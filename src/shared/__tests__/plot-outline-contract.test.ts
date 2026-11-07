@@ -153,6 +153,24 @@ describe('chapter Markdown outline contract', () => {
     expect(synopsisForDraftChapter(synopsis, 1)).toBe(synopsis)
     expect([first, second].every((entry, index) => validPlotOutlineEntry(entry, index + 1))).toBe(false)
   })
+  it('accepts ordinary Chinese prose starting with 第 without requesting a compact retry', () => {
+    const text = '## 第7章：标题\n\n第一次见面时，她正在修改一篇文章。'
+    expect(validPlotOutlineEntry(text, 7)).toBe(true)
+    expect(derivePlotOutlineCursor({ from: 1, to: 8 }, 6, [{
+      purpose: 'plot-outline:chapter:7:normal', status: 'settled', finishReason: 'stop',
+      artifact: { artifactId: 'normal-7', text, revision: 1, textHash: 'a'.repeat(64) },
+    }])).toEqual({ kind: 'accept', chapterNumber: 7, artifactIds: ['normal-7'], text })
+  })
+  it.each([
+    '第7章：重复章', '## 第8章：下一章', '- 第8章：下一章', '第8章：下一章',
+    '第8至9章：合并章', '第八、九章：合并章',
+    '第8至第9章：后续分章', '第８章：下一章', '第八～第九章：合并章',
+    '第 八 章：下一章', '第 8–9 章：章组', '第八-九章：章组', '第8 — 9章：章组',
+    '## 章外概览', 'Chapter 8: Next', '- Chapters 8-9: Group',
+    '> 后续概览：下一章', '```\n围栏内容\n```',
+  ])('rejects an extra heading or forbidden marker after a valid first heading: %s', body => {
+    expect(validPlotOutlineEntry(`## 第7章：标题\n行动和结果。\n\n${body}\n后续内容。`, 7)).toBe(false)
+  })
   it('counts the full entry in Unicode code points without truncating a 1201 point entry', () => {
     const heading = '## 第1章：标题\n'
     const maximum = heading + '😀'.repeat(1200 - [...heading].length)
