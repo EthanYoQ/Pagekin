@@ -64,6 +64,7 @@ export interface WorkflowStep {
   description: string
   status: StepStatus
   progress?: number
+  activityText?: string
   result?: string
   error?: string
   /** Non-empty machine-readable code supplied by the thrown error. */
@@ -183,6 +184,7 @@ export interface StepCallbacks {
   log: (message: string) => void
   /** 更新进度 (0-100) */
   setProgress: (progress: number) => void
+  setActivityText?: (activityText: string | undefined) => void
   /** 保存本步骤最近一次模型调用的安全提示词预算摘要。 */
   setPromptBudgetReport?: (report: PromptBudgetReport) => void
   setGenerationActivity?: (activity: NonNullable<WorkflowStep['generationActivity']>) => void
@@ -758,7 +760,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       const stepDef = definition.steps[i]
 
       // 标记当前步骤为运行中
-      updateStepById(set, run.id, i, { status: 'running', startedAt: new Date().toISOString() })
+      updateStepById(set, run.id, i, { status: 'running', startedAt: new Date().toISOString(), activityText: undefined })
       updateRunById(set, run.id, { currentStepIndex: i })
       get().addLog('info', uiText(
         context.uiLocale,
@@ -775,6 +777,9 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         },
         setGenerationActivity: (generationActivity) => {
           updateStepById(set, run.id, i, { generationActivity })
+        },
+        setActivityText: (activityText) => {
+          updateStepById(set, run.id, i, { activityText })
         },
         setProgress: (progress) => {
           updateStepById(set, run.id, i, { progress })

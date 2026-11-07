@@ -292,6 +292,44 @@ describe('ImportRunOrchestrator', () => {
     expect(getRun().stage).toBe('refresh')
   })
 
+  it('keeps resumed completion at seven of nine chapters until the next checkpoint is acknowledged', async () => {
+    const numbers = Array.from({ length: 9 }, (_, index) => index + 1)
+    const { deps } = harness(9, {
+      purpose: 'author-manuscript', stage: 'author-postprocess',
+      completedBatches: { 'author-postprocess': numbers.slice(0, 7).map(number => `chapter:${number}`) },
+    })
+    deps.getAuthorCommitReceipt = vi.fn(async () => ({
+      operationId: 'author-import:run-1', payloadHash: 'e'.repeat(64), chapterNumbers: numbers, idempotent: false,
+      drafts: numbers.map(chapterNumber => ({ chapterNumber, draftId: chapterNumber, finalizationId: `final-${chapterNumber}`,
+        contentHash: 'f'.repeat(64), targetFileName: `Chapter ${chapterNumber}.txt`, status: 'finalized' as const, publicationStatus: 'pending' as const })),
+    }))
+    let finishProjection!: () => void, acknowledgeCheckpoint!: () => void
+    const projection = new Promise<void>(resolve => { finishProjection = resolve })
+    const checkpoint = new Promise<void>(resolve => { acknowledgeCheckpoint = resolve })
+    const progress: number[] = []
+    const observer = { ...callbacks, setProgress: (value: number) => { progress.push(value) }, setActivityText: vi.fn() }
+    deps.postprocessAuthorChapter = vi.fn(async chapter => { if (chapter.number === 8) await projection })
+    const save = deps.completeBatch
+    deps.completeBatch = vi.fn(async (...args: Parameters<typeof save>) => {
+      if (args[2] === 'chapter:8') await checkpoint
+      return save(...args)
+    })
+    const executing = new ImportRunOrchestrator(deps).executeStage('run-1', 'author-postprocess', 'test-runner', { cancelled: false }, observer)
+    await vi.waitFor(() => expect(deps.postprocessAuthorChapter).toHaveBeenCalledTimes(1))
+    const duringProjection = [...progress]
+    finishProjection()
+    await vi.waitFor(() => expect(deps.completeBatch).toHaveBeenCalledTimes(1))
+    const duringCheckpoint = [...progress]
+    const clearedBeforeCheckpoint = observer.setActivityText.mock.calls.length
+    acknowledgeCheckpoint()
+    await executing
+    expect(duringProjection).toEqual([78])
+    expect(duringCheckpoint).toEqual([78])
+    expect(clearedBeforeCheckpoint).toBe(0)
+    expect(progress).toEqual([78, 89, 99])
+    expect(observer.setActivityText).toHaveBeenCalledWith(undefined)
+  })
+
   it('keeps renewing its lease while one knowledge effect runs longer than the original TTL', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)

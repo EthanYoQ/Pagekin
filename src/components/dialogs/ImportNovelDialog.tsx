@@ -17,6 +17,7 @@ import type { AuthorManuscriptImportPreview } from '../../shared/author-manuscri
 import {
   createImportWorkflow,
   estimateImportCost,
+  estimateAuthorImportWorkload,
   loadAuthorImportChapterNumbers,
 } from '../../services/workflows/import-workflow'
 import {
@@ -66,8 +67,17 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const [splitting, setSplitting] = useState(false)
   const [splitDone, setSplitDone] = useState(false)
   const [splitError, setSplitError] = useState('')
-  const [authorPreview, setAuthorPreview] = useState<AuthorManuscriptImportPreview | null>(null)
-  const [authorPreviewLoading, setAuthorPreviewLoading] = useState(false)
+  const [authorPreviewResult, setAuthorPreviewResult] = useState<{
+    project: NonNullable<typeof currentProject>
+    inspection: ImportInspectionSummary
+    locale: typeof locale
+    preview: AuthorManuscriptImportPreview | null
+  } | null>(null)
+  const currentAuthorPreview = authorPreviewResult?.project === currentProject
+    && authorPreviewResult?.inspection === inspection && authorPreviewResult?.locale === locale
+  const authorPreview = currentAuthorPreview ? authorPreviewResult!.preview : null
+  const authorPreviewLoading = purpose === 'author-manuscript' && targetMode === 'current'
+    && !!inspection && !!currentProject && !currentAuthorPreview
   const [selectionPreparation, setSelectionPreparation] = useState<ImportRunPreparationResult | null>(null)
   const [selectionProjectLeaseId, setSelectionProjectLeaseId] = useState('')
 
@@ -133,7 +143,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
       currentProject.path,
     ).then(preview => {
       if (!active || !isProjectSessionCurrent(session)) return
-      setAuthorPreview(preview)
+      setAuthorPreviewResult({ project: currentProject, inspection, locale, preview })
       if (preview.classification === 'conflict') {
         if (preview.authorityInvalid) {
           setSplitError(text(
@@ -154,11 +164,9 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
       }
     }).catch(error => {
       if (active && isProjectSessionCurrent(session)) {
-        setAuthorPreview(null)
+        setAuthorPreviewResult({ project: currentProject, inspection, locale, preview: null })
         setSplitError(displayedErrorMessage(locale, error))
       }
-    }).finally(() => {
-      if (active && isProjectSessionCurrent(session)) setAuthorPreviewLoading(false)
     })
     return () => { active = false }
   }, [currentProject, inspection, locale, purpose, targetMode, text])
@@ -166,8 +174,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const changePurpose = useCallback((nextPurpose: ImportPurpose) => {
     setPurpose(nextPurpose)
     setInspection(null)
-    setAuthorPreview(null)
-    setAuthorPreviewLoading(false)
+    setAuthorPreviewResult(null)
     setSelectionPreparation(null)
     setSelectionProjectLeaseId('')
     setSplitDone(false)
@@ -223,12 +230,10 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
       setSplitError('')
       setImportNotice('')
       setInspection(null)
-      setAuthorPreview(null)
-      setAuthorPreviewLoading(false)
+      setAuthorPreviewResult(null)
       setSelectionPreparation(null)
       setSelectionProjectLeaseId('')
       if (purpose === 'author-manuscript' && result.success && result.inspection) {
-        setAuthorPreviewLoading(true)
         setInspection(result.inspection)
         setSplitDone(true)
       } else if (purpose === 'reference' && result.success && result.preparation) {
@@ -432,7 +437,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
       console.error('[ImportNovel] 导入失败:', e)
       if (purpose === 'author-manuscript') {
         setInspection(null)
-        setAuthorPreview(null)
+        setAuthorPreviewResult(null)
         setSplitDone(false)
       }
       setSplitError(displayedErrorMessage(locale, e))
@@ -527,9 +532,10 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
     }
   }
 
-  // 成本预估
-  const runsInference = purpose === 'reference' || authorInference
-  const costEstimate = runsInference && splitDone && inspection
+  const authorWorkload = purpose === 'author-manuscript' && splitDone && !authorPreviewLoading && authorPreview?.classification === 'ready'
+    ? estimateAuthorImportWorkload(authorPreview.newChapterNumbers.length)
+    : null
+  const costEstimate = purpose === 'reference' && splitDone && inspection
     ? estimateImportCost(inspection.totalWords, inspection.chapterCount)
     : null
 
@@ -616,8 +622,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
                 onClick={() => {
                   setTargetMode('new')
                   setInspection(null)
-                  setAuthorPreview(null)
-                  setAuthorPreviewLoading(false)
+                  setAuthorPreviewResult(null)
                   setSelectionPreparation(null)
                   setSelectionProjectLeaseId('')
                   setSplitDone(false)
@@ -634,8 +639,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
                 onClick={() => {
                   setTargetMode('current')
                   setInspection(null)
-                  setAuthorPreview(null)
-                  setAuthorPreviewLoading(false)
+                  setAuthorPreviewResult(null)
                   setSelectionPreparation(null)
                   setSelectionProjectLeaseId('')
                   setSplitDone(false)
@@ -911,7 +915,27 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
             </>
           )}
 
-          {/* ===== Token 预估 ===== */}
+          {authorWorkload && (
+            <div data-testid="author-import-workload" className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2.5 text-xs space-y-1.5">
+              <p className="font-medium">{text('AI 处理工作量', 'AI processing workload')}</p>
+              <p>{text(
+                `新增 ${authorWorkload.newChapterCount} 章，连续性处理通常需 ${authorWorkload.continuityRequests} 次 AI 请求。`,
+                `Continuity processing for ${authorWorkload.newChapterCount} new ${pluralEn(authorWorkload.newChapterCount, 'chapter')} normally needs ${authorWorkload.continuityRequests} AI requests.`,
+              )}</p>
+              <p className="text-[var(--color-text-secondary)]">{text(
+                '每章生成剧情要点和角色状态各一次；继续导入时跳过已完成的部分，修复或重试可能增加请求。',
+                'Each chapter needs one plot-notes request and one character-state request. Resuming skips completed work; repairs or retries may add requests.',
+              )}</p>
+              {authorInference && <p className="text-[var(--color-text-secondary)]">{text(
+                '已启用额外反推：设定、架构、角色、文风和缺失的章节蓝图。',
+                'Additional inference is enabled for settings, architecture, characters, writing style, and missing chapter blueprints.',
+              )}</p>}
+              <p className="text-[var(--color-text-secondary)]">{text(
+                '耗时取决于模型和正文长度，暂无法可靠预计。',
+                'Duration depends on the model and manuscript length and cannot yet be estimated reliably.',
+              )}</p>
+            </div>
+          )}
           {costEstimate && (
             <div className="rounded-lg px-3 py-2.5 space-y-1.5"
               style={{

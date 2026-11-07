@@ -146,6 +146,7 @@ function RunSteps({ run, live, text }: { run: WorkflowRun; live: boolean; text: 
             key={step.id}
             step={step}
             live={live && step.status === 'running'}
+            activityText={current && run.status === 'running' && step.status === 'running' ? step.activityText : undefined}
             reasoning={current ? reasoning : ''}
             open={open[step.id] ?? openByDefault}
             onToggle={() => setOpen(previous => ({ ...previous, [step.id]: !(previous[step.id] ?? openByDefault) }))}
@@ -176,10 +177,11 @@ function stepMeta(step: WorkflowStep, text: Text): string {
   return ''
 }
 
-function RunStep({ step, live, reasoning, open, onToggle, text }: {
+function RunStep({ step, live, activityText, reasoning, open, onToggle, text }: {
   step: WorkflowStep
   /** 这一步正在运行：输出持续追加，自动滚到最新。 */
   live: boolean
+  activityText?: string
   reasoning: string
   open: boolean
   onToggle: () => void
@@ -203,6 +205,7 @@ function RunStep({ step, live, reasoning, open, onToggle, text }: {
       {hasDetail
         ? <button type="button" className="run-step-row pi-focusable" aria-expanded={expanded} onClick={onToggle}>{row}</button>
         : <div className="run-step-row">{row}</div>}
+      {activityText && <p className="run-step-wait" role="status" data-testid="run-step-activity">{activityText}</p>}
       {reviewing && <ReviewWait step={step} />}
       {expanded && (
         <div className="run-step-detail">

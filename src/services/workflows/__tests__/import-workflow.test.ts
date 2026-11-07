@@ -20,7 +20,7 @@ vi.mock('../commands/import-novel.command', () => ({
   },
 }))
 
-import { createImportWorkflow, estimateImportCost, loadAuthorImportChapterNumbers } from '../import-workflow'
+import { createImportWorkflow, estimateAuthorImportWorkload, estimateImportCost, loadAuthorImportChapterNumbers } from '../import-workflow'
 import {
   IMPORT_RUN_EFFECT_RECEIPT_SCHEMA_VERSION,
   type ImportRunEffectReceipt,
@@ -494,6 +494,13 @@ describe('createImportWorkflow', () => {
     expect(source).not.toMatch(/[\u2600-\u27BF]/u)
     expect(source).not.toMatch(/\uFE0F/u)
     expect(source).not.toMatch(/[\p{Extended_Pictographic}]/u)
+  })
+})
+
+describe('estimateAuthorImportWorkload', () => {
+  it('counts two usual continuity requests per new chapter without claiming duration or total tokens', () => {
+    expect(estimateAuthorImportWorkload(9)).toEqual({ newChapterCount: 9, continuityRequests: 18 })
+    expect(estimateAuthorImportWorkload(0)).toEqual({ newChapterCount: 0, continuityRequests: 0 })
   })
 })
 

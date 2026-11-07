@@ -141,6 +141,25 @@ beforeEach(() => {
 })
 
 describe('workflow generation prompt budget diagnostics', () => {
+  it.each([false, true])('keeps activity separate from completion until the executor settles, failure=%s', async fail => {
+    let finish!: () => void
+    const pending = new Promise<void>(resolve => { finish = resolve })
+    const executing = useWorkflowStore.getState().startWorkflow({
+      type: 'architecture_generation', title: 'Outline', projectPath, projectSession,
+      steps: [{ name: 'Outline', description: '', executor: async (_step, _context, callbacks) => {
+        callbacks.setActivityText?.('Saving accepted chapters')
+        callbacks.setProgress(99)
+        await pending
+        if (fail) throw new Error('commit failed')
+      } }],
+    })
+    await vi.waitFor(() => expect(useWorkflowStore.getState().activeRuns[0]?.steps[0]?.activityText).toBe('Saving accepted chapters'))
+    expect(useWorkflowStore.getState().activeRuns[0]?.steps[0]?.progress).toBe(99)
+    finish()
+    await executing
+    expect(useWorkflowStore.getState().history[0]?.steps[0]).toMatchObject({ status: fail ? 'failed' : 'completed', progress: fail ? 99 : 100 })
+  })
+
   it.each([
     ['successful', 'stop', 'completed'],
     ['content-filtered', 'content_filter', 'failed'],

@@ -648,7 +648,10 @@ export class ImportRunOrchestrator {
     }
     const draftsByChapter = new Map(receipt.drafts.map(draft => [draft.chapterNumber, draft]))
     let after = 0
-    let visited = 0
+    const publishProgress = () => callbacks.setProgress(
+      Math.min(99, Math.round(((run.completedBatches[stage]?.length ?? 0) / run.totalChapters) * 100)),
+    )
+    publishProgress()
     let page = await this.dependencies.listChapters(run.id, after, IMPORT_CHAPTER_PAGE_SIZE)
     while (page.length > 0) {
       for (const chapter of page) {
@@ -685,9 +688,9 @@ export class ImportRunOrchestrator {
             execution.current,
           )
           run = completed.run
+          if (stage === 'author-postprocess') callbacks.setActivityText?.(undefined)
+          publishProgress()
         }
-        visited += 1
-        callbacks.setProgress(Math.min(99, Math.round((visited / run.totalChapters) * 100)))
         stopIfCancelled(context, run.locale)
       }
       after = page.at(-1)!.number

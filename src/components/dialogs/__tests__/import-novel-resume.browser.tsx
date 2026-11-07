@@ -1,4 +1,4 @@
-import { act } from 'react'
+import { act, useLayoutEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
@@ -19,7 +19,7 @@ import type { AuthorManuscriptImportPreview } from '../../../shared/author-manus
 
 let root: Root
 let container: HTMLDivElement
-let invoke: ReturnType<typeof vi.fn>
+let invoke: ReturnType<typeof vi.fn<(channel: string, ...args: unknown[]) => Promise<unknown>>>
 let startWorkflow: ReturnType<typeof vi.fn>
 let preparation: ImportRunPreparationResult
 let authorPreview: AuthorManuscriptImportPreview
@@ -551,22 +551,86 @@ describe('current-project reference import', () => {
     expect(invoke.mock.calls.some(([channel]) => String(channel).startsWith('kb:'))).toBe(false)
   })
 
-  it('我的原稿默认勾选「同时反推」，勾选时显示费用预估并随创建请求冻结；取消勾选后预估消失', async () => {
+  it('shows required continuity work with inference on and off and freezes the selected inference option', async () => {
     await act(async () => page.getByTestId('import-purpose-author').click())
     const option = page.getByRole('checkbox', { name: /同时反推设定、架构、角色和蓝图/ })
     await expect.element(option).toBeChecked()
     await expect.element(page.getByText('只补空白，不覆盖已有内容')).toBeInTheDocument()
     await act(async () => page.getByTestId('import-source-choose').click())
-    await expect.element(page.getByText('预估 AI 消耗')).toBeInTheDocument()
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('新增 1 章，连续性处理通常需 2 次 AI 请求')
 
     await act(async () => page.getByText('同时反推设定、架构、角色和蓝图').click())
     await expect.element(option).not.toBeChecked()
-    expect(document.body.textContent).not.toContain('预估 AI 消耗')
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('通常需 2 次 AI 请求')
+    expect(document.body.textContent).not.toMatch(/预估 AI 消耗|预计耗时|总计：~/)
+    expect(page.getByTestId('author-import-workload').element().textContent).not.toContain('已启用额外反推')
 
     await act(async () => page.getByText('同时反推设定、架构、角色和蓝图').click())
     await act(async () => page.getByRole('button', { name: /确认导入（1 章）/ }).click())
     const prepareCall = invoke.mock.calls.find(([channel]) => channel === 'db:import-run-prepare-inspection')
     expect(prepareCall?.[1]).toMatchObject({ purpose: 'author-manuscript', authorInference: true })
+  })
+
+  it('uses only new author chapters for workload and hides it for an exact duplicate', async () => {
+    authorPreview = { ...authorPreview, chapterCount: 9, newChapterNumbers: [3, 4, 5, 6, 7, 8, 9], duplicateChapterNumbers: [1, 2] }
+    await act(async () => page.getByTestId('import-purpose-author').click())
+    await act(async () => page.getByTestId('import-source-choose').click())
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('新增 7 章，连续性处理通常需 14 次 AI 请求')
+    await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('Continuity processing for 7 new chapters normally needs 14 AI requests')
+    authorPreview = { ...authorPreview, classification: 'exact-duplicate', newChapterNumbers: [], duplicateChapterNumbers: [1, 2, 3, 4, 5, 6, 7, 8, 9] }
+    await act(async () => page.getByTestId('import-source-choose').click())
+    await expect.element(page.getByTestId('author-import-confirmation-summary')).toHaveTextContent('already')
+    expect(document.querySelector('[data-testid="author-import-workload"]')).toBeNull()
+  })
+
+  it('hides workload while refreshing the current author preview', async () => {
+    await act(async () => page.getByTestId('import-purpose-author').click())
+    await act(async () => page.getByTestId('import-source-choose').click())
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('通常需 2 次 AI 请求')
+    const refreshed = deferred<AuthorManuscriptImportPreview>()
+    const original = invoke.getMockImplementation()!
+    invoke.mockImplementation((channel, ...args) => channel === 'db:import-run-author-preview' ? refreshed.promise : original(channel, ...args))
+    await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+    const whileRefreshing = document.querySelector('[data-testid="author-import-workload"]')?.textContent
+    await act(async () => refreshed.resolve(authorPreview))
+    expect(whileRefreshing).toBeUndefined()
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('Continuity processing for 1 new chapter normally needs 2 AI requests')
+  })
+
+  it('removes old preview work and disables import on the first commit after a project session changes', async () => {
+    const observations: { lease: string | undefined; workload: string | null; disabled: boolean | undefined }[] = []
+    function PreviewProbe() {
+      const current = useProjectStore(state => state.currentProject)
+      useLayoutEffect(() => {
+        const confirm = [...document.querySelectorAll('button')].find(button => button.textContent?.includes('确认导入'))
+        observations.push({ lease: current?.sessionLease, workload: document.querySelector('[data-testid="author-import-workload"]')?.textContent ?? null, disabled: confirm?.disabled })
+      }, [current])
+      return <ImportNovelDialog open onClose={vi.fn()} />
+    }
+    await act(async () => root.render(<PreviewProbe />))
+    await act(async () => page.getByTestId('import-purpose-author').click())
+    await act(async () => page.getByTestId('import-source-choose').click())
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('通常需 2 次 AI 请求')
+    const stale = deferred<AuthorManuscriptImportPreview>(), current = deferred<AuthorManuscriptImportPreview>()
+    const original = invoke.getMockImplementation()!
+    invoke.mockImplementation((channel, ...args) => {
+      if (channel !== 'db:import-run-author-preview') return original(channel, ...args)
+      const session = args.at(-1) as { leaseId: string }
+      return session.leaseId === 'lease-reopened' ? stale.promise : current.promise
+    })
+    await act(async () => useProjectStore.setState({ currentProject: { ...project, sessionLease: 'lease-reopened' } as never }))
+    await act(async () => useProjectStore.setState({ currentProject: { ...project, sessionLease: 'lease-latest' } as never }))
+    const pendingObservations = observations.filter(item => item.lease === 'lease-reopened' || item.lease === 'lease-latest')
+    await act(async () => stale.resolve(authorPreview))
+    const afterStale = document.querySelector('[data-testid="author-import-workload"]')
+    await act(async () => current.resolve(authorPreview))
+    expect(pendingObservations).toEqual([
+      { lease: 'lease-reopened', workload: null, disabled: true },
+      { lease: 'lease-latest', workload: null, disabled: true },
+    ])
+    expect(afterStale).toBeNull()
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('通常需 2 次 AI 请求')
   })
 
   it('不勾选反推时创建请求冻结 false', async () => {

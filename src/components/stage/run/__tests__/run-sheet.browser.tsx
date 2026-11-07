@@ -114,6 +114,25 @@ afterEach(async () => {
 })
 
 describe('运行侧页', () => {
+  it('shows current import activity with output collapsed and hides stale or terminal activity', async () => {
+    const active = run('import', 'running', { type: 'novel_import', steps: [
+      { id: 'continuity', name: '更新连续性事实', description: '', status: 'running', progress: 78, logs: [], activityText: '第 8 章 · 章节剧情要点' },
+      { id: 'later', name: '刷新', description: '', status: 'running', logs: [], activityText: 'stale activity' },
+    ] })
+    useWorkflowStore.setState({ activeRuns: [active] })
+    await render()
+    expect(host!.querySelector('.run-output')).toBeNull()
+    expect(host!.querySelector('[data-testid="run-step-activity"]')?.textContent).toBe('第 8 章 · 章节剧情要点')
+    expect(host!.textContent).not.toContain('stale activity')
+    await act(async () => useWorkflowStore.setState({ activeRuns: [{ ...active, steps: [{ ...active.steps[0], activityText: '第 8 章 · 角色状态更新' }] }] }))
+    expect(host!.querySelector('[data-testid="run-step-activity"]')?.textContent).toBe('第 8 章 · 角色状态更新')
+    expect(host!.querySelector('.run-step-meta')?.textContent).toBe('78%')
+    for (const status of ['cancelling', 'cancelled', 'failed', 'completed'] as const) {
+      await act(async () => useWorkflowStore.setState({ activeRuns: [{ ...active, status }] }))
+      expect(host!.querySelector('[data-testid="run-step-activity"]')).toBeNull()
+    }
+  })
+
   it('三个分页：进行中看运行，历史列出结束的运行并展开看步骤，诊断是宽版', async () => {
     useWorkflowStore.setState({ activeRuns: [run('4', 'running')], history: [run('3', 'completed', { completedAt: '2026-10-12T08:00:00.000Z' })] })
     await render()
