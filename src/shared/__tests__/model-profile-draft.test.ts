@@ -98,6 +98,12 @@ describe('model profile drafts', () => {
       expect(resolveContextWindow(custom({ provider: 'ollama', baseUrl: 'http://localhost:11434/v1' }))).toEqual({ tokens: 4_096, source: 'default' })
     })
 
+    it('LM Studio 这类本机服务读不到窗口时也按 4,096，读到时用实际值', () => {
+      const lmStudio = { baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'gemma-3' }
+      expect(resolveContextWindow(custom(lmStudio))).toEqual({ tokens: 4_096, source: 'default' })
+      expect(resolveContextWindow(custom({ ...lmStudio, ...stored(8_192, 'endpoint') }))).toEqual({ tokens: 8_192, source: 'endpoint' })
+    })
+
     it('旧档案没有来源记录：等于预设的算内置资料，不同的算手填，没有数的看预设或默认', () => {
       const preset = catalogued().tokens
       expect(resolveContextWindow(official(stored(preset)))).toEqual({ tokens: preset, source: 'preset' })

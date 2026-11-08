@@ -226,7 +226,7 @@ describe('model discovery settings flow', () => {
     await act(async () => { useLLMStore.setState({ models: [JSON.parse(JSON.stringify(saved))] }) })
     await act(async () => { await page.getByRole('button', { name: /^编辑「/ }).click() })
     expect(container?.querySelector('[data-context-window-source]')?.textContent).toBe('你填的')
-    expect(container?.querySelector('[data-capability-sources]')?.textContent).toContain(declared ? '模型输出容量：接口取得' : '模型输出容量：资料匹配')
+    expect(container?.querySelector('[data-capability-sources]')?.textContent).toContain(declared ? '模型输出容量：来自服务商' : '模型输出容量：内置资料')
   })
 
   describe('上下文窗口来源标签', () => {
@@ -252,6 +252,49 @@ describe('model discovery settings flow', () => {
       await renderSettings(savedProfile(overrides), listed('manual-model'), locale)
       await openEditor(locale)
       expect(sourceTag()).toBe(label)
+    })
+
+    it.each<[Locale, 'manual' | 'endpoint' | 'preset' | 'unknown', string, string]>([
+      ['zh-CN', 'manual', '你填的', '模型输出容量：你填的'],
+      ['zh-CN', 'endpoint', '来自服务商', '模型输出容量：来自服务商'],
+      ['zh-CN', 'preset', '内置资料', '模型输出容量：内置资料'],
+      ['zh-CN', 'unknown', '默认值', '模型输出容量：默认值'],
+      ['en-US', 'manual', 'Set by you', 'Model output capacity: Set by you'],
+      ['en-US', 'endpoint', 'From provider', 'Model output capacity: From provider'],
+      ['en-US', 'preset', 'Built-in data', 'Model output capacity: Built-in data'],
+      ['en-US', 'unknown', 'Default', 'Model output capacity: Default'],
+    ])('%s 下来源 %s 在窗口标签和下面一行是同一个词', async (locale, source, word, line) => {
+      const capabilities = source === 'unknown' ? undefined : { contextWindowTokens: 64_000, maxOutputTokens: 4096, reasoning: false, structuredOutput: false, usage: false }
+      await renderSettings(savedProfile({ capabilities, capabilitySources: { contextWindowTokens: source, maxOutputTokens: source } }), listed('manual-model'), locale)
+      await openEditor(locale)
+      expect(sourceTag()).toBe(word)
+      expect(container?.querySelector('[data-capability-sources]')?.textContent).toContain(line)
+    })
+
+    it('LM Studio 未加载模型、读不到窗口时按 4096，没有提示，配置能保存', async () => {
+      const { saveModel } = await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: '' }), listed('gemma-3'))
+      useLLMStore.setState({ discoverLocalContextWindow: vi.fn(async () => null) })
+      await openEditor()
+      await openSuggestions()
+      await vi.waitFor(() => expect(suggestionValues()).toContain('gemma-3'))
+      await chooseSuggestion('gemma-3')
+      expect(windowElement().value).toBe('')
+      expect(windowElement().placeholder).toBe('4096')
+      expect(sourceTag()).toBe('默认值')
+      expect(container?.querySelector('[role="alert"]')).toBeNull()
+      await act(async () => { await page.getByRole('button', { name: '保存配置', exact: true }).click() })
+      expect(saveModel).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'gemma-3' }))
+    })
+
+    it('LM Studio 已加载模型时取实例的窗口', async () => {
+      await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: '' }), listed('gemma-3'))
+      useLLMStore.setState({ discoverLocalContextWindow: vi.fn(async () => 8_192) })
+      await openEditor()
+      await openSuggestions()
+      await vi.waitFor(() => expect(suggestionValues()).toContain('gemma-3'))
+      await chooseSuggestion('gemma-3')
+      await vi.waitFor(() => expect(windowElement().value).toBe('8192'))
+      expect(sourceTag()).toBe('来自服务商')
     })
 
     it('没有窗口的模型留空，占位显示生效的默认数；Ollama 显示 4096', async () => {
