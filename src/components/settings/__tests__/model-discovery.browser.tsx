@@ -375,6 +375,34 @@ describe('model discovery settings flow', () => {
       expect(discoverModels).toHaveBeenCalledWith(discoveryRequest(model))
     })
 
+    it.each<['endpoint' | 'manual', string, string, string]>([
+      ['endpoint', '', '4096', '默认值'],
+      ['manual', '32768', '32768', '你填的'],
+    ])('重新选中已保存的本机模型读不到窗口：%s 的旧值变成 %j', async (source, value, placeholder, tag) => {
+      await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'gemma-3', ...stored(32_768, source) }), listed('gemma-3'))
+      useLLMStore.setState({ discoverLocalContextWindow: vi.fn(async () => null) })
+      await openEditor()
+      await openSuggestions()
+      await vi.waitFor(() => expect(suggestionValues()).toContain('gemma-3'))
+      await chooseSuggestion('gemma-3')
+      await vi.waitFor(() => expect(sourceTag()).toBe(tag))
+      expect(windowElement().value).toBe(value)
+      expect(windowElement().placeholder).toBe(placeholder)
+    })
+
+    it('取回窗口期间换了 API Key，旧响应不写回', async () => {
+      let respond: (result: ModelDiscoveryResult) => void = () => {}
+      const discoverModels = vi.fn(() => new Promise<ModelDiscoveryResult>(resolve => { respond = resolve }))
+      await renderSettings(savedProfile({ modelName: 'gateway', ...stored(20_000, 'manual') }), discoverModels)
+      await openEditor()
+      await act(async () => { await windowInput().fill('') })
+      await vi.waitFor(() => expect(discoverModels).toHaveBeenCalled())
+      await typeInto(apiKeyInput(), 'replacement-credential')
+      await act(async () => { respond({ success: true, models: [{ id: 'gateway', name: 'gateway', value: 'gateway', capabilities: { contextWindowTokens: 128_000 } }] }) })
+      expect(windowElement().value).toBe('')
+      expect(sourceTag()).toBe('默认值')
+    })
+
     it('重新取回窗口失败时静默用默认值', async () => {
       await renderSettings(savedProfile({ modelName: 'gateway', ...stored(20_000, 'manual') }), vi.fn(async () => { throw new Error('down') }))
       await openEditor()
