@@ -33,6 +33,26 @@ const withKeeperInChapter3 = context => seedStageSample(context, { beforeReload:
 } })
 
 /**
+ * 夹具：真实蓝图表没有关系提示，这里在主进程给第 3 章的读取结果补一条，再给一个第 2 章起「决裂」的作者节点。
+ * 只用于看提示的形态；保存、豁免走真实处理。
+ */
+async function injectRelationConflict(app) {
+  const wrapped = await app.evaluate(({ ipcMain }) => {
+    const handlers = ipcMain._invokeHandlers
+    const read = handlers instanceof Map && handlers.get('db:blueprint-get-all')
+    if (!read) return false
+    handlers.set('db:blueprint-get-all', async (...args) => (await read(...args)).map(item => item.chapterNumber === 3
+      ? { ...item, relationshipHints: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] } : item))
+    handlers.set('db:character-continuity-nodes', () => [{
+      eventId: 'relation:add:drive-fixture', subjectId: 'a', subjectName: '林岚', targetId: 'b', targetName: '守塔人', relationshipId: 'drive-fixture',
+      aspect: 'relation', value: '决裂', effectiveChapter: 2, provenance: { kind: 'author', operationId: 'drive' }, draftId: null, seq: 1, quote: null,
+    }])
+    return true
+  })
+  assert.equal(wrapped, true, 'ipcMain 处理函数表不可用')
+}
+
+/**
  * 主进程里改写 db:continuity-list-before：第 1 章定稿里守塔人已死，作为一致性预检的夹具。保存安排等其余通道照常走真实处理。
  * 写稿时的上下文也读这条通道，夹具的来源不是真实定稿，所以开始写之前要换回原处理函数。
  */
@@ -314,6 +334,34 @@ export const BLUEPRINT_SCENARIOS = {
     assert.match(await popover.getByRole('combobox').inputValue(), new RegExp(FAKE_MODEL.id))
   } },
 
+  'blueprint-relation-conflict': { model: false, shell: 'stage', setup: withKeeperInChapter3, run: async ({ app, page }) => {
+    await injectRelationConflict(app)
+    await blueprint.open(page)
+    await blueprint.pageMenu(page, '重新加载蓝图')
+    await blueprint.planItem(page, 3).click()
+    await page.getByRole('button', { name: '保存此章' }).click()
+    await page.getByText('第 3 章蓝图把 林岚 和 守塔人 写成「亲密同伴」，但第 2 章起两人是「决裂」。').waitFor({ state: 'visible' })
+    await page.getByText('依据：第 2 章 · 决裂').waitFor({ state: 'visible' })
+    for (const name of ['这是有意安排', '全书都不再提示', '去看时间线']) await page.getByRole('button', { name }).waitFor({ state: 'visible' })
+    await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
+  } },
+
+  'blueprint-relation-exempted': { model: false, shell: 'stage', setup: withKeeperInChapter3, run: async ({ app, page }) => {
+    await injectRelationConflict(app)
+    await blueprint.open(page)
+    await blueprint.pageMenu(page, '重新加载蓝图')
+    await blueprint.planItem(page, 3).click()
+    await page.getByRole('button', { name: '保存此章' }).click()
+    await page.getByRole('button', { name: '这是有意安排' }).click()
+    await page.getByText('已记下，这一章不再提示。').waitFor({ state: 'visible' })
+    await page.getByRole('button', { name: '撤销' }).waitFor({ state: 'visible' })
+    assert.equal(await page.getByText('依据：第 2 章 · 决裂').count(), 0, '豁免后这一章不再提示')
+    await page.getByRole('button', { name: '保存此章' }).click()
+    await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
+    await page.waitForTimeout(500)
+    assert.equal(await page.getByText('依据：第 2 章 · 决裂').count(), 0, '再次保存也不提示：豁免已写进库')
+  } },
+
   'blueprint-preflight': { model: true, shell: 'stage', setup: withKeeperInChapter3, run: async ({ app, page, fake }) => {
     await injectDeadKeeper(app)
     await blueprint.open(page)
@@ -321,7 +369,7 @@ export const BLUEPRINT_SCENARIOS = {
     await blueprint.preflight(page).waitFor({ state: 'visible' })
     await blueprint.popover(page).getByText(/“守塔人”处于死亡终态/).waitFor({ state: 'visible' })
     assert.equal(fake.chats.length, 0, '有提醒时不开始写')
-    for (const name of ['保存安排', '仅本次忽略', '改蓝图后重检']) await blueprint.preflight(page).getByRole('button', { name }).waitFor({ state: 'visible' })
+    for (const name of ['这是有意安排', '仅本次忽略', '改蓝图后重检']) await blueprint.preflight(page).getByRole('button', { name }).waitFor({ state: 'visible' })
   }, after: async ({ app, page, fake }) => {
     await restoreContinuity(app)
     await blueprint.preflight(page).getByRole('button', { name: '仅本次忽略' }).click()

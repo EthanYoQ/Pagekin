@@ -38,7 +38,7 @@ let container: HTMLDivElement | undefined
 let startWorkflow: ReturnType<typeof vi.fn>
 let writtenLogs: unknown[]
 let continuityProjections: unknown[]
-let exemptions: { stableFactKey: string; reason: string; revoked: boolean }[]
+let exemptions: { stableFactKey: string; reason: string; revoked: boolean; chapterNumber: number | null }[]
 let exemptionSave: () => Promise<{ success: boolean; error?: string }>
 let continuityGate: Promise<void> | null = null
 let authority: unknown
@@ -105,11 +105,11 @@ function installIpc() {
     if (channel === 'db:consistency-exemption-list') return exemptions
     if (channel === 'db:consistency-exemption-save') {
       const result = await exemptionSave()
-      if (result.success) exemptions = [...exemptions, { stableFactKey: String(args[0]), reason: String(args[1]), revoked: false }]
+      if (result.success) exemptions = [...exemptions, { stableFactKey: String(args[0]), reason: String(args[1]), revoked: false, chapterNumber: args[2] as number | null }]
       return result
     }
     if (channel === 'db:consistency-exemption-revoke') {
-      exemptions = exemptions.map(item => item.stableFactKey === args[0] ? { ...item, revoked: true } : item)
+      exemptions = exemptions.map(item => item.stableFactKey === args[0] && item.chapterNumber === args[1] ? { ...item, revoked: true } : item)
       return { success: true }
     }
     if (channel === 'fs:read-json') return { success: false }
@@ -347,7 +347,7 @@ describe('写作此章弹层', () => {
     expect(exemptions).toEqual([])
   })
 
-  it('保存安排后重检并开始写；已保存的安排可以在弹层里撤销', async () => {
+  it('一键确认有意安排后重检并开始写，只豁免这一章；已保存的安排可以在弹层里撤销', async () => {
     continuityProjections = [{
       draftId: 1, chapterNumber: 1, chapterTitle: '终局', chapterNotes: '老周死亡',
       source: { draftId: 1, finalizationId: 'finalization-1', chapterNumber: 1, contentHash: 'a'.repeat(64) },
@@ -357,10 +357,9 @@ describe('写作此章弹层', () => {
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
     await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
     const popover = page.getByRole('dialog', { name: '本次写作选项' })
-    await act(async () => popover.getByLabelText('安排说明').fill('老周以幽灵身份出现，是刻意安排。'))
-    await act(async () => popover.getByRole('button', { name: '保存安排' }).click())
+    await act(async () => popover.getByRole('button', { name: '这是有意安排' }).click())
     await vi.waitFor(() => expect(startWorkflow).toHaveBeenCalledOnce())
-    expect(exemptions).toMatchObject([{ reason: '老周以幽灵身份出现，是刻意安排。', revoked: false }])
+    expect(exemptions).toMatchObject([{ reason: '作者确认是有意安排', revoked: false, chapterNumber: 5 }])
 
     await act(async () => page.getByRole('button', { name: '本次写作选项' }).click())
     await popover.getByText('已保存安排（1）').click()
@@ -528,9 +527,8 @@ describe('写作此章弹层', () => {
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
     await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
     const popover = page.getByRole('dialog', { name: '本次写作选项' })
-    await act(async () => popover.getByLabelText('安排说明').fill('老周以幽灵身份出现，是刻意安排。'))
-    await act(async () => popover.getByRole('button', { name: '保存安排' }).click())
-    await expect.element(popover.getByRole('button', { name: '保存安排' })).toBeDisabled()
+    await act(async () => popover.getByRole('button', { name: '这是有意安排' }).click())
+    await expect.element(popover.getByRole('button', { name: '这是有意安排' })).toBeDisabled()
     await expect.element(popover.getByRole('button', { name: '仅本次忽略' })).toBeDisabled()
     const main = page.getByRole('button', { name: '写第 5 章' }).element() as HTMLButtonElement
     expect(main.disabled).toBe(true)
@@ -538,7 +536,7 @@ describe('写作此章弹层', () => {
     expect(main.closest('.pi-split')!.classList.contains('pi-split--main-off')).toBe(true)
     await act(async () => finishSave({ success: false, error: '数据库只读' }))
     await expect.element(popover.getByRole('alert')).toHaveTextContent('数据库只读')
-    await expect.element(popover.getByRole('button', { name: '保存安排' })).toBeEnabled()
+    await expect.element(popover.getByRole('button', { name: '这是有意安排' })).toBeEnabled()
     expect(startWorkflow).not.toHaveBeenCalled()
   })
 
@@ -549,8 +547,7 @@ describe('写作此章弹层', () => {
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="Write chapter 5" />)
     await act(async () => page.getByRole('button', { name: 'Write chapter 5' }).click())
     const popover = page.getByRole('dialog', { name: 'Options for this run' })
-    await act(async () => popover.getByLabelText('Why this is intentional').fill('The keeper appears as a ghost on purpose.'))
-    await act(async () => popover.getByRole('button', { name: 'Save arrangement' }).click())
+    await act(async () => popover.getByRole('button', { name: 'This is intentional' }).click())
     await expect.element(popover.getByRole('alert')).toHaveTextContent(/^Could not save the consistency arrangement.$/)
     expect(startWorkflow).not.toHaveBeenCalled()
   })
@@ -562,8 +559,7 @@ describe('写作此章弹层', () => {
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
     await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
     const popover = page.getByRole('dialog', { name: '本次写作选项' })
-    await act(async () => popover.getByLabelText('安排说明').fill('老周以幽灵身份出现，是刻意安排。'))
-    await act(async () => popover.getByRole('button', { name: '保存安排' }).click())
+    await act(async () => popover.getByRole('button', { name: '这是有意安排' }).click())
     const other = { projectId: 'harbor', leaseId: 'harbor-lease', projectPath: 'C:\\novels\\harbor' }
     setActiveProjectSessionContext(other)
     await act(async () => useProjectStore.setState({ currentProject: { ...project(), id: 'harbor', sessionLease: 'harbor-lease', name: '港口', path: other.projectPath } }))
@@ -582,12 +578,11 @@ describe('写作此章弹层', () => {
     await act(async () => dialog.getByLabelText(/写几章/).fill('1'))
     await act(async () => dialog.getByRole('button', { name: '开始写 1 章' }).click())
     await expect.element(dialog.getByRole('region', { name: '一致性预检' })).toBeVisible()
-    await act(async () => dialog.getByLabelText('安排说明').fill('老周以幽灵身份出现，是刻意安排。'))
-    await act(async () => dialog.getByRole('button', { name: '保存安排' }).click())
-    await expect.element(dialog.getByRole('button', { name: '保存安排' })).toBeDisabled()
+    await act(async () => dialog.getByRole('button', { name: '这是有意安排' }).click())
+    await expect.element(dialog.getByRole('button', { name: '这是有意安排' })).toBeDisabled()
     await act(async () => finishSave({ success: false, error: '数据库只读' }))
     await expect.element(dialog.getByRole('alert')).toHaveTextContent('数据库只读')
-    await expect.element(dialog.getByRole('button', { name: '保存安排' })).toBeEnabled()
+    await expect.element(dialog.getByRole('button', { name: '这是有意安排' })).toBeEnabled()
     expect(startWorkflow).not.toHaveBeenCalled()
   })
 })

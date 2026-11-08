@@ -121,7 +121,7 @@ describe('findBlueprintContinuityRisks', () => {
     }, [{ stableFactKey: findBlueprintContinuityRisks(projection, {
       chapterNumber: 2, title: '重逢', role: '发展', purpose: '顾舟归来', keyEvents: '顾舟敲门',
       characters: ['顾舟'], suspenseHook: '', userGuidance: '', notes: '',
-    }, [])[0]!.stableFactKey, reason: '回忆场景', revoked: false }])
+    }, [])[0]!.stableFactKey, reason: '回忆场景', revoked: false, chapterNumber: null }])
     expect(ignored).toEqual([])
   })
 

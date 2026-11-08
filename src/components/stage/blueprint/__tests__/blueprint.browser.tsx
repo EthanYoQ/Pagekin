@@ -5,6 +5,8 @@ import { createRoot, type Root } from 'react-dom/client'
 
 import type { TrashedChapter } from '../../../../shared/chapter-deletion'
 import type { AuthoritativeChapterSequence } from '../../../../shared/chapter-sequence'
+import type { ContinuityNode } from '../../../../shared/character-continuity'
+import type { ConsistencyExemption } from '../../../../shared/consistency-preflight'
 import type { ProjectData } from '../../../../shared/ipc-channels'
 import { globalEventBus } from '../../../../shared/event-bus'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
@@ -47,6 +49,13 @@ let invoke: ReturnType<typeof vi.fn>
 let authority: AuthoritativeChapterSequence | null
 let trashEntries: TrashedChapter[]
 let trashListFails: boolean
+let exemptions: ConsistencyExemption[]
+let nodesFail: boolean
+
+const BROKEN_NODE: ContinuityNode = {
+  eventId: 'relation:add:line', subjectId: 'a', subjectName: '林岚', targetId: 'b', targetName: '守塔人', relationshipId: 'line', aspect: 'relation',
+  value: '决裂', effectiveChapter: 1, provenance: { kind: 'author', operationId: 'op' }, draftId: null, seq: 1, quote: null,
+}
 
 function trashed(chapterNumber: number, restoreMode: TrashedChapter['restoreMode'] = 'into-gap'): TrashedChapter {
   return {
@@ -80,7 +89,20 @@ function installIpc() {
       status: 'continuous', lastChapterNumber: nextChapter - 1, nextChapterNumber: nextChapter, gaps: [], duplicateChapterNumbers: [], authorityFingerprint: 'a'.repeat(64),
     }
     if (channel === 'generation:find-blueprint-recovery') return null
-    if (channel === 'db:consistency-exemption-list') return []
+    if (channel === 'db:consistency-exemption-list') return exemptions
+    if (channel === 'db:continuity-list-before') return []
+    if (channel === 'db:character-continuity-nodes') {
+      if (nodesFail) throw new Error('nodes unavailable')
+      return [BROKEN_NODE]
+    }
+    if (channel === 'db:consistency-exemption-save') {
+      exemptions = [...exemptions, { stableFactKey: String(args[0]), reason: String(args[1]), revoked: false, chapterNumber: args[2] as number | null }]
+      return { success: true }
+    }
+    if (channel === 'db:consistency-exemption-revoke') {
+      exemptions = exemptions.map(item => item.stableFactKey === args[0] && item.chapterNumber === args[1] ? { ...item, revoked: true } : item)
+      return { success: true }
+    }
     if (channel === 'chapter:trash-list') {
       if (trashListFails) throw new Error('trash list unavailable')
       return { success: true, entries: trashEntries, damaged: [] }
@@ -142,6 +164,8 @@ beforeEach(async () => {
   authority = null
   trashEntries = []
   trashListFails = false
+  exemptions = []
+  nodesFail = false
   writableOverride.value = null
   useLocaleStore.setState({ locale: 'zh-CN' })
   useEditorStore.setState({ tabs: [], activeTabId: null, draftLedgers: {} })
@@ -502,6 +526,66 @@ describe('蓝图阶段', () => {
     await act(async () => { await save!() })
     const [[, saved]] = calls('db:blueprint-upsert-many')
     expect((saved as ChapterBlueprint[]).find(item => item.chapterNumber === 2)).toMatchObject({ title: '北堤夜雨', userGuidance: '节奏放慢，只写声音。' })
+  })
+
+  describe('保存后的连续性提示', () => {
+    const planned = () => {
+      stored = [{ ...blueprint(2, '同行'), relationshipHints: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }]
+      nextChapter = 2
+    }
+    const save = (name = '保存此章') => act(async () => page.getByRole('button', { name }).click())
+
+    it('蓝图关系和时间线相反：保存成功，提示写明章号和原文', async () => {
+      planned()
+      await renderPage()
+      await save()
+      expect(invoke.mock.calls.some(call => call[0] === 'db:blueprint-upsert' && (call[1] as ChapterBlueprint).chapterNumber === 2)).toBe(true)
+      await expect.element(page.getByText('第 2 章蓝图把 林岚 和 守塔人 写成「亲密同伴」，但第 1 章起两人是「决裂」。')).toBeVisible()
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).toBeVisible()
+      await expect.element(page.getByRole('button', { name: '写第 2 章' })).toBeEnabled()
+    })
+
+    it('一键确认只豁免这一章，不要求打字，可以撤销', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+      expect(exemptions).toEqual([{ stableFactKey: 'relation:relation:add:line', reason: '作者确认是有意安排', revoked: false, chapterNumber: 2 }])
+      await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).not.toBeInTheDocument()
+      await act(async () => page.getByRole('button', { name: '撤销' }).click())
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).toBeVisible()
+    })
+
+    it('全书豁免放在次级按钮，写入的章号为空', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await act(async () => page.getByRole('button', { name: '全书都不再提示' }).click())
+      expect(exemptions).toMatchObject([{ chapterNumber: null, revoked: false }])
+      await expect.element(page.getByText('已记下，全书不再提示。')).toBeVisible()
+    })
+
+    it('读节点失败时保存照常，不提示也不报错', async () => {
+      planned()
+      nodesFail = true
+      await renderPage()
+      await save()
+      await vi.waitFor(() => expect(invoke.mock.calls.some(call => call[0] === 'db:character-continuity-nodes')).toBe(true))
+      await expect.element(page.getByText(/依据：/)).not.toBeInTheDocument()
+      await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('英文界面的提示和按钮都是英文', async () => {
+      planned()
+      await renderPage()
+      await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+      await save('Save chapter')
+      await expect.element(page.getByText('The chapter 2 blueprint has 林岚 and 守塔人 as “亲密同伴”, but from chapter 1 they are “决裂”.')).toBeVisible()
+      await expect.element(page.getByText('Basis: Chapter 1 · 决裂')).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'This is intentional' })).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'View timeline' })).toBeVisible()
+    })
   })
 
   it('保存此章只写当前一章', async () => {

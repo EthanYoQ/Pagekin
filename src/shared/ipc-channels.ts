@@ -1,6 +1,6 @@
 import type { GenerationOwnerChannels, GenerationOwnerEvents } from './generation-owner-contract'
 import type { CharacterProposalChannels } from './character-proposal'
-import type { CharacterContinuityTimeline } from './character-continuity'
+import type { CharacterContinuityTimeline, ContinuityNode } from './character-continuity'
 import type { FinalizedCharacterGenerationChannels } from './finalized-character-generation'
 import type { ReviewRevisionGenerationInvokeChannels } from './review-revision-generation'
 import type { AgentGenerationChannels } from './agent-generation'
@@ -1056,12 +1056,13 @@ export interface DatabaseChannels {
     return: FinalizedSourceReadResult
   }
   'db:consistency-exemption-list': { args: [expectedProjectPath: string]; return: ConsistencyExemption[] }
+  'db:character-continuity-nodes': { args: [expectedProjectPath: string]; return: ContinuityNode[] }
   'db:consistency-exemption-save': {
-    args: [stableFactKey: string, reason: string, expectedProjectPath: string]
+    args: [stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string]
     return: { success: boolean; error?: string }
   }
   'db:consistency-exemption-revoke': {
-    args: [stableFactKey: string, expectedProjectPath: string]
+    args: [stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string]
     return: { success: boolean; error?: string }
   }
   'db:narrative-thread-list': {

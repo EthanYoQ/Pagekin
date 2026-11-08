@@ -13,6 +13,8 @@ import { Notice } from '../../ui/Notice'
 import { InkDialog } from '../InkDialog'
 import { useStageView } from '../use-stage-work'
 import WriteChapterPopover from '../write/WriteChapterPopover'
+import BlueprintContinuityNotices from './BlueprintContinuityNotices'
+import { useBlueprintContinuityNotice } from './use-blueprint-continuity-notice'
 import BatchWriteDialog from './BatchWriteDialog'
 import BlueprintCard from './BlueprintCard'
 import BlueprintPlanList from './BlueprintPlanList'
@@ -48,7 +50,8 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
   selectRequest?: number
 }) {
   const text = useLocaleStore(s => s.text)
-  const plan = useChapterBlueprints({ projectKey, initialChapterNumber, selectRequest })
+  const continuity = useBlueprintContinuityNotice()
+  const plan = useChapterBlueprints({ projectKey, initialChapterNumber, selectRequest, onSaved: (session, saved) => void continuity.check(session, saved) })
   const trash = useChapterTrash()
   const { chapters } = useStageView()
   const rows = useMemo(() => new Map(chapters.map(row => [row.number, row])), [chapters])
@@ -195,6 +198,8 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
       {plan.projectDataReady && plan.authorityError && (
         <Notice tone="warn" title={text('暂时无法确定下一章', 'The next chapter cannot be determined')}>{plan.authorityError}</Notice>
       )}
+
+      {selected && <BlueprintContinuityNotices chapterNumber={selected.chapterNumber} notice={continuity} />}
 
       {count === 0 ? (
         <div className="stage-bp-empty">

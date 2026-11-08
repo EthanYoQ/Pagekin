@@ -3,9 +3,29 @@ import type { BlueprintForPreflight, ConsistencyExemption, ConsistencyFinding } 
 import { findBlueprintContinuityRisks } from '../shared/consistency-preflight'
 import { ipc } from './ipc-client'
 
+/** chapterNumber 是这条提示所在的蓝图章。同一节点在批量里可能出现在多章，按章豁免要靠它。 */
+export type PreflightFinding = ConsistencyFinding & { chapterNumber: number }
+
 export interface ConsistencyPreflightResult {
-  findings: ConsistencyFinding[]
+  findings: PreflightFinding[]
   exemptions: ConsistencyExemption[]
+}
+
+export type ExemptionScope = 'chapter' | 'book'
+
+/** 全书豁免的章号是 null，和按章豁免各占一行。 */
+export const exemptionChapter = (finding: PreflightFinding, scope: ExemptionScope) => scope === 'book' ? null : finding.chapterNumber
+
+export function saveFindingExemption(
+  session: ProjectSessionContext,
+  finding: PreflightFinding,
+  scope: ExemptionScope,
+  text: (zh: string, en: string) => string,
+) {
+  const reason = scope === 'book'
+    ? text('作者确认全书都是有意安排', 'The author confirmed this is intentional throughout the book.')
+    : text('作者确认是有意安排', 'The author confirmed this is intentional.')
+  return ipc.invokeWithProjectSession(session, 'db:consistency-exemption-save', finding.stableFactKey, reason, exemptionChapter(finding, scope), session.projectPath)
 }
 
 export async function readConsistencyPreflight(
@@ -15,11 +35,16 @@ export async function readConsistencyPreflight(
   const exemptions = await ipc.invokeWithProjectSession(
     session, 'db:consistency-exemption-list', session.projectPath,
   )
+  // 关系节点读不出来时只少一类提示，不影响其他提示，也不影响写作。
+  const nodes = blueprints.some(blueprint => blueprint.relationshipHints)
+    ? await ipc.invokeWithProjectSession(session, 'db:character-continuity-nodes', session.projectPath).catch(() => [])
+    : []
   const findings = (await Promise.all(blueprints.map(async blueprint => {
     const projections = await ipc.invokeWithProjectSession(
       session, 'db:continuity-list-before', blueprint.chapterNumber, session.projectPath,
     )
-    return findBlueprintContinuityRisks(projections, blueprint, exemptions)
+    return findBlueprintContinuityRisks(projections, blueprint, exemptions, nodes)
+      .map(finding => ({ ...finding, chapterNumber: blueprint.chapterNumber }))
   }))).flat()
   return { findings, exemptions }
 }

@@ -137,7 +137,9 @@ node scripts/redesign/drive.mjs --scenario arch-timing --out <目录>
 | `blueprint-regression` | 第 3 章蓝图带出场人物与作者指导，从蓝图写下一章：旧外壳点「写作第 3 章」在对话框里直接开始，新外壳点「写第 3 章」。`measured.requests` 是每次模型请求的种类、模型与消息的 sha256，`proseMessages` 是正文请求原文。trunk（`--app-root`）与 head（`--shell stage`）两边的 `requests` 相同即通过 | 写出的草稿 | 是 | lane 1 |
 | `blueprint-page` | 选中第 5 章：标题「逐章规划」、主按钮「写第 3 章」、12 章规划、页头只有一个拆分主按钮、蓝图页文字对比度（名称 4.5:1，说明 3:1；章节规划的状态文字 `.stage-bp-plan-status` 每种状态都查，含默认的待写）。选择器清单是 `blueprint-scenarios.mjs` 的 `PAGE_CONTRAST`，算法与外壳共用 `scenarios.mjs` 的 `contrastFailures`。浅色、深色各跑一次 | 蓝图页 | 否 | lane 2、lane 10（`--theme dark`） |
 | `blueprint-popover` | 打开「本次写作选项」：只有本次模型、作者微操指导、折叠的更多（检索关键词），整页只有这一个对话层 | 写作弹层 | 否 | lane 3 |
-| `blueprint-preflight` | 主进程里把 `db:continuity-list-before` 换成夹具（第 1 章守塔人已死），点写第 3 章：弹层里出现一致性预检，有保存安排、仅本次忽略、改蓝图后重检，模型没有收到请求；`after` 换回原处理函数后仅本次忽略，写完 | 一致性预检 | 是 | lane 4 |
+| `blueprint-preflight` | 主进程里把 `db:continuity-list-before` 换成夹具（第 1 章守塔人已死），点写第 3 章：弹层里出现一致性预检，有这是有意安排、仅本次忽略、改蓝图后重检，模型没有收到请求；`after` 换回原处理函数后仅本次忽略，写完 | 一致性预检 | 是 | lane 4 |
+| `blueprint-relation-conflict` | 主进程夹具：第 3 章读取结果补关系提示「亲密同伴」，节点第 2 章起「决裂」。保存第 3 章：保存成功，提示写第 2 章和原文，有这是有意安排、全书都不再提示、去看时间线 | 蓝图连续性提示 | 否 | C5 |
+| `blueprint-relation-exempted` | 同上夹具，点这是有意安排：提示消失，出现已记下和撤销，库里记一条第 3 章的豁免 | 蓝图连续性提示 | 否 | C5 |
 | `blueprint-overwrite` | AI 生成蓝图选覆盖后开始：生成对话框先收起，危险确认「覆盖已有蓝图？」写明会替换 12 章；`after` 取消后生成对话框原样回来，没有错误提示，蓝图不变 | 覆盖确认 | 否 | lane 5 |
 | `blueprint-batch` | 删掉 3、4 章草稿后批量创作 4 章：运行侧页出现批量卡（第 3 至 6 章）；`after` 取消 | 批量卡 | 是 | lane 6 |
 | `blueprint-clear` | 更多蓝图操作的危险分组里清空全部蓝图，危险确认后列表为空，出现空状态与 AI 生成蓝图 | 空状态 | 否 | lane 7 |

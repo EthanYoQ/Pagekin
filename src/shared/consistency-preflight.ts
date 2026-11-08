@@ -1,9 +1,13 @@
+import { findRelationReversals } from './blueprint-relation-conflict'
+import { latestNodesBefore, type ContinuityNode, type LatestContinuityNodes } from './character-continuity'
 import type { FinalizedContinuityProjection } from './finalized-continuity'
 
 export interface ConsistencyExemption {
   stableFactKey: string
   reason: string
   revoked: boolean
+  /** null 表示全书豁免。 */
+  chapterNumber: number | null
 }
 
 export interface ConsistencyFinding {
@@ -31,6 +35,8 @@ export interface BlueprintForPreflight {
   suspenseHook: string
   userGuidance: string
   notes: string
+  /** 未校验的 JSON，形状和 BlueprintData 的同名字段一致，由规则解析。 */
+  relationshipHints?: unknown
 }
 
 function normalizedKeyPart(value: string): string {
@@ -75,34 +81,29 @@ export function continuityStableFactKey(fact: {
   return `fact:${hash.toString(16).padStart(16, '0')}`
 }
 
-/**
- * Low-cost, deterministic preflight. The first rule is intentionally narrow:
- * a structured terminal character state conflicts with scheduling that same
- * character to appear in the current blueprint.
- * Findings are evidence, never a writing prohibition.
- */
-export function findBlueprintContinuityRisks(
-  projections: readonly FinalizedContinuityProjection[],
-  blueprint: BlueprintForPreflight,
-  exemptions: readonly ConsistencyExemption[],
-): ConsistencyFinding[] {
-  const activeExemptions = new Set(
-    exemptions.filter(exemption => !exemption.revoked).map(exemption => exemption.stableFactKey),
-  )
-  const characters = new Set(blueprint.characters.map(normalizedKeyPart))
+/** 一条规则的全部输入。规则只产出 ConsistencyFinding，豁免在表外统一处理。 */
+interface BlueprintRuleContext {
+  blueprint: BlueprintForPreflight
+  projections: readonly FinalizedContinuityProjection[]
+  continuity: LatestContinuityNodes
+}
 
+/**
+ * The death rule is intentionally narrow: a structured terminal character state
+ * conflicts with scheduling that same character to appear in the current blueprint.
+ */
+function terminalCharacterScheduled({ blueprint, projections }: BlueprintRuleContext): ConsistencyFinding[] {
+  const characters = new Set(blueprint.characters.map(normalizedKeyPart))
   return projections.flatMap(projection => (
     projection.sourceStatus === 'current' ? (projection.facts ?? []) : []
   ).flatMap((fact) => {
     if (fact.category !== 'character-state') return []
-    const stableFactKey = continuityStableFactKey(fact)
-    if (activeExemptions.has(stableFactKey)) return []
     const subject = fact.entities
       .map(normalizedKeyPart)
       .find(entity => characters.has(entity) && isExplicitTerminalSubject(fact.statement, entity))
     if (!subject) return []
     return [{
-      stableFactKey,
+      stableFactKey: continuityStableFactKey(fact),
       severity: 'warning' as const,
       sourceChapter: fact.sourceChapter,
       evidence: fact.evidence,
@@ -116,6 +117,28 @@ export function findBlueprintContinuityRisks(
       },
     }]
   }))
+}
+
+const BLUEPRINT_CONTINUITY_RULES: ReadonlyArray<(context: BlueprintRuleContext) => ConsistencyFinding[]> = [
+  terminalCharacterScheduled,
+  ({ blueprint, continuity }) => findRelationReversals(blueprint, continuity),
+]
+
+/**
+ * Low-cost, deterministic preflight. Findings are evidence, never a writing prohibition.
+ * 审稿入口不传 nodes：它的结果冻结在审稿上下文里，恢复时要逐字段相等，升级后不能多出关系提示。
+ */
+export function findBlueprintContinuityRisks(
+  projections: readonly FinalizedContinuityProjection[],
+  blueprint: BlueprintForPreflight,
+  exemptions: readonly ConsistencyExemption[],
+  nodes: readonly ContinuityNode[] = [],
+): ConsistencyFinding[] {
+  const exempted = new Set(exemptions
+    .filter(exemption => !exemption.revoked && (exemption.chapterNumber === null || exemption.chapterNumber === blueprint.chapterNumber))
+    .map(exemption => exemption.stableFactKey))
+  const context = { blueprint, projections, continuity: latestNodesBefore(nodes, blueprint.chapterNumber) }
+  return BLUEPRINT_CONTINUITY_RULES.flatMap(rule => rule(context)).filter(finding => !exempted.has(finding.stableFactKey))
 }
 
 export function mergeConsistencyFindingsIntoReview(

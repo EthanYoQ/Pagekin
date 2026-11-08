@@ -23,7 +23,7 @@ import {
 } from '../repositories/blueprint-repository'
 import { CharacterRepository, hasCharacterIdentitySchema } from '../repositories/character-repository'
 import { commitAuthorCharacterRoster } from '../services/character-roster-author'
-import { readCharacterContinuityTimeline } from '../repositories/character-continuity-repository'
+import { readCharacterContinuityTimeline, readContinuityNodesWithCurrentNames } from '../repositories/character-continuity-repository'
 import { CharacterRosterRepository } from '../repositories/character-roster-repository'
 import type { CharacterRosterCommitRequest } from '../../src/shared/character-roster'
 import { DraftRepository } from '../repositories/draft-repository'
@@ -695,6 +695,13 @@ export function registerDatabaseController() {
     return readCharacterContinuityTimeline(database, characterId)
   })
 
+  ipcMain.handle('db:character-continuity-nodes', async (_event, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const database = getProjectDb()
+    if (!database) throw new Error('DB_NOT_OPEN')
+    return readContinuityNodesWithCurrentNames(database)
+  })
+
   ipcMain.handle('db:character-roster-commit', async (
     _event,
     request: CharacterRosterCommitRequest,
@@ -836,20 +843,20 @@ export function registerDatabaseController() {
     return ConsistencyExemptionRepository.list()
   })
 
-  ipcMain.handle('db:consistency-exemption-save', async (_event, stableFactKey: string, reason: string, expectedProjectPath: string) => {
+  ipcMain.handle('db:consistency-exemption-save', async (_event, stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string) => {
     try {
       assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ConsistencyExemptionRepository.save(stableFactKey, reason)
+      ConsistencyExemptionRepository.save(stableFactKey, reason, chapterNumber)
       return { success: true }
     } catch (error) {
       return { success: false, error: String(error) }
     }
   })
 
-  ipcMain.handle('db:consistency-exemption-revoke', async (_event, stableFactKey: string, expectedProjectPath: string) => {
+  ipcMain.handle('db:consistency-exemption-revoke', async (_event, stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string) => {
     try {
       assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ConsistencyExemptionRepository.revoke(stableFactKey)
+      ConsistencyExemptionRepository.revoke(stableFactKey, chapterNumber)
       return { success: true }
     } catch (error) {
       return { success: false, error: String(error) }
