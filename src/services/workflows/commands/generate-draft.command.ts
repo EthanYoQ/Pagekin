@@ -54,7 +54,8 @@ import { chapterThreadTasks, narrativeThreadSchedule, parseChapterThreadTasks, t
 import { promptLanguageText } from '../../prompt-language'
 import { countDraftUnits, draftTargetUnitRange } from '../../../shared/draft-units'
 import type { RecoveryChapterSource } from '../../../shared/recovery-candidate'
-import { CHARACTER_STATE_TEXT_FIELDS } from '../../../shared/character-roster'
+import { CHARACTER_STATE_TEXT_FIELDS, type CharacterRosterEntry } from '../../../shared/character-roster'
+import { characterTimelinePromptLines, type CharacterTimelinePromptLines } from '../../../shared/character-timeline-prompt'
 import {
   assembleChapterMaterials,
   ChapterMaterialCapacityError,
@@ -285,6 +286,14 @@ function recordedThreadTasks(authorInputs: readonly { id: string; text: string }
   if (text === undefined) return null
   const recorded = (JSON.parse(text) as { threadTasks?: unknown }).threadTasks
   return recorded === undefined ? [] : parseChapterThreadTasks(recorded)
+}
+
+const CHARACTER_TIMELINE_INPUT_ID = 'draft:character-timeline'
+
+/** 恢复只认开跑时记下的时间线；旧运行没有这一项，所有角色沿用档案原来的行，提示词才对得上当初的哈希。 */
+function recordedCharacterTimeline(authorInputs: readonly { id: string; text: string }[]): CharacterTimelinePromptLines {
+  const text = authorInputs.find(input => input.id === CHARACTER_TIMELINE_INPUT_ID)?.text
+  return text === undefined ? {} : JSON.parse(text) as CharacterTimelinePromptLines
 }
 
 function threadTaskLines(tasks: readonly ChapterThreadTask[]): { zhCN: string[]; enUS: string[] } {
@@ -632,22 +641,42 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         `  Thread tasks for this chapter: ${tasks.length}${leftOut > 0 ? `; ${leftOut} more due or overdue ${pluralEn(leftOut, 'thread')} not listed this time` : ''}`,
       ))
     }
-    const authorInputs = [{ id: 'draft:chapter-info', text: JSON.stringify(writerChapterInfo) },
-      { id: 'draft:author-config', text: JSON.stringify(novelConfig) },
-      { id: 'draft:target-units', text: String(targetChars) }]
     if (defaultMain) context.generationModelId = workflowGenerationModelId(context) || routeModelId('chapter-draft') || undefined
-    const prepared = defaultMain && !this.resumeHandle
-      ? await ipc.invokeWithProjectSession(projectSession, 'generation:prepare-draft-context', {
-        chapterNumber: this.chapterInfo.chapterNumber, modelId: context.generationModelId!,
-        promptKeys: [templateKey], skillStages: ['drafting'], authorInputs, query: searchQuery,
-        selectedDraftIds: [...new Set(this.selectedCandidateDrafts.filter(item => item.chapterNumber < this.chapterInfo.chapterNumber).map(item => item.draftId))],
-        ...(this.batchId ? { batchId: this.batchId } : {}),
-        ...(contextWindowRetryOf ? { contextWindowRetryOf } : {}),
-      }).catch(error => {
-        const code = error instanceof Error ? /(?:^|:\s)(KNOWLEDGE_BASE_NATIVE_UNAVAILABLE|LEGACY_VECTOR_MIGRATION_BLOCKED)$/u.exec(error.message)?.[1] : undefined
-        if (code) throw Object.assign(new Error(appErrorMessage(context.uiLocale ?? 'zh-CN', { code })), { code })
-        throw error
-      }) : null
+    const prepareFromCurrentRoster = async () => {
+      const characterMaterial = await this.readCharacterProfiles(
+        expectedProjectPath,
+        projectSession,
+        writingLanguage,
+        this.chapterInfo.characters,
+        this.resumeHandle ? recordedCharacterTimeline(earlyRecovery?.authorInputs ?? []) : undefined,
+      )
+      const authorInputs = [{ id: 'draft:chapter-info', text: JSON.stringify(writerChapterInfo) },
+        { id: 'draft:author-config', text: JSON.stringify(novelConfig) },
+        { id: 'draft:target-units', text: String(targetChars) },
+        ...(Object.keys(characterMaterial.timeline).length ? [{ id: CHARACTER_TIMELINE_INPUT_ID, text: JSON.stringify(characterMaterial.timeline) }] : [])]
+      const prepared = defaultMain && !this.resumeHandle
+        ? await ipc.invokeWithProjectSession(projectSession, 'generation:prepare-draft-context', {
+          chapterNumber: this.chapterInfo.chapterNumber, modelId: context.generationModelId!,
+          promptKeys: [templateKey], skillStages: ['drafting'], authorInputs, query: searchQuery,
+          selectedDraftIds: [...new Set(this.selectedCandidateDrafts.filter(item => item.chapterNumber < this.chapterInfo.chapterNumber).map(item => item.draftId))],
+          characterRosterRevision: characterMaterial.rosterRevision,
+          ...(this.batchId ? { batchId: this.batchId } : {}),
+          ...(contextWindowRetryOf ? { contextWindowRetryOf } : {}),
+        }).catch(error => {
+          const code = error instanceof Error ? /(?:^|:\s)(KNOWLEDGE_BASE_NATIVE_UNAVAILABLE|LEGACY_VECTOR_MIGRATION_BLOCKED)$/u.exec(error.message)?.[1] : undefined
+          if (code) throw Object.assign(new Error(appErrorMessage(context.uiLocale ?? 'zh-CN', { code })), { code })
+          throw error
+        }) : null
+      return { characterMaterial, authorInputs, prepared }
+    }
+    const { characterMaterial, authorInputs, prepared } = await prepareFromCurrentRoster().catch(error => {
+      if (!(error instanceof Error && /(?:^|:\s)GENERATION_DRAFT_PREPARATION_CHANGED$/u.test(error.message))) throw error
+      return prepareFromCurrentRoster()
+    })
+    if (characterMaterial.timelineUnavailable) callbacks.log(uiText(
+      '  人物时间线没能读取：本章按档案里的最新状态写，正文照常。',
+      '  Character timeline could not be read: this chapter uses the latest profile states and is written as usual.',
+    ))
     const knowledgeSnapshot = prepared?.knowledgeSnapshot ?? earlyRecovery?.knowledgeSnapshot
     // Recovery uses the original main snapshot, including retrieval hints outside the writer prompt.
     if (defaultMain && (!knowledgeSnapshot || prepared && knowledgeSnapshot.query !== searchQuery))
@@ -683,12 +712,6 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       projectPrompts,
     ].filter(Boolean).join('\n\n')
 
-    const characterProfiles = await this.readCharacterProfiles(
-      expectedProjectPath,
-      projectSession,
-      writingLanguage,
-      this.chapterInfo.characters,
-    )
     let futureBlueprintsStr = promptLanguageText(
       writingLanguage,
       '（无后续蓝图）',
@@ -852,11 +875,12 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         identity: { projectId: projectSession.projectId, epoch: projectSession.leaseId },
         writingLanguage,
         admission: prepared ? { kind: 'budget', budget: prepared.materialBudget } : earlyRecovery?.materialAdmission ?? DEFAULT_MATERIAL_ADMISSION,
-        // 短细纲是首稿提示词里后追加的生成内容，按它的目标字数预留。
+        // 短细纲是首稿提示词里后追加的生成内容，按它的目标字数预留。时间线有自己的条数上限，不占可选材料的额度。
         nonMaterialUnits: utf8Units(withSkill(composeInitialPrompt('', ''))) + utf8Units(systemRole)
-          + utf8Units(draftShortOutlineBlock(writingLanguage, '字'.repeat(DRAFT_SHORT_OUTLINE_UNITS))),
+          + utf8Units(draftShortOutlineBlock(writingLanguage, '字'.repeat(DRAFT_SHORT_OUTLINE_UNITS)))
+          - characterMaterial.timelineUnits,
         authorProjectFacts: authoredConfigFacts,
-        characterProfiles,
+        characterProfiles: characterMaterial.text,
         futurePlans: futureBlueprintsStr,
         references: [
           ...(activeThreads.text ? [{ text: activeThreads.text, rendered: activeThreads.text }] : []),
@@ -981,9 +1005,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           selectedBlueprintChapterNumbers: Array.from({ length: 6 }, (_, index) => this.chapterInfo.chapterNumber + index),
           // S10B 步骤 3：本次准入的脱敏收据随冻结上下文一起进主进程，并被恢复指纹绑定。
           materialDecision,
-          authorInputs: [{ id: 'draft:chapter-info', text: JSON.stringify(writerChapterInfo) },
-            { id: 'draft:author-config', text: JSON.stringify(novelConfig) },
-            { id: 'draft:target-units', text: String(targetChars) }],
+          authorInputs,
           ...(this.resumeHandle ? { resumeHandle: this.resumeHandle } : {}),
           ...(contextWindowRetryOf ? { restartHandle: contextWindowRetryOf, retryNonce: 'context-window' } : {}),
         } })
@@ -1019,11 +1041,9 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             throw new Error('GENERATION_DRAFT_RECOVERY_EVIDENCE_REQUIRED')
           if (recovery?.composition && isDraftVisibleTextVersion(recovery.composition.algorithm))
             compositionVersion = recovery.composition.algorithm
-          const expectedInputs = [{ id: 'draft:chapter-info', text: JSON.stringify(writerChapterInfo) },
-            { id: 'draft:author-config', text: JSON.stringify(novelConfig) },
-            { id: 'draft:target-units', text: String(targetChars) }]
           const recoveredAuthorInputs = recovery?.authorInputs
-          if (recoveredAuthorInputs && expectedInputs.some(input => recoveredAuthorInputs.find(item => item.id === input.id)?.text !== input.text))
+          if (recoveredAuthorInputs && (authorInputs.some(input => recoveredAuthorInputs.find(item => item.id === input.id)?.text !== input.text)
+            || recoveredAuthorInputs.some(item => item.id === CHARACTER_TIMELINE_INPUT_ID) && !authorInputs.some(input => input.id === CHARACTER_TIMELINE_INPUT_ID)))
             throw new Error('GENERATION_DRAFT_RECOVERY_AUTHOR_INPUT_CHANGED')
           const sameIds = (a: readonly number[], b: readonly number[]) => JSON.stringify([...new Set(a)].sort((a, b) => a - b)) === JSON.stringify([...new Set(b)].sort((a, b) => a - b))
           if (recovery && (!sameIds(recovery.selectedDraftIds, selectedCandidateDrafts.map(item => item.draftId))
@@ -1863,15 +1883,17 @@ ${params.candidate.text}`,
     projectSession: ProjectSessionContext,
     writingLanguage: WritingLanguage,
     relevantCharacterNames: readonly string[],
-  ): Promise<string> {
+    recordedTimeline: CharacterTimelinePromptLines | undefined,
+  ): Promise<{ text: string; timeline: CharacterTimelinePromptLines; timelineUnits: number; timelineUnavailable: boolean; rosterRevision?: number }> {
+    const unavailable = (text: string, rosterRevision?: number) => ({ text, timeline: {}, timelineUnits: 0, timelineUnavailable: false, rosterRevision })
     try {
       const roster = await ipc.invokeWithProjectSession(projectSession, 'db:character-roster-read', projectPath)
       if (roster.status !== 'ready' && roster.status !== 'empty') {
-        return promptLanguageText(
+        return unavailable(promptLanguageText(
           writingLanguage,
           '（角色资料来源未知或待修复；未作为作者事实注入）',
           '(character-profile provenance is unknown or needs repair; it was not injected as author fact)',
-        )
+        ), roster.revision)
       }
       const profiles: string[] = []
       const relevantNames = new Set(relevantCharacterNames.map(name => name.trim()).filter(Boolean))
@@ -1884,7 +1906,11 @@ ${params.candidate.text}`,
         if (renamed.length === 0) for (const card of named) selected.add(card)
         else if (named.length === 0 && renamed.length === 1) selected.add(renamed[0])
       }
+      const read = recordedTimeline ?? await this.readCharacterTimeline(projectPath, projectSession, writingLanguage, roster.entries, selected)
+      const timeline = read ?? {}
+      let timelineUnits = 0
       for (const card of selected) {
+        const timelineLines = card.characterId ? timeline[card.characterId] : undefined
         const facts = [
           card.gender && `gender: ${card.gender}`,
           card.age && `age: ${card.age}`,
@@ -1896,7 +1922,7 @@ ${params.candidate.text}`,
           card.arc && `arc: ${card.arc}`,
           card.notes && `notes: ${card.notes}`,
         ].filter(Boolean)
-        for (const relationship of card.relationships ?? []) {
+        if (!timelineLines) for (const relationship of card.relationships ?? []) {
           const target = relationship.target?.trim()
           const relation = relationship.relation?.trim()
           if (target && relation) facts.push(`relationship: ${target} (${relation})`)
@@ -1909,7 +1935,10 @@ ${params.candidate.text}`,
             `relationship (legacy provenance unknown): ${legacyRelationshipNotes}`,
           ))
         }
-        for (const field of CHARACTER_STATE_TEXT_FIELDS) {
+        if (timelineLines) {
+          facts.push(...timelineLines)
+          timelineUnits += new TextEncoder().encode(timelineLines.map(line => ` | ${line}`).join('')).length
+        } else for (const field of CHARACTER_STATE_TEXT_FIELDS) {
           const provenance = card.currentState?.provenance?.[field]
           const value = card.currentState?.[field]?.trim()
           if (provenance?.kind === 'author' && value) {
@@ -1918,13 +1947,34 @@ ${params.candidate.text}`,
         }
         profiles.push(`${card.name} (${card.role || 'unknown'})${facts.length ? ` | ${facts.join(' | ')}` : ''}`)
       }
-      return profiles.length > 0 ? profiles.join('\n') : ''
+      return { text: profiles.length > 0 ? profiles.join('\n') : '', timeline, timelineUnits, timelineUnavailable: read === null, rosterRevision: roster.revision }
     } catch {
-      return promptLanguageText(
+      return unavailable(promptLanguageText(
         writingLanguage,
         '（角色资料读取失败；未把旧 currentState 或 characters_arch 当作作者事实）',
         '(character profiles unavailable; legacy currentState and characters_arch were not treated as author facts)',
-      )
+      ))
+    }
+  }
+
+  private async readCharacterTimeline(
+    projectPath: string,
+    projectSession: ProjectSessionContext,
+    language: WritingLanguage,
+    entries: readonly CharacterRosterEntry[],
+    selected: ReadonlySet<CharacterRosterEntry>,
+  ): Promise<CharacterTimelinePromptLines | null> {
+    const characterIds = [...selected].flatMap(card => card.characterId ?? [])
+    try {
+      return characterTimelinePromptLines({
+        nodes: await ipc.invokeWithProjectSession(projectSession, 'db:character-continuity-nodes', characterIds, projectPath),
+        chapter: this.chapterInfo.chapterNumber,
+        characterIds,
+        currentNames: new Map(entries.flatMap(card => card.characterId ? [[card.characterId, card.name] as const] : [])),
+        language,
+      })
+    } catch {
+      return null
     }
   }
 

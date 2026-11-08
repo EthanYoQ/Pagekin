@@ -398,7 +398,9 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   const draftPreparation = (request: PrepareDraftContextRequest, knowledgeSnapshot?: GenerationKnowledgeSnapshot): { binding: RunBinding; model: ModelProfile } => {
     assertCurrent()
     if (!request || typeof request.query !== 'string' || knowledgeSnapshot && request.query !== knowledgeSnapshot.query
-      || Object.keys(request).some(key => !['chapterNumber', 'modelId', 'promptKeys', 'skillStages', 'authorInputs', 'query', 'selectedDraftIds', 'batchId', 'contextWindowRetryOf'].includes(key))) throw new Error('GENERATION_DRAFT_PREPARATION_INVALID')
+      || Object.keys(request).some(key => !['chapterNumber', 'modelId', 'promptKeys', 'skillStages', 'authorInputs', 'query', 'selectedDraftIds', 'batchId', 'characterRosterRevision', 'contextWindowRetryOf'].includes(key))) throw new Error('GENERATION_DRAFT_PREPARATION_INVALID')
+    if (request.characterRosterRevision !== undefined
+      && request.characterRosterRevision !== deps.database.prepare("SELECT revision FROM character_roster_meta WHERE id='main'").pluck().get()) throw new Error('GENERATION_DRAFT_PREPARATION_CHANGED')
     const model = deps.loadModel(request.modelId)
     if (!model) throw new Error('GENERATION_MODEL_MISSING')
     const receipt = safeGenerationModelReceipt(createModelExecutionLeaseReceipt(model, { leaseId: 'read-only-evidence', createdAt: 0, expiresAt: 0 }))

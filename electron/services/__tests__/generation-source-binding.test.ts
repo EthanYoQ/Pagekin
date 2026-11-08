@@ -108,6 +108,19 @@ describe('main rebuilt generation sources', () => {
         expect(f.db.prepare("SELECT * FROM characters WHERE character_id='character-unproved'").get()).toEqual(stored);
     });
 
+    it('freezes the chapter timeline with the run, so a later continuity node leaves the binding unchanged', () => {
+        const f = fixture(true);
+        f.input.operation = 'chapter-draft';
+        f.input.selectedDraftIds = [];
+        const frozen = JSON.stringify({ lin: ['作者设定（自第1章起）位置：码头'] });
+        f.input.authorInputs = [{ id: 'draft:character-timeline', text: frozen }];
+        const before = f.build();
+        expect(before.materials.find(item => item.ref.sourceId === 'author-action:draft:character-timeline')?.text).toBe(frozen);
+        f.db.prepare(`INSERT INTO character_continuity_events(event_id,subject_id,subject_name,aspect,value,effective_chapter,provenance_json)
+          VALUES('later','lin','林岚','location','后来的地点',2,'{"kind":"author","operationId":"op"}')`).run();
+        expect(compareGenerationSourceBindings(before.binding, rebuildGenerationSourceBinding(f.deps, before.binding, 'e').binding)).toBe(true);
+    });
+
     it('keeps valid author, legacy and current derived state while omitting one invalid field entry', () => {
         const f = fixture(true);
         f.input.operation = 'chapter-draft';

@@ -259,6 +259,8 @@ export interface PrepareDraftContextRequest {
   batchId?: string
   /** 被服务商以超长拒绝、回执标了 retryWithLearnedWindow 的运行；额度按它学到的窗口收紧。 */
   contextWindowRetryOf?: MainGenerationRunHandle
+  /** authorInputs 和提示词里的档案读自哪个名册版本；没读到名册时不填。 */
+  characterRosterRevision?: number
 }
 export interface PreparedDraftContext {
   preparationId: string
