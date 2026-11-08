@@ -229,10 +229,12 @@ export function ModelForm({
     if (result?.success) writeBackContextWindow(cleared, result.models.find(candidate => candidate.value === cleared.modelName)?.capabilities?.contextWindowTokens)
   }
 
-  const lookedUpModelName = useRef(model.modelName)
+  const windowLookupKey = ({ protocol, baseUrl, modelName }: ModelProfile) => JSON.stringify([protocol, baseUrl, modelName])
+  const lastWindowLookup = useRef(windowLookupKey(model))
   const handleModelNameCommit = () => {
-    if (isEmbedding || !model.modelName.trim() || model.modelName === lookedUpModelName.current) return
-    lookedUpModelName.current = model.modelName
+    const key = windowLookupKey(model)
+    if (isEmbedding || !model.modelName.trim() || key === lastWindowLookup.current) return
+    lastWindowLookup.current = key
     void refreshLocalContextWindow(model)
   }
 
@@ -242,7 +244,7 @@ export function ModelForm({
       return
     }
     const selected = applyModelProfileSelection(model, { modelName: value }, capabilities)
-    lookedUpModelName.current = value
+    lastWindowLookup.current = windowLookupKey(selected)
     onChange(selected)
     if (capabilities?.contextWindowTokens === undefined) void refreshLocalContextWindow(selected)
   }
