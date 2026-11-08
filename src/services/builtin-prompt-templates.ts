@@ -462,6 +462,8 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
     systemRole: '你是一位经验丰富的世界观设计师。尊重作者事实，让规则、资源与权力结构通过具体冲突推动故事。',
     variables: {
       premise: '故事前提',
+      topic: '核心梗概',
+      character_dynamics: '已采用角色图谱',
       genre: '小说类型',
       core_setting: '世界观基盘',
       golden_finger: '金手指体系',
@@ -471,6 +473,8 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
     },
     requiredContextVariables: [
       'premise',
+      'topic',
+      'character_dynamics',
       'genre',
       'core_setting',
       'golden_finger',
@@ -486,6 +490,12 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
 - 金手指体系：{{golden_finger}}
 - 主角定位：{{protagonist_profile}}
 - 全局写作要求：{{global_guidance}}
+
+【核心梗概】
+{{topic}}
+
+【已采用角色图谱】
+{{character_dynamics}}
 
 【生成任务】
 请基于核心世界观，根据「{{genre}}」类型的特点，构建以下三个维度的世界观设定。每个设定都必须"自带冲突点"，能直接驱动情节。
@@ -505,7 +515,7 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
 【要求】
 1. 所有设定必须围绕「{{genre}}」题材的核心看点，不要写无法融入正文的废话设定。
 2. 金手指与世界规则的交互必须具体、可操作，避免泛泛而谈。
-3. 严格遵循故事前提、主角档案中的作者明确设定和全局写作要求；无需机械复述与世界无关的角色事实，但不得制造相反设定。
+3. 严格遵循核心梗概、故事前提、已采用角色图谱和主角档案中的作者明确设定，以及全局写作要求；无需机械复述与世界无关的角色事实，但不得制造相反设定。
 4. 仅返回世界观设定文本，不要生成任何无关代码或解释。
 
 `,

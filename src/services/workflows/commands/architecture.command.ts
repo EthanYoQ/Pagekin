@@ -1366,14 +1366,15 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
 
     const factsFingerprint = synopsisFactsFingerprint([
       premise_result,
+      JSON.stringify(core?.charactersArch || ''),
       JSON.stringify(config),
       stepGuidance,
       JSON.stringify(template),
     ])
     if (resumeRequested && partial.world_building_facts_fingerprint !== factsFingerprint) {
       throw new Error(text(
-        '故事前提、小说配置或世界观模板自候选保存后已变化，旧候选不能续到新上下文；候选仍可查看或复制。',
-        'The premise, novel configuration, or worldbuilding template changed after the candidate was saved, so the old candidate cannot be continued into the new context. The candidate remains available to view or copy.',
+        '故事前提、小说配置、角色图谱或世界观模板自候选保存后已变化，旧候选不能续到新上下文；候选仍可查看或复制。',
+        'The premise, novel configuration, character map, or worldbuilding template changed after the candidate was saved, so the old candidate cannot be continued into the new context. The candidate remains available to view or copy.',
       ))
     }
 
@@ -1383,6 +1384,8 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
 
     const promptBuilder = new ArchitecturePromptBuilder(template, writingLanguage)
       .withCoreSeed(premise_result)
+      .withTopic(config.coreOutline || '')
+      .withCharacterDynamics(core?.charactersArch || '')
       .withGenre(modelFacts.genre)
       .withCoreSetting(config.worldSetting || missingValue)
       .withGoldenFinger(config.goldenFinger || missingValue)
@@ -1493,6 +1496,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
     const latestFactsFingerprint = latestProject && latestTemplate
       ? synopsisFactsFingerprint([
           latestCore?.premise || '',
+          JSON.stringify(latestCore?.charactersArch || ''),
           JSON.stringify(latestProject.novelConfig),
           stepGuidance,
           JSON.stringify(latestTemplate),
@@ -1514,10 +1518,10 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
       )
       throw new WorldBuildingResumeAvailableError(text(
         sourceFactsChanged
-          ? '世界观生成期间故事前提、小说配置或模板已变化，本次结果已保留为候选且未写入正式世界观；可查看或复制候选。'
+          ? '世界观生成期间故事前提、小说配置、角色图谱或模板已变化，本次结果已保留为候选且未写入正式世界观；可查看或复制候选。'
           : '世界观生成期间正式内容已被修改，本次结果已保留为候选且未覆盖作者修改；可查看或复制候选。',
         sourceFactsChanged
-          ? 'The premise, novel configuration, or template changed while worldbuilding was being generated. This result was kept as a candidate and was not written to formal worldbuilding; you can view or copy it.'
+          ? 'The premise, novel configuration, character map, or template changed while worldbuilding was being generated. This result was kept as a candidate and was not written to formal worldbuilding; you can view or copy it.'
           : 'The formal worldbuilding changed while generation was running. This result was kept as a candidate and did not overwrite the author edit; you can view or copy it.',
       ))
     }

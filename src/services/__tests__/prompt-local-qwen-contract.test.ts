@@ -37,6 +37,8 @@ const expectedPromptVariables: Record<string, string[]> = {
   ],
   world_building: [
     'premise',
+    'topic',
+    'character_dynamics',
     'genre',
     'core_setting',
     'golden_finger',

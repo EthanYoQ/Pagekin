@@ -274,6 +274,12 @@ Return exactly one JSON object with "schemaVersion":1 and "entries":[...]. Every
 - Protagonist profile: {{protagonist_profile}}
 - Project-wide writing guidance: {{global_guidance}}
 
+[Core story outline]
+{{topic}}
+
+[Adopted character map]
+{{character_dynamics}}
+
 [Deliverable]
 Build three connected dimensions, each with a concrete source of conflict:
 
@@ -292,7 +298,7 @@ Build three connected dimensions, each with a concrete source of conflict:
 [Requirements]
 1. Every setting must support the core appeal of {{genre}} and be usable in scenes.
 2. Make the advantage's interaction with the world rules specific and actionable.
-3. Preserve explicit author facts from the story premise and protagonist profile together with the project-wide guidance. Facts unrelated to world mechanics need not be repeated, but the world must not contradict them.
+3. Preserve explicit author facts from the core story outline, story premise, adopted character map, and protagonist profile together with the project-wide guidance. Facts unrelated to world mechanics need not be repeated, but the world must not contradict them.
 4. Return the world-building text only, with no code, analysis, or explanation.`,
     systemSuffix: `[Author guidance for this step — highest priority when present]
 {{step_guidance}}`,
