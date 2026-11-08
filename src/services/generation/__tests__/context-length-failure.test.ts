@@ -80,6 +80,27 @@ describe('讨论区 #77：上下文超长码在每条消费路径上都保留', 
     vi.unstubAllGlobals()
   })
 
+  it('导入阶段请求成功后也上报诊断，界面才知道模型请求已经结束', async () => {
+    const diagnostics = { startedAt: 1, elapsedMs: 20, httpStatus: 200, phase: 'complete', endReason: 'completed', visibleEvents: 1, reasoningEvents: 0 }
+    const setGenerationActivity = vi.fn()
+    const completed = { status: 'completed', content: '{}', finishReason: 'stop', receipt: { ...failedOutcome().receipt, finishReason: 'stop', diagnostics } }
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'import-generation:read') return { view, modelId: 'model', frozenContext: {} }
+      if (channel === 'import-generation:execute') return { run: view, outcome: completed }
+      throw new Error(channel)
+    })
+    vi.stubGlobal('window', { aiNovelAPI: { invoke } })
+    const context: WorkflowContext = { runId: 'workflow', projectPath: project.projectPath, projectSession: project,
+      generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false }
+    const runtime = await createWorkflowMainGenerationRuntime({ context, callbacks: { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn(), setGenerationActivity },
+      selection: { operation: 'import-global-facts', promptKeys: [], skillStages: [], output: 'structured-data',
+        importSlot: { runId: 'import-run', stage: 'global', batchId: 'done' } } },
+    { read: vi.fn(async () => view), subscribe: vi.fn(() => () => {}) } as unknown as ReturnType<typeof createMainGenerationTransport>)
+    await runtime.execute(async ({ session }) => { await session.complete({ purpose: 'import-global-facts', output: 'structured-data', messages: [] }) })
+    expect(setGenerationActivity).toHaveBeenLastCalledWith({ operation: 'import-global-facts', diagnostics })
+    vi.unstubAllGlobals()
+  })
+
   it('定稿后处理以登记码失败，说明换模型或调低最大输出，且不再提供重试', async () => {
     const source = { finalizationId: '定稿', draftId: 1, chapterNumber: 1, contentHash: 'a'.repeat(64) }
     const slot = { source, stepKey: 'chapter_notes' as const }
