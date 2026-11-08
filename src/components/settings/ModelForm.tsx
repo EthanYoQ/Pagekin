@@ -199,16 +199,27 @@ export function ModelForm({
   }
 
   /** 读到时作者可能已经换了模型或手填，写回交给选择函数判断。 */
-  const writeBackContextWindow = (selected: ModelProfile, tokens: number | null | undefined) => {
+  const formStillOn = (selected: ModelProfile) => {
     const current = latestModel.current
-    if (typeof tokens !== 'number' || !current || current.id !== selected.id || current.modelName !== selected.modelName
-      || current.baseUrl !== selected.baseUrl || current.protocol !== selected.protocol) return
+    return current && current.id === selected.id && current.modelName === selected.modelName && current.baseUrl === selected.baseUrl
+      && current.protocol === selected.protocol && current.apiKey === selected.apiKey ? current : null
+  }
+
+  const writeBackContextWindow = (selected: ModelProfile, tokens: number | null | undefined) => {
+    const current = formStillOn(selected)
+    if (typeof tokens !== 'number' || !current) return
     onChange({ ...applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }), maxTokens: current.maxTokens })
   }
 
   const refreshLocalContextWindow = async (selected: ModelProfile) => {
     if (selected.protocol !== 'openai' || !isLocalModelEndpoint(selected)) return
-    writeBackContextWindow(selected, await discoverLocalContextWindow(selected).catch(() => null))
+    const tokens = await discoverLocalContextWindow(selected).catch(() => null)
+    if (tokens !== null) {
+      writeBackContextWindow(selected, tokens)
+      return
+    }
+    const current = formStillOn(selected)
+    if (current && modelCapabilitySource(current, 'contextWindowTokens') === 'endpoint') onChange(clearContextWindowOverride(current))
   }
 
   const refetchDeclaredContextWindow = async (cleared: ModelProfile) => {
