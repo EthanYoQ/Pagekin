@@ -329,8 +329,59 @@ describe('model discovery settings flow', () => {
       await chooseSuggestion('qwen2.5')
       expect(sourceTag()).toBe('默认值')
       expect(statusText()).toContain('已从端点获取')
+      expect(container?.querySelector('[role="alert"]')).toBeNull()
       await act(async () => { await page.getByRole('button', { name: '保存配置', exact: true }).click() })
       expect(saveModel).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'qwen2.5' }))
+    })
+
+    it('清空窗口后读到本机运行值，不改作者的最大输出', async () => {
+      const { saveModel } = await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'gemma-3', maxTokens: 8192,
+        capabilities: { contextWindowTokens: 1_000, maxOutputTokens: 4096, reasoning: false, structuredOutput: false, usage: false },
+        capabilitySources: { contextWindowTokens: 'manual' } }), listed('gemma-3'))
+      useLLMStore.setState({ discoverLocalContextWindow: vi.fn(async () => 16_384) })
+      await openEditor()
+      await act(async () => { await windowInput().fill('') })
+      await vi.waitFor(() => expect(windowElement().value).toBe('16384'))
+      await act(async () => { await page.getByRole('button', { name: '保存配置', exact: true }).click() })
+      expect(saveModel).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 8192 }))
+    })
+
+    it('手打本机模型名离开输入框时读一次窗口，名字没变不重复读', async () => {
+      const discoverLocalContextWindow = vi.fn(async () => 8_192)
+      await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'old-name' }), listed())
+      useLLMStore.setState({ discoverLocalContextWindow })
+      await openEditor()
+      await act(async () => { modelNameInput().focus() })
+      await act(async () => { modelNameInput().blur() })
+      expect(discoverLocalContextWindow).not.toHaveBeenCalled()
+      await act(async () => { modelNameInput().focus() })
+      await typeInto(modelNameInput(), 'typed-model')
+      await act(async () => { modelNameInput().blur() })
+      await vi.waitFor(() => expect(windowElement().value).toBe('8192'))
+      expect(sourceTag()).toBe('来自服务商')
+      expect(discoverLocalContextWindow).toHaveBeenCalledTimes(1)
+      expect(discoverLocalContextWindow).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://127.0.0.1:1234/v1', modelName: 'typed-model' }))
+    })
+
+    it('重新打开后清空手填，向当前端点重新取回声明的窗口', async () => {
+      const discoverModels = vi.fn(async () => ({ success: true as const, models: [{ id: 'gateway', name: 'gateway', value: 'gateway', capabilities: { contextWindowTokens: 128_000 } }] }))
+      const model = savedProfile({ modelName: 'gateway', ...stored(20_000, 'manual') })
+      await renderSettings(model, discoverModels)
+      await openEditor()
+      expect(discoverModels).not.toHaveBeenCalled()
+      await act(async () => { await windowInput().fill('') })
+      await vi.waitFor(() => expect(windowElement().value).toBe('128000'))
+      expect(sourceTag()).toBe('来自服务商')
+      expect(discoverModels).toHaveBeenCalledWith(discoveryRequest(model))
+    })
+
+    it('重新取回窗口失败时静默用默认值', async () => {
+      await renderSettings(savedProfile({ modelName: 'gateway', ...stored(20_000, 'manual') }), vi.fn(async () => { throw new Error('down') }))
+      await openEditor()
+      await act(async () => { await windowInput().fill('') })
+      await vi.waitFor(() => expect(sourceTag()).toBe('默认值'))
+      expect(windowElement().placeholder).toBe('32768')
+      expect(container?.querySelector('[role="alert"]')).toBeNull()
     })
 
     it('作者填数后变你填的，清空后回到列表声明的值', async () => {
