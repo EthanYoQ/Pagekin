@@ -291,6 +291,7 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
 - 必须以标准的 JSON 格式返回，确保匹配以下结构。
 - 只输出一个 JSON 对象，不要输出分析、计划、解释、Markdown 或代码块。
 - 所有长文本字段都写成字符串，不要把 coreOutline、worldSetting、protagonistProfile、globalGuidance、writingStyle 写成数组或对象。
+- globalGuidance 的每条规则独占一行，在 JSON 字符串中用 \\n 表示换行。
 
 【JSON 字段结构】
 {

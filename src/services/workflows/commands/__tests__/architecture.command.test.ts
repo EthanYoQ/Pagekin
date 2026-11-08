@@ -324,7 +324,8 @@ describe('GenerateConfigCommand error boundaries', () => {
         }),
       })
       const authorIdea = 'A café named “夜航 Café” survives at the edge of two timelines.'
-      const command = new GenerateConfigCommand(authorIdea, 100, 3000, vi.fn())
+      const onGenerated = vi.fn()
+      const command = new GenerateConfigCommand(authorIdea, 100, 3000, onGenerated)
 
       await command.execute({ step: {}, context: runContext, callbacks })
 
@@ -333,6 +334,13 @@ describe('GenerateConfigCommand error boundaries', () => {
       expect(system).toContain(expected)
       expect(system).not.toContain(unexpected)
       expect(user).toContain(authorIdea)
+      const guidanceContract = user.split('\n').find(line => line.startsWith('- globalGuidance ')) ?? ''
+      expect(guidanceContract).toMatch(writingLanguage === 'zh-CN' ? /每条规则独占一行/u : /one rule per line/u)
+      expect(guidanceContract).toMatch(/(?<!\\)\\n(?!\\)/u)
+      expect(useLLMStore.getState().generateStream).toHaveBeenCalledOnce()
+      expect(onGenerated).toHaveBeenCalledWith(expect.objectContaining({
+        globalGuidance: JSON.parse(validConfigJson).globalGuidance,
+      }))
     },
   )
 
@@ -363,6 +371,7 @@ describe('GenerateConfigCommand error boundaries', () => {
       expect(prompt).toContain('totalChapters 若输出必须严格等于 100')
       expect(prompt).toContain('wordsPerChapter 若输出必须严格等于 3000')
       expect(prompt).toContain('globalGuidance 必须是 4–8 条')
+      expect(prompt).toContain('每条规则独占一行，在 JSON 字符串中用 \\n 表示换行')
       expect(prompt).toContain('不得超过 600 字符')
       expect(prompt).toContain('不得输出中文枚举、近义词')
     }
@@ -411,6 +420,10 @@ describe('GenerateConfigCommand error boundaries', () => {
   })
 
   it.each([
+    {
+      case: 'when numbered rules share a single line',
+      generatedGuidance: '1. 保持因果推进。 2. 保留已建立的角色状态。 3. 用行动升级冲突。 4. 收束已兑现的伏笔。',
+    },
     {
       case: 'at a natural boundary',
       generatedGuidance: `${'规'.repeat(580)}。\n${'不'.repeat(84)}`,
