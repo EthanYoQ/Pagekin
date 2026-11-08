@@ -363,6 +363,19 @@ describe('model discovery settings flow', () => {
       expect(discoverLocalContextWindow).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://127.0.0.1:1234/v1', modelName: 'typed-model' }))
     })
 
+    it('换了端点后离开模型名输入框，同名模型向新端点读窗口', async () => {
+      const discoverLocalContextWindow = vi.fn(async () => 8_192)
+      await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'same-name' }), listed())
+      useLLMStore.setState({ discoverLocalContextWindow })
+      await openEditor()
+      await typeInto(baseUrlInput('http://127.0.0.1:1234/v1'), 'http://127.0.0.1:5678/v1')
+      await act(async () => { modelNameInput().focus() })
+      await act(async () => { modelNameInput().blur() })
+      await vi.waitFor(() => expect(windowElement().value).toBe('8192'))
+      expect(discoverLocalContextWindow).toHaveBeenCalledTimes(1)
+      expect(discoverLocalContextWindow).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://127.0.0.1:5678/v1', modelName: 'same-name' }))
+    })
+
     it('重新打开后清空手填，向当前端点重新取回声明的窗口', async () => {
       const discoverModels = vi.fn(async () => ({ success: true as const, models: [{ id: 'gateway', name: 'gateway', value: 'gateway', capabilities: { contextWindowTokens: 128_000 } }] }))
       const model = savedProfile({ modelName: 'gateway', ...stored(20_000, 'manual') })
