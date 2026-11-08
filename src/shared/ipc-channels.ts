@@ -1,6 +1,6 @@
 import type { GenerationOwnerChannels, GenerationOwnerEvents } from './generation-owner-contract'
 import type { CharacterProposalChannels } from './character-proposal'
-import type { ContinuityNode } from './character-continuity'
+import type { CharacterContinuityTimeline, ContinuityNode } from './character-continuity'
 import type { FinalizedCharacterGenerationChannels } from './finalized-character-generation'
 import type { ReviewRevisionGenerationInvokeChannels } from './review-revision-generation'
 import type { AgentGenerationChannels } from './agent-generation'
@@ -1015,6 +1015,7 @@ export interface DatabaseChannels {
     return: CharacterRosterSnapshot
   }
   'db:character-continuity-nodes': { args: [expectedProjectPath: string]; return: ContinuityNode[] }
+  'db:character-continuity-timeline': { args: [characterId: string, expectedProjectPath: string]; return: CharacterContinuityTimeline }
   'db:character-roster-commit': {
     args: [request: CharacterRosterCommitRequest, expectedProjectPath: string]
     return: { success: boolean; receipt?: CharacterRosterCommitReceipt; error?: string }
