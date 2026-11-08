@@ -225,8 +225,86 @@ describe('model discovery settings flow', () => {
     const saved = saveModel.mock.calls[0][0] as unknown as ModelProfile
     await act(async () => { useLLMStore.setState({ models: [JSON.parse(JSON.stringify(saved))] }) })
     await act(async () => { await page.getByRole('button', { name: /^编辑「/ }).click() })
-    expect(container?.querySelector('[data-capability-sources]')?.textContent).toContain('上下文：手动设置')
+    expect(container?.querySelector('[data-context-window-source]')?.textContent).toBe('你填的')
     expect(container?.querySelector('[data-capability-sources]')?.textContent).toContain(declared ? '模型输出容量：接口取得' : '模型输出容量：资料匹配')
+  })
+
+  describe('上下文窗口来源标签', () => {
+    const windowInput = (locale: Locale = 'zh-CN') => page.getByLabelText(locale === 'zh-CN' ? '上下文窗口' : 'Context Window', { exact: true })
+    const sourceTag = () => container?.querySelector('[data-context-window-source]')?.textContent
+    const windowElement = () => windowInput().element() as HTMLInputElement
+    const openEditor = (locale: Locale = 'zh-CN') => act(async () => { await page.getByRole('button', { name: locale === 'zh-CN' ? /^编辑「/ : /^Edit “/ }).click() })
+    const stored = (tokens: number, source: 'manual' | 'endpoint' | 'preset'): Partial<ModelProfile> => ({
+      capabilities: { contextWindowTokens: tokens, maxOutputTokens: 4096, reasoning: false, structuredOutput: false, usage: false },
+      capabilitySources: { contextWindowTokens: source },
+    })
+
+    it.each<[Locale, Partial<ModelProfile>, string]>([
+      ['zh-CN', stored(1_000, 'manual'), '你填的'],
+      ['zh-CN', stored(64_000, 'endpoint'), '来自服务商'],
+      ['zh-CN', stored(64_000, 'preset'), '内置资料'],
+      ['zh-CN', {}, '默认值'],
+      ['en-US', stored(1_000, 'manual'), 'Set by you'],
+      ['en-US', stored(64_000, 'endpoint'), 'From provider'],
+      ['en-US', stored(64_000, 'preset'), 'Built-in data'],
+      ['en-US', {}, 'Default'],
+    ])('%s 下档案 %j 显示 %s', async (locale, overrides, label) => {
+      await renderSettings(savedProfile(overrides), listed('manual-model'), locale)
+      await openEditor(locale)
+      expect(sourceTag()).toBe(label)
+    })
+
+    it('没有窗口的模型留空，占位显示生效的默认数；Ollama 显示 4096', async () => {
+      await renderSettings(savedProfile(), listed('manual-model'))
+      await openEditor()
+      expect(windowElement().value).toBe('')
+      expect(windowElement().placeholder).toBe('32768')
+    })
+
+    it('Ollama 默认 4096，选中后读到运行值写入并标来自服务商', async () => {
+      const discoverLocalContextWindow = vi.fn(async () => 8_192)
+      const model = savedProfile({ provider: 'ollama', baseUrl: 'http://localhost:11434/v1', apiKey: '', modelName: '' })
+      await renderSettings(model, listed('qwen2.5'))
+      useLLMStore.setState({ discoverLocalContextWindow })
+      await openEditor()
+      expect(windowElement().placeholder).toBe('4096')
+      await openSuggestions()
+      await vi.waitFor(() => expect(suggestionValues()).toContain('qwen2.5'))
+      await chooseSuggestion('qwen2.5')
+      await vi.waitFor(() => expect(windowElement().value).toBe('8192'))
+      expect(sourceTag()).toBe('来自服务商')
+      expect(discoverLocalContextWindow).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://localhost:11434/v1', modelName: 'qwen2.5' }))
+    })
+
+    it('读不到本机窗口时没有提示，配置照常能保存', async () => {
+      const model = savedProfile({ provider: 'ollama', baseUrl: 'http://localhost:11434/v1', apiKey: '', modelName: '' })
+      const { saveModel } = await renderSettings(model, listed('qwen2.5'))
+      useLLMStore.setState({ discoverLocalContextWindow: vi.fn(async () => { throw new Error('down') }) })
+      await openEditor()
+      await openSuggestions()
+      await vi.waitFor(() => expect(suggestionValues()).toContain('qwen2.5'))
+      await chooseSuggestion('qwen2.5')
+      expect(sourceTag()).toBe('默认值')
+      expect(statusText()).toContain('已从端点获取')
+      await act(async () => { await page.getByRole('button', { name: '保存配置', exact: true }).click() })
+      expect(saveModel).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'qwen2.5' }))
+    })
+
+    it('作者填数后变你填的，清空后回到列表声明的值', async () => {
+      const discoverModels = vi.fn(async () => ({ success: true as const, models: [{ id: 'gateway', name: 'gateway', value: 'gateway', capabilities: { contextWindowTokens: 128_000 } }] }))
+      await renderSettings(savedProfile({ modelName: '' }), discoverModels)
+      await openEditor()
+      await openSuggestions()
+      await vi.waitFor(() => expect(suggestionValues()).toContain('gateway'))
+      await chooseSuggestion('gateway')
+      expect(windowElement().value).toBe('128000')
+      expect(sourceTag()).toBe('来自服务商')
+      await act(async () => { await windowInput().fill('20000') })
+      expect(sourceTag()).toBe('你填的')
+      await act(async () => { await windowInput().fill('') })
+      expect(windowElement().value).toBe('128000')
+      expect(sourceTag()).toBe('来自服务商')
+    })
   })
 
   it('previews the Gemini 3 thinking level and accepts a thinking-level mapping on the Gemini protocol', async () => {
