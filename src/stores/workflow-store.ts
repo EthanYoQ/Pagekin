@@ -75,6 +75,8 @@ export interface WorkflowStep {
   generationActivity?: { operation: string; diagnostics?: GenerationTransportDiagnostics }
   startedAt?: string
   completedAt?: string
+  /** 最后一次有真实进展的时刻，由 updateStepById 统一记录；连接心跳不算。 */
+  lastProgressAt?: string
   logs: string[]
 }
 
@@ -1182,6 +1184,17 @@ function updateRunById(
   })
 }
 
+/** 主进程每次快照都会重发相同的文本与进度，心跳只改耗时，所以这里比较取值，不看字段是否出现。 */
+function advancesStep(step: WorkflowStep, { status, progress, result, generationActivity: activity }: Partial<WorkflowStep>): boolean {
+  if (status === 'running' || (progress !== undefined && progress !== step.progress) || (result !== undefined && result !== step.result)) return true
+  if (!activity) return false
+  if (!activity.diagnostics) return true // 只有一次请求开始时才不带诊断。
+  const before = step.generationActivity
+  return before?.operation !== activity.operation
+    || (before.diagnostics?.lastOutputMs ?? null) !== activity.diagnostics.lastOutputMs
+    || before.diagnostics?.endReason !== activity.diagnostics.endReason
+}
+
 /** 更新指定工作流的指定步骤 */
 function updateStepById(
   set: (fn: (s: WorkflowState) => Partial<WorkflowState>) => void,
@@ -1193,7 +1206,8 @@ function updateStepById(
     const newRuns = s.activeRuns.map(r => {
       if (r.id !== runId) return r
       const steps = [...r.steps]
-      steps[stepIndex] = { ...steps[stepIndex], ...updates }
+      const step = steps[stepIndex]
+      steps[stepIndex] = { ...step, ...updates, ...(advancesStep(step, updates) ? { lastProgressAt: new Date().toISOString() } : {}) }
       return { ...r, steps }
     })
     return { activeRuns: newRuns, ...computeCompat(newRuns, s.waitingRuns) }

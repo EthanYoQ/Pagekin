@@ -5,9 +5,11 @@ import { useLocaleStore } from '../../stores/locale-store'
 import { navigate } from '../../stores/navigation/navigation-intents'
 import { useStageStore } from '../../stores/navigation/stage-store'
 import { useProjectStore } from '../../stores/project-store'
-import { useWorkflowStore } from '../../stores/workflow-store'
-import { runProgress } from '../../stores/navigation/stage-progress'
+import { useWorkflowStore, type WorkflowRun } from '../../stores/workflow-store'
+import { runProgress, stepWait } from '../../stores/navigation/stage-progress'
+import { useNow } from '../run/use-now'
 import { ProgressRing } from './ProgressRing'
+import { durationText } from './run/run-format'
 
 const DONE_VISIBLE_MS = 1800
 
@@ -40,7 +42,7 @@ export default function RunCapsule() {
         <ProgressRing size={18} stroke={2} ratio={runs.reduce((sum, run) => sum + runProgress(run), 0) / runs.length} />
         {waiting > 0
           ? text(`${runs.length} 项运行中 · ${waiting} 项等你确认`, `${runs.length} running · ${waiting} need you`)
-          : text(`${runs.length} 项运行中`, `${runs.length} running`)}
+          : <>{text(`${runs.length} 项运行中`, `${runs.length} running`)}<CapsuleWait runs={runs} /></>}
       </button>
     )
   }
@@ -53,8 +55,19 @@ export default function RunCapsule() {
       <ProgressRing size={18} stroke={2} ratio={percent / 100} />
       <span className="stage-capsule-label">{waiting ? text(`${run.title} · 等你确认`, `${run.title} · needs you`) : step && !run.title.includes(step.name) ? `${run.title} · ${step.name}` : run.title}</span>
       <b className="stage-capsule-value">{percent}%</b>
+      <CapsuleWait runs={runs} />
     </button>
   )
+}
+
+/** 多项运行时显示等得最久的那一项。 */
+function CapsuleWait({ runs }: { runs: readonly WorkflowRun[] }) {
+  const text = useLocaleStore(s => s.text)
+  const now = useNow()
+  const longest = Math.max(0, ...runs.map(run => stepWait(run.steps[run.currentStepIndex], run.status, now)?.waitedMs ?? 0))
+  if (longest === 0) return null
+  const waited = durationText(longest, text)
+  return <span className="stage-capsule-wait">{text(`已等 ${waited}`, `Waiting ${waited}`)}</span>
 }
 
 /** 按 until 重新挂载：挂载时已过期（这条完成运行进入历史时就晚了）直接不显示，否则到点收起。 */
