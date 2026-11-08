@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import { streamingProse } from './fake-model.mjs'
 import * as blueprint from './pages/blueprint.mjs'
+import * as chapterView from './pages/chapter-view.mjs'
 import * as runSheet from './pages/run-sheet.mjs'
 import * as stage from './pages/stage.mjs'
 import { seedStageSample, untilGateHolds } from './scenarios.mjs'
@@ -41,6 +42,27 @@ export const I631_SCENARIOS = {
     const text = await capsule(page).innerText()
     assert.match(text, /已等 \d+ 秒/)
     return { capsule: text }
+  }, after: async ({ page, fake }) => {
+    fake.gate.release()
+    await capsule(page).waitFor({ state: 'detached', timeout: 90_000 })
+  } },
+
+  'i631-wait-review': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake }) => {
+    fake.gate.hold()
+    await chapterView.open(page, 4)
+    await chapterView.view(page).getByRole('button', { name: 'AI 审稿', exact: true }).click()
+    await untilGateHolds(fake.gate)
+    if (!await runSheet.sheet(page).isVisible()) await capsule(page).click()
+    await runSheet.waitUntilOpen(page)
+    await note(page).getByText(/已等/).waitFor({ state: 'visible', timeout: 25_000 })
+    const shown = await page.evaluate(() => ({
+      capsule: document.querySelector('.stage-capsule-wait')?.textContent ?? '',
+      firstLine: document.querySelector('.run-step-wait > p')?.textContent ?? '',
+      lines: [...document.querySelectorAll('.run-step-wait > p')].map(line => line.textContent),
+    }))
+    assert.equal(shown.firstLine, `正在等模型回复，${shown.capsule}`, '胶囊和侧页首行是同一个已等时长')
+    assert.ok(shown.lines.some(line => line.includes('尚无完整审稿报告')), '原有的审稿说明还在')
+    return shown
   }, after: async ({ page, fake }) => {
     fake.gate.release()
     await capsule(page).waitFor({ state: 'detached', timeout: 90_000 })
