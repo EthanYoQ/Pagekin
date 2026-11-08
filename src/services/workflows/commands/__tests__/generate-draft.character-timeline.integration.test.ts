@@ -87,6 +87,8 @@ function installIpc(): void {
   } } })
 }
 
+const promptLog = vi.fn()
+
 async function finalPrompt(chapterNumber: number, language: WritingLanguage = 'zh-CN'): Promise<string> {
   let prompt = ''
   const dependencies = { createRuntime: async () => ({
@@ -99,7 +101,7 @@ async function finalPrompt(chapterNumber: number, language: WritingLanguage = 'z
   useProjectStore.setState({ currentProject: { id: 'timeline', sessionLease: 'lease', name: 'Timeline', path: projectPath, novelConfig: { writingLanguage: language, wordsPerChapter: 3000 } } as never })
   const context = { runId: 'timeline-run', projectPath, projectSession: { projectId: 'timeline', leaseId: 'lease', projectPath }, writingLanguage: language, uiLocale: 'zh-CN', data: {}, cancelled: false } as WorkflowContext
   await expect(new GenerateDraftCommand({ projectPath, chapterNumber, title: '合成章节', role: 'development', purpose: '推进', keyEvents: '两人重逢', characters: ['林岚'], userGuidance: '', wordsTarget: 100 },
-    { dependencies: dependencies as never }).execute({ step: {}, context, callbacks: { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn(), replaceText: vi.fn() } })).rejects.toThrow('PROMPT_CAPTURED')
+    { dependencies: dependencies as never }).execute({ step: {}, context, callbacks: { log: promptLog, setProgress: vi.fn(), appendText: vi.fn(), replaceText: vi.fn() } })).rejects.toThrow('PROMPT_CAPTURED')
   return prompt
 }
 
@@ -113,6 +115,7 @@ beforeEach(() => {
   openCanonicalProjectFixture(projectPath)
   db().prepare("INSERT OR IGNORE INTO project_core (id, project_name, writing_language) VALUES ('main', 'Timeline', 'zh-CN')").run()
   relationshipCount = 0
+  promptLog.mockClear()
   nodesRead = () => readCharacterContinuityNodes(db())
   lin = seedCharacter('林岚', 'protagonist')
   zhou = seedCharacter('周砚', 'supporting')
@@ -224,8 +227,10 @@ describe('写第 N 章时提示词里的人物状态和关系按时间线取', (
       finalize(1)
       seedRosterWithoutNodes()
       const expected = await finalPrompt(2)
+      expect(promptLog).not.toHaveBeenCalledWith(expect.stringContaining('人物时间线没能读取'))
       nodesRead = () => { throw new Error('SQLITE_BUSY') }
       expect(await finalPrompt(2)).toBe(expected)
+      expect(promptLog).toHaveBeenCalledWith(expect.stringContaining('人物时间线没能读取'))
     })
 
     it('升级项目的基线节点：关系和作者状态保持原来的写法，来历不明的状态仍不进提示', async () => {
