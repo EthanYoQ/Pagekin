@@ -96,6 +96,7 @@ export function ModelForm({
   const discoverModels = useLLMStore(s => s.discoverModels)
   const discoverLocalContextWindow = useLLMStore(s => s.discoverLocalContextWindow)
   const [discovery, setDiscovery] = useState<ModelDiscoveryState>({ status: 'idle' })
+  const [lastListedModels, setLastListedModels] = useState<DiscoveredModel[]>([])
   const discoveryRevision = useRef(0)
   const currentDiscoveryConfig = useRef({
     id: model.id,
@@ -134,6 +135,7 @@ export function ModelForm({
   const invalidateDiscovery = () => {
     discoveryRevision.current += 1
     setDiscovery({ status: 'idle' })
+    setLastListedModels([])
     window.clearTimeout(autoDiscoveryTimer.current)
     autoDiscoveryTimer.current = window.setTimeout(() => {
       if (canDiscover(currentDiscoveryConfig.current)) void handleDiscoverModels()
@@ -263,7 +265,7 @@ export function ModelForm({
     }
   }, [windowLookup])
 
-  const listedWindow = shownModels(discovery).find(candidate => candidate.value === model.modelName)?.capabilities?.contextWindowTokens ?? null
+  const listedWindow = lastListedModels.find(candidate => candidate.value === model.modelName)?.capabilities?.contextWindowTokens ?? null
   const settledWindow = windowLookup.active
     ? settleWindow(readsLocalWindow(model), windowRead?.lookup === windowLookup ? windowRead.tokens : 'pending', listedWindow)
     : 'pending'
@@ -325,6 +327,7 @@ export function ModelForm({
         purposes: model.purposes,
       })
       if (!isCurrentRequest()) return
+      if (result.success) setLastListedModels(result.models)
       setDiscovery(result.success
         ? { status: 'loaded', models: result.models }
         : { status: 'failed', errorCode: result.errorCode })
