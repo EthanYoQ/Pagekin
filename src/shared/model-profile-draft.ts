@@ -71,7 +71,7 @@ export function applyModelProfileSelection(model: ModelProfile,
   const capabilitySources: NonNullable<ModelProfile['capabilitySources']> = {}
   for (const key of ['contextWindowTokens', 'maxOutputTokens', 'reasoning', 'structuredOutput', 'usage'] as const) {
     const oldSource = modelCapabilitySource(model, key)
-    const retainManual = sameIdentity && oldSource === 'manual'
+    const retainManual = sameIdentity && oldSource === 'manual' && (model.capabilities?.[key] ?? null) !== null
     const retainEndpoint = sameIdentity && oldSource === 'endpoint' && declared?.[key] === undefined
     const value = retainManual || retainEndpoint ? model.capabilities?.[key] : declared?.[key] ?? preset[key]
     capabilitySources[key] = retainManual ? 'manual' : retainEndpoint || declared?.[key] !== undefined ? 'endpoint'

@@ -205,33 +205,40 @@ export function ModelForm({
     onChange(isEmbedding ? { ...model, ...selection, capabilities: undefined, capabilitySources: undefined } : applyModelProfileSelection(model, selection))
   }
 
-  const readContextWindow = useEffectEvent(async (target: ModelProfile): Promise<number | null> => {
-    if (readsLocalWindow(target)) return discoverLocalContextWindow(target)
-    if (!canDiscover(target)) return null
+  const listedContextWindow = (modelName: string) => shownModels(discovery).find(candidate => candidate.value === modelName)?.capabilities?.contextWindowTokens ?? null
+
+  const readContextWindow = useEffectEvent(async (target: ModelProfile, mayFetchList: boolean): Promise<number | null | undefined> => {
+    const listed = listedContextWindow(target.modelName)
+    if (readsLocalWindow(target)) return await discoverLocalContextWindow(target).catch(() => null) ?? listed
+    if (listed !== null) return listed
+    if (!mayFetchList || shownModels(discovery).length > 0 || !canDiscover(target)) return undefined
     const { provider, protocol, baseUrl, apiKey, purposes } = target
     const result = await discoverModels({ provider, protocol, baseUrl, apiKey, purposes })
-    return result.success ? result.models.find(candidate => candidate.value === target.modelName)?.capabilities?.contextWindowTokens ?? null : null
+    return result.success ? result.models.find(candidate => candidate.value === target.modelName)?.capabilities?.contextWindowTokens ?? undefined : undefined
   })
 
-  const applyReadContextWindow = useEffectEvent((tokens: number | null) => {
+  const applyReadContextWindow = useEffectEvent((tokens: number | null | undefined) => {
     const current = latestModel.current
-    if (!current) return
+    if (!current || tokens === undefined) return
     if (tokens !== null) onChange({ ...applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }), maxTokens: current.maxTokens })
     else if (modelCapabilitySource(current, 'contextWindowTokens') === 'endpoint') onChange(clearContextWindowOverride(current))
   })
 
   const windowIdentity = windowLookupIdentity(model)
   const [windowLookupRequest, setWindowLookupRequest] = useState(0)
-  const handledWindowLookup = useRef({ identity: windowIdentity, request: windowLookupRequest })
+  const handledWindowLookup = useRef({ identity: windowIdentity, request: windowLookupRequest, modelName: model.modelName })
   useEffect(() => {
-    const requested = handledWindowLookup.current.request !== windowLookupRequest
-    if (handledWindowLookup.current.identity === windowIdentity && !requested) return
-    handledWindowLookup.current = { identity: windowIdentity, request: windowLookupRequest }
+    const previous = handledWindowLookup.current
+    const requested = previous.request !== windowLookupRequest
+    if (previous.identity === windowIdentity && !requested) return
     const target = latestModel.current
-    if (windowIdentity === null || !target || (!requested && !readsLocalWindow(target))) return
+    handledWindowLookup.current = { identity: windowIdentity, request: windowLookupRequest, modelName: target?.modelName ?? '' }
+    if (windowIdentity === null || !target) return
+    const mayFetchList = requested || previous.modelName !== target.modelName
+    if (!mayFetchList && !readsLocalWindow(target)) return
     let superseded = false
     const timer = window.setTimeout(() => {
-      void readContextWindow(target).catch(() => null).then(tokens => { if (!superseded) applyReadContextWindow(tokens) })
+      void readContextWindow(target, mayFetchList).catch(() => undefined).then(tokens => { if (!superseded) applyReadContextWindow(tokens) })
     }, requested ? 0 : AUTO_DISCOVERY_DELAY_MS)
     return () => {
       superseded = true
@@ -246,21 +253,21 @@ export function ModelForm({
     }
     const selected = applyModelProfileSelection(model, { modelName: value }, capabilities)
     onChange(selected)
-    if (capabilities?.contextWindowTokens !== undefined) handledWindowLookup.current = { identity: windowLookupIdentity(selected), request: windowLookupRequest }
-    else if (readsLocalWindow(selected)) setWindowLookupRequest(request => request + 1)
+    if (readsLocalWindow(selected)) setWindowLookupRequest(request => request + 1)
+    else if (capabilities?.contextWindowTokens !== undefined) handledWindowLookup.current = { identity: windowLookupIdentity(selected), request: windowLookupRequest, modelName: value }
   }
 
   const handleContextWindowInput = (raw: string) => {
-    const tokens = parseInt(raw) || null
+    const parsed = parseInt(raw, 10)
+    const tokens = Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
     if (tokens !== null || isEmbedding) {
       updateCapabilities({ contextWindowTokens: tokens })
       return
     }
-    const listedModels = shownModels(discovery)
-    const declared = listedModels.find(candidate => candidate.value === model.modelName)?.capabilities?.contextWindowTokens ?? undefined
+    const declared = listedContextWindow(model.modelName) ?? undefined
     const cleared = clearContextWindowOverride(model, declared)
     onChange(cleared)
-    if (declared === undefined && (readsLocalWindow(cleared) || listedModels.length === 0)) setWindowLookupRequest(request => request + 1)
+    if (declared === undefined) setWindowLookupRequest(request => request + 1)
   }
 
   const handleTest = async () => {
