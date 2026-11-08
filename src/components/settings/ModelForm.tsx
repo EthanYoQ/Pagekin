@@ -58,8 +58,8 @@ function windowLookupFor(model: ModelProfile, fetchesList: boolean, delayMs: num
   return { identity, modelName: model.modelName, active: identity !== null, fetchesList, delayMs }
 }
 
-function settleWindow(local: boolean, read: WindowRead, listed: number | null): WindowRead {
-  if (!local) return listed ?? 'pending'
+function settleWindow(local: boolean, read: WindowRead, listed: number | null, listMissesModel: boolean): WindowRead {
+  if (!local) return listed ?? (listMissesModel ? 'unavailable' : 'pending')
   return read === 'unavailable' ? listed ?? read : read
 }
 
@@ -269,9 +269,10 @@ export function ModelForm({
     }
   }, [windowLookup])
 
-  const listedWindow = lastListedModels.find(candidate => candidate.value === model.modelName)?.capabilities?.contextWindowTokens ?? null
+  const listedModel = lastListedModels.find(candidate => candidate.value === model.modelName)
+  const listedWindow = listedModel?.capabilities?.contextWindowTokens ?? null
   const settledWindow = windowLookup.active
-    ? settleWindow(readsLocalWindow(model), windowRead?.lookup === windowLookup ? windowRead.tokens : 'pending', listedWindow)
+    ? settleWindow(readsLocalWindow(model), windowRead?.lookup === windowLookup ? windowRead.tokens : 'pending', listedWindow, lastListedModels.length > 0 && !listedModel)
     : 'pending'
   useEffect(() => { applySettledWindow(settledWindow) }, [windowLookup, settledWindow])
 
