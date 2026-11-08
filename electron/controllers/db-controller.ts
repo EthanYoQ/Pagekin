@@ -707,7 +707,7 @@ export function registerDatabaseController() {
     return BlueprintRepository.committedRelationshipHints(chapterNumbers)
   })
 
-  ipcMain.handle('db:character-continuity-nodes', async (_event, expectedProjectPath: string) => {
+  ipcMain.handle('db:character-continuity-preflight-nodes', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')

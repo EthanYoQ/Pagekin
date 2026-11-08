@@ -104,7 +104,7 @@ function installIpc() {
     if (channel === 'db:blueprint-get-all') return [BLUEPRINT]
     if (channel === 'db:blueprint-get') return persistedBlueprint
     if (channel === 'db:blueprint-relationship-hints') return committedHints
-    if (channel === 'db:character-continuity-nodes') return [BROKEN_WITH_KEEPER]
+    if (channel === 'db:character-continuity-preflight-nodes') return [BROKEN_WITH_KEEPER]
     if (channel === 'db:character-get-all') return [{ id: 1 }]
     if (channel === 'db:draft-get-finalized') return { chapterNumber: Number(args[0]) }
     if (channel === 'db:post-process-get-latest-run') return null

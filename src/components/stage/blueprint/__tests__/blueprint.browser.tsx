@@ -103,7 +103,7 @@ function installIpc() {
       if (hintsFail) throw new Error('hints unavailable')
       return committedHints
     }
-    if (channel === 'db:character-continuity-nodes') {
+    if (channel === 'db:character-continuity-preflight-nodes') {
       if (nodesFail) throw new Error('nodes unavailable')
       return [BROKEN_NODE]
     }
@@ -705,7 +705,7 @@ describe('蓝图阶段', () => {
       nodesFail = true
       await renderPage()
       await save()
-      await vi.waitFor(() => expect(invoke.mock.calls.some(call => call[0] === 'db:character-continuity-nodes')).toBe(true))
+      await vi.waitFor(() => expect(invoke.mock.calls.some(call => call[0] === 'db:character-continuity-preflight-nodes')).toBe(true))
       await expect.element(page.getByText(/依据：/)).not.toBeInTheDocument()
       await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
     })

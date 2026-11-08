@@ -39,7 +39,7 @@ export async function readConsistencyPreflight(
     session, 'db:blueprint-relationship-hints', blueprints.map(blueprint => blueprint.chapterNumber), session.projectPath,
   ).catch((): Record<number, unknown> => ({}))
   const nodes = Object.keys(hints).length > 0
-    ? await ipc.invokeWithProjectSession(session, 'db:character-continuity-nodes', session.projectPath).catch(() => [])
+    ? await ipc.invokeWithProjectSession(session, 'db:character-continuity-preflight-nodes', session.projectPath).catch(() => [])
     : []
   const subjects = new Map(nodes.map(node => [`relation:${node.eventId}`, node.subjectId]))
   const findings = (await Promise.all(blueprints.map(async blueprint => {
