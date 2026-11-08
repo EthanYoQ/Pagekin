@@ -1007,7 +1007,8 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           if (recovery?.composition && isDraftVisibleTextVersion(recovery.composition.algorithm))
             compositionVersion = recovery.composition.algorithm
           const recoveredAuthorInputs = recovery?.authorInputs
-          if (recoveredAuthorInputs && authorInputs.some(input => recoveredAuthorInputs.find(item => item.id === input.id)?.text !== input.text))
+          if (recoveredAuthorInputs && (authorInputs.some(input => recoveredAuthorInputs.find(item => item.id === input.id)?.text !== input.text)
+            || recoveredAuthorInputs.some(item => item.id === CHARACTER_TIMELINE_INPUT_ID) && !authorInputs.some(input => input.id === CHARACTER_TIMELINE_INPUT_ID)))
             throw new Error('GENERATION_DRAFT_RECOVERY_AUTHOR_INPUT_CHANGED')
           const sameIds = (a: readonly number[], b: readonly number[]) => JSON.stringify([...new Set(a)].sort((a, b) => a - b)) === JSON.stringify([...new Set(b)].sort((a, b) => a - b))
           if (recovery && (!sameIds(recovery.selectedDraftIds, selectedCandidateDrafts.map(item => item.draftId))
@@ -1927,11 +1928,12 @@ ${params.candidate.text}`,
     entries: readonly CharacterRosterEntry[],
     selected: ReadonlySet<CharacterRosterEntry>,
   ): Promise<CharacterTimelinePromptLines> {
+    const characterIds = [...selected].flatMap(card => card.characterId ?? [])
     try {
       return characterTimelinePromptLines({
-        nodes: await ipc.invokeWithProjectSession(projectSession, 'db:character-continuity-nodes', projectPath),
+        nodes: await ipc.invokeWithProjectSession(projectSession, 'db:character-continuity-nodes', characterIds, projectPath),
         chapter: this.chapterInfo.chapterNumber,
-        characterIds: [...selected].flatMap(card => card.characterId ?? []),
+        characterIds,
         currentNames: new Map(entries.flatMap(card => card.characterId ? [[card.characterId, card.name] as const] : [])),
         language,
       })

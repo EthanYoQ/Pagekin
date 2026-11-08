@@ -43,13 +43,19 @@ function promptEntry(node: ContinuityNode, language: WritingLanguage, targetName
     case 'legacy':
       if (node.aspect === 'relation') return { authored: true, chapter, text: `relationship: ${targetName} (${value})${suffix}` }
       return node.provenance.authorChapter === undefined ? null
-        : { authored: true, chapter, text: `${node.aspect}@chapter${node.provenance.authorChapter}: ${value}` }
+        : { authored: true, chapter: node.provenance.authorChapter, text: `${node.aspect}@chapter${node.provenance.authorChapter}: ${value}` }
   }
 }
 
-/** M08 基线的状态是升级那一刻的快照；关系基线没有章号，是名单里一直有的事实，按开篇就有算。 */
-const withTimelessBaselineRelations = (nodes: readonly ContinuityNode[]): ContinuityNode[] =>
-  nodes.map(node => node.aspect === 'relation' && node.provenance.kind === 'legacy' ? { ...node, effectiveChapter: 0 } : node)
+/**
+ * M08 基线的生效章是升级那一刻的快照，不是事实发生的章。关系基线没有章号，按开篇就有算；
+ * 作者填的状态按当时记下的章算，减一是因为基线节点按「早于本章」比较，记下的那一章本身也要看得到。
+ */
+function withBaselineFactChapters(node: ContinuityNode): ContinuityNode {
+  if (node.provenance.kind !== 'legacy') return node
+  if (node.aspect === 'relation') return { ...node, effectiveChapter: 0 }
+  return node.provenance.authorChapter === undefined ? node : { ...node, effectiveChapter: node.provenance.authorChapter - 1 }
+}
 
 export function characterTimelinePromptLines(input: {
   nodes: readonly ContinuityNode[]
@@ -58,7 +64,7 @@ export function characterTimelinePromptLines(input: {
   currentNames: ReadonlyMap<string, string>
   language: WritingLanguage
 }): CharacterTimelinePromptLines {
-  const { states, relations } = latestNodesBefore(withTimelessBaselineRelations(input.nodes), input.chapter, input.characterIds)
+  const { states, relations } = latestNodesBefore(input.nodes.map(withBaselineFactChapters), input.chapter, input.characterIds)
   const withNodes = new Set(input.nodes.map(node => node.subjectId))
   const entries = new Map(input.characterIds.filter(id => withNodes.has(id)).map(id => [id, [] as PromptEntry[]]))
   const add = (node: ContinuityNode, targetName: string, conflict: boolean) => {

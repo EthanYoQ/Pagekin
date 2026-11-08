@@ -673,11 +673,11 @@ export function registerDatabaseController() {
     return CharacterRepository.getAll()
   })
 
-  ipcMain.handle('db:character-continuity-nodes', async (_event, expectedProjectPath: string) => {
+  ipcMain.handle('db:character-continuity-nodes', async (_event, characterIds: string[], expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
-    return readCharacterContinuityNodes(database)
+    return characterIds.flatMap(characterId => readCharacterContinuityNodes(database, characterId))
   })
 
   ipcMain.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {

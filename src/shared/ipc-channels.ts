@@ -1014,7 +1014,7 @@ export interface DatabaseChannels {
     args: [expectedProjectPath: string]
     return: CharacterRosterSnapshot
   }
-  'db:character-continuity-nodes': { args: [expectedProjectPath: string]; return: ContinuityNode[] }
+  'db:character-continuity-nodes': { args: [characterIds: string[], expectedProjectPath: string]; return: ContinuityNode[] }
   'db:character-continuity-timeline': { args: [characterId: string, expectedProjectPath: string]; return: CharacterContinuityTimeline }
   'db:character-roster-commit': {
     args: [request: CharacterRosterCommitRequest, expectedProjectPath: string]
