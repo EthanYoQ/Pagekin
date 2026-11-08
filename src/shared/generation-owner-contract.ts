@@ -253,6 +253,8 @@ export interface PrepareDraftContextRequest {
   query: string
   selectedDraftIds: number[]
   batchId?: string
+  /** authorInputs 和提示词里的档案读自哪个名册版本；没读到名册时不填。 */
+  characterRosterRevision?: number
 }
 export interface PreparedDraftContext {
   preparationId: string

@@ -6,7 +6,8 @@ export type ContinuityProvenance =
   | { kind: 'author'; operationId: string }
   | { kind: 'derived'; source: FinalizedSourceIdentity }
   | { kind: 'adopted'; operationId: string; source?: FinalizedSourceIdentity }
-  | { kind: 'legacy' }
+  /** authorChapter：升级前这个状态字段就是作者填的，值是当时记下的章号。 */
+  | { kind: 'legacy'; authorChapter?: number }
 
 interface ContinuityNodeBase {
   eventId: string
@@ -44,9 +45,11 @@ export interface LatestContinuityNodes {
 
 const authorDecided = (provenance: ContinuityProvenance) => provenance.kind === 'author' || provenance.kind === 'adopted'
 
-/** 作者定的值「自第 N 章起」生效；派生值和基线是第 N 章写完后的状态，重写第 N 章时还不存在。 */
-const visibleWhileWriting = (node: ContinuityNode, chapter: number) =>
-  authorDecided(node.provenance) ? node.effectiveChapter <= chapter : node.effectiveChapter < chapter
+/** 作者定的值「自第 N 章起」生效；派生值和基线是第 N 章写完后的状态，重写第 N 章时还不存在。升级前作者填的状态按当时记下的章，不按升级快照章。 */
+function visibleWhileWriting(node: ContinuityNode, chapter: number): boolean {
+  if (node.provenance.kind === 'legacy' && node.provenance.authorChapter !== undefined) return node.provenance.authorChapter <= chapter
+  return authorDecided(node.provenance) ? node.effectiveChapter <= chapter : node.effectiveChapter < chapter
+}
 
 function newer(candidate: ContinuityNode, current: ContinuityNode): boolean {
   if (candidate.effectiveChapter !== current.effectiveChapter) return candidate.effectiveChapter > current.effectiveChapter
