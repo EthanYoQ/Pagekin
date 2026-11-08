@@ -1,6 +1,7 @@
 import { DEFAULT_EMBEDDING_OPTIONS } from './embedding-options'
+import { DEFAULT_CONTEXT_WINDOW_TOKENS } from './generation-owner-contract'
 import type { ModelProfile } from './ipc-channels'
-import { createProviderCatalog, resolveModelProfileBudgetCapabilities, resolveModelProfileCapabilities, resolveModelProfileReasoningMapping } from './provider-presets'
+import { createProviderCatalog, isLocalModelEndpoint, resolveModelProfileBudgetCapabilities, resolveModelProfileCapabilities, resolveModelProfileReasoningMapping } from './provider-presets'
 
 export const DEFAULT_GENERATION_OUTPUT_TOKENS = 65_536
 
@@ -10,6 +11,40 @@ export function modelCapabilitySource(model: ModelProfile, key: keyof NonNullabl
   const value = model.capabilities?.[key]
   return typeof value === 'boolean' || typeof value === 'number' && Number.isSafeInteger(value) && value > 0
     ? 'manual' : 'unknown'
+}
+
+export type ContextWindowSource = 'manual' | 'endpoint' | 'preset' | 'default'
+export interface ResolvedContextWindow { tokens: number, source: ContextWindowSource }
+
+export const MODEL_VALUE_SOURCE_LABELS: Record<ContextWindowSource, readonly [string, string]> = {
+  manual: ['你填的', 'Set by you'],
+  endpoint: ['来自服务商', 'From provider'],
+  preset: ['内置资料', 'Built-in data'],
+  default: ['默认值', 'Default'],
+}
+
+const LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS = 4_096
+
+export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow {
+  const value = model.capabilities?.contextWindowTokens
+  const stored = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+  const preset = resolveModelProfileBudgetCapabilities(model)?.contextWindowTokens ?? null
+  const recorded = model.capabilitySources?.contextWindowTokens
+  if (stored !== null) {
+    if (recorded === 'endpoint' || recorded === 'preset') return { tokens: stored, source: recorded }
+    return { tokens: stored, source: !recorded && stored === preset ? 'preset' : 'manual' }
+  }
+  if (preset !== null) return { tokens: preset, source: 'preset' }
+  return { tokens: isLocalModelEndpoint(model) ? LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS, source: 'default' }
+}
+
+export function clearContextWindowOverride(model: ModelProfile, discoveredTokens?: number): ModelProfile {
+  const capabilitySources: NonNullable<ModelProfile['capabilitySources']> = {}
+  for (const key of ['maxOutputTokens', 'reasoning', 'structuredOutput', 'usage'] as const) capabilitySources[key] = modelCapabilitySource(model, key)
+  capabilitySources.contextWindowTokens = 'unknown'
+  const cleared = applyModelProfileSelection({ ...model, capabilitySources }, {},
+    discoveredTokens === undefined ? {} : { contextWindowTokens: discoveredTokens })
+  return { ...cleared, maxTokens: model.maxTokens }
 }
 
 /** One explicit model selection seam; refreshing a list never calls it. */
@@ -34,7 +69,7 @@ export function applyModelProfileSelection(model: ModelProfile,
   const capabilitySources: NonNullable<ModelProfile['capabilitySources']> = {}
   for (const key of ['contextWindowTokens', 'maxOutputTokens', 'reasoning', 'structuredOutput', 'usage'] as const) {
     const oldSource = modelCapabilitySource(model, key)
-    const retainManual = sameIdentity && oldSource === 'manual'
+    const retainManual = sameIdentity && oldSource === 'manual' && (model.capabilities?.[key] ?? null) !== null
     const retainEndpoint = sameIdentity && oldSource === 'endpoint' && declared?.[key] === undefined
     const value = retainManual || retainEndpoint ? model.capabilities?.[key] : declared?.[key] ?? preset[key]
     capabilitySources[key] = retainManual ? 'manual' : retainEndpoint || declared?.[key] !== undefined ? 'endpoint'

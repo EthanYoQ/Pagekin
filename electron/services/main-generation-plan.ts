@@ -8,8 +8,8 @@ import type { LLMGenerateOptions } from '../llm/provider.interface'
 import type { CreativeStrategy, GenerationReasoningStage } from '../../src/shared/reasoning-types'
 import { CREATIVE_STRATEGIES } from '../../src/shared/reasoning-types'
 import { isDeepStrictEqual } from 'node:util'
-import { DEFAULT_CONTEXT_WINDOW_TOKENS, materialBudgetFrom, type ArchitecturePlanningIntent, type BeginGenerationRequest, type MaterialBudget, type PlanningGenerationScope } from '../../src/shared/generation-owner-contract'
-import { modelCapabilitySource } from '../../src/shared/model-profile-draft'
+import { materialBudgetFrom, type ArchitecturePlanningIntent, type BeginGenerationRequest, type MaterialBudget, type PlanningGenerationScope } from '../../src/shared/generation-owner-contract'
+import { resolveContextWindow } from '../../src/shared/model-profile-draft'
 import { planBlueprintGenerationCost } from '../../src/services/workflows/blueprint-batch-policy'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, assertPlanningActionRange, parsePlanningTargetUnits, DEFAULT_PLANNING_ACTION_CHAPTERS } from '../../src/shared/plot-outline-contract'
 
@@ -267,15 +267,12 @@ function requestedOutputLimit(capability: ReturnType<typeof resolveGenerationCap
   return Math.min(capability.modelMaxOutputTokens ?? Infinity, capability.userMaxOutputTokens ?? Infinity, maxOutputPerRequest)
 }
 
-/** 窗口按「手填 > 拉取 > 预设 > 默认」取：手填与拉取都落在模型档案的同一字段上。 */
 export function resolveMaterialBudget(model: ModelProfile, maxOutputPerRequest: number): MaterialBudget {
   const capability = resolveGenerationCapabilityConstraints(model)
-  const profileWindow = capability.userContextWindowTokens, presetWindow = capability.modelContextWindowTokens
-  const profileSource = modelCapabilitySource(model, 'contextWindowTokens')
+  const window = resolveContextWindow(model)
   return materialBudgetFrom({
-    contextWindowTokens: profileWindow ?? presetWindow ?? DEFAULT_CONTEXT_WINDOW_TOKENS,
-    contextWindowSource: profileWindow !== null ? (profileSource === 'unknown' ? 'manual' : profileSource)
-      : presetWindow !== null ? 'preset' : 'default',
+    contextWindowTokens: window.tokens,
+    contextWindowSource: window.source,
     reservedOutputTokens: requestedOutputLimit(capability, maxOutputPerRequest),
     safetyMarginTokens: MAIN_GENERATION_POLICY.safetyMarginTokens,
   })

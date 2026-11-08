@@ -546,7 +546,16 @@ export type ModelDiscoveryRequest = Pick<
   'provider' | 'protocol' | 'baseUrl' | 'apiKey' | 'purposes'
 >
 
+export type LocalContextWindowRequest = Pick<
+  ModelProfile,
+  'provider' | 'protocol' | 'baseUrl' | 'apiKey' | 'modelName'
+>
+
 export interface LLMChannels {
+  'llm:discover-local-context-window': {
+    args: [request: LocalContextWindowRequest]
+    return: number | null
+  }
   'llm:begin-execution-lease': {
     args: [modelId: string]
     return: {

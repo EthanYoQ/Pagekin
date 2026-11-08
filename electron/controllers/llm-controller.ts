@@ -7,7 +7,7 @@ import {
   GLOBAL_CONFIG_PATH,
   DEFAULT_GLOBAL_CONFIG,
 } from '../utils/config-utils'
-import type { GlobalConfig, LLMFinishReason, LLMRequest, LLMResponse, ModelDiscoveryRequest, ModelProfile, TokenUsage } from '../../src/shared/ipc-channels'
+import type { GlobalConfig, LLMFinishReason, LLMRequest, LLMResponse, LocalContextWindowRequest, ModelDiscoveryRequest, ModelProfile, TokenUsage } from '../../src/shared/ipc-channels'
 import { knownAppErrorMessage } from '../../src/i18n/app-errors'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import { isReasoningMapping, reasoningAdapterFitsProtocol } from '../../src/shared/reasoning-types'
@@ -316,6 +316,15 @@ export function registerLLMController() {
   })
 
   ipcMain.handle('llm:list-models', async () => loadModelConfigs())
+
+  ipcMain.handle('llm:discover-local-context-window', async (_event, request: LocalContextWindowRequest) => {
+    try {
+      applyProxyConfig()
+      return await modelDiscovery.discoverLocalContextWindow(request)
+    } catch {
+      return null
+    }
+  })
 
   ipcMain.handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
     try {

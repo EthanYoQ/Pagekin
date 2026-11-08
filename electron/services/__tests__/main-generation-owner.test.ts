@@ -1677,6 +1677,11 @@ describe('材料额度（ADR-0026）', () => {
       reservedOutputTokens: 4_096, safetyMarginTokens: MAIN_GENERATION_POLICY.safetyMarginTokens })
   })
 
+  it('Ollama 取不到运行值时额度按 4,096 算，照常放行', () => {
+    expect(resolveMaterialBudget(profile({ provider: 'ollama', baseUrl: 'http://localhost:11434/v1', maxTokens: 1_024 }), 8_192))
+      .toMatchObject({ contextWindowTokens: 4_096, contextWindowSource: 'default', inputTokens: 2_560 })
+  })
+
   it('手填的窗口压过预设，拉取的窗口记拉取', () => {
     const preset = { provider: 'siliconflow' as const, modelName: 'deepseek-ai/DeepSeek-V4-Flash', baseUrl: 'https://api.siliconflow.cn/v1' }
     const presetWindow = resolveMaterialBudget(profile(preset), 8_192)
