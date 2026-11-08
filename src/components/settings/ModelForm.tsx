@@ -38,7 +38,6 @@ type ModelDiscoveryState =
 
 const readsLocalWindow = (model: ModelProfile) => model.protocol === 'openai' && isLocalModelEndpoint(model)
 
-/** 窗口读取结果属于哪一份配置；同一身份只读一次，身份变了旧结果作废。 */
 function windowLookupIdentity(model: ModelProfile): string | null {
   if (!model.modelName.trim() || model.purposes?.includes('embedding')) return null
   return JSON.stringify([model.id, model.provider, model.protocol, model.baseUrl, model.apiKey, model.modelName])
@@ -214,7 +213,6 @@ export function ModelForm({
     return result.success ? result.models.find(candidate => candidate.value === target.modelName)?.capabilities?.contextWindowTokens ?? null : null
   })
 
-  /** 手填不会被覆盖：写回交给 applyModelProfileSelection 判断，读不到时只清拉取来的旧值。 */
   const applyReadContextWindow = useEffectEvent((tokens: number | null) => {
     const current = latestModel.current
     if (!current) return
