@@ -27,7 +27,6 @@ function relationTitle({ sourceName, targetName, source }: PendingFinalizedRelat
   return `${sourceName} → ${targetName} · ${text(`第 ${source.chapterNumber} 章`, `Chapter ${source.chapterNumber}`)}`
 }
 
-/** 角色决策（定稿或导入产生）与角色状态、关系建议（定稿产生）合成一条提示条；没有待处理项时不显示。 */
 export default function CharacterSuggestions() {
   const project = useProjectStore(state => state.currentProject)
   const session = captureProjectSession(project)

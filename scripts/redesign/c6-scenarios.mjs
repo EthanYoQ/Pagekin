@@ -1,4 +1,3 @@
-// C6：定稿写出关系变化，和作者设定对不上时在角色建议里待确认；采用后变成作者关系，自该章起生效。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
@@ -9,7 +8,6 @@ import { seedStageSample } from './scenarios.mjs'
 
 const AUTHOR_RELATION = '素不相识'
 const NEW_RELATION = '彼此信任'
-// 第 4 章里只出现一次的原句。
 const EVIDENCE = '他给林岚倒了一杯很淡的茶，自己却只是捧着杯子，看着炉火。'
 const CHAPTER_FOUR_MARKER = '守塔人的屋子在灯塔背风的一侧'
 

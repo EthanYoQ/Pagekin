@@ -460,7 +460,6 @@ function pendingRelationCandidate(db: BetterSqlite3.Database, candidate: Finaliz
   return pair.rows.length && !pair.all.includes(candidate.value) ? { ...structuredClone(candidate), authorRelations: pair.rows.map(row => row.relation) } : null
 }
 
-/** 采用是作者的决定：这对角色的作者关系换成新值，自该章起生效，经身份提交写入，角色名单投影一起刷新。 */
 function adoptRelationCandidate(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate, operationId: string, scope: ProjectEpoch): void {
   const chapter = candidate.source.chapterNumber
   const { sourceId, targetId, rows } = authorRelationsOfPair(db, candidate.sourceId, candidate.targetId)
