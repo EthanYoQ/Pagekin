@@ -23,6 +23,7 @@ import {
 } from '../repositories/blueprint-repository'
 import { CharacterRepository, hasCharacterIdentitySchema } from '../repositories/character-repository'
 import { commitAuthorCharacterRoster } from '../services/character-roster-author'
+import { readCharacterContinuityNodes } from '../repositories/character-continuity-repository'
 import { CharacterRosterRepository } from '../repositories/character-roster-repository'
 import type { CharacterRosterCommitRequest } from '../../src/shared/character-roster'
 import { DraftRepository } from '../repositories/draft-repository'
@@ -670,6 +671,13 @@ export function registerDatabaseController() {
   ipcMain.handle('db:character-get-all', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return CharacterRepository.getAll()
+  })
+
+  ipcMain.handle('db:character-continuity-nodes', async (_event, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const database = getProjectDb()
+    if (!database) throw new Error('DB_NOT_OPEN')
+    return readCharacterContinuityNodes(database)
   })
 
   ipcMain.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {

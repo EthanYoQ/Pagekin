@@ -6,7 +6,8 @@ export type ContinuityProvenance =
   | { kind: 'author'; operationId: string }
   | { kind: 'derived'; source: FinalizedSourceIdentity }
   | { kind: 'adopted'; operationId: string; source?: FinalizedSourceIdentity }
-  | { kind: 'legacy' }
+  /** authorChapter：升级前这个状态字段就是作者填的，值是当时记下的章号。 */
+  | { kind: 'legacy'; authorChapter?: number }
 
 interface ContinuityNodeBase {
   eventId: string
