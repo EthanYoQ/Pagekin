@@ -9,6 +9,7 @@ import { insertContinuityBaseline } from '../../../../../electron/migrations/m08
 import {
   insertCharacterRelationship,
   readCharacterContinuityNodes,
+  readStateChapterRange,
   writeCharacterStateField,
   type StateWriteOrigin,
 } from '../../../../../electron/repositories/character-continuity-repository'
@@ -45,9 +46,9 @@ const derivedAt = (chapter: number, quote = QUOTE): StateWriteOrigin => ({
   kind: 'derived', fieldRevision: 1, quote: { start: 0, end: quote.length, text: quote },
   source: { draftId: chapter, finalizationId: `finalization-${chapter}`, chapterNumber: chapter, contentHash: hash(PROSE) },
 })
-const author: StateWriteOrigin = { kind: 'author', operationId: 'author-edit' }
+const author = (): StateWriteOrigin => ({ kind: 'author', operationId: 'author-edit', effectiveChapter: readStateChapterRange(db()).next })
 
-function writeState(field: CharacterStateTextField, value: string, origin: StateWriteOrigin = author, characterId = lin): void {
+function writeState(field: CharacterStateTextField, value: string, origin: StateWriteOrigin = author(), characterId = lin): void {
   db().transaction(() => writeCharacterStateField(db(), { characterId, characterName: '林岚', field, value, origin }))()
 }
 
