@@ -388,6 +388,70 @@ describe('model discovery settings flow', () => {
       expect(windowElement().value).toBe('16384')
     })
 
+    describe('窗口取值矩阵', () => {
+      type How = 'select' | 'type' | 'type-list-open' | 'reopen'
+      type Prior = 'none' | 'manual' | 'manual-other-model' | 'empty-manual' | 'endpoint'
+      const ENDPOINTS = { local: { baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '' }, cloud: { baseUrl: 'https://provider.invalid/v1' } }
+      const priorProfile = (prior: Prior, how: How): Partial<ModelProfile> => {
+        const onTarget = prior === 'manual' || prior === 'empty-manual' || prior === 'endpoint' || how === 'reopen'
+        const modelName = onTarget ? 'target' : 'old'
+        if (prior === 'none') return { modelName: how === 'select' ? '' : modelName }
+        if (prior === 'endpoint') return { modelName, ...stored(32_768, 'endpoint') }
+        if (prior === 'empty-manual') return { modelName, capabilities: { contextWindowTokens: null, maxOutputTokens: 4096, reasoning: false, structuredOutput: false, usage: false }, capabilitySources: { contextWindowTokens: 'manual' } }
+        return { modelName, ...stored(1_000, 'manual') }
+      }
+
+      it.each<[keyof typeof ENDPOINTS, How, Prior, number | undefined, number | null, string, string]>([
+        ['local', 'select', 'none', undefined, 8_192, '8192', '来自服务商'],
+        ['local', 'select', 'none', 64_000, 8_192, '8192', '来自服务商'],
+        ['local', 'select', 'none', 64_000, null, '64000', '来自服务商'],
+        ['local', 'select', 'none', undefined, null, '', '默认值'],
+        ['local', 'select', 'manual', undefined, 8_192, '1000', '你填的'],
+        ['local', 'select', 'empty-manual', undefined, 8_192, '8192', '来自服务商'],
+        ['local', 'select', 'endpoint', undefined, null, '', '默认值'],
+        ['local', 'type', 'none', undefined, 8_192, '8192', '来自服务商'],
+        ['local', 'type', 'manual-other-model', undefined, 8_192, '8192', '来自服务商'],
+        ['local', 'reopen', 'endpoint', undefined, 8_192, '32768', '来自服务商'],
+        ['local', 'reopen', 'manual', undefined, 8_192, '1000', '你填的'],
+        ['cloud', 'select', 'none', 128_000, null, '128000', '来自服务商'],
+        ['cloud', 'select', 'none', undefined, null, '', '默认值'],
+        ['cloud', 'select', 'manual', 128_000, null, '1000', '你填的'],
+        ['cloud', 'type', 'none', 128_000, null, '128000', '来自服务商'],
+        ['cloud', 'type-list-open', 'none', 128_000, null, '128000', '来自服务商'],
+        ['cloud', 'type', 'manual-other-model', 128_000, null, '128000', '来自服务商'],
+        ['cloud', 'reopen', 'endpoint', 128_000, null, '32768', '来自服务商'],
+        ['cloud', 'reopen', 'manual', 128_000, null, '1000', '你填的'],
+      ])('%s × %s × 先前 %s × 列表 %s × 运行值 %s：窗口 %j，来源 %s', async (endpoint, how, prior, listWindow, runtime, value, tag) => {
+        const discoverLocalContextWindow = vi.fn(async () => runtime)
+        const discoverModels = vi.fn(async () => ({ success: true as const, models: [{ id: 'target', name: 'target', value: 'target', ...(listWindow === undefined ? {} : { capabilities: { contextWindowTokens: listWindow } }) }] }))
+        await renderSettings(savedProfile({ ...ENDPOINTS[endpoint], ...priorProfile(prior, how) }), discoverModels)
+        useLLMStore.setState({ discoverLocalContextWindow })
+        await openEditor()
+        if (how === 'select' || how === 'type-list-open') {
+          await openSuggestions()
+          await vi.waitFor(() => expect(suggestionValues()).toContain('target'))
+        }
+        if (how === 'select') await chooseSuggestion('target')
+        if (how === 'type' || how === 'type-list-open') await typeInto(modelNameInput(), 'target')
+        await act(async () => { await new Promise(resolve => setTimeout(resolve, AUTO_DISCOVERY_WAIT_MS)) })
+        expect(windowElement().value).toBe(value)
+        expect(sourceTag()).toBe(tag)
+        if (how === 'reopen') {
+          expect(discoverLocalContextWindow).not.toHaveBeenCalled()
+          expect(discoverModels).not.toHaveBeenCalled()
+        }
+      })
+    })
+
+    it('窗口填负数按清空处理，不存成手填', async () => {
+      const { saveModel } = await renderSettings(savedProfile({ ...stored(1_000, 'manual') }), listed('manual-model'))
+      await openEditor()
+      await act(async () => { await windowInput().fill('-5') })
+      expect(sourceTag()).toBe('默认值')
+      await act(async () => { await page.getByRole('button', { name: '保存配置', exact: true }).click() })
+      expect(saveModel.mock.calls[0][0].capabilities?.contextWindowTokens ?? null).toBeNull()
+    })
+
     it('重新打开后清空手填，向当前端点重新取回声明的窗口', async () => {
       const discoverModels = vi.fn(async () => ({ success: true as const, models: [{ id: 'gateway', name: 'gateway', value: 'gateway', capabilities: { contextWindowTokens: 128_000 } }] }))
       const model = savedProfile({ modelName: 'gateway', ...stored(20_000, 'manual') })
