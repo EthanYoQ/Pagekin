@@ -8,7 +8,7 @@ import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema
 import { getDesktopMigrationRegistry, CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { migrateSchema } from '../../migrations/runner'
-import { createMainGenerationOwner, safeGenerationModelReceipt } from '../main-generation-owner'
+import { createMainGenerationOwner, ProviderContextLengthError, safeGenerationModelReceipt } from '../main-generation-owner'
 import { batchRootBudget, buildMainGenerationPlan, MAIN_GENERATION_POLICY, newMainGenerationPolicy, readMainGenerationPolicy, resolveMaterialBudget } from '../main-generation-plan'
 import { createModelExecutionLeaseReceipt, ModelExecutionLeaseRegistry } from '../model-execution-lease'
 import * as providerPresets from '../../../src/shared/provider-presets'
@@ -35,6 +35,7 @@ import { ChapterDeletionService } from '../chapter-deletion-service'
 import { GenerationDraftEffects } from '../generation-draft-effects'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationKnowledgeSnapshot } from '../../../src/shared/generation-knowledge'
+import type { MainGenerationRunHandle } from '../../../src/services/generation/generation-runtime'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
 import { getProjectDb, getCurrentProjectPath } from '../../database'
 import { ProjectClearRepository } from '../../repositories/project-clear-repository'
@@ -4067,4 +4068,81 @@ describe('规划恢复稿是否还列为可恢复（#608）', () => {
     expect(owner.listRecovery().planning).toEqual([])
     expect(owner.readContext({ ...run.handle, epoch: 'epoch-2' }).planningDraft?.standing).toBe('superseded')
   })
+})
+
+describe('超长报错里学到真实窗口', () => {
+  const snapshot: GenerationKnowledgeSnapshot = { version: 1, state: 'empty', storageState: 'absent', query: '第一章', topK: 5, canonicalRevision: null, documentsRevision: null, items: [] }
+  const prepareRequest = { chapterNumber: 1, promptKeys: ['first_chapter_draft'], skillStages: [], authorInputs: [], query: '第一章', selectedDraftIds: [] }
+  const outlinePrompt = '短细纲输入', base = '首稿输入', outlineText = '前驱：信已送到；行动：读信。'
+  const budgetOf = (contextWindowTokens: number, contextWindowSource: 'default' | 'manual' = 'default') =>
+    ({ inputTokens: Math.max(0, contextWindowTokens - 2048 - 512), contextWindowTokens, contextWindowSource, reservedOutputTokens: 2048, safetyMarginTokens: 512 })
+  const decisionOf = (budget: ReturnType<typeof budgetOf>) => ({ version: 1 as const, verdict: 'admitted' as const,
+    promptHash: textHash(base), shortOutlinePromptHash: textHash(outlinePrompt), budget,
+    capacity: { maxInputUnits: 8000, methodVersion: 'utf8-bytes-v1' as const, admittedUnits: 1 },
+    coverage: { required: 1, included: 1, complete: true }, omitted: [],
+    included: [{ sourceId: 'author:required', revision: 1, contentHash: 'a'.repeat(64), category: 'author' as const, required: true, units: 1 }] })
+  const outlineCall = { purpose: DRAFT_SHORT_OUTLINE_PURPOSE, output: 'visible-text' as const, messages: [{ role: 'user' as const, content: outlinePrompt }] }
+  const reject = (body: unknown) => vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 400 })))
+  const prepareRetry = (f: ReturnType<typeof fixture>, handle: MainGenerationRunHandle) =>
+    f.owner.prepareDraftContext({ ...prepareRequest, modelId: f.model.id, contextWindowRetryOf: handle }, snapshot)
+
+  it('比这次用的窗口小：回执标记可重试，重试的额度按学到的窗口收紧', async () => {
+    reject(contextLengthSamples.siliconflow)
+    const f = fixture()
+    f.model.capabilities = { ...f.model.capabilities!, contextWindowTokens: 1_048_576 }
+    const run = f.owner.begin({ ...f.begin, materialDecision: decisionOf(budgetOf(1_048_576)) })
+    const rejected = await f.owner.execute({ handle: run.handle, invocationNonce: 'outline', task: outlineCall })
+    expect(rejected.outcome.receipt).toMatchObject({ failureCode: 'GENERATION_CONTEXT_LENGTH_EXCEEDED', retryWithLearnedWindow: true })
+    expect(JSON.stringify(rejected)).not.toContain('max_seq_len')
+    expect(prepareRetry(f, run.handle).materialBudget).toEqual({ inputTokens: 32_768 - 2048 - 512, contextWindowTokens: 32_768, contextWindowSource: 'endpoint', reservedOutputTokens: 2048, safetyMarginTokens: 512 })
+  })
+
+  it('手填窗口不被覆盖，这次运行仍按学到的值重试；模型档案不变，同模型的在途运行不受影响', async () => {
+    const f = fixture()
+    f.model.capabilities = { ...f.model.capabilities!, contextWindowTokens: 1_048_576 }
+    const before = structuredClone(f.model)
+    const other = f.owner.begin({ ...f.begin, uiActionNonce: 'other', materialDecision: decisionOf(budgetOf(1_048_576, 'manual')) })
+    const run = f.owner.begin({ ...f.begin, materialDecision: decisionOf(budgetOf(1_048_576, 'manual')) })
+    reject(contextLengthSamples.siliconflow)
+    await f.owner.execute({ handle: run.handle, invocationNonce: 'outline', task: outlineCall })
+    expect(prepareRetry(f, run.handle).materialBudget.contextWindowTokens).toBe(32_768)
+    expect(f.model).toEqual(before)
+    expect(f.owner.prepareDraftContext({ ...prepareRequest, modelId: f.model.id }, snapshot).materialBudget.contextWindowTokens).toBe(1_048_576)
+    syntheticStream()
+    expect((await f.owner.execute({ handle: other.handle, invocationNonce: 'outline', task: outlineCall })).outcome.receipt.failureCode).toBeUndefined()
+  })
+
+  it.each([
+    ['读不出窗口', { error: { message: 'The input token count (1200000) exceeds the maximum number of tokens' } }, budgetOf(1_048_576)],
+    ['报的窗口不比这次小', contextLengthSamples.siliconflow, budgetOf(32_768)],
+    ['可选材料早已放不下，缩窗口也没有变化', contextLengthSamples.siliconflowMaxTokens, budgetOf(2_000)],
+  ])('%s：不标记重试', async (_name, body, budget) => {
+    reject(body)
+    const f = fixture(), run = f.owner.begin({ ...f.begin, materialDecision: decisionOf(budget) })
+    const rejected = await f.owner.execute({ handle: run.handle, invocationNonce: 'outline', task: outlineCall })
+    expect(rejected.outcome.receipt.failureCode).toBe('GENERATION_CONTEXT_LENGTH_EXCEEDED')
+    expect(rejected.outcome.receipt.retryWithLearnedWindow).toBeUndefined()
+  })
+
+  it('重试开新运行后，短细纲已成功、正文超长的旧运行不进恢复列表', async () => {
+    const fetch = syntheticStream()
+    const f = fixture(dispatchOutlineThenReject()), run = f.owner.begin({ ...f.begin, materialDecision: decisionOf(budgetOf(1_048_576)) })
+    await f.owner.execute({ handle: run.handle, invocationNonce: 'outline', task: outlineCall })
+    const rejected = await f.owner.execute({ handle: run.handle, invocationNonce: 'prose',
+      task: { ...task, messages: [{ role: 'user', content: `${base}\n\n${draftShortOutlineBlock('zh-CN', outlineText)}` }] } })
+    expect(rejected.outcome.receipt.retryWithLearnedWindow).toBe(true)
+    const next = f.owner.restart(run.handle, { ...f.begin, uiActionNonce: 'click:retry', materialDecision: decisionOf(budgetOf(16_384)) })
+    expect(next.handle.runId).not.toBe(run.handle.runId)
+    expect(f.owner.listRecovery().drafts.map(item => item.view.handle.runId)).not.toContain(run.handle.runId)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  function dispatchOutlineThenReject(): GenerationRunServiceDependencies['dispatch'] {
+    let calls = 0
+    return async (_request, options) => {
+      if (++calls > 1) throw new ProviderContextLengthError(16_384)
+      options.onVisible({ kind: 'delta', text: outlineText })
+      return { finishReason: 'stop', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2, reasoningTokens: null, accounting: 'included-in-completion', totalIncludesReasoning: true, trusted: true } }
+    }
+  }
 })
