@@ -695,6 +695,11 @@ export function registerDatabaseController() {
     return readCharacterContinuityTimeline(database, characterId)
   })
 
+  ipcMain.handle('db:blueprint-relationship-hints', async (_event, chapterNumbers: number[], expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return BlueprintRepository.committedRelationshipHints(chapterNumbers)
+  })
+
   ipcMain.handle('db:character-continuity-nodes', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()

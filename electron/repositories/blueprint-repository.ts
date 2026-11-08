@@ -518,6 +518,41 @@ export class BlueprintRepository {
         }
     }
 
+    /**
+     * 各章最近一次提交回执里的关系提示。蓝图表不存它，只有回执里有。
+     * 这一章的规划内容已经和回执不同时，提示不再代表作者的安排，这一章不返回。
+     * rowid 而不是 committed_at：后者只到秒，且排在回执正文之后的列，排序要读穿整份回执。
+     */
+    static committedRelationshipHints(chapterNumbers: readonly number[], db = requireProjectDb()): Record<number, unknown> {
+        const latestCovering = db.prepare(`
+          SELECT operation_id FROM blueprint_commit_operations
+          WHERE start_chapter <= @chapter AND end_chapter >= @chapter
+          ORDER BY rowid DESC LIMIT 1
+        `).pluck()
+        const readOperation = db.prepare('SELECT * FROM blueprint_commit_operations WHERE operation_id = ?')
+        const readRow = db.prepare('SELECT * FROM blueprints WHERE chapter_number = ?')
+        const receipts = new Map<string, Map<unknown, BlueprintData>>()
+        const receipt = (operationId: string) => {
+            let written = receipts.get(operationId)
+            if (written) return written
+            written = new Map()
+            try {
+                for (const item of readCharacterSyncInput(readOperation.get(operationId) as BlueprintCommitOperationRow)) written.set(item?.chapterNumber, item)
+            } catch { /* 损坏的回执等于没有回执 */ }
+            receipts.set(operationId, written)
+            return written
+        }
+        const hints: Record<number, unknown> = {}
+        for (const chapter of chapterNumbers) {
+            const operationId = latestCovering.get({ chapter }) as string | undefined
+            const item = operationId === undefined ? undefined : receipt(operationId).get(chapter)
+            const row = readRow.get(chapter) as BlueprintRow | undefined
+            if (item?.relationshipHints === undefined || !row) continue
+            if (samePersistedBlueprint(planningContent(rowToData(row)), planningContent(item))) hints[chapter] = item.relationshipHints
+        }
+        return hints
+    }
+
     /** 获取单个蓝图 */
     static getByChapter(chapterNumber: number): BlueprintData | null {
         const db = requireProjectDb()

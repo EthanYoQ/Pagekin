@@ -1056,6 +1056,7 @@ export interface DatabaseChannels {
     return: FinalizedSourceReadResult
   }
   'db:consistency-exemption-list': { args: [expectedProjectPath: string]; return: ConsistencyExemption[] }
+  'db:blueprint-relationship-hints': { args: [chapterNumbers: number[], expectedProjectPath: string]; return: Record<number, unknown> }
   'db:character-continuity-nodes': { args: [expectedProjectPath: string]; return: ContinuityNode[] }
   'db:consistency-exemption-save': {
     args: [stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string]
