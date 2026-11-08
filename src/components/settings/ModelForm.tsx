@@ -59,7 +59,7 @@ function windowLookupFor(model: ModelProfile, fetchesList: boolean, delayMs: num
 }
 
 function settleWindow(local: boolean, read: WindowRead, listed: number | null): WindowRead {
-  if (!local) return listed ?? read
+  if (!local) return listed ?? 'pending'
   return read === 'unavailable' ? listed ?? read : read
 }
 
@@ -227,12 +227,12 @@ export function ModelForm({
     onChange(isEmbedding ? { ...model, ...selection, capabilities: undefined, capabilitySources: undefined } : applyModelProfileSelection(model, selection))
   }
 
-  const readContextWindow = useEffectEvent(async (target: ModelProfile, fetchesList: boolean): Promise<WindowRead> => {
+  const readContextWindow = useEffectEvent(async (target: ModelProfile, fetchesList: boolean): Promise<WindowRead | DiscoveredModel[]> => {
     if (readsLocalWindow(target)) return await discoverLocalContextWindow(target).catch(() => null) ?? 'unavailable'
     if (!fetchesList || discovery.status === 'loading' || discovery.status === 'loaded' || !canDiscover(target)) return 'pending'
     const { provider, protocol, baseUrl, apiKey, purposes } = target
     const result = await discoverModels({ provider, protocol, baseUrl, apiKey, purposes })
-    return result.success ? result.models.find(candidate => candidate.value === target.modelName)?.capabilities?.contextWindowTokens ?? 'pending' : 'pending'
+    return result.success ? result.models : 'pending'
   })
 
   const applySettledWindow = useEffectEvent((tokens: WindowRead) => {
@@ -257,7 +257,11 @@ export function ModelForm({
     if (!windowLookup.active || !target) return
     let superseded = false
     const timer = window.setTimeout(() => {
-      void readContextWindow(target, windowLookup.fetchesList).catch((): WindowRead => 'pending').then(tokens => { if (!superseded) setWindowRead({ lookup: windowLookup, tokens }) })
+      void readContextWindow(target, windowLookup.fetchesList).catch((): WindowRead => 'pending').then(read => {
+        if (superseded) return
+        if (Array.isArray(read)) setLastListedModels(read)
+        else setWindowRead({ lookup: windowLookup, tokens: read })
+      })
     }, windowLookup.delayMs)
     return () => {
       superseded = true
