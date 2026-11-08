@@ -43,7 +43,6 @@ function windowLookupIdentity(model: ModelProfile): string | null {
   return JSON.stringify([model.id, model.provider, model.protocol, model.baseUrl, model.apiKey, model.modelName])
 }
 
-/** 配置身份变了或作者要求时开一次取值。打开表单时没有动作，不读也不回填。 */
 interface WindowLookup {
   identity: string | null
   modelName: string
@@ -52,18 +51,16 @@ interface WindowLookup {
   delayMs: number
 }
 
-/** 数字是读到的窗口，null 是本机取不到有效运行值，undefined 是还没有结果。 */
-type WindowRead = number | null | undefined
+type WindowRead = number | 'unavailable' | 'pending'
 
 function windowLookupFor(model: ModelProfile, fetchesList: boolean, delayMs: number): WindowLookup {
   const identity = windowLookupIdentity(model)
   return { identity, modelName: model.modelName, active: identity !== null, fetchesList, delayMs }
 }
 
-/** 本机要等运行值读完，读不到才用列表声明；云端以列表声明为准。 */
 function settleWindow(local: boolean, read: WindowRead, listed: number | null): WindowRead {
   if (!local) return listed ?? read
-  return read === undefined ? undefined : read ?? listed
+  return read === 'unavailable' ? listed ?? read : read
 }
 
 /** 候选列表里显示的模型：刷新期间沿用旧列表，还没拉到时为空。 */
@@ -229,17 +226,17 @@ export function ModelForm({
   }
 
   const readContextWindow = useEffectEvent(async (target: ModelProfile, fetchesList: boolean): Promise<WindowRead> => {
-    if (readsLocalWindow(target)) return await discoverLocalContextWindow(target).catch(() => null)
-    if (!fetchesList || discovery.status === 'loading' || discovery.status === 'loaded' || !canDiscover(target)) return undefined
+    if (readsLocalWindow(target)) return await discoverLocalContextWindow(target).catch(() => null) ?? 'unavailable'
+    if (!fetchesList || discovery.status === 'loading' || discovery.status === 'loaded' || !canDiscover(target)) return 'pending'
     const { provider, protocol, baseUrl, apiKey, purposes } = target
     const result = await discoverModels({ provider, protocol, baseUrl, apiKey, purposes })
-    return result.success ? result.models.find(candidate => candidate.value === target.modelName)?.capabilities?.contextWindowTokens ?? undefined : undefined
+    return result.success ? result.models.find(candidate => candidate.value === target.modelName)?.capabilities?.contextWindowTokens ?? 'pending' : 'pending'
   })
 
   const applySettledWindow = useEffectEvent((tokens: WindowRead) => {
     const current = latestModel.current
-    if (!current || tokens === undefined) return
-    const next = tokens !== null
+    if (!current || tokens === 'pending') return
+    const next = tokens !== 'unavailable'
       ? { ...applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }), maxTokens: current.maxTokens }
       : modelCapabilitySource(current, 'contextWindowTokens') === 'endpoint' ? clearContextWindowOverride(current) : current
     if (next.capabilities?.contextWindowTokens === current.capabilities?.contextWindowTokens
@@ -258,7 +255,7 @@ export function ModelForm({
     if (!windowLookup.active || !target) return
     let superseded = false
     const timer = window.setTimeout(() => {
-      void readContextWindow(target, windowLookup.fetchesList).catch(() => undefined).then(tokens => { if (!superseded) setWindowRead({ lookup: windowLookup, tokens }) })
+      void readContextWindow(target, windowLookup.fetchesList).catch((): WindowRead => 'pending').then(tokens => { if (!superseded) setWindowRead({ lookup: windowLookup, tokens }) })
     }, windowLookup.delayMs)
     return () => {
       superseded = true
@@ -268,8 +265,8 @@ export function ModelForm({
 
   const listedWindow = shownModels(discovery).find(candidate => candidate.value === model.modelName)?.capabilities?.contextWindowTokens ?? null
   const settledWindow = windowLookup.active
-    ? settleWindow(readsLocalWindow(model), windowRead?.lookup === windowLookup ? windowRead.tokens : undefined, listedWindow)
-    : undefined
+    ? settleWindow(readsLocalWindow(model), windowRead?.lookup === windowLookup ? windowRead.tokens : 'pending', listedWindow)
+    : 'pending'
   useEffect(() => { applySettledWindow(settledWindow) }, [windowLookup, settledWindow])
 
   const handleModelSelect = ({ value, capabilities }: DiscoveredModel) => {
