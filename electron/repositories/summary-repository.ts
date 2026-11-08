@@ -405,8 +405,18 @@ function authorRelationRows(db: BetterSqlite3.Database, sourceId: string, target
     WHERE r.source_character_id=? AND r.target_character_id=? AND a.retired=0 AND b.retired=0 ORDER BY r.relationship_id`).all(sourceId, targetId) as AuthorRelationRow[]
 }
 
+/** 比对不分方向。作者只写了反向时以作者写的方向为准，节点、待确认项和采用都落在那一边，时间线才能合成一行。 */
+function authorRelationsOfPair(db: BetterSqlite3.Database, sourceId: string, targetId: string) {
+  const forward = authorRelationRows(db, sourceId, targetId), backward = authorRelationRows(db, targetId, sourceId)
+  const flipped = !forward.length && backward.length > 0
+  return { sourceId: flipped ? targetId : sourceId, targetId: flipped ? sourceId : targetId, rows: flipped ? backward : forward,
+    all: [...forward, ...backward].map(row => row.relation) }
+}
+
+const unorderedPairKey = (left: string, right: string) => JSON.stringify([left, right].sort())
+
 function relationCandidateKey(source: FinalizedSourceIdentity, change: FinalizedRelationChange): string {
-  return `fcs-relation:${sha256(JSON.stringify([source.draftId, source.finalizationId, source.contentHash, change.sourceId, change.targetId, sha256(change.relation)]))}`
+  return `fcs-relation:${sha256(JSON.stringify([source.draftId, source.finalizationId, source.contentHash, unorderedPairKey(change.sourceId, change.targetId), sha256(change.relation)]))}`
 }
 
 /** 同一份定稿重跑时节点已在，这里仍要补上待确认项：上一次可能因为要点那步失败而没地方存。 */
@@ -414,9 +424,10 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
   const { source } = context
   const name = (id: string) => context.characters.find(character => character.characterId === id)!.displayNameSnapshot
   const candidates: FinalizedRelationCandidate[] = []
-  for (const change of changes) {
-    const authorRelations = authorRelationRows(db, change.sourceId, change.targetId).map(row => row.relation)
-    if (authorRelations.includes(change.relation)) continue
+  for (const reported of changes) {
+    const pair = authorRelationsOfPair(db, reported.sourceId, reported.targetId)
+    if (pair.all.includes(reported.relation)) continue
+    const change = { ...reported, sourceId: pair.sourceId, targetId: pair.targetId }
     const series = derivedRelationSeries(change.sourceId, change.targetId)
     const previous = latestNodesBefore(readCharacterContinuityNodes(db, change.sourceId), source.chapterNumber + 1).relations
       .flatMap(pair => pair.lines).find(line => line.relationshipId === series)
@@ -424,7 +435,7 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
     if (unchanged && !(previous.provenance.kind === 'derived' && previous.provenance.source.finalizationId === source.finalizationId)) continue
     const names = { sourceName: name(change.sourceId), targetName: name(change.targetId) }
     if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence })
-    if (authorRelations.length) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
+    if (pair.rows.length) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
       ...names, value: change.relation, evidence: change.evidence })
   }
   if (!candidates.length) return
@@ -434,8 +445,8 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
   if (!row) return
   const store = parseCharacterStateCandidateStore(row.candidates)
   const decided = new Set(store.receipts.map(receipt => receipt.candidateKey))
-  const byPair = new Map(store.relationPending.map(candidate => [JSON.stringify([candidate.sourceId, candidate.targetId]), candidate]))
-  for (const candidate of candidates) if (!decided.has(candidate.candidateKey)) byPair.set(JSON.stringify([candidate.sourceId, candidate.targetId]), candidate)
+  const byPair = new Map(store.relationPending.map(candidate => [unorderedPairKey(candidate.sourceId, candidate.targetId), candidate]))
+  for (const candidate of candidates) if (!decided.has(candidate.candidateKey)) byPair.set(unorderedPairKey(candidate.sourceId, candidate.targetId), candidate)
   store.relationPending = [...byPair.values()]
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
@@ -445,20 +456,20 @@ function relationDecisionPayloadHash(request: FinalizedRelationDecisionRequest):
 }
 
 function pendingRelationCandidate(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate): PendingFinalizedRelationCandidate | null {
-  const authorRelations = authorRelationRows(db, candidate.sourceId, candidate.targetId).map(row => row.relation)
-  return authorRelations.length && !authorRelations.includes(candidate.value) ? { ...structuredClone(candidate), authorRelations } : null
+  const pair = authorRelationsOfPair(db, candidate.sourceId, candidate.targetId)
+  return pair.rows.length && !pair.all.includes(candidate.value) ? { ...structuredClone(candidate), authorRelations: pair.rows.map(row => row.relation) } : null
 }
 
 /** 采用是作者的决定：这对角色的作者关系换成新值，自该章起生效，经身份提交写入，角色名单投影一起刷新。 */
 function adoptRelationCandidate(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate, operationId: string, scope: ProjectEpoch): void {
   const chapter = candidate.source.chapterNumber
-  for (const row of authorRelationRows(db, candidate.sourceId, candidate.targetId)) deleteCharacterRelationship(db, { relationshipId: row.relationshipId,
-    sourceId: candidate.sourceId, sourceName: row.sourceName, targetId: candidate.targetId, targetName: row.targetName }, operationId, chapter)
+  const { sourceId, targetId, rows } = authorRelationsOfPair(db, candidate.sourceId, candidate.targetId)
+  for (const row of rows) deleteCharacterRelationship(db, { relationshipId: row.relationshipId, sourceId, sourceName: row.sourceName, targetId, targetName: row.targetName }, operationId, chapter)
   const revision = db.prepare("SELECT revision FROM character_identity_meta WHERE id='main'").pluck().get() as number
   commitCharacterIdentities(db, { approval: { operationId, expectedRevision: revision, action: 'author-edit',
     source: { kind: 'author', source: { projectId: scope.projectId, epoch: scope.epoch, sourceId: candidate.candidateKey, revision, contentHash: candidate.source.contentHash } } },
   changes: [], creations: [], retireIds: [], resolutions: [],
-  relationships: [{ sourceCharacterId: candidate.sourceId, targetCharacterId: candidate.targetId, relation: candidate.value, effectiveChapter: chapter }] }, () => true)
+  relationships: [{ sourceCharacterId: sourceId, targetCharacterId: targetId, relation: candidate.value, effectiveChapter: chapter }] }, () => true)
   refreshCharacterIdentityProjection(db)
 }
 

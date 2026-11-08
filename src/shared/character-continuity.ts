@@ -113,11 +113,30 @@ export interface CharacterTimelineChange {
   removed: boolean
   /** removed 时是被去掉的旧值，其余时候是节点的值。 */
   value: string
+  /** 作者采用定稿发现的关系时被换掉的旧值，这时 node 带着定稿的原文。 */
+  replaced?: string[]
 }
 export interface CharacterTimelineChapter { chapter: number; changes: CharacterTimelineChange[] }
 
 const aspectRank = (node: ContinuityNode) => node.aspect === 'relation' ? CHARACTER_STATE_TEXT_FIELDS.length : CHARACTER_STATE_TEXT_FIELDS.indexOf(node.aspect)
 const targetOf = (node: ContinuityNode) => node.aspect === 'relation' ? node.targetName : ''
+
+/** 采用在事件表里是解除旧行、派生值、作者新值三个节点，作者看到的是一件事。靠同一次操作认定，手工改的不合并。 */
+function foldAdoptedRelations(changes: readonly CharacterTimelineChange[]): CharacterTimelineChange[] {
+  const absorbed = new Set<CharacterTimelineChange>()
+  const folded = changes.map(change => {
+    const { node } = change
+    if (node.aspect !== 'relation' || node.provenance.kind !== 'author' || change.removed) return change
+    const { operationId } = node.provenance
+    const samePair = (other: CharacterTimelineChange) => other.node.aspect === 'relation' && other.node.subjectId === node.subjectId && other.node.targetId === node.targetId
+    const found = changes.find(other => samePair(other) && other.source === 'finalized' && other.value === change.value)
+    const replaced = changes.filter(other => samePair(other) && other.removed && other.node.provenance.kind === 'author' && other.node.provenance.operationId === operationId)
+    if (!found || !replaced.length) return change
+    for (const other of [found, ...replaced]) absorbed.add(other)
+    return { ...change, node: { ...node, quote: found.node.quote }, replaced: replaced.map(other => other.value) }
+  })
+  return folded.filter(change => !absorbed.has(change))
+}
 
 /** 同章同字段的取舍规则与 latestNodesBefore 相同。 */
 export function characterTimeline(nodes: readonly ContinuityNode[]): CharacterTimelineChapter[] {
@@ -143,7 +162,7 @@ export function characterTimeline(nodes: readonly ContinuityNode[]): CharacterTi
   }
   return [...chapters].sort(([left], [right]) => right - left).map(([chapter, changes]) => ({
     chapter,
-    changes: changes.sort((left, right) => aspectRank(left.node) - aspectRank(right.node)
+    changes: foldAdoptedRelations(changes).sort((left, right) => aspectRank(left.node) - aspectRank(right.node)
       || targetOf(left.node).localeCompare(targetOf(right.node)) || Number(right.removed) - Number(left.removed)),
   }))
 }
