@@ -75,7 +75,7 @@ export function useBlueprintContinuityNotice() {
   }
 
   return { busy, check, findings: (chapterNumber: number | undefined) => notice(chapterNumber)?.findings ?? [],
-    exempted: (chapterNumber: number | undefined) => exempted?.blueprint.chapterNumber === chapterNumber && isProjectSessionCurrent(exempted.session) ? exempted : null, exempt, undo }
+    exempted: (chapterNumber: number | undefined) => exempted && exempted.blueprint.chapterNumber === chapterNumber && isProjectSessionCurrent(exempted.session) ? exempted : null, exempt, undo }
 }
 
 export type BlueprintContinuityNotice = ReturnType<typeof useBlueprintContinuityNotice>
