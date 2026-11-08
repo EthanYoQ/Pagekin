@@ -575,7 +575,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       return await this.generate(params)
     } catch (error) {
       const failed = context.mainGenerationRunHandle
-      if (!failed || this.resumeHandle || this.batchId || context.cancelled
+      if (!failed || this.resumeHandle || this.batchId || context.agentWorkflowRegistrationId || context.cancelled
         || !(error instanceof TerminalProviderFailureError && error.receipt.retryWithLearnedWindow)) throw error
       callbacks.log(workflowUiText(context,
         '  模型的实际窗口比预计小，已收缩可选材料，自动重试一次。',

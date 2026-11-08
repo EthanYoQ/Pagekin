@@ -680,7 +680,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
       Object.assign(rejected.receipt, { failureCode: 'GENERATION_CONTEXT_LENGTH_EXCEEDED', ...(retryable ? { retryWithLearnedWindow: true } : {}) })
       return rejected
     }
-    function harness(options: { retryable?: boolean; rejections?: number; rejectAt?: string; onRestart?: (context: WorkflowContext) => void; uiLocale?: 'zh-CN' | 'en-US'; batchId?: string } = {}) {
+    function harness(options: { retryable?: boolean; rejections?: number; rejectAt?: string; onRestart?: (context: WorkflowContext) => void; onRetryPrepare?: (context: WorkflowContext) => void; uiLocale?: 'zh-CN' | 'en-US'; batchId?: string } = {}) {
       const f = setup({ runtime: fakeOutcomes(), wordsTarget: 900, mainDefault: true, keyEvents: '必需的本章事件', materialBudget: wide, uiLocale: options.uiLocale, batchId: options.batchId,
         knowledgeResults: [{ fileName: '资料', score: 0.9, text: OPTIONAL_REFERENCE, documentId: 'doc', rank: 1 }] as never })
       f.context.generationModelId = '合成模型'
@@ -695,6 +695,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
         if (channel === 'generation:prepare-draft-context') {
           const request = args[0] as { contextWindowRetryOf?: MainGenerationRunHandle }
           budgets.push(request.contextWindowRetryOf ?? null)
+          if (request.contextWindowRetryOf) options.onRetryPrepare?.(f.context)
           const prepared = await original(channel, ...args) as object
           return request.contextWindowRetryOf ? { ...prepared, materialBudget: tight } : prepared
         }
@@ -767,6 +768,21 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
       const h = harness({ batchId: '批次' })
       await expect(h.run()).rejects.toMatchObject({ code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' })
       expect(h.channels('generation:restart')).toHaveLength(0)
+    })
+
+    it('Agent 发起的写稿不开新运行，保留超长错误', async () => {
+      const h = harness()
+      h.f.context.agentWorkflowRegistrationId = '登记'
+      await expect(h.run()).rejects.toMatchObject({ code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' })
+      expect(h.channels('generation:restart')).toHaveLength(0)
+    })
+
+    it('重试准备阶段取消：不开新运行，取消旧运行，不保存草稿', async () => {
+      const h = harness({ onRetryPrepare: context => { context.cancelled = true } })
+      await expect(h.run()).rejects.toThrow()
+      expect(h.channels('generation:restart')).toHaveLength(0)
+      expect(h.channels('generation:cancel').map(call => (call[1] as MainGenerationRunHandle).runId)).toContain('首次')
+      expect(h.channels('generation:commit-draft')).toHaveLength(0)
     })
 
     it('重试期间取消：取消旧运行，不保存草稿', async () => {
