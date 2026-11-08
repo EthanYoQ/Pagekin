@@ -9,7 +9,6 @@ export function clockTime(at: string | Date | undefined, locale: Locale): string
   return Number.isNaN(time.getTime()) ? '—' : time.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-/** 时长：不到一分钟写秒，否则写分与秒。 */
 export function durationText(milliseconds: number, text: Text): string {
   const seconds = Math.max(0, Math.round(milliseconds / 1000))
   if (seconds < 60) return text(`${seconds} 秒`, `${seconds}s`)

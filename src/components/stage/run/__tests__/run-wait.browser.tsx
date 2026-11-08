@@ -38,7 +38,6 @@ async function mount(sheet = true) {
   await act(async () => root!.render(<App sheet={sheet} />))
 }
 
-/** 起一条真实工作流，单步卡在执行器里，测试直接调步骤回调，等于模型那头在上报。 */
 async function start(title = '拆书') {
   let callbacks: StepCallbacks | undefined
   let release = () => {}

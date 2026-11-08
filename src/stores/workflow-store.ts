@@ -75,7 +75,6 @@ export interface WorkflowStep {
   generationActivity?: { operation: string; diagnostics?: GenerationTransportDiagnostics }
   startedAt?: string
   completedAt?: string
-  /** 最后一次有真实进展的时刻，由 updateStepById 统一记录；连接心跳不算。 */
   lastProgressAt?: string
   logs: string[]
 }

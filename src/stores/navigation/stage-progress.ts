@@ -240,7 +240,6 @@ const STEP_WAIT_AFTER_MS = 15_000
 /** on 为 model 时一次模型请求还没结束；为 step 时拿不准在做什么，界面只说这一步还在进行。 */
 export interface StepWait { waitedMs: number; on: 'model' | 'step' }
 
-/** 运行中的步骤连续 15 秒没有进展时算在等待；暂停、取消中、等你确认、结束时都不算。 */
 export function stepWait(step: WorkflowStep | undefined, runStatus: WorkflowRun['status'], now: number): StepWait | null {
   if (runStatus !== 'running' || step?.status !== 'running' || !step.lastProgressAt) return null
   const waitedMs = now - Date.parse(step.lastProgressAt)

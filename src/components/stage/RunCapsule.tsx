@@ -60,7 +60,6 @@ export default function RunCapsule() {
   )
 }
 
-/** 多项运行时显示等得最久的那一项。 */
 function CapsuleWait({ runs }: { runs: readonly WorkflowRun[] }) {
   const text = useLocaleStore(s => s.text)
   const now = useNow()

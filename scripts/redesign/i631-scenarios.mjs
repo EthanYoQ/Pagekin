@@ -10,7 +10,6 @@ import { seedStageSample, untilGateHolds } from './scenarios.mjs'
 const capsule = page => stage.root(page).getByRole('banner').locator('.stage-capsule')
 const note = page => runSheet.sheet(page).locator('.run-step-wait')
 
-/** 让假模型卡住第一次请求，等到运行侧页出现等待说明。 */
 async function waitOnHeldModel(page, fake) {
   fake.gate.hold()
   await blueprint.open(page)
