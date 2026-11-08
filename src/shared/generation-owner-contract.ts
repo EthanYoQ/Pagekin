@@ -93,7 +93,6 @@ export interface MaterialBudget {
 export function materialBudgetFrom(input: Omit<MaterialBudget, 'inputTokens'>): MaterialBudget {
   return { ...input, inputTokens: Math.max(0, input.contextWindowTokens - input.reservedOutputTokens - input.safetyMarginTokens) }
 }
-/** 只收紧：报的窗口不比现有的小时原样返回。 */
 export function tightenMaterialBudget(budget: MaterialBudget, contextWindowTokens: number): MaterialBudget {
   return contextWindowTokens < budget.contextWindowTokens
     ? materialBudgetFrom({ ...budget, contextWindowTokens, contextWindowSource: 'endpoint' }) : budget

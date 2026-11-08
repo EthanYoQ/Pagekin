@@ -92,7 +92,6 @@ export interface MainGenerationOwnerDependencies {
 
 interface ProviderRequest { runId: string; conversationId: string; model: ModelProfile; task: GenerationTask; plan: MainGenerationPlan }
 
-/** 消息就是登记码，分类路径和没有窗口的超长一样；只多带服务商报的窗口数字。 */
 export class ProviderContextLengthError extends Error {
   constructor(readonly windowTokens: number) { super('GENERATION_CONTEXT_LENGTH_EXCEEDED') }
 }
@@ -1104,7 +1103,6 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
           return
         }
         const recovery = readContext(handle)
-        // 重试已换材料开了新运行，旧运行只剩短细纲，续写只会被同样拒绝。
         if (!recovery.composition && repository.budget(handle.rootActionId).root.status === 'cancelled'
           && view.budgetDiagnostics?.at(-1)?.failureCode === 'GENERATION_CONTEXT_LENGTH_EXCEEDED') return
         if (recovery.composition || recovery.draftShortOutline?.completedOutput || recovery.draftShortOutline?.retry?.kind === 'available'

@@ -20,7 +20,6 @@ export interface WorkflowMainGenerationSelection extends Omit<BeginGenerationReq
   resumeHandle?: MainGenerationRunHandle
   /** Explicit author continuation; main closes the original and admits only its missing range. */
   restartHandle?: MainGenerationRunHandle
-  /** 同一次操作里再开新运行时区分幂等键；main 拒绝沿用旧键的 restart。 */
   retryNonce?: string
   /** Main-issued lineage of the original review; admission verifies its durable effect. */
   parentRootActionId?: string

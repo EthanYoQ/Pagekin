@@ -566,7 +566,6 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       return await this.generate(params)
     } catch (error) {
       const failed = context.mainGenerationRunHandle
-      // 批量的根由整批共用且每章只许一个未完成运行，这里开不了新运行。
       if (!failed || this.resumeHandle || this.batchId || context.cancelled
         || !(error instanceof TerminalProviderFailureError && error.receipt.retryWithLearnedWindow)) throw error
       callbacks.log(workflowUiText(context,

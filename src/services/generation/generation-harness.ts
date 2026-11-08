@@ -185,7 +185,6 @@ export interface GenerationAttemptReceipt {
   finishReason: LLMFinishReason
   /** Main-normalized failure category; never provider response text. */
   failureCode?: 'GENERATION_PROVIDER_FAILED' | 'NETWORK_ERROR' | 'ROOT_BUDGET_EXHAUSTED' | 'GENERATION_STORAGE_FAILED' | 'GENERATION_CONTEXT_LENGTH_EXCEEDED'
-  /** 主进程判定：这次超长读到了更小的真实窗口，换材料重发有意义。 */
   retryWithLearnedWindow?: true
   usage?: TokenUsage
   promptBudget?: PromptBudgetReport
