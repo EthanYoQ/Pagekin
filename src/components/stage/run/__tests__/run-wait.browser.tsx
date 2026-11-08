@@ -220,6 +220,49 @@ describe('长任务百分比不动时说明在等什么（#631）', () => {
     expect(capsule()).toContain('已等 20 秒')
   })
 
+  describe('审稿等待中胶囊和侧页首行是同一个时长', () => {
+    const review = (extra: Partial<GenerationTransportDiagnostics> = {}) => ({ operation: 'review-chapter', diagnostics: diagnostics(extra) })
+    const firstLine = () => host!.querySelector('.run-step-wait > p')?.textContent
+
+    it('两处读同一个已等时长，分钟格式也一致', async () => {
+      const callbacks = await start()
+      await report(() => callbacks.setGenerationActivity!(review({ elapsedMs: 90_000 })))
+      await mount()
+      await advance(20_000)
+      expect(firstLine()).toBe('正在等模型回复，已等 20 秒')
+      expect(capsule()).toContain('已等 20 秒')
+      await advance(55_000)
+      expect(firstLine()).toBe('正在等模型回复，已等 1 分 15 秒')
+      expect(capsule()).toContain('已等 1 分 15 秒')
+    })
+
+    it('收到进展后两处同时清零，下一次无进展从头计时，审稿说明一直在', async () => {
+      const callbacks = await start()
+      await report(() => callbacks.setGenerationActivity!(review({ lastOutputMs: 1_000, reasoningEvents: 1, phase: 'stream' })))
+      await mount()
+      await advance(30_000)
+      expect(capsule()).toContain('已等 30 秒')
+      await report(() => callbacks.setGenerationActivity!(review({ elapsedMs: 31_000, lastResponseMs: 31_000, lastOutputMs: 31_000, reasoningEvents: 2, phase: 'stream' })))
+      expect(capsule()).not.toContain('已等')
+      expect(notes()).toHaveLength(1)
+      expect(notes()[0]).not.toContain('已等')
+      expect(notes()[0]).toContain('尚无完整审稿报告')
+      await advance(15_000)
+      expect(firstLine()).toBe('正在等模型回复，已等 15 秒')
+      expect(capsule()).toContain('已等 15 秒')
+    })
+
+    it('英文界面两处也一致', async () => {
+      useLocaleStore.setState({ locale: 'en-US' })
+      const callbacks = await start()
+      await report(() => callbacks.setGenerationActivity!(review()))
+      await mount()
+      await advance(20_000)
+      expect(firstLine()).toBe('Waiting for the model, 20s so far')
+      expect(capsule()).toContain('Waiting 20s')
+    })
+  })
+
   it('英文界面', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
     const callbacks = await start()

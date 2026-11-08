@@ -6,7 +6,7 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowReasoningStore } from '../../../stores/workflow-reasoning-store'
 import { useWorkflowStore, type WorkflowRun, type WorkflowStep } from '../../../stores/workflow-store'
-import { runProgress, stepWait } from '../../../stores/navigation/stage-progress'
+import { runProgress, stepWait, type StepWait } from '../../../stores/navigation/stage-progress'
 import { CharacterProposalSelectionPanel } from '../../characters/CharacterProposalSelectionPanel'
 import { isCurrentSessionRun, openArchitectureFor, openNovelConfigurationFor, runFailure, useResumePlotOutline } from '../../run/run-failure'
 import { ACTIVE_RUN_STATUSES, splitThinking } from '../../run/run-output'
@@ -206,7 +206,7 @@ function RunStep({ step, runStatus, live, reasoning, open, onToggle, text }: {
       {hasDetail
         ? <button type="button" className="run-step-row pi-focusable" aria-expanded={expanded} onClick={onToggle}>{row}</button>
         : <div className="run-step-row">{row}</div>}
-      {live && (reviewing ? <ReviewWait step={step} /> : <StepWaitNote step={step} runStatus={runStatus} text={text} />)}
+      {live && (reviewing ? <ReviewWait step={step} runStatus={runStatus} text={text} /> : <StepWaitNote step={step} runStatus={runStatus} text={text} />)}
       {expanded && (
         <div className="run-step-detail">
           {thinking && (
@@ -223,23 +223,29 @@ function RunStep({ step, runStatus, live, reasoning, open, onToggle, text }: {
   )
 }
 
-function ReviewWait({ step }: { step: WorkflowStep }) {
+function waitLine(wait: StepWait, text: Text): string {
+  const waited = durationText(wait.waitedMs, text)
+  return wait.on === 'model'
+    ? text(`正在等模型回复，已等 ${waited}`, `Waiting for the model, ${waited} so far`)
+    : text(`这一步还在进行，已等 ${waited}`, `This step is still running, ${waited} so far`)
+}
+
+function ReviewWait({ step, runStatus, text }: { step: WorkflowStep; runStatus: WorkflowRun['status']; text: Text }) {
   const locale = useLocaleStore(s => s.locale)
+  const wait = stepWait(step, runStatus, useNow())
   const lines = useReviewWaitLines(step, locale)
-  return <div className="run-step-wait" role="status">{lines.map(line => <p key={line}>{line}</p>)}</div>
+  return (
+    <div className="run-step-wait" role="status">
+      {wait && <p>{waitLine(wait, text)}</p>}
+      {lines.map(line => <p key={line}>{line}</p>)}
+    </div>
+  )
 }
 
 function StepWaitNote({ step, runStatus, text }: { step: WorkflowStep; runStatus: WorkflowRun['status']; text: Text }) {
   const wait = stepWait(step, runStatus, useNow())
   if (!wait) return null
-  const waited = durationText(wait.waitedMs, text)
-  return (
-    <div className="run-step-wait">
-      <p>{wait.on === 'model'
-        ? text(`正在等模型回复，已等 ${waited}`, `Waiting for the model, ${waited} so far`)
-        : text(`这一步还在进行，已等 ${waited}`, `This step is still running, ${waited} so far`)}</p>
-    </div>
-  )
+  return <div className="run-step-wait"><p>{waitLine(wait, text)}</p></div>
 }
 
 /** 输出框贴着底部时随新内容滚动；作者往上翻看时不打断。 */
