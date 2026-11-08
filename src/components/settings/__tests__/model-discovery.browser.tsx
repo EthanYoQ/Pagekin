@@ -517,6 +517,8 @@ describe('model discovery settings flow', () => {
         ['cloud', 'open list select', 128_000, null, '128000', '来自服务商', 0, 1],
         ['cloud', 'open list manual clear', 128_000, null, '128000', '来自服务商', 0, 1],
         ['cloud', 'url list refresh list-failed', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud', 'url list refresh idle list-failed', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud', 'url list refresh list-without-target', 128_000, null, '', '默认值', 0, 2],
         ['cloud-manual', 'key2 list', 128_000, null, '1000', '你填的', 0, 1],
         ['cloud-manual', 'clear list', 128_000, null, '128000', '来自服务商', 0, 1],
         ['cloud-manual', 'clear list open list-lower select refresh list-without-window', 128_000, null, '64000', '来自服务商', 0, 3],
