@@ -666,6 +666,115 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     expect(prompt).toContain('SOUTH_HEALER')
   })
 
+  describe('超长后按学到的窗口自动重试', () => {
+    const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+    const prose = '潮'.repeat(900) + '。'
+    const OPTIONAL_REFERENCE = '可选知识库片段'.repeat(40)
+    const tight = materialBudgetFrom({ contextWindowTokens: 5_000, contextWindowSource: 'endpoint', reservedOutputTokens: 4_096, safetyMarginTokens: 512 })
+    const wide = materialBudgetFrom({ contextWindowTokens: 1_048_576, contextWindowSource: 'default', reservedOutputTokens: 4_096, safetyMarginTokens: 512 })
+    const tooLong = (retryable: boolean) => {
+      const rejected = outcome('', 'error')
+      Object.assign(rejected.receipt, { failureCode: 'GENERATION_CONTEXT_LENGTH_EXCEEDED', ...(retryable ? { retryWithLearnedWindow: true } : {}) })
+      return rejected
+    }
+    function harness(options: { retryable?: boolean; rejections?: number; rejectAt?: string; onRestart?: (context: WorkflowContext) => void; uiLocale?: 'zh-CN' | 'en-US'; batchId?: string } = {}) {
+      const f = setup({ runtime: fakeOutcomes(), wordsTarget: 900, mainDefault: true, keyEvents: '必需的本章事件', materialBudget: wide, uiLocale: options.uiLocale, batchId: options.batchId,
+        knowledgeResults: [{ fileName: '资料', score: 0.9, text: OPTIONAL_REFERENCE, documentId: 'doc', rank: 1 }] as never })
+      f.context.generationModelId = '合成模型'
+      const handleOf = (runId: string): MainGenerationRunHandle => ({ projectId: f.context.projectSession.projectId, epoch: f.context.projectSession.leaseId, rootActionId: `根-${runId}`, runId })
+      const viewOf = (handle: MainGenerationRunHandle): MainGenerationRunView => ({ handle, status: 'running', nonReplayable: false, artifacts: [],
+        budget: { maxAttempts: 32, maxRequestedOutputTokens: 2000000, maxRequestedOutputTokensPerAttempt: 32768, deadlineAt: Date.now() + 3600000 } })
+      const prompts: { runId: string; purpose: string; prompt: string }[] = []
+      const budgets: unknown[] = []
+      let rejections = options.rejections ?? 1
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => {
+        if (channel === 'generation:prepare-draft-context') {
+          const request = args[0] as { contextWindowRetryOf?: MainGenerationRunHandle }
+          budgets.push(request.contextWindowRetryOf ?? null)
+          const prepared = await original(channel, ...args) as object
+          return request.contextWindowRetryOf ? { ...prepared, materialBudget: tight } : prepared
+        }
+        if (channel === 'generation:begin') return viewOf(handleOf('首次'))
+        if (channel === 'generation:restart') { options.onRestart?.(f.context); return viewOf(handleOf('重试')) }
+        if (channel === 'generation:read') return viewOf(args[0] as MainGenerationRunHandle)
+        if (channel === 'generation:cancel') return viewOf(args[0] as MainGenerationRunHandle)
+        if (channel === 'generation:execute') {
+          const request = args[0] as { handle: MainGenerationRunHandle; task: GenerationTask }
+          prompts.push({ runId: request.handle.runId, purpose: request.task.purpose, prompt: request.task.messages.map(message => message.content).join('\n') })
+          const view = viewOf(request.handle)
+          if (request.task.purpose === (options.rejectAt ?? 'chapter-draft-short-outline') && rejections > 0) {
+            rejections -= 1
+            return { outcome: tooLong(options.retryable ?? true), run: view }
+          }
+          if (request.task.purpose === 'chapter-draft-short-outline') return { outcome: outcome('目标：读信；前驱：信已送到；行动与结果：读完信；结尾：保留约束。', 'stop'), run: view }
+          const result = outcome(prose, 'stop')
+          result.receipt.visibleArtifact = { artifactId: '正文片', attemptId: '物理请求', revision: 1, textHash: hash(prose) }
+          return { outcome: result, run: view }
+        }
+        if (channel === 'generation:compose-visible') return { algorithm: DRAFT_VISIBLE_TEXT_VERSION, artifactIds: ['正文片'], text: prose, textHash: hash(prose), sources: [] }
+        if (channel === 'generation:commit-draft') return { success: true, id: 31, version: 1, content: prose, contentHash: hash(prose) }
+        return original(channel, ...args)
+      })
+      const channels = (name: string) => f.invoke.mock.calls.filter(([channel]) => channel === name)
+      const run = () => f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
+      const logged = () => vi.mocked(f.callbacks.log).mock.calls.map(([line]) => line)
+      return { f, prompts, budgets, channels, run, logged, handleOf }
+    }
+
+    it.each(['chapter-draft-short-outline', 'chapter-draft'])('%s 超长：只收缩可选材料，开新运行重试一次并保存', async rejectAt => {
+      const h = harness({ rejectAt })
+      await expect(h.run()).resolves.toBe(prose)
+      const first = h.prompts.find(item => item.runId === '首次')!, retried = h.prompts.find(item => item.runId === '重试')!
+      expect(first.prompt).toContain(OPTIONAL_REFERENCE)
+      expect(retried.prompt).toContain('必需的本章事件')
+      expect(retried.prompt).not.toContain(OPTIONAL_REFERENCE)
+      expect(h.budgets).toEqual([null, h.handleOf('首次')])
+      expect(h.channels('generation:restart')).toHaveLength(1)
+      const [handle, request] = h.channels('generation:restart')[0]!.slice(1) as [MainGenerationRunHandle, BeginGenerationRequest]
+      expect(handle.runId).toBe('首次')
+      expect(request.materialDecision?.budget).toEqual(tight)
+      expect(h.channels('generation:commit-draft')).toHaveLength(1)
+      expect(h.logged().filter(line => line.includes('自动重试'))).toHaveLength(1)
+    })
+
+    it('英文界面的日志是英文', async () => {
+      const h = harness({ uiLocale: 'en-US' })
+      await h.run()
+      expect(h.logged().filter(line => line.includes('retrying once'))).toHaveLength(1)
+      expect(h.logged().some(line => line.includes('自动重试'))).toBe(false)
+    })
+
+    it('读不出窗口：只发一次请求，走现有错误', async () => {
+      const h = harness({ retryable: false })
+      await expect(h.run()).rejects.toMatchObject({ code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' })
+      expect(h.prompts).toHaveLength(1)
+      expect(h.channels('generation:restart')).toHaveLength(0)
+    })
+
+    it('重试后仍超长：一共两次请求，不再重试，走现有错误', async () => {
+      const h = harness({ rejections: 5 })
+      await expect(h.run()).rejects.toMatchObject({ code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' })
+      expect(h.prompts).toHaveLength(2)
+      expect(h.channels('generation:restart')).toHaveLength(1)
+      expect(h.channels('generation:commit-draft')).toHaveLength(0)
+    })
+
+    it('批量写稿不开新运行，走现有错误', async () => {
+      const h = harness({ batchId: '批次' })
+      await expect(h.run()).rejects.toMatchObject({ code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' })
+      expect(h.channels('generation:restart')).toHaveLength(0)
+    })
+
+    it('重试期间取消：取消旧运行，不保存草稿', async () => {
+      const h = harness({ onRestart: context => { context.cancelled = true } })
+      await expect(h.run()).rejects.toThrow()
+      expect(h.channels('generation:commit-draft')).toHaveLength(0)
+      expect(h.channels('generation:cancel').map(call => (call[1] as MainGenerationRunHandle).runId)).toContain('首次')
+      expect(h.prompts.filter(item => item.runId === '重试')).toHaveLength(0)
+    })
+  })
+
   it.each([{ target: 900, edit: false }, { target: 2000, edit: false }, { target: 3000, edit: false }, { target: 900, edit: true }])('真实默认 facade 字数 $target，作者改稿 $edit，仅main组合与原子保存', async ({ target, edit }) => {
     const legacy = fakeOutcomes()
     const f = setup({ runtime: legacy, wordsTarget: target, mainDefault: true })

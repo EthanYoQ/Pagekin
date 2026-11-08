@@ -20,6 +20,8 @@ export interface WorkflowMainGenerationSelection extends Omit<BeginGenerationReq
   resumeHandle?: MainGenerationRunHandle
   /** Explicit author continuation; main closes the original and admits only its missing range. */
   restartHandle?: MainGenerationRunHandle
+  /** 同一次操作里再开新运行时区分幂等键；main 拒绝沿用旧键的 restart。 */
+  retryNonce?: string
   /** Main-issued lineage of the original review; admission verifies its durable effect. */
   parentRootActionId?: string
   /** Persist navigation metadata before the first physical request. */
@@ -79,7 +81,7 @@ export async function createWorkflowMainGenerationRuntime(request: WorkflowMainG
   context.requestMainGenerationCancellation = async () => { await cancel(); if (cancelFailure) throw cancelFailure }
   const open = async (selection: WorkflowMainGenerationSelection) => {
     if (closed || context.cancelled) throw new Error('GENERATION_WORKFLOW_CANCELLED')
-    const { resumeHandle, restartHandle, onRunOpened, ...intent } = selection
+    const { resumeHandle, restartHandle, retryNonce, onRunOpened, ...intent } = selection
     if (resumeHandle && restartHandle) throw new Error('GENERATION_RECOVERY_SELECTION_INVALID')
     operation = selection.operation
     importOrdinal = 0
@@ -118,7 +120,7 @@ export async function createWorkflowMainGenerationRuntime(request: WorkflowMainG
           throw new Error('GENERATION_WORKFLOW_RESUME_REQUIRED')
         const beginRequest = { ...intent, selectedDraftIds: intent.selectedDraftIds ?? [],
           selectedFinalizedDraftIds: intent.selectedFinalizedDraftIds ?? [], modelId,
-          uiActionNonce: `${context.runId}:${intent.operation}${intent.operation === 'chapter-draft' ? `:${intent.chapterNumber}` : ''}`,
+          uiActionNonce: `${context.runId}:${intent.operation}${intent.operation === 'chapter-draft' ? `:${intent.chapterNumber}` : ''}${retryNonce ? `:${retryNonce}` : ''}`,
           ...(context.agentWorkflowRegistrationId ? { agentWorkflowRegistrationId: context.agentWorkflowRegistrationId } : {}),
           ...(parent ? { parentRootActionId: parent.rootActionId } : {}) }
         view = restartHandle ? await transport.restart(projectSession, restartHandle, beginRequest) : await transport.begin(projectSession, beginRequest)
