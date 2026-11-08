@@ -581,6 +581,23 @@ describe('角色时间线', () => {
     expect(rowText().slice(1).join()).toContain('同门')
   })
 
+  it('采用定稿发现的关系后，这一章一行写旧值到新值，原文可展开，摘要按合并后的行数算', async () => {
+    const found = '他给她倒了一杯茶。'
+    timeline = { nodes: [relationNode('素不相识', 1, 'old'), relationNode('', 4, 'old'), relationNode('彼此信任', 4, 'new'),
+      { ...relationNode('彼此信任', 4, 'derived:x'), provenance: derived, quote: { start: 0, end: found.length, text: found } }], chapterRange: { next: 5, last: 20 } }
+    await openState()
+    expect(section()!.querySelector('summary')!.textContent).toBe('时间线 · 2 处变化')
+    await expand()
+    expect(chapters()).toEqual(['第 4 章', '第 1 章'])
+    const [merged] = [...host!.querySelectorAll('.cast-timeline-row')]
+    expect(merged.querySelector('.cast-timeline-value')!.textContent).toBe('素不相识 → 彼此信任')
+    expect(merged.textContent).toContain('作者设定')
+    expect(merged.textContent).not.toContain('定稿记录')
+    const quote = merged.querySelector<HTMLDetailsElement>('.cast-timeline-quote')!
+    await act(async () => quote.querySelector('summary')!.click())
+    expect(quote.textContent).toContain(found)
+  })
+
   it('升级前已有的节点写明之前的变化没有记录，只写一次', async () => {
     const legacy: ContinuityProvenance = { kind: 'legacy' }
     timeline = { nodes: [stateNode('旧站', 5, legacy), relationNode('盟友', 5)].map((node, index) => index ? { ...node, provenance: legacy } : node), chapterRange: { next: 6, last: 6 } }
