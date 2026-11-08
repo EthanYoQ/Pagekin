@@ -3,7 +3,7 @@ import type { Locale } from '../../i18n/types'
 import type { WorkflowStep } from '../../stores/workflow-store'
 
 /**
- * 审稿等模型整份回复时没有逐字输出，只能报等了多久、最近一次响应与有效输出在多久之前。
+ * 审稿等模型整份回复时没有逐字输出，只能报最近一次响应与有效输出在多久之前。
  * 主进程给的是收到快照时的耗时，这里每秒在它上面累加本地流逝的时间。
  */
 export function useReviewWaitLines(step: WorkflowStep, locale: Locale): string[] {
@@ -21,7 +21,6 @@ export function useReviewWaitLines(step: WorkflowStep, locale: Locale): string[]
   const response = diagnostics?.lastResponseMs
   const output = diagnostics?.lastOutputMs
   return [
-    t(`已等待 ${seconds(elapsed)}`, `Waited ${seconds(elapsed)}`),
     !diagnostics ? t('响应时间暂不可用。', 'Response timing is unavailable.') : response == null ? t('尚未收到响应。', 'No response received yet.')
       : t(`距最近响应 ${seconds(elapsed - response)}`, `Last response ${seconds(elapsed - response)} ago`),
     !diagnostics ? t('有效输出时间暂不可用。', 'Output timing is unavailable.') : output == null ? t('尚未收到有效输出；连接心跳不代表审稿进度。', 'No output yet; connection heartbeats do not indicate review progress.')
