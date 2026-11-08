@@ -1,4 +1,4 @@
-import { useState, useEffect, useId, useLayoutEffect, useRef } from 'react'
+import { useState, useEffect, useEffectEvent, useId, useLayoutEffect, useRef } from 'react'
 import { Save, Settings2, Zap, Eye, EyeOff, ChevronDown, RotateCcw } from 'lucide-react'
 import { useLLMStore } from '../../stores/llm-store'
 import type { DiscoveredModel, ModelDiscoveryErrorCode, ModelProfile } from '../../shared/ipc-channels'
@@ -35,6 +35,14 @@ type ModelDiscoveryState =
   | { status: 'loading', previous: DiscoveredModel[] }
   | { status: 'loaded', models: DiscoveredModel[] }
   | { status: 'failed', errorCode: ModelDiscoveryErrorCode }
+
+const readsLocalWindow = (model: ModelProfile) => model.protocol === 'openai' && isLocalModelEndpoint(model)
+
+/** 窗口读取结果属于哪一份配置；同一身份只读一次，身份变了旧结果作废。 */
+function windowLookupIdentity(model: ModelProfile): string | null {
+  if (!model.modelName.trim() || model.purposes?.includes('embedding')) return null
+  return JSON.stringify([model.id, model.provider, model.protocol, model.baseUrl, model.apiKey, model.modelName])
+}
 
 /** 候选列表里显示的模型：刷新期间沿用旧列表，还没拉到时为空。 */
 function shownModels(state: ModelDiscoveryState): DiscoveredModel[] {
@@ -198,45 +206,40 @@ export function ModelForm({
     onChange(isEmbedding ? { ...model, ...selection, capabilities: undefined, capabilitySources: undefined } : applyModelProfileSelection(model, selection))
   }
 
-  /** 读到时作者可能已经换了模型或手填，写回交给选择函数判断。 */
-  const formStillOn = (selected: ModelProfile) => {
+  const readContextWindow = useEffectEvent(async (target: ModelProfile): Promise<number | null> => {
+    if (readsLocalWindow(target)) return discoverLocalContextWindow(target)
+    if (!canDiscover(target)) return null
+    const { provider, protocol, baseUrl, apiKey, purposes } = target
+    const result = await discoverModels({ provider, protocol, baseUrl, apiKey, purposes })
+    return result.success ? result.models.find(candidate => candidate.value === target.modelName)?.capabilities?.contextWindowTokens ?? null : null
+  })
+
+  /** 手填不会被覆盖：写回交给 applyModelProfileSelection 判断，读不到时只清拉取来的旧值。 */
+  const applyReadContextWindow = useEffectEvent((tokens: number | null) => {
     const current = latestModel.current
-    return current && current.id === selected.id && current.modelName === selected.modelName && current.baseUrl === selected.baseUrl
-      && current.protocol === selected.protocol && current.apiKey === selected.apiKey ? current : null
-  }
+    if (!current) return
+    if (tokens !== null) onChange({ ...applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }), maxTokens: current.maxTokens })
+    else if (modelCapabilitySource(current, 'contextWindowTokens') === 'endpoint') onChange(clearContextWindowOverride(current))
+  })
 
-  const writeBackContextWindow = (selected: ModelProfile, tokens: number | null | undefined) => {
-    const current = formStillOn(selected)
-    if (typeof tokens !== 'number' || !current) return
-    onChange({ ...applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }), maxTokens: current.maxTokens })
-  }
-
-  const refreshLocalContextWindow = async (selected: ModelProfile) => {
-    if (selected.protocol !== 'openai' || !isLocalModelEndpoint(selected)) return
-    const tokens = await discoverLocalContextWindow(selected).catch(() => null)
-    if (tokens !== null) {
-      writeBackContextWindow(selected, tokens)
-      return
+  const windowIdentity = windowLookupIdentity(model)
+  const [windowLookupRequest, setWindowLookupRequest] = useState(0)
+  const handledWindowLookup = useRef({ identity: windowIdentity, request: windowLookupRequest })
+  useEffect(() => {
+    const requested = handledWindowLookup.current.request !== windowLookupRequest
+    if (handledWindowLookup.current.identity === windowIdentity && !requested) return
+    handledWindowLookup.current = { identity: windowIdentity, request: windowLookupRequest }
+    const target = latestModel.current
+    if (windowIdentity === null || !target || (!requested && !readsLocalWindow(target))) return
+    let superseded = false
+    const timer = window.setTimeout(() => {
+      void readContextWindow(target).catch(() => null).then(tokens => { if (!superseded) applyReadContextWindow(tokens) })
+    }, requested ? 0 : AUTO_DISCOVERY_DELAY_MS)
+    return () => {
+      superseded = true
+      window.clearTimeout(timer)
     }
-    const current = formStillOn(selected)
-    if (current && modelCapabilitySource(current, 'contextWindowTokens') === 'endpoint') onChange(clearContextWindowOverride(current))
-  }
-
-  const refetchDeclaredContextWindow = async (cleared: ModelProfile) => {
-    if (!canDiscover(cleared)) return
-    const { provider, protocol, baseUrl, apiKey, purposes } = cleared
-    const result = await discoverModels({ provider, protocol, baseUrl, apiKey, purposes }).catch(() => null)
-    if (result?.success) writeBackContextWindow(cleared, result.models.find(candidate => candidate.value === cleared.modelName)?.capabilities?.contextWindowTokens)
-  }
-
-  const windowLookupKey = ({ protocol, baseUrl, modelName }: ModelProfile) => JSON.stringify([protocol, baseUrl, modelName])
-  const lastWindowLookup = useRef(windowLookupKey(model))
-  const handleModelNameCommit = () => {
-    const key = windowLookupKey(model)
-    if (isEmbedding || !model.modelName.trim() || key === lastWindowLookup.current) return
-    lastWindowLookup.current = key
-    void refreshLocalContextWindow(model)
-  }
+  }, [windowIdentity, windowLookupRequest])
 
   const handleModelSelect = ({ value, capabilities }: DiscoveredModel) => {
     if (isEmbedding) {
@@ -244,9 +247,9 @@ export function ModelForm({
       return
     }
     const selected = applyModelProfileSelection(model, { modelName: value }, capabilities)
-    lastWindowLookup.current = windowLookupKey(selected)
     onChange(selected)
-    if (capabilities?.contextWindowTokens === undefined) void refreshLocalContextWindow(selected)
+    if (capabilities?.contextWindowTokens !== undefined) handledWindowLookup.current = { identity: windowLookupIdentity(selected), request: windowLookupRequest }
+    else if (readsLocalWindow(selected)) setWindowLookupRequest(request => request + 1)
   }
 
   const handleContextWindowInput = (raw: string) => {
@@ -259,9 +262,7 @@ export function ModelForm({
     const declared = listedModels.find(candidate => candidate.value === model.modelName)?.capabilities?.contextWindowTokens ?? undefined
     const cleared = clearContextWindowOverride(model, declared)
     onChange(cleared)
-    if (declared !== undefined) return
-    if (isLocalModelEndpoint(cleared)) void refreshLocalContextWindow(cleared)
-    else if (listedModels.length === 0) void refetchDeclaredContextWindow(cleared)
+    if (declared === undefined && (readsLocalWindow(cleared) || listedModels.length === 0)) setWindowLookupRequest(request => request + 1)
   }
 
   const handleTest = async () => {
@@ -427,7 +428,6 @@ export function ModelForm({
         refreshing={discovery.status === 'loading'}
         status={modelNameStatus()}
         onInput={(value) => up('modelName', value)}
-        onCommit={handleModelNameCommit}
         onSelect={handleModelSelect}
         onOpen={handleModelListOpen}
         onRefresh={() => { if (canDiscover(model)) void handleDiscoverModels() }}
