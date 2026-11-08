@@ -1765,6 +1765,15 @@ describe('材料额度（ADR-0026）', () => {
     expect(prepared.materialBudget).toMatchObject({ contextWindowTokens: 32_768 })
   })
 
+  it('写稿准备核对档案依据的名册版本：落后就拒绝，相同或没读到名册时放行', () => {
+    const f = fixture(), snapshot: GenerationKnowledgeSnapshot = { version: 1, state: 'empty', storageState: 'absent', query: '第一章', topK: 5, canonicalRevision: null, documentsRevision: null, items: [] }
+    const request = { chapterNumber: 1, modelId: f.model.id, promptKeys: ['first_chapter_draft'], skillStages: [], authorInputs: [], query: '第一章', selectedDraftIds: [] }
+    const current = f.db.prepare("SELECT revision FROM character_roster_meta WHERE id='main'").pluck().get() as number
+    expect(() => f.owner.prepareDraftContext({ ...request, characterRosterRevision: current - 1 }, snapshot)).toThrow('GENERATION_DRAFT_PREPARATION_CHANGED')
+    expect(f.owner.prepareDraftContext({ ...request, characterRosterRevision: current }, snapshot).preparationId).toBeTruthy()
+    expect(f.owner.prepareDraftContext(request, snapshot).preparationId).toBeTruthy()
+  })
+
   it('窗口比预留还小时输入额度归零，不报错', () => {
     expect(resolveMaterialBudget(profile({ capabilities: { contextWindowTokens: 1_024 } as ModelProfile['capabilities'] }), 8_192).inputTokens).toBe(0)
   })
