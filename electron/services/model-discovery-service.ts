@@ -83,7 +83,6 @@ function resolveAnthropicModelsUrl(baseUrl: string): string {
   return endpoint.toString()
 }
 
-/** 本机服务的原生接口与 OpenAI 兼容路径同一个服务地址，只换路径。 */
 function resolveNativeUrl(baseUrl: string, nativePath: string): string {
   const endpoint = new URL(resolveOpenAIModelsUrl(baseUrl))
   endpoint.pathname = `${endpoint.pathname.replace(/(?:\/v1)?\/models$/u, '')}${nativePath}`
@@ -261,7 +260,7 @@ function parseAnthropicModels(payload: unknown, credential: string): { models: D
 export class ModelDiscoveryService {
   constructor(private readonly dependencies: ModelDiscoveryServiceDependencies = {}) {}
 
-  /** 作者选中本机模型时读一次实际运行的窗口。读不到一律返回 null，由 resolveContextWindow 兜底，不打扰作者。 */
+  /** 读失败有意不外抛、不弹错，由 resolveContextWindow 兜底。 */
   async discoverLocalContextWindow(model: LocalContextWindowRequest): Promise<number | null> {
     if (model.protocol !== 'openai' || !isLocalModelEndpoint(model)) return null
     const abortController = new AbortController()

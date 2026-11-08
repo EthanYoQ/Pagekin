@@ -88,7 +88,6 @@ export function ModelForm({
     }
   }, [model.apiKey, model.baseUrl, model.id, model.protocol, model.provider])
 
-  /** 异步读到本机窗口时要写回的最新表单；表单已关闭时为空。 */
   const latestModel = useRef<ModelProfile | null>(model)
   useLayoutEffect(() => {
     latestModel.current = model
@@ -199,7 +198,7 @@ export function ModelForm({
     onChange(isEmbedding ? { ...model, ...selection, capabilities: undefined, capabilitySources: undefined } : applyModelProfileSelection(model, selection))
   }
 
-  /** 本机服务的列表不带窗口，选中后再问一次实际运行值。读到时作者可能已经换了模型或手填，写回交给选择函数判断。 */
+  /** 读到时作者可能已经换了模型或手填，写回交给选择函数判断。 */
   const refreshLocalContextWindow = async (selected: ModelProfile) => {
     if (selected.protocol !== 'openai' || !isLocalModelEndpoint(selected)) return
     const tokens = await discoverLocalContextWindow(selected).catch(() => null)

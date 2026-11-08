@@ -16,7 +16,6 @@ export function modelCapabilitySource(model: ModelProfile, key: keyof NonNullabl
 export type ContextWindowSource = 'manual' | 'endpoint' | 'preset' | 'default'
 export interface ResolvedContextWindow { tokens: number, source: ContextWindowSource }
 
-/** 设置页来源说明的唯一文案，[中文, 英文]。 */
 export const MODEL_VALUE_SOURCE_LABELS: Record<ContextWindowSource, readonly [string, string]> = {
   manual: ['你填的', 'Set by you'],
   endpoint: ['来自服务商', 'From provider'],
@@ -27,7 +26,7 @@ export const MODEL_VALUE_SOURCE_LABELS: Record<ContextWindowSource, readonly [st
 /** 本机服务（Ollama、LM Studio）未加载模型时实际窗口未知，取不到运行值就往小了算。 */
 const LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS = 4_096
 
-/** 窗口的唯一取值顺序：手填 > 拉取 > 预设 > 默认。档案上的数按记录的来源归类，旧档案没有记录时与预设比。 */
+/** 旧档案没有记录来源时与预设比。 */
 export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow {
   const value = model.capabilities?.contextWindowTokens
   const stored = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
@@ -41,7 +40,6 @@ export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow
   return { tokens: isLocalModelEndpoint(model) ? LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS, source: 'default' }
 }
 
-/** 作者清空窗口：回到自动取值，只动窗口这一项。 */
 export function clearContextWindowOverride(model: ModelProfile, discoveredTokens?: number): ModelProfile {
   const capabilitySources: NonNullable<ModelProfile['capabilitySources']> = {}
   for (const key of ['maxOutputTokens', 'reasoning', 'structuredOutput', 'usage'] as const) capabilitySources[key] = modelCapabilitySource(model, key)
