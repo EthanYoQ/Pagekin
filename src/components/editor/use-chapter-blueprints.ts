@@ -86,7 +86,7 @@ export function useChapterBlueprints({
   initialChapterNumber?: number
   /** 再次请求选中同一章时递增，选中才会重新生效。 */
   selectRequest?: number
-  /** 保存成功后调用，saved 是这次真正写入的章。 */
+  /** saved 是这次真正写入的章。 */
   onSaved?: (session: ProjectSessionContext, saved: readonly ChapterBlueprint[]) => void
 }) {
   const text = useLocaleStore(s => s.text)

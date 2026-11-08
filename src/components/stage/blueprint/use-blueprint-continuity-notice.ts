@@ -37,7 +37,7 @@ export function useBlueprintContinuityNotice() {
         }
         return { session, byChapter }
       })
-    } catch { /* 见函数注释 */ }
+    } catch { return }
   }, [])
 
   const notice = (chapterNumber: number | undefined) => {

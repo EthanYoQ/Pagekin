@@ -35,10 +35,7 @@ const withKeeperInChapter3 = context => seedStageSample(context, { beforeReload:
 const RELATION_PLAN = { role: '发展', purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚', '守塔人'], suspenseHook: '', userGuidance: '', notes: '', notesUpdatedAt: '',
   relationshipHints: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
 
-/**
- * 全走真实通道：名单提交写「守塔人 → 林岚：决裂」节点，示例作品定稿到第 2 章，节点从第 3 章起生效；蓝图提交写回执，第 3、5 章的回执带关系提示。
- * 关系挂在守塔人名下：他不是默认选中的角色，点按钮后能看出选中确实变了。
- */
+/** 关系挂在守塔人名下：他不是默认选中的角色，点按钮后能看出选中确实变了。 */
 const withRelationConflict = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
   const roster = await invoke(page, 'db:character-roster-read', path, session)
   const heroine = roster.entries.find(entry => entry.name === '林岚')

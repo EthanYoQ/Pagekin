@@ -519,9 +519,8 @@ export class BlueprintRepository {
     }
 
     /**
-     * 各章最近一次提交回执里的关系提示。蓝图表不存它，只有回执里有。
-     * 这一章的规划内容已经和回执不同时，提示不再代表作者的安排，这一章不返回。
-     * rowid 而不是 committed_at：后者只到秒，且排在回执正文之后的列，排序要读穿整份回执。
+     * 规划内容已和回执不同的章不返回：提示不再代表作者的安排。
+     * 按 rowid 而不是 committed_at 排序：后者只到秒，且排在回执正文之后的列，排序要读穿整份回执。
      */
     static committedRelationshipHints(chapterNumbers: readonly number[], db = requireProjectDb()): Record<number, unknown> {
         const latestCovering = db.prepare(`

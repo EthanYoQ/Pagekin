@@ -14,7 +14,6 @@ interface WritePreflightProps {
   onRevoke: (exemption: ConsistencyExemption) => void
 }
 
-/** 写作弹层里的一致性预检：线索提醒只作提示，作者可以一键确认是有意安排、仅本次忽略，或改蓝图后重检；已确认的安排可以撤销。 */
 export default function WritePreflight({ preflight, busy, onIgnoreOnce, onRerun, onExempt, onRevoke }: WritePreflightProps) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)

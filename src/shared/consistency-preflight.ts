@@ -81,17 +81,14 @@ export function continuityStableFactKey(fact: {
   return `fact:${hash.toString(16).padStart(16, '0')}`
 }
 
-/** 一条规则的全部输入。规则只产出 ConsistencyFinding，豁免在表外统一处理。 */
+/** 规则只产出 ConsistencyFinding，豁免在规则表外统一处理。 */
 interface BlueprintRuleContext {
   blueprint: BlueprintForPreflight
   projections: readonly FinalizedContinuityProjection[]
   continuity: LatestContinuityNodes
 }
 
-/**
- * The death rule is intentionally narrow: a structured terminal character state
- * conflicts with scheduling that same character to appear in the current blueprint.
- */
+/** 故意收窄：只有结构化的死亡终态才和「本章出场」冲突。 */
 function terminalCharacterScheduled({ blueprint, projections }: BlueprintRuleContext): ConsistencyFinding[] {
   const characters = new Set(blueprint.characters.map(normalizedKeyPart))
   return projections.flatMap(projection => (
@@ -124,10 +121,7 @@ const BLUEPRINT_CONTINUITY_RULES: ReadonlyArray<(context: BlueprintRuleContext) 
   ({ blueprint, continuity }) => findRelationReversals(blueprint, continuity),
 ]
 
-/**
- * Low-cost, deterministic preflight. Findings are evidence, never a writing prohibition.
- * 审稿入口不传 nodes：它的结果冻结在审稿上下文里，恢复时要逐字段相等，升级后不能多出关系提示。
- */
+/** 审稿入口不传 nodes：它的结果冻结在审稿上下文里，恢复时要逐字段相等，升级后不能多出关系提示。 */
 export function findBlueprintContinuityRisks(
   projections: readonly FinalizedContinuityProjection[],
   blueprint: BlueprintForPreflight,

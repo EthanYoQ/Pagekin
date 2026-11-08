@@ -3,7 +3,7 @@ import type { BlueprintForPreflight, ConsistencyExemption, ConsistencyFinding } 
 import { findBlueprintContinuityRisks } from '../shared/consistency-preflight'
 import { ipc } from './ipc-client'
 
-/** chapterNumber 是这条提示所在的蓝图章。同一节点在批量里可能出现在多章，按章豁免要靠它。characterId 只有关系提示有，指向这条关系所属的角色。 */
+/** 同一节点在批量里可能出现在多章，按章豁免要靠 chapterNumber 区分。 */
 export type PreflightFinding = ConsistencyFinding & { chapterNumber: number; characterId?: string }
 
 export interface ConsistencyPreflightResult {
@@ -13,7 +13,6 @@ export interface ConsistencyPreflightResult {
 
 export type ExemptionScope = 'chapter' | 'book'
 
-/** 全书豁免的章号是 null，和按章豁免各占一行。 */
 export const exemptionChapter = (finding: PreflightFinding, scope: ExemptionScope) => scope === 'book' ? null : finding.chapterNumber
 
 export function saveFindingExemption(

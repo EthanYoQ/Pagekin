@@ -11,7 +11,6 @@ function openCharacter(characterId: string, name: string) {
   openBuiltinEditor('character-editor', name, 'character')
 }
 
-/** 这一章保存后发现的连续性提示。不挡保存，也不挡写章。 */
 export default function BlueprintContinuityNotices({ chapterNumber, notice }: { chapterNumber: number; notice: BlueprintContinuityNotice }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)

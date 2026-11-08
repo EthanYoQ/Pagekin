@@ -64,7 +64,7 @@ function newestFirst(left: CharacterRelationNode, right: CharacterRelationNode):
   return right.effectiveChapter - left.effectiveChapter || right.seq - left.seq
 }
 
-/** 蓝图的关系提示和第 N 章已生效的关系明确相反。键只取自节点，同一节点在别的章要用同一个键，全书豁免才管用。 */
+/** 键只取自节点：同一节点在别的章要用同一个键，全书豁免才管用。 */
 export function findRelationReversals(blueprint: BlueprintForPreflight, continuity: LatestContinuityNodes): ConsistencyFinding[] {
   const planText = [blueprint.purpose, blueprint.keyEvents, blueprint.suspenseHook, blueprint.notes, blueprint.userGuidance].join('\n')
   if (RELATION_TURN.test(planText)) return []

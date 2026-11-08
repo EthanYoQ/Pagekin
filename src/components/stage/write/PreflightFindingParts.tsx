@@ -11,7 +11,6 @@ export function PreflightFindingSource({ finding, className }: { finding: Prefli
   return <span className={className}>{text(`依据：${place} · ${finding.evidence}`, `Basis: ${place} · ${finding.evidence}`)}</span>
 }
 
-/** 一键豁免：默认只管这一章，全书放在次级操作。 */
 export function PreflightExemptButtons({ busy, onExempt }: { busy: boolean; onExempt: (scope: ExemptionScope) => void }) {
   const text = useLocaleStore(s => s.text)
   return (
