@@ -1,8 +1,10 @@
 import type {
   DiscoveredModel,
+  LocalContextWindowRequest,
   ModelDiscoveryRequest,
   ModelDiscoveryResult,
 } from '../../src/shared/ipc-channels'
+import { isLocalModelEndpoint } from '../../src/shared/provider-presets'
 
 interface ModelDiscoveryServiceDependencies {
   fetchImpl?: typeof fetch
@@ -81,6 +83,50 @@ function resolveAnthropicModelsUrl(baseUrl: string): string {
   return endpoint.toString()
 }
 
+/** 本机服务的原生接口与 OpenAI 兼容路径同一个服务地址，只换路径。 */
+function resolveNativeUrl(baseUrl: string, nativePath: string): string {
+  const endpoint = new URL(resolveOpenAIModelsUrl(baseUrl))
+  endpoint.pathname = `${endpoint.pathname.replace(/(?:\/v1)?\/models$/u, '')}${nativePath}`
+  return endpoint.toString()
+}
+
+function windowTokens(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined
+}
+
+function declaredWindow(value: unknown): Pick<DiscoveredModel, 'capabilities'> {
+  const contextWindowTokens = windowTokens(value)
+  return contextWindowTokens === undefined ? {} : { capabilities: { contextWindowTokens } }
+}
+
+function records(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object') : []
+}
+
+const withoutLatestTag = (name: unknown) => typeof name === 'string' ? name.replace(/:latest$/u, '') : name
+
+function ollamaRunningWindow(payload: Record<string, unknown>, modelName: string): number | undefined {
+  const wanted = withoutLatestTag(modelName)
+  const running = records(payload.models).find(item => withoutLatestTag(item.name) === wanted || withoutLatestTag(item.model) === wanted)
+  return windowTokens(running?.context_length)
+}
+
+/** 只认 Modelfile 设过的 num_ctx。model_info 里的 context_length 是模型架构上限，不是实际运行值。 */
+function ollamaConfiguredWindow(payload: Record<string, unknown>): number | undefined {
+  const match = typeof payload.parameters === 'string' ? /^\s*num_ctx\s+(\d+)\s*$/mu.exec(payload.parameters) : null
+  return match ? windowTokens(Number(match[1])) : undefined
+}
+
+/** 只认已加载实例的运行值。max_context_length 是模型上限，未加载时实际窗口未知。 */
+function lmStudioLoadedWindow(payload: Record<string, unknown>, modelName: string): number | undefined {
+  for (const model of records(payload.models)) {
+    const instances = records(model.loaded_instances)
+    const instance = instances.find(item => item.id === modelName) ?? (model.key === modelName ? instances[0] : undefined)
+    if (instance) return windowTokens((instance.config as { context_length?: unknown } | undefined)?.context_length)
+  }
+  return undefined
+}
+
 function safeProviderText(value: unknown, credential: string): string | null {
   if (typeof value !== 'string') return null
   if (Buffer.byteLength(value, 'utf8') > MAX_DISCOVERED_MODEL_TEXT_BYTES) return null
@@ -132,8 +178,8 @@ function parseOpenAIModels(payload: unknown, credential: string): DiscoveredMode
     const flags = raw.capabilities && typeof raw.capabilities === 'object'
       ? raw.capabilities as Record<string, unknown> : {}
     const capabilities: NonNullable<DiscoveredModel['capabilities']> = {}
-    const context = raw.context_window ?? raw.context_length
-    if (typeof context === 'number' && Number.isSafeInteger(context) && context > 0) capabilities.contextWindowTokens = context
+    const context = windowTokens(raw.context_window ?? raw.context_length)
+    if (context !== undefined) capabilities.contextWindowTokens = context
     const output = raw.max_output_tokens
     if (typeof output === 'number' && Number.isSafeInteger(output) && output > 0) capabilities.maxOutputTokens = output
     for (const key of ['reasoning', 'structuredOutput', 'usage'] as const) {
@@ -179,7 +225,7 @@ function parseGeminiModels(payload: unknown, credential: string, purpose: Discov
     if (!value) return null
     if (seenValues.has(value)) continue
     seenValues.add(value)
-    if (geminiModelServesPurpose(item, value, purpose)) models.push({ id, name, value })
+    if (geminiModelServesPurpose(item, value, purpose)) models.push({ id, name, value, ...declaredWindow((item as { inputTokenLimit?: unknown }).inputTokenLimit) })
   }
   return { models, listed: seenValues.size }
 }
@@ -203,7 +249,7 @@ function parseAnthropicModels(payload: unknown, credential: string): { models: D
     if (!name) return null
     if (seenValues.has(id)) continue
     seenValues.add(id)
-    models.push({ id, name, value: id })
+    models.push({ id, name, value: id, ...declaredWindow((item as { max_input_tokens?: unknown }).max_input_tokens) })
   }
   return { models, listed: seenValues.size }
 }
@@ -214,6 +260,33 @@ function parseAnthropicModels(payload: unknown, credential: string): { models: D
  */
 export class ModelDiscoveryService {
   constructor(private readonly dependencies: ModelDiscoveryServiceDependencies = {}) {}
+
+  /** 作者选中本机模型时读一次实际运行的窗口。读不到一律返回 null，由 resolveContextWindow 兜底，不打扰作者。 */
+  async discoverLocalContextWindow(model: LocalContextWindowRequest): Promise<number | null> {
+    if (model.protocol !== 'openai' || !isLocalModelEndpoint(model)) return null
+    const abortController = new AbortController()
+    const timeout = setTimeout(() => abortController.abort(), this.dependencies.timeoutMs ?? DEFAULT_MODEL_DISCOVERY_TIMEOUT_MS)
+    const requestJson = async (nativePath: string, body?: unknown): Promise<Record<string, unknown>> => {
+      const response = await (this.dependencies.fetchImpl ?? fetch)(resolveNativeUrl(model.baseUrl, nativePath), {
+        method: body === undefined ? 'GET' : 'POST',
+        redirect: 'error',
+        signal: abortController.signal,
+        headers: { Accept: 'application/json', ...(model.apiKey ? { Authorization: `Bearer ${model.apiKey}` } : {}) },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+      const payload: unknown = response.ok ? await response.json() : null
+      return payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
+    }
+    try {
+      if (model.provider !== 'ollama') return lmStudioLoadedWindow(await requestJson('/api/v1/models'), model.modelName) ?? null
+      return ollamaRunningWindow(await requestJson('/api/ps'), model.modelName)
+        ?? ollamaConfiguredWindow(await requestJson('/api/show', { model: model.modelName })) ?? null
+    } catch {
+      return null
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
 
   async discoverModels(model: ModelDiscoveryRequest): Promise<ModelDiscoveryResult> {
     const purpose: DiscoveryPurpose = Array.isArray(model.purposes) && model.purposes.includes('embedding') ? 'embedding' : 'generation'

@@ -544,7 +544,17 @@ export type ModelDiscoveryRequest = Pick<
   'provider' | 'protocol' | 'baseUrl' | 'apiKey' | 'purposes'
 >
 
+/** 读本机模型服务实际运行窗口所需的未保存表单字段。 */
+export type LocalContextWindowRequest = Pick<
+  ModelProfile,
+  'provider' | 'protocol' | 'baseUrl' | 'apiKey' | 'modelName'
+>
+
 export interface LLMChannels {
+  'llm:discover-local-context-window': {
+    args: [request: LocalContextWindowRequest]
+    return: number | null
+  }
   'llm:begin-execution-lease': {
     args: [modelId: string]
     return: {
