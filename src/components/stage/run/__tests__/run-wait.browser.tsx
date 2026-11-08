@@ -180,6 +180,7 @@ describe('长任务百分比不动时说明在等什么（#631）', () => {
     await mount(true)
     await advance(20_000)
     const seconds = /已等 (\d+) 秒/
+    expect(notes()).toHaveLength(1)
     expect(capsule().match(seconds)?.[1]).toBe(notes()[0]?.match(seconds)?.[1])
   })
 
