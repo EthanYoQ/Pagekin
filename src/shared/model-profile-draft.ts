@@ -23,10 +23,8 @@ export const MODEL_VALUE_SOURCE_LABELS: Record<ContextWindowSource, readonly [st
   default: ['默认值', 'Default'],
 }
 
-/** 本机服务（Ollama、LM Studio）未加载模型时实际窗口未知，取不到运行值就往小了算。 */
 const LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS = 4_096
 
-/** 旧档案没有记录来源时与预设比。 */
 export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow {
   const value = model.capabilities?.contextWindowTokens
   const stored = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
