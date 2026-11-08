@@ -346,34 +346,46 @@ describe('model discovery settings flow', () => {
       expect(saveModel).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 8192 }))
     })
 
-    it('手打本机模型名离开输入框时读一次窗口，名字没变不重复读', async () => {
+    it('手打本机模型名，停止输入后读一次窗口；打开表单不读', async () => {
       const discoverLocalContextWindow = vi.fn(async () => 8_192)
       await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'old-name' }), listed())
       useLLMStore.setState({ discoverLocalContextWindow })
       await openEditor()
-      await act(async () => { modelNameInput().focus() })
-      await act(async () => { modelNameInput().blur() })
+      await new Promise(resolve => setTimeout(resolve, AUTO_DISCOVERY_WAIT_MS))
       expect(discoverLocalContextWindow).not.toHaveBeenCalled()
-      await act(async () => { modelNameInput().focus() })
+      await typeInto(modelNameInput(), 'typed')
       await typeInto(modelNameInput(), 'typed-model')
-      await act(async () => { modelNameInput().blur() })
       await vi.waitFor(() => expect(windowElement().value).toBe('8192'))
       expect(sourceTag()).toBe('来自服务商')
       expect(discoverLocalContextWindow).toHaveBeenCalledTimes(1)
       expect(discoverLocalContextWindow).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://127.0.0.1:1234/v1', modelName: 'typed-model' }))
     })
 
-    it('换了端点后离开模型名输入框，同名模型向新端点读窗口', async () => {
+    it('换了端点不用碰模型名，同名模型向新端点读窗口', async () => {
       const discoverLocalContextWindow = vi.fn(async () => 8_192)
       await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'same-name' }), listed())
       useLLMStore.setState({ discoverLocalContextWindow })
       await openEditor()
       await typeInto(baseUrlInput('http://127.0.0.1:1234/v1'), 'http://127.0.0.1:5678/v1')
-      await act(async () => { modelNameInput().focus() })
-      await act(async () => { modelNameInput().blur() })
       await vi.waitFor(() => expect(windowElement().value).toBe('8192'))
       expect(discoverLocalContextWindow).toHaveBeenCalledTimes(1)
       expect(discoverLocalContextWindow).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://127.0.0.1:5678/v1', modelName: 'same-name' }))
+    })
+
+    it('先发的读取后返回，不盖掉后发的结果', async () => {
+      const responses: Array<(tokens: number | null) => void> = []
+      const discoverLocalContextWindow = vi.fn(() => new Promise<number | null>(resolve => { responses.push(resolve) }))
+      await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'gemma-3', ...stored(1_000, 'manual') }), listed())
+      useLLMStore.setState({ discoverLocalContextWindow })
+      await openEditor()
+      await act(async () => { await windowInput().fill('') })
+      await vi.waitFor(() => expect(responses).toHaveLength(1))
+      await act(async () => { await windowInput().fill('2000') })
+      await act(async () => { await windowInput().fill('') })
+      await vi.waitFor(() => expect(responses).toHaveLength(2))
+      await act(async () => { responses[1](16_384) })
+      await act(async () => { responses[0](9_999) })
+      expect(windowElement().value).toBe('16384')
     })
 
     it('重新打开后清空手填，向当前端点重新取回声明的窗口', async () => {
