@@ -1,11 +1,11 @@
-import { useState, useEffect, useId, useLayoutEffect, useRef } from 'react'
+import { useState, useEffect, useEffectEvent, useId, useLayoutEffect, useRef } from 'react'
 import { Save, Settings2, Zap, Eye, EyeOff, ChevronDown, RotateCcw } from 'lucide-react'
 import { useLLMStore } from '../../stores/llm-store'
 import type { DiscoveredModel, ModelDiscoveryErrorCode, ModelProfile } from '../../shared/ipc-channels'
 import { LOW_VRAM_EMBEDDING_OPTIONS, normalizeEmbeddingOptions } from '../../shared/embedding-options'
 import type { ModelCapabilities, ProviderPreset } from '../../shared/provider-presets'
 import { hasRequiredApiKey, isLocalModelEndpoint, parseHttpEndpoint, resolveModelProfileBudgetCapabilities } from '../../shared/provider-presets'
-import { applyModelProfileSelection, DEFAULT_GENERATION_OUTPUT_TOKENS, modelCapabilitySource } from '../../shared/model-profile-draft'
+import { applyModelProfileSelection, clearContextWindowOverride, DEFAULT_GENERATION_OUTPUT_TOKENS, MODEL_VALUE_SOURCE_LABELS, modelCapabilitySource, resolveContextWindow } from '../../shared/model-profile-draft'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
@@ -35,6 +35,13 @@ type ModelDiscoveryState =
   | { status: 'loading', previous: DiscoveredModel[] }
   | { status: 'loaded', models: DiscoveredModel[] }
   | { status: 'failed', errorCode: ModelDiscoveryErrorCode }
+
+const readsLocalWindow = (model: ModelProfile) => model.protocol === 'openai' && isLocalModelEndpoint(model)
+
+function windowLookupIdentity(model: ModelProfile): string | null {
+  if (!model.modelName.trim() || model.purposes?.includes('embedding')) return null
+  return JSON.stringify([model.id, model.provider, model.protocol, model.baseUrl, model.apiKey, model.modelName])
+}
 
 /** 候选列表里显示的模型：刷新期间沿用旧列表，还没拉到时为空。 */
 function shownModels(state: ModelDiscoveryState): DiscoveredModel[] {
@@ -67,6 +74,7 @@ export function ModelForm({
   const testFailure = testResult && !testResult.success ? displayedErrorMessage(locale, testResult.error) : ''
   const testConnection = useLLMStore(s => s.testConnection)
   const discoverModels = useLLMStore(s => s.discoverModels)
+  const discoverLocalContextWindow = useLLMStore(s => s.discoverLocalContextWindow)
   const [discovery, setDiscovery] = useState<ModelDiscoveryState>({ status: 'idle' })
   const discoveryRevision = useRef(0)
   const currentDiscoveryConfig = useRef({
@@ -86,6 +94,12 @@ export function ModelForm({
       apiKey: model.apiKey,
     }
   }, [model.apiKey, model.baseUrl, model.id, model.protocol, model.provider])
+
+  const latestModel = useRef<ModelProfile | null>(model)
+  useLayoutEffect(() => {
+    latestModel.current = model
+    return () => { latestModel.current = null }
+  })
 
   const autoDiscoveryTimer = useRef<number | undefined>(undefined)
   useEffect(() => () => {
@@ -191,9 +205,69 @@ export function ModelForm({
     onChange(isEmbedding ? { ...model, ...selection, capabilities: undefined, capabilitySources: undefined } : applyModelProfileSelection(model, selection))
   }
 
+  const listedContextWindow = (modelName: string) => shownModels(discovery).find(candidate => candidate.value === modelName)?.capabilities?.contextWindowTokens ?? null
+
+  const readContextWindow = useEffectEvent(async (target: ModelProfile, mayFetchList: boolean): Promise<number | null | undefined> => {
+    const listed = listedContextWindow(target.modelName)
+    if (readsLocalWindow(target)) return await discoverLocalContextWindow(target).catch(() => null) ?? listed
+    if (listed !== null) return listed
+    if (!mayFetchList || shownModels(discovery).length > 0 || !canDiscover(target)) return undefined
+    const { provider, protocol, baseUrl, apiKey, purposes } = target
+    const result = await discoverModels({ provider, protocol, baseUrl, apiKey, purposes })
+    return result.success ? result.models.find(candidate => candidate.value === target.modelName)?.capabilities?.contextWindowTokens ?? undefined : undefined
+  })
+
+  const applyReadContextWindow = useEffectEvent((tokens: number | null | undefined) => {
+    const current = latestModel.current
+    if (!current || tokens === undefined) return
+    if (tokens !== null) onChange({ ...applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }), maxTokens: current.maxTokens })
+    else if (modelCapabilitySource(current, 'contextWindowTokens') === 'endpoint') onChange(clearContextWindowOverride(current))
+  })
+
+  const windowIdentity = windowLookupIdentity(model)
+  const [windowLookupRequest, setWindowLookupRequest] = useState(0)
+  const handledWindowLookup = useRef({ identity: windowIdentity, request: windowLookupRequest, modelName: model.modelName })
+  useEffect(() => {
+    const previous = handledWindowLookup.current
+    const requested = previous.request !== windowLookupRequest
+    if (previous.identity === windowIdentity && !requested) return
+    const target = latestModel.current
+    handledWindowLookup.current = { identity: windowIdentity, request: windowLookupRequest, modelName: target?.modelName ?? '' }
+    if (windowIdentity === null || !target) return
+    const mayFetchList = requested || previous.modelName !== target.modelName
+    if (!mayFetchList && !readsLocalWindow(target)) return
+    let superseded = false
+    const timer = window.setTimeout(() => {
+      void readContextWindow(target, mayFetchList).catch(() => undefined).then(tokens => { if (!superseded) applyReadContextWindow(tokens) })
+    }, requested ? 0 : AUTO_DISCOVERY_DELAY_MS)
+    return () => {
+      superseded = true
+      window.clearTimeout(timer)
+    }
+  }, [windowIdentity, windowLookupRequest])
+
   const handleModelSelect = ({ value, capabilities }: DiscoveredModel) => {
-    if (isEmbedding) setEmbeddingModelName(value)
-    else onChange(applyModelProfileSelection(model, { modelName: value }, capabilities))
+    if (isEmbedding) {
+      setEmbeddingModelName(value)
+      return
+    }
+    const selected = applyModelProfileSelection(model, { modelName: value }, capabilities)
+    onChange(selected)
+    if (readsLocalWindow(selected)) setWindowLookupRequest(request => request + 1)
+    else if (capabilities?.contextWindowTokens !== undefined) handledWindowLookup.current = { identity: windowLookupIdentity(selected), request: windowLookupRequest, modelName: value }
+  }
+
+  const handleContextWindowInput = (raw: string) => {
+    const parsed = parseInt(raw, 10)
+    const tokens = Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
+    if (tokens !== null || isEmbedding) {
+      updateCapabilities({ contextWindowTokens: tokens })
+      return
+    }
+    const declared = listedContextWindow(model.modelName) ?? undefined
+    const cleared = clearContextWindowOverride(model, declared)
+    onChange(cleared)
+    if (declared === undefined) setWindowLookupRequest(request => request + 1)
   }
 
   const handleTest = async () => {
@@ -254,6 +328,7 @@ export function ModelForm({
       : { tone: 'muted', text: text('填写 base_url 和 API Key 后获取模型列表。', 'Enter the base_url and API key to fetch the model list.') }
   }
 
+  const contextWindow = isEmbedding ? null : resolveContextWindow(model)
   const keyMissing = !hasRequiredApiKey(model)
   const missingForSave = [
     !model.baseUrl.trim() && 'base_url',
@@ -383,14 +458,21 @@ export function ModelForm({
       )}
 
       <div>
-        <Label>{text('上下文窗口', 'Context Window')}</Label>
+        <div className="flex items-baseline justify-between gap-3">
+          <Label>{text('上下文窗口', 'Context Window')}</Label>
+          {contextWindow && (
+            <span className="text-xs text-[var(--color-text-muted)]" data-context-window-source={contextWindow.source}>
+              {text(...MODEL_VALUE_SOURCE_LABELS[contextWindow.source])}
+            </span>
+          )}
+        </div>
         <Input
           aria-label={text('上下文窗口', 'Context Window')}
           type="number"
           min={0}
           value={model.capabilities?.contextWindowTokens ?? ''}
-          placeholder={text('可选', 'Optional')}
-          onChange={(e) => updateCapabilities({ contextWindowTokens: e.target.value === '' ? null : parseInt(e.target.value) || null })}
+          placeholder={contextWindow ? String(contextWindow.tokens) : text('可选', 'Optional')}
+          onChange={(e) => handleContextWindowInput(e.target.value)}
         />
       </div>
 

@@ -270,6 +270,7 @@ button.run-step-row:hover {
   gap: 2px;
   font-size: var(--fs-12);
   color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .run-step-wait > p {
