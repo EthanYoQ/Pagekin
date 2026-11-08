@@ -78,7 +78,7 @@ export function latestNodesBefore(nodes: readonly ContinuityNode[], chapter: num
     const key = JSON.stringify([node.subjectId, node.targetId])
     const pair = pairs.get(key) ?? { subjectId: node.subjectId, targetId: node.targetId, lines: [], conflict: false }
     pair.lines.push(node)
-    pair.conflict = pair.lines.length > 1
+    pair.conflict = new Set(pair.lines.map(line => line.value)).size > 1
     pairs.set(key, pair)
   }
   return { states, relations: [...pairs.values()] }
