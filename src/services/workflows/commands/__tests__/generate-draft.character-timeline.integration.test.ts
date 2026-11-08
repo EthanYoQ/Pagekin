@@ -283,7 +283,7 @@ describe('写第 N 章时提示词里的人物状态和关系按时间线取', (
       const read = CharacterRosterRepository.read(db()), entries = structuredClone(read.entries)
       const entry = entries.find(item => item.characterId === lin)!
       entry.notes = notes
-      entry.currentState = { location: '', powerLevel: '', physicalState: '', mentalState: '', keyItems: '', recentEvents: '', updatedAtChapter: 1, ...entry.currentState, location }
+      entry.currentState = { powerLevel: '', physicalState: '', mentalState: '', keyItems: '', recentEvents: '', updatedAtChapter: 1, ...entry.currentState, location }
       commitAuthorCharacterRoster(db(), { operationId: `save-${++saves}`, schemaVersion: 1, intent: 'manual_edit', expectedRevision: read.revision, expectedIdentityRevision: read.identityRevision!,
         entries, stateEffectiveChapter: readStateChapterRange(db()).next }, { projectId: 'timeline', epoch: 'lease' }, () => {})
     }
