@@ -626,6 +626,10 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       writingLanguage,
       this.chapterInfo.characters,
       this.resumeHandle ? recordedCharacterTimeline(earlyRecovery?.authorInputs ?? []) : undefined,
+      () => callbacks.log(uiText(
+        '  人物时间线没能读取：本章按档案里的最新状态写，正文照常。',
+        '  Character timeline could not be read: this chapter uses the latest profile states and is written as usual.',
+      )),
     )
     const authorInputs = [{ id: 'draft:chapter-info', text: JSON.stringify(writerChapterInfo) },
       { id: 'draft:author-config', text: JSON.stringify(novelConfig) },
@@ -1849,6 +1853,7 @@ ${params.candidate.text}`,
     writingLanguage: WritingLanguage,
     relevantCharacterNames: readonly string[],
     recordedTimeline: CharacterTimelinePromptLines | undefined,
+    onTimelineUnavailable: () => void,
   ): Promise<{ text: string; timeline: CharacterTimelinePromptLines; timelineUnits: number }> {
     const unavailable = (text: string) => ({ text, timeline: {}, timelineUnits: 0 })
     try {
@@ -1871,7 +1876,7 @@ ${params.candidate.text}`,
         if (renamed.length === 0) for (const card of named) selected.add(card)
         else if (named.length === 0 && renamed.length === 1) selected.add(renamed[0])
       }
-      const timeline = recordedTimeline ?? await this.readCharacterTimeline(projectPath, projectSession, writingLanguage, roster.entries, selected)
+      const timeline = recordedTimeline ?? await this.readCharacterTimeline(projectPath, projectSession, writingLanguage, roster.entries, selected, onTimelineUnavailable)
       let timelineUnits = 0
       for (const card of selected) {
         const timelineLines = card.characterId ? timeline[card.characterId] : undefined
@@ -1927,6 +1932,7 @@ ${params.candidate.text}`,
     language: WritingLanguage,
     entries: readonly CharacterRosterEntry[],
     selected: ReadonlySet<CharacterRosterEntry>,
+    onUnavailable: () => void,
   ): Promise<CharacterTimelinePromptLines> {
     const characterIds = [...selected].flatMap(card => card.characterId ?? [])
     try {
@@ -1937,7 +1943,10 @@ ${params.candidate.text}`,
         currentNames: new Map(entries.flatMap(card => card.characterId ? [[card.characterId, card.name] as const] : [])),
         language,
       })
-    } catch { return {} }
+    } catch {
+      onUnavailable()
+      return {}
+    }
   }
 
   private async readFinalizedMaterials(
