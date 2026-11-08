@@ -9,8 +9,9 @@ import { fileURLToPath } from 'node:url'
 import * as architecture from './pages/architecture.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
-import { STAGE_SAMPLE } from './stage-sample.mjs'
-import { seedStageSample } from './scenarios.mjs'
+import { FIXTURE_PROSE } from './fake-model.mjs'
+import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
+import { firstLine, seedStageSample } from './scenarios.mjs'
 
 const HEAD_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -120,7 +121,35 @@ async function continuityNodes(projectPath) {
   } finally { db.close() }
 }
 
+/** 第 1–4 章定稿；第 5 章蓝图列出林岚；作者把她的位置手改成钟楼顶层，这个改动从下一章（第 5 章）起生效。 */
+const seedHandEditedState = context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
+  const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(), chapters: [3, 4].map(number => {
+    const content = STAGE_SAMPLE.drafts[number].text
+    return { chapterNumber: number, title: stageChapterTitle(number), content, wordCount: countUnits(content) }
+  }) }, path, session)
+  assert.equal(imported.success, true, imported.error)
+  assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 5, title: stageChapterTitle(5), role: '发展', purpose: '推进灯塔与沉船的线索',
+    keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚'] }, path, session)).success, true)
+  const roster = await invoke(page, 'db:character-roster-read', path, session)
+  const entries = roster.entries.map(entry => entry.name === '林岚' ? { ...entry, currentState: { powerLevel: '', physicalState: '', mentalState: '', keyItems: '', recentEvents: '', updatedAtChapter: 4, ...entry.currentState, location: '钟楼顶层' } } : entry)
+  assert.equal((await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
+    expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries }, path, session)).success, true)
+} })
+
 export const F491_SCENARIOS = {
+  'c4-timeline-draft-prompt': { model: true, shell: 'stage', setup: seedHandEditedState, run: async ({ page, fake }) => {
+    await chapterView.open(page, 5)
+    await chapterView.view(page).getByRole('button', { name: '写作此章', exact: true }).click()
+    await chapterView.prose(page).getByText(firstLine(FIXTURE_PROSE)).first().waitFor({ state: 'visible', timeout: 90_000 })
+    const prose = fake.chats.filter(chat => chat.kind === 'prose')
+    assert.equal(prose.length, 1, '写第 5 章只发一次正文请求')
+    const prompt = prose[0].messages.map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content)).join('\n')
+    const profile = prompt.split('\n').find(line => line.startsWith('林岚 (')) ?? ''
+    assert.match(profile, /作者设定（自第5章起）位置：钟楼顶层/u, '手改的状态以时间线的写法进最终提示词')
+    assert.doesNotMatch(profile, /location@chapter/u, '档案原来的状态行被替换，不重复')
+    return { profile }
+  } },
+
   'c2-continuity-nodes-finalize': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
     context.fake.replyCharacterState(characterStateReply)
     await finalizeChapter(context.page, 3)
