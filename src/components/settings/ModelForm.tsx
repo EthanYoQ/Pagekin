@@ -199,13 +199,30 @@ export function ModelForm({
   }
 
   /** 读到时作者可能已经换了模型或手填，写回交给选择函数判断。 */
-  const refreshLocalContextWindow = async (selected: ModelProfile) => {
-    if (selected.protocol !== 'openai' || !isLocalModelEndpoint(selected)) return
-    const tokens = await discoverLocalContextWindow(selected).catch(() => null)
+  const writeBackContextWindow = (selected: ModelProfile, tokens: number | null | undefined) => {
     const current = latestModel.current
     if (typeof tokens !== 'number' || !current || current.id !== selected.id || current.modelName !== selected.modelName
       || current.baseUrl !== selected.baseUrl || current.protocol !== selected.protocol) return
-    onChange(applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }))
+    onChange({ ...applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }), maxTokens: current.maxTokens })
+  }
+
+  const refreshLocalContextWindow = async (selected: ModelProfile) => {
+    if (selected.protocol !== 'openai' || !isLocalModelEndpoint(selected)) return
+    writeBackContextWindow(selected, await discoverLocalContextWindow(selected).catch(() => null))
+  }
+
+  const refetchDeclaredContextWindow = async (cleared: ModelProfile) => {
+    if (!canDiscover(cleared)) return
+    const { provider, protocol, baseUrl, apiKey, purposes } = cleared
+    const result = await discoverModels({ provider, protocol, baseUrl, apiKey, purposes }).catch(() => null)
+    if (result?.success) writeBackContextWindow(cleared, result.models.find(candidate => candidate.value === cleared.modelName)?.capabilities?.contextWindowTokens)
+  }
+
+  const lookedUpModelName = useRef(model.modelName)
+  const handleModelNameCommit = () => {
+    if (isEmbedding || !model.modelName.trim() || model.modelName === lookedUpModelName.current) return
+    lookedUpModelName.current = model.modelName
+    void refreshLocalContextWindow(model)
   }
 
   const handleModelSelect = ({ value, capabilities }: DiscoveredModel) => {
@@ -214,6 +231,7 @@ export function ModelForm({
       return
     }
     const selected = applyModelProfileSelection(model, { modelName: value }, capabilities)
+    lookedUpModelName.current = value
     onChange(selected)
     if (capabilities?.contextWindowTokens === undefined) void refreshLocalContextWindow(selected)
   }
@@ -224,10 +242,13 @@ export function ModelForm({
       updateCapabilities({ contextWindowTokens: tokens })
       return
     }
-    const declared = shownModels(discovery).find(candidate => candidate.value === model.modelName)?.capabilities?.contextWindowTokens ?? undefined
+    const listedModels = shownModels(discovery)
+    const declared = listedModels.find(candidate => candidate.value === model.modelName)?.capabilities?.contextWindowTokens ?? undefined
     const cleared = clearContextWindowOverride(model, declared)
     onChange(cleared)
-    if (declared === undefined) void refreshLocalContextWindow(cleared)
+    if (declared !== undefined) return
+    if (isLocalModelEndpoint(cleared)) void refreshLocalContextWindow(cleared)
+    else if (listedModels.length === 0) void refetchDeclaredContextWindow(cleared)
   }
 
   const handleTest = async () => {
@@ -393,6 +414,7 @@ export function ModelForm({
         refreshing={discovery.status === 'loading'}
         status={modelNameStatus()}
         onInput={(value) => up('modelName', value)}
+        onCommit={handleModelNameCommit}
         onSelect={handleModelSelect}
         onOpen={handleModelListOpen}
         onRefresh={() => { if (canDiscover(model)) void handleDiscoverModels() }}

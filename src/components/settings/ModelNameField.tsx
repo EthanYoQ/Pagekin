@@ -18,7 +18,7 @@ function matches(model: DiscoveredModel, query: string): boolean {
 }
 
 export function ModelNameField({
-  value, placeholder, candidates, refreshing, status, onInput, onSelect, onOpen, onRefresh,
+  value, placeholder, candidates, refreshing, status, onInput, onCommit, onSelect, onOpen, onRefresh,
 }: {
   value: string
   placeholder: string
@@ -26,6 +26,7 @@ export function ModelNameField({
   refreshing: boolean
   status: { text: string, tone: 'muted' | 'error' } | null
   onInput: (value: string) => void
+  onCommit?: () => void
   onSelect: (candidate: DiscoveredModel) => void
   onOpen: () => void
   onRefresh: () => void
@@ -113,6 +114,7 @@ export function ModelNameField({
     <div
       onBlur={(event) => {
         if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+        onCommit?.()
         // 列表随文档流展开，收起会让下面的控件上移。鼠标按下引起的失焦要等这次点击完成再收起，
         // 否则按下与松开落在不同位置，点击会丢。
         if (pointerPressed.current) document.addEventListener('pointerup', () => window.setTimeout(hide, 0), { once: true, capture: true })
