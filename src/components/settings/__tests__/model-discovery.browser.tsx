@@ -519,6 +519,7 @@ describe('model discovery settings flow', () => {
         ['cloud', 'url list refresh list-failed', 128_000, null, '128000', '来自服务商', 0, 2],
         ['cloud-manual', 'key2 list', 128_000, null, '1000', '你填的', 0, 1],
         ['cloud-manual', 'clear list', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud-manual', 'clear list open list-lower select refresh list-without-window', 128_000, null, '64000', '来自服务商', 0, 3],
         ['cloud-manual', 'clear await-list manual list', 128_000, null, '20000', '你填的', 0, 1],
         ['cloud-manual', 'clear await-list key2 await-list-2 list list-stale', 128_000, null, '128000', '来自服务商', 0, 2],
       ])('%s：%s（列表 %s，运行值 %s）→ 窗口 %j，来源 %s', { timeout: 15_000 }, async (start, steps, listWindow, runtime, value, tag, runtimeReads, listReads) => {
@@ -543,6 +544,8 @@ describe('model discovery settings flow', () => {
           },
           list: () => settle(listReplies, 'newest', listResponse(listWindow)),
           'list-stale': () => settle(listReplies, 'oldest', listResponse(STALE_WINDOW)),
+          'list-lower': () => settle(listReplies, 'newest', listResponse(64_000)),
+          'list-without-window': () => settle(listReplies, 'newest', listResponse()),
           'list-failed': () => settle(listReplies, 'newest', { success: false, errorCode: 'network' }),
           'list-without-target': () => settle(listReplies, 'newest', { success: true, models: endpointModels('other') }),
           refresh: () => act(async () => { await page.getByRole('button', { name: '获取模型列表', exact: true }).click() }),
