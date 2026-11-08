@@ -620,33 +620,41 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         `  Thread tasks for this chapter: ${tasks.length}${leftOut > 0 ? `; ${leftOut} more due or overdue ${pluralEn(leftOut, 'thread')} not listed this time` : ''}`,
       ))
     }
-    const characterMaterial = await this.readCharacterProfiles(
-      expectedProjectPath,
-      projectSession,
-      writingLanguage,
-      this.chapterInfo.characters,
-      this.resumeHandle ? recordedCharacterTimeline(earlyRecovery?.authorInputs ?? []) : undefined,
-      () => callbacks.log(uiText(
-        '  人物时间线没能读取：本章按档案里的最新状态写，正文照常。',
-        '  Character timeline could not be read: this chapter uses the latest profile states and is written as usual.',
-      )),
-    )
-    const authorInputs = [{ id: 'draft:chapter-info', text: JSON.stringify(writerChapterInfo) },
-      { id: 'draft:author-config', text: JSON.stringify(novelConfig) },
-      { id: 'draft:target-units', text: String(targetChars) },
-      ...(Object.keys(characterMaterial.timeline).length ? [{ id: CHARACTER_TIMELINE_INPUT_ID, text: JSON.stringify(characterMaterial.timeline) }] : [])]
     if (defaultMain) context.generationModelId = workflowGenerationModelId(context) || routeModelId('chapter-draft') || undefined
-    const prepared = defaultMain && !this.resumeHandle
-      ? await ipc.invokeWithProjectSession(projectSession, 'generation:prepare-draft-context', {
-        chapterNumber: this.chapterInfo.chapterNumber, modelId: context.generationModelId!,
-        promptKeys: [templateKey], skillStages: ['drafting'], authorInputs, query: searchQuery,
-        selectedDraftIds: [...new Set(this.selectedCandidateDrafts.filter(item => item.chapterNumber < this.chapterInfo.chapterNumber).map(item => item.draftId))],
-        ...(this.batchId ? { batchId: this.batchId } : {}),
-      }).catch(error => {
-        const code = error instanceof Error ? /(?:^|:\s)(KNOWLEDGE_BASE_NATIVE_UNAVAILABLE|LEGACY_VECTOR_MIGRATION_BLOCKED)$/u.exec(error.message)?.[1] : undefined
-        if (code) throw Object.assign(new Error(appErrorMessage(context.uiLocale ?? 'zh-CN', { code })), { code })
-        throw error
-      }) : null
+    const prepareFromCurrentRoster = async () => {
+      const characterMaterial = await this.readCharacterProfiles(
+        expectedProjectPath,
+        projectSession,
+        writingLanguage,
+        this.chapterInfo.characters,
+        this.resumeHandle ? recordedCharacterTimeline(earlyRecovery?.authorInputs ?? []) : undefined,
+      )
+      const authorInputs = [{ id: 'draft:chapter-info', text: JSON.stringify(writerChapterInfo) },
+        { id: 'draft:author-config', text: JSON.stringify(novelConfig) },
+        { id: 'draft:target-units', text: String(targetChars) },
+        ...(Object.keys(characterMaterial.timeline).length ? [{ id: CHARACTER_TIMELINE_INPUT_ID, text: JSON.stringify(characterMaterial.timeline) }] : [])]
+      const prepared = defaultMain && !this.resumeHandle
+        ? await ipc.invokeWithProjectSession(projectSession, 'generation:prepare-draft-context', {
+          chapterNumber: this.chapterInfo.chapterNumber, modelId: context.generationModelId!,
+          promptKeys: [templateKey], skillStages: ['drafting'], authorInputs, query: searchQuery,
+          selectedDraftIds: [...new Set(this.selectedCandidateDrafts.filter(item => item.chapterNumber < this.chapterInfo.chapterNumber).map(item => item.draftId))],
+          characterRosterRevision: characterMaterial.rosterRevision,
+          ...(this.batchId ? { batchId: this.batchId } : {}),
+        }).catch(error => {
+          const code = error instanceof Error ? /(?:^|:\s)(KNOWLEDGE_BASE_NATIVE_UNAVAILABLE|LEGACY_VECTOR_MIGRATION_BLOCKED)$/u.exec(error.message)?.[1] : undefined
+          if (code) throw Object.assign(new Error(appErrorMessage(context.uiLocale ?? 'zh-CN', { code })), { code })
+          throw error
+        }) : null
+      return { characterMaterial, authorInputs, prepared }
+    }
+    const { characterMaterial, authorInputs, prepared } = await prepareFromCurrentRoster().catch(error => {
+      if (!(error instanceof Error && /(?:^|:\s)GENERATION_DRAFT_PREPARATION_CHANGED$/u.test(error.message))) throw error
+      return prepareFromCurrentRoster()
+    })
+    if (characterMaterial.timelineUnavailable) callbacks.log(uiText(
+      '  人物时间线没能读取：本章按档案里的最新状态写，正文照常。',
+      '  Character timeline could not be read: this chapter uses the latest profile states and is written as usual.',
+    ))
     const knowledgeSnapshot = prepared?.knowledgeSnapshot ?? earlyRecovery?.knowledgeSnapshot
     // Recovery uses the original main snapshot, including retrieval hints outside the writer prompt.
     if (defaultMain && (!knowledgeSnapshot || prepared && knowledgeSnapshot.query !== searchQuery))
@@ -1853,9 +1861,8 @@ ${params.candidate.text}`,
     writingLanguage: WritingLanguage,
     relevantCharacterNames: readonly string[],
     recordedTimeline: CharacterTimelinePromptLines | undefined,
-    onTimelineUnavailable: () => void,
-  ): Promise<{ text: string; timeline: CharacterTimelinePromptLines; timelineUnits: number }> {
-    const unavailable = (text: string) => ({ text, timeline: {}, timelineUnits: 0 })
+  ): Promise<{ text: string; timeline: CharacterTimelinePromptLines; timelineUnits: number; timelineUnavailable: boolean; rosterRevision?: number }> {
+    const unavailable = (text: string, rosterRevision?: number) => ({ text, timeline: {}, timelineUnits: 0, timelineUnavailable: false, rosterRevision })
     try {
       const roster = await ipc.invokeWithProjectSession(projectSession, 'db:character-roster-read', projectPath)
       if (roster.status !== 'ready' && roster.status !== 'empty') {
@@ -1863,7 +1870,7 @@ ${params.candidate.text}`,
           writingLanguage,
           '（角色资料来源未知或待修复；未作为作者事实注入）',
           '(character-profile provenance is unknown or needs repair; it was not injected as author fact)',
-        ))
+        ), roster.revision)
       }
       const profiles: string[] = []
       const relevantNames = new Set(relevantCharacterNames.map(name => name.trim()).filter(Boolean))
@@ -1876,7 +1883,8 @@ ${params.candidate.text}`,
         if (renamed.length === 0) for (const card of named) selected.add(card)
         else if (named.length === 0 && renamed.length === 1) selected.add(renamed[0])
       }
-      const timeline = recordedTimeline ?? await this.readCharacterTimeline(projectPath, projectSession, writingLanguage, roster.entries, selected, onTimelineUnavailable)
+      const read = recordedTimeline ?? await this.readCharacterTimeline(projectPath, projectSession, writingLanguage, roster.entries, selected)
+      const timeline = read ?? {}
       let timelineUnits = 0
       for (const card of selected) {
         const timelineLines = card.characterId ? timeline[card.characterId] : undefined
@@ -1916,7 +1924,7 @@ ${params.candidate.text}`,
         }
         profiles.push(`${card.name} (${card.role || 'unknown'})${facts.length ? ` | ${facts.join(' | ')}` : ''}`)
       }
-      return { text: profiles.length > 0 ? profiles.join('\n') : '', timeline, timelineUnits }
+      return { text: profiles.length > 0 ? profiles.join('\n') : '', timeline, timelineUnits, timelineUnavailable: read === null, rosterRevision: roster.revision }
     } catch {
       return unavailable(promptLanguageText(
         writingLanguage,
@@ -1932,8 +1940,7 @@ ${params.candidate.text}`,
     language: WritingLanguage,
     entries: readonly CharacterRosterEntry[],
     selected: ReadonlySet<CharacterRosterEntry>,
-    onUnavailable: () => void,
-  ): Promise<CharacterTimelinePromptLines> {
+  ): Promise<CharacterTimelinePromptLines | null> {
     const characterIds = [...selected].flatMap(card => card.characterId ?? [])
     try {
       return characterTimelinePromptLines({
@@ -1944,8 +1951,7 @@ ${params.candidate.text}`,
         language,
       })
     } catch {
-      onUnavailable()
-      return {}
+      return null
     }
   }
 
