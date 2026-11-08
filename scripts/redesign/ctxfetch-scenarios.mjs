@@ -17,6 +17,7 @@ export const CTXFETCH_SCENARIOS = {
       placeholder: await windowInput.getAttribute('placeholder'),
       source: await page.locator('[data-context-window-source]').innerText(),
     })
+    const otherSources = () => page.locator('[data-capability-sources]').innerText()
     const capture = async name => {
       await combobox.evaluate(element => element.closest('.rounded-xl')?.scrollIntoView({ block: 'start' }))
       await page.mouse.move(0, 0)
@@ -31,6 +32,7 @@ export const CTXFETCH_SCENARIOS = {
     await choose(DECLARED_MODEL)
     const endpoint = await capture('ctx-fetch-endpoint')
     assert.deepEqual(endpoint, { value: String(DECLARED_WINDOW), placeholder: String(DECLARED_WINDOW), source: '来自服务商' })
+    assert.match(await otherSources(), /模型输出容量：默认值/u)
 
     await windowInput.fill('20000')
     const manual = await capture('ctx-fetch-manual')
@@ -47,6 +49,7 @@ export const CTXFETCH_SCENARIOS = {
     const preset = await capture('ctx-fetch-preset')
     assert.equal(preset.source, '内置资料')
     assert.ok(Number(preset.value) > 0, JSON.stringify(preset))
+    assert.match(await otherSources(), /模型输出容量：内置资料/u)
 
     await page.getByRole('button', { name: '保存配置', exact: true }).click()
     await page.getByRole('button', { name: `编辑「${FAKE_MODEL.name}」`, exact: true }).waitFor({ state: 'visible' })

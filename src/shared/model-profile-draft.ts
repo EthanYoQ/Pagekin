@@ -1,7 +1,7 @@
 import { DEFAULT_EMBEDDING_OPTIONS } from './embedding-options'
 import { DEFAULT_CONTEXT_WINDOW_TOKENS } from './generation-owner-contract'
 import type { ModelProfile } from './ipc-channels'
-import { createProviderCatalog, resolveModelProfileBudgetCapabilities, resolveModelProfileCapabilities, resolveModelProfileReasoningMapping } from './provider-presets'
+import { createProviderCatalog, isLocalModelEndpoint, resolveModelProfileBudgetCapabilities, resolveModelProfileCapabilities, resolveModelProfileReasoningMapping } from './provider-presets'
 
 export const DEFAULT_GENERATION_OUTPUT_TOKENS = 65_536
 
@@ -16,8 +16,16 @@ export function modelCapabilitySource(model: ModelProfile, key: keyof NonNullabl
 export type ContextWindowSource = 'manual' | 'endpoint' | 'preset' | 'default'
 export interface ResolvedContextWindow { tokens: number, source: ContextWindowSource }
 
-/** Ollama 未加载时按它自己的小窗口跑，取不到运行值就往小了算。 */
-export const OLLAMA_DEFAULT_CONTEXT_WINDOW_TOKENS = 4_096
+/** 设置页来源说明的唯一文案，[中文, 英文]。 */
+export const MODEL_VALUE_SOURCE_LABELS: Record<ContextWindowSource, readonly [string, string]> = {
+  manual: ['你填的', 'Set by you'],
+  endpoint: ['来自服务商', 'From provider'],
+  preset: ['内置资料', 'Built-in data'],
+  default: ['默认值', 'Default'],
+}
+
+/** 本机服务（Ollama、LM Studio）未加载模型时实际窗口未知，取不到运行值就往小了算。 */
+const LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS = 4_096
 
 /** 窗口的唯一取值顺序：手填 > 拉取 > 预设 > 默认。档案上的数按记录的来源归类，旧档案没有记录时与预设比。 */
 export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow {
@@ -30,7 +38,7 @@ export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow
     return { tokens: stored, source: !recorded && stored === preset ? 'preset' : 'manual' }
   }
   if (preset !== null) return { tokens: preset, source: 'preset' }
-  return { tokens: model.provider === 'ollama' ? OLLAMA_DEFAULT_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS, source: 'default' }
+  return { tokens: isLocalModelEndpoint(model) ? LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS, source: 'default' }
 }
 
 /** 作者清空窗口：回到自动取值，只动窗口这一项。 */

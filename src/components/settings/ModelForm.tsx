@@ -5,7 +5,7 @@ import type { DiscoveredModel, ModelDiscoveryErrorCode, ModelProfile } from '../
 import { LOW_VRAM_EMBEDDING_OPTIONS, normalizeEmbeddingOptions } from '../../shared/embedding-options'
 import type { ModelCapabilities, ProviderPreset } from '../../shared/provider-presets'
 import { hasRequiredApiKey, isLocalModelEndpoint, parseHttpEndpoint, resolveModelProfileBudgetCapabilities } from '../../shared/provider-presets'
-import { applyModelProfileSelection, clearContextWindowOverride, DEFAULT_GENERATION_OUTPUT_TOKENS, modelCapabilitySource, resolveContextWindow, type ContextWindowSource } from '../../shared/model-profile-draft'
+import { applyModelProfileSelection, clearContextWindowOverride, DEFAULT_GENERATION_OUTPUT_TOKENS, MODEL_VALUE_SOURCE_LABELS, modelCapabilitySource, resolveContextWindow } from '../../shared/model-profile-draft'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
@@ -27,13 +27,6 @@ const DISCOVERY_NOTICES: Record<ModelDiscoveryErrorCode, readonly [string, strin
   invalid_response: ['端点返回了无法识别的模型列表。请继续手工填写模型 ID。', 'The endpoint returned an invalid model list. Continue with a manual model ID.'],
   no_models: ['端点没有返回任何模型。请继续手工填写模型 ID。', 'The endpoint returned no models. Continue with a manual model ID.'],
   no_suitable_models: ['端点返回的模型都不适合当前用途。请继续手工填写模型 ID。', 'None of the endpoint models fit this purpose. Continue with a manual model ID.'],
-}
-
-const CONTEXT_WINDOW_SOURCE_LABELS: Record<ContextWindowSource, readonly [string, string]> = {
-  manual: ['你填的', 'Set by you'],
-  endpoint: ['来自服务商', 'From provider'],
-  preset: ['内置资料', 'Built-in data'],
-  default: ['默认值', 'Default'],
 }
 
 type ModelDiscoveryState =
@@ -430,7 +423,7 @@ export function ModelForm({
           <Label>{text('上下文窗口', 'Context Window')}</Label>
           {contextWindow && (
             <span className="text-xs text-[var(--color-text-muted)]" data-context-window-source={contextWindow.source}>
-              {text(...CONTEXT_WINDOW_SOURCE_LABELS[contextWindow.source])}
+              {text(...MODEL_VALUE_SOURCE_LABELS[contextWindow.source])}
             </span>
           )}
         </div>
