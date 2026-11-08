@@ -42,9 +42,8 @@ export const I631_SCENARIOS = {
     assert.match(text, /已等 \d+ 秒/)
     return { capsule: text }
   }, after: async ({ page, fake }) => {
-    await capsule(page).click()
-    await runSheet.waitUntilOpen(page)
-    await finish({ page, fake })
+    fake.gate.release()
+    await capsule(page).waitFor({ state: 'detached', timeout: 90_000 })
   } },
 
   'i631-wait-resumed': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake }) => {
