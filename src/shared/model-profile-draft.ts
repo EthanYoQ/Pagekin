@@ -38,8 +38,9 @@ export function clearContextWindowOverride(model: ModelProfile, discoveredTokens
   const capabilitySources: NonNullable<ModelProfile['capabilitySources']> = {}
   for (const key of ['maxOutputTokens', 'reasoning', 'structuredOutput', 'usage'] as const) capabilitySources[key] = modelCapabilitySource(model, key)
   capabilitySources.contextWindowTokens = 'unknown'
-  return applyModelProfileSelection({ ...model, capabilitySources }, {},
+  const cleared = applyModelProfileSelection({ ...model, capabilitySources }, {},
     discoveredTokens === undefined ? {} : { contextWindowTokens: discoveredTokens })
+  return { ...cleared, maxTokens: model.maxTokens }
 }
 
 /** One explicit model selection seam; refreshing a list never calls it. */

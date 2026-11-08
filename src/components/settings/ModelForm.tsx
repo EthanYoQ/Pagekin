@@ -211,7 +211,7 @@ export function ModelForm({
     if (selected.protocol !== 'openai' || !isLocalModelEndpoint(selected)) return
     const tokens = await discoverLocalContextWindow(selected).catch(() => null)
     const current = latestModel.current
-    if (tokens === null || !current || current.id !== selected.id || current.modelName !== selected.modelName
+    if (typeof tokens !== 'number' || !current || current.id !== selected.id || current.modelName !== selected.modelName
       || current.baseUrl !== selected.baseUrl || current.protocol !== selected.protocol) return
     onChange(applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }))
   }

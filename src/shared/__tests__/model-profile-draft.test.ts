@@ -107,11 +107,12 @@ describe('model profile drafts', () => {
     })
 
     it('清空手填：有列表声明用声明，没有回预设或默认，其他手填项不动', () => {
-      const manual = official({ ...stored(1_000), capabilitySources: { contextWindowTokens: 'manual', maxOutputTokens: 'manual' } })
+      const manual = official({ ...stored(1_000), maxTokens: 8_192, capabilitySources: { contextWindowTokens: 'manual', maxOutputTokens: 'manual' } })
       const declared = clearContextWindowOverride(manual, 64_000)
       expect(resolveContextWindow(declared)).toEqual({ tokens: 64_000, source: 'endpoint' })
       expect(declared.capabilitySources?.maxOutputTokens).toBe('manual')
       expect(declared.capabilities?.maxOutputTokens).toBe(4096)
+      expect(declared.maxTokens).toBe(8_192)
       expect(resolveContextWindow(clearContextWindowOverride(manual))).toEqual(catalogued())
       expect(resolveContextWindow(clearContextWindowOverride(custom(stored(1_000, 'manual'))))).toEqual({ tokens: 32_768, source: 'default' })
     })
