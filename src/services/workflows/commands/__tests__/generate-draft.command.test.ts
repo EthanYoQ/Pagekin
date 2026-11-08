@@ -3749,6 +3749,8 @@ ${headingPrefix}第3章：潮门
       expect(continuationPrompts[0]).toContain('作者设定（自第1章起）位置：开跑时的码头')
       expect(continuationPrompts[0]).not.toContain('开跑后才写的状态')
       expect(continuationPrompts[0]).not.toContain('档案里的关系')
+      expect(f.invoke.mock.calls.filter(([channel]) => channel === 'generation:prepare-draft-context')).toHaveLength(0)
+      expect(f.invoke.mock.calls.filter(([channel]) => channel === 'db:character-roster-read')).toHaveLength(1)
     })
 
     it.each([

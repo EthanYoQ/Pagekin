@@ -14,10 +14,19 @@ import {
   type StateWriteOrigin,
 } from '../../../../../electron/repositories/character-continuity-repository'
 import { CharacterRosterRepository, commitCharacterIdentities, refreshCharacterIdentityProjection } from '../../../../../electron/repositories/character-roster-repository'
+import { commitAuthorCharacterRoster } from '../../../../../electron/services/character-roster-author'
+import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../../../../../electron/services/generation-source-binding'
+import { createMainGenerationOwner } from '../../../../../electron/services/main-generation-owner'
+import { readMainGenerationPolicy } from '../../../../../electron/services/main-generation-plan'
+import { ModelExecutionLeaseRegistry } from '../../../../../electron/services/model-execution-lease'
 import { ProjectCoreRepository } from '../../../../../electron/repositories/project-core-repository'
 import { SummaryRepository } from '../../../../../electron/repositories/summary-repository'
 import { openCanonicalProjectFixture } from '../../../../../test/helpers/canonical-project-fixture'
+import { getBuiltinPromptTemplate } from '../../../builtin-prompt-templates'
+import { readBuiltinWritingSkill } from '../../../../shared/builtin-writing-skills'
 import type { CharacterStateTextField } from '../../../../shared/character-roster'
+import { generationOutputContract, type PrepareDraftContextRequest } from '../../../../shared/generation-owner-contract'
+import type { ModelProfile } from '../../../../shared/ipc-channels'
 import type { WritingLanguage } from '../../../../shared/writing-language'
 import { useLLMStore } from '../../../../stores/llm-store'
 import { useProjectStore } from '../../../../stores/project-store'
@@ -34,6 +43,7 @@ let lin = ''
 let zhou = ''
 let relationshipCount = 0
 let nodesRead: () => unknown = () => readCharacterContinuityNodes(db())
+let mainChannels: Record<string, (...args: unknown[]) => unknown> = {}
 
 function finalize(chapter: number): void {
   db().prepare('INSERT INTO contents (id, body) VALUES (?, ?)').run(chapter, PROSE)
@@ -67,6 +77,7 @@ function seedCharacter(name: string, role: 'protagonist' | 'supporting'): string
 
 function installIpc(): void {
   vi.stubGlobal('window', { aiNovelAPI: { on: vi.fn(() => () => {}), invoke: async (channel: string, ...args: unknown[]) => {
+    if (mainChannels[channel]) return mainChannels[channel](...args)
     switch (channel) {
       case 'prompt:load-global': return { templates: [], diagnostics: [] }
       case 'fs:check-exists': return false
@@ -117,6 +128,7 @@ beforeEach(() => {
   relationshipCount = 0
   promptLog.mockClear()
   nodesRead = () => readCharacterContinuityNodes(db())
+  mainChannels = {}
   lin = seedCharacter('林岚', 'protagonist')
   zhou = seedCharacter('周砚', 'supporting')
   db().transaction(() => refreshCharacterIdentityProjection(db()))()
@@ -255,6 +267,133 @@ describe('写第 N 章时提示词里的人物状态和关系按时间线取', (
       expect(entriesOf(await finalPrompt(5))).toContain('location@chapter3: 作者指定的码头')
       expect(entriesOf(await finalPrompt(3))).toContain('location@chapter3: 作者指定的码头')
       expect(profileOf(await finalPrompt(2))).not.toContain('作者指定的码头')
+    })
+  })
+
+  describe('读取档案之后、写稿准备之前作者保存了名册', () => {
+    const model = { id: 'test-model', name: '合成模型', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1', apiKey: 'synthetic-private-key', baseUrl: 'https://api.openai.com/v1',
+      temperature: 0.7, maxTokens: 2048, purposes: ['generation'], capabilities: { contextWindowTokens: 32768, maxOutputTokens: 2048, reasoning: false, structuredOutput: false, usage: true } } as ModelProfile
+    let saves = 0
+    let requests: PrepareDraftContextRequest[] = []
+    let boundCharacters = ''
+    let beforePrepare: (attempt: number) => void = () => {}
+    let modelRequests = 0
+
+    function saveRoster(notes: string, location: string): void {
+      const read = CharacterRosterRepository.read(db()), entries = structuredClone(read.entries)
+      const entry = entries.find(item => item.characterId === lin)!
+      entry.notes = notes
+      entry.currentState = { location: '', powerLevel: '', physicalState: '', mentalState: '', keyItems: '', recentEvents: '', updatedAtChapter: 1, ...entry.currentState, location }
+      commitAuthorCharacterRoster(db(), { operationId: `save-${++saves}`, schemaVersion: 1, intent: 'manual_edit', expectedRevision: read.revision, expectedIdentityRevision: read.identityRevision!,
+        entries, stateEffectiveChapter: readStateChapterRange(db()).next }, { projectId: 'timeline', epoch: 'lease' }, () => {})
+    }
+
+    const charactersFingerprint = (owner: ReturnType<typeof createMainGenerationOwner>, request: PrepareDraftContextRequest) =>
+      JSON.stringify(owner.draftPreparationBinding(request).sourceRefs.find(ref => ref.sourceId === 'characters:all'))
+
+    function installMainOwner(): ReturnType<typeof createMainGenerationOwner> {
+      const projectStorageRoot = path.join(projectPath, 'binding-project'), globalDataRoot = path.join(projectPath, 'binding-global')
+      fs.mkdirSync(projectStorageRoot); fs.mkdirSync(globalDataRoot)
+      const sourceDeps = { db: db(), projectStorageRoot, globalDataRoot,
+        readBuiltinPrompt: (key: string, language: 'zh-CN' | 'en-US') => JSON.stringify(getBuiltinPromptTemplate(key, language)), readBuiltinSkill: readBuiltinWritingSkill }
+      const owner = createMainGenerationOwner({ database: db(), projectId: 'timeline', epoch: 'lease', assertCurrent: () => {},
+        leases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => model,
+        buildBinding: (selection, modelReceipt, policy) => buildGenerationSourceBinding(sourceDeps, { ...selection, projectId: 'timeline', epoch: 'lease', modelReceipt, policy, outputContract: generationOutputContract(selection) }).binding,
+        rebuildBinding: (previous, modelReceipt) => rebuildGenerationSourceBinding(sourceDeps, previous, 'lease', modelReceipt, readMainGenerationPolicy(previous.sourceManifest.policy)).binding })
+      mainChannels['generation:prepare-draft-context'] = raw => {
+        const request = raw as PrepareDraftContextRequest
+        requests.push(request)
+        beforePrepare(requests.length)
+        const baseline = owner.draftPreparationBinding(request)
+        const knowledge = { version: 1, state: 'empty', storageState: 'absent', query: request.query, topK: 5, canonicalRevision: null, documentsRevision: null, items: [] } as never
+        const prepared = owner.prepareDraftContext(request, knowledge, baseline)
+        boundCharacters = charactersFingerprint(owner, request)
+        return prepared
+      }
+      return owner
+    }
+
+    function runMainDraft(chapterNumber: number): { result: Promise<unknown>; prompt: () => string } {
+      let prompt = ''
+      const handle = { projectId: 'timeline', epoch: 'lease', rootActionId: 'root', runId: 'run' }
+      const view = { handle, status: 'running', nonReplayable: false, artifacts: [], budget: { maxAttempts: 32, maxRequestedOutputTokens: 2_000_000, maxRequestedOutputTokensPerAttempt: 32_768, deadlineAt: Date.now() + 3_600_000 } }
+      mainChannels['generation:begin'] = () => view
+      mainChannels['generation:read'] = () => view
+      mainChannels['generation:execute'] = raw => {
+        modelRequests += 1
+        prompt = (raw as { task: { messages: Array<{ role: string; content: string }> } }).task.messages.find(message => message.role === 'user')?.content ?? ''
+        throw new Error('PROMPT_CAPTURED')
+      }
+      useProjectStore.setState({ currentProject: { id: 'timeline', sessionLease: 'lease', name: 'Timeline', path: projectPath, novelConfig: { writingLanguage: 'zh-CN', wordsPerChapter: 3000 } } as never })
+      const context = { runId: 'timeline-run', projectPath, projectSession: { projectId: 'timeline', leaseId: 'lease', projectPath }, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', generationModelId: 'test-model', data: {}, cancelled: false } as WorkflowContext
+      const result = new GenerateDraftCommand({ projectPath, chapterNumber, title: '合成章节', role: 'development', purpose: '推进', keyEvents: '两人重逢', characters: ['林岚'], userGuidance: '', wordsTarget: 100 })
+        .execute({ step: {}, context, callbacks: { log: promptLog, setProgress: vi.fn(), appendText: vi.fn(), replaceText: vi.fn() } })
+      return { result, prompt: () => prompt }
+    }
+
+    async function mainPrompt(chapterNumber: number): Promise<string> {
+      const run = runMainDraft(chapterNumber)
+      await expect(run.result).rejects.toThrow('PROMPT_CAPTURED')
+      return run.prompt()
+    }
+
+    beforeEach(() => {
+      saves = 0
+      requests = []
+      boundCharacters = ''
+      modelRequests = 0
+      beforePrepare = () => {}
+      finalize(1)
+      db().prepare("INSERT INTO blueprints(chapter_number,title) VALUES(2,'合成章节')").run()
+    })
+
+    it('提示词用新档案，绑定指纹对应新名册，作者看不到任何报错', async () => {
+      const owner = installMainOwner()
+      saveRoster('旧档案备注', '旧码头')
+      beforePrepare = attempt => { if (attempt === 1) saveRoster('新档案备注', '新灯塔') }
+      const prompt = await mainPrompt(2)
+      expect(prompt).toContain('新档案备注')
+      expect(prompt).toContain('位置：新灯塔')
+      expect(prompt).not.toContain('旧档案备注')
+      expect(prompt).not.toContain('位置：旧码头')
+      expect(boundCharacters).toBe(charactersFingerprint(owner, requests.at(-1)!))
+      expect(modelRequests).toBe(1)
+    })
+
+    it('一直有保存时只多试一次，然后按来源变化处理，不发模型请求', async () => {
+      installMainOwner()
+      beforePrepare = attempt => saveRoster(`第${attempt}次保存`, `地点${attempt}`)
+      await expect(runMainDraft(2).result).rejects.toThrow('GENERATION_DRAFT_PREPARATION_CHANGED')
+      expect(requests).toHaveLength(2)
+      expect(modelRequests).toBe(0)
+    })
+
+    it('没有并发保存时只准备一次，提示词和不走准备的路径逐字相同', async () => {
+      installMainOwner()
+      saveRoster('静态备注', '码头')
+      const prompt = await mainPrompt(2)
+      expect(requests).toHaveLength(1)
+      expect(prompt).toContain('静态备注')
+      expect(prompt).toBe(await finalPrompt(2))
+    })
+
+    it('重试时时间线一直读不到：日志只留一条警告，写稿照常', async () => {
+      installMainOwner()
+      saveRoster('旧档案备注', '旧码头')
+      nodesRead = () => { throw new Error('SQLITE_BUSY') }
+      beforePrepare = attempt => { if (attempt === 1) saveRoster('新档案备注', '新灯塔') }
+      expect(await mainPrompt(2)).toContain('新档案备注')
+      expect(promptLog.mock.calls.filter(([line]) => String(line).includes('人物时间线没能读取'))).toHaveLength(1)
+    })
+
+    it('第一次时间线读不到、重试读到了：不留警告，提示词用时间线', async () => {
+      installMainOwner()
+      saveRoster('旧档案备注', '旧码头')
+      let reads = 0
+      nodesRead = () => { if (++reads === 1) throw new Error('SQLITE_BUSY'); return readCharacterContinuityNodes(db()) }
+      beforePrepare = attempt => { if (attempt === 1) saveRoster('新档案备注', '新灯塔') }
+      expect(await mainPrompt(2)).toContain('位置：新灯塔')
+      expect(promptLog).not.toHaveBeenCalledWith(expect.stringContaining('人物时间线没能读取'))
     })
   })
 })
