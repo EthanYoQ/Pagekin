@@ -191,6 +191,7 @@ export async function createWorkflowMainGenerationRuntime(request: WorkflowMainG
           context.mainGenerationRootHandle = Object.freeze({ ...view.handle })
           const artifactId = receipt.outcome.receipt.visibleArtifact?.artifactId
           for (const snapshot of (view.candidates ?? view.artifacts).filter(snapshot => snapshot.artifactId === artifactId)) onSnapshot(snapshot)
+          if (receipt.outcome.receipt.diagnostics) callbacks.setGenerationActivity?.({ operation, diagnostics: receipt.outcome.receipt.diagnostics })
           throwIfTerminalProviderFailure(receipt.outcome.receipt)
           return receipt.outcome
         }
