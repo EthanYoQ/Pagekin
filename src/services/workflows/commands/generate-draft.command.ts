@@ -1920,7 +1920,6 @@ ${params.candidate.text}`,
     }
   }
 
-  /** 读不到节点时返回空，档案沿用原来的行，写稿照常。 */
   private async readCharacterTimeline(
     projectPath: string,
     projectSession: ProjectSessionContext,

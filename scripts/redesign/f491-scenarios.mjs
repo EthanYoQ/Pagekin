@@ -121,7 +121,6 @@ async function continuityNodes(projectPath) {
   } finally { db.close() }
 }
 
-/** 第 1–4 章定稿；第 5 章蓝图列出林岚；作者把她的位置手改成钟楼顶层，这个改动从下一章（第 5 章）起生效。 */
 const seedHandEditedState = context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
   const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(), chapters: [3, 4].map(number => {
     const content = STAGE_SAMPLE.drafts[number].text

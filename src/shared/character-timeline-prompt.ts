@@ -51,7 +51,6 @@ function promptEntry(node: ContinuityNode, language: WritingLanguage, targetName
 const withTimelessBaselineRelations = (nodes: readonly ContinuityNode[]): ContinuityNode[] =>
   nodes.map(node => node.aspect === 'relation' && node.provenance.kind === 'legacy' ? { ...node, effectiveChapter: 0 } : node)
 
-/** 写第 chapter 章时每个角色进提示词的状态和关系。章号边界全部由 latestNodesBefore 决定。 */
 export function characterTimelinePromptLines(input: {
   nodes: readonly ContinuityNode[]
   chapter: number
