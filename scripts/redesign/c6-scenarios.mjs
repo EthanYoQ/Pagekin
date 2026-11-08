@@ -88,6 +88,17 @@ export const C6_SCENARIOS = {
     assert.deepEqual(measured.afterAdopt.current, [NEW_RELATION], '采用后当前关系换成新值')
     assert.ok(measured.afterAdopt.nodes.some(node => node.kind === 'author' && node.value === NEW_RELATION && node.effective_chapter === 4), `作者节点自第 4 章起。实际：${JSON.stringify(measured.afterAdopt.nodes)}`)
     await context.shoot('c6-4-adopted')
+
+    const merged = fourth.locator('.cast-timeline-row')
+    await merged.filter({ hasText: `${AUTHOR_RELATION} → ${NEW_RELATION}` }).waitFor({ state: 'visible' })
+    assert.equal(await merged.count(), 1, '采用后第 4 章只有一行')
+    assert.match(await merged.innerText(), /作者设定/u, '合并后的来源是作者设定')
+    measured.summary = await profile.locator('.cast-timeline-summary').innerText()
+    assert.match(measured.summary, /时间线 · 2 处变化/u, '第 3 章作者设定一行，第 4 章合并后一行')
+    await merged.locator('.cast-timeline-quote summary').click()
+    measured.mergedQuote = await merged.locator('blockquote').innerText()
+    assert.equal(measured.mergedQuote, EVIDENCE, '合并后的行原文还能展开')
+    await context.shoot('c6-5-timeline-merged')
     return measured
   } },
 }
