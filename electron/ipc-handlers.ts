@@ -5,6 +5,7 @@ import { registerConfigController } from './controllers/config-controller'
 import { registerProjectController } from './controllers/project-controller'
 import { registerProjectArchiveController } from './controllers/project-archive-controller'
 import { registerCloudBackupController } from './controllers/cloud-backup-controller'
+import { registerGitSyncController } from './controllers/git-sync-controller'
 import { registerFSController } from './controllers/fs-controller'
 import { registerLLMController } from './controllers/llm-controller'
 import { registerGenerationController } from './controllers/generation-controller'
@@ -43,6 +44,7 @@ export function registerIPCHandlers() {
   })
   registerProjectArchiveController()
   registerCloudBackupController()
+  registerGitSyncController()
   registerFSController()
   registerExternalFileGrantController()
   registerGenerationController(registerLLMController())

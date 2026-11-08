@@ -30,6 +30,7 @@ export const SETTINGS_GROUPS: readonly { id: string; name: Pair; pages: readonly
     { id: 'skills', name: ['写作 Skills', 'Writing skills'], lede: ['安装提示词型的写作 Skill，并绑定到创作阶段。安装前会先让你检查内容。', 'Install prompt-only writing skills and bind them to writing stages. You review each one before installing.'] },
   ] },
   { id: 'other', name: ['其他', 'Other'], pages: [
+    { id: 'sync', name: ['作品同步', 'Book sync'], lede: ['把作品接到私有 git 仓库（GitHub / Gitee），用「上传进度 / 拉取最新」在两个电脑之间交接。', 'Connect the book to a private git repository (GitHub or Gitee) and hand progress between two computers with Upload and Pull.'] },
     { id: 'backup', name: ['项目备份', 'Project backup'], lede: ['把作品打包存到本机，或备份到你绑定的云端。恢复时总是另存为一份新的作品副本。', 'Archive the book locally or to a cloud you connect. Restoring always creates a new copy.'] },
     { id: 'about', name: ['关于与更新', 'About & updates'], lede: ['版本信息与应用更新。', 'Version information and app updates.'] },
   ] },
