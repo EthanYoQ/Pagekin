@@ -1,9 +1,15 @@
+import { useCharacterStore } from '../../../stores/character-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { openBuiltinEditor } from '../../../stores/open-builtin-editor'
 import { Button } from '../../ui/Button'
 import { Notice } from '../../ui/Notice'
 import { PreflightExemptButtons, PreflightFindingSource } from '../write/PreflightFindingParts'
 import type { BlueprintContinuityNotice } from './use-blueprint-continuity-notice'
+
+function openCharacter(characterId: string, name: string) {
+  useCharacterStore.getState().setSelectedId(characterId)
+  openBuiltinEditor('character-editor', name, 'character')
+}
 
 /** 这一章保存后发现的连续性提示。不挡保存，也不挡写章。 */
 export default function BlueprintContinuityNotices({ chapterNumber, notice }: { chapterNumber: number; notice: BlueprintContinuityNotice }) {
@@ -20,9 +26,9 @@ export default function BlueprintContinuityNotices({ chapterNumber, notice }: { 
           actions={(
             <>
               <PreflightExemptButtons busy={notice.busy} onExempt={scope => void notice.exempt(chapterNumber, finding, scope)} />
-              {finding.stableFactKey.startsWith('relation:') && (
-                <Button variant="text" size="sm" onClick={() => openBuiltinEditor('character-editor', text('角色名单', 'Cast'), 'character')}>
-                  {text('去看时间线', 'View timeline')}
+              {finding.characterId && (
+                <Button variant="text" size="sm" onClick={() => openCharacter(finding.characterId!, text('角色名单', 'Cast'))}>
+                  {text('去看这个角色', 'View character')}
                 </Button>
               )}
             </>

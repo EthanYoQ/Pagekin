@@ -13,6 +13,7 @@ import { setActiveProjectSessionContext } from '../../../../shared/project-sessi
 import { disposeProjectService, initProjectService } from '../../../../services/project-service'
 import type { ChapterBlueprint } from '../../../../services/workflows/directory-workflow'
 import { editorSaveHandler, useEditorStore } from '../../../../stores/editor-store'
+import { useCharacterStore } from '../../../../stores/character-store'
 import { useLocaleStore } from '../../../../stores/locale-store'
 import { useStageStore } from '../../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../../stores/project-store'
@@ -51,6 +52,9 @@ let trashEntries: TrashedChapter[]
 let trashListFails: boolean
 let exemptions: ConsistencyExemption[]
 let nodesFail: boolean
+let committedHints: Record<number, unknown>
+let hintsFail: boolean
+let projections: unknown[]
 
 const BROKEN_NODE: ContinuityNode = {
   eventId: 'relation:add:line', subjectId: 'a', subjectName: '林岚', targetId: 'b', targetName: '守塔人', relationshipId: 'line', aspect: 'relation',
@@ -90,7 +94,11 @@ function installIpc() {
     }
     if (channel === 'generation:find-blueprint-recovery') return null
     if (channel === 'db:consistency-exemption-list') return exemptions
-    if (channel === 'db:continuity-list-before') return []
+    if (channel === 'db:continuity-list-before') return projections
+    if (channel === 'db:blueprint-relationship-hints') {
+      if (hintsFail) throw new Error('hints unavailable')
+      return committedHints
+    }
     if (channel === 'db:character-continuity-nodes') {
       if (nodesFail) throw new Error('nodes unavailable')
       return [BROKEN_NODE]
@@ -166,6 +174,9 @@ beforeEach(async () => {
   trashListFails = false
   exemptions = []
   nodesFail = false
+  committedHints = {}
+  hintsFail = false
+  projections = []
   writableOverride.value = null
   useLocaleStore.setState({ locale: 'zh-CN' })
   useEditorStore.setState({ tabs: [], activeTabId: null, draftLedgers: {} })
@@ -530,7 +541,8 @@ describe('蓝图阶段', () => {
 
   describe('保存后的连续性提示', () => {
     const planned = () => {
-      stored = [{ ...blueprint(2, '同行'), relationshipHints: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }]
+      stored = [blueprint(2, '同行'), blueprint(3, '灯室')]
+      committedHints = { 2: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
       nextChapter = 2
     }
     const save = (name = '保存此章') => act(async () => page.getByRole('button', { name }).click())
@@ -566,6 +578,63 @@ describe('蓝图阶段', () => {
       await expect.element(page.getByText('已记下，全书不再提示。')).toBeVisible()
     })
 
+    it('回执读不出来时保存照常，不提示也不报错', async () => {
+      planned()
+      hintsFail = true
+      await renderPage()
+      await save()
+      await vi.waitFor(() => expect(calls('db:blueprint-relationship-hints').length).toBeGreaterThan(0))
+      await expect.element(page.getByText(/依据：/)).not.toBeInTheDocument()
+      await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('切到别的章「已记下」就消失，切回来也不再出现', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+      const noted = page.getByText('已记下，这一章不再提示。')
+      await expect.element(noted).toBeVisible()
+      await act(async () => page.getByRole('button', { name: /^3\D/ }).click())
+      await expect.element(noted).not.toBeInTheDocument()
+      await act(async () => page.getByRole('button', { name: /^2\D/ }).click())
+      await expect.element(page.getByRole('textbox', { name: '章节标题' })).toHaveValue('同行')
+      await expect.element(noted).not.toBeInTheDocument()
+      expect(exemptions).toMatchObject([{ chapterNumber: 2, revoked: false }])
+    })
+
+    it('按钮把作者带到这个角色：角色名单打开，选中关系所属的人', async () => {
+      planned()
+      const cards = [{ characterId: 'z', name: '路人' }, { characterId: 'a', name: '林岚' }]
+      const original = useCharacterStore.getState()
+      useCharacterStore.setState({ characters: cards as never, dataProjectSession: SESSION, loadingProjectSession: null, lastError: null, selectedId: 'z' })
+      try {
+        await renderPage()
+        await save()
+        await act(async () => page.getByRole('button', { name: '去看这个角色' }).click())
+        expect(useEditorStore.getState().tabs.map(tab => tab.type)).toContain('character')
+        expect(useCharacterStore.getState().selectedId).toBe('a')
+      } finally {
+        useCharacterStore.setState(original)
+      }
+    })
+
+    it('蓝图列了已死的角色：保存成功，提示写明依据，不带去角色的按钮', async () => {
+      projections = [{
+        draftId: 1, chapterNumber: 1, chapterTitle: '旧港', chapterNotes: '',
+        source: { draftId: 1, finalizationId: 'finalization-1', chapterNumber: 1, contentHash: 'a'.repeat(64) },
+        sourceStatus: 'current',
+        facts: [{ category: 'character-state', entities: ['守塔人'], statement: '守塔人已经死亡。', sourceChapter: 1, evidence: '守塔人没有再回来。' }],
+      }]
+      await renderPage()
+      await save()
+      expect(calls('db:blueprint-upsert')).toHaveLength(1)
+      await expect.element(page.getByText(/“守塔人”处于死亡终态/)).toBeVisible()
+      await expect.element(page.getByText('依据：第 1 章 · 守塔人没有再回来。')).toBeVisible()
+      await expect.element(page.getByRole('button', { name: '这是有意安排' })).toBeVisible()
+      await expect.element(page.getByRole('button', { name: '去看这个角色' })).not.toBeInTheDocument()
+    })
+
     it('读节点失败时保存照常，不提示也不报错', async () => {
       planned()
       nodesFail = true
@@ -584,7 +653,7 @@ describe('蓝图阶段', () => {
       await expect.element(page.getByText('The chapter 2 blueprint has 林岚 and 守塔人 as “亲密同伴”, but from chapter 1 they are “决裂”.')).toBeVisible()
       await expect.element(page.getByText('Basis: Chapter 1 · 决裂')).toBeVisible()
       await expect.element(page.getByRole('button', { name: 'This is intentional' })).toBeVisible()
-      await expect.element(page.getByRole('button', { name: 'View timeline' })).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'View character' })).toBeVisible()
     })
   })
 

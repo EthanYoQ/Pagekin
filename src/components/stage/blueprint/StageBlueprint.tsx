@@ -67,6 +67,10 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
   const writable = useMemo(() => new Set(plan.writableChapters), [plan.writableChapters])
   const firstUnexplainedGap = plan.chapterGaps.find(gap => gap.cause === 'unexplained')
 
+  // 「已记下」和它的撤销只属于当前这一章，换章后不再显示。
+  const { clearExempted } = continuity
+  useEffect(clearExempted, [clearExempted, selected?.chapterNumber])
+
   // 写作请求只由那一章的写作按钮接手：下一章在本页，缺口章在它的单章视图。那一章现在写不了时丢掉请求，免得以后突然弹出。
   useEffect(() => {
     if (plan.loading || !writeRequest || writable.has(writeRequest.chapterNumber)) return

@@ -3,8 +3,8 @@ import type { BlueprintForPreflight, ConsistencyExemption, ConsistencyFinding } 
 import { findBlueprintContinuityRisks } from '../shared/consistency-preflight'
 import { ipc } from './ipc-client'
 
-/** chapterNumber 是这条提示所在的蓝图章。同一节点在批量里可能出现在多章，按章豁免要靠它。 */
-export type PreflightFinding = ConsistencyFinding & { chapterNumber: number }
+/** chapterNumber 是这条提示所在的蓝图章。同一节点在批量里可能出现在多章，按章豁免要靠它。characterId 只有关系提示有，指向这条关系所属的角色。 */
+export type PreflightFinding = ConsistencyFinding & { chapterNumber: number; characterId?: string }
 
 export interface ConsistencyPreflightResult {
   findings: PreflightFinding[]
@@ -35,16 +35,20 @@ export async function readConsistencyPreflight(
   const exemptions = await ipc.invokeWithProjectSession(
     session, 'db:consistency-exemption-list', session.projectPath,
   )
-  // 关系节点读不出来时只少一类提示，不影响其他提示，也不影响写作。
-  const nodes = blueprints.some(blueprint => blueprint.relationshipHints)
+  // 回执和关系节点读不出来时只少一类提示，不影响其他提示，也不影响写作。
+  const hints = await ipc.invokeWithProjectSession(
+    session, 'db:blueprint-relationship-hints', blueprints.map(blueprint => blueprint.chapterNumber), session.projectPath,
+  ).catch((): Record<number, unknown> => ({}))
+  const nodes = Object.keys(hints).length > 0
     ? await ipc.invokeWithProjectSession(session, 'db:character-continuity-nodes', session.projectPath).catch(() => [])
     : []
+  const subjects = new Map(nodes.map(node => [`relation:${node.eventId}`, node.subjectId]))
   const findings = (await Promise.all(blueprints.map(async blueprint => {
     const projections = await ipc.invokeWithProjectSession(
       session, 'db:continuity-list-before', blueprint.chapterNumber, session.projectPath,
     )
-    return findBlueprintContinuityRisks(projections, blueprint, exemptions, nodes)
-      .map(finding => ({ ...finding, chapterNumber: blueprint.chapterNumber }))
+    return findBlueprintContinuityRisks(projections, { ...blueprint, relationshipHints: hints[blueprint.chapterNumber] }, exemptions, nodes)
+      .map(finding => ({ ...finding, chapterNumber: blueprint.chapterNumber, characterId: subjects.get(finding.stableFactKey) }))
   }))).flat()
   return { findings, exemptions }
 }

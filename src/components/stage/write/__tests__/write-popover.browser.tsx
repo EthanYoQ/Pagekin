@@ -42,6 +42,8 @@ let exemptions: { stableFactKey: string; reason: string; revoked: boolean; chapt
 let exemptionSave: () => Promise<{ success: boolean; error?: string }>
 let continuityGate: Promise<void> | null = null
 let authority: unknown
+let committedHints: Record<number, unknown>
+let persistedBlueprint: ChapterBlueprint
 const CONTINUOUS_AUTHORITY = {
   status: 'continuous', lastChapterNumber: 4, nextChapterNumber: 5, gaps: [], duplicateChapterNumbers: [], authorityFingerprint: 'e'.repeat(64),
 }
@@ -52,6 +54,12 @@ const DEAD_KEEPER = [{
   sourceStatus: 'current',
   facts: [{ category: 'character-state', entities: ['老周'], statement: '老周已经死亡。', sourceChapter: 1, evidence: '老周停止了呼吸。' }],
 }]
+
+const BROKEN_WITH_KEEPER = {
+  eventId: 'relation:add:line', subjectId: 'lin', subjectName: '林舟', targetId: 'zhou', targetName: '老周', relationshipId: 'line', aspect: 'relation',
+  value: '决裂', effectiveChapter: 3, provenance: { kind: 'author', operationId: 'op' }, draftId: null, seq: 1, quote: null,
+}
+const COMPANION_HINTS = { 5: [{ from: '林舟', to: '老周', relation: '亲密同伴' }] }
 
 const BLUEPRINT: ChapterBlueprint = {
   chapterNumber: 5,
@@ -94,7 +102,9 @@ function installIpc() {
   const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     if (channel === 'db:draft-authority-sequence') return authority
     if (channel === 'db:blueprint-get-all') return [BLUEPRINT]
-    if (channel === 'db:blueprint-get') return BLUEPRINT
+    if (channel === 'db:blueprint-get') return persistedBlueprint
+    if (channel === 'db:blueprint-relationship-hints') return committedHints
+    if (channel === 'db:character-continuity-nodes') return [BROKEN_WITH_KEEPER]
     if (channel === 'db:character-get-all') return [{ id: 1 }]
     if (channel === 'db:draft-get-finalized') return { chapterNumber: Number(args[0]) }
     if (channel === 'db:post-process-get-latest-run') return null
@@ -158,6 +168,8 @@ beforeEach(async () => {
   exemptionSave = async () => ({ success: true })
   continuityGate = null
   authority = CONTINUOUS_AUTHORITY
+  committedHints = {}
+  persistedBlueprint = BLUEPRINT
   startWorkflow = vi.fn(async () => 'write-popover-run')
   useLocaleStore.setState({ locale: 'zh-CN' })
   useProjectStore.setState({ currentProject: project() })
@@ -584,5 +596,39 @@ describe('写作此章弹层', () => {
     await expect.element(dialog.getByRole('alert')).toHaveTextContent('数据库只读')
     await expect.element(dialog.getByRole('button', { name: '这是有意安排' })).toBeEnabled()
     expect(startWorkflow).not.toHaveBeenCalled()
+  })
+
+  describe('蓝图回执里的关系提示', () => {
+    const startSingle = async () => {
+      await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
+      await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
+      return page.getByRole('dialog', { name: '本次写作选项' })
+    }
+    const startBatch = async () => {
+      await render(<BatchWriteDialog isOpen startChapterNumber={5} onClose={vi.fn()} />)
+      const dialog = page.getByRole('dialog', { name: '批量创作' })
+      await act(async () => dialog.getByLabelText(/写几章/).fill('1'))
+      await act(async () => dialog.getByRole('button', { name: '开始写 1 章' }).click())
+      return dialog
+    }
+    const CONFLICT = '第 5 章蓝图把 林舟 和 老周 写成「亲密同伴」，但第 3 章起两人是「决裂」。'
+
+    it.each([['写作此章', startSingle], ['批量创作', startBatch]] as const)('%s：回执里的关系和时间线相反时提醒', async (_name, start) => {
+      committedHints = COMPANION_HINTS
+      const surface = await start()
+      await expect.element(surface.getByText(CONFLICT)).toBeVisible()
+      expect(startWorkflow).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['写作此章的悬念钩子', startSingle, { suspenseHook: '老周在这一章和林舟和解。' }],
+      ['写作此章的章节要点', startSingle, { notes: '两人解开误会。' }],
+      ['批量创作的悬念钩子', startBatch, { suspenseHook: '老周在这一章和林舟和解。' }],
+    ] as const)('%s里写了和解：不提醒', async (_name, start, fields) => {
+      committedHints = COMPANION_HINTS
+      persistedBlueprint = { ...BLUEPRINT, ...fields }
+      await start()
+      await vi.waitFor(() => expect(startWorkflow).toHaveBeenCalledOnce())
+    })
   })
 })
