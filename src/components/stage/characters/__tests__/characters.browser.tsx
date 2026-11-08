@@ -95,6 +95,7 @@ beforeEach(async () => {
       if (timeline instanceof Error) throw timeline
       return timeline
     }
+    if (channel === 'finalized-character:list-relation-candidates') return []
     if (channel === 'character-proposal:list-pending-finalized') return Array.from({ length: pendingDecisions }, (_, index) =>
       ({ proposalBatchId: `cpb-${index}`, revision: 1, finalizationId: `final-${index}` }))
     if (channel === 'finalized-character:list-state-candidates') return pendingStates.map(candidate => ({
