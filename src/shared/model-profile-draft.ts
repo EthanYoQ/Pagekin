@@ -1,4 +1,5 @@
 import { DEFAULT_EMBEDDING_OPTIONS } from './embedding-options'
+import { DEFAULT_CONTEXT_WINDOW_TOKENS } from './generation-owner-contract'
 import type { ModelProfile } from './ipc-channels'
 import { createProviderCatalog, resolveModelProfileBudgetCapabilities, resolveModelProfileCapabilities, resolveModelProfileReasoningMapping } from './provider-presets'
 
@@ -10,6 +11,35 @@ export function modelCapabilitySource(model: ModelProfile, key: keyof NonNullabl
   const value = model.capabilities?.[key]
   return typeof value === 'boolean' || typeof value === 'number' && Number.isSafeInteger(value) && value > 0
     ? 'manual' : 'unknown'
+}
+
+export type ContextWindowSource = 'manual' | 'endpoint' | 'preset' | 'default'
+export interface ResolvedContextWindow { tokens: number, source: ContextWindowSource }
+
+/** Ollama 未加载时按它自己的小窗口跑，取不到运行值就往小了算。 */
+export const OLLAMA_DEFAULT_CONTEXT_WINDOW_TOKENS = 4_096
+
+/** 窗口的唯一取值顺序：手填 > 拉取 > 预设 > 默认。档案上的数按记录的来源归类，旧档案没有记录时与预设比。 */
+export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow {
+  const value = model.capabilities?.contextWindowTokens
+  const stored = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+  const preset = resolveModelProfileBudgetCapabilities(model)?.contextWindowTokens ?? null
+  const recorded = model.capabilitySources?.contextWindowTokens
+  if (stored !== null) {
+    if (recorded === 'endpoint' || recorded === 'preset') return { tokens: stored, source: recorded }
+    return { tokens: stored, source: !recorded && stored === preset ? 'preset' : 'manual' }
+  }
+  if (preset !== null) return { tokens: preset, source: 'preset' }
+  return { tokens: model.provider === 'ollama' ? OLLAMA_DEFAULT_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS, source: 'default' }
+}
+
+/** 作者清空窗口：回到自动取值，只动窗口这一项。 */
+export function clearContextWindowOverride(model: ModelProfile, discoveredTokens?: number): ModelProfile {
+  const capabilitySources: NonNullable<ModelProfile['capabilitySources']> = {}
+  for (const key of ['maxOutputTokens', 'reasoning', 'structuredOutput', 'usage'] as const) capabilitySources[key] = modelCapabilitySource(model, key)
+  capabilitySources.contextWindowTokens = 'unknown'
+  return applyModelProfileSelection({ ...model, capabilitySources }, {},
+    discoveredTokens === undefined ? {} : { contextWindowTokens: discoveredTokens })
 }
 
 /** One explicit model selection seam; refreshing a list never calls it. */
