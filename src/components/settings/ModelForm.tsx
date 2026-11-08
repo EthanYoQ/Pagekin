@@ -5,7 +5,7 @@ import type { DiscoveredModel, ModelDiscoveryErrorCode, ModelProfile } from '../
 import { LOW_VRAM_EMBEDDING_OPTIONS, normalizeEmbeddingOptions } from '../../shared/embedding-options'
 import type { ModelCapabilities, ProviderPreset } from '../../shared/provider-presets'
 import { hasRequiredApiKey, isLocalModelEndpoint, parseHttpEndpoint, resolveModelProfileBudgetCapabilities } from '../../shared/provider-presets'
-import { applyModelProfileSelection, DEFAULT_GENERATION_OUTPUT_TOKENS, modelCapabilitySource } from '../../shared/model-profile-draft'
+import { applyModelProfileSelection, clearContextWindowOverride, DEFAULT_GENERATION_OUTPUT_TOKENS, modelCapabilitySource, resolveContextWindow, type ContextWindowSource } from '../../shared/model-profile-draft'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
@@ -27,6 +27,13 @@ const DISCOVERY_NOTICES: Record<ModelDiscoveryErrorCode, readonly [string, strin
   invalid_response: ['端点返回了无法识别的模型列表。请继续手工填写模型 ID。', 'The endpoint returned an invalid model list. Continue with a manual model ID.'],
   no_models: ['端点没有返回任何模型。请继续手工填写模型 ID。', 'The endpoint returned no models. Continue with a manual model ID.'],
   no_suitable_models: ['端点返回的模型都不适合当前用途。请继续手工填写模型 ID。', 'None of the endpoint models fit this purpose. Continue with a manual model ID.'],
+}
+
+const CONTEXT_WINDOW_SOURCE_LABELS: Record<ContextWindowSource, readonly [string, string]> = {
+  manual: ['你填的', 'Set by you'],
+  endpoint: ['来自服务商', 'From provider'],
+  preset: ['内置资料', 'Built-in data'],
+  default: ['默认值', 'Default'],
 }
 
 type ModelDiscoveryState =
@@ -67,6 +74,7 @@ export function ModelForm({
   const testFailure = testResult && !testResult.success ? displayedErrorMessage(locale, testResult.error) : ''
   const testConnection = useLLMStore(s => s.testConnection)
   const discoverModels = useLLMStore(s => s.discoverModels)
+  const discoverLocalContextWindow = useLLMStore(s => s.discoverLocalContextWindow)
   const [discovery, setDiscovery] = useState<ModelDiscoveryState>({ status: 'idle' })
   const discoveryRevision = useRef(0)
   const currentDiscoveryConfig = useRef({
@@ -86,6 +94,13 @@ export function ModelForm({
       apiKey: model.apiKey,
     }
   }, [model.apiKey, model.baseUrl, model.id, model.protocol, model.provider])
+
+  /** 异步读到本机窗口时要写回的最新表单；表单已关闭时为空。 */
+  const latestModel = useRef<ModelProfile | null>(model)
+  useLayoutEffect(() => {
+    latestModel.current = model
+    return () => { latestModel.current = null }
+  })
 
   const autoDiscoveryTimer = useRef<number | undefined>(undefined)
   useEffect(() => () => {
@@ -191,9 +206,36 @@ export function ModelForm({
     onChange(isEmbedding ? { ...model, ...selection, capabilities: undefined, capabilitySources: undefined } : applyModelProfileSelection(model, selection))
   }
 
+  /** 本机服务的列表不带窗口，选中后再问一次实际运行值。读到时作者可能已经换了模型或手填，写回交给选择函数判断。 */
+  const refreshLocalContextWindow = async (selected: ModelProfile) => {
+    if (selected.protocol !== 'openai' || !isLocalModelEndpoint(selected)) return
+    const tokens = await discoverLocalContextWindow(selected).catch(() => null)
+    const current = latestModel.current
+    if (tokens === null || !current || current.id !== selected.id || current.modelName !== selected.modelName
+      || current.baseUrl !== selected.baseUrl || current.protocol !== selected.protocol) return
+    onChange(applyModelProfileSelection(current, {}, { contextWindowTokens: tokens }))
+  }
+
   const handleModelSelect = ({ value, capabilities }: DiscoveredModel) => {
-    if (isEmbedding) setEmbeddingModelName(value)
-    else onChange(applyModelProfileSelection(model, { modelName: value }, capabilities))
+    if (isEmbedding) {
+      setEmbeddingModelName(value)
+      return
+    }
+    const selected = applyModelProfileSelection(model, { modelName: value }, capabilities)
+    onChange(selected)
+    if (capabilities?.contextWindowTokens === undefined) void refreshLocalContextWindow(selected)
+  }
+
+  const handleContextWindowInput = (raw: string) => {
+    const tokens = parseInt(raw) || null
+    if (tokens !== null || isEmbedding) {
+      updateCapabilities({ contextWindowTokens: tokens })
+      return
+    }
+    const declared = shownModels(discovery).find(candidate => candidate.value === model.modelName)?.capabilities?.contextWindowTokens ?? undefined
+    const cleared = clearContextWindowOverride(model, declared)
+    onChange(cleared)
+    if (declared === undefined) void refreshLocalContextWindow(cleared)
   }
 
   const handleTest = async () => {
@@ -254,6 +296,7 @@ export function ModelForm({
       : { tone: 'muted', text: text('填写 base_url 和 API Key 后获取模型列表。', 'Enter the base_url and API key to fetch the model list.') }
   }
 
+  const contextWindow = isEmbedding ? null : resolveContextWindow(model)
   const keyMissing = !hasRequiredApiKey(model)
   const missingForSave = [
     !model.baseUrl.trim() && 'base_url',
@@ -383,14 +426,21 @@ export function ModelForm({
       )}
 
       <div>
-        <Label>{text('上下文窗口', 'Context Window')}</Label>
+        <div className="flex items-baseline justify-between gap-3">
+          <Label>{text('上下文窗口', 'Context Window')}</Label>
+          {contextWindow && (
+            <span className="text-xs text-[var(--color-text-muted)]" data-context-window-source={contextWindow.source}>
+              {text(...CONTEXT_WINDOW_SOURCE_LABELS[contextWindow.source])}
+            </span>
+          )}
+        </div>
         <Input
           aria-label={text('上下文窗口', 'Context Window')}
           type="number"
           min={0}
           value={model.capabilities?.contextWindowTokens ?? ''}
-          placeholder={text('可选', 'Optional')}
-          onChange={(e) => updateCapabilities({ contextWindowTokens: e.target.value === '' ? null : parseInt(e.target.value) || null })}
+          placeholder={contextWindow ? String(contextWindow.tokens) : text('可选', 'Optional')}
+          onChange={(e) => handleContextWindowInput(e.target.value)}
         />
       </div>
 

@@ -26,7 +26,7 @@ export function ModelCapabilitySources({ model }: { model: ModelProfile }) {
   }
   return <div className="text-xs text-[var(--color-text-muted)]" data-capability-sources>
     {([
-      ['contextWindowTokens', text('上下文', 'Context')], ['maxOutputTokens', text('模型输出容量', 'Model output capacity')],
+      ['maxOutputTokens', text('模型输出容量', 'Model output capacity')],
       ['reasoning', text('推理能力', 'Reasoning capability')], ['structuredOutput', text('结构化输出', 'Structured output')],
       ['usage', text('用量报告', 'Usage reporting')],
     ] as const).map(([key, label]) => <span className="mr-3" key={key}>{label}：{labels[modelCapabilitySource(model, key)]}</span>)}
