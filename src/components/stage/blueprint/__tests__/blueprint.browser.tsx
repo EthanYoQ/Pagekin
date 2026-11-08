@@ -54,6 +54,7 @@ let exemptions: ConsistencyExemption[]
 let nodesFail: boolean
 let committedHints: Record<number, unknown>
 let hintsFail: boolean
+let exemptionsFail: boolean
 let projections: unknown[]
 
 const BROKEN_NODE: ContinuityNode = {
@@ -93,7 +94,10 @@ function installIpc() {
       status: 'continuous', lastChapterNumber: nextChapter - 1, nextChapterNumber: nextChapter, gaps: [], duplicateChapterNumbers: [], authorityFingerprint: 'a'.repeat(64),
     }
     if (channel === 'generation:find-blueprint-recovery') return null
-    if (channel === 'db:consistency-exemption-list') return exemptions
+    if (channel === 'db:consistency-exemption-list') {
+      if (exemptionsFail) throw new Error('exemptions unavailable')
+      return exemptions
+    }
     if (channel === 'db:continuity-list-before') return projections
     if (channel === 'db:blueprint-relationship-hints') {
       if (hintsFail) throw new Error('hints unavailable')
@@ -176,6 +180,7 @@ beforeEach(async () => {
   nodesFail = false
   committedHints = {}
   hintsFail = false
+  exemptionsFail = false
   projections = []
   writableOverride.value = null
   useLocaleStore.setState({ locale: 'zh-CN' })
@@ -576,6 +581,66 @@ describe('蓝图阶段', () => {
       await act(async () => page.getByRole('button', { name: '全书都不再提示' }).click())
       expect(exemptions).toMatchObject([{ chapterNumber: null, revoked: false }])
       await expect.element(page.getByText('已记下，全书不再提示。')).toBeVisible()
+    })
+
+    describe('豁免之后的提示状态', () => {
+      const chapter = (number: number) => act(async () => page.getByRole('button', { name: new RegExp(`^${number}[^0-9]`) }).click())
+      const conflict = (number: number) => page.getByText(new RegExp(`第 ${number} 章蓝图把 林岚 和 守塔人`))
+
+      it('全书豁免后，别的章已显示过的同一条提示也消失', async () => {
+        planned()
+        committedHints = { ...committedHints, 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
+        await renderPage()
+        await save()
+        await chapter(3)
+        await save()
+        await expect.element(conflict(3)).toBeVisible()
+        await chapter(2)
+        await act(async () => page.getByRole('button', { name: '全书都不再提示' }).click())
+        await expect.element(page.getByText('已记下，全书不再提示。')).toBeVisible()
+        await chapter(3)
+        await expect.element(page.getByRole('textbox', { name: '章节标题' })).toHaveValue('灯室')
+        await expect.element(conflict(3)).not.toBeInTheDocument()
+      })
+
+      it('撤销全书豁免后，别的章的提示恢复', async () => {
+        planned()
+        committedHints = { ...committedHints, 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
+        await renderPage()
+        await save()
+        await chapter(3)
+        await save()
+        await chapter(2)
+        await act(async () => page.getByRole('button', { name: '全书都不再提示' }).click())
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await expect.element(conflict(2)).toBeVisible()
+        await chapter(3)
+        await expect.element(conflict(3)).toBeVisible()
+      })
+
+      it('豁免后作者又改了这一章并保存，撤销按最新保存的内容重查', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await act(async () => page.getByLabelText(/作者微操指导/).fill('两人在这一章和解。'))
+        await save()
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await vi.waitFor(() => expect(exemptions).toMatchObject([{ revoked: true }]))
+        await expect.element(page.getByRole('button', { name: '撤销' })).not.toBeInTheDocument()
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+      })
+
+      it('豁免已保存但重查失败：提示不和「已记下」同时显示', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await expect.element(conflict(2)).toBeVisible()
+        exemptionsFail = true
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+      })
     })
 
     it('回执读不出来时保存照常，不提示也不报错', async () => {

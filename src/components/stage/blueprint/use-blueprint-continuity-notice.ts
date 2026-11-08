@@ -13,9 +13,8 @@ import { sameProjectSessionContext } from '../../../shared/project-session-conte
 import { useLocaleStore } from '../../../stores/locale-store'
 import { isProjectSessionCurrent } from '../../project-session-gate'
 
-interface Recheck { session: ProjectSessionContext; blueprint: BlueprintForPreflight }
-interface Exempted extends Recheck { finding: PreflightFinding; scope: ExemptionScope }
-interface Notices { session: ProjectSessionContext; byChapter: ReadonlyMap<number, { recheck: Recheck; findings: PreflightFinding[] }> }
+interface Exempted { session: ProjectSessionContext; chapterNumber: number; finding: PreflightFinding; scope: ExemptionScope }
+interface Notices { session: ProjectSessionContext; byChapter: ReadonlyMap<number, { blueprint: BlueprintForPreflight; findings: PreflightFinding[] }> }
 
 /** 保存蓝图之后的提示。这里的失败一律不出声：提示读不出来，保存已经成功了。 */
 export function useBlueprintContinuityNotice() {
@@ -31,7 +30,7 @@ export function useBlueprintContinuityNotice() {
         const byChapter = new Map(current && sameProjectSessionContext(current.session, session) ? current.byChapter : [])
         for (const blueprint of blueprints) {
           byChapter.set(blueprint.chapterNumber, {
-            recheck: { session, blueprint },
+            blueprint,
             findings: findings.filter(finding => finding.chapterNumber === blueprint.chapterNumber),
           })
         }
@@ -46,14 +45,17 @@ export function useBlueprintContinuityNotice() {
   }
 
   const exempt = async (chapterNumber: number, finding: PreflightFinding, scope: ExemptionScope) => {
-    const entry = notice(chapterNumber)
-    if (!entry || busy) return
+    if (!notice(chapterNumber) || !notices || busy) return
+    const { session } = notices
     setBusy(true)
     try {
-      const saved = await saveFindingExemption(entry.recheck.session, finding, scope, useLocaleStore.getState().text).catch(() => null)
+      const saved = await saveFindingExemption(session, finding, scope, useLocaleStore.getState().text).catch(() => null)
       if (!saved?.success) return
-      setExempted({ ...entry.recheck, finding, scope })
-      await check(entry.recheck.session, [entry.recheck.blueprint])
+      setExempted({ session, chapterNumber, finding, scope })
+      setNotices(current => current && { ...current, byChapter: new Map([...current.byChapter].map(([number, entry]) => [number,
+        scope === 'book' || number === chapterNumber
+          ? { ...entry, findings: entry.findings.filter(item => item.stableFactKey !== finding.stableFactKey) }
+          : entry])) })
     } finally {
       setBusy(false)
     }
@@ -63,12 +65,13 @@ export function useBlueprintContinuityNotice() {
     if (!exempted || busy) return
     setBusy(true)
     try {
-      const { session, blueprint, finding, scope } = exempted
+      const { session, chapterNumber, finding, scope } = exempted
       const revoked = await ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', finding.stableFactKey,
         exemptionChapter(finding, scope), session.projectPath).catch(() => null)
       if (!revoked?.success) return
       setExempted(null)
-      await check(session, [blueprint])
+      const cached = notices && sameProjectSessionContext(notices.session, session) ? [...notices.byChapter.values()] : []
+      await check(session, cached.map(entry => entry.blueprint).filter(blueprint => scope === 'book' || blueprint.chapterNumber === chapterNumber))
     } finally {
       setBusy(false)
     }
@@ -77,7 +80,7 @@ export function useBlueprintContinuityNotice() {
   const clearExempted = useCallback(() => setExempted(null), [])
 
   return { busy, check, clearExempted, findings: (chapterNumber: number | undefined) => notice(chapterNumber)?.findings ?? [],
-    exempted: (chapterNumber: number | undefined) => exempted && exempted.blueprint.chapterNumber === chapterNumber && isProjectSessionCurrent(exempted.session) ? exempted : null, exempt, undo }
+    exempted: (chapterNumber: number | undefined) => exempted && exempted.chapterNumber === chapterNumber && isProjectSessionCurrent(exempted.session) ? exempted : null, exempt, undo }
 }
 
 export type BlueprintContinuityNotice = ReturnType<typeof useBlueprintContinuityNotice>
