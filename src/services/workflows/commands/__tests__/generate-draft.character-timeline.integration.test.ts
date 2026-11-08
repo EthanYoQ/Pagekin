@@ -238,7 +238,18 @@ describe('写第 N 章时提示词里的人物状态和关系按时间线取', (
       expect(next.join()).not.toContain('来源不明的近况')
       const rewrite = entriesOf(await finalPrompt(2))
       expect(rewrite).toContain('relationship: 周砚 (父子)')
-      expect(rewrite.join()).not.toContain('作者指定的码头')
+      expect(rewrite.join()).not.toContain('来源不明的近况')
+    })
+
+    it('升级前作者填的状态按当时记下的章生效，不按升级快照章：之后的章都看得到，更早的章看不到', async () => {
+      for (let chapter = 1; chapter <= 10; chapter += 1) finalize(chapter)
+      db().prepare('UPDATE characters SET cs_location=?,cs_updated_at_chapter=3,cs_provenance=? WHERE character_id=?').run('作者指定的码头',
+        JSON.stringify({ location: { kind: 'author', chapterNumber: 3, revision: 1 } }), lin)
+      db().transaction(() => refreshCharacterIdentityProjection(db()))()
+      db().transaction(() => insertContinuityBaseline(db()))()
+      expect(entriesOf(await finalPrompt(5))).toContain('location@chapter3: 作者指定的码头')
+      expect(entriesOf(await finalPrompt(3))).toContain('location@chapter3: 作者指定的码头')
+      expect(profileOf(await finalPrompt(2))).not.toContain('作者指定的码头')
     })
   })
 })

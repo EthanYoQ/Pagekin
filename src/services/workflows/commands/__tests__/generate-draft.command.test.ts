@@ -749,6 +749,20 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
       return vi.mocked(assembleChapterMaterials).mock.results.at(-1)!.value.then((assembly: { text: string }) => assembly.text)
     }
 
+    it('只读本章出场角色的节点，不把全书所有角色的历史都传过来', async () => {
+      const f = setup({ runtime: fakeOutcomes(), wordsTarget: 900, mainDefault: true, characters: ['林岚'], materialBudget: budgetFor(16_384), continuityNodes: [],
+        characterCards: [{ name: '林岚', characterId: 'lin', role: 'protagonist', currentState: {} }, { name: '周砚', characterId: 'zhou', role: 'supporting', currentState: {} }] })
+      f.context.generationModelId = '合成模型'
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => {
+        if (channel === 'generation:begin') throw new Error('STOP_AFTER_BEGIN')
+        return original(channel, ...args)
+      })
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).rejects.toThrow('STOP_AFTER_BEGIN')
+      const read = f.invoke.mock.calls.find(([channel]) => channel === 'db:character-continuity-nodes')
+      expect(JSON.stringify(read)).toContain('["lin"]')
+    })
+
     it('刚好放得下知识库片段的窗口，加上时间线后片段还在', async () => {
       let [tooSmall, enough] = [0, 16_384]
       while (enough - tooSmall > 1) {
@@ -3735,6 +3749,30 @@ ${headingPrefix}第3章：潮门
       expect(continuationPrompts[0]).toContain('作者设定（自第1章起）位置：开跑时的码头')
       expect(continuationPrompts[0]).not.toContain('开跑后才写的状态')
       expect(continuationPrompts[0]).not.toContain('档案里的关系')
+    })
+
+    it.each([
+      ['名册待修复', async () => ({ status: 'inconsistent', entries: [] })],
+      ['名册读取失败', async () => { throw new Error('SQLITE_BUSY') }],
+    ])('记录里有人物时间线而%s时拒绝恢复，不换上下文续写', async (_label, readRoster) => {
+      const recorded = JSON.stringify({ lin: ['作者设定（自第1章起）位置：开跑时的码头'] })
+      const { f, continuationPrompts } = resumeFixture([frozenTask], [], { recorded })
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => channel === 'db:character-roster-read' ? readRoster() : original(channel, ...args))
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks }))
+        .rejects.toThrow('GENERATION_DRAFT_RECOVERY_AUTHOR_INPUT_CHANGED')
+      expect(continuationPrompts).toHaveLength(0)
+    })
+
+    it('升级前开跑的运行没有记录时间线，名册读取失败时仍按原样恢复', async () => {
+      const { f, expected, continuationPrompts } = resumeFixture([frozenTask], [])
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => {
+        if (channel === 'db:character-roster-read') throw new Error('SQLITE_BUSY')
+        return original(channel, ...args)
+      })
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(expected)
+      expect(continuationPrompts).toHaveLength(1)
     })
 
     it('升级前开跑的运行没有记录时间线，恢复时沿用档案原来的行', async () => {
