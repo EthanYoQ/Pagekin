@@ -6,6 +6,7 @@ import { displayedErrorMessage } from '../i18n/app-errors'
 import { useLocaleStore } from './locale-store'
 import type {
   LLMFinishReason,
+  LocalContextWindowRequest,
   ModelDiscoveryResult,
   ModelDiscoveryRequest,
   ModelProfile,
@@ -70,6 +71,7 @@ interface LLMState {
   testConnection: (model: ModelProfile) => Promise<{ success: boolean; error?: string }>
   /** 以当前表单中的端点和凭据主动发现 provider 模型。 */
   discoverModels: (request: ModelDiscoveryRequest) => Promise<ModelDiscoveryResult>
+  discoverLocalContextWindow: (request: LocalContextWindowRequest) => Promise<number | null>
 }
 
 let initializationFlight: Promise<void> | null = null
@@ -306,4 +308,5 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
   },
 
   discoverModels: async (request) => ipc.invoke('llm:discover-models', request),
+  discoverLocalContextWindow: async (request) => ipc.invoke('llm:discover-local-context-window', request),
 }))

@@ -11,6 +11,8 @@ export const FAKE_MODEL = Object.freeze({ id: 'redesign-drive-fixture', name: '�
 export const FIXTURE_ENDPOINT_MODELS = Object.freeze(['gpt-5.5-mini', 'gpt-4.1', 'gateway/novel-writer-pro', 'text-embedding-3-small',
   'gateway/very-long-model-identifier-for-layout-checks-2026-10-24-preview', ...Array.from({ length: 12 }, (_, index) => `gateway/model-${String(index + 1).padStart(2, '0')}`)])
 
+export const FIXTURE_ENDPOINT_CONTEXT_WINDOW = Object.freeze(['gateway/novel-writer-pro', 128_000])
+
 export const FIXTURE_PROSE = '林岚沿着旧港的石阶往下走，潮水刚退，青石上还留着一层薄薄的盐霜。她把父亲留下的地图摊在膝头，对照远处灯塔的位置，一格一格数过去。守塔人站在塔下朝她招手，说昨夜的钟声比往常早了一刻。'
 const FIXTURE_REVISED = `${FIXTURE_PROSE}林岚把这句话记进日志，又核对了一遍潮位表。`
 const REVIEW = JSON.stringify({ summary: '时间线需要核对。', items: [
@@ -202,7 +204,7 @@ export async function startFakeModel(diagnostics) {
   const server = createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/v1/models' && request.headers.authorization === `Bearer ${FAKE_MODEL.apiKey}`) {
       record('models', 'GET /v1/models')
-      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: FIXTURE_ENDPOINT_MODELS.map(id => ({ id })) }))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: FIXTURE_ENDPOINT_MODELS.map(id => ({ id, ...(id === FIXTURE_ENDPOINT_CONTEXT_WINDOW[0] ? { context_window: FIXTURE_ENDPOINT_CONTEXT_WINDOW[1] } : {}) })) }))
       return
     }
     if (request.method === 'POST' && request.url.endsWith('/v1/messages')) {

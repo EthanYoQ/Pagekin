@@ -149,9 +149,12 @@ interface NodeRow {
 }
 
 function parseNode(row: NodeRow): ContinuityNode {
-  const evidence = JSON.parse(row.evidence_json) as { seq?: number; quote?: FinalizedCharacterEvidence; relationshipId?: string }
+  const evidence = JSON.parse(row.evidence_json) as { seq?: number; quote?: FinalizedCharacterEvidence; relationshipId?: string; fieldProvenance?: { kind?: string; chapterNumber?: number } | null }
+  const stored = JSON.parse(row.provenance_json) as ContinuityProvenance
+  const provenance: ContinuityProvenance = stored.kind === 'legacy' && evidence.fieldProvenance?.kind === 'author' && typeof evidence.fieldProvenance.chapterNumber === 'number'
+    ? { kind: 'legacy', authorChapter: evidence.fieldProvenance.chapterNumber } : stored
   const base = { eventId: row.event_id, subjectId: row.subject_id, subjectName: row.subject_name, value: row.value, effectiveChapter: row.effective_chapter,
-    provenance: JSON.parse(row.provenance_json) as ContinuityProvenance, draftId: row.draft_id, seq: evidence.seq ?? 0, quote: evidence.quote ?? null }
+    provenance, draftId: row.draft_id, seq: evidence.seq ?? 0, quote: evidence.quote ?? null }
   return row.target_id === null
     ? { ...base, aspect: row.aspect as CharacterStateTextField }
     : { ...base, aspect: 'relation', targetId: row.target_id, targetName: row.target_name!, relationshipId: evidence.relationshipId ?? row.event_id }

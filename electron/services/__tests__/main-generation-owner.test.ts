@@ -1677,6 +1677,11 @@ describe('材料额度（ADR-0026）', () => {
       reservedOutputTokens: 4_096, safetyMarginTokens: MAIN_GENERATION_POLICY.safetyMarginTokens })
   })
 
+  it('Ollama 取不到运行值时额度按 4,096 算，照常放行', () => {
+    expect(resolveMaterialBudget(profile({ provider: 'ollama', baseUrl: 'http://localhost:11434/v1', maxTokens: 1_024 }), 8_192))
+      .toMatchObject({ contextWindowTokens: 4_096, contextWindowSource: 'default', inputTokens: 2_560 })
+  })
+
   it('手填的窗口压过预设，拉取的窗口记拉取', () => {
     const preset = { provider: 'siliconflow' as const, modelName: 'deepseek-ai/DeepSeek-V4-Flash', baseUrl: 'https://api.siliconflow.cn/v1' }
     const presetWindow = resolveMaterialBudget(profile(preset), 8_192)
@@ -1699,6 +1704,15 @@ describe('材料额度（ADR-0026）', () => {
     f.modelSource.load = () => ++reads === 1 ? f.model : later
     const prepared = f.owner.prepareDraftContext({ chapterNumber: 1, modelId: f.model.id, promptKeys: ['first_chapter_draft'], skillStages: [], authorInputs: [], query: '第一章', selectedDraftIds: [] }, snapshot)
     expect(prepared.materialBudget).toMatchObject({ contextWindowTokens: 32_768 })
+  })
+
+  it('写稿准备核对档案依据的名册版本：落后就拒绝，相同或没读到名册时放行', () => {
+    const f = fixture(), snapshot: GenerationKnowledgeSnapshot = { version: 1, state: 'empty', storageState: 'absent', query: '第一章', topK: 5, canonicalRevision: null, documentsRevision: null, items: [] }
+    const request = { chapterNumber: 1, modelId: f.model.id, promptKeys: ['first_chapter_draft'], skillStages: [], authorInputs: [], query: '第一章', selectedDraftIds: [] }
+    const current = f.db.prepare("SELECT revision FROM character_roster_meta WHERE id='main'").pluck().get() as number
+    expect(() => f.owner.prepareDraftContext({ ...request, characterRosterRevision: current - 1 }, snapshot)).toThrow('GENERATION_DRAFT_PREPARATION_CHANGED')
+    expect(f.owner.prepareDraftContext({ ...request, characterRosterRevision: current }, snapshot).preparationId).toBeTruthy()
+    expect(f.owner.prepareDraftContext(request, snapshot).preparationId).toBeTruthy()
   })
 
   it('窗口比预留还小时输入额度归零，不报错', () => {

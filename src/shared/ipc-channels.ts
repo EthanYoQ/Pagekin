@@ -1,6 +1,6 @@
 import type { GenerationOwnerChannels, GenerationOwnerEvents } from './generation-owner-contract'
 import type { CharacterProposalChannels } from './character-proposal'
-import type { CharacterContinuityTimeline } from './character-continuity'
+import type { CharacterContinuityTimeline, ContinuityNode } from './character-continuity'
 import type { FinalizedCharacterGenerationChannels } from './finalized-character-generation'
 import type { ReviewRevisionGenerationInvokeChannels } from './review-revision-generation'
 import type { AgentGenerationChannels } from './agent-generation'
@@ -546,7 +546,16 @@ export type ModelDiscoveryRequest = Pick<
   'provider' | 'protocol' | 'baseUrl' | 'apiKey' | 'purposes'
 >
 
+export type LocalContextWindowRequest = Pick<
+  ModelProfile,
+  'provider' | 'protocol' | 'baseUrl' | 'apiKey' | 'modelName'
+>
+
 export interface LLMChannels {
+  'llm:discover-local-context-window': {
+    args: [request: LocalContextWindowRequest]
+    return: number | null
+  }
   'llm:begin-execution-lease': {
     args: [modelId: string]
     return: {
@@ -1014,6 +1023,7 @@ export interface DatabaseChannels {
     args: [expectedProjectPath: string]
     return: CharacterRosterSnapshot
   }
+  'db:character-continuity-nodes': { args: [characterIds: string[], expectedProjectPath: string]; return: ContinuityNode[] }
   'db:character-continuity-timeline': { args: [characterId: string, expectedProjectPath: string]; return: CharacterContinuityTimeline }
   'db:character-roster-commit': {
     args: [request: CharacterRosterCommitRequest, expectedProjectPath: string]

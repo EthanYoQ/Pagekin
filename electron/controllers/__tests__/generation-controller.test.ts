@@ -511,6 +511,12 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     })
     await expect(invoke('generation:prepare-draft-context', fixture.prepareRequest)).rejects.toThrow('GENERATION_DRAFT_PREPARATION_CHANGED')
   })
+  it('rejects a stale character roster revision before any knowledge request', async () => {
+    const fixture = await selectedSourceFixture(), load = vi.spyOn(knowledgeBaseLoader, 'load')
+    const current = getProjectDb()!.prepare("SELECT revision FROM character_roster_meta WHERE id='main'").pluck().get() as number
+    await expect(invoke('generation:prepare-draft-context', { ...fixture.prepareRequest, characterRosterRevision: current - 1 })).rejects.toThrow('GENERATION_DRAFT_PREPARATION_CHANGED')
+    expect(load).not.toHaveBeenCalled()
+  })
   it('keeps the original root active when a restart preparation is rejected', async () => {
     const fixture = await selectedSourceFixture()
     const prepared = await invoke('generation:prepare-draft-context', fixture.prepareRequest)
