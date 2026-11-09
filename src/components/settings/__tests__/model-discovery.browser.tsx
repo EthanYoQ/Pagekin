@@ -462,6 +462,7 @@ describe('model discovery settings flow', () => {
         local: { baseUrl: LOCAL_URL, apiKey: '', modelName: 'target' },
         cloud: { baseUrl: CLOUD_URL, apiKey: 'key-0', modelName: 'target' },
         'cloud-unfilled': { baseUrl: CLOUD_URL, apiKey: '', modelName: '' },
+        'cloud-renamed': { baseUrl: CLOUD_URL, apiKey: 'key-0', modelName: 'before-rename' },
         'cloud-manual': { baseUrl: CLOUD_URL, apiKey: 'key-0', modelName: 'target', ...stored(1_000, 'manual') },
       } satisfies Record<string, Partial<ModelProfile>>
       const listResponse = (tokens?: number): ModelDiscoveryResult => ({ success: true, models: [
@@ -524,6 +525,11 @@ describe('model discovery settings flow', () => {
         ['cloud-manual', 'clear list open list-lower select refresh list-without-window', 128_000, null, '64000', '来自服务商', 0, 3],
         ['cloud-manual', 'clear await-list manual list', 128_000, null, '20000', '你填的', 0, 1],
         ['cloud-manual', 'clear await-list key2 await-list-2 list list-stale', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud-renamed', 'open list-failed name await-list refresh await-list-2 list-lower list-late manual clear', 128_000, null, '64000', '来自服务商', 0, 3],
+        ['cloud-renamed', 'open list-failed name await-list refresh await-list-2 list-late list-lower manual clear', 128_000, null, '64000', '来自服务商', 0, 3],
+        ['cloud-renamed', 'open list-failed name await-list list manual clear', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud-renamed', 'refresh name idle list-lower', 128_000, null, '64000', '来自服务商', 0, 1],
+        ['cloud-manual', 'refresh clear idle list-lower', 128_000, null, '64000', '来自服务商', 0, 1],
       ])('%s：%s（列表 %s，运行值 %s）→ 窗口 %j，来源 %s', { timeout: 15_000 }, async (start, steps, listWindow, runtime, value, tag, runtimeReads, listReads) => {
         const runtimeReplies: Array<(tokens: number | null) => void> = []
         const listReplies: Array<(result: ModelDiscoveryResult) => void> = []
@@ -546,6 +552,7 @@ describe('model discovery settings flow', () => {
           },
           list: () => settle(listReplies, 'newest', listResponse(listWindow)),
           'list-stale': () => settle(listReplies, 'oldest', listResponse(STALE_WINDOW)),
+          'list-late': () => settle(listReplies, 'oldest', listResponse(listWindow)),
           'list-lower': () => settle(listReplies, 'newest', listResponse(64_000)),
           'list-without-window': () => settle(listReplies, 'newest', listResponse()),
           'list-failed': () => settle(listReplies, 'newest', { success: false, errorCode: 'network' }),
