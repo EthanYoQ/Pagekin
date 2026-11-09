@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
   exemptionChapter,
   readConsistencyPreflight,
@@ -14,6 +14,7 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { isProjectSessionCurrent } from '../../project-session-gate'
 
 interface Exempted { session: ProjectSessionContext; chapterNumber: number; finding: PreflightFinding; scope: ExemptionScope }
+interface LatestCheck { session: ProjectSessionContext; blueprint: BlueprintForPreflight }
 interface Notices { session: ProjectSessionContext; byChapter: ReadonlyMap<number, { blueprint: BlueprintForPreflight; findings: PreflightFinding[] }> }
 
 /** 保存蓝图之后的提示。这里的失败一律不出声：提示读不出来，保存已经成功了。 */
@@ -21,14 +22,19 @@ export function useBlueprintContinuityNotice() {
   const [notices, setNotices] = useState<Notices | null>(null)
   const [exempted, setExempted] = useState<Exempted | null>(null)
   const [busy, setBusy] = useState(false)
+  const latestChecks = useRef(new Map<number, LatestCheck>())
 
   const check = useCallback(async (session: ProjectSessionContext, blueprints: readonly BlueprintForPreflight[]) => {
+    const requests = blueprints.map((blueprint): LatestCheck => ({ session, blueprint }))
+    for (const request of requests) latestChecks.current.set(request.blueprint.chapterNumber, request)
     try {
       const { findings } = await readConsistencyPreflight(session, blueprints)
       if (!isProjectSessionCurrent(session)) return
+      const fresh = requests.filter(request => latestChecks.current.get(request.blueprint.chapterNumber) === request)
+      if (fresh.length === 0) return
       setNotices(current => {
         const byChapter = new Map(current && sameProjectSessionContext(current.session, session) ? current.byChapter : [])
-        for (const blueprint of blueprints) {
+        for (const { blueprint } of fresh) {
           byChapter.set(blueprint.chapterNumber, {
             blueprint,
             findings: findings.filter(finding => finding.chapterNumber === blueprint.chapterNumber),
@@ -70,15 +76,15 @@ export function useBlueprintContinuityNotice() {
         exemptionChapter(finding, scope), session.projectPath).catch(() => null)
       if (!revoked?.success) return
       setExempted(null)
-      const cached = notices && sameProjectSessionContext(notices.session, session) ? [...notices.byChapter.values()] : []
-      await check(session, cached.map(entry => entry.blueprint).filter(blueprint => scope === 'book' || blueprint.chapterNumber === chapterNumber))
+      const latest = [...latestChecks.current.values()].filter(entry => sameProjectSessionContext(entry.session, session))
+      await check(session, latest.map(entry => entry.blueprint).filter(blueprint => scope === 'book' || blueprint.chapterNumber === chapterNumber))
     } finally {
       setBusy(false)
     }
   }
 
   const clearExempted = useCallback(() => setExempted(null), [])
-  const clear = useCallback(() => { setNotices(null); setExempted(null) }, [])
+  const clear = useCallback(() => { latestChecks.current.clear(); setNotices(null); setExempted(null) }, [])
 
   return { busy, check, clear, clearExempted, findings: (chapterNumber: number | undefined) => notice(chapterNumber)?.findings ?? [],
     exempted: (chapterNumber: number | undefined) => exempted && exempted.chapterNumber === chapterNumber && isProjectSessionCurrent(exempted.session) ? exempted : null, exempt, undo }
