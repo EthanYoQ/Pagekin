@@ -426,16 +426,17 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
   const candidates: FinalizedRelationCandidate[] = []
   for (const reported of changes) {
     const pair = authorRelationsOfPair(db, reported.sourceId, reported.targetId)
-    if (pair.all.includes(reported.relation)) continue
     const change = { ...reported, sourceId: pair.sourceId, targetId: pair.targetId }
     const series = derivedRelationSeries(change.sourceId, change.targetId)
     const previous = latestNodesBefore(readCharacterContinuityNodes(db, change.sourceId), source.chapterNumber + 1).relations
       .flatMap(pair => pair.lines).find(line => line.relationshipId === series)
     const unchanged = previous?.value === change.relation
+    const matchesAuthor = pair.all.includes(change.relation)
+    if (matchesAuthor && (!previous || unchanged)) continue
     if (unchanged && !(previous.provenance.kind === 'derived' && previous.provenance.source.finalizationId === source.finalizationId)) continue
     const names = { sourceName: name(change.sourceId), targetName: name(change.targetId) }
     if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence })
-    if (pair.rows.length) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
+    if (pair.rows.length && !matchesAuthor) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
       ...names, value: change.relation, evidence: change.evidence })
   }
   if (!candidates.length) return
