@@ -78,8 +78,9 @@ export function useBlueprintContinuityNotice() {
   }
 
   const clearExempted = useCallback(() => setExempted(null), [])
+  const clear = useCallback(() => { setNotices(null); setExempted(null) }, [])
 
-  return { busy, check, clearExempted, findings: (chapterNumber: number | undefined) => notice(chapterNumber)?.findings ?? [],
+  return { busy, check, clear, clearExempted, findings: (chapterNumber: number | undefined) => notice(chapterNumber)?.findings ?? [],
     exempted: (chapterNumber: number | undefined) => exempted && exempted.chapterNumber === chapterNumber && isProjectSessionCurrent(exempted.session) ? exempted : null, exempt, undo }
 }
 

@@ -26,6 +26,7 @@ import { commitAuthorCharacterRoster } from '../services/character-roster-author
 import { readCharacterContinuityNodes, readCharacterContinuityTimeline, readContinuityNodesWithCurrentNames } from '../repositories/character-continuity-repository'
 import { CharacterRosterRepository } from '../repositories/character-roster-repository'
 import type { CharacterRosterCommitRequest } from '../../src/shared/character-roster'
+import type { BlueprintForPreflight } from '../../src/shared/consistency-preflight'
 import { DraftRepository } from '../repositories/draft-repository'
 import type { DraftSourceDependency } from '../../src/shared/draft-source-dependency'
 import { FinalizedDraftImportRepository } from '../repositories/finalized-draft-import-repository'
@@ -702,9 +703,9 @@ export function registerDatabaseController() {
     return readCharacterContinuityTimeline(database, characterId)
   })
 
-  ipcMain.handle('db:blueprint-relationship-hints', async (_event, chapterNumbers: number[], expectedProjectPath: string) => {
+  ipcMain.handle('db:blueprint-relationship-hints', async (_event, blueprints: BlueprintForPreflight[], expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    return BlueprintRepository.committedRelationshipHints(chapterNumbers)
+    return BlueprintRepository.committedRelationshipHints(blueprints)
   })
 
   ipcMain.handle('db:character-continuity-preflight-nodes', async (_event, expectedProjectPath: string) => {

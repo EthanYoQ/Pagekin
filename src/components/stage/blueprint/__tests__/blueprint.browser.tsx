@@ -583,6 +583,24 @@ describe('蓝图阶段', () => {
       await expect.element(page.getByText('已记下，全书不再提示。')).toBeVisible()
     })
 
+    it('读回执时带上实际被检查的蓝图内容', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await vi.waitFor(() => expect(calls('db:blueprint-relationship-hints').length).toBeGreaterThan(0))
+      expect(calls('db:blueprint-relationship-hints')[0]?.[1]).toMatchObject([{ chapterNumber: 2, title: '同行' }])
+    })
+
+    it('蓝图被别处替换后，旧提示和豁免按钮一起消失', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).toBeVisible()
+      await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).not.toBeInTheDocument()
+      await expect.element(page.getByRole('button', { name: '这是有意安排' })).not.toBeInTheDocument()
+    })
+
     describe('豁免之后的提示状态', () => {
       const chapter = (number: number) => act(async () => page.getByRole('button', { name: new RegExp(`^${number}[^0-9]`) }).click())
       const conflict = (number: number) => page.getByText(new RegExp(`第 ${number} 章蓝图把 林岚 和 守塔人`))

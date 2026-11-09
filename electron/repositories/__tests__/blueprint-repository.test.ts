@@ -798,44 +798,52 @@ describe('BlueprintRepository range commit', () => {
       db = createBlueprintDb()
       vi.mocked(getProjectDb).mockReturnValue(db)
     })
+    const hintsFor = (...chapters: number[]) => BlueprintRepository.committedRelationshipHints(
+      BlueprintRepository.getAll().filter(row => chapters.includes(row.chapterNumber)),
+    )
+
+    it('被检查的内容和回执不同就没有提示，即使这一章的数据库行没变', () => {
+      commit('first', [withHints(1)])
+      expect(BlueprintRepository.committedRelationshipHints([{ ...blueprintFor(1), characters: ['别的人'] }])).toEqual({})
+    })
 
     it('按章返回覆盖该章的回执里的提示，没有提示的章不出现', () => {
       commit('first', [withHints(1), blueprintFor(2)])
-      expect(BlueprintRepository.committedRelationshipHints([1, 2, 3])).toEqual({ 1: HINTS })
+      expect(hintsFor(1, 2, 3)).toEqual({ 1: HINTS })
     })
 
     it('作者改过这一章后这一章没有提示，同一份回执的其他章不受影响', () => {
       commit('first', [withHints(1), withHints(2)])
       BlueprintRepository.upsert({ ...blueprintFor(2), keyEvents: '作者改了这一章' })
-      expect(BlueprintRepository.committedRelationshipHints([1, 2])).toEqual({ 1: HINTS })
+      expect(hintsFor(1, 2)).toEqual({ 1: HINTS })
     })
 
     it('原样保存不算改过，定稿写入的章节要点也不算', () => {
       commit('first', [withHints(1)])
       BlueprintRepository.upsert(blueprintFor(1))
       BlueprintRepository.updateNotes(1, '定稿后的要点')
-      expect(BlueprintRepository.committedRelationshipHints([1])).toEqual({ 1: HINTS })
+      expect(hintsFor(1)).toEqual({ 1: HINTS })
     })
 
     it('只认最近一次回执：同一秒内后提交的回执没有提示，就不再用前一次的', () => {
       commit('first', [withHints(1)])
       commit('second', [blueprintFor(1)])
-      expect(BlueprintRepository.committedRelationshipHints([1])).toEqual({})
+      expect(hintsFor(1)).toEqual({})
     })
 
     it('回执损坏时没有提示，也不报错；另一份完好的回执照常', () => {
       commit('broken', [withHints(1)])
       commit('good', [withHints(2)])
       db.prepare("UPDATE blueprint_commit_operations SET character_sync_input='{not json' WHERE operation_id='broken'").run()
-      expect(BlueprintRepository.committedRelationshipHints([1, 2])).toEqual({ 2: HINTS })
+      expect(hintsFor(1, 2)).toEqual({ 2: HINTS })
       db.prepare(`UPDATE blueprint_commit_operations SET character_sync_input='[null,{"chapterNumber":1}]' WHERE operation_id='broken'`).run()
-      expect(BlueprintRepository.committedRelationshipHints([1, 2])).toEqual({ 2: HINTS })
+      expect(hintsFor(1, 2)).toEqual({ 2: HINTS })
     })
 
     it('旧项目没有回执时为空', () => {
       BlueprintRepository.listPendingCharacterSyncOperations()
       BlueprintRepository.upsert(blueprintFor(1))
-      expect(BlueprintRepository.committedRelationshipHints([1])).toEqual({})
+      expect(hintsFor(1)).toEqual({})
     })
   })
 })

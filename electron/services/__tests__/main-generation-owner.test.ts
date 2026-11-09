@@ -1620,7 +1620,7 @@ describe('durable directory commit and remaining stage', () => {
       }
       const preflight = () => {
         const row = BlueprintRepository.getByChapter(12)!
-        return findBlueprintContinuityRisks([], { ...row, relationshipHints: BlueprintRepository.committedRelationshipHints([12])[12] }, [], readContinuityNodesWithCurrentNames(f.db))
+        return findBlueprintContinuityRisks([], { ...row, relationshipHints: BlueprintRepository.committedRelationshipHints([row])[12] }, [], readContinuityNodesWithCurrentNames(f.db))
       }
       const relationNodes = () => f.db.prepare("SELECT value,effective_chapter AS chapter FROM character_continuity_events WHERE aspect='relation' ORDER BY rowid").all()
       return { f, editRoster, preflight, relationNodes }

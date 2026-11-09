@@ -36,7 +36,7 @@ export async function readConsistencyPreflight(
   )
   // 回执和关系节点读不出来时只少一类提示，不影响其他提示，也不影响写作。
   const hints = await ipc.invokeWithProjectSession(
-    session, 'db:blueprint-relationship-hints', blueprints.map(blueprint => blueprint.chapterNumber), session.projectPath,
+    session, 'db:blueprint-relationship-hints', [...blueprints], session.projectPath,
   ).catch((): Record<number, unknown> => ({}))
   const nodes = Object.keys(hints).length > 0
     ? await ipc.invokeWithProjectSession(session, 'db:character-continuity-preflight-nodes', session.projectPath).catch(() => [])

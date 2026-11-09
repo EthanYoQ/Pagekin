@@ -51,7 +51,7 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
 }) {
   const text = useLocaleStore(s => s.text)
   const continuity = useBlueprintContinuityNotice()
-  const plan = useChapterBlueprints({ projectKey, initialChapterNumber, selectRequest, onSaved: (session, saved) => void continuity.check(session, saved) })
+  const plan = useChapterBlueprints({ projectKey, initialChapterNumber, selectRequest, onSaved: (session, saved) => void continuity.check(session, saved), onExternalRefresh: continuity.clear })
   const trash = useChapterTrash()
   const { chapters } = useStageView()
   const rows = useMemo(() => new Map(chapters.map(row => [row.number, row])), [chapters])

@@ -81,6 +81,7 @@ export function useChapterBlueprints({
   initialChapterNumber,
   selectRequest,
   onSaved,
+  onExternalRefresh,
 }: {
   projectKey: string
   initialChapterNumber?: number
@@ -88,6 +89,8 @@ export function useChapterBlueprints({
   selectRequest?: number
   /** saved 是这次真正写入的章。 */
   onSaved?: (session: ProjectSessionContext, saved: readonly ChapterBlueprint[]) => void
+  /** 蓝图被本页保存以外的来源改过。 */
+  onExternalRefresh?: () => void
 }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
@@ -377,10 +380,11 @@ export function useChapterBlueprints({
         )
         && shouldRefreshBlueprints(payload.resources)
       ) {
+        onExternalRefresh?.()
         loadBlueprints()
       }
     })
-  }, [loadBlueprints, projectKey])
+  }, [loadBlueprints, onExternalRefresh, projectKey])
 
   const selected = projectDataReady ? blueprints[selectedIdx] ?? null : null
 
