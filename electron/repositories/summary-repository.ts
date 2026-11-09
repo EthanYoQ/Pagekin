@@ -424,6 +424,7 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
   const { source } = context
   const name = (id: string) => context.characters.find(character => character.characterId === id)!.displayNameSnapshot
   const candidates: FinalizedRelationCandidate[] = []
+  const settled: string[] = []
   for (const reported of changes) {
     const pair = authorRelationsOfPair(db, reported.sourceId, reported.targetId)
     const change = { ...reported, sourceId: pair.sourceId, targetId: pair.targetId }
@@ -432,6 +433,7 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
       .flatMap(pair => pair.lines).find(line => line.relationshipId === series)
     const unchanged = previous?.value === change.relation
     const matchesAuthor = pair.all.includes(change.relation)
+    if (matchesAuthor) settled.push(unorderedPairKey(change.sourceId, change.targetId))
     if (matchesAuthor && (!previous || unchanged)) continue
     if (unchanged && !(previous.provenance.kind === 'derived' && previous.provenance.source.finalizationId === source.finalizationId)) continue
     const names = { sourceName: name(change.sourceId), targetName: name(change.targetId) }
@@ -439,7 +441,7 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
     if (pair.rows.length && !matchesAuthor) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
       ...names, value: change.relation, evidence: change.evidence })
   }
-  if (!candidates.length) return
+  if (!candidates.length && !settled.length) return
   const row = db.prepare(`SELECT id,character_state_candidates AS candidates FROM summary_snapshots
     WHERE draft_id=? AND source_finalization_id=? AND source_content_hash=? AND projection_generation=?`)
     .get(source.draftId, source.finalizationId, source.contentHash, context.projectionGeneration) as { id: number; candidates: string } | undefined
@@ -447,7 +449,9 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
   const store = parseCharacterStateCandidateStore(row.candidates)
   const decided = new Set(store.receipts.map(receipt => receipt.candidateKey))
   const byPair = new Map(store.relationPending.map(candidate => [unorderedPairKey(candidate.sourceId, candidate.targetId), candidate]))
+  for (const key of settled) byPair.delete(key)
   for (const candidate of candidates) if (!decided.has(candidate.candidateKey)) byPair.set(unorderedPairKey(candidate.sourceId, candidate.targetId), candidate)
+  if (isDeepStrictEqual([...byPair.values()], store.relationPending)) return
   store.relationPending = [...byPair.values()]
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
