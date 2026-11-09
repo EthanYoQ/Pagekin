@@ -11,6 +11,7 @@ const failureText = (cause: unknown) => appErrorMessage(useLocaleStore.getState(
 
 /** 定稿发现的、和作者设定不一致的关系：采用、保留原设定，或以后再说（什么都不记）。 */
 export function usePendingRelationCandidates(session: ProjectSessionContext) {
+  const rosterLoads = useCharacterStore(state => state.rosterLoads)
   const [candidates, setCandidates] = useState<PendingFinalizedRelationCandidate[]>([])
   const [openKey, setOpenKey] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -30,7 +31,7 @@ export function usePendingRelationCandidates(session: ProjectSessionContext) {
   useEffect(() => {
     const timer = window.setTimeout(() => { void reload() }, 0)
     return () => window.clearTimeout(timer)
-  }, [reload])
+  }, [reload, rosterLoads])
 
   const open = candidates.find(item => item.candidateKey === openKey) ?? null
 
