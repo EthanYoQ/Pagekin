@@ -54,6 +54,7 @@ let exemptions: ConsistencyExemption[]
 let nodesFail: boolean
 let committedHints: Record<number, unknown>
 let hintsFail: boolean
+let heldHintReplies: Array<Promise<Record<number, unknown>>>
 let exemptionsFail: boolean
 let projections: unknown[]
 
@@ -101,7 +102,7 @@ function installIpc() {
     if (channel === 'db:continuity-list-before') return projections
     if (channel === 'db:blueprint-relationship-hints') {
       if (hintsFail) throw new Error('hints unavailable')
-      return committedHints
+      return heldHintReplies.shift() ?? committedHints
     }
     if (channel === 'db:character-continuity-preflight-nodes') {
       if (nodesFail) throw new Error('nodes unavailable')
@@ -180,6 +181,7 @@ beforeEach(async () => {
   nodesFail = false
   committedHints = {}
   hintsFail = false
+  heldHintReplies = []
   exemptionsFail = false
   projections = []
   writableOverride.value = null
@@ -599,6 +601,111 @@ describe('蓝图阶段', () => {
       await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
       await expect.element(page.getByText('依据：第 1 章 · 决裂')).not.toBeInTheDocument()
       await expect.element(page.getByRole('button', { name: '这是有意安排' })).not.toBeInTheDocument()
+    })
+
+    describe('迟到的预检结果', () => {
+      const CONFLICT = { 2: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
+      const conflict = (number: number) => page.getByText(new RegExp(`第 ${number} 章蓝图把 林岚 和 守塔人`))
+      const chapter = (number: number) => act(async () => page.getByRole('button', { name: new RegExp(`^${number}[^0-9]`) }).click())
+      const retitle = (title: string) => act(async () => page.getByRole('textbox', { name: '章节标题' }).fill(title))
+      const hold = () => {
+        let release!: (hints: Record<number, unknown>) => void
+        heldHintReplies.push(new Promise(resolve => { release = resolve }))
+        return release
+      }
+      const requested = (count: number) => vi.waitFor(() => expect(calls('db:blueprint-relationship-hints')).toHaveLength(count))
+      const landed = async (count: number) => {
+        await vi.waitFor(() => expect(calls('db:continuity-list-before')).toHaveLength(count))
+        await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+      }
+
+      it('蓝图被别处刷新后才返回的结果，不把提示带回来', async () => {
+        planned()
+        await renderPage()
+        const late = hold()
+        await save()
+        await requested(1)
+        await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
+        await act(async () => late(CONFLICT))
+        await landed(1)
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+        await expect.element(page.getByRole('button', { name: '这是有意安排' })).not.toBeInTheDocument()
+      })
+
+      it('刷新之后又保存，刷新前的结果仍然写不进去', async () => {
+        planned()
+        await renderPage()
+        const beforeRefresh = hold()
+        await save()
+        await requested(1)
+        await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
+        const afterRefresh = hold()
+        await retitle('回潮')
+        await save()
+        await requested(2)
+        await act(async () => beforeRefresh(CONFLICT))
+        await landed(1)
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+        await act(async () => afterRefresh({}))
+        await landed(2)
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+      })
+
+      it('同一章旧结果晚于新结果返回：显示新结果，撤销按新内容重查', async () => {
+        planned()
+        await renderPage()
+        const older = hold()
+        await save()
+        await requested(1)
+        const newer = hold()
+        await retitle('回潮')
+        await save()
+        await requested(2)
+        await act(async () => newer(CONFLICT))
+        await expect.element(conflict(2)).toBeVisible()
+        await act(async () => older({}))
+        await landed(2)
+        await expect.element(conflict(2)).toBeVisible()
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await requested(3)
+        expect(calls('db:blueprint-relationship-hints')[2]?.[1]).toMatchObject([{ chapterNumber: 2, title: '回潮' }])
+      })
+
+      it('新的保存还没出结果就撤销豁免：按新内容重查', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await expect.element(conflict(2)).toBeVisible()
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        const pendingSave = hold()
+        await retitle('回潮')
+        await save()
+        await requested(2)
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await requested(3)
+        expect(calls('db:blueprint-relationship-hints')[2]?.[1]).toMatchObject([{ chapterNumber: 2, title: '回潮' }])
+        await act(async () => pendingSave({}))
+      })
+
+      it('不同章的预检互不作废', async () => {
+        planned()
+        await renderPage()
+        const second = hold()
+        await save()
+        await requested(1)
+        await chapter(3)
+        const third = hold()
+        await save()
+        await requested(2)
+        await act(async () => third({ 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }))
+        await expect.element(conflict(3)).toBeVisible()
+        await act(async () => second(CONFLICT))
+        await landed(2)
+        await expect.element(conflict(3)).toBeVisible()
+        await chapter(2)
+        await expect.element(conflict(2)).toBeVisible()
+      })
     })
 
     describe('豁免之后的提示状态', () => {
