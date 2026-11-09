@@ -28,6 +28,8 @@ export interface CharacterRelationNode extends ContinuityNodeBase {
   targetId: string
   targetName: string
   relationshipId: string
+  /** 作者对这条定稿发现选了保留原设定。只有写稿读取会带上。 */
+  authorDeclined?: true
 }
 export type ContinuityNode = CharacterStateNode | CharacterRelationNode
 
@@ -78,6 +80,7 @@ export function latestNodesBefore(nodes: readonly ContinuityNode[], chapter: num
   for (const node of latest.values()) {
     if (node.value === '') continue
     if (node.aspect !== 'relation') { states.push(node); continue }
+    if (node.authorDeclined) continue
     const key = JSON.stringify([node.subjectId, node.targetId])
     const pair = pairs.get(key) ?? { subjectId: node.subjectId, targetId: node.targetId, lines: [], conflict: false }
     pair.lines.push(node)
