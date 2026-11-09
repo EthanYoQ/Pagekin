@@ -12,7 +12,7 @@
  * 不写进 .git/config，不拼进 remote URL。
  */
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -34,6 +34,17 @@ export const GIT_SYNC_IGNORE_ENTRIES: readonly string[] = [
   'Thumbs.db',
   'git-sync.conf',
 ]
+
+
+/** 同步问 git：路径是否已被跟踪。失败（未初始化、无该文件）都按「没有」处理。 */
+function spawnSyncGit(workTree: string, args: readonly string[]): boolean {
+  try {
+    const result = spawnSync('git', ['-c', 'core.quotePath=false', ...args], { cwd: workTree, stdio: 'ignore' })
+    return result.status === 0
+  } catch {
+    return false
+  }
+}
 
 export class GitSyncError extends Error {
   constructor(readonly code: GitSyncErrorCode, readonly detail?: string) {
@@ -185,6 +196,32 @@ function writeAskpassScript(directory: string, credentials: GitSyncCredentials):
   fs.writeFileSync(file, body, { mode: 0o700 })
   try { fs.chmodSync(file, 0o700) } catch { /* Windows 上无 POSIX 模式 */ }
   return file
+}
+
+export interface GitSyncPushInput {
+  workTree: string
+  remoteUrl: string
+  branch: string
+  credentials: GitSyncCredentials
+  authorName: string
+  authorEmail: string
+  /** 要一起提交的作品（相对书库根的路径）；只传这次允许动的书 */
+  books: readonly LibraryBook[]
+  /** 主进程已关库的书，逐本做一致快照 */
+  snapshot: (book: LibraryBook) => Promise<void>
+  /** 分叉自动合并后，告诉调用方哪些书被远端改回来了，好清 -wal/-shm 并校验库 */
+  afterReconcile?: (changedBooks: readonly string[], keptLocal: readonly string[], tookRemote: readonly string[]) => Promise<void>
+}
+
+export interface GitSyncPullResult {
+  updated: boolean
+  commit: GitCommitView | null
+  changedBooks: string[]
+  /** 按书对齐时：保留本机的作品 / 采用远端的作品 */
+  keptLocal: string[]
+  tookRemote: string[]
+  /** 「以远端为准」时本机原提交存到的备份分支 */
+  backupRef: string | null
 }
 
 export interface GitSyncServiceOptions {
@@ -392,6 +429,25 @@ export class GitSyncService {
     }
   }
 
+  /**
+   * 只刷新远端引用，用于让界面上的 ahead/behind/diverged 反映真实远端。
+   * 不关库、不改工作区；失败就静默保留旧读数（离线时界面不该报错）。
+   */
+  async refreshRemoteRefs(workTree: string, branch: string, credentials: GitSyncCredentials): Promise<boolean> {
+    if (!(await this.isInitialized(workTree))) return false
+    try {
+      return await this.withCredentials(workTree, credentials, async env => {
+        const fetched = await this.run(workTree, ['fetch', REMOTE_NAME, '--prune'], env)
+        if (fetched.code !== 0) return false
+        // fetch 只更新 refs/remotes，本地 HEAD 不动，所以这个操作永远安全。
+        const remote = await this.run(workTree, ['rev-parse', '--verify', `${REMOTE_NAME}/${branch}`], env)
+        return remote.code === 0
+      })
+    } catch {
+      return false
+    }
+  }
+
   async status(workTree: string): Promise<GitSyncStatus> {
     const empty: GitSyncStatus = {
       initialized: false, hasRemote: false, remoteUrl: null, branch: 'main',
@@ -441,6 +497,8 @@ export class GitSyncService {
   }): Promise<{ created: boolean }> {
     const created = !(await this.isInitialized(input.workTree))
     if (created) await this.mustRun(input.workTree, ['init', '-b', input.branch?.trim() || 'main'])
+    // 只在仓库里还没有可跟踪的 .gitignore 时才写它；已经跟踪的绝不能改写——
+    // 那会让一台本来干净的本机凭空多出「待上传改动」，作者拉取后总看到「有 N 个文件待上传」。
     this.ensureIgnoreFile(input.workTree)
     if (input.remoteUrl) {
       const url = normalizeGitRemoteUrl(input.remoteUrl)
@@ -449,22 +507,25 @@ export class GitSyncService {
       else if (current.stdout.trim() !== url) await this.mustRun(input.workTree, ['remote', 'set-url', REMOTE_NAME, url])
     }
     await this.ensureIdentity(input.workTree, input.authorName, input.authorEmail)
-    // 生成的 .gitignore 要立刻进仓库：否则它永远是一条「未提交改动」，
-    // 让「本地必须干净」的检查永远失败，拉取就永远被拒。
-    const tracked = await this.run(input.workTree, ['ls-files', '--error-unmatch', '.gitignore'])
-    if (tracked.code !== 0) {
-      await this.mustRun(input.workTree, ['add', '--', '.gitignore'])
-      const head = await this.run(input.workTree, ['rev-parse', '--verify', 'HEAD'])
-      // 仓库里还没有任何提交时不能 commit；此时 .gitignore 留在暂存区，由首次上传一起提交。
-      if (head.code === 0) {
-        await this.mustRun(input.workTree, ['commit', '-q', '-m', 'chore: 忽略每台机器各自的运行时文件', '--', '.gitignore'])
-      }
-    }
+    // 忽略规则不写进仓库，改写到 .git/info/exclude：
+    //   - 它是本机的，不产生提交，也就绝不会让两台电脑各自新增同一个文件而分叉；
+    //   - 又确实让运行时文件不进 git status，拉取前的「本地必须干净」检查能通过。
+    // 之前这里会 commit 一个 .gitignore，远端本来就有这个文件时，本机就凭空多一个提交，
+    // 任何一次拉取都会退化成「分叉」，作者只会看到「打开项目失败」。
+    this.ensureExcludeFile(input.workTree)
     return { created }
   }
 
+  /**
+   * 生成 .gitignore 仅用于「仓库里还没有这份文件」的初始情形。
+   * 文件一旦被 git 跟踪，就绝不能再改写：忽略规则改由 .git/info/exclude 承担，
+   * 否则每次同步都会把它变成一条未提交改动。
+   */
   private ensureIgnoreFile(workTree: string): void {
     const ignorePath = path.join(workTree, '.gitignore')
+    // 已跟踪 → 原样不动。
+    const tracked = spawnSyncGit(workTree, ['ls-files', '--error-unmatch', '.gitignore'])
+    if (tracked) return
     const existing = fs.existsSync(ignorePath) ? fs.readFileSync(ignorePath, 'utf8') : ''
     const lines = new Set(existing.split(/\r?\n/u).map(line => line.trim()).filter(Boolean))
     let changed = false
@@ -474,6 +535,23 @@ export class GitSyncService {
     if (changed || !fs.existsSync(ignorePath)) {
       fs.writeFileSync(ignorePath, `${[...lines].join('\n')}\n`, 'utf8')
     }
+  }
+
+  /** 把运行时文件的忽略规则写进 .git/info/exclude：只影响本机，不进仓库。 */
+  private ensureExcludeFile(workTree: string): void {
+    const gitDir = path.join(workTree, '.git')
+    if (!fs.existsSync(gitDir)) return
+    const excludePath = path.join(gitDir, 'info', 'exclude')
+    try {
+      fs.mkdirSync(path.dirname(excludePath), { recursive: true })
+      const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf8') : ''
+      const lines = new Set(existing.split(/\r?\n/u).map(line => line.trim()).filter(Boolean))
+      let changed = false
+      for (const entry of GIT_SYNC_IGNORE_ENTRIES) {
+        if (!lines.has(entry)) { lines.add(entry); changed = true }
+      }
+      if (changed) fs.writeFileSync(excludePath, `${[...lines].join('\n')}\n`, 'utf8')
+    } catch { /* 忽略规则写不进去不该阻断同步，后面还有 status 检查兜底 */ }
   }
 
   /** 没有全局 git 身份时就地补一个，绝不改动用户的全局配置。 */
@@ -496,18 +574,7 @@ export class GitSyncService {
    * 只提交真正有改动的书：git add 只按给定路径做，没动过的书连暂存区都不会进，
    * 因此不会产生空提交，也就不会出现「同步了别的书」。
    */
-  async push(input: {
-    workTree: string
-    remoteUrl: string
-    branch: string
-    credentials: GitSyncCredentials
-    authorName: string
-    authorEmail: string
-    /** 要一起提交的作品（相对书库根的路径）；只传这次允许动的书 */
-    books: readonly LibraryBook[]
-    /** 主进程已关库的书，逐本做一致快照 */
-    snapshot: (book: LibraryBook) => Promise<void>
-  }): Promise<{ committed: boolean; commit: GitCommitView | null; uploaded: Array<{ relativePath: string; committed: boolean }> }> {
+  async push(input: GitSyncPushInput): Promise<{ committed: boolean; commit: GitCommitView | null; uploaded: Array<{ relativePath: string; committed: boolean }> }> {
     await this.initialize({
       workTree: input.workTree,
       branch: input.branch,
@@ -521,40 +588,60 @@ export class GitSyncService {
     const ignoreStaged = (await this.run(input.workTree, ['diff', '--cached', '--name-only', '--', '.gitignore'])).stdout.trim()
     const commitPaths = (bookPath: string): string[] => (ignoreStaged ? ['.gitignore', bookPath] : [bookPath])
 
-    const uploaded: Array<{ relativePath: string; committed: boolean }> = []
-    for (const book of input.books) {
-      // 快照放在 add 之前：先合并 WAL，再让 git 看到最终字节。
-      await input.snapshot(book)
-      await this.mustRun(input.workTree, ['add', '-A', '--', book.relativePath])
-      const staged = await this.run(input.workTree, ['diff', '--cached', '--quiet', '--', book.relativePath])
-      const hasChanges = staged.code !== 0
-      uploaded.push({ relativePath: book.relativePath, committed: hasChanges })
-      if (!hasChanges) continue
-      const stamp = this.now().toISOString().replace('T', ' ').slice(0, 16)
-      await this.mustRun(input.workTree, [
-        'commit', '-q', '-m', `sync: ${book.name} · ${input.authorName} @ ${stamp}`, '--', ...commitPaths(book.relativePath),
-      ])
-    }
-
-    const committed = uploaded.some(entry => entry.committed)
-    await this.withCredentials(input.workTree, input.credentials, async env => {
-      // 必须先 fetch：否则 origin/main 是上一次的旧引用，分叉检测会失效。
+    return this.withCredentials(input.workTree, input.credentials, async env => {
+      // 先 fetch 再提交：反过来会让「检测到分叉」时本机的提交已经落下，
+      // 于是本机凭空多出一个没人推上去的提交，下次拉取就只能走合并。
       const fetched = await this.run(input.workTree, ['fetch', REMOTE_NAME, '--prune'], env)
       if (fetched.code !== 0) throw this.failure(fetched)
       const remoteHead = await this.run(input.workTree, ['rev-parse', '--verify', `${REMOTE_NAME}/${input.branch}`], env)
       const remoteHasBranch = remoteHead.code === 0
+
+      const uploaded: Array<{ relativePath: string; committed: boolean }> = []
+      for (const book of input.books) {
+        // 快照放在 add 之前：先合并 WAL，再让 git 看到最终字节。
+        await input.snapshot(book)
+        await this.mustRun(input.workTree, ['add', '-A', '--', book.relativePath])
+        const staged = await this.run(input.workTree, ['diff', '--cached', '--quiet', '--', book.relativePath])
+        const hasChanges = staged.code !== 0
+        uploaded.push({ relativePath: book.relativePath, committed: hasChanges })
+        if (!hasChanges) continue
+        const stamp = this.now().toISOString().replace('T', ' ').slice(0, 16)
+        await this.mustRun(input.workTree, [
+          'commit', '-q', '-m', `sync: ${book.name} · ${input.authorName} @ ${stamp}`, '--', ...commitPaths(book.relativePath),
+        ])
+      }
+
+      const committed = uploaded.some(entry => entry.committed)
+      let reconciled: { changedBooks: string[]; keptLocal: string[]; tookRemote: string[] } | null = null
       if (remoteHasBranch) {
-        const ancestor = await this.run(input.workTree, ['merge-base', '--is-ancestor', `${REMOTE_NAME}/${input.branch}`, 'HEAD'], env)
-        if (ancestor.code !== 0) throw new GitSyncError('GIT_SYNC_DIVERGED')
+        const remoteSha = remoteHead.stdout.trim()
+        const ancestor = await this.run(input.workTree, ['merge-base', '--is-ancestor', remoteSha, 'HEAD'], env)
+        if (ancestor.code !== 0) {
+          // 远端在两次同步之间被另一台推过。此时不能硬推：那会删掉对方的章节。
+          // 也不能就这么失败：本机提交已经在本地，失败一次就永久卡住。
+          // 按书三方合并——每本书整体取一边，数据库字节永不逐行合并。
+          reconciled = await this.reconcileWithRemote(input.workTree, input, remoteSha, env)
+          if (!reconciled) throw new GitSyncError('GIT_SYNC_DIVERGED')
+        }
       }
       // 远端还没有这个分支（新电脑第一次上传）时，即使这次没有新提交也要把本地历史推上去。
       const head = await this.run(input.workTree, ['rev-parse', '--verify', 'HEAD'])
-      if (!committed && remoteHasBranch) return
-      if (!remoteHasBranch && head.code !== 0) return
-      const pushed = await this.run(input.workTree, ['push', REMOTE_NAME, `HEAD:${input.branch}`], env)
-      if (pushed.code !== 0) throw this.failure(pushed)
+      const needsPush = reconciled !== null || committed || !remoteHasBranch
+      if (needsPush && head.code !== 0) return { committed, commit: null, uploaded }
+      if (needsPush) {
+        const pushed = await this.run(input.workTree, ['push', REMOTE_NAME, `HEAD:${input.branch}`], env)
+        if (pushed.code !== 0) throw this.failure(pushed)
+        // 推完让本机的 origin/<branch> 跟上，界面上的 ahead/behind 才不会继续显示分叉。
+        // 用推完的真实远端引用，而不是推之前读的 HEAD。
+        const landed = await this.run(input.workTree, ['rev-parse', 'HEAD'], env)
+        if (landed.code === 0) {
+          await this.run(input.workTree, ['update-ref', `refs/remotes/${REMOTE_NAME}/${input.branch}`, landed.stdout.trim()], env)
+        }
+      }
+      if (reconciled) await input.afterReconcile?.(reconciled.changedBooks, reconciled.keptLocal, reconciled.tookRemote)
+      const didWork = reconciled !== null || committed
+      return { committed: didWork, commit: didWork ? await this.readHead(input.workTree) : null, uploaded }
     })
-    return { committed, commit: committed ? await this.readHead(input.workTree) : null, uploaded }
   }
 
   /** 拉取：本地必须干净，只允许快进。 */
@@ -569,7 +656,7 @@ export class GitSyncService {
     books?: readonly LibraryBook[]
     /** 检出之后清掉错配的 -wal/-shm，并报告哪些书变了 */
     afterCheckout: (changedBooks: readonly string[]) => Promise<void>
-  }): Promise<{ updated: boolean; commit: GitCommitView | null; changedBooks: string[] }> {
+  }): Promise<GitSyncPullResult> {
     await this.initialize({
       workTree: input.workTree,
       branch: input.branch,
@@ -589,7 +676,9 @@ export class GitSyncService {
       const remoteSha = remoteBranch.stdout.trim()
       const head = await this.run(input.workTree, ['rev-parse', 'HEAD'])
       const headSha = head.code === 0 ? head.stdout.trim() : ''
-      if (headSha === remoteSha) return { updated: false, commit: null, changedBooks: [] }
+      if (headSha === remoteSha) {
+        return { updated: false, commit: null, changedBooks: [], keptLocal: [], tookRemote: [], backupRef: null }
+      }
       // 先记下这次会动到哪些书，检出后再交给调用方清理运行时文件。
       const changedBooks = headSha
         ? await this.changedBookPaths(input.workTree, `${headSha}..${remoteSha}`)
@@ -601,7 +690,14 @@ export class GitSyncService {
         if (merged.code !== 0) throw new GitSyncError('GIT_SYNC_DIVERGED')
       }
       await input.afterCheckout(changedBooks)
-      return { updated: true, commit: await this.readHead(input.workTree), changedBooks }
+      return {
+        updated: true,
+        commit: await this.readHead(input.workTree),
+        changedBooks,
+        keptLocal: [],
+        tookRemote: changedBooks,
+        backupRef: null,
+      }
     })
   }
 
@@ -681,6 +777,234 @@ export class GitSyncService {
       changed: changedTops.has(book.relativePath.split('/')[0] ?? book.relativePath),
       current: false,
     }))
+  }
+
+  /** 某个树里第一层的作品目录（带 .ai-novel/project.json 的目录）。 */
+  private async listTreeBooks(workTree: string, treeish: string): Promise<string[]> {
+    const listed = await this.run(workTree, ['ls-tree', '-r', '--name-only', '-z', treeish])
+    if (listed.code !== 0) return []
+    const books = new Set<string>()
+    for (const file of listed.stdout.split('\0')) {
+      if (!file) continue
+      const parts = file.split('/')
+      if (parts.length === 3 && parts[1] === CANONICAL_PROJECT_DIRECTORY && parts[2] === 'project.json') {
+        books.add(parts[0] as string)
+      }
+    }
+    return [...books]
+  }
+
+  /**
+   * 分叉时按书合并：每本书整体取一边，绝不逐行合并 SQLite / LanceDB。
+   *
+   * 判断依据是三方（共同祖先 base、本机 HEAD、远端）：
+   *   - 只有本机动过 → 保留本机；
+   *   - 只有远端动过 → 取远端（本机没改，没有可丢的东西）；
+   *   - 两边都动过 → 默认保留本机（「以本机为准」），对方那版仍留在 git 历史里，随时能找回。
+   * 合并结果是一个正常的双亲提交，所以不需要 force push，也不会删掉任何历史。
+   */
+  private async reconcileWithRemote(
+    workTree: string,
+    input: GitSyncPushInput,
+    remoteSha: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<{ changedBooks: string[]; keptLocal: string[]; tookRemote: string[] } | null> {
+    // 一律用刚 fetch 到的远端 SHA，不用 origin/<branch> 这个引用：
+    // 合并/推送之后它不会自动前移，拿它算差异会把已合上的书又算一遍。
+    const baseResult = await this.run(workTree, ['merge-base', 'HEAD', remoteSha], env)
+    const hasCommonBase = baseResult.code === 0 && Boolean(baseResult.stdout.trim())
+    // 空树：git 里的常量，直接写死（不依赖 /dev/null，Windows 上没有这个路径）。
+    const baseSha = hasCommonBase ? baseResult.stdout.trim() : '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+    // 空树作基时，区间写成「空树..X」，等价于「X 相对空树新增的全部文件」。
+    let ours = await this.changedBookPaths(workTree, `${baseSha}..HEAD`)
+    let theirs = await this.changedBookPaths(workTree, `${baseSha}..${remoteSha}`)
+    // 别把 .gitignore 这类顶层条目当成一本书。
+    const bookPaths = new Set(input.books.map(book => book.relativePath))
+    // 远端可能有本机书库里还不存在的书（新电脑第一次接上已有仓库）：
+    // 这不是「本机的一本书」，仍要参与合并，否则它会被静默丢掉。
+    const remoteBooks = await this.listTreeBooks(workTree, remoteSha)
+    for (const name of remoteBooks) bookPaths.add(name)
+    ours = ours.filter(name => bookPaths.has(name))
+    theirs = theirs.filter(name => bookPaths.has(name))
+
+
+    // 不用 `git merge`：它会先检查工作区，只要有一个不相干的文件（比如被重新生成过的
+    // .gitignore）挡住，整次合并就失败——用户点了「以本机为准」却只看到「分叉」。
+    // 也不用 `read-tree -m`：两边没有共同祖先时它会静默丢掉远端独有的整本书。
+    //
+    // 改成确定性构造：先把远端整棵树放进索引（保证远端独有的东西一个不少），
+    // 再把「要保留本机」的书整本覆盖回去。只算索引，不碰工作区，也不会留下冲突标记。
+    const mergeHead = await this.run(workTree, ['rev-parse', '--verify', '-q', 'MERGE_HEAD'], env)
+    if (mergeHead.code === 0) {
+      // 上一版可能留下半截合并状态，它会让后续 git 命令全部报错。只重置索引，不动工作区。
+      await this.run(workTree, ['reset', '-q'], env)
+    }
+    const oldHead = (await this.run(workTree, ['rev-parse', 'HEAD'], env)).stdout.trim()
+    // 以远端那棵树为起点。
+    const seeded = await this.run(workTree, ['read-tree', remoteSha], env)
+    if (seeded.code !== 0) { if (process.env.PAGEKIN_DEBUG_SYNC) console.error('[sync] read-tree failed', seeded.stderr); return null }
+
+    // 逐本比较「本机这一版」与「远端这一版」的实际内容，而不是只看提交区间：
+    // 没有共同祖先时（两台各自 init），区间会把所有书都算成「两边都改过」，
+    // 结果远端独有的版本永远拿不回来。按内容判定对两种情形都成立。
+    const subtreeOf = async (treeish: string, book: string): Promise<string | null> => {
+      const result = await this.run(workTree, ['rev-parse', '--verify', '-q', `${treeish}:${book}`], env)
+      return result.code === 0 && result.stdout.trim() ? result.stdout.trim() : null
+    }
+    const allBooks = [...new Set([...ours, ...theirs, ...input.books.map(book => book.relativePath)])]
+      .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'))
+    const keptLocal: string[] = []
+    const tookRemote: string[] = []
+    for (const book of allBooks) {
+      const localTree = await subtreeOf('HEAD', book)
+      const remoteTree = await subtreeOf(remoteSha, book)
+      // 本机没有这本 → 只能取远端。
+      if (!localTree) { if (remoteTree) tookRemote.push(book); continue }
+      // 两边一模一样 → 不需要动，算保留本机。
+      if (localTree === remoteTree) { keptLocal.push(book); continue }
+      // 内容不同，要看是谁动的：
+      //   有共同祖先 → 远端动过而本机没动过，才取远端；两边都动过以本机为准。
+      //   没有共同祖先 → 无从判断谁动过，本机有这本就保留本机。
+      const wantRemote = hasCommonBase && theirs.includes(book) && !ours.includes(book)
+      if (wantRemote && remoteTree) { tookRemote.push(book); continue }
+      // 保留本机：把这本书整本换成本机那一版（含本机已删掉的文件）。
+      //
+      // 必须先把这个前缀下的条目从索引里彻底清掉，否则 `read-tree --prefix` 会报
+      // "Entry ... overlaps ... Cannot bind"。`git rm --cached` 只处理 HEAD 里有的路径，
+      // 对刚从远端读进来的条目无效，所以这里按索引实际内容逐条移除。
+      const inIndex = await this.run(workTree, ['ls-files', '-z', '--', book], env)
+      for (const file of inIndex.stdout.split('\0')) {
+        if (!file) continue
+        await this.run(workTree, ['update-index', '--force-remove', '--', file], env)
+      }
+      const restored = await this.run(workTree, ['read-tree', `--prefix=${book}/`, `HEAD:${book}`], env)
+      if (restored.code !== 0) return null
+      keptLocal.push(book)
+    }
+
+    // 本机独有的非书文件（.gitignore 之类）不能因为索引以远端为起点而消失：
+    // 把它们原样补回索引。已经存在的路径不动，避免覆盖远端更新过的内容。
+    const localTop = await this.run(workTree, ['ls-tree', '--name-only', '-z', 'HEAD'], env)
+    for (const entry of localTop.stdout.split('\0')) {
+      if (!entry || bookPaths.has(entry)) continue
+      const inRemote = await this.run(workTree, ['rev-parse', '--verify', '-q', `${remoteSha}:${entry}`], env)
+      if (inRemote.code === 0) continue
+      const inIndexNow = await this.run(workTree, ['ls-files', '-z', '--', entry], env)
+      if (inIndexNow.stdout.trim()) continue
+      // 当前条目的 blob 与模式，直接写回索引（read-tree 只接受树，不接受单个文件）。
+      const describe = await this.run(workTree, ['ls-tree', 'HEAD', '--', entry], env)
+      const [meta, name] = describe.stdout.split('\t')
+      const [mode, type, sha] = (meta ?? '').split(' ')
+      if (!name || type !== 'blob' || !sha) continue
+      await this.run(workTree, ['update-index', '--add', '--cacheinfo', `${mode},${sha},${name}`], env)
+    }
+
+    const tree = await this.run(workTree, ['write-tree'], env)
+    if (tree.code !== 0) return null
+    const stamp = this.now().toISOString().replace('T', ' ').slice(0, 16)
+    const created = await this.run(workTree, [
+      'commit-tree', tree.stdout.trim(), '-p', oldHead, '-p', remoteSha,
+      '-m', `merge: 与远端对齐（${input.authorName} @ ${stamp}）`,
+    ], env)
+    if (created.code !== 0) return null
+    const newSha = created.stdout.trim()
+
+    // 移动当前分支到这次合并提交；索引这时已经等于新树。
+    const branchRef = await this.run(workTree, ['symbolic-ref', '-q', 'HEAD'], env)
+    const target = branchRef.code === 0 ? branchRef.stdout.trim() : 'HEAD'
+    const moved = await this.run(workTree, ['update-ref', target, newSha, oldHead], env)
+    if (moved.code !== 0) return null
+
+    // 只把「真的变了」的文件写回工作区：没动过的书保持原样，mtime 与 inode 都不变。
+    const changed = await this.run(workTree, ['diff', '--name-only', '-z', oldHead, newSha], env)
+    for (const file of changed.stdout.split('\0')) {
+      if (!file) continue
+      const exists = await this.run(workTree, ['cat-file', '-e', `${newSha}:${file}`], env)
+      if (exists.code === 0) {
+        await this.run(workTree, ['checkout-index', '-f', '--', file], env)
+      } else {
+        try { fs.rmSync(path.join(workTree, file), { force: true }) } catch { /* 尽力删除 */ }
+      }
+    }
+
+    // 保持索引与新的 HEAD 一致，避免下次操作抱怨。
+    await this.run(workTree, ['reset', '-q'], env)
+
+    const changedBooks = [...new Set([...keptLocal, ...tookRemote])]
+      .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'))
+    return { changedBooks, keptLocal, tookRemote }
+  }
+
+  /**
+   * 「以本机为准」：把本机这一版强制变成远端的最新版。
+   *
+   * 走的是 push 的路径：先把本机改动提交，再和远端按书对齐，最后推上去。
+   * 不能走 pull —— pull 的前置检查会以「本机有未上传改动」为由直接拒绝，
+   * 而这正是本操作要处理的情况。
+   */
+  async forceUpload(input: GitSyncPushInput): Promise<{
+    committed: boolean
+    commit: GitCommitView | null
+    keptLocal: string[]
+    tookRemote: string[]
+  }> {
+    let keptLocal: string[] | null = null
+    let tookRemote: string[] = []
+    const pushed = await this.push({
+      ...input,
+      // 调用方（控制器）也要在这时清理被换掉的书，不能被我这里覆盖掉。
+      afterReconcile: async (changed, kept, took) => {
+        keptLocal = [...kept]
+        tookRemote = [...took]
+        await input.afterReconcile?.(changed, kept, took)
+      },
+    })
+    return {
+      committed: pushed.committed,
+      commit: pushed.commit,
+      // 没发生分叉合并时，本机这些书原样推了上去，全部算「保留本机」。
+      keptLocal: keptLocal ?? input.books.map(book => book.relativePath),
+      tookRemote,
+    }
+  }
+
+  /**
+   * 「以远端为准」：把本机退回到远端那一版，本机此前的提交另存成一个备份分支，
+   * 不删任何东西。用于本机这一版是误操作、想要远端那版的情形。
+   */
+  async followRemote(input: {
+    workTree: string
+    branch: string
+    credentials: GitSyncCredentials
+    authorName: string
+    authorEmail: string
+    afterCheckout: (changedBooks: readonly string[]) => Promise<void>
+  }): Promise<{ updated: boolean; backupRef: string | null; changedBooks: string[]; commit: GitCommitView | null }> {
+    return this.withCredentials(input.workTree, input.credentials, async env => {
+      const fetched = await this.run(input.workTree, ['fetch', REMOTE_NAME, '--prune'], env)
+      if (fetched.code !== 0) throw this.failure(fetched)
+      const remoteRef = `${REMOTE_NAME}/${input.branch}`
+      const remote = await this.run(input.workTree, ['rev-parse', '--verify', remoteRef], env)
+      if (remote.code !== 0) throw new GitSyncError('GIT_SYNC_REMOTE_EMPTY')
+      const remoteSha = remote.stdout.trim()
+      const head = await this.run(input.workTree, ['rev-parse', '--verify', 'HEAD'])
+      const headSha = head.code === 0 ? head.stdout.trim() : ''
+      if (headSha === remoteSha) {
+        return { updated: false, backupRef: null, changedBooks: [], commit: await this.readHead(input.workTree) }
+      }
+
+      let backupRef: string | null = null
+      if (headSha) {
+        // 本机独有的提交先留一个分支引用：界面上能看到，也能用 git 找回。
+        backupRef = `pagekin-backup/${this.now().toISOString().replace(/[:.]/gu, '-')}`
+        await this.mustRun(input.workTree, ['branch', backupRef, headSha])
+      }
+      const changedBooks = headSha ? await this.changedBookPaths(input.workTree, `${headSha}..${remoteSha}`) : []
+      // -f：本机这些书的改动就是这次要丢弃的，调用方已在界面上确认过。
+      await this.mustRun(input.workTree, ['checkout', '-f', '-B', input.branch, remoteSha], env)
+      await input.afterCheckout(changedBooks)
+      return { updated: true, backupRef, changedBooks, commit: await this.readHead(input.workTree) }
+    })
   }
 
   /** 两次提交之间动到的作品目录（第一层）。 */

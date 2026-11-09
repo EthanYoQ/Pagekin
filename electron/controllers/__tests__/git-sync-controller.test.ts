@@ -181,7 +181,11 @@ describe('git 同步控制器（书库）', () => {
         })),
         initialize: vi.fn(),
         push: vi.fn(async () => { await gate; return { committed: true, commit: null, uploaded: [] } }),
-        pull: vi.fn(async () => ({ updated: false, commit: null, changedBooks: [] })),
+        pull: vi.fn(async () => ({
+          updated: false, commit: null, changedBooks: [], keptLocal: [], tookRemote: [], backupRef: null,
+        })),
+        followRemote: vi.fn(),
+        refreshRemoteRefs: vi.fn(async () => true),
         bookChanges: vi.fn(),
       } as unknown as GitSyncControllerDependencies['service'],
       inspectPull: async () => ({ incoming: [], dirty: [], conflicts: [] }),
@@ -298,5 +302,100 @@ describe('git 同步控制器（书库）', () => {
     const status = result.status as { bookCount: number; initialized: boolean }
     expect(status.bookCount).toBe(0)
     expect(status.initialized).toBe(false)
+  })
+})
+
+describe('强制对齐的两个回归点', () => {
+  const divergedStatus = {
+    initialized: true, hasRemote: true, remoteUrl: REMOTE, branch: 'main',
+    pendingFiles: 3, ahead: 1, behind: 1, diverged: true, lastCommit: null,
+  }
+  const stubs = {
+    initialize: async () => ({ created: false }),
+    push: async () => { throw new Error('不该直接调 push') },
+    pull: async () => { throw new Error('以本机为准绝不能走 pull') },
+    followRemote: async () => { throw new Error('不该走 followRemote') },
+    bookChanges: async () => [],
+  }
+
+  it('以本机为准走 push 而不是 pull：本机有未上传改动也要成功', async () => {
+    const pushed: unknown[] = []
+    const { invoke } = harness({
+      overrides: {
+        service: {
+          ...stubs,
+          status: async () => divergedStatus,
+          forceUpload: async (input: unknown) => {
+            pushed.push(input)
+            return { committed: true, commit: null, keptLocal: ['书甲'], tookRemote: ['书乙'] }
+          },
+          refreshRemoteRefs: async () => true,
+        } as never,
+      },
+    })
+    const result = await invoke('git-sync:resolve-diverged', { projectSession: SESSION, strategy: 'local' })
+    expect(result).toMatchObject({ success: true, state: 'aligned', keptLocal: ['书甲'], tookRemote: ['书乙'] })
+    expect(pushed).toHaveLength(1)
+  })
+
+  it('失败发生在关库之后时，必须告诉界面「库关过了」，否则蓝图会是空的', async () => {
+    const { invoke } = harness({
+      overrides: {
+        service: {
+          ...stubs,
+          status: async () => divergedStatus,
+          forceUpload: async () => { throw Object.assign(new Error('boom'), { code: 'GIT_SYNC_FAILED' }) },
+          refreshRemoteRefs: async () => true,
+        } as never,
+      },
+    })
+    const result = await invoke('git-sync:resolve-diverged', { projectSession: SESSION, strategy: 'local' })
+    expect(result).toMatchObject({ success: false, databaseClosed: true })
+  })
+
+  it('没关过库就失败时，不要误报「库关过了」', async () => {
+    const { invoke } = harness({
+      overrides: {
+        service: {
+          ...stubs,
+          status: async () => { throw Object.assign(new Error('net'), { code: 'GIT_SYNC_NETWORK_FAILED' }) },
+          forceUpload: async () => { throw new Error('x') },
+          refreshRemoteRefs: async () => true,
+        } as never,
+      },
+    })
+    const result = await invoke('git-sync:resolve-diverged', { projectSession: SESSION, strategy: 'local' })
+    expect(result.success).toBe(false)
+    expect(result.databaseClosed).toBeUndefined()
+  })
+})
+
+describe('拉取删掉了书时不应当成失败', () => {
+  it('变化的书被远端删除后，拉取仍然成功（不再因校验缺失的库而报错）', async () => {
+    const { invoke, events } = harness({
+      overrides: {
+        service: {
+          status: async () => ({
+            initialized: true, hasRemote: true, remoteUrl: REMOTE, branch: 'main',
+            pendingFiles: 0, ahead: 0, behind: 1, diverged: false, lastCommit: null,
+          }),
+          initialize: async () => ({ created: false }),
+          push: async () => { throw new Error('不该推') },
+          // 拉取后报告「书甲」变了，但它的目录其实已经被删掉。
+          pull: vi.fn(async (input: { afterCheckout: (books: string[]) => Promise<void> }) => {
+            events.push('pull')
+            await input.afterCheckout(['已删除的书'])
+            return { updated: true, commit: null, changedBooks: ['已删除的书'], keptLocal: [], tookRemote: ['已删除的书'], backupRef: null }
+          }),
+          followRemote: async () => { throw new Error('x') },
+          forceUpload: async () => { throw new Error('x') },
+          refreshRemoteRefs: async () => true,
+        } as never,
+      },
+    })
+    const result = await invoke('git-sync:download', { projectSession: SESSION })
+    // 目录不存在就必须跳过校验，而不是抛 GIT_SYNC_SNAPSHOT_FAILED。
+    expect(result).toMatchObject({ success: true, state: 'updated' })
+    expect(events).not.toContain('verify')
   })
 })

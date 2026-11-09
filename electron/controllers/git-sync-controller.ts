@@ -25,6 +25,8 @@ import type {
   GitSyncErrorCode,
   GitSyncFailure,
   GitSyncProjectSessionContext,
+  GitSyncResolveRequest,
+  GitSyncResolveResult,
   GitSyncStatusView,
   GitSyncUploadRequest,
   GitSyncUploadResult,
@@ -67,7 +69,7 @@ interface ActiveProject {
 export interface GitSyncControllerDependencies {
   ipc: GitSyncIpcRegistrar
   credentials: Pick<GitSyncCredentialStore, 'save' | 'resolve' | 'forget'>
-  service: Pick<GitSyncService, 'status' | 'initialize' | 'push' | 'pull'>
+  service: Pick<GitSyncService, 'status' | 'initialize' | 'push' | 'pull' | 'followRemote' | 'forceUpload' | 'refreshRemoteRefs'>
   assertCurrentProjectContext(
     context: GitSyncProjectSessionContext | undefined,
     currentProjectPath: string | null,
@@ -172,6 +174,16 @@ export function registerGitSyncController(injected: Partial<GitSyncControllerDep
     },
   }
 
+  // 每次 IPC 调用都单独记「这次关过库没有」：失败时如实回给界面，
+  // 免得界面靠 success 猜，猜错就把作品留在一个关着的数据库上（蓝图全空）。
+  let closedThisCall = false
+  const closeDatabase = (): void => {
+    if (dependencies.isProjectDatabaseOpen()) closedThisCall = true
+    dependencies.closeProjectDatabase()
+  }
+  const attachClosed = (result: GitSyncFailure): GitSyncFailure =>
+    closedThisCall ? { ...result, databaseClosed: true } : result
+
   const inFlight = new Set<string>()
   const guard = async <T>(projectId: string, action: () => Promise<T>): Promise<T> => {
     if (inFlight.has(projectId)) fail('GIT_SYNC_BUSY')
@@ -226,6 +238,17 @@ export function registerGitSyncController(injected: Partial<GitSyncControllerDep
         } satisfies GitSyncViewResult
       }
       const books = dependencies.listLibraryBooks(libraryRoot)
+      // 先刷新远端引用再算 ahead/behind：否则界面显示的是上次 fetch 的旧状态，
+      // 「分叉」可能早就解决，或者早就发生却看不出来。
+      const credential = dependencies.credentials.resolve(active.projectId)
+      const remoteUrl = await dependencies.service.status(libraryRoot)
+      if (credential?.token && remoteUrl.remoteUrl) {
+        await dependencies.service.refreshRemoteRefs(
+          libraryRoot,
+          remoteUrl.branch || DEFAULT_BRANCH,
+          { username: credential.metadata.username, token: credential.token },
+        )
+      }
       const status = await dependencies.service.status(libraryRoot)
       const changed = await dependencies.changedBooks(libraryRoot, books, active.rootPath)
       const view: GitSyncViewResult = {
@@ -404,6 +427,7 @@ export function registerGitSyncController(injected: Partial<GitSyncControllerDep
   })
 
   dependencies.ipc.handle('git-sync:upload', async (_event, rawRequest) => {
+    closedThisCall = false
     try {
       const request = record(rawRequest) as unknown as GitSyncUploadRequest
       const resolved = resolveActive(request.projectSession)
@@ -418,7 +442,7 @@ export function registerGitSyncController(injected: Partial<GitSyncControllerDep
 
         // 关库只影响「当前打开的那本」；其余书根本没开，直接做快照即可。
         const openedRoot = resolved.active.rootPath
-        if (dependencies.isProjectDatabaseOpen()) dependencies.closeProjectDatabase()
+        closeDatabase()
         if (dependencies.isProjectDatabaseOpen()) fail('GIT_SYNC_SAVE_PENDING')
 
         const books = dependencies.listLibraryBooks(libraryRoot)
@@ -450,11 +474,12 @@ export function registerGitSyncController(injected: Partial<GitSyncControllerDep
         }
       })
     } catch (error) {
-      return failure(error)
+      return attachClosed(failure(error))
     }
   })
 
   dependencies.ipc.handle('git-sync:download', async (_event, rawRequest) => {
+    closedThisCall = false
     try {
       const request = record(rawRequest) as unknown as GitSyncDownloadRequest
       const resolved = resolveActive(request.projectSession)
@@ -476,7 +501,7 @@ export function registerGitSyncController(injected: Partial<GitSyncControllerDep
         if (inspection.conflicts.length > 0) {
           fail('GIT_SYNC_LOCAL_CHANGES', inspection.conflicts.join('、'))
         }
-        if (dependencies.isProjectDatabaseOpen()) dependencies.closeProjectDatabase()
+        closeDatabase()
         if (dependencies.isProjectDatabaseOpen()) fail('GIT_SYNC_SAVE_PENDING')
         const pulled = await dependencies.service.pull({
           workTree: libraryRoot,
@@ -491,6 +516,9 @@ export function registerGitSyncController(injected: Partial<GitSyncControllerDep
             for (const relativePath of changedBooks) {
               const bookRoot = path.join(libraryRoot, ...relativePath.split('/'))
               const paths = resolveGitSyncPaths(bookRoot)
+              // 这本书可能被远端整个删掉了：没有库就没有要清理或校验的东西。
+              // 这里若还去校验，会把一次成功的拉取误判成失败。
+              if (!fs.existsSync(paths.databasePath)) continue
               dependencies.removeRuntimeFiles(paths.databasePath)
               dependencies.verifyDatabase(paths.databasePath)
             }
@@ -504,7 +532,99 @@ export function registerGitSyncController(injected: Partial<GitSyncControllerDep
         }
       })
     } catch (error) {
-      return failure(error)
+      return attachClosed(failure(error))
+    }
+  })
+
+  dependencies.ipc.handle('git-sync:resolve-diverged', async (_event, rawRequest) => {
+    closedThisCall = false
+    try {
+      const request = record(rawRequest) as unknown as GitSyncResolveRequest
+      const resolve = request.strategy === 'remote' ? 'remote' as const : 'local' as const
+      const resolved = resolveActive(request.projectSession)
+      const projectId = resolved.active.projectId
+      const libraryRoot = dependencies.findLibraryRoot(resolved.active.rootPath)
+      if (!libraryRoot) fail('GIT_SYNC_LIBRARY_MISSING')
+      return await guard(projectId, async (): Promise<GitSyncResolveResult | GitSyncFailure> => {
+        const credential = dependencies.credentials.resolve(projectId)
+        if (!credential?.token) fail('GIT_SYNC_CREDENTIAL_UNAVAILABLE')
+        const status = await dependencies.service.status(libraryRoot)
+        if (!status.remoteUrl) fail('GIT_SYNC_NOT_CONFIGURED')
+        const books = dependencies.listLibraryBooks(libraryRoot)
+        const branch = status.branch || DEFAULT_BRANCH
+        const credentials = { username: credential.metadata.username, token: credential.token }
+        const openedRoot = resolved.active.rootPath
+
+        if (resolve === 'remote') {
+          // 以远端为准是丢弃本机改动，不需要先关库做快照；但要先关库再动文件。
+          if (dependencies.isProjectDatabaseOpen()) dependencies.closeProjectDatabase()
+          if (dependencies.isProjectDatabaseOpen()) fail('GIT_SYNC_SAVE_PENDING')
+          const followed = await dependencies.service.followRemote({
+            workTree: libraryRoot,
+            branch,
+            credentials,
+            authorName: credential.metadata.username || DEFAULT_AUTHOR,
+            authorEmail: DEFAULT_EMAIL,
+            afterCheckout: async changedBooks => {
+              for (const relativePath of changedBooks) {
+                const bookRoot = path.join(libraryRoot, ...relativePath.split('/'))
+                const paths = resolveGitSyncPaths(bookRoot)
+                // 同上：远端删掉的书没有库可校验。
+                if (!fs.existsSync(paths.databasePath)) continue
+                dependencies.removeRuntimeFiles(paths.databasePath)
+                dependencies.verifyDatabase(paths.databasePath)
+              }
+            },
+          })
+          return {
+            success: true as const,
+            state: followed.updated ? 'aligned' as const : 'up-to-date' as const,
+            commit: commitView(followed.commit),
+            keptLocal: [],
+            tookRemote: followed.changedBooks,
+            backupRef: followed.backupRef,
+          }
+        }
+
+        // 以本机为准：走 push 的路径（先提交本机改动 → 与远端按书对齐 → 推上去）。
+        // 绝不能走 pull：pull 的前置检查会以「本机有未上传改动」直接拒绝，
+        // 而这恰恰是本操作要处理的情形，用户点了按钮却报这句错。
+        closeDatabase()
+        if (dependencies.isProjectDatabaseOpen()) fail('GIT_SYNC_SAVE_PENDING')
+        const forced = await dependencies.service.forceUpload({
+          workTree: libraryRoot,
+          remoteUrl: status.remoteUrl,
+          branch,
+          credentials,
+          authorName: credential.metadata.username || DEFAULT_AUTHOR,
+          authorEmail: DEFAULT_EMAIL,
+          books,
+          snapshot: async book => {
+            const paths = resolveGitSyncPaths(book.rootPath)
+            await dependencies.snapshotDatabase(paths.databasePath, book.rootPath === openedRoot)
+          },
+          // 合并时被远端版本换掉的书要清运行时文件，否则旧 -wal 会盖回去。
+          afterReconcile: async (changedBooks, _keptLocal, tookRemote) => {
+            for (const relativePath of tookRemote) {
+              const bookRoot = path.join(libraryRoot, ...relativePath.split('/'))
+              const paths = resolveGitSyncPaths(bookRoot)
+              dependencies.removeRuntimeFiles(paths.databasePath)
+              dependencies.verifyDatabase(paths.databasePath)
+            }
+            void changedBooks
+          },
+        })
+        return {
+          success: true as const,
+          state: 'aligned' as const,
+          commit: commitView(forced.commit),
+          keptLocal: forced.keptLocal,
+          tookRemote: forced.tookRemote,
+          backupRef: null,
+        }
+      })
+    } catch (error) {
+      return attachClosed(failure(error))
     }
   })
 

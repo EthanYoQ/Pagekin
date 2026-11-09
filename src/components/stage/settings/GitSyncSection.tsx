@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowDownToLine, ArrowUpFromLine, CloudCog, RefreshCw } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, CloudCog, GitMerge, RefreshCw, ShieldQuestion } from 'lucide-react'
 
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { displayedErrorMessage, errorCodeOf } from '../../../i18n/app-errors'
 import { ipc } from '../../../services/ipc-client'
 import type {
   GitSyncConfigView,
@@ -15,10 +15,17 @@ import { saveDirtyEditorChangesForExit } from '../../../stores/editor-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { actionToast } from '../../ui/ActionToast'
 import { Button } from '../../ui/Button'
+import { DangerConfirm } from '../../ui/DangerConfirm'
 
 type Notice = { kind: 'error' | 'success' | 'info'; text: string } | null
 
 const errorText = (error: unknown) => displayedErrorMessage(useLocaleStore.getState().locale, error)
+
+/**
+ * 拉取后重开失败时，这些码说明「这本书已经不在书库里」，
+ * 属于正常的更新结果，不该当成错误拦住作者。
+ */
+const BOOK_GONE_CODES = new Set(['PROJECT_DIRECTORY_MISSING', 'PROJECT_DIRECTORY_NOT_FOLDER', 'PROJECT_NOT_FOUND'])
 
 function commitLabel(sha: string | undefined, subject: string | undefined): string {
   if (!sha) return ''
@@ -56,7 +63,8 @@ function GitSyncSectionSession({
   const [host, setHost] = useState<GitSyncHost>('github')
   const [repositoryName, setRepositoryName] = useState('')
   const [candidates, setCandidates] = useState<Array<{ fullName: string; cloneUrl: string; updatedAt: string }>>([])
-  const [busy, setBusy] = useState<null | 'view' | 'configure' | 'upload' | 'download'>(null)
+  const [busy, setBusy] = useState<null | 'view' | 'configure' | 'upload' | 'download' | 'resolve'>(null)
+  const [resolving, setResolving] = useState<null | 'local' | 'remote'>(null)
   // 这次动作有没有真的让主进程关掉数据库：决定结束后要不要重开作品。
   const closedDatabase = useRef(false)
   const [notice, setNotice] = useState<Notice>(null)
@@ -194,7 +202,9 @@ function GitSyncSectionSession({
       const saved = await saveOpenDrafts()
       if (!saved) { setNotice({ kind: 'error', text: text('还有未保存的稿件，已取消上传。', 'Some drafts are unsaved, so the upload was cancelled.') }); return }
       const result = await ipc.invoke('git-sync:upload', { projectSession })
-      closedDatabase.current = result.success
+      // 失败也可能发生在关库之后，所以不能只看 success：
+      // 主进程会在失败结果里说明这次关过库没有，照它来。
+      closedDatabase.current = result.success || result.databaseClosed === true
       if (!result.success) { failureNotice(result); return }
       const uploadedBooks = result.books.filter(book => book.uploaded).map(book => book.relativePath)
       const message = uploadedBooks.length > 0
@@ -223,7 +233,9 @@ function GitSyncSectionSession({
       const saved = await saveOpenDrafts()
       if (!saved) { setNotice({ kind: 'error', text: text('还有未保存的稿件，已取消拉取。', 'Some drafts are unsaved, so the pull was cancelled.') }); return }
       const result = await ipc.invoke('git-sync:download', { projectSession })
-      closedDatabase.current = result.success
+      // 失败也可能发生在关库之后，所以不能只看 success：
+      // 主进程会在失败结果里说明这次关过库没有，照它来。
+      closedDatabase.current = result.success || result.databaseClosed === true
       if (!result.success) { failureNotice(result); return }
       const message = result.state === 'updated'
         ? text(
@@ -242,15 +254,79 @@ function GitSyncSectionSession({
   }
 
   /**
+   * 分叉时按用户选的方向强制对齐。
+   * 「以本机为准」= 按书合并：两边都改过的保留本机，只有对方改过的取对方，然后推上去；
+   * 「以远端为准」= 完全丢弃本机这一版，但先把本机提交存成备份分支，随时能找回。
+   */
+  const resolveDiverged = async (strategy: 'local' | 'remote') => {
+    if (!projectSession || !project) return
+    setResolving(null)
+    setBusy('resolve')
+    setNotice(null)
+    closedDatabase.current = false
+    try {
+      const saved = await saveOpenDrafts()
+      if (!saved) { setNotice({ kind: 'error', text: text('还有未保存的稿件，已取消。', 'Some drafts are unsaved, so the action was cancelled.') }); return }
+      const result = await ipc.invoke('git-sync:resolve-diverged', { projectSession, strategy })
+      // 失败也可能发生在关库之后，所以不能只看 success：
+      // 主进程会在失败结果里说明这次关过库没有，照它来。
+      closedDatabase.current = result.success || result.databaseClosed === true
+      if (!result.success) { failureNotice(result); return }
+      const message = result.state === 'up-to-date'
+        ? text('本机已经和远端一致，无需对齐。', 'This computer already matches the remote.')
+        : strategy === 'local'
+          ? text(
+            `已按本机为准对齐并上传。保留本机：${result.keptLocal.join('、') || '（无）'}；取回远端：${result.tookRemote.join('、') || '（无）'}`,
+            `Aligned with this computer and uploaded. Kept local: ${result.keptLocal.join(', ') || '(none)'}; took remote: ${result.tookRemote.join(', ') || '(none)'}`,
+          )
+          : text(
+            `已按远端为准对齐。${result.backupRef ? `本机原来的版本存成了 ${result.backupRef}，需要时可以找回。` : ''}`,
+            `Aligned with the remote.${result.backupRef ? ` This computer’s previous version was saved as ${result.backupRef}.` : ''}`,
+          )
+      setNotice({ kind: 'success', text: message })
+      actionToast.show({ type: 'success', message })
+      await refresh()
+    } catch (error) {
+      setNotice({ kind: 'error', text: errorText(error) })
+    } finally {
+      if (mounted.current) setBusy(null)
+      await reopenAfterSync(closedDatabase.current)
+    }
+  }
+
+  /**
    * 只有主进程真的关过库（成功上传/拉取）才需要重开作品；
    * 被拦下的动作没动数据库，重开只会把作者从设置页弹走。
+   *
+   * 拉取可能把当前打开的书整个删掉（另一台删了它、或这本书其实是被清理掉的副本），
+   * 这时按原路径重开必然报「找不到项目文件夹」，把一次成功的拉取说成失败。
+   * 所以先确认目录还在；不在就退回书库根，让作者自己选要开哪本。
    */
   const reopenAfterSync = async (closed: boolean) => {
     if (!closed || !project) return
     try {
       await openProject(project.path)
     } catch (error) {
-      setNotice({ kind: 'error', text: errorText(error) })
+      const code = errorCodeOf(error)
+      if (!BOOK_GONE_CODES.has(code ?? '')) {
+        setNotice({ kind: 'error', text: errorText(error) })
+        return
+      }
+      // 这本书在拉取后已经不在书库里了：回到书库根，而不是卡在设置页报错。
+      setNotice({
+        kind: 'info',
+        text: text(
+          '拉取完成。刚才打开的那本书在这次更新后已不在书库里，请回到书房重新选择要写的作品。',
+          'Pull finished. The book you had open is no longer in the library after this update; go back to the library and pick the book you want to write.',
+        ),
+      })
+      actionToast.show({
+        type: 'info',
+        message: text(
+          '拉取完成。原先打开的作品已不在书库里，请回书房重新选择。',
+          'Pull finished. The book that was open is no longer in the library; pick one in the library.',
+        ),
+      })
     }
   }
 
@@ -428,18 +504,30 @@ function GitSyncSectionSession({
             <ArrowUpFromLine size={14} aria-hidden="true" />
             {busy === 'upload' ? text('上传中…', 'Uploading…') : text('上传进度', 'Upload')}
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => void download()} disabled={busy !== null || !configured || diverged}>
+          <Button variant="secondary" size="sm" onClick={() => void download()} disabled={busy !== null || !configured}>
             <ArrowDownToLine size={14} aria-hidden="true" />
             {busy === 'download' ? text('拉取中…', 'Pulling…') : text('拉取最新', 'Pull latest')}
           </Button>
         </div>
         {diverged && (
-          <p className="stage-set-row-extra stage-set-error">
-            {text(
-              '两台电脑各自都写过，仓库分叉了。为免悄悄丢章节，这里不会自动合并：请先在另一台上传，或把本机这次改动导出成存档后再处理。',
-              'Both computers wrote, so the repository diverged. This never merges automatically: upload from the other computer first, or export this computer’s work as an archive.',
-            )}
-          </p>
+          <div className="stage-set-row-extra">
+            <p className="stage-set-error">
+              {text(
+                '两台电脑各自都写过，仓库分叉了。选一边作为准，点一下就能对齐——不会丢章节：被放弃的那一版仍然留在 git 历史里，随时能找回。',
+                'Both computers wrote, so the repository diverged. Pick one side and align in one click. Nothing is lost: the version that is not chosen stays in git history.',
+              )}
+            </p>
+            <div className="stage-set-foot" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button variant="primary" size="sm" onClick={() => setResolving('local')} disabled={busy !== null}>
+                <GitMerge size={14} aria-hidden="true" />
+                {busy === 'resolve' ? text('正在对齐…', 'Aligning…') : text('以本机为准，强制上传', 'Keep this computer and upload')}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setResolving('remote')} disabled={busy !== null}>
+                <ShieldQuestion size={14} aria-hidden="true" />
+                {busy === 'resolve' ? text('正在对齐…', 'Aligning…') : text('以远端为准，丢弃本机改动', 'Take the remote and drop local changes')}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -478,6 +566,33 @@ function GitSyncSectionSession({
           {notice.text}
         </p>
       )}
+
+      <DangerConfirm
+        open={resolving === 'local'}
+        onOpenChange={open => { if (!open) setResolving(null) }}
+        title={text('以本机这一版为准？', 'Keep this computer’s version?')}
+        consequence={text(
+          '本机的改动会成为仓库里的最新版本。两边都改过的作品保留本机这一版，只有另一台改过的作品会把它的版本取回来——两边的章节都不会丢。',
+          'This computer’s work becomes the latest version in the repository. Books changed on both sides keep this computer’s version; books only changed elsewhere get that version back. Nothing is lost either way.',
+        )}
+        recoverability={text('被放弃的那一版仍留在 git 历史里，可以找回。', 'The version that is not chosen stays in git history and can be recovered.')}
+        cancelLabel={text('取消', 'Cancel')}
+        confirmLabel={text('以本机为准', 'Keep this computer')}
+        onConfirm={() => void resolveDiverged('local')}
+      />
+      <DangerConfirm
+        open={resolving === 'remote'}
+        onOpenChange={open => { if (!open) setResolving(null) }}
+        title={text('以远端为准？', 'Take the remote version?')}
+        consequence={text(
+          '这台电脑上还没上传的改动会被远端那一版覆盖。',
+          'Changes on this computer that were not uploaded will be replaced by the remote version.',
+        )}
+        recoverability={text('本机原来的提交会存成一个备份分支，需要时可以找回。', 'This computer’s previous commits are saved as a backup branch and can be recovered.')}
+        cancelLabel={text('取消', 'Cancel')}
+        confirmLabel={text('以远端为准', 'Take the remote')}
+        onConfirm={() => void resolveDiverged('remote')}
+      />
     </div>
   )
 }

@@ -51,6 +51,12 @@ export interface GitSyncFailure {
   errorCode: GitSyncErrorCode
   /** 只含 git 的一行摘要，绝不含凭据或完整远端文本 */
   detail?: string
+  /**
+   * 这次失败之前，主进程有没有关掉作品数据库。
+   * 有就必须让界面重开作品，否则蓝图、章节都会是空的——
+   * 界面不能靠 success 猜这件事：失败也可能发生在关库之后。
+   */
+  databaseClosed?: boolean
 }
 
 export interface GitSyncCommitView {
@@ -177,6 +183,31 @@ export interface GitSyncDownloadResult {
   commit: GitSyncCommitView | null
   /** 拉取后本地发生变化、需要重新打开的书 */
   changedBooks: string[]
+  /** 分叉自动对齐时，本机保留 / 采用远端 的作品 */
+  keptLocal?: string[]
+  tookRemote?: string[]
+  /** 「以远端为准」时，本机此前的提交存到了哪个备份分支（可从 git 找回） */
+  backupRef?: string | null
+}
+
+/** 拉取时怎么处理分叉：默认 fast-forward，给了方向就强制对齐。 */
+export type GitSyncResolveStrategy = 'local' | 'remote'
+
+export interface GitSyncResolveRequest {
+  projectSession: GitSyncProjectSessionContext
+  strategy: GitSyncResolveStrategy
+}
+
+export interface GitSyncResolveResult {
+  success: true
+  state: 'aligned' | 'up-to-date'
+  commit: GitSyncCommitView | null
+  /** 本机这一版保留的作品 */
+  keptLocal: string[]
+  /** 采用远端那一版的作品 */
+  tookRemote: string[]
+  /** 以远端为准时，本机原提交存成的备份分支 */
+  backupRef: string | null
 }
 
 export interface GitSyncChannels {
@@ -199,6 +230,10 @@ export interface GitSyncChannels {
   'git-sync:download': {
     args: [request: GitSyncDownloadRequest]
     return: GitSyncDownloadResult | GitSyncFailure
+  }
+  'git-sync:resolve-diverged': {
+    args: [request: GitSyncResolveRequest]
+    return: GitSyncResolveResult | GitSyncFailure
   }
   'git-sync:forget-credential': {
     args: [projectSession: GitSyncProjectSessionContext]
