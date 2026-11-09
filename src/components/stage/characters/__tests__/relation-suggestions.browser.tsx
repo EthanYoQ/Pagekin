@@ -2,9 +2,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
-import type { PendingFinalizedRelationCandidate } from '../../../../shared/finalized-continuity'
+import type { PendingFinalizedCharacterStateCandidateSummary, PendingFinalizedRelationCandidate } from '../../../../shared/finalized-continuity'
 import type { ProjectSessionContext } from '../../../../shared/ipc-channels'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
+import { useCharacterStore } from '../../../../stores/character-store'
 import { useLocaleStore } from '../../../../stores/locale-store'
 import { useProjectStore } from '../../../../stores/project-store'
 import CharacterSuggestions from '../CharacterSuggestions'
@@ -21,6 +22,7 @@ const candidate: PendingFinalizedRelationCandidate = {
 let root: Root
 let host: HTMLDivElement
 let pending: PendingFinalizedRelationCandidate[]
+let stateSummaries: PendingFinalizedCharacterStateCandidateSummary[]
 let invoke: ReturnType<typeof vi.fn<(channel: string, ...args: unknown[]) => Promise<unknown>>>
 const originalLocale = useLocaleStore.getState()
 const originalProject = useProjectStore.getState()
@@ -32,12 +34,15 @@ const decisions = () => invoke.mock.calls.filter(([channel]) => channel === 'fin
 
 beforeEach(async () => {
   pending = [candidate]
+  stateSummaries = []
   useLocaleStore.setState({ locale: 'zh-CN' })
   setActiveProjectSessionContext(session)
   useProjectStore.setState({ currentProject: { id: session.projectId, path: session.projectPath, sessionLease: session.leaseId } as never })
   invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     if (channel === 'finalized-character:list-relation-candidates') return pending
     if (channel === 'finalized-character:decide-relation-candidate') { pending = []; return { decision: (args[0] as { decision: string }).decision } }
+    if (channel === 'finalized-character:list-state-candidates') return stateSummaries
+    if (channel === 'db:character-roster-read') return { revision: 3, identityRevision: 1, entries: [] }
     return []
   })
   Object.defineProperty(window, 'aiNovelAPI', { configurable: true, value: { invoke, on: () => () => {} } })
@@ -80,6 +85,20 @@ it('保留原设定走 decline', async () => {
   await click('检查')
   await click('保留原设定')
   expect(decisions()).toMatchObject([{ decision: 'decline' }])
+})
+
+it('角色页开着且建议区为空，定稿后角色仓库重载：新建议和状态建议自动出现', async () => {
+  await click('检查')
+  await click('保留原设定')
+  expect(host.textContent).not.toContain('林岚 → 沈砚')
+
+  pending = [{ ...candidate, candidateKey: 'fcs-relation:2', value: '不共戴天' }]
+  stateSummaries = [{ draftId: 7, candidateKey: 'state-1', finalizationId: 'f-7', characterId: 'lin', characterName: '林岚', field: 'location' }]
+  await act(async () => { await useCharacterStore.getState().load(session.projectPath, session) })
+  await settle()
+
+  expect(host.querySelector('[data-kind="relation"]')?.textContent).toContain('林岚 → 沈砚 · 第 8 章')
+  expect(host.textContent).toContain('2 项待处理的角色建议')
 })
 
 it('以后再说不发任何决定，建议还在列表', async () => {

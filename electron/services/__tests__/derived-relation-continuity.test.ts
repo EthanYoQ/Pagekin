@@ -2,21 +2,33 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { closeProjectDatabase, createProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
+import { closeProjectDatabase, createProjectDatabase, getCurrentProjectPath, getProjectDb, initProjectDatabase } from '../../database'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
-import { insertCharacterRelationship, readCharacterContinuityNodes } from '../../repositories/character-continuity-repository'
+import { insertCharacterRelationship, readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
 import { refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
 import { DraftRepository } from '../../repositories/draft-repository'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
 import { SummaryRepository } from '../../repositories/summary-repository'
 import { captureFinalizationGenerationContext, finalizationGenerationTask } from '../finalization-generation-source'
+import { projectAccess } from '../project-access'
 import { getBuiltinPromptTemplate } from '../../../src/services/builtin-prompt-templates'
-import { characterTimeline, latestNodesBefore, type CharacterRelationNode } from '../../../src/shared/character-continuity'
+import { characterTimeline, latestNodesBefore, type CharacterRelationNode, type ContinuityNode } from '../../../src/shared/character-continuity'
+import { characterTimelinePromptLines } from '../../../src/shared/character-timeline-prompt'
 import { createCanonicalProjectManifest } from '../../../src/shared/project-format'
 import { parseFinalizedCharacterStateResponse, type FinalizedCharacterContext } from '../../../src/shared/finalized-continuity'
 import { removeDirectoryWithWindowsRetry } from '../../utils/remove-directory'
+
+type IpcHandler = (...args: unknown[]) => unknown
+const ipcHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>())
+vi.mock('electron', () => ({ app: { getLocale: () => 'zh-CN', getPath: () => '' }, ipcMain: { handle: (channel: string, handler: IpcHandler) => ipcHandlers.set(channel, handler) } }))
+
+async function continuityNodesHandler(): Promise<IpcHandler> {
+  if (!ipcHandlers.size) (await import('../../controllers/db-controller')).registerDatabaseController()
+  vi.spyOn(projectAccess, 'assertCurrentProjectContext').mockReturnValue({} as never)
+  return ipcHandlers.get('db:character-continuity-nodes')!
+}
 
 const roots: string[] = []
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -418,6 +430,131 @@ describe('关系比对查两个方向', () => {
     replaceFinal(8, '第八章改：林岚独自离开。')
     expect(pending()).toEqual([])
     expect(allDerived()).toEqual([])
+  })
+})
+
+describe('待确认项和写稿提示跟着作者的决定走', () => {
+  const AUTHOR_LINE = '作者设定（自第1章起）与沈砚的关系：师徒'
+  const REWRITE = '沈砚冷眼旁观，林岚与他形同陌路。'
+  const BOTH_READINGS = `${CHAPTER_EIGHT}${REWRITE}`
+  const breakUp = relationChange('恩断义绝', BREAK_UP), estranged = relationChange('形同陌路', REWRITE)
+  const output = (...relations: unknown[]) => ({ updates: [], relations })
+
+  async function promptLines(chapter: number, characterId = LIN): Promise<string[]> {
+    const nodes = await (await continuityNodesHandler())({}, [LIN, SHEN], getCurrentProjectPath()) as ContinuityNode[]
+    return characterTimelinePromptLines({ nodes, chapter, characterIds: [LIN, SHEN], currentNames: new Map(Object.entries(NAMES)), language: 'zh-CN' })[characterId]
+  }
+
+  it('拒绝 A、重跑出待确认 B、再重跑回 A：列表没有 B，也无法采用 B', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, BOTH_READINGS)
+    commitModelOutput(draftId, output(breakUp))
+    decide('decline')
+    commitModelOutput(draftId, output(estranged))
+    const [stale] = pending()
+    expect(stale.value).toBe('形同陌路')
+
+    commitModelOutput(draftId, output(breakUp))
+    expect(pending()).toEqual([])
+    expect(() => SummaryRepository.decideFinalizedRelationCandidate({ draftId, candidateKey: stale.candidateKey, expectedAuthorRelations: stale.authorRelations,
+      operationId: 'accept-stale', decision: 'accept' }, scope, db())).toThrow('FINALIZED_CHARACTER_STATE_CANDIDATE_NOT_FOUND')
+    expect(authorRows()).toEqual(['师徒'])
+  })
+
+  it('保留原设定后，写下一章的提示只有作者设定，没有原文和待作者裁定', async () => {
+    openProject()
+    authorRelation('师徒')
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(breakUp))
+    decide('decline')
+
+    expect(await promptLines(9)).toEqual([AUTHOR_LINE])
+  })
+
+  it('重跑回到拒绝过的值，提示同样只有作者设定', async () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, BOTH_READINGS)
+    commitModelOutput(draftId, output(breakUp))
+    decide('decline')
+    commitModelOutput(draftId, output(estranged))
+    commitModelOutput(draftId, output(breakUp))
+
+    expect(await promptLines(9)).toEqual([AUTHOR_LINE])
+  })
+
+  it('作者设定在反向时，保留原设定后提示也只有作者写的那一边', async () => {
+    openProject()
+    authorRelation('师徒', SHEN, LIN)
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(breakUp))
+    decide('decline')
+
+    expect(await promptLines(9, SHEN)).toEqual(['作者设定（自第1章起）与林岚的关系：师徒'])
+  })
+
+  it('拒绝的是最新一条时，更早的定稿记录不会冒出来顶替；写更早的章仍看得到它', async () => {
+    openProject()
+    authorRelation('师徒')
+    const quote = '林岚与沈砚渐生嫌隙。'
+    commitModelOutput(finalizeNew(5, `第五章：${quote}`), output(relationChange('渐生嫌隙', quote)))
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(breakUp))
+    const eighth = pending().find(item => item.value === '恩断义绝')!
+    SummaryRepository.decideFinalizedRelationCandidate({ draftId: eighth.source.draftId, candidateKey: eighth.candidateKey, expectedAuthorRelations: eighth.authorRelations,
+      operationId: 'decline-eighth', decision: 'decline' }, scope, db())
+
+    expect(await promptLines(9)).toEqual([AUTHOR_LINE])
+    expect((await promptLines(7)).join()).toContain(quote)
+  })
+
+  it('后续章重述拒绝过的值，提示仍只有作者设定', async () => {
+    openProject()
+    authorRelation('师徒')
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(breakUp))
+    decide('decline')
+    const quote = '沈砚望着断裂的信物'
+    commitModelOutput(finalizeNew(9, `第九章：${quote}，一言不发。`), output(relationChange('恩断义绝', quote)))
+
+    expect(await promptLines(10)).toEqual([AUTHOR_LINE])
+  })
+
+  it('作者还没决定时，提示同时放作者设定和原文', async () => {
+    openProject()
+    authorRelation('师徒')
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(breakUp))
+    expect(pending()).toHaveLength(1)
+
+    const lines = await promptLines(9)
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain(`${AUTHOR_LINE}（与沈砚有多条关系并存，待作者裁定`)
+    expect(lines[1]).toContain(`定稿记录·与沈砚的关系（第8章，原文：${BREAK_UP}）`)
+    expect(lines[1]).toContain('待作者裁定')
+  })
+
+  it('拒绝之后时间线仍显示这一行，计数不变', () => {
+    openProject()
+    authorRelation('师徒')
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(breakUp))
+    const before = characterTimeline(readCharacterContinuityTimeline(db(), LIN).nodes)
+    decide('decline')
+
+    expect(characterTimeline(readCharacterContinuityTimeline(db(), LIN).nodes)).toEqual(before)
+    expect(before.flatMap(chapter => chapter.changes.map(change => [chapter.chapter, change.source, change.value])))
+      .toEqual([[8, 'finalized', '恩断义绝'], [1, 'author', '师徒']])
+  })
+
+  it('拒绝之后后续章出现不同的新值：仍生成待确认项，提示按未决定处理', async () => {
+    openProject()
+    authorRelation('师徒')
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(breakUp))
+    decide('decline')
+    const quote = '林岚提剑直指沈砚。'
+    commitModelOutput(finalizeNew(9, `第九章：${quote}`), output(relationChange('不共戴天', quote)))
+
+    expect(pending().map(item => item.value)).toEqual(['不共戴天'])
+    const lines = await promptLines(10)
+    expect(lines).toHaveLength(2)
+    expect(lines[1]).toContain(`原文：${quote}`)
+    expect(lines.every(line => line.includes('待作者裁定'))).toBe(true)
   })
 })
 
