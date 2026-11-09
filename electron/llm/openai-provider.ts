@@ -228,7 +228,7 @@ export class OpenAIProvider implements ILLMProvider {
 
       if (!res.ok) {
         transport.fail('HTTP_ERROR')
-        fail(await providerFailureCode(res, opts.signal))
+        fail(await providerFailureCode(res, opts))
         return
       }
 

@@ -46,6 +46,7 @@ import {
   type GenerationAttemptReceipt,
   type GenerationOutcome,
   type GenerationSession,
+  TerminalProviderFailureError,
 } from '../../generation/generation-harness'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
@@ -568,7 +569,27 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     this.selectedCandidateDrafts = Object.freeze([...(options.selectedCandidateDrafts ?? [])])
   }
 
-  async execute({ step, context, callbacks }: CommandExecuteParams): Promise<string> {
+  async execute(params: CommandExecuteParams): Promise<string> {
+    const { context, callbacks } = params
+    try {
+      return await this.generate(params)
+    } catch (error) {
+      const failed = context.mainGenerationRunHandle
+      if (!failed || this.resumeHandle || this.batchId || context.agentWorkflowRegistrationId || context.cancelled
+        || !(error instanceof TerminalProviderFailureError && error.receipt.retryWithLearnedWindow)) throw error
+      callbacks.log(workflowUiText(context,
+        '  模型的实际窗口比预计小，已收缩可选材料，自动重试一次。',
+        '  The model window is smaller than expected. Trimmed optional material and retrying once.'))
+      try {
+        return await this.generate(params, failed)
+      } catch (retryError) {
+        if (context.cancelled) await ipc.invokeWithProjectSession(requireWorkflowProjectSession(context), 'generation:cancel', failed).catch(() => undefined)
+        throw retryError
+      }
+    }
+  }
+
+  private async generate({ step, context, callbacks }: CommandExecuteParams, contextWindowRetryOf?: MainGenerationRunHandle): Promise<string> {
     const uiText = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
     const expectedProjectPath = this.chapterInfo.projectPath
     const projectSession = requireWorkflowProjectSession(context)
@@ -640,6 +661,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           selectedDraftIds: [...new Set(this.selectedCandidateDrafts.filter(item => item.chapterNumber < this.chapterInfo.chapterNumber).map(item => item.draftId))],
           characterRosterRevision: characterMaterial.rosterRevision,
           ...(this.batchId ? { batchId: this.batchId } : {}),
+          ...(contextWindowRetryOf ? { contextWindowRetryOf } : {}),
         }).catch(error => {
           const code = error instanceof Error ? /(?:^|:\s)(KNOWLEDGE_BASE_NATIVE_UNAVAILABLE|LEGACY_VECTOR_MIGRATION_BLOCKED)$/u.exec(error.message)?.[1] : undefined
           if (code) throw Object.assign(new Error(appErrorMessage(context.uiLocale ?? 'zh-CN', { code })), { code })
@@ -985,6 +1007,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           materialDecision,
           authorInputs,
           ...(this.resumeHandle ? { resumeHandle: this.resumeHandle } : {}),
+          ...(contextWindowRetryOf ? { restartHandle: contextWindowRetryOf, retryNonce: 'context-window' } : {}),
         } })
         mainOwned = (runtime as { mainOwned?: boolean }).mainOwned === true
         cleanDraftText = await runtime.execute(async ({ session }) => {

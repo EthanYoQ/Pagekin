@@ -93,6 +93,10 @@ export interface MaterialBudget {
 export function materialBudgetFrom(input: Omit<MaterialBudget, 'inputTokens'>): MaterialBudget {
   return { ...input, inputTokens: Math.max(0, input.contextWindowTokens - input.reservedOutputTokens - input.safetyMarginTokens) }
 }
+export function tightenMaterialBudget(budget: MaterialBudget, contextWindowTokens: number): MaterialBudget {
+  return contextWindowTokens < budget.contextWindowTokens
+    ? materialBudgetFrom({ ...budget, contextWindowTokens, contextWindowSource: 'endpoint' }) : budget
+}
 export function estimateMaterialTokens(units: number): number {
   return Math.ceil(units / MATERIAL_BYTES_PER_TOKEN)
 }
@@ -253,6 +257,8 @@ export interface PrepareDraftContextRequest {
   query: string
   selectedDraftIds: number[]
   batchId?: string
+  /** 被服务商以超长拒绝、回执标了 retryWithLearnedWindow 的运行；额度按它学到的窗口收紧。 */
+  contextWindowRetryOf?: MainGenerationRunHandle
   /** authorInputs 和提示词里的档案读自哪个名册版本；没读到名册时不填。 */
   characterRosterRevision?: number
 }
