@@ -187,6 +187,20 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(pending()).toEqual([])
   })
 
+  it('同一份定稿重跑后关系回到作者设定：这一章旧的待确认项撤下，别的章不受影响', () => {
+    openProject()
+    authorRelation('师徒')
+    const eight = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(eight, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    const quote = '沈砚望着断裂的信物'
+    const nine = finalizeNew(9, `第九章：${quote}，一言不发。`)
+    commitModelOutput(nine, { updates: [], relations: [relationChange('反目', quote)] })
+    expect(pending().map(item => item.value)).toEqual(['恩断义绝', '反目'])
+
+    commitModelOutput(nine, { updates: [], relations: [relationChange('师徒', quote)] })
+    expect(pending().map(item => item.value)).toEqual(['恩断义绝'])
+  })
+
   it('采用后变成作者节点，自该章起生效，作者关系当前值随之更新', () => {
     openProject()
     authorRelation('师徒')
@@ -380,6 +394,19 @@ describe('关系比对查两个方向', () => {
     commitModelOutput(draftId, { updates: [], relations: [backward, forward] })
 
     expect(pending()).toEqual([])
+  })
+
+  it('作者两个方向都写了：采用只换卡片上那一行，另一个方向的作者行不动，作者中途改它也不被覆盖', () => {
+    openProject()
+    authorRelation('师父', LIN, SHEN)
+    authorRelation('徒弟', SHEN, LIN)
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+
+    expect(pending()).toMatchObject([{ sourceId: LIN, targetId: SHEN, authorRelations: ['师父'] }])
+    db().prepare("UPDATE character_relationships SET relation='宿敌' WHERE relationship_id='reverse-line'").run()
+    decide('accept')
+    expect(allAuthorRows()).toEqual(expect.arrayContaining([{ source: LIN, target: SHEN, relation: '恩断义绝' }, { source: SHEN, target: LIN, relation: '宿敌' }]))
+    expect(allAuthorRows()).toHaveLength(2)
   })
 
   it('反向的待确认项在重开并替换该章后失效', () => {
