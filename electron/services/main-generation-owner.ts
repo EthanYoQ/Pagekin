@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type { BeginGenerationRequest, ExecuteGenerationRequest, BeginGenerationBatchRequest, GenerationDraftCommitRequest, GenerationRecoveryContext, MaterialAdmission, MaterialDecisionReceipt, VisibleCompositionAlgorithm, GenerationOwnerChannels, GenerationRecoveryList, ShortOutlineRetry, PlanningContinuation, PlanningDraftStanding } from '../../src/shared/generation-owner-contract'
 import { planningRecoverable } from '../../src/shared/planning-recovery'
 import { isDraftVisibleTextVersion } from '../../src/shared/draft-visible-text'
-import { generationOutputContract, type GenerationAuthorInput } from '../../src/shared/generation-owner-contract'
+import { generationOutputContract, tightenMaterialBudget, type GenerationAuthorInput } from '../../src/shared/generation-owner-contract'
 import type { MainGenerationExecuteReceipt, MainGenerationRunHandle, MainGenerationRunSummary, MainGenerationRunView, MainGenerationSnapshot } from '../../src/services/generation/generation-runtime'
 import type { ModelProfile, ModelExecutionLeaseReceipt, LLMFinishReason } from '../../src/shared/ipc-channels'
 import type { CreativeStrategy } from '../../src/shared/reasoning-types'
@@ -90,7 +90,11 @@ export interface MainGenerationOwnerDependencies {
   transferOrigin?: () => string | undefined
 }
 
-interface ProviderRequest { conversationId: string; model: ModelProfile; task: GenerationTask; plan: MainGenerationPlan }
+interface ProviderRequest { runId: string; conversationId: string; model: ModelProfile; task: GenerationTask; plan: MainGenerationPlan }
+
+export class ProviderContextLengthError extends Error {
+  constructor(readonly windowTokens: number) { super('GENERATION_CONTEXT_LENGTH_EXCEEDED') }
+}
 
 /** 回执里交给渲染端的失败码：供应商与网络失败、上下文超长，以及阻断根的活动时长用完、写入失败。 */
 const RENDERER_SAFE_FAILURE_CODES = ['GENERATION_PROVIDER_FAILED', 'NETWORK_ERROR', ...TERMINAL_PROVIDER_FAILURE_CODES,
@@ -108,15 +112,18 @@ async function dispatchProvider(value: unknown, options: Parameters<GenerationRu
   let evidence: ProviderUsageEvidence | null = null
   let finishReason: LLMFinishReason | null = null
   let failureCode: string | null = null
+  let windowTokens: number | null = null
   await LLMFactory.getProvider(model).generateStream(model, task.messages.map(message => ({ ...message })), {
     ...plan.options, conversationId, signal: options.signal, visibleOnly: true,
     onChunk: text => options.onVisible({ kind: 'delta', text }),
     onReasoning: options.onReasoning,
     onDiagnostics: options.onDiagnostics,
     onUsageEvidence: value => { evidence = value },
+    onContextWindow: tokens => { windowTokens = tokens },
     onDone: (text, _usage, reason) => { options.onVisible({ kind: 'cumulative', text }); finishReason = reason },
     onError: error => { failureCode = providerStreamFailureCode(error) },
   })
+  if (failureCode === 'GENERATION_CONTEXT_LENGTH_EXCEEDED' && windowTokens !== null) throw new ProviderContextLengthError(windowTokens)
   if (failureCode || finishReason === null) throw new Error(failureCode ?? 'GENERATION_PROVIDER_FAILED')
   const usageEvidence = evidence as ProviderUsageEvidence | null
   return { finishReason, usage: usageEvidence ? { ...usageEvidence.usage, reasoningTokens: usageEvidence.reasoningTokens,
@@ -133,6 +140,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   const volatileReceipts = new Map<string, GenerationExecutionReceipt>()
   const pending = new Map<string, { hash: string; promise: Promise<MainGenerationExecuteReceipt> }>()
   const preparations = new Map<string, { binding: RunBinding; knowledgeSnapshot: GenerationKnowledgeSnapshot }>()
+  /** 只活在本次会话：写进模型档案会改 modelRevision，同模型的在途运行就恢复不了。 */
+  const learnedWindows = new Map<string, number>()
   let closed = false
   const assertCurrent = () => {
     if (closed || !deps.database.open) throw new Error('GENERATION_OWNER_CLOSED')
@@ -257,6 +266,11 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       revision: artifact.revision, durableRevision: artifact.revision, text: artifact.text, textHash: artifact.textHash, status, compositionEligible }
   }
   const providerDispatch = deps.dispatch ?? dispatchProvider
+  const learnContextWindow = ({ runId, task }: ProviderRequest, windowTokens: number) => {
+    const budget = (repository.get(runId).binding.sourceManifest.materialDecision as MaterialDecisionReceipt | undefined)?.budget
+    if (budget && [DRAFT_SHORT_OUTLINE_PURPOSE, 'chapter-draft'].includes(task.purpose)
+      && tightenMaterialBudget(budget, windowTokens).inputTokens < budget.inputTokens) learnedWindows.set(runId, windowTokens)
+  }
   /** 还没结束的请求；关闭作品时在关库前把它们记成已取消。 */
   const unrecordedCalls = new Set<() => void>()
   /** 每次真正发出的模型请求都记入运行侧页的 AI 调用记录，每次只记一行；记录只作诊断，写不进去也不改变生成结果。 */
@@ -283,6 +297,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       record(result.finishReason === 'stop', result.usage, result.finishReason === 'stop' ? undefined : `finish:${result.finishReason ?? 'unknown'}`)
       return result
     } catch (error) {
+      if (error instanceof ProviderContextLengthError) learnContextWindow(request as ProviderRequest, error.windowTokens)
       if (options.signal.reason === GENERATION_STOPPED) recordCancelled()
       else record(false, null, error instanceof Error ? error.message : String(error))
       throw error
@@ -383,7 +398,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   const draftPreparation = (request: PrepareDraftContextRequest, knowledgeSnapshot?: GenerationKnowledgeSnapshot): { binding: RunBinding; model: ModelProfile } => {
     assertCurrent()
     if (!request || typeof request.query !== 'string' || knowledgeSnapshot && request.query !== knowledgeSnapshot.query
-      || Object.keys(request).some(key => !['chapterNumber', 'modelId', 'promptKeys', 'skillStages', 'authorInputs', 'query', 'selectedDraftIds', 'batchId', 'characterRosterRevision'].includes(key))) throw new Error('GENERATION_DRAFT_PREPARATION_INVALID')
+      || Object.keys(request).some(key => !['chapterNumber', 'modelId', 'promptKeys', 'skillStages', 'authorInputs', 'query', 'selectedDraftIds', 'batchId', 'characterRosterRevision', 'contextWindowRetryOf'].includes(key))) throw new Error('GENERATION_DRAFT_PREPARATION_INVALID')
     if (request.characterRosterRevision !== undefined
       && request.characterRosterRevision !== deps.database.prepare("SELECT revision FROM character_roster_meta WHERE id='main'").pluck().get()) throw new Error('GENERATION_DRAFT_PREPARATION_CHANGED')
     const model = deps.loadModel(request.modelId)
@@ -408,7 +423,9 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       })
       return { binding, model, selectedDrafts }
     })()
-    const materialBudget = resolveMaterialBudget(model, (binding.sourceManifest.policy as MainGenerationPolicy).budget.maxOutputPerRequest)
+    const budget = resolveMaterialBudget(model, (binding.sourceManifest.policy as MainGenerationPolicy).budget.maxOutputPerRequest)
+    const learned = request.contextWindowRetryOf ? learnedWindows.get(requireRun(request.contextWindowRetryOf).runId) : undefined
+    const materialBudget = learned === undefined ? budget : tightenMaterialBudget(budget, learned)
     const preparationId = randomUUID()
     if (preparations.size >= 64) preparations.delete(preparations.keys().next().value!)
     preparations.set(preparationId, { binding, knowledgeSnapshot: structuredClone(knowledgeSnapshot) })
@@ -550,6 +567,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const details: GenerationAttemptReceipt = { purpose: task.purpose,
       ...(receipt.diagnostics ? { diagnostics: receipt.diagnostics } : {}),
       ...(safeFailureCode ? { failureCode: safeFailureCode } : {}),
+      ...(safeFailureCode === 'GENERATION_CONTEXT_LENGTH_EXCEEDED' && learnedWindows.has(receipt.run.runId) ? { retryWithLearnedWindow: true as const } : {}),
       ...(receipt.artifact ? { visibleArtifact: { artifactId: receipt.artifact.artifactId, attemptId: receipt.attempt.attemptId,
         revision: receipt.artifact.revision, textHash: receipt.artifact.textHash } } : {}),
       model: { id: frozenModel.modelId, configurationRevision: frozenModel.modelRevision, endpointFingerprint: frozenModel.endpointFingerprint },
@@ -668,7 +686,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     deps.beforeDispatch?.()
     assertCurrent()
     const receipt = await service.execute({ runId: run.runId, invocationNonce: request.invocationNonce, requestHash,
-      providerRequest: { model, task, plan, conversationId: run.rootActionId } satisfies ProviderRequest, reservedTokens: plan.reservedTokens,
+      providerRequest: { runId: run.runId, model, task, plan, conversationId: run.rootActionId } satisfies ProviderRequest, reservedTokens: plan.reservedTokens,
       requestedOutputTokens: plan.requestedOutputTokens, inputUpperBoundTokens: plan.inputUpperBoundTokens,
       reasoningUpperBoundTokens: plan.reasoningUpperBoundTokens, usagePolicy: plan.usagePolicy, purpose: task.purpose,
       ...(plan.budgetDecision ? { budgetDecision: plan.budgetDecision } : {}),
@@ -1087,6 +1105,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
           return
         }
         const recovery = readContext(handle)
+        if (!recovery.composition && repository.budget(handle.rootActionId).root.status === 'cancelled'
+          && view.budgetDiagnostics?.at(-1)?.failureCode === 'GENERATION_CONTEXT_LENGTH_EXCEEDED') return
         if (recovery.composition || recovery.draftShortOutline?.completedOutput || recovery.draftShortOutline?.retry?.kind === 'available'
           || withoutDraftReconciliationArtifacts([...view.artifacts, ...(view.candidates ?? [])], recovery).some(hasText)
           || view.unsavedTails?.some(hasText)) list.drafts.push({ view, recovery })

@@ -77,6 +77,23 @@ export const D77_SCENARIOS = {
     assert.deepEqual(chats, ['context-length'], `服务商拒绝后不自动重发：${chats.join('、')}`)
     return { card: text, chats }
   } },
+  // 手填窗口比真实窗口大：第一次超长带窗口，软件换材料重试一次，作者看不到失败，手填的数不变。
+  'ctx-retry-learned-window': { model: true, shell: 'stage', setup, run: async ({ page, fake, invoke, shoot }) => {
+    const large = { ...AUTHOR_64K, capabilities: { ...AUTHOR_64K.capabilities, contextWindowTokens: 1_048_576 } }
+    assert.equal((await invoke(page, 'llm:save-model', large)).success, true)
+    fake.rejectContextLength(true, { sample: 'siliconflow', times: 1 })
+    const before = fake.requests.length
+    await startDraft(page)
+    await runSheet.waitForRunDone(page)
+    const chats = modelCallKindsSince(fake, before)
+    assert.deepEqual(chats, ['context-length', 'outline', 'prose'], `第一次超长后只多一次，换材料重试成功：${chats.join('、')}`)
+    await chapterView.prose(page).getByText(firstLine(FIXTURE_PROSE)).first().waitFor({ state: 'visible', timeout: 30_000 })
+    assert.equal(await runSheet.anyCard(page).filter({ hasText: /^上一次运行/ }).filter({ hasText: /换用上下文更长的模型/ }).count(), 0, '作者看不到超长失败卡片')
+    const stored = (await invoke(page, 'llm:list-models')).find(model => model.id === large.id)
+    assert.equal(stored.capabilities.contextWindowTokens, 1_048_576, '手填窗口不被改写')
+    await shoot('ctx-retry-learned-window')
+    return { chats, storedWindow: stored.capabilities.contextWindowTokens }
+  } },
   // 模型设置的「有效输出额度」：有值时说明新开始的生成每次最多发这么多、旧运行可能按 32,768 封顶；
   // 把作者设置和模型输出容量清成 0 后，这句改说还没有额度，不出现「为 未设置」。不保存。
   'd77-output-allowance': { model: true, shell: 'stage', setup, run: async ({ page, shoot }) => {

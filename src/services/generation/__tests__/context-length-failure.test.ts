@@ -135,9 +135,9 @@ describe('讨论区 #77：服务商上下文超长', () => {
   })
 
   it.each([
-    ['zh-CN', ['换用上下文更长的模型', '调低最大输出 Tokens', '精简本章要求、参考材料'], '上下文窗口'],
-    ['en-US', ['model with a longer context', 'lower Max output tokens', 'shorten the chapter request and reference material'], 'Context Window'],
-  ] as const)('%s 文案建议换模型、调低最大输出或精简材料，不指向上下文窗口设置', (locale, advice, stale) => {
+    ['zh-CN', ['作品内容没有变动', '换用上下文更长的模型', '调低最大输出 Tokens', '「设置」', '再重新生成'], '上下文窗口'],
+    ['en-US', ['Your work is unchanged', 'model with a longer context', 'lower Max output tokens', 'In Settings', 'then generate again'], 'Context Window'],
+  ] as const)('%s 文案建议换模型、调低最大输出，不指向上下文窗口设置', (locale, advice, stale) => {
     const message = knownAppErrorMessage(locale, new Error('GENERATION_CONTEXT_LENGTH_EXCEEDED'))
     for (const phrase of advice) expect(message).toContain(phrase)
     expect(message).not.toContain(stale)
