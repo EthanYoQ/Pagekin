@@ -30,6 +30,8 @@ export interface LLMGenerateOptions {
 
 export interface LLMStreamOptions extends LLMGenerateOptions {
   onDiagnostics?: (diagnostics: GenerationTransportDiagnostics) => void
+  /** 服务商超长报错里读到的真实窗口；只传数字，错误原文不外传。 */
+  onContextWindow?: (tokens: number) => void
   signal: AbortSignal
   /** The durable owner receives only visible content, preserving its exact whitespace. */
   visibleOnly?: boolean

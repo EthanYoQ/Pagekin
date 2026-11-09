@@ -151,6 +151,7 @@ export async function startFakeModel(diagnostics) {
   let importInference = false
   let directoryBlueprints = false
   let contextLengthRejection = null
+  let contextLengthRejectionsLeft = Infinity
   /** 每次被接受的嵌入请求带的 Authorization 头（没有时为 null），场景据此确认本机检索模型真的没带 Key。 */
   const embeddingAuthorizations = []
   const streamLog = []
@@ -190,12 +191,13 @@ export async function startFakeModel(diagnostics) {
   /** 之后的参考小说导入：全局推演回一份合法 JSON（三张角色卡），分批蓝图推演按本批章号回齐全的蓝图。 */
   const replyImport = () => { importInference = true }
   const replyDirectoryBlueprints = (on = true) => { directoryBlueprints = on }
-  const rejectContextLength = (rejected = true) => {
+  const rejectContextLength = (rejected = true, { sample: sampleName = 'deepseek', times = Infinity } = {}) => {
     if (!rejected) { contextLengthRejection = null; return }
+    contextLengthRejectionsLeft = times
     const sample = new URL('../../electron/llm/__tests__/provider-context-length-samples.json', import.meta.url)
-    try { contextLengthRejection = JSON.parse(readFileSync(sample, 'utf8')).deepseek }
+    try { contextLengthRejection = JSON.parse(readFileSync(sample, 'utf8'))[sampleName] }
     catch (error) { throw new Error(`rejectContextLength: 读不出错误体样本 ${fileURLToPath(sample)}`, { cause: error }) }
-    if (!contextLengthRejection?.error?.message) throw new Error('rejectContextLength: 样本缺少 deepseek 错误体')
+    if (!contextLengthRejection) throw new Error(`rejectContextLength: 样本缺少 ${sampleName} 错误体`)
   }
   const record = (kind, detail) => {
     requests.push(kind)
@@ -249,7 +251,7 @@ export async function startFakeModel(diagnostics) {
     }
     if (request.url !== '/v1/chat/completions') { response.writeHead(404).end(); return }
     await pass()
-    if (contextLengthRejection) {
+    if (contextLengthRejection && contextLengthRejectionsLeft-- > 0) {
       record('context-length', `${Buffer.byteLength(JSON.stringify(body.messages ?? []))} 字节`)
       response.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify(contextLengthRejection))
       return
