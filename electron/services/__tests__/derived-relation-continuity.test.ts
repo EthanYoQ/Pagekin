@@ -174,6 +174,19 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(pending()).toEqual([])
   })
 
+  it('定稿改变关系后下一章又回到作者设定：记下恢复，不再和旧的派生值打架，也不提示', () => {
+    openProject()
+    authorRelation('师徒')
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    decide('decline')
+    const reconciled = '沈砚扶起林岚，重新认她为徒。'
+    commitModelOutput(finalizeNew(9, `第九章：${reconciled}`), { updates: [], relations: [relationChange('师徒', reconciled)] })
+
+    expect(derivedNodes().map(node => [node.effectiveChapter, node.value]).sort()).toEqual([[8, '恩断义绝'], [9, '师徒']])
+    expect(latestNodesBefore(relationNodes(), 10).relations[0]).toMatchObject({ conflict: false })
+    expect(pending()).toEqual([])
+  })
+
   it('采用后变成作者节点，自该章起生效，作者关系当前值随之更新', () => {
     openProject()
     authorRelation('师徒')
