@@ -27,11 +27,15 @@ export function BlueprintAiFindings({ chapterNumber, ai }: { chapterNumber: numb
           <ul className="stage-bp-ai-list">
             {findings.map(finding => (
               <li key={finding.stableFactKey} className="stage-bp-ai-item">
-                <p className="stage-bp-ai-issue">{finding.issue}</p>
-                <p>{text('依据：', 'Basis: ')}{finding.basis.map((node, index) => (
-                  <Fragment key={node.eventId}>{index > 0 && text('；', '; ')}{basisLine(node, text)}</Fragment>
-                ))}</p>
-                <p>{text('建议：', 'Suggestion: ')}{finding.suggestion}</p>
+                {finding.points.map((point, pointIndex) => (
+                  <Fragment key={pointIndex}>
+                    <p className="stage-bp-ai-issue">{point.issue}</p>
+                    {pointIndex === 0 && <p>{text('依据：', 'Basis: ')}{finding.basis.map((node, index) => (
+                      <Fragment key={node.eventId}>{index > 0 && text('；', '; ')}{basisLine(node, text)}</Fragment>
+                    ))}</p>}
+                    <p>{text('建议：', 'Suggestion: ')}{point.suggestion}</p>
+                  </Fragment>
+                ))}
                 <div className="stage-bp-ai-actions">
                   <PreflightExemptButtons busy={ai.busy} onExempt={scope => void ai.exempt(finding, scope)} />
                 </div>

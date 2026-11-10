@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { displayedErrorMessage, errorCodeOf } from '../../../i18n/app-errors'
 import {
-  readLatestContinuityReport, runContinuityCheck, type ContinuityReport,
+  forgetContinuityCheck, pendingContinuityCheck, readLatestContinuityReport, runContinuityCheck,
+  type ContinuityCheckOutcome, type ContinuityReport,
 } from '../../../services/blueprint-continuity-check'
 import { exemptionChapter, saveFindingExemption, type ExemptionScope } from '../../../services/consistency-preflight'
 import { ipc } from '../../../services/ipc-client'
 import type { ChapterBlueprint } from '../../../services/workflows/directory-workflow'
-import { continuityFindingKey, isChapterAsChecked, selectContinuityCheckScope, type ContinuityCheckNode } from '../../../shared/blueprint-continuity-check'
+import {
+  continuityFindingKey, isChapterAsChecked, selectContinuityCheckScope, type ContinuityCheckNode, type ContinuityCheckPoint,
+} from '../../../shared/blueprint-continuity-check'
 import type { ContinuityNode } from '../../../shared/character-continuity'
 import { exemptedFactKeys, type ConsistencyExemption } from '../../../shared/consistency-preflight'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
@@ -26,16 +29,23 @@ type CheckStatus =
 export interface AiFinding {
   stableFactKey: string
   chapterNumber: number
-  issue: string
-  suggestion: string
+  points: ContinuityCheckPoint[]
   basis: ContinuityCheckNode[]
 }
 
 interface Exempted { session: ProjectSessionContext; finding: AiFinding; scope: ExemptionScope }
 
+function sessionFor(projectKey: string) {
+  const session = captureProjectSession(useProjectStore.getState().currentProject)
+  return session && isProjectSessionPath(session, projectKey) ? session : null
+}
+
 export function useBlueprintAiCheck(projectKey: string, blueprints: readonly ChapterBlueprint[]) {
   const sessionLease = useProjectStore(s => s.currentProject?.sessionLease)
-  const [status, setStatus] = useState<CheckStatus>({ kind: 'idle' })
+  const [status, setStatus] = useState<CheckStatus>(() => {
+    const session = sessionFor(projectKey)
+    return session && pendingContinuityCheck(session) ? { kind: 'running' } : { kind: 'idle' }
+  })
   const [report, setReport] = useState<ContinuityReport | null>(null)
   const [exemptions, setExemptions] = useState<ConsistencyExemption[]>([])
   const [hasTimeline, setHasTimeline] = useState(true)
@@ -43,11 +53,13 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const [exempted, setExempted] = useState<Exempted | null>(null)
   const [busy, setBusy] = useState(false)
   const checked = useRef(false)
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
-  const currentSession = useCallback(() => {
-    const session = captureProjectSession(useProjectStore.getState().currentProject)
-    return session && isProjectSessionPath(session, projectKey) ? session : null
-  }, [projectKey])
+  const currentSession = useCallback(() => sessionFor(projectKey), [projectKey])
 
   const readTimeline = useCallback(async (session: ProjectSessionContext) => {
     const nodes = await ipc.invokeWithProjectSession(session, 'db:character-continuity-preflight-nodes', session.projectPath)
@@ -65,6 +77,34 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     if (isProjectSessionCurrent(session)) setExemptions(list)
   }, [])
 
+  const follow = useCallback((session: ProjectSessionContext, pending: Promise<ContinuityCheckOutcome>) => {
+    const { text, locale } = useLocaleStore.getState()
+    checked.current = true
+    const shown = () => {
+      if (!mounted.current || !isProjectSessionCurrent(session)) return false
+      forgetContinuityCheck(session, pending)
+      return true
+    }
+    return pending.then(async outcome => {
+      if (!shown()) return
+      if (outcome.status === 'checked') {
+        await Promise.all([readExemptions(session), readTimeline(session)]).catch(() => {})
+        setReport(outcome.report)
+        setStatus({ kind: 'done' })
+      } else {
+        setReport(null)
+        setStatus({ kind: outcome.status })
+      }
+    }, (error: unknown) => {
+      if (!shown()) return
+      const code = errorCodeOf(error)
+      if (code === 'GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED') { setHasTimeline(false); setStatus({ kind: 'idle' }); return }
+      setStatus({ kind: 'failed', message: code === 'GENERATION_GRAPH_BLUEPRINT_REQUIRED'
+        ? text('没有还没定稿的章节要检查。', 'Every chapter is finalized, so there is nothing to check.')
+        : displayedErrorMessage(locale, error, text('蓝图没有改动。这次没查成，再点一次“AI 检查”。', 'Your blueprints are unchanged. The check did not finish. Choose AI check again.')) })
+    })
+  }, [readExemptions, readTimeline])
+
   useEffect(() => {
     const session = currentSession()
     if (!session) return
@@ -74,41 +114,24 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
       .then(nodes => { if (applies()) { setHasTimeline(nodes.length > 0); setTimeline(nodes) } }).catch(() => {})
     void ipc.invokeWithProjectSession(session, 'db:consistency-exemption-list', session.projectPath)
       .then(list => { if (applies()) setExemptions(list) }).catch(() => {})
+    const pending = pendingContinuityCheck(session)
+    if (pending) void follow(session, pending)
     void readLatestContinuityReport(session)
       .then(latest => { if (applies() && !checked.current) setReport(latest) }).catch(() => {})
     return () => { active = false }
-  }, [currentSession, sessionLease])
+  }, [currentSession, sessionLease, follow])
 
   const run = async () => {
     const session = currentSession()
-    const { text, locale } = useLocaleStore.getState()
+    const { text } = useLocaleStore.getState()
     if (!session) return
     const modelId = routeStageModel('planning', useLLMStore.getState()).modelId
     if (!modelId) {
       setStatus({ kind: 'failed', message: text('蓝图没有改动。还没有能用的模型，到“分工模型”选一个，再点“AI 检查”。', 'Your blueprints are unchanged. No model is available. Pick one in Model roles, then choose AI check again.') })
       return
     }
-    checked.current = true
     setStatus({ kind: 'running' })
-    try {
-      const outcome = await runContinuityCheck(session, modelId)
-      if (!isProjectSessionCurrent(session)) return
-      if (outcome.status === 'checked') {
-        await Promise.all([readExemptions(session), readTimeline(session)]).catch(() => {})
-        setReport(outcome.report)
-        setStatus({ kind: 'done' })
-      } else {
-        setReport(null)
-        setStatus({ kind: outcome.status })
-      }
-    } catch (error) {
-      if (!isProjectSessionCurrent(session)) return
-      const code = errorCodeOf(error)
-      if (code === 'GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED') { setHasTimeline(false); setStatus({ kind: 'idle' }); return }
-      setStatus({ kind: 'failed', message: code === 'GENERATION_GRAPH_BLUEPRINT_REQUIRED'
-        ? text('没有还没定稿的章节要检查。', 'Every chapter is finalized, so there is nothing to check.')
-        : displayedErrorMessage(locale, error, text('蓝图没有改动。这次没查成，再点一次“AI 检查”。', 'Your blueprints are unchanged. The check did not finish. Choose AI check again.')) })
-    }
+    await follow(session, runContinuityCheck(session, modelId))
   }
 
   const unchanged = useMemo(() => {
@@ -130,7 +153,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     return report.result.findings.flatMap(finding => {
       const stableFactKey = continuityFindingKey(finding.eventIds)
       if (!unchanged(finding.chapterNumber) || exemptedFactKeys(exemptions, finding.chapterNumber).has(stableFactKey)) return []
-      return [{ stableFactKey, chapterNumber: finding.chapterNumber, issue: finding.issue, suggestion: finding.suggestion,
+      return [{ stableFactKey, chapterNumber: finding.chapterNumber, points: finding.points,
         basis: finding.eventIds.map(id => report.nodes.get(id)!) }]
     })
   }, [report, stale, unchanged, exemptions])
