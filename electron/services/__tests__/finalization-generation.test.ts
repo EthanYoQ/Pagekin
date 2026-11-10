@@ -19,6 +19,8 @@ import { parseFinalizedCharacterStateResponse } from '../../../src/shared/finali
 import { getBuiltinPromptTemplate } from '../../../src/services/builtin-prompt-templates'
 import * as portableAuthority from '../portable-current-authority'
 import { registerAsReopenDraft } from '../../../test/helpers/reopened-draft'
+import { insertCharacterRelationship } from '../../repositories/character-continuity-repository'
+import { refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
 
 vi.mock('../../database', async importOriginal => ({ ...await importOriginal<typeof import('../../database')>(), getProjectDb: vi.fn() }))
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -968,4 +970,22 @@ it('#420 生成记录写入失败后点重试：报出写入失败本身，而�
  await expect(f.owner.executeFinalizationGeneration({ handle, recoverFrom })).rejects.toThrow('GENERATION_STORAGE_FAILED')
  expect(f.dispatch).toHaveBeenCalledTimes(1)
  f.owner.discardCandidate(handle, f.artifactOf(failed).artifactId)
+})
+
+it('章节要点快照还没有时，待确认关系让角色步留在可重试：补上快照后重试同一结果，卡片出现，不再请求模型', async () => {
+ const quote = '林岚与沈砚决裂。'
+ const f = fixture(async (_r, o) => { o.onVisible({ kind: 'delta', text: JSON.stringify({ updates: [], relations: [{ source: 'character-lan', target: 'character-shen', relation: '决裂', evidence: { text: quote } }] }) }); return { finishReason: 'stop', usage: null } }, { content: quote, secondCharacter: true, seed: db => db.transaction(() => {
+  db.prepare("INSERT OR IGNORE INTO character_identity_approvals VALUES('seed-approval','hash','{}')").run()
+  insertCharacterRelationship(db, { relationshipId: 'author-line', sourceId: 'character-lan', sourceName: '林岚', targetId: 'character-shen', targetName: '沈砚', relation: '师徒', provenanceJson: '{"kind":"author"}' }, { operationId: 'seed-approval', action: 'author-edit' }, 1)
+  refreshCharacterIdentityProjection(db)
+ })() })
+ const { context } = f.prepared
+ const slot = { source: context.source, stepKey: 'character_cards' as const }
+ const { handle } = f.owner.beginFinalizationGeneration({ slot, modelId: 'synthetic' }).view
+ const commit = { handle, artifact: f.artifactOf(await f.owner.executeFinalizationGeneration({ handle })) }
+ try { f.owner.commitFinalizationGeneration(commit) } catch (error) { expect((error as Error).message).toBe('CONTINUITY_PROJECTION_MISSING') }
+ SummaryRepository.saveFinalizedContinuity({ draftId: context.source.draftId, chapterNumber: context.source.chapterNumber, chapterNotes: '要点', facts: [], source: context.source, projectionGeneration: context.projectionGeneration }, f.db)
+ f.owner.commitFinalizationGeneration(commit)
+ expect(SummaryRepository.listPendingFinalizedRelationCandidates(f.db).map(candidate => candidate.value)).toEqual(['决裂'])
+ expect(f.dispatch).toHaveBeenCalledTimes(1)
 })
