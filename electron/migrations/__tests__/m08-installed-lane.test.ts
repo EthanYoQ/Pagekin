@@ -85,9 +85,9 @@ describe('installed M08 lane', () => {
         relationships: db.prepare('SELECT * FROM character_relationships ORDER BY relationship_id').all(),
       }
       const result = migrateSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
-      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(9)
-      expect(result.completedSteps).toEqual(['M08'])
-      expect(verifySchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry(), 9).version).toBe(9)
+      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(10)
+      expect(result.completedSteps).toEqual(['M08', 'M09'])
+      expect(verifySchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry(), 10).version).toBe(10)
       expect(events(db)).toEqual(EXPECTED_BASELINE)
       expect(db.prepare('SELECT * FROM characters ORDER BY character_id').all()).toEqual(before.characters)
       expect(db.prepare('SELECT * FROM character_relationships ORDER BY relationship_id').all()).toEqual(before.relationships)
@@ -101,7 +101,7 @@ describe('installed M08 lane', () => {
   it('gives a new project the same v9 schema as an upgraded v8 project', () => {
     const upgraded = v8Project(), created = new Database(':memory:')
     try {
-      migrateSchema(new SqliteSchemaAdapter(upgraded), getDesktopMigrationRegistry(), 9)
+      migrateSchema(new SqliteSchemaAdapter(upgraded), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
       created.pragma('foreign_keys=ON')
       created.transaction(() => initializeLegacyBaselineSchema(created))()
       migrateSchema(new SqliteSchemaAdapter(created), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)

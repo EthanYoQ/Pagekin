@@ -90,3 +90,33 @@ describe('数据库控制器注册的通道', () => {
     expect(handlers.has('db:get-latest-summary')).toBe(false)
   })
 })
+
+describe('批注修改提交', () => {
+  it('在同一事务里保存原文、新文和批注，再更新草稿', async () => {
+    const id = DraftRepository.create({ chapterNumber: 2, source: 'write', content: '春雨落下', wordCount: 4 })
+    const input = { draftId: id, expectedSaved: '春雨落下', before: '春雨落下', after: '秋雨落下', annotations: [{ id: 'one', from: 0, to: 1, selectedText: '春', instruction: '改成秋' }] }
+    await expect(handlers.get('db:annotation-commit')!({}, input, session.projectPath, session)).resolves.toEqual({ success: true })
+    expect(DraftRepository.getFull(id)?.content).toBe('秋雨落下')
+    const { getProjectDb } = await import('../../database')
+    const saved = getProjectDb()!.prepare('SELECT before_text, after_text, annotations_json FROM annotation_history WHERE draft_id=?').get(id) as { before_text: string; after_text: string; annotations_json: string }
+    expect(saved.before_text).toBe(input.before)
+    expect(saved.after_text).toBe(input.after)
+    expect(JSON.parse(saved.annotations_json)).toEqual(input.annotations)
+  })
+  it('保留尚未保存的作者编辑作为修改前快照', async () => {
+    const id = DraftRepository.create({ chapterNumber: 3, source: 'write', content: '旧稿', wordCount: 2 })
+    const input = { draftId: id, expectedSaved: '旧稿', before: '春雨落下', after: '秋雨落下', annotations: [{ id: 'one', from: 0, to: 1, selectedText: '春', instruction: '改成秋' }] }
+    await expect(handlers.get('db:annotation-commit')!({}, input, session.projectPath, session)).resolves.toEqual({ success: true })
+    const { getProjectDb } = await import('../../database')
+    expect(getProjectDb()!.prepare('SELECT before_text FROM annotation_history WHERE draft_id=?').pluck().get(id)).toBe('春雨落下')
+    expect(DraftRepository.getFull(id)?.content).toBe('秋雨落下')
+  })
+  it('正文发生变化时不覆盖，也不写历史', async () => {
+    const id = DraftRepository.create({ chapterNumber: 2, source: 'write', content: '夏雨落下', wordCount: 4 })
+    const input = { draftId: id, expectedSaved: '春雨落下', before: '春雨落下', after: '秋雨落下', annotations: [{ id: 'one', from: 0, to: 1, selectedText: '春', instruction: '改成秋' }] }
+    await expect(handlers.get('db:annotation-commit')!({}, input, session.projectPath, session)).resolves.toMatchObject({ success: false })
+    expect(DraftRepository.getFull(id)?.content).toBe('夏雨落下')
+    const { getProjectDb } = await import('../../database')
+    expect(getProjectDb()!.prepare('SELECT count(*) FROM annotation_history WHERE draft_id=?').pluck().get(id)).toBe(0)
+  })
+})

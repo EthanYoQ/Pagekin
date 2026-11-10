@@ -59,7 +59,7 @@ describe('installed M07 lane', () => {
         receipts: rows(db, 'SELECT * FROM chapter_deletion_operations'),
       }
       const result = migrateSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry(), 8)
-      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(9)
+      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(10)
       expect(result.completedSteps).toEqual(['M07'])
       const v8 = getDesktopMigrationRegistry().recognizedSchemas.filter(schema => schema.version === 8).map(schema => schema.fingerprint)
       expect(v8).toContain(sqliteSchemaFingerprint(db))
@@ -199,6 +199,7 @@ describe('M07 deletion columns and live views', () => {
 
 // G6：经外键挂在草稿上的表，要么本身改名为 _all 并在原名上有 live 视图，要么写明为什么暂不需要。
 const LIVE_VIEW_EXEMPT_TABLES: Readonly<Record<string, string>> = {
+  annotation_history: '批注历史读取只通过 drafts live 视图定位父稿，删除章节后不显示',
   contents: '只按 id 读，id 取自 drafts、reviews、revisions 的行；本身没有章号与状态',
   reviews: '按 id 或 base_draft_id 读；ReviewRepository 的读取都带 LIVE_PARENT（父稿在 drafts 视图里），回收站章节的审稿读不出。用例见 live-row-sentinel.test.ts 与 m03-review-cycle.test.ts',
   revisions: '按 id 或 base_draft_id 读；RevisionRepository 的读取和改状态都带 LIVE_PARENT，回收站章节的修稿读不出、改不了。用例见 live-row-sentinel.test.ts',

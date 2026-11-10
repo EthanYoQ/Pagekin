@@ -727,7 +727,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
       originProjectId: f.projectId,
       snapshotGeneration: 'generation-test-1',
       requiresRuntimeFreezeGuard: true,
-      sourceEvidence: { schemaVersion: 9, tableCount: 54, fieldCount: 514 },
+      sourceEvidence: { schemaVersion: 10, tableCount: 55, fieldCount: 520 },
     })
     expect(contextCalls).toEqual(['lease-current', 'lease-current', 'lease-current'])
     expect(fs.readFileSync(f.databasePath)).toEqual(before)
@@ -754,7 +754,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     })
     const portable = new Database(path.join(unpacked.stagingPath, 'project.db'), { readonly: true })
     try {
-      expect(portable.pragma('user_version', { simple: true })).toBe(9)
+      expect(portable.pragma('user_version', { simple: true })).toBe(10)
       expect(portable.prepare('SELECT COUNT(*) FROM review_cycle_merges').pluck().get()).toBe(0)
       expect(portable.prepare('SELECT body FROM contents WHERE id=1').pluck().get()).toBe(seeded.body)
       expect(portable.prepare('SELECT relation FROM character_relationships').pluck().get()).toBe('盟友')
@@ -787,14 +787,14 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     const before = fs.readFileSync(f.databasePath)
 
     const receipt = await exportPortableProject(input(f))
-    expect(receipt.sourceEvidence).toMatchObject({ schemaVersion: 9, tableCount: 54, fieldCount: 515 })
+    expect(receipt.sourceEvidence).toMatchObject({ schemaVersion: 10, tableCount: 55, fieldCount: 521 })
     const targetProjectRoot = path.join(f.base, 'restored-donor')
     await restorePortableProject({ archivePath: f.target, targetProjectRoot })
 
     const restoredStorage = path.join(targetProjectRoot, '.ai-novel')
     const restored = new Database(path.join(restoredStorage, 'project.db'), { readonly: true })
     try {
-      expect(restored.pragma('user_version', { simple: true })).toBe(9)
+      expect(restored.pragma('user_version', { simple: true })).toBe(10)
       expect(restored.prepare('SELECT avatar FROM characters').pluck().all()).toEqual(['', ''])
       expect(restored.prepare('SELECT body FROM contents WHERE id=1').pluck().get()).toBe(seeded.body)
       const avatarPath = restored.prepare('SELECT relative_path FROM character_avatar_assets').pluck().get() as string
@@ -1188,4 +1188,23 @@ describe('portable redaction registry', () => {
     } finally { db.close() }
     expect(collapsed.sort()).toEqual([])
   })
+})
+
+it('portable export and restore preserve author annotation history snapshots', async () => {
+  const f = fixture()
+  seedProject(f)
+  const source = new Database(f.databasePath)
+  try {
+    source.prepare('INSERT INTO annotation_history(draft_id,before_text,after_text,annotations_json) VALUES(?,?,?,?)')
+      .run(1, '春雨落下', '秋雨落下', JSON.stringify([{ selectedText: '春', instruction: '改成秋' }]))
+  } finally { source.close() }
+  await exportPortableProject(input(f))
+  const destination = path.join(f.base, 'annotation-restored')
+  await restorePortableProject({ archivePath: f.target, targetProjectRoot: destination })
+  const restored = new Database(path.join(destination, '.ai-novel', 'project.db'), { readonly: true })
+  try {
+    expect(restored.prepare('SELECT before_text,after_text,annotations_json FROM annotation_history').get()).toEqual({
+      before_text: '春雨落下', after_text: '秋雨落下', annotations_json: JSON.stringify([{ selectedText: '春', instruction: '改成秋' }]),
+    })
+  } finally { restored.close() }
 })

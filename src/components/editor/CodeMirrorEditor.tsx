@@ -21,6 +21,7 @@ import { displayedErrorMessage } from '../../i18n/app-errors'
 import { isTerminalProviderFailure } from '../../services/generation/generation-harness'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
 import { livePreview, paperHeadFacet, type PaperHead } from './live-preview'
+import InlineAnnotationReview from './InlineAnnotationReview'
 import { commandKeyLabel, isComposing } from '../stage/shortcut-keys'
 
 export type CodeMirrorEditorProps = {
@@ -28,6 +29,7 @@ export type CodeMirrorEditorProps = {
   filePath?: string
   recoveryHandle?: MainGenerationRunHandle
   onGenerationHandle?: (handle: MainGenerationRunHandle) => void
+  onCommitAnnotations?: (before: string, after: string, annotations: EditorInlineAnnotation[]) => Promise<void>
   editable?: boolean
   onChange?: (content: string) => void
   onSave?: (content: string) => Promise<void> | void
@@ -75,6 +77,7 @@ export default function CodeMirrorEditor({
   filePath,
   recoveryHandle,
   onGenerationHandle,
+  onCommitAnnotations,
   editable = true,
   onChange,
   onSave,
@@ -96,6 +99,7 @@ export default function CodeMirrorEditor({
   const [noteDraft, setNoteDraft] = useState<string | null>(null)
   const [noteError, setNoteError] = useState<string | null>(null)
   const [annotations, setAnnotations] = useState<EditorInlineAnnotation[]>([])
+  const [inlineReview, setInlineReview] = useState<{ before: string; after: string; annotations: EditorInlineAnnotation[]; sessionKey: string; filePath?: string } | null>(null)
   const hasEmittedInitialCount = useRef(false)
   const composingRef = useRef(false)
   const pendingExternalContentRef = useRef<string | null>(null)
@@ -237,13 +241,14 @@ export default function CodeMirrorEditor({
   const handleUpdate = useCallback((v: ViewUpdate) => {
     if (v.docChanged) {
       const newText = v.state.doc.toString()
+      const changedByAuthor = newText !== lastEmittedContentRef.current
       lastEmittedContentRef.current = newText
-      setAnnotations(current => current.flatMap(annotation => {
+      if (changedByAuthor) setAnnotations(current => current.flatMap(annotation => {
         const from = v.changes.mapPos(annotation.from, 1)
         const to = v.changes.mapPos(annotation.to, -1)
         return to > from ? [{ ...annotation, from, to, selectedText: newText.slice(from, to) }] : []
       }))
-      onChange?.(newText)
+      if (changedByAuthor) onChange?.(newText)
 
       const cnt = countDraftUnits(newText)
       onCharCountChange?.(cnt)
@@ -472,6 +477,11 @@ export default function CodeMirrorEditor({
       }
       const proof = (receipt.run.candidates ?? receipt.run.artifacts).find(candidate => candidate.text === receipt.outcome.content && candidate.status === 'completed' && candidate.compositionEligible === true)
       aiCandidateRef.current = proof ? { artifactId: proof.artifactId, textHash: proof.textHash } : null
+      if (request.action === 'batch-instruct' && proof && receipt.sourceStatus === 'current' && onCommitAnnotations) {
+        setInlineReview({ before: input.documentText, after: receipt.outcome.content, annotations: request.annotations, sessionKey: JSON.stringify(session), filePath })
+        setAiResult(null); setBubbleOpen(false)
+        return
+      }
       setAiResult(receipt.outcome.content)
       if (receipt.sourceStatus !== 'current') setAiError(uiText('来源已变化，结果仅可复制', 'Sources changed; the result can only be copied.'))
     } catch {
@@ -653,7 +663,7 @@ export default function CodeMirrorEditor({
           void Promise.resolve(onSave?.(lastEmittedContentRef.current)).catch(() => undefined)
         }
       }}>
-      <div className={fitContent ? 'relative' : 'flex-1 relative min-h-0 overflow-hidden'}>
+      <div hidden={Boolean(inlineReview)} className={fitContent ? 'relative' : 'flex-1 relative min-h-0 overflow-hidden'}>
         <div className={fitContent ? undefined : 'absolute inset-0'}>
           <CodeMirror
             ref={editorRef}
@@ -671,6 +681,12 @@ export default function CodeMirrorEditor({
         </div>
       </div>
 
+      {inlineReview && onCommitAnnotations && <InlineAnnotationReview before={inlineReview.before} after={inlineReview.after} annotations={inlineReview.annotations}
+        onCancel={() => setInlineReview(null)} onCommit={async after => {
+          if (filePath !== inlineReview.filePath || inlineReview.sessionKey !== JSON.stringify(getActiveProjectSessionContext()) || editorRef.current?.view?.state.doc.toString() !== inlineReview.before) throw new Error('SOURCE_DRAFT_CHANGED')
+          await onCommitAnnotations(inlineReview.before, after, inlineReview.annotations)
+          setAnnotations([]); setInlineReview(null)
+        }} />}
       {/* 选区工具条：纸墨浮层，自带纸墨令牌与深浅色 */}
       {bubbleOpen && (editable || aiResult !== null) && bubblePos.top !== 0 && (
         <div
@@ -779,7 +795,7 @@ export default function CodeMirrorEditor({
         </div>
       )}
 
-      {editable && aiResult === null && annotations.length > 0 && (
+      {editable && !inlineReview && aiResult === null && annotations.length > 0 && (
         <aside role="region" className="paper-ink cm-annotations" data-theme={inkThemeName} aria-label={uiText('本章批注', 'Chapter annotations')}>
           <div className="cm-annotations-head">
             <div className="cm-selbar-title">

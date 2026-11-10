@@ -8,6 +8,7 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { chapterPhase } from '../../../stores/navigation/stage-progress'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
+import { useEditorStore } from '../../../stores/editor-store'
 import type { ReviewEntry } from '../../../services/draft-index'
 import { ipc } from '../../../services/ipc-client'
 import { confirmationSourceReviewId, parseHumanConfirmedReviewSnapshot } from '../../../shared/human-confirmed-review'
@@ -24,6 +25,7 @@ import { useChapterBlueprint } from './use-chapter-blueprint'
 import ChapterPlan from './ChapterPlan'
 import { STAGE_STEP } from './chapter-lifecycle'
 import VersionSwitcher from './VersionSwitcher'
+import AnnotationRevisionHistory from './AnnotationRevisionHistory'
 import { pluralEn } from '../../../shared/plural-en'
 
 /**
@@ -91,6 +93,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     // 复验完成时新增一份审稿而显示的仍是原审稿，审稿记录也算进来，周期随之重读。
     refreshKey: `${draft.status}:${draft.pendingRevisions.map(revision => revision.id).join(',')}:${draft.reviews.map(entry => entry.id).join(',')}` })
   const [charCount, setCharCount] = useState(() => countDraftUnits(tab.content ?? ''))
+  const [annotationHistoryRevision, setAnnotationHistoryRevision] = useState(0)
   // 沉浸写作底部的字数进度，目标取设定里的每章字数。
   const target = useProjectStore(s => s.currentProject?.novelConfig.wordsPerChapter) || 0
   const [sheetSlot, setSheetSlot] = useState<HTMLDivElement | null>(null)
@@ -172,7 +175,23 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 onCharCountChange={setCharCount}
                 onChange={draft.onBodyChange}
                 onSave={body => draft.save(body)}
+                onCommitAnnotations={async (before, after, annotations) => {
+                  const activeSession = captureProjectSession(useProjectStore.getState().currentProject)
+                  if (!activeSession || !draft.meta || draft.currentBodyRef.current !== before) throw new Error('SOURCE_DRAFT_CHANGED')
+                  const savedTab = useEditorStore.getState().tabs.find(item => item.id === tab.id)
+                  if (!isProjectSessionCurrent(activeSession) || !savedTab || typeof savedTab.savedContent !== 'string' || savedTab.content !== before) throw new Error('SOURCE_DRAFT_CHANGED')
+                  const result = await ipc.invokeWithProjectSession(activeSession, 'db:annotation-commit', { draftId: draft.meta.id, expectedSaved: savedTab.savedContent, before, after, annotations }, activeSession.projectPath)
+                  if (!result.success) throw new Error(result.error || 'ANNOTATION_COMMIT_FAILED')
+                  if (!isProjectSessionCurrent(activeSession)) return
+                  const current = useEditorStore.getState().tabs.find(item => item.id === tab.id)
+                  if (!current || current.content !== before) return
+                  draft.onBodyChange(after)
+                  setAnnotationHistoryRevision(value => value + 1)
+                  const updated = useEditorStore.getState().tabs.find(item => item.id === tab.id)
+                  if (updated) useEditorStore.getState().settleTabSave(tab.id, { content: after, contentRevision: updated.contentRevision ?? 0 })
+                }}
               />
+              {draft.meta && <AnnotationRevisionHistory draftId={draft.meta.id} projectKey={projectKey} refresh={annotationHistoryRevision} />}
             </div>
           )}
         </article>

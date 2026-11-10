@@ -956,3 +956,16 @@
   font-size: var(--fs-12);
   color: var(--ink-3);
 }
+
+.inline-annotation-prose { white-space: pre-wrap; font: var(--fs-14)/1.9 var(--font-prose); }
+.inline-annotation-change { display: inline; }
+.inline-annotation-mark { padding: 0 2px; border: 0; background: transparent; font: inherit; cursor: pointer; }
+.inline-annotation-mark:focus-visible { outline: 2px solid var(--accent); }
+.inline-annotation-change del { color: var(--danger); text-decoration: line-through; }
+.inline-annotation-change ins { color: var(--ok); background: var(--ok-soft); text-decoration: none; }
+.inline-annotation-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); margin: var(--s-1); }
+.inline-annotation-actions textarea { min-width: 220px; }
+.inline-annotation-footer { position: fixed; right: var(--s-5); bottom: var(--s-5); z-index: 20; display: flex; gap: var(--s-2); padding: var(--s-2); background: var(--surface); box-shadow: var(--shadow-pop); }
+.annotation-revision-history { margin-top: var(--s-5); }
+.annotation-revision-history ins { color: var(--ok); background: var(--ok-soft); text-decoration: none; }
+.annotation-revision-history del { color: var(--danger); }

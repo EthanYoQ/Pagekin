@@ -27,6 +27,8 @@ import { readCharacterContinuityNodes, readCharacterContinuityTimeline } from '.
 import { CharacterRosterRepository } from '../repositories/character-roster-repository'
 import type { CharacterRosterCommitRequest } from '../../src/shared/character-roster'
 import { DraftRepository } from '../repositories/draft-repository'
+import { validateEditorInlineInput } from '../services/editor-inline-generation'
+import { countDraftUnits } from '../../src/shared/draft-units'
 import type { DraftSourceDependency } from '../../src/shared/draft-source-dependency'
 import { FinalizedDraftImportRepository } from '../repositories/finalized-draft-import-repository'
 import { FinalizationRepository } from '../repositories/finalization-repository'
@@ -103,6 +105,7 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'db:draft-create',
   'db:draft-update-status',
   'db:draft-update-content',
+  'db:annotation-commit',
   'db:draft-delete',
   'db:recovery-candidate-record',
   'db:recovery-candidate-update',
@@ -937,6 +940,30 @@ export function registerDatabaseController() {
     } catch (err) {
       return { success: false, error: String(err) }
     }
+  })
+
+  ipcMain.handle('db:annotation-history-list', async (_event, draftId: number, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const db = getProjectDb()
+    if (!db || !DraftRepository.getMeta(draftId)) throw new Error('DRAFT_NOT_FOUND')
+    const rows = db.prepare(`SELECT id, before_text AS before, after_text AS after, annotations_json AS annotationsJson, created_at AS createdAt FROM annotation_history
+      WHERE draft_id IN (SELECT id FROM drafts WHERE chapter_number = (SELECT chapter_number FROM drafts WHERE id = ?)) ORDER BY id DESC`).all(draftId) as Array<{ id: number; before: string; after: string; annotationsJson: string; createdAt: string }>
+    return rows.map(({ annotationsJson, ...row }) => ({ ...row, annotations: JSON.parse(annotationsJson) }))
+  })
+
+  ipcMain.handle('db:annotation-commit', async (_event, input: { draftId: number; expectedSaved: string; before: string; after: string; annotations: import('../../src/shared/editor-inline-generation').EditorInlineAnnotation[] }, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const db = getProjectDb()
+    if (!db || typeof input.expectedSaved !== 'string' || typeof input.before !== 'string' || typeof input.after !== 'string') throw new Error('ANNOTATION_COMMIT_INVALID')
+    validateEditorInlineInput({ action: 'batch-instruct', documentText: input.before, selectedText: input.before, from: 0, to: input.before.length, annotations: input.annotations })
+    db.transaction(() => {
+      const draft = DraftRepository.getFull(input.draftId)
+      if (!draft || !['draft', 'reviewed', 'revised'].includes(draft.status)) throw new Error('DRAFT_NOT_WRITABLE')
+      if (draft.content !== input.expectedSaved) throw new Error('SOURCE_DRAFT_CHANGED')
+      db.prepare('INSERT INTO annotation_history(draft_id,before_text,after_text,annotations_json) VALUES(?,?,?,?)').run(input.draftId, input.before, input.after, JSON.stringify(input.annotations))
+      DraftRepository.updateContent(input.draftId, input.after, countDraftUnits(input.after))
+    }).immediate()
+    return { success: true }
   })
 
   ipcMain.handle('db:draft-update-content', async (_event, id: number, content: string, wordCount: number, expectedProjectPath: string) => {
