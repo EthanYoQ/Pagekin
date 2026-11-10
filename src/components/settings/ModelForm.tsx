@@ -36,10 +36,28 @@ type ModelDiscoveryState =
   | { status: 'loaded', models: DiscoveredModel[] }
   | { status: 'failed', errorCode: ModelDiscoveryErrorCode }
 
+const PROVIDER_OPTIONS: ReadonlyArray<{ provider: ModelProfile['provider'], label: readonly [string, string] }> = [
+  { provider: 'openai', label: ['OpenAI', 'OpenAI'] },
+  { provider: 'novelai', label: ['NovelAI', 'NovelAI'] },
+  { provider: 'deepseek', label: ['DeepSeek', 'DeepSeek'] },
+  { provider: 'gemini', label: ['Google Gemini', 'Google Gemini'] },
+  { provider: 'xai', label: ['xAI(Grok)', 'xAI(Grok)'] },
+  { provider: 'siliconflow', label: ['SiliconFlow', 'SiliconFlow'] },
+  { provider: 'ollama', label: ['Ollama（本地）', 'Ollama (local)'] },
+  { provider: 'bigmodel', label: ['BigModel（智谱）', 'BigModel (Zhipu)'] },
+  { provider: 'bigmodel-anthropic', label: ['BigModel（智谱 Anthropic）', 'BigModel (Zhipu Anthropic)'] },
+  { provider: 'custom', label: ['自定义', 'Custom'] },
+]
+
+type ModelUsage = 'generation' | 'embedding' | 'rerank'
+
+const modelUsage = (model: ModelProfile): ModelUsage =>
+  model.purposes?.includes('rerank') ? 'rerank' : model.purposes?.includes('embedding') ? 'embedding' : 'generation'
+
 const readsLocalWindow = (model: ModelProfile) => model.protocol === 'openai' && isLocalModelEndpoint(model)
 
 function windowLookupIdentity(model: ModelProfile): string | null {
-  if (!model.modelName.trim() || model.purposes?.includes('embedding')) return null
+  if (!model.modelName.trim() || modelUsage(model) !== 'generation') return null
   return JSON.stringify([model.id, model.provider, model.protocol, model.baseUrl, model.apiKey, model.modelName])
 }
 
@@ -145,14 +163,18 @@ export function ModelForm({
     }, AUTO_DISCOVERY_DELAY_MS)
   }
 
-  const isEmbedding = model.purposes?.includes('embedding')
+  const usage = modelUsage(model)
+  const isGeneration = usage === 'generation'
   const embeddingOptions = normalizeEmbeddingOptions(model.embeddingOptions)
   // 将预设数组转换为以 provider 为键的 Map 方便查找
   const presetMap = new Map(presets.map((p) => [p.provider, p]))
   const preset = presetMap.get(model.provider)
+  const providerOptions = PROVIDER_OPTIONS.filter(({ provider }) => usage === 'rerank'
+    ? provider === 'custom' || Boolean(presetMap.get(provider)?.rerankModels?.length)
+    : usage === 'generation' || provider !== 'bigmodel-anthropic')
 
-  /** 向量模型名换了就换掉能力数据：与预设同名时用预设的，否则清空。生成模型由 applyModelProfileSelection 按端点和名字匹配。 */
-  const setEmbeddingModelName = (modelName: string) => {
+  /** 向量和重排模型名换了就换掉能力数据：与预设同名时用预设的，否则清空。生成模型由 applyModelProfileSelection 按端点和名字匹配。 */
+  const setRetrievalModelName = (modelName: string) => {
     if (modelName === model.modelName) return
     const capabilities = preset?.embeddingModelCapabilities?.[modelName]
     onChange(capabilities
@@ -165,11 +187,11 @@ export function ModelForm({
     if (key === 'provider' || key === 'protocol' || key === 'baseUrl' || key === 'apiKey') {
       invalidateDiscovery()
     }
-    if (isEmbedding && key === 'modelName') {
-      setEmbeddingModelName(val as string)
+    if (!isGeneration && key === 'modelName') {
+      setRetrievalModelName(val as string)
       return
     }
-    onChange(!isEmbedding && ['modelName', 'baseUrl', 'protocol', 'provider'].includes(key)
+    onChange(isGeneration && ['modelName', 'baseUrl', 'protocol', 'provider'].includes(key)
       ? applyModelProfileSelection(model, { [key]: val }) : { ...model, [key]: val })
   }
 
@@ -220,9 +242,9 @@ export function ModelForm({
       protocol: (p?.protocol ?? 'openai') as ModelProfile['protocol'],
       baseUrl: p?.baseUrl ?? '',
       apiKey: '',
-      modelName: '',
+      modelName: usage === 'rerank' ? p?.rerankModels?.[0] ?? '' : '',
     }
-    onChange(isEmbedding ? { ...model, ...selection, capabilities: undefined, capabilitySources: undefined } : applyModelProfileSelection(model, selection))
+    onChange(isGeneration ? applyModelProfileSelection(model, selection) : { ...model, ...selection, capabilities: undefined, capabilitySources: undefined })
   }
 
   const readContextWindow = useEffectEvent(async (target: ModelProfile, fetchesList: boolean): Promise<WindowRead | DiscoveredModel[]> => {
@@ -276,8 +298,8 @@ export function ModelForm({
   useEffect(() => { applySettledWindow(settledWindow) }, [windowLookup, settledWindow])
 
   const handleModelSelect = ({ value, capabilities }: DiscoveredModel) => {
-    if (isEmbedding) {
-      setEmbeddingModelName(value)
+    if (!isGeneration) {
+      setRetrievalModelName(value)
       return
     }
     const selected = applyModelProfileSelection(model, { modelName: value }, capabilities)
@@ -288,7 +310,7 @@ export function ModelForm({
   const handleContextWindowInput = (raw: string) => {
     const parsed = Number(raw)
     const tokens = Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
-    if (tokens !== null || isEmbedding) {
+    if (tokens !== null || !isGeneration) {
       updateCapabilities({ contextWindowTokens: tokens })
       return
     }
@@ -356,7 +378,7 @@ export function ModelForm({
       : { tone: 'muted', text: text('填写 base_url 和 API Key 后获取模型列表。', 'Enter the base_url and API key to fetch the model list.') }
   }
 
-  const contextWindow = isEmbedding ? null : resolveContextWindow(model)
+  const contextWindow = isGeneration ? resolveContextWindow(model) : null
   const keyMissing = !hasRequiredApiKey(model)
   const missingForSave = [
     !model.baseUrl.trim() && 'base_url',
@@ -384,38 +406,29 @@ export function ModelForm({
       </div>
 
       {/* 服务商 + 协议 */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className={usage === 'rerank' ? undefined : 'grid grid-cols-2 gap-3'}>
         <div>
           <Label>{text('服务商', 'Provider')}</Label>
           <NativeSelect
             value={model.provider}
             onChange={(e) => handleProviderChange(e.target.value as ModelProfile['provider'])}
           >
-            <option value="openai">OpenAI</option>
-            <option value="novelai">NovelAI</option>
-            <option value="deepseek">DeepSeek</option>
-            <option value="gemini">Google Gemini</option>
-            <option value="xai">xAI(Grok)</option>
-            <option value="siliconflow">SiliconFlow</option>
-            <option value="ollama">{text('Ollama（本地）', 'Ollama (local)')}</option>
-            <option value="bigmodel">{text('BigModel（智谱）', 'BigModel (Zhipu)')}</option>
-            {!isEmbedding && (
-              <option value="bigmodel-anthropic">{text('BigModel（智谱 Anthropic）', 'BigModel (Zhipu Anthropic)')}</option>
-            )}
-            <option value="custom">{text('自定义', 'Custom')}</option>
+            {providerOptions.map(({ provider, label }) => <option key={provider} value={provider}>{text(...label)}</option>)}
           </NativeSelect>
         </div>
-        <div>
-          <Label>{text('调用协议', 'Protocol')}</Label>
-          <NativeSelect
-            value={model.protocol}
-            onChange={(e) => up('protocol', e.target.value as ModelProfile['protocol'])}
-          >
-            <option value="openai">OpenAI</option>
-            <option value="gemini">Gemini</option>
-            {!isEmbedding && <option value="anthropic">Anthropic</option>}
-          </NativeSelect>
-        </div>
+        {usage !== 'rerank' && (
+          <div>
+            <Label>{text('调用协议', 'Protocol')}</Label>
+            <NativeSelect
+              value={model.protocol}
+              onChange={(e) => up('protocol', e.target.value as ModelProfile['protocol'])}
+            >
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Gemini</option>
+              {isGeneration && <option value="anthropic">Anthropic</option>}
+            </NativeSelect>
+          </div>
+        )}
       </div>
 
       {/* Base URL */}
@@ -466,7 +479,7 @@ export function ModelForm({
         onRefresh={() => { if (canDiscover(model)) void handleDiscoverModels() }}
       />
 
-      {isEmbedding && model.provider === 'siliconflow' && model.modelName === 'BAAI/bge-m3' && (
+      {usage === 'embedding' && model.provider === 'siliconflow' && model.modelName === 'BAAI/bge-m3' && (
         <div className="rounded-lg p-3 space-y-2" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-hover)' }}>
           <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             {text('BAAI/bge-m3 当前在 SiliconFlow 提供免费调用。完成实名认证后可使用，仍受固定速率限制约束。', 'BAAI/bge-m3 is currently free on SiliconFlow. Verification is required; fixed rate limits still apply.')}
@@ -485,31 +498,33 @@ export function ModelForm({
         </div>
       )}
 
-      <div>
-        <div className="flex items-baseline justify-between gap-3">
-          <Label>{text('上下文窗口', 'Context Window')}</Label>
-          {contextWindow && (
-            <span className="text-xs text-[var(--color-text-muted)]" data-context-window-source={contextWindow.source}>
-              {text(...MODEL_VALUE_SOURCE_LABELS[contextWindow.source])}
-            </span>
-          )}
+      {usage !== 'rerank' && (
+        <div>
+          <div className="flex items-baseline justify-between gap-3">
+            <Label>{text('上下文窗口', 'Context Window')}</Label>
+            {contextWindow && (
+              <span className="text-xs text-[var(--color-text-muted)]" data-context-window-source={contextWindow.source}>
+                {text(...MODEL_VALUE_SOURCE_LABELS[contextWindow.source])}
+              </span>
+            )}
+          </div>
+          <Input
+            aria-label={text('上下文窗口', 'Context Window')}
+            type="number"
+            min={0}
+            value={contextWindow?.source === 'learned' ? contextWindow.tokens : model.capabilities?.contextWindowTokens ?? ''}
+            placeholder={contextWindow ? String(contextWindow.tokens) : text('可选', 'Optional')}
+            onChange={(e) => handleContextWindowInput(e.target.value)}
+          />
         </div>
-        <Input
-          aria-label={text('上下文窗口', 'Context Window')}
-          type="number"
-          min={0}
-          value={contextWindow?.source === 'learned' ? contextWindow.tokens : model.capabilities?.contextWindowTokens ?? ''}
-          placeholder={contextWindow ? String(contextWindow.tokens) : text('可选', 'Optional')}
-          onChange={(e) => handleContextWindowInput(e.target.value)}
-        />
-      </div>
+      )}
 
-      {!isEmbedding && (
+      {isGeneration && (
         <ProjectCreativeStrategySettings />
       )}
-      {!isEmbedding && <ModelCapabilitySources model={model} />}
+      {isGeneration && <ModelCapabilitySources model={model} />}
 
-      {!isEmbedding && (
+      {isGeneration && (
         <div className="rounded-lg border border-[var(--color-border)]" data-model-advanced-settings>
           <button
             type="button"
@@ -591,7 +606,7 @@ export function ModelForm({
         </div>
       )}
 
-      {isEmbedding && (
+      {usage === 'embedding' && (
         <div className="space-y-3 rounded-lg p-3" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-hover)' }}>
           <div className="flex items-start justify-between gap-3">
             <div>

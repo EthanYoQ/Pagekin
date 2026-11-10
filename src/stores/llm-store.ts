@@ -32,6 +32,8 @@ interface LLMState {
   defaultModelId: string | null
   /** 当前默认向量模型 ID */
   defaultEmbeddingModelId: string | null
+  /** 当前默认重排模型 ID */
+  defaultRerankModelId: string | null
   stageModelIds: StageModelIds
   /** 正在进行的活跃请求 */
   activeRequests: Map<string, { status: 'running' | 'done' | 'error'; text: string }>
@@ -51,6 +53,8 @@ interface LLMState {
   setDefaultModel: (modelId: string) => Promise<boolean>
   /** 设置默认向量模型（持久化到 ~/.vela/config.json） */
   setDefaultEmbeddingModel: (modelId: string) => Promise<boolean>
+  /** 设置默认重排模型（持久化到 ~/.vela/config.json） */
+  setDefaultRerankModel: (modelId: string) => Promise<boolean>
   setStageModel: (stage: ModelStage, modelId: string | null) => Promise<boolean>
   /** 非流式生成 */
   generate: (
@@ -80,6 +84,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
   models: [],
   defaultModelId: null,
   defaultEmbeddingModelId: null,
+  defaultRerankModelId: null,
   stageModelIds: {},
   activeRequests: new Map(),
   loaded: false,
@@ -93,16 +98,18 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
         set({ loaded: true })
         return
       }
-      const [models, defaultModelId, defaultEmbeddingModelId, stageModelIds] = await Promise.all([
+      const [models, defaultModelId, defaultEmbeddingModelId, defaultRerankModelId, stageModelIds] = await Promise.all([
         ipc.invoke('llm:list-models'),
         ipc.invoke('llm:get-default-model'),
         ipc.invoke('llm:get-default-embedding-model'),
+        ipc.invoke('llm:get-default-rerank-model'),
         ipc.invoke('llm:get-stage-models'),
       ])
       set({
         models,
         defaultModelId,
         defaultEmbeddingModelId,
+        defaultRerankModelId,
         stageModelIds,
         loaded: true,
       })
@@ -145,6 +152,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
     set(state => ({
       defaultModelId: result.defaultModelId ?? null,
       defaultEmbeddingModelId: result.defaultEmbeddingModelId ?? null,
+      defaultRerankModelId: result.defaultRerankModelId ?? null,
       stageModelIds: removeModelFromStages(state.stageModelIds, modelId).next,
     }))
     return true
@@ -169,6 +177,18 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
         '保存默认向量模型',
       )
       set({ defaultEmbeddingModelId: modelId })
+      return true
+    } catch (error) {
+      const { locale, text } = useLocaleStore.getState()
+      alertError(displayedErrorMessage(locale, error), { title: text('模型设置保存失败', 'Model settings could not be saved') })
+      return false
+    }
+  },
+
+  setDefaultRerankModel: async (modelId) => {
+    try {
+      requireIpcSuccess(await ipc.invoke('llm:set-default-rerank-model', modelId), '保存默认重排模型')
+      set({ defaultRerankModelId: modelId })
       return true
     } catch (error) {
       const { locale, text } = useLocaleStore.getState()

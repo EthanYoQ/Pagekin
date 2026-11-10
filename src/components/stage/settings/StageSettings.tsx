@@ -15,6 +15,7 @@ import { isComposing, isModalOpen } from '../shortcut-keys'
 import AboutSection from './AboutSection'
 import AppearanceSection from './AppearanceSection'
 import ModelsSection from './ModelsSection'
+import RerankSection from './RerankSection'
 import ProxySection from './ProxySection'
 import StageModelsSection from './StageModelsSection'
 import { SETTINGS_GROUPS, SETTINGS_PAGES, type SettingsPageSpec } from './settings-pages'
@@ -85,6 +86,7 @@ function PageBody({ page }: { page: SettingsSection }) {
       return (
         <>
           <ModelsSection purposes={['embedding']} header={action => <PageHeader page="embedding" action={action} />} />
+          <RerankSection />
           <KnowledgeIndexSection />
         </>
       )

@@ -195,6 +195,7 @@ function parseOpenAIModels(payload: unknown, credential: string): DiscoveredMode
  */
 const GEMINI_NON_WRITING_MODEL = /(?:^|[-_.])(?:tts|image|live|transcribe|audio|lyria|nano-banana|computer-use|deep-research|antigravity|robotics)(?:$|[-_.])/iu
 const OPENAI_COMPATIBLE_EMBEDDING_MODEL = /embed|bge/iu
+const OPENAI_COMPATIBLE_RERANK_MODEL = /rerank/iu
 
 function geminiModelServesPurpose(item: object, value: string, purpose: DiscoveryPurpose): boolean {
   const methods = (item as { supportedGenerationMethods?: unknown }).supportedGenerationMethods
@@ -398,12 +399,12 @@ export class ModelDiscoveryService {
       const models = parseOpenAIModels(payload, model.apiKey)
       if (!models) return { success: false, errorCode: 'invalid_response' }
       if (models.length === 0) return { success: false, errorCode: 'no_models' }
-      // OpenAI 兼容接口不说明模型用途，只能按名字认出向量模型。
-      if (purpose === 'embedding') {
-        const isEmbedding = (candidate: DiscoveredModel) => OPENAI_COMPATIBLE_EMBEDDING_MODEL.test(candidate.value)
-        return { success: true, models: [...models.filter(isEmbedding), ...models.filter(candidate => !isEmbedding(candidate))] }
-      }
-      return { success: true, models }
+      // OpenAI 兼容接口不说明模型用途，只能按名字把合用途的模型排前面。
+      const fitsPurpose = model.purposes?.includes('rerank') ? OPENAI_COMPATIBLE_RERANK_MODEL
+        : purpose === 'embedding' ? OPENAI_COMPATIBLE_EMBEDDING_MODEL : null
+      if (!fitsPurpose) return { success: true, models }
+      const fits = (candidate: DiscoveredModel) => fitsPurpose.test(candidate.value)
+      return { success: true, models: [...models.filter(fits), ...models.filter(candidate => !fits(candidate))] }
     } catch {
       return { success: false, errorCode: 'network' }
     } finally {

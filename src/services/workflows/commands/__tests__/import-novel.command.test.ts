@@ -776,6 +776,29 @@ describe('InferGlobalSettingsCommand', () => {
     ])
   })
 
+  it('samples the same prompt text when reranking fell back', async () => {
+    const hit = { text: '陆舟登上了雾港。', score: 0.8, fileName: '正文.txt' }
+    const promptFor = async (searchHit: Record<string, unknown>) => {
+      stubIpcInvoke((channel) => {
+        if (channel === 'kb:search') return [searchHit]
+        throw new Error(`unexpected IPC ${channel}`)
+      })
+      const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+        async (_messages, streamCallbacks) => {
+          streamCallbacks.onDone?.('{}', undefined, 'stop')
+          return 'request'
+        },
+      )
+      useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+      await expect(new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })).rejects.toThrow()
+      return generateStream.mock.calls[0]![0]
+    }
+
+    const plain = await promptFor(hit)
+    expect(JSON.stringify(plain)).toContain('陆舟登上了雾港。')
+    await expect(promptFor({ ...hit, rerankFallback: 'http-error' })).resolves.toEqual(plain)
+  })
+
   it('fails closed when the replacement is incomplete', async () => {
     const invoke = stubIpcInvoke((channel) => {
       if (channel === 'kb:search') return []
