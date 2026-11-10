@@ -86,9 +86,10 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
       return true
     }
     return pending.then(async outcome => {
+      if (outcome.status === 'checked' && mounted.current)
+        await Promise.all([readExemptions(session), readTimeline(session)]).catch(() => {})
       if (!shown()) return
       if (outcome.status === 'checked') {
-        await Promise.all([readExemptions(session), readTimeline(session)]).catch(() => {})
         setReport(outcome.report)
         setStatus({ kind: 'done' })
       } else {
