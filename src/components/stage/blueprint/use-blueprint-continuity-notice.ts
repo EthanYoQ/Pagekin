@@ -11,13 +11,14 @@ import type { BlueprintForPreflight } from '../../../shared/consistency-prefligh
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { sameProjectSessionContext } from '../../../shared/project-session-context'
 import { useLocaleStore } from '../../../stores/locale-store'
+import { toast } from '../../ui/Toast'
 import { isProjectSessionCurrent } from '../../project-session-gate'
 
 interface Exempted { session: ProjectSessionContext; chapterNumber: number; finding: PreflightFinding; scope: ExemptionScope }
 interface LatestCheck { session: ProjectSessionContext; blueprint: BlueprintForPreflight }
-interface Notices { session: ProjectSessionContext; byChapter: ReadonlyMap<number, { blueprint: BlueprintForPreflight; findings: PreflightFinding[] }> }
+interface Notices { session: ProjectSessionContext; byChapter: ReadonlyMap<number, { findings: PreflightFinding[] }> }
 
-/** 保存蓝图之后的提示。这里的失败一律不出声：提示读不出来，保存已经成功了。 */
+/** 保存蓝图之后的提示。自动预检失败不出声：提示读不出来，保存已经成功了。 */
 export function useBlueprintContinuityNotice() {
   const [notices, setNotices] = useState<Notices | null>(null)
   const [exempted, setExempted] = useState<Exempted | null>(null)
@@ -36,7 +37,6 @@ export function useBlueprintContinuityNotice() {
         const byChapter = new Map(current && sameProjectSessionContext(current.session, session) ? current.byChapter : [])
         for (const { blueprint } of fresh) {
           byChapter.set(blueprint.chapterNumber, {
-            blueprint,
             findings: findings.filter(finding => finding.chapterNumber === blueprint.chapterNumber),
           })
         }
@@ -53,10 +53,17 @@ export function useBlueprintContinuityNotice() {
   const exempt = async (chapterNumber: number, finding: PreflightFinding, scope: ExemptionScope) => {
     if (!notice(chapterNumber) || !notices || busy) return
     const { session } = notices
+    const { text } = useLocaleStore.getState()
     setBusy(true)
     try {
-      const saved = await saveFindingExemption(session, finding, scope, useLocaleStore.getState().text).catch(() => null)
-      if (!saved?.success) return
+      const saved = await saveFindingExemption(session, finding, scope, text).catch(() => null)
+      if (!saved?.success) {
+        toast.error(text('没记下，提示还在。再点一次试试。', 'Not saved. The reminder stays. Try again.'))
+        return
+      }
+      for (const [number, entry] of latestChecks.current) {
+        if (scope === 'book' || number === chapterNumber) latestChecks.current.set(number, { ...entry })
+      }
       setExempted({ session, chapterNumber, finding, scope })
       setNotices(current => current && { ...current, byChapter: new Map([...current.byChapter].map(([number, entry]) => [number,
         scope === 'book' || number === chapterNumber
@@ -74,7 +81,11 @@ export function useBlueprintContinuityNotice() {
       const { session, chapterNumber, finding, scope } = exempted
       const revoked = await ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', finding.stableFactKey,
         exemptionChapter(finding, scope), session.projectPath).catch(() => null)
-      if (!revoked?.success) return
+      if (!revoked?.success) {
+        const { text } = useLocaleStore.getState()
+        toast.error(text('没撤销，这条还是不提示。再点一次试试。', 'Not undone. This stays dismissed. Try again.'))
+        return
+      }
       setExempted(null)
       const latest = [...latestChecks.current.values()].filter(entry => sameProjectSessionContext(entry.session, session))
       await check(session, latest.map(entry => entry.blueprint).filter(blueprint => scope === 'book' || blueprint.chapterNumber === chapterNumber))
