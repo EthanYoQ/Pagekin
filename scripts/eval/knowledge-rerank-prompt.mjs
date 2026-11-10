@@ -16,7 +16,6 @@ export function promptBudgets({ DEFAULT_MATERIAL_ADMISSION, materialBudgetFrom }
   }
 }
 
-/** 片段的渲染模板与 generate-draft.command.ts 一致；裁剪全部交给生产的 assemble。 */
 export async function finalPromptCoverage(assemble, { ranked, requiredFacts, chapterInfo, admission }) {
   const assembly = await assemble({
     identity: { projectId: "knowledge-rerank-eval", epoch: "knowledge-rerank-eval" },
