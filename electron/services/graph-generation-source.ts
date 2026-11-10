@@ -59,7 +59,7 @@ export function captureGraphGenerationContext(db: Database.Database, input: Grap
     if (nodes.length === 0) throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED')
     if (blueprints.length === 0) throw new Error('GENERATION_GRAPH_BLUEPRINT_REQUIRED')
     const scope = selectContinuityCheckScope(blueprints, nodes, frozen ? Infinity : continuityInputTokens)
-    if (scope.nodes.length === 0) throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED')
+    if (scope.nodes.length === 0) throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_NOT_IN_FORCE')
     return { ...base, kind: 'continuity', ...scope }
   }
   let plan = NarrativeThreadRepository.list(db).find(row => row.id === valid.planId)

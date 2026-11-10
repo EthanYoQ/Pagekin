@@ -52,6 +52,7 @@ export const enUS = {
   'error.generationDraftDependencyStale': 'An earlier draft this chapter was written from has changed, so the new prose was not saved. Rewrite or finalize the current draft of the previous chapter, then write this chapter again.',
   'error.generationDraftDependencyInvalid': 'The sources recorded for this chapter could not be read, so the new prose was not saved. Write the chapter again. If it keeps happening, report it.',
   'error.blueprintCheckNoTimeline': 'Finalize a chapter first to build the character timeline.',
+  'error.blueprintCheckTimelineNotInForce': 'Your blueprints are unchanged. No character timeline applies to the chapters to check yet, so there is nothing to compare.',
   'error.generationSourceChanged': 'The settings, blueprint, or earlier text this generation relied on changed while it ran, so the result was not saved. Generate it again.',
   'error.projectCoreUpdateFailed': 'Nothing was adopted, and your settings are unchanged. Try again. If it still fails, reopen the book and adopt again.',
   'error.generationModelChanged': 'The model settings changed while this generation ran, so the result was not saved. Confirm the model to use, then generate again.',
