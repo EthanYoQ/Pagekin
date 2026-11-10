@@ -58,7 +58,7 @@ export function useChapterThreadTasks(chapterNumber: number, open: boolean) {
       const target = chapterNumber + chapters
       set({
         planId, chapterNumber: target, writingChapter: chapterNumber, kind: 'resolve',
-        note: text(`写第 ${chapterNumber} 章前延后到第 ${target} 章`, `Moved to Ch. ${target} before writing Ch. ${chapterNumber}`),
+        note: text(`写第 ${chapterNumber} 章时延后`, `Moved on while writing Ch. ${chapterNumber}`),
       }, text('线索还在本章任务里。延后没保存上，再点一次试试。', 'The thread is still a task for this chapter. The change was not saved. Try again.'))
     },
     assign: (planId: number) => set({

@@ -31,7 +31,7 @@ const plan = (title: string, targetStartChapter: number, targetEndChapter: numbe
   title, type: '伏笔', targetStartChapter, targetEndChapter, authorIntent: `${title}要有交代。`,
 })
 const defer = (planId: number, writingChapter: number, chapterNumber: number) => NarrativeThreadRepository.setAssignment({
-  planId, writingChapter, chapterNumber, kind: 'resolve', note: `写第 ${writingChapter} 章前延后到第 ${chapterNumber} 章`,
+  planId, writingChapter, chapterNumber, kind: 'resolve', note: `写第 ${writingChapter} 章时延后`,
 })
 const advance = (planId: number, chapterNumber: number) => NarrativeThreadRepository.setAssignment({
   planId, writingChapter: chapterNumber, chapterNumber, kind: 'advance', note: `写第 ${chapterNumber} 章前指定本章推进`,
@@ -80,7 +80,7 @@ describe('写前延后和指定本章推进', () => {
     const { id } = plan('青铜钥匙', 1, 5)
     defer(id, 5, 6)
     defer(id, 5, 6)
-    expect(thread(id).assignments).toEqual([{ chapterNumber: 6, kind: 'resolve', note: '写第 5 章前延后到第 6 章' }])
+    expect(thread(id).assignments).toEqual([{ chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' }])
 
     NarrativeThreadRepository.removeAssignment(id, 6)
     NarrativeThreadRepository.removeAssignment(id, 6)

@@ -1064,14 +1064,14 @@ describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）',
     seed.pragma('foreign_keys = ON')
     try {
       seed.prepare("INSERT INTO narrative_thread_plans(id,title,type,target_start_chapter,target_end_chapter,author_intent) VALUES(8,'旧信','伏笔',1,5,'交代寄信人')").run()
-      seed.prepare("INSERT INTO narrative_thread_assignments(plan_id,chapter_number,kind,note) VALUES(8,6,'resolve','写第 5 章前延后到第 6 章'),(8,4,'advance','写第 4 章前指定本章推进')").run()
+      seed.prepare("INSERT INTO narrative_thread_assignments(plan_id,chapter_number,kind,note) VALUES(8,6,'resolve','写第 5 章时延后'),(8,4,'advance','写第 4 章前指定本章推进')").run()
     } finally { seed.close() }
     const restored = new Database(await roundtrip(f, 'restored-thread-assignments'), { readonly: true })
     try {
       expect(restored.prepare(`SELECT p.title,a.chapter_number AS chapterNumber,a.kind,a.note FROM narrative_thread_assignments a
         JOIN narrative_thread_plans p ON p.id=a.plan_id ORDER BY a.chapter_number`).all()).toEqual([
         { title: '旧信', chapterNumber: 4, kind: 'advance', note: '写第 4 章前指定本章推进' },
-        { title: '旧信', chapterNumber: 6, kind: 'resolve', note: '写第 5 章前延后到第 6 章' },
+        { title: '旧信', chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' },
       ])
     } finally { restored.close() }
   })

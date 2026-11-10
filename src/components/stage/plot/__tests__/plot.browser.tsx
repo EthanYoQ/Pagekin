@@ -124,8 +124,8 @@ async function render(initialView: 'plot-tree' | 'plans') {
 describe('线索延后的痕迹', () => {
   it('写明原定章、现在的章和备注，路线的解决站跟着新章，延后后不再标逾期', async () => {
     threads = [{ ...thread(), targetEndChapter: 5, assignments: [
-      { chapterNumber: 6, kind: 'resolve', note: '写第 5 章前延后到第 6 章' },
-      { chapterNumber: 9, kind: 'resolve', note: '写第 6 章前延后到第 9 章' },
+      { chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' },
+      { chapterNumber: 9, kind: 'resolve', note: '写第 6 章时延后' },
     ] }]
     await render('plans')
     const row = await vi.waitFor(() => {
@@ -133,7 +133,7 @@ describe('线索延后的痕迹', () => {
       expect(found).toBeTruthy()
       return found!
     })
-    expect(row.querySelector('.stage-thread-name')?.textContent).toContain('原定第 5 章，延到第 9 章 · 写第 6 章前延后到第 9 章')
+    expect(row.querySelector('.stage-thread-name')?.textContent).toContain('原定第 5 章，延到第 9 章 · 写第 6 章时延后')
     expect([...row.querySelectorAll('.stage-thread-route li')].at(-1)?.textContent).toBe('解 · 第 9 章')
   })
 

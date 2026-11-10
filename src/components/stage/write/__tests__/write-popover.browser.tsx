@@ -276,7 +276,7 @@ describe('写前的线索：延后与指定本章推进', () => {
     await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后一章' }).click())
     await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 6 章')
     expect(threadCalls('db:narrative-thread-assignment-set')[0]![1]).toEqual({
-      planId: 1, chapterNumber: 6, writingChapter: 5, kind: 'resolve', note: '写第 5 章前延后到第 6 章',
+      planId: 1, chapterNumber: 6, writingChapter: 5, kind: 'resolve', note: '写第 5 章时延后',
     })
     expect(hint(1).query()).toBeNull()
 
@@ -395,7 +395,7 @@ describe('写前的线索：延后与指定本章推进', () => {
     await expect.element(dialog.getByRole('listitem').filter({ hasText: 'Bronze key' })).toHaveTextContent('3 overdue')
     await act(async () => dialog.getByRole('button', { name: 'Move 1 on' }).click())
     await expect.element(dialog.getByRole('listitem').filter({ hasText: 'Bronze key' })).toHaveTextContent('Moved to Ch. 6')
-    expect(threadCalls('db:narrative-thread-assignment-set')[0]![1]).toMatchObject({ note: 'Moved to Ch. 6 before writing Ch. 5' })
+    expect(threadCalls('db:narrative-thread-assignment-set')[0]![1]).toMatchObject({ note: 'Moved on while writing Ch. 5' })
     expect(document.querySelector('.stage-write-threads')?.textContent).not.toMatch(/[\u4e00-\u9fff]/u)
   })
 })

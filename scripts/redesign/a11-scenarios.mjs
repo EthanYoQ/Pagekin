@@ -109,7 +109,7 @@ export const A11_SCENARIOS = {
 
     await refs.open(page, 'plot')
     await refs.plotView(page, '伏笔线索').click()
-    await page.getByText('原定第 5 章，延到第 6 章 · 写第 5 章前延后到第 6 章').waitFor({ state: 'visible', timeout: 15_000 })
+    await page.getByText('原定第 5 章，延到第 6 章 · 写第 5 章时延后').waitFor({ state: 'visible', timeout: 15_000 })
     await shoot('a11-thread-defer-trace')
     return { contract5, letterLine, contract6 }
   } },

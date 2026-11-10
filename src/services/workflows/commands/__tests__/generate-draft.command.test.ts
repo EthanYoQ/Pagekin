@@ -3653,7 +3653,7 @@ ${headingPrefix}第3章：潮门
       previousFinalizedContent: '第四章定稿原文。',
       narrativeThreads: [
         { ...threadView(1, '青铜钥匙', 1, 9), assignments: [{ chapterNumber: 5, kind: 'advance', note: '写第 5 章前指定本章推进' }] },
-        { ...threadView(2, '父亲的旧信', 3, 5), assignments: [{ chapterNumber: 8, kind: 'resolve', note: '写第 5 章前延后到第 8 章' }] },
+        { ...threadView(2, '父亲的旧信', 3, 5), assignments: [{ chapterNumber: 8, kind: 'resolve', note: '写第 5 章时延后' }] },
       ],
     })
 
@@ -3849,7 +3849,7 @@ ${headingPrefix}第3章：潮门
 
     it('开写后作者才延后：恢复仍按冻结的任务写，线索现状不进合同', async () => {
       const assignedTask = { ...frozenTask, schedule: { kind: 'assigned' } }
-      const deferredNow = { ...threadView(1, '青铜钥匙', 1, 1), assignments: [{ chapterNumber: 4, kind: 'resolve' as const, note: '写第 1 章前延后到第 4 章' }] }
+      const deferredNow = { ...threadView(1, '青铜钥匙', 1, 1), assignments: [{ chapterNumber: 4, kind: 'resolve' as const, note: '写第 1 章时延后' }] }
       const { f, continuationPrompts } = resumeFixture([assignedTask], [deferredNow])
       await f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
       expect(continuationPrompts.length).toBeGreaterThan(0)
