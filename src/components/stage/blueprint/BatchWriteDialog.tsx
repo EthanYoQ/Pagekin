@@ -156,8 +156,8 @@ function BatchWriteDialogSession(props: BatchChapterProps) {
             busy={starting}
             onIgnoreOnce={() => void form.handleStart(true)}
             onRerun={() => void form.handleStart(false)}
-            onSave={(key, reason) => void form.saveArrangement(key, reason)}
-            onRevoke={key => void form.revokeArrangement(key)}
+            onExempt={(finding, scope) => void form.saveArrangement(finding, scope)}
+            onRevoke={exemption => void form.revokeArrangement(exemption)}
           />
         )}
 
