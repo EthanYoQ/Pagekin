@@ -498,7 +498,7 @@ export function ModelForm({
           aria-label={text('上下文窗口', 'Context Window')}
           type="number"
           min={0}
-          value={model.capabilities?.contextWindowTokens ?? ''}
+          value={contextWindow?.source === 'learned' ? contextWindow.tokens : model.capabilities?.contextWindowTokens ?? ''}
           placeholder={contextWindow ? String(contextWindow.tokens) : text('可选', 'Optional')}
           onChange={(e) => handleContextWindowInput(e.target.value)}
         />

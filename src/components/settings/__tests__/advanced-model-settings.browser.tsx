@@ -180,6 +180,17 @@ describe('advanced model settings', () => {
     await act(async () => page.getByRole('button', { name: 'Save configuration', exact: true }).click())
     await vi.waitFor(() => expect(saveModel).toHaveBeenCalledTimes(1))
   })
+
+  it('标着「实测」时窗口框显示学到的数，不显示拉取的数', async () => {
+    await renderSettings()
+    const { provider, protocol, baseUrl, modelName } = model()
+    await act(async () => useLLMStore.setState({ models: [{ ...model(),
+      capabilities: { ...model().capabilities!, contextWindowTokens: 1_048_576 }, capabilitySources: { contextWindowTokens: 'endpoint' },
+      learnedContextWindow: { tokens: 32_768, provider, protocol, baseUrl, modelName } }] }))
+    await clickEdit()
+    await expect.element(page.getByLabelText('上下文窗口')).toHaveValue(32768)
+    expect(container?.querySelector('[data-context-window-source="learned"]')).not.toBeNull()
+  })
 })
 
 it('ignores zero output limits and preserves unknown capability provenance on reset', async () => {

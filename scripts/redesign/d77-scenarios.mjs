@@ -99,6 +99,7 @@ export const D77_SCENARIOS = {
     await stage.openSettings(page)
     await page.getByRole('button', { name: `编辑「${reported.name}」`, exact: true }).click()
     await page.getByRole('button', { name: '高级设置', exact: true }).click()
+    assert.equal(await page.getByLabel('上下文窗口', { exact: true }).inputValue(), '32768', '标着实测的窗口框显示学到的数')
     const windowRow = page.getByText('实测', { exact: false }).first()
     await windowRow.waitFor({ state: 'visible', timeout: 10_000 })
     await windowRow.evaluate(element => element.scrollIntoView({ block: 'center' }))
