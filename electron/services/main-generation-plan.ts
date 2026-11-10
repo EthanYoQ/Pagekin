@@ -263,7 +263,6 @@ function resolvePhysicalLiability(model: ModelProfile, creativeStrategy: Creativ
   return { capability, parameters, usagePolicy, reservationCeiling, openai, gemini, totalBounded, canBound, separateReasoning }
 }
 
-/** 发给服务商的输出上限：预设、作者设置与单次上限的最小值。单次上限已含按窗口的收紧（ADR-0028）。 */
 function requestedOutputLimit(capability: ReturnType<typeof resolveGenerationCapabilityConstraints>, maxOutputPerRequest: number): number {
   return Math.min(capability.modelMaxOutputTokens ?? Infinity, capability.userMaxOutputTokens ?? Infinity, maxOutputPerRequest)
 }
@@ -287,7 +286,6 @@ export function buildMainGenerationPlan(model: ModelProfile, receipt: Pick<Model
   const { capability, parameters, usagePolicy, openai, gemini, totalBounded, canBound, separateReasoning }
     = resolvePhysicalLiability(model, creativeStrategy, task.reasoningStage ?? (task.output === 'visible-text' ? 'drafting' : 'planning'))
   const evidence = receipt.capabilityEvidence, safety = MAIN_GENERATION_POLICY.safetyMarginTokens
-  // 取收据里冻结的值：运行途中学到的窗口只影响之后开始的运行。
   const maxOutputPerRequest = Math.min(budget.policy.maxOutputPerRequest, evidence.maxOutputTokens)
   const options = (maxTokens: number): LLMGenerateOptions => ({ ...parameters, maxTokens,
     ...(openai ? { outputTokenParameter: 'max_completion_tokens' as const } : {}),

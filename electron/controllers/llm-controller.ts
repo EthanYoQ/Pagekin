@@ -72,13 +72,11 @@ function getModelConfig(modelId: string): ModelProfile | null {
   return models.find((m) => m.id === modelId) ?? null
 }
 
-/** 学到的窗口归主进程：渲染端的副本可能是旧的，保存时一律以盘上的为准，模型身份变了就丢掉。 */
 function withStoredLearnedWindow(incoming: ModelProfile, stored: ModelProfile | undefined): ModelProfile {
   const learned = stored?.learnedContextWindow
   return { ...incoming, learnedContextWindow: learned && sameModelIdentity(learned, incoming) ? learned : undefined }
 }
 
-/** 只是提升下次的成功率，写不进去不能盖掉这次超长的错误。 */
 function rememberContextWindow(snapshot: ModelProfile, windowTokens: number): void {
   try {
     const models = loadModelConfigsForUpdate()

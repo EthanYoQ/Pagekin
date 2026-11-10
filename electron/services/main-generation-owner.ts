@@ -73,10 +73,6 @@ export function safeGenerationModelReceipt(receipt: ModelExecutionLeaseReceipt):
   return { modelId: receipt.modelId, provider: receipt.provider, protocol: receipt.protocol, modelName: receipt.modelName,
     modelRevision: receipt.modelRevision, endpointFingerprint: receipt.endpointFingerprint, capabilityEvidence: structuredClone(receipt.capabilityEvidence) }
 }
-/**
- * 配置没变（modelRevision 相同）时，窗口和输出上限沿用运行开始时冻结的值（ADR-0028）。
- * 学到窗口、升级后换了取值规则都不算模型变了；功能证据仍要逐项相等。
- */
 function withFrozenWindowEvidence(current: SafeGenerationModelReceipt, frozen: SafeGenerationModelReceipt): SafeGenerationModelReceipt {
   if (current.modelRevision !== frozen.modelRevision) return current
   const { contextWindowTokens, maxOutputTokens, source } = frozen.capabilityEvidence
@@ -151,7 +147,6 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   const volatileReceipts = new Map<string, GenerationExecutionReceipt>()
   const pending = new Map<string, { hash: string; promise: Promise<MainGenerationExecuteReceipt> }>()
   const preparations = new Map<string, { binding: RunBinding; knowledgeSnapshot: GenerationKnowledgeSnapshot }>()
-  /** 这次运行能否按学到的窗口重试。手填的窗口不落档，只靠它重试一次。 */
   const learnedWindows = new Map<string, number>()
   let closed = false
   const assertCurrent = () => {

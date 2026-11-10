@@ -77,6 +77,26 @@ export const D77_SCENARIOS = {
     assert.deepEqual(chats, ['context-length'], `服务商拒绝后不自动重发：${chats.join('、')}`)
     return { card: text, chats }
   } },
+  // 拉取的窗口比真实窗口大、输出上限比真实窗口还大：学到的窗口落进档案，开新运行时输出上限自动收紧。
+  'ctx-lease-learned-window': { model: true, shell: 'stage', setup, run: async ({ page, fake, invoke, shoot }) => {
+    const reported = { ...AUTHOR_64K, maxTokens: 65_536,
+      capabilities: { ...AUTHOR_64K.capabilities, contextWindowTokens: 1_048_576, maxOutputTokens: 65_536 },
+      capabilitySources: { ...AUTHOR_64K.capabilitySources, contextWindowTokens: 'endpoint', maxOutputTokens: 'endpoint' } }
+    assert.equal((await invoke(page, 'llm:save-model', reported)).success, true)
+    fake.rejectContextLength(true, { sample: 'siliconflow', times: 1 })
+    const before = fake.chats.length
+    await startDraft(page)
+    await runSheet.waitForRunDone(page)
+    await chapterView.prose(page).getByText(firstLine(FIXTURE_PROSE)).first().waitFor({ state: 'visible', timeout: 30_000 })
+    const stored = (await invoke(page, 'llm:list-models')).find(model => model.id === reported.id)
+    assert.equal(stored.learnedContextWindow?.tokens, 32_768, '学到的窗口写进了模型档案')
+    assert.equal(stored.capabilities.contextWindowTokens, 1_048_576, '拉取到的数不被改写')
+    const maxTokens = fake.chats.slice(before).map(chat => chat.maxTokens)
+    assert.ok(maxTokens.length > 0 && maxTokens.every(value => value === 16_384), `学到后每个请求的 max_tokens 都收紧到 16,384：${maxTokens.join('、')}`)
+    assert.equal(await runSheet.anyCard(page).filter({ hasText: /^上一次运行/ }).filter({ hasText: /换用上下文更长的模型/ }).count(), 0, '作者看不到超长失败卡片')
+    await shoot('ctx-lease-learned-window')
+    return { maxTokens, learnedWindow: stored.learnedContextWindow.tokens, storedWindow: stored.capabilities.contextWindowTokens }
+  } },
   // 手填窗口比真实窗口大：第一次超长带窗口，软件换材料重试一次，作者看不到失败，手填的数不变。
   'ctx-retry-learned-window': { model: true, shell: 'stage', setup, run: async ({ page, fake, invoke, shoot }) => {
     const large = { ...AUTHOR_64K, capabilities: { ...AUTHOR_64K.capabilities, contextWindowTokens: 1_048_576 } }
