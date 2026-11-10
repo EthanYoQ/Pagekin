@@ -108,9 +108,39 @@ export const A11_SCENARIOS = {
 
     await refs.open(page, 'plot')
     await refs.plotView(page, '伏笔线索').click()
-    await page.getByText('原定第 5 章，延到第 6 章 · 写第 5 章时延后').waitFor({ state: 'visible', timeout: 15_000 })
+    await page.getByText('延到第 6 章 · 写第 5 章时延后', { exact: true }).waitFor({ state: 'visible', timeout: 15_000 })
     await shoot('a11-thread-defer-trace')
     return { contract5, letterLine, contract6 }
+  } },
+  'a11-thread-defer-edit': { model: true, shell: 'stage', setup: seed, run: async ({ page, shoot }) => {
+    const popover = page.getByRole('dialog', { name: '本次写作选项' })
+    const hint = count => chapterView.view(page).getByRole('button', { name: `本章要处理 ${count} 条线索` })
+    const row = title => popover.getByRole('listitem').filter({ hasText: title })
+    await chapterView.open(page, 5)
+    await hint(2).click()
+    await row('父亲的旧信').getByRole('button', { name: '延后一章' }).click()
+    await row('父亲的旧信').getByText('已延到第 6 章').waitFor({ state: 'visible' })
+    await page.keyboard.press('Escape')
+
+    await refs.open(page, 'plot')
+    await refs.plotView(page, '伏笔线索').click()
+    await refs.threadMore(page, '父亲的旧信').click()
+    await refs.menuItem(page, '编辑线索').click()
+    const end = page.getByRole('dialog', { name: '编辑线索' }).getByLabel('回收章')
+    const prefilled = await end.inputValue()
+    assert.equal(prefilled, '6', '延后后编辑表单预填当前回收章第 6 章')
+    await end.fill('5')
+    await page.getByRole('button', { name: '保存线索' }).click()
+    await page.getByText('曾延到第 6 章 · 写第 5 章时延后', { exact: true }).waitFor({ state: 'visible', timeout: 15_000 })
+    assert.equal(await page.getByText('延到第 6 章 · 写第 5 章时延后', { exact: true }).count(), 0, '改回第 5 章后不再有现在时的延到第 6 章')
+    await shoot('a11-thread-defer-edit-trace')
+
+    await stage.stageButton(page, '正文').click()
+    await chapterView.open(page, 5)
+    await hint(2).click()
+    await row('父亲的旧信').getByText('本章到期').waitFor({ state: 'visible', timeout: 15_000 })
+    await shoot('a11-thread-defer-edit-back')
+    return { prefilled }
   } },
   'a11-overdue-thread-prompt': { model: true, shell: 'stage', setup: seed, run: async ({ page, fake }) => {
     await chapterView.open(page, 5)

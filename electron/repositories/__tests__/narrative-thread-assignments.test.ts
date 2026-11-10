@@ -8,7 +8,6 @@ import { openCanonicalProjectFixture as initProjectDatabase } from '../../../tes
 import {
   chapterThreadPanel,
   chapterThreadTasks,
-  effectiveTargetEndChapter,
   narrativeThreadSchedule,
   parseChapterThreadTasks,
   type NarrativeThreadView,
@@ -50,29 +49,29 @@ describe('写前延后和指定本章推进', () => {
     expect(chapterThreadTasks(NarrativeThreadRepository.list(), 6).tasks).toEqual([expect.objectContaining({ planId: id, schedule: { kind: 'due' } })])
   })
 
-  it('写第 6 章前再延三章：截止章是第 9 章，原定的 targetEndChapter 还是 5', () => {
+  it('写第 6 章前再延三章：回收章是第 9 章，两次延后都留在历史里', () => {
     const { id } = plan('青铜钥匙', 1, 5)
     defer(id, 5, 6)
     defer(id, 6, 9)
 
-    expect(thread(id).targetEndChapter).toBe(5)
-    expect(effectiveTargetEndChapter(thread(id))).toBe(9)
+    expect(thread(id).targetEndChapter).toBe(9)
+    expect(thread(id).assignments?.map(item => item.chapterNumber)).toEqual([6, 9])
     expect(narrativeThreadSchedule(thread(id), 9)).toEqual({ kind: 'due' })
     expect(narrativeThreadSchedule(thread(id), 10)).toEqual({ kind: 'overdue', chaptersOverdue: 1 })
   })
 
-  it('撤销只删这一行：截止章回到上一个生效值，本章重新是硬任务', () => {
+  it('逐次撤销：回收章回到每次延后前的章，本章重新是硬任务', () => {
     const { id } = plan('青铜钥匙', 1, 5)
     defer(id, 5, 6)
     defer(id, 6, 9)
     expect(taskIds(6)).toEqual([])
 
-    NarrativeThreadRepository.removeAssignment(id, 9)
+    NarrativeThreadRepository.removeAssignment(id, 9, 6)
 
-    expect(effectiveTargetEndChapter(thread(id))).toBe(6)
+    expect(thread(id).targetEndChapter).toBe(6)
     expect(taskIds(6)).toEqual([id])
-    NarrativeThreadRepository.removeAssignment(id, 6)
-    expect(effectiveTargetEndChapter(thread(id))).toBe(5)
+    NarrativeThreadRepository.removeAssignment(id, 6, 5)
+    expect(thread(id).targetEndChapter).toBe(5)
     expect(narrativeThreadSchedule(thread(id), 6)).toEqual({ kind: 'overdue', chaptersOverdue: 1 })
   })
 
@@ -82,9 +81,10 @@ describe('写前延后和指定本章推进', () => {
     defer(id, 5, 6)
     expect(thread(id).assignments).toEqual([{ chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' }])
 
-    NarrativeThreadRepository.removeAssignment(id, 6)
-    NarrativeThreadRepository.removeAssignment(id, 6)
+    NarrativeThreadRepository.removeAssignment(id, 6, 5)
+    NarrativeThreadRepository.removeAssignment(id, 6, 5)
     expect(thread(id).assignments).toBeUndefined()
+    expect(thread(id).targetEndChapter).toBe(5)
   })
 
   it('逾期线索的延后从正在写的章算，延后后在新截止章前仍作软参考进相关列表', () => {
@@ -97,13 +97,13 @@ describe('写前延后和指定本章推进', () => {
     expect(thread(id).overdue).toBe(false)
   })
 
-  it('设为本章推进：这一章是 assigned 硬任务，下一章不是，截止章不变', () => {
+  it('设为本章推进：这一章是 assigned 硬任务，下一章不是，回收章不变', () => {
     const { id } = plan('父亲的旧信', 3, 9)
     advance(id, 5)
 
     expect(chapterThreadTasks(NarrativeThreadRepository.list(), 5).tasks).toEqual([expect.objectContaining({ planId: id, schedule: { kind: 'assigned' } })])
     expect(taskIds(6)).toEqual([])
-    expect(effectiveTargetEndChapter(thread(id))).toBe(9)
+    expect(thread(id).targetEndChapter).toBe(9)
   })
 
   it('到期优先于作者指定', () => {
@@ -123,22 +123,22 @@ describe('写前延后和指定本章推进', () => {
     expect(tasks[0]).toMatchObject({ planId: assigned, schedule: { kind: 'assigned' } })
     expect(leftOut).toBe(2)
 
-    const panel = chapterThreadPanel(threads, 8)
+    const panel = chapterThreadPanel(threads, 8, new Map())
     expect(panel.rows.map(row => row.thread.id)).toEqual([assigned, ...overdue])
     expect(panel).toMatchObject({ taskCount: 6, leftOut: 2 })
   })
 
-  it('弹层：延后的线索变成可撤销的一行，区间内的进「也可以本章推进」，重开仍能撤销', () => {
+  it('弹层：本次会话延后的线索变成可撤销的一行，区间内的进「也可以本章推进」', () => {
     const due = plan('青铜钥匙', 1, 5).id
     const inWindow = plan('父亲的旧信', 3, 9).id
     const later = plan('远期', 7, 9).id
-    const resolvedLater = chapterThreadPanel(NarrativeThreadRepository.list(), 5)
+    const resolvedLater = chapterThreadPanel(NarrativeThreadRepository.list(), 5, new Map())
     expect(resolvedLater.rows).toEqual([expect.objectContaining({ state: 'task', schedule: { kind: 'due' }, thread: expect.objectContaining({ id: due }) })])
     expect(resolvedLater.canAdvance.map(item => item.id)).toEqual([inWindow])
 
     defer(due, 5, 8)
 
-    const panel = chapterThreadPanel(NarrativeThreadRepository.list(), 5)
+    const panel = chapterThreadPanel(NarrativeThreadRepository.list(), 5, new Map([[due, { to: 8 }]]))
     expect(panel.rows).toEqual([expect.objectContaining({ state: 'deferred', deferredTo: 8, thread: expect.objectContaining({ id: due }) })])
     expect(panel.canAdvance.map(item => item.id)).toEqual([inWindow])
     expect(panel.canAdvance.map(item => item.id)).not.toContain(later)

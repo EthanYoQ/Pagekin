@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react'
 import { Check, MoreHorizontal, Plus, Sparkles, TriangleAlert } from 'lucide-react'
-import { effectiveTargetEndChapter, type NarrativeThreadEventType, type NarrativeThreadView } from '../../../shared/narrative-thread'
+import type { NarrativeThreadEventType, NarrativeThreadView } from '../../../shared/narrative-thread'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { Button } from '../../ui/Button'
 import { EmptyState } from '../../ui/EmptyState'
@@ -46,11 +46,16 @@ function threadNote(thread: NarrativeThreadView, dormantThreshold: number, text:
   return <span className="stage-thread-sub">{thread.type} · {text(...STATUS_LABELS[thread.status])}</span>
 }
 
-function threadDeferral(thread: NarrativeThreadView, text: Text) {
-  const current = effectiveTargetEndChapter(thread)
-  if (current <= thread.targetEndChapter) return null
-  const note = thread.assignments?.find(item => item.kind === 'resolve' && item.chapterNumber === current)?.note
-  return <span className="stage-thread-sub">{text(`原定第 ${thread.targetEndChapter} 章，延到第 ${current} 章`, `Planned for Ch. ${thread.targetEndChapter}, moved to Ch. ${current}`)}{note && ` · ${note}`}</span>
+/** 回收章还是延到的那章才写现在时；之后再延后或在这里改过的写过去时。 */
+function threadDeferrals(thread: NarrativeThreadView, text: Text) {
+  return thread.assignments?.filter(item => item.kind === 'resolve').map(({ chapterNumber, note }) => (
+    <span key={chapterNumber} className="stage-thread-sub">
+      {chapterNumber === thread.targetEndChapter
+        ? text(`延到第 ${chapterNumber} 章`, `Moved to Ch. ${chapterNumber}`)
+        : text(`曾延到第 ${chapterNumber} 章`, `Once moved to Ch. ${chapterNumber}`)}
+      {note && ` · ${note}`}
+    </span>
+  ))
 }
 
 interface PlotThreadsProps {
@@ -116,7 +121,7 @@ export default function PlotThreads({ plot, onDelete }: PlotThreadsProps) {
                 <div className="stage-thread-name">
                   <b>{thread.title}</b>
                   {threadNote(thread, plot.dormantThreshold, text)}
-                  {threadDeferral(thread, text)}
+                  {threadDeferrals(thread, text)}
                 </div>
                 <Route thread={thread} text={text} />
                 <Menu

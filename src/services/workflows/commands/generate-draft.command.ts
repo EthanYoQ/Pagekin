@@ -50,7 +50,7 @@ import {
 } from '../../generation/generation-harness'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
-import { chapterThreadTasks, effectiveTargetEndChapter, isChapterThreadTaskSchedule, narrativeThreadSchedule, parseChapterThreadTasks, type ChapterThreadTask, type NarrativeThreadView } from '../../../shared/narrative-thread'
+import { chapterThreadTasks, isChapterThreadTaskSchedule, narrativeThreadSchedule, parseChapterThreadTasks, type ChapterThreadTask, type NarrativeThreadView } from '../../../shared/narrative-thread'
 import { promptLanguageText } from '../../prompt-language'
 import { countDraftUnits, draftTargetUnitRange } from '../../../shared/draft-units'
 import type { RecoveryChapterSource } from '../../../shared/recovery-candidate'
@@ -2178,11 +2178,10 @@ ${params.candidate.text}`,
       const schedule = narrativeThreadSchedule(thread, this.chapterInfo.chapterNumber)
       const note = schedule && isChapterThreadTaskSchedule(schedule) ? threadScheduleNote(schedule) : null
       const mark = note ? promptLanguageText(writingLanguage, `${note.zhCN}；`, `${note.enUS}; `) : ''
-      const targetEnd = effectiveTargetEndChapter(thread)
       const line = promptLanguageText(
         writingLanguage,
-        `- ${thread.title} [${thread.status}]（${mark}目标第${thread.targetStartChapter}–${targetEnd}章；作者意图：${thread.authorIntent}${source ? `；来源第${source.chapterNumber}章：${source.evidence}` : ''}）`,
-        `- ${thread.title} [${thread.status}] (${mark}target Chapters ${thread.targetStartChapter}–${targetEnd}; author intent: ${thread.authorIntent}${source ? `; source Chapter ${source.chapterNumber}: ${source.evidence}` : ''})`,
+        `- ${thread.title} [${thread.status}]（${mark}目标第${thread.targetStartChapter}–${thread.targetEndChapter}章；作者意图：${thread.authorIntent}${source ? `；来源第${source.chapterNumber}章：${source.evidence}` : ''}）`,
+        `- ${thread.title} [${thread.status}] (${mark}target Chapters ${thread.targetStartChapter}–${thread.targetEndChapter}; author intent: ${thread.authorIntent}${source ? `; source Chapter ${source.chapterNumber}: ${source.evidence}` : ''})`,
       )
       const nextLength = line.length + (lines.length > 0 ? 1 : 0)
       if (usedChars + nextLength > ACTIVE_THREAD_CONTEXT_MAX_CHARS) continue

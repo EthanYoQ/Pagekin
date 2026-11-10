@@ -46,7 +46,7 @@ export interface NarrativeThreadEvent extends NarrativeThreadEventInput {
   createdAt: string
 }
 
-/** resolve：改到第 N 章回收，只把截止章往后推。advance：作者指定第 N 章推进，不动截止章。 */
+/** resolve：写前延后到第 N 章的历史，延后时回收章已直接改成 N，排期不读它。advance：作者指定第 N 章推进，不动回收章。 */
 export interface NarrativeThreadAssignment {
   chapterNumber: number
   kind: 'advance' | 'resolve'
@@ -90,24 +90,13 @@ export type NarrativeThreadSchedule =
   | { kind: 'overdue'; chaptersOverdue: number }
   | { kind: 'due' | 'assigned' | 'in-window' | 'later' | 'terminal' }
 
-type ThreadDeadline = Pick<NarrativeThreadView, 'targetEndChapter' | 'assignments'>
-
-const deferredChapters = (thread: ThreadDeadline) =>
-  (thread.assignments ?? []).filter(assignment => assignment.kind === 'resolve').map(assignment => assignment.chapterNumber)
-
-/** 取最大值、不看先后，重复延后和撤销才是幂等的。targetEndChapter 永远是作者原定的章。 */
-export function effectiveTargetEndChapter(thread: ThreadDeadline): number {
-  return Math.max(thread.targetEndChapter, ...deferredChapters(thread))
-}
-
 export function narrativeThreadSchedule(
   thread: Pick<NarrativeThreadView, 'status' | 'targetStartChapter' | 'targetEndChapter' | 'assignments'>,
   chapterNumber: number,
 ): NarrativeThreadSchedule | null {
-  const { targetStartChapter: start, targetEndChapter: plannedEnd } = thread
-  if (!Number.isSafeInteger(start) || start < 1 || !Number.isSafeInteger(plannedEnd) || plannedEnd < start) return null
+  const { targetStartChapter: start, targetEndChapter: end } = thread
+  if (!Number.isSafeInteger(start) || start < 1 || !Number.isSafeInteger(end) || end < start) return null
   if (isTerminalNarrativeThreadStatus(thread.status)) return { kind: 'terminal' }
-  const end = effectiveTargetEndChapter(thread)
   if (chapterNumber > end) return { kind: 'overdue', chaptersOverdue: chapterNumber - end }
   if (chapterNumber === end) return { kind: 'due' }
   if (thread.assignments?.some(item => item.kind === 'advance' && item.chapterNumber === chapterNumber)) return { kind: 'assigned' }
@@ -184,23 +173,19 @@ export interface ChapterThreadPanel {
   leftOut: number
 }
 
-/** 撤销最晚的那次延后之后，这条线索在第 N 章会回到到期或逾期时，返回那次延后到的章。 */
-function deferredPastChapter(thread: NarrativeThreadView, chapterNumber: number): number | null {
-  const chapters = deferredChapters(thread).sort((left, right) => left - right)
-  const latest = chapters.pop()
-  if (latest === undefined || latest <= chapterNumber) return null
-  return chapterNumber >= Math.max(thread.targetEndChapter, ...chapters) ? latest : null
-}
-
-export function chapterThreadPanel(threads: readonly NarrativeThreadView[], chapterNumber: number): ChapterThreadPanel {
+/**
+ * movedHere 是写这一章时本次会话里延后过的线索（线索 id → 延到哪章）。延后前的回收章只有会话知道，
+ * 所以只有它们能撤销；作者在别处改过回收章的不再算。
+ */
+export function chapterThreadPanel(threads: readonly NarrativeThreadView[], chapterNumber: number,
+  movedHere: ReadonlyMap<number, { to: number }>): ChapterThreadPanel {
   const { tasks, leftOut } = chapterThreadTasks(threads, chapterNumber)
   const deferred: ChapterThreadPanelRow[] = []
   const canAdvance: NarrativeThreadView[] = []
   for (const thread of threads) {
     if (narrativeThreadSchedule(thread, chapterNumber)?.kind !== 'in-window') continue
-    const deferredTo = deferredPastChapter(thread, chapterNumber)
-    if (deferredTo === null) canAdvance.push(thread)
-    else deferred.push({ state: 'deferred', thread, deferredTo })
+    if (movedHere.get(thread.id)?.to === thread.targetEndChapter) deferred.push({ state: 'deferred', thread, deferredTo: thread.targetEndChapter })
+    else canAdvance.push(thread)
   }
   return {
     rows: [...pendingThreadTasks(threads, chapterNumber).map(task => ({ state: 'task' as const, ...task })), ...deferred],

@@ -3653,7 +3653,7 @@ ${headingPrefix}第3章：潮门
       previousFinalizedContent: '第四章定稿原文。',
       narrativeThreads: [
         { ...threadView(1, '青铜钥匙', 1, 9), assignments: [{ chapterNumber: 5, kind: 'advance', note: '写第 5 章前指定本章推进' }] },
-        { ...threadView(2, '父亲的旧信', 3, 5), assignments: [{ chapterNumber: 8, kind: 'resolve', note: '写第 5 章时延后' }] },
+        { ...threadView(2, '父亲的旧信', 3, 8), assignments: [{ chapterNumber: 8, kind: 'resolve', note: '写第 5 章时延后' }] },
       ],
     })
 

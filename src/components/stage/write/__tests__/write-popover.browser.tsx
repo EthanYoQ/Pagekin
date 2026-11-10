@@ -312,7 +312,7 @@ describe('写前的线索：延后与指定本章推进', () => {
     await expect.element(threadRow('青铜钥匙')).toHaveTextContent('逾期 3 章')
   })
 
-  it('换到别的章再回来：不留可撤销的一行，延后过的线索可以设为本章推进', async () => {
+  it('第 5 章的撤销不带到第 6 章：第 6 章里它是到期任务', async () => {
     threadViews = [threadView(1, '青铜钥匙', 1, 5)]
     await renderPopover()
     await act(async () => hint(1).click())
@@ -320,11 +320,9 @@ describe('写前的线索：延后与指定本章推进', () => {
     await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 6 章')
     await userEvent.keyboard('{Escape}')
 
-    await render(<WriteChapterPopover chapterNumber={4} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 4 章" />)
-    await renderPopover()
-    await act(async () => page.getByRole('button', { name: '本次写作选项' }).click())
-    await act(async () => popover.getByText('也可以本章推进').click())
-    await expect.element(threadRow('青铜钥匙').getByRole('button', { name: '本章推进' })).toBeVisible()
+    await render(<WriteChapterPopover chapterNumber={6} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 6 章" />)
+    await act(async () => hint(1).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('本章到期')
     expect(popover.getByRole('button', { name: '撤销' }).query()).toBeNull()
   })
 

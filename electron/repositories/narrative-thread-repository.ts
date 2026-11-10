@@ -99,14 +99,28 @@ export class NarrativeThreadRepository {
       throw new Error('NARRATIVE_THREAD_RANGE_INVALID')
     }
     if (!this.getPlan(planId, db)) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
-    db.prepare(`
-      INSERT INTO narrative_thread_assignments (plan_id, chapter_number, kind, note) VALUES (?, ?, ?, ?)
-      ON CONFLICT(plan_id, chapter_number) DO UPDATE SET kind = excluded.kind, note = excluded.note, created_at = datetime('now')
-    `).run(planId, chapterNumber, kind, input.note.trim())
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO narrative_thread_assignments (plan_id, chapter_number, kind, note) VALUES (?, ?, ?, ?)
+        ON CONFLICT(plan_id, chapter_number) DO UPDATE SET kind = excluded.kind, note = excluded.note, created_at = datetime('now')
+      `).run(planId, chapterNumber, kind, input.note.trim())
+      if (kind === 'resolve') {
+        db.prepare(`UPDATE narrative_thread_plans SET target_end_chapter = ?, updated_at = datetime('now') WHERE id = ?`).run(chapterNumber, planId)
+      }
+    })()
   }
 
-  static removeAssignment(planId: number, chapterNumber: number, db = requireDb()): void {
-    db.prepare('DELETE FROM narrative_thread_assignments WHERE plan_id = ? AND chapter_number = ?').run(planId, chapterNumber)
+  /** 撤销延后时还原 restoreEndChapter；回收章已被作者改成别的章就只删记录。 */
+  static removeAssignment(planId: number, chapterNumber: number, restoreEndChapter: number | null, db = requireDb()): void {
+    db.transaction(() => {
+      const kind = db.prepare('DELETE FROM narrative_thread_assignments WHERE plan_id = ? AND chapter_number = ? RETURNING kind')
+        .pluck().get(planId, chapterNumber)
+      if (kind !== 'resolve' || restoreEndChapter === null) return
+      db.prepare(`
+        UPDATE narrative_thread_plans SET target_end_chapter = ?, updated_at = datetime('now')
+        WHERE id = ? AND target_end_chapter = ?
+      `).run(restoreEndChapter, planId, chapterNumber)
+    })()
   }
 
   static getPlan(id: number, db = requireDb()): NarrativeThreadPlanRecord | null {

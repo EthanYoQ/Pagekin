@@ -1112,7 +1112,7 @@ export interface DatabaseChannels {
     return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
   }
   'db:narrative-thread-assignment-remove': {
-    args: [planId: number, chapterNumber: number, expectedProjectPath: string]
+    args: [planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string]
     return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
   }
   'db:plot-tree-read': {

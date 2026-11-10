@@ -920,9 +920,11 @@ export function registerDatabaseController() {
     return { success: true, threads: NarrativeThreadRepository.list() }
   })
 
-  ipcMain.handle('db:narrative-thread-assignment-remove', async (_event, planId: number, chapterNumber: number, expectedProjectPath: string) => {
+  ipcMain.handle('db:narrative-thread-assignment-remove', async (
+    _event, planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string,
+  ) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    NarrativeThreadRepository.removeAssignment(planId, chapterNumber)
+    NarrativeThreadRepository.removeAssignment(planId, chapterNumber, restoreEndChapter)
     return { success: true, threads: NarrativeThreadRepository.list() }
   })
 

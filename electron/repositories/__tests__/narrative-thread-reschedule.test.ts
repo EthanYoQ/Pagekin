@@ -91,11 +91,11 @@ describe('写前弹层里撤销延后', () => {
   it('只有本次会话里延后过、回收章仍是延到的那章，才显示可撤销的一行', () => {
     const { id } = plan(5)
     defer(id, 5, 6)
-    expect(chapterThreadPanel(NarrativeThreadRepository.list(), 5, new Map([[id, 6]])).rows)
+    expect(chapterThreadPanel(NarrativeThreadRepository.list(), 5, new Map([[id, { to: 6 }]])).rows)
       .toEqual([expect.objectContaining({ state: 'deferred', deferredTo: 6 })])
 
     edit(id, 8)
-    expect(chapterThreadPanel(NarrativeThreadRepository.list(), 5, new Map([[id, 6]])).rows).toEqual([])
+    expect(chapterThreadPanel(NarrativeThreadRepository.list(), 5, new Map([[id, { to: 6 }]])).rows).toEqual([])
   })
 
   it('会话记录没了（重启或换章再回来）：延后过的线索在「也可以本章推进」里，点它回到本章任务', () => {
