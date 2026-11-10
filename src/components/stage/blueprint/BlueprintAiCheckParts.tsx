@@ -16,7 +16,6 @@ function basisLine(node: ContinuityCheckNode, text: (zh: string, en: string) => 
   return text(`${zhCN}，${node.subjectName}的${label(zh)}是「${node.value}」`, `${since}, ${node.subjectName}’s ${label(en).toLowerCase()} is “${node.value}”`)
 }
 
-/** 选中章的 AI 结论，放在规则提示下面，单独成段。 */
 export function BlueprintAiFindings({ chapterNumber, ai }: { chapterNumber: number; ai: BlueprintAiCheck }) {
   const text = useLocaleStore(s => s.text)
   const findings = ai.chapterFindings(chapterNumber)

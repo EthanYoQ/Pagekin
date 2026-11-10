@@ -45,10 +45,7 @@ interface ContinuityBasis {
   since: { zhCN: string; enUS: string }
 }
 
-/**
- * 派生节点没有定稿原文就没有依据（ADR-0017）。基线节点的章号是迁移时补的，不当章号给作者看，sourceChapter 记 0。
- * 蓝图页的 AI 检查也用这里的 since，同一节点两张卡说法一致。
- */
+/** 派生节点没有定稿原文就没有依据（ADR-0017）。基线节点的章号是迁移时补的，不当章号给作者看，sourceChapter 记 0。 */
 export function continuityBasis(node: ContinuityNode): ContinuityBasis | null {
   const chapter = node.effectiveChapter
   switch (node.provenance.kind) {

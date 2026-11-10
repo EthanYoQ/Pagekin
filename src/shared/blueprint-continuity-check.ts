@@ -24,7 +24,6 @@ export interface ContinuityCheckNode {
   eventId: string
   /** 节点的来历，和规则卡同一种说法。只给作者看，不进模型请求。 */
   since: { zhCN: string; enUS: string }
-  /** 从这一章起节点才算数。 */
   fromChapter: number
   subjectName: string
   aspect: ContinuityNode['aspect']

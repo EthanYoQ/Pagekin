@@ -17,7 +17,6 @@ export type ContinuityCheckOutcome =
   | { status: 'checked'; report: ContinuityReport }
   /** 检查期间来源变了，这份结果对不上现在的蓝图。 */
   | { status: 'changed' }
-  /** 模型回了内容，但读不出结论。 */
   | { status: 'unreadable' }
 
 function reportOf(recovery: GraphGenerationRecovery): ContinuityReport | null {
