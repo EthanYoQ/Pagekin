@@ -210,6 +210,7 @@ export async function launchChapterWrite({
 
   if (!ignoreFindingsOnce) {
     try {
+      const persisted = await ipc.invokeWithProjectSession(session, 'db:blueprint-get', targetChapter, projectPath)
       const preflight = await readConsistencyPreflight(session, [{
         chapterNumber: targetChapter,
         title: form.title,
@@ -217,9 +218,9 @@ export async function launchChapterWrite({
         purpose: form.purpose,
         keyEvents: form.keyEvents,
         characters: form.characters.split(/[、,，]/u).map(value => value.trim()).filter(Boolean),
-        suspenseHook: '',
+        suspenseHook: persisted?.suspenseHook ?? '',
         userGuidance: form.userGuidance,
-        notes: '',
+        notes: persisted?.notes ?? '',
       }])
       if (!isProjectSessionCurrent(session)) return { kind: 'stale' }
       if (preflight.findings.length > 0) return { kind: 'preflight', preflight }

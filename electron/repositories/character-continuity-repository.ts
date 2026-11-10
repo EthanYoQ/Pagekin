@@ -148,6 +148,17 @@ export function readCharacterContinuityNodes(db: BetterSqlite3.Database, subject
     ORDER BY e.subject_id,e.aspect,e.effective_chapter,e.event_id`).all({ subjectId }) as NodeRow[]).map(parseNode)
 }
 
+/** 节点里的名字是写入时的快照，改名后对不上蓝图。给预检用的读取换成角色现在的名字。 */
+export function readContinuityNodesWithCurrentNames(db: BetterSqlite3.Database): ContinuityNode[] {
+  const names = new Map((db.prepare('SELECT character_id,name FROM characters').all() as { character_id: string; name: string }[])
+    .map(row => [row.character_id, row.name]))
+  return readCharacterContinuityNodes(db).map(node => ({
+    ...node,
+    subjectName: names.get(node.subjectId) ?? node.subjectName,
+    ...(node.aspect === 'relation' ? { targetName: names.get(node.targetId) ?? node.targetName } : {}),
+  }))
+}
+
 export function readCharacterContinuityTimeline(db: BetterSqlite3.Database, characterId: string): CharacterContinuityTimeline {
   return { nodes: readCharacterContinuityNodes(db, characterId), chapterRange: readStateChapterRange(db) }
 }

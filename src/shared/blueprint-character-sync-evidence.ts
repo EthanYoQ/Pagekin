@@ -25,7 +25,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function relationshipFacts(hints: unknown): RelationshipFact[] {
+export function relationshipFacts(hints: unknown): RelationshipFact[] {
   if (!Array.isArray(hints)) return []
   return hints.flatMap((candidate) => {
     if (!isRecord(candidate)) return []
