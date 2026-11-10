@@ -12,7 +12,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { build } from "esbuild"
-import { aggregateReceipts, finalPromptCoverage, identityRank, promptBudgets, rerankHealth, timedRank } from "./knowledge-rerank-prompt.mjs"
+import { aggregateReceipts, finalPromptCoverage, identityRank, PRODUCTION_BUDGET, promptBudgets, rerankHealth, timedRank } from "./knowledge-rerank-prompt.mjs"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
 const FIXTURE_DIR = path.join(ROOT, "test", "fixtures", "knowledge-rerank")
@@ -407,11 +407,17 @@ async function compare(basePath, otherPath, outPath) {
   console.log(JSON.stringify({ outcomes: result.outcomes, identical: result.identical, onlyEqualRankReorders: result.onlyEqualRankReorders }, null, 2))
 }
 
+const budgetsOf = row => Object.keys(row.promptCoverage).sort().join()
+
 async function aggregate(files, outPath) {
   const receipts = await Promise.all(files.map(async file => JSON.parse(await readFile(file, "utf8"))))
   for (const [index, receipt] of receipts.entries()) {
     const name = path.basename(files[index])
     if (receipt.kind !== "knowledge-rerank-eval" || receipt.schemaVersion !== 1 || !receipt.rerankSummary) fail(`${name} 不是带重排的评估收据`)
+    if (!Array.isArray(receipt.queries) || receipt.queries.length === 0) fail(`${name} 没有 queries，请用当前脚本重跑`)
+    if (receipt.queries.some(row => !row.promptCoverage || !row.rerank?.call)) fail(`${name} 缺少 promptCoverage 或 rerank.call，请用当前脚本重跑`)
+    if (receipt.queries.some(row => budgetsOf(row) !== budgetsOf(receipts[0].queries[0]))) fail(`${name} 的 promptCoverage 预算与第一份不同`)
+    if (receipt.group === "vector" && !receipt.queries[0].promptCoverage[PRODUCTION_BUDGET]) fail(`${name} 没有 ${PRODUCTION_BUDGET} 预算`)
     if (receipt.group !== receipts[0].group || JSON.stringify(receipt.fixture.sha256) !== JSON.stringify(receipts[0].fixture.sha256)
       || JSON.stringify(receipt.models) !== JSON.stringify(receipts[0].models)) fail(`${name} 的分组、夹具或模型与第一份不同`)
   }
