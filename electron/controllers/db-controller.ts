@@ -23,7 +23,7 @@ import {
 } from '../repositories/blueprint-repository'
 import { CharacterRepository, hasCharacterIdentitySchema } from '../repositories/character-repository'
 import { commitAuthorCharacterRoster } from '../services/character-roster-author'
-import { readCharacterContinuityNodes, readCharacterContinuityTimeline, readContinuityNodesWithCurrentNames } from '../repositories/character-continuity-repository'
+import { readCharacterContinuityTimeline } from '../repositories/character-continuity-repository'
 import { CharacterRosterRepository } from '../repositories/character-roster-repository'
 import type { CharacterRosterCommitRequest } from '../../src/shared/character-roster'
 import type { BlueprintForPreflight } from '../../src/shared/consistency-preflight'
@@ -680,7 +680,7 @@ export function registerDatabaseController() {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
-    return characterIds.flatMap(characterId => readCharacterContinuityNodes(database, characterId))
+    return SummaryRepository.readContinuityNodesForWriting(characterIds, database)
   })
 
   ipcMain.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {
@@ -714,7 +714,7 @@ export function registerDatabaseController() {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
-    return readContinuityNodesWithCurrentNames(database)
+    return SummaryRepository.readContinuityNodesForPreflight(database)
   })
 
   ipcMain.handle('db:character-roster-commit', async (

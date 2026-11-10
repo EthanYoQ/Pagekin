@@ -84,6 +84,12 @@ const BROKEN_WITH_KEEPER = {
   eventId: 'relation:add:line', subjectId: 'lin', subjectName: '林舟', targetId: 'zhou', targetName: '老周', relationshipId: 'line', aspect: 'relation',
   value: '决裂', effectiveChapter: 3, provenance: { kind: 'author', operationId: 'op' }, draftId: null, seq: 1, quote: null,
 }
+const UNDECIDED_QUOTE = '老周把车票撕成两半。'
+const UNDECIDED_RELATION = {
+  candidateKey: 'fcs-relation:undecided', source: { draftId: 4, finalizationId: 'f4', chapterNumber: 4, contentHash: 'a'.repeat(64) },
+  sourceId: 'lin', sourceName: '林舟', targetId: 'zhou', targetName: '老周', value: '形同陌路', evidence: { text: UNDECIDED_QUOTE }, authorRelations: ['父子'],
+}
+let pendingRelations: unknown[] = []
 const COMPANION_HINTS = { 5: [{ from: '林舟', to: '老周', relation: '亲密同伴' }] }
 
 const BLUEPRINT: ChapterBlueprint = {
@@ -130,6 +136,7 @@ function installIpc() {
     if (channel === 'db:blueprint-get') return persistedBlueprint
     if (channel === 'db:blueprint-relationship-hints') return committedHints
     if (channel === 'db:character-continuity-preflight-nodes') return [BROKEN_WITH_KEEPER]
+    if (channel === 'finalized-character:list-relation-candidates') return pendingRelations
     if (channel === 'db:character-get-all') return [{ id: 1 }]
     if (channel === 'db:draft-get-finalized') return { chapterNumber: Number(args[0]) }
     if (channel === 'db:post-process-get-latest-run') return null
@@ -200,6 +207,7 @@ beforeEach(async () => {
   threadIpc = storedThreadIpc
   startWorkflow = vi.fn(async () => 'write-popover-run')
   useLocaleStore.setState({ locale: 'zh-CN' })
+  pendingRelations = []
   useProjectStore.setState({ currentProject: project() })
   setActiveProjectSessionContext(SESSION)
   useLLMStore.setState({ models: [model('glm'), model('grok')], defaultModelId: 'grok', loaded: true })
@@ -732,6 +740,21 @@ describe('写作此章弹层', () => {
     await expect.element(popover.getByRole('alert')).toHaveTextContent('数据库只读')
     await expect.element(popover.getByRole('button', { name: '这是有意安排' })).toBeEnabled()
     expect(startWorkflow).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['zh-CN', '写第 5 章', '本次写作选项', '你设定林舟和老周是「父子」，第 4 章定稿写的是「形同陌路」，还没决定用哪个。', '到角色页的建议里决定。'],
+    ['en-US', 'Write chapter 5', 'Options for this run', 'You set 林舟 and 老周 as “父子”, but finalized chapter 4 says “形同陌路”. You have not decided yet.', 'Decide in the suggestions on the Cast page.'],
+  ] as const)('待决定的派生关系在写章前给出警告，有作者设定和原文，不挡开写（%s）', async (locale, label, dialogName, issue, suggestion) => {
+    useLocaleStore.setState({ locale })
+    pendingRelations = [UNDECIDED_RELATION]
+    await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label={label} />)
+    await act(async () => page.getByRole('button', { name: label }).click())
+    const popover = page.getByRole('dialog', { name: dialogName })
+    await expect.element(popover).toHaveTextContent(issue)
+    await expect.element(popover).toHaveTextContent(suggestion)
+    await expect.element(popover).toHaveTextContent(UNDECIDED_QUOTE)
+    await expect.element(page.getByRole('button', { name: label })).toBeEnabled()
   })
 
   it('英文界面下保存安排被拒、又没带原因时，提示也是英文', async () => {

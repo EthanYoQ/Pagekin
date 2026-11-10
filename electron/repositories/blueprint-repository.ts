@@ -49,6 +49,8 @@ export interface BlueprintData {
      * the immutable operation receipt so character sync can be replayed.
      */
     relationshipHints?: unknown
+    /** 只出现在回执里：fill-empty 没有改动这一章，提示要往前找真正写入它的回执。 */
+    retainedByFillEmpty?: true
     suspenseHook: string
     userGuidance: string
     notes: string
@@ -524,10 +526,10 @@ export class BlueprintRepository {
      * 按 rowid 而不是 committed_at 排序：后者只到秒，且排在回执正文之后的列，排序要读穿整份回执。
      */
     static committedRelationshipHints(blueprints: readonly BlueprintForPreflight[], db = requireProjectDb()): Record<number, unknown> {
-        const latestCovering = db.prepare(`
+        const covering = db.prepare(`
           SELECT operation_id FROM blueprint_commit_operations
           WHERE start_chapter <= @chapter AND end_chapter >= @chapter
-          ORDER BY rowid DESC LIMIT 1
+          ORDER BY rowid DESC
         `).pluck()
         const readOperation = db.prepare('SELECT * FROM blueprint_commit_operations WHERE operation_id = ?')
         const receipts = new Map<string, Map<unknown, BlueprintData>>()
@@ -544,7 +546,7 @@ export class BlueprintRepository {
         const hints: Record<number, unknown> = {}
         for (const blueprint of blueprints) {
             const chapter = blueprint.chapterNumber
-            const operationId = latestCovering.get({ chapter }) as string | undefined
+            const operationId = (covering.all({ chapter }) as string[]).find(id => !receipt(id).get(chapter)?.retainedByFillEmpty)
             const item = operationId === undefined ? undefined : receipt(operationId).get(chapter)
             if (item?.relationshipHints === undefined) continue
             if (samePersistedBlueprint(planningContent({ ...blueprint, notesUpdatedAt: '' }), planningContent(item))) hints[chapter] = item.relationshipHints
@@ -741,7 +743,9 @@ export class BlueprintRepository {
                 }
             }
 
-            const characterSyncInput = blueprints
+            const characterSyncInput = blueprints.map(blueprint => (
+                kept(blueprint.chapterNumber) ? { ...blueprint, retainedByFillEmpty: true as const } : blueprint
+            ))
             db.prepare(`
               INSERT INTO blueprint_commit_operations (
                 operation_id, payload_hash, mode, start_chapter, end_chapter, character_sync_input

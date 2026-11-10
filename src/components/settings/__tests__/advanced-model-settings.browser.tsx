@@ -163,26 +163,33 @@ describe('advanced model settings', () => {
     expect(container?.querySelector('[data-effective-output-limit="65536"]')).not.toBeNull()
   })
 
-  it('warns when the configured output consumes the context window without blocking save', async () => {
+  it('does not ask the author to adjust when the configured output consumes the context window', async () => {
     const { saveModel } = await renderSettings('en-US')
     await clickEdit('Edit')
     await act(async () => {
       await page.getByLabelText('Context Window').fill('8192')
       await page.getByRole('button', { name: 'Advanced settings', exact: true }).click()
       await page.getByLabelText('Max output tokens').fill('8192')
-      expect(container?.textContent).not.toContain('Max output tokens leave no safe room')
       await page.getByLabelText('Model output capacity').fill('8192')
     })
 
-    await expect.element(page.getByRole('status')).toHaveTextContent(
-      'Max output tokens leave no safe room for the prompt',
-    )
-    // ADR-0023：上下文窗口设置不影响发送，调大它不能解决拒绝。
-    await expect.element(page.getByRole('status')).not.toHaveTextContent('increase the context window')
-    await expect.element(page.getByRole('status')).toHaveTextContent('switch to a model with a longer context')
+    expect(container?.querySelector('[data-effective-output-limit="8192"]')).not.toBeNull()
+    expect(container?.textContent).not.toContain('leave no safe room')
+    expect(container?.querySelector('[role="status"]')).toBeNull()
 
     await act(async () => page.getByRole('button', { name: 'Save configuration', exact: true }).click())
     await vi.waitFor(() => expect(saveModel).toHaveBeenCalledTimes(1))
+  })
+
+  it('标着「实测」时窗口框显示学到的数，不显示拉取的数', async () => {
+    await renderSettings()
+    const { provider, protocol, baseUrl, modelName } = model()
+    await act(async () => useLLMStore.setState({ models: [{ ...model(),
+      capabilities: { ...model().capabilities!, contextWindowTokens: 1_048_576 }, capabilitySources: { contextWindowTokens: 'endpoint' },
+      learnedContextWindow: { tokens: 32_768, provider, protocol, baseUrl, modelName } }] }))
+    await clickEdit()
+    await expect.element(page.getByLabelText('上下文窗口')).toHaveValue(32768)
+    expect(container?.querySelector('[data-context-window-source="learned"]')).not.toBeNull()
   })
 })
 

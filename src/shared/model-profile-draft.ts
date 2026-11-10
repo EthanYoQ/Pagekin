@@ -13,11 +13,12 @@ export function modelCapabilitySource(model: ModelProfile, key: keyof NonNullabl
     ? 'manual' : 'unknown'
 }
 
-export type ContextWindowSource = 'manual' | 'endpoint' | 'preset' | 'default'
+export type ContextWindowSource = 'manual' | 'learned' | 'endpoint' | 'preset' | 'default'
 export interface ResolvedContextWindow { tokens: number, source: ContextWindowSource }
 
 export const MODEL_VALUE_SOURCE_LABELS: Record<ContextWindowSource, readonly [string, string]> = {
   manual: ['你填的', 'Set by you'],
+  learned: ['实测', 'Measured'],
   endpoint: ['来自服务商', 'From provider'],
   preset: ['内置资料', 'Built-in data'],
   default: ['默认值', 'Default'],
@@ -25,17 +26,35 @@ export const MODEL_VALUE_SOURCE_LABELS: Record<ContextWindowSource, readonly [st
 
 const LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS = 4_096
 
+export function sameModelIdentity(a: Pick<ModelProfile, 'provider' | 'protocol' | 'baseUrl' | 'modelName'>, b: Pick<ModelProfile, 'provider' | 'protocol' | 'baseUrl' | 'modelName'>): boolean {
+  return a.provider === b.provider && a.protocol === b.protocol && a.baseUrl === b.baseUrl && a.modelName === b.modelName
+}
+
 export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow {
   const value = model.capabilities?.contextWindowTokens
   const stored = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
   const preset = resolveModelProfileBudgetCapabilities(model)?.contextWindowTokens ?? null
   const recorded = model.capabilitySources?.contextWindowTokens
-  if (stored !== null) {
-    if (recorded === 'endpoint' || recorded === 'preset') return { tokens: stored, source: recorded }
-    return { tokens: stored, source: !recorded && stored === preset ? 'preset' : 'manual' }
-  }
+  const storedSource = recorded === 'endpoint' || recorded === 'preset' ? recorded : !recorded && stored === preset ? 'preset' as const : 'manual' as const
+  if (stored !== null && storedSource === 'manual') return { tokens: stored, source: 'manual' }
+  const learned = model.learnedContextWindow
+  if (learned && sameModelIdentity(learned, model)) return { tokens: learned.tokens, source: 'learned' }
+  if (stored !== null) return { tokens: stored, source: storedSource }
   if (preset !== null) return { tokens: preset, source: 'preset' }
   return { tokens: isLocalModelEndpoint(model) ? LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS, source: 'default' }
+}
+
+/** 服务商把输入和 max_tokens 合计算进窗口，输出占满窗口就一定超长；留一半给提示词。默认值是猜测，不收紧。 */
+export function contextWindowOutputCap(window: ResolvedContextWindow): number {
+  return window.source === 'default' ? Infinity : Math.ceil(window.tokens / 2)
+}
+
+/** 默认值是猜测，服务商报什么都比它可信；其余来源只收紧，手填的不动。 */
+export function withLearnedContextWindow(model: ModelProfile, tokens: number): ModelProfile {
+  const current = resolveContextWindow(model)
+  if (current.source === 'manual' || current.source !== 'default' && tokens >= current.tokens) return model
+  const { provider, protocol, baseUrl, modelName } = model
+  return { ...model, learnedContextWindow: { tokens, provider, protocol, baseUrl, modelName } }
 }
 
 export function clearContextWindowOverride(model: ModelProfile, discoveredTokens?: number): ModelProfile {

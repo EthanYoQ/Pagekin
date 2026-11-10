@@ -110,6 +110,7 @@ export function generationIpcErrorCode(channel: string, error: unknown): string 
 export function registerGenerationController(options: {
   modelExecutionLeases: ModelExecutionLeaseRegistry
   loadModel: (id: string) => ModelProfile | null
+  rememberContextWindow: (model: ModelProfile, windowTokens: number) => void
   applyProxyConfig: () => void
 }) {
   onProjectDatabaseBeforeClose(({ database }) => {
@@ -139,7 +140,7 @@ export function registerGenerationController(options: {
       const owner = createMainGenerationOwner({ database, projectId: captured.projectId, epoch: captured.leaseId,
         assertCurrent: () => { projectAccess.assertCurrentProjectContext(captured, getCurrentProjectPath());
           if (getProjectDb() !== database) throw new Error('GENERATION_DATABASE_CHANGED') },
-        leases: options.modelExecutionLeases, loadModel: options.loadModel, beforeDispatch: options.applyProxyConfig,
+        leases: options.modelExecutionLeases, loadModel: options.loadModel, rememberContextWindow: options.rememberContextWindow, beforeDispatch: options.applyProxyConfig,
         transferOrigin: () => readPortableCurrentAuthority({ database, projectStorageRoot: sourceDependencies.projectStorageRoot,
           projectId: captured.projectId })?.originProjectId,
         buildBinding: (selection, modelReceipt, policy) => buildGenerationSourceBinding(sourceDependencies, { ...selection,
@@ -235,6 +236,8 @@ export function registerGenerationController(options: {
   register('finalized-character:list-state-candidates', 0, owner => owner.listPendingFinalizedCharacterStateCandidates())
   register('finalized-character:read-state-candidate', 1, (owner, request) => owner.readPendingFinalizedCharacterStateCandidate(request))
   register('finalized-character:decide-state-candidate', 1, (owner, request) => owner.decideFinalizedCharacterStateCandidate(request))
+  register('finalized-character:list-relation-candidates', 0, owner => owner.listPendingFinalizedRelationCandidates())
+  register('finalized-character:decide-relation-candidate', 1, (owner, request) => owner.decideFinalizedRelationCandidate(request))
   register('finalization-generation:read', 1, (owner, request) => owner.readFinalizationGeneration(request))
   register('finalization-generation:begin', 1, (owner, request) => owner.beginFinalizationGeneration(request))
   register('finalization-generation:execute', 1, (owner, request) => owner.executeFinalizationGeneration(request))
