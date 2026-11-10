@@ -55,12 +55,12 @@ import { readLegacyRosterGenerationContext } from './legacy-roster-generation-co
 import { readPortableRuntimeFreeze } from './portable-runtime-freeze'
 import { readLegacyRosterSource, adoptLegacyCards } from './legacy-roster-source'
 import { buildLegacyRosterJsonRepairTask, buildLegacyRosterReplacementTask, parseLegacyRosterJson } from '../../src/shared/legacy-roster-generation-pure'
-import { validateGraphGenerationInput, readGraphGenerationContext } from './graph-generation-source'
+import { graphGenerationOperations, validateGraphGenerationInput, readGraphGenerationContext } from './graph-generation-source'
 import { planningTargetInstruction, parsePlanningTargetUnits, renderPlotOutlineRange, plotOutlineRecoveryDraft, plotOutlineSourceInvalid, validPlotOutlineAuthorPrefix, type PlotOutlineSource, type PlotOutlineProgress, type PlotOutlineRecovery, type PlotOutlineAuthorEditReceipt } from '../../src/shared/plot-outline-contract'
 import { ProjectCoreRepository, type ProjectCoreSynopsisExpected, type ProjectCoreSynopsisCommitRequest } from '../repositories/project-core-repository'
 // 尝试 id 都由 randomUUID 生成；recoverFrom 还拼进 nonce，只收 UUID，免得拼出别的尝试的 nonce。
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
-const graphOperations = { plot: 'plot-tree-snapshot', plan: 'narrative-thread-plan-candidate', event: 'narrative-thread-event-candidate' } as const
+const graphOperations = graphGenerationOperations
 /** 可能出现在运行侧页「可恢复」区的运行，按操作类型归类。不在表里的从不列出：定稿后处理、图生成、导入，以及随聊天隐藏的助手任务（磁盘记录保留）。 */
 const RECOVERY_KIND: ReadonlyMap<string, 'planning' | 'review' | 'editor' | 'draft'> = new Map([
   ['generate-plot-outline', 'planning'], ['chapter-blueprint-directory', 'planning'],
@@ -1303,6 +1303,18 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       assertCurrent()
       if (!request || Object.keys(request).some(key => key !== 'handle')) throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
       return graphRecovery(graphs.require(request.handle))
+    },
+    readLatestContinuityCheck: (): GraphGenerationRecovery | null => {
+      assertCurrent()
+      // 打开页面时走这里：只扫 root 的小 JSON，不解析各运行的 binding（#536）。
+      const rows = deps.database.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
+        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=? ORDER BY r.created_at_ms DESC, r.rowid DESC LIMIT 3`)
+        .pluck().all(deps.projectId, graphOperations.continuity) as string[]
+      for (const runId of rows) {
+        const recovery = graphRecovery(repository.get(runId))
+        if (recovery.result) return recovery
+      }
+      return null
     },
     executeGraphGeneration: async (request: GraphGenerationChannels['graph-generation:execute']['args'][0]) => {
       assertCurrent()

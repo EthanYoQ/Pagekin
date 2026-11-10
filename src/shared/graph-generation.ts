@@ -5,8 +5,9 @@ import type { NarrativeThreadPlanRecord, NarrativeThreadEvent, NarrativeThreadVi
 import type { NarrativeThreadPlanCandidate, NarrativeThreadEventCandidate } from './narrative-thread-generation-pure'
 import type { FinalizedSourceIdentity } from './finalized-continuity'
 import type { WritingLanguage } from './writing-language'
+import type { ContinuityCheckChapter, ContinuityCheckNode, ContinuityCheckResult } from './blueprint-continuity-check'
 
-export type GraphGenerationInput = { kind: 'plot' } | { kind: 'plan'; chapterNumber: number } | { kind: 'event'; planId: number; draftId: number }
+export type GraphGenerationInput = { kind: 'plot' } | { kind: 'plan'; chapterNumber: number } | { kind: 'event'; planId: number; draftId: number } | { kind: 'continuity' }
 type BlueprintData = DatabaseChannels['db:blueprint-get-all']['return'][number]
 export type GraphGenerationContext = {
   projectId: string
@@ -18,10 +19,12 @@ export type GraphGenerationContext = {
   writingLanguage: WritingLanguage
 } & ({ kind: 'plot'; sources: PlotTreeSourceBundle; targetBaselineHash: string }
   | { kind: 'plan'; blueprint: BlueprintData; totalChapters: number }
-  | { kind: 'event'; plan: NarrativeThreadView; source: FinalizedSourceIdentity; content: string; contentRevision: number; projectionGeneration: number })
+  | { kind: 'event'; plan: NarrativeThreadView; source: FinalizedSourceIdentity; content: string; contentRevision: number; projectionGeneration: number }
+  | { kind: 'continuity'; chapters: ContinuityCheckChapter[]; nodes: ContinuityCheckNode[] })
 export type GraphGenerationResult = { kind: 'plot'; snapshot: PlotTreeSnapshot; derivation: 'model' | 'normalized' | 'deterministic' }
   | { kind: 'plan'; candidates: NarrativeThreadPlanCandidate[] }
   | { kind: 'event'; candidates: NarrativeThreadEventCandidate[] }
+  | ({ kind: 'continuity' } & ContinuityCheckResult)
 export interface GraphGenerationArtifact { artifactId: string; revision: number; textHash: string }
 export type GraphGenerationEffect = { success: true; index: number } & (
   { kind: 'plot'; snapshot: PlotTreeSnapshot; derivation: 'model' | 'normalized' | 'deterministic' }
@@ -42,5 +45,6 @@ export interface GraphGenerationChannels {
   'graph-generation:read': { args: [{ handle: MainGenerationRunHandle }]; return: GraphGenerationRecovery }
   'graph-generation:execute': { args: [{ handle: MainGenerationRunHandle }]; return: MainGenerationExecuteReceipt }
   'graph-generation:confirm': { args: [{ handle: MainGenerationRunHandle; artifact: GraphGenerationArtifact; index: number }]; return: GraphGenerationEffect }
+  'graph-generation:latest-continuity': { args: []; return: GraphGenerationRecovery | null }
   'graph-generation:cancel': { args: [{ handle: MainGenerationRunHandle }]; return: MainGenerationRunView }
 }
