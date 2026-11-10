@@ -620,7 +620,6 @@ export class SummaryRepository {
     })
   }
 
-  /** 写稿提示读这里。时间线和重跑比对要看作者拒绝过的节点原样，读 readCharacterContinuityNodes。 */
   static readContinuityNodesForWriting(characterIds: readonly string[], db: BetterSqlite3.Database): ContinuityNode[] {
     const declined = new Set(candidateReceipts(db).filter(receipt => receipt.decision === 'decline').map(receipt => receipt.candidateKey))
     return characterIds.flatMap(characterId => readCharacterContinuityNodes(db, characterId)).map(node =>

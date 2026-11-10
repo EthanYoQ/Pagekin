@@ -217,7 +217,7 @@ interface CharacterState {
   dataProjectSession: ProjectSessionContext | null
   /** 当前角色卡来自的 roster revision；所有保存都必须带回这一乐观并发令牌。 */
   rosterRevision: number | null
-  /** 每次从主进程读到名单加一。定稿发现的建议不改名单版本，也和作者的编辑无关，建议列表靠它重读。 */
+  /** 定稿发现的建议不改名单版本，建议列表靠这个计数重读。 */
   rosterLoads: number
   identityRevision: number | null
   loadingProjectKey: string | null

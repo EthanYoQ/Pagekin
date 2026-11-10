@@ -28,7 +28,6 @@ export interface CharacterRelationNode extends ContinuityNodeBase {
   targetId: string
   targetName: string
   relationshipId: string
-  /** 作者对这条定稿发现选了保留原设定。只有写稿读取会带上。 */
   authorDeclined?: true
 }
 export type ContinuityNode = CharacterStateNode | CharacterRelationNode
