@@ -16,7 +16,6 @@ function writeManifest(root: string, projectId: string): void {
   })))
 }
 
-/** 新建空库要跑基线建表和全部迁移，在 Windows runner 上每次可达数秒；每个文件只建一次，用例复制这份库文件。 */
 export function buildProjectTemplate(): void {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'project-template-'))
   writeManifest(root, randomUUID())
