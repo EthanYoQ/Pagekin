@@ -194,7 +194,7 @@ export interface FinalizedRelationCandidate {
   targetName: string
   value: string
   evidence: FinalizedCharacterEvidence
-  /** 建议创建时这对人物两个方向的作者行，每项是 [来源, 目标, 关系] 的 JSON，已排序。作者后来改过，建议作废。升级前写的候选没有这个字段。 */
+  /** 建议创建时这对人物两个方向的作者行，每项是 [来源, 目标, 关系] 的 JSON，已排序。升级前写的候选没有这个字段。 */
   authorLinesAtCreation?: string[]
 }
 export interface PendingFinalizedRelationCandidate extends FinalizedRelationCandidate {

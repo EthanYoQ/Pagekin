@@ -482,7 +482,7 @@ function pendingRelationCandidate(db: BetterSqlite3.Database, candidate: Finaliz
   return { ...structuredClone(candidate), ...currentNames, authorRelations: pair.rows.map(row => row.relation) }
 }
 
-/** 采用较早章的建议不是对较晚章建议的决定：把它们记下的作者行换成采用后的，免得一起作废。较早章的建议留着旧快照，随之作废。 */
+/** 采用只是对这一条建议的决定。较晚章的建议换成采用后的作者行，否则会被当成作者后改而作废。 */
 function carryLaterRelationCandidates(db: BetterSqlite3.Database, adopted: FinalizedRelationCandidate, before: string[], after: string[]): void {
   const pair = unorderedPairKey(adopted.sourceId, adopted.targetId)
   const rows = db.prepare("SELECT id,character_state_candidates AS candidates FROM summary_snapshots WHERE chapter_number>? AND character_state_candidates<>'[]'")
