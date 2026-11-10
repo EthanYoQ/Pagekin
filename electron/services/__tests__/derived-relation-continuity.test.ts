@@ -1,10 +1,8 @@
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { closeProjectDatabase, createProjectDatabase, getCurrentProjectPath, getProjectDb, initProjectDatabase } from '../../database'
+import { closeProjectDatabase, getCurrentProjectPath, getProjectDb, initProjectDatabase } from '../../database'
+import { registerDatabaseController } from '../../controllers/db-controller'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
 import { deleteCharacterRelationship, insertCharacterRelationship, readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
 import { refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
@@ -19,16 +17,16 @@ import { getBuiltinPromptTemplate } from '../../../src/services/builtin-prompt-t
 import { characterTimeline, latestNodesBefore, type CharacterRelationNode, type ContinuityNode } from '../../../src/shared/character-continuity'
 import { characterTimelinePromptLines } from '../../../src/shared/character-timeline-prompt'
 import { findBlueprintContinuityRisks, type BlueprintForPreflight } from '../../../src/shared/consistency-preflight'
-import { createCanonicalProjectManifest } from '../../../src/shared/project-format'
 import { parseFinalizedCharacterStateResponse, type FinalizedCharacterContext } from '../../../src/shared/finalized-continuity'
 import { removeDirectoryWithWindowsRetry } from '../../utils/remove-directory'
+import { buildProjectTemplate, createProjectFromTemplate, removeProjectTemplate } from './project-template-fixture'
 
 type IpcHandler = (...args: unknown[]) => unknown
 const ipcHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>())
 vi.mock('electron', () => ({ app: { getLocale: () => 'zh-CN', getPath: () => '' }, ipcMain: { handle: (channel: string, handler: IpcHandler) => ipcHandlers.set(channel, handler) } }))
 
-async function continuityNodesHandler(): Promise<IpcHandler> {
-  if (!ipcHandlers.size) (await import('../../controllers/db-controller')).registerDatabaseController()
+function continuityNodesHandler(): IpcHandler {
+  if (!ipcHandlers.size) registerDatabaseController()
   vi.spyOn(projectAccess, 'assertCurrentProjectContext').mockReturnValue({} as never)
   return ipcHandlers.get('db:character-continuity-nodes')!
 }
@@ -44,19 +42,17 @@ const db = () => getProjectDb()!
 const BREAK_UP = '林岚当众折断师门信物，与沈砚恩断义绝。'
 const CHAPTER_EIGHT = `第八章：雨夜。${BREAK_UP}`
 
+beforeAll(buildProjectTemplate)
+afterAll(removeProjectTemplate)
+
 afterEach(async () => {
   closeProjectDatabase()
   for (const root of roots.splice(0)) await removeDirectoryWithWindowsRetry(root)
 })
 
 function openProject(): void {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'derived-relation-'))
+  const root = createProjectFromTemplate('derived-relation-', PROJECT_ID)
   roots.push(root)
-  fs.mkdirSync(path.join(root, '.ai-novel'), { recursive: true })
-  fs.writeFileSync(path.join(root, '.ai-novel', 'project.json'), JSON.stringify(createCanonicalProjectManifest({
-    projectId: PROJECT_ID, createdAt: '2026-11-01T00:00:00.000Z',
-  })))
-  createProjectDatabase(root, Buffer.alloc(32, 7))
   initProjectDatabase(root)
   BlueprintRepository.listPendingCharacterSyncOperations()
   db().prepare("INSERT INTO project_core(id,project_name,writing_language) VALUES('main','关系','zh-CN')").run()
@@ -455,7 +451,7 @@ describe('待确认项和写稿提示跟着作者的决定走', () => {
   const output = (...relations: unknown[]) => ({ updates: [], relations })
 
   async function promptLines(chapter: number, characterId = LIN): Promise<string[]> {
-    const nodes = await (await continuityNodesHandler())({}, [LIN, SHEN], getCurrentProjectPath()) as ContinuityNode[]
+    const nodes = await continuityNodesHandler()({}, [LIN, SHEN], getCurrentProjectPath()) as ContinuityNode[]
     return characterTimelinePromptLines({ nodes, chapter, characterIds: [LIN, SHEN], currentNames: new Map(Object.entries(NAMES)), language: 'zh-CN' })[characterId]
   }
 
@@ -638,7 +634,7 @@ describe('作者对派生关系的决定，预检和建议说法一致', () => {
   })
 
   async function preflight(blueprint: BlueprintForPreflight) {
-    await continuityNodesHandler()
+    continuityNodesHandler()
     const nodes = await ipcHandlers.get('db:character-continuity-preflight-nodes')!({}, getCurrentProjectPath()) as ContinuityNode[]
     return findBlueprintContinuityRisks([], blueprint, ConsistencyExemptionRepository.list(db()), nodes, pending())
   }
