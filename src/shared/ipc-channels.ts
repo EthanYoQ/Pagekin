@@ -42,7 +42,7 @@ import type {
   SaveFinalizedContinuityRequest,
 } from './finalized-continuity'
 import type { DraftSourceDependency } from './draft-source-dependency'
-import type { ConsistencyExemption } from './consistency-preflight'
+import type { BlueprintForPreflight, ConsistencyExemption } from './consistency-preflight'
 import type {
   NarrativeThreadEvent,
   NarrativeThreadEventInput,
@@ -1068,12 +1068,14 @@ export interface DatabaseChannels {
     return: FinalizedSourceReadResult
   }
   'db:consistency-exemption-list': { args: [expectedProjectPath: string]; return: ConsistencyExemption[] }
+  'db:blueprint-relationship-hints': { args: [blueprints: BlueprintForPreflight[], expectedProjectPath: string]; return: Record<number, unknown> }
+  'db:character-continuity-preflight-nodes': { args: [expectedProjectPath: string]; return: ContinuityNode[] }
   'db:consistency-exemption-save': {
-    args: [stableFactKey: string, reason: string, expectedProjectPath: string]
+    args: [stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string]
     return: { success: boolean; error?: string }
   }
   'db:consistency-exemption-revoke': {
-    args: [stableFactKey: string, expectedProjectPath: string]
+    args: [stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string]
     return: { success: boolean; error?: string }
   }
   'db:narrative-thread-list': {

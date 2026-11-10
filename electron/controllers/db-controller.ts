@@ -23,9 +23,10 @@ import {
 } from '../repositories/blueprint-repository'
 import { CharacterRepository, hasCharacterIdentitySchema } from '../repositories/character-repository'
 import { commitAuthorCharacterRoster } from '../services/character-roster-author'
-import { readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../repositories/character-continuity-repository'
+import { readCharacterContinuityTimeline, readContinuityNodesWithCurrentNames } from '../repositories/character-continuity-repository'
 import { CharacterRosterRepository } from '../repositories/character-roster-repository'
 import type { CharacterRosterCommitRequest } from '../../src/shared/character-roster'
+import type { BlueprintForPreflight } from '../../src/shared/consistency-preflight'
 import { DraftRepository } from '../repositories/draft-repository'
 import type { DraftSourceDependency } from '../../src/shared/draft-source-dependency'
 import { FinalizedDraftImportRepository } from '../repositories/finalized-draft-import-repository'
@@ -677,7 +678,7 @@ export function registerDatabaseController() {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
-    return characterIds.flatMap(characterId => readCharacterContinuityNodes(database, characterId))
+    return SummaryRepository.readContinuityNodesForWriting(characterIds, database)
   })
 
   ipcMain.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {
@@ -700,6 +701,18 @@ export function registerDatabaseController() {
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
     return readCharacterContinuityTimeline(database, characterId)
+  })
+
+  ipcMain.handle('db:blueprint-relationship-hints', async (_event, blueprints: BlueprintForPreflight[], expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return BlueprintRepository.committedRelationshipHints(blueprints)
+  })
+
+  ipcMain.handle('db:character-continuity-preflight-nodes', async (_event, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const database = getProjectDb()
+    if (!database) throw new Error('DB_NOT_OPEN')
+    return readContinuityNodesWithCurrentNames(database)
   })
 
   ipcMain.handle('db:character-roster-commit', async (
@@ -843,20 +856,20 @@ export function registerDatabaseController() {
     return ConsistencyExemptionRepository.list()
   })
 
-  ipcMain.handle('db:consistency-exemption-save', async (_event, stableFactKey: string, reason: string, expectedProjectPath: string) => {
+  ipcMain.handle('db:consistency-exemption-save', async (_event, stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string) => {
     try {
       assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ConsistencyExemptionRepository.save(stableFactKey, reason)
+      ConsistencyExemptionRepository.save(stableFactKey, reason, chapterNumber)
       return { success: true }
     } catch (error) {
       return { success: false, error: String(error) }
     }
   })
 
-  ipcMain.handle('db:consistency-exemption-revoke', async (_event, stableFactKey: string, expectedProjectPath: string) => {
+  ipcMain.handle('db:consistency-exemption-revoke', async (_event, stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string) => {
     try {
       assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ConsistencyExemptionRepository.revoke(stableFactKey)
+      ConsistencyExemptionRepository.revoke(stableFactKey, chapterNumber)
       return { success: true }
     } catch (error) {
       return { success: false, error: String(error) }

@@ -4,6 +4,7 @@
  * 取代旧的 chapter-repository.ts，管理章节的规划元数据。
  */
 import { createHash } from 'node:crypto'
+import type { BlueprintForPreflight } from '../../src/shared/consistency-preflight'
 
 import { getProjectDb, getCurrentProjectPath } from '../database'
 import { readPortableRuntimeFreeze } from '../services/portable-runtime-freeze'
@@ -516,6 +517,39 @@ export class BlueprintRepository {
                 return !!item && samePersistedBlueprint(planningContent(current), planningContent(item))
             })
         }
+    }
+
+    /**
+     * 被检查的内容和回执不同的章不返回：提示不再代表作者的安排。比的是传入的内容，写章前它可能是未保存的表单。
+     * 按 rowid 而不是 committed_at 排序：后者只到秒，且排在回执正文之后的列，排序要读穿整份回执。
+     */
+    static committedRelationshipHints(blueprints: readonly BlueprintForPreflight[], db = requireProjectDb()): Record<number, unknown> {
+        const latestCovering = db.prepare(`
+          SELECT operation_id FROM blueprint_commit_operations
+          WHERE start_chapter <= @chapter AND end_chapter >= @chapter
+          ORDER BY rowid DESC LIMIT 1
+        `).pluck()
+        const readOperation = db.prepare('SELECT * FROM blueprint_commit_operations WHERE operation_id = ?')
+        const receipts = new Map<string, Map<unknown, BlueprintData>>()
+        const receipt = (operationId: string) => {
+            let written = receipts.get(operationId)
+            if (written) return written
+            written = new Map()
+            try {
+                for (const item of readCharacterSyncInput(readOperation.get(operationId) as BlueprintCommitOperationRow)) written.set(item?.chapterNumber, item)
+            } catch { /* 损坏的回执等于没有回执 */ }
+            receipts.set(operationId, written)
+            return written
+        }
+        const hints: Record<number, unknown> = {}
+        for (const blueprint of blueprints) {
+            const chapter = blueprint.chapterNumber
+            const operationId = latestCovering.get({ chapter }) as string | undefined
+            const item = operationId === undefined ? undefined : receipt(operationId).get(chapter)
+            if (item?.relationshipHints === undefined) continue
+            if (samePersistedBlueprint(planningContent({ ...blueprint, notesUpdatedAt: '' }), planningContent(item))) hints[chapter] = item.relationshipHints
+        }
+        return hints
     }
 
     /** 获取单个蓝图 */

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type BetterSqlite3 from 'better-sqlite3'
 import type { CharacterApproval } from '../../src/shared/character-identity'
 import type { CharacterContinuityTimeline, ContinuityNode, ContinuityProvenance, StateChapterRange } from '../../src/shared/character-continuity'
@@ -67,8 +68,8 @@ function appendNode(db: BetterSqlite3.Database, node: NodeWrite): void {
     FROM character_continuity_events e LEFT JOIN drafts d ON d.id=e.draft_id
     WHERE e.subject_id=? AND e.aspect=? AND e.target_id IS ? AND json_extract(e.evidence_json,'$.relationshipId') IS ?`)
     .get(node.subjectId, node.aspect, node.target?.id ?? null, node.evidence.relationshipId ?? null) as { chapter: number | null; seq: number }
-  // 不早于同系列已有节点：否则按章折叠会读到更早写入的值，与当前列分叉。
-  const effectiveChapter = Math.max(node.effectiveChapter, series.chapter ?? 0)
+  // 不早于同系列已有节点：否则按章折叠会读到更早写入的值，与当前列分叉。派生关系没有当前列，按章记。
+  const effectiveChapter = node.provenance.kind === 'derived' && node.target ? node.effectiveChapter : Math.max(node.effectiveChapter, series.chapter ?? 0)
   db.prepare(`INSERT INTO character_continuity_events(event_id,subject_id,subject_name,target_id,target_name,aspect,value,effective_chapter,provenance_json,draft_id,evidence_json)
     VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(node.eventId, node.subjectId, node.subjectName, node.target?.id ?? null, node.target?.name ?? null,
     node.aspect, node.value, effectiveChapter, JSON.stringify(node.provenance), node.draftId, JSON.stringify({ ...node.evidence, seq: series.seq + 1 }))
@@ -113,11 +114,33 @@ export function insertCharacterRelationship(db: BetterSqlite3.Database, line: Ch
 }
 
 /** 删除 character_relationships 的唯一入口。节点的值为空，靠 relationshipId 指出删的是哪一行。 */
-export function deleteCharacterRelationship(db: BetterSqlite3.Database, line: CharacterRelationshipLine, operationId: string): void {
+export function deleteCharacterRelationship(db: BetterSqlite3.Database, line: CharacterRelationshipLine, operationId: string, effectiveChapter = nextChapter(db)): void {
   requireTransaction(db)
   db.prepare('DELETE FROM character_relationships WHERE relationship_id=?').run(line.relationshipId)
   appendNode(db, { eventId: `relation:remove:${line.relationshipId}`, subjectId: line.sourceId, subjectName: line.sourceName, target: { id: line.targetId, name: line.targetName },
-    aspect: 'relation', value: '', effectiveChapter: nextChapter(db), provenance: { kind: 'author', operationId }, draftId: null, evidence: { relationshipId: line.relationshipId } })
+    aspect: 'relation', value: '', effectiveChapter, provenance: { kind: 'author', operationId }, draftId: null, evidence: { relationshipId: line.relationshipId } })
+}
+
+/** 同一对角色的派生关系是一个系列，和作者关系行分开，派生值不会盖掉作者设定。 */
+export const derivedRelationSeries = (sourceId: string, targetId: string) => `derived:${JSON.stringify([sourceId, targetId])}`
+
+export interface DerivedRelationWrite {
+  sourceId: string
+  sourceName: string
+  targetId: string
+  targetName: string
+  relation: string
+  source: FinalizedSourceIdentity
+  quote: FinalizedCharacterEvidence
+}
+
+/** 只进事件表，不碰 character_relationships（ADR-0007）。节点绑定定稿稿，稿被替换后随之失效（ADR-0024、ADR-0025）。 */
+export function appendDerivedRelationNode(db: BetterSqlite3.Database, write: DerivedRelationWrite): void {
+  requireTransaction(db)
+  appendNode(db, { eventId: `derived:${write.source.finalizationId}:relation:${randomUUID()}`, subjectId: write.sourceId, subjectName: write.sourceName,
+    target: { id: write.targetId, name: write.targetName }, aspect: 'relation', value: write.relation, effectiveChapter: write.source.chapterNumber,
+    provenance: { kind: 'derived', source: write.source }, draftId: write.source.draftId,
+    evidence: { quote: write.quote, relationshipId: derivedRelationSeries(write.sourceId, write.targetId) } })
 }
 
 interface NodeRow {
@@ -146,6 +169,17 @@ export function readCharacterContinuityNodes(db: BetterSqlite3.Database, subject
     WHERE (e.draft_id IS NULL OR d.status='finalized') AND (@subjectId IS NULL OR e.subject_id=@subjectId)
       AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.retired=1 AND c.character_id IN (e.subject_id,e.target_id))
     ORDER BY e.subject_id,e.aspect,e.effective_chapter,e.event_id`).all({ subjectId }) as NodeRow[]).map(parseNode)
+}
+
+/** 节点里的名字是写入时的快照，改名后对不上蓝图。给预检用的读取换成角色现在的名字。 */
+export function readContinuityNodesWithCurrentNames(db: BetterSqlite3.Database): ContinuityNode[] {
+  const names = new Map((db.prepare('SELECT character_id,name FROM characters').all() as { character_id: string; name: string }[])
+    .map(row => [row.character_id, row.name]))
+  return readCharacterContinuityNodes(db).map(node => ({
+    ...node,
+    subjectName: names.get(node.subjectId) ?? node.subjectName,
+    ...(node.aspect === 'relation' ? { targetName: names.get(node.targetId) ?? node.targetName } : {}),
+  }))
 }
 
 export function readCharacterContinuityTimeline(db: BetterSqlite3.Database, characterId: string): CharacterContinuityTimeline {

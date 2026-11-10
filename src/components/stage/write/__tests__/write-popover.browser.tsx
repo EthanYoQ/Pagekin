@@ -38,10 +38,12 @@ let container: HTMLDivElement | undefined
 let startWorkflow: ReturnType<typeof vi.fn>
 let writtenLogs: unknown[]
 let continuityProjections: unknown[]
-let exemptions: { stableFactKey: string; reason: string; revoked: boolean }[]
+let exemptions: { stableFactKey: string; reason: string; revoked: boolean; chapterNumber: number | null }[]
 let exemptionSave: () => Promise<{ success: boolean; error?: string }>
 let continuityGate: Promise<void> | null = null
 let authority: unknown
+let committedHints: Record<number, unknown>
+let persistedBlueprint: ChapterBlueprint
 const CONTINUOUS_AUTHORITY = {
   status: 'continuous', lastChapterNumber: 4, nextChapterNumber: 5, gaps: [], duplicateChapterNumbers: [], authorityFingerprint: 'e'.repeat(64),
 }
@@ -52,6 +54,12 @@ const DEAD_KEEPER = [{
   sourceStatus: 'current',
   facts: [{ category: 'character-state', entities: ['老周'], statement: '老周已经死亡。', sourceChapter: 1, evidence: '老周停止了呼吸。' }],
 }]
+
+const BROKEN_WITH_KEEPER = {
+  eventId: 'relation:add:line', subjectId: 'lin', subjectName: '林舟', targetId: 'zhou', targetName: '老周', relationshipId: 'line', aspect: 'relation',
+  value: '决裂', effectiveChapter: 3, provenance: { kind: 'author', operationId: 'op' }, draftId: null, seq: 1, quote: null,
+}
+const COMPANION_HINTS = { 5: [{ from: '林舟', to: '老周', relation: '亲密同伴' }] }
 
 const BLUEPRINT: ChapterBlueprint = {
   chapterNumber: 5,
@@ -94,7 +102,9 @@ function installIpc() {
   const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     if (channel === 'db:draft-authority-sequence') return authority
     if (channel === 'db:blueprint-get-all') return [BLUEPRINT]
-    if (channel === 'db:blueprint-get') return BLUEPRINT
+    if (channel === 'db:blueprint-get') return persistedBlueprint
+    if (channel === 'db:blueprint-relationship-hints') return committedHints
+    if (channel === 'db:character-continuity-preflight-nodes') return [BROKEN_WITH_KEEPER]
     if (channel === 'db:character-get-all') return [{ id: 1 }]
     if (channel === 'db:draft-get-finalized') return { chapterNumber: Number(args[0]) }
     if (channel === 'db:post-process-get-latest-run') return null
@@ -105,11 +115,11 @@ function installIpc() {
     if (channel === 'db:consistency-exemption-list') return exemptions
     if (channel === 'db:consistency-exemption-save') {
       const result = await exemptionSave()
-      if (result.success) exemptions = [...exemptions, { stableFactKey: String(args[0]), reason: String(args[1]), revoked: false }]
+      if (result.success) exemptions = [...exemptions, { stableFactKey: String(args[0]), reason: String(args[1]), revoked: false, chapterNumber: args[2] as number | null }]
       return result
     }
     if (channel === 'db:consistency-exemption-revoke') {
-      exemptions = exemptions.map(item => item.stableFactKey === args[0] ? { ...item, revoked: true } : item)
+      exemptions = exemptions.map(item => item.stableFactKey === args[0] && item.chapterNumber === args[1] ? { ...item, revoked: true } : item)
       return { success: true }
     }
     if (channel === 'fs:read-json') return { success: false }
@@ -158,6 +168,8 @@ beforeEach(async () => {
   exemptionSave = async () => ({ success: true })
   continuityGate = null
   authority = CONTINUOUS_AUTHORITY
+  committedHints = {}
+  persistedBlueprint = BLUEPRINT
   startWorkflow = vi.fn(async () => 'write-popover-run')
   useLocaleStore.setState({ locale: 'zh-CN' })
   useProjectStore.setState({ currentProject: project() })
@@ -347,7 +359,7 @@ describe('写作此章弹层', () => {
     expect(exemptions).toEqual([])
   })
 
-  it('保存安排后重检并开始写；已保存的安排可以在弹层里撤销', async () => {
+  it('一键确认有意安排后重检并开始写，只豁免这一章；已保存的安排可以在弹层里撤销', async () => {
     continuityProjections = [{
       draftId: 1, chapterNumber: 1, chapterTitle: '终局', chapterNotes: '老周死亡',
       source: { draftId: 1, finalizationId: 'finalization-1', chapterNumber: 1, contentHash: 'a'.repeat(64) },
@@ -357,10 +369,9 @@ describe('写作此章弹层', () => {
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
     await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
     const popover = page.getByRole('dialog', { name: '本次写作选项' })
-    await act(async () => popover.getByLabelText('安排说明').fill('老周以幽灵身份出现，是刻意安排。'))
-    await act(async () => popover.getByRole('button', { name: '保存安排' }).click())
+    await act(async () => popover.getByRole('button', { name: '这是有意安排' }).click())
     await vi.waitFor(() => expect(startWorkflow).toHaveBeenCalledOnce())
-    expect(exemptions).toMatchObject([{ reason: '老周以幽灵身份出现，是刻意安排。', revoked: false }])
+    expect(exemptions).toMatchObject([{ reason: '作者确认是有意安排', revoked: false, chapterNumber: 5 }])
 
     await act(async () => page.getByRole('button', { name: '本次写作选项' }).click())
     await popover.getByText('已保存安排（1）').click()
@@ -528,9 +539,8 @@ describe('写作此章弹层', () => {
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
     await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
     const popover = page.getByRole('dialog', { name: '本次写作选项' })
-    await act(async () => popover.getByLabelText('安排说明').fill('老周以幽灵身份出现，是刻意安排。'))
-    await act(async () => popover.getByRole('button', { name: '保存安排' }).click())
-    await expect.element(popover.getByRole('button', { name: '保存安排' })).toBeDisabled()
+    await act(async () => popover.getByRole('button', { name: '这是有意安排' }).click())
+    await expect.element(popover.getByRole('button', { name: '这是有意安排' })).toBeDisabled()
     await expect.element(popover.getByRole('button', { name: '仅本次忽略' })).toBeDisabled()
     const main = page.getByRole('button', { name: '写第 5 章' }).element() as HTMLButtonElement
     expect(main.disabled).toBe(true)
@@ -538,7 +548,7 @@ describe('写作此章弹层', () => {
     expect(main.closest('.pi-split')!.classList.contains('pi-split--main-off')).toBe(true)
     await act(async () => finishSave({ success: false, error: '数据库只读' }))
     await expect.element(popover.getByRole('alert')).toHaveTextContent('数据库只读')
-    await expect.element(popover.getByRole('button', { name: '保存安排' })).toBeEnabled()
+    await expect.element(popover.getByRole('button', { name: '这是有意安排' })).toBeEnabled()
     expect(startWorkflow).not.toHaveBeenCalled()
   })
 
@@ -549,8 +559,7 @@ describe('写作此章弹层', () => {
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="Write chapter 5" />)
     await act(async () => page.getByRole('button', { name: 'Write chapter 5' }).click())
     const popover = page.getByRole('dialog', { name: 'Options for this run' })
-    await act(async () => popover.getByLabelText('Why this is intentional').fill('The keeper appears as a ghost on purpose.'))
-    await act(async () => popover.getByRole('button', { name: 'Save arrangement' }).click())
+    await act(async () => popover.getByRole('button', { name: 'This is intentional' }).click())
     await expect.element(popover.getByRole('alert')).toHaveTextContent(/^Could not save the consistency arrangement.$/)
     expect(startWorkflow).not.toHaveBeenCalled()
   })
@@ -562,8 +571,7 @@ describe('写作此章弹层', () => {
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
     await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
     const popover = page.getByRole('dialog', { name: '本次写作选项' })
-    await act(async () => popover.getByLabelText('安排说明').fill('老周以幽灵身份出现，是刻意安排。'))
-    await act(async () => popover.getByRole('button', { name: '保存安排' }).click())
+    await act(async () => popover.getByRole('button', { name: '这是有意安排' }).click())
     const other = { projectId: 'harbor', leaseId: 'harbor-lease', projectPath: 'C:\\novels\\harbor' }
     setActiveProjectSessionContext(other)
     await act(async () => useProjectStore.setState({ currentProject: { ...project(), id: 'harbor', sessionLease: 'harbor-lease', name: '港口', path: other.projectPath } }))
@@ -582,12 +590,45 @@ describe('写作此章弹层', () => {
     await act(async () => dialog.getByLabelText(/写几章/).fill('1'))
     await act(async () => dialog.getByRole('button', { name: '开始写 1 章' }).click())
     await expect.element(dialog.getByRole('region', { name: '一致性预检' })).toBeVisible()
-    await act(async () => dialog.getByLabelText('安排说明').fill('老周以幽灵身份出现，是刻意安排。'))
-    await act(async () => dialog.getByRole('button', { name: '保存安排' }).click())
-    await expect.element(dialog.getByRole('button', { name: '保存安排' })).toBeDisabled()
+    await act(async () => dialog.getByRole('button', { name: '这是有意安排' }).click())
+    await expect.element(dialog.getByRole('button', { name: '这是有意安排' })).toBeDisabled()
     await act(async () => finishSave({ success: false, error: '数据库只读' }))
     await expect.element(dialog.getByRole('alert')).toHaveTextContent('数据库只读')
-    await expect.element(dialog.getByRole('button', { name: '保存安排' })).toBeEnabled()
+    await expect.element(dialog.getByRole('button', { name: '这是有意安排' })).toBeEnabled()
     expect(startWorkflow).not.toHaveBeenCalled()
+  })
+
+  describe('蓝图回执里的关系提示', () => {
+    const startSingle = async () => {
+      await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
+      await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
+      return page.getByRole('dialog', { name: '本次写作选项' })
+    }
+    const startBatch = async () => {
+      await render(<BatchWriteDialog isOpen startChapterNumber={5} onClose={vi.fn()} />)
+      const dialog = page.getByRole('dialog', { name: '批量创作' })
+      await act(async () => dialog.getByLabelText(/写几章/).fill('1'))
+      await act(async () => dialog.getByRole('button', { name: '开始写 1 章' }).click())
+      return dialog
+    }
+    const CONFLICT = '第 5 章蓝图把 林舟 和 老周 写成「亲密同伴」，但第 3 章起两人是「决裂」。'
+
+    it.each([['写作此章', startSingle], ['批量创作', startBatch]] as const)('%s：回执里的关系和时间线相反时提醒', async (_name, start) => {
+      committedHints = COMPANION_HINTS
+      const surface = await start()
+      await expect.element(surface.getByText(CONFLICT)).toBeVisible()
+      expect(startWorkflow).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['写作此章的悬念钩子', startSingle, { suspenseHook: '老周在这一章和林舟和解。' }],
+      ['写作此章的章节要点', startSingle, { notes: '两人解开误会。' }],
+      ['批量创作的悬念钩子', startBatch, { suspenseHook: '老周在这一章和林舟和解。' }],
+    ] as const)('%s里写了和解：不提醒', async (_name, start, fields) => {
+      committedHints = COMPANION_HINTS
+      persistedBlueprint = { ...BLUEPRINT, ...fields }
+      await start()
+      await vi.waitFor(() => expect(startWorkflow).toHaveBeenCalledOnce())
+    })
   })
 })

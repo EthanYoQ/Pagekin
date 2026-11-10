@@ -1609,6 +1609,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     listPendingFinalizedCharacterStateCandidates: () => finalizedCharacters.listPendingStateCandidates(),
     readPendingFinalizedCharacterStateCandidate: (request: { draftId: number; candidateKey: string }) => finalizedCharacters.readPendingStateCandidate(request),
     decideFinalizedCharacterStateCandidate: (request: import('../../src/shared/finalized-continuity').FinalizedCharacterStateDecisionRequest) => finalizedCharacters.decideStateCandidate(request),
+    listPendingFinalizedRelationCandidates: () => finalizedCharacters.listPendingRelationCandidates(),
+    decideFinalizedRelationCandidate: (request: import('../../src/shared/finalized-continuity').FinalizedRelationDecisionRequest) => finalizedCharacters.decideRelationCandidate(request),
     prepareReviewRevision: (request: PrepareReviewRevisionRequest) => reviewRevisions.prepare(request),
     commitReview: (request: ReviewGenerationCommitRequest) => reviewRevisions.commitReview(request, assertSourcesCurrent),
     commitRevision: (request: RevisionGenerationCommitRequest) => reviewRevisions.commitRevision(request, assertSourcesCurrent),

@@ -404,7 +404,6 @@ describe('bounded completion', () => {
   })
 
   it.each([
-    { code: 'CONTEXT_BUDGET_EXHAUSTED', contextWindowTokens: 2_500, maxAttempts: 8, maxRequestedOutputTokens: 65_536 },
     { code: 'ATTEMPT_BUDGET_EXHAUSTED', contextWindowTokens: null, maxAttempts: 1, maxRequestedOutputTokens: 65_536 },
     { code: 'REQUESTED_TOKEN_BUDGET_EXHAUSTED', contextWindowTokens: null, maxAttempts: 8, maxRequestedOutputTokens: 8192 },
   ])('retains the partial without dispatch when the generation session rejects $code', async ({
@@ -442,6 +441,40 @@ describe('bounded completion', () => {
     expect(requestContinuation.mock.calls[0]?.[0]).toContain(originalPrompt)
     expect(complete).toHaveBeenCalledOnce()
     expect(onInterrupted).toHaveBeenCalledExactlyOnceWith(partial)
+  })
+
+  it('sends a continuation that exceeds the recorded context window to the provider', async () => {
+    const partial = '先前已经生成的世界观内容。'.repeat(400)
+    const originalPrompt = '完整作者材料。'.repeat(150)
+    const complete = vi.fn()
+      .mockResolvedValueOnce({ content: partial, finishReason: 'length' })
+      .mockResolvedValueOnce({ content: '世界观的最后一段。', finishReason: 'stop' })
+    const session = createGenerationHarness({
+      modelSource: { snapshotDefaultModel: () => ({
+        model: { id: 'bounded-model', provider: 'custom', protocol: 'openai', modelName: 'bounded-model',
+          baseUrl: 'https://provider.example/v1', maxTokens: 8192 },
+        revision: 'bounded-model-revision', modelExecutionLeaseId: 'bounded-model-lease',
+        resolvedCapabilities: { contextWindowTokens: 2_500, maxOutputTokens: 8192, reasoning: null, structuredOutput: null, usage: null,
+          source: { contextWindowTokens: 'user-operational-cap', maxOutputTokens: 'user-operational-cap', featureFlags: 'unknown' } },
+      }) },
+      completionPort: { complete },
+      policy: { maxAttempts: 8, maxRequestedOutputTokens: 65_536, maxRequestedOutputTokensPerAttempt: 8192, deadlineMs: 60_000 },
+    }).openSession()
+    const task = (prompt: string) => ({
+      purpose: 'generate-world-building', output: 'visible-text' as const,
+      messages: [{ role: 'user' as const, content: prompt }],
+    })
+    const onInterrupted = vi.fn()
+
+    await expect(completeBoundedCompletion({
+      initial: await session.complete(task(originalPrompt)), mode: 'append-visible-text', maxContinuations: 3, originalPrompt,
+      writingLanguage: 'zh-CN', requestContinuation: prompt => session.complete(task(prompt)), onInterrupted,
+    })).resolves.toContain('世界观的最后一段。')
+
+    expect(complete).toHaveBeenCalledTimes(2)
+    expect(complete.mock.calls[1]?.[0].messages[0]?.content).toContain(originalPrompt)
+    expect(complete.mock.calls[1]?.[0].plan.maxOutputTokens).toBe(8192)
+    expect(onInterrupted).not.toHaveBeenCalled()
   })
 })
 

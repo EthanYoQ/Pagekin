@@ -47,7 +47,7 @@ describe('恢复 M08 之前导出的便携包（schema 8）', { timeout: 60_000 
     ConsistencyExemptionRepository.revoke('scar:林澈')
     expect(ConsistencyExemptionRepository.list()).toEqual([
       { ...before, reason: '第 9 章确认是假死', revoked: false },
-      { stableFactKey: 'scar:林澈', reason: '旧伤已愈', revoked: true },
+      { stableFactKey: 'scar:林澈', reason: '旧伤已愈', revoked: true, chapterNumber: null },
     ])
     expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM consistency_exemptions').pluck().get()).toBe(2)
   })

@@ -236,6 +236,8 @@ export function registerGenerationController(options: {
   register('finalized-character:list-state-candidates', 0, owner => owner.listPendingFinalizedCharacterStateCandidates())
   register('finalized-character:read-state-candidate', 1, (owner, request) => owner.readPendingFinalizedCharacterStateCandidate(request))
   register('finalized-character:decide-state-candidate', 1, (owner, request) => owner.decideFinalizedCharacterStateCandidate(request))
+  register('finalized-character:list-relation-candidates', 0, owner => owner.listPendingFinalizedRelationCandidates())
+  register('finalized-character:decide-relation-candidate', 1, (owner, request) => owner.decideFinalizedRelationCandidate(request))
   register('finalization-generation:read', 1, (owner, request) => owner.readFinalizationGeneration(request))
   register('finalization-generation:begin', 1, (owner, request) => owner.beginFinalizationGeneration(request))
   register('finalization-generation:execute', 1, (owner, request) => owner.executeFinalizationGeneration(request))
