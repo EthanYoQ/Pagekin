@@ -61,7 +61,7 @@ it('一次请求，结论的依据是冻结的真实节点，已定稿章不进�
   const read = f.owner.readGraphGeneration({ handle: begun.view.handle })
   expect(read.sourceStatus).toBe('current')
   expect(read.result).toEqual({ kind: 'continuity', checkedThroughChapter: 3, droppedFindings: 0,
-    findings: [{ chapterNumber: 2, eventIds: ['relation:add:关系1'], issue: finding().issue, suggestion: finding().suggestion }] })
+    findings: [{ chapterNumber: 2, eventIds: ['relation:add:关系1'], points: [{ issue: finding().issue, suggestion: finding().suggestion }] }] })
 })
 
 it('编造节点或范围外的章只丢那一条，运行记录有计数', async () => {
