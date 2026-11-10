@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 
 import { FIXTURE_PROSE } from './fake-model.mjs'
+import * as blueprint from './pages/blueprint.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as refs from './pages/refs.mjs'
+import * as stage from './pages/stage.mjs'
 import { firstLine, seedStageSample } from './scenarios.mjs'
 import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 
@@ -14,6 +16,9 @@ const PLANS = Object.freeze([
 
 /** 只给线索硬任务场景加的一条：夹具正文写了林岚对照父亲的地图找灯塔，审稿判已回收有引文可依。 */
 const MAP_PLAN = Object.freeze({ title: '父亲的地图', type: '伏笔', targetStartChapter: 3, targetEndChapter: 5, authorIntent: '林岚对照父亲的地图找到灯塔。' })
+
+/** 只给延后场景加的一条：写第 5 章时还在区间内，用来试「也可以本章推进」。 */
+const ECHO_PLAN = Object.freeze({ title: '灯塔的回声', type: '支线', targetStartChapter: 4, targetEndChapter: 9, authorIntent: '后文交代回声的来源。' })
 
 const seedWith = plans => context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
   const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(), chapters: [3, 4].map((number) => {
@@ -28,7 +33,86 @@ const seedWith = plans => context => seedStageSample(context, { landOnChapter3: 
 } })
 const seed = seedWith(PLANS)
 
+const contractOf = chat => chat.messages.map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content)).join('\n')
+  .split('\n').filter(text => text.startsWith('- 本章推进或回收：'))
+
 export const A11_SCENARIOS = {
+  'a11-thread-defer': { model: true, shell: 'stage', setup: seedWith([...PLANS, ECHO_PLAN]), run: async ({ page, fake, shoot }) => {
+    const popover = page.getByRole('dialog', { name: '本次写作选项' })
+    const hint = count => chapterView.view(page).getByRole('button', { name: `本章要处理 ${count} 条线索` })
+    const row = title => popover.getByRole('listitem').filter({ hasText: title })
+    const writeChapter = async () => {
+      const before = fake.chats.filter(chat => chat.kind === 'prose').length
+      await chapterView.view(page).getByRole('button', { name: '写作此章', exact: true }).click()
+      await chapterView.prose(page).getByText(firstLine(FIXTURE_PROSE)).first().waitFor({ state: 'visible', timeout: 90_000 })
+      const prose = fake.chats.filter(chat => chat.kind === 'prose').slice(before)
+      assert.equal(prose.length, 1, '开写只发一次正文请求')
+      return prose[0]
+    }
+
+    await chapterView.open(page, 5)
+    await hint(2).waitFor({ state: 'visible', timeout: 15_000 })
+    assert.equal(await popover.isVisible(), false, '线索到期不自动打开弹层')
+    await shoot('a11-thread-defer-hint')
+    await blueprint.open(page)
+    await page.getByRole('button', { name: '本章要处理 2 条线索' }).waitFor({ state: 'visible', timeout: 15_000 })
+    await shoot('a11-thread-defer-blueprint')
+    await stage.stageButton(page, '正文').click()
+    await chapterView.open(page, 5)
+
+    await hint(2).click()
+    await row('父亲的旧信').getByText('本章到期').waitFor({ state: 'visible' })
+    await row('青铜钥匙').getByText('逾期 3 章').waitFor({ state: 'visible' })
+    await popover.getByText('也可以本章推进').click()
+    await row('灯塔的回声').getByRole('button', { name: '本章推进' }).waitFor({ state: 'visible' })
+    await shoot('a11-thread-defer-open')
+
+    await row('父亲的旧信').getByRole('button', { name: '延后一章' }).click()
+    await row('父亲的旧信').getByText('已延到第 6 章').waitFor({ state: 'visible' })
+    await row('灯塔的回声').getByRole('button', { name: '本章推进' }).click()
+    await hint(2).waitFor({ state: 'visible' })
+    await row('灯塔的回声').getByRole('button', { name: '撤销' }).waitFor({ state: 'visible' })
+    await shoot('a11-thread-defer-done')
+    await page.keyboard.press('Escape')
+
+    const chapter5 = await writeChapter()
+    const contract5 = contractOf(chapter5)
+    assert.deepEqual(contract5, [
+      '- 本章推进或回收：灯塔的回声（作者指定本章推进；作者意图：后文交代回声的来源。）',
+      '- 本章推进或回收：青铜钥匙（已逾期 3 章；作者意图：第二章揭示钥匙能打开灯室。）',
+    ], '第 5 章合同：指定的在最前，延后的旧信不在')
+    const prompt5 = chapter5.messages.map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content)).join('\n')
+    const letterLine = prompt5.split('\n').find(text => text.startsWith('- 父亲的旧信 ')) ?? ''
+    assert.match(letterLine, /目标第3–6章/, '旧信仍作软参考，目标写新的截止章')
+    assert.doesNotMatch(letterLine, /本章到期|已逾期/, '旧信不再标到期')
+
+    await chapterView.finalize(page, 5)
+    await chapterView.postProcess(page).getByText('4 / 4 完成').waitFor({ state: 'visible', timeout: 60_000 })
+    await chapterView.open(page, 6)
+    await hint(2).waitFor({ state: 'visible', timeout: 15_000 })
+    await shoot('a11-thread-defer-next-chapter')
+    await hint(2).click()
+    await row('父亲的旧信').getByText('本章到期').waitFor({ state: 'visible' })
+    await page.keyboard.press('Escape')
+    // 假模型每章回同一段正文，第 6 章开头会被判成重演而不落稿；这里只看发出去的合同。
+    const proseBefore = fake.chats.filter(chat => chat.kind === 'prose').length
+    await chapterView.view(page).getByRole('button', { name: '写作此章', exact: true }).click()
+    for (const deadline = Date.now() + 60_000; fake.chats.filter(chat => chat.kind === 'prose').length === proseBefore;) {
+      assert.ok(Date.now() < deadline, '第 6 章发出了正文请求')
+      await page.waitForTimeout(100)
+    }
+    const contract6 = contractOf(fake.chats.filter(chat => chat.kind === 'prose')[proseBefore])
+    assert.deepEqual(contract6, [
+      '- 本章推进或回收：青铜钥匙（已逾期 4 章；作者意图：第二章揭示钥匙能打开灯室。）',
+      '- 本章推进或回收：父亲的旧信（本章到期；作者意图：第五章林岚读到父亲的旧信。）',
+    ], '第 6 章旧信重新到期，指定只管第 5 章')
+
+    await refs.open(page, 'plot')
+    await refs.plotView(page, '伏笔线索').click()
+    await page.getByText('原定第 5 章，延到第 6 章 · 写第 5 章前延后到第 6 章').waitFor({ state: 'visible', timeout: 15_000 })
+    await shoot('a11-thread-defer-trace')
+    return { contract5, letterLine, contract6 }
+  } },
   'a11-overdue-thread-prompt': { model: true, shell: 'stage', setup: seed, run: async ({ page, fake }) => {
     await chapterView.open(page, 5)
     const proseBefore = fake.chats.filter(chat => chat.kind === 'prose').length
