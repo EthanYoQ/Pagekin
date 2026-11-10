@@ -1353,7 +1353,7 @@ describe('蓝图页的恢复稿横幅跟着主进程的判定走（#608）', () 
 
 describe('AI 检查（蓝图正文对照时间线）', () => {
   const HANDLE = { projectId: 'stage-blueprint', epoch: 'epoch', rootActionId: 'root', runId: 'run' }
-  const NODE = { eventId: 'relation:add:line', sourceChapter: 1, fromChapter: 1, subjectName: '林岚', aspect: 'relation', targetName: '守塔人', value: '决裂' }
+  const NODE = { eventId: 'relation:add:line', since: { zhCN: '第 1 章起', enUS: 'from chapter 1' }, fromChapter: 1, subjectName: '林岚', aspect: 'relation', targetName: '守塔人', value: '决裂' }
   const finding = (chapterNumber: number, issue: string) => ({ chapterNumber, eventIds: ['relation:add:line'], issue, suggestion: '改成对峙。' })
   const recovery = (over: Record<string, unknown>) => ({
     view: { handle: HANDLE, status: 'running', budgetDiagnostics: [], artifacts: [], candidates: [] }, modelId: 'grok', attemptCount: 0, effects: [], sourceStatus: 'current',
@@ -1389,12 +1389,25 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     expect(calls('graph-generation:begin')[0]![1]).toMatchObject({ input: { kind: 'continuity' }, modelId: 'grok' })
     expect(calls('graph-generation:execute')).toHaveLength(1)
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
-    await expect.element(page.getByText('依据：第 1 章 · 林岚和守塔人：决裂')).toBeVisible()
+    await expect.element(page.getByText('依据：第 1 章起，林岚和守塔人是「决裂」')).toBeVisible()
     await expect.element(page.getByText('建议：改成对峙。')).toBeVisible()
     expect(document.body.textContent).not.toContain('relation:add:line')
     await expect.element(page.getByText('第 3 章同样写成同伴。')).not.toBeInTheDocument()
     await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
     await act(async () => page.getByRole('button', { name: '第 3 章', exact: true }).click())
+    await expect.element(page.getByText('第 3 章同样写成同伴。')).toBeVisible()
+  })
+
+  it('总结里的章号静止时就带按钮边框，键盘能聚焦并用回车跳过去', async () => {
+    await renderPage(2)
+    await check()
+    const jump = page.getByRole('button', { name: '第 3 章', exact: true }).element() as HTMLButtonElement
+    const border = getComputedStyle(jump)
+    expect(border.borderTopStyle).toBe('solid')
+    expect(border.borderTopColor).not.toBe('rgba(0, 0, 0, 0)')
+    jump.focus()
+    expect(document.activeElement).toBe(jump)
+    await act(async () => userEvent.keyboard('{Enter}'))
     await expect.element(page.getByText('第 3 章同样写成同伴。')).toBeVisible()
   })
 
@@ -1419,7 +1432,7 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await renderPage(2)
     await check()
     await expect.element(page.getByText('蓝图没有改动。这次结果没读出来，再点一次“AI 检查”。')).toBeVisible()
-    await expect.element(page.getByText('依据：第 1 章 · 林岚和守塔人：决裂')).not.toBeInTheDocument()
+    await expect.element(page.getByText('依据：第 1 章起，林岚和守塔人是「决裂」')).not.toBeInTheDocument()
   })
 
   it('检查期间蓝图被改：结果不显示，提示重新检查', async () => {
@@ -1490,7 +1503,7 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await renderPage(2)
     await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
     await act(async () => page.getByRole('button', { name: 'AI check', exact: true }).click())
-    await expect.element(page.getByText('Basis: Chapter 1 · 林岚 and 守塔人: 决裂')).toBeVisible()
+    await expect.element(page.getByText('Basis: From chapter 1, 林岚’s relation to 守塔人 is “决裂”')).toBeVisible()
     await expect.element(page.getByText('AI check reached chapter 3. These chapters conflict with the timeline.')).toBeVisible()
   })
 })

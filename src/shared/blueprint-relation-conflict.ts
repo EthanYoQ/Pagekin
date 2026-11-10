@@ -1,5 +1,5 @@
 import { relationshipFacts } from './blueprint-character-sync-evidence'
-import type { CharacterRelationNode, LatestContinuityNodes } from './character-continuity'
+import type { CharacterRelationNode, ContinuityNode, LatestContinuityNodes } from './character-continuity'
 import { characterRosterIdentityKey } from './character-roster'
 import type { BlueprintForPreflight, ConsistencyFinding } from './consistency-preflight'
 import type { PendingFinalizedRelationCandidate } from './finalized-continuity'
@@ -39,14 +39,17 @@ export function relationPolarity(text: string): RelationPolarity | null {
   return found.size === 1 && !UNCERTAIN.test(rest) ? [...found][0]! : null
 }
 
-interface RelationBasis {
+interface ContinuityBasis {
   sourceChapter: number
   evidence: string
   since: { zhCN: string; enUS: string }
 }
 
-/** 派生节点没有定稿原文就没有依据（ADR-0017）。基线节点的章号是迁移时补的，不当章号给作者看，sourceChapter 记 0。 */
-function relationBasis(node: CharacterRelationNode): RelationBasis | null {
+/**
+ * 派生节点没有定稿原文就没有依据（ADR-0017）。基线节点的章号是迁移时补的，不当章号给作者看，sourceChapter 记 0。
+ * 蓝图页的 AI 检查也用这里的 since，同一节点两张卡说法一致。
+ */
+export function continuityBasis(node: ContinuityNode): ContinuityBasis | null {
   const chapter = node.effectiveChapter
   switch (node.provenance.kind) {
     case 'author':
@@ -78,9 +81,9 @@ export function findRelationReversals(blueprint: BlueprintForPreflight, continui
     const lines = continuity.relations.flatMap(pair => pair.lines)
       .filter(line => names.size === 2 && names.has(characterRosterIdentityKey(line.subjectName)) && names.has(characterRosterIdentityKey(line.targetName)))
     if (lines.length === 0 || lines.some(line => relationPolarity(line.value) !== OPPOSITE[planned])) continue
-    const line = [...lines].sort(newestFirst).find(candidate => relationBasis(candidate))
+    const line = [...lines].sort(newestFirst).find(candidate => continuityBasis(candidate))
     if (!line) continue
-    const basis = relationBasis(line)!
+    const basis = continuityBasis(line)!
     const stableFactKey = `relation:${line.eventId}`
     if (findings.has(stableFactKey)) continue
     findings.set(stableFactKey, {

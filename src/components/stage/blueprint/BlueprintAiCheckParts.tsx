@@ -8,11 +8,12 @@ import { PreflightExemptButtons } from '../write/PreflightFindingParts'
 import type { BlueprintAiCheck } from './use-blueprint-ai-check'
 
 function basisLine(node: ContinuityCheckNode, text: (zh: string, en: string) => string): string {
-  const place = node.sourceChapter > 0 ? text(`第 ${node.sourceChapter} 章`, `Chapter ${node.sourceChapter}`) : text('升级前的设定', 'Pre-upgrade notes')
-  if (node.aspect === 'relation') return text(`${place} · ${node.subjectName}和${node.targetName}：${node.value}`, `${place} · ${node.subjectName} and ${node.targetName}: ${node.value}`)
+  const { zhCN, enUS } = node.since
+  const since = enUS.charAt(0).toUpperCase() + enUS.slice(1)
+  if (node.aspect === 'relation') return text(`${zhCN}，${node.subjectName}和${node.targetName}是「${node.value}」`, `${since}, ${node.subjectName}’s relation to ${node.targetName} is “${node.value}”`)
   const [, zh, en] = CHARACTER_STATE_FIELDS.find(([field]) => field === node.aspect)!
-  const label = text(zh, en).replace(/\s*[（(].*$/u, '')
-  return text(`${place} · ${node.subjectName}的${label}：${node.value}`, `${place} · ${node.subjectName}, ${label}: ${node.value}`)
+  const label = (value: string) => value.replace(/\s*[（(].*$/u, '')
+  return text(`${zhCN}，${node.subjectName}的${label(zh)}是「${node.value}」`, `${since}, ${node.subjectName}’s ${label(en).toLowerCase()} is “${node.value}”`)
 }
 
 /** 选中章的 AI 结论，放在规则提示下面，单独成段。 */
@@ -67,7 +68,7 @@ export function BlueprintAiSummary({ ai, onSelectChapter }: { ai: BlueprintAiChe
       tone="warn"
       title={text(`AI 检查到第 ${through} 章，这些章和时间线矛盾。`, `AI check reached chapter ${through}. These chapters conflict with the timeline.`)}
       actions={chapters.map(chapter => (
-        <Button key={chapter} variant="text" size="sm" onClick={() => onSelectChapter(chapter)}>{text(`第 ${chapter} 章`, `Chapter ${chapter}`)}</Button>
+        <Button key={chapter} variant="secondary" size="sm" onClick={() => onSelectChapter(chapter)}>{text(`第 ${chapter} 章`, `Chapter ${chapter}`)}</Button>
       ))}
     />
   )

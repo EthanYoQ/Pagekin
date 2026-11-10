@@ -4,12 +4,12 @@ import {
   type ContinuityCheckChapter, type ContinuityCheckNode,
 } from '../blueprint-continuity-check'
 import type { ContinuityNode } from '../character-continuity'
-import { exemptedFactKeys } from '../consistency-preflight'
+import { exemptedFactKeys, findBlueprintContinuityRisks } from '../consistency-preflight'
 
 const chapter = (chapterNumber: number, keyEvents = '并肩作战'): ContinuityCheckChapter => ({
   chapterNumber, title: `第${chapterNumber}章`, role: '', purpose: '', keyEvents, characters: [], suspenseHook: '', userGuidance: '', notes: '',
 })
-const node = (eventId: string, fromChapter: number): ContinuityCheckNode => ({ eventId, sourceChapter: fromChapter - 1, fromChapter, subjectName: '林岚', aspect: 'physicalState', value: '重伤' })
+const node = (eventId: string, fromChapter: number): ContinuityCheckNode => ({ eventId, since: { zhCN: `第 ${fromChapter - 1} 章定稿后`, enUS: '' }, fromChapter, subjectName: '林岚', aspect: 'physicalState', value: '重伤' })
 const line = (over: Record<string, unknown>) => JSON.stringify({ findings: [{ chapterNumber: 3, eventIds: ['e1'], issue: '矛盾', suggestion: '改', ...over }] })
 const parse = (text: string) => parseBlueprintContinuityCheck(text, [chapter(2), chapter(3)], [node('真实节点', 2), node('后来的节点', 9)])
 
@@ -55,10 +55,33 @@ describe('selectContinuityCheckScope', () => {
   })
 })
 
-it('任务把节点换成短 id，不带真实 eventId', () => {
+describe('依据的来历和规则卡同一种说法', () => {
+  const SOURCE = { draftId: 8, finalizationId: 'f8', chapterNumber: 8, contentHash: 'h8' }
+  const relation = (provenance: ContinuityNode['provenance']): ContinuityNode => ({
+    eventId: 'relation:line', subjectId: 'a', subjectName: '林晚', targetId: 'b', targetName: '沈舟', relationshipId: 'line', aspect: 'relation',
+    value: '决裂', effectiveChapter: 8, provenance, draftId: null, seq: 1, quote: { start: 0, end: 7, text: '两人当场决裂。' },
+  })
+  const plan = { chapterNumber: 12, title: '同行', role: '发展', purpose: '两人赶路', keyEvents: '山路遇雨', characters: ['林晚', '沈舟'],
+    suspenseHook: '', userGuidance: '', notes: '', relationshipHints: [{ from: '林晚', to: '沈舟', relation: '亲密同伴' }] }
+  it.each([
+    ['角色页或名册设的', { kind: 'author', operationId: 'op' }, '第 8 章起', 'from chapter 8'],
+    ['定稿派生的', { kind: 'derived', source: SOURCE }, '第 8 章定稿后', 'since chapter 8 was finalized'],
+    ['升级前的', { kind: 'legacy' }, '升级前的设定里', 'in your notes from before the upgrade'],
+  ] as const)('%s', (_name, provenance, zhCN, enUS) => {
+    const relationNode = relation(provenance)
+    const [aiNode] = selectContinuityCheckScope([{ ...plan, notesUpdatedAt: '' }], [relationNode], 100_000).nodes
+    const [rule] = findBlueprintContinuityRisks([], plan, [], [relationNode])
+    expect(aiNode!.since).toEqual({ zhCN, enUS })
+    expect(rule!.issue.zhCN).toContain(`但${zhCN}两人是`)
+    expect(rule!.issue.enUS).toContain(`but ${enUS} they are`)
+  })
+})
+
+it('任务把节点换成短 id，不带真实 eventId，也不带来历说法', () => {
   const task = buildBlueprintContinuityCheckTask({ writingLanguage: 'zh-CN', chapters: [chapter(2)], nodes: [node('derived:很长的UUID', 2)] })
   expect(task.messages[1]!.content).toContain('"id":"e1"')
   expect(task.messages[1]!.content).not.toContain('很长的UUID')
+  expect(JSON.parse(task.messages[1]!.content).timeline).toEqual([{ id: 'e1', character: '林岚', aspect: 'physicalState', value: '重伤', appliesFrom: 2 }])
 })
 
 it('蓝图改过就不算已检查，空保存和时间戳不算改', () => {

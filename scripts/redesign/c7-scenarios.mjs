@@ -49,7 +49,7 @@ export const C7_SCENARIOS = {
     const root = stage.root(page)
     const summary = root.getByText(`AI 检查到第 ${LAST_CHAPTER} 章，这些章和时间线矛盾。`, { exact: true })
     await summary.waitFor({ state: 'visible' })
-    const basis = root.getByText(`依据：第 3 章 · 林岚和守塔人：${AUTHOR_RELATION}`, { exact: true })
+    const basis = root.getByText(`依据：第 3 章起，林岚和守塔人是「${AUTHOR_RELATION}」`, { exact: true })
     await root.getByText(ISSUE(5), { exact: true }).waitFor({ state: 'visible' })
     await basis.waitFor({ state: 'visible' })
     assert.equal(checkRequests(fake), 1, '只发一次请求')

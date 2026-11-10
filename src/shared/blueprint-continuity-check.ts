@@ -1,3 +1,4 @@
+import { continuityBasis } from './blueprint-relation-conflict'
 import { firstVisibleChapter, latestNodesBefore, type ContinuityNode } from './character-continuity'
 import { estimateMaterialTokens } from './generation-owner-contract'
 import type { DatabaseChannels } from './ipc-channels'
@@ -21,8 +22,8 @@ export interface ContinuityCheckChapter {
 
 export interface ContinuityCheckNode {
   eventId: string
-  /** 给作者看的章号；0 表示升级前的设定，没有可信章号。 */
-  sourceChapter: number
+  /** 节点的来历，和规则卡同一种说法。只给作者看，不进模型请求。 */
+  since: { zhCN: string; enUS: string }
   /** 从这一章起节点才算数。 */
   fromChapter: number
   subjectName: string
@@ -63,18 +64,15 @@ export function isChapterAsChecked(checked: ContinuityCheckChapter, current: Blu
   return current !== undefined && JSON.stringify(continuityCheckChapter(current)) === JSON.stringify(checked)
 }
 
-/** 派生节点没有定稿原文就没有依据（ADR-0017）。 */
-const hasBasis = (node: ContinuityNode) => node.provenance.kind !== 'derived' || node.quote !== null
-
 function nodesInForce(nodes: readonly ContinuityNode[], chapter: number): ContinuityNode[] {
   const { states, relations } = latestNodesBefore(nodes, chapter)
-  return [...states, ...relations.flatMap(pair => pair.lines)].filter(hasBasis)
+  return [...states, ...relations.flatMap(pair => pair.lines)].filter(node => continuityBasis(node) !== null)
 }
 
 function continuityCheckNode(node: ContinuityNode): ContinuityCheckNode {
   return {
     eventId: node.eventId,
-    sourceChapter: node.provenance.kind === 'legacy' ? 0 : node.effectiveChapter,
+    since: continuityBasis(node)!.since,
     fromChapter: firstVisibleChapter(node),
     subjectName: node.subjectName,
     aspect: node.aspect,
