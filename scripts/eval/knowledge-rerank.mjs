@@ -12,7 +12,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { build } from "esbuild"
-import { aggregateReceipts, finalPromptCoverage, promptBudgets, rerankHealth, timedRank } from "./knowledge-rerank-prompt.mjs"
+import { aggregateReceipts, finalPromptCoverage, identityRank, promptBudgets, rerankHealth, timedRank } from "./knowledge-rerank-prompt.mjs"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
 const FIXTURE_DIR = path.join(ROOT, "test", "fixtures", "knowledge-rerank")
@@ -27,7 +27,7 @@ const GROUPS = { fts: { retrieval: "fts" }, vector: { retrieval: "vector" } }
 
 // 块 id 每次导入都随机，跨运行比较会混入召回差异，所以重排只和同一次运行、同一组候选的原序比。
 const RERANKERS = {
-  identity: { model: null, rank: async (_query, candidates) => timedRank(async () => ({ items: candidates.slice(0, FINAL), ranking: { method: "rerank", candidateCount: candidates.length } })) },
+  identity: { model: null, rank: async (_query, candidates) => identityRank(candidates, FINAL) },
   "bge-reranker-v2-m3": {
     model: "BAAI/bge-reranker-v2-m3",
     // 评估显式打开自动复用，借检索档案的同一端点和 Key；生产默认关闭。

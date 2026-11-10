@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rankPassages } from '../../electron/rerank'
 import { DEFAULT_MATERIAL_ADMISSION, materialBudgetFrom } from '../../src/shared/generation-owner-contract'
 import { assembleChapterMaterials } from '../../src/services/workflows/chapter-materials'
-import { finalPromptCoverage, promptBudgets, rerankHealth, timedRank } from '../eval/knowledge-rerank-prompt.mjs'
+import { finalPromptCoverage, identityRank, promptBudgets, rerankHealth, timedRank } from '../eval/knowledge-rerank-prompt.mjs'
 
 const script = path.resolve(__dirname, '../eval/knowledge-rerank.mjs')
 const budgets = promptBudgets({ DEFAULT_MATERIAL_ADMISSION, materialBudgetFrom })
@@ -84,6 +84,12 @@ describe('重排健康度', () => {
   it('P50、P95 取排序后的最近秩，样本数一并给出', () => {
     const health = rerankHealth(Array.from({ length: 20 }, (_, index) => ok(index + 1)))
     expect(health).toMatchObject({ requests: 20, failures: 0, failureRate: 0, latencyMs: { samples: 20, p50: 10, p95: 19 } })
+  })
+
+  it('原序对照不发请求，不进健康度统计', async () => {
+    const { items, call } = await identityRank([passage('a'), passage('b')], 1)
+    expect(items.map(item => item.paragraphSha256)).toEqual(['a'])
+    expect(rerankHealth([call])).toMatchObject({ requests: 0, failures: 0, latencyMs: { samples: 0 } })
   })
 
   it('没有发请求的回退（无候选）不算失败，也不进延迟样本', () => {

@@ -51,6 +51,9 @@ export async function timedRank(rank) {
   return { items, call: { method: ranking.method, ...(ranking.method === "original" ? { reason: ranking.reason } : {}), latencyMs: performance.now() - started } }
 }
 
+export const identityRank = (candidates, limit) =>
+  timedRank(async () => ({ items: candidates.slice(0, limit), ranking: { method: "original", candidateCount: candidates.length, reason: "identity-control" } }))
+
 function percentile(sorted, fraction) {
   return sorted.length ? sorted[Math.ceil(fraction * sorted.length) - 1] : null
 }
