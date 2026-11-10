@@ -14,6 +14,8 @@ import { isReasoningMapping, reasoningAdapterFitsProtocol } from '../../src/shar
 import { isLocalModelEndpoint } from '../../src/shared/provider-presets'
 import { sameModelIdentity, withLearnedContextWindow } from '../../src/shared/model-profile-draft'
 import { assignStageModel, availableGenerationModelId, isModelStage, parseStageModelIds, removeModelFromStages } from '../../src/shared/model-stage-routing'
+import type { RerankFailure } from '../../src/shared/knowledge-ranking'
+import { rankPassages } from '../rerank'
 import { LLMFactory } from '../llm/llm-factory'
 import { getMainLocale, mainT, mainText } from '../i18n'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
@@ -39,6 +41,22 @@ const CLOUD_CONNECTION_TEST_TIMEOUT_MS = 30_000
 /** 本机模型冷启动要先把权重载入显存，常常超过 30 秒；云端卡住多是网络或代理问题，早点报出来。 */
 function connectionTestTimeoutMs(model: ModelProfile): number {
   return isLocalModelEndpoint(model) ? LOCAL_CONNECTION_TEST_TIMEOUT_MS : CLOUD_CONNECTION_TEST_TIMEOUT_MS
+}
+
+const RERANK_TEST_FAILURES: Record<RerankFailure, readonly [string, string]> = {
+  timeout: ['重排服务响应超时，请稍后再试。', 'The reranking service timed out. Try again later.'],
+  'request-failed': ['连不上重排服务，请检查 base_url 和网络。', 'Could not reach the reranking service. Check the base_url and your network.'],
+  'http-error': ['重排服务拒绝了请求，请检查 API Key 和模型名称。', 'The reranking service refused the request. Check the API key and model name.'],
+  'invalid-response': ['服务的返回不是重排结果，请确认这个模型支持重排。', 'The service did not return reranking results. Check that this model supports reranking.'],
+}
+
+async function testRerankConnection(model: ModelProfile) {
+  const { baseUrl, apiKey, modelName } = model
+  const { ranking } = await rankPassages('hello', [{ text: 'hello' }, { text: 'world' }],
+    { kind: 'explicit', profileId: model.id, endpoint: { baseUrl, apiKey, modelName } }, 2)
+  return ranking.method === 'rerank'
+    ? { success: true, error: undefined }
+    : { success: false, error: mainText(app.getLocale(), ...RERANK_TEST_FAILURES[ranking.reason as RerankFailure]) }
 }
 
 const CLOSED_EXECUTION_LEASE_TOMBSTONE_TTL_MS = 5 * 60_000
@@ -484,6 +502,22 @@ export function registerLLMController() {
     return config.defaultEmbeddingModelId ?? null
   })
 
+  ipcMain.handle('llm:set-default-rerank-model', async (_event, modelId: string | null) => {
+    try {
+      const config = loadGlobalConfigForUpdate()
+      config.defaultRerankModelId = modelId
+      writeJsonFile(GLOBAL_CONFIG_PATH, config)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('llm:get-default-rerank-model', async () => {
+    const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
+    return config.defaultRerankModelId ?? null
+  })
+
   ipcMain.handle('llm:test-connection', async (
     _event,
     model: ModelProfile,
@@ -496,6 +530,8 @@ export function registerLLMController() {
     const timedOut = () => ({ success: false, error: mainT(app.getLocale(), 'error.connectionTestTimeout', { seconds: timeoutMs / 1000 }) })
     try {
       applyProxyConfig()
+
+      if (model.purposes?.includes('rerank')) return await testRerankConnection(model)
 
       const messages = [{ role: 'user', content: 'Say "hello" and nothing else.' }]
       const provider = LLMFactory.getProvider(model)

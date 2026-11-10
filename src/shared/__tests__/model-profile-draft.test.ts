@@ -44,6 +44,20 @@ describe('model profile drafts', () => {
     expect(applyModelProfileSelection(edited, { modelName: 'unlisted' }))
       .toMatchObject({ modelName: 'unlisted', maxTokens: 1024, capabilities: undefined, reasoningOverride: 'auto' })
   })
+  it('starts a rerank draft on SiliconFlow with its reranker, no API key and no generation or embedding fields', () => {
+    const draft = createModelProfileDraft({ id: 'new-rerank', purposes: ['rerank'] })
+    expect(draft).toMatchObject({
+      name: 'SiliconFlow BAAI/bge-reranker-v2-m3',
+      provider: 'siliconflow',
+      protocol: 'openai',
+      baseUrl: 'https://api.siliconflow.cn/v1',
+      modelName: 'BAAI/bge-reranker-v2-m3',
+      apiKey: '',
+      purposes: ['rerank'],
+    })
+    expect(draft.capabilities).toBeUndefined()
+    expect(draft.embeddingOptions).toBeUndefined()
+  })
   it('creates a complete SiliconFlow bge-m3 embedding profile without an API key', () => {
     const draft = createModelProfileDraft({
       id: 'new-embedding-profile',

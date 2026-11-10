@@ -719,4 +719,42 @@ describe('kb:search reranking', () => {
     expect(searchKnowledge).toHaveBeenCalledWith('查询', 'C:/projects/A', 'openai', expect.anything(), 0)
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ['http-error', async () => new Response('{}', { status: 500 })],
+    ['request-failed', async () => { throw new TypeError('fetch failed') }],
+    ['timeout', async () => { throw new DOMException('deadline', 'TimeoutError') }],
+    ['invalid-response', async () => new Response(JSON.stringify({ results: [] }))],
+  ] as const)('keeps the original order and reports %s on kb:search results when the rerank request fails', async (reason, respond) => {
+    saved([siliconflowEmbedding, rerankProfile])
+    fetchMock.mockImplementation(respond)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await expect(handler('kb:search')({}, '查询', 3, 'C:/projects/A')).resolves.toEqual(
+      candidates.slice(0, 3).map(item => ({ ...item, rerankFallback: reason })))
+    warn.mockRestore()
+  })
+
+  it('reports nothing on kb:search results when the rerank request succeeds', async () => {
+    saved([siliconflowEmbedding, rerankProfile])
+    const results = await handler('kb:search')({}, '查询', 3, 'C:/projects/A') as Array<Record<string, unknown>>
+    expect(results.every(item => !('rerankFallback' in item))).toBe(true)
+  })
+
+  it('leaves kb:search-writing-context results unchanged when the rerank request fails', async () => {
+    saved([siliconflowEmbedding, rerankProfile])
+    fetchMock.mockImplementation(async () => new Response('{}', { status: 500 }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await expect(handler('kb:search-writing-context')({}, '查询', 3, 'C:/projects/A')).resolves.toEqual(candidates.slice(0, 3))
+    warn.mockRestore()
+  })
+
+  it('sends no rerank request once the default rerank profile is gone', async () => {
+    saved([siliconflowEmbedding, rerankProfile])
+    await handler('kb:search')({}, '查询', 3, 'C:/projects/A')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    fetchMock.mockClear()
+    saved([siliconflowEmbedding])
+    await expect(handler('kb:search')({}, '查询', 3, 'C:/projects/A')).resolves.toEqual(candidates.slice(0, 3))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
