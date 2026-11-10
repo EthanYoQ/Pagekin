@@ -99,6 +99,32 @@ it('重开后取回最近一次读得出结论的运行，读不出的跳过', a
   expect(f.spy).toHaveBeenCalledTimes(2)
 })
 
+it('成功之后连着三次读不出来，重开仍取回那次成功的结论', async () => {
+  let text = JSON.stringify({ findings: [finding()] })
+  const f = fixture(async (_request, options) => { options.onVisible({ kind: 'delta', text }); return { finishReason: 'stop', usage: null } })
+  const first = f.begin()
+  await f.owner.executeGraphGeneration({ handle: first.view.handle })
+  text = '坏结果'
+  for (const nonce of ['二', '三', '四']) {
+    const next = f.owner.beginGraphGeneration({ input: { kind: 'continuity' }, modelId: 'synthetic', uiActionNonce: nonce })
+    await f.owner.executeGraphGeneration({ handle: next.view.handle })
+  }
+  expect(f.spy).toHaveBeenCalledTimes(4)
+  expect(f.reopen().readLatestContinuityCheck()?.view.handle.runId).toBe(first.view.handle.runId)
+})
+
+it('最新一次运行记录读取时抛错：跳过它，取回更早那次的结论', async () => {
+  const f = fixture(reply(JSON.stringify({ findings: [finding()] })))
+  const first = f.begin()
+  await f.owner.executeGraphGeneration({ handle: first.view.handle })
+  const broken = f.owner.beginGraphGeneration({ input: { kind: 'continuity' }, modelId: 'synthetic', uiActionNonce: '损坏' })
+  await f.owner.executeGraphGeneration({ handle: broken.view.handle })
+  const reopened = f.reopen()
+  f.db.prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$.sourceManifest.graphGenerationContextHash','0') WHERE run_id=?`).run(broken.view.handle.runId)
+  expect(() => reopened.readGraphGeneration({ handle: broken.view.handle })).toThrow()
+  expect(reopened.readLatestContinuityCheck()?.view.handle.runId).toBe(first.view.handle.runId)
+})
+
 it('运行中蓝图被改：sourceStatus 变 conflict', async () => {
   const f = fixture(reply(JSON.stringify({ findings: [finding()] })))
   const { handle } = f.begin().view

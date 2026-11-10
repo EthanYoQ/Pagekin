@@ -6,7 +6,8 @@ import {
 import { exemptionChapter, saveFindingExemption, type ExemptionScope } from '../../../services/consistency-preflight'
 import { ipc } from '../../../services/ipc-client'
 import type { ChapterBlueprint } from '../../../services/workflows/directory-workflow'
-import { continuityFindingKey, isChapterAsChecked, type ContinuityCheckNode } from '../../../shared/blueprint-continuity-check'
+import { continuityFindingKey, isChapterAsChecked, selectContinuityCheckScope, type ContinuityCheckNode } from '../../../shared/blueprint-continuity-check'
+import type { ContinuityNode } from '../../../shared/character-continuity'
 import { exemptedFactKeys, type ConsistencyExemption } from '../../../shared/consistency-preflight'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { routeStageModel } from '../../../shared/model-stage-routing'
@@ -37,6 +38,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const [report, setReport] = useState<ContinuityReport | null>(null)
   const [exemptions, setExemptions] = useState<ConsistencyExemption[]>([])
   const [hasTimeline, setHasTimeline] = useState(true)
+  const [timeline, setTimeline] = useState<ContinuityNode[] | null>(null)
   const [exempted, setExempted] = useState<Exempted | null>(null)
   const [busy, setBusy] = useState(false)
   const checked = useRef(false)
@@ -57,7 +59,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     let active = true
     const applies = () => active && isProjectSessionCurrent(session)
     void ipc.invokeWithProjectSession(session, 'db:character-continuity-preflight-nodes', session.projectPath)
-      .then(nodes => { if (applies()) setHasTimeline(nodes.length > 0) }).catch(() => {})
+      .then(nodes => { if (applies()) { setHasTimeline(nodes.length > 0); setTimeline(nodes) } }).catch(() => {})
     void ipc.invokeWithProjectSession(session, 'db:consistency-exemption-list', session.projectPath)
       .then(list => { if (applies()) setExemptions(list) }).catch(() => {})
     void readLatestContinuityReport(session)
@@ -97,19 +99,27 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     }
   }
 
+  const unchanged = useMemo(() => {
+    const current = new Map(blueprints.map(blueprint => [blueprint.chapterNumber, blueprint]))
+    return (chapter: number) => report !== null && isChapterAsChecked(report.chapters.get(chapter)!, current.get(chapter))
+  }, [report, blueprints])
+
   const findings = useMemo<AiFinding[]>(() => {
     if (!report) return []
-    const current = new Map(blueprints.map(blueprint => [blueprint.chapterNumber, blueprint]))
-    const unchanged = (chapter: number) => isChapterAsChecked(report.chapters.get(chapter)!, current.get(chapter))
-    // 全部章都没变却对不上，是时间线或模型变了，这份结论不能按章保留。
-    if (report.sourceStatus === 'conflict' && [...report.chapters.keys()].every(unchanged)) return []
+    if (report.sourceStatus === 'conflict') {
+      // 来源对不上时，只有确认时间线没变、确实是某几章蓝图改了，没改的章才保留结论。
+      const checkedChapters = [...report.chapters.values()].map(chapter => ({ ...chapter, notesUpdatedAt: '' }))
+      const sameTimeline = timeline !== null
+        && JSON.stringify(selectContinuityCheckScope(checkedChapters, timeline, Infinity).nodes) === JSON.stringify([...report.nodes.values()])
+      if (!sameTimeline || [...report.chapters.keys()].every(unchanged)) return []
+    }
     return report.result.findings.flatMap(finding => {
       const stableFactKey = continuityFindingKey(finding.eventIds)
       if (!unchanged(finding.chapterNumber) || exemptedFactKeys(exemptions, finding.chapterNumber).has(stableFactKey)) return []
       return [{ stableFactKey, chapterNumber: finding.chapterNumber, issue: finding.issue, suggestion: finding.suggestion,
         basis: finding.eventIds.map(id => report.nodes.get(id)!) }]
     })
-  }, [report, blueprints, exemptions])
+  }, [report, unchanged, exemptions, timeline])
 
   const exempt = async (finding: AiFinding, scope: ExemptionScope) => {
     const session = currentSession()
@@ -146,7 +156,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     status, hasTimeline, busy, findings, chapterFindings, exempt, undo,
     checkedThroughChapter: report?.result.checkedThroughChapter ?? null,
     /** 按章隐藏掉的结论不算「没发现」，只有模型确实没报（或都被豁免）才说没问题。 */
-    clean: status.kind === 'done' && report !== null && report.result.findings.every(finding =>
+    clean: status.kind === 'done' && report !== null && [...report.chapters.keys()].every(unchanged) && report.result.findings.every(finding =>
       exemptedFactKeys(exemptions, finding.chapterNumber).has(continuityFindingKey(finding.eventIds))),
     exempted: (chapterNumber: number | undefined) => exempted && exempted.finding.chapterNumber === chapterNumber && isProjectSessionCurrent(exempted.session) ? exempted : null,
     clearExempted: useCallback(() => setExempted(null), []),

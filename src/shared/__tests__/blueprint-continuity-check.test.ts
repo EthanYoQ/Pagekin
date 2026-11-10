@@ -53,6 +53,18 @@ describe('selectContinuityCheckScope', () => {
     const scope = selectContinuityCheckScope([blueprint(4, '短'), blueprint(2, '长'.repeat(900)), blueprint(3, '短')], [], 2_000)
     expect(scope.chapters.map(item => item.chapterNumber)).toEqual([2])
   })
+  it.each([
+    ['后来清空', author('清空', '', 3)],
+    ['后来换了值', author('痊愈', '痊愈', 3)],
+  ])('节点在后面的章%s：后面那章引用它的结论丢弃，前面的章照常', (_name, later) => {
+    const scope = selectContinuityCheckScope([blueprint(2), blueprint(3)], [author('重伤', '重伤', 1), later], 100_000)
+    const injuryId = `e${scope.nodes.findIndex(item => item.eventId === '重伤') + 1}`
+    const cite = (chapterNumber: number) => JSON.stringify({ findings: [{ chapterNumber, eventIds: [injuryId], issue: '矛盾', suggestion: '改' }] })
+    expect(parseBlueprintContinuityCheck(cite(2), scope.chapters, scope.nodes)).toMatchObject({ findings: [{ chapterNumber: 2 }], droppedFindings: 0 })
+    expect(parseBlueprintContinuityCheck(cite(3), scope.chapters, scope.nodes)).toMatchObject({ findings: [], droppedFindings: 1 })
+    const task = buildBlueprintContinuityCheckTask({ writingLanguage: 'zh-CN', ...scope })
+    expect(JSON.parse(task.messages[1]!.content).timeline.every((item: object) => Object.keys(item).join() === 'id,character,aspect,value,appliesFrom')).toBe(true)
+  })
 })
 
 describe('依据的来历和规则卡同一种说法', () => {

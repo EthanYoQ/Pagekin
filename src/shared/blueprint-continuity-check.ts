@@ -25,6 +25,8 @@ export interface ContinuityCheckNode {
   /** 节点的来历，和规则卡同一种说法。只给作者看，不进模型请求。 */
   since: { zhCN: string; enUS: string }
   fromChapter: number
+  /** 从这一章起被后来的节点换掉或清空。模型看不到，只用来丢掉引用过期节点的结论。 */
+  untilChapter?: number
   subjectName: string
   aspect: ContinuityNode['aspect']
   targetName?: string
@@ -87,17 +89,26 @@ const PROMPT_OVERHEAD_TOKENS = 1024
 export function selectContinuityCheckScope(blueprints: readonly BlueprintData[], nodes: readonly ContinuityNode[], inputTokens: number) {
   const chapters: ContinuityCheckChapter[] = []
   const kept = new Map<string, ContinuityCheckNode>()
+  const inForce: { chapterNumber: number; ids: Set<string> }[] = []
   let bytes = 0
   for (const blueprint of [...blueprints].sort((left, right) => left.chapterNumber - right.chapterNumber)) {
     const chapter = continuityCheckChapter(blueprint)
-    const fresh = nodesInForce(nodes, chapter.chapterNumber).filter(node => !kept.has(node.eventId)).map(continuityCheckNode)
+    const current = nodesInForce(nodes, chapter.chapterNumber)
+    const fresh = current.filter(node => !kept.has(node.eventId)).map(continuityCheckNode)
     const added = utf8Bytes(chapter) + fresh.reduce((sum, node) => sum + utf8Bytes(node), 0)
     if (PROMPT_OVERHEAD_TOKENS + estimateMaterialTokens(bytes + added) > inputTokens) break
     bytes += added
     chapters.push(chapter)
+    inForce.push({ chapterNumber: chapter.chapterNumber, ids: new Set(current.map(node => node.eventId)) })
     for (const node of fresh) kept.set(node.eventId, node)
   }
-  return { chapters, nodes: [...kept.values()] }
+  return {
+    chapters,
+    nodes: [...kept.values()].map(node => {
+      const until = inForce.find(entry => entry.chapterNumber >= node.fromChapter && !entry.ids.has(node.eventId))?.chapterNumber
+      return until === undefined ? node : { ...node, untilChapter: until }
+    }),
+  }
 }
 
 /** 模型只见 e1、e2：真实 eventId 带 UUID，又长又容易抄错。 */
@@ -192,7 +203,7 @@ export function parseBlueprintContinuityCheck(
     const issue = boundedText(value?.issue)
     const suggestion = boundedText(value?.suggestion)
     if (typeof chapterNumber !== 'number' || !checked.has(chapterNumber) || cited.length === 0 || !issue || !suggestion
-      || cited.some(node => !node || node.fromChapter > chapterNumber)) {
+      || cited.some(node => !node || node.fromChapter > chapterNumber || node.untilChapter !== undefined && chapterNumber >= node.untilChapter)) {
       droppedFindings += 1
       continue
     }

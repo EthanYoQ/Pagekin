@@ -1357,18 +1357,20 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
   const finding = (chapterNumber: number, issue: string) => ({ chapterNumber, eventIds: ['relation:add:line'], issue, suggestion: '改成对峙。' })
   const recovery = (over: Record<string, unknown>) => ({
     view: { handle: HANDLE, status: 'running', budgetDiagnostics: [], artifacts: [], candidates: [] }, modelId: 'grok', attemptCount: 0, effects: [], sourceStatus: 'current',
-    context: { projectId: 'stage-blueprint', kind: 'continuity', input: { kind: 'continuity' }, chapters: stored.slice(1).map(continuityCheckChapter), nodes: [NODE] }, ...over,
+    context: { projectId: 'stage-blueprint', kind: 'continuity', input: { kind: 'continuity' }, chapters: frozen, nodes: [NODE] }, ...over,
   })
   const checked = (findings: ReturnType<typeof finding>[]) => ({ attemptCount: 1, artifact: { artifactId: 'a', revision: 1, textHash: 'h' },
     result: { kind: 'continuity', checkedThroughChapter: 3, droppedFindings: 0, findings } })
   let read: Record<string, unknown>
   let latest: Record<string, unknown> | null
-  let nodes: unknown[]
+  let nodes: ContinuityNode[]
+  let frozen: ReturnType<typeof continuityCheckChapter>[]
 
   beforeEach(() => {
     read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。'), finding(3, '第 3 章同样写成同伴。')])
     latest = null
-    nodes = [NODE]
+    nodes = [BROKEN_NODE]
+    frozen = stored.slice(1).map(continuityCheckChapter)
     useLLMStore.setState({ models: [{ id: 'grok', name: 'grok', provider: 'openai', protocol: 'openai', modelName: 'grok', apiKey: 'k', baseUrl: 'https://x.test/v1', temperature: 0.7, maxTokens: 2048, purposes: ['generation'] }] as never, defaultModelId: 'grok', loaded: true })
     const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
@@ -1490,6 +1492,34 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
     await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).not.toBeInTheDocument()
     expect(calls('graph-generation:execute')).toHaveLength(0)
+  })
+
+  it('没发现之后改了检查过的章：不再说没问题', async () => {
+    read = checked([])
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('没发现和时间线矛盾的地方。检查到第 3 章。')).toBeVisible()
+    stored = stored.map(item => item.chapterNumber === 2 ? { ...item, keyEvents: '改过的事件' } : item)
+    await refreshBlueprints()
+    await expect.element(page.getByText('没发现和时间线矛盾的地方。检查到第 3 章。')).not.toBeInTheDocument()
+  })
+
+  it('重开时时间线变了、又有一章蓝图改过：没改的章也不显示旧结论', async () => {
+    latest = { ...read, sourceStatus: 'conflict' }
+    nodes = [{ ...BROKEN_NODE, value: '和解' }]
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    await renderPage(2)
+    await vi.waitFor(() => expect(calls('graph-generation:latest-continuity')).toHaveLength(1))
+    await vi.waitFor(() => expect(calls('db:character-continuity-preflight-nodes').length).toBeGreaterThan(0))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+  })
+
+  it('重开时只有一章蓝图改过、时间线没变：没改的章照常显示', async () => {
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
 
   it('重开时来源对不上且各章都没变（时间线或模型变了）：整体不显示', async () => {

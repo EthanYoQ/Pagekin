@@ -1306,12 +1306,13 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     },
     readLatestContinuityCheck: (): GraphGenerationRecovery | null => {
       assertCurrent()
-      // 打开页面时走这里：只扫 root 的小 JSON，不解析各运行的 binding（#536）。
+      // 打开页面时走这里：先只取 run_id，从新到旧找第一份读得出的结论，不一次解析全部 binding（#536）。
       const rows = deps.database.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
-        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=? ORDER BY r.created_at_ms DESC, r.rowid DESC LIMIT 3`)
+        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=? ORDER BY r.created_at_ms DESC, r.rowid DESC`)
         .pluck().all(deps.projectId, graphOperations.continuity) as string[]
       for (const runId of rows) {
-        const recovery = graphRecovery(repository.get(runId))
+        let recovery: GraphGenerationRecovery
+        try { recovery = graphRecovery(repository.get(runId)) } catch { continue }
         if (recovery.result) return recovery
       }
       return null
