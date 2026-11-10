@@ -4,8 +4,8 @@ import type { GenerationTask } from '../../../src/services/generation/generation
 import type { BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
 import type { GenerationBudgetReceipt } from '../../repositories/generation-run-repository'
 import { createModelExecutionLeaseReceipt } from '../model-execution-lease'
-import { buildMainGenerationPlan, newMainGenerationPolicy } from '../main-generation-plan'
-import { applyModelProfileSelection, createModelProfileDraft, modelCapabilitySource } from '../../../src/shared/model-profile-draft'
+import { buildMainGenerationPlan, newMainGenerationPolicy, resolveMaterialBudget } from '../main-generation-plan'
+import { applyModelProfileSelection, createModelProfileDraft, modelCapabilitySource, withLearnedContextWindow } from '../../../src/shared/model-profile-draft'
 import { draftShortOutlineTask } from '../../../src/shared/draft-short-outline'
 import { DRAFT_CONDENSE_PURPOSE } from '../../../src/shared/draft-visible-text'
 import { assertReservation, type PhysicalAttempt } from '../../../src/shared/generation-contract'
@@ -81,7 +81,7 @@ describe('讨论区 #77：发给服务商的输出上限只来自模型或作者
 
   const custom = (): ModelProfile => ({ ...createModelProfileDraft({ id: 'custom', purposes: ['generation'] }), apiKey: 'sk-synthetic',
     provider: 'custom', protocol: 'openai', baseUrl: 'https://compatible.example/v1', modelName: 'hand-entered', maxTokens: 12_000,
-    capabilities: { contextWindowTokens: 16_384, maxOutputTokens: 12_000, reasoning: false, structuredOutput: false, usage: false } })
+    capabilities: { contextWindowTokens: 32_768, maxOutputTokens: 12_000, reasoning: false, structuredOutput: false, usage: false } })
   const unsplit = TASKS.filter(([name]) => name !== '蓝图')
 
   it.each([['作者把最大输出 Tokens 填成 8,000', deepseek(32_768, 8_000), 8_000], ['没有已验证预设的兼容端点，作者填 12,000', custom(), 12_000]] as const)(
@@ -94,6 +94,43 @@ describe('讨论区 #77：发给服务商的输出上限只来自模型或作者
   it.each([[deepseek(32_768, 8_000), '2'], [custom(), '3']] as const)('输出上限放不下 10 条蓝图时按输出上限切分，与输入长短无关', (profile, selected) => {
     const blueprint = TASKS.find(([name]) => name === '蓝图')![1]
     for (const content of [SMALL, HUGE]) expect(() => plan(profile, blueprint(content))).toThrow(`TASK_BUDGET_SCOPE_SPLIT_REQUIRED:${selected}`)
+  })
+})
+
+describe('输出上限按可信窗口自动收紧（ADR-0028）', () => {
+  const task: GenerationTask = TASKS.find(([name]) => name === '大纲')![1](SMALL)
+  const capabilities = (contextWindowTokens: number | null, maxOutputTokens: number) => ({ contextWindowTokens, maxOutputTokens, reasoning: false, structuredOutput: false, usage: false })
+  const custom = (overrides: Partial<ModelProfile>): ModelProfile => ({ ...createModelProfileDraft({ id: 'custom', purposes: ['generation'] }), apiKey: 'sk-synthetic',
+    provider: 'custom', protocol: 'openai', baseUrl: 'https://compatible.example/v1', modelName: 'future', maxTokens: 65_536,
+    capabilities: capabilities(null, 65_536), ...overrides })
+  const windowed = (source: 'manual' | 'endpoint') => custom({ capabilities: capabilities(32_768, 65_536), capabilitySources: { contextWindowTokens: source } })
+  const receiptOf = (profile: ModelProfile) => createModelExecutionLeaseReceipt(profile, { leaseId: 'l', createdAt: 1, expiresAt: 1000 })
+
+  it.each([['手填', windowed('manual')], ['拉取', windowed('endpoint')], ['学到', withLearnedContextWindow(custom({}), 32_768)]] as const)(
+    '来源是%s：发送的 max_tokens 收紧到窗口以内', (_name, profile) => {
+      expect(plan(profile, task).options.maxTokens).toBe(16_384)
+      expect(resolveMaterialBudget(profile, newMainGenerationPolicy(selection, profile).budget.maxOutputPerRequest)).toMatchObject({ contextWindowTokens: 32_768, reservedOutputTokens: 16_384 })
+    })
+
+  it('来源是默认猜测：发送的 max_tokens 不收紧', () => {
+    expect(plan(custom({}), task).options.maxTokens).toBe(65_536)
+  })
+
+  it('已开始的运行按收据里冻结的值发送，运行途中学到的窗口不重算', () => {
+    const profile = custom({})
+    expect(buildMainGenerationPlan(withLearnedContextWindow(profile, 16_000), receiptOf(profile), task, ledger(profile)).options.maxTokens).toBe(65_536)
+  })
+
+  it('旧版本收据按收据记下的输出上限发送', () => {
+    const profile = custom({})
+    const old = receiptOf(profile)
+    old.capabilityEvidence.maxOutputTokens = 24_000
+    expect(buildMainGenerationPlan(profile, old, task, ledger(profile)).options.maxTokens).toBe(24_000)
+  })
+
+  it('材料额度按学到的窗口，来源写明是学到的', () => {
+    const profile = withLearnedContextWindow(custom({ maxTokens: 8_192, capabilities: capabilities(128_000, 8_192), capabilitySources: { contextWindowTokens: 'endpoint' } }), 32_768)
+    expect(resolveMaterialBudget(profile, 8_192)).toEqual({ inputTokens: 32_768 - 8_192 - 512, contextWindowTokens: 32_768, contextWindowSource: 'learned', reservedOutputTokens: 8_192, safetyMarginTokens: 512 })
   })
 })
 

@@ -12,6 +12,8 @@ import { createMainGenerationOwner, ProviderContextLengthError, safeGenerationMo
 import { batchRootBudget, buildMainGenerationPlan, MAIN_GENERATION_POLICY, newMainGenerationPolicy, readMainGenerationPolicy, resolveMaterialBudget } from '../main-generation-plan'
 import { createModelExecutionLeaseReceipt, ModelExecutionLeaseRegistry } from '../model-execution-lease'
 import * as providerPresets from '../../../src/shared/provider-presets'
+import * as modelProfileDraft from '../../../src/shared/model-profile-draft'
+import { resolveContextWindow, withLearnedContextWindow } from '../../../src/shared/model-profile-draft'
 import { buildGenerationSourceBinding, planningBlueprintSourceHash, rebuildGenerationSourceBinding } from '../generation-source-binding'
 import { getBuiltinPromptTemplate } from '../../../src/services/builtin-prompt-templates'
 import { readBuiltinWritingSkill } from '../../../src/shared/builtin-writing-skills'
@@ -80,6 +82,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch'], silico
     return createMainGenerationOwner({ database: capturedDb, projectId: 'project', epoch: capturedEpoch,
       assertCurrent: () => { if (!current || capturedEpoch !== epoch || capturedDb !== db) throw new Error('GENERATION_EPOCH_STALE') },
       leases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => modelSource.load(), dispatch,
+      rememberContextWindow: (_snapshot, tokens) => { Object.assign(model, withLearnedContextWindow(model, tokens)) },
       onReasoning,
       onSnapshot,
       buildBinding: (selection, modelReceipt, policy) => buildGenerationSourceBinding(sourceDeps, { ...selection, projectId: 'project', epoch: capturedEpoch,
@@ -4131,6 +4134,78 @@ describe('超长报错里学到真实窗口', () => {
     const rejected = await f.owner.execute({ handle: run.handle, invocationNonce: 'outline', task: outlineCall })
     expect(rejected.outcome.receipt.failureCode).toBe('GENERATION_CONTEXT_LENGTH_EXCEEDED')
     expect(rejected.outcome.receipt.retryWithLearnedWindow).toBeUndefined()
+  })
+
+  describe('学到的窗口下一次直接用（ADR-0028）', () => {
+    const guessed = (f: ReturnType<typeof fixture>) => Object.assign(f.model, { provider: 'custom', baseUrl: 'https://compatible.example/v1', modelName: 'future',
+      maxTokens: 65_536, capabilities: { contextWindowTokens: null, maxOutputTokens: 65_536, reasoning: false, structuredOutput: false, usage: false } })
+    const sentMaxTokens = (fetch: ReturnType<typeof syntheticStream>) => JSON.parse(String(fetch.mock.calls.at(-1)![1].body)).max_tokens
+    const firstRequest = { ...task, purpose: 'chapter-draft' }
+    const learnFromRejection = async (f: ReturnType<typeof fixture>) => {
+      reject(contextLengthSamples.siliconflowMaxTokens)
+      const failed = f.owner.begin({ ...f.begin, uiActionNonce: 'learn' })
+      const rejected = await f.owner.execute({ handle: failed.handle, invocationNonce: 'learn', task: firstRequest })
+      expect(rejected.outcome.receipt.failureCode).toBe('GENERATION_CONTEXT_LENGTH_EXCEEDED')
+    }
+
+    it('服务商报过一次超长：下一次写稿的额度和 max_tokens 都按学到的窗口，请求不再撞超长', async () => {
+      const f = fixture()
+      guessed(f)
+      await learnFromRejection(f)
+      expect(resolveContextWindow(f.model)).toEqual({ tokens: 32_768, source: 'learned' })
+      expect(f.owner.prepareDraftContext({ ...prepareRequest, modelId: f.model.id }, snapshot).materialBudget).toMatchObject({ contextWindowTokens: 32_768, contextWindowSource: 'learned', reservedOutputTokens: 16_384 })
+      const fetch = syntheticStream()
+      const next = f.owner.begin({ ...f.begin, uiActionNonce: 'next' })
+      expect((await f.owner.execute({ handle: next.handle, invocationNonce: 'next', task: firstRequest })).outcome.receipt.failureCode).toBeUndefined()
+      expect(sentMaxTokens(fetch)).toBe(16_384)
+    })
+
+    it('批量写稿的根预算已经冻结：之后的每章仍按学到的窗口发送', async () => {
+      const f = fixture()
+      guessed(f)
+      const authorInputs = [{ id: 'draft:target-units', text: '20' }]
+      const batch = f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 2 }, targetUnits: 20,
+        uiActionNonce: 'batch', modelId: f.model.id, authorInputs, promptKeys: f.begin.promptKeys, skillStages: [] })
+      await learnFromRejection(f)
+      const fetch = syntheticStream()
+      const chapter = f.owner.begin({ ...f.begin, uiActionNonce: 'chapter', authorInputs, batchId: batch.batchId, parentRootActionId: batch.rootHandle.rootActionId })
+      await f.owner.execute({ handle: chapter.handle, invocationNonce: 'chapter', task: firstRequest })
+      expect(sentMaxTokens(fetch)).toBe(16_384)
+    })
+
+    it('学到窗口不影响同模型的在途运行：它按开始时的值继续发送', async () => {
+      const f = fixture()
+      guessed(f)
+      const other = f.owner.begin({ ...f.begin, uiActionNonce: 'other' })
+      await learnFromRejection(f)
+      const fetch = syntheticStream()
+      expect((await f.owner.execute({ handle: other.handle, invocationNonce: 'other', task: firstRequest })).outcome.receipt.failureCode).toBeUndefined()
+      expect(sentMaxTokens(fetch)).toBe(65_536)
+    })
+
+    it('学到窗口后重开作品，在途运行照常恢复', async () => {
+      const f = fixture()
+      guessed(f)
+      const other = f.owner.begin({ ...f.begin, uiActionNonce: 'other' })
+      await learnFromRejection(f)
+      const owner = f.reopen()
+      await expect(owner.resume(other.handle)).resolves.toBeDefined()
+    })
+
+    it('旧版本按旧规则冻结的收据：恢复不报模型变了，按收据值发送', async () => {
+      const f = fixture()
+      guessed(f)
+      Object.assign(f.model, { capabilities: { contextWindowTokens: 40_000, maxOutputTokens: 65_536, reasoning: false, structuredOutput: false, usage: false }, capabilitySources: { contextWindowTokens: 'manual' } })
+      const legacyRule = vi.spyOn(modelProfileDraft, 'resolveContextWindow').mockReturnValue({ tokens: 200_000, source: 'preset' })
+      cleanups.push(() => legacyRule.mockRestore())
+      const old = f.owner.begin({ ...f.begin, uiActionNonce: 'old' })
+      legacyRule.mockRestore()
+      const fetch = syntheticStream()
+      await expect(f.owner.execute({ handle: old.handle, invocationNonce: 'old', task: firstRequest })).resolves.toBeDefined()
+      expect(sentMaxTokens(fetch)).toBe(65_536)
+      const owner = f.reopen()
+      await expect(owner.resume(old.handle)).resolves.toBeDefined()
+    })
   })
 
   it('重试开新运行后，短细纲已成功、正文超长的旧运行不进恢复列表', async () => {
