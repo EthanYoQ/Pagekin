@@ -32,7 +32,6 @@ function reportOf(recovery: GraphGenerationRecovery): ContinuityReport | null {
 const checks = new Map<string, Promise<ContinuityCheckOutcome>>()
 const checkKey = (session: ProjectSessionContext) => `${session.projectId}:${session.leaseId}`
 
-/** 作者切走页面时检查照样跑完；回到蓝图页从这里接回，不再花一次模型费用。渲染进程重载后接不回。 */
 export function runContinuityCheck(session: ProjectSessionContext, modelId: string): Promise<ContinuityCheckOutcome> {
   const outcome = checkContinuity(session, modelId)
   checks.set(checkKey(session), outcome)
@@ -41,8 +40,7 @@ export function runContinuityCheck(session: ProjectSessionContext, modelId: stri
 
 export const pendingContinuityCheck = (session: ProjectSessionContext) => checks.get(checkKey(session))
 
-/** 结果显示给作者之后才放掉；没人看到之前一直留着等页面回来。 */
-export function forgetContinuityCheck(session: ProjectSessionContext, outcome: Promise<ContinuityCheckOutcome>) {
+export function releaseShownContinuityCheck(session: ProjectSessionContext, outcome: Promise<ContinuityCheckOutcome>) {
   if (checks.get(checkKey(session)) === outcome) checks.delete(checkKey(session))
 }
 

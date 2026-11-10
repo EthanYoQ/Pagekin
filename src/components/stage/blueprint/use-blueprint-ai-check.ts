@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { displayedErrorMessage, errorCodeOf } from '../../../i18n/app-errors'
 import {
-  forgetContinuityCheck, pendingContinuityCheck, readLatestContinuityReport, runContinuityCheck,
+  releaseShownContinuityCheck, pendingContinuityCheck, readLatestContinuityReport, runContinuityCheck,
   type ContinuityCheckOutcome, type ContinuityReport,
 } from '../../../services/blueprint-continuity-check'
 import { exemptionChapter, saveFindingExemption, type ExemptionScope } from '../../../services/consistency-preflight'
@@ -82,7 +82,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     checked.current = true
     const shown = () => {
       if (!mounted.current || !isProjectSessionCurrent(session)) return false
-      forgetContinuityCheck(session, pending)
+      releaseShownContinuityCheck(session, pending)
       return true
     }
     return pending.then(async outcome => {

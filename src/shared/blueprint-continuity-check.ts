@@ -37,7 +37,6 @@ export interface ContinuityCheckPoint {
   suggestion: string
 }
 
-/** 同章同一组依据只有一条结论，模型给的几种说法都收进 points。 */
 export interface ContinuityCheckFinding {
   chapterNumber: number
   eventIds: string[]
