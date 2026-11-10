@@ -11,6 +11,7 @@ import {
 import { useAgentStore, type AgentMode } from '../../../stores/agent-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import type { ModelProfile } from '../../../shared/ipc-channels'
+import { isGenerationModel } from '../../../shared/model-stage-routing'
 import { useOutsideClick } from '../../../hooks/useOutsideClick'
 import SlashCommandMenu from './SlashCommandMenu'
 import MentionMenu from './MentionMenu'
@@ -41,8 +42,7 @@ export default function AgentInputBox() {
   const models = useLLMStore(s => s.models)
   const defaultModelId = useLLMStore(s => s.defaultModelId)
 
-  // 过滤出非仅限 embedding 专用的模型
-  const chatModels = models.filter(m => !(m.purposes.length === 1 && m.purposes[0] === 'embedding'))
+  const chatModels = models.filter(isGenerationModel)
 
   const activeConv = getActiveConversation()
   const currentMode = activeConv?.mode ?? 'planning'
