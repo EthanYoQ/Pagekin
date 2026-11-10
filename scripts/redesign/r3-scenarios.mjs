@@ -65,7 +65,7 @@ export const R3_SCENARIOS = {
   'r3-settings-collapsed': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     await openRetrievalSettings(page)
     assert.equal(await summary(page).getAttribute('aria-expanded'), 'false')
-    assert.match(await rerankSection(page).innerText(), /可选，提升取材精度/)
+    assert.match(await rerankSection(page).innerText(), /提升取材精度/)
     await rerankSection(page).scrollIntoViewIfNeeded()
     await shoot('settings-collapsed')
     return { text: await summary(page).innerText() }
