@@ -50,7 +50,7 @@ import {
 } from '../../generation/generation-harness'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
-import { chapterThreadTasks, narrativeThreadSchedule, parseChapterThreadTasks, type ChapterThreadTask, type NarrativeThreadView } from '../../../shared/narrative-thread'
+import { chapterThreadTasks, effectiveTargetEndChapter, isChapterThreadTaskSchedule, narrativeThreadSchedule, parseChapterThreadTasks, type ChapterThreadTask, type NarrativeThreadView } from '../../../shared/narrative-thread'
 import { promptLanguageText } from '../../prompt-language'
 import { countDraftUnits, draftTargetUnitRange } from '../../../shared/draft-units'
 import type { RecoveryChapterSource } from '../../../shared/recovery-candidate'
@@ -296,12 +296,19 @@ function recordedCharacterTimeline(authorInputs: readonly { id: string; text: st
   return text === undefined ? {} : JSON.parse(text) as CharacterTimelinePromptLines
 }
 
+function threadScheduleNote(schedule: ChapterThreadTask['schedule']): { zhCN: string; enUS: string } {
+  if (schedule.kind === 'overdue') {
+    return { zhCN: `已逾期 ${schedule.chaptersOverdue} 章`, enUS: `overdue by ${schedule.chaptersOverdue} ${pluralEn(schedule.chaptersOverdue, 'chapter')}` }
+  }
+  return schedule.kind === 'assigned'
+    ? { zhCN: '作者指定本章推进', enUS: 'assigned by the author to this chapter' }
+    : { zhCN: '本章到期', enUS: 'due this chapter' }
+}
+
 function threadTaskLines(tasks: readonly ChapterThreadTask[]): { zhCN: string[]; enUS: string[] } {
   return {
-    zhCN: tasks.map(task => `- 本章推进或回收：${task.title}（${task.schedule.kind === 'overdue'
-      ? `已逾期 ${task.schedule.chaptersOverdue} 章` : '本章到期'}；作者意图：${task.authorIntent}）`),
-    enUS: tasks.map(task => `- Advance or resolve in this chapter: ${task.title} (${task.schedule.kind === 'overdue'
-      ? `overdue by ${task.schedule.chaptersOverdue} ${pluralEn(task.schedule.chaptersOverdue, 'chapter')}` : 'due this chapter'}; author intent: ${task.authorIntent})`),
+    zhCN: tasks.map(task => `- 本章推进或回收：${task.title}（${threadScheduleNote(task.schedule).zhCN}；作者意图：${task.authorIntent}）`),
+    enUS: tasks.map(task => `- Advance or resolve in this chapter: ${task.title} (${threadScheduleNote(task.schedule).enUS}; author intent: ${task.authorIntent})`),
   }
 }
 
@@ -2169,13 +2176,13 @@ ${params.candidate.text}`,
       if (lines.length === ACTIVE_THREAD_CONTEXT_MAX_ITEMS) break
       const source = thread.events.at(-1)
       const schedule = narrativeThreadSchedule(thread, this.chapterInfo.chapterNumber)
-      const mark = schedule?.kind === 'overdue'
-        ? promptLanguageText(writingLanguage, `已逾期 ${schedule.chaptersOverdue} 章；`, `overdue by ${schedule.chaptersOverdue} ${pluralEn(schedule.chaptersOverdue, 'chapter')}; `)
-        : schedule?.kind === 'due' ? promptLanguageText(writingLanguage, '本章到期；', 'due this chapter; ') : ''
+      const note = schedule && isChapterThreadTaskSchedule(schedule) ? threadScheduleNote(schedule) : null
+      const mark = note ? promptLanguageText(writingLanguage, `${note.zhCN}；`, `${note.enUS}; `) : ''
+      const targetEnd = effectiveTargetEndChapter(thread)
       const line = promptLanguageText(
         writingLanguage,
-        `- ${thread.title} [${thread.status}]（${mark}目标第${thread.targetStartChapter}–${thread.targetEndChapter}章；作者意图：${thread.authorIntent}${source ? `；来源第${source.chapterNumber}章：${source.evidence}` : ''}）`,
-        `- ${thread.title} [${thread.status}] (${mark}target Chapters ${thread.targetStartChapter}–${thread.targetEndChapter}; author intent: ${thread.authorIntent}${source ? `; source Chapter ${source.chapterNumber}: ${source.evidence}` : ''})`,
+        `- ${thread.title} [${thread.status}]（${mark}目标第${thread.targetStartChapter}–${targetEnd}章；作者意图：${thread.authorIntent}${source ? `；来源第${source.chapterNumber}章：${source.evidence}` : ''}）`,
+        `- ${thread.title} [${thread.status}] (${mark}target Chapters ${thread.targetStartChapter}–${targetEnd}; author intent: ${thread.authorIntent}${source ? `; source Chapter ${source.chapterNumber}: ${source.evidence}` : ''})`,
       )
       const nextLength = line.length + (lines.length > 0 ? 1 : 0)
       if (usedChars + nextLength > ACTIVE_THREAD_CONTEXT_MAX_CHARS) continue
