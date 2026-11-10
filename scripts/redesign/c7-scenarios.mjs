@@ -41,7 +41,7 @@ const openBlueprintsAt = async (page, chapterNumber) => {
 const checkButton = page => page.getByRole('button', { name: 'AI 检查', exact: true })
 
 export const C7_SCENARIOS = {
-  'c7-check-finds-conflicts': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: seedConflicts }), run: async ({ page, fake, shoot }) => {
+  'c7-check-finds-conflicts': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: seedConflicts }), run: async ({ page, fake, shoot, reload }) => {
     fake.replyReview(conflictReply)
     await openBlueprintsAt(page, 5)
     assert.equal(checkRequests(fake), 0, '不点按钮不发请求')
@@ -59,6 +59,13 @@ export const C7_SCENARIOS = {
     await shoot('c7-1-chapter-5')
     await root.getByRole('button', { name: '第 7 章', exact: true }).click()
     await root.getByText(ISSUE(7), { exact: true }).waitFor({ state: 'visible' })
+    await shoot('c7-2-chapter-7')
+
+    await reload()
+    await openBlueprintsAt(page, 5)
+    await root.getByText(ISSUE(5), { exact: true }).waitFor({ state: 'visible' })
+    assert.equal(await summary.count(), 0, '重开后不出这次点击的总结')
+    assert.equal(checkRequests(fake), 1, '重开取回不发请求')
   } },
   'c7-check-clean': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: seedKeeperRelation }), run: async ({ page, fake }) => {
     fake.replyReview(cleanReply)
