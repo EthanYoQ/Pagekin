@@ -859,6 +859,93 @@
   white-space: pre-wrap;
 }
 
+.paper-ink.cm-annotations {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 45;
+  width: min(380px, calc(100vw - 48px));
+  max-height: min(460px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+
+.cm-annotations-head,
+.cm-annotations-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+}
+
+.cm-annotations-head {
+  border-bottom: 1px solid var(--rule);
+}
+
+.cm-annotations-foot {
+  border-top: 1px solid var(--rule);
+}
+
+.cm-annotations-foot > span {
+  font-size: var(--fs-12);
+  color: var(--ink-3);
+}
+
+.cm-annotations-list {
+  overflow: auto;
+  padding: 0 var(--s-3);
+}
+
+.cm-annotation {
+  position: relative;
+  padding: var(--s-3) 30px var(--s-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cm-annotation:last-child {
+  border-bottom: 0;
+}
+
+.cm-annotation > .pi-btn {
+  position: absolute;
+  top: var(--s-2);
+  right: 0;
+}
+
+.cm-annotation-quote {
+  display: -webkit-box;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: var(--fs-12)/1.6 var(--font-prose);
+  text-align: left;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  cursor: pointer;
+}
+
+.cm-annotation-quote:hover {
+  color: var(--accent);
+}
+
+.cm-annotation p {
+  margin: var(--s-1) 0 0;
+  color: var(--ink);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 /* ================= 恢复候选与只读修稿 ================= */
 .stage-doc-title {
   font-size: 28px;

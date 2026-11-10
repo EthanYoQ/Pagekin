@@ -4,8 +4,18 @@ import type { WritingLanguage } from './writing-language'
 
 /** 上限按码点计，不是 UTF-16 单元。 */
 export const EDITOR_INLINE_INSTRUCTION_MAX_LENGTH = 2000
+export const EDITOR_INLINE_ANNOTATION_MAX_COUNT = 100
 export type EditorInlineFixedAction = 'refine' | 'expand' | 'continue' | 'dialogue'
-export type EditorInlineRequest = { action: EditorInlineFixedAction } | { action: 'instruct'; instruction: string }
+export type EditorInlineAnnotation = {
+  id: string
+  from: number
+  to: number
+  selectedText: string
+  instruction: string
+}
+export type EditorInlineRequest = { action: EditorInlineFixedAction }
+  | { action: 'instruct'; instruction: string }
+  | { action: 'batch-instruct'; annotations: EditorInlineAnnotation[] }
 export type EditorInlineInput = EditorInlineRequest & {
   documentText: string
   from: number

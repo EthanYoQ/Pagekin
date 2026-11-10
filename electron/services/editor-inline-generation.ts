@@ -1,5 +1,5 @@
 import { textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
-import { EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, type EditorInlineInput, type EditorInlineContext } from '../../src/shared/editor-inline-generation'
+import { EDITOR_INLINE_ANNOTATION_MAX_COUNT, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, type EditorInlineAnnotation, type EditorInlineInput, type EditorInlineContext } from '../../src/shared/editor-inline-generation'
 import type { WritingLanguage } from '../../src/shared/writing-language'
 import { composePromptSystemRole, type PromptTemplate } from '../../src/services/builtin-prompt-templates'
 import { renderPrompt } from '../../src/shared/render-prompt'
@@ -13,16 +13,38 @@ const instructions = {
   dialogue: ['将这部分改写为有区分度、能推动冲突的自然对话。', 'Rewrite this passage as distinct, natural dialogue that advances the conflict.'],
 } as const
 
+const validNote = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0 && [...value].length <= EDITOR_INLINE_INSTRUCTION_MAX_LENGTH
 const validInstruction = (input: EditorInlineInput) => input.action === 'instruct'
-  ? typeof input.instruction === 'string' && input.instruction.trim().length > 0 && [...input.instruction].length <= EDITOR_INLINE_INSTRUCTION_MAX_LENGTH
-  : typeof input.action === 'string' && Object.hasOwn(instructions, input.action) && !Object.hasOwn(input, 'instruction')
+  ? validNote(input.instruction)
+  : input.action === 'batch-instruct'
+    ? Array.isArray(input.annotations) && input.annotations.length > 0 && input.annotations.length <= EDITOR_INLINE_ANNOTATION_MAX_COUNT && !Object.hasOwn(input, 'instruction')
+    : typeof input.action === 'string' && Object.hasOwn(instructions, input.action) && !Object.hasOwn(input, 'instruction') && !Object.hasOwn(input, 'annotations')
+
+function validAnnotations(input: EditorInlineInput): boolean {
+  if (input.action !== 'batch-instruct') return !Object.hasOwn(input, 'annotations')
+  if (input.from !== 0 || input.to !== input.documentText.length) return false
+  const ids = new Set<string>()
+  let previousTo = 0
+  for (const annotation of input.annotations as EditorInlineAnnotation[]) {
+    if (!annotation || typeof annotation !== 'object' || Array.isArray(annotation)
+      || Object.keys(annotation).some(key => !['id', 'from', 'to', 'selectedText', 'instruction'].includes(key))
+      || typeof annotation.id !== 'string' || !annotation.id.trim() || annotation.id.length > 128 || ids.has(annotation.id)
+      || !Number.isSafeInteger(annotation.from) || !Number.isSafeInteger(annotation.to) || annotation.from < previousTo || annotation.to <= annotation.from
+      || annotation.to > input.documentText.length || input.documentText.slice(annotation.from, annotation.to) !== annotation.selectedText
+      || !validNote(annotation.instruction)) return false
+    ids.add(annotation.id)
+    previousTo = annotation.to
+  }
+  return true
+}
 
 export function validateEditorInlineInput(input: EditorInlineInput): EditorInlineInput {
   if (!input || typeof input !== 'object' || Array.isArray(input)
-    || Object.keys(input).some(key => !['action', 'documentText', 'from', 'to', 'selectedText', 'instruction'].includes(key))
+    || Object.keys(input).some(key => !['action', 'documentText', 'from', 'to', 'selectedText', 'instruction', 'annotations'].includes(key))
     || !validInstruction(input) || typeof input.documentText !== 'string' || typeof input.selectedText !== 'string'
     || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to) || input.from < 0 || input.to <= input.from
     || input.to > input.documentText.length || input.documentText.slice(input.from, input.to) !== input.selectedText
+    || !validAnnotations(input)
     || Buffer.byteLength(input.documentText, 'utf8') > 8 * 1024 * 1024) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
   return structuredClone(input)
 }
@@ -37,7 +59,9 @@ export function readEditorInlineContext(run: DurableGenerationRun): EditorInline
     || textHash(JSON.stringify(context)) !== run.binding.sourceManifest.editorInlineContextHash
     || textHash(context.documentText) !== context.documentHash) throw new Error('GENERATION_EDITOR_CONTEXT_INVALID')
   const input = validateEditorInlineInput(run.binding.sourceManifest.editorInlineInput as EditorInlineInput)
-  const frozen = { action: context.action, documentText: context.documentText, from: context.from, to: context.to, selectedText: context.selectedText, ...(context.action === 'instruct' ? { instruction: context.instruction } : {}) }
+  const frozen = { action: context.action, documentText: context.documentText, from: context.from, to: context.to, selectedText: context.selectedText,
+    ...(context.action === 'instruct' ? { instruction: context.instruction } : {}),
+    ...(context.action === 'batch-instruct' ? { annotations: context.annotations } : {}) }
   if (!isDeepStrictEqual(input, frozen)) throw new Error('GENERATION_EDITOR_CONTEXT_INVALID')
   return structuredClone(context)
 }
@@ -48,17 +72,31 @@ export function readEditorInlineTask(run: DurableGenerationRun): GenerationTask 
   return structuredClone(task)
 }
 function editInstruction(context: EditorInlineContext, english: boolean): string {
+  if (context.action === 'batch-instruct') {
+    const annotations = context.annotations.map((annotation, index) => english
+      ? `[Annotation ${index + 1}]\nOriginal passage:\n${annotation.selectedText}\nAuthor note:\n${annotation.instruction}`
+      : `【批注 ${index + 1}】\n对应原文：\n${annotation.selectedText}\n作者意见：\n${annotation.instruction}`).join('\n\n')
+    return english
+      ? `Revise the complete chapter according to every annotation below. Each note applies to its corresponding original passage. Keep passages without annotations unchanged unless a change is required for continuity.\n\n${annotations}`
+      : `按下面的全部批注修改完整章节。每条意见只针对对应原文；未批注的内容保持原样，确为衔接所必需时除外。\n\n${annotations}`
+  }
   if (context.action !== 'instruct') return instructions[context.action][english ? 1 : 0]
   return english
     ? `Revise this passage as the author's note asks. The note outranks every other preference.\n${context.instruction}`
     : `按作者意见修改这部分。作者意见优先于其他任何偏好。\n${context.instruction}`
 }
 function systemRole(context: EditorInlineContext): Pick<PromptTemplate, 'systemRole'> {
-  if (context.action !== 'instruct') return context.template
-  const rule = context.writingLanguage === 'en-US'
+  if (context.action !== 'instruct' && context.action !== 'batch-instruct') return context.template
+  const english = context.writingLanguage === 'en-US'
+  const noteRule = english
     ? "The author's note is itself the newest explicit author fact. Where the note conflicts with the preservation requirements above, or with the explicit-facts clause of the contract below, follow the note; keep everything the note does not mention."
-    : '作者这次的意见本身就是最新的作者明确事实。意见与上述保留要求冲突时，或与下文合同里「作者与项目的明确事实」那一条冲突时，以作者意见为准；意见没提到的部分照常保留。'
-  return { systemRole: [context.template.systemRole?.trim(), rule].filter(Boolean).join('\n') }
+    : '作者这次的批注意见本身就是最新的作者明确事实。意见与上述保留要求冲突时，或与下文合同里「作者与项目的明确事实」那一条冲突时，以作者意见为准；意见没提到的部分照常保留。'
+  const batchRule = context.action === 'batch-instruct'
+    ? english
+      ? 'The selected prose below is the complete chapter. Apply all annotations in one pass and output only the complete revised chapter, never only the annotated passages.'
+      : '下文选中的正文是完整章节。请一次性落实所有批注，并且只输出修改后的完整章节，不能只输出被批注的片段。'
+    : ''
+  return { systemRole: [context.template.systemRole?.trim(), noteRule, batchRule].filter(Boolean).join('\n') }
 }
 export function editorInlineTask(context: EditorInlineContext): GenerationTask {
   const { template, writingLanguage } = context

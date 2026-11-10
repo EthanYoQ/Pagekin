@@ -5,7 +5,8 @@ import type { EditorInlineInput, EditorInlineRecovery } from '../shared/editor-i
 
 const hasEpoch = (handle: MainGenerationRunHandle) => typeof handle.epoch === 'string' && handle.epoch.trim().length > 0
 const identity = (handle: MainGenerationRunHandle) => JSON.stringify([handle.projectId, handle.rootActionId, handle.runId])
-const authorInput = (input: EditorInlineInput) => [input.action, input.documentText, input.from, input.to, input.selectedText, input.action === 'instruct' ? input.instruction : undefined]
+const authorInput = (input: EditorInlineInput) => [input.action, input.documentText, input.from, input.to, input.selectedText,
+  input.action === 'instruct' ? input.instruction : input.action === 'batch-instruct' ? JSON.stringify(input.annotations) : undefined]
 const sameAuthorInput = (a: EditorInlineInput, b: EditorInlineInput) => authorInput(a).every((value, index) => value === authorInput(b)[index])
 
 /** Main owns the task, model, nonce and budget. This adapter only holds navigation. */
@@ -19,9 +20,20 @@ export function createEditorInlineGeneration(sessionInput: ProjectSessionContext
   async function validate(value: EditorInlineRecovery, expected?: MainGenerationRunHandle) {
     if (value.view.handle.projectId !== session.projectId || !hasEpoch(value.view.handle) || expected && identity(expected) !== identity(value.view.handle)) throw new Error('EDITOR_INLINE_IDENTITY_MISMATCH')
     const input = value.context
-    if (!['refine', 'expand', 'continue', 'dialogue', 'instruct'].includes(input.action) || input.kind !== 'author-draft' || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to)
+    if (!['refine', 'expand', 'continue', 'dialogue', 'instruct', 'batch-instruct'].includes(input.action) || input.kind !== 'author-draft' || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to)
       || input.from < 0 || input.to <= input.from || input.to > input.documentText.length
       || input.documentText.slice(input.from, input.to) !== input.selectedText) throw new Error('EDITOR_INLINE_CONTEXT_INVALID')
+    if (input.action === 'batch-instruct') {
+      let previousTo = 0
+      const ids = new Set<string>()
+      for (const annotation of input.annotations) {
+        if (!Number.isSafeInteger(annotation.from) || !Number.isSafeInteger(annotation.to) || annotation.from < previousTo || annotation.to <= annotation.from
+          || annotation.to > input.documentText.length || input.documentText.slice(annotation.from, annotation.to) !== annotation.selectedText
+          || !annotation.id || ids.has(annotation.id) || typeof annotation.instruction !== 'string' || !annotation.instruction.trim()) throw new Error('EDITOR_INLINE_CONTEXT_INVALID')
+        ids.add(annotation.id)
+        previousTo = annotation.to
+      }
+    }
     const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input.documentText))
     const hash = Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
     if (hash !== input.documentHash) throw new Error('EDITOR_INLINE_CONTEXT_INVALID')

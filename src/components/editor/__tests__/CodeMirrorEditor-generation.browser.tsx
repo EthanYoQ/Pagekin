@@ -202,76 +202,94 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(view.state.doc.toString()).toBe('替换甲')
   })
 
-  it('revises the selection with an author note and replaces it after acceptance', async () => {
+  it('collects multiple annotations, revises once, and replaces the chapter after acceptance', async () => {
     deferStream = true
-    await act(async () => root.render(
-      <CodeMirrorEditor content="林岚走进北塔" mode="prose" />,
-    ))
+    const documentText = '林岚走进北塔。\n\n她停下脚步。'
+    const revisedText = '我走进北塔。\n\n我停下脚步。'
+    await act(async () => root.render(<CodeMirrorEditor content={documentText} mode="prose" />))
     const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
 
-    await act(async () => page.getByText('林岚走进北塔').click({ clickCount: 3 }))
-    await expect.element(page.getByRole('button', { name: '按意见改' })).toBeVisible()
-    await act(async () => page.getByRole('button', { name: '按意见改' }).click())
-
-    const note = page.getByRole('textbox', { name: '修改意见' })
+    await selectLine('林岚走进北塔。', { exact: true })
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    const note = page.getByRole('textbox', { name: '批注意见' })
     await expect.element(note).toHaveFocus()
-    const submit = page.getByRole('button', { name: '改写' })
+    const submit = page.getByRole('button', { name: '添加批注' })
     await expect.element(submit).toBeDisabled()
     await act(async () => note.fill('  \n '))
     await expect.element(submit).toBeDisabled()
     await act(async () => note.fill('改成第一人称'))
     await act(async () => submit.click())
 
-    await expect.element(page.getByText('按意见改预览')).toBeVisible()
-    await expect.element(page.getByText('改成第一人称')).toBeVisible()
-    expect(invoke).toHaveBeenCalledWith('editor-inline:begin', expect.objectContaining({ input: expect.objectContaining({ action: 'instruct', instruction: '改成第一人称', selectedText: '林岚走进北塔' }) }), expect.any(Object))
+    await expect.element(page.getByRole('region', { name: '本章批注' })).toBeVisible()
+    expect(container.querySelectorAll('.cm-editor-annotation')).toHaveLength(1)
+    expect(invoke.mock.calls.some(([channel]) => channel === 'editor-inline:begin')).toBe(false)
+
+    await selectLine('她停下脚步。', { exact: true })
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => note.fill('同样改成第一人称'))
+    await act(async () => submit.click())
+    await expect.element(page.getByText('本章批注 · 2')).toBeVisible()
+    expect(container.querySelectorAll('.cm-editor-annotation')).toHaveLength(2)
+
+    await act(async () => page.getByRole('button', { name: '统一修改（2）' }).click())
+    await expect.element(page.getByText('批量批注修改预览')).toBeVisible()
+    const begins = invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:begin')
+    expect(begins).toHaveLength(1)
+    expect(begins[0][1]).toEqual(expect.objectContaining({ input: expect.objectContaining({
+      action: 'batch-instruct', documentText, selectedText: documentText,
+      annotations: [
+        expect.objectContaining({ selectedText: '林岚走进北塔。\n', instruction: '改成第一人称' }),
+        expect.objectContaining({ selectedText: '她停下脚步。', instruction: '同样改成第一人称' }),
+      ],
+    }) }))
     await act(async () => {
-      listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never)
+      listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: revisedText, finishReason: 'stop' } as never)
     })
-    await expect.element(page.getByText('我走进北塔')).toBeVisible()
+    await expect.element(page.getByText(revisedText)).toBeVisible()
     await act(async () => page.getByRole('button', { name: '替换' }).click())
 
-    expect(view.state.doc.toString()).toBe('我走进北塔')
+    expect(view.state.doc.toString()).toBe(revisedText)
+    await expect.element(page.getByRole('region', { name: '本章批注' })).not.toBeInTheDocument()
   })
 
-  it('submits the note with Ctrl+Enter and returns to the actions with Escape', async () => {
-    deferStream = true
+  it('adds the note with Ctrl+Enter and returns to the actions with Escape', async () => {
     await act(async () => root.render(
       <CodeMirrorEditor content="林岚走进北塔" mode="prose" />,
     ))
 
     await selectLine('林岚走进北塔')
-    await act(async () => page.getByRole('button', { name: '按意见改' }).click())
-    const note = page.getByRole('textbox', { name: '修改意见' })
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    const note = page.getByRole('textbox', { name: '批注意见' })
     await act(async () => note.fill('语气更冷'))
     await act(async () => { note.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
     await expect.element(note).not.toBeInTheDocument()
     await expect.element(page.getByRole('button', { name: '润色' })).toBeVisible()
     expect(invoke.mock.calls.some(([channel]) => channel === 'editor-inline:begin')).toBe(false)
 
-    await act(async () => page.getByRole('button', { name: '按意见改' }).click())
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
     await act(async () => note.fill('语气更冷'))
     await act(async () => { note.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })) })
-    await expect.element(page.getByText('按意见改预览')).toBeVisible()
-    expect(invoke).toHaveBeenCalledWith('editor-inline:begin', expect.objectContaining({ input: expect.objectContaining({ action: 'instruct', instruction: '语气更冷' }) }), expect.any(Object))
+    await expect.element(page.getByRole('region', { name: '本章批注' })).toBeVisible()
+    await expect.element(page.getByText('语气更冷')).toBeVisible()
+    expect(invoke.mock.calls.some(([channel]) => channel === 'editor-inline:begin')).toBe(false)
   })
 
-  it('shows the submit shortcut with the platform command key', async () => {
+  it('shows the add shortcut with the platform command key', async () => {
     expect(commandKeyLabel('Enter', true)).toBe('⌘ + Enter')
     expect(commandKeyLabel('Enter', false)).toBe('Ctrl + Enter')
     await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" />))
 
     await selectLine('林岚走进北塔')
-    await act(async () => page.getByRole('button', { name: '按意见改' }).click())
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
 
-    await expect.element(page.getByText(`${IS_MAC ? '⌘' : 'Ctrl'} + Enter 提交`, { exact: true })).toBeVisible()
+    await expect.element(page.getByText(`${IS_MAC ? '⌘' : 'Ctrl'} + Enter 添加`, { exact: true })).toBeVisible()
   })
 
   it('accepts a 2000 code point note outside the BMP in full', async () => {
     await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" />))
     await selectLine('林岚走进北塔')
-    await act(async () => page.getByRole('button', { name: '按意见改' }).click())
-    const note = page.getByRole('textbox', { name: '修改意见' })
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    const note = page.getByRole('textbox', { name: '批注意见' })
     const longNote = '𠀋'.repeat(2000)
 
     await act(async () => note.fill(longNote + '𠀋'))
@@ -282,9 +300,9 @@ describe('CodeMirror editor AI generation boundary', () => {
   it('keeps the note form inside the viewport for a selection at the top edge', async () => {
     await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" />))
     await selectLine('林岚走进北塔')
-    await act(async () => page.getByRole('button', { name: '按意见改' }).click())
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
 
-    const note = page.getByRole('textbox', { name: '修改意见' })
+    const note = page.getByRole('textbox', { name: '批注意见' })
     await expect.element(note).toBeVisible()
     // 表单长高后在下一帧绘制前夹紧；量用户看到的那一帧，不量还没排版过的 DOM
     await nextFrames()
@@ -321,7 +339,7 @@ describe('CodeMirror editor AI generation boundary', () => {
     await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" />))
     await act(async () => page.getByText('林岚走进北塔').click({ clickCount: 3 }))
 
-    const toolbar = page.getByRole('button', { name: '按意见改' })
+    const toolbar = page.getByRole('button', { name: '添加批注' })
     await expect.element(toolbar).toBeVisible()
     await vi.waitFor(() => expect(container.querySelector('.cm-selbar')!.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth))
   })
@@ -355,8 +373,8 @@ describe('CodeMirror editor AI generation boundary', () => {
       <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>,
     ))
     await selectLine('第1段原文', { exact: true })
-    await act(async () => page.getByRole('button', { name: '按意见改' }).click())
-    const note = page.getByRole('textbox', { name: '修改意见' })
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    const note = page.getByRole('textbox', { name: '批注意见' })
     await act(async () => note.fill('我的未提交意见'))
 
     await scrollChapterTo(1200)
@@ -377,14 +395,14 @@ describe('CodeMirror editor AI generation boundary', () => {
       view.dispatch({ selection: { anchor: view.state.doc.line(5).from, head: view.state.doc.line(39).to } })
     })
     await scrollChapterTo(200)
-    await act(async () => page.getByRole('button', { name: '按意见改' }).click())
-    const note = page.getByRole('textbox', { name: '修改意见' })
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    const note = page.getByRole('textbox', { name: '批注意见' })
     await expect.element(note).toHaveFocus()
 
     await scrollChapterTo(210)
 
     expect(note.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(0)
-    const submit = page.getByRole('button', { name: '改写' }).element().getBoundingClientRect()
+    const submit = page.getByRole('button', { name: '添加批注' }).element().getBoundingClientRect()
     expect(submit.top).toBeGreaterThanOrEqual(0)
     expect(submit.bottom).toBeLessThanOrEqual(window.innerHeight)
   })
@@ -392,8 +410,8 @@ describe('CodeMirror editor AI generation boundary', () => {
   it('leaves Escape to the input method while it reports composition by keyCode 229', async () => {
     await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" />))
     await selectLine('林岚走进北塔')
-    await act(async () => page.getByRole('button', { name: '按意见改' }).click())
-    const note = page.getByRole('textbox', { name: '修改意见' })
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    const note = page.getByRole('textbox', { name: '批注意见' })
 
     await act(async () => { note.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229, bubbles: true })) })
 
@@ -406,7 +424,7 @@ describe('CodeMirror editor AI generation boundary', () => {
     ))
     await act(async () => page.getByText('定稿正文').click({ clickCount: 3 }))
     await expect.element(page.getByRole('toolbar')).not.toBeInTheDocument()
-    await expect.element(page.getByRole('button', { name: '按意见改' })).not.toBeInTheDocument()
+    await expect.element(page.getByRole('button', { name: '添加批注' })).not.toBeInTheDocument()
   })
 
   it('keeps a delayed result copyable but refuses stale offsets after the document changes', async () => {

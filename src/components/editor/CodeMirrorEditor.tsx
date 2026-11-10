@@ -3,16 +3,17 @@ import { flushSync } from 'react-dom'
 import CodeMirror, { ReactCodeMirrorRef, EditorView, ViewUpdate } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { EditorState, type Extension } from '@codemirror/state'
+import { EditorState, RangeSetBuilder, type Extension } from '@codemirror/state'
+import { Decoration, type DecorationSet } from '@codemirror/view'
 import { openSearchPanel, closeSearchPanel, search } from '@codemirror/search'
-import { Sparkles, Bold, Check, MessageSquareText } from 'lucide-react'
+import { Sparkles, Bold, Check, MessageSquareText, Trash2, X } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { paragraphIndent } from './paragraph-indent'
 import { proseTab } from './prose-tab'
 import { useThemeStore } from '../../stores/theme-store'
 import type { MainGenerationRunHandle } from '../../services/generation/generation-runtime'
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
-import { EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, type EditorInlineFixedAction, type EditorInlineRequest } from '../../shared/editor-inline-generation'
+import { EDITOR_INLINE_ANNOTATION_MAX_COUNT, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, type EditorInlineAnnotation, type EditorInlineFixedAction, type EditorInlineRequest } from '../../shared/editor-inline-generation'
 import { routeModelId } from '../../services/model-routing'
 import { countDraftUnits } from '../../shared/draft-units'
 import { useLocaleStore } from '../../stores/locale-store'
@@ -65,7 +66,9 @@ const AI_ACTIONS: readonly { key: EditorInlineFixedAction; label: Label }[] = [
   { key: 'dialogue', label: ['改成对话', 'To dialogue'] },
 ]
 const NOTE_LABEL: Label = ['按意见改', 'Revise with note']
-const actionLabel = (action: EditorInlineRequest['action']): Label => action === 'instruct' ? NOTE_LABEL : AI_ACTIONS.find(item => item.key === action)!.label
+const ANNOTATE_LABEL: Label = ['添加批注', 'Add annotation']
+const BATCH_NOTE_LABEL: Label = ['批量批注修改', 'Batch annotation revision']
+const actionLabel = (action: EditorInlineRequest['action']): Label => action === 'instruct' ? NOTE_LABEL : action === 'batch-instruct' ? BATCH_NOTE_LABEL : AI_ACTIONS.find(item => item.key === action)!.label
 
 export default function CodeMirrorEditor({
   content,
@@ -90,6 +93,9 @@ export default function CodeMirrorEditor({
   // 避免状态回路
   const lastEmittedContentRef = useRef(content)
   const [editorContent, setEditorContent] = useState(content)
+  const [noteDraft, setNoteDraft] = useState<string | null>(null)
+  const [noteError, setNoteError] = useState<string | null>(null)
+  const [annotations, setAnnotations] = useState<EditorInlineAnnotation[]>([])
   const hasEmittedInitialCount = useRef(false)
   const composingRef = useRef(false)
   const pendingExternalContentRef = useRef<string | null>(null)
@@ -111,6 +117,8 @@ export default function CodeMirrorEditor({
       pendingExternalContentRef.current = null
       if (pending !== latestContentPropRef.current) return
       lastEmittedContentRef.current = pending
+      setAnnotations([])
+      setNoteDraft(null)
       setEditorContent(pending)
       charCountHandlerRef.current?.(countDraftUnits(pending))
     })
@@ -131,6 +139,8 @@ export default function CodeMirrorEditor({
       }
       pendingExternalContentRef.current = null
       lastEmittedContentRef.current = content
+      setAnnotations([])
+      setNoteDraft(null)
       setEditorContent(content)
       // 内容经由外部变动（例如打开新文件）
       onCharCountChange?.(countDraftUnits(content))
@@ -143,7 +153,6 @@ export default function CodeMirrorEditor({
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
   const [activeAIAction, setActiveAIAction] = useState<string | null>(null)
-  const [noteDraft, setNoteDraft] = useState<string | null>(null)
   const [activeNote, setActiveNote] = useState<string | null>(null)
   const [bubbleSize, setBubbleSize] = useState({ width: 0, height: 0 })
   const bubbleRef = useCallback((node: HTMLDivElement | null) => {
@@ -162,6 +171,7 @@ export default function CodeMirrorEditor({
   const aiRequestSequenceRef = useRef(0)
   const aiTargetRef = useRef<{
     requestSequence: number
+    action: EditorInlineRequest['action']
     from: number
     to: number
     selectedText: string
@@ -198,7 +208,7 @@ export default function CodeMirrorEditor({
       setAiError(applicable ? null : uiText('恢复的候选尚不可应用，可复制或继续原运行', 'The recovered candidate cannot be applied yet; copy it or continue the original run.'))
       setCanResumeAI(recovery.sourceStatus === 'current' && recovery.view.status !== 'cancelled' && recovery.view.ledger?.physicalRequests === 0 && candidates.length === 0)
       setActiveAIAction(uiText(...actionLabel(target.action)))
-      setActiveNote(target.action === 'instruct' ? target.instruction : null)
+      setActiveNote(target.action === 'instruct' ? target.instruction : target.action === 'batch-instruct' ? uiText(`共 ${target.annotations.length} 条批注`, `${target.annotations.length} annotations`) : null)
       const view = editorRef.current?.view
       const from = Math.min(target.from, view?.state.doc.length ?? 0)
       setSelectionRange({ from, to: Math.min(target.to, view?.state.doc.length ?? 0) })
@@ -228,6 +238,11 @@ export default function CodeMirrorEditor({
     if (v.docChanged) {
       const newText = v.state.doc.toString()
       lastEmittedContentRef.current = newText
+      setAnnotations(current => current.flatMap(annotation => {
+        const from = v.changes.mapPos(annotation.from, 1)
+        const to = v.changes.mapPos(annotation.to, -1)
+        return to > from ? [{ ...annotation, from, to, selectedText: newText.slice(from, to) }] : []
+      }))
       onChange?.(newText)
 
       const cnt = countDraftUnits(newText)
@@ -334,6 +349,7 @@ export default function CodeMirrorEditor({
     ".cm-cursor": { borderLeftColor: "var(--color-editor-caret, var(--color-text))", borderLeftWidth: "2px" },
     ".cm-activeLine": { backgroundColor: "transparent" },
     ".cm-selectionBackground, .cm-focused .cm-selectionBackground": { backgroundColor: "var(--color-hover) !important" },
+    ".cm-editor-annotation": { backgroundColor: "var(--color-hover)", borderBottom: "2px solid var(--color-accent)" },
     ".cm-line": { padding: "0" },
     ".cm-lp-paperhead": {
       padding: "8px 0 28px",
@@ -363,6 +379,13 @@ export default function CodeMirrorEditor({
     () => paperHeadTitle === null ? null : { title: paperHeadTitle, subtitle: paperHeadSubtitle },
     [paperHeadTitle, paperHeadSubtitle],
   )
+  const annotationDecorations = useMemo<DecorationSet>(() => {
+    const builder = new RangeSetBuilder<Decoration>()
+    for (const annotation of annotations) {
+      builder.add(annotation.from, annotation.to, Decoration.mark({ class: 'cm-editor-annotation', attributes: { title: annotation.instruction } }))
+    }
+    return builder.finish()
+  }, [annotations])
 
   // 构建扩展
   const extensions = useMemo(() => {
@@ -411,27 +434,29 @@ export default function CodeMirrorEditor({
     }
     if (mode === 'prose') exts.push(...livePreview())
     if (indentParagraphs) exts.push(paragraphIndent)
+    exts.push(EditorView.decorations.of(annotationDecorations))
     exts.push(paperHeadFacet.of(stablePaperHead))
     return exts
-  }, [mode, stablePaperHead, uiLocale, indentParagraphs])
+  }, [mode, stablePaperHead, uiLocale, indentParagraphs, annotationDecorations])
 
   // AI 菜单处理（流式调用，实时显示生成内容）
-  const handleAIAction = async (request: EditorInlineRequest) => {
+  const handleAIAction = async (request: EditorInlineRequest, targetRange = selectionRange) => {
     let requestSequence: number | null = null
     try {
-      if (!selectionRange || !editorRef.current?.view || !editable) return
+      if (!targetRange || !editorRef.current?.view || !editable) return
       const session = getActiveProjectSessionContext()
       if (!session) throw new Error('EDITOR_INLINE_PROJECT_REQUIRED')
       const view = editorRef.current.view
       requestSequence = ++aiRequestSequenceRef.current
-      const input = { ...request, from: selectionRange.from, to: selectionRange.to,
-        selectedText: view.state.sliceDoc(selectionRange.from, selectionRange.to), documentText: view.state.doc.toString() }
+      const input = { ...request, from: targetRange.from, to: targetRange.to,
+        selectedText: view.state.sliceDoc(targetRange.from, targetRange.to), documentText: view.state.doc.toString() }
       aiTargetRef.current = { ...input, requestSequence, filePath, sessionKey: JSON.stringify(session) }
       inlineRef.current?.detach()
       const client = createEditorInlineGeneration(session)
       inlineRef.current = client
       aiCandidateRef.current = null
-      setActiveAIAction(uiText(...actionLabel(request.action))); setActiveNote(request.action === 'instruct' ? request.instruction : null)
+      setActiveAIAction(uiText(...actionLabel(request.action)))
+      setActiveNote(request.action === 'instruct' ? request.instruction : request.action === 'batch-instruct' ? uiText(`共 ${request.annotations.length} 条批注`, `${request.annotations.length} annotations`) : null)
       setNoteDraft(null); setAiResult(''); setAiError(null); setCanResumeAI(false)
       const recovery = await client.open({ input, modelId: routeModelId('editor-inline') ?? '', uiActionNonce: crypto.randomUUID() })
       if (requestSequence !== aiRequestSequenceRef.current) return
@@ -510,6 +535,7 @@ export default function CodeMirrorEditor({
       view.dispatch({
         changes: { from: target.from, to: target.to, insert: aiResult }
       })
+      if (target.action === 'batch-instruct') setAnnotations([])
     }
     aiTargetRef.current = null
     setAiResult(null)
@@ -518,13 +544,60 @@ export default function CodeMirrorEditor({
 
   const submitNote = () => {
     const instruction = noteDraft ?? ''
-    if (!instruction.trim()) return
-    void handleAIAction({ action: 'instruct', instruction })
+    const view = editorRef.current?.view
+    if (!instruction.trim() || !selectionRange || !view) return
+    if (annotations.length >= EDITOR_INLINE_ANNOTATION_MAX_COUNT) {
+      setNoteError(uiText(`一章最多保留 ${EDITOR_INLINE_ANNOTATION_MAX_COUNT} 条批注`, `A chapter can hold up to ${EDITOR_INLINE_ANNOTATION_MAX_COUNT} annotations.`))
+      return
+    }
+    if (annotations.some(annotation => selectionRange.from < annotation.to && selectionRange.to > annotation.from)) {
+      setNoteError(uiText('这段正文与已有批注重叠，请先删除重叠批注', 'This passage overlaps an existing annotation. Remove the overlapping annotation first.'))
+      return
+    }
+    const annotation: EditorInlineAnnotation = {
+      id: crypto.randomUUID(),
+      ...selectionRange,
+      selectedText: view.state.sliceDoc(selectionRange.from, selectionRange.to),
+      instruction,
+    }
+    setAnnotations([...annotations, annotation].sort((a, b) => a.from - b.from || a.to - b.to))
+    setNoteDraft(null)
+    setNoteError(null)
+    setBubbleOpen(false)
+    view.dispatch({ selection: { anchor: selectionRange.to } })
+    view.focus()
   }
 
   const cancelNote = () => {
     setNoteDraft(null)
+    setNoteError(null)
     editorRef.current?.view?.focus()
+  }
+
+  const removeAnnotation = (id: string) => {
+    setAnnotations(annotations.filter(annotation => annotation.id !== id))
+  }
+
+  const clearAnnotations = () => {
+    setAnnotations([])
+  }
+
+  const locateAnnotation = (annotation: EditorInlineAnnotation) => {
+    const view = editorRef.current?.view
+    if (!view) return
+    view.dispatch({ selection: { anchor: annotation.from, head: annotation.to } })
+    view.focus()
+  }
+
+  const handleBatchRevision = () => {
+    const view = editorRef.current?.view
+    const current = annotations.map(annotation => ({ ...annotation }))
+    if (!view || current.length === 0) return
+    const range = { from: 0, to: view.state.doc.length }
+    view.dispatch({ selection: { anchor: range.from, head: range.to } })
+    setSelectionRange(range)
+    setBubbleOpen(true)
+    void handleAIAction({ action: 'batch-instruct', annotations: current }, range)
   }
 
   const handleRejectAI = () => {
@@ -644,27 +717,28 @@ export default function CodeMirrorEditor({
             <form className="cm-selbar-note" onSubmit={(e) => { e.preventDefault(); submitNote() }}>
               <div className="cm-selbar-title">
                 <MessageSquareText size={13} aria-hidden="true" />
-                {uiText(...NOTE_LABEL)}
+                {uiText(...ANNOTATE_LABEL)}
               </div>
               <textarea
                 className="pi-input cm-selbar-note-input"
-                aria-label={uiText('修改意见', 'Revision note')}
+                aria-label={uiText('批注意见', 'Annotation note')}
                 aria-keyshortcuts="Control+Enter Meta+Enter Escape"
-                placeholder={uiText('想怎么改？例如：改成第一人称，语气更冷', 'How should it change? For example: first person, colder tone')}
+                placeholder={uiText('记下这段要怎么改，例如：改成第一人称，语气更冷', 'Note how this passage should change, for example: first person, colder tone')}
                 rows={3}
                 autoFocus
                 value={noteDraft}
-                onChange={(e) => setNoteDraft(Array.from(e.target.value).slice(0, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH).join(''))}
+                onChange={(e) => { setNoteDraft(Array.from(e.target.value).slice(0, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH).join('')); setNoteError(null) }}
                 onKeyDown={(e) => {
                   if (isComposing(e.nativeEvent)) return
                   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelNote() }
                   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); e.stopPropagation(); submitNote() }
                 }}
               />
+              {noteError && <p className="cm-selbar-error" role="alert">{noteError}</p>}
               <div className="cm-selbar-actions">
-                <span className="cm-selbar-hint">{uiText(`${commandKeyLabel('Enter')} 提交`, `${commandKeyLabel('Enter')} to submit`)}</span>
+                <span className="cm-selbar-hint">{uiText(`${commandKeyLabel('Enter')} 添加`, `${commandKeyLabel('Enter')} to add`)}</span>
                 <Button variant="secondary" size="sm" type="button" onClick={cancelNote}>{uiText('取消', 'Cancel')}</Button>
-                <Button variant="primary" size="sm" type="submit" disabled={!noteDraft.trim()}>{uiText('改写', 'Revise')}</Button>
+                <Button variant="primary" size="sm" type="submit" disabled={!noteDraft.trim()}>{uiText('添加批注', 'Add annotation')}</Button>
               </div>
             </form>
           ) : (
@@ -696,13 +770,40 @@ export default function CodeMirrorEditor({
                 </Button>
               ))}
               <span className="cm-selbar-sep" aria-hidden="true" />
-              <Button variant="text" size="sm" className="cm-selbar-tool" onClick={() => setNoteDraft('')}>
+              <Button variant="text" size="sm" className="cm-selbar-tool" onClick={() => { setNoteError(null); setNoteDraft('') }}>
                 <MessageSquareText size={13} aria-hidden="true" />
-                {uiText(...NOTE_LABEL)}
+                {uiText(...ANNOTATE_LABEL)}
               </Button>
             </>
           )}
         </div>
+      )}
+
+      {editable && aiResult === null && annotations.length > 0 && (
+        <aside role="region" className="paper-ink cm-annotations" data-theme={inkThemeName} aria-label={uiText('本章批注', 'Chapter annotations')}>
+          <div className="cm-annotations-head">
+            <div className="cm-selbar-title">
+              <MessageSquareText size={13} aria-hidden="true" />
+              {uiText(`本章批注 · ${annotations.length}`, `Chapter annotations · ${annotations.length}`)}
+            </div>
+            <Button variant="text" size="sm" onClick={clearAnnotations}><Trash2 size={13} aria-hidden="true" />{uiText('清空', 'Clear')}</Button>
+          </div>
+          <div className="cm-annotations-list">
+            {annotations.map((annotation, index) => (
+              <article className="cm-annotation" key={annotation.id}>
+                <button type="button" className="cm-annotation-quote" onClick={() => locateAnnotation(annotation)} aria-label={uiText(`定位批注 ${index + 1}`, `Locate annotation ${index + 1}`)}>
+                  {annotation.selectedText}
+                </button>
+                <p>{annotation.instruction}</p>
+                <Button variant="icon" size="sm" aria-label={uiText(`删除批注 ${index + 1}`, `Delete annotation ${index + 1}`)} onClick={() => removeAnnotation(annotation.id)}><X size={14} aria-hidden="true" /></Button>
+              </article>
+            ))}
+          </div>
+          <div className="cm-annotations-foot">
+            <span>{uiText('批注仅保留在当前编辑会话，切换章节或关闭后会清除', 'Annotations last only for this editing session and are cleared when you leave the chapter or close it.')}</span>
+            <Button variant="primary" size="sm" onClick={handleBatchRevision}><Sparkles size={13} aria-hidden="true" />{uiText(`统一修改（${annotations.length}）`, `Revise all (${annotations.length})`)}</Button>
+          </div>
+        </aside>
       )}
     </div>
   )

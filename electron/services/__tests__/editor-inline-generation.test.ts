@@ -163,3 +163,37 @@ it.each([
  for(const phrase of rule) expect(role).toContain(phrase)
  expect(contract).toBe(composePromptSystemRole(template,language).split(heading)[1])
 })
+
+
+const batchDocument = input.documentText
+const batchInput = {
+ action: 'batch-instruct' as const,
+ documentText: batchDocument,
+ from: 0,
+ to: batchDocument.length,
+ selectedText: batchDocument,
+ annotations: [
+  { id: '批注一', from: input.from, to: input.to, selectedText: input.selectedText, instruction: '改成第一人称' },
+  { id: '批注二', from: batchDocument.length - 1, to: batchDocument.length, selectedText: '乙', instruction: '删掉这个字' },
+ ],
+}
+it('多处批注冻结为一个完整章节任务，一次执行并可在重开后恢复', async () => {
+ const f = fixture(async (_r, o) => { o.onVisible({ kind: 'delta', text: '修改后的完整章节' }); return { finishReason: 'stop', usage: null } })
+ const recovery = f.owner.beginEditorInline({ input: batchInput, modelId: 'synthetic', uiActionNonce: '统一批注修改' })
+ await f.owner.executeEditorInline(recovery.view.handle)
+ expect(f.spy).toHaveBeenCalledTimes(1)
+ const { task } = f.spy.mock.calls[0]![0] as { task: { messages: { role: string; content: string }[] } }
+ const sent = task.messages.map(message => message.content).join('\n')
+ for (const expected of ['改成第一人称', '删掉这个字', '完整章节', batchDocument]) expect(sent).toContain(expected)
+ expect(f.reopenStorage().readEditorInlineRecovery(recovery.view.handle).context).toMatchObject(batchInput)
+})
+it.each([
+ ['空批注', { ...batchInput, annotations: [] }],
+ ['批注重叠', { ...batchInput, annotations: [batchInput.annotations[0], { ...batchInput.annotations[1], from: 2 }] }],
+ ['批注原文不符', { ...batchInput, annotations: [batchInput.annotations[0], { ...batchInput.annotations[1], selectedText: '伪原文' }] }],
+ ['不是整章目标', { ...batchInput, from: 1, selectedText: batchDocument.slice(1) }],
+])('%s时拒绝批量运行', (_name, bad) => {
+ const f = fixture()
+ expect(() => f.owner.beginEditorInline({ input: bad, modelId: 'synthetic', uiActionNonce: '非法批注' })).toThrow('GENERATION_EDITOR_INPUT_INVALID')
+ expect(f.spy).not.toHaveBeenCalled()
+})
