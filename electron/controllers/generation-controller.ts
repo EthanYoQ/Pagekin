@@ -245,6 +245,7 @@ export function registerGenerationController(options: {
   register('finalization-generation:cancel', 1, (owner, request) => owner.cancelFinalizationGeneration(request))
   register('graph-generation:begin', 1, (owner, request) => owner.beginGraphGeneration(request))
   register('graph-generation:read', 1, (owner, request) => owner.readGraphGeneration(request))
+  register('graph-generation:latest-continuity', 0, owner => owner.readLatestContinuityCheck())
   register('graph-generation:execute', 1, (owner, request) => owner.executeGraphGeneration(request))
   register('graph-generation:confirm', 1, (owner, request) => owner.confirmGraphGeneration(request))
   register('graph-generation:cancel', 1, (owner, request) => owner.cancelGraphGeneration(request))

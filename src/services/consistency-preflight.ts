@@ -15,11 +15,13 @@ export interface ConsistencyPreflightResult {
 
 export type ExemptionScope = 'chapter' | 'book'
 
-export const exemptionChapter = (finding: PreflightFinding, scope: ExemptionScope) => scope === 'book' ? null : finding.chapterNumber
+type ExemptableFinding = Pick<PreflightFinding, 'stableFactKey' | 'chapterNumber'>
+
+export const exemptionChapter = (finding: ExemptableFinding, scope: ExemptionScope) => scope === 'book' ? null : finding.chapterNumber
 
 export function saveFindingExemption(
   session: ProjectSessionContext,
-  finding: PreflightFinding,
+  finding: ExemptableFinding,
   scope: ExemptionScope,
   text: (zh: string, en: string) => string,
 ) {
