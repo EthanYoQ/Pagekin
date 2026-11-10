@@ -794,7 +794,7 @@ describe('作者对派生关系的决定，预检和建议说法一致', () => {
       const draftId = setupPending()
       const row = db().prepare('SELECT id,character_state_candidates AS candidates FROM summary_snapshots WHERE draft_id=?').get(draftId) as { id: number; candidates: string }
       const store = JSON.parse(row.candidates) as { relationPending: Array<Record<string, unknown>> }
-      store.relationPending = store.relationPending.map(({ authorLinesAtCreation: _dropped, ...candidate }) => candidate)
+      for (const candidate of store.relationPending) delete candidate.authorLinesAtCreation
       db().prepare('UPDATE summary_snapshots_all SET character_state_candidates=? WHERE id=?').run(JSON.stringify(store), row.id)
 
       const [legacy] = pending()

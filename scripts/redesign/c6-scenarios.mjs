@@ -118,6 +118,7 @@ export const C6_SCENARIOS = {
     await finalizeChapter(page, 4)
 
     await blueprint.open(page)
+    await context.shoot('c56-0-before-write')
     await blueprint.writeNext(page)
     const preflight = blueprint.preflight(page)
     await preflight.waitFor({ state: 'visible' })
