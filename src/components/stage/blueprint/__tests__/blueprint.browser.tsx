@@ -1537,6 +1537,31 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
       expect(calls('graph-generation:execute')).toHaveLength(1)
     })
 
+    it('检查做完、豁免还没读回时离开：回来接回这次总结；显示过之后再回来不重复', async () => {
+      let readsBack!: () => void
+      const readsHeld = new Promise<void>(resolve => { readsBack = resolve })
+      let finished = false
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+        if (channel === 'graph-generation:read') finished = true
+        if (finished && channel === 'db:consistency-exemption-list') await readsHeld
+        return base(channel, ...args)
+      })
+      await renderPage(2)
+      await check()
+      const before = calls('db:consistency-exemption-list').length
+      release()
+      await vi.waitFor(() => expect(calls('db:consistency-exemption-list').length).toBeGreaterThan(before))
+      await remount()
+      readsBack()
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
+      expect(calls('graph-generation:begin')).toHaveLength(1)
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+      await remount()
+      await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeEnabled()
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).not.toBeInTheDocument()
+    })
+
     it('切到别的作品：不把这部作品的检查接过去；切回来仍接得上', async () => {
       const OTHER_PATH = 'C:\\novels\\other'
       const other = { projectId: 'other', leaseId: 'other-lease', projectPath: OTHER_PATH }
