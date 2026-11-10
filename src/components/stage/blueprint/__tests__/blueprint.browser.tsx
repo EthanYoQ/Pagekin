@@ -1506,6 +1506,33 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     expect(calls('graph-generation:begin')).toHaveLength(0)
   })
 
+  describe('有节点但都不作用于待检查章', () => {
+    beforeEach(() => {
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+        if (channel === 'graph-generation:begin') throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_NOT_IN_FORCE')
+        return base(channel, ...args)
+      })
+    })
+
+    it('说明待检查章还没有生效的时间线，按钮仍可点，不发检查请求', async () => {
+      await renderPage(2)
+      await check()
+      await expect.element(page.getByText('蓝图没有改动。待检查的章节还没有生效的人物时间线，暂时没有可对照的。')).toBeVisible()
+      await expect.element(page.getByText('先定稿一章，才有可对照的人物时间线')).not.toBeInTheDocument()
+      await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeEnabled()
+      expect(calls('graph-generation:execute')).toHaveLength(0)
+    })
+
+    it('英文界面说同一件事', async () => {
+      await renderPage(2)
+      await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+      await act(async () => page.getByRole('button', { name: 'AI check', exact: true }).click())
+      await expect.element(page.getByText('Your blueprints are unchanged. No character timeline applies to the chapters to check yet, so there is nothing to compare.')).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'AI check', exact: true })).toBeEnabled()
+    })
+  })
+
   it('重开页面取回最近一次结果，不出总结，不发请求', async () => {
     latest = read
     await renderPage(2)

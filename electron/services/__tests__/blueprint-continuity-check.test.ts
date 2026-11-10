@@ -23,7 +23,7 @@ type Dispatch = GenerationRunServiceDependencies['dispatch']
 const reply = (text: string): Dispatch => async (_request, options) => { options.onVisible({ kind: 'delta', text }); return { finishReason: 'stop', usage: null } }
 const finding = (over: Record<string, unknown> = {}) => ({ chapterNumber: 2, eventIds: ['e1'], issue: '蓝图写两人并肩作战，节点说两人已决裂。', suggestion: '改成对峙。', ...over })
 
-function fixture(dispatch: Dispatch, { windowTokens = 32768, nodes = true, longKeyEvents = '沈舟与林岚并肩作战' } = {}) {
+function fixture(dispatch: Dispatch, { windowTokens = 32768, nodes = true, nodeFrom = 1, longKeyEvents = '沈舟与林岚并肩作战' } = {}) {
   const base = path.resolve('.runtime/.cache/novel-quality-modernization/graph-owner-tests'); fs.mkdirSync(base, { recursive: true })
   const root = fs.mkdtempSync(path.join(base, '项目-')); prepareCanonicalStorageFixture(root)
   const file = path.join(root, '.ai-novel', 'project.db'); let db = new Database(file); vi.mocked(getProjectDb).mockReturnValue(db)
@@ -33,7 +33,7 @@ function fixture(dispatch: Dispatch, { windowTokens = 32768, nodes = true, longK
   const blueprint = db.prepare('INSERT INTO blueprints(chapter_number,title,key_events) VALUES(?,?,?)')
   blueprint.run(2, '并肩', longKeyEvents); blueprint.run(3, '北塔', longKeyEvents)
   if (nodes) db.prepare(`INSERT INTO character_continuity_events(event_id,subject_id,subject_name,target_id,target_name,aspect,value,effective_chapter,provenance_json,draft_id,evidence_json)
-    VALUES('relation:add:关系1','甲','林岚','乙','沈舟','relation','决裂',1,?,NULL,?)`).run(JSON.stringify({ kind: 'author', operationId: '操作1' }), JSON.stringify({ seq: 1, relationshipId: '关系1' }))
+    VALUES('relation:add:关系1','甲','林岚','乙','沈舟','relation','决裂',?,?,NULL,?)`).run(nodeFrom, JSON.stringify({ kind: 'author', operationId: '操作1' }), JSON.stringify({ seq: 1, relationshipId: '关系1' }))
   const model: ModelProfile = { id: 'synthetic', name: '合成模型', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1', apiKey: 'fixture-only', baseUrl: 'https://api.openai.com/v1', temperature: 0.7, maxTokens: 1024, purposes: ['generation'], capabilities: { contextWindowTokens: windowTokens, maxOutputTokens: 1024, reasoning: false, structuredOutput: true, usage: true } }
   const spy = vi.fn<Dispatch>(dispatch)
   const deps = { db, projectStorageRoot: root, globalDataRoot: root, readBuiltinPrompt: (key: string) => JSON.stringify({ key, systemRole: '图谱编辑', content: '合成模板' }) }
@@ -144,6 +144,13 @@ it('只读检查不能确认写入', async () => {
 it('没有时间线节点时不建运行、不发请求', () => {
   const f = fixture(reply('{}'), { nodes: false })
   expect(() => f.begin()).toThrow('GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED')
+  expect(f.db.prepare('SELECT COUNT(*) FROM generation_runs').pluck().get()).toBe(0)
+  expect(f.spy).not.toHaveBeenCalled()
+})
+
+it('有节点但都不作用于待检查章：换一个码，不建运行、不发请求', () => {
+  const f = fixture(reply('{}'), { nodeFrom: 10 })
+  expect(() => f.begin()).toThrow('GENERATION_GRAPH_CONTINUITY_TIMELINE_NOT_IN_FORCE')
   expect(f.db.prepare('SELECT COUNT(*) FROM generation_runs').pluck().get()).toBe(0)
   expect(f.spy).not.toHaveBeenCalled()
 })
