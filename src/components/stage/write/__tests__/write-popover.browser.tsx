@@ -52,13 +52,20 @@ const storedThreadIpc = async (channel: string, ...args: unknown[]): Promise<unk
   if (channel === 'db:narrative-thread-list') return threadViews
   if (channel === 'db:narrative-thread-assignment-set') {
     const { planId, chapterNumber, kind, note } = args[0] as NarrativeThreadAssignmentInput
-    threadViews = threadViews.map(item => item.id === planId
-      ? { ...item, assignments: [...(item.assignments ?? []).filter(old => old.chapterNumber !== chapterNumber), { chapterNumber, kind, note }] } : item)
+    threadViews = threadViews.map(item => item.id === planId ? {
+      ...item,
+      targetEndChapter: kind === 'resolve' ? chapterNumber : item.targetEndChapter,
+      assignments: [...(item.assignments ?? []).filter(old => old.chapterNumber !== chapterNumber), { chapterNumber, kind, note }],
+    } : item)
     return { success: true, threads: threadViews }
   }
   if (channel === 'db:narrative-thread-assignment-remove') {
-    threadViews = threadViews.map(item => item.id === args[0]
-      ? { ...item, assignments: (item.assignments ?? []).filter(old => old.chapterNumber !== args[1]) } : item)
+    const [planId, chapterNumber, restoreEndChapter] = args as [number, number, number | null]
+    threadViews = threadViews.map(item => item.id === planId ? {
+      ...item,
+      targetEndChapter: restoreEndChapter !== null && item.targetEndChapter === chapterNumber ? restoreEndChapter : item.targetEndChapter,
+      assignments: (item.assignments ?? []).filter(old => old.chapterNumber !== chapterNumber),
+    } : item)
     return { success: true, threads: threadViews }
   }
   throw new Error(`unexpected IPC ${channel}`)
@@ -289,16 +296,36 @@ describe('写前的线索：延后与指定本章推进', () => {
 
     await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '撤销' }).click())
     await expect.element(threadRow('青铜钥匙')).toHaveTextContent('本章到期')
-    expect(threadCalls('db:narrative-thread-assignment-remove')[0]!.slice(1, 3)).toEqual([1, 6])
+    expect(threadCalls('db:narrative-thread-assignment-remove')[0]!.slice(1, 4)).toEqual([1, 6, 5])
     await expect.element(hint(1)).toBeVisible()
   })
 
-  it('延后三章从正在写的章算', async () => {
+  it('延后三章从正在写的章算，撤销后回到原来的逾期章数', async () => {
     threadViews = [threadView(1, '青铜钥匙', 1, 2)]
     await renderPopover()
     await act(async () => hint(1).click())
     await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后三章' }).click())
     await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 8 章')
+    expect(threadViews[0]!.targetEndChapter).toBe(8)
+
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '撤销' }).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('逾期 3 章')
+  })
+
+  it('换到别的章再回来：不留可撤销的一行，延后过的线索可以设为本章推进', async () => {
+    threadViews = [threadView(1, '青铜钥匙', 1, 5)]
+    await renderPopover()
+    await act(async () => hint(1).click())
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后一章' }).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 6 章')
+    await userEvent.keyboard('{Escape}')
+
+    await render(<WriteChapterPopover chapterNumber={4} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 4 章" />)
+    await renderPopover()
+    await act(async () => page.getByRole('button', { name: '本次写作选项' }).click())
+    await act(async () => popover.getByText('也可以本章推进').click())
+    await expect.element(threadRow('青铜钥匙').getByRole('button', { name: '本章推进' })).toBeVisible()
+    expect(popover.getByRole('button', { name: '撤销' }).query()).toBeNull()
   })
 
   it('超过 6 条时全部列出，写明另有几条本次不进任务，小字只数进任务的', async () => {

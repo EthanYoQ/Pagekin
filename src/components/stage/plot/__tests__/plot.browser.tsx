@@ -122,25 +122,37 @@ async function render(initialView: 'plot-tree' | 'plans') {
 }
 
 describe('线索延后的痕迹', () => {
-  it('写明原定章、现在的章和备注，路线的解决站跟着新章，延后后不再标逾期', async () => {
-    threads = [{ ...thread(), targetEndChapter: 5, assignments: [
-      { chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' },
-      { chapterNumber: 9, kind: 'resolve', note: '写第 6 章时延后' },
-    ] }]
+  const deferrals = async () => {
     await render('plans')
     const row = await vi.waitFor(() => {
       const found = document.querySelector('#narrative-plan-5')
       expect(found).toBeTruthy()
       return found!
     })
-    expect(row.querySelector('.stage-thread-name')?.textContent).toContain('原定第 5 章，延到第 9 章 · 写第 6 章时延后')
+    return { row, lines: [...row.querySelectorAll('.stage-thread-name .stage-thread-sub')].map(node => node.textContent).slice(1) }
+  }
+
+  it('仍生效的延后写现在时，被后来的延后取代的写过去时，路线的解决站是当前回收章', async () => {
+    threads = [{ ...thread(), targetEndChapter: 9, assignments: [
+      { chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' },
+      { chapterNumber: 9, kind: 'resolve', note: '写第 6 章时延后' },
+    ] }]
+    const { row, lines } = await deferrals()
+    expect(lines).toEqual(['曾延到第 6 章 · 写第 5 章时延后', '延到第 9 章 · 写第 6 章时延后'])
     expect([...row.querySelectorAll('.stage-thread-route li')].at(-1)?.textContent).toBe('解 · 第 9 章')
   })
 
+  it('延后后作者在线索页把回收章改回第 5 章：历史写过去时，不再说延到第 6 章', async () => {
+    threads = [{ ...thread(), targetEndChapter: 5, assignments: [{ chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' }] }]
+    const { row, lines } = await deferrals()
+    expect(lines).toEqual(['曾延到第 6 章 · 写第 5 章时延后'])
+    expect([...row.querySelectorAll('.stage-thread-route li')].at(-1)?.textContent).toBe('解 · 第 5 章')
+  })
+
   it('没有延后的线索不显示痕迹', async () => {
-    await render('plans')
-    await vi.waitFor(() => expect(document.querySelector('#narrative-plan-5')).toBeTruthy())
-    expect(document.body.textContent).not.toContain('原定第')
+    const { lines } = await deferrals()
+    expect(lines).toEqual([])
+    expect(document.body.textContent).not.toContain('延到第')
   })
 })
 
