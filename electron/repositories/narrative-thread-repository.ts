@@ -12,6 +12,8 @@ import {
   narrativeEvidenceInText,
   narrativeThreadSchedule,
   narrativeThreadView,
+  type NarrativeThreadAssignment,
+  type NarrativeThreadAssignmentInput,
   type NarrativeThreadEvent,
   type NarrativeThreadEventInput,
   type NarrativeThreadChapterContext,
@@ -88,6 +90,24 @@ export class NarrativeThreadRepository {
   static deletePlan(id: number, db = requireDb()): void {
     const result = db.prepare('DELETE FROM narrative_thread_plans WHERE id = ?').run(id)
     if (result.changes !== 1) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
+  }
+
+  /** 同一线索同一章只留一行，后写的覆盖先写的。 */
+  static setAssignment(input: NarrativeThreadAssignmentInput, db = requireDb()): void {
+    const { planId, chapterNumber, writingChapter, kind } = input
+    if (!Number.isSafeInteger(chapterNumber) || chapterNumber < 1 || !Number.isSafeInteger(writingChapter) || writingChapter < 1
+      || (kind !== 'advance' && kind !== 'resolve') || (kind === 'resolve' && chapterNumber <= writingChapter)) {
+      throw new Error('NARRATIVE_THREAD_RANGE_INVALID')
+    }
+    if (!this.getPlan(planId, db)) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
+    db.prepare(`
+      INSERT INTO narrative_thread_assignments (plan_id, chapter_number, kind, note) VALUES (?, ?, ?, ?)
+      ON CONFLICT(plan_id, chapter_number) DO UPDATE SET kind = excluded.kind, note = excluded.note, created_at = datetime('now')
+    `).run(planId, chapterNumber, kind, input.note.trim())
+  }
+
+  static removeAssignment(planId: number, chapterNumber: number, db = requireDb()): void {
+    db.prepare('DELETE FROM narrative_thread_assignments WHERE plan_id = ? AND chapter_number = ?').run(planId, chapterNumber)
   }
 
   static getPlan(id: number, db = requireDb()): NarrativeThreadPlanRecord | null {
@@ -170,8 +190,17 @@ export class NarrativeThreadRepository {
     `).get() as { chapterNumber: number }).chapterNumber
     const plans = db.prepare('SELECT * FROM narrative_thread_plans ORDER BY id ASC')
       .all() as Record<string, unknown>[]
+    const assignments = new Map<number, NarrativeThreadAssignment[]>()
+    for (const { planId, ...assignment } of db.prepare(`
+      SELECT plan_id AS planId, chapter_number AS chapterNumber, kind, note
+      FROM narrative_thread_assignments ORDER BY chapter_number ASC
+    `).all() as (NarrativeThreadAssignment & { planId: number })[]) {
+      assignments.set(planId, [...(assignments.get(planId) ?? []), assignment])
+    }
     return plans.map((row) => {
-      const plan = rowToPlan(row)
+      const record = rowToPlan(row)
+      const planAssignments = assignments.get(record.id)
+      const plan = planAssignments ? { ...record, assignments: planAssignments } : record
       const events = db.prepare(`
         SELECT confirmations.id, confirmations.plan_id AS planId,
                confirmations.draft_id AS draftId, confirmations.event_type AS type,

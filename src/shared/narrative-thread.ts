@@ -46,12 +46,26 @@ export interface NarrativeThreadEvent extends NarrativeThreadEventInput {
   createdAt: string
 }
 
+/** resolve：改到第 N 章回收，只把截止章往后推。advance：作者指定第 N 章推进，不动截止章。 */
+export interface NarrativeThreadAssignment {
+  chapterNumber: number
+  kind: 'advance' | 'resolve'
+  note: string
+}
+
+export interface NarrativeThreadAssignmentInput extends NarrativeThreadAssignment {
+  planId: number
+  writingChapter: number
+}
+
 export interface NarrativeThreadView extends NarrativeThreadPlanInput {
   id: number
   status: NarrativeThreadStatus
   dormantChapters: number
   overdue: boolean
   events: NarrativeThreadEvent[]
+  /** 没有指定和延后时不带这个字段，按章升序。 */
+  assignments?: NarrativeThreadAssignment[]
   createdAt: string
   updatedAt: string
 }
@@ -75,17 +89,29 @@ export interface NarrativeThreadChapterContext {
  */
 export type NarrativeThreadSchedule =
   | { kind: 'overdue'; chaptersOverdue: number }
-  | { kind: 'due' | 'in-window' | 'later' | 'terminal' }
+  | { kind: 'due' | 'assigned' | 'in-window' | 'later' | 'terminal' }
+
+type ThreadDeadline = Pick<NarrativeThreadView, 'targetEndChapter' | 'assignments'>
+
+const deferredChapters = (thread: ThreadDeadline) =>
+  (thread.assignments ?? []).filter(assignment => assignment.kind === 'resolve').map(assignment => assignment.chapterNumber)
+
+/** 取最大值、不看先后，重复延后和撤销才是幂等的。targetEndChapter 永远是作者原定的章。 */
+export function effectiveTargetEndChapter(thread: ThreadDeadline): number {
+  return Math.max(thread.targetEndChapter, ...deferredChapters(thread))
+}
 
 export function narrativeThreadSchedule(
-  thread: Pick<NarrativeThreadView, 'status' | 'targetStartChapter' | 'targetEndChapter'>,
+  thread: Pick<NarrativeThreadView, 'status' | 'targetStartChapter' | 'targetEndChapter' | 'assignments'>,
   chapterNumber: number,
 ): NarrativeThreadSchedule | null {
-  const { targetStartChapter: start, targetEndChapter: end } = thread
-  if (!Number.isSafeInteger(start) || start < 1 || !Number.isSafeInteger(end) || end < start) return null
+  const { targetStartChapter: start, targetEndChapter: plannedEnd } = thread
+  if (!Number.isSafeInteger(start) || start < 1 || !Number.isSafeInteger(plannedEnd) || plannedEnd < start) return null
   if (isTerminalNarrativeThreadStatus(thread.status)) return { kind: 'terminal' }
+  const end = effectiveTargetEndChapter(thread)
   if (chapterNumber > end) return { kind: 'overdue', chaptersOverdue: chapterNumber - end }
   if (chapterNumber === end) return { kind: 'due' }
+  if (thread.assignments?.some(item => item.kind === 'advance' && item.chapterNumber === chapterNumber)) return { kind: 'assigned' }
   return { kind: chapterNumber >= start ? 'in-window' : 'later' }
 }
 
@@ -94,7 +120,7 @@ export function isTerminalNarrativeThreadStatus(status: NarrativeThreadStatus): 
 }
 
 const SCHEDULE_RANK: Record<NarrativeThreadSchedule['kind'], number> = {
-  overdue: 0, due: 1, 'in-window': 2, later: 3, terminal: 4,
+  assigned: 0, overdue: 1, due: 2, 'in-window': 3, later: 4, terminal: 5,
 }
 
 export function compareNarrativeThreadSchedules(left: NarrativeThreadSchedule, right: NarrativeThreadSchedule): number {
@@ -105,37 +131,85 @@ export function compareNarrativeThreadSchedules(left: NarrativeThreadSchedule, r
 export const CHAPTER_THREAD_TASK_LIMIT = 6
 
 /**
- * 写第 N 章时到期或逾期的线索，开写时冻结进章节信息，作为本章硬任务。
+ * 写第 N 章时到期、逾期或作者指定的线索，开写时冻结进章节信息，作为本章硬任务。
  * 恢复和审稿都读冻结值，开写后作者改计划不影响本轮。
  */
 export interface ChapterThreadTask {
   planId: number
   title: string
   authorIntent: string
-  schedule: { kind: 'overdue'; chaptersOverdue: number } | { kind: 'due' }
+  schedule: { kind: 'overdue'; chaptersOverdue: number } | { kind: 'due' | 'assigned' }
 }
 
 function chapterThreadTask(planId: number, title: string, authorIntent: string,
   schedule: ChapterThreadTask['schedule']): ChapterThreadTask {
   return {
     planId, title, authorIntent,
-    schedule: schedule.kind === 'overdue' ? { kind: 'overdue', chaptersOverdue: schedule.chaptersOverdue } : { kind: 'due' },
+    schedule: schedule.kind === 'overdue' ? { kind: 'overdue', chaptersOverdue: schedule.chaptersOverdue } : { kind: schedule.kind },
   }
+}
+
+export function isChapterThreadTaskSchedule(schedule: NarrativeThreadSchedule): schedule is ChapterThreadTask['schedule'] {
+  return schedule.kind === 'overdue' || schedule.kind === 'due' || schedule.kind === 'assigned'
+}
+
+interface PendingThreadTask { thread: NarrativeThreadView; schedule: ChapterThreadTask['schedule'] }
+
+/** 合同和写前弹层共用这一份排序，两边的顺序才不会对不上。 */
+function pendingThreadTasks(threads: readonly NarrativeThreadView[], chapterNumber: number): PendingThreadTask[] {
+  return threads.flatMap((thread): PendingThreadTask[] => {
+    const schedule = narrativeThreadSchedule(thread, chapterNumber)
+    return schedule && isChapterThreadTaskSchedule(schedule) ? [{ thread, schedule }] : []
+  }).sort((left, right) => compareNarrativeThreadSchedules(left.schedule, right.schedule))
 }
 
 export function chapterThreadTasks(threads: readonly NarrativeThreadView[], chapterNumber: number): {
   tasks: ChapterThreadTask[]
   leftOut: number
 } {
-  const pending = threads.flatMap((thread): { thread: NarrativeThreadView; schedule: ChapterThreadTask['schedule'] }[] => {
-    const schedule = narrativeThreadSchedule(thread, chapterNumber)
-    if (schedule?.kind === 'overdue') return [{ thread, schedule }]
-    return schedule?.kind === 'due' ? [{ thread, schedule: { kind: 'due' } }] : []
-  }).sort((left, right) => compareNarrativeThreadSchedules(left.schedule, right.schedule))
+  const pending = pendingThreadTasks(threads, chapterNumber)
   return {
     tasks: pending.slice(0, CHAPTER_THREAD_TASK_LIMIT)
       .map(({ thread, schedule }) => chapterThreadTask(thread.id, thread.title, thread.authorIntent, schedule)),
     leftOut: Math.max(0, pending.length - CHAPTER_THREAD_TASK_LIMIT),
+  }
+}
+
+export type ChapterThreadPanelRow =
+  | ({ state: 'task' } & PendingThreadTask)
+  | { state: 'deferred'; thread: NarrativeThreadView; deferredTo: number }
+
+export interface ChapterThreadPanel {
+  rows: ChapterThreadPanelRow[]
+  canAdvance: NarrativeThreadView[]
+  taskCount: number
+  leftOut: number
+}
+
+/** 撤销最晚的那次延后之后，这条线索在第 N 章会回到到期或逾期时，返回那次延后到的章。 */
+function deferredPastChapter(thread: NarrativeThreadView, chapterNumber: number): number | null {
+  const chapters = deferredChapters(thread).sort((left, right) => left - right)
+  const latest = chapters.pop()
+  if (latest === undefined || latest <= chapterNumber) return null
+  return chapterNumber >= Math.max(thread.targetEndChapter, ...chapters) ? latest : null
+}
+
+/** 写前弹层：列全部到期和逾期的线索（不止进合同的 6 条），本章延后过的留一行可撤销，区间内的可指定本章推进。 */
+export function chapterThreadPanel(threads: readonly NarrativeThreadView[], chapterNumber: number): ChapterThreadPanel {
+  const { tasks, leftOut } = chapterThreadTasks(threads, chapterNumber)
+  const deferred: ChapterThreadPanelRow[] = []
+  const canAdvance: NarrativeThreadView[] = []
+  for (const thread of threads) {
+    if (narrativeThreadSchedule(thread, chapterNumber)?.kind !== 'in-window') continue
+    const deferredTo = deferredPastChapter(thread, chapterNumber)
+    if (deferredTo === null) canAdvance.push(thread)
+    else deferred.push({ state: 'deferred', thread, deferredTo })
+  }
+  return {
+    rows: [...pendingThreadTasks(threads, chapterNumber).map(task => ({ state: 'task' as const, ...task })), ...deferred],
+    canAdvance,
+    taskCount: tasks.length,
+    leftOut,
   }
 }
 
@@ -148,7 +222,7 @@ export function parseChapterThreadTasks(value: unknown): ChapterThreadTask[] | n
     const schedule = task?.schedule as { kind?: unknown; chaptersOverdue?: unknown } | undefined
     if (!task || !Number.isSafeInteger(task.planId) || Number(task.planId) < 1
       || typeof task.title !== 'string' || typeof task.authorIntent !== 'string' || !schedule
-      || !(schedule.kind === 'due' || (schedule.kind === 'overdue'
+      || !(schedule.kind === 'due' || schedule.kind === 'assigned' || (schedule.kind === 'overdue'
         && Number.isSafeInteger(schedule.chaptersOverdue) && Number(schedule.chaptersOverdue) >= 1))) return null
     tasks.push(chapterThreadTask(task.planId!, task.title, task.authorIntent, schedule as ChapterThreadTask['schedule']))
   }
@@ -170,7 +244,7 @@ export function writtenChapterThreadTasks(bindingJson: string): ChapterThreadTas
 }
 
 export function narrativeThreadView(
-  plan: NarrativeThreadPlanRecord,
+  plan: NarrativeThreadPlanRecord & Pick<NarrativeThreadView, 'assignments'>,
   events: NarrativeThreadEvent[],
   currentFinalizedChapter: number,
 ): NarrativeThreadView {
