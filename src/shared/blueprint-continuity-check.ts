@@ -25,7 +25,6 @@ export interface ContinuityCheckNode {
   /** 节点的来历，和规则卡同一种说法。只给作者看，不进模型请求。 */
   since: { zhCN: string; enUS: string }
   fromChapter: number
-  /** 从这一章起被后来的节点换掉或清空。模型看不到，只用来丢掉引用过期节点的结论。 */
   untilChapter?: number
   subjectName: string
   aspect: ContinuityNode['aspect']

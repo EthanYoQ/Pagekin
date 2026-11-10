@@ -107,11 +107,10 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const findings = useMemo<AiFinding[]>(() => {
     if (!report) return []
     if (report.sourceStatus === 'conflict') {
-      // 来源对不上时，只有确认时间线没变、确实是某几章蓝图改了，没改的章才保留结论。
       const checkedChapters = [...report.chapters.values()].map(chapter => ({ ...chapter, notesUpdatedAt: '' }))
-      const sameTimeline = timeline !== null
+      const timelineUnchanged = timeline !== null
         && JSON.stringify(selectContinuityCheckScope(checkedChapters, timeline, Infinity).nodes) === JSON.stringify([...report.nodes.values()])
-      if (!sameTimeline || [...report.chapters.keys()].every(unchanged)) return []
+      if (!timelineUnchanged || [...report.chapters.keys()].every(unchanged)) return []
     }
     return report.result.findings.flatMap(finding => {
       const stableFactKey = continuityFindingKey(finding.eventIds)
