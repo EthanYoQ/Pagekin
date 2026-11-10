@@ -419,7 +419,7 @@ function relationCandidateKey(source: FinalizedSourceIdentity, change: Pick<Fina
   return `fcs-relation:${sha256(JSON.stringify([source.draftId, source.finalizationId, source.contentHash, unorderedPairKey(change.sourceId, change.targetId), sha256(change.relation)]))}`
 }
 
-/** 同一份定稿重跑时节点已在，这里仍要补上待确认项：上一次可能因为要点那步失败而没地方存。 */
+/** 同一份定稿重跑时节点已在，这里仍要补上待确认项。 */
 function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCharacterContext, changes: readonly FinalizedRelationChange[]): void {
   const { source } = context
   const name = (id: string) => context.characters.find(character => character.characterId === id)!.displayNameSnapshot
@@ -443,7 +443,10 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
   const row = db.prepare(`SELECT id,character_state_candidates AS candidates FROM summary_snapshots
     WHERE draft_id=? AND source_finalization_id=? AND source_content_hash=? AND projection_generation=?`)
     .get(source.draftId, source.finalizationId, source.contentHash, context.projectionGeneration) as { id: number; candidates: string } | undefined
-  if (!row) return
+  if (!row) {
+    if (candidates.length) throw new Error('CONTINUITY_PROJECTION_MISSING')
+    return
+  }
   const store = parseCharacterStateCandidateStore(row.candidates)
   const decided = new Set(store.receipts.map(receipt => receipt.candidateKey))
   const byPair = new Map(store.relationPending.map(candidate => [unorderedPairKey(candidate.sourceId, candidate.targetId), candidate]))
