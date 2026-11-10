@@ -184,11 +184,6 @@ export function ModelForm({
   const outputLimits = [model.maxTokens, currentCapabilities.maxOutputTokens, providerOutputLimit]
     .filter((value): value is number => Number.isSafeInteger(value) && Number(value) > 0)
   const effectiveOutputLimit = outputLimits.length ? Math.min(...outputLimits) : null
-  const contextOutputConflict = !isEmbedding
-    && currentCapabilities.contextWindowTokens !== null
-    && currentCapabilities.contextWindowTokens > 0
-    && effectiveOutputLimit !== null
-    && effectiveOutputLimit >= currentCapabilities.contextWindowTokens
 
   const updateCapabilities = (next: Partial<ModelCapabilities>) => {
     const capabilities = { ...currentCapabilities, ...next }
@@ -590,22 +585,6 @@ export function ModelForm({
                   : text(`当前有效输出额度为 ${effectiveOutputLimit.toLocaleString()}。取作者设置、模型输出容量与已知服务商上限中的较小值。新开始的生成每次请求最多发这么多，拆分的任务可能发得更少；旧版本开始的运行可能按 32,768 封顶。`,
                     `Effective output allowance: ${effectiveOutputLimit.toLocaleString()}. It is the lowest of your setting, the model output capacity, and a known provider limit. A newly started generation sends at most this much per request, and a split task may send less; runs started by an older version may be capped at 32,768.`)}
               </p>
-              {contextOutputConflict && (
-                <p
-                  role="status"
-                  className="rounded-lg border px-3 py-2 text-xs leading-5"
-                  style={{
-                    borderColor: 'var(--color-warning)',
-                    backgroundColor: 'color-mix(in srgb, var(--color-warning) 8%, transparent)',
-                    color: 'var(--color-warning-text)',
-                  }}
-                >
-                  {text(
-                    '最大输出 Tokens 没有给提示词留下安全空间。服务商可能以提示词超长拒绝请求；请降低最大输出 Tokens，或换用上下文更长的模型。此提示不会阻止保存。',
-                    'Max output tokens leave no safe room for the prompt. The provider may reject requests as too long; lower max output tokens or switch to a model with a longer context. This warning does not block saving.',
-                  )}
-                </p>
-              )}
               <ModelReasoningOverrideSettings model={model} onModelChange={onChange} />
             </div>
           )}
