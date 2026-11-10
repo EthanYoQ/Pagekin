@@ -17,7 +17,6 @@ const PLANS = Object.freeze([
 /** 只给线索硬任务场景加的一条：夹具正文写了林岚对照父亲的地图找灯塔，审稿判已回收有引文可依。 */
 const MAP_PLAN = Object.freeze({ title: '父亲的地图', type: '伏笔', targetStartChapter: 3, targetEndChapter: 5, authorIntent: '林岚对照父亲的地图找到灯塔。' })
 
-/** 只给延后场景加的一条：写第 5 章时还在区间内，用来试「也可以本章推进」。 */
 const ECHO_PLAN = Object.freeze({ title: '灯塔的回声', type: '支线', targetStartChapter: 4, targetEndChapter: 9, authorIntent: '后文交代回声的来源。' })
 
 const seedWith = plans => context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {

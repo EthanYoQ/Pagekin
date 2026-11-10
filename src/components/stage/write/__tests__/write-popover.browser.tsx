@@ -48,7 +48,6 @@ let persistedBlueprint: ChapterBlueprint
 let threadViews: NarrativeThreadView[]
 let threadIpc: (channel: string, ...args: unknown[]) => Promise<unknown>
 
-/** 按仓储的写入规则改夹具：同线索同章覆盖，撤销删一行；排期由真实的共享函数算。 */
 const storedThreadIpc = async (channel: string, ...args: unknown[]): Promise<unknown> => {
   if (channel === 'db:narrative-thread-list') return threadViews
   if (channel === 'db:narrative-thread-assignment-set') {

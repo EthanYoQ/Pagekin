@@ -64,7 +64,6 @@ export interface NarrativeThreadView extends NarrativeThreadPlanInput {
   dormantChapters: number
   overdue: boolean
   events: NarrativeThreadEvent[]
-  /** 没有指定和延后时不带这个字段，按章升序。 */
   assignments?: NarrativeThreadAssignment[]
   createdAt: string
   updatedAt: string
@@ -155,7 +154,6 @@ export function isChapterThreadTaskSchedule(schedule: NarrativeThreadSchedule): 
 
 interface PendingThreadTask { thread: NarrativeThreadView; schedule: ChapterThreadTask['schedule'] }
 
-/** 合同和写前弹层共用这一份排序，两边的顺序才不会对不上。 */
 function pendingThreadTasks(threads: readonly NarrativeThreadView[], chapterNumber: number): PendingThreadTask[] {
   return threads.flatMap((thread): PendingThreadTask[] => {
     const schedule = narrativeThreadSchedule(thread, chapterNumber)
@@ -194,7 +192,6 @@ function deferredPastChapter(thread: NarrativeThreadView, chapterNumber: number)
   return chapterNumber >= Math.max(thread.targetEndChapter, ...chapters) ? latest : null
 }
 
-/** 写前弹层：列全部到期和逾期的线索（不止进合同的 6 条），本章延后过的留一行可撤销，区间内的可指定本章推进。 */
 export function chapterThreadPanel(threads: readonly NarrativeThreadView[], chapterNumber: number): ChapterThreadPanel {
   const { tasks, leftOut } = chapterThreadTasks(threads, chapterNumber)
   const deferred: ChapterThreadPanelRow[] = []

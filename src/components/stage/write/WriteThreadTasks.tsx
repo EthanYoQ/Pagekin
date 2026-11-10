@@ -9,7 +9,6 @@ interface WriteThreadTasksProps {
   threads: ReturnType<typeof useChapterThreadTasks>
 }
 
-/** 写前弹层里的线索：到期和逾期的可一键延后，区间内的可指定本章推进。这里的操作都不挡开写。 */
 export default function WriteThreadTasks({ chapterNumber, threads }: WriteThreadTasksProps) {
   const text = useLocaleStore(s => s.text)
   const { panel, savingPlanId, failure, defer, assign, undo } = threads

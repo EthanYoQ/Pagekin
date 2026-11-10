@@ -92,7 +92,6 @@ export class NarrativeThreadRepository {
     if (result.changes !== 1) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
   }
 
-  /** 同一线索同一章只留一行，后写的覆盖先写的。 */
   static setAssignment(input: NarrativeThreadAssignmentInput, db = requireDb()): void {
     const { planId, chapterNumber, writingChapter, kind } = input
     if (!Number.isSafeInteger(chapterNumber) || chapterNumber < 1 || !Number.isSafeInteger(writingChapter) || writingChapter < 1
