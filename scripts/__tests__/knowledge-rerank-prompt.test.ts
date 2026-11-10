@@ -182,4 +182,39 @@ describe('knowledge-rerank aggregate 汇总多次重复并逐条判定', () => {
     expect(result.status).not.toBe(0)
     expect(result.out).toBeNull()
   })
+
+  const good = () => receiptOf('vector', rows(0))
+  const withRows = (receipt: ReturnType<typeof good>, change: (row: ReturnType<typeof judgedRow>, index: number) => unknown) =>
+    ({ ...receipt, queries: receipt.queries.map(change) })
+  const coverageOf = (row: ReturnType<typeof judgedRow>) => row.promptCoverage['production-default']
+  const withoutRerankCall = (row: ReturnType<typeof judgedRow>) => ({ ...row, rerank: { ...row.rerank, call: undefined } })
+  const withTightBudget = (row: ReturnType<typeof judgedRow>) => ({ ...row, promptCoverage: { ...row.promptCoverage, tight: coverageOf(row) } })
+  const expectRejectedNaming = (receipts: unknown[], name: string) => {
+    const result = aggregate(receipts)
+    expect(result.status).not.toBe(0)
+    expect(result.out).toBeNull()
+    expect(result.stderr).toContain(name)
+    expect(result.stderr).not.toMatch(/TypeError/)
+  }
+
+  it.each([
+    ['第一份是旧收据（没有 promptCoverage 和 rerank.call）', () => [withRows(good(), row => ({ ...withoutRerankCall(row), promptCoverage: undefined })), good()], 'r0.json'],
+    ['缺 queries', () => [{ ...good(), queries: undefined }], 'r0.json'],
+    ['queries 为空', () => [{ ...good(), queries: [] }], 'r0.json'],
+    ['后面某份的某一行缺 promptCoverage', () => [good(), withRows(good(), (row, index) => index === 7 ? { ...row, promptCoverage: undefined } : row)], 'r1.json'],
+    ['后面某份的某一行缺 rerank.call', () => [good(), withRows(good(), (row, index) => index === 7 ? withoutRerankCall(row) : row)], 'r1.json'],
+    ['某份的预算键与第一份不同', () => [good(), withRows(good(), row => ({ ...row, promptCoverage: { tight: coverageOf(row) } }))], 'r1.json'],
+    ['某份只有一行缺了第一份的预算键', () => [withRows(good(), withTightBudget), withRows(good(), (row, index) => index === 7 ? row : withTightBudget(row))], 'r1.json'],
+    ['向量组所有收据都没有生产默认预算', () => [withRows(good(), row => ({ ...row, promptCoverage: { tight: coverageOf(row) } }))], 'r0.json'],
+  ])('%s：拒绝汇总并点名文件，不写结果', (_label, receipts, name) => {
+    expectRejectedNaming(receipts(), name)
+  })
+
+  it('各份的预算键相同只是顺序不同时照常汇总', () => {
+    const budgets = (order: string[]) => withRows(good(), row => ({ ...row, promptCoverage: Object.fromEntries(order.map(budget => [budget, coverageOf(row)])) }))
+    const result = aggregate([budgets(['production-default', 'tight']), budgets(['tight', 'production-default'])])
+    expect(result.status).toBe(0)
+    expect(result.out.repetitions).toBe(2)
+    expect(Object.keys(result.out.promptCoverage).sort()).toEqual(['production-default', 'tight'])
+  })
 })
