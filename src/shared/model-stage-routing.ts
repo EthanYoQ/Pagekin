@@ -19,6 +19,7 @@ export const MODEL_STAGE_BY_OPERATION = {
   'plot-tree-snapshot': 'planning',
   'narrative-thread-plan-candidate': 'planning',
   'narrative-thread-event-candidate': 'planning',
+  'blueprint-continuity-check': 'planning',
   'chapter-draft': 'drafting',
   'batch-chapters': 'drafting',
   'editor-inline': 'drafting',

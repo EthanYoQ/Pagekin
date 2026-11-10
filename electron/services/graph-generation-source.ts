@@ -5,18 +5,20 @@ import { resolveWritingLanguage } from '../../src/shared/writing-language'
 import { buildPlotTreeTask } from '../../src/shared/plot-tree-generation-pure'
 import { buildNarrativeThreadEventTask, buildNarrativeThreadPlanTask } from '../../src/shared/narrative-thread-generation-pure'
 import { narrativeThreadView } from '../../src/shared/narrative-thread'
+import { buildBlueprintContinuityCheckTask, selectContinuityCheckScope } from '../../src/shared/blueprint-continuity-check'
 import { PlotTreeRepository } from '../repositories/plot-tree-repository'
 import { NarrativeThreadRepository } from '../repositories/narrative-thread-repository'
 import { BlueprintRepository } from '../repositories/blueprint-repository'
+import { SummaryRepository } from '../repositories/summary-repository'
 import { textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
 
 const positive = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0
 const nonempty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
-const operations = { plot: 'plot-tree-snapshot', plan: 'narrative-thread-plan-candidate', event: 'narrative-thread-event-candidate' } as const
+export const graphGenerationOperations = { plot: 'plot-tree-snapshot', plan: 'narrative-thread-plan-candidate', event: 'narrative-thread-event-candidate', continuity: 'blueprint-continuity-check' } as const
 
 export function validateGraphGenerationInput(input: GraphGenerationInput): GraphGenerationInput {
-  if (!input || typeof input !== 'object' || Array.isArray(input) || !Object.hasOwn(operations, input.kind)) throw new Error('GENERATION_GRAPH_INPUT_INVALID')
-  const keys = input.kind === 'plot' ? ['kind'] : input.kind === 'plan' ? ['kind', 'chapterNumber'] : ['kind', 'planId', 'draftId']
+  if (!input || typeof input !== 'object' || Array.isArray(input) || !Object.hasOwn(graphGenerationOperations, input.kind)) throw new Error('GENERATION_GRAPH_INPUT_INVALID')
+  const keys = input.kind === 'plot' || input.kind === 'continuity' ? ['kind'] : input.kind === 'plan' ? ['kind', 'chapterNumber'] : ['kind', 'planId', 'draftId']
   if (Object.keys(input).some(key => !keys.includes(key))
     || input.kind === 'plan' && !positive(input.chapterNumber)
     || input.kind === 'event' && (!positive(input.planId) || !positive(input.draftId))) throw new Error('GENERATION_GRAPH_INPUT_INVALID')
@@ -26,7 +28,7 @@ export function validateGraphGenerationInput(input: GraphGenerationInput): Graph
 /** The ignored IDs are supplied only by the main effect owner after validating its ACKs. */
 export function captureGraphGenerationContext(db: Database.Database, input: GraphGenerationInput,
   scope: { projectId: string; epoch: string }, key: string, previous?: GraphGenerationContext,
-  ignoredOwnEventIds: readonly number[] = []): GraphGenerationContext {
+  ignoredOwnEventIds: readonly number[] = [], continuityInputTokens = Infinity): GraphGenerationContext {
   const valid = validateGraphGenerationInput(input)
   if (!nonempty(scope.projectId) || !nonempty(scope.epoch) || !nonempty(key)
     || ignoredOwnEventIds.some(id => !positive(id)) || new Set(ignoredOwnEventIds).size !== ignoredOwnEventIds.length
@@ -48,6 +50,17 @@ export function captureGraphGenerationContext(db: Database.Database, input: Grap
     const blueprint = BlueprintRepository.getAll(db).find(row => row.chapterNumber === valid.chapterNumber)
     if (!blueprint || !positive(core.total_chapters) || valid.chapterNumber > core.total_chapters) throw new Error('GENERATION_GRAPH_BLUEPRINT_REQUIRED')
     return { ...base, kind: 'plan', blueprint, totalChapters: core.total_chapters }
+  }
+  if (valid.kind === 'continuity') {
+    const finalized = new Set(db.prepare("SELECT DISTINCT chapter_number FROM drafts WHERE status='finalized'").pluck().all())
+    const frozen = previous?.kind === 'continuity' ? new Set(previous.chapters.map(chapter => chapter.chapterNumber)) : null
+    const blueprints = BlueprintRepository.getAll(db).filter(row => frozen ? frozen.has(row.chapterNumber) : !finalized.has(row.chapterNumber))
+    const nodes = SummaryRepository.readContinuityNodesForPreflight(db)
+    if (nodes.length === 0) throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED')
+    if (blueprints.length === 0) throw new Error('GENERATION_GRAPH_BLUEPRINT_REQUIRED')
+    const scope = selectContinuityCheckScope(blueprints, nodes, frozen ? Infinity : continuityInputTokens)
+    if (scope.nodes.length === 0) throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_NOT_IN_FORCE')
+    return { ...base, kind: 'continuity', ...scope }
   }
   let plan = NarrativeThreadRepository.list(db).find(row => row.id === valid.planId)
   if (!plan) throw new Error('GENERATION_GRAPH_PLAN_REQUIRED')
@@ -74,6 +87,7 @@ export function captureGraphGenerationContext(db: Database.Database, input: Grap
 
 export function graphGenerationTask(context: GraphGenerationContext) {
   if (context.kind === 'plot') return buildPlotTreeTask(context.sources)
+  if (context.kind === 'continuity') return buildBlueprintContinuityCheckTask({ writingLanguage: context.writingLanguage, chapters: context.chapters, nodes: context.nodes })
   if (context.kind === 'plan') return buildNarrativeThreadPlanTask({ writingLanguage: context.writingLanguage, blueprint: context.blueprint, totalChapters: context.totalChapters })
   return buildNarrativeThreadEventTask({ writingLanguage: context.writingLanguage, plan: context.plan,
     draftId: context.source.draftId, chapterNumber: context.source.chapterNumber, finalizedContent: context.content })
@@ -81,13 +95,14 @@ export function graphGenerationTask(context: GraphGenerationContext) {
 
 export function readGraphGenerationContext(run: DurableGenerationRun): GraphGenerationContext {
   const manifest = run.binding.sourceManifest, context = manifest.graphGenerationContext as GraphGenerationContext | undefined
-  if (!context || !context.input || !Object.hasOwn(operations, context.kind) || context.input.kind !== context.kind
-    || manifest.operation !== operations[context.kind] || textHash(JSON.stringify(context)) !== manifest.graphGenerationContextHash
+  if (!context || !context.input || !Object.hasOwn(graphGenerationOperations, context.kind) || context.input.kind !== context.kind
+    || manifest.operation !== graphGenerationOperations[context.kind] || textHash(JSON.stringify(context)) !== manifest.graphGenerationContextHash
     || context.projectId !== run.binding.projectId || !nonempty(context.originEpoch) || manifest.graphGenerationOriginEpoch !== context.originEpoch
     || !nonempty(context.key) || !nonempty(context.createdAt) || manifest.graphGenerationKey !== context.key
     || !isDeepStrictEqual(manifest.graphGenerationInput, context.input)) throw new Error('GENERATION_GRAPH_CONTEXT_INVALID')
   validateGraphGenerationInput(context.input)
   if (context.kind === 'plan' && (context.input.kind !== 'plan' || context.blueprint?.chapterNumber !== context.input.chapterNumber || !positive(context.totalChapters))
+    || context.kind === 'continuity' && (!context.chapters?.length || !context.nodes?.length)
     || context.kind === 'plot' && (!context.sources || context.sources.snapshot !== null || context.sources.writingLanguage !== context.writingLanguage || !/^[a-f0-9]{64}$/.test(context.targetBaselineHash))
     || context.kind === 'event' && (context.input.kind !== 'event' || context.plan?.id !== context.input.planId || context.source?.draftId !== context.input.draftId
       || !positive(context.source.chapterNumber) || !nonempty(context.source.finalizationId) || typeof context.content !== 'string'

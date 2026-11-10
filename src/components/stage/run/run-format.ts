@@ -40,6 +40,7 @@ const PURPOSES: Record<string, [string, string]> = {
   'generate-plot-outline': ['情节大纲', 'Plot outline'],
   'planning-material-character-extraction': ['提取角色卡', 'Character extraction'],
   'plot-tree-snapshot': ['剧情树', 'Plot tree'],
+  'blueprint-continuity-check': ['检查蓝图', 'Blueprint check'],
 }
 
 export function callPurpose(purpose: string, text: Text): string {
