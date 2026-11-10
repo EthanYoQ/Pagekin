@@ -62,6 +62,7 @@ export const C7_SCENARIOS = {
     await shoot('c7-2-chapter-7')
 
     await reload()
+    await stage.openFromLibrary(page, STAGE_SAMPLE.name)
     await openBlueprintsAt(page, 5)
     await root.getByText(ISSUE(5), { exact: true }).waitFor({ state: 'visible' })
     assert.equal(await summary.count(), 0, '重开后不出这次点击的总结')
