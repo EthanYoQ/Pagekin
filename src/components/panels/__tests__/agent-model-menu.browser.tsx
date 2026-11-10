@@ -23,7 +23,7 @@ beforeEach(async () => {
   useLLMStore.setState({
     loaded: true,
     defaultModelId: 'writer',
-    models: [profile('writer', '写稿模型', ['generation']), profile('finder', '检索专用', ['embedding']), profile('ranker', '重排专用', ['rerank'])],
+    models: [profile('writer', '写稿模型', ['generation']), profile('finder', '检索专用', ['embedding']), profile('ranker', '重排专用', ['rerank']), profile('both', '检索两用', ['embedding', 'rerank']), profile('polisher', '修稿专用', ['refinement']), profile('digest', '摘要专用', ['summary'])],
   })
   container = document.createElement('div')
   document.body.append(container)
@@ -38,11 +38,14 @@ afterEach(async () => {
   useLocaleStore.setState(originalLocale, true)
 })
 
-it('助手的模型菜单只列含生成用途的档案', async () => {
+it('助手的模型菜单列出生成、修稿、摘要档案，不列只做检索的档案', async () => {
   const trigger = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('写稿模型'))!
   await act(async () => trigger.click())
   const text = container.textContent ?? ''
   expect(text).toContain('写稿模型')
+  expect(text).toContain('修稿专用')
+  expect(text).toContain('摘要专用')
   expect(text).not.toContain('重排专用')
   expect(text).not.toContain('检索专用')
+  expect(text).not.toContain('检索两用')
 })
