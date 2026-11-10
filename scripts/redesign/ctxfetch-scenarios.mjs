@@ -55,4 +55,31 @@ export const CTXFETCH_SCENARIOS = {
     await page.getByRole('button', { name: `编辑「${FAKE_MODEL.name}」`, exact: true }).waitFor({ state: 'visible' })
     return { endpoint, manual, fallback, preset }
   } },
+  'ctx-settle-name-before-key': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
+    await stage.openSettings(page)
+    await page.getByRole('button', { name: `编辑「${FAKE_MODEL.name}」`, exact: true }).click()
+    const combobox = page.locator('input[role="combobox"]')
+    const keyInput = combobox.locator('xpath=ancestor::div[contains(@class, "rounded-xl")][1]').locator('input[type="password"]')
+    const windowInput = page.getByLabel('上下文窗口', { exact: true })
+    const source = page.locator('[data-context-window-source]')
+    const read = async () => ({ value: await windowInput.inputValue(), source: await source.innerText() })
+    const capture = async name => {
+      await combobox.evaluate(element => element.closest('.rounded-xl')?.scrollIntoView({ block: 'start' }))
+      await page.mouse.move(0, 0)
+      await shoot(name)
+      return read()
+    }
+
+    await keyInput.fill('')
+    await combobox.fill(DECLARED_MODEL)
+    await page.waitForTimeout(800)
+    const beforeKey = await capture('ctx-settle-before-key')
+    assert.deepEqual(beforeKey, { value: '', source: '默认值' })
+
+    await keyInput.fill(FAKE_MODEL.apiKey)
+    await page.waitForFunction(expected => document.querySelector('input[aria-label="上下文窗口"]')?.value === expected, String(DECLARED_WINDOW), { timeout: 5_000 })
+    const afterKey = await capture('ctx-settle-after-key')
+    assert.deepEqual(afterKey, { value: String(DECLARED_WINDOW), source: '来自服务商' })
+    return { beforeKey, afterKey }
+  } },
 }

@@ -80,11 +80,17 @@ export function useChapterBlueprints({
   projectKey,
   initialChapterNumber,
   selectRequest,
+  onSaved,
+  onExternalRefresh,
 }: {
   projectKey: string
   initialChapterNumber?: number
   /** 再次请求选中同一章时递增，选中才会重新生效。 */
   selectRequest?: number
+  /** saved 是这次真正写入的章。 */
+  onSaved?: (session: ProjectSessionContext, saved: readonly ChapterBlueprint[]) => void
+  /** 蓝图被本页保存以外的来源改过。 */
+  onExternalRefresh?: () => void
 }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
@@ -374,10 +380,11 @@ export function useChapterBlueprints({
         )
         && shouldRefreshBlueprints(payload.resources)
       ) {
+        onExternalRefresh?.()
         loadBlueprints()
       }
     })
-  }, [loadBlueprints, projectKey])
+  }, [loadBlueprints, onExternalRefresh, projectKey])
 
   const selected = projectDataReady ? blueprints[selectedIdx] ?? null : null
 
@@ -426,6 +433,7 @@ export function useChapterBlueprints({
       persistProjectDraftState(projectKey, projectSession, current.blueprints, nextDirty)
       setSaveOutcome(nextDirty.size === 0 ? 'saved' : 'idle')
       announceSaved(projectSession)
+      onSaved?.(projectSession, [selected])
       addLog('info', text(`第 ${selected.chapterNumber} 章蓝图已保存`, `Saved blueprint for Chapter ${selected.chapterNumber}`))
     } catch (err) {
       if (!isCurrentProjectSession(projectSession)) return
@@ -448,6 +456,7 @@ export function useChapterBlueprints({
       || !sameProjectSessionContext(dataProjectSessionRef.current, projectSession)
     ) return
     const saveInput = blueprintsRef.current
+    const changed = saveInput.filter(blueprint => dirtyChapterNumbersRef.current.has(blueprint.chapterNumber))
     const savedSnapshots = captureBlueprintSnapshots(saveInput)
     setSaving(true)
     setSaveOutcome('idle')
@@ -463,6 +472,7 @@ export function useChapterBlueprints({
       persistProjectDraftState(projectKey, projectSession, current.blueprints, nextDirty)
       setSaveOutcome(nextDirty.size === 0 ? 'saved' : 'idle')
       announceSaved(projectSession)
+      onSaved?.(projectSession, changed)
       addLog('info', text(`已保存全部 ${saveInput.length} 章蓝图`, `Saved ${saveInput.length} chapter ${pluralEn(saveInput.length, 'blueprint')}`))
     } catch (err) {
       if (!isCurrentProjectSession(projectSession)) return
