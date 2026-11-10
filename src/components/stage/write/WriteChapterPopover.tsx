@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { ChevronRight, PenLine } from 'lucide-react'
-import type { ConsistencyPreflightResult } from '../../../services/consistency-preflight'
+import { saveFindingExemption, type ConsistencyPreflightResult, type ExemptionScope, type PreflightFinding } from '../../../services/consistency-preflight'
+import type { ConsistencyExemption } from '../../../shared/consistency-preflight'
 import { ipc } from '../../../services/ipc-client'
 import {
   chapterDefaultWordsTarget,
@@ -143,19 +144,19 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
     }
   }
 
-  const saveArrangement = async (stableFactKey: string, reason: string) => {
+  const saveArrangement = async (finding: PreflightFinding, scope: ExemptionScope) => {
     const saved = await changeArrangement(text('保存一致性安排失败', 'Could not save the consistency arrangement.'),
-      session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-save', stableFactKey, reason, session.projectPath))
+      session => saveFindingExemption(session, finding, scope, text))
     if (saved) await start(false, saved)
   }
 
-  const revokeArrangement = async (stableFactKey: string) => {
+  const revokeArrangement = async (exemption: ConsistencyExemption) => {
     const revoked = await changeArrangement(text('撤销一致性安排失败', 'Could not revoke the consistency arrangement.'),
-      session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', stableFactKey, session.projectPath))
+      session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', exemption.stableFactKey, exemption.chapterNumber, session.projectPath))
     if (!revoked) return
     setPreflight(current => current ? {
       ...current,
-      exemptions: current.exemptions.map(item => item.stableFactKey === stableFactKey ? { ...item, revoked: true } : item),
+      exemptions: current.exemptions.map(item => item === exemption ? { ...item, revoked: true } : item),
     } : null)
   }
 
@@ -224,8 +225,8 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
           busy={busy}
           onIgnoreOnce={() => void start(true)}
           onRerun={() => void start(false)}
-          onSave={(key, reason) => void saveArrangement(key, reason)}
-          onRevoke={key => void revokeArrangement(key)}
+          onExempt={(finding, scope) => void saveArrangement(finding, scope)}
+          onRevoke={exemption => void revokeArrangement(exemption)}
         />
       )}
       {message && <p className="stage-write-error" role="alert">{message}</p>}
