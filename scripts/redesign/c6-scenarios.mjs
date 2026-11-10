@@ -13,7 +13,7 @@ const NEW_RELATION = '彼此信任'
 const EVIDENCE = '他给林岚倒了一杯很淡的茶，自己却只是捧着杯子，看着炉火。'
 const CHAPTER_FOUR_MARKER = '守塔人的屋子在灯塔背风的一侧'
 
-async function seedKeeperRelation({ page, invoke, path: projectPath, session }) {
+export async function seedKeeperRelation({ page, invoke, path: projectPath, session }) {
   const commit = async (roster, entries) => {
     const result = await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
       expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries }, projectPath, session)
