@@ -46,7 +46,6 @@ function threadNote(thread: NarrativeThreadView, dormantThreshold: number, text:
   return <span className="stage-thread-sub">{thread.type} · {text(...STATUS_LABELS[thread.status])}</span>
 }
 
-/** 回收章还是延到的那章才写现在时；之后再延后或在这里改过的写过去时。 */
 function threadDeferrals(thread: NarrativeThreadView, text: Text) {
   return thread.assignments?.filter(item => item.kind === 'resolve').map(({ chapterNumber, note }) => (
     <span key={chapterNumber} className="stage-thread-sub">
