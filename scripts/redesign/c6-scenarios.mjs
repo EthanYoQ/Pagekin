@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
+import * as blueprint from './pages/blueprint.mjs'
 import * as stage from './pages/stage.mjs'
 import { finalizeChapter, openCharacterState } from './f491-scenarios.mjs'
 import { seedStageSample } from './scenarios.mjs'
+import { STAGE_SAMPLE } from './stage-sample.mjs'
 
 const AUTHOR_RELATION = '素不相识'
 const NEW_RELATION = '彼此信任'
@@ -25,6 +27,15 @@ async function seedKeeperRelation({ page, invoke, path: projectPath, session }) 
   const keeper = second.entries.find(entry => entry.name === '守塔人')
   await commit(second, second.entries.map(entry => entry.name === '林岚'
     ? { ...entry, relationships: [{ targetCharacterId: keeper.characterId, target: '守塔人', relation: AUTHOR_RELATION }] } : entry))
+}
+
+async function seedKeeperInNextChapter(context) {
+  await seedKeeperRelation(context)
+  const { page, invoke, path: projectPath, session } = context
+  const committed = await invoke(page, 'db:blueprint-commit-range', { mode: 'replace-range', operationId: randomUUID(), startChapter: 5, endChapter: 5, blueprints: [
+    { chapterNumber: 5, title: STAGE_SAMPLE.titles[4], role: '发展', purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚', '守塔人'],
+      suspenseHook: '', userGuidance: '', notes: '', notesUpdatedAt: '', relationshipHints: [] }] }, projectPath, session)
+  assert.equal(committed.success, true, committed.error)
 }
 
 function relationReply(prompt) {
@@ -97,6 +108,42 @@ export const C6_SCENARIOS = {
     measured.mergedQuote = await merged.locator('blockquote').innerText()
     assert.equal(measured.mergedQuote, EVIDENCE, '合并后的行原文还能展开')
     await context.shoot('c6-5-timeline-merged')
+    return measured
+  } },
+
+  'c56-undecided-relation-warning': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: seedKeeperInNextChapter }), run: async context => {
+    const { page, fake, samplePath } = context
+    fake.replyCharacterState(relationReply)
+    await finalizeChapter(page, 3)
+    await finalizeChapter(page, 4)
+
+    await blueprint.open(page)
+    await context.shoot('c56-0-before-write')
+    await blueprint.writeNext(page)
+    const preflight = blueprint.preflight(page)
+    await preflight.waitFor({ state: 'visible' })
+    await preflight.getByText(`你设定林岚和守塔人是「${AUTHOR_RELATION}」，第 4 章定稿写的是「${NEW_RELATION}」，还没决定用哪个。`).waitFor({ state: 'visible' })
+    await preflight.getByText(`依据：第 4 章 · ${EVIDENCE}`).waitFor({ state: 'visible' })
+    await preflight.getByText('到角色页的建议里决定。').waitFor({ state: 'visible' })
+    const measured = { warning: (await preflight.innerText()).replace(/\s+/gu, ' ').trim() }
+    await context.shoot('c56-1-undecided-warning')
+
+    await page.keyboard.press('Escape')
+    await openCharacterState(page)
+    const card = stage.root(page).getByRole('region', { name: '待处理的角色建议' }).locator('[data-kind="relation"]')
+    await card.getByRole('button', { name: '检查定稿关系建议' }).click()
+    await card.getByRole('button', { name: '采用', exact: true }).click()
+    await card.waitFor({ state: 'detached', timeout: 15_000 })
+    measured.afterAdopt = await readRelations(samplePath)
+    assert.deepEqual(measured.afterAdopt.current, [NEW_RELATION], '采用后当前关系换成新值')
+
+    await blueprint.open(page)
+    const started = fake.requests.length
+    await blueprint.writeNext(page)
+    for (let waited = 0; fake.requests.length === started && waited < 15_000; waited += 100) await page.waitForTimeout(100)
+    assert.ok(fake.requests.length > started, '没有警告时直接开写')
+    assert.equal(await page.getByText('还没决定用哪个').count(), 0, '作者决定之后警告消失')
+    await context.shoot('c56-2-decided-no-warning')
     return measured
   } },
 }

@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { findBlueprintContinuityRisks, type BlueprintForPreflight } from '../../../src/shared/consistency-preflight'
 import { openCanonicalProjectFixture as initProjectDatabase } from '../../../test/helpers/canonical-project-fixture'
 import { closeProjectDatabase, getProjectDb } from '../../database'
-import { insertCharacterRelationship, readContinuityNodesWithCurrentNames } from '../character-continuity-repository'
+import { insertCharacterRelationship } from '../character-continuity-repository'
 import { ConsistencyExemptionRepository } from '../consistency-exemption-repository'
+import { SummaryRepository } from '../summary-repository'
 
 let projectRoot = ''
 
@@ -29,7 +30,7 @@ const plan = (chapterNumber: number, from = '林晚'): BlueprintForPreflight => 
 })
 
 const check = (chapter: number, from?: string) => findBlueprintContinuityRisks(
-  [], plan(chapter, from), ConsistencyExemptionRepository.list(), readContinuityNodesWithCurrentNames(getProjectDb()!))
+  [], plan(chapter, from), ConsistencyExemptionRepository.list(), SummaryRepository.readContinuityNodesForPreflight(getProjectDb()!))
 
 beforeEach(() => {
   projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-continuity-preflight-'))
@@ -51,7 +52,7 @@ describe('真实库里的关系节点进预检', () => {
   })
 
   it('没有节点的旧项目不提示', () => {
-    expect(readContinuityNodesWithCurrentNames(getProjectDb()!)).toEqual([])
+    expect(SummaryRepository.readContinuityNodesForPreflight(getProjectDb()!)).toEqual([])
     expect(check(12)).toEqual([])
   })
 
