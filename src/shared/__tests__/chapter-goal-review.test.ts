@@ -175,6 +175,8 @@ describe('伏笔线索任务的审稿目标', () => {
     const [en] = withChapterThreadGoals(freezeChapterGoals(6, ''), assigned, 'en-US').items
     expect(en!.text).toContain('assigned by the author to this chapter')
     expect(en!.text).not.toContain('due this chapter')
+    expect(buildChapterGoalReviewPrompt(withChapterThreadGoals(freezeChapterGoals(6, ''), assigned, 'zh-CN'), 'zh-CN')).not.toContain('是到期或逾期的')
+    expect(buildChapterGoalReviewPrompt(withChapterThreadGoals(freezeChapterGoals(6, ''), assigned, 'en-US'), 'en-US')).not.toContain('are due or overdue')
   })
 
   it('审稿给出回收、推进或未处理之一，回收和推进必须附引文', () => {

@@ -3801,6 +3801,32 @@ ${headingPrefix}第3章：潮门
     expect(prompt).not.toContain('本章推进或回收')
   })
 
+  it.each([
+    { writingLanguage: 'zh-CN' as const, rule: '【伏笔线索任务】', wrongClaim: '已到期或逾期' },
+    { writingLanguage: 'en-US' as const, rule: '[Narrative thread tasks]', wrongClaim: 'are due or overdue' },
+  ])('$writingLanguage: an author-assigned thread is not described as due or overdue, and still must change', async ({ writingLanguage, rule, wrongClaim }) => {
+    const promptFor = async (narrativeThreads: NarrativeThreadView[]) => {
+      let observedTask: GenerationTask | undefined
+      const runtime = fakeRuntime((_attempt, task) => {
+        observedTask = task
+        return outcome('新章正文。'.repeat(125), 'stop')
+      })
+      const { context, callbacks, command } = setup({ runtime, chapterNumber: 5, wordsTarget: 500, writingLanguage,
+        previousFinalizedContent: '第四章定稿原文。', narrativeThreads })
+      await command.execute({ step: {}, context, callbacks })
+      const prompt = observedTask?.messages.map(message => message.content).join('\n') ?? ''
+      return prompt.split('\n').find(line => line.startsWith(rule)) ?? ''
+    }
+    const assigned = { ...threadView(1, '区间线索', 3, 8), assignments: [{ chapterNumber: 5, kind: 'advance' as const, note: '' }] }
+
+    const assignedRule = await promptFor([assigned])
+    const dueRule = await promptFor([threadView(2, '青铜钥匙', 1, 5)])
+
+    expect(assignedRule).not.toBe('')
+    expect(assignedRule).not.toContain(wrongClaim)
+    expect(dueRule).toBe(assignedRule)
+  })
+
   it('tells the author when threads cannot be read, so the chapter is written without thread tasks knowingly', async () => {
     let observedTask: GenerationTask | undefined
     const runtime = fakeRuntime((_attempt, task) => {
