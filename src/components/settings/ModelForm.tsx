@@ -1,4 +1,4 @@
-import { useState, useEffect, useEffectEvent, useId, useLayoutEffect, useRef } from 'react'
+import { useCallback, useState, useEffect, useEffectEvent, useId, useLayoutEffect, useRef } from 'react'
 import { Save, Settings2, Zap, Eye, EyeOff, ChevronDown, RotateCcw } from 'lucide-react'
 import { useLLMStore } from '../../stores/llm-store'
 import type { DiscoveredModel, ModelDiscoveryErrorCode, ModelProfile } from '../../shared/ipc-channels'
@@ -98,6 +98,9 @@ export function ModelForm({
   const [discovery, setDiscovery] = useState<ModelDiscoveryState>({ status: 'idle' })
   const [lastListedModels, setLastListedModels] = useState<DiscoveredModel[]>([])
   const discoveryRevision = useRef(0)
+  const recordListedModels = useCallback((revision: number, models: DiscoveredModel[]) => {
+    if (discoveryRevision.current === revision) setLastListedModels(models)
+  }, [])
   const currentDiscoveryConfig = useRef({
     id: model.id,
     provider: model.provider,
@@ -257,9 +260,10 @@ export function ModelForm({
     if (!windowLookup.active || !target) return
     let superseded = false
     const timer = window.setTimeout(() => {
+      const revision = discoveryRevision.current
       void readContextWindow(target, windowLookup.fetchesList).catch((): WindowRead => 'pending').then(read => {
         if (superseded) return
-        if (Array.isArray(read)) setLastListedModels(read)
+        if (Array.isArray(read)) recordListedModels(revision, read)
         else setWindowRead({ lookup: windowLookup, tokens: read })
       })
     }, windowLookup.delayMs)
@@ -267,7 +271,7 @@ export function ModelForm({
       superseded = true
       window.clearTimeout(timer)
     }
-  }, [windowLookup])
+  }, [windowLookup, recordListedModels])
 
   const listedModel = lastListedModels.find(candidate => candidate.value === model.modelName)
   const listedWindow = listedModel?.capabilities?.contextWindowTokens ?? null
@@ -332,7 +336,7 @@ export function ModelForm({
         purposes: model.purposes,
       })
       if (!isCurrentRequest()) return
-      if (result.success) setLastListedModels(result.models)
+      if (result.success) recordListedModels(requestRevision, result.models)
       setDiscovery(result.success
         ? { status: 'loaded', models: result.models }
         : { status: 'failed', errorCode: result.errorCode })
