@@ -86,7 +86,7 @@ export const R3_SCENARIOS = {
     await summary(page).click()
     await rerankSection(page).getByRole('button', { name: '添加重排模型' }).click()
     const options = await rerankSection(page).locator('select').first().locator('option').allInnerTexts()
-    assert.equal(options.length, 3, `服务商只列有重排模型的两家和自定义，实际 ${options.join('、')}`)
+    assert.equal(options.length, 3, `服务商只列带重排模型预设的服务商和自定义，实际 ${options.join('、')}`)
     await rerankSection(page).scrollIntoViewIfNeeded()
     await shoot('settings-form')
     return { options }

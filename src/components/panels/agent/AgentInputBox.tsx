@@ -11,7 +11,6 @@ import {
 import { useAgentStore, type AgentMode } from '../../../stores/agent-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import type { ModelProfile } from '../../../shared/ipc-channels'
-import { isGenerationModel } from '../../../shared/model-stage-routing'
 import { useOutsideClick } from '../../../hooks/useOutsideClick'
 import SlashCommandMenu from './SlashCommandMenu'
 import MentionMenu from './MentionMenu'
@@ -23,6 +22,7 @@ import { registerProjectTransitionDraft } from '../../../services/project-transi
 /** 输入框最大高度（px），超出后框内滚动 */
 const MAX_HEIGHT = 200
 const projectInputDrafts = new Map<string, { value: string; savedValue: string }>()
+const isRetrievalPurpose = (purpose: ModelProfile['purposes'][number]) => purpose === 'embedding' || purpose === 'rerank'
 
 /**
  * Agent 输入框组件（参考 agent1.html 第 69-155 行）
@@ -42,7 +42,7 @@ export default function AgentInputBox() {
   const models = useLLMStore(s => s.models)
   const defaultModelId = useLLMStore(s => s.defaultModelId)
 
-  const chatModels = models.filter(isGenerationModel)
+  const chatModels = models.filter(m => !(m.purposes.length > 0 && m.purposes.every(isRetrievalPurpose)))
 
   const activeConv = getActiveConversation()
   const currentMode = activeConv?.mode ?? 'planning'
