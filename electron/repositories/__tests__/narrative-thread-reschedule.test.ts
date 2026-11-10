@@ -117,3 +117,25 @@ describe('写前弹层里撤销延后', () => {
     expect(panel.canAdvance.map(item => item.id)).toEqual([id])
   })
 })
+
+describe('写回收章的入口拒绝坏值，线索不会从排期里消失', () => {
+  const unchanged = (id: number, end: number) => {
+    expect(view(id).targetEndChapter).toBe(end)
+    expect(narrativeThreadSchedule(view(id), end)).toEqual({ kind: 'due' })
+  }
+
+  it('延后到埋设章之前：拒绝，回收章和记录都不变', () => {
+    const { id } = NarrativeThreadRepository.createPlan({ ...base, targetStartChapter: 7, targetEndChapter: 9 })
+    expect(() => defer(id, 2, 3)).toThrow('NARRATIVE_THREAD_RANGE_INVALID')
+    unchanged(id, 9)
+    expect(view(id).assignments).toBeUndefined()
+  })
+
+  it.each([0, -1, 2.5, 3, 4.5])('撤销时带回 %s（不是整数或早于埋设章）：拒绝，延后照旧生效', (restore) => {
+    const { id } = NarrativeThreadRepository.createPlan({ ...base, targetStartChapter: 4, targetEndChapter: 5 })
+    defer(id, 5, 6)
+    expect(() => NarrativeThreadRepository.removeAssignment(id, 6, restore)).toThrow('NARRATIVE_THREAD_RANGE_INVALID')
+    unchanged(id, 6)
+    expect(view(id).assignments).toEqual([{ chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' }])
+  })
+})
