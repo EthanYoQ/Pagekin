@@ -56,6 +56,7 @@ let committedHints: Record<number, unknown>
 let hintsFail: boolean
 let heldHintReplies: Array<Promise<Record<number, unknown>>>
 let exemptionsFail: boolean
+let exemptionWritesFail: boolean
 let projections: unknown[]
 
 const BROKEN_NODE: ContinuityNode = {
@@ -109,10 +110,12 @@ function installIpc() {
       return [BROKEN_NODE]
     }
     if (channel === 'db:consistency-exemption-save') {
+      if (exemptionWritesFail) throw new Error('SQLITE_BUSY')
       exemptions = [...exemptions, { stableFactKey: String(args[0]), reason: String(args[1]), revoked: false, chapterNumber: args[2] as number | null }]
       return { success: true }
     }
     if (channel === 'db:consistency-exemption-revoke') {
+      if (exemptionWritesFail) throw new Error('SQLITE_BUSY')
       exemptions = exemptions.map(item => item.stableFactKey === args[0] && item.chapterNumber === args[1] ? { ...item, revoked: true } : item)
       return { success: true }
     }
@@ -183,6 +186,7 @@ beforeEach(async () => {
   hintsFail = false
   heldHintReplies = []
   exemptionsFail = false
+  exemptionWritesFail = false
   projections = []
   writableOverride.value = null
   useLocaleStore.setState({ locale: 'zh-CN' })
@@ -688,6 +692,61 @@ describe('蓝图阶段', () => {
         await act(async () => pendingSave({}))
       })
 
+      it('预检在途时豁免这一章：结果迟到，提示不回来，撤销仍按新内容重查', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await expect.element(conflict(2)).toBeVisible()
+        const pendingSave = hold()
+        await retitle('回潮')
+        await save()
+        await requested(2)
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        await act(async () => pendingSave(CONFLICT))
+        await landed(2)
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await requested(3)
+        expect(calls('db:blueprint-relationship-hints')[2]?.[1]).toMatchObject([{ chapterNumber: 2, title: '回潮' }])
+      })
+
+      it('全书豁免作废别的章在途的预检', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await chapter(3)
+        const third = hold()
+        await save()
+        await requested(2)
+        await chapter(2)
+        await act(async () => page.getByRole('button', { name: '全书都不再提示' }).click())
+        await expect.element(page.getByText('已记下，全书不再提示。')).toBeVisible()
+        await act(async () => third({ 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }))
+        await landed(2)
+        await chapter(3)
+        await expect.element(page.getByRole('textbox', { name: '章节标题' })).toHaveValue('灯室')
+        await expect.element(conflict(3)).not.toBeInTheDocument()
+      })
+
+      it('这一章的豁免不作废别的章在途的预检', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await chapter(3)
+        const third = hold()
+        await save()
+        await requested(2)
+        await chapter(2)
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        await act(async () => third({ 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }))
+        await landed(2)
+        await chapter(3)
+        await expect.element(conflict(3)).toBeVisible()
+      })
+
       it('不同章的预检互不作废', async () => {
         planned()
         await renderPage()
@@ -753,6 +812,33 @@ describe('蓝图阶段', () => {
         await act(async () => page.getByRole('button', { name: '撤销' }).click())
         await vi.waitFor(() => expect(exemptions).toMatchObject([{ revoked: true }]))
         await expect.element(page.getByRole('button', { name: '撤销' })).not.toBeInTheDocument()
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+      })
+
+      const toasts = () => [...document.querySelectorAll('.pi-toast')].map(toast => toast.textContent)
+
+      it('豁免没存上：提示留着，告诉作者再点一次', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await expect.element(conflict(2)).toBeVisible()
+        exemptionWritesFail = true
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await vi.waitFor(() => expect(toasts()).toContain('没记下，提示还在。再点一次试试。'))
+        await expect.element(conflict(2)).toBeVisible()
+        await expect.element(page.getByText('已记下，这一章不再提示。')).not.toBeInTheDocument()
+      })
+
+      it('撤销没存上：「已记下」留着，告诉作者再点一次', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        exemptionWritesFail = true
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await vi.waitFor(() => expect(toasts()).toContain('没撤销，这条还是不提示。再点一次试试。'))
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
         await expect.element(conflict(2)).not.toBeInTheDocument()
       })
 
