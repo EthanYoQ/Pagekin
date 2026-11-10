@@ -260,7 +260,7 @@ export async function startFakeModel(diagnostics) {
     const reply = responseFor(prompt, { extraction, plotTree, review, characterState, importInference, directoryBlueprints })
     const { kind } = reply
     const content = kind === 'character-state' && brokenCharacterState ? '角色状态暂时无法整理。' : reply.content
-    chats.push({ kind, model: body.model, messages: body.messages })
+    chats.push({ kind, model: body.model, messages: body.messages, maxTokens: body.max_tokens ?? body.max_completion_tokens })
     record(kind, prompt.slice(0, 120).replace(/\s+/g, ' '))
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
     if (kind === 'character-state' && droppedCharacterStates > 0) {

@@ -853,6 +853,8 @@ export interface ModelProfile {
   capabilities?: ModelCapabilities
   /** Configuration provenance only; never grants verified provider bounds. */
   capabilitySources?: Partial<Record<keyof ModelCapabilities, 'endpoint' | 'preset' | 'manual' | 'unknown'>>
+  /** 服务商超长报错里读到的真实窗口，只由主进程写，不进 modelRevision。模型身份变了就不算数。 */
+  learnedContextWindow?: Pick<ModelProfile, 'provider' | 'protocol' | 'baseUrl' | 'modelName'> & { tokens: number }
   /** 旧配置和当前执行路径使用的输出 token 上限，保持兼容。 */
   maxTokens: number
   purposes: Array<'generation' | 'refinement' | 'summary' | 'embedding' | 'rerank'>

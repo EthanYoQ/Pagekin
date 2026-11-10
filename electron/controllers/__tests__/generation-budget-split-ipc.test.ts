@@ -49,7 +49,7 @@ const task: GenerationTask = { purpose: 'chapter-draft', output: 'visible-text',
   messages: [{ role: 'user', content: '保留作者事实，创作中文段落。' }] }
 
 beforeAll(() => {
-  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel }), loadModel, applyProxyConfig: () => {} })
+  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel }), loadModel, rememberContextWindow: () => {}, applyProxyConfig: () => {} })
   registerDatabaseController()
 })
 
