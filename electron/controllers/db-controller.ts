@@ -124,6 +124,8 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'db:narrative-thread-plan-update',
   'db:narrative-thread-plan-delete',
   'db:narrative-thread-event-confirm',
+  'db:narrative-thread-assignment-set',
+  'db:narrative-thread-assignment-remove',
   'db:plot-tree-save',
   'db:plot-tree-clear',
 ])
@@ -910,6 +912,20 @@ export function registerDatabaseController() {
   ipcMain.handle('db:narrative-thread-event-confirm', async (_event, input, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return { success: true, event: NarrativeThreadRepository.confirmEvent(input) }
+  })
+
+  ipcMain.handle('db:narrative-thread-assignment-set', async (_event, input, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    NarrativeThreadRepository.setAssignment(input)
+    return { success: true, threads: NarrativeThreadRepository.list() }
+  })
+
+  ipcMain.handle('db:narrative-thread-assignment-remove', async (
+    _event, planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string,
+  ) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    NarrativeThreadRepository.removeAssignment(planId, chapterNumber, restoreEndChapter)
+    return { success: true, threads: NarrativeThreadRepository.list() }
   })
 
   ipcMain.handle('db:plot-tree-read', async (_event, expectedProjectPath: string) => {

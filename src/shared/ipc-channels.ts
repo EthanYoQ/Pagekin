@@ -45,6 +45,7 @@ import type {
 import type { DraftSourceDependency } from './draft-source-dependency'
 import type { BlueprintForPreflight, ConsistencyExemption } from './consistency-preflight'
 import type {
+  NarrativeThreadAssignmentInput,
   NarrativeThreadEvent,
   NarrativeThreadEventInput,
   NarrativeThreadChapterContext,
@@ -1114,6 +1115,14 @@ export interface DatabaseChannels {
   'db:narrative-thread-event-confirm': {
     args: [input: NarrativeThreadEventInput, expectedProjectPath: string]
     return: { success: boolean; event?: NarrativeThreadEvent; error?: string }
+  }
+  'db:narrative-thread-assignment-set': {
+    args: [input: NarrativeThreadAssignmentInput, expectedProjectPath: string]
+    return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
+  }
+  'db:narrative-thread-assignment-remove': {
+    args: [planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string]
+    return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
   }
   'db:plot-tree-read': {
     args: [expectedProjectPath: string]

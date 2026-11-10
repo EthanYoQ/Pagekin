@@ -3640,6 +3640,32 @@ ${headingPrefix}第3章：潮门
     expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('另有 2 条'))
   })
 
+  it('作者指定本章推进的线索进合同并标明；延后的线索不进合同，提示里写新的目标章', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 5,
+      wordsTarget: 500,
+      previousFinalizedContent: '第四章定稿原文。',
+      narrativeThreads: [
+        { ...threadView(1, '青铜钥匙', 1, 9), assignments: [{ chapterNumber: 5, kind: 'advance', note: '写第 5 章前指定本章推进' }] },
+        { ...threadView(2, '父亲的旧信', 3, 8), assignments: [{ chapterNumber: 8, kind: 'resolve', note: '写第 5 章时延后' }] },
+      ],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(prompt.split('\n').filter(line => line.startsWith('- 本章推进或回收：'))).toEqual(['- 本章推进或回收：青铜钥匙（作者指定本章推进；作者意图：青铜钥匙要有交代。）'])
+    expect(promptLine(prompt, '青铜钥匙')).toContain('作者指定本章推进；目标第1–9章')
+    expect(promptLine(prompt, '父亲的旧信')).toContain('目标第3–8章')
+    expect(promptLine(prompt, '父亲的旧信')).not.toMatch(/本章到期|已逾期/)
+  })
+
   it('injects relevant threads into the first chapter too', async () => {
     let observedTask: GenerationTask | undefined
     const runtime = fakeRuntime((_attempt, task) => {
@@ -3775,6 +3801,32 @@ ${headingPrefix}第3章：潮门
     expect(prompt).not.toContain('本章推进或回收')
   })
 
+  it.each([
+    { writingLanguage: 'zh-CN' as const, rule: '【伏笔线索任务】', wrongClaim: '已到期或逾期' },
+    { writingLanguage: 'en-US' as const, rule: '[Narrative thread tasks]', wrongClaim: 'are due or overdue' },
+  ])('$writingLanguage: an author-assigned thread is not described as due or overdue, and still must change', async ({ writingLanguage, rule, wrongClaim }) => {
+    const promptFor = async (narrativeThreads: NarrativeThreadView[]) => {
+      let observedTask: GenerationTask | undefined
+      const runtime = fakeRuntime((_attempt, task) => {
+        observedTask = task
+        return outcome('新章正文。'.repeat(125), 'stop')
+      })
+      const { context, callbacks, command } = setup({ runtime, chapterNumber: 5, wordsTarget: 500, writingLanguage,
+        previousFinalizedContent: '第四章定稿原文。', narrativeThreads })
+      await command.execute({ step: {}, context, callbacks })
+      const prompt = observedTask?.messages.map(message => message.content).join('\n') ?? ''
+      return prompt.split('\n').find(line => line.startsWith(rule)) ?? ''
+    }
+    const assigned = { ...threadView(1, '区间线索', 3, 8), assignments: [{ chapterNumber: 5, kind: 'advance' as const, note: '' }] }
+
+    const assignedRule = await promptFor([assigned])
+    const dueRule = await promptFor([threadView(2, '青铜钥匙', 1, 5)])
+
+    expect(assignedRule).not.toBe('')
+    expect(assignedRule).not.toContain(wrongClaim)
+    expect(dueRule).toBe(assignedRule)
+  })
+
   it('tells the author when threads cannot be read, so the chapter is written without thread tasks knowingly', async () => {
     let observedTask: GenerationTask | undefined
     const runtime = fakeRuntime((_attempt, task) => {
@@ -3819,6 +3871,16 @@ ${headingPrefix}第3章：潮门
       expect(sent.length).toBeGreaterThanOrEqual(2)
       expect(new Set(sent)).toEqual(new Set([chapterInfoText([frozenTask])]))
       expect(f.callbacks.log).toHaveBeenCalledWith(expect.stringContaining('本章硬任务线索 1 条'))
+    })
+
+    it('开写后作者才延后：恢复仍按冻结的任务写，线索现状不进合同', async () => {
+      const assignedTask = { ...frozenTask, schedule: { kind: 'assigned' } }
+      const deferredNow = { ...threadView(1, '青铜钥匙', 1, 1), assignments: [{ chapterNumber: 4, kind: 'resolve' as const, note: '写第 1 章时延后' }] }
+      const { f, continuationPrompts } = resumeFixture([assignedTask], [deferredNow])
+      await f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
+      expect(continuationPrompts.length).toBeGreaterThan(0)
+      expect(continuationPrompts.join('\n')).toContain('- 本章推进或回收：青铜钥匙（作者指定本章推进；作者意图：青铜钥匙要有交代。）')
+      expect(new Set(sentChapterInfos(f.invoke))).toEqual(new Set())
     })
 
     function resumeFixture(recordedTasks: unknown[] | undefined, currentThreads: NarrativeThreadView[], timeline: { recorded?: string; nodes?: ContinuityNode[] } = {}) {
