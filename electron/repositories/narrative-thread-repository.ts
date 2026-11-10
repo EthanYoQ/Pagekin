@@ -36,11 +36,23 @@ function validatePlan(input: NarrativeThreadPlanInput): NarrativeThreadPlanInput
     || !authorIntent || authorIntent.length > 1000) {
     throw new Error('NARRATIVE_THREAD_PLAN_INVALID')
   }
-  if (!Number.isSafeInteger(input.targetStartChapter) || input.targetStartChapter < 1
-    || !Number.isSafeInteger(input.targetEndChapter) || input.targetEndChapter < input.targetStartChapter) {
+  assertChapterRange(input.targetStartChapter, input.targetEndChapter)
+  return { ...input, title, type, authorIntent }
+}
+
+function assertChapterRange(start: number, end: number): void {
+  if (!Number.isSafeInteger(start) || start < 1 || !Number.isSafeInteger(end) || end < start) {
     throw new Error('NARRATIVE_THREAD_RANGE_INVALID')
   }
-  return { ...input, title, type, authorIntent }
+}
+
+/** 延后和撤销改回收章都走这里。onlyFrom 不为 null 时，回收章已不是它（作者改过）就不动。 */
+function moveTargetEnd(db: ReturnType<typeof requireDb>, plan: NarrativeThreadPlanRecord, end: number, onlyFrom: number | null): void {
+  assertChapterRange(plan.targetStartChapter, end)
+  db.prepare(`
+    UPDATE narrative_thread_plans SET target_end_chapter = ?, updated_at = datetime('now')
+    WHERE id = ? AND (? IS NULL OR target_end_chapter = ?)
+  `).run(end, plan.id, onlyFrom, onlyFrom)
 }
 
 function savedGoalReview(reportBody: string): ChapterGoalReview | null {
@@ -98,15 +110,14 @@ export class NarrativeThreadRepository {
       || (kind !== 'advance' && kind !== 'resolve') || (kind === 'resolve' && chapterNumber <= writingChapter)) {
       throw new Error('NARRATIVE_THREAD_RANGE_INVALID')
     }
-    if (!this.getPlan(planId, db)) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
+    const plan = this.getPlan(planId, db)
+    if (!plan) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
     db.transaction(() => {
       db.prepare(`
         INSERT INTO narrative_thread_assignments (plan_id, chapter_number, kind, note) VALUES (?, ?, ?, ?)
         ON CONFLICT(plan_id, chapter_number) DO UPDATE SET kind = excluded.kind, note = excluded.note, created_at = datetime('now')
       `).run(planId, chapterNumber, kind, input.note.trim())
-      if (kind === 'resolve') {
-        db.prepare(`UPDATE narrative_thread_plans SET target_end_chapter = ?, updated_at = datetime('now') WHERE id = ?`).run(chapterNumber, planId)
-      }
+      if (kind === 'resolve') moveTargetEnd(db, plan, chapterNumber, null)
     })()
   }
 
@@ -115,11 +126,8 @@ export class NarrativeThreadRepository {
     db.transaction(() => {
       const kind = db.prepare('DELETE FROM narrative_thread_assignments WHERE plan_id = ? AND chapter_number = ? RETURNING kind')
         .pluck().get(planId, chapterNumber)
-      if (kind !== 'resolve' || restoreEndChapter === null) return
-      db.prepare(`
-        UPDATE narrative_thread_plans SET target_end_chapter = ?, updated_at = datetime('now')
-        WHERE id = ? AND target_end_chapter = ?
-      `).run(restoreEndChapter, planId, chapterNumber)
+      const plan = this.getPlan(planId, db)
+      if (kind === 'resolve' && restoreEndChapter !== null && plan) moveTargetEnd(db, plan, restoreEndChapter, chapterNumber)
     })()
   }
 
