@@ -190,7 +190,6 @@ export async function startFakeModel(diagnostics) {
   /** 之后不带 Key 的嵌入请求也照常回向量，模拟不需要 Key 的本机检索服务；传 false 恢复拒绝。 */
   const acceptKeylessEmbeddings = (accepted = true) => { keylessEmbeddings = accepted }
   /** 之后的参考小说导入：全局推演回一份合法 JSON（三张角色卡），分批蓝图推演按本批章号回齐全的蓝图。 */
-  /** 之后的重排请求回 500，用来演示重排失败时结果按原顺序显示；传 false 恢复。 */
   const failRerank = (failed = true) => { failedRerank = failed }
   const replyImport = () => { importInference = true }
   const replyDirectoryBlueprints = (on = true) => { directoryBlueprints = on }

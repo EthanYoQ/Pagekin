@@ -17,7 +17,6 @@ import { rerankStatus } from './rerank-status'
 
 const RERANK_PURPOSES: ModelProfile['purposes'] = ['rerank']
 
-/** 检索模型页的可选分区：默认收成一行，不配也不影响写作和查找。 */
 export default function RerankSection() {
   const text = useLocaleStore(s => s.text)
   const section = useModelSection(RERANK_PURPOSES)

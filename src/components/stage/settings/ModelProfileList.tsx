@@ -10,7 +10,6 @@ function providerName(model: ModelProfile): string {
   return preset?.displayName ?? model.provider
 }
 
-/** 一类模型档案的列表：名称、默认标记、编辑，以及「设为默认」和删除菜单。 */
 export default function ModelProfileList({ models, defaultId, label, onEdit, onSetDefault, onDelete }: {
   models: ModelProfile[]
   defaultId: string | null

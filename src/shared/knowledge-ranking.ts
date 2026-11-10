@@ -14,7 +14,6 @@ export type KnowledgeRankingFallback =
   | 'top-k-exceeds-candidates'
   | 'source-changed'
 
-/** 配了重排、这次请求没成。没配、取的条数超过候选数这些情况不算，界面不提示。 */
 export function isRerankFailure(reason: KnowledgeRankingFallback): reason is RerankFailure {
   return (RERANK_FAILURES as readonly string[]).includes(reason)
 }
@@ -28,6 +27,5 @@ export interface KnowledgeSearchHit {
   text: string
   score: number
   fileName: string
-  /** 只在这次重排请求失败时出现，结果是原顺序。 */
   rerankFallback?: RerankFailure
 }

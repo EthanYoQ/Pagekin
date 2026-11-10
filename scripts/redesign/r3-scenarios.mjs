@@ -1,4 +1,3 @@
-/** #279 R3：检索模型页的重排分区，以及重排失败时知识库页的回退小字。 */
 
 import assert from 'node:assert/strict'
 

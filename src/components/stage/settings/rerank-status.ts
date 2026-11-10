@@ -1,7 +1,6 @@
 import type { ModelProfile } from '../../../shared/ipc-channels'
 import type { RerankConfig } from '../../../shared/rerank-config'
 
-/** 分区折叠行的状态文字，只由 resolveRerankConfig 的结果决定。 */
 export function rerankStatus(config: RerankConfig, models: readonly ModelProfile[]): readonly [string, string] {
   switch (config.kind) {
     case 'none':

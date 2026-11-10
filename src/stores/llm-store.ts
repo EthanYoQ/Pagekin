@@ -32,7 +32,6 @@ interface LLMState {
   defaultModelId: string | null
   /** 当前默认向量模型 ID */
   defaultEmbeddingModelId: string | null
-  /** 当前默认重排模型 ID */
   defaultRerankModelId: string | null
   stageModelIds: StageModelIds
   /** 正在进行的活跃请求 */
@@ -53,7 +52,6 @@ interface LLMState {
   setDefaultModel: (modelId: string) => Promise<boolean>
   /** 设置默认向量模型（持久化到 ~/.vela/config.json） */
   setDefaultEmbeddingModel: (modelId: string) => Promise<boolean>
-  /** 设置默认重排模型（持久化到 ~/.vela/config.json） */
   setDefaultRerankModel: (modelId: string) => Promise<boolean>
   setStageModel: (stage: ModelStage, modelId: string | null) => Promise<boolean>
   /** 非流式生成 */
