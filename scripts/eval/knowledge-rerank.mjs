@@ -318,6 +318,7 @@ async function runGroup(groupName, rerankName, outPath) {
       const wrapperTop = wrapper.items.map(item => chunkToParagraph.get(item.chunkId))
       rows.push({
         id, query, ftsTerms: terms,
+        productionTop5: wrapperTop,
         productionTop5MatchesCandidateHead: wrapperTop.join() === candidates.slice(0, FINAL).map(item => item.paragraphSha256).join(),
         metrics, candidates, final: final.map(item => item.paragraphSha256), promptCoverage,
         ...(reranked ? { rerank: { final: reranked.map(item => item.paragraphSha256), metrics: rerankMetrics, outcome: outcomeOf(metrics, rerankMetrics), call: rankResult.call } } : {}),
