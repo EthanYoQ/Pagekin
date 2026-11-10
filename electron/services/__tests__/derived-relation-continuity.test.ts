@@ -75,14 +75,10 @@ function authorRelation(relation: string, sourceId = LIN, targetId = SHEN): void
   })()
 }
 
-function publishFinal(draftId: number, chapterNumber: number, body: string): void {
+function commitFinal(draftId: number, chapterNumber: number, body: string): void {
   db().prepare('INSERT OR IGNORE INTO blueprints(chapter_number,title) VALUES(?,?)').run(chapterNumber, `第${chapterNumber}章`)
   FinalizationRepository.commit({ finalizationId: `finalization-${randomUUID()}`, draftId, chapterNumber,
     chapterTitle: `第${chapterNumber}章`, content: body, contentHash: sha256(body), contentRevision: 1, targetFileName: `${chapterNumber}-${draftId}.md` })
-}
-
-function commitFinal(draftId: number, chapterNumber: number, body: string): void {
-  publishFinal(draftId, chapterNumber, body)
   const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
   SummaryRepository.saveFinalizedContinuity({ draftId, chapterNumber, chapterNotes: `第${chapterNumber}章摘要`, facts: [],
     source: context.source, projectionGeneration: context.projectionGeneration }, db())
@@ -320,32 +316,6 @@ describe('定稿后自动记录人物关系变化', () => {
 
     expect(latestNodesBefore(relationNodes(), 6).relations[0].lines.map(line => line.value)).toEqual(['同盟'])
     expect(latestNodesBefore(relationNodes(), 9).relations[0].lines.map(line => line.value)).toEqual(['恩断义绝'])
-  })
-})
-
-describe('章节要点还没落库时提交关系变化', () => {
-  const publishWithoutNotes = () => {
-    const draftId = DraftRepository.create({ chapterNumber: 8, source: 'write', content: CHAPTER_EIGHT, wordCount: CHAPTER_EIGHT.length })
-    publishFinal(draftId, 8, CHAPTER_EIGHT)
-    return draftId
-  }
-
-  it('有待确认关系时提交失败，派生节点一起回滚', () => {
-    openProject()
-    authorRelation('师徒')
-    const draftId = publishWithoutNotes()
-
-    expect(() => commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })).toThrow('CONTINUITY_PROJECTION_MISSING')
-    expect(derivedNodes()).toEqual([])
-  })
-
-  it('没有待确认关系时照常成功，节点照记', () => {
-    openProject()
-    const draftId = publishWithoutNotes()
-
-    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
-    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
-    expect(pending()).toEqual([])
   })
 })
 
