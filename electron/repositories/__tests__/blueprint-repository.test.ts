@@ -831,6 +831,24 @@ describe('BlueprintRepository range commit', () => {
       expect(hintsFor(1)).toEqual({})
     })
 
+    const importFill = (operationId: string, chapters: BlueprintData[]) => BlueprintRepository.commitRange({
+      mode: 'replace-range', operationId, startChapter: chapters[0].chapterNumber, endChapter: chapters[chapters.length - 1].chapterNumber, blueprints: chapters,
+    }, undefined, undefined, 'fill-empty')
+
+    it('导入只补空白：保留下来的章提示还在，导入新写的章按新回执', () => {
+      commit('first', [withHints(1)])
+      importFill('import', [{ ...blueprintFor(1), keyEvents: '导入反推的内容' }, { ...blueprintFor(2), keyEvents: '导入反推的内容' }])
+      expect(BlueprintRepository.getByChapter(1)?.keyEvents).toBe(blueprintFor(1).keyEvents)
+      expect(hintsFor(1, 2)).toEqual({ 1: HINTS })
+    })
+
+    it('导入保留过的章，之后被重新规划且没有提示：不再用导入之前的提示', () => {
+      commit('first', [withHints(1)])
+      importFill('import', [blueprintFor(1)])
+      commit('replan', [blueprintFor(1)])
+      expect(hintsFor(1)).toEqual({})
+    })
+
     it('回执损坏时没有提示，也不报错；另一份完好的回执照常', () => {
       commit('broken', [withHints(1)])
       commit('good', [withHints(2)])

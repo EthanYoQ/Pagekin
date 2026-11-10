@@ -557,6 +557,17 @@ describe('角色时间线', () => {
     expect(rowText()[1]).toContain('作者设定')
   })
 
+  it('打开着的时间线在名单重载后更新，名单版本没变也一样', async () => {
+    timeline = { nodes: [stateNode('北塔', 3)], chapterRange: { next: 8, last: 20 } }
+    await openState()
+    await expand()
+    expect(chapters()).toEqual(['第 3 章'])
+
+    timeline = { nodes: [stateNode('北塔', 3), relationNode('决裂', 7)], chapterRange: { next: 8, last: 20 } }
+    await act(async () => useCharacterStore.setState({ rosterLoads: useCharacterStore.getState().rosterLoads + 1 }))
+    await vi.waitFor(() => expect(chapters()).toEqual(['第 7 章', '第 3 章']))
+  })
+
   it('定稿记录可以看原文证据，作者设定没有原文入口', async () => {
     timeline = { nodes: [stateNode('旧站', 7, derived, '他走回旧站。'), stateNode('北塔', 3)], chapterRange: { next: 8, last: 20 } }
     await openState()
