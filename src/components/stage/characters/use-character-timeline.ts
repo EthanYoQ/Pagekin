@@ -12,6 +12,7 @@ export type CharacterTimelineView =
 
 export function useCharacterTimeline(characterId: string | undefined, enabled: boolean): CharacterTimelineView {
   const rosterRevision = useCharacterStore(state => state.rosterRevision)
+  const rosterLoads = useCharacterStore(state => state.rosterLoads)
   const [loaded, setLoaded] = useState<{ characterId: string; timeline: CharacterContinuityTimeline | null } | null>(null)
 
   useEffect(() => {
@@ -22,7 +23,7 @@ export function useCharacterTimeline(characterId: string | undefined, enabled: b
       .catch(() => null)
       .then(timeline => { if (latest && isProjectSessionCurrent(session)) setLoaded({ characterId, timeline }) })
     return () => { latest = false }
-  }, [enabled, characterId, rosterRevision])
+  }, [enabled, characterId, rosterRevision, rosterLoads])
 
   if (!loaded || loaded.characterId !== characterId) return { status: 'loading' }
   if (!loaded.timeline) return { status: 'failed' }
