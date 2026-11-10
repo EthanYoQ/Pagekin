@@ -171,6 +171,56 @@ describe('llm connection test', () => {
     await connectionHandler()({}, deepSeekModel)
     expect(mocks.logCall).not.toHaveBeenCalled()
   })
+
+  describe('rerank profiles', () => {
+    const rerankModel: ModelProfile = {
+      ...deepSeekModel,
+      id: 'rerank',
+      provider: 'custom',
+      modelName: 'my-reranker',
+      apiKey: 'sk-fake-rerank',
+      baseUrl: 'https://rerank.example/v1',
+      purposes: ['rerank'],
+    }
+    const fetchMock = vi.fn()
+
+    beforeEach(() => {
+      fetchMock.mockReset()
+      vi.stubGlobal('fetch', fetchMock)
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    })
+
+    it('probes the rerank endpoint with the profile key instead of the chat endpoint', async () => {
+      fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+        const { documents } = JSON.parse(String(init.body)) as { documents: string[] }
+        return new Response(JSON.stringify({ results: documents.map((_, index) => ({ index, relevance_score: 1 - index / 10 })) }))
+      })
+
+      await expect(connectionHandler()({}, rerankModel)).resolves.toEqual({ success: true, error: undefined })
+
+      expect(mocks.generate).not.toHaveBeenCalled()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const [url, init] = fetchMock.mock.calls[0]!
+      expect(url).toBe('https://rerank.example/v1/rerank')
+      expect(new Headers(init.headers).get('authorization')).toBe('Bearer sk-fake-rerank')
+    })
+
+    it('reports a failed probe without the endpoint or key', async () => {
+      fetchMock.mockImplementation(async () => new Response('{}', { status: 401 }))
+
+      const result = await connectionHandler()({}, rerankModel) as { success: boolean; error: string }
+
+      expect(result.success).toBe(false)
+      expect(result.error).toBeTruthy()
+      expect(result.error).not.toContain('rerank.example')
+      expect(result.error).not.toContain('sk-fake-rerank')
+    })
+  })
 })
 
 describe('llm generation parameter policy controller integration', () => {

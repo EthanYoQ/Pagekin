@@ -8,6 +8,7 @@ import { isProjectSessionContext } from '../../src/shared/project-session-contex
 import { hasRequiredApiKey } from '../../src/shared/provider-presets'
 import type { EmbeddingModel } from '../../src/shared/embedding-options'
 import { resolveRerankConfig, type RerankConfig } from '../../src/shared/rerank-config'
+import { isRerankFailure } from '../../src/shared/knowledge-ranking'
 import { rankPassages, rerankRecallCount } from '../rerank'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
 import { knowledgeBaseLoader } from '../services/knowledge-base-loader'
@@ -221,11 +222,16 @@ export function getRerankConfig(): RerankConfig {
 }
 
 async function searchRanked<Unavailable>(query: string, topK: number | undefined,
-  search: (recall: number) => Promise<Array<{ text: string; score: number; fileName: string }> | Unavailable>) {
+  search: (recall: number) => Promise<Array<{ text: string; score: number; fileName: string }> | Unavailable>,
+  reportFailure = false) {
   const limit = topK ?? 5
   const rerank = getRerankConfig()
   const results = await search(rerankRecallCount(rerank, limit))
-  return Array.isArray(results) ? (await rankPassages(query, results, rerank, limit)).items : results
+  if (!Array.isArray(results)) return results
+  const { items, ranking } = await rankPassages(query, results, rerank, limit)
+  if (!reportFailure || ranking.method === 'rerank' || !isRerankFailure(ranking.reason)) return items
+  const rerankFallback = ranking.reason
+  return items.map(item => ({ ...item, rerankFallback }))
 }
 
 function hasUsableEmbeddingConfig(
@@ -430,7 +436,7 @@ export function registerKBController(
         return kb.searchKnowledge(query, projectPath, embConfig.protocol, embConfig.model, recall)
       }
       return kb.searchKnowledgeFTS(query, projectPath, recall)
-    }))
+    }), true)
   })
 
   ipcMain.handle('kb:search-writing-context', async (_event, query: string, topK: number | undefined, expectedProjectPath: string) => {

@@ -13,6 +13,7 @@ import type { CharacterAvatarChannels } from './character-avatar'
 import type { CloudBackupChannels } from './cloud-backup'
 import type { ProjectOverview } from './project-overview'
 import type { ModelStage, StageModelIds } from './model-stage-routing'
+import type { KnowledgeSearchHit } from './knowledge-ranking'
 /**
  * IPC 频道定义 — 渲染进程与主进程的类型安全通信契约
  * 所有 IPC 调用都通过此文件定义频道名和参数/返回值类型
@@ -630,6 +631,14 @@ export interface LLMChannels {
     args: []
     return: string | null
   }
+  'llm:set-default-rerank-model': {
+    args: [modelId: string | null]
+    return: { success: boolean; error?: string }
+  }
+  'llm:get-default-rerank-model': {
+    args: []
+    return: string | null
+  }
   'llm:test-connection': {
     args: [model: ModelProfile, creativeStrategy?: CreativeStrategy]
     return: { success: boolean; error?: string }
@@ -1243,7 +1252,7 @@ export interface KnowledgeBaseChannels {
     ]
     return: { success: boolean; docId?: string; chunkCount?: number; idempotent?: boolean; error?: string; errorCode?: AppErrorCode }
   }
-  'kb:search': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<Array<{ text: string; score: number; fileName: string }>> }
+  'kb:search': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<KnowledgeSearchHit[]> }
   'kb:search-writing-context': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<Array<{ text: string; score: number; fileName: string }>> }
   'kb:list-documents': { args: [expectedProjectPath: string]; return: AppResult<Array<{ id: string; fileName: string; importedAt: string; chunkCount: number; filePath: string; finalizedChapter?: number }>> }
   'kb:read-document-copy': {
