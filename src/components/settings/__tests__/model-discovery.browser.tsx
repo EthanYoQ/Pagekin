@@ -1,14 +1,16 @@
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 
 import type { ModelDiscoveryRequest, ModelDiscoveryResult, ModelProfile } from '../../../shared/ipc-channels'
 import type { Locale } from '../../../i18n/types'
+import { BUILTIN_PRESETS } from '../../../shared/provider-presets'
 import { useLayoutStore } from '../../../stores/layout-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import StageSettings from '../../stage/settings/StageSettings'
+import { ModelForm } from '../ModelForm'
 
 const originalLayoutState = useLayoutStore.getState()
 const originalLLMState = useLLMStore.getState()
@@ -450,6 +452,258 @@ describe('model discovery settings flow', () => {
       expect(sourceTag()).toBe('默认值')
       await act(async () => { await page.getByRole('button', { name: '保存配置', exact: true }).click() })
       expect(saveModel.mock.calls[0][0].capabilities?.contextWindowTokens ?? null).toBeNull()
+    })
+
+    describe('事件先后顺序矩阵', () => {
+      const LOCAL_URL = 'http://127.0.0.1:1234/v1'
+      const CLOUD_URL = 'https://provider.invalid/v1'
+      const STALE_WINDOW = 999
+      const START = {
+        local: { baseUrl: LOCAL_URL, apiKey: '', modelName: 'target' },
+        cloud: { baseUrl: CLOUD_URL, apiKey: 'key-0', modelName: 'target' },
+        'cloud-unfilled': { baseUrl: CLOUD_URL, apiKey: '', modelName: '' },
+        'cloud-renamed': { baseUrl: CLOUD_URL, apiKey: 'key-0', modelName: 'before-rename' },
+        'cloud-manual': { baseUrl: CLOUD_URL, apiKey: 'key-0', modelName: 'target', ...stored(1_000, 'manual') },
+      } satisfies Record<string, Partial<ModelProfile>>
+      const listResponse = (tokens?: number): ModelDiscoveryResult => ({ success: true, models: [
+        { id: 'target', name: 'target', value: 'target', ...(tokens === undefined ? {} : { capabilities: { contextWindowTokens: tokens } }) },
+        { id: 'other', name: 'other', value: 'other' },
+      ] })
+      const settle = async <T,>(pending: Array<(value: T) => void>, end: 'newest' | 'oldest', value: T) => {
+        await vi.waitFor(() => expect(pending.length).toBeGreaterThan(0), { timeout: 3_000 })
+        const resolve = end === 'newest' ? pending.pop() : pending.shift()
+        await act(async () => { resolve?.(value) })
+      }
+
+      it.each<[keyof typeof START, string, number | undefined, number | null, string, string, number, number]>([
+        ['local', 'url runtime list', 64_000, 8_192, '8192', '来自服务商', 1, 1],
+        ['local', 'url list runtime', 64_000, 8_192, '8192', '来自服务商', 1, 1],
+        ['local', 'url runtime list', 64_000, null, '64000', '来自服务商', 1, 1],
+        ['local', 'url list runtime', 64_000, null, '64000', '来自服务商', 1, 1],
+        ['local', 'url runtime list', undefined, null, '', '默认值', 1, 1],
+        ['local', 'url list runtime', undefined, 8_192, '8192', '来自服务商', 1, 1],
+        ['local', 'url manual runtime list', 64_000, 8_192, '20000', '你填的', 1, 1],
+        ['local', 'url runtime manual list', 64_000, null, '20000', '你填的', 1, 1],
+        ['local', 'url list manual runtime', 64_000, 8_192, '20000', '你填的', 1, 1],
+        ['local', 'url runtime list manual clear runtime', 64_000, 8_192, '8192', '来自服务商', 2, 1],
+        ['local', 'url runtime list manual clear runtime', 64_000, null, '64000', '来自服务商', 2, 1],
+        ['local', 'open list manual clear runtime', 64_000, 8_192, '8192', '来自服务商', 1, 1],
+        ['local', 'open list manual clear runtime', 64_000, null, '64000', '来自服务商', 1, 1],
+        ['local', 'open list select runtime', 64_000, 8_192, '8192', '来自服务商', 1, 1],
+        ['local', 'open list select runtime', 64_000, null, '64000', '来自服务商', 1, 1],
+        ['local', 'open list select runtime manual clear runtime', 64_000, 8_192, '8192', '来自服务商', 2, 1],
+        ['local', 'open list manual clear manual runtime', 64_000, 8_192, '20000', '你填的', 1, 1],
+        ['local', 'url await-runtime await-list url2 await-runtime-2 await-list-2 runtime runtime-stale list list-stale', 64_000, 8_192, '8192', '来自服务商', 2, 2],
+        ['local', 'url await-runtime await-list url2 runtime-stale list-stale runtime list', 64_000, 8_192, '8192', '来自服务商', 2, 2],
+        ['local', 'url await-runtime await-list url2 list-stale runtime-stale runtime list', 64_000, null, '64000', '来自服务商', 2, 2],
+        ['local', 'open list', 64_000, 8_192, '', '默认值', 0, 1],
+        ['local', 'url runtime list refresh list-failed', 64_000, null, '64000', '来自服务商', 1, 2],
+        ['local', 'url runtime list refresh list-failed refresh idle list-failed', 64_000, null, '64000', '来自服务商', 1, 3],
+        ['local', 'url runtime list refresh list-without-target', 64_000, null, '', '默认值', 1, 2],
+        ['local', 'url list-failed runtime', 64_000, 8_192, '8192', '来自服务商', 1, 1],
+        ['cloud-unfilled', 'name key list', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud-unfilled', 'key name list', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud-unfilled', 'key name await-list idle list', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud-unfilled', 'key list name', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud-unfilled', 'name key list', undefined, null, '', '默认值', 0, 1],
+        ['cloud-unfilled', 'name manual key list', 128_000, null, '20000', '你填的', 0, 1],
+        ['cloud-unfilled', 'name key manual list', 128_000, null, '20000', '你填的', 0, 1],
+        ['cloud-unfilled', 'name key list manual clear', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud-unfilled', 'name key list name2 name', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud-unfilled', 'name key await-list key2 await-list-2 list list-stale', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud-unfilled', 'name key await-list key2 list-stale list', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud', 'url list', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud', 'key2 list', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud', 'open list', 128_000, null, '', '默认值', 0, 1],
+        ['cloud', 'open list select', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud', 'open list manual clear', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud', 'url list refresh list-failed', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud', 'url list refresh idle list-failed', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud', 'url list refresh list-without-target', 128_000, null, '', '默认值', 0, 2],
+        ['cloud-manual', 'key2 list', 128_000, null, '1000', '你填的', 0, 1],
+        ['cloud-manual', 'clear list', 128_000, null, '128000', '来自服务商', 0, 1],
+        ['cloud-manual', 'clear list open list-lower select refresh list-without-window', 128_000, null, '64000', '来自服务商', 0, 3],
+        ['cloud-manual', 'clear await-list manual list', 128_000, null, '20000', '你填的', 0, 1],
+        ['cloud-manual', 'clear await-list key2 await-list-2 list list-stale', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud-renamed', 'open list-failed name await-list refresh await-list-2 list-lower list-late manual clear', 128_000, null, '64000', '来自服务商', 0, 3],
+        ['cloud-renamed', 'open list-failed name await-list refresh await-list-2 list-late list-lower manual clear', 128_000, null, '64000', '来自服务商', 0, 3],
+        ['cloud-renamed', 'open list-failed name await-list list manual clear', 128_000, null, '128000', '来自服务商', 0, 2],
+        ['cloud-renamed', 'refresh name idle list-lower', 128_000, null, '64000', '来自服务商', 0, 1],
+        ['cloud-manual', 'refresh clear idle list-lower', 128_000, null, '64000', '来自服务商', 0, 1],
+      ])('%s：%s（列表 %s，运行值 %s）→ 窗口 %j，来源 %s', { timeout: 15_000 }, async (start, steps, listWindow, runtime, value, tag, runtimeReads, listReads) => {
+        const runtimeReplies: Array<(tokens: number | null) => void> = []
+        const listReplies: Array<(result: ModelDiscoveryResult) => void> = []
+        const discoverLocalContextWindow = vi.fn(() => new Promise<number | null>(resolve => { runtimeReplies.push(resolve) }))
+        const discoverModels = vi.fn(() => new Promise<ModelDiscoveryResult>(resolve => { listReplies.push(resolve) }))
+        await renderSettings(savedProfile(START[start]), discoverModels)
+        useLLMStore.setState({ discoverLocalContextWindow })
+        await openEditor()
+
+        let url = START[start].baseUrl
+        const moveTo = async (next: string) => {
+          await typeInto(baseUrlInput(url), next)
+          url = next
+        }
+        const actions: Record<string, () => Promise<unknown>> = {
+          open: () => openSuggestions(),
+          select: async () => {
+            await vi.waitFor(() => expect(suggestionValues()).toContain('target'))
+            await chooseSuggestion('target')
+          },
+          list: () => settle(listReplies, 'newest', listResponse(listWindow)),
+          'list-stale': () => settle(listReplies, 'oldest', listResponse(STALE_WINDOW)),
+          'list-late': () => settle(listReplies, 'oldest', listResponse(listWindow)),
+          'list-lower': () => settle(listReplies, 'newest', listResponse(64_000)),
+          'list-without-window': () => settle(listReplies, 'newest', listResponse()),
+          'list-failed': () => settle(listReplies, 'newest', { success: false, errorCode: 'network' }),
+          'list-without-target': () => settle(listReplies, 'newest', { success: true, models: endpointModels('other') }),
+          refresh: () => act(async () => { await page.getByRole('button', { name: '获取模型列表', exact: true }).click() }),
+          'await-list': () => vi.waitFor(() => expect(listReplies.length).toBeGreaterThan(0), { timeout: 3_000 }),
+          'await-list-2': () => vi.waitFor(() => expect(listReplies.length).toBe(2), { timeout: 3_000 }),
+          runtime: () => settle(runtimeReplies, 'newest', runtime),
+          'runtime-stale': () => settle(runtimeReplies, 'oldest', STALE_WINDOW),
+          'await-runtime': () => vi.waitFor(() => expect(runtimeReplies.length).toBeGreaterThan(0), { timeout: 3_000 }),
+          'await-runtime-2': () => vi.waitFor(() => expect(runtimeReplies.length).toBe(2), { timeout: 3_000 }),
+          url: () => moveTo(start === 'local' ? 'http://127.0.0.1:5678/v1' : 'https://other.invalid/v1'),
+          url2: () => moveTo('http://127.0.0.1:9999/v1'),
+          key: () => typeInto(apiKeyInput(), 'key-1'),
+          key2: () => typeInto(apiKeyInput(), 'key-2'),
+          name: () => typeInto(modelNameInput(), 'target'),
+          name2: () => typeInto(modelNameInput(), 'unlisted'),
+          manual: () => act(async () => { await windowInput().fill('20000') }),
+          clear: () => act(async () => { await windowInput().fill('') }),
+          idle: () => act(async () => { await new Promise(resolve => setTimeout(resolve, AUTO_DISCOVERY_WAIT_MS)) }),
+        }
+        for (const step of steps.split(' ')) await actions[step]()
+        await act(async () => { await new Promise(resolve => setTimeout(resolve, AUTO_DISCOVERY_WAIT_MS)) })
+
+        expect(windowElement().value).toBe(value)
+        expect(sourceTag()).toBe(tag)
+        expect(discoverLocalContextWindow).toHaveBeenCalledTimes(runtimeReads)
+        expect(discoverModels).toHaveBeenCalledTimes(listReads)
+      })
+
+      it.each([
+        ['云端先填模型名、后填 Key，列表到达', 'cloud-unfilled', 1],
+        ['本机改地址，运行值读不到早于列表到达', 'local', 1],
+      ] as const)('%s：窗口只写一次，不重复请求', async (_, start, windowWrites) => {
+        const runtimeReplies: Array<(tokens: number | null) => void> = []
+        const listReplies: Array<(result: ModelDiscoveryResult) => void> = []
+        const discoverLocalContextWindow = vi.fn(() => new Promise<number | null>(resolve => { runtimeReplies.push(resolve) }))
+        const discoverModels = vi.fn(() => new Promise<ModelDiscoveryResult>(resolve => { listReplies.push(resolve) }))
+        useLLMStore.setState({ discoverLocalContextWindow, discoverModels })
+        const onChange = vi.fn<(next: ModelProfile) => void>()
+        function Form() {
+          const [model, setModel] = useState(savedProfile(START[start]))
+          return (
+            <ModelForm model={model} onChange={next => { onChange(next); setModel(next) }} onSave={() => {}} onCancel={() => {}}
+              saving={false} purposeOptions={['generation']} presets={BUILTIN_PRESETS} />
+          )
+        }
+        container = document.createElement('div')
+        document.body.append(container)
+        root = createRoot(container)
+        await act(async () => root?.render(<Form />))
+
+        if (start === 'local') await typeInto(baseUrlInput(LOCAL_URL), 'http://127.0.0.1:5678/v1')
+        else {
+          await typeInto(modelNameInput(), 'target')
+          await typeInto(apiKeyInput(), 'key-1')
+        }
+        if (start === 'local') await settle(runtimeReplies, 'newest', null)
+        await vi.waitFor(() => expect(listReplies.length).toBeGreaterThan(0), { timeout: 3_000 })
+        const before = onChange.mock.calls.length
+        await settle(listReplies, 'newest', listResponse(64_000))
+        await act(async () => { await new Promise(resolve => setTimeout(resolve, AUTO_DISCOVERY_WAIT_MS)) })
+
+        expect(onChange.mock.calls.slice(before).map(([next]) => next.capabilities?.contextWindowTokens)).toEqual(Array(windowWrites).fill(64_000))
+        expect(discoverModels).toHaveBeenCalledTimes(1)
+        expect(discoverLocalContextWindow).toHaveBeenCalledTimes(start === 'local' ? 1 : 0)
+      })
+    })
+
+    it('本机列表声明 64000、运行值 8192：手填后清空，取运行值', async () => {
+      const discoverLocalContextWindow = vi.fn(async () => 8_192)
+      const discoverModels = vi.fn(async () => ({ success: true as const, models: [{ id: 'gemma-3', name: 'gemma-3', value: 'gemma-3', capabilities: { contextWindowTokens: 64_000 } }] }))
+      await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: '' }), discoverModels)
+      useLLMStore.setState({ discoverLocalContextWindow })
+      await openEditor()
+      await openSuggestions()
+      await vi.waitFor(() => expect(suggestionValues()).toContain('gemma-3'))
+      await chooseSuggestion('gemma-3')
+      await vi.waitFor(() => expect(windowElement().value).toBe('8192'))
+      await act(async () => { await windowInput().fill('20000') })
+      await act(async () => { await windowInput().fill('') })
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+      expect(windowElement().value).toBe('8192')
+      expect(sourceTag()).toBe('来自服务商')
+      expect(discoverLocalContextWindow).toHaveBeenCalledTimes(2)
+    })
+
+    it('云端先填模型名、后填 Key：自动拉到的列表补上窗口', async () => {
+      const discoverModels = vi.fn(async () => ({ success: true as const, models: [{ id: 'gateway', name: 'gateway', value: 'gateway', capabilities: { contextWindowTokens: 128_000 } }] }))
+      await renderSettings(savedProfile({ modelName: '', apiKey: '' }), discoverModels)
+      await openEditor()
+      await typeInto(modelNameInput(), 'gateway')
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, AUTO_DISCOVERY_WAIT_MS)) })
+      expect(discoverModels).not.toHaveBeenCalled()
+      await typeInto(apiKeyInput(), 'late-key')
+      await vi.waitFor(() => expect(statusText()).toContain('已从端点获取'), { timeout: 3_000 })
+      await vi.waitFor(() => expect(windowElement().value).toBe('128000'))
+      expect(sourceTag()).toBe('来自服务商')
+      expect(discoverModels).toHaveBeenCalledTimes(1)
+    })
+
+    it('本机网关改地址，运行值读不到早于列表到达：用列表声明的窗口', async () => {
+      const discoverLocalContextWindow = vi.fn(async () => null)
+      let respond: (result: ModelDiscoveryResult) => void = () => {}
+      const discoverModels = vi.fn(() => new Promise<ModelDiscoveryResult>(resolve => { respond = resolve }))
+      await renderSettings(savedProfile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'gateway' }), discoverModels)
+      useLLMStore.setState({ discoverLocalContextWindow })
+      await openEditor()
+      await typeInto(baseUrlInput('http://127.0.0.1:1234/v1'), 'http://127.0.0.1:5678/v1')
+      await vi.waitFor(() => expect(discoverLocalContextWindow).toHaveBeenCalled(), { timeout: 3_000 })
+      await vi.waitFor(() => expect(discoverModels).toHaveBeenCalled())
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+      await act(async () => { respond({ success: true, models: [{ id: 'gateway', name: 'gateway', value: 'gateway', capabilities: { contextWindowTokens: 64_000 } }] }) })
+      await vi.waitFor(() => expect(windowElement().value).toBe('64000'))
+      expect(sourceTag()).toBe('来自服务商')
+    })
+
+    it.each<[string, string, string, number | null]>([
+      ['1.5', '', '默认值', null],
+      ['1e3', '1e3', '你填的', 1_000],
+      ['-5', '', '默认值', null],
+      ['', '', '默认值', null],
+    ])('手填 %j：窗口 %j，来源 %s，不写成 1', async (raw, value, tag, saved) => {
+      const { saveModel } = await renderSettings(savedProfile({ ...stored(20_000, 'manual') }), listed('manual-model'))
+      await openEditor()
+      await act(async () => { await windowInput().fill(raw) })
+      expect(windowElement().value).toBe(value)
+      expect(sourceTag()).toBe(tag)
+      await act(async () => { await page.getByRole('button', { name: '保存配置', exact: true }).click() })
+      expect(saveModel.mock.calls[0][0].capabilities?.contextWindowTokens ?? null).toBe(saved)
+    })
+
+    it('切换服务商后，窗口取值不把旧 Key 发给新端点', async () => {
+      const discoverModels = vi.fn<(request: ModelDiscoveryRequest) => Promise<ModelDiscoveryResult>>(async () => ({ success: true, models: endpointModels('typed-model') }))
+      const model = savedProfile({ provider: 'deepseek', baseUrl: 'https://api.deepseek.com', modelName: 'gateway', ...stored(20_000, 'manual') })
+      await renderSettings(model, discoverModels)
+      await openEditor()
+      await act(async () => { await windowInput().fill('') })
+      await vi.waitFor(() => expect(discoverModels).toHaveBeenCalledTimes(1))
+      expect(discoverModels.mock.calls[0][0]).toMatchObject({ baseUrl: 'https://api.deepseek.com', apiKey: model.apiKey })
+
+      const providerSelect = Array.from(document.querySelectorAll('select')).find(select => select.value === 'deepseek')
+      if (!providerSelect) throw new Error('Missing provider select')
+      await typeInto(providerSelect, 'gemini')
+      await typeInto(modelNameInput(), 'typed-model')
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, AUTO_DISCOVERY_WAIT_MS)) })
+      expect(discoverModels).toHaveBeenCalledTimes(1)
+
+      await typeInto(apiKeyInput(), 'gemini-key')
+      await vi.waitFor(() => expect(discoverModels).toHaveBeenCalledTimes(2), { timeout: 3_000 })
+      expect(discoverModels.mock.calls[1][0]).toMatchObject({ baseUrl: 'https://generativelanguage.googleapis.com', apiKey: 'gemini-key' })
     })
 
     it('重新打开后清空手填，向当前端点重新取回声明的窗口', async () => {

@@ -41,7 +41,10 @@ import { getProjectDb, getCurrentProjectPath } from '../../database'
 import { ProjectClearRepository } from '../../repositories/project-clear-repository'
 import { CANONICAL_PROJECT_DIRECTORY } from '../../../src/shared/project-format'
 import { BlueprintRepository, type BlueprintRangeCommitRequest } from '../../repositories/blueprint-repository'
-import { commitCharacterIdentities, refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
+import { CharacterRosterRepository, commitCharacterIdentities, refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
+import { readContinuityNodesWithCurrentNames } from '../../repositories/character-continuity-repository'
+import { commitAuthorCharacterRoster } from '../character-roster-author'
+import { findBlueprintContinuityRisks } from '../../../src/shared/consistency-preflight'
 import { proveCharacterProposal } from '../generation-character-proposal-proof'
 import { CHARACTER_DETAIL_DESCRIPTION_FIELDS, CHARACTER_STATE_TEXT_FIELDS } from '../../../src/shared/character-proposal-parser'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, joinPlotOutlineEntries, plotOutlinePurpose, plotOutlineRequestContract, planningTargetInstruction, renderPlotOutlineSynopsis, renderPlotOutlineRange, type PlotOutlineProgress } from '../../../src/shared/plot-outline-contract'
@@ -1588,6 +1591,62 @@ describe('durable directory commit and remaining stage', () => {
     const node = f.db.prepare("SELECT value,effective_chapter,provenance_json FROM character_continuity_events WHERE aspect='relation'").get() as { value: string; effective_chapter: number; provenance_json: string }
     expect(node).toMatchObject({ value: '同行', effective_chapter: 2 })
     expect(JSON.parse(node.provenance_json)).toMatchObject({ kind: 'adopted', operationId: 'approve-hint' })
+  })
+  describe('蓝图提案同步的关系被作者改掉之后，第 12 章的预检', () => {
+    const HINT = { from: '林晚', to: '沈舟', relation: '亲密同伴' }
+    async function syncedRelation(finalizedThrough: number) {
+      const f = directoryFixture('chapter-blueprint-directory', 12)
+      new GenerationRunRepository(() => f.fixture.db).pause(f.run.handle.rootActionId)
+      await f.owner.resume(f.run.handle)
+      await f.owner.execute({ handle: f.run.handle, invocationNonce: 'proposal', task: directoryTask })
+      const request = f.request('hint-chapter', 1, 12)
+      request.blueprints[11] = { ...request.blueprints[11], characters: ['林晚', '沈舟'],
+        newCharacterCandidates: [{ name: '林晚', role: 'supporting' }, { name: '沈舟', role: 'supporting' }], relationshipHints: [HINT] }
+      f.commit(f.owner, f.run.handle, request, { startChapter: 1, endChapter: 12 })
+      const operation = BlueprintRepository.getCommittedRangeOperation(request.operationId)!
+      const batch = f.owner.characterProposals.stage({ kind: 'directory', operationId: operation.characterSyncOperation.operationId })
+      f.owner.approveCharacterProposal({ proposalBatchId: batch.proposalBatchId, expectedRevision: batch.revision, operationId: 'approve-hint',
+        selections: batch.items.map(item => ({ selectionKey: item.selectionKey, action: 'create' as const })),
+        relationships: [{ sourceSelectionKey: '12:0', targetSelectionKey: '12:1', relation: HINT.relation }] })
+      for (let chapter = 1; chapter <= finalizedThrough; chapter++) {
+        f.db.prepare("INSERT INTO contents(id,body) VALUES(?,'')").run(chapter)
+        f.db.prepare("INSERT INTO drafts_all(id,chapter_number,version,status,content_id) VALUES(?,?,1,'finalized',?)").run(chapter, chapter, chapter)
+      }
+      const editRoster = (change: (relations: { target: string; targetCharacterId?: string; relation: string }[]) => typeof relations, stateEffectiveChapter?: number) => {
+        const read = CharacterRosterRepository.read(f.db), entries = structuredClone(read.entries)
+        const owner = entries.find(entry => entry.name === HINT.from)!
+        owner.relationships = change(owner.relationships)
+        commitAuthorCharacterRoster(f.db, { operationId: 'author-edit', schemaVersion: 1, intent: 'manual_edit', expectedRevision: read.revision,
+          expectedIdentityRevision: read.identityRevision!, entries, stateEffectiveChapter }, { projectId: 'project', epoch: 'epoch-1' }, () => undefined)
+      }
+      const preflight = () => {
+        const row = BlueprintRepository.getByChapter(12)!
+        return findBlueprintContinuityRisks([], { ...row, relationshipHints: BlueprintRepository.committedRelationshipHints([row])[12] }, [], readContinuityNodesWithCurrentNames(f.db))
+      }
+      const relationNodes = () => f.db.prepare("SELECT value,effective_chapter AS chapter FROM character_continuity_events WHERE aspect='relation' ORDER BY rowid").all()
+      return { f, editRoster, preflight, relationNodes }
+    }
+
+    it('已定稿到第 7 章时把这一行改成决裂：决裂落在第 8 章，第 12 章要报', async () => {
+      const { editRoster, preflight, relationNodes } = await syncedRelation(7)
+      expect(preflight()).toEqual([])
+      editRoster(relations => relations.map(relation => ({ ...relation, relation: '决裂' })))
+      expect(relationNodes()).toEqual([{ value: '亲密同伴', chapter: 12 }, { value: '', chapter: 12 }, { value: '决裂', chapter: 8 }])
+      expect(preflight()).toMatchObject([{ sourceChapter: 8, evidence: '决裂' }])
+    })
+
+    it('角色页选的章只管状态字段：已定稿到第 2 章时选第 8 章，关系仍从第 3 章起', async () => {
+      const { editRoster, preflight, relationNodes } = await syncedRelation(2)
+      editRoster(relations => relations.map(relation => ({ ...relation, relation: '决裂' })), 8)
+      expect(relationNodes()).toEqual([{ value: '亲密同伴', chapter: 12 }, { value: '', chapter: 12 }, { value: '决裂', chapter: 3 }])
+      expect(preflight()).toMatchObject([{ sourceChapter: 3, evidence: '决裂' }])
+    })
+
+    it('作者另写一条决裂、同步来的亲密同伴还在：这一对仍有不相反的关系，不报', async () => {
+      const { editRoster, preflight } = await syncedRelation(7)
+      editRoster(relations => [...relations, { ...relations[0], relation: '决裂' }])
+      expect(preflight()).toEqual([])
+    })
   })
   it.each(['author-edit', 'other-progress', 'own-progress', 'own-hash', 'own-handle'] as const)(
     'preserves directory proposal evidence while refusing invalid %s recovery', async fault => {
