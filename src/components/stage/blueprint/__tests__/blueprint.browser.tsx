@@ -1478,6 +1478,26 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByRole('button', { name: '第 3 章', exact: true })).not.toBeInTheDocument()
   })
 
+  const refreshTimeline = (resource: 'characterCards' | 'drafts') => act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: [resource], projectPath: PROJECT_PATH, projectSession: SESSION }))
+
+  it('页面开着时有了时间线节点：按钮变成可点', async () => {
+    nodes = []
+    await renderPage(2)
+    await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeDisabled()
+    nodes = [BROKEN_NODE]
+    await refreshTimeline('drafts')
+    await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeEnabled()
+  })
+
+  it('页面开着时时间线变了：已显示的结论收起', async () => {
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    nodes = [{ ...BROKEN_NODE, value: '和解' }]
+    await refreshTimeline('characterCards')
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+  })
+
   it('没有时间线节点：按钮不可点，旁边说明，不发请求', async () => {
     nodes = []
     await renderPage(2)

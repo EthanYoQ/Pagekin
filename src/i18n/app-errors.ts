@@ -120,7 +120,6 @@ const ERROR_KEYS = {
   GENERATION_PLOT_OUTLINE_GUIDANCE_CHANGED: 'error.generationSourceChanged',
   GENERATION_GRAPH_TARGET_CHANGED: 'error.generationSourceChanged',
   GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED: 'error.blueprintCheckNoTimeline',
-  GENERATION_GRAPH_CONTINUITY_TOO_LARGE: 'error.blueprintCheckTooLarge',
   GENERATION_IMPORT_CHECKPOINT_CHANGED: 'error.generationSourceChanged',
   GENERATION_REVIEW_SOURCE_CHANGED: 'error.sourceDraftChanged',
   GENERATION_SAVED_WITH_NEWER_AUTHOR_DRAFT: 'error.generationSavedWithNewerAuthorDraft',

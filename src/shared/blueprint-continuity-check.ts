@@ -84,7 +84,7 @@ function continuityCheckNode(node: ContinuityNode): ContinuityCheckNode {
 const utf8Bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
 const PROMPT_OVERHEAD_TOKENS = 1024
 
-/** 从第一章起按顺序放，放不下就停在上一章。单章要么整章进，要么不进。 */
+/** 从第一章起按顺序放，放不下就停在上一章。单章要么整章进，要么不进。第一章总是放进去：预算只决定放多少，不拒绝检查（ADR-0026）。 */
 export function selectContinuityCheckScope(blueprints: readonly BlueprintData[], nodes: readonly ContinuityNode[], inputTokens: number) {
   const chapters: ContinuityCheckChapter[] = []
   const kept = new Map<string, ContinuityCheckNode>()
@@ -95,7 +95,7 @@ export function selectContinuityCheckScope(blueprints: readonly BlueprintData[],
     const current = nodesInForce(nodes, chapter.chapterNumber)
     const fresh = current.filter(node => !kept.has(node.eventId)).map(continuityCheckNode)
     const added = utf8Bytes(chapter) + fresh.reduce((sum, node) => sum + utf8Bytes(node), 0)
-    if (PROMPT_OVERHEAD_TOKENS + estimateMaterialTokens(bytes + added) > inputTokens) break
+    if (chapters.length > 0 && PROMPT_OVERHEAD_TOKENS + estimateMaterialTokens(bytes + added) > inputTokens) break
     bytes += added
     chapters.push(chapter)
     inForce.push({ chapterNumber: chapter.chapterNumber, ids: new Set(current.map(node => node.eventId)) })

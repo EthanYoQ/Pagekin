@@ -59,7 +59,6 @@ export function captureGraphGenerationContext(db: Database.Database, input: Grap
     if (nodes.length === 0) throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED')
     if (blueprints.length === 0) throw new Error('GENERATION_GRAPH_BLUEPRINT_REQUIRED')
     const scope = selectContinuityCheckScope(blueprints, nodes, frozen ? Infinity : continuityInputTokens)
-    if (scope.chapters.length === 0) throw new Error('GENERATION_GRAPH_CONTINUITY_TOO_LARGE')
     if (scope.nodes.length === 0) throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED')
     return { ...base, kind: 'continuity', ...scope }
   }

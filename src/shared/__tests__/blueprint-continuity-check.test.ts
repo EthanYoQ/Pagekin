@@ -49,6 +49,9 @@ describe('selectContinuityCheckScope', () => {
     const derived = { ...author('派生', '重伤', 1), provenance: { kind: 'derived' as const, source: { draftId: 1, chapterNumber: 1, finalizationId: 'f', contentHash: 'h' } } }
     expect(selectContinuityCheckScope([blueprint(5)], [derived], 100_000).nodes).toEqual([])
   })
+  it('窗口连一章都放不下：仍放第一章，不拒绝检查', () => {
+    expect(selectContinuityCheckScope([blueprint(3), blueprint(2)], [], 0).chapters.map(item => item.chapterNumber)).toEqual([2])
+  })
   it('按章号从小到大放，放不下就停，不跳过', () => {
     const scope = selectContinuityCheckScope([blueprint(4, '短'), blueprint(2, '长'.repeat(900)), blueprint(3, '短')], [], 2_000)
     expect(scope.chapters.map(item => item.chapterNumber)).toEqual([2])
