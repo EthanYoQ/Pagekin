@@ -132,6 +132,11 @@ describe('输出上限按可信窗口自动收紧（ADR-0028）', () => {
     const profile = withLearnedContextWindow(custom({ maxTokens: 8_192, capabilities: capabilities(128_000, 8_192), capabilitySources: { contextWindowTokens: 'endpoint' } }), 32_768)
     expect(resolveMaterialBudget(profile, 8_192)).toEqual({ inputTokens: 32_768 - 8_192 - 512, contextWindowTokens: 32_768, contextWindowSource: 'learned', reservedOutputTokens: 8_192, safetyMarginTokens: 512 })
   })
+
+  it('作者把输出上限清空后，打开暂停的运行不抛错，材料额度仍按窗口一半预留', () => {
+    const profile = custom({ maxTokens: 0, capabilities: capabilities(32_768, 0), capabilitySources: { contextWindowTokens: 'manual' } })
+    expect(resolveMaterialBudget(profile, 65_536)).toMatchObject({ contextWindowTokens: 32_768, reservedOutputTokens: 16_384 })
+  })
 })
 
 describe('讨论区 #77：账本照记，token 额度不拒绝，次数刹车仍在', () => {

@@ -44,6 +44,11 @@ export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow
   return { tokens: isLocalModelEndpoint(model) ? LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS, source: 'default' }
 }
 
+/** 服务商把输入和 max_tokens 合计算进窗口，输出占满窗口就一定超长；留一半给提示词。默认值是猜测，不收紧。 */
+export function contextWindowOutputCap(window: ResolvedContextWindow): number {
+  return window.source === 'default' ? Infinity : Math.ceil(window.tokens / 2)
+}
+
 /** 默认值是猜测，服务商报什么都比它可信；其余来源只收紧，手填的不动。 */
 export function withLearnedContextWindow(model: ModelProfile, tokens: number): ModelProfile {
   const current = resolveContextWindow(model)

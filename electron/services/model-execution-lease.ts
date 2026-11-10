@@ -5,7 +5,7 @@ import type {
   ModelExecutionLeaseReceipt,
   ModelProfile,
 } from '../../src/shared/ipc-channels'
-import { resolveContextWindow, type ContextWindowSource } from '../../src/shared/model-profile-draft'
+import { contextWindowOutputCap, resolveContextWindow, type ContextWindowSource } from '../../src/shared/model-profile-draft'
 import { resolveModelProfileCapabilities, resolveModelProfileStructuredOutput } from '../../src/shared/provider-presets'
 
 const DEFAULT_MODEL_EXECUTION_LEASE_TTL_MS = 4 * 60 * 60 * 1_000
@@ -100,10 +100,7 @@ export function resolveModelExecutionCapabilityEvidence(
     : verifiedOutputLimit ?? operationalOutputCap
   const window = resolveContextWindow(model)
   const contextWindowTokens = window.source === 'default' ? null : window.tokens
-  // 服务商把输入和 max_tokens 合计算进窗口，输出占满窗口就一定超长；留一半给提示词。
-  const maxOutputTokens = unconstrainedOutputTokens && contextWindowTokens
-    ? Math.min(unconstrainedOutputTokens, Math.ceil(contextWindowTokens / 2))
-    : unconstrainedOutputTokens
+  const maxOutputTokens = unconstrainedOutputTokens && Math.min(unconstrainedOutputTokens, contextWindowOutputCap(window))
   if (!maxOutputTokens) {
     throw new ModelExecutionLeaseError('MODEL_OUTPUT_LIMIT_INVALID')
   }

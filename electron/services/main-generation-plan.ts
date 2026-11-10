@@ -9,8 +9,7 @@ import type { CreativeStrategy, GenerationReasoningStage } from '../../src/share
 import { CREATIVE_STRATEGIES } from '../../src/shared/reasoning-types'
 import { isDeepStrictEqual } from 'node:util'
 import { materialBudgetFrom, type ArchitecturePlanningIntent, type BeginGenerationRequest, type MaterialBudget, type PlanningGenerationScope } from '../../src/shared/generation-owner-contract'
-import { resolveContextWindow } from '../../src/shared/model-profile-draft'
-import { resolveModelExecutionCapabilityEvidence } from './model-execution-lease'
+import { contextWindowOutputCap, resolveContextWindow } from '../../src/shared/model-profile-draft'
 import { planBlueprintGenerationCost } from '../../src/services/workflows/blueprint-batch-policy'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, assertPlanningActionRange, parsePlanningTargetUnits, DEFAULT_PLANNING_ACTION_CHAPTERS } from '../../src/shared/plot-outline-contract'
 
@@ -273,7 +272,7 @@ export function resolveMaterialBudget(model: ModelProfile, maxOutputPerRequest: 
   return materialBudgetFrom({
     contextWindowTokens: window.tokens,
     contextWindowSource: window.source,
-    reservedOutputTokens: requestedOutputLimit(capability, Math.min(maxOutputPerRequest, resolveModelExecutionCapabilityEvidence(model).maxOutputTokens)),
+    reservedOutputTokens: requestedOutputLimit(capability, Math.min(maxOutputPerRequest, contextWindowOutputCap(window))),
     safetyMarginTokens: MAIN_GENERATION_POLICY.safetyMarginTokens,
   })
 }

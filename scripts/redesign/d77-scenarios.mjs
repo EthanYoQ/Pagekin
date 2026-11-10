@@ -78,7 +78,7 @@ export const D77_SCENARIOS = {
     return { card: text, chats }
   } },
   // 拉取的窗口比真实窗口大、输出上限比真实窗口还大：学到的窗口落进档案，开新运行时输出上限自动收紧。
-  'ctx-lease-learned-window': { model: true, shell: 'stage', setup, run: async ({ page, fake, invoke, shoot }) => {
+  'ctx-lease-learned-window': { model: true, shell: 'stage', setup, run: async ({ page, fake, invoke, shoot, reload }) => {
     const reported = { ...AUTHOR_64K, maxTokens: 65_536,
       capabilities: { ...AUTHOR_64K.capabilities, contextWindowTokens: 1_048_576, maxOutputTokens: 65_536 },
       capabilitySources: { ...AUTHOR_64K.capabilitySources, contextWindowTokens: 'endpoint', maxOutputTokens: 'endpoint' } }
@@ -95,7 +95,17 @@ export const D77_SCENARIOS = {
     assert.ok(maxTokens.length > 0 && maxTokens.every(value => value === 16_384), `学到后每个请求的 max_tokens 都收紧到 16,384：${maxTokens.join('、')}`)
     assert.equal(await runSheet.anyCard(page).filter({ hasText: /^上一次运行/ }).filter({ hasText: /换用上下文更长的模型/ }).count(), 0, '作者看不到超长失败卡片')
     await shoot('ctx-lease-learned-window')
-    return { maxTokens, learnedWindow: stored.learnedContextWindow.tokens, storedWindow: stored.capabilities.contextWindowTokens }
+    await reload()
+    await stage.openSettings(page)
+    await page.getByRole('button', { name: `编辑「${reported.name}」`, exact: true }).click()
+    await page.getByRole('button', { name: '高级设置', exact: true }).click()
+    const windowRow = page.getByText('实测', { exact: false }).first()
+    await windowRow.waitFor({ state: 'visible', timeout: 10_000 })
+    await windowRow.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    const conflictPrompts = await page.getByText(/没有给提示词留下空间/u).count()
+    assert.equal(conflictPrompts, 0, '设置页不再提示作者调整输出上限')
+    await shoot('ctx-lease-learned-window-settings')
+    return { maxTokens, learnedWindow: stored.learnedContextWindow.tokens, storedWindow: stored.capabilities.contextWindowTokens, conflictPrompts }
   } },
   // 手填窗口比真实窗口大：第一次超长带窗口，软件换材料重试一次，作者看不到失败，手填的数不变。
   'ctx-retry-learned-window': { model: true, shell: 'stage', setup, run: async ({ page, fake, invoke, shoot }) => {
