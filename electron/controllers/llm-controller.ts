@@ -12,6 +12,7 @@ import { knownAppErrorMessage } from '../../src/i18n/app-errors'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import { isReasoningMapping, reasoningAdapterFitsProtocol } from '../../src/shared/reasoning-types'
 import { isLocalModelEndpoint } from '../../src/shared/provider-presets'
+import { sameModelIdentity, withLearnedContextWindow } from '../../src/shared/model-profile-draft'
 import { assignStageModel, availableGenerationModelId, isModelStage, parseStageModelIds, removeModelFromStages } from '../../src/shared/model-stage-routing'
 import { LLMFactory } from '../llm/llm-factory'
 import { getMainLocale, mainT, mainText } from '../i18n'
@@ -69,6 +70,25 @@ function saveModelConfigs(models: ModelProfile[]) {
 function getModelConfig(modelId: string): ModelProfile | null {
   const models = loadModelConfigs()
   return models.find((m) => m.id === modelId) ?? null
+}
+
+function withStoredLearnedWindow(incoming: ModelProfile, stored: ModelProfile | undefined): ModelProfile {
+  const learned = stored?.learnedContextWindow
+  return { ...incoming, learnedContextWindow: learned && sameModelIdentity(learned, incoming) ? learned : undefined }
+}
+
+function rememberContextWindow(snapshot: ModelProfile, windowTokens: number): void {
+  try {
+    const models = loadModelConfigsForUpdate()
+    const idx = models.findIndex((m) => m.id === snapshot.id)
+    if (idx < 0 || !sameModelIdentity(models[idx], snapshot)) return
+    const next = withLearnedContextWindow(models[idx], windowTokens)
+    if (next === models[idx]) return
+    models[idx] = next
+    saveModelConfigs(models)
+  } catch (error) {
+    console.error('[AI Novel Writer] Could not remember the learned context window.', error)
+  }
 }
 
 function applyProxyConfig() {
@@ -343,8 +363,8 @@ export function registerLLMController() {
       }
       const models = loadModelConfigsForUpdate()
       const idx = models.findIndex((m) => m.id === model.id)
-      if (idx >= 0) models[idx] = model
-      else models.push(model)
+      if (idx >= 0) models[idx] = withStoredLearnedWindow(model, models[idx])
+      else models.push(withStoredLearnedWindow(model, undefined))
       saveModelConfigs(models)
       return { success: true }
     } catch (error) {
@@ -518,5 +538,5 @@ export function registerLLMController() {
     }
   })
 
-  return { modelExecutionLeases, loadModel: getModelConfig, applyProxyConfig }
+  return { modelExecutionLeases, loadModel: getModelConfig, rememberContextWindow, applyProxyConfig }
 }

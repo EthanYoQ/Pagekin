@@ -80,7 +80,7 @@ export const MATERIAL_DECISION_SOURCE_ID = /^(?:author:required|(?:finalized|can
 /** 选材按 UTF-8 字节估 token 的唯一系数。实测中文 3.78–4.37 字节/token，取 3 偏保守。 */
 export const MATERIAL_BYTES_PER_TOKEN = 3
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 32_768
-export const MATERIAL_BUDGET_WINDOW_SOURCES = ['manual', 'endpoint', 'preset', 'default'] as const
+export const MATERIAL_BUDGET_WINDOW_SOURCES = ['manual', 'learned', 'endpoint', 'preset', 'default'] as const
 export type MaterialBudgetWindowSource = typeof MATERIAL_BUDGET_WINDOW_SOURCES[number]
 /** 本次生成可用的输入 token 及其来历。只决定放多少可选材料，绝不用来拒绝发送（ADR-0026）。 */
 export interface MaterialBudget {
@@ -95,7 +95,7 @@ export function materialBudgetFrom(input: Omit<MaterialBudget, 'inputTokens'>): 
 }
 export function tightenMaterialBudget(budget: MaterialBudget, contextWindowTokens: number): MaterialBudget {
   return contextWindowTokens < budget.contextWindowTokens
-    ? materialBudgetFrom({ ...budget, contextWindowTokens, contextWindowSource: 'endpoint' }) : budget
+    ? materialBudgetFrom({ ...budget, contextWindowTokens, contextWindowSource: 'learned' }) : budget
 }
 export function estimateMaterialTokens(units: number): number {
   return Math.ceil(units / MATERIAL_BYTES_PER_TOKEN)
