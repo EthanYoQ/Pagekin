@@ -636,6 +636,23 @@ describe('ModelDiscoveryService', () => {
       expect(values(generation)).toEqual(['Qwen/Qwen3.8-27B', 'BAAI/bge-m3', 'deepseek-v4-flash', 'Qwen/Qwen3-Embedding-8B'])
     })
 
+    it('重排用途把名字像 reranker 的模型排在最前', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [
+        { id: 'deepseek-v4-flash' }, { id: 'BAAI/bge-m3' }, { id: 'BAAI/bge-reranker-v2-m3' }, { id: 'Qwen/Qwen3-Reranker-8B' },
+      ] }) })
+      const result = await new ModelDiscoveryService({ fetchImpl }).discoverModels(profile({ baseUrl: 'https://example.test/v1', purposes: ['rerank'] }))
+      expect(values(result)).toEqual(['BAAI/bge-reranker-v2-m3', 'Qwen/Qwen3-Reranker-8B', 'deepseek-v4-flash', 'BAAI/bge-m3'])
+    })
+
+    it('重排档案拉列表只发往表单里的端点，只带表单里的 Key', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: 'my-reranker' }] }) })
+      await new ModelDiscoveryService({ fetchImpl }).discoverModels(profile({ baseUrl: 'https://rerank.example/v1', apiKey: 'sk-fake-rerank', purposes: ['rerank'] }))
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+      const [url, init] = fetchImpl.mock.calls[0]!
+      expect(url).toBe('https://rerank.example/v1/models')
+      expect(init).toMatchObject({ redirect: 'error', headers: { Authorization: 'Bearer sk-fake-rerank' } })
+    })
+
     it('Anthropic 协议拉取官方模型列表，向量用途直接判为无合适模型', async () => {
       const credential = crypto.randomUUID()
       let requestUrl = ''

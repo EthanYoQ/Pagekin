@@ -102,6 +102,19 @@ describe('llm model deletion consistency', () => {
     expect(writes[0]?.value).toMatchObject({ defaultModelId: 'generation', defaultRerankModelId: null })
   })
 
+  it('stores and reads back the default rerank profile', async () => {
+    const set = mocks.handlers.get('llm:set-default-rerank-model')
+    const get = mocks.handlers.get('llm:get-default-rerank-model')
+    expect(set && get, 'default rerank handlers are registered').toBeTruthy()
+    const writes: Array<{ path: string; value: Record<string, unknown> }> = []
+    mocks.writeJsonFile.mockImplementation((path: string, value: Record<string, unknown>) => { writes.push({ path, value }) })
+
+    await expect(set!({}, 'rerank')).resolves.toEqual({ success: true })
+    expect(writes).toEqual([{ path: 'config.json', value: expect.objectContaining({ defaultModelId: 'generation', defaultRerankModelId: 'rerank' }) }])
+    await expect(get!({})).resolves.toBe('rerank')
+    delete (mocks.config as Record<string, unknown>).defaultRerankModelId
+  })
+
   it('keeps the rerank reference when another profile is deleted', async () => {
     const { tryReadJsonFile } = await import('../../utils/config-utils')
     vi.mocked(tryReadJsonFile)
