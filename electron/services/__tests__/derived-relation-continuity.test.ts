@@ -6,16 +6,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { closeProjectDatabase, createProjectDatabase, getCurrentProjectPath, getProjectDb, initProjectDatabase } from '../../database'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
-import { insertCharacterRelationship, readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
+import { deleteCharacterRelationship, insertCharacterRelationship, readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
 import { refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
+import { ConsistencyExemptionRepository } from '../../repositories/consistency-exemption-repository'
 import { DraftRepository } from '../../repositories/draft-repository'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
 import { SummaryRepository } from '../../repositories/summary-repository'
 import { captureFinalizationGenerationContext, finalizationGenerationTask } from '../finalization-generation-source'
+import { captureReviewRevisionContext } from '../review-revision-context'
 import { projectAccess } from '../project-access'
 import { getBuiltinPromptTemplate } from '../../../src/services/builtin-prompt-templates'
 import { characterTimeline, latestNodesBefore, type CharacterRelationNode, type ContinuityNode } from '../../../src/shared/character-continuity'
 import { characterTimelinePromptLines } from '../../../src/shared/character-timeline-prompt'
+import { findBlueprintContinuityRisks, type BlueprintForPreflight } from '../../../src/shared/consistency-preflight'
 import { createCanonicalProjectManifest } from '../../../src/shared/project-format'
 import { parseFinalizedCharacterStateResponse, type FinalizedCharacterContext } from '../../../src/shared/finalized-continuity'
 import { removeDirectoryWithWindowsRetry } from '../../utils/remove-directory'
@@ -254,7 +257,7 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(pending()).toHaveLength(1)
   })
 
-  it('作者在决定前改过这对角色的关系时，采用被拒绝，不覆盖作者的改动', () => {
+  it('作者在决定前改过这对角色的关系时，建议作废，采用被拒绝，不覆盖作者的改动', () => {
     openProject()
     authorRelation('师徒')
     const draftId = finalizeNew(8, CHAPTER_EIGHT)
@@ -262,9 +265,10 @@ describe('定稿后自动记录人物关系变化', () => {
     const [candidate] = pending()
     db().prepare("UPDATE character_relationships SET relation='宿敌' WHERE relationship_id='author-line'").run()
 
+    expect(pending()).toEqual([])
     expect(() => SummaryRepository.decideFinalizedRelationCandidate({ draftId, candidateKey: candidate.candidateKey,
       expectedAuthorRelations: candidate.authorRelations, operationId: 'late-accept', decision: 'accept' }, scope, db()))
-      .toThrow('FINALIZED_CHARACTER_STATE_FIELD_CONFLICT')
+      .toThrow('FINALIZED_CHARACTER_STATE_CANDIDATE_NOT_FOUND')
     expect(authorRows()).toEqual(['宿敌'])
   })
 
@@ -408,17 +412,27 @@ describe('关系比对查两个方向', () => {
     expect(pending()).toEqual([])
   })
 
-  it('作者两个方向都写了：采用只换卡片上那一行，另一个方向的作者行不动，作者中途改它也不被覆盖', () => {
+  it('作者两个方向都写了：采用只换卡片上那一行，另一个方向的作者行不动', () => {
     openProject()
     authorRelation('师父', LIN, SHEN)
     authorRelation('徒弟', SHEN, LIN)
     commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
 
     expect(pending()).toMatchObject([{ sourceId: LIN, targetId: SHEN, authorRelations: ['师父'] }])
-    db().prepare("UPDATE character_relationships SET relation='宿敌' WHERE relationship_id='reverse-line'").run()
     decide('accept')
-    expect(allAuthorRows()).toEqual(expect.arrayContaining([{ source: LIN, target: SHEN, relation: '恩断义绝' }, { source: SHEN, target: LIN, relation: '宿敌' }]))
+    expect(allAuthorRows()).toEqual(expect.arrayContaining([{ source: LIN, target: SHEN, relation: '恩断义绝' }, { source: SHEN, target: LIN, relation: '徒弟' }]))
     expect(allAuthorRows()).toHaveLength(2)
+  })
+
+  it('作者两个方向都写了：作者中途改了另一个方向，建议同样作废', () => {
+    openProject()
+    authorRelation('师父', LIN, SHEN)
+    authorRelation('徒弟', SHEN, LIN)
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+
+    db().prepare("UPDATE character_relationships SET relation='宿敌' WHERE relationship_id='reverse-line'").run()
+    expect(pending()).toEqual([])
+    expect(allAuthorRows()).toEqual(expect.arrayContaining([{ source: LIN, target: SHEN, relation: '师父' }, { source: SHEN, target: LIN, relation: '宿敌' }]))
   })
 
   it('反向的待确认项在重开并替换该章后失效', () => {
@@ -613,5 +627,206 @@ describe('定稿后处理的提示词', () => {
 
     expect(() => prompt(draftId, 'zh-CN', context)).not.toThrow()
     expect(prompt(draftId, 'zh-CN', context).context.identity).toEqual(context.identity)
+  })
+})
+
+describe('作者对派生关系的决定，预检和建议说法一致', () => {
+  const output = (...relations: unknown[]) => ({ updates: [], relations })
+  const plan = (chapterNumber: number, relation: string | null, characters = ['林岚', '沈砚']): BlueprintForPreflight => ({
+    chapterNumber, title: '', role: '', purpose: '', keyEvents: '', characters, suspenseHook: '', userGuidance: '', notes: '',
+    relationshipHints: relation ? [{ from: '林岚', to: '沈砚', relation }] : [],
+  })
+
+  async function preflight(blueprint: BlueprintForPreflight) {
+    await continuityNodesHandler()
+    const nodes = await ipcHandlers.get('db:character-continuity-preflight-nodes')!({}, getCurrentProjectPath()) as ContinuityNode[]
+    return findBlueprintContinuityRisks([], blueprint, ConsistencyExemptionRepository.list(db()), nodes, pending())
+  }
+
+  function removeAuthorLine(chapter: number): void {
+    db().transaction(() => {
+      deleteCharacterRelationship(db(), { relationshipId: 'author-line', sourceId: LIN, sourceName: '林岚', targetId: SHEN, targetName: '沈砚' }, 'seed-approval', chapter)
+      refreshCharacterIdentityProjection(db())
+    })()
+  }
+
+  const setupPending = (relation = '恩断义绝') => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, output(relationChange(relation, BREAK_UP)))
+    return draftId
+  }
+
+  describe('拒绝', () => {
+    it('拒绝「仇敌」并保留「好友」：蓝图写仇敌时提示依据是作者设定，写好友时不提示', async () => {
+      openProject()
+      authorRelation('好友')
+      commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(relationChange('仇敌', BREAK_UP)))
+      decide('decline')
+
+      expect(await preflight(plan(9, '仇敌'))).toMatchObject([{ stableFactKey: expect.stringMatching(/^relation:/u), evidence: '好友' }])
+      expect(await preflight(plan(9, '好友'))).toEqual([])
+    })
+
+    it('被拒的关系是唯一依据时不报；没拒绝时同样的蓝图照常报', async () => {
+      openProject()
+      authorRelation('好友')
+      commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(relationChange('仇敌', BREAK_UP)))
+      decide('decline')
+      removeAuthorLine(9)
+      expect(await preflight(plan(12, '好友'))).toEqual([])
+
+      closeProjectDatabase()
+      openProject()
+      commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), output(relationChange('仇敌', BREAK_UP)))
+      expect(await preflight(plan(12, '好友'))).toMatchObject([{ sourceChapter: 8, evidence: BREAK_UP }])
+    })
+  })
+
+  describe('待决定的警告', () => {
+    it('本章出场人物包含这对人物：一条警告，放作者设定和原文，中英文都有', async () => {
+      setupPending()
+
+      const [finding, ...rest] = await preflight(plan(9, null))
+      expect(rest).toEqual([])
+      expect(finding).toMatchObject({ severity: 'warning', sourceChapter: 8, evidence: BREAK_UP, stableFactKey: `relation-pending:${pending()[0].candidateKey}` })
+      for (const copy of [finding.issue.zhCN, finding.issue.enUS]) {
+        expect(copy).toContain('师徒')
+        expect(copy).toContain('恩断义绝')
+      }
+    })
+
+    it('本章不含这对人物、或写的是定稿那一章及之前：没有警告', async () => {
+      setupPending()
+
+      expect(await preflight(plan(9, null, ['林岚', '路人']))).toEqual([])
+      expect(await preflight(plan(8, null))).toEqual([])
+      expect(await preflight(plan(3, null))).toEqual([])
+    })
+
+    it('同一对人物连着几章都待决定：只提示最新的一条', async () => {
+      setupPending()
+      const quote = '沈砚望着断裂的信物'
+      commitModelOutput(finalizeNew(9, `第九章：${quote}，一言不发。`), output(relationChange('反目', quote)))
+
+      expect(await preflight(plan(10, null))).toMatchObject([{ sourceChapter: 9, evidence: quote }])
+      expect(await preflight(plan(9, null))).toMatchObject([{ sourceChapter: 8, evidence: BREAK_UP }])
+    })
+
+    it('改名后按现在的名字对上，卡片也显示现在的名字', async () => {
+      setupPending()
+      db().prepare("UPDATE characters SET name='林晚晴' WHERE character_id=?").run(LIN)
+
+      expect(pending()).toMatchObject([{ sourceName: '林晚晴', targetName: '沈砚' }])
+      expect(await preflight(plan(9, null, ['林晚晴', '沈砚']))).toHaveLength(1)
+      expect(await preflight(plan(9, null))).toEqual([])
+    })
+
+    it.each(['accept', 'decline'] as const)('作者决定之后（%s）警告消失', async (decision) => {
+      setupPending()
+      expect(await preflight(plan(9, null))).toHaveLength(1)
+
+      decide(decision)
+      expect((await preflight(plan(9, null))).filter(finding => finding.stableFactKey.startsWith('relation-pending:'))).toEqual([])
+    })
+
+    it('按章豁免只管那一章，全书豁免各章都不提示', async () => {
+      setupPending()
+      const [{ stableFactKey }] = await preflight(plan(9, null))
+
+      ConsistencyExemptionRepository.save(stableFactKey, '作者确认是有意安排', 9)
+      expect(await preflight(plan(9, null))).toEqual([])
+      expect(await preflight(plan(10, null))).toHaveLength(1)
+      ConsistencyExemptionRepository.save(stableFactKey, '全书如此')
+      expect(await preflight(plan(10, null))).toEqual([])
+    })
+
+    it('审稿入口冻结的结果不多出这条警告', async () => {
+      setupPending()
+      const body = '第九章：林岚独自上路。'
+      db().prepare("INSERT INTO blueprints(chapter_number,title,characters) VALUES(9,'第9章',?)").run(JSON.stringify(['林岚', '沈砚']))
+      const draftId = DraftRepository.create({ chapterNumber: 9, source: 'write', content: body, wordCount: body.length })
+      expect(await preflight(plan(9, null))).toHaveLength(1)
+
+      const context = captureReviewRevisionContext(db(), { operation: 'review-chapter', draftId, authorInputs: [], uiLocale: 'zh-CN',
+        expectedDraft: { chapterNumber: 9, version: 1, status: 'draft', contentHash: sha256(body) } }, PROJECT_ID)
+      expect(context.preflightFindings).toEqual([])
+    })
+  })
+
+  describe('建议创建后作者又改了这一对', () => {
+    const acceptStale = (candidate: ReturnType<typeof pending>[number]) => () => SummaryRepository.decideFinalizedRelationCandidate({
+      draftId: candidate.source.draftId, candidateKey: candidate.candidateKey, expectedAuthorRelations: candidate.authorRelations,
+      operationId: 'accept-stale', decision: 'accept' }, scope, db())
+    const allRows = () => db().prepare('SELECT source_character_id AS source,target_character_id AS target,relation FROM character_relationships ORDER BY relation').all()
+
+    it('改了值：卡片和警告都消失，决定入口拒绝，关系表不动', async () => {
+      setupPending()
+      const [stale] = pending()
+      db().prepare("UPDATE character_relationships SET relation='宿敌' WHERE relationship_id='author-line'").run()
+
+      expect(pending()).toEqual([])
+      expect(await preflight(plan(9, null))).toEqual([])
+      expect(acceptStale(stale)).toThrow('FINALIZED_CHARACTER_STATE_CANDIDATE_NOT_FOUND')
+      expect(allRows()).toEqual([{ source: LIN, target: SHEN, relation: '宿敌' }])
+    })
+
+    it('只改了方向、值没变：同样作废，方向不被翻回去', () => {
+      setupPending()
+      const [stale] = pending()
+      db().prepare('UPDATE character_relationships SET source_character_id=?,target_character_id=? WHERE relationship_id=?').run(SHEN, LIN, 'author-line')
+
+      expect(pending()).toEqual([])
+      expect(acceptStale(stale)).toThrow('FINALIZED_CHARACTER_STATE_CANDIDATE_NOT_FOUND')
+      expect(allRows()).toEqual([{ source: SHEN, target: LIN, relation: '师徒' }])
+    })
+
+    it('同一份定稿重跑不会让作废的建议复活', () => {
+      const draftId = setupPending()
+      db().prepare("UPDATE character_relationships SET relation='宿敌' WHERE relationship_id='author-line'").run()
+
+      commitModelOutput(draftId, output(relationChange('恩断义绝', BREAK_UP)))
+      expect(pending()).toEqual([])
+    })
+
+    it('旧候选没有快照字段：列表、改动拒绝和采用都照旧', () => {
+      const draftId = setupPending()
+      const row = db().prepare('SELECT id,character_state_candidates AS candidates FROM summary_snapshots WHERE draft_id=?').get(draftId) as { id: number; candidates: string }
+      const store = JSON.parse(row.candidates) as { relationPending: Array<Record<string, unknown>> }
+      store.relationPending = store.relationPending.map(({ authorLinesAtCreation: _dropped, ...candidate }) => candidate)
+      db().prepare('UPDATE summary_snapshots_all SET character_state_candidates=? WHERE id=?').run(JSON.stringify(store), row.id)
+
+      const [legacy] = pending()
+      expect(legacy).toMatchObject({ value: '恩断义绝', authorRelations: ['师徒'] })
+      db().prepare("UPDATE character_relationships SET relation='宿敌' WHERE relationship_id='author-line'").run()
+      expect(pending()).toMatchObject([{ authorRelations: ['宿敌'] }])
+      expect(acceptStale(legacy)).toThrow('FINALIZED_CHARACTER_STATE_FIELD_CONFLICT')
+      decide('accept')
+      expect(authorRows()).toEqual(['恩断义绝'])
+    })
+
+    it('采用较早章的建议后，较晚章的建议还在，也还能采用', () => {
+      setupPending()
+      const quote = '沈砚望着断裂的信物'
+      commitModelOutput(finalizeNew(9, `第九章：${quote}，一言不发。`), output(relationChange('反目', quote)))
+      decide('accept')
+
+      expect(pending()).toMatchObject([{ value: '反目', authorRelations: ['恩断义绝'] }])
+      decide('accept')
+      expect(authorRows()).toEqual(['反目'])
+    })
+
+    it('采用较晚章的建议后，较早章的建议作废，不会把旧值采用回来', () => {
+      setupPending()
+      const quote = '沈砚望着断裂的信物'
+      commitModelOutput(finalizeNew(9, `第九章：${quote}，一言不发。`), output(relationChange('反目', quote)))
+      const ninth = pending().find(item => item.value === '反目')!
+      SummaryRepository.decideFinalizedRelationCandidate({ draftId: ninth.source.draftId, candidateKey: ninth.candidateKey,
+        expectedAuthorRelations: ninth.authorRelations, operationId: 'accept-ninth', decision: 'accept' }, scope, db())
+
+      expect(pending()).toEqual([])
+      expect(authorRows()).toEqual(['反目'])
+    })
   })
 })

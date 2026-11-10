@@ -43,6 +43,12 @@ describe('蓝图关系与时间线相反', () => {
     expect(check(blueprint(12), [reversed])).toHaveLength(1)
   })
 
+  it('英文名大小写不同也算同一个人', () => {
+    const nodes = [relation('enemies', 8, { subjectName: 'Alice', targetName: 'Bob' })]
+    const plan = blueprint(12, 'friends', { characters: ['alice', 'BOB'], relationshipHints: [{ from: 'alice', to: 'BOB', relation: 'friends' }] })
+    expect(check(plan, nodes)).toHaveLength(1)
+  })
+
   it('决裂在第 8 章才生效时，第 7 章蓝图不提示', () => {
     expect(check(blueprint(7), [BROKEN])).toEqual([])
   })
