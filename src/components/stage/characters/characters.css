@@ -577,7 +577,8 @@
   cursor: pointer;
 }
 
-.cast-timeline-quote > blockquote {
+.cast-timeline-quote > blockquote,
+.cast-suggestion-quote {
   margin: var(--s-1) 0;
   padding-left: var(--s-2);
   border-left: 2px solid var(--rule);
