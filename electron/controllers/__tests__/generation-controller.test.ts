@@ -58,7 +58,7 @@ const materialDecision = (prompt = '合成初始提示词'): NonNullable<BeginGe
   omitted: [],
 })
 beforeAll(() => {
-  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => model, applyProxyConfig: () => {} })
+  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => model, rememberContextWindow: () => {}, applyProxyConfig: () => {} })
   registerDatabaseController()
 })
 beforeEach(() => {

@@ -73,6 +73,16 @@ export function safeGenerationModelReceipt(receipt: ModelExecutionLeaseReceipt):
   return { modelId: receipt.modelId, provider: receipt.provider, protocol: receipt.protocol, modelName: receipt.modelName,
     modelRevision: receipt.modelRevision, endpointFingerprint: receipt.endpointFingerprint, capabilityEvidence: structuredClone(receipt.capabilityEvidence) }
 }
+/**
+ * 配置没变（modelRevision 相同）时，窗口和输出上限沿用运行开始时冻结的值（ADR-0028）。
+ * 学到窗口、升级后换了取值规则都不算模型变了；功能证据仍要逐项相等。
+ */
+function withFrozenWindowEvidence(current: SafeGenerationModelReceipt, frozen: SafeGenerationModelReceipt): SafeGenerationModelReceipt {
+  if (current.modelRevision !== frozen.modelRevision) return current
+  const { contextWindowTokens, maxOutputTokens, source } = frozen.capabilityEvidence
+  return { ...current, capabilityEvidence: { ...current.capabilityEvidence, contextWindowTokens, maxOutputTokens,
+    source: { ...current.capabilityEvidence.source, contextWindowTokens: source.contextWindowTokens, maxOutputTokens: source.maxOutputTokens } } }
+}
 export interface MainGenerationOwnerDependencies {
   database: Database.Database
   projectId: string
@@ -80,6 +90,7 @@ export interface MainGenerationOwnerDependencies {
   assertCurrent: () => void
   leases: ModelExecutionLeaseRegistry
   loadModel: (id: string) => ModelProfile | null
+  rememberContextWindow?: (model: ModelProfile, windowTokens: number) => void
   buildBinding: (selection: BeginGenerationRequest & { knowledgeSnapshot?: GenerationKnowledgeSnapshot; finalizedCharacterContextHash?: string; reviewRevisionContext?: ReviewRevisionContext; agentInput?: AgentGenerationInput; agentSession?: { key: string; roundIndex: number }; editorInlineInput?: EditorInlineInput; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; legacyRosterKey?: string }, model: SafeGenerationModelReceipt, policy: MainGenerationPolicy) => RunBinding
   rebuildBinding: (previous: RunBinding, model: SafeGenerationModelReceipt) => RunBinding
   beforeDispatch?: () => void
@@ -140,7 +151,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   const volatileReceipts = new Map<string, GenerationExecutionReceipt>()
   const pending = new Map<string, { hash: string; promise: Promise<MainGenerationExecuteReceipt> }>()
   const preparations = new Map<string, { binding: RunBinding; knowledgeSnapshot: GenerationKnowledgeSnapshot }>()
-  /** 只活在本次会话：写进模型档案会改 modelRevision，同模型的在途运行就恢复不了。 */
+  /** 这次运行能否按学到的窗口重试。手填的窗口不落档，只靠它重试一次。 */
   const learnedWindows = new Map<string, number>()
   let closed = false
   const assertCurrent = () => {
@@ -266,7 +277,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       revision: artifact.revision, durableRevision: artifact.revision, text: artifact.text, textHash: artifact.textHash, status, compositionEligible }
   }
   const providerDispatch = deps.dispatch ?? dispatchProvider
-  const learnContextWindow = ({ runId, task }: ProviderRequest, windowTokens: number) => {
+  const learnContextWindow = ({ runId, task, model }: ProviderRequest, windowTokens: number) => {
+    deps.rememberContextWindow?.(model, windowTokens)
     const budget = (repository.get(runId).binding.sourceManifest.materialDecision as MaterialDecisionReceipt | undefined)?.budget
     if (budget && [DRAFT_SHORT_OUTLINE_PURPOSE, 'chapter-draft'].includes(task.purpose)
       && tightenMaterialBudget(budget, windowTokens).inputTokens < budget.inputTokens) learnedWindows.set(runId, windowTokens)
@@ -320,7 +332,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   function currentModelReceipt(binding: RunBinding): SafeGenerationModelReceipt {
     const model = deps.loadModel(modelReceipt(binding).modelId)
     if (!model) throw new Error('GENERATION_MODEL_MISSING')
-    return safeGenerationModelReceipt(createModelExecutionLeaseReceipt(model, { leaseId: 'read-only-evidence', createdAt: 0, expiresAt: 0 }))
+    return withFrozenWindowEvidence(safeGenerationModelReceipt(createModelExecutionLeaseReceipt(model, { leaseId: 'read-only-evidence', createdAt: 0, expiresAt: 0 })), modelReceipt(binding))
   }
   const viewOf = (run: DurableGenerationRun): MainGenerationRunView => {
     const { budget, plotOutline, attempts } = repository.readRunView(run.runId)
@@ -723,7 +735,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const next = deps.rebuildBinding(run.binding, receipt)
     const lease = deps.leases.begin(receipt.modelId)
     try {
-      if (!isDeepStrictEqual(safeGenerationModelReceipt(lease), receipt)) throw new Error('GENERATION_MODEL_CHANGED')
+      if (!isDeepStrictEqual(withFrozenWindowEvidence(safeGenerationModelReceipt(lease), receipt), receipt)) throw new Error('GENERATION_MODEL_CHANGED')
       const resumed = await service.resume(run.runId, next)
       assertCurrent()
       const previous = runLeases.get(run.runId)

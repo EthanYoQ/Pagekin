@@ -913,7 +913,7 @@ describe('frozen planning roots', () => {
     { name: '64K user', changes: {}, expected: 65536 },
     { name: 'user', changes: { maxTokens: 16384 }, expected: 16384 },
     { name: 'provider', changes: { provider: 'openai', baseUrl: 'https://api.openai.com/v1', modelName: 'gpt-4.1' }, expected: 32768 },
-    { name: 'context', changes: { capabilities: { contextWindowTokens: 4096, maxOutputTokens: 65536, reasoning: true, structuredOutput: true, usage: true } }, expected: 65536 },
+    { name: 'context', changes: { capabilities: { contextWindowTokens: 4096, maxOutputTokens: 65536, reasoning: true, structuredOutput: true, usage: true } }, expected: 2048 },
   ] satisfies { name: string; changes: Partial<ModelProfile>; expected: number }[])('honors the $name bound on a standalone plot wire', async ({ changes, expected }) => {
     const fetch = syntheticStream(), f = planningFixture()
     Object.assign(f.model, changes)
@@ -1993,7 +1993,7 @@ describe('main generation owner with actual SQLite and provider adapter', () => 
       .toThrow('GENERATION_PLANNING_TARGET_INVALID')
     expect(f.db.prepare('SELECT COUNT(*) FROM generation_roots').pluck().get()).toBe(2)
   })
-  it.each([65536, 32768])('sends 43,699 bytes beside an author context of %i and records the full reservation', async contextWindowTokens => {
+  it.each([262144, 131072])('sends 43,699 bytes beside an author context of %i and records the full reservation', async contextWindowTokens => {
     const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (_request, options) => { options.onVisible({kind:'delta',text:'{"blueprints":[]}'}); return {finishReason:'stop',usage:null} })
     const f = fixture(dispatch)
     Object.assign(f.model, { baseUrl:'https://compatible.example/v1', modelName:'custom', maxTokens:65536,
@@ -4106,7 +4106,7 @@ describe('超长报错里学到真实窗口', () => {
     const rejected = await f.owner.execute({ handle: run.handle, invocationNonce: 'outline', task: outlineCall })
     expect(rejected.outcome.receipt).toMatchObject({ failureCode: 'GENERATION_CONTEXT_LENGTH_EXCEEDED', retryWithLearnedWindow: true })
     expect(JSON.stringify(rejected)).not.toContain('max_seq_len')
-    expect(prepareRetry(f, run.handle).materialBudget).toEqual({ inputTokens: 32_768 - 2048 - 512, contextWindowTokens: 32_768, contextWindowSource: 'endpoint', reservedOutputTokens: 2048, safetyMarginTokens: 512 })
+    expect(prepareRetry(f, run.handle).materialBudget).toEqual({ inputTokens: 32_768 - 2048 - 512, contextWindowTokens: 32_768, contextWindowSource: 'learned', reservedOutputTokens: 2048, safetyMarginTokens: 512 })
   })
 
   it('手填窗口不被覆盖，这次运行仍按学到的值重试；模型档案不变，同模型的在途运行不受影响', async () => {
