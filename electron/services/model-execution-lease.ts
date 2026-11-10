@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 
 import type {
+  ModelExecutionCapabilityEvidenceSource,
   ModelExecutionLeaseReceipt,
   ModelProfile,
 } from '../../src/shared/ipc-channels'
+import { resolveContextWindow, type ContextWindowSource } from '../../src/shared/model-profile-draft'
 import { resolveModelProfileCapabilities, resolveModelProfileStructuredOutput } from '../../src/shared/provider-presets'
 
 const DEFAULT_MODEL_EXECUTION_LEASE_TTL_MS = 4 * 60 * 60 * 1_000
@@ -72,6 +74,14 @@ function positiveInteger(value: unknown): number | null {
     : null
 }
 
+const WINDOW_EVIDENCE_SOURCE: Record<ContextWindowSource, ModelExecutionCapabilityEvidenceSource> = {
+  manual: 'user-operational-cap',
+  learned: 'user-operational-cap',
+  endpoint: 'user-operational-cap',
+  preset: 'verified-provider-preset',
+  default: 'unknown',
+}
+
 export function resolveModelExecutionCapabilityEvidence(
   model: ModelProfile,
 ): ModelExecutionLeaseReceipt['capabilityEvidence'] {
@@ -80,7 +90,6 @@ export function resolveModelExecutionCapabilityEvidence(
     modelName: model.modelName,
   })
   const verified = resolveModelProfileCapabilities(model)
-  const explicitContextWindow = positiveInteger(model.capabilities?.contextWindowTokens)
   const explicitOutputCap = positiveInteger(model.capabilities?.maxOutputTokens)
   const legacyOutputCap = positiveInteger(model.maxTokens)
   const operationalOutputCap = explicitOutputCap && legacyOutputCap
@@ -89,9 +98,11 @@ export function resolveModelExecutionCapabilityEvidence(
   const unconstrainedOutputTokens = verifiedOutputLimit && operationalOutputCap
     ? Math.min(verifiedOutputLimit, operationalOutputCap)
     : verifiedOutputLimit ?? operationalOutputCap
-  const contextWindowTokens = verified?.contextWindowTokens ?? explicitContextWindow
+  const window = resolveContextWindow(model)
+  const contextWindowTokens = window.source === 'default' ? null : window.tokens
+  // 服务商把输入和 max_tokens 合计算进窗口，输出占满窗口就一定超长；留一半给提示词。
   const maxOutputTokens = unconstrainedOutputTokens && contextWindowTokens
-    ? Math.min(unconstrainedOutputTokens, contextWindowTokens)
+    ? Math.min(unconstrainedOutputTokens, Math.ceil(contextWindowTokens / 2))
     : unconstrainedOutputTokens
   if (!maxOutputTokens) {
     throw new ModelExecutionLeaseError('MODEL_OUTPUT_LIMIT_INVALID')
@@ -104,11 +115,7 @@ export function resolveModelExecutionCapabilityEvidence(
       : 'legacy-profile' as const
   return {
     source: {
-      contextWindowTokens: verified
-        ? 'verified-provider-preset'
-        : explicitContextWindow
-          ? 'user-operational-cap'
-          : 'unknown',
+      contextWindowTokens: WINDOW_EVIDENCE_SOURCE[window.source],
       maxOutputTokens: maxOutputSource,
       // A separately declared JSON feature does not verify the whole feature group.
       featureFlags: verified ? 'verified-provider-preset' : 'unknown',

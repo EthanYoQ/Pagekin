@@ -26,7 +26,7 @@ function deepseek(context: 'preset' | number | null, maxOutput?: number): ModelP
 
 const PROFILES = [
   ['预设 1M', deepseek('preset')],
-  ['作者填 32K', deepseek(32_768)],
+  ['作者填 128K', deepseek(131_072)],
   ['作者不填', deepseek(null)],
 ] as const
 

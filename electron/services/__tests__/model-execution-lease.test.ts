@@ -91,9 +91,9 @@ describe('ModelExecutionLeaseRegistry', () => {
         capabilities: undefined, ...overrides }
       const receipt = new ModelExecutionLeaseRegistry({ loadModel: () => profile }).begin(profile.id)
       expect(receipt.capabilityEvidence).toMatchObject({
-        contextWindowTokens: null, maxOutputTokens: 8192, reasoning: null, usage: null,
+        maxOutputTokens: 8192, reasoning: null, usage: null,
         structuredOutput: json || output === 'visible-text' ? true : null,
-        source: { contextWindowTokens: 'unknown', maxOutputTokens: 'legacy-profile', featureFlags: 'unknown' },
+        source: { maxOutputTokens: 'legacy-profile', featureFlags: 'unknown' },
       })
       const task: GenerationTask = { purpose: 'chapter-review', output: output ?? 'structured-data',
         messages: [{ role: 'user', content: '请输出 JSON 审稿报告。' }] }
@@ -296,7 +296,7 @@ describe('ModelExecutionLeaseRegistry', () => {
         featureFlags: 'unknown',
       },
       contextWindowTokens: 32_768,
-      maxOutputTokens: 32_768,
+      maxOutputTokens: 16_384,
       reasoning: null,
       structuredOutput: null,
       usage: null,
@@ -415,7 +415,7 @@ describe('ModelExecutionLeaseRegistry', () => {
     it('来源是预设且输出上限大于窗口：同样收紧', () => {
       const profile = openAi({ modelName: 'gpt-4-turbo', maxTokens: 300_000, capabilities: undefined })
       expect(resolveContextWindow(profile)).toEqual({ tokens: 128_000, source: 'preset' })
-      expect(resolveModelExecutionCapabilityEvidence(profile).maxOutputTokens).toBe(4_096)
+      expect(resolveModelExecutionCapabilityEvidence(profile).maxOutputTokens).toBe(64_000)
     })
 
     it('窗口的一半够用时不动输出上限', () => {
