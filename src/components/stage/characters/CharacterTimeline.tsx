@@ -21,7 +21,8 @@ function fieldLabel({ node }: CharacterTimelineChange, text: Text): string {
   return text(zh, en)
 }
 
-function shownValue({ node, removed, value }: CharacterTimelineChange, text: Text): string {
+function shownValue({ node, removed, value, replaced }: CharacterTimelineChange, text: Text): string {
+  if (replaced) return `${replaced.join(text('、', ', '))} → ${value}`
   if (!removed) return value
   if (node.aspect !== 'relation') return text('已清除', 'Cleared')
   return value ? text(`解除「${value}」`, `Ended: ${value}`) : text('解除', 'Ended')

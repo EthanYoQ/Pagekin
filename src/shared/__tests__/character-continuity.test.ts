@@ -17,6 +17,41 @@ function relation(relationshipId: string, value: string, effectiveChapter: numbe
 const values = (nodes: Parameters<typeof latestNodesBefore>[0], chapter: number, ids?: string[]) =>
   latestNodesBefore(nodes, chapter, ids).states.map(node => node.value)
 
+describe('characterTimeline 采用定稿关系后的合并', () => {
+  const quote = { start: 0, end: 4, text: '彼此信任的那句' }
+  const chapterFour = (nodes: Parameters<typeof characterTimeline>[0]) => characterTimeline(nodes).find(group => group.chapter === 4)!.changes
+
+  it('被换掉的几条作者行都写进旧值，派生行和解除行不再单列', () => {
+    const nodes = [relation('r1', '旧一', 1), relation('r1', '', 4), relation('r2', '旧二', 1), relation('r2', '', 4),
+      relation('new', '彼此信任', 4), { ...relation('derived:x', '彼此信任', 4, derived), quote }]
+    expect(chapterFour(nodes)).toHaveLength(1)
+    expect(chapterFour(nodes)[0]).toMatchObject({ source: 'author', removed: false, value: '彼此信任', replaced: ['旧一', '旧二'], node: { relationshipId: 'new', quote } })
+  })
+
+  it('派生的值和作者新值不同：不合并', () => {
+    const nodes = [relation('r1', '旧一', 1), relation('r1', '', 4), relation('new', '作者写的', 4), { ...relation('derived:x', '模型写的', 4, derived), quote }]
+    expect(chapterFour(nodes).map(change => change.source).sort()).toEqual(['author', 'author', 'finalized'])
+    expect(chapterFour(nodes).every(change => change.replaced === undefined)).toBe(true)
+  })
+
+  it('解除来自另一次操作：不算这次采用，不合并', () => {
+    const other: ContinuityProvenance = { kind: 'author', operationId: '另一次保存' }
+    const nodes = [relation('r1', '旧一', 1), relation('r1', '', 4, other), relation('new', '彼此信任', 4), { ...relation('derived:x', '彼此信任', 4, derived), quote }]
+    expect(chapterFour(nodes)).toHaveLength(3)
+  })
+
+  it('作者只是新增了同值的关系，没有换掉旧值：不合并', () => {
+    const nodes = [relation('new', '彼此信任', 4), { ...relation('derived:x', '彼此信任', 4, derived), quote }]
+    expect(chapterFour(nodes)).toHaveLength(2)
+  })
+
+  it('对象不同的关系不互相合并', () => {
+    const nodes = [relation('r1', '旧一', 1), relation('r1', '', 4), relation('new', '彼此信任', 4),
+      { ...relation('derived:x', '彼此信任', 4, derived), quote, targetId: '丙', targetName: '丙' }]
+    expect(chapterFour(nodes)).toHaveLength(3)
+  })
+})
+
 describe('latestNodesBefore', () => {
   it('作者节点从生效章起可见，早一章看不到', () => {
     const nodes = [state('北塔', 6, author)]
