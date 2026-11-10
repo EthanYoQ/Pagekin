@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react'
 import { Check, MoreHorizontal, Plus, Sparkles, TriangleAlert } from 'lucide-react'
-import type { NarrativeThreadEventType, NarrativeThreadView } from '../../../shared/narrative-thread'
+import { effectiveTargetEndChapter, type NarrativeThreadEventType, type NarrativeThreadView } from '../../../shared/narrative-thread'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { Button } from '../../ui/Button'
 import { EmptyState } from '../../ui/EmptyState'
@@ -44,6 +44,13 @@ function threadNote(thread: NarrativeThreadView, dormantThreshold: number, text:
   if (open && thread.overdue) return <span className="stage-thread-sub" data-tone="warn"><TriangleAlert size={12} aria-hidden="true" />{text('已过计划章节，还没有推进到位', 'Past its planned chapter and not advanced yet')}</span>
   if (open && thread.dormantChapters >= dormantThreshold) return <span className="stage-thread-sub" data-tone="warn"><TriangleAlert size={12} aria-hidden="true" />{text(`已沉寂 ${thread.dormantChapters} 章`, `Quiet for ${thread.dormantChapters} ${pluralEn(thread.dormantChapters, 'chapter')}`)}</span>
   return <span className="stage-thread-sub">{thread.type} · {text(...STATUS_LABELS[thread.status])}</span>
+}
+
+function threadDeferral(thread: NarrativeThreadView, text: Text) {
+  const current = effectiveTargetEndChapter(thread)
+  if (current <= thread.targetEndChapter) return null
+  const note = thread.assignments?.find(item => item.kind === 'resolve' && item.chapterNumber === current)?.note
+  return <span className="stage-thread-sub">{text(`原定第 ${thread.targetEndChapter} 章，延到第 ${current} 章`, `Planned for Ch. ${thread.targetEndChapter}, moved to Ch. ${current}`)}{note && ` · ${note}`}</span>
 }
 
 interface PlotThreadsProps {
@@ -109,6 +116,7 @@ export default function PlotThreads({ plot, onDelete }: PlotThreadsProps) {
                 <div className="stage-thread-name">
                   <b>{thread.title}</b>
                   {threadNote(thread, plot.dormantThreshold, text)}
+                  {threadDeferral(thread, text)}
                 </div>
                 <Route thread={thread} text={text} />
                 <Menu

@@ -1,4 +1,4 @@
-import type { NarrativeThreadEventType, NarrativeThreadView } from '../../../shared/narrative-thread'
+import { effectiveTargetEndChapter, type NarrativeThreadEventType, type NarrativeThreadView } from '../../../shared/narrative-thread'
 import type { PlotTreeSnapshot } from '../../../shared/plot-tree'
 
 /** 剧情树里出现过的章：当前章、各轨道的起止章与事件所在章，升序去重。 */
@@ -47,7 +47,7 @@ export function threadRoute(thread: NarrativeThreadView): RouteStop[] {
   const stops: RouteStop[] = [
     { kind: 'planted', chapter: planted ?? thread.targetStartChapter, state: planted !== undefined ? 'done' : 'todo' },
     { kind: 'progressing', chapter: progressing ?? null, state: progressing !== undefined ? 'done' : 'none' },
-    { kind: 'resolved', chapter: resolved ?? thread.targetEndChapter, state: resolved !== undefined ? 'done' : 'todo' },
+    { kind: 'resolved', chapter: resolved ?? effectiveTargetEndChapter(thread), state: resolved !== undefined ? 'done' : 'todo' },
   ]
   if (thread.overdue && thread.status !== 'resolved' && thread.status !== 'abandoned') {
     const next = stops.find(stop => stop.state === 'todo')

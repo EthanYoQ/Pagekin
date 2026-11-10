@@ -121,6 +121,29 @@ async function render(initialView: 'plot-tree' | 'plans') {
   await act(async () => root!.render(<StagePlot projectKey={session.projectPath} initialView={initialView} />))
 }
 
+describe('线索延后的痕迹', () => {
+  it('写明原定章、现在的章和备注，路线的解决站跟着新章，延后后不再标逾期', async () => {
+    threads = [{ ...thread(), targetEndChapter: 5, assignments: [
+      { chapterNumber: 6, kind: 'resolve', note: '写第 5 章前延后到第 6 章' },
+      { chapterNumber: 9, kind: 'resolve', note: '写第 6 章前延后到第 9 章' },
+    ] }]
+    await render('plans')
+    const row = await vi.waitFor(() => {
+      const found = document.querySelector('#narrative-plan-5')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    expect(row.querySelector('.stage-thread-name')?.textContent).toContain('原定第 5 章，延到第 9 章 · 写第 6 章前延后到第 9 章')
+    expect([...row.querySelectorAll('.stage-thread-route li')].at(-1)?.textContent).toBe('解 · 第 9 章')
+  })
+
+  it('没有延后的线索不显示痕迹', async () => {
+    await render('plans')
+    await vi.waitFor(() => expect(document.querySelector('#narrative-plan-5')).toBeTruthy())
+    expect(document.body.textContent).not.toContain('原定第')
+  })
+})
+
 describe('剧情与伏笔', () => {
   it('剧情树分主线与支线两轨，写明它是只读快照、不参与写作', async () => {
     await render('plot-tree')
