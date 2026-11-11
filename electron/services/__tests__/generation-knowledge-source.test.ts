@@ -141,6 +141,13 @@ it('excludes reference corpus while keeping an identified legacy unknown source 
   const snapshot = await captureGenerationKnowledge({ projectStorageRoot: root, query: '中文' })
   expect(snapshot.items.map(item => [item.chunkId, item.corpusKind])).toEqual([['other-chunk', 'unknown']])
 })
+it('finds text in a legacy store whose tables predate the corpus kind column', async () => {
+  await seed({ duplicate: true })
+  await mutate('chunks', table => table.dropColumns(['corpusKind']))
+  await mutate('documents', table => table.dropColumns(['corpusKind']))
+  const snapshot = await captureGenerationKnowledge({ projectStorageRoot: root, query: '中文' })
+  expect(snapshot.items.map(item => [item.chunkId, item.corpusKind])).toEqual([['chunk', 'unknown'], ['other-chunk', 'unknown']])
+})
 
 it('serializes an actual vector mutation behind the shared source-verification gate and allows nested connection acquisition', async () => {
   const { prepareCanonicalStorageFixture } = await import('../../../test/helpers/canonical-project-fixture')

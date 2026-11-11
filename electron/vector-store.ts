@@ -13,6 +13,7 @@ import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { getProjectDataRoot } from './services/project-data-locator'
 import { CANONICAL_PROJECT_DIRECTORY } from '../src/shared/project-format'
+import { firstOfEach, fullTextFilter, fullTextTerms, rankFullText } from '../src/shared/full-text-search'
 
 // ===== 类型定义 =====
 
@@ -1376,7 +1377,7 @@ function requestMatchesActiveSpace(
   return space.modelFingerprint === requested.modelFingerprint && space.distanceMetric === requested.distanceMetric
 }
 
-async function tableSupportsField(table: lancedb.Table, fieldName: string): Promise<boolean> {
+export async function tableSupportsField(table: lancedb.Table, fieldName: string): Promise<boolean> {
   return (await table.schema()).fields.some(field => field.name === fieldName)
 }
 
@@ -1455,43 +1456,18 @@ async function searchInternal(
     let canonicalTable: lancedb.Table | undefined
     try {
       canonicalTable = await db.openTable(TABLE_NAME)
-      const rawTerms = queryText.match(/[\p{L}\p{N}-]+/gu) ?? []
-      const meaningfulTerms = rawTerms.filter(term => Array.from(term).length >= 2)
-      const searchTerms = [...new Map(
-        (meaningfulTerms.length > 0 ? meaningfulTerms : rawTerms)
-          .map(term => [term.toLocaleLowerCase(), term]),
-      ).values()].slice(0, 8)
-      const textFilter = searchTerms.length > 0
-        ? `(${searchTerms
-            .map(term => `text LIKE '%${term.replace(/'/g, "''")}%'`)
-            .join(' OR ')})`
-        : "text LIKE '%%'"
-      const filters = [textFilter]
+      const searchTerms = fullTextTerms(queryText)
+      const scope: string[] = []
       const corpusFilter = excludedCorpusFilter(excludedCorpusKinds)
       if (corpusFilter && await tableSupportsField(canonicalTable, 'corpusKind')) {
-        filters.push(corpusFilter)
+        scope.push(corpusFilter)
       }
-      if (currentCopyFilter) filters.push(currentCopyFilter)
-      const filter = filters.join(' AND ')
-      const results = await canonicalTable.query().filter(filter).toArray()
-      const normalizedTerms = searchTerms.map(term => term.toLocaleLowerCase())
-      const ftsResults = results
-        .map((row: { text: string; fileName: string }) => ({
-          result: { text: row.text, score: 0.5, fileName: row.fileName },
-          relevance: normalizedTerms.reduce((score, term, index) => (
-            row.text.toLocaleLowerCase().includes(term)
-              ? score + normalizedTerms.length - index
-              : score
-          ), 0),
-        }))
-        .sort((left, right) => right.relevance - left.relevance)
-        .map(candidate => candidate.result)
-      const uniqueResults = new Map<string, SearchResult>()
-      for (const result of ftsResults) {
-        const key = JSON.stringify([result.fileName, result.text])
-        if (!uniqueResults.has(key)) uniqueResults.set(key, result)
-      }
-      return [...uniqueResults.values()].slice(0, topK)
+      if (currentCopyFilter) scope.push(currentCopyFilter)
+      const results = await canonicalTable.query().filter([fullTextFilter(searchTerms), ...scope].join(' AND ')).toArray()
+      const ranked = rankFullText(results as Array<{ text: string; fileName: string }>, searchTerms, await canonicalTable.countRows(scope.join(' AND ') || undefined))
+      return firstOfEach(ranked, ({ row }) => JSON.stringify([row.fileName, row.text]))
+        .slice(0, topK)
+        .map(({ row }) => ({ text: row.text, score: 0.5, fileName: row.fileName }))
     } catch (error) {
       console.warn('[AI Novel VectorStore] 纯文本检索失败:', error)
       return []
