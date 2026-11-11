@@ -2,8 +2,9 @@
  * 失败后再点「重试」有没有用，决定界面摆不摆重试、说明末尾补不补「请点『重试』」：
  * prompt 有用，说明末尾补提示；described 可能有用，说明里已写明前提，不再补；never 结果也一样，不摆重试；
  * after 要等那一步成功后才有用，整卡重试会把它排在那一步之后一起重跑。
+ * redo：那一步即使记着成功也要一并重跑，因为它的结果已经不作数（要点行过期）；结果仍作数时重跑是空操作。
  */
-type StepRetry = 'prompt' | 'described' | 'never' | { after: string }
+type StepRetry = 'prompt' | 'described' | 'never' | { after: string; redo?: true }
 
 /** 从回收站恢复的章：知识库文档在删除时已清掉，kb_import 记这个码等重导（ADR-0025）。 */
 export const CHAPTER_RESTORED_REPROJECTION_PENDING = 'CHAPTER_RESTORED_REPROJECTION_PENDING'
@@ -69,7 +70,7 @@ const FINALIZATION_STEP_ERRORS: { code: RegExp; zh: string; en: string; enMany?:
   { code: /^KNOWLEDGE_BASE_VOLUME_UNSUPPORTED$/, retry: 'described',
     zh: '正文定稿已保存，但没能收进知识库：作品文件夹所在的磁盘不支持知识库要用的文件操作，常见于 exFAT、FAT32 格式的移动硬盘和 U 盘，留在这个磁盘上再点「重试」结果也一样。请退出书童，把整个作品文件夹移到 NTFS 格式的磁盘（Mac 上用 APFS 格式），打开新位置的作品后再点「重试」。',
     en: "The finalized chapter text is saved, but it could not be added to the knowledge base: the drive holding this book's folder does not support a file operation the knowledge base needs. This is common on external drives and USB sticks formatted as exFAT or FAT32, and retrying on that drive gives the same result. Quit Pagekin, move the whole book folder to an NTFS drive (APFS on a Mac), open the book from its new location, then select Retry." },
-  { code: /^GENERATION_FINALIZATION_PREDECESSOR_REQUIRED$/, retry: { after: 'chapter_notes' },
+  { code: /^GENERATION_FINALIZATION_PREDECESSOR_REQUIRED$/, retry: { after: 'chapter_notes', redo: true },
     zh: '需要先完成「章节剧情要点」。', en: 'Chapter plot notes must finish first.' },
   { code: /^FINALIZATION_REPLACED_KNOWLEDGE_IMPORT_REQUIRED$/, retry: { after: 'kb_import' },
     zh: '需要先完成「导入知识库」。新定稿收进知识库之前，旧版本的那一份先留着。',
@@ -146,11 +147,11 @@ export const REPLACED_FINAL_CLEANUP_STEP_LABELS: Readonly<Record<ReplacedFinalCl
 }
 
 /**
- * 一张定稿后处理卡（步骤名到结果）的重试安排。rows：可以单独重试的未成功步骤；card：「重试失败步骤」要重跑的步骤，按卡上顺序；
- * retired：现在流程已没有的步骤，不重试。
+ * 一张定稿后处理卡（步骤名到结果）的重试安排。rows：可以单独重试的未成功步骤，各自对应这次重试要跑的步骤；
+ * card：「重试失败步骤」要重跑的步骤，按卡上顺序；retired：现在流程已没有的步骤，不重试。
  * 现有步骤没有错误或错误没登记的照常可以重试。
  */
-export function planFinalizationRetry(steps: Readonly<Record<string, { ok: boolean; error?: string }>>): { rows: ReadonlySet<string>; card: readonly string[]; retired: ReadonlySet<string> } {
+export function planFinalizationRetry(steps: Readonly<Record<string, { ok: boolean; error?: string }>>): { rows: ReadonlyMap<string, readonly string[]>; card: readonly string[]; retired: ReadonlySet<string> } {
   const entries = Object.entries(steps)
   const retired = new Set(entries.map(([key]) => key).filter(key => !CURRENT_STEPS.has(key)))
   const succeeded = new Set(entries.filter(([, step]) => step.ok).map(([key]) => key))
@@ -159,5 +160,9 @@ export function planFinalizationRetry(steps: Readonly<Record<string, { ok: boole
   const pick = (ready: (key: string) => boolean) => unfinished
     .filter(step => direct.has(step.key) || typeof step.retry === 'object' && ready(step.retry.after))
     .map(step => step.key)
-  return { rows: new Set(pick(key => succeeded.has(key))), card: pick(key => succeeded.has(key) || direct.has(key)), retired }
+  const withRedo = (keys: readonly string[]) => {
+    const redo = unfinished.flatMap(step => keys.includes(step.key) && typeof step.retry === 'object' && step.retry.redo && succeeded.has(step.retry.after) ? [step.retry.after] : [])
+    return entries.map(([key]) => key).filter(key => keys.includes(key) || redo.includes(key))
+  }
+  return { rows: new Map(pick(key => succeeded.has(key)).map(key => [key, withRedo([key])])), card: withRedo(pick(key => succeeded.has(key) || direct.has(key))), retired }
 }

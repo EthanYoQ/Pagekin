@@ -68,6 +68,9 @@ export class FinalizationGeneration {
     if (this.artifact(run, saved.artifact).attemptId !== effects[0].attemptId) throw new Error('GENERATION_FINALIZATION_EFFECT_INVALID')
     if (saved.version !== 1 || saved.contextHash !== textHash(JSON.stringify(context)) || saved.receipt?.stepKey !== context.slot.stepKey || saved.receipt.success !== true
       || textHash(JSON.stringify(saved.receipt)) !== saved.receiptHash) throw new Error('GENERATION_FINALIZATION_EFFECT_INVALID')
+    // 要点行被作废（更早的章让连续性记录过期）或已由更新的运行重写后，这份封存结果不再算数，重试另开运行重新生成。
+    if (saved.receipt.stepKey === 'chapter_notes'
+      && SummaryRepository.currentNotesGeneration(context.slot.source.draftId, this.db) !== context.identity.projectionGeneration) return undefined
     if (saved.receipt.stepKey === 'character_cards') {
       const proof = proveFinalizedCharacterGeneration(this.db, this.runs, this.projectId,
         { projectId: this.projectId, epoch: run.binding.epoch, rootActionId: run.rootActionId, runId: run.runId }, saved.artifact)
@@ -99,8 +102,10 @@ export class FinalizationGeneration {
         if (!isDeepStrictEqual(finalizationNotesBaseline(this.db, context.slot), context.notesBaseline)) throw new Error('GENERATION_FINALIZATION_NOTES_CHANGED')
         const chapterNotes = proof.artifact.text.trim(), { source } = context.slot
         const facts = buildFinalizedContinuityFacts(source.chapterNumber, chapterNotes, context.identity.content, context.chapterEntities, context.identity)
+        // 过期后重新生成：蓝图里的要点若已不是上次生成的那份，是作者改过的，不覆盖。
+        const replaced = this.db.prepare('SELECT chapter_notes FROM summary_snapshots WHERE draft_id=?').pluck().get(source.draftId) as string | undefined
         SummaryRepository.saveFinalizedContinuity({ draftId: source.draftId, chapterNumber: source.chapterNumber, source, chapterNotes, facts, projectionGeneration: context.identity.projectionGeneration }, this.db)
-        const blueprintUpdated = BlueprintRepository.updateNotes(source.chapterNumber, chapterNotes, this.db)
+        const blueprintUpdated = (replaced === undefined || replaced === context.notesBaseline.blueprint.notes) && BlueprintRepository.updateNotes(source.chapterNumber, chapterNotes, this.db)
         receipt = { success: true, stepKey: 'chapter_notes', chapterNotes, factCount: facts.length, blueprintUpdated }
       } else {
         const characterProof = proveFinalizedCharacterGeneration(this.db, this.runs, this.projectId, handle, reference)

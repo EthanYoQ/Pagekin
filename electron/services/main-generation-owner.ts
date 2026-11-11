@@ -1408,7 +1408,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       const target = authorRetry && parentRootActionId ? repository.budget(parentRootActionId) : undefined
       const blockedCode = target && (target.blockedCode ?? (rootBudgetExhausted(target.policy, target.attempts, target.activeElapsedMs) ? 'ROOT_BUDGET_EXHAUSTED' : null))
       if (blockedCode) throw new Error(blockedCode)
-      if (sibling && !finalizations.readEffect(sibling)) throw new Error('GENERATION_FINALIZATION_PREDECESSOR_REQUIRED')
+      // 只有角色状态要等章节要点。要点过期后重新生成时，角色状态那次没写成的运行还在，不能反过来挡住要点。
+      if (slot.stepKey === 'character_cards' && sibling && !finalizations.readEffect(sibling)) throw new Error('GENERATION_FINALIZATION_PREDECESSOR_REQUIRED')
       const prepared = finalizedCharacters.readContext(slot.source.draftId)
       if (!isDeepStrictEqual(prepared.context.source, slot.source)) throw new Error('GENERATION_FINALIZATION_SOURCE_CHANGED')
       const characterStep = slot.stepKey === 'character_cards'

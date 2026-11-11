@@ -549,7 +549,7 @@ export function createRepairFinalizeWorkflow(
           let stepKeys: readonly string[] | undefined
           if (current) {
             const plan = planFinalizationRetry(current.steps)
-            stepKeys = stepKey ? [stepKey].filter(key => plan.rows.has(key)) : plan.card
+            stepKeys = stepKey ? plan.rows.get(stepKey) ?? [] : plan.card
           }
           if (stepKeys?.length === 0) throw new Error(text(
             '没有可以重试的失败步骤，请按各步骤的说明处理。',

@@ -363,6 +363,13 @@ function readCurrentCharacterStateCandidateRow(db: BetterSqlite3.Database, draft
   return row
 }
 
+/** 待确认项只存进本份定稿仍有效的要点行。没有这样的行时角色那步拒绝，重试会连章节要点一起重跑。 */
+function requireNotesRow(db: BetterSqlite3.Database, draftId: number): CharacterStateCandidateRow {
+  const row = currentCharacterStateCandidateRow(db, draftId)
+  if (!row) throw new Error('GENERATION_FINALIZATION_PREDECESSOR_REQUIRED')
+  return row
+}
+
 function currentCharacterStateCandidateRow(db: BetterSqlite3.Database, draftId: number): CharacterStateCandidateRow | undefined {
   const row = db.prepare(`SELECT id,draft_id AS draftId,chapter_number AS chapterNumber,
     character_state_candidates AS candidates,source_finalization_id AS finalizationId,
@@ -577,6 +584,11 @@ export function invalidateContinuityProjectionFrom(
 }
 
 export class SummaryRepository {
+  /** 本份定稿的要点行仍有效时，返回它写入时的连续性世代；没有行或已作废时返回 undefined。 */
+  static currentNotesGeneration(draftId: number, db: BetterSqlite3.Database): number | undefined {
+    return currentCharacterStateCandidateRow(db, draftId)?.projectionGeneration
+  }
+
   static readFinalizedCharacterContext(draftId: number, scope: ProjectEpoch, database = getProjectDb()): FinalizedCharacterContext {
     if (!database || !scope.projectId?.trim() || !scope.epoch?.trim()) throw new Error('FINALIZED_CHARACTER_SCOPE_REQUIRED')
     const db = database
@@ -900,27 +912,7 @@ export class SummaryRepository {
       if (input.projectionGeneration !== snapshot.projectionGeneration) {
         throw new Error('CONTINUITY_GENERATION_STALE')
       }
-      const row = db.prepare(`
-        SELECT character_state_candidates AS candidates,
-               source_finalization_id AS finalizationId,
-               source_content_hash AS contentHash,
-               projection_generation AS projectionGeneration
-        FROM summary_snapshots
-        WHERE draft_id = ?
-      `).get(input.draftId) as {
-        candidates: string
-        finalizationId: string
-        contentHash: string
-        projectionGeneration: number
-      } | undefined
-      if (
-        !row
-        || row.finalizationId !== input.source.finalizationId
-        || row.contentHash !== input.source.contentHash
-        || row.projectionGeneration !== input.projectionGeneration
-      ) throw new Error('CONTINUITY_PROJECTION_MISSING')
-
-      const store = parseCharacterStateCandidateStore(row.candidates)
+      const store = parseCharacterStateCandidateStore(requireNotesRow(db, input.draftId).candidates)
       const merged = new Map<string, FinalizedCharacterStateCandidate>()
       for (const candidate of [
         ...store.pending,

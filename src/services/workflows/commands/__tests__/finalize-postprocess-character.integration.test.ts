@@ -1474,6 +1474,18 @@ describe('更早章的连续性记录作废后重试本章的后处理（#279）
     expect(calls).toEqual({ notes: 1, character: 2 })
   })
 
+  it('要点仍然有效时被重试一并点名：不再调模型，要点原样不动', async () => {
+    characterStreamFails = true
+    await run()
+    characterStreamFails = false
+
+    const retried = await run(['chapter_notes', 'character_cards'])
+
+    expect(outcomes(retried.steps)).toEqual(ALL_DONE)
+    expect(notesRow()).toMatchObject({ notes: 'Notes take 1.' })
+    expect(calls).toEqual({ notes: 1, character: 2 })
+  })
+
   it('作者手改过蓝图里的本章要点：重试重新生成要点时不覆盖作者的改动', async () => {
     const failed = await characterStepFailsThenContinuityInvalidates(1)
     expect(blueprintNotes()).toBe('Notes take 1.')
