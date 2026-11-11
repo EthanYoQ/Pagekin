@@ -36,7 +36,7 @@ import { latestNodesBefore, type ContinuityNode } from '../../src/shared/charact
 import { parseFinalizedCharacterStateResponse } from '../../src/shared/finalized-continuity'
 import { hasCharacterIdentitySchema } from './character-repository'
 import { commitCharacterIdentities, refreshCharacterIdentityProjection, refreshCharacterStateProjection } from './character-roster-repository'
-import { appendDerivedRelationNode, CHARACTER_STATE_COLUMNS, deleteCharacterRelationship, derivedRelationSeries, readCharacterContinuityNodes, readContinuityNodesWithCurrentNames, readDerivedRelationAuthorLines, writeCharacterStateField } from './character-continuity-repository'
+import { appendDerivedRelationNode, CHARACTER_STATE_COLUMNS, deleteCharacterRelationship, derivedRelationSeries, readCharacterContinuityNodes, readContinuityNodesWithCurrentNames, readDerivedRelationAuthorSnapshot, writeCharacterStateField } from './character-continuity-repository'
 import type { ProjectEpoch } from '../../src/shared/source-ref'
 import { RECEIPTED_DRAFT_STATUS_SQL } from '../../src/shared/draft-status'
 
@@ -448,13 +448,15 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
     const unchanged = previous?.value === change.relation
     const authorAtExtraction = context.authorRelations?.filter(line => unorderedPairKey(line.sourceId, line.targetId) === unorderedPairKey(change.sourceId, change.targetId))
     const authorLinesAtExtraction = authorAtExtraction?.map(line => JSON.stringify([line.sourceId, line.targetId, line.relation])).sort()
+    const authorRevisionAtExtraction = authorLinesAtExtraction ? context.authorRelationsRevision : undefined
     const matchesAuthor = !!authorAtExtraction?.some(line => line.relation === change.relation)
     if (matchesAuthor && (!previous || unchanged)) continue
     if (unchanged && !(previous.provenance.kind === 'derived' && previous.provenance.source.finalizationId === source.finalizationId)) continue
     const names = { sourceName: name(change.sourceId), targetName: name(change.targetId) }
-    if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence, authorLinesAtExtraction })
+    if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence, authorLinesAtExtraction, authorRevisionAtExtraction })
     if (authorLinesAtExtraction?.length && !matchesAuthor) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
-      ...names, value: change.relation, evidence: change.evidence, authorLinesAtCreation: authorLinesAtExtraction })
+      ...names, value: change.relation, evidence: change.evidence, authorLinesAtCreation: authorLinesAtExtraction,
+      ...(authorRevisionAtExtraction === undefined ? {} : { authorRevisionAtCreation: authorRevisionAtExtraction }) })
   }
   if (changes.length) mergeRelationCandidates(db, source, changes, candidates)
 }
@@ -485,11 +487,12 @@ function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: Fi
     .sort((left, right) => writeOrder.get(left.eventId)! - writeOrder.get(right.eventId)!)
   const lastOfPair = new Map(nodes.map(node => [unorderedPairKey(node.subjectId, node.targetId), node]))
   const candidates = [...lastOfPair.values()].flatMap((node): FinalizedRelationCandidate[] => {
-    const authorLines = readDerivedRelationAuthorLines(db, node.eventId)
-    if (!authorLines?.length || authorLines.some(line => (JSON.parse(line) as string[])[2] === node.value)) return []
+    const author = readDerivedRelationAuthorSnapshot(db, node.eventId)
+    if (!author?.lines.length || author.lines.some(line => (JSON.parse(line) as string[])[2] === node.value)) return []
     const ids = { sourceId: node.subjectId, targetId: node.targetId }
     return [{ candidateKey: relationCandidateKey(source, { ...ids, relation: node.value }), source: structuredClone(source), ...ids,
-      sourceName: node.subjectName, targetName: node.targetName, value: node.value, evidence: node.quote!, authorLinesAtCreation: authorLines }]
+      sourceName: node.subjectName, targetName: node.targetName, value: node.value, evidence: node.quote!, authorLinesAtCreation: author.lines,
+      ...(author.revision === undefined ? {} : { authorRevisionAtCreation: author.revision }) }]
   })
   mergeRelationCandidates(db, source, nodes.map(node => ({ sourceId: node.subjectId, targetId: node.targetId })), candidates)
 }
@@ -513,16 +516,22 @@ function relationDecisionPayloadHash(request: FinalizedRelationDecisionRequest):
 function pendingRelationCandidate(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate): PendingFinalizedRelationCandidate | null {
   const pair = authorRelationsOfPair(db, candidate.sourceId, candidate.targetId)
   if (!pair.rows.length || pair.all.includes(candidate.value)) return null
-  if (candidate.authorLinesAtCreation && !authorLinesExplained(db, candidate.authorLinesAtCreation, pair.lines, candidate.source.chapterNumber)) return null
+  if (candidate.authorLinesAtCreation && !authorLinesExplained(db, candidate, pair.lines)) return null
   const [{ sourceName, targetName }] = pair.rows
   const currentNames = pair.sourceId === candidate.sourceId ? { sourceName, targetName } : { sourceName: targetName, targetName: sourceName }
   return { ...structuredClone(candidate), ...currentNames, authorRelations: pair.rows.map(row => row.relation) }
 }
 
-/** 作者行从建议快照变到现在，只经过较早章建议的采纳时不算作者后改：沿采纳收据从现在倒推，能回到快照才算。 */
-function authorLinesExplained(db: BetterSqlite3.Database, snapshot: readonly string[], current: string[], chapterNumber: number): boolean {
+/**
+ * 作者行从建议快照变到现在，只经过较早章建议在抽取之后的采纳时不算作者后改：沿这些采纳收据从现在倒推，能回到快照才算。
+ * 升级前的候选没有快照修订号，分不出采纳先后，所有较早章的采纳都算。
+ */
+function authorLinesExplained(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate, current: string[]): boolean {
+  const snapshot = candidate.authorLinesAtCreation!, floor = candidate.authorRevisionAtCreation
   if (isDeepStrictEqual(current, snapshot)) return true
-  const adoptions = candidateReceipts(db).filter(receipt => receipt.authorLinesAfter && receipt.source.chapterNumber < chapterNumber)
+  const approvalRevision = db.prepare("SELECT json_extract(receipt_json,'$.revision') FROM character_identity_approvals WHERE operation_id=?").pluck()
+  const adoptions = candidateReceipts(db).filter(receipt => receipt.authorLinesAfter && receipt.source.chapterNumber < candidate.source.chapterNumber
+    && (floor === undefined || (approvalRevision.get(receipt.operationId) as number | undefined ?? -1) > floor))
   const reached = [current]
   const has = (lines: readonly string[]) => reached.some(item => isDeepStrictEqual(item, lines))
   for (let grew = true; grew;) {
@@ -588,10 +597,12 @@ export class SummaryRepository {
       const authorRelations = frozen ? (db.prepare(`SELECT r.source_character_id AS sourceId,r.target_character_id AS targetId,c.name AS targetName,r.relation
         FROM character_relationships r JOIN characters c ON c.character_id=r.target_character_id WHERE c.retired=0 ORDER BY r.relationship_id`).all() as FinalizedAuthorRelation[])
         .filter(relation => known.has(relation.sourceId) && known.has(relation.targetId)) : []
+      const authorRelationsRevision = frozen ? db.prepare("SELECT revision FROM character_identity_meta WHERE id='main'").pluck().get() as number : undefined
       return { projectId: scope.projectId, epoch: scope.epoch, source: source.source, content: source.content, projectionGeneration: source.projectionGeneration,
         identityRevision: frozen?.identityRevision ?? 0, identityStatus: frozen ? 'bound' as const : 'legacy' as const,
         sourceOrder: { continuityEpoch: `${scope.projectId}:${source.projectionGeneration}`, chapterNumber: source.source.chapterNumber,
-          authoritativeFinalizationRevision: latest.version }, characters, authorRelations }
+          authoritativeFinalizationRevision: latest.version }, characters, authorRelations,
+        ...(authorRelationsRevision === undefined ? {} : { authorRelationsRevision }) }
     })()
   }
 
