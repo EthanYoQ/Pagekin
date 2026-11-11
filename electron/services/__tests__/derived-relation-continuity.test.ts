@@ -621,6 +621,57 @@ describe('定稿后自动记录人物关系变化', () => {
   })
 })
 
+describe('章节要点还没落库时角色那步被拒，要点落库后重跑', () => {
+  const NOTES_REQUIRED = 'GENERATION_FINALIZATION_PREDECESSOR_REQUIRED'
+  const FORWARD_B = relationChange('恩断义绝', BREAK_UP), REVERSE_C = relationChange('势不两立', BREAK_UP, SHEN, LIN)
+  const cards = () => pending().map(({ sourceId, targetId, value }) => ({ sourceId, targetId, value }))
+  /** 提交一次模型结果，返回它是否因为要点还没落库被拒。 */
+  const rejected = (draftId: number, relations: unknown[]) => {
+    try { commitModelOutput(draftId, { updates: [], relations }); return false } catch (error) {
+      if ((error as Error).message !== NOTES_REQUIRED) throw error
+      return true
+    }
+  }
+  function bothDirectionsAuthored(): void {
+    openProject()
+    authorRelation('同门')
+    authorRelation('同门', SHEN, LIN)
+  }
+
+  it('作者两个方向都有值，抽出正反两个新值后只重跑正向且值没变，要点之后才落库：被取代的反向值不出现，重跑后留下正向那一条', () => {
+    bothDirectionsAuthored()
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    const attempts = [rejected(draftId, [FORWARD_B, REVERSE_C]), rejected(draftId, [FORWARD_B])]
+    saveNotes(draftId, '第8章摘要')
+
+    expect(cards()).toEqual([])
+    expect(attempts).toEqual([true, true])
+    commitModelOutput(draftId, { updates: [], relations: [FORWARD_B] })
+    expect(cards()).toEqual([{ sourceId: LIN, targetId: SHEN, value: '恩断义绝' }])
+  })
+
+  it('作者两个方向同值，先抽出正向 B、反向 C，重跑抽出正向 D、反向回到作者设定，要点之后才落库：结果与要点先到时一样，D 可以采用', () => {
+    const FORWARD_D = relationChange('反目', BREAK_UP), REVERSE_AUTHOR = relationChange('同门', BREAK_UP, SHEN, LIN)
+    const outcome = (notesFirst: boolean) => {
+      bothDirectionsAuthored()
+      const draftId = notesFirst ? finalizeNew(8, CHAPTER_EIGHT) : finalizeWithoutNotes(8, CHAPTER_EIGHT)
+      const attempts = [rejected(draftId, [FORWARD_B, REVERSE_C]), rejected(draftId, [FORWARD_D, REVERSE_AUTHOR])]
+      if (!notesFirst) {
+        saveNotes(draftId, '第8章摘要')
+        commitModelOutput(draftId, { updates: [], relations: [FORWARD_D, REVERSE_AUTHOR] })
+      }
+      const pendingCards = cards()
+      decide('accept')
+      const result = { attempts, pendingCards, forward: authorRows() }
+      closeProjectDatabase()
+      return result
+    }
+
+    expect(outcome(true)).toEqual({ attempts: [false, false], pendingCards: [{ sourceId: LIN, targetId: SHEN, value: '反目' }], forward: ['反目'] })
+    expect(outcome(false)).toEqual({ attempts: [true, true], pendingCards: [{ sourceId: LIN, targetId: SHEN, value: '反目' }], forward: ['反目'] })
+  })
+})
+
 describe('采用后的时间线只留一行', () => {
   const timeline = (characterId = LIN) => characterTimeline(readCharacterContinuityNodes(db(), characterId))
   const chapterChanges = (chapter: number, characterId = LIN) => timeline(characterId).find(group => group.chapter === chapter)?.changes ?? []
