@@ -313,7 +313,7 @@ const RELATION_OUTPUT_CONTRACT = {
   'en-US': 'Also add a relations array to the same JSON object. List only relationships the prose explicitly shows actually changed in this chapter (allied, broke with, became mentor, fell in love, reconciled). Format: {"updates":[...],"relations":[{"source":"characterId of the character","target":"characterId of the other character","relation":"the relationship after the change, within 6 words","evidence":{"text":"exact source quote"}}]}. relationships on each existing card are what the author has set; do not list one this chapter leaves unchanged, and do not list people merely sharing a scene, talking, or cooperating once. source and target must both be characterIds from the frozen list; leave out anyone not on it. The evidence rules above apply. If no relationship changed, return "relations":[].',
   'zh-CN': '另外，在同一个 JSON 对象里加 relations 数组，只写本章正文明确写出、确实发生变化的人物关系（结盟、决裂、拜师、定情、反目、和解等）。格式：{"updates":[...],"relations":[{"source":"角色的 characterId","target":"对方的 characterId","relation":"变化后的关系，12字以内","evidence":{"text":"原文精确引用"}}]}。现有角色卡的 relationships 是作者写好的关系；本章没有改变它的不要写，只是同场出现、交谈、合作一次也不要写。source 和 target 都必须是冻结名单中的 characterId，名单外的人物不要写。evidence 规则同上。本章没有关系变化时写 "relations":[]。',
 } as const
-/** 写在模板之外：内置模板不变，在途定稿的恢复比较不受影响，自定义模板也带上。 */
+/** 写在模板之外：从旧内置模板复制的自定义模板也带上。 */
 export function finalizedCharacterOutputContract(language: WritingLanguage): string {
   const key = language === 'en-US' ? 'en-US' : 'zh-CN'
   return `${STATE_OUTPUT_CONTRACT[key]} ${RELATION_OUTPUT_CONTRACT[key]}`
