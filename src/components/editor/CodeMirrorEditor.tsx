@@ -471,7 +471,7 @@ export default function CodeMirrorEditor({
       if (receipt.outcome.status !== 'completed' || receipt.outcome.finishReason !== 'stop') {
         setAiResult('')
         const failureCode = receipt.outcome.receipt.failureCode
-        setAiError(isTerminalProviderFailure(failureCode) ? displayedErrorMessage(uiLocale, failureCode)
+        setAiError(failureCode ? displayedErrorMessage(uiLocale, failureCode)
           : uiText('生成未完整完成，结果不可应用', 'Generation did not complete; the result cannot be applied.'))
         return
       }
@@ -574,8 +574,7 @@ export default function CodeMirrorEditor({
     setNoteDraft(null)
     setNoteError(null)
     setBubbleOpen(false)
-    view.dispatch({ selection: { anchor: selectionRange.to } })
-    view.focus()
+    view.contentDOM.focus({ preventScroll: true })
   }
 
   const cancelNote = () => {
@@ -604,7 +603,6 @@ export default function CodeMirrorEditor({
     const current = annotations.map(annotation => ({ ...annotation }))
     if (!view || current.length === 0) return
     const range = { from: 0, to: view.state.doc.length }
-    view.dispatch({ selection: { anchor: range.from, head: range.to } })
     setSelectionRange(range)
     setBubbleOpen(true)
     void handleAIAction({ action: 'batch-instruct', annotations: current }, range)
