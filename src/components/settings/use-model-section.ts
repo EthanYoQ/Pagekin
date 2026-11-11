@@ -74,8 +74,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
       purposes: [...purposes],
     }))
   }
-  /** 实测的上下文窗口只写进主进程的模型设置，打开表单前须重读；重读期间作者改点了别的，就不再打开这一份。 */
-  const edit = async (model: ModelProfile) => {
+  const editLatestSaved = async (model: ModelProfile) => {
     const request = ++editRequest.current
     await loadModels()
     if (request !== editRequest.current) return
@@ -108,7 +107,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     setEditingModel,
     saving,
     add,
-    edit: (model: ModelProfile) => void edit(model),
+    edit: (model: ModelProfile) => void editLatestSaved(model),
     cancelEdit: () => {
       editRequest.current += 1
       setEditingModel(null)
