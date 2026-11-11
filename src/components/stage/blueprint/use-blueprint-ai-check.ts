@@ -53,6 +53,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const [exempted, setExempted] = useState<Exempted | null>(null)
   const [busy, setBusy] = useState(false)
   const checked = useRef(false)
+  const recovery = useRef(0)
   const mounted = useRef(false)
   useEffect(() => {
     mounted.current = true
@@ -66,11 +67,21 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     if (isProjectSessionCurrent(session)) { setHasTimeline(nodes.length > 0); setTimeline(nodes) }
   }, [])
 
+  /** 取回的结论带的是读取当时的来源状态；蓝图存过之后重读一次，改回原样的章不会让整份结论一直判作过期。 */
+  const recoverLatest = useCallback((session: ProjectSessionContext, applies: () => boolean) => {
+    const request = ++recovery.current
+    void readLatestContinuityReport(session)
+      .then(latest => { if (applies() && request === recovery.current && !checked.current) setReport(latest) }).catch(() => {})
+  }, [])
+
   useEffect(() => globalEventBus.on('REFRESH_RESOURCE', ({ projectSession, resources }) => {
     const session = currentSession()
-    if (session && isProjectSessionCurrent(projectSession) && resources.some(kind => kind === 'drafts' || kind === 'characterCards' || kind === 'all'))
+    if (!session || !isProjectSessionCurrent(projectSession)) return
+    if (resources.some(kind => kind === 'drafts' || kind === 'characterCards' || kind === 'all'))
       void readTimeline(session).catch(() => {})
-  }), [currentSession, readTimeline])
+    if (!checked.current && resources.some(kind => kind === 'blueprints' || kind === 'all'))
+      recoverLatest(session, () => mounted.current && isProjectSessionCurrent(session))
+  }), [currentSession, readTimeline, recoverLatest])
 
   const readExemptions = useCallback(async (session: ProjectSessionContext) => {
     const list = await ipc.invokeWithProjectSession(session, 'db:consistency-exemption-list', session.projectPath)
@@ -117,10 +128,9 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
       .then(list => { if (applies()) setExemptions(list) }).catch(() => {})
     const pending = pendingContinuityCheck(session)
     if (pending) void follow(session, pending)
-    void readLatestContinuityReport(session)
-      .then(latest => { if (applies() && !checked.current) setReport(latest) }).catch(() => {})
+    recoverLatest(session, applies)
     return () => { active = false }
-  }, [currentSession, sessionLease, follow])
+  }, [currentSession, sessionLease, follow, recoverLatest])
 
   const run = async () => {
     const session = currentSession()
