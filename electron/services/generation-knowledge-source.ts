@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { Connection, Table } from '@lancedb/lancedb'
 import type { EmbeddingSpaceIdentity, KnowledgeCorpusKind } from '../vector-store'
-import { isDocumentCopyIndexCurrent } from '../vector-store'
+import { isDocumentCopyIndexCurrent, tableSupportsField } from '../vector-store'
 
 import { firstOfEach, fullTextFilter, fullTextTerms, rankFullText } from '../../src/shared/full-text-search'
 import type { GenerationKnowledgeItem, GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge'
@@ -150,7 +150,8 @@ async function searchHits(reader: Reader, input: KnowledgeSearch, topK: number):
     const terms = fullTextTerms(input.query)
     const rows = await reader.chunks!.query().where(`${fullTextFilter(terms)}${documentFilter ? ` AND ${documentFilter}` : ''}`).toArray()
     const candidates = rows.filter(row => corpus(row.corpusKind) !== 'reference').map(row => ({ row, text: string(row.text), fileName: string(row.fileName) }))
-    const ranked = rankFullText(candidates, terms, await reader.chunks!.countRows())
+    const corpusFilter = await tableSupportsField(reader.chunks!, 'corpusKind') ? "`corpusKind` != 'reference'" : ''
+    const ranked = rankFullText(candidates, terms, await reader.chunks!.countRows([corpusFilter, documentFilter].filter(Boolean).join(' AND ') || undefined))
     hits = firstOfEach(ranked, ({ row }) => JSON.stringify([string(row.row.docId), row.text])).slice(0, topK).map(({ row }) => ({ row: row.row, score: 0.5 }))
   }
   if (new Set(hits.map(hit => hit.row.id)).size !== hits.length) fail('DUPLICATE_CHUNK')

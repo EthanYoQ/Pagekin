@@ -1377,7 +1377,7 @@ function requestMatchesActiveSpace(
   return space.modelFingerprint === requested.modelFingerprint && space.distanceMetric === requested.distanceMetric
 }
 
-async function tableSupportsField(table: lancedb.Table, fieldName: string): Promise<boolean> {
+export async function tableSupportsField(table: lancedb.Table, fieldName: string): Promise<boolean> {
   return (await table.schema()).fields.some(field => field.name === fieldName)
 }
 
@@ -1457,15 +1457,14 @@ async function searchInternal(
     try {
       canonicalTable = await db.openTable(TABLE_NAME)
       const searchTerms = fullTextTerms(queryText)
-      const filters = [fullTextFilter(searchTerms)]
+      const scope: string[] = []
       const corpusFilter = excludedCorpusFilter(excludedCorpusKinds)
       if (corpusFilter && await tableSupportsField(canonicalTable, 'corpusKind')) {
-        filters.push(corpusFilter)
+        scope.push(corpusFilter)
       }
-      if (currentCopyFilter) filters.push(currentCopyFilter)
-      const filter = filters.join(' AND ')
-      const results = await canonicalTable.query().filter(filter).toArray()
-      const ranked = rankFullText(results as Array<{ text: string; fileName: string }>, searchTerms, await canonicalTable.countRows())
+      if (currentCopyFilter) scope.push(currentCopyFilter)
+      const results = await canonicalTable.query().filter([fullTextFilter(searchTerms), ...scope].join(' AND ')).toArray()
+      const ranked = rankFullText(results as Array<{ text: string; fileName: string }>, searchTerms, await canonicalTable.countRows(scope.join(' AND ') || undefined))
       return firstOfEach(ranked, ({ row }) => JSON.stringify([row.fileName, row.text]))
         .slice(0, topK)
         .map(({ row }) => ({ text: row.text, score: 0.5, fileName: row.fileName }))
