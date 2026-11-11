@@ -10,11 +10,15 @@ export function fullTextTerms(query: string): string[] {
     return /\p{Script=Han}/u.test(word) && chars.length > 2 ? chars.slice(1).map((char, index) => chars[index] + char) : [word]
   })
   const meaningful = terms.filter(term => Array.from(term).length >= 2)
-  return [...new Map((meaningful.length ? meaningful : terms).map(term => [term.toLocaleLowerCase(), term])).values()].slice(0, MAX_TERMS)
+  return [...new Set(meaningful.length ? meaningful : terms)].slice(0, MAX_TERMS)
 }
 
 export function fullTextFilter(terms: readonly string[]): string {
   return terms.length ? `(${terms.map(term => `text LIKE '%${term.replace(/'/g, "''")}%'`).join(' OR ')})` : "text LIKE '%%'"
+}
+
+function compare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function occurrences(text: string, term: string): number {
@@ -25,9 +29,9 @@ function occurrences(text: string, term: string): number {
 
 /**
  * 区分大小写计数，与 LIKE 筛行一致，没命中的行不进统计，所以传全部段落和只传筛出的行排序相同。
- * 同分按正文排，免得结果随导入时的随机 id 变。
+ * 同分按正文、再按文件名排，免得结果随导入时的随机 id 变。
  */
-export function rankFullText<T extends { text: string }>(rows: readonly T[], terms: readonly string[], totalRows: number): { row: T; score: number }[] {
+export function rankFullText<T extends { text: string; fileName: string }>(rows: readonly T[], terms: readonly string[], totalRows: number): { row: T; score: number }[] {
   const counted = rows.map(row => ({ row, length: Array.from(row.text).length, counts: terms.map(term => occurrences(row.text, term)) }))
   const matched = counted.filter(item => item.counts.some(count => count > 0))
   const averageLength = matched.reduce((sum, item) => sum + item.length, 0) / matched.length
@@ -42,5 +46,5 @@ export function rankFullText<T extends { text: string }>(rows: readonly T[], ter
         ? sum + idf[index] * count * (K1 + 1) / (count + K1 * (1 - B + B * length / averageLength))
         : sum, 0),
     }))
-    .sort((left, right) => right.score - left.score || (left.row.text < right.row.text ? -1 : left.row.text > right.row.text ? 1 : 0))
+    .sort((left, right) => right.score - left.score || compare(left.row.text, right.row.text) || compare(left.row.fileName, right.row.fileName))
 }

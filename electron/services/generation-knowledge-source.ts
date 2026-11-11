@@ -149,7 +149,7 @@ async function searchHits(reader: Reader, input: KnowledgeSearch, topK: number):
   if (!hits.length) {
     const terms = fullTextTerms(input.query)
     const rows = await reader.chunks!.query().where(`${fullTextFilter(terms)}${documentFilter ? ` AND ${documentFilter}` : ''}`).toArray()
-    const candidates = rows.filter(row => corpus(row.corpusKind) !== 'reference').map(row => ({ row, text: string(row.text) }))
+    const candidates = rows.filter(row => corpus(row.corpusKind) !== 'reference').map(row => ({ row, text: string(row.text), fileName: string(row.fileName) }))
     hits = rankFullText(candidates, terms, await reader.chunks!.countRows()).slice(0, topK).map(({ row }) => ({ row: row.row, score: 0.5 }))
   }
   if (new Set(hits.map(hit => hit.row.id)).size !== hits.length) fail('DUPLICATE_CHUNK')
