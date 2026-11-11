@@ -332,6 +332,18 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(authorRows()).toEqual(['同门'])
   })
 
+  it('升级前冻结的在途定稿没有作者关系快照，要点已在：记下节点但不放建议', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    const context = { ...SummaryRepository.readFinalizedCharacterContext(draftId, scope, db()), authorRelations: undefined }
+    SummaryRepository.commitFinalizedCharacterStates(context, parseFinalizedCharacterStateResponse(JSON.stringify(
+      { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] }), context), db())
+
+    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
+    expect(pending()).toEqual([])
+  })
+
   it('升级前冻结的在途定稿没有作者关系快照：提交后要点补上时不补待确认项', () => {
     openProject()
     authorRelation('师徒')
