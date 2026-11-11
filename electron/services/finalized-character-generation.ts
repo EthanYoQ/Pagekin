@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type { MainGenerationRunHandle } from '../../src/services/generation/generation-runtime'
 import type { BeginGenerationRequest } from '../../src/shared/generation-owner-contract'
 import type { FinalizedCharacterContext } from '../../src/shared/finalized-continuity'
-import type { FinalizedCharacterStateDecisionRequest } from '../../src/shared/finalized-continuity'
+import type { FinalizedCharacterStateDecisionRequest, FinalizedRelationDecisionRequest } from '../../src/shared/finalized-continuity'
 import type { FinalizedCharacterGenerationCommit, FinalizedCharacterGenerationReceipt } from '../../src/shared/finalized-character-generation'
 import { SummaryRepository } from '../repositories/summary-repository'
 import { GenerationRunRepository, textHash } from '../repositories/generation-run-repository'
@@ -40,6 +40,16 @@ export class FinalizedCharacterGeneration {
   decideStateCandidate(request: FinalizedCharacterStateDecisionRequest) {
     this.assertCurrent()
     return SummaryRepository.decideFinalizedCharacterStateCandidate(request, this.db)
+  }
+
+  listPendingRelationCandidates() {
+    this.assertCurrent()
+    return SummaryRepository.listPendingFinalizedRelationCandidates(this.db)
+  }
+
+  decideRelationCandidate(request: FinalizedRelationDecisionRequest) {
+    this.assertCurrent()
+    return SummaryRepository.decideFinalizedRelationCandidate(request, this.scope, this.db)
   }
 
   /** A renderer cannot manufacture the identity/field snapshot placed in a generation manifest. */

@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
 
@@ -68,7 +68,7 @@ vi.mock('../../i18n', () => ({
   mainText: vi.fn((_locale: string, zh: string) => zh),
 }))
 
-import { getEmbeddingConfig, registerKBController } from '../kb-controller'
+import { getEmbeddingConfig, getRerankConfig, registerKBController } from '../kb-controller'
 
 function rawHandler(channel: string): IpcHandler {
   const registered = mocks.handlers.get(channel)
@@ -580,5 +580,181 @@ describe('embedding config fallback by protocol', () => {
   it('never falls back to an Anthropic-protocol profile, which has no embedding endpoint', () => {
     withModel({ ...generationModel, protocol: 'anthropic' })
     expect(getEmbeddingConfig()).toBeNull()
+  })
+})
+
+describe('rerank config from the saved global config', () => {
+  const embeddingProfile = {
+    id: 'embedding', name: 'Embedding', provider: 'siliconflow', protocol: 'openai', modelName: 'BAAI/bge-m3',
+    apiKey: 'sk-fake-embedding', baseUrl: 'https://api.siliconflow.cn/v1', temperature: 0.7, maxTokens: 0, purposes: ['embedding'],
+  }
+  const rerankProfile = {
+    id: 'rerank', name: 'Rerank', provider: 'custom', protocol: 'openai', modelName: 'my-reranker',
+    apiKey: 'sk-fake-rerank', baseUrl: 'https://rerank.example/v1', temperature: 0.7, maxTokens: 0, purposes: ['rerank'],
+  }
+  const saved = (config: Record<string, unknown>, models: Record<string, unknown>[]) =>
+    mocks.readJsonFile.mockImplementation((file: string, fallback: unknown) =>
+      file === 'global.json' ? config : file === 'models.json' ? models : fallback)
+
+  it('does not rerank for a legacy config whose retrieval model is not SiliconFlow', () => {
+    saved({ defaultModelId: null, defaultEmbeddingModelId: 'embedding' },
+      [{ ...embeddingProfile, provider: 'openai', baseUrl: 'https://api.openai.com/v1' }])
+    expect(getRerankConfig()).toEqual({ kind: 'none', reason: 'embedding-not-siliconflow' })
+  })
+
+  it('does not rerank when neither retrieval nor rerank is configured', () => {
+    saved({ defaultModelId: null }, [])
+    expect(getRerankConfig()).toEqual({ kind: 'none', reason: 'not-configured' })
+  })
+
+  // 默认关闭自动复用的原因见 src/shared/rerank-config.ts 的 AUTO_REUSE_EMBEDDING（#632）。
+  it('does not yet reuse the SiliconFlow retrieval endpoint and key for rerank', () => {
+    saved({ defaultModelId: null, defaultEmbeddingModelId: 'embedding' }, [embeddingProfile])
+    expect(getRerankConfig()).toEqual({ kind: 'none', reason: 'auto-reuse-not-enabled' })
+  })
+
+  it('refuses reuse when a SiliconFlow profile points at another host', () => {
+    saved({ defaultModelId: null, defaultEmbeddingModelId: 'embedding' }, [{ ...embeddingProfile, baseUrl: 'https://proxy.example/v1' }])
+    expect(getRerankConfig()).toEqual({ kind: 'none', reason: 'embedding-not-siliconflow' })
+  })
+
+  it('sends only the explicit rerank profile endpoint and key', () => {
+    saved({ defaultModelId: null, defaultEmbeddingModelId: 'embedding', defaultRerankModelId: 'rerank' }, [embeddingProfile, rerankProfile])
+    expect(getRerankConfig()).toEqual({
+      kind: 'explicit',
+      profileId: 'rerank',
+      endpoint: { baseUrl: 'https://rerank.example/v1', apiKey: 'sk-fake-rerank', modelName: 'my-reranker' },
+    })
+  })
+})
+
+describe('kb:search reranking', () => {
+  const siliconflowEmbedding = {
+    id: 'embedding', name: 'Embedding', provider: 'siliconflow', protocol: 'openai', modelName: 'BAAI/bge-m3',
+    apiKey: 'sk-fake-embedding', baseUrl: 'https://api.siliconflow.cn/v1', temperature: 0.7, maxTokens: 0, purposes: ['embedding'],
+  }
+  const candidates = Array.from({ length: 40 }, (_, index) => ({ text: `段落${index}`, score: 1 - index / 100, fileName: `第${index}章.md` }))
+  const searchKnowledge = vi.fn()
+  const searchKnowledgeFTS = vi.fn()
+  const rerankProfile = {
+    id: 'rerank', name: 'Rerank', provider: 'custom', protocol: 'openai', modelName: 'my-reranker',
+    apiKey: 'sk-fake-rerank', baseUrl: 'https://rerank.example/v1', temperature: 0.7, maxTokens: 0, purposes: ['rerank'],
+  }
+  const fetchMock = vi.fn()
+  const saved = (models: Record<string, unknown>[]) => mocks.readJsonFile.mockImplementation((file: string, fallback: unknown) =>
+    file === 'global.json' ? {
+      defaultModelId: null,
+      ...(models.length ? { defaultEmbeddingModelId: 'embedding' } : {}),
+      ...(models.some(model => model.id === 'rerank') ? { defaultRerankModelId: 'rerank' } : {}),
+    }
+      : file === 'models.json' ? models : fallback)
+
+  beforeEach(() => {
+    searchKnowledge.mockImplementation(async (_query: string, _path: string, _protocol: string, _model: unknown, topK: number) => candidates.slice(0, topK))
+    searchKnowledgeFTS.mockImplementation(async (_query: string, _path: string, topK: number) => candidates.slice(0, topK))
+    mocks.run.mockImplementation(async (operation: (kb: unknown) => unknown) => operation({ searchKnowledge, searchKnowledgeFTS }))
+    fetchMock.mockReset()
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({
+      results: [39, 7, 21].map((index, rank) => ({ index, relevance_score: 0.9 - rank / 10 })),
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it.each([
+    ['kb:search', []],
+    ['kb:search-writing-context', ['reference']],
+  ])('returns the same passages as before for %s when rerank is not configured', async (channel, excluded) => {
+    saved([])
+    await expect(handler(channel)({}, '查询', 3, 'C:/projects/A')).resolves.toEqual(candidates.slice(0, 3))
+    expect(searchKnowledgeFTS).toHaveBeenCalledWith('查询', 'C:/projects/A', 3, ...(excluded.length ? [excluded] : []))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['kb:search', []],
+    ['kb:search-writing-context', ['reference']],
+  ])('recalls 40 passages for %s and returns the requested count in the explicit rerank order', async (channel, excluded) => {
+    saved([siliconflowEmbedding, rerankProfile])
+    await expect(handler(channel)({}, '查询', 3, 'C:/projects/A')).resolves.toEqual([candidates[39], candidates[7], candidates[21]])
+    expect(searchKnowledge).toHaveBeenCalledWith('查询', 'C:/projects/A', 'openai', expect.objectContaining({ apiKey: 'sk-fake-embedding' }), 40,
+      ...(excluded.length ? [excluded] : []))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe('https://rerank.example/v1/rerank')
+    expect(new Headers(init.headers).get('authorization')).toBe('Bearer sk-fake-rerank')
+    expect(JSON.parse(String(init.body))).toMatchObject({ documents: candidates.map(item => item.text), top_n: 3 })
+  })
+
+  // 默认关闭自动复用的原因见 src/shared/rerank-config.ts 的 AUTO_REUSE_EMBEDDING（#632）。
+  it.each([
+    ['kb:search', []],
+    ['kb:search-writing-context', ['reference']],
+  ])('returns the same passages as before for %s with only a SiliconFlow retrieval profile', async (channel, excluded) => {
+    saved([siliconflowEmbedding])
+    await expect(handler(channel)({}, '查询', 3, 'C:/projects/A')).resolves.toEqual(candidates.slice(0, 3))
+    expect(searchKnowledge).toHaveBeenCalledWith('查询', 'C:/projects/A', 'openai', expect.objectContaining({ apiKey: 'sk-fake-embedding' }), 3,
+      ...(excluded.length ? [excluded] : []))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('sends no rerank request when a SiliconFlow retrieval profile points at another host', async () => {
+    saved([{ ...siliconflowEmbedding, baseUrl: 'https://proxy.example/v1' }])
+    await expect(handler('kb:search')({}, '查询', 5, 'C:/projects/A')).resolves.toEqual(candidates.slice(0, 5))
+    expect(searchKnowledge).toHaveBeenCalledWith('查询', 'C:/projects/A', 'openai', expect.anything(), 5)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('returns a request for more than 40 passages in the original order without a rerank request', async () => {
+    saved([siliconflowEmbedding, rerankProfile])
+    await expect(handler('kb:search')({}, '查询', 50, 'C:/projects/A')).resolves.toEqual(candidates)
+    expect(searchKnowledge).toHaveBeenCalledWith('查询', 'C:/projects/A', 'openai', expect.anything(), 50)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('recalls nothing extra and sends no passages for a request of zero passages', async () => {
+    saved([siliconflowEmbedding, rerankProfile])
+    await expect(handler('kb:search')({}, '查询', 0, 'C:/projects/A')).resolves.toEqual([])
+    expect(searchKnowledge).toHaveBeenCalledWith('查询', 'C:/projects/A', 'openai', expect.anything(), 0)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['http-error', async () => new Response('{}', { status: 500 })],
+    ['request-failed', async () => { throw new TypeError('fetch failed') }],
+    ['timeout', async () => { throw new DOMException('deadline', 'TimeoutError') }],
+    ['invalid-response', async () => new Response(JSON.stringify({ results: [] }))],
+  ] as const)('keeps the original order and reports %s on kb:search results when the rerank request fails', async (reason, respond) => {
+    saved([siliconflowEmbedding, rerankProfile])
+    fetchMock.mockImplementation(respond)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await expect(handler('kb:search')({}, '查询', 3, 'C:/projects/A')).resolves.toEqual(
+      candidates.slice(0, 3).map(item => ({ ...item, rerankFallback: reason })))
+    warn.mockRestore()
+  })
+
+  it('reports nothing on kb:search results when the rerank request succeeds', async () => {
+    saved([siliconflowEmbedding, rerankProfile])
+    const results = await handler('kb:search')({}, '查询', 3, 'C:/projects/A') as Array<Record<string, unknown>>
+    expect(results.every(item => !('rerankFallback' in item))).toBe(true)
+  })
+
+  it('leaves kb:search-writing-context results unchanged when the rerank request fails', async () => {
+    saved([siliconflowEmbedding, rerankProfile])
+    fetchMock.mockImplementation(async () => new Response('{}', { status: 500 }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await expect(handler('kb:search-writing-context')({}, '查询', 3, 'C:/projects/A')).resolves.toEqual(candidates.slice(0, 3))
+    warn.mockRestore()
+  })
+
+  it('sends no rerank request once the default rerank profile is gone', async () => {
+    saved([siliconflowEmbedding, rerankProfile])
+    await handler('kb:search')({}, '查询', 3, 'C:/projects/A')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    fetchMock.mockClear()
+    saved([siliconflowEmbedding])
+    await expect(handler('kb:search')({}, '查询', 3, 'C:/projects/A')).resolves.toEqual(candidates.slice(0, 3))
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

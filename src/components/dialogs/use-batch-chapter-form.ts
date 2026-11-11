@@ -19,7 +19,8 @@ import {
 } from '../project-session-gate'
 import { readWritableChapters } from '../../services/authoritative-chapter-sequence'
 import type { ChapterGap } from '../../shared/chapter-sequence'
-import { readConsistencyPreflight, type ConsistencyPreflightResult } from '../../services/consistency-preflight'
+import { readConsistencyPreflight, saveFindingExemption, type ConsistencyPreflightResult, type ExemptionScope, type PreflightFinding } from '../../services/consistency-preflight'
+import type { ConsistencyExemption } from '../../shared/consistency-preflight'
 import { requireIpcSuccess } from '../../services/ipc-result'
 import { normalizeChapterWordsTarget } from '../../services/workflows/chapter-creation-parameters'
 import {
@@ -261,19 +262,19 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
     }
   }
 
-  const saveArrangement = async (stableFactKey: string, reason: string) => {
+  const saveArrangement = async (finding: PreflightFinding, scope: ExemptionScope) => {
     const saved = await changeArrangement(text('保存一致性安排', 'Save consistency arrangement'),
-      session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-save', stableFactKey, reason, session.projectPath))
+      session => saveFindingExemption(session, finding, scope, text))
     if (saved) await handleStart(false)
   }
 
-  const revokeArrangement = async (stableFactKey: string) => {
+  const revokeArrangement = async (exemption: ConsistencyExemption) => {
     const revoked = await changeArrangement(text('撤销一致性安排', 'Revoke consistency arrangement'),
-      session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', stableFactKey, session.projectPath))
+      session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', exemption.stableFactKey, exemption.chapterNumber, session.projectPath))
     if (!revoked) return
     setConsistencyPreflight(current => current ? {
       ...current,
-      exemptions: current.exemptions.map(item => item.stableFactKey === stableFactKey ? { ...item, revoked: true } : item),
+      exemptions: current.exemptions.map(item => item === exemption ? { ...item, revoked: true } : item),
     } : null)
   }
 

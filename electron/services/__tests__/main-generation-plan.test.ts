@@ -69,11 +69,11 @@ describe('new physical root liability', () => {
   })
   it('keeps the author output limit for a 43,699-byte input whatever the author context setting', () => {
     const profile = model({ baseUrl: 'https://compatible.example/v1', modelName: 'custom', maxTokens: 65536,
-      capabilities: { contextWindowTokens: 65536, maxOutputTokens: 65536, reasoning: false, structuredOutput: true, usage: false } })
+      capabilities: { contextWindowTokens: 262144, maxOutputTokens: 65536, reasoning: false, structuredOutput: true, usage: false } })
     const receipt = createModelExecutionLeaseReceipt(profile, { leaseId: 'capacity', createdAt: 1, expiresAt: 1000 })
     const input: GenerationTask = { ...task, messages: [{ role: 'user', content: 'x'.repeat(43699) }],
       budgetDemand: { kind: 'structured-items', requestedItems: 1, writingLanguage: 'zh-CN' } }
-    for (const contextWindowTokens of [65536, 32768]) {
+    for (const contextWindowTokens of [262144, 131072]) {
       const profiled = { ...profile, capabilities: { ...profile.capabilities!, contextWindowTokens } }
       const policy = newMainGenerationPolicy(selection, profiled)
       expect(buildMainGenerationPlan(profiled, receipt, input, { ...ledger(), policy: policy.budget }).requestedOutputTokens).toBe(65536)
@@ -268,8 +268,8 @@ describe('no-demand tasks merge verified capability, user limits and input occup
     const result = plan(model({ modelName: 'gpt-4-turbo', maxTokens: 2048, reasoningOverride: 'off' }), plot())
     expect(result.requestedOutputTokens).toBe(2048)
   })
-  it('does not narrow the output by the author context setting or the input occupancy', () => {
-    const result = plan(deepseek({ maxTokens: 4000, capabilities: userCaps(4096, 4000) }), plot('A'.repeat(10000)))
+  it('does not narrow the output by the input occupancy when half the author context fits it', () => {
+    const result = plan(deepseek({ maxTokens: 4000, capabilities: userCaps(8192, 4000) }), plot('A'.repeat(10000)))
     expect(result.requestedOutputTokens).toBe(4000)
   })
   it('sends input beyond the verified model context and leaves the decision to the provider', () => {
@@ -277,7 +277,7 @@ describe('no-demand tasks merge verified capability, user limits and input occup
     expect(plan(profile, plot('A'.repeat(20000))).requestedOutputTokens).toBe(4096)
   })
   it('keeps the Silicon V4 full-context reservation and the author output limit for any input', () => {
-    const profile = { ...silicon(), reasoningOverride: 'off' as const, capabilities: userCaps(4096, 3000) }
+    const profile = { ...silicon(), reasoningOverride: 'off' as const, capabilities: userCaps(8192, 3000) }
     const result = plan(profile, plot())
     expect(result.requestedOutputTokens).toBe(3000)
     expect(result.reservedTokens).toBe(1_048_576)
@@ -324,7 +324,7 @@ describe('S07 semantic pre-dispatch integration', () => {
   it('keeps dense required evidence intact and sends it beside a small author context setting', () => {
     const input = { ...draft(900), messages: [{ role: 'user' as const, content: '作者明确事实\r\n'.repeat(1000) }] }
     const original = JSON.stringify(input)
-    expect(plan({ ...known(), capabilities: { contextWindowTokens: 1024, maxOutputTokens: 16384, reasoning: false, structuredOutput: false, usage: false } }, input).options.maxTokens).toBe(16384)
+    expect(plan({ ...known(), capabilities: { contextWindowTokens: 32768, maxOutputTokens: 16384, reasoning: false, structuredOutput: false, usage: false } }, input).options.maxTokens).toBe(16384)
     expect(JSON.stringify(input)).toBe(original)
   })
   it('rejects physical fields hidden inside semantic demand', () => {

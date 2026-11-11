@@ -19,6 +19,7 @@ export const STATE_FIELD_LABELS: Record<CharacterStateTextField, [string, string
 /** 定稿产生的待处理角色状态建议：列出、检查、接受、拒绝。 */
 export function usePendingStateCandidates(session: ProjectSessionContext) {
   const characters = useCharacterStore(state => state.characters)
+  const rosterLoads = useCharacterStore(state => state.rosterLoads)
   const [summaries, setSummaries] = useState<PendingFinalizedCharacterStateCandidateSummary[]>([])
   const [candidate, setCandidate] = useState<PendingFinalizedCharacterStateCandidate | null>(null)
   const [busy, setBusy] = useState(false)
@@ -39,7 +40,7 @@ export function usePendingStateCandidates(session: ProjectSessionContext) {
   useEffect(() => {
     const timer = window.setTimeout(() => { void loadSummaries() }, 0)
     return () => window.clearTimeout(timer)
-  }, [loadSummaries])
+  }, [loadSummaries, rosterLoads])
 
   async function read(summary: PendingFinalizedCharacterStateCandidateSummary) {
     setBusy(true); setError(''); setCandidate(null)

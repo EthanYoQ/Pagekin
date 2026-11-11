@@ -14,7 +14,7 @@ import { currentDerivedCharacterFields } from '../current-character-projection';
 import { readPortableCurrentAuthority } from '../portable-current-authority';
 import { createPortableTransferAuthority, mapPortableTransferAuthority, serializePortableTransferAuthority } from '../portable-transfer-authority';
 import { SummaryRepository, invalidateContinuityProjectionFrom } from '../../repositories/summary-repository';
-import { MATERIAL_DECISION_MAX_INPUT_UNITS, MATERIAL_DECISION_RECEIPT_VERSION, type MaterialDecisionReceipt } from '../../../src/shared/generation-owner-contract';
+import { DEFAULT_MATERIAL_ADMISSION, MATERIAL_DECISION_MAX_INPUT_UNITS, MATERIAL_DECISION_RECEIPT_VERSION, type MaterialDecisionReceipt } from '../../../src/shared/generation-owner-contract';
 import { captureReviewRevisionContext } from '../review-revision-context';
 import { textHash } from '../../repositories/generation-run-repository';
 import type { PrepareReviewRevisionRequest } from '../../../src/shared/review-revision-generation';
@@ -106,6 +106,19 @@ describe('main rebuilt generation sources', () => {
         expect(text).not.toContain('不可信伤势');
         expect(text).not.toContain('cs_provenance');
         expect(f.db.prepare("SELECT * FROM characters WHERE character_id='character-unproved'").get()).toEqual(stored);
+    });
+
+    it('freezes the chapter timeline with the run, so a later continuity node leaves the binding unchanged', () => {
+        const f = fixture(true);
+        f.input.operation = 'chapter-draft';
+        f.input.selectedDraftIds = [];
+        const frozen = JSON.stringify({ lin: ['作者设定（自第1章起）位置：码头'] });
+        f.input.authorInputs = [{ id: 'draft:character-timeline', text: frozen }];
+        const before = f.build();
+        expect(before.materials.find(item => item.ref.sourceId === 'author-action:draft:character-timeline')?.text).toBe(frozen);
+        f.db.prepare(`INSERT INTO character_continuity_events(event_id,subject_id,subject_name,aspect,value,effective_chapter,provenance_json)
+          VALUES('later','lin','林岚','location','后来的地点',2,'{"kind":"author","operationId":"op"}')`).run();
+        expect(compareGenerationSourceBindings(before.binding, rebuildGenerationSourceBinding(f.deps, before.binding, 'e').binding)).toBe(true);
     });
 
     it('keeps valid author, legacy and current derived state while omitting one invalid field entry', () => {
@@ -513,6 +526,7 @@ describe('material decision receipt binding (S10B step 3)', () => {
         omitted: [],
         ...over,
     });
+    const BUDGET = { inputTokens: 27_680, contextWindowTokens: 32_768, contextWindowSource: 'default', reservedOutputTokens: 4_576, safetyMarginTokens: 512 } as const;
     const decisionOf = (binding: { sourceManifest: Readonly<Record<string, unknown>> }) =>
         binding.sourceManifest.materialDecision as MaterialDecisionReceipt | undefined;
     const receiptFixture = () => {
@@ -610,10 +624,31 @@ describe('material decision receipt binding (S10B step 3)', () => {
         ['a complete flag that disagrees with the counts', { ...decision(), coverage: { required: 1, included: 1, complete: false } }],
         ['a credential-shaped field', { ...decision(), apiKey: 'secret' }],
         ['an oversized source list', { ...decision(), included: Array.from({ length: 1_025 }, () => ({ sourceId: 'author:required', revision: 1, contentHash: hash('x'), category: 'author', required: true, units: 1 })) }],
+        ['a budget with an unknown window source', { ...decision(), budget: { ...BUDGET, contextWindowSource: 'guess' } }],
+        ['a budget with a negative input', { ...decision(), budget: { ...BUDGET, inputTokens: -1 } }],
+        ['a budget carrying an extra field', { ...decision(), budget: { ...BUDGET, baseUrl: 'https://example.com' } }],
+        ['a null budget', { ...decision(), budget: null }],
     ])('fails closed on %s', (_name, value) => {
         const f = receiptFixture();
         f.input.materialDecision = value as MaterialDecisionReceipt;
         expect(() => f.build()).toThrow('GENERATION_MATERIAL_DECISION_INVALID');
+    });
+
+    it('freezes the budget into the receipt and its hash, and still accepts a receipt without one', () => {
+        const f = receiptFixture();
+        f.input.materialDecision = decision();
+        const legacy = f.build();
+        expect(decisionOf(legacy.binding)).toEqual(decision());
+        f.input.materialDecision = { ...decision(), budget: BUDGET };
+        const budgeted = f.build();
+        expect(decisionOf(budgeted.binding)?.budget).toEqual(BUDGET);
+        expect(budgeted.binding.sourceManifest.materialDecisionHash).not.toBe(legacy.binding.sourceManifest.materialDecisionHash);
+    });
+
+    it('recomputes the frozen input allowance from the window, reserve and margin', () => {
+        const f = receiptFixture();
+        f.input.materialDecision = { ...decision(), budget: { ...BUDGET, inputTokens: 900_000 } };
+        expect(decisionOf(f.build().binding)?.budget).toEqual(BUDGET);
     });
 
     it('rejects the receipt on a non-chapter operation', () => {
@@ -638,7 +673,7 @@ describe('material decision receipt binding (S10B step 3)', () => {
         const context = captureReviewRevisionContext(f.db, { operation: 'review-chapter', draftId: 1,
             expectedDraft: { chapterNumber: 2, version: 1, status: 'draft', contentHash: textHash('原文\r\n汉字。') },
             authorInputs: [], uiLocale: 'zh-CN' }, f.input.projectId);
-        const admission = await selectFrozenReviewRevisionMaterials(context, { projectId: f.input.projectId, epoch: f.input.epoch });
+        const admission = await selectFrozenReviewRevisionMaterials(context, { projectId: f.input.projectId, epoch: f.input.epoch }, DEFAULT_MATERIAL_ADMISSION, 0);
         expect(admission.decision.capacity.admittedUnits).toBeGreaterThan(24_000);
         expect(admission.decision.capacity.maxInputUnits).toBe(MATERIAL_DECISION_MAX_INPUT_UNITS);
         expect(admission.decision.coverage.complete).toBe(true);

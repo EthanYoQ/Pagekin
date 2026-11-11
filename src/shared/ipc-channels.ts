@@ -1,5 +1,6 @@
 import type { GenerationOwnerChannels, GenerationOwnerEvents } from './generation-owner-contract'
 import type { CharacterProposalChannels } from './character-proposal'
+import type { CharacterContinuityTimeline, ContinuityNode } from './character-continuity'
 import type { FinalizedCharacterGenerationChannels } from './finalized-character-generation'
 import type { ReviewRevisionGenerationInvokeChannels } from './review-revision-generation'
 import type { AgentGenerationChannels } from './agent-generation'
@@ -12,6 +13,7 @@ import type { CharacterAvatarChannels } from './character-avatar'
 import type { CloudBackupChannels } from './cloud-backup'
 import type { ProjectOverview } from './project-overview'
 import type { ModelStage, StageModelIds } from './model-stage-routing'
+import type { KnowledgeSearchHit } from './knowledge-ranking'
 /**
  * IPC 频道定义 — 渲染进程与主进程的类型安全通信契约
  * 所有 IPC 调用都通过此文件定义频道名和参数/返回值类型
@@ -41,8 +43,9 @@ import type {
   SaveFinalizedContinuityRequest,
 } from './finalized-continuity'
 import type { DraftSourceDependency } from './draft-source-dependency'
-import type { ConsistencyExemption } from './consistency-preflight'
+import type { BlueprintForPreflight, ConsistencyExemption } from './consistency-preflight'
 import type {
+  NarrativeThreadAssignmentInput,
   NarrativeThreadEvent,
   NarrativeThreadEventInput,
   NarrativeThreadChapterContext,
@@ -50,6 +53,7 @@ import type {
   NarrativeThreadPlanRecord,
   NarrativeThreadView,
 } from './narrative-thread'
+import type { NarrativeThreadReviewCandidate } from './narrative-thread-review-candidates'
 import type { PlotTreeSnapshot, PlotTreeSourceBundle } from './plot-tree'
 import type {
   UpdateActionResponse,
@@ -193,6 +197,8 @@ export interface GlobalConfig {
   locale?: Locale
   defaultModelId: string | null
   defaultEmbeddingModelId?: string | null
+  /** 显式选定的重排档案；缺省时按检索档案自动复用。 */
+  defaultRerankModelId?: string | null
   stageModelIds?: StageModelIds
   /** 定稿与后处理成功后，打开下一章的创作窗口（默认关闭）。 */
   autoOpenNextChapterAfterFinalize?: boolean
@@ -542,7 +548,16 @@ export type ModelDiscoveryRequest = Pick<
   'provider' | 'protocol' | 'baseUrl' | 'apiKey' | 'purposes'
 >
 
+export type LocalContextWindowRequest = Pick<
+  ModelProfile,
+  'provider' | 'protocol' | 'baseUrl' | 'apiKey' | 'modelName'
+>
+
 export interface LLMChannels {
+  'llm:discover-local-context-window': {
+    args: [request: LocalContextWindowRequest]
+    return: number | null
+  }
   'llm:begin-execution-lease': {
     args: [modelId: string]
     return: {
@@ -588,6 +603,7 @@ export interface LLMChannels {
       error?: string
       defaultModelId?: string | null
       defaultEmbeddingModelId?: string | null
+      defaultRerankModelId?: string | null
       stageModelIds?: StageModelIds
     }
   }
@@ -612,6 +628,14 @@ export interface LLMChannels {
     return: { success: boolean; error?: string }
   }
   'llm:get-default-embedding-model': {
+    args: []
+    return: string | null
+  }
+  'llm:set-default-rerank-model': {
+    args: [modelId: string | null]
+    return: { success: boolean; error?: string }
+  }
+  'llm:get-default-rerank-model': {
     args: []
     return: string | null
   }
@@ -839,9 +863,11 @@ export interface ModelProfile {
   capabilities?: ModelCapabilities
   /** Configuration provenance only; never grants verified provider bounds. */
   capabilitySources?: Partial<Record<keyof ModelCapabilities, 'endpoint' | 'preset' | 'manual' | 'unknown'>>
+  /** 服务商超长报错里读到的真实窗口，只由主进程写，不进 modelRevision。模型身份变了就不算数。 */
+  learnedContextWindow?: Pick<ModelProfile, 'provider' | 'protocol' | 'baseUrl' | 'modelName'> & { tokens: number }
   /** 旧配置和当前执行路径使用的输出 token 上限，保持兼容。 */
   maxTokens: number
-  purposes: Array<'generation' | 'refinement' | 'summary' | 'embedding'>
+  purposes: Array<'generation' | 'refinement' | 'summary' | 'embedding' | 'rerank'>
   /** Profile-scoped advanced request; `auto` defers to project strategy and purpose. */
   reasoningOverride?: ReasoningOverride
   /** Explicit advanced wire mapping; omitted profiles use endpoint metadata. */
@@ -1009,6 +1035,8 @@ export interface DatabaseChannels {
     args: [expectedProjectPath: string]
     return: CharacterRosterSnapshot
   }
+  'db:character-continuity-nodes': { args: [characterIds: string[], expectedProjectPath: string]; return: ContinuityNode[] }
+  'db:character-continuity-timeline': { args: [characterId: string, expectedProjectPath: string]; return: CharacterContinuityTimeline }
   'db:character-roster-commit': {
     args: [request: CharacterRosterCommitRequest, expectedProjectPath: string]
     return: { success: boolean; receipt?: CharacterRosterCommitReceipt; error?: string }
@@ -1050,12 +1078,14 @@ export interface DatabaseChannels {
     return: FinalizedSourceReadResult
   }
   'db:consistency-exemption-list': { args: [expectedProjectPath: string]; return: ConsistencyExemption[] }
+  'db:blueprint-relationship-hints': { args: [blueprints: BlueprintForPreflight[], expectedProjectPath: string]; return: Record<number, unknown> }
+  'db:character-continuity-preflight-nodes': { args: [expectedProjectPath: string]; return: ContinuityNode[] }
   'db:consistency-exemption-save': {
-    args: [stableFactKey: string, reason: string, expectedProjectPath: string]
+    args: [stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string]
     return: { success: boolean; error?: string }
   }
   'db:consistency-exemption-revoke': {
-    args: [stableFactKey: string, expectedProjectPath: string]
+    args: [stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string]
     return: { success: boolean; error?: string }
   }
   'db:narrative-thread-list': {
@@ -1065,6 +1095,10 @@ export interface DatabaseChannels {
   'db:narrative-thread-list-relevant': {
     args: [context: NarrativeThreadChapterContext, expectedProjectPath: string]
     return: NarrativeThreadView[]
+  }
+  'db:narrative-thread-review-candidates': {
+    args: [expectedProjectPath: string]
+    return: NarrativeThreadReviewCandidate[]
   }
   'db:narrative-thread-plan-create': {
     args: [input: NarrativeThreadPlanInput, expectedProjectPath: string]
@@ -1081,6 +1115,14 @@ export interface DatabaseChannels {
   'db:narrative-thread-event-confirm': {
     args: [input: NarrativeThreadEventInput, expectedProjectPath: string]
     return: { success: boolean; event?: NarrativeThreadEvent; error?: string }
+  }
+  'db:narrative-thread-assignment-set': {
+    args: [input: NarrativeThreadAssignmentInput, expectedProjectPath: string]
+    return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
+  }
+  'db:narrative-thread-assignment-remove': {
+    args: [planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string]
+    return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
   }
   'db:plot-tree-read': {
     args: [expectedProjectPath: string]
@@ -1194,8 +1236,6 @@ export interface DatabaseChannels {
     }
   }
   'db:get-llm-history': { args: [limit: number | undefined, expectedProjectPath: string]; return: unknown[] }
-  'db:save-summary-snapshot': { args: [chapterNumber: number, characterStates: string, expectedProjectPath: string]; return: { success: boolean } }
-  'db:get-latest-summary': { args: [expectedProjectPath: string]; return: { characterStates: string; chapterNumber: number } | null }
 }
 
 // ===== 知识库频道 =====
@@ -1212,7 +1252,7 @@ export interface KnowledgeBaseChannels {
     ]
     return: { success: boolean; docId?: string; chunkCount?: number; idempotent?: boolean; error?: string; errorCode?: AppErrorCode }
   }
-  'kb:search': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<Array<{ text: string; score: number; fileName: string }>> }
+  'kb:search': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<KnowledgeSearchHit[]> }
   'kb:search-writing-context': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<Array<{ text: string; score: number; fileName: string }>> }
   'kb:list-documents': { args: [expectedProjectPath: string]; return: AppResult<Array<{ id: string; fileName: string; importedAt: string; chunkCount: number; filePath: string; finalizedChapter?: number }>> }
   'kb:read-document-copy': {

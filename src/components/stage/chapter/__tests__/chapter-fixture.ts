@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import type { ReplacementImpact } from '../../../../shared/chapter-reopen'
+import type { ContinuitySuggestionList } from '../../../../shared/blueprint-continuity-suggest'
 import type { DraftSourceDependency } from '../../../../shared/draft-source-dependency'
 import type { ModelProfile, ProjectData } from '../../../../shared/ipc-channels'
 import type { ReviewCycleProjection, ReviewFindingStatus } from '../../../../shared/review-cycle'
@@ -77,6 +78,9 @@ export function createChapterBackend() {
     reopenGate: null as Promise<void> | null,
     calls: [] as { channel: string; args: unknown[] }[],
     clock: 0,
+    suggestions: null as ContinuitySuggestionList | null,
+    /** 接受时这些建议的蓝图已被改过，主进程判为过期。 */
+    staleOnAccept: new Set<string>(),
   }
   /** 和主进程 datetime('now') 同样写法的时间，每次写入往后走一秒，先后可比。 */
   const now = () => {
@@ -178,6 +182,14 @@ export function createChapterBackend() {
         return { success: true, created: true, draftId: reopened.id, version: reopened.version }
       }
       case 'chapter:replacement-impacts': return { success: true, impacts: state.impacts }
+      case 'graph-generation:suggestions': return state.suggestions
+      case 'graph-generation:decide-suggestion': {
+        const { suggestionId, decision } = args[0] as { suggestionId: string; decision: 'accept' | 'reject' }
+        const card = state.suggestions?.suggestions.find(candidate => candidate.suggestionId === suggestionId)
+        if (!card) throw new Error('GENERATION_GRAPH_SELECTION_INVALID')
+        if (card.status === 'pending') card.status = decision === 'reject' ? 'rejected' : state.staleOnAccept.has(suggestionId) ? 'stale' : 'accepted'
+        return { status: card.status }
+      }
       case 'chapter:replacement-impact-preview': {
         const impact = state.preview
         await state.previewGate

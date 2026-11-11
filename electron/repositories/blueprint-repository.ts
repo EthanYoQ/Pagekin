@@ -4,6 +4,7 @@
  * 取代旧的 chapter-repository.ts，管理章节的规划元数据。
  */
 import { createHash } from 'node:crypto'
+import type { BlueprintForPreflight } from '../../src/shared/consistency-preflight'
 
 import { getProjectDb, getCurrentProjectPath } from '../database'
 import { readPortableRuntimeFreeze } from '../services/portable-runtime-freeze'
@@ -48,6 +49,8 @@ export interface BlueprintData {
      * the immutable operation receipt so character sync can be replayed.
      */
     relationshipHints?: unknown
+    /** 只出现在回执里：fill-empty 没有改动这一章，提示要往前找真正写入它的回执。 */
+    retainedByFillEmpty?: true
     suspenseHook: string
     userGuidance: string
     notes: string
@@ -477,6 +480,11 @@ function samePersistedBlueprint(left: BlueprintData, right: BlueprintData): bool
         && left.notesUpdatedAt === right.notesUpdatedAt
 }
 
+/** 这两列由定稿写入，不是规划内容。 */
+function planningContent(blueprint: BlueprintData): BlueprintData {
+    return { ...blueprint, notes: '', notesUpdatedAt: '' }
+}
+
 export class BlueprintRepository {
     /** 获取所有蓝图（按章节号排序） */
     static getAll(db = requireProjectDb()): BlueprintData[] {
@@ -486,6 +494,64 @@ export class BlueprintRepository {
         ).all() as BlueprintRow[]
 
         return rows.map(rowToData)
+    }
+
+    /** 返回判定函数：这一章现在的规划内容是否就是 afterMs 之后某次正式提交写进去的那份。committed_at 只到秒，同一秒不算。 */
+    static commitMatcherAfter(range: { from: number; to: number }, afterMs: number, db = requireProjectDb()): (chapterNumber: number) => boolean {
+        const operations = db.prepare(`
+          SELECT start_chapter, end_chapter, character_sync_input FROM blueprint_commit_operations
+          WHERE start_chapter <= ? AND end_chapter >= ? AND CAST(strftime('%s', committed_at) AS INTEGER) * 1000 > ?
+        `).all(range.to, range.from, afterMs) as BlueprintCommitOperationRow[]
+        const commits = operations.flatMap(operation => {
+            let committed: BlueprintData[]
+            try { committed = readCharacterSyncInput(operation) } catch { return [] }
+            const written = new Map<unknown, BlueprintData>()
+            for (const item of committed) if (!written.has(item?.chapterNumber)) written.set(item?.chapterNumber, item)
+            return [{ from: operation.start_chapter, to: operation.end_chapter, written }]
+        })
+        const read = db.prepare('SELECT * FROM blueprints WHERE chapter_number = ?')
+        return chapterNumber => {
+            const row = read.get(chapterNumber) as BlueprintRow | undefined
+            if (!row) return false
+            const current = rowToData(row)
+            return commits.some(({ from, to, written }) => {
+                const item = from <= chapterNumber && chapterNumber <= to ? written.get(chapterNumber) : undefined
+                return !!item && samePersistedBlueprint(planningContent(current), planningContent(item))
+            })
+        }
+    }
+
+    /**
+     * 被检查的内容和回执不同的章不返回：提示不再代表作者的安排。比的是传入的内容，写章前它可能是未保存的表单。
+     * 按 rowid 而不是 committed_at 排序：后者只到秒，且排在回执正文之后的列，排序要读穿整份回执。
+     */
+    static committedRelationshipHints(blueprints: readonly BlueprintForPreflight[], db = requireProjectDb()): Record<number, unknown> {
+        const covering = db.prepare(`
+          SELECT operation_id FROM blueprint_commit_operations
+          WHERE start_chapter <= @chapter AND end_chapter >= @chapter
+          ORDER BY rowid DESC
+        `).pluck()
+        const readOperation = db.prepare('SELECT * FROM blueprint_commit_operations WHERE operation_id = ?')
+        const receipts = new Map<string, Map<unknown, BlueprintData>>()
+        const receipt = (operationId: string) => {
+            let written = receipts.get(operationId)
+            if (written) return written
+            written = new Map()
+            try {
+                for (const item of readCharacterSyncInput(readOperation.get(operationId) as BlueprintCommitOperationRow)) written.set(item?.chapterNumber, item)
+            } catch { /* 损坏的回执等于没有回执 */ }
+            receipts.set(operationId, written)
+            return written
+        }
+        const hints: Record<number, unknown> = {}
+        for (const blueprint of blueprints) {
+            const chapter = blueprint.chapterNumber
+            const operationId = (covering.all({ chapter }) as string[]).find(id => !receipt(id).get(chapter)?.retainedByFillEmpty)
+            const item = operationId === undefined ? undefined : receipt(operationId).get(chapter)
+            if (item?.relationshipHints === undefined) continue
+            if (samePersistedBlueprint(planningContent({ ...blueprint, notesUpdatedAt: '' }), planningContent(item))) hints[chapter] = item.relationshipHints
+        }
+        return hints
     }
 
     /** 获取单个蓝图 */
@@ -677,7 +743,9 @@ export class BlueprintRepository {
                 }
             }
 
-            const characterSyncInput = blueprints
+            const characterSyncInput = blueprints.map(blueprint => (
+                kept(blueprint.chapterNumber) ? { ...blueprint, retainedByFillEmpty: true as const } : blueprint
+            ))
             db.prepare(`
               INSERT INTO blueprint_commit_operations (
                 operation_id, payload_hash, mode, start_chapter, end_chapter, character_sync_input
