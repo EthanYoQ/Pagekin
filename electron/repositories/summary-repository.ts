@@ -521,14 +521,15 @@ function pendingRelationCandidate(db: BetterSqlite3.Database, candidate: Finaliz
 
 /** 作者行从建议快照变到现在，只经过较早章建议的采纳时不算作者后改：沿采纳收据从现在倒推，能回到快照才算。 */
 function authorLinesExplained(db: BetterSqlite3.Database, snapshot: readonly string[], current: string[], chapterNumber: number): boolean {
+  if (isDeepStrictEqual(current, snapshot)) return true
   const adoptions = candidateReceipts(db).filter(receipt => receipt.authorLinesAfter && receipt.source.chapterNumber < chapterNumber)
-  let lines = current
-  while (!isDeepStrictEqual(lines, snapshot)) {
-    const index = adoptions.findIndex(receipt => isDeepStrictEqual(receipt.authorLinesAfter, lines))
-    if (index < 0) return false
-    lines = adoptions.splice(index, 1)[0].authorLinesBefore!
+  const reached = [current]
+  const has = (lines: readonly string[]) => reached.some(item => isDeepStrictEqual(item, lines))
+  for (let grew = true; grew;) {
+    grew = false
+    for (const receipt of adoptions) if (has(receipt.authorLinesAfter!) && !has(receipt.authorLinesBefore!)) { reached.push(receipt.authorLinesBefore!); grew = true }
   }
-  return true
+  return has(snapshot)
 }
 
 function adoptRelationCandidate(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate, operationId: string, scope: ProjectEpoch): Pick<StoredCharacterStateDecision, 'authorLinesBefore' | 'authorLinesAfter'> {
