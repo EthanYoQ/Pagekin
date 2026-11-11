@@ -53,6 +53,13 @@ export function chapterThreadGoalPlanId(id: string): number | null {
   return match ? Number(match[1]) : null
 }
 
+function threadGoalScheduleNote(schedule: ChapterThreadTask['schedule']): { zhCN: string; enUS: string } {
+  if (schedule.kind === 'overdue') return { zhCN: `已逾期 ${schedule.chaptersOverdue} 章`, enUS: `overdue by ${schedule.chaptersOverdue}` }
+  return schedule.kind === 'assigned'
+    ? { zhCN: '作者指定本章推进', enUS: 'assigned by the author to this chapter' }
+    : { zhCN: '本章到期', enUS: 'due this chapter' }
+}
+
 /** 写稿时冻结的线索任务追加成目标；覆盖率只描述作者配置的目标，不随它变化。 */
 export function withChapterThreadGoals(goals: FrozenChapterGoals, tasks: readonly ChapterThreadTask[],
   language: WritingLanguage): FrozenChapterGoals {
@@ -60,8 +67,8 @@ export function withChapterThreadGoals(goals: FrozenChapterGoals, tasks: readonl
   const threadItems = tasks.map(task => Object.freeze({
     id: `ch${goals.chapterNumber}:thread:${task.planId}`,
     text: writingLanguageText(language,
-      `本章推进或回收线索「${task.title}」（${task.schedule.kind === 'overdue' ? `已逾期 ${task.schedule.chaptersOverdue} 章` : '本章到期'}；作者意图：${task.authorIntent}）`,
-      `Advance or resolve the thread "${task.title}" in this chapter (${task.schedule.kind === 'overdue' ? `overdue by ${task.schedule.chaptersOverdue}` : 'due this chapter'}; author intent: ${task.authorIntent})`),
+      `本章推进或回收线索「${task.title}」（${threadGoalScheduleNote(task.schedule).zhCN}；作者意图：${task.authorIntent}）`,
+      `Advance or resolve the thread "${task.title}" in this chapter (${threadGoalScheduleNote(task.schedule).enUS}; author intent: ${task.authorIntent})`),
   }))
   return Object.freeze({ ...goals, items: Object.freeze([...goals.items, ...threadItems]) })
 }
@@ -83,13 +90,13 @@ export function withoutResolvedOutcomeLabel(description: string): string {
 function threadGoalReviewRules(language: WritingLanguage): string {
   return writingLanguageText(language,
     `
-标识含 :thread: 的是到期或逾期的伏笔线索任务，不用上面的 completed/unmet/unknown，status 只能填以下三种之一：
+标识含 :thread: 的是本章的伏笔线索任务（到期、逾期或作者指定本章推进），不用上面的 completed/unmet/unknown，status 只能填以下三种之一：
 - resolved：正文明确交代了这条线索的结果、真相或收束；
 - advanced：正文让这条线索有实质新进展（新线索、新行动、新代价或关系变化），但没有收束；
 - unaddressed：正文没有触及这条线索，或只提了名字、没有新信息。
 resolved 和 advanced 必须附当前正文逐字引文；unaddressed 用 evidence:[]。`,
     `
-IDs containing :thread: are due or overdue narrative-thread tasks. Do not use completed/unmet/unknown for them; status must be one of:
+IDs containing :thread: are this chapter's narrative-thread tasks (due, overdue, or assigned to this chapter by the author). Do not use completed/unmet/unknown for them; status must be one of:
 - resolved: the draft explicitly settles the thread's outcome, truth, or closure;
 - advanced: the draft gives the thread a substantive new development (a new clue, action, cost, or relationship change) without closing it;
 - unaddressed: the draft does not touch the thread, or only mentions its name with no new information.

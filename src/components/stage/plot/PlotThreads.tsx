@@ -46,6 +46,17 @@ function threadNote(thread: NarrativeThreadView, dormantThreshold: number, text:
   return <span className="stage-thread-sub">{thread.type} · {text(...STATUS_LABELS[thread.status])}</span>
 }
 
+function threadDeferrals(thread: NarrativeThreadView, text: Text) {
+  return thread.assignments?.filter(item => item.kind === 'resolve').map(({ chapterNumber, note }) => (
+    <span key={chapterNumber} className="stage-thread-sub">
+      {chapterNumber === thread.targetEndChapter
+        ? text(`延到第 ${chapterNumber} 章`, `Moved to Ch. ${chapterNumber}`)
+        : text(`曾延到第 ${chapterNumber} 章`, `Once moved to Ch. ${chapterNumber}`)}
+      {note && ` · ${note}`}
+    </span>
+  ))
+}
+
 interface PlotThreadsProps {
   plot: PlotThreadsData
   onDelete: (thread: NarrativeThreadView) => void
@@ -109,6 +120,7 @@ export default function PlotThreads({ plot, onDelete }: PlotThreadsProps) {
                 <div className="stage-thread-name">
                   <b>{thread.title}</b>
                   {threadNote(thread, plot.dormantThreshold, text)}
+                  {threadDeferrals(thread, text)}
                 </div>
                 <Route thread={thread} text={text} />
                 <Menu

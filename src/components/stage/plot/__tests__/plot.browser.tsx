@@ -121,6 +121,41 @@ async function render(initialView: 'plot-tree' | 'plans') {
   await act(async () => root!.render(<StagePlot projectKey={session.projectPath} initialView={initialView} />))
 }
 
+describe('线索延后的痕迹', () => {
+  const deferrals = async () => {
+    await render('plans')
+    const row = await vi.waitFor(() => {
+      const found = document.querySelector('#narrative-plan-5')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    return { row, lines: [...row.querySelectorAll('.stage-thread-name .stage-thread-sub')].map(node => node.textContent).slice(1) }
+  }
+
+  it('仍生效的延后写现在时，被后来的延后取代的写过去时，路线的解决站是当前回收章', async () => {
+    threads = [{ ...thread(), targetEndChapter: 9, assignments: [
+      { chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' },
+      { chapterNumber: 9, kind: 'resolve', note: '写第 6 章时延后' },
+    ] }]
+    const { row, lines } = await deferrals()
+    expect(lines).toEqual(['曾延到第 6 章 · 写第 5 章时延后', '延到第 9 章 · 写第 6 章时延后'])
+    expect([...row.querySelectorAll('.stage-thread-route li')].at(-1)?.textContent).toBe('解 · 第 9 章')
+  })
+
+  it('延后后作者在线索页把回收章改回第 5 章：历史写过去时，不再说延到第 6 章', async () => {
+    threads = [{ ...thread(), targetEndChapter: 5, assignments: [{ chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' }] }]
+    const { row, lines } = await deferrals()
+    expect(lines).toEqual(['曾延到第 6 章 · 写第 5 章时延后'])
+    expect([...row.querySelectorAll('.stage-thread-route li')].at(-1)?.textContent).toBe('解 · 第 5 章')
+  })
+
+  it('没有延后的线索不显示痕迹', async () => {
+    const { lines } = await deferrals()
+    expect(lines).toEqual([])
+    expect(document.body.textContent).not.toContain('延到第')
+  })
+})
+
 describe('剧情与伏笔', () => {
   it('剧情树分主线与支线两轨，写明它是只读快照、不参与写作', async () => {
     await render('plot-tree')
