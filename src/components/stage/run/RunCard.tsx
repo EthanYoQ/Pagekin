@@ -11,7 +11,7 @@ import { CharacterProposalSelectionPanel } from '../../characters/CharacterPropo
 import { isCurrentSessionRun, openArchitectureFor, openNovelConfigurationFor, runFailure, useResumePlotOutline } from '../../run/run-failure'
 import { ACTIVE_RUN_STATUSES, splitThinking } from '../../run/run-output'
 import { useNow } from '../../run/use-now'
-import { useReviewWaitLines } from '../../run/use-review-wait'
+import { useReviewWaitLines, type WaitLine } from '../../run/use-review-wait'
 import { useWorkflowConfirmation, type WorkflowConfirmation } from '../../run/use-workflow-confirmation'
 import { Button } from '../../ui/Button'
 import MarkdownContent from '../../ui/MarkdownContent'
@@ -148,7 +148,6 @@ function RunSteps({ run, live, text }: { run: WorkflowRun; live: boolean; text: 
             step={step}
             runStatus={run.status}
             live={live && step.status === 'running'}
-            activityText={current && run.status === 'running' && step.status === 'running' ? step.activityText : undefined}
             reasoning={current ? reasoning : ''}
             open={open[step.id] ?? openByDefault}
             onToggle={() => setOpen(previous => ({ ...previous, [step.id]: !(previous[step.id] ?? openByDefault) }))}
@@ -179,12 +178,11 @@ function stepMeta(step: WorkflowStep, text: Text): string {
   return ''
 }
 
-function RunStep({ step, runStatus, live, activityText, reasoning, open, onToggle, text }: {
+function RunStep({ step, runStatus, live, reasoning, open, onToggle, text }: {
   step: WorkflowStep
   runStatus: WorkflowRun['status']
   /** 这一步正在运行：输出持续追加，自动滚到最新。 */
   live: boolean
-  activityText?: string
   reasoning: string
   open: boolean
   onToggle: () => void
@@ -208,8 +206,7 @@ function RunStep({ step, runStatus, live, activityText, reasoning, open, onToggl
       {hasDetail
         ? <button type="button" className="run-step-row pi-focusable" aria-expanded={expanded} onClick={onToggle}>{row}</button>
         : <div className="run-step-row">{row}</div>}
-      {activityText && <p className="run-step-wait" role="status" data-testid="run-step-activity">{activityText}</p>}
-      {live && (reviewing ? <ReviewWait step={step} runStatus={runStatus} text={text} /> : <StepWaitNote step={step} runStatus={runStatus} text={text} />)}
+      {live && (reviewing ? <ReviewWait step={step} runStatus={runStatus} text={text} /> : <StepWait step={step} runStatus={runStatus} text={text} />)}
       {expanded && (
         <div className="run-step-detail">
           {thinking && (
@@ -235,20 +232,19 @@ function waitLine(wait: StepWait, text: Text): string {
 
 function ReviewWait({ step, runStatus, text }: { step: WorkflowStep; runStatus: WorkflowRun['status']; text: Text }) {
   const locale = useLocaleStore(s => s.locale)
-  const wait = stepWait(step, runStatus, useNow())
-  const lines = useReviewWaitLines(step, locale)
-  return (
-    <div className="run-step-wait" role="status">
-      {wait && <p>{waitLine(wait, text)}</p>}
-      {lines.map(line => <p key={line}>{line}</p>)}
-    </div>
-  )
+  return <StepWait step={step} runStatus={runStatus} text={text} more={useReviewWaitLines(step, locale)} />
 }
 
-function StepWaitNote({ step, runStatus, text }: { step: WorkflowStep; runStatus: WorkflowRun['status']; text: Text }) {
+/** 计时行每秒都变，不放进播报区域，读屏器只在当前子步骤这类内容换了时才读。 */
+function StepWait({ step, runStatus, text, more = [] }: { step: WorkflowStep; runStatus: WorkflowRun['status']; text: Text; more?: WaitLine[] }) {
   const wait = stepWait(step, runStatus, useNow())
-  if (!wait) return null
-  return <div className="run-step-wait"><p>{waitLine(wait, text)}</p></div>
+  const lines: WaitLine[] = [
+    ...(runStatus === 'running' && step.activityText ? [{ key: 'activity', text: step.activityText }] : []),
+    ...(wait ? [{ key: 'wait', text: waitLine(wait, text), ticking: true }] : []),
+    ...more,
+  ]
+  if (lines.length === 0) return null
+  return <div className="run-step-wait">{lines.map(line => <p key={line.key} role={line.ticking ? undefined : 'status'}>{line.text}</p>)}</div>
 }
 
 /** 输出框贴着底部时随新内容滚动；作者往上翻看时不打断。 */

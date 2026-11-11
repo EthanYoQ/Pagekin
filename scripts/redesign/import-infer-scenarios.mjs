@@ -155,22 +155,14 @@ async function shootStagePage(page, shoot, name, stageName) {
 }
 
 export const IMPORT_INFER_SCENARIOS = {
-  'import-progress': { model: true, shell: 'stage', setup: async context => {
-    fs.writeFileSync(path.join(context.roots.root, '.vibe-owner.json'), JSON.stringify({
-      owner: 'pagekin-import-progress-verification', sourceProject: fs.realpathSync('.'),
-      createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
-      retentionReason: 'Keep failed verification data for diagnosis; the driver deletes successful sessions.',
-      cleanupCommand: `Remove-Item -LiteralPath '${context.roots.root.replaceAll("'", "''")}' -Recurse`,
-    }, null, 2))
-    await seedEmptyBook(context)
-  }, run: async context => {
+  'import-progress': { model: true, shell: 'stage', setup: seedEmptyBook, run: async context => {
     const { app, page, roots, fake, shoot } = context
     const dialog = await openAuthorImport(app, page, EMPTY_BOOK, manuscript(roots, [[1, '匿名信'], [2, '茶馆'], [3, '河对岸']]))
     await dialog.getByText('同时反推设定、架构、角色和蓝图', { exact: true }).click()
     assert.equal(await dialog.getByRole('checkbox', { name: /同时反推设定、架构、角色和蓝图/u }).isChecked(), false)
     const workload = dialog.getByTestId('author-import-workload')
     const workText = await workload.innerText()
-    assert.match(workText, /新增 3 章，连续性处理通常需 6 次 AI 请求/u)
+    assert.match(workText, /新增 3 章通常需 6 次 AI 请求/u)
     assert.doesNotMatch(workText, /预计耗时|预估 AI 消耗/u)
     await workload.scrollIntoViewIfNeeded()
     await shoot('import-progress-workload')
@@ -179,9 +171,9 @@ export const IMPORT_INFER_SCENARIOS = {
       await dialog.getByRole('button', { name: '确认导入（3 章）', disabled: false }).click()
       await dialog.waitFor({ state: 'hidden' })
       await runSheet.waitUntilOpen(page)
-      const activity = runSheet.sheet(page).getByTestId('run-step-activity')
+      const activity = runSheet.sheet(page).getByRole('status').filter({ hasText: /^第 \d+ 章 · /u })
       await activity.filter({ hasText: /第 1 章.*章节剧情要点/u }).waitFor({ state: 'visible' })
-      const currentStep = runSheet.sheet(page).getByRole('listitem').filter({ has: page.getByTestId('run-step-activity') })
+      const currentStep = runSheet.sheet(page).getByRole('listitem').filter({ has: activity })
       await currentStep.getByText('0%', { exact: true }).waitFor({ state: 'visible' })
       const notesText = await activity.innerText()
       await shoot('import-progress-notes')
@@ -194,7 +186,7 @@ export const IMPORT_INFER_SCENARIOS = {
       fake.replyReview(null)
       fake.gate.release()
       await runSheet.waitForRunDone(page, 120_000)
-      assert.equal(await runSheet.sheet(page).getByTestId('run-step-activity').count(), 0)
+      assert.equal(await activity.count(), 0)
       assert.equal(fake.chats.length, 6, '3 章各执行一次章节要点和角色状态请求')
       return { workText, notesText, cardsText, completed: true, chatRequests: fake.chats.length }
     } finally {

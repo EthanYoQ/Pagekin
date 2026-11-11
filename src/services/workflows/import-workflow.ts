@@ -362,10 +362,6 @@ function productionDependencies(
       ))
     },
     postprocessAuthorChapter: async (chapter, draft, run) => {
-      const showActivity = (label: string) => callbacks.setActivityText?.(textForLocale(
-        run.locale, `第 ${chapter.number} 章 · ${label}`, `Chapter ${chapter.number} · ${label}`,
-      ))
-      showActivity(textForLocale(run.locale, '准备连续性处理', 'Preparing continuity processing'))
       const current = useProjectStore.getState().currentProject
       if (!current || !sameProjectSessionContext(session, projectSessionContextFromProject(current))) {
         throw new Error(textForLocale(
@@ -394,7 +390,9 @@ function productionDependencies(
         ),
         stopOnFailure: true,
         onlyFailed: true,
-        onStepStart: showActivity,
+        onStepStart: label => callbacks.setActivityText?.(textForLocale(
+          run.locale, `第 ${chapter.number} 章 · ${label}`, `Chapter ${chapter.number} · ${label}`,
+        )),
       }).execute({ step: {} as never, context, callbacks })
       if (!status.allCriticalPassed) {
         throw new Error(textForLocale(
@@ -403,7 +401,6 @@ function productionDependencies(
           `Continuity post-processing did not complete for Chapter ${chapter.number}.`,
         ))
       }
-      showActivity(textForLocale(run.locale, '保存章节检查点', 'Saving chapter checkpoint'))
     },
     refresh: async run => {
       callbacks.log(textForLocale(run.locale, '正在刷新项目数据...', 'Refreshing project data...'))
@@ -614,10 +611,6 @@ export function createImportWorkflow(params: ImportWorkflowParams): WorkflowDefi
       ),
     },
   }
-}
-
-export function estimateAuthorImportWorkload(newChapterCount: number) {
-  return { newChapterCount, continuityRequests: newChapterCount * 2 }
 }
 
 export function estimateImportCost(_totalWords: number, chapterCount: number): {
