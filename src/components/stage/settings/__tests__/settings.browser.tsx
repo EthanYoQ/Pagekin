@@ -79,7 +79,8 @@ const dialogButton = (name: string) => [...discardDialog()!.querySelectorAll('bu
 
 beforeEach(() => {
   win.aiNovelAPI = {
-    invoke: async channel => channel === 'config:get' ? {} : channel === 'update:get-state' ? { status: 'disabled', currentVersion: '1.2.2', isReminderDeferred: false } : undefined,
+    invoke: async channel => channel === 'config:get' ? {} : channel === 'update:get-state' ? { status: 'disabled', currentVersion: '1.2.2', isReminderDeferred: false }
+      : channel === 'llm:list-models' ? useLLMStore.getState().models : undefined,
     on: () => () => undefined,
   }
   useLLMStore.setState({ loaded: true, models: [MODEL, LOCAL], defaultModelId: 'flash', defaultEmbeddingModelId: null, deleteModel: vi.fn(async () => true) })
@@ -200,6 +201,18 @@ describe('设置页', () => {
     expect(second.textContent).toContain('名称、接口地址和密钥会从本机删除')
     await click([...second.querySelectorAll('button')].find(button => button.textContent === '删除模型'))
     expect(useLLMStore.getState().deleteModel).toHaveBeenCalledWith('local')
+  })
+
+  it('设置页开着时生成实测出更小的上下文窗口，不重载应用，打开编辑就显示实测值', async () => {
+    await mount()
+    const learned = { ...MODEL, learnedContextWindow: { tokens: 65_536, provider: MODEL.provider, protocol: MODEL.protocol, baseUrl: MODEL.baseUrl, modelName: MODEL.modelName } }
+    const invoke = win.aiNovelAPI!.invoke
+    win.aiNovelAPI!.invoke = async (channel, ...args) => channel === 'llm:list-models' ? [learned, LOCAL] : invoke(channel, ...args)
+
+    await click(byName('编辑「DeepSeek V4 Flash」'))
+
+    await expect.poll(() => host!.querySelector('[data-context-window-source]')?.getAttribute('data-context-window-source')).toBe('learned')
+    expect(host!.querySelector<HTMLInputElement>('input[aria-label="上下文窗口"]')?.value).toBe('65536')
   })
 
   it('保存模型时主进程出错：弹出错误，保存按钮恢复可点，编辑表单留着', async () => {
