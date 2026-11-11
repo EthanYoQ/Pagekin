@@ -58,6 +58,20 @@ describe('单章写作中断', () => {
     expect(canResumeDraft(entry, ['甲'])).toBe(false)
   })
 
+  it('草稿保存后又改过时，说明让作者去「正文」打开这一章，不提已删除的草稿箱（#663）', () => {
+    const changed = { composition: { artifactIds: ['甲'] }, draftSave: { kind: 'changed' } }
+    const entry = draft(changed)
+    expect(entry.note).toContain('「正文」打开第 4 章')
+    expect(entry.note).not.toContain('草稿箱')
+
+    const english = buildRecoveryEntries({ ...EMPTY_RECOVERY_SOURCES, drafts: [{
+      view: view('正文', { artifacts: [artifact('甲', true)] }) as never,
+      recovery: { handle, operation: 'chapter-draft', chapterNumber: 4, attemptedPurposes: ['chapter-draft'], ...changed } as never,
+    }] }, 'en-US')[0] as DraftEntry
+    expect(english.note).toContain('Open Chapter 4 in Manuscript')
+    expect(english.note).not.toMatch(/\bDrafts\b/u)
+  })
+
   it('只写完细纲时不用勾选，可重做一次细纲或沿原细纲继续', () => {
     const outline = { composition: null, attemptedPurposes: ['chapter-draft-short-outline'] }
     const retry = draft({ ...outline, draftShortOutline: { retry: { kind: 'available' } } }, [])

@@ -243,3 +243,42 @@ describe('repair post-processing guard', () => {
     await expect(guardRepairPostProcess(3, projectPath, projectSession)).resolves.toEqual({ ok: true })
   })
 })
+
+describe('写第 3 章前第 2 章没准备好时，提示指向现在能点到的入口（#663）', () => {
+  function chapterTwo(state: 'not-finalized' | 'post-process-failed') {
+    vi.mocked(ipc.invokeWithProjectSession).mockImplementation((async (_session: unknown, channel: unknown) => {
+      switch (channel) {
+        case 'db:blueprint-get-all': return [{ chapterNumber: 3 }]
+        case 'db:character-get-all': return [{ id: 1 }]
+        case 'db:draft-get-finalized': return state === 'not-finalized' ? null : { id: 2 }
+        case 'db:post-process-get-latest-run':
+          return { id: 'run-2', sourceLabel: '', allCriticalPassed: false, createdAt: '', updatedAt: '' }
+        case 'db:post-process-get-steps':
+          return [{ stepKey: 'chapter_notes', label: '章节要点', critical: true, ok: false, errorMsg: 'failed', lastAttemptAt: '', attemptCount: 1 }]
+        default: throw new Error(`unexpected IPC: ${String(channel)}`)
+      }
+    }) as never)
+  }
+  afterEach(() => vi.mocked(ipc.invokeWithProjectSession).mockReset())
+
+  it.each(['not-finalized', 'post-process-failed'] as const)('%s：中文提示让作者去「正文」打开第 2 章，不提已删除的草稿箱', async state => {
+    chapterTwo(state)
+    const result = await guardChapterWriting(3, projectPath, projectSession)
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('「正文」打开第 2 章')
+    expect(result.message).not.toContain('草稿箱')
+    if (state === 'post-process-failed') expect(result.message).toContain('「定稿后处理」')
+  })
+
+  it.each(['not-finalized', 'post-process-failed'] as const)('%s: the English message points to Manuscript, not the removed Drafts entry', async state => {
+    chapterTwo(state)
+    useLocaleStore.setState({ locale: 'en-US' })
+    const result = await guardChapterWriting(3, projectPath, projectSession)
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('Open Chapter 2 in Manuscript')
+    expect(result.message).not.toMatch(/\bDrafts\b/u)
+    if (state === 'post-process-failed') expect(result.message).toContain('After finalization')
+  })
+})
