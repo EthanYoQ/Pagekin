@@ -1407,7 +1407,7 @@ describe('重复定稿修复让连续性记录过期之后，重试本章的后�
 
   async function clickRetry(stepKey?: string) {
     const step = createRepairFinalizeWorkflow(2, projectPath, workflowContext.projectSession!, stepKey).steps[0]!
-    await Promise.resolve(step.executor({ ...step, id: 'retry-click', status: 'running', logs: [] }, workflowContext, callbacks())).catch(() => {})
+    await step.executor({ ...step, id: 'retry-click', status: 'running', logs: [] }, workflowContext, callbacks())
   }
 
   async function characterStepFailsThenReopenRepairsDuplicate(duplicatedChapter: number) {
@@ -1522,6 +1522,21 @@ describe('重复定稿修复让连续性记录过期之后，重试本章的后�
 
     expect(await outcomes()).toEqual(ALL_DONE)
     expect(blueprintNotes()).toBe('Notes take 2.')
+  })
+
+  it('首跑前本章已有一行内容相同的要点、没有蓝图，生成后什么都没变：过期后重试照样重新生成', async () => {
+    db().prepare('DELETE FROM blueprints WHERE chapter_number=2').run()
+    insertFinalizedDraft(7, 2, content)
+    const existing = SummaryRepository.readFinalizedSource(7)
+    if (existing.status !== 'valid') throw new Error('expected valid finalized source')
+    SummaryRepository.saveFinalizedContinuity({ draftId: 7, chapterNumber: 2, chapterNotes: 'Notes take 1.', facts: [],
+      projectionGeneration: existing.snapshot.projectionGeneration, source: existing.snapshot.source })
+    await characterStepFailsThenReopenRepairsDuplicate(1)
+
+    await clickRetry()
+
+    expect(await outcomes()).toEqual(ALL_DONE)
+    expect(notesRow()).toEqual({ notes: 'Notes take 2.', generation: currentGeneration() })
   })
 
   it('过期的要点运行仍是封存的：读回时不再当作完成，但它的产物不能被丢弃', async () => {

@@ -334,6 +334,27 @@ describe('createRepairFinalizeWorkflow', () => {
       expect(postProcess.params.map(params => params.stepKeys)).toEqual([['character_cards'], ['chapter_notes', 'character_cards']])
     })
 
+    it('still reports a step that failed in the first pass and is not part of the follow-up run', async () => {
+      const cleanupKept = { stepKey: 'remove_replaced_knowledge', ok: false, errorMsg: 'FINALIZATION_REPLACED_KNOWLEDGE_EDITED' }
+      postProcess.execute
+        .mockResolvedValueOnce(statusOf([
+          { stepKey: 'chapter_notes', ok: true },
+          { stepKey: 'character_cards', ok: false, errorMsg: 'GENERATION_FINALIZATION_PREDECESSOR_REQUIRED' },
+          cleanupKept,
+        ]))
+        .mockResolvedValueOnce(statusOf([
+          { stepKey: 'chapter_notes', ok: true },
+          { stepKey: 'character_cards', ok: true },
+          cleanupKept,
+        ]))
+      await expect(retryCard([
+        { stepKey: 'chapter_notes', ok: true },
+        { stepKey: 'character_cards', ok: false, errorMsg: 'FINALIZATION_GENERATION_INCOMPLETE' },
+        { stepKey: 'remove_replaced_knowledge', ok: false, errorMsg: 'FINALIZATION_REPLACED_KNOWLEDGE_NOT_REMOVED' },
+      ])).rejects.toThrow('remove_replaced_knowledge')
+      expect(postProcess.params.map(params => params.stepKeys)).toEqual([['character_cards', 'remove_replaced_knowledge'], ['chapter_notes', 'character_cards']])
+    })
+
     it('reruns only once: a second report that the notes no longer count is left for the author to retry', async () => {
       postProcess.execute.mockResolvedValue(statusOf([
         { stepKey: 'kb_import', ok: true },
