@@ -32,7 +32,7 @@ import {
   type CharacterStateFieldProvenance,
 } from '../../src/shared/character-roster'
 import { decideDerivedPatch, type CharacterFieldSnapshot, type DerivedSourceOrder } from '../../src/shared/character-identity'
-import { latestNodesBefore, type CharacterRelationNode, type ContinuityNode } from '../../src/shared/character-continuity'
+import { latestNodesBefore, type ContinuityNode } from '../../src/shared/character-continuity'
 import { parseFinalizedCharacterStateResponse } from '../../src/shared/finalized-continuity'
 import { hasCharacterIdentitySchema } from './character-repository'
 import { commitCharacterIdentities, refreshCharacterIdentityProjection, refreshCharacterStateProjection } from './character-roster-repository'
@@ -459,10 +459,12 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: RelationCom
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
 
-/** 角色那步可能先于要点提交，那时没有快照存待确认项；要点落库时按这份定稿的派生节点补回。 */
+/** 角色那步可能先于要点提交，那时没有快照存待确认项；要点落库时按这份定稿当前生效的派生节点补回，重跑撤下的旧值不重放。 */
 function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity, projectionGeneration: number): void {
-  const nodes = readCharacterContinuityNodes(db).filter((node): node is CharacterRelationNode => node.aspect === 'relation' && node.provenance.kind === 'derived'
-    && node.draftId === source.draftId && node.provenance.source.finalizationId === source.finalizationId && !!node.quote)
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_continuity_events'").get()) return
+  const nodes = latestNodesBefore(readCharacterContinuityNodes(db), source.chapterNumber + 1).relations.flatMap(pair => pair.lines)
+    .filter(node => node.provenance.kind === 'derived' && node.draftId === source.draftId
+      && node.provenance.source.finalizationId === source.finalizationId && !!node.quote)
   if (!nodes.length) return
   const characters = nodes.flatMap(node => [{ characterId: node.subjectId, displayNameSnapshot: node.subjectName }, { characterId: node.targetId, displayNameSnapshot: node.targetName }])
   commitDerivedRelations(db, { source, projectionGeneration, characters },
