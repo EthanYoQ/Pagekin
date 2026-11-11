@@ -1649,6 +1649,17 @@ describe('durable directory commit and remaining stage', () => {
         selections: [{ selectionKey: '2:0', action: 'create' }] })).toThrow('CHARACTER_PROPOSAL_SOURCE_CHANGED')
       expect(f.owner.characterProposals.listPendingFinalized()).toEqual([])
     })
+
+    it('作者改了名单（哪怕只是背景）后，接受同样失败，不再列出', async () => {
+      const { f, batch } = await newcomerProposal()
+      const read = CharacterRosterRepository.read(f.db)
+      commitAuthorCharacterRoster(f.db, { operationId: 'edit-background', schemaVersion: 1, intent: 'manual_edit', expectedRevision: read.revision,
+        expectedIdentityRevision: read.identityRevision!, entries: read.entries.map(entry => ({ ...entry, background: '改过' })) }, { projectId: 'project', epoch: 'epoch-1' }, () => undefined)
+      const current = f.owner.characterProposals.read(batch.proposalBatchId)
+      expect(() => f.owner.approveCharacterProposal({ proposalBatchId: current.proposalBatchId, expectedRevision: current.revision, operationId: 'after-roster-edit',
+        selections: [{ selectionKey: '2:0', action: 'create' }] })).toThrow('CHARACTER_PROPOSAL_SOURCE_CHANGED')
+      expect(f.owner.characterProposals.listPendingFinalized()).toEqual([])
+    })
   })
   describe('蓝图提案同步的关系被作者改掉之后，第 12 章的预检', () => {
     const HINT = { from: '林晚', to: '沈舟', relation: '亲密同伴' }

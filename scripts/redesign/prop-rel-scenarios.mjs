@@ -5,6 +5,7 @@ import * as architecture from './pages/architecture.mjs'
 import * as blueprint from './pages/blueprint.mjs'
 import * as runSheet from './pages/run-sheet.mjs'
 import * as stage from './pages/stage.mjs'
+import { finalizeChapter } from './f491-scenarios.mjs'
 import { seedStageSample } from './scenarios.mjs'
 
 async function generate(page, fake, from, to) {
@@ -30,6 +31,7 @@ async function readProject(projectPath) {
       characters: db.prepare('SELECT name FROM characters WHERE retired=0 ORDER BY name').all().map(row => row.name),
       relations: db.prepare(`SELECT s.name AS source,t.name AS target,r.relation FROM character_relationships r
         JOIN characters s ON s.character_id=r.source_character_id JOIN characters t ON t.character_id=r.target_character_id`).all().map(row => `${row.source} → ${row.target}：${row.relation}`),
+      relationChapters: db.prepare("SELECT value,effective_chapter AS chapter FROM character_continuity_events WHERE aspect='relation'").all().map(row => `${row.value}@${row.chapter}`),
     }
   } finally { db.close() }
 }
@@ -60,6 +62,7 @@ export const PROPREL_SCENARIOS = {
     measured.relationChecked = await relation.isChecked()
     assert.equal(measured.relationEnabled, true, '关系的目标是已有角色林岚，可以勾选')
     assert.equal(measured.relationChecked, false, '名字只是标签，关系默认不勾，作者自己决定')
+    await shoot('prop-rel-2-review-default')
     await relation.check()
     await shoot('prop-rel-2-review')
 
@@ -69,7 +72,11 @@ export const PROPREL_SCENARIOS = {
     assert.ok(measured.adopted.characters.includes('雾灯人'), '雾灯人进了角色名单')
     assert.ok(measured.adopted.relations.includes('雾灯人 → 林岚：暗中守护'), `关系写进名单。实际：${JSON.stringify(measured.adopted.relations)}`)
     assert.equal(measured.adopted.directory[0].status, 'approved')
-    await architecture.castRow(page, '雾灯人').waitFor({ state: 'visible' })
+    assert.deepEqual(measured.adopted.relationChapters, ['暗中守护@13'], '关系从提出它的第 13 章生效')
+    await architecture.castRow(page, '雾灯人').click()
+    await architecture.profileName(page).filter({ hasText: '雾灯人' }).waitFor({ state: 'visible' })
+    measured.profileRelations = await stage.root(page).locator('.cast-profile textarea').evaluateAll(fields => fields.map(field => field.value).filter(value => value.includes('暗中守护')))
+    assert.deepEqual(measured.profileRelations, ['林岚：暗中守护'], '雾灯人的关系网里有这条关系')
     await shoot('prop-rel-3-adopted')
     return measured
   } },
@@ -93,6 +100,21 @@ export const PROPREL_SCENARIOS = {
     const measured = { listed: await suggestions.count() }
     await shoot('prop-rel-4-stale')
     assert.equal(measured.listed, 0, '改过来源蓝图后不再出建议')
+    return measured
+  } },
+  /** 生成蓝图后定稿第 3 章：定稿不碰蓝图提案的来源，建议还在。 */
+  'prop-rel-after-finalize': { model: true, shell: 'stage', setup: context => seedStageSample(context, { totalChapters: 16 }), run: async ({ page, fake, shoot }) => {
+    await blueprint.open(page)
+    fake.replyDirectoryBlueprints(13)
+    await generate(page, fake, 13, 14)
+    await finalizeChapter(page, 3)
+    await architecture.open(page)
+    await architecture.openCast(page)
+    const suggestions = stage.root(page).getByRole('region', { name: '待处理的角色建议' })
+    await suggestions.waitFor({ state: 'visible' })
+    const measured = { listed: (await suggestions.innerText()).replace(/\s+/gu, ' ').trim() }
+    await shoot('prop-rel-5-after-finalize')
+    assert.match(measured.listed, /第 13 章蓝图的新角色（1 位）/u)
     return measured
   } },
 }
