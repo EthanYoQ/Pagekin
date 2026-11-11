@@ -68,7 +68,7 @@ export async function exportAndRestore(context, projectPath, label) {
 /** 界面按 Ctrl O 打开指定文件夹里的作品。 */
 export async function openInUi({ app, page }, projectPath) {
   await stubDialogs(app, { open: projectPath })
-  await page.keyboard.press('Control+O')
+  await page.keyboard.press('ControlOrMeta+O')
   await stage.spine(page).waitFor({ state: 'visible', timeout: 60_000 })
   await page.waitForTimeout(2000)
 }

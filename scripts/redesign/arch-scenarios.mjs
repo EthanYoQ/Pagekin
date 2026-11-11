@@ -123,7 +123,7 @@ async function castFitAt({ page, invoke, reload }, locale, width, sheet) {
   }
   await root(page).locator('.cast-select').waitFor({ state: 'visible' })
   if (sheet) {
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await page.getByRole('dialog').getByRole('combobox').waitFor({ state: 'visible' })
     await page.keyboard.type(locale === 'en-US' ? 'Run sheet' : '运行侧页')
     await page.keyboard.press('Enter')
@@ -675,7 +675,7 @@ export const ARCH_SCENARIOS = {
     await name.fill('守塔人')
     await page.getByLabel('动机', { exact: true }).fill('守住雾钟，等一个三十年前没回来的人。')
     await root(page).locator('.cast-save-state').filter({ hasText: '未保存' }).waitFor()
-    await page.keyboard.press('Control+S')
+    await page.keyboard.press('ControlOrMeta+S')
     await root(page).locator('.cast-save-state').filter({ hasText: '已保存' }).waitFor({ timeout: 20_000 })
     assert.deepEqual(await arch.castRoster(page).locator('.cast-row-name').allInnerTexts(), ['林岚', '守塔人'])
     const roster = await readRoster(context)
@@ -789,7 +789,7 @@ export const ARCH_SCENARIOS = {
     const mountMs = await page.evaluate(() => window.__driveArchMountMs)
     const openDomMs = await page.evaluate(() => window.__driveArchDomMs)
 
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill('角色')
     await stage.palette(page).getByRole('option', { name: /^角色/ }).first().click()
     const list = page.locator('.cast-list, .stage-characters-list .overflow-y-auto').first()
