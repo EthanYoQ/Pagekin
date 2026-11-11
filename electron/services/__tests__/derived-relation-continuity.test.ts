@@ -108,6 +108,23 @@ const relationNodes = () => readCharacterContinuityNodes(db(), LIN).filter((node
 const derivedNodes = () => relationNodes().filter(node => node.provenance.kind === 'derived')
 const authorRows = () => db().prepare('SELECT relation FROM character_relationships WHERE source_character_id=? AND target_character_id=?').pluck().all(LIN, SHEN)
 const pending = () => SummaryRepository.listPendingFinalizedRelationCandidates(db())
+const eventCount = () => db().prepare('SELECT COUNT(*) FROM character_continuity_events').pluck().get()
+
+function reviseAuthorRelation(relation: string, sourceId = LIN, targetId = SHEN): void {
+  db().transaction(() => {
+    const rows = db().prepare('SELECT relationship_id AS id,source_character_id AS source,target_character_id AS target FROM character_relationships').all() as Array<{ id: string; source: string; target: string }>
+    for (const row of rows) deleteCharacterRelationship(db(), { relationshipId: row.id, sourceId: row.source, sourceName: NAMES[row.source], targetId: row.target, targetName: NAMES[row.target] }, 'seed-approval')
+    insertCharacterRelationship(db(), { relationshipId: `author-${randomUUID()}`, sourceId, sourceName: NAMES[sourceId], targetId, targetName: NAMES[targetId],
+      relation, provenanceJson: '{"kind":"author"}' }, { operationId: 'seed-approval', action: 'author-edit' })
+    refreshCharacterIdentityProjection(db())
+  })()
+}
+
+function saveNotes(draftId: number, chapterNotes: string): void {
+  const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+  SummaryRepository.saveFinalizedContinuity({ draftId, chapterNumber: context.source.chapterNumber, chapterNotes, facts: [],
+    source: context.source, projectionGeneration: context.projectionGeneration }, db())
+}
 
 function decide(decision: 'accept' | 'decline') {
   const [candidate] = pending()
@@ -219,6 +236,63 @@ describe('定稿后自动记录人物关系变化', () => {
       source: context.source, projectionGeneration: context.projectionGeneration }, db())
     expect(pending()).toEqual([])
     expect(authorRows()).toEqual(['师徒'])
+  })
+
+  it('作者自己改成建议值后重存要点，再改成别的再存：旧建议不回来', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    expect(pending()).toHaveLength(1)
+
+    reviseAuthorRelation('恩断义绝')
+    saveNotes(draftId, '第8章摘要又一版')
+    reviseAuthorRelation('同门')
+    saveNotes(draftId, '第8章摘要第三版')
+
+    expect(pending()).toEqual([])
+  })
+
+  it('作者调换关系方向后重存要点：时间线不多出事件', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    reviseAuthorRelation('师徒', SHEN, LIN)
+    const before = eventCount()
+
+    saveNotes(draftId, '第8章摘要又一版')
+
+    expect(eventCount()).toBe(before)
+    expect(readCharacterContinuityNodes(db()).filter(node => node.provenance.kind === 'derived')).toHaveLength(1)
+    expect(pending()).toEqual([])
+  })
+
+  it('作者改成建议值后同一份定稿重跑，再改成别的并重存要点：旧建议不回来', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    reviseAuthorRelation('恩断义绝')
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    reviseAuthorRelation('同门')
+
+    saveNotes(draftId, '第8章摘要又一版')
+
+    expect(pending()).toEqual([])
+  })
+
+  it('只存要点、不改关系时时间线事件数不变', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    const before = eventCount()
+
+    saveNotes(draftId, '第8章摘要又一版')
+
+    expect(eventCount()).toBe(before)
+    expect(pending()).toMatchObject([{ value: '恩断义绝', authorRelations: ['师徒'] }])
   })
 
   it('模型重述作者已有的关系不算变化，不记节点也不提示', () => {
