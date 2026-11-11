@@ -136,9 +136,6 @@ export interface CharacterRosterSnapshot {
 export type CharacterRosterCommitIntent =
   | 'initialize'
   | 'architecture_generation'
-  | 'legacy_repair'
-  /** 旧项目已有卡片时，由用户显式确认后只重建只读图谱，不改写卡片。 */
-  | 'legacy_cards_adoption'
   /** 角色管理的完整手工快照；允许新增、改名、删除和空名单。 */
   | 'manual_edit'
   /** 仿写导入产生的角色候选，保守合并到现有名单。 */
@@ -169,11 +166,6 @@ export interface CharacterRosterCommitRequest {
   renames?: CharacterRosterRename[]
   /** 仅 manual_edit 使用。 */
   stateEffectiveChapter?: number
-  /**
-   * legacy_repair / legacy_cards_adoption 使用。它是从只读快照回传的原始
-   * 证据，用来拒绝把旧 Markdown A 的候选提交到后来已变为 Markdown B 的项目中。
-   */
-  expectedLegacyMarkdown?: string
 }
 
 export interface CharacterRosterCommitReceipt {

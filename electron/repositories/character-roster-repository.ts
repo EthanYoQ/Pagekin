@@ -155,8 +155,6 @@ function hasManualValue(value: unknown): boolean {
 function isCommitIntent(value: unknown): value is CharacterRosterCommitIntent {
   return value === 'initialize'
     || value === 'architecture_generation'
-    || value === 'legacy_repair'
-    || value === 'legacy_cards_adoption'
     || value === 'manual_edit'
     || value === 'novel_import'
     || value === 'blueprint_sync'
@@ -165,10 +163,6 @@ function isCommitIntent(value: unknown): value is CharacterRosterCommitIntent {
 
 function isManualEditIntent(intent: CharacterRosterCommitIntent): boolean {
   return intent === 'manual_edit'
-}
-
-function isLegacyEvidenceIntent(intent: CharacterRosterCommitIntent): boolean {
-  return intent === 'legacy_repair' || intent === 'legacy_cards_adoption'
 }
 
 function normalizeRelationships(value: unknown, ownerName: string): CharacterRosterRelationship[] {
@@ -272,7 +266,7 @@ function normalizeRequest(value: unknown): CharacterRosterCommitRequest {
   // 手工候选还可能带着改名前或刚删除的目标。它们都必须先由深 module 与
   // 当前事实合并/转换，再用完整名单校验闭包。只有空项目初始化和旧图谱
   // 修复需要在候选本身上直接闭合。
-  if (intent === 'initialize' || intent === 'legacy_repair') {
+  if (intent === 'initialize') {
     for (const entry of entries) {
       for (const relationship of entry.relationships) {
         if (!names.has(characterRosterIdentityKey(relationship.target))) {
@@ -282,13 +276,6 @@ function normalizeRequest(value: unknown): CharacterRosterCommitRequest {
     }
   }
   const renames = normalizeRenames(value.renames, intent)
-  let expectedLegacyMarkdown: string | undefined
-  if (isLegacyEvidenceIntent(intent)) {
-    if (typeof value.expectedLegacyMarkdown !== 'string') {
-      throw new Error('CHARACTER_ROSTER_LEGACY_EVIDENCE_REQUIRED')
-    }
-    expectedLegacyMarkdown = value.expectedLegacyMarkdown
-  }
 
   return {
     operationId,
@@ -298,9 +285,6 @@ function normalizeRequest(value: unknown): CharacterRosterCommitRequest {
     ...(source ? { source } : {}),
     intent,
     ...(renames?.length ? { renames } : {}),
-    ...(isLegacyEvidenceIntent(intent)
-      ? { expectedLegacyMarkdown }
-      : {}),
   }
 }
 
@@ -308,7 +292,7 @@ function normalizeRequest(value: unknown): CharacterRosterCommitRequest {
 export function validateLegacyRosterCandidate(value: unknown): CharacterRosterEntry[] {
   if (!isObject(value)) throw new Error('CHARACTER_ROSTER_REQUEST_INVALID')
   return normalizeRequest({ operationId: 'legacy-roster-candidate-validation', expectedRevision: 0,
-    schemaVersion: value.schemaVersion, entries: value.entries, intent: 'legacy_repair', expectedLegacyMarkdown: '' }).entries
+    schemaVersion: value.schemaVersion, entries: value.entries, intent: 'initialize' }).entries
 }
 
 /** Shared scalar validation; the author boundary validates relationships by ID separately. */
@@ -360,9 +344,6 @@ function payloadHash(request: CharacterRosterCommitRequest): string {
   return hashText(JSON.stringify({
     schemaVersion: request.schemaVersion,
     intent: request.intent ?? 'initialize',
-    ...(isLegacyEvidenceIntent(request.intent ?? 'initialize')
-      ? { expectedLegacyMarkdown: request.expectedLegacyMarkdown }
-      : {}),
     ...(request.intent === 'manual_edit' ? { renames: request.renames ?? [] } : {}),
     ...(request.source ? { source: request.source } : {}),
     entries: canonicalEntries(request.entries),
@@ -1019,43 +1000,19 @@ export class CharacterRosterRepository {
       const currentSnapshot = readSnapshot(db)
       const intent = request.intent ?? 'initialize'
       const maySafelyRegenerate = intent === 'architecture_generation'
-      const isLegacyRepair = intent === 'legacy_repair'
-      const isLegacyCardsAdoption = intent === 'legacy_cards_adoption'
       const isManualEdit = isManualEditIntent(intent)
       const isIncremental = intent === 'blueprint_sync' || intent === 'chapter_progress'
       const isNovelImport = intent === 'novel_import'
-      if (currentSnapshot.status === 'legacy_repair_required' && !isLegacyRepair) {
+      if (currentSnapshot.status === 'legacy_repair_required') {
         throw new Error('CHARACTER_ROSTER_LEGACY_REPAIR_REQUIRED')
       }
-      if (currentSnapshot.status === 'inconsistent' && !isLegacyCardsAdoption) {
+      if (currentSnapshot.status === 'inconsistent') {
         if (meta.migration_state === 'legacy_cards_preserved') {
           throw new Error('CHARACTER_ROSTER_EXISTING_PROTECTED')
         }
         throw new Error('CHARACTER_ROSTER_STATE_INCONSISTENT')
       }
-      if (isLegacyRepair) {
-        if (currentSnapshot.status !== 'legacy_repair_required' || existingEntries.length > 0) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_REPAIR_NOT_NEEDED')
-        }
-        if (request.expectedLegacyMarkdown !== meta.legacy_markdown) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_SOURCE_CHANGED')
-        }
-      } else if (isLegacyCardsAdoption) {
-        if (meta.migration_state !== 'legacy_cards_preserved' || existingEntries.length === 0) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_ADOPTION_UNAVAILABLE')
-        }
-        if (request.expectedLegacyMarkdown !== meta.legacy_markdown) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_SOURCE_CHANGED')
-        }
-        const candidateNames = new Set(request.entries.map(entry => entry.name))
-        const existingNames = new Set(existingEntries.map(entry => entry.name))
-        if (
-          candidateNames.size !== existingNames.size
-          || [...candidateNames].some(name => !existingNames.has(name))
-        ) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_SOURCE_CHANGED')
-        }
-      } else if (
+      if (
         !maySafelyRegenerate
         && !isManualEdit
         && !isIncremental
@@ -1066,33 +1023,29 @@ export class CharacterRosterRepository {
       }
 
       let renameByOriginal = new Map<string, string>()
-      const committedEntries = isLegacyCardsAdoption
-        ? existingEntries
-        : isManualEdit
-          ? (() => {
-              const resolved = resolveManualEntries(request, existingEntries)
-              renameByOriginal = resolved.renameByOriginal
-              return resolved.entries
-            })()
-          : maySafelyRegenerate || isNovelImport
-            ? mergeGeneratedEntriesWithExisting(request.entries, existingEntries)
-            : isIncremental
-                ? mergeIncrementalEntriesWithExisting(
-                  db,
-                  request.entries,
-                  existingEntries,
-                   intent as Extract<CharacterRosterCommitIntent, 'blueprint_sync' | 'chapter_progress'>,
-                   request.source,
-                 )
-              : request.entries
+      const committedEntries = isManualEdit
+        ? (() => {
+            const resolved = resolveManualEntries(request, existingEntries)
+            renameByOriginal = resolved.renameByOriginal
+            return resolved.entries
+          })()
+        : maySafelyRegenerate || isNovelImport
+          ? mergeGeneratedEntriesWithExisting(request.entries, existingEntries)
+          : isIncremental
+            ? mergeIncrementalEntriesWithExisting(
+              db,
+              request.entries,
+              existingEntries,
+              intent as Extract<CharacterRosterCommitIntent, 'blueprint_sync' | 'chapter_progress'>,
+              request.source,
+            )
+            : request.entries
       const writingLanguage = ProjectCoreRepository.get()?.writingLanguage ?? DEFAULT_WRITING_LANGUAGE
       const projection = renderCharacterRosterMarkdown(committedEntries, writingLanguage)
       const projectionHash = hashText(projection)
       const factHash = fullFactHash(committedEntries)
       const nextRevision = meta.revision + 1
 
-      // adoption 的唯一职责是以已有结构化卡片重建只读投影。它不能重写
-      // cards 表，否则“采用已有卡片”会变成一次隐式数据迁移。
       if (isManualEdit) {
         // 手工保存提交的是完整名单快照。先清空再回填使删除、改名（包括交换）
         // 与资料变更受同一事务保护；transaction 回滚时不会留下半个名单。
@@ -1105,7 +1058,7 @@ export class CharacterRosterRepository {
           renameByOriginal,
           new Set(committedEntries.map(entry => entry.name)),
         )
-      } else if (!isLegacyCardsAdoption) {
+      } else {
         for (const entry of committedEntries) CharacterRepository.upsert(characterFromEntry(entry))
       }
       const coreUpdate = db.prepare(`

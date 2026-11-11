@@ -691,43 +691,32 @@ describe('CharacterRosterRepository public read/commit seam', () => {
   })
 
   it('safely regenerates a structured roster around existing manual cards without replacing non-empty fields', () => {
-    db.exec('DELETE FROM character_roster_meta')
-    CharacterRepository.upsert({
-      name: '林舟',
-      role: 'supporting',
-      gender: '',
-      age: '',
-      appearance: '作者手写的旧斗篷',
-      personality: '',
-      background: '',
-      abilities: '',
-      motivation: '',
-      relationships: '作者手工填写的旧关系备注，不得被生成 JSON 覆盖',
-      arc: '',
-      notes: '作者已确认，不应覆盖',
-    })
-    ensureCharacterRosterSchema(db)
-
-    // 旧项目先由显式 adoption 固化 cards -> projection；架构重新生成不再
-    // 获得绕过 inconsistent 状态的特权。
-    const preserved = CharacterRosterRepository.read()
-    const adopted = CharacterRosterRepository.commit({
-      operationId: 'adopt-before-architecture-regeneration',
-      expectedRevision: preserved.revision,
+    const seeded = CharacterRosterRepository.commit({
+      operationId: 'manual-card-before-architecture-regeneration',
+      expectedRevision: 0,
       schemaVersion: 1,
-      entries: preserved.entries.map((entry) => {
-        const structuredEntry = { ...entry }
-        delete structuredEntry.legacyRelationshipNotes
-        return structuredEntry
-      }),
-      intent: 'legacy_cards_adoption',
-      expectedLegacyMarkdown: preserved.legacyMarkdown ?? '',
+      intent: 'manual_edit',
+      entries: [{
+        name: '林舟',
+        role: 'supporting',
+        gender: '',
+        age: '',
+        appearance: '作者手写的旧斗篷',
+        personality: '',
+        background: '',
+        abilities: '',
+        motivation: '',
+        relationships: [],
+        legacyRelationshipNotes: '作者手工填写的旧关系备注，不得被生成 JSON 覆盖',
+        arc: '',
+        notes: '作者已确认，不应覆盖',
+      }],
     })
 
     const receipt = CharacterRosterRepository.commit({
       ...commitRequest({
         operationId: 'architecture-regeneration-001',
-        expectedRevision: adopted.revision,
+        expectedRevision: seeded.revision,
       }),
       intent: 'architecture_generation',
     })
@@ -891,63 +880,6 @@ describe('CharacterRosterRepository public read/commit seam', () => {
     })
   })
 
-  it('repairs a v0.7.1 zero-card legacy graph only through an exact-evidence structured commit', () => {
-    const legacyMarkdown = '矿场事故后，沈砺和顾湘从互相怀疑走向共同调查。这里没有可供程序解析的标题或编号。'
-    db.exec(`
-      DELETE FROM character_roster_meta;
-      UPDATE project_core
-      SET characters_arch = '${legacyMarkdown}';
-    `)
-    ensureCharacterRosterSchema(db)
-    const before = CharacterRosterRepository.read()
-
-    const receipt = CharacterRosterRepository.commit({
-      ...commitRequest({ operationId: 'legacy-repair-v071', expectedRevision: before.revision }),
-      intent: 'legacy_repair',
-      expectedLegacyMarkdown: legacyMarkdown,
-    })
-
-    expect(receipt).toMatchObject({
-      revision: 1,
-      idempotent: false,
-      snapshot: {
-        migrationState: 'ready',
-        status: 'ready',
-        legacyMarkdown,
-        entries: expect.arrayContaining([
-          expect.objectContaining({ name: '林舟' }),
-          expect.objectContaining({ name: '苏绾' }),
-        ]),
-      },
-    })
-    expect(ProjectCoreRepository.get()?.charactersArch).toBe(receipt.snapshot.renderedMarkdown)
-    expect(CharacterRosterRepository.commit({
-      ...commitRequest({ operationId: 'legacy-repair-v071', expectedRevision: before.revision }),
-      intent: 'legacy_repair',
-      expectedLegacyMarkdown: legacyMarkdown,
-    })).toMatchObject({ idempotent: true, revision: 1 })
-  })
-
-  it('rejects a legacy repair whose archived source changed, without touching cards or the old graph', () => {
-    const legacyMarkdown = '旧图谱原文 A：只有自然语言关系，没有固定 Markdown 排版。'
-    db.exec(`
-      DELETE FROM character_roster_meta;
-      UPDATE project_core
-      SET characters_arch = '${legacyMarkdown}';
-    `)
-    ensureCharacterRosterSchema(db)
-    const before = CharacterRosterRepository.read()
-
-    expect(() => CharacterRosterRepository.commit({
-      ...commitRequest({ operationId: 'legacy-repair-stale-source' }),
-      intent: 'legacy_repair',
-      expectedLegacyMarkdown: '旧图谱原文 B：模型候选不可以写回 A。',
-    })).toThrow('CHARACTER_ROSTER_LEGACY_SOURCE_CHANGED')
-
-    expect(CharacterRosterRepository.read()).toEqual(before)
-    expect(ProjectCoreRepository.get()?.charactersArch).toBe(legacyMarkdown)
-  })
-
   it('classifies empty, existing-card, partial-card and damaged legacy projects without auto-writing', () => {
     expect(CharacterRosterRepository.read()).toMatchObject({
       migrationState: 'empty',
@@ -983,52 +915,6 @@ describe('CharacterRosterRepository public read/commit seam', () => {
     // 将元数据刻意置为“待修复”而数据库已有卡，代表损坏/不一致状态。
     db.prepare("UPDATE character_roster_meta SET migration_state = 'legacy_markdown_pending'").run()
     expect(CharacterRosterRepository.read()).toMatchObject({ status: 'inconsistent' })
-  })
-
-  it('explicitly adopts existing legacy cards by rebuilding only the deterministic projection', () => {
-    const legacyMarkdown = '旧角色图谱原文：已有角色卡是事实，不应重新从这里提取。'
-    db.exec(`
-      DELETE FROM character_roster_meta;
-      UPDATE project_core SET characters_arch = '${legacyMarkdown}';
-    `)
-    CharacterRepository.upsert({
-      name: '手工主角',
-      role: 'protagonist',
-      gender: '女', age: '二十五岁', appearance: '作者手写的黑色风衣', personality: '谨慎',
-      background: '作者手工设定的背景', abilities: '调查', motivation: '寻找真相',
-      relationships: '作者手工填写的自由文本关系，必须原样保留', arc: '学会信任', notes: '不可覆盖',
-    })
-    ensureCharacterRosterSchema(db)
-    const before = CharacterRosterRepository.read()
-    const cardBefore = CharacterRepository.getByName('手工主角')
-
-    expect(before).toMatchObject({
-      migrationState: 'legacy_cards_preserved',
-      status: 'inconsistent',
-      entries: [expect.objectContaining({ legacyRelationshipNotes: '作者手工填写的自由文本关系，必须原样保留' })],
-    })
-
-    const receipt = CharacterRosterRepository.commit({
-      operationId: 'adopt-existing-cards',
-      expectedRevision: before.revision,
-      schemaVersion: 1,
-      entries: before.entries.map((entry) => {
-        const structuredEntry = { ...entry }
-        delete structuredEntry.legacyRelationshipNotes
-        return structuredEntry
-      }),
-      intent: 'legacy_cards_adoption',
-      expectedLegacyMarkdown: legacyMarkdown,
-    })
-
-    expect(receipt.snapshot).toMatchObject({
-      migrationState: 'ready',
-      status: 'ready',
-      legacyMarkdown,
-      entries: [expect.objectContaining({ name: '手工主角' })],
-    })
-    expect(ProjectCoreRepository.get()?.charactersArch).toBe(receipt.snapshot.renderedMarkdown)
-    expect(CharacterRepository.getByName('手工主角')).toEqual(cardBefore)
   })
 
   it('rejects chapter-progress additions and canonical duplicate names at the repository boundary', () => {
