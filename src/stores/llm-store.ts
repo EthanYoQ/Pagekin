@@ -77,7 +77,6 @@ interface LLMState {
 }
 
 let initializationFlight: Promise<void> | null = null
-let modelListRequest = 0
 
 export const useLLMStore = create<LLMState>()((set, get) => ({
   models: [],
@@ -121,9 +120,8 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
 
   loadModels: async () => {
     if (!ipc.isElectron) return
-    const request = ++modelListRequest
     const models = await ipc.invoke('llm:list-models')
-    if (request === modelListRequest) set({ models })
+    set({ models })
   },
 
   saveModel: async (model) => {

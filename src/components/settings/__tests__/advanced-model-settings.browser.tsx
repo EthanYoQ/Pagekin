@@ -59,6 +59,10 @@ async function renderSettings(locale: Locale = 'zh-CN') {
     defaultModelId: model().id,
     saveModel,
   })
+  ;(window as unknown as { aiNovelAPI: unknown }).aiNovelAPI = {
+    invoke: async (channel: string) => channel === 'llm:list-models' ? useLLMStore.getState().models : undefined,
+    on: () => () => {},
+  }
   useProjectStore.setState({
     currentProject: {
       id: 'advanced-project',
@@ -88,6 +92,7 @@ afterEach(async () => {
   useLLMStore.setState(originalLLMState)
   useLocaleStore.setState(originalLocaleState)
   useProjectStore.setState(originalProjectState)
+  delete (window as unknown as { aiNovelAPI?: unknown }).aiNovelAPI
   vi.restoreAllMocks()
 })
 

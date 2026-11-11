@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { ipc } from '../../services/ipc-client'
 import { useLLMStore } from '../../stores/llm-store'
 import { useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
@@ -31,6 +32,7 @@ async function confirmSaveWhileGenerating(modelId: string, defaultModelId: strin
 }
 
 const deletingModelIds = new Set<string>()
+let editRequest = 0
 
 /**
  * 一类模型（生成、向量或重排）的列表与编辑：按用途过滤、新增草稿、保存（该类第一个自动设为默认）、删除、设为默认。
@@ -51,7 +53,6 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
   const [editingModel, setEditingModel] = useState<ModelProfile | null>(null)
   const [editingOriginal, setEditingOriginal] = useState('')
   const [saving, setSaving] = useState(false)
-  const editRequest = useRef(0)
   useEffect(() => {
     if (!loaded) loadModels()
   }, [loaded, loadModels])
@@ -66,7 +67,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
 
   /** 向量和重排模型由工厂选择完整的 SiliconFlow 默认值。 */
   const startEditing = (model: ModelProfile) => {
-    editRequest.current += 1
+    editRequest += 1
     setEditingModel(model)
     setEditingOriginal(JSON.stringify(model))
   }
@@ -78,11 +79,9 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
   }
   const editLatestSaved = async (model: ModelProfile) => {
     if (deletingModelIds.has(model.id)) return
-    const request = ++editRequest.current
-    await loadModels()
-    if (request !== editRequest.current) return
-    const latest = useLLMStore.getState().models.find(saved => saved.id === model.id)
-    if (latest) startEditing({ ...latest })
+    const request = ++editRequest
+    const latest = (await ipc.invoke('llm:list-models')).find(saved => saved.id === model.id)
+    if (request === editRequest && latest) startEditing(latest)
   }
 
   const save = async () => {
@@ -113,12 +112,13 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     add,
     edit: (model: ModelProfile) => void editLatestSaved(model),
     cancelEdit: () => {
-      editRequest.current += 1
+      editRequest += 1
       setEditingModel(null)
     },
     save,
     remove: async (modelId: string) => {
-      editRequest.current += 1
+      if (deletingModelIds.has(modelId)) return false
+      editRequest += 1
       deletingModelIds.add(modelId)
       try {
         return await deleteModel(modelId)
