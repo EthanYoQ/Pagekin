@@ -514,32 +514,21 @@ describe('RunFinalizePostProcessCommand character-state persistence', () => {
 
   it('reports only executing substeps before their model work and skips already successful steps on resume', async () => {
     const labels: string[] = []
+    const labelAtModelCall: (string | undefined)[] = []
     const original = useLLMStore.getState().generateStream
-    let releaseNotes!: () => void, releaseCards!: () => void
-    const notes = new Promise<void>(resolve => { releaseNotes = resolve })
-    const cards = new Promise<void>(resolve => { releaseCards = resolve })
-    let calls = 0
     useLLMStore.setState({ generateStream: vi.fn(async (...args: Parameters<typeof original>) => {
-      calls += 1
-      await (calls === 1 ? notes : cards)
+      labelAtModelCall.push(labels.at(-1))
       return original(...args)
     }) })
-    const executing = command('Chapter 2 finalized content', { onStepStart: label => { labels.push(label) } })
+    const first = await command('Chapter 2 finalized content', { onStepStart: label => { labels.push(label) } })
       .execute({ step: {}, context: workflowContext, callbacks: callbacks() })
-    await vi.waitFor(() => expect(calls).toBe(1))
-    const notesLabel = labels.at(-1)
-    releaseNotes()
-    await vi.waitFor(() => expect(calls).toBe(2))
-    const cardsLabel = labels.at(-1)
-    releaseCards()
-    expect((await executing).allCriticalPassed).toBe(true)
+    expect(first.allCriticalPassed).toBe(true)
+    expect(labelAtModelCall).toEqual(['Chapter plot notes', 'Update character state'])
     labels.length = 0
     await command('Chapter 2 finalized content', { onlyFailed: true, onStepStart: label => { labels.push(label) } })
       .execute({ step: {}, context: workflowContext, callbacks: callbacks() })
-    expect(notesLabel).toBe('Chapter plot notes')
-    expect(cardsLabel).toBe('Update character state')
     expect(labels).toEqual([])
-    expect(calls).toBe(2)
+    expect(labelAtModelCall).toHaveLength(2)
   })
 
   it('records the finalization stage model on the run so editing that model warns about it', async () => {
