@@ -29,7 +29,7 @@ function occurrences(text: string, term: string): number {
 
 /**
  * 区分大小写计数，与 LIKE 筛行一致，没命中的行不进统计，所以传全部段落和只传筛出的行排序相同。
- * 同分按正文、再按文件名排，免得结果随导入时的随机 id 变。
+ * 排序结果只由分数、正文、文件名决定，与行 id 和导入顺序无关。
  */
 export function rankFullText<T extends { text: string; fileName: string }>(rows: readonly T[], terms: readonly string[], totalRows: number): { row: T; score: number }[] {
   const counted = rows.map(row => ({ row, length: Array.from(row.text).length, counts: terms.map(term => occurrences(row.text, term)) }))
