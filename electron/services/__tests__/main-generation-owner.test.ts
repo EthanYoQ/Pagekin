@@ -1595,6 +1595,61 @@ describe('durable directory commit and remaining stage', () => {
     expect(node).toMatchObject({ value: '同行', effective_chapter: 2 })
     expect(JSON.parse(node.provenance_json)).toMatchObject({ kind: 'adopted', operationId: 'approve-hint' })
   })
+  describe('蓝图提案的新角色进角色页的待处理建议', () => {
+    async function newcomerProposal(candidates = true) {
+      const f = directoryFixture('chapter-blueprint-directory')
+      const read = CharacterRosterRepository.read(f.db)
+      commitAuthorCharacterRoster(f.db, { operationId: 'seed-heroine', schemaVersion: 1, intent: 'manual_edit', expectedRevision: read.revision,
+        expectedIdentityRevision: read.identityRevision!, entries: [{ characterId: 'draft:00000000-0000-4000-8000-000000000001', name: '林岚', role: 'protagonist', gender: '', age: '', appearance: '',
+          personality: '', background: '', abilities: '', motivation: '', relationships: [], arc: '', notes: '' }] }, { projectId: 'project', epoch: 'epoch-1' }, () => undefined)
+      const run = f.owner.begin({ ...f.selection, uiActionNonce: 'newcomer' })
+      await f.owner.execute({ handle: run.handle, invocationNonce: 'newcomer', task: directoryTask })
+      const request = f.request('newcomer', 1, 2)
+      request.blueprints[1] = { ...request.blueprints[1], characters: ['林岚', '雾灯人'],
+        ...(candidates ? { newCharacterCandidates: [{ name: '雾灯人', role: 'supporting' as const }] } : {}),
+        relationshipHints: [{ from: '雾灯人', to: '林岚', relation: '暗中守护' }] }
+      f.commit(f.owner, run.handle, request, { startChapter: 1, endChapter: 3 })
+      const operation = BlueprintRepository.getCommittedRangeOperation(request.operationId)!
+      const batch = f.owner.characterProposals.stage({ kind: 'directory', operationId: operation.characterSyncOperation.operationId })
+      const heroine = CharacterRosterRepository.read(f.db).entries.find(entry => entry.name === '林岚')!.characterId
+      return { f, batch, heroine }
+    }
+
+    it('列出来，读得到，批准指向已有角色的关系：关系自提出它的第 2 章生效，建议随之消失', async () => {
+      const { f, batch, heroine } = await newcomerProposal()
+      expect(f.owner.characterProposals.listPendingFinalized()).toEqual([
+        { proposalBatchId: batch.proposalBatchId, revision: batch.revision, blueprintChapters: { from: 2, to: 2 }, itemCount: 1 }])
+      const pending = f.owner.characterProposals.readPendingFinalized(batch.proposalBatchId)
+      expect(pending.items.map(item => [item.fields.name, item.relationships.map(relation => [relation.targetName, relation.relation])]))
+        .toEqual([['雾灯人', [['林岚', '暗中守护']]]])
+      f.owner.approveCharacterProposal({ proposalBatchId: pending.proposalBatchId, expectedRevision: pending.revision, operationId: 'adopt-newcomer',
+        selections: [{ selectionKey: '2:0', action: 'create' }], relationships: [{ sourceSelectionKey: '2:0', targetCharacterId: heroine, relation: '暗中守护' }] })
+      expect(f.db.prepare(`SELECT s.name AS source,r.target_character_id AS target,r.relation FROM character_relationships r
+        JOIN characters s ON s.character_id=r.source_character_id`).all()).toEqual([{ source: '雾灯人', target: heroine, relation: '暗中守护' }])
+      expect(f.db.prepare("SELECT value,effective_chapter AS chapter FROM character_continuity_events WHERE aspect='relation'").all()).toEqual([{ value: '暗中守护', chapter: 2 }])
+      expect(f.owner.characterProposals.listPendingFinalized()).toEqual([])
+    })
+
+    it('拒绝后不再列出，名单不变', async () => {
+      const { f, batch } = await newcomerProposal()
+      f.owner.characterProposals.cancel({ proposalBatchId: batch.proposalBatchId, expectedRevision: batch.revision })
+      expect(f.owner.characterProposals.listPendingFinalized()).toEqual([])
+      expect(CharacterRosterRepository.read(f.db).entries.map(entry => entry.name)).toEqual(['林岚'])
+    })
+
+    it('没有新角色候选的蓝图不出建议', async () => {
+      const { f } = await newcomerProposal(false)
+      expect(f.owner.characterProposals.listPendingFinalized()).toEqual([])
+    })
+
+    it('作者改过提出它的那章蓝图后，接受必然失败，不再列出', async () => {
+      const { f, batch } = await newcomerProposal()
+      f.db.prepare("UPDATE blueprints SET title='作者改过' WHERE chapter_number=2").run()
+      expect(() => f.owner.approveCharacterProposal({ proposalBatchId: batch.proposalBatchId, expectedRevision: batch.revision, operationId: 'stale',
+        selections: [{ selectionKey: '2:0', action: 'create' }] })).toThrow('CHARACTER_PROPOSAL_SOURCE_CHANGED')
+      expect(f.owner.characterProposals.listPendingFinalized()).toEqual([])
+    })
+  })
   describe('蓝图提案同步的关系被作者改掉之后，第 12 章的预检', () => {
     const HINT = { from: '林晚', to: '沈舟', relation: '亲密同伴' }
     async function syncedRelation(finalizedThrough: number) {
