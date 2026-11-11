@@ -38,7 +38,6 @@ import {
   createProjectArchiveRoundtripFixture,
   insertAuthorImportReceipts,
 } from '../../../test/desktop/project-archive.fixture'
-import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -329,7 +328,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
 
-describe('portable project export service', { timeout: 20_000 }, () => {
+describe('portable project export service', () => {
   it('preserves admitted predecessor, recheck goals and state-update raw values without admitting unknown fields', async () => {
     const material = { draftId: 10, chapterNumber: 1, chapterTitle: '', content: '前驱正文',
       identity: { projectId: 'project', sourceId: 'candidate:10', revision: 1, contentHash: hash('前驱正文'), provenance: 'generated' } }
@@ -564,7 +563,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     expect(fs.existsSync(f.target)).toBe(false)
   })
 
-  it('exports the shared 20-chapter corpus with authority, assets and frozen runtime history', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+  it('exports the shared 20-chapter corpus with authority, assets and frozen runtime history', async () => {
     const f = await createProjectArchiveRoundtripFixture()
     try {
       const sourceBefore = fs.readFileSync(f.sourceDatabasePath)
@@ -616,7 +615,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     } finally { f.dispose() }
   })
 
-  it('exports and restores an author import that left several effect receipts (#607)', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+  it('exports and restores an author import that left several effect receipts (#607)', async () => {
     const f = await createProjectArchiveRoundtripFixture()
     try {
       const namespace = `import:author-manuscript:${AUTHOR_IMPORT_RUN_ID}`
@@ -1006,7 +1005,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
   })
 })
 
-describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）', { timeout: 30_000 }, () => {
+describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）', () => {
   const SECRET = 'sk-写稿凭据-绝不外带'
   const ENDPOINT = 'https://私有端点.example/v1'
   const MACHINE_PATH = 'C:\\Users\\writer\\密钥.txt'

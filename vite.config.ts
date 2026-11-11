@@ -60,6 +60,9 @@ export default defineConfig({
   test: {
     // Test copy must not follow the operating-system locale of a CI runner.
     setupFiles: ['test/setup-locale.ts', 'test/setup-buffer-equality.ts'],
+    // 托管 Windows runner 偶发 15 到 25 秒的磁盘卡顿（#582、#592），用例与钩子时限取其约两倍。
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
     // 本地历史 worktree 和 pnpm 缓存可能包含旧版本测试；它们不是当前项目源码。
     exclude: [
       ...configDefaults.exclude,

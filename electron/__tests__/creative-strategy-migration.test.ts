@@ -14,7 +14,6 @@ vi.mock('../database', async () => {
   return { ...actual, getProjectDb: fixture.getLegacyNormalizationFixtureDb, getCurrentProjectPath: fixture.getLegacyNormalizationFixturePath }
 })
 import { ProjectCoreRepository } from '../repositories/project-core-repository'
-import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../test/helpers/windows-runner-io-stall'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -23,9 +22,9 @@ const roots: string[] = []
 afterEach(() => {
   closeProjectDatabase()
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
-}, WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS)
+})
 
-describe('project creative strategy persistence', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
+describe('project creative strategy persistence', () => {
   it('migrates old projects to auto and restores a saved project strategy', () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-creative-strategy-'))
     roots.push(projectRoot)

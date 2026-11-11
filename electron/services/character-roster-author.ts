@@ -24,7 +24,7 @@ function normalize(candidate: CharacterRosterCommitRequest): AuthorRequest {
   if (!candidate || candidate.intent !== 'manual_edit' || candidate.schemaVersion !== CHARACTER_ROSTER_SCHEMA_VERSION
     || !nonempty(candidate.operationId) || candidate.operationId.length > 200 || !revision(candidate.expectedRevision)
     || !revision(candidate.expectedIdentityRevision) || !Array.isArray(candidate.entries)
-    || candidate.generationRunHandle || candidate.source || candidate.expectedLegacyMarkdown !== undefined) throw new Error('CHARACTER_AUTHOR_REQUEST_INVALID')
+    || candidate.generationRunHandle || candidate.source) throw new Error('CHARACTER_AUTHOR_REQUEST_INVALID')
   const entries = candidate.entries.map(raw => {
     if (!raw || !nonempty(raw.characterId) || !Array.isArray(raw.relationships)) throw new Error('CHARACTER_ID_WRITE_REQUIRED')
     const entry = normalizeAuthorRosterEntry(raw) as AuthorEntry

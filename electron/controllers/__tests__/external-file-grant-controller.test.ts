@@ -34,7 +34,6 @@ import {
 } from '../../../test/helpers/external-file-read-codes'
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-external-grant-controller-'))
-const SECURE_FILE_SYSTEM_TEST_TIMEOUT_MS = 15_000
 
 function handler(channel: string): IpcHandler {
   const registered = mocks.handlers.get(channel)
@@ -120,7 +119,7 @@ describe('external file grant IPC contract', () => {
     const written = fs.readFileSync(path.join(exportDirectory, 'Night Flight.md'), 'utf8')
     expect(written).toBe(content)
     expect(Buffer.from(written, 'utf8')).toEqual(Buffer.from(content, 'utf8'))
-  }, SECURE_FILE_SYSTEM_TEST_TIMEOUT_MS)
+  })
 
   it('导出写入拒绝 grant 外的 traversal 相对路径', async () => {
     const exportDirectory = path.join(temporaryRoot, 'exports-safe')
@@ -173,7 +172,7 @@ describe('external file grant IPC contract', () => {
     )).resolves.toMatchObject({ success: false, error: expect.stringContaining('路径无效') })
     expect(fs.existsSync(path.join(outsideDirectory, 'result.txt'))).toBe(false)
     expect(fs.existsSync(path.join(outsideDirectory, 'new-folder'))).toBe(false)
-  }, SECURE_FILE_SYSTEM_TEST_TIMEOUT_MS)
+  })
 
   it('仅 write 授权在 exists 后目标被删除时不能借原子替换重新创建文件', async () => {
     const exportDirectory = path.join(temporaryRoot, 'exports-write-only')
@@ -381,17 +380,17 @@ describe('external file grant refusals are explained by error code (#474)', () =
     const singleUse = issue(['read'], 1)
     await expect(read(singleUse)).resolves.toMatchObject({ success: true, content: 'text' })
     await expect(read(singleUse)).resolves.toMatchObject({ success: false, error: expired })
-  }, SECURE_FILE_SYSTEM_TEST_TIMEOUT_MS)
+  })
 
   it('refuses another window or an operation the grant does not cover', async () => {
     await expect(read(issue(['read']), 'grant-code.txt', event(18))).resolves.toMatchObject({ success: false, error: otherWindow })
     await expect(read(issue(['write']))).resolves.toMatchObject({ success: false, error: otherWindow })
-  }, SECURE_FILE_SYSTEM_TEST_TIMEOUT_MS)
+  })
 
   it('rejects paths that leave the granted directory', async () => {
     await expect(read(issue(['read']), '../outside.txt')).resolves.toMatchObject({ success: false, error: invalidPath })
     await expect(read(issue(['read']), path.resolve(directory, 'grant-code.txt'))).resolves.toMatchObject({ success: false, error: invalidPath })
-  }, SECURE_FILE_SYSTEM_TEST_TIMEOUT_MS)
+  })
 })
 
 describe('授权通过后读文件失败，说读文件的原因而不是授权（#593）', () => {

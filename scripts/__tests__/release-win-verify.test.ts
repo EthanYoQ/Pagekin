@@ -499,7 +499,7 @@ describe('Windows release verification orchestration', () => {
       await settleWithin(child).catch(() => undefined)
       rmSync(root, { recursive: true, force: true })
     }
-  }, 10_000)
+  })
 
   it('accepts a failed no-marker monitor root without waiting for a stopped state', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ai-novel-release-monitor-failed-'))
@@ -519,7 +519,7 @@ describe('Windows release verification orchestration', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
-  }, 7_000)
+  })
 
   it('marks a control-only no-marker root unresolved and preserves its fixture', async () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'ai-novel-release-monitor-unresolved-'))
@@ -555,7 +555,7 @@ describe('Windows release verification orchestration', () => {
       // the production-style cleanup path preserved the unresolved control root.
       rmSync(fixtureRoot, { recursive: true, force: true })
     }
-  }, 7_000)
+  })
 
   windowsIt('stops after a failed full test preflight without starting release or finalization work', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ai-novel-release-premonitor-failure-'))
@@ -659,7 +659,7 @@ describe('Windows release verification orchestration', () => {
       ])]
       await cleanupReleaseFixture(root, releaseRoots)
     }
-  }, 10_000)
+  })
 
   windowsIt('stops after monitor marker rename failure without running release finalization', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ai-novel-release-marker-failure-'))
@@ -796,7 +796,7 @@ describe('Windows release verification orchestration', () => {
       }
     }
     if (cleanupFailure) throw cleanupFailure
-  }, 10_000)
+  })
 
   it('preserves orchestrator and monitor evidence on every finalization failure path', () => {
     const script = readFileSync(releaseScript, 'utf8')
@@ -928,10 +928,7 @@ $at = Get-AiNovelStepCompletionDecision -NowUtc $start.AddSeconds(5) -AliveProce
       BeforeState: 'waiting-for-quiet',
       AtState: 'complete',
     })
-  // The assertions use a fixed clock and do not shorten the production five-second
-  // quiet contract. This budget only covers a cold Windows PowerShell process and
-  // monitor-library parsing while the full Vitest suite is contending for CPU.
-  }, 30_000)
+  })
 
   windowsIt('strictly rejects a missing, exited, or reused launcher identity', () => {
     const output = execFileSync(
@@ -966,7 +963,7 @@ $missing = Initialize-AiNovelGateRootIdentity -RootProcessId 2147483646 -RootPro
       Missing: false,
     })
     expect(Number(result.Stored)).toBeGreaterThan(0)
-  }, 15_000)
+  })
 
   windowsIt('keeps cross-process window events on the dedicated WinEventHook message loop', () => {
     const root = mkdtempSync(join(tmpdir(), 'ai-novel-release-gate-window-event-'))
@@ -1027,7 +1024,7 @@ finally {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
-  }, 10_000)
+  })
 
   windowsIt('fails closed when a 60ms descendant exits nonzero after its root launcher succeeds', async () => {
     const result = await runShortLivedProcessExitScenario({
@@ -1102,7 +1099,7 @@ $event = [pscustomobject]@{ ProcessId = 42; ExitCodeCaptured = $true; ExitCode =
 
     expect(monitor.slice(exemptionStart, exemptionEnd)).toContain('[uint32]$Event.JobMessage -eq 7')
     expect(result.Failure).toContain('abnormal exit')
-  }, 15_000)
+  })
 
   windowsIt.each(['build:win:artifacts', 'smoke:win-installer', 'smoke:win-v025-upgrade'])(
     'still fails result-owned step %s when the armed root exits nonzero',
@@ -1228,7 +1225,7 @@ $event = [pscustomobject]@{ ProcessId = 42; ExitCodeCaptured = $true; ExitCode =
       await stopGateMonitor(controlPath, monitor)
       rmSync(root, { recursive: true, force: true })
     }
-  }, 45_000)
+  })
 
   windowsIt.each(['smoke:win-installer', 'windows-in-app-update-e2e'])('observes the exact electron-builder process-check chain from one captured installer instance or strictly rejects an unretained member during %s', async (step) => {
     const root = mkdtempSync(join(tmpdir(), 'ai-novel-release-gate-nsis-probes-'))
@@ -2022,7 +2019,7 @@ internal static class ExactNsisUninstallerHelper {
       await stopGateMonitor(controlPath, monitor)
       rmSync(root, { recursive: true, force: true })
     }
-  }, 20_000)
+  })
 
   windowsIt('releases an armed real command once and transparently returns its nonzero exit code', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ai-novel-release-gate-exit-code-'))
@@ -2158,5 +2155,5 @@ internal static class ExactNsisUninstallerHelper {
       await stopGateMonitor(controlPath, monitor)
       rmSync(root, { recursive: true, force: true })
     }
-  }, 45_000)
+  })
 })

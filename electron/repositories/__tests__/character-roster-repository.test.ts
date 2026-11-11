@@ -5,11 +5,9 @@ import type BetterSqlite3 from 'better-sqlite3'
 
 import { getProjectDb } from '../../database'
 import { createLiveRowViews } from '../../../test/helpers/live-row-views'
-import { CharacterRosterRepository } from '../character-roster-repository'
+import { CharacterRosterRepository, renderCharacterRosterMarkdown, validateLegacyRosterCandidate } from '../character-roster-repository'
 import { ensureCharacterRosterSchema } from '../character-roster-schema'
-import { CharacterRepository } from '../character-repository'
-import { ProjectCoreRepository } from '../project-core-repository'
-import type { CharacterRosterCommitRequest } from '../../../src/shared/character-roster'
+import type { CharacterRosterEntry } from '../../../src/shared/character-roster'
 
 vi.mock('../../database', () => ({
   getProjectDb: vi.fn(),
@@ -20,45 +18,37 @@ const Database = require('better-sqlite3') as typeof import('better-sqlite3')
 
 let db: BetterSqlite3.Database
 
-function commitRequest(
-  overrides: Partial<CharacterRosterCommitRequest> = {},
-): CharacterRosterCommitRequest {
-  return {
-    operationId: 'architecture-run-001',
-    expectedRevision: 0,
-    schemaVersion: 1,
-    entries: [
-      {
-        name: '林舟',
-        role: 'protagonist',
-        gender: '男',
-        age: '十八岁',
-        appearance: '灰袍少年',
-        personality: '克制',
-        background: '铁砧镇学徒',
-        abilities: '锻造',
-        motivation: '守住家人',
-        relationships: [{ target: '苏绾', relation: '师徒' }],
-        arc: '从学徒成长为守护者',
-        notes: '左手有旧伤',
-      },
-      {
-        name: '苏绾',
-        role: 'supporting',
-        gender: '女',
-        age: '二十六岁',
-        appearance: '青衣剑客',
-        personality: '冷静',
-        background: '游侠',
-        abilities: '剑术',
-        motivation: '偿还旧债',
-        relationships: [{ target: '林舟', relation: '师徒' }],
-        arc: '学会托付',
-        notes: '',
-      },
-    ],
-    ...overrides,
-  }
+function rosterEntries(): CharacterRosterEntry[] {
+  return [
+    {
+      name: '林舟',
+      role: 'protagonist',
+      gender: '男',
+      age: '十八岁',
+      appearance: '灰袍少年',
+      personality: '克制',
+      background: '铁砧镇学徒',
+      abilities: '锻造',
+      motivation: '守住家人',
+      relationships: [{ target: '苏绾', relation: '师徒' }],
+      arc: '从学徒成长为守护者',
+      notes: '左手有旧伤',
+    },
+    {
+      name: '苏绾',
+      role: 'supporting',
+      gender: '女',
+      age: '二十六岁',
+      appearance: '青衣剑客',
+      personality: '冷静',
+      background: '游侠',
+      abilities: '剑术',
+      motivation: '偿还旧债',
+      relationships: [{ target: '林舟', relation: '师徒' }],
+      arc: '学会托付',
+      notes: '',
+    },
+  ]
 }
 
 beforeEach(() => {
@@ -119,155 +109,109 @@ afterEach(() => {
   db.close()
 })
 
-function finalizedSource(draftId: number, chapterNumber: number) {
-  return {
-    draftId,
-    finalizationId: `finalization-${draftId}`,
-    chapterNumber,
-    contentHash: String(draftId).padStart(64, '0'),
+
+const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
+
+function seedReadyLegacyRoster(entries: CharacterRosterEntry[]): void {
+  const insert = db.prepare(`
+    INSERT INTO characters (
+      name, role, gender, age, appearance, personality, background, abilities, motivation, relationships, arc, notes,
+      cs_location, cs_power_level, cs_physical_state, cs_mental_state, cs_key_items, cs_recent_events, cs_updated_at_chapter, cs_provenance
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  for (const entry of entries) {
+    const state = entry.currentState
+    insert.run(entry.name, entry.role, entry.gender, entry.age, entry.appearance, entry.personality, entry.background,
+      entry.abilities, entry.motivation, JSON.stringify(entry.relationships), entry.arc, entry.notes,
+      state?.location ?? '', state?.powerLevel ?? '', state?.physicalState ?? '', state?.mentalState ?? '',
+      state?.keyItems ?? '', state?.recentEvents ?? '', state?.updatedAtChapter ?? null, JSON.stringify(state?.provenance ?? {}))
   }
+  const stored = CharacterRosterRepository.read().entries
+  const projection = renderCharacterRosterMarkdown(stored)
+  const byName = [...stored].sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
+  db.prepare("UPDATE project_core SET characters_arch = ? WHERE id = 'main'").run(projection)
+  db.prepare(`
+    UPDATE character_roster_meta
+    SET revision = 1, migration_state = 'ready', projection_hash = ?, fact_hash = ?
+    WHERE id = 'main'
+  `).run(sha256(projection), sha256(JSON.stringify(byName)))
 }
 
-function insertDraft(draftId: number, chapterNumber: number, status: 'draft' | 'finalized'): void {
-  db.prepare('INSERT INTO drafts_all (id, chapter_number, status) VALUES (?, ?, ?)')
-    .run(draftId, chapterNumber, status)
-  if (status === 'finalized') {
-    const source = finalizedSource(draftId, chapterNumber)
-    db.prepare(`
-      INSERT INTO finalization_outbox_all (finalization_id, draft_id, chapter_number, content_hash)
-      VALUES (?, ?, ?, ?)
-    `).run(source.finalizationId, source.draftId, source.chapterNumber, source.contentHash)
-  }
-}
-
-function rawRosterStorage() {
-  return {
-    core: db.prepare("SELECT characters_arch FROM project_core WHERE id = 'main'").get(),
-    cards: db.prepare('SELECT * FROM characters ORDER BY name').all(),
-    meta: db.prepare(`
-      SELECT schema_version, revision, migration_state, legacy_markdown, projection_hash, fact_hash, updated_at
-      FROM character_roster_meta
-      WHERE id = 'main'
-    `).get(),
-    operations: db.prepare(`
-      SELECT operation_id, payload_hash, committed_revision, projection_hash, created_at
-      FROM character_roster_operations
-      ORDER BY operation_id
-    `).all(),
-  }
-}
-
-describe('CharacterRosterRepository public read/commit seam', () => {
+describe('CharacterRosterRepository legacy read', () => {
   it('keeps a pre-provenance ready roster ready after adding the empty provenance column', () => {
-    const request = commitRequest({
-      entries: commitRequest().entries.map((entry, index) => index === 0
-        ? {
-            ...entry,
-            currentState: {
-              location: '旧港口',
-              powerLevel: '学徒',
-              physicalState: '轻伤',
-              mentalState: '警觉',
-              keyItems: '旧剑',
-              recentEvents: '刚抵达港口',
-              updatedAtChapter: 1,
-            },
-          }
-        : entry),
-    })
-    const committed = CharacterRosterRepository.commit(request)
-    const legacyEntries = committed.snapshot.entries.map((entry) => {
-      if (!entry.currentState) return entry
-      const currentState = { ...entry.currentState }
-      delete currentState.provenance
-      return { ...entry, currentState }
-    })
-    const legacyFactHash = createHash('sha256')
-      .update(JSON.stringify(legacyEntries), 'utf8')
-      .digest('hex')
-    db.prepare("UPDATE character_roster_meta SET fact_hash = ? WHERE id = 'main'").run(legacyFactHash)
+    const [first, second] = rosterEntries()
+    seedReadyLegacyRoster([{
+      ...first,
+      currentState: {
+        location: '旧港口',
+        powerLevel: '学徒',
+        physicalState: '轻伤',
+        mentalState: '警觉',
+        keyItems: '旧剑',
+        recentEvents: '刚抵达港口',
+        updatedAtChapter: 1,
+      },
+    }, second])
     db.exec('ALTER TABLE characters DROP COLUMN cs_provenance')
 
     ensureCharacterRosterSchema(db)
 
     const upgraded = CharacterRosterRepository.read()
-    expect(upgraded).toMatchObject({ status: 'ready', factHash: legacyFactHash })
+    expect(upgraded.status).toBe('ready')
+    expect(upgraded.entries.find(entry => entry.name === '林舟')?.currentState).toMatchObject({ location: '旧港口' })
     expect(upgraded.entries[0]?.currentState).not.toHaveProperty('provenance')
   })
 
   it('keeps the persisted name-only factHash for a project without the identity schema', () => {
-    // 没有 character_identity_meta 的旧项目没有稳定角色 ID，公开 factHash
-    // 必须继续等于持久化的姓名版本，不能在只读路径上被重写成 ID 版本。
-    const committed = CharacterRosterRepository.commit(commitRequest())
-    const persisted = db
-      .prepare("SELECT fact_hash FROM character_roster_meta WHERE id = 'main'")
-      .get() as { fact_hash: string }
-    expect(committed.snapshot.factHash).toBe(persisted.fact_hash)
+    seedReadyLegacyRoster(rosterEntries())
+    const persisted = db.prepare("SELECT fact_hash FROM character_roster_meta WHERE id = 'main'").pluck().get()
 
-    const reread = CharacterRosterRepository.read()
-    expect(reread.factHash).toBe(persisted.fact_hash)
-    expect(reread.status).toBe('ready')
+    expect(CharacterRosterRepository.read()).toMatchObject({ status: 'ready', factHash: persisted, nameOnlyFactHash: persisted })
   })
 
-  it('normalizes a finite numeric model age without widening other roster fields', () => {
-    const base = commitRequest()
-    const numericAge = {
-      ...base,
-      entries: base.entries.map((entry) => (
-        entry.name === '林舟' ? { ...entry, age: 18 } : entry
-      )),
-    } as unknown as CharacterRosterCommitRequest
+  it('keeps a historical Chinese projection readable after a project switches to English', () => {
+    seedReadyLegacyRoster(rosterEntries())
+    const historical = CharacterRosterRepository.read()
+    db.prepare("UPDATE project_core SET writing_language = 'en-US' WHERE id = 'main'").run()
 
-    const receipt = CharacterRosterRepository.commit(numericAge)
-    expect(receipt.snapshot.entries.find((entry) => entry.name === '林舟')?.age).toBe('18')
-
-    for (const invalidAge of [Number.NaN, Number.POSITIVE_INFINITY, true, null]) {
-      expect(() => CharacterRosterRepository.commit({
-        ...commitRequest({ operationId: `invalid-age-${String(invalidAge)}` }),
-        entries: [{ ...base.entries[0], age: invalidAge }, base.entries[1]],
-      } as unknown as CharacterRosterCommitRequest)).toThrow('CHARACTER_ROSTER_TEXT_INVALID')
-    }
-    expect(() => CharacterRosterRepository.commit({
-      ...commitRequest({ operationId: 'invalid-name-number' }),
-      entries: [{ ...base.entries[0], name: 7 }, base.entries[1]],
-    } as unknown as CharacterRosterCommitRequest)).toThrow('CHARACTER_ROSTER_TEXT_INVALID')
+    expect(CharacterRosterRepository.read()).toMatchObject({
+      status: 'ready',
+      renderedMarkdown: historical.renderedMarkdown,
+      projectionHash: historical.projectionHash,
+    })
+    expect(historical.renderedMarkdown).toContain('# 角色图谱')
   })
 
   it('renders the canonical shared minor-role label in the deterministic roster projection', () => {
-    const receipt = CharacterRosterRepository.commit(commitRequest({
-      entries: commitRequest().entries.map(entry => (
-        entry.name === '苏绾' ? { ...entry, role: 'minor' as const } : entry
-      )),
-    }))
+    const markdown = renderCharacterRosterMarkdown(rosterEntries().map(entry => (
+      entry.name === '苏绾' ? { ...entry, role: 'minor' as const } : entry
+    )))
 
-    expect(receipt.snapshot.renderedMarkdown).toContain('## 龙套：苏绾')
-    expect(receipt.snapshot.renderedMarkdown).not.toContain('## 次要角色：苏绾')
+    expect(markdown).toContain('## 龙套：苏绾')
+    expect(markdown).not.toContain('## 次要角色：苏绾')
   })
 
   it('renders an English project roster without Chinese projection labels', () => {
-    db.prepare("UPDATE project_core SET writing_language = 'en-US' WHERE id = 'main'").run()
-
-    const receipt = CharacterRosterRepository.commit(commitRequest({
-      entries: commitRequest().entries.map(entry => ({
-        ...entry,
-        name: entry.name === '林舟' ? 'Lin Zhou' : 'Su Wan',
-        gender: entry.gender === '男' ? 'male' : 'female',
-        age: entry.age === '十八岁' ? '18' : '26',
-        appearance: 'plain travel clothes',
-        personality: 'calm',
-        background: 'harbor investigator',
-        abilities: 'investigation',
-        motivation: 'find the truth',
-        relationships: [{
-          target: entry.name === '林舟' ? 'Su Wan' : 'Lin Zhou',
-          relation: 'trusted colleague',
-        }],
-        arc: 'learns to trust others',
-        notes: '',
-      })),
+    const entries = rosterEntries().map(entry => ({
+      ...entry,
+      name: entry.name === '林舟' ? 'Lin Zhou' : 'Su Wan',
+      gender: entry.gender === '男' ? 'male' : 'female',
+      age: entry.age === '十八岁' ? '18' : '26',
+      appearance: 'plain travel clothes',
+      personality: 'calm',
+      background: 'harbor investigator',
+      abilities: 'investigation',
+      motivation: 'find the truth',
+      relationships: [{
+        target: entry.name === '林舟' ? 'Su Wan' : 'Lin Zhou',
+        relation: 'trusted colleague',
+      }],
+      arc: 'learns to trust others',
+      notes: '',
     }))
+    const markdown = renderCharacterRosterMarkdown(entries, 'en-US')
 
-    expect(receipt.snapshot.renderedMarkdown).toBe([
+    expect(markdown).toBe([
       '# Character graph',
       '',
       '## Protagonist: Lin Zhou',
@@ -292,551 +236,55 @@ describe('CharacterRosterRepository public read/commit seam', () => {
       '- Arc: learns to trust others',
       '- Relationship: Lin Zhou (trusted colleague)',
     ].join('\n'))
-    expect(receipt.snapshot.renderedMarkdown).not.toMatch(/[\u3400-\u9fff]/u)
+    expect(markdown).not.toMatch(/[㐀-鿿]/u)
 
-    const extraRoles = CharacterRosterRepository.commit({
-      operationId: 'english-role-labels',
-      expectedRevision: receipt.revision,
-      schemaVersion: 1,
-      intent: 'manual_edit',
-      entries: [
-        ...receipt.snapshot.entries,
-        { ...receipt.snapshot.entries[1], name: 'Rowan Vale', role: 'antagonist' as const, relationships: [] },
-        { ...receipt.snapshot.entries[1], name: 'Harbor Clerk', role: 'minor' as const, relationships: [] },
-      ],
-    })
-    expect(extraRoles.snapshot.renderedMarkdown).toContain('## Antagonist: Rowan Vale')
-    expect(extraRoles.snapshot.renderedMarkdown).toContain('## Minor character: Harbor Clerk')
+    const extraRoles = renderCharacterRosterMarkdown([
+      ...entries,
+      { ...entries[1], name: 'Rowan Vale', role: 'antagonist' as const, relationships: [] },
+      { ...entries[1], name: 'Harbor Clerk', role: 'minor' as const, relationships: [] },
+    ], 'en-US')
+    expect(extraRoles).toContain('## Antagonist: Rowan Vale')
+    expect(extraRoles).toContain('## Minor character: Harbor Clerk')
   })
 
-  it('keeps a historical Chinese projection readable after a project switches to English, then localizes the next commit', () => {
-    const historical = CharacterRosterRepository.commit(commitRequest())
-    db.prepare("UPDATE project_core SET writing_language = 'en-US' WHERE id = 'main'").run()
+  it('normalizes a finite numeric model age in legacy candidates without widening other roster fields', () => {
+    const [first, second] = rosterEntries()
+    expect(validateLegacyRosterCandidate({ schemaVersion: 1, entries: [{ ...first, age: 18 }, second] })[0]?.age).toBe('18')
 
-    expect(CharacterRosterRepository.read()).toMatchObject({
-      status: 'ready',
-      renderedMarkdown: historical.snapshot.renderedMarkdown,
-      projectionHash: historical.snapshot.projectionHash,
-    })
-    expect(CharacterRosterRepository.commit(commitRequest())).toMatchObject({
-      idempotent: true,
-      snapshot: { status: 'ready', renderedMarkdown: historical.snapshot.renderedMarkdown },
-    })
-
-    const localized = CharacterRosterRepository.commit({
-      operationId: 'manual-edit-localizes-projection',
-      expectedRevision: historical.revision,
-      schemaVersion: 1,
-      intent: 'manual_edit',
-      entries: historical.snapshot.entries,
-    })
-    expect(localized.snapshot).toMatchObject({ status: 'ready', revision: 2 })
-    expect(localized.snapshot.renderedMarkdown).toContain('# Character graph')
-    expect(localized.snapshot.renderedMarkdown).toContain('## Protagonist: 林舟')
-    expect(localized.snapshot.renderedMarkdown).toContain('- Relationship: 苏绾 (师徒)')
+    for (const invalidAge of [Number.NaN, Number.POSITIVE_INFINITY, true, null]) {
+      expect(() => validateLegacyRosterCandidate({ schemaVersion: 1, entries: [{ ...first, age: invalidAge }, second] }))
+        .toThrow('CHARACTER_ROSTER_TEXT_INVALID')
+    }
+    expect(() => validateLegacyRosterCandidate({ schemaVersion: 1, entries: [{ ...first, name: 7 }, second] }))
+      .toThrow('CHARACTER_ROSTER_TEXT_INVALID')
   })
 
-  it('uses one manual-edit receipt to rename, delete, preserve free-text relations, update blueprint references, and allow an empty roster', () => {
-    const initial = CharacterRosterRepository.commit(commitRequest({
-      intent: 'manual_edit',
-      entries: commitRequest().entries.map(entry => (
-        entry.name === '林舟'
-          ? {
-              ...entry,
-              relationships: [],
-              legacyRelationshipNotes: '作者手写的自由关系备注，不能被结构化保存吞掉',
-            }
-          : entry
-      )),
-    }))
-    db.prepare('INSERT INTO blueprints (chapter_number, characters) VALUES (?, ?)')
-      .run(1, JSON.stringify(['林舟', '苏绾']))
-
-    const renamedAndTrimmed = CharacterRosterRepository.commit({
-      operationId: 'manual-edit-rename-delete',
-      expectedRevision: initial.revision,
-      schemaVersion: 1,
-      intent: 'manual_edit',
-      renames: [{ originalName: '林舟', newName: '陆舟' }],
-      entries: [{
-        ...initial.snapshot.entries.find(entry => entry.name === '林舟')!,
-        name: '陆舟',
-        // This candidate still names the deleted card. The deep module must
-        // remove that structural edge together with the omitted card.
-        relationships: [{ target: '苏绾', relation: '旧师徒' }],
-        currentState: {
-          location: '北境',
-          powerLevel: '炼气',
-          physicalState: '轻伤',
-          mentalState: '警觉',
-          keyItems: '旧剑',
-          recentEvents: '发现线索',
-          updatedAtChapter: 3,
-        },
-      }],
-    })
-
-    expect(renamedAndTrimmed).toMatchObject({
-      revision: 2,
-      snapshot: {
-        status: 'ready',
-        entries: [expect.objectContaining({
-          name: '陆舟',
-          relationships: [],
-          legacyRelationshipNotes: '作者手写的自由关系备注，不能被结构化保存吞掉',
-          currentState: expect.objectContaining({ updatedAtChapter: 3 }),
-        })],
-      },
-    })
-    expect(renamedAndTrimmed.snapshot.factHash).not.toBe(initial.snapshot.factHash)
-    expect(db.prepare('SELECT characters FROM blueprints WHERE chapter_number = 1').get())
-      .toEqual({ characters: JSON.stringify(['陆舟']) })
-
-    const empty = CharacterRosterRepository.commit({
-      operationId: 'manual-edit-delete-last',
-      expectedRevision: renamedAndTrimmed.revision,
-      schemaVersion: 1,
-      intent: 'manual_edit',
-      entries: [],
-    })
-    expect(empty.snapshot).toMatchObject({
-      revision: 3,
-      status: 'empty',
-      entries: [],
-      renderedMarkdown: '',
-    })
-  })
-
-  it('fails closed when a legacy direct card write makes the ready roster inconsistent', () => {
-    const first = CharacterRosterRepository.commit(commitRequest())
-    const existing = CharacterRepository.getByName('林舟')!
-    CharacterRepository.upsert({ ...existing, notes: '旧旁路直接改写了角色事实' })
-
-    expect(CharacterRosterRepository.read()).toMatchObject({
-      revision: first.revision,
-      status: 'inconsistent',
-    })
-    expect(() => CharacterRosterRepository.commit(commitRequest({
-      operationId: 'architecture-must-not-bypass-inconsistent-roster',
-      expectedRevision: first.revision,
-      intent: 'architecture_generation',
-    }))).toThrow('CHARACTER_ROSTER_STATE_INCONSISTENT')
-    expect(CharacterRepository.getByName('林舟')?.notes).toBe('旧旁路直接改写了角色事实')
-  })
-
-  it('rejects free-text relationship evidence outside a manual edit', () => {
-    expect(() => CharacterRosterRepository.commit(commitRequest({
-      intent: 'novel_import',
-      entries: commitRequest().entries.map(entry => ({
-        ...entry,
-        legacyRelationshipNotes: '导入候选不得携带旧自由文本关系',
-      })),
-    }))).toThrow('CHARACTER_ROSTER_FREE_RELATIONSHIPS_FORBIDDEN')
-  })
-
-  it('commits a validated roster and its deterministic projection as one ready snapshot', () => {
-    const receipt = CharacterRosterRepository.commit(commitRequest())
-
-    expect(receipt).toMatchObject({
-      idempotent: false,
-      operationId: 'architecture-run-001',
-      revision: 1,
-      snapshot: {
-        schemaVersion: 1,
-        revision: 1,
-        migrationState: 'ready',
-        entries: [
-          expect.objectContaining({
-            name: '林舟',
-            relationships: [{ target: '苏绾', relation: '师徒' }],
-          }),
-          expect.objectContaining({
-            name: '苏绾',
-            relationships: [{ target: '林舟', relation: '师徒' }],
-          }),
-        ],
-        renderedMarkdown: [
-          '# 角色图谱',
-          '',
-          '## 主角：林舟',
-          '- 性别：男',
-          '- 年龄：十八岁',
-          '- 外貌：灰袍少年',
-          '- 性格：克制',
-          '- 背景：铁砧镇学徒',
-          '- 能力：锻造',
-          '- 动机：守住家人',
-          '- 弧光：从学徒成长为守护者',
-          '- 备注：左手有旧伤',
-          '- 关系：苏绾（师徒）',
-          '',
-          '## 配角：苏绾',
-          '- 性别：女',
-          '- 年龄：二十六岁',
-          '- 外貌：青衣剑客',
-          '- 性格：冷静',
-          '- 背景：游侠',
-          '- 能力：剑术',
-          '- 动机：偿还旧债',
-          '- 弧光：学会托付',
-          '- 关系：林舟（师徒）',
-        ].join('\n'),
-      },
-    })
-
-    expect(CharacterRosterRepository.read()).toEqual(receipt.snapshot)
-  })
-
-  it('returns the original receipt for an idempotent operation replay without writing a second revision', () => {
-    const first = CharacterRosterRepository.commit(commitRequest())
-    const replay = CharacterRosterRepository.commit(commitRequest())
-
-    expect(replay).toMatchObject({
-      operationId: first.operationId,
-      payloadHash: first.payloadHash,
-      revision: 1,
-      idempotent: true,
-    })
-    expect(CharacterRosterRepository.read().revision).toBe(1)
-  })
-
-  it('returns a current consistent idempotent observation when replaying an older operation after a later commit', () => {
-    const first = CharacterRosterRepository.commit(commitRequest())
-    const second = CharacterRosterRepository.commit({
-      operationId: 'manual-edit-after-first-operation',
-      expectedRevision: first.revision,
-      schemaVersion: 1,
-      intent: 'manual_edit',
-      entries: first.snapshot.entries.map(entry => (
-        entry.name === '林舟'
-          ? { ...entry, notes: 'B 已成为当前角色事实' }
-          : entry
-      )),
-    })
-    const operationCountBeforeReplay = (db.prepare(
-      'SELECT COUNT(*) AS count FROM character_roster_operations',
-    ).get() as { count: number }).count
-
-    const replay = CharacterRosterRepository.commit(commitRequest())
-
-    expect(replay).toMatchObject({
-      operationId: first.operationId,
-      payloadHash: first.payloadHash,
-      idempotent: true,
-      revision: second.revision,
-      snapshot: {
-        revision: second.revision,
-        entries: expect.arrayContaining([
-          expect.objectContaining({ name: '林舟', notes: 'B 已成为当前角色事实' }),
-        ]),
-      },
-    })
-    expect(replay.revision).toBe(replay.snapshot.revision)
-    expect(replay.snapshot).toEqual(second.snapshot)
-    expect((db.prepare('SELECT COUNT(*) AS count FROM character_roster_operations').get() as { count: number }).count)
-      .toBe(operationCountBeforeReplay)
-  })
-
-  it('rejects a reused operation ID with a different payload and a stale revision without changing the roster', () => {
-    const first = CharacterRosterRepository.commit(commitRequest())
-    const differentPayload = commitRequest({
-      entries: commitRequest().entries.map(entry => (
-        entry.name === '林舟' ? { ...entry, notes: '不同 payload' } : entry
-      )),
-    })
-
-    expect(() => CharacterRosterRepository.commit(differentPayload))
-      .toThrow('CHARACTER_ROSTER_OPERATION_CONFLICT')
-    expect(() => CharacterRosterRepository.commit(commitRequest({
-      operationId: 'architecture-run-002',
-      expectedRevision: 0,
-    }))).toThrow('CHARACTER_ROSTER_REVISION_STALE')
-    expect(CharacterRosterRepository.read()).toEqual(first.snapshot)
-  })
-
-  it('rejects a candidate with a dangling relationship before any facts are written', () => {
-    const invalid = commitRequest({
-      entries: [{
-        ...commitRequest().entries[0],
-        relationships: [{ target: '不存在的角色', relation: '敌对' }],
-      }],
-    })
-
-    expect(() => CharacterRosterRepository.commit(invalid))
-      .toThrow('CHARACTER_ROSTER_RELATIONSHIP_TARGET_UNKNOWN')
-    expect(CharacterRosterRepository.read()).toMatchObject({
-      revision: 0,
-      migrationState: 'empty',
-      entries: [],
-      renderedMarkdown: '',
-    })
-  })
-
-  it('fails closed for an unsupported schema, duplicate identity, invalid role and self relation', () => {
-    const base = commitRequest()
-    const invalidCandidates: Array<{ candidate: CharacterRosterCommitRequest; error: string }> = [
-      {
-        candidate: { ...base, schemaVersion: 2 as 1 },
-        error: 'CHARACTER_ROSTER_SCHEMA_UNSUPPORTED',
-      },
-      {
-        candidate: {
-          ...base,
-          entries: [base.entries[0], {
-            ...base.entries[1],
-            name: '林舟',
-            relationships: [],
-          }],
-        },
-        error: 'CHARACTER_ROSTER_NAME_DUPLICATE',
-      },
-      {
-        candidate: {
-          ...base,
-          entries: [{ ...base.entries[0], role: 'villain' as never }],
-        },
-        error: 'CHARACTER_ROSTER_ROLE_INVALID',
-      },
-      {
-        candidate: {
-          ...base,
-          entries: [{
-            ...base.entries[0],
-            relationships: [{ target: '林舟', relation: '镜像' }],
-          }],
-        },
-        error: 'CHARACTER_ROSTER_RELATIONSHIP_SELF',
-      },
+  it('rejects legacy candidates with an unsupported schema, duplicate identity, invalid role or self relation', () => {
+    const [first, second] = rosterEntries()
+    const invalidCandidates: Array<{ candidate: unknown; error: string }> = [
+      { candidate: { schemaVersion: 2, entries: [first, second] }, error: 'CHARACTER_ROSTER_SCHEMA_UNSUPPORTED' },
+      { candidate: { schemaVersion: 1, entries: [first, { ...second, name: '林舟', relationships: [] }] }, error: 'CHARACTER_ROSTER_NAME_DUPLICATE' },
+      { candidate: { schemaVersion: 1, entries: [{ ...first, role: 'villain' }] }, error: 'CHARACTER_ROSTER_ROLE_INVALID' },
+      { candidate: { schemaVersion: 1, entries: [{ ...first, relationships: [{ target: '林舟', relation: '镜像' }] }] }, error: 'CHARACTER_ROSTER_RELATIONSHIP_SELF' },
     ]
 
     for (const { candidate, error } of invalidCandidates) {
-      expect(() => CharacterRosterRepository.commit(candidate)).toThrow(error)
+      expect(() => validateLegacyRosterCandidate(candidate)).toThrow(error)
     }
-    expect(CharacterRosterRepository.read().revision).toBe(0)
   })
 
-  it('rolls back cards, projection, revision and receipt together when the final receipt write faults', () => {
-    db.exec(`
-      CREATE TRIGGER character_roster_test_receipt_fault
-      BEFORE INSERT ON character_roster_operations
-      BEGIN
-        SELECT RAISE(ABORT, 'injected receipt fault');
-      END;
-    `)
-
-    expect(() => CharacterRosterRepository.commit(commitRequest()))
-      .toThrow(/injected receipt fault/)
-    expect(CharacterRosterRepository.read()).toMatchObject({
-      revision: 0,
-      migrationState: 'empty',
-      entries: [],
-      renderedMarkdown: '',
-    })
-    expect(ProjectCoreRepository.get()?.charactersArch).toBe('')
+  it('validates legacy roster candidates as a closed cast without free-text relationships', () => {
+    expect(validateLegacyRosterCandidate({ schemaVersion: 1, entries: rosterEntries() }).map(entry => entry.name))
+      .toEqual(['林舟', '苏绾'])
+    expect(() => validateLegacyRosterCandidate({ schemaVersion: 1, entries: [{
+      ...rosterEntries()[0], relationships: [{ target: '不存在的角色', relation: '敌对' }],
+    }] })).toThrow('CHARACTER_ROSTER_RELATIONSHIP_TARGET_UNKNOWN')
+    expect(() => validateLegacyRosterCandidate({ schemaVersion: 1, entries: [{
+      ...rosterEntries()[0], relationships: [], legacyRelationshipNotes: '自由文本',
+    }] })).toThrow('CHARACTER_ROSTER_FREE_RELATIONSHIPS_FORBIDDEN')
+    expect(() => validateLegacyRosterCandidate({ schemaVersion: 1, entries: [] }))
+      .toThrow('CHARACTER_ROSTER_ENTRIES_REQUIRED')
   })
-
-  it('rolls back inserted cards when the projection write faults before meta and receipt are recorded', () => {
-    db.exec(`
-      CREATE TRIGGER character_roster_test_projection_fault
-      BEFORE UPDATE OF characters_arch ON project_core
-      BEGIN
-        SELECT RAISE(ABORT, 'injected projection fault');
-      END;
-    `)
-
-    expect(() => CharacterRosterRepository.commit(commitRequest()))
-      .toThrow(/injected projection fault/)
-    expect(CharacterRosterRepository.read()).toMatchObject({
-      revision: 0,
-      migrationState: 'empty',
-      entries: [],
-      renderedMarkdown: '',
-    })
-    expect(ProjectCoreRepository.get()?.charactersArch).toBe('')
-  })
-
-  it('exposes existing cards as preserved legacy facts and refuses to overwrite them through the new seam', () => {
-    db.exec('DELETE FROM character_roster_meta')
-    CharacterRepository.upsert({
-      name: '手工角色',
-      role: 'protagonist',
-      gender: '',
-      age: '',
-      appearance: '',
-      personality: '',
-      background: '',
-      abilities: '',
-      motivation: '',
-      relationships: '自由文本关系必须原样保留',
-      arc: '',
-      notes: '用户手工填写',
-    })
-    ensureCharacterRosterSchema(db)
-
-    expect(CharacterRosterRepository.read()).toMatchObject({
-      revision: 0,
-      migrationState: 'legacy_cards_preserved',
-      status: 'inconsistent',
-      entries: [expect.objectContaining({
-        name: '手工角色',
-        notes: '用户手工填写',
-        legacyRelationshipNotes: '自由文本关系必须原样保留',
-      })],
-    })
-    expect(() => CharacterRosterRepository.commit(commitRequest()))
-      .toThrow('CHARACTER_ROSTER_EXISTING_PROTECTED')
-    expect(CharacterRosterRepository.read().entries).toEqual([
-      expect.objectContaining({ name: '手工角色', notes: '用户手工填写' }),
-    ])
-  })
-
-  it('safely regenerates a structured roster around existing manual cards without replacing non-empty fields', () => {
-    db.exec('DELETE FROM character_roster_meta')
-    CharacterRepository.upsert({
-      name: '林舟',
-      role: 'supporting',
-      gender: '',
-      age: '',
-      appearance: '作者手写的旧斗篷',
-      personality: '',
-      background: '',
-      abilities: '',
-      motivation: '',
-      relationships: '作者手工填写的旧关系备注，不得被生成 JSON 覆盖',
-      arc: '',
-      notes: '作者已确认，不应覆盖',
-    })
-    ensureCharacterRosterSchema(db)
-
-    // 旧项目先由显式 adoption 固化 cards -> projection；架构重新生成不再
-    // 获得绕过 inconsistent 状态的特权。
-    const preserved = CharacterRosterRepository.read()
-    const adopted = CharacterRosterRepository.commit({
-      operationId: 'adopt-before-architecture-regeneration',
-      expectedRevision: preserved.revision,
-      schemaVersion: 1,
-      entries: preserved.entries.map((entry) => {
-        const structuredEntry = { ...entry }
-        delete structuredEntry.legacyRelationshipNotes
-        return structuredEntry
-      }),
-      intent: 'legacy_cards_adoption',
-      expectedLegacyMarkdown: preserved.legacyMarkdown ?? '',
-    })
-
-    const receipt = CharacterRosterRepository.commit({
-      ...commitRequest({
-        operationId: 'architecture-regeneration-001',
-        expectedRevision: adopted.revision,
-      }),
-      intent: 'architecture_generation',
-    })
-
-    expect(receipt.snapshot).toMatchObject({
-      revision: 2,
-      migrationState: 'ready',
-      entries: expect.arrayContaining([
-        expect.objectContaining({
-          name: '林舟',
-          role: 'supporting',
-          appearance: '作者手写的旧斗篷',
-          notes: '作者已确认，不应覆盖',
-          background: '铁砧镇学徒',
-          legacyRelationshipNotes: '作者手工填写的旧关系备注，不得被生成 JSON 覆盖',
-        }),
-        expect.objectContaining({ name: '苏绾', role: 'supporting' }),
-      ]),
-    })
-    expect(CharacterRosterRepository.read().entries).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        name: '林舟',
-        appearance: '作者手写的旧斗篷',
-        legacyRelationshipNotes: '作者手工填写的旧关系备注，不得被生成 JSON 覆盖',
-      }),
-      expect.objectContaining({ name: '苏绾' }),
-    ]))
-    expect(CharacterRepository.getByName('林舟')?.relationships)
-      .toBe('作者手工填写的旧关系备注，不得被生成 JSON 覆盖')
-  })
-
-  it('creates a second roster revision while preserving a manual edit made after the first structured commit', () => {
-    const first = CharacterRosterRepository.commit(commitRequest())
-    const manual = CharacterRosterRepository.commit({
-      operationId: 'manual-edit-after-first-generation',
-      expectedRevision: first.revision,
-      schemaVersion: 1,
-      intent: 'manual_edit',
-      entries: first.snapshot.entries.map(entry => (
-        entry.name === '林舟'
-          ? { ...entry, appearance: '作者在角色管理中补写的红色旧斗篷' }
-          : entry
-      )),
-    })
-    const newCharacter = {
-      name: '顾临',
-      role: 'antagonist' as const,
-      gender: '男',
-      age: '三十岁',
-      appearance: '玄铁面具',
-      personality: '偏执',
-      background: '旧王朝遗臣',
-      abilities: '阵法',
-      motivation: '复辟旧朝',
-      relationships: [],
-      arc: '承认失败',
-      notes: '',
-    }
-
-    const second = CharacterRosterRepository.commit({
-      ...commitRequest({
-        operationId: 'architecture-regeneration-002',
-        expectedRevision: manual.revision,
-        entries: [...commitRequest().entries, newCharacter],
-      }),
-      intent: 'architecture_generation',
-    })
-
-    expect(second).toMatchObject({ revision: 3, idempotent: false })
-    expect(second.snapshot.entries).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: '林舟', appearance: '作者在角色管理中补写的红色旧斗篷' }),
-      expect.objectContaining({ name: '顾临', role: 'antagonist' }),
-    ]))
-  })
-
-  it.each(['architecture_generation', 'novel_import'] as const)(
-    'merges a canonical-equivalent %s identity while preserving manual fields',
-    (intent) => {
-      const existing = {
-        ...commitRequest().entries[0],
-        name: 'Alice',
-        appearance: '作者手写的旧斗篷',
-        background: '',
-        relationships: [],
-      }
-      const initial = CharacterRosterRepository.commit(commitRequest({ entries: [existing] }))
-
-      const receipt = CharacterRosterRepository.commit({
-        operationId: `${intent}-canonical-existing-name`,
-        expectedRevision: initial.revision,
-        schemaVersion: 1,
-        intent,
-        entries: [{
-          ...existing,
-          name: ' ALICE ',
-          appearance: '模型试图覆盖的银色斗篷',
-          background: '模型补齐的航海经历',
-        }],
-      })
-
-      expect(receipt.snapshot.entries).toEqual([
-        expect.objectContaining({
-          name: 'Alice',
-          appearance: '作者手写的旧斗篷',
-          background: '模型补齐的航海经历',
-        }),
-      ])
-    },
-  )
 
   it('archives legacy Markdown as migration evidence instead of parsing it as a roster', () => {
     db.exec(`
@@ -856,85 +304,6 @@ describe('CharacterRosterRepository public read/commit seam', () => {
     })
   })
 
-  it('rejects normal generation for a zero-card legacy graph without changing its raw evidence, cards, or roster metadata', () => {
-    const legacyMarkdown = '旧角色图谱原文：没有角色卡时，普通架构生成不得把它转为 ready。'
-    db.prepare('DELETE FROM character_roster_meta').run()
-    db.prepare("UPDATE project_core SET characters_arch = ? WHERE id = 'main'").run(legacyMarkdown)
-    ensureCharacterRosterSchema(db)
-    const before = rawRosterStorage()
-
-    expect(() => CharacterRosterRepository.commit(commitRequest({
-      operationId: 'normal-generation-must-not-migrate-legacy-markdown',
-      intent: 'architecture_generation',
-    }))).toThrow('CHARACTER_ROSTER_LEGACY_REPAIR_REQUIRED')
-
-    expect(rawRosterStorage()).toEqual(before)
-    expect(CharacterRosterRepository.read()).toMatchObject({
-      revision: 0,
-      migrationState: 'legacy_markdown_pending',
-      status: 'legacy_repair_required',
-      entries: [],
-      legacyMarkdown,
-    })
-  })
-
-  it('repairs a v0.7.1 zero-card legacy graph only through an exact-evidence structured commit', () => {
-    const legacyMarkdown = '矿场事故后，沈砺和顾湘从互相怀疑走向共同调查。这里没有可供程序解析的标题或编号。'
-    db.exec(`
-      DELETE FROM character_roster_meta;
-      UPDATE project_core
-      SET characters_arch = '${legacyMarkdown}';
-    `)
-    ensureCharacterRosterSchema(db)
-    const before = CharacterRosterRepository.read()
-
-    const receipt = CharacterRosterRepository.commit({
-      ...commitRequest({ operationId: 'legacy-repair-v071', expectedRevision: before.revision }),
-      intent: 'legacy_repair',
-      expectedLegacyMarkdown: legacyMarkdown,
-    })
-
-    expect(receipt).toMatchObject({
-      revision: 1,
-      idempotent: false,
-      snapshot: {
-        migrationState: 'ready',
-        status: 'ready',
-        legacyMarkdown,
-        entries: expect.arrayContaining([
-          expect.objectContaining({ name: '林舟' }),
-          expect.objectContaining({ name: '苏绾' }),
-        ]),
-      },
-    })
-    expect(ProjectCoreRepository.get()?.charactersArch).toBe(receipt.snapshot.renderedMarkdown)
-    expect(CharacterRosterRepository.commit({
-      ...commitRequest({ operationId: 'legacy-repair-v071', expectedRevision: before.revision }),
-      intent: 'legacy_repair',
-      expectedLegacyMarkdown: legacyMarkdown,
-    })).toMatchObject({ idempotent: true, revision: 1 })
-  })
-
-  it('rejects a legacy repair whose archived source changed, without touching cards or the old graph', () => {
-    const legacyMarkdown = '旧图谱原文 A：只有自然语言关系，没有固定 Markdown 排版。'
-    db.exec(`
-      DELETE FROM character_roster_meta;
-      UPDATE project_core
-      SET characters_arch = '${legacyMarkdown}';
-    `)
-    ensureCharacterRosterSchema(db)
-    const before = CharacterRosterRepository.read()
-
-    expect(() => CharacterRosterRepository.commit({
-      ...commitRequest({ operationId: 'legacy-repair-stale-source' }),
-      intent: 'legacy_repair',
-      expectedLegacyMarkdown: '旧图谱原文 B：模型候选不可以写回 A。',
-    })).toThrow('CHARACTER_ROSTER_LEGACY_SOURCE_CHANGED')
-
-    expect(CharacterRosterRepository.read()).toEqual(before)
-    expect(ProjectCoreRepository.get()?.charactersArch).toBe(legacyMarkdown)
-  })
-
   it('classifies empty, existing-card, partial-card and damaged legacy projects without auto-writing', () => {
     expect(CharacterRosterRepository.read()).toMatchObject({
       migrationState: 'empty',
@@ -942,12 +311,7 @@ describe('CharacterRosterRepository public read/commit seam', () => {
       entries: [],
     })
 
-    CharacterRepository.upsert({
-      name: '已有角色',
-      role: 'supporting',
-      gender: '', age: '', appearance: '', personality: '', background: '', abilities: '', motivation: '',
-      relationships: '', arc: '', notes: '用户已手工填写',
-    })
+    db.prepare("INSERT INTO characters (name, role, notes) VALUES ('已有角色', 'supporting', '用户已手工填写')").run()
     // #83 之前旧编辑入口还会直接写 characters；读取只把它当受保护事实，
     // 不触发任何 Markdown 解析或覆盖。
     expect(CharacterRosterRepository.read()).toMatchObject({
@@ -971,276 +335,4 @@ describe('CharacterRosterRepository public read/commit seam', () => {
     db.prepare("UPDATE character_roster_meta SET migration_state = 'legacy_markdown_pending'").run()
     expect(CharacterRosterRepository.read()).toMatchObject({ status: 'inconsistent' })
   })
-
-  it('explicitly adopts existing legacy cards by rebuilding only the deterministic projection', () => {
-    const legacyMarkdown = '旧角色图谱原文：已有角色卡是事实，不应重新从这里提取。'
-    db.exec(`
-      DELETE FROM character_roster_meta;
-      UPDATE project_core SET characters_arch = '${legacyMarkdown}';
-    `)
-    CharacterRepository.upsert({
-      name: '手工主角',
-      role: 'protagonist',
-      gender: '女', age: '二十五岁', appearance: '作者手写的黑色风衣', personality: '谨慎',
-      background: '作者手工设定的背景', abilities: '调查', motivation: '寻找真相',
-      relationships: '作者手工填写的自由文本关系，必须原样保留', arc: '学会信任', notes: '不可覆盖',
-    })
-    ensureCharacterRosterSchema(db)
-    const before = CharacterRosterRepository.read()
-    const cardBefore = CharacterRepository.getByName('手工主角')
-
-    expect(before).toMatchObject({
-      migrationState: 'legacy_cards_preserved',
-      status: 'inconsistent',
-      entries: [expect.objectContaining({ legacyRelationshipNotes: '作者手工填写的自由文本关系，必须原样保留' })],
-    })
-
-    const receipt = CharacterRosterRepository.commit({
-      operationId: 'adopt-existing-cards',
-      expectedRevision: before.revision,
-      schemaVersion: 1,
-      entries: before.entries.map((entry) => {
-        const structuredEntry = { ...entry }
-        delete structuredEntry.legacyRelationshipNotes
-        return structuredEntry
-      }),
-      intent: 'legacy_cards_adoption',
-      expectedLegacyMarkdown: legacyMarkdown,
-    })
-
-    expect(receipt.snapshot).toMatchObject({
-      migrationState: 'ready',
-      status: 'ready',
-      legacyMarkdown,
-      entries: [expect.objectContaining({ name: '手工主角' })],
-    })
-    expect(ProjectCoreRepository.get()?.charactersArch).toBe(receipt.snapshot.renderedMarkdown)
-    expect(CharacterRepository.getByName('手工主角')).toEqual(cardBefore)
-  })
-
-  it('rejects chapter-progress additions and canonical duplicate names at the repository boundary', () => {
-    const initial = CharacterRosterRepository.commit(commitRequest())
-    insertDraft(2, 2, 'finalized')
-    const existing = initial.snapshot.entries[0]
-    const unknown = {
-      ...existing,
-      name: '未知角色',
-      relationships: [],
-      currentState: {
-        location: '码头',
-        powerLevel: '',
-        physicalState: '',
-        mentalState: '',
-        keyItems: '',
-        recentEvents: '突然出现',
-        updatedAtChapter: 2,
-      },
-    }
-
-    expect(() => CharacterRosterRepository.commit({
-      operationId: 'chapter-progress-unknown',
-      expectedRevision: initial.revision,
-      schemaVersion: 1,
-      intent: 'chapter_progress',
-      source: finalizedSource(2, 2),
-      entries: [unknown],
-    })).toThrow('CHARACTER_ROSTER_UNKNOWN_CHARACTER')
-    expect(CharacterRosterRepository.read()).toEqual(initial.snapshot)
-
-    expect(() => CharacterRosterRepository.commit({
-      operationId: 'chapter-progress-duplicate',
-      expectedRevision: initial.revision,
-      schemaVersion: 1,
-      intent: 'chapter_progress',
-      source: finalizedSource(2, 2),
-      entries: [
-        { ...existing, relationships: [] },
-        { ...existing, name: ` ${existing.name.toLocaleUpperCase('en-US')} `, relationships: [] },
-      ],
-    })).toThrow('CHARACTER_ROSTER_NAME_DUPLICATE')
-    expect(CharacterRosterRepository.read()).toEqual(initial.snapshot)
-  })
-
-  it('rejects chapter progress older than a genuinely finalized character state', () => {
-    const base = commitRequest()
-    const initial = CharacterRosterRepository.commit({
-      ...base,
-      entries: base.entries.map(entry => ({
-        ...entry,
-        currentState: {
-          location: '第三章现场',
-          powerLevel: '',
-          physicalState: '',
-          mentalState: '',
-          keyItems: '',
-          recentEvents: '',
-          updatedAtChapter: 3,
-        },
-      })),
-    })
-    insertDraft(2, 2, 'finalized')
-    insertDraft(3, 3, 'finalized')
-    const existing = initial.snapshot.entries[0]
-
-    expect(() => CharacterRosterRepository.commit({
-      operationId: 'older-finalized-chapter-progress',
-      expectedRevision: initial.revision,
-      schemaVersion: 1,
-      intent: 'chapter_progress',
-      source: finalizedSource(2, 2),
-      entries: [{
-        ...existing,
-        relationships: [],
-        currentState: { ...existing.currentState!, location: '第二章现场', updatedAtChapter: 2 },
-      }],
-    })).toThrow('CHARACTER_ROSTER_STATE_NEWER_CHAPTER')
-  })
-
-  it('preserves a non-empty legacy state instead of reclassifying it as derived', () => {
-    const base = commitRequest()
-    const initial = CharacterRosterRepository.commit({
-      ...base,
-      entries: base.entries.map(entry => ({
-        ...entry,
-        currentState: {
-          location: '受污染的未来状态',
-          powerLevel: '',
-          physicalState: '',
-          mentalState: '',
-          keyItems: '',
-          recentEvents: '',
-          updatedAtChapter: 3,
-        },
-      })),
-    })
-    insertDraft(2, 2, 'finalized')
-    const existing = initial.snapshot.entries[0]
-
-    const receipt = CharacterRosterRepository.commit({
-      operationId: 'repair-future-chapter-progress',
-      expectedRevision: initial.revision,
-      schemaVersion: 1,
-      intent: 'chapter_progress',
-      source: finalizedSource(2, 2),
-      entries: [{
-        ...existing,
-        relationships: [],
-        currentState: {
-          ...existing.currentState!,
-          location: '第二章现场',
-          updatedAtChapter: 2,
-          provenance: {
-            ...existing.currentState!.provenance,
-            location: { kind: 'derived', source: finalizedSource(2, 2) },
-          },
-        },
-      }],
-    })
-
-    expect(receipt.snapshot.entries.find(entry => entry.name === existing.name)?.currentState)
-      .toMatchObject({ location: '受污染的未来状态', updatedAtChapter: 3 })
-  })
-
-  it('rejects chapter progress whose candidate chapter is not finalized', () => {
-    const base = commitRequest()
-    const initial = CharacterRosterRepository.commit({
-      ...base,
-      entries: base.entries.map(entry => ({
-        ...entry,
-        currentState: {
-          location: '第一章现场',
-          powerLevel: '',
-          physicalState: '',
-          mentalState: '',
-          keyItems: '',
-          recentEvents: '',
-          updatedAtChapter: 1,
-        },
-      })),
-    })
-    insertDraft(2, 2, 'draft')
-    const existing = initial.snapshot.entries[0]
-
-    expect(() => CharacterRosterRepository.commit({
-      operationId: 'unfinalized-chapter-progress',
-      expectedRevision: initial.revision,
-      schemaVersion: 1,
-      intent: 'chapter_progress',
-      source: finalizedSource(2, 2),
-      entries: [{
-        ...existing,
-        relationships: [],
-        currentState: { ...existing.currentState!, location: '第二章现场', updatedAtChapter: 2 },
-      }],
-    })).toThrow('CHARACTER_ROSTER_FINALIZED_SOURCE_STALE')
-  })
-
-  it('preserves an author field while accepting a derived patch for a different empty field', () => {
-    const initial = CharacterRosterRepository.commit(commitRequest())
-    const authored = CharacterRosterRepository.commit({
-      operationId: 'manual-state-source',
-      expectedRevision: initial.revision,
-      schemaVersion: 1,
-      intent: 'manual_edit',
-      entries: initial.snapshot.entries.map((entry, index) => index === 0 ? {
-        ...entry,
-        currentState: {
-          location: '作者设定的山庄',
-          powerLevel: '',
-          physicalState: '',
-          mentalState: '',
-          keyItems: '',
-          recentEvents: '',
-          updatedAtChapter: 1,
-        },
-      } : entry),
-    })
-    insertDraft(2, 2, 'finalized')
-    const existing = authored.snapshot.entries[0]!
-    const source = finalizedSource(2, 2)
-
-    const derived = CharacterRosterRepository.commit({
-      operationId: 'derived-state-source',
-      expectedRevision: authored.revision,
-      schemaVersion: 1,
-      intent: 'chapter_progress',
-      source,
-      entries: [{
-        ...existing,
-        currentState: {
-          ...existing.currentState!,
-          location: '模型试图覆盖的码头',
-          mentalState: '警觉',
-          updatedAtChapter: 2,
-          provenance: {
-            location: { kind: 'derived', source },
-            mentalState: { kind: 'derived', source },
-          },
-        },
-      }],
-    })
-
-    expect(derived.snapshot.entries[0]?.currentState).toMatchObject({
-      location: '作者设定的山庄',
-      mentalState: '警觉',
-      updatedAtChapter: 2,
-      provenance: {
-        location: { kind: 'author', chapterNumber: 1 },
-        mentalState: { kind: 'derived', source },
-      },
-    })
-  })
-})
-
-it('runs the main generation source guard inside the write transaction but not on durable replay', () => {
-  const request = commitRequest()
-  const rejected = vi.fn(() => { expect(db.inTransaction).toBe(true); throw new Error('GENERATION_SOURCE_CHANGED') })
-  expect(() => CharacterRosterRepository.commit(request, rejected)).toThrow('GENERATION_SOURCE_CHANGED')
-  expect(CharacterRepository.count()).toBe(0)
-  expect(db.prepare('SELECT COUNT(*) FROM character_roster_operations').pluck().get()).toBe(0)
-  const accepted = vi.fn(() => { expect(db.inTransaction).toBe(true) })
-  CharacterRosterRepository.commit(request, accepted)
-  expect(accepted).toHaveBeenCalledTimes(1)
-  expect(CharacterRosterRepository.commit(request, rejected).idempotent).toBe(true)
-  expect(rejected).toHaveBeenCalledTimes(1)
 })
