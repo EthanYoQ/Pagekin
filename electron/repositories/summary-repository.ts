@@ -32,7 +32,7 @@ import {
   type CharacterStateFieldProvenance,
 } from '../../src/shared/character-roster'
 import { decideDerivedPatch, type CharacterFieldSnapshot, type DerivedSourceOrder } from '../../src/shared/character-identity'
-import { latestNodesBefore, type ContinuityNode } from '../../src/shared/character-continuity'
+import { latestNodesBefore, type CharacterRelationNode, type ContinuityNode } from '../../src/shared/character-continuity'
 import { parseFinalizedCharacterStateResponse } from '../../src/shared/finalized-continuity'
 import { hasCharacterIdentitySchema } from './character-repository'
 import { commitCharacterIdentities, refreshCharacterIdentityProjection, refreshCharacterStateProjection } from './character-roster-repository'
@@ -420,8 +420,10 @@ function relationCandidateKey(source: FinalizedSourceIdentity, change: Pick<Fina
   return `fcs-relation:${sha256(JSON.stringify([source.draftId, source.finalizationId, source.contentHash, unorderedPairKey(change.sourceId, change.targetId), sha256(change.relation)]))}`
 }
 
+type RelationCommitContext = Pick<FinalizedCharacterContext, 'source' | 'projectionGeneration'> & { characters: readonly FinalizedCharacterReference[] }
+
 /** 同一份定稿重跑时节点已在，这里仍要补上待确认项：上一次可能因为要点那步失败而没地方存。 */
-function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCharacterContext, changes: readonly FinalizedRelationChange[]): void {
+function commitDerivedRelations(db: BetterSqlite3.Database, context: RelationCommitContext, changes: readonly FinalizedRelationChange[]): void {
   const { source } = context
   const name = (id: string) => context.characters.find(character => character.characterId === id)!.displayNameSnapshot
   const candidates: FinalizedRelationCandidate[] = []
@@ -455,6 +457,16 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
   if (isDeepStrictEqual([...byPair.values()], store.relationPending)) return
   store.relationPending = [...byPair.values()]
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
+}
+
+/** 角色那步可能先于要点提交，那时没有快照存待确认项；要点落库时按这份定稿的派生节点补回。 */
+function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity, projectionGeneration: number): void {
+  const nodes = readCharacterContinuityNodes(db).filter((node): node is CharacterRelationNode => node.aspect === 'relation' && node.provenance.kind === 'derived'
+    && node.draftId === source.draftId && node.provenance.source.finalizationId === source.finalizationId && !!node.quote)
+  if (!nodes.length) return
+  const characters = nodes.flatMap(node => [{ characterId: node.subjectId, displayNameSnapshot: node.subjectName }, { characterId: node.targetId, displayNameSnapshot: node.targetName }])
+  commitDerivedRelations(db, { source, projectionGeneration, characters },
+    nodes.map(node => ({ sourceId: node.subjectId, targetId: node.targetId, relation: node.value, evidence: node.quote! })))
 }
 
 function candidateReceipts(db: BetterSqlite3.Database): StoredCharacterStateDecision[] {
@@ -830,6 +842,7 @@ export class SummaryRepository {
           input.projectionGeneration,
         )
       }
+      restoreDerivedRelationCandidates(db, input.source, input.projectionGeneration)
     })()
   }
 
