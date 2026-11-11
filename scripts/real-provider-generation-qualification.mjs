@@ -139,7 +139,7 @@ const QUALIFICATION_RECEIPT_OUTPUT_SCHEMA = Object.freeze([
   'modelName', 'modelIdentitySha256', 'endpointFingerprintSha256',
   'maxRequestedOutputTokensInOneAttempt', 'finishReasons', 'blueprintCount',
   'blueprintSha256', 'draftCharacters', 'draftSha256', 'usage', 'callsWithUsage',
-  'promptTokens', 'completionTokens', 'totalTokens', 'runtimeLease', 'begins', 'closes',
+  'promptTokens', 'completionTokens', 'totalTokens', 'runtimeLease',
   'oneLeaseAcrossAttempts', 'receiptChecksumSha256', 'checksumAlgorithm', 'checksumSha256',
   'sourceTreeState', 'priceSnapshot', 'priceEstimateStatus', 'estimatedReservedUsd',
   'estimatedWorstCaseUsd', 'sourceUrl', 'asOf', 'inputUsdPerMillionTokens',
@@ -751,7 +751,7 @@ async function loadProductRuntime(repositoryRoot) {
       absWorkingDir: resolvedRoot,
       stdin: {
         contents: [
-          "export { createGenerationRuntime } from './src/services/generation/generation-runtime.ts'",
+          "export { createGenerationHarness } from './src/services/generation/generation-harness.ts'",
           "export { createStructuredBatchExecutor } from './src/services/workflows/structured-batch-executor.ts'",
           "export { LLMFactory } from './electron/llm/llm-factory.ts'",
           "export { resolveGenerationParameters } from './electron/llm/generation-parameter-policy.ts'",
@@ -991,35 +991,43 @@ async function qualifyOneProfile({
     expiresAt: startedAt + QUALIFICATION_PROVIDER_LIMITS.deadlineMs,
   }))
   const completionLeaseIds = new Set()
-  let leaseBegins = 0
-  let leaseCloses = 0
-  const runtimeEnvironment = {
-    snapshotDefaultModelId: () => profile.id,
-    beginModelExecution(modelId) {
-      if (modelId !== profile.id) throw new QualificationFailure('ADAPTER_LEASE_MODEL_DRIFT')
-      leaseBegins += 1
-      return Promise.resolve(lease)
+  const { capabilityEvidence } = lease
+  const session = productRuntime.createGenerationHarness({
+    modelSource: {
+      snapshotDefaultModel: () => ({
+        revision: lease.modelRevision,
+        model: {
+          id: lease.modelId,
+          provider: lease.provider,
+          protocol: lease.protocol,
+          modelName: lease.modelName,
+          baseUrl: '',
+          maxTokens: capabilityEvidence.maxOutputTokens,
+        },
+        modelExecutionLeaseId: lease.leaseId,
+        endpointFingerprint: lease.endpointFingerprint,
+        resolvedCapabilities: {
+          contextWindowTokens: capabilityEvidence.contextWindowTokens,
+          maxOutputTokens: capabilityEvidence.maxOutputTokens,
+          reasoning: capabilityEvidence.reasoning,
+          structuredOutput: capabilityEvidence.structuredOutput,
+          usage: capabilityEvidence.usage,
+          source: { ...capabilityEvidence.source },
+        },
+      }),
     },
-    completeWithLease(request) {
-      if (request.leaseId !== lease.leaseId) {
-        return Promise.reject(new QualificationFailure('ADAPTER_LEASE_ID_DRIFT'))
-      }
-      completionLeaseIds.add(request.leaseId)
-      return guardedCompletion(request)
+    completionPort: {
+      complete(request) {
+        if (request.modelExecutionLeaseId !== lease.leaseId) {
+          return Promise.reject(new QualificationFailure('ADAPTER_LEASE_ID_DRIFT'))
+        }
+        completionLeaseIds.add(request.modelExecutionLeaseId)
+        return guardedCompletion(request)
+      },
     },
-    closeModelExecution(leaseId) {
-      if (leaseId !== lease.leaseId) {
-        return Promise.reject(new QualificationFailure('ADAPTER_LEASE_ID_DRIFT'))
-      }
-      leaseCloses += 1
-      return Promise.resolve()
-    },
-  }
-  const runtime = await productRuntime.createGenerationRuntime(
-    { budget: QUALIFICATION_SAFETY_BUDGET },
-    runtimeEnvironment,
-  )
-  const generationResult = await runtime.execute(async ({ session }) => {
+    policy: QUALIFICATION_SAFETY_BUDGET,
+  }).openSession()
+  const generationResult = await (async () => {
     const executor = productRuntime.createStructuredBatchExecutor({
       contract: blueprintContract(productRuntime, fixture),
       session,
@@ -1061,7 +1069,7 @@ async function qualifyOneProfile({
       blueprints: blueprintResult.items,
       draft,
     }
-  })
+  })()
 
   const { attempts, blueprints, draft } = generationResult
   const requestedOutputTokens = attempts.reduce(
@@ -1105,8 +1113,6 @@ async function qualifyOneProfile({
     draftSha256: sha256(draft),
     usage: summarizedUsage(attempts),
     runtimeLease: {
-      begins: leaseBegins,
-      closes: leaseCloses,
       oneLeaseAcrossAttempts: completionLeaseIds.size === 1
         && completionLeaseIds.has(lease.leaseId),
     },

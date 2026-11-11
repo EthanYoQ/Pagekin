@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import * as legacyRuntime from '../../services/generation/generation-runtime'
 import { AgentHostFixture } from '../../services/agent/__tests__/agent-generation.fixture'
 import { useLLMStore } from '../llm-store'
 import { useLocaleStore } from '../locale-store'
@@ -28,7 +27,6 @@ describe('Agent GenerationRuntime boundary', () => {
     useProjectStore.setState({ currentProject: structuredClone(project) })
     useEditorStore.setState({ tabs: [], activeTabId: null })
     fixture = new AgentHostFixture(session).install()
-    vi.spyOn(legacyRuntime, 'createGenerationRuntime').mockRejectedValue(new Error('Legacy provider fallback forbidden'))
   })
   afterEach(() => {
     useProjectStore.setState({ currentProject: null })
@@ -53,7 +51,6 @@ describe('Agent GenerationRuntime boundary', () => {
     }
     expect(fixture.recovery.modelId).toBe('model-a')
     expect(calls('generation:cancel')).toHaveLength(0)
-    expect(legacyRuntime.createGenerationRuntime).not.toHaveBeenCalled()
     expect(lastMessage()?.content).toBe('最终回复')
     expect(lastMessage()?.mainGenerationHandle).toEqual(fixture.recovery.handle)
   })
@@ -136,7 +133,6 @@ describe('Agent GenerationRuntime boundary', () => {
     expect(useProjectStore.getState().currentProject?.id).toBe('project-b')
     expect(execute).toHaveBeenCalledWith({}, expect.objectContaining({ projectSession: session, selectedModelId: 'model-a', writingLanguage: 'en-US' }))
     expect(calls('agent-generation:begin')).toHaveLength(0)
-    expect(legacyRuntime.createGenerationRuntime).not.toHaveBeenCalled()
   })
 
   it('requires an open project and never falls back to a global provider session', async () => {
@@ -144,7 +140,6 @@ describe('Agent GenerationRuntime boundary', () => {
     await useAgentStore.getState().sendMessage('请写故事')
     expect(lastMessage()?.content).toBe('请先打开项目，再使用 AI 助手。')
     expect(calls('agent-generation:begin')).toHaveLength(0)
-    expect(legacyRuntime.createGenerationRuntime).not.toHaveBeenCalled()
   })
 
   it('freezes history without duplicating the current author message', async () => {

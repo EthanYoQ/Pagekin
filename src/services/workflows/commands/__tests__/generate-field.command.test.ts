@@ -4,7 +4,7 @@ import { useProjectStore } from '../../../../stores/project-store'
 import { useLLMStore } from '../../../../stores/llm-store'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import { GenerateFieldCommand as RuntimeGenerateFieldCommand } from '../generate-field.command'
-import { workflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { useFakeModelStream, workflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
 import { TerminalProviderFailureError } from '../../../generation/generation-harness'
 import { isWorkflowCancellation, WorkflowCancelledError } from '../../workflow-cancellation'
 
@@ -16,7 +16,7 @@ class GenerateFieldCommand extends RuntimeGenerateFieldCommand {
 
 const projectAPath = 'C:\\novels\\A'
 const projectBPath = 'C:\\novels\\B'
-const originalGenerateStream = useLLMStore.getState().generateStream
+const originalGenerateStream = useFakeModelStream.getState().generateStream
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 const callbacks: StepCallbacks = {
   log: vi.fn(),
@@ -66,7 +66,8 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   useProjectStore.setState({ currentProject: null })
-  useLLMStore.setState({ generateStream: originalGenerateStream, defaultModelId: originalDefaultModelId })
+  useLLMStore.setState({ defaultModelId: originalDefaultModelId })
+  useFakeModelStream.setState({ generateStream: originalGenerateStream })
 })
 
 describe('GenerateFieldCommand project identity', () => {
@@ -93,9 +94,8 @@ describe('GenerateFieldCommand project identity', () => {
           saveProject: vi.fn(async () => true),
         })
         const observedPrompts: string[] = []
-        useLLMStore.setState({
-          defaultModelId: 'model-1',
-          generateStream: vi.fn<typeof originalGenerateStream>(async (messages, streamCallbacks) => {
+        useLLMStore.setState({ defaultModelId: 'model-1' })
+        useFakeModelStream.setState({ generateStream: vi.fn<typeof originalGenerateStream>(async (messages, streamCallbacks) => {
             observedPrompts.push(messages.map(message => message.content).join('\n'))
             streamCallbacks.onDone?.([
               'Keep character motives consistent.',
@@ -104,8 +104,7 @@ describe('GenerateFieldCommand project identity', () => {
               'End scenes with a meaningful change.',
             ].join('\n'), undefined, 'stop')
             return 'field-request'
-          }),
-        })
+          }) })
         const command = new RuntimeGenerateFieldCommand(fieldKey, {
           createRuntime: async (options, main) => {
             expect(main?.selection.authorInputs).toEqual([
@@ -147,14 +146,12 @@ describe('GenerateFieldCommand project identity', () => {
       } as never,
       saveProject: vi.fn(async () => true),
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
         observedPrompts.push(messages.map((message: { content: string }) => message.content).join('\n'))
         streamCallbacks.onDone?.(addition, undefined, 'stop')
         return 'field-request'
-      }),
-    })
+      }) })
 
     await new GenerateFieldCommand('worldSetting').execute({
       step: {},

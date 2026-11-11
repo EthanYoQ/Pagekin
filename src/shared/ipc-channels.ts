@@ -558,31 +558,6 @@ export interface LLMChannels {
     args: [request: LocalContextWindowRequest]
     return: number | null
   }
-  'llm:begin-execution-lease': {
-    args: [modelId: string]
-    return: {
-      success: boolean
-      lease?: ModelExecutionLeaseReceipt
-      errorCode?: 'MODEL_NOT_FOUND' | 'LEASE_BEGIN_FAILED'
-      error?: string
-    }
-  }
-  'llm:close-execution-lease': {
-    args: [leaseId: string]
-    return: { success: boolean; error?: string }
-  }
-  'llm:generate': {
-    args: [request: LLMRequest]
-    return: LLMResponse
-  }
-  'llm:generate-stream': {
-    args: [requestId: string, request: LLMRequest]
-    return: { requestId: string; started: boolean; error?: string }
-  }
-  'llm:cancel': {
-    args: [requestId: string]
-    return: { success: boolean }
-  }
   'llm:list-models': {
     args: []
     return: ModelProfile[]
@@ -643,18 +618,6 @@ export interface LLMChannels {
     args: [model: ModelProfile, creativeStrategy?: CreativeStrategy]
     return: { success: boolean; error?: string }
   }
-}
-
-export interface LLMStreamEvents {
-  'llm:stream-chunk': { requestId: string; chunk: string }
-  'llm:stream-done': {
-    requestId: string
-    fullText: string
-    usage?: TokenUsage
-    /** Main-process-normalized completion state. Missing provider values become `unknown`. */
-    finishReason: LLMFinishReason
-  }
-  'llm:stream-error': { requestId: string; error: string }
 }
 
 // ===== 公共数据类型 =====
@@ -1414,7 +1377,7 @@ export interface MCPChannels {
 
 // ===== 合并所有频道 =====
 export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CloudBackupChannels & GraphGenerationChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
-export type AllEventChannels = GenerationOwnerEvents & LLMStreamEvents & UpdateStateEvents & WindowEvents
+export type AllEventChannels = GenerationOwnerEvents & UpdateStateEvents & WindowEvents
 
 /** 提取 invoke 频道名 */
 export type InvokeChannel = keyof AllInvokeChannels

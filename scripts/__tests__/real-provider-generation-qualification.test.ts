@@ -196,7 +196,7 @@ describe('real provider generation qualification contract', () => {
           blueprintCount: 3,
           draftCharacters: 5000,
           blueprintResponseFormat: 'json_object',
-          runtimeLease: { begins: 1, closes: 1, oneLeaseAcrossAttempts: true },
+          runtimeLease: { oneLeaseAcrossAttempts: true },
         },
         {
           provider: 'xai',
@@ -204,7 +204,7 @@ describe('real provider generation qualification contract', () => {
           blueprintCount: 3,
           draftCharacters: 5000,
           blueprintResponseFormat: 'json_object',
-          runtimeLease: { begins: 1, closes: 1, oneLeaseAcrossAttempts: true },
+          runtimeLease: { oneLeaseAcrossAttempts: true },
         },
         {
           provider: 'gemini',
@@ -212,7 +212,7 @@ describe('real provider generation qualification contract', () => {
           blueprintCount: 3,
           draftCharacters: 5000,
           blueprintResponseFormat: 'json_object',
-          runtimeLease: { begins: 1, closes: 1, oneLeaseAcrossAttempts: true },
+          runtimeLease: { oneLeaseAcrossAttempts: true },
         },
       ],
     })
