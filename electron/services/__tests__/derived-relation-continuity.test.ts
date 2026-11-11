@@ -5,7 +5,7 @@ import { closeProjectDatabase, getCurrentProjectPath, getProjectDb, initProjectD
 import { registerDatabaseController } from '../../controllers/db-controller'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
 import { deleteCharacterRelationship, insertCharacterRelationship, readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
-import { refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
+import { commitCharacterIdentities, refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
 import { ConsistencyExemptionRepository } from '../../repositories/consistency-exemption-repository'
 import { DraftRepository } from '../../repositories/draft-repository'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
@@ -124,6 +124,20 @@ function reviseAuthorRelation(relation: string, sourceId = LIN, targetId = SHEN)
     for (const row of rows) deleteCharacterRelationship(db(), { relationshipId: row.id, sourceId: row.source, sourceName: NAMES[row.source], targetId: row.target, targetName: NAMES[row.target] }, 'seed-approval')
     insertCharacterRelationship(db(), { relationshipId: `author-${randomUUID()}`, sourceId, sourceName: NAMES[sourceId], targetId, targetName: NAMES[targetId],
       relation, provenanceJson: '{"kind":"author"}' }, { operationId: 'seed-approval', action: 'author-edit' })
+    refreshCharacterIdentityProjection(db())
+  })()
+}
+
+/** 和角色页保存同样的写法：删掉旧行，再经一次带修订号的作者批准写入新行。 */
+function reviseAuthorRelationThroughRoster(relation: string): void {
+  db().transaction(() => {
+    const operationId = `author-edit-${randomUUID()}`
+    const revision = db().prepare("SELECT revision FROM character_identity_meta WHERE id='main'").pluck().get() as number
+    const rows = db().prepare('SELECT relationship_id AS id,source_character_id AS source,target_character_id AS target FROM character_relationships').all() as Array<{ id: string; source: string; target: string }>
+    for (const row of rows) deleteCharacterRelationship(db(), { relationshipId: row.id, sourceId: row.source, sourceName: NAMES[row.source], targetId: row.target, targetName: NAMES[row.target] }, operationId)
+    commitCharacterIdentities(db(), { approval: { operationId, expectedRevision: revision, action: 'author-edit',
+      source: { kind: 'author', source: { projectId: PROJECT_ID, epoch: scope.epoch, sourceId: operationId, revision, contentHash: sha256(relation) } } },
+    changes: [], creations: [], retireIds: [], resolutions: [], relationships: [{ sourceCharacterId: LIN, targetCharacterId: SHEN, relation }] }, () => true)
     refreshCharacterIdentityProjection(db())
   })()
 }
@@ -1233,6 +1247,30 @@ describe('较早章建议被采纳后，较晚章的建议是否还有效', () =
     decide('accept')
     expect(authorRows()).toEqual(['决裂'])
     expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+  })
+
+  it.each([
+    ['直接改关系表', reviseAuthorRelation],
+    ['按角色页保存的写法改', reviseAuthorRelationThroughRoster],
+  ])('第 8 章抽出建议后先后采纳第 5 章、第 6 章的建议，作者再手改回第 5 章采纳的值（%s）：第 8 章的建议作废，采用入口拒绝', (_label, revise) => {
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    const six = finalizeNew(6, `第六章：断桥。${SIX_QUOTE}`)
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    decide('accept')
+    commitModelOutput(six, { updates: [], relations: [relationChange('决裂', SIX_QUOTE)] })
+    decide('accept')
+    const [eighth] = pending()
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+
+    revise('反目')
+
+    expect(cards()).toEqual([])
+    expect(() => SummaryRepository.decideFinalizedRelationCandidate({ draftId: eighth.source.draftId, candidateKey: eighth.candidateKey,
+      expectedAuthorRelations: ['反目'], operationId: 'accept-eighth-after-manual-edit', decision: 'accept' }, scope, db())).toThrow('FINALIZED_CHARACTER_STATE_CANDIDATE_NOT_FOUND')
+    expect(authorRows()).toEqual(['反目'])
   })
 
   it('较早章的采纳把关系改回过以前的值，第 8 章的建议照样认得出', () => {
