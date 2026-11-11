@@ -12,6 +12,7 @@ import { assertEditorReceipt, checkEditorReceipt, isEditorEnvironmentInvalid,
   recordEditorAttempt, resolveEditorProtocol } from '../docs/plans/novel-quality-program-v3-2026-09-13/checks/feature-union-check.mjs'
 import * as chapterView from './redesign/pages/chapter-view.mjs'
 import * as stage from './redesign/pages/stage.mjs'
+import { documentStartKey, documentEndKey, redoKey } from './redesign/keys.mjs'
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const performanceMode = process.argv.includes('--performance')
@@ -237,7 +238,7 @@ async function measureEditorAction(page, action, editorSelector = PROSE_EDITOR, 
   const result = await page.evaluate(() => window.__u06EditorProbe)
   assert.equal(result.trusted, true)
   if (action === 'input') {
-    await page.keyboard.press('Control+z')
+    await page.keyboard.press('ControlOrMeta+z')
     await page.waitForFunction(selector => {
       const line = document.querySelector(`${selector} .cm-line`)?.cloneNode(true)
       line?.querySelector('.cm-lp-paperhead')?.remove()
@@ -362,7 +363,7 @@ async function measureEditorInteractionV2(page, action, expectedDocument, editor
   const result = await page.evaluate(() => window.__u06EditorProbe)
   assert.equal(result.trusted, true)
   if (action === 'input') {
-    await page.keyboard.press('Control+z')
+    await page.keyboard.press('ControlOrMeta+z')
     await page.waitForFunction(({ selector, expected }) => document.querySelector(selector)?.cmTile?.root?.view?.state?.doc.toString() === expected,
       { selector: editorSelector, expected: expectedDocument })
   } else await page.keyboard.press('ArrowLeft')
@@ -571,7 +572,7 @@ async function performanceMain() {
           const phase = index < protocol.warmupCount ? 'warmup' : 'raw'
           currentSample = { units, action, index, phase }
           await editor.click()
-          await page.keyboard.press('Control+Home')
+          await page.keyboard.press(documentStartKey())
           const windowState = await app.evaluate(({ BrowserWindow }) => {
             const window = BrowserWindow.getAllWindows()[0]
             return { focused:window.isFocused(), visible:window.isVisible(), minimized:window.isMinimized(), eventCount:globalThis.__u06WindowEvents.length }
@@ -822,7 +823,7 @@ async function historicalClassicMain() {
       if (pairedSelectionDiagnostic) {
         for (let index = 0; index < 8; index++) {
           await editor.click()
-          await page.keyboard.press('Control+Home')
+          await page.keyboard.press(documentStartKey())
           const real = await measurePairedSelectionArm(page, false)
           const control = await measurePairedSelectionArm(page, true)
           assert.equal(await page.evaluate(() => window.getSelection()?.toString()), '春', 'control changed editor selection')
@@ -834,13 +835,13 @@ async function historicalClassicMain() {
       for (let index = 0; index < (pairedSelectionDiagnostic ? 0 : selectionDiagnostic ? protocol.sampleCount : protocol.warmupCount + protocol.sampleCount); index++) {
         if (selectionDiagnostic) {
           await editor.click()
-          await page.keyboard.press('Control+Home')
+          await page.keyboard.press(documentStartKey())
           selectionSamples[units].push(await measureClassicSelectionDiagnostic(page))
           continue
         }
         for (const action of protocol.actions) {
           await editor.click()
-          await page.keyboard.press('Control+Home')
+          await page.keyboard.press(documentStartKey())
           const cpuTitle = cpuProfiler?.session && action === 'input' && index >= protocol.warmupCount ? `U06-${units}-${index}` : null
           const pendingProfile = cpuTitle ? waitForCpuProfile(cpuProfiler.session, cpuTitle).catch(error => error) : null
           const result = await measureEditorAction(page, action, '.cm-content[contenteditable="true"]', phaseDiagnostic, cpuTitle)
@@ -1082,11 +1083,11 @@ async function main() {
 
     currentStep = 'U06.A01'
     await body.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
     await page.keyboard.insertText('**回声**')
-    await page.keyboard.press('Control+Home')
+    await page.keyboard.press(documentStartKey())
     await body.locator('.cm-lp-strong').getByText('回声', { exact: true }).waitFor({ state: 'visible' })
     assert.equal(await body.locator('.cm-lp-h1').count(), 1)
     assert.equal(await storedBody(projectPath, draftId), fixtureBody, 'preview edit wrote SQLite before save')
@@ -1130,9 +1131,9 @@ async function main() {
     pass('drag-selection-caret', 'U06.A04', 'mouse drag selected exact Chinese text and caret insertion stayed at its right edge')
 
     currentStep = 'U06.A05'
-    await page.keyboard.press('Control+z')
+    await page.keyboard.press('ControlOrMeta+z')
     assert.doesNotMatch(await editorText(body), /旧港码头看见/)
-    await page.keyboard.press('Control+y')
+    await page.keyboard.press(redoKey())
     assert.match(await editorText(body), /旧港码头看见/)
     pass('undo-redo', 'U06.A05', 'real CodeMirror keyboard undo and redo restored the same insertion')
 

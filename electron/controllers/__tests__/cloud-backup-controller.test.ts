@@ -20,7 +20,6 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registr
 import { continuityBaseline, SCHEMA8_CONTINUITY_ARCHIVE, SCHEMA8_EXPECTED_BASELINE } from '../../../test/helpers/schema8-continuity-archive'
 import { createPortableProjectAssetProvider } from '../../services/portable-project-assets'
 import { createProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
-import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 
 vi.mock('../../utils/remove-directory', async importOriginal => {
   const actual = await importOriginal<typeof import('../../utils/remove-directory')>()
@@ -335,7 +334,7 @@ describe('registerCloudBackupController', () => {
     expect(fs.readdirSync(path.join(f.root, 'cloud-backup-staging'))).toEqual([])
   })
 
-  it('backs up a real project whose author import left several effect receipts (#607)', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+  it('backs up a real project whose author import left several effect receipts (#607)', async () => {
     const project = await createProjectArchiveRoundtripFixture()
     try {
       expect(project.sourceProjectId).toBe(PROJECT)
@@ -354,7 +353,7 @@ describe('registerCloudBackupController', () => {
     } finally { project.dispose() }
   })
 
-  it('restores a backup uploaded before M08 as a current project with its continuity baseline', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+  it('restores a backup uploaded before M08 as a current project with its continuity baseline', async () => {
     const f = fixture({ restorePortableProject })
     vi.mocked(f.deps.webDav.downloadGeneration).mockImplementation(async input => {
       fs.copyFileSync(SCHEMA8_CONTINUITY_ARCHIVE, input.targetArchivePath)
