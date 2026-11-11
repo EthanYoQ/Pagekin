@@ -1,20 +1,10 @@
 import { Fragment } from 'react'
-import type { ContinuityCheckNode } from '../../../shared/blueprint-continuity-check'
 import { useLocaleStore } from '../../../stores/locale-store'
-import { CHARACTER_STATE_FIELDS } from '../../editor/character-state-fields'
 import { Button } from '../../ui/Button'
 import { Notice } from '../../ui/Notice'
 import { PreflightExemptButtons } from '../write/PreflightFindingParts'
+import { basisLine } from './basis-line'
 import type { BlueprintAiCheck } from './use-blueprint-ai-check'
-
-function basisLine(node: ContinuityCheckNode, text: (zh: string, en: string) => string): string {
-  const { zhCN, enUS } = node.since
-  const since = enUS.charAt(0).toUpperCase() + enUS.slice(1)
-  if (node.aspect === 'relation') return text(`${zhCN}，${node.subjectName}和${node.targetName}是「${node.value}」`, `${since}, ${node.subjectName}’s relation to ${node.targetName} is “${node.value}”`)
-  const [, zh, en] = CHARACTER_STATE_FIELDS.find(([field]) => field === node.aspect)!
-  const label = (value: string) => value.replace(/\s*[（(].*$/u, '')
-  return text(`${zhCN}，${node.subjectName}的${label(zh)}是「${node.value}」`, `${since}, ${node.subjectName}’s ${label(en).toLowerCase()} is “${node.value}”`)
-}
 
 export function BlueprintAiFindings({ chapterNumber, ai }: { chapterNumber: number; ai: BlueprintAiCheck }) {
   const text = useLocaleStore(s => s.text)

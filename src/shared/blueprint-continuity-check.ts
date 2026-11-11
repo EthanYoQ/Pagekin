@@ -115,7 +115,18 @@ export function selectContinuityCheckScope(blueprints: readonly BlueprintData[],
 }
 
 /** 模型只见 e1、e2：真实 eventId 带 UUID，又长又容易抄错。 */
-const promptId = (index: number) => `e${index + 1}`
+export const promptId = (index: number) => `e${index + 1}`
+
+export function continuityTimeline(nodes: readonly ContinuityCheckNode[]) {
+  return nodes.map((node, index) => ({
+    id: promptId(index),
+    character: node.subjectName,
+    aspect: node.aspect,
+    ...(node.targetName === undefined ? {} : { target: node.targetName }),
+    value: node.value,
+    appliesFrom: node.fromChapter,
+  }))
+}
 
 const SYSTEM_ZH = `你是长篇小说的连续性校对。chapters 是还没定稿的章节蓝图，timeline 是人物时间线节点。找出蓝图和时间线明确矛盾的地方。
 
@@ -154,14 +165,7 @@ export function buildBlueprintContinuityCheckTask(input: {
         role: 'user' as const,
         content: JSON.stringify({
           chapters: input.chapters,
-          timeline: input.nodes.map((node, index) => ({
-            id: promptId(index),
-            character: node.subjectName,
-            aspect: node.aspect,
-            ...(node.targetName === undefined ? {} : { target: node.targetName }),
-            value: node.value,
-            appliesFrom: node.fromChapter,
-          })),
+          timeline: continuityTimeline(input.nodes),
         }),
       },
     ],
@@ -176,11 +180,11 @@ function boundedText(value: unknown): string | null {
   return text && text.length <= MAX_FINDING_TEXT ? text : null
 }
 
-function record(value: unknown): Record<string, unknown> | null {
+export function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
 
-function parseJson(content: string): unknown {
+export function parseJson(content: string): unknown {
   const trimmed = content.trim()
   const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/iu.exec(trimmed)
   return JSON.parse(fenced ? fenced[1]! : trimmed)

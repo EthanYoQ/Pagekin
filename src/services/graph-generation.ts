@@ -75,7 +75,7 @@ export function createGraphGeneration(sessionInput: ProjectSessionContext) {
       if (expectedHandle && !sameRun(current.view.handle, expectedHandle)) throw new Error('GRAPH_GENERATION_IDENTITY_MISMATCH')
       const existing = current.effects.find(effect => effect.index === index)
       if (existing) return existing
-      if (cancelled || detached || current.sourceStatus !== 'current' || current.view.status === 'cancelled' || !current.artifact || !current.result || current.result.kind === 'continuity') throw new Error('GRAPH_GENERATION_NOT_CONFIRMABLE')
+      if (cancelled || detached || current.sourceStatus !== 'current' || current.view.status === 'cancelled' || !current.artifact || !current.result || current.result.kind === 'continuity' || current.result.kind === 'continuity-suggest') throw new Error('GRAPH_GENERATION_NOT_CONFIRMABLE')
       const length = current.result.kind === 'plot' ? 1 : current.result.candidates.length
       if (!Number.isSafeInteger(index) || index < 0 || index >= length) throw new Error('GRAPH_GENERATION_SELECTION_INVALID')
       return ipc.invokeWithProjectSession(session, 'graph-generation:confirm', { handle: current.view.handle, artifact: current.artifact, index })
