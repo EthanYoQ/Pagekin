@@ -27,6 +27,7 @@ beforeEach(() => {
     models: [],
     defaultModelId: 'old-model',
     defaultEmbeddingModelId: 'old-embedding',
+    defaultRerankModelId: null,
     activeRequests: new Map(),
     loaded: true,
   })
@@ -48,6 +49,26 @@ describe('LLM settings mutation boundaries', () => {
     await expect(useLLMStore.getState().setDefaultEmbeddingModel('new-embedding')).resolves.toBe(true)
 
     expect(useLLMStore.getState().defaultEmbeddingModelId).toBe('new-embedding')
+  })
+
+  it('publishes the default rerank model only after persistence succeeds', async () => {
+    mocks.invoke.mockResolvedValueOnce({ success: false, error: 'disk full' })
+    await expect(useLLMStore.getState().setDefaultRerankModel('new-rerank')).resolves.toBe(false)
+    expect(useLLMStore.getState().defaultRerankModelId).toBeNull()
+
+    mocks.invoke.mockResolvedValueOnce({ success: true })
+    await expect(useLLMStore.getState().setDefaultRerankModel('new-rerank')).resolves.toBe(true)
+    expect(mocks.invoke).toHaveBeenLastCalledWith('llm:set-default-rerank-model', 'new-rerank')
+    expect(useLLMStore.getState().defaultRerankModelId).toBe('new-rerank')
+  })
+
+  it('clears the default rerank model from the delete result', async () => {
+    useLLMStore.setState({ defaultRerankModelId: 'old-rerank' })
+    mocks.invoke.mockImplementation(async (channel: string) => channel === 'llm:list-models' ? [] : { success: true, defaultRerankModelId: null })
+
+    await expect(useLLMStore.getState().deleteModel('old-rerank')).resolves.toBe(true)
+
+    expect(useLLMStore.getState().defaultRerankModelId).toBeNull()
   })
 
   it('uses the atomic delete result without issuing separate default-model writes', async () => {

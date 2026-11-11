@@ -1,26 +1,26 @@
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-import { closeProjectDatabase, createProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
+import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
 import { DraftRepository } from '../../repositories/draft-repository'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
 import { SummaryRepository } from '../../repositories/summary-repository'
 import { refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
-import { createCanonicalProjectManifest } from '../../../src/shared/project-format'
 import { parseFinalizedCharacterStateResponse } from '../../../src/shared/finalized-continuity'
 import { currentDerivedCharacterFields } from '../current-character-projection'
 import { captureFinalizationGenerationContext, finalizationGenerationTask } from '../finalization-generation-source'
 import { getBuiltinPromptTemplate } from '../../../src/services/builtin-prompt-templates'
 import { removeDirectoryWithWindowsRetry } from '../../utils/remove-directory'
+import { buildProjectTemplate, createProjectFromTemplate, removeProjectTemplate } from './project-template-fixture'
 
 const roots: string[] = []
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
 const CHARACTER_ID = '66666666-6666-4666-8666-666666666666'
 const PROJECT_ID = randomUUID()
+
+beforeAll(buildProjectTemplate)
+afterAll(removeProjectTemplate)
 
 afterEach(async () => {
   closeProjectDatabase()
@@ -28,13 +28,8 @@ afterEach(async () => {
 })
 
 function openProject(): void {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'reopen-state-'))
+  const root = createProjectFromTemplate('reopen-state-', PROJECT_ID)
   roots.push(root)
-  fs.mkdirSync(path.join(root, '.ai-novel'), { recursive: true })
-  fs.writeFileSync(path.join(root, '.ai-novel', 'project.json'), JSON.stringify(createCanonicalProjectManifest({
-    projectId: PROJECT_ID, createdAt: '2026-11-01T00:00:00.000Z',
-  })))
-  createProjectDatabase(root, Buffer.alloc(32, 7))
   initProjectDatabase(root)
   BlueprintRepository.listPendingCharacterSyncOperations()
   const db = getProjectDb()!

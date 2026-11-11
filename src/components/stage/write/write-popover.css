@@ -56,6 +56,76 @@
   margin-top: var(--s-3);
 }
 
+.stage-write-threads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.stage-write-thread-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 208px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.stage-write-more > .stage-write-thread-list {
+  margin-top: var(--s-2);
+}
+
+.stage-write-thread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 3px 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.stage-write-thread[data-saving] {
+  opacity: .55;
+}
+
+.stage-write-thread-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stage-write-thread-name b {
+  overflow: hidden;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.stage-write-thread-name small {
+  font-size: var(--fs-12);
+  color: var(--ink-3);
+}
+
+.stage-write-thread-name small[data-overdue] {
+  color: var(--warn);
+}
+
+.stage-write-thread-actions {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.stage-write-thread-note {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--ink-3);
+}
+
 .stage-write-error {
   margin: 0;
   font-size: var(--fs-12);
@@ -114,14 +184,9 @@
 
 .stage-preflight-save {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--s-2);
-}
-
-.stage-preflight-save .pi-input {
-  flex: 1;
-  min-width: 0;
-  height: 28px;
-  font-size: var(--fs-12);
 }
 
 .stage-preflight-actions {

@@ -47,6 +47,17 @@ describe('服务商返回上下文超长时，流式请求报 LLM_CONTEXT_LENGTH
     expect(await streamError(gemini, status, body)).toBe('LLM_REQUEST_FAILED')
   })
 
+  it.each([
+    ['读得出窗口', SILICONFLOW_400, [32_768]],
+    ['不是超长', UNRELATED_400, undefined],
+  ])('%s时只把窗口数字报给调用方', async (_name, body, expected) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 400 })))
+    const onContextWindow = vi.fn()
+    await new OpenAIProvider().generateStream(openai, [{ role: 'user', content: '写正文' }], { temperature: 0.7, maxTokens: 512,
+      signal: new AbortController().signal, visibleOnly: true, onChunk: vi.fn(), onDone: vi.fn(), onError: vi.fn(), onContextWindow })
+    expect(onContextWindow.mock.calls[0]).toEqual(expected)
+  })
+
   it('不是 400 时不读错误体，直接取消', async () => {
     const text = vi.fn(async () => 'never read'), cancel = vi.fn(async () => {})
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, text, body: { cancel } }))

@@ -1,9 +1,13 @@
-import type { FinalizedContinuityProjection } from './finalized-continuity'
+import { findRelationReversals, findUndecidedRelations } from './blueprint-relation-conflict'
+import { latestNodesBefore, type ContinuityNode, type LatestContinuityNodes } from './character-continuity'
+import type { FinalizedContinuityProjection, PendingFinalizedRelationCandidate } from './finalized-continuity'
 
 export interface ConsistencyExemption {
   stableFactKey: string
   reason: string
   revoked: boolean
+  /** null 表示全书豁免。 */
+  chapterNumber: number | null
 }
 
 export interface ConsistencyFinding {
@@ -31,6 +35,8 @@ export interface BlueprintForPreflight {
   suspenseHook: string
   userGuidance: string
   notes: string
+  /** 未校验的 JSON，形状和 BlueprintData 的同名字段一致，由规则解析。 */
+  relationshipHints?: unknown
 }
 
 function normalizedKeyPart(value: string): string {
@@ -67,42 +73,39 @@ export function continuityStableFactKey(fact: {
     fact.entities.map(normalizedKeyPart).sort().join(','),
     normalizedKeyPart(fact.statement),
   ].join(':')
+  return `fact:${factHash(identity)}`
+}
+
+export function factHash(identity: string): string {
   let hash = 0xcbf29ce484222325n
   for (const character of identity) {
     hash ^= BigInt(character.codePointAt(0) ?? 0)
     hash = BigInt.asUintN(64, hash * 0x100000001b3n)
   }
-  return `fact:${hash.toString(16).padStart(16, '0')}`
+  return hash.toString(16).padStart(16, '0')
 }
 
-/**
- * Low-cost, deterministic preflight. The first rule is intentionally narrow:
- * a structured terminal character state conflicts with scheduling that same
- * character to appear in the current blueprint.
- * Findings are evidence, never a writing prohibition.
- */
-export function findBlueprintContinuityRisks(
-  projections: readonly FinalizedContinuityProjection[],
-  blueprint: BlueprintForPreflight,
-  exemptions: readonly ConsistencyExemption[],
-): ConsistencyFinding[] {
-  const activeExemptions = new Set(
-    exemptions.filter(exemption => !exemption.revoked).map(exemption => exemption.stableFactKey),
-  )
-  const characters = new Set(blueprint.characters.map(normalizedKeyPart))
+/** 规则只产出 ConsistencyFinding，豁免在规则表外统一处理。 */
+interface BlueprintRuleContext {
+  blueprint: BlueprintForPreflight
+  projections: readonly FinalizedContinuityProjection[]
+  continuity: LatestContinuityNodes
+  pendingRelations: readonly PendingFinalizedRelationCandidate[]
+}
 
+/** 故意收窄：只有结构化的死亡终态才和「本章出场」冲突。 */
+function terminalCharacterScheduled({ blueprint, projections }: BlueprintRuleContext): ConsistencyFinding[] {
+  const characters = new Set(blueprint.characters.map(normalizedKeyPart))
   return projections.flatMap(projection => (
     projection.sourceStatus === 'current' ? (projection.facts ?? []) : []
   ).flatMap((fact) => {
     if (fact.category !== 'character-state') return []
-    const stableFactKey = continuityStableFactKey(fact)
-    if (activeExemptions.has(stableFactKey)) return []
     const subject = fact.entities
       .map(normalizedKeyPart)
       .find(entity => characters.has(entity) && isExplicitTerminalSubject(fact.statement, entity))
     if (!subject) return []
     return [{
-      stableFactKey,
+      stableFactKey: continuityStableFactKey(fact),
       severity: 'warning' as const,
       sourceChapter: fact.sourceChapter,
       evidence: fact.evidence,
@@ -116,6 +119,31 @@ export function findBlueprintContinuityRisks(
       },
     }]
   }))
+}
+
+const BLUEPRINT_CONTINUITY_RULES: ReadonlyArray<(context: BlueprintRuleContext) => ConsistencyFinding[]> = [
+  terminalCharacterScheduled,
+  ({ blueprint, continuity }) => findRelationReversals(blueprint, continuity),
+  ({ blueprint, pendingRelations }) => findUndecidedRelations(blueprint, pendingRelations),
+]
+
+export function exemptedFactKeys(exemptions: readonly ConsistencyExemption[], chapterNumber: number): Set<string> {
+  return new Set(exemptions
+    .filter(exemption => !exemption.revoked && (exemption.chapterNumber === null || exemption.chapterNumber === chapterNumber))
+    .map(exemption => exemption.stableFactKey))
+}
+
+/** 审稿入口不传 nodes 和 pendingRelations：它的结果冻结在审稿上下文里，恢复时要逐字段相等，升级后不能多出关系提示。 */
+export function findBlueprintContinuityRisks(
+  projections: readonly FinalizedContinuityProjection[],
+  blueprint: BlueprintForPreflight,
+  exemptions: readonly ConsistencyExemption[],
+  nodes: readonly ContinuityNode[] = [],
+  pendingRelations: readonly PendingFinalizedRelationCandidate[] = [],
+): ConsistencyFinding[] {
+  const exempted = exemptedFactKeys(exemptions, blueprint.chapterNumber)
+  const context = { blueprint, projections, continuity: latestNodesBefore(nodes, blueprint.chapterNumber), pendingRelations }
+  return BLUEPRINT_CONTINUITY_RULES.flatMap(rule => rule(context)).filter(finding => !exempted.has(finding.stableFactKey))
 }
 
 export function mergeConsistencyFindingsIntoReview(

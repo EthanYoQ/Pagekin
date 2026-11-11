@@ -3,13 +3,16 @@
 //   node scripts/eval/knowledge-rerank.mjs run --group fts --out <收据.json>
 //   node scripts/eval/knowledge-rerank.mjs run --group vector --out <收据.json>   （需要环境变量 SILICONFLOW_API_KEY）
 //   node scripts/eval/knowledge-rerank.mjs run --group fts --rerank identity --out <收据.json>   （同一组候选上比较重排与原序）
+//   node scripts/eval/knowledge-rerank.mjs run --group fts --rerank bge-reranker-v2-m3 --out <收据.json>   （生产重排请求，需要 SILICONFLOW_API_KEY）
 //   node scripts/eval/knowledge-rerank.mjs compare <基准收据.json> <对照收据.json> --out <比较.json>
+//   node scripts/eval/knowledge-rerank.mjs aggregate <重复1.json> <重复2.json> ... --out <汇总.json>   （同一条件重复跑的均值、波动和逐条判定）
 
 import { createHash, randomUUID } from "node:crypto"
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { build } from "esbuild"
+import { aggregateReceipts, finalPromptCoverage, identityRank, PRODUCTION_BUDGET, promptBudgets, rerankHealth, timedRank } from "./knowledge-rerank-prompt.mjs"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
 const FIXTURE_DIR = path.join(ROOT, "test", "fixtures", "knowledge-rerank")
@@ -24,7 +27,16 @@ const GROUPS = { fts: { retrieval: "fts" }, vector: { retrieval: "vector" } }
 
 // 块 id 每次导入都随机，跨运行比较会混入召回差异，所以重排只和同一次运行、同一组候选的原序比。
 const RERANKERS = {
-  identity: { model: null, rank: async (_query, candidates) => candidates.slice(0, FINAL) },
+  identity: { model: null, rank: async (_query, candidates) => identityRank(candidates, FINAL) },
+  "bge-reranker-v2-m3": {
+    model: "BAAI/bge-reranker-v2-m3",
+    // 评估显式打开自动复用，借检索档案的同一端点和 Key；生产默认关闭。
+    rank: async (query, candidates, production) => {
+      const config = production.resolveRerankConfig({ defaultRerankModelId: undefined, models: [], embedding: embeddingModel(GROUPS.vector), autoReuseEmbedding: true })
+      if (config.kind === "none") fail(`重排没有配置：${config.reason}`)
+      return timedRank(() => production.rankPassages(query, candidates, config, FINAL))
+    },
+  },
 }
 
 const DECISION_RULES = {
@@ -32,6 +44,10 @@ const DECISION_RULES = {
   ftsRerankVsFts: "nDCG@5 平均提高 >= 0.10，且 >= 70% 查询不变差，且 Distractor@5 降 >= 30%",
   vectorRerankVsVector: "nDCG@5 不降，且变差的查询 <= 20%",
   recallBottleneck: "全文组 Recall@40 < 0.5 时，结论写「召回是瓶颈」",
+  promptCoverageSource: "batch11/rerank-r4.md「待确认」，开跑前定，不看结果再改",
+  promptCoverage: "逐组、逐预算：重排组平均必要事实覆盖率高于原序组，且变差的查询 <= 20%（重复合并计）",
+  rerankHealth: "重排请求失败比例 <= 5%，且 P95 延迟 <= 3 秒（重复合并计）",
+  recommendAutoReuse: "AUTO_REUSE_EMBEDDING 面向配了硅基流动检索的作者，走向量检索，所以建议只看向量组：vectorRerankVsVector、生产预算下的 promptCoverage、rerankHealth 全过才建议打开。小窗口预算和全文组只报告",
 }
 
 const METRIC_DEFINITIONS = {
@@ -44,6 +60,11 @@ const METRIC_DEFINITIONS = {
   rerankOutcome: "同一次运行、同一组候选上，重排后 nDCG@5 比检索原序高记 win，低记 loss，相等记 tie",
   grades: "查询是下一章的写作计划；2 = 写这一章前必须知道、要与之保持一致的既有事实，1 = 有用的背景，0 = 无关（撞词干扰另标）",
   chunkMapping: "每个块恰好包含一个完整语料段落；块的等级取该段落的判定等级，未判定记 0",
+  promptCoverage: "把前 5 段按排名送进生产的 assembleChapterMaterials，等级 2 段落中完整出现在组装结果文本里的比例；每条查询单独算，上限是该查询的 Recall@40(correct)",
+  promptCoverageOutcome: "同一次运行、同一组候选上，重排后覆盖率比原序高记 win，低记 loss，相等记 tie",
+  promptBudgets: "production-default = DEFAULT_MATERIAL_ADMISSION（32768 token 窗口）；tight = 1500 token 窗口，约放下 3 段，用来观察裁剪真实发生时的差别。两者 nonMaterialUnits 都为 0，无定稿或候选材料竞争额度",
+  rerankHealth: "只统计真实发出的请求；延迟是单次 rankPassages 调用的墙钟时间，P50、P95 取最近秩",
+  repetitions: "同一条件各自完整跑一遍（重新导入、重新检索、重新重排），aggregate 报均值与极差",
 }
 
 function fail(message) {
@@ -123,6 +144,10 @@ async function bundleProduction(workDir) {
     stdin: {
       contents: [
         "export { importText, captureWritingKnowledgeSnapshot } from './electron/knowledge-base.ts'",
+        "export { rankPassages } from './electron/rerank.ts'",
+        "export { assembleChapterMaterials } from './src/services/workflows/chapter-materials.ts'",
+        "export { DEFAULT_MATERIAL_ADMISSION, materialBudgetFrom } from './src/shared/generation-owner-contract.ts'",
+        "export { resolveRerankConfig } from './src/shared/rerank-config.ts'",
         "export { generateEmbeddings } from './electron/embedding.ts'",
         "export { captureGenerationKnowledge } from './electron/services/generation-knowledge-source.ts'",
         "export { withKnowledgeSourceGate } from './electron/services/knowledge-source-gate.ts'",
@@ -209,11 +234,13 @@ function checkReranked(id, candidates, reranked) {
   return reranked
 }
 
-function outcomeOf(base, other) {
-  const delta = other["nDCG@5"] - base["nDCG@5"]
+function outcomeBy(base, other) {
+  const delta = other - base
   if (Math.abs(delta) < 1e-9) return "tie"
   return delta > 0 ? "win" : "loss"
 }
+
+const outcomeOf = (base, other) => outcomeBy(base["nDCG@5"], other["nDCG@5"])
 
 function countOutcomes(outcomes) {
   return Object.fromEntries(["win", "tie", "loss"].map(outcome => [outcome, outcomes.filter(item => item === outcome).length]))
@@ -223,7 +250,7 @@ async function runGroup(groupName, rerankName, outPath) {
   const group = GROUPS[groupName]
   if (!group) fail(`未知分组：${groupName}，可选 ${Object.keys(GROUPS).join(", ")}`)
   const reranker = rerankName ? RERANKERS[rerankName] : null
-  if (rerankName && !reranker) fail(`未知重排器：${rerankName}，可选 ${Object.keys(RERANKERS).join(", ")}（BAAI/bge-reranker-v2-m3 等 R2 合入）`)
+  if (rerankName && !reranker) fail(`未知重排器：${rerankName}，可选 ${Object.keys(RERANKERS).join(", ")}`)
   const fixture = await loadFixture()
   const model = embeddingModel(group)
   const configuration = group.retrieval === "vector" ? { protocol: "openai", model } : null
@@ -250,6 +277,7 @@ async function runGroup(groupName, rerankName, outPath) {
       if (missing.count !== 0) fail(`向量组有 ${missing.count} 个块没有向量，导入时嵌入失败已降级为全文`)
     }
     const root = production.getProjectDataRoot(projectPath)
+    const budgets = promptBudgets(production)
     const rows = []
     for (const { id, chapterInfo } of fixture.queries) {
       const query = buildQuery(chapterInfo)
@@ -268,22 +296,32 @@ async function runGroup(groupName, rerankName, outPath) {
         if (!paragraphSha256) fail(`候选块 ${item.chunkId} 不在导入的块里`)
         const judgment = judged.get(paragraphSha256)
         return {
-          paragraphSha256, label: judgment?.label ?? null, grade: judgment?.grade ?? 0, distractor: Boolean(judgment?.distractor),
+          paragraphSha256, text: item.text, fileName: item.fileName, label: judgment?.label ?? null, grade: judgment?.grade ?? 0, distractor: Boolean(judgment?.distractor),
           score: item.score, ftsRank: ftsRank(terms, item.text), matchedTerms: terms.filter(term => item.text.toLocaleLowerCase().includes(term.toLocaleLowerCase())),
         }
       })
       if (configuration && candidates.length && candidates.every(item => item.score === 0.5)) fail(`${id} 的候选全是全文检索的固定分 0.5，向量检索可能已回退`)
       const final = candidates.slice(0, FINAL)
       const metrics = scoreQuery(candidates, final, judged)
-      const reranked = reranker ? checkReranked(id, candidates, await reranker.rank(query, candidates)) : null
+      const rankResult = reranker ? await reranker.rank(query, candidates, production) : null
+      const reranked = rankResult ? checkReranked(id, candidates, rankResult.items) : null
       const rerankMetrics = reranked ? scoreQuery(candidates, reranked, judged) : null
+      const requiredFacts = [...judged.values()].filter(item => item.grade === 2).map(item => ({ paragraphSha256: item.paragraphSha256, text: fixture.paragraphs.get(item.paragraphSha256).text }))
+      const promptCoverage = {}
+      for (const [budget, admission] of Object.entries(budgets)) {
+        const coverageOf = ranked => finalPromptCoverage(production.assembleChapterMaterials, { ranked, requiredFacts, chapterInfo, admission })
+        const original = await coverageOf(final)
+        const rerank = reranked ? await coverageOf(reranked) : null
+        promptCoverage[budget] = { original, ...(rerank ? { rerank, outcome: outcomeBy(original.coverage, rerank.coverage) } : {}) }
+      }
       const wrapper = await production.captureWritingKnowledgeSnapshot(query, projectPath, configuration)
       const wrapperTop = wrapper.items.map(item => chunkToParagraph.get(item.chunkId))
       rows.push({
         id, query, ftsTerms: terms,
+        productionTop5: wrapperTop,
         productionTop5MatchesCandidateHead: wrapperTop.join() === candidates.slice(0, FINAL).map(item => item.paragraphSha256).join(),
-        metrics, candidates, final: final.map(item => item.paragraphSha256),
-        ...(reranked ? { rerank: { final: reranked.map(item => item.paragraphSha256), metrics: rerankMetrics, outcome: outcomeOf(metrics, rerankMetrics) } } : {}),
+        metrics, candidates, final: final.map(item => item.paragraphSha256), promptCoverage,
+        ...(reranked ? { rerank: { final: reranked.map(item => item.paragraphSha256), metrics: rerankMetrics, outcome: outcomeOf(metrics, rerankMetrics), call: rankResult.call } } : {}),
       })
     }
     const receipt = {
@@ -299,12 +337,12 @@ async function runGroup(groupName, rerankName, outPath) {
       metricDefinitions: METRIC_DEFINITIONS,
       decisionRules: DECISION_RULES,
       summary: Object.fromEntries(Object.keys(rows[0]?.metrics ?? {}).map(key => [key, mean(rows, key)])),
-      ...(reranker ? { rerankSummary: Object.fromEntries(Object.keys(rows[0]?.metrics ?? {}).map(key => [key, mean(rows.map(row => row.rerank), key)])), rerankOutcomes: countOutcomes(rows.map(row => row.rerank.outcome)) } : {}),
+      ...(reranker ? { rerankSummary: Object.fromEntries(Object.keys(rows[0]?.metrics ?? {}).map(key => [key, mean(rows.map(row => row.rerank), key)])), rerankOutcomes: countOutcomes(rows.map(row => row.rerank.outcome)), rerankHealth: rerankHealth(rows.map(row => row.rerank.call)) } : {}),
       productionTop5Mismatches: rows.filter(row => !row.productionTop5MatchesCandidateHead).map(row => row.id),
       queries: rows,
     }
     await writeReceipt(outPath, receipt)
-    console.log(JSON.stringify({ group: groupName, summary: receipt.summary, rerankOutcomes: receipt.rerankOutcomes, productionTop5Mismatches: receipt.productionTop5Mismatches }, null, 2))
+    console.log(JSON.stringify({ group: groupName, summary: receipt.summary, rerankOutcomes: receipt.rerankOutcomes, rerankHealth: receipt.rerankHealth, productionTop5Mismatches: receipt.productionTop5Mismatches }, null, 2))
   } finally {
     try {
       production?.closeConnection(projectPath)
@@ -369,6 +407,25 @@ async function compare(basePath, otherPath, outPath) {
   console.log(JSON.stringify({ outcomes: result.outcomes, identical: result.identical, onlyEqualRankReorders: result.onlyEqualRankReorders }, null, 2))
 }
 
+const budgetsOf = row => Object.keys(row.promptCoverage).sort().join()
+
+async function aggregate(files, outPath) {
+  const receipts = await Promise.all(files.map(async file => JSON.parse(await readFile(file, "utf8"))))
+  for (const [index, receipt] of receipts.entries()) {
+    const name = path.basename(files[index])
+    if (receipt.kind !== "knowledge-rerank-eval" || receipt.schemaVersion !== 1 || !receipt.rerankSummary) fail(`${name} 不是带重排的评估收据`)
+    if (!Array.isArray(receipt.queries) || receipt.queries.length === 0) fail(`${name} 没有 queries，请用当前脚本重跑`)
+    if (receipt.queries.some(row => !row.promptCoverage || !row.rerank?.call)) fail(`${name} 缺少 promptCoverage 或 rerank.call，请用当前脚本重跑`)
+    if (receipt.queries.some(row => budgetsOf(row) !== budgetsOf(receipts[0].queries[0]))) fail(`${name} 的 promptCoverage 预算与第一份不同`)
+    if (receipt.group === "vector" && !receipt.queries[0].promptCoverage[PRODUCTION_BUDGET]) fail(`${name} 没有 ${PRODUCTION_BUDGET} 预算`)
+    if (receipt.group !== receipts[0].group || JSON.stringify(receipt.fixture.sha256) !== JSON.stringify(receipts[0].fixture.sha256)
+      || JSON.stringify(receipt.models) !== JSON.stringify(receipts[0].models)) fail(`${name} 的分组、夹具或模型与第一份不同`)
+  }
+  const result = aggregateReceipts(receipts)
+  await writeReceipt(outPath, result)
+  console.log(JSON.stringify({ group: result.group, repetitions: result.repetitions, rules: result.rules, rerankHealth: result.rerankHealth }, null, 2))
+}
+
 const { command, options } = parseArgs(process.argv.slice(2))
 if (command === "run") {
   if (!options.group || !options.out) fail("用法：run --group <fts|vector> [--rerank <名字>] --out <收据.json>")
@@ -376,6 +433,9 @@ if (command === "run") {
 } else if (command === "compare") {
   if (options.positional.length !== 2 || !options.out) fail("用法：compare <基准.json> <对照.json> --out <比较.json>")
   await compare(path.resolve(options.positional[0]), path.resolve(options.positional[1]), path.resolve(options.out))
+} else if (command === "aggregate") {
+  if (options.positional.length === 0 || !options.out) fail("用法：aggregate <重复1.json> ... --out <汇总.json>")
+  await aggregate(options.positional.map(file => path.resolve(file)), path.resolve(options.out))
 } else {
-  fail("用法：run --group <fts|vector> [--rerank <名字>] --out <收据.json> | compare <基准.json> <对照.json> --out <比较.json>")
+  fail("用法：run --group <fts|vector> [--rerank <名字>] --out <收据.json> | compare <基准.json> <对照.json> --out <比较.json> | aggregate <重复1.json> ... --out <汇总.json>")
 }

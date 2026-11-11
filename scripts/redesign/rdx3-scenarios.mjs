@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { FAKE_MODEL } from './fake-model.mjs'
+import { documentEndKey } from './keys.mjs'
 import * as blueprint from './pages/blueprint.mjs'
 import * as chapter from './pages/chapter.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
@@ -575,7 +576,7 @@ export const RDX3_SCENARIOS = {
     const inEditor = () => editor.evaluate(element => element.contains(document.activeElement))
     const lastLine = () => editor.evaluate(element => element.lastElementChild?.textContent ?? '')
     await editor.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     for (const line of ['※※※', '——他说，钟声提前了。', '◇◆◇']) {
       await page.keyboard.press('Enter')
       await page.keyboard.press('Enter')
@@ -590,7 +591,7 @@ export const RDX3_SCENARIOS = {
     const afterEscTab = { line: await lastLine(), inEditor: await inEditor() }
     await shoot('rdx3-prose-keys')
     await editor.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.press('Escape')
     await page.keyboard.press('ArrowLeft')
     await page.keyboard.press('Tab')
@@ -631,7 +632,7 @@ export const RDX3_SCENARIOS = {
    */
   'rdx3-candidates-en': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake, shoot }) => {
     fake.replyCharacterCards(1)
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill('角色')
     await stage.palette(page).getByRole('option', { name: /^角色/ }).first().click()
     await materials.importCharacterCards(page, '姓名：守塔人\n身份：灯塔看守，记得每一次钟声。')
@@ -644,7 +645,7 @@ export const RDX3_SCENARIOS = {
     await page.keyboard.press('Escape')
     await page.getByRole('navigation', { name: 'Settings sections' }).waitFor({ state: 'detached' })
     if (!(await runSheet.sheet(page).isVisible())) {
-      await page.keyboard.press('Control+K')
+      await page.keyboard.press('ControlOrMeta+K')
       await page.getByRole('dialog', { name: 'Search and jump' }).getByRole('combobox').fill('Run sheet')
       await page.keyboard.press('Enter')
     }

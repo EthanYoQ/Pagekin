@@ -20,6 +20,9 @@ export function narrativeEvidenceInText(evidence: string, content: string): bool
   return needle.length > 0 && content.replace(/\s+/gu, '').includes(needle)
 }
 
+export const NARRATIVE_EVENT_EVIDENCE_MAX_LENGTH = 240
+export const NARRATIVE_EVENT_REASON_MAX_LENGTH = 500
+
 export interface NarrativeThreadPlanInput {
   title: string
   type: string
@@ -43,12 +46,25 @@ export interface NarrativeThreadEvent extends NarrativeThreadEventInput {
   createdAt: string
 }
 
+/** resolve：写前延后到第 N 章的历史，延后时回收章已直接改成 N，排期不读它。advance：作者指定第 N 章推进，不动回收章。 */
+export interface NarrativeThreadAssignment {
+  chapterNumber: number
+  kind: 'advance' | 'resolve'
+  note: string
+}
+
+export interface NarrativeThreadAssignmentInput extends NarrativeThreadAssignment {
+  planId: number
+  writingChapter: number
+}
+
 export interface NarrativeThreadView extends NarrativeThreadPlanInput {
   id: number
   status: NarrativeThreadStatus
   dormantChapters: number
   overdue: boolean
   events: NarrativeThreadEvent[]
+  assignments?: NarrativeThreadAssignment[]
   createdAt: string
   updatedAt: string
 }
@@ -72,10 +88,10 @@ export interface NarrativeThreadChapterContext {
  */
 export type NarrativeThreadSchedule =
   | { kind: 'overdue'; chaptersOverdue: number }
-  | { kind: 'due' | 'in-window' | 'later' | 'terminal' }
+  | { kind: 'due' | 'assigned' | 'in-window' | 'later' | 'terminal' }
 
 export function narrativeThreadSchedule(
-  thread: Pick<NarrativeThreadView, 'status' | 'targetStartChapter' | 'targetEndChapter'>,
+  thread: Pick<NarrativeThreadView, 'status' | 'targetStartChapter' | 'targetEndChapter' | 'assignments'>,
   chapterNumber: number,
 ): NarrativeThreadSchedule | null {
   const { targetStartChapter: start, targetEndChapter: end } = thread
@@ -83,6 +99,7 @@ export function narrativeThreadSchedule(
   if (isTerminalNarrativeThreadStatus(thread.status)) return { kind: 'terminal' }
   if (chapterNumber > end) return { kind: 'overdue', chaptersOverdue: chapterNumber - end }
   if (chapterNumber === end) return { kind: 'due' }
+  if (thread.assignments?.some(item => item.kind === 'advance' && item.chapterNumber === chapterNumber)) return { kind: 'assigned' }
   return { kind: chapterNumber >= start ? 'in-window' : 'later' }
 }
 
@@ -91,7 +108,7 @@ export function isTerminalNarrativeThreadStatus(status: NarrativeThreadStatus): 
 }
 
 const SCHEDULE_RANK: Record<NarrativeThreadSchedule['kind'], number> = {
-  overdue: 0, due: 1, 'in-window': 2, later: 3, terminal: 4,
+  assigned: 0, overdue: 1, due: 2, 'in-window': 3, later: 4, terminal: 5,
 }
 
 export function compareNarrativeThreadSchedules(left: NarrativeThreadSchedule, right: NarrativeThreadSchedule): number {
@@ -99,8 +116,117 @@ export function compareNarrativeThreadSchedules(left: NarrativeThreadSchedule, r
     || (right.kind === 'overdue' ? right.chaptersOverdue : 0) - (left.kind === 'overdue' ? left.chaptersOverdue : 0)
 }
 
+export const CHAPTER_THREAD_TASK_LIMIT = 6
+
+/**
+ * 写第 N 章时到期、逾期或作者指定的线索，开写时冻结进章节信息，作为本章硬任务。
+ * 恢复和审稿都读冻结值，开写后作者改计划不影响本轮。
+ */
+export interface ChapterThreadTask {
+  planId: number
+  title: string
+  authorIntent: string
+  schedule: { kind: 'overdue'; chaptersOverdue: number } | { kind: 'due' | 'assigned' }
+}
+
+function chapterThreadTask(planId: number, title: string, authorIntent: string,
+  schedule: ChapterThreadTask['schedule']): ChapterThreadTask {
+  return {
+    planId, title, authorIntent,
+    schedule: schedule.kind === 'overdue' ? { kind: 'overdue', chaptersOverdue: schedule.chaptersOverdue } : { kind: schedule.kind },
+  }
+}
+
+export function isChapterThreadTaskSchedule(schedule: NarrativeThreadSchedule): schedule is ChapterThreadTask['schedule'] {
+  return schedule.kind === 'overdue' || schedule.kind === 'due' || schedule.kind === 'assigned'
+}
+
+interface PendingThreadTask { thread: NarrativeThreadView; schedule: ChapterThreadTask['schedule'] }
+
+function pendingThreadTasks(threads: readonly NarrativeThreadView[], chapterNumber: number): PendingThreadTask[] {
+  return threads.flatMap((thread): PendingThreadTask[] => {
+    const schedule = narrativeThreadSchedule(thread, chapterNumber)
+    return schedule && isChapterThreadTaskSchedule(schedule) ? [{ thread, schedule }] : []
+  }).sort((left, right) => compareNarrativeThreadSchedules(left.schedule, right.schedule))
+}
+
+export function chapterThreadTasks(threads: readonly NarrativeThreadView[], chapterNumber: number): {
+  tasks: ChapterThreadTask[]
+  leftOut: number
+} {
+  const pending = pendingThreadTasks(threads, chapterNumber)
+  return {
+    tasks: pending.slice(0, CHAPTER_THREAD_TASK_LIMIT)
+      .map(({ thread, schedule }) => chapterThreadTask(thread.id, thread.title, thread.authorIntent, schedule)),
+    leftOut: Math.max(0, pending.length - CHAPTER_THREAD_TASK_LIMIT),
+  }
+}
+
+export type ChapterThreadPanelRow =
+  | ({ state: 'task' } & PendingThreadTask)
+  | { state: 'deferred'; thread: NarrativeThreadView; deferredTo: number }
+
+export interface ChapterThreadPanel {
+  rows: ChapterThreadPanelRow[]
+  canAdvance: NarrativeThreadView[]
+  taskCount: number
+  leftOut: number
+}
+
+/**
+ * movedHere 是写这一章时本次会话里延后过的线索（线索 id → 延到哪章）。延后前的回收章只有会话知道，
+ * 所以只有它们能撤销；作者在别处改过回收章的不再算。
+ */
+export function chapterThreadPanel(threads: readonly NarrativeThreadView[], chapterNumber: number,
+  movedHere: ReadonlyMap<number, { to: number }>): ChapterThreadPanel {
+  const { tasks, leftOut } = chapterThreadTasks(threads, chapterNumber)
+  const deferred: ChapterThreadPanelRow[] = []
+  const canAdvance: NarrativeThreadView[] = []
+  for (const thread of threads) {
+    if (narrativeThreadSchedule(thread, chapterNumber)?.kind !== 'in-window') continue
+    if (movedHere.get(thread.id)?.to === thread.targetEndChapter) deferred.push({ state: 'deferred', thread, deferredTo: thread.targetEndChapter })
+    else canAdvance.push(thread)
+  }
+  return {
+    rows: [...pendingThreadTasks(threads, chapterNumber).map(task => ({ state: 'task' as const, ...task })), ...deferred],
+    canAdvance,
+    taskCount: tasks.length,
+    leftOut,
+  }
+}
+
+/** 读回冻结的任务，键序与开写时一致，恢复时逐字比对才能对上。格式不对返回 null。 */
+export function parseChapterThreadTasks(value: unknown): ChapterThreadTask[] | null {
+  if (!Array.isArray(value) || value.length > CHAPTER_THREAD_TASK_LIMIT) return null
+  const tasks: ChapterThreadTask[] = []
+  for (const item of value) {
+    const task = item as Partial<ChapterThreadTask> | null
+    const schedule = task?.schedule as { kind?: unknown; chaptersOverdue?: unknown } | undefined
+    if (!task || !Number.isSafeInteger(task.planId) || Number(task.planId) < 1
+      || typeof task.title !== 'string' || typeof task.authorIntent !== 'string' || !schedule
+      || !(schedule.kind === 'due' || schedule.kind === 'assigned' || (schedule.kind === 'overdue'
+        && Number.isSafeInteger(schedule.chaptersOverdue) && Number(schedule.chaptersOverdue) >= 1))) return null
+    tasks.push(chapterThreadTask(task.planId!, task.title, task.authorIntent, schedule as ChapterThreadTask['schedule']))
+  }
+  return tasks
+}
+
+/** 写稿运行绑定（RunBinding 的 JSON）在作者输入「draft:chapter-info」里冻结的线索任务。没有记录是空列表，记录写坏返回 null。 */
+export function writtenChapterThreadTasks(bindingJson: string): ChapterThreadTask[] | null {
+  try {
+    const inputs = (JSON.parse(bindingJson) as { sourceManifest?: { authorInputs?: { id: string; text: unknown }[] } }).sourceManifest?.authorInputs
+    const info = inputs?.find(input => input.id === 'draft:chapter-info')
+    if (!info) return []
+    if (typeof info.text !== 'string') return null
+    const recorded = (JSON.parse(info.text) as { threadTasks?: unknown }).threadTasks
+    return recorded === undefined ? [] : parseChapterThreadTasks(recorded)
+  } catch {
+    return null
+  }
+}
+
 export function narrativeThreadView(
-  plan: NarrativeThreadPlanRecord,
+  plan: NarrativeThreadPlanRecord & Pick<NarrativeThreadView, 'assignments'>,
   events: NarrativeThreadEvent[],
   currentFinalizedChapter: number,
 ): NarrativeThreadView {

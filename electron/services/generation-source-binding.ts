@@ -11,11 +11,12 @@ import { readInstalledWritingSkillBundle } from './writing-skill-package';
 import type { WritingLanguage } from '../../src/shared/writing-language';
 import { CURRENT_DRAFT_STATUS_SQL, WORKING_DRAFT_STATUSES } from '../../src/shared/draft-status';
 import type { RunBinding } from '../repositories/generation-run-repository';
-import type { GenerationAuthorInput, GenerationBatchIntent, MaterialDecisionIncludedSource, MaterialDecisionOmittedSource, MaterialDecisionReceipt } from '../../src/shared/generation-owner-contract';
-import { MATERIAL_DECISION_CATEGORIES, MATERIAL_DECISION_MAX_INPUT_UNITS, MATERIAL_DECISION_MAX_SOURCES,
+import type { GenerationAuthorInput, GenerationBatchIntent, MaterialBudget, MaterialDecisionIncludedSource, MaterialDecisionOmittedSource, MaterialDecisionReceipt } from '../../src/shared/generation-owner-contract';
+import { DEFAULT_CONTEXT_WINDOW_TOKENS, materialBudgetFrom, MATERIAL_BUDGET_WINDOW_SOURCES,MATERIAL_DECISION_CATEGORIES, MATERIAL_DECISION_MAX_INPUT_UNITS, MATERIAL_DECISION_MAX_SOURCES,
     MATERIAL_DECISION_OMISSION_REASONS, MATERIAL_DECISION_RECEIPT_VERSION, MATERIAL_DECISION_SOURCE_ID,
     MATERIAL_DECISION_UNIT_METHOD_VERSION } from '../../src/shared/generation-owner-contract';
 import type { GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge';
+import { MAIN_GENERATION_POLICY } from './main-generation-plan';
 import type { ReviewRevisionContext } from '../../src/shared/review-revision-generation';
 import { reviewRevisionAuthorMaterial, reviewRevisionAiBrief } from '../../src/shared/review-revision-generation';
 import { captureReviewRevisionContext, reviewRevisionRequest } from './review-revision-context';
@@ -28,7 +29,7 @@ import { buildEditorInlineContext, validateEditorInlineInput, editorInlineTask }
 import type { FinalizationGenerationContext, FinalizationGenerationSlot } from '../../src/shared/finalization-generation';
 import { captureFinalizationGenerationContext, finalizationSlotKey, finalizationGenerationTask } from './finalization-generation-source';
 import type { GraphGenerationContext, GraphGenerationInput } from '../../src/shared/graph-generation';
-import { captureGraphGenerationContext, graphGenerationTask, validateGraphGenerationInput } from './graph-generation-source';
+import { captureGraphGenerationContext, graphGenerationOperations, graphGenerationTask, validateGraphGenerationInput } from './graph-generation-source';
 import { provenGraphOwnEventIds } from './graph-generation';
 import type { LegacyRosterGenerationContext } from '../../src/shared/legacy-roster-generation';
 import { captureLegacyRosterGenerationContext, legacyRosterGenerationTask } from './legacy-roster-generation-context';
@@ -153,6 +154,13 @@ function readFile(root: string, relative: string, optional = false): Buffer | nu
     return fs.readFileSync(absolute);
 }
 function without(row: Record<string, unknown>, excluded: readonly string[]): Record<string, unknown> { return Object.fromEntries(Object.entries(row).filter(([key]) => !excluded.includes(key))); }
+function planningBlueprintText(db: Database.Database, chapter: number): string {
+    const row = db.prepare('SELECT * FROM blueprints WHERE chapter_number=?').get(chapter) as Record<string, unknown> | undefined;
+    return stable(row ? without(row, ['created_at', 'updated_at', 'notes', 'notes_updated_at']) : null);
+}
+export function planningBlueprintSourceHash(db: Database.Database, chapter: number): string {
+    return hash(planningBlueprintText(db, chapter));
+}
 function freezeAuthorInputs(value: unknown): GenerationAuthorInput[] {
     if (value === undefined) return [];
     if (!Array.isArray(value) || value.length > 64) fail('GENERATION_AUTHOR_INPUT_INVALID');
@@ -235,10 +243,17 @@ function decisionIdentity(value: { sourceId: string; revision: number; contentHa
 function compareDecisionIdentity(left: { sourceId: string; revision: number; contentHash: string }, right: { sourceId: string; revision: number; contentHash: string }): number {
     return compareCodeUnit(left.sourceId, right.sourceId) || left.revision - right.revision || compareCodeUnit(left.contentHash, right.contentHash);
 }
+function freezeMaterialBudget(budget: Record<string, unknown>): MaterialBudget {
+    decisionCount(budget.inputTokens);
+    return materialBudgetFrom({ contextWindowTokens: decisionCount(budget.contextWindowTokens, 1),
+        contextWindowSource: decisionEnum(budget.contextWindowSource, MATERIAL_BUDGET_WINDOW_SOURCES),
+        reservedOutputTokens: decisionCount(budget.reservedOutputTokens), safetyMarginTokens: decisionCount(budget.safetyMarginTokens) });
+}
 function freezeMaterialDecision(value: unknown): MaterialDecisionReceipt {
     const reconciled = !!value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'reconciliationPromptHash');
     const outlined = !!value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'shortOutlinePromptHash');
-    const record = decisionFields(value, ['version', 'verdict', 'promptHash', ...(reconciled ? ['reconciliationPromptHash'] : []), ...(outlined ? ['shortOutlinePromptHash'] : []), 'capacity', 'coverage', 'included', 'omitted']);
+    const budgeted = !!value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'budget');
+    const record = decisionFields(value, ['version', 'verdict', 'promptHash', ...(reconciled ? ['reconciliationPromptHash'] : []), ...(outlined ? ['shortOutlinePromptHash'] : []), 'capacity', ...(budgeted ? ['budget'] : []), 'coverage', 'included', 'omitted']);
     if (record.version !== MATERIAL_DECISION_RECEIPT_VERSION || record.verdict !== 'admitted')
         fail('GENERATION_MATERIAL_DECISION_INVALID');
     if (typeof record.promptHash !== 'string' || !isContentHash(record.promptHash)
@@ -247,6 +262,7 @@ function freezeMaterialDecision(value: unknown): MaterialDecisionReceipt {
         fail('GENERATION_MATERIAL_DECISION_INVALID');
     const capacity = decisionFields(record.capacity, ['maxInputUnits', 'methodVersion', 'admittedUnits']);
     const coverage = decisionFields(record.coverage, ['required', 'included', 'complete']);
+    const budget = budgeted ? decisionFields(record.budget, ['inputTokens', 'contextWindowTokens', 'contextWindowSource', 'reservedOutputTokens', 'safetyMarginTokens']) : undefined;
     const frozen: MaterialDecisionReceipt = {
         version: MATERIAL_DECISION_RECEIPT_VERSION, verdict: 'admitted', promptHash: record.promptHash,
         ...(reconciled ? { reconciliationPromptHash: record.reconciliationPromptHash as string } : {}),
@@ -254,6 +270,7 @@ function freezeMaterialDecision(value: unknown): MaterialDecisionReceipt {
         capacity: { maxInputUnits: decisionCount(capacity.maxInputUnits, 1, MATERIAL_DECISION_MAX_INPUT_UNITS),
             methodVersion: decisionEnum(capacity.methodVersion, [MATERIAL_DECISION_UNIT_METHOD_VERSION]),
             admittedUnits: decisionCount(capacity.admittedUnits, 0, MATERIAL_DECISION_MAX_INPUT_UNITS) },
+        ...(budget ? { budget: freezeMaterialBudget(budget) } : {}),
         coverage: { required: decisionCount(coverage.required), included: decisionCount(coverage.included),
             complete: coverage.complete === true },
         included: decisionSources(record.included, 'included') as MaterialDecisionIncludedSource[],
@@ -282,6 +299,11 @@ function freezeMaterialDecision(value: unknown): MaterialDecisionReceipt {
     safeMetadata(frozen);
     return JSON.parse(stable(frozen));
 }
+/** 只决定放多少章，绝不用来拒绝发送（ADR-0026）。 */
+function continuityInputTokens({ capabilityEvidence }: SafeGenerationModelReceipt): number {
+    return materialBudgetFrom({ contextWindowTokens: capabilityEvidence.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS, contextWindowSource: 'default',
+        reservedOutputTokens: capabilityEvidence.maxOutputTokens, safetyMarginTokens: MAIN_GENERATION_POLICY.safetyMarginTokens }).inputTokens;
+}
 export function buildGenerationSourceBinding(deps: GenerationSourceBindingDependencies, input: GenerationSourceBindingInput, verbatimModelName = false): GenerationSourceBindingResult {
     if (!deps.db.open || !input.projectId || !input.epoch || !input.operation)
         fail('GENERATION_SOURCE_BINDING_INVALID');
@@ -293,7 +315,7 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
     if (input.legacyRosterKey && (input.operation !== 'legacy-character-roster-repair' || !isDeepStrictEqual(input.promptKeys, ['legacy-roster'])
         || input.skillStages.length || input.selectedDraftIds.length || input.selectedFinalizedDraftIds.length || input.chapterNumber !== undefined
         || input.authorInputs?.length || graphInput)) fail('GENERATION_LEGACY_SELECTION_INVALID');
-    if (graphInput && (input.operation !== ({ plot: 'plot-tree-snapshot', plan: 'narrative-thread-plan-candidate', event: 'narrative-thread-event-candidate' } as const)[graphInput.kind]
+    if (graphInput && (input.operation !== graphGenerationOperations[graphInput.kind]
         || !input.graphGenerationKey || !isDeepStrictEqual(input.promptKeys, [`graph-${graphInput.kind}`]) || input.skillStages.length
         || input.selectedDraftIds.length || input.selectedFinalizedDraftIds.length || input.chapterNumber !== undefined || input.authorInputs?.length)) fail('GENERATION_GRAPH_SELECTION_INVALID');
     const authorInputs = freezeAuthorInputs(input.authorInputs);
@@ -372,7 +394,7 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
         }
         if (graphInput) {
             graphContext = captureGraphGenerationContext(deps.db, graphInput, input, input.graphGenerationKey!, input.graphGenerationContext,
-                input.graphGenerationContext ? provenGraphOwnEventIds(deps.db, input.graphGenerationContext) : []);
+                input.graphGenerationContext ? provenGraphOwnEventIds(deps.db, input.graphGenerationContext) : [], continuityInputTokens(input.modelReceipt));
             add('graph-generation-context', 0, JSON.stringify(graphContext), 'author-constraint', 'main captured graph sources and original target baseline');
         }
         if (agentInput) {
@@ -409,9 +431,8 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
         }
         for (const chapter of blueprintChapters) {
             if (chapter === input.chapterNumber) continue;
-            const row = deps.db.prepare('SELECT * FROM blueprints WHERE chapter_number=?').get(chapter) as Record<string, unknown> | undefined;
             // A requested empty slot is evidence too: later creation must invalidate this snapshot.
-            add(`blueprint:${chapter}`, 0, stable(row ? without(row, ['created_at', 'updated_at', 'notes', 'notes_updated_at']) : null),
+            add(`blueprint:${chapter}`, 0, planningBlueprintText(deps.db, chapter),
                 'author-constraint', 'explicit planning range; current row or absent slot');
         }
         for (const [ids, finalized] of [[input.selectedDraftIds, false], [input.selectedFinalizedDraftIds, true]] as const)

@@ -18,7 +18,7 @@ const SECOND_EDIT = '回到旧港时，她在地图背面记下了那道刻痕�
 const running = page => stage.root(page).locator('.stage-capsule:not([data-tone="ok"])')
 const ownNotice = (page, chapterNumber) => chapterView.view(page).locator('.pi-notice').filter({ hasText: `第 ${chapterNumber} 章已修改` })
 
-async function trackOpenedSession(app) {
+export async function trackOpenedSession(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
     const original = handlers.get('project:open')
@@ -58,7 +58,7 @@ async function impactLoaded(app, page, since, chapterNumber) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 }
 
-async function uiSession(app) {
+export async function uiSession(app) {
   const session = await app.evaluate(() => globalThis.__driveOpened)
   assert.ok(session?.leaseId, '记下了界面打开作品的会话')
   return session
@@ -89,20 +89,20 @@ async function knowledgeDocuments(context, chapterNumber, session) {
   return listed.filter(document => document.finalizedChapter === chapterNumber).map(document => document.id).sort()
 }
 
-async function reopen(page, chapterNumber) {
+export async function reopen(page, chapterNumber) {
   await chapterView.view(page).getByRole('button', { name: '重新打开修改', exact: true }).click()
   await page.getByRole('dialog', { name: `重新打开第 ${chapterNumber} 章？` }).getByRole('button', { name: '重新打开', exact: true }).click()
   await chapterView.view(page).getByText(`正在修改已定稿的第 ${chapterNumber} 章`).waitFor({ state: 'visible', timeout: 30_000 })
 }
 
-async function appendSentence(page, sentence) {
+export async function appendSentence(page, sentence) {
   await chapterView.prose(page).click()
   await page.keyboard.press('ControlOrMeta+End')
   await page.keyboard.type(sentence)
   await stage.saveProse(page)
 }
 
-async function finalizeReopened(page, chapterNumber, inspect) {
+export async function finalizeReopened(page, chapterNumber, inspect) {
   const button = chapterView.view(page).getByRole('button', { name: '定稿', exact: true })
   if (await button.count() > 0) await button.click()
   else await chapterView.more(page, '定稿…')

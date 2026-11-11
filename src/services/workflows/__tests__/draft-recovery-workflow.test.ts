@@ -66,7 +66,7 @@ it('从原资料快照恢复附加检索词，不发起新的准备或检索', a
   const workflow = await createDraftRecoveryWorkflow(session, handle)
   await expect(execute(workflow).result).rejects.toThrow('CONTEXT_READING_REACHED')
   expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
-    'generation:read-context', 'generation:read-context', 'db:draft-get-latest',
+    'generation:read-context', 'generation:read-context', 'db:character-roster-read', 'db:draft-get-latest',
   ])
 })
 

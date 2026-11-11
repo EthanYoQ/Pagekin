@@ -786,4 +786,82 @@ describe('BlueprintRepository range commit', () => {
       db.close()
     }
   })
+
+  describe('回执里的关系提示', () => {
+    const HINTS = [{ from: '林晚', to: '沈舟', relation: '亲密同伴' }]
+    const commit = (operationId: string, chapters: BlueprintData[]) => BlueprintRepository.commitRange({
+      mode: 'replace-range', operationId, startChapter: chapters[0].chapterNumber, endChapter: chapters[chapters.length - 1].chapterNumber, blueprints: chapters,
+    })
+    const withHints = (chapterNumber: number) => ({ ...blueprintFor(chapterNumber), relationshipHints: HINTS })
+    let db: BetterSqlite3.Database
+    beforeEach(() => {
+      db = createBlueprintDb()
+      vi.mocked(getProjectDb).mockReturnValue(db)
+    })
+    const hintsFor = (...chapters: number[]) => BlueprintRepository.committedRelationshipHints(
+      BlueprintRepository.getAll().filter(row => chapters.includes(row.chapterNumber)),
+    )
+
+    it('被检查的内容和回执不同就没有提示，即使这一章的数据库行没变', () => {
+      commit('first', [withHints(1)])
+      expect(BlueprintRepository.committedRelationshipHints([{ ...blueprintFor(1), characters: ['别的人'] }])).toEqual({})
+    })
+
+    it('按章返回覆盖该章的回执里的提示，没有提示的章不出现', () => {
+      commit('first', [withHints(1), blueprintFor(2)])
+      expect(hintsFor(1, 2, 3)).toEqual({ 1: HINTS })
+    })
+
+    it('作者改过这一章后这一章没有提示，同一份回执的其他章不受影响', () => {
+      commit('first', [withHints(1), withHints(2)])
+      BlueprintRepository.upsert({ ...blueprintFor(2), keyEvents: '作者改了这一章' })
+      expect(hintsFor(1, 2)).toEqual({ 1: HINTS })
+    })
+
+    it('原样保存不算改过，定稿写入的章节要点也不算', () => {
+      commit('first', [withHints(1)])
+      BlueprintRepository.upsert(blueprintFor(1))
+      BlueprintRepository.updateNotes(1, '定稿后的要点')
+      expect(hintsFor(1)).toEqual({ 1: HINTS })
+    })
+
+    it('只认最近一次回执：同一秒内后提交的回执没有提示，就不再用前一次的', () => {
+      commit('first', [withHints(1)])
+      commit('second', [blueprintFor(1)])
+      expect(hintsFor(1)).toEqual({})
+    })
+
+    const importFill = (operationId: string, chapters: BlueprintData[]) => BlueprintRepository.commitRange({
+      mode: 'replace-range', operationId, startChapter: chapters[0].chapterNumber, endChapter: chapters[chapters.length - 1].chapterNumber, blueprints: chapters,
+    }, undefined, undefined, 'fill-empty')
+
+    it('导入只补空白：保留下来的章提示还在，导入新写的章按新回执', () => {
+      commit('first', [withHints(1)])
+      importFill('import', [{ ...blueprintFor(1), keyEvents: '导入反推的内容' }, { ...blueprintFor(2), keyEvents: '导入反推的内容' }])
+      expect(BlueprintRepository.getByChapter(1)?.keyEvents).toBe(blueprintFor(1).keyEvents)
+      expect(hintsFor(1, 2)).toEqual({ 1: HINTS })
+    })
+
+    it('导入保留过的章，之后被重新规划且没有提示：不再用导入之前的提示', () => {
+      commit('first', [withHints(1)])
+      importFill('import', [blueprintFor(1)])
+      commit('replan', [blueprintFor(1)])
+      expect(hintsFor(1)).toEqual({})
+    })
+
+    it('回执损坏时没有提示，也不报错；另一份完好的回执照常', () => {
+      commit('broken', [withHints(1)])
+      commit('good', [withHints(2)])
+      db.prepare("UPDATE blueprint_commit_operations SET character_sync_input='{not json' WHERE operation_id='broken'").run()
+      expect(hintsFor(1, 2)).toEqual({ 2: HINTS })
+      db.prepare(`UPDATE blueprint_commit_operations SET character_sync_input='[null,{"chapterNumber":1}]' WHERE operation_id='broken'`).run()
+      expect(hintsFor(1, 2)).toEqual({ 2: HINTS })
+    })
+
+    it('旧项目没有回执时为空', () => {
+      BlueprintRepository.listPendingCharacterSyncOperations()
+      BlueprintRepository.upsert(blueprintFor(1))
+      expect(hintsFor(1)).toEqual({})
+    })
+  })
 })

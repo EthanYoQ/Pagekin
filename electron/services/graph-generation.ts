@@ -5,6 +5,8 @@ import type { MainGenerationRunHandle } from '../../src/services/generation/gene
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
 import { derivePlotTreeSnapshot } from '../../src/shared/plot-tree-generation-pure'
 import { parseNarrativeThreadPlanCandidates, parseNarrativeThreadEventCandidates } from '../../src/shared/narrative-thread-generation-pure'
+import { parseBlueprintContinuityCheck } from '../../src/shared/blueprint-continuity-check'
+import { parseBlueprintContinuitySuggest } from '../../src/shared/blueprint-continuity-suggest'
 import { GenerationRunRepository, textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
 import { readGraphGenerationContext } from './graph-generation-source'
 import { PlotTreeRepository } from '../repositories/plot-tree-repository'
@@ -16,6 +18,8 @@ export function deriveGraphGenerationResult(context: GraphGenerationContext, tex
     const result = derivePlotTreeSnapshot(text, context.sources, context.createdAt)
     return { kind: 'plot', snapshot: result.snapshot, derivation: result.kind }
   }
+  if (context.kind === 'continuity') return { kind: 'continuity', ...parseBlueprintContinuityCheck(text, context.chapters, context.nodes) }
+  if (context.kind === 'continuity-suggest') return { kind: 'continuity-suggest', ...parseBlueprintContinuitySuggest(text, context.chapters, context.nodes) }
   return context.kind === 'plan'
     ? { kind: 'plan', candidates: parseNarrativeThreadPlanCandidates(text, context.totalChapters, legacyStoredEffect) }
     : { kind: 'event', candidates: parseNarrativeThreadEventCandidates(text, context.content, legacyStoredEffect) }

@@ -3,6 +3,11 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { navigate } from '../../../stores/navigation/navigation-intents'
 import { Button } from '../../ui/Button'
 import { Notice } from '../../ui/Notice'
+import { getChapterFinalizeScope } from '../../../services/workflows/workflow-utils'
+import { planFinalizationRetry } from '../../../shared/finalization-step-error'
+import { usePostProcessStatus } from '../../ui/use-post-process-status'
+import LaterBlueprintSuggestions from './LaterBlueprintSuggestions'
+import { useLaterBlueprintCheck } from './use-later-blueprint-check'
 import { useReplacementImpacts } from './use-replacement-impacts'
 
 type Text = (zh: string, en: string) => string
@@ -65,32 +70,66 @@ export function ReplacementImpactPreview({ impact }: { impact: ReplacementImpact
   )
 }
 
-export default function ReplacementImpactNotices({ projectKey, chapterNumber, showOwn }: { projectKey: string; chapterNumber: number; showOwn: boolean }) {
+/**
+ * 检查后续蓝图要等后处理把新章的人物状态记进时间线；后处理失败或没有记录时也能查，只是依据可能不全。
+ * 「知道了」只收起替换提示，按钮和没处理的建议卡留着。
+ */
+function OwnImpactNotice({ impact, projectKey, acknowledged, onAcknowledge }: { impact: ReplacementImpact; projectKey: string; acknowledged: boolean; onAcknowledge: () => void }) {
   const text = useLocaleStore(s => s.text)
-  const { impacts, acknowledge } = useReplacementImpacts(projectKey)
-  const own = showOwn ? impacts.find(impact => impact.chapterNumber === chapterNumber) : undefined
-  const earlier = impacts.filter(impact => impact.laterChapters.includes(chapterNumber) || impact.blueprintOnlyChapters.includes(chapterNumber))
-  const firstLater = own?.laterChapters[0]
+  const check = useLaterBlueprintCheck(projectKey, impact.finalizationId!)
+  const { status, steps } = usePostProcessStatus(getChapterFinalizeScope(impact.chapterNumber))
+  const { retired } = planFinalizationRetry(status?.steps ?? {})
+  const postProcessing = steps.some(({ key, presentation }) => presentation === 'pending' && !retired.has(key))
+  const complete = status?.steps.chapter_notes?.ok === true && status.steps.character_cards?.ok === true
+  const checkable = impact.laterChapters.length + impact.blueprintOnlyChapters.length > 0
+  const firstLater = impact.laterChapters[0]
+  const running = check.status.kind === 'running'
+  const checkButton = checkable && (
+    <Button variant="secondary" size="sm" disabled={postProcessing || running} onClick={() => void check.run()}>
+      {running ? text('正在检查…', 'Checking…') : text('检查后续蓝图', 'Check later blueprints')}
+    </Button>
+  )
+  const checkHint = !checkable ? null : postProcessing
+    ? <p>{text('定稿后处理做完后才能检查后续蓝图：新章的人物状态要先记进时间线。', 'You can check later blueprints once post-finalization steps finish, so the new chapter’s character states are in the timeline.')}</p>
+    : !complete && <p>{text('角色状态没更新完，建议可能不全。', 'Character states were not fully updated, so suggestions may be incomplete.')}</p>
   return (
     <>
-      {own && (
-        <Notice
-          tone="warn"
-          title={text(`第 ${chapterNumber} 章已修改`, `Chapter ${chapterNumber} was changed`)}
-          actions={(
-            <>
-              <Button variant="secondary" size="sm" onClick={() => acknowledge(own.finalizationId!)}>{text('知道了', 'Got it')}</Button>
-              {firstLater !== undefined && (
-                <Button variant="text" size="sm" onClick={() => navigate({ kind: 'chapter', chapterNumber: firstLater })}>
-                  {text(`打开第 ${firstLater} 章`, `Open chapter ${firstLater}`)}
-                </Button>
-              )}
-            </>
-          )}
-        >
-          <ReplacementImpactSummary impact={own} />
-        </Notice>
-      )}
+      {acknowledged
+        ? checkable && <div className="stage-ch-suggest-bar">{checkButton}{checkHint}</div>
+        : (
+          <Notice
+            tone="warn"
+            title={text(`第 ${impact.chapterNumber} 章已修改`, `Chapter ${impact.chapterNumber} was changed`)}
+            actions={(
+              <>
+                {checkButton}
+                <Button variant="secondary" size="sm" onClick={onAcknowledge}>{text('知道了', 'Got it')}</Button>
+                {firstLater !== undefined && (
+                  <Button variant="text" size="sm" onClick={() => navigate({ kind: 'chapter', chapterNumber: firstLater })}>
+                    {text(`打开第 ${firstLater} 章`, `Open chapter ${firstLater}`)}
+                  </Button>
+                )}
+              </>
+            )}
+          >
+            <ReplacementImpactSummary impact={impact} />
+            {checkHint}
+          </Notice>
+        )}
+      <LaterBlueprintSuggestions check={check} projectKey={projectKey} pendingOnly={acknowledged} />
+    </>
+  )
+}
+
+export default function ReplacementImpactNotices({ projectKey, chapterNumber, showOwn }: { projectKey: string; chapterNumber: number; showOwn: boolean }) {
+  const text = useLocaleStore(s => s.text)
+  const { impacts, seen, acknowledge } = useReplacementImpacts(projectKey)
+  const own = showOwn ? impacts.find(impact => impact.chapterNumber === chapterNumber) : undefined
+  const earlier = impacts.filter(impact => !seen.has(impact.finalizationId!)
+    && (impact.laterChapters.includes(chapterNumber) || impact.blueprintOnlyChapters.includes(chapterNumber)))
+  return (
+    <>
+      {own && <OwnImpactNotice impact={own} projectKey={projectKey} acknowledged={seen.has(own.finalizationId!)} onAcknowledge={() => acknowledge(own.finalizationId!)} />}
       {earlier.map(impact => {
         const planned = impact.blueprintOnlyChapters.includes(chapterNumber)
         return (

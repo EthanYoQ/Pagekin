@@ -568,7 +568,7 @@ export const REFS_SCENARIOS = {
   }, after: async ({ page }) => {
     await refs.dialog(page).getByRole('button', { name: '继续编辑' }).click()
     assert.match(await refs.copyEditor(page).inputValue(), /他从不让人上灯室。$/, '继续编辑后修改还在')
-    await page.keyboard.press('Control+S')
+    await page.keyboard.press('ControlOrMeta+S')
     await page.getByText('有未保存的修改').waitFor({ state: 'detached' })
   } },
   'refs-diff': { model: false, shell: 'stage', setup: seedRefs, run: async ({ page }) => {

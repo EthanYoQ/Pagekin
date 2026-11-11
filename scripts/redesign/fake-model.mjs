@@ -11,6 +11,8 @@ export const FAKE_MODEL = Object.freeze({ id: 'redesign-drive-fixture', name: '�
 export const FIXTURE_ENDPOINT_MODELS = Object.freeze(['gpt-5.5-mini', 'gpt-4.1', 'gateway/novel-writer-pro', 'text-embedding-3-small',
   'gateway/very-long-model-identifier-for-layout-checks-2026-10-24-preview', ...Array.from({ length: 12 }, (_, index) => `gateway/model-${String(index + 1).padStart(2, '0')}`)])
 
+export const FIXTURE_ENDPOINT_CONTEXT_WINDOW = Object.freeze(['gateway/novel-writer-pro', 128_000])
+
 export const FIXTURE_PROSE = '林岚沿着旧港的石阶往下走，潮水刚退，青石上还留着一层薄薄的盐霜。她把父亲留下的地图摊在膝头，对照远处灯塔的位置，一格一格数过去。守塔人站在塔下朝她招手，说昨夜的钟声比往常早了一刻。'
 const FIXTURE_REVISED = `${FIXTURE_PROSE}林岚把这句话记进日志，又核对了一遍潮位表。`
 const REVIEW = JSON.stringify({ summary: '时间线需要核对。', items: [
@@ -87,9 +89,21 @@ function importReply(prompt) {
   return null
 }
 
-function responseFor(prompt, { extraction, plotTree, review, characterState, importInference }) {
+/** 按提示里的章范围回齐全蓝图；关闭时回正文，使解析失败、留下蓝图恢复稿。 */
+function directoryReply(prompt) {
+  const range = /为接下来的 第(\d+)章到第(\d+)章/u.exec(prompt)
+  if (!range) return null
+  const [from, to] = [Number(range[1]), Number(range[2])]
+  return { kind: 'directory-blueprints', content: JSON.stringify({ blueprints: Array.from({ length: to - from + 1 }, (_, index) => from + index).map(chapterNumber => ({
+    chapterNumber, title: `雾港第${chapterNumber}夜`, role: '发展', purpose: '推进灯塔线索', keyEvents: '林岚沿着潮汐表继续追查沉船的来历',
+    characters: ['林岚'], relationships: [], suspenseHook: '雾钟又在深夜响起' })) }) }
+}
+
+function responseFor(prompt, { extraction, plotTree, review, characterState, importInference, directoryBlueprints }) {
   const imported = importInference ? importReply(prompt) : null
   if (imported) return imported
+  const directory = directoryBlueprints ? directoryReply(prompt) : null
+  if (directory) return directory
   if (prompt.includes('不可变小说配置 JSON 合同') || prompt.includes('Immutable novel-configuration JSON contract')) {
     return { kind: 'config', content: JSON.stringify(FIXTURE_CONFIG) }
   }
@@ -134,8 +148,11 @@ export async function startFakeModel(diagnostics) {
   let review = null
   let characterState = null
   let keylessEmbeddings = false
+  let failedRerank = false
   let importInference = false
+  let directoryBlueprints = false
   let contextLengthRejection = null
+  let contextLengthRejectionsLeft = Infinity
   /** 每次被接受的嵌入请求带的 Authorization 头（没有时为 null），场景据此确认本机检索模型真的没带 Key。 */
   const embeddingAuthorizations = []
   const streamLog = []
@@ -173,13 +190,16 @@ export async function startFakeModel(diagnostics) {
   /** 之后不带 Key 的嵌入请求也照常回向量，模拟不需要 Key 的本机检索服务；传 false 恢复拒绝。 */
   const acceptKeylessEmbeddings = (accepted = true) => { keylessEmbeddings = accepted }
   /** 之后的参考小说导入：全局推演回一份合法 JSON（三张角色卡），分批蓝图推演按本批章号回齐全的蓝图。 */
+  const failRerank = (failed = true) => { failedRerank = failed }
   const replyImport = () => { importInference = true }
-  const rejectContextLength = (rejected = true) => {
+  const replyDirectoryBlueprints = (on = true) => { directoryBlueprints = on }
+  const rejectContextLength = (rejected = true, { sample: sampleName = 'deepseek', times = Infinity } = {}) => {
     if (!rejected) { contextLengthRejection = null; return }
+    contextLengthRejectionsLeft = times
     const sample = new URL('../../electron/llm/__tests__/provider-context-length-samples.json', import.meta.url)
-    try { contextLengthRejection = JSON.parse(readFileSync(sample, 'utf8')).deepseek }
+    try { contextLengthRejection = JSON.parse(readFileSync(sample, 'utf8'))[sampleName] }
     catch (error) { throw new Error(`rejectContextLength: 读不出错误体样本 ${fileURLToPath(sample)}`, { cause: error }) }
-    if (!contextLengthRejection?.error?.message) throw new Error('rejectContextLength: 样本缺少 deepseek 错误体')
+    if (!contextLengthRejection) throw new Error(`rejectContextLength: 样本缺少 ${sampleName} 错误体`)
   }
   const record = (kind, detail) => {
     requests.push(kind)
@@ -188,7 +208,7 @@ export async function startFakeModel(diagnostics) {
   const server = createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/v1/models' && request.headers.authorization === `Bearer ${FAKE_MODEL.apiKey}`) {
       record('models', 'GET /v1/models')
-      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: FIXTURE_ENDPOINT_MODELS.map(id => ({ id })) }))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: FIXTURE_ENDPOINT_MODELS.map(id => ({ id, ...(id === FIXTURE_ENDPOINT_CONTEXT_WINDOW[0] ? { context_window: FIXTURE_ENDPOINT_CONTEXT_WINDOW[1] } : {}) })) }))
       return
     }
     if (request.method === 'POST' && request.url.endsWith('/v1/messages')) {
@@ -196,7 +216,7 @@ export async function startFakeModel(diagnostics) {
       const body = JSON.parse(Buffer.concat(await Array.fromAsync(request)).toString('utf8'))
       await pass()
       const prompt = [body.system ?? '', ...(body.messages ?? []).map(message => message.content)].join('\n')
-      const { kind, content } = responseFor(prompt, { extraction, plotTree, review, characterState, importInference })
+      const { kind, content } = responseFor(prompt, { extraction, plotTree, review, characterState, importInference, directoryBlueprints })
       chats.push({ kind, model: body.model, messages: body.messages, protocol: 'anthropic',
         anthropicVersion: request.headers['anthropic-version'] ?? null, system: body.system ?? null, maxTokens: body.max_tokens, stream: body.stream === true })
       record(kind, `anthropic ${prompt.slice(0, 100).replace(/\s+/g, ' ')}`)
@@ -231,18 +251,25 @@ export async function startFakeModel(diagnostics) {
         .end(JSON.stringify({ data: input.map((_, index) => ({ index, embedding: [0.1, 0.2, 0.3] })) }))
       return
     }
+    if (request.url === '/v1/rerank') {
+      record('rerank', `${body.documents?.length ?? 0} 段${failedRerank ? '（回错误）' : ''}`)
+      if (failedRerank) { response.writeHead(500).end(); return }
+      const results = Array.from({ length: Math.min(body.top_n, body.documents.length) }, (_, rank) => ({ index: rank, relevance_score: 1 - rank / 100 }))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ results }))
+      return
+    }
     if (request.url !== '/v1/chat/completions') { response.writeHead(404).end(); return }
     await pass()
-    if (contextLengthRejection) {
+    if (contextLengthRejection && contextLengthRejectionsLeft-- > 0) {
       record('context-length', `${Buffer.byteLength(JSON.stringify(body.messages ?? []))} 字节`)
       response.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify(contextLengthRejection))
       return
     }
     const prompt = (body.messages ?? []).map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content)).join('\n')
-    const reply = responseFor(prompt, { extraction, plotTree, review, characterState, importInference })
+    const reply = responseFor(prompt, { extraction, plotTree, review, characterState, importInference, directoryBlueprints })
     const { kind } = reply
     const content = kind === 'character-state' && brokenCharacterState ? '角色状态暂时无法整理。' : reply.content
-    chats.push({ kind, model: body.model, messages: body.messages })
+    chats.push({ kind, model: body.model, messages: body.messages, maxTokens: body.max_tokens ?? body.max_completion_tokens })
     record(kind, prompt.slice(0, 120).replace(/\s+/g, ' '))
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
     if (kind === 'character-state' && droppedCharacterStates > 0) {
@@ -267,6 +294,6 @@ export async function startFakeModel(diagnostics) {
   })
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
   server.unref()
-  return { port: server.address().port, requests, chats, gate, streamProse, streamLog, replyCharacterCards, breakCharacterState, dropCharacterState, replyPlotTree, failProse, replyReview, replyCharacterState, acceptKeylessEmbeddings, replyImport, rejectContextLength, embeddingAuthorizations,
+  return { port: server.address().port, requests, chats, gate, streamProse, streamLog, replyCharacterCards, breakCharacterState, dropCharacterState, replyPlotTree, failProse, replyReview, replyCharacterState, acceptKeylessEmbeddings, failRerank, replyImport, replyDirectoryBlueprints, rejectContextLength, embeddingAuthorizations,
     close: () => new Promise(resolve => { server.closeAllConnections(); server.close(() => resolve()) }) }
 }

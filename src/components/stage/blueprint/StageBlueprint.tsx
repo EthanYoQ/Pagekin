@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, ListChecks, MoreHorizontal, Sparkles } from 'lucide-react'
+import { BookOpen, ListChecks, MoreHorizontal, ScanSearch, Sparkles } from 'lucide-react'
 import { blueprintWritePrefill } from '../../../services/workflows/chapter-write-launch'
 import type { DirectoryWorkflowParams } from '../../../services/workflows/directory-workflow'
-import { openPlanningRecoveryDraft } from '../../../stores/editor-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useStageStore } from '../../../stores/navigation/stage-store'
-import { isCurrentProjectSession, currentProjectSessionForPath, useChapterBlueprints } from '../../editor/use-chapter-blueprints'
+import { useChapterBlueprints } from '../../editor/use-chapter-blueprints'
 import { Button } from '../../ui/Button'
 import { DangerConfirm } from '../../ui/DangerConfirm'
 import { EmptyState } from '../../ui/EmptyState'
@@ -14,6 +13,10 @@ import { Notice } from '../../ui/Notice'
 import { InkDialog } from '../InkDialog'
 import { useStageView } from '../use-stage-work'
 import WriteChapterPopover from '../write/WriteChapterPopover'
+import BlueprintContinuityNotices from './BlueprintContinuityNotices'
+import { useBlueprintContinuityNotice } from './use-blueprint-continuity-notice'
+import { useBlueprintAiCheck } from './use-blueprint-ai-check'
+import { BlueprintAiSummary } from './BlueprintAiCheckParts'
 import BatchWriteDialog from './BatchWriteDialog'
 import BlueprintCard from './BlueprintCard'
 import BlueprintPlanList from './BlueprintPlanList'
@@ -49,7 +52,9 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
   selectRequest?: number
 }) {
   const text = useLocaleStore(s => s.text)
-  const plan = useChapterBlueprints({ projectKey, initialChapterNumber, selectRequest })
+  const continuity = useBlueprintContinuityNotice()
+  const plan = useChapterBlueprints({ projectKey, initialChapterNumber, selectRequest, onSaved: (session, saved) => void continuity.check(session, saved), onExternalRefresh: continuity.clear })
+  const ai = useBlueprintAiCheck(projectKey, plan.blueprints)
   const trash = useChapterTrash()
   const { chapters } = useStageView()
   const rows = useMemo(() => new Map(chapters.map(row => [row.number, row])), [chapters])
@@ -64,6 +69,11 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
   const deleting = ask?.kind === 'delete' ? ask.chapterNumber : null
   const writable = useMemo(() => new Set(plan.writableChapters), [plan.writableChapters])
   const firstUnexplainedGap = plan.chapterGaps.find(gap => gap.cause === 'unexplained')
+
+  // 「已记下」和它的撤销只属于当前这一章，换章后不再显示。
+  const { clearExempted } = continuity
+  const clearAiExempted = ai.clearExempted
+  useEffect(() => { clearExempted(); clearAiExempted() }, [clearExempted, clearAiExempted, selected?.chapterNumber])
 
   // 写作请求只由那一章的写作按钮接手：下一章在本页，缺口章在它的单章视图。那一章现在写不了时丢掉请求，免得以后突然弹出。
   useEffect(() => {
@@ -91,13 +101,6 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
     } catch (error) {
       setGenerateOpen(true)
       throw error
-    }
-  }
-
-  const openRecovery = () => {
-    const session = currentProjectSessionForPath(projectKey)
-    if (plan.planningRecovery && session && isCurrentProjectSession(session)) {
-      openPlanningRecoveryDraft(plan.planningRecovery, projectKey, text('蓝图恢复稿', 'Blueprint recovery draft'))
     }
   }
 
@@ -155,6 +158,16 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
               ] },
             ]}
           />
+          {count > 0 && (ai.hasTimeline ? plan.dirty : true) && (
+            <span className="stage-bp-ai-note">{ai.hasTimeline
+              ? text('先保存蓝图，再做 AI 检查', 'Save your blueprints before an AI check')
+              : text('先定稿一章，才有可对照的人物时间线', 'Finalize a chapter first to build the character timeline')}</span>
+          )}
+          {count > 0 && (
+            <Button variant="secondary" disabled={!plan.projectDataReady || !ai.hasTimeline || plan.dirty || ai.status.kind === 'running'} onClick={() => void ai.run()}>
+              <ScanSearch size={15} aria-hidden />{ai.status.kind === 'running' ? text('检查中…', 'Checking…') : text('AI 检查', 'AI check')}
+            </Button>
+          )}
           {count > 0 && generateButton}
           {next && (
             <Button variant="secondary" onClick={() => setBatchOpen(true)}>
@@ -176,7 +189,7 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
         <Notice
           tone="info"
           title={text('有一份蓝图恢复稿', 'A blueprint recovery draft is available')}
-          actions={<Button variant="secondary" size="sm" onClick={openRecovery}>{text('编辑恢复稿', 'Edit recovery draft')}</Button>}
+          actions={<Button variant="secondary" size="sm" onClick={plan.openPlanningRecovery}>{text('编辑恢复稿', 'Edit recovery draft')}</Button>}
         >
           {text('上次生成蓝图时中断，恢复出了一部分。列表里仍是原来的蓝图；保存恢复稿才会替换，也可以在恢复稿里接着生成缺少的章节。',
             'The last blueprint generation stopped partway. The list still shows the original blueprints; saving the recovery draft replaces them, and you can generate the missing chapters from there.')}
@@ -203,6 +216,10 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
       {plan.projectDataReady && plan.authorityError && (
         <Notice tone="warn" title={text('暂时无法确定下一章', 'The next chapter cannot be determined')}>{plan.authorityError}</Notice>
       )}
+
+      <BlueprintAiSummary ai={ai} onSelectChapter={chapter => plan.setSelectedIdx(plan.blueprints.findIndex(blueprint => blueprint.chapterNumber === chapter))} />
+
+      {selected && <BlueprintContinuityNotices chapterNumber={selected.chapterNumber} notice={continuity} ai={ai} />}
 
       {count === 0 ? (
         <div className="stage-bp-empty">
