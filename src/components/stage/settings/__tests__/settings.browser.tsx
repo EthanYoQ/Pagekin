@@ -234,6 +234,24 @@ describe('设置页', () => {
     expect(input('如：DeepSeek 主力 / GPT-4o 备用').value).toBe('新的模型')
   })
 
+  it('先后点两个模型的编辑、先点的那次重读最后回来：表单留在后点的模型上', async () => {
+    await mount()
+    const pending: (() => void)[] = []
+    const invoke = win.aiNovelAPI!.invoke
+    win.aiNovelAPI!.invoke = async (channel, ...args) => {
+      if (channel !== 'llm:list-models') return invoke(channel, ...args)
+      await new Promise<void>(resolve => { pending.push(resolve) })
+      return [MODEL, LOCAL]
+    }
+
+    await click(byName('编辑「DeepSeek V4 Flash」'))
+    await click(byName('编辑「本机 Ollama」'))
+    await act(async () => pending[1]!())
+    await act(async () => pending[0]!())
+
+    expect(input('如：DeepSeek 主力 / GPT-4o 备用').value).toBe('本机 Ollama')
+  })
+
   it('保存模型时主进程出错：弹出错误，保存按钮恢复可点，编辑表单留着', async () => {
     useLLMStore.setState({ saveModel: vi.fn(async () => { throw new Error('llm:save-model 不可用') }) })
     await mount()
