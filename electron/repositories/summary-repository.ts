@@ -420,10 +420,14 @@ function relationCandidateKey(source: FinalizedSourceIdentity, change: Pick<Fina
   return `fcs-relation:${sha256(JSON.stringify([source.draftId, source.finalizationId, source.contentHash, unorderedPairKey(change.sourceId, change.targetId), sha256(change.relation)]))}`
 }
 
-type RelationCommitContext = Pick<FinalizedCharacterContext, 'source' | 'projectionGeneration'> & { characters: readonly FinalizedCharacterReference[] }
+function candidateRowOf(db: BetterSqlite3.Database, source: FinalizedSourceIdentity, projectionGeneration: number) {
+  return db.prepare(`SELECT id,character_state_candidates AS candidates FROM summary_snapshots
+    WHERE draft_id=? AND source_finalization_id=? AND source_content_hash=? AND projection_generation=?`)
+    .get(source.draftId, source.finalizationId, source.contentHash, projectionGeneration) as { id: number; candidates: string } | undefined
+}
 
 /** 同一份定稿重跑时节点已在，这里仍要补上待确认项：上一次可能因为要点那步失败而没地方存。 */
-function commitDerivedRelations(db: BetterSqlite3.Database, context: RelationCommitContext, changes: readonly FinalizedRelationChange[]): void {
+function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCharacterContext, changes: readonly FinalizedRelationChange[]): void {
   const { source } = context
   const name = (id: string) => context.characters.find(character => character.characterId === id)!.displayNameSnapshot
   const candidates: FinalizedRelationCandidate[] = []
@@ -443,9 +447,7 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: RelationCom
       ...names, value: change.relation, evidence: change.evidence, authorLinesAtCreation: pair.lines })
   }
   if (!changes.length) return
-  const row = db.prepare(`SELECT id,character_state_candidates AS candidates FROM summary_snapshots
-    WHERE draft_id=? AND source_finalization_id=? AND source_content_hash=? AND projection_generation=?`)
-    .get(source.draftId, source.finalizationId, source.contentHash, context.projectionGeneration) as { id: number; candidates: string } | undefined
+  const row = candidateRowOf(db, source, context.projectionGeneration)
   if (!row) return
   const store = parseCharacterStateCandidateStore(row.candidates)
   const decided = new Set(store.receipts.map(receipt => receipt.candidateKey))
@@ -459,16 +461,32 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: RelationCom
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
 
-/** 角色那步可能先于要点提交，那时没有快照存待确认项；要点落库时按这份定稿当前生效的派生节点补回，重跑撤下的旧值不重放。 */
+/**
+ * 只在角色那步提交时还没有这份要点行、待确认项没地方存时调用。只补候选，不写时间线；
+ * 已有的待确认项和已决定的不动，作者后改作废的建议才不会带着新快照复活。
+ */
 function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity, projectionGeneration: number): void {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_continuity_events'").get()) return
+  const row = candidateRowOf(db, source, projectionGeneration)
+  if (!row) return
+  const store = parseCharacterStateCandidateStore(row.candidates)
+  const known = new Set([...store.relationPending, ...store.receipts].map(item => item.candidateKey))
   const nodes = latestNodesBefore(readCharacterContinuityNodes(db), source.chapterNumber + 1).relations.flatMap(pair => pair.lines)
-    .filter(node => node.provenance.kind === 'derived' && node.draftId === source.draftId
-      && node.provenance.source.finalizationId === source.finalizationId && !!node.quote)
-  if (!nodes.length) return
-  const characters = nodes.flatMap(node => [{ characterId: node.subjectId, displayNameSnapshot: node.subjectName }, { characterId: node.targetId, displayNameSnapshot: node.targetName }])
-  commitDerivedRelations(db, { source, projectionGeneration, characters },
-    nodes.map(node => ({ sourceId: node.subjectId, targetId: node.targetId, relation: node.value, evidence: node.quote! })))
+    .filter(node => node.provenance.kind === 'derived' && node.provenance.source.finalizationId === source.finalizationId && node.quote)
+  let added = false
+  for (const node of nodes) {
+    const pair = authorRelationsOfPair(db, node.subjectId, node.targetId)
+    const flipped = pair.sourceId !== node.subjectId
+    const ids = { sourceId: pair.sourceId, targetId: pair.targetId }
+    const candidateKey = relationCandidateKey(source, { ...ids, relation: node.value })
+    if (!pair.rows.length || pair.all.includes(node.value) || known.has(candidateKey)) continue
+    known.add(candidateKey)
+    store.relationPending.push({ candidateKey, source: structuredClone(source), ...ids,
+      sourceName: flipped ? node.targetName : node.subjectName, targetName: flipped ? node.subjectName : node.targetName,
+      value: node.value, evidence: node.quote!, authorLinesAtCreation: pair.lines })
+    added = true
+  }
+  if (added) db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
 
 function candidateReceipts(db: BetterSqlite3.Database): StoredCharacterStateDecision[] {
@@ -813,6 +831,7 @@ export class SummaryRepository {
       if (input.projectionGeneration !== generation) {
         throw new Error('CONTINUITY_GENERATION_STALE')
       }
+      const hadCandidateRow = !!candidateRowOf(db, input.source, input.projectionGeneration)
       const updated = db.prepare(`
         UPDATE summary_snapshots_all
         SET chapter_number = ?, chapter_notes = ?, continuity_facts = ?,
@@ -844,7 +863,7 @@ export class SummaryRepository {
           input.projectionGeneration,
         )
       }
-      restoreDerivedRelationCandidates(db, input.source, input.projectionGeneration)
+      if (!hadCandidateRow) restoreDerivedRelationCandidates(db, input.source, input.projectionGeneration)
     })()
   }
 
