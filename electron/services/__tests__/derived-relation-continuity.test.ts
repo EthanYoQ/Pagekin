@@ -962,6 +962,16 @@ describe('定稿后处理的提示词', () => {
     expect(String(task.messages[1].content)).not.toContain('"relation": "师徒"')
   })
 
+  it('上一个开发版冻结的在途定稿带着作者关系修订号：续跑不判身份变化', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    const { context } = prompt(draftId, 'zh-CN')
+    const frozen = { ...context, identity: { ...context.identity, authorRelationsRevision: 3 } }
+
+    expect(() => prompt(draftId, 'zh-CN', frozen)).not.toThrow()
+  })
+
   it('作者关系在定稿后处理途中被改，不算身份变化', () => {
     openProject()
     authorRelation('师徒')

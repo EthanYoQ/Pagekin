@@ -1513,6 +1513,17 @@ describe('重复定稿修复让连续性记录过期之后，重试本章的后�
     expect(blueprintNotes()).toBe('Author-edited notes')
   })
 
+  it('首跑时本章还没有蓝图、之后才建了一张要点为空的蓝图：重试重新生成的要点照常写进蓝图', async () => {
+    db().prepare('DELETE FROM blueprints WHERE chapter_number=2').run()
+    await characterStepFailsThenReopenRepairsDuplicate(1)
+    db().prepare("INSERT INTO blueprints (chapter_number, title, notes) VALUES (2, 'The Handoff', '')").run()
+
+    await clickRetry()
+
+    expect(await outcomes()).toEqual(ALL_DONE)
+    expect(blueprintNotes()).toBe('Notes take 2.')
+  })
+
   it('过期的要点运行仍是封存的：读回时不再当作完成，但它的产物不能被丢弃', async () => {
     await characterStepFailsThenReopenRepairsDuplicate(1)
     const slot = { source: SummaryRepository.readFinalizedCharacterContext(7, { projectId: 'test', epoch: 'lease-test' }).source, stepKey: 'chapter_notes' as const }
