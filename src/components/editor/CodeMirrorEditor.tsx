@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import CodeMirror, { ReactCodeMirrorRef, EditorView, ViewUpdate } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { EditorState, RangeSetBuilder, type Extension } from '@codemirror/state'
+import { EditorState, RangeSetBuilder, StateEffect, StateField, type Extension } from '@codemirror/state'
 import { Decoration, type DecorationSet } from '@codemirror/view'
 import { openSearchPanel, closeSearchPanel, search } from '@codemirror/search'
 import { Sparkles, Bold, Check, MessageSquareText, Trash2, X } from 'lucide-react'
@@ -71,6 +71,18 @@ const NOTE_LABEL: Label = ['按意见改', 'Revise with note']
 const ANNOTATE_LABEL: Label = ['添加批注', 'Add annotation']
 const BATCH_NOTE_LABEL: Label = ['批量批注修改', 'Batch annotation revision']
 const actionLabel = (action: EditorInlineRequest['action']): Label => action === 'instruct' ? NOTE_LABEL : action === 'batch-instruct' ? BATCH_NOTE_LABEL : AI_ACTIONS.find(item => item.key === action)!.label
+const setAnnotationDecorations = StateEffect.define<DecorationSet>()
+const annotationDecorationField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(decorations, transaction) {
+    const mapped = transaction.docChanged ? decorations.map(transaction.changes) : decorations
+    for (const effect of transaction.effects) {
+      if (effect.is(setAnnotationDecorations)) return effect.value
+    }
+    return mapped
+  },
+  provide: field => EditorView.decorations.from(field),
+})
 
 export default function CodeMirrorEditor({
   content,
@@ -384,12 +396,14 @@ export default function CodeMirrorEditor({
     () => paperHeadTitle === null ? null : { title: paperHeadTitle, subtitle: paperHeadSubtitle },
     [paperHeadTitle, paperHeadSubtitle],
   )
-  const annotationDecorations = useMemo<DecorationSet>(() => {
+  useEffect(() => {
+    const view = editorRef.current?.view
+    if (!view) return
     const builder = new RangeSetBuilder<Decoration>()
     for (const annotation of annotations) {
       builder.add(annotation.from, annotation.to, Decoration.mark({ class: 'cm-editor-annotation', attributes: { title: annotation.instruction } }))
     }
-    return builder.finish()
+    view.dispatch({ effects: setAnnotationDecorations.of(builder.finish()) })
   }, [annotations])
 
   // 构建扩展
@@ -439,10 +453,10 @@ export default function CodeMirrorEditor({
     }
     if (mode === 'prose') exts.push(...livePreview())
     if (indentParagraphs) exts.push(paragraphIndent)
-    exts.push(EditorView.decorations.of(annotationDecorations))
+    exts.push(annotationDecorationField)
     exts.push(paperHeadFacet.of(stablePaperHead))
     return exts
-  }, [mode, stablePaperHead, uiLocale, indentParagraphs, annotationDecorations])
+  }, [mode, stablePaperHead, uiLocale, indentParagraphs])
 
   // AI 菜单处理（流式调用，实时显示生成内容）
   const handleAIAction = async (request: EditorInlineRequest, targetRange = selectionRange) => {

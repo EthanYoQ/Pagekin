@@ -428,20 +428,18 @@ describe('CodeMirror editor AI generation boundary', () => {
       <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>,
     ))
     const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
-    const line = view.state.doc.line(39)
-    await act(async () => {
-      view.dispatch({ selection: { anchor: line.from, head: line.to }, scrollIntoView: true })
-      await new Promise(resolve => requestAnimationFrame(resolve))
-    })
-    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' })).toBeVisible()
+    await scrollChapterTo(500)
+    await selectLine('第12段原文', { exact: true })
+    const selection = { from: view.state.selection.main.from, to: view.state.selection.main.to }
     const scroller = container.querySelector<HTMLElement>('[data-testid="chapter-scroller"]')!
     const scrollTop = scroller.scrollTop
     await act(async () => page.getByRole('button', { name: '添加批注' }).click())
     await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('调整这一段'))
     await act(async () => page.getByRole('button', { name: '添加批注' }).last().click())
+    await nextFrames()
 
     expect(scroller.scrollTop).toBe(scrollTop)
-    expect(view.state.selection.main).toMatchObject({ from: line.from, to: line.to })
+    expect(view.state.selection.main).toMatchObject(selection)
   })
 
   it('shows a batch provider failure without scrolling to the end of the chapter', async () => {
