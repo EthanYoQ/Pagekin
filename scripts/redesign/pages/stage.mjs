@@ -59,7 +59,7 @@ export async function openFromLibrary(page, name) {
 
 /** 从 Ctrl K 打开书架上的书；同一部作品已打开时也会重新打开（新的项目会话）。 */
 export async function openFromPalette(page, name) {
-  await page.keyboard.press('Control+K')
+  await page.keyboard.press('ControlOrMeta+K')
   await paletteInput(page).waitFor({ state: 'visible' })
   await paletteInput(page).fill(name)
   await palette(page).getByRole('option', { name: new RegExp(`打开《${escape(name)}》`) }).click()
@@ -94,7 +94,7 @@ export const palette = page => page.getByRole('dialog', { name: /^(搜索与跳�
 export const paletteInput = page => palette(page).getByRole('combobox')
 
 export async function findChapter(page, query) {
-  await page.keyboard.press('Control+P')
+  await page.keyboard.press('ControlOrMeta+P')
   await paletteInput(page).waitFor({ state: 'visible' })
   await paletteInput(page).fill(query)
   await page.keyboard.press('Enter')

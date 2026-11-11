@@ -13,6 +13,7 @@ import {
   type M05AssetSourceSnapshot,
 } from '../m05-character-assets'
 import { readPortableCharacterAvatarRows } from '../../repositories/character-asset-repository'
+import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -41,9 +42,9 @@ function snapshot(files: Record<string, Buffer>): M05AssetSourceSnapshot {
     read(relativePath) { const bytes = files[relativePath]; if (!bytes) throw new Error('missing'); return Buffer.from(bytes) } }
 }
 
-afterEach(() => { for (const item of roots.splice(0)) fs.rmSync(item, { recursive: true, force: true }) })
+afterEach(() => { for (const item of roots.splice(0)) fs.rmSync(item, { recursive: true, force: true }) }, WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS)
 
-describe('M05 character asset migration', () => {
+describe('M05 character asset migration', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
   it('installs and verifies the schema only inside the runner transaction', () => {
     const db = database(':memory:')
     expect(() => applyM05CharacterAssets(db)).toThrow('CHARACTER_ASSET_MIGRATION_TRANSACTION_REQUIRED')

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 
 import { FAKE_MODEL, FIXTURE_PROSE } from './fake-model.mjs'
+import { documentEndKey } from './keys.mjs'
 import * as architecture from './pages/architecture.mjs'
 import * as blueprint from './pages/blueprint.mjs'
 import * as runSheet from './pages/run-sheet.mjs'
@@ -48,7 +49,7 @@ async function tabTo(page, target, trail, limit = 80) {
 
 /** Ctrl K 输入 query 后回车，交给搜索与跳转（中英文界面的对话框名不同，按其中的组合框找）。 */
 async function palette(page, query) {
-  await page.keyboard.press('Control+K')
+  await page.keyboard.press('ControlOrMeta+K')
   const input = page.getByRole('dialog').getByRole('combobox')
   await input.waitFor({ state: 'visible' })
   await page.keyboard.type(query)
@@ -134,11 +135,11 @@ export const RD10_SCENARIOS = {
     await runSheet.waitForRunDone(page)
     await stage.waitForProse(page, firstLine(FIXTURE_PROSE))
     await tabTo(page, stage.prose(page), trail)
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.press('Enter')
     await page.keyboard.type('灯塔的钟声在潮水里又响了一次。')
     await stage.saveStatus(page).filter({ hasText: /^未保存$/ }).waitFor({ state: 'visible' })
-    await page.keyboard.press('Control+s')
+    await page.keyboard.press('ControlOrMeta+s')
     await stage.saveStatus(page).filter({ hasText: /^已保存$/ }).waitFor({ state: 'visible' })
     await page.keyboard.press('Escape')
     await page.keyboard.press('Tab')
@@ -378,7 +379,7 @@ export const RD10_SCENARIOS = {
     const results = []
     for (const [name, input] of Object.entries(inputs)) {
       await prose.click()
-      await page.keyboard.press('Control+End')
+      await page.keyboard.press(documentEndKey())
       const before = await proseText()
       await input()
       const typed = await proseText()
