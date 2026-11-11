@@ -81,6 +81,23 @@ it('launcher既有卡模式被改变时拒绝改为模型流程', async () => {
  expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('legacy-roster:begin')
 })
 
+it('正式修复命令只经主进程的专属生成通道开跑并暂存提议', async () => {
+ let finished = false
+ const invoke = vi.fn(async (channel: string) => {
+  if (channel === 'legacy-roster:read-source') return source
+  if (channel === 'generation:list') return []
+  if (channel === 'legacy-roster:begin') return { ...stored, artifact: undefined, attemptCount: 0 }
+  if (channel === 'legacy-roster:read') return finished ? stored : { ...stored, artifact: undefined, attemptCount: 0 }
+  if (channel === 'legacy-roster:execute') { finished = true; return { run: stored.view } }
+  if (channel === 'legacy-roster:stage') return batch
+  throw new Error(`Unexpected ${channel}`)
+ }); install(invoke)
+ const args = params()
+ expect(await new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath, genre: '' }).execute(args)).toContain('矿场')
+ expect(args.context.data.characterProposalBatch).toEqual(batch)
+ expect(invoke.mock.calls.filter(([channel]) => channel === 'legacy-roster:execute')).toHaveLength(1)
+ expect(invoke.mock.calls.map(([channel]) => channel).filter(channel => !/^(legacy-roster|generation):/u.test(channel))).toEqual([])
+})
 it('known length failed但主资格为true，可显式恢复同run固定下一ordinal', async () => {
  let finished = false
  const invoke = vi.fn(async (channel: string) => {

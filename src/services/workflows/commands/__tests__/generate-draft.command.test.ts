@@ -14,18 +14,18 @@ import type {
 import type { NarrativeThreadView } from '../../../../shared/narrative-thread'
 import type { ContinuityNode } from '../../../../shared/character-continuity'
 import {
-  createGenerationRuntime,
   type GenerationRuntime,
-  type GenerationRuntimeEnvironment,
   type GenerationRuntimeScope,
   type MainGenerationRunHandle,
   type MainGenerationRunView,
 } from '../../../generation/generation-runtime'
 import type {
+  CompletionPort,
   GenerationAttemptReceipt,
   GenerationOutcome,
   GenerationTask,
 } from '../../../generation/generation-harness'
+import { fakeLeaseModelId, fakeRuntimeDependencies } from './workflow-generation-runtime.fixture'
 import { EN_US_BUILTIN_PROMPTS } from '../../../prompt-language'
 import { BUILTIN_PROMPTS, clearProjectCustomPrompts } from '../../../prompt-templates'
 import { composeDraftVisibleContinuation, DRAFT_VISIBLE_TEXT_VERSION } from '../../../../shared/draft-visible-text'
@@ -831,6 +831,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     } else await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(text)
     expect(legacy.createRuntime).not.toHaveBeenCalled()
     expect(f.invoke.mock.calls.filter(([channel]) => channel === 'generation:execute')).toHaveLength(2)
+    expect(f.invoke.mock.calls.map(([channel]) => String(channel)).filter(channel => channel.startsWith('llm:'))).toEqual([])
     expect(f.invoke.mock.calls.some(([channel]) => channel === 'db:draft-create' || channel === 'db:draft-next-version' || channel === 'db:recovery-candidate-record')).toBe(false)
   })
 
@@ -1814,42 +1815,30 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
   })
 
   it('freezes one lease and one budget across initial and continuation attempts after model/config changes', async () => {
-    let selectedModelId: string | null = 'model-a'
     let call = 0
-    const receipt = leaseReceipt()
-    const completeWithLease = vi.fn<GenerationRuntimeEnvironment['completeWithLease']>(async () => {
+    const capabilityEvidence = leaseReceipt().capabilityEvidence
+    const completeWithLease = vi.fn<CompletionPort['complete']>(async () => {
       if (completeWithLease.mock.calls.length === 1) return { content: '本章短细纲。', finishReason: 'stop' }
       call += 1
       if (call === 1) {
-        selectedModelId = 'model-b'
-        receipt.capabilityEvidence.maxOutputTokens = 1
+        useLLMStore.setState({ defaultModelId: 'model-b' })
+        capabilityEvidence.maxOutputTokens = 1
         return { content: '初'.repeat(3500), finishReason: 'length' }
       }
       return { content: `${'续'.repeat(700)}。`, finishReason: 'stop' }
     })
-    const environment: GenerationRuntimeEnvironment = {
-      snapshotDefaultModelId: vi.fn(() => selectedModelId),
-      beginModelExecution: vi.fn(async () => receipt),
-      completeWithLease,
-      closeModelExecution: vi.fn().mockResolvedValue(undefined),
-    }
-    const createRuntime = vi.fn<GenerateDraftCommandDependencies['createRuntime']>(
-      options => createGenerationRuntime(options, environment),
-    )
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    const fake = fakeRuntimeDependencies(completeWithLease, capabilityEvidence)
+    const createRuntime = vi.fn<GenerateDraftCommandDependencies['createRuntime']>(options => fake.createRuntime(options))
     const runtime = { createRuntime, complete: vi.fn(), execute: vi.fn(), close: vi.fn() }
     const { invoke, context, callbacks, command } = setup({ runtime })
 
     await expect(command.execute({ step: {}, context, callbacks })).resolves.toContain('续')
 
-    expect(environment.snapshotDefaultModelId).toHaveBeenCalledOnce()
-    expect(environment.beginModelExecution).toHaveBeenCalledOnce()
-    expect(environment.beginModelExecution).toHaveBeenCalledWith('model-a')
     expect(completeWithLease).toHaveBeenCalledTimes(3)
-    expect(completeWithLease.mock.calls.map(([request]) => request.leaseId)).toEqual([
-      'draft-lease-a',
-      'draft-lease-a',
-      'draft-lease-a',
-    ])
+    const leaseIds = completeWithLease.mock.calls.map(([request]) => request.modelExecutionLeaseId)
+    expect(fakeLeaseModelId(leaseIds[0])).toBe('model-a')
+    expect(leaseIds).toEqual([leaseIds[0], leaseIds[0], leaseIds[0]])
     expect(completeWithLease.mock.calls.map(([request]) => request.plan.maxOutputTokens)).toEqual([
       8192,
       8192,
@@ -4154,30 +4143,21 @@ ${headingPrefix}第3章：潮门
   })
 
   it('does not locally reject a 30K prompt when lease context evidence is unknown', async () => {
-    const completeWithLease = vi.fn<GenerationRuntimeEnvironment['completeWithLease']>(async request => {
+    const completeWithLease = vi.fn<CompletionPort['complete']>(async request => {
       void request
       return { content: `${'正文'.repeat(2500)}。`, finishReason: 'stop' }
     })
-    const environment: GenerationRuntimeEnvironment = {
-      snapshotDefaultModelId: () => 'model-a',
-      beginModelExecution: async () => leaseReceipt({
-        capabilityEvidence: {
-          ...leaseReceipt().capabilityEvidence,
-          source: {
-            contextWindowTokens: 'unknown',
-            maxOutputTokens: 'user-operational-cap',
-            featureFlags: 'unknown',
-          },
-          contextWindowTokens: null,
-          maxOutputTokens: 8192,
-        },
-      }),
-      completeWithLease,
-      closeModelExecution: vi.fn().mockResolvedValue(undefined),
-    }
-    const createRuntime = vi.fn<GenerateDraftCommandDependencies['createRuntime']>(
-      options => createGenerationRuntime(options, environment),
-    )
+    const fake = fakeRuntimeDependencies(completeWithLease, {
+      ...leaseReceipt().capabilityEvidence,
+      source: {
+        contextWindowTokens: 'unknown',
+        maxOutputTokens: 'user-operational-cap',
+        featureFlags: 'unknown',
+      },
+      contextWindowTokens: null,
+      maxOutputTokens: 8192,
+    })
+    const createRuntime = vi.fn<GenerateDraftCommandDependencies['createRuntime']>(options => fake.createRuntime(options))
     const runtime = { createRuntime, complete: vi.fn(), execute: vi.fn(), close: vi.fn() }
     const { context, callbacks, command } = setup({
       runtime,

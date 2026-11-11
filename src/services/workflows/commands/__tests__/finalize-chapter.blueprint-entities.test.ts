@@ -6,6 +6,7 @@ import { useLLMStore } from '../../../../stores/llm-store'
 import { useProjectStore } from '../../../../stores/project-store'
 import { FinalizeChapterCommand } from '../finalize-chapter.command'
 import type { FinalizedCharacterContext } from '../../../../shared/finalized-continuity'
+import { useFakeModelStream } from './workflow-generation-runtime.fixture'
 
 const finalizationClient = vi.hoisted(() => ({
   commitFinalizationSnapshot: vi.fn(),
@@ -181,9 +182,8 @@ describe('FinalizeChapterCommand blueprint character fallback', () => {
     vi.stubGlobal('window', { aiNovelAPI: { invoke } })
 
     let completionIndex = 0
-    useLLMStore.setState({
-      defaultModelId: 'test-model',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'test-model' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         completionIndex += 1
         streamCallbacks.onDone?.(
           completionIndex === 1
@@ -193,8 +193,7 @@ describe('FinalizeChapterCommand blueprint character fallback', () => {
           'stop',
         )
         return `request-${completionIndex}`
-      }),
-    })
+      }) })
 
     const command = new FinalizeChapterCommand({
       draftPath: 'ai-novel://draft/33',

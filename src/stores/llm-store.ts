@@ -5,25 +5,13 @@ import { alertError } from '../components/ui/AlertDialog'
 import { displayedErrorMessage } from '../i18n/app-errors'
 import { useLocaleStore } from './locale-store'
 import type {
-  LLMFinishReason,
   LocalContextWindowRequest,
   ModelDiscoveryResult,
   ModelDiscoveryRequest,
   ModelProfile,
-  LLMResponse,
-  TokenUsage,
 } from '../shared/ipc-channels'
-import type { CreativeStrategy, GenerationReasoningStage } from '../shared/reasoning-types'
 import { removeModelFromStages, type ModelStage, type StageModelIds } from '../shared/model-stage-routing'
-import { projectSessionContextFromProject } from '../shared/project-session-context'
 import { useProjectStore } from './project-store'
-
-/** 流式生成的回调 */
-interface StreamCallbacks {
-  onChunk?: (chunk: string) => void
-  onDone?: (fullText: string, usage: TokenUsage | undefined, finishReason: LLMFinishReason) => void
-  onError?: (error: string) => void
-}
 
 interface LLMState {
   /** 已配置的模型列表 */
@@ -34,8 +22,6 @@ interface LLMState {
   defaultEmbeddingModelId: string | null
   defaultRerankModelId: string | null
   stageModelIds: StageModelIds
-  /** 正在进行的活跃请求 */
-  activeRequests: Map<string, { status: 'running' | 'done' | 'error'; text: string }>
   /** 是否已加载模型配置 */
   loaded: boolean
 
@@ -54,21 +40,6 @@ interface LLMState {
   setDefaultEmbeddingModel: (modelId: string) => Promise<boolean>
   setDefaultRerankModel: (modelId: string) => Promise<boolean>
   setStageModel: (stage: ModelStage, modelId: string | null) => Promise<boolean>
-  /** 非流式生成 */
-  generate: (
-    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-    modelId?: string,
-    options?: { responseFormat?: { type: string }; maxTokens?: number; purpose?: string; projectSession?: import('../shared/ipc-channels').ProjectSessionContext; modelExecutionLeaseId?: string; creativeStrategy?: CreativeStrategy; reasoningStage?: GenerationReasoningStage }
-  ) => Promise<LLMResponse>
-  /** 流式生成 */
-  generateStream: (
-    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-    callbacks: StreamCallbacks,
-    modelId?: string,
-    options?: { responseFormat?: { type: string }; maxTokens?: number; purpose?: string; projectSession?: import('../shared/ipc-channels').ProjectSessionContext; modelExecutionLeaseId?: string; creativeStrategy?: CreativeStrategy; reasoningStage?: GenerationReasoningStage }
-  ) => Promise<string>
-  /** 取消生成 */
-  cancelGeneration: (requestId: string) => Promise<void>
   /** 测试模型连接 */
   testConnection: (model: ModelProfile) => Promise<{ success: boolean; error?: string }>
   /** 以当前表单中的端点和凭据主动发现 provider 模型。 */
@@ -84,7 +55,6 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
   defaultEmbeddingModelId: null,
   defaultRerankModelId: null,
   stageModelIds: {},
-  activeRequests: new Map(),
   loaded: false,
 
   init: () => {
@@ -206,115 +176,6 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       alertError(displayedErrorMessage(locale, error), { title: text('分工设置没有保存', 'The stage setting was not saved') })
       return false
     }
-  },
-
-  generate: async (messages, modelId, options) => {
-    const mid = modelId ?? get().defaultModelId
-    if (!mid) return { success: false, content: '', finishReason: 'error', error: '未配置默认模型' }
-    const projectSession = options?.projectSession
-      ?? projectSessionContextFromProject(useProjectStore.getState().currentProject)
-      ?? undefined
-    const creativeStrategy = options?.creativeStrategy
-      ?? useProjectStore.getState().currentProject?.novelConfig.creativeStrategy
-      ?? 'auto'
-    const response = await ipc.invoke('llm:generate', {
-      modelId: mid,
-      purpose: options?.purpose ?? 'generation',
-      creativeStrategy,
-      reasoningStage: options?.reasoningStage
-        ?? (options?.responseFormat ? 'planning' : 'drafting'),
-      projectSession,
-      modelExecutionLeaseId: options?.modelExecutionLeaseId,
-      messages,
-      responseFormat: options?.responseFormat as { type: 'json_object' | 'text' } | undefined,
-      maxTokens: options?.maxTokens,
-    })
-    return requireIpcSuccess(response, '模型生成')
-  },
-
-  generateStream: async (messages, callbacks, modelId, options) => {
-    const mid = modelId ?? get().defaultModelId
-    if (!mid) {
-      callbacks.onError?.('未配置默认模型')
-      return ''
-    }
-
-    const requestId = crypto.randomUUID()
-    const projectSession = options?.projectSession
-      ?? projectSessionContextFromProject(useProjectStore.getState().currentProject)
-      ?? undefined
-    const creativeStrategy = options?.creativeStrategy
-      ?? useProjectStore.getState().currentProject?.novelConfig.creativeStrategy
-      ?? 'auto'
-
-    // 注册流式事件监听
-    const unsubChunk = ipc.on('llm:stream-chunk', (data) => {
-      if (data.requestId === requestId) {
-        callbacks.onChunk?.(data.chunk)
-      }
-    })
-
-    const unsubDone = ipc.on('llm:stream-done', (data) => {
-      if (data.requestId === requestId) {
-        callbacks.onDone?.(data.fullText, data.usage, data.finishReason ?? 'unknown')
-        cleanup()
-      }
-    })
-
-    const unsubError = ipc.on('llm:stream-error', (data) => {
-      if (data.requestId === requestId) {
-        callbacks.onError?.(data.error)
-        cleanup()
-      }
-    })
-
-    const cleanup = () => {
-      unsubChunk()
-      unsubDone()
-      unsubError()
-      const reqs = new Map(get().activeRequests)
-      reqs.delete(requestId)
-      set({ activeRequests: reqs })
-    }
-
-    // 标记活跃请求
-    const reqs = new Map(get().activeRequests)
-    reqs.set(requestId, { status: 'running', text: '' })
-    set({ activeRequests: reqs })
-
-    // 发起流式请求
-    let started: { requestId: string; started: boolean; error?: string }
-    try {
-      started = await ipc.invoke('llm:generate-stream', requestId, {
-        modelId: mid,
-        purpose: options?.purpose ?? 'generation',
-        creativeStrategy,
-        reasoningStage: options?.reasoningStage
-          ?? (options?.responseFormat ? 'planning' : 'drafting'),
-        projectSession,
-        modelExecutionLeaseId: options?.modelExecutionLeaseId,
-        messages,
-        stream: true,
-        responseFormat: options?.responseFormat as { type: 'json_object' | 'text' } | undefined,
-        maxTokens: options?.maxTokens,
-      })
-    } catch (error) {
-      cleanup()
-      callbacks.onError?.(String(error))
-      throw error
-    }
-    if (!started.started) {
-      cleanup()
-      const startError = started.error || '模型流式生成未能启动'
-      callbacks.onError?.(startError)
-      throw new Error(startError)
-    }
-
-    return requestId
-  },
-
-  cancelGeneration: async (requestId) => {
-    await ipc.invoke('llm:cancel', requestId)
   },
 
   testConnection: async (model) => {

@@ -5,13 +5,13 @@ import { useProjectStore } from '../../../../stores/project-store'
 import type { CharacterRosterEntry } from '../../../../shared/character-roster'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import { InferGlobalSettingsCommand as RuntimeInferGlobalSettingsCommand } from '../import-novel.command'
-import { workflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
 
 class InferGlobalSettingsCommand extends RuntimeInferGlobalSettingsCommand {
   constructor() { super(workflowRuntimeDependencies) }
 }
 
-const originalGenerateStream = useLLMStore.getState().generateStream
+const originalGenerateStream = useFakeModelStream.getState().generateStream
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 const callbacks: StepCallbacks = {
   log: vi.fn(),
@@ -166,7 +166,7 @@ function stubNoCommitIpc() {
 function respondWith(responses: unknown[], finishReasons: Array<'stop' | 'length'> = []) {
   const serialized = responses.map(response => typeof response === 'string' ? response : JSON.stringify(response))
   let callCount = 0
-  const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+  const generateStream = vi.fn<FakeGenerateStream>(
     async (_messages, streamCallbacks) => {
       const output = serialized[callCount]
       if (output === undefined) throw new Error('unexpected import inference request')
@@ -176,7 +176,8 @@ function respondWith(responses: unknown[], finishReasons: Array<'stop' | 'length
       return `request-${callCount}`
     },
   )
-  useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+  useLLMStore.setState({ defaultModelId: 'model-a' })
+  useFakeModelStream.setState({ generateStream })
   return generateStream
 }
 
@@ -213,10 +214,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   useProjectStore.setState({ currentProject: null })
-  useLLMStore.setState({
-    defaultModelId: originalDefaultModelId,
-    generateStream: originalGenerateStream,
-  })
+  useLLMStore.setState({ defaultModelId: originalDefaultModelId })
+  useFakeModelStream.setState({ generateStream: originalGenerateStream })
 })
 
 describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {

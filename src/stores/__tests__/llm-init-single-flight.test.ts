@@ -38,7 +38,6 @@ beforeEach(() => {
     models: [],
     defaultModelId: null,
     defaultEmbeddingModelId: null,
-    activeRequests: new Map(),
     loaded: false,
   })
 })

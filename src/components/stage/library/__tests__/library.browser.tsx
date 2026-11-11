@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
 import type { StoreApi } from 'zustand'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -16,6 +15,7 @@ import { useStageStore } from '../../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../../stores/project-store'
 import NewWorkDialog from '../NewWorkDialog'
 import StageLibrary from '../StageLibrary'
+import { resizeViewport } from '../../../ui/__tests__/viewport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -86,7 +86,7 @@ async function type(input: HTMLInputElement, value: string) {
 
 beforeEach(async () => {
   // 书房按桌面宽度排版。默认 414 宽的视口放不下，对话框关闭后焦点回到菜单按钮会横向滚动页面，晚到的滚动把刚打开的菜单关掉。
-  await page.viewport(1440, 900)
+  await resizeViewport(1440, 900)
   invoke = vi.fn(async (channel: string) => {
     if (channel === 'project:peek-overview') return READY
     if (channel === 'project:overview-current') return { ...READY, projectId: 'lighthouse', name: '灯塔', excerpt: '守塔人把灯又擦了一遍。' }
@@ -243,7 +243,7 @@ describe('书房', () => {
 
   it('窗口最窄 1024×640 时书房不横向溢出，书架菜单与确认框照常可用', async () => {
     // 真实应用的最小窗口（electron/main.ts 的 minWidth、minHeight）。
-    await page.viewport(1024, 640)
+    await resizeViewport(1024, 640)
     openCurrent()
     useProjectStore.setState({ recentProjects: [LIGHTHOUSE, ISLAND] })
     await mount(1024, 640)

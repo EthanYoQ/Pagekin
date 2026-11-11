@@ -1,14 +1,12 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { LLMFinishReason, ModelExecutionLeaseReceipt } from '../../shared/ipc-channels'
-import {
-  createGenerationRuntime,
-  type GenerationRuntimeEnvironment,
-} from '../../services/generation/generation-runtime'
+import { fakeRuntimeDependencies } from '../../services/workflows/commands/__tests__/workflow-generation-runtime.fixture'
 import {
   BaseWorkflowCommand,
   type CommandExecuteParams,
 } from '../../services/workflows/commands/base-command'
+import { useLLMStore } from '../llm-store'
 import { useLocaleStore } from '../locale-store'
 import { useProjectStore } from '../project-store'
 import { useWorkflowStore } from '../workflow-store'
@@ -20,43 +18,18 @@ const projectSession = {
   projectPath,
 }
 
-function leaseReceipt(): ModelExecutionLeaseReceipt {
-  return {
-    leaseId: 'model-execution-lease-a',
-    modelId: 'model-a',
-    provider: 'custom',
-    protocol: 'openai',
-    modelName: 'model-a-v1',
-    modelRevision: 'a'.repeat(64),
-    endpointFingerprint: 'b'.repeat(64),
-    capabilityEvidence: {
-      source: {
-        contextWindowTokens: 'unknown',
-        maxOutputTokens: 'legacy-profile',
-        featureFlags: 'unknown',
-      },
-      subjectFingerprint: 'c'.repeat(64),
-      contextWindowTokens: 16_384,
-      maxOutputTokens: 4096,
-      reasoning: false,
-      structuredOutput: true,
-      usage: true,
-    },
-    createdAt: 1000,
-    expiresAt: 61_000,
-  }
-}
-
-function environment(finishReason: LLMFinishReason): GenerationRuntimeEnvironment {
-  return {
-    snapshotDefaultModelId: () => 'model-a',
-    beginModelExecution: vi.fn().mockResolvedValue(leaseReceipt()),
-    completeWithLease: vi.fn().mockResolvedValue({
-      content: finishReason === 'stop' ? '{"ok":true}' : '',
-      finishReason,
-    }),
-    closeModelExecution: vi.fn().mockResolvedValue(undefined),
-  }
+const capabilityEvidence: ModelExecutionLeaseReceipt['capabilityEvidence'] = {
+  source: {
+    contextWindowTokens: 'unknown',
+    maxOutputTokens: 'legacy-profile',
+    featureFlags: 'unknown',
+  },
+  subjectFingerprint: 'c'.repeat(64),
+  contextWindowTokens: 16_384,
+  maxOutputTokens: 4096,
+  reasoning: false,
+  structuredOutput: true,
+  usage: true,
 }
 
 class BudgetedGenerationCommand extends BaseWorkflowCommand {
@@ -64,10 +37,10 @@ class BudgetedGenerationCommand extends BaseWorkflowCommand {
     finishReason: LLMFinishReason,
     private readonly attempts = 1,
   ) {
-    const runtimeEnvironment = environment(finishReason)
-    super({
-      createRuntime: options => createGenerationRuntime(options, runtimeEnvironment),
-    })
+    super(fakeRuntimeDependencies(async () => ({
+      content: finishReason === 'stop' ? '{"ok":true}' : '',
+      finishReason,
+    }), capabilityEvidence))
   }
 
   execute(params: CommandExecuteParams): Promise<string> {
@@ -138,6 +111,7 @@ beforeEach(() => {
     } as never,
   })
   useLocaleStore.setState({ locale: 'en-US', initialized: true })
+  useLLMStore.setState({ defaultModelId: 'model-a' })
 })
 
 describe('workflow generation prompt budget diagnostics', () => {
@@ -206,4 +180,5 @@ describe('workflow generation prompt budget diagnostics', () => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  useLLMStore.setState({ defaultModelId: null })
 })
