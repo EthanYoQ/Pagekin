@@ -211,3 +211,15 @@ it('替换章进了回收站：不再列出建议，接受也不写蓝图', asyn
   expect(f.decide(card!.suggestionId, 'accept')).toEqual({ status: 'stale' })
   expect(f.keyEvents()).toBe(ORIGINAL)
 })
+
+it('替换章又被新的定稿取代：接受判作废，不写蓝图', async () => {
+  const f = fixture()
+  await f.check()
+  const [card] = f.list()!.suggestions
+  f.db.exec("INSERT INTO contents(id,body) VALUES(2,'又一稿'); INSERT INTO drafts_all(id,chapter_number,version,status,content_id,word_count) VALUES(2,1,2,'draft',2,3)")
+  const prose = '林岚与沈舟和好。'
+  FinalizationRepository.demoteToSuperseded(f.db, [1])
+  FinalizationRepository.commit({ finalizationId: '定稿2', draftId: 2, chapterNumber: 1, chapterTitle: '雨夜', content: prose, contentHash: textHash(prose), contentRevision: 1, targetFileName: '第一章.txt' })
+  expect(f.decide(card!.suggestionId, 'accept')).toEqual({ status: 'stale' })
+  expect(f.keyEvents()).toBe(ORIGINAL)
+})

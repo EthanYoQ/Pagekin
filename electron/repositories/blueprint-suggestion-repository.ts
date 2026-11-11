@@ -36,11 +36,10 @@ export class BlueprintSuggestionRepository {
     }).immediate()
   }
 
-  /** 接受时这一章必须还是检查时那份蓝图，否则这条作废；作废和接受都在同一个事务里落定。 */
   static decide(db: Database.Database, suggestionId: string, decision: SuggestionDecision): { status: SuggestionStatus } {
     return db.transaction(() => {
       const row = db.prepare(`SELECT s.chapter_number AS chapterNumber,s.base_blueprint_hash AS baseHash,s.patch_json AS patch,s.status,
-        EXISTS(SELECT 1 FROM finalization_outbox o WHERE o.finalization_id=s.finalization_id) AS live FROM blueprint_continuity_suggestions s WHERE s.suggestion_id=?`)
+        EXISTS(SELECT 1 FROM finalization_outbox o JOIN drafts d ON d.id=o.draft_id WHERE o.finalization_id=s.finalization_id AND d.status='finalized') AS live FROM blueprint_continuity_suggestions s WHERE s.suggestion_id=?`)
         .get(suggestionId) as { chapterNumber: number; baseHash: string; patch: string; status: SuggestionStatus; live: 0 | 1 } | undefined
       if (!row) throw new Error('GENERATION_GRAPH_SELECTION_INVALID')
       if (row.status !== 'pending') return { status: row.status }

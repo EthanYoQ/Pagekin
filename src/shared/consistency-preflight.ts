@@ -14,6 +14,8 @@ export interface ConsistencyFinding {
   stableFactKey: string
   severity: 'warning'
   sourceChapter: number
+  /** 依据是作者自己写的设定：sourceChapter 只是生效章，不是出处。 */
+  authorSetting?: true
   evidence: string
   issue: { zhCN: string; enUS: string }
   suggestion: { zhCN: string; enUS: string }

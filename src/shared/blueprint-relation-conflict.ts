@@ -41,6 +41,7 @@ export function relationPolarity(text: string): RelationPolarity | null {
 
 interface ContinuityBasis {
   sourceChapter: number
+  authorSetting?: true
   evidence: string
   since: { zhCN: string; enUS: string }
 }
@@ -50,6 +51,7 @@ export function continuityBasis(node: ContinuityNode): ContinuityBasis | null {
   const chapter = node.effectiveChapter
   switch (node.provenance.kind) {
     case 'author':
+      return { sourceChapter: chapter, authorSetting: true, evidence: node.value, since: { zhCN: `第 ${chapter} 章起`, enUS: `from chapter ${chapter}` } }
     case 'adopted':
       return { sourceChapter: chapter, evidence: node.value, since: { zhCN: `第 ${chapter} 章起`, enUS: `from chapter ${chapter}` } }
     case 'derived':
@@ -87,6 +89,7 @@ export function findRelationReversals(blueprint: BlueprintForPreflight, continui
       stableFactKey,
       severity: 'warning',
       sourceChapter: basis.sourceChapter,
+      ...(basis.authorSetting && { authorSetting: true }),
       evidence: basis.evidence,
       issue: {
         zhCN: `第 ${blueprint.chapterNumber} 章蓝图把 ${hint.from} 和 ${hint.to} 写成「${hint.relation}」，但${basis.since.zhCN}两人是「${line.value}」。`,

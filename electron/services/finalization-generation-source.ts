@@ -21,7 +21,7 @@ export function finalizationNotesBaseline(db: Database.Database, slot: Finalizat
   const rows = db.prepare('SELECT chapter_number,chapter_notes,continuity_facts,source_finalization_id,source_content_hash,projection_generation FROM summary_snapshots WHERE draft_id=? ORDER BY id').all(slot.source.draftId)
   return { blueprint: { exists: !!blueprint, notes: blueprint?.notes ?? '' }, continuityHash: textHash(JSON.stringify(rows)) }
 }
-const immutableIdentity = (context: FinalizedCharacterContext) => ({ ...context, authorRelations: undefined, characters: context.characters.map(({ fields: _fields, ...identity }) => { void _fields; return identity }) })
+const immutableIdentity = (context: FinalizedCharacterContext) => ({ ...context, authorRelations: undefined, authorRelationsRevision: undefined, characters: context.characters.map(({ fields: _fields, ...identity }) => { void _fields; return identity }) })
 
 export function captureFinalizationGenerationContext(db: Database.Database, slot: FinalizationGenerationSlot, scope: { projectId: string; epoch: string },
   writingLanguage: WritingLanguage, template: PromptTemplate, frozen?: FinalizationGenerationContext): FinalizationGenerationContext {
