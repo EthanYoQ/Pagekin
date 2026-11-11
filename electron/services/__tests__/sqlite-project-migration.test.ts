@@ -286,18 +286,23 @@ describe('real SQLite schema probe and WAL staging backup', () => {
     expect(fs.existsSync(f.target)).toBe(false)
     expect(bytes(f.root)).toEqual(before)
   })
-  it.each(['0.9.2', '1.0.0'] as const)('imports the official %s lazy blueprint schema without dropping old records', async version => {
-    const f = version === '0.9.2' ? legacyV092Fixture() : legacyV100Fixture(true)
+  const lazyBases = {
+    '0.9.2': [legacyV092Fixture, '7a34ee78ddace39804d64ce8a42c054f11d9d27a559ff99cbd345921088ba050'],
+    '1.0.0': [() => legacyV100Fixture(true), '29838d67b3b0338b717c7488a7a2841c40fdacbb58598a83358bd73b6bda4673'],
+    '1.0.0-qualified': [() => legacyV100Fixture(), '90ef4323d226be7e5593b8b33c6839656f88c4a5da3d9ebaf9aff9150eb95cb6'],
+    '1.1.0': [legacyV110Fixture, '6482cec23151f65e9fa1b0535cb7f9fa8ab16cfafa7cd264243730f1e54ac7b5'],
+  } as const
+  it.each(Object.keys(lazyBases) as (keyof typeof lazyBases)[])('imports the official %s lazy blueprint schema without dropping old records', async version => {
+    const [makeFixture, fingerprint] = lazyBases[version]
+    const f = makeFixture()
     ensureBaselineBlueprintTables(f.db)
-    const fingerprint = version === '0.9.2'
-      ? '7a34ee78ddace39804d64ce8a42c054f11d9d27a559ff99cbd345921088ba050'
-      : '29838d67b3b0338b717c7488a7a2841c40fdacbb58598a83358bd73b6bda4673'
     expect(sqliteSchemaFingerprint(f.db)).toBe(fingerprint)
     f.db.prepare('INSERT INTO blueprint_commit_operations(rowid,operation_id,payload_hash,mode,start_chapter,end_chapter,character_sync_input) VALUES (?,?,?,?,?,?,?)')
       .run(41, 'old-commit', 'old-hash', 'full', 7, 7, '{"characters":["旧角色"]}')
     f.db.prepare('INSERT INTO blueprint_character_sync_operations(rowid,operation_id,blueprint_commit_operation_id,blueprint_commit_payload_hash,start_chapter,end_chapter,character_sync_input) VALUES (?,?,?,?,?,?,?)')
       .run(53, 'old-sync', 'old-commit', 'old-hash', 7, 7, '{"characters":["旧角色"]}')
-    const preservedTables = ['blueprint_commit_operations', 'blueprint_character_sync_operations', 'contents', 'reviews', 'revisions']
+    f.db.prepare('INSERT INTO blueprints(chapter_number,title,notes) VALUES (?,?,?)').run(7, '旧蓝图', '作者蓝图备注')
+    const preservedTables = ['blueprints', 'blueprint_commit_operations', 'blueprint_character_sync_operations', 'contents', 'reviews', 'revisions']
     const originals = preservedTables.map(table => f.db.prepare(`SELECT rowid,* FROM ${table} ORDER BY rowid`).all())
     const before = bytes(f.root)
     expect(probeProjectSqlite({ databasePath: f.source })).toMatchObject({ schemaVersion: 0, fingerprint })
@@ -318,9 +323,9 @@ describe('real SQLite schema probe and WAL staging backup', () => {
     }
     expect(bytes(f.root)).toMatchObject(before)
   })
-  it.each(['0.9.2', '1.0.0'] as const)('rejects unknown DDL and broken references in official %s lazy schemas before creating staging', async version => {
+  it.each(Object.keys(lazyBases) as (keyof typeof lazyBases)[])('rejects unknown DDL and broken references in official %s lazy schemas before creating staging', async version => {
     for (const fault of ['unknown-ddl', 'foreign-key']) {
-      const f = version === '0.9.2' ? legacyV092Fixture() : legacyV100Fixture(true)
+      const f = lazyBases[version][0]()
       ensureBaselineBlueprintTables(f.db)
       if (fault === 'unknown-ddl') f.db.exec('ALTER TABLE blueprint_commit_operations ADD COLUMN unknown_fork TEXT')
       else {
