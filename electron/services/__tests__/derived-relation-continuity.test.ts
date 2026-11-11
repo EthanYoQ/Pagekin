@@ -272,6 +272,27 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(pending()).toEqual([])
   })
 
+  it.each([
+    ['先林后沈', [relationChange('恩断义绝', BREAK_UP), relationChange('势不两立', BREAK_UP, SHEN, LIN)]],
+    ['先沈后林', [relationChange('势不两立', BREAK_UP, SHEN, LIN), relationChange('恩断义绝', BREAK_UP)]],
+  ])('作者两个方向都写了，模型两个方向给出不同新值（%s）：角色那步先于要点时，补回后同一对只有一张卡，与要点先到时一样', (_label, relations) => {
+    const cardsAfter = (notesFirst: boolean) => {
+      openProject()
+      authorRelation('同门')
+      authorRelation('同门', SHEN, LIN)
+      const draftId = notesFirst ? finalizeNew(8, CHAPTER_EIGHT) : finalizeWithoutNotes(8, CHAPTER_EIGHT)
+      commitModelOutput(draftId, { updates: [], relations })
+      if (!notesFirst) saveNotes(draftId, '第8章摘要')
+      const cards = pending().map(({ sourceId, targetId, value }) => ({ sourceId, targetId, value }))
+      closeProjectDatabase()
+      return cards
+    }
+    const notesFirst = cardsAfter(true)
+
+    expect(notesFirst).toHaveLength(1)
+    expect(cardsAfter(false)).toEqual(notesFirst)
+  })
+
   it('升级前写下的派生节点没有作者关系快照：要点补上时不补待确认项，也不报错', () => {
     openProject()
     authorRelation('师徒')
