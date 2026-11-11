@@ -220,6 +220,19 @@ describe('llm connection test', () => {
       expect(result.error).not.toContain('rerank.example')
       expect(result.error).not.toContain('sk-fake-rerank')
     })
+
+    it.each([
+      ['timeout', () => Promise.reject(new DOMException('timed out', 'TimeoutError')), 'timed out'],
+      ['request-failed', () => Promise.reject(new TypeError('fetch failed')), 'Check the base_url'],
+      ['http-error', async () => new Response('{}', { status: 401 }), 'Check the API key and model name'],
+      ['invalid-response', async () => new Response('{}'), 'supports reranking'],
+    ] as const)('explains a %s probe failure with its own advice', async (_reason, respond, advice) => {
+      fetchMock.mockImplementation(respond)
+
+      const result = await connectionHandler()({}, rerankModel) as { success: boolean; error: string }
+
+      expect(result).toMatchObject({ success: false, error: expect.stringContaining(advice) })
+    })
   })
 })
 
