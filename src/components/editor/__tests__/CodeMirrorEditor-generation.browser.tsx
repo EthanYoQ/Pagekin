@@ -312,7 +312,6 @@ describe('CodeMirror editor AI generation boundary', () => {
     const longBefore = '甲'.repeat(2100)
     const longAfter = '乙'.repeat(2100)
     await act(async () => root.render(<CodeMirrorEditor content={longBefore} mode="prose" onCommitAnnotations={vi.fn(async () => {})} />))
-    const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
     await act(async () => page.getByText(longBefore).click({ clickCount: 3 }))
     await expect.element(page.getByRole('button', { name: '添加批注' })).toBeVisible()
     await act(async () => page.getByRole('button', { name: '添加批注' }).click())
