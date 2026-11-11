@@ -159,6 +159,18 @@ describe('定稿后处理步骤错误', () => {
       expect(describeFinalizationStepError(code, zh)).toContain('再点「重试」结果也一样')
     })
 
+    it('章节要点记着成功、角色状态却报要先完成要点（要点已过期）：这一行和整卡的重试都连要点一起重跑', () => {
+      const plan = planFinalizationRetry({ kb_import: { ok: true }, chapter_notes: { ok: true }, character_cards: failed(`${IPC}GENERATION_FINALIZATION_PREDECESSOR_REQUIRED`) })
+      expect({ rows: [...plan.rows], card: plan.card }).toEqual({
+        rows: [['character_cards', ['chapter_notes', 'character_cards']]], card: ['chapter_notes', 'character_cards'] })
+    })
+
+    it('等「导入知识库」的清理步骤：导入已成功时只重跑清理，不重新导入', () => {
+      const plan = planFinalizationRetry({ kb_import: { ok: true }, remove_replaced_knowledge: failed('FINALIZATION_REPLACED_KNOWLEDGE_IMPORT_REQUIRED') })
+      expect(plan.rows.has('remove_replaced_knowledge')).toBe(true)
+      expect(plan.card).toEqual(['remove_replaced_knowledge'])
+    })
+
     it('没登记的错误在现有步骤上照常可以重试', () => {
       const plan = planFinalizationRetry({ kb_import: failed('向量服务没有响应'), chapter_notes: { ok: true }, character_cards: { ok: true } })
       expect({ rows: [...plan.rows], card: plan.card }).toEqual({ rows: ['kb_import'], card: ['kb_import'] })

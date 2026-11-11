@@ -305,6 +305,15 @@ describe('createRepairFinalizeWorkflow', () => {
       expect(postProcess.params).toEqual([expect.objectContaining({ stepKeys: ['chapter_notes', 'character_cards'] })])
     })
 
+    it.each([undefined, 'character_cards'])('reruns chapter notes ahead of character state when character state reports that the finished notes no longer count (row retry: %s)', async stepKey => {
+      await retryCard([
+        { stepKey: 'kb_import', ok: true },
+        { stepKey: 'chapter_notes', ok: true },
+        { stepKey: 'character_cards', ok: false, errorMsg: 'GENERATION_FINALIZATION_PREDECESSOR_REQUIRED' },
+      ], stepKey)
+      expect(postProcess.params).toEqual([expect.objectContaining({ onlyFailed: true, stepKeys: ['chapter_notes', 'character_cards'] })])
+    })
+
     it('#512 leaves a step from an earlier version out of the retry and does not report the repair as failed because of it', async () => {
       postProcess.execute.mockResolvedValue(statusOf([
         { stepKey: 'kb_import', ok: true },

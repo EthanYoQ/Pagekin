@@ -37,6 +37,8 @@ import { GenerateDraftCommand } from '../generate-draft.command'
 import { createWorkflowMainGenerationRuntime } from '../../workflow-main-generation'
 import type { MainGenerationRunView } from '../../../generation/generation-runtime'
 import { useFakeModelStream, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
+import { planFinalizationRetry } from '../../../../shared/finalization-step-error'
+import type { PostProcessStatus } from '../../workflow-utils'
 type ModelMessages = Parameters<FakeGenerateStream>[0]
 
 let projectPath = ''
@@ -1381,5 +1383,106 @@ describe('重开再定稿后的后处理（ADR-0024）', () => {
     expect(Object.fromEntries(steps.map(step => [step.step_key, step.ok]))).toEqual({
       kb_import: 1, remove_replaced_knowledge: 1, remove_replaced_manuscripts: 0, chapter_notes: 1, character_cards: 1,
     })
+  })
+})
+
+describe('更早章的连续性记录作废后重试本章的后处理（#279）', () => {
+  const content = 'Lin Lan breaks with Zhou Yan at the harbor.'
+  const calls = { notes: 0, character: 0 }
+  let characterStreamFails = false
+  const db = () => getProjectDb()!
+  const run = (stepKeys?: readonly string[]) => command(content, stepKeys ? { onlyFailed: true, retryInvalidResult: true, stepKeys } : {})
+    .execute({ step: {}, context: workflowContext, callbacks: callbacks() })
+  const notesRow = () => db().prepare('SELECT chapter_notes AS notes,projection_generation AS generation FROM summary_snapshots WHERE draft_id=7').get()
+  const currentGeneration = () => db().prepare("SELECT generation FROM continuity_projection_meta WHERE id='main'").pluck().get()
+  const blueprintNotes = () => db().prepare('SELECT notes FROM blueprints WHERE chapter_number=2').pluck().get()
+
+  const ALL_DONE = { kb_import: 'ok', chapter_notes: 'ok', character_cards: 'ok' }
+  const outcomes = (steps: PostProcessStatus['steps']) => Object.fromEntries(Object.entries(steps).map(([key, step]) => [key, step.ok ? 'ok' : step.error]))
+
+  /** 像作者那样一直点「重试失败步骤」，到卡上没有可重试的步骤为止。 */
+  async function retryCardUntilSettled(steps: PostProcessStatus['steps']) {
+    for (let click = 0; click < 4; click++) {
+      const { card } = planFinalizationRetry(steps)
+      if (!card.length) break
+      steps = (await run(card)).steps
+    }
+    return steps
+  }
+
+  /** 本章要点成功、角色状态那步失败之后，从 staleFrom 章起的连续性记录作废（打开项目时修复重复定稿会这样）。 */
+  async function characterStepFailsThenContinuityInvalidates(staleFrom: number) {
+    characterStreamFails = true
+    const initial = await run()
+    expect(initial.steps).toMatchObject({ chapter_notes: { ok: true }, character_cards: { ok: false } })
+    characterStreamFails = false
+    invalidateContinuityProjectionFrom(db(), staleFrom)
+    return initial.steps
+  }
+
+  beforeEach(() => {
+    calls.notes = 0; calls.character = 0; characterStreamFails = false
+    db().prepare("INSERT INTO blueprints (chapter_number, title, notes) VALUES (2, 'The Handoff', '')").run()
+    cardResponse = JSON.stringify({ updates: [{ name: 'Lin Lan', currentState: { keyItems: '' } }] })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
+      const system = messages.find((message: { role: string; content: string }) => message.role === 'system')?.content ?? ''
+      if (system.includes('character records')) {
+        calls.character++
+        if (characterStreamFails) streamCallbacks.onError?.('synthetic stream interrupted')
+        else streamCallbacks.onDone?.(modelFixtureResponse(cardResponse), undefined, 'stop')
+      } else streamCallbacks.onDone?.(`Notes take ${++calls.notes}.`, undefined, 'stop')
+      return 'synthetic-request'
+    }) })
+  })
+
+  it('本章要点已过期、角色状态有待确认项要存：重试连章节要点一起重跑，走得完', async () => {
+    const steps = await retryCardUntilSettled(await characterStepFailsThenContinuityInvalidates(1))
+
+    expect(outcomes(steps)).toEqual(ALL_DONE)
+    expect(notesRow()).toEqual({ notes: 'Notes take 2.', generation: currentGeneration() })
+    expect(blueprintNotes()).toBe('Notes take 2.')
+    expect(SummaryRepository.listPendingFinalizedCharacterStateCandidates()).toMatchObject([{ field: 'keyItems' }])
+    expect(calls).toEqual({ notes: 2, character: 2 })
+  })
+
+  it('本章要点已过期、定稿和作者写的人物关系不一致：重试走完后建议卡还在', async () => {
+    const { currentState: _currentState, relationships: _relationships, ...fields } = initialRosterRequest().entries[0]
+    void _currentState; void _relationships
+    const approval = (operationId: string) => {
+      const revision = db().prepare("SELECT revision FROM character_identity_meta WHERE id='main'").pluck().get() as number
+      return { operationId, expectedRevision: revision, action: 'author-edit' as const,
+        source: { kind: 'author' as const, source: { projectId: 'test', epoch: 'lease-test', sourceId: operationId, revision, contentHash: 'c'.repeat(64) } } }
+    }
+    const zhou = commitCharacterIdentities(db(), { approval: approval('zhou'), creations: [{ selectionKey: 'zhou', fields: { ...fields, name: 'Zhou Yan' } }],
+      changes: [], retireIds: [], relationships: [], resolutions: [] }, () => true).created[0].characterId
+    commitCharacterIdentities(db(), { approval: approval('mentor'), creations: [], changes: [], retireIds: [], resolutions: [],
+      relationships: [{ sourceCharacterId: characterId, targetCharacterId: zhou, relation: 'mentor' }] }, () => true)
+    db().transaction(() => refreshCharacterIdentityProjection(db()))()
+    cardResponse = JSON.stringify({ updates: [], relations: [{ source: characterId, target: zhou, relation: 'rival', evidence: { text: content } }] })
+
+    const steps = await retryCardUntilSettled(await characterStepFailsThenContinuityInvalidates(1))
+
+    expect(outcomes(steps)).toEqual(ALL_DONE)
+    expect(SummaryRepository.listPendingFinalizedRelationCandidates(db()).map(item => item.value)).toEqual(['rival'])
+  })
+
+  it('作废的是更晚的章、本章要点仍然有效：重试只跑角色状态，不重新生成要点', async () => {
+    const steps = await retryCardUntilSettled(await characterStepFailsThenContinuityInvalidates(3))
+
+    expect(outcomes(steps)).toEqual(ALL_DONE)
+    expect(SummaryRepository.listPendingFinalizedCharacterStateCandidates()).toMatchObject([{ field: 'keyItems' }])
+    expect(calls).toEqual({ notes: 1, character: 2 })
+  })
+
+  it('作者手改过蓝图里的本章要点：重试重新生成要点时不覆盖作者的改动', async () => {
+    const failed = await characterStepFailsThenContinuityInvalidates(1)
+    expect(blueprintNotes()).toBe('Notes take 1.')
+    db().prepare("UPDATE blueprints SET notes='Author-edited notes' WHERE chapter_number=2").run()
+
+    const steps = await retryCardUntilSettled(failed)
+
+    expect(outcomes(steps)).toEqual(ALL_DONE)
+    expect(notesRow()).toMatchObject({ notes: 'Notes take 2.' })
+    expect(blueprintNotes()).toBe('Author-edited notes')
   })
 })
