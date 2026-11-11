@@ -132,7 +132,7 @@ export interface DerivedRelationWrite {
   relation: string
   source: FinalizedSourceIdentity
   quote: FinalizedCharacterEvidence
-  authorLinesAtExtraction: readonly string[]
+  authorLinesAtExtraction: readonly string[] | undefined
 }
 
 /** 只进事件表，不碰 character_relationships（ADR-0007）。节点绑定定稿稿，稿被替换后随之失效（ADR-0024、ADR-0025）。 */
