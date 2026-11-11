@@ -1353,6 +1353,7 @@ describe('蓝图页的恢复稿横幅跟着主进程的判定走（#608）', () 
 
 describe('AI 检查（蓝图正文对照时间线）', () => {
   const HANDLE = { projectId: 'stage-blueprint', epoch: 'epoch', rootActionId: 'root', runId: 'run' }
+  const EARLIER = { ...HANDLE, rootActionId: 'earlier-root', runId: 'earlier' }
   const NODE = { eventId: 'relation:add:line', since: { zhCN: '第 1 章起', enUS: 'from chapter 1' }, fromChapter: 1, subjectName: '林岚', aspect: 'relation', targetName: '守塔人', value: '决裂' }
   const finding = (chapterNumber: number, issue: string, ...more: { issue: string; suggestion: string }[]) =>
     ({ chapterNumber, eventIds: ['relation:add:line'], points: [{ issue, suggestion: '改成对峙。' }, ...more] })
@@ -1362,28 +1363,43 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
   })
   const checked = (findings: ReturnType<typeof finding>[]) => ({ attemptCount: 1, artifact: { artifactId: 'a', revision: 1, textHash: 'h' },
     result: { kind: 'continuity', checkedThroughChapter: 3, droppedFindings: 0, findings } })
+  const fromEarlier = (over: Record<string, unknown>) => {
+    const value = recovery(over) as { view: { handle: typeof HANDLE } }
+    return 'view' in over ? value : { ...value, view: { ...value.view, handle: EARLIER } }
+  }
   let read: Record<string, unknown>
   let latest: Record<string, unknown> | null
+  let earlier: Record<string, unknown>
   let nodes: ContinuityNode[]
   let frozen: ReturnType<typeof continuityCheckChapter>[]
 
   beforeEach(() => {
     read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。'), finding(3, '第 3 章同样写成同伴。')])
     latest = null
+    earlier = read
     nodes = [BROKEN_NODE]
     frozen = stored.slice(1).map(continuityCheckChapter)
     useLLMStore.setState({ models: [{ id: 'grok', name: 'grok', provider: 'openai', protocol: 'openai', modelName: 'grok', apiKey: 'k', baseUrl: 'https://x.test/v1', temperature: 0.7, maxTokens: 2048, purposes: ['generation'] }] as never, defaultModelId: 'grok', loaded: true })
     const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
-      if (channel === 'graph-generation:latest-continuity') return latest && recovery(latest)
+      if (channel === 'graph-generation:latest-continuity') return latest && fromEarlier(latest)
       if (channel === 'db:character-continuity-preflight-nodes') return nodes
       if (channel === 'graph-generation:begin') return recovery({})
       if (channel === 'graph-generation:execute') return { run: recovery({}).view }
-      if (channel === 'graph-generation:read') return recovery(read)
+      if (channel === 'graph-generation:read')
+        return (args[0] as { handle: typeof HANDLE }).handle.runId === EARLIER.runId ? fromEarlier(earlier) : recovery(read)
       return base(channel, ...args)
     })
   })
   const check = () => act(async () => page.getByRole('button', { name: 'AI 检查', exact: true }).click())
+  const refreshAndRecover = async (gated = 0) => {
+    const before = calls('graph-generation:latest-continuity').length
+    await refreshBlueprints()
+    await vi.waitFor(() => {
+      expect(calls('graph-generation:latest-continuity').length).toBeGreaterThan(before)
+      expect(invoke.mock.settledResults.filter(result => result.type === 'incomplete')).toHaveLength(gated)
+    })
+  }
 
   it('点按钮发一次，结论按章显示，依据是章号和节点内容，不露 eventId', async () => {
     await renderPage(2)
@@ -1444,6 +1460,111 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await check()
     await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
     await expect.element(page.getByText('第 2 章矛盾。')).not.toBeInTheDocument()
+  })
+
+  it('检查期间别章被改、之后蓝图又刷新：这次不算数，原来的结论留着', async () => {
+    latest = read
+    const rejected = { ...checked([finding(2, '被拒那次的第 2 章结论。')]), sourceStatus: 'conflict', view: recovery({}).view }
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel !== 'graph-generation:read' || (args[0] as { handle: typeof HANDLE }).handle.runId === EARLIER.runId) return base(channel, ...args)
+      stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+      earlier = { ...read, sourceStatus: 'conflict' }
+      latest = rejected
+      return recovery(rejected)
+    })
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await check()
+    await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
+    await refreshAndRecover()
+    await expect.element(page.getByText('被拒那次的第 2 章结论。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('检查冲突但没留下结论，之后把改过的章改回：原来的结论照常显示', async () => {
+    const original = stored
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'graph-generation:read') return recovery({ attemptCount: 1, sourceStatus: 'conflict' })
+      return base(channel, ...args)
+    })
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await check()
+    await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
+    stored = original
+    latest = read
+    await refreshAndRecover()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('检查结果已落库、页面还没收到“不算数”时蓝图刷新：原来的结论留着', async () => {
+    latest = read
+    const rejected = { ...checked([finding(2, '被拒那次的第 2 章结论。')]), sourceStatus: 'conflict', view: recovery({}).view }
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel !== 'graph-generation:read' || (args[0] as { handle: typeof HANDLE }).handle.runId === EARLIER.runId) return base(channel, ...args)
+      stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+      earlier = { ...read, sourceStatus: 'conflict' }
+      latest = rejected
+      await gate
+      return recovery(rejected)
+    })
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await check()
+    await vi.waitFor(() => expect(calls('graph-generation:read')).toHaveLength(1))
+    await refreshAndRecover(1)
+    await act(async () => release())
+    await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
+    await expect.element(page.getByText('被拒那次的第 2 章结论。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('原结论已冲突，检查期间把改过的章改回、这次结果被拒：原来的结论照常显示', async () => {
+    const original = stored
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    const rejected = { ...checked([finding(2, '被拒那次的第 2 章结论。')]), sourceStatus: 'conflict', view: recovery({}).view }
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel !== 'graph-generation:read' || (args[0] as { handle: typeof HANDLE }).handle.runId === EARLIER.runId) return base(channel, ...args)
+      stored = original
+      earlier = read
+      latest = rejected
+      return recovery(rejected)
+    })
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await check()
+    await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
+    await refreshAndRecover()
+    await expect.element(page.getByText('被拒那次的第 2 章结论。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('检查没查成之后把改过的章改回：蓝图刷新仍重读，结论照常显示', async () => {
+    const original = stored
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'graph-generation:execute') throw new Error('网络断了')
+      return base(channel, ...args)
+    })
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await check()
+    await expect.element(page.getByText('网络断了')).toBeVisible()
+    stored = original
+    latest = read
+    await refreshAndRecover()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
 
   it('改了某章蓝图后只有该章结论消失', async () => {
@@ -1719,8 +1840,7 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
     stored = original
     latest = read
-    await refreshBlueprints()
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await refreshAndRecover()
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
 
