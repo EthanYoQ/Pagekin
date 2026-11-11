@@ -127,17 +127,6 @@ function buildQuery(chapterInfo) {
   return [hint, chapterInfo.title, chapterInfo.keyEvents, chapterInfo.characters.join(" ")].filter(Boolean).join(" ")
 }
 
-/** 照抄 generation-knowledge-source.ts 的全文取词与加权，只用来标注候选。 */
-function ftsTerms(query) {
-  const raw = query.match(/[\p{L}\p{N}-]+/gu) ?? []
-  const meaningful = raw.filter(term => Array.from(term).length >= 2)
-  return [...new Map((meaningful.length ? meaningful : raw).map(term => [term.toLocaleLowerCase(), term])).values()].slice(0, 8)
-}
-
-function ftsRank(terms, text) {
-  return terms.reduce((sum, term, index) => sum + (text.toLocaleLowerCase().includes(term.toLocaleLowerCase()) ? terms.length - index : 0), 0)
-}
-
 async function bundleProduction(workDir) {
   const outfile = path.join(workDir, "production.cjs")
   await build({
@@ -148,6 +137,7 @@ async function bundleProduction(workDir) {
         "export { assembleChapterMaterials } from './src/services/workflows/chapter-materials.ts'",
         "export { DEFAULT_MATERIAL_ADMISSION, materialBudgetFrom } from './src/shared/generation-owner-contract.ts'",
         "export { resolveRerankConfig } from './src/shared/rerank-config.ts'",
+        "export { fullTextTerms, rankFullText } from './src/shared/full-text-search.ts'",
         "export { generateEmbeddings } from './electron/embedding.ts'",
         "export { captureGenerationKnowledge } from './electron/services/generation-knowledge-source.ts'",
         "export { withKnowledgeSourceGate } from './electron/services/knowledge-source-gate.ts'",
@@ -289,7 +279,8 @@ async function runGroup(groupName, rerankName, outPath) {
       const snapshot = await production.withKnowledgeSourceGate(root, () => production.captureGenerationKnowledge({
         projectStorageRoot: root, query, topK: CANDIDATES, queryVector, ...(space ? { embeddingSpace: space } : {}),
       }))
-      const terms = ftsTerms(query)
+      const terms = production.fullTextTerms(query)
+      const ftsScores = new Map(production.rankFullText(chunks, terms, chunks.length).map(({ row, score }) => [row.id, score]))
       const judged = fixture.judgments.get(id) ?? new Map()
       const candidates = snapshot.items.map(item => {
         const paragraphSha256 = chunkToParagraph.get(item.chunkId)
@@ -297,7 +288,7 @@ async function runGroup(groupName, rerankName, outPath) {
         const judgment = judged.get(paragraphSha256)
         return {
           paragraphSha256, text: item.text, fileName: item.fileName, label: judgment?.label ?? null, grade: judgment?.grade ?? 0, distractor: Boolean(judgment?.distractor),
-          score: item.score, ftsRank: ftsRank(terms, item.text), matchedTerms: terms.filter(term => item.text.toLocaleLowerCase().includes(term.toLocaleLowerCase())),
+          score: item.score, ftsRank: ftsScores.get(item.chunkId), matchedTerms: terms.filter(term => item.text.includes(term)),
         }
       })
       if (configuration && candidates.length && candidates.every(item => item.score === 0.5)) fail(`${id} 的候选全是全文检索的固定分 0.5，向量检索可能已回退`)
