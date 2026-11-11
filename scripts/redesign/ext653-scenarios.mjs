@@ -37,7 +37,6 @@ async function readProjectDb(projectPath, read) {
   try { return read(db) } finally { db.close() }
 }
 
-/** 正文与版本历史：版本号、状态、正文哈希，按章节与版本排序。 */
 const draftFacts = projectPath => readProjectDb(projectPath, db => ({
   userVersion: db.prepare('PRAGMA user_version').get().user_version,
   drafts: db.prepare('SELECT d.chapter_number AS chapter, d.version, d.status, c.body AS content FROM drafts d JOIN contents c ON c.id = d.content_id ORDER BY d.chapter_number, d.version').all()
