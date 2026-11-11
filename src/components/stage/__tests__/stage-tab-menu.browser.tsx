@@ -107,7 +107,10 @@ describe('标签菜单', () => {
 
   it('标签多到横向滚动时激活最右边的标签：「标签操作」按钮露在外面，点那里打开菜单，不关掉标签', async () => {
     // 下面按坐标找「标签操作」上面压着什么，视口要装得下整条 1280 宽的标签条
+    // viewport() 返回时尺寸已变，resize 事件却要等下一次渲染才派发；先等它到，免得它之后把菜单关掉
+    const resized = innerWidth === 1280 && innerHeight === 800 ? null : new Promise(resolve => window.addEventListener('resize', resolve, { once: true }))
     await browserPage.viewport(1280, 800)
+    await resized
     const many = Array.from({ length: 24 }, (_, index) => page(`第 ${index + 1} 页 · 雾钟与灯塔的来信`))
     await render(many, many[0].id)
     const strip = document.querySelector<HTMLElement>('.stage-tabs')!
