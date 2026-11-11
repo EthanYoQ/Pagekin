@@ -9,7 +9,7 @@ import { refreshCharacterIdentityProjection } from '../../repositories/character
 import { ConsistencyExemptionRepository } from '../../repositories/consistency-exemption-repository'
 import { DraftRepository } from '../../repositories/draft-repository'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
-import { SummaryRepository } from '../../repositories/summary-repository'
+import { invalidateContinuityProjectionFrom, SummaryRepository } from '../../repositories/summary-repository'
 import { captureFinalizationGenerationContext, finalizationGenerationTask } from '../finalization-generation-source'
 import { captureReviewRevisionContext } from '../review-revision-context'
 import { projectAccess } from '../project-access'
@@ -1126,5 +1126,64 @@ describe('作者对派生关系的决定，预检和建议说法一致', () => {
       expect(pending()).toEqual([])
       expect(authorRows()).toEqual(['反目'])
     })
+  })
+})
+
+describe('较早章建议被采纳后，较晚章的建议是否还有效', () => {
+  const FIVE_QUOTE = '林岚与沈砚在山门前反目。'
+  const SIX_QUOTE = '林岚与沈砚在断桥决裂。'
+  const cards = () => pending().map(({ value, source }) => ({ value, chapter: source.chapterNumber }))
+
+  it('第 8 章抽取开始后作者采纳第 5 章建议，第 8 章的建议照样出现', () => {
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    const eight = finalizeNew(8, CHAPTER_EIGHT)
+    const context = SummaryRepository.readFinalizedCharacterContext(eight, scope, db())
+    decide('accept')
+    SummaryRepository.commitFinalizedCharacterStates(context, parseFinalizedCharacterStateResponse(JSON.stringify({ updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] }), context), db())
+
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+  })
+
+  it('作者先手改、再采纳一张较早章的新建议：第 8 章的旧建议不复活', () => {
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    reviseAuthorRelation('同门')
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    expect(cards()).toEqual([{ value: '反目', chapter: 5 }])
+
+    decide('accept')
+    expect(authorRows()).toEqual(['反目'])
+    expect(cards()).toEqual([])
+  })
+
+  it('第 8 章要点已存、之后第 9 章起的连续性记录作废：第 8 章角色那步提交的建议照样出现', () => {
+    openProject()
+    authorRelation('师徒')
+    const eight = finalizeNew(8, CHAPTER_EIGHT)
+    invalidateContinuityProjectionFrom(db(), 9)
+    commitModelOutput(eight, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+  })
+
+  it('先后采纳第 5 章、第 6 章的建议，第 8 章的建议还在', () => {
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    const six = finalizeNew(6, `第六章：断桥。${SIX_QUOTE}`)
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    decide('accept')
+    commitModelOutput(six, { updates: [], relations: [relationChange('决裂', SIX_QUOTE)] })
+    expect(cards()).toEqual([{ value: '决裂', chapter: 6 }, { value: '恩断义绝', chapter: 8 }])
+
+    decide('accept')
+    expect(authorRows()).toEqual(['决裂'])
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
   })
 })
