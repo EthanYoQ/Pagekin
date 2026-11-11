@@ -53,7 +53,7 @@ interface NodeWrite {
   effectiveChapter: number
   provenance: ContinuityProvenance
   draftId: number | null
-  evidence: { quote?: FinalizedCharacterEvidence; relationshipId?: string }
+  evidence: { quote?: FinalizedCharacterEvidence; relationshipId?: string; authorLinesAtExtraction?: readonly string[]; authorRevisionAtExtraction?: number }
 }
 
 /** 业务写入和节点要一起成败，放在写业务列之前检查。 */
@@ -132,6 +132,8 @@ export interface DerivedRelationWrite {
   relation: string
   source: FinalizedSourceIdentity
   quote: FinalizedCharacterEvidence
+  authorLinesAtExtraction: readonly string[] | undefined
+  authorRevisionAtExtraction: number | undefined
 }
 
 /** 只进事件表，不碰 character_relationships（ADR-0007）。节点绑定定稿稿，稿被替换后随之失效（ADR-0024、ADR-0025）。 */
@@ -140,7 +142,16 @@ export function appendDerivedRelationNode(db: BetterSqlite3.Database, write: Der
   appendNode(db, { eventId: `derived:${write.source.finalizationId}:relation:${randomUUID()}`, subjectId: write.sourceId, subjectName: write.sourceName,
     target: { id: write.targetId, name: write.targetName }, aspect: 'relation', value: write.relation, effectiveChapter: write.source.chapterNumber,
     provenance: { kind: 'derived', source: write.source }, draftId: write.source.draftId,
-    evidence: { quote: write.quote, relationshipId: derivedRelationSeries(write.sourceId, write.targetId) } })
+    evidence: { quote: write.quote, relationshipId: derivedRelationSeries(write.sourceId, write.targetId),
+      authorLinesAtExtraction: write.authorLinesAtExtraction, authorRevisionAtExtraction: write.authorRevisionAtExtraction } })
+}
+
+/** 升级前写下的派生节点没有作者行快照，返回 null；只有快照、没有修订号的也是升级前写的。 */
+export function readDerivedRelationAuthorSnapshot(db: BetterSqlite3.Database, eventId: string): { lines: string[]; revision?: number } | null {
+  const row = db.prepare("SELECT json_extract(evidence_json,'$.authorLinesAtExtraction') AS lines,json_extract(evidence_json,'$.authorRevisionAtExtraction') AS revision FROM character_continuity_events WHERE event_id=?")
+    .get(eventId) as { lines: string | null; revision: number | null }
+  if (row.lines === null) return null
+  return { lines: JSON.parse(row.lines) as string[], ...(row.revision === null ? {} : { revision: row.revision }) }
 }
 
 interface NodeRow {
