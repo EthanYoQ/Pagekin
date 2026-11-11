@@ -20,6 +20,7 @@ import { useWorkflowStore } from '../../../../stores/workflow-store'
 import StageWorkspace from '../../StageWorkspace'
 import { swapChapterTab } from '../chapter-tab-routing'
 import { AI_REVIEW, BLUEPRINT, ORIGINAL, REVISED, SESSION, chapterProject, createChapterBackend, generationModel } from './chapter-fixture'
+import { resizeViewport } from '../../../ui/__tests__/viewport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -61,7 +62,7 @@ const versions = async () => {
 }
 
 beforeEach(async () => {
-  await page.viewport(1280, 900)
+  await resizeViewport(1280, 900)
   backend = createChapterBackend()
   backend.install()
   useLocaleStore.setState({ locale: 'zh-CN' })

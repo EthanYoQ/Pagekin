@@ -20,7 +20,7 @@ const models = [
 
 beforeEach(() => {
   vi.clearAllMocks()
-  useLLMStore.setState({ models: [], defaultModelId: null, defaultEmbeddingModelId: null, stageModelIds: {}, activeRequests: new Map(), loaded: false })
+  useLLMStore.setState({ models: [], defaultModelId: null, defaultEmbeddingModelId: null, stageModelIds: {}, loaded: false })
 })
 
 describe('stage model assignments in the model store', () => {

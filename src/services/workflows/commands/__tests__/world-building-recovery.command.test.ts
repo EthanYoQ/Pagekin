@@ -9,7 +9,7 @@ import {
   recoverableWorldBuildingCandidate,
   type ArchitectureProjectSnapshot,
 } from '../architecture.command'
-import { createWorkflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { createWorkflowRuntimeDependencies, useFakeModelStream } from './workflow-generation-runtime.fixture'
 import { clearProjectCustomPrompts } from '../../../prompt-templates'
 
 const projectPath = 'C:\\novels\\世界观恢复测试'
@@ -39,7 +39,7 @@ const snapshot: ArchitectureProjectSnapshot = {
   expectedProjectPath: projectPath,
   novelConfig,
 }
-const originalGenerateStream = useLLMStore.getState().generateStream
+const originalGenerateStream = useFakeModelStream.getState().generateStream
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 
 interface ResponseItem {
@@ -87,7 +87,8 @@ function installResponses(items: readonly ResponseItem[], writesAtRequestStart: 
     }
     return `世界观请求-${index}`
   })
-  useLLMStore.setState({ defaultModelId: 'world-recovery-model', generateStream })
+  useLLMStore.setState({ defaultModelId: 'world-recovery-model' })
+  useFakeModelStream.setState({ generateStream })
   return generateStream
 }
 
@@ -158,10 +159,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  useLLMStore.setState({
-    defaultModelId: originalDefaultModelId,
-    generateStream: originalGenerateStream,
-  })
+  useLLMStore.setState({ defaultModelId: originalDefaultModelId })
+  useFakeModelStream.setState({ generateStream: originalGenerateStream })
   useProjectStore.setState({ currentProject: null })
   clearProjectCustomPrompts()
 })
