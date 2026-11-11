@@ -78,7 +78,8 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     const request = ++editRequest.current
     await loadModels()
     if (request !== editRequest.current) return
-    startEditing({ ...(useLLMStore.getState().models.find(latest => latest.id === model.id) ?? model) })
+    const latest = useLLMStore.getState().models.find(saved => saved.id === model.id)
+    if (latest) startEditing({ ...latest })
   }
 
   const save = async () => {
@@ -113,7 +114,10 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
       setEditingModel(null)
     },
     save,
-    remove: (modelId: string) => deleteModel(modelId),
+    remove: (modelId: string) => {
+      editRequest.current += 1
+      return deleteModel(modelId)
+    },
     setDefault,
   }
 }
