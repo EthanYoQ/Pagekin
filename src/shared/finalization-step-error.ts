@@ -62,8 +62,8 @@ const FINALIZATION_STEP_ERRORS: { code: RegExp; zh: string; en: string; enMany?:
     zh: '正文定稿已保存，但这一步没有写入：本章定稿时角色名单里的角色，有的后来被删除了，再点「重试」结果也一样。请重新定稿本章后再处理。',
     en: 'The finalized chapter text is saved, but this step was not saved: a character who was in the cast when this chapter was finalized has since been deleted. Retrying gives the same result. Finalize this chapter again to run this step.' },
   { code: /^GENERATION_FINALIZATION_NOTES_CHANGED$/, retry: 'described',
-    zh: '你在生成期间改的「章节要点」已保留，这一步没有写入，角色状态也还没更新。点「重试」会重新生成并更新角色状态：本章以前生成过要点的，你改的要点仍保留；第一次生成的，要点会换成新结果，需要时再改回。',
-    en: "Your changes to Chapter notes made while this step was running are kept, so nothing was written and the character state has not been updated yet. Select Retry to generate again and update the character state. If this chapter had generated notes before, your edited notes stay; if not, they are replaced by the new notes, and you can edit them again afterward." },
+    zh: '生成期间本章的「章节要点」有改动，改动已保留，这一步没有写入，角色状态也还没更新。点「重试」会重新生成并更新角色状态；蓝图里你改的要点可能被新结果换掉，想留就先复制一份。',
+    en: "Chapter notes changed while this step was running. The change is kept, so nothing was written and the character state has not been updated yet. Select Retry to generate again and update the character state. Your edited notes on the chapter blueprint may be replaced by the new ones, so copy them first if you want to keep them." },
   // 作品放在不支持硬链接的磁盘上，知识库每次提交都失败（#571）；搬到支持的磁盘后重试才有用。
   { code: /^KNOWLEDGE_BASE_VOLUME_UNSUPPORTED$/, retry: 'described',
     zh: '正文定稿已保存，但没能收进知识库：作品文件夹所在的磁盘不支持知识库要用的文件操作，常见于 exFAT、FAT32 格式的移动硬盘和 U 盘，留在这个磁盘上再点「重试」结果也一样。请退出书童，把整个作品文件夹移到 NTFS 格式的磁盘（Mac 上用 APFS 格式），打开新位置的作品后再点「重试」。',

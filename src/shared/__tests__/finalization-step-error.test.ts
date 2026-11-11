@@ -129,7 +129,7 @@ describe('定稿后处理步骤错误', () => {
       expect(describeFinalizationStepError(code, en)).not.toMatch(/\p{Script=Han}/u)
     })
 
-    it('章节要点在生成期间被作者改过：说明先讲改动已保留，再按本章是否生成过要点分别讲重试后的结果，不劝作者别重试', () => {
+    it('章节要点在生成期间被作者改过：说明先讲改动已保留，提醒重试可能换掉蓝图要点、想留先复制，不劝作者别重试', () => {
       const plan = planFinalizationRetry({
         kb_import: { ok: true },
         chapter_notes: failed('GENERATION_FINALIZATION_NOTES_CHANGED'),
@@ -139,13 +139,11 @@ describe('定稿后处理步骤错误', () => {
       expect(plan.card).toEqual(['chapter_notes', 'character_cards'])
       const zhText = describeFinalizationStepError('GENERATION_FINALIZATION_NOTES_CHANGED', zh)
       const enText = describeFinalizationStepError('GENERATION_FINALIZATION_NOTES_CHANGED', en)
-      expect(zhText).toMatch(/^你在生成期间改的「章节要点」已保留/u)
-      expect(zhText).toContain('以前生成过要点的，你改的要点仍保留')
-      expect(zhText).toContain('第一次生成的，要点会换成新结果')
+      expect(zhText).toMatch(/^生成期间本章的「章节要点」有改动，改动已保留/u)
+      expect(zhText).toContain('可能被新结果换掉，想留就先复制一份')
       expect(zhText).not.toContain('不要重试')
-      expect(enText).toMatch(/^Your changes to Chapter notes made while this step was running are kept/u)
-      expect(enText).toContain('If this chapter had generated notes before, your edited notes stay')
-      expect(enText).toContain('if not, they are replaced by the new notes')
+      expect(enText).toMatch(/^Chapter notes changed while this step was running\. The change is kept/u)
+      expect(enText).toContain('may be replaced by the new ones, so copy them first')
       expect(enText).not.toContain("don't retry")
       expect(zhText).not.toContain('请点「重试」重新生成这一步')
       expect(enText).not.toContain('Select Retry to generate this step again')
