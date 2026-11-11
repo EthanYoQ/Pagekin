@@ -67,7 +67,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     if (isProjectSessionCurrent(session)) { setHasTimeline(nodes.length > 0); setTimeline(nodes) }
   }, [])
 
-  /** 取回的结论带的是读取当时的来源状态；蓝图存过之后重读一次，改回原样的章不会让整份结论一直判作过期。 */
+  /** 结论记的是读取当时的来源状态；蓝图保存后重读，章改回原样时才不会让整份结论一直判作过期。 */
   const recoverLatest = useCallback((session: ProjectSessionContext, applies: () => boolean) => {
     const request = ++recovery.current
     void readLatestContinuityReport(session)

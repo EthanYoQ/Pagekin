@@ -198,7 +198,7 @@ export interface FinalizedRelationCandidate {
   evidence: FinalizedCharacterEvidence
   /** 建议创建时这对人物两个方向的作者行，每项是 [来源, 目标, 关系] 的 JSON，已排序。升级前写的候选没有这个字段。 */
   authorLinesAtCreation?: string[]
-  /** 读 authorLinesAtCreation 时的身份修订号。之后的采纳收据修订号更大。升级前写的候选没有这个字段。 */
+  /** 读 authorLinesAtCreation 时的身份修订号；修订号大于它的采纳收据才是抽取之后的采纳。 */
   authorRevisionAtCreation?: number
 }
 export interface PendingFinalizedRelationCandidate extends FinalizedRelationCandidate {

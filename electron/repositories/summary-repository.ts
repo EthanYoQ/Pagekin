@@ -176,7 +176,6 @@ function parseCharacterStateCandidates(value: string): FinalizedCharacterStateCa
   }
 }
 
-/** 采纳关系建议的收据记下这一对的作者行在采纳前后的样子，较晚章的建议据此判断作者行的变化是不是采纳带来的。 */
 type StoredCharacterStateDecision = Omit<FinalizedCharacterStateDecisionReceipt, 'idempotent'> & { authorLinesBefore?: string[]; authorLinesAfter?: string[] }
 const isAuthorLines = (value: unknown): value is string[] => Array.isArray(value) && value.every(line => typeof line === 'string')
 interface CharacterStateCandidateStore {
@@ -477,7 +476,7 @@ function mergeRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSo
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
 
-/** 角色那步先于要点提交时，快照还不存在，待确认项补在这里。按写入顺序合并，后到覆盖先到才与要点先到时一致。 */
+/** 角色那步先于要点提交时，待确认项还没有快照，在此补建；按写入顺序合并，结果须与要点先到时一致。 */
 function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity): void {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_continuity_events'").get()) return
   const writeOrder = new Map((db.prepare('SELECT event_id FROM character_continuity_events WHERE draft_id=? ORDER BY rowid').pluck().all(source.draftId) as string[])
@@ -523,8 +522,8 @@ function pendingRelationCandidate(db: BetterSqlite3.Database, candidate: Finaliz
 }
 
 /**
- * 作者行从建议快照变到现在，只经过较早章建议在抽取之后的采纳时不算作者后改：沿这些采纳收据从现在倒推，能回到快照才算。
- * 升级前的候选没有快照修订号，分不出采纳先后，所有较早章的采纳都算。
+ * 作者行与建议快照不同时，只有差异全由「抽取之后、较早章建议的采纳」造成才不算作者后改：沿这些采纳收据从现在倒推，能回到快照才算。
+ * 升级前的候选没有快照修订号，分不出采纳先后，较早章的采纳一律计入。
  */
 function authorLinesExplained(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate, current: string[]): boolean {
   const snapshot = candidate.authorLinesAtCreation!, floor = candidate.authorRevisionAtCreation
