@@ -13,7 +13,7 @@ import { useEditorStore } from '../../../../stores/editor-store'
 import { useProjectStore } from '../../../../stores/project-store'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import { GenerationHarnessError, type CompletionPort } from '../../../generation/generation-harness'
-import { fakeRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { fakeModelExecutionLeaseId, fakeRuntimeDependencies } from './workflow-generation-runtime.fixture'
 import { clearProjectCustomPrompts, getBuiltinPromptTemplate } from '../../../prompt-templates'
 import { RefineDraftCommand as RuntimeRefineDraftCommand } from '../refine-draft.command'
 import { RefineFromReviewCommand as RuntimeRefineFromReviewCommand } from '../refine-from-review.command'
@@ -816,6 +816,8 @@ describe('RefineFromReviewCommand bounded visible completion', () => {
       CONFIRMATION_REVIEW_ID,
     )
     expect(createRuntime.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ modelId: 'grok-selected-model' }))
+    expect(completeWithLease.mock.calls.map(([request]) => request.modelExecutionLeaseId))
+      .toEqual([fakeModelExecutionLeaseId('grok-selected-model')])
     const prompt = completeWithLease.mock.calls[0]?.[0].messages.map(message => message.content).join('\n') ?? ''
     expect(prompt).toContain('只修复这个已确认的问题。')
     expect(prompt).toContain('保留开头的悬念。')

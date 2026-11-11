@@ -45,6 +45,10 @@ const DEFAULT_CAPABILITY_EVIDENCE: ModelExecutionLeaseReceipt['capabilityEvidenc
   usage: null,
 }
 
+export function fakeModelExecutionLeaseId(modelId: string): string {
+  return `test-workflow-lease-${modelId}`
+}
+
 export function fakeRuntimeDependencies(
   complete: CompletionPort['complete'],
   capabilityEvidence: ModelExecutionLeaseReceipt['capabilityEvidence'] = DEFAULT_CAPABILITY_EVIDENCE,
@@ -64,7 +68,7 @@ export function fakeRuntimeDependencies(
               baseUrl: '',
               maxTokens: capabilityEvidence.maxOutputTokens,
             },
-            modelExecutionLeaseId: `test-workflow-lease-${frozenModelId}`,
+            modelExecutionLeaseId: fakeModelExecutionLeaseId(frozenModelId),
             endpointFingerprint: 'b'.repeat(64),
             resolvedCapabilities: { ...capabilityEvidence, source: { ...capabilityEvidence.source } },
           }),
