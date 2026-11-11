@@ -138,7 +138,8 @@ export function parsePlotOutlinePurpose(purpose: string): { chapterNumber: numbe
 const DIGITS: Readonly<Record<string, number>> = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
 const UNITS: Readonly<Record<string, number>> = { 十: 10, 百: 100, 千: 1000 }
 const NUMBER = '[0-9零〇一二两三四五六七八九十百千]+'
-const BODY_NUMERALS = '0-9０-９零〇一二两三四五六七八九十百千万廿卅卌壹贰叁肆伍陆柒捌玖拾佰仟'
+const BODY_NUMBER = '[0-9０-９零〇一二两三四五六七八九十百千万廿卅卌壹贰叁肆伍陆柒捌玖拾佰仟]+'
+const EXTRA_CHAPTER_LINE = new RegExp(`^[\\t ]*(?:#{1,6}[\\t ]+|(?:[-*+][\\t ]+)?(?:第[^\\S\\r\\n]*${BODY_NUMBER}(?:[^\\S\\r\\n]*(?:以及|[、/／和及至～–—-])[^\\S\\r\\n]*(?:第[^\\S\\r\\n]*)?${BODY_NUMBER})*[^\\S\\r\\n]*章|Chapters?\\b))`, 'imu')
 function chapterNumber(token: string): number {
   if (/^\d+$/u.test(token)) return Number(token)
   let result = 0, digit = 0
@@ -163,9 +164,7 @@ export function validPlotOutlineEntry(text: string, chapter: number): boolean {
   const heading = entries[0]
   if (entries.length !== 1 || !heading || heading.grouped || heading.from !== chapter || heading.to !== chapter
     || text.slice(0, heading.index).trim() || !text.slice(heading.end).trim()) return false
-  const body = text.slice(heading.end)
-  const number = `[${BODY_NUMERALS}]+`, joiner = `[^\\s章第${BODY_NUMERALS}]{1,2}`
-  return !new RegExp(`^[\\t ]*(?:#{1,6}[\\t ]+|(?:[-*+][\\t ]+)?(?:第[\\t ]*${number}(?:[\\t ]*${joiner}[\\t ]*(?:第[\\t ]*)?${number})*[\\t ]*章|Chapters?\\b))`, 'imu').test(body)
+  return !EXTRA_CHAPTER_LINE.test(text.slice(heading.end))
 }
 
 export function derivePlotOutlineCursor(range: PlotOutlineRange, acceptedCount: number, attempts: readonly PlotOutlineAttempt[]): PlotOutlineCursor {
