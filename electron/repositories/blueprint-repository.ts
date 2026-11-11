@@ -9,12 +9,9 @@ import type { BlueprintForPreflight } from '../../src/shared/consistency-preflig
 import { getProjectDb, getCurrentProjectPath } from '../database'
 import { readPortableRuntimeFreeze } from '../services/portable-runtime-freeze'
 import { ensureBaselineBlueprintTables } from '../migrations/baseline-blueprint-schema'
-import { CharacterRosterRepository } from './character-roster-repository'
-import { hasCharacterIdentitySchema } from './character-repository'
 import { findCharacterProposalEvidence } from '../services/character-proposal-service'
 import { proveCharacterProposal } from '../services/generation-character-proposal-proof'
 import { GenerationRunRepository } from './generation-run-repository'
-import { blueprintCharacterSyncFactError } from '../../src/shared/blueprint-character-sync-evidence'
 import type { BlueprintNewCharacterCandidate } from '../../src/shared/blueprint-semantic-contract'
 
 /** 蓝图行类型（DB 蛇形命名） */
@@ -138,15 +135,6 @@ interface BlueprintCharacterSyncOperationRow {
     updated_at: string
     completed_at: string | null
 }
-
-interface CharacterRosterOperationEvidenceRow {
-    operation_id: string
-    payload_hash: string
-    committed_revision: number
-    projection_hash: string
-}
-
-const SHA256_HEX = /^[a-f0-9]{64}$/u
 
 function parseCharacters(raw: string | null): string[] {
     if (raw === null) return []
@@ -370,54 +358,9 @@ function authoritativeCharacterSyncCompletionReceipt(
     db: NonNullable<ReturnType<typeof getProjectDb>>,
     operation: BlueprintCharacterSyncOperation,
 ): BlueprintCharacterSyncCompletionReceipt {
-    if (hasCharacterIdentitySchema(db)) {
-        const proposalReceipt = findCharacterProposalEvidence(db, { kind: 'directory', operationId: operation.operationId },
-          (projectId, source) => proveCharacterProposal(db, new GenerationRunRepository(() => db), projectId, source, false, () => {}))
-        return { blueprintCommitOperationId: operation.blueprintCommitOperationId, operationId: operation.operationId, status: 'proposal-staged', proposalReceipt }
-    }
-    const roster = CharacterRosterRepository.read()
-    if (roster.status !== 'ready' && roster.status !== 'empty') {
-        throw new Error('BLUEPRINT_CHARACTER_SYNC_ROSTER_NOT_READY')
-    }
-    const factError = blueprintCharacterSyncFactError(operation.characterSyncInput, roster.entries)
-    if (factError) throw new Error('BLUEPRINT_CHARACTER_SYNC_FACTS_CHANGED')
-
-    const rosterOperation = db.prepare(`
-      SELECT operation_id, payload_hash, committed_revision, projection_hash
-      FROM character_roster_operations
-      WHERE operation_id = ?
-    `).get(operation.operationId) as CharacterRosterOperationEvidenceRow | undefined
-    if (!rosterOperation) {
-        return {
-            blueprintCommitOperationId: operation.blueprintCommitOperationId,
-            operationId: operation.operationId,
-            status: 'already-satisfied',
-        }
-    }
-    if (
-        rosterOperation.operation_id !== operation.operationId
-        || rosterOperation.committed_revision < 1
-        || rosterOperation.committed_revision > roster.revision
-        || !SHA256_HEX.test(rosterOperation.payload_hash)
-        || !SHA256_HEX.test(rosterOperation.projection_hash)
-        || (
-            rosterOperation.committed_revision === roster.revision
-            && rosterOperation.projection_hash !== roster.projectionHash
-        )
-    ) {
-        throw new Error('BLUEPRINT_CHARACTER_SYNC_EVIDENCE_MISMATCH')
-    }
-    return {
-        blueprintCommitOperationId: operation.blueprintCommitOperationId,
-        operationId: operation.operationId,
-        status: 'committed',
-        rosterReceipt: {
-            operationId: rosterOperation.operation_id,
-            payloadHash: rosterOperation.payload_hash,
-            revision: rosterOperation.committed_revision,
-            idempotent: false,
-        },
-    }
+    const proposalReceipt = findCharacterProposalEvidence(db, { kind: 'directory', operationId: operation.operationId },
+      (projectId, source) => proveCharacterProposal(db, new GenerationRunRepository(() => db), projectId, source, false, () => {}))
+    return { blueprintCommitOperationId: operation.blueprintCommitOperationId, operationId: operation.operationId, status: 'proposal-staged', proposalReceipt }
 }
 
 function assertAuthoritativeCharacterSyncCompletion(

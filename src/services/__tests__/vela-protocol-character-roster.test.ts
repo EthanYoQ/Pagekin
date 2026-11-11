@@ -69,7 +69,6 @@ describe('structured character roster static contract', () => {
     const controller = source('electron/controllers/db-controller.ts')
     const projectCore = source('electron/repositories/project-core-repository.ts')
     const projectClear = source('electron/repositories/project-clear-repository.ts')
-    const roster = source('electron/repositories/character-roster-repository.ts')
     const workflow = source('src/services/workflows/architecture-workflow.ts')
     const architectureSection = source('src/components/stage/architecture/ArchitectureSection.tsx')
     const worldBuilding = source('src/components/editor/use-architecture-overview.ts')
@@ -91,9 +90,6 @@ describe('structured character roster static contract', () => {
     // 清空创作字段经作者退休路径删除角色卡，不直接写 roster 表或 characters_arch 投影。
     expect(projectClear).not.toContain('characters_arch')
     expect(projectClear).not.toContain('DELETE FROM character')
-    // The ID projection and the guarded pre-M02 writer remain in the same repository.
-    expect(roster.match(/SET characters_arch\s*=/g)).toHaveLength(2)
-    expect(roster).toContain("if (hasCharacterIdentitySchema(db)) throw new Error('CHARACTER_ID_WRITE_REQUIRED')")
     expect(workflow).not.toContain('runArchCharacterExtract')
     expect(workflow).not.toContain('createCharacterExtractSteps')
     expect(workflow).not.toContain('runPostProcessPipeline')

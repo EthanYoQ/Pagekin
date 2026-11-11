@@ -10,7 +10,6 @@ import { IMPORT_FILL_FIELDS, planImportFill } from '../../src/shared/import-fill
 import { getProjectDb, getCurrentProjectPath } from '../database'
 import { CharacterRosterRepository } from './character-roster-repository'
 import { ProjectCoreRepository } from './project-core-repository'
-import { hasCharacterIdentitySchema } from './character-repository'
 import { CharacterProposalService, findCharacterProposalEvidence } from '../services/character-proposal-service'
 import { proveCharacterProposal } from '../services/generation-character-proposal-proof'
 import { GenerationRunRepository, textHash } from './generation-run-repository'
@@ -184,47 +183,24 @@ export class ImportGlobalFactsRepository {
         }
       }
 
-      // 补空模式不直接写角色名单：作者已有的角色由作者自己在提议里挑。
-      if (mode === 'fill-empty' || hasCharacterIdentitySchema(db)) {
-        const revision = db.prepare("SELECT revision FROM character_roster_meta WHERE id='main'").pluck().get()
-        if (revision !== request.expectedRosterRevision) throw new Error('CHARACTER_ROSTER_REVISION_STALE')
-        const projectPath = getCurrentProjectPath()
-        if (!projectPath) throw new Error('IMPORT_GLOBAL_FACTS_PROJECT_IDENTITY_MISSING')
-        const project = projectAccess.probeExistingProject(projectPath)
-        if (project.kind !== 'manifest') throw new Error('IMPORT_GLOBAL_FACTS_PROJECT_IDENTITY_MISSING')
-        const source = { kind: 'import' as const, operationId: request.operationId }
-        const characterProposal = { proposalBatchId: `cpb:${textHash(JSON.stringify([project.projectId, source]))}`,
-          sourceHash: textHash(JSON.stringify([payloadHash, request.characterEntries])) }
-        const fill = mode === 'fill-empty' ? planImportFill(CORE_FILL_FIELDS, coreSnapshot(), request.core) : null
-        ProjectCoreRepository.update(fill ? fill.patch : request.core)
-        const receipt: ImportGlobalFactsReceipt = { operationId: request.operationId, payloadHash, idempotent: false,
-          core: coreSnapshot(), ...(fill ? { mode: 'fill-empty' as const, suggestions: fill.suggestions } : {}),
-          characterProposal, proposalSource: request }
-        db.prepare('INSERT INTO import_global_fact_operations(operation_id,payload_hash,receipt_json) VALUES(?,?,?)').run(request.operationId, payloadHash, JSON.stringify(receipt))
-        const service = new CharacterProposalService(db, project.projectId, candidate => proveCharacterProposal(db, new GenerationRunRepository(() => db), project.projectId, candidate, false, () => {}))
-        service.stage(source)
-        if (JSON.stringify(service.evidence(characterProposal.proposalBatchId)) !== JSON.stringify(characterProposal)) throw new Error('IMPORT_GLOBAL_FACTS_READ_BACK_FAILED')
-        return receipt
-      }
-      ProjectCoreRepository.update(request.core)
-      const roster = CharacterRosterRepository.commit({
-        operationId: `${request.operationId}:roster`,
-        expectedRevision: request.expectedRosterRevision,
-        schemaVersion: 1,
-        intent: 'novel_import',
-        entries: request.characterEntries,
-      })
-      const receipt: ImportGlobalFactsReceipt = {
-        operationId: request.operationId,
-        payloadHash,
-        idempotent: false,
-        core: coreSnapshot(),
-        roster,
-      }
-      db.prepare(`
-        INSERT INTO import_global_fact_operations (operation_id, payload_hash, receipt_json)
-        VALUES (?, ?, ?)
-      `).run(request.operationId, payloadHash, JSON.stringify(receipt))
+      const revision = db.prepare("SELECT revision FROM character_roster_meta WHERE id='main'").pluck().get()
+      if (revision !== request.expectedRosterRevision) throw new Error('CHARACTER_ROSTER_REVISION_STALE')
+      const projectPath = getCurrentProjectPath()
+      if (!projectPath) throw new Error('IMPORT_GLOBAL_FACTS_PROJECT_IDENTITY_MISSING')
+      const project = projectAccess.probeExistingProject(projectPath)
+      if (project.kind !== 'manifest') throw new Error('IMPORT_GLOBAL_FACTS_PROJECT_IDENTITY_MISSING')
+      const source = { kind: 'import' as const, operationId: request.operationId }
+      const characterProposal = { proposalBatchId: `cpb:${textHash(JSON.stringify([project.projectId, source]))}`,
+        sourceHash: textHash(JSON.stringify([payloadHash, request.characterEntries])) }
+      const fill = mode === 'fill-empty' ? planImportFill(CORE_FILL_FIELDS, coreSnapshot(), request.core) : null
+      ProjectCoreRepository.update(fill ? fill.patch : request.core)
+      const receipt: ImportGlobalFactsReceipt = { operationId: request.operationId, payloadHash, idempotent: false,
+        core: coreSnapshot(), ...(fill ? { mode: 'fill-empty' as const, suggestions: fill.suggestions } : {}),
+        characterProposal, proposalSource: request }
+      db.prepare('INSERT INTO import_global_fact_operations(operation_id,payload_hash,receipt_json) VALUES(?,?,?)').run(request.operationId, payloadHash, JSON.stringify(receipt))
+      const service = new CharacterProposalService(db, project.projectId, candidate => proveCharacterProposal(db, new GenerationRunRepository(() => db), project.projectId, candidate, false, () => {}))
+      service.stage(source)
+      if (JSON.stringify(service.evidence(characterProposal.proposalBatchId)) !== JSON.stringify(characterProposal)) throw new Error('IMPORT_GLOBAL_FACTS_READ_BACK_FAILED')
       return receipt
     })()
   }

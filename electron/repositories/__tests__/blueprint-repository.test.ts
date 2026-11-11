@@ -4,8 +4,6 @@ import type BetterSqlite3 from 'better-sqlite3'
 
 import { getProjectDb } from '../../database'
 import { BlueprintRepository, type BlueprintData } from '../blueprint-repository'
-import { CharacterRosterRepository } from '../character-roster-repository'
-import type { CharacterRosterEntry } from '../../../src/shared/character-roster'
 import { parseBlueprintSemanticResponseText } from '../../../src/shared/blueprint-semantic-contract'
 
 vi.mock('../../database', () => ({
@@ -26,26 +24,6 @@ const blueprint: BlueprintData = {
   userGuidance: '',
   notes: '',
   notesUpdatedAt: '',
-}
-
-function rosterEntry(
-  name: string,
-  relationships: CharacterRosterEntry['relationships'] = [],
-): CharacterRosterEntry {
-  return {
-    name,
-    role: 'supporting',
-    gender: '',
-    age: '',
-    appearance: '',
-    personality: '',
-    background: '',
-    abilities: '',
-    motivation: '',
-    relationships,
-    arc: '',
-    notes: '',
-  }
 }
 
 function blueprintFor(chapterNumber: number): BlueprintData {
@@ -536,7 +514,7 @@ describe('BlueprintRepository range commit', () => {
     }
   })
 
-  it('persists a pending character-sync operation across restart and marks it completed durably', () => {
+  it('persists a pending character-sync operation across restart', () => {
     let db = createBlueprintDb()
     vi.mocked(getProjectDb).mockReturnValue(db)
 
@@ -569,146 +547,8 @@ describe('BlueprintRepository range commit', () => {
           characterSyncInput: committed.characterSyncInput,
         }),
       ])
-
-      CharacterRosterRepository.commit({
-        operationId: committed.characterSyncOperation.operationId,
-        expectedRevision: 0,
-        schemaVersion: 1,
-        intent: 'blueprint_sync',
-        entries: [
-          rosterEntry('主角', [{ target: '周砚', relation: '同盟' }]),
-          rosterEntry('周砚', [{ target: '主角', relation: '同盟' }]),
-        ],
-      })
-
-      const completed = BlueprintRepository.completeCharacterSyncOperation(
-        committed.characterSyncOperation.operationId,
-      )
-      expect(completed).toMatchObject({
-        status: 'completed',
-        completionReceipt: { status: 'committed' },
-      })
-      const secondRestartImage = db.serialize()
-      db.close()
-
-      db = createBlueprintDb(secondRestartImage)
-      vi.mocked(getProjectDb).mockReturnValue(db)
-      expect(BlueprintRepository.listPendingCharacterSyncOperations()).toEqual([])
-      expect(BlueprintRepository.getCharacterSyncOperation(
-        committed.characterSyncOperation.operationId,
-      )).toMatchObject({
-        status: 'completed',
-        completionReceipt: { status: 'committed' },
-      })
     } finally {
       if (db.open) db.close()
-    }
-  })
-
-  it('closes relationship sync without creating blueprint-only character cards', () => {
-    const db = createBlueprintDb()
-    vi.mocked(getProjectDb).mockReturnValue(db)
-    try {
-      const committed = BlueprintRepository.commitRange({
-        mode: 'replace-range',
-        operationId: 'directory-needs-roster-facts',
-        startChapter: 1,
-        endChapter: 1,
-        blueprints: [{
-          ...blueprintFor(1),
-          characters: ['林岚', '周砚'],
-          relationshipHints: [{ from: '林岚', to: '周砚', relation: '同盟' }],
-        }],
-      })
-
-      expect(BlueprintRepository.completeCharacterSyncOperation(
-        committed.characterSyncOperation.operationId,
-      )).toMatchObject({
-        status: 'completed',
-        completionReceipt: { status: 'already-satisfied' },
-      })
-      expect(CharacterRosterRepository.read().entries).toEqual([])
-      expect(BlueprintRepository.listPendingCharacterSyncOperations()).toHaveLength(0)
-    } finally {
-      db.close()
-    }
-  })
-
-  it('derives a committed completion receipt from the real roster operation and rejects forged hash or revision', () => {
-    const db = createBlueprintDb()
-    vi.mocked(getProjectDb).mockReturnValue(db)
-    try {
-      const committed = BlueprintRepository.commitRange({
-        mode: 'replace-range',
-        operationId: 'directory-authoritative-receipt',
-        startChapter: 1,
-        endChapter: 1,
-        blueprints: [{ ...blueprintFor(1), characters: ['林岚'], relationshipHints: [] }],
-      })
-      const authoritativeCommit = CharacterRosterRepository.commit({
-        operationId: committed.characterSyncOperation.operationId,
-        expectedRevision: 0,
-        schemaVersion: 1,
-        intent: 'blueprint_sync',
-        entries: [rosterEntry('林岚')],
-      })
-      const authoritativeRoster = authoritativeCommit.snapshot
-
-      const restoreEvidence = () => db.prepare(`
-        UPDATE character_roster_operations
-        SET payload_hash = ?, committed_revision = ?, projection_hash = ?
-        WHERE operation_id = ?
-      `).run(
-        authoritativeCommit.payloadHash,
-        authoritativeCommit.revision,
-        authoritativeCommit.snapshot.projectionHash,
-        committed.characterSyncOperation.operationId,
-      )
-      db.prepare(`
-        UPDATE character_roster_operations SET payload_hash = 'forged'
-        WHERE operation_id = ?
-      `).run(committed.characterSyncOperation.operationId)
-      expect(() => BlueprintRepository.completeCharacterSyncOperation(
-        committed.characterSyncOperation.operationId,
-      )).toThrow('BLUEPRINT_CHARACTER_SYNC_EVIDENCE_MISMATCH')
-      restoreEvidence()
-      db.prepare(`
-        UPDATE character_roster_operations SET committed_revision = 999
-        WHERE operation_id = ?
-      `).run(committed.characterSyncOperation.operationId)
-      expect(() => BlueprintRepository.completeCharacterSyncOperation(
-        committed.characterSyncOperation.operationId,
-      )).toThrow('BLUEPRINT_CHARACTER_SYNC_EVIDENCE_MISMATCH')
-      restoreEvidence()
-      db.prepare(`
-        UPDATE character_roster_operations SET projection_hash = 'forged'
-        WHERE operation_id = ?
-      `).run(committed.characterSyncOperation.operationId)
-      expect(() => BlueprintRepository.completeCharacterSyncOperation(
-        committed.characterSyncOperation.operationId,
-      )).toThrow('BLUEPRINT_CHARACTER_SYNC_EVIDENCE_MISMATCH')
-      restoreEvidence()
-
-      const completed = BlueprintRepository.completeCharacterSyncOperation(
-        committed.characterSyncOperation.operationId,
-      )
-      expect(completed.completionReceipt).toEqual({
-        blueprintCommitOperationId: committed.operationId,
-        operationId: committed.characterSyncOperation.operationId,
-        status: 'committed',
-        rosterReceipt: {
-          operationId: committed.characterSyncOperation.operationId,
-          payloadHash: authoritativeCommit.payloadHash,
-          revision: authoritativeRoster.revision,
-          idempotent: false,
-        },
-      })
-
-      expect(BlueprintRepository.completeCharacterSyncOperation(
-        committed.characterSyncOperation.operationId,
-      )).toEqual(completed)
-    } finally {
-      db.close()
     }
   })
 
@@ -718,46 +558,6 @@ describe('BlueprintRepository range commit', () => {
     try {
       expect(() => BlueprintRepository.completeCharacterSyncOperation('blueprint-sync-forged'))
         .toThrow('BLUEPRINT_CHARACTER_SYNC_OPERATION_MISSING')
-    } finally {
-      db.close()
-    }
-  })
-
-  it('marks an operation already satisfied only after current roster facts prove every frozen fact', () => {
-    const db = createBlueprintDb()
-    vi.mocked(getProjectDb).mockReturnValue(db)
-    try {
-      CharacterRosterRepository.commit({
-        operationId: 'prior-authoritative-roster-change',
-        expectedRevision: 0,
-        schemaVersion: 1,
-        intent: 'blueprint_sync',
-        entries: [
-          rosterEntry('林岚', [{ target: '周砚', relation: '同盟' }]),
-          rosterEntry('周砚', [{ target: '林岚', relation: '同盟' }]),
-        ],
-      })
-      const committed = BlueprintRepository.commitRange({
-        mode: 'replace-range',
-        operationId: 'directory-already-satisfied',
-        startChapter: 1,
-        endChapter: 1,
-        blueprints: [{
-          ...blueprintFor(1),
-          characters: ['林岚', '周砚'],
-          relationshipHints: [{ from: '林岚', to: '周砚', relation: '同盟' }],
-        }],
-      })
-
-      expect(BlueprintRepository.completeCharacterSyncOperation(
-        committed.characterSyncOperation.operationId,
-      )).toMatchObject({
-        status: 'completed',
-        completionReceipt: {
-          operationId: committed.characterSyncOperation.operationId,
-          status: 'already-satisfied',
-        },
-      })
     } finally {
       db.close()
     }
