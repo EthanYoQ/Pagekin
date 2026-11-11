@@ -1392,6 +1392,14 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     })
   })
   const check = () => act(async () => page.getByRole('button', { name: 'AI 检查', exact: true }).click())
+  const refreshAndRecover = async (gated = 0) => {
+    const before = calls('graph-generation:latest-continuity').length
+    await refreshBlueprints()
+    await vi.waitFor(() => {
+      expect(calls('graph-generation:latest-continuity').length).toBeGreaterThan(before)
+      expect(invoke.mock.settledResults.filter(result => result.type === 'incomplete')).toHaveLength(gated)
+    })
+  }
 
   it('点按钮发一次，结论按章显示，依据是章号和节点内容，不露 eventId', async () => {
     await renderPage(2)
@@ -1469,8 +1477,7 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
     await check()
     await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
-    await refreshBlueprints()
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await refreshAndRecover()
     await expect.element(page.getByText('被拒那次的第 2 章结论。')).not.toBeInTheDocument()
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
@@ -1490,8 +1497,7 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
     stored = original
     latest = read
-    await refreshBlueprints()
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await refreshAndRecover()
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
 
@@ -1513,9 +1519,8 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
     await check()
     await vi.waitFor(() => expect(calls('graph-generation:read')).toHaveLength(1))
-    await refreshBlueprints()
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
-    await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 50)) })
+    await refreshAndRecover(1)
+    await act(async () => release())
     await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
     await expect.element(page.getByText('被拒那次的第 2 章结论。')).not.toBeInTheDocument()
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
@@ -1538,8 +1543,7 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
     await check()
     await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
-    await refreshBlueprints()
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await refreshAndRecover()
     await expect.element(page.getByText('被拒那次的第 2 章结论。')).not.toBeInTheDocument()
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
@@ -1559,8 +1563,7 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('网络断了')).toBeVisible()
     stored = original
     latest = read
-    await refreshBlueprints()
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await refreshAndRecover()
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
 
@@ -1837,8 +1840,7 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
     stored = original
     latest = read
-    await refreshBlueprints()
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await refreshAndRecover()
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
 
