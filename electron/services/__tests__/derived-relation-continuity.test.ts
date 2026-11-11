@@ -194,6 +194,20 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(authorRows()).toEqual(['恩断义绝'])
   })
 
+  it('同一份定稿重跑把关系改回作者设定后要点再存一次：撤下的旧值不复活', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('师徒', BREAK_UP)] })
+    const before = derivedNodes().length
+    const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+    SummaryRepository.saveFinalizedContinuity({ draftId, chapterNumber: 8, chapterNotes: '第8章摘要又一版', facts: [],
+      source: context.source, projectionGeneration: context.projectionGeneration }, db())
+    expect(derivedNodes()).toHaveLength(before)
+    expect(pending()).toEqual([])
+  })
+
   it('保留原设定后要点再存一次：待确认项不回来', () => {
     openProject()
     authorRelation('师徒')
