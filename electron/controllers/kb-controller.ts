@@ -7,6 +7,9 @@ import { GlobalConfig, ModelProfile } from '../../src/shared/ipc-channels'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import { hasRequiredApiKey } from '../../src/shared/provider-presets'
 import type { EmbeddingModel } from '../../src/shared/embedding-options'
+import { resolveRerankConfig, type RerankConfig } from '../../src/shared/rerank-config'
+import { isRerankFailure } from '../../src/shared/knowledge-ranking'
+import { rankPassages, rerankRecallCount } from '../rerank'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
 import { knowledgeBaseLoader } from '../services/knowledge-base-loader'
 import { mainText } from '../i18n'
@@ -208,6 +211,29 @@ export function getEmbeddingConfig(): { protocol: 'openai' | 'gemini'; model: Em
   }
 }
 
+export function getRerankConfig(): RerankConfig {
+  const config = readJsonFile<Record<string, unknown>>(GLOBAL_CONFIG_PATH, {})
+  const models = readJsonFile<ModelProfile[]>(MODELS_CONFIG_PATH, [])
+  return resolveRerankConfig({
+    defaultRerankModelId: config.defaultRerankModelId,
+    models: Array.isArray(models) ? models : [],
+    embedding: getEmbeddingConfig()?.model ?? null,
+  })
+}
+
+async function searchRanked<Unavailable>(query: string, topK: number | undefined,
+  search: (recall: number) => Promise<Array<{ text: string; score: number; fileName: string }> | Unavailable>,
+  reportFailure = false) {
+  const limit = topK ?? 5
+  const rerank = getRerankConfig()
+  const results = await search(rerankRecallCount(rerank, limit))
+  if (!Array.isArray(results)) return results
+  const { items, ranking } = await rankPassages(query, results, rerank, limit)
+  if (!reportFailure || ranking.method === 'rerank' || !isRerankFailure(ranking.reason)) return items
+  const rerankFallback = ranking.reason
+  return items.map(item => ({ ...item, rerankFallback }))
+}
+
 function hasUsableEmbeddingConfig(
   config: ReturnType<typeof getEmbeddingConfig>,
 ): config is NonNullable<ReturnType<typeof getEmbeddingConfig>> {
@@ -405,31 +431,31 @@ export function registerKBController(
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
 
-    return knowledgeBaseLoader.run((kb) => {
+    return searchRanked(query, topK, recall => knowledgeBaseLoader.run((kb) => {
       if (embConfig) {
-        return kb.searchKnowledge(query, projectPath, embConfig.protocol, embConfig.model, topK ?? 5)
+        return kb.searchKnowledge(query, projectPath, embConfig.protocol, embConfig.model, recall)
       }
-      return kb.searchKnowledgeFTS(query, projectPath, topK ?? 5)
-    })
+      return kb.searchKnowledgeFTS(query, projectPath, recall)
+    }), true)
   })
 
   ipcMain.handle('kb:search-writing-context', async (_event, query: string, topK: number | undefined, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
 
-    return knowledgeBaseLoader.run((kb) => {
+    return searchRanked(query, topK, recall => knowledgeBaseLoader.run((kb) => {
       if (embConfig) {
         return kb.searchKnowledge(
           query,
           projectPath,
           embConfig.protocol,
           embConfig.model,
-          topK ?? 5,
+          recall,
           ['reference'],
         )
       }
-      return kb.searchKnowledgeFTS(query, projectPath, topK ?? 5, ['reference'])
-    })
+      return kb.searchKnowledgeFTS(query, projectPath, recall, ['reference'])
+    }))
   })
 
   ipcMain.handle('kb:list-documents', async (_event, expectedProjectPath: string) => {

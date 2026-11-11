@@ -28,6 +28,7 @@ import { listDocuments, readDocumentCopy } from '../../knowledge-base'
 import { exportPortableProject } from '../project-archive-service'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
 import { registerAsReopenDraft } from '../../../test/helpers/reopened-draft'
+import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const roots: string[] = []
@@ -220,8 +221,8 @@ function owned<A extends unknown[]>(body: (...args: A) => Promise<void>) {
   }
 }
 const it = Object.assign(
-  (name: string, body: () => Promise<void>) => vitestIt(name, owned(body)),
-  { each: <T>(cases: readonly T[]) => (name: string, body: (value: T) => Promise<void>) => vitestIt.each(cases)(name, owned(body)) },
+  (name: string, body: () => Promise<void>) => vitestIt(name, owned(body), WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS),
+  { each: <T>(cases: readonly T[]) => (name: string, body: (value: T) => Promise<void>) => vitestIt.each(cases)(name, owned(body), WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS) },
 )
 afterEach(async () => {
   const bodies = [...runningBodies], caseRoots = roots.splice(0)
@@ -293,6 +294,35 @@ async function markLegacyCardsReady(f: ReturnType<typeof fixture>, officialV100 
   } finally { old.close() }
   return meta
 }
+
+it('旧项目复制导入后在当前版本上，角色导入时的状态补了基线节点，豁免一条不丢', async () => {
+  const f = fixture('v110', '')
+  addLegacyCards(f)
+  const source = new Database(path.join(f.legacy, 'vela.db'))
+  try {
+    source.prepare("INSERT INTO consistency_exemptions(stable_fact_key,reason,revoked) VALUES('death:乙','假死',1),('scar:甲','旧伤',0)").run()
+  } finally { source.close() }
+  expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions })).toMatchObject({ state: 'ready' })
+  const db = new Database(path.join(f.target, '.ai-novel', 'project.db'), { readonly: true })
+  try {
+    expect(db.pragma('user_version', { simple: true })).toBe(9)
+    expect(db.prepare('SELECT stable_fact_key,chapter_number,reason,revoked FROM consistency_exemptions ORDER BY stable_fact_key').all()).toEqual([
+      { stable_fact_key: 'death:乙', chapter_number: null, reason: '假死', revoked: 1 },
+      { stable_fact_key: 'scar:甲', chapter_number: null, reason: '旧伤', revoked: 0 },
+    ])
+    const owner = db.prepare("SELECT character_id FROM characters WHERE name='乙'").pluck().get() as string
+    const target = db.prepare("SELECT character_id FROM characters WHERE name='甲'").pluck().get() as string
+    const relationship = db.prepare('SELECT relationship_id FROM character_relationships WHERE source_character_id=? AND target_character_id=?')
+      .pluck().get(owner, target) as string
+    expect(db.prepare(`SELECT event_id,subject_id,target_id,aspect,value,effective_chapter,provenance_json
+      FROM character_continuity_events ORDER BY aspect`).all()).toEqual([
+      { event_id: `legacy:state:${owner}:location`, subject_id: owner, target_id: null, aspect: 'location', value: '旧山门',
+        effective_chapter: 0, provenance_json: '{"kind":"legacy"}' },
+      { event_id: `legacy:relation:${relationship}`, subject_id: owner, target_id: target, aspect: 'relation', value: '同门',
+        effective_chapter: 0, provenance_json: '{"kind":"legacy"}' },
+    ])
+  } finally { db.close() }
+})
 
 it('v1.1 ready 旧卡在离线副本内绑定唯一 PK 关系并保持作者投影', async () => {
   const f = fixture('v110', '')
@@ -570,7 +600,7 @@ it.each(['v100', 'v110'] as const)('%s 合法空角色名单的离线完整副�
   expect(fs.readFileSync(path.join(f.target, 'outline.md'), 'utf8')).toBe('作者目录级大纲')
   expect(fs.readFileSync(path.join(f.target, '.ai-novel', 'prompts', 'author.txt'), 'utf8')).toBe('作者项目级提示词')
   expect(fs.readFileSync(path.join(f.target, '.ai-novel', 'skills', 'author.md'), 'utf8')).toBe('作者项目级 Skill 原文')
-  expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(8)
+  expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(9)
   const db = new Database(path.join(f.target, '.ai-novel', 'project.db'), { readonly: true })
   try {
     expect(db.prepare('SELECT characters_arch FROM project_core WHERE id=?').pluck().get('main')).toBe('')
@@ -688,6 +718,32 @@ it('源资料变化、未知旧资产均在发布前拒绝，旧项目保留', a
   expect(fs.existsSync(path.join(f.legacy, 'unmapped-author-notes.txt'))).toBe(true)
 })
 
+function plainFolder(files: string[]) {
+  const base = path.resolve('.runtime/.cache/novel-quality-modernization/a11-copy-import')
+  fs.mkdirSync(base, { recursive: true })
+  const root = fs.mkdtempSync(path.join(base, 'plain-')); roots.push(root)
+  const source = path.join(root, 'manuscript'), target = path.join(root, 'new')
+  fs.mkdirSync(source)
+  for (const name of files) fs.writeFileSync(path.join(source, name), `# ${name}\n\n正文\n`)
+  return { root, source, target }
+}
+
+it('只含 md 的文件夹不是旧项目：报 NOT_LEGACY_PROJECT，不归成读写失败，文件夹不动、不留半成品', async () => {
+  const f = plainFolder(['第1章.md', '第2章.md'])
+  const before = Object.fromEntries(fs.readdirSync(f.source).map(name => [name, hash(path.join(f.source, name))]))
+  expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
+    .toEqual({ state: 'blocked', code: 'LEGACY_IMPORT_NOT_LEGACY_PROJECT' })
+  expect(Object.fromEntries(fs.readdirSync(f.source).map(name => [name, hash(path.join(f.source, name))]))).toEqual(before)
+  expect(fs.readdirSync(f.root)).toEqual(['manuscript'])
+})
+
+it('所选文件夹在选择后消失仍是读写失败，不说成「不是旧项目」', async () => {
+  const f = plainFolder([])
+  fs.rmdirSync(f.source)
+  expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
+    .toEqual({ state: 'blocked', code: 'LEGACY_IMPORT_IO_FAILED' })
+})
+
 it('缺失必需旧库或目标发布前中断均不留下半成品', async () => {
   const missing = fixture('v110')
   fs.unlinkSync(path.join(missing.legacy, 'vela.db'))
@@ -753,7 +809,7 @@ it.each(['sqlite-converted', 'renamed'] as const)('%s 子进程终止后源保�
     expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
       .toMatchObject({ state: 'ready', targetRoot: f.target })
   } else {
-    expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(8)
+    expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(9)
     const access = new ProjectAccessService(preflightOptions)
     const trusted = access.adoptLegacyProject(access.probeExistingProject(f.target))
     expect(trusted.projectId).not.toBe(f.sourceProjectId)
@@ -771,6 +827,31 @@ it.each(['sqlite-converted', 'renamed'] as const)('%s 子进程终止后源保�
   for (const file of ['prompts/author.txt', 'skills/author.md'])
     expect(hash(path.join(f.target, '.ai-novel', file))).toBe(hash(path.join(f.legacy, file)))
   expect(sourceState(f)).toEqual(before)
+})
+
+it('旧项目做过原稿导入、留下多条效果收据时，副本导入成功并保留每条收据的命名空间与效果键（#607）', async () => {
+  const f = fixture('v110', ''), db = new Database(path.join(f.legacy, 'vela.db'))
+  const effects = [['global', 'done', 'global-facts', 'project-global-facts'],
+    ['style', 'done', 'writing-style', 'project-writing-style']] as const
+  try {
+    db.prepare(`INSERT INTO import_runs(id,purpose,root_run_id,effect_namespace,source_fingerprint,manifest_fingerprint,
+      locale,stage,status,total_chapters,manifest_chapter_count,resumable)
+      VALUES('old-author','author-manuscript','old-author','import:author-manuscript:old-author',?,?,'zh-CN','completed','completed',1,1,0)`)
+      .run(createHash('sha256').update('source').digest('hex'), createHash('sha256').update('manifest').digest('hex'))
+    for (const [stage, batch, key, kind] of effects) {
+      db.prepare(`INSERT INTO import_run_receipts(run_id,effect_namespace,effect_key,stage,batch_id,kind,payload_json,payload_hash,state,effect_receipt_json)
+        VALUES('old-author','import:author-manuscript:old-author',?,?,?,?,'{}',?,'committed','{}')`)
+        .run(key, stage, batch, kind, createHash('sha256').update('{}').digest('hex'))
+    }
+  } finally { db.close() }
+  const result = await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions })
+  expect(result).toMatchObject({ state: 'ready' })
+  const copy = new Database(path.join(f.target, '.ai-novel', 'project.db'), { readonly: true })
+  try {
+    expect(copy.prepare('SELECT effect_namespace,effect_key FROM import_run_receipts ORDER BY stage').all()).toEqual(effects.map(([, , key]) => ({
+      effect_namespace: 'import:author-manuscript:old-author', effect_key: key })))
+  } finally { copy.close() }
+  expect(readPortableRuntimeFreeze(f.target).isFrozen('import_runs', 'old-author')).toBe(true)
 })
 
 it('旧候选正文保留为可读冻结历史，新项目不重放', async () => {

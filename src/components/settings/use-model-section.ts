@@ -31,19 +31,21 @@ async function confirmSaveWhileGenerating(modelId: string, defaultModelId: strin
 }
 
 /**
- * 一类模型（生成或向量）的列表与编辑：按用途过滤、新增草稿、保存（该类第一个自动设为默认）、删除、设为默认。
- * 设置页的「AI 模型」与「检索模型」用它。
+ * 一类模型（生成、向量或重排）的列表与编辑：按用途过滤、新增草稿、保存（该类第一个自动设为默认）、删除、设为默认。
+ * 设置页的「AI 模型」「检索模型」及其「重排模型」分区用它。
  */
 export function useModelSection(purposes: ModelProfile['purposes']) {
   const models = useLLMStore(s => s.models)
   const defaultModelId = useLLMStore(s => s.defaultModelId)
   const defaultEmbeddingModelId = useLLMStore(s => s.defaultEmbeddingModelId)
+  const defaultRerankModelId = useLLMStore(s => s.defaultRerankModelId)
   const loaded = useLLMStore(s => s.loaded)
   const loadModels = useLLMStore(s => s.loadModels)
   const saveModel = useLLMStore(s => s.saveModel)
   const deleteModel = useLLMStore(s => s.deleteModel)
   const setDefaultModel = useLLMStore(s => s.setDefaultModel)
   const setDefaultEmbeddingModel = useLLMStore(s => s.setDefaultEmbeddingModel)
+  const setDefaultRerankModel = useLLMStore(s => s.setDefaultRerankModel)
   const [editingModel, setEditingModel] = useState<ModelProfile | null>(null)
   const [editingOriginal, setEditingOriginal] = useState('')
   const [saving, setSaving] = useState(false)
@@ -55,9 +57,11 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     m.purposes?.some((p) => purposes.includes(p as ModelProfile['purposes'][number]))
   )
   const isEmbeddingSection = purposes.includes('embedding')
-  const defaultId = isEmbeddingSection ? defaultEmbeddingModelId : defaultModelId
+  const [defaultId, setDefault] = purposes.includes('rerank') ? [defaultRerankModelId, setDefaultRerankModel] as const
+    : isEmbeddingSection ? [defaultEmbeddingModelId, setDefaultEmbeddingModel] as const
+      : [defaultModelId, setDefaultModel] as const
 
-  /** 向量模型由工厂选择完整的 SiliconFlow 默认值。 */
+  /** 向量和重排模型由工厂选择完整的 SiliconFlow 默认值。 */
   const startEditing = (model: ModelProfile) => {
     setEditingModel(model)
     setEditingOriginal(JSON.stringify(model))
@@ -68,10 +72,6 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
       purposes: [...purposes],
     }))
   }
-
-  const setDefault = (modelId: string) => isEmbeddingSection
-    ? setDefaultEmbeddingModel(modelId)
-    : setDefaultModel(modelId)
 
   const save = async () => {
     if (!editingModel) return

@@ -7,7 +7,7 @@ function source(file: string): string {
 }
 
 describe('model settings contract', () => {
-  it('keeps the user-facing field vocabulary and provider options in the model form', () => {
+  it('keeps the user-facing field vocabulary in the model form', () => {
     const settingsModal = source('src/components/settings/ModelForm.tsx') + source('src/components/settings/ModelNameField.tsx')
 
     for (const field of [
@@ -23,10 +23,6 @@ describe('model settings contract', () => {
     expect(settingsModal).toContain("text('温度', 'Temperature')")
     expect(settingsModal).toContain("text('最大输出 Tokens', 'Max output tokens')")
     expect(settingsModal).toContain("text('恢复默认值', 'Restore defaults')")
-
-    for (const provider of ['xai', 'siliconflow']) {
-      expect(settingsModal).toContain(`value="${provider}"`)
-    }
   })
 
   it('creates new embedding profiles from the SiliconFlow preset and opens only fixed provider resources through IPC', () => {

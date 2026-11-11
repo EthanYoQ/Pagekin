@@ -1,6 +1,6 @@
 // RD-7 蓝图阶段与写作此章弹层的实机场景：对应计划 RD-7 的 live lane 1～10、perf 的 blueprint-timing 与评审导览。
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import { join } from 'node:path'
 
@@ -30,6 +30,24 @@ const withKeeperInChapter3 = context => seedStageSample(context, { beforeReload:
   assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 3, title: STAGE_SAMPLE.titles[2], role: '发展',
     purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚', '守塔人'],
     userGuidance: '前半章只写钟声，不写人脸。' }, path, session)).success, true)
+} })
+
+const RELATION_PLAN = { role: '发展', purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚', '守塔人'], suspenseHook: '', userGuidance: '', notes: '', notesUpdatedAt: '',
+  relationshipHints: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
+
+/** 关系挂在守塔人名下：他不是默认选中的角色，点按钮后能看出选中确实变了。 */
+const withRelationConflict = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
+  const roster = await invoke(page, 'db:character-roster-read', path, session)
+  const heroine = roster.entries.find(entry => entry.name === '林岚')
+  assert.equal((await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision, expectedIdentityRevision: roster.identityRevision,
+    schemaVersion: 1, intent: 'manual_edit', entries: [...roster.entries, { characterId: `draft:${randomUUID()}`, name: '守塔人', role: 'supporting', gender: '', age: '', appearance: '', personality: '',
+      background: '', abilities: '', motivation: '', relationships: [{ targetCharacterId: heroine.characterId, target: '林岚', relation: '决裂' }], arc: '', notes: '' }] }, path, session)).success, true)
+  const committed = await invoke(page, 'db:blueprint-commit-range', { mode: 'replace-range', operationId: randomUUID(), startChapter: 3, endChapter: 5, blueprints: [
+    { chapterNumber: 3, title: STAGE_SAMPLE.titles[2], ...RELATION_PLAN },
+    { chapterNumber: 4, title: STAGE_SAMPLE.titles[3], ...RELATION_PLAN, relationshipHints: [] },
+    { chapterNumber: 5, title: STAGE_SAMPLE.titles[4], ...RELATION_PLAN },
+  ] }, path, session)
+  assert.equal(committed.success, true, committed.error)
 } })
 
 /**
@@ -146,6 +164,15 @@ async function rawBlueprintRow(projectPath, chapterNumber) {
 
 const chapterCard = (page, chapterNumber) => page.getByRole('region', { name: `第 ${chapterNumber} 章蓝图` })
 const nullChapterCard = page => chapterCard(page, NULL_CHAPTER)
+const RELATION_NOTICE = '第 5 章蓝图把 林岚 和 守塔人 写成「亲密同伴」，但第 3 章起两人是「决裂」。'
+const RELATION_BASIS = '依据：第 3 章 · 决裂'
+
+async function saveChapter(page, chapterNumber) {
+  await blueprint.open(page)
+  await blueprint.planItem(page, chapterNumber).click()
+  await chapterCard(page, chapterNumber).waitFor({ state: 'visible' })
+  await page.getByRole('button', { name: '保存此章' }).click()
+}
 
 async function authorFields(page, chapterNumber) {
   await blueprint.planItem(page, chapterNumber).click()
@@ -314,6 +341,58 @@ export const BLUEPRINT_SCENARIOS = {
     assert.match(await popover.getByRole('combobox').inputValue(), new RegExp(FAKE_MODEL.id))
   } },
 
+  'blueprint-relation-conflict': { model: false, shell: 'stage', setup: withRelationConflict, run: async ({ page }) => {
+    await saveChapter(page, 5)
+    await page.getByText(RELATION_NOTICE).waitFor({ state: 'visible' })
+    await page.getByText(RELATION_BASIS).waitFor({ state: 'visible' })
+    for (const name of ['这是有意安排', '全书都不再提示', '去看这个角色']) await page.getByRole('button', { name }).waitFor({ state: 'visible' })
+    await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
+  }, after: async ({ page }) => {
+    await page.getByRole('button', { name: '去看这个角色' }).click()
+    await page.getByRole('region', { name: '角色档案' }).getByRole('heading', { level: 1, name: '守塔人' }).waitFor({ state: 'visible' })
+  } },
+
+  'blueprint-relation-edited': { model: false, shell: 'stage', setup: withRelationConflict, run: async ({ page }) => {
+    await blueprint.open(page)
+    await blueprint.planItem(page, 5).click()
+    await chapterCard(page, 5).getByRole('textbox', { name: /^作者微操指导/ }).fill('这一章作者自己改过。')
+    await page.getByRole('button', { name: '保存此章' }).click()
+    await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
+    await page.waitForTimeout(500)
+    assert.equal(await page.getByText(RELATION_BASIS).count(), 0, '作者改过这一章后回执不再代表作者的安排，不提示')
+  } },
+
+  'blueprint-relation-write': { model: true, shell: 'stage', setup: withRelationConflict, run: async ({ page }) => {
+    await blueprint.open(page)
+    await blueprint.writeNext(page)
+    await blueprint.preflight(page).waitFor({ state: 'visible' })
+    await blueprint.preflight(page).getByText('第 3 章蓝图把 林岚 和 守塔人 写成「亲密同伴」，但第 3 章起两人是「决裂」。').waitFor({ state: 'visible' })
+  } },
+
+  'blueprint-death-notice': { model: false, shell: 'stage', setup: withKeeperInChapter3, run: async ({ app, page }) => {
+    await injectDeadKeeper(app)
+    await saveChapter(page, 3)
+    await page.getByText(/“守塔人”处于死亡终态/).waitFor({ state: 'visible' })
+    await page.getByText('依据：第 1 章 · 守塔人在风暴里没有再回来。').waitFor({ state: 'visible' })
+    await page.getByRole('button', { name: '这是有意安排' }).waitFor({ state: 'visible' })
+    assert.equal(await page.getByRole('button', { name: '去看这个角色' }).count(), 0, '死亡提示不带去角色的按钮')
+    await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
+  }, after: async ({ app }) => {
+    await restoreContinuity(app)
+  } },
+
+  'blueprint-relation-exempted': { model: false, shell: 'stage', setup: withRelationConflict, run: async ({ page }) => {
+    await saveChapter(page, 5)
+    await page.getByRole('button', { name: '这是有意安排' }).click()
+    await page.getByText('已记下，这一章不再提示。').waitFor({ state: 'visible' })
+    await page.getByRole('button', { name: '撤销' }).waitFor({ state: 'visible' })
+    assert.equal(await page.getByText(RELATION_BASIS).count(), 0, '豁免后这一章不再提示')
+    await page.getByRole('button', { name: '保存此章' }).click()
+    await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
+    await page.waitForTimeout(500)
+    assert.equal(await page.getByText(RELATION_BASIS).count(), 0, '再次保存也不提示：豁免已写进库')
+  } },
+
   'blueprint-preflight': { model: true, shell: 'stage', setup: withKeeperInChapter3, run: async ({ app, page, fake }) => {
     await injectDeadKeeper(app)
     await blueprint.open(page)
@@ -321,7 +400,7 @@ export const BLUEPRINT_SCENARIOS = {
     await blueprint.preflight(page).waitFor({ state: 'visible' })
     await blueprint.popover(page).getByText(/“守塔人”处于死亡终态/).waitFor({ state: 'visible' })
     assert.equal(fake.chats.length, 0, '有提醒时不开始写')
-    for (const name of ['保存安排', '仅本次忽略', '改蓝图后重检']) await blueprint.preflight(page).getByRole('button', { name }).waitFor({ state: 'visible' })
+    for (const name of ['这是有意安排', '仅本次忽略', '改蓝图后重检']) await blueprint.preflight(page).getByRole('button', { name }).waitFor({ state: 'visible' })
   }, after: async ({ app, page, fake }) => {
     await restoreContinuity(app)
     await blueprint.preflight(page).getByRole('button', { name: '仅本次忽略' }).click()
@@ -347,7 +426,7 @@ export const BLUEPRINT_SCENARIOS = {
     await blueprint.titleInput(page).fill('第二盏灯亮起')
     await stage.saveStatus(page).getByText('未保存').waitFor({ state: 'visible' })
     assert.equal(await stage.root(page).getByText('未保存', { exact: true }).count(), 1, '只有顶栏一处未保存提示')
-    await page.keyboard.press('Control+S')
+    await page.keyboard.press('ControlOrMeta+S')
     await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
     await blueprint.pageMenu(page, '重新加载蓝图')
     await blueprint.planItem(page, 6).getByText('第二盏灯亮起').waitFor({ state: 'visible' })
@@ -436,7 +515,7 @@ export const BLUEPRINT_SCENARIOS = {
     const recovery = page.getByRole('region', { name: 'Blueprint recovery' })
     await recovery.waitFor({ state: 'visible' })
     await recovery.locator('.cm-content').click()
-    await page.keyboard.press('Control+A')
+    await page.keyboard.press('ControlOrMeta+A')
     await page.keyboard.insertText('[{"chapterNumber":13,"title":"Fog"}]')
     await recovery.getByRole('button', { name: 'Save recovered blueprints' }).click()
     const alert = recovery.getByRole('alert')
@@ -458,7 +537,7 @@ export const BLUEPRINT_SCENARIOS = {
     await pause(1200)
     await blueprint.titleInput(page).fill('第二盏灯亮起')
     await pause(1200)
-    await page.keyboard.press('Control+S')
+    await page.keyboard.press('ControlOrMeta+S')
     await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
     await pause(1500)
     await blueprint.pageMenu(page, '清空全部蓝图…')

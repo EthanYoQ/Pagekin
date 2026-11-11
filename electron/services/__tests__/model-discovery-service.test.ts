@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import { ModelDiscoveryService } from '../model-discovery-service'
-import { applyModelProfileSelection } from '../../../src/shared/model-profile-draft'
+import { applyModelProfileSelection, resolveContextWindow } from '../../../src/shared/model-profile-draft'
 import { resolveGenerationParameters } from '../../llm/generation-parameter-policy'
 import { OpenAIProvider } from '../../llm/openai-provider'
 
@@ -46,6 +46,103 @@ afterEach(async () => {
 })
 
 describe('ModelDiscoveryService', () => {
+  it.each([
+    ['gemini', 'https://generativelanguage.googleapis.com', { models: [{ name: 'models/gemini-next', displayName: 'Next', inputTokenLimit: 1_048_576, outputTokenLimit: 65_536, supportedGenerationMethods: ['generateContent'] }] }, 'gemini-next', 1_048_576],
+    ['anthropic', 'https://api.anthropic.com', { data: [{ id: 'claude-next', display_name: 'Next', max_input_tokens: 200_000 }] }, 'claude-next', 200_000],
+    ['openai', 'https://example.test/v1', { data: [{ id: 'gateway-next', context_window: 128_000 }] }, 'gateway-next', 128_000],
+  ] as const)('选中 %s 协议声明了窗口的模型后写入档案，来源记服务商', async (protocol, baseUrl, payload, value, window) => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => payload })
+    const result = await new ModelDiscoveryService({ fetchImpl }).discoverModels(profile({ protocol, baseUrl }))
+    if (!result.success) throw new Error('Expected discovered models')
+    const candidate = result.models.find(model => model.value === value)!
+    const selected = applyModelProfileSelection(profile({ protocol, baseUrl }), { modelName: value }, candidate.capabilities)
+    expect(selected.capabilities?.contextWindowTokens).toBe(window)
+    expect(resolveContextWindow(selected)).toEqual({ tokens: window, source: 'endpoint' })
+  })
+
+  it('Gemini 的输出上限不随窗口写入档案', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ models: [{ name: 'models/gemini-next', displayName: 'Next', inputTokenLimit: 1_048_576, outputTokenLimit: 65_536, supportedGenerationMethods: ['generateContent'] }] }) })
+    const result = await new ModelDiscoveryService({ fetchImpl }).discoverModels(profile({ protocol: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com' }))
+    if (!result.success) throw new Error('Expected discovered models')
+    expect(result.models[0].capabilities).toEqual({ contextWindowTokens: 1_048_576 })
+  })
+
+  it('没有窗口字段的列表（硅基流动样本）不写窗口，模型照常可选', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: 'vendor/unlisted', object: 'model', created: 0, owned_by: 'vendor' }] }) })
+    const baseUrl = 'https://api.siliconflow.cn/v1'
+    const result = await new ModelDiscoveryService({ fetchImpl }).discoverModels(profile({ baseUrl }))
+    if (!result.success) throw new Error('Expected discovered models')
+    const selected = applyModelProfileSelection(profile({ baseUrl }), { modelName: 'vendor/unlisted' }, result.models[0].capabilities)
+    expect(resolveContextWindow(selected)).toEqual({ tokens: 32_768, source: 'default' })
+  })
+
+  describe('本机服务的运行窗口', () => {
+    const ollama = (overrides: Partial<ModelProfile> = {}) => profile({ provider: 'ollama', baseUrl: 'http://localhost:11434/v1', apiKey: '', modelName: 'qwen2.5', ...overrides })
+    const lmStudio = (overrides: Partial<ModelProfile> = {}) => profile({ baseUrl: 'http://127.0.0.1:1234/v1', apiKey: '', modelName: 'gemma-3', ...overrides })
+    const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body })
+    const routed = (routes: Record<string, unknown>) => vi.fn<(url: string, init?: RequestInit) => Promise<unknown>>(async url => {
+      const path = new URL(url).pathname
+      return path in routes ? json(routes[path]) : { ok: false, status: 404, json: async () => ({}) }
+    })
+    const service = (fetchImpl: unknown) => new ModelDiscoveryService({ fetchImpl: fetchImpl as typeof fetch })
+
+    it('Ollama 取 /api/ps 的运行值，不再问 /api/show', async () => {
+      const fetchImpl = routed({ '/api/ps': { models: [{ name: 'qwen2.5:latest', model: 'qwen2.5:latest', context_length: 8_192 }] } })
+      await expect(service(fetchImpl).discoverLocalContextWindow(ollama())).resolves.toBe(8_192)
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+    })
+
+    it('Ollama 没加载时看 /api/show 的 num_ctx，不把模型架构上限当窗口', async () => {
+      const fetchImpl = routed({ '/api/ps': { models: [] }, '/api/show': { parameters: 'stop "<|im_end|>"\nnum_ctx                        16384', model_info: { 'qwen2.context_length': 131_072 } } })
+      await expect(service(fetchImpl).discoverLocalContextWindow(ollama())).resolves.toBe(16_384)
+    })
+
+    it('Ollama 只有架构上限时返回空，档案按 4,096 写稿', async () => {
+      const fetchImpl = routed({ '/api/ps': { models: [] }, '/api/show': { model_info: { 'qwen2.context_length': 131_072 } } })
+      await expect(service(fetchImpl).discoverLocalContextWindow(ollama())).resolves.toBeNull()
+      expect(resolveContextWindow(applyModelProfileSelection(ollama({ modelName: '' }), { modelName: 'qwen2.5' }))).toEqual({ tokens: 4_096, source: 'default' })
+    })
+
+    it('LM Studio 取已加载实例的运行值，未加载不写窗口', async () => {
+      const loaded = routed({ '/api/v1/models': { models: [{ key: 'gemma-3', max_context_length: 262_144, loaded_instances: [{ id: 'gemma-3', config: { context_length: 4_096 } }] }] } })
+      await expect(service(loaded).discoverLocalContextWindow(lmStudio())).resolves.toBe(4_096)
+      const unloaded = routed({ '/api/v1/models': { models: [{ key: 'gemma-3', max_context_length: 262_144, loaded_instances: [] }] } })
+      await expect(service(unloaded).discoverLocalContextWindow(lmStudio())).resolves.toBeNull()
+    })
+
+    it.each([
+      ['超时', async () => { throw new DOMException('aborted', 'AbortError') }],
+      ['401', async () => ({ ok: false, status: 401, json: async () => ({}) })],
+      ['格式不对', async () => json('not-an-object')],
+      ['JSON 坏了', async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('bad') } })],
+    ])('%s 时静默返回空', async (_name, fetchImpl) => {
+      await expect(service(fetchImpl).discoverLocalContextWindow(ollama())).resolves.toBeNull()
+      await expect(service(fetchImpl).discoverLocalContextWindow(lmStudio())).resolves.toBeNull()
+    })
+
+    it.each([
+      ['Ollama', () => ollama({ baseUrl: 'http://gpu-box.lan:11434/proxy/v1', apiKey: 'local-secret' }), 'http://gpu-box.lan:11434/proxy/api/ps'],
+      ['LM Studio', () => lmStudio({ apiKey: 'local-secret' }), 'http://127.0.0.1:1234/api/v1/models'],
+    ] as const)('%s 的凭据只发往档案自己的地址，且不跟随重定向', async (_name, build, firstUrl) => {
+      const fetchImpl = routed({ '/proxy/api/ps': { models: [] }, '/proxy/api/show': {} })
+      const model = build()
+      await service(fetchImpl).discoverLocalContextWindow(model)
+      expect(fetchImpl.mock.calls[0][0]).toBe(firstUrl)
+      for (const [url, init] of fetchImpl.mock.calls) {
+        expect(new URL(url).origin).toBe(new URL(model.baseUrl).origin)
+        expect(init?.redirect).toBe('error')
+        expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer local-secret')
+      }
+    })
+
+    it('云端服务商和非 OpenAI 协议的档案不发请求', async () => {
+      const fetchImpl = routed({})
+      await expect(service(fetchImpl).discoverLocalContextWindow(profile({ baseUrl: 'https://example.test/v1' }))).resolves.toBeNull()
+      await expect(service(fetchImpl).discoverLocalContextWindow(lmStudio({ protocol: 'anthropic' }))).resolves.toBeNull()
+      expect(fetchImpl).not.toHaveBeenCalled()
+    })
+  })
+
   it('keeps explicit capacity fields but does not infer context from max_tokens', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [
       { id: 'new-model', context_length: 64000, max_output_tokens: 12000, capabilities: { reasoning: true } },
@@ -537,6 +634,23 @@ describe('ModelDiscoveryService', () => {
       expect(values(embedding)).toEqual(['BAAI/bge-m3', 'Qwen/Qwen3-Embedding-8B', 'Qwen/Qwen3.8-27B', 'deepseek-v4-flash'])
       const generation = await service.discoverModels(profile({ baseUrl: 'https://example.test/v1', purposes: ['generation'] }))
       expect(values(generation)).toEqual(['Qwen/Qwen3.8-27B', 'BAAI/bge-m3', 'deepseek-v4-flash', 'Qwen/Qwen3-Embedding-8B'])
+    })
+
+    it('重排用途把名字像 reranker 的模型排在最前', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [
+        { id: 'deepseek-v4-flash' }, { id: 'BAAI/bge-m3' }, { id: 'BAAI/bge-reranker-v2-m3' }, { id: 'Qwen/Qwen3-Reranker-8B' },
+      ] }) })
+      const result = await new ModelDiscoveryService({ fetchImpl }).discoverModels(profile({ baseUrl: 'https://example.test/v1', purposes: ['rerank'] }))
+      expect(values(result)).toEqual(['BAAI/bge-reranker-v2-m3', 'Qwen/Qwen3-Reranker-8B', 'deepseek-v4-flash', 'BAAI/bge-m3'])
+    })
+
+    it('重排档案拉列表只发往表单里的端点，只带表单里的 Key', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: 'my-reranker' }] }) })
+      await new ModelDiscoveryService({ fetchImpl }).discoverModels(profile({ baseUrl: 'https://rerank.example/v1', apiKey: 'sk-fake-rerank', purposes: ['rerank'] }))
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+      const [url, init] = fetchImpl.mock.calls[0]!
+      expect(url).toBe('https://rerank.example/v1/models')
+      expect(init).toMatchObject({ redirect: 'error', headers: { Authorization: 'Bearer sk-fake-rerank' } })
     })
 
     it('Anthropic 协议拉取官方模型列表，向量用途直接判为无合适模型', async () => {

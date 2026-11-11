@@ -424,7 +424,7 @@ describe('GenerationHarness', () => {
     expect(failure).not.toHaveProperty('receipt')
   })
 
-  it('reports a protected byte overflow before the generic context-window failure', async () => {
+  it('rejects a protected byte overflow locally and leaves a context-window overflow to the provider', async () => {
     const complete = vi.fn<CompletionPort['complete']>().mockResolvedValue({
       content: 'recovered',
       finishReason: 'stop',
@@ -478,7 +478,7 @@ describe('GenerationHarness', () => {
         limitUtf8Bytes: 99,
         contextWindowTokens: 600,
         estimatedInputTokens: 100,
-        reservedOutputTokens: 0,
+        reservedOutputTokens: 100,
         sections: [{ sectionName: 'global-guidance', utf8Bytes: 100 }],
       },
     })
@@ -492,18 +492,20 @@ describe('GenerationHarness', () => {
         limitUtf8Bytes: 200,
         sections: [{ sectionName: 'global-guidance', messageIndex: 0, finalText: oversized }],
       },
-    })).rejects.toMatchObject({
-      code: 'CONTEXT_BUDGET_EXHAUSTED',
-      message: expect.stringMatching(/^(?!.*token).*model-a.*上下文=600；估算输入=100；安全预留额度=512；输出预留额度=0；.*global-guidance=100/isu),
+    })).resolves.toMatchObject({
+      status: 'completed',
+      receipt: { budget: { attempt: 1, requestedOutputTokens: 100 } },
     })
-    expect(complete).not.toHaveBeenCalled()
+    expect(complete).toHaveBeenCalledOnce()
+    expect(complete.mock.calls[0]?.[0].messages[0]?.content).toBe(oversized)
+    expect(complete.mock.calls[0]?.[0].plan.maxOutputTokens).toBe(100)
 
     const recovered = await session.complete({
       purpose: 'after-double-overflow',
       output: 'visible-text',
       messages: [{ role: 'user', content: 'x' }],
     })
-    expect(recovered.receipt.budget).toMatchObject({ attempt: 1, cumulativeRequestedOutputTokens: 87 })
+    expect(recovered.receipt.budget).toMatchObject({ attempt: 2, cumulativeRequestedOutputTokens: 200 })
     diagnostic.mockRestore()
   })
 

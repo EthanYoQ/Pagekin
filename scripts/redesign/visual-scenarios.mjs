@@ -69,7 +69,7 @@ const SHEET_PAGES = [
   ['architecture', async page => { await stage.stageButton(page, '架构').click(); await attached(stage.root(page).locator('.arch-page:not([data-loading]):not([data-cast-loading]) .arch-section')) }],
   ['blueprint', async page => { await stage.stageButton(page, '蓝图').click(); await attached(blueprint.card(page)) }],
   ['characters', async page => {
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill('角色')
     await stage.palette(page).getByRole('option', { name: /^角色/ }).first().click()
     await stage.palette(page).waitFor({ state: 'detached' })
@@ -571,7 +571,7 @@ export const VISUAL_SCENARIOS = {
     await copy.dispatchEvent('click')
     await page.locator('.pi-toast', { hasText: '已复制安全诊断' }).waitFor({ state: 'visible' })
     // 提示栈已在时打开 Ctrl K 面板（Radix 模态），面板开着时复制失败
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).waitFor({ state: 'visible' })
     await stubClipboard(page, false)
     await copy.dispatchEvent('click')
@@ -611,7 +611,7 @@ export const VISUAL_SCENARIOS = {
   } },
 
   'rdv-run-failure': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill('角色')
     await stage.palette(page).getByRole('option', { name: /^角色/ }).first().click()
     await materials.importCharacterCards(page, '姓名：守塔人\n身份：灯塔看守，记得每一次钟声。')
@@ -685,7 +685,7 @@ export const VISUAL_SCENARIOS = {
     await stubClipboard(page, false)
     await copy.dispatchEvent('click')
     await pause()
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill('角色')
     await stage.palette(page).getByRole('option', { name: /^角色/ }).first().click()
     await materials.importCharacterCards(page, '姓名：守塔人\n身份：灯塔看守，记得每一次钟声。')

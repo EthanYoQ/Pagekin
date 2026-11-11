@@ -583,7 +583,7 @@ async function discardChanges(page) {
 }
 
 async function pickFromPalette(page, query, option) {
-  await page.keyboard.press('Control+K')
+  await page.keyboard.press('ControlOrMeta+K')
   await stage.paletteInput(page).fill(query)
   await stage.palette(page).getByRole('option', { name: option }).first().click()
 }
@@ -648,7 +648,7 @@ export const STAGE_SCENARIOS = {
   'stage-save': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
     await stage.stageButton(page, '设定').click()
     await stage.dirtySetup(page)
-    await page.keyboard.press('Control+S')
+    await page.keyboard.press('ControlOrMeta+S')
     await stage.saveStatus(page).filter({ hasText: '已保存' }).waitFor({ state: 'visible' })
   } },
   'stage-find-chapter': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
@@ -686,7 +686,7 @@ export const STAGE_SCENARIOS = {
     assert.deepEqual(overflow, { horizontal: 0, clipped: [] })
   } },
   'stage-palette': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill('灯')
     await stage.palette(page).getByRole('option', { name: /第二盏灯/ }).waitFor({ state: 'visible' })
   }, after: async ({ page }) => {
@@ -906,7 +906,7 @@ export const STAGE_SCENARIOS = {
     await stage.dirtySetup(page)
     await failProjectSaves(app, true)
     const failed = stage.setupFoot(page).getByRole('alert')
-    await page.keyboard.press('Control+S')
+    await page.keyboard.press('ControlOrMeta+S')
     await failed.filter({ hasText: SETUP_SAVE_FAILED }).waitFor({ state: 'visible' })
     await stage.setupOutline(page).focus()
     await stage.setupNext(page).click()
@@ -951,7 +951,7 @@ export const STAGE_SCENARIOS = {
       ipcMain._invokeHandlers.set('kb:clear-all', async () => ({ success: false, error: 'PROJECT_SESSION_STALE' }))
     })
     const openKnowledge = async name => {
-      await page.keyboard.press('Control+K')
+      await page.keyboard.press('ControlOrMeta+K')
       const input = page.getByRole('dialog').getByRole('combobox')
       await input.waitFor({ state: 'visible' })
       await page.keyboard.type(name)
@@ -1021,7 +1021,7 @@ export const STAGE_SCENARIOS = {
     await stage.waitForProse(page, firstLine(STAGE_SAMPLE.drafts[3].text))
 
     await stage.openSettings(page)
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill('角色')
     await stage.palette(page).getByRole('option', { name: /^角色/ }).click()
     await stage.settingsNav(page).waitFor({ state: 'detached' })
@@ -1063,13 +1063,13 @@ export const STAGE_SCENARIOS = {
       ['命令面板打开作品', () => pickFromPalette(page, STAGE_SAMPLE.name, new RegExp(`打开《${STAGE_SAMPLE.name}》`)), null],
       ['Ctrl O 打开作品', async () => {
         await stubOpenDialog(app, context.samplePath)
-        await page.keyboard.press('Control+O')
+        await page.keyboard.press('ControlOrMeta+O')
       }, null],
       ['命令面板打开文件夹', async () => {
         await stubOpenDialog(app, context.samplePath)
         await pickFromPalette(page, '打开作品', /^打开作品$/)
       }, null],
-      ['Ctrl N 新建作品', () => page.keyboard.press('Control+N'), () => closeDialog(page, '新建作品')],
+      ['Ctrl N 新建作品', () => page.keyboard.press('ControlOrMeta+N'), () => closeDialog(page, '新建作品')],
       ['命令面板新建作品', () => pickFromPalette(page, '新建作品', /^新建作品$/), () => closeDialog(page, '新建作品')],
       ['命令面板拆解与仿写', () => pickFromPalette(page, '小说拆解与仿写', /^小说拆解与仿写$/), () => closeDialog(page, /小说拆解/)],
     ]
@@ -1093,7 +1093,7 @@ export const STAGE_SCENARIOS = {
     await page.getByRole('heading', { name: '运行', exact: true }).waitFor({ state: 'visible' })
     await stage.root(page).getByRole('button', { expanded: true }).filter({ hasText: '%' }).waitFor({ state: 'visible' })
   }, after: async ({ page, fake }) => {
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).waitFor({ state: 'visible' })
     await page.keyboard.press('Escape')
     await stage.palette(page).waitFor({ state: 'hidden' })
@@ -1139,11 +1139,11 @@ export const STAGE_SCENARIOS = {
     await exportDialog.waitFor({ state: 'visible' })
     const discard = page.getByRole('dialog', { name: '放弃未保存的修改？' })
     const observed = {}
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await page.waitForTimeout(300)
     observed.paletteUnderDialog = await stage.palette(page).count() > 0
     if (observed.paletteUnderDialog) await page.keyboard.press('Escape')
-    await page.keyboard.press('Control+W')
+    await page.keyboard.press('ControlOrMeta+W')
     await page.waitForTimeout(300)
     observed.discardUnderDialog = await discard.count() > 0
     if (observed.discardUnderDialog) await page.keyboard.press('Escape')
@@ -1169,11 +1169,11 @@ export const STAGE_SCENARIOS = {
       window.addEventListener('keydown', event => { if (event.code === 'KeyW') window.__driveCloseKey.push(event.defaultPrevented) })
     })
     const pressCloseKey = async () => {
-      await page.keyboard.press('Control+W')
+      await page.keyboard.press('ControlOrMeta+W')
       return page.evaluate(() => window.__driveCloseKey.at(-1))
     }
     const observed = { library: await pressCloseKey() }
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).waitFor({ state: 'visible' })
     observed.palette = await pressCloseKey()
     observed.alive = !page.isClosed() && app.windows().length > 0
@@ -1226,7 +1226,7 @@ export const STAGE_SCENARIOS = {
     await stage.focusToggle(page).click()
     await stage.spine(page).waitFor({ state: 'detached' })
     await stage.prose(page).click()
-    await page.keyboard.press('Control+F')
+    await page.keyboard.press('ControlOrMeta+F')
     await stage.proseSearch(page).waitFor({ state: 'visible' })
     await page.keyboard.press('Escape')
     await page.waitForTimeout(300)
@@ -1293,7 +1293,7 @@ export const STAGE_SCENARIOS = {
     await stage.stageButton(page, '正文').click()
     await stage.waitForProse(page, firstLine(STAGE_SAMPLE.drafts[4].text))
     await pause(1500)
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).waitFor({ state: 'visible' })
     await pause(700)
     await stage.paletteInput(page).pressSequentially('雾钟', { delay: 220 })
@@ -1301,7 +1301,7 @@ export const STAGE_SCENARIOS = {
     await page.keyboard.press('Enter')
     await stage.waitForProse(page, firstLine(STAGE_SAMPLE.drafts[3].text))
     await pause(1500)
-    await page.keyboard.press('Control+P')
+    await page.keyboard.press('ControlOrMeta+P')
     await stage.paletteInput(page).waitFor({ state: 'visible' })
     await pause(500)
     await stage.paletteInput(page).pressSequentially('1', { delay: 200 })

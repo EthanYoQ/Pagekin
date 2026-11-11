@@ -778,7 +778,7 @@ describe('RunFinalizePostProcessCommand character-state persistence', () => {
       contentHash: createHash('sha256').update('Chapter 3 finalized content').digest('hex') }))()
     const contextThree = SummaryRepository.readFinalizedCharacterContext(8, { projectId: 'test', epoch: 'lease-test' })
     SummaryRepository.commitFinalizedCharacterStates(contextThree, { updates: [{ characterId, currentState: { location: '新港', recentEvents: '第三章已经交出黄铜钥匙' },
-      evidence: { start: 0, end: contextThree.content.length, text: contextThree.content } }], unresolved: [] })
+      evidence: { start: 0, end: contextThree.content.length, text: contextThree.content } }], unresolved: [], relations: [] })
     const chapterThree = { snapshot: CharacterRosterRepository.read() }
     cardResponse = JSON.stringify({
       updates: [{
