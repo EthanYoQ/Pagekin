@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
-import { page, userEvent } from 'vitest/browser'
+import { userEvent } from 'vitest/browser'
 import { createRoot, type Root } from 'react-dom/client'
 import type { StoreApi } from 'zustand'
 
@@ -20,6 +20,7 @@ import { CHARACTER_DRAFT_TAB } from '../../../../stores/project-editor-draft-led
 import { useProjectStore } from '../../../../stores/project-store'
 import { useWorkflowStore } from '../../../../stores/workflow-store'
 import StageCharacters from '../StageCharacters'
+import { resizeViewport } from '../../../ui/__tests__/viewport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -86,7 +87,7 @@ async function render() {
 
 beforeEach(async () => {
   // 宿主 1200 宽；视口比它窄时焦点移到屏外按钮会滚动页面，滚动事件晚一帧到达时会关掉刚打开的菜单。
-  await page.viewport(1280, 960)
+  await resizeViewport(1280, 960)
   pendingStates = []
   pendingDecisions = 0
   timeline = { nodes: [], chapterRange: { next: 1, last: 1 } }
