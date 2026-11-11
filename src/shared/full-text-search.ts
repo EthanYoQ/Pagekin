@@ -24,8 +24,8 @@ function occurrences(text: string, term: string): number {
 }
 
 /**
- * BM25 排序。按词区分大小写计数，与 LIKE 筛行一致，所以没命中的行不影响统计：
- * 传入全部段落和只传 LIKE 筛出的行，排序相同。同分按正文排，不随导入时的随机 id 变。
+ * 区分大小写计数，与 LIKE 筛行一致，没命中的行不进统计，所以传全部段落和只传筛出的行排序相同。
+ * 同分按正文排，免得结果随导入时的随机 id 变。
  */
 export function rankFullText<T extends { text: string }>(rows: readonly T[], terms: readonly string[], totalRows: number): { row: T; score: number }[] {
   const counted = rows.map(row => ({ row, length: Array.from(row.text).length, counts: terms.map(term => occurrences(row.text, term)) }))
