@@ -1207,4 +1207,33 @@ describe('较早章建议被采纳后，较晚章的建议是否还有效', () =
     expect(authorRows()).toEqual(['反目'])
     expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
   })
+
+  it('第 5 章采纳后作者手改回原值，第 8 章抽出建议后作者又手改：第 8 章的建议作废', () => {
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    decide('accept')
+    reviseAuthorRelation('师徒')
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+
+    reviseAuthorRelation('反目')
+    expect(cards()).toEqual([])
+  })
+
+  it('第 8 章先定稿，第 5 章采纳、作者手改回原值之后才抽取，作者再手改：第 8 章的建议作废', () => {
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    const eight = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    decide('accept')
+    reviseAuthorRelation('师徒')
+    commitModelOutput(eight, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+
+    reviseAuthorRelation('反目')
+    expect(cards()).toEqual([])
+  })
 })
