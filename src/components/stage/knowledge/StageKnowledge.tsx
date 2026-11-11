@@ -274,6 +274,9 @@ export default function StageKnowledge({ tabId }: { tabId: string }) {
           {searchResults.length === 0 && kb.searchedQuery && !kb.searching && (
             <p className="stage-kb-help">{text('没有找到相关的资料。', 'Nothing related was found.')}</p>
           )}
+          {searchResults[0]?.rerankFallback && (
+            <p className="stage-kb-help" role="status">{text('这次没能重排，结果按原顺序显示。', 'Reranking was unavailable this time, so results are in their original order.')}</p>
+          )}
           <ol className="stage-kb-results" aria-label={text('查找结果', 'Search results')}>
             {[...searchResults].reverse().map((result, position) => (
               <li key={position} className="stage-kb-result">

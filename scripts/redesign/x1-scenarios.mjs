@@ -117,7 +117,7 @@ async function dirtySkillsPage(page) {
 }
 
 async function paletteAction(page, query) {
-  await page.keyboard.press('Control+K')
+  await page.keyboard.press('ControlOrMeta+K')
   await stage.paletteInput(page).waitFor({ state: 'visible' })
   await stage.paletteInput(page).fill(query)
   await page.keyboard.press('Enter')
@@ -264,14 +264,14 @@ export const X1_SCENARIOS = {
     await stage.dirtySetup(page)
     await recordCalls(app, ['project:save'])
     await holdChannel(app, 'project:save')
-    await page.keyboard.press('Control+S')
+    await page.keyboard.press('ControlOrMeta+S')
     await untilHeld(app, 'project:save')
     await stage.tab(page, /^第 3 章/).click()
     await stage.setupOutline(page).waitFor({ state: 'hidden' })
     await stage.tab(page, '设定').click()
     await stage.setupOutline(page).waitFor({ state: 'visible' })
     const nextDisabled = await stage.setupNext(page).isDisabled()
-    await page.keyboard.press('Control+S')
+    await page.keyboard.press('ControlOrMeta+S')
     await page.waitForTimeout(500)
     await releaseChannel(app, 'project:save')
     await page.waitForTimeout(2000)
@@ -380,10 +380,9 @@ export const X1_SCENARIOS = {
     await blueprint.open(page)
     await blueprint.writeNext(page)
     await blueprint.preflight(page).waitFor({ state: 'visible' })
-    await blueprint.popover(page).getByLabel('安排说明').fill('守塔人以幽灵身份出现，是刻意安排。')
     await recordCalls(app, ['db:draft-authority-sequence', 'db:continuity-list-before'])
     await holdChannel(app, 'db:consistency-exemption-save', { after: true })
-    await blueprint.preflight(page).getByRole('button', { name: '保存安排' }).click()
+    await blueprint.preflight(page).getByRole('button', { name: '这是有意安排' }).click()
     await untilHeld(app, 'db:consistency-exemption-save')
     await stage.backToLibrary(page, STAGE_SAMPLE.name)
     await stage.openFromPalette(page, HARBOR)
@@ -573,7 +572,7 @@ export const X1_SCENARIOS = {
     const url = await dirtySkillsPage(page)
     await releaseChannel(app, 'project:import-legacy-copy')
     await discardDialog(page).waitFor({ state: 'visible', timeout: 10_000 })
-    await page.keyboard.press('Control+N')
+    await page.keyboard.press('ControlOrMeta+N')
     const reminded = await page.locator('.pi-toast-title').filter({ hasText: '请先处理「放弃未保存的修改？」' })
       .waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false)
     await discardDialog(page).getByRole('button', { name: '继续编辑' }).click()
@@ -597,7 +596,7 @@ export const X1_SCENARIOS = {
     await stage.openSettings(page)
     const url = await dirtySkillsPage(page)
     const asked = []
-    for (const open of [() => page.keyboard.press('Control+O'), () => stage.openWorkMenuItem(page, STAGE_SAMPLE.name, '打开其他作品…')]) {
+    for (const open of [() => page.keyboard.press('ControlOrMeta+O'), () => stage.openWorkMenuItem(page, STAGE_SAMPLE.name, '打开其他作品…')]) {
       await open()
       await discardDialog(page).waitFor({ state: 'visible', timeout: 5000 })
       asked.push(await stubCalls(app, 'dialog:select-folder'))
@@ -614,9 +613,9 @@ export const X1_SCENARIOS = {
     await stubChannel(app, 'dialog:select-folder', null)
     await stage.openSettings(page)
     const url = await dirtySkillsPage(page)
-    const opens = [() => page.keyboard.press('Control+O'), () => stage.openWorkMenuItem(page, STAGE_SAMPLE.name, '打开其他作品…'), async () => {
+    const opens = [() => page.keyboard.press('ControlOrMeta+O'), () => stage.openWorkMenuItem(page, STAGE_SAMPLE.name, '打开其他作品…'), async () => {
       await url.fill('')
-      await page.keyboard.press('Control+O')
+      await page.keyboard.press('ControlOrMeta+O')
     }]
     const after = []
     for (const [index, open] of opens.entries()) {
@@ -646,7 +645,7 @@ export const X1_SCENARIOS = {
     }, context.harbor.path)
     await stage.openSettings(page)
     await dirtySkillsPage(page)
-    await page.keyboard.press('Control+O')
+    await page.keyboard.press('ControlOrMeta+O')
     await discardDialog(page).waitFor({ state: 'visible', timeout: 5000 })
     const picksBeforeAnswer = await app.evaluate(() => globalThis.__drivePicks)
     await discardDialog(page).getByRole('button', { name: '放弃修改' }).click()
@@ -664,7 +663,7 @@ export const X1_SCENARIOS = {
   'x1-library-return': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
     await stage.backToLibrary(page, STAGE_SAMPLE.name)
     await holdChannel(app, 'fs:list-dir')
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill(STAGE_SAMPLE.name)
     await stage.palette(page).getByRole('option', { name: `打开《${STAGE_SAMPLE.name}》` }).click()
     await untilHeld(app, 'fs:list-dir')

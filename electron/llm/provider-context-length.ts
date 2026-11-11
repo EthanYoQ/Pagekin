@@ -1,17 +1,6 @@
-const CONTEXT_LENGTH_MESSAGES = [
-  // OpenAI 兼容协议（DeepSeek 实测）
-  /maximum context length is \d+ tokens/iu,
-  // 硅基流动（实测）：提示词超长，或最大输出本身超过上下文
-  /input tokens \(\d+\) has exceeded max_seq_len/iu,
-  /max_tokens \(\d+\) have exceeded max_seq_len/iu,
-  // Gemini；没有 key，未实测。
-  /input token count \(\d+\) exceeds the maximum number of tokens/iu,
-  // Anthropic：提示词超长，或输入加 max_tokens 超过上下文
-  /prompt is too long: \d+ tokens? > \d+ maximum/iu,
-  /input length and `?max_tokens`? exceed context limit: \d+ \+ \d+ > \d+/iu,
-]
+import { parseProviderContextLength } from '../../src/shared/provider-context-length'
 
-export async function providerFailureCode(response: Response, signal: AbortSignal): Promise<'LLM_CONTEXT_LENGTH_EXCEEDED' | 'LLM_REQUEST_FAILED'> {
+export async function providerFailureCode(response: Response, options: { signal: AbortSignal; onContextWindow?: (tokens: number) => void }): Promise<'LLM_CONTEXT_LENGTH_EXCEEDED' | 'LLM_REQUEST_FAILED'> {
   if (response.status !== 400) {
     void response.body?.cancel().catch(() => {})
     return 'LLM_REQUEST_FAILED'
@@ -19,7 +8,9 @@ export async function providerFailureCode(response: Response, signal: AbortSigna
   let body = ''
   try { body = await response.text() }
   catch (error) {
-    if (signal.aborted) throw error
+    if (options.signal.aborted) throw error
   }
-  return CONTEXT_LENGTH_MESSAGES.some(pattern => pattern.test(body)) ? 'LLM_CONTEXT_LENGTH_EXCEEDED' : 'LLM_REQUEST_FAILED'
+  const { exceeded, windowTokens } = parseProviderContextLength(body)
+  if (windowTokens !== null) options.onContextWindow?.(windowTokens)
+  return exceeded ? 'LLM_CONTEXT_LENGTH_EXCEEDED' : 'LLM_REQUEST_FAILED'
 }

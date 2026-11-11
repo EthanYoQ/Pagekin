@@ -182,6 +182,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.stage-capsule-wait {
+  flex: none;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
 .stage-capsule .stage-ring-track {
   stroke: var(--track);
 }

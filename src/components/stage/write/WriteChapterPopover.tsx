@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { ChevronRight, PenLine } from 'lucide-react'
-import type { ConsistencyPreflightResult } from '../../../services/consistency-preflight'
+import { saveFindingExemption, type ConsistencyPreflightResult, type ExemptionScope, type PreflightFinding } from '../../../services/consistency-preflight'
+import type { ConsistencyExemption } from '../../../shared/consistency-preflight'
 import { ipc } from '../../../services/ipc-client'
 import {
   chapterDefaultWordsTarget,
@@ -16,12 +17,16 @@ import type { ChapterWritePrefill } from '../../../stores/layout-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { pluralEn } from '../../../shared/plural-en'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { captureProjectSession, isProjectSessionCurrent } from '../../project-session-gate'
+import { Button } from '../../ui/Button'
 import { useAnchoredLayer } from '../../ui/use-anchored-layer'
 import SplitAction from './SplitAction'
+import { useChapterThreadTasks } from './use-chapter-thread-tasks'
 import WritePreflight from './WritePreflight'
+import WriteThreadTasks from './WriteThreadTasks'
 
 interface WriteChapterPopoverProps {
   chapterNumber: number
@@ -46,6 +51,7 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
   const writeRequest = useStageStore(s => s.writeRequest)
   const layer = useAnchoredLayer(align)
   const { open, show, close } = layer
+  const threads = useChapterThreadTasks(chapterNumber, open)
   const [modelId, setModelId] = useState<string | null>(null)
   const [guidance, setGuidance] = useState<string | null>(null)
   const [knowledgeHint, setKnowledgeHint] = useState('')
@@ -143,93 +149,105 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
     }
   }
 
-  const saveArrangement = async (stableFactKey: string, reason: string) => {
+  const saveArrangement = async (finding: PreflightFinding, scope: ExemptionScope) => {
     const saved = await changeArrangement(text('保存一致性安排失败', 'Could not save the consistency arrangement.'),
-      session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-save', stableFactKey, reason, session.projectPath))
+      session => saveFindingExemption(session, finding, scope, text))
     if (saved) await start(false, saved)
   }
 
-  const revokeArrangement = async (stableFactKey: string) => {
+  const revokeArrangement = async (exemption: ConsistencyExemption) => {
     const revoked = await changeArrangement(text('撤销一致性安排失败', 'Could not revoke the consistency arrangement.'),
-      session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', stableFactKey, session.projectPath))
+      session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', exemption.stableFactKey, exemption.chapterNumber, session.projectPath))
     if (!revoked) return
     setPreflight(current => current ? {
       ...current,
-      exemptions: current.exemptions.map(item => item.stableFactKey === stableFactKey ? { ...item, revoked: true } : item),
+      exemptions: current.exemptions.map(item => item === exemption ? { ...item, revoked: true } : item),
     } : null)
   }
 
   const showPreflight = preflight && (preflight.findings.length > 0 || preflight.exemptions.some(item => !item.revoked))
+  const taskCount = threads.panel.taskCount
+  // 线索到期不自动开弹层：逾期会连续好几章，每章弹一次等于每章多点一下。
+  const threadHint = taskCount > 0 && (
+    <Button variant="text" size="sm" onClick={show}>
+      {text(`本章要处理 ${taskCount} 条线索`, `${taskCount} ${pluralEn(taskCount, 'thread')} to handle here`)}
+    </Button>
+  )
 
   return (
-    <SplitAction
-      layer={layer}
-      label={label}
-      icon={<PenLine size={15} aria-hidden />}
-      disabled={busy}
-      busy={starting}
-      onRun={() => void start(false)}
-      optionsLabel={text('本次写作选项', 'Options for this run')}
-      popoverClassName="stage-write-pop"
-    >
-      <div className="pi-field">
-        <label htmlFor={modelFieldId}>{text('本次模型', 'Model for this run')} <em>{text('只用于这一次', 'This run only')}</em></label>
-        <select
-          id={modelFieldId}
-          className="pi-input"
-          value={selectedModelId ?? ''}
-          disabled={generationModels.length === 0}
-          onChange={event => { setModelId(event.target.value || null); setMessage(null) }}
-        >
-          <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
-          {generationModels.map(model => (
-            <option key={model.id} value={model.id}>
-              {model.name || model.modelName}{model.id === defaultModelId ? text('（默认）', ' (default)') : ''}
-            </option>
-          ))}
-        </select>
-        {modelError && <p className="stage-write-error" role="alert">{modelError}</p>}
-      </div>
-      <div className="pi-field">
-        <label htmlFor={guidanceFieldId}>{text('作者微操指导', 'Author guidance')} <em>{text('可选', 'Optional')}</em></label>
-        <textarea
-          id={guidanceFieldId}
-          className="pi-input stage-write-textarea"
-          rows={3}
-          value={userGuidance}
-          placeholder={text('比如：开头只写声音；结尾停在回头之前。', 'For example: open on sound only; end just before they turn around.')}
-          onChange={event => setGuidance(event.target.value)}
-        />
-      </div>
-      <details className="stage-write-more">
-        <summary>
-          <ChevronRight size={14} aria-hidden />
-          {text('更多', 'More')}
-          <small>{text('知识库检索关键词', 'Knowledge search terms')}</small>
-        </summary>
+    <>
+      {align === 'end' && threadHint}
+      <SplitAction
+        layer={layer}
+        label={label}
+        icon={<PenLine size={15} aria-hidden />}
+        disabled={busy}
+        busy={starting}
+        onRun={() => void start(false)}
+        optionsLabel={text('本次写作选项', 'Options for this run')}
+        popoverClassName="stage-write-pop"
+      >
+        <WriteThreadTasks chapterNumber={chapterNumber} threads={threads} />
         <div className="pi-field">
-          <label htmlFor={hintFieldId}>{text('知识库检索关键词', 'Knowledge search terms')} <em>{text('可选', 'Optional')}</em></label>
-          <input
-            id={hintFieldId}
+          <label htmlFor={modelFieldId}>{text('本次模型', 'Model for this run')} <em>{text('只用于这一次', 'This run only')}</em></label>
+          <select
+            id={modelFieldId}
             className="pi-input"
-            value={knowledgeHint}
-            placeholder={text('如：剑法传承、草原地貌', 'e.g. sword inheritance, grassland terrain')}
-            onChange={event => setKnowledgeHint(event.target.value)}
+            value={selectedModelId ?? ''}
+            disabled={generationModels.length === 0}
+            onChange={event => { setModelId(event.target.value || null); setMessage(null) }}
+          >
+            <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
+            {generationModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name || model.modelName}{model.id === defaultModelId ? text('（默认）', ' (default)') : ''}
+              </option>
+            ))}
+          </select>
+          {modelError && <p className="stage-write-error" role="alert">{modelError}</p>}
+        </div>
+        <div className="pi-field">
+          <label htmlFor={guidanceFieldId}>{text('作者微操指导', 'Author guidance')} <em>{text('可选', 'Optional')}</em></label>
+          <textarea
+            id={guidanceFieldId}
+            className="pi-input stage-write-textarea"
+            rows={3}
+            value={userGuidance}
+            placeholder={text('比如：开头只写声音；结尾停在回头之前。', 'For example: open on sound only; end just before they turn around.')}
+            onChange={event => setGuidance(event.target.value)}
           />
         </div>
-      </details>
-      {showPreflight && (
-        <WritePreflight
-          preflight={preflight}
-          busy={busy}
-          onIgnoreOnce={() => void start(true)}
-          onRerun={() => void start(false)}
-          onSave={(key, reason) => void saveArrangement(key, reason)}
-          onRevoke={key => void revokeArrangement(key)}
-        />
-      )}
-      {message && <p className="stage-write-error" role="alert">{message}</p>}
-      <p className="stage-write-foot">{text(`这些选项只用于本次写作，点「${label}」开始。`, `These options apply to this run only. Choose “${label}” to start.`)}</p>
-    </SplitAction>
+        <details className="stage-write-more">
+          <summary>
+            <ChevronRight size={14} aria-hidden />
+            {text('更多', 'More')}
+            <small>{text('知识库检索关键词', 'Knowledge search terms')}</small>
+          </summary>
+          <div className="pi-field">
+            <label htmlFor={hintFieldId}>{text('知识库检索关键词', 'Knowledge search terms')} <em>{text('可选', 'Optional')}</em></label>
+            <input
+              id={hintFieldId}
+              className="pi-input"
+              value={knowledgeHint}
+              placeholder={text('如：剑法传承、草原地貌', 'e.g. sword inheritance, grassland terrain')}
+              onChange={event => setKnowledgeHint(event.target.value)}
+            />
+          </div>
+        </details>
+        {showPreflight && (
+          <WritePreflight
+            preflight={preflight}
+            busy={busy}
+            onIgnoreOnce={() => void start(true)}
+            onRerun={() => void start(false)}
+            onExempt={(finding, scope) => void saveArrangement(finding, scope)}
+            onRevoke={exemption => void revokeArrangement(exemption)}
+          />
+        )}
+        {message && <p className="stage-write-error" role="alert">{message}</p>}
+        <p className="stage-write-foot">{text(`这些选项只用于本次写作，点「${label}」开始。`, `These options apply to this run only. Choose “${label}” to start.`)}</p>
+      </SplitAction>
+      {align === 'start' && threadHint}
+    </>
   )
 }

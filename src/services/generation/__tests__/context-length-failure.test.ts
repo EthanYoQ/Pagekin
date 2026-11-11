@@ -80,6 +80,27 @@ describe('讨论区 #77：上下文超长码在每条消费路径上都保留', 
     vi.unstubAllGlobals()
   })
 
+  it('导入阶段请求成功后也上报诊断，界面才知道模型请求已经结束', async () => {
+    const diagnostics = { startedAt: 1, elapsedMs: 20, httpStatus: 200, phase: 'complete', endReason: 'completed', visibleEvents: 1, reasoningEvents: 0 }
+    const setGenerationActivity = vi.fn()
+    const completed = { status: 'completed', content: '{}', finishReason: 'stop', receipt: { ...failedOutcome().receipt, finishReason: 'stop', diagnostics } }
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'import-generation:read') return { view, modelId: 'model', frozenContext: {} }
+      if (channel === 'import-generation:execute') return { run: view, outcome: completed }
+      throw new Error(channel)
+    })
+    vi.stubGlobal('window', { aiNovelAPI: { invoke } })
+    const context: WorkflowContext = { runId: 'workflow', projectPath: project.projectPath, projectSession: project,
+      generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false }
+    const runtime = await createWorkflowMainGenerationRuntime({ context, callbacks: { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn(), setGenerationActivity },
+      selection: { operation: 'import-global-facts', promptKeys: [], skillStages: [], output: 'structured-data',
+        importSlot: { runId: 'import-run', stage: 'global', batchId: 'done' } } },
+    { read: vi.fn(async () => view), subscribe: vi.fn(() => () => {}) } as unknown as ReturnType<typeof createMainGenerationTransport>)
+    await runtime.execute(async ({ session }) => { await session.complete({ purpose: 'import-global-facts', output: 'structured-data', messages: [] }) })
+    expect(setGenerationActivity).toHaveBeenLastCalledWith({ operation: 'import-global-facts', diagnostics })
+    vi.unstubAllGlobals()
+  })
+
   it('定稿后处理以登记码失败，说明换模型或调低最大输出，且不再提供重试', async () => {
     const source = { finalizationId: '定稿', draftId: 1, chapterNumber: 1, contentHash: 'a'.repeat(64) }
     const slot = { source, stepKey: 'chapter_notes' as const }
@@ -114,9 +135,9 @@ describe('讨论区 #77：服务商上下文超长', () => {
   })
 
   it.each([
-    ['zh-CN', ['换用上下文更长的模型', '调低最大输出 Tokens', '精简本章要求、参考材料'], '上下文窗口'],
-    ['en-US', ['model with a longer context', 'lower Max output tokens', 'shorten the chapter request and reference material'], 'Context Window'],
-  ] as const)('%s 文案建议换模型、调低最大输出或精简材料，不指向上下文窗口设置', (locale, advice, stale) => {
+    ['zh-CN', ['作品内容没有变动', '换用上下文更长的模型', '调低最大输出 Tokens', '「设置」', '再重新生成'], '上下文窗口'],
+    ['en-US', ['Your work is unchanged', 'model with a longer context', 'lower Max output tokens', 'In Settings', 'then generate again'], 'Context Window'],
+  ] as const)('%s 文案建议换模型、调低最大输出，不指向上下文窗口设置', (locale, advice, stale) => {
     const message = knownAppErrorMessage(locale, new Error('GENERATION_CONTEXT_LENGTH_EXCEEDED'))
     for (const phrase of advice) expect(message).toContain(phrase)
     expect(message).not.toContain(stale)

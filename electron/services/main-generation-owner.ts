@@ -1,9 +1,10 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import type { BeginGenerationRequest, ExecuteGenerationRequest, BeginGenerationBatchRequest, GenerationDraftCommitRequest, GenerationRecoveryContext, MaterialDecisionReceipt, VisibleCompositionAlgorithm, GenerationOwnerChannels, GenerationRecoveryList, ShortOutlineRetry, PlanningContinuation } from '../../src/shared/generation-owner-contract'
+import type { BeginGenerationRequest, ExecuteGenerationRequest, BeginGenerationBatchRequest, GenerationDraftCommitRequest, GenerationRecoveryContext, MaterialAdmission, MaterialDecisionReceipt, VisibleCompositionAlgorithm, GenerationOwnerChannels, GenerationRecoveryList, ShortOutlineRetry, PlanningContinuation, PlanningDraftStanding } from '../../src/shared/generation-owner-contract'
+import { planningRecoverable } from '../../src/shared/planning-recovery'
 import { isDraftVisibleTextVersion } from '../../src/shared/draft-visible-text'
-import { generationOutputContract, type GenerationAuthorInput } from '../../src/shared/generation-owner-contract'
+import { generationOutputContract, tightenMaterialBudget, type GenerationAuthorInput } from '../../src/shared/generation-owner-contract'
 import type { MainGenerationExecuteReceipt, MainGenerationRunHandle, MainGenerationRunSummary, MainGenerationRunView, MainGenerationSnapshot } from '../../src/services/generation/generation-runtime'
 import type { ModelProfile, ModelExecutionLeaseReceipt, LLMFinishReason } from '../../src/shared/ipc-channels'
 import type { CreativeStrategy } from '../../src/shared/reasoning-types'
@@ -15,7 +16,8 @@ import { getCurrentProjectPath } from '../database'
 import { ModelExecutionLeaseRegistry, createModelExecutionLeaseReceipt } from './model-execution-lease'
 import { createGenerationRunService, GENERATION_STOPPED, type GenerationRunServiceDependencies } from './generation-run-service'
 import { LLMHistoryRepository } from '../repositories/llm-repository'
-import { assertSemanticGenerationTask, buildMainGenerationPlan, MAIN_GENERATION_POLICY, newMainGenerationPolicy, planningGenerationScope, readMainGenerationPolicy, type MainGenerationPlan, type MainGenerationPolicy } from './main-generation-plan'
+import { REVIEW_REVISION_OPERATIONS } from './review-revision-context'
+import { assertSemanticGenerationTask, buildMainGenerationPlan, MAIN_GENERATION_POLICY, newMainGenerationPolicy, planningGenerationScope, readMainGenerationPolicy, resolveMaterialBudget, type MainGenerationPlan, type MainGenerationPolicy } from './main-generation-plan'
 import { LLMFactory } from '../llm/llm-factory'
 import type { GenerationAttemptReceipt, GenerationTask } from '../../src/services/generation/generation-harness'
 import type { ProviderUsageEvidence } from '../llm/provider.interface'
@@ -24,7 +26,7 @@ import { decodeBlueprintAuthorPayload } from '../../src/shared/blueprint-semanti
 import { GenerationDraftEffects, assertGenerationBatchIntent } from './generation-draft-effects'
 import { CharacterProposalService } from './character-proposal-service'
 import { proveCharacterProposal } from './generation-character-proposal-proof'
-import { compareGenerationSourceBindings, recordedModelName } from './generation-source-binding'
+import { compareGenerationSourceBindings, planningBlueprintSourceHash, recordedModelName } from './generation-source-binding'
 import type { GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge'
 import type { PrepareDraftContextRequest, PreparedDraftContext } from '../../src/shared/generation-owner-contract'
 import { FinalizedCharacterGeneration } from './finalized-character-generation'
@@ -46,6 +48,8 @@ import { proveFinalizedCharacterGeneration } from './finalized-character-generat
 import { FinalizedCharacterEvidenceError, parseFinalizedCharacterStateResponse, type FinalizedCharacterContext } from '../../src/shared/finalized-continuity'
 import type { GraphGenerationChannels, GraphGenerationInput, GraphGenerationRecovery } from '../../src/shared/graph-generation'
 import { GraphGeneration } from './graph-generation'
+import { BlueprintSuggestionRepository, patchedFields } from '../repositories/blueprint-suggestion-repository'
+import type { ContinuitySuggestionList } from '../../src/shared/blueprint-continuity-suggest'
 import type { LegacyRosterGenerationChannels, LegacyRosterGenerationRecovery } from '../../src/shared/legacy-roster-generation'
 import { LegacyRosterGeneration } from './legacy-roster-generation'
 import { readLegacyRosterGenerationProof } from './legacy-roster-generation-proof'
@@ -53,12 +57,12 @@ import { readLegacyRosterGenerationContext } from './legacy-roster-generation-co
 import { readPortableRuntimeFreeze } from './portable-runtime-freeze'
 import { readLegacyRosterSource, adoptLegacyCards } from './legacy-roster-source'
 import { buildLegacyRosterJsonRepairTask, buildLegacyRosterReplacementTask, parseLegacyRosterJson } from '../../src/shared/legacy-roster-generation-pure'
-import { validateGraphGenerationInput, readGraphGenerationContext } from './graph-generation-source'
+import { graphGenerationOperations, validateGraphGenerationInput, readGraphGenerationContext } from './graph-generation-source'
 import { planningTargetInstruction, parsePlanningTargetUnits, renderPlotOutlineRange, plotOutlineRecoveryDraft, plotOutlineSourceInvalid, validPlotOutlineAuthorPrefix, type PlotOutlineSource, type PlotOutlineProgress, type PlotOutlineRecovery, type PlotOutlineAuthorEditReceipt } from '../../src/shared/plot-outline-contract'
 import { ProjectCoreRepository, type ProjectCoreSynopsisExpected, type ProjectCoreSynopsisCommitRequest } from '../repositories/project-core-repository'
 // 尝试 id 都由 randomUUID 生成；recoverFrom 还拼进 nonce，只收 UUID，免得拼出别的尝试的 nonce。
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
-const graphOperations = { plot: 'plot-tree-snapshot', plan: 'narrative-thread-plan-candidate', event: 'narrative-thread-event-candidate' } as const
+const graphOperations = graphGenerationOperations
 /** 可能出现在运行侧页「可恢复」区的运行，按操作类型归类。不在表里的从不列出：定稿后处理、图生成、导入，以及随聊天隐藏的助手任务（磁盘记录保留）。 */
 const RECOVERY_KIND: ReadonlyMap<string, 'planning' | 'review' | 'editor' | 'draft'> = new Map([
   ['generate-plot-outline', 'planning'], ['chapter-blueprint-directory', 'planning'],
@@ -71,6 +75,12 @@ export function safeGenerationModelReceipt(receipt: ModelExecutionLeaseReceipt):
   return { modelId: receipt.modelId, provider: receipt.provider, protocol: receipt.protocol, modelName: receipt.modelName,
     modelRevision: receipt.modelRevision, endpointFingerprint: receipt.endpointFingerprint, capabilityEvidence: structuredClone(receipt.capabilityEvidence) }
 }
+function withFrozenWindowEvidence(current: SafeGenerationModelReceipt, frozen: SafeGenerationModelReceipt): SafeGenerationModelReceipt {
+  if (current.modelRevision !== frozen.modelRevision) return current
+  const { contextWindowTokens, maxOutputTokens, source } = frozen.capabilityEvidence
+  return { ...current, capabilityEvidence: { ...current.capabilityEvidence, contextWindowTokens, maxOutputTokens,
+    source: { ...current.capabilityEvidence.source, contextWindowTokens: source.contextWindowTokens, maxOutputTokens: source.maxOutputTokens } } }
+}
 export interface MainGenerationOwnerDependencies {
   database: Database.Database
   projectId: string
@@ -78,6 +88,7 @@ export interface MainGenerationOwnerDependencies {
   assertCurrent: () => void
   leases: ModelExecutionLeaseRegistry
   loadModel: (id: string) => ModelProfile | null
+  rememberContextWindow?: (model: ModelProfile, windowTokens: number) => void
   buildBinding: (selection: BeginGenerationRequest & { knowledgeSnapshot?: GenerationKnowledgeSnapshot; finalizedCharacterContextHash?: string; reviewRevisionContext?: ReviewRevisionContext; agentInput?: AgentGenerationInput; agentSession?: { key: string; roundIndex: number }; editorInlineInput?: EditorInlineInput; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; legacyRosterKey?: string }, model: SafeGenerationModelReceipt, policy: MainGenerationPolicy) => RunBinding
   rebuildBinding: (previous: RunBinding, model: SafeGenerationModelReceipt) => RunBinding
   beforeDispatch?: () => void
@@ -88,7 +99,11 @@ export interface MainGenerationOwnerDependencies {
   transferOrigin?: () => string | undefined
 }
 
-interface ProviderRequest { conversationId: string; model: ModelProfile; task: GenerationTask; plan: MainGenerationPlan }
+interface ProviderRequest { runId: string; conversationId: string; model: ModelProfile; task: GenerationTask; plan: MainGenerationPlan }
+
+export class ProviderContextLengthError extends Error {
+  constructor(readonly windowTokens: number) { super('GENERATION_CONTEXT_LENGTH_EXCEEDED') }
+}
 
 /** 回执里交给渲染端的失败码：供应商与网络失败、上下文超长，以及阻断根的活动时长用完、写入失败。 */
 const RENDERER_SAFE_FAILURE_CODES = ['GENERATION_PROVIDER_FAILED', 'NETWORK_ERROR', ...TERMINAL_PROVIDER_FAILURE_CODES,
@@ -106,15 +121,18 @@ async function dispatchProvider(value: unknown, options: Parameters<GenerationRu
   let evidence: ProviderUsageEvidence | null = null
   let finishReason: LLMFinishReason | null = null
   let failureCode: string | null = null
+  let windowTokens: number | null = null
   await LLMFactory.getProvider(model).generateStream(model, task.messages.map(message => ({ ...message })), {
     ...plan.options, conversationId, signal: options.signal, visibleOnly: true,
     onChunk: text => options.onVisible({ kind: 'delta', text }),
     onReasoning: options.onReasoning,
     onDiagnostics: options.onDiagnostics,
     onUsageEvidence: value => { evidence = value },
+    onContextWindow: tokens => { windowTokens = tokens },
     onDone: (text, _usage, reason) => { options.onVisible({ kind: 'cumulative', text }); finishReason = reason },
     onError: error => { failureCode = providerStreamFailureCode(error) },
   })
+  if (failureCode === 'GENERATION_CONTEXT_LENGTH_EXCEEDED' && windowTokens !== null) throw new ProviderContextLengthError(windowTokens)
   if (failureCode || finishReason === null) throw new Error(failureCode ?? 'GENERATION_PROVIDER_FAILED')
   const usageEvidence = evidence as ProviderUsageEvidence | null
   return { finishReason, usage: usageEvidence ? { ...usageEvidence.usage, reasoningTokens: usageEvidence.reasoningTokens,
@@ -131,6 +149,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   const volatileReceipts = new Map<string, GenerationExecutionReceipt>()
   const pending = new Map<string, { hash: string; promise: Promise<MainGenerationExecuteReceipt> }>()
   const preparations = new Map<string, { binding: RunBinding; knowledgeSnapshot: GenerationKnowledgeSnapshot }>()
+  const learnedWindows = new Map<string, number>()
   let closed = false
   const assertCurrent = () => {
     if (closed || !deps.database.open) throw new Error('GENERATION_OWNER_CLOSED')
@@ -255,6 +274,12 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       revision: artifact.revision, durableRevision: artifact.revision, text: artifact.text, textHash: artifact.textHash, status, compositionEligible }
   }
   const providerDispatch = deps.dispatch ?? dispatchProvider
+  const learnContextWindow = ({ runId, task, model }: ProviderRequest, windowTokens: number) => {
+    deps.rememberContextWindow?.(model, windowTokens)
+    const budget = (repository.get(runId).binding.sourceManifest.materialDecision as MaterialDecisionReceipt | undefined)?.budget
+    if (budget && [DRAFT_SHORT_OUTLINE_PURPOSE, 'chapter-draft'].includes(task.purpose)
+      && tightenMaterialBudget(budget, windowTokens).inputTokens < budget.inputTokens) learnedWindows.set(runId, windowTokens)
+  }
   /** 还没结束的请求；关闭作品时在关库前把它们记成已取消。 */
   const unrecordedCalls = new Set<() => void>()
   /** 每次真正发出的模型请求都记入运行侧页的 AI 调用记录，每次只记一行；记录只作诊断，写不进去也不改变生成结果。 */
@@ -281,6 +306,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       record(result.finishReason === 'stop', result.usage, result.finishReason === 'stop' ? undefined : `finish:${result.finishReason ?? 'unknown'}`)
       return result
     } catch (error) {
+      if (error instanceof ProviderContextLengthError) learnContextWindow(request as ProviderRequest, error.windowTokens)
       if (options.signal.reason === GENERATION_STOPPED) recordCancelled()
       else record(false, null, error instanceof Error ? error.message : String(error))
       throw error
@@ -303,7 +329,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   function currentModelReceipt(binding: RunBinding): SafeGenerationModelReceipt {
     const model = deps.loadModel(modelReceipt(binding).modelId)
     if (!model) throw new Error('GENERATION_MODEL_MISSING')
-    return safeGenerationModelReceipt(createModelExecutionLeaseReceipt(model, { leaseId: 'read-only-evidence', createdAt: 0, expiresAt: 0 }))
+    return withFrozenWindowEvidence(safeGenerationModelReceipt(createModelExecutionLeaseReceipt(model, { leaseId: 'read-only-evidence', createdAt: 0, expiresAt: 0 })), modelReceipt(binding))
   }
   const viewOf = (run: DurableGenerationRun): MainGenerationRunView => {
     const { budget, plotOutline, attempts } = repository.readRunView(run.runId)
@@ -378,10 +404,12 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     if (!prepared) throw new Error('GENERATION_DRAFT_PREPARATION_REQUIRED')
     return structuredClone(prepared.knowledgeSnapshot)
   }
-  const draftPreparationBinding = (request: PrepareDraftContextRequest, knowledgeSnapshot?: GenerationKnowledgeSnapshot): RunBinding => {
+  const draftPreparation = (request: PrepareDraftContextRequest, knowledgeSnapshot?: GenerationKnowledgeSnapshot): { binding: RunBinding; model: ModelProfile } => {
     assertCurrent()
     if (!request || typeof request.query !== 'string' || knowledgeSnapshot && request.query !== knowledgeSnapshot.query
-      || Object.keys(request).some(key => !['chapterNumber', 'modelId', 'promptKeys', 'skillStages', 'authorInputs', 'query', 'selectedDraftIds', 'batchId'].includes(key))) throw new Error('GENERATION_DRAFT_PREPARATION_INVALID')
+      || Object.keys(request).some(key => !['chapterNumber', 'modelId', 'promptKeys', 'skillStages', 'authorInputs', 'query', 'selectedDraftIds', 'batchId', 'characterRosterRevision', 'contextWindowRetryOf'].includes(key))) throw new Error('GENERATION_DRAFT_PREPARATION_INVALID')
+    if (request.characterRosterRevision !== undefined
+      && request.characterRosterRevision !== deps.database.prepare("SELECT revision FROM character_roster_meta WHERE id='main'").pluck().get()) throw new Error('GENERATION_DRAFT_PREPARATION_CHANGED')
     const model = deps.loadModel(request.modelId)
     if (!model) throw new Error('GENERATION_MODEL_MISSING')
     const receipt = safeGenerationModelReceipt(createModelExecutionLeaseReceipt(model, { leaseId: 'read-only-evidence', createdAt: 0, expiresAt: 0 }))
@@ -391,22 +419,26 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       ...(request.batchId ? { batchId: request.batchId } : {}), ...(knowledgeSnapshot ? { knowledgeSnapshot: structuredClone(knowledgeSnapshot) } : {}) }
     const policy = request.batchId ? rootPolicy(draftEffects.readBatch(request.batchId, deps.projectId).rootHandle.rootActionId)
       : newMainGenerationPolicy(selection, model)
-    return deps.buildBinding(selection, receipt, policy)
+    return { binding: deps.buildBinding(selection, receipt, policy), model }
   }
+  const draftPreparationBinding = (request: PrepareDraftContextRequest, knowledgeSnapshot?: GenerationKnowledgeSnapshot): RunBinding => draftPreparation(request, knowledgeSnapshot).binding
   const prepareDraftContext = (request: PrepareDraftContextRequest, knowledgeSnapshot: GenerationKnowledgeSnapshot, beforeKnowledgeRead?: RunBinding): PreparedDraftContext => {
-    const { binding, selectedDrafts } = deps.database.transaction(() => {
-      const binding = draftPreparationBinding(request, knowledgeSnapshot)
+    const { binding, model, selectedDrafts } = deps.database.transaction(() => {
+      const { binding, model } = draftPreparation(request, knowledgeSnapshot)
       if (beforeKnowledgeRead && !preparationMatches(beforeKnowledgeRead, binding, true)) throw new Error('GENERATION_DRAFT_PREPARATION_CHANGED')
       const selectedDrafts = request.selectedDraftIds.map(draftId => {
         const row = deps.database.prepare('SELECT d.chapter_number,d.version,c.body FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?').get(draftId) as { chapter_number: number; version: number; body: string }
         return { draftId, chapterNumber: row.chapter_number, version: row.version, contentHash: textHash(row.body), content: row.body }
       })
-      return { binding, selectedDrafts }
+      return { binding, model, selectedDrafts }
     })()
+    const budget = resolveMaterialBudget(model, (binding.sourceManifest.policy as MainGenerationPolicy).budget.maxOutputPerRequest)
+    const learned = request.contextWindowRetryOf ? learnedWindows.get(requireRun(request.contextWindowRetryOf).runId) : undefined
+    const materialBudget = learned === undefined ? budget : tightenMaterialBudget(budget, learned)
     const preparationId = randomUUID()
     if (preparations.size >= 64) preparations.delete(preparations.keys().next().value!)
     preparations.set(preparationId, { binding, knowledgeSnapshot: structuredClone(knowledgeSnapshot) })
-    return { preparationId, knowledgeSnapshot: structuredClone(knowledgeSnapshot), selectedDrafts }
+    return { preparationId, knowledgeSnapshot: structuredClone(knowledgeSnapshot), selectedDrafts, materialBudget }
   }
   const begin = (selection: (BeginGenerationRequest | AgentBeginSelection) & { editorInlineInput?: EditorInlineInput; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; legacyRosterKey?: string }, batchInitialization = false, agentInitialization = false, editorInitialization = false, finalizationInitialization = false, graphInitialization = false, legacyInitialization = false): MainGenerationRunView => {
     assertCurrent()
@@ -544,6 +576,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const details: GenerationAttemptReceipt = { purpose: task.purpose,
       ...(receipt.diagnostics ? { diagnostics: receipt.diagnostics } : {}),
       ...(safeFailureCode ? { failureCode: safeFailureCode } : {}),
+      ...(safeFailureCode === 'GENERATION_CONTEXT_LENGTH_EXCEEDED' && learnedWindows.has(receipt.run.runId) ? { retryWithLearnedWindow: true as const } : {}),
       ...(receipt.artifact ? { visibleArtifact: { artifactId: receipt.artifact.artifactId, attemptId: receipt.attempt.attemptId,
         revision: receipt.artifact.revision, textHash: receipt.artifact.textHash } } : {}),
       model: { id: frozenModel.modelId, configurationRevision: frozenModel.modelRevision, endpointFingerprint: frozenModel.endpointFingerprint },
@@ -662,7 +695,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     deps.beforeDispatch?.()
     assertCurrent()
     const receipt = await service.execute({ runId: run.runId, invocationNonce: request.invocationNonce, requestHash,
-      providerRequest: { model, task, plan, conversationId: run.rootActionId } satisfies ProviderRequest, reservedTokens: plan.reservedTokens,
+      providerRequest: { runId: run.runId, model, task, plan, conversationId: run.rootActionId } satisfies ProviderRequest, reservedTokens: plan.reservedTokens,
       requestedOutputTokens: plan.requestedOutputTokens, inputUpperBoundTokens: plan.inputUpperBoundTokens,
       reasoningUpperBoundTokens: plan.reasoningUpperBoundTokens, usagePolicy: plan.usagePolicy, purpose: task.purpose,
       ...(plan.budgetDecision ? { budgetDecision: plan.budgetDecision } : {}),
@@ -699,7 +732,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const next = deps.rebuildBinding(run.binding, receipt)
     const lease = deps.leases.begin(receipt.modelId)
     try {
-      if (!isDeepStrictEqual(safeGenerationModelReceipt(lease), receipt)) throw new Error('GENERATION_MODEL_CHANGED')
+      if (!isDeepStrictEqual(withFrozenWindowEvidence(safeGenerationModelReceipt(lease), receipt), receipt)) throw new Error('GENERATION_MODEL_CHANGED')
       const resumed = await service.resume(run.runId, next)
       assertCurrent()
       const previous = runLeases.get(run.runId)
@@ -809,6 +842,45 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     if (outline && !saved && (outline.composition?.chapters?.length || outline.cursor.kind === 'accept')) return { ...base, state: 'save-prefix' }
     return { ...base, state: 'ready' }
   }
+  const plotOutlineBatchInFormalOutline = (outline: PlotOutlineProgress): boolean => {
+    const batch = outline.cursor.kind === 'complete' ? outline.composition?.text.trim() : undefined
+    return !!batch && (ProjectCoreRepository.get(deps.database)?.synopsis ?? '').includes(batch)
+  }
+  const planningRunInFlight = (runId: string) => [...pending.keys()].some(key => (JSON.parse(key) as [string])[0] === runId) || !!deps.database.prepare(
+    "SELECT 1 FROM generation_attempts WHERE run_id=? AND json_extract(attempt_json,'$.status') IN ('reserved','dispatch-marked') LIMIT 1").get(runId)
+  /**
+   * 拿不准就列出：多列的一份作者能自己放弃，误藏的一份作者根本不知道还在。
+   * 导入原稿的 fill-empty 提交会把原有行原样记账，所以还要求这一章开跑以后确实变过。
+   * 大纲只认这次运行的正式写入；升级前写入的没有这一笔，退而看这一批原文是否还在正式大纲里。
+   */
+  const planningSuperseded = (run: DurableGenerationRun, outline: PlotOutlineProgress | null, remaining: PlanningContinuation['remainingRange']): boolean => {
+    if (!remaining) return true
+    if (outline) return repository.plotOutlineCommitted(run.runId) || plotOutlineBatchInFormalOutline(outline)
+    const chapters = Array.from({ length: remaining.to - remaining.from + 1 }, (_, index) => remaining.from + index)
+    const matchesCommit = BlueprintRepository.commitMatcherAfter(remaining, repository.createdAtMs(run.runId), deps.database)
+    return chapters.every(chapter => matchesCommit(chapter)
+      && planningBlueprintSourceHash(deps.database, chapter) !== run.binding.sourceRefs.find(ref => ref.sourceId === `blueprint:${chapter}`)?.contentHash)
+  }
+  const planningDraft = (run: DurableGenerationRun, outline: PlotOutlineProgress | null, continuation: PlanningContinuation | undefined): PlanningDraftStanding | undefined => {
+    const inputs = run.binding.sourceManifest.authorInputs as GenerationAuthorInput[] | undefined
+    const directory = run.binding.sourceManifest.operation === 'chapter-blueprint-directory'
+      ? inputs?.find(input => input.id === 'directory:requested-range') : undefined
+    const scope = directory ? JSON.parse(directory.text) as { startChapter: number; endChapter: number } : undefined
+    const requestedRange = outline ? { from: outline.range.from, to: outline.range.to } : scope ? { from: scope.startChapter, to: scope.endChapter } : null
+    if (!requestedRange) return undefined
+    const base = { requestedRange, createdAtMs: repository.createdAtMs(run.runId) }
+    if (planningRunInFlight(run.runId)) return { ...base, standing: 'open' }
+    if (repository.planningDismissed(run.runId)) return { ...base, standing: 'dismissed' }
+    if (continuation && planningSuperseded(run, outline, continuation.remainingRange)) return { ...base, standing: 'superseded' }
+    return { ...base, standing: 'open' }
+  }
+  /** 只记在运行上，候选原文与正式内容不动；正在生成的不能放弃。 */
+  const dismissPlanningRecovery = (handle: MainGenerationRunHandle) => {
+    const context = readContext(handle)
+    if (!context.planningDraft) throw new Error('GENERATION_PLANNING_RECOVERY_INVALID')
+    if (planningRunInFlight(handle.runId)) throw new Error('GENERATION_PLANNING_RECOVERY_IN_FLIGHT')
+    if (context.planningDraft.standing !== 'dismissed') repository.recordPlanningDismissal(handle.runId)
+  }
   const plotOutlineRecovery = (run: DurableGenerationRun, outline: PlotOutlineProgress): PlotOutlineRecovery => {
     const saved = repository.readPlotOutlineAuthorEdit(run.runId)
     const cursor = outline.cursor
@@ -829,9 +901,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         writeState = projectGenerationInFlight() ? { kind: 'blocked', reason: 'in-flight' } : { kind: 'ready' }
       }
     } catch { /* Frozen proposals remain readable when current sources are unavailable. */ }
-    const batch = outline.cursor.kind === 'complete' ? outline.composition?.text.trim() : undefined
-    const inFormalOutline = !!batch && (ProjectCoreRepository.get(deps.database)?.synopsis ?? '').includes(batch)
-    return { sourceHandle: handleOf(run), leaseEpoch: deps.epoch, draft, inFormalOutline,
+    return { sourceHandle: handleOf(run), leaseEpoch: deps.epoch, draft, inFormalOutline: plotOutlineBatchInFormalOutline(outline),
       completeChapters: [...(outline.composition?.chapters?.map(chapter => chapter.chapterNumber) ?? []),
         ...(outline.cursor.kind === 'accept' ? [outline.cursor.chapterNumber] : [])],
       writeState, saved }
@@ -907,14 +977,25 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     assertSourcesCurrent(handle)
     return false
   }
+  /** 已绑收据的运行沿用收据；审修在选材之前才开运行，尚无收据时按运行冻结的模型现算。 */
+  const materialAdmissionOf = (run: DurableGenerationRun): MaterialAdmission | undefined => {
+    const manifest = run.binding.sourceManifest, decision = manifest.materialDecision as MaterialDecisionReceipt | undefined
+    if (decision) return decision.budget ? { kind: 'budget', budget: decision.budget }
+      : { kind: 'frozen', optionalContentHashes: decision.included.filter(item => !item.required).map(item => item.contentHash) }
+    if (!REVIEW_REVISION_OPERATIONS.includes(manifest.operation as ReviewRevisionContext['operation'])) return undefined
+    const model = deps.loadModel(modelReceipt(run.binding).modelId)
+    return model ? { kind: 'budget', budget: resolveMaterialBudget(model, (manifest.policy as MainGenerationPolicy).budget.maxOutputPerRequest) } : undefined
+  }
   const readContext = (handle: MainGenerationRunHandle): GenerationRecoveryContext => {
     const run = requireRun(handle), manifest = run.binding.sourceManifest, composition = repository.isPrivatePlanningHistory(run.runId) ? null : repository.readVisibleComposition(run.runId)
     const plotOutline = repository.readPlotOutline(run.runId)
     const continuation = planningContinuation(run)
+    const draft = planningDraft(run, plotOutline, continuation)
     const blueprint = manifest.operation === 'chapter-blueprint-directory' ? repository.readBlueprintRecovery(run.runId) : null
     const blueprintSaved = blueprint?.kind === 'available' ? blueprint.authorEdit : null
     const draftSave = draftEffects.readRecovery(run.runId)
     const materialDecision = manifest.materialDecision as MaterialDecisionReceipt | undefined
+    const materialAdmission = materialAdmissionOf(run)
     const requiredCandidateDraftIds = new Set((materialDecision?.included ?? [])
       .filter(item => item.required && /^candidate:\d+$/u.test(item.sourceId))
       .map(item => Number(item.sourceId.slice('candidate:'.length))))
@@ -930,6 +1011,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     return { modelId: modelReceipt(run.binding).modelId, handle: handleOf(run), operation: manifest.operation as string, chapterNumber: manifest.chapterNumber as number | undefined,
       ...(plotOutline ? { plotOutline, plotOutlineRecovery: plotOutlineRecovery(run, plotOutline) } : {}),
       ...(continuation ? { planningContinuation: continuation } : {}),
+      ...(draft ? { planningDraft: draft } : {}),
       ...(blueprint && blueprint.kind !== 'available' ? { blueprintRecovery: {
         sourceHandle: handleOf(run), leaseEpoch: deps.epoch, draft: viewOf(run).candidates?.at(-1)?.text ?? '',
         editRange: null, saved: null, writeState: 'unavailable' as const, diagnostic: blueprint.diagnostic,
@@ -956,7 +1038,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       draftSave,
       ...(manifest.knowledgeSnapshot ? { knowledgeSnapshot: structuredClone(manifest.knowledgeSnapshot) as GenerationKnowledgeSnapshot } : {}),
       ...(selectedDrafts.every(item => item !== null) ? { selectedDrafts } : {}),
-      ...(manifest.batchId ? { batchId: manifest.batchId as string } : {}) }
+      ...(manifest.batchId ? { batchId: manifest.batchId as string } : {}),
+      ...(materialAdmission ? { materialAdmission } : {}) }
   }
   const readBatch = (batchId: string) => { assertCurrent(); return draftEffects.readBatch(batchId, deps.projectId) }
   const characters = new CharacterProposalService(deps.database, deps.projectId, (source, forWrite, version) => {
@@ -1006,7 +1089,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   /**
    * 运行侧页「可恢复」区的数据。只读操作类型可能恢复的运行；一个运行读不出不挡其余运行，只标 partial。
    * 单章写稿保存过就不再需要恢复，正文后来改没改过都一样；只有这次打开里还留着没落盘的正文时仍列出，那段文字只能从这里复制。
-   * 规划恢复稿只列没写进正式内容的：续写已完成的，或来源变了但本批已原样在正式大纲里的，都不算可恢复。
+   * 规划恢复稿是否列出按 planningRecoverable 判定，与蓝图页横幅、架构页大纲提示同一条。
    */
   const listRecovery = (): GenerationRecoveryList => {
     assertCurrent()
@@ -1018,8 +1101,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const collect = {
       planning: (handle: MainGenerationRunHandle) => {
         const recovery = readContext(handle)
-        if ((recovery.plotOutlineRecovery || recovery.blueprintRecovery) && recovery.planningContinuation?.state !== 'complete'
-          && !recovery.plotOutlineRecovery?.inFormalOutline) list.planning.push(recovery)
+        if (planningRecoverable(recovery)) list.planning.push(recovery)
       },
       review: (handle: MainGenerationRunHandle) => { list.reviews.push({ view: viewOf(requireRun(handle)), recovery: readReviewRevisionRecovery(handle) }) },
       editor: (handle: MainGenerationRunHandle) => { list.editors.push(readEditorInlineRecovery(handle)) },
@@ -1032,6 +1114,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
           return
         }
         const recovery = readContext(handle)
+        if (!recovery.composition && repository.budget(handle.rootActionId).root.status === 'cancelled'
+          && view.budgetDiagnostics?.at(-1)?.failureCode === 'GENERATION_CONTEXT_LENGTH_EXCEEDED') return
         if (recovery.composition || recovery.draftShortOutline?.completedOutput || recovery.draftShortOutline?.retry?.kind === 'available'
           || withoutDraftReconciliationArtifacts([...view.artifacts, ...(view.candidates ?? [])], recovery).some(hasText)
           || view.unsavedTails?.some(hasText)) list.drafts.push({ view, recovery })
@@ -1059,14 +1143,14 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   }
   /**
    * 蓝图页挂载时要的那份：最新一个还没写完的章节蓝图恢复稿；只读章节蓝图运行，读不出的跳过，不挡更早的恢复稿。
-   * 作者整段保存完的（续写已完成）与运行侧页一样不算。
+   * 判定同 planningRecoverable，不可恢复的跳过，找更早的。
    */
   const findBlueprintRecovery = (): GenerationRecoveryContext | null => {
     assertCurrent()
     for (const run of runSummaries().filter(item => item.operation === 'chapter-blueprint-directory')) {
       let recovery: GenerationRecoveryContext
       try { recovery = readContext(run.handle) } catch { continue }
-      if (recovery.blueprintRecovery && recovery.blueprintRecovery.writeState !== 'complete' && recovery.planningContinuation?.state !== 'complete') return recovery
+      if (recovery.blueprintRecovery && recovery.blueprintRecovery.writeState !== 'complete' && planningRecoverable(recovery)) return recovery
     }
     return null
   }
@@ -1221,6 +1305,51 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       assertCurrent()
       if (!request || Object.keys(request).some(key => key !== 'handle')) throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
       return graphRecovery(graphs.require(request.handle))
+    },
+    readLatestContinuityCheck: (): GraphGenerationRecovery | null => {
+      assertCurrent()
+      // 打开页面时走这里：先只取 run_id，从新到旧找第一份读得出的结论，不一次解析全部 binding（#536）。
+      const rows = deps.database.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
+        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=? ORDER BY r.created_at_ms DESC, r.rowid DESC`)
+        .pluck().all(deps.projectId, graphOperations.continuity) as string[]
+      for (const runId of rows) {
+        let recovery: GraphGenerationRecovery
+        try { recovery = graphRecovery(repository.get(runId)) } catch { continue }
+        if (recovery.result) return recovery
+      }
+      return null
+    },
+    /** 读时把结果落进建议表，崩溃后重开也只会补齐同一份。 */
+    listContinuitySuggestions: (request: GraphGenerationChannels['graph-generation:suggestions']['args'][0]): ContinuitySuggestionList | null => {
+      assertCurrent()
+      if (!request || Object.keys(request).some(key => key !== 'finalizationId') || typeof request.finalizationId !== 'string') throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
+      const rows = deps.database.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
+        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=?
+          AND json_extract(r.binding_json,'$.sourceManifest.graphGenerationInput.finalizationId')=? ORDER BY r.created_at_ms DESC, r.rowid DESC`)
+        .pluck().all(deps.projectId, graphOperations['continuity-suggest'], request.finalizationId) as string[]
+      for (const runId of rows) {
+        let recovery: GraphGenerationRecovery
+        try { recovery = graphRecovery(repository.get(runId)) } catch { continue }
+        const { context, result } = recovery
+        if (context.kind !== 'continuity-suggest' || result?.kind !== 'continuity-suggest') continue
+        const statuses = BlueprintSuggestionRepository.materialize(deps.database, request.finalizationId, runId, context.chapters, result)
+        if (!statuses) return null
+        const nodes = new Map(context.nodes.map(node => [node.eventId, node]))
+        return { runId, checkedChapters: context.chapters.map(chapter => chapter.chapterNumber), droppedSuggestions: result.droppedSuggestions,
+          suggestions: result.suggestions.flatMap(suggestion => {
+            const status = statuses.get(suggestion.chapterNumber)
+            const chapter = context.chapters.find(item => item.chapterNumber === suggestion.chapterNumber)!
+            return status ? [{ suggestionId: `${runId}:${suggestion.chapterNumber}`, chapterNumber: suggestion.chapterNumber, status, issues: suggestion.issues,
+              basis: suggestion.eventIds.map(id => nodes.get(id)!), before: patchedFields(chapter, suggestion.patch), after: suggestion.patch }] : []
+          }) }
+      }
+      return null
+    },
+    decideContinuitySuggestion: (request: GraphGenerationChannels['graph-generation:decide-suggestion']['args'][0]) => {
+      assertCurrent()
+      if (!request || Object.keys(request).some(key => !['suggestionId', 'decision'].includes(key)) || typeof request.suggestionId !== 'string'
+        || !['accept', 'reject'].includes(request.decision)) throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
+      return BlueprintSuggestionRepository.decide(deps.database, request.suggestionId, request.decision)
     },
     executeGraphGeneration: async (request: GraphGenerationChannels['graph-generation:execute']['args'][0]) => {
       assertCurrent()
@@ -1527,10 +1656,12 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     listPendingFinalizedCharacterStateCandidates: () => finalizedCharacters.listPendingStateCandidates(),
     readPendingFinalizedCharacterStateCandidate: (request: { draftId: number; candidateKey: string }) => finalizedCharacters.readPendingStateCandidate(request),
     decideFinalizedCharacterStateCandidate: (request: import('../../src/shared/finalized-continuity').FinalizedCharacterStateDecisionRequest) => finalizedCharacters.decideStateCandidate(request),
+    listPendingFinalizedRelationCandidates: () => finalizedCharacters.listPendingRelationCandidates(),
+    decideFinalizedRelationCandidate: (request: import('../../src/shared/finalized-continuity').FinalizedRelationDecisionRequest) => finalizedCharacters.decideRelationCandidate(request),
     prepareReviewRevision: (request: PrepareReviewRevisionRequest) => reviewRevisions.prepare(request),
     commitReview: (request: ReviewGenerationCommitRequest) => reviewRevisions.commitReview(request, assertSourcesCurrent),
     commitRevision: (request: RevisionGenerationCommitRequest) => reviewRevisions.commitRevision(request, assertSourcesCurrent),
-    readReviewRevisionRecovery, listRecovery, findBlueprintRecovery,
+    readReviewRevisionRecovery, listRecovery, findBlueprintRecovery, dismissPlanningRecovery,
     readContext, readBatch, prepareDraftContext, preparedKnowledge, draftPreparationBinding, retryDraftShortOutline,
     beginBatch: (request: BeginGenerationBatchRequest) => {
       assertGenerationBatchIntent(request)
@@ -1558,6 +1689,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       }).immediate()
     },
     assertSynopsisCommit, commitPlotOutlineAuthorEdit, commitBlueprintAuthorEdit,
+    recordPlotOutlineCommit: (handle: MainGenerationRunHandle) => repository.recordPlotOutlineCommitWithinTransaction(requireRun(handle).runId),
     withAgentChildEffect: <T>(handle: MainGenerationRunHandle, effect: () => T): T => { requireRun(handle); return agents.withChildEffect(handle, effect) },
     read: (handle: MainGenerationRunHandle) => viewOf(requireRun(handle)),
     listDirectoryProgress: () => {

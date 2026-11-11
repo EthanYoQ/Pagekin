@@ -11,6 +11,7 @@ import type {
   AppFailure,
   ProjectSessionContext,
 } from '../shared/ipc-channels'
+import type { KnowledgeSearchHit } from '../shared/knowledge-ranking'
 
 export interface PlanningMaterial {
   fileName: string
@@ -49,11 +50,7 @@ export interface KBDocument {
 }
 
 /** 检索结果 */
-export interface SearchResult {
-  text: string
-  score: number
-  fileName: string
-}
+export type SearchResult = KnowledgeSearchHit
 
 /** 知识库统计 */
 export interface KBStatsData {

@@ -185,6 +185,7 @@ export interface GenerationAttemptReceipt {
   finishReason: LLMFinishReason
   /** Main-normalized failure category; never provider response text. */
   failureCode?: 'GENERATION_PROVIDER_FAILED' | 'NETWORK_ERROR' | 'ROOT_BUDGET_EXHAUSTED' | 'GENERATION_STORAGE_FAILED' | 'GENERATION_CONTEXT_LENGTH_EXCEEDED'
+  retryWithLearnedWindow?: true
   usage?: TokenUsage
   promptBudget?: PromptBudgetReport
 }
@@ -259,7 +260,6 @@ export class GenerationHarnessError extends Error {
       | 'INVALID_POLICY'
       | 'ATTEMPT_BUDGET_EXHAUSTED'
       | 'REQUESTED_TOKEN_BUDGET_EXHAUSTED'
-      | 'CONTEXT_BUDGET_EXHAUSTED'
       | 'PROMPT_BUDGET_EXHAUSTED'
       | 'DEADLINE_EXHAUSTED'
       | 'CANCELLED'
@@ -297,8 +297,6 @@ export class GenerationAttemptError extends GenerationHarnessError {
 export function safeReceiptPurpose(purpose: string): string {
   return /^[a-z0-9][a-z0-9:_-]{0,127}$/u.test(purpose) ? purpose : 'unknown'
 }
-
-const CONTEXT_SAFETY_RESERVE_TOKENS = 512
 
 function utf8Bytes(value: string): number {
   return new TextEncoder().encode(value).byteLength
@@ -405,26 +403,6 @@ export function createPromptBudgetReport(input: {
 
 function logPromptBudgetReport(report: PromptBudgetReport): void {
   console.info('[GenerationPromptBudget]', report)
-}
-
-function contextBudgetExhaustedMessage(input: {
-  modelId: string
-  contextWindowTokens: number
-  estimatedInputTokens: number
-  sections?: readonly PromptBudgetSectionReport[]
-}): string {
-  const contributors = input.sections
-    ? [...input.sections]
-        .sort((left, right) => right.utf8Bytes - left.utf8Bytes)
-        .slice(0, 3)
-        .map(section => `${section.sectionName}=${section.utf8Bytes} UTF-8 bytes`)
-        .join(', ')
-    : 'prompt sections unavailable'
-  return '当前生成输入没有安全的输出空间。'
-    + `模型=${input.modelId}；上下文=${input.contextWindowTokens}；`
-    + `估算输入=${input.estimatedInputTokens}；`
-    + `安全预留额度=${CONTEXT_SAFETY_RESERVE_TOKENS}；输出预留额度=0；`
-    + `主要区段=${contributors}。`
 }
 
 function positiveInteger(value: unknown): number | null {
@@ -620,54 +598,28 @@ export function createGenerationHarness(dependencies: {
           }
 
           const estimatedInputTokens = estimateInputTokens(task.messages)
-          const intentOutputTokens = Math.min(
+          const maxOutputTokens = Math.min(
             capabilities.maxOutputTokens,
             remainingRequestedTokens,
             sessionBudget.maxRequestedOutputTokensPerAttempt,
           )
-          const contextAvailableOutputTokens = capabilities.contextWindowTokens === null
-            ? null
-            : capabilities.contextWindowTokens - estimatedInputTokens - CONTEXT_SAFETY_RESERVE_TOKENS
-          const safeReservedOutputTokens = Math.min(
-            intentOutputTokens,
-            Math.max(0, contextAvailableOutputTokens ?? intentOutputTokens),
-          )
-          const promptBudgetCandidate = task.promptBudget
+          const promptBudget = task.promptBudget
             ? createPromptBudgetReport({
                 messages: task.messages,
                 policy: task.promptBudget,
                 contextWindowTokens: capabilities.contextWindowTokens,
                 estimatedInputTokens,
-                reservedOutputTokens: safeReservedOutputTokens,
+                reservedOutputTokens: maxOutputTokens,
                 modelId: frozenIdentity.id,
               })
-            : undefined
-          if (promptBudgetCandidate?.errorCode === 'PROMPT_BUDGET_EXHAUSTED') {
-            logPromptBudgetReport(promptBudgetCandidate)
-            throw new PromptBudgetExceededError(promptBudgetCandidate)
-          }
-          if (contextAvailableOutputTokens !== null && contextAvailableOutputTokens <= 0) {
-            throw new GenerationHarnessError(
-              'CONTEXT_BUDGET_EXHAUSTED',
-              contextBudgetExhaustedMessage({
-                modelId: frozenIdentity.id,
-                contextWindowTokens: capabilities.contextWindowTokens!,
-                estimatedInputTokens,
-                sections: promptBudgetCandidate?.sections,
-              }),
-            )
-          }
-
-          const maxOutputTokens = Math.min(
-            intentOutputTokens,
-            contextAvailableOutputTokens ?? Number.POSITIVE_INFINITY,
-          )
-          const promptBudget = promptBudgetCandidate
-            ? Object.freeze({ ...promptBudgetCandidate, reservedOutputTokens: maxOutputTokens })
             : undefined
           if (promptBudget) {
             logPromptBudgetReport(promptBudget)
           }
+          if (promptBudget?.errorCode === 'PROMPT_BUDGET_EXHAUSTED') {
+            throw new PromptBudgetExceededError(promptBudget)
+          }
+
           const attempt = attempts + 1
           const plan = Object.freeze({
             attempt,

@@ -247,6 +247,21 @@ describe('agent project read tools', () => {
     }
   })
 
+  it('gives the Agent the same search text when reranking fell back', async () => {
+    const hit = { text: '守塔人姓周。', score: 0.8, fileName: '小传.txt' }
+    const invoke = vi.fn()
+      .mockResolvedValueOnce([hit])
+      .mockResolvedValueOnce([{ ...hit, rerankFallback: 'timeout' }])
+    vi.stubGlobal('window', { aiNovelAPI: { invoke, on: vi.fn(), once: vi.fn(), send: vi.fn() } })
+    const context = createAgentExecutionContext()
+
+    const plain = await searchKnowledgeTool.execute({ query: '守塔人' }, context)
+    const fallback = await searchKnowledgeTool.execute({ query: '守塔人' }, context)
+
+    expect(plain.success).toBe(true)
+    expect(fallback).toEqual(plain)
+  })
+
   it('uses the frozen Agent language for knowledge-search failures', async () => {
     useProjectStore.setState({
       currentProject: {

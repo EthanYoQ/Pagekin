@@ -5,15 +5,21 @@ import { createRoot, type Root } from 'react-dom/client'
 
 import type { TrashedChapter } from '../../../../shared/chapter-deletion'
 import type { AuthoritativeChapterSequence } from '../../../../shared/chapter-sequence'
+import type { ContinuityNode } from '../../../../shared/character-continuity'
+import type { ConsistencyExemption } from '../../../../shared/consistency-preflight'
 import type { ProjectData } from '../../../../shared/ipc-channels'
+import { continuityCheckChapter, continuityFindingKey } from '../../../../shared/blueprint-continuity-check'
 import { globalEventBus } from '../../../../shared/event-bus'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
 import { disposeProjectService, initProjectService } from '../../../../services/project-service'
 import type { ChapterBlueprint } from '../../../../services/workflows/directory-workflow'
 import { editorSaveHandler, useEditorStore } from '../../../../stores/editor-store'
+import { useCharacterStore } from '../../../../stores/character-store'
+import { useLLMStore } from '../../../../stores/llm-store'
 import { useLocaleStore } from '../../../../stores/locale-store'
 import { useStageStore } from '../../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../../stores/project-store'
+import RunSheet from '../../run/RunSheet'
 import StageBlueprint from '../StageBlueprint'
 
 const writableOverride = vi.hoisted(() => ({ value: null as number[] | null }))
@@ -46,6 +52,19 @@ let invoke: ReturnType<typeof vi.fn>
 let authority: AuthoritativeChapterSequence | null
 let trashEntries: TrashedChapter[]
 let trashListFails: boolean
+let exemptions: ConsistencyExemption[]
+let nodesFail: boolean
+let committedHints: Record<number, unknown>
+let hintsFail: boolean
+let heldHintReplies: Array<Promise<Record<number, unknown>>>
+let exemptionsFail: boolean
+let exemptionWritesFail: boolean
+let projections: unknown[]
+
+const BROKEN_NODE: ContinuityNode = {
+  eventId: 'relation:add:line', subjectId: 'a', subjectName: '林岚', targetId: 'b', targetName: '守塔人', relationshipId: 'line', aspect: 'relation',
+  value: '决裂', effectiveChapter: 1, provenance: { kind: 'author', operationId: 'op' }, draftId: null, seq: 1, quote: null,
+}
 
 function trashed(chapterNumber: number, restoreMode: TrashedChapter['restoreMode'] = 'into-gap'): TrashedChapter {
   return {
@@ -79,7 +98,30 @@ function installIpc() {
       status: 'continuous', lastChapterNumber: nextChapter - 1, nextChapterNumber: nextChapter, gaps: [], duplicateChapterNumbers: [], authorityFingerprint: 'a'.repeat(64),
     }
     if (channel === 'generation:find-blueprint-recovery') return null
-    if (channel === 'db:consistency-exemption-list') return []
+    if (channel === 'graph-generation:latest-continuity') return null
+    if (channel === 'db:consistency-exemption-list') {
+      if (exemptionsFail) throw new Error('exemptions unavailable')
+      return exemptions
+    }
+    if (channel === 'db:continuity-list-before') return projections
+    if (channel === 'db:blueprint-relationship-hints') {
+      if (hintsFail) throw new Error('hints unavailable')
+      return heldHintReplies.shift() ?? committedHints
+    }
+    if (channel === 'db:character-continuity-preflight-nodes') {
+      if (nodesFail) throw new Error('nodes unavailable')
+      return [BROKEN_NODE]
+    }
+    if (channel === 'db:consistency-exemption-save') {
+      if (exemptionWritesFail) throw new Error('SQLITE_BUSY')
+      exemptions = [...exemptions, { stableFactKey: String(args[0]), reason: String(args[1]), revoked: false, chapterNumber: args[2] as number | null }]
+      return { success: true }
+    }
+    if (channel === 'db:consistency-exemption-revoke') {
+      if (exemptionWritesFail) throw new Error('SQLITE_BUSY')
+      exemptions = exemptions.map(item => item.stableFactKey === args[0] && item.chapterNumber === args[1] ? { ...item, revoked: true } : item)
+      return { success: true }
+    }
     if (channel === 'chapter:trash-list') {
       if (trashListFails) throw new Error('trash list unavailable')
       return { success: true, entries: trashEntries, damaged: [] }
@@ -141,6 +183,14 @@ beforeEach(async () => {
   authority = null
   trashEntries = []
   trashListFails = false
+  exemptions = []
+  nodesFail = false
+  committedHints = {}
+  hintsFail = false
+  heldHintReplies = []
+  exemptionsFail = false
+  exemptionWritesFail = false
+  projections = []
   writableOverride.value = null
   useLocaleStore.setState({ locale: 'zh-CN' })
   useEditorStore.setState({ tabs: [], activeTabId: null, draftLedgers: {} })
@@ -503,6 +553,389 @@ describe('蓝图阶段', () => {
     expect((saved as ChapterBlueprint[]).find(item => item.chapterNumber === 2)).toMatchObject({ title: '北堤夜雨', userGuidance: '节奏放慢，只写声音。' })
   })
 
+  describe('保存后的连续性提示', () => {
+    const planned = () => {
+      stored = [blueprint(2, '同行'), blueprint(3, '灯室')]
+      committedHints = { 2: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
+      nextChapter = 2
+    }
+    const save = (name = '保存此章') => act(async () => page.getByRole('button', { name }).click())
+
+    it('蓝图关系和时间线相反：保存成功，提示写明章号和原文', async () => {
+      planned()
+      await renderPage()
+      await save()
+      expect(invoke.mock.calls.some(call => call[0] === 'db:blueprint-upsert' && (call[1] as ChapterBlueprint).chapterNumber === 2)).toBe(true)
+      await expect.element(page.getByText('第 2 章蓝图把 林岚 和 守塔人 写成「亲密同伴」，但第 1 章起两人是「决裂」。')).toBeVisible()
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).toBeVisible()
+      await expect.element(page.getByRole('button', { name: '写第 2 章' })).toBeEnabled()
+    })
+
+    it('一键确认只豁免这一章，不要求打字，可以撤销', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+      expect(exemptions).toEqual([{ stableFactKey: 'relation:relation:add:line', reason: '作者确认是有意安排', revoked: false, chapterNumber: 2 }])
+      await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).not.toBeInTheDocument()
+      await act(async () => page.getByRole('button', { name: '撤销' }).click())
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).toBeVisible()
+    })
+
+    it('全书豁免放在次级按钮，写入的章号为空', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await act(async () => page.getByRole('button', { name: '全书都不再提示' }).click())
+      expect(exemptions).toMatchObject([{ chapterNumber: null, revoked: false }])
+      await expect.element(page.getByText('已记下，全书不再提示。')).toBeVisible()
+    })
+
+    it('读回执时带上实际被检查的蓝图内容', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await vi.waitFor(() => expect(calls('db:blueprint-relationship-hints').length).toBeGreaterThan(0))
+      expect(calls('db:blueprint-relationship-hints')[0]?.[1]).toMatchObject([{ chapterNumber: 2, title: '同行' }])
+    })
+
+    it('蓝图被别处替换后，旧提示和豁免按钮一起消失', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).toBeVisible()
+      await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
+      await expect.element(page.getByText('依据：第 1 章 · 决裂')).not.toBeInTheDocument()
+      await expect.element(page.getByRole('button', { name: '这是有意安排' })).not.toBeInTheDocument()
+    })
+
+    describe('迟到的预检结果', () => {
+      const CONFLICT = { 2: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
+      const conflict = (number: number) => page.getByText(new RegExp(`第 ${number} 章蓝图把 林岚 和 守塔人`))
+      const chapter = (number: number) => act(async () => page.getByRole('button', { name: new RegExp(`^${number}[^0-9]`) }).click())
+      const retitle = (title: string) => act(async () => page.getByRole('textbox', { name: '章节标题' }).fill(title))
+      const hold = () => {
+        let release!: (hints: Record<number, unknown>) => void
+        heldHintReplies.push(new Promise(resolve => { release = resolve }))
+        return release
+      }
+      const requested = (count: number) => vi.waitFor(() => expect(calls('db:blueprint-relationship-hints')).toHaveLength(count))
+      const landed = async (count: number) => {
+        await vi.waitFor(() => expect(calls('db:continuity-list-before')).toHaveLength(count))
+        await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+      }
+
+      it('蓝图被别处刷新后才返回的结果，不把提示带回来', async () => {
+        planned()
+        await renderPage()
+        const late = hold()
+        await save()
+        await requested(1)
+        await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
+        await act(async () => late(CONFLICT))
+        await landed(1)
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+        await expect.element(page.getByRole('button', { name: '这是有意安排' })).not.toBeInTheDocument()
+      })
+
+      it('刷新之后又保存，刷新前的结果仍然写不进去', async () => {
+        planned()
+        await renderPage()
+        const beforeRefresh = hold()
+        await save()
+        await requested(1)
+        await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
+        const afterRefresh = hold()
+        await retitle('回潮')
+        await save()
+        await requested(2)
+        await act(async () => beforeRefresh(CONFLICT))
+        await landed(1)
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+        await act(async () => afterRefresh({}))
+        await landed(2)
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+      })
+
+      it('同一章旧结果晚于新结果返回：显示新结果，撤销按新内容重查', async () => {
+        planned()
+        await renderPage()
+        const older = hold()
+        await save()
+        await requested(1)
+        const newer = hold()
+        await retitle('回潮')
+        await save()
+        await requested(2)
+        await act(async () => newer(CONFLICT))
+        await expect.element(conflict(2)).toBeVisible()
+        await act(async () => older({}))
+        await landed(2)
+        await expect.element(conflict(2)).toBeVisible()
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await requested(3)
+        expect(calls('db:blueprint-relationship-hints')[2]?.[1]).toMatchObject([{ chapterNumber: 2, title: '回潮' }])
+      })
+
+      it('新的保存还没出结果就撤销豁免：按新内容重查', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await expect.element(conflict(2)).toBeVisible()
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        const pendingSave = hold()
+        await retitle('回潮')
+        await save()
+        await requested(2)
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await requested(3)
+        expect(calls('db:blueprint-relationship-hints')[2]?.[1]).toMatchObject([{ chapterNumber: 2, title: '回潮' }])
+        await act(async () => pendingSave({}))
+      })
+
+      it('预检在途时豁免这一章：结果迟到，提示不回来，撤销仍按新内容重查', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await expect.element(conflict(2)).toBeVisible()
+        const pendingSave = hold()
+        await retitle('回潮')
+        await save()
+        await requested(2)
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        await act(async () => pendingSave(CONFLICT))
+        await landed(2)
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await requested(3)
+        expect(calls('db:blueprint-relationship-hints')[2]?.[1]).toMatchObject([{ chapterNumber: 2, title: '回潮' }])
+      })
+
+      it('全书豁免作废别的章在途的预检', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await chapter(3)
+        const third = hold()
+        await save()
+        await requested(2)
+        await chapter(2)
+        await act(async () => page.getByRole('button', { name: '全书都不再提示' }).click())
+        await expect.element(page.getByText('已记下，全书不再提示。')).toBeVisible()
+        await act(async () => third({ 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }))
+        await landed(2)
+        await chapter(3)
+        await expect.element(page.getByRole('textbox', { name: '章节标题' })).toHaveValue('灯室')
+        await expect.element(conflict(3)).not.toBeInTheDocument()
+      })
+
+      it('这一章的豁免不作废别的章在途的预检', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await chapter(3)
+        const third = hold()
+        await save()
+        await requested(2)
+        await chapter(2)
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        await act(async () => third({ 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }))
+        await landed(2)
+        await chapter(3)
+        await expect.element(conflict(3)).toBeVisible()
+      })
+
+      it('不同章的预检互不作废', async () => {
+        planned()
+        await renderPage()
+        const second = hold()
+        await save()
+        await requested(1)
+        await chapter(3)
+        const third = hold()
+        await save()
+        await requested(2)
+        await act(async () => third({ 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }))
+        await expect.element(conflict(3)).toBeVisible()
+        await act(async () => second(CONFLICT))
+        await landed(2)
+        await expect.element(conflict(3)).toBeVisible()
+        await chapter(2)
+        await expect.element(conflict(2)).toBeVisible()
+      })
+    })
+
+    describe('豁免之后的提示状态', () => {
+      const chapter = (number: number) => act(async () => page.getByRole('button', { name: new RegExp(`^${number}[^0-9]`) }).click())
+      const conflict = (number: number) => page.getByText(new RegExp(`第 ${number} 章蓝图把 林岚 和 守塔人`))
+
+      it('全书豁免后，别的章已显示过的同一条提示也消失', async () => {
+        planned()
+        committedHints = { ...committedHints, 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
+        await renderPage()
+        await save()
+        await chapter(3)
+        await save()
+        await expect.element(conflict(3)).toBeVisible()
+        await chapter(2)
+        await act(async () => page.getByRole('button', { name: '全书都不再提示' }).click())
+        await expect.element(page.getByText('已记下，全书不再提示。')).toBeVisible()
+        await chapter(3)
+        await expect.element(page.getByRole('textbox', { name: '章节标题' })).toHaveValue('灯室')
+        await expect.element(conflict(3)).not.toBeInTheDocument()
+      })
+
+      it('撤销全书豁免后，别的章的提示恢复', async () => {
+        planned()
+        committedHints = { ...committedHints, 3: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
+        await renderPage()
+        await save()
+        await chapter(3)
+        await save()
+        await chapter(2)
+        await act(async () => page.getByRole('button', { name: '全书都不再提示' }).click())
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await expect.element(conflict(2)).toBeVisible()
+        await chapter(3)
+        await expect.element(conflict(3)).toBeVisible()
+      })
+
+      it('豁免后作者又改了这一章并保存，撤销按最新保存的内容重查', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await act(async () => page.getByLabelText(/作者微操指导/).fill('两人在这一章和解。'))
+        await save()
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await vi.waitFor(() => expect(exemptions).toMatchObject([{ revoked: true }]))
+        await expect.element(page.getByRole('button', { name: '撤销' })).not.toBeInTheDocument()
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+      })
+
+      const toasts = () => [...document.querySelectorAll('.pi-toast')].map(toast => toast.textContent)
+
+      it('豁免没存上：提示留着，告诉作者再点一次', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await expect.element(conflict(2)).toBeVisible()
+        exemptionWritesFail = true
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await vi.waitFor(() => expect(toasts()).toContain('没记下，提示还在。再点一次试试。'))
+        await expect.element(conflict(2)).toBeVisible()
+        await expect.element(page.getByText('已记下，这一章不再提示。')).not.toBeInTheDocument()
+      })
+
+      it('撤销没存上：「已记下」留着，告诉作者再点一次', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        exemptionWritesFail = true
+        await act(async () => page.getByRole('button', { name: '撤销' }).click())
+        await vi.waitFor(() => expect(toasts()).toContain('没撤销，这条还是不提示。再点一次试试。'))
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+      })
+
+      it('豁免已保存但重查失败：提示不和「已记下」同时显示', async () => {
+        planned()
+        await renderPage()
+        await save()
+        await expect.element(conflict(2)).toBeVisible()
+        exemptionsFail = true
+        await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+        await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+        await expect.element(conflict(2)).not.toBeInTheDocument()
+      })
+    })
+
+    it('回执读不出来时保存照常，不提示也不报错', async () => {
+      planned()
+      hintsFail = true
+      await renderPage()
+      await save()
+      await vi.waitFor(() => expect(calls('db:blueprint-relationship-hints').length).toBeGreaterThan(0))
+      await expect.element(page.getByText(/依据：/)).not.toBeInTheDocument()
+      await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('切到别的章「已记下」就消失，切回来也不再出现', async () => {
+      planned()
+      await renderPage()
+      await save()
+      await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+      const noted = page.getByText('已记下，这一章不再提示。')
+      await expect.element(noted).toBeVisible()
+      await act(async () => page.getByRole('button', { name: /^3\D/ }).click())
+      await expect.element(noted).not.toBeInTheDocument()
+      await act(async () => page.getByRole('button', { name: /^2\D/ }).click())
+      await expect.element(page.getByRole('textbox', { name: '章节标题' })).toHaveValue('同行')
+      await expect.element(noted).not.toBeInTheDocument()
+      expect(exemptions).toMatchObject([{ chapterNumber: 2, revoked: false }])
+    })
+
+    it('按钮把作者带到这个角色：角色名单打开，选中关系所属的人', async () => {
+      planned()
+      const cards = [{ characterId: 'z', name: '路人' }, { characterId: 'a', name: '林岚' }]
+      const original = useCharacterStore.getState()
+      useCharacterStore.setState({ characters: cards as never, dataProjectSession: SESSION, loadingProjectSession: null, lastError: null, selectedId: 'z' })
+      try {
+        await renderPage()
+        await save()
+        await act(async () => page.getByRole('button', { name: '去看这个角色' }).click())
+        expect(useEditorStore.getState().tabs.map(tab => tab.type)).toContain('character')
+        expect(useCharacterStore.getState().selectedId).toBe('a')
+      } finally {
+        useCharacterStore.setState(original)
+      }
+    })
+
+    it('蓝图列了已死的角色：保存成功，提示写明依据，不带去角色的按钮', async () => {
+      projections = [{
+        draftId: 1, chapterNumber: 1, chapterTitle: '旧港', chapterNotes: '',
+        source: { draftId: 1, finalizationId: 'finalization-1', chapterNumber: 1, contentHash: 'a'.repeat(64) },
+        sourceStatus: 'current',
+        facts: [{ category: 'character-state', entities: ['守塔人'], statement: '守塔人已经死亡。', sourceChapter: 1, evidence: '守塔人没有再回来。' }],
+      }]
+      await renderPage()
+      await save()
+      expect(calls('db:blueprint-upsert')).toHaveLength(1)
+      await expect.element(page.getByText(/“守塔人”处于死亡终态/)).toBeVisible()
+      await expect.element(page.getByText('依据：第 1 章 · 守塔人没有再回来。')).toBeVisible()
+      await expect.element(page.getByRole('button', { name: '这是有意安排' })).toBeVisible()
+      await expect.element(page.getByRole('button', { name: '去看这个角色' })).not.toBeInTheDocument()
+    })
+
+    it('读节点失败时保存照常，不提示也不报错', async () => {
+      planned()
+      nodesFail = true
+      await renderPage()
+      await save()
+      await vi.waitFor(() => expect(invoke.mock.calls.some(call => call[0] === 'db:character-continuity-preflight-nodes')).toBe(true))
+      await expect.element(page.getByText(/依据：/)).not.toBeInTheDocument()
+      await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('英文界面的提示和按钮都是英文', async () => {
+      planned()
+      await renderPage()
+      await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+      await save('Save chapter')
+      await expect.element(page.getByText('The chapter 2 blueprint has 林岚 and 守塔人 as “亲密同伴”, but from chapter 1 they are “决裂”.')).toBeVisible()
+      await expect.element(page.getByText('Basis: Chapter 1 · 决裂')).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'This is intentional' })).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'View character' })).toBeVisible()
+    })
+  })
+
   it('保存此章只写当前一章', async () => {
     await renderPage()
     await act(async () => page.getByRole('textbox', { name: '章节标题' }).fill('旧港潮汐'))
@@ -772,5 +1205,499 @@ describe('蓝图阶段', () => {
     await expect.element(page.getByRole('button', { name: '写第 3 章' })).toBeVisible()
     await act(async () => page.getByRole('button', { name: '本次写作选项' }).click())
     await expect.element(page.getByRole('dialog', { name: '本次写作选项' }).getByLabelText(/作者微操指导/)).toHaveValue('')
+  })
+})
+
+describe('蓝图页开着时在运行侧页放弃蓝图恢复稿（#608）', () => {
+  const recovery = (runId: string, createdAtMs: number) => ({
+    handle: { projectId: SESSION.projectId, epoch: SESSION.leaseId, rootActionId: `根${runId}`, runId }, operation: 'chapter-blueprint-directory',
+    blueprintRecovery: { writeState: 'ready', draft: `第 15–16 章蓝图（${runId}）`, editRange: { from: 15, to: 16 } },
+    planningDraft: { requestedRange: { from: 15, to: 16 }, createdAtMs, standing: 'open' },
+    planningContinuation: { state: 'ready', remainingRange: { from: 16, to: 16 } },
+  })
+  let open: ReturnType<typeof recovery>[]
+  let reply: { resolve: () => void; reject: (reason: Error) => void } | undefined
+  let dismissalFails: boolean
+
+  beforeEach(() => {
+    open = [recovery('最新', 2000)]
+    reply = undefined
+    dismissalFails = false
+    const fallback = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'generation:list-recovery') return { planning: open, editors: [], reviews: [], drafts: [], batches: [], partial: false }
+      if (channel === 'generation:find-blueprint-recovery') return [...open].sort((a, b) => b.planningDraft.createdAtMs - a.planningDraft.createdAtMs)[0] ?? null
+      if (channel === 'generation:dismiss-planning-recovery') {
+        // 主进程收到请求就同步记下放弃，回复晚一点才到渲染端。
+        const runId = (args[0] as { handle: { runId: string } }).handle.runId
+        if (!dismissalFails) open = open.filter(item => item.handle.runId !== runId)
+        return new Promise<void>((resolve, reject) => { reply = { resolve, reject } })
+      }
+      if (channel === 'db:recovery-candidate-list' || channel === 'skills:list-user') return []
+      if (channel === 'fs:check-exists') return false
+      return fallback(channel, ...args)
+    })
+  })
+
+  async function renderWithRunSheet() {
+    await act(async () => root?.render(
+      <div className="paper-ink">
+        <StageBlueprint projectKey={PROJECT_PATH} />
+        <RunSheet sheet={{ kind: 'run', tab: 'active' }} />
+      </div>,
+    ))
+    await expect.element(page.getByRole('complementary', { name: '章节规划' })).toBeVisible()
+    await vi.waitFor(() => expect(banner()).toBeTruthy())
+    await vi.waitFor(() => expect(document.querySelector('.run-recovery > .run-card')).toBeTruthy())
+  }
+  const banner = () => [...document.querySelectorAll('.pi-notice')].find(notice => notice.querySelector('.pi-notice-title')?.textContent === '有一份蓝图恢复稿')
+  const bannerEdit = () => [...banner()!.querySelectorAll('button')].find(item => item.textContent === '编辑恢复稿')!
+  const sheetButton = (name: string) => [...document.querySelector('.run-recovery > .run-card')!.querySelectorAll('button')].find(item => item.textContent === name)!
+  async function dismissNewestInRunSheet() {
+    await act(async () => sheetButton('放弃…').click())
+    await act(async () => sheetButton('放弃').click())
+  }
+  const openedRecoveryTabs = () => useEditorStore.getState().tabs.flatMap(tab => tab.planningRecovery ? [tab.planningRecovery.handle.runId] : [])
+
+  it('放弃唯一一份：横幅与「编辑恢复稿」立即消失，不用重新进入蓝图页', async () => {
+    await renderWithRunSheet()
+    await dismissNewestInRunSheet()
+    await act(async () => reply!.resolve())
+    await vi.waitFor(() => expect(banner()).toBeUndefined())
+    expect(document.querySelector('.run-recovery')).toBeNull()
+  })
+
+  it('同范围还有更早一份：横幅留着，「编辑恢复稿」打开更早的那份', async () => {
+    open = [recovery('更早', 1000), recovery('最新', 2000)]
+    await renderWithRunSheet()
+    await dismissNewestInRunSheet()
+    await act(async () => reply!.resolve())
+    await act(async () => bannerEdit().click())
+    await vi.waitFor(() => expect(openedRecoveryTabs()).toEqual(['更早']))
+  })
+
+  it('放弃失败：横幅仍指向原来那份，运行侧页说明失败', async () => {
+    dismissalFails = true
+    await renderWithRunSheet()
+    await dismissNewestInRunSheet()
+    await act(async () => reply!.reject(new Error('GENERATION_PLANNING_RECOVERY_IN_FLIGHT')))
+    await vi.waitFor(() => expect(document.querySelector('.run-recovery [role="alert"]')?.textContent).toBeTruthy())
+    expect(sheetButton('放弃…')).toBeTruthy()
+    await act(async () => bannerEdit().click())
+    await vi.waitFor(() => expect(openedRecoveryTabs()).toEqual(['最新']))
+  })
+
+  it('放弃的回复还没到时点横幅的「编辑恢复稿」：不会打开已放弃的那份', async () => {
+    await renderWithRunSheet()
+    await dismissNewestInRunSheet()
+    await act(async () => bannerEdit().click())
+    await act(async () => reply!.resolve())
+    expect(openedRecoveryTabs()).toEqual([])
+    await vi.waitFor(() => expect(banner()).toBeUndefined())
+    expect(openedRecoveryTabs()).toEqual([])
+  })
+})
+
+describe('蓝图页打开蓝图恢复稿时读取失败（#608）', () => {
+  it('点横幅的「编辑恢复稿」时读不到恢复稿：提示恢复稿还在、没能打开，让作者再点一次', async () => {
+    const recovery = { handle: { projectId: SESSION.projectId, epoch: SESSION.leaseId, rootActionId: '根', runId: '最新' },
+      blueprintRecovery: { writeState: 'ready', draft: '第 15–16 章蓝图', editRange: { from: 15, to: 16 } },
+      planningDraft: { requestedRange: { from: 15, to: 16 }, createdAtMs: 1, standing: 'open' } }
+    let findFails = false
+    const fallback = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'generation:find-blueprint-recovery') {
+        if (findFails) throw new Error('GENERATION_DATABASE_NOT_READY')
+        return recovery
+      }
+      return fallback(channel, ...args)
+    })
+    await renderPage()
+    await expect.element(page.getByRole('button', { name: '编辑恢复稿' })).toBeVisible()
+    findFails = true
+    await act(async () => page.getByRole('button', { name: '编辑恢复稿' }).click())
+    await vi.waitFor(() => expect([...document.querySelectorAll('.pi-toast')].map(toast => toast.textContent))
+      .toContain('恢复稿还在，但没能打开读取时出错。请再点一次「编辑恢复稿」。'))
+    expect(useEditorStore.getState().tabs.filter(tab => tab.planningRecovery)).toEqual([])
+  })
+})
+
+describe('蓝图页的恢复稿横幅跟着主进程的判定走（#608）', () => {
+  let current: unknown
+  beforeEach(() => {
+    current = { handle: { projectId: SESSION.projectId, epoch: SESSION.leaseId, rootActionId: '根', runId: '最新' },
+      blueprintRecovery: { writeState: 'ready', draft: '第 15–16 章蓝图', editRange: { from: 15, to: 16 } },
+      planningDraft: { requestedRange: { from: 15, to: 16 }, createdAtMs: 1, standing: 'open' } }
+    const fallback = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'generation:find-blueprint-recovery' ? current : fallback(channel, ...args))
+  })
+  const banner = () => [...document.querySelectorAll('.pi-notice-title')].find(title => title.textContent === '有一份蓝图恢复稿')
+
+  it('点「编辑恢复稿」时已经没有可给的恢复稿：不打开，横幅随之消失', async () => {
+    await renderPage()
+    await expect.element(page.getByRole('button', { name: '编辑恢复稿' })).toBeVisible()
+    current = null
+    await act(async () => page.getByRole('button', { name: '编辑恢复稿' }).click())
+    await vi.waitFor(() => expect(banner()).toBeUndefined())
+    expect(useEditorStore.getState().tabs.filter(tab => tab.planningRecovery)).toEqual([])
+  })
+
+  it('缺的章节在页面开着时都存了正式蓝图：横幅随蓝图刷新一起消失', async () => {
+    await renderPage()
+    await expect.element(page.getByRole('button', { name: '编辑恢复稿' })).toBeVisible()
+    current = null
+    await refreshBlueprints()
+    await vi.waitFor(() => expect(banner()).toBeUndefined())
+  })
+})
+
+describe('AI 检查（蓝图正文对照时间线）', () => {
+  const HANDLE = { projectId: 'stage-blueprint', epoch: 'epoch', rootActionId: 'root', runId: 'run' }
+  const NODE = { eventId: 'relation:add:line', since: { zhCN: '第 1 章起', enUS: 'from chapter 1' }, fromChapter: 1, subjectName: '林岚', aspect: 'relation', targetName: '守塔人', value: '决裂' }
+  const finding = (chapterNumber: number, issue: string, ...more: { issue: string; suggestion: string }[]) =>
+    ({ chapterNumber, eventIds: ['relation:add:line'], points: [{ issue, suggestion: '改成对峙。' }, ...more] })
+  const recovery = (over: Record<string, unknown>) => ({
+    view: { handle: HANDLE, status: 'running', budgetDiagnostics: [], artifacts: [], candidates: [] }, modelId: 'grok', attemptCount: 0, effects: [], sourceStatus: 'current',
+    context: { projectId: 'stage-blueprint', kind: 'continuity', input: { kind: 'continuity' }, chapters: frozen, nodes: [NODE] }, ...over,
+  })
+  const checked = (findings: ReturnType<typeof finding>[]) => ({ attemptCount: 1, artifact: { artifactId: 'a', revision: 1, textHash: 'h' },
+    result: { kind: 'continuity', checkedThroughChapter: 3, droppedFindings: 0, findings } })
+  let read: Record<string, unknown>
+  let latest: Record<string, unknown> | null
+  let nodes: ContinuityNode[]
+  let frozen: ReturnType<typeof continuityCheckChapter>[]
+
+  beforeEach(() => {
+    read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。'), finding(3, '第 3 章同样写成同伴。')])
+    latest = null
+    nodes = [BROKEN_NODE]
+    frozen = stored.slice(1).map(continuityCheckChapter)
+    useLLMStore.setState({ models: [{ id: 'grok', name: 'grok', provider: 'openai', protocol: 'openai', modelName: 'grok', apiKey: 'k', baseUrl: 'https://x.test/v1', temperature: 0.7, maxTokens: 2048, purposes: ['generation'] }] as never, defaultModelId: 'grok', loaded: true })
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'graph-generation:latest-continuity') return latest && recovery(latest)
+      if (channel === 'db:character-continuity-preflight-nodes') return nodes
+      if (channel === 'graph-generation:begin') return recovery({})
+      if (channel === 'graph-generation:execute') return { run: recovery({}).view }
+      if (channel === 'graph-generation:read') return recovery(read)
+      return base(channel, ...args)
+    })
+  })
+  const check = () => act(async () => page.getByRole('button', { name: 'AI 检查', exact: true }).click())
+
+  it('点按钮发一次，结论按章显示，依据是章号和节点内容，不露 eventId', async () => {
+    await renderPage(2)
+    await check()
+    expect(calls('graph-generation:begin')).toHaveLength(1)
+    expect(calls('graph-generation:begin')[0]![1]).toMatchObject({ input: { kind: 'continuity' }, modelId: 'grok' })
+    expect(calls('graph-generation:execute')).toHaveLength(1)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await expect.element(page.getByText('依据：第 1 章起，林岚和守塔人是「决裂」')).toBeVisible()
+    await expect.element(page.getByText('建议：改成对峙。')).toBeVisible()
+    expect(document.body.textContent).not.toContain('relation:add:line')
+    await expect.element(page.getByText('第 3 章同样写成同伴。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
+    await act(async () => page.getByRole('button', { name: '第 3 章', exact: true }).click())
+    await expect.element(page.getByText('第 3 章同样写成同伴。')).toBeVisible()
+  })
+
+  it('总结里的章号静止时就带按钮边框，键盘能聚焦并用回车跳过去', async () => {
+    await renderPage(2)
+    await check()
+    const jump = page.getByRole('button', { name: '第 3 章', exact: true }).element() as HTMLButtonElement
+    const border = getComputedStyle(jump)
+    expect(border.borderTopStyle).toBe('solid')
+    expect(border.borderTopColor).not.toBe('rgba(0, 0, 0, 0)')
+    jump.focus()
+    expect(document.activeElement).toBe(jump)
+    await act(async () => userEvent.keyboard('{Enter}'))
+    await expect.element(page.getByText('第 3 章同样写成同伴。')).toBeVisible()
+  })
+
+  it('不点按钮时，打开页面和保存蓝图都不发检查请求', async () => {
+    await renderPage()
+    await act(async () => page.getByRole('textbox', { name: '章节标题' }).fill('旧港潮汐'))
+    await act(async () => page.getByRole('button', { name: '保存此章' }).click())
+    await vi.waitFor(() => expect(calls('db:blueprint-upsert')).toHaveLength(1))
+    expect(calls('graph-generation:begin')).toHaveLength(0)
+    expect(calls('graph-generation:execute')).toHaveLength(0)
+  })
+
+  it('没发现时明确说一句，并写明检查到第几章', async () => {
+    read = checked([])
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('没发现和时间线矛盾的地方。检查到第 3 章。')).toBeVisible()
+  })
+
+  it('结果读不出来：说明蓝图没动，不显示结论', async () => {
+    read = { attemptCount: 1 }
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('蓝图没有改动。这次结果没读出来，再点一次“AI 检查”。')).toBeVisible()
+    await expect.element(page.getByText('依据：第 1 章起，林岚和守塔人是「决裂」')).not.toBeInTheDocument()
+  })
+
+  it('检查期间蓝图被改：结果不显示，提示重新检查', async () => {
+    read = { ...checked([finding(2, '第 2 章矛盾。')]), sourceStatus: 'conflict' }
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
+    await expect.element(page.getByText('第 2 章矛盾。')).not.toBeInTheDocument()
+  })
+
+  it('改了某章蓝图后只有该章结论消失', async () => {
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    stored = stored.map(item => item.chapterNumber === 2 ? { ...item, keyEvents: '改过的事件' } : item)
+    await refreshBlueprints()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+    await act(async () => page.getByRole('button', { name: '第 3 章', exact: true }).click())
+    await expect.element(page.getByText('第 3 章同样写成同伴。')).toBeVisible()
+  })
+
+  it('按章豁免后再次检查不再出现，撤销后恢复', async () => {
+    read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。')])
+    await renderPage(2)
+    await check()
+    await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+    expect(exemptions).toEqual([{ stableFactKey: continuityFindingKey(['relation:add:line']), reason: '作者确认是有意安排', revoked: false, chapterNumber: 2 }])
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+    await act(async () => page.getByRole('button', { name: '撤销' }).click())
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('同一章同一组依据的两条矛盾：都显示在同一张结论卡里', async () => {
+    read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。', { issue: '第 2 章还写两人同住灯塔。', suggestion: '改成分住两处。' })])
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await expect.element(page.getByText('第 2 章还写两人同住灯塔。')).toBeVisible()
+    await expect.element(page.getByText('建议：改成分住两处。')).toBeVisible()
+    expect(document.querySelectorAll('.stage-bp-ai-item')).toHaveLength(1)
+    expect(page.getByRole('button', { name: '这是有意安排' }).elements()).toHaveLength(1)
+  })
+
+  it('豁免合并后的结论卡：再次检查两条都不出现，撤销后两条都回来', async () => {
+    read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。', { issue: '第 2 章还写两人同住灯塔。', suggestion: '改成分住两处。' })])
+    await renderPage(2)
+    await check()
+    await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('第 2 章还写两人同住灯塔。')).not.toBeInTheDocument()
+    await act(async () => page.getByRole('button', { name: '撤销' }).click())
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await expect.element(page.getByText('第 2 章还写两人同住灯塔。')).toBeVisible()
+  })
+
+  describe('检查进行中离开蓝图页', () => {
+    let release: () => void
+    beforeEach(() => {
+      const held = new Promise<void>(resolve => { release = resolve })
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+        if (channel === 'graph-generation:execute') await held
+        return base(channel, ...args)
+      })
+    })
+    const remount = async () => {
+      await act(async () => root?.unmount())
+      root = createRoot(container!)
+      await renderPage(2)
+    }
+    const running = () => page.getByRole('button', { name: '检查中…' })
+
+    it('回来仍显示检查中，按钮不能再点，不再发请求；完成后结果和总结出来', async () => {
+      await renderPage(2)
+      await check()
+      await expect.element(running()).toBeDisabled()
+      await remount()
+      await expect.element(running()).toBeDisabled()
+      release()
+      await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
+      expect(calls('graph-generation:begin')).toHaveLength(1)
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+    })
+
+    it('离开期间检查做完：回来直接看到结果和总结', async () => {
+      await renderPage(2)
+      await check()
+      await act(async () => root?.unmount())
+      release()
+      await vi.waitFor(() => expect(calls('graph-generation:read').length).toBeGreaterThan(0))
+      root = createRoot(container!)
+      await renderPage(2)
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+    })
+
+    it('检查做完、豁免还没读回时离开：回来接回这次总结；显示过之后再回来不重复', async () => {
+      let readsBack!: () => void
+      const readsHeld = new Promise<void>(resolve => { readsBack = resolve })
+      let finished = false
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+        if (channel === 'graph-generation:read') finished = true
+        if (finished && channel === 'db:consistency-exemption-list') await readsHeld
+        return base(channel, ...args)
+      })
+      await renderPage(2)
+      await check()
+      const before = calls('db:consistency-exemption-list').length
+      release()
+      await vi.waitFor(() => expect(calls('db:consistency-exemption-list').length).toBeGreaterThan(before))
+      await remount()
+      readsBack()
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
+      expect(calls('graph-generation:begin')).toHaveLength(1)
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+      await remount()
+      await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeEnabled()
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).not.toBeInTheDocument()
+    })
+
+    it('切到别的作品：不把这部作品的检查接过去；切回来仍接得上', async () => {
+      const OTHER_PATH = 'C:\\novels\\other'
+      const other = { projectId: 'other', leaseId: 'other-lease', projectPath: OTHER_PATH }
+      await renderPage(2)
+      await check()
+      await act(async () => root?.unmount())
+      useProjectStore.setState({ currentProject: { ...project(), id: other.projectId, sessionLease: other.leaseId, path: OTHER_PATH } })
+      setActiveProjectSessionContext(other)
+      root = createRoot(container!)
+      await act(async () => root?.render(<div className="paper-ink"><StageBlueprint projectKey={OTHER_PATH} initialChapterNumber={2} /></div>))
+      await expect.element(page.getByRole('complementary', { name: '章节规划' })).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeInTheDocument()
+      await expect.element(running()).not.toBeInTheDocument()
+      await act(async () => root?.unmount())
+      useProjectStore.setState({ currentProject: project() })
+      setActiveProjectSessionContext(SESSION)
+      root = createRoot(container!)
+      await renderPage(2)
+      await expect.element(running()).toBeDisabled()
+      release()
+      await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+    })
+  })
+
+  it('全书豁免写空章号，别的章同样依据也不再提示', async () => {
+    await renderPage(2)
+    await check()
+    await act(async () => page.getByRole('button', { name: '全书都不再提示' }).first().click())
+    expect(exemptions).toMatchObject([{ chapterNumber: null, revoked: false }])
+    await expect.element(page.getByRole('button', { name: '第 3 章', exact: true })).not.toBeInTheDocument()
+  })
+
+  const refreshTimeline = (resource: 'characterCards' | 'drafts') => act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: [resource], projectPath: PROJECT_PATH, projectSession: SESSION }))
+
+  it('页面开着时有了时间线节点：按钮变成可点', async () => {
+    nodes = []
+    await renderPage(2)
+    await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeDisabled()
+    nodes = [BROKEN_NODE]
+    await refreshTimeline('drafts')
+    await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeEnabled()
+  })
+
+  it('页面开着时时间线变了：已显示的结论收起', async () => {
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    nodes = [{ ...BROKEN_NODE, value: '和解' }]
+    await refreshTimeline('characterCards')
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+  })
+
+  it('没有时间线节点：按钮不可点，旁边说明，不发请求', async () => {
+    nodes = []
+    await renderPage(2)
+    await expect.element(page.getByText('先定稿一章，才有可对照的人物时间线')).toBeVisible()
+    await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeDisabled()
+    expect(calls('graph-generation:begin')).toHaveLength(0)
+  })
+
+  describe('有节点但都不作用于待检查章', () => {
+    beforeEach(() => {
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+        if (channel === 'graph-generation:begin') throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_NOT_IN_FORCE')
+        return base(channel, ...args)
+      })
+    })
+
+    it('说明待检查章还没有生效的时间线，按钮仍可点，不发检查请求', async () => {
+      await renderPage(2)
+      await check()
+      await expect.element(page.getByText('蓝图没有改动。待检查的章节还没有生效的人物时间线，暂时没有可对照的。')).toBeVisible()
+      await expect.element(page.getByText('先定稿一章，才有可对照的人物时间线')).not.toBeInTheDocument()
+      await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeEnabled()
+      expect(calls('graph-generation:execute')).toHaveLength(0)
+    })
+
+    it('英文界面说同一件事', async () => {
+      await renderPage(2)
+      await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+      await act(async () => page.getByRole('button', { name: 'AI check', exact: true }).click())
+      await expect.element(page.getByText('Your blueprints are unchanged. No character timeline applies to the chapters to check yet, so there is nothing to compare.')).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'AI check', exact: true })).toBeEnabled()
+    })
+  })
+
+  it('重开页面取回最近一次结果，不出总结，不发请求', async () => {
+    latest = read
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).not.toBeInTheDocument()
+    expect(calls('graph-generation:execute')).toHaveLength(0)
+  })
+
+  it('没发现之后改了检查过的章：不再说没问题', async () => {
+    read = checked([])
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('没发现和时间线矛盾的地方。检查到第 3 章。')).toBeVisible()
+    stored = stored.map(item => item.chapterNumber === 2 ? { ...item, keyEvents: '改过的事件' } : item)
+    await refreshBlueprints()
+    await expect.element(page.getByText('没发现和时间线矛盾的地方。检查到第 3 章。')).not.toBeInTheDocument()
+  })
+
+  it('重开时时间线变了、又有一章蓝图改过：没改的章也不显示旧结论', async () => {
+    latest = { ...read, sourceStatus: 'conflict' }
+    nodes = [{ ...BROKEN_NODE, value: '和解' }]
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    await renderPage(2)
+    await vi.waitFor(() => expect(calls('graph-generation:latest-continuity')).toHaveLength(1))
+    await vi.waitFor(() => expect(calls('db:character-continuity-preflight-nodes').length).toBeGreaterThan(0))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+  })
+
+  it('重开时只有一章蓝图改过、时间线没变：没改的章照常显示', async () => {
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('重开时来源对不上且各章都没变（时间线或模型变了）：整体不显示', async () => {
+    latest = { ...read, sourceStatus: 'conflict' }
+    await renderPage(2)
+    await vi.waitFor(() => expect(calls('graph-generation:latest-continuity')).toHaveLength(1))
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+  })
+
+  it('英文界面的按钮、依据与总结', async () => {
+    await renderPage(2)
+    await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+    await act(async () => page.getByRole('button', { name: 'AI check', exact: true }).click())
+    await expect.element(page.getByText('Basis: From chapter 1, 林岚’s relation to 守塔人 is “决裂”')).toBeVisible()
+    await expect.element(page.getByText('AI check reached chapter 3. These chapters conflict with the timeline.')).toBeVisible()
   })
 })

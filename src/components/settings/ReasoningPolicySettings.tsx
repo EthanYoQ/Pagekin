@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { ModelProfile } from '../../shared/ipc-channels'
 import { projectSessionContextFromProject } from '../../shared/project-session-context'
 import { resolveReasoningPolicy } from '../../shared/reasoning-policy'
-import { modelCapabilitySource } from '../../shared/model-profile-draft'
+import { MODEL_VALUE_SOURCE_LABELS, modelCapabilitySource } from '../../shared/model-profile-draft'
 import { resolveModelProfileReasoningMapping } from '../../shared/provider-presets'
 import { isReasoningMapping, reasoningAdapterFitsProtocol } from '../../shared/reasoning-types'
 import type {
@@ -20,16 +20,16 @@ import { NativeSelect } from '../ui/NativeSelect'
 
 export function ModelCapabilitySources({ model }: { model: ModelProfile }) {
   const text = useLocaleStore(state => state.text)
-  const labels = {
-    endpoint: text('接口取得', 'Endpoint declaration'), preset: text('资料匹配', 'Catalog match'),
-    manual: text('手动设置', 'Manual setting'), unknown: text('未识别', 'Unknown'),
+  const sourceWord = (key: 'maxOutputTokens' | 'reasoning' | 'structuredOutput' | 'usage') => {
+    const source = modelCapabilitySource(model, key)
+    return text(...MODEL_VALUE_SOURCE_LABELS[source === 'unknown' ? 'default' : source])
   }
   return <div className="text-xs text-[var(--color-text-muted)]" data-capability-sources>
     {([
-      ['contextWindowTokens', text('上下文', 'Context')], ['maxOutputTokens', text('模型输出容量', 'Model output capacity')],
+      ['maxOutputTokens', text('模型输出容量', 'Model output capacity')],
       ['reasoning', text('推理能力', 'Reasoning capability')], ['structuredOutput', text('结构化输出', 'Structured output')],
       ['usage', text('用量报告', 'Usage reporting')],
-    ] as const).map(([key, label]) => <span className="mr-3" key={key}>{label}：{labels[modelCapabilitySource(model, key)]}</span>)}
+    ] as const).map(([key, label]) => <span className="mr-3" key={key}>{label}{text('：', ': ')}{sourceWord(key)}</span>)}
   </div>
 }
 

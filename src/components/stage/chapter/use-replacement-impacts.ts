@@ -34,6 +34,7 @@ const subscribe = (listener: () => void) => {
 
 export function useReplacementImpacts(projectKey: string): {
   impacts: readonly ReplacementImpact[]
+  seen: ReadonlySet<string>
   acknowledge: (finalizationId: string) => void
 } {
   const currentProject = useProjectStore(s => s.currentProject)
@@ -68,13 +69,13 @@ export function useReplacementImpacts(projectKey: string): {
 
   const seen = current ? readSeen(current.projectId) : new Set<string>()
   const impacts = loaded.sessionKey === sessionKey && current
-    ? loaded.impacts.filter(impact => impact.finalizationId !== null && !seen.has(impact.finalizationId))
+    ? loaded.impacts.filter(impact => impact.finalizationId !== null)
     : []
   const projectId = current?.projectId
   const acknowledge = useCallback((finalizationId: string) => {
     if (projectId) markSeen(projectId, finalizationId)
   }, [projectId])
-  return { impacts, acknowledge }
+  return { impacts, seen, acknowledge }
 }
 
 export function useReplacementImpactPreview(draftId: number, content: string, enabled: boolean): { impact: ReplacementImpact | null; pending: boolean } {

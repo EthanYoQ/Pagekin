@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { openLanceDatabase } from '../lance-database'
 import { KNOWLEDGE_COPY_MARKER, readKnowledgeCopy, writeKnowledgeCopy } from '../vector-store'
 import { m05CharacterAssetMigrationAdapter } from '../migrations/m05-character-assets'
+import { insertContinuityBaseline } from '../migrations/m08-continuity-foundation'
 import { CharacterRosterRepository, refreshCharacterIdentityProjection } from '../repositories/character-roster-repository'
 import { adoptLegacyCards, readLegacyRosterSource } from './legacy-roster-source'
 import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../migrations/desktop-registry'
@@ -291,6 +292,8 @@ async function adoptCopiedLegacyCards(db: import('better-sqlite3').Database, old
         if (source.snapshot.migrationState !== 'ready' || source.snapshot.status !== 'ready') reject()
       } else adoptLegacyCards(db, { operationId: 'offline-project-copy', expectedRevision: source.snapshot.revision,
         expectedLegacyHash: source.legacyHash, expectedIdentityRevision: source.identityRevision, expectedFactsHash: source.factsHash })
+      // 旧卡里的关系在 M08 之后才落表，补它们的基线节点；已有节点被 OR IGNORE 吸收。
+      insertContinuityBaseline(db)
     }).immediate()
   } finally {
     rosterCheck?.close()
@@ -321,6 +324,7 @@ export async function importLegacyProjectCopy(options: {
     if (exists(targetRoot)) fail('LEGACY_IMPORT_TARGET_EXISTS')
     assertProjectStoragePathSupported(targetRoot, options.preflightOptions)
     const legacyRoot = path.join(sourceRoot, '.vela')
+    if (!exists(legacyRoot)) fail('LEGACY_IMPORT_NOT_LEGACY_PROJECT')
     physicalDirectory(legacyRoot)
     if (exists(path.join(sourceRoot, CANONICAL_PROJECT_DIRECTORY)) || exists(path.join(sourceRoot, '.ai-novel-migration'))) fail('LEGACY_IMPORT_UNSUPPORTED_SOURCE')
     const sourceNames = fs.readdirSync(legacyRoot)

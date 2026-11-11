@@ -43,9 +43,33 @@ const ERROR_KEYS = {
   // 打开作品时，正式连接看到的库与刚校验过的快照字节不一致：校验之后有别的程序改了作品文件。
   SOURCE_CHANGED_SINCE_PROBE: 'error.projectChangedDuringOpen',
   LEGACY_IMPORT_UNSUPPORTED_SOURCE: 'error.legacyImportUnsupportedSource',
+  LEGACY_IMPORT_NOT_LEGACY_PROJECT: 'error.legacyImportNotLegacyProject',
+  LEGACY_IMPORT_PATH_INVALID: 'error.legacyImportChooseAgain',
+  LEGACY_IMPORT_TARGET_EXISTS: 'error.legacyImportTargetExists',
+  LEGACY_IMPORT_PATH_OVERLAP: 'error.legacyImportPathOverlap',
+  LEGACY_IMPORT_UNMAPPED_ASSET: 'error.legacyImportIncompleteSource',
+  LEGACY_IMPORT_INVALID_MANIFEST: 'error.legacyImportIncompleteSource',
+  LEGACY_IMPORT_UNSAFE_PATH: 'error.legacyImportLinkedSource',
+  LEGACY_IMPORT_SOURCE_CHANGED: 'error.legacyImportSourceBusy',
+  LEGACY_IMPORT_COPY_CHANGED: 'error.legacyImportSourceBusy',
+  LEGACY_IMPORT_KNOWLEDGE_ORIGINAL_UNAVAILABLE: 'error.legacyImportKnowledgeOriginal',
+  LEGACY_IMPORT_KNOWLEDGE_ORIGINAL_INVALID: 'error.legacyImportKnowledgeOriginal',
+  LEGACY_IMPORT_IO_FAILED: 'error.legacyImportIoFailed',
+  LEGACY_IMPORT_SQLITE_CONTENT_CHANGED: 'error.legacyImportFailed',
+  LEGACY_IMPORT_SQLITE_VERIFICATION_FAILED: 'error.legacyImportFailed',
+  LEGACY_IMPORT_AVATAR_UNRESOLVED: 'error.legacyImportFailed',
+  LEGACY_IMPORT_AVATAR_INVALID: 'error.legacyImportFailed',
+  LEGACY_IMPORT_VECTOR_INVALID: 'error.legacyImportFailed',
+  LEGACY_IMPORT_IDENTITY_INVALID: 'error.legacyImportFailed',
+  LEGACY_IMPORT_HISTORY_INVALID: 'error.legacyImportFailed',
+  LEGACY_IMPORT_HISTORY_FREEZE_INVALID: 'error.legacyImportFailed',
+  LEGACY_IMPORT_HISTORY_AUTHORITY_INVALID: 'error.legacyImportFailed',
+  LEGACY_IMPORT_ROSTER_UNAVAILABLE: 'error.legacyImportFailed',
   PROJECT_DELETE_FAILED: 'error.projectDeleteFailed',
   PROJECT_RECENT_LIST_UPDATE_FAILED: 'error.projectRecentListUpdateFailed',
   PROJECT_ARCHIVE_TARGET_EXISTS: 'error.projectArchiveTargetExists',
+  // 导出或云备份时有一列登记为脱敏投影却没有投影办法（#611），整次打包中止，作品不动。
+  PORTABLE_UNSAFE_PROJECTION: 'error.portableUnsafeProjection',
   // 选择文件或文件夹后授权已过期、用尽或被撤销（例如选完很久才确认）。
   EXTERNAL_FILE_GRANT_NOT_FOUND: 'error.externalFileGrantExpired',
   EXTERNAL_FILE_GRANT_EXPIRED: 'error.externalFileGrantExpired',
@@ -95,6 +119,10 @@ const ERROR_KEYS = {
   GENERATION_PLANNING_INTENT_CHANGED: 'error.generationSourceChanged',
   GENERATION_PLOT_OUTLINE_GUIDANCE_CHANGED: 'error.generationSourceChanged',
   GENERATION_GRAPH_TARGET_CHANGED: 'error.generationSourceChanged',
+  GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED: 'error.blueprintCheckNoTimeline',
+  GENERATION_GRAPH_CONTINUITY_TIMELINE_NOT_IN_FORCE: 'error.blueprintCheckTimelineNotInForce',
+  GENERATION_GRAPH_POSTPROCESS_PENDING: 'error.laterBlueprintCheckPostprocessPending',
+  GENERATION_GRAPH_FINALIZATION_REQUIRED: 'error.laterBlueprintCheckFinalizationChanged',
   GENERATION_IMPORT_CHECKPOINT_CHANGED: 'error.generationSourceChanged',
   GENERATION_REVIEW_SOURCE_CHANGED: 'error.sourceDraftChanged',
   GENERATION_SAVED_WITH_NEWER_AUTHOR_DRAFT: 'error.generationSavedWithNewerAuthorDraft',
@@ -129,6 +157,7 @@ const ERROR_KEYS = {
   GENERATION_IMPORT_PREVIOUS_ATTEMPT_INCOMPLETE: 'error.importPreviousAttemptIncomplete',
   GENERATION_WORKFLOW_SESSION_BUSY: 'error.generationBusy',
   GENERATION_PLOT_OUTLINE_AUTHOR_IN_FLIGHT: 'error.generationBusy',
+  GENERATION_PLANNING_RECOVERY_IN_FLIGHT: 'error.generationBusy',
   GENERATION_KNOWLEDGE_BUSY: 'error.generationKnowledgeBusy',
   GENERATION_AUTHOR_INPUT_TOO_LARGE: 'error.generationInputTooLarge',
   GENERATION_IMPORT_CONTEXT_LIMIT: 'error.generationInputTooLarge',
@@ -358,6 +387,15 @@ function readMessage(error: unknown): string {
 export function knownAppErrorMessage(locale: Locale, error: unknown): string | undefined {
   const code = readCode(error)
   return code ? translate(locale, ERROR_KEYS[code]) : undefined
+}
+
+export function legacyImportFailureMessage(locale: Locale, error: unknown): string {
+  const copyTargetTooDeep = errorCodeOf(error) === 'PROJECT_STORAGE_PATH_UNSUPPORTED'
+  const reason = copyTargetTooDeep
+    ? translate(locale, 'error.legacyImportTargetTooDeep')
+    : knownAppErrorMessage(locale, error) ?? translate(locale, 'error.legacyImportFailed')
+  const kept = translate(locale, 'error.legacyImportNothingChanged')
+  return localize(locale, `${kept}${reason}`, `${kept} ${reason}`)
 }
 
 const IMPORT_BLOCKED_CODES = new Set(['GENERATION_DISPATCH_BLOCKED', 'GENERATION_DIRECTORY_CONTINUATION_BLOCKED', 'GENERATION_PARENT_INVALID'])

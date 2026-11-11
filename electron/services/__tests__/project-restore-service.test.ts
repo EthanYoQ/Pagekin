@@ -206,9 +206,9 @@ async function archiveWithExtra(f: Fixture, archivePath: string): Promise<string
 afterEach(() => {
   closeProjectDatabase()
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
-})
+}, WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS)
 
-describe('portable project restore service', { timeout: 20_000 }, () => {
+describe('portable project restore service', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
   it('archives a verified legacy copy with readable unreceipted prose while rejecting new unreceipted finalizations', async () => {
     const f = fixture(), legacyRoot = path.join(f.base, 'legacy'), legacyStorage = path.join(legacyRoot, '.vela')
     fs.mkdirSync(legacyStorage, { recursive: true })

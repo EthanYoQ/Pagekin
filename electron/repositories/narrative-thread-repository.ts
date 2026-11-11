@@ -1,9 +1,19 @@
 import { getProjectDb } from '../database'
+import { parseChapterGoalReview, type ChapterGoalReview } from '../../src/shared/chapter-goal-review'
+import {
+  narrativeThreadReviewCandidates,
+  type NarrativeThreadReviewCandidate,
+  type ReviewedFinalDraft,
+} from '../../src/shared/narrative-thread-review-candidates'
 import {
   compareNarrativeThreadSchedules,
+  NARRATIVE_EVENT_EVIDENCE_MAX_LENGTH,
+  NARRATIVE_EVENT_REASON_MAX_LENGTH,
   narrativeEvidenceInText,
   narrativeThreadSchedule,
   narrativeThreadView,
+  type NarrativeThreadAssignment,
+  type NarrativeThreadAssignmentInput,
   type NarrativeThreadEvent,
   type NarrativeThreadEventInput,
   type NarrativeThreadChapterContext,
@@ -26,11 +36,31 @@ function validatePlan(input: NarrativeThreadPlanInput): NarrativeThreadPlanInput
     || !authorIntent || authorIntent.length > 1000) {
     throw new Error('NARRATIVE_THREAD_PLAN_INVALID')
   }
-  if (!Number.isSafeInteger(input.targetStartChapter) || input.targetStartChapter < 1
-    || !Number.isSafeInteger(input.targetEndChapter) || input.targetEndChapter < input.targetStartChapter) {
+  assertChapterRange(input.targetStartChapter, input.targetEndChapter)
+  return { ...input, title, type, authorIntent }
+}
+
+function assertChapterRange(start: number, end: number): void {
+  if (!Number.isSafeInteger(start) || start < 1 || !Number.isSafeInteger(end) || end < start) {
     throw new Error('NARRATIVE_THREAD_RANGE_INVALID')
   }
-  return { ...input, title, type, authorIntent }
+}
+
+/** 延后和撤销改回收章都走这里。onlyFrom 不为 null 时，回收章已不是它（作者改过）就不动。 */
+function moveTargetEnd(db: ReturnType<typeof requireDb>, plan: NarrativeThreadPlanRecord, end: number, onlyFrom: number | null): void {
+  assertChapterRange(plan.targetStartChapter, end)
+  db.prepare(`
+    UPDATE narrative_thread_plans SET target_end_chapter = ?, updated_at = datetime('now')
+    WHERE id = ? AND (? IS NULL OR target_end_chapter = ?)
+  `).run(end, plan.id, onlyFrom, onlyFrom)
+}
+
+function savedGoalReview(reportBody: string): ChapterGoalReview | null {
+  try {
+    return parseChapterGoalReview((JSON.parse(reportBody) as { goalReview?: unknown } | null)?.goalReview)
+  } catch {
+    return null
+  }
 }
 
 function rowToPlan(row: Record<string, unknown>): NarrativeThreadPlanRecord {
@@ -74,6 +104,33 @@ export class NarrativeThreadRepository {
     if (result.changes !== 1) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
   }
 
+  static setAssignment(input: NarrativeThreadAssignmentInput, db = requireDb()): void {
+    const { planId, chapterNumber, writingChapter, kind } = input
+    if (!Number.isSafeInteger(chapterNumber) || chapterNumber < 1 || !Number.isSafeInteger(writingChapter) || writingChapter < 1
+      || (kind !== 'advance' && kind !== 'resolve') || (kind === 'resolve' && chapterNumber <= writingChapter)) {
+      throw new Error('NARRATIVE_THREAD_RANGE_INVALID')
+    }
+    const plan = this.getPlan(planId, db)
+    if (!plan) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO narrative_thread_assignments (plan_id, chapter_number, kind, note) VALUES (?, ?, ?, ?)
+        ON CONFLICT(plan_id, chapter_number) DO UPDATE SET kind = excluded.kind, note = excluded.note, created_at = datetime('now')
+      `).run(planId, chapterNumber, kind, input.note.trim())
+      if (kind === 'resolve') moveTargetEnd(db, plan, chapterNumber, null)
+    })()
+  }
+
+  /** 撤销延后时还原 restoreEndChapter；回收章已被作者改成别的章就只删记录。 */
+  static removeAssignment(planId: number, chapterNumber: number, restoreEndChapter: number | null, db = requireDb()): void {
+    db.transaction(() => {
+      const kind = db.prepare('DELETE FROM narrative_thread_assignments WHERE plan_id = ? AND chapter_number = ? RETURNING kind')
+        .pluck().get(planId, chapterNumber)
+      const plan = this.getPlan(planId, db)
+      if (kind === 'resolve' && restoreEndChapter !== null && plan) moveTargetEnd(db, plan, restoreEndChapter, chapterNumber)
+    })()
+  }
+
   static getPlan(id: number, db = requireDb()): NarrativeThreadPlanRecord | null {
     const row = db.prepare('SELECT * FROM narrative_thread_plans WHERE id = ?')
       .get(id) as Record<string, unknown> | undefined
@@ -84,7 +141,8 @@ export class NarrativeThreadRepository {
     const evidence = input.evidence.trim()
     const reason = input.reason.trim()
     if (!['planted', 'progressing', 'resolved', 'abandoned'].includes(input.type)
-      || !evidence || evidence.length > 240 || !reason || reason.length > 500) {
+      || !evidence || evidence.length > NARRATIVE_EVENT_EVIDENCE_MAX_LENGTH
+      || !reason || reason.length > NARRATIVE_EVENT_REASON_MAX_LENGTH) {
       throw new Error('NARRATIVE_THREAD_EVENT_INVALID')
     }
     const source = db.prepare(`
@@ -153,8 +211,17 @@ export class NarrativeThreadRepository {
     `).get() as { chapterNumber: number }).chapterNumber
     const plans = db.prepare('SELECT * FROM narrative_thread_plans ORDER BY id ASC')
       .all() as Record<string, unknown>[]
+    const assignments = new Map<number, NarrativeThreadAssignment[]>()
+    for (const { planId, ...assignment } of db.prepare(`
+      SELECT plan_id AS planId, chapter_number AS chapterNumber, kind, note
+      FROM narrative_thread_assignments ORDER BY chapter_number ASC
+    `).all() as (NarrativeThreadAssignment & { planId: number })[]) {
+      assignments.set(planId, [...(assignments.get(planId) ?? []), assignment])
+    }
     return plans.map((row) => {
-      const plan = rowToPlan(row)
+      const record = rowToPlan(row)
+      const planAssignments = assignments.get(record.id)
+      const plan = planAssignments ? { ...record, assignments: planAssignments } : record
       const events = db.prepare(`
         SELECT confirmations.id, confirmations.plan_id AS planId,
                confirmations.draft_id AS draftId, confirmations.event_type AS type,
@@ -169,6 +236,26 @@ export class NarrativeThreadRepository {
       `).all(plan.id) as NarrativeThreadEvent[]
       return narrativeThreadView(plan, events, currentFinalizedChapter)
     })
+  }
+
+  static listReviewCandidates(db = requireDb()): NarrativeThreadReviewCandidate[] {
+    const rows = db.prepare(`
+      SELECT drafts.id AS draftId, drafts.chapter_number AS chapterNumber,
+             finalization_outbox.content_snapshot AS content, contents.body AS reportBody
+      FROM drafts
+      JOIN finalization_outbox ON finalization_outbox.draft_id = drafts.id
+      JOIN reviews ON reviews.base_draft_id = drafts.id
+      JOIN contents ON contents.id = reviews.content_id
+      WHERE drafts.status = 'finalized'
+      ORDER BY drafts.chapter_number ASC, reviews.review_index DESC
+    `).all() as Array<Omit<ReviewedFinalDraft, 'goalReview'> & { reportBody: string }>
+    const latestByDraft = new Map<number, ReviewedFinalDraft>()
+    for (const { reportBody, ...draft } of rows) {
+      if (latestByDraft.has(draft.draftId)) continue
+      const goalReview = savedGoalReview(reportBody)
+      if (goalReview) latestByDraft.set(draft.draftId, { ...draft, goalReview })
+    }
+    return narrativeThreadReviewCandidates(this.list(db), [...latestByDraft.values()])
   }
 
   /** 写第 N 章参考的线索：逾期、到期、区间内的必选，区间未到的只在名字命中时选；逾期最久的排最前。 */

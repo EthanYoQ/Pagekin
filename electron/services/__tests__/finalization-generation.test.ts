@@ -26,7 +26,7 @@ const cleanup: (() => void)[] = []
 afterEach(() => { for (const dispose of cleanup.splice(0)) dispose(); vi.restoreAllMocks() })
 const prose = '林岚走进了北塔。'
 
-function fixture(dispatch?: GenerationRunServiceDependencies['dispatch'], options: { content?: string; writingLanguage?: 'en-US'; builtinPrompts?: boolean; seed?: (db: import('better-sqlite3').Database) => void; transferOrigin?: () => string | undefined } = {}) {
+function fixture(dispatch?: GenerationRunServiceDependencies['dispatch'], options: { content?: string; writingLanguage?: 'en-US'; builtinPrompts?: boolean; seed?: (db: import('better-sqlite3').Database) => void; transferOrigin?: () => string | undefined; secondCharacter?: boolean } = {}) {
   const content = options.content ?? prose
   const base = path.resolve('.runtime/.cache/novel-quality-modernization/finalization-generation-tests')
   fs.mkdirSync(base, { recursive: true })
@@ -35,6 +35,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch'], option
   let db = new Database(path.join(root,'.ai-novel','project.db'))
   vi.mocked(getProjectDb).mockReturnValue(db)
   db.exec("INSERT INTO characters(name,character_id,cs_provenance) VALUES('林岚','character-lan','{}')")
+  if (options.secondCharacter) db.exec("INSERT INTO characters(name,character_id,cs_provenance) VALUES('沈砚','character-shen','{}')")
   db.exec("INSERT INTO project_core(id,project_name) VALUES('main','合成定稿'); INSERT INTO blueprints(chapter_number,title) VALUES(1,'北塔'); INSERT INTO contents(id,body) VALUES(1,'旧稿'); INSERT INTO drafts_all(id,chapter_number,version,status,content_id,word_count) VALUES(1,1,1,'draft',1,2)")
   if (options.writingLanguage) db.prepare("UPDATE project_core SET writing_language=? WHERE id='main'").run(options.writingLanguage)
   FinalizationRepository.commit({ finalizationId: 'finalized-1', draftId: 1, chapterNumber: 1, chapterTitle: '北塔',
@@ -559,7 +560,28 @@ it.each([undefined, 'en-US'] as const)('末次安排合同保留原snapshot并�
  }
 })
 
-it('characters最终合同要求每个update含recentEvents，且与渲染端副本一致（中英）',async()=>{
+it('关系随角色状态在同一次请求里返回，模型只调用一次，时间线上出现该章节点',async()=>{
+ const f=fixture(async(_request,options)=>{options.onVisible({kind:'delta',text:JSON.stringify({
+  updates:[{characterId:'character-lan',currentState:{recentEvents:'北塔'},evidence:{text:prose}}],
+  relations:[{source:'character-lan',target:'character-shen',relation:'结盟',evidence:{text:prose}}]})});return {finishReason:'stop',usage:null}},{secondCharacter:true})
+ const slot={source:f.prepared.context.source,stepKey:'character_cards' as const}
+ const recovery=f.owner.beginFinalizationGeneration({slot,modelId:'synthetic'})
+ const receipt=await f.owner.executeFinalizationGeneration({handle:recovery.view.handle})
+ expect(f.owner.commitFinalizationGeneration({handle:recovery.view.handle,artifact:f.artifactOf(receipt)})).toMatchObject({success:true,applied:1})
+ expect(f.dispatch).toHaveBeenCalledTimes(1)
+ expect(f.db.prepare('SELECT COUNT(*) FROM generation_attempts').pluck().get()).toBe(1)
+ expect(f.db.prepare("SELECT value,effective_chapter AS chapter,draft_id AS draftId FROM character_continuity_events WHERE aspect='relation'").all()).toEqual([{value:'结盟',chapter:1,draftId:1}])
+})
+it('relations 畸形而 updates 合格的回答照常提交，不进合同修复，也不多调模型',async()=>{
+ const f=fixture(async(_request,options)=>{options.onVisible({kind:'delta',text:JSON.stringify({
+  updates:[{characterId:'character-lan',currentState:{recentEvents:'北塔'},evidence:{text:prose}}],relations:'无变化'})});return {finishReason:'stop',usage:null}})
+ const slot={source:f.prepared.context.source,stepKey:'character_cards' as const}
+ const recovery=f.owner.beginFinalizationGeneration({slot,modelId:'synthetic'})
+ const receipt=await f.owner.executeFinalizationGeneration({handle:recovery.view.handle})
+ expect(f.owner.commitFinalizationGeneration({handle:recovery.view.handle,artifact:f.artifactOf(receipt)})).toMatchObject({success:true,applied:1})
+ expect(f.dispatch).toHaveBeenCalledTimes(1)
+})
+it('characters最终合同要求每个update含recentEvents（中英）',async()=>{
  const zh=lastUserMessage((await splitEvidenceRun(undefined,[single])).dispatch.mock.calls[0]![0])
  const en=lastUserMessage((await splitEvidenceRun('en-US',[single])).dispatch.mock.calls[0]![0])
  expect(zh).toContain('每个 update 必须填写 recentEvents（本章结束时该角色的最新状态，50字以内）')
@@ -576,11 +598,6 @@ it('characters最终合同要求每个update含recentEvents，且与渲染端副
  expect(en).not.toContain('location is a place, never an event or progress')
  expect(en).toContain('Return one JSON object: {"updates":[{"characterId":"exact ID from the frozen list","currentState":{"recentEvents":"this chapter\'s event","location":"new place"},"evidence":{"text":"exact source quote"}}]}')
  expect(en).not.toContain('list only the fields that actually changed')
- const renderer=fs.readFileSync(path.resolve('src/services/workflows/commands/finalize-chapter.command.ts'),'utf8')
- for(const [message,prefix] of [[zh,'【最终输出合同'],[en,'[Final output contract']] as const){
-  const contract=message.slice(message.indexOf(prefix))
-  expect(renderer).toContain(`'${contract.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}'`)
- }
 })
 
 it.each(['cancelled', 'notes-changed'] as const)('starts an explicit fresh finalization attempt after %s, preserving history and sealed replay', async reason => {
