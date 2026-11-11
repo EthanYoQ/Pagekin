@@ -24,7 +24,6 @@ async function holdDeletes(app) {
 const modelIds = async ({ page, invoke }) => (await invoke(page, 'llm:list-models')).map(model => model.id)
 
 export const SETDEL_SCENARIOS = {
-  // #279 遗留：确认删除后、主进程删完前再确认一次删除，再点「编辑」。删完后表单要关掉，不能把已删模型存回来；重复删除不报错。
   'setdel-edit-during-delete': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     assert.equal((await invoke(page, 'llm:save-model', EXTRA)).success, true)
   } }), run: async context => {
