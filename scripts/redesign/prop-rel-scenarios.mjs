@@ -45,11 +45,10 @@ export const PROPREL_SCENARIOS = {
 
     await architecture.open(page)
     await architecture.openCast(page)
-    await page.waitForTimeout(1500)
     const suggestions = stage.root(page).getByRole('region', { name: '待处理的角色建议' })
-    measured.listed = await suggestions.count() ? (await suggestions.innerText()).replace(/\s+/gu, ' ').trim() : null
+    await suggestions.waitFor({ state: 'visible' })
+    measured.listed = (await suggestions.innerText()).replace(/\s+/gu, ' ').trim()
     await shoot('prop-rel-1-listed')
-    assert.ok(measured.listed, '角色页出现待处理的角色建议')
     assert.match(measured.listed, /1 项待处理的角色建议/u)
     assert.match(measured.listed, /第 13 章蓝图的新角色（1 位）/u)
 
@@ -60,7 +59,8 @@ export const PROPREL_SCENARIOS = {
     measured.relationEnabled = await relation.isEnabled()
     measured.relationChecked = await relation.isChecked()
     assert.equal(measured.relationEnabled, true, '关系的目标是已有角色林岚，可以勾选')
-    assert.equal(measured.relationChecked, true, '默认随新角色一起采用')
+    assert.equal(measured.relationChecked, false, '名字只是标签，关系默认不勾，作者自己决定')
+    await relation.check()
     await shoot('prop-rel-2-review')
 
     await card.getByRole('button', { name: '接受这些决策' }).click()
@@ -71,6 +71,28 @@ export const PROPREL_SCENARIOS = {
     assert.equal(measured.adopted.directory[0].status, 'approved')
     await architecture.castRow(page, '雾灯人').waitFor({ state: 'visible' })
     await shoot('prop-rel-3-adopted')
+    return measured
+  } },
+  /** 建议先列出；作者随后改了第 13 章蓝图标题，这条提案接受必然失败，角色页不再列出。 */
+  'prop-rel-stale': { model: true, shell: 'stage', setup: context => seedStageSample(context, { totalChapters: 16 }), run: async ({ page, fake, shoot }) => {
+    await blueprint.open(page)
+    fake.replyDirectoryBlueprints(13)
+    await generate(page, fake, 13, 14)
+    const suggestions = stage.root(page).getByRole('region', { name: '待处理的角色建议' })
+    await architecture.open(page)
+    await architecture.openCast(page)
+    await suggestions.waitFor({ state: 'visible' })
+    await blueprint.open(page)
+    await blueprint.planItem(page, 13).click()
+    await blueprint.titleInput(page).fill('第十三夜改名')
+    await page.keyboard.press('ControlOrMeta+S')
+    await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
+    await architecture.open(page)
+    await architecture.openCast(page)
+    await page.waitForTimeout(1500)
+    const measured = { listed: await suggestions.count() }
+    await shoot('prop-rel-4-stale')
+    assert.equal(measured.listed, 0, '改过来源蓝图后不再出建议')
     return measured
   } },
 }

@@ -267,7 +267,7 @@ describe('角色名单', () => {
       ? Promise.reject(ipcError(channel)) : base(channel, ...args))
     await render()
     await vi.waitFor(() => expect(banner()?.querySelector('.pi-notice-title')?.textContent).toBe('角色建议读取失败'))
-    expect(banner()!.querySelector('.pi-notice-text')?.textContent).toBe('定稿与导入留下的角色建议这次没读出来，可以重新读取。')
+    expect(banner()!.querySelector('.pi-notice-text')?.textContent).toBe('定稿、导入和蓝图留下的角色建议这次没读出来，可以重新读取。')
     expect([...banner()!.querySelectorAll('button')].map(button => button.textContent)).toEqual(['重新读取'])
     expect(banner()!.textContent).not.toContain('Error invoking remote method')
     expect(banner()!.textContent).not.toContain('项目会话已失效')
@@ -333,7 +333,7 @@ describe('角色名单', () => {
     await vi.waitFor(() => expect(banner()?.textContent).toContain('建议：北塔'))
     await click('接受状态建议')
     await vi.waitFor(() => expect(banner()?.querySelector('.pi-notice-title')?.textContent).toBe('角色建议读取失败'))
-    expect(banner()!.querySelector('.pi-notice-text')?.textContent).toBe('定稿与导入留下的角色建议这次没读出来，可以重新读取。')
+    expect(banner()!.querySelector('.pi-notice-text')?.textContent).toBe('定稿、导入和蓝图留下的角色建议这次没读出来，可以重新读取。')
   })
 
   it('读取失败后点「重新读取」重读两份列表，读到就换成待处理的建议', async () => {
