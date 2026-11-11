@@ -527,6 +527,7 @@ describe('单章视图的主按钮随五种状态变化', () => {
       expect(detail).not.toMatch(/GENERATION_|Error invoking/u)
       expect(detail).toContain('改动已保留')
       expect(detail).toContain('想留就先复制一份')
+      expect(detail).toContain(`点「${cardRetry()}」`)
       expect(detail).not.toContain('不要重试')
     })
 

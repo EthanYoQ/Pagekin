@@ -129,19 +129,23 @@ describe('定稿后处理步骤错误', () => {
       expect(describeFinalizationStepError(code, en)).not.toMatch(/\p{Script=Han}/u)
     })
 
-    it('章节要点在生成期间被作者改过：说明先讲改动已保留，提醒重试可能换掉蓝图要点、想留先复制，不劝作者别重试', () => {
+    it('章节要点在生成期间被作者改过：行上的重试只跑要点，说明指向能接着更新角色状态的「重试失败步骤」，提醒想留要点先复制', () => {
       const plan = planFinalizationRetry({
         kb_import: { ok: true },
         chapter_notes: failed('GENERATION_FINALIZATION_NOTES_CHANGED'),
         character_cards: failed('GENERATION_FINALIZATION_PREDECESSOR_REQUIRED'),
       })
-      expect([...plan.rows.keys()]).toEqual(['chapter_notes'])
+      expect([...plan.rows.entries()]).toEqual([['chapter_notes', ['chapter_notes']]])
       expect(plan.card).toEqual(['chapter_notes', 'character_cards'])
       const zhText = describeFinalizationStepError('GENERATION_FINALIZATION_NOTES_CHANGED', zh)
       const enText = describeFinalizationStepError('GENERATION_FINALIZATION_NOTES_CHANGED', en)
       expect(zhText).toMatch(/^生成期间本章的「章节要点」有改动，改动已保留/u)
+      expect(zhText).toContain('点「重试失败步骤」会重新生成要点并更新角色状态')
+      expect(zhText).not.toContain('点「重试」')
       expect(zhText).toContain('可能被新结果换掉，想留就先复制一份')
       expect(zhText).not.toContain('不要重试')
+      expect(enText).toContain('Select Retry failed steps to generate the notes again and update the character state')
+      expect(enText).not.toMatch(/Select Retry(?! failed steps)/u)
       expect(enText).toMatch(/^Chapter notes changed while this step was running\. The change is kept/u)
       expect(enText).toContain('may be replaced by the new ones, so copy them first')
       expect(enText).not.toContain("don't retry")
