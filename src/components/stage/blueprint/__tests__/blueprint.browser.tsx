@@ -567,7 +567,7 @@ describe('蓝图阶段', () => {
       await save()
       expect(invoke.mock.calls.some(call => call[0] === 'db:blueprint-upsert' && (call[1] as ChapterBlueprint).chapterNumber === 2)).toBe(true)
       await expect.element(page.getByText('第 2 章蓝图把 林岚 和 守塔人 写成「亲密同伴」，但第 1 章起两人是「决裂」。')).toBeVisible()
-      await expect.element(page.getByText('依据：第 1 章 · 决裂')).toBeVisible()
+      await expect.element(page.getByText('依据：你的设定 · 决裂')).toBeVisible()
       await expect.element(page.getByRole('button', { name: '写第 2 章' })).toBeEnabled()
     })
 
@@ -578,9 +578,9 @@ describe('蓝图阶段', () => {
       await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
       expect(exemptions).toEqual([{ stableFactKey: 'relation:relation:add:line', reason: '作者确认是有意安排', revoked: false, chapterNumber: 2 }])
       await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
-      await expect.element(page.getByText('依据：第 1 章 · 决裂')).not.toBeInTheDocument()
+      await expect.element(page.getByText('依据：你的设定 · 决裂')).not.toBeInTheDocument()
       await act(async () => page.getByRole('button', { name: '撤销' }).click())
-      await expect.element(page.getByText('依据：第 1 章 · 决裂')).toBeVisible()
+      await expect.element(page.getByText('依据：你的设定 · 决裂')).toBeVisible()
     })
 
     it('全书豁免放在次级按钮，写入的章号为空', async () => {
@@ -604,9 +604,9 @@ describe('蓝图阶段', () => {
       planned()
       await renderPage()
       await save()
-      await expect.element(page.getByText('依据：第 1 章 · 决裂')).toBeVisible()
+      await expect.element(page.getByText('依据：你的设定 · 决裂')).toBeVisible()
       await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
-      await expect.element(page.getByText('依据：第 1 章 · 决裂')).not.toBeInTheDocument()
+      await expect.element(page.getByText('依据：你的设定 · 决裂')).not.toBeInTheDocument()
       await expect.element(page.getByRole('button', { name: '这是有意安排' })).not.toBeInTheDocument()
     })
 
@@ -930,7 +930,7 @@ describe('蓝图阶段', () => {
       await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
       await save('Save chapter')
       await expect.element(page.getByText('The chapter 2 blueprint has 林岚 and 守塔人 as “亲密同伴”, but from chapter 1 they are “决裂”.')).toBeVisible()
-      await expect.element(page.getByText('Basis: Chapter 1 · 决裂')).toBeVisible()
+      await expect.element(page.getByText('Basis: Your settings · 决裂')).toBeVisible()
       await expect.element(page.getByRole('button', { name: 'This is intentional' })).toBeVisible()
       await expect.element(page.getByRole('button', { name: 'View character' })).toBeVisible()
     })
