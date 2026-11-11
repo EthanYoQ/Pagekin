@@ -259,7 +259,6 @@ describe('GenerateWorldBuildingCommand 截断恢复', () => {
   })
 
   it('正常 stop 只请求一次并直接保存正式世界观', async () => {
-    currentCharactersArch = undefined
     const generateStream = installResponses([{ content: '新世界遵循明确的资源与权力规则。', finishReason: 'stop' }])
 
     await expect(new GenerateWorldBuildingCommand(snapshot, createWorkflowRuntimeDependencies())
