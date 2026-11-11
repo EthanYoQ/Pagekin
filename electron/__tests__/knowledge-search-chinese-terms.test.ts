@@ -12,18 +12,23 @@ import { removeDirectoryWithWindowsRetry } from '../utils/remove-directory'
 const model = { provider: 'openai', baseUrl: 'https://unused.example/v1', apiKey: '', modelName: 'fts-only' }
 const roots: string[] = []
 
-async function searchProject(texts: readonly string[], query: string, topK = 10) {
+async function searchFiles(files: readonly (readonly [fileName: string, text: string])[], query: string, topK: number) {
   fs.mkdirSync(path.resolve('.runtime/.cache'), { recursive: true })
   const projectPath = fs.mkdtempSync(path.resolve('.runtime/.cache', 'kb-zh-terms-'))
   roots.push(projectPath)
   openCanonicalProjectFixture(projectPath)
-  for (const [index, text] of texts.entries()) {
-    expect((await importText(text, `第${index + 1}章 正文.md`, projectPath, 'openai', model)).success).toBe(true)
+  for (const [fileName, text] of files) {
+    expect((await importText(text, fileName, projectPath, 'openai', model)).success).toBe(true)
   }
-  const search = (await searchKnowledgeFTS(query, projectPath, topK)).map(hit => hit.text)
-  const generation = (await captureGenerationKnowledge({ projectStorageRoot: getProjectDataRoot(projectPath), query, topK })).items.map(item => item.text)
+  const search = await searchKnowledgeFTS(query, projectPath, topK)
+  const generation = (await captureGenerationKnowledge({ projectStorageRoot: getProjectDataRoot(projectPath), query, topK })).items
   closeProjectDatabase()
   return { search, generation }
+}
+
+async function searchProject(texts: readonly string[], query: string, topK = 10) {
+  const { search, generation } = await searchFiles(texts.map((text, index) => [`第${index + 1}章 正文.md`, text] as const), query, topK)
+  return { search: search.map(hit => hit.text), generation: generation.map(item => item.text) }
 }
 
 afterEach(async () => {
@@ -48,6 +53,11 @@ describe('full-text knowledge search without a retrieval model', () => {
     expect(await searchProject([lantern, lancet], '2049')).toEqual({ search: [lantern], generation: [lantern] })
   })
 
+  it('finds a capitalized word when the query repeats it in lower case', async () => {
+    const lantern = 'The Lantern of 2049 burns.'
+    expect(await searchProject([lantern], 'Lantern lantern')).toEqual({ search: [lantern], generation: [lantern] })
+  })
+
   it('ranks the same way in knowledge search and generation material', async () => {
     const { search, generation } = await searchProject([
       '盐引藏在渡口的木箱里，渡口的船夫不知情。',
@@ -68,5 +78,15 @@ describe('full-text knowledge search without a retrieval model', () => {
     expect(forward.search).toHaveLength(tied.length)
     expect(backward).toEqual(forward)
     expect(forward.generation).toEqual(forward.search)
+  })
+
+  it('picks the same source for identical passages however the files were imported', async () => {
+    const files = [['第1章 北岸.md', '灯塔在雾里亮着。'], ['第2章 南岸.md', '灯塔在雾里亮着。']] as const
+    const forward = await searchFiles(files, '灯塔', 1)
+    const backward = await searchFiles([...files].reverse(), '灯塔', 1)
+
+    expect(forward.search.map(hit => hit.fileName)).toEqual(backward.search.map(hit => hit.fileName))
+    expect(forward.generation.map(item => item.fileName)).toEqual(backward.generation.map(item => item.fileName))
+    expect(forward.generation.map(item => item.fileName)).toEqual(forward.search.map(hit => hit.fileName))
   })
 })
