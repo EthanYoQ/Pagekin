@@ -310,6 +310,36 @@ describe('设置页', () => {
     return finish
   }
 
+  it('同一模型同时在检索和重排分区：在一个分区点编辑、读取未回时在另一个分区删掉它，读取回来也不打开表单', async () => {
+    const both = { ...LOCAL, id: 'both', name: '双用途', purposes: ['embedding', 'rerank'] } as ModelProfile
+    let finishDelete!: () => void
+    useLLMStore.setState({ models: [MODEL, both], deleteModel: vi.fn(async () => {
+      await new Promise<void>(resolve => { finishDelete = resolve })
+      return true
+    }) })
+    useLayoutStore.setState({ settingsSection: 'embedding' })
+    await mount()
+    let finishRead!: () => void
+    const invoke = win.aiNovelAPI!.invoke
+    win.aiNovelAPI!.invoke = async (channel, ...args) => {
+      if (channel !== 'llm:list-models') return invoke(channel, ...args)
+      await new Promise<void>(resolve => { finishRead = resolve })
+      return [MODEL, both]
+    }
+    const named = (name: string) => buttons().filter(button => button.getAttribute('aria-label') === name)
+    await click(host!.querySelector<HTMLButtonElement>('[data-rerank-section] > button') ?? undefined)
+    expect(named('编辑「双用途」')).toHaveLength(2)
+
+    await click(named('编辑「双用途」')[0])
+    await click(named('「双用途」更多操作').at(-1))
+    await click([...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === '删除模型…'))
+    await click([...document.querySelector('[role="dialog"]')!.querySelectorAll('button')].find(button => button.textContent === '删除模型'))
+    await act(async () => finishDelete())
+    await act(async () => finishRead())
+
+    expect([...host!.querySelectorAll('input')].some(field => field.value === '双用途')).toBe(false)
+  })
+
   it('删除还没完成时再确认一次删除同一模型：只发一次删除，这次失败后可以再编辑', async () => {
     const finish = await deleteLocalWhile(false)
     await confirmDeleteLocal()
