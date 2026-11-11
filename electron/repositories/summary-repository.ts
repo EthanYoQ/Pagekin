@@ -36,7 +36,7 @@ import { latestNodesBefore, type ContinuityNode } from '../../src/shared/charact
 import { parseFinalizedCharacterStateResponse } from '../../src/shared/finalized-continuity'
 import { hasCharacterIdentitySchema } from './character-repository'
 import { commitCharacterIdentities, refreshCharacterIdentityProjection, refreshCharacterStateProjection } from './character-roster-repository'
-import { appendDerivedRelationNode, CHARACTER_STATE_COLUMNS, deleteCharacterRelationship, derivedRelationSeries, readCharacterContinuityNodes, readContinuityNodesWithCurrentNames, writeCharacterStateField } from './character-continuity-repository'
+import { appendDerivedRelationNode, CHARACTER_STATE_COLUMNS, deleteCharacterRelationship, derivedRelationSeries, readCharacterContinuityNodes, readContinuityNodesWithCurrentNames, readDerivedRelationAuthorLines, writeCharacterStateField } from './character-continuity-repository'
 import type { ProjectEpoch } from '../../src/shared/source-ref'
 import { RECEIPTED_DRAFT_STATUS_SQL } from '../../src/shared/draft-status'
 
@@ -442,7 +442,7 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
     if (matchesAuthor && (!previous || unchanged)) continue
     if (unchanged && !(previous.provenance.kind === 'derived' && previous.provenance.source.finalizationId === source.finalizationId)) continue
     const names = { sourceName: name(change.sourceId), targetName: name(change.targetId) }
-    if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence })
+    if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence, authorLines: pair.lines })
     if (pair.rows.length && !matchesAuthor) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
       ...names, value: change.relation, evidence: change.evidence, authorLinesAtCreation: pair.lines })
   }
@@ -461,7 +461,10 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
 
-/** 角色那步先于要点提交时，快照还不存在，待确认项补在这里；已有行不能重建，否则作者处理过的建议会复活。 */
+/**
+ * 角色那步先于要点提交时，快照还不存在，待确认项补在这里；已有行不能重建，否则作者处理过的建议会复活。
+ * 比对用节点里抽取那一刻的作者行：作者其间改过，建议照样作废。
+ */
 function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity, projectionGeneration: number): void {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_continuity_events'").get()) return
   const row = candidateRowOf(db, source, projectionGeneration)
@@ -472,15 +475,14 @@ function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: Fi
     .filter(node => node.provenance.kind === 'derived' && node.provenance.source.finalizationId === source.finalizationId && node.quote)
   let added = false
   for (const node of nodes) {
-    const pair = authorRelationsOfPair(db, node.subjectId, node.targetId)
-    const flipped = pair.sourceId !== node.subjectId
-    const ids = { sourceId: pair.sourceId, targetId: pair.targetId }
+    const authorLines = readDerivedRelationAuthorLines(db, node.eventId)
+    if (!authorLines?.length || authorLines.some(line => (JSON.parse(line) as string[])[2] === node.value)) continue
+    const ids = { sourceId: node.subjectId, targetId: node.targetId }
     const candidateKey = relationCandidateKey(source, { ...ids, relation: node.value })
-    if (!pair.rows.length || pair.all.includes(node.value) || known.has(candidateKey)) continue
+    if (known.has(candidateKey)) continue
     known.add(candidateKey)
-    store.relationPending.push({ candidateKey, source: structuredClone(source), ...ids,
-      sourceName: flipped ? node.targetName : node.subjectName, targetName: flipped ? node.subjectName : node.targetName,
-      value: node.value, evidence: node.quote!, authorLinesAtCreation: pair.lines })
+    store.relationPending.push({ candidateKey, source: structuredClone(source), ...ids, sourceName: node.subjectName, targetName: node.targetName,
+      value: node.value, evidence: node.quote!, authorLinesAtCreation: authorLines })
     added = true
   }
   if (added) db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
