@@ -112,7 +112,7 @@ export const ipc = {
    * 监听主进程推送的事件（返回取消订阅函数）
    *
    * @example
-   * const unsub = ipc.on('llm:stream-chunk', (data) => console.log(data.chunk))
+   * const unsub = ipc.on('generation:snapshot', (data) => console.log(data.text))
    * // 组件卸载时取消
    * unsub()
    */
