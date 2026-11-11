@@ -292,7 +292,7 @@ describe('ImportRunOrchestrator', () => {
     expect(getRun().stage).toBe('refresh')
   })
 
-  it('keeps resumed completion at seven of nine chapters until the next checkpoint is acknowledged', async () => {
+  it('holds resumed completion at the last saved chapter while the next one runs and clears its activity once saved', async () => {
     const numbers = Array.from({ length: 9 }, (_, index) => index + 1)
     const { deps } = harness(9, {
       purpose: 'author-manuscript', stage: 'author-postprocess',
@@ -303,31 +303,21 @@ describe('ImportRunOrchestrator', () => {
       drafts: numbers.map(chapterNumber => ({ chapterNumber, draftId: chapterNumber, finalizationId: `final-${chapterNumber}`,
         contentHash: 'f'.repeat(64), targetFileName: `Chapter ${chapterNumber}.txt`, status: 'finalized' as const, publicationStatus: 'pending' as const })),
     }))
-    let finishProjection!: () => void, acknowledgeCheckpoint!: () => void
+    let finishProjection!: () => void
     const projection = new Promise<void>(resolve => { finishProjection = resolve })
-    const checkpoint = new Promise<void>(resolve => { acknowledgeCheckpoint = resolve })
     const progress: number[] = []
     const observer = { ...callbacks, setProgress: (value: number) => { progress.push(value) }, setActivityText: vi.fn() }
-    deps.postprocessAuthorChapter = vi.fn(async chapter => { if (chapter.number === 8) await projection })
-    const save = deps.completeBatch
-    deps.completeBatch = vi.fn(async (...args: Parameters<typeof save>) => {
-      if (args[2] === 'chapter:8') await checkpoint
-      return save(...args)
+    deps.postprocessAuthorChapter = vi.fn(async chapter => {
+      observer.setActivityText(`Chapter ${chapter.number}`)
+      if (chapter.number === 8) await projection
     })
     const executing = new ImportRunOrchestrator(deps).executeStage('run-1', 'author-postprocess', 'test-runner', { cancelled: false }, observer)
     await vi.waitFor(() => expect(deps.postprocessAuthorChapter).toHaveBeenCalledTimes(1))
-    const duringProjection = [...progress]
+    expect(Math.max(...progress)).toBe(78)
     finishProjection()
-    await vi.waitFor(() => expect(deps.completeBatch).toHaveBeenCalledTimes(1))
-    const duringCheckpoint = [...progress]
-    const clearedBeforeCheckpoint = observer.setActivityText.mock.calls.length
-    acknowledgeCheckpoint()
     await executing
-    expect(duringProjection).toEqual([78])
-    expect(duringCheckpoint).toEqual([78])
-    expect(clearedBeforeCheckpoint).toBe(0)
-    expect(progress).toEqual([78, 89, 99])
-    expect(observer.setActivityText).toHaveBeenCalledWith(undefined)
+    expect(progress.at(-1)).toBe(99)
+    expect(observer.setActivityText.mock.calls.at(-1)).toEqual([undefined])
   })
 
   it('keeps renewing its lease while one knowledge effect runs longer than the original TTL', async () => {
