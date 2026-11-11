@@ -178,7 +178,7 @@ function installLegacyRun(snapshots: string[], totalChapters: number): void {
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-import-run-'))
   initProjectDatabase(root)
-}, 20_000)
+})
 
 afterEach(() => {
   normalization.db?.close(); normalization.db = null; normalization.root = null
@@ -187,7 +187,7 @@ afterEach(() => {
 })
 
 describe('ImportRunRepository', () => {
-  describe('historical schema normalization', { timeout: 20_000 }, () => {
+  describe('historical schema normalization', () => {
     it('historical fixture normalization (not production admission): the pre-purpose import-run schema before creating purpose indexes', () => {
       closeProjectDatabase()
       const legacy = new Database(path.join(root, '.ai-novel', 'project.db'))

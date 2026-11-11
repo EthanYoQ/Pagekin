@@ -575,7 +575,7 @@ describe('release evidence v2 CLI', () => {
       { cwd: repositoryRoot, encoding: 'utf8' })
     expect(historical.status, historical.stderr).toBe(0)
 
-  }, 15_000)
+  })
 
   it('requires externally frozen expected toolchain versions and rejects a runtime mismatch', () => {
     const evidenceRoot = fixture()
