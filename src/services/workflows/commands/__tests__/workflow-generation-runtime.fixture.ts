@@ -24,7 +24,6 @@ export type FakeGenerateStream = (
   },
 ) => Promise<string>
 
-/** Test double for the provider stream that workflow-command fixtures script per case. */
 export const useFakeModelStream = create<{ generateStream: FakeGenerateStream }>()(() => ({
   generateStream: async (_messages, callbacks) => {
     callbacks.onError?.('FAKE_MODEL_STREAM_NOT_SCRIPTED')
@@ -46,7 +45,6 @@ const DEFAULT_CAPABILITY_EVIDENCE: ModelExecutionLeaseReceipt['capabilityEvidenc
   usage: null,
 }
 
-/** A renderer-local GenerationRuntime that drives the shared harness against one scripted completion port. */
 export function fakeRuntimeDependencies(
   complete: CompletionPort['complete'],
   capabilityEvidence: ModelExecutionLeaseReceipt['capabilityEvidence'] = DEFAULT_CAPABILITY_EVIDENCE,

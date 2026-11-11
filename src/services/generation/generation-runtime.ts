@@ -26,7 +26,6 @@ export interface GenerationRuntime {
 
 export interface CreateGenerationRuntimeOptions {
   budget: GenerationRuntimeBudget
-  /** Optional semantic model identity. */
   modelId?: string
   /** Project identity captured by the caller before any asynchronous lease work. */
   projectSession?: ProjectSessionContext
