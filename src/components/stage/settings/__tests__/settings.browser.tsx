@@ -362,6 +362,30 @@ describe('设置页', () => {
     await expect.poll(() => [...host!.querySelectorAll('input')].some(field => field.value === '本机向量')).toBe(true)
   })
 
+  it('重排分区点编辑、读取未回时打开删除确认：读回后确认删除，表单关掉，不能把它存回来', async () => {
+    const rerank = { ...LOCAL, id: 'rr', name: '本机重排', purposes: ['rerank'] } as ModelProfile
+    useLLMStore.setState({ models: [MODEL, rerank] })
+    useLayoutStore.setState({ settingsSection: 'embedding' })
+    await mount()
+    let finishRead!: () => void
+    const invoke = win.aiNovelAPI!.invoke
+    win.aiNovelAPI!.invoke = async (channel, ...args) => {
+      if (channel !== 'llm:list-models') return invoke(channel, ...args)
+      await new Promise<void>(resolve => { finishRead = resolve })
+      return [MODEL, rerank]
+    }
+    await click(host!.querySelector<HTMLButtonElement>('[data-rerank-section] > button') ?? undefined)
+
+    await click(byName('编辑「本机重排」'))
+    await click(byName('「本机重排」更多操作'))
+    await click([...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === '删除模型…'))
+    await act(async () => finishRead())
+    await click([...document.querySelector('[role="dialog"]')!.querySelectorAll('button')].find(button => button.textContent === '删除模型'))
+
+    expect(useLLMStore.getState().deleteModel).toHaveBeenCalledWith('rr')
+    expect([...host!.querySelectorAll('input')].some(field => field.value === '本机重排')).toBe(false)
+  })
+
   it('删除还没完成时再确认一次删除同一模型：只发一次删除，这次失败后可以再编辑', async () => {
     const finish = await deleteLocalWhile(false)
     await confirmDeleteLocal()
