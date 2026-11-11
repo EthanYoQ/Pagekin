@@ -130,7 +130,7 @@ describe('备份恢复的项目替换一章定稿', { timeout: 60_000 }, () => {
   it.each([7, 8])('收据记 schema %i 的导入作品升到当前版本后，转移授权仍可读', async version => {
     const { restored } = await restoredProject(`v${version}-receipt`)
     const file = path.join(restored.root, '.ai-novel', 'portable-transfer-authority.json')
-    expect(JSON.parse(fs.readFileSync(file, 'utf8')).sourceSchemaVersion).toBe(9)
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).sourceSchemaVersion).toBe(10)
     fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), sourceSchemaVersion: version }))
     expect(currentAuthority(restored)).not.toBeNull()
   })

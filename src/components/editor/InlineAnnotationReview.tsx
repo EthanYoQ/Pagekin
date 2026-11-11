@@ -5,6 +5,7 @@ import { routeModelId } from '../../services/model-routing'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
 import type { EditorInlineAnnotation } from '../../shared/editor-inline-generation'
 import { useLocaleStore } from '../../stores/locale-store'
+import { Check } from 'lucide-react'
 import { Button } from '../ui/Button'
 
 type Piece = { kind: 'same'; text: string } | { kind: 'change'; index: number; from: number; to: number; before: string; after: string }
@@ -83,7 +84,7 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
     <p>{text('红色为删除，绿色为新增。点击标色文字可编辑、重新生成或接受；全部确认后自动保存版本。', 'Red is removed, green is added. Select a change to edit, reroll or accept it; confirming all saves a version.')}</p>
     <div className="inline-annotation-prose">{pieces.map((piece, position) => piece.kind === 'same' ? <span key={position}>{piece.text}</span> : <span key={position} className="inline-annotation-change">
       <button type="button" className="inline-annotation-mark" aria-label={text(`查看修改 ${piece.index + 1}`, `Inspect change ${piece.index + 1}`)} aria-expanded={activeChange === piece.index} onClick={() => setActiveChange(activeChange === piece.index ? null : piece.index)}>
-        {piece.before && <del>{piece.before}</del>}{changes[piece.index]!.value && <ins>{changes[piece.index]!.value}</ins>}{changes[piece.index]!.accepted && <span aria-label={text('已接受', 'Accepted')}>✓</span>}
+        {piece.before && <del>{piece.before}</del>}{changes[piece.index]!.value && <ins>{changes[piece.index]!.value}</ins>}{changes[piece.index]!.accepted && <span aria-label={text('已接受', 'Accepted')}><Check aria-hidden="true" /></span>}
       </button>
       {activeChange === piece.index && <span className="inline-annotation-actions">
         {changes[piece.index]!.editing && <textarea aria-label={text(`编辑修改 ${piece.index + 1}`, `Edit change ${piece.index + 1}`)} value={changes[piece.index]!.value} onChange={event => update(piece.index, { value: event.target.value, accepted: false, error: '' })} />}
