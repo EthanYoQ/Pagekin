@@ -340,6 +340,27 @@ describe('设置页', () => {
     expect([...host!.querySelectorAll('input')].some(field => field.value === '双用途')).toBe(false)
   })
 
+  it('检索分区点编辑、读取未回时在重排分区添加模型：读取回来检索模型的编辑表单照常打开', async () => {
+    const embedding = { ...LOCAL, id: 'embed', name: '本机向量', purposes: ['embedding'] } as ModelProfile
+    useLLMStore.setState({ models: [MODEL, embedding] })
+    useLayoutStore.setState({ settingsSection: 'embedding' })
+    await mount()
+    let finishRead!: () => void
+    const invoke = win.aiNovelAPI!.invoke
+    win.aiNovelAPI!.invoke = async (channel, ...args) => {
+      if (channel !== 'llm:list-models') return invoke(channel, ...args)
+      await new Promise<void>(resolve => { finishRead = resolve })
+      return [MODEL, embedding]
+    }
+    await click(host!.querySelector<HTMLButtonElement>('[data-rerank-section] > button') ?? undefined)
+
+    await click(byName('编辑「本机向量」'))
+    await click(byName('添加重排模型'))
+    await act(async () => finishRead())
+
+    await expect.poll(() => [...host!.querySelectorAll('input')].some(field => field.value === '本机向量')).toBe(true)
+  })
+
   it('删除还没完成时再确认一次删除同一模型：只发一次删除，这次失败后可以再编辑', async () => {
     const finish = await deleteLocalWhile(false)
     await confirmDeleteLocal()
