@@ -315,6 +315,7 @@ describe('设置页', () => {
     let finishDelete!: () => void
     useLLMStore.setState({ models: [MODEL, both], deleteModel: vi.fn(async () => {
       await new Promise<void>(resolve => { finishDelete = resolve })
+      useLLMStore.setState({ models: [MODEL] })
       return true
     }) })
     useLayoutStore.setState({ settingsSection: 'embedding' })
