@@ -30,6 +30,8 @@ async function confirmSaveWhileGenerating(modelId: string, defaultModelId: strin
   })
 }
 
+const deletingModelIds = new Set<string>()
+
 /**
  * 一类模型（生成、向量或重排）的列表与编辑：按用途过滤、新增草稿、保存（该类第一个自动设为默认）、删除、设为默认。
  * 设置页的「AI 模型」「检索模型」及其「重排模型」分区用它。
@@ -50,7 +52,6 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
   const [editingOriginal, setEditingOriginal] = useState('')
   const [saving, setSaving] = useState(false)
   const editRequest = useRef(0)
-  const deleting = useRef(new Set<string>())
   useEffect(() => {
     if (!loaded) loadModels()
   }, [loaded, loadModels])
@@ -76,7 +77,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     }))
   }
   const editLatestSaved = async (model: ModelProfile) => {
-    if (deleting.current.has(model.id)) return
+    if (deletingModelIds.has(model.id)) return
     const request = ++editRequest.current
     await loadModels()
     if (request !== editRequest.current) return
@@ -118,11 +119,11 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     save,
     remove: async (modelId: string) => {
       editRequest.current += 1
-      deleting.current.add(modelId)
+      deletingModelIds.add(modelId)
       try {
         return await deleteModel(modelId)
       } finally {
-        deleting.current.delete(modelId)
+        deletingModelIds.delete(modelId)
       }
     },
     setDefault,
