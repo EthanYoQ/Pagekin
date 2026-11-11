@@ -53,6 +53,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const [exempted, setExempted] = useState<Exempted | null>(null)
   const [busy, setBusy] = useState(false)
   const checked = useRef(false)
+  const rejected = useRef(false)
   const recovery = useRef(0)
   const mounted = useRef(false)
   useEffect(() => {
@@ -71,7 +72,9 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const recoverLatest = useCallback((session: ProjectSessionContext, applies: () => boolean) => {
     const request = ++recovery.current
     void readLatestContinuityReport(session)
-      .then(latest => { if (applies() && request === recovery.current && !checked.current) setReport(latest) }).catch(() => {})
+      .then(latest => {
+        if (applies() && request === recovery.current && !checked.current) setReport(shown => shown && rejected.current ? shown : latest)
+      }).catch(() => {})
   }, [])
 
   useEffect(() => globalEventBus.on('REFRESH_RESOURCE', ({ projectSession, resources }) => {
@@ -104,6 +107,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
         setReport(outcome.report)
         setStatus({ kind: 'done' })
       } else {
+        rejected.current ||= outcome.status === 'changed'
         setStatus({ kind: outcome.status })
       }
     }, (error: unknown) => {
@@ -120,6 +124,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     const session = currentSession()
     if (!session) return
     let active = true
+    rejected.current = false
     const applies = () => active && isProjectSessionCurrent(session)
     void ipc.invokeWithProjectSession(session, 'db:character-continuity-preflight-nodes', session.projectPath)
       .then(nodes => { if (applies()) { setHasTimeline(nodes.length > 0); setTimeline(nodes) } }).catch(() => {})
