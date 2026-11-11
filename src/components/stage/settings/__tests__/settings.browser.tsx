@@ -272,6 +272,42 @@ describe('设置页', () => {
     expect(host!.querySelector('input[placeholder="如：DeepSeek 主力 / GPT-4o 备用"]')).toBeNull()
   })
 
+  async function deleteLocalWhile(result: boolean) {
+    let finish!: () => void
+    useLLMStore.setState({ deleteModel: vi.fn(async (id: string) => {
+      await new Promise<void>(resolve => { finish = resolve })
+      if (result) useLLMStore.setState(state => ({ models: state.models.filter(model => model.id !== id) }))
+      return result
+    }) })
+    await mount()
+    await click(byName('「本机 Ollama」更多操作'))
+    await click([...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === '删除模型…'))
+    await click([...document.querySelector('[role="dialog"]')!.querySelectorAll('button')].find(button => button.textContent === '删除模型'))
+    await click(byName('编辑「本机 Ollama」'))
+    return finish
+  }
+
+  it('删除确认框关了、模型还没删完时点它的编辑：不打开表单，删完后列表里没有它，也没有表单能把它存回来', async () => {
+    const saveModel = vi.fn(async () => true)
+    useLLMStore.setState({ saveModel })
+    const finish = await deleteLocalWhile(true)
+
+    expect(host!.querySelector('input[placeholder="如：DeepSeek 主力 / GPT-4o 备用"]')).toBeNull()
+    await act(async () => finish())
+
+    expect(byName('编辑「本机 Ollama」')).toBeUndefined()
+    expect(host!.querySelector('input[placeholder="如：DeepSeek 主力 / GPT-4o 备用"]')).toBeNull()
+    expect(saveModel).not.toHaveBeenCalled()
+  })
+
+  it('删除失败后可以再编辑这个模型', async () => {
+    const finish = await deleteLocalWhile(false)
+    await act(async () => finish())
+
+    await click(byName('编辑「本机 Ollama」'))
+    await expect.poll(() => host!.querySelector<HTMLInputElement>('input[placeholder="如：DeepSeek 主力 / GPT-4o 备用"]')?.value).toBe('本机 Ollama')
+  })
+
   it('保存模型时主进程出错：弹出错误，保存按钮恢复可点，编辑表单留着', async () => {
     useLLMStore.setState({ saveModel: vi.fn(async () => { throw new Error('llm:save-model 不可用') }) })
     await mount()
