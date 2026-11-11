@@ -6,6 +6,7 @@ import type { Connection, Table } from '@lancedb/lancedb'
 import type { EmbeddingSpaceIdentity, KnowledgeCorpusKind } from '../vector-store'
 import { isDocumentCopyIndexCurrent } from '../vector-store'
 
+import { fullTextFilter, fullTextTerms, rankFullText } from '../../src/shared/full-text-search'
 import type { GenerationKnowledgeItem, GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge'
 export type { GenerationKnowledgeItem, GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge'
 
@@ -146,13 +147,10 @@ async function searchHits(reader: Reader, input: KnowledgeSearch, topK: number):
     }
   }
   if (!hits.length) {
-    const raw = input.query.match(/[\p{L}\p{N}-]+/gu) ?? [], meaningful = raw.filter(term => Array.from(term).length >= 2)
-    const terms = [...new Map((meaningful.length ? meaningful : raw).map(term => [term.toLocaleLowerCase(), term])).values()].slice(0, 8)
-    const filter = terms.length ? terms.map(term => `text LIKE ${quote(`%${term}%`)}`).join(' OR ') : "text LIKE '%%'"
-    const rows = await reader.chunks!.query().where(`(${filter})${documentFilter ? ` AND ${documentFilter}` : ''}`).toArray()
-    const rank = (row: Row) => terms.reduce((sum, term, index) => sum + (string(row.text).toLocaleLowerCase().includes(term.toLocaleLowerCase()) ? terms.length - index : 0), 0)
-    hits = rows.filter(row => corpus(row.corpusKind) !== 'reference').sort((a, b) => rank(b) - rank(a) || string(a.id).localeCompare(string(b.id)))
-      .slice(0, topK).map(row => ({ row, score: 0.5 }))
+    const terms = fullTextTerms(input.query)
+    const rows = await reader.chunks!.query().where(`${fullTextFilter(terms)}${documentFilter ? ` AND ${documentFilter}` : ''}`).toArray()
+    const candidates = rows.filter(row => corpus(row.corpusKind) !== 'reference').map(row => ({ row, text: string(row.text) }))
+    hits = rankFullText(candidates, terms, await reader.chunks!.countRows()).slice(0, topK).map(({ row }) => ({ row: row.row, score: 0.5 }))
   }
   if (new Set(hits.map(hit => hit.row.id)).size !== hits.length) fail('DUPLICATE_CHUNK')
   return hits
