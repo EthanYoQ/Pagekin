@@ -8,7 +8,7 @@ import {
   InferBlueprintsPerChapterCommand as RuntimeInferBlueprintsPerChapterCommand,
   InferGlobalSettingsCommand as RuntimeInferGlobalSettingsCommand,
 } from '../import-novel.command'
-import { workflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { fakeLeaseModelId, useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
 import { importGenerationStopMessage } from '../../../../i18n/app-errors'
 import { contextLengthRejectingDependencies } from './context-length-runtime.fixture'
 import { isWorkflowCancellation } from '../../workflow-cancellation'
@@ -27,7 +27,7 @@ const callbacks: StepCallbacks = {
   setProgress: vi.fn(),
   appendText: vi.fn(),
 }
-const originalGenerateStream = useLLMStore.getState().generateStream
+const originalGenerateStream = useFakeModelStream.getState().generateStream
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 const originalRefreshFileTree = useProjectStore.getState().refreshFileTree
 const originalLocale = useLocaleStore.getState().locale
@@ -196,10 +196,8 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.useRealTimers()
   useProjectStore.setState({ currentProject: null, refreshFileTree: originalRefreshFileTree })
-  useLLMStore.setState({
-    defaultModelId: originalDefaultModelId,
-    generateStream: originalGenerateStream,
-  })
+  useLLMStore.setState({ defaultModelId: originalDefaultModelId })
+  useFakeModelStream.setState({ generateStream: originalGenerateStream })
   useLocaleStore.setState({ locale: originalLocale })
 })
 
@@ -232,14 +230,12 @@ describe('InferBlueprintsPerChapterCommand', () => {
           }
         : null,
     }))
-    useLLMStore.setState({
-      defaultModelId: 'model-a',
-      generateStream: vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(async (messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream: vi.fn<FakeGenerateStream>(async (messages, streamCallbacks) => {
         observed.push(messages)
         streamCallbacks.onDone?.(observed.length === 1 ? malformed : valid, undefined, 'stop')
         return `import-blueprint-language-${observed.length}`
-      }),
-    })
+      }) })
     const context = createContext()
     context.writingLanguage = 'en-US'
     context.uiLocale = 'zh-CN'
@@ -294,9 +290,8 @@ describe('InferBlueprintsPerChapterCommand', () => {
       if (channel === 'db:blueprint-commit-range') return { success: false, error: 'DB 写入失败' }
       return { success: true }
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-a',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(JSON.stringify({
           blueprints: [{
             chapterNumber: 1,
@@ -310,8 +305,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
           }],
         }), undefined, 'stop')
         return 'import-blueprint-request'
-      }),
-    })
+      }) })
     const command = new InferBlueprintsPerChapterCommand()
 
     await expect(command.execute({ step: {}, context: createContext(), callbacks })).rejects.toThrow(/DB 写入失败/)
@@ -412,7 +406,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
     const invoke = stubIpcInvoke((channel) => {
       throw new Error(`unexpected mutation ${channel}`)
     })
-    const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+    const generateStream = vi.fn<FakeGenerateStream>(
       async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(JSON.stringify({
           blueprints: [{
@@ -429,7 +423,8 @@ describe('InferBlueprintsPerChapterCommand', () => {
         return 'import-blueprint-request'
       },
     )
-    useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream })
 
     await expect(new InferBlueprintsPerChapterCommand().execute({
       step: {},
@@ -517,11 +512,10 @@ describe('InferBlueprintsPerChapterCommand', () => {
       throw new Error(`unexpected ${channel}`)
     })
     let generationPrompt = ''
-    useLLMStore.setState({
-      defaultModelId: 'model-a',
-      generateStream: vi.fn(async (
-        messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-        streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (
+        messages: Parameters<FakeGenerateStream>[0],
+        streamCallbacks: Parameters<FakeGenerateStream>[1],
       ) => {
         generationPrompt = messages.map(message => message.content).join('\n')
         streamCallbacks.onDone?.(JSON.stringify({
@@ -537,8 +531,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
           }],
         }), undefined, 'stop')
         return 'import-blueprint-request'
-      }),
-    })
+      }) })
 
     await new InferBlueprintsPerChapterCommand().execute({
       step: {},
@@ -569,14 +562,12 @@ describe('InferGlobalSettingsCommand', () => {
     }))
     workflowContext.data.importRunTotalChapters = 23
     let prompt = ''
-    useLLMStore.setState({
-      defaultModelId: 'model-a',
-      generateStream: vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(async (messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream: vi.fn<FakeGenerateStream>(async (messages, streamCallbacks) => {
         prompt = messages.map(message => message.content).join('\n')
         streamCallbacks.onDone?.(JSON.stringify(validInference()), undefined, 'stop')
         return 'full-manifest-count'
-      }),
-    })
+      }) })
 
     await new InferGlobalSettingsCommand().execute({
       step: {}, context: workflowContext, callbacks,
@@ -594,7 +585,7 @@ describe('InferGlobalSettingsCommand', () => {
     const valid = JSON.stringify(inferred)
     const malformed = `${valid.slice(0, -1)},}`
     const observed: Array<Array<{ role: string; content: string }>> = []
-    const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+    const generateStream = vi.fn<FakeGenerateStream>(
       async (messages, streamCallbacks) => {
         observed.push(messages)
         streamCallbacks.onDone?.(observed.length === 1 ? malformed : valid, undefined, 'stop')
@@ -609,7 +600,8 @@ describe('InferGlobalSettingsCommand', () => {
           }
         : null,
     }))
-    useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream })
     const context = createContext()
     context.writingLanguage = 'en-US'
     context.uiLocale = 'en-US'
@@ -672,14 +664,15 @@ describe('InferGlobalSettingsCommand', () => {
     const invoke = successfulInferenceIpc()
     const valid = JSON.stringify(validInference())
     const malformed = `${valid.slice(0, -1)},}`
-    const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+    const generateStream = vi.fn<FakeGenerateStream>(
       async (_messages, streamCallbacks, _modelId, options) => {
         expect(invoke.mock.calls.filter(([channel]) => channel === 'kb:search')).toHaveLength(4)
         streamCallbacks.onDone?.(generateStream.mock.calls.length === 1 ? malformed : valid, undefined, 'stop')
         return String(options?.modelExecutionLeaseId)
       },
     )
-    useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream })
     const promptBudgetLog = vi.spyOn(console, 'info').mockImplementation(() => undefined)
     let repairReport: Record<string, unknown> | undefined
 
@@ -692,8 +685,9 @@ describe('InferGlobalSettingsCommand', () => {
     }
 
     expect(generateStream).toHaveBeenCalledTimes(2)
-    expect(generateStream.mock.calls[0][3]?.modelExecutionLeaseId)
-      .toBe(generateStream.mock.calls[1][3]?.modelExecutionLeaseId)
+    const leaseIds = generateStream.mock.calls.map(call => call[3]?.modelExecutionLeaseId)
+    expect(fakeLeaseModelId(leaseIds[0])).toBe('model-a')
+    expect(leaseIds).toEqual([leaseIds[0], leaseIds[0]])
     expect(invoke.mock.calls.filter(([channel]) => channel === 'db:import-global-facts-commit')).toHaveLength(1)
     expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('project:save')
     expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('db:project-core-update')
@@ -719,13 +713,14 @@ describe('InferGlobalSettingsCommand', () => {
   it('routes an oversized direct-repair candidate through the typed shared preflight', async () => {
     const invoke = successfulInferenceIpc()
     const oversizedCandidate = '{'.repeat(32_769)
-    const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+    const generateStream = vi.fn<FakeGenerateStream>(
       async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(oversizedCandidate, undefined, 'stop')
         return 'initial-import-inference'
       },
     )
-    useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream })
     const diagnostic = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 
     let failure: unknown
@@ -760,13 +755,14 @@ describe('InferGlobalSettingsCommand', () => {
     const architectureFiles: Record<string, string> = { ...valid.architectureFiles }
     Reflect.deleteProperty(architectureFiles, 'synopsis')
     const invalid = { ...valid, architectureFiles }
-    const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+    const generateStream = vi.fn<FakeGenerateStream>(
       async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(JSON.stringify(invalid), undefined, 'stop')
         return 'request'
       },
     )
-    useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream })
 
     await expect(new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks }))
       .rejects.toThrow('code=missing_field path=architectureFiles.synopsis')
@@ -783,13 +779,14 @@ describe('InferGlobalSettingsCommand', () => {
         if (channel === 'kb:search') return [searchHit]
         throw new Error(`unexpected IPC ${channel}`)
       })
-      const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+      const generateStream = vi.fn<FakeGenerateStream>(
         async (_messages, streamCallbacks) => {
           streamCallbacks.onDone?.('{}', undefined, 'stop')
           return 'request'
         },
       )
-      useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+      useLLMStore.setState({ defaultModelId: 'model-a' })
+      useFakeModelStream.setState({ generateStream })
       await expect(new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })).rejects.toThrow()
       return generateStream.mock.calls[0]![0]
     }
@@ -805,14 +802,15 @@ describe('InferGlobalSettingsCommand', () => {
       throw new Error(`unexpected mutation ${channel}`)
     })
     const valid = JSON.stringify(validInference())
-    const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+    const generateStream = vi.fn<FakeGenerateStream>(
       async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(generateStream.mock.calls.length === 1 ? `${valid.slice(0, -1)},}` : valid, undefined,
           generateStream.mock.calls.length === 1 ? 'stop' : 'length')
         return 'request'
       },
     )
-    useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream })
 
     await expect(new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks }))
       .rejects.toThrow(/本次请求长度限制/)
@@ -855,13 +853,14 @@ describe('InferGlobalSettingsCommand', () => {
 
   it('accepts a valid response in one call', async () => {
     successfulInferenceIpc()
-    const generateStream = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(
+    const generateStream = vi.fn<FakeGenerateStream>(
       async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(JSON.stringify(validInference()), undefined, 'stop')
         return 'request'
       },
     )
-    useLLMStore.setState({ defaultModelId: 'model-a', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream })
     await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
     expect(generateStream).toHaveBeenCalledOnce()
   })
@@ -891,13 +890,11 @@ describe('InferGlobalSettingsCommand', () => {
       }
       throw new Error(`unexpected IPC ${channel}`)
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-a',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(JSON.stringify(inferred), undefined, 'stop')
         return 'merged-roster-receipt'
-      }),
-    })
+      }) })
 
     await expect(new InferGlobalSettingsCommand().execute({
       step: {}, context: createContext(), callbacks,
@@ -911,13 +908,11 @@ describe('InferGlobalSettingsCommand', () => {
     })
     const invalid = validInference()
     invalid.characterCards[0].relationships = '与旧友苏绾保持复杂关系' as never
-    useLLMStore.setState({
-      defaultModelId: 'model-a',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(JSON.stringify(invalid), undefined, 'stop')
         return 'request'
-      }),
-    })
+      }) })
 
     await expect(new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks }))
       .rejects.toThrow('code=invalid_type path=characterCards[0].relationships')
@@ -955,13 +950,11 @@ describe('InferGlobalSettingsCommand', () => {
       target: '苏绾',
       relation: '旧友',
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-a',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(JSON.stringify(valid), undefined, 'stop')
         return 'request'
-      }),
-    })
+      }) })
 
     await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
 
@@ -989,13 +982,11 @@ describe('InferGlobalSettingsCommand', () => {
       if (channel === 'db:import-global-facts-commit') return { success: false, error: '全局事实事务失败' }
       throw new Error(`unexpected IPC ${channel}`)
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-a',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(JSON.stringify(validInference()), undefined, 'stop')
         return 'request'
-      }),
-    })
+      }) })
 
     await expect(new InferGlobalSettingsCommand().execute({
       step: {},
@@ -1024,7 +1015,8 @@ describe('M02 text-import proposal receipts', () => {
       }
       throw new Error(`unexpected IPC ${channel}`)
     })
-    useLLMStore.setState({ defaultModelId: 'model-a', generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
       streamCallbacks.onDone?.(JSON.stringify(validInference()), undefined, 'stop'); return 'candidate-request'
     }) })
     return invoke
@@ -1098,7 +1090,7 @@ describe('M02 text-import proposal receipts', () => {
     ambiguous.characterCards[1].name = ambiguous.characterCards[0].name
     ambiguous.characterCards[1].notes = '不同来源的独立事实'
     const raw = JSON.stringify(ambiguous)
-    useLLMStore.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
       streamCallbacks.onDone?.(raw, undefined, 'stop'); return 'ambiguous-candidate'
     }) })
     await expect(new InferGlobalSettingsCommand().execute({ step: {}, context, callbacks })).resolves.toBeUndefined()

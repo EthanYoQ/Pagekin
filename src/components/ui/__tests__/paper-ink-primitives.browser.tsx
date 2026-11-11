@@ -20,6 +20,7 @@ import { StatGrid } from '../StatGrid'
 import { composite, contrast, luminance } from './color-contrast'
 import { useAnchoredLayer } from '../use-anchored-layer'
 import { withReducedMotion } from './reduced-motion'
+import { resizeViewport } from './viewport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -65,7 +66,7 @@ function expectFocusRing(element: Element, theme: 'light' | 'dark' = 'light') {
 }
 
 beforeEach(async () => {
-  await page.viewport(1000, 720)
+  await resizeViewport(1000, 720)
 })
 
 afterEach(async () => {

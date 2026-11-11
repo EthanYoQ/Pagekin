@@ -110,11 +110,6 @@ export const ipc = {
 
   /**
    * 监听主进程推送的事件（返回取消订阅函数）
-   *
-   * @example
-   * const unsub = ipc.on('llm:stream-chunk', (data) => console.log(data.chunk))
-   * // 组件卸载时取消
-   * unsub()
    */
   on: <C extends EventChannel>(
     channel: C,

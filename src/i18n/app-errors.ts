@@ -200,7 +200,6 @@ const ERROR_KEYS = {
   TASK_BUDGET_SCOPE_SPLIT_REQUIRED: 'error.generationInputTooLarge',
   MODEL_NOT_FOUND: 'error.generationModelMissing',
   NO_DEFAULT_MODEL: 'error.generationModelMissing',
-  LEASE_BEGIN_FAILED: 'error.generationRequestFailed',
   // 角色建议页（待批准的角色提议、定稿角色状态建议）的决策请求被主进程拒绝（#474）。
   CHARACTER_PROPOSAL_ALREADY_APPROVED: 'error.characterProposalAlreadyDecided',
   CHARACTER_PROPOSAL_NOT_PENDING_FINALIZED: 'error.characterProposalAlreadyDecided',

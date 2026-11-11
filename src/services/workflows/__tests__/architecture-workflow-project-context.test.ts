@@ -13,15 +13,11 @@ import type { NovelConfig } from '../../../shared/ipc-channels'
 
 const originalLocale = useLocaleStore.getState().locale
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
-const originalGenerateStream = useLLMStore.getState().generateStream
 
 afterEach(() => {
   useProjectStore.setState({ currentProject: null })
   useLocaleStore.setState({ locale: originalLocale })
-  useLLMStore.setState({
-    defaultModelId: originalDefaultModelId,
-    generateStream: originalGenerateStream,
-  })
+  useLLMStore.setState({ defaultModelId: originalDefaultModelId })
   vi.unstubAllGlobals()
 })
 
@@ -53,8 +49,7 @@ function arrangeConfigGenerationJourney(responses: Array<{ content: string; fini
     updatedAt: '',
   }
   useProjectStore.setState({ currentProject: project as never, saveProject })
-  const generateStream = vi.fn(() => { throw new Error('Renderer provider dispatch is forbidden') })
-  useLLMStore.setState({ models: [{ id: 'deepseek-v4-flash', purposes: ['generation'] }] as never, defaultModelId: 'deepseek-v4-flash', generateStream })
+  useLLMStore.setState({ models: [{ id: 'deepseek-v4-flash', purposes: ['generation'] }] as never, defaultModelId: 'deepseek-v4-flash' })
   const view: MainGenerationRunView = {
     handle: { projectId: project.id, epoch: project.sessionLease, rootActionId: '合成配置根', runId: '合成配置运行' },
     status: 'running', nonReplayable: false, artifacts: [],
@@ -98,7 +93,7 @@ function arrangeConfigGenerationJourney(responses: Array<{ content: string; fini
     wordsPerChapter: 3000,
     onGenerated,
   })
-  return { workflow, onGenerated, saveProject, generateStream, executeMain, invoke }
+  return { workflow, onGenerated, saveProject, executeMain, invoke }
 }
 
 describe('architecture workflow project context', () => {
@@ -329,7 +324,6 @@ describe('config generation full journey completion contract', () => {
     await expect(execute(journey.workflow)).resolves.toBe('生成的配置已成功应用！')
 
     expect(journey.executeMain).toHaveBeenCalledTimes(2)
-    expect(journey.generateStream).not.toHaveBeenCalled()
     expect(new Set(journey.executeMain.mock.calls.map(([request]) => request.invocationNonce)).size).toBe(2)
     const replacementPrompt = journey.executeMain.mock.calls[1][0].task.messages
       .map(message => message.content).join('\n')
@@ -367,7 +361,6 @@ describe('config generation full journey completion contract', () => {
     expect(journey.onGenerated).toHaveBeenCalledWith(expect.objectContaining({ globalGuidance: guidance }))
     expect(journey.saveProject).not.toHaveBeenCalled()
     expect(journey.invoke.mock.calls.filter(([channel]) => channel === 'db:project-core-commit-generated')).toHaveLength(1)
-    expect(journey.generateStream).not.toHaveBeenCalled()
   })
 
   it('does not apply the callback or save again when the main source guard rejects', async () => {
@@ -401,7 +394,6 @@ describe('config generation full journey completion contract', () => {
     expect(journey.onGenerated).not.toHaveBeenCalled()
     expect(journey.saveProject).not.toHaveBeenCalled()
     expect(journey.executeMain).toHaveBeenCalledTimes(2)
-    expect(journey.generateStream).not.toHaveBeenCalled()
   })
 })
 
