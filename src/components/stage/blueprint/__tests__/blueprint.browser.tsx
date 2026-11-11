@@ -561,7 +561,7 @@ describe('蓝图阶段', () => {
     }
     const save = (name = '保存此章') => act(async () => page.getByRole('button', { name }).click())
 
-    it('蓝图关系和时间线相反：保存成功，提示写明章号和原文', async () => {
+    it('蓝图关系和时间线相反：保存成功，提示写明依据和原文', async () => {
       planned()
       await renderPage()
       await save()
@@ -930,7 +930,7 @@ describe('蓝图阶段', () => {
       await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
       await save('Save chapter')
       await expect.element(page.getByText('The chapter 2 blueprint has 林岚 and 守塔人 as “亲密同伴”, but from chapter 1 they are “决裂”.')).toBeVisible()
-      await expect.element(page.getByText('Basis: Your settings · 决裂')).toBeVisible()
+      await expect.element(page.getByText('Basis: Your notes · 决裂')).toBeVisible()
       await expect.element(page.getByRole('button', { name: 'This is intentional' })).toBeVisible()
       await expect.element(page.getByRole('button', { name: 'View character' })).toBeVisible()
     })

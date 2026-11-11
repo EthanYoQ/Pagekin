@@ -5,7 +5,7 @@ import { Button } from '../../ui/Button'
 /** 依据行。sourceChapter 为 0 的是升级前的设定，没有可信的章号。 */
 export function PreflightFindingSource({ finding, className }: { finding: PreflightFinding; className?: string }) {
   const text = useLocaleStore(s => s.text)
-  const place = finding.authorSetting ? text('你的设定', 'Your settings')
+  const place = finding.authorSetting ? text('你的设定', 'Your notes')
     : finding.sourceChapter > 0
       ? text(`第 ${finding.sourceChapter} 章`, `Chapter ${finding.sourceChapter}`)
       : text('升级前的设定', 'Pre-upgrade notes')
