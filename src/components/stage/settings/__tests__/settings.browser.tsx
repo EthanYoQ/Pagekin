@@ -148,7 +148,7 @@ describe('设置页', () => {
     let configured = false
     win.aiNovelAPI!.invoke = async channel => channel === 'kb:get-vector-rebuild-status'
       ? { embeddingConfigured: configured, canRebuild: configured, totalChunks: 9, vectorlessCount: 4, activeVectorDimension: 0 }
-      : channel === 'config:get' ? {} : undefined
+      : channel === 'config:get' ? {} : channel === 'llm:list-models' ? useLLMStore.getState().models : undefined
     useProjectStore.setState({ currentProject: { id: session.projectId, path: session.projectPath, sessionLease: session.leaseId, name: '灯塔', novelConfig: {} } as unknown as ProjectData })
     setActiveProjectSessionContext(session)
     useLayoutStore.setState({ settingsSection: 'embedding' })
