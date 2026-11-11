@@ -177,7 +177,11 @@ export const RBK_SCENARIOS = {
     observed.afterRepair = await chapter3ContinuityFacts(projectPath)
 
     await openChapter(context.page, 3)
+    const sentBeforeRetry = requests().characterState
     await chapterView.postProcess(context.page).getByRole('button', { name: '重试失败步骤' }).click()
+    for (const deadline = Date.now() + 90_000; requests().characterState === sentBeforeRetry; await new Promise(resolve => setTimeout(resolve, 100))) {
+      assert.ok(Date.now() < deadline, '90 秒内重试没有发出角色状态请求')
+    }
     await settled()
     observed.afterRetry = { steps: await chapterView.postProcessSteps(context.page), requests: requests(), facts: await chapter3ContinuityFacts(projectPath) }
     await context.shoot('rbk-10-ch3-retried-once')

@@ -577,9 +577,9 @@ export function createRepairFinalizeWorkflow(
           let status = await run(stepKeys)
           const afterThisRun = stepKeys && arrange(status.steps)
           const predecessorTurnedOutStale = afterThisRun?.some(key => status.steps[key]?.ok)
-          if (afterThisRun && predecessorTurnedOutStale) {
-            stepKeys = afterThisRun
-            status = await run(stepKeys)
+          if (stepKeys && afterThisRun && predecessorTurnedOutStale) {
+            status = await run(afterThisRun)
+            stepKeys = [...new Set([...stepKeys, ...afterThisRun])]
           }
 
           // 后处理修复不会产生新定稿快照，只请求项目资源刷新。

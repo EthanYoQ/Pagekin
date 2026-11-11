@@ -33,7 +33,7 @@ export class FinalizationGeneration {
     if (this.effectInForce(run)) return false
     const context = readFinalizationGenerationContext(run), budget = this.runs.budget(run.rootActionId)
     if (budget.attempts.some(attempt => ['reserved', 'dispatch-marked'].includes(attempt.status))) return false
-    return budget.root.status === 'cancelled' || context.slot.stepKey === 'chapter_notes'
+    return budget.root.status === 'cancelled' || this.sealedEffect(run) !== undefined || context.slot.stepKey === 'chapter_notes'
       && !isDeepStrictEqual(finalizationNotesBaseline(this.db, context.slot), context.notesBaseline)
   }
   require(handle: MainGenerationRunHandle): DurableGenerationRun {
