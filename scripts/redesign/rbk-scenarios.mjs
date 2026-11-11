@@ -147,7 +147,6 @@ export const RBK_SCENARIOS = {
     assert.deepEqual(observed.afterSecondOpen, observed.afterRepair, '修复幂等：再打开一次数据不变')
     return observed
   } },
-  /** #279：修复重复定稿让后面各章的章节要点过期。角色状态那步此前失败的章，点一次「重试失败步骤」就连要点一起重跑并走完。 */
   'rbk-stale-notes-retry': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
     const { fake } = context
     const projectPath = context.samplePath
@@ -202,14 +201,12 @@ export const RBK_SCENARIOS = {
 
 const STATE_EVIDENCE = '林岚把纸条夹进父亲的地图里。'
 
-/** 给林岚的当前位置报一个新值；位置是作者写的，这条更新只能留成待确认项。 */
 function locationUpdateReply(prompt) {
   const id = /"characterId": "([^"]+)",\s*"name": "林岚"/u.exec(prompt)?.[1]
   if (!id || !prompt.includes(STATE_EVIDENCE)) return '{"updates":[]}'
   return JSON.stringify({ updates: [{ characterId: id, currentState: { location: '灯塔顶层灯室' }, evidence: { text: STATE_EVIDENCE } }] })
 }
 
-/** 只读打开作品库：连续性世代、第 3 章要点行写入时的世代，以及那一行里待确认的角色状态字段。 */
 async function chapter3ContinuityFacts(projectPath) {
   const { DatabaseSync } = await import('node:sqlite')
   const db = new DatabaseSync(path.join(projectPath, '.ai-novel', 'project.db'), { readOnly: true })

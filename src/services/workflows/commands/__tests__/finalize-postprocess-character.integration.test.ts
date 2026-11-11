@@ -1405,16 +1405,11 @@ describe('重复定稿修复让连续性记录过期之后，重试本章的后�
     return Object.fromEntries(Object.entries(status!.steps).map(([key, step]) => [key, step.ok ? 'ok' : step.error]))
   }
 
-  /** 作者点一次卡上的「重试失败步骤」，或某一行的「重试」：走真实的修复工作流。失败的步骤留在后处理状态里，由 outcomes 读出。 */
   async function clickRetry(stepKey?: string) {
     const step = createRepairFinalizeWorkflow(2, projectPath, workflowContext.projectSession!, stepKey).steps[0]!
     await Promise.resolve(step.executor({ ...step, id: 'retry-click', status: 'running', logs: [] }, workflowContext, callbacks())).catch(() => {})
   }
 
-  /**
-   * 本章要点成功、角色状态那步失败；关掉项目再打开时，第 duplicatedChapter 章遗留的重复定稿被修复，
-   * 从那一章起的连续性记录作废。生产里只有这条路会推进连续性世代。
-   */
   async function characterStepFailsThenReopenRepairsDuplicate(duplicatedChapter: number) {
     characterStreamFails = true
     const initial = await finalize()

@@ -363,7 +363,6 @@ function readCurrentCharacterStateCandidateRow(db: BetterSqlite3.Database, draft
   return row
 }
 
-/** 待确认项只存进本份定稿仍有效的要点行。没有这样的行时角色那步拒绝，重试会连章节要点一起重跑。 */
 function requireNotesRow(db: BetterSqlite3.Database, draftId: number): CharacterStateCandidateRow {
   const row = currentCharacterStateCandidateRow(db, draftId)
   if (!row) throw new Error('GENERATION_FINALIZATION_PREDECESSOR_REQUIRED')
@@ -434,7 +433,6 @@ function relationCandidateKey(source: FinalizedSourceIdentity, change: Pick<Fina
   return `fcs-relation:${sha256(JSON.stringify([source.draftId, source.finalizationId, source.contentHash, unorderedPairKey(change.sourceId, change.targetId), sha256(change.relation)]))}`
 }
 
-/** 同一份定稿重跑时节点已在，待确认项仍要重新列入：合并时会先清掉这次涉及的角色对。 */
 function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCharacterContext, changes: readonly FinalizedRelationChange[]): void {
   const { source } = context
   const name = (id: string) => context.characters.find(character => character.characterId === id)!.displayNameSnapshot
@@ -494,25 +492,21 @@ function relationDecisionPayloadHash(request: FinalizedRelationDecisionRequest):
 function pendingRelationCandidate(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate): PendingFinalizedRelationCandidate | null {
   const pair = authorRelationsOfPair(db, candidate.sourceId, candidate.targetId)
   if (!pair.rows.length || pair.all.includes(candidate.value)) return null
-  if (candidate.authorLinesAtCreation && !authorLinesExplained(db, candidate, pair.lines)) return null
+  if (candidate.authorLinesAtCreation && !onlyEarlierAdoptionsWroteSinceSnapshot(db, candidate, pair.lines)) return null
   const [{ sourceName, targetName }] = pair.rows
   const currentNames = pair.sourceId === candidate.sourceId ? { sourceName, targetName } : { sourceName: targetName, targetName: sourceName }
   return { ...structuredClone(candidate), ...currentNames, authorRelations: pair.rows.map(row => row.relation) }
 }
 
-/**
- * 作者行与建议快照不同时，沿这对角色的作者关系写入记录从最后一次往回走：每一次都得是较早章建议的采纳，且采纳后的作者行接得上，
- * 走回快照才算采纳造成的变化。途中遇到作者手改或别的写入，建议作废。
- */
-function authorLinesExplained(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate, current: string[]): boolean {
+function onlyEarlierAdoptionsWroteSinceSnapshot(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate, current: string[]): boolean {
   const snapshot = candidate.authorLinesAtCreation!
   const adoptions = new Map(candidateReceipts(db).filter(receipt => receipt.authorLinesAfter && receipt.source.chapterNumber < candidate.source.chapterNumber)
     .map(receipt => [receipt.operationId, receipt]))
-  const writers = db.prepare(`SELECT json_extract(provenance_json,'$.operationId') FROM character_continuity_events
+  const writersNewestFirst = db.prepare(`SELECT json_extract(provenance_json,'$.operationId') FROM character_continuity_events
     WHERE aspect='relation' AND json_extract(provenance_json,'$.kind')<>'derived' AND subject_id IN (@source,@target) AND target_id IN (@source,@target)
     ORDER BY rowid DESC`).pluck().all({ source: candidate.sourceId, target: candidate.targetId }) as Array<string | null>
   let lines = current, last: string | null | undefined
-  for (const writer of writers) {
+  for (const writer of writersNewestFirst) {
     if (isDeepStrictEqual(lines, snapshot)) return true
     if (writer === last) continue
     const adoption = adoptions.get(writer ?? '')
@@ -560,7 +554,6 @@ export function invalidateContinuityProjectionFrom(
 }
 
 export class SummaryRepository {
-  /** 本份定稿的要点行仍有效时，返回它写入时的连续性世代；没有行或已作废时返回 undefined。 */
   static currentNotesGeneration(draftId: number, db: BetterSqlite3.Database): number | undefined {
     return currentCharacterStateCandidateRow(db, draftId)?.projectionGeneration
   }

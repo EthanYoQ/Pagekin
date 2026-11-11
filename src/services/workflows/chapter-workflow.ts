@@ -575,10 +575,10 @@ export function createRepairFinalizeWorkflow(
             chapterEntities,
           }).execute({ step: {}, context, callbacks })
           let status = await run(stepKeys)
-          // 章节要点过期要到角色状态这一跑才看得出来：按新状态再排一次，新安排点名了已成功的步骤（要点）就接着重跑，只接这一次。
-          const rearranged = stepKeys && arrange(status.steps)
-          if (rearranged?.some(key => status.steps[key]?.ok)) {
-            stepKeys = rearranged
+          const afterThisRun = stepKeys && arrange(status.steps)
+          const predecessorTurnedOutStale = afterThisRun?.some(key => status.steps[key]?.ok)
+          if (afterThisRun && predecessorTurnedOutStale) {
+            stepKeys = afterThisRun
             status = await run(stepKeys)
           }
 

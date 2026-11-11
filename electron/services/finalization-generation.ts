@@ -23,14 +23,14 @@ export class FinalizationGeneration {
     for (const row of rows) {
       const run = this.runs.get(row.run_id)
       if (run.binding.projectId !== this.projectId || !isDeepStrictEqual(readFinalizationGenerationContext(run).slot, slot)
-        || previous && (this.readEffect(previous) || row.ui_action_nonce !== `finalization:${key}:retry:${previous.runId}`))
+        || previous && (this.effectInForce(previous) || row.ui_action_nonce !== `finalization:${key}:retry:${previous.runId}`))
         throw new Error('GENERATION_FINALIZATION_SLOT_CONFLICT')
       previous = run
     }
     return previous
   }
   retryable(run: DurableGenerationRun): boolean {
-    if (this.readEffect(run)) return false
+    if (this.effectInForce(run)) return false
     const context = readFinalizationGenerationContext(run), budget = this.runs.budget(run.rootActionId)
     if (budget.attempts.some(attempt => ['reserved', 'dispatch-marked'].includes(attempt.status))) return false
     return budget.root.status === 'cancelled' || context.slot.stepKey === 'chapter_notes'
@@ -58,13 +58,11 @@ export class FinalizationGeneration {
       || receipt.failureCode || !['settled', 'unknown'].includes(receipt.attempt.status) || receipt.result?.finishReason !== 'stop') throw new Error('GENERATION_FINALIZATION_ARTIFACT_INVALID')
     return { artifact, attemptId: row.attempt_id, receipt }
   }
-  /** 仍然算数的封存结果。要点行被作废（更早的章让连续性记录过期）或已由更新的运行重写后，那份要点结果不再算数，重试另开运行重新生成。 */
-  readEffect(run: DurableGenerationRun): FinalizationGenerationEffect | undefined {
+  effectInForce(run: DurableGenerationRun): FinalizationGenerationEffect | undefined {
     const sealed = this.sealedEffect(run), context = readFinalizationGenerationContext(run)
     return sealed?.stepKey === 'chapter_notes'
       && SummaryRepository.currentNotesGeneration(context.slot.source.draftId, this.db) !== context.identity.projectionGeneration ? undefined : sealed
   }
-  /** 这次运行封存下来的结果，不论现在还算不算数。 */
   private sealedEffect(run: DurableGenerationRun): FinalizationGenerationEffect | undefined {
     const context = readFinalizationGenerationContext(run)
     const rows = this.db.prepare('SELECT attempt_id,usage_receipt_json FROM generation_attempts WHERE run_id=? ORDER BY rowid').all(run.runId) as { attempt_id: string; usage_receipt_json: string }[]
@@ -106,10 +104,10 @@ export class FinalizationGeneration {
         if (!isDeepStrictEqual(finalizationNotesBaseline(this.db, context.slot), context.notesBaseline)) throw new Error('GENERATION_FINALIZATION_NOTES_CHANGED')
         const chapterNotes = proof.artifact.text.trim(), { source } = context.slot
         const facts = buildFinalizedContinuityFacts(source.chapterNumber, chapterNotes, context.identity.content, context.chapterEntities, context.identity)
-        // 过期后重新生成：蓝图里的要点若已不是上次生成的那份，是作者改过的，不覆盖。
-        const replaced = this.db.prepare('SELECT chapter_notes FROM summary_snapshots WHERE draft_id=?').pluck().get(source.draftId) as string | undefined
+        const notesLastGenerated = this.db.prepare('SELECT chapter_notes FROM summary_snapshots WHERE draft_id=?').pluck().get(source.draftId) as string | undefined
+        const authorEditedBlueprintNotes = notesLastGenerated !== undefined && notesLastGenerated !== context.notesBaseline.blueprint.notes
         SummaryRepository.saveFinalizedContinuity({ draftId: source.draftId, chapterNumber: source.chapterNumber, source, chapterNotes, facts, projectionGeneration: context.identity.projectionGeneration }, this.db)
-        const blueprintUpdated = (replaced === undefined || replaced === context.notesBaseline.blueprint.notes) && BlueprintRepository.updateNotes(source.chapterNumber, chapterNotes, this.db)
+        const blueprintUpdated = !authorEditedBlueprintNotes && BlueprintRepository.updateNotes(source.chapterNumber, chapterNotes, this.db)
         receipt = { success: true, stepKey: 'chapter_notes', chapterNotes, factCount: facts.length, blueprintUpdated }
       } else {
         const characterProof = proveFinalizedCharacterGeneration(this.db, this.runs, this.projectId, handle, reference)

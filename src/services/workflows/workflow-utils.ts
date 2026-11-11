@@ -205,7 +205,7 @@ export interface PipelineOptions {
   retryCount?: number
   /** true = 只重跑失败步骤（修复模式） */
   onlyFailed?: boolean
-  /** 修复模式下重试安排点名的步骤：已成功也照跑（它的结果可能已不作数，仍作数时由步骤自己空跑）。 */
+  /** 修复模式下点名要重跑的步骤，即使已记为成功。 */
   rerun?: readonly string[]
   /** true = 任一步骤最终失败后立即停止，不再执行后续后处理 */
   stopOnFailure?: boolean

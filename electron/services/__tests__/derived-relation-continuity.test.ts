@@ -128,7 +128,6 @@ function reviseAuthorRelation(relation: string, sourceId = LIN, targetId = SHEN)
   })()
 }
 
-/** 和角色页保存同样的写法：删掉旧行，再经一次带修订号的作者批准写入新行。 */
 function reviseAuthorRelationThroughRoster(relation: string): void {
   db().transaction(() => {
     const operationId = `author-edit-${randomUUID()}`
@@ -150,7 +149,6 @@ function saveNotes(draftId: number, chapterNotes: string): void {
 
 const NOTES_REQUIRED = 'GENERATION_FINALIZATION_PREDECESSOR_REQUIRED'
 
-/** 被拒之后的重试复用同一份模型结果重新提交：上下文是抽取开始时冻结的那份，不重读。 */
 function frozenSubmission(draftId: number, output: Record<string, unknown>) {
   const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
   return () => SummaryRepository.commitFinalizedCharacterStates(context, parseFinalizedCharacterStateResponse(JSON.stringify(output), context), db())
@@ -623,7 +621,6 @@ describe('定稿后自动记录人物关系变化', () => {
 describe('章节要点还没落库时角色那步被拒，要点落库后重跑', () => {
   const FORWARD_B = relationChange('恩断义绝', BREAK_UP), REVERSE_C = relationChange('势不两立', BREAK_UP, SHEN, LIN)
   const cards = () => pending().map(({ sourceId, targetId, value }) => ({ sourceId, targetId, value }))
-  /** 提交一次模型结果，返回它是否因为要点还没落库被拒。 */
   const rejected = (draftId: number, relations: unknown[]) => {
     try { commitModelOutput(draftId, { updates: [], relations }); return false } catch (error) {
       if ((error as Error).message !== NOTES_REQUIRED) throw error
