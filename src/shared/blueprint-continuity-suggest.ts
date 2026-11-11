@@ -102,7 +102,6 @@ function text(value: unknown, max: number): string | null {
   return trimmed && trimmed.length <= max ? trimmed : null
 }
 
-/** 和原文一样的字段不算改动；剩下没有改动的整条丢掉。 */
 function readPatch(value: unknown, chapter: ContinuityCheckChapter): BlueprintPatch | null {
   const raw = record(value)
   if (!raw || Object.keys(raw).some(key => !allowed.has(key))) return null

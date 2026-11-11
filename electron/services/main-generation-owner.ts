@@ -1319,7 +1319,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       }
       return null
     },
-    /** 最新一份读得出的检查结果就是这次替换的建议；读时把它落进建议表，崩溃后重开也只会补齐同一份。 */
+    /** 读时把结果落进建议表，崩溃后重开也只会补齐同一份。 */
     listContinuitySuggestions: (request: GraphGenerationChannels['graph-generation:suggestions']['args'][0]): ContinuitySuggestionList | null => {
       assertCurrent()
       if (!request || Object.keys(request).some(key => key !== 'finalizationId') || typeof request.finalizationId !== 'string') throw new Error('GENERATION_GRAPH_REQUEST_INVALID')

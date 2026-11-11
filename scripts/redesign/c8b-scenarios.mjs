@@ -44,7 +44,6 @@ function suggestReply(prompt) {
 
 const replacedNotice = page => chapterView.view(page).locator('.pi-notice').filter({ hasText: '第 2 章已修改' })
 
-/** 重开第 2 章、补一句反目、再定稿，等定稿页出现替换提示。 */
 async function finalizeReplacement({ page, fake }) {
   fake.replyCharacterState(relationReply)
   fake.replyReview(suggestReply)
@@ -55,7 +54,6 @@ async function finalizeReplacement({ page, fake }) {
   await replacedNotice(page).waitFor({ state: 'visible', timeout: 30_000 })
 }
 
-/** 替换后等后处理做完，「检查后续蓝图」可点，点一次出建议。 */
 async function replaceChapterTwo(context) {
   const { page, fake } = context
   await finalizeReplacement(context)

@@ -82,11 +82,12 @@ function chapterList(chapters: readonly number[], text: Text) {
   return first === last ? text(`第 ${first} 章`, `chapter ${first}`) : text(`第 ${first}–${last} 章`, `chapters ${first}–${last}`)
 }
 
-/**
- * 检查后续蓝图的结果：每章一张卡，按字段对比新旧文字，作者逐章接受或不用。
- * pendingOnly 时只留没处理的卡和这次刚处理的卡，处理过的旧卡不再占地方。
- */
-export default function LaterBlueprintSuggestions({ check, projectKey, pendingOnly }: { check: LaterBlueprintCheck; projectKey: string; pendingOnly: boolean }) {
+export default function LaterBlueprintSuggestions({ check, projectKey, pendingOnly }: {
+  check: LaterBlueprintCheck
+  projectKey: string
+  /** 只留没处理的卡和这次刚处理的卡，处理过的旧卡不再占地方。 */
+  pendingOnly: boolean
+}) {
   const text = useLocaleStore(s => s.text)
   const ledger = useEditorStore(s => s.draftLedgers[CHAPTER_CARD_TAB_ID])
   const unsaved = (getChapterCardProjectDraft(parseChapterCardDraftLedger(ledger), projectKey)?.dirtyChapterNumbers.length ?? 0) > 0
