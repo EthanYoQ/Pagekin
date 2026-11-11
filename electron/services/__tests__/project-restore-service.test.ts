@@ -36,7 +36,6 @@ import { ChapterDeletionService } from '../chapter-deletion-service'
 import { readPortableCurrentAuthority } from '../portable-current-authority'
 import { readPortableRuntimeFreeze } from '../portable-runtime-freeze'
 import { createProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
-import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 import { readDocumentCopy } from '../../knowledge-base'
 import { captureGenerationKnowledge } from '../generation-knowledge-source'
 import { GenerationRunRepository, textHash } from '../../repositories/generation-run-repository'
@@ -206,9 +205,9 @@ async function archiveWithExtra(f: Fixture, archivePath: string): Promise<string
 afterEach(() => {
   closeProjectDatabase()
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
-}, WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS)
+})
 
-describe('portable project restore service', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
+describe('portable project restore service', () => {
   it('archives a verified legacy copy with readable unreceipted prose while rejecting new unreceipted finalizations', async () => {
     const f = fixture(), legacyRoot = path.join(f.base, 'legacy'), legacyStorage = path.join(legacyRoot, '.vela')
     fs.mkdirSync(legacyStorage, { recursive: true })
@@ -421,7 +420,7 @@ describe('portable project restore service', { timeout: WINDOWS_RUNNER_IO_STALL_
     }
   })
 
-  it('restores the shared 20-chapter corpus under a new identity with exact authored assets and frozen history', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+  it('restores the shared 20-chapter corpus under a new identity with exact authored assets and frozen history', async () => {
     const f = await createProjectArchiveRoundtripFixture()
     try {
       await f.exportAndRestore()

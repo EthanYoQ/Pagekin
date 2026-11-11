@@ -38,7 +38,6 @@ import {
   createProjectArchiveRoundtripFixture,
   insertAuthorImportReceipts,
 } from '../../../test/desktop/project-archive.fixture'
-import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -564,7 +563,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     expect(fs.existsSync(f.target)).toBe(false)
   })
 
-  it('exports the shared 20-chapter corpus with authority, assets and frozen runtime history', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+  it('exports the shared 20-chapter corpus with authority, assets and frozen runtime history', async () => {
     const f = await createProjectArchiveRoundtripFixture()
     try {
       const sourceBefore = fs.readFileSync(f.sourceDatabasePath)
@@ -616,7 +615,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     } finally { f.dispose() }
   })
 
-  it('exports and restores an author import that left several effect receipts (#607)', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+  it('exports and restores an author import that left several effect receipts (#607)', async () => {
     const f = await createProjectArchiveRoundtripFixture()
     try {
       const namespace = `import:author-manuscript:${AUTHOR_IMPORT_RUN_ID}`
