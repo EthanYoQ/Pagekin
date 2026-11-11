@@ -9,6 +9,7 @@ import { _electron as electron } from 'playwright'
 import * as stage from './redesign/pages/stage.mjs'
 import { resolveWindowsExecutable } from './product-identity.mjs'
 import { CURRENT_PROJECT_SCHEMA_VERSION } from './lib/current-project-schema.mjs'
+import { documentEndKey } from './redesign/keys.mjs'
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const arg = name => process.argv.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3)
@@ -218,7 +219,7 @@ async function currentProjectState(name, roots, session, source) {
     let body = await stage.openChapter(page, 1)
     assert.equal(await stage.proseBody(body), initialBody)
     await body.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.type(' 迁移后补写')
     assert.equal(await stage.proseBody(body), savedBody)
     await topStatus(page, '未保存')

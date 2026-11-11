@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
 import * as stage from './redesign/pages/stage.mjs'
 import { resolveWindowsExecutable } from './product-identity.mjs'
+import { documentEndKey } from './redesign/keys.mjs'
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageDir = process.argv.find(arg => arg.startsWith('--package-dir='))?.slice('--package-dir='.length)
@@ -100,7 +101,7 @@ async function main() {
     const body = await stage.openChapterVersion(editorPage, 1, 1)
     assert.equal(await editorBody(body), fixtureBody, 'fixture body missing before edit')
     await body.click()
-    await editorPage.keyboard.press('Control+End')
+    await editorPage.keyboard.press(documentEndKey())
     await editorPage.keyboard.type(marker)
     const savedUiBody = await editorBody(body)
     assert.equal(savedUiBody, fixtureBody + marker, 'UI body changed beyond requested append')
