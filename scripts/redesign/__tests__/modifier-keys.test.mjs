@@ -17,7 +17,7 @@ it('驱动脚本不写死 Control+ 组合键：macOS 上应用快捷键认 Cmd�
   const offenders = scripts(ROOT).filter(file => !file.endsWith('keys.mjs')).flatMap(file =>
     readFileSync(file, 'utf8').split('\n').flatMap((line, index) =>
       /['"`]Control\+/.test(line) ? [`${relative(ROOT, file).replaceAll('\\', '/')}:${index + 1}`] : []))
-  assert.deepEqual(offenders, [], '组合键写 ControlOrMeta+；移到正文末尾用 keys.mjs 的 documentEndKey()')
+  assert.deepEqual(offenders, [], `组合键写 ControlOrMeta+；移到正文末尾用 keys.mjs 的 documentEndKey()。写死处：${offenders.join('、')}`)
 })
 
 it('移到正文末尾的按键按平台选：macOS 用 Cmd+↓，其余平台用 Ctrl+End', async () => {
