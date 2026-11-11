@@ -223,6 +223,18 @@ describe('llm connection test', () => {
   })
 })
 
+describe('renderer-side generation entry points', () => {
+  it.each([
+    'llm:generate',
+    'llm:generate-stream',
+    'llm:cancel',
+    'llm:begin-execution-lease',
+    'llm:close-execution-lease',
+  ])('registers no %s handler, so a renderer cannot send arbitrary messages with a stored key', channel => {
+    expect(mocks.handlers.has(channel)).toBe(false)
+  })
+})
+
 describe('llm generation parameter policy controller integration', () => {
   function handler(channel: 'llm:generate' | 'llm:generate-stream' | 'llm:cancel'): IpcHandler {
     const registered = mocks.handlers.get(channel)

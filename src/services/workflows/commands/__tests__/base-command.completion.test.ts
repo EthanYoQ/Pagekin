@@ -23,7 +23,7 @@ type ProbeStep =
 
 class CompletionProbeCommand extends BaseWorkflowCommand<string> {
   constructor(
-    dependencies: WorkflowGenerationRuntimeDependencies,
+    dependencies?: WorkflowGenerationRuntimeDependencies,
     private readonly intent: WorkflowGenerationIntent = 'structured',
   ) {
     super(dependencies)
@@ -129,6 +129,19 @@ function dependenciesFor(environment: GenerationRuntimeEnvironment): WorkflowGen
 describe('BaseWorkflowCommand completion boundary', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('refuses a production run without a main-process selection before any IPC', async () => {
+    const invoke = vi.fn(async () => { throw new Error('IPC must not be reached') })
+    vi.stubGlobal('window', { aiNovelAPI: { invoke, on: () => () => {} } })
+
+    await expect(new CompletionProbeCommand().execute({
+      step: { kind: 'single' },
+      context: { ...context, generationModelId: 'model-a' },
+      callbacks,
+    })).rejects.toThrow('WORKFLOW_MAIN_GENERATION_REQUEST_REQUIRED')
+    expect(invoke).not.toHaveBeenCalled()
   })
 
   it.each([
