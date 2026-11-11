@@ -164,12 +164,17 @@ describe('chapter Markdown outline contract', () => {
   it.each([
     '第7章：重复章', '## 第8章：下一章', '- 第8章：下一章', '第8章：下一章',
     '第8至9章：合并章', '第八、九章：合并章', '第8/9章：合并章', '第八／九章：合并章', '第八和第九章：追逐与逃亡', '第8及9章：追逐与逃亡', '第8以及9章：合并章',
-    '第8至第9章：后续分章', '第８章：下一章', '第八～第九章：合并章',
+    '第8至第9章：后续分章', '第８章：下一章', '第八～第九章：合并章', '第廿八章：下一章', '第壹章：另一章',
     '第 八 章：下一章', '第 8–9 章：章组', '第八-九章：章组', '第8 — 9章：章组',
     '## 章外概览', 'Chapter 8: Next', '- Chapters 8-9: Group',
     '> 后续概览：下一章', '```\n围栏内容\n```',
   ])('rejects an extra heading or forbidden marker after a valid first heading: %s', body => {
     expect(validPlotOutlineEntry(`## 第7章：标题\n行动和结果。\n\n${body}\n后续内容。`, 7)).toBe(false)
+  })
+  it('checks a long run of digits after 第 in linear time', () => {
+    const started = performance.now()
+    expect(validPlotOutlineEntry(`## 第7章：标题\n\n第${'1'.repeat(40)}次见面。`, 7)).toBe(true)
+    expect(performance.now() - started).toBeLessThan(1000)
   })
   it('counts the full entry in Unicode code points without truncating a 1201 point entry', () => {
     const heading = '## 第1章：标题\n'
