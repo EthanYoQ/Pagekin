@@ -72,6 +72,11 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
       purposes: [...purposes],
     }))
   }
+  /** 生成中实测到的上下文窗口只写进主进程的模型设置，打开表单前重读一次，表单才显示得出来。 */
+  const edit = async (model: ModelProfile) => {
+    await loadModels()
+    startEditing({ ...(useLLMStore.getState().models.find(latest => latest.id === model.id) ?? model) })
+  }
 
   const save = async () => {
     if (!editingModel) return
@@ -99,7 +104,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     setEditingModel,
     saving,
     add,
-    edit: (model: ModelProfile) => startEditing({ ...model }),
+    edit: (model: ModelProfile) => void edit(model),
     cancelEdit: () => setEditingModel(null),
     save,
     remove: (modelId: string) => deleteModel(modelId),
