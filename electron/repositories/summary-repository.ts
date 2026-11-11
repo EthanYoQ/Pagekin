@@ -475,7 +475,8 @@ function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: Fi
   const nodes = latestNodesBefore(readCharacterContinuityNodes(db), source.chapterNumber + 1).relations.flatMap(pair => pair.lines)
     .filter(node => node.provenance.kind === 'derived' && node.provenance.source.finalizationId === source.finalizationId && node.quote)
     .sort((left, right) => writeOrder.get(left.eventId)! - writeOrder.get(right.eventId)!)
-  const candidates = nodes.flatMap((node): FinalizedRelationCandidate[] => {
+  const lastOfPair = new Map(nodes.map(node => [unorderedPairKey(node.subjectId, node.targetId), node]))
+  const candidates = [...lastOfPair.values()].flatMap((node): FinalizedRelationCandidate[] => {
     const authorLines = readDerivedRelationAuthorLines(db, node.eventId)
     if (!authorLines?.length || authorLines.some(line => (JSON.parse(line) as string[])[2] === node.value)) return []
     const ids = { sourceId: node.subjectId, targetId: node.targetId }
