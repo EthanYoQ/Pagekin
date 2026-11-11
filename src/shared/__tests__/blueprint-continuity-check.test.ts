@@ -15,7 +15,7 @@ const parse = (text: string) => parseBlueprintContinuityCheck(text, [chapter(2),
 
 describe('parseBlueprintContinuityCheck', () => {
   it('把模型的短 id 换回真实 eventId', () => {
-    expect(parse(line({})).findings).toEqual([{ chapterNumber: 3, eventIds: ['真实节点'], issue: '矛盾', suggestion: '改' }])
+    expect(parse(line({})).findings).toEqual([{ chapterNumber: 3, eventIds: ['真实节点'], points: [{ issue: '矛盾', suggestion: '改' }] }])
   })
   it('引用该章还看不到的节点按编造处理', () => {
     expect(parse(line({ eventIds: ['e2'] }))).toMatchObject({ findings: [], droppedFindings: 1 })
@@ -30,10 +30,18 @@ describe('parseBlueprintContinuityCheck', () => {
     expect(() => parse('不是 JSON')).toThrow()
     expect(() => parse('{"wrong":[]}')).toThrow('GENERATION_GRAPH_CONTINUITY_RESULT_INVALID')
   })
-  it('容忍代码围栏，同章同依据只留一条，空结果写明检查到第几章', () => {
+  it('容忍代码围栏，空结果写明检查到第几章', () => {
     expect(parse('```json\n{"findings":[]}\n```')).toEqual({ checkedThroughChapter: 3, findings: [], droppedFindings: 0 })
-    const twice = JSON.stringify({ findings: [{ chapterNumber: 3, eventIds: ['e1'], issue: '一', suggestion: '改' }, { chapterNumber: 3, eventIds: ['e1'], issue: '二', suggestion: '改' }] })
-    expect(parse(twice).findings).toHaveLength(1)
+  })
+  it('同章同依据的几条矛盾并进一条结论，逐条都留着，原样重复的只留一次', () => {
+    const items = [
+      { chapterNumber: 3, eventIds: ['e1'], issue: '一', suggestion: '改甲' },
+      { chapterNumber: 3, eventIds: ['e1'], issue: '二', suggestion: '改乙' },
+      { chapterNumber: 3, eventIds: ['e1'], issue: '一', suggestion: '改甲' },
+    ]
+    expect(parse(JSON.stringify({ findings: items })).findings).toEqual([{ chapterNumber: 3, eventIds: ['真实节点'], points: [
+      { issue: '一', suggestion: '改甲' }, { issue: '二', suggestion: '改乙' },
+    ] }])
   })
 })
 

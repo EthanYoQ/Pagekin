@@ -29,7 +29,22 @@ function reportOf(recovery: GraphGenerationRecovery): ContinuityReport | null {
   }
 }
 
-export async function runContinuityCheck(session: ProjectSessionContext, modelId: string): Promise<ContinuityCheckOutcome> {
+const checks = new Map<string, Promise<ContinuityCheckOutcome>>()
+const checkKey = (session: ProjectSessionContext) => `${session.projectId}:${session.leaseId}`
+
+export function runContinuityCheck(session: ProjectSessionContext, modelId: string): Promise<ContinuityCheckOutcome> {
+  const outcome = checkContinuity(session, modelId)
+  checks.set(checkKey(session), outcome)
+  return outcome
+}
+
+export const pendingContinuityCheck = (session: ProjectSessionContext) => checks.get(checkKey(session))
+
+export function releaseShownContinuityCheck(session: ProjectSessionContext, outcome: Promise<ContinuityCheckOutcome>) {
+  if (checks.get(checkKey(session)) === outcome) checks.delete(checkKey(session))
+}
+
+async function checkContinuity(session: ProjectSessionContext, modelId: string): Promise<ContinuityCheckOutcome> {
   const client = createGraphGeneration(session)
   try {
     await client.open({ input: { kind: 'continuity' }, modelId, uiActionNonce: crypto.randomUUID() })

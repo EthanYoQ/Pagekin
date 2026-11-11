@@ -32,11 +32,15 @@ export interface ContinuityCheckNode {
   value: string
 }
 
+export interface ContinuityCheckPoint {
+  issue: string
+  suggestion: string
+}
+
 export interface ContinuityCheckFinding {
   chapterNumber: number
   eventIds: string[]
-  issue: string
-  suggestion: string
+  points: ContinuityCheckPoint[]
 }
 
 export interface ContinuityCheckResult {
@@ -208,7 +212,9 @@ export function parseBlueprintContinuityCheck(
     }
     const eventIds = [...new Set(cited.map(node => node!.eventId))]
     const key = `${chapterNumber}:${continuityFindingKey(eventIds)}`
-    if (!findings.has(key)) findings.set(key, { chapterNumber, eventIds, issue, suggestion })
+    let finding = findings.get(key)
+    if (!finding) findings.set(key, finding = { chapterNumber, eventIds, points: [] })
+    if (!finding.points.some(point => point.issue === issue && point.suggestion === suggestion)) finding.points.push({ issue, suggestion })
   }
   return {
     checkedThroughChapter: Math.max(...checked),
