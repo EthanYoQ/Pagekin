@@ -150,3 +150,11 @@ it.each(['request', 'receipt', 'effect'] as const)('历史%s被改不能假ACK�
   if (mode === 'effect') f.db.exec("UPDATE character_identity_approvals SET payload_hash='被改' WHERE operation_id='author-roster-effect:作者保存'")
   const before = facts(f.db); expect(() => save(f, request)).toThrow(); expect(facts(f.db)).toEqual(before)
 })
+
+it('名单提交只接受作者手工保存，缺意图的名单写入被拒且不改库', () => {
+  const f = fixture(), before = facts(f.db)
+  const withoutIntent = f.request('缺意图')
+  delete withoutIntent.intent
+  expect(() => save(f, withoutIntent)).toThrow('CHARACTER_AUTHOR_REQUEST_INVALID')
+  expect(facts(f.db)).toEqual(before)
+})
