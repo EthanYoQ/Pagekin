@@ -41,6 +41,7 @@ const PURPOSES: Record<string, [string, string]> = {
   'planning-material-character-extraction': ['提取角色卡', 'Character extraction'],
   'plot-tree-snapshot': ['剧情树', 'Plot tree'],
   'blueprint-continuity-check': ['检查蓝图', 'Blueprint check'],
+  'blueprint-continuity-suggest': ['检查后续蓝图', 'Later blueprint check'],
 }
 
 export function callPurpose(purpose: string, text: Text): string {

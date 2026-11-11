@@ -6,8 +6,10 @@ import type { NarrativeThreadPlanCandidate, NarrativeThreadEventCandidate } from
 import type { FinalizedSourceIdentity } from './finalized-continuity'
 import type { WritingLanguage } from './writing-language'
 import type { ContinuityCheckChapter, ContinuityCheckNode, ContinuityCheckResult } from './blueprint-continuity-check'
+import type { ContinuitySuggestionList, ContinuitySuggestResult, SuggestionDecision, SuggestionStatus } from './blueprint-continuity-suggest'
 
 export type GraphGenerationInput = { kind: 'plot' } | { kind: 'plan'; chapterNumber: number } | { kind: 'event'; planId: number; draftId: number } | { kind: 'continuity' }
+  | { kind: 'continuity-suggest'; finalizationId: string }
 type BlueprintData = DatabaseChannels['db:blueprint-get-all']['return'][number]
 export type GraphGenerationContext = {
   projectId: string
@@ -20,11 +22,13 @@ export type GraphGenerationContext = {
 } & ({ kind: 'plot'; sources: PlotTreeSourceBundle; targetBaselineHash: string }
   | { kind: 'plan'; blueprint: BlueprintData; totalChapters: number }
   | { kind: 'event'; plan: NarrativeThreadView; source: FinalizedSourceIdentity; content: string; contentRevision: number; projectionGeneration: number }
-  | { kind: 'continuity'; chapters: ContinuityCheckChapter[]; nodes: ContinuityCheckNode[] })
+  | { kind: 'continuity'; chapters: ContinuityCheckChapter[]; nodes: ContinuityCheckNode[] }
+  | { kind: 'continuity-suggest'; chapters: ContinuityCheckChapter[]; nodes: ContinuityCheckNode[] })
 export type GraphGenerationResult = { kind: 'plot'; snapshot: PlotTreeSnapshot; derivation: 'model' | 'normalized' | 'deterministic' }
   | { kind: 'plan'; candidates: NarrativeThreadPlanCandidate[] }
   | { kind: 'event'; candidates: NarrativeThreadEventCandidate[] }
   | ({ kind: 'continuity' } & ContinuityCheckResult)
+  | ({ kind: 'continuity-suggest' } & ContinuitySuggestResult)
 export interface GraphGenerationArtifact { artifactId: string; revision: number; textHash: string }
 export type GraphGenerationEffect = { success: true; index: number } & (
   { kind: 'plot'; snapshot: PlotTreeSnapshot; derivation: 'model' | 'normalized' | 'deterministic' }
@@ -46,5 +50,7 @@ export interface GraphGenerationChannels {
   'graph-generation:execute': { args: [{ handle: MainGenerationRunHandle }]; return: MainGenerationExecuteReceipt }
   'graph-generation:confirm': { args: [{ handle: MainGenerationRunHandle; artifact: GraphGenerationArtifact; index: number }]; return: GraphGenerationEffect }
   'graph-generation:latest-continuity': { args: []; return: GraphGenerationRecovery | null }
+  'graph-generation:suggestions': { args: [{ finalizationId: string }]; return: ContinuitySuggestionList | null }
+  'graph-generation:decide-suggestion': { args: [{ suggestionId: string; decision: SuggestionDecision }]; return: { status: SuggestionStatus } }
   'graph-generation:cancel': { args: [{ handle: MainGenerationRunHandle }]; return: MainGenerationRunView }
 }

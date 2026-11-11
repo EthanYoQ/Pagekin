@@ -48,6 +48,8 @@ import { proveFinalizedCharacterGeneration } from './finalized-character-generat
 import { FinalizedCharacterEvidenceError, parseFinalizedCharacterStateResponse, type FinalizedCharacterContext } from '../../src/shared/finalized-continuity'
 import type { GraphGenerationChannels, GraphGenerationInput, GraphGenerationRecovery } from '../../src/shared/graph-generation'
 import { GraphGeneration } from './graph-generation'
+import { BlueprintSuggestionRepository, patchedFields } from '../repositories/blueprint-suggestion-repository'
+import type { ContinuitySuggestionList } from '../../src/shared/blueprint-continuity-suggest'
 import type { LegacyRosterGenerationChannels, LegacyRosterGenerationRecovery } from '../../src/shared/legacy-roster-generation'
 import { LegacyRosterGeneration } from './legacy-roster-generation'
 import { readLegacyRosterGenerationProof } from './legacy-roster-generation-proof'
@@ -1316,6 +1318,37 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         if (recovery.result) return recovery
       }
       return null
+    },
+    /** 最新一份读得出的检查结果就是这次替换的建议；读时把它落进建议表，崩溃后重开也只会补齐同一份。 */
+    listContinuitySuggestions: (request: GraphGenerationChannels['graph-generation:suggestions']['args'][0]): ContinuitySuggestionList | null => {
+      assertCurrent()
+      if (!request || Object.keys(request).some(key => key !== 'finalizationId') || typeof request.finalizationId !== 'string') throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
+      const rows = deps.database.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
+        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=?
+          AND json_extract(r.binding_json,'$.sourceManifest.graphGenerationInput.finalizationId')=? ORDER BY r.created_at_ms DESC, r.rowid DESC`)
+        .pluck().all(deps.projectId, graphOperations['continuity-suggest'], request.finalizationId) as string[]
+      for (const runId of rows) {
+        let recovery: GraphGenerationRecovery
+        try { recovery = graphRecovery(repository.get(runId)) } catch { continue }
+        const { context, result } = recovery
+        if (context.kind !== 'continuity-suggest' || result?.kind !== 'continuity-suggest') continue
+        const statuses = BlueprintSuggestionRepository.materialize(deps.database, request.finalizationId, runId, context.chapters, result)
+        const nodes = new Map(context.nodes.map(node => [node.eventId, node]))
+        return { runId, checkedChapters: context.chapters.map(chapter => chapter.chapterNumber), droppedSuggestions: result.droppedSuggestions,
+          suggestions: result.suggestions.flatMap(suggestion => {
+            const status = statuses.get(suggestion.chapterNumber)
+            const chapter = context.chapters.find(item => item.chapterNumber === suggestion.chapterNumber)!
+            return status ? [{ suggestionId: `${runId}:${suggestion.chapterNumber}`, chapterNumber: suggestion.chapterNumber, status, issues: suggestion.issues,
+              basis: suggestion.eventIds.map(id => nodes.get(id)!), before: patchedFields(chapter, suggestion.patch), after: suggestion.patch }] : []
+          }) }
+      }
+      return null
+    },
+    decideContinuitySuggestion: (request: GraphGenerationChannels['graph-generation:decide-suggestion']['args'][0]) => {
+      assertCurrent()
+      if (!request || Object.keys(request).some(key => !['suggestionId', 'decision'].includes(key)) || typeof request.suggestionId !== 'string'
+        || !['accept', 'reject'].includes(request.decision)) throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
+      return BlueprintSuggestionRepository.decide(deps.database, request.suggestionId, request.decision)
     },
     executeGraphGeneration: async (request: GraphGenerationChannels['graph-generation:execute']['args'][0]) => {
       assertCurrent()
