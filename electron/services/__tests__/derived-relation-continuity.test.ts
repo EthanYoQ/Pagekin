@@ -304,6 +304,34 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(authorRows()).toEqual(['同门'])
   })
 
+  it('要点已在时抽取期间作者改了关系：旧结论不对着作者新写的关系出现', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+    reviseAuthorRelation('同门')
+    SummaryRepository.commitFinalizedCharacterStates(context, parseFinalizedCharacterStateResponse(JSON.stringify(
+      { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] }), context), db())
+
+    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
+    expect(pending()).toEqual([])
+    expect(authorRows()).toEqual(['同门'])
+  })
+
+  it('要点已在时抽取期间作者改了关系，而定稿写的正是改之前的设定：不把旧设定当建议放出', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+    reviseAuthorRelation('同门')
+    SummaryRepository.commitFinalizedCharacterStates(context, parseFinalizedCharacterStateResponse(JSON.stringify(
+      { updates: [], relations: [relationChange('师徒', BREAK_UP)] }), context), db())
+
+    expect(derivedNodes()).toEqual([])
+    expect(pending()).toEqual([])
+    expect(authorRows()).toEqual(['同门'])
+  })
+
   it('升级前冻结的在途定稿没有作者关系快照：提交后要点补上时不补待确认项', () => {
     openProject()
     authorRelation('师徒')
