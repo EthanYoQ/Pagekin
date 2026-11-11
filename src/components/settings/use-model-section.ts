@@ -104,7 +104,9 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     edit: (model: ModelProfile) => startEditing({ ...model }),
     cancelEdit: () => setEditingModel(null),
     save,
-    remove: (modelId: string) => deleteModel(modelId),
+    remove: async (modelId: string) => {
+      if (await deleteModel(modelId)) setEditingModel(current => current?.id === modelId ? null : current)
+    },
     setDefault,
   }
 }
