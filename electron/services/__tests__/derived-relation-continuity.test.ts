@@ -1186,4 +1186,25 @@ describe('较早章建议被采纳后，较晚章的建议是否还有效', () =
     expect(authorRows()).toEqual(['决裂'])
     expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
   })
+
+  it('较早章的采纳把关系改回过以前的值，第 8 章的建议照样认得出', () => {
+    const SEVEN_QUOTE = '林岚与沈砚在渡口再度反目。'
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    const six = finalizeNew(6, `第六章：断桥。${SIX_QUOTE}`)
+    const seven = finalizeNew(7, `第七章：渡口。${SEVEN_QUOTE}`)
+    const eight = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    decide('accept')
+    commitModelOutput(six, { updates: [], relations: [relationChange('决裂', SIX_QUOTE)] })
+    decide('accept')
+    commitModelOutput(eight, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    commitModelOutput(seven, { updates: [], relations: [relationChange('反目', SEVEN_QUOTE)] })
+    expect(cards()).toEqual([{ value: '反目', chapter: 7 }, { value: '恩断义绝', chapter: 8 }])
+
+    decide('accept')
+    expect(authorRows()).toEqual(['反目'])
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+  })
 })
