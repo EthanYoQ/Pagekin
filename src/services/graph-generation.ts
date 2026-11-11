@@ -84,17 +84,3 @@ export function createGraphGeneration(sessionInput: ProjectSessionContext) {
     detach() { detached = true },
   }
 }
-
-export async function generateGraphResult(session: ProjectSessionContext, input: GraphGenerationInput, modelId: string, signal: AbortSignal) {
-  const client = createGraphGeneration(session)
-  const cancel = () => { void client.cancel().catch(() => {}) }
-  signal.addEventListener('abort', cancel, { once: true })
-  try {
-    if (signal.aborted) throw new Error('GRAPH_GENERATION_CANCELLED')
-    await client.open({ input, modelId, uiActionNonce: crypto.randomUUID() })
-    const recovery = await client.execute()
-    assertGraphResult(recovery)
-    if (input.kind === 'plot') await client.confirm(0)
-    return recovery.result
-  } finally { signal.removeEventListener('abort', cancel); client.detach() }
-}
