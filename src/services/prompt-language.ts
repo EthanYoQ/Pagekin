@@ -190,7 +190,6 @@ Make the result concrete, causally useful, and consistent with the supplied fact
 - Return exactly one valid JSON object, with no analysis, plan, explanation, Markdown, code fence, or reasoning.
 - All long-form fields must be strings, not arrays or nested objects.
 - Required string fields: genre, targetAudience, subGenre, coreOutline, worldSetting, goldenFinger, protagonistProfile, globalGuidance, writingStyle.
-- globalGuidance must use one rule per line, with line breaks encoded as \\n in the JSON string.
 - plotStructure must be one of: three_act, heros_journey, save_the_cat, kishotenketsu, multi_thread, freeform.
 - narrativePOV must be one of: third_limited, first_person, third_omniscient, multi_pov.`,
   },
