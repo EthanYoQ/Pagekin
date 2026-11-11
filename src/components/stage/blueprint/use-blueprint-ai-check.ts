@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { displayedErrorMessage, errorCodeOf } from '../../../i18n/app-errors'
 import {
-  releaseShownContinuityCheck, pendingContinuityCheck, readLatestContinuityReport, runContinuityCheck,
+  releaseShownContinuityCheck, pendingContinuityCheck, readContinuityReport, readLatestContinuityReport, runContinuityCheck,
   type ContinuityCheckOutcome, type ContinuityReport,
 } from '../../../services/blueprint-continuity-check'
 import { exemptionChapter, saveFindingExemption, type ExemptionScope } from '../../../services/consistency-preflight'
@@ -35,8 +35,6 @@ export interface AiFinding {
 
 interface Exempted { session: ProjectSessionContext; finding: AiFinding; scope: ExemptionScope }
 
-const reportContent = (report: ContinuityReport) => JSON.stringify([report.result, [...report.chapters.values()], [...report.nodes.values()]])
-
 function sessionFor(projectKey: string) {
   const session = captureProjectSession(useProjectStore.getState().currentProject)
   return session && isProjectSessionPath(session, projectKey) ? session : null
@@ -56,11 +54,13 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const [busy, setBusy] = useState(false)
   const checked = useRef(false)
   const recovery = useRef(0)
+  const shownRun = useRef<ContinuityReport['handle'] | null>(null)
   const mounted = useRef(false)
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
+  useEffect(() => { shownRun.current = report?.handle ?? null }, [report])
 
   const currentSession = useCallback(() => sessionFor(projectKey), [projectKey])
 
@@ -73,9 +73,10 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const recoverLatest = useCallback((session: ProjectSessionContext, applies: () => boolean, keepShown: boolean) => {
     const request = ++recovery.current
     void readLatestContinuityReport(session)
-      .then(latest => {
-        if (applies() && request === recovery.current && !checked.current)
-          setReport(shown => keepShown && shown && reportContent(shown) !== (latest && reportContent(latest)) ? shown : latest)
+      .then(async latest => {
+        const shown = keepShown ? shownRun.current : null
+        const next = shown && shown.runId !== latest?.handle.runId ? await readContinuityReport(session, shown) : latest
+        if (applies() && request === recovery.current && !checked.current) setReport(next)
       }).catch(() => {})
   }, [])
 
