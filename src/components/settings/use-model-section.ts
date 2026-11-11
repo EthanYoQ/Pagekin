@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLLMStore } from '../../stores/llm-store'
 import { useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
@@ -49,6 +49,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
   const [editingModel, setEditingModel] = useState<ModelProfile | null>(null)
   const [editingOriginal, setEditingOriginal] = useState('')
   const [saving, setSaving] = useState(false)
+  const editRequest = useRef(0)
   useEffect(() => {
     if (!loaded) loadModels()
   }, [loaded, loadModels])
@@ -63,6 +64,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
 
   /** 向量和重排模型由工厂选择完整的 SiliconFlow 默认值。 */
   const startEditing = (model: ModelProfile) => {
+    editRequest.current += 1
     setEditingModel(model)
     setEditingOriginal(JSON.stringify(model))
   }
@@ -72,9 +74,11 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
       purposes: [...purposes],
     }))
   }
-  /** 实测的上下文窗口只写进主进程的模型设置，打开表单前须重读。 */
+  /** 实测的上下文窗口只写进主进程的模型设置，打开表单前须重读；重读期间作者改点了别的，就不再打开这一份。 */
   const edit = async (model: ModelProfile) => {
+    const request = ++editRequest.current
     await loadModels()
+    if (request !== editRequest.current) return
     startEditing({ ...(useLLMStore.getState().models.find(latest => latest.id === model.id) ?? model) })
   }
 
@@ -105,7 +109,10 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     saving,
     add,
     edit: (model: ModelProfile) => void edit(model),
-    cancelEdit: () => setEditingModel(null),
+    cancelEdit: () => {
+      editRequest.current += 1
+      setEditingModel(null)
+    },
     save,
     remove: (modelId: string) => deleteModel(modelId),
     setDefault,
