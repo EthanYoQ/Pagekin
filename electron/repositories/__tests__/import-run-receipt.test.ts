@@ -193,6 +193,34 @@ describe('import-run durable effect receipt', () => {
       })
   })
 
+  it('reads and replays a proposal-staged sync receipt unchanged after restart', () => {
+    prepareCommittedBlueprintReceipt()
+    const syncOperationId = 'blueprint-sync-import-blueprints-receipt-run-1-1'
+    const staged = stageDirectory(syncOperationId)
+    const completed = BlueprintRepository.completeCharacterSyncOperation(syncOperationId)
+    expect(completed.completionReceipt).toEqual({
+      blueprintCommitOperationId: 'import-blueprints-receipt-run-1-1',
+      operationId: syncOperationId,
+      status: 'proposal-staged',
+      proposalReceipt: { proposalBatchId: staged.proposalBatchId, sourceHash: expect.stringMatching(/^[a-f0-9]{64}$/) },
+    })
+
+    closeProjectDatabase()
+    initProjectDatabase(root)
+
+    expect(BlueprintRepository.getCharacterSyncOperation(syncOperationId)?.completionReceipt)
+      .toEqual(completed.completionReceipt)
+    const replay = BlueprintRepository.commitRange({
+      mode: 'replace-range',
+      operationId: 'import-blueprints-receipt-run-1-1',
+      startChapter: 1,
+      endChapter: 1,
+      blueprints: [blueprint],
+    })
+    expect(replay.idempotent).toBe(true)
+    expect(replay.characterSyncOperation.completionReceipt).toEqual(completed.completionReceipt)
+  })
+
   it('rejects an offline-forged completion without its proposal staging evidence', () => {
     prepareCommittedBlueprintReceipt()
     tamperOffline(`
