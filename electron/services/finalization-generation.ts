@@ -105,7 +105,8 @@ export class FinalizationGeneration {
         const chapterNotes = proof.artifact.text.trim(), { source } = context.slot
         const facts = buildFinalizedContinuityFacts(source.chapterNumber, chapterNotes, context.identity.content, context.chapterEntities, context.identity)
         const notesLastGenerated = this.db.prepare('SELECT chapter_notes FROM summary_snapshots WHERE draft_id=?').pluck().get(source.draftId) as string | undefined
-        const authorEditedBlueprintNotes = notesLastGenerated !== undefined && notesLastGenerated !== context.notesBaseline.blueprint.notes
+        const blueprintNotes = context.notesBaseline.blueprint.notes
+        const authorEditedBlueprintNotes = notesLastGenerated !== undefined && blueprintNotes.trim() !== '' && blueprintNotes !== notesLastGenerated
         SummaryRepository.saveFinalizedContinuity({ draftId: source.draftId, chapterNumber: source.chapterNumber, source, chapterNotes, facts, projectionGeneration: context.identity.projectionGeneration }, this.db)
         const blueprintUpdated = !authorEditedBlueprintNotes && BlueprintRepository.updateNotes(source.chapterNumber, chapterNotes, this.db)
         receipt = { success: true, stepKey: 'chapter_notes', chapterNotes, factCount: facts.length, blueprintUpdated }
