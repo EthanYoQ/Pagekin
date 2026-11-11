@@ -328,7 +328,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
 
-describe('portable project export service', { timeout: 20_000 }, () => {
+describe('portable project export service', () => {
   it('preserves admitted predecessor, recheck goals and state-update raw values without admitting unknown fields', async () => {
     const material = { draftId: 10, chapterNumber: 1, chapterTitle: '', content: '前驱正文',
       identity: { projectId: 'project', sourceId: 'candidate:10', revision: 1, contentHash: hash('前驱正文'), provenance: 'generated' } }
@@ -1005,7 +1005,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
   })
 })
 
-describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）', { timeout: 30_000 }, () => {
+describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）', () => {
   const SECRET = 'sk-写稿凭据-绝不外带'
   const ENDPOINT = 'https://私有端点.example/v1'
   const MACHINE_PATH = 'C:\\Users\\writer\\密钥.txt'
