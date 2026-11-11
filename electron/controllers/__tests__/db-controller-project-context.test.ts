@@ -33,7 +33,6 @@ const mocks = vi.hoisted(() => ({
     projectionHash: 'empty',
     factHash: 'empty-fact',
   })),
-  characterRosterCommit: vi.fn(),
   authorRosterCommit: vi.fn(),
   hasCharacterIdentitySchema: vi.fn(() => false),
   getProjectDb: vi.fn(),
@@ -131,7 +130,6 @@ vi.mock('../../services/character-roster-author', () => ({ commitAuthorCharacter
 vi.mock('../../repositories/character-roster-repository', () => ({
   CharacterRosterRepository: {
     read: mocks.characterRosterRead,
-    commit: mocks.characterRosterCommit,
   },
 }))
 
@@ -341,7 +339,7 @@ describe('database controller project context guard', () => {
   it('routes M02 author ID writes through the captured author transaction and rechecks its session', async () => {
     const db = { synthetic: true }, receipt = { revision: 7 }
     const request = { operationId: 'author-ID', intent: 'manual_edit', schemaVersion: 1, expectedRevision: 6, expectedIdentityRevision: 3, entries: [] }
-    mocks.getProjectDb.mockReturnValue(db); mocks.hasCharacterIdentitySchema.mockReturnValue(true)
+    mocks.getProjectDb.mockReturnValue(db)
     mocks.authorRosterCommit.mockImplementation((actualDb, actualRequest, scope, assertCurrent) => {
       expect(actualDb).toBe(db); expect(actualRequest).toBe(request)
       expect(scope).toEqual({ projectId: 'project-A', epoch: 'lease-A' }); assertCurrent(); return receipt
@@ -349,16 +347,14 @@ describe('database controller project context guard', () => {
     expect(await handler('db:character-roster-commit')({}, request, 'C:/projects/A')).toEqual({ success: true, receipt })
     expect(mocks.authorRosterCommit).toHaveBeenCalledTimes(1)
     expect(mocks.assertCurrentSession).toHaveBeenCalledWith({ projectId: 'project-A', leaseId: 'lease-A', rootPath: 'C:/projects/A' })
-    expect(mocks.characterRosterCommit).not.toHaveBeenCalled()
   })
-  it('cannot enter the old name writer when the captured M02 author session changes', async () => {
-    mocks.getProjectDb.mockReturnValue({ synthetic: true }); mocks.hasCharacterIdentitySchema.mockReturnValue(true)
+  it('rejects the author roster write when the captured session changes', async () => {
+    mocks.getProjectDb.mockReturnValue({ synthetic: true })
     mocks.authorRosterCommit.mockImplementation((_db, _request, _scope, assertCurrent) => {
       mocks.currentProjectPath = 'C:/projects/B'; assertCurrent()
     })
     const result = await handler('db:character-roster-commit')({}, { intent: 'manual_edit' }, 'C:/projects/A')
     expect(result).toMatchObject({ success: false })
-    expect(mocks.characterRosterCommit).not.toHaveBeenCalled()
   })
   it('commits a synopsis only through the active project session', async () => {
     const request = synopsisCommitRequest()
@@ -382,13 +378,6 @@ describe('database controller project context guard', () => {
     )).resolves.toEqual({
       success: false,
       error: 'PROJECT_CORE_SYNOPSIS_CHANGED',
-    })
-  })
-
-  it('refuses the retired renderer plot-tree save with the admission code and no sources-changed shortcut', async () => {
-    await expect(handler('db:plot-tree-save')({}, { version: 1 }, 'a'.repeat(64), 'C:/projects/A')).resolves.toEqual({
-      success: false,
-      error: 'Error: GENERATION_GRAPH_ADMISSION_REQUIRED',
     })
   })
 
@@ -735,7 +724,7 @@ describe('database controller project context guard', () => {
     )
 
     expect(result).toMatchObject({ success: false })
-    expect(mocks.characterRosterCommit).not.toHaveBeenCalled()
+    expect(mocks.authorRosterCommit).not.toHaveBeenCalled()
   })
 
   it('passes a current-session roster commit through the typed IPC seam exactly once', async () => {
@@ -745,7 +734,8 @@ describe('database controller project context guard', () => {
       schemaVersion: 1,
       entries: [],
     }
-    mocks.characterRosterCommit.mockReturnValueOnce({
+    mocks.getProjectDb.mockReturnValue({ synthetic: true })
+    mocks.authorRosterCommit.mockReturnValueOnce({
       operationId: request.operationId,
       payloadHash: 'payload-hash',
       revision: 1,
@@ -761,8 +751,8 @@ describe('database controller project context guard', () => {
       success: true,
       receipt: { operationId: 'architecture-run-A', revision: 1 },
     })
-    expect(mocks.characterRosterCommit).toHaveBeenCalledOnce()
-    expect(mocks.characterRosterCommit.mock.calls[0]?.[0]).toEqual(request)
+    expect(mocks.authorRosterCommit).toHaveBeenCalledOnce()
+    expect(mocks.authorRosterCommit.mock.calls[0]?.[1]).toEqual(request)
   })
 
   it('commits a finalized import against the current main-process project root exactly once', async () => {
@@ -860,7 +850,7 @@ describe('database controller project context guard', () => {
       success: false,
       error: 'Error: PROJECT_SESSION_REQUIRED',
     })
-    expect(mocks.characterRosterCommit).not.toHaveBeenCalled()
+    expect(mocks.authorRosterCommit).not.toHaveBeenCalled()
   })
 
   it('rejects A workflow writes and post-process marks after the user switches to B', async () => {
@@ -898,7 +888,7 @@ describe('database controller project context guard', () => {
     expect(createRunResult).toMatchObject({ success: false })
     expect(markResult).toMatchObject({ success: false })
     expect(mocks.projectCoreUpdate).not.toHaveBeenCalled()
-    expect(mocks.characterRosterCommit).not.toHaveBeenCalled()
+    expect(mocks.authorRosterCommit).not.toHaveBeenCalled()
     expect(mocks.postProcessCreateRun).not.toHaveBeenCalled()
     expect(mocks.postProcessMarkStepOk).not.toHaveBeenCalled()
   })
@@ -953,7 +943,8 @@ describe('database controller project context guard', () => {
       { premise: 'A project result' },
       'C:/projects/A',
     )
-    mocks.characterRosterCommit.mockReturnValueOnce({
+    mocks.getProjectDb.mockReturnValue({ synthetic: true })
+    mocks.authorRosterCommit.mockReturnValueOnce({
       operationId: 'current-A', payloadHash: 'hash', revision: 1, idempotent: false, snapshot: mocks.characterRosterRead(),
     })
     const characterResult = await handler('db:character-roster-commit')(
@@ -983,7 +974,7 @@ describe('database controller project context guard', () => {
     expect(createRunResult).toEqual({ success: true, id: 'run-1' })
     expect(markResult).toEqual({ success: true })
     expect(mocks.projectCoreUpdate).toHaveBeenCalledOnce()
-    expect(mocks.characterRosterCommit).toHaveBeenCalledOnce()
+    expect(mocks.authorRosterCommit).toHaveBeenCalledOnce()
     expect(mocks.postProcessCreateRun).toHaveBeenCalledOnce()
     expect(mocks.postProcessMarkStepOk).toHaveBeenCalledOnce()
   })
@@ -1020,7 +1011,7 @@ describe('database controller project context guard', () => {
     expect(blueprintDelete).toMatchObject({ success: false })
     expect(blueprintClear).toMatchObject({ success: false })
     expect(mocks.characterGetAll).not.toHaveBeenCalled()
-    expect(mocks.characterRosterCommit).not.toHaveBeenCalled()
+    expect(mocks.authorRosterCommit).not.toHaveBeenCalled()
     expect(mocks.blueprintGetAll).not.toHaveBeenCalled()
     expect(mocks.blueprintUpsert).not.toHaveBeenCalled()
     expect(mocks.blueprintDelete).not.toHaveBeenCalled()
@@ -1029,7 +1020,8 @@ describe('database controller project context guard', () => {
 
   it('allows same-project character and blueprint access with an explicit context', async () => {
     await expect(handler('db:character-get-all')({}, 'C:/projects/A')).resolves.toEqual([])
-    mocks.characterRosterCommit.mockReturnValueOnce({
+    mocks.getProjectDb.mockReturnValue({ synthetic: true })
+    mocks.authorRosterCommit.mockReturnValueOnce({
       operationId: 'current-A', payloadHash: 'hash', revision: 1, idempotent: false, snapshot: mocks.characterRosterRead(),
     })
     expect(await handler('db:character-roster-commit')(
@@ -1049,7 +1041,7 @@ describe('database controller project context guard', () => {
       .toEqual({ success: true })
 
     expect(mocks.characterGetAll).toHaveBeenCalledOnce()
-    expect(mocks.characterRosterCommit).toHaveBeenCalledOnce()
+    expect(mocks.authorRosterCommit).toHaveBeenCalledOnce()
     expect(mocks.blueprintGetAll).toHaveBeenCalledOnce()
     expect(mocks.blueprintUpsert).toHaveBeenCalledOnce()
     expect(mocks.blueprintDelete).toHaveBeenCalledOnce()

@@ -11,8 +11,6 @@ const WRITES = [
 /** 写 cs_* 值列或关系表的全部源文件。新增写入方必须走 character-continuity-repository，或在这里写明为什么不追加节点。 */
 const REGISTERED_WRITERS: Readonly<Record<string, string>> = {
   'electron/repositories/character-continuity-repository.ts': '收口：写业务列并在同一事务追加节点',
-  'electron/repositories/character-repository.ts': 'upsert/delete/updateState 在身份 schema 上抛 CHARACTER_ID_WRITE_REQUIRED，第 9 版的库走不到',
-  'electron/repositories/character-roster-repository.ts': 'CharacterRosterRepository.commit 的整表回填同样先抛 CHARACTER_ID_WRITE_REQUIRED，第 9 版的库走不到',
   'electron/services/legacy-project-copy-import.ts': '旧版项目复制是整库导入，事务末尾由 insertContinuityBaseline 补基线节点',
   'electron/migrations/baseline-schema.ts': '迁移：只把哨兵 0 改成 NULL，不写值列',
 }

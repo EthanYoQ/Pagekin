@@ -85,7 +85,7 @@ it('真实version5项目从init入口执行M05并保留正文', () => {
   expect(getProjectDb()!.prepare('SELECT body FROM contents').pluck().get()).toBe('铜钥匙\r\n作者原文')
   expect(getProjectDb()!.prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='character_avatar_assets'").pluck().get()).toBe(1)
 })
-it('未知version4与失败M04都在写入当前schema前保留原数据', { timeout: 20_000 }, () => {
+it('未知version4与失败M04都在写入当前schema前保留原数据', () => {
   const unknown = fixture(4)
   const fork = new Database(unknown.file)
   try { fork.exec('ALTER TABLE contents ADD COLUMN unknown_m04_fork TEXT') } finally { fork.close() }
@@ -102,7 +102,7 @@ it('未知version4与失败M04都在写入当前schema前保留原数据', { tim
   expect(fs.readFileSync(failed.file)).toEqual(before)
   expect(probeProjectSqlite({ databasePath: failed.file }).schemaVersion).toBe(4)
 })
-it('未知version5与失败M05都在写入当前schema前保留原数据', { timeout: 20_000 }, () => {
+it('未知version5与失败M05都在写入当前schema前保留原数据', () => {
   const unknown = fixture(5), fork = new Database(unknown.file)
   try { fork.exec('ALTER TABLE contents ADD COLUMN unknown_m05_fork TEXT') } finally { fork.close() }
   const forkBytes = fs.readFileSync(unknown.file)
@@ -124,7 +124,7 @@ it('新建项目与S04备份默认均到当前schema，M00可显式停在1', asy
   const result = await backupProjectSqlite({ sourceDatabasePath: old.file, targetDatabasePath: path.join(old.root, '副本.db') })
   expect(result.schemaVersion).toBe(CURRENT_DESKTOP_SCHEMA_VERSION); expect(fs.readFileSync(old.file)).toEqual(bytes)
 })
-it.each(['unknown', 'higher', 'missing-manifest'] as const)('%s在任何迁移写入前拒绝，源字节不变', { timeout: 20_000 }, mode => {
+it.each(['unknown', 'higher', 'missing-manifest'] as const)('%s在任何迁移写入前拒绝，源字节不变', mode => {
   const f = fixture()
   if (mode === 'missing-manifest') fs.unlinkSync(path.join(f.data, 'project.json'))
   else { const db = new Database(f.file); try { if (mode === 'higher') db.pragma('user_version = 999'); else db.exec('ALTER TABLE contents ADD COLUMN unknown_fork TEXT') } finally { db.close() } }

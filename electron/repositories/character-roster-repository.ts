@@ -7,11 +7,7 @@ import {
   CHARACTER_STATE_TEXT_FIELDS,
   characterRosterIdentityKey,
   type CharacterRosterCharacterState,
-  type CharacterRosterCommitReceipt,
-  type CharacterRosterCommitIntent,
-  type CharacterRosterCommitRequest,
   type CharacterRosterEntry,
-  type CharacterRosterRename,
   type CharacterRosterMigrationState,
   type CharacterRosterStatus,
   type CharacterRosterRelationship,
@@ -36,13 +32,6 @@ interface CharacterRosterMetaRow {
   legacy_markdown: string
   projection_hash: string
   fact_hash: string
-}
-
-interface CharacterRosterOperationRow {
-  operation_id: string
-  payload_hash: string
-  committed_revision: number
-  projection_hash: string
 }
 
 const ROLE_ORDER: Record<CharacterRosterRole, number> = {
@@ -146,31 +135,6 @@ function normalizeState(value: unknown): CharacterRosterCharacterState | undefin
   }
 }
 
-function hasManualValue(value: unknown): boolean {
-  if (typeof value === 'string') return value.trim().length > 0
-  if (typeof value === 'number') return Number.isFinite(value) && value !== 0
-  return Boolean(value)
-}
-
-function isCommitIntent(value: unknown): value is CharacterRosterCommitIntent {
-  return value === 'initialize'
-    || value === 'architecture_generation'
-    || value === 'legacy_repair'
-    || value === 'legacy_cards_adoption'
-    || value === 'manual_edit'
-    || value === 'novel_import'
-    || value === 'blueprint_sync'
-    || value === 'chapter_progress'
-}
-
-function isManualEditIntent(intent: CharacterRosterCommitIntent): boolean {
-  return intent === 'manual_edit'
-}
-
-function isLegacyEvidenceIntent(intent: CharacterRosterCommitIntent): boolean {
-  return intent === 'legacy_repair' || intent === 'legacy_cards_adoption'
-}
-
 function normalizeRelationships(value: unknown, ownerName: string): CharacterRosterRelationship[] {
   if (!Array.isArray(value)) throw new Error('CHARACTER_ROSTER_RELATIONSHIPS_INVALID')
   const seen = new Set<string>()
@@ -225,90 +189,21 @@ function normalizeEntry(
   }
 }
 
-function normalizeRenames(value: unknown, intent: CharacterRosterCommitIntent): CharacterRosterRename[] | undefined {
-  if (value === undefined) return undefined
-  if (!isManualEditIntent(intent)) {
-    throw new Error('CHARACTER_ROSTER_RENAMES_FORBIDDEN')
-  }
-  if (!Array.isArray(value)) throw new Error('CHARACTER_ROSTER_RENAMES_INVALID')
-  const renames = value.map((raw) => {
-    if (!isObject(raw)) throw new Error('CHARACTER_ROSTER_RENAMES_INVALID')
-    const originalName = requiredText(raw.originalName)
-    const newName = requiredText(raw.newName)
-    if (!originalName || !newName) throw new Error('CHARACTER_ROSTER_RENAMES_INVALID')
-    if (originalName === newName) throw new Error('CHARACTER_ROSTER_RENAMES_INVALID')
-    return { originalName, newName }
-  })
-  if (
-    new Set(renames.map(rename => rename.originalName)).size !== renames.length
-    || new Set(renames.map(rename => rename.newName)).size !== renames.length
-  ) throw new Error('CHARACTER_ROSTER_RENAMES_INVALID')
-  return renames
-}
-
-function normalizeRequest(value: unknown): CharacterRosterCommitRequest {
+export function validateLegacyRosterCandidate(value: unknown): CharacterRosterEntry[] {
   if (!isObject(value)) throw new Error('CHARACTER_ROSTER_REQUEST_INVALID')
-  const operationId = requiredText(value.operationId)
-  if (!operationId) throw new Error('CHARACTER_ROSTER_OPERATION_ID_REQUIRED')
-  if (value.schemaVersion !== CHARACTER_ROSTER_SCHEMA_VERSION) {
-    throw new Error('CHARACTER_ROSTER_SCHEMA_UNSUPPORTED')
-  }
-  if (!Number.isSafeInteger(value.expectedRevision) || (value.expectedRevision as number) < 0) {
-    throw new Error('CHARACTER_ROSTER_REVISION_INVALID')
-  }
-  const intent = value.intent === undefined ? 'initialize' : value.intent
-  if (!isCommitIntent(intent)) throw new Error('CHARACTER_ROSTER_INTENT_INVALID')
-  if (!Array.isArray(value.entries) || (value.entries.length === 0 && !isManualEditIntent(intent))) {
-    throw new Error('CHARACTER_ROSTER_ENTRIES_REQUIRED')
-  }
-
-  const source = value.source === undefined ? undefined : normalizeFinalizedSource(value.source)
-  if (intent === 'chapter_progress' && !source) throw new Error('CHARACTER_ROSTER_FINALIZED_SOURCE_REQUIRED')
-  if (intent !== 'chapter_progress' && source) throw new Error('CHARACTER_ROSTER_FINALIZED_SOURCE_UNEXPECTED')
-  const entries = value.entries.map(entry => normalizeEntry(entry, isManualEditIntent(intent)))
+  if (value.schemaVersion !== CHARACTER_ROSTER_SCHEMA_VERSION) throw new Error('CHARACTER_ROSTER_SCHEMA_UNSUPPORTED')
+  if (!Array.isArray(value.entries) || value.entries.length === 0) throw new Error('CHARACTER_ROSTER_ENTRIES_REQUIRED')
+  const entries = value.entries.map(entry => normalizeEntry(entry, false))
   const names = new Set(entries.map(entry => characterRosterIdentityKey(entry.name)))
   if (names.size !== entries.length) throw new Error('CHARACTER_ROSTER_NAME_DUPLICATE')
-  // 批量生成/导入/蓝图/定稿的增量候选可以引用“本次没有变化”的既有角色；
-  // 手工候选还可能带着改名前或刚删除的目标。它们都必须先由深 module 与
-  // 当前事实合并/转换，再用完整名单校验闭包。只有空项目初始化和旧图谱
-  // 修复需要在候选本身上直接闭合。
-  if (intent === 'initialize' || intent === 'legacy_repair') {
-    for (const entry of entries) {
-      for (const relationship of entry.relationships) {
-        if (!names.has(characterRosterIdentityKey(relationship.target))) {
-          throw new Error('CHARACTER_ROSTER_RELATIONSHIP_TARGET_UNKNOWN')
-        }
+  for (const entry of entries) {
+    for (const relationship of entry.relationships) {
+      if (!names.has(characterRosterIdentityKey(relationship.target))) {
+        throw new Error('CHARACTER_ROSTER_RELATIONSHIP_TARGET_UNKNOWN')
       }
     }
   }
-  const renames = normalizeRenames(value.renames, intent)
-  let expectedLegacyMarkdown: string | undefined
-  if (isLegacyEvidenceIntent(intent)) {
-    if (typeof value.expectedLegacyMarkdown !== 'string') {
-      throw new Error('CHARACTER_ROSTER_LEGACY_EVIDENCE_REQUIRED')
-    }
-    expectedLegacyMarkdown = value.expectedLegacyMarkdown
-  }
-
-  return {
-    operationId,
-    expectedRevision: value.expectedRevision as number,
-    schemaVersion: CHARACTER_ROSTER_SCHEMA_VERSION,
-    entries,
-    ...(source ? { source } : {}),
-    intent,
-    ...(renames?.length ? { renames } : {}),
-    ...(isLegacyEvidenceIntent(intent)
-      ? { expectedLegacyMarkdown }
-      : {}),
-  }
-}
-
-/** Validate migration candidates without re-enabling the retired name-based write path. */
-export function validateLegacyRosterCandidate(value: unknown): CharacterRosterEntry[] {
-  if (!isObject(value)) throw new Error('CHARACTER_ROSTER_REQUEST_INVALID')
-  return normalizeRequest({ operationId: 'legacy-roster-candidate-validation', expectedRevision: 0,
-    schemaVersion: value.schemaVersion, entries: value.entries, intent: 'legacy_repair', expectedLegacyMarkdown: '' }).entries
+  return entries
 }
 
 /** Shared scalar validation; the author boundary validates relationships by ID separately. */
@@ -356,19 +251,6 @@ function hashText(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
-function payloadHash(request: CharacterRosterCommitRequest): string {
-  return hashText(JSON.stringify({
-    schemaVersion: request.schemaVersion,
-    intent: request.intent ?? 'initialize',
-    ...(isLegacyEvidenceIntent(request.intent ?? 'initialize')
-      ? { expectedLegacyMarkdown: request.expectedLegacyMarkdown }
-      : {}),
-    ...(request.intent === 'manual_edit' ? { renames: request.renames ?? [] } : {}),
-    ...(request.source ? { source: request.source } : {}),
-    entries: canonicalEntries(request.entries),
-  }))
-}
-
 function isStructuredRelationships(value: string): value is string {
   try {
     const parsed: unknown = JSON.parse(value)
@@ -406,345 +288,6 @@ function entryFromCharacter(character: CharacterData): CharacterRosterEntry {
     ...(hasStructuredRelationships || !character.relationships
       ? {}
       : { legacyRelationshipNotes: character.relationships }),
-  }
-}
-
-function characterFromEntry(entry: CharacterRosterEntry): CharacterData {
-  return {
-    name: entry.name,
-    role: entry.role,
-    gender: entry.gender,
-    age: entry.age,
-    appearance: entry.appearance,
-    personality: entry.personality,
-    background: entry.background,
-    abilities: entry.abilities,
-    motivation: entry.motivation,
-    // 旧手工卡的自由文本关系尚无安全的字段级迁移；安全重生成时必须原样
-    // 保留，不能为了写入新候选而把它静默替换为 JSON。
-    relationships: entry.legacyRelationshipNotes?.trim()
-      ? entry.legacyRelationshipNotes
-      : JSON.stringify(entry.relationships),
-    arc: entry.arc,
-    notes: entry.notes,
-    currentState: entry.currentState,
-  }
-}
-
-function mergeCurrentStateManualWins(
-  existing: CharacterRosterCharacterState | undefined,
-  generated: CharacterRosterCharacterState | undefined,
-): CharacterRosterCharacterState | undefined {
-  if (!existing && !generated) return undefined
-  const merged = { ...(generated ?? {}), ...(existing ?? {}) } as CharacterRosterCharacterState
-  const fields: Array<keyof CharacterRosterCharacterState> = [
-    'location', 'powerLevel', 'physicalState', 'mentalState', 'keyItems', 'recentEvents', 'updatedAtChapter',
-  ]
-  for (const field of fields) {
-    if (!hasManualValue(existing?.[field]) && generated?.[field] !== undefined) {
-      Object.assign(merged, { [field]: generated[field] })
-    }
-  }
-  return merged
-}
-
-function mergeExistingEntryManualWins(
-  existing: CharacterRosterEntry,
-  generated: CharacterRosterEntry,
-): CharacterRosterEntry {
-  const merged = { ...existing, name: existing.name.trim() }
-  const fields: Array<keyof Pick<
-    CharacterRosterEntry,
-    'role' | 'gender' | 'age' | 'appearance' | 'personality' | 'background' | 'abilities' | 'motivation' | 'arc' | 'notes'
-  >> = [
-    'role', 'gender', 'age', 'appearance', 'personality', 'background', 'abilities', 'motivation', 'arc', 'notes',
-  ]
-  for (const field of fields) {
-    if (!hasManualValue(existing[field]) && hasManualValue(generated[field])) {
-      Object.assign(merged, { [field]: generated[field] })
-    }
-  }
-  merged.relationships = existing.legacyRelationshipNotes?.trim() || existing.relationships.length > 0
-    ? existing.relationships
-    : generated.relationships
-  merged.currentState = mergeCurrentStateManualWins(existing.currentState, generated.currentState)
-  return merged
-}
-
-function assertRelationshipClosure(entries: readonly CharacterRosterEntry[]): void {
-  const names = new Set(entries.map(entry => characterRosterIdentityKey(entry.name)))
-  if (names.size !== entries.length || entries.some(entry => !entry.name.trim())) {
-    throw new Error('CHARACTER_ROSTER_EXISTING_IDENTITY_UNSAFE')
-  }
-  for (const entry of entries) {
-    const relationshipKeys = new Set<string>()
-    for (const relationship of entry.relationships) {
-      if (
-        !relationship.target.trim()
-        || !relationship.relation.trim()
-        || characterRosterIdentityKey(relationship.target) === characterRosterIdentityKey(entry.name)
-        || !names.has(characterRosterIdentityKey(relationship.target))
-      ) {
-        throw new Error('CHARACTER_ROSTER_EXISTING_RELATIONSHIPS_INVALID')
-      }
-      const key = `${relationship.target}\u0000${relationship.relation}`
-      if (relationshipKeys.has(key)) throw new Error('CHARACTER_ROSTER_EXISTING_RELATIONSHIPS_INVALID')
-      relationshipKeys.add(key)
-    }
-  }
-}
-
-/**
- * 正常架构重新生成延续旧的 manual-wins 安全规则：非空旧字段和未出现在
- * 本轮候选中的旧角色都保留；空字段才由新候选补齐。该策略不猜测字段来源。
- */
-function mergeGeneratedEntriesWithExisting(
-  generatedEntries: CharacterRosterEntry[],
-  existingEntries: CharacterRosterEntry[],
-): CharacterRosterEntry[] {
-  const generatedByName = new Map(generatedEntries.map(entry => [characterRosterIdentityKey(entry.name), entry]))
-  const mergedExisting = existingEntries.map((existing) => {
-    const generated = generatedByName.get(characterRosterIdentityKey(existing.name))
-    return generated ? mergeExistingEntryManualWins(existing, generated) : { ...existing }
-  })
-  const existingNames = new Set(existingEntries.map(entry => characterRosterIdentityKey(entry.name)))
-  const additions = generatedEntries.filter(entry => !existingNames.has(characterRosterIdentityKey(entry.name)))
-  const merged = [...mergedExisting, ...additions]
-  assertRelationshipClosure(merged)
-  return merged
-}
-
-function hasFinalizedDraft(db: BetterSqlite3.Database, chapterNumber: number): boolean {
-  return db.prepare(`
-    SELECT 1
-    FROM drafts
-    WHERE chapter_number = ? AND status = 'finalized'
-    LIMIT 1
-  `).get(chapterNumber) !== undefined
-}
-
-function assertCurrentFinalizedSource(
-  db: BetterSqlite3.Database,
-  source: FinalizedSourceIdentity,
-): void {
-  const row = db.prepare(`
-    SELECT drafts.chapter_number AS chapterNumber, drafts.status,
-           finalization_outbox.finalization_id AS finalizationId,
-           finalization_outbox.content_hash AS contentHash
-    FROM drafts
-    JOIN finalization_outbox ON finalization_outbox.draft_id = drafts.id
-    WHERE drafts.id = ?
-  `).get(source.draftId) as {
-    chapterNumber: number
-    status: string
-    finalizationId: string
-    contentHash: string
-  } | undefined
-  if (
-    !row
-    || row.status !== 'finalized'
-    || row.chapterNumber !== source.chapterNumber
-    || row.finalizationId !== source.finalizationId
-    || row.contentHash !== source.contentHash
-  ) throw new Error('CHARACTER_ROSTER_FINALIZED_SOURCE_STALE')
-}
-
-function mergeDerivedCurrentState(
-  existing: CharacterRosterCharacterState | undefined,
-  candidate: CharacterRosterCharacterState,
-  source: FinalizedSourceIdentity,
-): CharacterRosterCharacterState | undefined {
-  const merged: CharacterRosterCharacterState = existing
-    ? { ...existing, provenance: { ...existing.provenance } }
-    : {
-        location: '', powerLevel: '', physicalState: '', mentalState: '',
-        keyItems: '', recentEvents: '', updatedAtChapter: source.chapterNumber,
-      }
-  let changed = false
-  for (const field of CHARACTER_STATE_TEXT_FIELDS) {
-    const provenance = candidate.provenance?.[field]
-    if (provenance?.kind !== 'derived') continue
-    if (
-      provenance.source.draftId !== source.draftId
-      || provenance.source.finalizationId !== source.finalizationId
-      || provenance.source.chapterNumber !== source.chapterNumber
-      || provenance.source.contentHash !== source.contentHash
-    ) throw new Error('CHARACTER_ROSTER_STATE_SOURCE_MISMATCH')
-
-    const previousSource = existing?.provenance?.[field]
-    const previousValue = existing?.[field] ?? ''
-    // Unknown legacy and explicit author values are never silently reclassified or overwritten.
-    if (previousValue && previousSource?.kind !== 'derived') continue
-    if (previousSource?.kind === 'author' || previousSource?.kind === 'legacy') continue
-    merged[field] = candidate[field]
-    merged.provenance ??= {}
-    merged.provenance[field] = provenance
-    changed = true
-  }
-  if (!changed) return existing
-  merged.updatedAtChapter = source.chapterNumber
-  return merged
-}
-
-function mergeIncrementalEntriesWithExisting(
-  db: BetterSqlite3.Database,
-  candidates: CharacterRosterEntry[],
-  existingEntries: CharacterRosterEntry[],
-  intent: Extract<CharacterRosterCommitIntent, 'blueprint_sync' | 'chapter_progress'>,
-  source?: FinalizedSourceIdentity,
-): CharacterRosterEntry[] {
-  if (intent === 'chapter_progress') {
-    if (!source) throw new Error('CHARACTER_ROSTER_FINALIZED_SOURCE_REQUIRED')
-    assertCurrentFinalizedSource(db, source)
-    for (const candidate of candidates) {
-      if (
-        !candidate.currentState
-        || candidate.currentState.updatedAtChapter !== source.chapterNumber
-      ) {
-        throw new Error('CHARACTER_ROSTER_STATE_NOT_FINALIZED')
-      }
-    }
-  }
-  const candidateByName = new Map(candidates.map(entry => [characterRosterIdentityKey(entry.name), entry]))
-  const mergedExisting = existingEntries.map((existing) => {
-    const candidate = candidateByName.get(characterRosterIdentityKey(existing.name))
-    if (!candidate) return { ...existing }
-    if (
-      intent === 'chapter_progress'
-      && candidate.currentState
-      && existing.currentState
-      && candidate.currentState.updatedAtChapter < existing.currentState.updatedAtChapter
-      && hasFinalizedDraft(db, existing.currentState.updatedAtChapter)
-    ) {
-      throw new Error('CHARACTER_ROSTER_STATE_NEWER_CHAPTER')
-    }
-
-    // 蓝图同步只附加结构化关系；章节定稿则以本轮已验证的状态补丁推进
-    // currentState。其他资料保留已有事实，避免工作流重写人工档案。
-    const merged: CharacterRosterEntry = {
-      ...existing,
-      relationships: candidate.relationships.length > 0
-        ? candidate.relationships
-        : existing.relationships,
-      ...(intent === 'chapter_progress' && candidate.currentState && source
-        ? { currentState: mergeDerivedCurrentState(existing.currentState, candidate.currentState, source) }
-        : {}),
-    }
-    return merged
-  })
-  const existingNames = new Set(existingEntries.map(entry => characterRosterIdentityKey(entry.name)))
-  const additions = candidates.filter(candidate => !existingNames.has(characterRosterIdentityKey(candidate.name)))
-  if (intent === 'chapter_progress' && additions.length > 0) {
-    throw new Error('CHARACTER_ROSTER_UNKNOWN_CHARACTER')
-  }
-  const merged = [...mergedExisting, ...additions]
-  assertRelationshipClosure(merged)
-  return merged
-}
-
-function mapManualRelationshipTargets(
-  entry: CharacterRosterEntry,
-  renameByOriginal: ReadonlyMap<string, string>,
-  finalNames: ReadonlySet<string>,
-): CharacterRosterEntry {
-  const seen = new Set<string>()
-  const relationships: CharacterRosterRelationship[] = []
-  for (const relationship of entry.relationships) {
-    const target = renameByOriginal.get(relationship.target) ?? relationship.target
-    // Omitted manual entries are deletes. Their structural edges must be
-    // removed in this same commit; no stale relationship can survive.
-    if (!finalNames.has(target) || target === entry.name) continue
-    const key = `${target}\u0000${relationship.relation}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    relationships.push({ target, relation: relationship.relation })
-  }
-  return {
-    ...entry,
-    relationships: relationships.sort((left, right) => (
-      compareText(left.target, right.target) || compareText(left.relation, right.relation)
-    )),
-  }
-}
-
-function resolveManualEntries(
-  request: CharacterRosterCommitRequest,
-  existingEntries: CharacterRosterEntry[],
-): { entries: CharacterRosterEntry[]; renameByOriginal: Map<string, string> } {
-  const renames = request.renames ?? []
-  const existingByName = new Map(existingEntries.map(entry => [entry.name, entry]))
-  const finalNames = new Set(request.entries.map(entry => entry.name))
-  const renameByOriginal = new Map(renames.map(rename => [rename.originalName, rename.newName]))
-  const renameByNew = new Map(renames.map(rename => [rename.newName, rename.originalName]))
-
-  for (const rename of renames) {
-    if (!existingByName.has(rename.originalName)) {
-      throw new Error('CHARACTER_ROSTER_RENAME_SOURCE_MISSING')
-    }
-    if (!finalNames.has(rename.newName)) {
-      throw new Error('CHARACTER_ROSTER_RENAME_MISMATCH')
-    }
-  }
-
-  const entries = request.entries.map((candidate) => {
-    const originalName = renameByNew.get(candidate.name) ?? candidate.name
-    const existing = existingByName.get(originalName)
-    const mapped = mapManualRelationshipTargets(candidate, renameByOriginal, finalNames)
-    const withLegacyNotes = existing?.legacyRelationshipNotes && !mapped.legacyRelationshipNotes
-      ? { ...mapped, legacyRelationshipNotes: existing.legacyRelationshipNotes }
-      : mapped
-    if (!withLegacyNotes.currentState) return withLegacyNotes
-    const provenance = { ...withLegacyNotes.currentState.provenance }
-    for (const field of CHARACTER_STATE_TEXT_FIELDS) {
-      if ((existing?.currentState?.[field] ?? '') !== withLegacyNotes.currentState[field]) {
-        provenance[field] = {
-          kind: 'author',
-          chapterNumber: withLegacyNotes.currentState.updatedAtChapter,
-        }
-      } else if (existing?.currentState?.provenance?.[field]) {
-        provenance[field] = existing.currentState.provenance[field]
-      }
-    }
-    return {
-      ...withLegacyNotes,
-      currentState: { ...withLegacyNotes.currentState, provenance },
-    }
-  })
-  assertRelationshipClosure(entries)
-  return { entries, renameByOriginal }
-}
-
-function updateBlueprintReferencesForManualEdit(
-  db: BetterSqlite3.Database,
-  renameByOriginal: ReadonlyMap<string, string>,
-  finalNames: ReadonlySet<string>,
-): void {
-  const blueprints = db.prepare('SELECT chapter_number, characters FROM blueprints').all() as Array<{
-    chapter_number: number
-    characters: string
-  }>
-  const updateBlueprint = db.prepare(`
-    UPDATE blueprints
-    SET characters = ?, updated_at = datetime('now')
-    WHERE chapter_number = ?
-  `)
-  for (const blueprint of blueprints) {
-    let rawNames: unknown
-    try {
-      rawNames = JSON.parse(blueprint.characters)
-    } catch {
-      throw new Error('CHARACTER_ROSTER_BLUEPRINT_CHARACTERS_INVALID')
-    }
-    if (!Array.isArray(rawNames) || !rawNames.every(name => typeof name === 'string')) {
-      throw new Error('CHARACTER_ROSTER_BLUEPRINT_CHARACTERS_INVALID')
-    }
-    const nextNames = rawNames
-      .map(name => renameByOriginal.get(name) ?? name)
-      .filter(name => finalNames.has(name))
-      .filter((name, index, values) => values.indexOf(name) === index)
-    if (JSON.stringify(nextNames) !== JSON.stringify(rawNames)) {
-      updateBlueprint.run(JSON.stringify(nextNames), blueprint.chapter_number)
-    }
   }
 }
 
@@ -851,8 +394,6 @@ function deriveRosterStatus(
         ? 'legacy_repair_required'
         : 'inconsistent'
     case 'ready':
-      // #83 起，read/commit 是唯一写入 seam。投影和包含 currentState 的
-      // 完整事实哈希都必须与表内事实一致，才能让 UI/工作流继续写入。
       if (
         meta.projection_hash !== hashText(renderedMarkdown)
         || meta.fact_hash !== fullFactHash([...entries])
@@ -896,7 +437,7 @@ function readSnapshot(db: BetterSqlite3.Database): CharacterRosterSnapshot {
   const hasIdentitySchema = hasCharacterIdentitySchema(db)
   const entries = hasIdentitySchema ? identityProjectionEntries(db) : sortedEntries(CharacterRepository.getAll(db).map(entryFromCharacter))
   // 身份 schema 项目额外读取带稳定 ID 的事实，用于公开 DTO 与公开事实哈希。
-  // 持久化 meta.fact_hash 仍是姓名版本，read/commit 的 ready 校验不受影响。
+  // 持久化 meta.fact_hash 仍是姓名版本，ready 校验不受影响。
   const identityEntries = hasIdentitySchema ? identityProjectionEntries(db, true) : entries
   const writingLanguage = ProjectCoreRepository.get(db)?.writingLanguage ?? DEFAULT_WRITING_LANGUAGE
   const currentProjection = readCurrentProjection(db)
@@ -905,9 +446,7 @@ function readSnapshot(db: BetterSqlite3.Database): CharacterRosterSnapshot {
     entries,
     writingLanguage === 'en-US' ? 'zh-CN' : 'en-US',
   )
-  // A project may change writing language after a ready roster was committed.
-  // Keep that exact historical projection readable; the next roster commit
-  // rewrites it in the current project language without changing facts.
+  // 写作语言变更后，已 ready 的名单仍按提交时语言的投影读取。
   const renderedMarkdown = (
     meta.migration_state === 'ready'
     && currentProjection === previousLanguageProjection
@@ -937,211 +476,10 @@ function readSnapshot(db: BetterSqlite3.Database): CharacterRosterSnapshot {
   }
 }
 
-function assertReadBack(
-  db: BetterSqlite3.Database,
-  expectedRevision: number,
-  expectedEntries: CharacterRosterEntry[],
-  expectedProjection: string,
-  expectedProjectionHash: string,
-  expectedFactHash: string,
-): CharacterRosterSnapshot {
-  const snapshot = readSnapshot(db)
-  const expectedStatus: CharacterRosterStatus = expectedEntries.length > 0 ? 'ready' : 'empty'
-  if (
-    snapshot.revision !== expectedRevision
-    || snapshot.migrationState !== 'ready'
-    || snapshot.status !== expectedStatus
-    || snapshot.projectionHash !== expectedProjectionHash
-    || snapshot.factHash !== expectedFactHash
-    || snapshot.renderedMarkdown !== expectedProjection
-    || JSON.stringify(canonicalEntries(snapshot.entries)) !== JSON.stringify(canonicalEntries(expectedEntries))
-  ) {
-    throw new Error('CHARACTER_ROSTER_READ_BACK_FAILED')
-  }
-  const core = db.prepare(
-    "SELECT characters_arch FROM project_core WHERE id = 'main'",
-  ).get() as { characters_arch?: string } | undefined
-  if (core?.characters_arch !== expectedProjection) {
-    throw new Error('CHARACTER_ROSTER_READ_BACK_FAILED')
-  }
-  return snapshot
-}
-
-/**
- * 结构化角色名单的深 module。
- *
- * 外部 interface 只有 read/commit；校验、投影、幂等、事务与回读验证都留在
- * implementation 内。当前旧角色写入路径仍可兼容，后续 ticket 再统一收口。
- */
 export class CharacterRosterRepository {
   static read(db = requiredDb()): CharacterRosterSnapshot {
     ensureCharacterRosterSchema(db)
     return readSnapshot(db)
-  }
-
-  static commit(candidate: CharacterRosterCommitRequest, assertGenerationSources?: () => void): CharacterRosterCommitReceipt {
-    const db = requiredDb()
-    ensureCharacterRosterSchema(db)
-    if (hasCharacterIdentitySchema(db)) throw new Error('CHARACTER_ID_WRITE_REQUIRED')
-    const request = normalizeRequest(candidate)
-    const requestPayloadHash = payloadHash(request)
-
-    return db.transaction(() => {
-      const existingOperation = db.prepare(`
-        SELECT operation_id, payload_hash, committed_revision, projection_hash
-        FROM character_roster_operations
-        WHERE operation_id = ?
-      `).get(request.operationId) as CharacterRosterOperationRow | undefined
-      if (existingOperation) {
-        if (existingOperation.payload_hash !== requestPayloadHash) {
-          throw new Error('CHARACTER_ROSTER_OPERATION_CONFLICT')
-        }
-        // 幂等 replay 只是“该操作已被观察到”的无写入查询，不能把历史
-        // committed_revision 冒充为当前事实。返回读取时的完整当前快照，保证
-        // receipt.revision 始终与 receipt.snapshot.revision 一致，也不会暗示
-        // 较早 payload 在后续提交后又重新生效。
-        const snapshot = readSnapshot(db)
-        return {
-          operationId: request.operationId,
-          payloadHash: requestPayloadHash,
-          revision: snapshot.revision,
-          idempotent: true,
-          snapshot,
-        }
-      }
-
-      assertGenerationSources?.()
-      const meta = readMeta(db)
-      if (request.expectedRevision !== meta.revision) {
-        throw new Error('CHARACTER_ROSTER_REVISION_STALE')
-      }
-      const existingEntries = CharacterRepository.getAll().map(entryFromCharacter)
-      const currentSnapshot = readSnapshot(db)
-      const intent = request.intent ?? 'initialize'
-      const maySafelyRegenerate = intent === 'architecture_generation'
-      const isLegacyRepair = intent === 'legacy_repair'
-      const isLegacyCardsAdoption = intent === 'legacy_cards_adoption'
-      const isManualEdit = isManualEditIntent(intent)
-      const isIncremental = intent === 'blueprint_sync' || intent === 'chapter_progress'
-      const isNovelImport = intent === 'novel_import'
-      if (currentSnapshot.status === 'legacy_repair_required' && !isLegacyRepair) {
-        throw new Error('CHARACTER_ROSTER_LEGACY_REPAIR_REQUIRED')
-      }
-      if (currentSnapshot.status === 'inconsistent' && !isLegacyCardsAdoption) {
-        if (meta.migration_state === 'legacy_cards_preserved') {
-          throw new Error('CHARACTER_ROSTER_EXISTING_PROTECTED')
-        }
-        throw new Error('CHARACTER_ROSTER_STATE_INCONSISTENT')
-      }
-      if (isLegacyRepair) {
-        if (currentSnapshot.status !== 'legacy_repair_required' || existingEntries.length > 0) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_REPAIR_NOT_NEEDED')
-        }
-        if (request.expectedLegacyMarkdown !== meta.legacy_markdown) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_SOURCE_CHANGED')
-        }
-      } else if (isLegacyCardsAdoption) {
-        if (meta.migration_state !== 'legacy_cards_preserved' || existingEntries.length === 0) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_ADOPTION_UNAVAILABLE')
-        }
-        if (request.expectedLegacyMarkdown !== meta.legacy_markdown) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_SOURCE_CHANGED')
-        }
-        const candidateNames = new Set(request.entries.map(entry => entry.name))
-        const existingNames = new Set(existingEntries.map(entry => entry.name))
-        if (
-          candidateNames.size !== existingNames.size
-          || [...candidateNames].some(name => !existingNames.has(name))
-        ) {
-          throw new Error('CHARACTER_ROSTER_LEGACY_SOURCE_CHANGED')
-        }
-      } else if (
-        !maySafelyRegenerate
-        && !isManualEdit
-        && !isIncremental
-        && !isNovelImport
-        && (meta.migration_state !== 'empty' || existingEntries.length > 0)
-      ) {
-        throw new Error('CHARACTER_ROSTER_EXISTING_PROTECTED')
-      }
-
-      let renameByOriginal = new Map<string, string>()
-      const committedEntries = isLegacyCardsAdoption
-        ? existingEntries
-        : isManualEdit
-          ? (() => {
-              const resolved = resolveManualEntries(request, existingEntries)
-              renameByOriginal = resolved.renameByOriginal
-              return resolved.entries
-            })()
-          : maySafelyRegenerate || isNovelImport
-            ? mergeGeneratedEntriesWithExisting(request.entries, existingEntries)
-            : isIncremental
-                ? mergeIncrementalEntriesWithExisting(
-                  db,
-                  request.entries,
-                  existingEntries,
-                   intent as Extract<CharacterRosterCommitIntent, 'blueprint_sync' | 'chapter_progress'>,
-                   request.source,
-                 )
-              : request.entries
-      const writingLanguage = ProjectCoreRepository.get()?.writingLanguage ?? DEFAULT_WRITING_LANGUAGE
-      const projection = renderCharacterRosterMarkdown(committedEntries, writingLanguage)
-      const projectionHash = hashText(projection)
-      const factHash = fullFactHash(committedEntries)
-      const nextRevision = meta.revision + 1
-
-      // adoption 的唯一职责是以已有结构化卡片重建只读投影。它不能重写
-      // cards 表，否则“采用已有卡片”会变成一次隐式数据迁移。
-      if (isManualEdit) {
-        // 手工保存提交的是完整名单快照。先清空再回填使删除、改名（包括交换）
-        // 与资料变更受同一事务保护；transaction 回滚时不会留下半个名单。
-        db.prepare('DELETE FROM characters').run()
-        for (const entry of committedEntries) {
-          CharacterRepository.upsert(characterFromEntry(entry))
-        }
-        updateBlueprintReferencesForManualEdit(
-          db,
-          renameByOriginal,
-          new Set(committedEntries.map(entry => entry.name)),
-        )
-      } else if (!isLegacyCardsAdoption) {
-        for (const entry of committedEntries) CharacterRepository.upsert(characterFromEntry(entry))
-      }
-      const coreUpdate = db.prepare(`
-        UPDATE project_core
-        SET characters_arch = ?
-        WHERE id = 'main'
-      `).run(projection)
-      if (coreUpdate.changes !== 1) throw new Error('CHARACTER_ROSTER_PROJECT_CORE_MISSING')
-
-      db.prepare(`
-        UPDATE character_roster_meta
-        SET revision = ?, migration_state = 'ready', projection_hash = ?, fact_hash = ?, updated_at = datetime('now')
-        WHERE id = 'main'
-      `).run(nextRevision, projectionHash, factHash)
-      db.prepare(`
-        INSERT INTO character_roster_operations (
-          operation_id, payload_hash, committed_revision, projection_hash
-        ) VALUES (?, ?, ?, ?)
-      `).run(request.operationId, requestPayloadHash, nextRevision, projectionHash)
-
-      const snapshot = assertReadBack(
-        db,
-        nextRevision,
-        committedEntries,
-        projection,
-        projectionHash,
-        factHash,
-      )
-      return {
-        operationId: request.operationId,
-        payloadHash: requestPayloadHash,
-        revision: nextRevision,
-        idempotent: false,
-        snapshot,
-      }
-    }).immediate()
   }
 }
 

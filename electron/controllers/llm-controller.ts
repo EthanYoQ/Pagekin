@@ -13,7 +13,7 @@ import { isReasoningMapping, reasoningAdapterFitsProtocol } from '../../src/shar
 import { isLocalModelEndpoint } from '../../src/shared/provider-presets'
 import { sameModelIdentity, withLearnedContextWindow } from '../../src/shared/model-profile-draft'
 import { assignStageModel, availableGenerationModelId, isModelStage, parseStageModelIds, removeModelFromStages } from '../../src/shared/model-stage-routing'
-import type { RerankFailure } from '../../src/shared/knowledge-ranking'
+import { isRerankFailure, type RerankFailure } from '../../src/shared/knowledge-ranking'
 import { rankPassages } from '../rerank'
 import { LLMFactory } from '../llm/llm-factory'
 import { getMainLocale, mainT, mainText } from '../i18n'
@@ -41,9 +41,9 @@ async function testRerankConnection(model: ModelProfile) {
   const { baseUrl, apiKey, modelName } = model
   const { ranking } = await rankPassages('hello', [{ text: 'hello' }, { text: 'world' }],
     { kind: 'explicit', profileId: model.id, endpoint: { baseUrl, apiKey, modelName } }, 2)
-  return ranking.method === 'rerank'
-    ? { success: true, error: undefined }
-    : { success: false, error: mainText(app.getLocale(), ...RERANK_TEST_FAILURES[ranking.reason as RerankFailure]) }
+  if (ranking.method === 'rerank') return { success: true, error: undefined }
+  if (!isRerankFailure(ranking.reason)) throw new Error(`RERANK_TEST_UNEXPECTED_${ranking.reason}`)
+  return { success: false, error: mainText(app.getLocale(), ...RERANK_TEST_FAILURES[ranking.reason]) }
 }
 
 function loadModelConfigs(): ModelProfile[] {

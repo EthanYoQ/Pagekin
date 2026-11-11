@@ -28,7 +28,6 @@ import { listDocuments, readDocumentCopy } from '../../knowledge-base'
 import { exportPortableProject } from '../project-archive-service'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
 import { registerAsReopenDraft } from '../../../test/helpers/reopened-draft'
-import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const roots: string[] = []
@@ -221,8 +220,8 @@ function owned<A extends unknown[]>(body: (...args: A) => Promise<void>) {
   }
 }
 const it = Object.assign(
-  (name: string, body: () => Promise<void>) => vitestIt(name, owned(body), WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS),
-  { each: <T>(cases: readonly T[]) => (name: string, body: (value: T) => Promise<void>) => vitestIt.each(cases)(name, owned(body), WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS) },
+  (name: string, body: () => Promise<void>) => vitestIt(name, owned(body)),
+  { each: <T>(cases: readonly T[]) => (name: string, body: (value: T) => Promise<void>) => vitestIt.each(cases)(name, owned(body)) },
 )
 afterEach(async () => {
   const bodies = [...runningBodies], caseRoots = roots.splice(0)
@@ -237,7 +236,7 @@ afterEach(async () => {
   const removeRoots = async () => { for (const root of caseRoots) await removeDirectoryWithWindowsRetry(root) }
   if (settled) return removeRoots()
   void Promise.allSettled(bodies).then(removeRoots).catch(() => undefined)
-}, BODY_SETTLE_MS + 10_000)
+})
 
 it.each(['v100', 'v110'] as const)('%s 有旧角色原文但无角色卡时拒绝发布且保留源', async version => {
   const f = fixture(version), before = sourceState(f)

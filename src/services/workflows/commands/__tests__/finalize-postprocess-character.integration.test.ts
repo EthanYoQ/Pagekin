@@ -276,15 +276,6 @@ function installRealRepositoryIpc(): void {
             `).get(Number(args[0])) ?? null
           case 'db:character-roster-read':
             return CharacterRosterRepository.read()
-          case 'db:character-roster-commit':
-            try {
-              return {
-                success: true,
-                receipt: CharacterRosterRepository.commit(args[0] as CharacterRosterCommitRequest),
-              }
-            } catch (error) {
-              return { success: false, error: String(error) }
-            }
           case 'db:post-process-get-latest-run':
             return PostProcessRepository.getLatestRun(String(args[0]), String(args[1]))
           case 'db:post-process-create-run':

@@ -9,6 +9,7 @@ import { _electron as electron } from 'playwright'
 import * as lancedb from '@lancedb/lancedb'
 import * as stage from './redesign/pages/stage.mjs'
 import { resolveMacExecutable, resolveWindowsExecutable } from './product-identity.mjs'
+import { documentEndKey } from './redesign/keys.mjs'
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const arg = name => process.argv.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3)
@@ -747,7 +748,7 @@ async function verify(source) {
       assert(!originalBody.includes(' A11 目标补写'))
       savedBody = `${originalBody} A11 目标补写`
       await editor.click()
-      await session.page.keyboard.press('Control+End')
+      await session.page.keyboard.press(documentEndKey())
       await session.page.keyboard.type(' A11 目标补写')
       assert.equal(await editorBody(editor), savedBody)
       await stage.saveStatus(session.page).filter({ hasText: /^未保存$/ }).waitFor({ state: 'visible' })

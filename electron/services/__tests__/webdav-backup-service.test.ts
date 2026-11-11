@@ -205,7 +205,7 @@ describe('WebDavBackupService', () => {
     expect(Date.now() - start).toBeGreaterThan(15_000)
     expect(sha256(dav.files.get(`/dav/books/${BOOK}/generations/${GEN_A}/archive.ainovel`)!)).toBe(sha256(fs.readFileSync(source.archive)))
     expect(dav.files.has(`/dav/books/${BOOK}/generations/${GEN_A}/completion.json`)).toBe(true)
-  }, 30_000)
+  })
 
   it('reads back and restores an archive whose GET outlasts the metadata deadline', async () => {
     const dav = new DavFixture(); await dav.listen()
@@ -229,7 +229,7 @@ describe('WebDavBackupService', () => {
     const target = path.join(path.dirname(source.archive), 'restored.ainovel')
     await service.downloadGeneration({ account: account(dav), cloudBookId: BOOK, generationId: GEN_A, targetArchivePath: target })
     expect(sha256(fs.readFileSync(target))).toBe(sha256(fs.readFileSync(source.archive)))
-  }, 30_000)
+  })
 
   it.each([false, true])('expires or cancels a stalled archive PUT without publishing completion: cancel=%s', async cancel => {
     const dav = new DavFixture(); await dav.listen()

@@ -436,8 +436,8 @@ function draftEntry({ view, recovery }: RecoverySources['drafts'][number], local
     ...usageOf(view, locale),
     artifacts,
     tails,
-    note: changed ? t('草稿已保存，正文后来已修改。请从草稿箱打开当前正文；原生成文字仍可复制。',
-      'The draft was saved and later edited. Open the current text from Drafts. The original generated text can still be copied.')
+    note: changed ? t(`草稿已保存，之后又改过。在「正文」打开第 ${recovery.chapterNumber} 章看当前稿；原生成文字仍可复制。`,
+      `The draft was saved and later edited. Open Chapter ${recovery.chapterNumber} in Manuscript to see the current text. The original generated text can still be copied.`)
       : t('勾选顺序决定续接顺序；未完成或来源冲突的片段仍可复制。', 'Selection order determines continuation order. Incomplete or conflicted text can still be copied.'),
     actionLabel: changed ? t('已保存，正文已修改', 'Saved, then edited')
       : outlineOnly ? recovery.draftShortOutline?.retry?.kind === 'available'

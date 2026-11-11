@@ -116,7 +116,7 @@ const CHAPTER_1 = '第一章：林岚在北塔顶层找到铜钥匙。'
 const CHAPTER_2 = '第二章：林岚离开北塔，住进南港旅店。'
 const CHAPTER_3 = '第三章：林岚在南港旅店收到师父的来信。'
 
-describe('#491 角色状态来源经过多次备份往返', { timeout: 30_000 }, () => {
+describe('#491 角色状态来源经过多次备份往返', () => {
   it('导出→恢复→再导出→再恢复后，定稿派生字段仍是当前来源，最新章定稿可提交', async () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'f491-'))
     roots.push(base)
@@ -272,7 +272,7 @@ async function deleteFinalizedChapter(project: OpenProject, draftId: number, cha
   expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM finalization_outbox WHERE draft_id=?').pluck().get(draftId)).toBe(0)
 }
 
-describe('#484 写入派生字段的章节已删除后再定稿后面的章节', { timeout: 30_000 }, () => {
+describe('#484 写入派生字段的章节已删除后再定稿后面的章节', () => {
   it('原项目：删掉第 1 章后定稿第 2 章，地点按第 2 章更新', async () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'f484-'))
     roots.push(base)
@@ -479,7 +479,7 @@ describe('#484 删章记录作为来源证明的边界', { timeout: 60_000 }, ()
   })
 })
 
-describe('角色时间线经过便携导出恢复', { timeout: 30_000 }, () => {
+describe('角色时间线经过便携导出恢复', () => {
   it('导出再恢复后，每章的字段、值、来历和原文证据都和导出前一样', async () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'timeline-'))
     roots.push(base)
