@@ -36,7 +36,7 @@ export class BlueprintSuggestionRepository {
     }).immediate()
   }
 
-  /** 接受时这一章必须还是检查时那份蓝图、替换章也还是现在的定稿，否则这条作废；作废和接受都在同一个事务里落定。 */
+  /** 接受时蓝图或替换章已变，这条作废，不写蓝图。 */
   static decide(db: Database.Database, suggestionId: string, decision: SuggestionDecision): { status: SuggestionStatus } {
     return db.transaction(() => {
       const row = db.prepare(`SELECT s.chapter_number AS chapterNumber,s.base_blueprint_hash AS baseHash,s.patch_json AS patch,s.status,
