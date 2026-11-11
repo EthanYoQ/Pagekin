@@ -293,6 +293,23 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(cardsAfter(false)).toEqual(notesFirst)
   })
 
+  it('作者两个方向都写了，重跑把一个方向改回作者设定：角色那步先于要点时，补回后另一方向的旧值不复活，与要点先到时一样', () => {
+    const cardsAfter = (notesFirst: boolean) => {
+      openProject()
+      authorRelation('同门')
+      authorRelation('同门', SHEN, LIN)
+      const draftId = notesFirst ? finalizeNew(8, CHAPTER_EIGHT) : finalizeWithoutNotes(8, CHAPTER_EIGHT)
+      commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP), relationChange('势不两立', BREAK_UP, SHEN, LIN)] })
+      commitModelOutput(draftId, { updates: [], relations: [relationChange('同门', BREAK_UP)] })
+      if (!notesFirst) saveNotes(draftId, '第8章摘要')
+      const cards = pending().map(({ sourceId, targetId, value }) => ({ sourceId, targetId, value }))
+      closeProjectDatabase()
+      return cards
+    }
+    expect(cardsAfter(true)).toEqual([])
+    expect(cardsAfter(false)).toEqual([])
+  })
+
   it('升级前写下的派生节点没有作者关系快照：要点补上时不补待确认项，也不报错', () => {
     openProject()
     authorRelation('师徒')
