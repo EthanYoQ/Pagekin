@@ -95,7 +95,7 @@ describe('chapter lifecycle deletion IPC', () => {
       projectRoot,
       'reference-document',
       targetFileName,
-      ['参考小说应保留关键字'],
+      ['参考小说应保留红帆'],
       undefined,
       undefined,
       { corpusKind: 'reference', replacementMode: 'stable-id' },
@@ -155,7 +155,7 @@ describe('chapter lifecycle deletion IPC', () => {
       expect.objectContaining({ id: 'reference-document', fileName: targetFileName }),
     ])
     await expect(searchKnowledgeFTS('目标章节独有关键字', projectRoot)).resolves.toEqual([])
-    await expect(searchKnowledgeFTS('参考小说应保留关键字', projectRoot)).resolves.toEqual([
+    await expect(searchKnowledgeFTS('参考小说应保留红帆', projectRoot)).resolves.toEqual([
       expect.objectContaining({ fileName: targetFileName }),
     ])
   })
@@ -292,7 +292,7 @@ describe('chapter lifecycle deletion IPC', () => {
       operation: { status: 'completed', attemptCount: 2 },
     })
     await expect(searchKnowledgeFTS('目标章节独有关键字', projectRoot)).resolves.toEqual([])
-    await expect(searchKnowledgeFTS('参考小说应保留关键字', projectRoot)).resolves.not.toEqual([])
+    await expect(searchKnowledgeFTS('参考小说应保留红帆', projectRoot)).resolves.not.toEqual([])
   })
 
   it('persists a failed manuscript cleanup and removes the file on retry', async () => {
@@ -331,7 +331,7 @@ describe('chapter lifecycle deletion IPC', () => {
     })
     expect(fs.existsSync(path.join(projectRoot, targetFileName))).toBe(true)
     await expect(searchKnowledgeFTS('目标章节独有关键字', projectRoot)).resolves.toEqual([])
-    await expect(searchKnowledgeFTS('参考小说应保留关键字', projectRoot)).resolves.not.toEqual([])
+    await expect(searchKnowledgeFTS('参考小说应保留红帆', projectRoot)).resolves.not.toEqual([])
 
     registerChapterLifecycleController(new ChapterDeletionService())
     const retried = await handlers.get('chapter:retry-deletion')!(
@@ -347,7 +347,7 @@ describe('chapter lifecycle deletion IPC', () => {
       operation: { status: 'completed', attemptCount: 2 },
     })
     expect(fs.existsSync(path.join(projectRoot, targetFileName))).toBe(false)
-    await expect(searchKnowledgeFTS('参考小说应保留关键字', projectRoot)).resolves.not.toEqual([])
+    await expect(searchKnowledgeFTS('参考小说应保留红帆', projectRoot)).resolves.not.toEqual([])
   })
 
   it('rejects stale leases and mismatched chapter identities without deleting anything', async () => {
