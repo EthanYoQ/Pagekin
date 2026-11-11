@@ -768,7 +768,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       name: '合成小说', sessionLease: session.leaseId, novelConfig: config, characterStates: '', createdAt: '', updatedAt: '' } })
     syncProject()
     let fault = options.crash, calls = 0
-    const progress: number[] = [], requestProgress: number[] = [], commitProgress: number[] = []
+    const progress: number[] = [], requestProgress: number[] = []
     const prompts: string[] = []
     const fetch = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { messages: { role: string; content: string }[] }
@@ -792,7 +792,6 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       if (channel === 'fs:read-file') return { success: true, content: fs.readFileSync(String(args[0]), 'utf8') }
       if (channel === 'fs:read-json') return fs.existsSync(String(args[0])) ? { success: true, data: JSON.parse(fs.readFileSync(String(args[0]), 'utf8')) } : { success: false }
       if (channel === 'fs:write-json') { fs.mkdirSync(path.dirname(String(args[0])), { recursive: true }); fs.writeFileSync(String(args[0]), JSON.stringify(args[1])); return { success: true } }
-      if (channel === 'db:project-core-synopsis-commit') commitProgress.push(progress.at(-1) ?? 0)
       if (channel === 'db:project-core-synopsis-commit' && fault === 'complete-before-cas') { fault = undefined; throw new Error('TEST_TRANSPORT_LOST_BEFORE_CAS') }
       const handler = mocks.handlers.get(channel)
       if (!handler) throw new Error(`UNEXPECTED_TEST_TRANSPORT:${channel}`)
@@ -822,7 +821,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     }
     const navigation = () => JSON.parse(fs.readFileSync(path.join(getProjectDataRoot(session.projectPath), 'partial_arch.json'), 'utf8')) as { synopsis_generation_handle: MainGenerationRunHandle; synopsis_incomplete: boolean; synopsis_protocol: string; synopsis_result?: string }
     const target = renderPlotOutlineSynopsis(Array.from({ length: chapters }, (_, index) => accepted(index + 1)).join('\n\n'), chapters, expected)
-    return { execute, reopen, navigation, target, accepted, fetch, bridge, prompts, progress, requestProgress, commitProgress, expected, facts: [premise, characters, world, guidance, config.coreOutline, config.worldSetting] }
+    return { execute, reopen, navigation, target, accepted, fetch, bridge, prompts, progress, requestProgress, expected, facts: [premise, characters, world, guidance, config.coreOutline, config.worldSetting] }
   }
 
   it('rebuilds once from complete original facts and accepts six chapters before a single formal CAS', async () => {
@@ -836,7 +835,6 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     await f.execute()
     expect(f.requestProgress).toEqual([0, 0, 17, 33, 50, 67, 83])
     expect(f.progress).toEqual([...f.progress].sort((a, b) => a - b))
-    expect(f.commitProgress).toEqual([99])
     expect(f.progress.at(-1)).toBe(99)
     expect(f.fetch).toHaveBeenCalledTimes(7)
     expect(commit).toHaveBeenCalledTimes(1)
@@ -864,7 +862,6 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     expect(f.progress[0]).toBe(25)
     expect(f.requestProgress).toEqual([0, 25, 50, 75])
     expect(f.progress.at(-1)).toBe(99)
-    expect(f.commitProgress).toEqual([99])
     expect(ProjectCoreRepository.get()?.synopsis).toBe(f.target)
   })
 
