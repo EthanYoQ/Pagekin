@@ -461,10 +461,7 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
 
-/**
- * 只在角色那步提交时还没有这份要点行、待确认项没地方存时调用。只补候选，不写时间线；
- * 已有的待确认项和已决定的不动，作者后改作废的建议才不会带着新快照复活。
- */
+/** 角色那步先于要点提交时，快照还不存在，待确认项补在这里；已有行不能重建，否则作者处理过的建议会复活。 */
 function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity, projectionGeneration: number): void {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_continuity_events'").get()) return
   const row = candidateRowOf(db, source, projectionGeneration)
