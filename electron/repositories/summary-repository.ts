@@ -473,6 +473,27 @@ function mergeRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSo
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
 
+/** 升级前的版本会先于要点写下派生关系，作者行快照只记在节点上。补存要点时据此补建待确认项，结果须与要点先到时一致；没有快照的新节点不碰。 */
+function restoreLegacyRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity): void {
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_continuity_events'").get()) return
+  const snapshots = new Map((db.prepare(`SELECT event_id AS eventId,json_extract(evidence_json,'$.authorLinesAtExtraction') AS lines
+    FROM character_continuity_events WHERE draft_id=? AND json_extract(evidence_json,'$.authorLinesAtExtraction') IS NOT NULL ORDER BY rowid`)
+    .all(source.draftId) as Array<{ eventId: string; lines: string }>).map(row => [row.eventId, JSON.parse(row.lines) as string[]]))
+  const writeOrder = [...snapshots.keys()]
+  const nodes = latestNodesBefore(readCharacterContinuityNodes(db), source.chapterNumber + 1).relations.flatMap(pair => pair.lines)
+    .filter(node => snapshots.has(node.eventId) && node.provenance.kind === 'derived' && node.provenance.source.finalizationId === source.finalizationId && node.quote)
+    .sort((left, right) => writeOrder.indexOf(left.eventId) - writeOrder.indexOf(right.eventId))
+  const lastOfPair = new Map(nodes.map(node => [unorderedPairKey(node.subjectId, node.targetId), node]))
+  const candidates = [...lastOfPair.values()].flatMap((node): FinalizedRelationCandidate[] => {
+    const lines = snapshots.get(node.eventId)!
+    if (!lines.length || lines.some(line => (JSON.parse(line) as string[])[2] === node.value)) return []
+    const ids = { sourceId: node.subjectId, targetId: node.targetId }
+    return [{ candidateKey: relationCandidateKey(source, { ...ids, relation: node.value }), source: structuredClone(source), ...ids,
+      sourceName: node.subjectName, targetName: node.targetName, value: node.value, evidence: node.quote!, authorLinesAtCreation: lines }]
+  })
+  if (nodes.length) mergeRelationCandidates(db, source, nodes.map(node => ({ sourceId: node.subjectId, targetId: node.targetId })), candidates)
+}
+
 function candidateReceipts(db: BetterSqlite3.Database): StoredCharacterStateDecision[] {
   return (db.prepare("SELECT character_state_candidates AS candidates FROM summary_snapshots WHERE character_state_candidates<>'[]'").all() as Array<{ candidates: string }>)
     .flatMap(item => parseCharacterStateCandidateStore(item.candidates).receipts)
@@ -824,6 +845,9 @@ export class SummaryRepository {
       if (input.projectionGeneration !== generation) {
         throw new Error('CONTINUITY_GENERATION_STALE')
       }
+      const hadNotes = !!db.prepare(`SELECT 1 FROM summary_snapshots
+        WHERE draft_id=? AND source_finalization_id=? AND source_content_hash=? AND projection_generation=?`)
+        .get(input.draftId, input.source.finalizationId, input.source.contentHash, input.projectionGeneration)
       const updated = db.prepare(`
         UPDATE summary_snapshots_all
         SET chapter_number = ?, chapter_notes = ?, continuity_facts = ?,
@@ -855,6 +879,7 @@ export class SummaryRepository {
           input.projectionGeneration,
         )
       }
+      if (!hadNotes) restoreLegacyRelationCandidates(db, input.source)
     })()
   }
 
