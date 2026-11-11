@@ -288,16 +288,43 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(pending()).toEqual([])
   })
 
-  it('同一份定稿重跑把关系改回作者设定后要点再存一次：撤下的旧值不复活', () => {
+  it('抽取开始后、提交前作者改了关系：要点补上后旧结论不对着作者新写的关系出现', () => {
     openProject()
     authorRelation('师徒')
-    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+    reviseAuthorRelation('同门')
+    SummaryRepository.commitFinalizedCharacterStates(context, parseFinalizedCharacterStateResponse(JSON.stringify(
+      { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] }), context), db())
+    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
+
+    saveNotes(draftId, '第8章摘要')
+
+    expect(pending()).toEqual([])
+    expect(authorRows()).toEqual(['同门'])
+  })
+
+  it('升级前冻结的在途定稿没有作者关系快照：提交后要点补上时不补待确认项', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    const context = { ...SummaryRepository.readFinalizedCharacterContext(draftId, scope, db()), authorRelations: undefined }
+    SummaryRepository.commitFinalizedCharacterStates(context, parseFinalizedCharacterStateResponse(JSON.stringify(
+      { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] }), context), db())
+    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
+
+    expect(() => saveNotes(draftId, '第8章摘要')).not.toThrow()
+    expect(pending()).toEqual([])
+  })
+
+  it('同一份定稿重跑把关系改回作者设定后要点才补上：撤下的旧值不复活', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
     commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
     commitModelOutput(draftId, { updates: [], relations: [relationChange('师徒', BREAK_UP)] })
     const before = derivedNodes().length
-    const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
-    SummaryRepository.saveFinalizedContinuity({ draftId, chapterNumber: 8, chapterNotes: '第8章摘要又一版', facts: [],
-      source: context.source, projectionGeneration: context.projectionGeneration }, db())
+    saveNotes(draftId, '第8章摘要')
     expect(derivedNodes()).toHaveLength(before)
     expect(pending()).toEqual([])
   })
