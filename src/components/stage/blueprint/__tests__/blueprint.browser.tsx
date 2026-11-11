@@ -1705,6 +1705,30 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
 
+  it('重开后把改过的那章改回检查时的样子：结论照常显示', async () => {
+    const original = stored
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    stored = original
+    latest = read
+    await refreshBlueprints()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('重开后改回那章，但来源仍对不上（模型也变了）：整体不显示', async () => {
+    const original = stored
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    stored = original
+    await refreshBlueprints()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+  })
+
   it('重开时来源对不上且各章都没变（时间线或模型变了）：整体不显示', async () => {
     latest = { ...read, sourceStatus: 'conflict' }
     await renderPage(2)
