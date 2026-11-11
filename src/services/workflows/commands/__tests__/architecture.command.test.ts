@@ -329,6 +329,9 @@ describe('GenerateConfigCommand error boundaries', () => {
       expect(system).toContain(expected)
       expect(system).not.toContain(unexpected)
       expect(user).toContain(authorIdea)
+      const guidanceContract = user.split('\n').find(line => line.startsWith('- globalGuidance ')) ?? ''
+      expect(guidanceContract).toMatch(writingLanguage === 'zh-CN' ? /每条规则独占一行/u : /one rule per line/u)
+      expect(guidanceContract).toMatch(/(?<!\\)\\n(?!\\)/u)
     },
   )
 
