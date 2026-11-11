@@ -94,5 +94,5 @@ $variants = @(Get-AiNovelGateNsisCmdProcessCheckVariants)
         'findstr.exe|  /B /I /C:"\\"AI小说作家.exe\\""',
       ],
     })
-  }, 30_000)
+  })
 })

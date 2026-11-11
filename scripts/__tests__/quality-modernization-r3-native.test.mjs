@@ -416,7 +416,7 @@ test('planning ledger derives the action envelope and rejects spent or shared ro
     assert.equal(events.filter(row => row.type === 'reserve').length, planningPolicy.maxPhysicalRequests)
     assert.ok(events.filter(row => row.type === 'reserve').every(row => row.allocation === 'nonQualificationDiagnostic'))
   } finally { fs.rmSync(directory, { recursive: true, force: true }) }
-}, 30000)
+})
 
 test('saved Pro registration preserves the source cases and verifies the complete model and wire', () => {
   const previous = protocol.historicalSavedNativeRegistration94e9b048

@@ -19,7 +19,7 @@ let root = ''
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-import-superseded-'))
   initProjectDatabase(root)
-}, 20_000)
+})
 
 afterEach(() => {
   closeProjectDatabase()

@@ -57,7 +57,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
   fs.rmSync(root, { recursive: true, force: true })
   nativeStage('teardown-removed')
-}, 10_000)
+})
 function fingerprint(directory: string): string {
   const parts: string[] = []
   const walk = (dir: string) => { for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a,b) => a.name.localeCompare(b.name))) {

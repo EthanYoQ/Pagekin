@@ -105,7 +105,7 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-author-inference-'))
   initProjectDatabase(root)
   if (!ProjectCoreRepository.get()) ProjectCoreRepository.init('作者项目')
-}, 20_000)
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
