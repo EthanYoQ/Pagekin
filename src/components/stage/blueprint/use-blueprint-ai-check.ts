@@ -35,6 +35,8 @@ export interface AiFinding {
 
 interface Exempted { session: ProjectSessionContext; finding: AiFinding; scope: ExemptionScope }
 
+const reportContent = (report: ContinuityReport) => JSON.stringify([report.result, [...report.chapters.values()], [...report.nodes.values()]])
+
 function sessionFor(projectKey: string) {
   const session = captureProjectSession(useProjectStore.getState().currentProject)
   return session && isProjectSessionPath(session, projectKey) ? session : null
@@ -73,7 +75,8 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     const request = ++recovery.current
     void readLatestContinuityReport(session)
       .then(latest => {
-        if (applies() && request === recovery.current && !checked.current) setReport(shown => shown && rejected.current ? shown : latest)
+        if (applies() && request === recovery.current && !checked.current)
+          setReport(shown => shown && rejected.current && reportContent(shown) !== (latest && reportContent(latest)) ? shown : latest)
       }).catch(() => {})
   }, [])
 
