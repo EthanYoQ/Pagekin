@@ -8,7 +8,7 @@ import {
   InferBlueprintsPerChapterCommand as RuntimeInferBlueprintsPerChapterCommand,
   InferGlobalSettingsCommand as RuntimeInferGlobalSettingsCommand,
 } from '../import-novel.command'
-import { fakeModelExecutionLeaseId, useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
+import { fakeLeaseModelId, useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
 import { importGenerationStopMessage } from '../../../../i18n/app-errors'
 import { contextLengthRejectingDependencies } from './context-length-runtime.fixture'
 import { isWorkflowCancellation } from '../../workflow-cancellation'
@@ -685,8 +685,9 @@ describe('InferGlobalSettingsCommand', () => {
     }
 
     expect(generateStream).toHaveBeenCalledTimes(2)
-    expect(generateStream.mock.calls.map(call => call[3]?.modelExecutionLeaseId))
-      .toEqual([fakeModelExecutionLeaseId('model-a'), fakeModelExecutionLeaseId('model-a')])
+    const leaseIds = generateStream.mock.calls.map(call => call[3]?.modelExecutionLeaseId)
+    expect(fakeLeaseModelId(leaseIds[0])).toBe('model-a')
+    expect(leaseIds).toEqual([leaseIds[0], leaseIds[0]])
     expect(invoke.mock.calls.filter(([channel]) => channel === 'db:import-global-facts-commit')).toHaveLength(1)
     expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('project:save')
     expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('db:project-core-update')

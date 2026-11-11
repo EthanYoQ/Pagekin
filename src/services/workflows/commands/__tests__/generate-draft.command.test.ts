@@ -25,7 +25,7 @@ import type {
   GenerationOutcome,
   GenerationTask,
 } from '../../../generation/generation-harness'
-import { fakeRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { fakeLeaseModelId, fakeRuntimeDependencies } from './workflow-generation-runtime.fixture'
 import { EN_US_BUILTIN_PROMPTS } from '../../../prompt-language'
 import { BUILTIN_PROMPTS, clearProjectCustomPrompts } from '../../../prompt-templates'
 import { composeDraftVisibleContinuation, DRAFT_VISIBLE_TEXT_VERSION } from '../../../../shared/draft-visible-text'
@@ -1836,11 +1836,9 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     await expect(command.execute({ step: {}, context, callbacks })).resolves.toContain('续')
 
     expect(completeWithLease).toHaveBeenCalledTimes(3)
-    expect(completeWithLease.mock.calls.map(([request]) => request.modelExecutionLeaseId)).toEqual([
-      'test-workflow-lease-model-a',
-      'test-workflow-lease-model-a',
-      'test-workflow-lease-model-a',
-    ])
+    const leaseIds = completeWithLease.mock.calls.map(([request]) => request.modelExecutionLeaseId)
+    expect(fakeLeaseModelId(leaseIds[0])).toBe('model-a')
+    expect(leaseIds).toEqual([leaseIds[0], leaseIds[0], leaseIds[0]])
     expect(completeWithLease.mock.calls.map(([request]) => request.plan.maxOutputTokens)).toEqual([
       8192,
       8192,

@@ -45,8 +45,10 @@ const DEFAULT_CAPABILITY_EVIDENCE: ModelExecutionLeaseReceipt['capabilityEvidenc
   usage: null,
 }
 
-export function fakeModelExecutionLeaseId(modelId: string): string {
-  return `test-workflow-lease-${modelId}`
+const fakeLeaseModelIds = new Map<string, string>()
+
+export function fakeLeaseModelId(leaseId: string | null | undefined): string | undefined {
+  return leaseId ? fakeLeaseModelIds.get(leaseId) : undefined
 }
 
 export function fakeRuntimeDependencies(
@@ -56,6 +58,8 @@ export function fakeRuntimeDependencies(
   return {
     async createRuntime(options): Promise<GenerationRuntime> {
       const frozenModelId = options.modelId ?? useLLMStore.getState().defaultModelId ?? 'test-model'
+      const leaseId = `test-workflow-lease-${fakeLeaseModelIds.size + 1}`
+      fakeLeaseModelIds.set(leaseId, frozenModelId)
       const harness = createGenerationHarness({
         modelSource: {
           snapshotDefaultModel: () => ({
@@ -68,7 +72,7 @@ export function fakeRuntimeDependencies(
               baseUrl: '',
               maxTokens: capabilityEvidence.maxOutputTokens,
             },
-            modelExecutionLeaseId: fakeModelExecutionLeaseId(frozenModelId),
+            modelExecutionLeaseId: leaseId,
             endpointFingerprint: 'b'.repeat(64),
             resolvedCapabilities: { ...capabilityEvidence, source: { ...capabilityEvidence.source } },
           }),

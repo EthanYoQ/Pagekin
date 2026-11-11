@@ -10,7 +10,7 @@ import {
   type WorkflowGenerationIntent,
   type WorkflowGenerationRuntimeDependencies,
 } from '../base-command'
-import { fakeRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { fakeLeaseModelId, fakeRuntimeDependencies } from './workflow-generation-runtime.fixture'
 import { useLLMStore } from '../../../../stores/llm-store'
 
 type ProbeStep =
@@ -223,8 +223,9 @@ describe('BaseWorkflowCommand completion boundary', () => {
     })).resolves.toBe('{"blueprints":[]}')
 
     expect(complete).toHaveBeenCalledTimes(2)
-    expect(complete.mock.calls.map(([request]) => request.modelExecutionLeaseId))
-      .toEqual(['test-workflow-lease-model-a', 'test-workflow-lease-model-a'])
+    const leaseIds = complete.mock.calls.map(([request]) => request.modelExecutionLeaseId)
+    expect(fakeLeaseModelId(leaseIds[0])).toBe('model-a')
+    expect(leaseIds).toEqual([leaseIds[0], leaseIds[0]])
     useLLMStore.setState({ defaultModelId: null })
   })
 
