@@ -36,7 +36,7 @@ import { latestNodesBefore, type ContinuityNode } from '../../src/shared/charact
 import { parseFinalizedCharacterStateResponse } from '../../src/shared/finalized-continuity'
 import { hasCharacterIdentitySchema } from './character-repository'
 import { commitCharacterIdentities, refreshCharacterIdentityProjection, refreshCharacterStateProjection } from './character-roster-repository'
-import { appendDerivedRelationNode, CHARACTER_STATE_COLUMNS, deleteCharacterRelationship, derivedRelationSeries, readCharacterContinuityNodes, readContinuityNodesWithCurrentNames, readDerivedRelationAuthorSnapshot, writeCharacterStateField } from './character-continuity-repository'
+import { appendDerivedRelationNode, CHARACTER_STATE_COLUMNS, deleteCharacterRelationship, derivedRelationSeries, readCharacterContinuityNodes, readContinuityNodesWithCurrentNames, writeCharacterStateField } from './character-continuity-repository'
 import type { ProjectEpoch } from '../../src/shared/source-ref'
 import { RECEIPTED_DRAFT_STATUS_SQL } from '../../src/shared/draft-status'
 
@@ -434,13 +434,7 @@ function relationCandidateKey(source: FinalizedSourceIdentity, change: Pick<Fina
   return `fcs-relation:${sha256(JSON.stringify([source.draftId, source.finalizationId, source.contentHash, unorderedPairKey(change.sourceId, change.targetId), sha256(change.relation)]))}`
 }
 
-function candidateRowOf(db: BetterSqlite3.Database, source: FinalizedSourceIdentity, projectionGeneration: number) {
-  return db.prepare(`SELECT id,character_state_candidates AS candidates FROM summary_snapshots
-    WHERE draft_id=? AND source_finalization_id=? AND source_content_hash=? AND projection_generation=?`)
-    .get(source.draftId, source.finalizationId, source.contentHash, projectionGeneration) as { id: number; candidates: string } | undefined
-}
-
-/** 同一份定稿重跑时节点已在，这里仍要补上待确认项：上一次可能因为要点那步失败而没地方存。 */
+/** 同一份定稿重跑时节点已在，待确认项仍要重新列入：合并时会先清掉这次涉及的角色对。 */
 function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCharacterContext, changes: readonly FinalizedRelationChange[]): void {
   const { source } = context
   const name = (id: string) => context.characters.find(character => character.characterId === id)!.displayNameSnapshot
@@ -459,7 +453,7 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
     if (matchesAuthor && (!previous || unchanged)) continue
     if (unchanged && !(previous.provenance.kind === 'derived' && previous.provenance.source.finalizationId === source.finalizationId)) continue
     const names = { sourceName: name(change.sourceId), targetName: name(change.targetId) }
-    if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence, authorLinesAtExtraction, authorRevisionAtExtraction })
+    if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence })
     if (authorLinesAtExtraction?.length && !matchesAuthor) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
       ...names, value: change.relation, evidence: change.evidence, authorLinesAtCreation: authorLinesAtExtraction,
       ...(authorRevisionAtExtraction === undefined ? {} : { authorRevisionAtCreation: authorRevisionAtExtraction }) })
@@ -469,7 +463,7 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
 
 function mergeRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity,
   touched: ReadonlyArray<Pick<FinalizedRelationCandidate, 'sourceId' | 'targetId'>>, candidates: readonly FinalizedRelationCandidate[]): void {
-  const row = currentCharacterStateCandidateRow(db, source.draftId)
+  const row = candidates.length ? requireNotesRow(db, source.draftId) : currentCharacterStateCandidateRow(db, source.draftId)
   if (!row) return
   const store = parseCharacterStateCandidateStore(row.candidates)
   const decided = new Set(store.receipts.map(receipt => receipt.candidateKey))
@@ -481,26 +475,6 @@ function mergeRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSo
   if (isDeepStrictEqual([...byPair.values()], store.relationPending)) return
   store.relationPending = [...byPair.values()]
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
-}
-
-/** 角色那步先于要点提交时，待确认项还没有快照，在此补建；按写入顺序合并，结果须与要点先到时一致。 */
-function restoreDerivedRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity): void {
-  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_continuity_events'").get()) return
-  const writeOrder = new Map((db.prepare('SELECT event_id FROM character_continuity_events WHERE draft_id=? ORDER BY rowid').pluck().all(source.draftId) as string[])
-    .map((eventId, index) => [eventId, index]))
-  const nodes = latestNodesBefore(readCharacterContinuityNodes(db), source.chapterNumber + 1).relations.flatMap(pair => pair.lines)
-    .filter(node => node.provenance.kind === 'derived' && node.provenance.source.finalizationId === source.finalizationId && node.quote)
-    .sort((left, right) => writeOrder.get(left.eventId)! - writeOrder.get(right.eventId)!)
-  const lastOfPair = new Map(nodes.map(node => [unorderedPairKey(node.subjectId, node.targetId), node]))
-  const candidates = [...lastOfPair.values()].flatMap((node): FinalizedRelationCandidate[] => {
-    const author = readDerivedRelationAuthorSnapshot(db, node.eventId)
-    if (!author?.lines.length || author.lines.some(line => (JSON.parse(line) as string[])[2] === node.value)) return []
-    const ids = { sourceId: node.subjectId, targetId: node.targetId }
-    return [{ candidateKey: relationCandidateKey(source, { ...ids, relation: node.value }), source: structuredClone(source), ...ids,
-      sourceName: node.subjectName, targetName: node.targetName, value: node.value, evidence: node.quote!, authorLinesAtCreation: author.lines,
-      ...(author.revision === undefined ? {} : { authorRevisionAtCreation: author.revision }) }]
-  })
-  mergeRelationCandidates(db, source, nodes.map(node => ({ sourceId: node.subjectId, targetId: node.targetId })), candidates)
 }
 
 function candidateReceipts(db: BetterSqlite3.Database): StoredCharacterStateDecision[] {
@@ -857,7 +831,6 @@ export class SummaryRepository {
       if (input.projectionGeneration !== generation) {
         throw new Error('CONTINUITY_GENERATION_STALE')
       }
-      const hadCandidateRow = !!candidateRowOf(db, input.source, input.projectionGeneration)
       const updated = db.prepare(`
         UPDATE summary_snapshots_all
         SET chapter_number = ?, chapter_notes = ?, continuity_facts = ?,
@@ -889,7 +862,6 @@ export class SummaryRepository {
           input.projectionGeneration,
         )
       }
-      if (!hadCandidateRow) restoreDerivedRelationCandidates(db, input.source)
     })()
   }
 
