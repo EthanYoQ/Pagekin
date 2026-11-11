@@ -957,8 +957,8 @@ describe('定稿后处理的提示词', () => {
     authorRelation('师徒')
     const draftId = finalizeNew(8, CHAPTER_EIGHT)
     const { context } = prompt(draftId, 'zh-CN')
-    const { authorRelations: _dropped, authorRelationsRevision: _droppedRevision, ...oldIdentity } = context.identity as FinalizedCharacterContext
-    void _dropped; void _droppedRevision
+    const { authorRelations: _dropped, ...oldIdentity } = context.identity as FinalizedCharacterContext
+    void _dropped
 
     const { context: rebuilt, task } = prompt(draftId, 'zh-CN', { ...context, identity: oldIdentity })
     expect(rebuilt.identity).toEqual(oldIdentity)
@@ -1273,6 +1273,20 @@ describe('较早章建议被采纳后，较晚章的建议是否还有效', () =
     expect(authorRows()).toEqual(['反目'])
   })
 
+  it('采纳第 5 章的建议后关系又变了、却没有留下写入记录：采纳后的作者行接不上现在的，第 8 章的建议作废', () => {
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    decide('accept')
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+
+    db().prepare("UPDATE character_relationships SET relation='宿敌'").run()
+
+    expect(cards()).toEqual([])
+  })
+
   it('较早章的采纳把关系改回过以前的值，第 8 章的建议照样认得出', () => {
     const SEVEN_QUOTE = '林岚与沈砚在渡口再度反目。'
     openProject()
@@ -1338,26 +1352,6 @@ describe('较早章建议被采纳后，较晚章的建议是否还有效', () =
     expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
 
     reviseAuthorRelation('反目')
-    expect(cards()).toEqual([])
-  })
-
-  it('升级前的候选不知道抽取时的修订号，分不出采纳先后，较早章的采纳都算', () => {
-    openProject()
-    authorRelation('师徒')
-    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
-    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
-    decide('accept')
-    reviseAuthorRelation('师徒')
-    const eight = finalizeNew(8, CHAPTER_EIGHT)
-    commitModelOutput(eight, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
-    const row = db().prepare('SELECT id,character_state_candidates AS candidates FROM summary_snapshots WHERE draft_id=?').get(eight) as { id: number; candidates: string }
-    const store = JSON.parse(row.candidates) as { relationPending: Array<Record<string, unknown>> }
-    for (const candidate of store.relationPending) delete candidate.authorRevisionAtCreation
-    db().prepare('UPDATE summary_snapshots_all SET character_state_candidates=? WHERE id=?').run(JSON.stringify(store), row.id)
-
-    reviseAuthorRelation('反目')
-    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
-    reviseAuthorRelation('宿敌')
     expect(cards()).toEqual([])
   })
 })

@@ -448,15 +448,13 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
     const unchanged = previous?.value === change.relation
     const authorAtExtraction = context.authorRelations?.filter(line => unorderedPairKey(line.sourceId, line.targetId) === unorderedPairKey(change.sourceId, change.targetId))
     const authorLinesAtExtraction = authorAtExtraction?.map(line => JSON.stringify([line.sourceId, line.targetId, line.relation])).sort()
-    const authorRevisionAtExtraction = authorLinesAtExtraction ? context.authorRelationsRevision : undefined
     const matchesAuthor = !!authorAtExtraction?.some(line => line.relation === change.relation)
     if (matchesAuthor && (!previous || unchanged)) continue
     if (unchanged && !(previous.provenance.kind === 'derived' && previous.provenance.source.finalizationId === source.finalizationId)) continue
     const names = { sourceName: name(change.sourceId), targetName: name(change.targetId) }
     if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence })
     if (authorLinesAtExtraction?.length && !matchesAuthor) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
-      ...names, value: change.relation, evidence: change.evidence, authorLinesAtCreation: authorLinesAtExtraction,
-      ...(authorRevisionAtExtraction === undefined ? {} : { authorRevisionAtCreation: authorRevisionAtExtraction }) })
+      ...names, value: change.relation, evidence: change.evidence, authorLinesAtCreation: authorLinesAtExtraction })
   }
   if (changes.length) mergeRelationCandidates(db, source, changes, candidates)
 }
@@ -503,22 +501,26 @@ function pendingRelationCandidate(db: BetterSqlite3.Database, candidate: Finaliz
 }
 
 /**
- * 作者行与建议快照不同时，只有差异全由「抽取之后、较早章建议的采纳」造成才不算作者后改：沿这些采纳收据从现在倒推，能回到快照才算。
- * 升级前的候选没有快照修订号，分不出采纳先后，较早章的采纳一律计入。
+ * 作者行与建议快照不同时，沿这对角色的作者关系写入记录从最后一次往回走：每一次都得是较早章建议的采纳，且采纳后的作者行接得上，
+ * 走回快照才算采纳造成的变化。途中遇到作者手改或别的写入，建议作废。
  */
 function authorLinesExplained(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate, current: string[]): boolean {
-  const snapshot = candidate.authorLinesAtCreation!, floor = candidate.authorRevisionAtCreation
-  if (isDeepStrictEqual(current, snapshot)) return true
-  const approvalRevision = db.prepare("SELECT json_extract(receipt_json,'$.revision') FROM character_identity_approvals WHERE operation_id=?").pluck()
-  const adoptions = candidateReceipts(db).filter(receipt => receipt.authorLinesAfter && receipt.source.chapterNumber < candidate.source.chapterNumber
-    && (floor === undefined || (approvalRevision.get(receipt.operationId) as number | undefined ?? -1) > floor))
-  const reached = [current]
-  const has = (lines: readonly string[]) => reached.some(item => isDeepStrictEqual(item, lines))
-  for (let grew = true; grew;) {
-    grew = false
-    for (const receipt of adoptions) if (has(receipt.authorLinesAfter!) && !has(receipt.authorLinesBefore!)) { reached.push(receipt.authorLinesBefore!); grew = true }
+  const snapshot = candidate.authorLinesAtCreation!
+  const adoptions = new Map(candidateReceipts(db).filter(receipt => receipt.authorLinesAfter && receipt.source.chapterNumber < candidate.source.chapterNumber)
+    .map(receipt => [receipt.operationId, receipt]))
+  const writers = db.prepare(`SELECT json_extract(provenance_json,'$.operationId') FROM character_continuity_events
+    WHERE aspect='relation' AND json_extract(provenance_json,'$.kind')<>'derived' AND subject_id IN (@source,@target) AND target_id IN (@source,@target)
+    ORDER BY rowid DESC`).pluck().all({ source: candidate.sourceId, target: candidate.targetId }) as Array<string | null>
+  let lines = current, last: string | null | undefined
+  for (const writer of writers) {
+    if (isDeepStrictEqual(lines, snapshot)) return true
+    if (writer === last) continue
+    const adoption = adoptions.get(writer ?? '')
+    if (!adoption || !isDeepStrictEqual(adoption.authorLinesAfter, lines)) return false
+    lines = adoption.authorLinesBefore!
+    last = writer
   }
-  return has(snapshot)
+  return isDeepStrictEqual(lines, snapshot)
 }
 
 function adoptRelationCandidate(db: BetterSqlite3.Database, candidate: FinalizedRelationCandidate, operationId: string, scope: ProjectEpoch): Pick<StoredCharacterStateDecision, 'authorLinesBefore' | 'authorLinesAfter'> {
@@ -582,12 +584,10 @@ export class SummaryRepository {
       const authorRelations = frozen ? (db.prepare(`SELECT r.source_character_id AS sourceId,r.target_character_id AS targetId,c.name AS targetName,r.relation
         FROM character_relationships r JOIN characters c ON c.character_id=r.target_character_id WHERE c.retired=0 ORDER BY r.relationship_id`).all() as FinalizedAuthorRelation[])
         .filter(relation => known.has(relation.sourceId) && known.has(relation.targetId)) : []
-      const authorRelationsRevision = frozen ? db.prepare("SELECT revision FROM character_identity_meta WHERE id='main'").pluck().get() as number : undefined
       return { projectId: scope.projectId, epoch: scope.epoch, source: source.source, content: source.content, projectionGeneration: source.projectionGeneration,
         identityRevision: frozen?.identityRevision ?? 0, identityStatus: frozen ? 'bound' as const : 'legacy' as const,
         sourceOrder: { continuityEpoch: `${scope.projectId}:${source.projectionGeneration}`, chapterNumber: source.source.chapterNumber,
-          authoritativeFinalizationRevision: latest.version }, characters, authorRelations,
-        ...(authorRelationsRevision === undefined ? {} : { authorRelationsRevision }) }
+          authoritativeFinalizationRevision: latest.version }, characters, authorRelations }
     })()
   }
 
