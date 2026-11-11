@@ -27,7 +27,6 @@ function assertLegacyRepairSessionCurrent(projectSession: CommandExecuteParams['
 
 export interface LegacyCharacterRosterRepairInput {
   expectedProjectPath: string
-  genre: string
   recoveryHandle?: MainGenerationRunHandle
   restart?: boolean
   expectedMode?: 'existing' | 'model'

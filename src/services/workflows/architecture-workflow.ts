@@ -392,14 +392,9 @@ export async function migrateLegacyCharacterRoster(projectPath: string, options:
       ),
       executor: async (_step, context, callbacks) => {
         const { RepairLegacyCharacterRosterCommand } = await import('./commands/legacy-character-roster-repair.command')
-        const currentProject = useProjectStore.getState().currentProject
-        const genre = sameProjectSessionContext(
-          requireWorkflowProjectSession(context),
-          projectSessionContextFromProject(currentProject),
-        ) ? currentProject?.novelConfig.genre ?? '' : ''
         return new RepairLegacyCharacterRosterCommand({
           expectedProjectPath: projectPath,
-          genre, ...options, expectedMode: requiresAdoption ? 'model' : 'existing',
+          ...options, expectedMode: requiresAdoption ? 'model' : 'existing',
         }).execute({ step: _step, context, callbacks })
       },
     }, ...(requiresAdoption ? [{
