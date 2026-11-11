@@ -292,7 +292,7 @@ describe('ImportRunOrchestrator', () => {
     expect(getRun().stage).toBe('refresh')
   })
 
-  it('holds resumed completion at the last saved chapter while the next one runs and clears its activity once the stage ends', async () => {
+  it('holds resumed completion at the last saved chapter while the next one runs', async () => {
     const numbers = Array.from({ length: 9 }, (_, index) => index + 1)
     const { deps } = harness(9, {
       purpose: 'author-manuscript', stage: 'author-postprocess',
@@ -306,18 +306,14 @@ describe('ImportRunOrchestrator', () => {
     let finishProjection!: () => void
     const projection = new Promise<void>(resolve => { finishProjection = resolve })
     const progress: number[] = []
-    const observer = { ...callbacks, setProgress: (value: number) => { progress.push(value) }, setActivityText: vi.fn() }
-    deps.postprocessAuthorChapter = vi.fn(async chapter => {
-      observer.setActivityText(`Chapter ${chapter.number}`)
-      if (chapter.number === 8) await projection
-    })
+    const observer = { ...callbacks, setProgress: (value: number) => { progress.push(value) } }
+    deps.postprocessAuthorChapter = vi.fn(async chapter => { if (chapter.number === 8) await projection })
     const executing = new ImportRunOrchestrator(deps).executeStage('run-1', 'author-postprocess', 'test-runner', { cancelled: false }, observer)
     await vi.waitFor(() => expect(deps.postprocessAuthorChapter).toHaveBeenCalledTimes(1))
     expect(Math.max(...progress)).toBe(78)
     finishProjection()
     await executing
     expect(progress.at(-1)).toBe(99)
-    expect(observer.setActivityText.mock.calls.at(-1)).toEqual([undefined])
   })
 
   it('keeps renewing its lease while one knowledge effect runs longer than the original TTL', async () => {

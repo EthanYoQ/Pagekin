@@ -39,12 +39,12 @@ interface ImportNovelDialogProps {
 
 const kTokens = (tokens: number) => `${(tokens / 1_000).toFixed(0)}K`
 
-/** 小说拆解与仿写向导对话框 */
 const ESTIMATE_BOX_STYLE = {
   backgroundColor: 'color-mix(in srgb, var(--color-info) 6%, transparent)',
   border: '1px solid color-mix(in srgb, var(--color-info) 15%, transparent)',
 }
 
+/** 小说拆解与仿写向导对话框 */
 export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogProps) {
   const createProject = useProjectStore((s) => s.createProject)
   const currentProject = useProjectStore((s) => s.currentProject)

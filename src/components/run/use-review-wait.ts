@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import type { Locale } from '../../i18n/types'
 import type { WorkflowStep } from '../../stores/workflow-store'
 
+export interface WaitLine { key: string; text: string; ticking?: boolean }
+
 /**
  * 审稿等模型整份回复时没有逐字输出，只能报最近一次响应与有效输出在多久之前。
  * 主进程给的是收到快照时的耗时，这里每秒在它上面累加本地流逝的时间。
  */
-export interface WaitLine { key: string; text: string; ticking?: boolean }
-
 export function useReviewWaitLines(step: WorkflowStep, locale: Locale): WaitLine[] {
   const diagnostics = step.generationActivity?.diagnostics
   const [clock, setClock] = useState({ source: diagnostics, elapsed: diagnostics?.elapsedMs ?? 0 })

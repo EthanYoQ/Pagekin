@@ -693,7 +693,6 @@ export class ImportRunOrchestrator {
       after = page.at(-1)!.number
       page = await this.dependencies.listChapters(run.id, after, IMPORT_CHAPTER_PAGE_SIZE)
     }
-    callbacks.setActivityText?.(undefined)
     execution.current = await this.dependencies.renewExecution(run.id, execution.current)
     stopIfCancelled(context, run.locale)
     await this.dependencies.advanceStage(run.id, stage, nextStage(run, stage), execution.current)

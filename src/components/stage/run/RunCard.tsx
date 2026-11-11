@@ -235,7 +235,6 @@ function ReviewWait({ step, runStatus, text }: { step: WorkflowStep; runStatus: 
   return <StepWait step={step} runStatus={runStatus} text={text} more={useReviewWaitLines(step, locale)} />
 }
 
-/** 计时行每秒都变，不放进播报区域，读屏器只在当前子步骤这类内容换了时才读。 */
 function StepWait({ step, runStatus, text, more = [] }: { step: WorkflowStep; runStatus: WorkflowRun['status']; text: Text; more?: WaitLine[] }) {
   const wait = stepWait(step, runStatus, useNow())
   const lines: WaitLine[] = [
