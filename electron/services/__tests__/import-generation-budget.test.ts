@@ -68,4 +68,4 @@ it('请求进行中活动时长用完时，导入回执把 ROOT_BUDGET_EXHAUSTED
   const receipt = await f.owner.executeImportGeneration({ execution, handle, ordinal: 0, task: { purpose: 'import-global', output: 'structured-data', messages: [{ role: 'user', content: '推演参考小说' }] } })
   expect(f.db.prepare('SELECT blocked_code FROM generation_roots WHERE root_action_id=?').pluck().get(handle.rootActionId)).toBe('ROOT_BUDGET_EXHAUSTED')
   expect(receipt.outcome).toMatchObject({ status: 'incomplete', finishReason: 'error', receipt: { failureCode: 'ROOT_BUDGET_EXHAUSTED' } })
-}, 30_000)
+})
