@@ -921,6 +921,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     const before = await invoke('generation:read', handle)
     expect(before.plotOutline!.cursor.kind).toBe(crash === 'normal-saved' ? 'accept' : crash === 'composition-saved' ? 'request' : 'complete')
     expect(ProjectCoreRepository.get()?.synopsis).toBe(crash === 'cas-reply-lost' ? f.target : '旧正式大纲')
+    if (crash === 'complete-before-cas' || crash === 'cas-reply-lost') expect([...new Set(f.progress)]).toEqual([0, 33, 67, 99])
     const attempts = getProjectDb()!.prepare('SELECT * FROM generation_attempts ORDER BY rowid').all()
     const binding = getProjectDb()!.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(handle.runId)
     f.reopen()
