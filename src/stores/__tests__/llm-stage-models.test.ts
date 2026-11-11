@@ -29,6 +29,7 @@ describe('stage model assignments in the model store', () => {
       'llm:list-models': models,
       'llm:get-default-model': 'writer',
       'llm:get-default-embedding-model': null,
+      'llm:get-default-rerank-model': null,
       'llm:get-stage-models': { review: 'reviewer' },
     })[channel])
 

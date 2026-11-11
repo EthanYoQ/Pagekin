@@ -1,6 +1,6 @@
 import type { MainGenerationRunHandle } from '../services/generation/generation-runtime'
 import type { FinalizedCharacterContext, FinalizedCharacterStateCommitReceipt, FinalizedCharacterStateDecisionReceipt,
-  FinalizedCharacterStateDecisionRequest, FinalizedCharacterStateOccurrence, PendingFinalizedCharacterStateCandidate,
+  FinalizedCharacterStateDecisionRequest, FinalizedCharacterStateOccurrence, FinalizedRelationDecisionRequest, PendingFinalizedCharacterStateCandidate, PendingFinalizedRelationCandidate,
   PendingFinalizedCharacterStateCandidateSummary } from './finalized-continuity'
 
 export interface FinalizedCharacterArtifact {
@@ -23,4 +23,6 @@ export interface FinalizedCharacterGenerationChannels {
   'finalized-character:list-state-candidates': { args: []; return: PendingFinalizedCharacterStateCandidateSummary[] }
   'finalized-character:read-state-candidate': { args: [{ draftId: number; candidateKey: string }]; return: PendingFinalizedCharacterStateCandidate }
   'finalized-character:decide-state-candidate': { args: [FinalizedCharacterStateDecisionRequest]; return: FinalizedCharacterStateDecisionReceipt }
+  'finalized-character:list-relation-candidates': { args: []; return: PendingFinalizedRelationCandidate[] }
+  'finalized-character:decide-relation-candidate': { args: [FinalizedRelationDecisionRequest]; return: FinalizedCharacterStateDecisionReceipt }
 }

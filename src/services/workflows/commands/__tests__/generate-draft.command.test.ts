@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 
+import type { ChapterInfo } from '../../chapter-workflow'
 import { useProjectStore } from '../../../../stores/project-store'
 import { useLLMStore } from '../../../../stores/llm-store'
 import { useEditorStore } from '../../../../stores/editor-store'
@@ -11,6 +12,7 @@ import type {
   ModelExecutionLeaseReceipt,
 } from '../../../../shared/ipc-channels'
 import type { NarrativeThreadView } from '../../../../shared/narrative-thread'
+import type { ContinuityNode } from '../../../../shared/character-continuity'
 import {
   createGenerationRuntime,
   type GenerationRuntime,
@@ -40,7 +42,7 @@ import {
   type GenerateDraftCommandDependencies,
 } from '../generate-draft.command'
 import { assembleChapterMaterials } from '../../chapter-materials'
-import { MATERIAL_DECISION_MAX_INPUT_UNITS } from '../../../../shared/generation-owner-contract'
+import { MATERIAL_DECISION_MAX_INPUT_UNITS, materialBudgetFrom, type BeginGenerationRequest, type MaterialBudget } from '../../../../shared/generation-owner-contract'
 import { WorkflowCancelledError } from '../../workflow-cancellation'
 
 // 默认原样透传真实装配；只有个别测试用 mockImplementationOnce 改写一次返回值，
@@ -49,6 +51,8 @@ vi.mock('../../chapter-materials', async importOriginal => {
   const actual = await importOriginal<typeof import('../../chapter-materials')>()
   return { ...actual, assembleChapterMaterials: vi.fn(actual.assembleChapterMaterials) }
 })
+
+const PREPARED_MATERIAL_BUDGET = materialBudgetFrom({ contextWindowTokens: 32_768, contextWindowSource: 'default', reservedOutputTokens: 4_096, safetyMarginTokens: 512 })
 
 describe('generate draft command text cleanup', () => {
   it('主进程正文投影保持旧续接规则且不改原始片段', () => {
@@ -397,6 +401,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     writingLanguage?: 'zh-CN' | 'en-US'
     uiLocale?: 'zh-CN' | 'en-US'
     chapterNumber?: number
+    threadTasks?: unknown[]
     characters?: string[]
     characterAliases?: Array<{ name: string; characterId: string }>
     continuity?: Array<{
@@ -426,6 +431,8 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
       required?: boolean
     }>
     knowledgeResults?: Array<{ text: string; score: number; fileName: string }>
+    materialBudget?: MaterialBudget
+    continuityNodes?: ContinuityNode[]
     keyEvents?: string
     suspenseHook?: string
     knowledgeQueryHint?: string
@@ -527,7 +534,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
           : null
       }
       if (channel === 'generation:prepare-draft-context') return {
-        preparationId: '合成准备', selectedDrafts: (options.selectedCandidateDrafts ?? []).map(candidate => ({
+        preparationId: '合成准备', materialBudget: options.materialBudget ?? PREPARED_MATERIAL_BUDGET, selectedDrafts: (options.selectedCandidateDrafts ?? []).map(candidate => ({
           chapterNumber: candidate.chapterNumber, draftId: candidate.draftId,
           version: candidate.version, content: candidate.content,
         })),
@@ -537,6 +544,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
       }
       if (channel === 'kb:search-writing-context') return options.knowledgeResults ?? []
       if (channel === 'db:character-get-all') return options.characterCards ?? []
+      if (channel === 'db:character-continuity-nodes') return options.continuityNodes ?? []
       if (channel === 'db:character-roster-read') return {
         status: 'ready',
         entries: options.characterCards ?? [],
@@ -620,6 +628,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
       wordsTarget: options.wordsTarget,
       userGuidance: options.userGuidance,
       knowledgeQueryHint: options.knowledgeQueryHint,
+      ...(options.threadTasks ? { threadTasks: options.threadTasks as ChapterInfo['threadTasks'] } : {}),
     }, {
       ...(options.mainDefault ? {} : { dependencies: { createRuntime: options.runtime.createRuntime } }),
       resumeHandle: options.resumeHandle,
@@ -660,6 +669,131 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     expect(prompt).toContain('SOUTH_HEALER')
   })
 
+  describe('超长后按学到的窗口自动重试', () => {
+    const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+    const prose = '潮'.repeat(900) + '。'
+    const OPTIONAL_REFERENCE = '可选知识库片段'.repeat(40)
+    const tight = materialBudgetFrom({ contextWindowTokens: 5_000, contextWindowSource: 'endpoint', reservedOutputTokens: 4_096, safetyMarginTokens: 512 })
+    const wide = materialBudgetFrom({ contextWindowTokens: 1_048_576, contextWindowSource: 'default', reservedOutputTokens: 4_096, safetyMarginTokens: 512 })
+    const tooLong = (retryable: boolean) => {
+      const rejected = outcome('', 'error')
+      Object.assign(rejected.receipt, { failureCode: 'GENERATION_CONTEXT_LENGTH_EXCEEDED', ...(retryable ? { retryWithLearnedWindow: true } : {}) })
+      return rejected
+    }
+    function harness(options: { retryable?: boolean; rejections?: number; rejectAt?: string; onRestart?: (context: WorkflowContext) => void; onRetryPrepare?: (context: WorkflowContext) => void; uiLocale?: 'zh-CN' | 'en-US'; batchId?: string } = {}) {
+      const f = setup({ runtime: fakeOutcomes(), wordsTarget: 900, mainDefault: true, keyEvents: '必需的本章事件', materialBudget: wide, uiLocale: options.uiLocale, batchId: options.batchId,
+        knowledgeResults: [{ fileName: '资料', score: 0.9, text: OPTIONAL_REFERENCE, documentId: 'doc', rank: 1 }] as never })
+      f.context.generationModelId = '合成模型'
+      const handleOf = (runId: string): MainGenerationRunHandle => ({ projectId: f.context.projectSession.projectId, epoch: f.context.projectSession.leaseId, rootActionId: `根-${runId}`, runId })
+      const viewOf = (handle: MainGenerationRunHandle): MainGenerationRunView => ({ handle, status: 'running', nonReplayable: false, artifacts: [],
+        budget: { maxAttempts: 32, maxRequestedOutputTokens: 2000000, maxRequestedOutputTokensPerAttempt: 32768, deadlineAt: Date.now() + 3600000 } })
+      const prompts: { runId: string; purpose: string; prompt: string }[] = []
+      const budgets: unknown[] = []
+      let rejections = options.rejections ?? 1
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => {
+        if (channel === 'generation:prepare-draft-context') {
+          const request = args[0] as { contextWindowRetryOf?: MainGenerationRunHandle }
+          budgets.push(request.contextWindowRetryOf ?? null)
+          if (request.contextWindowRetryOf) options.onRetryPrepare?.(f.context)
+          const prepared = await original(channel, ...args) as object
+          return request.contextWindowRetryOf ? { ...prepared, materialBudget: tight } : prepared
+        }
+        if (channel === 'generation:begin') return viewOf(handleOf('首次'))
+        if (channel === 'generation:restart') { options.onRestart?.(f.context); return viewOf(handleOf('重试')) }
+        if (channel === 'generation:read') return viewOf(args[0] as MainGenerationRunHandle)
+        if (channel === 'generation:cancel') return viewOf(args[0] as MainGenerationRunHandle)
+        if (channel === 'generation:execute') {
+          const request = args[0] as { handle: MainGenerationRunHandle; task: GenerationTask }
+          prompts.push({ runId: request.handle.runId, purpose: request.task.purpose, prompt: request.task.messages.map(message => message.content).join('\n') })
+          const view = viewOf(request.handle)
+          if (request.task.purpose === (options.rejectAt ?? 'chapter-draft-short-outline') && rejections > 0) {
+            rejections -= 1
+            return { outcome: tooLong(options.retryable ?? true), run: view }
+          }
+          if (request.task.purpose === 'chapter-draft-short-outline') return { outcome: outcome('目标：读信；前驱：信已送到；行动与结果：读完信；结尾：保留约束。', 'stop'), run: view }
+          const result = outcome(prose, 'stop')
+          result.receipt.visibleArtifact = { artifactId: '正文片', attemptId: '物理请求', revision: 1, textHash: hash(prose) }
+          return { outcome: result, run: view }
+        }
+        if (channel === 'generation:compose-visible') return { algorithm: DRAFT_VISIBLE_TEXT_VERSION, artifactIds: ['正文片'], text: prose, textHash: hash(prose), sources: [] }
+        if (channel === 'generation:commit-draft') return { success: true, id: 31, version: 1, content: prose, contentHash: hash(prose) }
+        return original(channel, ...args)
+      })
+      const channels = (name: string) => f.invoke.mock.calls.filter(([channel]) => channel === name)
+      const run = () => f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
+      const logged = () => vi.mocked(f.callbacks.log).mock.calls.map(([line]) => line)
+      return { f, prompts, budgets, channels, run, logged, handleOf }
+    }
+
+    it.each(['chapter-draft-short-outline', 'chapter-draft'])('%s 超长：只收缩可选材料，开新运行重试一次并保存', async rejectAt => {
+      const h = harness({ rejectAt })
+      await expect(h.run()).resolves.toBe(prose)
+      const first = h.prompts.find(item => item.runId === '首次')!, retried = h.prompts.find(item => item.runId === '重试')!
+      expect(first.prompt).toContain(OPTIONAL_REFERENCE)
+      expect(retried.prompt).toContain('必需的本章事件')
+      expect(retried.prompt).not.toContain(OPTIONAL_REFERENCE)
+      expect(h.budgets).toEqual([null, h.handleOf('首次')])
+      expect(h.channels('generation:restart')).toHaveLength(1)
+      const [handle, request] = h.channels('generation:restart')[0]!.slice(1) as [MainGenerationRunHandle, BeginGenerationRequest]
+      expect(handle.runId).toBe('首次')
+      expect(request.materialDecision?.budget).toEqual(tight)
+      expect(h.channels('generation:commit-draft')).toHaveLength(1)
+      expect(h.logged().filter(line => line.includes('自动重试'))).toHaveLength(1)
+    })
+
+    it('英文界面的日志是英文', async () => {
+      const h = harness({ uiLocale: 'en-US' })
+      await h.run()
+      expect(h.logged().filter(line => line.includes('retrying once'))).toHaveLength(1)
+      expect(h.logged().some(line => line.includes('自动重试'))).toBe(false)
+    })
+
+    it('读不出窗口：只发一次请求，走现有错误', async () => {
+      const h = harness({ retryable: false })
+      await expect(h.run()).rejects.toMatchObject({ code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' })
+      expect(h.prompts).toHaveLength(1)
+      expect(h.channels('generation:restart')).toHaveLength(0)
+    })
+
+    it('重试后仍超长：一共两次请求，不再重试，走现有错误', async () => {
+      const h = harness({ rejections: 5 })
+      await expect(h.run()).rejects.toMatchObject({ code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' })
+      expect(h.prompts).toHaveLength(2)
+      expect(h.channels('generation:restart')).toHaveLength(1)
+      expect(h.channels('generation:commit-draft')).toHaveLength(0)
+    })
+
+    it('批量写稿不开新运行，走现有错误', async () => {
+      const h = harness({ batchId: '批次' })
+      await expect(h.run()).rejects.toMatchObject({ code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' })
+      expect(h.channels('generation:restart')).toHaveLength(0)
+    })
+
+    it('Agent 发起的写稿不开新运行，保留超长错误', async () => {
+      const h = harness()
+      h.f.context.agentWorkflowRegistrationId = '登记'
+      await expect(h.run()).rejects.toMatchObject({ code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' })
+      expect(h.channels('generation:restart')).toHaveLength(0)
+    })
+
+    it('重试准备阶段取消：不开新运行，取消旧运行，不保存草稿', async () => {
+      const h = harness({ onRetryPrepare: context => { context.cancelled = true } })
+      await expect(h.run()).rejects.toThrow()
+      expect(h.channels('generation:restart')).toHaveLength(0)
+      expect(h.channels('generation:cancel').map(call => (call[1] as MainGenerationRunHandle).runId)).toContain('首次')
+      expect(h.channels('generation:commit-draft')).toHaveLength(0)
+    })
+
+    it('重试期间取消：取消旧运行，不保存草稿', async () => {
+      const h = harness({ onRestart: context => { context.cancelled = true } })
+      await expect(h.run()).rejects.toThrow()
+      expect(h.channels('generation:commit-draft')).toHaveLength(0)
+      expect(h.channels('generation:cancel').map(call => (call[1] as MainGenerationRunHandle).runId)).toContain('首次')
+      expect(h.prompts.filter(item => item.runId === '重试')).toHaveLength(0)
+    })
+  })
+
   it.each([{ target: 900, edit: false }, { target: 2000, edit: false }, { target: 3000, edit: false }, { target: 900, edit: true }])('真实默认 facade 字数 $target，作者改稿 $edit，仅main组合与原子保存', async ({ target, edit }) => {
     const legacy = fakeOutcomes()
     const f = setup({ runtime: legacy, wordsTarget: target, mainDefault: true })
@@ -698,6 +832,79 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     expect(legacy.createRuntime).not.toHaveBeenCalled()
     expect(f.invoke.mock.calls.filter(([channel]) => channel === 'generation:execute')).toHaveLength(2)
     expect(f.invoke.mock.calls.some(([channel]) => channel === 'db:draft-create' || channel === 'db:draft-next-version' || channel === 'db:recovery-candidate-record')).toBe(false)
+  })
+
+  it('新开写用主进程算好的额度选材，并把额度写进收据', async () => {
+    const materialBudget = materialBudgetFrom({ contextWindowTokens: 64_000, contextWindowSource: 'preset', reservedOutputTokens: 4_096, safetyMarginTokens: 512 })
+    const f = setup({ runtime: fakeOutcomes(), wordsTarget: 900, mainDefault: true, materialBudget })
+    f.context.generationModelId = '合成模型'
+    let begun: BeginGenerationRequest | undefined
+    const original = f.invoke.getMockImplementation()!
+    f.invoke.mockImplementation(async (channel, ...args) => {
+      if (channel === 'generation:begin') { begun = args[0] as BeginGenerationRequest; throw new Error('STOP_AFTER_BEGIN') }
+      return original(channel, ...args)
+    })
+
+    await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).rejects.toThrow('STOP_AFTER_BEGIN')
+
+    expect(vi.mocked(assembleChapterMaterials).mock.calls.at(-1)?.[0].admission).toEqual({ kind: 'budget', budget: materialBudget })
+    expect(begun?.materialDecision?.budget).toEqual(materialBudget)
+  })
+
+  describe('人物时间线不占可选材料额度', () => {
+    const KNOWLEDGE = '知识库片段哨兵'.repeat(10)
+    const timelineNodes: ContinuityNode[] = Array.from({ length: 6 }, (_, index) => ({
+      eventId: `e${index}`, subjectId: 'lin', subjectName: '林岚', value: `关系${index}`.padEnd(70, '长'), effectiveChapter: 1,
+      provenance: { kind: 'author', operationId: 'op' }, draftId: null, seq: 1, quote: null,
+      aspect: 'relation', targetId: `t${index}`, targetName: `角色${index}`, relationshipId: `r${index}`,
+    }))
+    const budgetFor = (inputTokens: number) => materialBudgetFrom({ contextWindowTokens: inputTokens + 1, contextWindowSource: 'preset', reservedOutputTokens: 1, safetyMarginTokens: 0 })
+
+    async function draftPrompt(inputTokens: number, continuityNodes: ContinuityNode[]): Promise<string> {
+      const f = setup({ runtime: fakeOutcomes(), wordsTarget: 900, mainDefault: true, characters: ['林岚'], materialBudget: budgetFor(inputTokens), continuityNodes,
+        characterCards: [{ name: '林岚', characterId: 'lin', role: 'protagonist', currentState: {} }],
+        knowledgeResults: [{ fileName: '设定.txt', score: 0.9, text: KNOWLEDGE }] })
+      f.context.generationModelId = '合成模型'
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => {
+        if (channel === 'generation:begin') throw new Error('STOP_AFTER_BEGIN')
+        return original(channel, ...args)
+      })
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).rejects.toThrow('STOP_AFTER_BEGIN')
+      return vi.mocked(assembleChapterMaterials).mock.results.at(-1)!.value.then((assembly: { text: string }) => assembly.text)
+    }
+
+    it('只读本章出场角色的节点，不把全书所有角色的历史都传过来', async () => {
+      const f = setup({ runtime: fakeOutcomes(), wordsTarget: 900, mainDefault: true, characters: ['林岚'], materialBudget: budgetFor(16_384), continuityNodes: [],
+        characterCards: [{ name: '林岚', characterId: 'lin', role: 'protagonist', currentState: {} }, { name: '周砚', characterId: 'zhou', role: 'supporting', currentState: {} }] })
+      f.context.generationModelId = '合成模型'
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => {
+        if (channel === 'generation:begin') throw new Error('STOP_AFTER_BEGIN')
+        return original(channel, ...args)
+      })
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).rejects.toThrow('STOP_AFTER_BEGIN')
+      const read = f.invoke.mock.calls.find(([channel]) => channel === 'db:character-continuity-nodes')
+      expect(JSON.stringify(read)).toContain('["lin"]')
+    })
+
+    it('刚好放得下知识库片段的窗口，加上时间线后片段还在', async () => {
+      let [tooSmall, enough] = [0, 16_384]
+      while (enough - tooSmall > 1) {
+        const middle = Math.floor((tooSmall + enough) / 2)
+        if ((await draftPrompt(middle, [])).includes(KNOWLEDGE)) enough = middle
+        else tooSmall = middle
+      }
+      const prompt = await draftPrompt(enough, timelineNodes)
+      expect(prompt).toContain('作者设定（自第1章起）与角色0的关系')
+      expect(prompt).toContain(KNOWLEDGE)
+    })
+
+    it('窗口很小时时间线还在，可选材料按额度收缩', async () => {
+      const prompt = await draftPrompt(1, timelineNodes)
+      expect(prompt).toContain('作者设定（自第1章起）与角色0的关系')
+      expect(prompt).not.toContain(KNOWLEDGE)
+    })
   })
 
   it('没有显式模型时按写稿环节的模型准备上下文并开跑', async () => {
@@ -858,13 +1065,14 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     const seed = '潮'.repeat(state === 'saved-ack-lost' ? 1350 : finishReason === 'stop' ? 900 : 500)
     const addition = (state === 'legacy-length' ? `二十年后。\n\n${seed}\n\n` : '') + '灯'.repeat(500) + '。'
     const expected = finishReason === 'stop' ? seed : composeDraftVisibleContinuation(seed, addition, algorithm)
+    const frozenAdmission = { kind: 'budget', budget: materialBudgetFrom({ contextWindowTokens: 20_000, contextWindowSource: 'endpoint', reservedOutputTokens: 4_096, safetyMarginTokens: 512 }) } as const
     const hash = (text: string) => createHash('sha256').update(text).digest('hex')
     const view: MainGenerationRunView = { handle, status: 'running', nonReplayable: false, artifacts: [],
       budget: { maxAttempts: 32, maxRequestedOutputTokens: 2000000, maxRequestedOutputTokensPerAttempt: 32768, deadlineAt: Date.now() + 3600000 } }
     const original = f.invoke.getMockImplementation()!
     f.invoke.mockImplementation(async (channel, ...args) => {
       if (channel === 'generation:read') return view
-      if (channel === 'generation:read-context') return { draftSave: { kind: 'absent' }, handle, operation: 'chapter-draft', chapterNumber: 1,
+      if (channel === 'generation:read-context') return { draftSave: { kind: 'absent' }, handle, operation: 'chapter-draft', chapterNumber: 1, materialAdmission: frozenAdmission,
         authorInputs: [
           { id: 'draft:chapter-info', text: JSON.stringify({ chapterNumber: 1, title: '第一章', role: '开端', purpose: '建立冲突', characters: [], keyEvents: '开端' }) },
           { id: 'draft:author-config', text: JSON.stringify(useProjectStore.getState().currentProject!.novelConfig) },
@@ -894,6 +1102,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(expected)
     expect(f.invoke.mock.calls.filter(([channel]) => channel === 'generation:execute')).toHaveLength(finishReason === 'stop' ? 0 : 1)
     expect(f.invoke.mock.calls.some(([channel]) => channel === 'generation:begin' || channel === 'db:draft-create')).toBe(false)
+    if (state !== 'saved-ack-lost') expect(vi.mocked(assembleChapterMaterials).mock.calls.at(-1)?.[0].admission).toEqual(frozenAdmission)
     if (state === 'saved-ack-lost') {
       expect(f.invoke.mock.calls.some(([channel]) => channel === 'generation:read' || channel === 'generation:resume')).toBe(false)
       expect(f.invoke.mock.calls.some(([channel]) => ['generation:commit-draft', 'generation:prepare-draft-context', 'kb:search-writing-context', 'db:draft-get-latest'].includes(channel))).toBe(false)
@@ -2135,7 +2344,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
 
   it('binds the final provider request to only the finalized prose that reached that request', async () => {
     const runtime = fakeRuntime(() => outcome('新章正文。'.repeat(125), 'stop'))
-    const overBudget = `林岚把钥匙藏进钟楼。${'过长段落'.repeat(2_000)}`
+    const overBudget = `林岚把钥匙藏进钟楼。${'过长段落'.repeat(9_000)}`
     const included = '周砚守住码头，林岚折返仓库。'
     const { invoke, context, callbacks, command } = setup({
       runtime,
@@ -2205,7 +2414,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     const blueprints = Array.from({ length: 5 }, (_, index) => ({
       chapterNumber: chapterNumber + index + 1,
       title: `后续计划${index + 1}`,
-      keyEvents: '后续事件说明。'.repeat(260) + `TAIL_TIMING_${index}_只能在第${chapterNumber + index + 1}章交出钥匙。`,
+      keyEvents: '后续事件说明。'.repeat(1_040) + `TAIL_TIMING_${index}_只能在第${chapterNumber + index + 1}章交出钥匙。`,
     }))
     const worldSetting = 'GLOBAL_FACT_铜钥匙只有一把。'
     const previousFinalizedContent = '上一章仍在港口。'.repeat(100) + 'PREVIOUS_TAIL_钥匙仍由林舟保管。'
@@ -3387,13 +3596,411 @@ ${headingPrefix}第3章：潮门
     const threadContextEnd = prompt.indexOf('\n\n', threadContextStart)
     expect(threadContextEnd).toBeGreaterThan(threadContextStart)
     expect(threadContextEnd - threadContextStart).toBeLessThanOrEqual(1200)
-    expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('活跃叙事线索（6 条）'))
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('已加载相关活跃叙事线索（6 条；另有 2 条'))
     expect(invoke).toHaveBeenCalledWith(
       'db:narrative-thread-list-relevant',
       expect.objectContaining({ chapterNumber: 5, characters: ['林岚'] }),
       projectPath,
       expect.anything(),
     )
+  })
+
+  const threadView = (id: number, title: string, targetStartChapter: number, targetEndChapter: number): NarrativeThreadView => ({
+    id, title, type: '伏笔', targetStartChapter, targetEndChapter, authorIntent: `${title}要有交代。`,
+    status: 'planned', dormantChapters: 0, overdue: false, events: [], createdAt: '', updatedAt: '',
+  })
+  const promptLine = (prompt: string, title: string) => prompt.split('\n').find(line => line.startsWith(`- ${title} `)) ?? ''
+
+  it('#301: marks overdue and due threads for the chapter being written and logs how many did not fit', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 6,
+      wordsTarget: 500,
+      previousFinalizedContent: '第五章定稿原文。',
+      narrativeThreads: [
+        threadView(1, '青铜钥匙', 1, 2),
+        threadView(2, '雨夜来信', 4, 6),
+        ...Array.from({ length: 6 }, (_, index) => threadView(3 + index, `区间线索${index + 1}`, 5, 9)),
+      ],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(promptLine(prompt, '青铜钥匙')).toContain('已逾期 4 章')
+    expect(promptLine(prompt, '雨夜来信')).toContain('本章到期')
+    expect(promptLine(prompt, '区间线索1')).not.toMatch(/已逾期|本章到期/)
+    expect(prompt).toContain('区间线索4')
+    expect(prompt).not.toContain('区间线索5')
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('另有 2 条'))
+  })
+
+  it('作者指定本章推进的线索进合同并标明；延后的线索不进合同，提示里写新的目标章', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 5,
+      wordsTarget: 500,
+      previousFinalizedContent: '第四章定稿原文。',
+      narrativeThreads: [
+        { ...threadView(1, '青铜钥匙', 1, 9), assignments: [{ chapterNumber: 5, kind: 'advance', note: '写第 5 章前指定本章推进' }] },
+        { ...threadView(2, '父亲的旧信', 3, 8), assignments: [{ chapterNumber: 8, kind: 'resolve', note: '写第 5 章时延后' }] },
+      ],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(prompt.split('\n').filter(line => line.startsWith('- 本章推进或回收：'))).toEqual(['- 本章推进或回收：青铜钥匙（作者指定本章推进；作者意图：青铜钥匙要有交代。）'])
+    expect(promptLine(prompt, '青铜钥匙')).toContain('作者指定本章推进；目标第1–9章')
+    expect(promptLine(prompt, '父亲的旧信')).toContain('目标第3–8章')
+    expect(promptLine(prompt, '父亲的旧信')).not.toMatch(/本章到期|已逾期/)
+  })
+
+  it('injects relevant threads into the first chapter too', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('首章正文。'.repeat(125), 'stop')
+    })
+    const { context, callbacks, command } = setup({
+      runtime,
+      wordsTarget: 500,
+      narrativeThreads: [threadView(1, '青铜钥匙', 1, 1)],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(promptLine(prompt, '青铜钥匙')).toContain('本章到期')
+  })
+
+  it('says relevant threads were left out when none of them fits the thread block length', async () => {
+    const runtime = fakeRuntime(() => outcome('新章正文。'.repeat(125), 'stop'))
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 5,
+      wordsTarget: 500,
+      previousFinalizedContent: '第四章定稿原文。',
+      narrativeThreads: [{ ...threadView(1, '青铜钥匙', 1, 2), authorIntent: '钥匙'.repeat(600) }],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('相关活跃叙事线索 1 条都超出长度上限'))
+  })
+
+  it('skips an overlong thread line and still injects the shorter due thread after it', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 5,
+      wordsTarget: 500,
+      previousFinalizedContent: '第四章定稿原文。',
+      narrativeThreads: [
+        { ...threadView(1, '青铜钥匙', 1, 2), authorIntent: '钥匙'.repeat(600) },
+        threadView(2, '父亲的旧信', 3, 5),
+      ],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(promptLine(prompt, '父亲的旧信')).toContain('本章到期')
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('已加载相关活跃叙事线索（1 条；另有 1 条'))
+  })
+
+  it('says the thread block was left out when the optional material budget has no room for it', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 5,
+      wordsTarget: 500,
+      characters: ['林岚'],
+      characterCards: [{ name: '林岚', role: 'protagonist', personality: '谨慎'.repeat(18_000), currentState: {} }],
+      previousFinalizedContent: '第四章定稿原文。',
+      narrativeThreads: [threadView(1, '青铜钥匙', 1, 2)],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(prompt).not.toContain('【当前相关活跃叙事线索】')
+    expect(promptLine(prompt, '青铜钥匙')).toBe('')
+    expect(prompt).toContain('- 本章推进或回收：青铜钥匙（已逾期 3 章；作者意图：青铜钥匙要有交代。）')
+    expect(callbacks.log).not.toHaveBeenCalledWith(expect.stringContaining('已加载相关活跃叙事线索'))
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('相关活跃叙事线索（1 条）被可选材料预算省掉'))
+  })
+
+  it('lists at most six due or overdue threads as hard tasks, longest overdue first, and skips a broken range', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 6,
+      wordsTarget: 500,
+      previousFinalizedContent: '第五章定稿原文。',
+      narrativeThreads: [
+        threadView(1, '坏区间', 5, 3),
+        threadView(2, '雨夜来信', 4, 6),
+        threadView(3, '区间线索', 5, 9),
+        ...Array.from({ length: 7 }, (_, index) => threadView(4 + index, `逾期线索${index + 1}`, 1, 5 - (index % 5))),
+      ],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    const tasks = prompt.split('\n').filter(line => line.startsWith('- 本章推进或回收：'))
+    expect(tasks.map(line => /：(\S+?)（/u.exec(line)?.[1])).toEqual(['逾期线索5', '逾期线索4', '逾期线索3', '逾期线索2', '逾期线索7', '逾期线索1'])
+    expect(tasks[0]).toContain('已逾期 5 章')
+    expect(prompt).not.toContain('本章推进或回收：坏区间')
+    expect(prompt).not.toContain('本章推进或回收：区间线索')
+    expect(prompt).not.toContain('本章推进或回收：雨夜来信')
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('本章硬任务线索 6 条；另有 2 条到期或逾期线索本次未列入'))
+  })
+
+  it('writes no thread task when no thread is due or overdue', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 5,
+      wordsTarget: 500,
+      previousFinalizedContent: '第四章定稿原文。',
+      narrativeThreads: [threadView(1, '区间线索', 3, 8)],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(promptLine(prompt, '区间线索')).not.toBe('')
+    expect(prompt).not.toContain('本章推进或回收')
+  })
+
+  it.each([
+    { writingLanguage: 'zh-CN' as const, rule: '【伏笔线索任务】', wrongClaim: '已到期或逾期' },
+    { writingLanguage: 'en-US' as const, rule: '[Narrative thread tasks]', wrongClaim: 'are due or overdue' },
+  ])('$writingLanguage: an author-assigned thread is not described as due or overdue, and still must change', async ({ writingLanguage, rule, wrongClaim }) => {
+    const promptFor = async (narrativeThreads: NarrativeThreadView[]) => {
+      let observedTask: GenerationTask | undefined
+      const runtime = fakeRuntime((_attempt, task) => {
+        observedTask = task
+        return outcome('新章正文。'.repeat(125), 'stop')
+      })
+      const { context, callbacks, command } = setup({ runtime, chapterNumber: 5, wordsTarget: 500, writingLanguage,
+        previousFinalizedContent: '第四章定稿原文。', narrativeThreads })
+      await command.execute({ step: {}, context, callbacks })
+      const prompt = observedTask?.messages.map(message => message.content).join('\n') ?? ''
+      return prompt.split('\n').find(line => line.startsWith(rule)) ?? ''
+    }
+    const assigned = { ...threadView(1, '区间线索', 3, 8), assignments: [{ chapterNumber: 5, kind: 'advance' as const, note: '' }] }
+
+    const assignedRule = await promptFor([assigned])
+    const dueRule = await promptFor([threadView(2, '青铜钥匙', 1, 5)])
+
+    expect(assignedRule).not.toBe('')
+    expect(assignedRule).not.toContain(wrongClaim)
+    expect(dueRule).toBe(assignedRule)
+  })
+
+  it('tells the author when threads cannot be read, so the chapter is written without thread tasks knowingly', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const f = setup({ runtime, chapterNumber: 5, wordsTarget: 500, previousFinalizedContent: '第四章定稿原文。',
+      narrativeThreads: [threadView(1, '青铜钥匙', 1, 2)] })
+    const original = f.invoke.getMockImplementation()!
+    f.invoke.mockImplementation(async (channel, ...args) => {
+      if (channel === 'db:narrative-thread-list-relevant') throw new Error('SQLITE_BUSY')
+      return original(channel, ...args)
+    })
+
+    await f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(prompt).not.toContain('本章推进或回收')
+    expect(f.callbacks.log).toHaveBeenCalledWith(expect.stringContaining('伏笔线索没能读取'))
+  })
+
+  describe('冻结的线索硬任务在主进程开跑与恢复之间不变', () => {
+    const frozenTask = { planId: 1, title: '青铜钥匙', authorIntent: '青铜钥匙要有交代。', schedule: { kind: 'due' } }
+    const chapterInfoText = (threadTasks?: unknown[]) => JSON.stringify({ chapterNumber: 1, title: '第一章', role: '开端',
+      purpose: '建立冲突', characters: [], keyEvents: '开端', ...(threadTasks ? { threadTasks } : {}) })
+    const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+    const sentChapterInfos = (invoke: ReturnType<typeof vi.fn>) => invoke.mock.calls.flatMap(([, ...args]) => args.flatMap(arg => {
+      const inputs = (arg as { authorInputs?: Array<{ id: string; text: string }> } | null)?.authorInputs
+      return inputs?.filter(input => input.id === 'draft:chapter-info').map(input => input.text) ?? []
+    }))
+
+    it('新开写把到期线索冻结进 draft:chapter-info，准备上下文与开跑请求逐字一致', async () => {
+      const f = setup({ runtime: fakeOutcomes(), wordsTarget: 900, mainDefault: true, narrativeThreads: [threadView(1, '青铜钥匙', 1, 1)] })
+      f.context.generationModelId = '合成模型'
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => {
+        if (channel === 'generation:begin') throw new Error('STOP_AFTER_BEGIN')
+        return original(channel, ...args)
+      })
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).rejects.toThrow('STOP_AFTER_BEGIN')
+      const sent = sentChapterInfos(f.invoke)
+      expect(sent.length).toBeGreaterThanOrEqual(2)
+      expect(new Set(sent)).toEqual(new Set([chapterInfoText([frozenTask])]))
+      expect(f.callbacks.log).toHaveBeenCalledWith(expect.stringContaining('本章硬任务线索 1 条'))
+    })
+
+    it('开写后作者才延后：恢复仍按冻结的任务写，线索现状不进合同', async () => {
+      const assignedTask = { ...frozenTask, schedule: { kind: 'assigned' } }
+      const deferredNow = { ...threadView(1, '青铜钥匙', 1, 1), assignments: [{ chapterNumber: 4, kind: 'resolve' as const, note: '写第 1 章时延后' }] }
+      const { f, continuationPrompts } = resumeFixture([assignedTask], [deferredNow])
+      await f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
+      expect(continuationPrompts.length).toBeGreaterThan(0)
+      expect(continuationPrompts.join('\n')).toContain('- 本章推进或回收：青铜钥匙（作者指定本章推进；作者意图：青铜钥匙要有交代。）')
+      expect(new Set(sentChapterInfos(f.invoke))).toEqual(new Set())
+    })
+
+    function resumeFixture(recordedTasks: unknown[] | undefined, currentThreads: NarrativeThreadView[], timeline: { recorded?: string; nodes?: ContinuityNode[] } = {}) {
+      const handle: MainGenerationRunHandle = { projectId: 'generation-runtime', epoch: 'lease-generation-runtime', rootActionId: '原根', runId: '原正文' }
+      // 从恢复入口进来时，章节信息就是记录里的 JSON 原样展开，格式坏的任务也在里面。
+      const f = setup({ runtime: fakeOutcomes(), mainDefault: true, resumeHandle: handle, wordsTarget: 900, narrativeThreads: currentThreads,
+        threadTasks: recordedTasks, characters: ['林岚'], continuityNodes: timeline.nodes,
+        characterCards: [{ name: '林岚', characterId: 'lin', role: 'protagonist', relationships: [{ target: '周砚', relation: '档案里的关系' }], currentState: {} }] })
+      f.context.generationModelId = '合成模型'
+      const seed = '潮'.repeat(500)
+      const addition = `${'灯'.repeat(500)}。`
+      const expected = composeDraftVisibleContinuation(seed, addition, DRAFT_VISIBLE_TEXT_VERSION)
+      const view: MainGenerationRunView = { handle, status: 'running', nonReplayable: false, artifacts: [],
+        budget: { maxAttempts: 32, maxRequestedOutputTokens: 2000000, maxRequestedOutputTokensPerAttempt: 32768, deadlineAt: Date.now() + 3600000 } }
+      const continuationPrompts: string[] = []
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => {
+        if (channel === 'generation:read') return view
+        if (channel === 'generation:read-context') return { draftSave: { kind: 'absent' }, handle, operation: 'chapter-draft', chapterNumber: 1,
+          authorInputs: [
+            { id: 'draft:chapter-info', text: JSON.stringify({ ...JSON.parse(chapterInfoText(recordedTasks)), characters: ['林岚'] }) },
+            { id: 'draft:author-config', text: JSON.stringify(useProjectStore.getState().currentProject!.novelConfig) },
+            { id: 'draft:target-units', text: '900' },
+            ...(timeline.recorded ? [{ id: 'draft:character-timeline', text: timeline.recorded }] : []),
+          ], selectedDraftIds: [], selectedFinalizedDraftIds: [], selectedBlueprintChapterNumbers: [1, 2, 3, 4, 5, 6],
+          knowledgeSnapshot: { version: 1, state: 'empty', storageState: 'absent', query: '第一章 开端', topK: 5, canonicalRevision: null, documentsRevision: null, items: [] },
+          composition: { algorithm: DRAFT_VISIBLE_TEXT_VERSION, text: seed, textHash: hash(seed), artifactIds: ['原片'], sources: [] },
+          lastCompositionFinishReason: 'length', attemptedPurposes: ['chapter-draft'] }
+        if (channel === 'generation:execute') {
+          const task = (args[0] as { task: GenerationTask }).task
+          expect(task.purpose).toBe('chapter-draft-continuation')
+          continuationPrompts.push(task.messages.map(message => message.content).join('\n'))
+          const result = outcome(addition, 'stop')
+          result.receipt.visibleArtifact = { artifactId: '续片', attemptId: '续请求', revision: 1, textHash: hash(addition) }
+          return { outcome: result, run: view }
+        }
+        if (channel === 'generation:compose-visible')
+          return { algorithm: DRAFT_VISIBLE_TEXT_VERSION, artifactIds: ['原片', '续片'], text: expected, textHash: hash(expected), sources: [] }
+        if (channel === 'generation:commit-draft') return { success: true, id: 18, version: 1, content: expected, contentHash: hash(expected) }
+        return original(channel, ...args)
+      })
+      return { f, expected, continuationPrompts }
+    }
+
+    const laterNode: ContinuityNode = { eventId: '新节点', subjectId: 'lin', subjectName: '林岚', value: '开跑后才写的状态', effectiveChapter: 1, aspect: 'location',
+      provenance: { kind: 'author', operationId: 'op' }, draftId: null, seq: 1, quote: null }
+
+    it('恢复时用开跑时记下的人物时间线，之后追加的节点不进提示', async () => {
+      const recorded = JSON.stringify({ lin: ['作者设定（自第1章起）位置：开跑时的码头'] })
+      const { f, expected, continuationPrompts } = resumeFixture([frozenTask], [], { recorded, nodes: [laterNode] })
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(expected)
+      expect(continuationPrompts).toHaveLength(1)
+      expect(continuationPrompts[0]).toContain('作者设定（自第1章起）位置：开跑时的码头')
+      expect(continuationPrompts[0]).not.toContain('开跑后才写的状态')
+      expect(continuationPrompts[0]).not.toContain('档案里的关系')
+      expect(f.invoke.mock.calls.filter(([channel]) => channel === 'generation:prepare-draft-context')).toHaveLength(0)
+      expect(f.invoke.mock.calls.filter(([channel]) => channel === 'db:character-roster-read')).toHaveLength(1)
+    })
+
+    it.each([
+      ['名册待修复', async () => ({ status: 'inconsistent', entries: [] })],
+      ['名册读取失败', async () => { throw new Error('SQLITE_BUSY') }],
+    ])('记录里有人物时间线而%s时拒绝恢复，不换上下文续写', async (_label, readRoster) => {
+      const recorded = JSON.stringify({ lin: ['作者设定（自第1章起）位置：开跑时的码头'] })
+      const { f, continuationPrompts } = resumeFixture([frozenTask], [], { recorded })
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => channel === 'db:character-roster-read' ? readRoster() : original(channel, ...args))
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks }))
+        .rejects.toThrow('GENERATION_DRAFT_RECOVERY_AUTHOR_INPUT_CHANGED')
+      expect(continuationPrompts).toHaveLength(0)
+    })
+
+    it('升级前开跑的运行没有记录时间线，名册读取失败时仍按原样恢复', async () => {
+      const { f, expected, continuationPrompts } = resumeFixture([frozenTask], [])
+      const original = f.invoke.getMockImplementation()!
+      f.invoke.mockImplementation(async (channel, ...args) => {
+        if (channel === 'db:character-roster-read') throw new Error('SQLITE_BUSY')
+        return original(channel, ...args)
+      })
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(expected)
+      expect(continuationPrompts).toHaveLength(1)
+    })
+
+    it('升级前开跑的运行没有记录时间线，恢复时沿用档案原来的行', async () => {
+      const { f, expected, continuationPrompts } = resumeFixture([frozenTask], [], { nodes: [laterNode] })
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(expected)
+      expect(continuationPrompts[0]).toContain('relationship: 周砚 (档案里的关系)')
+      expect(continuationPrompts[0]).not.toContain('开跑后才写的状态')
+    })
+
+    it('恢复时沿用记录里的冻结任务；开写后线索已被标为回收，续写仍按冻结任务', async () => {
+      const { f, expected, continuationPrompts } = resumeFixture([frozenTask], [])
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(expected)
+      expect(continuationPrompts).toHaveLength(1)
+      expect(continuationPrompts[0]).toContain('- 本章推进或回收：青铜钥匙（本章到期；作者意图：青铜钥匙要有交代。）')
+    })
+
+    it('恢复时线索块与开写时一样列出冻结任务的线索，续写提示不因冻结而变形', async () => {
+      const { f, expected, continuationPrompts } = resumeFixture([frozenTask],
+        [threadView(1, '青铜钥匙', 1, 1), threadView(2, '雨夜来信', 1, 1)])
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(expected)
+      expect(continuationPrompts).toHaveLength(1)
+      expect(continuationPrompts[0]).toContain('- 本章推进或回收：青铜钥匙（本章到期；作者意图：青铜钥匙要有交代。）')
+      expect(promptLine(continuationPrompts[0]!, '青铜钥匙')).not.toBe('')
+      expect(promptLine(continuationPrompts[0]!, '雨夜来信')).not.toBe('')
+    })
+
+    it('记录里的任务格式坏了就拒绝续写，不带着坏数据发请求', async () => {
+      const { f, continuationPrompts } = resumeFixture([{ planId: 1, title: '青铜钥匙', authorIntent: '交代。', schedule: { kind: 'later' } }], [])
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks }))
+        .rejects.toThrow('GENERATION_DRAFT_RECOVERY_AUTHOR_INPUT_CHANGED')
+      expect(continuationPrompts).toHaveLength(0)
+    })
+
+    it('旧记录没有冻结任务时照常恢复，不按现在的计划补任务', async () => {
+      const { f, expected, continuationPrompts } = resumeFixture(undefined, [threadView(1, '青铜钥匙', 1, 1)])
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(expected)
+      expect(continuationPrompts).toHaveLength(1)
+      expect(continuationPrompts[0]).not.toContain('本章推进或回收')
+    })
   })
 
   it('previews only authored text before completion and reconciles to the persisted terminal draft', async () => {

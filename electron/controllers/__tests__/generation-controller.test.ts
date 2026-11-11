@@ -17,7 +17,7 @@ type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>
 const mocks = vi.hoisted(() => ({ handlers: new Map<string, Handler>(), globalRoot: '' }))
 vi.mock('electron', () => ({ ipcMain: { handle: (channel: string, handler: Handler) => mocks.handlers.set(channel, handler) } }))
 vi.mock('../../services/app-data-locator', () => ({ getGlobalDataRoot: () => mocks.globalRoot }))
-vi.mock('../kb-controller', () => ({ getEmbeddingConfig: () => null }))
+vi.mock('../kb-controller', () => ({ getEmbeddingConfig: () => null, getRerankConfig: () => ({ kind: 'none', reason: 'not-configured' }) }))
 import { generationIpcErrorCode, registerGenerationController } from '../generation-controller'
 import { registerDatabaseController } from '../db-controller'
 import { ProjectCoreRepository } from '../../repositories/project-core-repository'
@@ -36,6 +36,7 @@ import { useProjectStore } from '../../../src/stores/project-store'
 import { useWorkflowStore, type WorkflowContext, type StepCallbacks } from '../../../src/stores/workflow-store'
 import { useLocaleStore } from '../../../src/stores/locale-store'
 import type { MainGenerationRunHandle } from '../../../src/services/generation/generation-runtime'
+import { GenerationRunRepository } from '../../repositories/generation-run-repository'
 import { PLOT_OUTLINE_PROTOCOL, renderPlotOutlineSynopsis } from '../../../src/shared/plot-outline-contract'
 import { clearProjectCustomPrompts } from '../../../src/services/prompt-templates'
 import { exportPortableProject } from '../../services/project-archive-service'
@@ -57,7 +58,7 @@ const materialDecision = (prompt = '合成初始提示词'): NonNullable<BeginGe
   omitted: [],
 })
 beforeAll(() => {
-  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => model, applyProxyConfig: () => {} })
+  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => model, rememberContextWindow: () => {}, applyProxyConfig: () => {} })
   registerDatabaseController()
 })
 beforeEach(() => {
@@ -244,7 +245,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     SummaryRepository.saveFinalizedContinuity({ draftId: 1, chapterNumber: 1, chapterNotes: '定稿摘要', facts: [],
       source: context.source, projectionGeneration: context.projectionGeneration }, getProjectDb()!)
     SummaryRepository.commitFinalizedCharacterStates(context, { updates: [{ characterId, currentState: { location: '北塔' },
-      evidence: { start: 0, end: body.length, text: body } }], unresolved: [] }, getProjectDb()!)
+      evidence: { start: 0, end: body.length, text: body } }], unresolved: [], relations: [] }, getProjectDb()!)
 
     const [summary] = await invoke('finalized-character:list-state-candidates')
     expect(summary).toMatchObject({ draftId: 1, characterId, field: 'location' })
@@ -516,6 +517,12 @@ describe('generation public IPC with actual project authority and SQLite', () =>
       return knowledgeBase
     })
     await expect(invoke('generation:prepare-draft-context', fixture.prepareRequest)).rejects.toThrow('GENERATION_DRAFT_PREPARATION_CHANGED')
+  })
+  it('rejects a stale character roster revision before any knowledge request', async () => {
+    const fixture = await selectedSourceFixture(), load = vi.spyOn(knowledgeBaseLoader, 'load')
+    const current = getProjectDb()!.prepare("SELECT revision FROM character_roster_meta WHERE id='main'").pluck().get() as number
+    await expect(invoke('generation:prepare-draft-context', { ...fixture.prepareRequest, characterRosterRevision: current - 1 })).rejects.toThrow('GENERATION_DRAFT_PREPARATION_CHANGED')
+    expect(load).not.toHaveBeenCalled()
   })
   it('keeps the original root active when a restart preparation is rejected', async () => {
     const fixture = await selectedSourceFixture()
@@ -955,6 +962,39 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     await expect(f.execute(handle)).rejects.toThrow('attempts-exhausted')
     expect(f.fetch).toHaveBeenCalledTimes(2)
     expect(ProjectCoreRepository.get()?.synopsis).toBe('旧正式大纲')
+  })
+
+  it('大纲一批正式写进大纲后，作者改了其中一章：恢复列表不再给这次运行', async () => {
+    const f = outlineFixture()
+    await f.execute()
+    const handle = f.navigation().synopsis_generation_handle
+    getProjectDb()!.prepare('UPDATE project_core SET synopsis=?').run(f.target.replace('林岚核对证词1', '作者改写了第 1 章'))
+    expect((await invoke('generation:list-recovery')).planning).toEqual([])
+    expect((await invoke('generation:read-context', { handle })).planningDraft).toMatchObject({ standing: 'superseded' })
+  })
+
+  it('大纲正式保存被拒：作者之后自己写好这几章，恢复列表照常给这次运行', async () => {
+    const f = outlineFixture()
+    vi.spyOn(ProjectCoreRepository, 'commitSynopsis').mockReturnValueOnce(false)
+    await expect(f.execute()).rejects.toThrow()
+    const handle = f.navigation().synopsis_generation_handle
+    expect(ProjectCoreRepository.get()?.synopsis).toBe('旧正式大纲')
+    getProjectDb()!.prepare('UPDATE project_core SET synopsis=?').run(f.target.replaceAll('林岚核对证词', '作者自己写的证词'))
+    expect((await invoke('generation:list-recovery')).planning.map((item: { handle: MainGenerationRunHandle }) => item.handle.runId)).toEqual([handle.runId])
+  })
+
+  it('大纲写入的事务在记下这一笔后出错：正式大纲和这一笔一起撤回，作者自己写好这几章后恢复列表照常给这次运行', async () => {
+    const f = outlineFixture()
+    const original = GenerationRunRepository.prototype.recordPlotOutlineCommitWithinTransaction
+    vi.spyOn(GenerationRunRepository.prototype, 'recordPlotOutlineCommitWithinTransaction').mockImplementationOnce(function (this: GenerationRunRepository, runId: string) {
+      original.call(this, runId)
+      throw new Error('TEST_FAULT_AFTER_MARK')
+    })
+    await expect(f.execute()).rejects.toThrow()
+    const handle = f.navigation().synopsis_generation_handle
+    expect(ProjectCoreRepository.get()?.synopsis).toBe('旧正式大纲')
+    getProjectDb()!.prepare('UPDATE project_core SET synopsis=?').run(f.target.replaceAll('林岚核对证词', '作者自己写的证词'))
+    expect((await invoke('generation:list-recovery')).planning.map((item: { handle: MainGenerationRunHandle }) => item.handle.runId)).toEqual([handle.runId])
   })
 
   it.each(['third-text', 'other-core', 'prompt', 'model'] as const)('refuses lost-CAS-response recovery when %s changed', async changed => {

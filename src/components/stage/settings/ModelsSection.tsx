@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Cpu, ExternalLink, MoreHorizontal, Plus } from 'lucide-react'
+import { ExternalLink, Plus } from 'lucide-react'
 import type { ModelProfile } from '../../../shared/ipc-channels'
 import { MODEL_STAGES, routeStageModel } from '../../../shared/model-stage-routing'
 import { BUILTIN_PRESETS } from '../../../shared/provider-presets'
@@ -13,13 +13,8 @@ import { useModelSection } from '../../settings/use-model-section'
 import { Button } from '../../ui/Button'
 import { DangerConfirm } from '../../ui/DangerConfirm'
 import { EmptyState } from '../../ui/EmptyState'
-import { Menu } from '../../ui/Menu'
 import { Notice } from '../../ui/Notice'
-
-function providerName(model: ModelProfile): string {
-  const preset = BUILTIN_PRESETS.find(candidate => candidate.provider === model.provider)
-  return preset?.displayName ?? model.provider
-}
+import ModelProfileList from './ModelProfileList'
 
 /** 一类模型的列表与编辑：生成用的「AI 模型」或知识库用的「检索模型」。删除要先确认。 */
 export default function ModelsSection({ purposes, header }: { purposes: ModelProfile['purposes']; header: (action: ReactNode) => ReactNode }) {
@@ -103,34 +98,14 @@ export default function ModelsSection({ purposes, header }: { purposes: ModelPro
           </div>
         )
         : (
-          <ul className="stage-set-models" aria-label={retrieval ? text('检索模型', 'Retrieval models') : text('AI 模型', 'AI models')}>
-            {section.models.map(model => {
-              const isDefault = model.id === section.defaultId
-              const name = model.name || model.modelName
-              return (
-                <li key={model.id} className="stage-set-model" data-default={isDefault || undefined}>
-                  <span className="stage-set-model-mark" aria-hidden="true"><Cpu size={16} /></span>
-                  <div className="stage-set-model-text">
-                    <div className="stage-set-model-name">
-                      <span>{name}</span>
-                      {isDefault && <span className="stage-badge">{text('默认', 'Default')}</span>}
-                    </div>
-                    <p className="stage-set-model-meta">{providerName(model)} · {model.modelName}</p>
-                  </div>
-                  <Button variant="text" size="sm" onClick={() => section.edit(model)} aria-label={text(`编辑「${name}」`, `Edit “${name}”`)}>{text('编辑', 'Edit')}</Button>
-                  <Menu
-                    label={text(`「${name}」更多操作`, `More for “${name}”`)}
-                    icon={<MoreHorizontal size={16} aria-hidden="true" />}
-                    align="end"
-                    groups={[
-                      ...(isDefault ? [] : [{ id: 'default', items: [{ id: 'default', label: text('设为默认', 'Make default'), onSelect: () => void section.setDefault(model.id) }] }]),
-                      { id: 'danger', tone: 'danger' as const, items: [{ id: 'delete', label: text('删除模型…', 'Delete model…'), onSelect: () => setDeleting(model) }] },
-                    ]}
-                  />
-                </li>
-              )
-            })}
-          </ul>
+          <ModelProfileList
+            models={section.models}
+            defaultId={section.defaultId}
+            label={retrieval ? text('检索模型', 'Retrieval models') : text('AI 模型', 'AI models')}
+            onEdit={section.edit}
+            onSetDefault={modelId => void section.setDefault(modelId)}
+            onDelete={setDeleting}
+          />
         )}
       <DangerConfirm
         open={deleting !== null}

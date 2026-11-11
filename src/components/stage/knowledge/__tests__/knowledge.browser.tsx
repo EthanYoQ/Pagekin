@@ -279,6 +279,51 @@ describe('知识库', () => {
 
   })
 
+  describe('重排回退小字', () => {
+    const hits = [
+      { text: '第一段。', score: 0.9, fileName: '甲.md' },
+      { text: '第二段。', score: 0.8, fileName: '乙.md' },
+    ]
+    const NOTE = { zh: '这次没能重排，结果按原顺序显示。', en: 'Reranking was unavailable this time, so results are in their original order.' }
+    const search = async (results: unknown[]) => {
+      const base = invoke.getMockImplementation()!
+      invoke.mockImplementation(async (channel, ...args) => channel === 'kb:search' ? results : base(channel, ...args))
+      await renderPage()
+      await type(document.querySelector<HTMLInputElement>('form[role="search"] input')!, '三号站台')
+      await act(async () => document.querySelector<HTMLFormElement>('form[role="search"]')!.requestSubmit())
+      await vi.waitFor(() => expect(document.querySelectorAll('.stage-kb-result')).toHaveLength(results.length))
+    }
+    const shownResults = () => [...document.querySelectorAll('.stage-kb-result p')].map(node => node.textContent)
+
+    it.each(['http-error', 'timeout', 'request-failed', 'invalid-response'])('%s 时在结果上方出一行告知，结果顺序不变', async reason => {
+      await search(hits.map(hit => ({ ...hit, rerankFallback: reason })))
+      const note = [...document.querySelectorAll('.stage-kb-help')].find(node => node.textContent === NOTE.zh)
+      expect(note, '小字存在').toBeTruthy()
+      expect(note!.compareDocumentPosition(document.querySelector('.stage-kb-results')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(note!.closest('.pi-notice')).toBeNull()
+      expect(note!.querySelector('button')).toBeNull()
+      expect(shownResults()).toEqual(['第二段。', '第一段。'])
+    })
+
+    it('重排正常或没配重排时什么都不显示', async () => {
+      await search(hits)
+      expect(document.body.textContent).not.toContain(NOTE.zh)
+    })
+
+    it('英文界面显示英文，文案不含端点和 Key', async () => {
+      useLocaleStore.setState({ locale: 'en-US' })
+      await search(hits.map(hit => ({ ...hit, rerankFallback: 'http-error' })))
+      expect(document.body.textContent).toContain(NOTE.en)
+      expect(document.body.textContent).not.toMatch(/https?:|sk-|API key/i)
+    })
+
+    it('清除查找后小字跟着消失', async () => {
+      await search(hits.map(hit => ({ ...hit, rerankFallback: 'timeout' })))
+      await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="清除查找"]')!.click())
+      expect(document.body.textContent).not.toContain(NOTE.zh)
+    })
+  })
+
   it('改「最多显示」按上次查找的词重查，不用输入框里还没提交的字', async () => {
     await renderPage()
     const input = document.querySelector<HTMLInputElement>('form[role="search"] input')!

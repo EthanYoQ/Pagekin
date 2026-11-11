@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, Eye } from 'lucide-react'
 import type { PendingFinalizedCharacterProposalSummary } from '../../../shared/character-proposal'
+import type { PendingFinalizedRelationCandidate } from '../../../shared/finalized-continuity'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { pluralEn } from '../../../shared/plural-en'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { CharacterProposalSelectionPanel } from '../../characters/CharacterProposalSelectionPanel'
 import { usePendingCharacterProposals } from '../../characters/use-pending-character-proposals'
+import { usePendingRelationCandidates } from '../../characters/use-pending-relation-candidates'
 import { STATE_FIELD_LABELS, usePendingStateCandidates } from '../../characters/use-pending-state-candidates'
 import { captureProjectSession } from '../../project-session-gate'
 import { Button } from '../../ui/Button'
@@ -21,7 +23,10 @@ function importTitle({ importPurpose, itemCount: count }: ImportSummary, text: (
   return text(`导入时反推的角色（${count} 位）`, `${characters} inferred during import`)
 }
 
-/** 角色决策（定稿或导入产生）与角色状态建议（定稿产生）合成一条提示条；没有待处理项时不显示。 */
+function relationTitle({ sourceName, targetName, source }: PendingFinalizedRelationCandidate, text: (zh: string, en: string) => string): string {
+  return `${sourceName} → ${targetName} · ${text(`第 ${source.chapterNumber} 章`, `Chapter ${source.chapterNumber}`)}`
+}
+
 export default function CharacterSuggestions() {
   const project = useProjectStore(state => state.currentProject)
   const session = captureProjectSession(project)
@@ -32,13 +37,14 @@ function SessionSuggestions({ session }: { session: ProjectSessionContext }) {
   const text = useLocaleStore(state => state.text)
   const proposals = usePendingCharacterProposals(session)
   const states = usePendingStateCandidates(session)
+  const relations = usePendingRelationCandidates(session)
   const [collapsed, setCollapsed] = useState(false)
-  const count = proposals.summaries.length + states.summaries.length
-  const busy = proposals.busy || states.busy
+  const count = proposals.summaries.length + states.summaries.length + relations.candidates.length
+  const busy = proposals.busy || states.busy || relations.busy
   // 原始报错是主进程包过一层的 IPC 异常，不给作者看。失败可能发生在一次已提交的接受之后，所以只说可以重读，不断言名单状态。
-  const failed = Boolean(proposals.error || states.error)
+  const failed = Boolean(proposals.error || states.error || relations.error)
   if (count === 0 && !failed) return null
-  const reload = () => { void proposals.reload(); void states.reload() }
+  const reload = () => { void proposals.reload(); void states.reload(); void relations.reload() }
 
   return (
     <div className="cast-suggestions" role="region" aria-label={text('待处理的角色建议', 'Pending character suggestions')}>
@@ -99,6 +105,31 @@ function SessionSuggestions({ session }: { session: ProjectSessionContext }) {
               <div className="cast-suggestion-decide">
                 <Button variant="text" size="sm" disabled={busy} onClick={() => { void states.decide('decline') }}>{text('拒绝状态建议', 'Reject state suggestion')}</Button>
                 <Button variant="secondary" size="sm" disabled={busy} onClick={() => { void states.decide('accept') }}>{text('接受状态建议', 'Accept state suggestion')}</Button>
+              </div>
+            </li>
+          )}
+          {!relations.open && relations.candidates.map(candidate => (
+            <li key={candidate.candidateKey} className="cast-suggestion" data-kind="relation">
+              <span className="cast-suggestion-kind">{text('关系建议', 'Relationship')}</span>
+              <span className="cast-suggestion-text">{relationTitle(candidate, text)}</span>
+              <Button variant="text" size="sm" disabled={busy} aria-label={text('检查定稿关系建议', 'Review finalized relationship suggestion')}
+                onClick={() => relations.review(candidate.candidateKey)}>
+                <Eye size={14} aria-hidden />{text('检查', 'Review')}
+              </Button>
+            </li>
+          ))}
+          {relations.open && (
+            <li className="cast-suggestion cast-suggestion-open" data-kind="relation">
+              <div className="cast-suggestion-compare">
+                <strong>{relationTitle(relations.open, text)}</strong>
+                <span>{text('你的设定：', 'Your setting: ')}{relations.open.authorRelations.join(text('、', ', '))}</span>
+                <span>{text('正文里：', 'In the chapter: ')}{relations.open.value}</span>
+                <blockquote className="cast-suggestion-quote">{relations.open.evidence.text}</blockquote>
+              </div>
+              <div className="cast-suggestion-decide">
+                <Button variant="text" size="sm" disabled={busy} onClick={relations.later}>{text('以后再说', 'Decide later')}</Button>
+                <Button variant="text" size="sm" disabled={busy} onClick={() => { void relations.decide('decline') }}>{text('保留原设定', 'Keep my setting')}</Button>
+                <Button variant="secondary" size="sm" disabled={busy} onClick={() => { void relations.decide('accept') }}>{text('采用', 'Adopt')}</Button>
               </div>
             </li>
           )}

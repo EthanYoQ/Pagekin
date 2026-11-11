@@ -22,6 +22,7 @@ import { registerProjectTransitionDraft } from '../../../services/project-transi
 /** 输入框最大高度（px），超出后框内滚动 */
 const MAX_HEIGHT = 200
 const projectInputDrafts = new Map<string, { value: string; savedValue: string }>()
+const isRetrievalPurpose = (purpose: ModelProfile['purposes'][number]) => purpose === 'embedding' || purpose === 'rerank'
 
 /**
  * Agent 输入框组件（参考 agent1.html 第 69-155 行）
@@ -41,8 +42,7 @@ export default function AgentInputBox() {
   const models = useLLMStore(s => s.models)
   const defaultModelId = useLLMStore(s => s.defaultModelId)
 
-  // 过滤出非仅限 embedding 专用的模型
-  const chatModels = models.filter(m => !(m.purposes.length === 1 && m.purposes[0] === 'embedding'))
+  const chatModels = models.filter(m => !(m.purposes.length > 0 && m.purposes.every(isRetrievalPurpose)))
 
   const activeConv = getActiveConversation()
   const currentMode = activeConv?.mode ?? 'planning'

@@ -9,13 +9,16 @@ export function clockTime(at: string | Date | undefined, locale: Locale): string
   return Number.isNaN(time.getTime()) ? '—' : time.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-/** 步骤耗时：不到一分钟写秒，否则写分与秒。 */
-export function stepDuration(startedAt: string | undefined, completedAt: string | undefined, text: Text): string {
-  if (!startedAt || !completedAt) return ''
-  const seconds = Math.max(0, Math.round((Date.parse(completedAt) - Date.parse(startedAt)) / 1000))
+export function durationText(milliseconds: number, text: Text): string {
+  const seconds = Math.max(0, Math.round(milliseconds / 1000))
   if (seconds < 60) return text(`${seconds} 秒`, `${seconds}s`)
   const minutes = Math.floor(seconds / 60)
   return text(`${minutes} 分 ${seconds % 60} 秒`, `${minutes}m ${seconds % 60}s`)
+}
+
+export function stepDuration(startedAt: string | undefined, completedAt: string | undefined, text: Text): string {
+  if (!startedAt || !completedAt) return ''
+  return durationText(Date.parse(completedAt) - Date.parse(startedAt), text)
 }
 
 /** 调用记录里常见用途的说法；其余照原样显示。 */
@@ -37,6 +40,8 @@ const PURPOSES: Record<string, [string, string]> = {
   'generate-plot-outline': ['情节大纲', 'Plot outline'],
   'planning-material-character-extraction': ['提取角色卡', 'Character extraction'],
   'plot-tree-snapshot': ['剧情树', 'Plot tree'],
+  'blueprint-continuity-check': ['检查蓝图', 'Blueprint check'],
+  'blueprint-continuity-suggest': ['检查后续蓝图', 'Later blueprint check'],
 }
 
 export function callPurpose(purpose: string, text: Text): string {

@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { closeProjectDatabase, createProjectDatabase, initProjectDatabase } from '../../database'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
@@ -17,17 +17,27 @@ import { buildReviewGenerationReport } from '../../../src/shared/review-generati
 import type { ReviewCycleRecheckContext } from '../../../src/shared/review-cycle'
 import type { GenerationTransportDiagnostics } from '../../../src/shared/generation-contract'
 import { extractPortableProjectArchive } from '../portable-project-archive'
+import { getPortableFieldPolicy, listPortableFieldPolicyKeys } from '../portable-project-format'
+import { logicalTableName } from '../../migrations/m07-chapter-recycle'
 import { restorePortableProject } from '../project-restore-service'
 import { readPortableRuntimeFreeze } from '../portable-runtime-freeze'
 import { ReviewRevisionGeneration } from '../review-revision-generation'
-import { GenerationRunRepository } from '../../repositories/generation-run-repository'
+import { GenerationRunRepository, textHash } from '../../repositories/generation-run-repository'
+import { captureReviewRevisionContext } from '../review-revision-context'
 import {
   exportPortableProject,
+  PORTABLE_CLEARED_TABLES,
+  portableRedactionFor,
   type ExportPortableProjectInput,
   type PortableAssetSnapshot,
   type PortableProvidedFile,
 } from '../project-archive-service'
-import { createProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
+import {
+  AUTHOR_IMPORT_EFFECTS,
+  AUTHOR_IMPORT_RUN_ID,
+  createProjectArchiveRoundtripFixture,
+  insertAuthorImportReceipts,
+} from '../../../test/desktop/project-archive.fixture'
 import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 
 const require = createRequire(import.meta.url)
@@ -363,6 +373,41 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     }
   })
 
+  it('exports a confirmed review whose thread-task goal carries its outcome', async () => {
+    const goalReview = { version: 1, chapterNumber: 1, coverage: 'not_configured', items: [
+      { id: 'ch1:thread:3', text: '本章推进或回收线索「旧信」', status: 'completed', description: '结论：已回收。旧信读完。',
+        evidence: [{ quote: '旧信', start: 0, end: 2 }], threadOutcome: 'resolved' },
+    ] }
+    const seedConfirmed = (f: Fixture, extra: Record<string, unknown>) => {
+      seedMergedCycle(f)
+      const db = new Database(f.databasePath)
+      try {
+        const binding = JSON.parse(db.prepare("SELECT binding_json FROM generation_runs WHERE run_id='run-revision'").pluck().get() as string)
+        const context = binding.sourceManifest.reviewRevisionContext
+        context.confirmation.snapshot.goalReview = { ...goalReview, items: goalReview.items.map(item => ({ ...item, ...extra })) }
+        binding.sourceManifest.reviewRevisionContextHash = hash(JSON.stringify(context))
+        binding.sourceManifest.authorInputs = [{ id: 'review-revision-context', text: JSON.stringify(context) }]
+        db.prepare('INSERT INTO generation_runs VALUES(?,?,?,?,?,?)').run('run-next-revision', 'root-merge', JSON.stringify(binding), 'open', 2, 'open-next-revision')
+      } finally { db.close() }
+    }
+    const f = fixture()
+    seedConfirmed(f, {})
+    await exportPortableProject(input(f))
+    const targetRoot = path.join(f.base, 'restored-thread-goal')
+    await restorePortableProject({ archivePath: f.target, targetProjectRoot: targetRoot })
+    const restored = new Database(path.join(targetRoot, '.ai-novel', 'project.db'), { readonly: true })
+    try {
+      const binding = JSON.parse(restored.prepare("SELECT binding_json FROM generation_runs WHERE run_id='run-next-revision'").pluck().get() as string)
+      expect(binding.sourceManifest.reviewRevisionContext.confirmation.snapshot.goalReview).toEqual(goalReview)
+    } finally { restored.close() }
+    const invalid = fixture()
+    seedConfirmed(invalid, { machinePath: 'C:/secret' })
+    await expect(exportPortableProject(input(invalid))).rejects.toThrow('PORTABLE_UNSAFE_PROJECTION')
+    const unknownOutcome = fixture()
+    seedConfirmed(unknownOutcome, { threadOutcome: 'finished' })
+    await expect(exportPortableProject(input(unknownOutcome))).rejects.toThrow('PORTABLE_UNSAFE_PROJECTION')
+  })
+
   it('cleans staging when a runtime freeze sidecar is invalid', async () => {
     const f = fixture()
     fs.writeFileSync(path.join(f.storage, 'portable-runtime-freeze.json'), '{}')
@@ -571,6 +616,77 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     } finally { f.dispose() }
   })
 
+  it('exports and restores an author import that left several effect receipts (#607)', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+    const f = await createProjectArchiveRoundtripFixture()
+    try {
+      const namespace = `import:author-manuscript:${AUTHOR_IMPORT_RUN_ID}`
+      const expected = AUTHOR_IMPORT_EFFECTS.map(effect => ({ stage: effect.stage, batch: effect.batchId, namespace, key: effect.effectKey }))
+        .sort((left, right) => `${left.stage}:${left.batch}`.localeCompare(`${right.stage}:${right.batch}`))
+      const sourceBefore = fs.readFileSync(f.sourceDatabasePath)
+      await f.exportAndRestore()
+      expect(fs.readFileSync(f.sourceDatabasePath)).toEqual(sourceBefore)
+
+      const restored = new Database(f.targetDatabasePath, { readonly: true })
+      try {
+        const ledger = (table: string) => restored.prepare(`SELECT stage,batch_id AS batch,effect_namespace AS namespace,
+          effect_key AS key FROM ${table} WHERE run_id=? ORDER BY stage,batch_id`).all(AUTHOR_IMPORT_RUN_ID)
+        expect(ledger('import_run_receipts')).toEqual(expected)
+        expect(ledger('import_effect_ledger')).toEqual(expected)
+        expect(restored.prepare('SELECT effect_namespace,status FROM import_runs WHERE id=?').get(AUTHOR_IMPORT_RUN_ID))
+          .toEqual({ effect_namespace: namespace, status: 'completed' })
+      } finally { restored.close() }
+      const frozen = readPortableRuntimeFreeze(f.targetRoot)
+      expect(() => frozen.assertMutable('import_runs', AUTHOR_IMPORT_RUN_ID)).toThrow('PORTABLE_RUNTIME_FROZEN')
+    } finally { f.dispose() }
+  })
+
+  it('leaves the source database untouched whether or not the import receipts project', async () => {
+    const f = await createProjectArchiveRoundtripFixture()
+    try {
+      const sourceBefore = fs.readFileSync(f.sourceDatabasePath)
+      await Promise.allSettled([f.exportArchive()])
+      expect(fs.readFileSync(f.sourceDatabasePath)).toEqual(sourceBefore)
+    } finally { f.dispose() }
+  })
+
+  it('re-exports a copy restored from an older archive whose import identifiers were already blanked', async () => {
+    const f = fixture()
+    seedProject(f)
+    const db = new Database(f.databasePath)
+    db.pragma('foreign_keys = ON')
+    try {
+      insertAuthorImportReceipts(db)
+      db.prepare("UPDATE import_runs SET effect_namespace=''").run()
+      db.prepare("UPDATE import_run_receipts SET effect_namespace='',effect_key='' WHERE stage='global'").run()
+    } finally { db.close() }
+    await exportPortableProject(input(f))
+    const unpacked = await extract(f)
+    const portable = new Database(path.join(unpacked.stagingPath, 'project.db'), { readonly: true })
+    try {
+      expect(portable.prepare('SELECT effect_namespace AS namespace,effect_key AS key FROM import_run_receipts ORDER BY stage').all())
+        .toEqual([
+          { namespace: `import:author-manuscript:${AUTHOR_IMPORT_RUN_ID}`, key: AUTHOR_IMPORT_EFFECTS[1].effectKey },
+          { namespace: '', key: '' },
+        ])
+      expect(portable.prepare('SELECT DISTINCT effect_namespace FROM import_runs').pluck().all()).toEqual([''])
+    } finally { portable.close() }
+  })
+
+  it('refuses an import effect key that is not a domain-safe identifier, with a readable code and no archive', async () => {
+    const f = fixture()
+    seedProject(f)
+    const db = new Database(f.databasePath)
+    db.pragma('foreign_keys = ON')
+    try {
+      insertAuthorImportReceipts(db)
+      db.prepare("UPDATE import_run_receipts SET effect_key='C:\\Users\\writer\\原稿.txt' WHERE stage='global'").run()
+    } finally { db.close() }
+    const before = fs.readFileSync(f.databasePath)
+    await expect(exportPortableProject(input(f))).rejects.toMatchObject({ code: 'PORTABLE_UNSAFE_PROJECTION' })
+    expect(fs.existsSync(f.target)).toBe(false)
+    expect(fs.readFileSync(f.databasePath)).toEqual(before)
+  })
+
   it('keeps SQLite sidecar paths below the Windows limit under a long cloud staging parent', async () => {
     const f = fixture()
     const legacySuffix = path.join('.portable-export-attempt-123456', 'source-final-verification.db-wal')
@@ -611,7 +727,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
       originProjectId: f.projectId,
       snapshotGeneration: 'generation-test-1',
       requiresRuntimeFreezeGuard: true,
-      sourceEvidence: { schemaVersion: 8, tableCount: 51, fieldCount: 484 },
+      sourceEvidence: { schemaVersion: 9, tableCount: 54, fieldCount: 514 },
     })
     expect(contextCalls).toEqual(['lease-current', 'lease-current', 'lease-current'])
     expect(fs.readFileSync(f.databasePath)).toEqual(before)
@@ -638,7 +754,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     })
     const portable = new Database(path.join(unpacked.stagingPath, 'project.db'), { readonly: true })
     try {
-      expect(portable.pragma('user_version', { simple: true })).toBe(8)
+      expect(portable.pragma('user_version', { simple: true })).toBe(9)
       expect(portable.prepare('SELECT COUNT(*) FROM review_cycle_merges').pluck().get()).toBe(0)
       expect(portable.prepare('SELECT body FROM contents WHERE id=1').pluck().get()).toBe(seeded.body)
       expect(portable.prepare('SELECT relation FROM character_relationships').pluck().get()).toBe('盟友')
@@ -671,14 +787,14 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     const before = fs.readFileSync(f.databasePath)
 
     const receipt = await exportPortableProject(input(f))
-    expect(receipt.sourceEvidence).toMatchObject({ schemaVersion: 8, tableCount: 51, fieldCount: 485 })
+    expect(receipt.sourceEvidence).toMatchObject({ schemaVersion: 9, tableCount: 54, fieldCount: 515 })
     const targetProjectRoot = path.join(f.base, 'restored-donor')
     await restorePortableProject({ archivePath: f.target, targetProjectRoot })
 
     const restoredStorage = path.join(targetProjectRoot, '.ai-novel')
     const restored = new Database(path.join(restoredStorage, 'project.db'), { readonly: true })
     try {
-      expect(restored.pragma('user_version', { simple: true })).toBe(8)
+      expect(restored.pragma('user_version', { simple: true })).toBe(9)
       expect(restored.prepare('SELECT avatar FROM characters').pluck().all()).toEqual(['', ''])
       expect(restored.prepare('SELECT body FROM contents WHERE id=1').pluck().get()).toBe(seeded.body)
       const avatarPath = restored.prepare('SELECT relative_path FROM character_avatar_assets').pluck().get() as string
@@ -887,5 +1003,207 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     await expect(exportPortableProject(input(f, provider(), {
       targetArchivePath: path.join(f.root, 'forbidden.ainovel'),
     }))).rejects.toThrow('PORTABLE_TARGET_INSIDE_SOURCE')
+  })
+})
+
+describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）', { timeout: 30_000 }, () => {
+  const SECRET = 'sk-写稿凭据-绝不外带'
+  const ENDPOINT = 'https://私有端点.example/v1'
+  const MACHINE_PATH = 'C:\\Users\\writer\\密钥.txt'
+  const task = { planId: 8, title: '旧信', authorIntent: '交代旧信的寄信人。', schedule: { kind: 'overdue', chaptersOverdue: 2 } }
+
+  function seedWrittenDraft(f: Fixture, draftId: number, chapterNumber: number, threadTasks: unknown, manifestExtras: Record<string, unknown> = {}): void {
+    const db = new Database(f.databasePath)
+    db.pragma('foreign_keys = ON')
+    try {
+      const body = `第${chapterNumber}章正文，写完未审。`
+      db.prepare("INSERT OR IGNORE INTO project_core(id,project_name,writing_language) VALUES('main','铜钥匙','zh-CN')").run()
+      db.prepare('INSERT INTO contents(id,body) VALUES(?,?)').run(draftId, body)
+      db.prepare("INSERT INTO drafts_all(id,chapter_number,version,status,source,content_id,word_count) VALUES(?,?,1,'draft','write',?,?)")
+        .run(draftId, chapterNumber, draftId, body.length)
+      const root = `root-draft-${draftId}`, run = `run-draft-${draftId}`, attempt = `attempt-draft-${draftId}`
+      db.prepare('INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json) VALUES(?,?,?,?)')
+        .run(root, `key-${root}`, JSON.stringify({ projectId: f.projectId, epoch: 'epoch-1', operation: 'chapter-draft',
+          uiActionNonce: 'nonce', frozenInputHash: hash('input'), rootActionId: root, status: 'sealed', secretRef: SECRET }),
+        JSON.stringify({ maxPhysicalRequests: 2, maxTokenLiability: 1000, maxOutputPerRequest: 500, maxActiveElapsedMs: 1000 }))
+      db.prepare('INSERT INTO generation_runs VALUES(?,?,?,?,?,?)').run(run, root, JSON.stringify({
+        projectId: f.projectId, epoch: 'epoch-1', fingerprint: {}, contextSnapshotId: 'context-1',
+        sourceManifest: { ...manifestExtras, operation: 'chapter-draft', chapterNumber, secretRef: SECRET, endpoint: ENDPOINT, authorInputs: [
+          { id: 'draft:chapter-info', text: JSON.stringify({ chapterNumber, title: '雨夜', keyEvents: MACHINE_PATH, threadTasks }) },
+          { id: 'draft:target-units', text: '900' }] }, sourceRefs: [] }), 'completed', 1, `open-${run}`)
+      db.prepare('INSERT INTO generation_attempts VALUES(?,?,?,?,?,?,?)').run(attempt, `reservation-${attempt}`, run, root,
+        JSON.stringify({ attemptId: attempt, reservationId: `reservation-${attempt}`, rootActionId: root, status: 'settled',
+          reservedTokens: 500, requestedOutputTokens: 400 }),
+        JSON.stringify({ purpose: 'chapter-draft', apiKey: SECRET, endpoint: ENDPOINT, path: MACHINE_PATH,
+          draftCommit: { success: true, id: draftId, version: 1, content: body, contentHash: hash(body), chapterNumber,
+            handle: { projectId: f.projectId, epoch: 'epoch-1', runId: run } } }), `invocation-${attempt}`)
+    } finally { db.close() }
+  }
+
+  function reviewGoals(databasePath: string, draftId: number): ReturnType<typeof captureReviewRevisionContext>['frozenGoals'] {
+    const db = new Database(databasePath)
+    try {
+      const draft = db.prepare('SELECT d.chapter_number AS chapterNumber,d.version,d.status,c.body FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?')
+        .get(draftId) as { chapterNumber: number; version: number; status: 'draft'; body: string }
+      return captureReviewRevisionContext(db, { operation: 'review-chapter', draftId, authorInputs: [], uiLocale: 'zh-CN',
+        expectedDraft: { chapterNumber: draft.chapterNumber, version: draft.version, status: draft.status, contentHash: textHash(draft.body) } },
+      'project').frozenGoals
+    } finally { db.close() }
+  }
+
+  async function roundtrip(f: Fixture, name: string): Promise<string> {
+    await exportPortableProject(input(f))
+    const targetRoot = path.join(f.base, name)
+    await restorePortableProject({ archivePath: f.target, targetProjectRoot: targetRoot })
+    return path.join(targetRoot, '.ai-novel', 'project.db')
+  }
+
+  it('线索的延后和指定跟着副本走，plan_id 还指向同一条线索', async () => {
+    const f = fixture()
+    const seed = new Database(f.databasePath)
+    seed.pragma('foreign_keys = ON')
+    try {
+      seed.prepare("INSERT INTO narrative_thread_plans(id,title,type,target_start_chapter,target_end_chapter,author_intent) VALUES(8,'旧信','伏笔',1,5,'交代寄信人')").run()
+      seed.prepare("INSERT INTO narrative_thread_assignments(plan_id,chapter_number,kind,note) VALUES(8,6,'resolve','写第 5 章时延后'),(8,4,'advance','写第 4 章前指定本章推进')").run()
+    } finally { seed.close() }
+    const restored = new Database(await roundtrip(f, 'restored-thread-assignments'), { readonly: true })
+    try {
+      expect(restored.prepare(`SELECT p.title,a.chapter_number AS chapterNumber,a.kind,a.note FROM narrative_thread_assignments a
+        JOIN narrative_thread_plans p ON p.id=a.plan_id ORDER BY a.chapter_number`).all()).toEqual([
+        { title: '旧信', chapterNumber: 4, kind: 'advance', note: '写第 4 章前指定本章推进' },
+        { title: '旧信', chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' },
+      ])
+    } finally { restored.close() }
+  })
+
+  it('导出再恢复后，未审稿件的审稿目标仍含写稿时冻结的线索任务', async () => {
+    const f = fixture()
+    seedWrittenDraft(f, 5, 1, [task])
+    const before = reviewGoals(f.databasePath, 5)
+    expect(before.items.map(item => item.id)).toEqual(['ch1:thread:8'])
+    const restored = await roundtrip(f, 'restored-thread-tasks')
+    expect(reviewGoals(restored, 5)).toEqual(before)
+  })
+
+  it('副本里不带写稿收据的凭据、端点和机器路径，只留找到草稿的编号和任务', async () => {
+    const f = fixture()
+    seedWrittenDraft(f, 5, 1, [task])
+    const restored = await roundtrip(f, 'restored-thread-secrets')
+    const bytes = fs.readFileSync(f.target)
+    expect(bytes.includes(Buffer.from(SECRET, 'utf8'))).toBe(false)
+    expect(bytes.includes(Buffer.from('私有端点', 'utf8'))).toBe(false)
+    expect(bytes.includes(Buffer.from('密钥.txt', 'utf8'))).toBe(false)
+    const db = new Database(restored, { readonly: true })
+    try {
+      expect(JSON.parse(db.prepare("SELECT usage_receipt_json FROM generation_attempts WHERE attempt_id='attempt-draft-5'").pluck().get() as string))
+        .toEqual({ draftCommit: { id: 5, chapterNumber: 1 } })
+      expect(JSON.parse(db.prepare("SELECT binding_json FROM generation_runs WHERE run_id='run-draft-5'").pluck().get() as string))
+        .toEqual({ sourceManifest: { authorInputs: [{ id: 'draft:chapter-info', text: JSON.stringify({ threadTasks: [task] }) }] } })
+    } finally { db.close() }
+  })
+
+  it('写稿收据里的材料额度不进副本，恢复后这份稿按没有收据的旧稿读', async () => {
+    const f = fixture()
+    seedWrittenDraft(f, 5, 1, [task], { materialDecision: { version: 1, verdict: 'admitted', included: [], omitted: [],
+      budget: { inputTokens: 27_680, contextWindowTokens: 32_768, contextWindowSource: 'default', reservedOutputTokens: 4_576, safetyMarginTokens: 512 } } })
+    const before = reviewGoals(f.databasePath, 5)
+    const restored = await roundtrip(f, 'restored-material-budget')
+    const db = new Database(restored, { readonly: true })
+    try {
+      expect(JSON.parse(db.prepare("SELECT binding_json FROM generation_runs WHERE run_id='run-draft-5'").pluck().get() as string).sourceManifest)
+        .not.toHaveProperty('materialDecision')
+    } finally { db.close() }
+    expect(reviewGoals(restored, 5)).toEqual(before)
+  })
+
+  it('恢复出的副本再导出一次，线索任务仍在', async () => {
+    const f = fixture()
+    seedWrittenDraft(f, 5, 1, [task])
+    const before = reviewGoals(f.databasePath, 5)
+    await exportPortableProject(input(f))
+    const onceRoot = path.join(f.base, 'restored-once')
+    const once = await restorePortableProject({ archivePath: f.target, targetProjectRoot: onceRoot })
+    const secondArchive = path.join(f.base, '再导出.ainovel')
+    await exportPortableProject(input(f, provider(), { sourceProjectRoot: onceRoot, targetArchivePath: secondArchive,
+      projectSession: { projectId: once.targetProjectId, projectPath: onceRoot, leaseId: f.session.leaseId } }))
+    const twiceRoot = path.join(f.base, 'restored-twice')
+    await restorePortableProject({ archivePath: secondArchive, targetProjectRoot: twiceRoot })
+    expect(reviewGoals(path.join(twiceRoot, '.ai-novel', 'project.db'), 5)).toEqual(before)
+  })
+
+  it('没有冻结任务的旧稿，导出后的收据与审稿目标都和原来一样', async () => {
+    const f = fixture()
+    seedWrittenDraft(f, 5, 1, undefined)
+    const before = reviewGoals(f.databasePath, 5)
+    const restored = await roundtrip(f, 'restored-old-draft')
+    expect(reviewGoals(restored, 5)).toEqual(before)
+    const db = new Database(restored, { readonly: true })
+    try {
+      expect(db.prepare("SELECT usage_receipt_json FROM generation_attempts WHERE attempt_id='attempt-draft-5'").pluck().get()).toBeNull()
+      expect(db.prepare("SELECT binding_json FROM generation_runs WHERE run_id='run-draft-5'").pluck().get()).toBe('{}')
+    } finally { db.close() }
+  })
+
+  it('一份稿的线索任务段写坏，只这份稿退回无线索目标并记一行日志，导出恢复照常', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const f = fixture()
+      seedWrittenDraft(f, 5, 1, [task])
+      seedWrittenDraft(f, 6, 2, [{ planId: '坏', title: '旧信' }])
+      const restored = await roundtrip(f, 'restored-corrupt-task')
+      expect(reviewGoals(restored, 5).items.map(item => item.id)).toEqual(['ch1:thread:8'])
+      expect(reviewGoals(restored, 6).items).toEqual([])
+      expect(warn.mock.calls.filter(([message]) => String(message).startsWith('[portable-export]'))).toHaveLength(1)
+    } finally { warn.mockRestore() }
+  })
+
+  it('收据里的草稿编号不是整数时不带走任务，也不改写成别的草稿编号', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const f = fixture()
+      seedWrittenDraft(f, 5, 1, [task])
+      const db = new Database(f.databasePath)
+      try { db.exec("UPDATE generation_attempts SET usage_receipt_json=json_set(usage_receipt_json,'$.draftCommit.id',json('true'))") }
+      finally { db.close() }
+      const restored = await roundtrip(f, 'restored-boolean-draft-id')
+      const portable = new Database(restored, { readonly: true })
+      try {
+        expect(portable.prepare("SELECT usage_receipt_json FROM generation_attempts WHERE attempt_id='attempt-draft-5'").pluck().get()).toBeNull()
+      } finally { portable.close() }
+      expect(warn.mock.calls.filter(([message]) => String(message).startsWith('[portable-export]'))).toHaveLength(1)
+    } finally { warn.mockRestore() }
+  })
+})
+
+describe('portable redaction registry', () => {
+  it('classifies every redacted-projection field and never collapses a field that a unique key distinguishes', () => {
+    const split = (key: string) => key.split('.') as [string, string]
+    const redacted = listPortableFieldPolicyKeys().filter(key => getPortableFieldPolicy(...split(key)).disposition === 'redacted-projection')
+    expect(redacted.filter(key => !portableRedactionFor(...split(key)))).toEqual([])
+
+    const f = fixture()
+    const db = new Database(f.databasePath, { readonly: true })
+    const collapsed: string[] = []
+    try {
+      const tables = db.prepare("SELECT name FROM pragma_table_list WHERE schema='main' AND type='table' AND name NOT LIKE 'sqlite_%'")
+        .pluck().all() as string[]
+      for (const physical of tables) {
+        const table = logicalTableName(physical)
+        if (PORTABLE_CLEARED_TABLES.includes(table)) continue
+        const keyed = new Set((db.prepare(`PRAGMA table_info("${physical}")`).all() as Array<{ name: string; pk: number }>)
+          .filter(column => column.pk > 0).map(column => column.name))
+        for (const index of db.prepare(`PRAGMA index_list("${physical}")`).all() as Array<{ name: string; unique: number }>) {
+          if (!index.unique) continue
+          for (const column of db.prepare(`PRAGMA index_info("${index.name}")`).all() as Array<{ name: string }>) keyed.add(column.name)
+        }
+        for (const field of keyed) {
+          const { disposition } = getPortableFieldPolicy(table, field)
+          const redaction = disposition === 'exclude-machine-authority' ? 'blank'
+            : disposition === 'redacted-projection' ? portableRedactionFor(table, field) : 'kept'
+          if (redaction === 'blank' || redaction === 'json-neutral') collapsed.push(`${table}.${field}`)
+        }
+      }
+    } finally { db.close() }
+    expect(collapsed.sort()).toEqual([])
   })
 })
