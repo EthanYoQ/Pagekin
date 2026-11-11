@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { closeProjectDatabase, getCurrentProjectPath, getProjectDb, initProjectDatabase } from '../../database'
 import { registerDatabaseController } from '../../controllers/db-controller'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
-import { deleteCharacterRelationship, insertCharacterRelationship, readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
+import { deleteCharacterRelationship, derivedRelationSeries, insertCharacterRelationship, readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
 import { refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
 import { ConsistencyExemptionRepository } from '../../repositories/consistency-exemption-repository'
 import { DraftRepository } from '../../repositories/draft-repository'
@@ -86,6 +86,14 @@ function commitFinal(draftId: number, chapterNumber: number, body: string): void
 function finalizeNew(chapterNumber: number, body: string): number {
   const draftId = DraftRepository.create({ chapterNumber, source: 'write', content: body, wordCount: body.length })
   commitFinal(draftId, chapterNumber, body)
+  return draftId
+}
+
+function finalizeWithoutNotes(chapterNumber: number, body: string): number {
+  const draftId = DraftRepository.create({ chapterNumber, source: 'write', content: body, wordCount: body.length })
+  db().prepare('INSERT OR IGNORE INTO blueprints(chapter_number,title) VALUES(?,?)').run(chapterNumber, `第${chapterNumber}章`)
+  FinalizationRepository.commit({ finalizationId: `finalization-${randomUUID()}`, draftId, chapterNumber,
+    chapterTitle: `第${chapterNumber}章`, content: body, contentHash: sha256(body), contentRevision: 1, targetFileName: `${chapterNumber}-${draftId}.md` })
   return draftId
 }
 
@@ -209,6 +217,35 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(pending()).toMatchObject([{ sourceId: LIN, targetId: SHEN, value: '恩断义绝', authorRelations: ['师徒'], evidence: { text: BREAK_UP }, source: { draftId, chapterNumber: 8 } }])
     expect(decide('accept')).toMatchObject({ decision: 'accept', idempotent: false })
     expect(authorRows()).toEqual(['恩断义绝'])
+  })
+
+  it('角色那步先于要点提交、作者随后改了关系：要点补上后旧建议不出现，作者的改动不被覆盖', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    reviseAuthorRelation('同门')
+
+    saveNotes(draftId, '第8章摘要')
+
+    expect(pending()).toEqual([])
+    expect(authorRows()).toEqual(['同门'])
+  })
+
+  it('升级前写下的派生节点没有作者关系快照：要点补上时不补待确认项，也不报错', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    const { source } = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+    const start = CHAPTER_EIGHT.indexOf(BREAK_UP)
+    db().prepare(`INSERT INTO character_continuity_events(event_id,subject_id,subject_name,target_id,target_name,aspect,value,effective_chapter,provenance_json,draft_id,evidence_json)
+      VALUES(?,?,'林岚',?,'沈砚','relation','恩断义绝',8,?,?,?)`).run(`derived:${source.finalizationId}:relation:legacy`, LIN, SHEN,
+      JSON.stringify({ kind: 'derived', source }), draftId,
+      JSON.stringify({ quote: { text: BREAK_UP, start, end: start + BREAK_UP.length }, relationshipId: derivedRelationSeries(LIN, SHEN), seq: 1 }))
+    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
+
+    expect(() => saveNotes(draftId, '第8章摘要')).not.toThrow()
+    expect(pending()).toEqual([])
   })
 
   it('同一份定稿重跑把关系改回作者设定后要点再存一次：撤下的旧值不复活', () => {
