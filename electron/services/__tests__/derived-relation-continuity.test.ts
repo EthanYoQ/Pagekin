@@ -232,6 +232,46 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(authorRows()).toEqual(['同门'])
   })
 
+  it.each([
+    ['改关系、补要点、再重跑角色那步', 'notes-then-rerun'],
+    ['改关系、重跑角色那步、再补要点', 'rerun-then-notes'],
+  ])('角色那步先于要点提交，作者随后改了关系，%s：旧建议都不出现', (_label, order) => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    const extract = () => commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    extract()
+    reviseAuthorRelation('同门')
+    if (order === 'notes-then-rerun') { saveNotes(draftId, '第8章摘要'); extract() } else { extract(); saveNotes(draftId, '第8章摘要') }
+
+    expect(pending()).toEqual([])
+  })
+
+  it('抽取时作者还没写这对关系、之后才写：要点补上后不出现待确认项', () => {
+    openProject()
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    authorRelation('师徒')
+
+    saveNotes(draftId, '第8章摘要')
+
+    expect(pending()).toEqual([])
+  })
+
+  it('角色那步先于要点提交，作者随后调换关系方向：要点补上后不出现待确认项，时间线不多出事件', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    reviseAuthorRelation('师徒', SHEN, LIN)
+    const before = eventCount()
+
+    saveNotes(draftId, '第8章摘要')
+
+    expect(eventCount()).toBe(before)
+    expect(pending()).toEqual([])
+  })
+
   it('升级前写下的派生节点没有作者关系快照：要点补上时不补待确认项，也不报错', () => {
     openProject()
     authorRelation('师徒')
