@@ -8,17 +8,18 @@ import { captureGenerationKnowledge } from '../services/generation-knowledge-sou
 import { getProjectDataRoot } from '../services/project-data-locator'
 import { closeConnection } from '../vector-store'
 import { removeDirectoryWithWindowsRetry } from '../utils/remove-directory'
+import type { EmbeddingOptions } from '../../src/shared/embedding-options'
 
 const model = { provider: 'openai', baseUrl: 'https://unused.example/v1', apiKey: '', modelName: 'fts-only' }
 const roots: string[] = []
 
-async function searchFiles(files: readonly (readonly [fileName: string, text: string])[], query: string, topK: number) {
+async function searchFiles(files: readonly (readonly [fileName: string, text: string])[], query: string, topK: number, embeddingOptions?: EmbeddingOptions) {
   fs.mkdirSync(path.resolve('.runtime/.cache'), { recursive: true })
   const projectPath = fs.mkdtempSync(path.resolve('.runtime/.cache', 'kb-zh-terms-'))
   roots.push(projectPath)
   openCanonicalProjectFixture(projectPath)
   for (const [fileName, text] of files) {
-    expect((await importText(text, fileName, projectPath, 'openai', model)).success).toBe(true)
+    expect((await importText(text, fileName, projectPath, 'openai', { ...model, embeddingOptions })).success).toBe(true)
   }
   const search = await searchKnowledgeFTS(query, projectPath, topK)
   const generation = (await captureGenerationKnowledge({ projectStorageRoot: getProjectDataRoot(projectPath), query, topK })).items
@@ -85,8 +86,18 @@ describe('full-text knowledge search without a retrieval model', () => {
     const forward = await searchFiles(files, '灯塔', 1)
     const backward = await searchFiles([...files].reverse(), '灯塔', 1)
 
-    expect(forward.search.map(hit => hit.fileName)).toEqual(backward.search.map(hit => hit.fileName))
-    expect(forward.generation.map(item => item.fileName)).toEqual(backward.generation.map(item => item.fileName))
-    expect(forward.generation.map(item => item.fileName)).toEqual(forward.search.map(hit => hit.fileName))
+    for (const result of [forward, backward]) {
+      expect(result.search.map(hit => hit.fileName)).toEqual(['第1章 北岸.md'])
+      expect(result.generation.map(item => item.fileName)).toEqual(['第1章 北岸.md'])
+    }
+  })
+
+  it('does not spend two result slots on a passage repeated within one file', async () => {
+    const refrain = '灯塔亮着'.repeat(25)
+    const files = [['第1章 北岸.md', refrain + refrain], ['第2章 南岸.md', '灯塔。']] as const
+    const { search, generation } = await searchFiles(files, '灯塔', 2, { chunkSize: 100, chunkOverlap: 0, batchSize: 50 })
+
+    expect(search.map(hit => [hit.fileName, hit.text])).toEqual([['第1章 北岸.md', refrain], ['第2章 南岸.md', '灯塔。']])
+    expect(generation.map(item => [item.fileName, item.text])).toEqual([['第1章 北岸.md', refrain], ['第2章 南岸.md', '灯塔。']])
   })
 })
