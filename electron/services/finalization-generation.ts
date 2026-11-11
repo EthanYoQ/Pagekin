@@ -58,7 +58,14 @@ export class FinalizationGeneration {
       || receipt.failureCode || !['settled', 'unknown'].includes(receipt.attempt.status) || receipt.result?.finishReason !== 'stop') throw new Error('GENERATION_FINALIZATION_ARTIFACT_INVALID')
     return { artifact, attemptId: row.attempt_id, receipt }
   }
+  /** 仍然算数的封存结果。要点行被作废（更早的章让连续性记录过期）或已由更新的运行重写后，那份要点结果不再算数，重试另开运行重新生成。 */
   readEffect(run: DurableGenerationRun): FinalizationGenerationEffect | undefined {
+    const sealed = this.sealedEffect(run), context = readFinalizationGenerationContext(run)
+    return sealed?.stepKey === 'chapter_notes'
+      && SummaryRepository.currentNotesGeneration(context.slot.source.draftId, this.db) !== context.identity.projectionGeneration ? undefined : sealed
+  }
+  /** 这次运行封存下来的结果，不论现在还算不算数。 */
+  private sealedEffect(run: DurableGenerationRun): FinalizationGenerationEffect | undefined {
     const context = readFinalizationGenerationContext(run)
     const rows = this.db.prepare('SELECT attempt_id,usage_receipt_json FROM generation_attempts WHERE run_id=? ORDER BY rowid').all(run.runId) as { attempt_id: string; usage_receipt_json: string }[]
     const effects = rows.map(row => ({ attemptId: row.attempt_id, effect: JSON.parse(row.usage_receipt_json).finalizationEffect as SavedEffect | undefined })).filter(item => !!item.effect)
@@ -68,9 +75,6 @@ export class FinalizationGeneration {
     if (this.artifact(run, saved.artifact).attemptId !== effects[0].attemptId) throw new Error('GENERATION_FINALIZATION_EFFECT_INVALID')
     if (saved.version !== 1 || saved.contextHash !== textHash(JSON.stringify(context)) || saved.receipt?.stepKey !== context.slot.stepKey || saved.receipt.success !== true
       || textHash(JSON.stringify(saved.receipt)) !== saved.receiptHash) throw new Error('GENERATION_FINALIZATION_EFFECT_INVALID')
-    // 要点行被作废（更早的章让连续性记录过期）或已由更新的运行重写后，这份封存结果不再算数，重试另开运行重新生成。
-    if (saved.receipt.stepKey === 'chapter_notes'
-      && SummaryRepository.currentNotesGeneration(context.slot.source.draftId, this.db) !== context.identity.projectionGeneration) return undefined
     if (saved.receipt.stepKey === 'character_cards') {
       const proof = proveFinalizedCharacterGeneration(this.db, this.runs, this.projectId,
         { projectId: this.projectId, epoch: run.binding.epoch, rootActionId: run.rootActionId, runId: run.runId }, saved.artifact)
@@ -83,14 +87,14 @@ export class FinalizationGeneration {
   }
   assertMutable(run: DurableGenerationRun): void {
     if (!run.binding.sourceManifest.finalizationGenerationContext) return
-    if (this.readEffect(run)) throw new Error('GENERATION_FINALIZATION_EFFECT_SEALED')
+    if (this.sealedEffect(run)) throw new Error('GENERATION_FINALIZATION_EFFECT_SEALED')
     if (this.find(readFinalizationGenerationContext(run).slot)?.runId !== run.runId) throw new Error('GENERATION_FINALIZATION_SUPERSEDED')
   }
   commit(handle: MainGenerationRunHandle, reference: FinalizedCharacterArtifact, characters: CharacterProposalService, assertSources: (run: DurableGenerationRun) => void): FinalizationGenerationEffect {
     return this.db.transaction(() => {
       const run = this.require(handle), context = readFinalizationGenerationContext(run), proof = this.artifact(run, reference)
       const usage = JSON.parse(this.db.prepare('SELECT usage_receipt_json FROM generation_attempts WHERE attempt_id=?').pluck().get(proof.attemptId) as string) as Record<string, unknown>
-      const saved = this.readEffect(run)
+      const saved = this.sealedEffect(run)
       if (saved) {
         if (!isDeepStrictEqual((usage.finalizationEffect as SavedEffect | undefined)?.artifact, reference)) throw new Error('GENERATION_FINALIZATION_EFFECT_CONFLICT')
         return saved

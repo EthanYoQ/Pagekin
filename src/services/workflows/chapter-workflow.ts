@@ -546,11 +546,11 @@ export function createRepairFinalizeWorkflow(
           const { getChapterFinalizeScope, readPostProcessStatus } = await import('./workflow-utils')
           const { planFinalizationRetry } = await import('../../shared/finalization-step-error')
           const current = await readPostProcessStatus(projectPath, getChapterFinalizeScope(chapterNumber), projectSession)
-          let stepKeys: readonly string[] | undefined
-          if (current) {
-            const plan = planFinalizationRetry(current.steps)
-            stepKeys = stepKey ? plan.rows.get(stepKey) ?? [] : plan.card
+          const arrange = (steps: Parameters<typeof planFinalizationRetry>[0]) => {
+            const plan = planFinalizationRetry(steps)
+            return stepKey ? plan.rows.get(stepKey) ?? [] : plan.card
           }
+          let stepKeys = current ? arrange(current.steps) : undefined
           if (stepKeys?.length === 0) throw new Error(text(
             '没有可以重试的失败步骤，请按各步骤的说明处理。',
             'No failed step can be retried. Follow the note on each step.',
@@ -558,7 +558,7 @@ export function createRepairFinalizeWorkflow(
 
           // 修复运行也冻结一次模型租约，全部 LLM 后处理共享一个预算。
           const { RunFinalizePostProcessCommand } = await import('./commands/finalize-chapter.command')
-          const status = await new RunFinalizePostProcessCommand({
+          const run = (keys: readonly string[] | undefined) => new RunFinalizePostProcessCommand({
             project,
             chapterNumber,
             chapterTitle,
@@ -571,9 +571,16 @@ export function createRepairFinalizeWorkflow(
             ),
             onlyFailed: true,
             retryInvalidResult: true,
-            stepKeys,
+            stepKeys: keys,
             chapterEntities,
           }).execute({ step: {}, context, callbacks })
+          let status = await run(stepKeys)
+          // 章节要点过期要到角色状态这一跑才看得出来：按新状态再排一次，新安排点名了已成功的步骤（要点）就接着重跑，只接这一次。
+          const rearranged = stepKeys && arrange(status.steps)
+          if (rearranged?.some(key => status.steps[key]?.ok)) {
+            stepKeys = rearranged
+            status = await run(stepKeys)
+          }
 
           // 后处理修复不会产生新定稿快照，只请求项目资源刷新。
           const { globalEventBus } = await import('../../shared/event-bus')

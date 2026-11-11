@@ -314,6 +314,40 @@ describe('createRepairFinalizeWorkflow', () => {
       expect(postProcess.params).toEqual([expect.objectContaining({ onlyFailed: true, stepKeys: ['chapter_notes', 'character_cards'] })])
     })
 
+    it.each([undefined, 'character_cards'])('reruns once with chapter notes ahead when this run is what reveals that the finished notes no longer count (row retry: %s)', async stepKey => {
+      postProcess.execute
+        .mockResolvedValueOnce(statusOf([
+          { stepKey: 'kb_import', ok: true },
+          { stepKey: 'chapter_notes', ok: true },
+          { stepKey: 'character_cards', ok: false, errorMsg: 'GENERATION_FINALIZATION_PREDECESSOR_REQUIRED' },
+        ]))
+        .mockResolvedValueOnce(statusOf([
+          { stepKey: 'kb_import', ok: true },
+          { stepKey: 'chapter_notes', ok: true },
+          { stepKey: 'character_cards', ok: true },
+        ]))
+      await expect(retryCard([
+        { stepKey: 'kb_import', ok: true },
+        { stepKey: 'chapter_notes', ok: true },
+        { stepKey: 'character_cards', ok: false, errorMsg: 'FINALIZATION_GENERATION_INCOMPLETE' },
+      ], stepKey)).resolves.toBeUndefined()
+      expect(postProcess.params.map(params => params.stepKeys)).toEqual([['character_cards'], ['chapter_notes', 'character_cards']])
+    })
+
+    it('reruns only once: a second report that the notes no longer count is left for the author to retry', async () => {
+      postProcess.execute.mockResolvedValue(statusOf([
+        { stepKey: 'kb_import', ok: true },
+        { stepKey: 'chapter_notes', ok: true },
+        { stepKey: 'character_cards', ok: false, errorMsg: 'GENERATION_FINALIZATION_PREDECESSOR_REQUIRED' },
+      ]))
+      await expect(retryCard([
+        { stepKey: 'kb_import', ok: true },
+        { stepKey: 'chapter_notes', ok: true },
+        { stepKey: 'character_cards', ok: false, errorMsg: 'FINALIZATION_GENERATION_INCOMPLETE' },
+      ])).rejects.toThrow('character_cards')
+      expect(postProcess.params.map(params => params.stepKeys)).toEqual([['character_cards'], ['chapter_notes', 'character_cards']])
+    })
+
     it('#512 leaves a step from an earlier version out of the retry and does not report the repair as failed because of it', async () => {
       postProcess.execute.mockResolvedValue(statusOf([
         { stepKey: 'kb_import', ok: true },
