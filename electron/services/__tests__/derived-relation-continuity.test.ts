@@ -175,6 +175,38 @@ describe('定稿后自动记录人物关系变化', () => {
       authorRelations: ['师徒'], evidence: { text: BREAK_UP }, source: { draftId, chapterNumber: 8 } }])
   })
 
+  it('章节要点还没落库时角色那步先提交：要点补上后，待确认项照样出现', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = DraftRepository.create({ chapterNumber: 8, source: 'write', content: CHAPTER_EIGHT, wordCount: CHAPTER_EIGHT.length })
+    db().prepare('INSERT OR IGNORE INTO blueprints(chapter_number,title) VALUES(8,?)').run('第8章')
+    FinalizationRepository.commit({ finalizationId: `finalization-${randomUUID()}`, draftId, chapterNumber: 8,
+      chapterTitle: '第8章', content: CHAPTER_EIGHT, contentHash: sha256(CHAPTER_EIGHT), contentRevision: 1, targetFileName: `8-${draftId}.md` })
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
+
+    const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+    SummaryRepository.saveFinalizedContinuity({ draftId, chapterNumber: 8, chapterNotes: '第8章摘要', facts: [],
+      source: context.source, projectionGeneration: context.projectionGeneration }, db())
+
+    expect(pending()).toMatchObject([{ sourceId: LIN, targetId: SHEN, value: '恩断义绝', authorRelations: ['师徒'], evidence: { text: BREAK_UP }, source: { draftId, chapterNumber: 8 } }])
+    expect(decide('accept')).toMatchObject({ decision: 'accept', idempotent: false })
+    expect(authorRows()).toEqual(['恩断义绝'])
+  })
+
+  it('保留原设定后要点再存一次：待确认项不回来', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    decide('decline')
+    const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+    SummaryRepository.saveFinalizedContinuity({ draftId, chapterNumber: 8, chapterNotes: '第8章摘要又一版', facts: [],
+      source: context.source, projectionGeneration: context.projectionGeneration }, db())
+    expect(pending()).toEqual([])
+    expect(authorRows()).toEqual(['师徒'])
+  })
+
   it('模型重述作者已有的关系不算变化，不记节点也不提示', () => {
     openProject()
     authorRelation('师徒')
