@@ -28,7 +28,6 @@ beforeEach(() => {
     defaultModelId: 'old-model',
     defaultEmbeddingModelId: 'old-embedding',
     defaultRerankModelId: null,
-    activeRequests: new Map(),
     loaded: true,
   })
 })

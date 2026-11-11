@@ -1,10 +1,36 @@
+import { create } from 'zustand'
 import { useLLMStore } from '../../../../stores/llm-store'
-import type { ModelExecutionLeaseReceipt } from '../../../../shared/ipc-channels'
-import {
-  createGenerationRuntime,
-  type GenerationRuntimeEnvironment,
-} from '../../../generation/generation-runtime'
+import type { LLMFinishReason, ModelExecutionLeaseReceipt, TokenUsage } from '../../../../shared/ipc-channels'
+import type { CreativeStrategy, GenerationReasoningStage } from '../../../../shared/reasoning-types'
+import type { GenerationRuntime } from '../../../generation/generation-runtime'
+import { createGenerationHarness, type CompletionPort, type GenerationMessage } from '../../../generation/generation-harness'
 import type { WorkflowGenerationRuntimeDependencies } from '../base-command'
+
+export type FakeGenerateStream = (
+  messages: GenerationMessage[],
+  callbacks: {
+    onChunk?: (chunk: string) => void
+    onDone?: (fullText: string, usage: TokenUsage | undefined, finishReason: LLMFinishReason) => void
+    onError?: (error: string) => void
+  },
+  modelId?: string,
+  options?: {
+    modelExecutionLeaseId?: string
+    purpose?: string
+    creativeStrategy?: CreativeStrategy
+    reasoningStage?: GenerationReasoningStage
+    maxTokens?: number
+    responseFormat?: { type: string }
+  },
+) => Promise<string>
+
+/** Test double for the provider stream that workflow-command fixtures script per case. */
+export const useFakeModelStream = create<{ generateStream: FakeGenerateStream }>()(() => ({
+  generateStream: async (_messages, callbacks) => {
+    callbacks.onError?.('FAKE_MODEL_STREAM_NOT_SCRIPTED')
+    return ''
+  },
+}))
 
 const DEFAULT_CAPABILITY_EVIDENCE: ModelExecutionLeaseReceipt['capabilityEvidence'] = {
   source: {
@@ -20,56 +46,68 @@ const DEFAULT_CAPABILITY_EVIDENCE: ModelExecutionLeaseReceipt['capabilityEvidenc
   usage: null,
 }
 
-function leaseReceipt(
-  modelId: string,
-  capabilityEvidence: ModelExecutionLeaseReceipt['capabilityEvidence'],
-): ModelExecutionLeaseReceipt {
+/** A renderer-local GenerationRuntime that drives the shared harness against one scripted completion port. */
+export function fakeRuntimeDependencies(
+  complete: CompletionPort['complete'],
+  capabilityEvidence: ModelExecutionLeaseReceipt['capabilityEvidence'] = DEFAULT_CAPABILITY_EVIDENCE,
+): WorkflowGenerationRuntimeDependencies {
   return {
-    leaseId: `test-workflow-lease-${modelId}`,
-    modelId,
-    provider: 'custom',
-    protocol: 'openai',
-    modelName: modelId,
-    modelRevision: 'a'.repeat(64),
-    endpointFingerprint: 'b'.repeat(64),
-    capabilityEvidence,
-    createdAt: 1000,
-    expiresAt: 61_000,
+    async createRuntime(options): Promise<GenerationRuntime> {
+      const frozenModelId = useLLMStore.getState().defaultModelId ?? 'test-model'
+      const harness = createGenerationHarness({
+        modelSource: {
+          snapshotDefaultModel: () => ({
+            revision: 'a'.repeat(64),
+            model: {
+              id: frozenModelId,
+              provider: 'custom',
+              protocol: 'openai',
+              modelName: frozenModelId,
+              baseUrl: '',
+              maxTokens: capabilityEvidence.maxOutputTokens,
+            },
+            modelExecutionLeaseId: `test-workflow-lease-${frozenModelId}`,
+            endpointFingerprint: 'b'.repeat(64),
+            resolvedCapabilities: { ...capabilityEvidence, source: { ...capabilityEvidence.source } },
+          }),
+        },
+        completionPort: { complete },
+        policy: options.budget,
+        creativeStrategy: options.creativeStrategy ?? 'auto',
+      })
+      const session = harness.openSession()
+      return {
+        execute: operation => operation({ session }),
+        close: async () => {},
+      }
+    },
   }
 }
 
-/** Creates a test adapter that preserves old stream doubles behind the public runtime seam. */
 export function createWorkflowRuntimeDependencies(
   capabilityEvidence: ModelExecutionLeaseReceipt['capabilityEvidence'] = DEFAULT_CAPABILITY_EVIDENCE,
 ): WorkflowGenerationRuntimeDependencies {
   return {
     createRuntime(options) {
       const frozenModelId = useLLMStore.getState().defaultModelId ?? 'test-model'
-      const environment: GenerationRuntimeEnvironment = {
-        snapshotDefaultModelId: () => frozenModelId,
-        beginModelExecution: async () => leaseReceipt(frozenModelId, capabilityEvidence),
-        completeWithLease: request => new Promise((resolve, reject) => {
-          const store = useLLMStore.getState()
-          store.generateStream(
-            [...request.messages],
-            {
-              onDone: (content, usage, finishReason) => resolve({ content, usage, finishReason }),
-              onError: error => reject(new Error(error)),
-            },
-            frozenModelId,
-            {
-              modelExecutionLeaseId: request.leaseId,
-              purpose: request.purpose,
-              creativeStrategy: request.creativeStrategy,
-              reasoningStage: request.reasoningStage,
-              maxTokens: request.plan.maxOutputTokens,
-              responseFormat: request.plan.responseFormat,
-            },
-          ).catch(reject)
-        }),
-        closeModelExecution: async () => {},
-      }
-      return createGenerationRuntime(options, environment)
+      return fakeRuntimeDependencies(request => new Promise((resolve, reject) => {
+        useFakeModelStream.getState().generateStream(
+          [...request.messages],
+          {
+            onDone: (content, usage, finishReason) => resolve({ content, usage, finishReason }),
+            onError: error => reject(new Error(error)),
+          },
+          frozenModelId,
+          {
+            modelExecutionLeaseId: request.modelExecutionLeaseId ?? undefined,
+            purpose: request.purpose,
+            creativeStrategy: request.creativeStrategy,
+            reasoningStage: request.reasoningStage,
+            maxTokens: request.plan.maxOutputTokens,
+            responseFormat: request.plan.responseFormat,
+          },
+        ).catch(reject)
+      }), capabilityEvidence).createRuntime(options)
     },
   }
 }

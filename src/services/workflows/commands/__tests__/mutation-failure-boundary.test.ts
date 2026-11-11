@@ -17,7 +17,7 @@ import { savePartialData } from '../architecture.command'
 import { runPostProcessPipeline } from '../../workflow-utils'
 import { planFinalizationRetry } from '../../../../shared/finalization-step-error'
 import { createBoundedCompletionError } from '../../bounded-completion'
-import { workflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { workflowRuntimeDependencies, useFakeModelStream, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
 import type { CommandExecuteParams } from '../base-command'
 import { ReviewRevisionRuntimeFixture } from './review-revision-runtime.fixture'
 
@@ -110,7 +110,7 @@ function testPostProcessGeneration(): FinalizePostProcessGeneration {
       return { applied: 0, unchanged: 0, candidates: [], unresolved: result.unresolved }
     },
     complete(builder, stepCallbacks) {
-      const llmStore = useLLMStore.getState()
+      const llmStore = useFakeModelStream.getState()
       return new Promise<string>((resolve, reject) => {
         llmStore.generateStream(
           [
@@ -275,9 +275,8 @@ describe('workflow mutation failure boundaries', () => {
     })
     stubVelaIpc(invoke)
     const observedMessages: Array<Array<{ role: string; content: string }>> = []
-    useLLMStore.setState({
-      defaultModelId: 'model',
-      generateStream: vi.fn(async (messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
         observedMessages.push(messages)
         streamCallbacks.onDone?.(
           observedMessages.length === 2
@@ -287,8 +286,7 @@ describe('workflow mutation failure boundaries', () => {
           'stop',
         )
         return `request-${observedMessages.length}`
-      }),
-    })
+      }) })
     const steps = testFrozenCharacterSteps('The sign reads “夜航 Café”.', testPostProcessGeneration())
     const workflowContext = { ...context(), writingLanguage: 'en-US' as const }
 
@@ -464,13 +462,11 @@ describe('workflow mutation failure boundaries', () => {
       throw new Error(`unexpected IPC: ${channel}`)
     })
     stubVelaIpc(invoke)
-    useLLMStore.setState({
-      defaultModelId: 'model',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.('章节要点', undefined, 'stop')
         return 'request-1'
-      }),
-    })
+      }) })
     const step = buildFinalizePostProcessSteps(
       { path: PROJECT_PATH },
       1,
@@ -517,13 +513,11 @@ describe('workflow mutation failure boundaries', () => {
       throw new Error(`unexpected IPC: ${channel}`)
     })
     stubVelaIpc(invoke)
-    useLLMStore.setState({
-      defaultModelId: 'model',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.('作者原稿的连续性事实', undefined, 'stop')
         return 'request-1'
-      }),
-    })
+      }) })
     const step = buildFinalizePostProcessSteps(
       { path: PROJECT_PATH },
       1,
@@ -663,8 +657,8 @@ describe('workflow mutation failure boundaries', () => {
     })
     stubVelaIpc(invoke)
     const generateStream = vi.fn(async (
-      _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+      _messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
     ) => {
       const isFirstAttempt = generateStream.mock.calls.length === 1
       streamCallbacks.onDone?.(
@@ -674,7 +668,8 @@ describe('workflow mutation failure boundaries', () => {
       )
       return `request-${generateStream.mock.calls.length}`
     })
-    useLLMStore.setState({ defaultModelId: 'model', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream })
     const chapterNotes = buildFinalizePostProcessSteps(
       { path: PROJECT_PATH },
       1,
@@ -759,7 +754,8 @@ describe('workflow mutation failure boundaries', () => {
 
   it('does not accept character extraction when the stream is length-truncated', async () => {
     stubVelaIpc(vi.fn())
-    useLLMStore.setState({ defaultModelId: 'model', generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
       streamCallbacks.onDone?.('{"updates":[', undefined, 'length'); return 'request-1'
     }) })
     const step = testFrozenCharacterSteps('正文', testPostProcessGeneration()).find(step => step.key === 'character_cards')!
@@ -898,14 +894,12 @@ describe('workflow mutation failure boundaries', () => {
       throw new Error(`unexpected IPC: ${channel}`)
     })
     stubVelaIpc(invoke)
-    useLLMStore.setState({
-      defaultModelId: 'model',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         const legacyOnDone = streamCallbacks.onDone as ((text: string) => void) | undefined
         legacyOnDone?.('看似完整但无终止证据')
         return 'request-1'
-      }),
-    })
+      }) })
     const step = buildFinalizePostProcessSteps(
       { path: PROJECT_PATH },
       1,
@@ -1008,7 +1002,8 @@ describe('workflow mutation failure boundaries', () => {
       }), undefined, 'stop')
       return 'single-review-request'
     })
-    useLLMStore.setState({ defaultModelId: 'model', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream })
     await new ReviewChapterCommand({ draftPath: 'ai-novel://draft/1', draftContent: draft, chapterNumber: 1 })
       .execute({ step: {}, context: context(), callbacks: callbacks() })
     expect(generateStream).toHaveBeenCalledTimes(1)
@@ -1101,14 +1096,12 @@ describe('workflow mutation failure boundaries', () => {
     })
     stubVelaIpc(invoke)
     let observedReviewPrompt = ''
-    useLLMStore.setState({
-      defaultModelId: 'model',
-      generateStream: vi.fn(async (messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
         observedReviewPrompt = messages.map((message: { content: string }) => message.content).join('\n')
         streamCallbacks.onDone?.(JSON.stringify(review), undefined, 'stop')
         return 'review-request'
-      }),
-    })
+      }) })
     const command = new ReviewChapterCommand({
       draftPath: 'ai-novel://draft/1',
       draftContent: '待审正文',
@@ -1357,8 +1350,8 @@ describe('workflow mutation failure boundaries', () => {
     })
     stubVelaIpc(invoke)
     const generateStream = vi.fn(async (
-      _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+      _messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
     ) => {
       const firstAttempt = generateStream.mock.calls.length === 1
       streamCallbacks.onDone?.(
@@ -1368,7 +1361,8 @@ describe('workflow mutation failure boundaries', () => {
       )
       return `request-${generateStream.mock.calls.length}`
     })
-    useLLMStore.setState({ defaultModelId: 'model', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream })
     const command = new ReviewChapterCommand({
       draftPath: 'ai-novel://draft/1',
       draftContent: '待审正文',
@@ -1416,8 +1410,8 @@ describe('workflow mutation failure boundaries', () => {
     stubVelaIpc(invoke)
     const rebuildPrompts: string[] = []
     const generateStream = vi.fn(async (
-      messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+      messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
     ) => {
       const firstAttempt = generateStream.mock.calls.length === 1
       if (firstAttempt) blueprint.keyEvents = '生成期间外部改写的目标'
@@ -1431,7 +1425,8 @@ describe('workflow mutation failure boundaries', () => {
       )
       return `review-request-${generateStream.mock.calls.length}`
     })
-    useLLMStore.setState({ defaultModelId: 'model', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream })
     const command = new ReviewChapterCommand({
       draftPath: 'ai-novel://draft/1',
       draftContent: originalDraft,
@@ -1466,13 +1461,14 @@ describe('workflow mutation failure boundaries', () => {
     })
     stubVelaIpc(invoke)
     const generateStream = vi.fn(async (
-      _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+      _messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
     ) => {
       streamCallbacks.onDone?.('{"items":[', undefined, 'length')
       return `request-${generateStream.mock.calls.length}`
     })
-    useLLMStore.setState({ defaultModelId: 'model', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model' })
+    useFakeModelStream.setState({ generateStream })
     const command = new ReviewChapterCommand({
       draftPath: 'ai-novel://draft/1',
       draftContent: '待审正文',

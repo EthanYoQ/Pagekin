@@ -4,7 +4,7 @@ import { RefineDraftCommand } from '../refine-draft.command'
 import { RefineFromReviewCommand } from '../refine-from-review.command'
 import { ReviewChapterCommand } from '../review-chapter.command'
 import { ReviewRevisionRuntimeFixture } from './review-revision-runtime.fixture'
-import { workflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { workflowRuntimeDependencies, useFakeModelStream, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
 import { useProjectStore } from '../../../../stores/project-store'
 import { useEditorStore } from '../../../../stores/editor-store'
 import { useLLMStore } from '../../../../stores/llm-store'
@@ -50,7 +50,7 @@ function setup(responses: Response[], projections: FinalizedContinuityProjection
   })
   const fixture = new ReviewRevisionRuntimeFixture(backend)
   const providerBindCounts: number[] = []
-  const provider = vi.fn<ReturnType<typeof useLLMStore.getState>['generateStream']>(async (_messages, callbacks) => {
+  const provider = vi.fn<FakeGenerateStream>(async (_messages, callbacks) => {
     providerBindCounts.push(fixture.materialDecisions.length)
     const response = responses.shift()
     if (!response) throw new Error('unexpected synthetic provider request')
@@ -58,7 +58,8 @@ function setup(responses: Response[], projections: FinalizedContinuityProjection
     else callbacks.onDone?.(response.content, undefined, response.finishReason)
     return 'synthetic-request'
   })
-  useLLMStore.setState({ defaultModelId: 'model-a', generateStream: provider })
+  useLLMStore.setState({ defaultModelId: 'model-a' })
+  useFakeModelStream.setState({ generateStream: provider })
   const dependencies = { createRuntime: vi.fn(fixture.wrap(workflowRuntimeDependencies).createRuntime) }
   const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     if (channel === 'prompt:load-global') return { templates: [], diagnostics: [] }
