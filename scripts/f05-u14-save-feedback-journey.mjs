@@ -12,6 +12,7 @@ import * as arch from './redesign/pages/architecture.mjs'
 import * as blueprint from './redesign/pages/blueprint.mjs'
 import * as stage from './redesign/pages/stage.mjs'
 import { resolveWindowsExecutable } from './product-identity.mjs'
+import { documentEndKey } from './redesign/keys.mjs'
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const argument = name => process.argv.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
@@ -261,7 +262,7 @@ async function main() {
     await arch.section(page, 'worldbuilding').getByRole('button', { name: /^(编辑|自己写)$/ }).click()
     await archEditor(page).waitFor({ state: 'visible' })
     await archEditor(page).click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.type(archMarker)
     await archFeedback(page, '未保存').waitFor({ state: 'visible' })
     await waitTopStatus(page, '未保存')
@@ -288,7 +289,7 @@ async function main() {
     await assertStage(page, 'U14.A01')
     const body = await stage.openChapter(page, 1)
     await body.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.type(bodyMarker)
     await waitTopStatus(page, '未保存')
     const storedBody = () => db.prepare('SELECT contents.body FROM drafts JOIN contents ON contents.id = drafts.content_id WHERE drafts.id = ?').get(draftId).body
@@ -311,7 +312,7 @@ async function main() {
     mark('U14.A09-concurrent-edit')
     await assertStage(page, 'U14.A09')
     await body.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.type(' 并发一')
     await waitTopStatus(page, '未保存')
     let lockMessage
@@ -323,7 +324,7 @@ async function main() {
       assert(await shownDirty(page), 'lock failure falsely marked the draft clean')
       assert(!storedBody().includes('并发一'), 'failed locked save changed the durable draft')
       await body.click()
-      await page.keyboard.press('Control+End')
+      await page.keyboard.press(documentEndKey())
       await page.keyboard.type(' 并发二')
     } finally { db.exec('COMMIT') }
     await waitTopStatus(page, '未保存')
@@ -354,7 +355,7 @@ async function main() {
       })
     })
     await body.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.type(' 并发三')
     await waitTopStatus(page, '未保存')
     await assertStage(page, 'U14.A09-inflight-success')
@@ -363,7 +364,7 @@ async function main() {
     assert(storedBody().includes('并发三'), 'held save did not persist its first snapshot')
     assert(!storedBody().includes('并发四'), 'later input existed before it was typed')
     await body.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.type(' 并发四')
     await app.evaluate(({ ipcMain }) => {
       const gate = globalThis.__f05U14SaveGate
@@ -396,14 +397,14 @@ async function main() {
     const beforeShortcut = storedBody()
     assert(!beforeShortcut.includes(shortcutMarker))
     await body.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.type(shortcutMarker)
     const shortcutSavedBody = `${beforeShortcut}${shortcutMarker}`
     assert.equal(await stage.proseBody(body), shortcutSavedBody, 'shortcut test input did not reach the focused editor')
     assert(await body.evaluate(element => element === document.activeElement), 'shortcut target is not the focused editor')
     await waitTopStatus(page, '未保存')
     assert.equal(storedBody(), beforeShortcut, 'shortcut input saved before the key command')
-    await page.keyboard.press('Control+s')
+    await page.keyboard.press('ControlOrMeta+s')
     await waitTopStatus(page, '已保存')
     assert.equal(storedBody(), shortcutSavedBody, 'Ctrl+S did not persist the exact draft body')
     assert(!(await shownDirty(page)), 'Ctrl+S left the draft dirty')
@@ -444,7 +445,7 @@ async function main() {
     await assertStage(page, 'U14.A08')
     const exitBody = await stage.openChapter(page, 1)
     await exitBody.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.type(' 退出保存')
     await waitTopStatus(page, '未保存')
     const exitDialog = page.getByRole('dialog', { name: '退出前处理未保存的内容' })

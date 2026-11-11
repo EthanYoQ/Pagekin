@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import '../../../../index.css'
 
 import type { ModelProfile, ProjectData } from '../../../../shared/ipc-channels'
+import type { NarrativeThreadAssignmentInput, NarrativeThreadView } from '../../../../shared/narrative-thread'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
 import { blueprintWritePrefill } from '../../../../services/workflows/chapter-write-launch'
 import type { ChapterBlueprint } from '../../../../services/workflows/directory-workflow'
@@ -44,6 +45,36 @@ let continuityGate: Promise<void> | null = null
 let authority: unknown
 let committedHints: Record<number, unknown>
 let persistedBlueprint: ChapterBlueprint
+let threadViews: NarrativeThreadView[]
+let threadIpc: (channel: string, ...args: unknown[]) => Promise<unknown>
+
+const storedThreadIpc = async (channel: string, ...args: unknown[]): Promise<unknown> => {
+  if (channel === 'db:narrative-thread-list') return threadViews
+  if (channel === 'db:narrative-thread-assignment-set') {
+    const { planId, chapterNumber, kind, note } = args[0] as NarrativeThreadAssignmentInput
+    threadViews = threadViews.map(item => item.id === planId ? {
+      ...item,
+      targetEndChapter: kind === 'resolve' ? chapterNumber : item.targetEndChapter,
+      assignments: [...(item.assignments ?? []).filter(old => old.chapterNumber !== chapterNumber), { chapterNumber, kind, note }],
+    } : item)
+    return { success: true, threads: threadViews }
+  }
+  if (channel === 'db:narrative-thread-assignment-remove') {
+    const [planId, chapterNumber, restoreEndChapter] = args as [number, number, number | null]
+    threadViews = threadViews.map(item => item.id === planId ? {
+      ...item,
+      targetEndChapter: restoreEndChapter !== null && item.targetEndChapter === chapterNumber ? restoreEndChapter : item.targetEndChapter,
+      assignments: (item.assignments ?? []).filter(old => old.chapterNumber !== chapterNumber),
+    } : item)
+    return { success: true, threads: threadViews }
+  }
+  throw new Error(`unexpected IPC ${channel}`)
+}
+
+const threadView = (id: number, title: string, targetStartChapter: number, targetEndChapter: number): NarrativeThreadView => ({
+  id, title, type: '伏笔', targetStartChapter, targetEndChapter, authorIntent: `${title}要有交代。`,
+  status: 'planned', dormantChapters: 0, overdue: false, events: [], createdAt: '', updatedAt: '',
+})
 const CONTINUOUS_AUTHORITY = {
   status: 'continuous', lastChapterNumber: 4, nextChapterNumber: 5, gaps: [], duplicateChapterNumbers: [], authorityFingerprint: 'e'.repeat(64),
 }
@@ -59,6 +90,12 @@ const BROKEN_WITH_KEEPER = {
   eventId: 'relation:add:line', subjectId: 'lin', subjectName: '林舟', targetId: 'zhou', targetName: '老周', relationshipId: 'line', aspect: 'relation',
   value: '决裂', effectiveChapter: 3, provenance: { kind: 'author', operationId: 'op' }, draftId: null, seq: 1, quote: null,
 }
+const UNDECIDED_QUOTE = '老周把车票撕成两半。'
+const UNDECIDED_RELATION = {
+  candidateKey: 'fcs-relation:undecided', source: { draftId: 4, finalizationId: 'f4', chapterNumber: 4, contentHash: 'a'.repeat(64) },
+  sourceId: 'lin', sourceName: '林舟', targetId: 'zhou', targetName: '老周', value: '形同陌路', evidence: { text: UNDECIDED_QUOTE }, authorRelations: ['父子'],
+}
+let pendingRelations: unknown[] = []
 const COMPANION_HINTS = { 5: [{ from: '林舟', to: '老周', relation: '亲密同伴' }] }
 
 const BLUEPRINT: ChapterBlueprint = {
@@ -105,6 +142,7 @@ function installIpc() {
     if (channel === 'db:blueprint-get') return persistedBlueprint
     if (channel === 'db:blueprint-relationship-hints') return committedHints
     if (channel === 'db:character-continuity-preflight-nodes') return [BROKEN_WITH_KEEPER]
+    if (channel === 'finalized-character:list-relation-candidates') return pendingRelations
     if (channel === 'db:character-get-all') return [{ id: 1 }]
     if (channel === 'db:draft-get-finalized') return { chapterNumber: Number(args[0]) }
     if (channel === 'db:post-process-get-latest-run') return null
@@ -122,6 +160,7 @@ function installIpc() {
       exemptions = exemptions.map(item => item.stableFactKey === args[0] && item.chapterNumber === args[1] ? { ...item, revoked: true } : item)
       return { success: true }
     }
+    if (channel.startsWith('db:narrative-thread-')) return threadIpc(channel, ...args)
     if (channel === 'fs:read-json') return { success: false }
     if (channel === 'fs:write-json') {
       writtenLogs.push(args[1])
@@ -170,8 +209,11 @@ beforeEach(async () => {
   authority = CONTINUOUS_AUTHORITY
   committedHints = {}
   persistedBlueprint = BLUEPRINT
+  threadViews = []
+  threadIpc = storedThreadIpc
   startWorkflow = vi.fn(async () => 'write-popover-run')
   useLocaleStore.setState({ locale: 'zh-CN' })
+  pendingRelations = []
   useProjectStore.setState({ currentProject: project() })
   setActiveProjectSessionContext(SESSION)
   useLLMStore.setState({ models: [model('glm'), model('grok')], defaultModelId: 'grok', loaded: true })
@@ -217,6 +259,178 @@ function expectedLaunch(changes: { generationModelId: string; userGuidance: stri
       keyEvents: '阅读灯熄灭三次；老周查票时叫出林舟母亲的名字。', characters: '林舟、老周、阿满', userGuidance, wordsTarget: 2600 },
   }
 }
+
+describe('写前的线索：延后与指定本章推进', () => {
+  const popover = page.getByRole('dialog', { name: '本次写作选项' })
+  const hint = (count: number) => page.getByRole('button', { name: `本章要处理 ${count} 条线索` })
+  const renderPopover = () => render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
+  const threadRow = (title: string) => popover.getByRole('listitem').filter({ hasText: title })
+  const threadCalls = (channel: string) => (window as unknown as { aiNovelAPI: { invoke: ReturnType<typeof vi.fn> } }).aiNovelAPI.invoke.mock.calls.filter(([name]) => name === channel)
+
+  it('到期不自动开弹层，小字写明条数，点它打开；主按钮仍是一下开写', async () => {
+    threadViews = [threadView(1, '青铜钥匙', 1, 5), threadView(2, '父亲的旧信', 1, 2)]
+    await renderPopover()
+    await expect.element(hint(2)).toBeVisible()
+    expect(popover.query()).toBeNull()
+
+    await act(async () => hint(2).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('本章到期')
+    await expect.element(threadRow('父亲的旧信')).toHaveTextContent('逾期 3 章')
+    expect([...document.querySelectorAll('.stage-write-thread b')].map(node => node.textContent)).toEqual(['父亲的旧信', '青铜钥匙'])
+
+    await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
+    await vi.waitFor(() => expect(startWorkflow).toHaveBeenCalledOnce())
+  })
+
+  it('延后一章立刻生效并留备注，这一行变成可撤销，撤销后回到任务', async () => {
+    threadViews = [threadView(1, '青铜钥匙', 1, 5)]
+    await renderPopover()
+    await act(async () => hint(1).click())
+
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后一章' }).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 6 章')
+    expect(threadCalls('db:narrative-thread-assignment-set')[0]![1]).toEqual({
+      planId: 1, chapterNumber: 6, writingChapter: 5, kind: 'resolve', note: '写第 5 章时延后',
+    })
+    expect(hint(1).query()).toBeNull()
+
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '撤销' }).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('本章到期')
+    expect(threadCalls('db:narrative-thread-assignment-remove')[0]!.slice(1, 4)).toEqual([1, 6, 5])
+    await expect.element(hint(1)).toBeVisible()
+  })
+
+  it('延后三章从正在写的章算，撤销后回到原来的逾期章数', async () => {
+    threadViews = [threadView(1, '青铜钥匙', 1, 2)]
+    await renderPopover()
+    await act(async () => hint(1).click())
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后三章' }).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 8 章')
+    expect(threadViews[0]!.targetEndChapter).toBe(8)
+
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '撤销' }).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('逾期 3 章')
+  })
+
+  it('第 5 章的撤销不带到第 6 章：第 6 章里它是到期任务', async () => {
+    threadViews = [threadView(1, '青铜钥匙', 1, 5)]
+    await renderPopover()
+    await act(async () => hint(1).click())
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后一章' }).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 6 章')
+    await userEvent.keyboard('{Escape}')
+
+    await render(<WriteChapterPopover chapterNumber={6} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 6 章" />)
+    await act(async () => hint(1).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('本章到期')
+    expect(popover.getByRole('button', { name: '撤销' }).query()).toBeNull()
+  })
+
+  it('超过 6 条时全部列出，写明另有几条本次不进任务，小字只数进任务的', async () => {
+    threadViews = Array.from({ length: 8 }, (_, index) => threadView(index + 1, `线索${index + 1}`, 1, 2))
+    await renderPopover()
+    await act(async () => hint(6).click())
+    await vi.waitFor(() => expect(document.querySelectorAll('.stage-write-thread')).toHaveLength(8))
+    await expect.element(popover.getByText('另有 2 条本次不进任务')).toBeVisible()
+  })
+
+  it('区间内的线索收在折叠区，设为本章推进后进任务，可撤销', async () => {
+    threadViews = [threadView(1, '父亲的旧信', 3, 9)]
+    await renderPopover()
+    await act(async () => page.getByRole('button', { name: '本次写作选项' }).click())
+    await act(async () => popover.getByText('也可以本章推进').click())
+    await act(async () => threadRow('父亲的旧信').getByRole('button', { name: '本章推进' }).click())
+    await expect.element(hint(1)).toBeVisible()
+    expect(threadCalls('db:narrative-thread-assignment-set')[0]![1]).toMatchObject({ planId: 1, chapterNumber: 5, kind: 'advance' })
+
+    await act(async () => threadRow('父亲的旧信').getByRole('button', { name: '撤销' }).click())
+    await vi.waitFor(() => expect(hint(1).query()).toBeNull())
+  })
+
+  it('线索读不出来：不出小字和线索区，弹层其余正常，照常开写', async () => {
+    threadIpc = async () => { throw new Error('THREADS_UNAVAILABLE') }
+    await renderPopover()
+    await act(async () => page.getByRole('button', { name: '本次写作选项' }).click())
+    await expect.element(popover.getByLabelText(/本次模型/)).toBeVisible()
+    expect(page.getByRole('region', { name: '本章线索' }).query()).toBeNull()
+    expect(popover.getByRole('alert').query()).toBeNull()
+    await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
+    await vi.waitFor(() => expect(startWorkflow).toHaveBeenCalledOnce())
+  })
+
+  it('延后没保存上：一句人话，线索仍在任务里，再点能成功', async () => {
+    threadViews = [threadView(1, '青铜钥匙', 1, 5)]
+    threadIpc = async (channel, ...args) => channel === 'db:narrative-thread-assignment-set'
+      ? { success: false, error: 'Error: NARRATIVE_THREAD_PLAN_NOT_FOUND' } : storedThreadIpc(channel, ...args)
+    await renderPopover()
+    await act(async () => hint(1).click())
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后一章' }).click())
+
+    await expect.element(popover.getByRole('alert')).toHaveTextContent('线索还在本章任务里。延后没保存上，再点一次试试。')
+    expect(document.body.textContent).not.toContain('NARRATIVE_THREAD')
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('本章到期')
+
+    threadIpc = storedThreadIpc
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后一章' }).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 6 章')
+    expect(popover.getByRole('alert').query()).toBeNull()
+  })
+
+  it('换了项目后才到的线索响应不写进当前弹层', async () => {
+    let finishOldList!: (threads: NarrativeThreadView[]) => void
+    threadIpc = async channel => {
+      if (channel !== 'db:narrative-thread-list') throw new Error(`unexpected IPC ${channel}`)
+      return new Promise(resolve => { finishOldList = resolve })
+    }
+    await renderPopover()
+    await vi.waitFor(() => expect(finishOldList).toBeTypeOf('function'))
+    const oldFinish = finishOldList
+
+    threadIpc = async () => []
+    const next = { ...project(), id: 'other', sessionLease: 'other-lease', path: 'C:\\novels\\other' }
+    await act(async () => {
+      useProjectStore.setState({ currentProject: next })
+      setActiveProjectSessionContext({ projectId: 'other', leaseId: 'other-lease', projectPath: 'C:\\novels\\other' })
+    })
+    await act(async () => oldFinish([threadView(1, '上一部的线索', 1, 5)]))
+
+    expect(hint(1).query()).toBeNull()
+  })
+
+  it('换了项目后才到的保存失败不显示在当前弹层', async () => {
+    threadViews = [threadView(1, '青铜钥匙', 1, 5)]
+    let failSave!: (error: Error) => void
+    threadIpc = async (channel, ...args) => channel === 'db:narrative-thread-assignment-set'
+      ? new Promise((_resolve, reject) => { failSave = reject }) : storedThreadIpc(channel, ...args)
+    await renderPopover()
+    await act(async () => hint(1).click())
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后一章' }).click())
+    await vi.waitFor(() => expect(failSave).toBeTypeOf('function'))
+
+    threadViews = [threadView(2, '这一部的线索', 1, 5)]
+    const next = { ...project(), id: 'other', sessionLease: 'other-lease', path: 'C:\\novels\\other' }
+    await act(async () => {
+      useProjectStore.setState({ currentProject: next })
+      setActiveProjectSessionContext({ projectId: 'other', leaseId: 'other-lease', projectPath: 'C:\\novels\\other' })
+    })
+    await act(async () => failSave(new Error('SAVE_FAILED')))
+
+    expect(popover.getByRole('alert').query()).toBeNull()
+  })
+
+  it('英文界面的条数、状态和备注都是英文', async () => {
+    useLocaleStore.setState({ locale: 'en-US' })
+    threadViews = [threadView(1, 'Bronze key', 1, 2)]
+    await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="Write chapter 5" />)
+    const dialog = page.getByRole('dialog', { name: 'Options for this run' })
+    await act(async () => page.getByRole('button', { name: '1 thread to handle here' }).click())
+    await expect.element(dialog.getByRole('listitem').filter({ hasText: 'Bronze key' })).toHaveTextContent('3 overdue')
+    await act(async () => dialog.getByRole('button', { name: 'Move 1 on' }).click())
+    await expect.element(dialog.getByRole('listitem').filter({ hasText: 'Bronze key' })).toHaveTextContent('Moved to Ch. 6')
+    expect(threadCalls('db:narrative-thread-assignment-set')[0]![1]).toMatchObject({ note: 'Moved on while writing Ch. 5' })
+    expect(document.querySelector('.stage-write-threads')?.textContent).not.toMatch(/[\u4e00-\u9fff]/u)
+  })
+})
 
 describe('写作此章弹层', () => {
   it('同一蓝图下直接写作，交给工作流的参数与旧的章节创作对话框一致', async () => {
@@ -550,6 +764,21 @@ describe('写作此章弹层', () => {
     await expect.element(popover.getByRole('alert')).toHaveTextContent('数据库只读')
     await expect.element(popover.getByRole('button', { name: '这是有意安排' })).toBeEnabled()
     expect(startWorkflow).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['zh-CN', '写第 5 章', '本次写作选项', '你设定林舟和老周是「父子」，第 4 章定稿写的是「形同陌路」，还没决定用哪个。', '到角色页的建议里决定。'],
+    ['en-US', 'Write chapter 5', 'Options for this run', 'You set 林舟 and 老周 as “父子”, but finalized chapter 4 says “形同陌路”. You have not decided yet.', 'Decide in the suggestions on the Cast page.'],
+  ] as const)('待决定的派生关系在写章前给出警告，有作者设定和原文，不挡开写（%s）', async (locale, label, dialogName, issue, suggestion) => {
+    useLocaleStore.setState({ locale })
+    pendingRelations = [UNDECIDED_RELATION]
+    await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label={label} />)
+    await act(async () => page.getByRole('button', { name: label }).click())
+    const popover = page.getByRole('dialog', { name: dialogName })
+    await expect.element(popover).toHaveTextContent(issue)
+    await expect.element(popover).toHaveTextContent(suggestion)
+    await expect.element(popover).toHaveTextContent(UNDECIDED_QUOTE)
+    await expect.element(page.getByRole('button', { name: label })).toBeEnabled()
   })
 
   it('英文界面下保存安排被拒、又没带原因时，提示也是英文', async () => {

@@ -167,6 +167,18 @@ describe('伏笔线索任务的审稿目标', () => {
     expect(buildChapterGoalReviewPrompt(frozen, 'zh-CN')).toContain('resolved')
   })
 
+  it('作者指定本章推进的线索照样成为目标，并写明是作者指定的', () => {
+    const assigned = [{ planId: 11, title: '旧信', authorIntent: '交代寄信人。', schedule: { kind: 'assigned' } }] as const
+    const [zh] = withChapterThreadGoals(freezeChapterGoals(6, ''), assigned, 'zh-CN').items
+    expect(zh).toMatchObject({ id: 'ch6:thread:11', text: expect.stringContaining('作者指定本章推进') })
+    expect(zh!.text).not.toContain('本章到期')
+    const [en] = withChapterThreadGoals(freezeChapterGoals(6, ''), assigned, 'en-US').items
+    expect(en!.text).toContain('assigned by the author to this chapter')
+    expect(en!.text).not.toContain('due this chapter')
+    expect(buildChapterGoalReviewPrompt(withChapterThreadGoals(freezeChapterGoals(6, ''), assigned, 'zh-CN'), 'zh-CN')).not.toContain('是到期或逾期的')
+    expect(buildChapterGoalReviewPrompt(withChapterThreadGoals(freezeChapterGoals(6, ''), assigned, 'en-US'), 'en-US')).not.toContain('are due or overdue')
+  })
+
   it('审稿给出回收、推进或未处理之一，回收和推进必须附引文', () => {
     const frozen = withChapterThreadGoals(freezeChapterGoals(6, ''), tasks, 'zh-CN')
     const review = normalizeChapterGoalReview([

@@ -110,6 +110,7 @@ export function generationIpcErrorCode(channel: string, error: unknown): string 
 export function registerGenerationController(options: {
   modelExecutionLeases: ModelExecutionLeaseRegistry
   loadModel: (id: string) => ModelProfile | null
+  rememberContextWindow: (model: ModelProfile, windowTokens: number) => void
   applyProxyConfig: () => void
 }) {
   onProjectDatabaseBeforeClose(({ database }) => {
@@ -139,7 +140,7 @@ export function registerGenerationController(options: {
       const owner = createMainGenerationOwner({ database, projectId: captured.projectId, epoch: captured.leaseId,
         assertCurrent: () => { projectAccess.assertCurrentProjectContext(captured, getCurrentProjectPath());
           if (getProjectDb() !== database) throw new Error('GENERATION_DATABASE_CHANGED') },
-        leases: options.modelExecutionLeases, loadModel: options.loadModel, beforeDispatch: options.applyProxyConfig,
+        leases: options.modelExecutionLeases, loadModel: options.loadModel, rememberContextWindow: options.rememberContextWindow, beforeDispatch: options.applyProxyConfig,
         transferOrigin: () => readPortableCurrentAuthority({ database, projectStorageRoot: sourceDependencies.projectStorageRoot,
           projectId: captured.projectId })?.originProjectId,
         buildBinding: (selection, modelReceipt, policy) => buildGenerationSourceBinding(sourceDependencies, { ...selection,
@@ -235,6 +236,8 @@ export function registerGenerationController(options: {
   register('finalized-character:list-state-candidates', 0, owner => owner.listPendingFinalizedCharacterStateCandidates())
   register('finalized-character:read-state-candidate', 1, (owner, request) => owner.readPendingFinalizedCharacterStateCandidate(request))
   register('finalized-character:decide-state-candidate', 1, (owner, request) => owner.decideFinalizedCharacterStateCandidate(request))
+  register('finalized-character:list-relation-candidates', 0, owner => owner.listPendingFinalizedRelationCandidates())
+  register('finalized-character:decide-relation-candidate', 1, (owner, request) => owner.decideFinalizedRelationCandidate(request))
   register('finalization-generation:read', 1, (owner, request) => owner.readFinalizationGeneration(request))
   register('finalization-generation:begin', 1, (owner, request) => owner.beginFinalizationGeneration(request))
   register('finalization-generation:execute', 1, (owner, request) => owner.executeFinalizationGeneration(request))
@@ -242,6 +245,9 @@ export function registerGenerationController(options: {
   register('finalization-generation:cancel', 1, (owner, request) => owner.cancelFinalizationGeneration(request))
   register('graph-generation:begin', 1, (owner, request) => owner.beginGraphGeneration(request))
   register('graph-generation:read', 1, (owner, request) => owner.readGraphGeneration(request))
+  register('graph-generation:latest-continuity', 0, owner => owner.readLatestContinuityCheck())
+  register('graph-generation:suggestions', 1, (owner, request) => owner.listContinuitySuggestions(request))
+  register('graph-generation:decide-suggestion', 1, (owner, request) => owner.decideContinuitySuggestion(request))
   register('graph-generation:execute', 1, (owner, request) => owner.executeGraphGeneration(request))
   register('graph-generation:confirm', 1, (owner, request) => owner.confirmGraphGeneration(request))
   register('graph-generation:cancel', 1, (owner, request) => owner.cancelGraphGeneration(request))

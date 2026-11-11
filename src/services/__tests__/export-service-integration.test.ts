@@ -162,5 +162,5 @@ describe('authoritative finalized export integration', () => {
     if (!second.path) throw new Error('Expected second export path')
     expect(fs.readdirSync(path.join(exportPath, second.path)))
       .toEqual(['chapter_1.md'])
-  }, 15_000)
+  })
 })

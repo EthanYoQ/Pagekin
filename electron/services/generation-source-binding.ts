@@ -12,10 +12,11 @@ import type { WritingLanguage } from '../../src/shared/writing-language';
 import { CURRENT_DRAFT_STATUS_SQL, WORKING_DRAFT_STATUSES } from '../../src/shared/draft-status';
 import type { RunBinding } from '../repositories/generation-run-repository';
 import type { GenerationAuthorInput, GenerationBatchIntent, MaterialBudget, MaterialDecisionIncludedSource, MaterialDecisionOmittedSource, MaterialDecisionReceipt } from '../../src/shared/generation-owner-contract';
-import { materialBudgetFrom, MATERIAL_BUDGET_WINDOW_SOURCES,MATERIAL_DECISION_CATEGORIES, MATERIAL_DECISION_MAX_INPUT_UNITS, MATERIAL_DECISION_MAX_SOURCES,
+import { DEFAULT_CONTEXT_WINDOW_TOKENS, materialBudgetFrom, MATERIAL_BUDGET_WINDOW_SOURCES,MATERIAL_DECISION_CATEGORIES, MATERIAL_DECISION_MAX_INPUT_UNITS, MATERIAL_DECISION_MAX_SOURCES,
     MATERIAL_DECISION_OMISSION_REASONS, MATERIAL_DECISION_RECEIPT_VERSION, MATERIAL_DECISION_SOURCE_ID,
     MATERIAL_DECISION_UNIT_METHOD_VERSION } from '../../src/shared/generation-owner-contract';
 import type { GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge';
+import { MAIN_GENERATION_POLICY } from './main-generation-plan';
 import type { ReviewRevisionContext } from '../../src/shared/review-revision-generation';
 import { reviewRevisionAuthorMaterial, reviewRevisionAiBrief } from '../../src/shared/review-revision-generation';
 import { captureReviewRevisionContext, reviewRevisionRequest } from './review-revision-context';
@@ -28,7 +29,7 @@ import { buildEditorInlineContext, validateEditorInlineInput, editorInlineTask }
 import type { FinalizationGenerationContext, FinalizationGenerationSlot } from '../../src/shared/finalization-generation';
 import { captureFinalizationGenerationContext, finalizationSlotKey, finalizationGenerationTask } from './finalization-generation-source';
 import type { GraphGenerationContext, GraphGenerationInput } from '../../src/shared/graph-generation';
-import { captureGraphGenerationContext, graphGenerationTask, validateGraphGenerationInput } from './graph-generation-source';
+import { captureGraphGenerationContext, graphGenerationOperations, graphGenerationTask, validateGraphGenerationInput } from './graph-generation-source';
 import { provenGraphOwnEventIds } from './graph-generation';
 import type { LegacyRosterGenerationContext } from '../../src/shared/legacy-roster-generation';
 import { captureLegacyRosterGenerationContext, legacyRosterGenerationTask } from './legacy-roster-generation-context';
@@ -298,6 +299,11 @@ function freezeMaterialDecision(value: unknown): MaterialDecisionReceipt {
     safeMetadata(frozen);
     return JSON.parse(stable(frozen));
 }
+/** 只决定放多少章，绝不用来拒绝发送（ADR-0026）。 */
+function continuityInputTokens({ capabilityEvidence }: SafeGenerationModelReceipt): number {
+    return materialBudgetFrom({ contextWindowTokens: capabilityEvidence.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS, contextWindowSource: 'default',
+        reservedOutputTokens: capabilityEvidence.maxOutputTokens, safetyMarginTokens: MAIN_GENERATION_POLICY.safetyMarginTokens }).inputTokens;
+}
 export function buildGenerationSourceBinding(deps: GenerationSourceBindingDependencies, input: GenerationSourceBindingInput, verbatimModelName = false): GenerationSourceBindingResult {
     if (!deps.db.open || !input.projectId || !input.epoch || !input.operation)
         fail('GENERATION_SOURCE_BINDING_INVALID');
@@ -309,7 +315,7 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
     if (input.legacyRosterKey && (input.operation !== 'legacy-character-roster-repair' || !isDeepStrictEqual(input.promptKeys, ['legacy-roster'])
         || input.skillStages.length || input.selectedDraftIds.length || input.selectedFinalizedDraftIds.length || input.chapterNumber !== undefined
         || input.authorInputs?.length || graphInput)) fail('GENERATION_LEGACY_SELECTION_INVALID');
-    if (graphInput && (input.operation !== ({ plot: 'plot-tree-snapshot', plan: 'narrative-thread-plan-candidate', event: 'narrative-thread-event-candidate' } as const)[graphInput.kind]
+    if (graphInput && (input.operation !== graphGenerationOperations[graphInput.kind]
         || !input.graphGenerationKey || !isDeepStrictEqual(input.promptKeys, [`graph-${graphInput.kind}`]) || input.skillStages.length
         || input.selectedDraftIds.length || input.selectedFinalizedDraftIds.length || input.chapterNumber !== undefined || input.authorInputs?.length)) fail('GENERATION_GRAPH_SELECTION_INVALID');
     const authorInputs = freezeAuthorInputs(input.authorInputs);
@@ -388,7 +394,7 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
         }
         if (graphInput) {
             graphContext = captureGraphGenerationContext(deps.db, graphInput, input, input.graphGenerationKey!, input.graphGenerationContext,
-                input.graphGenerationContext ? provenGraphOwnEventIds(deps.db, input.graphGenerationContext) : []);
+                input.graphGenerationContext ? provenGraphOwnEventIds(deps.db, input.graphGenerationContext) : [], continuityInputTokens(input.modelReceipt));
             add('graph-generation-context', 0, JSON.stringify(graphContext), 'author-constraint', 'main captured graph sources and original target baseline');
         }
         if (agentInput) {

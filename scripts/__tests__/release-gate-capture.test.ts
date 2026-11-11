@@ -209,7 +209,7 @@ function ConvertTo-Snapshot {
     expect(['ExitedBeforeRead', 'Captured']).toContain(afterExit.commandLineState)
     if (afterExit.commandLineState === 'ExitedBeforeRead') expect(afterExit.commandLine).toBeNull()
     expect(whileAlive).toMatchObject({ commandLineState: 'Captured', commandLine: result.expectedLiveCommandLine })
-  }, 30_000)
+  })
 
   windowsIt('classifies synthetic NSIS process-check exits into a closed verdict set', () => {
     const result = runMonitorLibrary(String.raw`
@@ -330,5 +330,5 @@ $laterCmd = New-Cmd -Ticks '639284519689800000'
       ArmedRootNonzeroBuild: 'failure|failure|||True',
       SucceededE2e: 'succeeded|succeeded|||False',
     })
-  }, 30_000)
+  })
 })

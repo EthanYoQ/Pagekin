@@ -58,7 +58,7 @@ const materialDecision = (prompt = '合成初始提示词'): NonNullable<BeginGe
   omitted: [],
 })
 beforeAll(() => {
-  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => model, applyProxyConfig: () => {} })
+  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => model, rememberContextWindow: () => {}, applyProxyConfig: () => {} })
   registerDatabaseController()
 })
 beforeEach(() => {
@@ -238,7 +238,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     SummaryRepository.saveFinalizedContinuity({ draftId: 1, chapterNumber: 1, chapterNotes: '定稿摘要', facts: [],
       source: context.source, projectionGeneration: context.projectionGeneration }, getProjectDb()!)
     SummaryRepository.commitFinalizedCharacterStates(context, { updates: [{ characterId, currentState: { location: '北塔' },
-      evidence: { start: 0, end: body.length, text: body } }], unresolved: [] }, getProjectDb()!)
+      evidence: { start: 0, end: body.length, text: body } }], unresolved: [], relations: [] }, getProjectDb()!)
 
     const [summary] = await invoke('finalized-character:list-state-candidates')
     expect(summary).toMatchObject({ draftId: 1, characterId, field: 'location' })

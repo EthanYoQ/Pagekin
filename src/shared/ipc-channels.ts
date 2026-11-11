@@ -13,6 +13,7 @@ import type { CharacterAvatarChannels } from './character-avatar'
 import type { CloudBackupChannels } from './cloud-backup'
 import type { ProjectOverview } from './project-overview'
 import type { ModelStage, StageModelIds } from './model-stage-routing'
+import type { KnowledgeSearchHit } from './knowledge-ranking'
 /**
  * IPC 频道定义 — 渲染进程与主进程的类型安全通信契约
  * 所有 IPC 调用都通过此文件定义频道名和参数/返回值类型
@@ -44,6 +45,7 @@ import type {
 import type { DraftSourceDependency } from './draft-source-dependency'
 import type { BlueprintForPreflight, ConsistencyExemption } from './consistency-preflight'
 import type {
+  NarrativeThreadAssignmentInput,
   NarrativeThreadEvent,
   NarrativeThreadEventInput,
   NarrativeThreadChapterContext,
@@ -52,7 +54,7 @@ import type {
   NarrativeThreadView,
 } from './narrative-thread'
 import type { NarrativeThreadReviewCandidate } from './narrative-thread-review-candidates'
-import type { PlotTreeSnapshot, PlotTreeSourceBundle } from './plot-tree'
+import type { PlotTreeSourceBundle } from './plot-tree'
 import type {
   UpdateActionResponse,
   UpdateCheckResponse,
@@ -556,31 +558,6 @@ export interface LLMChannels {
     args: [request: LocalContextWindowRequest]
     return: number | null
   }
-  'llm:begin-execution-lease': {
-    args: [modelId: string]
-    return: {
-      success: boolean
-      lease?: ModelExecutionLeaseReceipt
-      errorCode?: 'MODEL_NOT_FOUND' | 'LEASE_BEGIN_FAILED'
-      error?: string
-    }
-  }
-  'llm:close-execution-lease': {
-    args: [leaseId: string]
-    return: { success: boolean; error?: string }
-  }
-  'llm:generate': {
-    args: [request: LLMRequest]
-    return: LLMResponse
-  }
-  'llm:generate-stream': {
-    args: [requestId: string, request: LLMRequest]
-    return: { requestId: string; started: boolean; error?: string }
-  }
-  'llm:cancel': {
-    args: [requestId: string]
-    return: { success: boolean }
-  }
   'llm:list-models': {
     args: []
     return: ModelProfile[]
@@ -629,22 +606,18 @@ export interface LLMChannels {
     args: []
     return: string | null
   }
+  'llm:set-default-rerank-model': {
+    args: [modelId: string | null]
+    return: { success: boolean; error?: string }
+  }
+  'llm:get-default-rerank-model': {
+    args: []
+    return: string | null
+  }
   'llm:test-connection': {
     args: [model: ModelProfile, creativeStrategy?: CreativeStrategy]
     return: { success: boolean; error?: string }
   }
-}
-
-export interface LLMStreamEvents {
-  'llm:stream-chunk': { requestId: string; chunk: string }
-  'llm:stream-done': {
-    requestId: string
-    fullText: string
-    usage?: TokenUsage
-    /** Main-process-normalized completion state. Missing provider values become `unknown`. */
-    finishReason: LLMFinishReason
-  }
-  'llm:stream-error': { requestId: string; error: string }
 }
 
 // ===== 公共数据类型 =====
@@ -853,6 +826,8 @@ export interface ModelProfile {
   capabilities?: ModelCapabilities
   /** Configuration provenance only; never grants verified provider bounds. */
   capabilitySources?: Partial<Record<keyof ModelCapabilities, 'endpoint' | 'preset' | 'manual' | 'unknown'>>
+  /** 服务商超长报错里读到的真实窗口，只由主进程写，不进 modelRevision。模型身份变了就不算数。 */
+  learnedContextWindow?: Pick<ModelProfile, 'provider' | 'protocol' | 'baseUrl' | 'modelName'> & { tokens: number }
   /** 旧配置和当前执行路径使用的输出 token 上限，保持兼容。 */
   maxTokens: number
   purposes: Array<'generation' | 'refinement' | 'summary' | 'embedding' | 'rerank'>
@@ -1104,13 +1079,17 @@ export interface DatabaseChannels {
     args: [input: NarrativeThreadEventInput, expectedProjectPath: string]
     return: { success: boolean; event?: NarrativeThreadEvent; error?: string }
   }
+  'db:narrative-thread-assignment-set': {
+    args: [input: NarrativeThreadAssignmentInput, expectedProjectPath: string]
+    return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
+  }
+  'db:narrative-thread-assignment-remove': {
+    args: [planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string]
+    return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
+  }
   'db:plot-tree-read': {
     args: [expectedProjectPath: string]
     return: PlotTreeSourceBundle
-  }
-  'db:plot-tree-save': {
-    args: [snapshot: PlotTreeSnapshot, expectedSourceRevision: string, expectedProjectPath: string]
-    return: { success: boolean; snapshot?: PlotTreeSnapshot; errorCode?: 'sources-changed'; error?: string }
   }
   'db:plot-tree-clear': {
     args: [expectedProjectPath: string]
@@ -1234,7 +1213,7 @@ export interface KnowledgeBaseChannels {
     ]
     return: { success: boolean; docId?: string; chunkCount?: number; idempotent?: boolean; error?: string; errorCode?: AppErrorCode }
   }
-  'kb:search': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<Array<{ text: string; score: number; fileName: string }>> }
+  'kb:search': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<KnowledgeSearchHit[]> }
   'kb:search-writing-context': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<Array<{ text: string; score: number; fileName: string }>> }
   'kb:list-documents': { args: [expectedProjectPath: string]; return: AppResult<Array<{ id: string; fileName: string; importedAt: string; chunkCount: number; filePath: string; finalizedChapter?: number }>> }
   'kb:read-document-copy': {
@@ -1396,7 +1375,7 @@ export interface MCPChannels {
 
 // ===== 合并所有频道 =====
 export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CloudBackupChannels & GraphGenerationChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
-export type AllEventChannels = GenerationOwnerEvents & LLMStreamEvents & UpdateStateEvents & WindowEvents
+export type AllEventChannels = GenerationOwnerEvents & UpdateStateEvents & WindowEvents
 
 /** 提取 invoke 频道名 */
 export type InvokeChannel = keyof AllInvokeChannels

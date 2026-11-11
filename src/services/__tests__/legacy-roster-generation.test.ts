@@ -20,7 +20,7 @@ afterEach(() => { vi.unstubAllGlobals(); useProjectStore.setState({ currentProje
 it('第三会话恢复原model与artifact，仅stage不重新请求，不正式采用', async () => {
  const invoke = vi.fn(async (channel: string) => { if (channel === 'legacy-roster:read') return stored; if (channel === 'legacy-roster:stage') return batch; throw new Error(channel) })
  install(invoke); const args = params()
- const output = await new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath, genre: '', recoveryHandle: handle }).execute(args)
+ const output = await new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath, recoveryHandle: handle }).execute(args)
  expect(output).toContain('矿场'); expect(output).toContain('尚未写入正式角色'); expect(output).toContain('不将其写入定稿状态')
  expect(args.context.data.characterProposalBatch).toEqual(batch)
  expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('legacy-roster:begin')
@@ -45,12 +45,12 @@ it('现有卡采用不读取任何模型并发送全部CAS凭证', async () => {
   if (channel === 'legacy-roster:adopt-existing') { expect(request).toMatchObject({ expectedRevision: 7, expectedLegacyHash: '旧hash', expectedIdentityRevision: 3, expectedFactsHash: '事实hash' }); return { snapshot: { renderedMarkdown: '原卡保留' } } }
   throw new Error(channel)
  }); install(invoke)
- expect(await new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath, genre: '' }).execute(params())).toBe('原卡保留')
+ expect(await new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath }).execute(params())).toBe('原卡保留')
  expect(invoke.mock.calls.map(([channel]) => channel)).toEqual(['legacy-roster:read-source', 'legacy-roster:adopt-existing'])
 })
 it('source读取期间取消，不采用既有卡', async () => {
  const args = params(); const invoke = vi.fn(async () => { args.context.cancelled = true; return { ...source, snapshot: { ...source.snapshot, migrationState: 'legacy_cards_preserved' } } }); install(invoke)
- await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath, genre: '' }).execute(args)).rejects.toThrow()
+ await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath }).execute(args)).rejects.toThrow()
  expect(invoke).toHaveBeenCalledTimes(1)
 })
 it('实际launcher暂停等待明确确认，stage不等于正式完成', async () => {
@@ -81,6 +81,42 @@ it('launcher既有卡模式被改变时拒绝改为模型流程', async () => {
  expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('legacy-roster:begin')
 })
 
+it('正式修复命令只经主进程的专属生成通道开跑并暂存提议', async () => {
+ let finished = false
+ const invoke = vi.fn(async (channel: string) => {
+  if (channel === 'legacy-roster:read-source') return source
+  if (channel === 'generation:list') return []
+  if (channel === 'legacy-roster:begin') return { ...stored, artifact: undefined, attemptCount: 0 }
+  if (channel === 'legacy-roster:read') return finished ? stored : { ...stored, artifact: undefined, attemptCount: 0 }
+  if (channel === 'legacy-roster:execute') { finished = true; return { run: stored.view } }
+  if (channel === 'legacy-roster:stage') return batch
+  throw new Error(`Unexpected ${channel}`)
+ }); install(invoke)
+ const args = params()
+ expect(await new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath }).execute(args)).toContain('矿场')
+ expect(args.context.data.characterProposalBatch).toEqual(batch)
+ expect(invoke.mock.calls.filter(([channel]) => channel === 'legacy-roster:execute')).toHaveLength(1)
+ expect(invoke.mock.calls.map(([channel]) => channel).filter(channel => !/^(legacy-roster|generation):/u.test(channel))).toEqual([])
+})
+it('生成期间切换项目，修复停下且不暂存提议', async () => {
+ let finished = false
+ const invoke = vi.fn(async (channel: string) => {
+  if (channel === 'legacy-roster:read-source') return source
+  if (channel === 'generation:list') return []
+  if (channel === 'legacy-roster:begin') return { ...stored, artifact: undefined, attemptCount: 0 }
+  if (channel === 'legacy-roster:read') return finished ? stored : { ...stored, artifact: undefined, attemptCount: 0 }
+  if (channel === 'legacy-roster:execute') {
+   useProjectStore.setState({ currentProject: { id: '另一个项目', path: 'C:/另一个项目', sessionLease: '另一会话', novelConfig: {} } as never })
+   finished = true
+   return { run: stored.view }
+  }
+  if (channel === 'legacy-roster:stage') return batch
+  throw new Error(`Unexpected ${channel}`)
+ }); install(invoke)
+ await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath }).execute(params()))
+  .rejects.toThrow('当前项目已切换，旧版角色名单修复已停止以避免写入错误项目')
+ expect(invoke.mock.calls.filter(([channel]) => channel === 'legacy-roster:stage')).toHaveLength(0)
+})
 it('known length failed但主资格为true，可显式恢复同run固定下一ordinal', async () => {
  let finished = false
  const invoke = vi.fn(async (channel: string) => {
@@ -100,7 +136,7 @@ it.each(['history', 'open', 'client-read'])('取消发生%s await返回时禁止
   if (channel === 'legacy-roster:cancel') return stored.view
   throw new Error(`Unexpected ${channel}`)
  }); install(invoke)
- await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath, genre: '' }).execute(args)).rejects.toThrow()
+ await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath }).execute(args)).rejects.toThrow()
  expect(invoke.mock.calls.filter(([channel]) => channel === 'legacy-roster:execute')).toHaveLength(0)
  expect(invoke.mock.calls.filter(([channel]) => channel === 'legacy-roster:cancel')).toHaveLength(point === 'history' ? 0 : 1)
  expect(invoke.mock.calls.filter(([channel]) => channel === 'legacy-roster:begin')).toHaveLength(point === 'history' ? 0 : 1)
@@ -150,7 +186,7 @@ it('没有显式模型时旧名单修复按规划环节的模型开跑', async (
   if (channel === 'legacy-roster:begin') throw new Error('STOP_AFTER_BEGIN')
   throw new Error(`Unexpected ${channel}`)
  }); install(invoke)
- await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath, genre: '' }).execute(params())).rejects.toThrow('STOP_AFTER_BEGIN')
+ await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath }).execute(params())).rejects.toThrow('STOP_AFTER_BEGIN')
  const begin = invoke.mock.calls.find(([channel]) => channel === 'legacy-roster:begin') as unknown[] | undefined
  expect(begin?.slice(1).find((arg): arg is { modelId: string } => typeof arg === 'object' && arg !== null && 'modelId' in arg)?.modelId).toBe('规划模型')
  useLLMStore.setState({ models: [], stageModelIds: {} })
@@ -164,7 +200,7 @@ it('按规划环节开出的修复运行记下实际用的模型，改这个模�
   if (channel === 'legacy-roster:begin') return { ...stored, view: { ...stored.view, status: 'running' }, artifact: undefined, modelId: '规划模型' }
   throw new Error('STOP_AFTER_BEGIN')
  }); install(invoke)
- await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath, genre: '' }).execute(params())).rejects.toThrow()
+ await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath }).execute(params())).rejects.toThrow()
  expect(invoke.mock.calls.map(([channel]) => channel)).toContain('legacy-roster:begin')
  expect(useWorkflowStore.getState().activeRuns[0]?.generationModelId).toBe('规划模型')
  useLLMStore.setState({ models: [], stageModelIds: {} })

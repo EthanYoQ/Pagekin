@@ -18,10 +18,9 @@ function fixture() {
   return { db, rows, request }
 }
 describe('approved ID character writes', () => {
-  it('requires explicit main authorization and blocks legacy name-only writes', () => {
+  it('requires explicit main authorization and resolves legacy names only through a source alias', () => {
     const f = fixture(); try {
       expect(() => commitCharacterIdentities(f.db, f.request)).toThrow('CHARACTER_APPROVAL_REQUIRED')
-      expect(() => CharacterRepository.delete('甲')).toThrow('CHARACTER_ID_WRITE_REQUIRED')
       expect(CharacterRepository.getByName('甲')).toBeNull()
       expect(CharacterRepository.getByName('甲', 'legacy:characters:0')?.characterId).toBe(f.rows[0].character_id)
     } finally { f.db.close() }

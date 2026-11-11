@@ -47,11 +47,7 @@ beforeEach(async () => {
   leaseRequestCount = 0
   failureCode = undefined
   useProjectStore.setState({ currentProject: { id: 'editor-project', sessionLease: 'editor-epoch', path: 'C:/合成编辑器', novelConfig: {} } as never })
-  useLLMStore.setState({
-    defaultModelId: 'editor-model',
-    loaded: true,
-    activeRequests: new Map(),
-  })
+  useLLMStore.setState({ defaultModelId: 'editor-model', loaded: true })
   const recoveries = new Map<string, unknown>()
   invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     if (channel === 'editor-inline:begin') {
@@ -104,7 +100,7 @@ afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
   useProjectStore.setState({ currentProject: null })
-  useLLMStore.setState({ defaultModelId: null, models: [], stageModelIds: {}, activeRequests: new Map() })
+  useLLMStore.setState({ defaultModelId: null, models: [], stageModelIds: {} })
   useLocaleStore.setState({ locale: 'zh-CN' })
   Reflect.deleteProperty(window, 'aiNovelAPI')
 })

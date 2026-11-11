@@ -129,24 +129,7 @@ export interface CharacterRosterSnapshot {
   legacyMarkdown?: string
 }
 
-/**
- * `initialize` 只允许空角色名单首次建档；正常角色架构重新生成使用
- * `architecture_generation`，并由主进程保守合并已存在的手工字段。
- */
-export type CharacterRosterCommitIntent =
-  | 'initialize'
-  | 'architecture_generation'
-  | 'legacy_repair'
-  /** 旧项目已有卡片时，由用户显式确认后只重建只读图谱，不改写卡片。 */
-  | 'legacy_cards_adoption'
-  /** 角色管理的完整手工快照；允许新增、改名、删除和空名单。 */
-  | 'manual_edit'
-  /** 仿写导入产生的角色候选，保守合并到现有名单。 */
-  | 'novel_import'
-  /** 已落盘的一批蓝图发现角色或结构化关系后的增量同步。 */
-  | 'blueprint_sync'
-  /** 章节定稿后仅推进已确认角色的动态状态。 */
-  | 'chapter_progress'
+export type CharacterRosterCommitIntent = 'manual_edit'
 
 export interface CharacterRosterRename {
   characterId?: string
@@ -163,17 +146,11 @@ export interface CharacterRosterCommitRequest {
   schemaVersion: typeof CHARACTER_ROSTER_SCHEMA_VERSION
   entries: CharacterRosterEntry[]
   intent?: CharacterRosterCommitIntent
-  /** Required for chapter_progress; validated against the immutable outbox receipt. */
   source?: FinalizedSourceIdentity
   /** 仅 manual_edit 使用；由角色管理的草稿账本明确给出身份映射。 */
   renames?: CharacterRosterRename[]
   /** 仅 manual_edit 使用。 */
   stateEffectiveChapter?: number
-  /**
-   * legacy_repair / legacy_cards_adoption 使用。它是从只读快照回传的原始
-   * 证据，用来拒绝把旧 Markdown A 的候选提交到后来已变为 Markdown B 的项目中。
-   */
-  expectedLegacyMarkdown?: string
 }
 
 export interface CharacterRosterCommitReceipt {

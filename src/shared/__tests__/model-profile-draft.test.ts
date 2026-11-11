@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ModelProfile } from '../ipc-channels'
-import { applyModelProfileSelection, clearContextWindowOverride, createModelProfileDraft, DEFAULT_GENERATION_OUTPUT_TOKENS, resolveContextWindow } from '../model-profile-draft'
+import { applyModelProfileSelection, clearContextWindowOverride, createModelProfileDraft, DEFAULT_GENERATION_OUTPUT_TOKENS, resolveContextWindow, withLearnedContextWindow } from '../model-profile-draft'
 
 describe('model profile drafts', () => {
   it('starts a generation draft on the OpenAI endpoint with no model name and the default output limit', () => {
@@ -43,6 +43,20 @@ describe('model profile drafts', () => {
     expect(applyModelProfileSelection(edited, { modelName: 'grok-4.5' })).toEqual(edited)
     expect(applyModelProfileSelection(edited, { modelName: 'unlisted' }))
       .toMatchObject({ modelName: 'unlisted', maxTokens: 1024, capabilities: undefined, reasoningOverride: 'auto' })
+  })
+  it('starts a rerank draft on SiliconFlow with its reranker, no API key and no generation or embedding fields', () => {
+    const draft = createModelProfileDraft({ id: 'new-rerank', purposes: ['rerank'] })
+    expect(draft).toMatchObject({
+      name: 'SiliconFlow BAAI/bge-reranker-v2-m3',
+      provider: 'siliconflow',
+      protocol: 'openai',
+      baseUrl: 'https://api.siliconflow.cn/v1',
+      modelName: 'BAAI/bge-reranker-v2-m3',
+      apiKey: '',
+      purposes: ['rerank'],
+    })
+    expect(draft.capabilities).toBeUndefined()
+    expect(draft.embeddingOptions).toBeUndefined()
   })
   it('creates a complete SiliconFlow bge-m3 embedding profile without an API key', () => {
     const draft = createModelProfileDraft({
@@ -110,6 +124,45 @@ describe('model profile drafts', () => {
       expect(resolveContextWindow(official(stored(preset + 1)))).toEqual({ tokens: preset + 1, source: 'manual' })
       expect(resolveContextWindow(official({ capabilities: undefined, capabilitySources: undefined }))).toEqual(catalogued())
       expect(resolveContextWindow(custom({ capabilities: undefined, capabilitySources: undefined }))).toEqual({ tokens: 32_768, source: 'default' })
+    })
+
+    describe('学到的窗口：手填 > 学到 > 拉取 > 预设 > 默认', () => {
+      it('学到的值压过拉取、预设和默认', () => {
+        expect(resolveContextWindow(withLearnedContextWindow(official(stored(128_000, 'endpoint')), 32_768))).toEqual({ tokens: 32_768, source: 'learned' })
+        expect(resolveContextWindow(withLearnedContextWindow(official(), 32_768))).toEqual({ tokens: 32_768, source: 'learned' })
+        expect(resolveContextWindow(withLearnedContextWindow(custom(), 16_000))).toEqual({ tokens: 16_000, source: 'learned' })
+      })
+
+      it('作者手填过就不用学到的值', () => {
+        const manual = official(stored(64_000, 'manual'))
+        expect(withLearnedContextWindow(manual, 32_768)).toBe(manual)
+        const learnedFirst = withLearnedContextWindow(official(stored(128_000, 'endpoint')), 32_768)
+        const filledLater = { ...learnedFirst, ...stored(64_000, 'manual') }
+        expect(resolveContextWindow(filledLater)).toEqual({ tokens: 64_000, source: 'manual' })
+      })
+
+      it('已有可信的窗口时只收紧，不放大', () => {
+        const endpoint = official(stored(64_000, 'endpoint'))
+        expect(withLearnedContextWindow(endpoint, 64_000)).toBe(endpoint)
+        expect(withLearnedContextWindow(endpoint, 128_000)).toBe(endpoint)
+        const learned = withLearnedContextWindow(endpoint, 32_768)
+        expect(resolveContextWindow(withLearnedContextWindow(learned, 16_000)).tokens).toBe(16_000)
+        expect(resolveContextWindow(withLearnedContextWindow(learned, 48_000)).tokens).toBe(32_768)
+      })
+
+      it('默认值只是猜测：服务商报的数和它相同也算学到', () => {
+        expect(resolveContextWindow(withLearnedContextWindow(custom(), 32_768))).toEqual({ tokens: 32_768, source: 'learned' })
+      })
+
+      it.each([
+        ['服务商', { provider: 'siliconflow' as const }],
+        ['协议', { protocol: 'anthropic' as const }],
+        ['地址', { baseUrl: 'https://other.example.com/v1' }],
+        ['模型名', { modelName: 'other-model' }],
+      ])('改了%s，学到的窗口作废', (_name, change) => {
+        const learned = withLearnedContextWindow(custom(stored(128_000, 'endpoint')), 32_768)
+        expect(resolveContextWindow({ ...learned, ...change })).toEqual({ tokens: 128_000, source: 'endpoint' })
+      })
     })
 
     it('清空手填：有列表声明用声明，没有回预设或默认，其他手填项不动', () => {

@@ -58,7 +58,8 @@ function savedAssignment(request: unknown) {
 }
 
 beforeEach(() => {
-  invoke = vi.fn<Invoke>(async (channel, request) => channel === 'llm:set-stage-model' ? savedAssignment(request) : undefined)
+  invoke = vi.fn<Invoke>(async (channel, request) => channel === 'llm:set-stage-model' ? savedAssignment(request)
+    : channel === 'llm:list-models' ? useLLMStore.getState().models : undefined)
   win.aiNovelAPI = { invoke, on: () => () => undefined }
   useLocaleStore.setState({ locale: 'zh-CN' })
   useLLMStore.setState({ loaded: true, models: [FLASH, GLM, BGE], defaultModelId: 'flash', defaultEmbeddingModelId: 'bge', stageModelIds: {} })

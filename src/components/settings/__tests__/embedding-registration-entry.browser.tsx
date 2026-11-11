@@ -71,7 +71,7 @@ describe('embedding registration entry', () => {
     { name: 'with no configured embedding model', models: [] },
     { name: 'with one configured embedding model', models: [configuredEmbedding] },
   ])('shows the free registration entry $name', async ({ models }) => {
-    invoke = vi.fn().mockResolvedValue({ success: true })
+    invoke = vi.fn(async (channel: string) => channel === 'llm:list-models' ? useLLMStore.getState().models : { success: true })
     ;(window as unknown as { aiNovelAPI: TestVelaApi }).aiNovelAPI = {
       invoke,
       on: () => () => {},
@@ -88,7 +88,7 @@ describe('embedding registration entry', () => {
   })
 
   it('opens the fixed SiliconFlow registration resource through IPC', async () => {
-    invoke = vi.fn().mockResolvedValue({ success: true })
+    invoke = vi.fn(async (channel: string) => channel === 'llm:list-models' ? useLLMStore.getState().models : { success: true })
     ;(window as unknown as { aiNovelAPI: TestVelaApi }).aiNovelAPI = {
       invoke,
       on: () => () => {},
@@ -110,7 +110,7 @@ describe('embedding registration entry', () => {
   })
 
   it('hides the recommendation after the user enters the add-embedding form', async () => {
-    invoke = vi.fn().mockResolvedValue({ success: true })
+    invoke = vi.fn(async (channel: string) => channel === 'llm:list-models' ? useLLMStore.getState().models : { success: true })
     ;(window as unknown as { aiNovelAPI: TestVelaApi }).aiNovelAPI = {
       invoke,
       on: () => () => {},

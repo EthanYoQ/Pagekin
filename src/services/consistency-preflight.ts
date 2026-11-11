@@ -1,6 +1,8 @@
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import type { BlueprintForPreflight, ConsistencyExemption, ConsistencyFinding } from '../shared/consistency-preflight'
+import { pendingRelationFactKey } from '../shared/blueprint-relation-conflict'
 import { findBlueprintContinuityRisks } from '../shared/consistency-preflight'
+import type { PendingFinalizedRelationCandidate } from '../shared/finalized-continuity'
 import { ipc } from './ipc-client'
 
 /** 同一节点在批量里可能出现在多章，按章豁免要靠 chapterNumber 区分。 */
@@ -13,11 +15,13 @@ export interface ConsistencyPreflightResult {
 
 export type ExemptionScope = 'chapter' | 'book'
 
-export const exemptionChapter = (finding: PreflightFinding, scope: ExemptionScope) => scope === 'book' ? null : finding.chapterNumber
+type ExemptableFinding = Pick<PreflightFinding, 'stableFactKey' | 'chapterNumber'>
+
+export const exemptionChapter = (finding: ExemptableFinding, scope: ExemptionScope) => scope === 'book' ? null : finding.chapterNumber
 
 export function saveFindingExemption(
   session: ProjectSessionContext,
-  finding: PreflightFinding,
+  finding: ExemptableFinding,
   scope: ExemptionScope,
   text: (zh: string, en: string) => string,
 ) {
@@ -41,12 +45,17 @@ export async function readConsistencyPreflight(
   const nodes = Object.keys(hints).length > 0
     ? await ipc.invokeWithProjectSession(session, 'db:character-continuity-preflight-nodes', session.projectPath).catch(() => [])
     : []
-  const subjects = new Map(nodes.map(node => [`relation:${node.eventId}`, node.subjectId]))
+  const pendingRelations = await ipc.invokeWithProjectSession(session, 'finalized-character:list-relation-candidates')
+    .catch((): PendingFinalizedRelationCandidate[] => [])
+  const subjects = new Map([
+    ...nodes.map(node => [`relation:${node.eventId}`, node.subjectId] as const),
+    ...pendingRelations.map(candidate => [pendingRelationFactKey(candidate.candidateKey), candidate.sourceId] as const),
+  ])
   const findings = (await Promise.all(blueprints.map(async blueprint => {
     const projections = await ipc.invokeWithProjectSession(
       session, 'db:continuity-list-before', blueprint.chapterNumber, session.projectPath,
     )
-    return findBlueprintContinuityRisks(projections, { ...blueprint, relationshipHints: hints[blueprint.chapterNumber] }, exemptions, nodes)
+    return findBlueprintContinuityRisks(projections, { ...blueprint, relationshipHints: hints[blueprint.chapterNumber] }, exemptions, nodes, pendingRelations)
       .map(finding => ({ ...finding, chapterNumber: blueprint.chapterNumber, characterId: subjects.get(finding.stableFactKey) }))
   }))).flat()
   return { findings, exemptions }

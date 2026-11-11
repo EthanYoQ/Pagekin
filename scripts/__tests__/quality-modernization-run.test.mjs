@@ -259,7 +259,7 @@ test('AI final manuscript distinguishes raw goal discoveries from mechanical unk
     savedContent: discovered.savedContent.replace('柜台描述', '人工补题'), context }), /SAVED_REPORT_MISMATCH/)
 })
 
-test('post-UI baseline uses its native review projection, persisted AI-only confirmation and 8192 refine command', { timeout: 30_000 }, async ({ signal }) => {
+test('post-UI baseline uses its native review projection, persisted AI-only confirmation and 8192 refine command', async ({ signal }) => {
   const directory = fs.mkdtempSync(path.join(ROOT, '.runtime/.cache/novel-quality-modernization/post-ui-baseline-native-'))
   let db, nativeDatabase
   try {
@@ -464,7 +464,7 @@ test.for([
   [false, { units: 1171, target: 900, expected: null, historical: 'AI_REVISION_LENGTH_MISMATCH' }],
   [false, { units: 735, target: 900, expected: null, historical: null }],
   [false, { units: 1103, target: 900, expected: null, historical: null }],
-])('AI final manuscript native main owner persists keyEvents unknown confirmation, one revision, merge and ordinary final review (LENGTH replacement=%s, revision bounds=%j)', { timeout: 30_000 }, async ([lengthRecovery, revisionBounds], { signal }) => {
+])('AI final manuscript native main owner persists keyEvents unknown confirmation, one revision, merge and ordinary final review (LENGTH replacement=%s, revision bounds=%j)', async ([lengthRecovery, revisionBounds], { signal }) => {
   const formal = lengthRecovery === 'formal'
   const current = formal || Boolean(revisionBounds)
   const scenario = formal ? productionScenario('full', 'final', CANDIDATE_ONLY_PROTOCOL_REVISION) : null
@@ -1124,7 +1124,7 @@ test('separated-review diagnostic freezes six slots without reopening qualificat
   assert.equal(forwardQualificationWindowFor(protocol, selected.phase, 'diagnostic'), null)
 })
 
-test('separated-review diagnostic runs six zero-model owner slots and preserves global one-shot limits', { timeout: 20_000 }, async () => {
+test('separated-review diagnostic runs six zero-model owner slots and preserves global one-shot limits', async () => {
   const { assertSharedInputDiagnostic } = await import('../quality-modernization-driver.mjs')
   const phase = 'separated-review-diagnostic', registered = protocol.phases[phase]
   const sources = registered.caseIds.map(id => ({ id, frozenContext: { sourceId: id },
@@ -2385,7 +2385,7 @@ function reusingContinuityResults(dir) {
   }
 }
 
-test('C17/C18 压缩结果最多两次 attempt、正式效果只在末次，且首稿超上限须可复核', { timeout: 30_000 }, () => {
+test('C17/C18 压缩结果最多两次 attempt、正式效果只在末次，且首稿超上限须可复核', () => {
   const dir = fs.mkdtempSync(path.join(ROOT, '.runtime/.cache/novel-quality-modernization/condense-result-test-'))
   try {
     const { syntheticDraftText } = syntheticLengthHelpers()
@@ -2444,7 +2444,7 @@ test('C17/C18 压缩结果最多两次 attempt、正式效果只在末次，且�
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 })
 
-test('C17-B 重新定稿后处理：notes/cards 绑定替换后的新 finalizationId，attempt 记账含 cards 原生 repair', { timeout: 20_000 }, () => {
+test('C17-B 重新定稿后处理：notes/cards 绑定替换后的新 finalizationId，attempt 记账含 cards 原生 repair', () => {
   const dir = fs.mkdtempSync(path.join(ROOT, '.runtime/.cache/novel-quality-modernization/c17b-post-process-test-'))
   const build = reusingContinuityResults(dir)
   try {
@@ -2739,8 +2739,7 @@ test('c16-c18 v7 场景沿用有界恢复、条件作者保护与 C17-B 重新�
     ['arms', 'maxRepairAttempts', 'milestone', 'operationId', 'primaryPurpose', 'repairPurpose', 'reviewRebuild'])
 })
 
-// 26 组夹具串行重建 104 次 SQLite 审稿库；本项验证证据合同，不是性能合同。
-test('C16-B 作者保护按正式产物是否提议改写而条件判定：真实未触发可过，提议无候选、证据缺失或畸形均失败，合成仍强制候选', { timeout: 40_000 }, () => {
+test('C16-B 作者保护按正式产物是否提议改写而条件判定：真实未触发可过，提议无候选、证据缺失或畸形均失败，合成仍强制候选', () => {
   const dir = fs.mkdtempSync(path.join(ROOT, '.runtime/.cache/novel-quality-modernization/author-protection-test-'))
   try {
     const check = (results, mode, expected, message) => assert.deepEqual(validateCandidateContinuityResults(results, mode), expected, message)
@@ -4628,7 +4627,7 @@ test('真实账本仅绑定登记分支的唯一工作树，拒绝重复和待�
   assert.throws(() => registeredCampaignWorktree(`${entry}\nprunable gitdir file points to non-existent location`), /CAMPAIGN_WORKTREE_NOT_UNIQUE/)
   assert.throws(() => registeredCampaignWorktree(`worktree C:/other\nHEAD ${'b'.repeat(40)}\nbranch refs/heads/other`), /CAMPAIGN_WORKTREE_NOT_UNIQUE/)
 })
-test('账本未知不释放、重试新attempt、无硬上限、重复/并发/残记录拒绝', { timeout: 20_000 }, () => {
+test('账本未知不释放、重试新attempt、无硬上限、重复/并发/残记录拒绝', () => {
   const parent = path.join(ROOT, '.runtime/.cache/novel-quality-modernization')
   fs.mkdirSync(parent, { recursive: true })
   const dir = fs.mkdtempSync(path.join(parent, 'ledger-test-'))
@@ -4678,7 +4677,7 @@ test('真实隔离配置只复制指定生成模型，不继承默认 embedding 
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(isolated, 'models.json'), 'utf8')), [profiles[0]])
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
-test('冻结执行验证拒绝adapter、Node版本/ABI、依赖、启动参数、native旁证篡改', { timeout: 20_000 }, () => {
+test('冻结执行验证拒绝adapter、Node版本/ABI、依赖、启动参数、native旁证篡改', () => {
   const parent = path.join(ROOT, '.runtime/.cache/novel-quality-modernization')
   fs.mkdirSync(parent, { recursive: true })
   const dir = fs.mkdtempSync(path.join(parent, 'environment-test-'))
@@ -4724,8 +4723,7 @@ test('实际SQLite唯一dispatch须匹配原handle、项目epoch与实际输出�
   } finally { db.close() }
 })
 
-// This integration case performs 78 durable appends; Intel macOS qualification took 6.8s.
-test('campaign保留后续阶段计划分配，unknown与修复超出原22仍继续记账且不能换账', { timeout: 20_000 }, () => {
+test('campaign保留后续阶段计划分配，unknown与修复超出原22仍继续记账且不能换账', () => {
   const dir = fs.mkdtempSync(path.join(ROOT, '.runtime/.cache/novel-quality-modernization/campaign-test-'))
   const file = path.join(dir, 'synthetic-ledger.jsonl')
   const binding = { campaignId: CAMPAIGN_ID, mode: 'synthetic', ...protocolBinding, arm: 'baseline', codeSha: 'a'.repeat(40),
@@ -5335,8 +5333,7 @@ s14bHistoryTest('S14B 新 revision 认证历史边界与登记证据', ({ histor
   }), /HISTORICAL_LEDGER_SUPERSESSION_EVIDENCE_MISSING/)
 })
 
-// Both historical integration cases validate full ledger prefixes and real Git ownership per mutation.
-s14bHistoryTest('S14B 新 revision 在账本读写两入口拒绝历史终态与代码身份漂移', { timeout: 20_000 }, ({ history: { real, synthetic, ledger, file } }) => {
+s14bHistoryTest('S14B 新 revision 在账本读写两入口拒绝历史终态与代码身份漂移', ({ history: { real, synthetic, ledger, file } }) => {
   const options = { campaignMode: 'synthetic', ...synthetic.boundaries }
   const planningAttempt = real.boundaries.historicalPlanningSavedOutlineBoundary.reserveAttempts.at(-1).attemptId
   const changedPlanning = raw => raw.replace(`"type":"unknown","attemptId":"${planningAttempt}"`,
@@ -5394,7 +5391,7 @@ s14bHistoryTest('S14B 新 revision 在账本读写两入口拒绝历史终态与
   fs.writeFileSync(file, synthetic.raw)
 })
 
-s14bHistoryTest('S14B 新 revision 在账本读写两入口拒绝前缀漂移并限制当前协议追加', { timeout: 20_000 }, ({ history: { real, synthetic, ledger, file } }) => {
+s14bHistoryTest('S14B 新 revision 在账本读写两入口拒绝前缀漂移并限制当前协议追加', ({ history: { real, synthetic, ledger, file } }) => {
   const partial = real.boundaries.historicalC16D021261fBoundary
   const diagnostic = real.boundaries.historicalSeparatedReviewB89b011aBoundary
   const ac3 = real.boundaries.historicalC16Ac3af420Boundary
@@ -7489,7 +7486,7 @@ test('full 预算：压缩 attempt 与首稿同 slot，计入失败/重试/修�
     assert.equal(Object.values(protocol.allocation).reduce((sum, value) => sum + value, 0), protocol.plannedCallAllocation)
     assert.equal(protocol.plannedCallAllocation, 80)
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
-}, 10_000)
+})
 
 test('full 压缩的 fixture 接线（行为）：登记只对候选臂取到，首稿证据取 owner artifact 原文 hash，并与 driver 门禁联通', () => {
   const dir = postUiEvidenceDir('full-condense-wiring-')

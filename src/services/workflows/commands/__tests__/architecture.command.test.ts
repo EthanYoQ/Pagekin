@@ -18,7 +18,9 @@ import {
 } from '../architecture.command'
 import {
   createWorkflowRuntimeDependencies,
+  useFakeModelStream,
   workflowRuntimeDependencies,
+  type FakeGenerateStream,
 } from './workflow-generation-runtime.fixture'
 import {
   clearProjectCustomPrompts,
@@ -41,7 +43,7 @@ class GenerateCharactersCommand extends RuntimeGenerateCharactersCommand {
 
 const projectAPath = 'C:\\novels\\A'
 const projectBPath = 'C:\\novels\\B'
-const originalGenerateStream = useLLMStore.getState().generateStream
+const originalGenerateStream = useFakeModelStream.getState().generateStream
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 const callbacks: StepCallbacks = {
   log: vi.fn(),
@@ -167,8 +169,8 @@ function createResponseStream(
 ) {
   let nextResponseIndex = 0
   return vi.fn((
-    _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-    streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+    _messages: Parameters<FakeGenerateStream>[0],
+    streamCallbacks: Parameters<FakeGenerateStream>[1],
   ) => {
     const index = nextResponseIndex++
     const output = responses[index]
@@ -237,10 +239,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  useLLMStore.setState({
-    defaultModelId: originalDefaultModelId,
-    generateStream: originalGenerateStream,
-  })
+  useLLMStore.setState({ defaultModelId: originalDefaultModelId })
+  useFakeModelStream.setState({ generateStream: originalGenerateStream })
   useProjectStore.setState({ currentProject: null })
   clearProjectCustomPrompts()
 })
@@ -249,7 +249,7 @@ describe('GenerateConfigCommand error boundaries', () => {
   it('expands authored configuration text and preserves explicit author choices', async () => {
     const authorOutline = '作者设定：主角必须先救出妹妹，这一事实不可改写。'
     const authorGuidance = `作者规则：${'不可删除。'.repeat(130)}`
-    let observedMessages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0] = []
+    let observedMessages: Parameters<FakeGenerateStream>[0] = []
     const onGenerated = vi.fn()
     useProjectStore.setState({
       currentProject: {
@@ -271,14 +271,12 @@ describe('GenerateConfigCommand error boundaries', () => {
       } as never,
       saveProject: vi.fn().mockResolvedValue(true),
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
         observedMessages = messages
         streamCallbacks.onDone?.(validConfigJson, undefined, 'stop')
         return 'config-expansion-request'
-      }),
-    })
+      }) })
 
     const command = new GenerateConfigCommand('扩写现有设定', 10, 2500, onGenerated)
     await command.execute({ step: {}, context, callbacks })
@@ -314,15 +312,13 @@ describe('GenerateConfigCommand error boundaries', () => {
         saveProject: vi.fn().mockResolvedValue(true),
       })
       const runContext = { ...context, writingLanguage }
-      let observedMessages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0] = []
-      useLLMStore.setState({
-        defaultModelId: 'model-1',
-        generateStream: vi.fn(async (messages, streamCallbacks) => {
+      let observedMessages: Parameters<FakeGenerateStream>[0] = []
+      useLLMStore.setState({ defaultModelId: 'model-1' })
+      useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
           observedMessages = messages
           streamCallbacks.onDone?.(validConfigJson, undefined, 'stop')
           return 'config-language-request'
-        }),
-      })
+        }) })
       const authorIdea = 'A café named “夜航 Café” survives at the edge of two timelines.'
       const command = new GenerateConfigCommand(authorIdea, 100, 3000, vi.fn())
 
@@ -333,14 +329,17 @@ describe('GenerateConfigCommand error boundaries', () => {
       expect(system).toContain(expected)
       expect(system).not.toContain(unexpected)
       expect(user).toContain(authorIdea)
+      const guidanceContract = user.split('\n').find(line => line.startsWith('- globalGuidance ')) ?? ''
+      expect(guidanceContract).toMatch(writingLanguage === 'zh-CN' ? /每条规则独占一行/u : /one rule per line/u)
+      expect(guidanceContract).toMatch(/(?<!\\)\\n(?!\\)/u)
     },
   )
 
   it('sends the same exact config JSON contract on the initial and length-replacement requests', async () => {
     const observedPrompts: string[] = []
     const generateStream = vi.fn((
-      messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+      messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
     ) => {
       observedPrompts.push(messages.map(message => message.content).join('\n'))
       const index = generateStream.mock.calls.length
@@ -349,7 +348,8 @@ describe('GenerateConfigCommand error boundaries', () => {
       return Promise.resolve(`config-request-${index}`)
     })
     const onGenerated = vi.fn()
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     useProjectStore.setState({ saveProject: vi.fn().mockResolvedValue(true) })
     const command = new GenerateConfigCommand('灵脉枯竭前寻找失落传承', 100, 3000, onGenerated)
 
@@ -376,7 +376,8 @@ describe('GenerateConfigCommand error boundaries', () => {
     })
     const onGenerated = vi.fn()
     const saveProject = vi.fn().mockResolvedValue(true)
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     useProjectStore.setState({ saveProject })
     const command = new GenerateConfigCommand('idea', 100, 3000, onGenerated)
 
@@ -398,7 +399,8 @@ describe('GenerateConfigCommand error boundaries', () => {
     })
     const onGenerated = vi.fn()
     const saveProject = vi.fn()
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     useProjectStore.setState({ saveProject })
     const command = new GenerateConfigCommand('idea', 100, 3000, onGenerated)
 
@@ -442,10 +444,8 @@ describe('GenerateConfigCommand error boundaries', () => {
       streamCallbacks.onDone?.(generationCall === 1 ? overlongConfig : replacementGuidance, undefined, 'stop')
       return 'config-request'
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream,
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const onGenerated = vi.fn()
     const saveProject = vi.fn().mockResolvedValue(true)
     useProjectStore.setState({ saveProject })
@@ -465,13 +465,11 @@ describe('GenerateConfigCommand error boundaries', () => {
 
   it('rejects an inexact plot structure without applying or saving config', async () => {
     const invalid = JSON.stringify({ ...JSON.parse(validConfigJson), plotStructure: '三幕式' })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(invalid, undefined, 'stop')
         return 'config-request'
-      }),
-    })
+      }) })
     const onGenerated = vi.fn()
     const saveProject = vi.fn()
     useProjectStore.setState({ saveProject })
@@ -484,9 +482,8 @@ describe('GenerateConfigCommand error boundaries', () => {
 
   it('preserves the project-switch error instead of reporting it as invalid JSON', async () => {
     let finishGeneration: (() => void) | undefined
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         await new Promise<void>((resolve) => {
           finishGeneration = () => {
             streamCallbacks.onDone?.(validConfigJson, undefined, 'stop')
@@ -494,8 +491,7 @@ describe('GenerateConfigCommand error boundaries', () => {
           }
         })
         return 'config-request'
-      }),
-    })
+      }) })
     const command = new GenerateConfigCommand('idea', 100, 3000, vi.fn())
 
     const execution = command.execute({ step: {}, context, callbacks })
@@ -507,13 +503,11 @@ describe('GenerateConfigCommand error boundaries', () => {
   })
 
   it('preserves save errors after valid JSON parsing', async () => {
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(validConfigJson, undefined, 'stop')
         return 'config-request'
-      }),
-    })
+      }) })
     const command = new GenerateConfigCommand('idea', 100, 3000, vi.fn())
     useProjectStore.setState({
       saveProject: vi.fn().mockRejectedValue(new Error('磁盘写入失败')),
@@ -553,9 +547,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const enProgressMark = '[Outline batch progress: covered chapters 1-20 of 20]'
     const outlineOutput = `Chapters 1-20: Shared threshold\n${modelOutput}`
     let englishCallCount = 0
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         englishCallCount += 1
         streamCallbacks.onDone?.(
           englishCallCount === 3 ? `${outlineOutput}\n\n${enProgressMark}` : modelOutput,
@@ -563,8 +556,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
           'stop',
         )
         return `architecture-english-request-${englishCallCount}`
-      }),
-    })
+      }) })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
         case 'character-proposal:stage': return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
@@ -636,7 +628,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const second = 'The southern king taxes every crossing.'
     const final = 'The northern villages maintain a hidden ferry.'
     const generateStream = createResponseStream([initial, second, final], ['length', 'length', 'stop'])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     let partialFile: Record<string, unknown> = {}
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'prompt:load-global') return { templates: [], diagnostics: [] }
@@ -697,13 +690,11 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     useProjectStore.setState({
       currentProject: { ...project(projectAPath), novelConfig } as never,
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.('', undefined, 'stop')
         return 'empty-premise-request'
-      }),
-    })
+      }) })
     const runContext = {
       ...context,
       writingLanguage: 'zh-CN' as const,
@@ -732,10 +723,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     useProjectStore.setState({
       currentProject: { ...project(projectAPath), novelConfig } as never,
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(() => new Promise<string>(() => {})),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(() => new Promise<string>(() => {})) })
     const runContext = {
       ...context,
       writingLanguage: 'en-US' as const,
@@ -750,7 +739,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       context: runContext,
       callbacks: stepCallbacks,
     })
-    await vi.waitFor(() => expect(useLLMStore.getState().generateStream).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(useFakeModelStream.getState().generateStream).toHaveBeenCalledOnce())
     runContext.cancelled = true
 
     await expect(execution).rejects.toThrow('Workflow was cancelled.')
@@ -787,10 +776,9 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       uiLocale: 'en-US' as const,
     }
     const observed = new Map<string, string>()
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (
-        messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (
+        messages: Parameters<FakeGenerateStream>[0],
         streamCallbacks,
         _modelId,
         options,
@@ -798,8 +786,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
         observed.set(options?.purpose ?? 'unknown', messages.map(message => message.content).join('\n'))
         streamCallbacks.onError?.('captured request')
         return 'architecture-language-request'
-      }),
-    })
+      }) })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -848,7 +835,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
 
   it('preflights the character identity manifest with field attribution before any provider request', async () => {
     const generateStream = vi.fn()
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -908,7 +896,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
 
   it('keeps a complete 12 KB author context instead of requiring the author to delete project guidance', async () => {
     const generateStream = createResponseStream([JSON.stringify({ slots: [] })])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -944,7 +933,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
   it('lets a 25,457-byte author context reach a frozen large-window provider unchanged', async () => {
     const authorGuidance = 'G'.repeat(25_457)
     const generateStream = createResponseStream([JSON.stringify({ slots: [] })])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -1058,10 +1048,10 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       JSON.stringify({ entries: generatedDetails.slice(6) }),
     ]
     const observedPrefixes: string[][] = []
-    let manifestMessages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0] | undefined
+    let manifestMessages: Parameters<FakeGenerateStream>[0] | undefined
     const generateStream = vi.fn((
-      messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+      messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
     ) => {
       if (generateStream.mock.calls.length === 1) manifestMessages = messages
       const user = messages.find(message => message.role === 'user')?.content ?? ''
@@ -1074,7 +1064,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       streamCallbacks.onDone?.(output, undefined, 'stop')
       return Promise.resolve(`character-batch-${generateStream.mock.calls.length}`)
     })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const expectedSnapshot = { ...readyRoster, entries: fullEntries, renderedMarkdown: '# 八人角色图谱' }
     let committedRequest: unknown
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
@@ -1189,7 +1180,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       role: slot.role === 'protagonist' ? 'supporting' : slot.role,
     }))
     const generateStream = createResponseStream([JSON.stringify(manifest)])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -1219,7 +1211,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const generateStream = createResponseStream([
       JSON.stringify({ schemaVersion: 1, entries: rosterEntries }),
     ])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -1250,7 +1243,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       JSON.stringify(manifestFor(rosterEntries)),
       JSON.stringify(forged),
     ])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -1298,7 +1292,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       JSON.stringify({ entries: details.slice(0, 3) }),
       JSON.stringify({ entries: details.slice(3) }),
     ])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     const authorAppearance = '作者手写的灰色旧斗篷'
     const existingEntries = [
@@ -1383,7 +1378,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
         ).entries[0]),
       }),
     ])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
@@ -1454,7 +1450,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       fencedJsonWithProse(JSON.stringify(manifestFor(rosterEntries))),
       ...detailBatchResponses(rosterEntries),
     ])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
@@ -1516,7 +1513,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       `${JSON.stringify(manifestFor(rosterEntries))}\n\n{"slots":[`,
       ...detailResponses(rosterEntries),
     ])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
@@ -1575,7 +1573,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       JSON.stringify(manifestFor(rosterEntries)),
       ...detailBatchResponses(rosterEntries).map(fencedJsonWithProse),
     ])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
@@ -1639,7 +1638,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       cancelled: false,
     }
     const generateStream = createResponseStream(twoStageResponses(rosterEntries))
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
         case 'character-proposal:stage': committedThenCancelledContext.cancelled = true; return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
@@ -1696,7 +1696,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
   it('stages a proposal without invoking the legacy checkpoint writer', async () => {
     const checkpointContext: WorkflowContext = { ...context, data: {}, cancelled: false }
     const generateStream = createResponseStream(twoStageResponses(rosterEntries))
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
         case 'character-proposal:stage': return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
@@ -1756,9 +1757,9 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const truncated = '{"slots":['
     const responses = [truncated, JSON.stringify(manifestFor(rosterEntries)), ...detailBatchResponses(rosterEntries)]
     const generateStream = vi.fn((
-      _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
-      modelId: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[2],
+      _messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
+      modelId: Parameters<FakeGenerateStream>[2],
     ) => {
       void modelId
       const output = responses[generateStream.mock.calls.length - 1]
@@ -1771,7 +1772,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       streamCallbacks.onDone?.(output, undefined, finishReason)
       return Promise.resolve(`truncated-character-request-${generateStream.mock.calls.length}`)
     })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
         case 'character-proposal:stage': return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
@@ -1842,7 +1844,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       responses,
       responses.map((_, index) => index === 0 ? 'length' : 'stop'),
     )
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
         case 'character-proposal:stage': return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
@@ -1926,7 +1929,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
   it('fails the protected length replacement before an additional provider call when its complete prompt exceeds the product budget', async () => {
     vi.spyOn(console, 'info').mockImplementation(() => {})
     const generateStream = createResponseStream(['{"slots":['], ['length'])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -1994,8 +1998,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const malformed = details.slice(0, -2)
     const responses = [JSON.stringify(manifestFor(rosterEntries)), malformed, details]
     const generateStream = vi.fn((
-      _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+      _messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
     ) => {
       const output = responses[generateStream.mock.calls.length - 1]
       if (!output) throw new Error('unexpected character generation attempt')
@@ -2003,7 +2007,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       streamCallbacks.onDone?.(output, undefined, 'stop')
       return Promise.resolve(`character-request-${generateStream.mock.calls.length}`)
     })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
         case 'character-proposal:stage': return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
@@ -2063,7 +2068,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       JSON.stringify(manifestFor(rosterEntries)),
       JSON.stringify({ entries: [] }),
     ])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
         case 'character-proposal:stage': return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
@@ -2128,7 +2134,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     modelEntry.currentState!.recentEvents = `  ${mayaRecentEvents}  `
     const modelEntries = [modelEntry, ...rosterEntries.slice(1)]
     const generateStream = createResponseStream(twoStageResponses(modelEntries))
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     let committedEntries: CharacterRosterEntry[] | undefined
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
@@ -2191,7 +2198,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       const invalid = JSON.parse(detailResponses(rosterEntries)[0]) as { entries: Array<Record<string, unknown>> }
       invalid.entries[0].age = invalidAge
       const generateStream = createResponseStream([JSON.stringify(manifestFor(rosterEntries)), JSON.stringify(invalid)])
-      useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+      useLLMStore.setState({ defaultModelId: 'model-1' })
+      useFakeModelStream.setState({ generateStream })
       const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
         if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -2221,7 +2229,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
         const state = invalid.entries[0].currentState as Record<string, unknown>
         state[field] = invalidValue
         const generateStream = createResponseStream([JSON.stringify(manifestFor(rosterEntries)), JSON.stringify(invalid)])
-        useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+        useLLMStore.setState({ defaultModelId: 'model-1' })
+        useFakeModelStream.setState({ generateStream })
         const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
           if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -2249,7 +2258,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const missingState = JSON.parse(detailResponses(rosterEntries)[0]) as { entries: Array<Record<string, unknown>> }
     delete missingState.entries[0].currentState
     const generateStream = createResponseStream([JSON.stringify(manifestFor(rosterEntries)), JSON.stringify(missingState)])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -2271,7 +2281,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
   })
 
   it('fails with the registered code when the provider rejects the character details as too long', async () => {
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream: createResponseStream([JSON.stringify(manifestFor(rosterEntries))]) })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: createResponseStream([JSON.stringify(manifestFor(rosterEntries))]) })
     vi.stubGlobal('window', { aiNovelAPI: { invoke: vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'prompt:load-global') return { templates: [], diagnostics: [] }
@@ -2298,7 +2309,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       malformed,
       malformed,
     ])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -2343,13 +2355,14 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const result = JSON.stringify(manifestFor(rosterEntries))
     let finishGeneration: (() => void) | undefined
     const generateStream = vi.fn((
-      _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+      _messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
     ) => {
       finishGeneration = () => streamCallbacks.onDone?.(result, undefined, 'stop')
       return Promise.resolve('late-character-request')
     })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }
@@ -2389,13 +2402,14 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const result = JSON.stringify(manifestFor(rosterEntries))
     let finishGeneration: (() => void) | undefined
     const generateStream = vi.fn((
-      _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-      streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+      _messages: Parameters<FakeGenerateStream>[0],
+      streamCallbacks: Parameters<FakeGenerateStream>[1],
     ) => {
       finishGeneration = () => streamCallbacks.onDone?.(result, undefined, 'stop')
       return Promise.resolve('cancelled-character-request')
     })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
       if (channel === 'character-proposal:approve') return { batch: { proposalBatchId: 'fixture-proposals', revision: 1, status: 'approved', items: [] } as unknown as CharacterProposalBatch, created: [] }

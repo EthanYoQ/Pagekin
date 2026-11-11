@@ -9,7 +9,7 @@ import type { CreativeStrategy, GenerationReasoningStage } from '../../src/share
 import { CREATIVE_STRATEGIES } from '../../src/shared/reasoning-types'
 import { isDeepStrictEqual } from 'node:util'
 import { materialBudgetFrom, type ArchitecturePlanningIntent, type BeginGenerationRequest, type MaterialBudget, type PlanningGenerationScope } from '../../src/shared/generation-owner-contract'
-import { resolveContextWindow } from '../../src/shared/model-profile-draft'
+import { contextWindowOutputCap, resolveContextWindow } from '../../src/shared/model-profile-draft'
 import { planBlueprintGenerationCost } from '../../src/services/workflows/blueprint-batch-policy'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, assertPlanningActionRange, parsePlanningTargetUnits, DEFAULT_PLANNING_ACTION_CHAPTERS } from '../../src/shared/plot-outline-contract'
 
@@ -262,7 +262,6 @@ function resolvePhysicalLiability(model: ModelProfile, creativeStrategy: Creativ
   return { capability, parameters, usagePolicy, reservationCeiling, openai, gemini, totalBounded, canBound, separateReasoning }
 }
 
-/** ADR-0023 决定 2：发给服务商的输出上限只取预设、作者设置与根账单次上限的最小值。 */
 function requestedOutputLimit(capability: ReturnType<typeof resolveGenerationCapabilityConstraints>, maxOutputPerRequest: number): number {
   return Math.min(capability.modelMaxOutputTokens ?? Infinity, capability.userMaxOutputTokens ?? Infinity, maxOutputPerRequest)
 }
@@ -273,7 +272,7 @@ export function resolveMaterialBudget(model: ModelProfile, maxOutputPerRequest: 
   return materialBudgetFrom({
     contextWindowTokens: window.tokens,
     contextWindowSource: window.source,
-    reservedOutputTokens: requestedOutputLimit(capability, maxOutputPerRequest),
+    reservedOutputTokens: requestedOutputLimit(capability, Math.min(maxOutputPerRequest, contextWindowOutputCap(window))),
     safetyMarginTokens: MAIN_GENERATION_POLICY.safetyMarginTokens,
   })
 }
@@ -286,6 +285,7 @@ export function buildMainGenerationPlan(model: ModelProfile, receipt: Pick<Model
   const { capability, parameters, usagePolicy, openai, gemini, totalBounded, canBound, separateReasoning }
     = resolvePhysicalLiability(model, creativeStrategy, task.reasoningStage ?? (task.output === 'visible-text' ? 'drafting' : 'planning'))
   const evidence = receipt.capabilityEvidence, safety = MAIN_GENERATION_POLICY.safetyMarginTokens
+  const maxOutputPerRequest = Math.min(budget.policy.maxOutputPerRequest, evidence.maxOutputTokens)
   const options = (maxTokens: number): LLMGenerateOptions => ({ ...parameters, maxTokens,
     ...(openai ? { outputTokenParameter: 'max_completion_tokens' as const } : {}),
     ...(task.output === 'structured-data' && evidence.structuredOutput ? { responseFormat: { type: 'json_object' } } : {}) })
@@ -295,7 +295,7 @@ export function buildMainGenerationPlan(model: ModelProfile, receipt: Pick<Model
       demand: task.budgetDemand,
       inputEstimate: { upperBoundTokens: inputUpperBoundTokens, estimatorVersion: MAIN_GENERATION_POLICY.estimatorVersion },
       capability,
-      root: { maxOutputPerRequest: budget.policy.maxOutputPerRequest },
+      root: { maxOutputPerRequest },
       liability: totalBounded ? { mode: 'total-bounded', totalLiabilityUpperBoundTokens: TOTAL_LIABILITY_UPPER_BOUND_TOKENS }
         : !canBound ? { mode: 'unknown', reasoningUpperBoundTokens: separateReasoning }
           : gemini ? { mode: 'separate-bounded', reasoningUpperBoundTokens: separateReasoning } : { mode: 'included-in-output' },
@@ -312,7 +312,7 @@ export function buildMainGenerationPlan(model: ModelProfile, receipt: Pick<Model
       reasoningUpperBoundTokens: decision.reasoningUpperBoundTokens, requestedOutputTokens: decision.reservedOutputTokens,
     }
   }
-  const requestedOutputTokens = requestedOutputLimit(capability, budget.policy.maxOutputPerRequest)
+  const requestedOutputTokens = requestedOutputLimit(capability, maxOutputPerRequest)
   // SiliconFlow max_tokens excludes reasoning, and thinking_budget is not a hard
   // stop for every model. Reserve the separately selected envelope instead.
   // This is a reservation, never a claim that the model consumed that many tokens.
