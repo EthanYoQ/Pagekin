@@ -54,7 +54,7 @@ import type {
   NarrativeThreadView,
 } from './narrative-thread'
 import type { NarrativeThreadReviewCandidate } from './narrative-thread-review-candidates'
-import type { PlotTreeSnapshot, PlotTreeSourceBundle } from './plot-tree'
+import type { PlotTreeSourceBundle } from './plot-tree'
 import type {
   UpdateActionResponse,
   UpdateCheckResponse,
@@ -1090,10 +1090,6 @@ export interface DatabaseChannels {
   'db:plot-tree-read': {
     args: [expectedProjectPath: string]
     return: PlotTreeSourceBundle
-  }
-  'db:plot-tree-save': {
-    args: [snapshot: PlotTreeSnapshot, expectedSourceRevision: string, expectedProjectPath: string]
-    return: { success: boolean; snapshot?: PlotTreeSnapshot; errorCode?: 'sources-changed'; error?: string }
   }
   'db:plot-tree-clear': {
     args: [expectedProjectPath: string]
