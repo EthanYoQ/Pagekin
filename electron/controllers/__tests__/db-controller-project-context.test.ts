@@ -385,13 +385,6 @@ describe('database controller project context guard', () => {
     })
   })
 
-  it('refuses the retired renderer plot-tree save with the admission code and no sources-changed shortcut', async () => {
-    await expect(handler('db:plot-tree-save')({}, { version: 1 }, 'a'.repeat(64), 'C:/projects/A')).resolves.toEqual({
-      success: false,
-      error: 'Error: GENERATION_GRAPH_ADMISSION_REQUIRED',
-    })
-  })
-
   it('rejects a synopsis commit after the project session switches', async () => {
     mocks.currentProjectPath = 'C:/projects/B'
 

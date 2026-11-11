@@ -126,7 +126,6 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'db:narrative-thread-event-confirm',
   'db:narrative-thread-assignment-set',
   'db:narrative-thread-assignment-remove',
-  'db:plot-tree-save',
   'db:plot-tree-clear',
 ])
 
@@ -931,20 +930,6 @@ export function registerDatabaseController() {
   ipcMain.handle('db:plot-tree-read', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return PlotTreeRepository.read()
-  })
-
-  ipcMain.handle('db:plot-tree-save', async (
-    _event,
-    _snapshot,
-    _expectedSourceRevision: string,
-    expectedProjectPath: string,
-  ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      throw new Error('GENERATION_GRAPH_ADMISSION_REQUIRED')
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
   })
 
   ipcMain.handle('db:plot-tree-clear', async (_event, expectedProjectPath: string) => {
