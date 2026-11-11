@@ -55,7 +55,7 @@ export function fakeRuntimeDependencies(
 ): WorkflowGenerationRuntimeDependencies {
   return {
     async createRuntime(options): Promise<GenerationRuntime> {
-      const frozenModelId = useLLMStore.getState().defaultModelId ?? 'test-model'
+      const frozenModelId = options.modelId ?? useLLMStore.getState().defaultModelId ?? 'test-model'
       const harness = createGenerationHarness({
         modelSource: {
           snapshotDefaultModel: () => ({
@@ -91,7 +91,7 @@ export function createWorkflowRuntimeDependencies(
 ): WorkflowGenerationRuntimeDependencies {
   return {
     createRuntime(options) {
-      const frozenModelId = useLLMStore.getState().defaultModelId ?? 'test-model'
+      const frozenModelId = options.modelId ?? useLLMStore.getState().defaultModelId ?? 'test-model'
       return fakeRuntimeDependencies(request => new Promise((resolve, reject) => {
         useFakeModelStream.getState().generateStream(
           [...request.messages],
