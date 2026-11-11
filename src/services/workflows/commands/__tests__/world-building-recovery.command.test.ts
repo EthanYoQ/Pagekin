@@ -10,7 +10,7 @@ import {
   type ArchitectureProjectSnapshot,
 } from '../architecture.command'
 import { createWorkflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
-import { clearProjectCustomPrompts } from '../../../prompt-templates'
+import { clearProjectCustomPrompts, getBuiltinPromptTemplate, type PromptTemplate } from '../../../prompt-templates'
 
 const projectPath = 'C:\\novels\\世界观恢复测试'
 const otherProjectPath = 'C:\\novels\\另一本书'
@@ -93,6 +93,8 @@ function installResponses(items: readonly ResponseItem[], writesAtRequestStart: 
 
 let partialFile: Record<string, unknown>
 let currentPremise: string
+let currentCharactersArch: string | null | undefined
+let projectPrompt: PromptTemplate | undefined
 let formalWorldbuilding: string
 let formalWrites: string[]
 let partialWriteCount: number
@@ -102,9 +104,14 @@ function installIpc(): void {
     aiNovelAPI: {
       invoke: vi.fn(async (channel: string, ...args: unknown[]) => {
         if (channel === 'prompt:load-global') return { templates: [], diagnostics: [] }
-        if (channel === 'fs:check-exists') return false
+        if (channel === 'fs:check-exists') return !!projectPrompt
+        if (channel === 'fs:list-dir' && projectPrompt) {
+          const name = `world_building.${projectPrompt.writingLanguage ?? 'zh-CN'}.json`
+          return [{ name, path: `${projectPath}/.ai-novel/prompts/${name}`, isDir: false }]
+        }
+        if (channel === 'fs:read-file') return { success: true, content: JSON.stringify(projectPrompt) }
         if (channel === 'db:project-core-get') {
-          return { premise: currentPremise, worldbuilding: formalWorldbuilding }
+          return { premise: currentPremise, charactersArch: currentCharactersArch, worldbuilding: formalWorldbuilding }
         }
         if (channel === 'fs:read-json') {
           expect(args[0]).toBe(`${projectPath}/.ai-novel/partial_arch.json`)
@@ -140,6 +147,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   partialFile = {}
   currentPremise = premise
+  currentCharactersArch = '沈砚是灯塔守塔人，许苒是港务调查员。'
+  projectPrompt = undefined
   formalWorldbuilding = '# 世界观\n\n作者已经确认的完整世界观。'
   formalWrites = []
   partialWriteCount = 0
@@ -167,6 +176,88 @@ afterEach(() => {
 })
 
 describe('GenerateWorldBuildingCommand 截断恢复', () => {
+  describe.each(['zh-CN', 'en-US'] as const)('%s 世界观事实传递', writingLanguage => {
+    it.each(['builtin', 'custom'] as const)('%s 模板的实际请求保留完整梗概和正式角色事实', async templateSource => {
+      const config = {
+        ...novelConfig,
+        writingLanguage,
+        coreOutline: 'The father is an archive restorer. His daughter must recover the lost logbook.',
+      }
+      currentCharactersArch = 'Shen Yan is a lighthouse keeper.\nXu Ran is a port investigator.'
+      if (templateSource === 'custom') {
+        projectPrompt = {
+          ...getBuiltinPromptTemplate('world_building', writingLanguage)!,
+          writingLanguage,
+          content: 'Build a world for {{genre}}.',
+          requiredContextVariables: [],
+        }
+      }
+      useProjectStore.setState({
+        currentProject: { ...useProjectStore.getState().currentProject!, novelConfig: config },
+      })
+      const runContext = { ...context(), writingLanguage }
+      runContext.data.partial = { character_dynamics_result: 'Unadopted proposal: Shen Yan is a policeman.' }
+      const generateStream = installResponses([{ content: 'A complete world based on the established facts.' }])
+
+      await new GenerateWorldBuildingCommand(
+        { ...snapshot, novelConfig: config },
+        createWorkflowRuntimeDependencies(),
+      ).execute({ step: {}, context: runContext, callbacks: callbacks() })
+
+      expect(generateStream).toHaveBeenCalledTimes(1)
+      const messages = generateStream.mock.calls[0]![0] as Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0]
+      const prompt = messages.filter(message => message.role === 'user').map(message => message.content).join('\n')
+      if (templateSource === 'custom') expect(prompt).toContain('Build a world for')
+      expect(prompt).toContain(config.coreOutline)
+      expect(prompt).toContain(currentCharactersArch)
+      expect(prompt).not.toContain('Unadopted proposal')
+      expect(prompt).not.toMatch(/\{\{(?:topic|character_dynamics)\}\}/u)
+      expect(formalWrites).toHaveLength(1)
+    })
+  })
+
+  it('生成期间修改正式角色图谱时保留候选，不写入正式世界观', async () => {
+    const original = formalWorldbuilding
+    installResponses([{
+      content: '基于旧角色职业生成的世界观。',
+      beforeResponse: () => { currentCharactersArch = '沈砚是作者重新指定的档案修复员。' },
+    }])
+
+    await expect(new GenerateWorldBuildingCommand(snapshot, createWorkflowRuntimeDependencies())
+      .execute({ step: {}, context: context(), callbacks: callbacks() }))
+      .rejects.toBeInstanceOf(WorldBuildingResumeAvailableError)
+
+    expect(formalWorldbuilding).toBe(original)
+    expect(formalWrites).toHaveLength(0)
+    expect(recoverableWorldBuildingCandidate(partialFile)).toBe('基于旧角色职业生成的世界观。')
+  })
+
+  it('候选保存后修改正式角色图谱时不发送续写请求', async () => {
+    installResponses([
+      { content: '基于正式角色事实的首段。', finishReason: 'length' },
+      { content: '尚未完成的世界规则。', finishReason: 'length' },
+    ])
+    await expect(new GenerateWorldBuildingCommand(snapshot, createWorkflowRuntimeDependencies())
+      .execute({ step: {}, context: context(), callbacks: callbacks() }))
+      .rejects.toBeInstanceOf(WorldBuildingResumeAvailableError)
+    const savedCandidate = recoverableWorldBuildingCandidate(partialFile)
+    const original = formalWorldbuilding
+    currentCharactersArch = '作者重新指定沈砚为档案修复员。'
+    const resumeCalls = installResponses([{ content: '不应发出的续写。' }])
+
+    await expect(new GenerateWorldBuildingCommand(
+      snapshot,
+      createWorkflowRuntimeDependencies(),
+      { resumeWorldBuilding: true, resumeHandle: { projectId: projectSession.projectId, epoch: projectSession.leaseId, rootActionId: '合成恢复根', runId: '合成恢复运行' } },
+    ).execute({ step: {}, context: { ...context(), data: {} }, callbacks: callbacks() }))
+      .rejects.toThrow('旧候选不能续到新上下文')
+
+    expect(resumeCalls).not.toHaveBeenCalled()
+    expect(recoverableWorldBuildingCandidate(partialFile)).toBe(savedCandidate)
+    expect(formalWorldbuilding).toBe(original)
+    expect(formalWrites).toHaveLength(0)
+  })
+
   it('正常 stop 只请求一次并直接保存正式世界观', async () => {
     const generateStream = installResponses([{ content: '新世界遵循明确的资源与权力规则。', finishReason: 'stop' }])
 
@@ -300,7 +391,7 @@ describe('GenerateWorldBuildingCommand 截断恢复', () => {
 
     await expect(new GenerateWorldBuildingCommand(snapshot, createWorkflowRuntimeDependencies())
       .execute({ step: {}, context: context(), callbacks: callbacks() }))
-      .rejects.toThrow('故事前提、小说配置或模板已变化')
+      .rejects.toThrow('故事前提、小说配置、角色图谱或模板已变化')
 
     expect(formalWorldbuilding).toBe(original)
     expect(formalWrites).toHaveLength(0)
