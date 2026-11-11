@@ -1446,6 +1446,46 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章矛盾。')).not.toBeInTheDocument()
   })
 
+  it('检查期间别章被改、之后蓝图又刷新：这次不算数，原来的结论留着', async () => {
+    latest = read
+    const rejected = { ...checked([finding(2, '被拒那次的第 2 章结论。')]), sourceStatus: 'conflict' }
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel !== 'graph-generation:read') return base(channel, ...args)
+      stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+      latest = rejected
+      return recovery(rejected)
+    })
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await check()
+    await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
+    await refreshBlueprints()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await expect.element(page.getByText('被拒那次的第 2 章结论。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('检查没查成之后把改过的章改回：蓝图刷新仍重读，结论照常显示', async () => {
+    const original = stored
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'graph-generation:execute') throw new Error('网络断了')
+      return base(channel, ...args)
+    })
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await check()
+    await expect.element(page.getByText('网络断了')).toBeVisible()
+    stored = original
+    latest = read
+    await refreshBlueprints()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
   it('改了某章蓝图后只有该章结论消失', async () => {
     await renderPage(2)
     await check()
