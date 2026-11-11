@@ -6,7 +6,7 @@ import type { Connection, Table } from '@lancedb/lancedb'
 import type { EmbeddingSpaceIdentity, KnowledgeCorpusKind } from '../vector-store'
 import { isDocumentCopyIndexCurrent } from '../vector-store'
 
-import { fullTextFilter, fullTextTerms, rankFullText } from '../../src/shared/full-text-search'
+import { firstOfEach, fullTextFilter, fullTextTerms, rankFullText } from '../../src/shared/full-text-search'
 import type { GenerationKnowledgeItem, GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge'
 export type { GenerationKnowledgeItem, GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge'
 
@@ -150,7 +150,8 @@ async function searchHits(reader: Reader, input: KnowledgeSearch, topK: number):
     const terms = fullTextTerms(input.query)
     const rows = await reader.chunks!.query().where(`${fullTextFilter(terms)}${documentFilter ? ` AND ${documentFilter}` : ''}`).toArray()
     const candidates = rows.filter(row => corpus(row.corpusKind) !== 'reference').map(row => ({ row, text: string(row.text), fileName: string(row.fileName) }))
-    hits = rankFullText(candidates, terms, await reader.chunks!.countRows()).slice(0, topK).map(({ row }) => ({ row: row.row, score: 0.5 }))
+    const ranked = rankFullText(candidates, terms, await reader.chunks!.countRows())
+    hits = firstOfEach(ranked, ({ row }) => JSON.stringify([string(row.row.docId), row.text])).slice(0, topK).map(({ row }) => ({ row: row.row, score: 0.5 }))
   }
   if (new Set(hits.map(hit => hit.row.id)).size !== hits.length) fail('DUPLICATE_CHUNK')
   return hits

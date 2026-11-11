@@ -48,3 +48,13 @@ export function rankFullText<T extends { text: string; fileName: string }>(rows:
     }))
     .sort((left, right) => right.score - left.score || compare(left.row.text, right.row.text) || compare(left.row.fileName, right.row.fileName))
 }
+
+export function firstOfEach<T>(items: readonly T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>()
+  return items.filter(item => {
+    const value = key(item)
+    if (seen.has(value)) return false
+    seen.add(value)
+    return true
+  })
+}

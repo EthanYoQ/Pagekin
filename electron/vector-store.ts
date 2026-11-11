@@ -13,7 +13,7 @@ import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { getProjectDataRoot } from './services/project-data-locator'
 import { CANONICAL_PROJECT_DIRECTORY } from '../src/shared/project-format'
-import { fullTextFilter, fullTextTerms, rankFullText } from '../src/shared/full-text-search'
+import { firstOfEach, fullTextFilter, fullTextTerms, rankFullText } from '../src/shared/full-text-search'
 
 // ===== 类型定义 =====
 
@@ -1465,14 +1465,10 @@ async function searchInternal(
       if (currentCopyFilter) filters.push(currentCopyFilter)
       const filter = filters.join(' AND ')
       const results = await canonicalTable.query().filter(filter).toArray()
-      const ftsResults = rankFullText(results as Array<{ text: string; fileName: string }>, searchTerms, await canonicalTable.countRows())
+      const ranked = rankFullText(results as Array<{ text: string; fileName: string }>, searchTerms, await canonicalTable.countRows())
+      return firstOfEach(ranked, ({ row }) => JSON.stringify([row.fileName, row.text]))
+        .slice(0, topK)
         .map(({ row }) => ({ text: row.text, score: 0.5, fileName: row.fileName }))
-      const uniqueResults = new Map<string, SearchResult>()
-      for (const result of ftsResults) {
-        const key = JSON.stringify([result.fileName, result.text])
-        if (!uniqueResults.has(key)) uniqueResults.set(key, result)
-      }
-      return [...uniqueResults.values()].slice(0, topK)
     } catch (error) {
       console.warn('[AI Novel VectorStore] 纯文本检索失败:', error)
       return []
