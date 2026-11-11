@@ -5,7 +5,7 @@ import type BetterSqlite3 from 'better-sqlite3'
 
 import { getProjectDb } from '../../database'
 import { createLiveRowViews } from '../../../test/helpers/live-row-views'
-import { CharacterRosterRepository } from '../character-roster-repository'
+import { CharacterRosterRepository, validateLegacyRosterCandidate } from '../character-roster-repository'
 import { ensureCharacterRosterSchema } from '../character-roster-schema'
 import { CharacterRepository } from '../character-repository'
 import { ProjectCoreRepository } from '../project-core-repository'
@@ -837,6 +837,19 @@ describe('CharacterRosterRepository public read/commit seam', () => {
       ])
     },
   )
+
+  it('validates legacy roster candidates as a closed cast without free-text relationships', () => {
+    expect(validateLegacyRosterCandidate({ schemaVersion: 1, entries: commitRequest().entries }).map(entry => entry.name))
+      .toEqual(['林舟', '苏绾'])
+    expect(() => validateLegacyRosterCandidate({ schemaVersion: 1, entries: [{
+      ...commitRequest().entries[0], relationships: [{ target: '不存在的角色', relation: '敌对' }],
+    }] })).toThrow('CHARACTER_ROSTER_RELATIONSHIP_TARGET_UNKNOWN')
+    expect(() => validateLegacyRosterCandidate({ schemaVersion: 1, entries: [{
+      ...commitRequest().entries[0], relationships: [], legacyRelationshipNotes: '自由文本',
+    }] })).toThrow('CHARACTER_ROSTER_FREE_RELATIONSHIPS_FORBIDDEN')
+    expect(() => validateLegacyRosterCandidate({ schemaVersion: 1, entries: [] }))
+      .toThrow('CHARACTER_ROSTER_ENTRIES_REQUIRED')
+  })
 
   it('archives legacy Markdown as migration evidence instead of parsing it as a roster', () => {
     db.exec(`
