@@ -50,6 +50,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
   const [editingOriginal, setEditingOriginal] = useState('')
   const [saving, setSaving] = useState(false)
   const editRequest = useRef(0)
+  const deleting = useRef(new Set<string>())
   useEffect(() => {
     if (!loaded) loadModels()
   }, [loaded, loadModels])
@@ -75,6 +76,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     }))
   }
   const editLatestSaved = async (model: ModelProfile) => {
+    if (deleting.current.has(model.id)) return
     const request = ++editRequest.current
     await loadModels()
     if (request !== editRequest.current) return
@@ -114,9 +116,14 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
       setEditingModel(null)
     },
     save,
-    remove: (modelId: string) => {
+    remove: async (modelId: string) => {
       editRequest.current += 1
-      return deleteModel(modelId)
+      deleting.current.add(modelId)
+      try {
+        return await deleteModel(modelId)
+      } finally {
+        deleting.current.delete(modelId)
+      }
     },
     setDefault,
   }
