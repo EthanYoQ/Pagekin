@@ -961,3 +961,16 @@
 .stage-ch-suggest-actions .stage-ch-suggest-hint {
   margin-top: 0;
 }
+
+.stage-ch-suggest-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  font-size: var(--fs-13);
+  color: var(--ink-3);
+}
+
+.stage-ch-suggest-bar p {
+  margin: 0;
+}

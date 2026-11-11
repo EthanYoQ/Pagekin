@@ -140,7 +140,7 @@ afterEach(async () => {
 })
 
 describe('替换定稿后检查后续蓝图', () => {
-  it('后处理没做完时按钮不可点并说明原因；角色状态记完后可点，不自动开跑', async () => {
+  it('后处理还在跑时按钮不可点并说明原因；跑完后可点，不自动开跑', async () => {
     postProcessDone(false)
     await openReplaced()
     await expect.element(button('检查后续蓝图')).toBeDisabled()
@@ -150,7 +150,47 @@ describe('替换定稿后检查后续蓝图', () => {
     await act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'post-process', projectPath: SESSION.projectPath, projectSession: SESSION, runId: 'pp' }))
     await expect.element(button('检查后续蓝图')).toBeEnabled()
     expect(document.body.textContent).not.toContain('定稿后处理做完后才能检查后续蓝图')
+    expect(document.body.textContent).not.toContain('角色状态没更新完')
     expect(graph.opened).toEqual([])
+  })
+
+  it('后处理失败或这次替换没有后处理记录时仍可检查，并说明建议可能不全', async () => {
+    backend.state.postProcess = { steps: [
+      { stepKey: 'chapter_notes', label: '章节要点', ok: true },
+      { stepKey: 'character_cards', label: '角色状态', ok: false, errorMsg: 'GENERATION_FAILED', attemptCount: 2 },
+    ] }
+    await openReplaced()
+    await expect.element(button('检查后续蓝图')).toBeEnabled()
+    await expect.element(page.getByText('角色状态没更新完，建议可能不全。')).toBeVisible()
+    expect(document.body.textContent).not.toContain('定稿后处理做完后才能检查后续蓝图')
+    await unmount()
+
+    backend.state.postProcess = null
+    await mount()
+    await expect.element(button('检查后续蓝图')).toBeEnabled()
+    await expect.element(page.getByText('角色状态没更新完，建议可能不全。')).toBeVisible()
+    await click('检查后续蓝图')
+    expect(graph.opened).toHaveLength(1)
+    await finish()
+  })
+
+  it('「知道了」只收起替换提示：按钮和没处理的建议卡留着，处理完的卡不再显示', async () => {
+    backend.state.suggestions = list([card(4), card(5, { status: 'accepted' })])
+    await openReplaced()
+    await click('知道了')
+    expect(document.body.textContent).not.toContain('第 3 章已修改')
+    await expect.element(button('检查后续蓝图')).toBeEnabled()
+    const section = page.getByRole('region', { name: '后续蓝图的修改建议' })
+    await expect.element(section.getByText('第 4 章写林舟和老周并肩，新稿里两人已成死敌。')).toBeVisible()
+    expect(document.body.textContent).not.toContain('第 5 章写林舟和老周并肩')
+
+    await click('不用')
+    await expect.element(section.getByText('没有采用，蓝图没动。')).toBeVisible()
+    await unmount()
+    await mount()
+    await expect.element(button('检查后续蓝图')).toBeEnabled()
+    expect(document.body.textContent).not.toContain('后续蓝图的修改建议')
+    expect(document.body.textContent).not.toContain('第 3 章已修改')
   })
 
   it('点「检查后续蓝图」按这次替换开跑；每章一张卡，写明问题、依据和逐字段对比；已有草稿的章提示正文不会跟着变', async () => {
@@ -189,8 +229,8 @@ describe('替换定稿后检查后续蓝图', () => {
     expect(refreshed).toHaveBeenCalledWith({ resources: ['blueprints'], projectPath: SESSION.projectPath, projectSession: SESSION })
 
     await act(async () => section.getByRole('listitem').nth(1).getByRole('button', { name: '接受' }).click())
-    await expect.element(section.getByText('第 5 章的蓝图在建议之后改过，没有写入。再点“检查后续蓝图”。')).toBeVisible()
     await expect.element(section.getByText('这章蓝图在建议之后改过，这条不再适用。重新检查一次。')).toBeVisible()
+    expect(document.body.textContent).not.toContain('没有写入')
     expect(refreshed).toHaveBeenCalledTimes(1)
     off()
   })

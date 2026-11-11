@@ -29,7 +29,7 @@ export function useLaterBlueprintCheck(projectKey: string, finalizationId: strin
   })
   const [list, setList] = useState<ContinuitySuggestionList | null>(null)
   const [busy, setBusy] = useState(false)
-  const [staleChapter, setStaleChapter] = useState<number | null>(null)
+  const [decided, setDecided] = useState<ReadonlySet<string>>(() => new Set())
   const mounted = useRef(false)
   useEffect(() => {
     mounted.current = true
@@ -44,7 +44,6 @@ export function useLaterBlueprintCheck(projectKey: string, finalizationId: strin
     }
     return pending.then(outcome => {
       if (!shown()) return
-      setStaleChapter(null)
       if (outcome.status === 'checked') { setList(outcome.list); setStatus({ kind: 'done' }) } else setStatus({ kind: 'unreadable' })
     }, (error: unknown) => {
       if (!shown()) return
@@ -79,7 +78,7 @@ export function useLaterBlueprintCheck(projectKey: string, finalizationId: strin
     await follow(session, runLaterBlueprintCheck(session, finalizationId, modelId))
   }
 
-  const decide = async (suggestionId: string, chapterNumber: number, decision: SuggestionDecision) => {
+  const decide = async (suggestionId: string, decision: SuggestionDecision) => {
     const session = sessionFor(projectKey)
     if (!session || busy) return
     setBusy(true)
@@ -91,13 +90,13 @@ export function useLaterBlueprintCheck(projectKey: string, finalizationId: strin
         toast.error(text('蓝图没有改动。没处理成，再点一次试试。', 'Your blueprint is unchanged. That did not go through. Try again.'))
         return
       }
-      setStaleChapter(result.status === 'stale' ? chapterNumber : null)
+      setDecided(previous => new Set(previous).add(suggestionId))
       if (result.status === 'accepted') globalEventBus.emit('REFRESH_RESOURCE', { projectSession: session, projectPath: session.projectPath, resources: ['blueprints'] })
       setList(await readLaterBlueprintSuggestions(session, finalizationId).catch(() => list))
     } finally { setBusy(false) }
   }
 
-  return { status, list, busy, staleChapter, run, decide }
+  return { status, list, busy, decided, run, decide }
 }
 
 export type LaterBlueprintCheck = ReturnType<typeof useLaterBlueprintCheck>

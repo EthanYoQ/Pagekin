@@ -67,8 +67,8 @@ function SuggestionCard({ card, check, drafted, unsaved }: { card: ContinuitySug
         ? <p className="stage-ch-suggest-note" role="status">{done}</p>
         : (
           <div className="stage-ch-suggest-actions">
-            <Button variant="secondary" size="sm" disabled={check.busy || unsaved} onClick={() => void check.decide(card.suggestionId, card.chapterNumber, 'accept')}>{text('接受', 'Accept')}</Button>
-            <Button variant="text" size="sm" disabled={check.busy} onClick={() => void check.decide(card.suggestionId, card.chapterNumber, 'reject')}>{text('不用', 'Don’t use')}</Button>
+            <Button variant="secondary" size="sm" disabled={check.busy || unsaved} onClick={() => void check.decide(card.suggestionId, 'accept')}>{text('接受', 'Accept')}</Button>
+            <Button variant="text" size="sm" disabled={check.busy} onClick={() => void check.decide(card.suggestionId, 'reject')}>{text('不用', 'Don’t use')}</Button>
             {unsaved && <span className="stage-ch-suggest-hint">{text('蓝图里有没保存的修改，先保存或放弃当前修改。', 'The blueprint has unsaved changes. Save or discard them first.')}</span>}
           </div>
         )}
@@ -82,8 +82,11 @@ function chapterList(chapters: readonly number[], text: Text) {
   return first === last ? text(`第 ${first} 章`, `chapter ${first}`) : text(`第 ${first}–${last} 章`, `chapters ${first}–${last}`)
 }
 
-/** 检查后续蓝图的结果：每章一张卡，按字段对比新旧文字，作者逐章接受或不用。 */
-export default function LaterBlueprintSuggestions({ check, projectKey }: { check: LaterBlueprintCheck; projectKey: string }) {
+/**
+ * 检查后续蓝图的结果：每章一张卡，按字段对比新旧文字，作者逐章接受或不用。
+ * pendingOnly 时只留没处理的卡和这次刚处理的卡，处理过的旧卡不再占地方。
+ */
+export default function LaterBlueprintSuggestions({ check, projectKey, pendingOnly }: { check: LaterBlueprintCheck; projectKey: string; pendingOnly: boolean }) {
   const text = useLocaleStore(s => s.text)
   const ledger = useEditorStore(s => s.draftLedgers[CHAPTER_CARD_TAB_ID])
   const unsaved = (getChapterCardProjectDraft(parseChapterCardDraftLedger(ledger), projectKey)?.dirtyChapterNumbers.length ?? 0) > 0
@@ -97,6 +100,8 @@ export default function LaterBlueprintSuggestions({ check, projectKey }: { check
       ? <Notice tone="ok" title={text(`检查了${chapterList(list.checkedChapters, text)}，蓝图和新的时间线没有矛盾。`, `Checked ${chapterList(list.checkedChapters, text)}. No blueprint conflicts with the new timeline.`)} />
       : null
   }
+  const cards = pendingOnly ? list.suggestions.filter(card => card.status === 'pending' || check.decided.has(card.suggestionId)) : list.suggestions
+  if (cards.length === 0) return null
   const drafted = new Set(chapters.filter(row => row.draft && row.draft.status !== 'finalized').map(row => row.number))
   return (
     <section className="stage-ch-suggest" aria-label={text('后续蓝图的修改建议', 'Suggested blueprint changes')}>
@@ -104,11 +109,8 @@ export default function LaterBlueprintSuggestions({ check, projectKey }: { check
         {text('后续蓝图的修改建议', 'Suggested blueprint changes')}
         <small>{text(`检查了${chapterList(list.checkedChapters, text)}`, `Checked ${chapterList(list.checkedChapters, text)}`)}</small>
       </h2>
-      {check.staleChapter !== null && (
-        <p className="stage-ch-suggest-hint" role="status">{text(`第 ${check.staleChapter} 章的蓝图在建议之后改过，没有写入。再点“检查后续蓝图”。`, `Chapter ${check.staleChapter}’s blueprint changed after the suggestion, so nothing was written. Choose Check later blueprints again.`)}</p>
-      )}
       <ul className="stage-ch-suggest-list">
-        {list.suggestions.map(card => <SuggestionCard key={card.suggestionId} card={card} check={check} drafted={drafted.has(card.chapterNumber)} unsaved={unsaved} />)}
+        {cards.map(card => <SuggestionCard key={card.suggestionId} card={card} check={check} drafted={drafted.has(card.chapterNumber)} unsaved={unsaved} />)}
       </ul>
     </section>
   )

@@ -42,18 +42,26 @@ function suggestReply(prompt) {
   return JSON.stringify({ suggestions: CONFLICTING.map(chapterNumber => ({ chapterNumber, eventIds: [id], issue: ISSUE(chapterNumber), patch: { keyEvents: PATCHED } })) })
 }
 
-/** 重开第 2 章、补一句反目、再定稿；等后处理做完，「检查后续蓝图」可点。 */
-async function replaceChapterTwo({ page, fake }) {
+const replacedNotice = page => chapterView.view(page).locator('.pi-notice').filter({ hasText: '第 2 章已修改' })
+
+/** 重开第 2 章、补一句反目、再定稿，等定稿页出现替换提示。 */
+async function finalizeReplacement({ page, fake }) {
   fake.replyCharacterState(relationReply)
   fake.replyReview(suggestReply)
   await openChapter(page, 2)
   await reopen(page, 2)
   await appendSentence(page, REPLACED_LINE)
   await finalizeReopened(page, 2)
-  const notice = chapterView.view(page).locator('.pi-notice').filter({ hasText: '第 2 章已修改' })
-  await notice.waitFor({ state: 'visible', timeout: 30_000 })
-  const check = notice.getByRole('button', { name: '检查后续蓝图', exact: true })
-  await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === '检查后续蓝图' && !button.disabled), null, { timeout: 30_000 })
+  await replacedNotice(page).waitFor({ state: 'visible', timeout: 30_000 })
+}
+
+/** 替换后等后处理做完，「检查后续蓝图」可点，点一次出建议。 */
+async function replaceChapterTwo(context) {
+  const { page, fake } = context
+  await finalizeReplacement(context)
+  const check = replacedNotice(page).getByRole('button', { name: '检查后续蓝图', exact: true })
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === '检查后续蓝图' && !button.disabled)
+    && !document.body.textContent.includes('角色状态没更新完') && !document.body.textContent.includes('定稿后处理做完后'), null, { timeout: 30_000 })
   assert.equal(suggestRequests(fake), 0, '不点按钮不发请求')
   await check.click()
   const section = page.getByRole('region', { name: '后续蓝图的修改建议' })
@@ -102,12 +110,57 @@ export const C8B_SCENARIOS = {
     assert.equal((await context.invoke(context.page, 'db:blueprint-upsert', { ...current, keyEvents: edited }, session.projectPath, session)).success, true)
 
     await cardOf(section, 6).getByRole('button', { name: '接受', exact: true }).click()
-    await section.getByText('第 6 章的蓝图在建议之后改过，没有写入。再点“检查后续蓝图”。', { exact: true }).waitFor({ state: 'visible' })
     await cardOf(section, 6).getByText('这章蓝图在建议之后改过，这条不再适用。重新检查一次。', { exact: true }).waitFor({ state: 'visible' })
-    const measured = { sixAfter: (await blueprintOf(context, 6)).keyEvents }
+    const measured = {
+      sixAfter: (await blueprintOf(context, 6)).keyEvents,
+      staleLines: await section.getByText('在建议之后改过').count(),
+    }
     assert.equal(measured.sixAfter, edited, '过期的建议不写入，作者改的蓝图保住')
+    assert.equal(measured.staleLines, 1, '作废提示只在卡片上出现一次')
     await cardOf(section, 6).scrollIntoViewIfNeeded()
-    await context.shoot('c8b-3-stale')
+    await context.shoot('c8b-r2-stale-one-line')
+    return measured
+  } },
+  'c8b-ack-keeps-cards': { model: true, shell: 'stage', setup, run: async context => {
+    const { page } = context
+    const section = await replaceChapterTwo(context)
+    await cardOf(section, 4).getByRole('button', { name: '不用', exact: true }).click()
+    await cardOf(section, 4).getByText('没有采用，蓝图没动。', { exact: true }).waitFor({ state: 'visible' })
+    await replacedNotice(page).getByRole('button', { name: '知道了', exact: true }).click()
+    await replacedNotice(page).waitFor({ state: 'detached' })
+    await openChapter(page, 3)
+    await openChapter(page, 2)
+    const check = chapterView.view(page).locator('.stage-ch-suggest-bar').getByRole('button', { name: '检查后续蓝图', exact: true })
+    await check.waitFor({ state: 'visible', timeout: 30_000 })
+    const after = page.getByRole('region', { name: '后续蓝图的修改建议' })
+    await after.getByText(ISSUE(6), { exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+    const measured = {
+      notices: await replacedNotice(page).count(),
+      checkEnabled: await check.isEnabled(),
+      cards: await after.locator('.stage-ch-suggest-card h3').allInnerTexts(),
+    }
+    assert.equal(measured.notices, 0, '「知道了」后替换提示收起')
+    assert.equal(measured.checkEnabled, true, '「检查后续蓝图」仍在且可点')
+    assert.deepEqual(measured.cards, ['第 6 章'], '没处理的第 6 章留着，已选「不用」的第 4 章不再占地方')
+    await context.shoot('c8b-r2-ack-keeps-cards')
+    return measured
+  } },
+  'c8b-postprocess-failed': { model: true, shell: 'stage', setup, run: async context => {
+    const { page, fake } = context
+    fake.breakCharacterState()
+    await finalizeReplacement(context)
+    await page.getByRole('button', { name: '重试失败步骤', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
+    const notice = replacedNotice(page)
+    const check = notice.getByRole('button', { name: '检查后续蓝图', exact: true })
+    const measured = {
+      checkEnabled: await check.isEnabled(),
+      hint: await notice.getByText('角色状态没更新完，建议可能不全。', { exact: true }).count(),
+      requests: suggestRequests(fake),
+    }
+    assert.equal(measured.checkEnabled, true, '后处理失败时仍可检查')
+    assert.equal(measured.hint, 1, '按钮旁说明建议可能不全')
+    assert.equal(measured.requests, 0, '不点按钮不发请求')
+    await context.shoot('c8b-r2-postprocess-failed')
     return measured
   } },
 }
