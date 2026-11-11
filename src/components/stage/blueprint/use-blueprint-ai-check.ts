@@ -79,7 +79,6 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
 
   const follow = useCallback((session: ProjectSessionContext, pending: Promise<ContinuityCheckOutcome>) => {
     const { text, locale } = useLocaleStore.getState()
-    checked.current = true
     const shown = () => {
       if (!mounted.current || !isProjectSessionCurrent(session)) return false
       releaseShownContinuityCheck(session, pending)
@@ -89,6 +88,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
       if (outcome.status === 'checked' && mounted.current)
         await Promise.all([readExemptions(session), readTimeline(session)]).catch(() => {})
       if (!shown()) return
+      checked.current = true
       if (outcome.status === 'checked') {
         setReport(outcome.report)
         setStatus({ kind: 'done' })
