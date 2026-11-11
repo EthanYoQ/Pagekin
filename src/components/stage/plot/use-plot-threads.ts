@@ -4,21 +4,14 @@ import type { MainGenerationRunHandle, MainGenerationRunSummary } from '../../..
 import { ipc } from '../../../services/ipc-client'
 import { isGenerationModel, preferredGenerationModelId } from '../../../services/workflows/chapter-write-launch'
 import type {
-  NarrativeThreadCandidateGenerator,
   NarrativeThreadEventCandidate,
   NarrativeThreadPlanCandidate,
-} from '../../../services/narrative-thread-candidate-generator'
+} from '../../../shared/narrative-thread-generation-pure'
 import {
-  PlotTreeGenerationError,
   PlotTreeInputLimitError,
-  PlotTreeIncompleteError,
-  PlotTreeResponseError,
   PlotTreeSourceError,
   PlotTreeSourceLimitError,
-  type GeneratePlotTreeInput,
-  type PlotTreeGenerationErrorCode,
-  type PlotTreeResponseErrorCode,
-} from '../../../services/plot-tree-generator'
+} from '../../../shared/plot-tree-generation-pure'
 import type { GraphGenerationInput, GraphGenerationRecovery } from '../../../shared/graph-generation'
 import type { DatabaseChannels } from '../../../shared/ipc-channels'
 import {
@@ -28,15 +21,13 @@ import {
   type NarrativeThreadView,
 } from '../../../shared/narrative-thread'
 import type { NarrativeThreadReviewCandidate } from '../../../shared/narrative-thread-review-candidates'
-import type { PlotTreeSnapshot, PlotTreeSourceBundle, PlotTreeSourceReference } from '../../../shared/plot-tree'
+import type { PlotTreeSourceBundle, PlotTreeSourceReference } from '../../../shared/plot-tree'
 import { routeStageModel } from '../../../shared/model-stage-routing'
 import { formatResourceUri } from '../../../shared/project-paths'
-import { resolveWritingLanguage } from '../../../shared/writing-language'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { openBuiltinEditor } from '../../../stores/open-builtin-editor'
 import { useProjectStore } from '../../../stores/project-store'
-import { useWorkflowStore } from '../../../stores/workflow-store'
 import { openChapterFile } from '../../panels/sidebar/sidebar-file-openers'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
 import { toast } from '../../ui/Toast'
@@ -57,10 +48,8 @@ export const STATUS_LABELS: Record<NarrativeThreadView['status'], [string, strin
 }
 
 export interface PlotThreadsOptions {
-  candidateGenerator?: NarrativeThreadCandidateGenerator
   initialView?: 'plot-tree' | 'plans'
   viewRequest?: number
-  plotTreeGenerator?: (request: GeneratePlotTreeInput) => Promise<PlotTreeSnapshot>
 }
 
 type AICandidateMode = 'plan' | 'event'
@@ -76,28 +65,6 @@ function plotTreeErrorMessage(
   text: LocaleText,
   fallback: [zh: string, en: string],
 ): string {
-  if (error instanceof PlotTreeGenerationError) {
-    return error.code === 'DEADLINE_EXHAUSTED'
-      ? text(
-          '剧情树生成超过会话截止时间，旧快照保持不变，请稍后重试。',
-          'Plot-tree generation exceeded the session deadline; the previous snapshot remains unchanged. Try again later.',
-        )
-      : text(
-          '剧情树模型请求失败，旧快照保持不变，请检查模型连接后重试。',
-          'The plot-tree model request failed; the previous snapshot remains unchanged. Check the model connection and try again.',
-        )
-  }
-  if (error instanceof PlotTreeResponseError) {
-    return error.code === 'invalid_json'
-      ? text(
-          '模型未返回可解析的剧情树 JSON，旧快照保持不变。',
-          'The model did not return parseable plot-tree JSON; the previous snapshot remains unchanged.',
-        )
-      : text(
-          '模型返回的剧情树结构或来源引用无效，旧快照保持不变。',
-          'The model returned an invalid plot-tree structure or source reference; the previous snapshot remains unchanged.',
-        )
-  }
   if (error instanceof PlotTreeSourceLimitError) {
     return text(
       `剧情树完整来源上限为 ${error.maximum} 个章节；本次未调用模型，旧快照保持不变。`,
@@ -142,38 +109,11 @@ function plotTreeErrorMessage(
     && SNAPSHOT_VALIDATION_ERROR_ENDINGS.some(ending => message.endsWith(ending))) {
     return text('剧情树快照无效。', 'The plot-tree snapshot is invalid.')
   }
-  if (message === '剧情树快照保存失败') {
-    return text('无法保存剧情树。', 'Could not save the plot tree.')
-  }
   if (message === '剧情资料在生成期间已更新，本次结果未保存，请重新生成。'
     || message === 'Plot sources changed during generation. This result was not saved; generate it again.') {
     return text(
       '剧情资料在生成期间已更新，本次结果未保存，请重新生成。',
       'Plot sources changed during generation. This result was not saved; generate it again.',
-    )
-  }
-  if (error instanceof PlotTreeIncompleteError) {
-    if (error.finishReason === 'length') {
-      return text(
-        '剧情树输出达到模型最大长度，结果未保存，请提高最大输出 Tokens 或缩短项目资料。',
-        'Plot-tree output reached the model maximum output length and was not saved. Increase maximum output tokens or shorten the project sources.',
-      )
-    }
-    if (error.finishReason === 'content_filter') {
-      return text(
-        '剧情树输出因内容限制未完成，结果未保存。',
-        'Plot-tree output was stopped by the content policy and was not saved.',
-      )
-    }
-    if (error.finishReason === 'cancelled') {
-      return text(
-        '剧情树生成已取消，结果未保存。',
-        'Plot-tree generation was cancelled and the result was not saved.',
-      )
-    }
-    return text(
-      '剧情树生成未正常完成，结果未保存。',
-      'Plot-tree generation did not complete normally and the result was not saved.',
     )
   }
   return text(...fallback)
@@ -194,10 +134,8 @@ export interface BoundEventCandidate extends NarrativeThreadEventCandidate {
  * 「剧情与伏笔」页用它；危险操作的确认由页面呈现。
  */
 export function usePlotThreads(projectKey: string, {
-  candidateGenerator,
   initialView = 'plans',
   viewRequest,
-  plotTreeGenerator,
 }: PlotThreadsOptions = {}) {
   const currentProject = useProjectStore(s => s.currentProject)
   const text = useLocaleStore(s => s.text)
@@ -475,75 +413,17 @@ export function usePlotThreads(projectKey: string, {
     plotAbortRef.current = controller
     setPlotBusy(true)
     setPlotError('')
-    let failureCode: PlotTreeGenerationErrorCode | PlotTreeResponseErrorCode
-      | 'sources_changed' | 'length' | 'save_failed' | null = null
     try {
-      if (!plotTreeGenerator) {
-        const { value } = await startGraph({ kind: 'plot' }, frozenModelId)
-        if (value.result?.kind !== 'plot') throw new Error('GRAPH_GENERATION_KIND_MISMATCH')
-        if (value.sourceStatus !== 'current') throw new Error(uiText(
-          '剧情资料在生成期间已更新，本次结果未保存，请重新生成。',
-          'Plot sources changed during generation. This result was not saved; generate it again.',
-        ))
-        const effect = await confirmGraph(0, value.view.handle)
-        if (effect.kind === 'plot' && isProjectSessionCurrent(session)) setPlotSources(previous => previous ? { ...previous, snapshot: effect.snapshot } : previous)
-        return
-      }
-      const snapshot = await plotTreeGenerator({
-        modelId: frozenModelId,
-        projectSession: session,
-        sources: plotSources,
-        signal: controller.signal,
-      })
-      if (!isProjectSessionCurrent(session) || controller.signal.aborted) return
-      let saved
-      try {
-        saved = await ipc.invokeWithProjectSession(
-          session,
-          'db:plot-tree-save',
-          snapshot,
-          plotSources.sourceRevision,
-          projectKey,
-        )
-      } catch {
-        failureCode = 'save_failed'
-        throw new Error(uiText('剧情树快照保存失败', 'Could not save the plot-tree snapshot.'))
-      }
-      if (!isProjectSessionCurrent(session) || controller.signal.aborted) return
-      const savedSnapshot = saved.snapshot
-      if (!saved.success || !savedSnapshot) {
-        if (saved.errorCode === 'sources-changed') {
-          failureCode = 'sources_changed'
-          await loadPlotTree()
-        } else {
-          failureCode = 'save_failed'
-        }
-        throw new Error(saved.errorCode === 'sources-changed'
-          ? uiText(
-              '剧情资料在生成期间已更新，本次结果未保存，请重新生成。',
-              'Plot sources changed during generation. This result was not saved; generate it again.',
-            )
-          : uiText('剧情树快照保存失败', 'Could not save the plot-tree snapshot.'))
-      }
-      setPlotSources(previous => previous ? { ...previous, snapshot: savedSnapshot } : previous)
+      const { value } = await startGraph({ kind: 'plot' }, frozenModelId)
+      if (value.result?.kind !== 'plot') throw new Error('GRAPH_GENERATION_KIND_MISMATCH')
+      if (value.sourceStatus !== 'current') throw new Error(uiText(
+        '剧情资料在生成期间已更新，本次结果未保存，请重新生成。',
+        'Plot sources changed during generation. This result was not saved; generate it again.',
+      ))
+      const effect = await confirmGraph(0, value.view.handle)
+      if (effect.kind === 'plot' && isProjectSessionCurrent(session)) setPlotSources(previous => previous ? { ...previous, snapshot: effect.snapshot } : previous)
     } catch (error) {
       if (isProjectSessionCurrent(session) && !controller.signal.aborted) {
-        failureCode ??= error instanceof PlotTreeGenerationError
-          ? error.code
-          : error instanceof PlotTreeResponseError
-            ? error.code
-            : error instanceof PlotTreeIncompleteError && error.finishReason === 'length'
-              ? 'length'
-              : null
-        if (failureCode) {
-          useWorkflowStore.getState().addLog(
-            'error',
-            uiText(
-              `剧情树生成失败（错误码：${failureCode}）。`,
-              `Plot-tree generation failed (error code: ${failureCode}).`,
-            ),
-          )
-        }
         setPlotError(plotTreeErrorMessage(
           error,
           uiText,
@@ -632,16 +512,7 @@ export function usePlotThreads(projectKey: string, {
     setAiError('')
     setPlanCandidates([])
     try {
-      if (!candidateGenerator) { await startGraph({ kind: 'plan', chapterNumber: blueprint.chapterNumber }, frozenModelId); return }
-      const candidates = await candidateGenerator.generatePlanCandidates({
-        modelId: frozenModelId,
-        writingLanguage: resolveWritingLanguage(projectSnapshot.novelConfig.writingLanguage),
-        totalChapters,
-        blueprint,
-        signal: controller.signal,
-      })
-      if (!isProjectSessionCurrent(session) || controller.signal.aborted) return
-      setPlanCandidates(candidates)
+      await startGraph({ kind: 'plan', chapterNumber: blueprint.chapterNumber }, frozenModelId)
     } catch (error) {
       if (isProjectSessionCurrent(session) && !controller.signal.aborted) {
         setAiError(providerContextFailureText(error, text) ?? text('未生成有效的计划候选，请重试。', 'No valid plan candidates were generated. Try again.'))
@@ -666,27 +537,7 @@ export function usePlotThreads(projectKey: string, {
     setAiError('')
     setEventCandidates([])
     try {
-      if (!candidateGenerator) { await startGraph({ kind: 'event', planId: planSnapshot.id, draftId: draftSnapshot.id }, frozenModelId); return }
-      const fullDraft = await ipc.invokeWithProjectSession(
-        session, 'db:draft-get-full', draftSnapshot.id, projectKey,
-      )
-      if (!fullDraft || !isProjectSessionCurrent(session) || controller.signal.aborted) return
-      const candidates = await candidateGenerator.generateEventCandidates({
-        modelId: frozenModelId,
-        writingLanguage: resolveWritingLanguage(useProjectStore.getState().currentProject?.novelConfig.writingLanguage),
-        plan: planSnapshot,
-        draftId: draftSnapshot.id,
-        chapterNumber: draftSnapshot.chapterNumber,
-        finalizedContent: fullDraft.content,
-        signal: controller.signal,
-      })
-      if (!isProjectSessionCurrent(session) || controller.signal.aborted) return
-      setEventCandidates(candidates.map(candidate => ({
-        ...candidate,
-        planId: planSnapshot.id,
-        draftId: draftSnapshot.id,
-        chapterNumber: draftSnapshot.chapterNumber,
-      })))
+      await startGraph({ kind: 'event', planId: planSnapshot.id, draftId: draftSnapshot.id }, frozenModelId)
     } catch (error) {
       if (isProjectSessionCurrent(session) && !controller.signal.aborted) {
         setAiError(providerContextFailureText(error, text) ?? text(
