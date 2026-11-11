@@ -25,16 +25,20 @@ const FIXED = '沈舟与林岚在城门对峙'
 const suggestion = (over: Record<string, unknown> = {}) => ({ chapterNumber: 2, eventIds: ['e1'], issue: '两人已决裂，蓝图却写并肩作战。', patch: { keyEvents: FIXED }, ...over })
 const reply = (body: unknown) => JSON.stringify({ suggestions: body })
 
-function fixture({ postprocessed = true } = {}) {
+function fixture({ postprocess = 'done' }: { postprocess?: 'done' | 'running' | 'failed' | 'none' } = {}) {
   const base = path.resolve('.runtime/.cache/novel-quality-modernization/graph-owner-tests'); fs.mkdirSync(base, { recursive: true })
   const root = fs.mkdtempSync(path.join(base, '项目-')); prepareCanonicalStorageFixture(root)
   const file = path.join(root, '.ai-novel', 'project.db'); let db = new Database(file); vi.mocked(getProjectDb).mockReturnValue(db)
   db.exec("INSERT INTO project_core(id,project_name,total_chapters,synopsis) VALUES('main','铜钥匙',10,'寻找北塔'); INSERT INTO blueprints(chapter_number,title,key_events) VALUES(1,'雨夜','发现铜钥匙'); INSERT INTO contents(id,body) VALUES(1,'原稿'); INSERT INTO drafts_all(id,chapter_number,version,status,content_id,word_count) VALUES(1,1,1,'draft',1,2)")
   const prose = '林岚找到铜钥匙，与沈舟决裂。'
   FinalizationRepository.commit({ finalizationId: '定稿1', draftId: 1, chapterNumber: 1, chapterTitle: '雨夜', content: prose, contentHash: textHash(prose), contentRevision: 1, targetFileName: '第一章.txt' })
-  if (postprocessed) {
+  if (postprocess !== 'none') {
     db.prepare("INSERT INTO post_process_runs(id,trigger_source_type,trigger_source_id,source_label) VALUES('后处理1','chapter_finalize','finalization:定稿1','第一章')").run()
-    for (const key of ['kb_import', 'chapter_notes', 'character_cards']) db.prepare("INSERT INTO post_process_steps(run_id,step_key,label,critical,ok) VALUES('后处理1',?,?,0,1)").run(key, key)
+    const step = db.prepare("INSERT INTO post_process_steps(run_id,step_key,label,critical,ok,error_msg,attempt_count) VALUES('后处理1',?,?,0,?,?,?)")
+    for (const key of ['kb_import', 'chapter_notes']) step.run(key, key, 1, '', 1)
+    if (postprocess === 'done') step.run('character_cards', 'character_cards', 1, '', 1)
+    if (postprocess === 'running') step.run('character_cards', 'character_cards', 0, '', 0)
+    if (postprocess === 'failed') step.run('character_cards', 'character_cards', 0, 'GENERATION_FAILED', 2)
   }
   const blueprint = db.prepare('INSERT INTO blueprints(chapter_number,title,key_events,notes) VALUES(?,?,?,?)')
   blueprint.run(2, '并肩', ORIGINAL, '作者备注'); blueprint.run(3, '北塔', '林岚独自登塔', '')
@@ -81,12 +85,18 @@ it('一次请求只看替换章之后未定稿的蓝图，每章一条建议，�
   expect(f.rows()).toEqual([{ chapterNumber: 2, status: 'pending' }])
 })
 
-it('后处理没做完：不建运行、不发请求', () => {
-  const f = fixture({ postprocessed: false })
+it('后处理还在跑：不建运行、不发请求', () => {
+  const f = fixture({ postprocess: 'running' })
   expect(() => f.owner().beginGraphGeneration({ input: { kind: 'continuity-suggest', finalizationId: '定稿1' }, modelId: 'synthetic', uiActionNonce: '早了' }))
     .toThrow('GENERATION_GRAPH_POSTPROCESS_PENDING')
   expect(f.db.prepare('SELECT COUNT(*) FROM generation_runs').pluck().get()).toBe(0)
   expect(f.spy).not.toHaveBeenCalled()
+})
+
+it.each([['角色状态那步失败', 'failed'], ['没有后处理记录', 'none']] as const)('%s：照样能检查，出建议', async (_, postprocess) => {
+  const f = fixture({ postprocess })
+  await f.check()
+  expect(f.list()!.suggestions.map(item => item.chapterNumber)).toEqual([2])
 })
 
 it('编造节点、越界章号、白名单外字段、空改动只丢那一条，运行记录有计数', async () => {
@@ -190,4 +200,14 @@ it('这次替换的定稿记录删掉后，建议跟着删除', async () => {
   f.db.pragma('foreign_keys = ON')
   f.db.prepare("DELETE FROM finalization_outbox_all WHERE finalization_id='定稿1'").run()
   expect(f.rows()).toEqual([])
+})
+
+it('替换章进了回收站：不再列出建议，接受也不写蓝图', async () => {
+  const f = fixture()
+  await f.check()
+  const [card] = f.list()!.suggestions
+  f.db.prepare("UPDATE drafts_all SET status='deleted',deletion_id='删除1',deleted_from_status='finalized',deleted_at='2026-11-11' WHERE id=1").run()
+  expect(f.list()).toBeNull()
+  expect(f.decide(card!.suggestionId, 'accept')).toEqual({ status: 'stale' })
+  expect(f.keyEvents()).toBe(ORIGINAL)
 })

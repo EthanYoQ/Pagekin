@@ -159,6 +159,12 @@ export const C8B_SCENARIOS = {
     assert.equal(measured.hint, 1, '按钮旁说明建议可能不全')
     assert.equal(measured.requests, 0, '不点按钮不发请求')
     await context.shoot('c8b-r2-postprocess-failed')
+
+    fake.replyReview(prompt => prompt.includes('连续性编辑') ? JSON.stringify({ suggestions: [] }) : null)
+    await check.click()
+    await chapterView.view(page).getByText(/^检查了第 3–12 章，蓝图和新的时间线没有矛盾。$/u).waitFor({ state: 'visible', timeout: 60_000 })
+    measured.requestsAfterClick = suggestRequests(fake)
+    assert.equal(measured.requestsAfterClick, 1, '点了真的发出一次检查')
     return measured
   } },
 }

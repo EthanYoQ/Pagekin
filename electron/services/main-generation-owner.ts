@@ -1333,6 +1333,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         const { context, result } = recovery
         if (context.kind !== 'continuity-suggest' || result?.kind !== 'continuity-suggest') continue
         const statuses = BlueprintSuggestionRepository.materialize(deps.database, request.finalizationId, runId, context.chapters, result)
+        if (!statuses) return null
         const nodes = new Map(context.nodes.map(node => [node.eventId, node]))
         return { runId, checkedChapters: context.chapters.map(chapter => chapter.chapterNumber), droppedSuggestions: result.droppedSuggestions,
           suggestions: result.suggestions.flatMap(suggestion => {

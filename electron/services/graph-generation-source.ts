@@ -90,15 +90,16 @@ export function captureGraphGenerationContext(db: Database.Database, input: Grap
     finalizationId: row.finalizationId, contentHash: row.contentHash }, content: row.content, contentRevision: row.contentRevision, projectionGeneration: row.projectionGeneration }
 }
 
-/** 只认这一章现在的定稿；后处理把新章的人物状态记进时间线之后才能检查后面的蓝图。 */
+/** 只认这一章现在的定稿；后处理还在把新章的人物状态记进时间线时不能检查，失败或没有记录时照样能查（界面说明可能不全）。 */
 function replacedChapter(db: Database.Database, finalizationId: string): number {
   const chapter = db.prepare(`SELECT d.chapter_number FROM finalization_outbox o JOIN drafts d ON d.id=o.draft_id
     WHERE o.finalization_id=? AND d.status='finalized' AND d.id=(SELECT id FROM drafts WHERE chapter_number=d.chapter_number AND status='finalized' ORDER BY version DESC,id DESC LIMIT 1)`)
     .pluck().get(finalizationId) as number | undefined
   if (chapter === undefined) throw new Error('GENERATION_GRAPH_FINALIZATION_REQUIRED')
-  const done = db.prepare(`SELECT COUNT(*) FROM post_process_steps WHERE ok=1 AND step_key IN ('chapter_notes','character_cards') AND run_id=(SELECT id FROM post_process_runs
+  const running = db.prepare(`SELECT COUNT(*) FROM post_process_steps WHERE ok=0 AND COALESCE(attempt_count,0)=0 AND COALESCE(error_msg,'')=''
+    AND COALESCE(last_attempt_at,'')='' AND COALESCE(completed_at,'')='' AND step_key IN ('chapter_notes','character_cards') AND run_id=(SELECT id FROM post_process_runs
     WHERE trigger_source_type='chapter_finalize' AND trigger_source_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1)`).pluck().get(`finalization:${finalizationId}`)
-  if (done !== 2) throw new Error('GENERATION_GRAPH_POSTPROCESS_PENDING')
+  if (running !== 0) throw new Error('GENERATION_GRAPH_POSTPROCESS_PENDING')
   return chapter
 }
 

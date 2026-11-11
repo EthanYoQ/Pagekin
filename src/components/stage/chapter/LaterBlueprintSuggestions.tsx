@@ -97,6 +97,7 @@ export default function LaterBlueprintSuggestions({ check, projectKey, pendingOn
   if (status.kind === 'failed') return <Notice tone="warn" title={status.message} />
   if (!list) return null
   if (list.suggestions.length === 0) {
+    if (list.droppedSuggestions > 0) return <Notice tone="warn" title={text('蓝图没有改动。这次的建议都不合格，再点“检查后续蓝图”。', 'Your blueprints are unchanged. None of the suggestions were usable. Choose Check later blueprints again.')} />
     return status.kind === 'done'
       ? <Notice tone="ok" title={text(`检查了${chapterList(list.checkedChapters, text)}，蓝图和新的时间线没有矛盾。`, `Checked ${chapterList(list.checkedChapters, text)}. No blueprint conflicts with the new timeline.`)} />
       : null

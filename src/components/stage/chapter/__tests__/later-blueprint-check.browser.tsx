@@ -266,15 +266,22 @@ describe('替换定稿后检查后续蓝图', () => {
     await expect.element(button('检查后续蓝图')).toBeEnabled()
   })
 
-  it('没有矛盾时说明查过哪些章；结果读不出来时说明蓝图没动、再点一次', async () => {
+  it('没有矛盾时说明查过哪些章；建议全被丢掉或结果读不出来时说明蓝图没动、再点一次', async () => {
     await openReplaced()
     await click('检查后续蓝图')
     backend.state.suggestions = list([])
     await finish()
     await expect.element(page.getByText('检查了第 4–5 章，蓝图和新的时间线没有矛盾。')).toBeVisible()
 
-    graph.result = 'unreadable'
     graph.runId = 'run-2'
+    await click('检查后续蓝图')
+    backend.state.suggestions = { ...list([]), runId: 'run-2', droppedSuggestions: 2 }
+    await finish()
+    await expect.element(page.getByText('蓝图没有改动。这次的建议都不合格，再点“检查后续蓝图”。')).toBeVisible()
+    expect(document.body.textContent).not.toContain('没有矛盾')
+
+    graph.result = 'unreadable'
+    graph.runId = 'run-3'
     await click('检查后续蓝图')
     await finish()
     await expect.element(page.getByText('蓝图没有改动。这次结果没读出来，再点“检查后续蓝图”。')).toBeVisible()

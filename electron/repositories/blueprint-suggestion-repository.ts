@@ -16,10 +16,10 @@ export function patchedFields(chapter: ContinuityCheckChapter, patch: BlueprintP
 /** 建议表没有运行号列：suggestion_id 取「运行号:章号」，同一次检查重放时只补缺的行，作者处理过的行不会被改回。 */
 export class BlueprintSuggestionRepository {
   static materialize(db: Database.Database, finalizationId: string, runId: string, chapters: readonly ContinuityCheckChapter[],
-    result: ContinuitySuggestResult): Map<number, SuggestionStatus> {
+    result: ContinuitySuggestResult): Map<number, SuggestionStatus> | null {
     return db.transaction(() => {
       const statuses = new Map<number, SuggestionStatus>()
-      if (!db.prepare('SELECT 1 FROM finalization_outbox_all WHERE finalization_id=?').get(finalizationId)) return statuses
+      if (!db.prepare('SELECT 1 FROM finalization_outbox WHERE finalization_id=?').get(finalizationId)) return null
       const insert = db.prepare(`INSERT OR IGNORE INTO blueprint_continuity_suggestions
         (suggestion_id,finalization_id,chapter_number,base_blueprint_hash,patch_json,evidence_event_ids) VALUES(?,?,?,?,?,?)`)
       for (const suggestion of result.suggestions) {
@@ -39,8 +39,9 @@ export class BlueprintSuggestionRepository {
   /** 接受时这一章必须还是检查时那份蓝图，否则这条作废；作废和接受都在同一个事务里落定。 */
   static decide(db: Database.Database, suggestionId: string, decision: SuggestionDecision): { status: SuggestionStatus } {
     return db.transaction(() => {
-      const row = db.prepare('SELECT chapter_number AS chapterNumber,base_blueprint_hash AS baseHash,patch_json AS patch,status FROM blueprint_continuity_suggestions WHERE suggestion_id=?')
-        .get(suggestionId) as { chapterNumber: number; baseHash: string; patch: string; status: SuggestionStatus } | undefined
+      const row = db.prepare(`SELECT s.chapter_number AS chapterNumber,s.base_blueprint_hash AS baseHash,s.patch_json AS patch,s.status,
+        EXISTS(SELECT 1 FROM finalization_outbox o WHERE o.finalization_id=s.finalization_id) AS live FROM blueprint_continuity_suggestions s WHERE s.suggestion_id=?`)
+        .get(suggestionId) as { chapterNumber: number; baseHash: string; patch: string; status: SuggestionStatus; live: 0 | 1 } | undefined
       if (!row) throw new Error('GENERATION_GRAPH_SELECTION_INVALID')
       if (row.status !== 'pending') return { status: row.status }
       const close = (status: SuggestionStatus, receipt: object) => {
@@ -51,7 +52,7 @@ export class BlueprintSuggestionRepository {
       if (decision === 'reject') return close('rejected', {})
       const current = BlueprintRepository.getAll(db).find(blueprint => blueprint.chapterNumber === row.chapterNumber)
       const finalized = db.prepare("SELECT 1 FROM drafts WHERE chapter_number=? AND status='finalized'").get(row.chapterNumber)
-      if (!current || finalized || chapterHash(continuityCheckChapter(current)) !== row.baseHash) return close('stale', {})
+      if (!row.live || !current || finalized || chapterHash(continuityCheckChapter(current)) !== row.baseHash) return close('stale', {})
       const patch = JSON.parse(row.patch) as BlueprintPatch
       BlueprintRepository.upsert({ ...current, ...patch }, db)
       return close('accepted', { before: patchedFields(continuityCheckChapter(current), patch), after: patch })
