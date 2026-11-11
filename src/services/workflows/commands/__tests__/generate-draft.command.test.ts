@@ -831,6 +831,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     } else await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(text)
     expect(legacy.createRuntime).not.toHaveBeenCalled()
     expect(f.invoke.mock.calls.filter(([channel]) => channel === 'generation:execute')).toHaveLength(2)
+    expect(f.invoke.mock.calls.map(([channel]) => String(channel)).filter(channel => channel.startsWith('llm:'))).toEqual([])
     expect(f.invoke.mock.calls.some(([channel]) => channel === 'db:draft-create' || channel === 'db:draft-next-version' || channel === 'db:recovery-candidate-record')).toBe(false)
   })
 
