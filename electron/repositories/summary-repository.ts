@@ -473,7 +473,6 @@ function mergeRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSo
   db.prepare("UPDATE summary_snapshots_all SET character_state_candidates=?,created_at=datetime('now') WHERE id=?").run(JSON.stringify(store), row.id)
 }
 
-/** 升级前的版本会先于要点写下派生关系，作者行快照只记在节点上。补存要点时据此补建待确认项，结果须与要点先到时一致；没有快照的新节点不碰。 */
 function restoreLegacyRelationCandidates(db: BetterSqlite3.Database, source: FinalizedSourceIdentity): void {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_continuity_events'").get()) return
   const snapshots = new Map((db.prepare(`SELECT event_id AS eventId,json_extract(evidence_json,'$.authorLinesAtExtraction') AS lines
