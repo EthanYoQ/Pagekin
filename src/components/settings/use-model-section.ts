@@ -119,6 +119,7 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
     remove: async (modelId: string) => {
       if (deletingModelIds.has(modelId)) return false
       editRequest.current += 1
+      setEditingModel(current => current?.id === modelId ? null : current)
       deletingModelIds.add(modelId)
       try {
         return await deleteModel(modelId)
