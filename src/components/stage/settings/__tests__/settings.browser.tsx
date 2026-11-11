@@ -215,6 +215,25 @@ describe('设置页', () => {
     expect(host!.querySelector<HTMLInputElement>('input[aria-label="上下文窗口"]')?.value).toBe('65536')
   })
 
+  it('点编辑后重读还没回来就改点添加模型并开始填写：重读回来不覆盖正在填的新表单', async () => {
+    await mount()
+    let finish!: () => void
+    const invoke = win.aiNovelAPI!.invoke
+    win.aiNovelAPI!.invoke = async (channel, ...args) => {
+      if (channel !== 'llm:list-models') return invoke(channel, ...args)
+      await new Promise<void>(resolve => { finish = resolve })
+      return [MODEL, LOCAL]
+    }
+
+    await click(byName('编辑「DeepSeek V4 Flash」'))
+    await click(byName('添加模型'))
+    const name = input('如：DeepSeek 主力 / GPT-4o 备用')
+    await type(name, '新的模型')
+    await act(async () => finish())
+
+    expect(input('如：DeepSeek 主力 / GPT-4o 备用').value).toBe('新的模型')
+  })
+
   it('保存模型时主进程出错：弹出错误，保存按钮恢复可点，编辑表单留着', async () => {
     useLLMStore.setState({ saveModel: vi.fn(async () => { throw new Error('llm:save-model 不可用') }) })
     await mount()
