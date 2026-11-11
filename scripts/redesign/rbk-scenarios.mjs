@@ -9,6 +9,7 @@ import * as blueprint from './pages/blueprint.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as refs from './pages/refs.mjs'
 import * as stage from './pages/stage.mjs'
+import { editLocationOnCastPage } from './f484-scenarios.mjs'
 import { finalizeChapter, openChapter } from './f491-scenarios.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { countUnits, STAGE_SAMPLE } from './stage-sample.mjs'
@@ -146,6 +147,80 @@ export const RBK_SCENARIOS = {
     assert.deepEqual(observed.afterSecondOpen, observed.afterRepair, '修复幂等：再打开一次数据不变')
     return observed
   } },
+  /** #279：修复重复定稿让后面各章的章节要点过期。角色状态那步此前失败的章，点一次「重试失败步骤」就连要点一起重跑并走完。 */
+  'rbk-stale-notes-retry': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
+    const { fake } = context
+    const projectPath = context.samplePath
+    const observed = {}
+    const notice = () => context.page.getByRole('alertdialog').or(context.page.getByRole('dialog')).filter({ hasText: '已修复重复的定稿' })
+    const settled = () => context.page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll('[aria-label="定稿后处理"] li')]
+      return rows.some(row => row.querySelector('b')?.textContent === '角色状态更新')
+        && rows.every(row => row.dataset.state === 'success' || row.dataset.state === 'failed')
+        && !document.querySelector('.stage-capsule:not([data-tone="ok"])')
+    }, null, { timeout: 120_000 })
+    const requests = () => ({
+      notes: fake.chats.filter(chat => chat.messages.some(message => String(message.content).includes('【结构化章节要点】'))).length,
+      characterState: fake.chats.filter(chat => chat.kind === 'character-state').length,
+    })
+
+    await editLocationOnCastPage(context.page, '作者写的位置：旧港码头')
+    fake.replyCharacterState(locationUpdateReply)
+    fake.dropCharacterState(1)
+    await finalizeChapter(context.page, 3)
+    observed.afterFinalize = { steps: await chapterView.postProcessSteps(context.page), requests: requests(), facts: await chapter3ContinuityFacts(projectPath) }
+    await context.shoot('rbk-9-ch3-character-state-failed')
+
+    await context.restart({ beforeLaunch: () => { observed.injected = JSON.parse(injectDuplicateFinalization(projectPath, 2)) } })
+    await stage.openAfterRestart(context.page, STAGE_SAMPLE.name)
+    await notice().waitFor({ state: 'visible', timeout: 60_000 })
+    await notice().getByRole('button', { name: '知道了' }).click()
+    observed.afterRepair = await chapter3ContinuityFacts(projectPath)
+
+    await openChapter(context.page, 3)
+    await chapterView.postProcess(context.page).getByRole('button', { name: '重试失败步骤' }).click()
+    await settled()
+    observed.afterRetry = { steps: await chapterView.postProcessSteps(context.page), requests: requests(), facts: await chapter3ContinuityFacts(projectPath) }
+    await context.shoot('rbk-10-ch3-retried-once')
+
+    console.log(`[rbk] observed ${JSON.stringify(observed)}`)
+    const stateOf = (steps, label) => steps.find(step => step.label === label)?.state
+    const { generation } = observed.afterFinalize.facts
+    assert.equal(stateOf(observed.afterFinalize.steps, '章节剧情要点'), 'success', '首跑章节要点成功')
+    assert.equal(stateOf(observed.afterFinalize.steps, '角色状态更新'), 'failed', '首跑角色状态断流失败')
+    assert.deepEqual(observed.afterFinalize.requests, { notes: 1, characterState: 1 })
+    assert.deepEqual(observed.injected, { chapter: 2, finalized: 2 }, '造出第 2 章两行定稿')
+    assert.deepEqual(observed.afterRepair, { generation: generation + 1, staleFrom: 2, notesGeneration: generation, pendingFields: [] },
+      '修复后连续性世代加一、从第 2 章起作废，第 3 章的要点行停在旧世代')
+    assert.ok(observed.afterRetry.steps.every(step => step.state === 'success'), `点一次重试后各步都成功：${JSON.stringify(observed.afterRetry.steps)}`)
+    assert.deepEqual(observed.afterRetry.requests, { notes: 2, characterState: 2 }, '这一次重试重新生成了一次要点、一次角色状态')
+    assert.deepEqual(observed.afterRetry.facts, { generation: generation + 1, staleFrom: 2, notesGeneration: generation + 1, pendingFields: ['location'] },
+      '要点行写到当前世代，作者写的位置留成待确认项')
+    return observed
+  } },
+}
+
+const STATE_EVIDENCE = '林岚把纸条夹进父亲的地图里。'
+
+/** 给林岚的当前位置报一个新值；位置是作者写的，这条更新只能留成待确认项。 */
+function locationUpdateReply(prompt) {
+  const id = /"characterId": "([^"]+)",\s*"name": "林岚"/u.exec(prompt)?.[1]
+  if (!id || !prompt.includes(STATE_EVIDENCE)) return '{"updates":[]}'
+  return JSON.stringify({ updates: [{ characterId: id, currentState: { location: '灯塔顶层灯室' }, evidence: { text: STATE_EVIDENCE } }] })
+}
+
+/** 只读打开作品库：连续性世代、第 3 章要点行写入时的世代，以及那一行里待确认的角色状态字段。 */
+async function chapter3ContinuityFacts(projectPath) {
+  const { DatabaseSync } = await import('node:sqlite')
+  const db = new DatabaseSync(path.join(projectPath, '.ai-novel', 'project.db'), { readOnly: true })
+  try {
+    const meta = db.prepare("SELECT generation, stale_from_chapter AS staleFrom FROM continuity_projection_meta WHERE id = 'main'").get()
+    const row = db.prepare(`SELECT s.projection_generation AS generation, s.character_state_candidates AS candidates
+      FROM summary_snapshots s JOIN drafts d ON d.id = s.draft_id WHERE s.chapter_number = 3 AND d.status = 'finalized'`).get()
+    const store = row ? JSON.parse(row.candidates) : []
+    return { generation: meta.generation, staleFrom: meta.staleFrom, notesGeneration: row?.generation ?? null,
+      pendingFields: (Array.isArray(store) ? store : store.pending ?? []).map(candidate => candidate.field) }
+  } finally { db.close() }
 }
 
 /** 界面打开作品时第二层数据加载完成会打这条日志，重复定稿提示紧接着在同一条调用链里派发。 */
