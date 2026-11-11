@@ -869,3 +869,95 @@
   font-size: var(--fs-12);
   color: var(--ink-3);
 }
+
+/* ================= 替换定稿后：后续蓝图的修改建议，每章一张卡，按字段对比 ================= */
+.stage-ch-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: 14px var(--s-4);
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px var(--rule);
+}
+
+.stage-ch-suggest-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stage-ch-suggest-card {
+  padding: var(--s-3) var(--s-4);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: var(--fs-13);
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+.stage-ch-suggest-card[data-status="stale"],
+.stage-ch-suggest-card[data-status="rejected"] {
+  opacity: .72;
+}
+
+.stage-ch-suggest-card p {
+  margin: 0;
+}
+
+.stage-ch-suggest-head {
+  margin: 0 0 var(--s-1);
+  font: 600 var(--fs-13)/1.4 var(--font-display);
+  color: var(--ink);
+}
+
+.stage-ch-suggest-issue {
+  color: var(--ink);
+}
+
+.stage-ch-suggest-fields {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px var(--s-3);
+  margin: var(--s-2) 0 0;
+}
+
+.stage-ch-suggest-fields dt {
+  color: var(--ink-3);
+}
+
+.stage-ch-suggest-fields dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+.stage-ch-suggest-fields ins {
+  text-decoration: none;
+  background: var(--ok-soft);
+  box-shadow: inset 0 -1.5px 0 var(--ok);
+}
+
+.stage-ch-suggest-fields del {
+  color: var(--ink-3);
+  text-decoration-color: var(--danger);
+}
+
+.stage-ch-suggest-note,
+.stage-ch-suggest-hint {
+  margin-top: var(--s-2);
+  color: var(--ink-3);
+}
+
+.stage-ch-suggest-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+
+.stage-ch-suggest-actions .stage-ch-suggest-hint {
+  margin-top: 0;
+}
