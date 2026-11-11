@@ -189,7 +189,6 @@ function normalizeEntry(
   }
 }
 
-/** Validate migration candidates without re-enabling the retired name-based write path. */
 export function validateLegacyRosterCandidate(value: unknown): CharacterRosterEntry[] {
   if (!isObject(value)) throw new Error('CHARACTER_ROSTER_REQUEST_INVALID')
   if (value.schemaVersion !== CHARACTER_ROSTER_SCHEMA_VERSION) throw new Error('CHARACTER_ROSTER_SCHEMA_UNSUPPORTED')
@@ -395,7 +394,6 @@ function deriveRosterStatus(
         ? 'legacy_repair_required'
         : 'inconsistent'
     case 'ready':
-      // 投影和包含 currentState 的完整事实哈希都必须与表内事实一致。
       if (
         meta.projection_hash !== hashText(renderedMarkdown)
         || meta.fact_hash !== fullFactHash([...entries])
@@ -448,8 +446,7 @@ function readSnapshot(db: BetterSqlite3.Database): CharacterRosterSnapshot {
     entries,
     writingLanguage === 'en-US' ? 'zh-CN' : 'en-US',
   )
-  // A project may change writing language after a ready roster was committed.
-  // Keep that exact historical projection readable.
+  // 写作语言变更后，已 ready 的名单仍按提交时语言的投影读取。
   const renderedMarkdown = (
     meta.migration_state === 'ready'
     && currentProjection === previousLanguageProjection
@@ -479,7 +476,6 @@ function readSnapshot(db: BetterSqlite3.Database): CharacterRosterSnapshot {
   }
 }
 
-/** 名单只读入口；写入只走 character-roster-author 的身份路径。 */
 export class CharacterRosterRepository {
   static read(db = requiredDb()): CharacterRosterSnapshot {
     ensureCharacterRosterSchema(db)

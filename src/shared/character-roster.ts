@@ -129,7 +129,6 @@ export interface CharacterRosterSnapshot {
   legacyMarkdown?: string
 }
 
-/** 角色管理的完整手工快照；允许新增、改名、删除和空名单。 */
 export type CharacterRosterCommitIntent = 'manual_edit'
 
 export interface CharacterRosterRename {
