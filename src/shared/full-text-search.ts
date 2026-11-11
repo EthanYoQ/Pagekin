@@ -30,7 +30,7 @@ function occurrences(text: string, term: string): number {
 export function rankFullText<T extends { text: string }>(rows: readonly T[], terms: readonly string[], totalRows: number): { row: T; score: number }[] {
   const counted = rows.map(row => ({ row, length: Array.from(row.text).length, counts: terms.map(term => occurrences(row.text, term)) }))
   const matched = counted.filter(item => item.counts.some(count => count > 0))
-  const averageLength = matched.reduce((sum, item) => sum + item.length, 0) / Math.max(1, matched.length) || 1
+  const averageLength = matched.reduce((sum, item) => sum + item.length, 0) / matched.length
   const idf = terms.map((_, index) => {
     const df = matched.filter(item => item.counts[index] > 0).length
     return Math.log(1 + (totalRows - df + 0.5) / (df + 0.5))
