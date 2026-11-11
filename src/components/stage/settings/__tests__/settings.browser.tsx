@@ -79,7 +79,8 @@ const dialogButton = (name: string) => [...discardDialog()!.querySelectorAll('bu
 
 beforeEach(() => {
   win.aiNovelAPI = {
-    invoke: async channel => channel === 'config:get' ? {} : channel === 'update:get-state' ? { status: 'disabled', currentVersion: '1.2.2', isReminderDeferred: false } : undefined,
+    invoke: async channel => channel === 'config:get' ? {} : channel === 'update:get-state' ? { status: 'disabled', currentVersion: '1.2.2', isReminderDeferred: false }
+      : channel === 'llm:list-models' ? useLLMStore.getState().models : undefined,
     on: () => () => undefined,
   }
   useLLMStore.setState({ loaded: true, models: [MODEL, LOCAL], defaultModelId: 'flash', defaultEmbeddingModelId: null, deleteModel: vi.fn(async () => true) })
@@ -147,7 +148,7 @@ describe('设置页', () => {
     let configured = false
     win.aiNovelAPI!.invoke = async channel => channel === 'kb:get-vector-rebuild-status'
       ? { embeddingConfigured: configured, canRebuild: configured, totalChunks: 9, vectorlessCount: 4, activeVectorDimension: 0 }
-      : channel === 'config:get' ? {} : undefined
+      : channel === 'config:get' ? {} : channel === 'llm:list-models' ? useLLMStore.getState().models : undefined
     useProjectStore.setState({ currentProject: { id: session.projectId, path: session.projectPath, sessionLease: session.leaseId, name: '灯塔', novelConfig: {} } as unknown as ProjectData })
     setActiveProjectSessionContext(session)
     useLayoutStore.setState({ settingsSection: 'embedding' })
@@ -200,6 +201,34 @@ describe('设置页', () => {
     expect(second.textContent).toContain('名称、接口地址和密钥会从本机删除')
     await click([...second.querySelectorAll('button')].find(button => button.textContent === '删除模型'))
     expect(useLLMStore.getState().deleteModel).toHaveBeenCalledWith('local')
+  })
+
+  const LEARNED = { ...MODEL, learnedContextWindow: { tokens: 65_536, provider: MODEL.provider, protocol: MODEL.protocol, baseUrl: MODEL.baseUrl, modelName: MODEL.modelName } }
+  function mainProcessModels(models: ModelProfile[]) {
+    const invoke = win.aiNovelAPI!.invoke
+    win.aiNovelAPI!.invoke = async (channel, ...args) => channel === 'llm:list-models' ? models : invoke(channel, ...args)
+  }
+  const contextWindowSource = () => host!.querySelector('[data-context-window-source]')?.getAttribute('data-context-window-source')
+
+  it('生成中实测出更小的上下文窗口后打开设置页：不重载应用，编辑表单就显示实测值', async () => {
+    mainProcessModels([LEARNED, LOCAL])
+    await mount()
+
+    await click(byName('编辑「DeepSeek V4 Flash」'))
+    await expect.poll(contextWindowSource).toBe('learned')
+    expect(host!.querySelector<HTMLInputElement>('input[aria-label="上下文窗口"]')?.value).toBe('65536')
+  })
+
+  it('设置页开着时窗口重新获得焦点：读到实测窗口，正在填的编辑表单不被覆盖', async () => {
+    await mount()
+    await click(byName('编辑「本机 Ollama」'))
+    await type(input('如：DeepSeek 主力 / GPT-4o 备用'), '改过的名字')
+    mainProcessModels([LEARNED, LOCAL])
+
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+
+    await expect.poll(() => useLLMStore.getState().models[0]?.learnedContextWindow?.tokens).toBe(65_536)
+    expect(input('如：DeepSeek 主力 / GPT-4o 备用').value).toBe('改过的名字')
   })
 
   it('保存模型时主进程出错：弹出错误，保存按钮恢复可点，编辑表单留着', async () => {

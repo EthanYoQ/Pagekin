@@ -127,7 +127,7 @@ async function renderSettings(
     discoverModels,
   })
   ;(window as unknown as { aiNovelAPI: TestVelaApi }).aiNovelAPI = {
-    invoke: vi.fn(),
+    invoke: vi.fn(async (channel: string) => channel === 'llm:list-models' ? useLLMStore.getState().models : undefined),
     on: () => () => {},
     once: () => {},
     send: () => {},

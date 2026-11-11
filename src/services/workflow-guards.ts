@@ -225,8 +225,8 @@ export async function guardChapterWriting(
         ok: false,
         message: localize(
           shown(),
-          `上下文缺失：第 ${prevChapter} 章尚未定稿！\n\n为了保证 AI 写稿时能读取到连贯的上下文（前章结尾和剧情要点），请必须先前往草稿箱完成第 ${prevChapter} 章的定稿操作。`,
-          `Missing context: Chapter ${prevChapter} has not been finalized.\n\nFinalize Chapter ${prevChapter} first so AI drafting can read a continuous context, including the previous ending and plot notes.`,
+          `第 ${prevChapter} 章尚未定稿，AI 读不到它的结尾和要点。\n\n请在「正文」打开第 ${prevChapter} 章，定稿后再写这一章。`,
+          `Chapter ${prevChapter} isn't finalized, so AI can't read its ending and notes.\n\nOpen Chapter ${prevChapter} in Manuscript and finalize it, then write this chapter.`,
         ),
       }
     }
@@ -240,8 +240,8 @@ export async function guardChapterWriting(
         ok: false,
         message: localize(
           shown(),
-          `第 ${prevChapter} 章的定稿后处理未完成！\n\n以下关键步骤失败：\n${failedLabels.map(f => `• ${f}`).join('\n')}\n\n请先在草稿箱中点击「修复定稿」按钮补全数据，否则后续章节的 AI 上下文将不完整。`,
-          `Chapter ${prevChapter} finalization post-processing is incomplete.\n\nFailed critical steps:\n${failedLabels.map(f => `• ${f}`).join('\n')}\n\nRepair the finalization from Drafts first, or later chapters will have incomplete AI context.`,
+          `第 ${prevChapter} 章已定稿，但定稿后处理未完成：\n${failedLabels.map(f => `• ${f}`).join('\n')}\n\n请在「正文」打开第 ${prevChapter} 章，到「定稿后处理」处理失败的步骤。`,
+          `Chapter ${prevChapter} is finalized, but some steps after finalization failed:\n${failedLabels.map(f => `• ${f}`).join('\n')}\n\nOpen Chapter ${prevChapter} in Manuscript and fix the failed steps under After finalization.`,
         ),
       }
     }

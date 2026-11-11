@@ -39,7 +39,6 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
   const defaultModelId = useLLMStore(s => s.defaultModelId)
   const defaultEmbeddingModelId = useLLMStore(s => s.defaultEmbeddingModelId)
   const defaultRerankModelId = useLLMStore(s => s.defaultRerankModelId)
-  const loaded = useLLMStore(s => s.loaded)
   const loadModels = useLLMStore(s => s.loadModels)
   const saveModel = useLLMStore(s => s.saveModel)
   const deleteModel = useLLMStore(s => s.deleteModel)
@@ -50,8 +49,11 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
   const [editingOriginal, setEditingOriginal] = useState('')
   const [saving, setSaving] = useState(false)
   useEffect(() => {
-    if (!loaded) loadModels()
-  }, [loaded, loadModels])
+    const refresh = () => void loadModels()
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [loadModels])
 
   const filtered = models.filter((m) =>
     m.purposes?.some((p) => purposes.includes(p as ModelProfile['purposes'][number]))
