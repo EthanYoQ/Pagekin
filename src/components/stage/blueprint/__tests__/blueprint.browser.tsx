@@ -1562,6 +1562,25 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
       await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).not.toBeInTheDocument()
     })
 
+    it('离开期间这次检查失败：回来仍看到上次成功的结论，并提示这次没查成', async () => {
+      latest = read
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+        const result = await base(channel, ...args)
+        if (channel === 'graph-generation:execute') throw new Error('网络断了')
+        return result
+      })
+      await renderPage(2)
+      await check()
+      await act(async () => root?.unmount())
+      root = createRoot(container!)
+      await renderPage(2)
+      release()
+      await expect.element(page.getByText('网络断了')).toBeVisible()
+      await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+    })
+
     it('切到别的作品：不把这部作品的检查接过去；切回来仍接得上', async () => {
       const OTHER_PATH = 'C:\\novels\\other'
       const other = { projectId: 'other', leaseId: 'other-lease', projectPath: OTHER_PATH }
