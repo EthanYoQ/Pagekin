@@ -98,6 +98,25 @@ it('正式修复命令只经主进程的专属生成通道开跑并暂存提议'
  expect(invoke.mock.calls.filter(([channel]) => channel === 'legacy-roster:execute')).toHaveLength(1)
  expect(invoke.mock.calls.map(([channel]) => channel).filter(channel => !/^(legacy-roster|generation):/u.test(channel))).toEqual([])
 })
+it('生成期间切换项目，修复停下且不暂存提议', async () => {
+ let finished = false
+ const invoke = vi.fn(async (channel: string) => {
+  if (channel === 'legacy-roster:read-source') return source
+  if (channel === 'generation:list') return []
+  if (channel === 'legacy-roster:begin') return { ...stored, artifact: undefined, attemptCount: 0 }
+  if (channel === 'legacy-roster:read') return finished ? stored : { ...stored, artifact: undefined, attemptCount: 0 }
+  if (channel === 'legacy-roster:execute') {
+   useProjectStore.setState({ currentProject: { id: '另一个项目', path: 'C:/另一个项目', sessionLease: '另一会话', novelConfig: {} } as never })
+   finished = true
+   return { run: stored.view }
+  }
+  if (channel === 'legacy-roster:stage') return batch
+  throw new Error(`Unexpected ${channel}`)
+ }); install(invoke)
+ await expect(new RepairLegacyCharacterRosterCommand({ expectedProjectPath: session.projectPath, genre: '' }).execute(params()))
+  .rejects.toThrow('当前项目已切换，旧版角色名单修复已停止以避免写入错误项目')
+ expect(invoke.mock.calls.filter(([channel]) => channel === 'legacy-roster:stage')).toHaveLength(0)
+})
 it('known length failed但主资格为true，可显式恢复同run固定下一ordinal', async () => {
  let finished = false
  const invoke = vi.fn(async (channel: string) => {
