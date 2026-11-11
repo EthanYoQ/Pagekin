@@ -1466,6 +1466,26 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
   })
 
+  it('检查冲突但没留下结论，之后把改过的章改回：原来的结论照常显示', async () => {
+    const original = stored
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'graph-generation:read') return recovery({ attemptCount: 1, sourceStatus: 'conflict' })
+      return base(channel, ...args)
+    })
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await check()
+    await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
+    stored = original
+    latest = read
+    await refreshBlueprints()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
   it('检查没查成之后把改过的章改回：蓝图刷新仍重读，结论照常显示', async () => {
     const original = stored
     latest = { ...read, sourceStatus: 'conflict' }
