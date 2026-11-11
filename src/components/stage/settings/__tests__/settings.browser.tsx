@@ -252,6 +252,26 @@ describe('设置页', () => {
     expect(input('如：DeepSeek 主力 / GPT-4o 备用').value).toBe('本机 Ollama')
   })
 
+  it('点编辑后重读还没回来就删掉这个模型：重读带着删除前的列表回来，也不再打开它的编辑表单', async () => {
+    await mount()
+    let finish!: () => void
+    const invoke = win.aiNovelAPI!.invoke
+    win.aiNovelAPI!.invoke = async (channel, ...args) => {
+      if (channel !== 'llm:list-models') return invoke(channel, ...args)
+      await new Promise<void>(resolve => { finish = resolve })
+      return [MODEL, LOCAL]
+    }
+
+    await click(byName('编辑「本机 Ollama」'))
+    await click(byName('「本机 Ollama」更多操作'))
+    await click([...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === '删除模型…'))
+    await click([...document.querySelector('[role="dialog"]')!.querySelectorAll('button')].find(button => button.textContent === '删除模型'))
+    await act(async () => finish())
+
+    expect(useLLMStore.getState().deleteModel).toHaveBeenCalledWith('local')
+    expect(host!.querySelector('input[placeholder="如：DeepSeek 主力 / GPT-4o 备用"]')).toBeNull()
+  })
+
   it('保存模型时主进程出错：弹出错误，保存按钮恢复可点，编辑表单留着', async () => {
     useLLMStore.setState({ saveModel: vi.fn(async () => { throw new Error('llm:save-model 不可用') }) })
     await mount()

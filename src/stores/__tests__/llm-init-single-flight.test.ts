@@ -125,6 +125,21 @@ describe('LLM store initialization seam', () => {
     expect(useLLMStore.getState()).toMatchObject({ models, loaded: false })
   })
 
+  it('keeps the newer model list when overlapping refreshes finish in reverse order', async () => {
+    const older = deferred<unknown[]>()
+    const newer = deferred<unknown[]>()
+    mocks.invoke.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise)
+
+    const first = useLLMStore.getState().loadModels()
+    const second = useLLMStore.getState().loadModels()
+    newer.resolve([models[0]])
+    await second
+    older.resolve(models)
+    await first
+
+    expect(useLLMStore.getState().models).toEqual([models[0]])
+  })
+
   it('clears a rejected initialization flight so the next caller can retry', async () => {
     mocks.invoke.mockImplementationOnce(() => Promise.reject(new Error('disk busy')))
       .mockResolvedValueOnce('generation-model')
