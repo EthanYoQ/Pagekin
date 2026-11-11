@@ -16,7 +16,7 @@ function characterStateReply(prompt) {
   return JSON.stringify({ updates: [{ characterId: id, currentState: { location: '灯塔顶层灯室', recentEvents: '在灯室找到纸条' }, evidence: { text: EVIDENCE } }] })
 }
 
-async function editLocationOnCastPage(page, value) {
+export async function editLocationOnCastPage(page, value) {
   await architecture.open(page)
   await architecture.openCast(page)
   await architecture.castRow(page, '林岚').click()

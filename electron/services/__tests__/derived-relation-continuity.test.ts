@@ -5,7 +5,7 @@ import { closeProjectDatabase, getCurrentProjectPath, getProjectDb, initProjectD
 import { registerDatabaseController } from '../../controllers/db-controller'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
 import { deleteCharacterRelationship, derivedRelationSeries, insertCharacterRelationship, readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
-import { refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
+import { commitCharacterIdentities, refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
 import { ConsistencyExemptionRepository } from '../../repositories/consistency-exemption-repository'
 import { DraftRepository } from '../../repositories/draft-repository'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
@@ -128,10 +128,30 @@ function reviseAuthorRelation(relation: string, sourceId = LIN, targetId = SHEN)
   })()
 }
 
+function reviseAuthorRelationThroughRoster(relation: string): void {
+  db().transaction(() => {
+    const operationId = `author-edit-${randomUUID()}`
+    const revision = db().prepare("SELECT revision FROM character_identity_meta WHERE id='main'").pluck().get() as number
+    const rows = db().prepare('SELECT relationship_id AS id,source_character_id AS source,target_character_id AS target FROM character_relationships').all() as Array<{ id: string; source: string; target: string }>
+    for (const row of rows) deleteCharacterRelationship(db(), { relationshipId: row.id, sourceId: row.source, sourceName: NAMES[row.source], targetId: row.target, targetName: NAMES[row.target] }, operationId)
+    commitCharacterIdentities(db(), { approval: { operationId, expectedRevision: revision, action: 'author-edit',
+      source: { kind: 'author', source: { projectId: PROJECT_ID, epoch: scope.epoch, sourceId: operationId, revision, contentHash: sha256(relation) } } },
+    changes: [], creations: [], retireIds: [], resolutions: [], relationships: [{ sourceCharacterId: LIN, targetCharacterId: SHEN, relation }] }, () => true)
+    refreshCharacterIdentityProjection(db())
+  })()
+}
+
 function saveNotes(draftId: number, chapterNotes: string): void {
   const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
   SummaryRepository.saveFinalizedContinuity({ draftId, chapterNumber: context.source.chapterNumber, chapterNotes, facts: [],
     source: context.source, projectionGeneration: context.projectionGeneration }, db())
+}
+
+const NOTES_REQUIRED = 'GENERATION_FINALIZATION_PREDECESSOR_REQUIRED'
+
+function frozenSubmission(draftId: number, output: Record<string, unknown>) {
+  const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+  return () => SummaryRepository.commitFinalizedCharacterStates(context, parseFinalizedCharacterStateResponse(JSON.stringify(output), context), db())
 }
 
 function decide(decision: 'accept' | 'decline') {
@@ -200,49 +220,124 @@ describe('定稿后自动记录人物关系变化', () => {
       authorRelations: ['师徒'], evidence: { text: BREAK_UP }, source: { draftId, chapterNumber: 8 } }])
   })
 
-  it('章节要点还没落库时角色那步先提交：要点补上后，待确认项照样出现', () => {
+  it('章节要点还没落库时角色那步被拒，状态和关系都不落库；要点落库后重新提交同一份结果，待确认项出现，也能采用', () => {
     openProject()
     authorRelation('师徒')
-    const draftId = DraftRepository.create({ chapterNumber: 8, source: 'write', content: CHAPTER_EIGHT, wordCount: CHAPTER_EIGHT.length })
-    db().prepare('INSERT OR IGNORE INTO blueprints(chapter_number,title) VALUES(8,?)').run('第8章')
-    FinalizationRepository.commit({ finalizationId: `finalization-${randomUUID()}`, draftId, chapterNumber: 8,
-      chapterTitle: '第8章', content: CHAPTER_EIGHT, contentHash: sha256(CHAPTER_EIGHT), contentRevision: 1, targetFileName: `8-${draftId}.md` })
-    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
-    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    const submit = frozenSubmission(draftId, { updates: [{ characterId: LIN, currentState: { recentEvents: '折断信物' }, evidence: { text: BREAK_UP } }],
+      relations: [relationChange('恩断义绝', BREAK_UP)] })
+    const before = eventCount()
 
-    const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
-    SummaryRepository.saveFinalizedContinuity({ draftId, chapterNumber: 8, chapterNotes: '第8章摘要', facts: [],
-      source: context.source, projectionGeneration: context.projectionGeneration }, db())
+    expect(submit).toThrow(NOTES_REQUIRED)
+    expect(eventCount()).toBe(before)
+    saveNotes(draftId, '第8章摘要')
+    expect(pending()).toEqual([])
 
+    expect(submit()).toMatchObject({ applied: 1 })
     expect(pending()).toMatchObject([{ sourceId: LIN, targetId: SHEN, value: '恩断义绝', authorRelations: ['师徒'], evidence: { text: BREAK_UP }, source: { draftId, chapterNumber: 8 } }])
     expect(decide('accept')).toMatchObject({ decision: 'accept', idempotent: false })
     expect(authorRows()).toEqual(['恩断义绝'])
   })
 
-  it('角色那步先于要点提交、作者随后改了关系：要点补上后旧建议不出现，作者的改动不被覆盖', () => {
+  describe('升级前已落库：角色那步先于要点提交', () => {
+    function legacyDerivedNode(draftId: number, relation: string, authorLines?: string[]): void {
+      const { source } = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+      const start = CHAPTER_EIGHT.indexOf(BREAK_UP)
+      db().prepare(`INSERT INTO character_continuity_events(event_id,subject_id,subject_name,target_id,target_name,aspect,value,effective_chapter,provenance_json,draft_id,evidence_json)
+        VALUES(?,?,'林岚',?,'沈砚','relation',?,8,?,?,?)`).run(`derived:${source.finalizationId}:relation:legacy-${randomUUID()}`, LIN, SHEN, relation,
+        JSON.stringify({ kind: 'derived', source }), draftId,
+        JSON.stringify({ quote: { text: BREAK_UP, start, end: start + BREAK_UP.length }, relationshipId: derivedRelationSeries(LIN, SHEN), seq: 1,
+          ...(authorLines ? { authorLinesAtExtraction: authorLines } : {}) }))
+    }
+    const AUTHOR_LINES = [JSON.stringify([LIN, SHEN, '师徒'])]
+    const comparable = () => pending().map(({ candidateKey: _key, source: _source, ...rest }) => { void _key; void _source; return rest })
+
+    it('补存要点后待确认项出现，与要点先到时一致，也能采用；新的角色提交在要点之前仍被拒', () => {
+      const outcome = (legacy: boolean) => {
+        openProject()
+        authorRelation('师徒')
+        const draftId = legacy ? finalizeWithoutNotes(8, CHAPTER_EIGHT) : finalizeNew(8, CHAPTER_EIGHT)
+        let rejectedBeforeNotes = false
+        if (legacy) {
+          legacyDerivedNode(draftId, '恩断义绝', AUTHOR_LINES)
+          rejectedBeforeNotes = (() => { try { commitModelOutput(draftId, { updates: [], relations: [relationChange('反目', BREAK_UP)] }); return false } catch (error) { return (error as Error).message === NOTES_REQUIRED } })()
+          saveNotes(draftId, '第8章摘要')
+        } else {
+          commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+        }
+        const cardsBefore = comparable()
+        if (cardsBefore.length) decide('accept')
+        const result = { rejectedBeforeNotes, cardsBefore, forward: authorRows() }
+        closeProjectDatabase()
+        return result
+      }
+
+      const notesFirst = outcome(false)
+      expect(notesFirst.cardsBefore).toHaveLength(1)
+      expect(notesFirst.forward).toEqual(['恩断义绝'])
+      expect(outcome(true)).toEqual({ ...notesFirst, rejectedBeforeNotes: true })
+    })
+
+    it('旧节点没有作者关系快照：补存要点时不补待确认项，也不报错', () => {
+      openProject()
+      authorRelation('师徒')
+      const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+      legacyDerivedNode(draftId, '恩断义绝')
+
+      expect(() => saveNotes(draftId, '第8章摘要')).not.toThrow()
+      expect(pending()).toEqual([])
+    })
+
+    it('抽取之后作者改了这对关系：补存要点后旧建议不出现', () => {
+      openProject()
+      authorRelation('师徒')
+      const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+      legacyDerivedNode(draftId, '恩断义绝', AUTHOR_LINES)
+      reviseAuthorRelation('宿敌')
+
+      saveNotes(draftId, '第8章摘要')
+      expect(pending()).toEqual([])
+    })
+
+    it('新数据已有待确认项，投影代号变了再存要点：待确认项不被清掉', () => {
+      openProject()
+      authorRelation('师徒')
+      const draftId = finalizeNew(8, CHAPTER_EIGHT)
+      commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+      invalidateContinuityProjectionFrom(db(), 8)
+
+      saveNotes(draftId, '第8章摘要又一版')
+      expect(pending().map(card => card.value)).toEqual(['恩断义绝'])
+    })
+  })
+
+  it('角色那步被拒后作者改了关系：要点落库后重新提交同一份结果，旧建议不出现，作者的改动不被覆盖', () => {
     openProject()
     authorRelation('师徒')
     const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
-    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    const submit = frozenSubmission(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    expect(submit).toThrow(NOTES_REQUIRED)
     reviseAuthorRelation('同门')
 
     saveNotes(draftId, '第8章摘要')
+    submit()
 
+    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
     expect(pending()).toEqual([])
     expect(authorRows()).toEqual(['同门'])
   })
 
-  it.each([
-    ['改关系、补要点、再重跑角色那步', 'notes-then-rerun'],
-    ['改关系、重跑角色那步、再补要点', 'rerun-then-notes'],
-  ])('角色那步先于要点提交，作者随后改了关系，%s：旧建议都不出现', (_label, order) => {
+  it('角色那步被拒后作者改了关系，要点落库前又重试了一次：仍然被拒，要点落库后重新提交，旧建议不出现', () => {
     openProject()
     authorRelation('师徒')
     const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
-    const extract = () => commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
-    extract()
+    const submit = frozenSubmission(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    expect(submit).toThrow(NOTES_REQUIRED)
     reviseAuthorRelation('同门')
-    if (order === 'notes-then-rerun') { saveNotes(draftId, '第8章摘要'); extract() } else { extract(); saveNotes(draftId, '第8章摘要') }
+    expect(submit).toThrow(NOTES_REQUIRED)
+
+    saveNotes(draftId, '第8章摘要')
+    submit()
 
     expect(pending()).toEqual([])
   })
@@ -258,31 +353,37 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(pending()).toEqual([])
   })
 
-  it('角色那步先于要点提交，作者随后调换关系方向：要点补上后不出现待确认项，时间线不多出事件', () => {
+  it('角色那步被拒后作者调换关系方向：要点落库后重新提交同一份结果，不出现待确认项，方向不被翻回去', () => {
     openProject()
     authorRelation('师徒')
     const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
-    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    const submit = frozenSubmission(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    expect(submit).toThrow(NOTES_REQUIRED)
     reviseAuthorRelation('师徒', SHEN, LIN)
-    const before = eventCount()
 
     saveNotes(draftId, '第8章摘要')
+    submit()
 
-    expect(eventCount()).toBe(before)
     expect(pending()).toEqual([])
+    expect(db().prepare('SELECT source_character_id AS source,target_character_id AS target,relation FROM character_relationships').all())
+      .toEqual([{ source: SHEN, target: LIN, relation: '师徒' }])
   })
 
   it.each([
     ['先林后沈', [relationChange('恩断义绝', BREAK_UP), relationChange('势不两立', BREAK_UP, SHEN, LIN)]],
     ['先沈后林', [relationChange('势不两立', BREAK_UP, SHEN, LIN), relationChange('恩断义绝', BREAK_UP)]],
-  ])('作者两个方向都写了，模型两个方向给出不同新值（%s）：角色那步先于要点时，补回后同一对只有一张卡，与要点先到时一样', (_label, relations) => {
+  ])('作者两个方向都写了，模型两个方向给出不同新值（%s）：角色那步被拒、要点落库后重新提交，同一对只有一张卡，与要点先到时一样', (_label, relations) => {
     const cardsAfter = (notesFirst: boolean) => {
       openProject()
       authorRelation('同门')
       authorRelation('同门', SHEN, LIN)
       const draftId = notesFirst ? finalizeNew(8, CHAPTER_EIGHT) : finalizeWithoutNotes(8, CHAPTER_EIGHT)
-      commitModelOutput(draftId, { updates: [], relations })
-      if (!notesFirst) saveNotes(draftId, '第8章摘要')
+      const submit = frozenSubmission(draftId, { updates: [], relations })
+      if (!notesFirst) {
+        expect(submit).toThrow(NOTES_REQUIRED)
+        saveNotes(draftId, '第8章摘要')
+      }
+      submit()
       const cards = pending().map(({ sourceId, targetId, value }) => ({ sourceId, targetId, value }))
       closeProjectDatabase()
       return cards
@@ -293,51 +394,31 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(cardsAfter(false)).toEqual(notesFirst)
   })
 
-  it('作者两个方向都写了，重跑把一个方向改回作者设定：角色那步先于要点时，补回后另一方向的旧值不复活，与要点先到时一样', () => {
-    const cardsAfter = (notesFirst: boolean) => {
-      openProject()
-      authorRelation('同门')
-      authorRelation('同门', SHEN, LIN)
-      const draftId = notesFirst ? finalizeNew(8, CHAPTER_EIGHT) : finalizeWithoutNotes(8, CHAPTER_EIGHT)
-      commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP), relationChange('势不两立', BREAK_UP, SHEN, LIN)] })
-      commitModelOutput(draftId, { updates: [], relations: [relationChange('同门', BREAK_UP)] })
-      if (!notesFirst) saveNotes(draftId, '第8章摘要')
-      const cards = pending().map(({ sourceId, targetId, value }) => ({ sourceId, targetId, value }))
-      closeProjectDatabase()
-      return cards
-    }
-    expect(cardsAfter(true)).toEqual([])
-    expect(cardsAfter(false)).toEqual([])
-  })
-
-  it('升级前写下的派生节点没有作者关系快照：要点补上时不补待确认项，也不报错', () => {
+  it('作者两个方向都写了，重跑把一个方向改回作者设定：另一方向的旧值随同一对的卡一起撤下', () => {
     openProject()
-    authorRelation('师徒')
-    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
-    const { source } = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
-    const start = CHAPTER_EIGHT.indexOf(BREAK_UP)
-    db().prepare(`INSERT INTO character_continuity_events(event_id,subject_id,subject_name,target_id,target_name,aspect,value,effective_chapter,provenance_json,draft_id,evidence_json)
-      VALUES(?,?,'林岚',?,'沈砚','relation','恩断义绝',8,?,?,?)`).run(`derived:${source.finalizationId}:relation:legacy`, LIN, SHEN,
-      JSON.stringify({ kind: 'derived', source }), draftId,
-      JSON.stringify({ quote: { text: BREAK_UP, start, end: start + BREAK_UP.length }, relationshipId: derivedRelationSeries(LIN, SHEN), seq: 1 }))
-    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
+    authorRelation('同门')
+    authorRelation('同门', SHEN, LIN)
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP), relationChange('势不两立', BREAK_UP, SHEN, LIN)] })
+    expect(pending()).toHaveLength(1)
 
-    expect(() => saveNotes(draftId, '第8章摘要')).not.toThrow()
+    commitModelOutput(draftId, { updates: [], relations: [relationChange('同门', BREAK_UP)] })
+
     expect(pending()).toEqual([])
   })
 
-  it('抽取开始后、提交前作者改了关系：要点补上后旧结论不对着作者新写的关系出现', () => {
+  it('抽取开始后、提交前作者改了关系，要点还没落库：被拒，要点落库后重新提交，旧结论不对着作者新写的关系出现', () => {
     openProject()
     authorRelation('师徒')
     const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
-    const context = SummaryRepository.readFinalizedCharacterContext(draftId, scope, db())
+    const submit = frozenSubmission(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
     reviseAuthorRelation('同门')
-    SummaryRepository.commitFinalizedCharacterStates(context, parseFinalizedCharacterStateResponse(JSON.stringify(
-      { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] }), context), db())
-    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
+    expect(submit).toThrow(NOTES_REQUIRED)
 
     saveNotes(draftId, '第8章摘要')
+    submit()
 
+    expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
     expect(pending()).toEqual([])
     expect(authorRows()).toEqual(['同门'])
   })
@@ -392,18 +473,6 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(derivedNodes().map(node => node.value)).toEqual(['恩断义绝'])
 
     expect(() => saveNotes(draftId, '第8章摘要')).not.toThrow()
-    expect(pending()).toEqual([])
-  })
-
-  it('同一份定稿重跑把关系改回作者设定后要点才补上：撤下的旧值不复活', () => {
-    openProject()
-    authorRelation('师徒')
-    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
-    commitModelOutput(draftId, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
-    commitModelOutput(draftId, { updates: [], relations: [relationChange('师徒', BREAK_UP)] })
-    const before = derivedNodes().length
-    saveNotes(draftId, '第8章摘要')
-    expect(derivedNodes()).toHaveLength(before)
     expect(pending()).toEqual([])
   })
 
@@ -618,6 +687,55 @@ describe('定稿后自动记录人物关系变化', () => {
 
     expect(latestNodesBefore(relationNodes(), 6).relations[0].lines.map(line => line.value)).toEqual(['同盟'])
     expect(latestNodesBefore(relationNodes(), 9).relations[0].lines.map(line => line.value)).toEqual(['恩断义绝'])
+  })
+})
+
+describe('章节要点还没落库时角色那步被拒，要点落库后重跑', () => {
+  const FORWARD_B = relationChange('恩断义绝', BREAK_UP), REVERSE_C = relationChange('势不两立', BREAK_UP, SHEN, LIN)
+  const cards = () => pending().map(({ sourceId, targetId, value }) => ({ sourceId, targetId, value }))
+  const rejected = (draftId: number, relations: unknown[]) => {
+    try { commitModelOutput(draftId, { updates: [], relations }); return false } catch (error) {
+      if ((error as Error).message !== NOTES_REQUIRED) throw error
+      return true
+    }
+  }
+  function bothDirectionsAuthored(): void {
+    openProject()
+    authorRelation('同门')
+    authorRelation('同门', SHEN, LIN)
+  }
+
+  it('作者两个方向都有值，抽出正反两个新值后只重跑正向且值没变，要点之后才落库：被取代的反向值不出现，重跑后留下正向那一条', () => {
+    bothDirectionsAuthored()
+    const draftId = finalizeWithoutNotes(8, CHAPTER_EIGHT)
+    const attempts = [rejected(draftId, [FORWARD_B, REVERSE_C]), rejected(draftId, [FORWARD_B])]
+    saveNotes(draftId, '第8章摘要')
+
+    expect(cards()).toEqual([])
+    expect(attempts).toEqual([true, true])
+    commitModelOutput(draftId, { updates: [], relations: [FORWARD_B] })
+    expect(cards()).toEqual([{ sourceId: LIN, targetId: SHEN, value: '恩断义绝' }])
+  })
+
+  it('作者两个方向同值，先抽出正向 B、反向 C，重跑抽出正向 D、反向回到作者设定，要点之后才落库：结果与要点先到时一样，D 可以采用', () => {
+    const FORWARD_D = relationChange('反目', BREAK_UP), REVERSE_AUTHOR = relationChange('同门', BREAK_UP, SHEN, LIN)
+    const outcome = (notesFirst: boolean) => {
+      bothDirectionsAuthored()
+      const draftId = notesFirst ? finalizeNew(8, CHAPTER_EIGHT) : finalizeWithoutNotes(8, CHAPTER_EIGHT)
+      const attempts = [rejected(draftId, [FORWARD_B, REVERSE_C]), rejected(draftId, [FORWARD_D, REVERSE_AUTHOR])]
+      if (!notesFirst) {
+        saveNotes(draftId, '第8章摘要')
+        commitModelOutput(draftId, { updates: [], relations: [FORWARD_D, REVERSE_AUTHOR] })
+      }
+      const pendingCards = cards()
+      decide('accept')
+      const result = { attempts, pendingCards, forward: authorRows() }
+      closeProjectDatabase()
+      return result
+    }
+
+    expect(outcome(true)).toEqual({ attempts: [false, false], pendingCards: [{ sourceId: LIN, targetId: SHEN, value: '反目' }], forward: ['反目'] })
+    expect(outcome(false)).toEqual({ attempts: [true, true], pendingCards: [{ sourceId: LIN, targetId: SHEN, value: '反目' }], forward: ['反目'] })
   })
 })
 
@@ -908,12 +1026,22 @@ describe('定稿后处理的提示词', () => {
     authorRelation('师徒')
     const draftId = finalizeNew(8, CHAPTER_EIGHT)
     const { context } = prompt(draftId, 'zh-CN')
-    const { authorRelations: _dropped, authorRelationsRevision: _droppedRevision, ...oldIdentity } = context.identity as FinalizedCharacterContext
-    void _dropped; void _droppedRevision
+    const { authorRelations: _dropped, ...oldIdentity } = context.identity as FinalizedCharacterContext
+    void _dropped
 
     const { context: rebuilt, task } = prompt(draftId, 'zh-CN', { ...context, identity: oldIdentity })
     expect(rebuilt.identity).toEqual(oldIdentity)
     expect(String(task.messages[1].content)).not.toContain('"relation": "师徒"')
+  })
+
+  it('上一个开发版冻结的在途定稿带着作者关系修订号：续跑不判身份变化', () => {
+    openProject()
+    authorRelation('师徒')
+    const draftId = finalizeNew(8, CHAPTER_EIGHT)
+    const { context } = prompt(draftId, 'zh-CN')
+    const frozen = { ...context, identity: { ...context.identity, authorRelationsRevision: 3 } }
+
+    expect(() => prompt(draftId, 'zh-CN', frozen)).not.toThrow()
   })
 
   it('作者关系在定稿后处理途中被改，不算身份变化', () => {
@@ -1200,6 +1328,44 @@ describe('较早章建议被采纳后，较晚章的建议是否还有效', () =
     expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
   })
 
+  it.each([
+    ['直接改关系表', reviseAuthorRelation],
+    ['按角色页保存的写法改', reviseAuthorRelationThroughRoster],
+  ])('第 8 章抽出建议后先后采纳第 5 章、第 6 章的建议，作者再手改回第 5 章采纳的值（%s）：第 8 章的建议作废，采用入口拒绝', (_label, revise) => {
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    const six = finalizeNew(6, `第六章：断桥。${SIX_QUOTE}`)
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    decide('accept')
+    commitModelOutput(six, { updates: [], relations: [relationChange('决裂', SIX_QUOTE)] })
+    decide('accept')
+    const [eighth] = pending()
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+
+    revise('反目')
+
+    expect(cards()).toEqual([])
+    expect(() => SummaryRepository.decideFinalizedRelationCandidate({ draftId: eighth.source.draftId, candidateKey: eighth.candidateKey,
+      expectedAuthorRelations: ['反目'], operationId: 'accept-eighth-after-manual-edit', decision: 'accept' }, scope, db())).toThrow('FINALIZED_CHARACTER_STATE_CANDIDATE_NOT_FOUND')
+    expect(authorRows()).toEqual(['反目'])
+  })
+
+  it('采纳第 5 章的建议后关系又变了、却没有留下写入记录：采纳后的作者行接不上现在的，第 8 章的建议作废', () => {
+    openProject()
+    authorRelation('师徒')
+    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
+    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    decide('accept')
+    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
+
+    db().prepare("UPDATE character_relationships SET relation='宿敌'").run()
+
+    expect(cards()).toEqual([])
+  })
+
   it('较早章的采纳把关系改回过以前的值，第 8 章的建议照样认得出', () => {
     const SEVEN_QUOTE = '林岚与沈砚在渡口再度反目。'
     openProject()
@@ -1250,7 +1416,7 @@ describe('较早章建议被采纳后，较晚章的建议是否还有效', () =
     expect(cards()).toEqual([])
   })
 
-  it('第 8 章角色那步先于要点提交，第 5 章的采纳早于抽取：要点补上后，作者再手改，第 8 章的建议作废', () => {
+  it('第 8 章角色那步因要点没落库被拒，第 5 章的采纳早于抽取：要点落库后重新提交，作者再手改，第 8 章的建议作废', () => {
     openProject()
     authorRelation('师徒')
     const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
@@ -1258,31 +1424,13 @@ describe('较早章建议被采纳后，较晚章的建议是否还有效', () =
     decide('accept')
     reviseAuthorRelation('师徒')
     const eight = finalizeWithoutNotes(8, CHAPTER_EIGHT)
-    commitModelOutput(eight, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    const submit = frozenSubmission(eight, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    expect(submit).toThrow(NOTES_REQUIRED)
     saveNotes(eight, '第8章摘要')
+    submit()
     expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
 
     reviseAuthorRelation('反目')
-    expect(cards()).toEqual([])
-  })
-
-  it('升级前的候选不知道抽取时的修订号，分不出采纳先后，较早章的采纳都算', () => {
-    openProject()
-    authorRelation('师徒')
-    const five = finalizeNew(5, `第五章：山门。${FIVE_QUOTE}`)
-    commitModelOutput(five, { updates: [], relations: [relationChange('反目', FIVE_QUOTE)] })
-    decide('accept')
-    reviseAuthorRelation('师徒')
-    const eight = finalizeNew(8, CHAPTER_EIGHT)
-    commitModelOutput(eight, { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
-    const row = db().prepare('SELECT id,character_state_candidates AS candidates FROM summary_snapshots WHERE draft_id=?').get(eight) as { id: number; candidates: string }
-    const store = JSON.parse(row.candidates) as { relationPending: Array<Record<string, unknown>> }
-    for (const candidate of store.relationPending) delete candidate.authorRevisionAtCreation
-    db().prepare('UPDATE summary_snapshots_all SET character_state_candidates=? WHERE id=?').run(JSON.stringify(store), row.id)
-
-    reviseAuthorRelation('反目')
-    expect(cards()).toEqual([{ value: '恩断义绝', chapter: 8 }])
-    reviseAuthorRelation('宿敌')
     expect(cards()).toEqual([])
   })
 })

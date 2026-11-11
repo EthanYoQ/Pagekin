@@ -37,6 +37,9 @@ import { GenerateDraftCommand } from '../generate-draft.command'
 import { createWorkflowMainGenerationRuntime } from '../../workflow-main-generation'
 import type { MainGenerationRunView } from '../../../generation/generation-runtime'
 import { useFakeModelStream, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
+import { createRepairFinalizeWorkflow } from '../../chapter-workflow'
+import { getChapterFinalizeScope, readPostProcessStatus } from '../../workflow-utils'
+import { FinalizationRepository } from '../../../../../electron/repositories/finalization-repository'
 type ModelMessages = Parameters<FakeGenerateStream>[0]
 
 let projectPath = ''
@@ -224,6 +227,8 @@ function installRealRepositoryIpc(): void {
             return null
           case 'db:draft-list':
             return DraftRepository.listByChapter(Number(args[0]))
+          case 'db:draft-get-full':
+            return DraftRepository.getFull(Number(args[0]))
           case 'chapter:remove-replaced-knowledge':
           case 'chapter:remove-replaced-manuscripts':
             cleanupRequests.push([channel, args[0]])
@@ -1381,5 +1386,166 @@ describe('重开再定稿后的后处理（ADR-0024）', () => {
     expect(Object.fromEntries(steps.map(step => [step.step_key, step.ok]))).toEqual({
       kb_import: 1, remove_replaced_knowledge: 1, remove_replaced_manuscripts: 0, chapter_notes: 1, character_cards: 1,
     })
+  })
+})
+
+describe('重复定稿修复让连续性记录过期之后，重试本章的后处理（#279）', () => {
+  const content = 'Lin Lan breaks with Zhou Yan at the harbor.'
+  const calls = { notes: 0, character: 0 }
+  let characterStreamFails = false
+  const db = () => getProjectDb()!
+  const finalize = () => command(content).execute({ step: {}, context: workflowContext, callbacks: callbacks() })
+  const notesRow = () => db().prepare('SELECT chapter_notes AS notes,projection_generation AS generation FROM summary_snapshots WHERE draft_id=7').get()
+  const currentGeneration = () => db().prepare("SELECT generation FROM continuity_projection_meta WHERE id='main'").pluck().get() as number
+  const blueprintNotes = () => db().prepare('SELECT notes FROM blueprints WHERE chapter_number=2').pluck().get()
+
+  const ALL_DONE = { kb_import: 'ok', chapter_notes: 'ok', character_cards: 'ok' }
+  async function outcomes() {
+    const status = await readPostProcessStatus(projectPath, getChapterFinalizeScope(2), workflowContext.projectSession!)
+    return Object.fromEntries(Object.entries(status!.steps).map(([key, step]) => [key, step.ok ? 'ok' : step.error]))
+  }
+
+  async function clickRetry(stepKey?: string) {
+    const step = createRepairFinalizeWorkflow(2, projectPath, workflowContext.projectSession!, stepKey).steps[0]!
+    await step.executor({ ...step, id: 'retry-click', status: 'running', logs: [] }, workflowContext, callbacks())
+  }
+
+  async function characterStepFailsThenReopenRepairsDuplicate(duplicatedChapter: number) {
+    characterStreamFails = true
+    const initial = await finalize()
+    expect(initial.steps).toMatchObject({ chapter_notes: { ok: true }, character_cards: { ok: false } })
+    characterStreamFails = false
+    actualOwner?.suspendForProjectClose()
+    actualOwner = undefined
+    insertFinalizedDraft(30 + duplicatedChapter, duplicatedChapter, 'newer duplicate final')
+    db().prepare('UPDATE drafts_all SET version=2 WHERE id=?').run(30 + duplicatedChapter)
+    insertFinalizedDraft(20 + duplicatedChapter, duplicatedChapter, 'older duplicate final')
+    const before = currentGeneration()
+    const repair = FinalizationRepository.repairDuplicateFinalizations({ remove_replaced_knowledge: 'k', remove_replaced_manuscripts: 'm' })
+    expect(repair.chapters.map(chapter => chapter.chapterNumber)).toEqual([duplicatedChapter])
+    expect(currentGeneration()).toBe(before + 1)
+  }
+
+  beforeEach(() => {
+    calls.notes = 0; calls.character = 0; characterStreamFails = false
+    db().prepare("INSERT INTO blueprints (chapter_number, title, notes) VALUES (2, 'The Handoff', '')").run()
+    cardResponse = JSON.stringify({ updates: [{ name: 'Lin Lan', currentState: { keyItems: '' } }] })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
+      const system = messages.find((message: { role: string; content: string }) => message.role === 'system')?.content ?? ''
+      if (system.includes('character records')) {
+        calls.character++
+        if (characterStreamFails) streamCallbacks.onError?.('synthetic stream interrupted')
+        else streamCallbacks.onDone?.(modelFixtureResponse(cardResponse), undefined, 'stop')
+      } else streamCallbacks.onDone?.(`Notes take ${++calls.notes}.`, undefined, 'stop')
+      return 'synthetic-request'
+    }) })
+  })
+
+  it.each([
+    ['整卡的「重试失败步骤」', undefined],
+    ['角色状态那一行的「重试」', 'character_cards'],
+  ])('本章要点已过期、角色状态有待确认项要存：点一次%s，连章节要点一起重跑，走得完', async (_label, stepKey) => {
+    await characterStepFailsThenReopenRepairsDuplicate(1)
+
+    await clickRetry(stepKey)
+
+    expect(await outcomes()).toEqual(ALL_DONE)
+    expect(notesRow()).toEqual({ notes: 'Notes take 2.', generation: currentGeneration() })
+    expect(blueprintNotes()).toBe('Notes take 2.')
+    expect(SummaryRepository.listPendingFinalizedCharacterStateCandidates()).toMatchObject([{ field: 'keyItems' }])
+    expect(calls).toEqual({ notes: 2, character: 2 })
+  })
+
+  it('本章要点已过期、定稿和作者写的人物关系不一致：点一次重试，走完后建议卡还在', async () => {
+    const { currentState: _currentState, relationships: _relationships, ...fields } = initialRosterRequest().entries[0]
+    void _currentState; void _relationships
+    const approval = (operationId: string) => {
+      const revision = db().prepare("SELECT revision FROM character_identity_meta WHERE id='main'").pluck().get() as number
+      return { operationId, expectedRevision: revision, action: 'author-edit' as const,
+        source: { kind: 'author' as const, source: { projectId: 'test', epoch: 'lease-test', sourceId: operationId, revision, contentHash: 'c'.repeat(64) } } }
+    }
+    const zhou = commitCharacterIdentities(db(), { approval: approval('zhou'), creations: [{ selectionKey: 'zhou', fields: { ...fields, name: 'Zhou Yan' } }],
+      changes: [], retireIds: [], relationships: [], resolutions: [] }, () => true).created[0].characterId
+    commitCharacterIdentities(db(), { approval: approval('mentor'), creations: [], changes: [], retireIds: [], resolutions: [],
+      relationships: [{ sourceCharacterId: characterId, targetCharacterId: zhou, relation: 'mentor' }] }, () => true)
+    db().transaction(() => refreshCharacterIdentityProjection(db()))()
+    cardResponse = JSON.stringify({ updates: [], relations: [{ source: characterId, target: zhou, relation: 'rival', evidence: { text: content } }] })
+    await characterStepFailsThenReopenRepairsDuplicate(1)
+
+    await clickRetry()
+
+    expect(await outcomes()).toEqual(ALL_DONE)
+    expect(SummaryRepository.listPendingFinalizedRelationCandidates(db()).map(item => item.value)).toEqual(['rival'])
+  })
+
+  it('修复的是更晚的章、本章要点仍然有效：点一次重试只跑角色状态，不重新生成要点', async () => {
+    await characterStepFailsThenReopenRepairsDuplicate(3)
+
+    await clickRetry()
+
+    expect(await outcomes()).toEqual(ALL_DONE)
+    expect(SummaryRepository.listPendingFinalizedCharacterStateCandidates()).toMatchObject([{ field: 'keyItems' }])
+    expect(calls).toEqual({ notes: 1, character: 2 })
+  })
+
+  it('要点仍然有效时被重试一并点名：不再调模型，要点原样不动', async () => {
+    characterStreamFails = true
+    await finalize()
+    characterStreamFails = false
+
+    const retried = await command(content, { onlyFailed: true, retryInvalidResult: true, stepKeys: ['chapter_notes', 'character_cards'] })
+      .execute({ step: {}, context: workflowContext, callbacks: callbacks() })
+
+    expect(Object.values(retried.steps).map(step => step.ok)).toEqual([true, true, true])
+    expect(notesRow()).toMatchObject({ notes: 'Notes take 1.' })
+    expect(calls).toEqual({ notes: 1, character: 2 })
+  })
+
+  it('作者手改过蓝图里的本章要点：重试重新生成要点时不覆盖作者的改动', async () => {
+    await characterStepFailsThenReopenRepairsDuplicate(1)
+    expect(blueprintNotes()).toBe('Notes take 1.')
+    db().prepare("UPDATE blueprints SET notes='Author-edited notes' WHERE chapter_number=2").run()
+
+    await clickRetry()
+
+    expect(await outcomes()).toEqual(ALL_DONE)
+    expect(notesRow()).toMatchObject({ notes: 'Notes take 2.' })
+    expect(blueprintNotes()).toBe('Author-edited notes')
+  })
+
+  it('首跑时本章还没有蓝图、之后才建了一张要点为空的蓝图：重试重新生成的要点照常写进蓝图', async () => {
+    db().prepare('DELETE FROM blueprints WHERE chapter_number=2').run()
+    await characterStepFailsThenReopenRepairsDuplicate(1)
+    db().prepare("INSERT INTO blueprints (chapter_number, title, notes) VALUES (2, 'The Handoff', '')").run()
+
+    await clickRetry()
+
+    expect(await outcomes()).toEqual(ALL_DONE)
+    expect(blueprintNotes()).toBe('Notes take 2.')
+  })
+
+  it('首跑前本章已有一行内容相同的要点、没有蓝图，生成后什么都没变：过期后重试照样重新生成', async () => {
+    db().prepare('DELETE FROM blueprints WHERE chapter_number=2').run()
+    insertFinalizedDraft(7, 2, content)
+    const existing = SummaryRepository.readFinalizedSource(7)
+    if (existing.status !== 'valid') throw new Error('expected valid finalized source')
+    SummaryRepository.saveFinalizedContinuity({ draftId: 7, chapterNumber: 2, chapterNotes: 'Notes take 1.', facts: [],
+      projectionGeneration: existing.snapshot.projectionGeneration, source: existing.snapshot.source })
+    await characterStepFailsThenReopenRepairsDuplicate(1)
+
+    await clickRetry()
+
+    expect(await outcomes()).toEqual(ALL_DONE)
+    expect(notesRow()).toEqual({ notes: 'Notes take 2.', generation: currentGeneration() })
+  })
+
+  it('过期的要点运行仍是封存的：读回时不再当作完成，但它的产物不能被丢弃', async () => {
+    await characterStepFailsThenReopenRepairsDuplicate(1)
+    const slot = { source: SummaryRepository.readFinalizedCharacterContext(7, { projectId: 'test', epoch: 'lease-test' }).source, stepKey: 'chapter_notes' as const }
+
+    const stale = owner().readFinalizationGeneration({ slot })!
+
+    expect(stale.effect).toBeUndefined()
+    expect(() => owner().discardCandidate(stale.view.handle, stale.view.artifacts.at(-1)!.artifactId)).toThrow('GENERATION_FINALIZATION_EFFECT_SEALED')
   })
 })

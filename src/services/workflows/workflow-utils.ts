@@ -205,6 +205,8 @@ export interface PipelineOptions {
   retryCount?: number
   /** true = 只重跑失败步骤（修复模式） */
   onlyFailed?: boolean
+  /** 修复模式下点名要重跑的步骤，即使已记为成功。 */
+  rerun?: readonly string[]
   /** true = 任一步骤最终失败后立即停止，不再执行后续后处理 */
   stopOnFailure?: boolean
   /** 由所属工作流传入的取消标记，防止 LLM 返回后继续落盘。 */
@@ -302,7 +304,7 @@ export async function runPostProcessPipeline(
     const existingStep = stepMap.get(step.key)
 
     // 修复模式：跳过已成功的步骤
-    if (onlyFailed && existingStep?.ok) {
+    if (onlyFailed && existingStep?.ok && !options?.rerun?.includes(step.key)) {
       callbacks.log(text(
         `  ${step.label} — 已成功，跳过`,
         `  ${step.label} already succeeded; skipping`,

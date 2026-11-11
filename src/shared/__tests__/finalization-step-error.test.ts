@@ -74,7 +74,7 @@ describe('定稿后处理步骤错误', () => {
       expect(text).toMatch(/did not match/u)
       expect(text).not.toContain('character cards were not updated')
     }
-    expect(planFinalizationRetry({ kb_import: { ok: true }, chapter_notes: { ok: false, error: raw } }).rows).toEqual(new Set(['chapter_notes']))
+    expect(planFinalizationRetry({ kb_import: { ok: true }, chapter_notes: { ok: false, error: raw } }).rows).toEqual(new Map([['chapter_notes', ['chapter_notes']]]))
   })
 
   it('#552 角色状态合同码全集：每个都有说明，告诉作者可以重试或换模型，不露原码', () => {
@@ -90,7 +90,7 @@ describe('定稿后处理步骤错误', () => {
       expect(enText, code).toContain('After finalizing')
       for (const text of [zhText, enText]) expect(text, code).not.toMatch(/Error invoking|FINALIZED_CHARACTER/u)
       expect(planFinalizationRetry({ kb_import: { ok: true }, chapter_notes: { ok: true }, character_cards: { ok: false, error: code } }))
-        .toMatchObject({ rows: new Set(['character_cards']), card: ['character_cards'] })
+        .toMatchObject({ rows: new Map([['character_cards', ['character_cards']]]), card: ['character_cards'] })
     }
   })
 
@@ -129,18 +129,26 @@ describe('定稿后处理步骤错误', () => {
       expect(describeFinalizationStepError(code, en)).not.toMatch(/\p{Script=Han}/u)
     })
 
-    it('章节要点在生成期间被作者改过：重试有用，说明写明重试会替换作者改的要点，不机械地补「请点重试」', () => {
+    it('章节要点在生成期间被作者改过：行上的重试只跑要点，说明指向能接着更新角色状态的「重试失败步骤」，提醒想留要点先复制', () => {
       const plan = planFinalizationRetry({
         kb_import: { ok: true },
         chapter_notes: failed('GENERATION_FINALIZATION_NOTES_CHANGED'),
         character_cards: failed('GENERATION_FINALIZATION_PREDECESSOR_REQUIRED'),
       })
-      expect([...plan.rows]).toEqual(['chapter_notes'])
+      expect([...plan.rows.entries()]).toEqual([['chapter_notes', ['chapter_notes']]])
       expect(plan.card).toEqual(['chapter_notes', 'character_cards'])
       const zhText = describeFinalizationStepError('GENERATION_FINALIZATION_NOTES_CHANGED', zh)
       const enText = describeFinalizationStepError('GENERATION_FINALIZATION_NOTES_CHANGED', en)
-      expect(zhText).toContain('替换')
-      expect(enText).toContain('replaces')
+      expect(zhText).toMatch(/^生成期间本章的「章节要点」有改动，改动已保留/u)
+      expect(zhText).toContain('点「重试失败步骤」会重新生成要点并更新角色状态')
+      expect(zhText).not.toContain('点「重试」')
+      expect(zhText).toContain('可能被新结果换掉，想留就先复制一份')
+      expect(zhText).not.toContain('不要重试')
+      expect(enText).toContain('Select Retry failed steps to generate the notes again and update the character state')
+      expect(enText).not.toMatch(/Select Retry(?! failed steps)/u)
+      expect(enText).toMatch(/^Chapter notes changed while this step was running\. The change is kept/u)
+      expect(enText).toContain('may be replaced by the new ones, so copy them first')
+      expect(enText).not.toContain("don't retry")
       expect(zhText).not.toContain('请点「重试」重新生成这一步')
       expect(enText).not.toContain('Select Retry to generate this step again')
     })
@@ -152,16 +160,28 @@ describe('定稿后处理步骤错误', () => {
     ])('%s：重试也过不去，这一行和整卡都不重试，说明告诉作者重新定稿', code => {
       for (const stepKey of ['chapter_notes', 'character_cards']) {
         const plan = planFinalizationRetry({ kb_import: { ok: true }, chapter_notes: { ok: true }, [stepKey]: failed(`${IPC}${code}`) })
-        expect({ rows: [...plan.rows], card: plan.card }).toEqual({ rows: [], card: [] })
+        expect({ rows: [...plan.rows.keys()], card: plan.card }).toEqual({ rows: [], card: [] })
       }
       expect(describeFinalizationStepError(code, zh)).toContain('重新定稿本章')
       expect(describeFinalizationStepError(code, en)).toContain('Finalize this chapter again')
       expect(describeFinalizationStepError(code, zh)).toContain('再点「重试」结果也一样')
     })
 
+    it('章节要点记着成功、角色状态却报要先完成要点（要点已过期）：这一行和整卡的重试都连要点一起重跑', () => {
+      const plan = planFinalizationRetry({ kb_import: { ok: true }, chapter_notes: { ok: true }, character_cards: failed(`${IPC}GENERATION_FINALIZATION_PREDECESSOR_REQUIRED`) })
+      expect({ rows: [...plan.rows], card: plan.card }).toEqual({
+        rows: [['character_cards', ['chapter_notes', 'character_cards']]], card: ['chapter_notes', 'character_cards'] })
+    })
+
+    it('等「导入知识库」的清理步骤：导入已成功时只重跑清理，不重新导入', () => {
+      const plan = planFinalizationRetry({ kb_import: { ok: true }, remove_replaced_knowledge: failed('FINALIZATION_REPLACED_KNOWLEDGE_IMPORT_REQUIRED') })
+      expect(plan.rows.has('remove_replaced_knowledge')).toBe(true)
+      expect(plan.card).toEqual(['remove_replaced_knowledge'])
+    })
+
     it('没登记的错误在现有步骤上照常可以重试', () => {
       const plan = planFinalizationRetry({ kb_import: failed('向量服务没有响应'), chapter_notes: { ok: true }, character_cards: { ok: true } })
-      expect({ rows: [...plan.rows], card: plan.card }).toEqual({ rows: ['kb_import'], card: ['kb_import'] })
+      expect({ rows: [...plan.rows.keys()], card: plan.card }).toEqual({ rows: ['kb_import'], card: ['kb_import'] })
     })
   })
 
@@ -173,13 +193,13 @@ describe('定稿后处理步骤错误', () => {
         character_cards: { ok: true },
         style_analysis: { ok: false, error: '模型长时间没有响应' },
       })
-      expect({ rows: [...plan.rows], card: plan.card, retired: [...plan.retired] })
+      expect({ rows: [...plan.rows.keys()], card: plan.card, retired: [...plan.retired] })
         .toEqual({ rows: ['kb_import'], card: ['kb_import'], retired: ['style_analysis'] })
     })
 
     it('只有旧步骤失败时，整张卡没有可以重试的步骤', () => {
       const plan = planFinalizationRetry({ kb_import: { ok: true }, chapter_notes: { ok: true }, character_cards: { ok: true }, style_analysis: { ok: false } })
-      expect({ rows: [...plan.rows], card: plan.card }).toEqual({ rows: [], card: [] })
+      expect({ rows: [...plan.rows.keys()], card: plan.card }).toEqual({ rows: [], card: [] })
     })
   })
 })
@@ -231,11 +251,11 @@ describe('重开再定稿后清理旧版本（ADR-0024）', () => {
       chapter_notes: { ok: true },
       character_cards: { ok: true },
     })
-    expect({ rows: [...plan.rows], card: plan.card })
+    expect({ rows: [...plan.rows.keys()], card: plan.card })
       .toEqual({ rows: ['kb_import', 'remove_replaced_manuscripts'], card: ['kb_import', 'remove_replaced_knowledge', 'remove_replaced_manuscripts'] })
 
     const edited = planFinalizationRetry({ kb_import: { ok: true }, remove_replaced_knowledge: failed('FINALIZATION_REPLACED_KNOWLEDGE_EDITED') })
-    expect({ rows: [...edited.rows], card: edited.card }).toEqual({ rows: [], card: [] })
+    expect({ rows: [...edited.rows.keys()], card: edited.card }).toEqual({ rows: [], card: [] })
     expect(describeFinalizationStepError('FINALIZATION_REPLACED_KNOWLEDGE_EDITED', zh)).toContain('再点「重试」结果也一样')
   })
 
@@ -266,7 +286,7 @@ describe('#571 作品所在的磁盘不支持知识库的提交方式', () => {
 
   it('换到支持的磁盘后重试才有用：单步与整卡都还能重试', () => {
     expect(planFinalizationRetry({ kb_import: failedStep(raw), chapter_notes: { ok: true }, character_cards: { ok: true } }))
-      .toMatchObject({ rows: new Set(['kb_import']), card: ['kb_import'] })
+      .toMatchObject({ rows: new Map([['kb_import', ['kb_import']]]), card: ['kb_import'] })
   })
 
   it('知识库页导入创作资料走同一个码，说明里没有定稿字样', () => {

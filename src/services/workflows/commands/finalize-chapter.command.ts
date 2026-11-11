@@ -479,6 +479,7 @@ export class RunFinalizePostProcessCommand extends BaseWorkflowCommand<PostProce
       {
         stopOnFailure: this.params.stopOnFailure,
         onlyFailed: this.params.onlyFailed,
+        rerun: stepKeys,
         finalizedSource: this.params.finalizedSource,
         cancellation: context,
         projectSession,
