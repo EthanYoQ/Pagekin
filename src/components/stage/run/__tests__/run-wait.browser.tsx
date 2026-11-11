@@ -293,12 +293,16 @@ describe('长任务百分比不动时说明在等什么（#631）', () => {
       await mount()
       await advance(16_000)
       const before = announced()
+      expect(before).toBe('尚无完整审稿报告。等待期间可随时中止。')
       expect(notes().join()).toContain('已等 16 秒')
       for (let second = 0; second < 5; second += 1) {
         await advance(1_000)
         expect(announced()).toBe(before)
       }
       expect(notes().join()).toContain('已等 21 秒')
+      const ticking = [...host!.querySelectorAll('.run-step-wait > p')].filter(line => /已等|距最近/u.test(line.textContent ?? ''))
+      expect(ticking).toHaveLength(3)
+      expect(ticking.filter(line => line.closest('[role="status"]'))).toEqual([])
     })
 
     it('子步骤切换时播报内容随之变化', async () => {

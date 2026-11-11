@@ -292,7 +292,7 @@ describe('ImportRunOrchestrator', () => {
     expect(getRun().stage).toBe('refresh')
   })
 
-  it('holds resumed completion at the last saved chapter while the next one runs and clears its activity once saved', async () => {
+  it('holds resumed completion at the last saved chapter while the next one runs and clears its activity once the stage ends', async () => {
     const numbers = Array.from({ length: 9 }, (_, index) => index + 1)
     const { deps } = harness(9, {
       purpose: 'author-manuscript', stage: 'author-postprocess',

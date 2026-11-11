@@ -685,7 +685,6 @@ export class ImportRunOrchestrator {
             execution.current,
           )
           run = completed.run
-          callbacks.setActivityText?.(undefined)
         }
         visited += 1
         callbacks.setProgress(Math.min(99, Math.round((visited / run.totalChapters) * 100)))
@@ -694,6 +693,7 @@ export class ImportRunOrchestrator {
       after = page.at(-1)!.number
       page = await this.dependencies.listChapters(run.id, after, IMPORT_CHAPTER_PAGE_SIZE)
     }
+    callbacks.setActivityText?.(undefined)
     execution.current = await this.dependencies.renewExecution(run.id, execution.current)
     stopIfCancelled(context, run.locale)
     await this.dependencies.advanceStage(run.id, stage, nextStage(run, stage), execution.current)
