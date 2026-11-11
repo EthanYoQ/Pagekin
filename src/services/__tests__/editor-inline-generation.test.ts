@@ -141,3 +141,12 @@ it('按意见改：恢复带回原意见，main 回的意见与提交的不同�
   bridge(vi.fn(async () => stored))
   await expect(createEditorInlineGeneration(session).open({ input: { ...noted, instruction: '改成对话' }, modelId: '模型', uiActionNonce: '动作' })).rejects.toThrow('EDITOR_INLINE_CONTEXT_MISMATCH')
 })
+it('批注统一修改：恢复带回全部批注，main 回的批注与提交的不同就拒绝', async () => {
+  const annotations = [{ id: '批注一', from: 0, to: 1, selectedText: '甲', instruction: '改成丙' }, { id: '批注二', from: 3, to: 4, selectedText: '乙', instruction: '改成丁' }]
+  const batch = { ...input, action: 'batch-instruct' as const, from: 0, to: input.documentText.length, selectedText: input.documentText, annotations }
+  const stored = { ...await recovery(), context: { ...(await recovery()).context, ...batch } }
+  bridge(vi.fn(async () => stored))
+  expect((await createEditorInlineGeneration(session).open({ handle })).context).toMatchObject({ action: 'batch-instruct', annotations })
+  bridge(vi.fn(async () => stored))
+  await expect(createEditorInlineGeneration(session).open({ input: { ...batch, annotations: [annotations[0]] }, modelId: '模型', uiActionNonce: '动作' })).rejects.toThrow('EDITOR_INLINE_CONTEXT_MISMATCH')
+})

@@ -177,9 +177,8 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 onSave={body => draft.save(body)}
                 onCommitAnnotations={async (before, after, annotations) => {
                   const activeSession = captureProjectSession(useProjectStore.getState().currentProject)
-                  if (!activeSession || !draft.meta || draft.currentBodyRef.current !== before) throw new Error('SOURCE_DRAFT_CHANGED')
                   const savedTab = useEditorStore.getState().tabs.find(item => item.id === tab.id)
-                  if (!isProjectSessionCurrent(activeSession) || !savedTab || typeof savedTab.savedContent !== 'string' || savedTab.content !== before) throw new Error('SOURCE_DRAFT_CHANGED')
+                  if (!activeSession || !draft.meta || !savedTab || typeof savedTab.savedContent !== 'string' || savedTab.content !== before) throw new Error('SOURCE_DRAFT_CHANGED')
                   const result = await ipc.invokeWithProjectSession(activeSession, 'db:annotation-commit', { draftId: draft.meta.id, expectedSaved: savedTab.savedContent, before, after, annotations }, activeSession.projectPath)
                   if (!result.success) throw new Error(result.error || 'ANNOTATION_COMMIT_FAILED')
                   if (!isProjectSessionCurrent(activeSession)) return
