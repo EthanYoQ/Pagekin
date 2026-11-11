@@ -153,8 +153,8 @@ describe('chapter Markdown outline contract', () => {
     expect(synopsisForDraftChapter(synopsis, 1)).toBe(synopsis)
     expect([first, second].every((entry, index) => validPlotOutlineEntry(entry, index + 1))).toBe(false)
   })
-  it('accepts ordinary Chinese prose starting with 第 without requesting a compact retry', () => {
-    const text = '## 第7章：标题\n\n第一次见面时，她正在修改一篇文章。'
+  it.each(['第一次见面时，她正在修改一篇文章。', '- 第一次见面时，她正在修改一篇文章。'])('accepts ordinary Chinese prose starting with 第 without requesting a compact retry: %s', prose => {
+    const text = `## 第7章：标题\n\n${prose}`
     expect(validPlotOutlineEntry(text, 7)).toBe(true)
     expect(derivePlotOutlineCursor({ from: 1, to: 8 }, 6, [{
       purpose: 'plot-outline:chapter:7:normal', status: 'settled', finishReason: 'stop',
@@ -163,7 +163,7 @@ describe('chapter Markdown outline contract', () => {
   })
   it.each([
     '第7章：重复章', '## 第8章：下一章', '- 第8章：下一章', '第8章：下一章',
-    '第8至9章：合并章', '第八、九章：合并章',
+    '第8至9章：合并章', '第八、九章：合并章', '第8/9章：合并章', '第八／九章：合并章',
     '第8至第9章：后续分章', '第８章：下一章', '第八～第九章：合并章',
     '第 八 章：下一章', '第 8–9 章：章组', '第八-九章：章组', '第8 — 9章：章组',
     '## 章外概览', 'Chapter 8: Next', '- Chapters 8-9: Group',
