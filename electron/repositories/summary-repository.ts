@@ -438,15 +438,15 @@ function commitDerivedRelations(db: BetterSqlite3.Database, context: FinalizedCh
     const previous = latestNodesBefore(readCharacterContinuityNodes(db, change.sourceId), source.chapterNumber + 1).relations
       .flatMap(pair => pair.lines).find(line => line.relationshipId === series)
     const unchanged = previous?.value === change.relation
-    const matchesAuthor = pair.all.includes(change.relation)
+    const authorAtExtraction = context.authorRelations?.filter(line => unorderedPairKey(line.sourceId, line.targetId) === unorderedPairKey(change.sourceId, change.targetId))
+    const authorLinesAtExtraction = authorAtExtraction?.map(line => JSON.stringify([line.sourceId, line.targetId, line.relation])).sort()
+    const matchesAuthor = !!authorAtExtraction?.some(line => line.relation === change.relation)
     if (matchesAuthor && (!previous || unchanged)) continue
     if (unchanged && !(previous.provenance.kind === 'derived' && previous.provenance.source.finalizationId === source.finalizationId)) continue
     const names = { sourceName: name(change.sourceId), targetName: name(change.targetId) }
-    const authorLinesAtExtraction = context.authorRelations?.filter(line => unorderedPairKey(line.sourceId, line.targetId) === unorderedPairKey(change.sourceId, change.targetId))
-      .map(line => JSON.stringify([line.sourceId, line.targetId, line.relation])).sort()
     if (!unchanged) appendDerivedRelationNode(db, { ...change, ...names, source, quote: change.evidence, authorLinesAtExtraction })
-    if (pair.rows.length && !matchesAuthor) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
-      ...names, value: change.relation, evidence: change.evidence, authorLinesAtCreation: pair.lines })
+    if (authorLinesAtExtraction?.length && !matchesAuthor) candidates.push({ candidateKey: relationCandidateKey(source, change), source: structuredClone(source), sourceId: change.sourceId, targetId: change.targetId,
+      ...names, value: change.relation, evidence: change.evidence, authorLinesAtCreation: authorLinesAtExtraction })
   }
   if (!changes.length) return
   const row = candidateRowOf(db, source, context.projectionGeneration)
