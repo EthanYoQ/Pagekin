@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT } from 'diff-match-patch'
+import { Check } from 'lucide-react'
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
 import { routeModelId } from '../../services/model-routing'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
 import type { EditorInlineAnnotation } from '../../shared/editor-inline-generation'
 import { useLocaleStore } from '../../stores/locale-store'
-import { Check } from 'lucide-react'
 import { Button } from '../ui/Button'
 
 type Piece = { kind: 'same'; text: string } | { kind: 'change'; index: number; from: number; to: number; before: string; after: string }
