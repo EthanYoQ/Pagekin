@@ -515,7 +515,7 @@ describe('单章视图的主按钮随五种状态变化', () => {
       expect(cardRetry()).toBeNull()
     })
 
-    it('#512 章节要点在生成期间被作者改过：这一行能重试，说明写明重试会替换作者改的要点', async () => {
+    it('#512 章节要点在生成期间被作者改过：这一行能重试，说明先讲作者的改动已保留，不劝作者别重试', async () => {
       await show([
         { stepKey: 'kb_import', label: '导入知识库', ok: true },
         { stepKey: 'chapter_notes', label: '章节剧情要点', ok: false, attemptCount: 3, errorMsg: `${IPC}GENERATION_FINALIZATION_NOTES_CHANGED` },
@@ -525,7 +525,10 @@ describe('单章视图的主按钮随五种状态变化', () => {
       expect(cardRetry()).toBe('重试失败步骤')
       const detail = host!.querySelector('.stage-ch-post-step[data-state="failed"] .stage-ch-post-detail')!.textContent!
       expect(detail).not.toMatch(/GENERATION_|Error invoking/u)
-      expect(detail).toContain('替换')
+      expect(detail).toContain('改动已保留')
+      expect(detail).toContain('想留就先复制一份')
+      expect(detail).toContain(`点「${cardRetry()}」`)
+      expect(detail).not.toContain('不要重试')
     })
 
     it.each([

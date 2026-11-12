@@ -1156,7 +1156,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   }
   const finalizationRecovery = (run: DurableGenerationRun): FinalizationGenerationRecovery => {
     assertCurrent()
-    const context = readFinalizationGenerationContext(run), effect = finalizations.readEffect(run)
+    const context = readFinalizationGenerationContext(run), effect = finalizations.effectInForce(run)
     let current = false
     try { current = repository.budget(run.rootActionId).root.status !== 'cancelled' && compareGenerationSourceBindings(run.binding, deps.rebuildBinding(run.binding, currentModelReceipt(run.binding))) } catch { /* History remains readable without current source/model admission. */ }
     const attempts = runAttempts(run.runId), last = attempts.at(-1)
@@ -1180,7 +1180,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   }
   /** 作者点重试时能否另开运行：本运行没有写入结果、没有在途请求，最后的候选也不能直接提交。能提交的候选沿用它，不重新计费。 */
   const finalizationRetriesWithNewRun = (run: DurableGenerationRun): boolean => {
-    if (finalizations.readEffect(run) || repository.budget(run.rootActionId).attempts.some(attempt => ['reserved', 'dispatch-marked'].includes(attempt.status))) return false
+    if (finalizations.effectInForce(run) || repository.budget(run.rootActionId).attempts.some(attempt => ['reserved', 'dispatch-marked'].includes(attempt.status))) return false
     const candidate = viewOf(run).candidates?.at(-1)
     if (candidate?.status !== 'completed' || !candidate.compositionEligible) return true
     const context = readFinalizationGenerationContext(run)
@@ -1408,7 +1408,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       const target = authorRetry && parentRootActionId ? repository.budget(parentRootActionId) : undefined
       const blockedCode = target && (target.blockedCode ?? (rootBudgetExhausted(target.policy, target.attempts, target.activeElapsedMs) ? 'ROOT_BUDGET_EXHAUSTED' : null))
       if (blockedCode) throw new Error(blockedCode)
-      if (sibling && !finalizations.readEffect(sibling)) throw new Error('GENERATION_FINALIZATION_PREDECESSOR_REQUIRED')
+      if (slot.stepKey === 'character_cards' && sibling && !finalizations.effectInForce(sibling)) throw new Error('GENERATION_FINALIZATION_PREDECESSOR_REQUIRED')
       const prepared = finalizedCharacters.readContext(slot.source.draftId)
       if (!isDeepStrictEqual(prepared.context.source, slot.source)) throw new Error('GENERATION_FINALIZATION_SOURCE_CHANGED')
       const characterStep = slot.stepKey === 'character_cards'

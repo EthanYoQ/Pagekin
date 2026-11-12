@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { displayedErrorMessage, errorCodeOf } from '../../../i18n/app-errors'
 import {
-  releaseShownContinuityCheck, pendingContinuityCheck, readLatestContinuityReport, runContinuityCheck,
+  releaseShownContinuityCheck, pendingContinuityCheck, readContinuityReport, readLatestContinuityReport, runContinuityCheck,
   type ContinuityCheckOutcome, type ContinuityReport,
 } from '../../../services/blueprint-continuity-check'
 import { exemptionChapter, saveFindingExemption, type ExemptionScope } from '../../../services/consistency-preflight'
@@ -54,11 +54,13 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const [busy, setBusy] = useState(false)
   const checked = useRef(false)
   const recovery = useRef(0)
+  const shownRun = useRef<ContinuityReport['handle'] | null>(null)
   const mounted = useRef(false)
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
+  useEffect(() => { shownRun.current = report?.handle ?? null }, [report])
 
   const currentSession = useCallback(() => sessionFor(projectKey), [projectKey])
 
@@ -68,10 +70,14 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   }, [])
 
   /** 结论记的是读取当时的来源状态；蓝图保存后重读，章改回原样时才不会让整份结论一直判作过期。 */
-  const recoverLatest = useCallback((session: ProjectSessionContext, applies: () => boolean) => {
+  const recoverLatest = useCallback((session: ProjectSessionContext, applies: () => boolean, keepShown: boolean) => {
     const request = ++recovery.current
     void readLatestContinuityReport(session)
-      .then(latest => { if (applies() && request === recovery.current && !checked.current) setReport(latest) }).catch(() => {})
+      .then(async latest => {
+        const shown = keepShown ? shownRun.current : null
+        const next = shown && shown.runId !== latest?.handle.runId ? await readContinuityReport(session, shown) : latest
+        if (applies() && request === recovery.current && !checked.current) setReport(next)
+      }).catch(() => {})
   }, [])
 
   useEffect(() => globalEventBus.on('REFRESH_RESOURCE', ({ projectSession, resources }) => {
@@ -80,7 +86,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
     if (resources.some(kind => kind === 'drafts' || kind === 'characterCards' || kind === 'all'))
       void readTimeline(session).catch(() => {})
     if (!checked.current && resources.some(kind => kind === 'blueprints' || kind === 'all'))
-      recoverLatest(session, () => mounted.current && isProjectSessionCurrent(session))
+      recoverLatest(session, () => mounted.current && isProjectSessionCurrent(session), true)
   }), [currentSession, readTimeline, recoverLatest])
 
   const readExemptions = useCallback(async (session: ProjectSessionContext) => {
@@ -127,7 +133,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
       .then(list => { if (applies()) setExemptions(list) }).catch(() => {})
     const pending = pendingContinuityCheck(session)
     if (pending) void follow(session, pending)
-    recoverLatest(session, applies)
+    recoverLatest(session, applies, false)
     return () => { active = false }
   }, [currentSession, sessionLease, follow, recoverLatest])
 

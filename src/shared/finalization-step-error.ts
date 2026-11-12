@@ -3,7 +3,7 @@
  * prompt 有用，说明末尾补提示；described 可能有用，说明里已写明前提，不再补；never 结果也一样，不摆重试；
  * after 要等那一步成功后才有用，整卡重试会把它排在那一步之后一起重跑。
  */
-type StepRetry = 'prompt' | 'described' | 'never' | { after: string }
+type StepRetry = 'prompt' | 'described' | 'never' | { after: string; rerunIfSucceeded?: true }
 
 /** 从回收站恢复的章：知识库文档在删除时已清掉，kb_import 记这个码等重导（ADR-0025）。 */
 export const CHAPTER_RESTORED_REPROJECTION_PENDING = 'CHAPTER_RESTORED_REPROJECTION_PENDING'
@@ -61,15 +61,14 @@ const FINALIZATION_STEP_ERRORS: { code: RegExp; zh: string; en: string; enMany?:
   { code: /^FINALIZED_CHARACTER_ID_RETIRED$/, retry: 'never',
     zh: '正文定稿已保存，但这一步没有写入：本章定稿时角色名单里的角色，有的后来被删除了，再点「重试」结果也一样。请重新定稿本章后再处理。',
     en: 'The finalized chapter text is saved, but this step was not saved: a character who was in the cast when this chapter was finalized has since been deleted. Retrying gives the same result. Finalize this chapter again to run this step.' },
-  // 作者在生成期间改了本章「章节要点」（#512）。重试另开一次运行按现在的要点重新生成，写入时会替换作者的改动。
   { code: /^GENERATION_FINALIZATION_NOTES_CHANGED$/, retry: 'described',
-    zh: '生成期间本章的「章节要点」被改动过（例如在章节蓝图里手动修改），为免覆盖这次改动，本次没有写入，角色状态更新也还没有进行。点「重试」会重新生成，并用新结果替换现在的章节要点；想保留这次改动就不要重试。',
-    en: "This chapter's Chapter notes changed while this step was running (for example, they were edited on the chapter blueprint), so nothing was written to avoid overwriting that change, and the character state update has not run yet. Retry generates the notes again and replaces the current Chapter notes. To keep your change, don't retry." },
+    zh: '生成期间本章的「章节要点」有改动，改动已保留，这一步没有写入，角色状态也还没更新。点「重试失败步骤」会重新生成要点并更新角色状态；蓝图里你改的要点可能被新结果换掉，想留就先复制一份。',
+    en: "Chapter notes changed while this step was running. The change is kept, so nothing was written and the character state has not been updated yet. Select Retry failed steps to generate the notes again and update the character state. Your edited notes on the chapter blueprint may be replaced by the new ones, so copy them first if you want to keep them." },
   // 作品放在不支持硬链接的磁盘上，知识库每次提交都失败（#571）；搬到支持的磁盘后重试才有用。
   { code: /^KNOWLEDGE_BASE_VOLUME_UNSUPPORTED$/, retry: 'described',
     zh: '正文定稿已保存，但没能收进知识库：作品文件夹所在的磁盘不支持知识库要用的文件操作，常见于 exFAT、FAT32 格式的移动硬盘和 U 盘，留在这个磁盘上再点「重试」结果也一样。请退出书童，把整个作品文件夹移到 NTFS 格式的磁盘（Mac 上用 APFS 格式），打开新位置的作品后再点「重试」。',
     en: "The finalized chapter text is saved, but it could not be added to the knowledge base: the drive holding this book's folder does not support a file operation the knowledge base needs. This is common on external drives and USB sticks formatted as exFAT or FAT32, and retrying on that drive gives the same result. Quit Pagekin, move the whole book folder to an NTFS drive (APFS on a Mac), open the book from its new location, then select Retry." },
-  { code: /^GENERATION_FINALIZATION_PREDECESSOR_REQUIRED$/, retry: { after: 'chapter_notes' },
+  { code: /^GENERATION_FINALIZATION_PREDECESSOR_REQUIRED$/, retry: { after: 'chapter_notes', rerunIfSucceeded: true },
     zh: '需要先完成「章节剧情要点」。', en: 'Chapter plot notes must finish first.' },
   { code: /^FINALIZATION_REPLACED_KNOWLEDGE_IMPORT_REQUIRED$/, retry: { after: 'kb_import' },
     zh: '需要先完成「导入知识库」。新定稿收进知识库之前，旧版本的那一份先留着。',
@@ -146,11 +145,11 @@ export const REPLACED_FINAL_CLEANUP_STEP_LABELS: Readonly<Record<ReplacedFinalCl
 }
 
 /**
- * 一张定稿后处理卡（步骤名到结果）的重试安排。rows：可以单独重试的未成功步骤；card：「重试失败步骤」要重跑的步骤，按卡上顺序；
- * retired：现在流程已没有的步骤，不重试。
+ * 一张定稿后处理卡（步骤名到结果）的重试安排。rows：可以单独重试的未成功步骤，各自对应这次重试要跑的步骤；
+ * card：「重试失败步骤」要重跑的步骤，按卡上顺序；retired：现在流程已没有的步骤，不重试。
  * 现有步骤没有错误或错误没登记的照常可以重试。
  */
-export function planFinalizationRetry(steps: Readonly<Record<string, { ok: boolean; error?: string }>>): { rows: ReadonlySet<string>; card: readonly string[]; retired: ReadonlySet<string> } {
+export function planFinalizationRetry(steps: Readonly<Record<string, { ok: boolean; error?: string }>>): { rows: ReadonlyMap<string, readonly string[]>; card: readonly string[]; retired: ReadonlySet<string> } {
   const entries = Object.entries(steps)
   const retired = new Set(entries.map(([key]) => key).filter(key => !CURRENT_STEPS.has(key)))
   const succeeded = new Set(entries.filter(([, step]) => step.ok).map(([key]) => key))
@@ -159,5 +158,9 @@ export function planFinalizationRetry(steps: Readonly<Record<string, { ok: boole
   const pick = (ready: (key: string) => boolean) => unfinished
     .filter(step => direct.has(step.key) || typeof step.retry === 'object' && ready(step.retry.after))
     .map(step => step.key)
-  return { rows: new Set(pick(key => succeeded.has(key))), card: pick(key => succeeded.has(key) || direct.has(key)), retired }
+  const withSucceededPredecessors = (keys: readonly string[]) => {
+    const rerun = unfinished.flatMap(step => keys.includes(step.key) && typeof step.retry === 'object' && step.retry.rerunIfSucceeded && succeeded.has(step.retry.after) ? [step.retry.after] : [])
+    return entries.map(([key]) => key).filter(key => keys.includes(key) || rerun.includes(key))
+  }
+  return { rows: new Map(pick(key => succeeded.has(key)).map(key => [key, withSucceededPredecessors([key])])), card: withSucceededPredecessors(pick(key => succeeded.has(key) || direct.has(key))), retired }
 }

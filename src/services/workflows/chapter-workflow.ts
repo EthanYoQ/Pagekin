@@ -546,11 +546,11 @@ export function createRepairFinalizeWorkflow(
           const { getChapterFinalizeScope, readPostProcessStatus } = await import('./workflow-utils')
           const { planFinalizationRetry } = await import('../../shared/finalization-step-error')
           const current = await readPostProcessStatus(projectPath, getChapterFinalizeScope(chapterNumber), projectSession)
-          let stepKeys: readonly string[] | undefined
-          if (current) {
-            const plan = planFinalizationRetry(current.steps)
-            stepKeys = stepKey ? [stepKey].filter(key => plan.rows.has(key)) : plan.card
+          const arrange = (steps: Parameters<typeof planFinalizationRetry>[0]) => {
+            const plan = planFinalizationRetry(steps)
+            return stepKey ? plan.rows.get(stepKey) ?? [] : plan.card
           }
+          let stepKeys = current ? arrange(current.steps) : undefined
           if (stepKeys?.length === 0) throw new Error(text(
             '没有可以重试的失败步骤，请按各步骤的说明处理。',
             'No failed step can be retried. Follow the note on each step.',
@@ -558,7 +558,7 @@ export function createRepairFinalizeWorkflow(
 
           // 修复运行也冻结一次模型租约，全部 LLM 后处理共享一个预算。
           const { RunFinalizePostProcessCommand } = await import('./commands/finalize-chapter.command')
-          const status = await new RunFinalizePostProcessCommand({
+          const run = (keys: readonly string[] | undefined) => new RunFinalizePostProcessCommand({
             project,
             chapterNumber,
             chapterTitle,
@@ -571,9 +571,16 @@ export function createRepairFinalizeWorkflow(
             ),
             onlyFailed: true,
             retryInvalidResult: true,
-            stepKeys,
+            stepKeys: keys,
             chapterEntities,
           }).execute({ step: {}, context, callbacks })
+          let status = await run(stepKeys)
+          const afterThisRun = stepKeys && arrange(status.steps)
+          const predecessorTurnedOutStale = afterThisRun?.some(key => status.steps[key]?.ok)
+          if (stepKeys && afterThisRun && predecessorTurnedOutStale) {
+            status = await run(afterThisRun)
+            stepKeys = [...new Set([...stepKeys, ...afterThisRun])]
+          }
 
           // 后处理修复不会产生新定稿快照，只请求项目资源刷新。
           const { globalEventBus } = await import('../../shared/event-bus')
