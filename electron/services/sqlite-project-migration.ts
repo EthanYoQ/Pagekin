@@ -24,9 +24,13 @@ const QUALIFIED_V110_SCHEMA = '1207fd8203e31503e3cd09ba5b60a959c606ded34a8c8c777
 const QUALIFIED_EARLY_V110_SCHEMA = '2504dde08865f758f654d38ae3d972420c28fa60d1f747e92898390455272de6'
 const QUALIFIED_OFFICIAL_V100_LAZY_SCHEMA = '29838d67b3b0338b717c7488a7a2841c40fdacbb58598a83358bd73b6bda4673'
 const QUALIFIED_V092_LAZY_SCHEMA = '7a34ee78ddace39804d64ce8a42c054f11d9d27a559ff99cbd345921088ba050'
+const QUALIFIED_V100_LAZY_SCHEMA = '90ef4323d226be7e5593b8b33c6839656f88c4a5da3d9ebaf9aff9150eb95cb6'
+const QUALIFIED_V110_LAZY_SCHEMA = '6482cec23151f65e9fa1b0535cb7f9fa8ab16cfafa7cd264243730f1e54ac7b5'
 const QUALIFIED_PRE_V110_SCHEMAS = [QUALIFIED_V100_SCHEMA, QUALIFIED_OFFICIAL_V100_SCHEMA,
-  QUALIFIED_OFFICIAL_V100_LAZY_SCHEMA, QUALIFIED_V092_LAZY_SCHEMA]
-const QUALIFIED_LEGACY_SCHEMAS = [...QUALIFIED_PRE_V110_SCHEMAS, QUALIFIED_V110_SCHEMA, QUALIFIED_EARLY_V110_SCHEMA]
+  QUALIFIED_OFFICIAL_V100_LAZY_SCHEMA, QUALIFIED_V092_LAZY_SCHEMA, QUALIFIED_V100_LAZY_SCHEMA]
+const QUALIFIED_LAZY_SCHEMAS = [QUALIFIED_V092_LAZY_SCHEMA, QUALIFIED_OFFICIAL_V100_LAZY_SCHEMA,
+  QUALIFIED_V100_LAZY_SCHEMA, QUALIFIED_V110_LAZY_SCHEMA]
+const QUALIFIED_LEGACY_SCHEMAS = [...QUALIFIED_PRE_V110_SCHEMAS, QUALIFIED_V110_SCHEMA, QUALIFIED_V110_LAZY_SCHEMA, QUALIFIED_EARLY_V110_SCHEMA]
 const V092_MISSING_REVIEW_COLUMNS = ['source_draft_chapter_number', 'source_draft_version', 'source_draft_status', 'source_content']
 const EARLY_V110_TABLES = [
   'blueprints', 'characters', 'contents', 'drafts', 'llm_calls', 'post_process_runs',
@@ -158,7 +162,7 @@ function inspectSource(db: BetterSqlite3.Database, registry: MigrationRegistry, 
 function copyQualifiedLegacy(source: BetterSqlite3.Database, staging: BetterSqlite3.Database, sourceColumns: DomainColumns, fingerprint: string): void {
   initializeLegacyBaselineSchema(staging)
   const v092 = fingerprint === QUALIFIED_V092_LAZY_SCHEMA
-  if (v092 || fingerprint === QUALIFIED_OFFICIAL_V100_LAZY_SCHEMA) ensureBaselineBlueprintTables(staging)
+  if (QUALIFIED_LAZY_SCHEMAS.includes(fingerprint)) ensureBaselineBlueprintTables(staging)
   const targetColumns = domainColumns(staging)
   const columnSets = (tables: DomainColumns) => tables.map(({ name, columns }) => [name, [...columns].sort()])
   const missingColumns = v092 ? { ...V100_MISSING_COLUMNS,

@@ -1,11 +1,13 @@
 import type { ContinuityCheckChapter, ContinuityCheckNode, ContinuityCheckResult } from '../shared/blueprint-continuity-check'
 import type { GraphGenerationRecovery } from '../shared/graph-generation'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
+import type { MainGenerationRunHandle } from './generation/generation-runtime'
 import { throwIfLastAttemptTerminal } from './generation/generation-harness'
 import { createGraphGeneration } from './graph-generation'
 import { ipc } from './ipc-client'
 
 export interface ContinuityReport {
+  handle: MainGenerationRunHandle
   /** 结果读回来时，来源（蓝图、时间线、模型）和检查时是否一致。 */
   sourceStatus: GraphGenerationRecovery['sourceStatus']
   chapters: ReadonlyMap<number, ContinuityCheckChapter>
@@ -22,6 +24,7 @@ export type ContinuityCheckOutcome =
 function reportOf(recovery: GraphGenerationRecovery): ContinuityReport | null {
   if (recovery.context.kind !== 'continuity' || recovery.result?.kind !== 'continuity') return null
   return {
+    handle: recovery.view.handle,
     sourceStatus: recovery.sourceStatus,
     chapters: new Map(recovery.context.chapters.map(chapter => [chapter.chapterNumber, chapter])),
     nodes: new Map(recovery.context.nodes.map(node => [node.eventId, node])),
@@ -62,4 +65,8 @@ async function checkContinuity(session: ProjectSessionContext, modelId: string):
 export async function readLatestContinuityReport(session: ProjectSessionContext): Promise<ContinuityReport | null> {
   const recovery = await ipc.invokeWithProjectSession(session, 'graph-generation:latest-continuity')
   return recovery && reportOf(recovery)
+}
+
+export async function readContinuityReport(session: ProjectSessionContext, handle: MainGenerationRunHandle): Promise<ContinuityReport | null> {
+  return reportOf(await ipc.invokeWithProjectSession(session, 'graph-generation:read', { handle }))
 }

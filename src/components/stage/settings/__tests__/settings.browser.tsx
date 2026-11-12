@@ -203,6 +203,39 @@ describe('设置页', () => {
     expect(useLLMStore.getState().deleteModel).toHaveBeenCalledWith('local')
   })
 
+  async function editLocalWhileDeleting(deleted: boolean) {
+    let finish!: () => void
+    const saveModel = vi.fn(async () => true)
+    useLLMStore.setState({ saveModel, deleteModel: vi.fn(() => new Promise<boolean>(resolve => {
+      finish = () => {
+        if (deleted) useLLMStore.setState({ models: [MODEL] })
+        resolve(deleted)
+      }
+    })) })
+    await mount()
+    await click(byName('「本机 Ollama」更多操作'))
+    await click([...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === '删除模型…'))
+    await click([...document.querySelector('[role="dialog"]')!.querySelectorAll('button')].find(button => button.textContent === '删除模型'))
+    await click(byName('编辑「本机 Ollama」'))
+    await act(async () => finish())
+    return saveModel
+  }
+
+  it('确认删除后、删完之前点了编辑：删完表单关掉，列表里没有它，不能再存回来', async () => {
+    const saveModel = await editLocalWhileDeleting(true)
+
+    expect(byName('保存配置')).toBeUndefined()
+    expect(byName('编辑「本机 Ollama」')).toBeUndefined()
+    expect(saveModel).not.toHaveBeenCalled()
+  })
+
+  it('确认删除后、删完之前点了编辑：删除失败时表单留着，照常能保存', async () => {
+    const saveModel = await editLocalWhileDeleting(false)
+
+    await click(byName('保存配置'))
+    expect(saveModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'local' }))
+  })
+
   const LEARNED = { ...MODEL, learnedContextWindow: { tokens: 65_536, provider: MODEL.provider, protocol: MODEL.protocol, baseUrl: MODEL.baseUrl, modelName: MODEL.modelName } }
   function mainProcessModels(models: ModelProfile[]) {
     const invoke = win.aiNovelAPI!.invoke

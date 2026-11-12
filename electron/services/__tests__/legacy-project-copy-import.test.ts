@@ -1084,3 +1084,31 @@ it('有定稿收据的旧项目复制导入后，替换那一章再写稿、导�
     snapshotGeneration: 'legacy-replaced',
   })).resolves.toBeTruthy()
 })
+
+it('v1.1 建过惰性蓝图表的项目复制导入后，蓝图与待同步操作原样可读', async () => {
+  const { BlueprintRepository } = await import('../../repositories/blueprint-repository')
+  const { ensureBaselineBlueprintTables } = await import('../../migrations/baseline-blueprint-schema')
+  const f = fixture('v110', ''), source = new Database(path.join(f.legacy, 'vela.db'))
+  const blueprint = { chapterNumber: 1, title: '第一章', role: 'setup', purpose: '开局', keyEvents: '相遇', characters: ['主角'],
+    suspenseHook: '谁在门外', userGuidance: '慢热', notes: '作者备注', notesUpdatedAt: '' }
+  try {
+    ensureBaselineBlueprintTables(source)
+    source.prepare(`INSERT INTO blueprints(chapter_number,title,role,purpose,key_events,characters,suspense_hook,user_guidance,notes)
+      VALUES(1,'第一章','setup','开局','相遇','["主角"]','谁在门外','慢热','作者备注')`).run()
+    const insertCommit = source.prepare(`INSERT INTO blueprint_commit_operations(operation_id,payload_hash,mode,start_chapter,end_chapter,character_sync_input)
+      VALUES(?,?,'replace-range',1,1,?)`)
+    const insertSync = source.prepare(`INSERT INTO blueprint_character_sync_operations(operation_id,blueprint_commit_operation_id,
+      blueprint_commit_payload_hash,status,start_chapter,end_chapter,character_sync_input,completion_receipt) VALUES(?,?,?,?,1,1,?,?)`)
+    for (const [id, status] of [['done', 'completed'], ['waiting', 'pending']] as const) {
+      insertCommit.run(id, 'e'.repeat(64), JSON.stringify([blueprint]))
+      insertSync.run(`blueprint-sync-${id}`, id, 'e'.repeat(64), status, JSON.stringify([blueprint]), status === 'completed'
+        ? JSON.stringify({ blueprintCommitOperationId: id, operationId: `blueprint-sync-${id}`, status: 'already-satisfied' }) : null)
+    }
+  } finally { source.close() }
+
+  const result = await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions })
+  expect(result, JSON.stringify(result)).toMatchObject({ state: 'ready' })
+  initProjectDatabase(f.target)
+  expect(BlueprintRepository.getAll()).toMatchObject([blueprint])
+  expect(BlueprintRepository.listPendingCharacterSyncOperations().map(operation => operation.operationId)).toEqual(['blueprint-sync-waiting'])
+})

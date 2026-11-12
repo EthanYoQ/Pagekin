@@ -23,17 +23,17 @@ export class FinalizationGeneration {
     for (const row of rows) {
       const run = this.runs.get(row.run_id)
       if (run.binding.projectId !== this.projectId || !isDeepStrictEqual(readFinalizationGenerationContext(run).slot, slot)
-        || previous && (this.readEffect(previous) || row.ui_action_nonce !== `finalization:${key}:retry:${previous.runId}`))
+        || previous && (this.effectInForce(previous) || row.ui_action_nonce !== `finalization:${key}:retry:${previous.runId}`))
         throw new Error('GENERATION_FINALIZATION_SLOT_CONFLICT')
       previous = run
     }
     return previous
   }
   retryable(run: DurableGenerationRun): boolean {
-    if (this.readEffect(run)) return false
+    if (this.effectInForce(run)) return false
     const context = readFinalizationGenerationContext(run), budget = this.runs.budget(run.rootActionId)
     if (budget.attempts.some(attempt => ['reserved', 'dispatch-marked'].includes(attempt.status))) return false
-    return budget.root.status === 'cancelled' || context.slot.stepKey === 'chapter_notes'
+    return budget.root.status === 'cancelled' || this.sealedEffect(run) !== undefined || context.slot.stepKey === 'chapter_notes'
       && !isDeepStrictEqual(finalizationNotesBaseline(this.db, context.slot), context.notesBaseline)
   }
   require(handle: MainGenerationRunHandle): DurableGenerationRun {
@@ -58,7 +58,12 @@ export class FinalizationGeneration {
       || receipt.failureCode || !['settled', 'unknown'].includes(receipt.attempt.status) || receipt.result?.finishReason !== 'stop') throw new Error('GENERATION_FINALIZATION_ARTIFACT_INVALID')
     return { artifact, attemptId: row.attempt_id, receipt }
   }
-  readEffect(run: DurableGenerationRun): FinalizationGenerationEffect | undefined {
+  effectInForce(run: DurableGenerationRun): FinalizationGenerationEffect | undefined {
+    const sealed = this.sealedEffect(run), context = readFinalizationGenerationContext(run)
+    return sealed?.stepKey === 'chapter_notes'
+      && SummaryRepository.currentNotesGeneration(context.slot.source.draftId, this.db) !== context.identity.projectionGeneration ? undefined : sealed
+  }
+  private sealedEffect(run: DurableGenerationRun): FinalizationGenerationEffect | undefined {
     const context = readFinalizationGenerationContext(run)
     const rows = this.db.prepare('SELECT attempt_id,usage_receipt_json FROM generation_attempts WHERE run_id=? ORDER BY rowid').all(run.runId) as { attempt_id: string; usage_receipt_json: string }[]
     const effects = rows.map(row => ({ attemptId: row.attempt_id, effect: JSON.parse(row.usage_receipt_json).finalizationEffect as SavedEffect | undefined })).filter(item => !!item.effect)
@@ -80,14 +85,14 @@ export class FinalizationGeneration {
   }
   assertMutable(run: DurableGenerationRun): void {
     if (!run.binding.sourceManifest.finalizationGenerationContext) return
-    if (this.readEffect(run)) throw new Error('GENERATION_FINALIZATION_EFFECT_SEALED')
+    if (this.sealedEffect(run)) throw new Error('GENERATION_FINALIZATION_EFFECT_SEALED')
     if (this.find(readFinalizationGenerationContext(run).slot)?.runId !== run.runId) throw new Error('GENERATION_FINALIZATION_SUPERSEDED')
   }
   commit(handle: MainGenerationRunHandle, reference: FinalizedCharacterArtifact, characters: CharacterProposalService, assertSources: (run: DurableGenerationRun) => void): FinalizationGenerationEffect {
     return this.db.transaction(() => {
       const run = this.require(handle), context = readFinalizationGenerationContext(run), proof = this.artifact(run, reference)
       const usage = JSON.parse(this.db.prepare('SELECT usage_receipt_json FROM generation_attempts WHERE attempt_id=?').pluck().get(proof.attemptId) as string) as Record<string, unknown>
-      const saved = this.readEffect(run)
+      const saved = this.sealedEffect(run)
       if (saved) {
         if (!isDeepStrictEqual((usage.finalizationEffect as SavedEffect | undefined)?.artifact, reference)) throw new Error('GENERATION_FINALIZATION_EFFECT_CONFLICT')
         return saved
@@ -99,8 +104,11 @@ export class FinalizationGeneration {
         if (!isDeepStrictEqual(finalizationNotesBaseline(this.db, context.slot), context.notesBaseline)) throw new Error('GENERATION_FINALIZATION_NOTES_CHANGED')
         const chapterNotes = proof.artifact.text.trim(), { source } = context.slot
         const facts = buildFinalizedContinuityFacts(source.chapterNumber, chapterNotes, context.identity.content, context.chapterEntities, context.identity)
+        const notesLastGenerated = this.db.prepare('SELECT chapter_notes FROM summary_snapshots WHERE draft_id=?').pluck().get(source.draftId) as string | undefined
+        const blueprintNotes = context.notesBaseline.blueprint.notes
+        const authorEditedBlueprintNotes = notesLastGenerated !== undefined && blueprintNotes.trim() !== '' && blueprintNotes !== notesLastGenerated
         SummaryRepository.saveFinalizedContinuity({ draftId: source.draftId, chapterNumber: source.chapterNumber, source, chapterNotes, facts, projectionGeneration: context.identity.projectionGeneration }, this.db)
-        const blueprintUpdated = BlueprintRepository.updateNotes(source.chapterNumber, chapterNotes, this.db)
+        const blueprintUpdated = !authorEditedBlueprintNotes && BlueprintRepository.updateNotes(source.chapterNumber, chapterNotes, this.db)
         receipt = { success: true, stepKey: 'chapter_notes', chapterNotes, factCount: facts.length, blueprintUpdated }
       } else {
         const characterProof = proveFinalizedCharacterGeneration(this.db, this.runs, this.projectId, handle, reference)
