@@ -9,7 +9,7 @@ import {
   PlotOutlineResumeAvailableError,
 } from '../architecture.command'
 import { synopsisFactsFingerprint } from '../../../../shared/plot-outline-checkpoint'
-import { createWorkflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { createWorkflowRuntimeDependencies, useFakeModelStream, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
 import { clearProjectCustomPrompts, getBuiltinPromptTemplate } from '../../../prompt-templates'
 import { composeVisibleContinuation } from '../../../../shared/visible-continuation'
 import type { GenerationRecoveryContext, VisibleCompositionReceipt } from '../../../../shared/generation-owner-contract'
@@ -24,7 +24,7 @@ import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, type PlotOutlineProgress }
  */
 
 const projectAPath = 'C:\\novels\\plot-batch'
-const originalGenerateStream = useLLMStore.getState().generateStream
+const originalGenerateStream = useFakeModelStream.getState().generateStream
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 
 const novelConfig = {
@@ -117,8 +117,8 @@ function responseStream(
 ) {
   let nextResponseIndex = 0
   return vi.fn((
-    _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-    streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+    _messages: Parameters<FakeGenerateStream>[0],
+    streamCallbacks: Parameters<FakeGenerateStream>[1],
   ) => {
     const index = nextResponseIndex++
     const output = responses[index]
@@ -131,8 +131,8 @@ function responseStream(
 function lengthThenNetworkFailure(firstBody: string) {
   let callIndex = 0
   return vi.fn((
-    _messages: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[0],
-    streamCallbacks: Parameters<ReturnType<typeof useLLMStore.getState>['generateStream']>[1],
+    _messages: Parameters<FakeGenerateStream>[0],
+    streamCallbacks: Parameters<FakeGenerateStream>[1],
   ) => {
     callIndex += 1
     if (callIndex === 1) {
@@ -298,11 +298,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  useLLMStore.setState({
-    models: [],
-    defaultModelId: originalDefaultModelId,
-    generateStream: originalGenerateStream,
-  })
+  useLLMStore.setState({ models: [], defaultModelId: originalDefaultModelId })
+  useFakeModelStream.setState({ generateStream: originalGenerateStream })
   useProjectStore.setState({ currentProject: null })
   clearProjectCustomPrompts()
 })
@@ -312,7 +309,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     const body = Array.from({ length: 20 }, (_, index) =>
       `第${index + 1}章：核对记录\n周岚核对记录并据此推进调查，确认本章线索的来源。`,
     ).join('\n\n')
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream: responseStream([body]) })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([body]) })
     const harness = harnessWith()
 
     const result = await makeCommand({ synopsisRange: { from: 1, to: 20 } })
@@ -323,12 +321,13 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
       synopsis_incomplete: false,
       synopsis_covered_to: 20,
     })
-    expect(useLLMStore.getState().generateStream).toHaveBeenCalledTimes(1)
+    expect(useFakeModelStream.getState().generateStream).toHaveBeenCalledTimes(1)
   })
 
   it('length 后续写失败即使章节覆盖齐全也仍保存为未完成', async () => {
     const body = `第1–20章：核对记录\n${'周岚核对记录并据此推进调查，确认各条线索的来源。'.repeat(6)}`
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream: lengthThenNetworkFailure(body) })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: lengthThenNetworkFailure(body) })
     const harness = harnessWith()
 
     await expect(makeCommand({ synopsisRange: { from: 1, to: 20 } })
@@ -338,10 +337,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
   it.each([progressLine(21, 40, 100), '大纲批次进度：本批结束'])('正文完整但显式进度行无效时仍拒绝完成：%s', async mark => {
     const body = `第1–20章：核对记录\n${'周岚核对记录并据此推进调查，确认各条线索的来源。'.repeat(6)}`
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream([`${body}\n${mark}`]),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([`${body}\n${mark}`]) })
     const harness = harnessWith()
 
     await expect(makeCommand({ synopsisRange: { from: 1, to: 20 } })
@@ -352,10 +349,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
   it('首次全量成功：完整正文带正确进度行时保存并剥离进度行', async () => {
     const body = '## 第一卷\n\n第1–100章：终局守门人\n林舟从铁砧镇学徒成长为终局守门人，每章均有独立推进。'
     const completed = `${body}\n\n${progressLine(1, 100, 100)}`
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream([completed]),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([completed]) })
     const harness = harnessWith()
     const command = makeCommand()
 
@@ -391,10 +386,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
   it('P0：全量输出被截断（stop 且无进度行）绝不当成功——保存部分并抛可续写错误', async () => {
     // 模拟网关在输出上限把截断报成 stop：内容只写了两章，没有批次完成进度行。
     const truncated = `## 第一卷\n\n第一章：旧铁锤\n${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉追查家人的下落。'.repeat(4)}\n\n第二章：宗门封锁\n林舟被迫改变追查路线。`
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream([truncated]),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([truncated]) })
     const harness = harnessWith()
     const command = makeCommand()
 
@@ -419,7 +412,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     context.uiLocale = 'zh-CN'
     const truncated = `Chapters 1-3: The first clues\n${'The apprentice follows each clue while preserving the causal chain. '.repeat(4)}`
     const generateStream = responseStream([truncated])
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const harness = harnessWith()
 
     await expect(makeCommand({ synopsisRange: { from: 1, to: 20 } }).execute({ step: {}, context, callbacks }))
@@ -439,10 +433,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
   it('断点续写：有效检查点（incomplete+范围+指纹匹配）续写完成后清除未完成标记', async () => {
     const partialBody = `## 第一卷\n\n第1–3章：追入废墟\n${'林舟从铁砧镇追入宗门废墟，逐步发现灵脉异变。'.repeat(5)}`
     const addition = '\n\n第4–100章：传承试炼\n林舟完成传承试炼并承担记忆代价，后续各章连续推进至终局。\n\n' + progressLine(1, 100, 100)
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream([addition]),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([addition]) })
     const dbOutline = `# 情节大纲\n\n${partialBody}\n\n> ⚠️ **本大纲未完成**：生成被输出长度中断，以上为已自动保存的已完成部分。\n> 可在「AI 输出」提示处点击「继续生成情节大纲」，从断点续写补齐本批章节。`
     const harness = harnessWith({
       synopsis_result: partialBody,
@@ -472,7 +464,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
   it('fail-closed：没有中断检查点却请求续写 → 拒绝且不发起任何模型调用', async () => {
     const harness = harnessWith({}) // 无检查点
     const generateStream = vi.fn()
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const command = makeCommand({ resumeSynopsis: true })
 
     await expect(command.execute({ step: {}, context, callbacks }))
@@ -483,10 +476,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
   })
 
   it('fail-closed：续写检查点的源事实指纹与当前不一致 → 拒绝续接', async () => {
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream(['should never run']),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream(['should never run']) })
     harnessWith({
       synopsis_result: 'some older outline body that is at least a reasonably long piece of text content'.repeat(3),
       synopsis_incomplete: true,
@@ -498,7 +489,7 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
     await expect(command.execute({ step: {}, context, callbacks }))
       .rejects.toThrow('源事实')
-    expect(useLLMStore.getState().generateStream).not.toHaveBeenCalled()
+    expect(useFakeModelStream.getState().generateStream).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -523,7 +514,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     checkpoint.synopsis_db_hash = dbHashOf(dbOutline)
     const harness = harnessWith(checkpoint, dbOutline)
     const generateStream = vi.fn()
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     const command = incomplete
       ? makeCommand({ resumeSynopsis: true })
@@ -541,10 +533,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     const nextSegment = '## 第二卷\n\n第21章：破门\n宗门废墟之下，林舟第一次触碰那柄旧铁锤里的传承。\n\n'
       + '第22–100章：反噬\n记忆损耗的代价持续推进并最终在终局兑现。\n\n'
       + progressLine(21, 100, 100)
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream([nextSegment]),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([nextSegment]) })
     const dbOutline = `# 情节大纲\n\n${prefixBody}\n\n> 本大纲已覆盖至第 20 章（全书 100 章），其余章节将在后续批次继续生成。`
     const harness = harnessWith({
       synopsis_result: prefixBody,
@@ -736,10 +726,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
   })
 
   it('分批必须连续：from ≤ coveredTo（非 1）→ 拒绝且不覆盖已确认前缀', async () => {
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream(['never']),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream(['never']) })
     harnessWith({
       synopsis_result: 'already confirmed prefix content that is long enough for the checkpoint'.repeat(2),
       synopsis_covered_to: 20,
@@ -751,14 +739,12 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
     await expect(command.execute({ step: {}, context, callbacks }))
       .rejects.toThrow('已包含在已确认大纲中')
-    expect(useLLMStore.getState().generateStream).not.toHaveBeenCalled()
+    expect(useFakeModelStream.getState().generateStream).not.toHaveBeenCalled()
   })
 
   it('存在未完成批次时不允许再发起新批次（先断点续写）', async () => {
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream(['never']),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream(['never']) })
     harnessWith({
       synopsis_result: 'interrupted body content with enough characters to be meaningful here',
       synopsis_incomplete: true,
@@ -771,16 +757,14 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
     await expect(command.execute({ step: {}, context, callbacks }))
       .rejects.toThrow('先完成该批次')
-    expect(useLLMStore.getState().generateStream).not.toHaveBeenCalled()
+    expect(useFakeModelStream.getState().generateStream).not.toHaveBeenCalled()
   })
 
   it('分批范围收尾：首批只生成 1–20 章（进度行校验）后 covered_to=20，仍可继续', async () => {
     const firstBatch = '## 第一卷\n\n第1章：铁砧镇的学徒\n林舟发现宗门封锁的第一条线索。\n\n第2–20章：初窥门径\n林舟步步追查并初窥门径。\n\n' + progressLine(1, 20, 100)
     const generateStream = responseStream([firstBatch])
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream,
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const harness = harnessWith()
     const command = makeCommand({ synopsisRange: { from: 1, to: 20 } })
 
@@ -808,10 +792,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     const dbOutline = `# 情节大纲\n\n${prefixBody}\n\n> 本大纲已覆盖至第 20 章（全书 100 章），其余章节将在后续批次继续生成。\n`
     // 用户随后在编辑器里手动改写了第 5 章的内容并保存（DB 与镜像指纹不一致）
     const editedDbOutline = dbOutline.replace('第一章', '第一章（手动修订后的新表述）')
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream(['should never run']),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream(['should never run']) })
     const harness = harnessWith({
       synopsis_result: prefixBody,
       synopsis_covered_to: 20,
@@ -824,7 +806,7 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
     await expect(command.execute({ step: {}, context, callbacks }))
       .rejects.toThrow('已被手动修改')
-    expect(useLLMStore.getState().generateStream).not.toHaveBeenCalled()
+    expect(useFakeModelStream.getState().generateStream).not.toHaveBeenCalled()
     expect(harness.coreUpdates).toHaveLength(0)
   })
 
@@ -832,10 +814,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     // 请求 1–100 章，模型正文只写了一小段却谎报 80–100：严格校验 from/to 后必须拒绝。
     const shortBody = `## 第一卷\n\n第一章：铁砧镇\n${'铁砧镇的学徒追查宗门封锁背后的灵脉异变。'.repeat(6)}\n\n第二章：宗门封锁\n林舟改变追查路线。`
     const wrongMarkBody = `${shortBody}\n\n${progressLine(80, 100, 100)}`
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream([wrongMarkBody]),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([wrongMarkBody]) })
     const harness = harnessWith()
     const command = makeCommand()
 
@@ -853,7 +833,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     ['out-of-order entries', `第2章：抵达\n港口的阻力迫使主角改变计划。\n第1章：启程\n主角从故乡出发并承担选择的代价。`],
   ])('does not report malformed %s as complete or automatically resumable', async (_caseName, entries) => {
     const response = `${'卷首背景。'.repeat(40)}\n${entries}\n${progressLine(1, 2, 100)}`
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream: responseStream([response]) })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([response]) })
     const harness = harnessWith()
 
     const failure = await makeCommand({ synopsisRange: { from: 1, to: 2 } })
@@ -873,10 +854,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     ['越界章', '第1–100章：连续推进\n主角沿既定因果逐章推进。\n\n第101章：越过范围\n写入全书范围外的事件。', false],
   ] as const)('标题覆盖%s：只为合法连续前缀提供自动恢复', async (_caseName, headings, resumable) => {
     const body = `## 第一卷\n\n${headings}\n\n${'每一段都保留角色行动、条件与后果的连续关系。'.repeat(6)}`
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream([`${body}\n\n${progressLine(1, 100, 100)}`]),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([`${body}\n\n${progressLine(1, 100, 100)}`]) })
     const harness = harnessWith()
 
     const failure = await makeCommand().execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
@@ -895,7 +874,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
   it('不足 120 字的错误标题覆盖不宣称可恢复，也不写检查点或 DB', async () => {
     const body = `第1章：开端。\n\n${progressLine(1, 100, 100)}`
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream: responseStream([body]) })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([body]) })
     const harness = harnessWith()
 
     const failure = await makeCommand().execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
@@ -920,7 +900,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
       synopsis_step_guidance: '',
     }, dbOutline)
     const generateStream = vi.fn()
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     await expect(makeCommand({ resumeSynopsis: true }).execute({ step: {}, context, callbacks }))
       .rejects.toThrow('检查点正文与数据库原文不一致')
@@ -943,10 +924,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
       concurrentPartialUpdate: { world_building_result: 'concurrent world phase' },
     })
     const body = `第1–100章：完整终局\n${'主角遵循明确条件行动，结果逐章承接至终局。'.repeat(5)}`
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream([`${body}\n\n${progressLine(1, 100, 100)}`]),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([`${body}\n\n${progressLine(1, 100, 100)}`]) })
 
     await expect(makeCommand().execute({ step: {}, context, callbacks }))
       .rejects.toThrow('Project data changed while the outline was being generated')
@@ -972,10 +951,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
       commitResult: { success: false, error: 'PROJECT_CORE_SYNOPSIS_CHANGED' },
     })
     const body = `第1–100章：完整终局\n${'主角遵循明确条件行动，结果逐章承接至终局。'.repeat(5)}`
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: responseStream([`${body}\n\n${progressLine(1, 100, 100)}`]),
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([`${body}\n\n${progressLine(1, 100, 100)}`]) })
 
     const failure = makeCommand().execute({ step: {}, context, callbacks })
     await expect(failure).rejects.toThrow('项目数据已变化，已拒绝覆盖情节大纲。')
@@ -1002,7 +979,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     }
     const body = `第1–100章：完整终局\n${'主角依据已确认事实行动，并使后果逐章承接至终局。'.repeat(8)}`
     const response = complete ? `${body}\n\n${progressLine(1, 100, 100)}` : body
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream: responseStream([response]) })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([response]) })
     const harness = harnessWith(oldCheckpoint, '作者原有的数据库大纲', {
       afterPartialWrite: (_checkpoint, writeCount) => {
         if (writeCount !== 1) return undefined
@@ -1027,15 +1005,13 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     const addition = `\n\n第4–100章：后续终局\n后续因果连续推进至终局。\n\n${progressLine(1, 100, 100)}`
     const prompts: string[] = []
     let callIndex = 0
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn((messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn((messages, streamCallbacks) => {
         prompts.push(messages.map((message: { content: string }) => message.content).join('\n'))
         const output = callIndex++ === 0 ? partialBody : addition
         streamCallbacks.onDone?.(output, undefined, 'stop')
         return Promise.resolve(`plot-request-${callIndex}`)
-      }),
-    })
+      }) })
     const harness = harnessWith()
     context.data.stepGuidance = { synopsis: '只属于旧检查点的指导' }
     await expect(makeCommand().execute({ step: {}, context, callbacks }))
@@ -1057,7 +1033,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     malformedPartial,
   ) => {
     const generateStream = lengthThenNetworkFailure(malformedPartial)
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const harness = harnessWith()
 
     const failure = await makeCommand().execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
@@ -1074,7 +1051,8 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     // 请求抛网络错误。此前会丢掉首轮内容，现在应保存并可断点续写。
     const firstBody = `## 第一卷\n\n第一章：铁砧镇的学徒\n${'宗门封锁前夜，林舟发现了旧铁锤里的秘密。'.repeat(8)}\n\n第二章：被长度上限截断`
     const generateStream = lengthThenNetworkFailure(firstBody)
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const harness = harnessWith()
     const command = makeCommand()
 

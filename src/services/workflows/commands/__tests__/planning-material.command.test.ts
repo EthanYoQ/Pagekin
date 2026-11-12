@@ -10,6 +10,7 @@ import {
   CommitPlanningMaterialCharactersCommand,
   ExtractPlanningMaterialCharactersCommand as RuntimeCommand,
 } from '../planning-material.command'
+import { useFakeModelStream } from './workflow-generation-runtime.fixture'
 
 class ExtractPlanningMaterialCharactersCommand extends RuntimeCommand {
   constructor(...args: ConstructorParameters<typeof RuntimeCommand>) {
@@ -33,7 +34,7 @@ const callbacks: StepCallbacks = {
   setProgress: vi.fn(),
   appendText: vi.fn(),
 }
-const originalGenerateStream = useLLMStore.getState().generateStream
+const originalGenerateStream = useFakeModelStream.getState().generateStream
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 
 describe('planning material character extraction', () => {
@@ -95,10 +96,8 @@ describe('planning material character extraction', () => {
       }), undefined, 'stop')
       return 'planning-material-request'
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream,
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     const preview = await new ExtractPlanningMaterialCharactersCommand([
       { fileName: '人物设定.md', text: '周岚45岁，守馆20年，动机是保护幸存者。' },
@@ -137,7 +136,8 @@ describe('planning material character extraction', () => {
       throw new Error(`Unexpected IPC channel: ${channel}`)
     })
     vi.stubGlobal('window', { aiNovelAPI: { invoke, on: vi.fn(), once: vi.fn(), send: vi.fn() } })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
       streamCallbacks.onDone?.(JSON.stringify({ results: [{ sourceId: '1:1', characterCards: [{ name: '周岚', role: 'supporting' }] }] }), undefined, 'stop')
       return 'planning-material-request'
     }) })
@@ -175,10 +175,8 @@ describe('planning material character extraction', () => {
       }), undefined, 'stop')
       return 'planning-material-request'
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream,
-    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     await new ExtractPlanningMaterialCharactersCommand([
       { fileName: '人物设定.md', text: '周岚是配角。' },
@@ -194,10 +192,8 @@ describe('planning material character extraction', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
-    useLLMStore.setState({
-      defaultModelId: originalDefaultModelId,
-      generateStream: originalGenerateStream,
-    })
+    useLLMStore.setState({ defaultModelId: originalDefaultModelId })
+    useFakeModelStream.setState({ generateStream: originalGenerateStream })
     useProjectStore.setState({ currentProject: null })
   })
 
@@ -227,9 +223,8 @@ describe('planning material character extraction', () => {
       aiNovelAPI: { invoke, on: vi.fn(), once: vi.fn(), send: vi.fn() },
     })
     let observedPrompt = ''
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
         observedPrompt = messages.find((message: { role: string; content: string }) => message.role === 'user')?.content ?? ''
         const json = JSON.stringify({
           results: [{
@@ -247,8 +242,7 @@ describe('planning material character extraction', () => {
           : json
         streamCallbacks.onDone?.(content, undefined, 'stop')
         return 'planning-material-request'
-      }),
-    })
+      }) })
 
     const command = new ExtractPlanningMaterialCharactersCommand([
       { fileName: '人物设定.md', text: '林晓是谨慎的主角，负责调查校园数据系统。' },
@@ -295,9 +289,8 @@ describe('planning material character extraction', () => {
           novelConfig: { writingLanguage },
         } as never,
       })
-      useLLMStore.setState({
-        defaultModelId: 'model-1',
-        generateStream: vi.fn(async (messages, streamCallbacks) => {
+      useLLMStore.setState({ defaultModelId: 'model-1' })
+      useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
           observedPrompt = messages.find(
             (message: { role: string; content: string }) => message.role === 'user',
           )?.content ?? ''
@@ -305,8 +298,7 @@ describe('planning material character extraction', () => {
             results: [{ sourceId: '1:1', characterCards: [] }],
           }), undefined, 'stop')
           return 'planning-material-request'
-        }),
-      })
+        }) })
 
       const command = new ExtractPlanningMaterialCharactersCommand([
         { fileName: 'characters.md', text: material },
@@ -386,7 +378,8 @@ describe('planning material character extraction', () => {
       }), undefined, 'stop')
       return 'planning-material-request'
     })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     const command = new ExtractPlanningMaterialCharactersCommand([{
       fileName: '人物设定.md',
@@ -422,9 +415,8 @@ describe('planning material character extraction', () => {
         novelConfig: { writingLanguage: 'en-US' },
       } as never,
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         const json = JSON.stringify({
           results: [{ sourceId: '1:1', characterCards: [{ name: 'Lin', role: 'protagonist' }] }],
         })
@@ -435,8 +427,7 @@ describe('planning material character extraction', () => {
             : 'PRIVATE_INVALID_OUTPUT'
         streamCallbacks.onDone?.(content, undefined, 'stop')
         return 'planning-material-request'
-      }),
-    })
+      }) })
 
     const command = new ExtractPlanningMaterialCharactersCommand([
       { fileName: 'characters.md', text: 'Lin is the protagonist.' },
@@ -477,9 +468,8 @@ describe('planning material character extraction', () => {
     vi.stubGlobal('window', {
       aiNovelAPI: { invoke, on: vi.fn(), once: vi.fn(), send: vi.fn() },
     })
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (_messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
         streamCallbacks.onDone?.(JSON.stringify({
           results: [{
             sourceId: '1:1',
@@ -487,8 +477,7 @@ describe('planning material character extraction', () => {
           }],
         }), undefined, 'stop')
         return 'planning-material-request'
-      }),
-    })
+      }) })
 
     const command = new ExtractPlanningMaterialCharactersCommand([
       { fileName: '人物设定.md', text: '林晓负责指导调查。' },
@@ -508,9 +497,8 @@ describe('planning material character extraction', () => {
   it('starts the next material chunk at a nearby paragraph boundary', async () => {
     const paragraph = `新段落开始，${'铺垫'.repeat(80)}林晓是主角。`
     const observedPrompts: string[] = []
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
         observedPrompts.push(
           messages.find((message: { role: string; content: string }) => message.role === 'user')?.content ?? '',
         )
@@ -521,8 +509,7 @@ describe('planning material character extraction', () => {
           ],
         }), undefined, 'stop')
         return 'planning-material-request'
-      }),
-    })
+      }) })
 
     const command = new ExtractPlanningMaterialCharactersCommand([
       { fileName: '长篇设定.md', text: `${'前'.repeat(11_950)}\n\n${paragraph}` },
@@ -535,9 +522,8 @@ describe('planning material character extraction', () => {
 
   it('keeps a surrogate pair intact at a hard material chunk boundary', async () => {
     let observedPrompt = ''
-    useLLMStore.setState({
-      defaultModelId: 'model-1',
-      generateStream: vi.fn(async (messages, streamCallbacks) => {
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (messages, streamCallbacks) => {
         observedPrompt = messages.find(
           (message: { role: string; content: string }) => message.role === 'user',
         )?.content ?? ''
@@ -548,8 +534,7 @@ describe('planning material character extraction', () => {
           ],
         }), undefined, 'stop')
         return 'planning-material-request'
-      }),
-    })
+      }) })
 
     const command = new ExtractPlanningMaterialCharactersCommand([{
       fileName: 'emoji.txt',
@@ -577,7 +562,8 @@ describe('planning material character extraction', () => {
       streamCallbacks.onDone?.(JSON.stringify({ results: [result] }), undefined, 'stop')
       return 'planning-material-request'
     })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
 
     await expect(new ExtractPlanningMaterialCharactersCommand([
       { fileName: '人物设定.md', text: '林晓是十八岁的主角，认识周岚。' },
@@ -600,7 +586,8 @@ describe('planning material character extraction', () => {
       }), undefined, 'stop')
       return `planning-material-request-${observedSourceIds.length}`
     })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const materials = Array.from({ length: 32 }, (_, index) => ({
       fileName: `资料-${index + 1}.md`,
       text: `第 ${index + 1} 份资料没有角色。`,
@@ -616,7 +603,8 @@ describe('planning material character extraction', () => {
 
   it('does not impose a private 16-call cap and preserves owner failure without candidates', async () => {
     const generateStream = vi.fn(async (_messages, callbacks) => { callbacks.onError?.('owner refused'); return 'synthetic-request' })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const materials = Array.from({ length: 33 }, (_, index) => ({
       fileName: `资料-${index + 1}.md`,
       text: `第 ${index + 1} 份资料没有角色。`,
@@ -643,7 +631,8 @@ describe('planning material character extraction', () => {
       }), undefined, 'stop')
       return 'planning-material-request'
     })
-    useLLMStore.setState({ defaultModelId: 'model-1', generateStream })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
     const materials = [{ fileName: '资料.md', text: '本资料没有角色。' }]
 
     context.cancelled = true

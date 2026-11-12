@@ -2,11 +2,7 @@ import type { WorkflowContext, StepCallbacks } from '../../../stores/workflow-st
 import { globalEventBus, EventPayloadMap } from '../../../shared/event-bus'
 import type { LLMFinishReason, ProjectSessionContext } from '../../../shared/ipc-channels'
 import type { BasePromptBuilder } from '../../prompts/prompt-builder'
-import {
-  createGenerationRuntime,
-  type CreateGenerationRuntimeOptions,
-  type GenerationRuntime,
-} from '../../generation/generation-runtime'
+import type { CreateGenerationRuntimeOptions, GenerationRuntime } from '../../generation/generation-runtime'
 import {
   GenerationAttemptError,
   type GenerationAttemptReceipt,
@@ -155,7 +151,10 @@ export interface WorkflowGenerationRuntimeDependencies {
 }
 
 const DEFAULT_GENERATION_DEPENDENCIES: WorkflowGenerationRuntimeDependencies = {
-  createRuntime: (options, main) => main ? createWorkflowMainGenerationRuntime(main) : createGenerationRuntime(options),
+  createRuntime: (_options, main) => {
+    if (!main) throw new Error('WORKFLOW_MAIN_GENERATION_REQUEST_REQUIRED')
+    return createWorkflowMainGenerationRuntime(main)
+  },
 }
 
 interface ActiveGenerationExecution {

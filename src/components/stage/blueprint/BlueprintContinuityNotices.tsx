@@ -5,13 +5,15 @@ import { Button } from '../../ui/Button'
 import { Notice } from '../../ui/Notice'
 import { PreflightExemptButtons, PreflightFindingSource } from '../write/PreflightFindingParts'
 import type { BlueprintContinuityNotice } from './use-blueprint-continuity-notice'
+import { BlueprintAiFindings } from './BlueprintAiCheckParts'
+import type { BlueprintAiCheck } from './use-blueprint-ai-check'
 
 function openCharacter(characterId: string, name: string) {
   useCharacterStore.getState().setSelectedId(characterId)
   openBuiltinEditor('character-editor', name, 'character')
 }
 
-export default function BlueprintContinuityNotices({ chapterNumber, notice }: { chapterNumber: number; notice: BlueprintContinuityNotice }) {
+export default function BlueprintContinuityNotices({ chapterNumber, notice, ai }: { chapterNumber: number; notice: BlueprintContinuityNotice; ai: BlueprintAiCheck }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
   const exempted = notice.exempted(chapterNumber)
@@ -43,6 +45,7 @@ export default function BlueprintContinuityNotices({ chapterNumber, notice }: { 
           actions={<Button variant="text" size="sm" disabled={notice.busy} onClick={() => void notice.undo()}>{text('撤销', 'Undo')}</Button>}
         />
       )}
+      <BlueprintAiFindings chapterNumber={chapterNumber} ai={ai} />
     </>
   )
 }

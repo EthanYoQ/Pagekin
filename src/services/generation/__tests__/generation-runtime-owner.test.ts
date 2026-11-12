@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createGenerationRuntime as createFacade, createMainOwnedGenerationRuntime as createGenerationRuntime, readMainGenerationRun, type MainGenerationRunHandle, type MainGenerationRunView, type MainGenerationSnapshot, type MainGenerationTransport } from '../generation-runtime'
+import { createMainOwnedGenerationRuntime as createGenerationRuntime, readMainGenerationRun, type MainGenerationRunHandle, type MainGenerationRunView, type MainGenerationSnapshot, type MainGenerationTransport } from '../generation-runtime'
 import type { GenerationOutcome, GenerationTask } from '../generation-harness'
 import { hashAuthorText } from '../../../shared/source-ref'
-import { useLLMStore } from '../../../stores/llm-store'
 
 const handle: MainGenerationRunHandle = { projectId: '项目甲', epoch: '打开甲', rootActionId: '动作甲', runId: '运行甲' }
 const task: GenerationTask = { purpose: '正文', output: 'visible-text', messages: [{ role: 'user', content: '续写铜钥匙的故事' }] }
@@ -92,17 +91,13 @@ describe('main owned generation facade', () => {
       diagnostics: expect.objectContaining({ elapsedMs: 20, reasoningEvents: 1 }) }))
     await runtime.close()
   })
-  it('仅转发主进程句柄和语义请求，不经旧模型store或新预算', async () => {
-    const f = fixture(); const oldProvider = vi.spyOn(useLLMStore.getState(), 'generateStream')
-    try {
-      const runtime = await createFacade({ runHandle: handle }, f.transport)
-      const result = await runtime.execute(({ session }) => session.complete(task, { invocationNonce: '点击甲' }))
-      expect(result).toEqual(f.outcome)
-      expect(f.transport.execute).toHaveBeenCalledExactlyOnceWith({ handle, invocationNonce: '点击甲', task })
-      expect(oldProvider).not.toHaveBeenCalled()
-      await runtime.close(); await runtime.close()
-      expect(f.detach).toHaveBeenCalledTimes(1); expect(f.transport.cancel).not.toHaveBeenCalled()
-    } finally { oldProvider.mockRestore() }
+  it('仅转发主进程句柄和语义请求，不带新预算', async () => {
+    const f = fixture(); const runtime = await createGenerationRuntime({ runHandle: handle }, f.transport)
+    const result = await runtime.execute(({ session }) => session.complete(task, { invocationNonce: '点击甲' }))
+    expect(result).toEqual(f.outcome)
+    expect(f.transport.execute).toHaveBeenCalledExactlyOnceWith({ handle, invocationNonce: '点击甲', task })
+    await runtime.close(); await runtime.close()
+    expect(f.detach).toHaveBeenCalledTimes(1); expect(f.transport.cancel).not.toHaveBeenCalled()
   })
   it('缺失transport或nonce拒绝，不生成空指纹/新动作', async () => {
     await expect(createGenerationRuntime({ runHandle: handle })).rejects.toThrow('TRANSPORT_REQUIRED')

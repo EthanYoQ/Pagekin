@@ -21,6 +21,7 @@ import { DangerConfirm } from '../DangerConfirm'
 import { InkDialog } from '../../stage/InkDialog'
 import { Menu } from '../Menu'
 import { withReducedMotion } from './reduced-motion'
+import { resizeViewport } from './viewport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -79,7 +80,7 @@ let container: HTMLDivElement | undefined
 const onOpenChange = vi.fn()
 
 beforeEach(async () => {
-  await page.viewport(1100, 760)
+  await resizeViewport(1100, 760)
   useThemeStore.setState({ resolvedTheme: 'light' })
 })
 
@@ -563,9 +564,7 @@ describe('提示栈', () => {
     expect(stack.hasAttribute('data-overflow')).toBe(false)
     const rightBefore = liveToasts().at(-1)!.getBoundingClientRect().right
 
-    await page.viewport(1100, 420)
-    await vi.waitFor(() => expect(window.innerHeight).toBe(420))
-    await wait(100)
+    await resizeViewport(1100, 420)
     expect(stack.hasAttribute('data-overflow')).toBe(true)
     expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight)
     const box = stack.getBoundingClientRect()

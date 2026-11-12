@@ -23,17 +23,6 @@ export function createEditorInlineGeneration(sessionInput: ProjectSessionContext
     if (!['refine', 'expand', 'continue', 'dialogue', 'instruct', 'batch-instruct'].includes(input.action) || input.kind !== 'author-draft' || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to)
       || input.from < 0 || input.to <= input.from || input.to > input.documentText.length
       || input.documentText.slice(input.from, input.to) !== input.selectedText) throw new Error('EDITOR_INLINE_CONTEXT_INVALID')
-    if (input.action === 'batch-instruct') {
-      let previousTo = 0
-      const ids = new Set<string>()
-      for (const annotation of input.annotations) {
-        if (!Number.isSafeInteger(annotation.from) || !Number.isSafeInteger(annotation.to) || annotation.from < previousTo || annotation.to <= annotation.from
-          || annotation.to > input.documentText.length || input.documentText.slice(annotation.from, annotation.to) !== annotation.selectedText
-          || !annotation.id || ids.has(annotation.id) || typeof annotation.instruction !== 'string' || !annotation.instruction.trim()) throw new Error('EDITOR_INLINE_CONTEXT_INVALID')
-        ids.add(annotation.id)
-        previousTo = annotation.to
-      }
-    }
     const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input.documentText))
     const hash = Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
     if (hash !== input.documentHash) throw new Error('EDITOR_INLINE_CONTEXT_INVALID')

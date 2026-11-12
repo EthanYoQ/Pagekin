@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow } from 'electron'
+import { app, ipcMain } from 'electron'
 import {
   readJsonFile,
   tryReadJsonFile,
@@ -7,30 +7,20 @@ import {
   GLOBAL_CONFIG_PATH,
   DEFAULT_GLOBAL_CONFIG,
 } from '../utils/config-utils'
-import type { GlobalConfig, LLMFinishReason, LLMRequest, LLMResponse, LocalContextWindowRequest, ModelDiscoveryRequest, ModelProfile, TokenUsage } from '../../src/shared/ipc-channels'
+import type { GlobalConfig, LLMRequest, LLMResponse, LocalContextWindowRequest, ModelDiscoveryRequest, ModelProfile } from '../../src/shared/ipc-channels'
 import { knownAppErrorMessage } from '../../src/i18n/app-errors'
-import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import { isReasoningMapping, reasoningAdapterFitsProtocol } from '../../src/shared/reasoning-types'
 import { isLocalModelEndpoint } from '../../src/shared/provider-presets'
+import { sameModelIdentity, withLearnedContextWindow } from '../../src/shared/model-profile-draft'
 import { assignStageModel, availableGenerationModelId, isModelStage, parseStageModelIds, removeModelFromStages } from '../../src/shared/model-stage-routing'
+import { isRerankFailure, type RerankFailure } from '../../src/shared/knowledge-ranking'
+import { rankPassages } from '../rerank'
 import { LLMFactory } from '../llm/llm-factory'
 import { getMainLocale, mainT, mainText } from '../i18n'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
-import { getCurrentProjectPath } from '../database'
-import { LLMHistoryRepository } from '../repositories/llm-repository'
-import { projectAccess } from '../services/project-access'
-import {
-  ModelExecutionLeaseError,
-  ModelExecutionLeaseRegistry,
-} from '../services/model-execution-lease'
+import { ModelExecutionLeaseRegistry } from '../services/model-execution-lease'
 import { ModelDiscoveryService } from '../services/model-discovery-service'
 
-interface ActiveStream {
-  controller: AbortController
-  recordCancelled: () => void
-}
-
-const activeStreams = new Map<string, ActiveStream>()
 const CONNECTION_TEST_MAX_TOKENS = 1024
 const LOCAL_CONNECTION_TEST_TIMEOUT_MS = 120_000
 const CLOUD_CONNECTION_TEST_TIMEOUT_MS = 30_000
@@ -40,7 +30,21 @@ function connectionTestTimeoutMs(model: ModelProfile): number {
   return isLocalModelEndpoint(model) ? LOCAL_CONNECTION_TEST_TIMEOUT_MS : CLOUD_CONNECTION_TEST_TIMEOUT_MS
 }
 
-const CLOSED_EXECUTION_LEASE_TOMBSTONE_TTL_MS = 5 * 60_000
+const RERANK_TEST_FAILURES: Record<RerankFailure, readonly [string, string]> = {
+  timeout: ['重排服务响应超时，请稍后再试。', 'The reranking service timed out. Try again later.'],
+  'request-failed': ['连不上重排服务，请检查 base_url 和网络。', 'Could not reach the reranking service. Check the base_url and your network.'],
+  'http-error': ['重排服务拒绝了请求，请检查 API Key 和模型名称。', 'The reranking service refused the request. Check the API key and model name.'],
+  'invalid-response': ['服务的返回不是重排结果，请确认这个模型支持重排。', 'The service did not return reranking results. Check that this model supports reranking.'],
+}
+
+async function testRerankConnection(model: ModelProfile) {
+  const { baseUrl, apiKey, modelName } = model
+  const { ranking } = await rankPassages('hello', [{ text: 'hello' }, { text: 'world' }],
+    { kind: 'explicit', profileId: model.id, endpoint: { baseUrl, apiKey, modelName } }, 2)
+  if (ranking.method === 'rerank') return { success: true, error: undefined }
+  if (!isRerankFailure(ranking.reason)) throw new Error(`RERANK_TEST_UNEXPECTED_${ranking.reason}`)
+  return { success: false, error: mainText(app.getLocale(), ...RERANK_TEST_FAILURES[ranking.reason]) }
+}
 
 function loadModelConfigs(): ModelProfile[] {
   return readJsonFile<ModelProfile[]>(MODELS_CONFIG_PATH, [])
@@ -71,6 +75,25 @@ function getModelConfig(modelId: string): ModelProfile | null {
   return models.find((m) => m.id === modelId) ?? null
 }
 
+function withStoredLearnedWindow(incoming: ModelProfile, stored: ModelProfile | undefined): ModelProfile {
+  const learned = stored?.learnedContextWindow
+  return { ...incoming, learnedContextWindow: learned && sameModelIdentity(learned, incoming) ? learned : undefined }
+}
+
+function rememberContextWindow(snapshot: ModelProfile, windowTokens: number): void {
+  try {
+    const models = loadModelConfigsForUpdate()
+    const idx = models.findIndex((m) => m.id === snapshot.id)
+    if (idx < 0 || !sameModelIdentity(models[idx], snapshot)) return
+    const next = withLearnedContextWindow(models[idx], windowTokens)
+    if (next === models[idx]) return
+    models[idx] = next
+    saveModelConfigs(models)
+  } catch (error) {
+    console.error('[AI Novel Writer] Could not remember the learned context window.', error)
+  }
+}
+
 function applyProxyConfig() {
   try {
     const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
@@ -89,39 +112,6 @@ function applyProxyConfig() {
       delete process.env.https_proxy
     }
   } catch { /* 忽略 */ }
-}
-
-function recordProviderOutcome(
-  request: LLMRequest,
-  model: ModelProfile,
-  startedAt: number,
-  outcome: {
-    success: boolean
-    usage?: TokenUsage
-    error?: string
-    finishReason?: LLMFinishReason
-  },
-): void {
-  if (!isProjectSessionContext(request.projectSession)) return
-  try {
-    projectAccess.assertCurrentProjectContext(request.projectSession, getCurrentProjectPath())
-    LLMHistoryRepository.logCall({
-      modelId: model.id,
-      modelName: model.name || model.modelName,
-      purpose: request.purpose?.trim() || 'generation',
-      promptTokens: outcome.usage?.promptTokens ?? null,
-      completionTokens: outcome.usage?.completionTokens ?? null,
-      totalTokens: outcome.usage?.totalTokens ?? null,
-      durationMs: Math.max(0, Date.now() - startedAt),
-      success: outcome.success,
-      errorMessage: outcome.finishReason && outcome.finishReason !== 'stop'
-        ? `finish:${outcome.finishReason}`
-        : outcome.error,
-    })
-  } catch (error) {
-    // Statistics are diagnostic only and must never change generation outcome.
-    console.warn('[AI Novel Writer] LLM call statistics were not recorded.', error)
-  }
 }
 
 /**
@@ -172,148 +162,6 @@ function providerConnectionFailure(response: Extract<LLMResponse, { success: fal
 export function registerLLMController() {
   const modelExecutionLeases = new ModelExecutionLeaseRegistry({ loadModel: getModelConfig })
   const modelDiscovery = new ModelDiscoveryService()
-  const closedExecutionLeaseTombstones = new Map<string, number>()
-
-  const pruneClosedExecutionLeaseTombstones = (now: number) => {
-    for (const [leaseId, expiresAt] of closedExecutionLeaseTombstones) {
-      if (expiresAt <= now) closedExecutionLeaseTombstones.delete(leaseId)
-    }
-  }
-
-  ipcMain.handle('llm:begin-execution-lease', async (_event, modelId: string) => {
-    try {
-      return { success: true, lease: modelExecutionLeases.begin(modelId) }
-    } catch (error) {
-      if (error instanceof ModelExecutionLeaseError && error.code === 'MODEL_NOT_FOUND') {
-        return { success: false, errorCode: 'MODEL_NOT_FOUND' as const }
-      }
-      return { success: false, errorCode: 'LEASE_BEGIN_FAILED' as const }
-    }
-  })
-
-  ipcMain.handle('llm:close-execution-lease', async (_event, leaseId: string) => {
-    const now = Date.now()
-    pruneClosedExecutionLeaseTombstones(now)
-    if (modelExecutionLeases.close(leaseId)) {
-      closedExecutionLeaseTombstones.set(
-        leaseId,
-        now + CLOSED_EXECUTION_LEASE_TOMBSTONE_TTL_MS,
-      )
-      return { success: true }
-    }
-    if (closedExecutionLeaseTombstones.has(leaseId)) return { success: true }
-    return { success: false, error: 'MODEL_EXECUTION_LEASE_INVALID' }
-  })
-
-  ipcMain.handle('llm:generate', async (_event, request: LLMRequest) => {
-    const startedAt = Date.now()
-    let model: ModelProfile | null = null
-    try {
-      applyProxyConfig()
-      model = request.modelExecutionLeaseId
-        ? modelExecutionLeases.resolve(request.modelExecutionLeaseId)
-        : getModelConfig(request.modelId)
-      if (!model) return { success: false, content: '', finishReason: 'error', error: 'MODEL_NOT_FOUND' }
-
-      const provider = LLMFactory.getProvider(model)
-      const result = await provider.generate(
-        model,
-        request.messages,
-        {
-          ...resolveGenerationParameters(model, request),
-          // One execution lease spans one logical generation run; its id is the
-          // gateway conversation scope so retries keep session affinity.
-          conversationId: request.modelExecutionLeaseId,
-        },
-      )
-      recordProviderOutcome(request, model, startedAt, result)
-      return result
-    } catch (error) {
-      if (model) recordProviderOutcome(request, model, startedAt, { success: false, error: String(error) })
-      return { success: false, content: '', finishReason: 'error', error: String(error) }
-    }
-  })
-
-  ipcMain.handle('llm:generate-stream', async (event, requestId: string, request: LLMRequest) => {
-    applyProxyConfig()
-    let model: ModelProfile | null
-    try {
-      model = request.modelExecutionLeaseId
-        ? modelExecutionLeases.resolve(request.modelExecutionLeaseId)
-        : getModelConfig(request.modelId)
-    } catch (error) {
-      return { requestId, started: false, error: String(error) }
-    }
-    if (!model) return { requestId, started: false }
-    const generationParameters = {
-      ...resolveGenerationParameters(model, request),
-      // Same scope as llm:generate: the execution lease, when present, marks
-      // one logical generation run for gateway session affinity.
-      conversationId: request.modelExecutionLeaseId,
-    }
-
-    const abortController = new AbortController()
-    const startedAt = Date.now()
-    let recorded = false
-    const recordOnce = (outcome: { success: boolean; usage?: TokenUsage; error?: string }) => {
-      if (recorded) return
-      recorded = true
-      recordProviderOutcome(request, model, startedAt, outcome)
-    }
-    activeStreams.set(requestId, {
-      controller: abortController,
-      recordCancelled: () => recordOnce({ success: false, error: 'cancelled' }),
-    })
-    const win = BrowserWindow.fromWebContents(event.sender)
-
-    const provider = LLMFactory.getProvider(model)
-    
-    // We do not await this globally since it's streaming independently
-    provider.generateStream(model, request.messages, {
-      ...generationParameters,
-      signal: abortController.signal,
-      onChunk: (chunk: string) => win?.webContents.send('llm:stream-chunk', { requestId, chunk }),
-      onDone: (fullText: string, usage?: TokenUsage, finishReason?: LLMFinishReason) => {
-        const terminalReason: LLMFinishReason = finishReason ?? 'unknown'
-        const success = terminalReason === 'stop'
-        recordOnce({ success, usage, error: success ? undefined : `finish:${terminalReason}` })
-        win?.webContents.send('llm:stream-done', {
-          requestId,
-          fullText,
-          usage,
-          finishReason: terminalReason,
-        })
-        activeStreams.delete(requestId)
-      },
-      onError: (error: string, content?: string, usage?: TokenUsage) => {
-        recordOnce({ success: false, usage, error })
-        if (content !== undefined) {
-          win?.webContents.send('llm:stream-done', {
-            requestId,
-            fullText: content,
-            usage,
-            finishReason: 'error',
-          })
-        } else {
-          win?.webContents.send('llm:stream-error', { requestId, error })
-        }
-        activeStreams.delete(requestId)
-      },
-    })
-
-    return { requestId, started: true }
-  })
-
-  ipcMain.handle('llm:cancel', async (_event, requestId: string) => {
-    const stream = activeStreams.get(requestId)
-    if (stream) {
-      stream.recordCancelled()
-      stream.controller.abort()
-      activeStreams.delete(requestId)
-      return { success: true }
-    }
-    return { success: false }
-  })
 
   ipcMain.handle('llm:list-models', async () => loadModelConfigs())
 
@@ -343,8 +191,8 @@ export function registerLLMController() {
       }
       const models = loadModelConfigsForUpdate()
       const idx = models.findIndex((m) => m.id === model.id)
-      if (idx >= 0) models[idx] = model
-      else models.push(model)
+      if (idx >= 0) models[idx] = withStoredLearnedWindow(model, models[idx])
+      else models.push(withStoredLearnedWindow(model, undefined))
       saveModelConfigs(models)
       return { success: true }
     } catch (error) {
@@ -464,6 +312,22 @@ export function registerLLMController() {
     return config.defaultEmbeddingModelId ?? null
   })
 
+  ipcMain.handle('llm:set-default-rerank-model', async (_event, modelId: string | null) => {
+    try {
+      const config = loadGlobalConfigForUpdate()
+      config.defaultRerankModelId = modelId
+      writeJsonFile(GLOBAL_CONFIG_PATH, config)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('llm:get-default-rerank-model', async () => {
+    const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
+    return config.defaultRerankModelId ?? null
+  })
+
   ipcMain.handle('llm:test-connection', async (
     _event,
     model: ModelProfile,
@@ -476,6 +340,8 @@ export function registerLLMController() {
     const timedOut = () => ({ success: false, error: mainT(app.getLocale(), 'error.connectionTestTimeout', { seconds: timeoutMs / 1000 }) })
     try {
       applyProxyConfig()
+
+      if (model.purposes?.includes('rerank')) return await testRerankConnection(model)
 
       const messages = [{ role: 'user', content: 'Say "hello" and nothing else.' }]
       const provider = LLMFactory.getProvider(model)
@@ -518,5 +384,5 @@ export function registerLLMController() {
     }
   })
 
-  return { modelExecutionLeases, loadModel: getModelConfig, applyProxyConfig }
+  return { modelExecutionLeases, loadModel: getModelConfig, rememberContextWindow, applyProxyConfig }
 }

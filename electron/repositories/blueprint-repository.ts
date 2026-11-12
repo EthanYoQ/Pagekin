@@ -9,12 +9,9 @@ import type { BlueprintForPreflight } from '../../src/shared/consistency-preflig
 import { getProjectDb, getCurrentProjectPath } from '../database'
 import { readPortableRuntimeFreeze } from '../services/portable-runtime-freeze'
 import { ensureBaselineBlueprintTables } from '../migrations/baseline-blueprint-schema'
-import { CharacterRosterRepository } from './character-roster-repository'
-import { hasCharacterIdentitySchema } from './character-repository'
 import { findCharacterProposalEvidence } from '../services/character-proposal-service'
 import { proveCharacterProposal } from '../services/generation-character-proposal-proof'
 import { GenerationRunRepository } from './generation-run-repository'
-import { blueprintCharacterSyncFactError } from '../../src/shared/blueprint-character-sync-evidence'
 import type { BlueprintNewCharacterCandidate } from '../../src/shared/blueprint-semantic-contract'
 
 /** 蓝图行类型（DB 蛇形命名） */
@@ -49,6 +46,8 @@ export interface BlueprintData {
      * the immutable operation receipt so character sync can be replayed.
      */
     relationshipHints?: unknown
+    /** 只出现在回执里：fill-empty 没有改动这一章，提示要往前找真正写入它的回执。 */
+    retainedByFillEmpty?: true
     suspenseHook: string
     userGuidance: string
     notes: string
@@ -136,15 +135,6 @@ interface BlueprintCharacterSyncOperationRow {
     updated_at: string
     completed_at: string | null
 }
-
-interface CharacterRosterOperationEvidenceRow {
-    operation_id: string
-    payload_hash: string
-    committed_revision: number
-    projection_hash: string
-}
-
-const SHA256_HEX = /^[a-f0-9]{64}$/u
 
 function parseCharacters(raw: string | null): string[] {
     if (raw === null) return []
@@ -368,54 +358,9 @@ function authoritativeCharacterSyncCompletionReceipt(
     db: NonNullable<ReturnType<typeof getProjectDb>>,
     operation: BlueprintCharacterSyncOperation,
 ): BlueprintCharacterSyncCompletionReceipt {
-    if (hasCharacterIdentitySchema(db)) {
-        const proposalReceipt = findCharacterProposalEvidence(db, { kind: 'directory', operationId: operation.operationId },
-          (projectId, source) => proveCharacterProposal(db, new GenerationRunRepository(() => db), projectId, source, false, () => {}))
-        return { blueprintCommitOperationId: operation.blueprintCommitOperationId, operationId: operation.operationId, status: 'proposal-staged', proposalReceipt }
-    }
-    const roster = CharacterRosterRepository.read()
-    if (roster.status !== 'ready' && roster.status !== 'empty') {
-        throw new Error('BLUEPRINT_CHARACTER_SYNC_ROSTER_NOT_READY')
-    }
-    const factError = blueprintCharacterSyncFactError(operation.characterSyncInput, roster.entries)
-    if (factError) throw new Error('BLUEPRINT_CHARACTER_SYNC_FACTS_CHANGED')
-
-    const rosterOperation = db.prepare(`
-      SELECT operation_id, payload_hash, committed_revision, projection_hash
-      FROM character_roster_operations
-      WHERE operation_id = ?
-    `).get(operation.operationId) as CharacterRosterOperationEvidenceRow | undefined
-    if (!rosterOperation) {
-        return {
-            blueprintCommitOperationId: operation.blueprintCommitOperationId,
-            operationId: operation.operationId,
-            status: 'already-satisfied',
-        }
-    }
-    if (
-        rosterOperation.operation_id !== operation.operationId
-        || rosterOperation.committed_revision < 1
-        || rosterOperation.committed_revision > roster.revision
-        || !SHA256_HEX.test(rosterOperation.payload_hash)
-        || !SHA256_HEX.test(rosterOperation.projection_hash)
-        || (
-            rosterOperation.committed_revision === roster.revision
-            && rosterOperation.projection_hash !== roster.projectionHash
-        )
-    ) {
-        throw new Error('BLUEPRINT_CHARACTER_SYNC_EVIDENCE_MISMATCH')
-    }
-    return {
-        blueprintCommitOperationId: operation.blueprintCommitOperationId,
-        operationId: operation.operationId,
-        status: 'committed',
-        rosterReceipt: {
-            operationId: rosterOperation.operation_id,
-            payloadHash: rosterOperation.payload_hash,
-            revision: rosterOperation.committed_revision,
-            idempotent: false,
-        },
-    }
+    const proposalReceipt = findCharacterProposalEvidence(db, { kind: 'directory', operationId: operation.operationId },
+      (projectId, source) => proveCharacterProposal(db, new GenerationRunRepository(() => db), projectId, source, false, () => {}))
+    return { blueprintCommitOperationId: operation.blueprintCommitOperationId, operationId: operation.operationId, status: 'proposal-staged', proposalReceipt }
 }
 
 function assertAuthoritativeCharacterSyncCompletion(
@@ -524,10 +469,10 @@ export class BlueprintRepository {
      * 按 rowid 而不是 committed_at 排序：后者只到秒，且排在回执正文之后的列，排序要读穿整份回执。
      */
     static committedRelationshipHints(blueprints: readonly BlueprintForPreflight[], db = requireProjectDb()): Record<number, unknown> {
-        const latestCovering = db.prepare(`
+        const covering = db.prepare(`
           SELECT operation_id FROM blueprint_commit_operations
           WHERE start_chapter <= @chapter AND end_chapter >= @chapter
-          ORDER BY rowid DESC LIMIT 1
+          ORDER BY rowid DESC
         `).pluck()
         const readOperation = db.prepare('SELECT * FROM blueprint_commit_operations WHERE operation_id = ?')
         const receipts = new Map<string, Map<unknown, BlueprintData>>()
@@ -544,7 +489,7 @@ export class BlueprintRepository {
         const hints: Record<number, unknown> = {}
         for (const blueprint of blueprints) {
             const chapter = blueprint.chapterNumber
-            const operationId = latestCovering.get({ chapter }) as string | undefined
+            const operationId = (covering.all({ chapter }) as string[]).find(id => !receipt(id).get(chapter)?.retainedByFillEmpty)
             const item = operationId === undefined ? undefined : receipt(operationId).get(chapter)
             if (item?.relationshipHints === undefined) continue
             if (samePersistedBlueprint(planningContent({ ...blueprint, notesUpdatedAt: '' }), planningContent(item))) hints[chapter] = item.relationshipHints
@@ -741,7 +686,9 @@ export class BlueprintRepository {
                 }
             }
 
-            const characterSyncInput = blueprints
+            const characterSyncInput = blueprints.map(blueprint => (
+                kept(blueprint.chapterNumber) ? { ...blueprint, retainedByFillEmpty: true as const } : blueprint
+            ))
             db.prepare(`
               INSERT INTO blueprint_commit_operations (
                 operation_id, payload_hash, mode, start_chapter, end_chapter, character_sync_input

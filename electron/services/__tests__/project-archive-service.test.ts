@@ -38,7 +38,6 @@ import {
   createProjectArchiveRoundtripFixture,
   insertAuthorImportReceipts,
 } from '../../../test/desktop/project-archive.fixture'
-import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -329,7 +328,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
 
-describe('portable project export service', { timeout: 20_000 }, () => {
+describe('portable project export service', () => {
   it('preserves admitted predecessor, recheck goals and state-update raw values without admitting unknown fields', async () => {
     const material = { draftId: 10, chapterNumber: 1, chapterTitle: '', content: '前驱正文',
       identity: { projectId: 'project', sourceId: 'candidate:10', revision: 1, contentHash: hash('前驱正文'), provenance: 'generated' } }
@@ -564,7 +563,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     expect(fs.existsSync(f.target)).toBe(false)
   })
 
-  it('exports the shared 20-chapter corpus with authority, assets and frozen runtime history', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+  it('exports the shared 20-chapter corpus with authority, assets and frozen runtime history', async () => {
     const f = await createProjectArchiveRoundtripFixture()
     try {
       const sourceBefore = fs.readFileSync(f.sourceDatabasePath)
@@ -616,7 +615,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
     } finally { f.dispose() }
   })
 
-  it('exports and restores an author import that left several effect receipts (#607)', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, async () => {
+  it('exports and restores an author import that left several effect receipts (#607)', async () => {
     const f = await createProjectArchiveRoundtripFixture()
     try {
       const namespace = `import:author-manuscript:${AUTHOR_IMPORT_RUN_ID}`
@@ -1006,7 +1005,7 @@ describe('portable project export service', { timeout: 20_000 }, () => {
   })
 })
 
-describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）', { timeout: 30_000 }, () => {
+describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）', () => {
   const SECRET = 'sk-写稿凭据-绝不外带'
   const ENDPOINT = 'https://私有端点.example/v1'
   const MACHINE_PATH = 'C:\\Users\\writer\\密钥.txt'
@@ -1057,6 +1056,24 @@ describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）',
     await restorePortableProject({ archivePath: f.target, targetProjectRoot: targetRoot })
     return path.join(targetRoot, '.ai-novel', 'project.db')
   }
+
+  it('线索的延后和指定跟着副本走，plan_id 还指向同一条线索', async () => {
+    const f = fixture()
+    const seed = new Database(f.databasePath)
+    seed.pragma('foreign_keys = ON')
+    try {
+      seed.prepare("INSERT INTO narrative_thread_plans(id,title,type,target_start_chapter,target_end_chapter,author_intent) VALUES(8,'旧信','伏笔',1,5,'交代寄信人')").run()
+      seed.prepare("INSERT INTO narrative_thread_assignments(plan_id,chapter_number,kind,note) VALUES(8,6,'resolve','写第 5 章时延后'),(8,4,'advance','写第 4 章前指定本章推进')").run()
+    } finally { seed.close() }
+    const restored = new Database(await roundtrip(f, 'restored-thread-assignments'), { readonly: true })
+    try {
+      expect(restored.prepare(`SELECT p.title,a.chapter_number AS chapterNumber,a.kind,a.note FROM narrative_thread_assignments a
+        JOIN narrative_thread_plans p ON p.id=a.plan_id ORDER BY a.chapter_number`).all()).toEqual([
+        { title: '旧信', chapterNumber: 4, kind: 'advance', note: '写第 4 章前指定本章推进' },
+        { title: '旧信', chapterNumber: 6, kind: 'resolve', note: '写第 5 章时延后' },
+      ])
+    } finally { restored.close() }
+  })
 
   it('导出再恢复后，未审稿件的审稿目标仍含写稿时冻结的线索任务', async () => {
     const f = fixture()

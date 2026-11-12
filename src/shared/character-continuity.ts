@@ -28,6 +28,7 @@ export interface CharacterRelationNode extends ContinuityNodeBase {
   targetId: string
   targetName: string
   relationshipId: string
+  authorDeclined?: true
 }
 export type ContinuityNode = CharacterStateNode | CharacterRelationNode
 
@@ -46,9 +47,9 @@ export interface LatestContinuityNodes {
 const authorDecided = (provenance: ContinuityProvenance) => provenance.kind === 'author' || provenance.kind === 'adopted'
 
 /** 作者定的值「自第 N 章起」生效；派生值和基线是第 N 章写完后的状态，重写第 N 章时还不存在。升级前作者填的状态按当时记下的章，不按升级快照章。 */
-function visibleWhileWriting(node: ContinuityNode, chapter: number): boolean {
-  if (node.provenance.kind === 'legacy' && node.provenance.authorChapter !== undefined) return node.provenance.authorChapter <= chapter
-  return authorDecided(node.provenance) ? node.effectiveChapter <= chapter : node.effectiveChapter < chapter
+export function firstVisibleChapter(node: ContinuityNode): number {
+  if (node.provenance.kind === 'legacy' && node.provenance.authorChapter !== undefined) return node.provenance.authorChapter
+  return authorDecided(node.provenance) ? node.effectiveChapter : node.effectiveChapter + 1
 }
 
 function newer(candidate: ContinuityNode, current: ContinuityNode): boolean {
@@ -69,7 +70,7 @@ export function latestNodesBefore(nodes: readonly ContinuityNode[], chapter: num
   const wanted = ids && new Set(ids)
   const latest = new Map<string, ContinuityNode>()
   for (const node of nodes) {
-    if (wanted && !wanted.has(node.subjectId) || !visibleWhileWriting(node, chapter)) continue
+    if (wanted && !wanted.has(node.subjectId) || firstVisibleChapter(node) > chapter) continue
     const key = seriesKey(node), current = latest.get(key)
     if (!current || newer(node, current)) latest.set(key, node)
   }
@@ -78,10 +79,11 @@ export function latestNodesBefore(nodes: readonly ContinuityNode[], chapter: num
   for (const node of latest.values()) {
     if (node.value === '') continue
     if (node.aspect !== 'relation') { states.push(node); continue }
+    if (node.authorDeclined) continue
     const key = JSON.stringify([node.subjectId, node.targetId])
     const pair = pairs.get(key) ?? { subjectId: node.subjectId, targetId: node.targetId, lines: [], conflict: false }
     pair.lines.push(node)
-    pair.conflict = pair.lines.length > 1
+    pair.conflict = new Set(pair.lines.map(line => line.value)).size > 1
     pairs.set(key, pair)
   }
   return { states, relations: [...pairs.values()] }
@@ -113,11 +115,30 @@ export interface CharacterTimelineChange {
   removed: boolean
   /** removed 时是被去掉的旧值，其余时候是节点的值。 */
   value: string
+  /** 作者采用定稿发现的关系时被换掉的旧值，这时 node 带着定稿的原文。 */
+  replaced?: string[]
 }
 export interface CharacterTimelineChapter { chapter: number; changes: CharacterTimelineChange[] }
 
 const aspectRank = (node: ContinuityNode) => node.aspect === 'relation' ? CHARACTER_STATE_TEXT_FIELDS.length : CHARACTER_STATE_TEXT_FIELDS.indexOf(node.aspect)
 const targetOf = (node: ContinuityNode) => node.aspect === 'relation' ? node.targetName : ''
+
+/** 采用在事件表里是解除旧行、派生值、作者新值三个节点，作者看到的是一件事。靠同一次操作认定，手工改的不合并。 */
+function foldAdoptedRelations(changes: readonly CharacterTimelineChange[]): CharacterTimelineChange[] {
+  const absorbed = new Set<CharacterTimelineChange>()
+  const folded = changes.map(change => {
+    const { node } = change
+    if (node.aspect !== 'relation' || node.provenance.kind !== 'author' || change.removed) return change
+    const { operationId } = node.provenance
+    const samePair = (other: CharacterTimelineChange) => other.node.aspect === 'relation' && other.node.subjectId === node.subjectId && other.node.targetId === node.targetId
+    const found = changes.find(other => samePair(other) && other.source === 'finalized' && other.value === change.value)
+    const replaced = changes.filter(other => samePair(other) && other.removed && other.node.provenance.kind === 'author' && other.node.provenance.operationId === operationId)
+    if (!found || !replaced.length) return change
+    for (const other of [found, ...replaced]) absorbed.add(other)
+    return { ...change, node: { ...node, quote: found.node.quote }, replaced: replaced.map(other => other.value) }
+  })
+  return folded.filter(change => !absorbed.has(change))
+}
 
 /** 同章同字段的取舍规则与 latestNodesBefore 相同。 */
 export function characterTimeline(nodes: readonly ContinuityNode[]): CharacterTimelineChapter[] {
@@ -143,7 +164,7 @@ export function characterTimeline(nodes: readonly ContinuityNode[]): CharacterTi
   }
   return [...chapters].sort(([left], [right]) => right - left).map(([chapter, changes]) => ({
     chapter,
-    changes: changes.sort((left, right) => aspectRank(left.node) - aspectRank(right.node)
+    changes: foldAdoptedRelations(changes).sort((left, right) => aspectRank(left.node) - aspectRank(right.node)
       || targetOf(left.node).localeCompare(targetOf(right.node)) || Number(right.removed) - Number(left.removed)),
   }))
 }

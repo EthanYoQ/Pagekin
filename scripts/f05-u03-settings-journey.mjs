@@ -264,16 +264,12 @@ async function main() {
     await stage.closeSettings(page)
 
     currentStep = 'U03.A07-request-parameters'
-    const generated = await invoke(page, 'llm:generate', {
-      modelId: savedModel.id, purpose: 'u03-parameter-probe', reasoningStage: 'general', creativeStrategy: 'auto',
-      messages: [{ role: 'user', content: 'Reply with U03_OK.' }],
-    })
-    assert.equal(generated.success, true, generated.error)
-    assert.equal(generated.content, 'U03_OK')
+    const probed = await invoke(page, 'llm:test-connection', savedModel)
+    assert.equal(probed.success, true, probed.error)
     assert.deepEqual(fixture.requests[1], { method: 'POST', path: '/v1/chat/completions', authorized: true,
-      parameters: { model: discoveredModelName, max_tokens: 1536, temperature: 0.35, stream: false, reasoning_effort: null } })
+      parameters: { model: discoveredModelName, max_tokens: 1024, temperature: 0.35, stream: false, reasoning_effort: null } })
     assert.equal(fixture.requests.length, 2)
-    pass('U03.A07-request-parameters', 'U03.A07', 'The saved V3 model drove a main-process request whose controlled endpoint observed exact temperature/output cap and no unsupported reasoning field')
+    pass('U03.A07-request-parameters', 'U03.A07', 'The saved V3 model drove a main-process connection probe whose controlled endpoint observed its exact temperature, the probe output cap within its 1536 limit, and no unsupported reasoning field')
 
     currentStep = 'U03.A03-default-valid-section'
     await stage.openSettings(page)
@@ -458,7 +454,7 @@ async function main() {
     profile: { canonical: profile.canonical, userData: profile.userData, projectRoot: profile.projects },
     unverified: ['U03.A03 has no independent invalid URL deep-link consumer; existing default and backup section entries were tested',
       'U03.A05-A07 use an isolated loopback model; real external provider capability/quality is unverified',
-      'U03.A07 verifies the saved V3 model through renderer IPC and main HTTP request, not a complete V3 generation workflow',
+      'U03.A07 verifies the saved V3 model through the connection probe and main HTTP request, not a complete V3 generation workflow',
       'U03.A07 does not qualify provider-specific reasoning mappings or context-budget preflight',
       'U03.A09-A10 use a controlled loopback Skill source through exact main-process GitHub fetch interception; arbitrary public GitHub availability/trust is unverified',
       'U03.A11 tests one planning-stage architecture run, not every writing stage or model quality',

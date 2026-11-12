@@ -583,7 +583,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
             </div>
             <div className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }} data-testid="import-purpose-explanation">
               {purpose === 'reference'
-                ? text('用于知识库、结构与文风拆解，不会写入草稿箱或正文章节。', 'Used for knowledge, structure, and style analysis. It never becomes a draft or manuscript chapter.')
+                ? text('用于知识库、结构与文风拆解，不会变成章节草稿或正文。', 'Used for knowledge, structure, and style analysis. It never becomes a draft or manuscript chapter.')
                 : text('按章节号导入为不可变权威定稿，用于连续性与后续写作；不会进入参考语料或生成仿写拆解。', 'Imported by chapter number as immutable authoritative finalized text for continuity and future writing. It is not added to reference corpus or imitation analysis.')}
             </div>
             {purpose === 'author-manuscript' && (

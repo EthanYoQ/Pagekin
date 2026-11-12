@@ -8,7 +8,6 @@ import { closeProjectDatabase, getProjectDb } from '../../../../../electron/data
 import { insertContinuityBaseline } from '../../../../../electron/migrations/m08-continuity-foundation'
 import {
   insertCharacterRelationship,
-  readCharacterContinuityNodes,
   readStateChapterRange,
   writeCharacterStateField,
   type StateWriteOrigin,
@@ -42,7 +41,8 @@ let projectPath = ''
 let lin = ''
 let zhou = ''
 let relationshipCount = 0
-let nodesRead: () => unknown = () => readCharacterContinuityNodes(db())
+const nodesAsHandlerReads = (characterIds: string[]) => SummaryRepository.readContinuityNodesForWriting(characterIds, db())
+let nodesRead: (characterIds: string[]) => unknown = nodesAsHandlerReads
 let mainChannels: Record<string, (...args: unknown[]) => unknown> = {}
 
 function finalize(chapter: number): void {
@@ -92,7 +92,7 @@ function installIpc(): void {
       case 'db:draft-get-finalized': return db().prepare("SELECT id FROM drafts WHERE chapter_number=? AND status='finalized'").get(Number(args[0])) ?? null
       case 'kb:search-writing-context': return { success: true, value: [] }
       case 'db:character-roster-read': return CharacterRosterRepository.read()
-      case 'db:character-continuity-nodes': return nodesRead()
+      case 'db:character-continuity-nodes': return nodesRead(args[0] as string[])
       default: throw new Error(`unexpected IPC: ${channel}`)
     }
   } } })
@@ -127,7 +127,7 @@ beforeEach(() => {
   db().prepare("INSERT OR IGNORE INTO project_core (id, project_name, writing_language) VALUES ('main', 'Timeline', 'zh-CN')").run()
   relationshipCount = 0
   promptLog.mockClear()
-  nodesRead = () => readCharacterContinuityNodes(db())
+  nodesRead = nodesAsHandlerReads
   mainChannels = {}
   lin = seedCharacter('林岚', 'protagonist')
   zhou = seedCharacter('周砚', 'supporting')
@@ -390,7 +390,7 @@ describe('写第 N 章时提示词里的人物状态和关系按时间线取', (
       installMainOwner()
       saveRoster('旧档案备注', '旧码头')
       let reads = 0
-      nodesRead = () => { if (++reads === 1) throw new Error('SQLITE_BUSY'); return readCharacterContinuityNodes(db()) }
+      nodesRead = characterIds => { if (++reads === 1) throw new Error('SQLITE_BUSY'); return nodesAsHandlerReads(characterIds) }
       beforePrepare = attempt => { if (attempt === 1) saveRoster('新档案备注', '新灯塔') }
       expect(await mainPrompt(2)).toContain('位置：新灯塔')
       expect(promptLog).not.toHaveBeenCalledWith(expect.stringContaining('人物时间线没能读取'))

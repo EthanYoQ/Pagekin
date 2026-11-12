@@ -19,29 +19,18 @@ export interface NarrativeThreadEventCandidate {
 type BlueprintData = DatabaseChannels['db:blueprint-get-all']['return'][number]
 
 export interface GenerateNarrativeThreadPlanCandidateInput {
-  modelId: string
   writingLanguage: WritingLanguage
   totalChapters: number
   blueprint: BlueprintData
-  signal: AbortSignal
 }
 
 export interface GenerateNarrativeThreadEventCandidateInput {
-  modelId: string
   writingLanguage: WritingLanguage
   plan: NarrativeThreadView
   draftId: number
   chapterNumber: number
   finalizedContent: string
-  signal: AbortSignal
 }
-
-export const NARRATIVE_THREAD_CANDIDATE_BUDGET = Object.freeze({
-  maxAttempts: 1,
-  maxRequestedOutputTokens: 4096,
-  maxRequestedOutputTokensPerAttempt: 4096,
-  deadlineMs: 120_000,
-})
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -118,7 +107,7 @@ export function parseNarrativeThreadEventCandidates(
   })
 }
 
-export function buildNarrativeThreadPlanTask(input: Omit<GenerateNarrativeThreadPlanCandidateInput, 'modelId' | 'signal'>) {
+export function buildNarrativeThreadPlanTask(input: GenerateNarrativeThreadPlanCandidateInput) {
   return {
   purpose: 'narrative-thread-plan-candidate',
   reasoningStage: 'planning' as const,
@@ -143,7 +132,7 @@ export function buildNarrativeThreadPlanTask(input: Omit<GenerateNarrativeThread
   }
 }
 
-export function buildNarrativeThreadEventTask(input: Omit<GenerateNarrativeThreadEventCandidateInput, 'modelId' | 'signal'>) {
+export function buildNarrativeThreadEventTask(input: GenerateNarrativeThreadEventCandidateInput) {
   return {
   purpose: 'narrative-thread-event-candidate',
   reasoningStage: 'review' as const,

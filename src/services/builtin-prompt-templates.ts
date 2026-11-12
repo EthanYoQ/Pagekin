@@ -1136,51 +1136,39 @@ severity 取值：error=严重的上述客观问题，强烈建议修复；warni
 ---
 
 【任务要求】
-1. 分析并在 \`updates\` 中提取已有角色（从提供的现有角色卡中找）发生状态变化的信息。
-2. 分析并在 \`newCharacters\` 中提取本章新出场的重要角色（不要包含路人或已死无后续影响的龙套）。
-3. \`currentState\` 字段说明：
+1. 在 \`updates\` 中只列出本章状态有变化的角色。现有角色卡中的人物填写其精确 \`characterId\`。
+2. 本章新出场的重要角色（不要包含路人或已死无后续影响的龙套）也写进 \`updates\`，只填 \`name\`、不填 \`characterId\`，作为待确认提议。
+3. \`currentState\` 字段说明（recentEvents 必填，其余字段只在与现有角色卡不同时填写）：
    - location: 当前所在位置/阵营（字符串）
    - powerLevel: 修为境界/能力等级（字符串）
    - physicalState: 身体状态，包括伤势/BUFF/外貌变化（字符串）
    - mentalState: 心理状态，当前愿望/恐惧/心态（字符串）
    - keyItems: 当前持有的关键道具/资源（字符串）
    - recentEvents: 本章结束时该角色的最新状态；有安排更正、撤回或推迟时优先保留最后更正及当前条件，不以显著旧事件替代；无更正则保留有关事件或待执行安排，不把计划写成已执行，也不替其他角色更改计划（字符串，50字以内）
-   - updatedAtChapter: 固定填写 {{chapter_number}}（数字）
+4. 每项都必须有 \`evidence.text\`：从本章正文逐字复制、只出现一次的一句原文。
 
 【输出格式（JSON）】
 {
   "updates": [
     {
-      "name": "已有角色的精确名字",
+      "characterId": "现有角色卡中的精确 characterId",
       "currentState": {
-        "location": "...",
-        "powerLevel": "...",
-        "physicalState": "...",
-        "mentalState": "...",
-        "keyItems": "...",
         "recentEvents": "...",
-        "updatedAtChapter": {{chapter_number}}
-      }
-    }
-  ],
-  "newCharacters": [
+        "location": "..."
+      },
+      "evidence": { "text": "本章正文中逐字复制的一句" }
+    },
     {
-      "name": "新角色名字",
-      "role": "主要人物/反派/配角/导师",
+      "name": "新出场角色的名字",
       "currentState": {
-        "location": "...",
-        "powerLevel": "...",
-        "physicalState": "...",
-        "mentalState": "...",
-        "keyItems": "...",
-        "recentEvents": "...",
-        "updatedAtChapter": {{chapter_number}}
-      }
+        "recentEvents": "..."
+      },
+      "evidence": { "text": "本章正文中逐字复制的一句" }
     }
   ]
 }
 
-如果本章无任何角色发生状态变化且无新角色，返回 {"updates": [], "newCharacters": []}。`,
+如果本章无任何角色发生状态变化且无新角色，返回 {"updates": []}。`,
   },
 
   // ================================================================

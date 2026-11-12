@@ -21,58 +21,6 @@ import {
 
 const temporaryRoots: string[] = []
 const windowsIt = process.platform === 'win32' ? it : it.skip
-const WINDOWS_POWERSHELL_INTEGRATION_TIMEOUT_MS = 30_000
-
-function powerShellTestCoverage(source: string): { relevant: string[], unbounded: string[] } {
-  const file = ts.createSourceFile('integration.test.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-  const powerShellHelpers = new Set([
-    'runProbeLibrary', 'runInstallerLibrary', 'runReleaseMonitorLibrary', 'runWinFormsGracefulCloseProbe',
-    'runWindowsE2ePowerShellFunctions', 'runWindowsE2ePowerShellFunction',
-  ])
-  const relevant: string[] = []
-  const unbounded: string[] = []
-
-  function usesPowerShell(node: ts.Node): boolean {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-      if (powerShellHelpers.has(node.expression.text)) return true
-      if (['execFileSync', 'spawnSync'].includes(node.expression.text)) {
-        const command = node.arguments[0]
-        if (command && ts.isStringLiteral(command) && /^(?:powershell|pwsh)(?:\.exe)?$/i.test(command.text)) return true
-      }
-    }
-    return ts.forEachChild(node, usesPowerShell) ?? false
-  }
-
-  function visit(node: ts.Node): void {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)
-      && ['it', 'windowsIt', 'windowsPowerShellIt', 'oldWriterIt'].includes(node.expression.text)
-      && node.arguments.length >= 2 && ts.isStringLiteral(node.arguments[0])
-      && usesPowerShell(node.arguments[1])) {
-      relevant.push(node.arguments[0].text)
-      const timeout = node.arguments[2]
-      const bounded = node.expression.text === 'windowsPowerShellIt'
-        || (timeout && (ts.isNumericLiteral(timeout)
-          ? Number(timeout.text.replaceAll('_', '')) >= WINDOWS_POWERSHELL_INTEGRATION_TIMEOUT_MS
-          : ts.isIdentifier(timeout) && timeout.text === 'WINDOWS_POWERSHELL_INTEGRATION_TIMEOUT_MS'))
-      if (!bounded) unbounded.push(node.arguments[0].text)
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(file)
-  return { relevant, unbounded }
-}
-
-function windowsPowerShellIt(
-  name: string,
-  handler: () => void | Promise<void>,
-  timeoutMilliseconds = WINDOWS_POWERSHELL_INTEGRATION_TIMEOUT_MS,
-) {
-  return windowsIt(
-    name,
-    handler,
-    Math.max(timeoutMilliseconds, WINDOWS_POWERSHELL_INTEGRATION_TIMEOUT_MS),
-  )
-}
 
 function quotePowerShell(value: string): string {
   return `'${value.replaceAll("'", "''")}'`
@@ -217,49 +165,6 @@ afterEach(() => {
   while (temporaryRoots.length > 0) {
     rmSync(temporaryRoots.pop()!, { recursive: true, force: true })
   }
-})
-
-describe('Windows heavy integration timeout contract', () => {
-  it('accepts an additional wrapped PowerShell test', () => {
-    expect(powerShellTestCoverage("windowsPowerShellIt('wrapped', () => runProbeLibrary(''))")).toEqual({
-      relevant: ['wrapped'], unbounded: [],
-    })
-  })
-
-  it('rejects an additional unwrapped PowerShell test', () => {
-    expect(powerShellTestCoverage("windowsIt('unwrapped', () => { const start = 1; runProbeLibrary('') })")).toEqual({
-      relevant: ['unwrapped'], unbounded: ['unwrapped'],
-    })
-  })
-
-  it('accepts a test moved out of the PowerShell set', () => {
-    expect(powerShellTestCoverage("windowsIt('moved', () => expect(true).toBe(true))")).toEqual({
-      relevant: [], unbounded: [],
-    })
-  })
-
-  it('bounds every real PowerShell child without changing ordinary test timeouts', () => {
-    const smokeInstallerTests = readFileSync(
-      resolve(process.cwd(), 'scripts/__tests__/smoke-win-installer.test.ts'),
-      'utf8',
-    )
-    const updateE2eTests = readFileSync(
-      resolve(process.cwd(), 'scripts/__tests__/windows-in-app-update-e2e.test.ts'),
-      'utf8',
-    )
-
-    expect(smokeInstallerTests).toContain('WINDOWS_POWERSHELL_INTEGRATION_TIMEOUT_MS = 30_000')
-    expect(smokeInstallerTests).toContain('Math.max(timeoutMilliseconds, WINDOWS_POWERSHELL_INTEGRATION_TIMEOUT_MS)')
-    const smokeCoverage = powerShellTestCoverage(smokeInstallerTests)
-    expect(smokeCoverage.relevant.length).toBeGreaterThan(0)
-    expect(smokeCoverage.unbounded).toEqual([])
-
-    expect(updateE2eTests).toContain('WINDOWS_POWERSHELL_INTEGRATION_TIMEOUT_MS = 30_000')
-    expect(updateE2eTests).toContain('Math.max(timeoutMilliseconds, WINDOWS_POWERSHELL_INTEGRATION_TIMEOUT_MS)')
-    const updateCoverage = powerShellTestCoverage(updateE2eTests)
-    expect(updateCoverage.relevant.length).toBeGreaterThan(0)
-    expect(updateCoverage.unbounded).toEqual([])
-  })
 })
 
 describe('Windows official in-app update E2E contract', () => {
@@ -596,7 +501,7 @@ describe('Windows official in-app update E2E contract', () => {
     expect(powershell).toContain('Assert-E2eRecentProjectPreserved -RecentProjects $afterRecentProjects')
   })
 
-  windowsPowerShellIt('allows managed JSON normalization while rejecting lost user config or recent projects', () => {
+  windowsIt('allows managed JSON normalization while rejecting lost user config or recent projects', () => {
     const expectedProject = 'C:\\e2e\\projects\\continuity'
     const output = runWindowsE2ePowerShellFunctions([
       'Assert-E2eCondition',
@@ -649,7 +554,7 @@ try { Assert-E2eRecentProjectPreserved -RecentProjects @([pscustomobject]@{ path
     })
   })
 
-  windowsPowerShellIt('seeds a valid recent-project array whose authorized project data is frozen independently', () => {
+  windowsIt('seeds a valid recent-project array whose authorized project data is frozen independently', () => {
     const root = temporaryRoot()
     const output = runWindowsE2ePowerShellFunctions(['New-E2eUserDataFixture'], `
 $fixture = New-E2eUserDataFixture -RuntimeRoot ${quotePowerShell(root)}
@@ -700,7 +605,7 @@ $velaHome = 'C:\\polluted-by-dot-source'
     expect(WINDOWS_UPDATE_RUNNER_COMMAND).toBe('pwsh.exe')
   })
 
-  windowsPowerShellIt('waits only for the exact pending installer root to exit before force-run cleanup', () => {
+  windowsIt('waits only for the exact pending installer root to exit before force-run cleanup', () => {
     const pendingInstallerPath = 'C:\\Users\\runneradmin\\AppData\\Local\\ai-novel-writer-updater\\pending\\ai-novel-writer-setup-0.8.0.exe'
     const output = runWindowsE2ePowerShellFunctions([
       'Assert-E2eCondition',
@@ -793,7 +698,7 @@ catch {
     })
   })
 
-  windowsPowerShellIt('fingerprints an installed app root supplied through its Windows 8.3 path', () => {
+  windowsIt('fingerprints an installed app root supplied through its Windows 8.3 path', () => {
     const root = temporaryRoot()
     const output = runWindowsE2ePowerShellFunctions([
       'Assert-E2eCondition',
@@ -819,7 +724,7 @@ $lines = @($fingerprint -split [char]10)
     })
   })
 
-  windowsPowerShellIt('treats an already-exited installed app as clean while rejecting PID reuse', () => {
+  windowsIt('treats an already-exited installed app as clean while rejecting PID reuse', () => {
     const output = runWindowsE2ePowerShellFunction(`
 $script:stopCalled = $false
 function Add-AiNovelTrackedProcess { param($ProcessIds, $StartTimeTicks, $ProcessId); [void]$ProcessIds.Add([int]$ProcessId); $StartTimeTicks[[int]$ProcessId] = '1'; return $true }

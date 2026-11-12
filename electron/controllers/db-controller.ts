@@ -21,9 +21,9 @@ import {
   BlueprintData,
   type BlueprintRangeCommitRequest,
 } from '../repositories/blueprint-repository'
-import { CharacterRepository, hasCharacterIdentitySchema } from '../repositories/character-repository'
+import { CharacterRepository } from '../repositories/character-repository'
 import { commitAuthorCharacterRoster } from '../services/character-roster-author'
-import { readCharacterContinuityNodes, readCharacterContinuityTimeline, readContinuityNodesWithCurrentNames } from '../repositories/character-continuity-repository'
+import { readCharacterContinuityTimeline } from '../repositories/character-continuity-repository'
 import { CharacterRosterRepository } from '../repositories/character-roster-repository'
 import type { CharacterRosterCommitRequest } from '../../src/shared/character-roster'
 import type { BlueprintForPreflight } from '../../src/shared/consistency-preflight'
@@ -127,7 +127,8 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'db:narrative-thread-plan-update',
   'db:narrative-thread-plan-delete',
   'db:narrative-thread-event-confirm',
-  'db:plot-tree-save',
+  'db:narrative-thread-assignment-set',
+  'db:narrative-thread-assignment-remove',
   'db:plot-tree-clear',
 ])
 
@@ -681,7 +682,7 @@ export function registerDatabaseController() {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
-    return characterIds.flatMap(characterId => readCharacterContinuityNodes(database, characterId))
+    return SummaryRepository.readContinuityNodesForWriting(characterIds, database)
   })
 
   ipcMain.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {
@@ -715,7 +716,7 @@ export function registerDatabaseController() {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
-    return readContinuityNodesWithCurrentNames(database)
+    return SummaryRepository.readContinuityNodesForPreflight(database)
   })
 
   ipcMain.handle('db:character-roster-commit', async (
@@ -726,17 +727,14 @@ export function registerDatabaseController() {
     try {
       assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
       const authorDb = getProjectDb()
-      if (request.intent === 'manual_edit' && authorDb && hasCharacterIdentitySchema(authorDb)) {
-        const authorSession = projectAccess.captureCurrentSession()
-        if (!authorSession) throw new Error('CHARACTER_AUTHOR_SCOPE_REQUIRED')
-        return { success: true, receipt: commitAuthorCharacterRoster(authorDb, request,
-          { projectId: authorSession.projectId, epoch: authorSession.leaseId }, () => {
-            projectAccess.assertCurrentSession(authorSession)
-            assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-          }) }
-      }
-      return { success: true, receipt: CharacterRosterRepository.commit(request,
-        request.generationRunHandle ? () => assertGenerationSourcesCurrent(request.generationRunHandle!) : undefined) }
+      if (!authorDb) throw new Error('PROJECT_NOT_OPEN')
+      const authorSession = projectAccess.captureCurrentSession()
+      if (!authorSession) throw new Error('CHARACTER_AUTHOR_SCOPE_REQUIRED')
+      return { success: true, receipt: commitAuthorCharacterRoster(authorDb, request,
+        { projectId: authorSession.projectId, epoch: authorSession.leaseId }, () => {
+          projectAccess.assertCurrentSession(authorSession)
+          assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+        }) }
     } catch (err) {
       return { success: false, error: String(err) }
     }
@@ -915,23 +913,23 @@ export function registerDatabaseController() {
     return { success: true, event: NarrativeThreadRepository.confirmEvent(input) }
   })
 
+  ipcMain.handle('db:narrative-thread-assignment-set', async (_event, input, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    NarrativeThreadRepository.setAssignment(input)
+    return { success: true, threads: NarrativeThreadRepository.list() }
+  })
+
+  ipcMain.handle('db:narrative-thread-assignment-remove', async (
+    _event, planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string,
+  ) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    NarrativeThreadRepository.removeAssignment(planId, chapterNumber, restoreEndChapter)
+    return { success: true, threads: NarrativeThreadRepository.list() }
+  })
+
   ipcMain.handle('db:plot-tree-read', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return PlotTreeRepository.read()
-  })
-
-  ipcMain.handle('db:plot-tree-save', async (
-    _event,
-    _snapshot,
-    _expectedSourceRevision: string,
-    expectedProjectPath: string,
-  ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      throw new Error('GENERATION_GRAPH_ADMISSION_REQUIRED')
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
   })
 
   ipcMain.handle('db:plot-tree-clear', async (_event, expectedProjectPath: string) => {

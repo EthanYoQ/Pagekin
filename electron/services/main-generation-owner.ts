@@ -48,6 +48,8 @@ import { proveFinalizedCharacterGeneration } from './finalized-character-generat
 import { FinalizedCharacterEvidenceError, parseFinalizedCharacterStateResponse, type FinalizedCharacterContext } from '../../src/shared/finalized-continuity'
 import type { GraphGenerationChannels, GraphGenerationInput, GraphGenerationRecovery } from '../../src/shared/graph-generation'
 import { GraphGeneration } from './graph-generation'
+import { BlueprintSuggestionRepository, patchedFields } from '../repositories/blueprint-suggestion-repository'
+import type { ContinuitySuggestionList } from '../../src/shared/blueprint-continuity-suggest'
 import type { LegacyRosterGenerationChannels, LegacyRosterGenerationRecovery } from '../../src/shared/legacy-roster-generation'
 import { LegacyRosterGeneration } from './legacy-roster-generation'
 import { readLegacyRosterGenerationProof } from './legacy-roster-generation-proof'
@@ -55,12 +57,12 @@ import { readLegacyRosterGenerationContext } from './legacy-roster-generation-co
 import { readPortableRuntimeFreeze } from './portable-runtime-freeze'
 import { readLegacyRosterSource, adoptLegacyCards } from './legacy-roster-source'
 import { buildLegacyRosterJsonRepairTask, buildLegacyRosterReplacementTask, parseLegacyRosterJson } from '../../src/shared/legacy-roster-generation-pure'
-import { validateGraphGenerationInput, readGraphGenerationContext } from './graph-generation-source'
+import { graphGenerationOperations, validateGraphGenerationInput, readGraphGenerationContext } from './graph-generation-source'
 import { planningTargetInstruction, parsePlanningTargetUnits, renderPlotOutlineRange, plotOutlineRecoveryDraft, plotOutlineSourceInvalid, validPlotOutlineAuthorPrefix, type PlotOutlineSource, type PlotOutlineProgress, type PlotOutlineRecovery, type PlotOutlineAuthorEditReceipt } from '../../src/shared/plot-outline-contract'
 import { ProjectCoreRepository, type ProjectCoreSynopsisExpected, type ProjectCoreSynopsisCommitRequest } from '../repositories/project-core-repository'
 // 尝试 id 都由 randomUUID 生成；recoverFrom 还拼进 nonce，只收 UUID，免得拼出别的尝试的 nonce。
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
-const graphOperations = { plot: 'plot-tree-snapshot', plan: 'narrative-thread-plan-candidate', event: 'narrative-thread-event-candidate' } as const
+const graphOperations = graphGenerationOperations
 /** 可能出现在运行侧页「可恢复」区的运行，按操作类型归类。不在表里的从不列出：定稿后处理、图生成、导入，以及随聊天隐藏的助手任务（磁盘记录保留）。 */
 const RECOVERY_KIND: ReadonlyMap<string, 'planning' | 'review' | 'editor' | 'draft'> = new Map([
   ['generate-plot-outline', 'planning'], ['chapter-blueprint-directory', 'planning'],
@@ -73,6 +75,12 @@ export function safeGenerationModelReceipt(receipt: ModelExecutionLeaseReceipt):
   return { modelId: receipt.modelId, provider: receipt.provider, protocol: receipt.protocol, modelName: receipt.modelName,
     modelRevision: receipt.modelRevision, endpointFingerprint: receipt.endpointFingerprint, capabilityEvidence: structuredClone(receipt.capabilityEvidence) }
 }
+function withFrozenWindowEvidence(current: SafeGenerationModelReceipt, frozen: SafeGenerationModelReceipt): SafeGenerationModelReceipt {
+  if (current.modelRevision !== frozen.modelRevision) return current
+  const { contextWindowTokens, maxOutputTokens, source } = frozen.capabilityEvidence
+  return { ...current, capabilityEvidence: { ...current.capabilityEvidence, contextWindowTokens, maxOutputTokens,
+    source: { ...current.capabilityEvidence.source, contextWindowTokens: source.contextWindowTokens, maxOutputTokens: source.maxOutputTokens } } }
+}
 export interface MainGenerationOwnerDependencies {
   database: Database.Database
   projectId: string
@@ -80,6 +88,7 @@ export interface MainGenerationOwnerDependencies {
   assertCurrent: () => void
   leases: ModelExecutionLeaseRegistry
   loadModel: (id: string) => ModelProfile | null
+  rememberContextWindow?: (model: ModelProfile, windowTokens: number) => void
   buildBinding: (selection: BeginGenerationRequest & { knowledgeSnapshot?: GenerationKnowledgeSnapshot; finalizedCharacterContextHash?: string; reviewRevisionContext?: ReviewRevisionContext; agentInput?: AgentGenerationInput; agentSession?: { key: string; roundIndex: number }; editorInlineInput?: EditorInlineInput; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; legacyRosterKey?: string }, model: SafeGenerationModelReceipt, policy: MainGenerationPolicy) => RunBinding
   rebuildBinding: (previous: RunBinding, model: SafeGenerationModelReceipt) => RunBinding
   beforeDispatch?: () => void
@@ -140,7 +149,6 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   const volatileReceipts = new Map<string, GenerationExecutionReceipt>()
   const pending = new Map<string, { hash: string; promise: Promise<MainGenerationExecuteReceipt> }>()
   const preparations = new Map<string, { binding: RunBinding; knowledgeSnapshot: GenerationKnowledgeSnapshot }>()
-  /** 只活在本次会话：写进模型档案会改 modelRevision，同模型的在途运行就恢复不了。 */
   const learnedWindows = new Map<string, number>()
   let closed = false
   const assertCurrent = () => {
@@ -266,7 +274,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       revision: artifact.revision, durableRevision: artifact.revision, text: artifact.text, textHash: artifact.textHash, status, compositionEligible }
   }
   const providerDispatch = deps.dispatch ?? dispatchProvider
-  const learnContextWindow = ({ runId, task }: ProviderRequest, windowTokens: number) => {
+  const learnContextWindow = ({ runId, task, model }: ProviderRequest, windowTokens: number) => {
+    deps.rememberContextWindow?.(model, windowTokens)
     const budget = (repository.get(runId).binding.sourceManifest.materialDecision as MaterialDecisionReceipt | undefined)?.budget
     if (budget && [DRAFT_SHORT_OUTLINE_PURPOSE, 'chapter-draft'].includes(task.purpose)
       && tightenMaterialBudget(budget, windowTokens).inputTokens < budget.inputTokens) learnedWindows.set(runId, windowTokens)
@@ -320,7 +329,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   function currentModelReceipt(binding: RunBinding): SafeGenerationModelReceipt {
     const model = deps.loadModel(modelReceipt(binding).modelId)
     if (!model) throw new Error('GENERATION_MODEL_MISSING')
-    return safeGenerationModelReceipt(createModelExecutionLeaseReceipt(model, { leaseId: 'read-only-evidence', createdAt: 0, expiresAt: 0 }))
+    return withFrozenWindowEvidence(safeGenerationModelReceipt(createModelExecutionLeaseReceipt(model, { leaseId: 'read-only-evidence', createdAt: 0, expiresAt: 0 })), modelReceipt(binding))
   }
   const viewOf = (run: DurableGenerationRun): MainGenerationRunView => {
     const { budget, plotOutline, attempts } = repository.readRunView(run.runId)
@@ -723,7 +732,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const next = deps.rebuildBinding(run.binding, receipt)
     const lease = deps.leases.begin(receipt.modelId)
     try {
-      if (!isDeepStrictEqual(safeGenerationModelReceipt(lease), receipt)) throw new Error('GENERATION_MODEL_CHANGED')
+      if (!isDeepStrictEqual(withFrozenWindowEvidence(safeGenerationModelReceipt(lease), receipt), receipt)) throw new Error('GENERATION_MODEL_CHANGED')
       const resumed = await service.resume(run.runId, next)
       assertCurrent()
       const previous = runLeases.get(run.runId)
@@ -1297,6 +1306,51 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       if (!request || Object.keys(request).some(key => key !== 'handle')) throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
       return graphRecovery(graphs.require(request.handle))
     },
+    readLatestContinuityCheck: (): GraphGenerationRecovery | null => {
+      assertCurrent()
+      // 打开页面时走这里：先只取 run_id，从新到旧找第一份读得出的结论，不一次解析全部 binding（#536）。
+      const rows = deps.database.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
+        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=? ORDER BY r.created_at_ms DESC, r.rowid DESC`)
+        .pluck().all(deps.projectId, graphOperations.continuity) as string[]
+      for (const runId of rows) {
+        let recovery: GraphGenerationRecovery
+        try { recovery = graphRecovery(repository.get(runId)) } catch { continue }
+        if (recovery.result) return recovery
+      }
+      return null
+    },
+    /** 读时把结果落进建议表，崩溃后重开也只会补齐同一份。 */
+    listContinuitySuggestions: (request: GraphGenerationChannels['graph-generation:suggestions']['args'][0]): ContinuitySuggestionList | null => {
+      assertCurrent()
+      if (!request || Object.keys(request).some(key => key !== 'finalizationId') || typeof request.finalizationId !== 'string') throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
+      const rows = deps.database.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
+        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=?
+          AND json_extract(r.binding_json,'$.sourceManifest.graphGenerationInput.finalizationId')=? ORDER BY r.created_at_ms DESC, r.rowid DESC`)
+        .pluck().all(deps.projectId, graphOperations['continuity-suggest'], request.finalizationId) as string[]
+      for (const runId of rows) {
+        let recovery: GraphGenerationRecovery
+        try { recovery = graphRecovery(repository.get(runId)) } catch { continue }
+        const { context, result } = recovery
+        if (context.kind !== 'continuity-suggest' || result?.kind !== 'continuity-suggest') continue
+        const statuses = BlueprintSuggestionRepository.materialize(deps.database, request.finalizationId, runId, context.chapters, result)
+        if (!statuses) return null
+        const nodes = new Map(context.nodes.map(node => [node.eventId, node]))
+        return { runId, checkedChapters: context.chapters.map(chapter => chapter.chapterNumber), droppedSuggestions: result.droppedSuggestions,
+          suggestions: result.suggestions.flatMap(suggestion => {
+            const status = statuses.get(suggestion.chapterNumber)
+            const chapter = context.chapters.find(item => item.chapterNumber === suggestion.chapterNumber)!
+            return status ? [{ suggestionId: `${runId}:${suggestion.chapterNumber}`, chapterNumber: suggestion.chapterNumber, status, issues: suggestion.issues,
+              basis: suggestion.eventIds.map(id => nodes.get(id)!), before: patchedFields(chapter, suggestion.patch), after: suggestion.patch }] : []
+          }) }
+      }
+      return null
+    },
+    decideContinuitySuggestion: (request: GraphGenerationChannels['graph-generation:decide-suggestion']['args'][0]) => {
+      assertCurrent()
+      if (!request || Object.keys(request).some(key => !['suggestionId', 'decision'].includes(key)) || typeof request.suggestionId !== 'string'
+        || !['accept', 'reject'].includes(request.decision)) throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
+      return BlueprintSuggestionRepository.decide(deps.database, request.suggestionId, request.decision)
+    },
     executeGraphGeneration: async (request: GraphGenerationChannels['graph-generation:execute']['args'][0]) => {
       assertCurrent()
       if (!request || Object.keys(request).some(key => key !== 'handle')) throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
@@ -1602,6 +1656,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     listPendingFinalizedCharacterStateCandidates: () => finalizedCharacters.listPendingStateCandidates(),
     readPendingFinalizedCharacterStateCandidate: (request: { draftId: number; candidateKey: string }) => finalizedCharacters.readPendingStateCandidate(request),
     decideFinalizedCharacterStateCandidate: (request: import('../../src/shared/finalized-continuity').FinalizedCharacterStateDecisionRequest) => finalizedCharacters.decideStateCandidate(request),
+    listPendingFinalizedRelationCandidates: () => finalizedCharacters.listPendingRelationCandidates(),
+    decideFinalizedRelationCandidate: (request: import('../../src/shared/finalized-continuity').FinalizedRelationDecisionRequest) => finalizedCharacters.decideRelationCandidate(request),
     prepareReviewRevision: (request: PrepareReviewRevisionRequest) => reviewRevisions.prepare(request),
     commitReview: (request: ReviewGenerationCommitRequest) => reviewRevisions.commitReview(request, assertSourcesCurrent),
     commitRevision: (request: RevisionGenerationCommitRequest) => reviewRevisions.commitRevision(request, assertSourcesCurrent),

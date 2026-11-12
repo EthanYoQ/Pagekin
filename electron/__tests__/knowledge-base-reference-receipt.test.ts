@@ -318,7 +318,7 @@ describe('stable reference knowledge receipt', () => {
     const reference = await authorizedReference('独立参照红帆', 'reference-red-sail').import(fileName)
     expect(reference).toMatchObject({ success: true })
 
-    const first = await importText('定稿旧灯塔', fileName, projectPath, 'openai', model)
+    const first = await importText('旧港石桥', fileName, projectPath, 'openai', model)
     expect(first).toMatchObject({ success: true })
     expect(await getDocumentIntegrity(projectPath, reference.docId!)).toMatchObject({ complete: true, corpusKind: 'reference' })
     expect(await searchKnowledgeFTS('独立参照红帆', projectPath)).not.toEqual([])
@@ -333,7 +333,7 @@ describe('stable reference knowledge receipt', () => {
     ]))
     expect(await getDocumentIntegrity(projectPath, first.docId!)).toBeNull()
     expect(await searchKnowledgeFTS('独立参照红帆', projectPath)).not.toEqual([])
-    expect(await searchKnowledgeFTS('定稿旧灯塔', projectPath)).toEqual([])
+    expect(await searchKnowledgeFTS('旧港石桥', projectPath)).toEqual([])
     expect(await searchKnowledgeFTS('定稿新灯塔', projectPath)).not.toEqual([])
   })
 

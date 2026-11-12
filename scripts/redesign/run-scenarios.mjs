@@ -133,7 +133,7 @@ async function reopenForReading({ page, invoke, reload }, projectPath) {
 
 /** Ctrl P 查找章节里标着「生成中」的章（流程脊只在正文阶段展开章节列表，Ctrl P 在哪一步都能看）。 */
 async function writingChapters(page) {
-  await page.keyboard.press('Control+P')
+  await page.keyboard.press('ControlOrMeta+P')
   await stage.paletteInput(page).waitFor({ state: 'visible' })
   const options = await stage.palette(page).getByRole('option').filter({ hasText: '生成中' }).allInnerTexts()
   await page.keyboard.press('Escape')
@@ -218,7 +218,7 @@ export const RUN_SCENARIOS = {
 
   'run-confirm': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake }) => {
     fake.replyCharacterCards()
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill('角色')
     await stage.palette(page).getByRole('option', { name: /^角色/ }).first().click()
     await materials.importCharacterCards(page, '姓名：守塔人\n身份：灯塔看守，记得每一次钟声。\n\n姓名：林岚\n身份：旧港潮汐记录的测绘师。')
@@ -291,7 +291,7 @@ export const RUN_SCENARIOS = {
     await stage.openFromLibraryEn(page, '灯塔')
     const spine = page.getByRole('navigation', { name: 'Writing flow' })
     await spine.waitFor({ state: 'visible' })
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     const input = page.getByRole('dialog', { name: 'Search and jump' }).getByRole('combobox')
     for (const [query, expected] of [['assistant', 0], ['agent', 0], ['chat', 0], ['Run sheet', 1]]) {
       await input.fill(query)
@@ -312,7 +312,7 @@ export const RUN_SCENARIOS = {
   } },
 
   'palette-no-chat': { model: false, shell: 'stage', setup: context => seedStageSample(context, { landOnChapter3: false }), run: async ({ page }) => {
-    await page.keyboard.press('Control+K')
+    await page.keyboard.press('ControlOrMeta+K')
     const input = stage.paletteInput(page)
     await input.waitFor({ state: 'visible' })
     for (const query of ['聊天', '对话', 'Agent', '助手']) {

@@ -1,6 +1,8 @@
 import { relationshipFacts } from './blueprint-character-sync-evidence'
-import type { CharacterRelationNode, LatestContinuityNodes } from './character-continuity'
+import type { CharacterRelationNode, ContinuityNode, LatestContinuityNodes } from './character-continuity'
+import { characterRosterIdentityKey } from './character-roster'
 import type { BlueprintForPreflight, ConsistencyFinding } from './consistency-preflight'
+import type { PendingFinalizedRelationCandidate } from './finalized-continuity'
 
 export type RelationPolarity = 'hostile' | 'close'
 
@@ -37,14 +39,14 @@ export function relationPolarity(text: string): RelationPolarity | null {
   return found.size === 1 && !UNCERTAIN.test(rest) ? [...found][0]! : null
 }
 
-interface RelationBasis {
+interface ContinuityBasis {
   sourceChapter: number
   evidence: string
   since: { zhCN: string; enUS: string }
 }
 
 /** 派生节点没有定稿原文就没有依据（ADR-0017）。基线节点的章号是迁移时补的，不当章号给作者看，sourceChapter 记 0。 */
-function relationBasis(node: CharacterRelationNode): RelationBasis | null {
+export function continuityBasis(node: ContinuityNode): ContinuityBasis | null {
   const chapter = node.effectiveChapter
   switch (node.provenance.kind) {
     case 'author':
@@ -72,13 +74,13 @@ export function findRelationReversals(blueprint: BlueprintForPreflight, continui
   for (const hint of relationshipFacts(blueprint.relationshipHints)) {
     const planned = relationPolarity(hint.relation)
     if (!planned) continue
-    const names = new Set([hint.from, hint.to])
+    const names = new Set([hint.from, hint.to].map(characterRosterIdentityKey))
     const lines = continuity.relations.flatMap(pair => pair.lines)
-      .filter(line => names.size === 2 && names.has(line.subjectName.trim()) && names.has(line.targetName.trim()))
+      .filter(line => names.size === 2 && names.has(characterRosterIdentityKey(line.subjectName)) && names.has(characterRosterIdentityKey(line.targetName)))
     if (lines.length === 0 || lines.some(line => relationPolarity(line.value) !== OPPOSITE[planned])) continue
-    const line = [...lines].sort(newestFirst).find(candidate => relationBasis(candidate))
+    const line = [...lines].sort(newestFirst).find(candidate => continuityBasis(candidate))
     if (!line) continue
-    const basis = relationBasis(line)!
+    const basis = continuityBasis(line)!
     const stableFactKey = `relation:${line.eventId}`
     if (findings.has(stableFactKey)) continue
     findings.set(stableFactKey, {
@@ -97,4 +99,31 @@ export function findRelationReversals(blueprint: BlueprintForPreflight, continui
     })
   }
   return [...findings.values()]
+}
+
+export const pendingRelationFactKey = (candidateKey: string) => `relation-pending:${candidateKey}`
+
+/** 作者一直没决定时每章的说法都会留一条建议，这里每对人物只提示本章之前最新的一条。pending 按章升序。 */
+export function findUndecidedRelations(blueprint: BlueprintForPreflight, pending: readonly PendingFinalizedRelationCandidate[]): ConsistencyFinding[] {
+  const cast = new Set(blueprint.characters.map(characterRosterIdentityKey))
+  const latest = new Map<string, PendingFinalizedRelationCandidate>()
+  for (const candidate of pending) {
+    if (candidate.source.chapterNumber >= blueprint.chapterNumber) continue
+    if (cast.has(characterRosterIdentityKey(candidate.sourceName)) && cast.has(characterRosterIdentityKey(candidate.targetName)))
+      latest.set(JSON.stringify([candidate.sourceId, candidate.targetId].sort()), candidate)
+  }
+  return [...latest.values()].map(candidate => {
+    const { sourceName, targetName, value, source: { chapterNumber } } = candidate
+    return {
+      stableFactKey: pendingRelationFactKey(candidate.candidateKey),
+      severity: 'warning',
+      sourceChapter: chapterNumber,
+      evidence: candidate.evidence.text,
+      issue: {
+        zhCN: `你设定${sourceName}和${targetName}是「${candidate.authorRelations.join('、')}」，第 ${chapterNumber} 章定稿写的是「${value}」，还没决定用哪个。`,
+        enUS: `You set ${sourceName} and ${targetName} as “${candidate.authorRelations.join(', ')}”, but finalized chapter ${chapterNumber} says “${value}”. You have not decided yet.`,
+      },
+      suggestion: { zhCN: '到角色页的建议里决定。', enUS: 'Decide in the suggestions on the Cast page.' },
+    }
+  })
 }

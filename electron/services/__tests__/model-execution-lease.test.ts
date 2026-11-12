@@ -10,6 +10,7 @@ import {
   ModelExecutionLeaseRegistry,
   resolveModelExecutionCapabilityEvidence,
 } from '../model-execution-lease'
+import { resolveContextWindow, withLearnedContextWindow } from '../../../src/shared/model-profile-draft'
 
 const ORIGINAL_KEY = 'lease-test-secret-original'
 
@@ -90,9 +91,9 @@ describe('ModelExecutionLeaseRegistry', () => {
         capabilities: undefined, ...overrides }
       const receipt = new ModelExecutionLeaseRegistry({ loadModel: () => profile }).begin(profile.id)
       expect(receipt.capabilityEvidence).toMatchObject({
-        contextWindowTokens: null, maxOutputTokens: 8192, reasoning: null, usage: null,
+        maxOutputTokens: 8192, reasoning: null, usage: null,
         structuredOutput: json || output === 'visible-text' ? true : null,
-        source: { contextWindowTokens: 'unknown', maxOutputTokens: 'legacy-profile', featureFlags: 'unknown' },
+        source: { maxOutputTokens: 'legacy-profile', featureFlags: 'unknown' },
       })
       const task: GenerationTask = { purpose: 'chapter-review', output: output ?? 'structured-data',
         messages: [{ role: 'user', content: '请输出 JSON 审稿报告。' }] }
@@ -295,7 +296,7 @@ describe('ModelExecutionLeaseRegistry', () => {
         featureFlags: 'unknown',
       },
       contextWindowTokens: 32_768,
-      maxOutputTokens: 32_768,
+      maxOutputTokens: 16_384,
       reasoning: null,
       structuredOutput: null,
       usage: null,
@@ -377,6 +378,53 @@ describe('ModelExecutionLeaseRegistry', () => {
       reasoning: true,
       structuredOutput: true,
       usage: true,
+    })
+  })
+
+  describe('租约按解析出的窗口走（ADR-0028）', () => {
+    const capabilities = (contextWindowTokens: number | null, maxOutputTokens: number) => ({ contextWindowTokens, maxOutputTokens, reasoning: false, structuredOutput: false, usage: false })
+    const openAi = (overrides: Partial<ModelProfile>): ModelProfile => ({ ...modelProfile(), provider: 'openai', baseUrl: 'https://api.openai.com/v1', modelName: 'gpt-4o', maxTokens: 16_384, ...overrides })
+    const custom = (overrides: Partial<ModelProfile>): ModelProfile => ({ ...modelProfile(), provider: 'custom', baseUrl: 'https://compatible.example/v1', modelName: 'future', maxTokens: 65_536, capabilities: capabilities(null, 65_536), ...overrides })
+
+    it('手填 64,000、预设 128,000：租约的窗口是 64,000', () => {
+      const profile = openAi({ capabilities: capabilities(64_000, 16_384), capabilitySources: { contextWindowTokens: 'manual' } })
+      expect(resolveContextWindow({ ...profile, capabilities: undefined })).toEqual({ tokens: 128_000, source: 'preset' })
+      expect(resolveModelExecutionCapabilityEvidence(profile)).toMatchObject({ contextWindowTokens: 64_000, source: { contextWindowTokens: 'user-operational-cap' } })
+    })
+
+    it('没手填、已学到 32,768、拉取到 128,000：租约的窗口是 32,768', () => {
+      const profile = withLearnedContextWindow(custom({ capabilities: capabilities(128_000, 65_536), capabilitySources: { contextWindowTokens: 'endpoint' } }), 32_768)
+      expect(resolveModelExecutionCapabilityEvidence(profile).contextWindowTokens).toBe(32_768)
+    })
+
+    it('学到窗口不改变 modelRevision', () => {
+      const profile = custom({ capabilities: capabilities(128_000, 65_536), capabilitySources: { contextWindowTokens: 'endpoint' } })
+      const options = { leaseId: 'l', createdAt: 0, expiresAt: 1 }
+      expect(createModelExecutionLeaseReceipt(withLearnedContextWindow(profile, 32_768), options).modelRevision)
+        .toBe(createModelExecutionLeaseReceipt(profile, options).modelRevision)
+    })
+
+    it.each([
+      ['手填', custom({ capabilities: capabilities(32_768, 65_536), capabilitySources: { contextWindowTokens: 'manual' } })],
+      ['拉取', custom({ capabilities: capabilities(32_768, 65_536), capabilitySources: { contextWindowTokens: 'endpoint' } })],
+      ['学到', withLearnedContextWindow(custom({}), 32_768)],
+    ])('来源是%s且输出上限大于窗口：收紧到窗口的一半，给提示词留位置', (_name, profile) => {
+      expect(resolveModelExecutionCapabilityEvidence(profile).maxOutputTokens).toBe(16_384)
+    })
+
+    it('来源是预设且输出上限大于窗口：同样收紧', () => {
+      const profile = openAi({ modelName: 'gpt-4-turbo', maxTokens: 300_000, capabilities: undefined })
+      expect(resolveContextWindow(profile)).toEqual({ tokens: 128_000, source: 'preset' })
+      expect(resolveModelExecutionCapabilityEvidence(profile).maxOutputTokens).toBe(64_000)
+    })
+
+    it('窗口的一半够用时不动输出上限', () => {
+      const profile = custom({ maxTokens: 8_192, capabilities: capabilities(32_768, 8_192), capabilitySources: { contextWindowTokens: 'endpoint' } })
+      expect(resolveModelExecutionCapabilityEvidence(profile).maxOutputTokens).toBe(8_192)
+    })
+
+    it('窗口只是默认猜测：输出上限不收紧，窗口记为未知', () => {
+      expect(resolveModelExecutionCapabilityEvidence(custom({}))).toMatchObject({ contextWindowTokens: null, maxOutputTokens: 65_536, source: { contextWindowTokens: 'unknown' } })
     })
   })
 

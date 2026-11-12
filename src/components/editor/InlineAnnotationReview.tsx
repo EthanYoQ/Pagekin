@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT } from 'diff-match-patch'
+import { Check } from 'lucide-react'
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
 import { routeModelId } from '../../services/model-routing'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
 import type { EditorInlineAnnotation } from '../../shared/editor-inline-generation'
 import { useLocaleStore } from '../../stores/locale-store'
-import { Check } from 'lucide-react'
 import { Button } from '../ui/Button'
 
 type Piece = { kind: 'same'; text: string } | { kind: 'change'; index: number; from: number; to: number; before: string; after: string }
@@ -61,12 +61,12 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
     const session = getActiveProjectSessionContext()
     const selected = changes[piece.index]?.value || piece.before
     if (!session || !selected) { update(piece.index, { error: text('没有可重新生成的文字', 'No text to regenerate') }); return }
-    update(piece.index, { busy: true, accepted: false, error: '' })
+    update(piece.index, { busy: true, accepted: false, editing: false, error: '' })
     const client = createEditorInlineGeneration(session)
     rerollClients.current.add(client)
     try {
       const notes = annotations.filter(item => item.from <= piece.to && item.to >= piece.from).map(item => item.instruction).join('；').slice(0, 1000)
-      const context = before.slice(Math.max(0, piece.from - 160), Math.min(before.length, piece.to + 160))
+      const context = `${before.slice(Math.max(0, piece.from - 160), piece.from)}……${before.slice(piece.to, piece.to + 160)}`
       await client.open({ input: { action: 'instruct', instruction: text(`重新改写所选片段，只输出片段。上下文：${context}。作者意见：${notes}`, `Rewrite only the selected passage. Context: ${context}. Author notes: ${notes}`), documentText: selected, selectedText: selected, from: 0, to: selected.length }, modelId: routeModelId('editor-inline') ?? '', uiActionNonce: crypto.randomUUID() })
       const receipt = await client.execute()
       if (receipt.outcome.status !== 'completed' || receipt.outcome.finishReason !== 'stop' || receipt.sourceStatus !== 'current' || !(receipt.run.candidates ?? receipt.run.artifacts).some(candidate => candidate.text === receipt.outcome.content && candidate.status === 'completed' && candidate.compositionEligible)) throw new Error('REROLL_INCOMPLETE')
@@ -84,7 +84,7 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
     <p>{text('红色为删除，绿色为新增。点击标色文字可编辑、重新生成或接受；全部确认后自动保存版本。', 'Red is removed, green is added. Select a change to edit, reroll or accept it; confirming all saves a version.')}</p>
     <div className="inline-annotation-prose">{pieces.map((piece, position) => piece.kind === 'same' ? <span key={position}>{piece.text}</span> : <span key={position} className="inline-annotation-change">
       <button type="button" className="inline-annotation-mark" aria-label={text(`查看修改 ${piece.index + 1}`, `Inspect change ${piece.index + 1}`)} aria-expanded={activeChange === piece.index} onClick={() => setActiveChange(activeChange === piece.index ? null : piece.index)}>
-        {piece.before && <del>{piece.before}</del>}{changes[piece.index]!.value && <ins>{changes[piece.index]!.value}</ins>}{changes[piece.index]!.accepted && <span aria-label={text('已接受', 'Accepted')}><Check aria-hidden="true" /></span>}
+        {piece.before && <del>{piece.before}</del>}{changes[piece.index]!.value && <ins>{changes[piece.index]!.value}</ins>}{changes[piece.index]!.accepted && <Check size={13} aria-label={text('已接受', 'Accepted')} />}
       </button>
       {activeChange === piece.index && <span className="inline-annotation-actions">
         {changes[piece.index]!.editing && <textarea aria-label={text(`编辑修改 ${piece.index + 1}`, `Edit change ${piece.index + 1}`)} value={changes[piece.index]!.value} onChange={event => update(piece.index, { value: event.target.value, accepted: false, error: '' })} />}

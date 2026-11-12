@@ -9,6 +9,7 @@ import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import CodeMirrorEditor from '../CodeMirrorEditor'
 import { commandKeyLabel, IS_MAC } from '../../stage/shortcut-keys'
+import { EDITOR_INLINE_INSTRUCTION_MAX_LENGTH } from '../../../shared/editor-inline-generation'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -47,11 +48,7 @@ beforeEach(async () => {
   leaseRequestCount = 0
   failureCode = undefined
   useProjectStore.setState({ currentProject: { id: 'editor-project', sessionLease: 'editor-epoch', path: 'C:/合成编辑器', novelConfig: {} } as never })
-  useLLMStore.setState({
-    defaultModelId: 'editor-model',
-    loaded: true,
-    activeRequests: new Map(),
-  })
+  useLLMStore.setState({ defaultModelId: 'editor-model', loaded: true })
   const recoveries = new Map<string, unknown>()
   invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     if (channel === 'editor-inline:begin') {
@@ -104,7 +101,7 @@ afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
   useProjectStore.setState({ currentProject: null })
-  useLLMStore.setState({ defaultModelId: null, models: [], stageModelIds: {}, activeRequests: new Map() })
+  useLLMStore.setState({ defaultModelId: null, models: [], stageModelIds: {} })
   useLocaleStore.setState({ locale: 'zh-CN' })
   Reflect.deleteProperty(window, 'aiNovelAPI')
 })
@@ -288,6 +285,65 @@ describe('CodeMirror editor AI generation boundary', () => {
     await act(async () => page.getByRole('textbox', { name: '编辑修改 1' }).fill('她'))
     await act(async () => page.getByRole('button', { name: '接受全部' }).click())
     expect(commit).toHaveBeenCalledWith('林岚走进北塔', '她走进北塔', expect.any(Array))
+  })
+
+  it('keeps a batch result copy-only when the author edits the chapter during generation', async () => {
+    deferStream = true
+    const commit = vi.fn(async () => {})
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={commit} />))
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('改成第一人称'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => view.dispatch({ changes: { from: view.state.doc.length, insert: '。' } }))
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+
+    await expect.element(page.getByText('正文或原目标已变化，结果未应用；你仍可复制预览内容')).toBeVisible()
+    await expect.element(page.getByRole('region', { name: '批注修改对比' })).not.toBeInTheDocument()
+    await expect.element(page.getByRole('button', { name: '替换' })).toBeDisabled()
+    expect(view.state.doc.toString()).toBe('林岚走进北塔。')
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('rerolls a change longer than the note limit with a bounded instruction', async () => {
+    deferStream = true
+    const longBefore = '甲'.repeat(2100)
+    const longAfter = '乙'.repeat(2100)
+    await act(async () => root.render(<CodeMirrorEditor content={longBefore} mode="prose" onCommitAnnotations={vi.fn(async () => {})} />))
+    await act(async () => page.getByText(longBefore).click({ clickCount: 3 }))
+    await expect.element(page.getByRole('button', { name: '添加批注' })).toBeVisible()
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('换成乙'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: longAfter, finishReason: 'stop' } as never))
+    await act(async () => page.getByRole('button', { name: '查看修改 1' }).click())
+    await act(async () => page.getByRole('button', { name: '重新生成' }).click())
+
+    await vi.waitFor(() => expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:begin')).toHaveLength(2))
+    const reroll = invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:begin')[1][1] as { input: { action: string; instruction: string } }
+    expect(reroll.input.action).toBe('instruct')
+    expect([...reroll.input.instruction].length).toBeLessThanOrEqual(EDITOR_INLINE_INSTRUCTION_MAX_LENGTH)
+  })
+
+  it('closes the edit box while a reroll runs so typed text is not silently replaced', async () => {
+    deferStream = true
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={vi.fn(async () => {})} />))
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('改成第一人称'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+    await act(async () => page.getByRole('button', { name: '查看修改 1' }).click())
+    await act(async () => page.getByRole('button', { name: '编辑', exact: true }).click())
+    await expect.element(page.getByRole('textbox', { name: '编辑修改 1' })).toBeVisible()
+    await act(async () => page.getByRole('button', { name: '重新生成' }).click())
+
+    await expect.element(page.getByRole('button', { name: '生成中…' })).toBeVisible()
+    await expect.element(page.getByRole('textbox', { name: '编辑修改 1' })).not.toBeInTheDocument()
   })
 
   it('adds the note with Ctrl+Enter and returns to the actions with Escape', async () => {

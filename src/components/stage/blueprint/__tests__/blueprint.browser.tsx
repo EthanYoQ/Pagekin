@@ -8,12 +8,14 @@ import type { AuthoritativeChapterSequence } from '../../../../shared/chapter-se
 import type { ContinuityNode } from '../../../../shared/character-continuity'
 import type { ConsistencyExemption } from '../../../../shared/consistency-preflight'
 import type { ProjectData } from '../../../../shared/ipc-channels'
+import { continuityCheckChapter, continuityFindingKey } from '../../../../shared/blueprint-continuity-check'
 import { globalEventBus } from '../../../../shared/event-bus'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
 import { disposeProjectService, initProjectService } from '../../../../services/project-service'
 import type { ChapterBlueprint } from '../../../../services/workflows/directory-workflow'
 import { editorSaveHandler, useEditorStore } from '../../../../stores/editor-store'
 import { useCharacterStore } from '../../../../stores/character-store'
+import { useLLMStore } from '../../../../stores/llm-store'
 import { useLocaleStore } from '../../../../stores/locale-store'
 import { useStageStore } from '../../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../../stores/project-store'
@@ -96,6 +98,7 @@ function installIpc() {
       status: 'continuous', lastChapterNumber: nextChapter - 1, nextChapterNumber: nextChapter, gaps: [], duplicateChapterNumbers: [], authorityFingerprint: 'a'.repeat(64),
     }
     if (channel === 'generation:find-blueprint-recovery') return null
+    if (channel === 'graph-generation:latest-continuity') return null
     if (channel === 'db:consistency-exemption-list') {
       if (exemptionsFail) throw new Error('exemptions unavailable')
       return exemptions
@@ -1345,5 +1348,356 @@ describe('蓝图页的恢复稿横幅跟着主进程的判定走（#608）', () 
     current = null
     await refreshBlueprints()
     await vi.waitFor(() => expect(banner()).toBeUndefined())
+  })
+})
+
+describe('AI 检查（蓝图正文对照时间线）', () => {
+  const HANDLE = { projectId: 'stage-blueprint', epoch: 'epoch', rootActionId: 'root', runId: 'run' }
+  const NODE = { eventId: 'relation:add:line', since: { zhCN: '第 1 章起', enUS: 'from chapter 1' }, fromChapter: 1, subjectName: '林岚', aspect: 'relation', targetName: '守塔人', value: '决裂' }
+  const finding = (chapterNumber: number, issue: string, ...more: { issue: string; suggestion: string }[]) =>
+    ({ chapterNumber, eventIds: ['relation:add:line'], points: [{ issue, suggestion: '改成对峙。' }, ...more] })
+  const recovery = (over: Record<string, unknown>) => ({
+    view: { handle: HANDLE, status: 'running', budgetDiagnostics: [], artifacts: [], candidates: [] }, modelId: 'grok', attemptCount: 0, effects: [], sourceStatus: 'current',
+    context: { projectId: 'stage-blueprint', kind: 'continuity', input: { kind: 'continuity' }, chapters: frozen, nodes: [NODE] }, ...over,
+  })
+  const checked = (findings: ReturnType<typeof finding>[]) => ({ attemptCount: 1, artifact: { artifactId: 'a', revision: 1, textHash: 'h' },
+    result: { kind: 'continuity', checkedThroughChapter: 3, droppedFindings: 0, findings } })
+  let read: Record<string, unknown>
+  let latest: Record<string, unknown> | null
+  let nodes: ContinuityNode[]
+  let frozen: ReturnType<typeof continuityCheckChapter>[]
+
+  beforeEach(() => {
+    read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。'), finding(3, '第 3 章同样写成同伴。')])
+    latest = null
+    nodes = [BROKEN_NODE]
+    frozen = stored.slice(1).map(continuityCheckChapter)
+    useLLMStore.setState({ models: [{ id: 'grok', name: 'grok', provider: 'openai', protocol: 'openai', modelName: 'grok', apiKey: 'k', baseUrl: 'https://x.test/v1', temperature: 0.7, maxTokens: 2048, purposes: ['generation'] }] as never, defaultModelId: 'grok', loaded: true })
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'graph-generation:latest-continuity') return latest && recovery(latest)
+      if (channel === 'db:character-continuity-preflight-nodes') return nodes
+      if (channel === 'graph-generation:begin') return recovery({})
+      if (channel === 'graph-generation:execute') return { run: recovery({}).view }
+      if (channel === 'graph-generation:read') return recovery(read)
+      return base(channel, ...args)
+    })
+  })
+  const check = () => act(async () => page.getByRole('button', { name: 'AI 检查', exact: true }).click())
+
+  it('点按钮发一次，结论按章显示，依据是章号和节点内容，不露 eventId', async () => {
+    await renderPage(2)
+    await check()
+    expect(calls('graph-generation:begin')).toHaveLength(1)
+    expect(calls('graph-generation:begin')[0]![1]).toMatchObject({ input: { kind: 'continuity' }, modelId: 'grok' })
+    expect(calls('graph-generation:execute')).toHaveLength(1)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await expect.element(page.getByText('依据：第 1 章起，林岚和守塔人是「决裂」')).toBeVisible()
+    await expect.element(page.getByText('建议：改成对峙。')).toBeVisible()
+    expect(document.body.textContent).not.toContain('relation:add:line')
+    await expect.element(page.getByText('第 3 章同样写成同伴。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
+    await act(async () => page.getByRole('button', { name: '第 3 章', exact: true }).click())
+    await expect.element(page.getByText('第 3 章同样写成同伴。')).toBeVisible()
+  })
+
+  it('总结里的章号静止时就带按钮边框，键盘能聚焦并用回车跳过去', async () => {
+    await renderPage(2)
+    await check()
+    const jump = page.getByRole('button', { name: '第 3 章', exact: true }).element() as HTMLButtonElement
+    const border = getComputedStyle(jump)
+    expect(border.borderTopStyle).toBe('solid')
+    expect(border.borderTopColor).not.toBe('rgba(0, 0, 0, 0)')
+    jump.focus()
+    expect(document.activeElement).toBe(jump)
+    await act(async () => userEvent.keyboard('{Enter}'))
+    await expect.element(page.getByText('第 3 章同样写成同伴。')).toBeVisible()
+  })
+
+  it('不点按钮时，打开页面和保存蓝图都不发检查请求', async () => {
+    await renderPage()
+    await act(async () => page.getByRole('textbox', { name: '章节标题' }).fill('旧港潮汐'))
+    await act(async () => page.getByRole('button', { name: '保存此章' }).click())
+    await vi.waitFor(() => expect(calls('db:blueprint-upsert')).toHaveLength(1))
+    expect(calls('graph-generation:begin')).toHaveLength(0)
+    expect(calls('graph-generation:execute')).toHaveLength(0)
+  })
+
+  it('没发现时明确说一句，并写明检查到第几章', async () => {
+    read = checked([])
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('没发现和时间线矛盾的地方。检查到第 3 章。')).toBeVisible()
+  })
+
+  it('结果读不出来：说明蓝图没动，不显示结论', async () => {
+    read = { attemptCount: 1 }
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('蓝图没有改动。这次结果没读出来，再点一次“AI 检查”。')).toBeVisible()
+    await expect.element(page.getByText('依据：第 1 章起，林岚和守塔人是「决裂」')).not.toBeInTheDocument()
+  })
+
+  it('检查期间蓝图被改：结果不显示，提示重新检查', async () => {
+    read = { ...checked([finding(2, '第 2 章矛盾。')]), sourceStatus: 'conflict' }
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('蓝图在检查时改过，这次结果不算数。再点一次“AI 检查”。')).toBeVisible()
+    await expect.element(page.getByText('第 2 章矛盾。')).not.toBeInTheDocument()
+  })
+
+  it('改了某章蓝图后只有该章结论消失', async () => {
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    stored = stored.map(item => item.chapterNumber === 2 ? { ...item, keyEvents: '改过的事件' } : item)
+    await refreshBlueprints()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+    await act(async () => page.getByRole('button', { name: '第 3 章', exact: true }).click())
+    await expect.element(page.getByText('第 3 章同样写成同伴。')).toBeVisible()
+  })
+
+  it('按章豁免后再次检查不再出现，撤销后恢复', async () => {
+    read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。')])
+    await renderPage(2)
+    await check()
+    await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+    expect(exemptions).toEqual([{ stableFactKey: continuityFindingKey(['relation:add:line']), reason: '作者确认是有意安排', revoked: false, chapterNumber: 2 }])
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('已记下，这一章不再提示。')).toBeVisible()
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+    await act(async () => page.getByRole('button', { name: '撤销' }).click())
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('同一章同一组依据的两条矛盾：都显示在同一张结论卡里', async () => {
+    read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。', { issue: '第 2 章还写两人同住灯塔。', suggestion: '改成分住两处。' })])
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await expect.element(page.getByText('第 2 章还写两人同住灯塔。')).toBeVisible()
+    await expect.element(page.getByText('建议：改成分住两处。')).toBeVisible()
+    expect(document.querySelectorAll('.stage-bp-ai-item')).toHaveLength(1)
+    expect(page.getByRole('button', { name: '这是有意安排' }).elements()).toHaveLength(1)
+  })
+
+  it('豁免合并后的结论卡：再次检查两条都不出现，撤销后两条都回来', async () => {
+    read = checked([finding(2, '第 2 章写两人并肩，节点说已决裂。', { issue: '第 2 章还写两人同住灯塔。', suggestion: '改成分住两处。' })])
+    await renderPage(2)
+    await check()
+    await act(async () => page.getByRole('button', { name: '这是有意安排' }).click())
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('第 2 章还写两人同住灯塔。')).not.toBeInTheDocument()
+    await act(async () => page.getByRole('button', { name: '撤销' }).click())
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await expect.element(page.getByText('第 2 章还写两人同住灯塔。')).toBeVisible()
+  })
+
+  describe('检查进行中离开蓝图页', () => {
+    let release: () => void
+    beforeEach(() => {
+      const held = new Promise<void>(resolve => { release = resolve })
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+        if (channel === 'graph-generation:execute') await held
+        return base(channel, ...args)
+      })
+    })
+    const remount = async () => {
+      await act(async () => root?.unmount())
+      root = createRoot(container!)
+      await renderPage(2)
+    }
+    const running = () => page.getByRole('button', { name: '检查中…' })
+
+    it('回来仍显示检查中，按钮不能再点，不再发请求；完成后结果和总结出来', async () => {
+      await renderPage(2)
+      await check()
+      await expect.element(running()).toBeDisabled()
+      await remount()
+      await expect.element(running()).toBeDisabled()
+      release()
+      await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
+      expect(calls('graph-generation:begin')).toHaveLength(1)
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+    })
+
+    it('离开期间检查做完：回来直接看到结果和总结', async () => {
+      await renderPage(2)
+      await check()
+      await act(async () => root?.unmount())
+      release()
+      await vi.waitFor(() => expect(calls('graph-generation:read').length).toBeGreaterThan(0))
+      root = createRoot(container!)
+      await renderPage(2)
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+    })
+
+    it('检查做完、豁免还没读回时离开：回来接回这次总结；显示过之后再回来不重复', async () => {
+      let readsBack!: () => void
+      const readsHeld = new Promise<void>(resolve => { readsBack = resolve })
+      let finished = false
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+        if (channel === 'graph-generation:read') finished = true
+        if (finished && channel === 'db:consistency-exemption-list') await readsHeld
+        return base(channel, ...args)
+      })
+      await renderPage(2)
+      await check()
+      const before = calls('db:consistency-exemption-list').length
+      release()
+      await vi.waitFor(() => expect(calls('db:consistency-exemption-list').length).toBeGreaterThan(before))
+      await remount()
+      readsBack()
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).toBeVisible()
+      expect(calls('graph-generation:begin')).toHaveLength(1)
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+      await remount()
+      await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeEnabled()
+      await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).not.toBeInTheDocument()
+    })
+
+    it('切到别的作品：不把这部作品的检查接过去；切回来仍接得上', async () => {
+      const OTHER_PATH = 'C:\\novels\\other'
+      const other = { projectId: 'other', leaseId: 'other-lease', projectPath: OTHER_PATH }
+      await renderPage(2)
+      await check()
+      await act(async () => root?.unmount())
+      useProjectStore.setState({ currentProject: { ...project(), id: other.projectId, sessionLease: other.leaseId, path: OTHER_PATH } })
+      setActiveProjectSessionContext(other)
+      root = createRoot(container!)
+      await act(async () => root?.render(<div className="paper-ink"><StageBlueprint projectKey={OTHER_PATH} initialChapterNumber={2} /></div>))
+      await expect.element(page.getByRole('complementary', { name: '章节规划' })).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeInTheDocument()
+      await expect.element(running()).not.toBeInTheDocument()
+      await act(async () => root?.unmount())
+      useProjectStore.setState({ currentProject: project() })
+      setActiveProjectSessionContext(SESSION)
+      root = createRoot(container!)
+      await renderPage(2)
+      await expect.element(running()).toBeDisabled()
+      release()
+      await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+      expect(calls('graph-generation:execute')).toHaveLength(1)
+    })
+  })
+
+  it('全书豁免写空章号，别的章同样依据也不再提示', async () => {
+    await renderPage(2)
+    await check()
+    await act(async () => page.getByRole('button', { name: '全书都不再提示' }).first().click())
+    expect(exemptions).toMatchObject([{ chapterNumber: null, revoked: false }])
+    await expect.element(page.getByRole('button', { name: '第 3 章', exact: true })).not.toBeInTheDocument()
+  })
+
+  const refreshTimeline = (resource: 'characterCards' | 'drafts') => act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: [resource], projectPath: PROJECT_PATH, projectSession: SESSION }))
+
+  it('页面开着时有了时间线节点：按钮变成可点', async () => {
+    nodes = []
+    await renderPage(2)
+    await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeDisabled()
+    nodes = [BROKEN_NODE]
+    await refreshTimeline('drafts')
+    await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeEnabled()
+  })
+
+  it('页面开着时时间线变了：已显示的结论收起', async () => {
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    nodes = [{ ...BROKEN_NODE, value: '和解' }]
+    await refreshTimeline('characterCards')
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+  })
+
+  it('没有时间线节点：按钮不可点，旁边说明，不发请求', async () => {
+    nodes = []
+    await renderPage(2)
+    await expect.element(page.getByText('先定稿一章，才有可对照的人物时间线')).toBeVisible()
+    await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeDisabled()
+    expect(calls('graph-generation:begin')).toHaveLength(0)
+  })
+
+  describe('有节点但都不作用于待检查章', () => {
+    beforeEach(() => {
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+        if (channel === 'graph-generation:begin') throw new Error('GENERATION_GRAPH_CONTINUITY_TIMELINE_NOT_IN_FORCE')
+        return base(channel, ...args)
+      })
+    })
+
+    it('说明待检查章还没有生效的时间线，按钮仍可点，不发检查请求', async () => {
+      await renderPage(2)
+      await check()
+      await expect.element(page.getByText('蓝图没有改动。待检查的章节还没有生效的人物时间线，暂时没有可对照的。')).toBeVisible()
+      await expect.element(page.getByText('先定稿一章，才有可对照的人物时间线')).not.toBeInTheDocument()
+      await expect.element(page.getByRole('button', { name: 'AI 检查', exact: true })).toBeEnabled()
+      expect(calls('graph-generation:execute')).toHaveLength(0)
+    })
+
+    it('英文界面说同一件事', async () => {
+      await renderPage(2)
+      await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+      await act(async () => page.getByRole('button', { name: 'AI check', exact: true }).click())
+      await expect.element(page.getByText('Your blueprints are unchanged. No character timeline applies to the chapters to check yet, so there is nothing to compare.')).toBeVisible()
+      await expect.element(page.getByRole('button', { name: 'AI check', exact: true })).toBeEnabled()
+    })
+  })
+
+  it('重开页面取回最近一次结果，不出总结，不发请求', async () => {
+    latest = read
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+    await expect.element(page.getByText('AI 检查到第 3 章，这些章和时间线矛盾。')).not.toBeInTheDocument()
+    expect(calls('graph-generation:execute')).toHaveLength(0)
+  })
+
+  it('没发现之后改了检查过的章：不再说没问题', async () => {
+    read = checked([])
+    await renderPage(2)
+    await check()
+    await expect.element(page.getByText('没发现和时间线矛盾的地方。检查到第 3 章。')).toBeVisible()
+    stored = stored.map(item => item.chapterNumber === 2 ? { ...item, keyEvents: '改过的事件' } : item)
+    await refreshBlueprints()
+    await expect.element(page.getByText('没发现和时间线矛盾的地方。检查到第 3 章。')).not.toBeInTheDocument()
+  })
+
+  it('重开时时间线变了、又有一章蓝图改过：没改的章也不显示旧结论', async () => {
+    latest = { ...read, sourceStatus: 'conflict' }
+    nodes = [{ ...BROKEN_NODE, value: '和解' }]
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    await renderPage(2)
+    await vi.waitFor(() => expect(calls('graph-generation:latest-continuity')).toHaveLength(1))
+    await vi.waitFor(() => expect(calls('db:character-continuity-preflight-nodes').length).toBeGreaterThan(0))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+  })
+
+  it('重开时只有一章蓝图改过、时间线没变：没改的章照常显示', async () => {
+    latest = { ...read, sourceStatus: 'conflict' }
+    stored = stored.map(item => item.chapterNumber === 3 ? { ...item, keyEvents: '改过的事件' } : item)
+    await renderPage(2)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
+  it('重开时来源对不上且各章都没变（时间线或模型变了）：整体不显示', async () => {
+    latest = { ...read, sourceStatus: 'conflict' }
+    await renderPage(2)
+    await vi.waitFor(() => expect(calls('graph-generation:latest-continuity')).toHaveLength(1))
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).not.toBeInTheDocument()
+  })
+
+  it('英文界面的按钮、依据与总结', async () => {
+    await renderPage(2)
+    await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+    await act(async () => page.getByRole('button', { name: 'AI check', exact: true }).click())
+    await expect.element(page.getByText('Basis: From chapter 1, 林岚’s relation to 守塔人 is “决裂”')).toBeVisible()
+    await expect.element(page.getByText('AI check reached chapter 3. These chapters conflict with the timeline.')).toBeVisible()
   })
 })

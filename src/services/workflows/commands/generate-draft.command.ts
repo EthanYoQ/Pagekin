@@ -50,7 +50,7 @@ import {
 } from '../../generation/generation-harness'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
-import { chapterThreadTasks, narrativeThreadSchedule, parseChapterThreadTasks, type ChapterThreadTask, type NarrativeThreadView } from '../../../shared/narrative-thread'
+import { chapterThreadTasks, isChapterThreadTaskSchedule, narrativeThreadSchedule, parseChapterThreadTasks, type ChapterThreadTask, type NarrativeThreadView } from '../../../shared/narrative-thread'
 import { promptLanguageText } from '../../prompt-language'
 import { countDraftUnits, draftTargetUnitRange } from '../../../shared/draft-units'
 import type { RecoveryChapterSource } from '../../../shared/recovery-candidate'
@@ -296,12 +296,19 @@ function recordedCharacterTimeline(authorInputs: readonly { id: string; text: st
   return text === undefined ? {} : JSON.parse(text) as CharacterTimelinePromptLines
 }
 
+function threadScheduleNote(schedule: ChapterThreadTask['schedule']): { zhCN: string; enUS: string } {
+  if (schedule.kind === 'overdue') {
+    return { zhCN: `已逾期 ${schedule.chaptersOverdue} 章`, enUS: `overdue by ${schedule.chaptersOverdue} ${pluralEn(schedule.chaptersOverdue, 'chapter')}` }
+  }
+  return schedule.kind === 'assigned'
+    ? { zhCN: '作者指定本章推进', enUS: 'assigned by the author to this chapter' }
+    : { zhCN: '本章到期', enUS: 'due this chapter' }
+}
+
 function threadTaskLines(tasks: readonly ChapterThreadTask[]): { zhCN: string[]; enUS: string[] } {
   return {
-    zhCN: tasks.map(task => `- 本章推进或回收：${task.title}（${task.schedule.kind === 'overdue'
-      ? `已逾期 ${task.schedule.chaptersOverdue} 章` : '本章到期'}；作者意图：${task.authorIntent}）`),
-    enUS: tasks.map(task => `- Advance or resolve in this chapter: ${task.title} (${task.schedule.kind === 'overdue'
-      ? `overdue by ${task.schedule.chaptersOverdue} ${pluralEn(task.schedule.chaptersOverdue, 'chapter')}` : 'due this chapter'}; author intent: ${task.authorIntent})`),
+    zhCN: tasks.map(task => `- 本章推进或回收：${task.title}（${threadScheduleNote(task.schedule).zhCN}；作者意图：${task.authorIntent}）`),
+    enUS: tasks.map(task => `- Advance or resolve in this chapter: ${task.title} (${threadScheduleNote(task.schedule).enUS}; author intent: ${task.authorIntent})`),
   }
 }
 
@@ -445,7 +452,7 @@ function chapterExecutionContractText(writingLanguage: WritingLanguage, chapterI
     `【本章执行合同】
 【作者本章任务】按作者原文含义遵循：明确要求在本章发生的事件与收束须由正文动作或结果落实；持续状态、知情边界、禁止事项和文风要求是叙述约束，不要仅为证明遵守而新增或反复确认动作、对话或解释。悬念按原文揭示时点处理，留待后文的事不得提前写成已完成；作者明确要求的回顾、回忆、动作、揭示或反复仍按原文执行。后一项动作必须承接正文实际形成的物品持有、人物知情和计划完成状态。
 【本章可推进的事件】可以写与既有事实相容的新行动和结果；普通无代价情节无需增加代价。${hasThreadTasks ? `
-【伏笔线索任务】列为「本章推进或回收」的线索已到期或逾期，本章正文必须让它有实质变化：写出新的线索、行动、代价或真相，或按作者意图把它收束；只让人物提一句或由旁白概括不算推进。` : ''}${hasPredecessor ? `
+【伏笔线索任务】「本章推进或回收」下的线索（到期、逾期或作者指定本章推进），本章正文必须让每条都有实质变化：写出新的线索、行动、代价或真相，或按作者意图把它收束；只让人物提一句或由旁白概括不算推进。` : ''}${hasPredecessor ? `
 【前文已定稿事实】本章蓝图、章节计划或必需事件的措辞与已定稿章节中确立的事实（包括作者在定稿中的最新更正）冲突时，以定稿事实为准：按与定稿事实一致的方式落实该条目，不得把已撤回、取消或被取代的计划追溯写成已执行。人物身份、物品持有、人物知情、付款与收回及事件时点应承接前文；付款、收回、失去等状态改变必须按事件先后写清，不能把同一笔钱款或物品同时写成已收回与仍然失去。
 【前文计划与本章决定】人物的等待、暂停或撤回是当时的计划状态，不是作者禁令；本章可以先写出人物基于既有事实作出的新决定、理由及连续性依据，再推进或替换计划，但不能违反作者明确禁令、必需呈现或既成事实。
 【本章事件兑现】作者或本章蓝图要求在本章发生的事件，必须在本章通过具体行动及其实际后果发生；复述、确认或记账前章已发生的结果不能替代本章要求发生的动作或结果。
@@ -455,7 +462,7 @@ ${chapterTimeContinuity('zh-CN')}` : ''}
     `[Current-chapter execution contract]
 [Author tasks for this chapter] Follow the author text according to its meaning: events and outcomes explicitly required in this chapter must be realized through manuscript action or outcome. Ongoing states, knowledge boundaries, prohibitions, and style requests are narrative constraints; do not add or repeatedly confirm actions, dialogue, or explanations merely to prove compliance. Follow the reveal timing specified by the author; do not present what is reserved for later chapters as already completed. Still carry out explicitly requested recollections, flashbacks, actions, reveals, or repetition. Each later action must continue from the item ownership, character knowledge, and plan-completion state actually established in the prose.
 [Events this chapter may advance] New actions and outcomes consistent with established facts are allowed. Ordinary events need no added cost.${hasThreadTasks ? `
-[Narrative thread tasks] Threads listed under "Advance or resolve in this chapter" are due or overdue. The prose must change each of them substantively: show a new clue, action, cost, or truth, or resolve it as the author intends. A passing mention by a character or a narrator summary does not count as advancing it.` : ''}${hasPredecessor ? `
+[Narrative thread tasks] Threads listed under "Advance or resolve in this chapter" are due, overdue, or assigned to this chapter by the author. The prose must change each of them substantively: show a new clue, action, cost, or truth, or resolve it as the author intends. A passing mention by a character or a narrator summary does not count as advancing it.` : ''}${hasPredecessor ? `
 [Established finalized facts] When the chapter blueprint, chapter plans, or the wording of required events conflict with facts established in finalized chapters (including the author's latest corrections in them), the finalized facts prevail: realize the item consistently and never retroactively portray a withdrawn, cancelled, or superseded plan as executed. Preserve identities, item ownership, character knowledge, payments and recoveries, and event times from prior prose. Keep the order and result of paying, recovering, or losing money or property consistent; do not describe the same amount or item as both recovered and still lost.
 [Prior plans and current decisions] Characters' waiting, paused, or withdrawn plans describe their prior intention, not an author prohibition; this chapter may first show a new decision grounded in established facts, the character's reason, and continuity evidence, then advance or replace the plan without violating explicit author prohibitions, required on-page events, or completed facts.
 [Required events in this chapter] Events required by the author or this chapter blueprint to happen in this chapter must happen through concrete action and actual consequence here; merely repeating, confirming, or accounting for an outcome already completed in an earlier chapter cannot replace the action or outcome required in this chapter.
@@ -2169,9 +2176,8 @@ ${params.candidate.text}`,
       if (lines.length === ACTIVE_THREAD_CONTEXT_MAX_ITEMS) break
       const source = thread.events.at(-1)
       const schedule = narrativeThreadSchedule(thread, this.chapterInfo.chapterNumber)
-      const mark = schedule?.kind === 'overdue'
-        ? promptLanguageText(writingLanguage, `已逾期 ${schedule.chaptersOverdue} 章；`, `overdue by ${schedule.chaptersOverdue} ${pluralEn(schedule.chaptersOverdue, 'chapter')}; `)
-        : schedule?.kind === 'due' ? promptLanguageText(writingLanguage, '本章到期；', 'due this chapter; ') : ''
+      const note = schedule && isChapterThreadTaskSchedule(schedule) ? threadScheduleNote(schedule) : null
+      const mark = note ? promptLanguageText(writingLanguage, `${note.zhCN}；`, `${note.enUS}; `) : ''
       const line = promptLanguageText(
         writingLanguage,
         `- ${thread.title} [${thread.status}]（${mark}目标第${thread.targetStartChapter}–${thread.targetEndChapter}章；作者意图：${thread.authorIntent}${source ? `；来源第${source.chapterNumber}章：${source.evidence}` : ''}）`,

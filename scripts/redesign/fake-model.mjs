@@ -148,6 +148,7 @@ export async function startFakeModel(diagnostics) {
   let review = null
   let characterState = null
   let keylessEmbeddings = false
+  let failedRerank = false
   let importInference = false
   let directoryBlueprints = false
   let contextLengthRejection = null
@@ -189,6 +190,7 @@ export async function startFakeModel(diagnostics) {
   /** 之后不带 Key 的嵌入请求也照常回向量，模拟不需要 Key 的本机检索服务；传 false 恢复拒绝。 */
   const acceptKeylessEmbeddings = (accepted = true) => { keylessEmbeddings = accepted }
   /** 之后的参考小说导入：全局推演回一份合法 JSON（三张角色卡），分批蓝图推演按本批章号回齐全的蓝图。 */
+  const failRerank = (failed = true) => { failedRerank = failed }
   const replyImport = () => { importInference = true }
   const replyDirectoryBlueprints = (on = true) => { directoryBlueprints = on }
   const rejectContextLength = (rejected = true, { sample: sampleName = 'deepseek', times = Infinity } = {}) => {
@@ -249,6 +251,13 @@ export async function startFakeModel(diagnostics) {
         .end(JSON.stringify({ data: input.map((_, index) => ({ index, embedding: [0.1, 0.2, 0.3] })) }))
       return
     }
+    if (request.url === '/v1/rerank') {
+      record('rerank', `${body.documents?.length ?? 0} 段${failedRerank ? '（回错误）' : ''}`)
+      if (failedRerank) { response.writeHead(500).end(); return }
+      const results = Array.from({ length: Math.min(body.top_n, body.documents.length) }, (_, rank) => ({ index: rank, relevance_score: 1 - rank / 100 }))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ results }))
+      return
+    }
     if (request.url !== '/v1/chat/completions') { response.writeHead(404).end(); return }
     await pass()
     if (contextLengthRejection && contextLengthRejectionsLeft-- > 0) {
@@ -260,7 +269,7 @@ export async function startFakeModel(diagnostics) {
     const reply = responseFor(prompt, { extraction, plotTree, review, characterState, importInference, directoryBlueprints })
     const { kind } = reply
     const content = kind === 'character-state' && brokenCharacterState ? '角色状态暂时无法整理。' : reply.content
-    chats.push({ kind, model: body.model, messages: body.messages })
+    chats.push({ kind, model: body.model, messages: body.messages, maxTokens: body.max_tokens ?? body.max_completion_tokens })
     record(kind, prompt.slice(0, 120).replace(/\s+/g, ' '))
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
     if (kind === 'character-state' && droppedCharacterStates > 0) {
@@ -285,6 +294,6 @@ export async function startFakeModel(diagnostics) {
   })
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
   server.unref()
-  return { port: server.address().port, requests, chats, gate, streamProse, streamLog, replyCharacterCards, breakCharacterState, dropCharacterState, replyPlotTree, failProse, replyReview, replyCharacterState, acceptKeylessEmbeddings, replyImport, replyDirectoryBlueprints, rejectContextLength, embeddingAuthorizations,
+  return { port: server.address().port, requests, chats, gate, streamProse, streamLog, replyCharacterCards, breakCharacterState, dropCharacterState, replyPlotTree, failProse, replyReview, replyCharacterState, acceptKeylessEmbeddings, failRerank, replyImport, replyDirectoryBlueprints, rejectContextLength, embeddingAuthorizations,
     close: () => new Promise(resolve => { server.closeAllConnections(); server.close(() => resolve()) }) }
 }

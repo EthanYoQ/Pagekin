@@ -491,13 +491,15 @@ export default function CodeMirrorEditor({
       }
       const proof = (receipt.run.candidates ?? receipt.run.artifacts).find(candidate => candidate.text === receipt.outcome.content && candidate.status === 'completed' && candidate.compositionEligible === true)
       aiCandidateRef.current = proof ? { artifactId: proof.artifactId, textHash: proof.textHash } : null
-      if (request.action === 'batch-instruct' && proof && receipt.sourceStatus === 'current' && onCommitAnnotations) {
+      const documentChanged = view.state.doc.toString() !== input.documentText
+      if (request.action === 'batch-instruct' && proof && receipt.sourceStatus === 'current' && !documentChanged && onCommitAnnotations) {
         setInlineReview({ before: input.documentText, after: receipt.outcome.content, annotations: request.annotations, sessionKey: JSON.stringify(session), filePath })
         setAiResult(null); setBubbleOpen(false)
         return
       }
       setAiResult(receipt.outcome.content)
       if (receipt.sourceStatus !== 'current') setAiError(uiText('来源已变化，结果仅可复制', 'Sources changed; the result can only be copied.'))
+      else if (request.action === 'batch-instruct' && documentChanged) setAiError(uiText('正文或原目标已变化，结果未应用；你仍可复制预览内容', 'The document or original target changed. The result was not applied; you can still copy the preview.'))
     } catch {
       if (requestSequence !== aiRequestSequenceRef.current) return
       setAiResult(''); setAiError(uiText('生成失败，结果不可应用', 'Generation failed; the result cannot be applied.'))

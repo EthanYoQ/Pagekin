@@ -7,16 +7,7 @@ import {
   type PlotTreeSourceReference,
   type PlotTreeSourceBundle,
 } from './plot-tree'
-import type { LLMFinishReason } from './ipc-channels'
-import type { WritingLanguage } from './writing-language'
 import { writingLanguageText as promptLanguageText } from './writing-language'
-
-export const PLOT_TREE_GENERATION_BUDGET = Object.freeze({
-  maxAttempts: 1,
-  maxRequestedOutputTokens: 8192,
-  maxRequestedOutputTokensPerAttempt: 8192,
-  deadlineMs: 10 * 60_000,
-})
 
 export const PLOT_TREE_INPUT_MAX_CHARACTERS = 220_000
 
@@ -32,25 +23,6 @@ const PLOT_TREE_SOURCE_LIMITS = Object.freeze({
   blueprints: 200,
   finalizedChapters: 200,
 })
-
-export type PlotTreeResponseErrorCode = 'invalid_json' | 'invalid_contract'
-export type PlotTreeGenerationErrorCode = 'DEADLINE_EXHAUSTED' | 'PROVIDER_REQUEST_FAILED'
-
-export class PlotTreeGenerationError extends Error {
-  constructor(readonly code: PlotTreeGenerationErrorCode) {
-    super(code)
-    this.name = 'PlotTreeGenerationError'
-    Object.setPrototypeOf(this, new.target.prototype)
-  }
-}
-
-export class PlotTreeResponseError extends Error {
-  constructor(readonly code: PlotTreeResponseErrorCode, message: string) {
-    super(message)
-    this.name = 'PlotTreeResponseError'
-    Object.setPrototypeOf(this, new.target.prototype)
-  }
-}
 
 export class PlotTreeSourceError extends Error {
   readonly code = 'NO_EVENT_SOURCES'
@@ -78,40 +50,6 @@ export class PlotTreeInputLimitError extends Error {
   constructor(readonly maximumCharacters: number) {
     super('SOURCE_INPUT_TOO_LARGE')
     this.name = 'PlotTreeInputLimitError'
-    Object.setPrototypeOf(this, new.target.prototype)
-  }
-}
-
-export class PlotTreeIncompleteError extends Error {
-  readonly finishReason: Exclude<LLMFinishReason, 'stop'>
-
-  constructor(writingLanguage: WritingLanguage, finishReason: Exclude<LLMFinishReason, 'stop'>) {
-    const message = finishReason === 'length'
-      ? promptLanguageText(
-          writingLanguage,
-          '剧情树输出达到模型最大长度，结果未保存，请提高最大输出 Tokens 或缩短项目资料。',
-          'Plot-tree output reached the model maximum output length and was not saved. Increase maximum output tokens or shorten the project sources.',
-        )
-      : finishReason === 'content_filter'
-        ? promptLanguageText(
-            writingLanguage,
-            '剧情树输出因内容限制未完成，结果未保存。',
-            'Plot-tree output was stopped by the content policy and was not saved.',
-          )
-        : finishReason === 'cancelled'
-          ? promptLanguageText(
-              writingLanguage,
-              '剧情树生成已取消，结果未保存。',
-              'Plot-tree generation was cancelled and the result was not saved.',
-            )
-          : promptLanguageText(
-              writingLanguage,
-              '剧情树生成未正常完成，结果未保存。',
-              'Plot-tree generation did not complete normally and the result was not saved.',
-            )
-    super(message)
-    this.name = 'PlotTreeIncompleteError'
-    this.finishReason = finishReason
     Object.setPrototypeOf(this, new.target.prototype)
   }
 }

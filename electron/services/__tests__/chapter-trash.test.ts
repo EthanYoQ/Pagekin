@@ -17,7 +17,6 @@ import { ChapterDeletionService, removeDeletedManuscript, type ChapterDeletionPr
 import { FinalizationService } from '../finalization-service'
 import { serializeManuscript } from '../manuscript-publisher'
 import * as portableFreeze from '../portable-runtime-freeze'
-import { WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS } from '../../../test/helpers/windows-runner-io-stall'
 
 // 回收站（#564 PR3）：删除进回收站、恢复（三种方式）、彻底删除，在仓库层与服务层的行为。
 
@@ -26,13 +25,13 @@ let projectRoot = ''
 beforeEach(() => {
   projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-trash-'))
   initProjectDatabase(projectRoot)
-}, WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS)
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
   closeProjectDatabase()
   fs.rmSync(projectRoot, { recursive: true, force: true })
-}, WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS)
+})
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
 const db = () => getProjectDb()!
@@ -104,7 +103,7 @@ function barrier() {
 const continuity = () => db().prepare("SELECT generation, stale_from_chapter FROM continuity_projection_meta WHERE id='main'").get()
 const statuses = (...ids: number[]) => ids.map(id => db().prepare('SELECT status FROM drafts_all WHERE id=?').pluck().get(id))
 
-describe('删除进回收站', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
+describe('删除进回收站', () => {
   it('本章定稿与旧定稿原样留在回收站，读取路径看不见；水位不推，后面各章的要点与角色状态仍然当前', async () => {
     const { old, current } = threeChapters()
     const before = continuity()
@@ -145,7 +144,7 @@ describe('删除进回收站', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, 
   })
 })
 
-describe('恢复', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
+describe('恢复', () => {
   it('放回原位：两份定稿回到原状态，收据删掉，只把知识库导入标成待重做，重发实体稿', async () => {
     const { old, current, currentRecord } = threeChapters()
     const { service: s, retry } = service()
@@ -421,7 +420,7 @@ describe('恢复', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
   })
 })
 
-describe('彻底删除', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
+describe('彻底删除', () => {
   it('删掉这一项的全部行、正文与后处理，收据留作删除证明；再删一次列为 alreadyGone', async () => {
     const { old, current, oldRecord, currentRecord } = threeChapters()
     const { service: s } = service()
@@ -475,7 +474,7 @@ describe('彻底删除', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => 
   })
 })
 
-describe('回收站列表', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
+describe('回收站列表', () => {
   it('一项残缺只单列这一项，其余照常列出', async () => {
     threeChapters()
     const { service: s } = service()
@@ -492,7 +491,7 @@ describe('回收站列表', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () 
   })
 })
 
-describe('删除清理只删属于这份定稿的实体稿', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
+describe('删除清理只删属于这份定稿的实体稿', () => {
   /** 实体稿用默认清理器的删法；知识库清理不涉及。 */
   const fileCleaner: ChapterDeletionProjectionCleaner = {
     removeManuscript: removeDeletedManuscript,
@@ -547,7 +546,7 @@ describe('删除清理只删属于这份定稿的实体稿', { timeout: WINDOWS_
   })
 })
 
-describe('彻底删除清理没完成的项', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
+describe('彻底删除清理没完成的项', () => {
   it('删除时知识库清理失败的项彻底删除后，收据仍在待续跑，重试照常删掉知识库文档', async () => {
     const draft = write(1, '第一章：雾钟。')
     finalize(draft, 'kb-1')
@@ -563,7 +562,7 @@ describe('彻底删除清理没完成的项', { timeout: WINDOWS_RUNNER_IO_STALL
   })
 })
 
-describe('排队的回收站操作跨作品切换', { timeout: WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS }, () => {
+describe('排队的回收站操作跨作品切换', () => {
   it('A 作品删除卡在清理时排队的「全部彻底删除」，切到 B 作品后被拒绝，B 的回收站原样保留', async () => {
     const otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-trash-b-'))
     try {
@@ -609,7 +608,7 @@ describe('排队的回收站操作跨作品切换', { timeout: WINDOWS_RUNNER_IO
     return root
   }
   const others: string[] = []
-  afterEach(() => { closeProjectDatabase(); for (const root of others.splice(0)) fs.rmSync(root, { recursive: true, force: true }) }, WINDOWS_RUNNER_IO_STALL_TIMEOUT_MS)
+  afterEach(() => { closeProjectDatabase(); for (const root of others.splice(0)) fs.rmSync(root, { recursive: true, force: true }) })
 
   it('删除清理等清理器期间切到 B 作品：清理结果不记进 B 的库，A 的收据停在待续跑，回到 A 照常补完', async () => {
     const otherRoot = otherProject()

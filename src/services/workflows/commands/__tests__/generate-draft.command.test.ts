@@ -14,18 +14,18 @@ import type {
 import type { NarrativeThreadView } from '../../../../shared/narrative-thread'
 import type { ContinuityNode } from '../../../../shared/character-continuity'
 import {
-  createGenerationRuntime,
   type GenerationRuntime,
-  type GenerationRuntimeEnvironment,
   type GenerationRuntimeScope,
   type MainGenerationRunHandle,
   type MainGenerationRunView,
 } from '../../../generation/generation-runtime'
 import type {
+  CompletionPort,
   GenerationAttemptReceipt,
   GenerationOutcome,
   GenerationTask,
 } from '../../../generation/generation-harness'
+import { fakeLeaseModelId, fakeRuntimeDependencies } from './workflow-generation-runtime.fixture'
 import { EN_US_BUILTIN_PROMPTS } from '../../../prompt-language'
 import { BUILTIN_PROMPTS, clearProjectCustomPrompts } from '../../../prompt-templates'
 import { composeDraftVisibleContinuation, DRAFT_VISIBLE_TEXT_VERSION } from '../../../../shared/draft-visible-text'
@@ -831,6 +831,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     } else await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).resolves.toBe(text)
     expect(legacy.createRuntime).not.toHaveBeenCalled()
     expect(f.invoke.mock.calls.filter(([channel]) => channel === 'generation:execute')).toHaveLength(2)
+    expect(f.invoke.mock.calls.map(([channel]) => String(channel)).filter(channel => channel.startsWith('llm:'))).toEqual([])
     expect(f.invoke.mock.calls.some(([channel]) => channel === 'db:draft-create' || channel === 'db:draft-next-version' || channel === 'db:recovery-candidate-record')).toBe(false)
   })
 
@@ -1814,42 +1815,30 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
   })
 
   it('freezes one lease and one budget across initial and continuation attempts after model/config changes', async () => {
-    let selectedModelId: string | null = 'model-a'
     let call = 0
-    const receipt = leaseReceipt()
-    const completeWithLease = vi.fn<GenerationRuntimeEnvironment['completeWithLease']>(async () => {
+    const capabilityEvidence = leaseReceipt().capabilityEvidence
+    const completeWithLease = vi.fn<CompletionPort['complete']>(async () => {
       if (completeWithLease.mock.calls.length === 1) return { content: '本章短细纲。', finishReason: 'stop' }
       call += 1
       if (call === 1) {
-        selectedModelId = 'model-b'
-        receipt.capabilityEvidence.maxOutputTokens = 1
+        useLLMStore.setState({ defaultModelId: 'model-b' })
+        capabilityEvidence.maxOutputTokens = 1
         return { content: '初'.repeat(3500), finishReason: 'length' }
       }
       return { content: `${'续'.repeat(700)}。`, finishReason: 'stop' }
     })
-    const environment: GenerationRuntimeEnvironment = {
-      snapshotDefaultModelId: vi.fn(() => selectedModelId),
-      beginModelExecution: vi.fn(async () => receipt),
-      completeWithLease,
-      closeModelExecution: vi.fn().mockResolvedValue(undefined),
-    }
-    const createRuntime = vi.fn<GenerateDraftCommandDependencies['createRuntime']>(
-      options => createGenerationRuntime(options, environment),
-    )
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    const fake = fakeRuntimeDependencies(completeWithLease, capabilityEvidence)
+    const createRuntime = vi.fn<GenerateDraftCommandDependencies['createRuntime']>(options => fake.createRuntime(options))
     const runtime = { createRuntime, complete: vi.fn(), execute: vi.fn(), close: vi.fn() }
     const { invoke, context, callbacks, command } = setup({ runtime })
 
     await expect(command.execute({ step: {}, context, callbacks })).resolves.toContain('续')
 
-    expect(environment.snapshotDefaultModelId).toHaveBeenCalledOnce()
-    expect(environment.beginModelExecution).toHaveBeenCalledOnce()
-    expect(environment.beginModelExecution).toHaveBeenCalledWith('model-a')
     expect(completeWithLease).toHaveBeenCalledTimes(3)
-    expect(completeWithLease.mock.calls.map(([request]) => request.leaseId)).toEqual([
-      'draft-lease-a',
-      'draft-lease-a',
-      'draft-lease-a',
-    ])
+    const leaseIds = completeWithLease.mock.calls.map(([request]) => request.modelExecutionLeaseId)
+    expect(fakeLeaseModelId(leaseIds[0])).toBe('model-a')
+    expect(leaseIds).toEqual([leaseIds[0], leaseIds[0], leaseIds[0]])
     expect(completeWithLease.mock.calls.map(([request]) => request.plan.maxOutputTokens)).toEqual([
       8192,
       8192,
@@ -3640,6 +3629,32 @@ ${headingPrefix}第3章：潮门
     expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('另有 2 条'))
   })
 
+  it('作者指定本章推进的线索进合同并标明；延后的线索不进合同，提示里写新的目标章', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 5,
+      wordsTarget: 500,
+      previousFinalizedContent: '第四章定稿原文。',
+      narrativeThreads: [
+        { ...threadView(1, '青铜钥匙', 1, 9), assignments: [{ chapterNumber: 5, kind: 'advance', note: '写第 5 章前指定本章推进' }] },
+        { ...threadView(2, '父亲的旧信', 3, 8), assignments: [{ chapterNumber: 8, kind: 'resolve', note: '写第 5 章时延后' }] },
+      ],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(prompt.split('\n').filter(line => line.startsWith('- 本章推进或回收：'))).toEqual(['- 本章推进或回收：青铜钥匙（作者指定本章推进；作者意图：青铜钥匙要有交代。）'])
+    expect(promptLine(prompt, '青铜钥匙')).toContain('作者指定本章推进；目标第1–9章')
+    expect(promptLine(prompt, '父亲的旧信')).toContain('目标第3–8章')
+    expect(promptLine(prompt, '父亲的旧信')).not.toMatch(/本章到期|已逾期/)
+  })
+
   it('injects relevant threads into the first chapter too', async () => {
     let observedTask: GenerationTask | undefined
     const runtime = fakeRuntime((_attempt, task) => {
@@ -3775,6 +3790,32 @@ ${headingPrefix}第3章：潮门
     expect(prompt).not.toContain('本章推进或回收')
   })
 
+  it.each([
+    { writingLanguage: 'zh-CN' as const, rule: '【伏笔线索任务】', wrongClaim: '已到期或逾期' },
+    { writingLanguage: 'en-US' as const, rule: '[Narrative thread tasks]', wrongClaim: 'are due or overdue' },
+  ])('$writingLanguage: an author-assigned thread is not described as due or overdue, and still must change', async ({ writingLanguage, rule, wrongClaim }) => {
+    const promptFor = async (narrativeThreads: NarrativeThreadView[]) => {
+      let observedTask: GenerationTask | undefined
+      const runtime = fakeRuntime((_attempt, task) => {
+        observedTask = task
+        return outcome('新章正文。'.repeat(125), 'stop')
+      })
+      const { context, callbacks, command } = setup({ runtime, chapterNumber: 5, wordsTarget: 500, writingLanguage,
+        previousFinalizedContent: '第四章定稿原文。', narrativeThreads })
+      await command.execute({ step: {}, context, callbacks })
+      const prompt = observedTask?.messages.map(message => message.content).join('\n') ?? ''
+      return prompt.split('\n').find(line => line.startsWith(rule)) ?? ''
+    }
+    const assigned = { ...threadView(1, '区间线索', 3, 8), assignments: [{ chapterNumber: 5, kind: 'advance' as const, note: '' }] }
+
+    const assignedRule = await promptFor([assigned])
+    const dueRule = await promptFor([threadView(2, '青铜钥匙', 1, 5)])
+
+    expect(assignedRule).not.toBe('')
+    expect(assignedRule).not.toContain(wrongClaim)
+    expect(dueRule).toBe(assignedRule)
+  })
+
   it('tells the author when threads cannot be read, so the chapter is written without thread tasks knowingly', async () => {
     let observedTask: GenerationTask | undefined
     const runtime = fakeRuntime((_attempt, task) => {
@@ -3819,6 +3860,16 @@ ${headingPrefix}第3章：潮门
       expect(sent.length).toBeGreaterThanOrEqual(2)
       expect(new Set(sent)).toEqual(new Set([chapterInfoText([frozenTask])]))
       expect(f.callbacks.log).toHaveBeenCalledWith(expect.stringContaining('本章硬任务线索 1 条'))
+    })
+
+    it('开写后作者才延后：恢复仍按冻结的任务写，线索现状不进合同', async () => {
+      const assignedTask = { ...frozenTask, schedule: { kind: 'assigned' } }
+      const deferredNow = { ...threadView(1, '青铜钥匙', 1, 1), assignments: [{ chapterNumber: 4, kind: 'resolve' as const, note: '写第 1 章时延后' }] }
+      const { f, continuationPrompts } = resumeFixture([assignedTask], [deferredNow])
+      await f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
+      expect(continuationPrompts.length).toBeGreaterThan(0)
+      expect(continuationPrompts.join('\n')).toContain('- 本章推进或回收：青铜钥匙（作者指定本章推进；作者意图：青铜钥匙要有交代。）')
+      expect(new Set(sentChapterInfos(f.invoke))).toEqual(new Set())
     })
 
     function resumeFixture(recordedTasks: unknown[] | undefined, currentThreads: NarrativeThreadView[], timeline: { recorded?: string; nodes?: ContinuityNode[] } = {}) {
@@ -4092,30 +4143,21 @@ ${headingPrefix}第3章：潮门
   })
 
   it('does not locally reject a 30K prompt when lease context evidence is unknown', async () => {
-    const completeWithLease = vi.fn<GenerationRuntimeEnvironment['completeWithLease']>(async request => {
+    const completeWithLease = vi.fn<CompletionPort['complete']>(async request => {
       void request
       return { content: `${'正文'.repeat(2500)}。`, finishReason: 'stop' }
     })
-    const environment: GenerationRuntimeEnvironment = {
-      snapshotDefaultModelId: () => 'model-a',
-      beginModelExecution: async () => leaseReceipt({
-        capabilityEvidence: {
-          ...leaseReceipt().capabilityEvidence,
-          source: {
-            contextWindowTokens: 'unknown',
-            maxOutputTokens: 'user-operational-cap',
-            featureFlags: 'unknown',
-          },
-          contextWindowTokens: null,
-          maxOutputTokens: 8192,
-        },
-      }),
-      completeWithLease,
-      closeModelExecution: vi.fn().mockResolvedValue(undefined),
-    }
-    const createRuntime = vi.fn<GenerateDraftCommandDependencies['createRuntime']>(
-      options => createGenerationRuntime(options, environment),
-    )
+    const fake = fakeRuntimeDependencies(completeWithLease, {
+      ...leaseReceipt().capabilityEvidence,
+      source: {
+        contextWindowTokens: 'unknown',
+        maxOutputTokens: 'user-operational-cap',
+        featureFlags: 'unknown',
+      },
+      contextWindowTokens: null,
+      maxOutputTokens: 8192,
+    })
+    const createRuntime = vi.fn<GenerateDraftCommandDependencies['createRuntime']>(options => fake.createRuntime(options))
     const runtime = { createRuntime, complete: vi.fn(), execute: vi.fn(), close: vi.fn() }
     const { context, callbacks, command } = setup({
       runtime,

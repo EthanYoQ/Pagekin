@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
-import { page, userEvent } from 'vitest/browser'
+import { userEvent } from 'vitest/browser'
 import { createRoot, type Root } from 'react-dom/client'
 import type { StoreApi } from 'zustand'
 
@@ -20,6 +20,7 @@ import { CHARACTER_DRAFT_TAB } from '../../../../stores/project-editor-draft-led
 import { useProjectStore } from '../../../../stores/project-store'
 import { useWorkflowStore } from '../../../../stores/workflow-store'
 import StageCharacters from '../StageCharacters'
+import { resizeViewport } from '../../../ui/__tests__/viewport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -86,7 +87,7 @@ async function render() {
 
 beforeEach(async () => {
   // 宿主 1200 宽；视口比它窄时焦点移到屏外按钮会滚动页面，滚动事件晚一帧到达时会关掉刚打开的菜单。
-  await page.viewport(1280, 960)
+  await resizeViewport(1280, 960)
   pendingStates = []
   pendingDecisions = 0
   timeline = { nodes: [], chapterRange: { next: 1, last: 1 } }
@@ -95,6 +96,7 @@ beforeEach(async () => {
       if (timeline instanceof Error) throw timeline
       return timeline
     }
+    if (channel === 'finalized-character:list-relation-candidates') return []
     if (channel === 'character-proposal:list-pending-finalized') return Array.from({ length: pendingDecisions }, (_, index) =>
       ({ proposalBatchId: `cpb-${index}`, revision: 1, finalizationId: `final-${index}` }))
     if (channel === 'finalized-character:list-state-candidates') return pendingStates.map(candidate => ({
@@ -556,6 +558,17 @@ describe('角色时间线', () => {
     expect(rowText()[1]).toContain('作者设定')
   })
 
+  it('打开着的时间线在名单重载后更新，名单版本没变也一样', async () => {
+    timeline = { nodes: [stateNode('北塔', 3)], chapterRange: { next: 8, last: 20 } }
+    await openState()
+    await expand()
+    expect(chapters()).toEqual(['第 3 章'])
+
+    timeline = { nodes: [stateNode('北塔', 3), relationNode('决裂', 7)], chapterRange: { next: 8, last: 20 } }
+    await act(async () => useCharacterStore.setState({ rosterLoads: useCharacterStore.getState().rosterLoads + 1 }))
+    await vi.waitFor(() => expect(chapters()).toEqual(['第 7 章', '第 3 章']))
+  })
+
   it('定稿记录可以看原文证据，作者设定没有原文入口', async () => {
     timeline = { nodes: [stateNode('旧站', 7, derived, '他走回旧站。'), stateNode('北塔', 3)], chapterRange: { next: 8, last: 20 } }
     await openState()
@@ -578,6 +591,23 @@ describe('角色时间线', () => {
     expect(rowText()[0]).toContain('解除「盟友」')
     expect(rowText().slice(1).join()).toContain('盟友')
     expect(rowText().slice(1).join()).toContain('同门')
+  })
+
+  it('采用定稿发现的关系后，这一章一行写旧值到新值，原文可展开，摘要按合并后的行数算', async () => {
+    const found = '他给她倒了一杯茶。'
+    timeline = { nodes: [relationNode('素不相识', 1, 'old'), relationNode('', 4, 'old'), relationNode('彼此信任', 4, 'new'),
+      { ...relationNode('彼此信任', 4, 'derived:x'), provenance: derived, quote: { start: 0, end: found.length, text: found } }], chapterRange: { next: 5, last: 20 } }
+    await openState()
+    expect(section()!.querySelector('summary')!.textContent).toBe('时间线 · 2 处变化')
+    await expand()
+    expect(chapters()).toEqual(['第 4 章', '第 1 章'])
+    const [merged] = [...host!.querySelectorAll('.cast-timeline-row')]
+    expect(merged.querySelector('.cast-timeline-value')!.textContent).toBe('素不相识 → 彼此信任')
+    expect(merged.textContent).toContain('作者设定')
+    expect(merged.textContent).not.toContain('定稿记录')
+    const quote = merged.querySelector<HTMLDetailsElement>('.cast-timeline-quote')!
+    await act(async () => quote.querySelector('summary')!.click())
+    expect(quote.textContent).toContain(found)
   })
 
   it('升级前已有的节点写明之前的变化没有记录，只写一次', async () => {

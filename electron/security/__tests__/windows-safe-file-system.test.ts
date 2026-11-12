@@ -10,7 +10,6 @@ import {
 } from '../windows-safe-file-system'
 
 const temporaryRoots: string[] = []
-const REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS = 15_000
 
 function fixtureRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-secure-fs-'))
@@ -272,7 +271,7 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
       .rejects.toThrow('SECURE_FS_REPARSE_POINT')
     expect(fs.existsSync(path.join(outsideRoot, 'new-folder'))).toBe(false)
     expect(fs.existsSync(path.join(outsideRoot, 'result.txt'))).toBe(false)
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('lists ordinary entries when the directory also contains a junction without exposing the junction', async () => {
     const fixture = fixtureRoot()
@@ -290,7 +289,7 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
       .resolves.toEqual([{ name: 'chapter.txt', isDirectory: false }])
     await expect(safeFileSystem.listDirectory(capability(selectedRoot, 'linked-outside')))
       .resolves.toEqual([])
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('lists authorized roots reached through parent or root junctions without exposing child junctions', async () => {
     const fixture = fixtureRoot()
@@ -316,7 +315,7 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
       .resolves.toEqual([{ name: 'chapter.txt', isDirectory: false }])
     await expect(safeFileSystem.listDirectory(capability(rootViaParentJunction, 'linked-outside')))
       .resolves.toEqual([])
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('rejects read, list, and atomic write after an authorized ordinary root becomes an outside junction', async () => {
     const fixture = fixtureRoot()
@@ -340,7 +339,7 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
       .rejects.toThrow('SECURE_FS_ROOT_CHANGED')
     expect(fs.readFileSync(path.join(outsideRoot, 'chapter.txt'), 'utf8')).toBe('outside')
     expect(fs.existsSync(path.join(outsideRoot, 'new-chapter.txt'))).toBe(false)
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('keeps ordinary non-reparse reads, recursive mkdir, atomic writes, and enumeration working', async () => {
     const fixture = fixtureRoot()
@@ -358,7 +357,7 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
     await expect(safeFileSystem.readText(output)).resolves.toBe('正常内容')
     await expect(safeFileSystem.listDirectory(capability(selectedRoot, 'nested')))
       .resolves.toEqual([{ name: 'chapter.txt', isDirectory: false }])
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('cancels a prepared atomic replacement when the main-process commit guard rejects it', async () => {
     const fixture = fixtureRoot()
@@ -555,7 +554,7 @@ describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file s
     await expect(safeFileSystem.writeTextAtomically(writeCapability, 'attacker write'))
       .rejects.toThrow('SECURE_FS_ROOT_CHANGED')
     expect(fs.readFileSync(path.join(selectedRoot, 'chapter.txt'), 'utf8')).toBe('replacement')
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('rejects a selected file that grows past the caller byte budget', async () => {
     const fixture = fixtureRoot()
@@ -572,7 +571,7 @@ describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file s
 
     await expect(safeFileSystem.readText(grantedCapability, 3))
       .rejects.toThrow('SECURE_FS_FILE_TOO_LARGE')
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('rejects symlink escapes for reads, mkdir, and atomic writes', async () => {
     const fixture = fixtureRoot()
@@ -599,7 +598,7 @@ describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file s
     )).rejects.toThrow('SECURE_FS_REPARSE_POINT')
     expect(fs.existsSync(path.join(outsideRoot, 'new-folder'))).toBe(false)
     expect(fs.existsSync(path.join(outsideRoot, 'result.txt'))).toBe(false)
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('keeps ordinary operations and the atomic commit boundary working', async () => {
     const fixture = fixtureRoot()
@@ -627,7 +626,7 @@ describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file s
       throw new Error('lease-revalidation-rejected')
     })).rejects.toThrow('lease-revalidation-rejected')
     expect(fs.readFileSync(path.join(selectedRoot, 'nested', 'chapter.txt'), 'utf8')).toBe('normal content')
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('does not recreate a must-exist target that was removed before preparation', async () => {
     const fixture = fixtureRoot()
@@ -653,7 +652,7 @@ describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file s
 
     expect(reachedCommitGuard).toBe(false)
     expect(fs.existsSync(targetPath)).toBe(false)
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('fails closed when a must-exist target changes during the commit guard', async () => {
     const fixture = fixtureRoot()
@@ -674,7 +673,7 @@ describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file s
     )).rejects.toThrow('SECURE_FS_WRITE_FAILED')
 
     expect(fs.existsSync(targetPath)).toBe(false)
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 
   it('does not replace a must-exist target substituted during the commit guard', async () => {
     const fixture = fixtureRoot()
@@ -697,5 +696,5 @@ describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file s
     )).rejects.toThrow('SECURE_FS_WRITE_FAILED')
 
     expect(fs.readFileSync(targetPath, 'utf8')).toBe('attacker content')
-  }, REAL_WINDOWS_MULTI_HELPER_TIMEOUT_MS)
+  })
 })
