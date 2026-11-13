@@ -5,7 +5,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import * as chapterView from './pages/chapter-view.mjs'
+import * as runSheet from './pages/run-sheet.mjs'
 import * as stage from './pages/stage.mjs'
+import { seedWithCandidate } from './run-scenarios.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { countUnits, STAGE_SAMPLE } from './stage-sample.mjs'
 
@@ -52,8 +54,30 @@ const seedFourthChapterVersion = context => seedStageSample(context, {
   },
 })
 
-async function annotate(page, paragraph, note) {
-  await chapterView.prose(page).getByText(paragraph).first().click({ clickCount: 3 })
+/** 面板与正文栏在水平方向重叠时，正文滚过面板所在高度就会被盖住。 */
+const panelCoversColumn = panel => panel.evaluate(node => {
+  const box = node.getBoundingClientRect()
+  const column = document.querySelector('.cm-content').getBoundingClientRect()
+  return box.left < column.right && column.left < box.right
+})
+
+/** 第二段首字相对正文区左缘的位置与它的字号、行高、字体：编辑与审阅两边要一致。 */
+const secondParagraphGlyph = (page, scope) => page.evaluate(([selector, needle]) => {
+  const root = document.querySelector(selector)
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const offset = node.textContent.indexOf(needle)
+    if (offset < 0) continue
+    const range = document.createRange()
+    range.setStart(node, offset); range.setEnd(node, offset + 1)
+    const style = getComputedStyle(node.parentElement)
+    return { left: Math.round(range.getBoundingClientRect().left - root.closest('.stage-ch-prose').getBoundingClientRect().left), fontSize: style.fontSize, lineHeight: style.lineHeight, fontFamily: style.fontFamily }
+  }
+  return null
+}, [scope, '他给'])
+
+async function annotate(page, paragraph, note, scope = chapterView.prose(page)) {
+  await scope.getByText(paragraph).first().click({ clickCount: 3 })
   const toolbar = page.getByRole('toolbar', { name: '选中文字的操作' })
   await toolbar.getByRole('button', { name: '添加批注' }).click()
   await toolbar.getByRole('textbox', { name: '批注意见' }).fill(note)
@@ -76,6 +100,9 @@ export const EXT653_SCENARIOS = {
     assert.equal(measured.panelTitle, '本章批注 · 3')
     measured.marks = await chapterView.prose(page).locator('.cm-editor-annotation').count()
     assert.equal(measured.marks, 3, '三处批注在正文里都有底色')
+    measured.panelCoversColumn = await panelCoversColumn(panel)
+    assert.equal(measured.panelCoversColumn, false, '批注面板停在正文栏旁边，不盖字')
+    measured.editingGlyph = await secondParagraphGlyph(page, '.stage-ch-prose .cm-content')
     await context.shoot('ext653-1-annotations')
 
     await panel.getByRole('button', { name: '统一修改（3）' }).click()
@@ -85,6 +112,8 @@ export const EXT653_SCENARIOS = {
     assert.equal(measured.changes, 3, '三处批注各成一处修改')
     measured.removed = await review.locator('del').allInnerTexts()
     measured.added = await review.locator('ins').allInnerTexts()
+    measured.reviewGlyph = await secondParagraphGlyph(page, '.inline-annotation-prose')
+    assert.deepEqual(measured.reviewGlyph, measured.editingGlyph, '审阅与编辑的第二段首字同位置、同字号行高与字体')
 
     await review.getByRole('button', { name: '查看修改 1' }).click()
     await review.getByRole('button', { name: '接受', exact: true }).click()
@@ -124,9 +153,31 @@ export const EXT653_SCENARIOS = {
     await reopened.locator('summary').first().click()
     await reopened.locator('details summary').first().click()
     measured.historyEntry = await reopened.locator('details summary').first().innerText()
-    measured.historyNotes = await reopened.locator('details p b').allInnerTexts()
+    measured.historyNotes = await reopened.locator('details .cm-annotation-quote').allInnerTexts()
     assert.equal(measured.historyNotes.length, 3, '重开后三条批注都在历史里')
+    measured.historyQuoteWeight = await reopened.locator('details .cm-annotation-quote').first().evaluate(node => getComputedStyle(node).fontWeight)
+    assert.ok(Number(measured.historyQuoteWeight) < 600, '引文不加粗')
+    assert.doesNotMatch(await reopened.innerText(), /[。！？.!?][：:]/, '批注历史里没有「。：」这类双标点')
     await reopened.scrollIntoViewIfNeeded()
+    return measured
+  } },
+
+  /** 恢复候选（非章节的正文编辑器）里加一条批注：面板叫「批注」，停在正文旁边不盖字。 */
+  'ext653-doc-annotation': { model: false, shell: 'stage', setup: seedWithCandidate, run: async ({ page, shoot }) => {
+    const measured = {}
+    await runSheet.openFromPalette(page)
+    const card = runSheet.recovery(page).getByRole('article', { name: '原始候选 · 第5章 潮汐表' })
+    await card.getByRole('button', { name: '继续编辑' }).click()
+    await runSheet.sheet(page).getByRole('button', { name: '收起运行侧页' }).first().click()
+    const prose = page.locator('.stage-doc .stage-ch-prose')
+    await annotate(page, '潮水退去，钟声早了一刻。', '钟声早一刻要有伏笔', prose)
+    const panel = page.getByRole('region', { name: '批注', exact: true })
+    measured.panelTitle = await panel.locator('.cm-selbar-title').innerText()
+    assert.equal(measured.panelTitle, '批注 · 1')
+    assert.equal(await page.getByRole('region', { name: '本章批注' }).count(), 0, '非章节编辑器里不叫「本章批注」')
+    measured.panelCoversColumn = await panelCoversColumn(panel)
+    assert.equal(measured.panelCoversColumn, false, '批注面板停在正文栏旁边，不盖字')
+    await shoot('ext653-3-doc-annotation')
     return measured
   } },
 
