@@ -500,9 +500,14 @@ describe('CodeMirror editor AI generation boundary', () => {
 
   it('shows a batch provider failure without scrolling to the end of the chapter', async () => {
     failureCode = 'GENERATION_PROVIDER_FAILED'
-    await act(async () => root.render(
-      <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>,
-    ))
+    const Chapter = () => {
+      const [slot, setSlot] = useState<HTMLDivElement | null>(null)
+      return <div style={{ display: 'flex' }}>
+        <div data-testid="chapter-scroller" style={{ flex: 1, height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent annotationSlot={slot} /></div>
+        <div ref={setSlot} style={{ display: 'flex' }} />
+      </div>
+    }
+    await act(async () => root.render(<Chapter />))
     const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
     await act(async () => {
       const line = view.state.doc.line(39)
@@ -755,15 +760,6 @@ it('继续原运行时服务商以上下文超长拒绝，显示对应说明', a
 
 const CHAPTER_TEXT = `${'守塔人的屋子在灯塔背风的一侧，窗玻璃上积着经年的盐，'.repeat(3)}。\n\n${'他给林岚倒了一杯很淡的茶，自己却只是捧着杯子看着炉火，'.repeat(3)}。`
 const SECOND_PARAGRAPH = '他给林岚倒了一杯很淡的茶'
-function ChapterHarness({ width, onCommit }: { width: number; onCommit?: () => Promise<void> }) {
-  const [slot, setSlot] = useState<HTMLDivElement | null>(null)
-  return <div className="paper-ink stage-ch" style={{ width, height: 640 }}>
-    <div className="stage-ch-scroll"><article className="stage-ch-page"><div className="stage-ch-prose">
-      <CodeMirrorEditor mode="prose" fitContent paragraphIndent hideStatusBar chapterAnnotations annotationSlot={slot} content={CHAPTER_TEXT} onCommitAnnotations={onCommit} />
-    </div></article></div>
-    <div ref={setSlot} className="stage-ch-sheet-slot" />
-  </div>
-}
 const annotateLine = async (text: string, note: string) => {
   await act(async () => page.getByText(text).click({ clickCount: 3 }))
   await act(async () => page.getByRole('button', { name: '添加批注' }).click())
@@ -790,6 +786,16 @@ const glyphAt = (scope: Element, needle: string) => {
 }
 
 describe('annotation panel layout', () => {
+  function ChapterHarness({ width, onCommit }: { width: number; onCommit?: () => Promise<void> }) {
+    const [slot, setSlot] = useState<HTMLDivElement | null>(null)
+    return <div className="paper-ink stage-ch" style={{ width, height: 640 }}>
+      <div className="stage-ch-scroll"><article className="stage-ch-page"><div className="stage-ch-prose">
+        <CodeMirrorEditor mode="prose" fitContent paragraphIndent hideStatusBar chapterAnnotations annotationSlot={slot} content={CHAPTER_TEXT} onCommitAnnotations={onCommit} />
+      </div></article></div>
+      <div ref={setSlot} className="stage-ch-sheet-slot" />
+    </div>
+  }
+
   for (const width of [1000, 740]) {
     it(`docks beside the chapter page without covering prose at ${width}px`, async () => {
       await act(async () => root.render(<ChapterHarness width={width} />))
