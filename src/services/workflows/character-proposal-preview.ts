@@ -16,9 +16,9 @@ export function relationTarget(batch: CharacterProposalBatch, relation: Characte
   identities: readonly Identity[]): { targetSelectionKey: string } | { targetCharacterId: string } | undefined {
   if (relation.targetSelectionKey) return { targetSelectionKey: relation.targetSelectionKey }
   const candidates = batch.items.filter(candidate => candidate.fields.name === relation.targetName)
-  if (candidates.length) return candidates.length === 1 ? { targetSelectionKey: candidates[0].selectionKey } : undefined
   const matches = identities.filter(identity => identity.name === relation.targetName)
-  return matches.length === 1 ? { targetCharacterId: matches[0].characterId } : undefined
+  if (candidates.length + matches.length !== 1) return undefined
+  return candidates.length ? { targetSelectionKey: candidates[0].selectionKey } : { targetCharacterId: matches[0].characterId }
 }
 export function isSelfRelation(selections: ApproveCharacterProposalRequest['selections'], relation: Relationship) {
   const endpoint = (key: string) => { const selection = selections.find(item => item.selectionKey === key); return selection?.action === 'map' ? selection.characterId : key }
@@ -27,12 +27,16 @@ export function isSelfRelation(selections: ApproveCharacterProposalRequest['sele
 export function defaultCharacterProposalRelationships(batch: CharacterProposalBatch, identities: readonly Identity[] = []) {
   const selections = defaultCharacterProposalSelections(batch)
   const adoptedKeys = new Set(selections.filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
+  const seen = new Set<string>()
   return batch.items.flatMap(item => adoptedKeys.has(item.selectionKey)
     ? item.relationships.flatMap((relation): Relationship[] => {
       const target = relationTarget(batch, relation, identities)
       if (!target || ('targetSelectionKey' in target && !adoptedKeys.has(target.targetSelectionKey))) return []
-      const edge = { sourceSelectionKey: item.selectionKey, ...target, relation: relation.relation }
-      return isSelfRelation(selections, edge) ? [] : [edge]
+      const edge: Relationship = { sourceSelectionKey: item.selectionKey, ...target, relation: relation.relation }
+      const key = JSON.stringify([edge.sourceSelectionKey, edge.targetSelectionKey, edge.targetCharacterId, edge.relation])
+      if (isSelfRelation(selections, edge) || seen.has(key)) return []
+      seen.add(key)
+      return [edge]
     }) : [])
 }
 export function formatCharacterProposalPreview(batch: CharacterProposalBatch, text: Text): string {

@@ -159,6 +159,7 @@ export class CharacterProposalService {
     const batch = this.read(proposalBatchId)
     if (batch.status !== 'pending-approval' || !['finalized-generation', 'import', 'directory'].includes(batch.source.kind))
       throw new Error('CHARACTER_PROPOSAL_NOT_PENDING_FINALIZED')
+    if (batch.source.kind === 'directory') this.sourceProof(batch.source, true, 1)
     return batch
   }
   evidence(proposalBatchId: string) {
