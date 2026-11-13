@@ -125,8 +125,7 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
         onClick={() => toggle(piece.index)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(piece.index) } }}>
         {piece.before && <del>{wrapAllBut(piece.before, changes[piece.index]!.value ? 0 : 1)}</del>}{changes[piece.index]!.value && <ins>{wrapAllBut(changes[piece.index]!.value, 1)}</ins>}
       </span>
-      {/* 对勾与操作区是原子盒，浏览器允许在它前后断行。片段整体不换行、只放开末字之前的文字，
-          末字、对勾、操作区和紧跟的句读就连成一体，不会把对勾、按钮或句读挤到行首 */}
+      {/* 对勾与操作区是原子盒，浏览器会在其前后断行；末字不放进可断区，才能与它们和句读一起换行 */}
       {changes[piece.index]!.accepted && <Check size={13} aria-label={text('已接受', 'Accepted')} />}
       {activeChange === piece.index && <span className="inline-annotation-actions">
         {changes[piece.index]!.editing && <textarea aria-label={text(`编辑修改 ${piece.index + 1}`, `Edit change ${piece.index + 1}`)} value={changes[piece.index]!.value} onChange={event => update(piece.index, { value: event.target.value, accepted: false, error: '' })} />}
