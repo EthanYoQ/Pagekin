@@ -479,6 +479,47 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(container.querySelector('.cm-selbar')!.getBoundingClientRect().top).toBeGreaterThanOrEqual(0)
   })
 
+  it('keeps the chapter scroll position and selection after adding an annotation', async () => {
+    await act(async () => root.render(
+      <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>,
+    ))
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
+    await scrollChapterTo(500)
+    await selectLine('第12段原文', { exact: true })
+    const selection = { from: view.state.selection.main.from, to: view.state.selection.main.to }
+    const scroller = container.querySelector<HTMLElement>('[data-testid="chapter-scroller"]')!
+    const scrollTop = scroller.scrollTop
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('调整这一段'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).last().click())
+    await nextFrames()
+
+    expect(scroller.scrollTop).toBe(scrollTop)
+    expect(view.state.selection.main).toMatchObject(selection)
+  })
+
+  it('shows a batch provider failure without scrolling to the end of the chapter', async () => {
+    failureCode = 'GENERATION_PROVIDER_FAILED'
+    await act(async () => root.render(
+      <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>,
+    ))
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
+    await act(async () => {
+      const line = view.state.doc.line(39)
+      view.dispatch({ selection: { anchor: line.from, head: line.to }, scrollIntoView: true })
+    })
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' })).toBeVisible()
+    const scroller = container.querySelector<HTMLElement>('[data-testid="chapter-scroller"]')!
+    const scrollTop = scroller.scrollTop
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('调整这一段'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).last().click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+
+    await expect.element(page.getByText('模型服务没有返回完整结果。请检查网络和模型设置后重试。')).toBeVisible()
+    expect(scroller.scrollTop).toBe(scrollTop)
+  })
+
   it('keeps the note form on screen while a long selection whose start scrolled away is still visible', async () => {
     await act(async () => root.render(
       <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>,
