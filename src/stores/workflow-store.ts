@@ -1,7 +1,7 @@
 import { displayedErrorMessage } from '../i18n/app-errors'
 import type { GenerationTransportDiagnostics } from '../shared/generation-contract'
 import type { CharacterProposalBatch } from '../shared/character-proposal'
-import { createCharacterProposalChoices, type CharacterProposalChoices } from '../services/character-proposal-choices'
+import type { CharacterProposalChoices } from '../services/character-proposal-choices'
 import { create } from 'zustand'
 import { randomUUID } from '../utils/id'
 import { globalEventBus } from '../shared/event-bus'
@@ -714,9 +714,9 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         // Register before publishing waiting state so an immediate UI confirmation cannot be lost.
         const confirmed = new Promise<void>(resolve => { continueResolveRefs.set(run.id, resolve) })
         const batch = context.data.characterProposalBatch as CharacterProposalBatch | undefined
-        const choices = batch ? createCharacterProposalChoices(batch) : undefined
-        if (choices) context.data.characterProposalChoices = structuredClone(choices)
-        updateRunById(set, run.id, { status: 'waiting', ...(batch && choices ? { characterProposalBatch: structuredClone(batch), characterProposalChoices: structuredClone(choices) } : {}) })
+        // 默认选中要等确认区读到已保存角色后才建，见 use-workflow-confirmation。
+        if (batch) delete context.data.characterProposalChoices
+        updateRunById(set, run.id, { status: 'waiting', ...(batch ? { characterProposalBatch: structuredClone(batch), characterProposalChoices: undefined } : {}) })
         set(s => {
           const newWaiting = { ...s.waitingRuns, [run.id]: { waitingForConfirm: true, waitingAfterStepIndex: i - 1 } }
           return { waitingRuns: newWaiting, ...computeCompat(s.activeRuns, newWaiting) }

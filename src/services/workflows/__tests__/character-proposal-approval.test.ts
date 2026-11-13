@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CharacterProposalBatch } from '../../../shared/character-proposal'
 import type { WorkflowContext, StepCallbacks } from '../../../stores/workflow-store'
 import { useProjectStore } from '../../../stores/project-store'
-import { defaultCharacterProposalRelationships, defaultCharacterProposalSelections, formatCharacterProposalPreview } from '../character-proposal-preview'
+import { defaultCharacterProposalSelections, formatCharacterProposalPreview } from '../character-proposal-preview'
+import { createCharacterProposalChoices } from '../../character-proposal-choices'
 import { AdoptGeneratedCharactersCommand } from '../commands/architecture.command'
 import { createArchitectureWorkflow } from '../architecture-workflow'
 import { createPlanningMaterialCharacterExtractionWorkflow } from '../planning-material-workflow'
@@ -26,7 +27,7 @@ describe('explicit character proposal adoption', () => {
       { selectionKey: 'new', action: 'create' }, { selectionKey: 'known', action: 'map', characterId: 'identity' },
       { selectionKey: 'ambiguous', action: 'keep-unresolved' }, { selectionKey: 'name-match', action: 'keep-unresolved' },
     ])
-    expect(defaultCharacterProposalRelationships(batch())).toEqual([{ sourceSelectionKey: 'new', targetSelectionKey: 'known', relation: '朋友' }])
+    expect(createCharacterProposalChoices(batch(), []).relationships).toEqual([{ sourceSelectionKey: 'new', targetSelectionKey: 'known', relation: '朋友' }])
     const preview = formatCharacterProposalPreview(batch(), zh => zh)
     expect(preview).toContain('尚未写入正式角色'); expect(preview).toContain('暂不采用'); expect(preview).toContain('未知身份')
   })
@@ -39,7 +40,7 @@ describe('explicit character proposal adoption', () => {
     await command.execute({ step: {}, context: state, callbacks })
     expect(invoke).toHaveBeenCalledOnce()
     expect(invoke).toHaveBeenCalledWith('character-proposal:approve', { proposalBatchId: 'batch', expectedRevision: 7,
-      operationId: 'character-adoption:run', selections: defaultCharacterProposalSelections(original), relationships: defaultCharacterProposalRelationships(original) }, session)
+      operationId: 'character-adoption:run', selections: defaultCharacterProposalSelections(original), relationships: [] }, session)
   })
   it('cancel leaves the proposal readable and performs zero approval calls', async () => {
     const state = context(); state.cancelled = true

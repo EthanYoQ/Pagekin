@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ipc } from '../../services/ipc-client'
-import { createCharacterProposalChoices, type CharacterProposalChoices } from '../../services/character-proposal-choices'
+import { adoptedRelationships, createCharacterProposalChoices, type CharacterProposalChoices } from '../../services/character-proposal-choices'
 import type { CharacterProposalBatch, PendingFinalizedCharacterProposalSummary } from '../../shared/character-proposal'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { useCharacterStore } from '../../stores/character-store'
@@ -17,7 +17,6 @@ export function usePendingCharacterProposals(session: ProjectSessionContext) {
   const [summaries, setSummaries] = useState<PendingFinalizedCharacterProposalSummary[]>([])
   const [batch, setBatch] = useState<CharacterProposalBatch | null>(null)
   const [choices, setChoices] = useState<CharacterProposalChoices | null>(null)
-  const [identities, setIdentities] = useState<{ characterId: string; name: string; role?: string }[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -50,7 +49,7 @@ export function usePendingCharacterProposals(session: ProjectSessionContext) {
       if (!isProjectSessionCurrent(session)) return
       const saved = snapshot.characters.filter(character => !character.retired)
         .map(character => ({ characterId: character.characterId, name: character.fields.name, role: character.fields.role }))
-      setIdentities(saved); setBatch(next); setChoices(createCharacterProposalChoices(next, saved))
+      setBatch(next); setChoices(createCharacterProposalChoices(next, saved))
     } catch (cause) {
       if (isProjectSessionCurrent(session)) setError(failureText(cause))
     } finally {
@@ -65,7 +64,7 @@ export function usePendingCharacterProposals(session: ProjectSessionContext) {
       if (action === 'approve') await ipc.invokeWithProjectSession(session, 'character-proposal:approve', {
         proposalBatchId: batch.proposalBatchId, expectedRevision: batch.revision,
         operationId: `finalized-character-adoption:${batch.proposalBatchId}`,
-        selections: choices.selections, relationships: choices.relationships,
+        selections: choices.selections, relationships: adoptedRelationships(batch, choices),
       })
       else await ipc.invokeWithProjectSession(session, 'character-proposal:cancel', {
         proposalBatchId: batch.proposalBatchId, expectedRevision: batch.revision,
@@ -83,5 +82,5 @@ export function usePendingCharacterProposals(session: ProjectSessionContext) {
     }
   }
 
-  return { summaries, batch, choices, setChoices, busy, error, identities, read, decide, reload: loadSummaries }
+  return { summaries, batch, choices, setChoices, busy, error, read, decide, reload: loadSummaries }
 }

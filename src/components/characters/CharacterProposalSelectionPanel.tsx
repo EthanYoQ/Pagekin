@@ -1,7 +1,7 @@
 import { directoryProposalChapter, type CharacterProposalBatch } from '../../shared/character-proposal'
 import { CHARACTER_ROLES, getCharacterRoleLabels } from '../../shared/character-role'
-import type { CharacterProposalChoices } from '../../services/character-proposal-choices'
-import { adoptableRelationships, relationTarget } from '../../services/workflows/character-proposal-preview'
+import { adoptedRelationships, type CharacterProposalChoices } from '../../services/character-proposal-choices'
+import { proposalRelations, sameRelationship } from '../../services/workflows/character-proposal-preview'
 import { useLocaleStore } from '../../stores/locale-store'
 import { NativeSelect } from '../ui/NativeSelect'
 
@@ -13,9 +13,8 @@ const editableFields = [
 ] as const
 
 /** Controlled author choices; the host owns confirmation, main owns the atomic effect. */
-export function CharacterProposalSelectionPanel({ batch, identities, choices, onChange, disabled = false }: {
+export function CharacterProposalSelectionPanel({ batch, choices, onChange, disabled = false }: {
   batch: CharacterProposalBatch
-  identities: Array<{ characterId: string; name: string; role?: string }>
   choices: CharacterProposalChoices
   onChange(choices: CharacterProposalChoices): void
   disabled?: boolean
@@ -27,14 +26,8 @@ export function CharacterProposalSelectionPanel({ batch, identities, choices, on
     return text(label.zhCN, label.enUS)
   }
   if (choices.proposalBatchId !== batch.proposalBatchId || choices.revision !== batch.revision) return <p role="alert">{text('提议已改变，请重新载入选择。', 'The proposals changed. Reload the choices.')}</p>
-  const active = new Set(choices.selections.filter(choice => choice.action !== 'keep-unresolved').map(choice => choice.selectionKey))
-  const relations = batch.items.flatMap(item => item.relationships.map(relation => ({ sourceSelectionKey: item.selectionKey,
-    targetSelectionKey: undefined, targetCharacterId: undefined, ...relationTarget(batch, relation, identities), targetName: relation.targetName, relation: relation.relation })))
-  const edge = (relation: typeof relations[number]) => relation.targetSelectionKey
-    ? { sourceSelectionKey: relation.sourceSelectionKey, targetSelectionKey: relation.targetSelectionKey, relation: relation.relation }
-    : { sourceSelectionKey: relation.sourceSelectionKey, targetCharacterId: relation.targetCharacterId, relation: relation.relation }
-  const sameEdge = (a: CharacterProposalChoices['relationships'][number], b: CharacterProposalChoices['relationships'][number]) =>
-    a.sourceSelectionKey === b.sourceSelectionKey && a.targetSelectionKey === b.targetSelectionKey && a.targetCharacterId === b.targetCharacterId && a.relation === b.relation
+  const { identities } = choices
+  const relations = proposalRelations(batch, identities, choices.selections)
   return <section className="space-y-3" aria-label={text('批量选择角色采用方式', 'Choose character adoption in one batch')}>
     <p className="text-xs text-[var(--color-text-secondary)]">{text('同名或共享别名不会自动合并。可选择对应角色、新建或暂不采用；最后一次确认统一保存。', 'Matching names or shared aliases are not merged automatically. Choose a character, create one, or keep unresolved, then confirm the batch once.')}</p>
     {batch.items.map(item => {
@@ -61,11 +54,9 @@ export function CharacterProposalSelectionPanel({ batch, identities, choices, on
               ? { selectionKey: item.selectionKey, action: 'map' as const, characterId: value.slice(4) }
               : { selectionKey: item.selectionKey, action: value === 'create' ? 'create' as const : 'keep-unresolved' as const }
             const selections = choices.selections.filter(current => current.selectionKey !== item.selectionKey).concat(selection)
-            const adopted = new Set(selections.filter(current => current.action !== 'keep-unresolved').map(current => current.selectionKey))
             onChange({ ...choices, selections,
               edits: selection.action === 'keep-unresolved' ? choices.edits?.filter(edit => edit.selectionKey !== item.selectionKey) : choices.edits,
-              relationships: adoptableRelationships(selections, choices.relationships.filter(relation => adopted.has(relation.sourceSelectionKey)
-                && (relation.targetSelectionKey ? adopted.has(relation.targetSelectionKey) : Boolean(relation.targetCharacterId)))) })
+              relationships: adoptedRelationships(batch, { ...choices, selections }) })
           }}>
           <option value="keep-unresolved">{text('暂不采用，保留候选', 'Keep unresolved')}</option>
           <option value="create">{text('新建独立角色', 'Create a separate character')}</option>
@@ -94,13 +85,12 @@ export function CharacterProposalSelectionPanel({ batch, identities, choices, on
         </details>}
       </div>
     })}
-    {relations.map((relation, index) => <label className="flex gap-2 text-xs" key={`${relation.sourceSelectionKey}:${relation.targetSelectionKey ?? relation.targetCharacterId}:${index}`}>
-      <input type="checkbox" disabled={disabled || batch.status !== 'pending-approval' || !active.has(relation.sourceSelectionKey)
-        || !(relation.targetSelectionKey ? active.has(relation.targetSelectionKey) : relation.targetCharacterId) || !adoptableRelationships(choices.selections, [edge(relation)]).length}
-        checked={choices.relationships.some(value => sameEdge(value, edge(relation)))}
-        onChange={event => onChange({ ...choices, relationships: event.target.checked ? adoptableRelationships(choices.selections, [...choices.relationships, edge(relation)]) : choices.relationships.filter(value => !sameEdge(value, edge(relation))) })} />
-      {batch.items.find(item => item.selectionKey === relation.sourceSelectionKey)?.fields.name} → {batch.items.find(item => item.selectionKey === relation.targetSelectionKey)?.fields.name ?? relation.targetName}：{relation.relation}
-      {!relation.targetSelectionKey && !relation.targetCharacterId && text('（目标身份待确认，暂不采用关系）', ' (Target identity unresolved; relationship not adopted)')}
+    {relations.map(({ edge, ...relation }, index) => <label className="flex gap-2 text-xs" key={`${relation.sourceSelectionKey}:${edge?.targetSelectionKey ?? edge?.targetCharacterId}:${index}`}>
+      <input type="checkbox" disabled={disabled || batch.status !== 'pending-approval' || !relation.adoptable}
+        checked={!!edge && choices.relationships.some(value => sameRelationship(value, edge))}
+        onChange={event => { if (edge) onChange({ ...choices, relationships: event.target.checked ? adoptedRelationships(batch, { ...choices, relationships: [...choices.relationships, edge] }) : choices.relationships.filter(value => !sameRelationship(value, edge)) }) }} />
+      {batch.items.find(item => item.selectionKey === relation.sourceSelectionKey)?.fields.name} → {batch.items.find(item => item.selectionKey === edge?.targetSelectionKey)?.fields.name ?? relation.targetName}：{relation.relation}
+      {!edge && text('（目标身份待确认，暂不采用关系）', ' (Target identity unresolved; relationship not adopted)')}
     </label>)}
   </section>
 }

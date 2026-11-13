@@ -10,9 +10,9 @@ export function defaultCharacterProposalSelections(batch: CharacterProposalBatch
       ? { selectionKey: item.selectionKey, action: 'create' as const }
       : { selectionKey: item.selectionKey, action: 'keep-unresolved' as const })
 }
-type Identity = { characterId: string; name: string }
+type Identity = { characterId: string; name: string; role?: string }
 type Relationship = NonNullable<ApproveCharacterProposalRequest['relationships']>[number]
-export function relationTarget(batch: CharacterProposalBatch, relation: CharacterProposalBatch['items'][number]['relationships'][number],
+function relationTarget(batch: CharacterProposalBatch, relation: CharacterProposalBatch['items'][number]['relationships'][number],
   identities: readonly Identity[]): { targetSelectionKey: string } | { targetCharacterId: string } | undefined {
   if (relation.targetSelectionKey) return { targetSelectionKey: relation.targetSelectionKey }
   const candidates = batch.items.filter(candidate => candidate.fields.name === relation.targetName)
@@ -32,15 +32,18 @@ export function adoptableRelationships(selections: ApproveCharacterProposalReque
     return true
   })
 }
-export function defaultCharacterProposalRelationships(batch: CharacterProposalBatch, identities: readonly Identity[] = []) {
-  const selections = defaultCharacterProposalSelections(batch)
-  const adoptedKeys = new Set(selections.filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
-  return adoptableRelationships(selections, batch.items.flatMap(item => adoptedKeys.has(item.selectionKey)
-    ? item.relationships.flatMap((relation): Relationship[] => {
-      const target = relationTarget(batch, relation, identities)
-      return !target || ('targetSelectionKey' in target && !adoptedKeys.has(target.targetSelectionKey)) ? []
-        : [{ sourceSelectionKey: item.selectionKey, ...target, relation: relation.relation }]
-    }) : []))
+export const sameRelationship = (a: Relationship, b: Relationship) => a.sourceSelectionKey === b.sourceSelectionKey
+  && a.targetSelectionKey === b.targetSelectionKey && a.targetCharacterId === b.targetCharacterId && a.relation === b.relation
+/** 每条关系提议在这份名单快照与这组采用方式下指向谁、能不能勾。默认选中、面板勾选与提交都只认它。 */
+export function proposalRelations(batch: CharacterProposalBatch, identities: readonly Identity[], selections: ApproveCharacterProposalRequest['selections']) {
+  const active = new Set(selections.filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
+  return batch.items.flatMap(item => item.relationships.map(relation => {
+    const target = relationTarget(batch, relation, identities)
+    const edge: Relationship | undefined = target && { sourceSelectionKey: item.selectionKey, ...target, relation: relation.relation }
+    const adoptable = !!edge && active.has(item.selectionKey) && (!edge.targetSelectionKey || active.has(edge.targetSelectionKey))
+      && adoptableRelationships(selections, [edge]).length > 0
+    return { sourceSelectionKey: item.selectionKey, targetName: relation.targetName, relation: relation.relation, edge, adoptable }
+  }))
 }
 export function formatCharacterProposalPreview(batch: CharacterProposalBatch, text: Text): string {
   if (!batch.items.length) return text('未发现明确角色，角色名单尚未更改。', 'No explicit characters were found; the roster is unchanged.')

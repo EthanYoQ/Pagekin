@@ -1,7 +1,7 @@
 import { characterProposalMaterialChunks as materialChunks, parseMaterialExtraction as parseExtraction, type MaterialExtraction, type MaterialChunk } from '../../../shared/character-proposal-parser'
 import type { CharacterProposalBatch } from '../../../shared/character-proposal'
-import type { CharacterProposalChoices } from '../../character-proposal-choices'
-import { defaultCharacterProposalRelationships, defaultCharacterProposalSelections, formatCharacterProposalPreview } from '../character-proposal-preview'
+import { adoptedRelationships, type CharacterProposalChoices } from '../../character-proposal-choices'
+import { defaultCharacterProposalSelections, formatCharacterProposalPreview } from '../character-proposal-preview'
 import type { MainGenerationRunHandle } from '../../generation/generation-runtime'
 import { composePromptSystemRole, resolvePromptTemplate, renderPrompt } from '../../prompt-templates'
 import type { PlanningMaterial } from '../../knowledge-service'
@@ -182,7 +182,7 @@ export class CommitPlanningMaterialCharactersCommand extends BaseWorkflowCommand
       proposalBatchId: shown.proposalBatchId, expectedRevision: shown.revision,
       operationId: `planning-material-${context.runId}`,
       selections: choices?.selections ?? defaultCharacterProposalSelections(shown),
-      relationships: choices?.relationships ?? defaultCharacterProposalRelationships(shown),
+      relationships: choices ? adoptedRelationships(shown, choices) : [],
       ...(choices?.edits?.length ? { edits: choices.edits } : {}),
     })
     context.data.characterProposalBatch = result.batch

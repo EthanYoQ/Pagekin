@@ -89,7 +89,7 @@ function SessionSuggestions({ session }: { session: ProjectSessionContext }) {
           })}
           {proposals.batch && proposals.choices && (
             <li className="cast-suggestion cast-suggestion-open" data-kind="decision">
-              <CharacterProposalSelectionPanel batch={proposals.batch} identities={proposals.identities} choices={proposals.choices}
+              <CharacterProposalSelectionPanel batch={proposals.batch} choices={proposals.choices}
                 onChange={proposals.setChoices} disabled={busy} />
               <div className="cast-suggestion-decide">
                 <Button variant="text" size="sm" disabled={busy} onClick={() => { void proposals.decide('cancel') }}>{text('拒绝这些决策', 'Reject decisions')}</Button>
