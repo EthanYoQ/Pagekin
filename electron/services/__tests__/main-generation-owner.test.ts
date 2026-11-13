@@ -1650,6 +1650,13 @@ describe('durable directory commit and remaining stage', () => {
       expect(f.owner.characterProposals.listPendingFinalized()).toEqual([])
     })
 
+    it('列出后作者改了那章蓝图，再打开检查直接报来源已变，不给一份接受不了的提案', async () => {
+      const { f, batch } = await newcomerProposal()
+      expect(f.owner.characterProposals.listPendingFinalized()).toHaveLength(1)
+      f.db.prepare("UPDATE blueprints SET title='作者改过' WHERE chapter_number=2").run()
+      expect(() => f.owner.characterProposals.readPendingFinalized(batch.proposalBatchId)).toThrow('CHARACTER_PROPOSAL_SOURCE_CHANGED')
+    })
+
     it('作者改了名单（哪怕只是背景）后，接受同样失败，不再列出', async () => {
       const { f, batch } = await newcomerProposal()
       const read = CharacterRosterRepository.read(f.db)
