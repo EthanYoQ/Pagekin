@@ -61,10 +61,8 @@ export const PROPREL_SCENARIOS = {
     measured.relationEnabled = await relation.isEnabled()
     measured.relationChecked = await relation.isChecked()
     assert.equal(measured.relationEnabled, true, '关系的目标是已有角色林岚，可以勾选')
-    assert.equal(measured.relationChecked, false, '名字只是标签，关系默认不勾，作者自己决定')
+    assert.equal(measured.relationChecked, true, '名单里只有一个林岚，关系默认勾上')
     await shoot('prop-rel-2-review-default')
-    await relation.check()
-    await shoot('prop-rel-2-review')
 
     await card.getByRole('button', { name: '接受这些决策' }).click()
     await suggestions.waitFor({ state: 'detached', timeout: 15_000 })
