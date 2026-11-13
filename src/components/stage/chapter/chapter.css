@@ -974,13 +974,13 @@
   /* each-line：预排文本里每个换行后的行首都缩进，与编辑器一致 */
   text-indent: 2em each-line;
 }
-.inline-annotation-change { display: inline; }
-.inline-annotation-mark { padding: 0 2px; border: 0; background: transparent; font: inherit; text-indent: 0; cursor: pointer; }
+.inline-annotation-mark { padding: 0 2px; cursor: pointer; }
 .inline-annotation-mark:focus-visible { outline: 2px solid var(--accent); }
-.inline-annotation-mark svg { display: inline; margin-left: 2px; vertical-align: -2px; color: var(--ok); }
+.inline-annotation-tail { white-space: nowrap; }
+.inline-annotation-tail > svg { display: inline; margin-left: 2px; vertical-align: -2px; color: var(--ok); }
 .inline-annotation-change del { color: var(--danger); text-decoration: line-through; }
 .inline-annotation-change ins { color: var(--ok); background: var(--ok-soft); text-decoration: none; }
-.inline-annotation-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); margin: var(--s-1); text-indent: 0; font-family: var(--font-ui); font-size: var(--fs-13); line-height: 1.5; }
+.inline-annotation-actions { display: inline-flex; flex-wrap: wrap; white-space: normal; align-items: center; gap: var(--s-1); margin: var(--s-1); text-indent: 0; font-family: var(--font-ui); font-size: var(--fs-13); line-height: 1.5; }
 .inline-annotation-actions textarea { min-width: 220px; }
 .inline-annotation-footer { position: fixed; right: var(--s-5); bottom: var(--s-5); z-index: 20; display: flex; gap: var(--s-2); padding: var(--s-2); background: var(--surface); box-shadow: var(--shadow-pop); }
 .annotation-revision-history { margin-top: var(--s-5); }
