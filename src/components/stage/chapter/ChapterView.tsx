@@ -8,7 +8,6 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { chapterPhase } from '../../../stores/navigation/stage-progress'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
-import { useEditorStore } from '../../../stores/editor-store'
 import type { ReviewEntry } from '../../../services/draft-index'
 import { ipc } from '../../../services/ipc-client'
 import { confirmationSourceReviewId, parseHumanConfirmedReviewSnapshot } from '../../../shared/human-confirmed-review'
@@ -178,19 +177,8 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 annotationSlot={sheetSlot}
                 chapterAnnotations
                 onCommitAnnotations={async (before, after, annotations) => {
-                  const activeSession = captureProjectSession(useProjectStore.getState().currentProject)
-                  const savedTab = useEditorStore.getState().tabs.find(item => item.id === tab.id)
-                  if (!activeSession || !draft.meta || !savedTab || typeof savedTab.savedContent !== 'string' || savedTab.content !== before) throw new Error('SOURCE_DRAFT_CHANGED')
-                  const result = await ipc.invokeWithProjectSession(activeSession, 'db:annotation-commit', { draftId: draft.meta.id, expectedSaved: savedTab.savedContent, before, after, annotations }, activeSession.projectPath)
-                  if (!result.success) throw new Error(result.error || 'ANNOTATION_COMMIT_FAILED')
-                  if (!isProjectSessionCurrent(activeSession)) return
-                  if (draft.pendingRevisions.length > 0) draft.reload()
-                  const current = useEditorStore.getState().tabs.find(item => item.id === tab.id)
-                  if (!current || current.content !== before) return
-                  draft.onBodyChange(after)
+                  await draft.commitAnnotations(before, after, annotations)
                   setAnnotationHistoryRevision(value => value + 1)
-                  const updated = useEditorStore.getState().tabs.find(item => item.id === tab.id)
-                  if (updated) useEditorStore.getState().settleTabSave(tab.id, { content: after, contentRevision: updated.contentRevision ?? 0 })
                 }}
               />
               {draft.meta && <AnnotationRevisionHistory draftId={draft.meta.id} projectKey={projectKey} refresh={annotationHistoryRevision} />}

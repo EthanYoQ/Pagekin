@@ -29,6 +29,7 @@ import { countDraftUnits } from '../../shared/draft-units'
 import { globalEventBus } from '../../shared/event-bus'
 import { sameProjectSessionContext } from '../../shared/project-session-context'
 import type { SaveOutcome } from './save-feedback'
+import type { EditorInlineAnnotation } from '../../shared/editor-inline-generation'
 import { guardRepairPostProcess } from '../../services/workflow-guards'
 import {
   captureProjectSession,
@@ -232,8 +233,12 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     useEditorStore.getState().updateTabContent(tabId, body)
   }
 
+  const annotationCommitRef = useRef<Promise<void> | null>(null)
+
   /** 保存（ai-novel://draft/ 走 DB，其他走 FS） */
   const save = async (draftContent: string, propagateFailure = false) => {
+    // 批注修改写入期间取的正文还是写入前的样子，等它落定再取，否则会把写入的结果改回去。
+    await annotationCommitRef.current?.catch(() => undefined)
     const projectSession = captureProjectSession(currentProject)
     if (!projectMatches || !projectSession || !isProjectSessionPath(projectSession, projectKey)) return
     const targetTab = useEditorStore.getState().tabs.find(
@@ -282,6 +287,26 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     } finally {
       if (isProjectSessionCurrent(projectSession)) setSaving(false)
     }
+  }
+
+  /** 批注统一修改：写入新正文与批注历史，再把标签上的正文换成写入的样子并记为已保存。 */
+  const commitAnnotations = (before: string, after: string, annotations: EditorInlineAnnotation[]) => {
+    const run = (async () => {
+      const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
+      const savedTab = useEditorStore.getState().tabs.find(tab => tab.id === tabId)
+      if (!projectSession || !meta || !savedTab || typeof savedTab.savedContent !== 'string' || savedTab.content !== before) throw new Error('SOURCE_DRAFT_CHANGED')
+      const result = await ipc.invokeWithProjectSession(projectSession, 'db:annotation-commit', { draftId: meta.id, expectedSaved: savedTab.savedContent, before, after, annotations }, projectSession.projectPath)
+      if (!result.success) throw new Error(result.error || 'ANNOTATION_COMMIT_FAILED')
+      if (!isProjectSessionCurrent(projectSession)) return
+      if (pendingRevisions.length > 0) reload()
+      const current = useEditorStore.getState().tabs.find(tab => tab.id === tabId)
+      if (!current || current.content !== before) return
+      onBodyChange(after)
+      const updated = useEditorStore.getState().tabs.find(tab => tab.id === tabId)
+      if (updated) useEditorStore.getState().settleTabSave(tabId, { content: after, contentRevision: updated.contentRevision ?? 0 })
+    })()
+    annotationCommitRef.current = run
+    return run.finally(() => { if (annotationCommitRef.current === run) annotationCommitRef.current = null })
   }
 
   const exitSaveRef = useRef(save)
@@ -692,7 +717,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
   return {
     meta, status, isReadonly, isChapterBusy, isDirty, finalizationPublication, finalizationPending, finalizationConflict,
     pendingRevisions, reviews, loaded, reload,
-    saving, saveOutcome, currentBodyRef, onBodyChange, save,
+    saving, saveOutcome, currentBodyRef, onBodyChange, save, commitAnnotations,
     refine, review, canFinalize, requestFinalize, finalize, retryManuscriptPublication, repairFinalize,
     mergeData, closeMerge, openPendingRevision, completeMerge, discardRevisions,
   }

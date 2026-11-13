@@ -15,8 +15,11 @@ import { BLUEPRINT, SESSION, chapterProject, createChapterBackend, generationMod
 import { resizeViewport } from '../../../ui/__tests__/viewport'
 
 vi.mock('/src/components/editor/CodeMirrorEditor.tsx', () => ({
-  default: ({ content, onCommitAnnotations }: { content: string; onCommitAnnotations?: (before: string, after: string, annotations: never[]) => Promise<void> }) => onCommitAnnotations
-    ? <button type="button" onClick={() => void onCommitAnnotations(content, `${content}\n\n批注改出的一段。`, [])}>接受批注修改</button>
+  default: ({ content, onCommitAnnotations, onSave }: { content: string; onSave?: (body: string) => unknown; onCommitAnnotations?: (before: string, after: string, annotations: never[]) => Promise<void> }) => onCommitAnnotations
+    ? <>
+      <button type="button" onClick={() => void onCommitAnnotations(content, `${content}\n\n批注改出的一段。`, []).catch(() => {})}>接受批注修改</button>
+      <button type="button" onClick={() => void onSave?.(content)}>保存正文</button>
+    </>
     : null,
 }))
 
@@ -26,17 +29,20 @@ const original = { editor: useEditorStore.getState(), project: useProjectStore.g
 let root: Root
 let host: HTMLDivElement
 let backend: ReturnType<typeof createChapterBackend>
+let holdCommit: Promise<void> | null = null
 
 beforeEach(async () => {
   await resizeViewport(1280, 900)
   backend = createChapterBackend()
   backend.install()
   const answer = backend.invoke.getMockImplementation()!
+  holdCommit = null
   backend.invoke.mockImplementation(async (channel, ...args) => {
     if (channel === 'db:annotation-history-list') return []
     if (channel !== 'db:annotation-commit') return answer(channel, ...args)
     const { draftId, after } = args[0] as { draftId: number; after: string }
     Object.assign(backend.state.drafts.find(draft => draft.id === draftId)!, { content: after })
+    await holdCommit
     return { success: true }
   })
   useProjectStore.setState({ currentProject: chapterProject() })
@@ -75,4 +81,21 @@ it('批注修改写进这一稿后，生成在先的修稿立刻显示为不能�
   await act(async () => page.getByRole('button', { name: '接受批注修改' }).click())
 
   await expect.element(page.getByText('有 1 份修稿不能再合并')).toBeVisible()
+})
+
+it('批注修改还在写入时作者按了保存：保存等写入完成后再取正文，不把写入的结果改回去', async () => {
+  const draft = backend.addDraft({ status: 'draft' })
+  await act(async () => { await useDraftStore.getState().loadAllDrafts(SESSION.projectPath, SESSION) })
+  await act(async () => { await openDraftTab(useDraftStore.getState().draftsByChapter[3]!.find(candidate => candidate.id === draft.id)!, '第 3 章 · 雨夜车站', SESSION) })
+  let release!: () => void
+  holdCommit = new Promise(resolve => { release = resolve })
+  const after = `${draft.content}\n\n批注改出的一段。`
+
+  await act(async () => page.getByRole('button', { name: '接受批注修改' }).click())
+  await act(async () => page.getByRole('button', { name: '保存正文' }).click())
+  await act(async () => release())
+
+  await vi.waitFor(() => expect(backend.writes('db:draft-update-content').length).toBeGreaterThan(0))
+  expect(backend.writes('db:draft-update-content').map(args => args[1])).toEqual([after])
+  expect(backend.state.drafts.find(candidate => candidate.id === draft.id)!.content).toBe(after)
 })
