@@ -1,6 +1,7 @@
 import { directoryProposalChapter, type CharacterProposalBatch } from '../../shared/character-proposal'
 import { CHARACTER_ROLES, getCharacterRoleLabels } from '../../shared/character-role'
 import type { CharacterProposalChoices } from '../../services/character-proposal-choices'
+import { existingRelationTarget } from '../../services/workflows/character-proposal-preview'
 import { useLocaleStore } from '../../stores/locale-store'
 import { NativeSelect } from '../ui/NativeSelect'
 
@@ -29,10 +30,9 @@ export function CharacterProposalSelectionPanel({ batch, identities, choices, on
   const active = new Set(choices.selections.filter(choice => choice.action !== 'keep-unresolved').map(choice => choice.selectionKey))
   const relations = batch.items.flatMap(item => item.relationships.map(relation => {
     const matches = batch.items.filter(candidate => candidate.fields.name === relation.targetName)
-    const existing = relation.targetSelectionKey || matches.length ? [] : identities.filter(identity => identity.name === relation.targetName)
     return { sourceSelectionKey: item.selectionKey,
       targetSelectionKey: relation.targetSelectionKey ?? (matches.length === 1 ? matches[0].selectionKey : undefined),
-      targetCharacterId: existing.length === 1 ? existing[0].characterId : undefined,
+      targetCharacterId: relation.targetSelectionKey ? undefined : existingRelationTarget(batch, relation.targetName, identities),
       targetName: relation.targetName, relation: relation.relation }
   }))
   const edge = (relation: typeof relations[number]) => relation.targetSelectionKey

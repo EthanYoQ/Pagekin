@@ -1,4 +1,4 @@
-import type { CharacterProposalBatch } from '../../shared/character-proposal'
+import type { ApproveCharacterProposalRequest, CharacterProposalBatch } from '../../shared/character-proposal'
 import { getCharacterRoleLabels } from '../../shared/character-role'
 
 type Text = (zh: string, en: string) => string
@@ -10,14 +10,23 @@ export function defaultCharacterProposalSelections(batch: CharacterProposalBatch
       ? { selectionKey: item.selectionKey, action: 'create' as const }
       : { selectionKey: item.selectionKey, action: 'keep-unresolved' as const })
 }
-/** Names are display labels. Only declared selection-key endpoints can become proposed edges. */
-export function defaultCharacterProposalRelationships(batch: CharacterProposalBatch) {
+type Identity = { characterId: string; name: string }
+/** 关系只写了名字：批次里没有同名候选、名单里恰好一个同名角色时才指向它，否则不猜。 */
+export function existingRelationTarget(batch: CharacterProposalBatch, targetName: string | undefined, identities: readonly Identity[]) {
+  if (!targetName || batch.items.some(candidate => candidate.fields.name === targetName)) return undefined
+  const matches = identities.filter(identity => identity.name === targetName)
+  return matches.length === 1 ? matches[0].characterId : undefined
+}
+export function defaultCharacterProposalRelationships(batch: CharacterProposalBatch, identities: readonly Identity[] = []) {
   const adoptedKeys = new Set(defaultCharacterProposalSelections(batch)
     .filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
   return batch.items.flatMap(item => adoptedKeys.has(item.selectionKey)
-    ? item.relationships.flatMap(relation => relation.targetSelectionKey && adoptedKeys.has(relation.targetSelectionKey)
-      ? [{ sourceSelectionKey: item.selectionKey, targetSelectionKey: relation.targetSelectionKey, relation: relation.relation }]
-      : []) : [])
+    ? item.relationships.flatMap((relation): NonNullable<ApproveCharacterProposalRequest['relationships']> => {
+      if (relation.targetSelectionKey) return adoptedKeys.has(relation.targetSelectionKey)
+        ? [{ sourceSelectionKey: item.selectionKey, targetSelectionKey: relation.targetSelectionKey, relation: relation.relation }] : []
+      const targetCharacterId = existingRelationTarget(batch, relation.targetName, identities)
+      return targetCharacterId ? [{ sourceSelectionKey: item.selectionKey, targetCharacterId, relation: relation.relation }] : []
+    }) : [])
 }
 export function formatCharacterProposalPreview(batch: CharacterProposalBatch, text: Text): string {
   if (!batch.items.length) return text('未发现明确角色，角色名单尚未更改。', 'No explicit characters were found; the roster is unchanged.')

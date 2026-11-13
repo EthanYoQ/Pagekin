@@ -47,7 +47,7 @@ export function usePendingCharacterProposals(session: ProjectSessionContext) {
       const next = await ipc.invokeWithProjectSession(session, 'character-proposal:read-pending-finalized',
         { proposalBatchId: summary.proposalBatchId })
       if (!isProjectSessionCurrent(session)) return
-      setBatch(next); setChoices(createCharacterProposalChoices(next))
+      setBatch(next); setChoices(createCharacterProposalChoices(next, identities))
     } catch (cause) {
       if (isProjectSessionCurrent(session)) setError(failureText(cause))
     } finally {

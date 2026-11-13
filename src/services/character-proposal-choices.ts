@@ -8,7 +8,8 @@ export interface CharacterProposalChoices {
   relationships: NonNullable<ApproveCharacterProposalRequest['relationships']>
   edits?: NonNullable<ApproveCharacterProposalRequest['edits']>
 }
-export function createCharacterProposalChoices(batch: CharacterProposalBatch): CharacterProposalChoices {
+export function createCharacterProposalChoices(batch: CharacterProposalBatch,
+  identities: Parameters<typeof defaultCharacterProposalRelationships>[1] = []): CharacterProposalChoices {
   return { proposalBatchId: batch.proposalBatchId, revision: batch.revision,
-    selections: defaultCharacterProposalSelections(batch), relationships: defaultCharacterProposalRelationships(batch) }
+    selections: defaultCharacterProposalSelections(batch), relationships: defaultCharacterProposalRelationships(batch, identities) }
 }
