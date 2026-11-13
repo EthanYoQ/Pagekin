@@ -766,7 +766,7 @@ const annotateLine = async (text: string, note: string) => {
   await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill(note))
   await act(async () => page.getByRole('button', { name: '添加批注' }).click())
 }
-/** 正文会滚动经过面板所在的高度，所以只要面板与正文栏在水平方向重叠，就总有字被盖住。 */
+/** 正文会滚过面板所在高度，所以只看水平方向是否重叠。 */
 const overlapsColumn = (panel: Element) => {
   const box = panel.getBoundingClientRect()
   const column = container.querySelector('.cm-content')!.getBoundingClientRect()

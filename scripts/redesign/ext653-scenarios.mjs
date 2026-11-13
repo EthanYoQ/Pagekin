@@ -54,14 +54,12 @@ const seedFourthChapterVersion = context => seedStageSample(context, {
   },
 })
 
-/** 面板与正文栏在水平方向重叠时，正文滚过面板所在高度就会被盖住。 */
 const panelCoversColumn = panel => panel.evaluate(node => {
   const box = node.getBoundingClientRect()
   const column = document.querySelector('.cm-content').getBoundingClientRect()
   return box.left < column.right && column.left < box.right
 })
 
-/** 第二段首字相对正文区左缘的位置与它的字号、行高、字体：编辑与审阅两边要一致。 */
 const secondParagraphGlyph = (page, scope) => page.evaluate(([selector, needle]) => {
   const root = document.querySelector(selector)
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)

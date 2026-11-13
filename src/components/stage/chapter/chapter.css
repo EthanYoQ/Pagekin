@@ -870,7 +870,6 @@
   background: var(--surface);
 }
 
-/* 文档编辑器没有侧页位置时，面板停在编辑区右侧，编辑区让出这块宽度 */
 .cm-annotating {
   display: flex;
 }
@@ -880,7 +879,6 @@
   min-width: 0;
 }
 
-/* 停在章节页右侧时与审稿侧页同列；窄窗口按章节区宽度收窄，正文让出这块宽度，不被盖住 */
 .stage-ch-sheet-slot > .paper-ink.cm-annotations {
   width: min(var(--sheet-w), 40cqw);
 }
@@ -973,7 +971,7 @@
   font-family: var(--font-writing);
   font-size: var(--prose-size);
   line-height: var(--prose-lh);
-  /* 与编辑器的段首缩进两字一致：审阅是一整段预排文本，每个换行后的行首都缩进 */
+  /* each-line：预排文本里每个换行后的行首都缩进，与编辑器一致 */
   text-indent: 2em each-line;
 }
 .inline-annotation-change { display: inline; }

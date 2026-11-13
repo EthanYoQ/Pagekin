@@ -237,7 +237,6 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
 
   /** 保存（ai-novel://draft/ 走 DB，其他走 FS） */
   const save = async (draftContent: string, propagateFailure = false) => {
-    // 批注修改写入期间取的正文还是写入前的样子，等它落定再取，否则会把写入的结果改回去。
     await annotationCommitRef.current?.catch(() => undefined)
     const projectSession = captureProjectSession(currentProject)
     if (!projectMatches || !projectSession || !isProjectSessionPath(projectSession, projectKey)) return
@@ -289,7 +288,6 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     }
   }
 
-  /** 批注统一修改：写入新正文与批注历史，再把标签上的正文换成写入的样子并记为已保存。 */
   const commitAnnotations = (before: string, after: string, annotations: EditorInlineAnnotation[]) => {
     const run = (async () => {
       const projectSession = captureProjectSession(useProjectStore.getState().currentProject)

@@ -43,7 +43,7 @@ export type CodeMirrorEditorProps = {
   fitContent?: boolean
   /** 段落首行缩进两字（只是显示，见 paragraph-indent）。 */
   paragraphIndent?: boolean
-  /** 批注面板停靠的位置，由所在布局给出；不给时停在编辑器右侧。 */
+  /** 批注面板的停靠位置；不给时停在编辑器右侧。 */
   annotationSlot?: HTMLElement | null
   chapterAnnotations?: boolean
 }
@@ -278,7 +278,7 @@ export default function CodeMirrorEditor({
         if (aiResult === null) { setBubbleOpen(false); setSelectionRange(null); setNoteDraft(null) }
       } else {
         setSelectionRange({ from: sel.from, to: sel.to })
-        // 交由下方的 useEffect 进行精准防越界座标计算与位置同步。只有版面变了（例如批注面板停靠后正文栏变窄）不重新弹出。
+        // 交由下方的 useEffect 进行精准防越界座标计算与位置同步。
         if (!aiResult && (v.selectionSet || v.docChanged)) {
           setBubbleOpen(true)
         }
