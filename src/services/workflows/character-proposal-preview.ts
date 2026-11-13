@@ -11,21 +11,30 @@ export function defaultCharacterProposalSelections(batch: CharacterProposalBatch
       : { selectionKey: item.selectionKey, action: 'keep-unresolved' as const })
 }
 type Identity = { characterId: string; name: string }
-/** 关系只写了名字：批次里没有同名候选、名单里恰好一个同名角色时才指向它，否则不猜。 */
-export function existingRelationTarget(batch: CharacterProposalBatch, targetName: string | undefined, identities: readonly Identity[]) {
-  if (!targetName || batch.items.some(candidate => candidate.fields.name === targetName)) return undefined
-  const matches = identities.filter(identity => identity.name === targetName)
-  return matches.length === 1 ? matches[0].characterId : undefined
+type Relationship = NonNullable<ApproveCharacterProposalRequest['relationships']>[number]
+/** 关系只写了名字时：先在本批候选里找，再在名单里找；同名多于一个就不猜。 */
+export function relationTarget(batch: CharacterProposalBatch, relation: CharacterProposalBatch['items'][number]['relationships'][number],
+  identities: readonly Identity[]): { targetSelectionKey: string } | { targetCharacterId: string } | undefined {
+  if (relation.targetSelectionKey) return { targetSelectionKey: relation.targetSelectionKey }
+  const candidates = batch.items.filter(candidate => candidate.fields.name === relation.targetName)
+  if (candidates.length) return candidates.length === 1 ? { targetSelectionKey: candidates[0].selectionKey } : undefined
+  const matches = identities.filter(identity => identity.name === relation.targetName)
+  return matches.length === 1 ? { targetCharacterId: matches[0].characterId } : undefined
+}
+/** 两端会落到同一个角色（例如把候选对应到关系目标本人），主进程会拒绝整批。 */
+export function isSelfRelation(selections: ApproveCharacterProposalRequest['selections'], relation: Relationship) {
+  const endpoint = (key: string) => { const selection = selections.find(item => item.selectionKey === key); return selection?.action === 'map' ? selection.characterId : key }
+  return endpoint(relation.sourceSelectionKey) === (relation.targetSelectionKey ? endpoint(relation.targetSelectionKey) : relation.targetCharacterId)
 }
 export function defaultCharacterProposalRelationships(batch: CharacterProposalBatch, identities: readonly Identity[] = []) {
-  const adoptedKeys = new Set(defaultCharacterProposalSelections(batch)
-    .filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
+  const selections = defaultCharacterProposalSelections(batch)
+  const adoptedKeys = new Set(selections.filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
   return batch.items.flatMap(item => adoptedKeys.has(item.selectionKey)
-    ? item.relationships.flatMap((relation): NonNullable<ApproveCharacterProposalRequest['relationships']> => {
-      if (relation.targetSelectionKey) return adoptedKeys.has(relation.targetSelectionKey)
-        ? [{ sourceSelectionKey: item.selectionKey, targetSelectionKey: relation.targetSelectionKey, relation: relation.relation }] : []
-      const targetCharacterId = existingRelationTarget(batch, relation.targetName, identities)
-      return targetCharacterId ? [{ sourceSelectionKey: item.selectionKey, targetCharacterId, relation: relation.relation }] : []
+    ? item.relationships.flatMap((relation): Relationship[] => {
+      const target = relationTarget(batch, relation, identities)
+      if (!target || ('targetSelectionKey' in target && !adoptedKeys.has(target.targetSelectionKey))) return []
+      const edge = { sourceSelectionKey: item.selectionKey, ...target, relation: relation.relation }
+      return isSelfRelation(selections, edge) ? [] : [edge]
     }) : [])
 }
 export function formatCharacterProposalPreview(batch: CharacterProposalBatch, text: Text): string {

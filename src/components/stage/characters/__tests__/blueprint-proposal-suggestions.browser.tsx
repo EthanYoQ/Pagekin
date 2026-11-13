@@ -137,3 +137,12 @@ it('把雾灯人对应到林岚本人：指向林岚的关系去掉勾且不能�
   await click('接受这些决策')
   expect(calls('character-proposal:approve')).toMatchObject([{ selections: [{ selectionKey: '13:0', action: 'map', characterId: 'heroine' }], relationships: [] }])
 })
+
+it('导入的角色卡同样适用：关系目标在名单里唯一同名时默认勾上', async () => {
+  pending = [{ proposalBatchId: 'cpb:import', revision: 2, importOperationId: 'import-1', itemCount: 1 }]
+  readBatch = { ...batch, proposalBatchId: 'cpb:import', revision: 2, source: { kind: 'import', operationId: 'import-1' } }
+  useCharacterStore.setState({ rosterRevision: 2 })
+  await settle()
+  await click('检查导入角色决策')
+  expect(relationBox()?.checked).toBe(true)
+})
