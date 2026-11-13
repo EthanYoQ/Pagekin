@@ -20,7 +20,12 @@ const batch: CharacterProposalBatch = {
     relationships: [{ targetName: '林岚', relation: '暗中守护' }], resolution: { status: 'unresolved', candidateIds: [] } }],
 }
 
+const pairBatch: CharacterProposalBatch = { ...batch, items: [
+  { ...batch.items[0], relationships: [{ targetName: '守塔人', relation: '旧识' }] },
+  { selectionKey: '13:1', sourceId: 'directory-13:13:1', fields: { name: '守塔人', role: 'minor' }, relationships: [], resolution: { status: 'unresolved', candidateIds: [] } }] }
+
 let root: Root
+let readBatch: CharacterProposalBatch
 let host: HTMLDivElement
 let pending: PendingFinalizedCharacterProposalSummary[]
 let invoke: ReturnType<typeof vi.fn<(channel: string, ...args: unknown[]) => Promise<unknown>>>
@@ -31,18 +36,19 @@ const originalCharacters = useCharacterStore.getState()
 const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
 const button = (name: string) => [...host.querySelectorAll('button')].find(item => item.textContent?.trim() === name || item.getAttribute('aria-label') === name)
 const click = async (name: string) => { await act(async () => { button(name)!.click() }); await settle() }
-const relationBox = () => [...host.querySelectorAll('label')].find(label => label.textContent?.includes('雾灯人 → 林岚：暗中守护'))?.querySelector('input')
+const relationBox = (text = '雾灯人 → 林岚：暗中守护') => [...host.querySelectorAll('label')].find(label => label.textContent?.includes(text))?.querySelector('input')
 const calls = (channel: string) => invoke.mock.calls.filter(([name]) => name === channel).map(call => call[1])
 
 beforeEach(async () => {
   pending = [summary]
+  readBatch = batch
   useLocaleStore.setState({ locale: 'zh-CN' })
   setActiveProjectSessionContext(session)
   useProjectStore.setState({ currentProject: { id: session.projectId, path: session.projectPath, sessionLease: session.leaseId } as never })
   useCharacterStore.setState({ characters: [{ characterId: 'heroine', name: '林岚', role: 'protagonist' }] as never, load: vi.fn(async () => {}) as never })
   invoke = vi.fn(async (channel: string) => {
     if (channel === 'character-proposal:list-pending-finalized') return pending
-    if (channel === 'character-proposal:read-pending-finalized') return batch
+    if (channel === 'character-proposal:read-pending-finalized') return readBatch
     if (channel === 'character-proposal:approve' || channel === 'character-proposal:cancel') { pending = []; return { batch, created: [] } }
     return []
   })
@@ -109,4 +115,25 @@ it('名单里有两个同名林岚时不猜目标，关系不能勾选', async (
   await click('检查蓝图角色决策')
   expect(relationBox()?.disabled).toBe(true)
   expect(relationBox()?.checked).toBe(false)
+})
+
+it('关系指向同一批里唯一的另一位新角色：默认勾上，接受时带上对方的候选键', async () => {
+  readBatch = pairBatch
+  await click('检查蓝图角色决策')
+  expect(relationBox('雾灯人 → 守塔人：旧识')?.checked).toBe(true)
+  await click('接受这些决策')
+  expect(calls('character-proposal:approve')).toMatchObject([{ relationships: [{ sourceSelectionKey: '13:0', targetSelectionKey: '13:1', relation: '旧识' }] }])
+})
+
+it('把雾灯人对应到林岚本人：指向林岚的关系去掉勾且不能再勾，接受不带它', async () => {
+  await click('检查蓝图角色决策')
+  const select = host.querySelector<HTMLSelectElement>('select[aria-label^="采用方式：雾灯人"]')!
+  await act(async () => {
+    select.value = 'map:heroine'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  expect(relationBox()?.checked).toBe(false)
+  expect(relationBox()?.disabled).toBe(true)
+  await click('接受这些决策')
+  expect(calls('character-proposal:approve')).toMatchObject([{ selections: [{ selectionKey: '13:0', action: 'map', characterId: 'heroine' }], relationships: [] }])
 })
