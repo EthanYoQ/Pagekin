@@ -744,6 +744,25 @@ it('点击接受前原候选已丢弃，保留预览但不写入正文', async (
   expect(EditorView.findFromDOM(container.querySelector('.cm-editor')!)!.state.doc.toString()).toBe(documentText)
   await expect.element(page.getByText('候选')).toBeVisible()
 })
+it('恢复的批注统一修改结果在替换时先进入逐处审阅，接受全部后才写入并记批注历史', async () => {
+  const handle = { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: '原预算', runId: '批注运行' }
+  const documentText = '林岚走进北塔。'
+  const after = '我走进北塔。'
+  const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
+  const annotations = [{ id: 'a1', from: 0, to: 2, selectedText: '林岚', instruction: '改成第一人称' }]
+  invoke.mockImplementation(async () => ({ view: { handle, status: 'completed', artifacts: [{ ...handle, artifactId: 'proof', textHash: 'proof-hash', text: after, status: 'completed', compositionEligible: true }] }, modelId: '原模型', sourceStatus: 'current', context: { action: 'batch-instruct', annotations, kind: 'author-draft', documentText, documentHash, from: 0, to: documentText.length, selectedText: documentText } }))
+  const commit = vi.fn(async () => {})
+  await act(async () => root.render(<CodeMirrorEditor content={documentText} recoveryHandle={handle} onCommitAnnotations={commit} />))
+  await expect.element(page.getByText(after)).toBeVisible()
+
+  await act(async () => page.getByRole('button', { name: '替换' }).click())
+
+  const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
+  expect(view.state.doc.toString()).toBe(documentText)
+  expect(commit).not.toHaveBeenCalled()
+  await act(async () => page.getByRole('button', { name: '接受全部' }).click())
+  await vi.waitFor(() => expect(commit).toHaveBeenCalledWith(documentText, after, annotations))
+})
 it('继续原运行时服务商以上下文超长拒绝，显示对应说明', async () => {
   const handle = { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: '原预算', runId: '续跑运行' }
   const documentText = '原文'

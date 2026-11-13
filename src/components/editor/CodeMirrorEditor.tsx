@@ -200,6 +200,7 @@ export default function CodeMirrorEditor({
     documentText: string
     filePath?: string
     sessionKey: string
+    annotations?: EditorInlineAnnotation[]
   } | null>(null)
 
   const editableRef = useRef(editable)
@@ -562,6 +563,13 @@ export default function CodeMirrorEditor({
           '正文或原目标已变化，结果未应用；你仍可复制预览内容',
           'The document or original target changed. The result was not applied; you can still copy the preview.',
         ))
+        return
+      }
+      if (target.action === 'batch-instruct' && target.annotations && onCommitAnnotations) {
+        setInlineReview({ before: target.documentText, after: aiResult, annotations: target.annotations, sessionKey: target.sessionKey, filePath: target.filePath })
+        aiTargetRef.current = null
+        setAiResult(null)
+        setBubbleOpen(false)
         return
       }
       view.dispatch({

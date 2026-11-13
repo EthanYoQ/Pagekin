@@ -278,12 +278,12 @@ function editorEntry(recovery: EditorInlineRecovery, locale: Locale): EditorEntr
   return {
     kind: 'editor',
     key: view.handle.runId,
-    title: recovery.context.action === 'batch-instruct' ? t('章节批注修改建议', 'Chapter annotation revision') : t('编辑器选区建议', 'Editor selection suggestion'),
+    title: recovery.context.action === 'batch-instruct' ? t('批注修改建议', 'Annotation revision') : t('编辑器选区建议', 'Editor selection suggestion'),
     selectedText: recovery.context.selectedText,
     instructionNote: recovery.context.action === 'instruct'
       ? t(`作者意见：${recovery.context.instruction}`, `Author note: ${recovery.context.instruction}`)
       : recovery.context.action === 'batch-instruct'
-        ? t(`作者批注：${recovery.context.annotations.map(item => item.instruction).join('；')}`, `Author annotations: ${recovery.context.annotations.map(item => item.instruction).join('; ')}`)
+        ? t(`作者批注 ${recovery.context.annotations.length} 条`, `${recovery.context.annotations.length} author ${pluralEn(recovery.context.annotations.length, 'annotation')}`)
         : undefined,
     ...usageOf(view, locale),
     conflictNote: recovery.sourceStatus === 'conflict' ? t('来源已变化；原建议仍可复制。', 'Sources changed; the original suggestion can still be copied.') : undefined,
