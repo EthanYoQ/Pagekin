@@ -265,6 +265,52 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(commit).toHaveBeenCalledWith('林岚走进北塔', '我走进北塔', [expect.objectContaining({ instruction: '改成第一人称' })])
   })
 
+  it('审阅期间原运行的来源变了（例如改了模型设置），接受全部不写入，并说明要取消后重来', async () => {
+    deferStream = true
+    const commit = vi.fn(async () => {})
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={commit} />))
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('改成第一人称'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+    await expect.element(page.getByRole('region', { name: '批注修改对比' })).toBeVisible()
+    const answer = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'editor-inline:read-recovery'
+      ? { ...(await answer(channel, ...args) as object), sourceStatus: 'conflict' }
+      : answer(channel, ...args))
+
+    await act(async () => page.getByRole('button', { name: '接受全部' }).click())
+
+    await expect.element(page.getByText('正文或来源已变化，这次修改不能保存。取消后可重新统一修改。')).toBeVisible()
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('重新生成一处修改时只带这一处的批注，不带紧挨着的另一段的批注', async () => {
+    deferStream = true
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={vi.fn(async () => {})} />))
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
+    for (const [from, to, note] of [[0, 2, '改成第一人称'], [2, 4, '动作保持不变']] as const) {
+      await act(async () => page.getByText('林岚走进北塔').click())
+      await act(async () => { view.dispatch({ selection: { anchor: from, head: to } }) })
+      await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' })).toBeVisible()
+      await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+      await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill(note))
+      await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    }
+    await act(async () => page.getByRole('button', { name: '统一修改（2）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+    await act(async () => page.getByRole('button', { name: '查看修改 1' }).click())
+
+    await act(async () => page.getByRole('button', { name: '重新生成' }).click())
+
+    await vi.waitFor(() => expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:begin')).toHaveLength(2))
+    const reroll = invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:begin')[1]![1] as { input: { instruction: string } }
+    expect(reroll.input.instruction).toContain('改成第一人称')
+    expect(reroll.input.instruction).not.toContain('动作保持不变')
+  })
+
   it('rerolls one inline change and commits the regenerated text', async () => {
     deferStream = true
     const commit = vi.fn(async () => {})

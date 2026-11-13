@@ -72,7 +72,12 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
     commitGuard.current = true; setCommitting(true); setError('')
     try {
       await onCommit(pieces.map(piece => piece.kind === 'same' ? piece.text : next[piece.index]!.value).join(''))
-    } catch { setError(text('保存版本失败，修改仍在当前页面，请重试。', 'Could not save the version. Your edits are still here; try again.')); commitGuard.current = false }
+    } catch (cause) {
+      setError(cause instanceof Error && cause.message === 'SOURCE_DRAFT_CHANGED'
+        ? text('正文或来源已变化，这次修改不能保存。取消后可重新统一修改。', 'The chapter or its sources changed, so these edits cannot be saved. Cancel and run the revision again.')
+        : text('保存版本失败，修改仍在当前页面，请重试。', 'Could not save the version. Your edits are still here; try again.'))
+      commitGuard.current = false
+    }
     finally { setCommitting(false) }
   }
   const accept = (index: number) => {
@@ -88,7 +93,7 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
     const client = createEditorInlineGeneration(session)
     rerollClients.current.add(client)
     try {
-      const notes = annotations.filter(item => item.from <= piece.to && item.to >= piece.from).map(item => item.instruction).join('；').slice(0, 1000)
+      const notes = annotations.filter(item => piece.from === piece.to ? item.from <= piece.from && item.to >= piece.from : item.from < piece.to && item.to > piece.from).map(item => item.instruction).join('；').slice(0, 1000)
       const context = `${before.slice(Math.max(0, piece.from - 160), piece.from)}……${before.slice(piece.to, piece.to + 160)}`
       await client.open({ input: { action: 'instruct', instruction: text(`重新改写所选片段，只输出片段。上下文：${context}。作者意见：${notes}`, `Rewrite only the selected passage. Context: ${context}. Author notes: ${notes}`), documentText: selected, selectedText: selected, from: 0, to: selected.length }, modelId: routeModelId('editor-inline') ?? '', uiActionNonce: crypto.randomUUID() })
       const receipt = await client.execute()

@@ -117,7 +117,8 @@ export default function CodeMirrorEditor({
   const [noteDraft, setNoteDraft] = useState<string | null>(null)
   const [noteError, setNoteError] = useState<string | null>(null)
   const [annotations, setAnnotations] = useState<EditorInlineAnnotation[]>([])
-  const [inlineReview, setInlineReview] = useState<{ before: string; after: string; annotations: EditorInlineAnnotation[]; sessionKey: string; filePath?: string } | null>(null)
+  const [inlineReview, setInlineReview] = useState<{ before: string; after: string; annotations: EditorInlineAnnotation[]; sessionKey: string; filePath?: string
+    client: ReturnType<typeof createEditorInlineGeneration>; candidate: { artifactId: string; textHash: string } } | null>(null)
   const hasEmittedInitialCount = useRef(false)
   const composingRef = useRef(false)
   const pendingExternalContentRef = useRef<string | null>(null)
@@ -500,7 +501,7 @@ export default function CodeMirrorEditor({
       aiCandidateRef.current = proof ? { artifactId: proof.artifactId, textHash: proof.textHash } : null
       const documentChanged = view.state.doc.toString() !== input.documentText
       if (request.action === 'batch-instruct' && proof && receipt.sourceStatus === 'current' && !documentChanged && onCommitAnnotations) {
-        setInlineReview({ before: input.documentText, after: receipt.outcome.content, annotations: request.annotations, sessionKey: JSON.stringify(session), filePath })
+        setInlineReview({ before: input.documentText, after: receipt.outcome.content, annotations: request.annotations, sessionKey: JSON.stringify(session), filePath, client, candidate: { artifactId: proof.artifactId, textHash: proof.textHash } })
         setAiResult(null); setBubbleOpen(false)
         return
       }
@@ -565,8 +566,10 @@ export default function CodeMirrorEditor({
         ))
         return
       }
-      if (target.action === 'batch-instruct' && target.annotations && onCommitAnnotations) {
-        setInlineReview({ before: target.documentText, after: aiResult, annotations: target.annotations, sessionKey: target.sessionKey, filePath: target.filePath })
+      const client = inlineRef.current
+      const candidate = aiCandidateRef.current
+      if (target.action === 'batch-instruct' && target.annotations && onCommitAnnotations && client && candidate) {
+        setInlineReview({ before: target.documentText, after: aiResult, annotations: target.annotations, sessionKey: target.sessionKey, filePath: target.filePath, client, candidate })
         aiTargetRef.current = null
         setAiResult(null)
         setBubbleOpen(false)
@@ -741,6 +744,9 @@ export default function CodeMirrorEditor({
       {inlineReview && onCommitAnnotations && <InlineAnnotationReview before={inlineReview.before} after={inlineReview.after} annotations={inlineReview.annotations}
         onCancel={() => setInlineReview(null)} onCommit={async after => {
           if (filePath !== inlineReview.filePath || inlineReview.sessionKey !== JSON.stringify(getActiveProjectSessionContext()) || editorRef.current?.view?.state.doc.toString() !== inlineReview.before) throw new Error('SOURCE_DRAFT_CHANGED')
+          const run = await inlineReview.client.read().catch(() => null)
+          if (!run || run.sourceStatus !== 'current' || run.view.status === 'cancelled'
+            || !(run.view.candidates ?? run.view.artifacts).some(candidate => candidate.artifactId === inlineReview.candidate.artifactId && candidate.textHash === inlineReview.candidate.textHash && candidate.text === inlineReview.after && candidate.status === 'completed' && candidate.compositionEligible === true)) throw new Error('SOURCE_DRAFT_CHANGED')
           await onCommitAnnotations(inlineReview.before, after, inlineReview.annotations)
           setAnnotations([]); setInlineReview(null)
         }} />}
