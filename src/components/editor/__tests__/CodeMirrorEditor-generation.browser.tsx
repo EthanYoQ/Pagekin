@@ -816,6 +816,14 @@ describe('annotation panel layout', () => {
     expect(overlapsColumn(panel.element())).toBe(false)
   })
 
+  it('keeps the selection toolbar closed when the docked panel reflows the page', async () => {
+    await act(async () => root.render(<ChapterHarness width={1000} />))
+    await annotateLine('守塔人的屋子在灯塔背风的一侧', '把盐写得更具体')
+    await expect.element(page.getByRole('region', { name: '本章批注' })).toBeVisible()
+    await nextFrames()
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' })).not.toBeInTheDocument()
+  })
+
   it('titles the panel by where it is used, in both languages', async () => {
     await act(async () => root.render(<ChapterHarness width={1000} />))
     await annotateLine('守塔人的屋子在灯塔背风的一侧', '把盐写得更具体')

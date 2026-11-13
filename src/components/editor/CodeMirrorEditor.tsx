@@ -278,8 +278,8 @@ export default function CodeMirrorEditor({
         if (aiResult === null) { setBubbleOpen(false); setSelectionRange(null); setNoteDraft(null) }
       } else {
         setSelectionRange({ from: sel.from, to: sel.to })
-        // 交由下方的 useEffect 进行精准防越界座标计算与位置同步
-        if (!aiResult) {
+        // 交由下方的 useEffect 进行精准防越界座标计算与位置同步。只有版面变了（例如批注面板停靠后正文栏变窄）不重新弹出。
+        if (!aiResult && (v.selectionSet || v.docChanged)) {
           setBubbleOpen(true)
         }
       }
