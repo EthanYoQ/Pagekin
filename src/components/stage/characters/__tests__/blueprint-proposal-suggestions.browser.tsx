@@ -68,20 +68,30 @@ it('列表里写明是第几章蓝图的新角色，计入待处理数', () => {
   expect(host.querySelector('[data-kind="decision"]')?.textContent).toContain('第 13 章蓝图的新角色（1 位）')
 })
 
-it('关系指向已有角色：可以勾选，勾上后接受时带上目标角色', async () => {
+it('名单里只有一个林岚：关系默认勾上，直接接受就带上目标角色', async () => {
   await click('检查蓝图角色决策')
   expect(host.querySelector('[data-kind="decision"]')?.textContent).toContain('雾灯人 · 配角第 13 章蓝图首次出场')
   expect(relationBox()?.disabled).toBe(false)
-  expect(relationBox()?.checked).toBe(false)
-  await act(async () => { relationBox()!.click() })
+  expect(relationBox()?.checked).toBe(true)
   await click('接受这些决策')
   expect(calls('character-proposal:approve')).toMatchObject([{ proposalBatchId: 'cpb:blueprint', expectedRevision: 4,
     selections: [{ selectionKey: '13:0', action: 'create' }], relationships: [{ sourceSelectionKey: '13:0', targetCharacterId: 'heroine', relation: '暗中守护' }] }])
   expect(host.querySelector('[data-kind="decision"]')).toBeNull()
 })
 
-it('不勾关系直接接受：只采用角色，不带这条关系', async () => {
+it('取消勾选关系再接受：只采用角色，不带这条关系', async () => {
   await click('检查蓝图角色决策')
+  await act(async () => { relationBox()!.click() })
+  expect(relationBox()?.checked).toBe(false)
+  await click('接受这些决策')
+  expect(calls('character-proposal:approve')).toMatchObject([{ relationships: [] }])
+})
+
+it('名单里没有林岚时关系不默认勾，接受不带关系', async () => {
+  useCharacterStore.setState({ characters: [{ characterId: 'keeper', name: '守塔人', role: 'supporting' }] as never })
+  await settle()
+  await click('检查蓝图角色决策')
+  expect(relationBox()?.checked).toBe(false)
   await click('接受这些决策')
   expect(calls('character-proposal:approve')).toMatchObject([{ relationships: [] }])
 })
