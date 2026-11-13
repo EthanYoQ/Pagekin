@@ -121,7 +121,7 @@ function RunConfirmation({ confirmation, primary, text }: { confirmation: Workfl
           <p className="run-confirm-summary">{text(`${proposal.batch.items.length} 个角色候选`, `${proposal.batch.items.length} character ${pluralEn(proposal.batch.items.length, 'candidate')}`)}</p>
           <div className="run-proposals">
             <CharacterProposalSelectionPanel batch={proposal.batch} choices={proposal.choices}
-              identities={proposal.identities} disabled={!ready} onChange={proposal.onChange} />
+              disabled={!ready} onChange={proposal.onChange} />
           </div>
         </>
       )}

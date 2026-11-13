@@ -65,8 +65,9 @@ export interface CancelCharacterProposalRequest {
 export type PendingFinalizedCharacterProposalSummary = {
   proposalBatchId: string
   revision: number
-} & ({ finalizationId: string; importOperationId?: never }
-  | { importOperationId: string; importPurpose?: ImportPurpose; itemCount: number; finalizationId?: never })
+} & ({ finalizationId: string; importOperationId?: never; blueprintChapters?: never }
+  | { importOperationId: string; importPurpose?: ImportPurpose; itemCount: number; finalizationId?: never; blueprintChapters?: never }
+  | { blueprintChapters: { from: number; to: number }; itemCount: number; finalizationId?: never; importOperationId?: never })
 export interface CharacterIdentitySnapshot {
   revision: number
   characters: { characterId: string; fields: CharacterStaticFields; retired: boolean; revision: number;

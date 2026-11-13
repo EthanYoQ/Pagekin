@@ -23,6 +23,17 @@ function importTitle({ importPurpose, itemCount: count }: ImportSummary, text: (
   return text(`导入时反推的角色（${count} 位）`, `${characters} inferred during import`)
 }
 
+function decisionLabels(summary: PendingFinalizedCharacterProposalSummary, text: (zh: string, en: string) => string) {
+  if (summary.blueprintChapters) {
+    const { from, to } = summary.blueprintChapters, count = summary.itemCount
+    const chapters = from === to ? text(`第 ${from} 章`, `chapter ${from}`) : text(`第 ${from}–${to} 章`, `chapters ${from}–${to}`)
+    return { kind: text('蓝图角色', 'Blueprint'), title: text(`${chapters}蓝图的新角色（${count} 位）`, `${count} new ${pluralEn(count, 'character')} from the ${chapters} blueprint`),
+      review: text('检查蓝图角色决策', 'Review blueprint character decision') }
+  }
+  if (summary.importOperationId) return { kind: text('导入角色', 'Imported'), title: importTitle(summary, text), review: text('检查导入角色决策', 'Review imported character decision') }
+  return { kind: text('定稿角色', 'Finalized'), title: summary.finalizationId, review: text('检查定稿角色决策', 'Review finalized character decision') }
+}
+
 function relationTitle({ sourceName, targetName, source }: PendingFinalizedRelationCandidate, text: (zh: string, en: string) => string): string {
   return `${sourceName} → ${targetName} · ${text(`第 ${source.chapterNumber} 章`, `Chapter ${source.chapterNumber}`)}`
 }
@@ -59,25 +70,26 @@ function SessionSuggestions({ session }: { session: ProjectSessionContext }) {
         ) : <Button variant="secondary" size="sm" onClick={reload}>{text('重新读取', 'Read again')}</Button>}
       >
         {count > 0
-          ? text('来自定稿与导入的角色卡。接受前不会改动角色名单。', 'From finalized chapters and imported cards. Nothing changes in the cast until you accept.')
-          : text('定稿与导入留下的角色建议这次没读出来，可以重新读取。', 'The suggestions from finalized chapters and imports could not be read this time. You can read them again.')}
+          ? text('来自定稿、导入和蓝图。接受前不会改动角色名单。', 'From finalized chapters, imports, and blueprints. Nothing changes in the cast until you accept.')
+          : text('定稿、导入和蓝图留下的角色建议这次没读出来，可以重新读取。', 'The suggestions from finalized chapters, imports, and blueprints could not be read this time. You can read them again.')}
       </Notice>
       {count > 0 && !collapsed && (
         <ul className="cast-suggestion-list">
-          {!proposals.batch && proposals.summaries.map(summary => (
-            <li key={summary.proposalBatchId} className="cast-suggestion" data-kind="decision">
-              <span className="cast-suggestion-kind">{summary.importOperationId ? text('导入角色', 'Imported') : text('定稿角色', 'Finalized')}</span>
-              <span className="cast-suggestion-text">{summary.importOperationId ? importTitle(summary, text) : summary.finalizationId}</span>
-              <Button variant="text" size="sm" disabled={busy}
-                aria-label={summary.importOperationId ? text('检查导入角色决策', 'Review imported character decision') : text('检查定稿角色决策', 'Review finalized character decision')}
-                onClick={() => { void proposals.read(summary) }}>
-                <Eye size={14} aria-hidden />{text('检查', 'Review')}
-              </Button>
-            </li>
-          ))}
+          {!proposals.batch && proposals.summaries.map(summary => {
+            const labels = decisionLabels(summary, text)
+            return (
+              <li key={summary.proposalBatchId} className="cast-suggestion" data-kind="decision">
+                <span className="cast-suggestion-kind">{labels.kind}</span>
+                <span className="cast-suggestion-text">{labels.title}</span>
+                <Button variant="text" size="sm" disabled={busy} aria-label={labels.review} onClick={() => { void proposals.read(summary) }}>
+                  <Eye size={14} aria-hidden />{text('检查', 'Review')}
+                </Button>
+              </li>
+            )
+          })}
           {proposals.batch && proposals.choices && (
             <li className="cast-suggestion cast-suggestion-open" data-kind="decision">
-              <CharacterProposalSelectionPanel batch={proposals.batch} identities={proposals.identities} choices={proposals.choices}
+              <CharacterProposalSelectionPanel batch={proposals.batch} choices={proposals.choices}
                 onChange={proposals.setChoices} disabled={busy} />
               <div className="cast-suggestion-decide">
                 <Button variant="text" size="sm" disabled={busy} onClick={() => { void proposals.decide('cancel') }}>{text('拒绝这些决策', 'Reject decisions')}</Button>
