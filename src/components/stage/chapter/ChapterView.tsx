@@ -184,6 +184,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                   const result = await ipc.invokeWithProjectSession(activeSession, 'db:annotation-commit', { draftId: draft.meta.id, expectedSaved: savedTab.savedContent, before, after, annotations }, activeSession.projectPath)
                   if (!result.success) throw new Error(result.error || 'ANNOTATION_COMMIT_FAILED')
                   if (!isProjectSessionCurrent(activeSession)) return
+                  if (draft.pendingRevisions.length > 0) draft.reload()
                   const current = useEditorStore.getState().tabs.find(item => item.id === tab.id)
                   if (!current || current.content !== before) return
                   draft.onBodyChange(after)
