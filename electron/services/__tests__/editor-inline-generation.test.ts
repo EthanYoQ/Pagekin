@@ -187,6 +187,16 @@ it('多处批注冻结为一个完整章节任务，一次执行并可在重开�
  for (const expected of ['改成第一人称', '删掉这个字', '完整章节', batchDocument]) expect(sent).toContain(expected)
  expect(f.reopenStorage().readEditorInlineRecovery(recovery.view.handle).context).toMatchObject(batchInput)
 })
+it('同一段原文在章里出现多次时，提示词写明批注的是第几处', async () => {
+ const repeated = '灯亮了。风停了。灯亮了。'
+ const twice = { action: 'batch-instruct' as const, documentText: repeated, from: 0, to: repeated.length, selectedText: repeated,
+  annotations: [{ id: '后一处', from: 8, to: 12, selectedText: '灯亮了。', instruction: '改成灯灭了' }] }
+ const f = fixture(async (_r, o) => { o.onVisible({ kind: 'delta', text: '灯亮了。风停了。灯灭了。' }); return { finishReason: 'stop', usage: null } })
+ const recovery = f.owner.beginEditorInline({ input: twice, modelId: 'synthetic', uiActionNonce: '重复原文' })
+ await f.owner.executeEditorInline(recovery.view.handle)
+ const { task } = f.spy.mock.calls[0]![0] as { task: { messages: { role: string; content: string }[] } }
+ expect(task.messages.map(message => message.content).join('\n')).toContain('全文第 2 处（共 2 处）')
+})
 it.each([
  ['空批注', { ...batchInput, annotations: [] }],
  ['批注重叠', { ...batchInput, annotations: [batchInput.annotations[0], { ...batchInput.annotations[1], from: 2 }] }],

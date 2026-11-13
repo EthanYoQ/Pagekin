@@ -71,11 +71,24 @@ export function readEditorInlineTask(run: DurableGenerationRun): GenerationTask 
   if (!task || textHash(JSON.stringify(task)) !== run.binding.sourceManifest.editorInlineTaskHash) throw new Error('GENERATION_EDITOR_TASK_INVALID')
   return structuredClone(task)
 }
+/** 同一段原文在章里出现不止一次时，批注针对的是第几处。 */
+function occurrence(documentText: string, annotation: { from: number; selectedText: string }): { nth: number; total: number } | null {
+  let total = 0, nth = 0
+  for (let at = documentText.indexOf(annotation.selectedText); at !== -1; at = documentText.indexOf(annotation.selectedText, at + 1)) {
+    total += 1
+    if (at <= annotation.from) nth = total
+  }
+  return total > 1 ? { nth, total } : null
+}
 function editInstruction(context: EditorInlineContext, english: boolean): string {
   if (context.action === 'batch-instruct') {
-    const annotations = context.annotations.map((annotation, index) => english
-      ? `[Annotation ${index + 1}]\nOriginal passage:\n${annotation.selectedText}\nAuthor note:\n${annotation.instruction}`
-      : `【批注 ${index + 1}】\n对应原文：\n${annotation.selectedText}\n作者意见：\n${annotation.instruction}`).join('\n\n')
+    const annotations = context.annotations.map((annotation, index) => {
+      const place = occurrence(context.documentText, annotation)
+      const where = !place ? '' : english ? ` (occurrence ${place.nth} of ${place.total} in the chapter)` : `（全文第 ${place.nth} 处（共 ${place.total} 处））`
+      return english
+        ? `[Annotation ${index + 1}]\nOriginal passage${where}:\n${annotation.selectedText}\nAuthor note:\n${annotation.instruction}`
+        : `【批注 ${index + 1}】\n对应原文${where}：\n${annotation.selectedText}\n作者意见：\n${annotation.instruction}`
+    }).join('\n\n')
     return english
       ? `Revise the complete chapter according to every annotation below. Each note applies to its corresponding original passage. Keep passages without annotations unchanged unless a change is required for continuity.\n\n${annotations}`
       : `按下面的全部批注修改完整章节。每条意见只针对对应原文；未批注的内容保持原样，确为衔接所必需时除外。\n\n${annotations}`

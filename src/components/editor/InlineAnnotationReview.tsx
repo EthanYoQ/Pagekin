@@ -9,18 +9,41 @@ import { useLocaleStore } from '../../stores/locale-store'
 import { Button } from '../ui/Button'
 
 type Piece = { kind: 'same'; text: string } | { kind: 'change'; index: number; from: number; to: number; before: string; after: string }
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff
 function splitChanges(before: string, after: string): Piece[] {
   const engine = new diff_match_patch()
   const diffs = engine.diff_main(before, after)
   engine.diff_cleanupSemantic(diffs)
+  const runs: ({ same: string } | { before: string; after: string })[] = []
+  for (const [kind, text] of diffs) {
+    const last = runs.at(-1)
+    if (kind === 0) { runs.push({ same: text }); continue }
+    const run = last && !('same' in last) ? last : { before: '', after: '' }
+    if (run !== last) runs.push(run)
+    if (kind === DIFF_DELETE) run.before += text
+    if (kind === DIFF_INSERT) run.after += text
+  }
+  // diff 按 UTF-16 切分，会把扩展区汉字的代理对拆在相同与修改两边。
+  runs.forEach((run, i) => {
+    if ('same' in run) return
+    const prev = runs[i - 1], next = runs[i + 1]
+    if (prev && 'same' in prev && isHighSurrogate(prev.same.charCodeAt(prev.same.length - 1))) {
+      const char = prev.same.slice(-1)
+      prev.same = prev.same.slice(0, -1); run.before = char + run.before; run.after = char + run.after
+    }
+    if (next && 'same' in next && isLowSurrogate(next.same.charCodeAt(0))) {
+      const char = next.same.slice(0, 1)
+      next.same = next.same.slice(1); run.before += char; run.after += char
+    }
+  })
   const pieces: Piece[] = []
   let offset = 0
-  for (const [kind, text] of diffs) {
-    if (kind === 0) { pieces.push({ kind: 'same', text }); offset += text.length; continue }
-    let last = pieces.at(-1)
-    if (!last || last.kind !== 'change') { last = { kind: 'change', index: pieces.filter(piece => piece.kind === 'change').length, from: offset, to: offset, before: '', after: '' }; pieces.push(last) }
-    if (kind === DIFF_DELETE) { last.before += text; offset += text.length; last.to = offset }
-    if (kind === DIFF_INSERT) last.after += text
+  let index = 0
+  for (const run of runs) {
+    if ('same' in run) { if (run.same) pieces.push({ kind: 'same', text: run.same }); offset += run.same.length; continue }
+    pieces.push({ kind: 'change', index: index++, from: offset, to: offset + run.before.length, before: run.before, after: run.after })
+    offset += run.before.length
   }
   return pieces
 }
