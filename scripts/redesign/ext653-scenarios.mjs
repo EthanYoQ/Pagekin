@@ -74,6 +74,26 @@ const secondParagraphGlyph = (page, scope) => page.evaluate(([selector, needle])
   return null
 }, [scope, '他给'])
 
+const reviewLineStarts = review => review.locator('.inline-annotation-prose').evaluate(root => {
+  const starts = []
+  let bottom = -Infinity
+  const place = (glyph, rect) => {
+    if (!rect.width) return
+    if (rect.top >= bottom - 1) { starts.push(glyph); bottom = rect.bottom } else bottom = Math.max(bottom, rect.bottom)
+  }
+  const walk = node => {
+    if (node.nodeType === Node.ELEMENT_NODE && node.matches('svg, .inline-annotation-actions')) return place(node.matches('svg') ? '✓' : '▣', node.getBoundingClientRect())
+    if (node.nodeType !== Node.TEXT_NODE) return node.childNodes.forEach(walk)
+    for (let i = 0; i < node.textContent.length; i++) {
+      const range = document.createRange()
+      range.setStart(node, i); range.setEnd(node, i + 1)
+      place(node.textContent[i], range.getBoundingClientRect())
+    }
+  }
+  walk(root)
+  return starts.join('')
+})
+
 async function annotate(page, paragraph, note, scope = chapterView.prose(page)) {
   await scope.getByText(paragraph).first().click({ clickCount: 3 })
   const toolbar = page.getByRole('toolbar', { name: '选中文字的操作' })
@@ -124,6 +144,13 @@ export const EXT653_SCENARIOS = {
     measured.rerollRequests = fake.chats.filter(chat => JSON.stringify(chat.messages).includes('重新改写所选片段')).length
     assert.equal(measured.rerollRequests, 1)
     await context.shoot('ext653-2-review')
+    measured.reviewLineStarts = await reviewLineStarts(review)
+    assert.doesNotMatch(measured.reviewLineStarts, /[，。、；：！？✓▣]/, '审阅里没有一行以句读、对勾或操作按钮开头')
+    await page.setViewportSize({ width: 900, height: 900 })
+    measured.narrowReviewLineStarts = await reviewLineStarts(review)
+    assert.doesNotMatch(measured.narrowReviewLineStarts, /[，。、；：！？✓▣]/, '窄窗口下审阅里也没有一行以句读、对勾或操作按钮开头')
+    await context.shoot('ext653-2-review-narrow')
+    await page.setViewportSize({ width: 1440, height: 900 })
 
     await review.getByRole('button', { name: '接受全部' }).click()
     await review.waitFor({ state: 'hidden', timeout: 30_000 })

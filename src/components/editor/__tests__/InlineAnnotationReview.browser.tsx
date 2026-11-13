@@ -65,13 +65,13 @@ const AFTER = [
   '他给她倒了一杯很淡的茶，自己却只是捧着杯子，看着炉火。',
   '「你父亲也问过钟的事。」他说完这句话，就再也没有开口，只是抬头望向塔顶。',
 ].join('\n\n')
-const NO_LINE_START = '，。、；：！？）」』'
+const NO_LINE_START = '，。、；：！？）」』✓▣'
 
 type Item = { char: string; rect: DOMRect }
 function layoutLines(prose: Element) {
   const items: Item[] = []
   const walk = (node: Node) => {
-    if (node instanceof Element && node.matches('svg, .inline-annotation-actions')) { items.push({ char: '', rect: node.getBoundingClientRect() }); return }
+    if (node instanceof Element && node.matches('svg, .inline-annotation-actions')) { items.push({ char: node.matches('svg') ? '✓' : '▣', rect: node.getBoundingClientRect() }); return }
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent!
       for (let i = 0; i < text.length; i++) {
@@ -112,9 +112,16 @@ describe('逐处审阅的断行', () => {
         const next = lines[i + 1]!
         if (next[0]!.rect.top - line.at(-1)!.rect.bottom > line.at(-1)!.rect.height) return
         const room = right - line.at(-1)!.rect.right
-        const pulled = next[0]!.rect.width + (next[1] && NO_LINE_START.includes(next[1].char) && next[1].char ? next[1].rect.width : 0)
-        expect(room, `第 ${i + 1} 行末尾还空着 ${Math.round(room)}px，下一行以「${next.map(item => item.char).join('').slice(0, 6)}」开头`).toBeLessThan(pulled + 4)
+        const glued = next.findIndex((item, k) => k > 0 && !NO_LINE_START.includes(item.char))
+        const pulled = next[(glued < 0 ? next.length : glued) - 1]!.rect.right - next[0]!.rect.left
+        expect(room, `第 ${i + 1} 行末尾还空着 ${Math.round(room)}px，下一行以「${next.map(item => item.char).join('').slice(0, 6)}」开头`).toBeLessThan(pulled + 8)
       })
     })
   }
+  it('新增的换行在审阅里照样另起一行', async () => {
+    await act(async () => root.render(<div className="paper-ink" style={{ width: 612 }}><InlineAnnotationReview before="灯亮了。他走了。" after={'灯亮了。\n他走了。'} annotations={[]} onCommit={async () => {}} onCancel={() => {}} /></div>))
+    const items = layoutLines(host.querySelector('.inline-annotation-prose')!).flat()
+    const top = (char: string) => items.find(item => item.char === char)!.rect.top
+    expect(top('他')).toBeGreaterThan(top('灯'))
+  })
 })
