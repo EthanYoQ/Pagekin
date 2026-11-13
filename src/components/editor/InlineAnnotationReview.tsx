@@ -88,6 +88,10 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
     const next = pieces[position + 1]
     return pieces[position]?.kind === 'change' && next?.kind === 'same' ? /^[，。、；：！？）」』”’]*/.exec(next.text)![0] : ''
   }
+  const wrapAllBut = (value: string, kept: number) => {
+    const chars = Array.from(value)
+    return <><span className="inline-annotation-wrap">{chars.slice(0, chars.length - kept).join('')}</span>{chars.slice(chars.length - kept).join('')}</>
+  }
   const toggle = (index: number) => setActiveChange(current => current === index ? null : index)
   const acceptAll = () => { const next = changes.map(item => ({ ...item, accepted: true, editing: false })); setChanges(next); void commit(next) }
   const reroll = async (piece: Extract<Piece, { kind: 'change' }>) => {
@@ -119,17 +123,18 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
       {/* <button> 是原子行内盒，整段修改无法在中间断行，所以用可聚焦的 span */}
       <span role="button" tabIndex={0} className="inline-annotation-mark" aria-label={text(`查看修改 ${piece.index + 1}`, `Inspect change ${piece.index + 1}`)} aria-expanded={activeChange === piece.index}
         onClick={() => toggle(piece.index)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(piece.index) } }}>
-        {piece.before && <del>{piece.before}</del>}{changes[piece.index]!.value && <ins>{changes[piece.index]!.value}</ins>}
+        {piece.before && <del>{wrapAllBut(piece.before, changes[piece.index]!.value ? 0 : 1)}</del>}{changes[piece.index]!.value && <ins>{wrapAllBut(changes[piece.index]!.value, 1)}</ins>}
       </span>
-      {/* 对勾与操作区是原子盒，浏览器允许在它后面断行；把紧跟的句读放进同一个不换行单元，免得落到行首 */}
-      <span className="inline-annotation-tail">{changes[piece.index]!.accepted && <Check size={13} aria-label={text('已接受', 'Accepted')} />}
+      {/* 对勾与操作区是原子盒，浏览器允许在它前后断行。片段整体不换行、只放开末字之前的文字，
+          末字、对勾、操作区和紧跟的句读就连成一体，不会把对勾、按钮或句读挤到行首 */}
+      {changes[piece.index]!.accepted && <Check size={13} aria-label={text('已接受', 'Accepted')} />}
       {activeChange === piece.index && <span className="inline-annotation-actions">
         {changes[piece.index]!.editing && <textarea aria-label={text(`编辑修改 ${piece.index + 1}`, `Edit change ${piece.index + 1}`)} value={changes[piece.index]!.value} onChange={event => update(piece.index, { value: event.target.value, accepted: false, error: '' })} />}
         <Button variant="text" size="sm" disabled={committing || changes[piece.index]!.busy} onClick={() => update(piece.index, { editing: !changes[piece.index]!.editing, accepted: false })}>{text('编辑', 'Edit')}</Button>
         <Button variant="text" size="sm" disabled={committing || changes[piece.index]!.busy} onClick={() => void reroll(piece)}>{changes[piece.index]!.busy ? text('生成中…', 'Generating…') : text('重新生成', 'Reroll')}</Button>
         <Button variant="secondary" size="sm" disabled={committing || changes[piece.index]!.busy || changes[piece.index]!.accepted} onClick={() => accept(piece.index)}>{changes[piece.index]!.accepted ? text('已接受', 'Accepted') : text('接受', 'Accept')}</Button>
         {changes[piece.index]!.error && <span role="alert">{changes[piece.index]!.error}</span>}
-      </span>}{closingAfter(position)}</span>
+      </span>}{closingAfter(position)}
     </span>)}</div>
     {error && <p role="alert">{error}</p>}
     <div className="inline-annotation-footer"><Button variant="secondary" disabled={committing} onClick={onCancel}>{text('取消', 'Cancel')}</Button><Button variant="primary" disabled={committing || changes.some(item => item.busy)} onClick={acceptAll}>{committing ? text('保存中…', 'Saving…') : text('接受全部', 'Accept all')}</Button></div>
