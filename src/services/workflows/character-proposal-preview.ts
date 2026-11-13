@@ -34,7 +34,6 @@ export function adoptableRelationships(selections: ApproveCharacterProposalReque
 }
 export const sameRelationship = (a: Relationship, b: Relationship) => a.sourceSelectionKey === b.sourceSelectionKey
   && a.targetSelectionKey === b.targetSelectionKey && a.targetCharacterId === b.targetCharacterId && a.relation === b.relation
-/** 每条关系提议在这份名单快照与这组采用方式下指向谁、能不能勾。默认选中、面板勾选与提交都只认它。 */
 export function proposalRelations(batch: CharacterProposalBatch, identities: readonly Identity[], selections: ApproveCharacterProposalRequest['selections']) {
   const active = new Set(selections.filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
   return batch.items.flatMap(item => item.relationships.map(relation => {

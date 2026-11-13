@@ -25,7 +25,6 @@ export interface WorkflowConfirmation {
 
 /**
  * 运行停在需要确认的步骤时返回确认区的内容，否则返回 null。
- * 有角色候选时按这次项目会话读出已保存角色，用这份快照建一次默认选中；卸载重挂不重建，作者的勾选不丢。
  */
 export function useWorkflowConfirmation(run: WorkflowRun): WorkflowConfirmation | null {
   const t = (zh: string, en: string) => run.uiLocale === 'en-US' ? en : zh

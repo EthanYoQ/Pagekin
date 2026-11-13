@@ -714,7 +714,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         // Register before publishing waiting state so an immediate UI confirmation cannot be lost.
         const confirmed = new Promise<void>(resolve => { continueResolveRefs.set(run.id, resolve) })
         const batch = context.data.characterProposalBatch as CharacterProposalBatch | undefined
-        // 默认选中要等确认区读到已保存角色后才建，见 use-workflow-confirmation。
         if (batch) delete context.data.characterProposalChoices
         updateRunById(set, run.id, { status: 'waiting', ...(batch ? { characterProposalBatch: structuredClone(batch), characterProposalChoices: undefined } : {}) })
         set(s => {
