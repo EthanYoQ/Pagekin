@@ -89,7 +89,7 @@ function importReply(prompt) {
   return null
 }
 
-/** 按提示里的章范围回齐全蓝图；关闭时回正文，使解析失败、留下蓝图恢复稿。newcomerChapter 这一章引入新角色雾灯人和他对林岚的关系。 */
+/** 按提示里的章范围回齐全蓝图；关闭时回正文，使解析失败、留下蓝图恢复稿。 */
 function directoryReply(prompt, newcomerChapter) {
   const range = /为接下来的 第(\d+)章到第(\d+)章/u.exec(prompt)
   if (!range) return null

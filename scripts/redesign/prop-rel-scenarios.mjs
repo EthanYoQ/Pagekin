@@ -37,7 +37,6 @@ async function readProject(projectPath) {
 }
 
 export const PROPREL_SCENARIOS = {
-  /** 生成第 13–14 章蓝图，第 13 章引入新角色雾灯人和他对林岚的关系；角色页的建议里能看到、批准这条关系。 */
   'prop-rel-blueprint-relation': { model: true, shell: 'stage', setup: context => seedStageSample(context, { totalChapters: 16 }), run: async ({ page, fake, samplePath, shoot }) => {
     await blueprint.open(page)
     fake.replyDirectoryBlueprints(13)
@@ -78,7 +77,6 @@ export const PROPREL_SCENARIOS = {
     await shoot('prop-rel-3-adopted')
     return measured
   } },
-  /** 建议先列出；作者随后改了第 13 章蓝图标题，这条提案接受必然失败，角色页不再列出。 */
   'prop-rel-stale': { model: true, shell: 'stage', setup: context => seedStageSample(context, { totalChapters: 16 }), run: async ({ page, fake, shoot }) => {
     await blueprint.open(page)
     fake.replyDirectoryBlueprints(13)
@@ -100,7 +98,6 @@ export const PROPREL_SCENARIOS = {
     assert.equal(measured.listed, 0, '改过来源蓝图后不再出建议')
     return measured
   } },
-  /** 生成蓝图后定稿第 3 章：定稿不碰蓝图提案的来源，建议还在。 */
   'prop-rel-after-finalize': { model: true, shell: 'stage', setup: context => seedStageSample(context, { totalChapters: 16 }), run: async ({ page, fake, shoot }) => {
     await blueprint.open(page)
     fake.replyDirectoryBlueprints(13)

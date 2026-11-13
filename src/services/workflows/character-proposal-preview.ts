@@ -12,7 +12,6 @@ export function defaultCharacterProposalSelections(batch: CharacterProposalBatch
 }
 type Identity = { characterId: string; name: string }
 type Relationship = NonNullable<ApproveCharacterProposalRequest['relationships']>[number]
-/** 关系只写了名字时：先在本批候选里找，再在名单里找；同名多于一个就不猜。 */
 export function relationTarget(batch: CharacterProposalBatch, relation: CharacterProposalBatch['items'][number]['relationships'][number],
   identities: readonly Identity[]): { targetSelectionKey: string } | { targetCharacterId: string } | undefined {
   if (relation.targetSelectionKey) return { targetSelectionKey: relation.targetSelectionKey }
@@ -21,7 +20,6 @@ export function relationTarget(batch: CharacterProposalBatch, relation: Characte
   const matches = identities.filter(identity => identity.name === relation.targetName)
   return matches.length === 1 ? { targetCharacterId: matches[0].characterId } : undefined
 }
-/** 两端会落到同一个角色（例如把候选对应到关系目标本人），主进程会拒绝整批。 */
 export function isSelfRelation(selections: ApproveCharacterProposalRequest['selections'], relation: Relationship) {
   const endpoint = (key: string) => { const selection = selections.find(item => item.selectionKey === key); return selection?.action === 'map' ? selection.characterId : key }
   return endpoint(relation.sourceSelectionKey) === (relation.targetSelectionKey ? endpoint(relation.targetSelectionKey) : relation.targetCharacterId)
