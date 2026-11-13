@@ -20,24 +20,27 @@ export function relationTarget(batch: CharacterProposalBatch, relation: Characte
   if (candidates.length + matches.length !== 1) return undefined
   return candidates.length ? { targetSelectionKey: candidates[0].selectionKey } : { targetCharacterId: matches[0].characterId }
 }
-export function isSelfRelation(selections: ApproveCharacterProposalRequest['selections'], relation: Relationship) {
+/** 按落库后的两端去掉自指和重复：主进程遇到任一条都会拒绝整批。 */
+export function adoptableRelationships(selections: ApproveCharacterProposalRequest['selections'], relationships: readonly Relationship[]) {
   const endpoint = (key: string) => { const selection = selections.find(item => item.selectionKey === key); return selection?.action === 'map' ? selection.characterId : key }
-  return endpoint(relation.sourceSelectionKey) === (relation.targetSelectionKey ? endpoint(relation.targetSelectionKey) : relation.targetCharacterId)
+  const seen = new Set<string>()
+  return relationships.filter(relation => {
+    const from = endpoint(relation.sourceSelectionKey), to = relation.targetSelectionKey ? endpoint(relation.targetSelectionKey) : relation.targetCharacterId
+    const key = JSON.stringify([from, to, relation.relation])
+    if (from === to || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 export function defaultCharacterProposalRelationships(batch: CharacterProposalBatch, identities: readonly Identity[] = []) {
   const selections = defaultCharacterProposalSelections(batch)
   const adoptedKeys = new Set(selections.filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
-  const seen = new Set<string>()
-  return batch.items.flatMap(item => adoptedKeys.has(item.selectionKey)
+  return adoptableRelationships(selections, batch.items.flatMap(item => adoptedKeys.has(item.selectionKey)
     ? item.relationships.flatMap((relation): Relationship[] => {
       const target = relationTarget(batch, relation, identities)
-      if (!target || ('targetSelectionKey' in target && !adoptedKeys.has(target.targetSelectionKey))) return []
-      const edge: Relationship = { sourceSelectionKey: item.selectionKey, ...target, relation: relation.relation }
-      const key = JSON.stringify([edge.sourceSelectionKey, edge.targetSelectionKey, edge.targetCharacterId, edge.relation])
-      if (isSelfRelation(selections, edge) || seen.has(key)) return []
-      seen.add(key)
-      return [edge]
-    }) : [])
+      return !target || ('targetSelectionKey' in target && !adoptedKeys.has(target.targetSelectionKey)) ? []
+        : [{ sourceSelectionKey: item.selectionKey, ...target, relation: relation.relation }]
+    }) : []))
 }
 export function formatCharacterProposalPreview(batch: CharacterProposalBatch, text: Text): string {
   if (!batch.items.length) return text('未发现明确角色，角色名单尚未更改。', 'No explicit characters were found; the roster is unchanged.')
