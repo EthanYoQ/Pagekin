@@ -182,3 +182,28 @@ it('同一条关系提了两遍：默认只带一条，接受不被主进程判�
   expect(calls('character-proposal:approve')).toMatchObject([{ relationships: [{ sourceSelectionKey: '13:0', targetCharacterId: 'heroine', relation: '暗中守护' }] }])
   expect((calls('character-proposal:approve')[0] as { relationships: unknown[] }).relationships).toHaveLength(1)
 })
+
+const twinBatch = (resolution: CharacterProposalBatch['items'][number]['resolution']): CharacterProposalBatch => ({ ...batch, items: [
+  { ...batch.items[0], resolution },
+  { ...batch.items[0], selectionKey: '13:1', sourceId: 'directory-13:13:1', fields: { name: '守塔老人', role: 'minor' }, resolution }] })
+const approvedRelationships = () => (calls('character-proposal:approve')[0] as { relationships: unknown[] }).relationships
+
+it('两位候选都对应到同一个已有角色：指向林岚的同一条关系只带一条', async () => {
+  roster.push({ characterId: 'keeper', name: '守塔人', role: 'supporting' })
+  readBatch = twinBatch({ status: 'unresolved', candidateIds: [] })
+  await click('检查蓝图角色决策')
+  for (const select of host.querySelectorAll<HTMLSelectElement>('select[aria-label^="采用方式："]')) await act(async () => {
+    select.value = 'map:keeper'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await click('接受这些决策')
+  expect(approvedRelationships()).toEqual([{ sourceSelectionKey: '13:0', targetCharacterId: 'heroine', relation: '暗中守护' }])
+})
+
+it('两位候选默认就认定为同一个已有角色：默认选中的关系也只带一条', async () => {
+  roster.push({ characterId: 'keeper', name: '守塔人', role: 'supporting' })
+  readBatch = twinBatch({ status: 'resolved', characterId: 'keeper' })
+  await click('检查蓝图角色决策')
+  await click('接受这些决策')
+  expect(approvedRelationships()).toEqual([{ sourceSelectionKey: '13:0', targetCharacterId: 'heroine', relation: '暗中守护' }])
+})
