@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { EditorView } from '@codemirror/view'
 
@@ -217,7 +217,7 @@ describe('CodeMirror editor AI generation boundary', () => {
     await act(async () => note.fill('改成第一人称'))
     await act(async () => submit.click())
 
-    await expect.element(page.getByRole('region', { name: '本章批注' })).toBeVisible()
+    await expect.element(page.getByRole('region', { name: '批注', exact: true })).toBeVisible()
     expect(container.querySelectorAll('.cm-editor-annotation')).toHaveLength(1)
     expect(invoke.mock.calls.some(([channel]) => channel === 'editor-inline:begin')).toBe(false)
 
@@ -225,7 +225,7 @@ describe('CodeMirror editor AI generation boundary', () => {
     await act(async () => page.getByRole('button', { name: '添加批注' }).click())
     await act(async () => note.fill('同样改成第一人称'))
     await act(async () => submit.click())
-    await expect.element(page.getByText('本章批注 · 2')).toBeVisible()
+    await expect.element(page.getByText('批注 · 2', { exact: true })).toBeVisible()
     expect(container.querySelectorAll('.cm-editor-annotation')).toHaveLength(2)
 
     await act(async () => page.getByRole('button', { name: '统一修改（2）' }).click())
@@ -246,7 +246,7 @@ describe('CodeMirror editor AI generation boundary', () => {
     await act(async () => page.getByRole('button', { name: '替换' }).click())
 
     expect(view.state.doc.toString()).toBe(revisedText)
-    await expect.element(page.getByRole('region', { name: '本章批注' })).not.toBeInTheDocument()
+    await expect.element(page.getByRole('region', { name: '批注', exact: true })).not.toBeInTheDocument()
   })
 
   it('opens batch results inline and commits only after the author accepts', async () => {
@@ -363,7 +363,7 @@ describe('CodeMirror editor AI generation boundary', () => {
     await act(async () => page.getByRole('button', { name: '添加批注' }).click())
     await act(async () => note.fill('语气更冷'))
     await act(async () => { note.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })) })
-    await expect.element(page.getByRole('region', { name: '本章批注' })).toBeVisible()
+    await expect.element(page.getByRole('region', { name: '批注', exact: true })).toBeVisible()
     await expect.element(page.getByText('语气更冷')).toBeVisible()
     expect(invoke.mock.calls.some(([channel]) => channel === 'editor-inline:begin')).toBe(false)
   })
@@ -710,4 +710,89 @@ it('继续原运行时服务商以上下文超长拒绝，显示对应说明', a
   await act(async () => root.render(<CodeMirrorEditor content={documentText} recoveryHandle={handle} />))
   await act(async () => page.getByRole('button', { name: '继续原运行' }).click())
   await expect.element(page.getByText(/提示词超出了模型能接受的长度/)).toBeVisible()
+})
+
+const CHAPTER_TEXT = `${'守塔人的屋子在灯塔背风的一侧，窗玻璃上积着经年的盐，'.repeat(3)}。\n\n${'他给林岚倒了一杯很淡的茶，自己却只是捧着杯子看着炉火，'.repeat(3)}。`
+const SECOND_PARAGRAPH = '他给林岚倒了一杯很淡的茶'
+function ChapterHarness({ width, onCommit }: { width: number; onCommit?: () => Promise<void> }) {
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null)
+  return <div className="paper-ink stage-ch" style={{ width, height: 640 }}>
+    <div className="stage-ch-scroll"><article className="stage-ch-page"><div className="stage-ch-prose">
+      <CodeMirrorEditor mode="prose" fitContent paragraphIndent hideStatusBar chapterAnnotations annotationSlot={slot} content={CHAPTER_TEXT} onCommitAnnotations={onCommit} />
+    </div></article></div>
+    <div ref={setSlot} className="stage-ch-sheet-slot" />
+  </div>
+}
+const annotateLine = async (text: string, note: string) => {
+  await act(async () => page.getByText(text).click({ clickCount: 3 }))
+  await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+  await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill(note))
+  await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+}
+/** 正文会滚动经过面板所在的高度，所以只要面板与正文栏在水平方向重叠，就总有字被盖住。 */
+const overlapsColumn = (panel: Element) => {
+  const box = panel.getBoundingClientRect()
+  const column = container.querySelector('.cm-content')!.getBoundingClientRect()
+  return box.left < column.right && column.left < box.right
+}
+const glyphAt = (scope: Element, needle: string) => {
+  const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const offset = node.textContent!.indexOf(needle)
+    if (offset < 0) continue
+    const range = document.createRange()
+    range.setStart(node, offset); range.setEnd(node, offset + 1)
+    const style = getComputedStyle(node.parentElement!)
+    return { left: Math.round(range.getBoundingClientRect().left - scope.closest('.stage-ch-prose')!.getBoundingClientRect().left), fontSize: style.fontSize, lineHeight: style.lineHeight, fontFamily: style.fontFamily }
+  }
+  throw new Error(`没有找到 ${needle}`)
+}
+
+describe('annotation panel layout', () => {
+  for (const width of [1000, 740]) {
+    it(`docks beside the chapter page without covering prose at ${width}px`, async () => {
+      await act(async () => root.render(<ChapterHarness width={width} />))
+      await annotateLine('守塔人的屋子在灯塔背风的一侧', '把盐写得更具体')
+      const panel = page.getByRole('region', { name: '本章批注' })
+      await expect.element(panel).toBeVisible()
+      expect(overlapsColumn(panel.element())).toBe(false)
+    })
+  }
+
+  it('docks beside a document editor without covering text', async () => {
+    await act(async () => root.render(<div className="paper-ink" style={{ display: 'flex', width: 900, height: 520 }}>
+      <div className="flex-1 overflow-hidden"><CodeMirrorEditor mode="document" hideStatusBar content={CHAPTER_TEXT} /></div>
+    </div>))
+    await annotateLine('守塔人的屋子在灯塔背风的一侧', '把盐写得更具体')
+    const panel = page.getByRole('region', { name: '批注', exact: true })
+    await expect.element(panel).toBeVisible()
+    expect(overlapsColumn(panel.element())).toBe(false)
+  })
+
+  it('titles the panel by where it is used, in both languages', async () => {
+    await act(async () => root.render(<ChapterHarness width={1000} />))
+    await annotateLine('守塔人的屋子在灯塔背风的一侧', '把盐写得更具体')
+    await expect.element(page.getByText('本章批注 · 1')).toBeVisible()
+    await act(async () => root.render(<CodeMirrorEditor key="doc" mode="document" content={CHAPTER_TEXT} />))
+    useLocaleStore.setState({ locale: 'en-US' })
+    await act(async () => page.getByText('守塔人的屋子在灯塔背风的一侧').click({ clickCount: 3 }))
+    await act(async () => page.getByRole('button', { name: 'Add annotation' }).click())
+    await act(async () => page.getByRole('textbox', { name: 'Annotation note' }).fill('Saltier'))
+    await act(async () => page.getByRole('button', { name: 'Add annotation' }).click())
+    await expect.element(page.getByRole('region', { name: 'Annotations', exact: true })).toBeVisible()
+    await expect.element(page.getByText('Annotations · 1', { exact: true })).toBeVisible()
+  })
+
+  it('lays out the review with the same prose type and indent as the editor', async () => {
+    deferStream = true
+    await act(async () => root.render(<ChapterHarness width={1000} onCommit={vi.fn(async () => {})} />))
+    const editing = glyphAt(container.querySelector('.cm-content')!, SECOND_PARAGRAPH)
+    await annotateLine('守塔人的屋子在灯塔背风的一侧', '把盐写得更具体')
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: CHAPTER_TEXT.replace('经年的盐', '厚厚一层白霜'), finishReason: 'stop' } as never))
+    await expect.element(page.getByRole('region', { name: '批注修改对比' })).toBeVisible()
+    const reviewing = glyphAt(container.querySelector('.inline-annotation-prose')!, SECOND_PARAGRAPH)
+    expect(editing).toMatchObject({ fontSize: '18px', lineHeight: '36.9px' })
+    expect(reviewing).toEqual(editing)
+  })
 })

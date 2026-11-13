@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react'
-import { flushSync } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import CodeMirror, { ReactCodeMirrorRef, EditorView, ViewUpdate } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
@@ -7,6 +7,7 @@ import { EditorState, RangeSetBuilder, type Extension } from '@codemirror/state'
 import { Decoration, type DecorationSet } from '@codemirror/view'
 import { openSearchPanel, closeSearchPanel, search } from '@codemirror/search'
 import { Sparkles, Bold, Check, MessageSquareText, Trash2, X } from 'lucide-react'
+import { clsx } from 'clsx'
 import { Button } from '../ui/Button'
 import { paragraphIndent } from './paragraph-indent'
 import { proseTab } from './prose-tab'
@@ -42,6 +43,9 @@ export type CodeMirrorEditorProps = {
   fitContent?: boolean
   /** 段落首行缩进两字（只是显示，见 paragraph-indent）。 */
   paragraphIndent?: boolean
+  /** 批注面板停靠的位置，由所在布局给出；不给时停在编辑器右侧。 */
+  annotationSlot?: HTMLElement | null
+  chapterAnnotations?: boolean
 }
 
 type Label = readonly [string, string]
@@ -87,6 +91,8 @@ export default function CodeMirrorEditor({
   paperHead = null,
   fitContent = false,
   paragraphIndent: indentParagraphs = false,
+  annotationSlot,
+  chapterAnnotations = false,
 }: CodeMirrorEditorProps) {
   const inkThemeName = useThemeStore(s => s.resolvedTheme)
   const uiText = useLocaleStore(s => s.text)
@@ -559,7 +565,7 @@ export default function CodeMirrorEditor({
     const view = editorRef.current?.view
     if (!instruction.trim() || !selectionRange || !view) return
     if (annotations.length >= EDITOR_INLINE_ANNOTATION_MAX_COUNT) {
-      setNoteError(uiText(`一章最多保留 ${EDITOR_INLINE_ANNOTATION_MAX_COUNT} 条批注`, `A chapter can hold up to ${EDITOR_INLINE_ANNOTATION_MAX_COUNT} annotations.`))
+      setNoteError(uiText(`最多保留 ${EDITOR_INLINE_ANNOTATION_MAX_COUNT} 条批注`, `You can keep up to ${EDITOR_INLINE_ANNOTATION_MAX_COUNT} annotations.`))
       return
     }
     if (annotations.some(annotation => selectionRange.from < annotation.to && selectionRange.to > annotation.from)) {
@@ -637,8 +643,37 @@ export default function CodeMirrorEditor({
     completionKeymap: mode !== 'prose',
   }), [mode])
 
+  const panelTitle = chapterAnnotations ? uiText('本章批注', 'Chapter annotations') : uiText('批注', 'Annotations')
+  const annotationPanel = editable && !inlineReview && aiResult === null && annotations.length > 0 ? (
+    <aside role="region" className="paper-ink cm-annotations" data-theme={inkThemeName} aria-label={panelTitle}>
+      <div className="cm-annotations-head">
+        <div className="cm-selbar-title">
+          <MessageSquareText size={13} aria-hidden="true" />
+          {panelTitle} · {annotations.length}
+        </div>
+        <Button variant="text" size="sm" onClick={clearAnnotations}><Trash2 size={13} aria-hidden="true" />{uiText('清空', 'Clear')}</Button>
+      </div>
+      <div className="cm-annotations-list">
+        {annotations.map((annotation, index) => (
+          <article className="cm-annotation" key={annotation.id}>
+            <button type="button" className="cm-annotation-quote" onClick={() => locateAnnotation(annotation)} aria-label={uiText(`定位批注 ${index + 1}`, `Locate annotation ${index + 1}`)}>
+              {annotation.selectedText}
+            </button>
+            <p>{annotation.instruction}</p>
+            <Button variant="icon" size="sm" aria-label={uiText(`删除批注 ${index + 1}`, `Delete annotation ${index + 1}`)} onClick={() => removeAnnotation(annotation.id)}><X size={14} aria-hidden="true" /></Button>
+          </article>
+        ))}
+      </div>
+      <div className="cm-annotations-foot">
+        <span>{uiText('批注只在本次编辑中保留，离开或关闭后清除', 'Annotations last for this editing session and clear when you leave or close.')}</span>
+        <Button variant="primary" size="sm" onClick={handleBatchRevision}><Sparkles size={13} aria-hidden="true" />{uiText(`统一修改（${annotations.length}）`, `Revise all (${annotations.length})`)}</Button>
+      </div>
+    </aside>
+  ) : null
+  const panelBeside = Boolean(annotationPanel && !annotationSlot && !fitContent)
+
   return (
-    <div className={fitContent ? 'relative' : 'relative h-full flex flex-col min-h-0'}
+    <div className={fitContent ? 'relative' : clsx('relative h-full flex min-h-0', panelBeside ? 'cm-annotating' : 'flex-col')}
       onCompositionStartCapture={handleCompositionStart}
       onCompositionEndCapture={handleCompositionEnd}
       onKeyDownCapture={(e) => {
@@ -665,7 +700,7 @@ export default function CodeMirrorEditor({
           void Promise.resolve(onSave?.(lastEmittedContentRef.current)).catch(() => undefined)
         }
       }}>
-      <div hidden={Boolean(inlineReview)} className={fitContent ? 'relative' : 'flex-1 relative min-h-0 overflow-hidden'}>
+      <div hidden={Boolean(inlineReview)} className={fitContent ? 'relative' : 'flex-1 relative min-h-0 min-w-0 overflow-hidden'}>
         <div className={fitContent ? undefined : 'absolute inset-0'}>
           <CodeMirror
             ref={editorRef}
@@ -797,32 +832,7 @@ export default function CodeMirrorEditor({
         </div>
       )}
 
-      {editable && !inlineReview && aiResult === null && annotations.length > 0 && (
-        <aside role="region" className="paper-ink cm-annotations" data-theme={inkThemeName} aria-label={uiText('本章批注', 'Chapter annotations')}>
-          <div className="cm-annotations-head">
-            <div className="cm-selbar-title">
-              <MessageSquareText size={13} aria-hidden="true" />
-              {uiText(`本章批注 · ${annotations.length}`, `Chapter annotations · ${annotations.length}`)}
-            </div>
-            <Button variant="text" size="sm" onClick={clearAnnotations}><Trash2 size={13} aria-hidden="true" />{uiText('清空', 'Clear')}</Button>
-          </div>
-          <div className="cm-annotations-list">
-            {annotations.map((annotation, index) => (
-              <article className="cm-annotation" key={annotation.id}>
-                <button type="button" className="cm-annotation-quote" onClick={() => locateAnnotation(annotation)} aria-label={uiText(`定位批注 ${index + 1}`, `Locate annotation ${index + 1}`)}>
-                  {annotation.selectedText}
-                </button>
-                <p>{annotation.instruction}</p>
-                <Button variant="icon" size="sm" aria-label={uiText(`删除批注 ${index + 1}`, `Delete annotation ${index + 1}`)} onClick={() => removeAnnotation(annotation.id)}><X size={14} aria-hidden="true" /></Button>
-              </article>
-            ))}
-          </div>
-          <div className="cm-annotations-foot">
-            <span>{uiText('批注仅保留在当前编辑会话，切换章节或关闭后会清除', 'Annotations last only for this editing session and are cleared when you leave the chapter or close it.')}</span>
-            <Button variant="primary" size="sm" onClick={handleBatchRevision}><Sparkles size={13} aria-hidden="true" />{uiText(`统一修改（${annotations.length}）`, `Revise all (${annotations.length})`)}</Button>
-          </div>
-        </aside>
-      )}
+      {annotationPanel && (annotationSlot ? createPortal(annotationPanel, annotationSlot) : annotationPanel)}
     </div>
   )
 }

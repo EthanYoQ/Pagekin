@@ -53,3 +53,33 @@ it('把库里的 UTC 时刻按本机时区显示', async () => {
   expect(host.textContent).toContain(`${local} · `)
   expect(host.textContent).not.toContain('2026-11-11 08:00:00')
 })
+
+it('批注引文不整段加粗，拼接处不出双标点，折叠样式与审稿侧页一致', async () => {
+  const reference = document.createElement('details'); reference.className = 'stage-ch-passed'
+  reference.innerHTML = '<summary>参照</summary>'; document.body.append(reference)
+  await act(async () => root.render(<AnnotationRevisionHistory draftId={7} projectKey="C:/合成批注" refresh={0} />))
+  await act(async () => page.getByText('批注历史版本（2）').click())
+  for (const summary of host.querySelectorAll('summary')) {
+    expect(getComputedStyle(summary).fontSize).toBe(getComputedStyle(reference.querySelector('summary')!).fontSize)
+    expect(getComputedStyle(summary).color).toBe(getComputedStyle(reference.querySelector('summary')!).color)
+  }
+  reference.remove()
+  for (const entry of host.querySelectorAll('details details')) (entry as HTMLDetailsElement).open = true
+  const quote = page.getByText('林岚走进北塔。', { exact: true })
+  await expect.element(quote).toBeVisible()
+  expect(Number(getComputedStyle(quote.element()).fontWeight)).toBeLessThan(600)
+  expect(host.textContent).not.toMatch(/[。！？.!?][：:]/)
+})
+
+it('英文批注历史同样不出双标点', async () => {
+  entries.splice(0, entries.length, { id: 3, before: 'I walked in.', after: 'She walked in.', annotations: [{ id: 'c', from: 0, to: 12, selectedText: 'I walked in.', instruction: 'Use third person' }], createdAt: '2026-11-11 10:00:00' })
+  const { useLocaleStore } = await import('../../../../stores/locale-store')
+  useLocaleStore.setState({ locale: 'en-US' })
+  try {
+    await act(async () => root.render(<AnnotationRevisionHistory draftId={7} projectKey="C:/合成批注" refresh={0} />))
+    await act(async () => page.getByText('Annotation history (1)').click())
+    for (const entry of host.querySelectorAll('details details')) (entry as HTMLDetailsElement).open = true
+    await expect.element(page.getByText('Use third person')).toBeVisible()
+    expect(host.textContent).not.toMatch(/[。！？.!?][：:]/)
+  } finally { useLocaleStore.setState({ locale: 'zh-CN' }) }
+})

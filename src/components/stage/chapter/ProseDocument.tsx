@@ -24,6 +24,7 @@ export default function ProseDocument({ tab, project }: { tab: EditorTab; projec
   const projectFile = isProjectFileTab(tab)
   const [units, setUnits] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [annotationSlot, setAnnotationSlot] = useState<HTMLDivElement | null>(null)
   const latest = useRef(tab.content ?? '')
 
   const persist = useCallback(async (content: string) => {
@@ -100,6 +101,7 @@ export default function ProseDocument({ tab, project }: { tab: EditorTab; projec
               filePath={tab.filePath}
               editable={recovery}
               hideStatusBar
+              annotationSlot={annotationSlot}
               onCharCountChange={setUnits}
               onChange={value => {
                 if (!recovery) return
@@ -111,6 +113,7 @@ export default function ProseDocument({ tab, project }: { tab: EditorTab; projec
           </div>
         </article>
       </div>
+      <div ref={setAnnotationSlot} className="stage-ch-sheet-slot" />
     </div>
   )
 }

@@ -24,10 +24,10 @@ export default function AnnotationRevisionHistory({ draftId, projectKey, refresh
     return () => { active = false }
   }, [draftId, projectKey, key])
   if (!loaded || loaded.key !== key || loaded.entries.length === 0) return null
-  return <details className="annotation-revision-history"><summary>{text(`批注历史版本（${loaded.entries.length}）`, `Annotation history (${loaded.entries.length})`)}</summary>
+  return <details className="stage-ch-passed annotation-revision-history"><summary>{text(`批注历史版本（${loaded.entries.length}）`, `Annotation history (${loaded.entries.length})`)}</summary>
     {loaded.entries.map(({ diff, ...entry }) => {
-      return <details key={entry.id}><summary>{sqliteTime(entry.createdAt).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })} · {text(`新增 ${diff.added} 处，删除 ${diff.removed} 处`, `${diff.added} added, ${diff.removed} removed`)}</summary>
-        {entry.annotations.map(note => <p key={note.id}><b>{note.selectedText}</b>：{note.instruction}</p>)}
+      return <details key={entry.id} className="stage-ch-passed"><summary>{sqliteTime(entry.createdAt).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })} · {text(`新增 ${diff.added} 处，删除 ${diff.removed} 处`, `${diff.added} added, ${diff.removed} removed`)}</summary>
+        {entry.annotations.map(note => <div key={note.id} className="cm-annotation"><span className="cm-annotation-quote">{note.selectedText}</span><p>{note.instruction}</p></div>)}
         <div className="inline-annotation-prose">{diff.paragraphs.map((paragraph, i) => <p key={i}>{paragraph.map((part, j) => part.kind === 'added' ? <ins key={j}>{part.text}</ins> : part.kind === 'removed' ? <del key={j}>{part.text}</del> : <span key={j}>{part.text}</span>)}</p>)}</div>
       </details>
     })}

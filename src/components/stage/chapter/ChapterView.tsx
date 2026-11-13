@@ -175,6 +175,8 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 onCharCountChange={setCharCount}
                 onChange={draft.onBodyChange}
                 onSave={body => draft.save(body)}
+                annotationSlot={sheetSlot}
+                chapterAnnotations
                 onCommitAnnotations={async (before, after, annotations) => {
                   const activeSession = captureProjectSession(useProjectStore.getState().currentProject)
                   const savedTab = useEditorStore.getState().tabs.find(item => item.id === tab.id)
