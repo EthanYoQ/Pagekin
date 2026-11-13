@@ -90,19 +90,22 @@ function importReply(prompt) {
 }
 
 /** 按提示里的章范围回齐全蓝图；关闭时回正文，使解析失败、留下蓝图恢复稿。 */
-function directoryReply(prompt) {
+function directoryReply(prompt, newcomerChapter) {
   const range = /为接下来的 第(\d+)章到第(\d+)章/u.exec(prompt)
   if (!range) return null
   const [from, to] = [Number(range[1]), Number(range[2])]
   return { kind: 'directory-blueprints', content: JSON.stringify({ blueprints: Array.from({ length: to - from + 1 }, (_, index) => from + index).map(chapterNumber => ({
     chapterNumber, title: `雾港第${chapterNumber}夜`, role: '发展', purpose: '推进灯塔线索', keyEvents: '林岚沿着潮汐表继续追查沉船的来历',
-    characters: ['林岚'], relationships: [], suspenseHook: '雾钟又在深夜响起' })) }) }
+    ...(chapterNumber === newcomerChapter
+      ? { characters: ['林岚', '雾灯人'], newCharacterCandidates: [{ name: '雾灯人', role: 'supporting' }], relationships: [{ from: '雾灯人', to: '林岚', relation: '暗中守护' }] }
+      : { characters: ['林岚'], relationships: [] }),
+    suspenseHook: '雾钟又在深夜响起' })) }) }
 }
 
 function responseFor(prompt, { extraction, plotTree, review, characterState, importInference, directoryBlueprints }) {
   const imported = importInference ? importReply(prompt) : null
   if (imported) return imported
-  const directory = directoryBlueprints ? directoryReply(prompt) : null
+  const directory = directoryBlueprints ? directoryReply(prompt, directoryBlueprints) : null
   if (directory) return directory
   if (prompt.includes('不可变小说配置 JSON 合同') || prompt.includes('Immutable novel-configuration JSON contract')) {
     return { kind: 'config', content: JSON.stringify(FIXTURE_CONFIG) }
@@ -192,6 +195,7 @@ export async function startFakeModel(diagnostics) {
   /** 之后的参考小说导入：全局推演回一份合法 JSON（三张角色卡），分批蓝图推演按本批章号回齐全的蓝图。 */
   const failRerank = (failed = true) => { failedRerank = failed }
   const replyImport = () => { importInference = true }
+  /** 之后的蓝图生成回齐全蓝图；传章号时那一章带一个新角色候选和他的关系，传 false 恢复。 */
   const replyDirectoryBlueprints = (on = true) => { directoryBlueprints = on }
   const rejectContextLength = (rejected = true, { sample: sampleName = 'deepseek', times = Infinity } = {}) => {
     if (!rejected) { contextLengthRejection = null; return }

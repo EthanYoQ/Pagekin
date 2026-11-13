@@ -1,8 +1,8 @@
 import { parsePlanningTargetUnits, planningTargetInstruction, DEFAULT_PLANNING_ACTION_CHAPTERS } from '../../../shared/plot-outline-contract'
-import type { CharacterProposalChoices } from '../../character-proposal-choices'
+import { adoptedRelationships, type CharacterProposalChoices } from '../../character-proposal-choices'
 import { decodeCharacterIdentityManifest, decodeCharacterDetails, validateCharacterDetail, type CharacterIdentitySlot, type CharacterDetailOutput } from '../../../shared/character-proposal-parser'
 import type { CharacterProposalBatch } from '../../../shared/character-proposal'
-import { defaultCharacterProposalRelationships, defaultCharacterProposalSelections, formatCharacterProposalPreview } from '../character-proposal-preview'
+import { defaultCharacterProposalSelections, formatCharacterProposalPreview } from '../character-proposal-preview'
 import type { MainGenerationRunHandle } from '../../generation/generation-runtime'
 import type { ArchitecturePlanningIntent, GenerationRecoveryContext } from '../../../shared/generation-owner-contract'
 import { PLOT_OUTLINE_PROTOCOL, plotOutlinePurpose, plotOutlineRequestContract, plotOutlineSourceInvalidText, joinPlotOutlineEntries, renderPlotOutlineRange, type PlotOutlineProgress } from '../../../shared/plot-outline-contract'
@@ -1261,7 +1261,7 @@ export class AdoptGeneratedCharactersCommand extends BaseWorkflowCommand<string>
     const result = await ipc.invokeWithProjectSession(session, 'character-proposal:approve', {
       proposalBatchId: shown.proposalBatchId, expectedRevision: shown.revision,
       operationId: `character-adoption:${context.runId}`, selections: choices?.selections ?? defaultCharacterProposalSelections(shown),
-      relationships: choices?.relationships ?? defaultCharacterProposalRelationships(shown),
+      relationships: choices ? adoptedRelationships(shown, choices) : [],
     })
     context.data.characterProposalBatch = result.batch
     this.notifyRefresh(['characterCards'], session.projectPath, session)

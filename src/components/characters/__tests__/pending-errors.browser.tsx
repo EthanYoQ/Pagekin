@@ -42,6 +42,7 @@ beforeEach(() => {
   setActiveProjectSessionContext(session)
   invoke = vi.fn(async (channel: string) => {
     if (channel === 'character-proposal:read-pending-finalized') return batch
+    if (channel === 'character-identity:read') return { revision: 1, characters: [], aliases: [], relationships: [] }
     if (channel === 'finalized-character:read-state-candidate') return candidate
     if (channel === 'character-proposal:approve') throw rejected(channel, 'CHARACTER_ID_REVISION_CONFLICT')
     if (channel === 'finalized-character:decide-state-candidate') throw rejected(channel, 'FINALIZED_CHARACTER_STATE_FIELD_CONFLICT')

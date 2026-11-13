@@ -1,4 +1,4 @@
-import type { CharacterProposalBatch } from '../../shared/character-proposal'
+import type { ApproveCharacterProposalRequest, CharacterProposalBatch } from '../../shared/character-proposal'
 import { getCharacterRoleLabels } from '../../shared/character-role'
 
 type Text = (zh: string, en: string) => string
@@ -10,14 +10,39 @@ export function defaultCharacterProposalSelections(batch: CharacterProposalBatch
       ? { selectionKey: item.selectionKey, action: 'create' as const }
       : { selectionKey: item.selectionKey, action: 'keep-unresolved' as const })
 }
-/** Names are display labels. Only declared selection-key endpoints can become proposed edges. */
-export function defaultCharacterProposalRelationships(batch: CharacterProposalBatch) {
-  const adoptedKeys = new Set(defaultCharacterProposalSelections(batch)
-    .filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
-  return batch.items.flatMap(item => adoptedKeys.has(item.selectionKey)
-    ? item.relationships.flatMap(relation => relation.targetSelectionKey && adoptedKeys.has(relation.targetSelectionKey)
-      ? [{ sourceSelectionKey: item.selectionKey, targetSelectionKey: relation.targetSelectionKey, relation: relation.relation }]
-      : []) : [])
+type Identity = { characterId: string; name: string; role?: string }
+type Relationship = NonNullable<ApproveCharacterProposalRequest['relationships']>[number]
+function relationTarget(batch: CharacterProposalBatch, relation: CharacterProposalBatch['items'][number]['relationships'][number],
+  identities: readonly Identity[]): { targetSelectionKey: string } | { targetCharacterId: string } | undefined {
+  if (relation.targetSelectionKey) return { targetSelectionKey: relation.targetSelectionKey }
+  const candidates = batch.items.filter(candidate => candidate.fields.name === relation.targetName)
+  const matches = identities.filter(identity => identity.name === relation.targetName)
+  if (candidates.length + matches.length !== 1) return undefined
+  return candidates.length ? { targetSelectionKey: candidates[0].selectionKey } : { targetCharacterId: matches[0].characterId }
+}
+/** 按落库后的两端去掉自指和重复：主进程遇到任一条都会拒绝整批。 */
+export function adoptableRelationships(selections: ApproveCharacterProposalRequest['selections'], relationships: readonly Relationship[]) {
+  const endpoint = (key: string) => { const selection = selections.find(item => item.selectionKey === key); return selection?.action === 'map' ? selection.characterId : key }
+  const seen = new Set<string>()
+  return relationships.filter(relation => {
+    const from = endpoint(relation.sourceSelectionKey), to = relation.targetSelectionKey ? endpoint(relation.targetSelectionKey) : relation.targetCharacterId
+    const key = JSON.stringify([from, to, relation.relation])
+    if (from === to || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+export const sameRelationship = (a: Relationship, b: Relationship) => a.sourceSelectionKey === b.sourceSelectionKey
+  && a.targetSelectionKey === b.targetSelectionKey && a.targetCharacterId === b.targetCharacterId && a.relation === b.relation
+export function proposalRelations(batch: CharacterProposalBatch, identities: readonly Identity[], selections: ApproveCharacterProposalRequest['selections']) {
+  const active = new Set(selections.filter(item => item.action !== 'keep-unresolved').map(item => item.selectionKey))
+  return batch.items.flatMap(item => item.relationships.map(relation => {
+    const target = relationTarget(batch, relation, identities)
+    const edge: Relationship | undefined = target && { sourceSelectionKey: item.selectionKey, ...target, relation: relation.relation }
+    const adoptable = !!edge && active.has(item.selectionKey) && (!edge.targetSelectionKey || active.has(edge.targetSelectionKey))
+      && adoptableRelationships(selections, [edge]).length > 0
+    return { sourceSelectionKey: item.selectionKey, targetName: relation.targetName, relation: relation.relation, edge, adoptable }
+  }))
 }
 export function formatCharacterProposalPreview(batch: CharacterProposalBatch, text: Text): string {
   if (!batch.items.length) return text('未发现明确角色，角色名单尚未更改。', 'No explicit characters were found; the roster is unchanged.')
