@@ -27,6 +27,8 @@ export type CodeMirrorEditorProps = {
   content: string
   filePath?: string
   recoveryHandle?: MainGenerationRunHandle
+  /** 同一运行再次请求恢复时换一个值，让读取失败后的再一次请求重新读取。 */
+  recoveryNonce?: number
   onGenerationHandle?: (handle: MainGenerationRunHandle) => void
   editable?: boolean
   onChange?: (content: string) => void
@@ -72,6 +74,7 @@ export default function CodeMirrorEditor({
   content,
   filePath,
   recoveryHandle,
+  recoveryNonce,
   onGenerationHandle,
   editable = true,
   onChange,
@@ -191,10 +194,10 @@ export default function CodeMirrorEditor({
     } catch { if (sequence === aiRequestSequenceRef.current) setAiError(uiText('原运行未完整完成，结果不可应用', 'The original run did not complete; its result cannot be applied.')) }
   }
 
-  const recoveryKey = recoveryHandle ? JSON.stringify(recoveryHandle) : ''
+  const recoveryKey = recoveryHandle ? JSON.stringify([recoveryNonce, recoveryHandle]) : ''
   useEffect(() => {
     if (!recoveryKey) return
-    const handle = JSON.parse(recoveryKey) as MainGenerationRunHandle
+    const [, handle] = JSON.parse(recoveryKey) as [number | undefined, MainGenerationRunHandle]
     const session = getActiveProjectSessionContext()
     if (!session) return
     const sequence = ++aiRequestSequenceRef.current

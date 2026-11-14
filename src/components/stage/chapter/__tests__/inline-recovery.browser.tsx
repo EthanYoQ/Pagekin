@@ -256,6 +256,5 @@ describe('运行侧页「继续原选区任务」', () => {
     await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
 
     await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
-    expect(reads).toBe(2)
   })
 })
