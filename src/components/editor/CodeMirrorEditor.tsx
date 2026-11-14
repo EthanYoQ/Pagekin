@@ -143,6 +143,8 @@ export default function CodeMirrorEditor({
   const [bubblePos, setBubblePos] = useState({ top: 0, left: 0, inView: true })
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
+  /** 复制失败的那段建议；只提示，不影响建议能否替换。 */
+  const [copyFailedFor, setCopyFailedFor] = useState<string | null>(null)
   const [activeAIAction, setActiveAIAction] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState<string | null>(null)
   const [activeNote, setActiveNote] = useState<string | null>(null)
@@ -631,8 +633,9 @@ export default function CodeMirrorEditor({
               ) : (
                 <p className="cm-selbar-text">{aiResult}</p>
               )}
+              {aiResult && copyFailedFor === aiResult && <p className="cm-selbar-error" role="alert">{uiText('复制失败', 'Copy failed')}</p>}
               <div className="cm-selbar-actions">
-                {aiResult && <Button variant="text" size="sm" onClick={() => navigator.clipboard.writeText(aiResult).catch(() => setAiError(uiText('复制失败', 'Copy failed')))}>{uiText('复制', 'Copy')}</Button>}
+                {aiResult && <Button variant="text" size="sm" onClick={() => navigator.clipboard.writeText(aiResult).then(() => setCopyFailedFor(null), () => setCopyFailedFor(aiResult))}>{uiText('复制', 'Copy')}</Button>}
                 <Button variant="secondary" size="sm" onClick={handleRejectAI}>{uiText('取消', 'Cancel')}</Button>
                 <Button
                   variant="primary"
