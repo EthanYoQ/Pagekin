@@ -492,12 +492,12 @@ export class RunFinalizePostProcessCommand extends BaseWorkflowCommand<PostProce
 
 // ===== 定稿命令 =====
 
-export class FinalizeChapterCommand extends BaseWorkflowCommand<void> {
+export class FinalizeChapterCommand extends BaseWorkflowCommand<PostProcessStatus> {
   constructor(private params: FinalizeChapterParams) {
     super()
   }
 
-  async execute({ context, callbacks }: CommandExecuteParams): Promise<void> {
+  async execute({ context, callbacks }: CommandExecuteParams): Promise<PostProcessStatus> {
     const uiText = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
     const projectSession = requireWorkflowProjectSession(context)
     const project = useProjectStore.getState().currentProject
@@ -621,6 +621,7 @@ export class FinalizeChapterCommand extends BaseWorkflowCommand<void> {
     ))
     this.assertNotCancelled(context)
     await useProjectStore.getState().refreshFileTree(project.path, undefined, projectSession)
+    return postProcessStatus
   }
 
   private async createBatchSnapshot(

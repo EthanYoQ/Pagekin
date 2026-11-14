@@ -38,7 +38,7 @@ import { resolveDefaultUserData, resolveGlobalDataRoots } from './services/app-d
 import { runGlobalDataMigration, activateGlobalData } from './services/global-data-migration'
 import { ensureVelaHome } from './utils/config-utils'
 import type { StartupBlockedCode, StartupMigrationNotice } from '../src/shared/startup-contract'
-import { APP_BRAND } from '../src/shared/brand'
+import { APP_BRAND, APP_ID } from '../src/shared/brand'
 
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
@@ -48,6 +48,7 @@ import path from 'node:path'
 if (process.platform === 'win32') {
   app.commandLine.appendSwitch('disable-gpu-sandbox')
 }
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 

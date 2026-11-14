@@ -33,6 +33,7 @@ export async function createReviewRevisionRecoveryWorkflow(projectSession: Proje
   return { type: 'chapter_creation', title: name, projectPath: session.projectPath, projectSession: session,
     generationModelId: recovery.modelId, uiLocale: frozen.uiLocale,
     resourceKeys: [workflowResourceKey('chapter', source.chapterNumber)],
+    backgroundNotice: { stage: frozen.operation === 'review-chapter' ? 'review' : 'revise', chapterNumber: source.chapterNumber },
     steps: [{ name, description: requestsReview
       ? (frozen.uiLocale === 'en-US' ? 'Send a new model request within the original action budget; preserve the source draft.' : '沿用原任务预算，重新调用模型；原稿保留。')
       : frozen.uiLocale === 'en-US' ? 'Continue the original action and preserve its budget.' : '沿用原任务与预算，保存前重新核对来源。',

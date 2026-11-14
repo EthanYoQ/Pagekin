@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PRODUCT_NAME, PRODUCT_NAMES, resolvePackagedWindowsExecutable, resolveWindowsExecutable } from '../product-identity.mjs'
+import { APP_ID } from '../../src/shared/brand'
 
 const windowsIt = process.platform === 'win32' ? it : it.skip
 
@@ -19,6 +20,11 @@ describe('product identity used by release scripts', () => {
   it('matches the productName electron-builder packages with', () => {
     const config = readFileSync('electron-builder.json5', 'utf8')
     expect(/"productName":\s*"([^"]+)"/.exec(config)?.[1]).toBe(PRODUCT_NAME)
+  })
+
+  it('keeps the shared APP_ID equal to the appId electron-builder packages with', () => {
+    const config = readFileSync('electron-builder.json5', 'utf8')
+    expect(/"appId":\s*"([^"]+)"/.exec(config)?.[1]).toBe(APP_ID)
   })
 
   it('gives the PowerShell smoke library the same names in the same order', () => {
