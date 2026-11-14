@@ -461,12 +461,15 @@ function draftEntry({ view, recovery }: RecoverySources['drafts'][number], local
  * 这次打开作品后还在进行的工作：它正显示在运行卡片里，不是中断留下的。
  * 单章与审修要这次打开里有单章运行正占着这一章：会话内失败时持久状态不会改，仍记为 running，不能当作还在写。
  * 批量运行也占着各章，但它写的正文带批次号、不列为单章条目（use-run-recovery），也不跑审修，所以不算。
- * 选区生成不是工作流运行，看 epoch：上次打开时没写完的换过会话，仍算可恢复。
+ * 选区生成不是工作流运行，看 epoch：上次打开时没写完的换过会话，仍算可恢复。这次打开里写完的运行状态仍是 running，有完整建议就不算在写。
  * 批量看进行中（含暂停）的批量运行：资源锁让同一批章同时只有一个批量运行在写，范围相同就是它在推进这一批。
  */
 export function isInFlight(entry: RecoveryEntry, leaseId: string | undefined, liveRuns: readonly Pick<WorkflowRun, 'type' | 'resourceKeys'>[]): boolean {
   if (entry.kind === 'batch') return liveRuns.some(run => run.type === 'batch_generate' && sameChapters(run.resourceKeys, entry.range))
-  if (entry.kind === 'editor') return entry.recovery.view.status === 'running' && entry.recovery.view.handle.epoch === leaseId
+  if (entry.kind === 'editor') {
+    const { view } = entry.recovery
+    return view.status === 'running' && view.handle.epoch === leaseId && !(view.candidates ?? view.artifacts).some(item => item.status === 'completed')
+  }
   if ((entry.kind !== 'draft' && entry.kind !== 'review') || entry.chapterNumber === undefined) return false
   const chapter = workflowResourceKey('chapter', entry.chapterNumber)
   return entry.view.status === 'running' && entry.view.handle.epoch === leaseId
