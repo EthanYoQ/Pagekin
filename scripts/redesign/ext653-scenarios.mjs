@@ -234,10 +234,7 @@ export const EXT653_SCENARIOS = {
     return measured
   } },
 
-  /**
-   * 旧版本（--app-root 指向已构建的 origin/master，上一版 schema）造示例作品，第 4 章两稿；读库记下正文与版本。
-   * 换本工作树的构建重启打开同一作品：迁到当前 schema，正文与版本哈希逐条相同，版本切换器仍列出两稿。
-   */
+  // 旧版本由 --app-root 指向已构建的 origin/master 造库；换本工作树构建重启后同一作品的正文与版本哈希须逐条不变。
   'ext653-old-library': { model: false, shell: 'stage', setup: seedFourthChapterVersion, run: async context => {
     const measured = {}
     measured.before = await draftFacts(context.projectPath)
