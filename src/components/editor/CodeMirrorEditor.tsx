@@ -37,6 +37,8 @@ export type CodeMirrorEditorProps = {
   paperHead?: PaperHead | null
   /** 编辑器随内容长高、不自己滚动，由外层页面一起滚动（单章视图的纸面）。 */
   fitContent?: boolean
+  /** 外层滚动容器顶部被吸顶内容挡住的高度，滚动定位时让开。 */
+  stickyTopInset?: (editor: HTMLElement) => number
   /** 段落首行缩进两字（只是显示，见 paragraph-indent）。 */
   paragraphIndent?: boolean
 }
@@ -80,6 +82,7 @@ export default function CodeMirrorEditor({
   mode = 'document',
   paperHead = null,
   fitContent = false,
+  stickyTopInset,
   paragraphIndent: indentParagraphs = false,
 }: CodeMirrorEditorProps) {
   const inkThemeName = useThemeStore(s => s.resolvedTheme)
@@ -411,9 +414,10 @@ export default function CodeMirrorEditor({
     }
     if (mode === 'prose') exts.push(...livePreview())
     if (indentParagraphs) exts.push(paragraphIndent)
+    if (stickyTopInset) exts.push(EditorView.scrollMargins.of(view => ({ top: stickyTopInset(view.dom) })))
     exts.push(paperHeadFacet.of(stablePaperHead))
     return exts
-  }, [mode, stablePaperHead, uiLocale, indentParagraphs])
+  }, [mode, stablePaperHead, uiLocale, indentParagraphs, stickyTopInset])
 
   // AI 菜单处理（流式调用，实时显示生成内容）
   const handleAIAction = async (request: EditorInlineRequest) => {

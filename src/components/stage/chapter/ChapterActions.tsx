@@ -412,7 +412,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
 
   return (
     <>
-      {!draft.mergeData && <div className="stage-ch-actions">{bar}</div>}
+      {!draft.mergeData && <div className="stage-ch-actions stage-ch-actions-sticky">{bar}</div>}
       <div className="stage-ch-notices">
         {!draft.mergeData && reopening && (
           <Notice title={text(`正在修改已定稿的${chapterLabel(chapterNumber, text)}`, `Editing finalized ${chapterLabel(chapterNumber, text).toLowerCase()}`)}>
