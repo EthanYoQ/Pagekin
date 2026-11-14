@@ -227,11 +227,21 @@ export default function CodeMirrorEditor({
       setBubblePos({ top: coords?.top ?? 150, left: coords?.left ?? 200, inView: true })
       setBubbleOpen(true)
       if (resumable) void handleResumeAI()
-    }).catch(() => { if (sequence === aiRequestSequenceRef.current) { setAiResult(''); setAiError(uiText('无法恢复原运行', 'The original run could not be restored.')); setBubbleOpen(true) } })
+    }).catch(() => {
+      if (sequence !== aiRequestSequenceRef.current) return
+      const view = editorRef.current?.view
+      const coords = view?.coordsAtPos(view.state.selection.main.from)
+      setBubblePos({ top: coords?.top ?? 150, left: coords?.left ?? 200, inView: true })
+      setAiResult(''); setAiError(uiText('无法恢复原运行', 'The original run could not be restored.')); setBubbleOpen(true)
+    })
     return () => { client.detach(); aiRequestSequenceRef.current += 1 }
     // Navigation is explicit; later document changes are checked at acceptance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recoveryKey])
+
+  // 预览真的画出来才回执；编辑器在结果到达前卸载时没有回执，运行留在侧页可复制。
+  const previewShown = bubbleOpen && bubblePos.top !== 0 && !!aiResult
+  useEffect(() => { if (previewShown) inlineRef.current?.delivered() }, [previewShown, aiResult])
 
   useEffect(() => () => {
     inlineRef.current?.detach()
@@ -447,7 +457,7 @@ export default function CodeMirrorEditor({
       const view = editorRef.current.view
       requestSequence = ++aiRequestSequenceRef.current
       const input = { ...request, from: selectionRange.from, to: selectionRange.to,
-        selectedText: view.state.sliceDoc(selectionRange.from, selectionRange.to), documentText: view.state.doc.toString() }
+        selectedText: view.state.sliceDoc(selectionRange.from, selectionRange.to), documentText: view.state.doc.toString(), ...(filePath ? { filePath } : {}) }
       aiTargetRef.current = { ...input, requestSequence, filePath, sessionKey: JSON.stringify(session) }
       inlineRef.current?.detach()
       const client = createEditorInlineGeneration(session)

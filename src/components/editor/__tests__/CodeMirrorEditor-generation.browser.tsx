@@ -505,6 +505,7 @@ it.each([false, true])('明确 handle 恢复原候选；文件改变=%s 时只�
   const documentText = '甲😀乙'
   const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
   invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'editor-inline:delivered') return undefined
     if (channel !== 'editor-inline:read-recovery') throw new Error('恢复不可创建或执行新请求:' + channel)
     return { view: { handle, status: 'completed', artifacts: [{ ...handle, artifactId: '原artifact', textHash: 'proof-hash', text: '替换表情', status: 'completed', compositionEligible: true }] }, modelId: '原模型', sourceStatus: 'current', context: { action: 'refine', kind: 'author-draft', documentText, documentHash, from: 1, to: 3, selectedText: '😀' } }
   })
@@ -516,7 +517,8 @@ it.each([false, true])('明确 handle 恢复原候选；文件改变=%s 时只�
   const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
   expect(view.state.doc.toString()).toBe(changedFile ? documentText : '甲替换表情乙')
   if (changedFile) await expect.element(page.getByText('正文或原目标已变化，结果未应用；你仍可复制预览内容')).toBeVisible()
-  expect(invoke).toHaveBeenCalledTimes(2)
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:read-recovery')).toHaveLength(2)
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered').map(([, request]) => request)).toEqual([{ handle }])
 })
 
 it('明确 handle 恢复按意见改的候选时显示当时的意见', async () => {

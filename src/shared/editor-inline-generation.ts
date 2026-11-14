@@ -11,6 +11,8 @@ export type EditorInlineInput = EditorInlineRequest & {
   from: number
   to: number
   selectedText: string
+  /** 发起时所在稿的 filePath。续跑按它找回原稿；升级前的运行没有，只能在侧页复制。 */
+  filePath?: string
 }
 export type EditorInlineContext = EditorInlineInput & {
   kind: 'author-draft'
@@ -29,4 +31,6 @@ export interface EditorInlineGenerationChannels {
   'editor-inline:read-recovery': { args: [{ handle: MainGenerationRunHandle }]; return: EditorInlineRecovery }
   'editor-inline:execute': { args: [{ handle: MainGenerationRunHandle }]; return: MainGenerationExecuteReceipt }
   'editor-inline:cancel': { args: [{ handle: MainGenerationRunHandle }]; return: MainGenerationRunView }
+  /** 气泡把这次的建议显示给作者了；之后运行侧页不再列出它。 */
+  'editor-inline:delivered': { args: [{ handle: MainGenerationRunHandle }]; return: void }
 }

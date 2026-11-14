@@ -12,10 +12,11 @@ import { useLocaleStore } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowStore, type WorkflowDefinition } from '../../stores/workflow-store'
 import {
-  buildRecoveryEntries, continuedEditorEntry, EMPTY_RECOVERY_SOURCES, planningTitle,
+  buildRecoveryEntries, EMPTY_RECOVERY_SOURCES, planningTitle,
   type BatchEntry, type CandidateEntry, type DraftEntry, type EditorEntry, type PlanningEntry, type RecoveryEntry, type RecoverySources, type ReviewEntry,
 } from './run-recovery'
 import { displayedErrorMessage } from '../../i18n/app-errors'
+import { leaveSettingsThen } from '../settings/unsaved-settings'
 import { hideRecovery, readHiddenRecovery } from './hidden-recovery'
 import { projectRuns } from './run-output'
 import type { GenerationRecoveryList } from '../../shared/generation-owner-contract'
@@ -87,7 +88,6 @@ export function useRunRecovery(): RunRecovery {
   const projectId = session?.projectId
   const hiddenEarlier = useMemo(() => projectId ? readHiddenRecovery(projectId) : new Set<string>(), [projectId])
   const [hiddenNow, setHiddenNow] = useState<ReadonlySet<string>>(new Set())
-  const continued = useStageStore(s => s.continuedSelections)
 
   useEffect(() => {
     if (!session) {
@@ -153,11 +153,9 @@ export function useRunRecovery(): RunRecovery {
   const entries = useMemo(() => {
     if (!session) return []
     const ofSession = <T,>(loaded: Loaded<T>, empty: T) => sameProjectSessionContext(loaded.session, session) ? loaded.value : empty
-    const listed = buildRecoveryEntries({ ...ofSession(generationList, { ...EMPTY_RECOVERY_SOURCES, partial: false }), candidates: ofSession(candidateList, []) }, locale)
-    const kept = Object.values(continued && sameProjectSessionContext(continued.session, session) ? continued.byRun : {}).filter(entry => !listed.some(item => item.kind === 'editor' && item.key === entry.key))
-    return [...listed, ...kept]
+    return buildRecoveryEntries({ ...ofSession(generationList, { ...EMPTY_RECOVERY_SOURCES, partial: false }), candidates: ofSession(candidateList, []) }, locale)
       .filter(entry => !('hideKey' in entry) || (!hiddenEarlier.has(entry.hideKey) && !hiddenNow.has(entry.hideKey)))
-  }, [session, generationList, candidateList, continued, locale, hiddenEarlier, hiddenNow])
+  }, [session, generationList, candidateList, locale, hiddenEarlier, hiddenNow])
 
   const stillCurrent = useCallback(() => session !== null && sameProjectSessionContext(session, currentSession()), [session])
 
@@ -252,26 +250,25 @@ export function useRunRecovery(): RunRecovery {
       await ipc.invokeWithProjectSession(current, 'generation:dismiss-planning-recovery', { handle: entry.recovery.handle })
       globalEventBus.emit('PLANNING_RECOVERY_CHANGED', { projectSession: current })
     }),
-    /** 选区位置是发起时正文里的偏移，恰好一个已打开标签的正文一字不差才能在原选区气泡续跑；否则在侧页续跑，建议留在卡片上。 */
+    /**
+     * 发起时那一稿还开着、正文一字不差（选区是那时的偏移），才离开设置页回到它的原选区气泡续跑；
+     * 否则在侧页续跑，气泡没显示过的建议主进程一直列着，卡片上可复制。
+     */
     continueEditor: entry => {
       if (!session || !stillCurrent()) return
-      const { handle } = entry.recovery.view
-      const tabs = useEditorStore.getState().tabs.filter(tab => tab.projectKey === session.projectPath && isChapterViewTab(tab)
-        && tab.content === entry.recovery.context.documentText)
-      const tab = tabs.length === 1 ? tabs[0] : undefined
-      if (tab?.filePath) {
-        useStageStore.setState({ selectionRequest: { session, filePath: tab.filePath, handle, nonce: ++selectionRequests } })
-        useEditorStore.getState().setActiveTab(tab.id)
+      const { view: { handle }, context } = entry.recovery
+      const tab = context.filePath === undefined ? undefined : useEditorStore.getState().tabs.find(tab => tab.projectKey === session.projectPath
+        && isChapterViewTab(tab) && tab.filePath === context.filePath && tab.content === context.documentText)
+      if (tab) {
+        leaveSettingsThen(() => {
+          useStageStore.setState({ selectionRequest: { session, filePath: context.filePath!, handle, nonce: ++selectionRequests } })
+          useEditorStore.getState().setActiveTab(tab.id)
+        })
         return
       }
       void act(async current => {
         const receipt = await ipc.invokeWithProjectSession(current, 'editor-inline:execute', { handle })
         if (!stillCurrent()) return
-        const text = receipt.outcome.content
-        if (text.trim()) useStageStore.setState(({ continuedSelections: kept }) => ({ continuedSelections: { session: current, byRun: {
-          ...(kept && sameProjectSessionContext(kept.session, current) ? kept.byRun : {}),
-          [entry.key]: continuedEditorEntry(entry, text),
-        } } }))
         setRefreshTick(value => value + 1)
         throwIfTerminalProviderFailure(receipt.outcome.receipt)
       })

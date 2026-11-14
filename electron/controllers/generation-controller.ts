@@ -270,6 +270,7 @@ export function registerGenerationController(options: {
   register('editor-inline:read-recovery', 1, (owner, request) => owner.readEditorInlineRecovery(request.handle))
   register('editor-inline:execute', 1, (owner, request) => owner.executeEditorInline(request.handle))
   register('editor-inline:cancel', 1, (owner, request) => owner.cancelEditorInline(request.handle))
+  register('editor-inline:delivered', 1, (owner, request) => owner.acknowledgeEditorInline(request.handle))
   register('agent-generation:resume', 1, (owner, request) => owner.agents.resume(request.handle))
   register('agent-generation:round', 1, (owner, request) => owner.agents.executeRound(request))
   register('agent-generation:claim-tool', 1, (owner, request) => owner.agents.claimTool(request))

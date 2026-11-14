@@ -308,11 +308,6 @@ function editorEntry(recovery: EditorInlineRecovery, locale: Locale): EditorEntr
   }
 }
 
-export function continuedEditorEntry(entry: EditorEntry, text: string): EditorEntry {
-  const suggestions = [{ id: entry.key, text }]
-  return { ...entry, usage: undefined, canContinue: false, suggestions, hideKey: hideKeyOf(entry.key, [...suggestions, ...entry.tails]) }
-}
-
 const SEVERITY_ORDER = { error: 0, warning: 1, pass: 2 } as const
 
 /**

@@ -1112,7 +1112,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       },
       editor: (handle: MainGenerationRunHandle) => {
         const recovery = readEditorInlineRecovery(handle), outputs = recovery.view.candidates ?? recovery.view.artifacts
-        const settled = recovery.view.status === 'cancelled' || outputs.some(item => item.status === 'completed' && item.compositionEligible === true)
+        const settled = recovery.view.status === 'cancelled' || !repository.editorInlineAwaitingDelivery(handle.runId)
+          && outputs.some(item => item.status === 'completed' && item.compositionEligible === true)
         if (tailedRuns.has(handle.runId) || !settled && (editorCanContinue(recovery) || outputs.some(hasText))) list.editors.push(recovery)
       },
       draft: (handle: MainGenerationRunHandle) => {
@@ -1599,7 +1600,11 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       }
       if (deps.database.prepare('SELECT COUNT(*) FROM generation_attempts WHERE run_id=?').pluck().get(run.runId) !== 0) throw new Error('GENERATION_EDITOR_ATTEMPT_CONFLICT')
       const current = viewOf(run).nonReplayable ? await resume(handleOf(run)) : viewOf(run)
+      repository.markEditorInlineAwaitingDelivery(run.runId)
       return execute({ handle: current.handle, invocationNonce, task }, false, false, true)
+    },
+    acknowledgeEditorInline: (handle: MainGenerationRunHandle) => {
+      repository.recordEditorInlineDelivery(requireEditorInlineRun(handle).runId)
     },
     readImportGeneration: (slot: ImportGenerationSlot, runId?: string) => {
       assertCurrent()
