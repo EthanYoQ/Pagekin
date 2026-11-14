@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => {
       commandLine: { appendSwitch: vi.fn(), getSwitchValue: vi.fn(() => '') },
       getPath: vi.fn((name: string) => name === 'appData' ? mocks.appData : mocks.userData),
       setPath: vi.fn(),
+      setAppUserModelId: vi.fn(),
       getLocale: () => 'zh-CN',
       getVersion: () => '0.7.0',
       isPackaged: false,
@@ -140,6 +141,11 @@ describe('interactive Electron startup', () => {
     expect(fs.readFileSync(path.join(legacy, 'config.json'), 'utf8')).toBe('{}')
     expect(fs.readFileSync(path.join(mocks.userData, 'retained.json'), 'utf8')).toBe('original Chromium profile')
     expect(mocks.windows[0]?.on).toHaveBeenCalledWith('close', expect.any(Function))
+  })
+
+  it.runIf(process.platform === 'win32')('registers the installer appId so Windows notifications show under the app shortcut', async () => {
+    await import('../main')
+    expect(mocks.app.setAppUserModelId).toHaveBeenCalledWith('com.ai-novel-writer.app')
   })
 
   it('passes Electron appData to migration when no canonical override is configured', async () => {
