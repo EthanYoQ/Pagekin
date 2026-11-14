@@ -77,14 +77,25 @@ async function mount() {
   await act(async () => root!.render(<StageWorkspace library={false} focus={false} />))
 }
 
-async function openChapter(chapterNumber = 3) {
+async function openChapter(chapterNumber = 3, prepare?: (draft: ReturnType<typeof backend.addDraft>) => void) {
   const draft = backend.addDraft({ status: 'draft', chapterNumber })
+  prepare?.(draft)
   await act(async () => { await useDraftStore.getState().loadAllDrafts(SESSION.projectPath, SESSION) })
   const meta = Object.values(useDraftStore.getState().draftsByChapter).flat().find(candidate => candidate.id === draft.id)!
   await act(async () => { await openDraftTab(meta, `第 ${chapterNumber} 章`, SESSION) })
 }
 
 const executions = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:execute').length
+const deliveries = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered').length
+const withMergeableRevision = (draft: ReturnType<typeof backend.addDraft>) => { backend.addReview(draft); backend.addRevision(draft, 'refine') }
+
+/** 合并视图挡住编辑器时：建议在侧页卡片上可复制，也不回执。 */
+async function expectContinuedInSheet() {
+  await vi.waitFor(() => expect(executions()).toBe(1))
+  const card = page.getByRole('article').filter({ hasText: '编辑器选区建议' })
+  await expect.element(card.getByText(SUGGESTION)).toBeVisible()
+  expect(deliveries()).toBe(0)
+}
 const editor = () => EditorView.findFromDOM(host!.querySelector('.cm-editor')!)!
 const editorText = () => editor().state.doc.toString()
 
@@ -320,6 +331,68 @@ describe('运行侧页「继续原选区任务」', () => {
 
     expect(useLayoutStore.getState().settingsOpen).toBe(false)
     await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
+  })
+
+  it('气泡续跑期间打开设置页：生成完成时预览看不见就不回执，关掉设置页看到建议才回执', async () => {
+    let finish!: () => void
+    await interruptedSelectionRun(ORIGINAL, new Promise<void>(resolve => { finish = resolve }))
+    await mount()
+    await openChapter()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+    await vi.waitFor(() => expect(executions()).toBe(1))
+
+    await act(async () => useLayoutStore.setState({ settingsOpen: true }))
+    await act(async () => finish())
+    await act(async () => new Promise(resolve => setTimeout(resolve, 50)))
+    expect(deliveries()).toBe(0)
+
+    await act(async () => useLayoutStore.setState({ settingsOpen: false }))
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
+    await vi.waitFor(() => expect(deliveries()).toBe(1))
+  })
+
+  it('修稿合并视图开着时点「继续原选区任务」：合并视图留着，在侧页续跑，建议留在卡片上', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await mount()
+    await openChapter(3, withMergeableRevision)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
+    await expectContinuedInSheet()
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+  })
+
+  it('原稿在后台标签且有待合并修稿（切过去会摆出合并视图）：不切标签，在侧页续跑', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await mount()
+    await openChapter(3, withMergeableRevision)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    await openChapter(4)
+    const fourth = useEditorStore.getState().activeTabId
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
+    await expectContinuedInSheet()
+    expect(useEditorStore.getState().activeTabId).toBe(fourth)
+  })
+
+  it('正在查看不能合并的修稿时点「继续原选区任务」：不退出查看，在侧页续跑', async () => {
+    const edited = `${ORIGINAL}\n\n作者后来补的一段。`
+    await interruptedSelectionRun(edited)
+    await mount()
+    await openChapter(3, draft => { withMergeableRevision(draft); draft.content = edited })
+    await act(async () => page.getByRole('button', { name: '查看修稿' }).click())
+    await expect.element(page.getByText('修订仍可查看但不能合并', { exact: false })).toBeVisible()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
+    await expectContinuedInSheet()
+    await expect.element(page.getByText('修订仍可查看但不能合并', { exact: false })).toBeVisible()
   })
 
   it('第一次在气泡里读不出原运行，再从侧页点「继续原选区任务」会重新读取并续跑', async () => {
