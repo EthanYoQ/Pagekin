@@ -15,14 +15,14 @@
   flex: 1;
   min-width: 0;
   overflow: auto;
-  padding: 28px 32px 64px;
+  padding: 0 32px 64px;
   container: page / inline-size;
 }
 
 /* 纸面宽度取版心加左右留白，1280 宽时正文一行正好 34 字 */
 .stage-ch-page {
   max-width: calc(34 * var(--prose-size) + 144px);
-  margin: 0 auto;
+  margin: 28px auto 0;
   padding: 52px 72px 88px;
   border-radius: var(--radius-sm);
   background: var(--paper);
@@ -127,6 +127,16 @@
   margin: 26px 0 34px;
   padding-bottom: 26px;
   border-bottom: 1px solid var(--rule);
+}
+
+/* 外边距挪 12px 进内边距，吸住时按钮不贴视区顶边 */
+.stage-ch-actions-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-top: 14px;
+  padding-top: 12px;
+  background: var(--focus-paper, var(--paper));
 }
 
 .stage-ch-hint {

@@ -63,6 +63,8 @@ function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
   return report?.key === key ? report : null
 }
 
+const stickyActionsHeight = (editor: HTMLElement) => editor.closest('.stage-ch-page')?.querySelector<HTMLElement>('.stage-ch-actions-sticky')?.offsetHeight ?? 0
+
 /**
  * 正文单章视图：章节头、生命周期、章节动作条、版本切换器与纸面正文。待写章显示本章蓝图与写作此章。
  * 审稿报告是视图里的侧页，修稿合并在纸面上逐段选择，定稿后显示后处理四步；全程不需要离开这个标签。
@@ -166,6 +168,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
               <CodeMirrorEditor
                 mode="prose"
                 fitContent
+                stickyTopInset={stickyActionsHeight}
                 paragraphIndent
                 content={tab.content ?? ''}
                 filePath={filePath}
