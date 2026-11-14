@@ -178,8 +178,15 @@ describe('长恢复候选', () => {
       return element
     })
     scroller.scrollTop = scroller.scrollHeight / 2
-    await userEvent.click(page.getByText('第 80 段。', { exact: false }))
+    const reading = await vi.waitFor(() => {
+      const middle = scroller.getBoundingClientRect().top + scroller.clientHeight / 2
+      const line = [...host!.querySelectorAll<HTMLElement>('.cm-line')].find(line => line.textContent && line.getBoundingClientRect().top >= middle)
+      expect(line).toBeDefined()
+      return line!
+    })
+    await userEvent.click(reading)
     await userEvent.keyboard('{Control>}f{/Control}')
+    expect(host!.querySelector('.cm-content')!.getBoundingClientRect().top).toBeLessThan(-scroller.clientHeight)
     const input = host!.querySelector<HTMLInputElement>('.cm-search input[name="search"]')!
     const rect = input.getBoundingClientRect()
     expect(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)).toBe(input)
