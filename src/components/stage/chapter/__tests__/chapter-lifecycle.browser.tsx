@@ -906,10 +906,13 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(bar.getBoundingClientRect().bottom)
   })
 
-  it('读到中段按 Ctrl F：搜索框和动作条都在眼前，读到的那段没被挤出视口，往上找到的匹配不被挡住', async () => {
-    const draft = backend.addDraft({ status: 'draft', content: LONG })
-    await mount()
-    await openDraft(draft.id)
+  const hits = (element: Element) => {
+    const rect = element.getBoundingClientRect()
+    return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
+  }
+
+  /** 滚到正文中段，点视口下半的一行，按 Ctrl F。 */
+  async function searchFromMiddle() {
     const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
     await vi.waitFor(() => expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight * 4))
     scroller.scrollTop = scroller.scrollHeight / 2
@@ -924,11 +927,14 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     const reading = line.textContent!
     await userEvent.click(line)
     await userEvent.keyboard('{Control>}f{/Control}')
-    const input = document.querySelector<HTMLInputElement>('.cm-search input[name="search"]')!
-    const hits = (element: Element) => {
-      const rect = element.getBoundingClientRect()
-      return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
-    }
+    return { box, reading, input: document.querySelector<HTMLInputElement>('.cm-search input[name="search"]')! }
+  }
+
+  it('读到中段按 Ctrl F：搜索框和动作条都在眼前，读到的那段没被挤出视口，往上找到的匹配不被挡住', async () => {
+    const draft = backend.addDraft({ status: 'draft', content: LONG })
+    await mount()
+    await openDraft(draft.id)
+    const { box, reading, input } = await searchFromMiddle()
     expect(hits(input)).toBe(true)
     expect(hits(page.getByRole('button', { name: 'AI 审稿', exact: true }).element())).toBe(true)
     const readingRect = [...document.querySelectorAll('.cm-line')].find(candidate => candidate.textContent === reading)!.getBoundingClientRect()
@@ -943,6 +949,29 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
       const text = document.createRange()
       text.selectNodeContents(match!)
       expect(text.getClientRects()[0].top).toBeGreaterThanOrEqual(panel.bottom)
+    })
+  })
+
+  it('先按 Ctrl F、审稿读完动作条才出现：搜索框挪到动作条下面，两者都在眼前', async () => {
+    const draft = backend.addDraft({ status: 'draft', content: LONG })
+    backend.addReview(draft)
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const answer = backend.invoke.getMockImplementation()!
+    backend.invoke.mockImplementation(async (channel, ...args) => {
+      if (channel === 'db:review-cycle-get') await gate
+      return answer(channel, ...args)
+    })
+    await mount()
+    await openDraft(draft.id)
+    const { input } = await searchFromMiddle()
+    expect(document.querySelector('.stage-ch-actions-sticky')).toBeNull()
+    await act(async () => release())
+    const primary = page.getByRole('button', { name: '按 2 项意见修稿' })
+    await expect.element(primary).toBeVisible()
+    await vi.waitFor(() => {
+      expect(hits(input)).toBe(true)
+      expect(hits(primary.element())).toBe(true)
     })
   })
 })
