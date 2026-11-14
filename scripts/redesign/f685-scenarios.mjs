@@ -1,7 +1,9 @@
-// #685 实机场景：书童在后台时，开关关着审稿结束不发通知；打开后第 4 章定稿结束由主进程发一条；后处理有一步失败时同样按定稿完成通知。
+// #685 实机场景：书童在后台时，开关关着审稿结束不发通知；打开后第 4 章定稿结束由主进程发一条；后处理有一步失败时写「已定稿，有一步没完成」；批量创作整批结束只发一条。
 import assert from 'node:assert/strict'
 
+import * as blueprint from './pages/blueprint.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
+import * as runSheet from './pages/run-sheet.mjs'
 import * as stage from './pages/stage.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { finalizeChapter, openChapter } from './f491-scenarios.mjs'
@@ -15,7 +17,21 @@ async function recordNotifications(app) {
 }
 
 const recorded = app => app.evaluate(() => globalThis.__f685)
+/** 等运行结束、主进程记下第一条通知，再多等 2 秒确认没有第二条。 */
+async function notices(app, page) {
+  await runSheet.lastRun(page).waitFor({ state: 'visible', timeout: 120_000 })
+  for (const deadline = Date.now() + 10_000; (await recorded(app)).length === 0 && Date.now() < deadline;) await page.waitForTimeout(100)
+  await page.waitForTimeout(2_000)
+  return recorded(app)
+}
 const windowState = app => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(win => ({ focused: win.isFocused(), minimized: win.isMinimized() })))
+const withoutChapters3And4 = context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path: projectPath, session }) => {
+  for (const chapterNumber of [3, 4]) {
+    for (const draft of await invoke(page, 'db:draft-list', chapterNumber, projectPath, session)) {
+      assert.equal((await invoke(page, 'db:draft-delete', draft.id, projectPath, session)).success, true)
+    }
+  }
+} })
 const notifySwitch = page => page.getByRole('switch', { name: '在后台时通知我' })
 
 async function showAppearance(page) {
@@ -87,7 +103,31 @@ export const F685_SCENARIOS = {
     const steps = await chapterView.postProcessSteps(page)
     await shoot('f685-finalize-kb-failed')
     assert.equal(steps.find(step => step.label === '导入知识库')?.state, 'failed', '导入知识库失败')
-    assert.deepEqual(notices, [{ title: '第 4 章定稿完成', body: '回到书童查看结果。' }], '正文已定稿，后处理有一步失败时仍按定稿完成通知')
+    assert.deepEqual(notices, [{ title: '第 4 章已定稿，有一步没完成', body: '回到书童查看并重试。' }], '正文已定稿、后处理有一步失败时如实写没完成')
     return { notices, steps }
+  } },
+
+  'f685-batch-notice': { model: true, shell: 'stage', setup: withoutChapters3And4, run: async ({ app, page, shoot }) => {
+    await recordNotifications(app)
+    await blueprint.open(page)
+    await blueprint.startBatch(page, 1)
+    await runSheet.waitUntilOpen(page)
+    const finished = await notices(app, page)
+    await shoot('f685-batch-notice')
+    assert.deepEqual(finished, [{ title: '第 3 章批量创作完成', body: '回到书童查看结果。' }], '整批写完发一条')
+    return { finished, lastRun: await runSheet.lastRun(page).innerText() }
+  } },
+
+  'f685-batch-stopped': { model: true, shell: 'stage', setup: withoutChapters3And4, run: async ({ app, page, shoot }) => {
+    await recordNotifications(app)
+    await blueprint.open(page)
+    await blueprint.startBatch(page, 2)
+    await runSheet.waitUntilOpen(page)
+    const stopped = await notices(app, page)
+    const lastRun = await runSheet.lastRun(page).innerText()
+    await shoot('f685-batch-stopped')
+    assert.match(lastRun, /第 3 章 · 生成草稿待审[\s\S]*第 4 章 · 生成草稿待审\s*失败/u, '夹具模型两章回同一段正文，第 4 章被判与上一章重演而失败')
+    assert.deepEqual(stopped, [{ title: '批量创作停在第 4 章', body: '已完成 1 章，回到书童查看原因。' }], '第 3 章写完不单独发，整批停下时只发一条')
+    return { stopped, lastRun }
   } },
 }
