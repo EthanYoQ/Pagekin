@@ -37,7 +37,7 @@ export type CodeMirrorEditorProps = {
   paperHead?: PaperHead | null
   /** 编辑器随内容长高、不自己滚动，由外层页面一起滚动（单章视图的纸面）。 */
   fitContent?: boolean
-  /** 外层滚动容器顶部被吸顶内容挡住的高度；光标与搜索结果滚进视区时让开这一段。 */
+  /** 外层滚动容器顶部被吸顶内容挡住的高度，滚动定位时让开。 */
   stickyTopInset?: (editor: HTMLElement) => number
   /** 段落首行缩进两字（只是显示，见 paragraph-indent）。 */
   paragraphIndent?: boolean

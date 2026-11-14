@@ -129,7 +129,7 @@
   border-bottom: 1px solid var(--rule);
 }
 
-/* 草稿的动作条吸在纸面顶上，长章节读到末尾也能直接定稿（#668）；外边距挪 12px 进内边距，吸住时按钮不贴视区顶边 */
+/* 外边距挪 12px 进内边距，吸住时按钮不贴视区顶边 */
 .stage-ch-actions-sticky {
   position: sticky;
   top: 0;

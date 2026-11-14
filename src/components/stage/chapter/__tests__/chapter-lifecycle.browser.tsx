@@ -809,7 +809,6 @@ describe('确认审稿清单的往返期间换了作品，回来的结果不碰�
 describe('长章节读到底，章节动作条仍在眼前', () => {
   const LONG = Array.from({ length: 160 }, (_, index) => `第 ${index + 1} 段。雨还在下，站台的灯一盏接一盏地熄了，他把信纸折好又展开。`).join('\n\n')
 
-  /** 把正文滚到底，再在主按钮中心做命中测试：作者点下去落在按钮上，而不是正文或别的层上。 */
   async function scrollToEndAndHit(name: string) {
     const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
     // 编辑器量完行高、侧页挤窄纸面后正文还会变长，每次重试都重新滚到底。

@@ -8,7 +8,6 @@ import { countUnits, STAGE_SAMPLE } from './stage-sample.mjs'
 const MORE = Array.from({ length: 90 }, (_, index) => `第 ${index + 1} 次涨潮时，林岚又数了一遍台阶。雾钟没有响，守塔人把灯芯剪短，窗外的航标灯一盏接一盏地亮起来。`)
 const longText = text => [text, ...MORE].join('\n\n')
 
-/** 第 3 章是带一份审稿的长草稿（已审稿，侧页默认展开），第 4 章是已修稿的长草稿；审稿按长正文建，不在审稿后改正文。 */
 const seed = context => seedStageSample(context, {
   beforeReload: async ({ page, invoke, path, session }) => {
     for (const chapterNumber of [3, 4]) {
@@ -31,7 +30,7 @@ const seed = context => seedStageSample(context, {
 
 const scroller = page => chapterView.view(page).locator('.stage-ch-scroll')
 
-/** 滚到正文末尾：编辑器量完行高后正文还会变长，滚到连续几帧都停在底部为止。 */
+/** 编辑器量完行高后正文还会变长，要连续几帧停在底部才算到底。 */
 async function scrollToEnd(page) {
   await scroller(page).evaluate(async element => {
     for (let settled = 0; settled < 3;) {
@@ -42,7 +41,6 @@ async function scrollToEnd(page) {
   })
 }
 
-/** 按钮中心点下去落在按钮自己身上，作者不用滚动就能点到。 */
 const hit = button => button.evaluate(element => {
   const rect = element.getBoundingClientRect()
   return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
@@ -84,7 +82,6 @@ export const I668_SCENARIOS = {
     await page.keyboard.press('Escape')
     await chapterView.finalizeDialog(page, 4).waitFor({ state: 'hidden' })
 
-    // 光标在后半章时搜前面的一段：编辑器往上滚到匹配处，匹配行要落在吸顶的动作条下面
     await chapterView.prose(page).click()
     await page.keyboard.press('ControlOrMeta+F')
     const search = chapterView.view(page).locator('.cm-search input[name="search"]')
