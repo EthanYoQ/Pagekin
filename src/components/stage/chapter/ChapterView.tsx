@@ -62,7 +62,7 @@ function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
   return report?.key === key ? report : null
 }
 
-const stickyActionsHeight = (editor: HTMLElement) => editor.closest('.stage-ch-page')?.querySelector<HTMLElement>('.stage-ch-actions-sticky')?.offsetHeight ?? 0
+const stickyActionsHeight = (inside: HTMLElement) => inside.closest('.stage-ch-scroll')?.querySelector<HTMLElement>('.stage-ch-actions-sticky')?.offsetHeight ?? 0
 
 /**
  * 正文单章视图：章节头、生命周期、章节动作条、版本切换器与纸面正文。待写章显示本章蓝图与写作此章。
@@ -125,7 +125,8 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
 
   return (
     <div className="stage-ch" data-focus={focus || undefined}>
-      <div className="stage-ch-scroll">
+      {/* 键盘把焦点移到上方时，浏览器滚动让开吸顶的动作条 */}
+      <div className="stage-ch-scroll" onFocusCapture={event => { event.currentTarget.style.scrollPaddingTop = `${stickyActionsHeight(event.currentTarget)}px` }}>
         <article className="stage-ch-page" aria-busy={!draft.loaded}>
           {chapterNumber !== undefined && (
             <ChapterHead

@@ -414,7 +414,14 @@ export default function CodeMirrorEditor({
     }
     if (mode === 'prose') exts.push(...livePreview())
     if (indentParagraphs) exts.push(paragraphIndent)
-    if (stickyTopInset) exts.push(EditorView.scrollMargins.of(view => ({ top: stickyTopInset(view.dom) })))
+    if (stickyTopInset) exts.push(
+      EditorView.scrollMargins.of(view => ({ top: stickyTopInset(view.dom) })),
+      // 搜索面板吸在吸顶内容下面，不叠在它上面。
+      EditorView.updateListener.of(({ view }) => {
+        const panels = view.dom.querySelector<HTMLElement>(':scope > .cm-panels-top')
+        if (panels) panels.style.top = `${stickyTopInset(view.dom)}px`
+      }),
+    )
     exts.push(paperHeadFacet.of(stablePaperHead))
     return exts
   }, [mode, stablePaperHead, uiLocale, indentParagraphs, stickyTopInset])

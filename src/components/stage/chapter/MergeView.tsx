@@ -47,7 +47,7 @@ export default function MergeView({ data, versionLabel, recheck, onComplete, onL
 
   return (
     <section className="stage-ch-merge" aria-label={text('修稿合并', 'Revision merge')}>
-      <div className="stage-ch-actions">
+      <div className="stage-ch-actions stage-ch-actions-sticky">
         <Button variant="primary" disabled={busy || Boolean(data.staleReason)} onClick={() => void complete()}>
           <Check size={15} aria-hidden />{text('完成合并', 'Finish merge')}
         </Button>

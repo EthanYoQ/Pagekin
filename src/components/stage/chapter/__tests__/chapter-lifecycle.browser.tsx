@@ -810,6 +810,15 @@ describe('确认审稿清单的往返期间换了作品，回来的结果不碰�
 describe('长章节读到底，章节动作条仍在眼前', () => {
   const LONG = Array.from({ length: 160 }, (_, index) => `第 ${index + 1} 段。雨还在下，站台的灯一盏接一盏地熄了，他把信纸折好又展开。`).join('\n\n')
 
+  /** 长章节的待合并修稿：每十段改一处，合并视图里共 16 处改动。 */
+  async function openLongMerge() {
+    const draft = backend.addDraft({ status: 'draft', content: LONG })
+    backend.addReview(draft)
+    backend.addRevision(draft).content = LONG.replace(/(第 \d*0 段。)雨还在下/g, '$1雨停了')
+    await mount()
+    await openDraft(draft.id)
+  }
+
   async function scrollToEndAndHit(name: string) {
     const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
     // 编辑器量完行高、侧页挤窄纸面后正文还会变长，每次重试都重新滚到底。
@@ -858,14 +867,21 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
   })
 
   it('有待合并修稿：滚到合并视图末尾，完成合并仍在视口里', async () => {
-    const draft = backend.addDraft({ status: 'draft', content: LONG })
-    backend.addReview(draft)
-    const revision = backend.addRevision(draft)
-    revision.content = LONG.replace(/(第 \d*0 段。)雨还在下/g, '$1雨停了')
-    await mount()
-    await openDraft(draft.id)
+    await openLongMerge()
     await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
     expect(await scrollToEndAndHit('完成合并')).toBe(true)
+  })
+
+  it('合并视图里用 Shift+Tab 往上走，聚焦的段落选择停在动作条下面', async () => {
+    await openLongMerge()
+    expect(await scrollToEndAndHit('完成合并')).toBe(true)
+    const groups = page.getByRole('group', { name: /用哪一版$/ }).elements()
+    groups.at(-1)!.querySelector<HTMLElement>('[tabindex="0"]')!.focus()
+    const bar = document.querySelector('.stage-ch-merge .stage-ch-actions')!
+    for (let step = 0; step < 8; step++) {
+      await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
+      expect(document.activeElement!.getBoundingClientRect().top).toBeGreaterThanOrEqual(bar.getBoundingClientRect().bottom)
+    }
   })
 
   it('读到中段按 Ctrl F：搜索框和动作条都在眼前，读到的那段没被挤出视口，往上找到的匹配不被挡住', async () => {
@@ -901,7 +917,9 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     await vi.waitFor(() => {
       const match = [...document.querySelectorAll('.cm-line')].find(candidate => candidate.textContent!.startsWith('第 30 段。'))
       expect(match).toBeDefined()
-      expect(match!.getBoundingClientRect().top).toBeGreaterThanOrEqual(panel.bottom)
+      const text = document.createRange()
+      text.selectNodeContents(match!)
+      expect(text.getClientRects()[0].top).toBeGreaterThanOrEqual(panel.bottom)
     })
   })
 })
