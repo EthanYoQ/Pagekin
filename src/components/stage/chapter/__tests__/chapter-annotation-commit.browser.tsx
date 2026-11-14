@@ -134,3 +134,18 @@ it('作者已切到另一部作品，原标签还在：批注修改不按当前�
   expect(backend.invoke.mock.calls.filter(([channel]) => channel === 'db:annotation-commit')).toEqual([])
   expect(useEditorStore.getState().tabs[0]!.content).toBe(tab.content)
 })
+
+it('同一标签已换成这一章的另一稿：批注修改不写进那一稿', async () => {
+  const draft = backend.addDraft({ status: 'draft' })
+  await act(async () => { await useDraftStore.getState().loadAllDrafts(SESSION.projectPath, SESSION) })
+  await act(async () => { await openDraftTab(useDraftStore.getState().draftsByChapter[3]!.find(candidate => candidate.id === draft.id)!, '第 3 章 · 雨夜车站', SESSION) })
+  await expect.element(page.getByRole('button', { name: '接受批注修改' })).toBeVisible()
+  const commit = editorProps.commit!
+  const tab = useEditorStore.getState().tabs[0]!
+  await act(async () => useEditorStore.setState({ tabs: [{ ...tab, draftId: draft.id + 1 }] }))
+
+  const outcome = await commit(tab.content!, `${tab.content}\n\n批注改出的一段。`, []).then(() => 'committed', (error: Error) => error.message)
+
+  expect(outcome).toBe('SOURCE_DRAFT_CHANGED')
+  expect(backend.invoke.mock.calls.filter(([channel]) => channel === 'db:annotation-commit')).toEqual([])
+})
