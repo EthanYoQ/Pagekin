@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
@@ -785,5 +785,57 @@ describe('确认审稿清单的往返期间换了作品，回来的结果不碰�
     await click('按 3 项意见修稿')
     await vi.waitFor(() => expect(useStageStore.getState().sheet).toEqual({ kind: 'review', filePath: activeTab()!.filePath }))
     await expect.element(page.getByText('请填写或移除空白的人工问题后再确认。')).toBeVisible()
+  })
+})
+
+describe('长章节读到底，章节动作条仍在眼前', () => {
+  const LONG = Array.from({ length: 160 }, (_, index) => `第 ${index + 1} 段。雨还在下，站台的灯一盏接一盏地熄了，他把信纸折好又展开。`).join('\n\n')
+
+  /** 把正文滚到底，再在主按钮中心做命中测试：作者点下去落在按钮上，而不是正文或别的层上。 */
+  async function scrollToEndAndHit(name: string) {
+    const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
+    // 编辑器量完行高、侧页挤窄纸面后正文还会变长，每次重试都重新滚到底。
+    await vi.waitFor(() => {
+      scroller.scrollTop = scroller.scrollHeight
+      expect(scroller.scrollTop + scroller.clientHeight).toBeGreaterThanOrEqual(scroller.scrollHeight - 1)
+    })
+    const button = page.getByRole('button', { name, exact: true }).element()
+    const rect = button.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    return button.contains(hit)
+  }
+
+  it('已修稿：滚到正文末尾，定稿按钮仍在视口里，点它打开定稿确认', async () => {
+    const draft = backend.addDraft({ status: 'revised', content: LONG })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '定稿', exact: true })).toBeVisible()
+    expect(await scrollToEndAndHit('定稿')).toBe(true)
+    await act(async () => page.getByRole('button', { name: '定稿', exact: true }).element().click())
+    await expect.element(page.getByRole('dialog', { name: '定稿第 3 章？' })).toBeVisible()
+  })
+
+  it('已审稿且审稿报告开着：滚到正文末尾，修稿主按钮仍在视口里', async () => {
+    const draft = backend.addDraft({ status: 'draft', content: LONG })
+    backend.addReview(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('complementary', { name: /审稿/ })).toBeVisible()
+    expect(await scrollToEndAndHit('按 2 项意见修稿')).toBe(true)
+  })
+
+  it('光标从末尾往上走，滚动后停在动作条下面，不被它挡住', async () => {
+    const draft = backend.addDraft({ status: 'draft', content: LONG })
+    await mount()
+    await openDraft(draft.id)
+    await userEvent.click(page.getByText('第 1 段。', { exact: false }))
+    await userEvent.keyboard('{Control>}{End}{/Control}')
+    const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
+    await vi.waitFor(() => expect(scroller.scrollTop).toBeGreaterThan(0))
+    const end = scroller.scrollTop
+    for (let step = 0; step < 80; step++) await userEvent.keyboard('{ArrowUp}')
+    await vi.waitFor(() => expect(scroller.scrollTop).toBeLessThan(end))
+    const bar = document.querySelector('.stage-ch-actions')!.getBoundingClientRect()
+    expect(document.querySelector('.cm-cursor')!.getBoundingClientRect().top).toBeGreaterThanOrEqual(bar.bottom)
   })
 })
