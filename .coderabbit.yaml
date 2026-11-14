@@ -1,8 +1,7 @@
-# 只排除纯文档路径，.release/** 等发布说明照常审查。范围是 scripts/pr-docs-only.mjs 的子集。
+# 只排除纯文档路径。代理指令（.claude、.agents、AGENTS.md、CLAUDE.md、SKILL.md）与 .release/** 照常审查。
 reviews:
   path_filters:
     - "!README*.md"
     - "!CONTRIBUTING.md"
     - "!LICENSE"
     - "!docs/**/*.md"
-    - "!.claude/**/*.md"
