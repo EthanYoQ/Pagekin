@@ -5,16 +5,32 @@ import { useProjectStore } from '../project-store'
 import { useLocaleStore } from '../locale-store'
 import { createReviewOnlyWorkflow, createChapterWorkflow, createRepairFinalizeWorkflow } from '../../services/workflows/chapter-workflow'
 import { createBatchChapterWorkflow } from '../../services/workflows/batch-chapter-workflow'
+import { createDraftRecoveryWorkflow } from '../../services/workflows/draft-recovery-workflow'
+import { createReviewRevisionRecoveryWorkflow } from '../../services/workflows/review-revision-recovery-workflow'
 
 const projectPath = 'C:\\test-project'
 const session = { projectId: 'test-project', leaseId: 'lease-test-project', projectPath }
 let invoke: ReturnType<typeof vi.fn>
+const handle = { projectId: session.projectId, epoch: 'earlier-session', rootActionId: 'root', runId: 'run' }
+const draftRecovery = {
+  handle, operation: 'chapter-draft', chapterNumber: 6, modelId: 'model', draftSave: { kind: 'current', receipt: { success: true, id: 9, version: 1, content: '正文', contentHash: 'hash' } },
+  authorInputs: [{ id: 'draft:chapter-info', text: JSON.stringify({ chapterNumber: 6, title: '潮声', role: '', purpose: '', characters: [], keyEvents: '' }) }, { id: 'draft:target-units', text: '900' }],
+  selectedDraftIds: [], selectedDrafts: [], attemptedPurposes: ['chapter-draft'], composition: null,
+}
+let reviewRecovery: unknown
+const recoveredAction = (operation: 'review-chapter' | 'refine-draft') => {
+  reviewRecovery = { handle, saved: true, sourceStatus: 'current', canResume: true, modelId: 'model',
+    context: { operation, uiLocale: 'zh-CN', blueprints: [], source: { id: 9, chapterNumber: 6, content: '正文' } } }
+  return createReviewRevisionRecoveryWorkflow(session, handle)
+}
 
 beforeEach(() => {
   invoke = vi.fn(async (channel: string) => {
     if (channel === 'skills:list-user') return []
     if (channel === 'fs:check-exists') return false
     if (channel === 'window:notify-stage') return { shown: true }
+    if (channel === 'generation:read-context') return draftRecovery
+    if (channel === 'review-revision:read-recovery') return reviewRecovery
     throw new Error(`测试未配置桌面调用：${channel}`)
   })
   vi.stubGlobal('window', { aiNovelAPI: { invoke, on: vi.fn(() => () => {}), once: vi.fn() } })
@@ -111,5 +127,22 @@ describe('批量创作整批结束时发一次通知', () => {
     }, async () => 'ok'))
     expect(useWorkflowStore.getState().history[0].status).toBe('cancelled')
     expect(notices()).toEqual([])
+  })
+})
+
+describe('从运行侧页继续的单章运行同样通知', () => {
+  it('继续正文完成时发「写作完成」', async () => {
+    await useWorkflowStore.getState().startWorkflow(withStep(await createDraftRecoveryWorkflow(session, handle), async () => 'ok'))
+    expect(notices()).toEqual([{ title: '第 6 章写作完成', body: '回到书童查看结果。' }])
+  })
+
+  it('恢复审稿失败时发「审稿没完成」', async () => {
+    await useWorkflowStore.getState().startWorkflow(withStep(await recoveredAction('review-chapter'), async () => { throw new Error('模型超时') }))
+    expect(notices()).toEqual([{ title: '第 6 章审稿没完成', body: '回到书童查看原因。' }])
+  })
+
+  it('恢复修稿完成时发「修稿完成」', async () => {
+    await useWorkflowStore.getState().startWorkflow(withStep(await recoveredAction('refine-draft'), async () => 'ok'))
+    expect(notices()).toEqual([{ title: '第 6 章修稿完成', body: '回到书童查看结果。' }])
   })
 })
