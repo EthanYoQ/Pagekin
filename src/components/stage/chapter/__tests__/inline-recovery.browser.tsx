@@ -89,7 +89,6 @@ const executions = () => backend.invoke.mock.calls.filter(([channel]) => channel
 const deliveries = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered').length
 const withMergeableRevision = (draft: ReturnType<typeof backend.addDraft>) => { backend.addReview(draft); backend.addRevision(draft, 'refine') }
 
-/** 合并视图挡住编辑器时：建议在侧页卡片上可复制，也不回执。 */
 async function expectContinuedInSheet() {
   await vi.waitFor(() => expect(executions()).toBe(1))
   const card = page.getByRole('article').filter({ hasText: '编辑器选区建议' })
