@@ -55,6 +55,7 @@ async function interruptedSelectionRun(documentText: string, executed: Promise<v
     switch (channel) {
       case 'generation:list-recovery': return { planning: [], editors: delivered ? [] : [recovery()], reviews: [], drafts: [], batches: [], partial: false }
       case 'db:recovery-candidate-list': return []
+      case 'llm:list-models': return useLLMStore.getState().models
       case 'editor-inline:read-recovery': return recovery()
       case 'editor-inline:delivered':
         if (view === done) delivered = true
