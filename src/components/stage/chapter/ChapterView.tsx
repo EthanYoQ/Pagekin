@@ -62,7 +62,15 @@ function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
   return report?.key === key ? report : null
 }
 
-const stickyActionsHeight = (editor: HTMLElement) => editor.closest('.stage-ch-page')?.querySelector<HTMLElement>('.stage-ch-actions-sticky')?.offsetHeight ?? 0
+const stickyActionsHeight = (inside: HTMLElement) => inside.closest('.stage-ch-scroll')?.querySelector<HTMLElement>('.stage-ch-actions-sticky')?.offsetHeight ?? 0
+
+/** 条高会随审稿读完出现、纸面宽窄变化；chapter.css 的 scroll-padding-top 与搜索面板 top 读这个变量。 */
+const syncStickyTopVar = (scroller: HTMLDivElement | null) => {
+  if (!scroller) return
+  const observer = new ResizeObserver(() => scroller.style.setProperty('--stage-ch-sticky-top', `${stickyActionsHeight(scroller)}px`))
+  observer.observe(scroller.firstElementChild!)
+  return () => observer.disconnect()
+}
 
 /**
  * 正文单章视图：章节头、生命周期、章节动作条、版本切换器与纸面正文。待写章显示本章蓝图与写作此章。
@@ -125,7 +133,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
 
   return (
     <div className="stage-ch" data-focus={focus || undefined}>
-      <div className="stage-ch-scroll">
+      <div ref={syncStickyTopVar} className="stage-ch-scroll">
         <article className="stage-ch-page" aria-busy={!draft.loaded}>
           {chapterNumber !== undefined && (
             <ChapterHead
