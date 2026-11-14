@@ -28,6 +28,26 @@ const seed = context => seedStageSample(context, {
   },
 })
 
+/** 第 3 章换成长草稿与审稿，再按审稿建一份待合并修稿：每十处涨潮改一句，合并视图里有 9 处改动。 */
+const seedMerge = context => seedStageSample(context, {
+  landOnChapter3: false,
+  beforeReload: async ({ page, invoke, path, session }) => {
+    for (const draft of await invoke(page, 'db:draft-list', 3, path, session)) {
+      assert.equal((await invoke(page, 'db:draft-delete', draft.id, path, session)).success, true)
+    }
+    const content = longText(STAGE_SAMPLE.drafts[3].text)
+    const created = await invoke(page, 'db:draft-create', { chapterNumber: 3, version: 1, source: 'write', content, wordCount: countUnits(content) }, path, session)
+    assert.equal(created.success, true, created.error)
+    const expectedSource = { id: created.id, chapterNumber: 3, version: 1, status: 'draft', content }
+    const review = await invoke(page, 'db:review-create', { baseDraftId: created.id, content: STAGE_SAMPLE.drafts[3].review, expectedSource }, path, session)
+    assert.equal(review.success, true, review.error)
+    const revised = content.replace(/(第 \d*0 次涨潮时，林岚又数了一遍台阶。)雾钟没有响/g, '$1雾钟响了三声')
+    const revision = await invoke(page, 'db:revision-create', { baseDraftId: created.id, revisionType: 'review-fix', reviewSourceId: review.id,
+      content: revised, wordCount: countUnits(revised), expectedSource }, path, session)
+    assert.equal(revision.success, true, revision.error)
+  },
+})
+
 const scroller = page => chapterView.view(page).locator('.stage-ch-scroll')
 
 /** 编辑器量完行高后正文还会变长，要连续几帧停在底部才算到底。 */
@@ -47,6 +67,10 @@ const hit = button => button.evaluate(element => {
 })
 
 const scrollState = page => scroller(page).evaluate(element => ({ top: Math.round(element.scrollTop), height: element.scrollHeight, client: element.clientHeight }))
+
+const settle = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+
+const bottomOf = locator => locator.evaluate(element => Math.round(element.getBoundingClientRect().bottom))
 
 export const I668_SCENARIOS = {
   'i668-long-chapter': { model: false, shell: 'stage', setup: seed, run: async ({ page, shoot }) => {
@@ -127,5 +151,66 @@ export const I668_SCENARIOS = {
     await shoot('i668-review-1280-mid')
     assert.equal(reviewHit, true, '1280 宽、审稿报告开着、滚到中段时，修稿主按钮仍可点')
     return { reviewHit, barHeight }
+  } },
+  'i668-merge-search': { model: false, shell: 'stage', setup: seedMerge, run: async ({ page, shoot }) => {
+    await chapterView.open(page, 3)
+    const merge = chapterView.merge(page)
+    const finish = merge.getByRole('button', { name: '完成合并' })
+    await finish.waitFor({ state: 'visible' })
+    const changes = await merge.getByRole('group', { name: /用哪一版$/ }).count()
+    await shoot('i668-merge-top')
+
+    await scrollToEnd(page)
+    const mergeEnd = await scrollState(page)
+    const finishHit = await hit(finish)
+    await shoot('i668-merge-end')
+    assert.ok(mergeEnd.top > 0, '合并视图够长，滚得动')
+    assert.equal(finishHit, true, '合并视图滚到末尾时，完成合并仍可点')
+
+    const bar = merge.locator('.stage-ch-actions')
+    await merge.getByRole('group', { name: /用哪一版$/ }).last().locator('[tabindex="0"]').focus()
+    const focusTops = []
+    for (let step = 0; step < 5; step++) {
+      await page.keyboard.press('Shift+Tab')
+      focusTops.push(await page.evaluate(() => Math.round(document.activeElement.getBoundingClientRect().top)))
+    }
+    const mergeBarBottom = await bottomOf(bar)
+    await shoot('i668-merge-shift-tab')
+    assert.ok(focusTops.every(top => top >= mergeBarBottom), 'Shift+Tab 往上走时焦点停在动作条下面')
+
+    await merge.getByRole('button', { name: '稍后再合并' }).click()
+    await merge.waitFor({ state: 'detached' })
+    await scroller(page).evaluate(element => { element.scrollTop = element.scrollHeight / 2 })
+    await settle(page)
+    const middleLine = chapterView.prose(page).locator('.cm-line', { hasText: '第 45 次涨潮' })
+    await middleLine.click()
+    await page.keyboard.press('ControlOrMeta+F')
+    const input = chapterView.view(page).locator('.cm-search input[name="search"]')
+    await input.waitFor({ state: 'visible' })
+    await settle(page)
+    const searchHit = await hit(input)
+    const primaryHit = await hit(chapterView.primary(page))
+    const readingLine = await middleLine.evaluate(element => Math.round(element.getBoundingClientRect().top))
+    const viewport = await scrollState(page)
+    await shoot('i668-search-mid')
+    assert.equal(searchHit, true, '读到中段按 Ctrl F，搜索框就在眼前')
+    assert.equal(primaryHit, true, '搜索框开着，动作条主按钮仍可点')
+    assert.ok(readingLine > 0 && readingLine < viewport.client, '读到的那段还在视口里')
+
+    await page.keyboard.type('第 20 次涨潮')
+    await page.keyboard.press('Shift+Enter')
+    const match = chapterView.prose(page).locator('.cm-line', { hasText: '第 20 次涨潮' })
+    await match.waitFor({ state: 'visible' })
+    await settle(page)
+    const panelBottom = await bottomOf(chapterView.view(page).locator('.cm-panels-top'))
+    const matchTop = await match.evaluate(element => {
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      return Math.round(range.getClientRects()[0].top)
+    })
+    await shoot('i668-search-prev')
+    assert.ok(matchTop >= panelBottom, '往上找到的匹配行不被搜索面板挡住')
+
+    return { changes, mergeEnd, finishHit, focusTops, mergeBarBottom, searchHit, primaryHit, readingLine, panelBottom, matchTop }
   } },
 }
