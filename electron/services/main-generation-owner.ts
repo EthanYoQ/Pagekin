@@ -1090,8 +1090,6 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   /**
    * 运行侧页「可恢复」区的数据。只读操作类型可能恢复的运行；一个运行读不出不挡其余运行，只标 partial。
    * 只列作者还能从这里拿回或接着做的运行。这次打开里还留着没落盘文字的一律列出，那段文字只能从这里复制。
-   * 单章写稿、审稿、修稿保存过就不再需要恢复，正文后来改没改过都一样；没保存的审修不能续跑又没写出字时也不列。
-   * 选区建议被作者拒绝过、或完整建议已经送到选区气泡的不列；来源已变、不能继续的批次不列。
    * 规划恢复稿是否列出按 planningRecoverable 判定，与蓝图页横幅、架构页大纲提示同一条。
    */
   const listRecovery = (): GenerationRecoveryList => {

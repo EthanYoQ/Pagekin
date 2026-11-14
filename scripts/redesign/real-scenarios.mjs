@@ -282,7 +282,6 @@ async function batchRecovery(page) {
   return { text: await card.first().innerText(), continueEnabled: await button.isEnabled() }
 }
 
-/** 不能继续的批次没有可做的动作，不列为可恢复（#686）。 */
 async function batchUnlisted(page) {
   await runSheet.openFromPalette(page)
   await page.waitForTimeout(2000)

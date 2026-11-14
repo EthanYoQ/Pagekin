@@ -55,7 +55,7 @@ export interface RunRecovery {
   resumeReview: (entry: ReviewEntry) => void
   resumeBatch: (entry: BatchEntry) => void
   resumeDraft: (entry: DraftEntry) => void
-  /** 这张卡在这部作品里不再显示；生成记录不动。 */
+  /** 只隐藏卡片，不动生成记录。 */
   hide: (entry: DraftEntry | ReviewEntry | EditorEntry) => void
 }
 
