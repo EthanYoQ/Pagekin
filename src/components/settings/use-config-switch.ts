@@ -6,7 +6,7 @@ import type { GlobalConfig } from '../../shared/ipc-channels'
 
 type SwitchKey = 'autoOpenNextChapterAfterFinalize' | 'backgroundStageNotifications'
 
-/** config.json 里的一个开关：读取、乐观写入、失败回滚并给出原因。键缺省时取 fallback。 */
+/** 键缺省时取 fallback。 */
 export function useConfigSwitch(key: SwitchKey, fallback: boolean, failure: (reason: string) => string) {
   const text = useLocaleStore(s => s.text)
   const [enabled, setEnabled] = useState(fallback)

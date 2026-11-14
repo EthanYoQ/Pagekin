@@ -3,7 +3,6 @@ import type { StageNotice } from '../../shared/ipc-channels'
 import type { WorkflowRun } from '../../stores/workflow-store'
 import type { PostProcessStatus } from './workflow-utils'
 
-/** 作者手动发起、结束时值得在后台提醒的运行。判定表见 batch11/feat-685.todo.md。 */
 export type BackgroundNotice =
   | { stage: 'draft' | 'review' | 'revise' | 'finalize'; chapterNumber: number }
   | { stage: 'batch'; startChapter: number; endChapter: number }
@@ -18,7 +17,6 @@ const STAGE_NAME = {
   finalize: ['定稿', 'finalization'],
 } as const
 
-/** 运行结束时的通知；取消等非完成、非失败的结局不通知。 */
 export function stageNotice(
   locale: Locale,
   notice: BackgroundNotice,

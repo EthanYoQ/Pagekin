@@ -1,4 +1,3 @@
-// #685 实机场景：书童在后台时，开关关着审稿结束不发通知；打开后第 4 章定稿结束由主进程发一条；后处理有一步失败时写「已定稿，有一步没完成」；批量创作整批结束只发一条。
 import assert from 'node:assert/strict'
 
 import * as blueprint from './pages/blueprint.mjs'
@@ -8,7 +7,7 @@ import * as stage from './pages/stage.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { finalizeChapter, openChapter } from './f491-scenarios.mjs'
 
-/** 替身：主进程里只记下 Notification.show 的标题与正文，不真的弹出，免得打扰正在用电脑的人。 */
+/** 替身：只记录 Notification.show 的标题与正文，不真的弹出。 */
 async function recordNotifications(app) {
   await app.evaluate(({ Notification }) => {
     globalThis.__f685 = []
@@ -17,7 +16,6 @@ async function recordNotifications(app) {
 }
 
 const recorded = app => app.evaluate(() => globalThis.__f685)
-/** 等运行结束、主进程记下第一条通知，再多等 2 秒确认没有第二条。 */
 async function notices(app, page) {
   await runSheet.lastRun(page).waitFor({ state: 'visible', timeout: 120_000 })
   for (const deadline = Date.now() + 10_000; (await recorded(app)).length === 0 && Date.now() < deadline;) await page.waitForTimeout(100)
@@ -40,7 +38,6 @@ async function showAppearance(page) {
   await notifySwitch(page).scrollIntoViewIfNeeded()
 }
 
-/** 在外观页把开关拨到 on，等写入结束后关掉设置；返回开关是否停在 on。 */
 async function setNotify(page, on) {
   await showAppearance(page)
   await notifySwitch(page).setChecked(on, { force: true })

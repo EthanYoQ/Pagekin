@@ -248,7 +248,7 @@ export interface WorkflowDefinition {
   onCancelledAtBoundary?: (context: WorkflowContext) => void | Promise<void>
   /** 工作流完成后的通知/跳转动作（可选） */
   onComplete?: WorkflowCompleteAction
-  /** 完成或失败时请主进程在窗口不在前台时弹系统通知；取消不发。 */
+  /** 完成或失败时，窗口不在前台则弹系统通知。 */
   backgroundNotice?: BackgroundNotice
 }
 

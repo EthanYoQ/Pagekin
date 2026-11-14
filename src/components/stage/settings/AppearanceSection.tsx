@@ -69,7 +69,6 @@ function FontSelect({ id, value, onChange }: { id: string; value: FontId; onChan
   )
 }
 
-/** 外观：主题、语言、字体、缩放、定稿后打开下一章与后台通知。改动立即生效。 */
 export default function AppearanceSection() {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
