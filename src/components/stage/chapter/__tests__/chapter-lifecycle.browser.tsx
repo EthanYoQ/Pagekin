@@ -397,6 +397,24 @@ describe('单章视图的主按钮随五种状态变化', () => {
     expect(page.getByRole('button', { name: '回到当前稿' }).element()).toBeTruthy()
   })
 
+  it('版本菜单：每一项的版本名和字数时间两行都落在这一项的高亮底里', async () => {
+    backend.addDraft({ status: 'superseded' })
+    const finalized = backend.addDraft({ status: 'finalized', version: 2 })
+    await mount()
+    await openDraft(finalized.id)
+    await click(/本章版本/)
+
+    const rows = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')]
+    expect(rows).toHaveLength(2)
+    for (const row of rows) {
+      const box = row.getBoundingClientRect()
+      for (const line of row.children) {
+        const rect = line.getBoundingClientRect()
+        expect({ top: rect.top >= box.top, bottom: rect.bottom <= box.bottom }, line.textContent ?? '').toEqual({ top: true, bottom: true })
+      }
+    }
+  })
+
   it('定稿：正文只读，列出后处理各步；重试失败步骤只重跑失败的，单步重试只跑那一步', async () => {
     const draft = backend.addDraft({ status: 'finalized' })
     backend.state.postProcess = { steps: [
