@@ -215,8 +215,10 @@ export default function CodeMirrorEditor({
       setActiveNote(target.action === 'instruct' ? target.instruction : null)
       const view = editorRef.current?.view
       const from = Math.min(target.from, view?.state.doc.length ?? 0)
-      setSelectionRange({ from, to: Math.min(target.to, view?.state.doc.length ?? 0) })
-      view?.dispatch({ effects: EditorView.scrollIntoView(from, { y: 'center' }) })
+      const to = Math.min(target.to, view?.state.doc.length ?? 0)
+      setSelectionRange({ from, to })
+      view?.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'center' }) })
+      view?.focus()
       const coords = view?.coordsAtPos(from)
       setBubblePos({ top: coords?.top ?? 150, left: coords?.left ?? 200, inView: true })
       setBubbleOpen(true)
