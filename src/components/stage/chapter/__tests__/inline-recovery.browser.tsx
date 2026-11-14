@@ -36,7 +36,7 @@ async function sha256(text: string) {
 }
 
 /** 请求发出前关闭应用留下的第 3 章选区润色运行。 */
-async function interruptedSelectionRun(documentText: string) {
+async function interruptedSelectionRun(documentText: string, executed: Promise<void> = Promise.resolve()) {
   const from = documentText.indexOf(SELECTED)
   const context = { action: 'refine', kind: 'author-draft', documentText, documentHash: await sha256(documentText), from, to: from + SELECTED.length, selectedText: SELECTED }
   const pending = { handle, status: 'running', artifacts: [], candidates: [], ledger: { physicalRequests: 0 } }
@@ -50,6 +50,7 @@ async function interruptedSelectionRun(documentText: string) {
       case 'db:recovery-candidate-list': return []
       case 'editor-inline:read-recovery': return recovery()
       case 'editor-inline:execute':
+        await executed
         view = done
         return { run: { ...done, status: 'running', handle: { ...handle, epoch: SESSION.leaseId } }, sourceStatus: 'current', outcome: { status: 'completed', finishReason: 'stop', content: SUGGESTION, receipt: { finishReason: 'stop' } } }
       default: return fixture(channel, ...args)
@@ -79,6 +80,7 @@ const editorText = () => editor().state.doc.toString()
 
 beforeEach(async () => {
   await page.viewport(1280, 900)
+  localStorage.clear()
   backend = createChapterBackend()
   backend.install()
   useLocaleStore.setState({ locale: 'zh-CN' })
@@ -161,5 +163,63 @@ describe('运行侧页「继续原选区任务」', () => {
     expect(useStageStore.getState().sheet).not.toBeNull()
     expect(host!.querySelector('[role="toolbar"]')).toBeNull()
     expect(editorText()).toBe(`夜。${ORIGINAL}`)
+  })
+
+  it('侧页续跑出的建议在关掉侧页再打开后仍在，点「不再显示」才不列出', async () => {
+    await interruptedSelectionRun(ORIGINAL.replace('雨从傍晚', '雪从傍晚'))
+    await mount()
+    await openChapter()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+    const card = page.getByRole('article').filter({ hasText: '编辑器选区建议' })
+    await expect.element(card.getByText(SUGGESTION)).toBeVisible()
+
+    await act(async () => useStageStore.setState({ sheet: null }))
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await expect.element(card.getByText(SUGGESTION)).toBeVisible()
+    await act(async () => card.getByRole('button', { name: '不再显示' }).click())
+    await expect.element(card).not.toBeInTheDocument()
+    await act(async () => useStageStore.setState({ sheet: null }))
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await expect.element(page.getByText('没有进行中的运行')).toBeVisible()
+    await expect.element(card).not.toBeInTheDocument()
+  })
+
+  it('续跑进行中点了「不再显示」：藏的是续跑前的卡片，续跑写出的新建议照常列出', async () => {
+    let finish!: () => void
+    await interruptedSelectionRun(ORIGINAL.replace('雨从傍晚', '雪从傍晚'), new Promise<void>(resolve => { finish = resolve }))
+    await mount()
+    await openChapter()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    const card = page.getByRole('article').filter({ hasText: '编辑器选区建议' })
+    await act(async () => card.getByRole('button', { name: '继续原选区任务' }).click())
+
+    await act(async () => card.getByRole('button', { name: '不再显示' }).click())
+    await expect.element(card).not.toBeInTheDocument()
+    await act(async () => finish())
+
+    await expect.element(card.getByText(SUGGESTION)).toBeVisible()
+  })
+
+  it('气泡里复制失败只提示复制失败，「替换」仍可用；再复制成功提示消失', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValueOnce(new Error('denied')).mockResolvedValue(undefined)
+    await mount()
+    await openChapter()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+    const bubble = page.getByRole('toolbar', { name: '选中文字的操作' })
+    await expect.element(bubble.getByText(SUGGESTION)).toBeVisible()
+
+    await act(async () => bubble.getByRole('button', { name: '复制' }).click())
+    await expect.element(bubble.getByText('复制失败')).toBeVisible()
+    await expect.element(bubble.getByRole('button', { name: '替换' })).toBeEnabled()
+
+    await act(async () => bubble.getByRole('button', { name: '复制' }).click())
+    expect(writeText).toHaveBeenCalledTimes(2)
+    await expect.element(bubble.getByText('复制失败')).not.toBeInTheDocument()
+    await act(async () => bubble.getByRole('button', { name: '替换' }).click())
+    await vi.waitFor(() => expect(editorText()).toBe(ORIGINAL.replace(SELECTED, SUGGESTION)))
   })
 })
