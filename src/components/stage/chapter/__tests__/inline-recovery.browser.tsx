@@ -67,11 +67,11 @@ async function mount() {
   await act(async () => root!.render(<StageWorkspace library={false} focus={false} />))
 }
 
-async function openChapter() {
-  const draft = backend.addDraft({ status: 'draft' })
+async function openChapter(chapterNumber = 3) {
+  const draft = backend.addDraft({ status: 'draft', chapterNumber })
   await act(async () => { await useDraftStore.getState().loadAllDrafts(SESSION.projectPath, SESSION) })
   const meta = Object.values(useDraftStore.getState().draftsByChapter).flat().find(candidate => candidate.id === draft.id)!
-  await act(async () => { await openDraftTab(meta, '第 3 章', SESSION) })
+  await act(async () => { await openDraftTab(meta, `第 ${chapterNumber} 章`, SESSION) })
 }
 
 const executions = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:execute').length
@@ -221,5 +221,41 @@ describe('运行侧页「继续原选区任务」', () => {
     await expect.element(bubble.getByText('复制失败')).not.toBeInTheDocument()
     await act(async () => bubble.getByRole('button', { name: '替换' }).click())
     await vi.waitFor(() => expect(editorText()).toBe(ORIGINAL.replace(SELECTED, SUGGESTION)))
+  })
+
+  it('两个已打开标签的正文都和发起时一样：分不清是哪一稿，不进气泡，在侧页续跑，正文都不动', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await mount()
+    await openChapter(3)
+    await openChapter(4)
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
+    await expect.element(page.getByRole('article').filter({ hasText: '编辑器选区建议' }).getByText(SUGGESTION)).toBeVisible()
+    expect(useStageStore.getState().sheet).not.toBeNull()
+    expect(host!.querySelector('[role="toolbar"]')).toBeNull()
+    expect(useEditorStore.getState().tabs.filter(tab => tab.content === ORIGINAL)).toHaveLength(2)
+  })
+
+  it('第一次在气泡里读不出原运行，再从侧页点「继续原选区任务」会重新读取并续跑', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    const fixture = backend.invoke.getMockImplementation()!
+    let reads = 0
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'editor-inline:read-recovery' && ++reads === 1) throw new Error('读取失败')
+      return fixture(channel, ...args)
+    })
+    await mount()
+    await openChapter()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+    await vi.waitFor(() => expect(reads).toBe(1))
+
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
+    expect(reads).toBe(2)
   })
 })
