@@ -10,13 +10,15 @@ const mocks = vi.hoisted(() => {
     constructor(readonly options: { title: string; body: string }) { notifications.push(this) }
     on(event: string, listener: () => void) { this.listeners.set(event, listener); return this }
     static isSupported() { return true }
+    static handleActivation(callback: () => void) { activation.callback = callback }
   }
-  return { handlers: new Map<string, IpcHandler>(), notifications, config: {} as Record<string, unknown>, FakeNotification }
+  const activation = { callback: null as (() => void) | null }
+  return { handlers: new Map<string, IpcHandler>(), notifications, config: {} as Record<string, unknown>, FakeNotification, activation, windows: [] as unknown[] }
 })
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn((channel: string, handler: IpcHandler) => mocks.handlers.set(channel, handler)) },
-  BrowserWindow: { fromWebContents: vi.fn((sender: { owner: FakeWindow }) => sender.owner) },
+  BrowserWindow: { fromWebContents: vi.fn((sender: { owner: FakeWindow }) => sender.owner), getAllWindows: () => mocks.windows },
   Notification: mocks.FakeNotification,
 }))
 
@@ -52,6 +54,8 @@ describe('后台阶段通知', () => {
     mocks.handlers.clear()
     mocks.notifications.length = 0
     mocks.config = {}
+    mocks.activation.callback = null
+    mocks.windows = []
     registerStageNotificationController()
   })
 
@@ -97,6 +101,25 @@ describe('后台阶段通知', () => {
     mocks.notifications[0].listeners.get('click')?.()
     expect(win.restore).toHaveBeenCalledOnce()
     expect(win.show).toHaveBeenCalledOnce()
+    expect(win.focus).toHaveBeenCalledOnce()
+  })
+
+  it('Windows 横幅超时收进操作中心后，再点通知仍把窗口带回前台', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      mocks.activation.callback = null
+      registerStageNotificationController()
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+    }
+    const win = new FakeWindow()
+    win.minimized = true
+    mocks.windows = [win]
+    await notify(win)
+    mocks.notifications[0].listeners.get('close')?.()
+    mocks.activation.callback?.()
+    expect(win.restore).toHaveBeenCalledOnce()
     expect(win.focus).toHaveBeenCalledOnce()
   })
 })
