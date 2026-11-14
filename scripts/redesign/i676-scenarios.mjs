@@ -1,4 +1,3 @@
-// #676 实机场景：正文页版本菜单的每一项是两行（版本名、字数与时间），两行都要落在这一项的高亮底里。
 import assert from 'node:assert/strict'
 
 import * as chapterView from './pages/chapter-view.mjs'
