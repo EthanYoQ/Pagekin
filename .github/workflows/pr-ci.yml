@@ -195,7 +195,6 @@ jobs:
       # Intentionally no artifact uploads or dependency cache: keep this daily
       # gate separate from retained, release-qualified Windows/macOS packages.
 
-  # These tests read README content, so docs-only PRs still run them, on Linux.
   docs-tests:
     name: Docs content tests
     needs: changes
