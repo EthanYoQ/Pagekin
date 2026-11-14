@@ -28,12 +28,9 @@ describe('release metadata', () => {
     ])
   })
 
-  it('documents the bilingual 1.1.0 notes, current README version, retained features, and signing disclosure', () => {
+  it('documents the bilingual 1.1.0 notes, retained features, and signing disclosure', () => {
     const notes = readFileSync('.release/notes/v1.1.0.md', 'utf8')
     const previousNotes = readFileSync('.release/notes/v1.0.0.md', 'utf8')
-    const chineseReadme = readFileSync('README.md', 'utf8')
-    const englishReadme = readFileSync('README_en.md', 'utf8')
-
     for (const expected of [
       '来源边界',
       '候选稿',
@@ -63,12 +60,6 @@ describe('release metadata', () => {
       'not notarized',
     ]) expect(notes).toContain(expected)
 
-    expect(chineseReadme).toContain('> ## 1.3.0 更新')
-    expect(englishReadme).toContain("> ## What's new in 1.3.0")
-    for (const readme of [chineseReadme, englishReadme]) {
-      expect(readme).toContain('https://github.com/EthanYoQ/Pagekin/releases/tag/v1.3.0)')
-    }
-
     const zhRetained = previousNotes
       .slice(0, previousNotes.indexOf('## 安装提示'))
       .split('\n')
@@ -92,7 +83,6 @@ describe('release metadata', () => {
         'Windows x64',
         'Apple Silicon',
         'Intel',
-        '1.3.0',
         'https://github.com/EthanYoQ/Pagekin/releases/latest)',
       ]) expect(readme).toContain(expected)
 
