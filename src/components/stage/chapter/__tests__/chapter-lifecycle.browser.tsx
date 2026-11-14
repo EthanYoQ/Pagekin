@@ -911,7 +911,6 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
   }
 
-  /** 滚到正文中段，点视口下半的一行，按 Ctrl F。 */
   async function searchFromMiddle() {
     const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
     await vi.waitFor(() => expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight * 4))
