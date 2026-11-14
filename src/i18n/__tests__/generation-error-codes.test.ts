@@ -788,6 +788,9 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'IMPORT_SOURCE_BYTES_EXCEEDED',
     'IMPORT_SOURCE_COUNT_EXCEEDED',
     'IMPORT_SOURCE_SIZE_INVALID',
+    // 批注统一修改的审阅面板在保存前发现正文已变只读（定稿或有生成在跑）时抛出（#653）：
+    // InlineAnnotationReview 就地接住，换成自己的按语言说明，原码不进失败面板。
+    'DRAFT_NOT_EDITABLE',
   ],
 }
 

@@ -1,9 +1,10 @@
-// #653 多处批注统一修改：新构建里逐处审阅并保存批注历史；旧版本（schema 9）造的作品库用新构建打开后正文与版本历史不变。
+// #653 多处批注统一修改：新构建里逐处审阅并保存批注历史；上一版 schema 造的作品库用新构建打开后正文与版本历史不变。
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { CURRENT_PROJECT_SCHEMA_VERSION } from '../lib/current-project-schema.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as runSheet from './pages/run-sheet.mjs'
 import * as stage from './pages/stage.mjs'
@@ -234,13 +235,13 @@ export const EXT653_SCENARIOS = {
   } },
 
   /**
-   * 旧版本（--app-root 指向已构建的 origin/master，schema 9）造示例作品，第 4 章两稿；读库记下正文与版本。
-   * 换本工作树的构建重启打开同一作品：迁到 schema 10，正文与版本哈希逐条相同，版本切换器仍列出两稿。
+   * 旧版本（--app-root 指向已构建的 origin/master，上一版 schema）造示例作品，第 4 章两稿；读库记下正文与版本。
+   * 换本工作树的构建重启打开同一作品：迁到当前 schema，正文与版本哈希逐条相同，版本切换器仍列出两稿。
    */
   'ext653-old-library': { model: false, shell: 'stage', setup: seedFourthChapterVersion, run: async context => {
     const measured = {}
     measured.before = await draftFacts(context.projectPath)
-    assert.equal(measured.before.userVersion, 9, '旧版本造的是 schema 9 的库')
+    assert.ok(measured.before.userVersion < CURRENT_PROJECT_SCHEMA_VERSION, `旧版本造的库低于 schema ${CURRENT_PROJECT_SCHEMA_VERSION}`)
     await chapterView.open(context.page, 4)
     measured.versionsBefore = await chapterView.versions(context.page)
 
@@ -251,7 +252,7 @@ export const EXT653_SCENARIOS = {
     await chapterView.prose(page).getByText(PARAGRAPHS[2]).first().waitFor({ state: 'visible', timeout: 30_000 })
     measured.versionsAfter = await chapterView.versions(page)
     measured.after = await draftFacts(context.projectPath)
-    assert.equal(measured.after.userVersion, 10, '新构建打开后迁到 schema 10')
+    assert.equal(measured.after.userVersion, CURRENT_PROJECT_SCHEMA_VERSION, `新构建打开后迁到 schema ${CURRENT_PROJECT_SCHEMA_VERSION}`)
     assert.deepEqual(measured.after.drafts, measured.before.drafts, '每一稿的章节、版本、状态与正文哈希都不变')
     assert.deepEqual(measured.versionsAfter, measured.versionsBefore, '版本切换器列出的版本不变')
     measured.historyTable = await readProjectDb(context.projectPath, db => db.prepare('SELECT COUNT(*) AS n FROM annotation_history').get().n)
