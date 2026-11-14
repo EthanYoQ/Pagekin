@@ -2,7 +2,7 @@ name: PR CI
 
 on:
   pull_request:
-    branches: [master]
+    branches: [master, claude/ci-docs-vbase]
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
