@@ -62,6 +62,7 @@ export async function createDraftRecoveryWorkflow(
     type: 'chapter_creation', title: `第 ${info.chapterNumber} 章 · 继续正文`, projectPath: session.projectPath,
     projectSession: session, generationModelId: recovery.modelId, chapterWordsTarget: target,
     resourceKeys: [workflowResourceKey('chapter', info.chapterNumber)],
+    backgroundNotice: { stage: 'draft', chapterNumber: Number(info.chapterNumber) },
     steps: [{ name: '继续已选正文', description: '沿原候选和原预算继续，保存前重新检查来源。',
       executor: (step, context, callbacks) => command.execute({ step, context, callbacks }) }],
   }

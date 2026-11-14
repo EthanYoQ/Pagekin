@@ -73,4 +73,24 @@ describe('settings persistence truthfulness', () => {
     await expect.element(toggle).not.toBeChecked()
     await expect.element(page.getByText(/自动打开下一章设置保存失败/)).toBeVisible()
   })
+
+  it('后台通知默认开着，关掉后写进配置', async () => {
+    await renderSection('appearance')
+    const toggle = page.getByRole('switch', { name: '在后台时通知我' })
+    await expect.element(toggle).toBeChecked()
+
+    await act(async () => (toggle.element() as HTMLInputElement).click())
+
+    await expect.element(toggle).not.toBeChecked()
+    expect(invoke).toHaveBeenCalledWith('config:set', { backgroundStageNotifications: false })
+  })
+
+  it('读到已关闭的后台通知时显示为关', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'config:get') return { backgroundStageNotifications: false }
+      throw new Error(`Unexpected IPC channel: ${channel}`)
+    })
+    await renderSection('appearance')
+    await expect.element(page.getByRole('switch', { name: '在后台时通知我' })).not.toBeChecked()
+  })
 })

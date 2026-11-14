@@ -407,6 +407,7 @@ export function createBatchChapterWorkflow(params: BatchChapterWorkflowParams): 
       workflowResourceKey('blueprints'),
     ],
     completionMode,
+    backgroundNotice: { stage: 'batch', startChapter: startChapterNumber, endChapter: endChapterNumber },
     title: localeText(uiLocale, `${modeZh} · ${rangeZh}`, `${modeEn} · ${rangeEn}`),
     steps: Array.from({ length: chapterCount }, (_, index) => {
       const chapterNumber = startChapterNumber + index

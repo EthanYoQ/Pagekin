@@ -12,6 +12,7 @@ import { registerDatabaseController } from './controllers/db-controller'
 import { registerKBController } from './controllers/kb-controller'
 import { registerImportController } from './controllers/import-controller'
 import { registerWindowController } from './controllers/window-controller'
+import { registerStageNotificationController } from './controllers/stage-notification-controller'
 import { registerOfficialHomepageController } from './controllers/official-homepage-controller'
 import { registerModelProviderResourceController } from './controllers/model-provider-resource-controller'
 import { registerFinalizationController } from './controllers/finalization-controller'
@@ -33,6 +34,7 @@ export function registerIPCHandlers() {
 
   // 挂载控制器路由
   registerWindowController()
+  registerStageNotificationController()
   registerOfficialHomepageController()
   registerModelProviderResourceController()
   registerConfigController()

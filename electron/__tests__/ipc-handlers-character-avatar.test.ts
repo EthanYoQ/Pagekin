@@ -49,6 +49,7 @@ vi.mock('../controllers/db-controller', () => ({ registerDatabaseController: vi.
 vi.mock('../controllers/kb-controller', () => ({ registerKBController: vi.fn() }))
 vi.mock('../controllers/import-controller', () => ({ registerImportController: vi.fn() }))
 vi.mock('../controllers/window-controller', () => ({ registerWindowController: vi.fn() }))
+vi.mock('../controllers/stage-notification-controller', () => ({ registerStageNotificationController: vi.fn() }))
 vi.mock('../controllers/official-homepage-controller', () => ({ registerOfficialHomepageController: vi.fn() }))
 vi.mock('../controllers/model-provider-resource-controller', () => ({ registerModelProviderResourceController: vi.fn() }))
 vi.mock('../controllers/finalization-controller', () => ({ registerFinalizationController: vi.fn() }))
