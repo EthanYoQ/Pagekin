@@ -810,7 +810,7 @@ describe('确认审稿清单的往返期间换了作品，回来的结果不碰�
 describe('长章节读到底，章节动作条仍在眼前', () => {
   const LONG = Array.from({ length: 160 }, (_, index) => `第 ${index + 1} 段。雨还在下，站台的灯一盏接一盏地熄了，他把信纸折好又展开。`).join('\n\n')
 
-  /** 长章节的待合并修稿：每十段改一处，合并视图里共 16 处改动。 */
+  /** 合并视图共 16 处改动（每十段改一处）。 */
   async function openLongMerge() {
     const draft = backend.addDraft({ status: 'draft', content: LONG })
     backend.addReview(draft)

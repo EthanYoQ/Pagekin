@@ -28,7 +28,7 @@ const seed = context => seedStageSample(context, {
   },
 })
 
-/** 第 3 章换成长草稿与审稿，再按审稿建一份待合并修稿：每十处涨潮改一句，合并视图里有 9 处改动。 */
+/** 合并视图共 9 处改动（每十处涨潮改一句）。 */
 const seedMerge = context => seedStageSample(context, {
   landOnChapter3: false,
   beforeReload: async ({ page, invoke, path, session }) => {

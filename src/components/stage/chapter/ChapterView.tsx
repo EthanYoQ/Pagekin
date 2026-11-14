@@ -125,7 +125,6 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
 
   return (
     <div className="stage-ch" data-focus={focus || undefined}>
-      {/* 键盘把焦点移到上方时，浏览器滚动让开吸顶的动作条 */}
       <div className="stage-ch-scroll" onFocusCapture={event => { event.currentTarget.style.scrollPaddingTop = `${stickyActionsHeight(event.currentTarget)}px` }}>
         <article className="stage-ch-page" aria-busy={!draft.loaded}>
           {chapterNumber !== undefined && (
