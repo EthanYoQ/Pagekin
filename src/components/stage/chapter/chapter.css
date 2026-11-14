@@ -101,10 +101,6 @@
   line-height: 1.4;
 }
 
-.stage-ch-version-item:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--ink) 4%, transparent);
-}
-
 .stage-ch-version-item small {
   font-size: var(--fs-11);
   font-weight: 400;

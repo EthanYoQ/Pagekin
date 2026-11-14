@@ -21,11 +21,13 @@ const openVersionMenu = async (page, { hoverSecond }) => {
   else await page.mouse.move(4, 4)
   const measured = await rows.evaluateAll(items => items.map(item => {
     const box = item.getBoundingClientRect()
-    const style = getComputedStyle(item)
-    return { text: item.innerText.split('\n'), height: Math.round(box.height), background: style.backgroundColor,
+    const title = getComputedStyle(item.firstElementChild)
+    return { text: item.innerText.split('\n'), height: Math.round(box.height), background: getComputedStyle(item).backgroundColor,
+      titleSize: title.fontSize, titleWeight: title.fontWeight,
       inside: [...item.children].every(line => { const rect = line.getBoundingClientRect(); return rect.top >= box.top && rect.bottom <= box.bottom }) }
   }))
   assert.ok(measured.every(row => row.inside), JSON.stringify(measured))
+  if (!hoverSecond) assert.ok(measured.every(row => row.background === 'rgba(0, 0, 0, 0)'), JSON.stringify(measured))
   return { rows: measured }
 }
 
@@ -37,6 +39,6 @@ export const I676_SCENARIOS = {
     await page.getByRole('button', { name: '标签操作' }).click()
     const items = page.getByRole('menu', { name: '标签操作' }).getByRole('menuitem')
     await items.nth(1).hover()
-    return { items: await items.allInnerTexts() }
+    return { items: await items.evaluateAll(list => list.map(item => ({ text: item.innerText, height: Math.round(item.getBoundingClientRect().height), fontSize: getComputedStyle(item).fontSize, background: getComputedStyle(item).backgroundColor }))) }
   } },
 }
