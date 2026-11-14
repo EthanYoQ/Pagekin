@@ -6,6 +6,8 @@ import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { globalEventBus } from '../../shared/event-bus'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../shared/project-session-context'
 import { openPlanningRecoveryDraft, useEditorStore } from '../../stores/editor-store'
+import { useStageStore } from '../../stores/navigation/stage-store'
+import { isChapterViewTab } from '../stage/chapter/chapter-tab-routing'
 import { useLocaleStore } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowStore, type WorkflowDefinition } from '../../stores/workflow-store'
@@ -83,6 +85,8 @@ export function useRunRecovery(): RunRecovery {
   const projectId = session?.projectId
   const hiddenEarlier = useMemo(() => projectId ? readHiddenRecovery(projectId) : new Set<string>(), [projectId])
   const [hiddenNow, setHiddenNow] = useState<ReadonlySet<string>>(new Set())
+  /** 在侧页续跑完成的选区建议：主进程随即不再列出这条运行，建议留在这里供复制。 */
+  const [continued, setContinued] = useState<Loaded<Record<string, EditorEntry>>>({ session: null, value: {} })
 
   useEffect(() => {
     if (!session) {
@@ -148,9 +152,11 @@ export function useRunRecovery(): RunRecovery {
   const entries = useMemo(() => {
     if (!session) return []
     const ofSession = <T,>(loaded: Loaded<T>, empty: T) => sameProjectSessionContext(loaded.session, session) ? loaded.value : empty
-    return buildRecoveryEntries({ ...ofSession(generationList, { ...EMPTY_RECOVERY_SOURCES, partial: false }), candidates: ofSession(candidateList, []) }, locale)
+    const listed = buildRecoveryEntries({ ...ofSession(generationList, { ...EMPTY_RECOVERY_SOURCES, partial: false }), candidates: ofSession(candidateList, []) }, locale)
+    const kept = Object.values(ofSession(continued, {})).filter(entry => !listed.some(item => item.kind === 'editor' && item.key === entry.key))
+    return [...listed, ...kept]
       .filter(entry => !('hideKey' in entry) || (!hiddenEarlier.has(entry.hideKey) && !hiddenNow.has(entry.hideKey)))
-  }, [session, generationList, candidateList, locale, hiddenEarlier, hiddenNow])
+  }, [session, generationList, candidateList, continued, locale, hiddenEarlier, hiddenNow])
 
   const stillCurrent = useCallback(() => session !== null && sameProjectSessionContext(session, currentSession()), [session])
 
@@ -245,12 +251,29 @@ export function useRunRecovery(): RunRecovery {
       await ipc.invokeWithProjectSession(current, 'generation:dismiss-planning-recovery', { handle: entry.recovery.handle })
       globalEventBus.emit('PLANNING_RECOVERY_CHANGED', { projectSession: current })
     }),
-    continueEditor: entry => void act(async current => {
-      const receipt = await ipc.invokeWithProjectSession(current, 'editor-inline:execute', { handle: entry.recovery.view.handle })
-      if (!stillCurrent()) return
-      setRefreshTick(value => value + 1)
-      throwIfTerminalProviderFailure(receipt.outcome.receipt)
-    }),
+    /** 原选区所在的章开着、正文和发起时一字不差：到那一章的原选区气泡里续跑。否则在侧页续跑，建议留在卡片上。 */
+    continueEditor: entry => {
+      if (!session || !stillCurrent()) return
+      const { handle } = entry.recovery.view
+      const tab = useEditorStore.getState().tabs.find(tab => tab.projectKey === session.projectPath && isChapterViewTab(tab)
+        && tab.content === entry.recovery.context.documentText)
+      if (tab?.filePath) {
+        useStageStore.setState({ selectionRequest: { session, filePath: tab.filePath, handle } })
+        useEditorStore.getState().setActiveTab(tab.id)
+        return
+      }
+      void act(async current => {
+        const receipt = await ipc.invokeWithProjectSession(current, 'editor-inline:execute', { handle })
+        if (!stillCurrent()) return
+        const text = receipt.outcome.content
+        if (text.trim()) setContinued(kept => ({ session: current, value: {
+          ...(sameProjectSessionContext(kept.session, current) ? kept.value : {}),
+          [entry.key]: { ...entry, canContinue: false, suggestions: [{ id: entry.key, text }] },
+        } }))
+        setRefreshTick(value => value + 1)
+        throwIfTerminalProviderFailure(receipt.outcome.receipt)
+      })
+    },
     resumeReview: entry => startRecovery(current => createReviewRevisionRecoveryWorkflow(current, entry.view.handle)),
     resumeBatch: entry => startRecovery(current => createBatchRecoveryWorkflow(current, entry.batchId)),
     resumeDraft: entry => {

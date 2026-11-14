@@ -73,7 +73,7 @@ async function openChapter() {
   await act(async () => { await openDraftTab(meta, '第 3 章', SESSION) })
 }
 
-const executions = () => backend.writes('editor-inline:execute').length
+const executions = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:execute').length
 const editorText = () => EditorView.findFromDOM(host!.querySelector('.cm-editor')!)!.state.doc.toString()
 
 beforeEach(async () => {

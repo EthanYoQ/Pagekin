@@ -113,6 +113,15 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
+  // 运行侧页要在这一稿的原选区续跑：句柄留在视图里交给编辑器，请求随即清掉，重新挂载时不再重开气泡。
+  const requested = useStageStore(s => s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
+    ? s.selectionRequest.handle : undefined)
+  const [recoveryHandle, setRecoveryHandle] = useState(requested)
+  if (requested && requested !== recoveryHandle) setRecoveryHandle(requested)
+  useEffect(() => {
+    if (requested) useStageStore.setState({ selectionRequest: null, sheet: null })
+  }, [requested])
+
   const title = blueprint?.title || draft.meta?.chapterTitle || ''
   const units = charCount.toLocaleString(locale)
   const [labelZh, labelEn] = DRAFT_STATUS_INFO[stage === 'archived' || stage === 'superseded' || stage === 'revised' ? stage : 'draft'].label
@@ -167,6 +176,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 paragraphIndent
                 content={tab.content ?? ''}
                 filePath={filePath}
+                recoveryHandle={recoveryHandle}
                 editable={editable}
                 hideStatusBar
                 onCharCountChange={setCharCount}

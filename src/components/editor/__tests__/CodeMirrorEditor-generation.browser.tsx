@@ -564,7 +564,7 @@ it.each(['unknown', 'discarded'])('已有 %s 请求占用时不显示重新执�
   const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
   invoke.mockImplementation(async () => ({ view: { handle, status, artifacts: [], candidates: [], ledger: { physicalRequests: 1 } }, modelId: '原模型', sourceStatus: 'current', context: { action: 'refine', kind: 'author-draft', documentText, documentHash, from: 0, to: 2, selectedText: documentText } }))
   await act(async () => root.render(<CodeMirrorEditor content={documentText} recoveryHandle={handle} />))
-  await expect.element(page.getByText('恢复的候选尚不可应用，可复制或继续原运行')).toBeVisible()
+  await expect.element(page.getByText('恢复的候选不可应用，只能复制')).toBeVisible()
   await expect.element(page.getByRole('button', { name: '继续原运行' })).not.toBeInTheDocument()
   expect(invoke).toHaveBeenCalledTimes(1)
 })
@@ -582,7 +582,7 @@ it('点击接受前原候选已丢弃，保留预览但不写入正文', async (
   expect(EditorView.findFromDOM(container.querySelector('.cm-editor')!)!.state.doc.toString()).toBe(documentText)
   await expect.element(page.getByText('候选')).toBeVisible()
 })
-it('继续原运行时服务商以上下文超长拒绝，显示对应说明', async () => {
+it('明确 handle 打开还没发出请求的原运行时直接续跑；服务商以上下文超长拒绝，显示对应说明', async () => {
   const handle = { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: '原预算', runId: '续跑运行' }
   const documentText = '原文'
   const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
@@ -592,6 +592,6 @@ it('继续原运行时服务商以上下文超长拒绝，显示对应说明', a
     ? { run: view, outcome: { status: 'incomplete', content: '', finishReason: 'error', receipt: { finishReason: 'error', failureCode: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' } } }
     : stored)
   await act(async () => root.render(<CodeMirrorEditor content={documentText} recoveryHandle={handle} />))
-  await act(async () => page.getByRole('button', { name: '继续原运行' }).click())
   await expect.element(page.getByText(/提示词超出了模型能接受的长度/)).toBeVisible()
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:execute')).toHaveLength(1)
 })

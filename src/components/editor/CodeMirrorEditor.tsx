@@ -13,6 +13,7 @@ import { useThemeStore } from '../../stores/theme-store'
 import type { MainGenerationRunHandle } from '../../services/generation/generation-runtime'
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
 import { EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, type EditorInlineFixedAction, type EditorInlineRequest } from '../../shared/editor-inline-generation'
+import { editorCanContinue } from '../../shared/recovery-actions'
 import { routeModelId } from '../../services/model-routing'
 import { countDraftUnits } from '../../shared/draft-units'
 import { useLocaleStore } from '../../stores/locale-store'
@@ -175,7 +176,20 @@ export default function CodeMirrorEditor({
   useLayoutEffect(() => { editableRef.current = editable; filePathRef.current = filePath }, [editable, filePath])
   const aiCandidateRef = useRef<{ artifactId: string; textHash: string } | null>(null)
   const inlineRef = useRef<ReturnType<typeof createEditorInlineGeneration> | null>(null)
-  const [canResumeAI, setCanResumeAI] = useState(false)
+  const handleResumeAI = async () => {
+    const sequence = aiRequestSequenceRef.current
+    try {
+      const receipt = await inlineRef.current?.execute()
+      if (sequence !== aiRequestSequenceRef.current) return
+      const failureCode = receipt?.outcome.receipt.failureCode
+      if (isTerminalProviderFailure(failureCode)) { setAiError(displayedErrorMessage(uiLocale, failureCode)); return }
+      if (!receipt || receipt.outcome.status !== 'completed' || receipt.outcome.finishReason !== 'stop') throw new Error('EDITOR_INLINE_INCOMPLETE')
+      const proof = (receipt.run.candidates ?? receipt.run.artifacts).find(candidate => candidate.text === receipt.outcome.content && candidate.status === 'completed' && candidate.compositionEligible === true)
+      aiCandidateRef.current = proof ? { artifactId: proof.artifactId, textHash: proof.textHash } : null
+      setAiResult(receipt.outcome.content); setAiError(receipt.sourceStatus === 'current' ? null : uiText('来源已变化，结果仅可复制', 'Sources changed; the result can only be copied.'))
+    } catch { if (sequence === aiRequestSequenceRef.current) setAiError(uiText('原运行未完整完成，结果不可应用', 'The original run did not complete; its result cannot be applied.')) }
+  }
+
   const recoveryKey = recoveryHandle ? JSON.stringify(recoveryHandle) : ''
   useEffect(() => {
     if (!recoveryKey) return
@@ -195,16 +209,18 @@ export default function CodeMirrorEditor({
       aiCandidateRef.current = latest ? { artifactId: latest.artifactId, textHash: latest.textHash } : null
       setAiResult(latest?.text ?? '')
       const applicable = latest?.status === 'completed' && latest.compositionEligible === true && recovery.view.status !== 'cancelled' && recovery.sourceStatus === 'current'
-      setAiError(applicable ? null : uiText('恢复的候选尚不可应用，可复制或继续原运行', 'The recovered candidate cannot be applied yet; copy it or continue the original run.'))
-      setCanResumeAI(recovery.sourceStatus === 'current' && recovery.view.status !== 'cancelled' && recovery.view.ledger?.physicalRequests === 0 && candidates.length === 0)
+      const resumable = editorCanContinue(recovery)
+      setAiError(applicable || resumable ? null : uiText('恢复的候选不可应用，只能复制', 'The recovered candidate cannot be applied; it can only be copied.'))
       setActiveAIAction(uiText(...actionLabel(target.action)))
       setActiveNote(target.action === 'instruct' ? target.instruction : null)
       const view = editorRef.current?.view
       const from = Math.min(target.from, view?.state.doc.length ?? 0)
       setSelectionRange({ from, to: Math.min(target.to, view?.state.doc.length ?? 0) })
+      view?.dispatch({ effects: EditorView.scrollIntoView(from, { y: 'center' }) })
       const coords = view?.coordsAtPos(from)
       setBubblePos({ top: coords?.top ?? 150, left: coords?.left ?? 200, inView: true })
       setBubbleOpen(true)
+      if (resumable) void handleResumeAI()
     }).catch(() => { if (sequence === aiRequestSequenceRef.current) { setAiResult(''); setAiError(uiText('无法恢复原运行', 'The original run could not be restored.')); setBubbleOpen(true) } })
     return () => { client.detach(); aiRequestSequenceRef.current += 1 }
     // Navigation is explicit; later document changes are checked at acceptance.
@@ -432,7 +448,7 @@ export default function CodeMirrorEditor({
       inlineRef.current = client
       aiCandidateRef.current = null
       setActiveAIAction(uiText(...actionLabel(request.action))); setActiveNote(request.action === 'instruct' ? request.instruction : null)
-      setNoteDraft(null); setAiResult(''); setAiError(null); setCanResumeAI(false)
+      setNoteDraft(null); setAiResult(''); setAiError(null)
       const recovery = await client.open({ input, modelId: routeModelId('editor-inline') ?? '', uiActionNonce: crypto.randomUUID() })
       if (requestSequence !== aiRequestSequenceRef.current) return
       onGenerationHandle?.(recovery.view.handle)
@@ -453,21 +469,6 @@ export default function CodeMirrorEditor({
       if (requestSequence !== aiRequestSequenceRef.current) return
       setAiResult(''); setAiError(uiText('生成失败，结果不可应用', 'Generation failed; the result cannot be applied.'))
     }
-  }
-
-  const handleResumeAI = async () => {
-    const sequence = aiRequestSequenceRef.current
-    setCanResumeAI(false)
-    try {
-      const receipt = await inlineRef.current?.execute()
-      if (sequence !== aiRequestSequenceRef.current) return
-      const failureCode = receipt?.outcome.receipt.failureCode
-      if (isTerminalProviderFailure(failureCode)) { setAiError(displayedErrorMessage(uiLocale, failureCode)); return }
-      if (!receipt || receipt.outcome.status !== 'completed' || receipt.outcome.finishReason !== 'stop') throw new Error('EDITOR_INLINE_INCOMPLETE')
-      const proof = (receipt.run.candidates ?? receipt.run.artifacts).find(candidate => candidate.text === receipt.outcome.content && candidate.status === 'completed' && candidate.compositionEligible === true)
-      aiCandidateRef.current = proof ? { artifactId: proof.artifactId, textHash: proof.textHash } : null
-      setAiResult(receipt.outcome.content); setAiError(receipt.sourceStatus === 'current' ? null : uiText('来源已变化，结果仅可复制', 'Sources changed; the result can only be copied.'))
-    } catch { if (sequence === aiRequestSequenceRef.current) setAiError(uiText('原运行未完整完成，结果不可应用', 'The original run did not complete; its result cannot be applied.')) }
   }
 
   const handleAcceptAI = async () => {
@@ -529,7 +530,6 @@ export default function CodeMirrorEditor({
 
   const handleRejectAI = () => {
     void inlineRef.current?.cancel().catch(() => {})
-    setCanResumeAI(false)
     aiRequestSequenceRef.current += 1
     aiTargetRef.current = null
     setAiResult(null)
@@ -630,7 +630,6 @@ export default function CodeMirrorEditor({
                 <p className="cm-selbar-text">{aiResult}</p>
               )}
               <div className="cm-selbar-actions">
-                {canResumeAI && <Button variant="text" size="sm" onClick={handleResumeAI}>{uiText('继续原运行', 'Continue original run')}</Button>}
                 <Button variant="secondary" size="sm" onClick={handleRejectAI}>{uiText('取消', 'Cancel')}</Button>
                 <Button
                   variant="primary"
