@@ -114,7 +114,7 @@ describe('批注修改提交', () => {
   it('正文发生变化时不覆盖，也不写历史', async () => {
     const id = DraftRepository.create({ chapterNumber: 2, source: 'write', content: '夏雨落下', wordCount: 4 })
     const input = { draftId: id, expectedSaved: '春雨落下', before: '春雨落下', after: '秋雨落下', annotations: [{ id: 'one', from: 0, to: 1, selectedText: '春', instruction: '改成秋' }] }
-    await expect(handlers.get('db:annotation-commit')!({}, input, session.projectPath, session)).resolves.toMatchObject({ success: false })
+    await expect(handlers.get('db:annotation-commit')!({}, input, session.projectPath, session)).resolves.toEqual({ success: false, error: 'Error: SOURCE_DRAFT_CHANGED' })
     expect(DraftRepository.getFull(id)?.content).toBe('夏雨落下')
     const { getProjectDb } = await import('../../database')
     expect(getProjectDb()!.prepare('SELECT count(*) FROM annotation_history WHERE draft_id=?').pluck().get(id)).toBe(0)

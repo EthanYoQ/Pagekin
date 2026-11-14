@@ -287,6 +287,43 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(commit).not.toHaveBeenCalled()
   })
 
+  it('审阅期间章节被审稿或修稿占用（正文不可编辑），接受全部不写入，修改仍留在审阅里', async () => {
+    deferStream = true
+    const commit = vi.fn(async () => {})
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={commit} />))
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('改成第一人称'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+    await expect.element(page.getByRole('region', { name: '批注修改对比' })).toBeVisible()
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" editable={false} onCommitAnnotations={commit} />))
+
+    await act(async () => page.getByRole('button', { name: '接受全部' }).click())
+
+    await expect.element(page.getByText('保存版本失败，修改仍在当前页面，请重试。')).toBeVisible()
+    expect(commit).not.toHaveBeenCalled()
+    await expect.element(page.getByRole('region', { name: '批注修改对比' })).toBeVisible()
+  })
+
+  it('写入时主进程报正文已变（经 IPC 带 "Error: " 前缀），提示取消后重来，而不是让作者重试', async () => {
+    deferStream = true
+    const commit = vi.fn(async () => { throw new Error('Error: SOURCE_DRAFT_CHANGED') })
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={commit} />))
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('改成第一人称'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+
+    await act(async () => page.getByRole('button', { name: '接受全部' }).click())
+
+    await expect.element(page.getByText('正文或来源已变化，这次修改不能保存。取消后可重新统一修改。')).toBeVisible()
+    expect(commit).toHaveBeenCalledTimes(1)
+  })
+
   it('重新生成一处修改时只带这一处的批注，不带紧挨着的另一段的批注', async () => {
     deferStream = true
     await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={vi.fn(async () => {})} />))

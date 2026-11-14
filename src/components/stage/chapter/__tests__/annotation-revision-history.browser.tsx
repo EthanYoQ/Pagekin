@@ -83,3 +83,24 @@ it('英文批注历史同样不出双标点', async () => {
     expect(host.textContent).not.toMatch(/[。！？.!?][：:]/)
   } finally { useLocaleStore.setState({ locale: 'zh-CN' }) }
 })
+
+it('批注历史读取失败时说明并给「重试」，重试读到后列出历史', async () => {
+  const invoke = vi.mocked((window as unknown as { aiNovelAPI: { invoke: (channel: string) => Promise<unknown> } }).aiNovelAPI.invoke)
+  invoke.mockRejectedValueOnce(new Error('Error: SQLITE_BUSY'))
+  await act(async () => root.render(<AnnotationRevisionHistory draftId={7} projectKey="C:/合成批注" refresh={0} />))
+  await expect.element(page.getByText('正文不受影响，批注历史没读出来。')).toBeVisible()
+
+  await act(async () => page.getByRole('button', { name: '重试' }).click())
+
+  await expect.element(page.getByText(`批注历史版本（${entries.length}）`)).toBeVisible()
+  await expect.element(page.getByText('正文不受影响，批注历史没读出来。')).not.toBeInTheDocument()
+})
+
+it('没有批注历史时不显示任何内容', async () => {
+  const invoke = vi.mocked((window as unknown as { aiNovelAPI: { invoke: (channel: string) => Promise<unknown> } }).aiNovelAPI.invoke)
+  invoke.mockResolvedValueOnce([])
+  await act(async () => root.render(<AnnotationRevisionHistory draftId={7} projectKey="C:/合成批注" refresh={0} />))
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalled())
+  await act(async () => {})
+  expect(host.textContent).toBe('')
+})
