@@ -55,8 +55,8 @@ export interface RunRecovery {
   resumeReview: (entry: ReviewEntry) => void
   resumeBatch: (entry: BatchEntry) => void
   resumeDraft: (entry: DraftEntry) => void
-  /** 这张候选卡在这部作品里不再显示；生成记录不动。 */
-  hideDraft: (entry: DraftEntry) => void
+  /** 这张卡在这部作品里不再显示；生成记录不动。 */
+  hide: (entry: DraftEntry | ReviewEntry | EditorEntry) => void
 }
 
 /**
@@ -149,7 +149,7 @@ export function useRunRecovery(): RunRecovery {
     if (!session) return []
     const ofSession = <T,>(loaded: Loaded<T>, empty: T) => sameProjectSessionContext(loaded.session, session) ? loaded.value : empty
     return buildRecoveryEntries({ ...ofSession(generationList, { ...EMPTY_RECOVERY_SOURCES, partial: false }), candidates: ofSession(candidateList, []) }, locale)
-      .filter(entry => entry.kind !== 'draft' || (!hiddenEarlier.has(entry.hideKey) && !hiddenNow.has(entry.hideKey)))
+      .filter(entry => !('hideKey' in entry) || (!hiddenEarlier.has(entry.hideKey) && !hiddenNow.has(entry.hideKey)))
   }, [session, generationList, candidateList, locale, hiddenEarlier, hiddenNow])
 
   const stillCurrent = useCallback(() => session !== null && sameProjectSessionContext(session, currentSession()), [session])
@@ -257,7 +257,7 @@ export function useRunRecovery(): RunRecovery {
       const picked = selection[entry.key] ?? []
       startRecovery(current => createDraftRecoveryWorkflow(current, entry.view.handle, picked.length ? [...picked] : undefined))
     },
-    hideDraft: entry => {
+    hide: entry => {
       if (!session || !stillCurrent()) return
       hideRecovery(session.projectId, entry.hideKey)
       setHiddenNow(previous => new Set(previous).add(entry.hideKey))
