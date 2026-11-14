@@ -121,6 +121,12 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   useEffect(() => {
     if (requested) useStageStore.setState({ selectionRequest: null, sheet: null })
   }, [requested])
+  const merging = draft.mergeData !== null
+  useEffect(() => {
+    if (!merging) return
+    useStageStore.setState({ mergeViewFile: filePath })
+    return () => useStageStore.setState({ mergeViewFile: null })
+  }, [merging, filePath])
 
   const title = blueprint?.title || draft.meta?.chapterTitle || ''
   const units = charCount.toLocaleString(locale)

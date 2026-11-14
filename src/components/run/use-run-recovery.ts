@@ -5,7 +5,7 @@ import { createReviewRevisionRecoveryWorkflow } from '../../services/workflows/r
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { globalEventBus } from '../../shared/event-bus'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../shared/project-session-context'
-import { openPlanningRecoveryDraft, useEditorStore } from '../../stores/editor-store'
+import { openPlanningRecoveryDraft, useEditorStore, type EditorTab } from '../../stores/editor-store'
 import { useStageStore } from '../../stores/navigation/stage-store'
 import { isChapterViewTab } from '../stage/chapter/chapter-tab-routing'
 import { useLocaleStore } from '../../stores/locale-store'
@@ -28,6 +28,14 @@ function workflowWriting(projectPath: string | undefined, runs = useWorkflowStor
 }
 
 let selectionRequests = 0
+
+/** 修稿合并视图里编辑器不渲染：当前标签看它此刻摆没摆合并，后台标签看切过去会不会自动摆出合并（有可合并修稿）。 */
+function editorReceives(tab: EditorTab, session: ProjectSessionContext): boolean {
+  const { mergeViewFile, chapterFacts } = useStageStore.getState()
+  if (tab.id === useEditorStore.getState().activeTabId) return mergeViewFile !== tab.filePath
+  const facts = tab.draftId !== undefined && chapterFacts && sameProjectSessionContext(chapterFacts.session, session) ? chapterFacts.byDraft[tab.draftId] : undefined
+  return !facts?.mergeable.length
+}
 
 function currentSession(): ProjectSessionContext | null {
   return projectSessionContextFromProject(useProjectStore.getState().currentProject)
@@ -250,13 +258,13 @@ export function useRunRecovery(): RunRecovery {
       await ipc.invokeWithProjectSession(current, 'generation:dismiss-planning-recovery', { handle: entry.recovery.handle })
       globalEventBus.emit('PLANNING_RECOVERY_CHANGED', { projectSession: current })
     }),
-    /** 选区是发起时正文里的偏移：原稿还开着且正文一字不差，才回到原选区气泡续跑；否则在侧页续跑。 */
+    /** 选区是发起时正文里的偏移：原稿还开着、正文一字不差、编辑器接得住，才回到原选区气泡续跑；否则在侧页续跑。 */
     continueEditor: entry => {
       if (!session || !stillCurrent()) return
       const { view: { handle }, context } = entry.recovery
       const tab = context.filePath === undefined ? undefined : useEditorStore.getState().tabs.find(tab => tab.projectKey === session.projectPath
         && isChapterViewTab(tab) && tab.filePath === context.filePath && tab.content === context.documentText)
-      if (tab) {
+      if (tab && editorReceives(tab, session)) {
         leaveSettingsThen(() => {
           useStageStore.setState({ selectionRequest: { session, filePath: context.filePath!, handle, nonce: ++selectionRequests } })
           useEditorStore.getState().setActiveTab(tab.id)
