@@ -17,6 +17,7 @@
   overflow: auto;
   padding: 0 32px 64px;
   container: page / inline-size;
+  scroll-padding-top: var(--stage-ch-sticky-top, 0px);
 }
 
 /* 纸面宽度取版心加左右留白，1280 宽时正文一行正好 34 字 */
@@ -147,6 +148,7 @@
 /* 正文随外层一起滚，搜索面板要吸住才不会留在正文顶上；盖过 index.css 的 static */
 .stage-ch-prose .cm-editor .cm-panels-top:has(.cm-search) {
   position: sticky !important;
+  top: var(--stage-ch-sticky-top, 0px) !important;
 }
 
 .stage-ch-hint {

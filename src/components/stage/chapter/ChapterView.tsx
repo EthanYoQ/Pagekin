@@ -64,6 +64,14 @@ function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
 
 const stickyActionsHeight = (inside: HTMLElement) => inside.closest('.stage-ch-scroll')?.querySelector<HTMLElement>('.stage-ch-actions-sticky')?.offsetHeight ?? 0
 
+/** 动作条随审稿读完出现、随纸面宽窄换行，纸面跟着变高；每次变化重量一遍，焦点让位与搜索面板吸顶都读这个变量。 */
+const trackStickyActions = (scroller: HTMLDivElement | null) => {
+  if (!scroller) return
+  const observer = new ResizeObserver(() => scroller.style.setProperty('--stage-ch-sticky-top', `${stickyActionsHeight(scroller)}px`))
+  observer.observe(scroller.firstElementChild!)
+  return () => observer.disconnect()
+}
+
 /**
  * 正文单章视图：章节头、生命周期、章节动作条、版本切换器与纸面正文。待写章显示本章蓝图与写作此章。
  * 审稿报告是视图里的侧页，修稿合并在纸面上逐段选择，定稿后显示后处理四步；全程不需要离开这个标签。
@@ -125,7 +133,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
 
   return (
     <div className="stage-ch" data-focus={focus || undefined}>
-      <div className="stage-ch-scroll" onFocusCapture={event => { event.currentTarget.style.scrollPaddingTop = `${stickyActionsHeight(event.currentTarget)}px` }}>
+      <div ref={trackStickyActions} className="stage-ch-scroll">
         <article className="stage-ch-page" aria-busy={!draft.loaded}>
           {chapterNumber !== undefined && (
             <ChapterHead
