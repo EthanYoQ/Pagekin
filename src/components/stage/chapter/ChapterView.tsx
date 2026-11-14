@@ -63,7 +63,7 @@ function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
 }
 
 /** 章节动作条吸在纸面顶上，光标往上走时要停在它下面。 */
-const actionsHeight = (editor: HTMLElement) => editor.closest('.stage-ch-page')?.querySelector<HTMLElement>('.stage-ch-actions')?.offsetHeight ?? 0
+const actionsHeight = (editor: HTMLElement) => editor.closest('.stage-ch-page')?.querySelector<HTMLElement>('.stage-ch-actions-sticky')?.offsetHeight ?? 0
 
 /**
  * 正文单章视图：章节头、生命周期、章节动作条、版本切换器与纸面正文。待写章显示本章蓝图与写作此章。

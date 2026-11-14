@@ -106,19 +106,25 @@
   background: var(--accent-soft);
 }
 
-/* ================= 章节动作条：吸在纸面顶上，长章节读到末尾也能直接定稿（#668） ================= */
+/* ================= 章节动作条 ================= */
 .stage-ch-actions {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--focus-paper, var(--paper));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s-2);
-  margin: 14px 0 34px;
-  padding: 12px 0 26px;
+  margin: 26px 0 34px;
+  padding-bottom: 26px;
   border-bottom: 1px solid var(--rule);
+}
+
+/* 草稿的动作条吸在纸面顶上，长章节读到末尾也能直接定稿（#668）；外边距挪 12px 进内边距，吸住时按钮不贴视区顶边 */
+.stage-ch-actions-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-top: 14px;
+  padding-top: 12px;
+  background: var(--focus-paper, var(--paper));
 }
 
 .stage-ch-hint {

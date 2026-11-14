@@ -84,6 +84,26 @@ export const I668_SCENARIOS = {
     await page.keyboard.press('Escape')
     await chapterView.finalizeDialog(page, 4).waitFor({ state: 'hidden' })
 
+    // 光标在后半章时搜前面的一段：编辑器往上滚到匹配处，匹配行要落在吸顶的动作条下面
+    await chapterView.prose(page).click()
+    await page.keyboard.press('ControlOrMeta+F')
+    const search = chapterView.view(page).locator('.cm-search input[name="search"]')
+    await page.keyboard.type('第 20 次涨潮')
+    await page.keyboard.press('Enter')
+    const match = chapterView.prose(page).locator('.cm-line', { hasText: '第 20 次涨潮' })
+    await match.waitFor({ state: 'visible' })
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const searchMatch = await chapterView.view(page).evaluate(view => ({
+      bar: Math.round(view.querySelector('.stage-ch-actions-sticky').getBoundingClientRect().bottom),
+      line: Math.round([...view.querySelectorAll('.cm-line')].find(line => line.textContent.includes('第 20 次涨潮')).getBoundingClientRect().top),
+    }))
+    await shoot('i668-search-match')
+    assert.ok(searchMatch.line >= searchMatch.bar, '搜索跳到的匹配行不被动作条挡住')
+    await page.keyboard.press('Escape')
+    await search.waitFor({ state: 'detached' })
+    const finalizeAfterSearch = await hit(finalize)
+    assert.equal(finalizeAfterSearch, true, '关掉搜索后定稿按钮仍点得到')
+
     await stage.focusToggle(page).click()
     await stage.spine(page).waitFor({ state: 'detached' })
     await scroller(page).evaluate(element => { element.scrollTop = element.scrollHeight / 2 })
@@ -94,6 +114,21 @@ export const I668_SCENARIOS = {
     await page.keyboard.press('Escape')
     await stage.spine(page).waitFor({ state: 'visible' })
 
-    return { reviewEnd, reviewHit, revisedEnd, revisedHit, afterClick, focusHit }
+    return { reviewEnd, reviewHit, revisedEnd, revisedHit, afterClick, searchMatch, finalizeAfterSearch, focusHit }
+  } },
+  'i668-review-1280': { model: false, shell: 'stage', setup: async context => {
+    await context.page.setViewportSize({ width: 1280, height: 900 })
+    await seed(context)
+  }, run: async ({ page, shoot }) => {
+    const revise = chapterView.reviseButton(page)
+    await chapterView.reviewSheet(page).waitFor({ state: 'visible' })
+    await revise.waitFor({ state: 'visible' })
+    await scroller(page).evaluate(element => { element.scrollTop = element.scrollHeight / 2 })
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const reviewHit = await hit(revise)
+    const barHeight = await chapterView.view(page).locator('.stage-ch-actions-sticky').evaluate(element => element.offsetHeight)
+    await shoot('i668-review-1280-mid')
+    assert.equal(reviewHit, true, '1280 宽、审稿报告开着、滚到中段时，修稿主按钮仍可点')
+    return { reviewHit, barHeight }
   } },
 }

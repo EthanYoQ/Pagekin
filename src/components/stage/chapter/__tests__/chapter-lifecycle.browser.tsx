@@ -835,7 +835,7 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     const end = scroller.scrollTop
     for (let step = 0; step < 80; step++) await userEvent.keyboard('{ArrowUp}')
     await vi.waitFor(() => expect(scroller.scrollTop).toBeLessThan(end))
-    const bar = document.querySelector('.stage-ch-actions')!.getBoundingClientRect()
+    const bar = document.querySelector('.stage-ch-actions-sticky')!.getBoundingClientRect()
     expect(document.querySelector('.cm-cursor')!.getBoundingClientRect().top).toBeGreaterThanOrEqual(bar.bottom)
   })
 })
