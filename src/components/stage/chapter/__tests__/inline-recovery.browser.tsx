@@ -40,14 +40,14 @@ async function sha256(text: string) {
 const chapterTab = (chapterNumber: number) => useEditorStore.getState().tabs.find(tab => tab.chapterNumber === chapterNumber)?.filePath
 
 /**
- * 请求发出前关闭应用留下的第 3 章选区润色运行。和主进程一样：生成完的建议在气泡回执「已显示」之前一直列为可恢复。
- * origin 是发起时记下的原稿身份，升级前的旧运行没有。
+ * 请求发出前关闭应用留下的第 3 章选区润色运行。和主进程一样：生成完的建议在气泡回执「已显示」之前一直列为可恢复；
+ * 这次打开里执行完的运行状态仍是 running，句柄换成这次打开的 epoch。origin 是发起时记下的原稿身份，升级前的旧运行没有。
  */
 async function interruptedSelectionRun(documentText: string, executed: Promise<void> = Promise.resolve(), origin: () => string | undefined = () => chapterTab(3) ?? 'drafts/3') {
   const from = documentText.indexOf(SELECTED)
   const base = { action: 'refine', kind: 'author-draft', documentText, documentHash: await sha256(documentText), from, to: from + SELECTED.length, selectedText: SELECTED }
   const pending = { handle, status: 'running', artifacts: [], candidates: [], ledger: { physicalRequests: 0 } }
-  const done = { handle, status: 'completed', artifacts: [], candidates: [{ ...handle, artifactId: '建议', textHash: 'h', text: SUGGESTION, status: 'completed', compositionEligible: true }], ledger: { physicalRequests: 1 } }
+  const done = { handle: { ...handle, epoch: SESSION.leaseId }, status: 'running', artifacts: [], candidates: [{ ...handle, artifactId: '建议', textHash: 'h', text: SUGGESTION, status: 'completed', compositionEligible: true }], ledger: { physicalRequests: 1 } }
   let view: typeof pending | typeof done = pending
   let delivered = false
   const recovery = () => {
@@ -66,7 +66,7 @@ async function interruptedSelectionRun(documentText: string, executed: Promise<v
       case 'editor-inline:execute':
         await executed
         view = done
-        return { run: { ...done, status: 'running', handle: { ...handle, epoch: SESSION.leaseId } }, sourceStatus: 'current', outcome: { status: 'completed', finishReason: 'stop', content: SUGGESTION, receipt: { finishReason: 'stop' } } }
+        return { run: done, sourceStatus: 'current', outcome: { status: 'completed', finishReason: 'stop', content: SUGGESTION, receipt: { finishReason: 'stop' } } }
       default: return fixture(channel, ...args)
     }
   })
