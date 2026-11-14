@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 9,
+  "schemaVersion": 10,
   "rules": {
     "D": ["preserve-domain", "signed-domain-value", "portable-domain-copy"],
     "H": ["historical-nonreplayable", "nonreplayable-history", "portable-history-projector"],
@@ -104,7 +104,9 @@
     "summary_snapshots.character_states": "preserve-domain-value-with-current-source-check",
     "summary_snapshots.continuity_facts": "preserve-domain-value-with-current-source-check"
   },
+  "m09Fields": ["annotation_history.id", "annotation_history.draft_id", "annotation_history.before_text", "annotation_history.after_text", "annotation_history.annotations_json", "annotation_history.created_at"],
   "tables": {
+    "annotation_history": {"id":"D","draft_id":"D","before_text":"D","after_text":"D","annotations_json":"D","created_at":"D"},
     "blueprint_character_sync_operations": {"operation_id":"H","blueprint_commit_operation_id":"H","blueprint_commit_payload_hash":"R","status":"H","start_chapter":"H","end_chapter":"H","character_sync_input":"R","completion_receipt":"R","created_at":"H","updated_at":"H","completed_at":"H"},
     "blueprint_commit_operations": {"operation_id":"H","payload_hash":"R","mode":"H","start_chapter":"H","end_chapter":"H","character_sync_input":"R","committed_at":"H"},
     "blueprint_continuity_suggestions": {"suggestion_id":"D","finalization_id":"D","chapter_number":"D","base_blueprint_hash":"D","patch_json":"D","evidence_event_ids":"D","status":"D","decided_at":"D","decision_receipt_json":"D","created_at":"D"},

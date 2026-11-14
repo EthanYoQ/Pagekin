@@ -20,6 +20,7 @@ import { readPortableCharacterAvatarRows } from '../repositories/character-asset
 import {
   PORTABLE_PROJECT_FORMAT_VERSION,
   PORTABLE_SOURCE_SCHEMA_VERSION,
+  PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS,
   assertPortableSourceSchema,
   getPortableFieldPolicy,
   portablePathKey,
@@ -893,7 +894,9 @@ export function sanitizePortableDatabase(databasePath: string): {
   try {
     db.pragma('foreign_keys = ON')
     db.pragma('secure_delete = ON')
-    const sourceSchema = assertPortableSourceSchema(db)
+    const schemaVersion = PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS.find(version => version === db.pragma('user_version', { simple: true }))
+    if (schemaVersion === undefined) throw new Error('PORTABLE_SCHEMA_UNSUPPORTED')
+    const sourceSchema = assertPortableSourceSchema(db, schemaVersion)
     const avatarRows = readPortableCharacterAvatarRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
       root_action_id: string }>).map(row => row.root_action_id))
@@ -978,7 +981,7 @@ export function sanitizePortableDatabase(databasePath: string): {
     }).immediate()
     db.exec('VACUUM')
     db.pragma('wal_checkpoint(TRUNCATE)')
-    assertPortableSourceSchema(db)
+    assertPortableSourceSchema(db, schemaVersion)
     return { history, tableCounts }
   } finally { db.close() }
 }

@@ -1106,6 +1106,8 @@ export interface DatabaseChannels {
   }
   'db:draft-next-version': { args: [chapterNumber: number, expectedProjectPath: string]; return: number }
   'db:draft-update-status': { args: [id: number, status: string, wordCount: number | undefined, expectedProjectPath: string]; return: { success: boolean; error?: string } }
+  'db:annotation-history-list': { args: [draftId: number, expectedProjectPath: string]; return: { id: number; before: string; after: string; annotations: import('./editor-inline-generation').EditorInlineAnnotation[]; createdAt: string }[] }
+  'db:annotation-commit': { args: [input: { draftId: number; expectedSaved: string; before: string; after: string; annotations: import('./editor-inline-generation').EditorInlineAnnotation[] }, expectedProjectPath: string]; return: { success: boolean; error?: string } }
   'db:draft-update-content': { args: [id: number, content: string, wordCount: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
   'db:draft-delete': {
     args: [id: number, expectedProjectPath: string]

@@ -57,7 +57,7 @@ export interface PlanningEntry {
   recovery: GenerationRecoveryContext
 }
 
-/** 正文选区的 AI 建议（润色、扩写等）中断。 */
+/** 正文选区或整章批注的 AI 建议中断。 */
 export interface EditorEntry extends Usage {
   kind: 'editor'
   key: string
@@ -278,9 +278,13 @@ function editorEntry(recovery: EditorInlineRecovery, locale: Locale): EditorEntr
   return {
     kind: 'editor',
     key: view.handle.runId,
-    title: t('编辑器选区建议', 'Editor selection suggestion'),
+    title: recovery.context.action === 'batch-instruct' ? t('批注修改建议', 'Annotation revision') : t('编辑器选区建议', 'Editor selection suggestion'),
     selectedText: recovery.context.selectedText,
-    instructionNote: recovery.context.action === 'instruct' ? t(`作者意见：${recovery.context.instruction}`, `Author note: ${recovery.context.instruction}`) : undefined,
+    instructionNote: recovery.context.action === 'instruct'
+      ? t(`作者意见：${recovery.context.instruction}`, `Author note: ${recovery.context.instruction}`)
+      : recovery.context.action === 'batch-instruct'
+        ? t(`作者批注 ${recovery.context.annotations.length} 条`, `${recovery.context.annotations.length} author ${pluralEn(recovery.context.annotations.length, 'annotation')}`)
+        : undefined,
     ...usageOf(view, locale),
     conflictNote: recovery.sourceStatus === 'conflict' ? t('来源已变化；原建议仍可复制。', 'Sources changed; the original suggestion can still be copied.') : undefined,
     suggestions: (view.candidates ?? view.artifacts).filter(hasText).map(artifact => ({

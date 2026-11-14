@@ -304,7 +304,7 @@ it('旧项目复制导入后在当前版本上，角色导入时的状态补了�
   expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions })).toMatchObject({ state: 'ready' })
   const db = new Database(path.join(f.target, '.ai-novel', 'project.db'), { readonly: true })
   try {
-    expect(db.pragma('user_version', { simple: true })).toBe(9)
+    expect(db.pragma('user_version', { simple: true })).toBe(10)
     expect(db.prepare('SELECT stable_fact_key,chapter_number,reason,revoked FROM consistency_exemptions ORDER BY stable_fact_key').all()).toEqual([
       { stable_fact_key: 'death:乙', chapter_number: null, reason: '假死', revoked: 1 },
       { stable_fact_key: 'scar:甲', chapter_number: null, reason: '旧伤', revoked: 0 },
@@ -599,7 +599,7 @@ it.each(['v100', 'v110'] as const)('%s 合法空角色名单的离线完整副�
   expect(fs.readFileSync(path.join(f.target, 'outline.md'), 'utf8')).toBe('作者目录级大纲')
   expect(fs.readFileSync(path.join(f.target, '.ai-novel', 'prompts', 'author.txt'), 'utf8')).toBe('作者项目级提示词')
   expect(fs.readFileSync(path.join(f.target, '.ai-novel', 'skills', 'author.md'), 'utf8')).toBe('作者项目级 Skill 原文')
-  expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(9)
+  expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(10)
   const db = new Database(path.join(f.target, '.ai-novel', 'project.db'), { readonly: true })
   try {
     expect(db.prepare('SELECT characters_arch FROM project_core WHERE id=?').pluck().get('main')).toBe('')
@@ -808,7 +808,7 @@ it.each(['sqlite-converted', 'renamed'] as const)('%s 子进程终止后源保�
     expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
       .toMatchObject({ state: 'ready', targetRoot: f.target })
   } else {
-    expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(9)
+    expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(10)
     const access = new ProjectAccessService(preflightOptions)
     const trusted = access.adoptLegacyProject(access.probeExistingProject(f.target))
     expect(trusted.projectId).not.toBe(f.sourceProjectId)

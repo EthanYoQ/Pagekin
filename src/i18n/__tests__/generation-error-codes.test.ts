@@ -788,6 +788,8 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'IMPORT_SOURCE_BYTES_EXCEEDED',
     'IMPORT_SOURCE_COUNT_EXCEEDED',
     'IMPORT_SOURCE_SIZE_INVALID',
+    // 批注审阅面板就地接住并换成自己的说明，原码不进失败面板（#653）。
+    'DRAFT_NOT_EDITABLE',
   ],
 }
 

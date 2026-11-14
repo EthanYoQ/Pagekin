@@ -414,3 +414,14 @@ describe('同一范围的几份规划恢复稿（#608）', () => {
     expect(busy).toMatchObject({ canDismiss: false })
   })
 })
+
+describe('批注统一修改的恢复卡', () => {
+  const annotations = Array.from({ length: 100 }, (_, index) => ({ id: `${index}`, from: index, to: index + 1, selectedText: '字', instruction: '意'.repeat(2000) }))
+  const entry = (locale: 'zh-CN' | 'en-US') => buildRecoveryEntries({ ...EMPTY_RECOVERY_SOURCES, editors: [{ view: view('批注'), modelId: '模型', sourceStatus: 'current',
+    context: { action: 'batch-instruct', annotations, selectedText: '全文', documentText: '全文' } } as never] }, locale)[0]!
+
+  it('标题不限于章节，说明只写条数，不把一百条批注全文铺在卡上', () => {
+    expect(entry('zh-CN')).toMatchObject({ title: '批注修改建议', instructionNote: '作者批注 100 条' })
+    expect(entry('en-US')).toMatchObject({ title: 'Annotation revision', instructionNote: '100 author annotations' })
+  })
+})

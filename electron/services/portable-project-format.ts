@@ -6,9 +6,9 @@ import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
 import fieldPolicyDocument from './portable-project-field-policy.json'
 
 export const PORTABLE_PROJECT_FORMAT_VERSION = 1 as const
-export const PORTABLE_SOURCE_SCHEMA_VERSION = 9 as const
+export const PORTABLE_SOURCE_SCHEMA_VERSION = 10 as const
 /** 可恢复的旧包版本：v1.2.0-Preview 到 v1.4.0 导出的是 7，之后到 M08 之前是 8。 */
-export const PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS = Object.freeze([7, 8, PORTABLE_SOURCE_SCHEMA_VERSION] as const)
+export const PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS = Object.freeze([7, 8, 9, PORTABLE_SOURCE_SCHEMA_VERSION] as const)
 export type PortableSourceSchemaVersion = typeof PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS[number]
 
 export type PortableFieldDisposition = 'preserve-domain' | 'historical-nonreplayable'
@@ -19,7 +19,7 @@ export interface PortableFieldPolicy {
   disposition: PortableFieldDisposition
   validator: string
   consumer: string
-  origin: 'signed-s01' | 'm01-m05-delta' | 'm06-delta' | 'm07-delta' | 'm08-delta' | 'registered-donor'
+  origin: 'signed-s01' | 'm01-m05-delta' | 'm06-delta' | 'm07-delta' | 'm08-delta' | 'm09-delta' | 'registered-donor'
   signedDisposition: string | null
 }
 
@@ -34,6 +34,7 @@ const deltaTables = new Set<string>(fieldPolicyDocument.deltaTables)
 const m06Tables = new Set<string>(fieldPolicyDocument.m06Tables)
 const m07Fields = new Set<string>(fieldPolicyDocument.m07Fields)
 const m08Fields = new Set<string>(fieldPolicyDocument.m08Fields)
+const m09Fields = new Set<string>(fieldPolicyDocument.m09Fields)
 const deltaCharacterFields = new Set<string>(fieldPolicyDocument.deltaCharacterFields)
 const optionalFields = new Set<string>(fieldPolicyDocument.optionalFields)
 const signedOverrides = fieldPolicyDocument.signedOverrides as Record<string, string>
@@ -52,7 +53,7 @@ function loadFieldPolicy(): ReadonlyMap<string, PortableFieldPolicy> {
     for (const [field, code] of Object.entries(fields)) {
       const rule = rules[code]
       const key = `${table}.${field}`
-      const delta = optionalFields.has(key) || deltaTables.has(table) || m06Tables.has(table) || m07Fields.has(key) || m08Fields.has(key)
+      const delta = optionalFields.has(key) || deltaTables.has(table) || m06Tables.has(table) || m07Fields.has(key) || m08Fields.has(key) || m09Fields.has(key)
         || table === 'characters' && deltaCharacterFields.has(field)
       const signedDisposition = delta ? null : signedOverrides[key] ?? signedDefaults[code]
       if (!field || !rule || rule.length !== 3 || !PORTABLE_FIELD_DISPOSITIONS.has(rule[0])
@@ -62,7 +63,7 @@ function loadFieldPolicy(): ReadonlyMap<string, PortableFieldPolicy> {
       }
       result.set(key, Object.freeze({ disposition: rule[0], validator: rule[1], consumer: rule[2],
         origin: optionalFields.has(key) ? 'registered-donor'
-          : m06Tables.has(table) ? 'm06-delta' : m07Fields.has(key) ? 'm07-delta' : m08Fields.has(key) ? 'm08-delta' : delta ? 'm01-m05-delta' : 'signed-s01', signedDisposition }))
+          : m06Tables.has(table) ? 'm06-delta' : m07Fields.has(key) ? 'm07-delta' : m08Fields.has(key) ? 'm08-delta' : m09Fields.has(key) ? 'm09-delta' : delta ? 'm01-m05-delta' : 'signed-s01', signedDisposition }))
     }
   }
   if (Object.keys(signedOverrides).some(key => result.get(key)?.origin !== 'signed-s01')) {
@@ -86,9 +87,10 @@ function quoteIdentifier(value: string): string { return `"${value.replaceAll('"
 
 const liveRowViews = new Set<string>(LIVE_ROW_VIEWS.map(item => item.view))
 const fieldsAddedAfter: Readonly<Record<PortableSourceSchemaVersion, ReadonlySet<string>>> = {
-  7: new Set([...m07Fields, ...m08Fields]),
-  8: m08Fields,
-  9: new Set(),
+  7: new Set([...m07Fields, ...m08Fields, ...m09Fields]),
+  8: new Set([...m08Fields, ...m09Fields]),
+  9: m09Fields,
+  10: new Set(),
 }
 
 /**

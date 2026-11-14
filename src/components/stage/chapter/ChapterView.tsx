@@ -24,6 +24,7 @@ import { useChapterBlueprint } from './use-chapter-blueprint'
 import ChapterPlan from './ChapterPlan'
 import { STAGE_STEP } from './chapter-lifecycle'
 import VersionSwitcher from './VersionSwitcher'
+import AnnotationRevisionHistory from './AnnotationRevisionHistory'
 import { pluralEn } from '../../../shared/plural-en'
 
 /**
@@ -93,6 +94,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     // 复验完成时新增一份审稿而显示的仍是原审稿，审稿记录也算进来，周期随之重读。
     refreshKey: `${draft.status}:${draft.pendingRevisions.map(revision => revision.id).join(',')}:${draft.reviews.map(entry => entry.id).join(',')}` })
   const [charCount, setCharCount] = useState(() => countDraftUnits(tab.content ?? ''))
+  const [annotationHistoryRevision, setAnnotationHistoryRevision] = useState(0)
   // 沉浸写作底部的字数进度，目标取设定里的每章字数。
   const target = useProjectStore(s => s.currentProject?.novelConfig.wordsPerChapter) || 0
   const [sheetSlot, setSheetSlot] = useState<HTMLDivElement | null>(null)
@@ -175,7 +177,14 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 onCharCountChange={setCharCount}
                 onChange={draft.onBodyChange}
                 onSave={body => draft.save(body)}
+                annotationSlot={sheetSlot}
+                chapterAnnotations
+                onCommitAnnotations={async (before, after, annotations) => {
+                  await draft.commitAnnotations(before, after, annotations)
+                  setAnnotationHistoryRevision(value => value + 1)
+                }}
               />
+              {draft.meta && <AnnotationRevisionHistory draftId={draft.meta.id} projectKey={projectKey} refresh={annotationHistoryRevision} />}
             </div>
           )}
         </article>

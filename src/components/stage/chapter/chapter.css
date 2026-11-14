@@ -881,6 +881,101 @@
   white-space: pre-wrap;
 }
 
+.paper-ink.cm-annotations {
+  flex: none;
+  width: min(var(--sheet-w), 40%);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.cm-annotating {
+  display: flex;
+}
+
+.cm-annotating > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.stage-ch-sheet-slot > .paper-ink.cm-annotations {
+  width: min(var(--sheet-w), 40cqw);
+}
+
+.cm-annotations-head,
+.cm-annotations-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+}
+
+.cm-annotations-head {
+  border-bottom: 1px solid var(--rule);
+}
+
+.cm-annotations-foot {
+  border-top: 1px solid var(--rule);
+}
+
+.cm-annotations-foot > span {
+  font-size: var(--fs-12);
+  color: var(--ink-3);
+}
+
+.cm-annotations-list {
+  overflow: auto;
+  padding: 0 var(--s-3);
+}
+
+.cm-annotation {
+  position: relative;
+  padding: var(--s-3) 30px var(--s-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cm-annotation:last-child {
+  border-bottom: 0;
+}
+
+.cm-annotation > .pi-btn {
+  position: absolute;
+  top: var(--s-2);
+  right: 0;
+}
+
+.cm-annotation-quote {
+  display: -webkit-box;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: var(--fs-12)/1.6 var(--font-prose);
+  text-align: left;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  cursor: pointer;
+}
+
+.cm-annotation-quote:hover {
+  color: var(--accent);
+}
+
+.cm-annotation p {
+  margin: var(--s-1) 0 0;
+  color: var(--ink);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 /* ================= 恢复候选与只读修稿 ================= */
 .stage-doc-title {
   font-size: 28px;
@@ -891,6 +986,31 @@
   font-size: var(--fs-12);
   color: var(--ink-3);
 }
+
+.inline-annotation-prose {
+  max-width: var(--prose-measure);
+  white-space: pre-wrap;
+  font-family: var(--font-writing);
+  font-size: var(--prose-size);
+  line-height: var(--prose-lh);
+  /* each-line：预排文本里每个换行后的行首都缩进，与编辑器一致 */
+  text-indent: 2em each-line;
+}
+.inline-annotation-change { white-space: pre; }
+.inline-annotation-wrap { white-space: pre-wrap; }
+.inline-annotation-mark { padding: 0 2px; cursor: pointer; }
+.inline-annotation-mark:focus-visible { outline: 2px solid var(--accent); }
+.inline-annotation-change > svg { display: inline; margin-left: 2px; vertical-align: -2px; color: var(--ok); }
+.inline-annotation-change del { color: var(--danger); text-decoration: line-through; }
+.inline-annotation-change ins { color: var(--ok); background: var(--ok-soft); text-decoration: none; }
+.inline-annotation-actions { display: inline-flex; flex-wrap: wrap; white-space: normal; align-items: center; gap: var(--s-1); margin: var(--s-1); text-indent: 0; font-family: var(--font-ui); font-size: var(--fs-13); line-height: 1.5; }
+.inline-annotation-actions textarea { min-width: 220px; }
+.inline-annotation-footer { position: fixed; right: var(--s-5); bottom: var(--s-5); z-index: 20; display: flex; gap: var(--s-2); padding: var(--s-2); background: var(--surface); box-shadow: var(--shadow-pop); }
+.annotation-revision-history { margin-top: var(--s-5); }
+.annotation-revision-history .cm-annotation { padding-right: 0; }
+.annotation-revision-history .inline-annotation-prose p { margin: 0; }
+.annotation-revision-history ins { color: var(--ok); background: var(--ok-soft); text-decoration: none; }
+.annotation-revision-history del { color: var(--danger); }
 
 /* ================= 替换定稿后：后续蓝图的修改建议，每章一张卡，按字段对比 ================= */
 .stage-ch-suggest {

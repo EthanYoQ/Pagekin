@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeProjectDatabase, getProjectDb } from '../../database'
 import { openCanonicalProjectFixture as initProjectDatabase } from '../../../test/helpers/canonical-project-fixture'
 import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema'
+import { applyM09AnnotationHistory } from '../../migrations/m09-annotation-history'
 import { createLiveRowViews, dropLiveRowViews } from '../../../test/helpers/live-row-views'
 import { ImportSourceIdentityRepository } from '../import-source-identity-repository'
 import { ImportRunRepository } from '../import-run-repository'
@@ -146,6 +147,8 @@ describe('project-scoped opaque import source identity', () => {
     // Explicit legacy normalization regression; ordinary reopen never runs it.
     dropLiveRowViews(offline)
     initializeLegacyBaselineSchema(offline, applicationSecret)
+    offline.exec('DROP TABLE annotation_history')
+    offline.transaction(() => applyM09AnnotationHistory(offline))()
     createLiveRowViews(offline)
     offline.close()
 
