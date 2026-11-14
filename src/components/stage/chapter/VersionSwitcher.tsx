@@ -115,7 +115,7 @@ export default function VersionSwitcher({ tab, current, label, title, onSave }: 
       tabIndex={-1}
       onClick={() => choose(draft)}
     >
-      <span>{versionName(draft, text)}{draft.id === current.id ? text(' · 当前', ' · open') : ''}</span>
+      <span>{versionName(draft, text)}{draft.id === current.id && <span className="stage-ch-version-current">{text(' · 当前', ' · open')}</span>}</span>
       <small>
         {draft.wordCount !== undefined ? text(`${draft.wordCount.toLocaleString(locale)} 字 · `, `${draft.wordCount.toLocaleString(locale)} ${pluralEn(draft.wordCount, 'word')} · `) : ''}
         {sqliteTime(draft.updatedAt ?? draft.createdAt).toLocaleString(locale, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
