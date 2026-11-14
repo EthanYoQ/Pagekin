@@ -33,9 +33,9 @@ const EXPECTED = [
 
 const sha = text => createHash('sha256').update(text).digest('hex').slice(0, 16)
 
-async function readProjectDb(projectPath, read) {
+async function readProjectDb(projectPath, read, { readOnly = true } = {}) {
   const { DatabaseSync } = await import('node:sqlite')
-  const db = new DatabaseSync(path.join(projectPath, '.ai-novel', 'project.db'), { readOnly: true })
+  const db = new DatabaseSync(path.join(projectPath, '.ai-novel', 'project.db'), { readOnly })
   try { return read(db) } finally { db.close() }
 }
 
@@ -184,6 +184,33 @@ export const EXT653_SCENARIOS = {
     assert.ok(Number(measured.historyQuoteWeight) < 600, '引文不加粗')
     assert.doesNotMatch(await reopened.innerText(), /[。！？.!?][：:]/, '批注历史里没有「。：」这类双标点')
     await reopened.scrollIntoViewIfNeeded()
+    return measured
+  } },
+
+  /** 第 4 章有一条批注历史，但读历史时库报错：正文照常显示，历史处写明没读出来并给「重试」；库恢复后点「重试」列出历史。 */
+  'ext653-history-error': { model: false, shell: 'stage', setup: seedFourthChapterVersion, run: async ({ page, projectPath, shoot }) => {
+    const measured = {}
+    await readProjectDb(projectPath, db => {
+      db.prepare("INSERT INTO annotation_history(draft_id,before_text,after_text,annotations_json) SELECT id, ?, ?, ? FROM drafts WHERE chapter_number = 4 AND version = 2")
+        .run(PARAGRAPHS.join('\n\n'), REVISED.join('\n\n'), JSON.stringify([{ id: 'a', from: 0, to: PARAGRAPHS[0].length, selectedText: PARAGRAPHS[0], instruction: NOTES[0] }]))
+      db.exec('ALTER TABLE annotation_history RENAME TO annotation_history_unreadable')
+    }, { readOnly: false })
+    await chapterView.open(page, 4)
+    await chapterView.prose(page).getByText(PARAGRAPHS[2]).first().waitFor({ state: 'visible', timeout: 30_000 })
+    const failure = page.locator('.annotation-revision-history[role="alert"]')
+    await failure.waitFor({ state: 'visible', timeout: 30_000 })
+    measured.failure = await failure.innerText()
+    assert.match(measured.failure, /正文不受影响，批注历史没读出来。/)
+    await failure.scrollIntoViewIfNeeded()
+    await shoot('ext653-4-history-error')
+
+    await readProjectDb(projectPath, db => db.exec('ALTER TABLE annotation_history_unreadable RENAME TO annotation_history'), { readOnly: false })
+    await failure.getByRole('button', { name: '重试' }).click()
+    const history = page.locator('details.annotation-revision-history')
+    await history.locator('summary').first().waitFor({ state: 'visible', timeout: 30_000 })
+    measured.historyTitle = await history.locator('summary').first().innerText()
+    assert.equal(measured.historyTitle, '批注历史版本（1）')
+    assert.equal(await page.locator('.annotation-revision-history[role="alert"]').count(), 0)
     return measured
   } },
 
