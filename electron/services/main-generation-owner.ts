@@ -1088,7 +1088,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     run => viewOf(run).candidates?.at(-1))
   /**
    * 运行侧页「可恢复」区的数据。只读操作类型可能恢复的运行；一个运行读不出不挡其余运行，只标 partial。
-   * 单章写稿保存过就不再需要恢复，正文后来改没改过都一样；只有这次打开里还留着没落盘的正文时仍列出，那段文字只能从这里复制。
+   * 单章写稿、审稿、修稿保存过就不再需要恢复，正文后来改没改过都一样；只有这次打开里还留着没落盘的文字时仍列出，那段文字只能从这里复制。
    * 规划恢复稿是否列出按 planningRecoverable 判定，与蓝图页横幅、架构页大纲提示同一条。
    */
   const listRecovery = (): GenerationRecoveryList => {
@@ -1103,7 +1103,11 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         const recovery = readContext(handle)
         if (planningRecoverable(recovery)) list.planning.push(recovery)
       },
-      review: (handle: MainGenerationRunHandle) => { list.reviews.push({ view: viewOf(requireRun(handle)), recovery: readReviewRevisionRecovery(handle) }) },
+      review: (handle: MainGenerationRunHandle) => {
+        const recovery = readReviewRevisionRecovery(handle)
+        if (recovery.saved && !tailedRuns.has(handle.runId)) return
+        list.reviews.push({ view: viewOf(requireRun(handle)), recovery })
+      },
       editor: (handle: MainGenerationRunHandle) => { list.editors.push(readEditorInlineRecovery(handle)) },
       draft: (handle: MainGenerationRunHandle) => {
         const saved = draftEffects.readRecovery(handle.runId).kind !== 'absent'

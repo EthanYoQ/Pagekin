@@ -87,6 +87,17 @@ describe('review and revision generation through the actual owner and SQLite', (
     expect(list.reviews.map(item => [item.view.handle.runId, item.recovery.context.operation])).toContainEqual([request.handle.runId, operation])
     expect(list).toMatchObject({ drafts: [], planning: [], editors: [], partial: false })
   })
+  it.each(['review-chapter', 'refine-draft'] as const)('%s 保存后不再列为可恢复，正式结果照常读得到（#686）', async operation => {
+    const f = fixture(operation === 'review-chapter' ? undefined : async (_request, options) => {
+      options.onVisible({ kind: 'delta', text: revisedProse }); return { finishReason: 'stop', usage: null }
+    })
+    const request = await f.run(operation)
+    expect(f.owner.listRecovery().reviews.map(item => item.view.handle.runId)).toEqual([request.handle.runId])
+    const saved = operation === 'review-chapter' ? f.owner.commitReview(request) : f.owner.commitRevision({ contextId: request.contextId, handle: request.handle,
+      expectedCompositionHash: f.owner.composeVisible(request.handle, [request.artifact.artifactId], textHash(revisedProse), 'visible-append-v1').textHash })
+    expect(f.owner.listRecovery()).toMatchObject({ reviews: [], partial: false })
+    expect(f.owner.readReviewRevisionRecovery(request.handle).saved).toEqual(saved)
+  })
   it.each([
     'Here is the truth: I never left the island. Everyone who said otherwise was lying.',
     '以下是我从父亲遗物中找到的最后一份内容。它改变了我们所有人的命运。',
@@ -361,7 +372,7 @@ describe('review and revision generation through the actual owner and SQLite', (
     },
   )
   it('源稿进回收站后审修恢复稿既不列出也读不出，不算读坏；放回后照常（#564）', async () => {
-    const f = fixture(), request = await f.run(), saved = f.owner.commitReview(request)
+    const f = fixture(), request = await f.run()
     const status = (deleted: boolean) => f.db.prepare(deleted
       ? "UPDATE drafts_all SET status='deleted',deletion_id='trash-1',deleted_from_status='finalized',deleted_at='now' WHERE id=1"
       : "UPDATE drafts_all SET status='draft',deletion_id='',deleted_from_status='',deleted_at='' WHERE id=1").run()
@@ -370,8 +381,9 @@ describe('review and revision generation through the actual owner and SQLite', (
     expect(() => f.owner.readReviewRevisionRecovery(request.handle)).toThrow('GENERATION_REVIEW_SOURCE_DELETED')
     expect(f.owner.listRecovery()).toMatchObject({ reviews: [], partial: false })
     status(false)
-    expect(f.owner.readReviewRevisionRecovery(request.handle).saved).toEqual(saved)
     expect(f.owner.listRecovery().reviews).toHaveLength(1)
+    const saved = f.owner.commitReview(request)
+    expect(f.owner.readReviewRevisionRecovery(request.handle).saved).toEqual(saved)
   })
   it('源稿彻底删除后（收据留作删除证明）照样不列出；没有删除收据的工作稿被删，仍保留冲突恢复（#564）', async () => {
     const purged = fixture(), purgedRun = await purged.run()
