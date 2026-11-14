@@ -741,8 +741,10 @@ describe('generation public IPC with actual project authority and SQLite', () =>
 
 describe('chapter outline command through registered main IPC and formal CAS', () => {
   type Crash = 'normal-saved' | 'composition-saved' | 'complete-before-cas' | 'cas-reply-lost'
-  function outlineFixture(options: { chapters?: number; crash?: Crash; crashCall?: number; compact?: 'once' | 'fails'; customTemplate?: boolean } = {}) {
+  function outlineFixture(options: { chapters?: number; from?: number; crash?: Crash; crashCall?: number; compact?: 'once' | 'fails'; customTemplate?: boolean } = {}) {
     const chapters = options.chapters ?? 3
+    const from = options.from ?? 1
+    const accepted = (chapter: number) => `## 第${chapter}章：证词${chapter}\n林岚核对证词${chapter}，保留原件，并约定下一步。`
     const premise = `${'前提原文。'.repeat(40)}前提尾部：证据原件必须留在岛上。`
     const characters = `${'角色原文。'.repeat(40)}角色尾部：林岚左手不能持重物。`
     const world = `${'世界原文。'.repeat(40)}世界尾部：渡口在日落后关闭。`
@@ -753,6 +755,10 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     getProjectDb()!.prepare('UPDATE project_core SET synopsis=?,premise=?,characters_arch=?,worldbuilding=?,genre=?,total_chapters=?,words_per_chapter=?,global_guidance=?')
       .run('旧正式大纲', premise, characters, world, config.genre, chapters, config.wordsPerChapter, guidance)
     const expected = ProjectCoreRepository.get()!
+    if (from > 1) {
+      expected.synopsis = renderPlotOutlineSynopsis(Array.from({ length: from - 1 }, (_, index) => accepted(index + 1)).join('\n\n'), from - 1, expected)
+      getProjectDb()!.prepare('UPDATE project_core SET synopsis=?').run(expected.synopsis)
+    }
     if (options.customTemplate) {
       const dir = path.join(getProjectDataRoot(session.projectPath), 'prompts')
       fs.mkdirSync(dir, { recursive: true })
@@ -762,11 +768,13 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       name: '合成小说', sessionLease: session.leaseId, novelConfig: config, characterStates: '', createdAt: '', updatedAt: '' } })
     syncProject()
     let fault = options.crash, calls = 0
-    const prompts: string[] = [], accepted = (chapter: number) => `## 第${chapter}章：证词${chapter}\n林岚核对证词${chapter}，保留原件，并约定下一步。`
+    const progress: number[] = [], requestProgress: number[] = []
+    const prompts: string[] = []
     const fetch = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { messages: { role: string; content: string }[] }
       const prompt = body.messages.find(message => message.role === 'user')!.content
       prompts.push(prompt)
+      requestProgress.push(progress.at(-1) ?? 0)
       const chapter = Number(/本次只写第 (\d+) 章/u.exec(prompt)![1])
       const call = calls++
       const failed = !!options.compact && (call === 0 || options.compact === 'fails')
@@ -797,13 +805,13 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       return result
     })
     vi.stubGlobal('window', { aiNovelAPI: { invoke: bridge, on: () => () => {} } })
-    const callbacks: StepCallbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn(), replaceText: vi.fn() }
+    const callbacks: StepCallbacks = { log: vi.fn(), setProgress: value => { progress.push(value) }, appendText: vi.fn(), replaceText: vi.fn() }
     const execute = (resumeHandle?: MainGenerationRunHandle) => {
       const context: WorkflowContext = { runId: resumeHandle ? 'outline-resumed' : 'outline-original', projectPath: session.projectPath,
         projectSession: session, generationModelId: model.id, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', cancelled: false,
         data: { stepGuidance: { synopsis: '步骤尾部：最终章必须归还借来的钥匙。' } } }
       const command = new GeneratePlotArchitectureCommand(['synopsis'], { expectedProjectPath: session.projectPath, novelConfig: config }, undefined,
-        resumeHandle ? { resumeSynopsis: true, resumeHandle } : { synopsisRange: { from: 1, to: chapters } })
+        resumeHandle ? { resumeSynopsis: true, resumeHandle } : { synopsisRange: { from, to: chapters } })
       return command.execute({ step: {}, context, callbacks })
     }
     const reopen = () => {
@@ -813,7 +821,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     }
     const navigation = () => JSON.parse(fs.readFileSync(path.join(getProjectDataRoot(session.projectPath), 'partial_arch.json'), 'utf8')) as { synopsis_generation_handle: MainGenerationRunHandle; synopsis_incomplete: boolean; synopsis_protocol: string; synopsis_result?: string }
     const target = renderPlotOutlineSynopsis(Array.from({ length: chapters }, (_, index) => accepted(index + 1)).join('\n\n'), chapters, expected)
-    return { execute, reopen, navigation, target, accepted, fetch, bridge, prompts, expected, facts: [premise, characters, world, guidance, config.coreOutline, config.worldSetting] }
+    return { execute, reopen, navigation, target, accepted, fetch, bridge, prompts, progress, requestProgress, expected, facts: [premise, characters, world, guidance, config.coreOutline, config.worldSetting] }
   }
 
   it('rebuilds once from complete original facts and accepts six chapters before a single formal CAS', async () => {
@@ -825,6 +833,9 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       return original(input)
     })
     await f.execute()
+    expect(f.requestProgress).toEqual([0, 0, 17, 33, 50, 67, 83])
+    expect(f.progress).toEqual([...f.progress].sort((a, b) => a - b))
+    expect(f.progress.at(-1)).toBe(99)
     expect(f.fetch).toHaveBeenCalledTimes(7)
     expect(commit).toHaveBeenCalledTimes(1)
     expect(ProjectCoreRepository.get()?.synopsis).toBe(f.target)
@@ -839,6 +850,19 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     const view = await invoke('generation:read', f.navigation().synopsis_generation_handle)
     expect(view.plotOutline?.composition?.artifactIds).toHaveLength(6)
     expect(view.ledger!.tokenLiability).toBeGreaterThan(7 * model.maxTokens!)
+  })
+
+  it('resumes progress relative to a selected range starting after chapter one', async () => {
+    const f = outlineFixture({ chapters: 8, from: 5, crash: 'composition-saved' })
+    await expect(f.execute()).rejects.toThrow('TEST_TRANSPORT_REPLY_LOST')
+    const handle = f.navigation().synopsis_generation_handle
+    f.reopen()
+    f.progress.length = 0
+    await f.execute(handle)
+    expect(f.progress[0]).toBe(25)
+    expect(f.requestProgress).toEqual([0, 25, 50, 75])
+    expect(f.progress.at(-1)).toBe(99)
+    expect(ProjectCoreRepository.get()?.synopsis).toBe(f.target)
   })
 
   it('saves an author recovery prefix under the current lease without model calls or changing the old responsibility', async () => {
@@ -894,11 +918,16 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     const before = await invoke('generation:read', handle)
     expect(before.plotOutline!.cursor.kind).toBe(crash === 'normal-saved' ? 'accept' : crash === 'composition-saved' ? 'request' : 'complete')
     expect(ProjectCoreRepository.get()?.synopsis).toBe(crash === 'cas-reply-lost' ? f.target : '旧正式大纲')
+    if (crash === 'complete-before-cas' || crash === 'cas-reply-lost') expect([...new Set(f.progress)]).toEqual([0, 33, 67, 99])
     const attempts = getProjectDb()!.prepare('SELECT * FROM generation_attempts ORDER BY rowid').all()
     const binding = getProjectDb()!.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(handle.runId)
     f.reopen()
     expect(session.leaseId).not.toBe(handle.epoch)
+    f.progress.length = 0
     await f.execute(handle)
+    expect(f.progress[0]).toBe(crash === 'normal-saved' ? 0 : crash === 'composition-saved' ? 33 : 99)
+    expect(f.progress).toEqual([...f.progress].sort((a, b) => a - b))
+    expect(f.progress.every(value => value < 100)).toBe(true)
     expect(ProjectCoreRepository.get()?.synopsis).toBe(f.target)
     expect(f.fetch).toHaveBeenCalledTimes(3)
     expect(commit).toHaveBeenCalledTimes(1)

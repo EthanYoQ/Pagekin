@@ -2183,10 +2183,17 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       : new Error(text(
         `第 ${cursor.chapterNumber} 章已停止自动生成，原因 ${cursor.reason}。已接受前缀和全部候选已保留，正式大纲未被覆盖。`,
         `Automatic generation stopped at chapter ${cursor.chapterNumber}: ${cursor.reason}. The accepted prefix and all candidates remain saved; the formal outline was not overwritten.`))
+    const requestCallbacks = { ...callbacks, setProgress: () => {} }
+    const publishProgress = (outline: PlotOutlineProgress) => {
+      const total = outline.range.to - outline.range.from + 1
+      const accepted = outline.cursor.kind === 'complete' ? total : outline.cursor.chapterNumber - outline.range.from
+      callbacks.setProgress(Math.min(99, Math.round(accepted * 100 / total)))
+    }
     let outline = initial
     // 来源无效时没有可写进检查点的前缀，先给与恢复入口相同的说明；其余停止原因照常先写检查点。
     if (outline.cursor.kind === 'stopped' && outline.cursor.reason === 'source-invalid') throw stopped(outline.cursor)
     await saveNavigation(outline)
+    publishProgress(outline)
     while (outline.cursor.kind !== 'complete') {
       this.assertNotCancelled(context)
       assertArchitectureProjectSessionCurrent(session, context)
@@ -2202,7 +2209,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           `Generating the outline for chapter ${cursor.chapterNumber}${cursor.attempt === 'compact' ? ' with its single rebuild from original facts' : ''}.`))
         try {
           await this.callLLMResult(`${originalPrompt}\n\n${plotOutlineRequestContract(outline, cursor.chapterNumber, cursor.attempt)}`,
-            `${promptBuilder.getSystemRole()}\n\n${planningTargetInstruction('outline', outline.targetUnits, language)}`, callbacks, { purpose: plotOutlinePurpose(cursor.chapterNumber, cursor.attempt), reasoningStage: 'planning', writingSkillStage: 'planning' }, context)
+            `${promptBuilder.getSystemRole()}\n\n${planningTargetInstruction('outline', outline.targetUnits, language)}`, requestCallbacks, { purpose: plotOutlinePurpose(cursor.chapterNumber, cursor.attempt), reasoningStage: 'planning', writingSkillStage: 'planning' }, context)
         } catch (error) {
           const changed = error instanceof Error ? PLOT_OUTLINE_SOURCE_CHANGED_PATTERN.exec(error.message) : null
           if (!changed) throw error
@@ -2223,6 +2230,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       if (!current.plotOutline) throw new Error('GENERATION_PLOT_OUTLINE_SOURCE_INVALID')
       outline = current.plotOutline
       await saveNavigation(outline)
+      publishProgress(outline)
     }
     this.assertNotCancelled(context)
     assertArchitectureProjectSessionCurrent(session, context)
