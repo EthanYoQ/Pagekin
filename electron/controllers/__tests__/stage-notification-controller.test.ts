@@ -108,7 +108,6 @@ describe('后台阶段通知', () => {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
     Object.defineProperty(process, 'platform', { value: 'win32' })
     try {
-      mocks.activation.callback = null
       registerStageNotificationController()
     } finally {
       Object.defineProperty(process, 'platform', platform)
