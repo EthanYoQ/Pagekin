@@ -51,7 +51,7 @@ async function interruptedSelectionRun(documentText: string) {
       case 'editor-inline:read-recovery': return recovery()
       case 'editor-inline:execute':
         view = done
-        return { run: done, sourceStatus: 'current', outcome: { status: 'completed', finishReason: 'stop', content: SUGGESTION, receipt: { finishReason: 'stop' } } }
+        return { run: { ...done, status: 'running', handle: { ...handle, epoch: SESSION.leaseId } }, sourceStatus: 'current', outcome: { status: 'completed', finishReason: 'stop', content: SUGGESTION, receipt: { finishReason: 'stop' } } }
       default: return fixture(channel, ...args)
     }
   })
@@ -139,7 +139,7 @@ describe('运行侧页「继续原选区任务」', () => {
 
     const card = page.getByRole('article').filter({ hasText: '编辑器选区建议' })
     await expect.element(card.getByText(SUGGESTION)).toBeVisible()
-    await expect.element(card.getByText('已用 1 次请求')).toBeVisible()
+    await expect.element(card.getByText(/已用 \d+ 次请求/)).not.toBeInTheDocument()
     await expect.element(card.getByRole('button', { name: '继续原选区任务' })).toBeDisabled()
     expect(executions()).toBe(1)
     expect(useStageStore.getState().sheet).not.toBeNull()
