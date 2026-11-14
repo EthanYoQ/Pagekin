@@ -12,19 +12,31 @@ const seedTwoDrafts = context => seedStageSample(context, { beforeReload: async 
   assert.equal(created.success, true, created.error)
 } })
 
+const openVersionMenu = async (page, { hoverSecond }) => {
+  await chapterView.open(page, 4)
+  await chapterView.versionButton(page).click()
+  const rows = page.getByRole('menu', { name: '本章版本' }).getByRole('menuitemradio')
+  assert.equal(await rows.count(), 2)
+  if (hoverSecond) await rows.nth(1).hover()
+  else await page.mouse.move(4, 4)
+  const measured = await rows.evaluateAll(items => items.map(item => {
+    const box = item.getBoundingClientRect()
+    const style = getComputedStyle(item)
+    return { text: item.innerText.split('\n'), height: Math.round(box.height), background: style.backgroundColor,
+      inside: [...item.children].every(line => { const rect = line.getBoundingClientRect(); return rect.top >= box.top && rect.bottom <= box.bottom }) }
+  }))
+  assert.ok(measured.every(row => row.inside), JSON.stringify(measured))
+  return { rows: measured }
+}
+
 export const I676_SCENARIOS = {
-  'i676-version-menu': { model: false, shell: 'stage', setup: seedTwoDrafts, run: async ({ page }) => {
+  'i676-version-menu': { model: false, shell: 'stage', setup: seedTwoDrafts, run: ({ page }) => openVersionMenu(page, { hoverSecond: true }) },
+  'i676-version-menu-idle': { model: false, shell: 'stage', setup: seedTwoDrafts, run: ({ page }) => openVersionMenu(page, { hoverSecond: false }) },
+  'i676-tab-menu': { model: false, shell: 'stage', setup: seedTwoDrafts, run: async ({ page }) => {
     await chapterView.open(page, 4)
-    await chapterView.versionButton(page).click()
-    const rows = page.getByRole('menu', { name: '本章版本' }).getByRole('menuitemradio')
-    assert.equal(await rows.count(), 2)
-    await rows.nth(1).hover()
-    const measured = await rows.evaluateAll(items => items.map(item => {
-      const box = item.getBoundingClientRect()
-      return { text: item.innerText.split('\n'), height: Math.round(box.height),
-        inside: [...item.children].every(line => { const rect = line.getBoundingClientRect(); return rect.top >= box.top && rect.bottom <= box.bottom }) }
-    }))
-    assert.ok(measured.every(row => row.inside), JSON.stringify(measured))
-    return { rows: measured }
+    await page.getByRole('button', { name: '标签操作' }).click()
+    const items = page.getByRole('menu', { name: '标签操作' }).getByRole('menuitem')
+    await items.nth(1).hover()
+    return { items: await items.allInnerTexts() }
   } },
 }
