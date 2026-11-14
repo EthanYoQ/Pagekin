@@ -3498,6 +3498,17 @@ describe('main draft persistence and batch lineage', () => {
       expect(list.batches.map(batch => [batch.batchId, batch.nextChapterNumber])).toEqual([[open.batchId, 2]])
       expect(list).toMatchObject({ planning: [], reviews: [], editors: [], partial: false })
     })
+    it('来源已变、不能继续的批次不列；来源恢复后重新列出（#686）', async () => {
+      const f = drafting()
+      f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'第二章')")
+      const batch = f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 2 }, targetUnits: 20,
+        uiActionNonce: 'batch', modelId: f.model.id, authorInputs, promptKeys: f.begin.promptKeys, skillStages: [] })
+      f.owner.commitDraft((await generate(f, { ...f.begin, authorInputs, batchId: batch.batchId, parentRootActionId: batch.rootHandle.rootActionId })).request)
+      const replacement = DraftRepository.create({ chapterNumber: 1, source: 'write', content: '作者创建的新版本。', wordCount: 9 })
+      expect(f.owner.listRecovery()).toMatchObject({ batches: [], partial: false })
+      DraftRepository.delete(replacement)
+      expect(runIds(f.owner.listRecovery().batches)).toEqual([batch.batchId])
+    })
     it('已保存的单章运行不列为可恢复，无论正文后来改没改过', async () => {
       const f = drafting()
       const current = await generate(f, { ...f.begin, uiActionNonce: 'current', authorInputs })

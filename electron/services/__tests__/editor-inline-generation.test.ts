@@ -54,12 +54,26 @@ it('main实际模板与UTF16原文hash冻结，不把草稿声称为canonical',(
  expect(f.spy).not.toHaveBeenCalled()
  expect(()=>f.owner.beginEditorInline({...request,input:{...input,from:2}})).toThrow()
 })
-it('运行侧页的可恢复列表把选区建议列为选区恢复，不当作单章候选',async()=>{
- const f=fixture(),recovery=f.owner.beginEditorInline(request)
- await f.owner.executeEditorInline(recovery.view.handle)
+const replying=(text:string,finishReason:'stop'|'length'):GenerationRunServiceDependencies['dispatch']=>async(_request,options)=>{options.onVisible({kind:'delta',text});return {finishReason,usage:null}}
+it('半截建议和还没发出的选区任务列为选区恢复，不当作单章候选',async()=>{
+ const f=fixture(replying('林岚停下','length'))
+ const cut=f.owner.beginEditorInline({...request,uiActionNonce:'半截'}).view.handle
+ await f.owner.executeEditorInline(cut)
+ const pending=f.owner.beginEditorInline({...request,uiActionNonce:'没发出'}).view.handle
  const list=f.reopenStorage().listRecovery()
- expect(list.editors.map(item=>item.view.handle.runId)).toEqual([recovery.view.handle.runId])
+ expect(list.editors.map(item=>item.view.handle.runId).sort()).toEqual([cut.runId,pending.runId].sort())
  expect(list).toMatchObject({drafts:[],planning:[],reviews:[],partial:false})
+})
+it('完整送达过的建议和作者拒绝过的建议不再列为可恢复（#686）',async()=>{
+ const f=fixture(replying('林岚停下脚步。','stop'))
+ const delivered=f.owner.beginEditorInline({...request,uiActionNonce:'送达'}).view.handle
+ await f.owner.executeEditorInline(delivered)
+ const rejected=f.owner.beginEditorInline({...request,uiActionNonce:'拒绝'}).view.handle
+ await f.owner.executeEditorInline(rejected)
+ f.owner.cancel(rejected)
+ const unsent=f.owner.beginEditorInline({...request,uiActionNonce:'没发就拒绝'}).view.handle
+ f.owner.cancel(unsent)
+ expect(f.reopenStorage().listRecovery()).toMatchObject({editors:[],partial:false})
 })
 it('同nonce不同作者输入拒绝，generic begin/execute不能绕过editor owner',async()=>{
  const f=fixture(),recovery=f.owner.beginEditorInline(request)
