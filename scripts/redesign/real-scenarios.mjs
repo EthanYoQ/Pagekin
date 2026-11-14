@@ -461,6 +461,7 @@ export const REAL_SCENARIOS = {
     await restartAndOpen(context)
     page = context.page
     measured.recovery = await batchUnlisted(page)
+    await shoot('real-batch-unlisted-after-restart')
     return measured
   } },
 
