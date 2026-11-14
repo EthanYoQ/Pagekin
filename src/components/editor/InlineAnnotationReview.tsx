@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT } from 'diff-match-patch'
 import { Check } from 'lucide-react'
+import { errorCodeOf } from '../../i18n/app-errors'
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
 import { routeModelId } from '../../services/model-routing'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
@@ -73,7 +74,7 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
     try {
       await onCommit(pieces.map(piece => piece.kind === 'same' ? piece.text : next[piece.index]!.value).join(''))
     } catch (cause) {
-      setError(cause instanceof Error && cause.message === 'SOURCE_DRAFT_CHANGED'
+      setError(errorCodeOf(cause) === 'SOURCE_DRAFT_CHANGED'
         ? text('正文或来源已变化，这次修改不能保存。取消后可重新统一修改。', 'The chapter or its sources changed, so these edits cannot be saved. Cancel and run the revision again.')
         : text('保存版本失败，修改仍在当前页面，请重试。', 'Could not save the version. Your edits are still here; try again.'))
       commitGuard.current = false

@@ -288,19 +288,22 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     }
   }
 
+  const annotationTab = () => useEditorStore.getState().tabs.find(
+    tab => tab.id === tabId && tab.projectKey === projectKey && (tab.draftId === undefined || tab.draftId === meta?.id),
+  )
   const commitAnnotations = (before: string, after: string, annotations: EditorInlineAnnotation[]) => {
     const run = (async () => {
       const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
-      const savedTab = useEditorStore.getState().tabs.find(tab => tab.id === tabId)
-      if (!projectSession || !meta || !savedTab || typeof savedTab.savedContent !== 'string' || savedTab.content !== before) throw new Error('SOURCE_DRAFT_CHANGED')
+      const savedTab = annotationTab()
+      if (!projectSession || !isProjectSessionPath(projectSession, projectKey) || !meta || !savedTab || typeof savedTab.savedContent !== 'string' || savedTab.content !== before) throw new Error('SOURCE_DRAFT_CHANGED')
       const result = await ipc.invokeWithProjectSession(projectSession, 'db:annotation-commit', { draftId: meta.id, expectedSaved: savedTab.savedContent, before, after, annotations }, projectSession.projectPath)
       if (!result.success) throw new Error(result.error || 'ANNOTATION_COMMIT_FAILED')
       if (!isProjectSessionCurrent(projectSession)) return
       if (pendingRevisions.length > 0) reload()
-      const current = useEditorStore.getState().tabs.find(tab => tab.id === tabId)
+      const current = annotationTab()
       if (!current || current.content !== before) return
       onBodyChange(after)
-      const updated = useEditorStore.getState().tabs.find(tab => tab.id === tabId)
+      const updated = annotationTab()
       if (updated) useEditorStore.getState().settleTabSave(tabId, { content: after, contentRevision: updated.contentRevision ?? 0 })
     })()
     annotationCommitRef.current = run

@@ -745,6 +745,7 @@ export default function CodeMirrorEditor({
         onCancel={() => setInlineReview(null)} onCommit={async after => {
           if (filePath !== inlineReview.filePath || inlineReview.sessionKey !== JSON.stringify(getActiveProjectSessionContext()) || editorRef.current?.view?.state.doc.toString() !== inlineReview.before) throw new Error('SOURCE_DRAFT_CHANGED')
           const run = await inlineReview.client.read().catch(() => null)
+          if (!editableRef.current) throw new Error('DRAFT_NOT_EDITABLE')
           if (!run || run.sourceStatus !== 'current' || run.view.status === 'cancelled'
             || !(run.view.candidates ?? run.view.artifacts).some(candidate => candidate.artifactId === inlineReview.candidate.artifactId && candidate.textHash === inlineReview.candidate.textHash && candidate.text === inlineReview.after && candidate.status === 'completed' && candidate.compositionEligible === true)) throw new Error('SOURCE_DRAFT_CHANGED')
           await onCommitAnnotations(inlineReview.before, after, inlineReview.annotations)

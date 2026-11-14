@@ -41,7 +41,6 @@ beforeEach(async () => {
   const answer = backend.invoke.getMockImplementation()!
   holdCommit = null
   backend.invoke.mockImplementation(async (channel, ...args) => {
-    if (channel === 'db:annotation-history-list') return []
     if (channel !== 'db:annotation-commit') return answer(channel, ...args)
     const { draftId, after } = args[0] as { draftId: number; after: string }
     Object.assign(backend.state.drafts.find(draft => draft.id === draftId)!, { content: after })
@@ -117,9 +116,7 @@ async function switchToOtherWorkWhileCommitPending(retagTab: boolean) {
     setActiveProjectSessionContext(OTHER_SESSION)
     if (retagTab) useEditorStore.setState({ tabs: [{ ...tab, projectKey: OTHER_SESSION.projectPath }] })
   })
-  return { draft, tab, outcome: await commit(tab.content!, `${tab.content}
-
-批注改出的一段。`, []).then(() => 'committed', (error: Error) => error.message) }
+  return { tab, outcome: await commit(tab.content!, `${tab.content}\n\n批注改出的一段。`, []).then(() => 'committed', (error: Error) => error.message) }
 }
 
 it('作者已切到另一部作品，同一标签号的标签属于那部作品：批注修改不写进那部作品', async () => {
