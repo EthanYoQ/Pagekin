@@ -8,6 +8,7 @@ import { setActiveProjectSessionContext } from '../../../../shared/project-sessi
 import { useDraftStore } from '../../../../stores/draft-store'
 import { useEditorStore } from '../../../../stores/editor-store'
 import { useLLMStore } from '../../../../stores/llm-store'
+import { useLayoutStore } from '../../../../stores/layout-store'
 import { useLocaleStore } from '../../../../stores/locale-store'
 import { useStageStore } from '../../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../../stores/project-store'
@@ -20,7 +21,7 @@ import { BLUEPRINT, ORIGINAL, SESSION, chapterProject, createChapterBackend, gen
 
 const original = {
   editor: useEditorStore.getState(), project: useProjectStore.getState(), drafts: useDraftStore.getState(),
-  stage: useStageStore.getState(), llm: useLLMStore.getState(), workflow: useWorkflowStore.getState(),
+  stage: useStageStore.getState(), layout: useLayoutStore.getState(), llm: useLLMStore.getState(), workflow: useWorkflowStore.getState(),
 }
 
 const SELECTED = '他第三次展开信纸。'
@@ -35,20 +36,33 @@ async function sha256(text: string) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-/** 请求发出前关闭应用留下的第 3 章选区润色运行。 */
-async function interruptedSelectionRun(documentText: string, executed: Promise<void> = Promise.resolve()) {
+/** 第 3 章的标签：选区运行记下的原稿身份就是它的 filePath。 */
+const chapterTab = (chapterNumber: number) => useEditorStore.getState().tabs.find(tab => tab.chapterNumber === chapterNumber)?.filePath
+
+/**
+ * 请求发出前关闭应用留下的第 3 章选区润色运行。和主进程一样：生成完的建议在气泡回执「已显示」之前一直列为可恢复。
+ * origin 是发起时记下的原稿身份，升级前的旧运行没有。
+ */
+async function interruptedSelectionRun(documentText: string, executed: Promise<void> = Promise.resolve(), origin: () => string | undefined = () => chapterTab(3) ?? 'drafts/3') {
   const from = documentText.indexOf(SELECTED)
-  const context = { action: 'refine', kind: 'author-draft', documentText, documentHash: await sha256(documentText), from, to: from + SELECTED.length, selectedText: SELECTED }
+  const base = { action: 'refine', kind: 'author-draft', documentText, documentHash: await sha256(documentText), from, to: from + SELECTED.length, selectedText: SELECTED }
   const pending = { handle, status: 'running', artifacts: [], candidates: [], ledger: { physicalRequests: 0 } }
   const done = { handle, status: 'completed', artifacts: [], candidates: [{ ...handle, artifactId: '建议', textHash: 'h', text: SUGGESTION, status: 'completed', compositionEligible: true }], ledger: { physicalRequests: 1 } }
   let view: typeof pending | typeof done = pending
-  const recovery = () => ({ view, modelId: 'glm', sourceStatus: 'current', context })
+  let delivered = false
+  const recovery = () => {
+    const filePath = origin()
+    return { view, modelId: 'glm', sourceStatus: 'current', context: filePath === undefined ? base : { ...base, filePath } }
+  }
   const fixture = backend.invoke.getMockImplementation()!
   backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
     switch (channel) {
-      case 'generation:list-recovery': return { planning: [], editors: view === pending ? [recovery()] : [], reviews: [], drafts: [], batches: [], partial: false }
+      case 'generation:list-recovery': return { planning: [], editors: delivered ? [] : [recovery()], reviews: [], drafts: [], batches: [], partial: false }
       case 'db:recovery-candidate-list': return []
       case 'editor-inline:read-recovery': return recovery()
+      case 'editor-inline:delivered':
+        if (view === done) delivered = true
+        return undefined
       case 'editor-inline:execute':
         await executed
         view = done
@@ -102,6 +116,7 @@ afterEach(async () => {
   useProjectStore.setState(original.project, true)
   useDraftStore.setState(original.drafts, true)
   useStageStore.setState(original.stage, true)
+  useLayoutStore.setState(original.layout, true)
   useLLMStore.setState(original.llm, true)
   useWorkflowStore.setState(original.workflow, true)
 })
@@ -141,7 +156,7 @@ describe('运行侧页「继续原选区任务」', () => {
 
     const card = page.getByRole('article').filter({ hasText: '编辑器选区建议' })
     await expect.element(card.getByText(SUGGESTION)).toBeVisible()
-    await expect.element(card.getByText(/已用 \d+ 次请求/)).not.toBeInTheDocument()
+    await expect.element(card.getByText('已用 0 次请求')).not.toBeInTheDocument()
     await expect.element(card.getByRole('button', { name: '继续原选区任务' })).toBeDisabled()
     expect(executions()).toBe(1)
     expect(useStageStore.getState().sheet).not.toBeNull()
@@ -223,7 +238,7 @@ describe('运行侧页「继续原选区任务」', () => {
     await vi.waitFor(() => expect(editorText()).toBe(ORIGINAL.replace(SELECTED, SUGGESTION)))
   })
 
-  it('两个已打开标签的正文都和发起时一样：分不清是哪一稿，不进气泡，在侧页续跑，正文都不动', async () => {
+  it('两个已打开标签正文相同：按发起时记下的原稿进第 3 章的气泡，第 4 章不动', async () => {
     await interruptedSelectionRun(ORIGINAL)
     await mount()
     await openChapter(3)
@@ -232,10 +247,83 @@ describe('运行侧页「继续原选区任务」', () => {
 
     await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
 
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
+    expect(useEditorStore.getState().activeTabId).toBe(useEditorStore.getState().tabs.find(tab => tab.chapterNumber === 3)!.id)
+    expect(useEditorStore.getState().tabs.find(tab => tab.chapterNumber === 4)!.content).toBe(ORIGINAL)
+  })
+
+  it('原稿没打开、另一份正文相同的稿开着：不进那份稿的气泡，在侧页续跑，正文不动', async () => {
+    await interruptedSelectionRun(ORIGINAL, undefined, () => 'drafts/没打开的原稿')
+    await mount()
+    await openChapter(4)
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
     await expect.element(page.getByRole('article').filter({ hasText: '编辑器选区建议' }).getByText(SUGGESTION)).toBeVisible()
-    expect(useStageStore.getState().sheet).not.toBeNull()
     expect(host!.querySelector('[role="toolbar"]')).toBeNull()
-    expect(useEditorStore.getState().tabs.filter(tab => tab.content === ORIGINAL)).toHaveLength(2)
+    expect(editorText()).toBe(ORIGINAL)
+  })
+
+  it('升级前的旧运行没记原稿：即使有正文相同的标签也只在侧页续跑', async () => {
+    await interruptedSelectionRun(ORIGINAL, undefined, () => undefined)
+    await mount()
+    await openChapter(3)
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
+    await expect.element(page.getByRole('article').filter({ hasText: '编辑器选区建议' }).getByText(SUGGESTION)).toBeVisible()
+    expect(host!.querySelector('[role="toolbar"]')).toBeNull()
+  })
+
+  it('气泡显示过建议后，运行侧页不再列出这条运行', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await mount()
+    await openChapter()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
+
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await expect.element(page.getByText('没有进行中的运行')).toBeVisible()
+    await expect.element(page.getByRole('article').filter({ hasText: '编辑器选区建议' })).not.toBeInTheDocument()
+  })
+
+  it('气泡续跑期间切到别的章：建议没显示过，运行侧页里仍能看到并复制', async () => {
+    let finish!: () => void
+    await interruptedSelectionRun(ORIGINAL, new Promise<void>(resolve => { finish = resolve }))
+    const copied: string[] = []
+    vi.spyOn(navigator.clipboard, 'writeText').mockImplementation(async value => { copied.push(value) })
+    await mount()
+    await openChapter(3)
+    await openChapter(4)
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+    await vi.waitFor(() => expect(executions()).toBe(1))
+
+    await act(async () => useEditorStore.getState().setActiveTab(useEditorStore.getState().tabs.find(tab => tab.chapterNumber === 4)!.id))
+    await act(async () => finish())
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    const card = page.getByRole('article').filter({ hasText: '编辑器选区建议' })
+    await expect.element(card.getByText(SUGGESTION)).toBeVisible()
+    await act(async () => card.getByRole('button', { name: '复制建议' }).click())
+    expect(copied).toEqual([SUGGESTION])
+  })
+
+  it('设置页开着时点「继续原选区任务」：先离开设置页，建议显示在看得见的气泡里', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await mount()
+    await openChapter()
+    await act(async () => useLayoutStore.setState({ settingsOpen: true }))
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
+    expect(useLayoutStore.getState().settingsOpen).toBe(false)
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
   })
 
   it('第一次在气泡里读不出原运行，再从侧页点「继续原选区任务」会重新读取并续跑', async () => {
@@ -251,6 +339,7 @@ describe('运行侧页「继续原选区任务」', () => {
     await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
     await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
     await vi.waitFor(() => expect(reads).toBe(1))
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText('无法恢复原运行')).toBeVisible()
 
     await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
     await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())

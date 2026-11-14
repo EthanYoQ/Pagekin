@@ -64,16 +64,40 @@ it('半截建议和还没发出的选区任务列为选区恢复，不当作单�
  expect(list.editors.map(item=>item.view.handle.runId).sort()).toEqual([cut.runId,pending.runId].sort())
  expect(list).toMatchObject({drafts:[],planning:[],reviews:[],partial:false})
 })
-it('完整送达过的建议和作者拒绝过的建议不再列为可恢复（#686）',async()=>{
+it('气泡显示过的建议和作者拒绝过的建议不再列为可恢复（#686）',async()=>{
  const f=fixture(replying('林岚停下脚步。','stop'))
  const delivered=f.owner.beginEditorInline({...request,uiActionNonce:'送达'}).view.handle
  await f.owner.executeEditorInline(delivered)
+ f.owner.acknowledgeEditorInline(delivered)
  const rejected=f.owner.beginEditorInline({...request,uiActionNonce:'拒绝'}).view.handle
  await f.owner.executeEditorInline(rejected)
  f.owner.cancel(rejected)
  const unsent=f.owner.beginEditorInline({...request,uiActionNonce:'没发就拒绝'}).view.handle
  f.owner.cancel(unsent)
  expect(f.reopenStorage().listRecovery()).toMatchObject({editors:[],partial:false})
+})
+it('生成完整但气泡没显示过（编辑器已卸载）：重开后仍列出，建议可从侧页复制',async()=>{
+ const f=fixture(replying('林岚停下脚步。','stop'))
+ const handle=f.owner.beginEditorInline(request).view.handle
+ await f.owner.executeEditorInline(handle)
+ const listed=f.reopenStorage().listRecovery().editors
+ expect(listed.map(item=>item.view.handle.runId)).toEqual([handle.runId])
+ expect((listed[0]!.view.candidates??listed[0]!.view.artifacts).map(item=>item.text)).toEqual(['林岚停下脚步。'])
+})
+it('升级前留下的完整建议没有待送达记录，按原判据不再列出',async()=>{
+ const f=fixture(replying('林岚停下脚步。','stop'))
+ const handle=f.owner.beginEditorInline(request).view.handle
+ await f.owner.executeEditorInline(handle)
+ f.db.prepare(`UPDATE generation_runs SET binding_json=json_remove(binding_json,'$."$editorInlineAwaitingDelivery"') WHERE run_id=?`).run(handle.runId)
+ expect(f.reopenStorage().listRecovery()).toMatchObject({editors:[],partial:false})
+})
+it('发起时记下原稿身份，重开后从运行读得到；旧运行没有这项',async()=>{
+ const f=fixture()
+ const withOrigin=f.owner.beginEditorInline({...request,uiActionNonce:'带原稿',input:{...input,filePath:'drafts/3-1.md'}}).view.handle
+ const legacy=f.owner.beginEditorInline({...request,uiActionNonce:'旧运行'}).view.handle
+ const next=f.reopenStorage()
+ expect(next.readEditorInlineRecovery(withOrigin).context.filePath).toBe('drafts/3-1.md')
+ expect(next.readEditorInlineRecovery(legacy).context.filePath).toBeUndefined()
 })
 it('拒绝过的建议还有没落盘的文字时仍列出，那段文字只能从这里复制',async()=>{
  const f=fixture(replying('林岚停下脚步。','stop'))
