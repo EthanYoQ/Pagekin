@@ -811,7 +811,7 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     await openDraft(draft.id)
     await expect.element(page.getByRole('button', { name: '定稿', exact: true })).toBeVisible()
     expect(await scrollToEndAndHit('定稿')).toBe(true)
-    await act(async () => page.getByRole('button', { name: '定稿', exact: true }).element().click())
+    await click('定稿')
     await expect.element(page.getByRole('dialog', { name: '定稿第 3 章？' })).toBeVisible()
   })
 
