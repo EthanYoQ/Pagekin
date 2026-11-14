@@ -262,6 +262,60 @@ describe('长任务百分比不动时说明在等什么（#631）', () => {
     })
   })
 
+  describe('当前在做哪一步（#609）与读屏播报（#645 后续）', () => {
+    const activity = () => host!.querySelector('.run-step [role="status"]')?.textContent ?? null
+    const announced = () => [...host!.querySelectorAll('.run-step [role="status"]')].map(node => node.textContent).join(' | ')
+
+    it('运行中显示当前章节与子步骤，子步骤切换就跟着换', async () => {
+      const callbacks = await start()
+      await mount()
+      expect(activity()).toBeNull()
+      await report(() => callbacks.setActivityText!('第 1 章 · 章节剧情要点'))
+      expect(activity()).toBe('第 1 章 · 章节剧情要点')
+      await report(() => callbacks.setActivityText!('第 1 章 · 角色状态更新'))
+      expect(activity()).toBe('第 1 章 · 角色状态更新')
+      await report(() => callbacks.setActivityText!(undefined))
+      expect(activity()).toBeNull()
+    })
+
+    it.each<[WorkflowRun['status']]>([['cancelling'], ['cancelled'], ['failed'], ['completed']])('运行状态为 %s 时不再显示当前子步骤', async status => {
+      const callbacks = await start()
+      await report(() => callbacks.setActivityText!('第 8 章 · 章节剧情要点'))
+      await mount()
+      expect(activity()).toBe('第 8 章 · 章节剧情要点')
+      await report(() => useWorkflowStore.setState(state => ({ activeRuns: state.activeRuns.map(run => ({ ...run, status })) })))
+      expect(activity()).toBeNull()
+    })
+
+    it('计时每秒变化不进播报区域', async () => {
+      const callbacks = await start()
+      await report(() => callbacks.setGenerationActivity!({ operation: 'review-chapter', diagnostics: diagnostics({ lastResponseMs: 500, lastOutputMs: 500, phase: 'stream' }) }))
+      await mount()
+      await advance(16_000)
+      const before = announced()
+      expect(before).toBe('尚无完整审稿报告。等待期间可随时中止。')
+      expect(notes().join()).toContain('已等 16 秒')
+      for (let second = 0; second < 5; second += 1) {
+        await advance(1_000)
+        expect(announced()).toBe(before)
+      }
+      expect(notes().join()).toContain('已等 21 秒')
+      const ticking = [...host!.querySelectorAll('.run-step-wait > p')].filter(line => /已等|距最近/u.test(line.textContent ?? ''))
+      expect(ticking).toHaveLength(3)
+      expect(ticking.filter(line => line.closest('[role="status"]'))).toEqual([])
+    })
+
+    it('子步骤切换时播报内容随之变化', async () => {
+      const callbacks = await start()
+      await report(() => callbacks.setActivityText!('第 1 章 · 章节剧情要点'))
+      await mount()
+      await advance(20_000)
+      expect(announced()).toBe('第 1 章 · 章节剧情要点')
+      await report(() => callbacks.setActivityText!('第 1 章 · 角色状态更新'))
+      expect(announced()).toBe('第 1 章 · 角色状态更新')
+    })
+  })
+
   it('英文界面', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
     const callbacks = await start()

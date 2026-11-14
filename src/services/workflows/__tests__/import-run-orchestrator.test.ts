@@ -292,6 +292,30 @@ describe('ImportRunOrchestrator', () => {
     expect(getRun().stage).toBe('refresh')
   })
 
+  it('holds resumed completion at the last saved chapter while the next one runs', async () => {
+    const numbers = Array.from({ length: 9 }, (_, index) => index + 1)
+    const { deps } = harness(9, {
+      purpose: 'author-manuscript', stage: 'author-postprocess',
+      completedBatches: { 'author-postprocess': numbers.slice(0, 7).map(number => `chapter:${number}`) },
+    })
+    deps.getAuthorCommitReceipt = vi.fn(async () => ({
+      operationId: 'author-import:run-1', payloadHash: 'e'.repeat(64), chapterNumbers: numbers, idempotent: false,
+      drafts: numbers.map(chapterNumber => ({ chapterNumber, draftId: chapterNumber, finalizationId: `final-${chapterNumber}`,
+        contentHash: 'f'.repeat(64), targetFileName: `Chapter ${chapterNumber}.txt`, status: 'finalized' as const, publicationStatus: 'pending' as const })),
+    }))
+    let finishProjection!: () => void
+    const projection = new Promise<void>(resolve => { finishProjection = resolve })
+    const progress: number[] = []
+    const observer = { ...callbacks, setProgress: (value: number) => { progress.push(value) } }
+    deps.postprocessAuthorChapter = vi.fn(async chapter => { if (chapter.number === 8) await projection })
+    const executing = new ImportRunOrchestrator(deps).executeStage('run-1', 'author-postprocess', 'test-runner', { cancelled: false }, observer)
+    await vi.waitFor(() => expect(deps.postprocessAuthorChapter).toHaveBeenCalledTimes(1))
+    expect(Math.max(...progress)).toBe(78)
+    finishProjection()
+    await executing
+    expect(progress.at(-1)).toBe(99)
+  })
+
   it('keeps renewing its lease while one knowledge effect runs longer than the original TTL', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)

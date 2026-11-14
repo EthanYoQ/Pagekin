@@ -390,6 +390,9 @@ function productionDependencies(
         ),
         stopOnFailure: true,
         onlyFailed: true,
+        onStepStart: label => callbacks.setActivityText?.(textForLocale(
+          run.locale, `第 ${chapter.number} 章 · ${label}`, `Chapter ${chapter.number} · ${label}`,
+        )),
       }).execute({ step: {} as never, context, callbacks })
       if (!status.allCriticalPassed) {
         throw new Error(textForLocale(

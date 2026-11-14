@@ -551,22 +551,39 @@ describe('current-project reference import', () => {
     expect(invoke.mock.calls.some(([channel]) => String(channel).startsWith('kb:'))).toBe(false)
   })
 
-  it('我的原稿默认勾选「同时反推」，勾选时显示费用预估并随创建请求冻结；取消勾选后预估消失', async () => {
+  it('shows the continuity requests with inference on and off and freezes the selected inference option', async () => {
     await act(async () => page.getByTestId('import-purpose-author').click())
     const option = page.getByRole('checkbox', { name: /同时反推设定、架构、角色和蓝图/ })
     await expect.element(option).toBeChecked()
     await expect.element(page.getByText('只补空白，不覆盖已有内容')).toBeInTheDocument()
     await act(async () => page.getByTestId('import-source-choose').click())
-    await expect.element(page.getByText('预估 AI 消耗')).toBeInTheDocument()
+    const workload = page.getByTestId('author-import-workload')
+    await expect.element(workload).toHaveTextContent('新增 1 章通常需 2 次 AI 请求')
+    await expect.element(workload).toHaveTextContent('已开反推')
 
     await act(async () => page.getByText('同时反推设定、架构、角色和蓝图').click())
     await expect.element(option).not.toBeChecked()
-    expect(document.body.textContent).not.toContain('预估 AI 消耗')
+    await expect.element(workload).toHaveTextContent('新增 1 章通常需 2 次 AI 请求')
+    await expect.element(workload).not.toHaveTextContent('已开反推')
+    expect(document.body.textContent).not.toMatch(/预估 AI 消耗|预计耗时/)
 
     await act(async () => page.getByText('同时反推设定、架构、角色和蓝图').click())
     await act(async () => page.getByRole('button', { name: /确认导入（1 章）/ }).click())
     const prepareCall = invoke.mock.calls.find(([channel]) => channel === 'db:import-run-prepare-inspection')
     expect(prepareCall?.[1]).toMatchObject({ purpose: 'author-manuscript', authorInference: true })
+  })
+
+  it('counts only new author chapters in the workload and hides it for an exact duplicate', async () => {
+    authorPreview = { ...authorPreview, chapterCount: 9, newChapterNumbers: [3, 4, 5, 6, 7, 8, 9], duplicateChapterNumbers: [1, 2] }
+    await act(async () => page.getByTestId('import-purpose-author').click())
+    await act(async () => page.getByTestId('import-source-choose').click())
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('新增 7 章通常需 14 次 AI 请求')
+    await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+    await expect.element(page.getByTestId('author-import-workload')).toHaveTextContent('Adding 7 new chapters usually takes 14 AI requests')
+    authorPreview = { ...authorPreview, classification: 'exact-duplicate', newChapterNumbers: [], duplicateChapterNumbers: [1, 2, 3, 4, 5, 6, 7, 8, 9] }
+    await act(async () => page.getByTestId('import-source-choose').click())
+    await expect.element(page.getByTestId('author-import-confirmation-summary')).toHaveTextContent('already')
+    expect(document.querySelector('[data-testid="author-import-workload"]')).toBeNull()
   })
 
   it('不勾选反推时创建请求冻结 false', async () => {

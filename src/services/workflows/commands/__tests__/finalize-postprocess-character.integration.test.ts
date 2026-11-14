@@ -319,7 +319,7 @@ function installModel(): void {
     }) })
 }
 
-function command(draftContent: string, overrides: { onlyFailed?: boolean; stepKeys?: readonly string[]; retryInvalidResult?: boolean; stopOnFailure?: boolean } = {},
+function command(draftContent: string, overrides: { onlyFailed?: boolean; stepKeys?: readonly string[]; retryInvalidResult?: boolean; stopOnFailure?: boolean; onStepStart?: (label: string) => void } = {},
   { draftId, chapterNumber }: { draftId: number; chapterNumber: number } = { draftId: 7, chapterNumber: 2 }) {
   insertFinalizedDraft(draftId, chapterNumber, draftContent)
   const db = getProjectDb()!
@@ -501,6 +501,25 @@ describe('RunFinalizePostProcessCommand character-state persistence', () => {
       step: {}, context: { ...workflowContext, ...(frozenModelId ? { generationModelId: frozenModelId } : {}) }, callbacks: callbacks(),
     })
     expect(selections.map(selection => (selection as { modelId: string }).modelId)).toEqual([expected, expected])
+  })
+
+  it('reports only executing substeps before their model work and skips already successful steps on resume', async () => {
+    const labels: string[] = []
+    const labelAtModelCall: (string | undefined)[] = []
+    const original = useLLMStore.getState().generateStream
+    useLLMStore.setState({ generateStream: vi.fn(async (...args: Parameters<typeof original>) => {
+      labelAtModelCall.push(labels.at(-1))
+      return original(...args)
+    }) })
+    const first = await command('Chapter 2 finalized content', { onStepStart: label => { labels.push(label) } })
+      .execute({ step: {}, context: workflowContext, callbacks: callbacks() })
+    expect(first.allCriticalPassed).toBe(true)
+    expect(labelAtModelCall).toEqual(['Chapter plot notes', 'Update character state'])
+    labels.length = 0
+    await command('Chapter 2 finalized content', { onlyFailed: true, onStepStart: label => { labels.push(label) } })
+      .execute({ step: {}, context: workflowContext, callbacks: callbacks() })
+    expect(labels).toEqual([])
+    expect(labelAtModelCall).toHaveLength(2)
   })
 
   it('records the finalization stage model on the run so editing that model warns about it', async () => {

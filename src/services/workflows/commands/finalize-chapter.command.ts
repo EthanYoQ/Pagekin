@@ -362,6 +362,7 @@ export interface RunFinalizePostProcessParams {
   sourceLabel: string
   finalizedSource: FinalizedSourceIdentity
   stopOnFailure?: boolean
+  onStepStart?: (label: string) => void
   onlyFailed?: boolean
   retryInvalidResult?: boolean
   /** 只跑这些步骤；不给时跑全部。 */
@@ -461,8 +462,15 @@ export class RunFinalizePostProcessCommand extends BaseWorkflowCommand<PostProce
       chapterDrafts.some(draft => draft.status === 'superseded'),
     )
     // 旧版本的跑批里可能留着现在已没有的步骤（如 style_analysis），跳过它们，只有一步都跑不了时才报错。
-    const { stepKeys } = this.params
-    const steps = stepKeys ? allSteps.filter(step => stepKeys.includes(step.key)) : allSteps
+    const { stepKeys, onStepStart } = this.params
+    const selected = stepKeys ? allSteps.filter(step => stepKeys.includes(step.key)) : allSteps
+    const steps = onStepStart ? selected.map(step => ({
+      ...step,
+      executor: (...args: Parameters<PostProcessStep['executor']>) => {
+        onStepStart(step.label)
+        return step.executor(...args)
+      },
+    })) : selected
     if (steps.length === 0) {
       throw new Error(workflowUiText(
         context,

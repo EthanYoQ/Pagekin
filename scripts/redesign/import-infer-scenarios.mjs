@@ -106,7 +106,7 @@ export async function openAuthorImport(app, page, bookName, file) {
   const imported = page.getByRole('dialog', { name: '导入作者原稿' })
   await imported.getByTestId('import-source-choose').click()
   await imported.getByTestId('author-import-confirmation-summary').waitFor({ state: 'visible' })
-  await imported.getByText('预估 AI 消耗').waitFor({ state: 'visible' })
+  await imported.getByTestId('author-import-workload').waitFor({ state: 'visible' })
   return imported
 }
 
@@ -155,6 +155,42 @@ async function shootStagePage(page, shoot, name, stageName) {
 }
 
 export const IMPORT_INFER_SCENARIOS = {
+  'import-progress': { model: true, shell: 'stage', setup: seedEmptyBook, run: async context => {
+    const { app, page, roots, fake, shoot } = context
+    const dialog = await openAuthorImport(app, page, EMPTY_BOOK, manuscript(roots, [[1, '匿名信'], [2, '茶馆'], [3, '河对岸']]))
+    await dialog.getByText('同时反推设定、架构、角色和蓝图', { exact: true }).click()
+    assert.equal(await dialog.getByRole('checkbox', { name: /同时反推设定、架构、角色和蓝图/u }).isChecked(), false)
+    const workload = dialog.getByTestId('author-import-workload')
+    const workText = await workload.innerText()
+    assert.match(workText, /新增 3 章通常需 6 次 AI 请求/u)
+    assert.doesNotMatch(workText, /预计耗时|预估 AI 消耗/u)
+    await workload.scrollIntoViewIfNeeded()
+    await shoot('import-progress-workload')
+    fake.gate.hold()
+    try {
+      await dialog.getByRole('button', { name: '确认导入（3 章）', disabled: false }).click()
+      await dialog.waitFor({ state: 'hidden' })
+      await runSheet.waitUntilOpen(page)
+      const activity = runSheet.sheet(page).getByRole('status').filter({ hasText: /^第 \d+ 章 · /u })
+      await activity.filter({ hasText: /第 1 章.*章节剧情要点/u }).waitFor({ state: 'visible' })
+      const notesText = await activity.innerText()
+      await shoot('import-progress-notes')
+      fake.replyReview(() => { fake.gate.hold(); return null })
+      fake.gate.release()
+      await activity.filter({ hasText: /第 1 章.*角色状态更新/u }).waitFor({ state: 'visible' })
+      const cardsText = await activity.innerText()
+      await shoot('import-progress-cards')
+      fake.replyReview(null)
+      fake.gate.release()
+      await runSheet.waitForRunDone(page, 120_000)
+      assert.equal(await activity.count(), 0)
+      assert.equal(fake.chats.length, 6, '3 章各执行一次章节要点和角色状态请求')
+      return { workText, notesText, cardsText, completed: true, chatRequests: fake.chats.length }
+    } finally {
+      fake.replyReview(null)
+      fake.gate.release()
+    }
+  } },
   'import-infer-empty': { model: true, shell: 'stage', setup: seedEmptyBook, run: async context => {
     const { app, page, roots, fake, shoot } = context
     fake.replyReview(inferenceReply)
