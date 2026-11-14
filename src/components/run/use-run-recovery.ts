@@ -19,6 +19,7 @@ import { displayedErrorMessage } from '../../i18n/app-errors'
 import { hideRecovery, readHiddenRecovery } from './hidden-recovery'
 import { projectRuns } from './run-output'
 import type { GenerationRecoveryList } from '../../shared/generation-owner-contract'
+import type { EditorInlineRecovery } from '../../shared/editor-inline-generation'
 import { throwIfTerminalProviderFailure } from '../../services/generation/generation-harness'
 
 /** 这部作品有工作流正在发生成请求；暂停与等确认的不算。 */
@@ -85,8 +86,8 @@ export function useRunRecovery(): RunRecovery {
   const projectId = session?.projectId
   const hiddenEarlier = useMemo(() => projectId ? readHiddenRecovery(projectId) : new Set<string>(), [projectId])
   const [hiddenNow, setHiddenNow] = useState<ReadonlySet<string>>(new Set())
-  /** 在侧页续跑完成的选区建议：主进程随即不再列出这条运行，建议留在这里供复制。 */
-  const [continued, setContinued] = useState<Loaded<Record<string, EditorEntry>>>({ session: null, value: {} })
+  /** 在侧页续跑完成的选区运行：主进程随即不再列出它，建议留在这里供复制。 */
+  const [continued, setContinued] = useState<Loaded<Record<string, EditorInlineRecovery>>>({ session: null, value: {} })
 
   useEffect(() => {
     if (!session) {
@@ -152,9 +153,9 @@ export function useRunRecovery(): RunRecovery {
   const entries = useMemo(() => {
     if (!session) return []
     const ofSession = <T,>(loaded: Loaded<T>, empty: T) => sameProjectSessionContext(loaded.session, session) ? loaded.value : empty
-    const listed = buildRecoveryEntries({ ...ofSession(generationList, { ...EMPTY_RECOVERY_SOURCES, partial: false }), candidates: ofSession(candidateList, []) }, locale)
-    const kept = Object.values(ofSession(continued, {})).filter(entry => !listed.some(item => item.kind === 'editor' && item.key === entry.key))
-    return [...listed, ...kept]
+    const sources = ofSession(generationList, { ...EMPTY_RECOVERY_SOURCES, partial: false })
+    const kept = Object.values(ofSession(continued, {})).filter(recovery => !sources.editors.some(item => item.view.handle.runId === recovery.view.handle.runId))
+    return buildRecoveryEntries({ ...sources, editors: [...sources.editors, ...kept], candidates: ofSession(candidateList, []) }, locale)
       .filter(entry => !('hideKey' in entry) || (!hiddenEarlier.has(entry.hideKey) && !hiddenNow.has(entry.hideKey)))
   }, [session, generationList, candidateList, continued, locale, hiddenEarlier, hiddenNow])
 
@@ -265,10 +266,9 @@ export function useRunRecovery(): RunRecovery {
       void act(async current => {
         const receipt = await ipc.invokeWithProjectSession(current, 'editor-inline:execute', { handle })
         if (!stillCurrent()) return
-        const text = receipt.outcome.content
-        if (text.trim()) setContinued(kept => ({ session: current, value: {
+        if (receipt.outcome.content.trim()) setContinued(kept => ({ session: current, value: {
           ...(sameProjectSessionContext(kept.session, current) ? kept.value : {}),
-          [entry.key]: { ...entry, canContinue: false, suggestions: [{ id: entry.key, text }] },
+          [entry.key]: { ...entry.recovery, view: receipt.run },
         } }))
         setRefreshTick(value => value + 1)
         throwIfTerminalProviderFailure(receipt.outcome.receipt)
