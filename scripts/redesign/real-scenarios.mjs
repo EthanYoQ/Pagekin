@@ -282,6 +282,14 @@ async function batchRecovery(page) {
   return { text: await card.first().innerText(), continueEnabled: await button.isEnabled() }
 }
 
+/** 不能继续的批次没有可做的动作，不列为可恢复（#686）。 */
+async function batchUnlisted(page) {
+  await runSheet.openFromPalette(page)
+  await page.waitForTimeout(2000)
+  await runSheet.recovery(page).getByRole('article').filter({ hasText: /批量正文：/ }).first().waitFor({ state: 'detached', timeout: 30_000 })
+  return true
+}
+
 export const REAL_SCENARIOS = {
   /** 主流程：第 1～3 章逐章写作、AI 审稿、按意见修稿并合并、定稿，后处理三步在真实回复下完成，知识库每块都有向量。 */
   'real-main': { real: true, setup: context => seedBook(context), run: async context => {
@@ -441,9 +449,7 @@ export const REAL_SCENARIOS = {
     assert.equal(measured.recoveryBeforeFinalize.continueEnabled, true, '未定稿任何章的批次照旧可续')
     await openChapter(page, 3)
     measured.finalize = await finalizeAndPostProcess(page, 3)
-    measured.recoveryAfterFinalize = await batchRecovery(page)
-    assert.equal(measured.recoveryAfterFinalize.continueEnabled, false, '定稿其中一章后批次不能继续')
-    assert.match(measured.recoveryAfterFinalize.text, /批次来源已变化，不能继续此批次/u)
+    measured.recoveryAfterFinalize = await batchUnlisted(page)
     await openChapter(page, 3)
     await chapterView.view(page).getByRole('button', { name: '重新打开修改', exact: true }).click()
     await page.getByRole('dialog', { name: '重新打开第 3 章？' }).getByRole('button', { name: '重新打开', exact: true }).click()
@@ -454,9 +460,7 @@ export const REAL_SCENARIOS = {
 
     await restartAndOpen(context)
     page = context.page
-    measured.recovery = await batchRecovery(page)
-    assert.equal(measured.recovery.continueEnabled, false, '作者定稿过其中一章的批次不能继续')
-    assert.match(measured.recovery.text, /批次来源已变化，不能继续此批次/u)
+    measured.recovery = await batchUnlisted(page)
     return measured
   } },
 

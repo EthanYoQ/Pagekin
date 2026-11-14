@@ -75,6 +75,17 @@ it('完整送达过的建议和作者拒绝过的建议不再列为可恢复（#
  f.owner.cancel(unsent)
  expect(f.reopenStorage().listRecovery()).toMatchObject({editors:[],partial:false})
 })
+it('拒绝过的建议还有没落盘的文字时仍列出，那段文字只能从这里复制',async()=>{
+ const f=fixture(replying('林岚停下脚步。','stop'))
+ const handle=f.owner.beginEditorInline(request).view.handle
+ f.db.exec("CREATE TRIGGER reject_snapshot BEFORE UPDATE OF artifact_json ON generation_artifacts BEGIN SELECT RAISE(FAIL,'synthetic disk failure'); END")
+ const receipt=await f.owner.executeEditorInline(handle)
+ f.db.exec('DROP TRIGGER reject_snapshot')
+ expect(receipt.run.unsavedTails?.[0]?.text.trim()).toBeTruthy()
+ f.owner.cancel(handle)
+ expect(f.owner.listRecovery().editors.map(item=>item.view.handle.runId)).toEqual([handle.runId])
+ f.owner.discardCandidate(handle,receipt.run.unsavedTails![0]!.artifactId)
+})
 it('同nonce不同作者输入拒绝，generic begin/execute不能绕过editor owner',async()=>{
  const f=fixture(),recovery=f.owner.beginEditorInline(request)
  expect(()=>f.owner.beginEditorInline({...request,input:{...input,action:'expand'}})).toThrow()

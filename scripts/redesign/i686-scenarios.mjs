@@ -120,4 +120,44 @@ export const I686_SCENARIOS = {
     assert.deepEqual(hidden, [], '点「不再显示」后审稿卡不再列出')
     return { listed, hidden }
   } },
+  /** 审稿没拿到报告后又改了正文并保存，再让一次选区润色中途被拦下；重启后两张卡都只能复制，各有「不再显示」。 */
+  'i686-tail-copy-only': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
+    await chapterView.open(context.page, 4)
+    context.fake.replyReview(prompt => prompt.includes('goalReviews') ? '这一次没有给出审稿报告。' : null)
+    const broken = await runsStarted(context.page)
+    await chapterView.view(context.page).getByRole('button', { name: 'AI 审稿', exact: true }).click()
+    await waitRunDone(context.page, broken)
+    context.fake.replyReview(undefined)
+    await chapterView.prose(context.page).getByText('你父亲也问过钟的事').first().click()
+    await context.page.keyboard.press('End')
+    await context.page.keyboard.type('钟声停了。')
+    await context.page.keyboard.press('ControlOrMeta+S')
+    await context.page.getByText('已保存', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 })
+
+    context.fake.failProse()
+    await chapterView.prose(context.page).getByText('你父亲也问过钟的事').first().click({ clickCount: 3 })
+    const toolbar = context.page.getByRole('toolbar', { name: '选中文字的操作' })
+    await toolbar.getByRole('button', { name: '润色' }).click()
+    await toolbar.getByText('生成未完整完成，结果不可应用').waitFor({ state: 'visible', timeout: 30_000 })
+    context.fake.failProse(false)
+
+    await context.restart()
+    await stage.openAfterRestart(context.page, STAGE_SAMPLE.name)
+    await context.page.waitForTimeout(2000)
+    await recoveryListed(context.app, context.page)
+    const listed = await allCards(context.page)
+    await context.shoot('i686-tail-copy-only-run-sheet')
+    assert.deepEqual(listed.map(card => card.title), ['编辑器选区建议', '第4章审稿候选'], '中途被拦下的选区建议和来源已变的审稿仍列出')
+    assert.ok(listed.every(card => card.buttons.includes('不再显示')), '两张卡都有「不再显示」')
+    await runSheet.sheet(context.page).locator('.run-recovery > .run-card').last().locator('.run-card-buttons').scrollIntoViewIfNeeded()
+    await context.shoot('i686-tail-copy-only-review')
+
+    for (const title of ['编辑器选区建议', '第4章审稿候选']) {
+      await runSheet.sheet(context.page).locator('.run-recovery > .run-card').filter({ has: context.page.getByRole('heading', { name: title }) })
+        .getByRole('button', { name: '不再显示' }).click()
+    }
+    const hidden = await allCards(context.page)
+    assert.deepEqual(hidden, [], '两张卡点「不再显示」后都不再列出')
+    return { listed, hidden }
+  } },
 }
