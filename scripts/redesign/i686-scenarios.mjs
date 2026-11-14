@@ -24,6 +24,10 @@ async function waitRunDone(page, before) {
 }
 
 async function recoveryListed(app, page) {
+  if (await runSheet.sheet(page).isVisible()) {
+    await runSheet.sheet(page).getByRole('button', { name: '收起运行侧页' }).first().click()
+    await runSheet.sheet(page).waitFor({ state: 'hidden' })
+  }
   await app.evaluate(({ ipcMain }) => {
     globalThis.__i686Reads = 0
     if (globalThis.__i686Wrapped) return
