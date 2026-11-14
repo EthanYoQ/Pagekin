@@ -505,6 +505,7 @@ it.each([false, true])('明确 handle 恢复原候选；文件改变=%s 时只�
   const documentText = '甲😀乙'
   const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
   invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'editor-inline:delivered') return undefined
     if (channel !== 'editor-inline:read-recovery') throw new Error('恢复不可创建或执行新请求:' + channel)
     return { view: { handle, status: 'completed', artifacts: [{ ...handle, artifactId: '原artifact', textHash: 'proof-hash', text: '替换表情', status: 'completed', compositionEligible: true }] }, modelId: '原模型', sourceStatus: 'current', context: { action: 'refine', kind: 'author-draft', documentText, documentHash, from: 1, to: 3, selectedText: '😀' } }
   })
@@ -516,7 +517,8 @@ it.each([false, true])('明确 handle 恢复原候选；文件改变=%s 时只�
   const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
   expect(view.state.doc.toString()).toBe(changedFile ? documentText : '甲替换表情乙')
   if (changedFile) await expect.element(page.getByText('正文或原目标已变化，结果未应用；你仍可复制预览内容')).toBeVisible()
-  expect(invoke).toHaveBeenCalledTimes(2)
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:read-recovery')).toHaveLength(2)
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered').map(([, request]) => request)).toEqual([{ handle }])
 })
 
 it('明确 handle 恢复按意见改的候选时显示当时的意见', async () => {
@@ -564,7 +566,7 @@ it.each(['unknown', 'discarded'])('已有 %s 请求占用时不显示重新执�
   const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
   invoke.mockImplementation(async () => ({ view: { handle, status, artifacts: [], candidates: [], ledger: { physicalRequests: 1 } }, modelId: '原模型', sourceStatus: 'current', context: { action: 'refine', kind: 'author-draft', documentText, documentHash, from: 0, to: 2, selectedText: documentText } }))
   await act(async () => root.render(<CodeMirrorEditor content={documentText} recoveryHandle={handle} />))
-  await expect.element(page.getByText('恢复的候选尚不可应用，可复制或继续原运行')).toBeVisible()
+  await expect.element(page.getByText('恢复的候选不可应用，只能复制')).toBeVisible()
   await expect.element(page.getByRole('button', { name: '继续原运行' })).not.toBeInTheDocument()
   expect(invoke).toHaveBeenCalledTimes(1)
 })
@@ -582,7 +584,7 @@ it('点击接受前原候选已丢弃，保留预览但不写入正文', async (
   expect(EditorView.findFromDOM(container.querySelector('.cm-editor')!)!.state.doc.toString()).toBe(documentText)
   await expect.element(page.getByText('候选')).toBeVisible()
 })
-it('继续原运行时服务商以上下文超长拒绝，显示对应说明', async () => {
+it('明确 handle 打开还没发出请求的原运行时直接续跑；服务商以上下文超长拒绝，显示对应说明', async () => {
   const handle = { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: '原预算', runId: '续跑运行' }
   const documentText = '原文'
   const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
@@ -592,6 +594,6 @@ it('继续原运行时服务商以上下文超长拒绝，显示对应说明', a
     ? { run: view, outcome: { status: 'incomplete', content: '', finishReason: 'error', receipt: { finishReason: 'error', failureCode: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' } } }
     : stored)
   await act(async () => root.render(<CodeMirrorEditor content={documentText} recoveryHandle={handle} />))
-  await act(async () => page.getByRole('button', { name: '继续原运行' }).click())
   await expect.element(page.getByText(/提示词超出了模型能接受的长度/)).toBeVisible()
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:execute')).toHaveLength(1)
 })

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { BeginGenerationRequest, ExecuteGenerationRequest, BeginGenerationBatchRequest, GenerationDraftCommitRequest, GenerationRecoveryContext, MaterialAdmission, MaterialDecisionReceipt, VisibleCompositionAlgorithm, GenerationOwnerChannels, GenerationRecoveryList, ShortOutlineRetry, PlanningContinuation, PlanningDraftStanding } from '../../src/shared/generation-owner-contract'
 import { planningRecoverable } from '../../src/shared/planning-recovery'
+import { editorCanContinue, reviewCanResume } from '../../src/shared/recovery-actions'
 import { isDraftVisibleTextVersion } from '../../src/shared/draft-visible-text'
 import { generationOutputContract, tightenMaterialBudget, type GenerationAuthorInput } from '../../src/shared/generation-owner-contract'
 import type { MainGenerationExecuteReceipt, MainGenerationRunHandle, MainGenerationRunSummary, MainGenerationRunView, MainGenerationSnapshot } from '../../src/services/generation/generation-runtime'
@@ -1088,7 +1089,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     run => viewOf(run).candidates?.at(-1))
   /**
    * 运行侧页「可恢复」区的数据。只读操作类型可能恢复的运行；一个运行读不出不挡其余运行，只标 partial。
-   * 单章写稿、审稿、修稿保存过就不再需要恢复，正文后来改没改过都一样；只有这次打开里还留着没落盘的文字时仍列出，那段文字只能从这里复制。
+   * 只列作者还能从这里拿回或接着做的运行。这次打开里还留着没落盘文字的一律列出，那段文字只能从这里复制。
    * 规划恢复稿是否列出按 planningRecoverable 判定，与蓝图页横幅、架构页大纲提示同一条。
    */
   const listRecovery = (): GenerationRecoveryList => {
@@ -1104,11 +1105,17 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         if (planningRecoverable(recovery)) list.planning.push(recovery)
       },
       review: (handle: MainGenerationRunHandle) => {
-        const recovery = readReviewRevisionRecovery(handle)
-        if (recovery.saved && !tailedRuns.has(handle.runId)) return
-        list.reviews.push({ view: viewOf(requireRun(handle)), recovery })
+        const recovery = readReviewRevisionRecovery(handle), tailed = tailedRuns.has(handle.runId)
+        if (recovery.saved && !tailed) return
+        const view = viewOf(requireRun(handle))
+        if (tailed || reviewCanResume(view, recovery) || (view.candidates ?? view.artifacts).some(hasText)) list.reviews.push({ view, recovery })
       },
-      editor: (handle: MainGenerationRunHandle) => { list.editors.push(readEditorInlineRecovery(handle)) },
+      editor: (handle: MainGenerationRunHandle) => {
+        const recovery = readEditorInlineRecovery(handle), outputs = recovery.view.candidates ?? recovery.view.artifacts
+        const settled = recovery.view.status === 'cancelled' || !repository.editorInlineAwaitingDelivery(handle.runId)
+          && outputs.some(item => item.status === 'completed' && item.compositionEligible === true)
+        if (tailedRuns.has(handle.runId) || !settled && (editorCanContinue(recovery) || outputs.some(hasText))) list.editors.push(recovery)
+      },
       draft: (handle: MainGenerationRunHandle) => {
         const saved = draftEffects.readRecovery(handle.runId).kind !== 'absent'
         if (saved && !tailedRuns.has(handle.runId)) return
@@ -1140,7 +1147,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     for (const run of batchRoots) {
       try {
         const batch = draftEffects.readBatchHistory(run.handle.runId, deps.projectId, commits)
-        if (batch.nextChapterNumber !== null) list.batches.push(batch)
+        if (batch.sourceCurrent && batch.nextChapterNumber !== null) list.batches.push(batch)
       } catch { list.partial = true }
     }
     return list
@@ -1593,7 +1600,11 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       }
       if (deps.database.prepare('SELECT COUNT(*) FROM generation_attempts WHERE run_id=?').pluck().get(run.runId) !== 0) throw new Error('GENERATION_EDITOR_ATTEMPT_CONFLICT')
       const current = viewOf(run).nonReplayable ? await resume(handleOf(run)) : viewOf(run)
+      repository.markEditorInlineAwaitingDelivery(run.runId)
       return execute({ handle: current.handle, invocationNonce, task }, false, false, true)
+    },
+    acknowledgeEditorInline: (handle: MainGenerationRunHandle) => {
+      repository.recordEditorInlineDelivery(requireEditorInlineRun(handle).runId)
     },
     readImportGeneration: (slot: ImportGenerationSlot, runId?: string) => {
       assertCurrent()

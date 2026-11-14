@@ -5,7 +5,7 @@ import type { EditorInlineInput, EditorInlineRecovery } from '../shared/editor-i
 
 const hasEpoch = (handle: MainGenerationRunHandle) => typeof handle.epoch === 'string' && handle.epoch.trim().length > 0
 const identity = (handle: MainGenerationRunHandle) => JSON.stringify([handle.projectId, handle.rootActionId, handle.runId])
-const authorInput = (input: EditorInlineInput) => [input.action, input.documentText, input.from, input.to, input.selectedText, input.action === 'instruct' ? input.instruction : undefined]
+const authorInput = (input: EditorInlineInput) => [input.action, input.documentText, input.from, input.to, input.selectedText, input.action === 'instruct' ? input.instruction : undefined, input.filePath]
 const sameAuthorInput = (a: EditorInlineInput, b: EditorInlineInput) => authorInput(a).every((value, index) => value === authorInput(b)[index])
 
 /** Main owns the task, model, nonce and budget. This adapter only holds navigation. */
@@ -73,6 +73,10 @@ export function createEditorInlineGeneration(sessionInput: ProjectSessionContext
       return { ...receipt, sourceStatus: current.sourceStatus }
     },
     async cancel() { cancelled = true; if (opening) await opening.catch(() => {}); await cancelKnown() },
+    // 回执失败不重试：运行仍列在侧页。
+    delivered() {
+      if (recovery && !detached) void ipc.invokeWithProjectSession(session, 'editor-inline:delivered', { handle: recovery.view.handle }).catch(() => {})
+    },
     detach() { detached = true },
   }
 }

@@ -625,6 +625,16 @@ export class GenerationRunRepository {
         if (this.portableFrozenRoot(this.get(runId).rootActionId)) fail('GENERATION_PLANNING_HISTORY_READ_ONLY');
         this.db().prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$planningDismissal"','dismissed') WHERE run_id=?`).run(runId);
     }
+    /** 选区建议发出了请求、气泡还没回执显示过。升级前的运行没有这一笔。 */
+    editorInlineAwaitingDelivery(runId: string): boolean {
+        return this.db().prepare(`SELECT json_type(binding_json,'$."$editorInlineAwaitingDelivery"') FROM generation_runs WHERE run_id=?`).pluck().get(runId) != null;
+    }
+    markEditorInlineAwaitingDelivery(runId: string): void {
+        this.db().prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$editorInlineAwaitingDelivery"','awaiting') WHERE run_id=?`).run(runId);
+    }
+    recordEditorInlineDelivery(runId: string): void {
+        this.db().prepare(`UPDATE generation_runs SET binding_json=json_remove(binding_json,'$."$editorInlineAwaitingDelivery"') WHERE run_id=?`).run(runId);
+    }
     plotOutlineCommitted(runId: string): boolean {
         return this.db().prepare(`SELECT json_type(binding_json,'$."$plotOutlineCommitted"') FROM generation_runs WHERE run_id=?`).pluck().get(runId) != null;
     }

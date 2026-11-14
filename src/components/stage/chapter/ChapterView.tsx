@@ -115,6 +115,21 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
+  // 句柄先存进本地 state 再清掉 store 里的请求，重新挂载时不再重开气泡。
+  const requested = useStageStore(s => s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
+    ? s.selectionRequest : undefined)
+  const [recovery, setRecovery] = useState(requested)
+  if (requested && requested.nonce !== recovery?.nonce) setRecovery(requested)
+  useEffect(() => {
+    if (requested) useStageStore.setState({ selectionRequest: null, sheet: null })
+  }, [requested])
+  const merging = draft.mergeData !== null
+  useEffect(() => {
+    if (!merging) return
+    useStageStore.setState({ mergeViewFile: filePath })
+    return () => useStageStore.setState({ mergeViewFile: null })
+  }, [merging, filePath])
+
   const title = blueprint?.title || draft.meta?.chapterTitle || ''
   const units = charCount.toLocaleString(locale)
   const [labelZh, labelEn] = DRAFT_STATUS_INFO[stage === 'archived' || stage === 'superseded' || stage === 'revised' ? stage : 'draft'].label
@@ -170,6 +185,8 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 paragraphIndent
                 content={tab.content ?? ''}
                 filePath={filePath}
+                recoveryHandle={recovery?.handle}
+                recoveryNonce={recovery?.nonce}
                 editable={editable}
                 hideStatusBar
                 onCharCountChange={setCharCount}

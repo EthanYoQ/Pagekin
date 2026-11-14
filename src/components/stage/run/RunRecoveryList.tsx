@@ -44,6 +44,7 @@ function RecoveryCard({ entry, recovery, text }: { entry: RecoveryEntry; recover
           actions={<>
             <Button variant="secondary" size="sm" disabled={busy || !entry.canContinue} onClick={() => recovery.continueEditor(entry)}>{entry.labels.continue}</Button>
             <Button variant="text" size="sm" onClick={() => recovery.copy(entry.documentText)}>{entry.labels.copyDocument}</Button>
+            <Button variant="text" size="sm" onClick={() => recovery.hide(entry)}>{entry.labels.hide}</Button>
           </>}>
           <Excerpt text={entry.selectedText} />
           {entry.suggestions.map(item => (
@@ -56,15 +57,18 @@ function RecoveryCard({ entry, recovery, text }: { entry: RecoveryEntry; recover
       return (
         <RecoveryShell title={entry.title} text={text} saved={entry.saved} notes={[entry.usage, ...entry.notes]}
           budget={<GenerationBudgetDiagnostics diagnostics={entry.budget} locale={locale} />}
-          actions={<Button variant="secondary" size="sm" disabled={busy || !entry.canAct} onClick={() => recovery.resumeReview(entry)}>{entry.actionLabel}</Button>}>
+          actions={<>
+            <Button variant="secondary" size="sm" disabled={busy || !entry.canAct} onClick={() => recovery.resumeReview(entry)}>{entry.actionLabel}</Button>
+            <Button variant="text" size="sm" onClick={() => recovery.hide(entry)}>{entry.labels.hide}</Button>
+          </>}>
           {entry.artifacts.map(item => <Excerpt key={item.id} text={item.display} copyLabel={entry.labels.copy} onCopy={() => recovery.copy(item.text)} />)}
           {entry.tails.map(item => <Excerpt key={item.id} text={item.display} copyLabel={entry.labels.copyTail} onCopy={() => recovery.copy(item.text)} />)}
         </RecoveryShell>
       )
     case 'batch':
       return (
-        <RecoveryShell title={entry.title} text={text} notes={[entry.staleNote]}
-          actions={<Button variant="secondary" size="sm" disabled={busy || !entry.canContinue} onClick={() => recovery.resumeBatch(entry)}>{entry.actionLabel}</Button>} />
+        <RecoveryShell title={entry.title} text={text}
+          actions={<Button variant="secondary" size="sm" disabled={busy} onClick={() => recovery.resumeBatch(entry)}>{entry.actionLabel}</Button>} />
       )
     case 'draft':
       return <DraftCard entry={entry} recovery={recovery} text={text} />
@@ -162,7 +166,7 @@ function DraftCard({ entry, recovery, text }: { entry: DraftEntry; recovery: Run
       budget={<GenerationBudgetDiagnostics diagnostics={entry.budget} locale={locale} />}
       actions={<>
         <Button variant="secondary" size="sm" disabled={recovery.busy || !canResumeDraft(entry, picked)} onClick={() => recovery.resumeDraft(entry)}>{entry.actionLabel}</Button>
-        <Button variant="text" size="sm" onClick={() => recovery.hideDraft(entry)}>{entry.labels.hide}</Button>
+        <Button variant="text" size="sm" onClick={() => recovery.hide(entry)}>{entry.labels.hide}</Button>
       </>}>
       {entry.artifacts.map(item => (
         <figure key={item.id} className="run-excerpt">

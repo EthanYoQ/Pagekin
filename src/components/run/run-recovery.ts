@@ -7,6 +7,7 @@ import type { EditorInlineRecovery } from '../../shared/editor-inline-generation
 import type { GenerationBatchHistory, GenerationRecoveryContext, GenerationRecoveryList } from '../../shared/generation-owner-contract'
 import { plotOutlineSourceInvalidText } from '../../shared/plot-outline-contract'
 import { pluralEn } from '../../shared/plural-en'
+import { editorCanContinue, reviewCanResume } from '../../shared/recovery-actions'
 import type { RecoveryCandidate } from '../../shared/recovery-candidate'
 import { buildReviewCycleRecheckReport, recheckCommitPolicy, type ReviewCycleRecheckContext } from '../../shared/review-cycle'
 import { parseReviewGenerationResult } from '../../shared/review-generation-report'
@@ -69,7 +70,8 @@ export interface EditorEntry extends Usage {
   tails: RecoveryText[]
   documentText: string
   canContinue: boolean
-  labels: { copySuggestion: string; copyTail: string; copyDocument: string; continue: string }
+  hideKey: string
+  labels: { copySuggestion: string; copyTail: string; copyDocument: string; continue: string; hide: string }
   recovery: EditorInlineRecovery
 }
 
@@ -91,7 +93,8 @@ export interface ReviewEntry extends Usage {
   canAct: boolean
   /** 结果已经保存：卡片只留给作者打开或复制，不再算可恢复。 */
   saved: boolean
-  labels: { copy: string; copyTail: string }
+  hideKey: string
+  labels: { copy: string; copyTail: string; hide: string }
   view: MainGenerationRunView
 }
 
@@ -100,8 +103,6 @@ export interface BatchEntry {
   kind: 'batch'
   key: string
   title: string
-  staleNote?: string
-  canContinue: boolean
   actionLabel: string
   batchId: string
   range: { startChapter: number; endChapter: number }
@@ -117,7 +118,6 @@ export interface DraftEntry extends Usage {
   tails: RecoveryText[]
   note: string
   actionLabel: string
-  /** 「不再显示」记的是这一刻列出的内容：同一运行之后又留下新候选或新尾段时，标记对不上，卡片重新出现。 */
   hideKey: string
   /** 草稿保存后正文又改过：只能复制。 */
   changed: boolean
@@ -148,6 +148,9 @@ function usageOf(view: Pick<MainGenerationRunView, 'budgetDiagnostics' | 'ledger
 
 /** 没写出任何字的片段（例如刚发出请求就取消）没有可复制、可续接的内容，不列出。 */
 export const hasText = (item: { text: string }) => item.text.trim().length > 0
+
+/** 「不再显示」记的是这一刻列出的内容：同一运行之后又留下新候选或新尾段时，标记对不上，卡片重新出现。 */
+const hideKeyOf = (runId: string, items: readonly RecoveryText[]) => `${runId}#${items.map(item => `${item.id}:${item.text.length}`).join(',')}`
 
 const texts = (items: readonly { attemptId: string; text: string }[] | undefined): RecoveryText[] =>
   (items ?? []).filter(hasText).map(item => ({ id: item.attemptId, text: item.text }))
@@ -275,6 +278,12 @@ function groupPlanning(recoveries: readonly GenerationRecoveryContext[], locale:
 function editorEntry(recovery: EditorInlineRecovery, locale: Locale): EditorEntry {
   const t = lang(locale)
   const { view } = recovery
+  const suggestions = (view.candidates ?? view.artifacts).filter(hasText).map(artifact => ({
+    id: artifact.artifactId,
+    text: artifact.text,
+    incompleteNote: artifact.status === 'completed' ? undefined : t('生成未完整完成，保留的文字仅供参考。', 'Generation is incomplete; the saved text is for reference.'),
+  }))
+  const tails = texts(view.unsavedTails)
   return {
     kind: 'editor',
     key: view.handle.runId,
@@ -283,20 +292,17 @@ function editorEntry(recovery: EditorInlineRecovery, locale: Locale): EditorEntr
     instructionNote: recovery.context.action === 'instruct' ? t(`作者意见：${recovery.context.instruction}`, `Author note: ${recovery.context.instruction}`) : undefined,
     ...usageOf(view, locale),
     conflictNote: recovery.sourceStatus === 'conflict' ? t('来源已变化；原建议仍可复制。', 'Sources changed; the original suggestion can still be copied.') : undefined,
-    suggestions: (view.candidates ?? view.artifacts).filter(hasText).map(artifact => ({
-      id: artifact.artifactId,
-      text: artifact.text,
-      incompleteNote: artifact.status === 'completed' ? undefined : t('生成未完整完成，保留的文字仅供参考。', 'Generation is incomplete; the saved text is for reference.'),
-    })),
-    tails: texts(view.unsavedTails),
+    suggestions,
+    tails,
     documentText: recovery.context.documentText,
-    canContinue: recovery.sourceStatus === 'current' && view.status !== 'cancelled'
-      && view.ledger?.physicalRequests === 0 && !(view.candidates?.length || view.artifacts.length),
+    canContinue: editorCanContinue(recovery),
+    hideKey: hideKeyOf(view.handle.runId, [...suggestions, ...tails]),
     labels: {
       copySuggestion: t('复制建议', 'Copy suggestion'),
       copyTail: t('复制未保存文字', 'Copy unsaved text'),
       copyDocument: t('复制原文稿', 'Copy original manuscript'),
       continue: t('继续原选区任务', 'Continue original selection task'),
+      hide: t('不再显示', 'Hide'),
     },
     recovery,
   }
@@ -377,9 +383,11 @@ function reviewEntry({ view, recovery }: RecoverySources['reviews'][number], loc
       && t('候选未通过保存校验；可复制保留，请从原稿重新发起任务。', 'The candidate failed save validation. Copy it if needed, then start a new action from the source draft.'),
     current && live && !recovery.saved && !recovery.canResume && review
       && t('当前任务的审稿请求次数已用尽。原稿保留，可从原稿发起新的审稿任务。', 'This task has used all review attempts. The source draft is preserved. Start a new review task from the source draft.'),
-    requestsReview && current && live && recovery.canResume
+    requestsReview && reviewCanResume(view, recovery)
       && t('尚无完整审稿报告。重新审稿会重新调用模型；原稿保留。', 'No complete review report is available. Reviewing again sends a new model request; the source draft is preserved.'),
   ].filter((note): note is string => Boolean(note))
+  const artifacts = (view.candidates ?? view.artifacts).filter(hasText).map(artifact => shown({ id: artifact.artifactId, text: artifact.text }))
+  const tails = texts(view.unsavedTails).map(shown)
   return {
     kind: 'review',
     key: view.handle.runId,
@@ -388,13 +396,14 @@ function reviewEntry({ view, recovery }: RecoverySources['reviews'][number], loc
       `Chapter ${recovery.context.source.chapterNumber} ${review ? 'review' : 'revision'} candidate`),
     ...usageOf(view, locale),
     notes,
-    artifacts: (view.candidates ?? view.artifacts).filter(hasText).map(artifact => shown({ id: artifact.artifactId, text: artifact.text })),
-    tails: texts(view.unsavedTails).map(shown),
+    artifacts,
+    tails,
     actionLabel: recovery.saved ? t('打开已保存结果', 'Open saved result')
       : requestsReview ? t('重新审稿', 'Review again') : t('恢复此审修任务', 'Recover this review or revision'),
-    canAct: Boolean(recovery.saved) || (recovery.canResume && current && live),
+    canAct: Boolean(recovery.saved) || reviewCanResume(view, recovery),
     saved: Boolean(recovery.saved),
-    labels: { copy: t('复制', 'Copy'), copyTail: t('复制未保存文字', 'Copy unsaved text') },
+    hideKey: hideKeyOf(view.handle.runId, [...artifacts, ...tails]),
+    labels: { copy: t('复制', 'Copy'), copyTail: t('复制未保存文字', 'Copy unsaved text'), hide: t('不再显示', 'Hide') },
     view,
   }
 }
@@ -406,9 +415,6 @@ function batchEntry(batch: GenerationBatchHistory, locale: Locale): BatchEntry {
     key: batch.batchId,
     title: t(`批量正文：已保存 ${batch.completedChapters.length} 章，下一章 ${batch.nextChapterNumber}`,
       `Batch drafts: ${batch.completedChapters.length} saved; next chapter ${batch.nextChapterNumber}`),
-    staleNote: batch.sourceCurrent ? undefined : t('批次来源已变化，不能继续此批次。请从当前正文发起新任务。',
-      'The batch source changed. This batch cannot continue. Start a new task from the current text.'),
-    canContinue: batch.sourceCurrent,
     actionLabel: t('继续此批次', 'Continue this batch'),
     batchId: batch.batchId,
     range: batch.range,
@@ -429,7 +435,7 @@ function draftEntry({ view, recovery }: RecoverySources['drafts'][number], local
   return {
     kind: 'draft',
     key: view.handle.runId,
-    hideKey: `${view.handle.runId}#${[...artifacts, ...tails].map(item => `${item.id}:${item.text.length}`).join(',')}`,
+    hideKey: hideKeyOf(view.handle.runId, [...artifacts, ...tails]),
     chapterNumber: recovery.chapterNumber,
     title: changed ? t(`第${recovery.chapterNumber}章生成记录`, `Chapter ${recovery.chapterNumber} generation history`)
       : t(`第${recovery.chapterNumber}章候选`, `Chapter ${recovery.chapterNumber} candidate`),
@@ -455,12 +461,15 @@ function draftEntry({ view, recovery }: RecoverySources['drafts'][number], local
  * 这次打开作品后还在进行的工作：它正显示在运行卡片里，不是中断留下的。
  * 单章与审修要这次打开里有单章运行正占着这一章：会话内失败时持久状态不会改，仍记为 running，不能当作还在写。
  * 批量运行也占着各章，但它写的正文带批次号、不列为单章条目（use-run-recovery），也不跑审修，所以不算。
- * 选区生成不是工作流运行，看 epoch：上次打开时没写完的换过会话，仍算可恢复。
+ * 选区生成不是工作流运行，看 epoch：上次打开时没写完的换过会话，仍算可恢复。这次打开里写完的运行状态仍是 running，有完整建议就不算在写。
  * 批量看进行中（含暂停）的批量运行：资源锁让同一批章同时只有一个批量运行在写，范围相同就是它在推进这一批。
  */
 export function isInFlight(entry: RecoveryEntry, leaseId: string | undefined, liveRuns: readonly Pick<WorkflowRun, 'type' | 'resourceKeys'>[]): boolean {
   if (entry.kind === 'batch') return liveRuns.some(run => run.type === 'batch_generate' && sameChapters(run.resourceKeys, entry.range))
-  if (entry.kind === 'editor') return entry.recovery.view.status === 'running' && entry.recovery.view.handle.epoch === leaseId
+  if (entry.kind === 'editor') {
+    const { view } = entry.recovery
+    return view.status === 'running' && view.handle.epoch === leaseId && !(view.candidates ?? view.artifacts).some(item => item.status === 'completed')
+  }
   if ((entry.kind !== 'draft' && entry.kind !== 'review') || entry.chapterNumber === undefined) return false
   const chapter = workflowResourceKey('chapter', entry.chapterNumber)
   return entry.view.status === 'running' && entry.view.handle.epoch === leaseId

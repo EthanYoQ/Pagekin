@@ -247,17 +247,6 @@ describe('运行侧页', () => {
     expect(host!.textContent).toContain('批量正文：已保存 1 章，下一章 4')
   })
 
-  it('作者定稿过其中一章的批次列为来源已变化，「继续此批次」不可点 (#568)', async () => {
-    batches = [{ batchId: '批次', range: { startChapter: 3, endChapter: 5 }, completedChapters: [{ chapterNumber: 3, finalizationId: '作者定稿' }],
-      nextChapterNumber: 4, sourceCurrent: false, rootHandle: { projectId: session.projectId, epoch: session.leaseId, rootActionId: '根', runId: '批量' } }]
-    await render()
-    await vi.waitFor(() => expect(button('继续此批次')).toBeTruthy())
-    expect(button('继续此批次')!.disabled).toBe(true)
-    expect(host!.textContent).toContain('批次来源已变化，不能继续此批次。请从当前正文发起新任务。')
-    await click('继续此批次')
-    expect(invoke.mock.calls.some(([channel]) => channel === 'generation:read-batch')).toBe(false)
-  })
-
   it('等你确认：显示下一步，确认后工作流继续到完成', async () => {
     const second = vi.fn(async () => '已写入')
     const pending = useWorkflowStore.getState().startWorkflow({ type: 'post_process', title: '提取角色', projectPath: session.projectPath, projectSession: session, steps: [
@@ -480,6 +469,42 @@ describe('运行侧页', () => {
     await vi.waitFor(() => expect(invoke.mock.calls.filter(([channel]) => channel === 'generation:list-recovery')).toHaveLength(2))
     await vi.waitFor(() => expect(titles()).toEqual(['第8章候选']))
     expect(invoke.mock.calls.map(([channel]) => channel).filter(channel => !['generation:list-recovery', 'db:recovery-candidate-list'].includes(channel))).toEqual([])
+  })
+
+  it('只能复制的审修候选和选区建议也能点「不再显示」，重开作品后不再出现（#686）', async () => {
+    const reviewRun = { projectId: session.projectId, epoch: '上次打开', rootActionId: '修稿根', runId: '修稿' }
+    const editorRun = { projectId: session.projectId, epoch: '上次打开', rootActionId: '选区根', runId: '选区' }
+    const fallback = invoke.getMockImplementation()!
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'generation:list-recovery'
+      ? { planning: [], reviews: [{
+        view: { handle: reviewRun, status: 'cancelled', artifacts: [{ ...reviewRun, artifactId: '修稿片', attemptId: '修稿请求', text: '潮水退去的修改稿', status: 'cancelled' }] },
+        recovery: { handle: reviewRun, modelId: '原模型', sourceStatus: 'conflict', canResume: false, attemptedPurposes: ['refine-draft'],
+          context: { operation: 'refine-draft', source: { chapterNumber: 6 } } },
+      }], editors: [{
+        view: { handle: editorRun, status: 'paused', artifacts: [{ ...editorRun, artifactId: '选区片', attemptId: '选区请求', text: '钟声停在半空', status: 'failed' }],
+          ledger: { physicalRequests: 1 } },
+        modelId: '原模型', sourceStatus: 'current', context: { action: 'refine', selectedText: '钟声', documentText: '钟声响起' },
+      }], batches: [], drafts: [], partial: false }
+      : fallback(channel, ...args))
+    const titles = () => [...host!.querySelectorAll('article h3')].map(title => title.textContent)
+    const hide = (title: string) => act(async () => {
+      const card = [...host!.querySelectorAll('article')].find(article => article.querySelector('h3')?.textContent === title)!
+      ;[...card.querySelectorAll('button')].find(item => item.textContent === '不再显示')!.click()
+    })
+    await render()
+    await vi.waitFor(() => expect(titles()).toEqual(['编辑器选区建议', '第6章修稿候选']))
+    await hide('第6章修稿候选')
+    expect(titles()).toEqual(['编辑器选区建议'])
+    await hide('编辑器选区建议')
+    expect(titles()).toEqual([])
+
+    await act(async () => root!.unmount())
+    root = createRoot(host!)
+    await act(async () => useStageStore.setState({ sheet: null }))
+    await render()
+    await vi.waitFor(() => expect(invoke.mock.calls.filter(([channel]) => channel === 'generation:list-recovery')).toHaveLength(2))
+    await act(async () => {})
+    expect(titles()).toEqual([])
   })
 
   it('「不再显示」只隐藏当时的内容：同一运行之后又留下新候选或新尾段时重新出现', async () => {

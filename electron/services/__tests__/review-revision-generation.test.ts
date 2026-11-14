@@ -98,6 +98,15 @@ describe('review and revision generation through the actual owner and SQLite', (
     expect(f.owner.listRecovery()).toMatchObject({ reviews: [], partial: false })
     expect(f.owner.readReviewRevisionRecovery(request.handle).saved).toEqual(saved)
   })
+  it('没保存、不能续跑、也没写出任何字的审修不列；写出过字的仍列出供复制（#686）', async () => {
+    const f = fixture()
+    const empty = f.owner.begin({ ...f.selection(f.prepare()), uiActionNonce: 'empty' })
+    f.owner.cancel(empty.handle)
+    const written = await f.run()
+    f.owner.cancel(written.handle)
+    expect(f.owner.readReviewRevisionRecovery(empty.handle).saved).toBeUndefined()
+    expect(f.owner.listRecovery().reviews.map(item => item.view.handle.runId)).toEqual([written.handle.runId])
+  })
   it.each([
     'Here is the truth: I never left the island. Everyone who said otherwise was lying.',
     '以下是我从父亲遗物中找到的最后一份内容。它改变了我们所有人的命运。',
