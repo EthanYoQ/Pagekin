@@ -36,13 +36,9 @@ async function sha256(text: string) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-/** 第 3 章的标签：选区运行记下的原稿身份就是它的 filePath。 */
 const chapterTab = (chapterNumber: number) => useEditorStore.getState().tabs.find(tab => tab.chapterNumber === chapterNumber)?.filePath
 
-/**
- * 请求发出前关闭应用留下的第 3 章选区润色运行。和主进程一样：生成完的建议在气泡回执「已显示」之前一直列为可恢复；
- * 这次打开里执行完的运行状态仍是 running，句柄换成这次打开的 epoch。origin 是发起时记下的原稿身份，升级前的旧运行没有。
- */
+/** 请求发出前关闭应用留下的第 3 章选区润色运行。执行完的视图照实机：状态仍是 running，句柄换成这次打开。 */
 async function interruptedSelectionRun(documentText: string, executed: Promise<void> = Promise.resolve(), origin: () => string | undefined = () => chapterTab(3) ?? 'drafts/3') {
   const from = documentText.indexOf(SELECTED)
   const base = { action: 'refine', kind: 'author-draft', documentText, documentHash: await sha256(documentText), from, to: from + SELECTED.length, selectedText: SELECTED }

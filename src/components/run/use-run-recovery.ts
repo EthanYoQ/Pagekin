@@ -250,10 +250,7 @@ export function useRunRecovery(): RunRecovery {
       await ipc.invokeWithProjectSession(current, 'generation:dismiss-planning-recovery', { handle: entry.recovery.handle })
       globalEventBus.emit('PLANNING_RECOVERY_CHANGED', { projectSession: current })
     }),
-    /**
-     * 发起时那一稿还开着、正文一字不差（选区是那时的偏移），才离开设置页回到它的原选区气泡续跑；
-     * 否则在侧页续跑，气泡没显示过的建议主进程一直列着，卡片上可复制。
-     */
+    /** 选区是发起时正文里的偏移：原稿还开着且正文一字不差，才回到原选区气泡续跑；否则在侧页续跑。 */
     continueEditor: entry => {
       if (!session || !stillCurrent()) return
       const { view: { handle }, context } = entry.recovery

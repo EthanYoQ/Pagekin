@@ -73,7 +73,7 @@ export function createEditorInlineGeneration(sessionInput: ProjectSessionContext
       return { ...receipt, sourceStatus: current.sourceStatus }
     },
     async cancel() { cancelled = true; if (opening) await opening.catch(() => {}); await cancelKnown() },
-    /** 回执失败时运行仍列在侧页，作者还能从那里拿到建议。 */
+    // 回执失败不重试：运行仍列在侧页。
     delivered() {
       if (recovery && !detached) void ipc.invokeWithProjectSession(session, 'editor-inline:delivered', { handle: recovery.view.handle }).catch(() => {})
     },

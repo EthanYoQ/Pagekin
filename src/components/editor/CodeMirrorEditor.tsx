@@ -239,7 +239,7 @@ export default function CodeMirrorEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recoveryKey])
 
-  // 预览真的画出来才回执；编辑器在结果到达前卸载时没有回执，运行留在侧页可复制。
+  // 预览真的画出来才回执；卸载时没有回执，运行留在侧页。
   const previewShown = bubbleOpen && bubblePos.top !== 0 && !!aiResult
   useEffect(() => { if (previewShown) inlineRef.current?.delivered() }, [previewShown, aiResult])
 

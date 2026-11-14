@@ -11,7 +11,7 @@ export type EditorInlineInput = EditorInlineRequest & {
   from: number
   to: number
   selectedText: string
-  /** 发起时所在稿的 filePath。续跑按它找回原稿；升级前的运行没有，只能在侧页复制。 */
+  /** 发起时所在稿的 filePath；升级前的运行没有。 */
   filePath?: string
 }
 export type EditorInlineContext = EditorInlineInput & {
