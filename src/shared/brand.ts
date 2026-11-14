@@ -9,3 +9,6 @@ export const APP_BRAND = {
   taglineEn: 'A local-first IDE for long-form fiction',
   assistantName: 'AI 写作助手',
 } as const
+
+/** 安装包的 appId（electron-builder.json5）。Windows 按它把系统通知归到安装时建的快捷方式名下。 */
+export const APP_ID = 'com.ai-novel-writer.app'

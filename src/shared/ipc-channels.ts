@@ -154,7 +154,14 @@ export interface WindowChannels {
     args: [requestId: string, decision: 'proceed' | 'cancel']
     return: { success: boolean }
   }
+  /** 写作、审稿、修稿、定稿结束时调用；窗口在后台且设置开着时才弹系统通知。 */
+  'window:notify-stage': {
+    args: [notice: StageNotice]
+    return: { shown: boolean }
+  }
 }
+
+export interface StageNotice { title: string; body: string }
 
 export interface WindowEvents {
   'window:close-requested': { requestId: string }
@@ -202,6 +209,8 @@ export interface GlobalConfig {
   stageModelIds?: StageModelIds
   /** 定稿与后处理成功后，打开下一章的创作窗口（默认关闭）。 */
   autoOpenNextChapterAfterFinalize?: boolean
+  /** 书童在后台时，阶段结束弹系统通知（缺省为开）。 */
+  backgroundStageNotifications?: boolean
   editorFontSize: number
   editorFontFamily: string
   autoSaveInterval: number

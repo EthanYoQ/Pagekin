@@ -3,7 +3,7 @@ import { Minus, Moon, Plus, Sun } from 'lucide-react'
 import type { Locale } from '../../../i18n/types'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { FONT_OPTIONS, useThemeStore, type FontId } from '../../../stores/theme-store'
-import { useAutoOpenNextChapter } from '../../settings/use-auto-open-next-chapter'
+import { useConfigSwitch } from '../../settings/use-config-switch'
 import { Button } from '../../ui/Button'
 import { Check } from '../../ui/Check'
 import { commandLabel } from '../shortcut-keys'
@@ -69,13 +69,16 @@ function FontSelect({ id, value, onChange }: { id: string; value: FontId; onChan
   )
 }
 
-/** 外观：主题、语言、字体、缩放与定稿后打开下一章。改动立即生效。 */
+/** 外观：主题、语言、字体、缩放、定稿后打开下一章与后台通知。改动立即生效。 */
 export default function AppearanceSection() {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
   const setLocale = useLocaleStore(s => s.setLocale)
   const { zoom, zoomIn, zoomOut, zoomReset, uiFont, setUiFont, writingFont, setWritingFont } = useThemeStore()
-  const autoOpenNext = useAutoOpenNextChapter()
+  const autoOpenNext = useConfigSwitch('autoOpenNextChapterAfterFinalize', false,
+    reason => text(`自动打开下一章设置保存失败：${reason}`, `Could not save the open-next-chapter setting: ${reason}`))
+  const notifyInBackground = useConfigSwitch('backgroundStageNotifications', true,
+    reason => text(`后台通知设置保存失败：${reason}`, `Could not save the background notification setting: ${reason}`))
   const languageId = useId()
   const uiFontId = useId()
   const writingFontId = useId()
@@ -118,6 +121,14 @@ export default function AppearanceSection() {
           label={<span className="stage-visually-hidden">{text('定稿后打开下一章', 'Open the next chapter after finalizing')}</span>} />}
       >
         {autoOpenNext.error && <p className="stage-set-error" role="alert">{autoOpenNext.error}</p>}
+      </Row>
+      <Row
+        title={text('在后台时通知我', 'Notify me in the background')}
+        desc={text('书童不在前台时，写作、审稿、修稿或定稿结束会弹系统通知。', 'When Pagekin is in the background, get a system notification when drafting, review, revision or finalizing ends.')}
+        control={<Check kind="switch" checked={notifyInBackground.enabled} disabled={notifyInBackground.saving} onChange={checked => void notifyInBackground.set(checked)}
+          label={<span className="stage-visually-hidden">{text('在后台时通知我', 'Notify me in the background')}</span>} />}
+      >
+        {notifyInBackground.error && <p className="stage-set-error" role="alert">{notifyInBackground.error}</p>}
       </Row>
     </div>
   )

@@ -35,6 +35,8 @@ import {
 } from '../shared/workflow-resource-claims'
 import type { FrozenWritingSkillSnapshot } from '../services/agent/writing-skill-bindings'
 import { freezeWritingSkillsSnapshot } from '../services/agent/writing-skill-bindings'
+import { stageNotice, type BackgroundNotice } from '../services/workflows/stage-notice'
+import { ipc } from '../services/ipc-client'
 import type { WritingSkillStage } from '../shared/writing-skills'
 
 // ===== 工作流数据模型 =====
@@ -246,6 +248,8 @@ export interface WorkflowDefinition {
   onCancelledAtBoundary?: (context: WorkflowContext) => void | Promise<void>
   /** 工作流完成后的通知/跳转动作（可选） */
   onComplete?: WorkflowCompleteAction
+  /** 完成或失败时请主进程在窗口不在前台时弹系统通知；取消不发。 */
+  backgroundNotice?: BackgroundNotice
 }
 
 function isCurrentWorkflowSession(
@@ -954,6 +958,11 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
           ), context.uiLocale)
         }
       }
+    }
+
+    const endedStatus = get().activeRuns.find(r => r.id === run.id)?.status
+    if (definition.backgroundNotice && (endedStatus === 'completed' || endedStatus === 'failed')) {
+      void ipc.invoke('window:notify-stage', stageNotice(context.uiLocale, definition.backgroundNotice, endedStatus)).catch(() => {})
     }
 
     // 从活跃列表移除，存入历史
