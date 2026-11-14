@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import '../../../../index.css'
 
 import type { ProjectData } from '../../../../shared/ipc-channels'
 import { parseHumanConfirmedReviewSnapshot } from '../../../../shared/human-confirmed-review'
@@ -854,5 +855,53 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     await vi.waitFor(() => expect(scroller.scrollTop).toBeLessThan(end))
     const bar = document.querySelector('.stage-ch-actions-sticky')!.getBoundingClientRect()
     expect(document.querySelector('.cm-cursor')!.getBoundingClientRect().top).toBeGreaterThanOrEqual(bar.bottom)
+  })
+
+  it('有待合并修稿：滚到合并视图末尾，完成合并仍在视口里', async () => {
+    const draft = backend.addDraft({ status: 'draft', content: LONG })
+    backend.addReview(draft)
+    const revision = backend.addRevision(draft)
+    revision.content = LONG.replace(/(第 \d*0 段。)雨还在下/g, '$1雨停了')
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    expect(await scrollToEndAndHit('完成合并')).toBe(true)
+  })
+
+  it('读到中段按 Ctrl F：搜索框和动作条都在眼前，读到的那段没被挤出视口，往上找到的匹配不被挡住', async () => {
+    const draft = backend.addDraft({ status: 'draft', content: LONG })
+    await mount()
+    await openDraft(draft.id)
+    const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
+    await vi.waitFor(() => expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight * 4))
+    scroller.scrollTop = scroller.scrollHeight / 2
+    const box = scroller.getBoundingClientRect()
+    const middle = box.top + box.height / 2
+    const line = await vi.waitFor(() => {
+      const found = [...document.querySelectorAll<HTMLElement>('.cm-line')]
+        .find(candidate => candidate.textContent && candidate.getBoundingClientRect().top > middle)
+      expect(found).toBeDefined()
+      return found!
+    })
+    const reading = line.textContent!
+    await userEvent.click(line)
+    await userEvent.keyboard('{Control>}f{/Control}')
+    const input = await vi.waitFor(() => document.querySelector<HTMLInputElement>('.cm-search input[name="search"]')!)
+    const hits = (element: Element) => {
+      const rect = element.getBoundingClientRect()
+      return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
+    }
+    expect(hits(input)).toBe(true)
+    expect(hits(page.getByRole('button', { name: 'AI 审稿', exact: true }).element())).toBe(true)
+    const readingRect = [...document.querySelectorAll('.cm-line')].find(candidate => candidate.textContent === reading)!.getBoundingClientRect()
+    expect(readingRect.bottom).toBeLessThan(box.bottom)
+
+    await userEvent.keyboard('第 30 段。{Shift>}{Enter}{/Shift}')
+    const panel = document.querySelector('.cm-panels-top')!.getBoundingClientRect()
+    await vi.waitFor(() => {
+      const match = [...document.querySelectorAll('.cm-line')].find(candidate => candidate.textContent!.startsWith('第 30 段。'))
+      expect(match).toBeDefined()
+      expect(match!.getBoundingClientRect().top).toBeGreaterThanOrEqual(panel.bottom)
+    })
   })
 })
