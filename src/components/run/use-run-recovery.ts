@@ -12,7 +12,7 @@ import { useLocaleStore } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowStore, type WorkflowDefinition } from '../../stores/workflow-store'
 import {
-  buildRecoveryEntries, EMPTY_RECOVERY_SOURCES, planningTitle,
+  buildRecoveryEntries, continuedEditorEntry, EMPTY_RECOVERY_SOURCES, planningTitle,
   type BatchEntry, type CandidateEntry, type DraftEntry, type EditorEntry, type PlanningEntry, type RecoveryEntry, type RecoverySources, type ReviewEntry,
 } from './run-recovery'
 import { displayedErrorMessage } from '../../i18n/app-errors'
@@ -85,8 +85,7 @@ export function useRunRecovery(): RunRecovery {
   const projectId = session?.projectId
   const hiddenEarlier = useMemo(() => projectId ? readHiddenRecovery(projectId) : new Set<string>(), [projectId])
   const [hiddenNow, setHiddenNow] = useState<ReadonlySet<string>>(new Set())
-  /** 在侧页续跑完成的选区建议：主进程随即不再列出这条运行，建议留在这里供复制。 */
-  const [continued, setContinued] = useState<Loaded<Record<string, EditorEntry>>>({ session: null, value: {} })
+  const continued = useStageStore(s => s.continuedSelections)
 
   useEffect(() => {
     if (!session) {
@@ -153,7 +152,7 @@ export function useRunRecovery(): RunRecovery {
     if (!session) return []
     const ofSession = <T,>(loaded: Loaded<T>, empty: T) => sameProjectSessionContext(loaded.session, session) ? loaded.value : empty
     const listed = buildRecoveryEntries({ ...ofSession(generationList, { ...EMPTY_RECOVERY_SOURCES, partial: false }), candidates: ofSession(candidateList, []) }, locale)
-    const kept = Object.values(ofSession(continued, {})).filter(entry => !listed.some(item => item.kind === 'editor' && item.key === entry.key))
+    const kept = Object.values(continued && sameProjectSessionContext(continued.session, session) ? continued.byRun : {}).filter(entry => !listed.some(item => item.kind === 'editor' && item.key === entry.key))
     return [...listed, ...kept]
       .filter(entry => !('hideKey' in entry) || (!hiddenEarlier.has(entry.hideKey) && !hiddenNow.has(entry.hideKey)))
   }, [session, generationList, candidateList, continued, locale, hiddenEarlier, hiddenNow])
@@ -266,10 +265,10 @@ export function useRunRecovery(): RunRecovery {
         const receipt = await ipc.invokeWithProjectSession(current, 'editor-inline:execute', { handle })
         if (!stillCurrent()) return
         const text = receipt.outcome.content
-        if (text.trim()) setContinued(kept => ({ session: current, value: {
-          ...(sameProjectSessionContext(kept.session, current) ? kept.value : {}),
-          [entry.key]: { ...entry, usage: undefined, canContinue: false, suggestions: [{ id: entry.key, text }] },
-        } }))
+        if (text.trim()) useStageStore.setState(({ continuedSelections: kept }) => ({ continuedSelections: { session: current, byRun: {
+          ...(kept && sameProjectSessionContext(kept.session, current) ? kept.byRun : {}),
+          [entry.key]: continuedEditorEntry(entry, text),
+        } } }))
         setRefreshTick(value => value + 1)
         throwIfTerminalProviderFailure(receipt.outcome.receipt)
       })

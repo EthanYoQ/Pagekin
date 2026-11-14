@@ -308,6 +308,12 @@ function editorEntry(recovery: EditorInlineRecovery, locale: Locale): EditorEntr
   }
 }
 
+/** 在侧页续跑写出的建议换掉原卡片的内容；「不再显示」的标记按新内容算，续跑前藏掉的旧卡片不连带藏掉它。 */
+export function continuedEditorEntry(entry: EditorEntry, text: string): EditorEntry {
+  const suggestions = [{ id: entry.key, text }]
+  return { ...entry, usage: undefined, canContinue: false, suggestions, hideKey: hideKeyOf(entry.key, [...suggestions, ...entry.tails]) }
+}
+
 const SEVERITY_ORDER = { error: 0, warning: 1, pass: 2 } as const
 
 /**
