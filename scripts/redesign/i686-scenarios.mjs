@@ -162,23 +162,7 @@ export const I686_SCENARIOS = {
   } },
   /** 选区润色建好运行、请求还没发出去应用就关了；重启后在「进行中」点「继续原选区任务」，回到第 4 章原选区，气泡里出建议，替换后卡片不再列出。 */
   'i686-continue-selection': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
-    await chapterView.open(context.page, 4)
-    await context.app.evaluate(({ ipcMain }) => {
-      ipcMain._invokeHandlers.set('editor-inline:execute', async () => { throw new Error('请求发出前应用关闭') })
-    })
-    await chapterView.prose(context.page).getByText('你父亲也问过钟的事').first().click({ clickCount: 3 })
-    const toolbar = context.page.getByRole('toolbar', { name: '选中文字的操作' })
-    await toolbar.getByRole('button', { name: '润色' }).click()
-    await toolbar.getByText('生成失败，结果不可应用').waitFor({ state: 'visible', timeout: 30_000 })
-
-    await context.restart()
-    await stage.openAfterRestart(context.page, STAGE_SAMPLE.name)
-    await chapterView.open(context.page, 4)
-    await recoveryListed(context.app, context.page)
-    const before = await allCards(context.page)
-    assert.ok(before.some(card => card.title === '编辑器选区建议' && card.buttons.includes('继续原选区任务')), '重启后列出可继续的选区任务')
-    await runSheet.sheet(context.page).locator('.run-recovery > .run-card').filter({ has: context.page.getByRole('heading', { name: '编辑器选区建议' }) })
-      .getByRole('button', { name: '继续原选区任务' }).click()
+    const before = await continueInterruptedSelection(context)
     const bubble = context.page.getByRole('toolbar', { name: '选中文字的操作' })
     await bubble.getByText(firstLine(FIXTURE_PROSE)).waitFor({ state: 'visible', timeout: 30_000 })
     assert.equal(await runSheet.sheet(context.page).isVisible(), false, '运行侧页已收起')
@@ -192,4 +176,40 @@ export const I686_SCENARIOS = {
     assert.ok(!after.some(card => card.title === '编辑器选区建议'), '送达气泡的选区建议不再列出')
     return { before, after }
   } },
+  /** 同上，但重启后打开第 4 章先改了一个字：定位不到原选区，在侧页续跑，建议留在卡片上可复制。 */
+  'i686-continue-selection-changed': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
+    const before = await continueInterruptedSelection(context, async () => {
+      await chapterView.prose(context.page).getByText('你父亲也问过钟的事').first().click()
+      await context.page.keyboard.press('End')
+      await context.page.keyboard.type('夜')
+    })
+    const card = runSheet.sheet(context.page).locator('.run-recovery > .run-card').filter({ has: context.page.getByRole('heading', { name: '编辑器选区建议' }) })
+    await card.getByText(firstLine(FIXTURE_PROSE)).waitFor({ state: 'visible', timeout: 30_000 })
+    assert.equal(await context.page.getByRole('toolbar', { name: '选中文字的操作' }).count(), 0, '没有重开气泡')
+    await card.locator('.run-card-buttons').scrollIntoViewIfNeeded()
+    await context.shoot('i686-continue-card')
+    return { before, after: await allCards(context.page) }
+  } },
+}
+
+async function continueInterruptedSelection(context, beforeContinue = async () => {}) {
+  await chapterView.open(context.page, 4)
+  await context.app.evaluate(({ ipcMain }) => {
+    ipcMain._invokeHandlers.set('editor-inline:execute', async () => { throw new Error('请求发出前应用关闭') })
+  })
+  await chapterView.prose(context.page).getByText('你父亲也问过钟的事').first().click({ clickCount: 3 })
+  const toolbar = context.page.getByRole('toolbar', { name: '选中文字的操作' })
+  await toolbar.getByRole('button', { name: '润色' }).click()
+  await toolbar.getByText('生成失败，结果不可应用').waitFor({ state: 'visible', timeout: 30_000 })
+
+  await context.restart()
+  await stage.openAfterRestart(context.page, STAGE_SAMPLE.name)
+  await chapterView.open(context.page, 4)
+  await beforeContinue()
+  await recoveryListed(context.app, context.page)
+  const before = await allCards(context.page)
+  assert.ok(before.some(card => card.title === '编辑器选区建议' && card.buttons.includes('继续原选区任务')), '重启后列出可继续的选区任务')
+  await runSheet.sheet(context.page).locator('.run-recovery > .run-card').filter({ has: context.page.getByRole('heading', { name: '编辑器选区建议' }) })
+    .getByRole('button', { name: '继续原选区任务' }).click()
+  return before
 }
