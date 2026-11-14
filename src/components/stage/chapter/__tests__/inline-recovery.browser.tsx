@@ -74,7 +74,8 @@ async function openChapter() {
 }
 
 const executions = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:execute').length
-const editorText = () => EditorView.findFromDOM(host!.querySelector('.cm-editor')!)!.state.doc.toString()
+const editor = () => EditorView.findFromDOM(host!.querySelector('.cm-editor')!)!
+const editorText = () => editor().state.doc.toString()
 
 beforeEach(async () => {
   await page.viewport(1280, 900)
@@ -104,8 +105,10 @@ afterEach(async () => {
 })
 
 describe('运行侧页「继续原选区任务」', () => {
-  it('原章正文没变：收起侧页，在原选区的气泡里续跑，建议显示在气泡里，点「替换」写进正文', async () => {
+  it('原章正文没变：收起侧页，选中原选区并在气泡里续跑，建议可复制，点「替换」写进正文', async () => {
     await interruptedSelectionRun(ORIGINAL)
+    const copied: string[] = []
+    vi.spyOn(navigator.clipboard, 'writeText').mockImplementation(async value => { copied.push(value) })
     await mount()
     await openChapter()
     await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
@@ -116,6 +119,10 @@ describe('运行侧页「继续原选区任务」', () => {
     await expect.element(bubble.getByText(SUGGESTION)).toBeVisible()
     expect(useStageStore.getState().sheet).toBeNull()
     expect(executions()).toBe(1)
+    const { from, to } = editor().state.selection.main
+    expect(editorText().slice(from, to)).toBe(SELECTED)
+    await act(async () => bubble.getByRole('button', { name: '复制' }).click())
+    expect(copied).toEqual([SUGGESTION])
     await act(async () => bubble.getByRole('button', { name: '替换' }).click())
     await vi.waitFor(() => expect(editorText()).toBe(ORIGINAL.replace(SELECTED, SUGGESTION)))
   })
@@ -137,5 +144,20 @@ describe('运行侧页「继续原选区任务」', () => {
     await act(async () => card.getByRole('button', { name: '复制建议' }).click())
     expect(copied).toEqual([SUGGESTION])
     expect(editorText()).toBe(ORIGINAL)
+  })
+
+  it('打开章之后作者改过正文：不进气泡，在侧页续跑，建议留在卡片上', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await mount()
+    await openChapter()
+    await act(async () => editor().dispatch({ changes: { from: 0, insert: '夜。' } }))
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
+    await expect.element(page.getByRole('article').filter({ hasText: '编辑器选区建议' }).getByText(SUGGESTION)).toBeVisible()
+    expect(useStageStore.getState().sheet).not.toBeNull()
+    expect(host!.querySelector('[role="toolbar"]')).toBeNull()
+    expect(editorText()).toBe(`夜。${ORIGINAL}`)
   })
 })
