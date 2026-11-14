@@ -139,6 +139,11 @@
   background: var(--focus-paper, var(--paper));
 }
 
+/* 合并卡片的描边比动作条宽，滚到条下时会从两侧露出来，左右各补一条纸色 */
+.stage-ch-merge .stage-ch-actions-sticky {
+  box-shadow: -4px 0 var(--focus-paper, var(--paper)), 4px 0 var(--focus-paper, var(--paper));
+}
+
 /* 正文随外层一起滚，搜索面板要吸住才不会留在正文顶上；盖过 index.css 的 static */
 .stage-ch-prose .cm-editor .cm-panels-top:has(.cm-search) {
   position: sticky !important;

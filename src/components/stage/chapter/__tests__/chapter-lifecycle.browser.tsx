@@ -902,7 +902,7 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     const reading = line.textContent!
     await userEvent.click(line)
     await userEvent.keyboard('{Control>}f{/Control}')
-    const input = await vi.waitFor(() => document.querySelector<HTMLInputElement>('.cm-search input[name="search"]')!)
+    const input = document.querySelector<HTMLInputElement>('.cm-search input[name="search"]')!
     const hits = (element: Element) => {
       const rect = element.getBoundingClientRect()
       return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
