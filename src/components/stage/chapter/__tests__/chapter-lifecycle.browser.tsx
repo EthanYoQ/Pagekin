@@ -884,6 +884,28 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     }
   })
 
+  it('合并视图聚焦后纸面变宽、动作条换成两行：Shift+Tab 聚焦的段落选择仍停在条下面', async () => {
+    await openLongMerge()
+    host!.style.width = '800px'
+    expect(await scrollToEndAndHit('完成合并')).toBe(true)
+    const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
+    const bar = document.querySelector<HTMLElement>('.stage-ch-merge .stage-ch-actions')!
+    page.getByRole('group', { name: /用哪一版$/ }).elements().at(-1)!.querySelector<HTMLElement>('[tabindex="0"]')!.focus()
+    await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
+    const target = document.activeElement as HTMLElement
+    await userEvent.keyboard('{Tab}')
+    const oneRow = bar.offsetHeight
+    host!.style.width = '1028px'
+    await vi.waitFor(() => expect(bar.offsetHeight).toBeGreaterThan(oneRow))
+    // 把下一个焦点摆在旧条高之下、新条高之内：只按旧条高让位时浏览器认为它已可见，不滚动
+    scroller.scrollTop += target.getBoundingClientRect().top - (scroller.getBoundingClientRect().top + oneRow + 10)
+    // 作者按键前至少过了两帧，条高的变化已经画出来
+    for (let frame = 0; frame < 2; frame++) await new Promise(requestAnimationFrame)
+    await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
+    expect(document.activeElement).toBe(target)
+    expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(bar.getBoundingClientRect().bottom)
+  })
+
   it('读到中段按 Ctrl F：搜索框和动作条都在眼前，读到的那段没被挤出视口，往上找到的匹配不被挡住', async () => {
     const draft = backend.addDraft({ status: 'draft', content: LONG })
     await mount()
@@ -910,6 +932,7 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     expect(hits(input)).toBe(true)
     expect(hits(page.getByRole('button', { name: 'AI 审稿', exact: true }).element())).toBe(true)
     const readingRect = [...document.querySelectorAll('.cm-line')].find(candidate => candidate.textContent === reading)!.getBoundingClientRect()
+    expect(readingRect.top).toBeGreaterThanOrEqual(document.querySelector('.cm-panels-top')!.getBoundingClientRect().bottom)
     expect(readingRect.bottom).toBeLessThan(box.bottom)
 
     await userEvent.keyboard('第 30 段。{Shift>}{Enter}{/Shift}')
