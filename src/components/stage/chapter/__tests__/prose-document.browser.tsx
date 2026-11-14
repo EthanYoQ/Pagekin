@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { page, userEvent } from 'vitest/browser'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { EditorView } from '@codemirror/view'
 import type { StoreApi } from 'zustand'
+import '../../../../index.css'
 
 import type { ProjectData } from '../../../../shared/ipc-channels'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
@@ -160,5 +162,26 @@ describe('助手 open_editor 打开的作品目录文件', () => {
     expect(host!.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false')
     await act(async () => { saveKey(host!.querySelector<HTMLElement>('.cm-content')!) })
     expect(writes()).toEqual([])
+  })
+})
+
+describe('长恢复候选', () => {
+  it('读到中段按 Ctrl F，搜索框就在眼前', async () => {
+    await page.viewport(1280, 800)
+    const long = Array.from({ length: 160 }, (_, index) => `第 ${index + 1} 段。林岚从海港带回了信。`).join('\n\n')
+    useEditorStore.setState({ tabs: [{ id: 'recovery:candidate-1', name: '恢复候选 · 第3章 雾钟', type: 'chapter', filePath: 'ai-novel://recovery/candidate-1',
+      content: long, savedContent: long, dirty: false, projectKey: session.projectPath }], activeTabId: 'recovery:candidate-1' })
+    await act(async () => root!.render(<StageWorkspace library={false} focus={false} />))
+    const scroller = await vi.waitFor(() => {
+      const element = host!.querySelector<HTMLElement>('.stage-ch-scroll')!
+      expect(element.scrollHeight).toBeGreaterThan(element.clientHeight * 4)
+      return element
+    })
+    scroller.scrollTop = scroller.scrollHeight / 2
+    await userEvent.click(page.getByText('第 80 段。', { exact: false }))
+    await userEvent.keyboard('{Control>}f{/Control}')
+    const input = host!.querySelector<HTMLInputElement>('.cm-search input[name="search"]')!
+    const rect = input.getBoundingClientRect()
+    expect(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)).toBe(input)
   })
 })
