@@ -26,6 +26,8 @@ function workflowWriting(projectPath: string | undefined, runs = useWorkflowStor
   return projectRuns(runs, projectPath).some(run => run.status === 'running' || run.status === 'cancelling')
 }
 
+let selectionRequests = 0
+
 function currentSession(): ProjectSessionContext | null {
   return projectSessionContextFromProject(useProjectStore.getState().currentProject)
 }
@@ -250,14 +252,15 @@ export function useRunRecovery(): RunRecovery {
       await ipc.invokeWithProjectSession(current, 'generation:dismiss-planning-recovery', { handle: entry.recovery.handle })
       globalEventBus.emit('PLANNING_RECOVERY_CHANGED', { projectSession: current })
     }),
-    /** 选区位置是发起时正文里的偏移，正文一字不差才能在原选区气泡续跑；否则在侧页续跑，建议留在卡片上。 */
+    /** 选区位置是发起时正文里的偏移，恰好一个已打开标签的正文一字不差才能在原选区气泡续跑；否则在侧页续跑，建议留在卡片上。 */
     continueEditor: entry => {
       if (!session || !stillCurrent()) return
       const { handle } = entry.recovery.view
-      const tab = useEditorStore.getState().tabs.find(tab => tab.projectKey === session.projectPath && isChapterViewTab(tab)
+      const tabs = useEditorStore.getState().tabs.filter(tab => tab.projectKey === session.projectPath && isChapterViewTab(tab)
         && tab.content === entry.recovery.context.documentText)
+      const tab = tabs.length === 1 ? tabs[0] : undefined
       if (tab?.filePath) {
-        useStageStore.setState({ selectionRequest: { session, filePath: tab.filePath, handle } })
+        useStageStore.setState({ selectionRequest: { session, filePath: tab.filePath, handle, nonce: ++selectionRequests } })
         useEditorStore.getState().setActiveTab(tab.id)
         return
       }
