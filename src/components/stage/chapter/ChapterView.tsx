@@ -113,7 +113,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
-  // 运行侧页要在这一稿的原选区续跑：句柄留在视图里交给编辑器，请求随即清掉，重新挂载时不再重开气泡。
+  // 句柄先存进本地 state 再清掉 store 里的请求，重新挂载时不再重开气泡。
   const requested = useStageStore(s => s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
     ? s.selectionRequest.handle : undefined)
   const [recoveryHandle, setRecoveryHandle] = useState(requested)

@@ -35,7 +35,7 @@ async function sha256(text: string) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-/** 上次打开时在第 3 章选中一句点了「润色」，请求还没发出去应用就关了；这次打开它列在运行侧页「进行中」。 */
+/** 请求发出前关闭应用留下的第 3 章选区润色运行。 */
 async function interruptedSelectionRun(documentText: string) {
   const from = documentText.indexOf(SELECTED)
   const context = { action: 'refine', kind: 'author-draft', documentText, documentHash: await sha256(documentText), from, to: from + SELECTED.length, selectedText: SELECTED }

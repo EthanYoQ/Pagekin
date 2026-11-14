@@ -251,7 +251,7 @@ export function useRunRecovery(): RunRecovery {
       await ipc.invokeWithProjectSession(current, 'generation:dismiss-planning-recovery', { handle: entry.recovery.handle })
       globalEventBus.emit('PLANNING_RECOVERY_CHANGED', { projectSession: current })
     }),
-    /** 原选区所在的章开着、正文和发起时一字不差：到那一章的原选区气泡里续跑。否则在侧页续跑，建议留在卡片上。 */
+    /** 选区位置是发起时正文里的偏移，正文一字不差才能在原选区气泡续跑；否则在侧页续跑，建议留在卡片上。 */
     continueEditor: entry => {
       if (!session || !stillCurrent()) return
       const { handle } = entry.recovery.view
