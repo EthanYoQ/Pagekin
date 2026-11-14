@@ -960,10 +960,9 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       }
     }
 
-    const endedStatus = get().activeRuns.find(r => r.id === run.id)?.status
-    if (definition.backgroundNotice && (endedStatus === 'completed' || endedStatus === 'failed')) {
-      void ipc.invoke('window:notify-stage', stageNotice(context.uiLocale, definition.backgroundNotice, endedStatus)).catch(() => {})
-    }
+    const endedRun = get().activeRuns.find(r => r.id === run.id)
+    const notice = endedRun && definition.backgroundNotice && stageNotice(context.uiLocale, definition.backgroundNotice, endedRun, context.data)
+    if (notice) void ipc.invoke('window:notify-stage', notice).catch(() => {})
 
     // 从活跃列表移除，存入历史
     set(s => {

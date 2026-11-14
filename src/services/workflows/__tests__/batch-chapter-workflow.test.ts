@@ -34,6 +34,7 @@ vi.mock('../../workflow-guards', () => ({
 
 vi.mock('../../ipc-client', () => ({
   ipc: {
+    invoke: async () => ({ shown: false }),
     invokeWithProjectSession: async (context: unknown, channel: string, ...args: unknown[]) => {
       if (channel === 'fs:check-exists') return false
       if (channel === 'generation:begin-batch') {

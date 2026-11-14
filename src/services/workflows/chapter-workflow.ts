@@ -13,6 +13,7 @@ import { normalizeChapterWordsTarget } from './chapter-creation-parameters'
 import { localize } from '../../i18n/core'
 import type { Locale } from '../../i18n/types'
 import { useLocaleStore } from '../../stores/locale-store'
+import { FINALIZE_POST_PROCESS_KEY } from './stage-notice'
 
 // ==========================================
 // 1. 结构与类型导出 (保留对外的向后兼容)
@@ -448,7 +449,7 @@ export function createFinalizeWorkflow(
             chapterInfo,
             snapshot: params.snapshot,
           })
-          return cmd.execute({ step, context, callbacks })
+          context.data[FINALIZE_POST_PROCESS_KEY] = await cmd.execute({ step, context, callbacks })
         },
       },
     ],
