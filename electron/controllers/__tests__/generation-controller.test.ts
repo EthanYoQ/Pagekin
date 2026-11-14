@@ -38,6 +38,7 @@ import { useLocaleStore } from '../../../src/stores/locale-store'
 import type { MainGenerationRunHandle } from '../../../src/services/generation/generation-runtime'
 import { GenerationRunRepository } from '../../repositories/generation-run-repository'
 import { PLOT_OUTLINE_PROTOCOL, renderPlotOutlineSynopsis } from '../../../src/shared/plot-outline-contract'
+import { synopsisFactsFingerprint, type SynopsisCheckpoint } from '../../../src/shared/plot-outline-checkpoint'
 import { clearProjectCustomPrompts } from '../../../src/services/prompt-templates'
 import { exportPortableProject } from '../../services/project-archive-service'
 import { restorePortableProject } from '../../services/project-restore-service'
@@ -64,7 +65,7 @@ beforeAll(() => {
 beforeEach(() => {
   const cache = path.resolve('.runtime/.cache/t12c')
   fs.mkdirSync(cache, { recursive: true })
-  root = fs.mkdtempSync(path.join(cache, 'ipc-'))
+  root = fs.mkdtempSync(path.join(fs.realpathSync(cache), 'ipc-'))
   mocks.globalRoot = path.join(root, 'global'); fs.mkdirSync(mocks.globalRoot)
   const project = projectAccess.createProject(root, '合成小说')
   openedProject = project
@@ -762,6 +763,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       name: '合成小说', sessionLease: session.leaseId, novelConfig: config, characterStates: '', createdAt: '', updatedAt: '' } })
     syncProject()
     let fault = options.crash, calls = 0
+    const navigationWrites: SynopsisCheckpoint[] = []
     const prompts: string[] = [], accepted = (chapter: number) => `## 第${chapter}章：证词${chapter}\n林岚核对证词${chapter}，保留原件，并约定下一步。`
     const fetch = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { messages: { role: string; content: string }[] }
@@ -783,7 +785,13 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       if (channel === 'fs:list-dir') return fs.readdirSync(String(args[0]), { withFileTypes: true }).map(item => ({ name: item.name, path: path.join(String(args[0]), item.name), isDir: item.isDirectory() }))
       if (channel === 'fs:read-file') return { success: true, content: fs.readFileSync(String(args[0]), 'utf8') }
       if (channel === 'fs:read-json') return fs.existsSync(String(args[0])) ? { success: true, data: JSON.parse(fs.readFileSync(String(args[0]), 'utf8')) } : { success: false }
-      if (channel === 'fs:write-json') { fs.mkdirSync(path.dirname(String(args[0])), { recursive: true }); fs.writeFileSync(String(args[0]), JSON.stringify(args[1])); return { success: true } }
+      if (channel === 'fs:write-json') {
+        const content = JSON.stringify(args[1])
+        fs.mkdirSync(path.dirname(String(args[0])), { recursive: true })
+        fs.writeFileSync(String(args[0]), content)
+        if (path.basename(String(args[0])) === 'partial_arch.json') navigationWrites.push(JSON.parse(content))
+        return { success: true }
+      }
       if (channel === 'db:project-core-synopsis-commit' && fault === 'complete-before-cas') { fault = undefined; throw new Error('TEST_TRANSPORT_LOST_BEFORE_CAS') }
       const handler = mocks.handlers.get(channel)
       if (!handler) throw new Error(`UNEXPECTED_TEST_TRANSPORT:${channel}`)
@@ -813,7 +821,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     }
     const navigation = () => JSON.parse(fs.readFileSync(path.join(getProjectDataRoot(session.projectPath), 'partial_arch.json'), 'utf8')) as { synopsis_generation_handle: MainGenerationRunHandle; synopsis_incomplete: boolean; synopsis_protocol: string; synopsis_result?: string }
     const target = renderPlotOutlineSynopsis(Array.from({ length: chapters }, (_, index) => accepted(index + 1)).join('\n\n'), chapters, expected)
-    return { execute, reopen, navigation, target, accepted, fetch, bridge, prompts, expected, facts: [premise, characters, world, guidance, config.coreOutline, config.worldSetting] }
+    return { execute, reopen, navigation, navigationWrites, target, accepted, fetch, bridge, prompts, expected, facts: [premise, characters, world, guidance, config.coreOutline, config.worldSetting] }
   }
 
   it('rebuilds once from complete original facts and accepts six chapters before a single formal CAS', async () => {
@@ -829,6 +837,18 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     expect(commit).toHaveBeenCalledTimes(1)
     expect(ProjectCoreRepository.get()?.synopsis).toBe(f.target)
     expect(f.navigation()).toMatchObject({ synopsis_protocol: PLOT_OUTLINE_PROTOCOL, synopsis_incomplete: false })
+    expect(f.navigationWrites).toHaveLength(9)
+    expect(f.navigationWrites[0]).toEqual({ synopsis_generation_handle: f.navigation().synopsis_generation_handle })
+    const prefixes = Array.from({ length: 7 }, (_, count) => Array.from({ length: count }, (_, index) => f.accepted(index + 1)).join('\n\n'))
+    const checkpoints = f.navigationWrites.slice(1)
+    for (const [index, prefix] of prefixes.entries()) {
+      expect(checkpoints[index]).toMatchObject({ synopsis_body_hash: synopsisFactsFingerprint([prefix]),
+        synopsis_db_hash: synopsisFactsFingerprint(['旧正式大纲']), synopsis_covered_to: 0, synopsis_incomplete: true })
+      expect(checkpoints[index]).not.toHaveProperty('synopsis_result')
+    }
+    expect(checkpoints.at(-1)).toMatchObject({ synopsis_body_hash: synopsisFactsFingerprint([prefixes.at(-1)!]),
+      synopsis_db_hash: synopsisFactsFingerprint([f.target]), synopsis_covered_to: 6, synopsis_incomplete: false,
+      synopsis_result: prefixes.at(-1)! })
     expect(f.prompts[1]).toContain('本次从原始冻结事实和已接受前缀重新构建此章')
     for (const prompt of f.prompts) {
       for (const fact of f.facts) expect(prompt.split(fact)).toHaveLength(2)
@@ -920,6 +940,10 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     const view = await invoke('generation:read', handle)
     expect(view.candidates).toHaveLength(2)
     expect(view.plotOutline!.composition).toBeNull()
+    expect(f.navigationWrites).toHaveLength(2)
+    expect(f.navigationWrites[1]).toMatchObject({ synopsis_body_hash: synopsisFactsFingerprint(['']),
+      synopsis_db_hash: synopsisFactsFingerprint(['旧正式大纲']), synopsis_incomplete: true })
+    expect(f.navigationWrites[1]).not.toHaveProperty('synopsis_result')
     f.reopen()
     await expect(f.execute(handle)).rejects.toThrow('attempts-exhausted')
     expect(f.fetch).toHaveBeenCalledTimes(2)
