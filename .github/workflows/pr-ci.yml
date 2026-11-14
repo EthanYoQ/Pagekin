@@ -195,10 +195,38 @@ jobs:
       # Intentionally no artifact uploads or dependency cache: keep this daily
       # gate separate from retained, release-qualified Windows/macOS packages.
 
+  docs-tests:
+    name: Docs content tests
+    needs: changes
+    if: ${{ needs.changes.outputs.docs_only == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda
+        with:
+          version: 11.11.0
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.1
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run README content tests
+        run: node node_modules/vitest/vitest.mjs run scripts/__tests__/release-version.test.ts scripts/__tests__/readme-localization.test.ts src/components/settings/__tests__/settings-branding.test.ts
+
   desktop:
     name: Desktop PR CI (Windows)
     if: ${{ always() }}
-    needs: [changes, desktop-tests]
+    needs: [changes, desktop-tests, docs-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Require every Windows shard to pass unless the PR only changes docs
@@ -206,7 +234,8 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
           SHARD_RESULT: ${{ needs.desktop-tests.result }}
+          DOCS_TESTS_RESULT: ${{ needs.docs-tests.result }}
         run: |
-          echo "changes=$CHANGES_RESULT docs_only=$DOCS_ONLY shards=$SHARD_RESULT"
+          echo "changes=$CHANGES_RESULT docs_only=$DOCS_ONLY shards=$SHARD_RESULT docs_tests=$DOCS_TESTS_RESULT"
           test "$SHARD_RESULT" = success && exit 0
-          test "$CHANGES_RESULT" = success && test "$DOCS_ONLY" = true && test "$SHARD_RESULT" = skipped
+          test "$CHANGES_RESULT" = success && test "$DOCS_ONLY" = true && test "$SHARD_RESULT" = skipped && test "$DOCS_TESTS_RESULT" = success

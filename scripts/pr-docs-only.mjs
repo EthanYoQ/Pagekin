@@ -9,9 +9,14 @@ const RULES = [
   ['docs/**', true],
   ['docs/**/*.json', false],
   ['docs/**/*.mjs', false],
-  ['README*.md', false],
   ['.release/**', false],
   ['.github/**', false],
+  // 代理指令会让代理执行命令，按代码对待。
+  ['.claude/**', false],
+  ['.agents/**', false],
+  ['**/AGENTS.md', false],
+  ['**/CLAUDE.md', false],
+  ['**/SKILL.md', false],
 ].map(([glob, docs]) => [globToRegExp(glob), docs])
 
 function globToRegExp(glob) {
