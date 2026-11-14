@@ -39,7 +39,7 @@ interface StageState {
   chapterRequest: { session: ProjectSessionContext; filePath: string } | null
   /** 运行侧页点了「继续原选区任务」，要这一稿的单章视图在原选区重开气泡续跑；视图接手后清空。只属于发出时的那次打开，换作品或重新打开即清掉。 */
   selectionRequest: { session: ProjectSessionContext; filePath: string; handle: MainGenerationRunHandle } | null
-  /** 在运行侧页续跑完成的选区建议（按运行 id）。主进程随即不再列出这条运行，关掉侧页后建议仍留在这里供复制，直到作者点「不再显示」。只属于发出时的那次打开。 */
+  /** 侧页续跑完成后主进程不再列出这条运行，建议靠这里在关掉侧页后留着。 */
   continuedSelections: { session: ProjectSessionContext; byRun: Readonly<Record<string, EditorEntry>> } | null
   /** 各稿的审稿与修稿记录（按稿 id），流程脊与单章视图据此判断一章走到哪一步；只属于读出它的那次打开。 */
   chapterFacts: { session: ProjectSessionContext; byDraft: Readonly<Record<number, ChapterFacts>> } | null

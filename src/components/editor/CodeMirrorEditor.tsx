@@ -143,7 +143,6 @@ export default function CodeMirrorEditor({
   const [bubblePos, setBubblePos] = useState({ top: 0, left: 0, inView: true })
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
-  /** 复制失败的那段建议；只提示，不影响建议能否替换。 */
   const [copyFailedFor, setCopyFailedFor] = useState<string | null>(null)
   const [activeAIAction, setActiveAIAction] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState<string | null>(null)
