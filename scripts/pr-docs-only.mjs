@@ -9,7 +9,6 @@ const RULES = [
   ['docs/**', true],
   ['docs/**/*.json', false],
   ['docs/**/*.mjs', false],
-  ['README*.md', false],
   ['.release/**', false],
   ['.github/**', false],
 ].map(([glob, docs]) => [globToRegExp(glob), docs])

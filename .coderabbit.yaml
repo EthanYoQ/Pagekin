@@ -1,0 +1,9 @@
+# 纯文档改动不进 AI 审查，路径与 scripts/pr-docs-only.mjs 判为文档的范围一致。
+# .release/** 的发布说明仍审。语法见 https://docs.coderabbit.ai/guides/review-instructions
+reviews:
+  path_filters:
+    - "!README*.md"
+    - "!CONTRIBUTING.md"
+    - "!LICENSE"
+    - "!docs/**/*.md"
+    - "!.claude/**/*.md"
