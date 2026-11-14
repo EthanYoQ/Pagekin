@@ -1,4 +1,4 @@
-// #685 实机场景：书童在后台时，开关关着审稿结束不发通知；打开后第 4 章定稿结束由主进程发一条。
+// #685 实机场景：书童在后台时，开关关着审稿结束不发通知；打开后第 4 章定稿结束由主进程发一条；后处理有一步失败时同样按定稿完成通知。
 import assert from 'node:assert/strict'
 
 import * as chapterView from './pages/chapter-view.mjs'
@@ -63,5 +63,31 @@ export const F685_SCENARIOS = {
     assert.deepEqual(afterReview, [], '关掉时审稿结束不发')
     assert.deepEqual(afterFinalize, [{ title: '第 4 章定稿完成', body: '回到书童查看结果。' }], '打开后定稿结束时主进程发了一条通知')
     return { before, switchedOff, afterReview, switchedOn, afterFinalize }
+  } },
+
+  'f685-finalize-kb-failed': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ app, page, shoot }) => {
+    await recordNotifications(app)
+    await app.evaluate(() => {
+      const fs = globalThis.process.getBuiltinModule('node:fs')
+      const linkSync = fs.linkSync
+      fs.linkSync = (existing, target) => {
+        if (!String(target).includes('.link-probe-')) return linkSync(existing, target)
+        throw Object.assign(new Error('EISDIR: illegal operation on a directory, link'), { code: 'EISDIR' })
+      }
+    })
+    await openChapter(page, 4)
+    await chapterView.finalize(page, 4)
+    await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll('[aria-label="定稿后处理"] li')]
+      return rows.length > 0 && rows.every(row => ['success', 'failed', 'retired'].includes(row.dataset.state))
+        && !document.querySelector('.stage-capsule:not([data-tone="ok"])')
+    }, null, { timeout: 90_000 })
+    for (const deadline = Date.now() + 10_000; (await recorded(app)).length === 0 && Date.now() < deadline;) await page.waitForTimeout(100)
+    const notices = await recorded(app)
+    const steps = await chapterView.postProcessSteps(page)
+    await shoot('f685-finalize-kb-failed')
+    assert.equal(steps.find(step => step.label === '导入知识库')?.state, 'failed', '导入知识库失败')
+    assert.deepEqual(notices, [{ title: '第 4 章定稿完成', body: '回到书童查看结果。' }], '正文已定稿，后处理有一步失败时仍按定稿完成通知')
+    return { notices, steps }
   } },
 }
