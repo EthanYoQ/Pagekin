@@ -139,6 +139,8 @@ describe('运行侧页「继续原选区任务」', () => {
 
     const card = page.getByRole('article').filter({ hasText: '编辑器选区建议' })
     await expect.element(card.getByText(SUGGESTION)).toBeVisible()
+    await expect.element(card.getByText('已用 1 次请求')).toBeVisible()
+    await expect.element(card.getByRole('button', { name: '继续原选区任务' })).toBeDisabled()
     expect(executions()).toBe(1)
     expect(useStageStore.getState().sheet).not.toBeNull()
     await act(async () => card.getByRole('button', { name: '复制建议' }).click())
