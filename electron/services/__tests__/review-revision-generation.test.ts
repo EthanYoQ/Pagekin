@@ -372,7 +372,7 @@ describe('review and revision generation through the actual owner and SQLite', (
     },
   )
   it('源稿进回收站后审修恢复稿既不列出也读不出，不算读坏；放回后照常（#564）', async () => {
-    const f = fixture(), request = await f.run(), saved = f.owner.commitReview(request)
+    const f = fixture(), request = await f.run()
     const status = (deleted: boolean) => f.db.prepare(deleted
       ? "UPDATE drafts_all SET status='deleted',deletion_id='trash-1',deleted_from_status='finalized',deleted_at='now' WHERE id=1"
       : "UPDATE drafts_all SET status='draft',deletion_id='',deleted_from_status='',deleted_at='' WHERE id=1").run()
@@ -381,8 +381,9 @@ describe('review and revision generation through the actual owner and SQLite', (
     expect(() => f.owner.readReviewRevisionRecovery(request.handle)).toThrow('GENERATION_REVIEW_SOURCE_DELETED')
     expect(f.owner.listRecovery()).toMatchObject({ reviews: [], partial: false })
     status(false)
-    expect(f.owner.readReviewRevisionRecovery(request.handle).saved).toEqual(saved)
     expect(f.owner.listRecovery().reviews).toHaveLength(1)
+    const saved = f.owner.commitReview(request)
+    expect(f.owner.readReviewRevisionRecovery(request.handle).saved).toEqual(saved)
   })
   it('源稿彻底删除后（收据留作删除证明）照样不列出；没有删除收据的工作稿被删，仍保留冲突恢复（#564）', async () => {
     const purged = fixture(), purgedRun = await purged.run()
