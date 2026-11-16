@@ -16,7 +16,7 @@ import { FAKE_MODEL } from './fake-model.mjs'
 import * as blueprint from './pages/blueprint.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
-import { countUnits } from './stage-sample.mjs'
+import { STAGE_SAMPLE, countUnits } from './stage-sample.mjs'
 
 const BOOK = '盐湖'
 const BLUEPRINTS = Number(process.env.PERF702_BLUEPRINTS ?? 200)
@@ -46,8 +46,11 @@ export function chapterText(number, units = CHAPTER_UNITS) {
   return paragraphs.join('\n\n')
 }
 
+const SEED_CORE = { coreOutline: '测绘师追查父亲留下的失踪地图。', premise: '一座本该停用的灯塔仍在夜里报时。',
+  worldbuilding: '旧港靠潮汐与灯塔维持秩序。', synopsis: '三幕：抵达、追查、风暴前夜。' }
+
 /** 新建作品并写满：设定、角色、BLUEPRINTS 章蓝图、前 finalized 章定稿。落在书房，作品没打开。 */
-export async function seedLargeBook(context, finalized, { blueprints: withBlueprints = true } = {}) {
+export async function seedLargeBook(context, finalized, { blueprints: withBlueprints = true, core = SEED_CORE } = {}) {
   const { app, page, roots, invoke, reload } = context
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
     name: BOOK, genre: '悬疑', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
@@ -65,9 +68,8 @@ export async function seedLargeBook(context, finalized, { blueprints: withBluepr
       gender: '', age: '', appearance: '', personality: '', background: `${name}在旧港长大。`, abilities: '', motivation: '查明沉船的来历。',
       relationships: [], arc: '', notes: '' })) }, projectPath, session)
   assert.equal(committed.success, true, committed.error)
-  const core = await invoke(page, 'db:project-core-update', { coreOutline: '测绘师追查父亲留下的失踪地图。', premise: '一座本该停用的灯塔仍在夜里报时。',
-    worldbuilding: '旧港靠潮汐与灯塔维持秩序。', synopsis: '三幕：抵达、追查、风暴前夜。', totalChapters: BLUEPRINTS, wordsPerChapter: CHAPTER_UNITS }, projectPath, session)
-  assert.equal(core.success, true, core.error)
+  const updated = await invoke(page, 'db:project-core-update', { ...core, totalChapters: BLUEPRINTS, wordsPerChapter: CHAPTER_UNITS }, projectPath, session)
+  assert.equal(updated.success, true, updated.error)
   const blueprints = Array.from({ length: BLUEPRINTS }, (_, index) => ({ chapterNumber: index + 1, title: chapterTitle(index + 1), role: '发展',
     purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: CHARACTERS.slice(0, 3), suspenseHook: '', userGuidance: '', notes: '' }))
   if (withBlueprints) assert.equal((await invoke(page, 'db:blueprint-upsert-many', blueprints, projectPath, session)).success, true)
@@ -489,16 +491,25 @@ async function reuseBuilt(context) {
  * 社群用户的 200 章蓝图是这样生成的，蓝图页挂载时要读这次规划运行的恢复稿。
  */
 async function generateBlueprints(context) {
-  await seedLargeBook(context, 0, { blueprints: false })
+  // 生成蓝图要求架构已有故事前提等内容，用样例作品的完整核心设定。
+  await seedLargeBook(context, 0, { blueprints: false, core: STAGE_SAMPLE.core })
   context.fake.replyDirectoryBlueprints()
   await installLedger(context.app, context.page)
   await stage.openFromLibrary(context.page, BOOK)
   await blueprint.open(context.page)
   const generated = await operation(context, `bpgen${BLUEPRINTS}-generate`, async () => {
     const startedAt = performance.now()
-    await blueprint.generateRange(context.page, 1, BLUEPRINTS)
-    await context.page.locator('.stage-bp-plan-item').filter({ hasText: String(BLUEPRINTS) }).first().waitFor({ state: 'visible', timeout: 900_000 })
-    await stage.root(context.page).locator(RUNNING).waitFor({ state: 'detached', timeout: 900_000 })
+    // 一次最多生成连续 10 章（「全部 N 章」也受这个限制），按作者的做法反复「接着生成 10 章」。
+    for (let done = 0; done < BLUEPRINTS; done += 10) {
+      await blueprint.openGenerate(context.page)
+      const dialog = blueprint.generateDialog(context.page)
+      // 聚焦章数输入框即选中「接着生成」。
+      await dialog.getByLabel('本次蓝图章数').fill(String(Math.min(10, BLUEPRINTS - done)))
+      await dialog.getByRole('button', { name: '开始生成' }).click()
+      await blueprint.continuePastArchitectureWarning(context.page)
+      await blueprint.planItem(context.page, Math.min(done + 10, BLUEPRINTS)).waitFor({ state: 'visible', timeout: 300_000 })
+      await stage.root(context.page).locator(RUNNING).waitFor({ state: 'detached', timeout: 300_000 })
+    }
     return { totalMs: Math.round(performance.now() - startedAt) }
   })
   await context.restart()
