@@ -18,7 +18,7 @@ import { useProjectStore } from '../../../../stores/project-store'
 import { useWorkflowStore } from '../../../../stores/workflow-store'
 import { openDraftTab } from '../../../../stores/open-draft-tab'
 import { toast } from '../../../ui/Toast'
-import { commandLabel } from '../../shortcut-keys'
+import { commandLabel, IS_MAC } from '../../shortcut-keys'
 import StageSpine from '../../StageSpine'
 import StageWorkspace from '../../StageWorkspace'
 import { useStageView } from '../../use-stage-work'
@@ -856,7 +856,7 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     await mount()
     await openDraft(draft.id)
     await userEvent.click(page.getByText('第 1 段。', { exact: false }))
-    await userEvent.keyboard('{Control>}{End}{/Control}')
+    await userEvent.keyboard(IS_MAC ? '{Meta>}{End}{/Meta}' : '{Control>}{End}{/Control}')
     const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
     await vi.waitFor(() => expect(scroller.scrollTop).toBeGreaterThan(0))
     const end = scroller.scrollTop
