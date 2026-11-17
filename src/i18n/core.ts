@@ -26,7 +26,7 @@ export function storedInterfaceLocale(value: unknown): InterfaceLocale | undefin
   return SUPPORTED_LOCALES.includes(value as InterfaceLocale) ? value as InterfaceLocale : undefined
 }
 
-/** Copy language of an interface language (`ja-JP` reads English): runs and stored records keep only this language. */
+/** 界面语言对应的文案语言：ja-JP 读英文。运行与存档只记这一种。 */
 export function copyLocale(locale: InterfaceLocale): Locale {
   return locale === 'zh-CN' ? 'zh-CN' : 'en-US'
 }
@@ -52,16 +52,11 @@ function interpolate(template: string, params: MessageParams = {}): string {
   return template.replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? `{${name}}`))
 }
 
-/** 就地文案函数（`text`、`mainText` 等）：日文可选，写在英文之后；参数对象总在最后。 */
 export interface LocalizedText {
   (zhCNText: string, enUSText: string, params?: MessageParams): string
   (zhCNText: string, enUSText: string, jaJPText: string, params?: MessageParams): string
 }
 
-/**
- * `localize`、`text`、`mainText` 共用的选择：日文界面且写了日文时用日文，其余中文界面用中文、别的用英文。
- * 冻结了文案语言（Locale）的运行传不出 ja-JP，所以运行记录里不会有日文。
- */
 export function selectCopy(
   locale: InterfaceLocale,
   zhCNText: string,

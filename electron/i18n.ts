@@ -25,7 +25,7 @@ export function mainErrorDisplayLocale(systemLocale: string | undefined): ErrorD
   }
 }
 
-/** Copy language of the main-process interface language: a `ja-JP` interface reads `en-US`. */
+/** 主进程界面语言对应的文案语言：ja-JP 读 en-US。 */
 export function getMainLocale(systemLocale: string | undefined): Locale {
   return copyLocale(getMainInterfaceLocale(systemLocale))
 }

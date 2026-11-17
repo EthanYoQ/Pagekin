@@ -16,7 +16,7 @@ export interface LocaleDependencies {
 export interface LocaleState {
   /** Language chosen for the interface, including languages that colocated copy does not have yet. */
   interfaceLocale: InterfaceLocale
-  /** Copy language of the interface language (`ja-JP` reads `en-US`); runs freeze this one. */
+  /** 界面语言对应的文案语言（ja-JP 读 en-US），运行冻结的就是它。 */
   locale: Locale
   initialized: boolean
   init: () => Promise<void>

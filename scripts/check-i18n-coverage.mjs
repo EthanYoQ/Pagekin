@@ -415,7 +415,6 @@ function inspectRendererFile(violations, root, file, sourceFile) {
     if (isLocalizedCall(node, sourceFile)) {
       const englishIndex = englishArgumentIndex.get(callName(node, sourceFile)) ?? 1
       const english = node.arguments[englishIndex]
-      // 英文后面可以先跟日文，参数对象在日文之后。
       const next = node.arguments[englishIndex + 1]
       const params = next && isStringCopy(next) ? node.arguments[englishIndex + 2] : next
       if (english) inspectEnglishCounts(violations, root, file, sourceFile, english, params)
@@ -801,10 +800,7 @@ function compareMainErrorBaseline(sites, baseline, violations) {
   return counts
 }
 
-/**
- * 日文覆盖（#722 第二阶段）：text、localize、mainText 的日文写在英文之后。这里逐处列出还没写日文的调用，
- * 供贡献者按目录认领。缺日文不算违规；写了日文却是空字符串才算（运行时会退回英文，等于没写）。
- */
+/** 缺日文不算违规；写了日文却是空字符串才算（运行时会退回英文，等于没写）。 */
 const JA_REPORT_ROOTS = ['src', 'electron']
 const jaCopyCallees = new Map([['text', 0], ['localize', 1], ['mainText', 1]])
 
@@ -825,7 +821,7 @@ function isFunctionValue(node) {
   return Boolean(node) && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
 }
 
-/** 声明 `name` 的语句：本文件自己写的 `const text = (zh, en) => …`、`function localize` 是本地包装，不是共用的文案函数。 */
+/** 本文件自己写的 text、localize 是本地包装，不是共用文案函数。 */
 function declaresCopyFunction(statement, name) {
   if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return 'local'
   if (!ts.isVariableStatement(statement)) return undefined
@@ -836,7 +832,6 @@ function declaresCopyFunction(statement, name) {
   return undefined
 }
 
-/** 调用绑到哪里：就近作用域里本地写的包装函数，还是共用的文案函数（含 store 的 text 与作为参数传进来的同类函数）。 */
 function copyFunctionBinding(node, name) {
   for (let scope = node.parent; scope; scope = scope.parent) {
     if (ts.isFunctionLike(scope) && scope.parameters?.some(parameter => parameter.name.getText() === name)) return 'shared'
@@ -903,7 +898,6 @@ function countBy(calls, key) {
   return [...counts].sort(([a], [b]) => a.localeCompare(b))
 }
 
-/** 列出缺日文的调用（文件:行），按顶层目录和所在目录汇总。`area` 只看这个路径下的文件，供贡献者认领一个区。 */
 export function reportJapaneseCoverage(root = process.cwd(), area = '') {
   const prefix = area.replaceAll('\\', '/').replace(/\/$/u, '')
   const calls = collectJaCopyCalls(root).filter(call => !prefix || call.file === prefix || call.file.startsWith(`${prefix}/`))
