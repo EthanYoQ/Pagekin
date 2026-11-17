@@ -21,8 +21,10 @@ function summarize(file) {
   const deltas = profile.timeDeltas
   let sampled = 0
   let idle = 0
+  // 同 DevTools：第 i 个样本的栈持续到下一个样本，即 deltas[i + 1]；deltas[0] 是第一个样本之前，没有栈；最后一个样本持续到 endTime。
+  const tail = Math.max(profile.endTime - profile.startTime - deltas.reduce((sum, delta) => sum + delta, 0), 0)
   profile.samples.forEach((id, index) => {
-    const ms = (deltas[index + 1] ?? 0) / 1000
+    const ms = (deltas[index + 1] ?? tail) / 1000
     sampled += ms
     const leaf = nodes.get(id)
     const leafKey = key(leaf)
