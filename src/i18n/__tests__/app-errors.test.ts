@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, displayedErrorMessage, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
+import { appErrorMessage, containsHan, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
+import { messages } from '../core'
 
 describe('localized application errors', () => {
   it('maps stable error codes to localized messages', () => {
@@ -350,5 +351,18 @@ describe('日文界面的已登记错误', () => {
       .toMatch(/。原稿の本文は取り込まれ/u)
     expect(displayedErrorMessage('ja-JP', 'PROJECT_NOT_OPEN')).toBe('先にプロジェクトを開いてください。')
     expect(displayedErrorMessage('ja-JP', '')).toBe('Unknown error')
+  })
+
+  it('英文概述后面保留日文原因，仍丢掉主进程未登记的中文原文', () => {
+    const japanese = displayedErrorMessage('ja-JP', 'PROJECT_NOT_OPEN')
+    expect(englishWithReason('Could not merge the revision.', japanese)).toBe(`Could not merge the revision. ${japanese}`)
+    expect(englishWithReason('Could not merge the revision.', displayedErrorMessage('ja-JP', '项目数据库未打开'))).toBe('Could not merge the revision.')
+    expect(englishWithReason('Could not merge the revision.', displayedErrorMessage('en-US', '项目数据库未打开'))).toBe('Could not merge the revision.')
+  })
+
+  it('日文目录里每条带汉字的错误说明都带假名，englishWithReason 才分得出日文和中文', () => {
+    const withoutKana = Object.entries(messages['ja-JP'])
+      .filter(([key, value]) => key.startsWith('error.') && containsHan(value) && !/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value))
+    expect(withoutKana).toEqual([])
   })
 })

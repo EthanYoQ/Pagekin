@@ -50,6 +50,12 @@ describe('workflow failures carrying a main-process error (#466)', () => {
     expect(failure).toHaveProperty('code', 'GENERATION_FINALIZATION_EFFECT_CONFLICT')
   })
 
+  it('日文界面：概述用英文文案，登记过的码按日文说明，未登记的中文原文不接上', () => {
+    const fromJapanese = (error: unknown) => workflowMainProcessError({ uiLocale: 'ja-JP' }, error, '定稿事务未提交', 'The finalization transaction was not committed.').message
+    expect(fromJapanese('PROJECT_NOT_OPEN')).toBe('The finalization transaction was not committed. 先にプロジェクトを開いてください。')
+    expect(fromJapanese('Error: 项目数据库未打开')).toBe('The finalization transaction was not committed.')
+  })
+
   it('主进程没给原因时只给说明', () => {
     expect(fail('en-US', undefined).message).toBe('The finalization transaction was not committed.')
     expect(fail('zh-CN', '  ').message).toBe('定稿事务未提交')

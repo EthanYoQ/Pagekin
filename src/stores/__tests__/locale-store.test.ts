@@ -164,6 +164,37 @@ describe('locale store', () => {
     expect(reportError).not.toHaveBeenCalled()
   })
 
+  // 两次连续选择 zh-CN → en-US → ja-JP，各自成败、谁先返回，八种组合。
+  // 主进程按发出顺序写配置，失败的不写：保存下来的是最后一次成功的选择。
+  const outcomes = [true, false].flatMap(first => [true, false].flatMap(second =>
+    [false, true].map(secondSettlesFirst => [first, second, secondSettlesFirst] as const)))
+  it.each(outcomes)('shows the saved language once both saves settle (first ok %s, second ok %s, second settles first %s)', async (firstOk, secondOk, secondSettlesFirst) => {
+    const settle: Array<() => void> = []
+    const saveLocale = vi.fn((_locale: string) => new Promise<{ success: boolean; error?: string }>(resolve => {
+      const ok = settle.length === 0 ? firstOk : secondOk
+      settle.push(() => resolve(ok ? { success: true } : { success: false, error: 'disk full' }))
+    }))
+    const reportError = vi.fn()
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'zh-CN' }),
+      saveLocale,
+      systemLocale: () => 'zh-CN',
+      setDocumentLanguage: vi.fn(),
+      reportError,
+    }))
+    await state.getState().init()
+
+    const first = state.getState().setLocale('en-US')
+    const second = state.getState().setLocale('ja-JP')
+    await vi.waitFor(() => expect(saveLocale).toHaveBeenCalledTimes(2))
+    for (const index of secondSettlesFirst ? [1, 0] : [0, 1]) settle[index]()
+    await Promise.all([first, second])
+
+    const saved = secondOk ? 'ja-JP' : firstOk ? 'en-US' : 'zh-CN'
+    expect(state.getState().interfaceLocale).toBe(saved)
+    expect(reportError).toHaveBeenCalledTimes(saved === 'ja-JP' ? 0 : 1)
+  })
+
   it.each([
     ['business failure', async () => ({ success: false, error: 'disk full' })],
     ['transport rejection', async () => { throw new Error('IPC unavailable') }],

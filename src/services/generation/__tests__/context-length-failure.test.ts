@@ -9,7 +9,8 @@ import { createWorkflowMainGenerationRuntime } from '../../workflows/workflow-ma
 import type { createMainGenerationTransport } from '../main-generation-transport'
 import { runFinalizationGeneration } from '../../finalization-generation'
 import { describeFinalizationStepError, planFinalizationRetry } from '../../../shared/finalization-step-error'
-import { classifyGenerationFailure, formatGenerationBudgetDiagnostic } from '../prompt-budget-failure'
+import { classifyGenerationFailure, formatGenerationBudgetDiagnostic, providerContextFailureText } from '../prompt-budget-failure'
+import { useLocaleStore } from '../../../stores/locale-store'
 import { presentWorkflowFailure } from '../../../components/panels/ai-output-failure-presentation'
 
 const handle: MainGenerationRunHandle = { projectId: '项目', epoch: '会话', rootActionId: '动作', runId: '运行' }
@@ -148,6 +149,25 @@ describe('讨论区 #77：服务商上下文超长', () => {
     expect(presentation.reason).toContain('换用上下文更长的模型')
     expect(presentation.reason).not.toContain('上下文窗口')
     expect(presentation.persistence).toBe('本次未保存草稿或正文章节。')
+  })
+
+  it('日文界面看英文冻结的运行：标题仍是英文文案，登记的原因按日文说明；中文运行不受影响', () => {
+    const restore = useLocaleStore.getState()
+    try {
+      useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+      const english = runFailure({ ...failedDraft(CODE), uiLocale: 'en-US' })
+      expect(english.presentation.heading).toBe('Workflow did not finish')
+      expect(english.presentation.reason).toContain('コンテキストの長いモデル')
+      expect(runFailure(failedDraft(CODE)).presentation.reason).toContain('换用上下文更长的模型')
+    } finally {
+      useLocaleStore.setState(restore, true)
+    }
+  })
+
+  it('服务商拒收超长请求时的说明按传入的界面语言写', () => {
+    expect(providerContextFailureText(new Error(CODE), 'ja-JP')).toContain('コンテキストの長いモデル')
+    expect(providerContextFailureText(new Error(CODE), 'zh-CN')).toContain('换用上下文更长的模型')
+    expect(providerContextFailureText(new Error('HTTP 500'), 'ja-JP')).toBeUndefined()
   })
 
   it('写稿步骤已有主进程保存的正文时，卡片不说未保存', () => {

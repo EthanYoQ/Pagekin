@@ -31,6 +31,7 @@ function snapshot<T>(store: StoreApi<T>): () => void {
   return () => store.setState(state, true)
 }
 const restores = [snapshot(useLocaleStore), snapshot(useLayoutStore), snapshot(useStageStore), snapshot(useLLMStore), snapshot(useThemeStore), snapshot(useProjectStore), snapshot(useEditorStore), snapshot(useWorkflowStore)]
+const PAGE_LANG = document.documentElement.lang
 
 const MODEL = { id: 'flash', name: 'DeepSeek V4 Flash', provider: 'deepseek', protocol: 'openai', modelName: 'deepseek-v4-flash',
   apiKey: 'k', baseUrl: 'https://api.deepseek.com', temperature: 0.7, maxTokens: 4096, purposes: ['generation'] } as ModelProfile
@@ -96,6 +97,7 @@ afterEach(async () => {
   delete win.aiNovelAPI
   setActiveProjectSessionContext(null)
   for (const restore of restores) restore()
+  document.documentElement.lang = PAGE_LANG
 })
 
 describe('设置页', () => {
