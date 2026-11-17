@@ -14,8 +14,8 @@ import { buildFinalizedContinuityFacts } from '../../src/shared/finalized-contin
 import { proveFinalizedCharacterGeneration } from './finalized-character-generation-proof'
 import type { CharacterProposalService } from './character-proposal-service'
 
-/** 重开会新建一稿，新稿还没有要点快照；只按本稿取会把作者改过的蓝图要点当成没改而覆盖，所以沿重开记下的被替换定稿往上取。 */
-function lastGeneratedNotes(db: Database.Database, draftId: number, chapterNumber: number): string | undefined {
+/** 重开会新建一稿，新稿还没有要点快照，只按本稿取会把作者改过的蓝图要点当成没改而覆盖。 */
+function notesGeneratedAlongReopenChain(db: Database.Database, draftId: number, chapterNumber: number): string | undefined {
   const notesOf = db.prepare("SELECT chapter_notes FROM summary_snapshots WHERE draft_id=? AND trim(chapter_notes)<>''").pluck()
   const dependenciesOf = db.prepare('SELECT source_dependencies FROM drafts WHERE id=?').pluck()
   const seen = new Set<number>()
@@ -119,7 +119,7 @@ export class FinalizationGeneration {
         if (!isDeepStrictEqual(finalizationNotesBaseline(this.db, context.slot), context.notesBaseline)) throw new Error('GENERATION_FINALIZATION_NOTES_CHANGED')
         const chapterNotes = proof.artifact.text.trim(), { source } = context.slot
         const facts = buildFinalizedContinuityFacts(source.chapterNumber, chapterNotes, context.identity.content, context.chapterEntities, context.identity)
-        const notesLastGenerated = lastGeneratedNotes(this.db, source.draftId, source.chapterNumber)
+        const notesLastGenerated = notesGeneratedAlongReopenChain(this.db, source.draftId, source.chapterNumber)
         const blueprintNotes = context.notesBaseline.blueprint.notes
         const authorEditedBlueprintNotes = notesLastGenerated !== undefined && blueprintNotes.trim() !== '' && blueprintNotes !== notesLastGenerated
         SummaryRepository.saveFinalizedContinuity({ draftId: source.draftId, chapterNumber: source.chapterNumber, source, chapterNotes, facts, projectionGeneration: context.identity.projectionGeneration }, this.db)
