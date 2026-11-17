@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { BlueprintCharacterSyncOperation } from '../../../electron/repositories/blueprint-repository'
 import { useProjectStore } from '../../stores/project-store'
 import { toast } from '../ui/Toast'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import type { DirectoryGenerationCatalog } from '../../shared/generation-owner-contract'
 import { terminalDirectoryProgress } from '../../services/workflows/directory-workflow'
 import type { DirectoryWorkflowParams } from '../../services/workflows/directory-workflow'
@@ -105,7 +105,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
     void ipc.invoke('config:get').then(config => {
       if (!disposed) setTargetUnits(String(parsePlanningTargetUnits(config.blueprintTargetUnits)))
     }).catch(error => {
-      if (!disposed) setLaunchError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      if (!disposed) setLaunchError(displayedErrorMessage(currentInterfaceLocale(), error))
     }).finally(() => { if (!disposed) setPreferenceLoading(false) })
     return () => { disposed = true; setPreferenceLoading(true) }
   }, [isOpen])
@@ -119,7 +119,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
       setProgressSessionKey(session.projectId + ':' + session.leaseId); setProgressError(null)
       const terminals = catalog.progress.map(item => terminalDirectoryProgress(item, catalog.progress))
       setDirectoryCatalog({ ...catalog, progress: [...new Map(terminals.map(item => [item.operationId, item])).values()] })
-    }).catch(error => { if (!disposed && isProjectSessionCurrent(session)) { setDirectoryCatalog({ progress: [], diagnostics: [] }); setProgressSessionKey(session.projectId + ':' + session.leaseId); setProgressError(displayedErrorMessage(useLocaleStore.getState().locale, error)) } })
+    }).catch(error => { if (!disposed && isProjectSessionCurrent(session)) { setDirectoryCatalog({ progress: [], diagnostics: [] }); setProgressSessionKey(session.projectId + ':' + session.leaseId); setProgressError(displayedErrorMessage(currentInterfaceLocale(), error)) } })
     return () => { disposed = true }
   }, [currentProject, isOpen])
 
@@ -149,7 +149,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
         setPendingCharacterSyncs(operations)
       } catch (error) {
         if (disposed) return
-        setRecoveryError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+        setRecoveryError(displayedErrorMessage(currentInterfaceLocale(), error))
       } finally {
         if (!disposed) setIsRecoveryLoading(false)
       }
@@ -185,7 +185,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
         if (disposed || !isProjectSessionCurrent(projectSession)) return
         setAuthoritativeNextChapter(null)
         setHighestBlueprintChapter(null)
-        setAuthorityError(displayedErrorMessage(useLocaleStore.getState().locale, cause))
+        setAuthorityError(displayedErrorMessage(currentInterfaceLocale(), cause))
       } finally {
         if (!disposed && isProjectSessionCurrent(projectSession)) setAuthorityLoading(false)
       }
@@ -239,7 +239,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
       setRecoveryError(null)
       toast.info(text('角色同步修复完成，无需重新生成蓝图。', 'Character sync repaired without regenerating blueprints.'))
     } catch (error) {
-      setRecoveryError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      setRecoveryError(displayedErrorMessage(currentInterfaceLocale(), error))
     } finally {
       setIsRecovering(false)
     }
@@ -265,7 +265,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
       frozenHighestBlueprint = authority[1]
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return
-      setAuthorityError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      setAuthorityError(displayedErrorMessage(currentInterfaceLocale(), error))
       return
     }
     if (!isProjectSessionCurrent(projectSession)) return
@@ -318,7 +318,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
       onClose()
       toast.info(text('已提交：正在生成章节蓝图...', 'Submitted: generating chapter blueprints...'))
     } catch (error) {
-      setLaunchError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      setLaunchError(displayedErrorMessage(currentInterfaceLocale(), error))
     } finally {
       setIsConfirming(false)
     }
@@ -332,7 +332,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
       const started = await onConfirm({ mode: 'append', continueDirectoryOperationId: operationId })
       setLaunchError(null)
       if (started) onClose()
-    } catch (error) { setLaunchError(displayedErrorMessage(useLocaleStore.getState().locale, error)) }
+    } catch (error) { setLaunchError(displayedErrorMessage(currentInterfaceLocale(), error)) }
     finally { setIsConfirming(false) }
   }
 

@@ -17,7 +17,7 @@ import { sameProjectSessionContext } from '../../../shared/project-session-conte
 import { knowledgeDraftDirty, type KnowledgeDraft } from '../../../stores/editor-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { routeModelId } from '../../../services/model-routing'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { navigate } from '../../../stores/navigation/navigation-intents'
 import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowStore, workflowResourceConflictMessage } from '../../../stores/workflow-store'
@@ -71,7 +71,7 @@ export function useKnowledgeIndex() {
       setStatus(unwrapKnowledgeValue(result))
       setStatusError('')
     } catch (error) {
-      if (latest()) setStatusError(appErrorMessage(useLocaleStore.getState().locale, error))
+      if (latest()) setStatusError(appErrorMessage(currentInterfaceLocale(), error))
     }
   }, [])
 
@@ -102,7 +102,7 @@ export function useKnowledgeIndex() {
       }
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return
-      toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       if (isProjectSessionCurrent(projectSession)) {
         setBackfilling(false)
@@ -192,7 +192,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
       setLoadError('')
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return
-      setLoadError(appErrorMessage(useLocaleStore.getState().locale, error))
+      setLoadError(appErrorMessage(currentInterfaceLocale(), error))
     }
     setDocumentsLoaded(true)
   }, [])
@@ -211,7 +211,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
       if (!isProjectSessionCurrent(session) || readDraft() !== loading) return
       // 读不出来就回到没选资料的样子：不留「正在读取」，作者再点这一份会重读。
       setDraft(EMPTY_DRAFT)
-      toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      toast.error(appErrorMessage(currentInterfaceLocale(), error))
     }
   }
   const openDocumentRef = useRef(openDocument)
@@ -289,7 +289,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
       clearResults()
       toast.success(text('项目副本已保存；更新检索后，写作时才能查到新内容', 'Project copy saved. Update search so writing can find the new text.'))
     } catch (error) {
-      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       replaceDraft(saving, current)
     }
@@ -311,7 +311,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
       clearResults()
       toast.success(text('检索已更新，写作时能查到新内容', 'Search updated. Writing can now find the new text.'))
     } catch (error) {
-      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       replaceDraft(reindexing, current)
     }
@@ -333,7 +333,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
     } catch (error) {
       if (!latest()) return
       resetResults()
-      toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       if (latest()) setSearching(false)
     }
@@ -369,7 +369,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
       }
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return
-      toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       if (isProjectSessionCurrent(projectSession)) setClearing(false)
     }
@@ -411,7 +411,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
       navigate({ kind: 'run', facet: 'tasks' })
       await useWorkflowStore.getState().startWorkflow(extractionWorkflow, true)
     } catch (error) {
-      if (isProjectSessionCurrent(projectSession)) toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      if (isProjectSessionCurrent(projectSession)) toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       setImporting(false)
     }

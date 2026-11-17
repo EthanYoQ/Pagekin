@@ -26,7 +26,7 @@ import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
 import { Check } from '../ui/Check'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
 import { captureProjectSession, isProjectSessionCurrent } from '../project-session-gate'
 import { randomUUID } from '../../utils/id'
@@ -91,7 +91,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
     ?? resumableRuns[0]
     ?? null
   // 存下的失败原因按导入运行的语言写好，也可能是旧版本留下的错误码：登记过的码按界面语言说明。
-  const resumableFailure = resumableRun?.lastError ? displayedErrorMessage(locale, resumableRun.lastError) : ''
+  const resumableFailure = resumableRun?.lastError ? displayedErrorMessage(currentInterfaceLocale(), resumableRun.lastError) : ''
   const resumableRunIsActive = resumableRun
     ? activeWorkflows.some(workflow => workflow.id === resumableRun.id)
     : false
@@ -160,7 +160,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
     }).catch(error => {
       if (active && isProjectSessionCurrent(session)) {
         setAuthorPreview(null)
-        setSplitError(displayedErrorMessage(locale, error))
+        setSplitError(displayedErrorMessage(currentInterfaceLocale(), error))
       }
     }).finally(() => {
       if (active && isProjectSessionCurrent(session)) setAuthorPreviewLoading(false)
@@ -257,11 +257,11 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         })
         setSplitDone(true)
       } else {
-        setSplitError(displayedErrorMessage(locale, result.error, text('拆章失败', 'Could not split chapters')))
+        setSplitError(displayedErrorMessage(currentInterfaceLocale(), result.error, text('拆章失败', 'Could not split chapters')))
       }
     } catch (e) {
       if (operationSession && !isProjectSessionCurrent(operationSession)) return
-      setSplitError(displayedErrorMessage(locale, e))
+      setSplitError(displayedErrorMessage(currentInterfaceLocale(), e))
     } finally {
       setSplitting(false)
     }
@@ -440,7 +440,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         setAuthorPreview(null)
         setSplitDone(false)
       }
-      setSplitError(displayedErrorMessage(locale, e))
+      setSplitError(displayedErrorMessage(currentInterfaceLocale(), e))
     } finally {
       setImporting(false)
     }
@@ -479,7 +479,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         await applyPreparation(result.preparation, projectSession, resumableRun.id)
       } catch (error) {
         if (!isProjectSessionCurrent(projectSession)) return
-        setSplitError(displayedErrorMessage(locale, error))
+        setSplitError(displayedErrorMessage(currentInterfaceLocale(), error))
       } finally {
         setImporting(false)
       }
@@ -526,7 +526,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
       await launchRun(result.run)
     } catch (error) {
       if (!isProjectSessionCurrent(session)) return
-      setSplitError(displayedErrorMessage(locale, error))
+      setSplitError(displayedErrorMessage(currentInterfaceLocale(), error))
     } finally {
       setImporting(false)
     }

@@ -73,7 +73,7 @@ export function createLocaleState(dependencies: LocaleDependencies): StateCreato
             dependencies.setDocumentLanguage(previousLocale)
           }
           const previousCopyLocale = copyLocale(previousLocale)
-          const reason = displayedErrorMessage(previousCopyLocale, error)
+          const reason = displayedErrorMessage(previousLocale, error)
           await dependencies.reportError?.(
             localize(previousCopyLocale, `语言设置保存失败：${reason}`, `Could not save the language setting: ${reason}`),
             localize(previousCopyLocale, '语言设置保存失败', 'Could not save language setting'),
@@ -98,3 +98,8 @@ const browserDependencies: LocaleDependencies = {
 }
 
 export const useLocaleStore = create<LocaleState>(createLocaleState(browserDependencies))
+
+/** Language of keyed catalog messages (registered error codes) at call time. */
+export function currentInterfaceLocale(): InterfaceLocale {
+  return activeInterfaceLocale(useLocaleStore.getState())
+}

@@ -19,7 +19,7 @@ import {
 import { randomUUID } from '../utils/id'
 import { useEditorStore } from './editor-store'
 import { useProjectStore } from './project-store'
-import { useLocaleStore } from './locale-store'
+import { currentInterfaceLocale, useLocaleStore } from './locale-store'
 import { displayedErrorMessage } from '../i18n/app-errors'
 import { workflowMainProcessError } from '../services/workflows/workflow-project-session'
 import {
@@ -410,7 +410,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
         rosterRevision: null, identityRevision: null,
         loadingProjectKey: null,
         loadingProjectSession: null,
-        lastError: displayedErrorMessage(useLocaleStore.getState().locale, error),
+        lastError: displayedErrorMessage(currentInterfaceLocale(), error),
       })
     }
   },

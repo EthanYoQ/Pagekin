@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { ImportFillField, ImportFillSuggestion } from '../../../shared/import-fill-empty'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import type { WorkflowRun } from '../../../stores/workflow-store'
 import { adoptImportSuggestions, loadPendingImportSuggestions } from '../../../services/workflows/import-suggestions'
@@ -68,7 +68,7 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
     let active = true
     void reload().then(next => { if (active) setLoaded({ session, items: next, error: '' }) })
       .catch(failure => {
-        if (active) setLoaded(previous => ({ session, items: previous.session === session ? previous.items : [], error: displayedErrorMessage(locale, failure) }))
+        if (active) setLoaded(previous => ({ session, items: previous.session === session ? previous.items : [], error: displayedErrorMessage(currentInterfaceLocale(), failure) }))
       })
     return () => { active = false }
   }, [locale, reload, session])
@@ -82,7 +82,7 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
       const next = await reload()
       setLoaded(previous => previous.session === session ? { session, items: next, error: '' } : previous)
     } catch (failure) {
-      setLoaded(previous => previous.session === session ? { ...previous, error: displayedErrorMessage(locale, failure) } : previous)
+      setLoaded(previous => previous.session === session ? { ...previous, error: displayedErrorMessage(currentInterfaceLocale(), failure) } : previous)
     } finally {
       setBusy(false)
     }

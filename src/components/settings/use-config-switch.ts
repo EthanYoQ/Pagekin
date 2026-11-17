@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ipc } from '../../services/ipc-client'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
 import type { GlobalConfig } from '../../shared/ipc-channels'
 
@@ -29,7 +29,7 @@ export function useConfigSwitch(key: SwitchKey, fallback: boolean, failure: (rea
       if (!result.success) throw new Error(result.error || text('未知错误', 'Unknown error'))
     } catch (cause) {
       setEnabled(previous)
-      setError(failure(displayedErrorMessage(useLocaleStore.getState().locale, cause)))
+      setError(failure(displayedErrorMessage(currentInterfaceLocale(), cause)))
     } finally {
       setSaving(false)
     }

@@ -17,7 +17,7 @@ import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImport
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
 import { countUnsavedEditorItemsForProject } from './editor-unsaved'
 import { useLayoutStore } from './layout-store'
-import { useLocaleStore } from './locale-store'
+import { currentInterfaceLocale, useLocaleStore } from './locale-store'
 import { requireIpcSuccess } from '../services/ipc-result'
 import {
   projectPathKey,
@@ -101,7 +101,7 @@ function projectError(
   if (error === undefined || error === null || error === '') {
     return projectText(fallbackZhCN, fallbackEnUS)
   }
-  return appErrorMessage(useLocaleStore.getState().locale, error)
+  return appErrorMessage(currentInterfaceLocale(), error)
 }
 
 function projectErrorCopy(
@@ -796,7 +796,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           .map(warning => projectError(warning))
         const repair = result.finalizationRepair
         if (repair?.status === 'failed') {
-          const reason = displayedErrorMessage(useLocaleStore.getState().locale, repair.error)
+          const reason = displayedErrorMessage(currentInterfaceLocale(), repair.error)
           warnings.push(projectText(
             `重复的定稿没能修复，后面的章节可能写不了；下次打开项目会再试一次。原因：${reason}`,
             englishWithReason('Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.', reason),
@@ -868,7 +868,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       const result = await ipc.invoke('project:import-legacy-copy', sourceRoot.grantId, target.grantId)
       if (result.state === 'cancelled') return false
       if (result.state === 'blocked') {
-        set({ legacyImportNotice: legacyImportFailureMessage(useLocaleStore.getState().locale, result.code) })
+        set({ legacyImportNotice: legacyImportFailureMessage(currentInterfaceLocale(), result.code) })
         return false
       }
       copiedTo = result.targetRoot
@@ -884,7 +884,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             : importedCopyNotOpenedNotice(result.targetRoot) })
       return opened
     } catch (error) {
-      set({ legacyImportNotice: copiedTo ? importedCopyNotOpenedNotice(copiedTo) : legacyImportFailureMessage(useLocaleStore.getState().locale, error) })
+      set({ legacyImportNotice: copiedTo ? importedCopyNotOpenedNotice(copiedTo) : legacyImportFailureMessage(currentInterfaceLocale(), error) })
       return false
     } finally {
       set({ legacyImportBusy: false })
@@ -1195,7 +1195,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (result.warning) {
         // 主进程已按界面语言写好清理未完成的说明（带原始文件系统错误），不再套「发生错误」。
         alertError(
-          displayedErrorMessage(useLocaleStore.getState().locale, result.warning),
+          displayedErrorMessage(currentInterfaceLocale(), result.warning),
           { title: projectText('项目已删除，部分清理未完成', 'Project deleted with some cleanup incomplete') },
         )
       }

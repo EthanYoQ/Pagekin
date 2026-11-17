@@ -9,7 +9,7 @@ import { create } from 'zustand'
 import { ipc } from '../services/ipc-client'
 import { toolRegistry } from '../services/agent/tool-registry'
 import { displayedErrorMessage } from '../i18n/app-errors'
-import { useLocaleStore } from './locale-store'
+import { currentInterfaceLocale, useLocaleStore } from './locale-store'
 import type {
   MCPResourceDescription,
   MCPServerStatus,
@@ -55,8 +55,8 @@ interface MCPState {
 
 /** 主进程转来的 MCP 失败原因：登记过的码按界面语言说明，其余原样保留，没有原因时用兜底。 */
 function mcpErrorText(error: string | undefined, zhCN: string, enUS: string): string {
-  const { locale, text } = useLocaleStore.getState()
-  return displayedErrorMessage(locale, error, text(zhCN, enUS))
+  const { text } = useLocaleStore.getState()
+  return displayedErrorMessage(currentInterfaceLocale(), error, text(zhCN, enUS))
 }
 
 export const useMCPStore = create<MCPState>()((set, get) => ({
@@ -103,7 +103,7 @@ export const useMCPStore = create<MCPState>()((set, get) => ({
 
       set({ loading: false })
     } catch (error) {
-      set({ loading: false, error: displayedErrorMessage(useLocaleStore.getState().locale, error) })
+      set({ loading: false, error: displayedErrorMessage(currentInterfaceLocale(), error) })
     }
   },
 
@@ -177,7 +177,7 @@ export const useMCPStore = create<MCPState>()((set, get) => ({
           return {
             success: result.success,
             content: result.content,
-            error: result.error && displayedErrorMessage(useLocaleStore.getState().locale, result.error),
+            error: result.error && displayedErrorMessage(currentInterfaceLocale(), result.error),
           }
         },
       }

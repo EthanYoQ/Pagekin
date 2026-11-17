@@ -21,7 +21,7 @@ import type { PlotTreeSourceBundle, PlotTreeSourceReference } from '../../../sha
 import { routeStageModel } from '../../../shared/model-stage-routing'
 import { formatResourceUri } from '../../../shared/project-paths'
 import { useLLMStore } from '../../../stores/llm-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { openBuiltinEditor } from '../../../stores/open-builtin-editor'
 import { useProjectStore } from '../../../stores/project-store'
 import { openChapterFile } from '../../panels/sidebar/sidebar-file-openers'
@@ -650,7 +650,7 @@ export function usePlotThreads(projectKey: string, {
     } catch (error) {
       if (!isProjectSessionCurrent(session)) return
       // 主进程用登记过的码拒绝（如短证据不在定稿正文里）时在表单里说明原因，作者改完能直接重试；其余仍是笼统提示。
-      const reason = knownAppErrorMessage(useLocaleStore.getState().locale, error)
+      const reason = knownAppErrorMessage(currentInterfaceLocale(), error)
       if (reason) setEventError(reason)
       else toast.error(text('保存定稿事件失败', 'Could not save finalized event'))
     } finally {

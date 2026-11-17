@@ -341,3 +341,14 @@ describe('导入旧项目副本的拒绝原因', () => {
       .toMatch(/^Nothing was imported\. Your original files were not changed\. .*write access/u)
   })
 })
+
+describe('日文界面的已登记错误', () => {
+  it('按日文目录说明，句子之间不加空格；未知错误的兜底仍是英文', () => {
+    expect(legacyImportFailureMessage('ja-JP', 'LEGACY_IMPORT_IO_FAILED'))
+      .toMatch(/^何も取り込まれませんでした。元のファイルは変更されていません。[^ ]/u)
+    expect(importGenerationStopMessage('ja-JP', 'GENERATION_STORAGE_FAILED', false, 'author-manuscript'))
+      .toMatch(/。原稿の本文は取り込まれ/u)
+    expect(displayedErrorMessage('ja-JP', 'PROJECT_NOT_OPEN')).toBe('先にプロジェクトを開いてください。')
+    expect(displayedErrorMessage('ja-JP', '')).toBe('Unknown error')
+  })
+})

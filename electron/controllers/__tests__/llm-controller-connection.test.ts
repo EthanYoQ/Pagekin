@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   generate: vi.fn(),
   models: [] as ModelProfile[],
   locale: 'en-US',
+  storedLocale: undefined as string | undefined,
 }))
 
 vi.mock('electron', () => ({
@@ -24,7 +25,9 @@ vi.mock('../../utils/config-utils', () => ({
   MODELS_CONFIG_PATH: 'models.json',
   GLOBAL_CONFIG_PATH: 'config.json',
   DEFAULT_GLOBAL_CONFIG: { proxy: { enabled: false } },
-  readJsonFile: vi.fn((filePath: string, fallback: unknown) => filePath === 'models.json' ? mocks.models : fallback),
+  readJsonFile: vi.fn((filePath: string, fallback: unknown) => filePath === 'models.json'
+    ? mocks.models
+    : filePath === 'config.json' && mocks.storedLocale ? { ...fallback as object, locale: mocks.storedLocale } : fallback),
   tryReadJsonFile: vi.fn(() => ({ status: 'missing' })),
   writeJsonFile: vi.fn(),
 }))
@@ -292,6 +295,19 @@ describe('retrieval model connection test', () => {
       expect(result.error).toContain(expected)
       expect(result.error).not.toMatch(forbidden)
     } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('explains a registered code in Japanese when the interface language is Japanese', async () => {
+    mocks.locale = 'en-US'
+    mocks.storedLocale = 'ja-JP'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 })))
+    try {
+      const result = await mocks.handlers.get('llm:test-connection')!({}, retrievalModel) as { success: boolean; error: string }
+      expect(result.error).toContain('検索モデルが使えない結果')
+    } finally {
+      mocks.storedLocale = undefined
       vi.unstubAllGlobals()
     }
   })

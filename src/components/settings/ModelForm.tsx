@@ -11,7 +11,7 @@ import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
 import { NativeSelect } from '../ui/NativeSelect'
 import { cn } from '../../lib/utils'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
 import { ModelReasoningOverrideSettings, ModelCapabilitySources, ProjectCreativeStrategySettings } from './ReasoningPolicySettings'
 import { openModelProviderResource } from './model-provider-resource'
@@ -102,14 +102,13 @@ export function ModelForm({
   presets: ProviderPreset[]
 }) {
   const text = useLocaleStore(s => s.text)
-  const locale = useLocaleStore(s => s.locale)
   const [showKey, setShowKey] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const saveHintId = useId()
 
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean, error?: string } | null>(null)
-  const testFailure = testResult && !testResult.success ? displayedErrorMessage(locale, testResult.error) : ''
+  const testFailure = testResult && !testResult.success ? displayedErrorMessage(currentInterfaceLocale(), testResult.error) : ''
   const testConnection = useLLMStore(s => s.testConnection)
   const discoverModels = useLLMStore(s => s.discoverModels)
   const discoverLocalContextWindow = useLLMStore(s => s.discoverLocalContextWindow)
