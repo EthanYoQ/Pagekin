@@ -598,3 +598,27 @@ it('本章有另一稿，选了它、它还在读取：不能发起统一修改�
 
   await expect.element(page.getByRole('button', { name: /^本章版本：定稿/ })).toBeVisible()
 })
+
+it('选了另一稿、它还在读取时早先发起的修稿生成完成：不在要换走的稿上自动打开修稿合并；读完换上那一稿', async () => {
+  await openChapter({ reviewed: true })
+  const other = backend.addDraft({ status: 'draft', version: 2, createdAt: '2026-10-13 20:30:00' })
+  await act(async () => { await useDraftStore.getState().loadAllDrafts(SESSION.projectPath, SESSION) })
+  const answer = backend.invoke.getMockImplementation()!
+  let release!: () => void
+  const read = new Promise<void>(resolve => { release = resolve })
+  backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+    if (channel === 'db:draft-get-full' && Number(args[0]) === other.id) await read
+    return answer(channel, ...args)
+  })
+
+  await act(async () => page.getByRole('button', { name: /^本章版本：/ }).click())
+  await act(async () => page.getByRole('menuitemradio', { name: /v2/ }).click())
+  await act(async () => { backend.addRevision(backend.state.drafts[0]!) })
+  await reloadChapter()
+
+  await expect.element(page.getByRole('button', { name: '打开修稿合并' })).toBeDisabled()
+  expect(document.querySelector('[role="region"][aria-label="修稿合并"]')).toBeNull()
+
+  await act(async () => release())
+  await vi.waitFor(() => expect(useEditorStore.getState().tabs.find(tab => tab.id === useEditorStore.getState().activeTabId)?.draftId).toBe(other.id))
+})
