@@ -14,7 +14,7 @@ import { buildFinalizedContinuityFacts } from '../../src/shared/finalized-contin
 import { proveFinalizedCharacterGeneration } from './finalized-character-generation-proof'
 import type { CharacterProposalService } from './character-proposal-service'
 
-/** 本稿自己的要点；没有就沿重开时记下的被替换定稿往上找，直到第一份生成过非空要点的稿。 */
+/** 重开会新建一稿，新稿还没有要点快照；只按本稿取会把作者改过的蓝图要点当成没改而覆盖，所以沿重开记下的被替换定稿往上取。 */
 function lastGeneratedNotes(db: Database.Database, draftId: number, chapterNumber: number): string | undefined {
   const notesOf = db.prepare("SELECT chapter_notes FROM summary_snapshots WHERE draft_id=? AND trim(chapter_notes)<>''").pluck()
   const dependenciesOf = db.prepare('SELECT source_dependencies FROM drafts WHERE id=?').pluck()
