@@ -102,7 +102,6 @@ const browserDependencies: LocaleDependencies = {
 
 export const useLocaleStore = create<LocaleState>(createLocaleState(browserDependencies))
 
-/** Language of keyed catalog messages (registered error codes) at call time. */
 export function currentInterfaceLocale(): InterfaceLocale {
   return activeInterfaceLocale(useLocaleStore.getState())
 }

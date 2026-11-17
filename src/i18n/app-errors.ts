@@ -414,7 +414,6 @@ export function importGenerationStopMessage(
   return joinSentences(locale, translate(locale, AUTHOR_STOP_REASON_KEYS[stop]), translate(locale, 'error.authorInferenceStopNext'))
 }
 
-/** 中文、日文句末是全角句号，句子直接相连；英文之间加空格。 */
 function joinSentences(locale: InterfaceLocale, first: string, second: string): string {
   return locale === 'en-US' ? `${first} ${second}` : `${first}${second}`
 }

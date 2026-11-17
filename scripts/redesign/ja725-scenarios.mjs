@@ -1,4 +1,3 @@
-// #722 Phase 1（PR #725）：设置 → 外观 → 界面语言选「日本語」。未翻译的内联文案是英文，已登记错误码按日文目录说明；切回中文恢复。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -36,7 +35,7 @@ export const JA725_SCENARIOS = {
     await page.keyboard.press('Escape')
     await page.getByRole('navigation', { name: 'Settings sections' }).waitFor({ state: 'detached' })
 
-    // 最近作品的文件夹在应用外被移走，再从书房打开。驱动的重启按中文书房判断就绪，先切回中文；重启后写回日语再 reload，界面按保存的设置启动。
+    // 驱动的重启按中文书房判断就绪，所以重启前先切回中文，重启后再写回日语。
     assert.equal((await invoke(page, 'config:set', { locale: 'zh-CN' })).success, true)
     await context.restart()
     page = context.page
