@@ -1,211 +1,22 @@
 import { createHash } from 'node:crypto'
-import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
-import { buildReviewGenerationReport } from '../../../src/shared/review-generation-report'
 import type { FrozenChapterGoals } from '../../../src/shared/chapter-goal-review'
 import type { ConsistencyFinding } from '../../../src/shared/consistency-preflight'
 import { buildReviewCycleRecheckReport, type ReviewCycleRecheckContext } from '../../../src/shared/review-cycle'
-import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema'
-import { createLiveRowViews } from '../../../test/helpers/live-row-views'
-import { M01_GENERATION_SQL } from '../../migrations/m01-generation-runs'
 import {
-  applyM03ReviewCycle,
-  applyM06ReviewCycleMerge,
-  canonicalM03FindingSetHash,
-  verifyM03ReviewCycle,
-} from '../../migrations/m03-review-cycle'
+  create,
+  defaultModel,
+  generatedCycle,
+  mergeRows,
+  reviewCycleDatabase as fixture,
+  seed,
+  seedRevision,
+} from '../../../test/helpers/review-cycle-fixture'
+import { canonicalM03FindingSetHash, verifyM03ReviewCycle } from '../../migrations/m03-review-cycle'
 import { RevisionRepository } from '../revision-repository'
-import {
-  ReviewCycleRepository,
-  type AttachGeneratedRevisionInput,
-  type CreateReviewCycleInput,
-} from '../review-cycle-repository'
+import { ReviewCycleRepository, type CreateReviewCycleInput } from '../review-cycle-repository'
 
-const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
-
-function fixture() {
-  const db = new Database(':memory:')
-  db.pragma('foreign_keys=ON')
-  db.transaction(() => {
-    initializeLegacyBaselineSchema(db); db.exec(M01_GENERATION_SQL)
-    applyM03ReviewCycle(db); applyM06ReviewCycleMerge(db); createLiveRowViews(db)
-  })()
-  return db
-}
-
-const defaultGoals: FrozenChapterGoals = { chapterNumber: 1, coverage: 'complete',
-  items: [{ id: 'goal-pass', text: '完成开场' }] }
-const defaultModel = { summary: '审稿完成', items: [{ category: '文风', severity: 'pass', description: '通过' }],
-  goalReviews: [{ id: 'goal-pass', status: 'completed', description: '已经完成', evidence: [{ quote: '开场' }] }] }
-
-interface SeedOptions {
-  key?: string
-  source?: string
-  sourceStatus?: 'draft' | 'revised'
-  existingDraftId?: number
-  model?: Record<string, unknown>
-  frozenGoals?: FrozenChapterGoals
-  preflight?: readonly ConsistencyFinding[]
-  corruptBody?: string
-  effect?: 'valid' | 'none' | 'wrong-effect' | 'wrong-artifact'
-}
-
-function seed(db: import('better-sqlite3').Database, options: SeedOptions = {}): {
-  call: CreateReviewCycleInput
-  reviewId: number
-  source: string
-  sourceStatus: 'draft' | 'revised'
-  draftId: number
-  reviewBody: string
-  frozenGoals: FrozenChapterGoals
-  preflight: readonly ConsistencyFinding[]
-} {
-  const key = options.key ?? 'review'
-  const source = options.source ?? '开场😀目标完成，预检证据，重复，重复。'
-  const sourceStatus = options.sourceStatus ?? 'draft'
-  const frozenGoals = options.frozenGoals ?? defaultGoals
-  const preflight = options.preflight ?? []
-  const modelContent = JSON.stringify(options.model ?? defaultModel)
-  const generatedBody = JSON.stringify(buildReviewGenerationReport({ content: modelContent, sourceContent: source,
-    frozenGoals, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', preflightFindings: preflight }), null, 2)
-  const body = options.corruptBody ?? generatedBody
-  const sourceContentId = options.existingDraftId === undefined
-    ? Number(db.prepare('INSERT INTO contents(body) VALUES(?)').run(source).lastInsertRowid) : null
-  const draftId = options.existingDraftId ?? Number(db.prepare(`INSERT INTO drafts_all(chapter_number,version,status,content_id)
-    VALUES(1,1,'draft',?)`).run(sourceContentId).lastInsertRowid)
-  const reviewContentId = Number(db.prepare('INSERT INTO contents(body) VALUES(?)').run(body).lastInsertRowid)
-  const reviewIndex = Number(db.prepare('SELECT COALESCE(MAX(review_index),0)+1 FROM reviews WHERE base_draft_id=?')
-    .pluck().get(draftId))
-  const reviewId = Number(db.prepare(`INSERT INTO reviews(base_draft_id,review_index,source_draft_chapter_number,
-    source_draft_version,source_draft_status,source_content,content_id) VALUES(?,?,1,1,?,?,?)`)
-    .run(draftId, reviewIndex, sourceStatus, source, reviewContentId).lastInsertRowid)
-  const rootActionId = `root-${key}`
-  const action = { rootActionId, projectId: 'project', epoch: 'epoch', operation: 'review-chapter',
-    uiActionNonce: `nonce-${key}`, frozenInputHash: hash(`frozen-${key}`), status: 'active' }
-  db.prepare('INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json) VALUES(?,?,?,?)')
-    .run(rootActionId, `root-key-${key}`, JSON.stringify(action), '{}')
-
-  if (options.effect !== 'none') {
-    const attemptId = `attempt-${key}`
-    const runId = `run-${key}`
-    const artifactId = `artifact-${key}`
-    const context = { version: 1, operation: 'review-chapter', sourceHash: hash(source),
-      source: { id: draftId, chapterNumber: 1, version: 1, status: sourceStatus, content: source }, config: {},
-      writingLanguage: 'zh-CN', uiLocale: 'zh-CN', authorInputs: [], characterStates: '（暂无）', worldbuilding: '',
-      history: [], blueprints: [], frozenGoals, preflightFindings: preflight }
-    const contextHash = hash(JSON.stringify(context))
-    const fingerprint = Object.fromEntries(['chapterBriefHash', 'authorGuidanceHash', 'dependencyHash', 'contextSnapshotHash',
-      'templateHash', 'skillSnapshotHash', 'modelLeaseRevision', 'policyHash', 'outputContractHash']
-      .map((name, index) => [name, hash(`fingerprint:${key}:${index}`)]))
-    const binding = { projectId: 'project', epoch: 'epoch', fingerprint, contextSnapshotId: `context-${key}`,
-      sourceManifest: { operation: 'review-chapter', reviewRevisionContext: context,
-        reviewRevisionContextHash: contextHash,
-        authorInputs: [{ id: 'review-revision-context', text: JSON.stringify(context) }] }, sourceRefs: [] }
-    db.prepare('INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key) VALUES(?,?,?,?,?,?)')
-      .run(runId, rootActionId, JSON.stringify(binding), 'completed', 1, `open-${key}`)
-    const artifact = { artifactId, attemptId, rootActionId, projectId: 'project', epoch: 'epoch', fingerprint,
-      revision: 1, text: modelContent, textHash: options.effect === 'wrong-artifact' ? hash('wrong') : hash(modelContent) }
-    const artifactRef = { artifactId, revision: 1, textHash: artifact.textHash }
-    const usage = { artifactIdentity: { artifactId, epoch: 'epoch', fingerprint }, result: { usage: null, finishReason: 'stop' },
-      reviewRevisionEffect: { kind: 'review', id: reviewId, index: reviewIndex,
-        contentHash: options.effect === 'wrong-effect' ? hash('wrong') : hash(body), contextHash, artifact: artifactRef } }
-    db.prepare(`INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,
-      usage_receipt_json,invocation_nonce) VALUES(?,?,?,?,?,?,?)`).run(attemptId, `reservation-${key}`, runId, rootActionId,
-      JSON.stringify({ attemptId, reservationId: `reservation-${key}`, rootActionId, status: 'settled', reservedTokens: 100,
-        requestedOutputTokens: 100, actualTokens: 1 }), JSON.stringify(usage), `invocation-${key}`)
-    db.prepare('INSERT INTO generation_artifacts(artifact_id,attempt_id,run_id,artifact_json,revision,status) VALUES(?,?,?,?,?,?)')
-      .run(artifactId, attemptId, runId, JSON.stringify(artifact), 1, 'partial')
-  }
-
-  return { reviewId, source, sourceStatus, draftId, reviewBody: body, frozenGoals, preflight,
-    call: { rootActionId, reviewId, reviewContentHash: hash(body), source: {
-    projectId: 'project', epoch: 'epoch', sourceId: `draft:${draftId}`, revision: 1, contentHash: hash(source),
-  } } }
-}
-
-function create(db: import('better-sqlite3').Database, input: CreateReviewCycleInput) {
-  return db.transaction(() => ReviewCycleRepository.create(input, db))()
-}
-
-function seedRevision(db: import('better-sqlite3').Database, base: ReturnType<typeof seed>, options: {
-  key?: string
-  revisionContent?: string
-  effect?: 'valid' | 'wrong-composition' | 'different-root'
-  replacePending?: boolean
-  snapshot?: Record<string, unknown>
-} = {}): { attach: AttachGeneratedRevisionInput; confirmationId: number; revisionId: number } {
-  const key = options.key ?? 'revision'
-  const revisionContent = options.revisionContent ?? `${base.source}\n修稿补充。`
-  const snapshot = options.snapshot ?? { kind: 'human-confirmed-review', schemaVersion: 1, sourceReviewId: base.reviewId,
-    sourceDraft: { id: base.draftId, chapterNumber: 1, version: 1, status: base.sourceStatus, content: base.source },
-    summary: '作者确认', authorGuidance: '', items: [{ category: '连续性', severity: 'warning',
-      description: '本次忽略', decision: 'ignore', origin: 'ai' }] }
-  const confirmationBody = JSON.stringify(snapshot, null, 2)
-  const confirmationContentId = Number(db.prepare('INSERT INTO contents(body) VALUES(?)').run(confirmationBody).lastInsertRowid)
-  const confirmationIndex = Number(db.prepare('SELECT COALESCE(MAX(review_index),0)+1 FROM reviews WHERE base_draft_id=?')
-    .pluck().get(base.draftId))
-  const confirmationId = Number(db.prepare(`INSERT INTO reviews(base_draft_id,review_index,source_draft_chapter_number,
-    source_draft_version,source_draft_status,source_content,content_id) VALUES(?,?,1,1,?,?,?)`)
-    .run(base.draftId, confirmationIndex, base.sourceStatus, base.source, confirmationContentId).lastInsertRowid)
-  const revision = options.replacePending === false ? (() => {
-    const revisionIndex = Number(db.prepare('SELECT COALESCE(MAX(revision_index),0)+1 FROM revisions WHERE base_draft_id=?')
-      .pluck().get(base.draftId))
-    const contentId = Number(db.prepare('INSERT INTO contents(body) VALUES(?)').run(revisionContent).lastInsertRowid)
-    const id = Number(db.prepare(`INSERT INTO revisions(base_draft_id,revision_index,revision_type,status,user_prompt,
-      review_source_id,source_draft_chapter_number,source_draft_version,source_draft_status,source_content,content_id,word_count)
-      VALUES(?,?,'review-fix','pending','',?,1,1,?,?,?,?)`)
-      .run(base.draftId, revisionIndex, confirmationId, base.sourceStatus, base.source, contentId, revisionContent.length).lastInsertRowid)
-    return { id, revisionIndex }
-  })() : RevisionRepository.replacePending({ baseDraftId: base.draftId, revisionType: 'review-fix',
-    reviewSourceId: confirmationId, content: revisionContent, wordCount: revisionContent.length,
-    expectedSource: { id: base.draftId, chapterNumber: 1, version: 1, status: base.sourceStatus, content: base.source } }, db)
-
-  const rootActionId = options.effect === 'different-root' ? `${base.call.rootActionId}-other-${key}` : base.call.rootActionId
-  if (rootActionId !== base.call.rootActionId) {
-    db.prepare('INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json) VALUES(?,?,?,?)')
-      .run(rootActionId, `other-root-key-${key}`, JSON.stringify({ rootActionId, projectId: 'project', epoch: 'epoch',
-        operation: 'refine-from-review', uiActionNonce: `other-${key}`, frozenInputHash: hash(`other-${key}`), status: 'active' }), '{}')
-  }
-  const attemptId = `attempt-${key}`
-  const runId = `run-${key}`
-  const artifactId = `artifact-${key}`
-  const context = { version: 1, operation: 'refine-from-review', sourceHash: hash(base.source),
-    source: { id: base.draftId, chapterNumber: 1, version: 1, status: base.sourceStatus, content: base.source }, config: {},
-    writingLanguage: 'zh-CN', uiLocale: 'zh-CN', authorInputs: [], characterStates: '（暂无）', worldbuilding: '',
-    history: [], blueprints: [], frozenGoals: base.frozenGoals, preflightFindings: base.preflight,
-    confirmation: { reviewSourceId: confirmationId, content: confirmationBody,
-      originalReviewContentHash: hash(base.reviewBody), snapshot } }
-  const contextHash = hash(JSON.stringify(context))
-  const fingerprint = Object.fromEntries(['chapterBriefHash', 'authorGuidanceHash', 'dependencyHash', 'contextSnapshotHash',
-    'templateHash', 'skillSnapshotHash', 'modelLeaseRevision', 'policyHash', 'outputContractHash']
-    .map((name, index) => [name, hash(`revision-fingerprint:${key}:${index}`)]))
-  const binding = { projectId: 'project', epoch: 'epoch', fingerprint, contextSnapshotId: `revision-context-${key}`,
-    sourceManifest: { operation: 'refine-from-review', reviewRevisionContext: context,
-      reviewRevisionContextHash: contextHash,
-      authorInputs: [{ id: 'review-revision-context', text: JSON.stringify(context) }] }, sourceRefs: [] }
-  db.prepare('INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key) VALUES(?,?,?,?,?,?)')
-    .run(runId, rootActionId, JSON.stringify(binding), 'completed', 2, `open-${key}`)
-  const contentHash = hash(revisionContent)
-  const artifact = { artifactId, attemptId, rootActionId, projectId: 'project', epoch: 'epoch', fingerprint,
-    revision: 1, text: revisionContent, textHash: contentHash }
-  const artifactRef = { artifactId, revision: 1, textHash: contentHash }
-  const visibleComposition = { algorithm: 'visible-append-v1',
-    textHash: options.effect === 'wrong-composition' ? hash('wrong-composition') : contentHash,
-    artifactIds: [artifactId], sources: [artifactRef] }
-  const usage = { artifactIdentity: { artifactId, epoch: 'epoch', fingerprint }, result: { usage: null, finishReason: 'stop' },
-    visibleComposition, reviewRevisionEffect: { kind: 'revision', id: revision.id, index: revision.revisionIndex,
-      contentHash, compositionHash: contentHash, contextHash, artifact: artifactRef } }
-  db.prepare(`INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,
-    usage_receipt_json,invocation_nonce) VALUES(?,?,?,?,?,?,?)`).run(attemptId, `reservation-${key}`, runId, rootActionId,
-    JSON.stringify({ attemptId, reservationId: `reservation-${key}`, rootActionId, status: 'settled', reservedTokens: 100,
-      requestedOutputTokens: 100, actualTokens: 1 }), JSON.stringify(usage), `invocation-${key}`)
-  db.prepare('INSERT INTO generation_artifacts(artifact_id,attempt_id,run_id,artifact_json,revision,status) VALUES(?,?,?,?,?,?)')
-    .run(artifactId, attemptId, runId, JSON.stringify(artifact), 1, 'partial')
-  return { confirmationId, revisionId: revision.id, attach: { cycleId: '', rootActionId: base.call.rootActionId,
-    confirmationReviewId: confirmationId, confirmationContentHash: hash(confirmationBody), revisionId: revision.id,
-    revisionContentHash: contentHash } }
-}
 
 function seedConfirmation(db: import('better-sqlite3').Database, base: ReturnType<typeof seed>,
   snapshot: Record<string, unknown>): { id: number; body: string } {
@@ -222,27 +33,6 @@ function seedConfirmation(db: import('better-sqlite3').Database, base: ReturnTyp
 function risk(stableFactKey: string, evidence: string): ConsistencyFinding {
   return { stableFactKey, severity: 'warning', sourceChapter: 1, evidence,
     issue: { zhCN: '事实冲突', enUS: 'Fact conflict' }, suggestion: { zhCN: '请核实', enUS: 'Verify' } }
-}
-
-function generatedCycle(db: import('better-sqlite3').Database, key: string, sameDraft?: ReturnType<typeof seed>,
-  options: SeedOptions = {}) {
-  const seeded = seed(db, { ...options, key: `review-${key}`, ...(sameDraft
-    ? { source: sameDraft.source, existingDraftId: sameDraft.draftId } : {}) })
-  const cycle = create(db, seeded.call)
-  const revision = seedRevision(db, seeded, { key: `revision-${key}`, replacePending: !sameDraft })
-  revision.attach.cycleId = cycle.cycleId
-  db.transaction(() => ReviewCycleRepository.attachGeneratedRevision(revision.attach, db))()
-  return { seeded, cycle, revision }
-}
-
-function mergeRows(db: import('better-sqlite3').Database, item: ReturnType<typeof generatedCycle>, mergedContent: string): string {
-  const contentId = db.prepare('SELECT content_id FROM drafts WHERE id=?').pluck().get(item.seeded.draftId) as number
-  db.prepare('UPDATE contents SET body=? WHERE id=?').run(mergedContent, contentId)
-  db.prepare("UPDATE drafts_all SET status='revised',word_count=? WHERE id=?")
-    .run(mergedContent.length, item.seeded.draftId)
-  db.prepare("UPDATE revisions SET status='merged',merged_to_draft_id=? WHERE id=?")
-    .run(item.seeded.draftId, item.revision.revisionId)
-  return hash(mergedContent)
 }
 
 function mergedFindingCycle(db: import('better-sqlite3').Database, key: string, mergedContent: string) {
