@@ -401,6 +401,30 @@ describe('workflow pause at a safe step boundary', () => {
     },
   )
 
+  it('records a run started from a Japanese interface with the English copy language, and keeps it when the interface changes mid-run (#722)', async () => {
+    useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    const observed: unknown[] = []
+
+    await useWorkflowStore.getState().startWorkflow({
+      type: 'chapter_creation',
+      title: 'Japanese interface run',
+      projectPath,
+      projectSession: frozenSession(),
+      steps: [{
+        name: 'capture',
+        description: 'capture the run locale across an interface switch',
+        executor: async (_step, context) => {
+          observed.push(context.uiLocale)
+          useLocaleStore.setState({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
+          observed.push(context.uiLocale)
+        },
+      }],
+    })
+
+    expect(observed).toEqual(['en-US', 'en-US'])
+    expect(useWorkflowStore.getState().history[0]).toMatchObject({ uiLocale: 'en-US', status: 'completed' })
+  })
+
   it('keeps store-owned success and pause logs in the UI locale frozen at launch', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
     let finishFirstStep: (() => void) | undefined
