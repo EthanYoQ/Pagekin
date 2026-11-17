@@ -18,7 +18,7 @@ import type { MainGenerationExecuteReceipt } from '../../../src/services/generat
 import { parseFinalizedCharacterStateResponse } from '../../../src/shared/finalized-continuity'
 import { getBuiltinPromptTemplate } from '../../../src/services/builtin-prompt-templates'
 import * as portableAuthority from '../portable-current-authority'
-import { registerAsReopenDraft } from '../../../test/helpers/reopened-draft'
+import { registerAsReopenDraft, reopenWithContent } from '../../../test/helpers/reopened-draft'
 
 vi.mock('../../database', async importOriginal => ({ ...await importOriginal<typeof import('../../database')>(), getProjectDb: vi.fn() }))
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -225,6 +225,32 @@ it('#484 生成期间字段被改：界面重试沿用冻结上下文仍拒写�
  expect(again.view.handle.runId).not.toBe(f.commitRequest.handle.runId)
  const receipt=await f.owner.executeFinalizationGeneration({handle:again.view.handle})
  expect(f.owner.commitFinalizationGeneration({handle:again.view.handle,artifact:f.artifactOf(receipt)})).toMatchObject({success:true,stepKey:'character_cards'})
+})
+async function refinalizeNotesAfterReopen(blueprintNotesBeforeReopen: string) {
+ const replies = ['林岚进入北塔。', '林岚再次进入北塔。']
+ const f = fixture(async (_request, options) => { options.onVisible({ kind: 'delta', text: replies.shift()! }); return { finishReason: 'stop', usage: null } })
+ const notesFor = async (source: FinalizationGenerationSlot['source']) => {
+  const recovery = f.owner.beginFinalizationGeneration({ slot: { source, stepKey: 'chapter_notes' }, modelId: 'synthetic' })
+  const receipt = await f.owner.executeFinalizationGeneration({ handle: recovery.view.handle })
+  return f.owner.commitFinalizationGeneration({ handle: recovery.view.handle, artifact: f.artifactOf(receipt) })
+ }
+ await notesFor(f.prepared.context.source)
+ f.db.prepare('UPDATE blueprints SET notes=? WHERE chapter_number=1').run(blueprintNotesBeforeReopen)
+ const content = '林岚又一次走进了北塔。'
+ const draftId = reopenWithContent(1, content)
+ FinalizationRepository.commit({ finalizationId: 'finalized-2', draftId, chapterNumber: 1, chapterTitle: '北塔', content, contentHash: textHash(content), contentRevision: 2, targetFileName: '第一章.txt' })
+ const saved = await notesFor(f.owner.readFinalizedCharacterContext(draftId).context.source)
+ return { saved, blueprintNotes: f.db.prepare('SELECT notes FROM blueprints WHERE chapter_number=1').pluck().get() }
+}
+it('重开再定稿：作者在两次定稿之间改过的章节要点不被新生成的要点覆盖', async () => {
+ const { saved, blueprintNotes } = await refinalizeNotesAfterReopen('作者改过的章节要点')
+ expect(saved).toMatchObject({ chapterNotes: '林岚再次进入北塔。', blueprintUpdated: false })
+ expect(blueprintNotes).toBe('作者改过的章节要点')
+})
+it.each([['仍是上次生成的要点', '林岚进入北塔。'], ['作者清空了要点', '']])('重开再定稿：%s时照常写入新要点', async (_case, notes) => {
+ const { saved, blueprintNotes } = await refinalizeNotesAfterReopen(notes)
+ expect(saved).toMatchObject({ chapterNotes: '林岚再次进入北塔。', blueprintUpdated: true })
+ expect(blueprintNotes).toBe('林岚再次进入北塔。')
 })
 it('运行侧页的可恢复列表不列定稿后处理运行，无论提交与否',async()=>{
  const f=await generated()
