@@ -2,7 +2,7 @@ import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { sameProjectPathKey } from '../../shared/project-session-context'
 import type { WorkflowContext } from '../../stores/workflow-store'
 import type { WritingLanguage } from '../../shared/writing-language'
-import type { InterfaceLocale, Locale } from '../../i18n/types'
+import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
 import { knownAppErrorMessage } from '../../i18n/app-errors'
 import { copyLocale } from '../../i18n/core'
 
@@ -47,18 +47,18 @@ const errorCode = /^[A-Z][A-Z0-9_]*$/u
  * 未登记的码原样附上供反馈定位，并挂在 code 上；其余原文只附在中文说明后面，英文界面只给英文说明。
  */
 export function workflowMainProcessError(
-  uiLocale: InterfaceLocale,
+  interfaceLocale: ErrorDisplayLocale,
   error: unknown,
   zhCNSummary: string,
   enUSSummary: string,
 ): Error {
-  const english = copyLocale(uiLocale) === 'en-US'
+  const english = copyLocale(interfaceLocale) === 'en-US'
   const summary = english ? enUSSummary : zhCNSummary
   // String(err) 的前缀是错误类名：多数是 "Error: "，带名字的错误类（ProjectSessionStaleError）是它自己的类名。
   const raw = typeof error === 'string' ? error.trim().replace(/^[A-Za-z]*Error: /u, '') : ''
   if (!raw) return new Error(summary)
   const code = errorCode.test(raw) ? raw : undefined
-  const reason = knownAppErrorMessage(uiLocale, raw) ?? (code || !english ? raw : undefined)
+  const reason = knownAppErrorMessage(interfaceLocale, raw) ?? (code || !english ? raw : undefined)
   const failure = new Error(reason ? `${summary}${english ? ' ' : '：'}${reason}` : summary)
   return code ? Object.assign(failure, { code }) : failure
 }

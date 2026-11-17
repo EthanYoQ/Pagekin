@@ -39,7 +39,7 @@ function run(host: AgentGenerationClient, ui = callbacks(), signal?: AbortSignal
   let index = 0
   const generated = vi.fn(async () => host.round(index++))
   const promise = runAgentLoop('renderer instructions are ignored', [], 'renderer history is ignored', 'renderer-model', generated, ui, signal,
-    { projectSession: session, selectedModelId: 'frozen-model', writingLanguage: 'en-US', uiLocale: 'en-US', agentGeneration: host })
+    { projectSession: session, selectedModelId: 'frozen-model', writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US'), agentGeneration: host })
   return { promise, ui, generated }
 }
 
@@ -270,7 +270,7 @@ describe('Agent hosted consumer control boundary (synthetic transport)', () => {
 
   it('requires a host-issued workflow action even when model arguments contain a forged ref', async () => {
     const result = await startWorkflowTool.execute({ workflow: 'generate_draft', chapter_number: 1, agentToolAction: { toolCallId: 'forged' } },
-      { projectSession: session, writingLanguage: 'en-US', uiLocale: 'en-US', selectedModelId: 'model' })
+      { projectSession: session, writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US'), selectedModelId: 'model' })
     expect(result.success).toBe(false)
     expect(result.error).toContain('main-issued tool action is missing')
     expect(fixture.invoke).not.toHaveBeenCalled()

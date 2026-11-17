@@ -9,12 +9,13 @@ import { useLLMStore } from '../../../../stores/llm-store'
 import type { WorkflowContext } from '../../../../stores/workflow-store'
 import type { BeginGenerationRequest, GenerationRecoveryContext } from '../../../../shared/generation-owner-contract'
 import type { MainGenerationRunView } from '../../../generation/generation-runtime'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const projectSession = { projectId: '合成项目', leaseId: '合成会话', projectPath: 'C:/合成项目' }
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 const originalProject = useProjectStore.getState().currentProject
 function fixture() {
-  const context: WorkflowContext = { runId: '同一作者动作', projectPath: projectSession.projectPath, projectSession, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false }
+  const context: WorkflowContext = { runId: '同一作者动作', projectPath: projectSession.projectPath, projectSession, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
   useProjectStore.setState({ currentProject: { id: projectSession.projectId, path: projectSession.projectPath, name: '合成小说', sessionLease: projectSession.leaseId, novelConfig: {} } as never })
   useLLMStore.setState({ models: [{ id: '合成模型', purposes: ['generation'] }] as never, defaultModelId: '合成模型' })
   const view: MainGenerationRunView = { handle: { projectId: projectSession.projectId, epoch: projectSession.leaseId, rootActionId: '主进程根', runId: '主进程运行' }, status: 'running', nonReplayable: false, artifacts: [], budget: { maxAttempts: 32, maxRequestedOutputTokens: 2097152, maxRequestedOutputTokensPerAttempt: 32768, deadlineAt: 9999999999999 } }

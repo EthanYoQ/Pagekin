@@ -7,6 +7,7 @@ import { GenerateFieldCommand as RuntimeGenerateFieldCommand } from '../generate
 import { useFakeModelStream, workflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
 import { TerminalProviderFailureError } from '../../../generation/generation-harness'
 import { isWorkflowCancellation, WorkflowCancelledError } from '../../workflow-cancellation'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 class GenerateFieldCommand extends RuntimeGenerateFieldCommand {
   constructor(...args: ConstructorParameters<typeof RuntimeGenerateFieldCommand>) {
@@ -28,7 +29,7 @@ const context: WorkflowContext = {
   projectPath: projectAPath,
   projectSession: { projectId: projectAPath, leaseId: 'lease-A', projectPath: projectAPath },
   writingLanguage: 'zh-CN',
-  uiLocale: 'zh-CN',
+  uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
   data: {},
   cancelled: false,
 }
@@ -120,7 +121,7 @@ describe('GenerateFieldCommand project identity', () => {
 
         await command.execute({
           step: {},
-          context: { ...context, writingLanguage, uiLocale: writingLanguage },
+          context: { ...context, writingLanguage, uiLocale: writingLanguage, interfaceLocale: shown(writingLanguage) },
           callbacks,
         })
 
@@ -155,7 +156,7 @@ describe('GenerateFieldCommand project identity', () => {
 
     await new GenerateFieldCommand('worldSetting').execute({
       step: {},
-      context: { ...context, writingLanguage: 'en-US', uiLocale: 'en-US' },
+      context: { ...context, writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US') },
       callbacks,
     })
 
@@ -186,7 +187,7 @@ describe('GenerateFieldCommand project identity', () => {
 
     await command.execute({
       step: {},
-      context: { ...context, writingLanguage: 'en-US', uiLocale: 'en-US' },
+      context: { ...context, writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US') },
       callbacks,
     })
 
@@ -222,7 +223,7 @@ describe('GenerateFieldCommand project identity', () => {
 
     await command.execute({
       step: {},
-      context: { ...context, writingLanguage: 'en-US', uiLocale: 'en-US' },
+      context: { ...context, writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US') },
       callbacks,
     })
 
@@ -351,7 +352,7 @@ describe('GenerateFieldCommand project identity', () => {
   })
 
   it('uses the frozen English UI locale for project and save failures', async () => {
-    const englishContext = { ...context, uiLocale: 'en-US' as const }
+    const englishContext = { ...context, uiLocale: 'en-US' as const, interfaceLocale: shown('en-US') }
     useProjectStore.setState({
       currentProject: project(projectBPath, 'Project B style') as never,
     })
@@ -385,7 +386,7 @@ describe('GenerateFieldCommand project identity', () => {
     try {
       await command.execute({
         step: {},
-        context: { ...context, uiLocale: 'en-US' },
+        context: { ...context, uiLocale: 'en-US', interfaceLocale: shown('en-US') },
         callbacks,
       })
     } catch (error) {

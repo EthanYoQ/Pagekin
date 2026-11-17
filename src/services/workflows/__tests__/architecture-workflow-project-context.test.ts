@@ -10,6 +10,7 @@ import { createArchitectureWorkflow, createConfigGenerationWorkflow } from '../a
 import { GeneratePlotArchitectureCommand } from '../commands/architecture.command'
 import type { BeginGenerationRequest } from '../../../shared/generation-owner-contract'
 import type { NovelConfig } from '../../../shared/ipc-channels'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const originalLocale = useLocaleStore.getState().locale
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
@@ -116,7 +117,7 @@ describe('architecture workflow project context', () => {
     selectedSteps.splice(0)
     synopsisRange.to = 200
     const context = { runId: 'architecture-run', projectPath: projectSession.projectPath, projectSession,
-      writingLanguage: 'zh-CN' as const, uiLocale: 'zh-CN' as const, data: {}, cancelled: false }
+      writingLanguage: 'zh-CN' as const, uiLocale: 'zh-CN' as const, interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
     const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
     await expect(workflow.steps[0].executor({ id: 'premise', name: '', description: '', status: 'running', logs: [] }, context, callbacks)).rejects.toThrow('captured-first-begin')
     expect(begins[0].operation).toBe('generate-core-seed')
@@ -244,7 +245,7 @@ describe('architecture workflow project context', () => {
         projectPath: 'C:/projects/A',
         projectSession: { projectId: 'project-A', leaseId: 'lease-A', projectPath: 'C:/projects/A' },
         writingLanguage: 'zh-CN',
-        uiLocale: 'zh-CN',
+        uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
         data: {},
         cancelled: false,
       },
@@ -306,7 +307,7 @@ describe('config generation full journey completion contract', () => {
       projectPath: 'C:/projects/A',
       projectSession: { projectId: 'project-A', leaseId: 'lease-A', projectPath: 'C:/projects/A' },
       writingLanguage: 'zh-CN',
-      uiLocale: 'zh-CN',
+      uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
       data: {},
       cancelled: false,
     },
@@ -413,7 +414,7 @@ describe('恢复按钮确认的运行身份', () => {
       resumeWorldBuilding: kind === 'worldbuilding', resumeSynopsis: kind === 'synopsis', expectedRecoveryHandle: expected,
     })
     const context = { runId: '恢复动作', projectPath: 'C:/projects/A', projectSession: workflow.projectSession,
-      writingLanguage: 'zh-CN' as const, uiLocale: 'zh-CN' as const, data: {}, cancelled: false }
+      writingLanguage: 'zh-CN' as const, uiLocale: 'zh-CN' as const, interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
     await expect(workflow.steps[0].executor({ id: kind, name: kind, description: '', status: 'running', logs: [] }, context,
       { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() })).rejects.toThrow('恢复记录已变化')
     expect(journey.invoke.mock.calls.map(([channel]) => channel)).toEqual(['fs:read-json'])
@@ -432,7 +433,7 @@ describe('恢复按钮确认的运行身份', () => {
     } }))
     await expect(workflow.steps[0].executor({ id: '恢复', name: '恢复', description: '', status: 'running', logs: [] },
       { runId: '恢复动作', projectPath: 'C:/projects/A', projectSession: workflow.projectSession,
-        writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false },
+        writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false },
       { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() })).rejects.toThrow('恢复记录已变化')
   })
 })

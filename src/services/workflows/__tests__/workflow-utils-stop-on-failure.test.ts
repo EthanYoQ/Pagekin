@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { WorkflowContext } from '../../../stores/workflow-store'
 import { runPostProcessPipeline } from '../workflow-utils'
 import { POST_PROCESS_INTERRUPTED } from '../../../shared/finalization-step-error'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const projectSession = {
   projectId: 'project-1',
@@ -16,7 +17,7 @@ function englishContext(): WorkflowContext {
     projectPath: projectSession.projectPath,
     projectSession,
     writingLanguage: 'zh-CN',
-    uiLocale: 'en-US',
+    uiLocale: 'en-US', interfaceLocale: shown('en-US'),
     data: {},
     cancelled: false,
   }

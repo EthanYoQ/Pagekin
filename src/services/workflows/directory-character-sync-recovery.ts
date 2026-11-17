@@ -3,8 +3,8 @@ import type {
   BlueprintCharacterSyncOperation,
 } from '../../../electron/repositories/blueprint-repository'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
-import { localize } from '../../i18n/core'
-import type { Locale } from '../../i18n/types'
+import { copyLocale, localize } from '../../i18n/core'
+import type { ErrorDisplayLocale } from '../../i18n/types'
 import { ipc } from '../ipc-client'
 import { syncBlueprintCharacterCandidates } from './blueprint-character-sync'
 import { workflowMainProcessError } from './workflow-project-session'
@@ -30,8 +30,9 @@ export async function retryDirectoryCharacterSync(
   operationId: string,
   expectedProjectPath: string,
   projectSession: ProjectSessionContext,
-  uiLocale: Locale,
+  interfaceLocale: ErrorDisplayLocale,
 ): Promise<DirectoryCharacterSyncReceipt> {
+  const uiLocale = copyLocale(interfaceLocale)
   const operation = await ipc.invokeWithProjectSession(
     projectSession,
     'db:blueprint-character-sync-get',
@@ -64,7 +65,7 @@ export async function retryDirectoryCharacterSync(
   )
   if (!completed.success || completed.operation?.status !== 'completed') {
     throw workflowMainProcessError(
-      uiLocale,
+      interfaceLocale,
       completed.error,
       '蓝图角色提议已保存，但回执未能持久化',
       'The blueprint character proposals were saved, but their receipt could not be stored.',
@@ -79,7 +80,7 @@ export async function retryDirectoryCharacterSync(
 export async function retryAllPendingDirectoryCharacterSyncs(
   expectedProjectPath: string,
   projectSession: ProjectSessionContext,
-  uiLocale: Locale,
+  interfaceLocale: ErrorDisplayLocale,
 ): Promise<DirectoryCharacterSyncReceipt[]> {
   const pending = await listPendingDirectoryCharacterSyncs(expectedProjectPath, projectSession)
   const receipts: DirectoryCharacterSyncReceipt[] = []
@@ -88,7 +89,7 @@ export async function retryAllPendingDirectoryCharacterSyncs(
       operation.operationId,
       expectedProjectPath,
       projectSession,
-      uiLocale,
+      interfaceLocale,
     ))
   }
   return receipts

@@ -1,8 +1,8 @@
 import { app } from 'electron'
 import { knownAppErrorMessage } from '../../src/i18n/app-errors'
-import { resolveLocale, translate } from '../../src/i18n/core'
-import type { Locale } from '../../src/i18n/types'
-import { getMainLocale } from '../i18n'
+import { errorLocaleForRun, resolveLocale, translate } from '../../src/i18n/core'
+import type { ErrorDisplayLocale, Locale } from '../../src/i18n/types'
+import { getMainLocale, mainErrorDisplayLocale } from '../i18n'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 
 const IPC_PREFIX = /^Error invoking remote method '[^']+': /u
@@ -29,7 +29,7 @@ function rawReason(error: unknown): string {
 export function explainImportRunFailure(error: unknown, locale: Locale | (() => Locale)): ImportRunFailure | undefined {
   const code = rawReason(error)
   if (!ERROR_CODE.test(code)) return undefined
-  const resolved = typeof locale === 'function' ? locale() : locale
+  const resolved = importErrorLocale(typeof locale === 'function' ? locale() : locale)
   return {
     error: knownAppErrorMessage(resolved, code) ?? translate(resolved, 'error.importRunCheckFailed', { code }),
     errorCode: code,
@@ -39,6 +39,11 @@ export function explainImportRunFailure(error: unknown, locale: Locale | (() => 
 /** 存进 last_error 的失败原因：去掉 Electron 的调用通道与错误类名前缀，认得出的码换成说明。 */
 export function persistedImportRunFailure(reason: string, locale: Locale | (() => Locale)): string {
   return explainImportRunFailure(reason, locale)?.error ?? rawReason(reason)
+}
+
+/** 导入报错查目录用的语言：运行语言与界面的文案语言一致时用界面语言（日文界面看英文运行得到 ja-JP），否则用运行语言。 */
+export function importErrorLocale(runLocale: Locale): ErrorDisplayLocale {
+  return errorLocaleForRun(runLocale, mainErrorDisplayLocale(app.getLocale()))
 }
 
 /** 说明用的语言：请求自带的导入语言优先，其次是导入运行记下的语言，都没有时用应用界面语言。 */

@@ -103,7 +103,7 @@ export function useCharacterProfile(projectKey: string) {
         setSaveOutcome('failed')
         const reason = displayedErrorMessage(currentInterfaceLocale(), error)
         setSaveError(reason)
-        addLog('error', text(`角色卡保存失败：${reason}`, englishWithReason('Could not save character cards.', reason)))
+        addLog('error', text(`角色卡保存失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not save character cards.', reason)))
       }
       if (propagateFailure) throw error
     }

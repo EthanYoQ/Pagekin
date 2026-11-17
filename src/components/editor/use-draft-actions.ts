@@ -410,7 +410,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
       const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`修稿启动失败：${reason}`, englishWithReason('Could not start AI revision.', reason)))
+      toast.error(text(`修稿启动失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not start AI revision.', reason)))
     }
   }
 
@@ -440,7 +440,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
       const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`审稿启动失败：${reason}`, englishWithReason('Could not start AI review.', reason)))
+      toast.error(text(`审稿启动失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not start AI review.', reason)))
     }
   }
 
@@ -509,7 +509,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
       const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`定稿启动失败：${reason}`, englishWithReason('Could not start finalization.', reason)))
+      toast.error(text(`定稿启动失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not start finalization.', reason)))
     }
   }
 
@@ -539,7 +539,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return
       const reason = displayedErrorMessage(currentInterfaceLocale(), error)
-      toast.error(text(`实体稿发布失败：${reason}`, englishWithReason('Could not publish the manuscript.', reason)))
+      toast.error(text(`实体稿发布失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not publish the manuscript.', reason)))
     }
   }, [currentProject, meta, projectKey, restored, tabId, text])
 
@@ -563,7 +563,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
       const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`修复启动失败：${reason}`, englishWithReason('Could not start the repair.', reason)))
+      toast.error(text(`修复启动失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not start the repair.', reason)))
     }
   }, [currentProject, isChapterBusy, meta, projectKey, projectMatches, text])
 
@@ -690,11 +690,11 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
         return true
       }
       const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
-      toast.error(text(`合并失败：${reason}`, englishWithReason('Could not merge the revision.', reason)))
+      toast.error(text(`合并失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not merge the revision.', reason)))
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return false
       const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`合并出错：${reason}`, englishWithReason('An error occurred while merging the revision.', reason)))
+      toast.error(text(`合并出错：${reason}`, englishWithReason(currentInterfaceLocale(), 'An error occurred while merging the revision.', reason)))
     }
     return false
   }
@@ -710,7 +710,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       }
     } catch (error) {
       const reason = displayedErrorMessage(currentInterfaceLocale(), error)
-      if (isProjectSessionCurrent(projectSession)) toast.error(text(`丢弃修稿失败：${reason}`, englishWithReason('Could not discard the revision.', reason)))
+      if (isProjectSessionCurrent(projectSession)) toast.error(text(`丢弃修稿失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not discard the revision.', reason)))
     }
     if (isProjectSessionCurrent(projectSession)) reload()
   }

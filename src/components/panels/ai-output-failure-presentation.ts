@@ -1,7 +1,7 @@
 import { knownAppErrorMessage } from '../../i18n/app-errors'
 import { classifyGenerationFailure } from '../../services/generation/prompt-budget-failure'
 import { copyLocale } from '../../i18n/core'
-import type { InterfaceLocale, Locale } from '../../i18n/types'
+import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
 import type { PromptBudgetReport } from '../../services/generation/generation-harness'
 import type { WorkflowFailureCode, WorkflowStep } from '../../stores/workflow-store'
 
@@ -107,7 +107,7 @@ function promptBudgetAdjustment(
 export function presentWorkflowFailure(
   failureCode: WorkflowFailureCode | undefined,
   error: string | undefined,
-  locale: InterfaceLocale,
+  locale: ErrorDisplayLocale,
   isUnpersistedChapterDraft: boolean,
   promptBudgetReport?: PromptBudgetReport,
   activity?: WorkflowStep['generationActivity'],

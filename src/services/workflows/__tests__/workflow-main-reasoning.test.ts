@@ -6,6 +6,7 @@ import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowReasoningStore } from '../../../stores/workflow-reasoning-store'
 import { createWorkflowMainGenerationRuntime } from '../workflow-main-generation'
 import type { createMainGenerationTransport } from '../../generation/main-generation-transport'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const session: ProjectSessionContext = { projectId: 'novel', leaseId: 'lease', projectPath: 'C:/novel' }
 const handle = { projectId: session.projectId, epoch: session.leaseId, rootActionId: 'root', runId: 'generation' }
@@ -27,7 +28,7 @@ it.each(['navigation', 'snapshot'] as const)('pauses the opened run and restores
   const previousCancellation = vi.fn()
   const previousHandle = { ...handle, runId: 'previous-run' }
   const context: WorkflowContext = { runId: 'workflow', projectPath: session.projectPath, projectSession: session,
-    generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false, mainGenerationRunHandle: previousHandle,
+    generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false, mainGenerationRunHandle: previousHandle,
     requestMainGenerationCancellation: previousCancellation }
   await expect(createWorkflowMainGenerationRuntime({ context,
     callbacks: { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() },
@@ -47,7 +48,7 @@ it('keeps the import ordinal when budget preflight rejects before a physical rec
   vi.stubGlobal('window', { aiNovelAPI: { invoke } })
   const transport = { read: vi.fn(async () => view), subscribe: vi.fn(() => () => {}) } as unknown as ReturnType<typeof createMainGenerationTransport>
   const context: WorkflowContext = { runId: 'workflow', projectPath: session.projectPath, projectSession: session,
-    generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false }
+    generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
   const runtime = await createWorkflowMainGenerationRuntime({ context,
     callbacks: { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() },
     selection: { operation: 'import-global-facts', promptKeys: [], skillStages: [], output: 'structured-data',

@@ -22,6 +22,7 @@ import { importStagesFor, type ImportRunChapterSnapshot } from '../../../src/sha
 import type { FinalizedDraftImportReceipt } from '../../../src/shared/finalized-draft-import'
 import type { ImportGlobalFactsRequest } from '../../../src/shared/import-global-facts'
 import { countDraftUnits } from '../../../src/shared/draft-units'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 let root = ''
 const RUN_ID = 'author-eight-stage-run'
@@ -105,7 +106,7 @@ function newTrace(): Trace {
 }
 
 function dependencies(trace: Trace): ImportRunOrchestratorDependencies {
-  return {
+  return { interfaceLocale: shown('zh-CN'),
     getRun: async runId => ImportRunRepository.get(runId),
     startOrResume: async (runId, owner) => ImportRunRepository.startOrResume(runId, owner),
     renewExecution: async (runId, execution) => ImportRunRepository.renewExecution(runId, execution),

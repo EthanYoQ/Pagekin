@@ -316,8 +316,8 @@ async function runOneBatchChapter(
       if (!publication.success) {
         // committed 为 false 时重试根本没执行（定稿记录已不在、会话不对），不能说定稿已提交。
         throw publication.committed
-          ? workflowMainProcessError(uiLocale, publication.error, '定稿已提交、实体稿待发布', 'Finalization was committed, but manuscript publication is still pending.')
-          : workflowMainProcessError(uiLocale, publication.error, '实体稿没有重新发布', 'The manuscript was not published again.')
+          ? workflowMainProcessError(context.interfaceLocale, publication.error, '定稿已提交、实体稿待发布', 'Finalization was committed, but manuscript publication is still pending.')
+          : workflowMainProcessError(context.interfaceLocale, publication.error, '实体稿没有重新发布', 'The manuscript was not published again.')
       }
     }
     if (!saved?.postProcessComplete) {
@@ -408,6 +408,7 @@ export function createBatchChapterWorkflow(params: BatchChapterWorkflowParams): 
     ],
     completionMode,
     backgroundNotice: { stage: 'batch', startChapter: startChapterNumber, endChapter: endChapterNumber },
+    uiLocale,
     title: localeText(uiLocale, `${modeZh} · ${rangeZh}`, `${modeEn} · ${rangeEn}`),
     steps: Array.from({ length: chapterCount }, (_, index) => {
       const chapterNumber = startChapterNumber + index

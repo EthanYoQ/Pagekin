@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import type { WorkflowContext } from '../../../stores/workflow-store'
 import { workflowMainProcessError } from '../workflow-project-session'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const fail = (uiLocale: WorkflowContext['uiLocale'], error: unknown) =>
-  workflowMainProcessError(uiLocale, error, '定稿事务未提交', 'The finalization transaction was not committed.')
+  workflowMainProcessError(shown(uiLocale), error, '定稿事务未提交', 'The finalization transaction was not committed.')
 
 describe('workflow failures carrying a main-process error (#466)', () => {
   it('英文界面不转出主进程的中文原文，只给英文说明', () => {
@@ -39,7 +40,7 @@ describe('workflow failures carrying a main-process error (#466)', () => {
   })
 
   it('日文界面：概述用英文文案，登记过的码按日文说明，未登记的中文原文不接上', () => {
-    const fromJapanese = (error: unknown) => workflowMainProcessError('ja-JP', error, '定稿事务未提交', 'The finalization transaction was not committed.').message
+    const fromJapanese = (error: unknown) => workflowMainProcessError(shown('ja-JP'), error, '定稿事务未提交', 'The finalization transaction was not committed.').message
     expect(fromJapanese('PROJECT_NOT_OPEN')).toBe('The finalization transaction was not committed. 先にプロジェクトを開いてください。')
     expect(fromJapanese('Error: 项目数据库未打开')).toBe('The finalization transaction was not committed.')
   })

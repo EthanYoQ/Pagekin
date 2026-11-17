@@ -2,7 +2,7 @@ import { create, type StateCreator } from 'zustand'
 import { ipc } from '../services/ipc-client'
 import { copyLocale, localize, resolveInterfaceLocale, storedInterfaceLocale, translate, type MessageKey, type MessageParams } from '../i18n/core'
 import { displayedErrorMessage } from '../i18n/app-errors'
-import type { InterfaceLocale, Locale } from '../i18n/types'
+import type { ErrorDisplayLocale, InterfaceLocale, Locale } from '../i18n/types'
 import type { GlobalConfig } from '../shared/ipc-channels'
 
 export interface LocaleDependencies {
@@ -33,8 +33,8 @@ function localeFields(interfaceLocale: InterfaceLocale): Pick<LocaleState, 'inte
  * Interface language in effect. Code that sets only `locale` (as tests do with setState) leaves
  * `interfaceLocale` behind; then `locale` wins, so the catalog and the colocated copy never disagree.
  */
-export function activeInterfaceLocale(state: Pick<LocaleState, 'interfaceLocale' | 'locale'>): InterfaceLocale {
-  return copyLocale(state.interfaceLocale) === state.locale ? state.interfaceLocale : state.locale
+export function activeInterfaceLocale(state: Pick<LocaleState, 'interfaceLocale' | 'locale'>): ErrorDisplayLocale {
+  return (copyLocale(state.interfaceLocale) === state.locale ? state.interfaceLocale : state.locale) as ErrorDisplayLocale
 }
 
 function createLocaleSaveLedger(initiallySaved: InterfaceLocale) {
@@ -103,7 +103,7 @@ export function createLocaleState(dependencies: LocaleDependencies): StateCreato
         set({ ...localeFields(fallback), ...localeReaders() })
         dependencies.setDocumentLanguage(fallback)
         const fallbackCopyLocale = copyLocale(fallback)
-        const reason = displayedErrorMessage(fallback, error)
+        const reason = displayedErrorMessage(activeInterfaceLocale(get()), error)
         await dependencies.reportError?.(
           localize(fallbackCopyLocale, `语言设置保存失败：${reason}`, `Could not save the language setting: ${reason}`),
           localize(fallbackCopyLocale, '语言设置保存失败', 'Could not save language setting'),
@@ -128,10 +128,6 @@ const browserDependencies: LocaleDependencies = {
 
 export const useLocaleStore = create<LocaleState>(createLocaleState(browserDependencies))
 
-export function currentInterfaceLocale(): InterfaceLocale {
+export function currentInterfaceLocale(): ErrorDisplayLocale {
   return activeInterfaceLocale(useLocaleStore.getState())
-}
-
-export function errorLocaleForRun(runCopyLocale: Locale, shown: InterfaceLocale): InterfaceLocale {
-  return copyLocale(shown) === runCopyLocale ? shown : runCopyLocale
 }

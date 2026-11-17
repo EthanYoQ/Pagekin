@@ -28,6 +28,7 @@ import {
   loadProjectCustomPrompts,
   saveProjectCustomPrompt,
 } from '../../../prompt-templates'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 class GenerateConfigCommand extends RuntimeGenerateConfigCommand {
   constructor(...args: ConstructorParameters<typeof RuntimeGenerateConfigCommand>) {
@@ -197,7 +198,7 @@ const context: WorkflowContext = {
   projectPath: projectAPath,
   projectSession: { projectId: 'main', leaseId: 'lease-main', projectPath: projectAPath },
   writingLanguage: 'zh-CN',
-  uiLocale: 'zh-CN',
+  uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
   data: {},
   cancelled: false,
 }
@@ -539,7 +540,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const runContext = {
       ...context,
       writingLanguage: 'en-US' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
       data: {},
     }
     const englishCallbacks = callbacks
@@ -650,7 +651,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       aiNovelAPI: { invoke, on: vi.fn(), once: vi.fn(), send: vi.fn(), setZoomLevel: vi.fn(), setZoomFactor: vi.fn(), getZoomLevel: vi.fn() },
     })
     const snapshot = { expectedProjectPath: projectAPath, novelConfig } as never
-    const makeContext = (): WorkflowContext => ({ ...context, writingLanguage: 'en-US', uiLocale: 'en-US', data: {} })
+    const makeContext = (): WorkflowContext => ({ ...context, writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US'), data: {} })
     await expect(new GenerateWorldBuildingCommand(snapshot, workflowRuntimeDependencies)
       .execute({ step: {}, context: makeContext(), callbacks })).rejects.toThrow('The incomplete candidate was saved')
     expect(generateStream).toHaveBeenCalledTimes(2)
@@ -698,7 +699,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const runContext = {
       ...context,
       writingLanguage: 'zh-CN' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
       data: {},
     }
     const stepCallbacks = callbacks
@@ -728,7 +729,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const runContext = {
       ...context,
       writingLanguage: 'en-US' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
       data: {},
     }
     const stepCallbacks = callbacks
@@ -773,7 +774,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const runContext = {
       ...context,
       writingLanguage: 'en-US' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
     }
     const observed = new Map<string, string>()
     useLLMStore.setState({ defaultModelId: 'model-1' })
@@ -852,7 +853,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     })
     const runContext = {
       ...context,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
       data: { stepGuidance: { characters: '' } },
       cancelled: false,
     }
@@ -1097,7 +1098,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     })).resolves.toBe(true)
     const eightContext = {
       ...context,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
       data: { stepGuidance: { characters: '必须塑造八名群像角色，覆盖不同立场且关系闭合。' } },
       writingSkills: Object.freeze({
         planning: Object.freeze({
@@ -1890,7 +1891,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const runContext = {
       ...context,
       writingLanguage: 'en-US' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
       data: { stepGuidance: { characters: '' } },
       cancelled: false,
     }
@@ -1955,7 +1956,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     const runContext = {
       ...context,
       writingLanguage: 'en-US' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
       data: { stepGuidance: { characters: '' } },
       cancelled: false,
     }
@@ -2101,7 +2102,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     })
     const failure = await command.execute({
       step: {},
-      context: { ...context, uiLocale: 'en-US' },
+      context: { ...context, uiLocale: 'en-US', interfaceLocale: shown('en-US') },
       callbacks,
     }).then(() => null, error => error as Error)
 

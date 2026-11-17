@@ -17,6 +17,7 @@ import { createHumanConfirmedReviewSnapshot, serializeHumanConfirmedReviewSnapsh
 import { clearProjectCustomPrompts, getBuiltinPromptTemplate, getPromptSource } from '../../../prompt-templates'
 import { ipcPromptPersistence } from '../../../prompt-catalog'
 import type { FinalizedContinuityProjection } from '../../../../shared/finalized-continuity'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const projectPath = 'C:\\synthetic\\review-runtime'
 const session = { projectId: 'review-runtime', projectPath, leaseId: 'review-epoch' }
@@ -68,7 +69,7 @@ function setup(responses: Response[], projections: FinalizedContinuityProjection
   })
   vi.stubGlobal('window', { aiNovelAPI: { invoke } })
   const context: WorkflowContext = { runId: 'consumer-action', projectPath, projectSession: session,
-    writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false }
+    writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
   const callbacks = { log: vi.fn(), appendText: vi.fn(), replaceText: vi.fn(), setProgress: vi.fn() }
   const args = { step: {}, context, callbacks }
   const command = (operation: ReviewRevisionOperation, overrides: Partial<ReviewRevisionCommandSource> = {}) => {
@@ -601,6 +602,7 @@ describe('review/revision consumers using the main contract (synthetic transport
     })
     english.args.context.writingLanguage = 'en-US'
     english.args.context.uiLocale = 'en-US'
+    english.args.context.interfaceLocale = shown('en-US')
     await english.command('refine-from-review').execute(english.args)
     const prompt = english.provider.mock.calls[0]![0].find(message => message.role === 'user')!.content
     expect(prompt).toContain('[Complete revision task contract]')

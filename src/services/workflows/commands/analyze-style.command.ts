@@ -158,7 +158,7 @@ export class AnalyzeWritingStyleCommand extends BaseWorkflowCommand<string> {
       } else {
         const saveResult = await ipc.invokeWithProjectSession(projectSession, 'db:project-core-update',
           { writingStyle: cleanResult }, context.projectPath)
-        if (!saveResult.success) throw workflowMainProcessError(context.uiLocale, saveResult.error, '文风特征保存失败', 'Failed to save the writing-style profile.')
+        if (!saveResult.success) throw workflowMainProcessError(context.interfaceLocale, saveResult.error, '文风特征保存失败', 'Failed to save the writing-style profile.')
       }
       if (!sameProjectSessionContext(
         projectSession,

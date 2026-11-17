@@ -11,6 +11,7 @@ import {
 import { guardChapterWriting } from '../../services/workflow-guards'
 import { ipc } from '../../services/ipc-client'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
+import { errorLocaleForRun } from '../../i18n/core'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { routeStageModel } from '../../shared/model-stage-routing'
 import {
@@ -191,7 +192,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
       if (!guard.ok) {
         setError(frozenLocale === 'en-US'
           ? 'Writing prerequisites are not met. Complete the project setup and previous finalized chapter before starting.'
-          : displayedErrorMessage(frozenLocale, guard.message, '前置条件未满足。'))
+          : displayedErrorMessage(errorLocaleForRun(frozenLocale, currentInterfaceLocale()), guard.message, '前置条件未满足。'))
         return
       }
 

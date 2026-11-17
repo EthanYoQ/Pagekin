@@ -18,7 +18,6 @@ import { currentProjectSessionForPath, isCurrentProjectSession } from '../../edi
  */
 export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
   const text = useLocaleStore(state => state.text)
-  const locale = useLocaleStore(state => state.locale)
   const [session] = useState(() => currentProjectSessionForPath(projectKey))
   const currentProject = useProjectStore(state => state.currentProject)
   const sessionCurrent = sameProjectSessionContext(session, projectSessionContextFromProject(currentProject))
@@ -66,7 +65,7 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
       if (!submission) {
         const authorEnd = Number(endRef.current)
         if (!Number.isSafeInteger(authorEnd) || authorEnd < originalRange.from || authorEnd > originalRange.to) throw new Error(text('请选择连续完整章节的终点', 'Choose the last complete consecutive chapter.'))
-        const blueprints = parseTextBlueprintsStrict(snapshot.content ?? '', originalRange.from, authorEnd, locale, 'author')
+        const blueprints = parseTextBlueprintsStrict(snapshot.content ?? '', originalRange.from, authorEnd, currentInterfaceLocale(), 'author')
         submission = {
           content: snapshot.content ?? '', contentRevision: snapshot.contentRevision ?? 0,
           status: 'pending', channel: 'db:blueprint-commit-range',
@@ -89,7 +88,7 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
       await refresh()
     } catch (reason) { setError(failureText(reason)); if (propagate) throw reason }
     finally { busyRef.current = false; setBusy(false) }
-  }, [failureText, locale, projectKey, refresh, session, tab.id, tab.planningRecovery, text])
+  }, [failureText, projectKey, refresh, session, tab.id, tab.planningRecovery, text])
   useEffect(() => {
     registerEditorExitSaveHandler({ tabId: tab.id, type: 'chapter-card', save: () => save(true) })
   }, [save, tab.id])

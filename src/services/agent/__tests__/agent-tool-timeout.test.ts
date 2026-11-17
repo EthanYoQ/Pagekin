@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { runAgentLoop } from '../agent-engine'
 import { toolRegistry, type AgentExecutionContext, type ToolResult } from '../tool-registry'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 function callbacks() {
   return {
@@ -18,7 +19,7 @@ function context(): AgentExecutionContext {
   return {
     projectSession: null,
     selectedModelId: 'model',
-    uiLocale: 'en-US',
+    uiLocale: 'en-US', interfaceLocale: shown('en-US'),
     writingLanguage: 'en-US',
   }
 }

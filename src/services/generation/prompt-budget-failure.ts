@@ -1,4 +1,4 @@
-import type { InterfaceLocale, Locale } from '../../i18n/types'
+import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
 import { knownAppErrorMessage } from '../../i18n/app-errors'
 import {
   PromptBudgetExceededError,
@@ -122,7 +122,7 @@ export function classifyGenerationFailure(
 }
 
 /** Registered guidance when the provider rejected the request as too long; undefined for any other failure. */
-export function providerContextFailureText(error: unknown, locale: InterfaceLocale): string | undefined {
+export function providerContextFailureText(error: unknown, locale: ErrorDisplayLocale): string | undefined {
   let message = ''
   if (error instanceof Error) message = error.message
   else if (typeof error === 'string') message = error

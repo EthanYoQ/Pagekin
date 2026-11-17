@@ -93,6 +93,8 @@ export interface AgentExecutionContext {
   readonly projectSession: ProjectSessionContext | null
   /** Visible interface language frozen for this complete Agent turn. */
   readonly uiLocale: import('../../i18n/types').Locale
+  /** 查报错目录用的界面语言，与 uiLocale 同时冻结。 */
+  readonly interfaceLocale: import('../../i18n/types').ErrorDisplayLocale
   /** Model-facing language frozen for this complete Agent turn. */
   readonly writingLanguage: WritingLanguage
   /**

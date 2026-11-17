@@ -231,7 +231,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
     if (!projectSession || !isProjectSessionCurrent(projectSession)) return
     setIsRecovering(true)
     try {
-      await retryAllPendingDirectoryCharacterSyncs(currentProject.path, projectSession, locale)
+      await retryAllPendingDirectoryCharacterSyncs(currentProject.path, projectSession, currentInterfaceLocale())
       if (!isProjectSessionCurrent(projectSession)) return
       const remaining = await listPendingDirectoryCharacterSyncs(currentProject.path, projectSession)
       if (!isProjectSessionCurrent(projectSession)) return

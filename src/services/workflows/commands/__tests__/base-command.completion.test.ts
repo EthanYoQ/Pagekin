@@ -12,6 +12,7 @@ import {
 } from '../base-command'
 import { fakeLeaseModelId, fakeRuntimeDependencies } from './workflow-generation-runtime.fixture'
 import { useLLMStore } from '../../../../stores/llm-store'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 type ProbeStep =
   | { kind: 'single' }
@@ -76,7 +77,7 @@ const context: WorkflowContext = {
   projectPath: 'C:\\novels\\probe',
   projectSession: { projectId: 'probe', leaseId: 'lease-probe', projectPath: 'C:\\novels\\probe' },
   writingLanguage: 'zh-CN',
-  uiLocale: 'zh-CN',
+  uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
   data: {},
   cancelled: false,
 }
@@ -199,7 +200,7 @@ describe('BaseWorkflowCommand completion boundary', () => {
 
     await expect(new CompletionProbeCommand(dependencies).execute({
       step: { kind: 'single' } satisfies ProbeStep,
-      context: { ...context, uiLocale: 'en-US', writingLanguage: 'zh-CN' },
+      context: { ...context, uiLocale: 'en-US', interfaceLocale: shown('en-US'), writingLanguage: 'zh-CN' },
       callbacks,
     })).rejects.toThrow('AI output reached this request length limit and is not yet complete')
   })

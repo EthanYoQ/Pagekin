@@ -664,7 +664,7 @@ async function writeArchToDb(
     ? await ipc.invokeWithProjectSession(projectSession, 'db:project-core-commit-generated', { data: { [key]: cleanContent }, generationRunHandle }, expectedProjectPath)
     : await ipc.invokeWithProjectSession(projectSession, 'db:project-core-update', { [key]: cleanContent }, expectedProjectPath)
   if (!result.success) {
-    throw workflowMainProcessError(context.uiLocale, result.error, '故事架构写入数据库失败', 'Failed to write story architecture to the database.')
+    throw workflowMainProcessError(context.interfaceLocale, result.error, '故事架构写入数据库失败', 'Failed to write story architecture to the database.')
   }
 
   // 通知 UI 层实时刷新架构完成状态
@@ -794,7 +794,7 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
     try {
       parsed = decodeCompleteNovelConfig(resultRaw, this.totalChapters, this.wordsPerChapter, text)
     } catch (e) {
-      const detail = displayedErrorMessage(context.uiLocale, e)
+      const detail = displayedErrorMessage(context.interfaceLocale, e)
       throw new Error(text(
         `AI 返回的小说配置不完整或无效，结果未应用。详细信息：${detail}`,
         `The AI novel configuration was incomplete or invalid, so the result was not applied. Details: ${detail}`,
@@ -1100,10 +1100,10 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
     try {
       manifest = decodeCharacterIdentityManifest(manifestRaw)
     } catch (error) {
-      const detail = displayedErrorMessage(context.uiLocale, error)
+      const detail = displayedErrorMessage(context.interfaceLocale, error)
       throw new Error(text(
         detail,
-        englishWithReason('The character identity manifest was invalid, so no character data was saved.', detail),
+        englishWithReason(context.interfaceLocale, 'The character identity manifest was invalid, so no character data was saved.', detail),
       ))
     }
     this.assertNotCancelled(context)
@@ -1220,8 +1220,8 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
         `attempts=${attempts}`,
       ].join(' ')
       throw new Error(text(
-        `${displayedErrorMessage(context.uiLocale, detailExecution.failure.message)}；角色详情失败收据：${failureReceipt}`,
-        `${knownAppErrorMessage(context.uiLocale, detailExecution.failure.message) ?? englishWithReason('Character details failed structural validation and were not saved.', displayedErrorMessage(context.uiLocale, detailExecution.failure.message))} Receipt: ${failureReceipt}`,
+        `${displayedErrorMessage(context.interfaceLocale, detailExecution.failure.message)}；角色详情失败收据：${failureReceipt}`,
+        `${knownAppErrorMessage(context.interfaceLocale, detailExecution.failure.message) ?? englishWithReason(context.interfaceLocale, 'Character details failed structural validation and were not saved.', displayedErrorMessage(context.interfaceLocale, detailExecution.failure.message))} Receipt: ${failureReceipt}`,
       ))
     }
     if (detailExecution.items.length !== manifest.length) {
@@ -1471,7 +1471,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
           expectedDbHash,
           stepGuidance,
         )
-        const detail = displayedErrorMessage(context.uiLocale, error)
+        const detail = displayedErrorMessage(context.interfaceLocale, error)
         throw new WorldBuildingResumeAvailableError(text(
           `世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。原因：${detail}`,
           `Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason: ${detail}`,
@@ -1985,8 +1985,8 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         `The completed part (about ${partialBody.length} ${pluralEn(partialBody.length, 'character')}) was saved. Click “Continue plot outline” to resume from the break point.`,
       ))
       throw new PlotOutlineResumeAvailableError(text(
-        `情节大纲没生成完就中断了：${displayedErrorMessage(context.uiLocale, cause)}。已完成的约 ${partialBody.length} 字已保存。\n点「继续生成情节大纲」接着写第 ${from}–${to} 章；本批太大就先在「AI 生成架构」调小每批章数。`,
-        `Plot-outline generation stopped early: ${displayedErrorMessage(context.uiLocale, cause)}. The finished part (about ${partialBody.length} ${pluralEn(partialBody.length, 'character')}) was saved.\nClick “Continue plot outline” to finish chapters ${from}-${to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.`,
+        `情节大纲没生成完就中断了：${displayedErrorMessage(context.interfaceLocale, cause)}。已完成的约 ${partialBody.length} 字已保存。\n点「继续生成情节大纲」接着写第 ${from}–${to} 章；本批太大就先在「AI 生成架构」调小每批章数。`,
+        `Plot-outline generation stopped early: ${displayedErrorMessage(context.interfaceLocale, cause)}. The finished part (about ${partialBody.length} ${pluralEn(partialBody.length, 'character')}) was saved.\nClick “Continue plot outline” to finish chapters ${from}-${to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.`,
       ))
     }
 
@@ -2330,8 +2330,8 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         )
       } catch (rollbackError) {
         // 只有回滚也失败时才拼成一句；单独的 commitError 原样抛出，由失败面板按码说明。
-        const commitDetail = displayedErrorMessage(context.uiLocale, commitError)
-        const detail = displayedErrorMessage(context.uiLocale, rollbackError)
+        const commitDetail = displayedErrorMessage(context.interfaceLocale, commitError)
+        const detail = displayedErrorMessage(context.interfaceLocale, rollbackError)
         throw new Error(text(
           `${commitDetail} 同时无法安全恢复旧检查点：${detail}`,
           `${commitDetail} The previous checkpoint also could not be restored safely: ${detail}`,

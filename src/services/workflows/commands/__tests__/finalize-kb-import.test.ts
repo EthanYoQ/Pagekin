@@ -2,13 +2,14 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import type { WorkflowContext } from '../../../../stores/workflow-store'
 import { buildFinalizePostProcessSteps, type FinalizePostProcessGeneration } from '../finalize-chapter.command'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const PROJECT_PATH = 'C:\\novels\\A'
 const SESSION = { projectId: 'A', leaseId: 'lease-A', projectPath: PROJECT_PATH }
 const generation: FinalizePostProcessGeneration = { complete: async () => { throw new Error('unused') } }
 
 function context(): WorkflowContext {
-  return { runId: 'kb-import', projectPath: PROJECT_PATH, projectSession: SESSION, uiLocale: 'zh-CN', writingLanguage: 'zh-CN', data: {}, cancelled: false }
+  return { runId: 'kb-import', projectPath: PROJECT_PATH, projectSession: SESSION, uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), writingLanguage: 'zh-CN', data: {}, cancelled: false }
 }
 
 afterEach(() => {

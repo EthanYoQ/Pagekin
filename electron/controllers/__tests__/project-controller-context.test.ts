@@ -196,6 +196,7 @@ vi.mock('../../repositories/finalization-repository', () => ({
 }))
 
 import { registerProjectController } from '../project-controller'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 function selectedProject(projectPath: string) {
   return { grantId: `selected:${projectPath}`, displayName: path.basename(projectPath) }
@@ -733,8 +734,8 @@ describe('project controller project identity', () => {
         mocks.probeProjectSqlite.mockImplementationOnce(() => { throw new Error(reason) })
       }
       const result = await handler('project:open')({ sender: { id: 17, once: vi.fn() } }, selectedProject(projectB), 'request-legacy-blocked') as { error: string }
-      expect(appErrorMessage('zh-CN', result.error)).toBe(zhCN)
-      expect(appErrorMessage('en-US', result.error)).toBe(enUS)
+      expect(appErrorMessage(shown('zh-CN'), result.error)).toBe(zhCN)
+      expect(appErrorMessage(shown('en-US'), result.error)).toBe(enUS)
       expect(result).toMatchObject({
         success: false,
         databaseRestored: true,
@@ -754,7 +755,7 @@ describe('project controller project identity', () => {
     })
     const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(ordinaryDirectory), 'request-unqualified-legacy') as { error: string }
     expect(result).not.toHaveProperty('errorCode')
-    expect(appErrorMessage('en-US', result.error)).toBe('This project cannot be converted safely yet. The original was kept and nothing was written. Use Import legacy project to create a complete copy.')
+    expect(appErrorMessage(shown('en-US'), result.error)).toBe('This project cannot be converted safely yet. The original was kept and nothing was written. Use Import legacy project to create a complete copy.')
     expect(result).toMatchObject({
       success: false,
       databaseRestored: true,

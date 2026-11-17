@@ -275,7 +275,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
     if (!execution?.mainOwned || !handle) return
     const { context } = execution
     const logFailure = (error: unknown) => {
-      const reason = displayedErrorMessage(context.uiLocale, error)
+      const reason = displayedErrorMessage(context.interfaceLocale, error)
       callbacks.log(workflowUiText(context, `丢弃没通过校验的导入输出失败：${reason}`, `Could not discard the rejected import output: ${reason}`))
     }
     const view = await ipc.invokeWithProjectSession(context.projectSession, 'generation:read', handle).catch(logFailure)

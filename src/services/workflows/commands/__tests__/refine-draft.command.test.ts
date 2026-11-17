@@ -20,6 +20,7 @@ import { RefineFromReviewCommand as RuntimeRefineFromReviewCommand } from '../re
 import { ReviewChapterCommand as RuntimeReviewChapterCommand } from '../review-chapter.command'
 import type { CommandExecuteParams, WorkflowGenerationRuntimeDependencies } from '../base-command'
 import { ReviewRevisionRuntimeFixture } from './review-revision-runtime.fixture'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 
 let mainFixture: ReviewRevisionRuntimeFixture
@@ -134,7 +135,7 @@ function workflowContext(options: { generationModelId?: string } = {}): Workflow
     projectSession: PROJECT_SESSION,
     ...(options.generationModelId ? { generationModelId: options.generationModelId } : {}),
     writingLanguage: 'zh-CN',
-    uiLocale: 'zh-CN',
+    uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
     data: {},
     cancelled: false,
   }
@@ -328,7 +329,7 @@ describe('RefineDraftCommand bounded visible completion', () => {
     const context = {
       ...workflowContext(),
       writingLanguage: 'zh-CN' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
     } as WorkflowContext & { uiLocale: 'en-US' }
 
     await command(completeWithLease, source).execute({ step: {}, context, callbacks: stepCallbacks })
@@ -615,7 +616,7 @@ describe('RefineDraftCommand bounded visible completion', () => {
       contentRevision: 4,
     }).execute({
       step: {},
-      context: { ...workflowContext(), writingLanguage: 'zh-CN', uiLocale: 'en-US' },
+      context: { ...workflowContext(), writingLanguage: 'zh-CN', uiLocale: 'en-US', interfaceLocale: shown('en-US') },
       callbacks: callbacks(),
     }).catch(cause => cause)
 
@@ -687,7 +688,7 @@ describe('RefineFromReviewCommand bounded visible completion', () => {
     const context = {
       ...workflowContext(),
       writingLanguage: 'zh-CN' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
     } as WorkflowContext & { uiLocale: 'en-US' }
 
     await reviewCommand(completeWithLease, source, {
@@ -717,7 +718,7 @@ describe('RefineFromReviewCommand bounded visible completion', () => {
     const context = {
       ...workflowContext(),
       writingLanguage: 'zh-CN' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
     } as WorkflowContext & { uiLocale: 'en-US' }
 
     await expect(target.execute({ step: {}, context, callbacks: callbacks() }))
@@ -1098,7 +1099,7 @@ describe('ReviewChapterCommand reasoning stage', () => {
       contentRevision: 8,
     }).execute({
       step: {},
-      context: { ...workflowContext(), writingLanguage: 'en-US', uiLocale: 'zh-CN' },
+      context: { ...workflowContext(), writingLanguage: 'en-US', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN') },
       callbacks: callbacks(),
     }).catch(cause => cause)
 
@@ -1432,7 +1433,7 @@ describe('ReviewChapterCommand reasoning stage', () => {
     const context = {
       ...workflowContext(),
       writingLanguage: 'zh-CN' as const,
-      uiLocale: 'en-US' as const,
+      uiLocale: 'en-US' as const, interfaceLocale: shown('en-US'),
     } as WorkflowContext & { uiLocale: 'en-US' }
 
     await chapterReviewCommand(completeWithLease).execute({ step: {}, context, callbacks: stepCallbacks })

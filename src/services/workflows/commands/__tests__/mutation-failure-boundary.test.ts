@@ -23,6 +23,7 @@ import { ReviewRevisionRuntimeFixture } from './review-revision-runtime.fixture'
 
 let mainFixture: ReviewRevisionRuntimeFixture
 import { parseFinalizedCharacterStateResponse, type FinalizedCharacterContext, type FinalizedSourceIdentity } from '../../../../shared/finalized-continuity'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 class RefineDraftCommand extends RuntimeRefineDraftCommand {
   private readonly fixtureSource: ConstructorParameters<typeof RuntimeRefineDraftCommand>[0]
@@ -152,7 +153,7 @@ function context(): WorkflowContext {
     projectPath: PROJECT_PATH,
     projectSession: { projectId: 'A', leaseId: 'lease-A', projectPath: PROJECT_PATH },
     writingLanguage: 'zh-CN',
-    uiLocale: 'zh-CN',
+    uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
     data: {},
     cancelled: false,
   }
@@ -1268,7 +1269,7 @@ describe('workflow mutation failure boundaries', () => {
 
     await expect(command.execute({
       step: {},
-      context: { ...context(), uiLocale: 'en-US', writingLanguage: 'en-US' },
+      context: { ...context(), uiLocale: 'en-US', interfaceLocale: shown('en-US'), writingLanguage: 'en-US' },
       callbacks: callbacks(),
     })).rejects.toThrow('The AI review response was invalid twice')
 
@@ -1477,7 +1478,7 @@ describe('workflow mutation failure boundaries', () => {
 
     await expect(command.execute({
       step: {},
-      context: { ...context(), uiLocale: 'en-US' },
+      context: { ...context(), uiLocale: 'en-US', interfaceLocale: shown('en-US') },
       callbacks: callbacks(),
     })).rejects.toThrow('Automatic continuation ran 1 time, but the output is not yet complete')
 

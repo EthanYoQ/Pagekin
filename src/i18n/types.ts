@@ -11,3 +11,11 @@ export const COPY_LOCALES = ['zh-CN', 'en-US'] as const
 
 export type Locale = typeof COPY_LOCALES[number]
 export type MessageParams = Record<string, string | number>
+
+declare const errorDisplay: unique symbol
+
+/**
+ * 查报错目录用的语言：作者在设置里选的界面语言。只由 locale-store、主进程配置和 errorLocaleForRun 给出，
+ * 文案语言 `Locale`（日文界面下是 en-US）传不进来，放宽成 `InterfaceLocale` 也不行。
+ */
+export type ErrorDisplayLocale = InterfaceLocale & { readonly [errorDisplay]: true }

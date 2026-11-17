@@ -555,8 +555,8 @@ export function appendVisibleDraftContinuation(draft: string, continuation: stri
  * 拼进日志与失败说明的原因：只看 message，裸码（含 IPC 前缀）按界面语言说明。不看 error.code，
  * 因为带码的错误（workflowMainProcessError）message 里已经写好了概述，按码替换会丢掉它。
  */
-function shownReason(context: Pick<CommandExecuteParams['context'], 'uiLocale'>, error: unknown): string {
-  return displayedErrorMessage(context.uiLocale, error instanceof Error ? error.message : error)
+function shownReason(context: Pick<CommandExecuteParams['context'], 'interfaceLocale'>, error: unknown): string {
+  return displayedErrorMessage(context.interfaceLocale, error instanceof Error ? error.message : error)
 }
 
 export class GenerateDraftCommand extends BaseWorkflowCommand {
@@ -671,7 +671,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           ...(contextWindowRetryOf ? { contextWindowRetryOf } : {}),
         }).catch(error => {
           const code = error instanceof Error ? /(?:^|:\s)(KNOWLEDGE_BASE_NATIVE_UNAVAILABLE|LEGACY_VECTOR_MIGRATION_BLOCKED)$/u.exec(error.message)?.[1] : undefined
-          if (code) throw Object.assign(new Error(appErrorMessage(context.uiLocale ?? 'zh-CN', { code })), { code })
+          if (code) throw Object.assign(new Error(appErrorMessage(context.interfaceLocale, { code })), { code })
           throw error
         }) : null
       return { characterMaterial, authorInputs, prepared }
@@ -1346,7 +1346,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       })()
       const nextVersion = createResult.version
       if (!createResult.success || !createResult.id) {
-        throw workflowMainProcessError(context.uiLocale, 'error' in createResult ? createResult.error : undefined, '章节草稿保存失败', 'Failed to save the chapter draft.')
+        throw workflowMainProcessError(context.interfaceLocale, 'error' in createResult ? createResult.error : undefined, '章节草稿保存失败', 'Failed to save the chapter draft.')
       }
       this.assertNotCancelled(context)
       draftPersisted = true
@@ -1375,7 +1375,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             expectedProjectPath,
           )
           if (!result.success || !result.candidate) {
-            throw workflowMainProcessError(context.uiLocale, result.error, '存储层拒绝写入', 'Storage rejected the write.')
+            throw workflowMainProcessError(context.interfaceLocale, result.error, '存储层拒绝写入', 'Storage rejected the write.')
           }
           callbacks.log(uiText(
             '生成未能安全完成；已收到的可见正文已保存为项目恢复候选，未进入草稿库。',
@@ -1387,11 +1387,11 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           const persistenceDetail = shownReason(context, persistenceError)
           callbacks.log(uiText(
             `恢复候选保存失败；可见正文仍保留在当前步骤中：${persistenceDetail}`,
-            englishWithReason('Saving the recovery candidate failed. The visible prose remains in the current step', persistenceDetail, ': '),
+            englishWithReason(context.interfaceLocale, 'Saving the recovery candidate failed. The visible prose remains in the current step', persistenceDetail, ': '),
           ))
           throw new Error(uiText(
             `${failureDetail}；恢复候选保存失败：${persistenceDetail}`,
-            englishWithReason(`${failureDetail}; saving the recovery candidate failed`, persistenceDetail, ': '),
+            englishWithReason(context.interfaceLocale, `${failureDetail}; saving the recovery candidate failed`, persistenceDetail, ': '),
           ))
         }
       } else if (!mainOwned && !draftPersisted) {
@@ -1815,7 +1815,7 @@ ${params.candidate.text}`,
       const detail = shownReason(params.context, error)
       params.callbacks.log(uiText(
         `  压缩修订未完成，保留原稿：${detail}`,
-        englishWithReason('  Condense revision did not complete; keeping the original draft', detail, ': '),
+        englishWithReason(params.context.interfaceLocale, '  Condense revision did not complete; keeping the original draft', detail, ': '),
       ))
       return original()
     }

@@ -139,6 +139,7 @@ export function useNovelConfigForm(projectKey: string) {
           projectSession,
           writingLanguage: resolveWritingLanguage(currentProject?.novelConfig.writingLanguage),
           uiLocale: useLocaleStore.getState().locale,
+          interfaceLocale: currentInterfaceLocale(),
           data: {},
           cancelled: false,
         },

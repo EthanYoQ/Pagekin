@@ -666,7 +666,7 @@ export function ModelForm({
         <div className={`text-xs p-2 rounded ${testResult.success ? 'bg-green-500/10 text-[var(--color-success-text)] border border-green-500/20' : 'bg-red-500/10 text-[var(--color-error-text)] border border-red-500/20'} break-all`}>
           {testResult.success
             ? text('连接成功', 'Connection succeeded')
-            : text(`连接失败：${testFailure}`, englishWithReason('Connection failed', testFailure, ': '))}
+            : text(`连接失败：${testFailure}`, englishWithReason(currentInterfaceLocale(), 'Connection failed', testFailure, ': '))}
         </div>
       )}
     </div>

@@ -7,6 +7,7 @@ import { useProjectStore } from '../../../../stores/project-store'
 import { FinalizeChapterCommand } from '../finalize-chapter.command'
 import type { FinalizedCharacterContext } from '../../../../shared/finalized-continuity'
 import { useFakeModelStream } from './workflow-generation-runtime.fixture'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const finalizationClient = vi.hoisted(() => ({
   commitFinalizationSnapshot: vi.fn(),
@@ -34,7 +35,7 @@ function workflowContext(uiLocale: 'zh-CN' | 'en-US' = 'zh-CN'): WorkflowContext
     projectPath: PROJECT_PATH,
     projectSession: PROJECT_SESSION,
     writingLanguage: 'zh-CN',
-    uiLocale,
+    uiLocale, interfaceLocale: shown(uiLocale),
     data: {},
     cancelled: false,
   }

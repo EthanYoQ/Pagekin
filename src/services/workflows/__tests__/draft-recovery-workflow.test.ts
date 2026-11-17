@@ -5,6 +5,7 @@ import { DRAFT_VISIBLE_TEXT_VERSION, composeDraftVisibleContinuation, type Draft
 import type { StepCallbacks, WorkflowContext, WorkflowDefinition, WorkflowStep } from '../../../stores/workflow-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { createDraftRecoveryWorkflow } from '../draft-recovery-workflow'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const session = { projectId: 'recovery-fixture', leaseId: 'current-session', projectPath: 'C:/recovery-fixture' }
 const handle = { projectId: session.projectId, epoch: 'original-session', rootActionId: 'original-root', runId: 'original-run' }
@@ -40,7 +41,7 @@ function bridge(recovery: GenerationRecoveryContext) {
 
 function execute(workflow: WorkflowDefinition) {
   const context: WorkflowContext = { runId: 'workflow-fixture', projectSession: session, projectPath: session.projectPath,
-    data: {}, cancelled: false, generationModelId: 'synthetic-model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN' }
+    data: {}, cancelled: false, generationModelId: 'synthetic-model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN') }
   const callbacks: StepCallbacks = { log: vi.fn(), appendText: vi.fn(), replaceText: vi.fn(), setProgress: vi.fn() }
   const step: WorkflowStep = { id: 'recover', name: '继续正文', description: '', status: 'running', logs: [] }
   return { context, result: workflow.steps[0].executor(step, context, callbacks) }

@@ -66,6 +66,7 @@ vi.mock('../../repositories/finalization-repository', () => ({
 
 vi.mock('../../i18n', () => ({
   mainText: vi.fn((_locale: string, zh: string) => zh),
+  mainErrorDisplayLocale: vi.fn((locale: string | undefined) => locale ?? 'zh-CN'),
 }))
 
 import { getEmbeddingConfig, getRerankConfig, registerKBController } from '../kb-controller'

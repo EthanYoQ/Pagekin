@@ -422,7 +422,7 @@ export function useChapterBlueprints({
     setSaving(true)
     setSaveOutcome('idle')
     try {
-      await saveChapterBlueprint(selected, projectKey, projectSession, locale)
+      await saveChapterBlueprint(selected, projectKey, projectSession, currentInterfaceLocale())
       if (!isCurrentProjectSession(projectSession)) return
       const current = currentWorkingState(projectKey, projectSession)
       const nextDirty = reconcileSavedBlueprintSnapshots(
@@ -438,8 +438,8 @@ export function useChapterBlueprints({
     } catch (err) {
       if (!isCurrentProjectSession(projectSession)) return
       const message = displayedErrorMessage(currentInterfaceLocale(), err)
-      addLog('error', text(`保存第 ${selected.chapterNumber} 章蓝图失败：${message}`, englishWithReason(`Could not save the blueprint for Chapter ${selected.chapterNumber}.`, message)))
-      toast.error(text(`保存失败\n\n${message}`, englishWithReason('Could not save the blueprint.', message, '\n\n')))
+      addLog('error', text(`保存第 ${selected.chapterNumber} 章蓝图失败：${message}`, englishWithReason(currentInterfaceLocale(), `Could not save the blueprint for Chapter ${selected.chapterNumber}.`, message)))
+      toast.error(text(`保存失败\n\n${message}`, englishWithReason(currentInterfaceLocale(), 'Could not save the blueprint.', message, '\n\n')))
       setSaveOutcome('failed')
       if (propagateFailure) throw err
     } finally {
@@ -461,7 +461,7 @@ export function useChapterBlueprints({
     setSaving(true)
     setSaveOutcome('idle')
     try {
-      await saveAllBlueprints(saveInput, projectKey, projectSession, locale)
+      await saveAllBlueprints(saveInput, projectKey, projectSession, currentInterfaceLocale())
       if (!isCurrentProjectSession(projectSession)) return
       const current = currentWorkingState(projectKey, projectSession)
       const nextDirty = reconcileSavedBlueprintSnapshots(
@@ -477,8 +477,8 @@ export function useChapterBlueprints({
     } catch (err) {
       if (!isCurrentProjectSession(projectSession)) return
       const message = displayedErrorMessage(currentInterfaceLocale(), err)
-      addLog('error', text(`保存全部蓝图失败：${message}`, englishWithReason('Could not save all chapter blueprints.', message)))
-      toast.error(text(`保存失败\n\n${message}`, englishWithReason('Could not save the blueprints.', message, '\n\n')))
+      addLog('error', text(`保存全部蓝图失败：${message}`, englishWithReason(currentInterfaceLocale(), 'Could not save all chapter blueprints.', message)))
+      toast.error(text(`保存失败\n\n${message}`, englishWithReason(currentInterfaceLocale(), 'Could not save the blueprints.', message, '\n\n')))
       setSaveOutcome('failed')
       if (propagateFailure) throw err
     } finally {
@@ -565,7 +565,7 @@ export function useChapterBlueprints({
     if (!isCurrentProjectSession(projectSession)) return
     if (!result.success) {
       const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
-      toast.error(text(`删除失败\n\n${reason}`, englishWithReason('Could not delete the chapter blueprint.', reason, '\n\n')))
+      toast.error(text(`删除失败\n\n${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not delete the chapter blueprint.', reason, '\n\n')))
       return
     }
     const current = currentWorkingState(projectKey, projectSession)
@@ -606,7 +606,7 @@ export function useChapterBlueprints({
     if (!isCurrentProjectSession(projectSession)) return
     if (!result.success) {
       const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
-      toast.error(text(`清空失败\n\n${reason}`, englishWithReason('Could not clear the chapter blueprints.', reason, '\n\n')))
+      toast.error(text(`清空失败\n\n${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not clear the chapter blueprints.', reason, '\n\n')))
       return
     }
     const current = currentWorkingState(projectKey, projectSession)

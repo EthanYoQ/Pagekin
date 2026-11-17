@@ -17,6 +17,7 @@ import {
   ImportRunOrchestrator,
   type ImportRunOrchestratorDependencies,
 } from '../import-run-orchestrator'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 function runSnapshot(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapshot {
   return {
@@ -46,7 +47,7 @@ function harness(total = 25, overrides: Partial<ImportRunSnapshot> = {}) {
   const execution = { owner: 'test-runner', epoch: 1, expiresAt: Number.MAX_SAFE_INTEGER }
   const receipts = new Map<string, ImportRunEffectReceipt>()
   const receiptKey = (stage: ImportRunStage, batchId: string) => `${stage}:${batchId}`
-  const deps: ImportRunOrchestratorDependencies = {
+  const deps: ImportRunOrchestratorDependencies = { interfaceLocale: shown(run.locale),
     getRun: vi.fn(async () => run),
     startOrResume: vi.fn(async () => ({ run, execution })),
     renewExecution: vi.fn(async () => execution),
@@ -1025,7 +1026,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', stage, 'test-runner', { cancelled: false }, { ...callbacks, log })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(importGenerationStopMessage(locale, code))
+    expect((failure as Error).message).toBe(importGenerationStopMessage(shown(locale), code))
     expect((failure as Error).message).not.toContain(code)
     expect(getRun()).toMatchObject({ status: 'failed', lastError: (failure as Error).message })
     expect(log.mock.calls.flat().some(line => String(line).includes(code))).toBe(true)
@@ -1064,7 +1065,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
     const failure = await new ImportRunOrchestrator(deps)
       .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, callbacks)
       .catch((error: Error) => error)
-    expect((failure as Error).message).toBe(importGenerationStopMessage('zh-CN', 'ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript'))
+    expect((failure as Error).message).toBe(importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript'))
     expect((failure as Error).message).not.toContain('重新开始')
     expect(getRun().lastError).toBe((failure as Error).message)
   })
