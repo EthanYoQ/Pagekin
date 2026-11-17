@@ -471,7 +471,7 @@ const REVISION_NOTE = '林岚把这句话记进日志，又核对了一遍潮位
 const issueQuote = chapter => `守塔人说第${chapter}夜的钟声又早了1刻`
 const goalQuote = chapter => `远处的航标灯亮了1盏，一路亮到第${chapter}号海湾。`
 
-/** 第 chapter 章的审稿：一条带引文的意见，加一条有正文证据的本章目标未达成（有证据的目标意见才进合并后复核）。 */
+/** 带引文的意见加一条有正文证据的目标未达成：只有有证据的目标意见才进合并后复核。 */
 function reviewReply(chapter) {
   return JSON.stringify({ summary: '本章目标还没落地。', items: [
     { category: '连续性', severity: 'warning', description: '核对钟声提前与潮位的关系。', quote: issueQuote(chapter) },
@@ -485,7 +485,6 @@ function revisedText(chapter) {
     .replace(goalQuote(chapter), `远处的航标灯亮了1盏。${REVISION_NOTE}`)
 }
 
-/** 审修一轮的应答：写作回模板正文，审稿回 reviewReply，修稿回 revisedText，复核把每条意见判为已解决。按种类计请求数。 */
 function installReviewCycleReplies(fake) {
   const sent = { write: 0, review: 0, revision: 0, recheck: 0 }
   fake.replyCharacterState(characterStates)
@@ -512,7 +511,6 @@ function installReviewCycleReplies(fake) {
   return sent
 }
 
-/** 单章审修一轮：写作此章、AI 审稿、按意见修稿、全部用修稿并完成合并、等合并后复核、定稿；每步各记一次，并核对四类请求各发了一次。 */
 async function reviewCycleChapter(context, chapter, sent) {
   const { page } = context
   const before = { ...sent }
@@ -562,10 +560,7 @@ async function reviewCycleChapter(context, chapter, sent) {
   return { write, review, revise, merge, finalize }
 }
 
-/**
- * 按「每章审修一轮」的写法造书：比 buildByHand 每章多一个修稿运行和一个复核运行，库的增长接近真实作品。
- * 存档与计时同 buildByHand（PERF702_SAVE、PERF702_CHECKPOINTS）。
- */
+/** 比 buildByHand 每章多一个修稿运行和一个复核运行，库的增长接近真实作品。 */
 async function buildByReviewCycle(context, finalized) {
   await seedLargeBook(context, 0)
   const sent = installReviewCycleReplies(context.fake)

@@ -19,7 +19,6 @@ type Database = BetterSqlite3.Database
 const BetterSqlite = createRequire(import.meta.url)('better-sqlite3') as typeof BetterSqlite3
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 
-/** 内存库：基线表 + 生成运行 + 审修循环与合并快照 + live 视图。 */
 export function reviewCycleDatabase(): Database {
   const db = new BetterSqlite(':memory:')
   db.pragma('foreign_keys=ON')
@@ -227,7 +226,6 @@ export function mergeRows(db: Database, item: ReturnType<typeof generatedCycle>,
   return hash(mergedContent)
 }
 
-/** 造 K 章已审稿作品：每章一稿，审稿、修稿、合并各一轮，全部走仓库接口。 */
 export function seedReviewedBook(db: Database, chapters: number, { firstChapter = 1 } = {}) {
   return Array.from({ length: chapters }, (_, index) => {
     const chapterNumber = firstChapter + index
@@ -250,7 +248,6 @@ export interface StatementLedger {
 }
 
 /**
- * 语句账本：按 SQL 原文记每次执行。
  * 计 prepare 出的语句每次 run/get/all/iterate、每次 exec（整段算一条）、每次 pragma。
  * 不计 db.transaction 自己发的 BEGIN/COMMIT/SAVEPOINT，它们不经过实例方法。
  * 只看得到挂上之后 prepare 的语句。
