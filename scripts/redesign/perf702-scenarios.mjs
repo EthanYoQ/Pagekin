@@ -5,6 +5,7 @@
 //   PERF702_SAVE         批量造书时在 PERF702_CHECKPOINTS（默认 10,50,112）章处退出应用，把作品存到 <SAVE>/<章数>/projects/盐湖。
 //   PERF702_FIXTURE      perf702-reuse 复制这份作品（<FIXTURE>/projects/盐湖）进隔离目录再计时；PERF702_FINALIZED 是它的定稿章数。
 //   PERF702_BLUEPRINTS   新造作品的蓝图条数，默认 200。
+//   perf702-review-cycle 每章审稿、按意见修稿、合并、复核、定稿各一轮，写到 PERF702_FINALIZED（默认 112）章；存档同 PERF702_SAVE。
 //   PERF702_SQL=0        不包 SQL 账本（对照账本本身的开销）。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -466,6 +467,120 @@ async function buildByHand(context, finalized) {
   return chapters
 }
 
+const REVISION_NOTE = '林岚把这句话记进日志，又核对了一遍潮位表。'
+const issueQuote = chapter => `守塔人说第${chapter}夜的钟声又早了1刻`
+const goalQuote = chapter => `远处的航标灯亮了1盏，一路亮到第${chapter}号海湾。`
+
+/** 第 chapter 章的审稿：一条带引文的意见，加一条有正文证据的本章目标未达成（有证据的目标意见才进合并后复核）。 */
+function reviewReply(chapter) {
+  return JSON.stringify({ summary: '本章目标还没落地。', items: [
+    { category: '连续性', severity: 'warning', description: '核对钟声提前与潮位的关系。', quote: issueQuote(chapter) },
+  ], goalReviews: [{ id: `ch${chapter}:keyEvents:1`, status: 'unmet', description: '林岚还没有在灯塔里找到新的线索。',
+    evidence: [{ quote: goalQuote(chapter) }] }] })
+}
+
+/** 修稿改掉两处被引的原文（证据变了，合并后才会复核），并补一句复核引用的话。 */
+function revisedText(chapter) {
+  return chapterText(chapter).replace(issueQuote(chapter), `守塔人说第${chapter}夜的钟声准了`)
+    .replace(goalQuote(chapter), `远处的航标灯亮了1盏。${REVISION_NOTE}`)
+}
+
+/** 审修一轮的应答：写作回模板正文，审稿回 reviewReply，修稿回 revisedText，复核把每条意见判为已解决。按种类计请求数。 */
+function installReviewCycleReplies(fake) {
+  const sent = { write: 0, review: 0, revision: 0, recheck: 0 }
+  fake.replyCharacterState(characterStates)
+  fake.replyReview(prompt => {
+    // 复核提示里也带着确认的修稿清单，先按复核锚点认出它。
+    const anchors = prompt.split('【需复核的原始证据锚点】')[1]
+    if (anchors) {
+      sent.recheck++
+      const findings = JSON.parse(anchors.slice(anchors.indexOf('['), anchors.indexOf(']\n\n') + 1))
+      return JSON.stringify({ summary: '复核：已补潮位核对。', items: findings.map(({ findingId, targetId }) => ({
+        findingId, targetId, resolved: true, evidenceQuote: '又核对了一遍潮位表', reason: '修稿补了潮位核对。' })) })
+    }
+    const revising = prompt.includes('【已确认纳入本次修稿的审稿项】')
+    if (revising || prompt.includes('goalReviews')) {
+      const chapter = Number(/ch(\d+):keyEvents/u.exec(prompt)?.[1] ?? /第(\d+)夜的潮水退得很慢。/u.exec(prompt)?.[1])
+      assert.ok(chapter > 0, '审稿或修稿提示里认不出章号')
+      sent[revising ? 'revision' : 'review']++
+      return revising ? revisedText(chapter) : reviewReply(chapter)
+    }
+    const draft = draftReply(prompt)
+    if (draft) sent.write++
+    return draft
+  })
+  return sent
+}
+
+/** 单章审修一轮：写作此章、AI 审稿、按意见修稿、全部用修稿并完成合并、等合并后复核、定稿；每步各记一次，并核对四类请求各发了一次。 */
+async function reviewCycleChapter(context, chapter, sent) {
+  const { page } = context
+  const before = { ...sent }
+  const settled = async kind => {
+    const deadline = Date.now() + 120_000
+    while (sent[kind] === before[kind]) {
+      assert.ok(Date.now() < deadline, `第 ${chapter} 章：120 秒内没有发出${kind}请求`)
+      await page.waitForTimeout(100)
+    }
+    await stage.root(page).locator(RUNNING).waitFor({ state: 'detached', timeout: 120_000 })
+  }
+  const step = (name, action) => operation(context, `rc-${chapter}-${name}`, async () => {
+    const startedAt = performance.now()
+    await action()
+    return { totalMs: Math.round(performance.now() - startedAt) }
+  })
+  await chapterView.open(page, chapter)
+  const write = await step('write', async () => {
+    await chapterView.view(page).getByRole('button', { name: '写作此章', exact: true }).click()
+    await settled('write')
+    await page.locator(prose).filter({ hasText: chapterMarker(chapter) }).waitFor({ state: 'visible', timeout: 120_000 })
+  })
+  const review = await step('review', async () => {
+    await chapterView.review(page)
+    await settled('review')
+  })
+  const revise = await step('revise', async () => {
+    await chapterView.reviseButton(page).click()
+    await chapterView.merge(page).waitFor({ state: 'visible', timeout: 120_000 })
+    await settled('revision')
+  })
+  const merge = await step('merge-recheck', async () => {
+    await chapterView.merge(page).getByRole('button', { name: '全部用修稿' }).click()
+    await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
+    await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: 120_000 })
+    await settled('recheck')
+  })
+  const finalize = await step('finalize', async () => {
+    // 复核结果写回时动作条会重绘，等主按钮重新出现再点，否则 finalize 会走进「更多」菜单。
+    await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: 120_000 })
+    await chapterView.finalize(page, chapter)
+    await chapterView.postProcess(page).waitFor({ state: 'visible', timeout: 120_000 })
+    await stage.root(page).locator(RUNNING).waitFor({ state: 'detached', timeout: 120_000 })
+  })
+  assert.deepEqual(Object.fromEntries(Object.entries(sent).map(([kind, count]) => [kind, count - before[kind]])),
+    { write: 1, review: 1, revision: 1, recheck: 1 }, `第 ${chapter} 章的四类模型请求应各发一次`)
+  return { write, review, revise, merge, finalize }
+}
+
+/**
+ * 按「每章审修一轮」的写法造书：比 buildByHand 每章多一个修稿运行和一个复核运行，库的增长接近真实作品。
+ * 存档与计时同 buildByHand（PERF702_SAVE、PERF702_CHECKPOINTS）。
+ */
+async function buildByReviewCycle(context, finalized) {
+  await seedLargeBook(context, 0)
+  const sent = installReviewCycleReplies(context.fake)
+  await installLedger(context.app, context.page)
+  await stage.openFromLibrary(context.page, BOOK)
+  const chapters = []
+  for (let chapter = 1; chapter <= finalized; chapter++) {
+    chapters.push(await reviewCycleChapter(context, chapter, sent))
+    await saveCheckpoint(context, chapter)
+  }
+  await context.restart()
+  installReplies(context.fake)
+  return chapters
+}
+
 const written = finalized => ({ model: true, shell: 'stage', setup: async context => { context.batches = await buildByBatch(context, finalized) },
   run: async context => ({ batches: context.batches, ...await timeLargeBook(context, finalized) }) })
 
@@ -577,6 +692,9 @@ export const PERF702_SCENARIOS = {
     run: async context => ({ generated: context.generated, ...await timeBlueprintsOnly(context, undefined, String(BLUEPRINTS)) }) },
   'perf702-hand-112': { model: true, shell: 'stage', setup: async context => { context.chapters = await buildByHand(context, 112) },
     run: async context => ({ chapters: context.chapters.length, ...await timeLargeBook(context, 112) }) },
+  'perf702-review-cycle': { model: true, shell: 'stage', setup: async context => {
+    context.chapters = await buildByReviewCycle(context, Number(process.env.PERF702_FINALIZED ?? 112))
+  }, run: async context => ({ chapters: context.chapters.length, ...await timeLargeBook(context, context.chapters.length) }) },
   'perf702-10': written(10),
   'perf702-112': written(112),
 }
