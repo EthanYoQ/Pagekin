@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   models: [] as ModelProfile[],
   locale: 'en-US',
   storedLocale: undefined as string | undefined,
+  configUnreadable: false,
 }))
 
 vi.mock('electron', () => ({
@@ -25,9 +26,12 @@ vi.mock('../../utils/config-utils', () => ({
   MODELS_CONFIG_PATH: 'models.json',
   GLOBAL_CONFIG_PATH: 'config.json',
   DEFAULT_GLOBAL_CONFIG: { proxy: { enabled: false } },
-  readJsonFile: vi.fn((filePath: string, fallback: unknown) => filePath === 'models.json'
-    ? mocks.models
-    : filePath === 'config.json' && mocks.storedLocale ? { ...fallback as object, locale: mocks.storedLocale } : fallback),
+  readJsonFile: vi.fn((filePath: string, fallback: unknown) => {
+    if (filePath === 'config.json' && mocks.configUnreadable) throw new Error('EACCES: config.json')
+    return filePath === 'models.json'
+      ? mocks.models
+      : filePath === 'config.json' && mocks.storedLocale ? { ...fallback as object, locale: mocks.storedLocale } : fallback
+  }),
   tryReadJsonFile: vi.fn(() => ({ status: 'missing' })),
   writeJsonFile: vi.fn(),
 }))
@@ -38,6 +42,7 @@ vi.mock('../../llm/llm-factory', () => ({
   },
 }))
 
+import { translate } from '../../../src/i18n/core'
 import { registerLLMController } from '../llm-controller'
 
 const deepSeekModel: ModelProfile = {
@@ -308,6 +313,21 @@ describe('retrieval model connection test', () => {
       expect(result.error).toContain('検索モデルが使えない結果')
     } finally {
       mocks.storedLocale = undefined
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps the explanation of a failed probe when the language setting cannot be read afterwards', async () => {
+    mocks.locale = 'en-US'
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      mocks.configUnreadable = true
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    }))
+    try {
+      const result = await mocks.handlers.get('llm:test-connection')!({}, retrievalModel) as { success: boolean; error: string }
+      expect(result).toEqual({ success: false, error: translate('en-US', 'error.embeddingResponseInvalid') })
+    } finally {
+      mocks.configUnreadable = false
       vi.unstubAllGlobals()
     }
   })
