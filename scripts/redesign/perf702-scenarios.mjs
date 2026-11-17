@@ -146,10 +146,12 @@ async function installLedger(app, page) {
       const child = spawn(...args)
       const kind = path => String(path).split(/[\\/]/u).pop()
       const name = [args[0], ...(Array.isArray(args[1]) ? args[1].filter(arg => /\.(ps1|exe|cmd|bat)$/iu.test(arg)) : [])].map(kind).join(' ')
-      const entry = ledger.spawns.kinds[name] ??= { calls: 0, ms: 0 }
-      ledger.spawns.calls += 1
+      // 子进程可能在账本换新之后才退出，时长要记回起它时的那一份。
+      const bucket = ledger.spawns
+      const entry = bucket.kinds[name] ??= { calls: 0, ms: 0 }
+      bucket.calls += 1
       entry.calls += 1
-      child.once('exit', () => { const ms = performance.now() - startedAt; ledger.spawns.ms += ms; entry.ms += ms })
+      child.once('exit', () => { const ms = performance.now() - startedAt; bucket.ms += ms; entry.ms += ms })
       return child
     }
     process.getBuiltinModule('node:module').syncBuiltinESMExports()
