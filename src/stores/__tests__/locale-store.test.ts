@@ -170,7 +170,7 @@ describe('locale store', () => {
     [false, true].map(secondSettlesFirst => [first, second, secondSettlesFirst] as const)))
   it.each(outcomes)('shows the saved language once both saves settle (first ok %s, second ok %s, second settles first %s)', async (firstOk, secondOk, secondSettlesFirst) => {
     const settle: Array<() => void> = []
-    const saveLocale = vi.fn((_locale: string) => new Promise<{ success: boolean; error?: string }>(resolve => {
+    const saveLocale = vi.fn(() => new Promise<{ success: boolean; error?: string }>(resolve => {
       const ok = settle.length === 0 ? firstOk : secondOk
       settle.push(() => resolve(ok ? { success: true } : { success: false, error: 'disk full' }))
     }))

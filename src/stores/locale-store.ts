@@ -39,7 +39,13 @@ function activeInterfaceLocale(state: Pick<LocaleState, 'interfaceLocale' | 'loc
 
 export function createLocaleState(dependencies: LocaleDependencies): StateCreator<LocaleState> {
   return (set, get) => {
-    let latestSave = 0
+    // 主进程按发出顺序写配置，失败的不写：存下来的是发出最晚的那次成功。几次保存都有结果之后再对账，
+    // 界面停在没存下来的语言时退回存下来的语言，并报最后一次失败。
+    let saved = resolveInterfaceLocale(dependencies.systemLocale())
+    let savedSave = 0
+    let sent = 0
+    let settled = 0
+    let failure: { error: unknown } | undefined
     // Components commonly select only `t` or `text`. Refreshing these reader
     // identities with the locale makes those subscriptions reactive while the
     // functions still resolve the latest locale when called from callbacks.
@@ -58,30 +64,37 @@ export function createLocaleState(dependencies: LocaleDependencies): StateCreato
         const config = await dependencies.loadConfig()
         const locale = storedInterfaceLocale(config.locale) ?? resolveInterfaceLocale(dependencies.systemLocale())
         dependencies.setDocumentLanguage(locale)
+        saved = locale
         set({ ...localeFields(locale), initialized: true, ...localeReaders() })
       },
       async setLocale(locale) {
-        const previousLocale = activeInterfaceLocale(get())
-        if (locale === previousLocale) return
-        const save = ++latestSave
+        if (locale === activeInterfaceLocale(get())) return
+        const save = ++sent
         set({ ...localeFields(locale), ...localeReaders() })
         dependencies.setDocumentLanguage(locale)
         try {
           const result = await dependencies.saveLocale(locale)
           if (!result.success) throw new Error(result.error ?? 'Failed to persist locale')
-        } catch (error) {
-          if (save !== latestSave) return
-          if (activeInterfaceLocale(get()) === locale) {
-            set({ ...localeFields(previousLocale), ...localeReaders() })
-            dependencies.setDocumentLanguage(previousLocale)
+          if (save > savedSave) {
+            saved = locale
+            savedSave = save
           }
-          const previousCopyLocale = copyLocale(previousLocale)
-          const reason = displayedErrorMessage(previousLocale, error)
-          await dependencies.reportError?.(
-            localize(previousCopyLocale, `语言设置保存失败：${reason}`, `Could not save the language setting: ${reason}`),
-            localize(previousCopyLocale, '语言设置保存失败', 'Could not save language setting'),
-          )
+        } catch (error) {
+          failure = { error }
         }
+        if (++settled < sent || !failure) return
+        const { error } = failure
+        failure = undefined
+        if (activeInterfaceLocale(get()) === saved) return
+        const fallback = saved
+        set({ ...localeFields(fallback), ...localeReaders() })
+        dependencies.setDocumentLanguage(fallback)
+        const fallbackCopyLocale = copyLocale(fallback)
+        const reason = displayedErrorMessage(fallback, error)
+        await dependencies.reportError?.(
+          localize(fallbackCopyLocale, `语言设置保存失败：${reason}`, `Could not save the language setting: ${reason}`),
+          localize(fallbackCopyLocale, '语言设置保存失败', 'Could not save language setting'),
+        )
       },
     }
   }
@@ -104,4 +117,10 @@ export const useLocaleStore = create<LocaleState>(createLocaleState(browserDepen
 
 export function currentInterfaceLocale(): InterfaceLocale {
   return activeInterfaceLocale(useLocaleStore.getState())
+}
+
+/** 运行冻结的是文案语言；它和当前界面读同一种文案时（日文界面看英文运行），登记的报错按界面语言说明。 */
+export function interfaceLocaleFor(frozen: Locale): InterfaceLocale {
+  const shown = currentInterfaceLocale()
+  return copyLocale(shown) === frozen ? shown : frozen
 }
