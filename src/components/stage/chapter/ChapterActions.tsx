@@ -64,7 +64,7 @@ type Ask = 'refine' | 'finalize' | 'delete' | 'discard' | 'reopen' | null
  * 完成合并、定稿；直接修稿、删除这一稿、复制本章正文在「更多」里。审稿清单的状态也在这里，
  * 侧页的勾选数与主按钮的「按 N 项意见修稿」是同一份。挂载方以审稿报告的会话键作 key，报告变了清单随之重置。
  */
-export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, title, draft, facts, review, focus, annotation }: {
+export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, title, draft, facts, review, focus, annotation, switching, whileSwitching }: {
   sheetSlot: HTMLDivElement | null
   tab: EditorTab
   stage: ChapterStage
@@ -77,6 +77,8 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   focus: boolean
   /** 批注统一修改进行中：此时打开修稿合并会卸载正文，批注修改会丢。 */
   annotation: AnnotationRevision | null
+  switching: boolean
+  whileSwitching: (run: () => Promise<void>) => Promise<void>
 }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
@@ -122,15 +124,15 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
     if (useStageStore.getState().sheet?.kind !== 'run') useStageStore.setState({ sheet: { kind: 'review', filePath } })
   }, [review, stage, filePath])
   const included = includedCount(checklist.items)
-  const busy = draft.isChapterBusy
+  const busy = draft.isChapterBusy || switching
   const annotating = annotation !== null
   const reviseLocked = busy || annotating
   const lockHint = annotating ? (
     <>
-      {text('批注修改还在等你处理，修稿会冲掉它。先接受或取消批注修改。', 'Your annotation edits are still pending, and a revision would discard them. Accept or cancel them first.')}
+      {text('批注修改还在等你处理，修稿或换稿会冲掉它。先接受或取消批注修改。', 'Your annotation edits are still pending, and revising or switching drafts would discard them. Accept or cancel them first.')}
       {annotation.reveal && <Button variant="text" size="sm" onClick={annotation.reveal}>{text('回到预览', 'Back to preview')}</Button>}
     </>
-  ) : null
+  ) : switching ? text('正在切换稿件…', 'Switching drafts…') : null
   const generationModels = models.filter(isGenerationModel)
   const selectedReviseModel = reviseModelId ?? preferredGenerationModelId(models, refinementModelId)
   // 有几份能合并时取最新的一份；过期的修稿不占主流程，只能查看或丢弃。
@@ -144,6 +146,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   const preview = useReplacementImpactPreview(meta.id, tab.content ?? '', ask === 'finalize' && reopening)
   const openReopenDraft = useDraftStore(s => stage === 'final' ? s.draftsByChapter[chapterNumber]?.find(isOpenReopenDraft) : undefined)
   const olderDraft = useDraftStore(s => editable && !reopening && (s.draftsByChapter[chapterNumber]?.some(candidate => candidate.status === 'finalized') ?? false))
+  const finalizeLocked = !draft.canFinalize || olderDraft || switching
   const finalizeHint = olderDraft ? text('先以这一稿重新打开本章', 'Reopen the chapter with this draft first') : null
 
   // 有待合并的修稿时直接摆出合并视图；作者选了稍后再合并就留在正文，直到再点「打开修稿合并」。
@@ -159,10 +162,10 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
     if (annotating && pending) autoOpened.current = pending.id
   }, [annotating, pending])
   useEffect(() => {
-    if (stage !== 'merge' || !pending || mergeData || mergeLater || autoOpened.current === pending.id) return
+    if (stage !== 'merge' || !pending || switching || mergeData || mergeLater || autoOpened.current === pending.id) return
     autoOpened.current = pending.id
     openRevision(pending)
-  }, [stage, pending, mergeData, mergeLater, openRevision])
+  }, [stage, pending, switching, mergeData, mergeLater, openRevision])
 
   const startReview = () => void draft.review(dims.filter(dim => checkedDims[dim.key]).map(dim => dim.promptLabel).join('、') || undefined)
 
@@ -216,7 +219,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
       .catch(() => toast.error(text('无法复制正文', 'Could not copy the chapter text')))
   }
 
-  const deleteThisDraft = async () => {
+  const deleteThisDraft = () => whileSwitching(async () => {
     const project = useProjectStore.getState().currentProject
     const displayName = `${chapterLabel(chapterNumber, text)} v${meta.version}`
     const doneMessage = reopening ? text(`已放弃修改，${chapterLabel(chapterNumber, text)}回到原定稿`, `Changes discarded. ${chapterLabel(chapterNumber, text)} is back to its final.`) : undefined
@@ -232,9 +235,9 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
     await swapChapterTab(tab.id, next
       ? () => openDraftInChapterView(next, title, session)
       : () => { openChapterPlan(chapterNumber, title, session); return true })
-  }
+  })
 
-  const reopen = async (initialDraftId?: number) => {
+  const reopen = (initialDraftId?: number) => whileSwitching(async () => {
     setAsk(null)
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session) return
@@ -261,7 +264,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
       const reason = displayedErrorMessage(useLocaleStore.getState().locale, error)
       toast.error(text(`没能重新打开${chapterLabel(chapterNumber, text)}：${reason}`, `Could not reopen ${chapterLabel(chapterNumber, text).toLowerCase()}: ${reason}`))
     }
-  }
+  })
 
   const deleteManuscript = async () => {
     await deleteFinalizedChapter({
@@ -280,7 +283,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   const moreGroups: MenuGroupSpec[] = [
     { id: 'chapter', items: [
       ...(editable ? [{ id: 'refine', label: text('直接修稿…', 'Revise directly…'), disabled: reviseLocked, onSelect: () => { setRefinePrompt(''); setAsk('refine') } }] : []),
-      ...(editable && stage !== 'revised' && !(stage === 'reviewed' && nothingToRevise) ? [{ id: 'finalize', label: text('定稿…', 'Finalize…'), disabled: !draft.canFinalize || olderDraft, onSelect: () => draft.requestFinalize(() => setAsk('finalize')) }] : []),
+      ...(editable && stage !== 'revised' && !(stage === 'reviewed' && nothingToRevise) ? [{ id: 'finalize', label: text('定稿…', 'Finalize…'), disabled: finalizeLocked, onSelect: () => draft.requestFinalize(() => setAsk('finalize')) }] : []),
       ...(review && !sheetOpen && !focus ? [{ id: 'report', label: text('审稿报告', 'Review report'), onSelect: () => setSheet(true) }] : []),
       { id: 'history', label: text('版本历史', 'Version history'), onSelect: () => navigate({ kind: 'resource', page: 'history' }) },
       { id: 'copy', label: text('复制本章正文', 'Copy chapter text'), onSelect: copyBody },
@@ -325,7 +328,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
                 {text('确认不修改', 'Confirm no revision')}
               </Button>
             ) : nothingToRevise ? (
-              <Button variant="primary" disabled={!draft.canFinalize || olderDraft} onClick={() => draft.requestFinalize(() => setAsk('finalize'))}>
+              <Button variant="primary" disabled={finalizeLocked} onClick={() => draft.requestFinalize(() => setAsk('finalize'))}>
                 <BadgeCheck size={15} aria-hidden />{text('定稿', 'Finalize')}
               </Button>
             ) : <SplitAction
@@ -372,7 +375,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
       case 'revised':
         return (
           <>
-            <Button variant="primary" disabled={!draft.canFinalize || olderDraft} onClick={() => draft.requestFinalize(() => setAsk('finalize'))}>
+            <Button variant="primary" disabled={finalizeLocked} onClick={() => draft.requestFinalize(() => setAsk('finalize'))}>
               <BadgeCheck size={15} aria-hidden />{text('定稿', 'Finalize')}
             </Button>
             {reviewAgain}
@@ -398,7 +401,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
               </Button>
             )}
             {more}
-            <span className="stage-ch-hint">{text('已定稿，只读', 'Finalized; read-only')}</span>
+            <span className="stage-ch-hint">{lockHint ?? text('已定稿，只读', 'Finalized; read-only')}</span>
           </>
         )
       case 'archived':
@@ -437,7 +440,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
         {!draft.mergeData && olderDraft && (
           <Notice
             title={text('这一稿不能直接定稿', 'This draft cannot be finalized directly')}
-            actions={<Button variant="secondary" size="sm" disabled={busy} onClick={() => void reopen(meta.id)}>{text('以这一稿重新打开', 'Reopen with this draft')}</Button>}
+            actions={<Button variant="secondary" size="sm" disabled={reviseLocked} onClick={() => void reopen(meta.id)}>{text('以这一稿重新打开', 'Reopen with this draft')}</Button>}
           >
             {text(`${chapterLabel(chapterNumber, text)}已有定稿。要用这一稿替换它，以这一稿重新打开本章，改完再定稿。`, `${chapterLabel(chapterNumber, text)} is already finalized. To replace it with this draft, reopen the chapter with this draft, then finalize.`)}
           </Notice>
