@@ -254,7 +254,8 @@ export interface StatementLedger {
  */
 export function attachStatementLedger(db: Database): StatementLedger {
   const counts = new Map<string, number>()
-  const record = (sql: string) => { counts.set(sql, (counts.get(sql) ?? 0) + 1) }
+  let active = true
+  const record = (sql: string) => { if (active) counts.set(sql, (counts.get(sql) ?? 0) + 1) }
   const prepare = db.prepare
   const exec = db.exec
   const pragma = db.pragma
@@ -283,6 +284,7 @@ export function attachStatementLedger(db: Database): StatementLedger {
     total: () => [...counts.values()].reduce((sum, count) => sum + count, 0),
     reset: () => counts.clear(),
     detach: () => {
+      active = false
       const own = db as unknown as Record<string, unknown>
       delete own.prepare; delete own.exec; delete own.pragma
     },

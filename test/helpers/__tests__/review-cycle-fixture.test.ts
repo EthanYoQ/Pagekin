@@ -24,8 +24,10 @@ describe('语句账本', () => {
     expect(ReviewCycleRepository.getByReviewId(999, db)).toBeNull()
     expect(ledger.total()).toBe(1)
 
+    const retained = db.prepare('SELECT 2')
     ledger.detach()
     db.prepare('SELECT 1').get()
+    retained.get()
     expect(ledger.total()).toBe(1)
   })
 })
