@@ -8,6 +8,9 @@ import { Button } from '../../ui/Button'
 import { Check } from '../../ui/Check'
 import { commandLabel } from '../shortcut-keys'
 
+/** 日语选项用日文自己的写法，日文用户在任何界面语言下都认得出，所以不翻译。 */
+const JAPANESE_NAME = '日本語'
+
 /** 一行设置：左边标题与说明，右边控件与标题对齐；children（示例句、错误）占整行，放在下面。 */
 function Row({ title, desc, control, children, htmlFor }: { title: string; desc?: ReactNode; control: ReactNode; children?: ReactNode; htmlFor?: string }) {
   return (
@@ -91,7 +94,7 @@ export default function AppearanceSection() {
           <select id={languageId} className="stage-select" value={interfaceLocale} onChange={event => void setLocale(event.target.value as InterfaceLocale)}>
             <option value="zh-CN">{text('简体中文', 'Simplified Chinese')}</option>
             <option value="en-US">English</option>
-            <option value="ja-JP">{text('日语', 'Japanese')}</option>
+            <option value="ja-JP">{JAPANESE_NAME}</option>
           </select>
         )} />
       <Row htmlFor={uiFontId} title={text('界面字体', 'Interface font')} desc={text('菜单、表单和列表使用的字体。', 'Used for menus, forms and lists.')}

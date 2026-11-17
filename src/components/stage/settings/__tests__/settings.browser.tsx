@@ -9,6 +9,7 @@ import { setActiveProjectSessionContext } from '../../../../shared/project-sessi
 import { registerEditorExitSaveHandler, useEditorStore } from '../../../../stores/editor-store'
 import { useLayoutStore } from '../../../../stores/layout-store'
 import { useLLMStore } from '../../../../stores/llm-store'
+import { useLocaleStore } from '../../../../stores/locale-store'
 import { navigate } from '../../../../stores/navigation/navigation-intents'
 import { useStageStore } from '../../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../../stores/project-store'
@@ -29,7 +30,7 @@ function snapshot<T>(store: StoreApi<T>): () => void {
   const state = store.getState()
   return () => store.setState(state, true)
 }
-const restores = [snapshot(useLayoutStore), snapshot(useStageStore), snapshot(useLLMStore), snapshot(useThemeStore), snapshot(useProjectStore), snapshot(useEditorStore), snapshot(useWorkflowStore)]
+const restores = [snapshot(useLocaleStore), snapshot(useLayoutStore), snapshot(useStageStore), snapshot(useLLMStore), snapshot(useThemeStore), snapshot(useProjectStore), snapshot(useEditorStore), snapshot(useWorkflowStore)]
 
 const MODEL = { id: 'flash', name: 'DeepSeek V4 Flash', provider: 'deepseek', protocol: 'openai', modelName: 'deepseek-v4-flash',
   apiKey: 'k', baseUrl: 'https://api.deepseek.com', temperature: 0.7, maxTokens: 4096, purposes: ['generation'] } as ModelProfile
@@ -327,6 +328,37 @@ describe('设置页', () => {
     await click(byName('缩小'))
     await click(byName('还原'))
     expect([zoomIn.mock.calls.length, zoomOut.mock.calls.length, zoomReset.mock.calls.length]).toEqual([1, 1, 1])
+  })
+
+  it('界面语言选「日本語」：立即保存并生效，未翻译的内联文案显示英文；切回中文恢复 (#722)', async () => {
+    const saved: unknown[] = []
+    const invoke = win.aiNovelAPI!.invoke
+    win.aiNovelAPI!.invoke = async (channel, ...args) => {
+      if (channel !== 'config:set') return invoke(channel, ...args)
+      saved.push(args[0])
+      return { success: true }
+    }
+    useLocaleStore.setState({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
+    useLayoutStore.setState({ settingsSection: 'appearance' })
+    await mount()
+    const select = () => host!.querySelector<HTMLSelectElement>('select.stage-select')!
+    const choose = async (value: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select(), value)
+      select().dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(select().querySelector('option[value="ja-JP"]')?.textContent).toBe('日本語')
+
+    await choose('ja-JP')
+    expect(saved).toEqual([{ locale: 'ja-JP' }])
+    expect(document.documentElement.lang).toBe('ja-JP')
+    expect(select().value).toBe('ja-JP')
+    expect(host!.textContent).toContain('Interface language')
+    expect(useLocaleStore.getState().t('error.projectNotOpen')).toBe('先にプロジェクトを開いてください。')
+
+    await choose('zh-CN')
+    expect(saved).toEqual([{ locale: 'ja-JP' }, { locale: 'zh-CN' }])
+    expect(select().value).toBe('zh-CN')
+    expect(host!.textContent).toContain('界面语言')
   })
 
   it('主题单选组只占一个 Tab 停靠点，方向键换主题并移动焦点，带修饰键时不动', async () => {
