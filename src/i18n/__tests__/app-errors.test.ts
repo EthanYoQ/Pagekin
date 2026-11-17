@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, containsHan, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
-import { messages } from '../core'
+import { appErrorMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
+import { shown } from './shown-locale'
 
 describe('localized application errors', () => {
   it('maps stable error codes to localized messages', () => {
@@ -353,16 +353,10 @@ describe('日文界面的已登记错误', () => {
     expect(displayedErrorMessage('ja-JP', '')).toBe('Unknown error')
   })
 
-  it('英文概述后面保留日文原因，仍丢掉主进程未登记的中文原文', () => {
-    const japanese = displayedErrorMessage('ja-JP', 'PROJECT_NOT_OPEN')
-    expect(englishWithReason('Could not merge the revision.', japanese)).toBe(`Could not merge the revision. ${japanese}`)
-    expect(englishWithReason('Could not merge the revision.', displayedErrorMessage('ja-JP', '项目数据库未打开'))).toBe('Could not merge the revision.')
-    expect(englishWithReason('Could not merge the revision.', displayedErrorMessage('en-US', '项目数据库未打开'))).toBe('Could not merge the revision.')
-  })
-
-  it('日文目录里每条带汉字的错误说明都带假名，englishWithReason 才分得出日文和中文', () => {
-    const withoutKana = Object.entries(messages['ja-JP'])
-      .filter(([key, value]) => key.startsWith('error.') && containsHan(value) && !/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value))
-    expect(withoutKana).toEqual([])
+  it('附不附原因看界面语言：日文界面保留原因，英文界面丢掉含汉字的原因', () => {
+    const japanese = displayedErrorMessage(shown('ja-JP'), 'PROJECT_NOT_OPEN')
+    expect(englishWithReason(shown('ja-JP'), 'Could not merge the revision.', japanese)).toBe(`Could not merge the revision. ${japanese}`)
+    expect(englishWithReason(shown('en-US'), 'Could not merge the revision.', '项目数据库未打开：ファイル.md')).toBe('Could not merge the revision.')
+    expect(englishWithReason(shown('en-US'), 'Could not merge the revision.', 'disk full')).toBe('Could not merge the revision. disk full')
   })
 })

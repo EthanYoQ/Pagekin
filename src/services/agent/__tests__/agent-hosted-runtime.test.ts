@@ -7,6 +7,8 @@ import { proposeNovelConfigTool } from '../tools/propose-novel-config.tool'
 import { proposeChapterBlueprintTool } from '../tools/propose-chapter-blueprint.tool'
 import { startWorkflowTool } from '../tools/start-workflow.tool'
 import { useProjectStore } from '../../../stores/project-store'
+import { providerContextFailureText } from '../../generation/prompt-budget-failure'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const session = { projectId: 'hosted-project', leaseId: 'hosted-lease', projectPath: 'C:/synthetic/hosted-agent' }
 const project = { id: session.projectId, sessionLease: session.leaseId, path: session.projectPath, name: 'Synthetic',
@@ -305,5 +307,13 @@ describe('Agent hosted consumer control boundary (synthetic transport)', () => {
     expect(ui.onToolCallConfirmRequired).toHaveBeenCalledOnce()
     expect(fixture.recovery.rounds[0].actions).toHaveLength(1)
     expect(fixture.domainEffects.size).toBe(0)
+  })
+
+  it('日文界面下服务商拒收超长请求，说明按日文写，Agent 的文案语言仍是 en-US', async () => {
+    const host = await client(), ui = callbacks()
+    await runAgentLoop('', [], '', 'renderer-model', async () => { throw new Error('GENERATION_CONTEXT_LENGTH_EXCEEDED') }, ui, undefined,
+      { projectSession: session, selectedModelId: 'frozen-model', writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('ja-JP'), agentGeneration: host })
+    expect(ui.onError).toHaveBeenCalledWith(providerContextFailureText(new Error('GENERATION_CONTEXT_LENGTH_EXCEEDED'), shown('ja-JP')))
+    expect(ui.onError.mock.calls[0][0]).toMatch(/\p{Script=Hiragana}|\p{Script=Katakana}/u)
   })
 })

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Locale } from '../../../i18n/types'
+import type { InterfaceLocale, Locale } from '../../../i18n/types'
+import { knownAppErrorMessage } from '../../../i18n/app-errors'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 import type { ProjectData } from '../../../shared/ipc-channels'
 import { useProjectStore } from '../../../stores/project-store'
 
@@ -11,12 +13,12 @@ import { createPlanningMaterialWorkflow } from '../planning-material-workflow'
 
 const projectSession = { projectId: 'project-1', leaseId: 'lease-1', projectPath: 'C:\\novels\\A' }
 
-async function importFailure(locale: Locale, result: Record<string, unknown>): Promise<string> {
+async function importFailure(locale: Locale, result: Record<string, unknown>, interfaceLocale: InterfaceLocale = locale): Promise<string> {
   invokeWithProjectSession.mockResolvedValue(result)
   const workflow = createPlanningMaterialWorkflow({ projectSession, materials: [{ fileName: '设定.md', text: '' }] }, locale)
   const step = workflow.steps[0] as { executor: (...args: unknown[]) => Promise<unknown> }
   const callbacks = { log: vi.fn(), setProgress: vi.fn() }
-  const failure = await step.executor(step, { projectPath: projectSession.projectPath }, callbacks).catch((error: unknown) => error)
+  const failure = await step.executor(step, { projectPath: projectSession.projectPath, uiLocale: locale, interfaceLocale: shown(interfaceLocale) }, callbacks).catch((error: unknown) => error)
   expect(failure).toBeInstanceOf(Error)
   return (failure as Error).message
 }
@@ -39,6 +41,12 @@ describe('planning material import failures', () => {
     const message = await importFailure('zh-CN', { success: false, error: 'KNOWLEDGE_BASE_TEXT_EMPTY' })
     expect(message).toContain('资料内容是空的')
     expect(message).not.toMatch(/[A-Z]{3,}_/u)
+  })
+
+  it('日文界面看英文冻结的运行：概述是英文，登记的原因按日文说明', async () => {
+    const message = await importFailure('en-US', { success: false, error: 'KNOWLEDGE_BASE_TEXT_EMPTY' }, 'ja-JP')
+    expect(message).toContain('Could not import 设定.md')
+    expect(message).toContain(knownAppErrorMessage(shown('ja-JP'), 'KNOWLEDGE_BASE_TEXT_EMPTY')!)
   })
 
   it('prefers errorCode over error text written in the system language', async () => {
