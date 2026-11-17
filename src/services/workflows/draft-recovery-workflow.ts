@@ -3,6 +3,7 @@ import type { MainGenerationRunHandle } from '../generation/generation-runtime'
 import type { WorkflowDefinition } from '../../stores/workflow-store'
 import { workflowResourceKey } from '../../stores/workflow-store'
 import { ipc } from '../ipc-client'
+import { useLocaleStore } from '../../stores/locale-store'
 import { createMainGenerationTransport } from '../generation/main-generation-transport'
 import { DRAFT_VISIBLE_TEXT_VERSION, isDraftVisibleTextVersion } from '../../shared/draft-visible-text'
 import { GenerateDraftCommand } from './commands/generate-draft.command'
@@ -70,10 +71,11 @@ export async function createDraftRecoveryWorkflow(
 
 export async function createBatchRecoveryWorkflow(session: ProjectSessionContext, batchId: string): Promise<WorkflowDefinition> {
   const captured = Object.freeze({ ...session })
+  const locale = useLocaleStore.getState().locale
   const progress = await ipc.invokeWithProjectSession(captured, 'generation:read-batch', { batchId })
   if (progress.nextChapterNumber === null) throw new Error('GENERATION_BATCH_ALREADY_COMPLETED')
   return createBatchChapterWorkflow({ projectPath: captured.projectPath, projectSession: captured,
     resumeBatchId: progress.batchId, generationModelId: progress.modelId, completionMode: progress.mode,
     chapterWordsTarget: progress.targetUnits, startChapterNumber: progress.range.startChapter,
-    chapterCount: progress.range.endChapter - progress.range.startChapter + 1 })
+    chapterCount: progress.range.endChapter - progress.range.startChapter + 1, locale })
 }

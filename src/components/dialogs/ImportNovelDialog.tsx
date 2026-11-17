@@ -696,7 +696,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
               <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                 {text(
                   `阶段：${resumableRun.stage}；进度：${runProgress(resumableRun).completed}/${runProgress(resumableRun).total}${resumableFailure ? `；上次失败：${resumableFailure}` : ''}`,
-                  englishWithReason(currentInterfaceLocale(), 
+                  englishWithReason(currentInterfaceLocale(),
                     `Stage: ${resumableRun.stage}; progress: ${runProgress(resumableRun).completed}/${runProgress(resumableRun).total}`,
                     resumableFailure,
                     ' — ',

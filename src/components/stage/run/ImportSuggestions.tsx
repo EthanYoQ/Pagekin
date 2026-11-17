@@ -59,6 +59,7 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
   const [busy, setBusy] = useState(false)
   // 只采用最近一次发起的读取：采用期间切换语言会再读一次，它读到的是采用前的建议，晚到时不能盖住采用后的结果。
   const latestLoad = useRef(0)
+  const activeSession = useRef(session)
   const current = loaded.session === session
   const items = current ? loaded.items : []
   const error = current && loaded.failure ? displayedErrorMessage(interfaceLocale, loaded.failure.reason) : ''
@@ -68,6 +69,7 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
   ), [run.id, run.projectPath, session])
 
   useEffect(() => {
+    activeSession.current = session
     const load = ++latestLoad.current
     void reload().then(next => { if (latestLoad.current === load) setLoaded({ session, items: next }) })
       .catch(failure => {
@@ -81,6 +83,7 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
     setLoaded(previous => ({ ...previous, failure: undefined }))
     try {
       await adoptImportSuggestions(chosen, session, run.projectPath, run.id)
+      if (activeSession.current !== session) return
       const load = ++latestLoad.current
       const next = await reload()
       if (latestLoad.current === load) setLoaded(previous => previous.session === session ? { session, items: next } : previous)

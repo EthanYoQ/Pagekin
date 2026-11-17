@@ -14,7 +14,7 @@ const MINTS = {
 }
 
 const ROOT = join(__dirname, '..', '..', '..')
-const MINT = /\bas ErrorDisplayLocale\b|shown-locale/gu
+const MINT = /\bas\s+ErrorDisplayLocale\b|shown-locale/gu
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {

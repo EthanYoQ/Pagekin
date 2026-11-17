@@ -186,6 +186,7 @@ export async function launchCreativeWorkflow(
 ): Promise<CreativeWorkflowLaunchReceipt> {
   let generationModelId = options.generationModelId?.trim() || undefined
   const uiLocale = useLocaleStore.getState().locale
+  const errorLocale = errorLocaleForRun(uiLocale, currentInterfaceLocale())
   currentProjectFor(projectSession, uiLocale)
   const registration = options.agentToolAction ? await ipc.invokeWithProjectSession(projectSession, 'agent-generation:register-workflow', { ref: options.agentToolAction }) : undefined
   if (registration) {
@@ -239,8 +240,8 @@ export async function launchCreativeWorkflow(
     useWorkflowStore.getState().addLog(
       'error',
       uiLocale === 'en-US'
-        ? `[Failed] Workflow errored after launch: ${displayedErrorMessage(errorLocaleForRun(uiLocale, currentInterfaceLocale()), error)}`
-        : `[失败] 工作流启动后异常：${displayedErrorMessage(errorLocaleForRun(uiLocale, currentInterfaceLocale()), error)}`,
+        ? `[Failed] Workflow errored after launch: ${displayedErrorMessage(errorLocale, error)}`
+        : `[失败] 工作流启动后异常：${displayedErrorMessage(errorLocale, error)}`,
       uiLocale,
     )
   })
