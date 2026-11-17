@@ -104,7 +104,7 @@ describe('exportNovel project session ownership', () => {
     let release!: () => void
     vi.mocked(ipc.invokeWithProjectSession).mockImplementationOnce((...args) =>
       new Promise<void>(resolve => { release = resolve }).then(() => snapshot(...args)))
-    vi.mocked(ipc.invoke).mockResolvedValueOnce({ success: false, error: 'PROJECT_NOT_OPEN' } as never)
+    vi.mocked(ipc.invoke).mockRejectedValueOnce(new Error('PROJECT_NOT_OPEN'))
 
     const exporting = exportNovel({ format: 'txt', grantId: 'export-grant' }, projectSnapshot, projectSession)
     await vi.waitFor(() => expect(release).toBeTypeOf('function'))
