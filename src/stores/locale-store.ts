@@ -1,25 +1,40 @@
 import { create, type StateCreator } from 'zustand'
 import { ipc } from '../services/ipc-client'
-import { localize, resolveLocale, translate, type MessageKey, type MessageParams } from '../i18n/core'
+import { copyLocale, localize, resolveInterfaceLocale, storedInterfaceLocale, translate, type MessageKey, type MessageParams } from '../i18n/core'
 import { displayedErrorMessage } from '../i18n/app-errors'
-import type { Locale } from '../i18n/types'
+import type { InterfaceLocale, Locale } from '../i18n/types'
 import type { GlobalConfig } from '../shared/ipc-channels'
 
 export interface LocaleDependencies {
   loadConfig: () => Promise<Partial<GlobalConfig>>
-  saveLocale: (locale: Locale) => Promise<{ success: boolean; error?: string }>
+  saveLocale: (locale: InterfaceLocale) => Promise<{ success: boolean; error?: string }>
   systemLocale: () => string | undefined
-  setDocumentLanguage: (locale: Locale) => void
+  setDocumentLanguage: (locale: InterfaceLocale) => void
   reportError?: (message: string, title: string) => void | Promise<void>
 }
 
 export interface LocaleState {
+  /** Language chosen for the interface, including languages that colocated copy does not have yet. */
+  interfaceLocale: InterfaceLocale
+  /** Language of colocated copy (`text`, `localize`) for the interface language: `ja-JP` reads `en-US`. */
   locale: Locale
   initialized: boolean
   init: () => Promise<void>
-  setLocale: (locale: Locale) => Promise<void>
+  setLocale: (locale: InterfaceLocale) => Promise<void>
   t: (key: MessageKey, params?: MessageParams) => string
   text: (zhCNText: string, enUSText: string, params?: MessageParams) => string
+}
+
+function localeFields(interfaceLocale: InterfaceLocale): Pick<LocaleState, 'interfaceLocale' | 'locale'> {
+  return { interfaceLocale, locale: copyLocale(interfaceLocale) }
+}
+
+/**
+ * Interface language in effect. Code that sets only `locale` (as tests do with setState) leaves
+ * `interfaceLocale` behind; then `locale` wins, so the catalog and the colocated copy never disagree.
+ */
+function activeInterfaceLocale(state: Pick<LocaleState, 'interfaceLocale' | 'locale'>): InterfaceLocale {
+  return copyLocale(state.interfaceLocale) === state.locale ? state.interfaceLocale : state.locale
 }
 
 export function createLocaleState(dependencies: LocaleDependencies): StateCreator<LocaleState> {
@@ -28,39 +43,40 @@ export function createLocaleState(dependencies: LocaleDependencies): StateCreato
     // identities with the locale makes those subscriptions reactive while the
     // functions still resolve the latest locale when called from callbacks.
     const localeReaders = () => ({
-      t: (key: MessageKey, params?: MessageParams) => translate(get().locale, key, params),
+      t: (key: MessageKey, params?: MessageParams) => translate(activeInterfaceLocale(get()), key, params),
       text: (zhCNText: string, enUSText: string, params?: MessageParams) => (
         localize(get().locale, zhCNText, enUSText, params)
       ),
     })
 
     return {
-      locale: resolveLocale(dependencies.systemLocale()),
+      ...localeFields(resolveInterfaceLocale(dependencies.systemLocale())),
       initialized: false,
       ...localeReaders(),
       async init() {
         const config = await dependencies.loadConfig()
-        const locale = config.locale ?? resolveLocale(dependencies.systemLocale())
+        const locale = storedInterfaceLocale(config.locale) ?? resolveInterfaceLocale(dependencies.systemLocale())
         dependencies.setDocumentLanguage(locale)
-        set({ locale, initialized: true, ...localeReaders() })
+        set({ ...localeFields(locale), initialized: true, ...localeReaders() })
       },
       async setLocale(locale) {
-        const previousLocale = get().locale
+        const previousLocale = activeInterfaceLocale(get())
         if (locale === previousLocale) return
-        set({ locale, ...localeReaders() })
+        set({ ...localeFields(locale), ...localeReaders() })
         dependencies.setDocumentLanguage(locale)
         try {
           const result = await dependencies.saveLocale(locale)
           if (!result.success) throw new Error(result.error ?? 'Failed to persist locale')
         } catch (error) {
-          if (get().locale === locale) {
-            set({ locale: previousLocale, ...localeReaders() })
+          if (activeInterfaceLocale(get()) === locale) {
+            set({ ...localeFields(previousLocale), ...localeReaders() })
             dependencies.setDocumentLanguage(previousLocale)
           }
-          const reason = displayedErrorMessage(previousLocale, error)
+          const previousCopyLocale = copyLocale(previousLocale)
+          const reason = displayedErrorMessage(previousCopyLocale, error)
           await dependencies.reportError?.(
-            localize(previousLocale, `语言设置保存失败：${reason}`, `Could not save the language setting: ${reason}`),
-            localize(previousLocale, '语言设置保存失败', 'Could not save language setting'),
+            localize(previousCopyLocale, `语言设置保存失败：${reason}`, `Could not save the language setting: ${reason}`),
+            localize(previousCopyLocale, '语言设置保存失败', 'Could not save language setting'),
           )
         }
       },

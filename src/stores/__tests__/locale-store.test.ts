@@ -48,6 +48,69 @@ describe('locale store', () => {
     expect(state.getState().locale).toBe('en-US')
   })
 
+  it('selects a Japanese interface from a Japanese system locale and reads colocated copy in English', async () => {
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({}),
+      saveLocale: vi.fn(async () => ({ success: true })),
+      systemLocale: () => 'ja-JP',
+      setDocumentLanguage: vi.fn(),
+    }))
+
+    await state.getState().init()
+
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    expect(state.getState().text('中文', 'English')).toBe('English')
+    expect(state.getState().t('error.projectNotOpen')).toBe('先にプロジェクトを開いてください。')
+  })
+
+  it('persists a Japanese choice and sets the document language to Japanese', async () => {
+    const saveLocale = vi.fn().mockResolvedValue({ success: true })
+    const setDocumentLanguage = vi.fn()
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({}),
+      saveLocale,
+      systemLocale: () => 'zh-CN',
+      setDocumentLanguage,
+    }))
+
+    await state.getState().setLocale('ja-JP')
+
+    expect(saveLocale).toHaveBeenCalledWith('ja-JP')
+    expect(setDocumentLanguage).toHaveBeenCalledWith('ja-JP')
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+  })
+
+  it('ignores an unknown stored locale and falls back to the operating-system locale', async () => {
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'ko-KR' as never }),
+      saveLocale: vi.fn(async () => ({ success: true })),
+      systemLocale: () => 'zh-CN',
+      setDocumentLanguage: vi.fn(),
+    }))
+
+    await state.getState().init()
+
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
+  })
+
+  it('lets a locale set on its own win over a stale interface language', async () => {
+    const saveLocale = vi.fn(async () => ({ success: true }))
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'ja-JP' }),
+      saveLocale,
+      systemLocale: () => 'ja-JP',
+      setDocumentLanguage: vi.fn(),
+    }))
+    await state.getState().init()
+
+    state.setState({ locale: 'zh-CN' })
+
+    expect(state.getState().t('error.projectNotOpen')).toBe('请先打开项目。')
+    await state.getState().setLocale('ja-JP')
+    expect(saveLocale).toHaveBeenCalledWith('ja-JP')
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+  })
+
   it('notifies components that subscribe only to locale readers', async () => {
     const state = createStore(createLocaleState({
       loadConfig: async () => ({}),

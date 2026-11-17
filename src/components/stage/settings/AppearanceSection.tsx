@@ -1,6 +1,6 @@
 import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { Minus, Moon, Plus, Sun } from 'lucide-react'
-import type { Locale } from '../../../i18n/types'
+import type { InterfaceLocale } from '../../../i18n/types'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { FONT_OPTIONS, useThemeStore, type FontId } from '../../../stores/theme-store'
 import { useConfigSwitch } from '../../settings/use-config-switch'
@@ -71,7 +71,7 @@ function FontSelect({ id, value, onChange }: { id: string; value: FontId; onChan
 
 export default function AppearanceSection() {
   const text = useLocaleStore(s => s.text)
-  const locale = useLocaleStore(s => s.locale)
+  const interfaceLocale = useLocaleStore(s => s.interfaceLocale)
   const setLocale = useLocaleStore(s => s.setLocale)
   const { zoom, zoomIn, zoomOut, zoomReset, uiFont, setUiFont, writingFont, setWritingFont } = useThemeStore()
   const autoOpenNext = useConfigSwitch('autoOpenNextChapterAfterFinalize', false,
@@ -88,9 +88,10 @@ export default function AppearanceSection() {
       <Row htmlFor={languageId} title={text('界面语言', 'Interface language')}
         desc={text('菜单、按钮与提示的语言。AI 写作用的语言在作品设定里单独设置。', 'Menus, buttons and messages. The language AI writes in is set per book, in setup.')}
         control={(
-          <select id={languageId} className="stage-select" value={locale} onChange={event => void setLocale(event.target.value as Locale)}>
+          <select id={languageId} className="stage-select" value={interfaceLocale} onChange={event => void setLocale(event.target.value as InterfaceLocale)}>
             <option value="zh-CN">{text('简体中文', 'Simplified Chinese')}</option>
             <option value="en-US">English</option>
+            <option value="ja-JP">{text('日语', 'Japanese')}</option>
           </select>
         )} />
       <Row htmlFor={uiFontId} title={text('界面字体', 'Interface font')} desc={text('菜单、表单和列表使用的字体。', 'Used for menus, forms and lists.')}

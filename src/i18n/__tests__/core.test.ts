@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createTranslator, localize, resolveLocale, translate } from '../core'
+import { copyLocale, createTranslator, localize, resolveInterfaceLocale, resolveLocale, storedInterfaceLocale, translate } from '../core'
 
 describe('i18n core', () => {
   it.each([
@@ -7,9 +7,39 @@ describe('i18n core', () => {
     ['zh-TW', 'zh-CN'],
     ['en-US', 'en-US'],
     ['fr-FR', 'en-US'],
+    ['ja-JP', 'en-US'],
     [undefined, 'en-US'],
   ] as const)('resolves %s to %s', (input, expected) => {
     expect(resolveLocale(input)).toBe(expected)
+  })
+
+  it.each([
+    ['ja-JP', 'ja-JP'],
+    ['ja', 'ja-JP'],
+    ['zh-TW', 'zh-CN'],
+    ['en-GB', 'en-US'],
+    ['fr-FR', 'en-US'],
+    [undefined, 'en-US'],
+  ] as const)('resolves the interface language for %s to %s', (input, expected) => {
+    expect(resolveInterfaceLocale(input)).toBe(expected)
+  })
+
+  it('accepts only supported stored interface languages', () => {
+    expect(storedInterfaceLocale('ja-JP')).toBe('ja-JP')
+    expect(storedInterfaceLocale('zh-CN')).toBe('zh-CN')
+    expect(storedInterfaceLocale('ko-KR')).toBeUndefined()
+    expect(storedInterfaceLocale(undefined)).toBeUndefined()
+  })
+
+  it('reads colocated copy in English for a Japanese interface', () => {
+    expect(copyLocale('ja-JP')).toBe('en-US')
+    expect(copyLocale('zh-CN')).toBe('zh-CN')
+    expect(copyLocale('en-US')).toBe('en-US')
+  })
+
+  it('translates catalog messages into Japanese', () => {
+    expect(translate('ja-JP', 'error.projectNotOpen')).toBe('先にプロジェクトを開いてください。')
+    expect(translate('ja-JP', 'error.unknown', { message: '<b>Book</b>' })).toBe('問題が発生しました：<b>Book</b>')
   })
 
   it('translates and interpolates values as plain text', () => {
@@ -21,9 +51,11 @@ describe('i18n core', () => {
     const localTranslate = createTranslator({
       'en-US': { 'error.projectNotOpen': 'Open a project first.' },
       'zh-CN': {},
+      'ja-JP': {},
     })
 
     expect(localTranslate('zh-CN', 'error.projectNotOpen')).toBe('Open a project first.')
+    expect(localTranslate('ja-JP', 'error.projectNotOpen')).toBe('Open a project first.')
     expect(localTranslate('en-US', 'missing.key')).toBe('missing.key')
   })
 
