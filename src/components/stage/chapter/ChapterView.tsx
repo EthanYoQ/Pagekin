@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { DRAFT_STATUS_INFO } from '../../../shared/draft-status'
 import { countDraftUnits } from '../../../shared/draft-units'
 import { formatResourceUri } from '../../../shared/project-paths'
@@ -132,6 +132,16 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   // 请求只交给看得见的编辑器；被合并视图或批注审阅盖住时留在 store，露出后再交。交接后清掉，重挂不会重开气泡。
   const [annotationRevision, setAnnotationRevision] = useState<AnnotationRevision | null>(null)
   const covered = draft.mergeData !== null || annotationRevision?.phase === 'review'
+  // 换稿从点击到新稿换上之间锁住正文：期间发起的批注修改会随旧稿一起卸载。
+  const [switching, setSwitching] = useState(false)
+  const whileSwitching = useCallback(async (run: () => Promise<void>) => {
+    setSwitching(true)
+    try {
+      await run()
+    } finally {
+      setSwitching(false)
+    }
+  }, [])
   const recovery = useStageStore(s => !covered && s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
     ? s.selectionRequest : undefined)
   useEffect(() => {
@@ -165,7 +175,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
               step={stage === 'archived' || stage === 'superseded' || stage === null ? null : STAGE_STEP[stage]}
               focus={focus}
               version={draft.meta
-                ? <VersionSwitcher tab={tab} current={draft.meta} label={versionLabel} title={title} disabled={annotationRevision !== null} onSave={() => draft.save(draft.currentBodyRef.current, true)} />
+                ? <VersionSwitcher tab={tab} current={draft.meta} label={versionLabel} title={title} disabled={annotationRevision !== null || switching} whileSwitching={whileSwitching} onSave={() => draft.save(draft.currentBodyRef.current, true)} />
                 : <span className="stage-ch-version stage-ch-version-chip" role="status">{versionLabel}</span>}
             />
           )}
@@ -182,6 +192,8 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
               review={latest ? { report: latest.content, reviewId: latest.id, snapshot: review.snapshot, cycle: review.cycle, reloadCycle: review.reloadCycle } : null}
               focus={focus}
               annotation={annotationRevision}
+              switching={switching}
+              whileSwitching={whileSwitching}
             />
           )}
           {chapterNumber !== undefined && (
@@ -203,7 +215,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 filePath={filePath}
                 recoveryHandle={recovery?.handle}
                 recoveryNonce={recovery?.nonce}
-                editable={editable}
+                editable={editable && !switching}
                 draftReadonly={draft.isReadonly}
                 hideStatusBar
                 onCharCountChange={setCharCount}

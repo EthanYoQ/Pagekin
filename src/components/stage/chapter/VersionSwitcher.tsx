@@ -26,13 +26,14 @@ function versionName(draft: DraftMeta, text: Text): string {
  * 章节标题旁的版本切换器：列出这一章的各稿，已归档的收在「显示已归档」后面。
  * 选中另一稿时在当前标签的位置换上那一稿；这一稿有未保存的修改时先问作者保存还是放弃，不会静默丢掉。
  */
-export default function VersionSwitcher({ tab, current, label, title, disabled, onSave }: {
+export default function VersionSwitcher({ tab, current, label, title, disabled, whileSwitching, onSave }: {
   tab: EditorTab
   current: DraftMeta
   label: string
   title: string
-  /** 批注修改还在等作者处理：换稿会卸载正文，审阅里的修改会丢。 */
+  /** 批注修改还在等作者处理，或正在换稿：换稿会卸载正文，审阅里的修改会丢。 */
   disabled: boolean
+  whileSwitching: (run: () => Promise<void>) => Promise<void>
   /** 保存这一稿的修改；失败时抛出，切换随之取消。 */
   onSave: () => Promise<void>
 }) {
@@ -57,11 +58,11 @@ export default function VersionSwitcher({ tab, current, label, title, disabled, 
     if (open) layerRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus()
   }, [open, layerRef])
 
-  const swapTo = async (draft: DraftMeta) => {
+  const swapTo = (draft: DraftMeta) => whileSwitching(async () => {
     const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
     if (!projectSession) return
     await swapChapterTab(tab.id, () => openDraftInChapterView(draft, title, projectSession))
-  }
+  })
 
   const choose = (draft: DraftMeta) => {
     close(true)

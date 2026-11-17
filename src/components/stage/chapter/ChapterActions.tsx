@@ -64,7 +64,7 @@ type Ask = 'refine' | 'finalize' | 'delete' | 'discard' | 'reopen' | null
  * 完成合并、定稿；直接修稿、删除这一稿、复制本章正文在「更多」里。审稿清单的状态也在这里，
  * 侧页的勾选数与主按钮的「按 N 项意见修稿」是同一份。挂载方以审稿报告的会话键作 key，报告变了清单随之重置。
  */
-export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, title, draft, facts, review, focus, annotation }: {
+export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, title, draft, facts, review, focus, annotation, switching, whileSwitching }: {
   sheetSlot: HTMLDivElement | null
   tab: EditorTab
   stage: ChapterStage
@@ -77,6 +77,8 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   focus: boolean
   /** 批注统一修改进行中：此时打开修稿合并会卸载正文，批注修改会丢。 */
   annotation: AnnotationRevision | null
+  switching: boolean
+  whileSwitching: (run: () => Promise<void>) => Promise<void>
 }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
@@ -124,10 +126,10 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   const included = includedCount(checklist.items)
   const busy = draft.isChapterBusy
   const annotating = annotation !== null
-  const reviseLocked = busy || annotating
+  const reviseLocked = busy || annotating || switching
   const lockHint = annotating ? (
     <>
-      {text('批注修改还在等你处理，修稿会冲掉它。先接受或取消批注修改。', 'Your annotation edits are still pending, and a revision would discard them. Accept or cancel them first.')}
+      {text('批注修改还在等你处理，修稿或换稿会冲掉它。先接受或取消批注修改。', 'Your annotation edits are still pending, and revising or switching drafts would discard them. Accept or cancel them first.')}
       {annotation.reveal && <Button variant="text" size="sm" onClick={annotation.reveal}>{text('回到预览', 'Back to preview')}</Button>}
     </>
   ) : null
@@ -234,7 +236,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
       : () => { openChapterPlan(chapterNumber, title, session); return true })
   }
 
-  const reopen = async (initialDraftId?: number) => {
+  const reopen = (initialDraftId?: number) => whileSwitching(async () => {
     setAsk(null)
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session) return
@@ -261,7 +263,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
       const reason = displayedErrorMessage(useLocaleStore.getState().locale, error)
       toast.error(text(`没能重新打开${chapterLabel(chapterNumber, text)}：${reason}`, `Could not reopen ${chapterLabel(chapterNumber, text).toLowerCase()}: ${reason}`))
     }
-  }
+  })
 
   const deleteManuscript = async () => {
     await deleteFinalizedChapter({
