@@ -219,7 +219,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
       .catch(() => toast.error(text('无法复制正文', 'Could not copy the chapter text')))
   }
 
-  const deleteThisDraft = async () => {
+  const deleteThisDraft = () => whileSwitching(async () => {
     const project = useProjectStore.getState().currentProject
     const displayName = `${chapterLabel(chapterNumber, text)} v${meta.version}`
     const doneMessage = reopening ? text(`已放弃修改，${chapterLabel(chapterNumber, text)}回到原定稿`, `Changes discarded. ${chapterLabel(chapterNumber, text)} is back to its final.`) : undefined
@@ -235,7 +235,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
     await swapChapterTab(tab.id, next
       ? () => openDraftInChapterView(next, title, session)
       : () => { openChapterPlan(chapterNumber, title, session); return true })
-  }
+  })
 
   const reopen = (initialDraftId?: number) => whileSwitching(async () => {
     setAsk(null)
