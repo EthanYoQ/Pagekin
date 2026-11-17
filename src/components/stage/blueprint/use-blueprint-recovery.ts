@@ -7,7 +7,7 @@ import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { structuredContractDiagnostic, structuredContractDiagnosticText } from '../../../shared/structured-contract-diagnostic'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../../shared/project-session-context'
 import { registerEditorExitSaveHandler, useEditorStore, type EditorTab, type PlanningRecoverySaveSnapshot } from '../../../stores/editor-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { currentProjectSessionForPath, isCurrentProjectSession } from '../../editor/use-chapter-blueprints'
 
@@ -32,7 +32,7 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
   const failureText = useCallback((reason: unknown) => {
     const shown = useLocaleStore.getState().locale
     const diagnostic = structuredContractDiagnostic(reason)
-    return diagnostic ? structuredContractDiagnosticText(shown, diagnostic) : displayedErrorMessage(shown, reason)
+    return diagnostic ? structuredContractDiagnosticText(shown, diagnostic) : displayedErrorMessage(currentInterfaceLocale(), reason)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -80,7 +80,7 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
         ...submission.request, authorRecovery: { ...submission.request.authorRecovery, leaseEpoch: candidate.leaseEpoch },
       }, projectKey)
       if (!result.success && !pending && isCurrentProjectSession(session)) useEditorStore.getState().setPlanningSaveSnapshot(tab.id, undefined)
-      if (!result.success) throw workflowMainProcessError({ uiLocale: useLocaleStore.getState().locale }, result.error, '保存恢复蓝图失败', 'Could not save the recovered blueprints.')
+      if (!result.success) throw workflowMainProcessError({ uiLocale: currentInterfaceLocale() }, result.error, '保存恢复蓝图失败', 'Could not save the recovered blueprints.')
       if (!isCurrentProjectSession(session)) return
       useEditorStore.getState().setPlanningSaveSnapshot(tab.id, { ...submission, status: 'saved' })
       useEditorStore.getState().settleTabSave(tab.id, submission)

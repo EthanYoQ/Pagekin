@@ -41,6 +41,7 @@ const CHOICE_NAMES = new Map<string, Pair>([...POV_OPTIONS, ...STRUCTURE_OPTIONS
 export function ImportSuggestions({ run }: { run: WorkflowRun }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
+  const interfaceLocale = useLocaleStore(s => s.interfaceLocale)
   const projectId = useProjectStore(s => s.currentProject?.id)
   const projectPath = useProjectStore(s => s.currentProject?.path)
   const sessionLease = useProjectStore(s => s.currentProject?.sessionLease)
@@ -71,7 +72,7 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
         if (active) setLoaded(previous => ({ session, items: previous.session === session ? previous.items : [], error: displayedErrorMessage(currentInterfaceLocale(), failure) }))
       })
     return () => { active = false }
-  }, [locale, reload, session])
+  }, [interfaceLocale, locale, reload, session])
 
   const adopt = async (chosen: ImportFillSuggestion[]) => {
     if (!session) return

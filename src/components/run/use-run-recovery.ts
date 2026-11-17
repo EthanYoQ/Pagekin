@@ -200,8 +200,8 @@ export function useRunRecovery(): RunRecovery {
   /** 结果晚到时界面语言可能已切换，按显示这一刻的语言写。 */
   const failCandidate = useCallback((error: unknown) => {
     if (!stillCurrent()) return
-    const { locale: shown, text } = useLocaleStore.getState()
-    setCandidateError(displayedErrorMessage(shown, error, text('恢复候选操作失败', 'Recovery candidate action failed')))
+    const { text } = useLocaleStore.getState()
+    setCandidateError(displayedErrorMessage(currentInterfaceLocale(), error, text('恢复候选操作失败', 'Recovery candidate action failed')))
   }, [stillCurrent])
 
   return {

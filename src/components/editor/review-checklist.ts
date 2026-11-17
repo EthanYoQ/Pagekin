@@ -563,7 +563,7 @@ export function useReviewChecklist({
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return null
       setChecklistError(displayedErrorMessage(
-        useLocaleStore.getState().locale,
+        currentInterfaceLocale(),
         error,
         text('确认审稿清单时发生错误。', 'An error occurred while confirming the review checklist.'),
       ))

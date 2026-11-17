@@ -7,15 +7,16 @@ import { describe, expect, it } from 'vitest'
  * 登记错误按传进去的语言查目录。日文界面下 store 的 `locale` 是文案语言 en-US，
  * 把它传进来，报错就是英文；`Locale` 是 `InterfaceLocale` 的子集，tsc 拦不住。
  * 显示时一律传 currentInterfaceLocale()，冻结了文案语言的运行用 interfaceLocaleFor()。
- * 其余实参只认下面登记过的：运行里写进记录与日志的冻结语言，和目录函数自己的参数。
+ * 其余实参只认下面登记过的：运行里写进记录与日志的冻结语言，和转手目录函数的参数。
  * 新出现的实参先判断属于哪一类，再登记。
  */
-const LIVE = /^(?:currentInterfaceLocale\(\)|interfaceLocaleFor\(.+\))$/u
+const LIVE = /^(?:\{ uiLocale: )?(?:currentInterfaceLocale\(\)|interfaceLocaleFor\(.+\))(?: \})?$/u
 
 const REGISTERED: Record<string, string[]> = {
   'src/components/dialogs/use-batch-chapter-form.ts': ['frozenLocale'],
   'src/components/panels/ai-output-failure-presentation.ts': ['locale'],
   'src/services/agent/agent-engine.ts': ['context.uiLocale'],
+  'src/services/generation/prompt-budget-failure.ts': ['locale'],
   'src/services/agent/tools/project-context.ts': ['context?.writingLanguage ?? DEFAULT_WRITING_LANGUAGE'],
   'src/services/workflows/batch-chapter-workflow.ts': ['{ uiLocale }'],
   'src/services/workflows/commands/analyze-style.command.ts': ['context'],
@@ -33,7 +34,7 @@ const REGISTERED: Record<string, string[]> = {
   'src/services/workflows/structured-batch-executor.ts': ['writingLanguage'],
   'src/services/workflows/workflow-project-session.ts': ['context.uiLocale'],
   'src/services/workflows/workflow-utils.ts': ['uiLocale'],
-  'src/stores/locale-store.ts': ['previousLocale'],
+  'src/stores/locale-store.ts': ['fallback'],
   'src/stores/workflow-store.ts': ['context.uiLocale', 'run.uiLocale', 'targetRun.uiLocale', 'uiLocale'],
 }
 

@@ -112,10 +112,9 @@ function projectErrorCopy(
   if (error === undefined || error === null || error === '') {
     return projectCopy(fallbackZhCN, fallbackEnUS)
   }
-  return projectCopy(
-    appErrorMessage('zh-CN', error),
-    appErrorMessage('en-US', error),
-  )
+  // 登记的码按界面语言说明，日文界面没有对应的文案槽；两个槽放同一句，显示时取哪个都对。
+  const shown = appErrorMessage(currentInterfaceLocale(), error)
+  return projectCopy(shown, shown)
 }
 
 function projectOperationCopy(operation: 'create' | 'open'): LocalizedProjectCopy {

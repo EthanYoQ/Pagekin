@@ -1,6 +1,7 @@
 import { knownAppErrorMessage } from '../../i18n/app-errors'
 import { classifyGenerationFailure } from '../../services/generation/prompt-budget-failure'
-import type { Locale } from '../../i18n/types'
+import { copyLocale } from '../../i18n/core'
+import type { InterfaceLocale, Locale } from '../../i18n/types'
 import type { PromptBudgetReport } from '../../services/generation/generation-harness'
 import type { WorkflowFailureCode, WorkflowStep } from '../../stores/workflow-store'
 
@@ -103,16 +104,17 @@ function promptBudgetAdjustment(
   }
 }
 
+/** 日文界面的标题与说明还没有日文，按英文写；登记过的原因按日文目录说明。 */
 export function presentWorkflowFailure(
   failureCode: WorkflowFailureCode | undefined,
   error: string | undefined,
-  locale: Locale,
+  locale: InterfaceLocale,
   isUnpersistedChapterDraft: boolean,
   promptBudgetReport?: PromptBudgetReport,
   activity?: WorkflowStep['generationActivity'],
 ): WorkflowFailurePresentation {
   if (failureCode === 'prompt_budget_exhausted') {
-    const adjustment = promptBudgetAdjustment(promptBudgetReport, locale)
+    const adjustment = promptBudgetAdjustment(promptBudgetReport, copyLocale(locale))
     return locale === 'zh-CN'
       ? {
           heading: '提示词预算不足',

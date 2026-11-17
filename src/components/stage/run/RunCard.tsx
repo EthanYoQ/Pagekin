@@ -273,6 +273,8 @@ function StepOutput({ content, live, text }: { content: string; live: boolean; t
 
 function RunFailureNotice({ run, primary }: { run: WorkflowRun; primary: boolean }) {
   const text = (zh: string, en: string) => run.uiLocale === 'en-US' ? en : zh
+  // 登记的原因按界面语言说明，切换界面语言时重新渲染。
+  useLocaleStore(s => s.interfaceLocale)
   const { presentation, errorCode, canResumeOutline, canRestartOutline } = runFailure(run)
   const current = useProjectStore(() => isCurrentSessionRun(run))
   const outline = useResumePlotOutline(run)

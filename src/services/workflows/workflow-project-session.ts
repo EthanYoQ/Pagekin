@@ -2,8 +2,9 @@ import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { sameProjectPathKey } from '../../shared/project-session-context'
 import type { WorkflowContext } from '../../stores/workflow-store'
 import type { WritingLanguage } from '../../shared/writing-language'
-import type { Locale } from '../../i18n/types'
+import type { InterfaceLocale, Locale } from '../../i18n/types'
 import { knownAppErrorMessage } from '../../i18n/app-errors'
+import { copyLocale } from '../../i18n/core'
 
 /**
  * 取出工作流启动时冻结的项目会话。
@@ -44,15 +45,16 @@ const errorCode = /^[A-Z][A-Z0-9_]*$/u
 /**
  * 主进程拒绝时只回 String(err)：多是只有中文的原文，也可能是错误码。登记过的码按界面语言说明；
  * 未登记的码原样附上供反馈定位，并挂在 code 上；其余原文只附在中文说明后面，英文界面只给英文说明。
- * 只用到界面语言：没有运行上下文的调用方传 { uiLocale }。
+ * 只用到界面语言：没有运行上下文的调用方传 { uiLocale }，显示时传 currentInterfaceLocale()。
+ * 概述按文案语言选（日文界面用英文概述），登记的码按界面语言说明。
  */
 export function workflowMainProcessError(
-  context: Pick<WorkflowContext, 'uiLocale'>,
+  context: { uiLocale: InterfaceLocale },
   error: unknown,
   zhCNSummary: string,
   enUSSummary: string,
 ): Error {
-  const english = context.uiLocale === 'en-US'
+  const english = copyLocale(context.uiLocale) === 'en-US'
   const summary = english ? enUSSummary : zhCNSummary
   // String(err) 的前缀是错误类名：多数是 "Error: "，带名字的错误类（ProjectSessionStaleError）是它自己的类名。
   const raw = typeof error === 'string' ? error.trim().replace(/^[A-Za-z]*Error: /u, '') : ''
