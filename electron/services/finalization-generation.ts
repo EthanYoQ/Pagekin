@@ -8,10 +8,25 @@ import { GenerationRunRepository, textHash, type DurableGenerationRun } from '..
 import { finalizationSlotKey, readFinalizationGenerationContext, finalizationNotesBaseline } from './finalization-generation-source'
 import { SummaryRepository } from '../repositories/summary-repository'
 import { BlueprintRepository } from '../repositories/blueprint-repository'
+import { parseDependencies } from '../repositories/draft-repository'
+import { reopenedFinal } from '../../src/shared/chapter-reopen'
 import { buildFinalizedContinuityFacts } from '../../src/shared/finalized-continuity-facts'
 import { proveFinalizedCharacterGeneration } from './finalized-character-generation-proof'
 import type { CharacterProposalService } from './character-proposal-service'
 
+/** 本稿自己的要点；没有就沿重开时记下的被替换定稿往上找，直到第一份生成过非空要点的稿。 */
+function lastGeneratedNotes(db: Database.Database, draftId: number, chapterNumber: number): string | undefined {
+  const notesOf = db.prepare("SELECT chapter_notes FROM summary_snapshots WHERE draft_id=? AND trim(chapter_notes)<>''").pluck()
+  const dependenciesOf = db.prepare('SELECT source_dependencies FROM drafts WHERE id=?').pluck()
+  const seen = new Set<number>()
+  for (let id: number | undefined = draftId; id !== undefined && !seen.has(id);) {
+    seen.add(id)
+    const notes = notesOf.get(id) as string | undefined
+    if (notes !== undefined) return notes
+    id = reopenedFinal({ chapterNumber, sourceDependencies: parseDependencies(dependenciesOf.get(id)).dependencies })?.draftId
+  }
+  return undefined
+}
 interface SavedEffect { version: 1; artifact: FinalizedCharacterArtifact; contextHash: string; receipt: FinalizationGenerationEffect; receiptHash: string }
 export class FinalizationGeneration {
   constructor(private readonly db: Database.Database, private readonly runs: GenerationRunRepository, private readonly projectId: string, private readonly characters: CharacterProposalService,
@@ -104,8 +119,7 @@ export class FinalizationGeneration {
         if (!isDeepStrictEqual(finalizationNotesBaseline(this.db, context.slot), context.notesBaseline)) throw new Error('GENERATION_FINALIZATION_NOTES_CHANGED')
         const chapterNotes = proof.artifact.text.trim(), { source } = context.slot
         const facts = buildFinalizedContinuityFacts(source.chapterNumber, chapterNotes, context.identity.content, context.chapterEntities, context.identity)
-        const notesLastGenerated = this.db.prepare("SELECT chapter_notes FROM summary_snapshots WHERE chapter_number=? AND draft_id IS NOT NULL AND trim(chapter_notes)<>'' ORDER BY id DESC LIMIT 1")
-          .pluck().get(source.chapterNumber) as string | undefined
+        const notesLastGenerated = lastGeneratedNotes(this.db, source.draftId, source.chapterNumber)
         const blueprintNotes = context.notesBaseline.blueprint.notes
         const authorEditedBlueprintNotes = notesLastGenerated !== undefined && blueprintNotes.trim() !== '' && blueprintNotes !== notesLastGenerated
         SummaryRepository.saveFinalizedContinuity({ draftId: source.draftId, chapterNumber: source.chapterNumber, source, chapterNotes, facts, projectionGeneration: context.identity.projectionGeneration }, this.db)
