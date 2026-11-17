@@ -12,11 +12,17 @@ import { getDesktopMigrationRegistry } from '../../migrations/desktop-registry'
 import { migrateSchema } from '../../migrations/runner'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { verifyM03ReviewCycle, canonicalM03FindingSetHash } from '../../migrations/m03-review-cycle'
-import { createCanonicalProjectManifest } from '../../../src/shared/project-format'
+import { CANONICAL_PROJECT_DATABASE, createCanonicalProjectManifest } from '../../../src/shared/project-format'
 import { buildReviewGenerationReport } from '../../../src/shared/review-generation-report'
 import type { ReviewCycleRecheckContext } from '../../../src/shared/review-cycle'
 import type { GenerationTransportDiagnostics } from '../../../src/shared/generation-contract'
-import { extractPortableProjectArchive } from '../portable-project-archive'
+import { extractPortableProjectArchive, writePortableProjectArchive } from '../portable-project-archive'
+import {
+  createPortableTransferAuthority,
+  parsePortableTransferAuthority,
+  PORTABLE_TRANSFER_AUTHORITY_PATH,
+  serializePortableTransferAuthority,
+} from '../portable-transfer-authority'
 import { getPortableFieldPolicy, listPortableFieldPolicyKeys } from '../portable-project-format'
 import { logicalTableName } from '../../migrations/m07-chapter-recycle'
 import { restorePortableProject } from '../project-restore-service'
@@ -1243,4 +1249,67 @@ it('portable export and restore preserve author annotation history snapshots', a
       before_text: '春雨落下', after_text: '秋雨落下', annotations_json: JSON.stringify([{ selectedText: '春', instruction: '改成秋' }]),
     })
   } finally { restored.close() }
+})
+
+describe('存档导入仍跑全书审修循环校验（#702）', () => {
+  const REVIEW_PROOF = "json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review'"
+
+  /** 解开导出的存档，在包里的库上改一笔，按改后的库重签转移凭据，再打包。 */
+  async function rewriteArchiveDatabase(f: Fixture, change: (db: import('better-sqlite3').Database) => void): Promise<string> {
+    const unpackParent = path.join(f.base, `variant-${randomUUID()}`)
+    fs.mkdirSync(unpackParent)
+    const unpacked = await extractPortableProjectArchive({ archivePath: f.target, stagingParentPath: unpackParent })
+    const file = (entryPath: string) => path.join(unpacked.stagingPath, ...entryPath.split('/'))
+    const databasePath = file(CANONICAL_PROJECT_DATABASE)
+    const db = new Database(databasePath)
+    try { change(db) } finally { db.close() }
+    const portableDatabaseSha256 = hash(fs.readFileSync(databasePath))
+    const previous = parsePortableTransferAuthority(JSON.parse(fs.readFileSync(file(PORTABLE_TRANSFER_AUTHORITY_PATH), 'utf8')))
+    const reader = new Database(databasePath, { readonly: true, fileMustExist: true })
+    let authority
+    try {
+      authority = createPortableTransferAuthority({ database: reader, originProjectId: previous.originProjectId,
+        snapshotGeneration: previous.snapshotGeneration, portableDatabaseSha256 })
+    } finally { reader.close() }
+    const authorityBytes = serializePortableTransferAuthority(authority)
+    fs.writeFileSync(file(PORTABLE_TRANSFER_AUTHORITY_PATH), authorityBytes)
+    const entries = unpacked.manifest.entries.map(entry => entry.path === CANONICAL_PROJECT_DATABASE
+      ? { ...entry, byteSize: fs.statSync(databasePath).size, sha256: portableDatabaseSha256 }
+      : entry.path === PORTABLE_TRANSFER_AUTHORITY_PATH ? { ...entry, byteSize: authorityBytes.length, sha256: hash(authorityBytes) } : entry)
+    const total = entries.reduce((sum, entry) => sum + entry.byteSize, 0)
+    const target = path.join(f.base, `rewritten-${randomUUID()}.ainovel`)
+    await writePortableProjectArchive({
+      manifest: { ...unpacked.manifest, entries, declaredUncompressedBytes: total, declaredCompressedBytes: total,
+        transferReceiptIds: unpacked.manifest.transferReceiptIds.map(id => id === previous.receiptId ? authority.receiptId : id) },
+      sources: entries.map(entry => ({ entry, sourcePath: file(entry.path) })),
+      targetPath: target,
+    })
+    return target
+  }
+
+  it('包里有一条过不了 M03 证明的审修循环，导入被拒绝；同样重签但没改坏的包照常导入', async () => {
+    const f = fixture()
+    seedMergedCycle(f)
+    await exportPortableProject(input(f))
+    let original = ''
+    const intact = await rewriteArchiveDatabase(f, db => {
+      original = db.prepare(`SELECT usage_receipt_json FROM generation_attempts WHERE ${REVIEW_PROOF}`).pluck().get() as string
+      db.prepare(`UPDATE generation_attempts SET usage_receipt_json=json_set(usage_receipt_json,'$.reviewRevisionEffect.contentHash',?)
+        WHERE ${REVIEW_PROOF}`).run(hash('另一份审稿'))
+      db.prepare(`UPDATE generation_attempts SET usage_receipt_json=? WHERE ${REVIEW_PROOF}`).run(original)
+    })
+    await restorePortableProject({ archivePath: intact, targetProjectRoot: path.join(f.base, 'restored-intact') })
+
+    const broken = await rewriteArchiveDatabase(f, db => {
+      const changed = db.prepare(`UPDATE generation_attempts
+        SET usage_receipt_json=json_set(usage_receipt_json,'$.reviewRevisionEffect.contentHash',?) WHERE ${REVIEW_PROOF}`)
+        .run(hash('另一份审稿')).changes
+      expect(changed).toBe(1)
+      db.pragma('foreign_keys = ON')
+      expect(verifyM03ReviewCycle(db)).toBe(false)
+    })
+    const targetProjectRoot = path.join(f.base, 'restored-broken')
+    await expect(restorePortableProject({ archivePath: broken, targetProjectRoot })).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
+    expect(fs.existsSync(path.join(targetProjectRoot, '.ai-novel', CANONICAL_PROJECT_DATABASE))).toBe(false)
+  })
 })
