@@ -130,8 +130,9 @@ async function installLedger(app, page) {
       const session = args.at(-1)
       if (session && typeof session === 'object' && typeof session.leaseId === 'string') globalThis.__perfSession = { event: args[0], session }
       const startedAt = performance.now()
+      const channels = ledger.channels
       try { return await handler(...args) } finally {
-        const entry = ledger.channels[channel] ??= { calls: 0, ms: 0 }
+        const entry = channels[channel] ??= { calls: 0, ms: 0 }
         entry.calls += 1
         entry.ms += performance.now() - startedAt
       }
