@@ -620,5 +620,5 @@ it('选了另一稿、它还在读取时早先发起的修稿生成完成：不�
   expect(document.querySelector('[role="region"][aria-label="修稿合并"]')).toBeNull()
 
   await act(async () => release())
-  await vi.waitFor(() => expect(useEditorStore.getState().tabs.find(tab => tab.id === useEditorStore.getState().activeTabId)?.draftId).toBe(other.id))
+  await expect.element(page.getByRole('button', { name: /^本章版本：草稿 v2/ })).toBeVisible()
 })

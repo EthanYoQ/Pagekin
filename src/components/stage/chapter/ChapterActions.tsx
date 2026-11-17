@@ -162,10 +162,10 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
     if (annotating && pending) autoOpened.current = pending.id
   }, [annotating, pending])
   useEffect(() => {
-    if (stage !== 'merge' || !pending || mergeData || mergeLater || autoOpened.current === pending.id) return
+    if (stage !== 'merge' || !pending || switching || mergeData || mergeLater || autoOpened.current === pending.id) return
     autoOpened.current = pending.id
     openRevision(pending)
-  }, [stage, pending, mergeData, mergeLater, openRevision])
+  }, [stage, pending, switching, mergeData, mergeLater, openRevision])
 
   const startReview = () => void draft.review(dims.filter(dim => checkedDims[dim.key]).map(dim => dim.promptLabel).join('、') || undefined)
 
