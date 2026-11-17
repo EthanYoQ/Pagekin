@@ -885,9 +885,9 @@ describe('Japanese copy coverage report (#722)', () => {
         "  return <p title={text('书架', 'Shelf', '本棚')}>{text('{n} 本', 'Books: {n}', '{n} 冊', { n: 2 })}</p>",
         '}',
       ].join('\n'),
-      'src/services/workflows/shelf-workflow.ts': [
-        "import { localize } from '../../i18n/core'",
-        "export function fail(uiLocale: 'zh-CN' | 'en-US') { throw new Error(localize(uiLocale, '失败', 'Failed.', '失敗しました。')) }",
+      'src/services/shelf-service.ts': [
+        "import { localize } from '../i18n/core'",
+        "export function fail(uiLocale: 'zh-CN' | 'en-US' | 'ja-JP') { throw new Error(localize(uiLocale, '失败', 'Failed.', '失敗しました。')) }",
       ].join('\n'),
     }, (root) => {
       const clean = runChecker(root)
@@ -922,6 +922,81 @@ describe('Japanese copy coverage report (#722)', () => {
     }, (root) => {
       const result = runChecker(root)
       expect(result.status, result.output).toBe(0)
+    })
+  })
+
+  it('reads the parameter object after Japanese copy held in a variable when checking English plurals', () => {
+    withFixture({
+      'src/components/shelf/Thread.tsx': [
+        "import { useLocaleStore } from '../../stores/locale-store'",
+        "import { pluralEn } from '../../shared/plural-en'",
+        "const removedJa = 'スレッドと {n} 件の出来事を削除しました'",
+        'export function Thread({ n }: { n: number }) {',
+        '  const text = useLocaleStore(s => s.text)',
+        "  return <p>{text('线索与 {n} 个事件已移除', 'The thread and its {n} {events} are removed', removedJa, { n, events: pluralEn(n, 'event') })}</p>",
+        '}',
+      ].join('\n'),
+    }, (root) => {
+      const result = runChecker(root)
+      expect(result.status, result.output).toBe(0)
+    })
+  })
+
+  it('checks empty Japanese copy only inside the area a contributor claims', () => {
+    withFixture({
+      'src/components/shelf/Shelf.tsx': "export const title = (text: (zh: string, en: string, ja: string) => string) => text('书架', 'Shelf', '')",
+      'src/services/notice.ts': "export const notice = (text: (zh: string, en: string, ja: string) => string) => text('提醒', 'Notice', 'お知らせ')",
+    }, (root) => {
+      const outside = runChecker(root, ['--ja-report', 'src/services'])
+      expect(outside.status, outside.output).toBe(0)
+      expect(outside.output).not.toContain('[empty-ja]')
+
+      const inside = runChecker(root, ['--ja-report', 'src/components'])
+      expect(inside.status).toBe(1)
+      expect(inside.output).toContain('src/components/shelf/Shelf.tsx:1 [empty-ja]')
+    })
+  })
+
+  describe('run code under src/services/workflows and src/services/agent (#725: ja-JP never reaches run records)', () => {
+    const runCode = {
+      'src/services/workflows/chapter-workflow.ts': [
+        "import { localize } from '../../i18n/core'",
+        "export const failed = (uiLocale: 'zh-CN' | 'en-US') => localize(uiLocale, '失败', 'Failed.', '失敗しました。')",
+        "export const done = (uiLocale: 'zh-CN' | 'en-US') => localize(uiLocale, '完成', 'Done.')",
+      ].join('\n'),
+      'src/services/agent/tools/note-tool.ts': [
+        "import { useLocaleStore } from '../../../stores/locale-store'",
+        "export const label = () => useLocaleStore.getState().text('笔记', 'Note', 'ノート', {})",
+        "export const plain = () => useLocaleStore.getState().text('笔记', 'Note')",
+      ].join('\n'),
+      'src/services/notice.ts': [
+        "import { copyLocale, localize } from '../i18n/core'",
+        "export const notice = (locale: 'zh-CN' | 'en-US' | 'ja-JP') => localize(copyLocale(locale), '提醒', 'Notice')",
+      ].join('\n'),
+    }
+
+    it('fails the default check on Japanese copy in run code and says why', () => {
+      withFixture(runCode, (root) => {
+        const result = runChecker(root)
+
+        expect(result.status).toBe(1)
+        expect(result.output).toContain('src/services/workflows/chapter-workflow.ts:2 [run-code-ja]')
+        expect(result.output).toContain('src/services/agent/tools/note-tool.ts:2 [run-code-ja]')
+        expect(result.output).not.toContain('chapter-workflow.ts:3')
+        expect(result.output).not.toContain('note-tool.ts:3')
+        expect(result.output).toMatch(/run language.*run records/)
+      })
+    })
+
+    it('leaves run code and frozen copy-locale calls out of the missing count and reports them on their own', () => {
+      withFixture(runCode, (root) => {
+        const result = runChecker(root, ['--ja-report'])
+
+        expect(result.output).toContain('Japanese copy coverage: 0 calls, 0 with Japanese, 0 missing, 0 undetermined')
+        expect(result.output).toContain('Run code (no Japanese; copy follows the run language and is stored): 4 calls')
+        expect(result.output).toContain('Frozen copy locale (never shows Japanese): 1 calls')
+        expect(result.output.split('Missing Japanese:\n')[1].split('\n\n')[0]).toBe('')
+      })
     })
   })
 })
