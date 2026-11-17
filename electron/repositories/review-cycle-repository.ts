@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { LIVE_PARENT } from './draft-source-guard'
-import { canonicalM03FindingSetHash, verifyM03ReviewCycle, type M03FindingDescriptor } from '../migrations/m03-review-cycle'
+import { canonicalM03FindingSetHash, verifyM03ReviewCycleById, type M03FindingDescriptor } from '../migrations/m03-review-cycle'
 import { parseHumanConfirmedReviewSnapshot, type HumanConfirmedReviewSnapshot } from '../../src/shared/human-confirmed-review'
 import { parseChapterGoalReview } from '../../src/shared/chapter-goal-review'
 import { classifyFindingEvidenceChange, unshownMustShowRecheckFindings, type ReviewCycleRecheckContext,
@@ -418,7 +418,8 @@ function bindAuthorWaivers(input: { cycleId: string; confirmationContentHash: st
   return waived
 }
 
-function reconcileDiscardedRevisionIds(db: Database.Database, revisionIds: readonly number[]): number {
+/** 返回被摘下修稿的循环。 */
+function reconcileDiscardedRevisionIds(db: Database.Database, revisionIds: readonly number[]): string[] {
   const cycles: Array<{ cycle_id: string; revision_id: number }> = []
   for (const revisionId of revisionIds) {
     const revision = db.prepare('SELECT status FROM revisions WHERE id=?').get(revisionId) as { status: string } | undefined
@@ -434,15 +435,19 @@ function reconcileDiscardedRevisionIds(db: Database.Database, revisionIds: reado
       WHERE cycle_id=? AND revision_id=? AND revision_status='generated'`).run(cycle.cycle_id, cycle.revision_id)
     if (result.changes !== 1) conflict()
   }
-  return cycles.length
+  return cycles.map(cycle => cycle.cycle_id)
 }
 
-function detachDiscardedGeneratedCycles(db: Database.Database, baseDraftId: number, excludedCycleId: string): void {
+function detachDiscardedGeneratedCycles(db: Database.Database, baseDraftId: number, excludedCycleId: string): string[] {
   const rows = db.prepare(`SELECT rc.revision_id FROM review_cycles rc
     JOIN revisions r ON r.id=rc.revision_id
     WHERE rc.revision_status='generated' AND r.status='discarded' AND r.base_draft_id=? AND rc.cycle_id<>?`)
     .all(baseDraftId, excludedCycleId) as { revision_id: number }[]
-  reconcileDiscardedRevisionIds(db, rows.map(row => row.revision_id))
+  return reconcileDiscardedRevisionIds(db, rows.map(row => row.revision_id))
+}
+
+function verifyCycles(db: Database.Database, cycleIds: readonly string[]): boolean {
+  return cycleIds.every(cycleId => verifyM03ReviewCycleById(db, cycleId))
 }
 
 function isCurrentMergedCycle(cycleId: string, mergedHash: string, db: Database.Database): boolean {
@@ -468,7 +473,7 @@ function readRecheckCycle(cycleId: string, db: Database.Database): RecheckCycleR
   if (!cycle || cycle.revision_status !== 'merge-committed' || !cycle.merged_hash
     || !HASH.test(cycle.merged_hash) || cycle.source_content === null
     || hash(cycle.merged_body) !== cycle.merged_hash || !isCurrentMergedCycle(cycleId, cycle.merged_hash, db)
-    || !verifyM03ReviewCycle(db)) conflict()
+    || !verifyM03ReviewCycleById(db, cycleId)) conflict()
   return cycle
 }
 
@@ -510,7 +515,7 @@ export class ReviewCycleRepository {
       FROM review_cycles WHERE review_id=? AND review_id IN (SELECT id FROM reviews WHERE ${LIVE_PARENT})`).get(reviewId) as { cycle_id: string; review_id: number;
         revision_status: ReviewCycleProjection['revisionStatus']; merged_hash: string | null; recheck_count: 0 | 1 } | undefined
     if (!cycle) return null
-    if (!verifyM03ReviewCycle(db)) conflict()
+    if (!verifyM03ReviewCycleById(db, cycle.cycle_id)) conflict()
     const review = db.prepare(`SELECT r.source_content,c.body FROM reviews r
       JOIN contents c ON c.id=r.content_id WHERE r.id=?`).get(reviewId) as { source_content: string | null; body: string } | undefined
     if (!review || review.source_content === null) conflict()
@@ -587,7 +592,7 @@ export class ReviewCycleRepository {
           || existing.review_content_hash !== input.reviewContentHash || existing.source_hash !== input.source.contentHash
           || existing.finding_set_hash !== findingSetHash || existing.comparison_version !== 1
           || canonicalM03FindingSetHash(stored.map(persistedFinding)) !== findingSetHash) conflict()
-        if (!verifyM03ReviewCycle(db)) conflict()
+        if (!verifyM03ReviewCycleById(db, id)) conflict()
         return { cycleId: id, findingSetHash, findingCount: findings.length }
       }
 
@@ -602,7 +607,7 @@ export class ReviewCycleRepository {
         item.source.span?.unit ?? null, item.excerptHash, item.occurrence, item.category, item.targetId, item.kind,
         item.problemText, item.expectedText, item.status,
         item.evidenceHash, item.confirmationItemIndex)
-      if (!verifyM03ReviewCycle(db)) invalid()
+      if (!verifyM03ReviewCycleById(db, id)) invalid()
       return { cycleId: id, findingSetHash, findingCount: findings.length }
     })()
   }
@@ -620,7 +625,7 @@ export class ReviewCycleRepository {
         if (cycle.confirmation_content_hash !== confirmation.contentHash) conflict()
         const waivedFindingCount = bindAuthorWaivers({ cycleId: input.cycleId,
           confirmationContentHash: confirmation.contentHash }, confirmation.snapshot, db, false)
-        if (!verifyM03ReviewCycle(db)) conflict()
+        if (!verifyM03ReviewCycleById(db, input.cycleId)) conflict()
         return { cycleId: input.cycleId, confirmationReviewId: input.confirmationReviewId,
           confirmationContentHash: confirmation.contentHash, waivedFindingCount, idempotent: true }
       }
@@ -646,7 +651,7 @@ export class ReviewCycleRepository {
       const result = db.prepare(`UPDATE review_cycles SET confirmation_review_id=?,confirmation_content_hash=?
         WHERE cycle_id=? AND revision_status='not-generated' AND revision_id IS NULL`)
         .run(input.confirmationReviewId, confirmation.contentHash, input.cycleId)
-      if (result.changes !== 1 || !verifyM03ReviewCycle(db)) conflict()
+      if (result.changes !== 1 || !verifyM03ReviewCycleById(db, input.cycleId)) conflict()
       return { cycleId: input.cycleId, confirmationReviewId: input.confirmationReviewId,
         confirmationContentHash: confirmation.contentHash, waivedFindingCount, idempotent: false }
     })()
@@ -667,7 +672,7 @@ export class ReviewCycleRepository {
           || cycle.confirmation_content_hash !== input.confirmationContentHash || cycle.revision_id !== input.revisionId) conflict()
         const { snapshot } = validateGeneratedBinding(input, cycle, db)
         bindAuthorWaivers({ cycleId: input.cycleId, confirmationContentHash: input.confirmationContentHash }, snapshot, db, false)
-        if (!verifyM03ReviewCycle(db)) conflict()
+        if (!verifyM03ReviewCycleById(db, input.cycleId)) conflict()
         return { cycleId: input.cycleId, confirmationReviewId: input.confirmationReviewId,
           revisionId: input.revisionId, revisionStatus: 'generated', idempotent: true }
       }
@@ -681,11 +686,11 @@ export class ReviewCycleRepository {
       const { baseDraftId, snapshot } = validateGeneratedBinding(input, cycle, db)
       bindAuthorWaivers({ cycleId: input.cycleId, confirmationContentHash: input.confirmationContentHash }, snapshot, db,
         cycle.confirmation_review_id === null)
-      detachDiscardedGeneratedCycles(db, baseDraftId, input.cycleId)
+      const detached = detachDiscardedGeneratedCycles(db, baseDraftId, input.cycleId)
       const result = db.prepare(`UPDATE review_cycles SET confirmation_review_id=?,confirmation_content_hash=?,revision_id=?,
         revision_status='generated' WHERE cycle_id=? AND revision_status='not-generated' AND revision_id IS NULL`)
         .run(input.confirmationReviewId, input.confirmationContentHash, input.revisionId, input.cycleId)
-      if (result.changes !== 1 || !verifyM03ReviewCycle(db)) invalid()
+      if (result.changes !== 1 || !verifyCycles(db, [input.cycleId, ...detached])) invalid()
       return { cycleId: input.cycleId, confirmationReviewId: input.confirmationReviewId,
         revisionId: input.revisionId, revisionStatus: 'generated', idempotent: false }
     })()
@@ -707,7 +712,7 @@ export class ReviewCycleRepository {
       if (!merged || merged.status !== 'merged' || merged.merged_to_draft_id !== merged.base_draft_id
         || hash(merged.body) !== input.mergedHash) conflict()
       if (cycle.revision_status === 'merge-committed') {
-        if (cycle.merged_hash !== input.mergedHash || !verifyM03ReviewCycle(db)) conflict()
+        if (cycle.merged_hash !== input.mergedHash || !verifyM03ReviewCycleById(db, cycle.cycle_id)) conflict()
         return { revisionId: input.revisionId, bound: true, cycleId: cycle.cycle_id,
           revisionStatus: 'merge-committed', idempotent: true }
       }
@@ -717,7 +722,7 @@ export class ReviewCycleRepository {
       if (result.changes === 1 && db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='review_cycle_merges'").get()) {
         db.prepare('INSERT INTO review_cycle_merges(cycle_id,body) VALUES(?,?)').run(cycle.cycle_id, merged.body)
       }
-      if (result.changes !== 1 || !verifyM03ReviewCycle(db)) conflict()
+      if (result.changes !== 1 || !verifyM03ReviewCycleById(db, cycle.cycle_id)) conflict()
       return { revisionId: input.revisionId, bound: true, cycleId: cycle.cycle_id,
         revisionStatus: 'merge-committed', idempotent: false }
     })()
@@ -780,7 +785,7 @@ export class ReviewCycleRepository {
       const result = db.prepare(`UPDATE review_cycles SET recheck_count=1,recheck_attempt_id=?
         WHERE cycle_id=? AND revision_status='merge-committed' AND recheck_count=0 AND recheck_attempt_id IS NULL`)
         .run(attemptId, cycleId)
-      if (result.changes !== 1 || !verifyM03ReviewCycle(db)) conflict()
+      if (result.changes !== 1 || !verifyM03ReviewCycleById(db, cycleId)) conflict()
       return { cycleId, attemptId, recheckCount: 1, idempotent: false }
     })()
   }
@@ -798,8 +803,8 @@ export class ReviewCycleRepository {
     const uniqueIds = [...new Set(revisionIds)].sort((left, right) => left - right)
     return db.transaction(() => {
       const detached = reconcileDiscardedRevisionIds(db, uniqueIds)
-      if (!verifyM03ReviewCycle(db)) conflict()
-      return { revisionIds: uniqueIds, detached }
+      if (!verifyCycles(db, detached)) conflict()
+      return { revisionIds: uniqueIds, detached: detached.length }
     })()
   }
 }

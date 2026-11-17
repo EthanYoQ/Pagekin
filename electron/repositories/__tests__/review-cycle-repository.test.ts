@@ -4,12 +4,16 @@ import type { FrozenChapterGoals } from '../../../src/shared/chapter-goal-review
 import type { ConsistencyFinding } from '../../../src/shared/consistency-preflight'
 import { buildReviewCycleRecheckReport, type ReviewCycleRecheckContext } from '../../../src/shared/review-cycle'
 import {
+  attachStatementLedger,
+  breakReviewProof,
   create,
+  defaultGoals,
   defaultModel,
   generatedCycle,
   mergeRows,
   reviewCycleDatabase as fixture,
   seed,
+  seedReviewedBook,
   seedRevision,
 } from '../../../test/helpers/review-cycle-fixture'
 import { canonicalM03FindingSetHash, verifyM03ReviewCycle } from '../../migrations/m03-review-cycle'
@@ -35,9 +39,9 @@ function risk(stableFactKey: string, evidence: string): ConsistencyFinding {
     issue: { zhCN: '事实冲突', enUS: 'Fact conflict' }, suggestion: { zhCN: '请核实', enUS: 'Verify' } }
 }
 
-function mergedFindingCycle(db: import('better-sqlite3').Database, key: string, mergedContent: string) {
+function mergedFindingCycle(db: import('better-sqlite3').Database, key: string, mergedContent: string, chapterNumber = 1) {
   const item = generatedCycle(db, key, undefined, { source: '开场时门闩松动，主角立即停步。',
-    preflight: [risk('fact:door-latch', '门闩松动')] })
+    preflight: [risk('fact:door-latch', '门闩松动')], chapterNumber, frozenGoals: { ...defaultGoals, chapterNumber } })
   const mergedHash = mergeRows(db, item, mergedContent)
   db.transaction(() => ReviewCycleRepository.commitMergedRevision({ revisionId: item.revision.revisionId, mergedHash }, db))()
   return { ...item, mergedContent, mergedHash }
@@ -58,7 +62,8 @@ function seedRecheckAttempt(db: import('better-sqlite3').Database, item: ReturnT
     findingId: mapping.findingId, targetId: mapping.targetId, resolved: mapping.resolved,
     evidenceQuote: item.mergedContent.slice(0, 2), reason: '复核证据',
   })) })
-  const frozenGoals: FrozenChapterGoals = { chapterNumber: 1, coverage: 'not_configured', items: [] }
+  const { chapterNumber } = item.seeded
+  const frozenGoals: FrozenChapterGoals = { chapterNumber, coverage: 'not_configured', items: [] }
   const report = buildReviewCycleRecheckReport(modelContent, item.mergedContent, context, 'zh-CN')
   const reviewBody = JSON.stringify({ summary: report.summary, items: report.items }, null, 2)
   const reportItems = (JSON.parse(reviewBody) as { items: unknown[] }).items
@@ -69,11 +74,11 @@ function seedRecheckAttempt(db: import('better-sqlite3').Database, item: ReturnT
     .pluck().get(item.seeded.draftId))
   const contentId = Number(db.prepare('INSERT INTO contents(body) VALUES(?)').run(reviewBody).lastInsertRowid)
   const reviewId = Number(db.prepare(`INSERT INTO reviews(base_draft_id,review_index,source_draft_chapter_number,
-    source_draft_version,source_draft_status,source_content,content_id) VALUES(?,?,1,1,'revised',?,?)`)
-    .run(item.seeded.draftId, reviewIndex, item.mergedContent, contentId).lastInsertRowid)
+    source_draft_version,source_draft_status,source_content,content_id) VALUES(?,?,?,1,'revised',?,?)`)
+    .run(item.seeded.draftId, reviewIndex, chapterNumber, item.mergedContent, contentId).lastInsertRowid)
   const attemptId = `attempt-recheck-${key}`, runId = `run-recheck-${key}`, artifactId = `artifact-recheck-${key}`
   const reviewContext = { version: 1, operation: 'review-chapter', sourceHash: item.mergedHash,
-    source: { id: item.seeded.draftId, chapterNumber: 1, version: 1, status: 'revised', content: item.mergedContent },
+    source: { id: item.seeded.draftId, chapterNumber, version: 1, status: 'revised', content: item.mergedContent },
     config: {}, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', authorInputs: [], characterStates: '（暂无）',
     worldbuilding: '', history: [], blueprints: [], frozenGoals, preflightFindings: [], recheck: context }
   const contextHash = hash(JSON.stringify(reviewContext))
@@ -615,9 +620,6 @@ describe('ReviewCycleRepository generated revision state', () => {
       db.prepare("UPDATE revisions SET status='discarded' WHERE id IN (?,?)")
         .run(first.revision.revisionId, second.revision.revisionId)
       expect(verifyM03ReviewCycle(db)).toBe(false)
-      expect(() => db.transaction(() => ReviewCycleRepository
-        .reconcileDiscardedRevision(first.revision.revisionId, db))()).toThrow('REVIEW_CYCLE_CONFLICT')
-      expect(db.prepare("SELECT COUNT(*) FROM review_cycles WHERE revision_status='generated'").pluck().get()).toBe(2)
 
       const result = db.transaction(() => ReviewCycleRepository.reconcileDiscardedRevisions([
         second.revision.revisionId, first.revision.revisionId,
@@ -1251,6 +1253,223 @@ describe('ReviewCycleRepository recheck state', () => {
       expect(db.prepare('SELECT recheck_count,recheck_attempt_id FROM review_cycles WHERE cycle_id=?').get(item.cycle.cycleId))
         .toEqual({ recheck_count: 0, recheck_attempt_id: null })
       expect(verifyM03ReviewCycle(db)).toBe(true)
+    } finally { db.close() }
+  })
+})
+
+function authorConfirmationFor(db: import('better-sqlite3').Database, key: string) {
+  const seeded = seed(db, { key, preflight: [risk('fact:door', '预检证据')] })
+  const cycle = create(db, seeded.call)
+  const rows = db.prepare('SELECT finding_id FROM review_findings WHERE cycle_id=? ORDER BY finding_id').pluck().all(cycle.cycleId) as string[]
+  const confirmation = seedConfirmation(db, seeded, { kind: 'human-confirmed-review', schemaVersion: 2, cycleId: cycle.cycleId,
+    sourceReviewId: seeded.reviewId,
+    sourceDraft: { id: seeded.draftId, chapterNumber: 1, version: 1, status: 'draft', content: seeded.source },
+    summary: '作者确认', authorGuidance: '', items: rows.map(findingId => ({ findingId, category: '连续性', severity: 'warning',
+      description: '本次忽略', decision: 'waive', origin: 'ai' })) })
+  const commit = () => db.transaction(() => ReviewCycleRepository.commitAuthorConfirmation({
+    cycleId: cycle.cycleId, confirmationReviewId: confirmation.id }, db))()
+  return { seeded, cycle, commit }
+}
+
+describe('ReviewCycleRepository 只校验被读写的那一条循环', () => {
+  /** 每个仓库入口执行的语句数（只计入口本身，造数不计）。 */
+  function statementsPerEntry(chapters: number): Record<string, number> {
+    const db = fixture()
+    try {
+      seedReviewedBook(db, chapters)
+      const chapterNumber = chapters + 1
+      const seeded = seed(db, { key: `review-next-${chapters}`, chapterNumber, source: `第${chapterNumber}章开场，目标完成。`,
+        frozenGoals: { ...defaultGoals, chapterNumber } })
+      const ledger = attachStatementLedger(db)
+      const counted = <T>(action: () => T): [number, T] => {
+        const before = ledger.total()
+        const result = action()
+        return [ledger.total() - before, result]
+      }
+      const [createCount, cycle] = counted(() => create(db, seeded.call))
+      const revision = seedRevision(db, seeded, { key: `revision-next-${chapters}` })
+      revision.attach.cycleId = cycle.cycleId
+      const [attachCount] = counted(() => db.transaction(() => ReviewCycleRepository.attachGeneratedRevision(revision.attach, db))())
+      const mergedHash = mergeRows(db, { seeded, cycle, revision }, `${seeded.source}\n合并。`)
+      const merge = () => db.transaction(() => ReviewCycleRepository.commitMergedRevision({ revisionId: revision.revisionId, mergedHash }, db))()
+      const [mergeCount] = counted(merge)
+      const [mergeAgainCount] = counted(merge)
+      const [readCount, projection] = counted(() => ReviewCycleRepository.getByReviewId(seeded.reviewId, db))
+      const [planCount, plan] = counted(() => ReviewCycleRepository.planRecheck(cycle.cycleId, db))
+      expect(projection?.revisionStatus).toBe('merge-committed')
+      expect(plan.disposition).toBe('not-required')
+      return { create: createCount, attach: attachCount, merge: mergeCount, mergeAgain: mergeAgainCount,
+        read: readCount, planRecheck: planCount }
+    } finally { db.close() }
+  }
+
+  it('读写一条循环执行的语句数不随全书章数 K 变', () => {
+    expect(statementsPerEntry(12)).toEqual(statementsPerEntry(1))
+  })
+
+  it('循环 Y 坏了以后，对循环 X 的读写照常成功', () => {
+    const db = fixture()
+    try {
+      const x = mergedFindingCycle(db, 'x', '开场时门闩已修好，主角继续前进。', 2)
+      const y = mergedFindingCycle(db, 'y', '开场时门闩已修好，主角继续前进。')
+      breakReviewProof(db, y)
+      expect(verifyM03ReviewCycle(db)).toBe(false)
+      expect(ReviewCycleRepository.getByReviewId(x.seeded.reviewId, db)?.revisionStatus).toBe('merge-committed')
+      expect(db.transaction(() => ReviewCycleRepository.commitMergedRevision({ revisionId: x.revision.revisionId,
+        mergedHash: x.mergedHash }, db))()).toMatchObject({ bound: true, idempotent: true })
+      const plan = ReviewCycleRepository.planRecheck(x.cycle.cycleId, db)
+      const finding = plan.context!.findings[0]!
+      const attempt = seedRecheckAttempt(db, x, plan.context!, { key: 'x',
+        mappings: [{ findingId: finding.findingId, targetId: finding.targetId, reviewItemIndex: 0, resolved: false }] })
+      expect(db.transaction(() => ReviewCycleRepository.commitRecheck(x.cycle.cycleId, attempt.attemptId, db))())
+        .toMatchObject({ recheckCount: 1, idempotent: false })
+      const next = generatedCycle(db, 'x-next', undefined, { chapterNumber: 3, frozenGoals: { ...defaultGoals, chapterNumber: 3 } })
+      expect(ReviewCycleRepository.getByReviewId(next.seeded.reviewId, db)?.revisionStatus).toBe('generated')
+    } finally { db.close() }
+  })
+
+  const CONFLICT = 'REVIEW_CYCLE_CONFLICT'
+  const INVALID = 'REVIEW_CYCLE_INPUT_INVALID'
+  type Database = import('better-sqlite3').Database
+  /** 每个入口：造出 Y 所需的状态并弄坏它，返回对 Y 调这个入口的动作。 */
+  const entries: Array<[string, string, (db: Database) => () => unknown]> = [
+    ['readRecheckCycle（planRecheck）', CONFLICT, db => {
+      const y = mergedFindingCycle(db, 'y', '开场时门闩已修好，主角继续前进。')
+      breakReviewProof(db, y)
+      return () => ReviewCycleRepository.planRecheck(y.cycle.cycleId, db)
+    }],
+    ['getByReviewId', CONFLICT, db => {
+      const y = mergedFindingCycle(db, 'y', '开场时门闩已修好，主角继续前进。')
+      breakReviewProof(db, y)
+      return () => ReviewCycleRepository.getByReviewId(y.seeded.reviewId, db)
+    }],
+    ['create（已存在）', CONFLICT, db => {
+      const seeded = seed(db, { key: 'y' })
+      create(db, seeded.call)
+      breakReviewProof(db, { seeded })
+      return () => create(db, seeded.call)
+    }],
+    ['create（新建）', INVALID, db => {
+      const seeded = seed(db, { key: 'y', effect: 'wrong-effect' })
+      return () => create(db, seeded.call)
+    }],
+    ['commitAuthorConfirmation（幂等）', CONFLICT, db => {
+      const y = authorConfirmationFor(db, 'y')
+      y.commit()
+      breakReviewProof(db, y)
+      return y.commit
+    }],
+    ['commitAuthorConfirmation（新绑定）', CONFLICT, db => {
+      const y = authorConfirmationFor(db, 'y')
+      breakReviewProof(db, y)
+      return y.commit
+    }],
+    ['attachGeneratedRevision（幂等）', CONFLICT, db => {
+      const y = generatedCycle(db, 'y')
+      breakReviewProof(db, y)
+      return () => db.transaction(() => ReviewCycleRepository.attachGeneratedRevision(y.revision.attach, db))()
+    }],
+    ['attachGeneratedRevision（新绑定）', INVALID, db => {
+      const seeded = seed(db, { key: 'y' })
+      const cycle = create(db, seeded.call)
+      const revision = seedRevision(db, seeded, { key: 'revision-y' })
+      revision.attach.cycleId = cycle.cycleId
+      breakReviewProof(db, { seeded })
+      return () => db.transaction(() => ReviewCycleRepository.attachGeneratedRevision(revision.attach, db))()
+    }],
+    ['commitMergedRevision（幂等）', CONFLICT, db => {
+      const y = mergedFindingCycle(db, 'y', '开场时门闩已修好，主角继续前进。')
+      breakReviewProof(db, y)
+      return () => db.transaction(() => ReviewCycleRepository.commitMergedRevision({ revisionId: y.revision.revisionId,
+        mergedHash: y.mergedHash }, db))()
+    }],
+    ['commitMergedRevision（新合并）', CONFLICT, db => {
+      const y = generatedCycle(db, 'y')
+      const mergedHash = mergeRows(db, y, '开场时门闩已修好，主角继续前进。')
+      breakReviewProof(db, y)
+      return () => db.transaction(() => ReviewCycleRepository.commitMergedRevision({ revisionId: y.revision.revisionId,
+        mergedHash }, db))()
+    }],
+    ['commitRecheck', CONFLICT, db => {
+      const y = mergedFindingCycle(db, 'y', '开场时门闩已修好，主角继续前进。')
+      const plan = ReviewCycleRepository.planRecheck(y.cycle.cycleId, db)
+      const finding = plan.context!.findings[0]!
+      const attempt = seedRecheckAttempt(db, y, plan.context!, { key: 'y',
+        mappings: [{ findingId: finding.findingId, targetId: finding.targetId, reviewItemIndex: 0, resolved: false }] })
+      // 写复核之前这条循环还没有复核，入口自己的检查只核回执字段；复核产物被改，只有写后的 M03 证明看得到。
+      db.prepare("UPDATE generation_artifacts SET artifact_json=json_set(artifact_json,'$.textHash',?) WHERE attempt_id=?")
+        .run(hash('另一份复核'), attempt.attemptId)
+      return () => db.transaction(() => ReviewCycleRepository.commitRecheck(y.cycle.cycleId, attempt.attemptId, db))()
+    }],
+    ['reconcileDiscardedRevisions', CONFLICT, db => {
+      const y = generatedCycle(db, 'y')
+      db.prepare("UPDATE revisions SET status='discarded' WHERE id=?").run(y.revision.revisionId)
+      breakReviewProof(db, y)
+      return () => db.transaction(() => ReviewCycleRepository.reconcileDiscardedRevisions([y.revision.revisionId], db))()
+    }],
+  ]
+
+  it.each(entries)('Y 坏了，对 Y 调 %s 仍报 %s，X 照常可读', (_name, code, arrange) => {
+    const db = fixture()
+    try {
+      const x = mergedFindingCycle(db, 'x', '开场时门闩已修好，主角继续前进。', 2)
+      const act = arrange(db)
+      expect(act).toThrow(code)
+      expect(ReviewCycleRepository.getByReviewId(x.seeded.reviewId, db)?.revisionStatus).toBe('merge-committed')
+    } finally { db.close() }
+  })
+
+  it('绑定修稿时顺手摘下的同稿循环也要校验', () => {
+    const db = fixture()
+    try {
+      const sibling = generatedCycle(db, 'sibling')
+      db.prepare("UPDATE revisions SET status='discarded' WHERE id=?").run(sibling.revision.revisionId)
+      breakReviewProof(db, sibling)
+      const seeded = seed(db, { key: 'review-current', source: sibling.seeded.source, existingDraftId: sibling.seeded.draftId })
+      const cycle = create(db, seeded.call)
+      const revision = seedRevision(db, seeded, { key: 'revision-current', replacePending: false })
+      revision.attach.cycleId = cycle.cycleId
+      expect(() => db.transaction(() => ReviewCycleRepository.attachGeneratedRevision(revision.attach, db))())
+        .toThrow(INVALID)
+      expect(db.prepare('SELECT revision_status FROM review_cycles WHERE cycle_id=?').pluck().get(sibling.cycle.cycleId))
+        .toBe('generated')
+    } finally { db.close() }
+  })
+
+  it('只调和两条已丢弃修稿中的一条时，只校验被摘下的那一条', () => {
+    const db = fixture()
+    try {
+      const first = generatedCycle(db, 'one')
+      const second = generatedCycle(db, 'two', first.seeded)
+      db.prepare("UPDATE revisions SET status='discarded' WHERE id IN (?,?)")
+        .run(first.revision.revisionId, second.revision.revisionId)
+      expect(db.transaction(() => ReviewCycleRepository.reconcileDiscardedRevision(first.revision.revisionId, db))())
+        .toEqual({ revisionId: first.revision.revisionId, detached: true })
+      expect(verifyM03ReviewCycle(db)).toBe(false)
+      expect(db.transaction(() => ReviewCycleRepository.reconcileDiscardedRevision(second.revision.revisionId, db))())
+        .toEqual({ revisionId: second.revision.revisionId, detached: true })
+      expect(verifyM03ReviewCycle(db)).toBe(true)
+    } finally { db.close() }
+  })
+
+  it('已合并却缺快照、未合并却有快照，单条校验仍拒绝', () => {
+    const db = fixture()
+    try {
+      const merged = mergedFindingCycle(db, 'merged', '开场时门闩已修好，主角继续前进。')
+      const generated = generatedCycle(db, 'generated', undefined, { chapterNumber: 2, frozenGoals: { ...defaultGoals, chapterNumber: 2 } })
+      db.prepare('DELETE FROM review_cycle_merges WHERE cycle_id=?').run(merged.cycle.cycleId)
+      expect(() => ReviewCycleRepository.getByReviewId(merged.seeded.reviewId, db)).toThrow(CONFLICT)
+      db.prepare('INSERT INTO review_cycle_merges(cycle_id,body) VALUES(?,?)').run(generated.cycle.cycleId, '多出来的快照')
+      expect(() => ReviewCycleRepository.getByReviewId(generated.seeded.reviewId, db)).toThrow(CONFLICT)
+      expect(verifyM03ReviewCycle(db)).toBe(false)
+    } finally { db.close() }
+  })
+
+  it('不属于任何循环的合并快照由外键拒绝写入', () => {
+    const db = fixture()
+    try {
+      expect(() => db.prepare('INSERT INTO review_cycle_merges(cycle_id,body) VALUES(?,?)').run('missing-cycle', '孤儿快照'))
+        .toThrow(/FOREIGN KEY constraint failed/u)
     } finally { db.close() }
   })
 })

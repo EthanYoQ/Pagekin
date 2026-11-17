@@ -298,14 +298,24 @@ function exactSchema(db: Database.Database, table: string, columns: readonly str
   return fragments.every(fragment => compact.includes(fragment.replace(/\s/gu, '').toLowerCase()))
 }
 
+type CycleTables = { mergeTable: boolean; draftRows: 'drafts_all' | 'drafts' }
+
+/** 合并快照表在不在、草稿的全部行在哪张表。v7 起必须有合并快照表。 */
+function cycleTables(db: Database.Database): CycleTables | null {
+  const mergeTable = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='review_cycle_merges'").get())
+  // M07 起 drafts 是不含回收站的视图；校验要看到全部行，否则删掉一章就让整个作品的审修循环校验失败。
+  const draftRows = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='drafts_all'").get() ? 'drafts_all' : 'drafts'
+  if (!mergeTable && Number(db.pragma('user_version', { simple: true })) >= 7) return null
+  return { mergeTable, draftRows }
+}
+
+/** 全书校验：外键、表结构，再逐条校验每个审修循环。只给迁移通道和存档导入用。 */
 export function verifyM03ReviewCycle(db: Database.Database): boolean {
   try {
     if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return false
-    const mergeTable = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='review_cycle_merges'").get())
-    // M07 起 drafts 是不含回收站的视图；校验要看到全部行，否则删掉一章就让整个作品的审修循环校验失败。
-    const draftRows = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='drafts_all'").get() ? 'drafts_all' : 'drafts'
-    if (!mergeTable && Number(db.pragma('user_version', { simple: true })) >= 7) return false
-    if (mergeTable && !exactSchema(db, 'review_cycle_merges', ['cycle_id', 'body'], [
+    const tables = cycleTables(db)
+    if (!tables) return false
+    if (tables.mergeTable && !exactSchema(db, 'review_cycle_merges', ['cycle_id', 'body'], [
       'cycle_id TEXT PRIMARY KEY REFERENCES review_cycles(cycle_id) ON DELETE CASCADE', 'body TEXT NOT NULL',
     ])) return false
     if (!exactSchema(db, 'review_cycles', ['cycle_id', 'root_action_id', 'review_id', 'review_content_hash', 'confirmation_review_id',
@@ -322,227 +332,242 @@ export function verifyM03ReviewCycle(db: Database.Database): boolean {
       "status IN ('unverified','author-waived')", "span_unit='utf16-code-unit'", "status='author-waived'",
     ])) return false
     const cycles = db.prepare('SELECT * FROM review_cycles ORDER BY cycle_id').all() as CycleRow[]
-    const snapshots = mergeTable ? new Map((db.prepare('SELECT cycle_id,body FROM review_cycle_merges').all() as Array<{
-      cycle_id: string; body: string }>).map(row => [row.cycle_id, row.body])) : null
-    if (snapshots && (snapshots.size !== cycles.filter(cycle => cycle.revision_status === 'merge-committed').length
-      || cycles.some(cycle => cycle.revision_status !== 'merge-committed' && snapshots.has(cycle.cycle_id)))) return false
-    for (const cycle of cycles) {
-      if (!nonempty(cycle.cycle_id) || !nonempty(cycle.root_action_id) || !integer(cycle.review_id, 1)
-        || !HASH.test(cycle.review_content_hash) || !HASH.test(cycle.source_hash) || !HASH.test(cycle.finding_set_hash)
-        || !integer(cycle.comparison_version, 1) || !CYCLE_STATUSES.has(cycle.revision_status)
-        || !integer(cycle.recheck_count) || cycle.recheck_count > 1) return false
-      const review = db.prepare(`SELECT r.id,r.base_draft_id,r.source_draft_chapter_number,r.source_draft_version,
-          r.source_draft_status,r.source_content,c.body
-        FROM reviews r JOIN contents c ON c.id=r.content_id WHERE r.id=?`).get(cycle.review_id) as ReviewRow | undefined
-      if (!review || !integer(review.source_draft_chapter_number, 1) || !integer(review.source_draft_version, 1)
-        || !nonempty(review.source_draft_status) || review.source_content === null || hash(review.body) !== cycle.review_content_hash
-        || hash(review.source_content) !== cycle.source_hash) return false
-      const root = db.prepare('SELECT action_json FROM generation_roots WHERE root_action_id=?').get(cycle.root_action_id) as { action_json: string } | undefined
-      const action = root && JSON.parse(root.action_json) as Record<string, unknown>
-      if (!action || !nonempty(action.projectId) || !nonempty(action.epoch)) return false
-      const attempts = db.prepare(`SELECT a.attempt_id,a.run_id,a.root_action_id,r.root_action_id AS run_root_action_id,
-          r.binding_json,a.attempt_json,a.usage_receipt_json
-        FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id WHERE a.root_action_id=? ORDER BY a.rowid`)
-        .all(cycle.root_action_id) as AttemptRow[]
-      if (attempts.some(row => { const binding = JSON.parse(row.binding_json) as Record<string, unknown>
-        return row.run_root_action_id !== cycle.root_action_id || binding.projectId !== action.projectId || !nonempty(binding.epoch) })) return false
-      const reviewIndex = Number(db.prepare('SELECT review_index FROM reviews WHERE id=?').pluck().get(cycle.review_id))
-      const reviewAttempts = attempts.filter(row => proveEffect(db, row, { kind: 'review', id: cycle.review_id,
-        index: reviewIndex, contentHash: cycle.review_content_hash, source: { id: review.base_draft_id,
-          chapterNumber: review.source_draft_chapter_number!, version: review.source_draft_version!,
-          status: review.source_draft_status!, content: review.source_content! } }))
-      if (reviewAttempts.length !== 1) return false
-      const reviewBinding = JSON.parse(reviewAttempts[0]!.binding_json) as Record<string, unknown>
-
-      let confirmation: { body: string; snapshot: HumanConfirmedReviewSnapshot } | null = null
-      if (cycle.confirmation_review_id !== null) {
-        const row = db.prepare('SELECT r.source_content,c.body FROM reviews r JOIN contents c ON c.id=r.content_id WHERE r.id=? AND r.base_draft_id=?')
-          .get(cycle.confirmation_review_id, review.base_draft_id) as { source_content: string | null; body: string } | undefined
-        if (!row || !cycle.confirmation_content_hash || hash(row.body) !== cycle.confirmation_content_hash) return false
-        const snapshot = parseHumanConfirmedReviewSnapshot(row.body)
-        const sourceDraft = snapshot?.sourceDraft
-        if (!snapshot || snapshot.sourceReviewId !== cycle.review_id
-          || row.source_content === null || hash(row.source_content) !== cycle.source_hash
-          || !sourceDraft || sourceDraft.id !== review.base_draft_id || sourceDraft.version !== review.source_draft_version
-          || typeof sourceDraft.content !== 'string' || hash(sourceDraft.content) !== cycle.source_hash) return false
-        confirmation = { body: row.body, snapshot }
-      } else if (cycle.confirmation_content_hash !== null) return false
-
-      let revision: RevisionRow | undefined
-      if (cycle.revision_id !== null) {
-        revision = db.prepare(`SELECT r.id,r.base_draft_id,r.review_source_id,r.source_draft_chapter_number,r.source_draft_version,
-          r.source_draft_status,r.source_content,r.status,r.merged_to_draft_id,c.body
-          FROM revisions r JOIN contents c ON c.id=r.content_id WHERE r.id=?`).get(cycle.revision_id) as RevisionRow | undefined
-        if (!revision || !confirmation || revision.base_draft_id !== review.base_draft_id
-          || revision.review_source_id !== cycle.confirmation_review_id || revision.source_content === null
-          || revision.source_draft_chapter_number !== review.source_draft_chapter_number
-          || revision.source_draft_version !== review.source_draft_version || revision.source_draft_status !== review.source_draft_status
-          || revision.source_content !== review.source_content || hash(revision.source_content) !== cycle.source_hash) return false
-        const revisionHash = hash(revision.body)
-        const revisionIndex = Number(db.prepare('SELECT revision_index FROM revisions WHERE id=?').pluck().get(cycle.revision_id))
-        const revisionAttempts = attempts.filter(row => proveEffect(db, row, { kind: 'revision', id: cycle.revision_id!,
-          index: revisionIndex, contentHash: revisionHash, source: { id: review.base_draft_id,
-            chapterNumber: review.source_draft_chapter_number!, version: review.source_draft_version!,
-            status: review.source_draft_status!, content: review.source_content! },
-          confirmation: { reviewSourceId: cycle.confirmation_review_id!, content: confirmation.body,
-            originalReviewContentHash: cycle.review_content_hash, snapshot: confirmation.snapshot } }))
-        if (revisionAttempts.length !== 1) return false
-      }
-      if (cycle.revision_status === 'not-generated' && (revision || cycle.merged_hash !== null || cycle.recheck_count !== 0 || cycle.recheck_attempt_id !== null)) return false
-      if (cycle.revision_status === 'generated' && (!revision || revision.status !== 'pending'
-        || cycle.merged_hash !== null || cycle.recheck_count !== 0 || cycle.recheck_attempt_id !== null)) return false
-      const recheckEvidence = new Map<string, { targetId: string; evidenceHash: string; resolved: boolean }>()
-      const recheckEligible = new Set<string>()
-      const recheckTargets = new Map<string, string>()
-      const unshownRecheck = new Set<string>()
-      if (cycle.revision_status === 'merge-committed') {
-        if (!revision || revision.status !== 'merged' || revision.merged_to_draft_id !== revision.base_draft_id
-          || revision.base_draft_id !== review.base_draft_id || !cycle.merged_hash || !HASH.test(cycle.merged_hash)) return false
-        const merged = snapshots ? { body: snapshots.get(cycle.cycle_id) } : db.prepare('SELECT c.body FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?')
-          .get(revision.merged_to_draft_id) as { body: string } | undefined
-        if (!merged || typeof merged.body !== 'string' || hash(merged.body) !== cycle.merged_hash) return false
-        const mergedBody = merged.body
-        if (cycle.recheck_count === 1) {
-          const recheck = attempts.find(row => row.attempt_id === cycle.recheck_attempt_id)
-          const recheckEffect = recheck && effect(recheck)
-          if (!recheckEffect || recheckEffect.kind !== 'review' || !integer(recheckEffect.id, 1)) return false
-          const recheckReview = db.prepare('SELECT r.source_content,c.body FROM reviews r JOIN contents c ON c.id=r.content_id WHERE r.id=?')
-            .get(recheckEffect.id) as { source_content: string | null; body: string } | undefined
-          const recheckMeta = db.prepare(`SELECT base_draft_id,review_index,source_draft_chapter_number,source_draft_version,
-              source_draft_status FROM reviews WHERE id=?`).get(recheckEffect.id) as { base_draft_id: number; review_index: number;
-                source_draft_chapter_number: number | null; source_draft_version: number | null; source_draft_status: string | null } | undefined
-          const mergedDraft = db.prepare(`SELECT chapter_number,version,status FROM ${draftRows} WHERE id=?`).get(review.base_draft_id) as {
-            chapter_number: number; version: number; status: string } | undefined
-          const recheckFindings = db.prepare(`SELECT finding_id,target_id,category,kind,problem_text,expected_text,status,span_start,span_end,span_unit,occurrence
-            FROM review_findings WHERE cycle_id=? ORDER BY finding_id`).all(cycle.cycle_id) as Array<{
-              finding_id: string; target_id: string | null; category: string; kind: 'objective' | 'literary'
-              problem_text: string; expected_text: string | null; status: string
-              span_start: number | null; span_end: number | null; span_unit: string | null; occurrence: number | null
-            }>
-          const eligible: ReviewCycleRecheckFinding[] = recheckFindings.flatMap(finding => {
-            if (finding.status === 'unverified' || finding.status === 'author-waived' || finding.target_id === null
-              || finding.span_start === null || finding.span_end === null || finding.span_unit !== 'utf16-code-unit'
-              || finding.occurrence === null) return []
-            const value: ReviewCycleRecheckFinding = { findingId: finding.finding_id, targetId: finding.target_id,
-              category: finding.category, kind: finding.kind,
-              problem: finding.problem_text, ...(finding.expected_text ? { expected: finding.expected_text } : {}),
-              sourceSpan: { start: finding.span_start, end: finding.span_end, unit: 'utf16-code-unit' }, occurrence: finding.occurrence,
-              sourceExcerpt: review.source_content!.slice(finding.span_start, finding.span_end) }
-            return classifyFindingEvidenceChange(review.source_content!, mergedBody, value) === 'changed' ? [value] : []
-          })
-          const unshown = unshownMustShowRecheckFindings(JSON.parse(review.body), confirmation?.snapshot ?? null,
-            recheckFindings.map(finding => ({ findingId: finding.finding_id, kind: finding.kind,
-              status: finding.status, targetId: finding.target_id, problemText: finding.problem_text,
-              expectedText: finding.expected_text }))).filter(finding =>
-              classifyFindingEvidenceChange(review.source_content!, mergedBody, finding) === 'changed')
-          eligible.push(...unshown)
-          for (const finding of unshown) unshownRecheck.add(finding.findingId)
-          for (const finding of eligible) {
-            recheckEligible.add(finding.findingId)
-            recheckTargets.set(finding.findingId, finding.targetId)
-          }
-          const usage = JSON.parse(recheck.usage_receipt_json!) as Record<string, unknown>
-          const receipt = usage.reviewCycleRecheck as Record<string, unknown> | undefined
-          if (!receipt || (receipt.version !== 1 && receipt.version !== 2)) return false
-          const expectedRecheck: ReviewCycleRecheckContext = { version: receipt.version, cycleId: cycle.cycle_id,
-            comparisonVersion: cycle.comparison_version, mergedHash: cycle.merged_hash,
-            findingSetHash: cycle.finding_set_hash,
-            ...(unshown.length ? { sourceContent: review.source_content! } : {}), findings: eligible }
-          if (!recheckReview || !recheckMeta || !mergedDraft || recheckMeta.base_draft_id !== review.base_draft_id
-            || recheckMeta.source_draft_chapter_number !== mergedDraft.chapter_number || recheckMeta.source_draft_version !== mergedDraft.version
-            || recheckMeta.source_draft_status !== 'revised' || recheckReview.source_content === null
-            || hash(recheckReview.source_content) !== cycle.merged_hash
-            || !proveEffect(db, recheck, { kind: 'review', id: recheckEffect.id as number, index: recheckMeta.review_index,
-              contentHash: hash(recheckReview.body), source: { id: review.base_draft_id, chapterNumber: mergedDraft.chapter_number,
-                version: mergedDraft.version, status: recheckMeta.source_draft_status, content: recheckReview.source_content },
-              recheck: expectedRecheck })) return false
-          const report = JSON.parse(recheckReview.body) as { items?: unknown[] }
-          if (receipt.cycleId !== cycle.cycle_id
-            || receipt.comparisonVersion !== cycle.comparison_version || receipt.mergedHash !== cycle.merged_hash
-            || receipt.findingSetHash !== cycle.finding_set_hash || !Array.isArray(receipt.findings)
-            || !Array.isArray(report.items)) return false
-          const receiptFindings = receipt.findings as Record<string, unknown>[]
-          const seenReviewItems = new Set<number>()
-          for (const item of receiptFindings) {
-            const reportItem = integer(item?.reviewItemIndex) ? record(report.items[item.reviewItemIndex as number]) : null
-            if (!item || !nonempty(item.findingId) || !nonempty(item.targetId) || !integer(item.reviewItemIndex)
-              || item.reviewItemIndex >= report.items.length || typeof item.resolved !== 'boolean'
-              || receipt.version === 2 && item.resolved === true
-              || recheckTargets.get(item.findingId) !== item.targetId || reportItem?.resolved !== item.resolved
-              || !HASH.test(String(item.evidenceHash)) || seenReviewItems.has(item.reviewItemIndex)
-              || recheckEvidence.has(item.findingId)) return false
-            const evidenceHash = hash(JSON.stringify({ findingId: item.findingId, targetId: item.targetId,
-              reviewItemIndex: item.reviewItemIndex, item: report.items[item.reviewItemIndex], resolved: item.resolved }))
-            if (item.evidenceHash !== evidenceHash) return false
-            seenReviewItems.add(item.reviewItemIndex)
-            recheckEvidence.set(item.findingId, { targetId: item.targetId, evidenceHash, resolved: item.resolved })
-          }
-          if (receiptFindings.length !== recheckEvidence.size) return false
-        } else if (cycle.recheck_attempt_id !== null) return false
-      }
-
-      const findings = db.prepare('SELECT * FROM review_findings WHERE cycle_id=? ORDER BY finding_id').all(cycle.cycle_id) as FindingRow[]
-      if (canonicalM03FindingSetHash(findings.map(descriptor)) !== cycle.finding_set_hash) return false
-      const seenAnchors = new Set<string>()
-      for (const finding of findings) {
-        if (!nonempty(finding.finding_id) || !nonempty(finding.source_project_id) || !nonempty(finding.source_epoch)
-          || !nonempty(finding.source_id) || !integer(finding.source_revision) || !HASH.test(finding.source_content_hash)
-          || finding.source_project_id !== action.projectId || finding.source_epoch !== reviewBinding.epoch
-          || finding.source_id !== `draft:${review.base_draft_id}` || finding.source_revision !== review.source_draft_version
-          || finding.source_content_hash !== cycle.source_hash || !nonempty(finding.category) || !nonempty(finding.problem_text)
-          || finding.expected_text !== null && !nonempty(finding.expected_text)
-          || !FINDING_KINDS.has(finding.kind) || !FINDING_STATUSES.has(finding.status)) return false
-        const emptyAnchor = finding.span_start === null && finding.span_end === null && finding.span_unit === null
-          && finding.excerpt_hash === null && finding.occurrence === null && finding.target_id === null
-        if (finding.status === 'unverified' || finding.status === 'author-waived' && emptyAnchor) {
-          if (!emptyAnchor || finding.status === 'unverified'
-            && (finding.evidence_hash !== null || finding.confirmation_item_index !== null)) return false
-        } else {
-          if (!integer(finding.span_start) || !integer(finding.span_end, 1) || finding.span_end <= finding.span_start
-            || finding.span_end > review.source_content.length || finding.span_unit !== 'utf16-code-unit'
-            || !finding.excerpt_hash || !HASH.test(finding.excerpt_hash)
-            || hash(review.source_content.slice(finding.span_start, finding.span_end)) !== finding.excerpt_hash
-            || !integer(finding.occurrence, 1) || !nonempty(finding.target_id)) return false
-          const anchor = JSON.stringify([finding.source_content_hash, { start: finding.span_start, end: finding.span_end, unit: finding.span_unit },
-            finding.occurrence, finding.excerpt_hash, finding.category, finding.target_id])
-          if (seenAnchors.has(anchor)) return false
-          seenAnchors.add(anchor)
-          const excerpt = review.source_content.slice(finding.span_start, finding.span_end)
-          let occurrence = 0
-          for (let offset = 0; offset <= finding.span_start;) {
-            const located = review.source_content.indexOf(excerpt, offset)
-            if (located < 0 || located > finding.span_start) break
-            occurrence += 1
-            offset = located + Math.max(1, excerpt.length)
-          }
-          if (occurrence !== finding.occurrence) return false
-        }
-        if (finding.evidence_hash !== null && !HASH.test(finding.evidence_hash)) return false
-        if (recheckEligible.has(finding.finding_id) && !unshownRecheck.has(finding.finding_id)) {
-          const candidateEvidence = recheckEvidence.get(finding.finding_id)
-          const evidence = candidateEvidence?.targetId === finding.target_id ? candidateEvidence : undefined
-          const expectedStatus = evidence ? evidence.resolved ? 'resolved' : 'unresolved' : 'unknown'
-          if (finding.status !== expectedStatus
-            || evidence && evidence.evidenceHash !== finding.evidence_hash
-            || !evidence && finding.evidence_hash !== null) return false
-        }
-        if (finding.status === 'resolved') {
-          const evidence = recheckEvidence.get(finding.finding_id)
-          if (cycle.recheck_count !== 1 || !finding.evidence_hash || !evidence || !evidence.resolved
-            || evidence.targetId !== finding.target_id || evidence.evidenceHash !== finding.evidence_hash) return false
-        }
-        if (finding.status === 'author-waived') {
-          if (!confirmation || finding.evidence_hash !== cycle.confirmation_content_hash
-            || !integer(finding.confirmation_item_index)) return false
-          const item = (confirmation.snapshot.items as unknown[])[finding.confirmation_item_index]
-          if (confirmation.snapshot.schemaVersion !== 2 || confirmation.snapshot.cycleId !== cycle.cycle_id
-            || !item || typeof item !== 'object' || (item as Record<string, unknown>).findingId !== finding.finding_id
-            || (item as Record<string, unknown>).decision !== 'waive') return false
-        } else if (finding.confirmation_item_index !== null) return false
-      }
-    }
-    return true
+    return cycles.every(cycle => verifyCycle(db, tables, cycle))
   } catch { return false }
+}
+
+/**
+ * 单条校验：只读这一条审修循环自己的行，仓库读写一条循环时用它。
+ * 不跑全库外键检查和表结构比对：打开作品时 integrity_check、外键检查和结构指纹已经做过。
+ */
+export function verifyM03ReviewCycleById(db: Database.Database, cycleId: string): boolean {
+  try {
+    if (db.pragma('foreign_keys', { simple: true }) !== 1) return false
+    const tables = cycleTables(db)
+    const cycle = db.prepare('SELECT * FROM review_cycles WHERE cycle_id=?').get(cycleId) as CycleRow | undefined
+    return Boolean(tables && cycle && verifyCycle(db, tables, cycle))
+  } catch { return false }
+}
+
+function verifyCycle(db: Database.Database, { mergeTable, draftRows }: CycleTables, cycle: CycleRow): boolean {
+  const snapshot = mergeTable ? db.prepare('SELECT body FROM review_cycle_merges WHERE cycle_id=?')
+    .get(cycle.cycle_id) as { body: string } | undefined : undefined
+  // 已合并 ⇔ 有一行合并快照。不属于任何循环的快照由外键挡住，全书校验里的 foreign_key_check 会报。
+  if (mergeTable && (cycle.revision_status === 'merge-committed') !== Boolean(snapshot)) return false
+  if (!nonempty(cycle.cycle_id) || !nonempty(cycle.root_action_id) || !integer(cycle.review_id, 1)
+    || !HASH.test(cycle.review_content_hash) || !HASH.test(cycle.source_hash) || !HASH.test(cycle.finding_set_hash)
+    || !integer(cycle.comparison_version, 1) || !CYCLE_STATUSES.has(cycle.revision_status)
+    || !integer(cycle.recheck_count) || cycle.recheck_count > 1) return false
+  const review = db.prepare(`SELECT r.id,r.base_draft_id,r.source_draft_chapter_number,r.source_draft_version,
+      r.source_draft_status,r.source_content,c.body
+    FROM reviews r JOIN contents c ON c.id=r.content_id WHERE r.id=?`).get(cycle.review_id) as ReviewRow | undefined
+  if (!review || !integer(review.source_draft_chapter_number, 1) || !integer(review.source_draft_version, 1)
+    || !nonempty(review.source_draft_status) || review.source_content === null || hash(review.body) !== cycle.review_content_hash
+    || hash(review.source_content) !== cycle.source_hash) return false
+  const root = db.prepare('SELECT action_json FROM generation_roots WHERE root_action_id=?').get(cycle.root_action_id) as { action_json: string } | undefined
+  const action = root && JSON.parse(root.action_json) as Record<string, unknown>
+  if (!action || !nonempty(action.projectId) || !nonempty(action.epoch)) return false
+  const attempts = db.prepare(`SELECT a.attempt_id,a.run_id,a.root_action_id,r.root_action_id AS run_root_action_id,
+      r.binding_json,a.attempt_json,a.usage_receipt_json
+    FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id WHERE a.root_action_id=? ORDER BY a.rowid`)
+    .all(cycle.root_action_id) as AttemptRow[]
+  if (attempts.some(row => { const binding = JSON.parse(row.binding_json) as Record<string, unknown>
+    return row.run_root_action_id !== cycle.root_action_id || binding.projectId !== action.projectId || !nonempty(binding.epoch) })) return false
+  const reviewIndex = Number(db.prepare('SELECT review_index FROM reviews WHERE id=?').pluck().get(cycle.review_id))
+  const reviewAttempts = attempts.filter(row => proveEffect(db, row, { kind: 'review', id: cycle.review_id,
+    index: reviewIndex, contentHash: cycle.review_content_hash, source: { id: review.base_draft_id,
+      chapterNumber: review.source_draft_chapter_number!, version: review.source_draft_version!,
+      status: review.source_draft_status!, content: review.source_content! } }))
+  if (reviewAttempts.length !== 1) return false
+  const reviewBinding = JSON.parse(reviewAttempts[0]!.binding_json) as Record<string, unknown>
+
+  let confirmation: { body: string; snapshot: HumanConfirmedReviewSnapshot } | null = null
+  if (cycle.confirmation_review_id !== null) {
+    const row = db.prepare('SELECT r.source_content,c.body FROM reviews r JOIN contents c ON c.id=r.content_id WHERE r.id=? AND r.base_draft_id=?')
+      .get(cycle.confirmation_review_id, review.base_draft_id) as { source_content: string | null; body: string } | undefined
+    if (!row || !cycle.confirmation_content_hash || hash(row.body) !== cycle.confirmation_content_hash) return false
+    const snapshot = parseHumanConfirmedReviewSnapshot(row.body)
+    const sourceDraft = snapshot?.sourceDraft
+    if (!snapshot || snapshot.sourceReviewId !== cycle.review_id
+      || row.source_content === null || hash(row.source_content) !== cycle.source_hash
+      || !sourceDraft || sourceDraft.id !== review.base_draft_id || sourceDraft.version !== review.source_draft_version
+      || typeof sourceDraft.content !== 'string' || hash(sourceDraft.content) !== cycle.source_hash) return false
+    confirmation = { body: row.body, snapshot }
+  } else if (cycle.confirmation_content_hash !== null) return false
+
+  let revision: RevisionRow | undefined
+  if (cycle.revision_id !== null) {
+    revision = db.prepare(`SELECT r.id,r.base_draft_id,r.review_source_id,r.source_draft_chapter_number,r.source_draft_version,
+      r.source_draft_status,r.source_content,r.status,r.merged_to_draft_id,c.body
+      FROM revisions r JOIN contents c ON c.id=r.content_id WHERE r.id=?`).get(cycle.revision_id) as RevisionRow | undefined
+    if (!revision || !confirmation || revision.base_draft_id !== review.base_draft_id
+      || revision.review_source_id !== cycle.confirmation_review_id || revision.source_content === null
+      || revision.source_draft_chapter_number !== review.source_draft_chapter_number
+      || revision.source_draft_version !== review.source_draft_version || revision.source_draft_status !== review.source_draft_status
+      || revision.source_content !== review.source_content || hash(revision.source_content) !== cycle.source_hash) return false
+    const revisionHash = hash(revision.body)
+    const revisionIndex = Number(db.prepare('SELECT revision_index FROM revisions WHERE id=?').pluck().get(cycle.revision_id))
+    const revisionAttempts = attempts.filter(row => proveEffect(db, row, { kind: 'revision', id: cycle.revision_id!,
+      index: revisionIndex, contentHash: revisionHash, source: { id: review.base_draft_id,
+        chapterNumber: review.source_draft_chapter_number!, version: review.source_draft_version!,
+        status: review.source_draft_status!, content: review.source_content! },
+      confirmation: { reviewSourceId: cycle.confirmation_review_id!, content: confirmation.body,
+        originalReviewContentHash: cycle.review_content_hash, snapshot: confirmation.snapshot } }))
+    if (revisionAttempts.length !== 1) return false
+  }
+  if (cycle.revision_status === 'not-generated' && (revision || cycle.merged_hash !== null || cycle.recheck_count !== 0 || cycle.recheck_attempt_id !== null)) return false
+  if (cycle.revision_status === 'generated' && (!revision || revision.status !== 'pending'
+    || cycle.merged_hash !== null || cycle.recheck_count !== 0 || cycle.recheck_attempt_id !== null)) return false
+  const recheckEvidence = new Map<string, { targetId: string; evidenceHash: string; resolved: boolean }>()
+  const recheckEligible = new Set<string>()
+  const recheckTargets = new Map<string, string>()
+  const unshownRecheck = new Set<string>()
+  if (cycle.revision_status === 'merge-committed') {
+    if (!revision || revision.status !== 'merged' || revision.merged_to_draft_id !== revision.base_draft_id
+      || revision.base_draft_id !== review.base_draft_id || !cycle.merged_hash || !HASH.test(cycle.merged_hash)) return false
+    const merged = mergeTable ? snapshot : db.prepare('SELECT c.body FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?')
+      .get(revision.merged_to_draft_id) as { body: string } | undefined
+    if (!merged || typeof merged.body !== 'string' || hash(merged.body) !== cycle.merged_hash) return false
+    const mergedBody = merged.body
+    if (cycle.recheck_count === 1) {
+      const recheck = attempts.find(row => row.attempt_id === cycle.recheck_attempt_id)
+      const recheckEffect = recheck && effect(recheck)
+      if (!recheckEffect || recheckEffect.kind !== 'review' || !integer(recheckEffect.id, 1)) return false
+      const recheckReview = db.prepare('SELECT r.source_content,c.body FROM reviews r JOIN contents c ON c.id=r.content_id WHERE r.id=?')
+        .get(recheckEffect.id) as { source_content: string | null; body: string } | undefined
+      const recheckMeta = db.prepare(`SELECT base_draft_id,review_index,source_draft_chapter_number,source_draft_version,
+          source_draft_status FROM reviews WHERE id=?`).get(recheckEffect.id) as { base_draft_id: number; review_index: number;
+            source_draft_chapter_number: number | null; source_draft_version: number | null; source_draft_status: string | null } | undefined
+      const mergedDraft = db.prepare(`SELECT chapter_number,version,status FROM ${draftRows} WHERE id=?`).get(review.base_draft_id) as {
+        chapter_number: number; version: number; status: string } | undefined
+      const recheckFindings = db.prepare(`SELECT finding_id,target_id,category,kind,problem_text,expected_text,status,span_start,span_end,span_unit,occurrence
+        FROM review_findings WHERE cycle_id=? ORDER BY finding_id`).all(cycle.cycle_id) as Array<{
+          finding_id: string; target_id: string | null; category: string; kind: 'objective' | 'literary'
+          problem_text: string; expected_text: string | null; status: string
+          span_start: number | null; span_end: number | null; span_unit: string | null; occurrence: number | null
+        }>
+      const eligible: ReviewCycleRecheckFinding[] = recheckFindings.flatMap(finding => {
+        if (finding.status === 'unverified' || finding.status === 'author-waived' || finding.target_id === null
+          || finding.span_start === null || finding.span_end === null || finding.span_unit !== 'utf16-code-unit'
+          || finding.occurrence === null) return []
+        const value: ReviewCycleRecheckFinding = { findingId: finding.finding_id, targetId: finding.target_id,
+          category: finding.category, kind: finding.kind,
+          problem: finding.problem_text, ...(finding.expected_text ? { expected: finding.expected_text } : {}),
+          sourceSpan: { start: finding.span_start, end: finding.span_end, unit: 'utf16-code-unit' }, occurrence: finding.occurrence,
+          sourceExcerpt: review.source_content!.slice(finding.span_start, finding.span_end) }
+        return classifyFindingEvidenceChange(review.source_content!, mergedBody, value) === 'changed' ? [value] : []
+      })
+      const unshown = unshownMustShowRecheckFindings(JSON.parse(review.body), confirmation?.snapshot ?? null,
+        recheckFindings.map(finding => ({ findingId: finding.finding_id, kind: finding.kind,
+          status: finding.status, targetId: finding.target_id, problemText: finding.problem_text,
+          expectedText: finding.expected_text }))).filter(finding =>
+          classifyFindingEvidenceChange(review.source_content!, mergedBody, finding) === 'changed')
+      eligible.push(...unshown)
+      for (const finding of unshown) unshownRecheck.add(finding.findingId)
+      for (const finding of eligible) {
+        recheckEligible.add(finding.findingId)
+        recheckTargets.set(finding.findingId, finding.targetId)
+      }
+      const usage = JSON.parse(recheck.usage_receipt_json!) as Record<string, unknown>
+      const receipt = usage.reviewCycleRecheck as Record<string, unknown> | undefined
+      if (!receipt || (receipt.version !== 1 && receipt.version !== 2)) return false
+      const expectedRecheck: ReviewCycleRecheckContext = { version: receipt.version, cycleId: cycle.cycle_id,
+        comparisonVersion: cycle.comparison_version, mergedHash: cycle.merged_hash,
+        findingSetHash: cycle.finding_set_hash,
+        ...(unshown.length ? { sourceContent: review.source_content! } : {}), findings: eligible }
+      if (!recheckReview || !recheckMeta || !mergedDraft || recheckMeta.base_draft_id !== review.base_draft_id
+        || recheckMeta.source_draft_chapter_number !== mergedDraft.chapter_number || recheckMeta.source_draft_version !== mergedDraft.version
+        || recheckMeta.source_draft_status !== 'revised' || recheckReview.source_content === null
+        || hash(recheckReview.source_content) !== cycle.merged_hash
+        || !proveEffect(db, recheck, { kind: 'review', id: recheckEffect.id as number, index: recheckMeta.review_index,
+          contentHash: hash(recheckReview.body), source: { id: review.base_draft_id, chapterNumber: mergedDraft.chapter_number,
+            version: mergedDraft.version, status: recheckMeta.source_draft_status, content: recheckReview.source_content },
+          recheck: expectedRecheck })) return false
+      const report = JSON.parse(recheckReview.body) as { items?: unknown[] }
+      if (receipt.cycleId !== cycle.cycle_id
+        || receipt.comparisonVersion !== cycle.comparison_version || receipt.mergedHash !== cycle.merged_hash
+        || receipt.findingSetHash !== cycle.finding_set_hash || !Array.isArray(receipt.findings)
+        || !Array.isArray(report.items)) return false
+      const receiptFindings = receipt.findings as Record<string, unknown>[]
+      const seenReviewItems = new Set<number>()
+      for (const item of receiptFindings) {
+        const reportItem = integer(item?.reviewItemIndex) ? record(report.items[item.reviewItemIndex as number]) : null
+        if (!item || !nonempty(item.findingId) || !nonempty(item.targetId) || !integer(item.reviewItemIndex)
+          || item.reviewItemIndex >= report.items.length || typeof item.resolved !== 'boolean'
+          || receipt.version === 2 && item.resolved === true
+          || recheckTargets.get(item.findingId) !== item.targetId || reportItem?.resolved !== item.resolved
+          || !HASH.test(String(item.evidenceHash)) || seenReviewItems.has(item.reviewItemIndex)
+          || recheckEvidence.has(item.findingId)) return false
+        const evidenceHash = hash(JSON.stringify({ findingId: item.findingId, targetId: item.targetId,
+          reviewItemIndex: item.reviewItemIndex, item: report.items[item.reviewItemIndex], resolved: item.resolved }))
+        if (item.evidenceHash !== evidenceHash) return false
+        seenReviewItems.add(item.reviewItemIndex)
+        recheckEvidence.set(item.findingId, { targetId: item.targetId, evidenceHash, resolved: item.resolved })
+      }
+      if (receiptFindings.length !== recheckEvidence.size) return false
+    } else if (cycle.recheck_attempt_id !== null) return false
+  }
+
+  const findings = db.prepare('SELECT * FROM review_findings WHERE cycle_id=? ORDER BY finding_id').all(cycle.cycle_id) as FindingRow[]
+  if (canonicalM03FindingSetHash(findings.map(descriptor)) !== cycle.finding_set_hash) return false
+  const seenAnchors = new Set<string>()
+  for (const finding of findings) {
+    if (!nonempty(finding.finding_id) || !nonempty(finding.source_project_id) || !nonempty(finding.source_epoch)
+      || !nonempty(finding.source_id) || !integer(finding.source_revision) || !HASH.test(finding.source_content_hash)
+      || finding.source_project_id !== action.projectId || finding.source_epoch !== reviewBinding.epoch
+      || finding.source_id !== `draft:${review.base_draft_id}` || finding.source_revision !== review.source_draft_version
+      || finding.source_content_hash !== cycle.source_hash || !nonempty(finding.category) || !nonempty(finding.problem_text)
+      || finding.expected_text !== null && !nonempty(finding.expected_text)
+      || !FINDING_KINDS.has(finding.kind) || !FINDING_STATUSES.has(finding.status)) return false
+    const emptyAnchor = finding.span_start === null && finding.span_end === null && finding.span_unit === null
+      && finding.excerpt_hash === null && finding.occurrence === null && finding.target_id === null
+    if (finding.status === 'unverified' || finding.status === 'author-waived' && emptyAnchor) {
+      if (!emptyAnchor || finding.status === 'unverified'
+        && (finding.evidence_hash !== null || finding.confirmation_item_index !== null)) return false
+    } else {
+      if (!integer(finding.span_start) || !integer(finding.span_end, 1) || finding.span_end <= finding.span_start
+        || finding.span_end > review.source_content.length || finding.span_unit !== 'utf16-code-unit'
+        || !finding.excerpt_hash || !HASH.test(finding.excerpt_hash)
+        || hash(review.source_content.slice(finding.span_start, finding.span_end)) !== finding.excerpt_hash
+        || !integer(finding.occurrence, 1) || !nonempty(finding.target_id)) return false
+      const anchor = JSON.stringify([finding.source_content_hash, { start: finding.span_start, end: finding.span_end, unit: finding.span_unit },
+        finding.occurrence, finding.excerpt_hash, finding.category, finding.target_id])
+      if (seenAnchors.has(anchor)) return false
+      seenAnchors.add(anchor)
+      const excerpt = review.source_content.slice(finding.span_start, finding.span_end)
+      let occurrence = 0
+      for (let offset = 0; offset <= finding.span_start;) {
+        const located = review.source_content.indexOf(excerpt, offset)
+        if (located < 0 || located > finding.span_start) break
+        occurrence += 1
+        offset = located + Math.max(1, excerpt.length)
+      }
+      if (occurrence !== finding.occurrence) return false
+    }
+    if (finding.evidence_hash !== null && !HASH.test(finding.evidence_hash)) return false
+    if (recheckEligible.has(finding.finding_id) && !unshownRecheck.has(finding.finding_id)) {
+      const candidateEvidence = recheckEvidence.get(finding.finding_id)
+      const evidence = candidateEvidence?.targetId === finding.target_id ? candidateEvidence : undefined
+      const expectedStatus = evidence ? evidence.resolved ? 'resolved' : 'unresolved' : 'unknown'
+      if (finding.status !== expectedStatus
+        || evidence && evidence.evidenceHash !== finding.evidence_hash
+        || !evidence && finding.evidence_hash !== null) return false
+    }
+    if (finding.status === 'resolved') {
+      const evidence = recheckEvidence.get(finding.finding_id)
+      if (cycle.recheck_count !== 1 || !finding.evidence_hash || !evidence || !evidence.resolved
+        || evidence.targetId !== finding.target_id || evidence.evidenceHash !== finding.evidence_hash) return false
+    }
+    if (finding.status === 'author-waived') {
+      if (!confirmation || finding.evidence_hash !== cycle.confirmation_content_hash
+        || !integer(finding.confirmation_item_index)) return false
+      const item = (confirmation.snapshot.items as unknown[])[finding.confirmation_item_index]
+      if (confirmation.snapshot.schemaVersion !== 2 || confirmation.snapshot.cycleId !== cycle.cycle_id
+        || !item || typeof item !== 'object' || (item as Record<string, unknown>).findingId !== finding.finding_id
+        || (item as Record<string, unknown>).decision !== 'waive') return false
+    } else if (finding.confirmation_item_index !== null) return false
+  }
+  return true
 }
 
 export function createM03Migration(deps: {
