@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { describeFinalizationStepError, finalizationStepErrorCode, planFinalizationRetry } from '../finalization-step-error'
 import { appErrorMessage } from '../../i18n/app-errors'
+import { shown } from '../../i18n/__tests__/shown-locale'
 
 const zh = (zhCNText: string) => zhCNText
 const en = (_zhCNText: string, enUSText: string) => enUSText
@@ -66,11 +67,11 @@ describe('定稿后处理步骤错误', () => {
   const contractCodes = [...new Set(readFileSync(new URL('../finalized-continuity.ts', import.meta.url), 'utf8').match(/FINALIZED_CHARACTER_[A-Z_]+[A-Z]/gu))]
   it('#552 IDENTITY_REQUIRED 在章节要点提交时也会出现：说明不能说成角色卡没更新', () => {
     const raw = "Error invoking remote method 'finalization-generation:commit': Error: FINALIZED_CHARACTER_IDENTITY_REQUIRED"
-    for (const text of [describeFinalizationStepError(raw, zh), appErrorMessage('zh-CN', new Error('FINALIZED_CHARACTER_IDENTITY_REQUIRED'))]) {
+    for (const text of [describeFinalizationStepError(raw, zh), appErrorMessage(shown('zh-CN'), new Error('FINALIZED_CHARACTER_IDENTITY_REQUIRED'))]) {
       expect(text).toContain('对不上')
       expect(text).not.toContain('角色卡没有自动更新')
     }
-    for (const text of [describeFinalizationStepError(raw, en), appErrorMessage('en-US', new Error('FINALIZED_CHARACTER_IDENTITY_REQUIRED'))]) {
+    for (const text of [describeFinalizationStepError(raw, en), appErrorMessage(shown('en-US'), new Error('FINALIZED_CHARACTER_IDENTITY_REQUIRED'))]) {
       expect(text).toMatch(/did not match/u)
       expect(text).not.toContain('character cards were not updated')
     }
@@ -297,7 +298,7 @@ describe('#571 作品所在的磁盘不支持知识库的提交方式', () => {
 
   it('知识库页导入创作资料走同一个码，说明里没有定稿字样', () => {
     for (const locale of ['zh-CN', 'en-US'] as const) {
-      const text = appErrorMessage(locale, new Error('KNOWLEDGE_BASE_VOLUME_UNSUPPORTED'))
+      const text = appErrorMessage(shown(locale), new Error('KNOWLEDGE_BASE_VOLUME_UNSUPPORTED'))
       expect(text).toMatch(/NTFS/u)
       expect(text).not.toMatch(/KNOWLEDGE_BASE|定稿|finalized/u)
     }

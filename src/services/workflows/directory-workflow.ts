@@ -4,8 +4,8 @@ import type { MainGenerationRunHandle } from '../generation/generation-runtime'
 import { workflowResourceKey, type WorkflowDefinition } from '../../stores/workflow-store'
 import { useProjectStore } from '../../stores/project-store'
 import { useLocaleStore } from '../../stores/locale-store'
-import type { Locale } from '../../i18n/types'
-import { localize } from '../../i18n/core'
+import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
+import { copyLocale, localize } from '../../i18n/core'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { globalEventBus } from '../../shared/event-bus'
 import {
@@ -165,7 +165,7 @@ export function parseTextBlueprintsStrict(
   content: string,
   startNum: number,
   endNum: number,
-  uiLocale: Locale,
+  interfaceLocale: ErrorDisplayLocale,
   source: 'model' | 'author' = 'model',
 ): ChapterBlueprint[] {
   try {
@@ -176,8 +176,8 @@ export function parseTextBlueprintsStrict(
     ).map(persistedBlueprint)
   } catch (error) {
     if (structuredContractDiagnostic(error)) throw error
-    const detail = displayedErrorMessage(uiLocale, error)
-    throw new Error(localize(uiLocale, `蓝图 JSON 解析失败：${detail}`, `Could not parse the blueprint JSON: ${detail}`))
+    const detail = displayedErrorMessage(interfaceLocale, error)
+    throw new Error(localize(copyLocale(interfaceLocale), `蓝图 JSON 解析失败：${detail}`, `Could not parse the blueprint JSON: ${detail}`))
   }
 }
 
@@ -193,11 +193,11 @@ export async function saveChapterBlueprint(
   blueprint: ChapterBlueprint,
   expectedProjectPath: string,
   projectSession: ProjectSessionContext,
-  uiLocale: Locale,
+  interfaceLocale: ErrorDisplayLocale,
 ): Promise<void> {
   const result = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-upsert', blueprint, expectedProjectPath)
   if (!result.success) {
-    throw workflowMainProcessError({ uiLocale }, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprint.')
+    throw workflowMainProcessError(interfaceLocale, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprint.')
   }
 }
 
@@ -205,11 +205,11 @@ export async function saveAllBlueprints(
   blueprints: ChapterBlueprint[],
   expectedProjectPath: string,
   projectSession: ProjectSessionContext,
-  uiLocale: Locale,
+  interfaceLocale: ErrorDisplayLocale,
 ): Promise<void> {
   const result = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-upsert-many', blueprints, expectedProjectPath)
   if (!result.success) {
-    throw workflowMainProcessError({ uiLocale }, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprints.')
+    throw workflowMainProcessError(interfaceLocale, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprints.')
   }
 }
 
@@ -219,7 +219,7 @@ export async function commitDirectoryBlueprintRange(
   range: { mode: BlueprintRangeCommitMode; startChapter: number; endChapter: number },
   operationId: string,
   projectSession: ProjectSessionContext,
-  uiLocale: Locale,
+  interfaceLocale: ErrorDisplayLocale,
   generationRunHandle?: MainGenerationRunHandle,
   generationRequestedRange?: { startChapter: number; endChapter: number },
 ): Promise<BlueprintRangeCommitReceipt> {
@@ -237,7 +237,7 @@ export async function commitDirectoryBlueprintRange(
     expectedProjectPath,
   )
   if (!result.success || !result.receipt) {
-    throw workflowMainProcessError({ uiLocale }, result.error, '提交章节蓝图失败', 'Could not commit the chapter blueprints.')
+    throw workflowMainProcessError(interfaceLocale, result.error, '提交章节蓝图失败', 'Could not commit the chapter blueprints.')
   }
   globalEventBus.emit('REFRESH_RESOURCE', {
     resources: ['blueprints'],

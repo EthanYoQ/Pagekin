@@ -489,7 +489,7 @@ async function runHostedAgentLoop(generate: LLMGenerateFn, callbacks: AgentEngin
     visible += ui('\n\n已达到最大工具调用次数限制，自动停止。', '\n\nThe maximum number of tool calls was reached, so generation stopped.')
     done()
   } catch (error) {
-    const providerRejection = providerContextFailureText(error, ui)
+    const providerRejection = providerContextFailureText(error, context.interfaceLocale)
     if (signal?.aborted) done()
     else if (visible) callbacks.onDone(visible + ui('\n\n生成未完成，原候选已保留。', '\n\nGeneration did not finish; the original candidate was retained.')
       + (providerRejection ? `\n\n${providerRejection}` : ''), calls, artifacts)

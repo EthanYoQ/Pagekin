@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { AnalyzeWritingStyleCommand } from '../analyze-style.command'
 import { useProjectStore } from '../../../../stores/project-store'
 import { useLLMStore } from '../../../../stores/llm-store'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const originalProject = useProjectStore.getState().currentProject
 const originalModel = useLLMStore.getState().defaultModelId
@@ -33,7 +34,7 @@ it.each([
   })
   vi.stubGlobal('window', { aiNovelAPI: { invoke, on: () => () => {} } })
   await expect(new AnalyzeWritingStyleCommand({ sampleText: '  作者样本。\r\n' }, undefined, custom ? effect : undefined).execute({
-    step: {}, context: { runId: '文风动作', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false },
+    step: {}, context: { runId: '文风动作', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false },
     callbacks: { log: vi.fn(), appendText: vi.fn(), setProgress: vi.fn() },
   })).rejects.toThrow(stage === 'generation' ? 'GENERATION_AUTHOR_DRAFT_CHANGED' : 'GENERATION_SAVED_WITH_NEWER_AUTHOR_DRAFT')
   expect(useProjectStore.getState().currentProject?.novelConfig.writingStyle).toBe('作者正在写的新文风')
@@ -61,7 +62,7 @@ it('导入文风只补空白时，界面显示主进程实际保留的文风，�
   }) } })
 
   await new AnalyzeWritingStyleCommand({ sampleText: '作者样本。' }, undefined, async () => '作者原始文风').execute({
-    step: {}, context: { runId: '文风动作', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false },
+    step: {}, context: { runId: '文风动作', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false },
     callbacks: { log: vi.fn(), appendText: vi.fn(), setProgress: vi.fn() },
   })
 
@@ -88,7 +89,7 @@ it('导入文风只补空白时，作者在设定页还没保存的文风保持�
   }) } })
 
   await new AnalyzeWritingStyleCommand({ sampleText: '作者样本。', fillEmpty: true }, undefined, async () => '作者原始文风').execute({
-    step: {}, context: { runId: '文风动作', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false },
+    step: {}, context: { runId: '文风动作', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false },
     callbacks: { log: vi.fn(), appendText: vi.fn(), setProgress: vi.fn() },
   })
 

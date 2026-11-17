@@ -8,6 +8,9 @@ import { ModelExecutionLeaseRegistry } from '../model-execution-lease'
 import { readMainGenerationPolicy } from '../main-generation-plan'
 import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../generation-source-binding'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
+import { ChapterDeletionRepository } from '../../repositories/chapter-deletion-repository'
+import { DraftRepository } from '../../repositories/draft-repository'
+import { countDraftUnits } from '../../../src/shared/draft-units'
 import { SummaryRepository } from '../../repositories/summary-repository'
 import { getProjectDb } from '../../database'
 import { GenerationRunRepository, textHash } from '../../repositories/generation-run-repository'
@@ -18,7 +21,7 @@ import type { MainGenerationExecuteReceipt } from '../../../src/services/generat
 import { parseFinalizedCharacterStateResponse } from '../../../src/shared/finalized-continuity'
 import { getBuiltinPromptTemplate } from '../../../src/services/builtin-prompt-templates'
 import * as portableAuthority from '../portable-current-authority'
-import { registerAsReopenDraft } from '../../../test/helpers/reopened-draft'
+import { registerAsReopenDraft, reopenWithContent } from '../../../test/helpers/reopened-draft'
 
 vi.mock('../../database', async importOriginal => ({ ...await importOriginal<typeof import('../../database')>(), getProjectDb: vi.fn() }))
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -225,6 +228,99 @@ it('#484 生成期间字段被改：界面重试沿用冻结上下文仍拒写�
  expect(again.view.handle.runId).not.toBe(f.commitRequest.handle.runId)
  const receipt=await f.owner.executeFinalizationGeneration({handle:again.view.handle})
  expect(f.owner.commitFinalizationGeneration({handle:again.view.handle,artifact:f.artifactOf(receipt)})).toMatchObject({success:true,stepKey:'character_cards'})
+})
+function notesFixture(replies: string[]) {
+ const f = fixture(async (_request, options) => { options.onVisible({ kind: 'delta', text: replies.shift()! }); return { finishReason: 'stop', usage: null } })
+ const notesFor = async (draftId: number) => {
+  const recovery = f.owner.beginFinalizationGeneration({ slot: { source: f.owner.readFinalizedCharacterContext(draftId).context.source, stepKey: 'chapter_notes' }, modelId: 'synthetic' })
+  const receipt = await f.owner.executeFinalizationGeneration({ handle: recovery.view.handle })
+  return f.owner.commitFinalizationGeneration({ handle: recovery.view.handle, artifact: f.artifactOf(receipt) })
+ }
+ const reopenAndFinalize = (finalizationId: string, content: string) => {
+  const draftId = reopenWithContent(1, content)
+  FinalizationRepository.commit({ finalizationId, draftId, chapterNumber: 1, chapterTitle: '北塔', content, contentHash: textHash(content), contentRevision: 2, targetFileName: `${finalizationId}.txt` })
+  return draftId
+ }
+ const blueprintNotes = (notes?: string) => notes === undefined
+  ? f.db.prepare('SELECT notes FROM blueprints WHERE chapter_number=1').pluck().get()
+  : f.db.prepare('UPDATE blueprints SET notes=? WHERE chapter_number=1').run(notes)
+ return { f, notesFor, reopenAndFinalize, blueprintNotes }
+}
+async function refinalizeNotesAfterReopen(blueprintNotesBeforeReopen: string) {
+ const { notesFor, reopenAndFinalize, blueprintNotes } = notesFixture(['林岚进入北塔。', '林岚再次进入北塔。'])
+ await notesFor(1)
+ blueprintNotes(blueprintNotesBeforeReopen)
+ const saved = await notesFor(reopenAndFinalize('finalized-2', '林岚又一次走进了北塔。'))
+ return { saved, blueprintNotes: blueprintNotes() }
+}
+it('重开再定稿：作者在两次定稿之间改过的章节要点不被新生成的要点覆盖', async () => {
+ const { saved, blueprintNotes } = await refinalizeNotesAfterReopen('作者改过的章节要点')
+ expect(saved).toMatchObject({ chapterNotes: '林岚再次进入北塔。', blueprintUpdated: false })
+ expect(blueprintNotes).toBe('作者改过的章节要点')
+})
+it.each([['仍是上次生成的要点', '林岚进入北塔。'], ['作者清空了要点', '']])('重开再定稿：%s时照常写入新要点', async (_case, notes) => {
+ const { saved, blueprintNotes } = await refinalizeNotesAfterReopen(notes)
+ expect(saved).toMatchObject({ chapterNotes: '林岚再次进入北塔。', blueprintUpdated: true })
+ expect(blueprintNotes).toBe('林岚再次进入北塔。')
+})
+async function refinalizeAfterTrashRestore(blueprintNotesBeforeReopen: string) {
+ const { notesFor, reopenAndFinalize, blueprintNotes } = notesFixture(['林岚进入北塔。', '林岚在北塔停了一夜。', '林岚再次进入北塔。'])
+ const trash = (operationId: string, draftId: number) => {
+  ChapterDeletionRepository.begin({ operationId, draftId, chapterNumber: 1 })
+  ChapterDeletionRepository.markProjection(operationId, 'manuscript', 'completed')
+ }
+ await notesFor(1)
+ trash('delete-f1', 1)
+ const gap = '林岚在北塔停了一夜。'
+ const d2 = DraftRepository.create({ chapterNumber: 1, source: 'write', content: gap, wordCount: countDraftUnits(gap) })
+ FinalizationRepository.commit({ finalizationId: 'finalized-d2', draftId: d2, chapterNumber: 1, chapterTitle: '北塔', content: gap, contentHash: textHash(gap), contentRevision: 1, targetFileName: '第一章-d2.txt' })
+ await notesFor(d2)
+ trash('delete-d2', d2)
+ expect(ChapterDeletionRepository.restore({ deletionId: 'delete-f1', draftId: 1, expectedMode: 'into-gap' })).toMatchObject({ outcome: 'restored' })
+ expect(ChapterDeletionRepository.restore({ deletionId: 'delete-d2', draftId: d2, expectedMode: 'as-history' })).toMatchObject({ outcome: 'restored-as-history' })
+ blueprintNotes(blueprintNotesBeforeReopen)
+ const saved = await notesFor(reopenAndFinalize('finalized-3', '林岚又一次走进了北塔。'))
+ return { saved, blueprintNotes: blueprintNotes() }
+}
+it('回收站恢复后重开再定稿：作者把要点改成了已替换旧稿的要点，仍算作者改动，不被覆盖', async () => {
+ const { saved, blueprintNotes } = await refinalizeAfterTrashRestore('林岚在北塔停了一夜。')
+ expect(saved).toMatchObject({ chapterNotes: '林岚再次进入北塔。', blueprintUpdated: false })
+ expect(blueprintNotes).toBe('林岚在北塔停了一夜。')
+})
+it('回收站恢复后重开再定稿：要点仍是被替换定稿生成的要点时照常写入', async () => {
+ const { saved, blueprintNotes } = await refinalizeAfterTrashRestore('林岚进入北塔。')
+ expect(saved).toMatchObject({ chapterNotes: '林岚再次进入北塔。', blueprintUpdated: true })
+ expect(blueprintNotes).toBe('林岚再次进入北塔。')
+})
+it('连续重开：被替换的定稿没生成过要点时，沿它重开的那份定稿再往上找', async () => {
+ const { notesFor, reopenAndFinalize, blueprintNotes } = notesFixture(['林岚进入北塔。', '林岚第三次进入北塔。'])
+ await notesFor(1)
+ blueprintNotes('作者改过的章节要点')
+ reopenAndFinalize('finalized-2', '林岚又一次走进了北塔。')
+ const saved = await notesFor(reopenAndFinalize('finalized-3', '林岚第三次走进了北塔。'))
+ expect(saved).toMatchObject({ chapterNotes: '林岚第三次进入北塔。', blueprintUpdated: false })
+ expect(blueprintNotes()).toBe('作者改过的章节要点')
+})
+it('首次定稿：只有旧版不带 draft 的状态快照时，蓝图里规划的要点照常被生成的要点替换', async () => {
+ const f = fixture(async (_request, options) => { options.onVisible({ kind: 'delta', text: '林岚进入北塔。' }); return { finishReason: 'stop', usage: null } }, {
+  seed: db => db.exec("UPDATE blueprints SET notes='蓝图规划的要点' WHERE chapter_number=1; INSERT INTO summary_snapshots_all(chapter_number,character_states) VALUES(1,'旧版角色状态')"),
+ })
+ const recovery = f.owner.beginFinalizationGeneration({ slot: { source: f.prepared.context.source, stepKey: 'chapter_notes' }, modelId: 'synthetic' })
+ const receipt = await f.owner.executeFinalizationGeneration({ handle: recovery.view.handle })
+ expect(f.owner.commitFinalizationGeneration({ handle: recovery.view.handle, artifact: f.artifactOf(receipt) })).toMatchObject({ blueprintUpdated: true })
+ expect(f.db.prepare('SELECT notes FROM blueprints WHERE chapter_number=1').pluck().get()).toBe('林岚进入北塔。')
+})
+it('重开再定稿：旧稿只绑定了空要点的旧版快照时，蓝图里规划的要点照常被生成的要点替换', async () => {
+ const f = fixture(async (_request, options) => { options.onVisible({ kind: 'delta', text: '林岚再次进入北塔。' }); return { finishReason: 'stop', usage: null } }, {
+  seed: db => db.exec("UPDATE blueprints SET notes='蓝图规划的要点' WHERE chapter_number=1; INSERT INTO summary_snapshots_all(draft_id,chapter_number,character_states) VALUES(1,1,'旧版角色状态')"),
+ })
+ const content = '林岚又一次走进了北塔。'
+ const draftId = reopenWithContent(1, content)
+ FinalizationRepository.commit({ finalizationId: 'finalized-2', draftId, chapterNumber: 1, chapterTitle: '北塔', content, contentHash: textHash(content), contentRevision: 2, targetFileName: '第一章.txt' })
+ const recovery = f.owner.beginFinalizationGeneration({ slot: { source: f.owner.readFinalizedCharacterContext(draftId).context.source, stepKey: 'chapter_notes' }, modelId: 'synthetic' })
+ const receipt = await f.owner.executeFinalizationGeneration({ handle: recovery.view.handle })
+ expect(f.owner.commitFinalizationGeneration({ handle: recovery.view.handle, artifact: f.artifactOf(receipt) })).toMatchObject({ chapterNotes: '林岚再次进入北塔。', blueprintUpdated: true })
+ expect(f.db.prepare('SELECT notes FROM blueprints WHERE chapter_number=1').pluck().get()).toBe('林岚再次进入北塔。')
 })
 it('运行侧页的可恢复列表不列定稿后处理运行，无论提交与否',async()=>{
  const f=await generated()

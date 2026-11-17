@@ -8,7 +8,7 @@ import { projectSessionContextFromProject, sameProjectSessionContext } from '../
 import { openPlanningRecoveryDraft, useEditorStore, type EditorTab } from '../../stores/editor-store'
 import { useStageStore } from '../../stores/navigation/stage-store'
 import { isChapterViewTab } from '../stage/chapter/chapter-tab-routing'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowStore, type WorkflowDefinition } from '../../stores/workflow-store'
 import {
@@ -106,7 +106,7 @@ export function useRunRecovery(): RunRecovery {
     }).catch(error => {
       if (!active) return
       setCandidates({ session, value: [] })
-      setCandidateError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      setCandidateError(displayedErrorMessage(currentInterfaceLocale(), error))
     })
     return () => { active = false }
   }, [session])
@@ -137,7 +137,7 @@ export function useRunRecovery(): RunRecovery {
       if (!active) return
       setGeneration({ session, value: list })
       setLoadError('')
-    }).catch(reason => { if (active) setLoadError(displayedErrorMessage(useLocaleStore.getState().locale, reason)) })
+    }).catch(reason => { if (active) setLoadError(displayedErrorMessage(currentInterfaceLocale(), reason)) })
     return () => { active = false }
   }, [session, lastEnded, refreshTick])
 
@@ -177,12 +177,12 @@ export function useRunRecovery(): RunRecovery {
   const act = useCallback(async (operation: (session: ProjectSessionContext) => Promise<void>) => {
     if (busy || !session || !stillCurrent()) return
     setBusy(true)
-    try { await operation(session); setActionError({ session, message: '' }) } catch (reason) { setActionError({ session, message: displayedErrorMessage(useLocaleStore.getState().locale, reason) }) }
+    try { await operation(session); setActionError({ session, message: '' }) } catch (reason) { setActionError({ session, message: displayedErrorMessage(currentInterfaceLocale(), reason) }) }
     finally { setBusy(false) }
   }, [busy, session, stillCurrent])
 
   const showGenerationFailure = useCallback((reason: unknown) => {
-    if (stillCurrent()) setActionError({ session, message: displayedErrorMessage(useLocaleStore.getState().locale, reason) })
+    if (stillCurrent()) setActionError({ session, message: displayedErrorMessage(currentInterfaceLocale(), reason) })
   }, [session, stillCurrent])
 
   /** startWorkflow 要等整个工作流结束才返回；只等定义建好，不让恢复区在运行期间一直忙。 */
@@ -200,8 +200,8 @@ export function useRunRecovery(): RunRecovery {
   /** 结果晚到时界面语言可能已切换，按显示这一刻的语言写。 */
   const failCandidate = useCallback((error: unknown) => {
     if (!stillCurrent()) return
-    const { locale: shown, text } = useLocaleStore.getState()
-    setCandidateError(displayedErrorMessage(shown, error, text('恢复候选操作失败', 'Recovery candidate action failed')))
+    const { text } = useLocaleStore.getState()
+    setCandidateError(displayedErrorMessage(currentInterfaceLocale(), error, text('恢复候选操作失败', 'Recovery candidate action failed')))
   }, [stillCurrent])
 
   return {
@@ -221,7 +221,7 @@ export function useRunRecovery(): RunRecovery {
     copyCandidate: entry => {
       if (!stillCurrent()) return
       navigator.clipboard.writeText(entry.text).then(() => setCandidateError(''),
-        error => setCandidateError(displayedErrorMessage(useLocaleStore.getState().locale, error)))
+        error => setCandidateError(displayedErrorMessage(currentInterfaceLocale(), error)))
     },
     continueCandidate: entry => {
       if (!session || !stillCurrent() || !entry.canContinue) return

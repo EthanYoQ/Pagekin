@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLLMStore } from '../../stores/llm-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
 import { useWorkflowStore } from '../../stores/workflow-store'
 import type { ModelProfile } from '../../shared/ipc-channels'
@@ -84,8 +84,8 @@ export function useModelSection(purposes: ModelProfile['purposes']) {
       if (filtered.length === 0 && !await setDefault(editingModel.id)) return
       setEditingModel(null)
     } catch (error) {
-      const { locale, text } = useLocaleStore.getState()
-      void alertError(displayedErrorMessage(locale, error), { title: text('模型设置保存失败', 'Model settings could not be saved') })
+      const { text } = useLocaleStore.getState()
+      void alertError(displayedErrorMessage(currentInterfaceLocale(), error), { title: text('模型设置保存失败', 'Model settings could not be saved') })
     } finally {
       setSaving(false)
     }

@@ -16,7 +16,7 @@ import { assignStageModel, availableGenerationModelId, isModelStage, parseStageM
 import { isRerankFailure, type RerankFailure } from '../../src/shared/knowledge-ranking'
 import { rankPassages } from '../rerank'
 import { LLMFactory } from '../llm/llm-factory'
-import { getMainLocale, mainT, mainText } from '../i18n'
+import { getMainInterfaceLocale, mainT, mainText } from '../i18n'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
 import { ModelExecutionLeaseRegistry } from '../services/model-execution-lease'
 import { ModelDiscoveryService } from '../services/model-discovery-service'
@@ -134,7 +134,7 @@ function connectionTestFailure(failure: unknown): string {
       `This is Ollama’s native /api address. Change the Base URL to ${String(detail.suggestedBaseUrl)}.`,
     )
   }
-  return knownAppErrorMessage(getMainLocale(app.getLocale()), failure) ?? String(failure)
+  return knownAppErrorMessage(getMainInterfaceLocale(app.getLocale()), failure) ?? String(failure)
 }
 
 function providerConnectionFailure(response: Extract<LLMResponse, { success: false }>): string | undefined {

@@ -22,6 +22,7 @@ import {
 } from '../../../src/services/workflows/import-run-orchestrator'
 import type { ImportRunChapterSnapshot } from '../../../src/shared/import-run'
 import type { CharacterRosterEntry } from '../../../src/shared/character-roster'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 let root = ''
 
@@ -89,7 +90,7 @@ function completeBlueprintCharacterSync(receipt: BlueprintRangeCommitReceipt): v
 }
 
 function fullRecoveryDependencies(trace: RecoveryTrace): ImportRunOrchestratorDependencies {
-  return {
+  return { interfaceLocale: shown('zh-CN'),
     getRun: async runId => ImportRunRepository.get(runId),
     startOrResume: async (runId, owner) => ImportRunRepository.startOrResume(runId, owner),
     renewExecution: async (runId, execution) => ImportRunRepository.renewExecution(runId, execution),
@@ -208,7 +209,7 @@ function realDependencies(
   modelCalls: number[][],
   crashAfterFirstCommit: { current: boolean },
 ): ImportRunOrchestratorDependencies {
-  return {
+  return { interfaceLocale: shown('zh-CN'),
     getRun: async runId => ImportRunRepository.get(runId),
     startOrResume: async (runId, owner) => ImportRunRepository.startOrResume(runId, owner),
     renewExecution: async (runId, execution) => ImportRunRepository.renewExecution(runId, execution),

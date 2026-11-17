@@ -11,9 +11,10 @@
 import type { StepCallbacks, WorkflowContext } from '../../stores/workflow-store'
 import type { AllInvokeChannels, InvokeChannel, ProjectSessionContext } from '../../shared/ipc-channels'
 import { ipc } from '../ipc-client'
-import { localize } from '../../i18n/core'
+import { copyLocale, errorLocaleForRun, localize } from '../../i18n/core'
 import { displayedErrorMessage } from '../../i18n/app-errors'
-import type { Locale } from '../../i18n/types'
+import type { ErrorDisplayLocale } from '../../i18n/types'
+import { currentInterfaceLocale } from '../../stores/locale-store'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 import { POST_PROCESS_INTERRUPTED } from '../../shared/finalization-step-error'
 
@@ -55,10 +56,10 @@ export async function withRetry(
   maxRetries: number,
   label: string,
   callbacks: StepCallbacks,
-  isCancelled?: () => boolean,
-  uiLocale: Locale = 'zh-CN',
+  isCancelled: (() => boolean) | undefined,
+  interfaceLocale: ErrorDisplayLocale,
 ): Promise<{ ok: boolean; error?: string; attempts: number }> {
-  const text = (zhCNText: string, enUSText: string) => localize(uiLocale, zhCNText, enUSText)
+  const text = (zhCNText: string, enUSText: string) => localize(copyLocale(interfaceLocale), zhCNText, enUSText)
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (isCancelled?.()) throw new WorkflowCancelledError(text('工作流已取消', 'Workflow was cancelled.'))
     try {
@@ -71,7 +72,7 @@ export async function withRetry(
       // 原始原因随步骤失败记录保存；日志按冻结的界面语言说明。作者已取消时不再重试，真实失败照常交回。
       const errMsg = err instanceof Error ? err.message : String(err)
       if (attempt < maxRetries && !cancelled) {
-        const reason = displayedErrorMessage(uiLocale, err)
+        const reason = displayedErrorMessage(interfaceLocale, err)
         callbacks.log(text(
           `  ${label} 第${attempt + 1}次失败，正在重试...（${reason}）`,
           `  ${label} failed on attempt ${attempt + 1}; retrying... (${reason})`,
@@ -253,6 +254,7 @@ export async function runPostProcessPipeline(
   const stopOnFailure = options?.stopOnFailure ?? false
   const cancellation = options?.cancellation
   const uiLocale = cancellation?.uiLocale ?? 'zh-CN'
+  const interfaceLocale = cancellation?.interfaceLocale ?? errorLocaleForRun(uiLocale, currentInterfaceLocale())
   const text = (zhCNText: string, enUSText: string) => localize(uiLocale, zhCNText, enUSText)
   const projectSession = options?.projectSession ?? cancellation?.projectSession ?? undefined
   const assertNotCancelled = () => {
@@ -288,7 +290,7 @@ export async function runPostProcessPipeline(
       ...(options?.finalizedSource ? { finalizedSource: options.finalizedSource } : {})
     }, projectPath)
     if (!createRes.success || !createRes.id) {
-      const error = displayedErrorMessage(uiLocale, createRes.error)
+      const error = displayedErrorMessage(interfaceLocale, createRes.error)
       throw new Error(text(
         `创建跑批失败: ${error}`,
         `Failed to create the post-processing run: ${error}`,
@@ -333,14 +335,14 @@ export async function runPostProcessPipeline(
         step.label,
         callbacks,
         () => cancellation?.cancelled === true,
-        uiLocale,
+        interfaceLocale,
       )
 
       if (result.ok) {
         assertNotCancelled()
         const markResult = await invokeForProjectSession(projectSession, 'db:post-process-mark-step-ok', runId, step.key, projectPath)
         if (!markResult.success) {
-          const reason = displayedErrorMessage(uiLocale, markResult.error)
+          const reason = displayedErrorMessage(interfaceLocale, markResult.error)
           throw new Error(text(
             `记录后处理成功状态失败: ${reason}`,
             `Failed to record the successful post-processing state: ${reason}`,
@@ -358,14 +360,14 @@ export async function runPostProcessPipeline(
           projectPath,
         )
         if (!markResult.success) {
-          const reason = displayedErrorMessage(uiLocale, markResult.error)
+          const reason = displayedErrorMessage(interfaceLocale, markResult.error)
           throw new Error(text(
             `记录后处理失败状态失败: ${reason}`,
             `Failed to record the failed post-processing state: ${reason}`,
           ))
         }
         if (stopOnFailure) {
-          const reason = displayedErrorMessage(uiLocale, stepError)
+          const reason = displayedErrorMessage(interfaceLocale, stepError)
           throw new Error(text(
             `后处理步骤失败：${step.label} — ${reason}`,
             `Post-processing step failed: ${step.label} — ${reason}`,
@@ -413,7 +415,7 @@ export async function runPostProcessPipeline(
     `${sourceLabel} post-processing summary`,
   ))
   for (const [, r] of Object.entries(status.steps)) {
-    const reason = r.ok ? '' : ` — ${displayedErrorMessage(uiLocale, r.error)}`
+    const reason = r.ok ? '' : ` — ${displayedErrorMessage(interfaceLocale, r.error)}`
     callbacks.log(text(
       `  ${r.ok ? '成功' : '失败'}：${r.label}${reason}`,
       `  ${r.ok ? 'Succeeded' : 'Failed'}: ${r.label}${reason}`,

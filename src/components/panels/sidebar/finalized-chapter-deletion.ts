@@ -4,7 +4,7 @@ import { globalEventBus } from '../../../shared/event-bus'
 import { ipc } from '../../../services/ipc-client'
 import { useDraftStore } from '../../../stores/draft-store'
 import { useEditorStore } from '../../../stores/editor-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { confirm } from '../../ui/Confirm'
 import { toast } from '../../ui/Toast'
@@ -104,7 +104,7 @@ function emitDeletionStatusUpdated(
 }
 
 function showUncommittedError(result: ChapterDeletionResult, text: Localize): void {
-  const reason = displayedErrorMessage(useLocaleStore.getState().locale, result.error)
+  const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
   toast.error(text(`删除失败\n\n${reason}`, `Delete failed\n\n${reason}`))
 }
 
@@ -132,7 +132,7 @@ async function finishCommittedDeletion(
   if (result.success) {
     toast.success(config.success)
   } else {
-    toast.warning(config.partialFailure(displayedErrorMessage(useLocaleStore.getState().locale, result.error)), 8000)
+    toast.warning(config.partialFailure(displayedErrorMessage(currentInterfaceLocale(), result.error)), 8000)
   }
   return result
 }

@@ -5,6 +5,7 @@ import { toolRegistry } from '../tool-registry'
 import { readArchitectureTool } from '../tools/read-architecture.tool'
 import { AgentHostFixture } from './agent-generation.fixture'
 import { useProjectStore } from '../../../stores/project-store'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const session = { projectId: 'arch-project', leaseId: 'arch-lease', projectPath: 'C:/synthetic/arch-agent' }
 const project = { id: session.projectId, sessionLease: session.leaseId, path: session.projectPath, name: 'Synthetic', novelConfig: {} }
@@ -45,7 +46,7 @@ async function runHosted() {
   const ui = { onTextChunk: vi.fn(), onToolCallStart: vi.fn(), onToolCallComplete: vi.fn(), onDone: vi.fn(), onError: vi.fn(),
     onToolCallConfirmRequired: vi.fn(async () => true) }
   await runAgentLoop('system', [], '读架构', 'frozen-model', vi.fn(async () => host.round(index++)), ui, undefined,
-    { projectSession: session, selectedModelId: 'frozen-model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', agentGeneration: host })
+    { projectSession: session, selectedModelId: 'frozen-model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), agentGeneration: host })
   expect(ui.onError).not.toHaveBeenCalled()
   doneText = ui.onDone.mock.calls.at(-1)?.[0] ?? ''
   return fixture.recovery.rounds.flatMap(round => round.actions).map(action => action.observation ?? '')
@@ -126,7 +127,7 @@ describe('read_architecture 超过工具结果上限时可以续读（#557）', 
   it('offset 超出内容长度时返回说明而不抛错', async () => {
     core.synopsis = longText(7000, '大纲')
     const result = await readArchitectureTool.execute({ file_name: '剧情大纲', offset: 999_999 },
-      { projectSession: session, selectedModelId: null, writingLanguage: 'zh-CN', uiLocale: 'zh-CN' })
+      { projectSession: session, selectedModelId: null, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN') })
 
     expect(result.success).toBe(true)
     expect(result.content).not.toContain(core.synopsis.slice(0, 20))
@@ -136,7 +137,7 @@ describe('read_architecture 超过工具结果上限时可以续读（#557）', 
   it.each([-1, 1.5, 'abc', '3000', true, null, []])('offset=%s 不是非负整数时报错而不是静默从头读', async offset => {
     core.synopsis = longText(7000, '大纲')
     const result = await readArchitectureTool.execute({ file_name: '剧情大纲', offset },
-      { projectSession: session, selectedModelId: null, writingLanguage: 'zh-CN', uiLocale: 'zh-CN' })
+      { projectSession: session, selectedModelId: null, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN') })
 
     expect(result.success).toBe(false)
     expect(result.error).toMatch(/offset/u)
@@ -168,7 +169,7 @@ describe('read_architecture 超过工具结果上限时可以续读（#557）', 
       onToolCallConfirmRequired: vi.fn(async () => true) }
 
     await runAgentLoop('system', [], '读架构', 'model', generate, ui, undefined,
-      { projectSession: session, selectedModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN' })
+      { projectSession: session, selectedModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN') })
 
     const segments = observations.map(observation => /<tool_result name="read_architecture">\n([\s\S]*)\n<\/tool_result>/u.exec(observation)![1])
     return { segments, doneText: ui.onDone.mock.calls.at(-1)?.[0] ?? '' }

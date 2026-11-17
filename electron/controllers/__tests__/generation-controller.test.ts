@@ -42,6 +42,7 @@ import { clearProjectCustomPrompts } from '../../../src/services/prompt-template
 import { exportPortableProject } from '../../services/project-archive-service'
 import { restorePortableProject } from '../../services/project-restore-service'
 import { readPortableRuntimeFreeze } from '../../services/portable-runtime-freeze'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 const model: ModelProfile = { id: 'fixture', name: '合成模型', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1',
   baseUrl: 'https://api.openai.com/v1', apiKey: 'synthetic-only', maxTokens: 1024, temperature: 0.7, purposes: ['generation'] }
@@ -181,7 +182,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
       expectedDraft: { chapterNumber: 1, version: 1, status: 'draft', contentHash: textHash(source.draftContent) },
       authorInputs: [], uiLocale })).rejects.toThrow('GENERATION_REVIEW_SOURCE_CHANGED')
     const context: WorkflowContext = { runId: 'stale-review-source', projectPath: session.projectPath, projectSession: session,
-      writingLanguage: 'zh-CN', uiLocale, cancelled: false, data: {} }
+      writingLanguage: 'zh-CN', uiLocale, interfaceLocale: shown(uiLocale), cancelled: false, data: {} }
     const callbacks: StepCallbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
     const commands = [new ReviewChapterCommand(source), new RefineDraftCommand({ ...source,
       chapterInfo: { projectPath: session.projectPath, chapterNumber: 1, title: '', role: '', purpose: '', keyEvents: '', characters: [] } })]
@@ -820,7 +821,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     const callbacks: StepCallbacks = { log: vi.fn(), setProgress: value => { progress.push(value) }, appendText: vi.fn(), replaceText: vi.fn() }
     const execute = (resumeHandle?: MainGenerationRunHandle) => {
       const context: WorkflowContext = { runId: resumeHandle ? 'outline-resumed' : 'outline-original', projectPath: session.projectPath,
-        projectSession: session, generationModelId: model.id, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', cancelled: false,
+        projectSession: session, generationModelId: model.id, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), cancelled: false,
         data: { stepGuidance: { synopsis: '步骤尾部：最终章必须归还借来的钥匙。' } } }
       const command = new GeneratePlotArchitectureCommand(['synopsis'], { expectedProjectPath: session.projectPath, novelConfig: config }, undefined,
         resumeHandle ? { resumeSynopsis: true, resumeHandle } : { synopsisRange: { from, to: chapters } })

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanAgentVisibleText, parseToolCalls, runAgentLoop } from '../agent-engine'
 import { toolRegistry } from '../tool-registry'
 import { requireAgentProject } from '../tools/project-context'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const RAW_START_WORKFLOW = 'start_workflow\n{"workflow":"generate_draft","chapter_number":1}'
 
@@ -255,7 +256,7 @@ describe('Agent raw tool-call compatibility', () => {
         projectSession: null,
         selectedModelId: 'model',
         writingLanguage: 'en-US',
-        uiLocale: 'zh-CN',
+        uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
       },
     )
 
@@ -302,7 +303,7 @@ describe('Agent raw tool-call compatibility', () => {
         projectSession: null,
         selectedModelId: 'model',
         writingLanguage: 'zh-CN',
-        uiLocale: 'en-US',
+        uiLocale: 'en-US', interfaceLocale: shown('en-US'),
       },
     )
 
@@ -332,7 +333,7 @@ describe('Agent raw tool-call compatibility', () => {
         projectSession: null,
         selectedModelId: 'model',
         writingLanguage: 'zh-CN',
-        uiLocale: 'en-US',
+        uiLocale: 'en-US', interfaceLocale: shown('en-US'),
       },
     )
 
@@ -357,7 +358,7 @@ describe('Agent raw tool-call compatibility', () => {
         projectSession: null,
         selectedModelId: 'model',
         writingLanguage: 'zh-CN',
-        uiLocale: 'en-US',
+        uiLocale: 'en-US', interfaceLocale: shown('en-US'),
       },
     )
 
@@ -382,7 +383,7 @@ describe('Agent raw tool-call compatibility', () => {
         projectSession: null,
         selectedModelId: 'model',
         writingLanguage: 'zh-CN',
-        uiLocale: 'en-US',
+        uiLocale: 'en-US', interfaceLocale: shown('en-US'),
       },
     )
 

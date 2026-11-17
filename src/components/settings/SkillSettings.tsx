@@ -10,7 +10,7 @@ import {
   type RemoteWritingSkillInspection,
   type WritingSkillStage,
 } from '../../shared/writing-skills'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
 import { ipc } from '../../services/ipc-client'
 import { skillRegistry, type LoadedSkill } from '../../services/agent/skill-registry'
@@ -216,7 +216,7 @@ export default function SkillSettings() {
           if (!disposed) setBindings(loaded.bindings)
         } else setBindings({})
       } catch (cause) {
-        if (!disposed) setError(displayedErrorMessage(useLocaleStore.getState().locale, cause))
+        if (!disposed) setError(displayedErrorMessage(currentInterfaceLocale(), cause))
       }
     })()
     return () => { disposed = true }
@@ -231,7 +231,7 @@ export default function SkillSettings() {
       if (!result.success || !result.inspection) throw new Error(result.error || text('Skill 检查失败', 'Skill inspection failed'))
       setCandidate({ origin: 'github', inspection: result.inspection })
     } catch (cause) {
-      setError(displayedErrorMessage(useLocaleStore.getState().locale, cause))
+      setError(displayedErrorMessage(currentInterfaceLocale(), cause))
     } finally {
       setBusy(false)
     }
@@ -247,7 +247,7 @@ export default function SkillSettings() {
       if (!result.success || !result.inspection) throw new Error(result.error || text('Skill 检查失败', 'Skill inspection failed'))
       setCandidate({ origin: 'local', inspection: result.inspection })
     } catch (cause) {
-      setError(displayedErrorMessage(useLocaleStore.getState().locale, cause))
+      setError(displayedErrorMessage(currentInterfaceLocale(), cause))
     } finally {
       setBusy(false)
     }
@@ -273,7 +273,7 @@ export default function SkillSettings() {
     } catch (cause) {
       // 主进程在安装前就丢弃了候选，失败后卡片已无法再安装；GitHub 地址保留，作者可直接重新检查。
       setCandidate(null)
-      setError(displayedErrorMessage(useLocaleStore.getState().locale, cause))
+      setError(displayedErrorMessage(currentInterfaceLocale(), cause))
     } finally {
       setBusy(false)
     }
@@ -292,7 +292,7 @@ export default function SkillSettings() {
         return next
       })
     } catch (cause) {
-      setError(displayedErrorMessage(useLocaleStore.getState().locale, cause))
+      setError(displayedErrorMessage(currentInterfaceLocale(), cause))
     } finally {
       setBusy(false)
     }
@@ -316,7 +316,7 @@ export default function SkillSettings() {
       if (!result.success) throw new Error(result.error || text('Skill 卸载失败', 'Skill uninstall failed'))
       await reload()
     } catch (cause) {
-      setError(displayedErrorMessage(useLocaleStore.getState().locale, cause))
+      setError(displayedErrorMessage(currentInterfaceLocale(), cause))
     } finally {
       setBusy(false)
     }

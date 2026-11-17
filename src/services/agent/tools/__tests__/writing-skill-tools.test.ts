@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProjectSessionContext } from '../../../../shared/ipc-channels'
 import { toolRegistry } from '../../tool-registry'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const invoke = vi.fn()
 const saveWritingSkillBinding = vi.fn()
@@ -74,7 +75,7 @@ describe('writing skill agent tools', () => {
     await expect(bindWritingSkillTool.execute({
       skill_id: 'builtin:natural-prose-refinement',
       stage: 'refinement',
-    }, { projectSession, selectedModelId: null, uiLocale: 'zh-CN', writingLanguage: 'zh-CN' })).resolves.toMatchObject({ success: true })
+    }, { projectSession, selectedModelId: null, uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), writingLanguage: 'zh-CN' })).resolves.toMatchObject({ success: true })
     expect(saveWritingSkillBinding).toHaveBeenCalledWith(
       projectSession,
       'refinement',

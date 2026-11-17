@@ -10,6 +10,7 @@ import { getBuiltinPromptTemplate } from '../../../builtin-prompt-templates'
 import { ExtractPlanningMaterialCharactersCommand } from '../planning-material.command'
 import { useProjectStore } from '../../../../stores/project-store'
 import { useLLMStore } from '../../../../stores/llm-store'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const originalProject = useProjectStore.getState().currentProject
@@ -45,7 +46,7 @@ it.each([['人物设定.txt'], ['foo.txt'], ['人物设定.txt', '人物设定.t
     })
     vi.stubGlobal('window', { aiNovelAPI: { invoke, on: vi.fn(() => () => {}) } })
     await expect(new ExtractPlanningMaterialCharactersCommand(materials).execute({ step: {},
-      context: { runId: '资料动作', projectPath: root, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false },
+      context: { runId: '资料动作', projectPath: root, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false },
       callbacks: { log: vi.fn(), appendText: vi.fn(), setProgress: vi.fn() },
     })).rejects.toThrow('真实来源绑定完成')
     expect(invoke).toHaveBeenCalledOnce()

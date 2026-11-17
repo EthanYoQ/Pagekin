@@ -21,7 +21,7 @@ import type { PlotTreeSourceBundle, PlotTreeSourceReference } from '../../../sha
 import { routeStageModel } from '../../../shared/model-stage-routing'
 import { formatResourceUri } from '../../../shared/project-paths'
 import { useLLMStore } from '../../../stores/llm-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { openBuiltinEditor } from '../../../stores/open-builtin-editor'
 import { useProjectStore } from '../../../stores/project-store'
 import { openChapterFile } from '../../panels/sidebar/sidebar-file-openers'
@@ -95,7 +95,7 @@ export function plotTreeErrorMessage(
       'This generation was not saved. Recover the generation record to check its result and cancellation status.',
     )
   }
-  const providerRejection = providerContextFailureText(error, text)
+  const providerRejection = providerContextFailureText(error, currentInterfaceLocale())
   if (providerRejection) return providerRejection
   if (message === 'GRAPH_GENERATION_NOT_CONFIRMABLE') {
     return text(
@@ -273,7 +273,7 @@ export function usePlotThreads(projectKey: string, {
       if (graphClient.current === client) showGraphRecovery(value)
       assertGraphResult(value)
     } catch (error) {
-      if (graphClient.current === client) setGraphError(providerContextFailureText(error, text) ?? text('原运行未完成，结果已保留。', 'The original run did not complete; its output is preserved.'))
+      if (graphClient.current === client) setGraphError(providerContextFailureText(error, currentInterfaceLocale()) ?? text('原运行未完成，结果已保留。', 'The original run did not complete; its output is preserved.'))
     } finally {
       if (graphClient.current === client) setGenerationBusy(false)
     }
@@ -513,7 +513,7 @@ export function usePlotThreads(projectKey: string, {
       await startGraph({ kind: 'plan', chapterNumber: blueprint.chapterNumber }, frozenModelId)
     } catch (error) {
       if (isProjectSessionCurrent(session) && !controller.signal.aborted) {
-        setAiError(providerContextFailureText(error, text) ?? text('未生成有效的计划候选，请重试。', 'No valid plan candidates were generated. Try again.'))
+        setAiError(providerContextFailureText(error, currentInterfaceLocale()) ?? text('未生成有效的计划候选，请重试。', 'No valid plan candidates were generated. Try again.'))
       }
     } finally {
       if (candidateAbortRef.current === controller) candidateAbortRef.current = null
@@ -538,7 +538,7 @@ export function usePlotThreads(projectKey: string, {
       await startGraph({ kind: 'event', planId: planSnapshot.id, draftId: draftSnapshot.id }, frozenModelId)
     } catch (error) {
       if (isProjectSessionCurrent(session) && !controller.signal.aborted) {
-        setAiError(providerContextFailureText(error, text) ?? text(
+        setAiError(providerContextFailureText(error, currentInterfaceLocale()) ?? text(
           '未生成带有效定稿证据的事件候选，请重试。',
           'No event candidate with valid finalized evidence was generated. Try again.',
         ))
@@ -650,7 +650,7 @@ export function usePlotThreads(projectKey: string, {
     } catch (error) {
       if (!isProjectSessionCurrent(session)) return
       // 主进程用登记过的码拒绝（如短证据不在定稿正文里）时在表单里说明原因，作者改完能直接重试；其余仍是笼统提示。
-      const reason = knownAppErrorMessage(useLocaleStore.getState().locale, error)
+      const reason = knownAppErrorMessage(currentInterfaceLocale(), error)
       if (reason) setEventError(reason)
       else toast.error(text('保存定稿事件失败', 'Could not save finalized event'))
     } finally {

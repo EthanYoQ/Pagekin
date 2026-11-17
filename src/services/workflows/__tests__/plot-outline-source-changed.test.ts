@@ -6,6 +6,7 @@ import { useProjectStore } from '../../../stores/project-store'
 import { GeneratePlotArchitectureCommand, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE } from '../commands/architecture.command'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, renderPlotOutlineSynopsis, type PlotOutlineProgress } from '../../../shared/plot-outline-contract'
 import type { NovelConfig } from '../../../shared/ipc-channels'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 afterEach(() => {
@@ -51,7 +52,7 @@ function arrangeOutlineRejectedAtChapter7(rejection: string, lastChapterDone = f
   const command = new GeneratePlotArchitectureCommand(['synopsis'], { expectedProjectPath: projectSession.projectPath, novelConfig }, undefined,
     { synopsisRange: { from: 6, to: 10 } })
   const context = { runId: 'architecture-run', projectPath: projectSession.projectPath, projectSession,
-    writingLanguage: 'zh-CN' as const, uiLocale: 'zh-CN' as const, data: {}, cancelled: false }
+    writingLanguage: 'zh-CN' as const, uiLocale: 'zh-CN' as const, interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
   const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
   return { run: () => command.execute({ step: {}, context, callbacks }), execute, commit }
 }

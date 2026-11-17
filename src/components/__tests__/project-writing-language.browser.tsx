@@ -77,10 +77,13 @@ function writingLanguageSelect(): HTMLSelectElement {
 }
 
 describe('project writing language', () => {
-  it('initializes a new project from the UI language at creation time', async () => {
+  it.each([
+    { interfaceLocale: 'en-US' },
+    { interfaceLocale: 'ja-JP' },
+  ] as const)('initializes a new project in English from the $interfaceLocale interface at creation time', async ({ interfaceLocale }) => {
     vi.spyOn(ipc, 'invoke').mockResolvedValueOnce({ grantId: 'parent-grant', displayName: 'novels' } as never)
     const createProject = vi.fn(async () => true)
-    useLocaleStore.setState({ locale: 'en-US' })
+    useLocaleStore.setState({ interfaceLocale, locale: 'en-US' })
     useProjectStore.setState({ createProject: createProject as never })
 
     useLayoutStore.setState({ newProjectOpen: true })

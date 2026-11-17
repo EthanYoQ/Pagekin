@@ -8,7 +8,8 @@ import { globalEventBus } from '../shared/event-bus'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import type { WritingLanguage } from '../shared/writing-language'
 import { resolveWritingLanguage } from '../shared/writing-language'
-import type { Locale } from '../i18n/types'
+import type { ErrorDisplayLocale, Locale } from '../i18n/types'
+import { errorLocaleForRun } from '../i18n/core'
 import {
   getBoundedCompletionFailureCode,
   type BoundedCompletionFailureCode,
@@ -26,7 +27,7 @@ import {
   sameProjectSessionContext,
 } from '../shared/project-session-context'
 import { useProjectStore } from './project-store'
-import { useLocaleStore } from './locale-store'
+import { currentInterfaceLocale, useLocaleStore } from './locale-store'
 import { navigate } from './navigation/navigation-intents'
 import {
   normalizeWorkflowResourceKeys,
@@ -167,6 +168,8 @@ export interface WorkflowContext {
   writingLanguage: WritingLanguage
   /** Visible interface locale frozen when the workflow starts. */
   uiLocale: Locale
+  /** 查报错目录用的界面语言，与 uiLocale 同时冻结；只在执行上下文里，不进运行记录。 */
+  interfaceLocale: ErrorDisplayLocale
   /** Full immutable content frozen once before the first workflow step starts. */
   writingSkills?: FrozenWritingSkillSnapshot
   /** 步骤间传递的数据 */
@@ -588,6 +591,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       projectSession,
       writingLanguage,
       uiLocale,
+      interfaceLocale: errorLocaleForRun(uiLocale, currentInterfaceLocale()),
       ...(generationModelId ? { generationModelId } : {}),
       ...(chapterWordsTarget ? { chapterWordsTarget } : {}),
       data: {},
@@ -644,7 +648,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         await cancelBeforeFirstStep()
         return runId
       }
-      const reason = displayedErrorMessage(uiLocale, error)
+      const reason = displayedErrorMessage(context.interfaceLocale, error)
       const failure = uiText(
         uiLocale,
         `写作 Skill 快照加载失败，工作流未启动：${reason}`,
@@ -849,7 +853,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         if (stoppedByCancellation(context, error)) {
           const notice = error instanceof WorkflowCancelledError && error.notice ? { error: error.message } : {}
           updateStepById(set, run.id, i, { status: 'cancelled', completedAt: new Date().toISOString(), ...notice })
-          const reason = displayedErrorMessage(context.uiLocale, error)
+          const reason = displayedErrorMessage(context.interfaceLocale, error)
           get().addLog('warn', uiText(
             context.uiLocale,
             `[取消] [${definition.title}] 步骤: ${stepDef.name} — ${reason}`,
@@ -879,7 +883,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
           ...(promptBudgetFailure ? { promptBudgetReport: promptBudgetFailure.report } : {}),
         })
         // 普通步骤失败交原错误，带 code 的按码说明；预算失败已写好说明。
-        const reason = displayedErrorMessage(context.uiLocale, promptBudgetFailure ? errorMsg : error)
+        const reason = displayedErrorMessage(context.interfaceLocale, promptBudgetFailure ? errorMsg : error)
         get().addLog('error', uiText(
           context.uiLocale,
           `[失败] [${definition.title}] 步骤: ${stepDef.name} — ${reason}`,
@@ -901,8 +905,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         } catch (error) {
           get().addLog('error', uiText(
             context.uiLocale,
-            `[取消失败] 工作流「${definition.title}」未能持久化安全边界：${displayedErrorMessage(context.uiLocale, error)}`,
-            `[Cancellation failed] Workflow "${definition.title}" could not persist its safe boundary: ${displayedErrorMessage(context.uiLocale, error)}`,
+            `[取消失败] 工作流「${definition.title}」未能持久化安全边界：${displayedErrorMessage(context.interfaceLocale, error)}`,
+            `[Cancellation failed] Workflow "${definition.title}" could not persist its safe boundary: ${displayedErrorMessage(context.interfaceLocale, error)}`,
           ), context.uiLocale)
         }
       }
@@ -958,8 +962,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         } catch (e) {
           get().addLog('warn', uiText(
             context.uiLocale,
-            `[警告] onComplete 执行失败: ${displayedErrorMessage(context.uiLocale, e)}`,
-            `[Warning] onComplete failed: ${displayedErrorMessage(context.uiLocale, e)}`,
+            `[警告] onComplete 执行失败: ${displayedErrorMessage(context.interfaceLocale, e)}`,
+            `[Warning] onComplete failed: ${displayedErrorMessage(context.interfaceLocale, e)}`,
           ), context.uiLocale)
         }
       }
@@ -1011,8 +1015,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
           void ctx.cancellationRequest.catch(error => {
             get().addLog('error', uiText(
               targetRun.uiLocale,
-              `[取消失败] 未能立即保存取消请求：${displayedErrorMessage(targetRun.uiLocale, error)}`,
-              `[Cancellation failed] Could not persist the cancellation request immediately: ${displayedErrorMessage(targetRun.uiLocale, error)}`,
+              `[取消失败] 未能立即保存取消请求：${displayedErrorMessage(ctx.interfaceLocale, error)}`,
+              `[Cancellation failed] Could not persist the cancellation request immediately: ${displayedErrorMessage(ctx.interfaceLocale, error)}`,
             ), targetRun.uiLocale)
           })
         }
@@ -1020,7 +1024,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         else ctx.cancelled = true
         ctx.pauseRequested = false
         if (targetRun.type !== 'novel_import') {
-          void ctx.requestMainGenerationCancellation?.().catch(error => get().addLog('error', displayedErrorMessage(targetRun.uiLocale, error), targetRun.uiLocale))
+          void ctx.requestMainGenerationCancellation?.().catch(error => get().addLog('error', displayedErrorMessage(ctx.interfaceLocale, error), targetRun.uiLocale))
         }
       }
       // 如果在步进等待，解除 Promise
@@ -1066,8 +1070,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
           void ctx.cancellationRequest.catch(error => {
             get().addLog('error', uiText(
               run.uiLocale,
-              `[取消失败] 未能立即保存取消请求：${displayedErrorMessage(run.uiLocale, error)}`,
-              `[Cancellation failed] Could not persist the cancellation request immediately: ${displayedErrorMessage(run.uiLocale, error)}`,
+              `[取消失败] 未能立即保存取消请求：${displayedErrorMessage(ctx.interfaceLocale, error)}`,
+              `[Cancellation failed] Could not persist the cancellation request immediately: ${displayedErrorMessage(ctx.interfaceLocale, error)}`,
             ), run.uiLocale)
           })
         }
@@ -1075,7 +1079,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         else ctx.cancelled = true
         ctx.pauseRequested = false
         if (run.type !== 'novel_import') {
-          void ctx.requestMainGenerationCancellation?.().catch(error => get().addLog('error', displayedErrorMessage(run.uiLocale, error), run.uiLocale))
+          void ctx.requestMainGenerationCancellation?.().catch(error => get().addLog('error', displayedErrorMessage(ctx.interfaceLocale, error), run.uiLocale))
         }
         const resolve = continueResolveRefs.get(id)
         if (resolve) { resolve(); continueResolveRefs.delete(id) }

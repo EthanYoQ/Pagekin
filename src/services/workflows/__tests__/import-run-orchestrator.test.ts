@@ -17,6 +17,8 @@ import {
   ImportRunOrchestrator,
   type ImportRunOrchestratorDependencies,
 } from '../import-run-orchestrator'
+import { shown } from '../../../i18n/__tests__/shown-locale'
+import type { InterfaceLocale } from '../../../i18n/types'
 
 function runSnapshot(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapshot {
   return {
@@ -38,7 +40,7 @@ function chapter(number: number): ImportRunChapterSnapshot {
   }
 }
 
-function harness(total = 25, overrides: Partial<ImportRunSnapshot> = {}) {
+function harness(total = 25, overrides: Partial<ImportRunSnapshot> = {}, interfaceLocale: InterfaceLocale = overrides.locale ?? 'en-US') {
   let run = runSnapshot({ totalChapters: total, ...overrides })
   const chapters = Array.from({ length: total }, (_, index) => chapter(index + 1))
   const calls: number[] = []
@@ -46,7 +48,7 @@ function harness(total = 25, overrides: Partial<ImportRunSnapshot> = {}) {
   const execution = { owner: 'test-runner', epoch: 1, expiresAt: Number.MAX_SAFE_INTEGER }
   const receipts = new Map<string, ImportRunEffectReceipt>()
   const receiptKey = (stage: ImportRunStage, batchId: string) => `${stage}:${batchId}`
-  const deps: ImportRunOrchestratorDependencies = {
+  const deps: ImportRunOrchestratorDependencies = { interfaceLocale: shown(interfaceLocale),
     getRun: vi.fn(async () => run),
     startOrResume: vi.fn(async () => ({ run, execution })),
     renewExecution: vi.fn(async () => execution),
@@ -1025,10 +1027,26 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', stage, 'test-runner', { cancelled: false }, { ...callbacks, log })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(importGenerationStopMessage(locale, code))
+    expect((failure as Error).message).toBe(importGenerationStopMessage(shown(locale), code))
     expect((failure as Error).message).not.toContain(code)
     expect(getRun()).toMatchObject({ status: 'failed', lastError: (failure as Error).message })
     expect(log.mock.calls.flat().some(line => String(line).includes(code))).toBe(true)
+  })
+
+  it('日文界面、英文运行：停止说明用日文目录，诊断日志仍是英文', async () => {
+    const { deps, getRun } = harness(5, { locale: 'en-US', stage: 'global' }, 'ja-JP')
+    deps.inferGlobal = vi.fn(async () => { throw new Error('ROOT_BUDGET_EXHAUSTED') })
+    const log = vi.fn()
+
+    const failure = await new ImportRunOrchestrator(deps)
+      .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, { ...callbacks, log })
+      .catch((error: Error) => error)
+
+    const japanese = importGenerationStopMessage(shown('ja-JP'), 'ROOT_BUDGET_EXHAUSTED')
+    expect(japanese).not.toBe(importGenerationStopMessage(shown('en-US'), 'ROOT_BUDGET_EXHAUSTED'))
+    expect((failure as Error).message).toBe(japanese)
+    expect(getRun()).toMatchObject({ locale: 'en-US', lastError: japanese })
+    expect(log).toHaveBeenCalledWith('Import stop reason: ROOT_BUDGET_EXHAUSTED')
   })
 
   it.each([
@@ -1064,7 +1082,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
     const failure = await new ImportRunOrchestrator(deps)
       .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, callbacks)
       .catch((error: Error) => error)
-    expect((failure as Error).message).toBe(importGenerationStopMessage('zh-CN', 'ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript'))
+    expect((failure as Error).message).toBe(importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript'))
     expect((failure as Error).message).not.toContain('重新开始')
     expect(getRun().lastError).toBe((failure as Error).message)
   })

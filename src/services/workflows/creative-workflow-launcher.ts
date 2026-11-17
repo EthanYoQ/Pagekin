@@ -9,7 +9,7 @@ import {
   type WorkflowDefinition,
   type WorkflowStatus,
 } from '../../stores/workflow-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { ipc } from '../ipc-client'
 import {
   guardArchitectureGeneration,
@@ -22,7 +22,7 @@ import { createChapterWorkflow } from './chapter-workflow'
 import { createDirectoryWorkflow, type DirectoryWorkflowParams } from './directory-workflow'
 import { normalizeChapterWordsTarget } from './chapter-creation-parameters'
 import type { Locale } from '../../i18n/types'
-import { localize } from '../../i18n/core'
+import { errorLocaleForRun, localize } from '../../i18n/core'
 import type { AgentToolActionRef } from '../../shared/agent-generation'
 
 export type CreativeWorkflowName =
@@ -186,6 +186,7 @@ export async function launchCreativeWorkflow(
 ): Promise<CreativeWorkflowLaunchReceipt> {
   let generationModelId = options.generationModelId?.trim() || undefined
   const uiLocale = useLocaleStore.getState().locale
+  const errorLocale = errorLocaleForRun(uiLocale, currentInterfaceLocale())
   currentProjectFor(projectSession, uiLocale)
   const registration = options.agentToolAction ? await ipc.invokeWithProjectSession(projectSession, 'agent-generation:register-workflow', { ref: options.agentToolAction }) : undefined
   if (registration) {
@@ -239,8 +240,8 @@ export async function launchCreativeWorkflow(
     useWorkflowStore.getState().addLog(
       'error',
       uiLocale === 'en-US'
-        ? `[Failed] Workflow errored after launch: ${displayedErrorMessage(uiLocale, error)}`
-        : `[失败] 工作流启动后异常：${displayedErrorMessage(uiLocale, error)}`,
+        ? `[Failed] Workflow errored after launch: ${displayedErrorMessage(errorLocale, error)}`
+        : `[失败] 工作流启动后异常：${displayedErrorMessage(errorLocale, error)}`,
       uiLocale,
     )
   })

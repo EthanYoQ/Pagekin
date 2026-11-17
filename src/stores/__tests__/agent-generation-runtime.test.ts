@@ -9,6 +9,7 @@ import { skillRegistry } from '../../services/agent/skill-registry'
 import { promptCatalog } from '../../services/prompt-templates'
 import { ipcPromptPersistence } from '../../services/prompt-catalog'
 import { useAgentStore } from '../agent-store'
+import { translate } from '../../i18n/core'
 
 const session = { projectId: 'project-a', leaseId: 'lease-a', projectPath: 'C:/synthetic/agent-a' }
 const project = { id: session.projectId, sessionLease: session.leaseId, path: session.projectPath, name: '合成项目',
@@ -22,7 +23,7 @@ const calls = (channel: string) => fixture.invoke.mock.calls.filter(call => call
 describe('Agent GenerationRuntime boundary', () => {
   beforeEach(() => {
     useAgentStore.setState({ conversations: [], activeConversationId: null, generating: false, activeRequestId: null, toolsInitialized: true })
-    useLocaleStore.setState({ locale: 'zh-CN', initialized: true })
+    useLocaleStore.setState({ locale: 'zh-CN', interfaceLocale: 'zh-CN', initialized: true })
     useLLMStore.setState({ defaultModelId: 'model-a' })
     useProjectStore.setState({ currentProject: structuredClone(project) })
     useEditorStore.setState({ tabs: [], activeTabId: null })
@@ -203,6 +204,22 @@ describe('Agent GenerationRuntime boundary', () => {
     expect(calls('agent-generation:begin')).toHaveLength(0)
     expect(calls('agent-generation:resume')).toHaveLength(0)
     expect(fixture.response).toHaveBeenCalledOnce()
+  })
+
+  it('日文界面下恢复中文对话，超长提示跟着对话用中文，不夹日文', async () => {
+    fixture.response = async () => {
+      fixture.recovery.run = { ...fixture.recovery.run, budgetDiagnostics: [{ runId: 'agent-run-0', failureCode: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' }] } as never
+      return { status: 'incomplete', text: '可见的原始候选' }
+    }
+    await useAgentStore.getState().sendMessage('继续')
+    const handle = lastMessage()!.mainGenerationHandle!
+    useAgentStore.getState().clearAll()
+    useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+
+    await useAgentStore.getState().resumeGeneration(handle)
+
+    expect(lastMessage()?.content).toContain(translate('zh-CN', 'error.generationContextLengthExceeded'))
+    expect(lastMessage()?.content).not.toContain(translate('ja-JP', 'error.generationContextLengthExceeded'))
   })
 
   it('retains main-projected interrupted text and its original handle without retrying the model', async () => {

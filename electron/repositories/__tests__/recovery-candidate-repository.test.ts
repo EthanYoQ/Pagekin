@@ -13,6 +13,7 @@ import { FinalizationRepository } from '../finalization-repository'
 import { RecoveryCandidateRepository } from '../recovery-candidate-repository'
 import { SummaryRepository } from '../summary-repository'
 import { displayedErrorMessage } from '../../../src/i18n/app-errors'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 let projectRoot = ''
 
@@ -294,7 +295,7 @@ describe('RecoveryCandidateRepository project-local seam', () => {
 
     // db:recovery-candidate-resolve 把报错按 String(error) 交给界面。
     expect(String(failure)).toBe('Error: RECOVERY_CANDIDATE_NOT_PENDING')
-    expect(displayedErrorMessage('zh-CN', String(failure))).toBe('这份恢复稿已经处理过（已采用或已丢弃），请刷新后再看。')
-    expect(displayedErrorMessage('en-US', String(failure))).toBe('This recovered draft was already handled (used or discarded). Refresh to see the current state.')
+    expect(displayedErrorMessage(shown('zh-CN'), String(failure))).toBe('这份恢复稿已经处理过（已采用或已丢弃），请刷新后再看。')
+    expect(displayedErrorMessage(shown('en-US'), String(failure))).toBe('This recovered draft was already handled (used or discarded). Refresh to see the current state.')
   })
 })

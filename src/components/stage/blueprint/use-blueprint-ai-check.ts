@@ -16,7 +16,7 @@ import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { globalEventBus } from '../../../shared/event-bus'
 import { routeStageModel } from '../../../shared/model-stage-routing'
 import { useLLMStore } from '../../../stores/llm-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { toast } from '../../ui/Toast'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
@@ -95,7 +95,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   }, [])
 
   const follow = useCallback((session: ProjectSessionContext, pending: Promise<ContinuityCheckOutcome>) => {
-    const { text, locale } = useLocaleStore.getState()
+    const { text } = useLocaleStore.getState()
     const shown = () => {
       if (!mounted.current || !isProjectSessionCurrent(session)) return false
       releaseShownContinuityCheck(session, pending)
@@ -118,7 +118,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
       if (code === 'GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED') { setHasTimeline(false); setStatus({ kind: 'idle' }); return }
       setStatus({ kind: 'failed', message: code === 'GENERATION_GRAPH_BLUEPRINT_REQUIRED'
         ? text('没有还没定稿的章节要检查。', 'Every chapter is finalized, so there is nothing to check.')
-        : displayedErrorMessage(locale, error, text('蓝图没有改动。这次没查成，再点一次“AI 检查”。', 'Your blueprints are unchanged. The check did not finish. Choose AI check again.')) })
+        : displayedErrorMessage(currentInterfaceLocale(), error, text('蓝图没有改动。这次没查成，再点一次“AI 检查”。', 'Your blueprints are unchanged. The check did not finish. Choose AI check again.')) })
     })
   }, [readExemptions, readTimeline])
 

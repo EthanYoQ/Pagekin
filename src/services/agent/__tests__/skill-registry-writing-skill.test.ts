@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { getBuiltinWritingSkills, readBuiltinWritingSkill } from '../../../shared/builtin-writing-skills'
 import { inspectWritingSkillMarkdown } from '../../../shared/writing-skills'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const invoke = vi.fn()
 
@@ -142,7 +143,7 @@ describe('writing skill registry identity and tool exposure', () => {
       const result = await tool!.execute({ args: 'Chapter 1' }, {
         projectSession: null,
         selectedModelId: 'model-a',
-        uiLocale: 'zh-CN',
+        uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
         writingLanguage: 'en-US',
       })
       expect(`${result.content}\n${result.error ?? ''}`, skill.metadata.name)

@@ -6,6 +6,7 @@ import type { StoreApi } from 'zustand'
 import '../../../../index.css'
 import '../../../../styles/paper-ink/index.css'
 import '../../stage.css'
+import { translate } from '../../../../i18n/core'
 import type { Locale } from '../../../../i18n/types'
 import type { ProjectData } from '../../../../shared/ipc-channels'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
@@ -268,6 +269,19 @@ describe('知识库', () => {
       expect(words.toasts[0]).toBe(say('重建检索失败：EMBEDDING_SPACE_VERIFY_FAILED', 'Could not rebuild search. EMBEDDING_SPACE_VERIFY_FAILED'))
     })
   }
+
+  it('ja-JP 下检查并重建被拒时，英文概述后接日文目录里的原因', async () => {
+    useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    const plain = invoke.getMockImplementation()!
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'kb:backfill-vectors'
+      ? { success: false, processed: 0, failed: 0, error: 'EMBEDDING_SPACE_REGISTRY_INVALID' } : plain(channel, ...args))
+    const words = wordCollector()
+    await act(async () => root!.render(<KnowledgeIndexSection />))
+    await vi.waitFor(() => expect(document.querySelector('section button')).toBeTruthy())
+    await act(async () => document.querySelector<HTMLButtonElement>('section button')!.click())
+    await vi.waitFor(() => expect(words.toasts).toHaveLength(1))
+    expect(words.toasts[0]).toBe(`Could not rebuild search. ${translate('ja-JP', 'error.knowledgeIndexDamaged')}`)
+  })
 
   it('查找结果里标出查找词，定稿章节分开列出', async () => {
     await renderPage()

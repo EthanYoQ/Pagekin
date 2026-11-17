@@ -40,6 +40,7 @@ import {
   ImportRunOrchestrator,
   type ImportRunOrchestratorDependencies,
 } from '../../../src/services/workflows/import-run-orchestrator'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -1144,7 +1145,7 @@ describe('ImportRunRepository', () => {
       .toEqual([expect.objectContaining({ number: 2, content: 'B chapter' })])
     const importedByWorkflow: Array<{ number: number; content: string }> = []
     const workflowOwner = 'repository-workflow-proof'
-    const workflowDependencies: ImportRunOrchestratorDependencies = {
+    const workflowDependencies: ImportRunOrchestratorDependencies = { interfaceLocale: shown('zh-CN'),
       getRun: async runId => ImportRunRepository.get(runId),
       startOrResume: async (runId, owner) => ImportRunRepository.startOrResume(runId, owner),
       renewExecution: async (runId, lease) => ImportRunRepository.renewExecution(runId, lease),

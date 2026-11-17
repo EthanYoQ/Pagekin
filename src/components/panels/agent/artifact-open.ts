@@ -2,7 +2,7 @@ import type { ToolArtifact } from '../../../services/agent/tool-registry'
 import { appErrorMessage } from '../../../i18n/app-errors'
 import { ipc } from '../../../services/ipc-client'
 import { useEditorStore } from '../../../stores/editor-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import {
   sameProjectPathKey,
@@ -26,7 +26,7 @@ function artifactError(
   if (error === undefined || error === null || error === '') {
     return artifactText(fallbackZhCN, fallbackEnUS)
   }
-  return appErrorMessage(useLocaleStore.getState().locale, error)
+  return appErrorMessage(currentInterfaceLocale(), error)
 }
 
 function reportProjectChangedWhileReadingArtifact(): void {

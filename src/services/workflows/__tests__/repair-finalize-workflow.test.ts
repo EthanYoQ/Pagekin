@@ -7,6 +7,7 @@ import type { PostProcessStatus } from '../workflow-utils'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { createChapterWorkflow, createRepairFinalizeWorkflow } from '../chapter-workflow'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const postProcess = vi.hoisted(() => ({
   params: [] as Array<Record<string, unknown>>,
@@ -56,7 +57,7 @@ function context(): WorkflowContext {
     projectPath: PROJECT_PATH,
     projectSession: PROJECT_SESSION,
     writingLanguage: 'zh-CN',
-    uiLocale: 'zh-CN',
+    uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
     data: {},
     cancelled: false,
   }
@@ -464,7 +465,7 @@ describe('createRepairFinalizeWorkflow', () => {
       id: 'repair-finalize-step-en',
       status: 'running',
       logs: [],
-    }, { ...context(), uiLocale: workflow.uiLocale! }, callbacks())
+    }, { ...context(), uiLocale: workflow.uiLocale!, interfaceLocale: shown(workflow.uiLocale!) }, callbacks())
 
     expect(postProcess.params).toEqual([expect.objectContaining({
       chapterTitle: 'Chapter 3',
@@ -503,6 +504,6 @@ describe('createRepairFinalizeWorkflow', () => {
       id: 'repair-finalize-error-step',
       status: 'running',
       logs: [],
-    }, { ...context(), uiLocale: workflow.uiLocale! }, callbacks())).rejects.toThrow(expected)
+    }, { ...context(), uiLocale: workflow.uiLocale!, interfaceLocale: shown(workflow.uiLocale!) }, callbacks())).rejects.toThrow(expected)
   })
 })

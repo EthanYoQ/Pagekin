@@ -18,7 +18,7 @@ import { EDITOR_INLINE_ANNOTATION_MAX_COUNT, EDITOR_INLINE_INSTRUCTION_MAX_LENGT
 import { editorCanContinue } from '../../shared/recovery-actions'
 import { routeModelId } from '../../services/model-routing'
 import { countDraftUnits } from '../../shared/draft-units'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
 import { isTerminalProviderFailure } from '../../services/generation/generation-harness'
@@ -239,7 +239,7 @@ export default function CodeMirrorEditor({
       const receipt = await inlineRef.current?.execute()
       if (sequence !== aiRequestSequenceRef.current) return
       const failureCode = receipt?.outcome.receipt.failureCode
-      if (isTerminalProviderFailure(failureCode)) { setAiError(displayedErrorMessage(uiLocale, failureCode)); return }
+      if (isTerminalProviderFailure(failureCode)) { setAiError(displayedErrorMessage(currentInterfaceLocale(), failureCode)); return }
       if (!receipt || receipt.outcome.status !== 'completed' || receipt.outcome.finishReason !== 'stop') throw new Error('EDITOR_INLINE_INCOMPLETE')
       const proof = (receipt.run.candidates ?? receipt.run.artifacts).find(candidate => candidate.text === receipt.outcome.content && candidate.status === 'completed' && candidate.compositionEligible === true)
       aiCandidateRef.current = proof ? { artifactId: proof.artifactId, textHash: proof.textHash } : null
@@ -573,7 +573,7 @@ export default function CodeMirrorEditor({
       if (receipt.outcome.status !== 'completed' || receipt.outcome.finishReason !== 'stop') {
         setAiResult('')
         const failureCode = receipt.outcome.receipt.failureCode
-        setAiError(failureCode ? displayedErrorMessage(uiLocale, failureCode)
+        setAiError(failureCode ? displayedErrorMessage(currentInterfaceLocale(), failureCode)
           : uiText('生成未完整完成，结果不可应用', 'Generation did not complete; the result cannot be applied.'))
         return
       }
