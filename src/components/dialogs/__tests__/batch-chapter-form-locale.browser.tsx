@@ -29,14 +29,13 @@ vi.mock('../../../services/consistency-preflight', async importOriginal => ({
 const MODEL = { id: 'flash', name: 'Flash', provider: 'deepseek', protocol: 'openai', modelName: 'deepseek-v4-flash',
   apiKey: 'k', baseUrl: 'https://api.deepseek.com', temperature: 0.7, maxTokens: 4096, purposes: ['generation'] } as ModelProfile
 
-let form: ReturnType<typeof useBatchChapterForm> | undefined
 let root: Root | undefined
 let host: HTMLDivElement | undefined
 const initialLocale = useLocaleStore.getState()
 
 function Probe() {
-  form = useBatchChapterForm({ isOpen: true, startChapterNumber: 1, onClose: () => undefined })
-  return null
+  const form = useBatchChapterForm({ isOpen: true, startChapterNumber: 1, onClose: () => undefined })
+  return <><button onClick={() => void form.handleStart()}>start</button><p>{form.error}</p></>
 }
 
 beforeEach(() => {
@@ -59,7 +58,6 @@ afterEach(async () => {
   host?.remove()
   root = undefined
   host = undefined
-  form = undefined
   delete win.aiNovelAPI
   setActiveProjectSessionContext(null)
   useProjectStore.setState({ currentProject: null })
@@ -73,7 +71,7 @@ it('日文界面下写作前置条件没满足：报出守卫给的具体原因�
   root = createRoot(host)
   await act(async () => root!.render(<Probe />))
 
-  await act(async () => form!.handleStart())
+  await act(async () => host!.querySelector('button')!.click())
 
-  expect(form!.error).toBe('No chapter blueprints have been generated.\n\nGenerate chapter blueprints first, then return to draft the chapter.')
+  await expect.poll(() => host!.querySelector('p')!.textContent).toBe('No chapter blueprints have been generated.\n\nGenerate chapter blueprints first, then return to draft the chapter.')
 })
