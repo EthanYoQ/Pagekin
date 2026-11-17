@@ -769,3 +769,143 @@ describe('main-process Chinese-only error ratchet (#474)', () => {
     })
   })
 })
+
+describe('Japanese copy coverage report (#722)', () => {
+  function withFixture(files: Record<string, string>, run: (root: string) => void) {
+    const root = mkdtempSync(join(tmpdir(), 'ai-novel-i18n-ja-'))
+    try {
+      for (const [relativePath, content] of Object.entries(files)) writeFixture(root, relativePath, content)
+      run(root)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  const area = {
+    'src/components/shelf/Shelf.tsx': [
+      "import { useLocaleStore } from '../../stores/locale-store'",
+      'export function Shelf({ n }: { n: number }) {',
+      '  const text = useLocaleStore(s => s.text)',
+      "  const title = text('书架', 'Shelf', '本棚')",
+      "  const empty = text('空', 'Empty')",
+      '  const count = text(',
+      '    `共 ${n} 本`,',
+      '    `${n} books`,',
+      '    `${n} 冊`,',
+      '  )',
+      "  const nested = text(String('（括号）'), String('(paren)'), { n: Math.max(n, 1) })",
+      '  const pair = PAIR',
+      '  const spread = text(...pair)',
+      "  const loaded = fetch('x').then(response => response.text())",
+      '  return [title, empty, count, nested, spread, loaded]',
+      '}',
+      "const PAIR = ['中', 'en'] as const",
+    ].join('\n'),
+    'src/components/shelf/run-label.ts': [
+      'export function runLabel(locale: string) {',
+      "  const text = (zh: string, en: string) => locale === 'en-US' ? en : zh",
+      "  return text('运行', 'Run')",
+      '}',
+    ].join('\n'),
+    'src/services/notice.ts': [
+      "import { localize } from '../i18n/core'",
+      'export const notice = (uiLocale: string, n: number) => [',
+      "  localize(uiLocale, '{n} 条', '{n} notes', '{n} 件', { n }),",
+      "  localize(uiLocale, '提醒', 'Notice'),",
+      ']',
+    ].join('\n'),
+    'electron/controllers/demo-controller.ts': [
+      "import { mainText } from '../i18n'",
+      "export const label = () => mainText(undefined, '选择文件', 'Choose files')",
+    ].join('\n'),
+    'src/components/shelf/__tests__/Shelf.test.tsx': "text('测试', 'Test')",
+  }
+
+  it('lists calls without Japanese by file and line, with counts per directory, and exits 0', () => {
+    withFixture(area, (root) => {
+      const result = runChecker(root, ['--ja-report'])
+
+      expect(result.status).toBe(0)
+      expect(result.output).toContain('Japanese copy coverage: 8 calls, 3 with Japanese, 4 missing, 1 undetermined; 1 calls to local wrappers skipped')
+      expect(result.output).toContain('  src/components\t2 / 5')
+      expect(result.output).toContain('  src/services\t1 / 2')
+      expect(result.output).toContain('  electron/controllers\t1 / 1')
+      expect(result.output).toContain('  src/components/shelf\t2 / 5')
+      const missing = result.output.split('Missing Japanese:\n')[1].split('\n\n')[0].split('\n')
+      expect([...missing].sort()).toEqual([
+        'electron/controllers/demo-controller.ts:2\tmainText(undefined)',
+        'src/components/shelf/Shelf.tsx:11\ttext',
+        'src/components/shelf/Shelf.tsx:5\ttext',
+        'src/services/notice.ts:4\tlocalize(uiLocale)',
+      ])
+      const undetermined = result.output.split('Undetermined')[1]
+      expect(undetermined).toContain('src/components/shelf/Shelf.tsx:13\ttext')
+      expect(result.output).not.toContain('Shelf.tsx:4\t')
+      expect(result.output).not.toContain('Shelf.tsx:6\t')
+      expect(result.output).not.toContain('run-label.ts')
+      expect(result.output).not.toContain('Shelf.test.tsx')
+    })
+  })
+
+  it('limits the report to one area that a contributor claims', () => {
+    withFixture(area, (root) => {
+      const result = runChecker(root, ['--ja-report', 'src/services'])
+
+      expect(result.status).toBe(0)
+      expect(result.output).toContain('Japanese copy coverage under src/services: 2 calls, 1 with Japanese, 1 missing, 0 undetermined')
+      expect(result.output).not.toContain('Shelf.tsx')
+    })
+  })
+
+  it('fails on Japanese copy written as an empty string, in the report and in the default check', () => {
+    withFixture({
+      'src/components/shelf/Shelf.tsx': [
+        'export function Shelf({ text }: { text: (zh: string, en: string, ja: string) => string }) {',
+        "  return <p>{text('书架', 'Shelf', '')}</p>",
+        '}',
+      ].join('\n'),
+    }, (root) => {
+      const report = runChecker(root, ['--ja-report'])
+      const check = runChecker(root)
+
+      expect(report.status).toBe(1)
+      expect(report.output).toContain('src/components/shelf/Shelf.tsx:2 [empty-ja]')
+      expect(check.status).toBe(1)
+      expect(check.output).toContain('src/components/shelf/Shelf.tsx:2 [empty-ja]')
+    })
+  })
+
+  it('accepts Japanese copy in visible copy and thrown errors, and still checks English plurals after it', () => {
+    withFixture({
+      'src/components/shelf/Shelf.tsx': [
+        "import { useLocaleStore } from '../../stores/locale-store'",
+        'export function Shelf() {',
+        '  const text = useLocaleStore(s => s.text)',
+        "  if (!text) throw new Error(text('书架不可用', 'The shelf is unavailable.', '本棚を使えません。'))",
+        "  return <p title={text('书架', 'Shelf', '本棚')}>{text('{n} 本', 'Books: {n}', '{n} 冊', { n: 2 })}</p>",
+        '}',
+      ].join('\n'),
+      'src/services/workflows/shelf-workflow.ts': [
+        "import { localize } from '../../i18n/core'",
+        "export function fail(uiLocale: 'zh-CN' | 'en-US') { throw new Error(localize(uiLocale, '失败', 'Failed.', '失敗しました。')) }",
+      ].join('\n'),
+    }, (root) => {
+      const clean = runChecker(root)
+      expect(clean.status, clean.output).toBe(0)
+    })
+
+    withFixture({
+      'src/components/shelf/Shelf.tsx': [
+        "import { useLocaleStore } from '../../stores/locale-store'",
+        'export function Shelf({ n }: { n: number }) {',
+        '  const text = useLocaleStore(s => s.text)',
+        "  return <p>{text('{n} 章', '{n} chapters', '{n} 章', { n })}</p>",
+        '}',
+      ].join('\n'),
+    }, (root) => {
+      const plural = runChecker(root)
+      expect(plural.status).toBe(1)
+      expect(plural.output).toContain('[english-plural]')
+    })
+  })
+})
