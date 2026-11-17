@@ -39,6 +39,7 @@ function activeInterfaceLocale(state: Pick<LocaleState, 'interfaceLocale' | 'loc
 
 export function createLocaleState(dependencies: LocaleDependencies): StateCreator<LocaleState> {
   return (set, get) => {
+    let latestSave = 0
     // Components commonly select only `t` or `text`. Refreshing these reader
     // identities with the locale makes those subscriptions reactive while the
     // functions still resolve the latest locale when called from callbacks.
@@ -62,12 +63,14 @@ export function createLocaleState(dependencies: LocaleDependencies): StateCreato
       async setLocale(locale) {
         const previousLocale = activeInterfaceLocale(get())
         if (locale === previousLocale) return
+        const save = ++latestSave
         set({ ...localeFields(locale), ...localeReaders() })
         dependencies.setDocumentLanguage(locale)
         try {
           const result = await dependencies.saveLocale(locale)
           if (!result.success) throw new Error(result.error ?? 'Failed to persist locale')
         } catch (error) {
+          if (save !== latestSave) return
           if (activeInterfaceLocale(get()) === locale) {
             set({ ...localeFields(previousLocale), ...localeReaders() })
             dependencies.setDocumentLanguage(previousLocale)

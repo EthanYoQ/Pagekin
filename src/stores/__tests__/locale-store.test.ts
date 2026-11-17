@@ -140,6 +140,30 @@ describe('locale store', () => {
     expect(state.getState().text('中文', 'English')).toBe('中文')
   })
 
+  it('keeps a later choice when an earlier save of the same language fails last', async () => {
+    let failFirstSave: (error: Error) => void = () => {}
+    const saveLocale = vi.fn()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { failFirstSave = reject }))
+      .mockResolvedValue({ success: true })
+    const reportError = vi.fn()
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({}),
+      saveLocale,
+      systemLocale: () => 'en-US',
+      setDocumentLanguage: vi.fn(),
+      reportError,
+    }))
+
+    const firstJapanese = state.getState().setLocale('ja-JP')
+    await state.getState().setLocale('zh-CN')
+    await state.getState().setLocale('ja-JP')
+    failFirstSave(new Error('disk full'))
+    await firstJapanese
+
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    expect(reportError).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['business failure', async () => ({ success: false, error: 'disk full' })],
     ['transport rejection', async () => { throw new Error('IPC unavailable') }],
