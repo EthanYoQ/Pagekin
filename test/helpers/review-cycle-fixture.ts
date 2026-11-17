@@ -208,7 +208,7 @@ export function seedRevision(db: Database, base: ReturnType<typeof seed>, option
 export function generatedCycle(db: Database, key: string, sameDraft?: ReturnType<typeof seed>,
   options: SeedOptions = {}) {
   const seeded = seed(db, { ...options, key: `review-${key}`, ...(sameDraft
-    ? { source: sameDraft.source, existingDraftId: sameDraft.draftId } : {}) })
+    ? { source: sameDraft.source, existingDraftId: sameDraft.draftId, chapterNumber: sameDraft.chapterNumber } : {}) })
   const cycle = create(db, seeded.call)
   const revision = seedRevision(db, seeded, { key: `revision-${key}`, replacePending: !sameDraft })
   revision.attach.cycleId = cycle.cycleId
@@ -254,7 +254,8 @@ export interface StatementLedger {
  */
 export function attachStatementLedger(db: Database): StatementLedger {
   const counts = new Map<string, number>()
-  const record = (sql: string) => { counts.set(sql, (counts.get(sql) ?? 0) + 1) }
+  let active = true
+  const record = (sql: string) => { if (active) counts.set(sql, (counts.get(sql) ?? 0) + 1) }
   const prepare = db.prepare
   const exec = db.exec
   const pragma = db.pragma
@@ -283,6 +284,7 @@ export function attachStatementLedger(db: Database): StatementLedger {
     total: () => [...counts.values()].reduce((sum, count) => sum + count, 0),
     reset: () => counts.clear(),
     detach: () => {
+      active = false
       const own = db as unknown as Record<string, unknown>
       delete own.prepare; delete own.exec; delete own.pragma
     },

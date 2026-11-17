@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { verifyM03ReviewCycle } from '../../../electron/migrations/m03-review-cycle'
 import { ReviewCycleRepository } from '../../../electron/repositories/review-cycle-repository'
-import { attachStatementLedger, reviewCycleDatabase, seedReviewedBook } from '../review-cycle-fixture'
+import { attachStatementLedger, defaultGoals, generatedCycle, reviewCycleDatabase, seedReviewedBook } from '../review-cycle-fixture'
 
 describe('语句账本', () => {
   it('报出的语句与次数和手数一致', () => {
@@ -24,8 +24,10 @@ describe('语句账本', () => {
     expect(ReviewCycleRepository.getByReviewId(999, db)).toBeNull()
     expect(ledger.total()).toBe(1)
 
+    const retained = db.prepare('SELECT 2')
     ledger.detach()
     db.prepare('SELECT 1').get()
+    retained.get()
     expect(ledger.total()).toBe(1)
   })
 })
@@ -39,5 +41,15 @@ describe('seedReviewedBook', () => {
     expect(db.prepare('SELECT COUNT(*) FROM review_cycle_merges').pluck().get()).toBe(3)
     expect(db.prepare('SELECT DISTINCT source_draft_chapter_number FROM reviews ORDER BY 1').pluck().all()).toEqual([1, 2, 3])
     expect(verifyM03ReviewCycle(db)).toBe(true)
+  })
+})
+
+describe('generatedCycle', () => {
+  it('复用同一稿时沿用那一稿的章号', () => {
+    const db = reviewCycleDatabase()
+    const first = generatedCycle(db, 'first', undefined, { chapterNumber: 2, frozenGoals: { ...defaultGoals, chapterNumber: 2 } })
+    const second = generatedCycle(db, 'second', first.seeded, { frozenGoals: { ...defaultGoals, chapterNumber: 2 } })
+    expect(second.seeded.chapterNumber).toBe(2)
+    expect(db.prepare('SELECT source_draft_chapter_number FROM reviews WHERE id=?').pluck().get(second.seeded.reviewId)).toBe(2)
   })
 })
