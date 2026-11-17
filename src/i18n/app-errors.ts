@@ -474,7 +474,6 @@ function displayedRaw(error: unknown): string {
   return error == null ? '' : String(error)
 }
 
-/** 文字里有没有汉字，含扩展区与兼容区。 */
 export function containsHan(value: string): boolean {
   return /\p{Script=Han}/u.test(value)
 }
@@ -487,7 +486,7 @@ export function englishWithReason(locale: ErrorDisplayLocale, summary: string, r
   return !reason.trim() || (locale === 'en-US' && containsHan(reason)) ? summary : `${summary}${separator}${reason}`
 }
 
-/** 主进程的码登记过没有；只判断，不说明。 */
+/** 主进程是否登记过这个码（登记过的码才有目录文案）。 */
 export function isRegisteredErrorCode(error: unknown): boolean {
   return readCode(error) !== undefined
 }

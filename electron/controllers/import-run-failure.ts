@@ -41,7 +41,7 @@ export function persistedImportRunFailure(reason: string, locale: Locale | (() =
   return explainImportRunFailure(reason, locale)?.error ?? rawReason(reason)
 }
 
-/** 导入报错查目录用的语言：运行语言与界面的文案语言一致时用界面语言（日文界面看英文运行得到 ja-JP），否则用运行语言。 */
+/** 导入的运行语言来自请求或运行记录，界面语言取主进程配置。 */
 export function importErrorLocale(runLocale: Locale): ErrorDisplayLocale {
   return errorLocaleForRun(runLocale, mainErrorDisplayLocale(app.getLocale()))
 }
