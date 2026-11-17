@@ -8,9 +8,9 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../
 import { migrateSchema, probeSchema, verifySchema } from '../migrations/runner'
 import { SchemaMigrationError, type MigrationRegistry } from '../migrations/registry'
 import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
-import { M02_ADDED_CHARACTER_COLUMNS, M02_AUXILIARY_TABLES } from '../migrations/m02-character-identity'
+import { M02_ADDED_CHARACTER_COLUMNS, M02_AUXILIARY_TABLES, verifyM02CharacterIdentity } from '../migrations/m02-character-identity'
 import { M03_REVIEW_CYCLE_TABLES } from '../migrations/m03-review-cycle'
-import { M07_DRAFT_COLUMNS, logicalTableName } from '../migrations/m07-chapter-recycle'
+import { M07_DRAFT_COLUMNS, logicalTableName, verifyM07ChapterRecycle } from '../migrations/m07-chapter-recycle'
 import { M08_EXEMPTION_COLUMNS, M08_TABLES } from '../migrations/m08-continuity-foundation'
 import { initializeLegacyBaselineSchema } from '../migrations/baseline-schema'
 import { ensureBaselineBlueprintTables } from '../migrations/baseline-blueprint-schema'
@@ -296,12 +296,20 @@ function currentSnapshotIdentity(databasePath: string): SqliteContentIdentity | 
 /** A read-only handle on the source reads WAL frames through the live -shm
  * index, which a snapshot rebuilds and may drop, and closing it never
  * checkpoints a WAL that verification refuses.
+ *
+ * 打开作品只做版本、integrity_check、外键检查、结构指纹和 M02、M07 的校验，即 v10 迁移校验去掉全书 M03。
+ * 全书 M03 随章数增长；仓库读写一条审修循环时校验那一条，迁移和存档导入仍跑全书（ADR-0029）。
+ * 库版本升级时要按新版本的迁移校验重新核对这里。
  */
 function verifyLiveSchema(databasePath: string): void {
   const reader = new Database(databasePath, { readonly: true, fileMustExist: true })
   try {
     reader.pragma('foreign_keys = ON')
-    verifySchema(new SqliteSchemaAdapter(reader), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
+    const probe = probeSchema(new SqliteSchemaAdapter(reader), getDesktopMigrationRegistry())
+    if (probe.version !== CURRENT_DESKTOP_SCHEMA_VERSION) throw new SchemaMigrationError('SCHEMA_VERSION_MISMATCH')
+    if (!verifyM02CharacterIdentity(reader) || !verifyM07ChapterRecycle(reader)) {
+      throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED')
+    }
   } finally { reader.close() }
 }
 

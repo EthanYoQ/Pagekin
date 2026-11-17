@@ -8,7 +8,9 @@ import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema
 import { ensureBaselineBlueprintTables } from '../../migrations/baseline-blueprint-schema'
 import { sqliteSchemaFingerprint } from '../../migrations/sqlite-schema-adapter'
 import { logicalTableName } from '../../migrations/m07-chapter-recycle'
-import { backupProjectSqlite, probeProjectSqlite, verifyProjectSqlite, upgradeProjectSqlite } from '../sqlite-project-migration'
+import { backupProjectSqlite, openProjectSqlite, probeProjectSqlite, verifyProjectSqlite, upgradeProjectSqlite } from '../sqlite-project-migration'
+import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
+import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
 import { CharacterRosterRepository } from '../../repositories/character-roster-repository'
 import { ProjectCoreRepository } from '../../repositories/project-core-repository'
 
@@ -447,4 +449,64 @@ it('resolves a trusted system scratch junction before validating its private sna
  process.env.LOCALAPPDATA=link
  try { expect(probeProjectSqlite({databasePath:f.source}).schemaVersion).toBe(0) }
  finally { if(previous===undefined) delete process.env.LOCALAPPDATA;else process.env.LOCALAPPDATA=previous }
+})
+
+describe('打开作品不跑全书审修循环校验（#702）', () => {
+  /** fixture 已有第 1 章草稿，审修循环从第 2 章起造。 */
+  async function projectWithReviewCycles(targetVersion?: number) {
+    const f = fixture()
+    await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target, targetVersion })
+    const db = new Database(f.target); handles.push(db)
+    db.pragma('foreign_keys = ON')
+    const book = seedReviewedBook(db, 2, { firstChapter: 2 })
+    return { ...f, db, book }
+  }
+
+  it('打开时的校验对应 v10 的迁移校验去掉全书 M03；库版本升级时要重新核对 verifyLiveSchema', () => {
+    expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(10)
+  })
+
+  it('有一条审修循环只过不了全书 M03 证明的作品照常打开，迁移通道的全书校验仍拒绝它', async () => {
+    const f = await projectWithReviewCycles()
+    breakReviewProof(f.db, f.book[1]!)
+    f.db.close()
+    expect(openProjectSqlite({ databasePath: f.target })).toMatchObject({ database: expect.any(String) })
+    expect(() => verifyProjectSqlite({ databasePath: f.target })).toThrow('MIGRATION_VERIFICATION_FAILED')
+  })
+
+  it.each([
+    ['外键损坏的库', 'CORRUPT_SCHEMA', (db: BetterSqlite3.Database) => {
+      db.pragma('foreign_keys = OFF')
+      db.prepare('INSERT INTO review_cycle_merges(cycle_id,body) VALUES(?,?)').run('missing-cycle', '孤儿快照')
+    }],
+    ['结构不认识的库', 'UNRECOGNIZED_SCHEMA', (db: BetterSqlite3.Database) => { db.exec('ALTER TABLE contents ADD COLUMN fork_secret TEXT') }],
+    ['版本过高的库', 'NEWER_SCHEMA_READ_ONLY', (db: BetterSqlite3.Database) => { db.pragma('user_version = 999') }],
+    ['角色身份账目对不上的库（M02）', 'MIGRATION_VERIFICATION_FAILED', (db: BetterSqlite3.Database) => {
+      db.exec("UPDATE character_identity_meta SET legacy_count=legacy_count+1 WHERE id='main'")
+    }],
+    ['回收站形状不对的草稿（M07）', 'MIGRATION_VERIFICATION_FAILED', (db: BetterSqlite3.Database) => {
+      const trigger = db.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='drafts_deletion_shape_update'").pluck().get() as string
+      db.exec('DROP TRIGGER drafts_deletion_shape_update')
+      db.exec("UPDATE drafts_all SET deleted_at='2026-01-01' WHERE chapter_number=1")
+      db.exec(trigger)
+    }],
+  ] as const)('打开作品仍拒绝%s', async (_name, code, damage) => {
+    const f = await projectWithReviewCycles()
+    damage(f.db)
+    f.db.close()
+    expect(() => openProjectSqlite({ databasePath: f.target })).toThrow(code)
+  })
+
+  it('打开要升级的旧版本作品时走迁移通道，仍跑全书校验', async () => {
+    const healthy = await projectWithReviewCycles(9)
+    healthy.db.close()
+    expect(() => openProjectSqlite({ databasePath: healthy.target })).not.toThrow()
+    expect(probeProjectSqlite({ databasePath: healthy.target }).schemaVersion).toBe(10)
+
+    const broken = await projectWithReviewCycles(9)
+    breakReviewProof(broken.db, broken.book[1]!)
+    broken.db.close()
+    expect(() => openProjectSqlite({ databasePath: broken.target })).toThrow('MIGRATION_VERIFICATION_FAILED')
+    expect(probeProjectSqlite({ databasePath: broken.target }).schemaVersion).toBe(9)
+  })
 })
