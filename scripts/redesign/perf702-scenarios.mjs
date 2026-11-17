@@ -191,6 +191,16 @@ async function installLedger(app, page) {
         return(value) { return inner.return ? inner.return(value) : { done: true, value } },
       }
     }
+    // exec 不经过 prepare（如蓝图提交的建表补数），整段算一次调用，行数不计。
+    const exec = Database.prototype.exec
+    Database.prototype.exec = function (source) {
+      const startedAt = performance.now()
+      const result = exec.call(this, source)
+      const entry = sqlEntry(source)
+      entry.calls += 1
+      entry.ms += performance.now() - startedAt
+      return result
+    }
   }, process.env.PERF702_SQL !== '0')
   await page.evaluate(() => {
     if (window.__perfLong) return
@@ -350,9 +360,11 @@ async function timeSingleChapter(context, finalized, prefix = String(finalized))
   })
   const review = await timeModelAction(context, `${prefix}-review`, () => chapterView.view(page).getByRole('button', { name: 'AI 审稿', exact: true }).click(),
     async () => {
-      await chapterView.reviewSheet(page).or(page.getByText('工作流未完成')).first().waitFor({ state: 'visible', timeout: 120_000 })
+      const failed = page.getByText('工作流未完成')
+      await chapterView.reviewSheet(page).or(failed).first().waitFor({ state: 'visible', timeout: 120_000 })
+      assert.equal(await failed.count(), 0, `第 ${next} 章的 AI 审稿没有完成`)
       await stage.root(page).locator(RUNNING).waitFor({ state: 'detached', timeout: 120_000 })
-    }).catch(error => ({ error: String(error.message ?? error) }))
+    })
   await page.keyboard.press('Escape')
   const finalize = await operation(context, `${prefix}-finalize`, async () => {
     const startedAt = performance.now()
