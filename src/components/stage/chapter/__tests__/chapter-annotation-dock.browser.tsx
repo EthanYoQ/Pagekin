@@ -523,3 +523,31 @@ it('批注修改审阅摆着时早先发起的修稿生成完成，作者接受�
   await expect.element(page.getByText('有 1 份修稿不能再合并')).toBeVisible()
   await expect.element(page.getByRole('region', { name: '修稿合并' })).not.toBeInTheDocument()
 })
+
+it('本章已有定稿，旧稿上批注修改审阅摆着：「以这一稿重新打开」不可点并提示，审阅留着；点「取消」后恢复可点', async () => {
+  backend.addDraft({ status: 'finalized', version: 2, createdAt: '2026-10-13 20:30:00' })
+  const review = await openAnnotationReview()
+  const reopen = page.getByRole('button', { name: '以这一稿重新打开' })
+
+  await expect.element(reopen).toBeDisabled()
+  await expect.element(page.getByText(LOCK_HINT)).toBeVisible()
+  await expect.element(review).toBeVisible()
+
+  await act(async () => review.getByRole('button', { name: '取消' }).click())
+
+  await expect.element(reopen).toBeEnabled()
+  await expect.element(page.getByText(LOCK_HINT)).not.toBeInTheDocument()
+})
+
+it('本章有另一稿，批注修改审阅摆着：版本切换不可点，审阅留着；点「取消」后恢复可点', async () => {
+  backend.addDraft({ status: 'finalized', version: 2, createdAt: '2026-10-13 20:30:00' })
+  const review = await openAnnotationReview()
+  const versions = page.getByRole('button', { name: /^本章版本：/ })
+
+  await expect.element(versions).toBeDisabled()
+  await expect.element(review).toBeVisible()
+
+  await act(async () => review.getByRole('button', { name: '取消' }).click())
+
+  await expect.element(versions).toBeEnabled()
+})
