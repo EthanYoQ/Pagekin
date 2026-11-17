@@ -350,9 +350,11 @@ async function timeSingleChapter(context, finalized, prefix = String(finalized))
   })
   const review = await timeModelAction(context, `${prefix}-review`, () => chapterView.view(page).getByRole('button', { name: 'AI 审稿', exact: true }).click(),
     async () => {
-      await chapterView.reviewSheet(page).or(page.getByText('工作流未完成')).first().waitFor({ state: 'visible', timeout: 120_000 })
+      const failed = page.getByText('工作流未完成')
+      await chapterView.reviewSheet(page).or(failed).first().waitFor({ state: 'visible', timeout: 120_000 })
+      assert.equal(await failed.count(), 0, `第 ${next} 章的 AI 审稿没有完成`)
       await stage.root(page).locator(RUNNING).waitFor({ state: 'detached', timeout: 120_000 })
-    }).catch(error => ({ error: String(error.message ?? error) }))
+    })
   await page.keyboard.press('Escape')
   const finalize = await operation(context, `${prefix}-finalize`, async () => {
     const startedAt = performance.now()
