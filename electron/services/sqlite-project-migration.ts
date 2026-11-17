@@ -297,9 +297,8 @@ function currentSnapshotIdentity(databasePath: string): SqliteContentIdentity | 
  * index, which a snapshot rebuilds and may drop, and closing it never
  * checkpoints a WAL that verification refuses.
  *
- * 打开作品只做版本、integrity_check、外键检查、结构指纹和 M02、M07 的校验，即 v10 迁移校验去掉全书 M03。
- * 全书 M03 随章数增长；仓库读写一条审修循环时校验那一条，迁移和存档导入仍跑全书（ADR-0029）。
- * 库版本升级时要按新版本的迁移校验重新核对这里。
+ * 与 v10 迁移校验的差别仅在不跑全书 M03（随章数增长），仓库读写改为逐条校验（ADR-0029）。
+ * 库版本升级时要对照新版本的迁移校验重新核对这里。
  */
 function verifyLiveSchema(databasePath: string): void {
   const reader = new Database(databasePath, { readonly: true, fileMustExist: true })

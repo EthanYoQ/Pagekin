@@ -1331,7 +1331,6 @@ describe('ReviewCycleRepository 只校验被读写的那一条循环', () => {
   const CONFLICT = 'REVIEW_CYCLE_CONFLICT'
   const INVALID = 'REVIEW_CYCLE_INPUT_INVALID'
   type Database = import('better-sqlite3').Database
-  /** 每个入口：造出 Y 所需的状态并弄坏它，返回对 Y 调这个入口的动作。 */
   const entries: Array<[string, string, (db: Database) => () => unknown]> = [
     ['readRecheckCycle（planRecheck）', CONFLICT, db => {
       const y = mergedFindingCycle(db, 'y', '开场时门闩已修好，主角继续前进。')
@@ -1396,7 +1395,7 @@ describe('ReviewCycleRepository 只校验被读写的那一条循环', () => {
       const finding = plan.context!.findings[0]!
       const attempt = seedRecheckAttempt(db, y, plan.context!, { key: 'y',
         mappings: [{ findingId: finding.findingId, targetId: finding.targetId, reviewItemIndex: 0, resolved: false }] })
-      // 写复核之前这条循环还没有复核，入口自己的检查只核回执字段；复核产物被改，只有写后的 M03 证明看得到。
+      // 写复核前循环尚无复核，入口检查只核回执字段；复核产物被改只有写后 M03 看得到。
       db.prepare("UPDATE generation_artifacts SET artifact_json=json_set(artifact_json,'$.textHash',?) WHERE attempt_id=?")
         .run(hash('另一份复核'), attempt.attemptId)
       return () => db.transaction(() => ReviewCycleRepository.commitRecheck(y.cycle.cycleId, attempt.attemptId, db))()

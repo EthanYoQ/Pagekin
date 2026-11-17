@@ -1254,7 +1254,7 @@ it('portable export and restore preserve author annotation history snapshots', a
 describe('存档导入仍跑全书审修循环校验（#702）', () => {
   const REVIEW_PROOF = "json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review'"
 
-  /** 解开导出的存档，在包里的库上改一笔，按改后的库重签转移凭据，再打包。 */
+  /** 改了包里的库就要重签转移凭据，否则导入在 M03 之前就因凭据不符被拒。 */
   async function rewriteArchiveDatabase(f: Fixture, change: (db: import('better-sqlite3').Database) => void): Promise<string> {
     const unpackParent = path.join(f.base, `variant-${randomUUID()}`)
     fs.mkdirSync(unpackParent)

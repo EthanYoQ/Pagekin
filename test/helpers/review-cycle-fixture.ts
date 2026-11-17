@@ -292,7 +292,7 @@ export function attachStatementLedger(db: Database): StatementLedger {
   }
 }
 
-/** 只有 M03 证明才发现的损坏：这条循环的审稿尝试回执指向别的审稿内容。仓库入口自己的检查看不到它。 */
+/** 仓库入口自己的检查看不到、只有 M03 证明才发现的损坏：审稿尝试回执指向别的审稿内容。 */
 export function breakReviewProof(db: Database, item: { seeded: { reviewId: number; call: CreateReviewCycleInput } }): void {
   const changed = db.prepare(`UPDATE generation_attempts
     SET usage_receipt_json=json_set(usage_receipt_json,'$.reviewRevisionEffect.contentHash',?)

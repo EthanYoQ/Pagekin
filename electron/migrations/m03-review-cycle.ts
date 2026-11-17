@@ -300,16 +300,16 @@ function exactSchema(db: Database.Database, table: string, columns: readonly str
 
 type CycleTables = { mergeTable: boolean; draftRows: 'drafts_all' | 'drafts' }
 
-/** 合并快照表在不在、草稿的全部行在哪张表。v7 起必须有合并快照表。 */
+/** v7 起必须有合并快照表。 */
 function cycleTables(db: Database.Database): CycleTables | null {
   const mergeTable = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='review_cycle_merges'").get())
-  // M07 起 drafts 是不含回收站的视图；校验要看到全部行，否则删掉一章就让整个作品的审修循环校验失败。
+  // drafts 自 M07 起不含回收站，直接读会让删过章的作品校验失败。
   const draftRows = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='drafts_all'").get() ? 'drafts_all' : 'drafts'
   if (!mergeTable && Number(db.pragma('user_version', { simple: true })) >= 7) return null
   return { mergeTable, draftRows }
 }
 
-/** 全书校验：外键、表结构，再逐条校验每个审修循环。只给迁移通道和存档导入用。 */
+/** 全书校验，只给迁移和存档导入用；仓库读写用 verifyM03ReviewCycleById。 */
 export function verifyM03ReviewCycle(db: Database.Database): boolean {
   try {
     if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return false
@@ -336,10 +336,7 @@ export function verifyM03ReviewCycle(db: Database.Database): boolean {
   } catch { return false }
 }
 
-/**
- * 单条校验：只读这一条审修循环自己的行，仓库读写一条循环时用它。
- * 不跑全库外键检查和表结构比对：打开作品时 integrity_check、外键检查和结构指纹已经做过。
- */
+/** 只校验这一条循环；全库外键和结构检查已在打开作品时做过，见 verifyLiveSchema。 */
 export function verifyM03ReviewCycleById(db: Database.Database, cycleId: string): boolean {
   try {
     if (db.pragma('foreign_keys', { simple: true }) !== 1) return false
@@ -352,7 +349,7 @@ export function verifyM03ReviewCycleById(db: Database.Database, cycleId: string)
 function verifyCycle(db: Database.Database, { mergeTable, draftRows }: CycleTables, cycle: CycleRow): boolean {
   const snapshot = mergeTable ? db.prepare('SELECT body FROM review_cycle_merges WHERE cycle_id=?')
     .get(cycle.cycle_id) as { body: string } | undefined : undefined
-  // 已合并 ⇔ 有一行合并快照。不属于任何循环的快照由外键挡住，全书校验里的 foreign_key_check 会报。
+  // 已合并 ⇔ 有合并快照行；孤儿快照由全书校验的 foreign_key_check 挡。
   if (mergeTable && (cycle.revision_status === 'merge-committed') !== Boolean(snapshot)) return false
   if (!nonempty(cycle.cycle_id) || !nonempty(cycle.root_action_id) || !integer(cycle.review_id, 1)
     || !HASH.test(cycle.review_content_hash) || !HASH.test(cycle.source_hash) || !HASH.test(cycle.finding_set_hash)

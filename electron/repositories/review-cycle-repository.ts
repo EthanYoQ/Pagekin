@@ -418,7 +418,6 @@ function bindAuthorWaivers(input: { cycleId: string; confirmationContentHash: st
   return waived
 }
 
-/** 返回被摘下修稿的循环。 */
 function reconcileDiscardedRevisionIds(db: Database.Database, revisionIds: readonly number[]): string[] {
   const cycles: Array<{ cycle_id: string; revision_id: number }> = []
   for (const revisionId of revisionIds) {
