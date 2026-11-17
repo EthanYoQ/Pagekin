@@ -165,7 +165,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
               step={stage === 'archived' || stage === 'superseded' || stage === null ? null : STAGE_STEP[stage]}
               focus={focus}
               version={draft.meta
-                ? <VersionSwitcher tab={tab} current={draft.meta} label={versionLabel} title={title} onSave={() => draft.save(draft.currentBodyRef.current, true)} />
+                ? <VersionSwitcher tab={tab} current={draft.meta} label={versionLabel} title={title} disabled={annotationRevision !== null} onSave={() => draft.save(draft.currentBodyRef.current, true)} />
                 : <span className="stage-ch-version stage-ch-version-chip" role="status">{versionLabel}</span>}
             />
           )}

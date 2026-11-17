@@ -437,7 +437,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
         {!draft.mergeData && olderDraft && (
           <Notice
             title={text('这一稿不能直接定稿', 'This draft cannot be finalized directly')}
-            actions={<Button variant="secondary" size="sm" disabled={busy} onClick={() => void reopen(meta.id)}>{text('以这一稿重新打开', 'Reopen with this draft')}</Button>}
+            actions={<Button variant="secondary" size="sm" disabled={reviseLocked} onClick={() => void reopen(meta.id)}>{text('以这一稿重新打开', 'Reopen with this draft')}</Button>}
           >
             {text(`${chapterLabel(chapterNumber, text)}已有定稿。要用这一稿替换它，以这一稿重新打开本章，改完再定稿。`, `${chapterLabel(chapterNumber, text)} is already finalized. To replace it with this draft, reopen the chapter with this draft, then finalize.`)}
           </Notice>

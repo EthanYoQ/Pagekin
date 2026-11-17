@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 
 import * as chapterView from './pages/chapter-view.mjs'
 import * as runSheet from './pages/run-sheet.mjs'
 import { seedStageSample } from './scenarios.mjs'
-import { countUnits, STAGE_SAMPLE } from './stage-sample.mjs'
+import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 
 const PARAGRAPH = '守塔人说，雾钟是三十年前装上的，从那以后只坏过一次。那一次，北堤外沉了一条船，船名至今没人能在档案里找到。'
 const NOTE = '沉船写得更具体'
@@ -29,6 +30,17 @@ const seedPendingRevision = context => seedStageSample(context, {
     const revision = await invoke(page, 'db:revision-create', { baseDraftId: created.id, revisionType: 'review-fix', reviewSourceId: review.id,
       content: revised, wordCount: countUnits(revised), expectedSource }, path, session)
     assert.equal(revision.success, true, revision.error)
+  },
+})
+
+// 第 3 章 v1 是已审稿的草稿，之后导入了 v2 定稿：v1 不能直接定稿，只能以它重新打开本章。
+const seedOlderDraft = context => seedStageSample(context, {
+  landOnChapter3: false,
+  beforeReload: async ({ page, invoke, path, session }) => {
+    const content = STAGE_SAMPLE.finalized[2]
+    const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
+      chapters: [{ chapterNumber: 3, title: stageChapterTitle(3), content, wordCount: countUnits(content) }] }, path, session)
+    assert.equal(imported.success, true, imported.error)
   },
 })
 
@@ -303,6 +315,39 @@ export const ADOCK_SCENARIOS = {
     measured.hintAfterCancel = await chapterView.hint(page).innerText()
     assert.equal(measured.hintAfterCancel, '修稿已生成，逐段选择后完成合并')
     await shoot('adock-m2-unlocked')
+    return measured
+  } },
+
+  'adock-lock-reopen': { model: true, shell: 'stage', setup: seedOlderDraft, run: async ({ page, fake, shoot }) => {
+    const measured = {}
+    fake.replyReview(prompt => prompt.includes(NOTE) ? REVISED : null)
+    await chapterView.open(page, 3)
+    await chapterView.versionButton(page).click()
+    await page.getByRole('menu', { name: '本章版本' }).getByRole('menuitemradio', { name: /^草稿 v1/ }).click()
+    const reopen = chapterView.view(page).getByRole('button', { name: '以这一稿重新打开' })
+    await reopen.waitFor({ state: 'visible' })
+    await annotate(page)
+    await dock(page).getByRole('button', { name: '统一修改（1）' }).click()
+    const review = page.getByRole('region', { name: '批注修改对比' })
+    await review.waitFor({ state: 'visible', timeout: 60_000 })
+
+    measured.reopenDisabled = await reopen.isDisabled()
+    assert.equal(measured.reopenDisabled, true, '审阅摆着时「以这一稿重新打开」不可点')
+    measured.versionsDisabled = await chapterView.versionButton(page).isDisabled()
+    assert.equal(measured.versionsDisabled, true, '审阅摆着时版本切换不可点')
+    measured.hint = await chapterView.hint(page).innerText()
+    assert.equal(measured.hint, LOCK_HINT)
+    await reopen.scrollIntoViewIfNeeded()
+    await shoot('adock-o1-locked')
+
+    await review.getByRole('button', { name: '取消' }).click()
+    await review.waitFor({ state: 'hidden' })
+    await reopen.click({ trial: true })
+    measured.reopenDisabledAfterCancel = await reopen.isDisabled()
+    assert.equal(measured.reopenDisabledAfterCancel, false, '取消后「以这一稿重新打开」恢复可点')
+    measured.versionsDisabledAfterCancel = await chapterView.versionButton(page).isDisabled()
+    assert.equal(measured.versionsDisabledAfterCancel, false, '取消后版本切换恢复可点')
+    await shoot('adock-o2-unlocked')
     return measured
   } },
 
