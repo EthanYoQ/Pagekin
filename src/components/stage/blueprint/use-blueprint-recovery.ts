@@ -4,6 +4,7 @@ import { launchCreativeWorkflow } from '../../../services/workflows/creative-wor
 import { parseTextBlueprintsStrict } from '../../../services/workflows/directory-workflow'
 import { workflowMainProcessError } from '../../../services/workflows/workflow-project-session'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { copyLocale } from '../../../i18n/core'
 import { structuredContractDiagnostic, structuredContractDiagnosticText } from '../../../shared/structured-contract-diagnostic'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../../shared/project-session-context'
 import { registerEditorExitSaveHandler, useEditorStore, type EditorTab, type PlanningRecoverySaveSnapshot } from '../../../stores/editor-store'
@@ -30,9 +31,9 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
   const currentTab = useEditorStore(state => state.tabs.find(item => item.id === tab.id)) ?? tab
   /** 作者稿不合蓝图契约时说明哪个字段出了什么问题；主进程经 IPC 拒绝时按登记的码说明。 */
   const failureText = useCallback((reason: unknown) => {
-    const shown = useLocaleStore.getState().locale
+    const shown = currentInterfaceLocale()
     const diagnostic = structuredContractDiagnostic(reason)
-    return diagnostic ? structuredContractDiagnosticText(shown, diagnostic) : displayedErrorMessage(currentInterfaceLocale(), reason)
+    return diagnostic ? structuredContractDiagnosticText(copyLocale(shown), diagnostic) : displayedErrorMessage(shown, reason)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -80,7 +81,7 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
         ...submission.request, authorRecovery: { ...submission.request.authorRecovery, leaseEpoch: candidate.leaseEpoch },
       }, projectKey)
       if (!result.success && !pending && isCurrentProjectSession(session)) useEditorStore.getState().setPlanningSaveSnapshot(tab.id, undefined)
-      if (!result.success) throw workflowMainProcessError({ uiLocale: currentInterfaceLocale() }, result.error, '保存恢复蓝图失败', 'Could not save the recovered blueprints.')
+      if (!result.success) throw workflowMainProcessError(currentInterfaceLocale(), result.error, '保存恢复蓝图失败', 'Could not save the recovered blueprints.')
       if (!isCurrentProjectSession(session)) return
       useEditorStore.getState().setPlanningSaveSnapshot(tab.id, { ...submission, status: 'saved' })
       useEditorStore.getState().settleTabSave(tab.id, submission)

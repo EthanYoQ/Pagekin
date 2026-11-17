@@ -48,7 +48,7 @@ export function createPlanningMaterialWorkflow(
             const result = await importPlanningMaterial(projectSession, material)
             // errorCode 优先：旧向量迁移阻断时 error 是按系统语言写好的说明。
             if (!result.success) throw workflowMainProcessError(
-              { uiLocale },
+              uiLocale,
               result.errorCode ?? result.error,
               `无法导入 ${material.fileName}`,
               `Could not import ${material.fileName}`,

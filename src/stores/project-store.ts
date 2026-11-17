@@ -83,6 +83,10 @@ function projectCopy(zhCNText: string, enUSText: string): LocalizedProjectCopy {
   return { zhCNText, enUSText }
 }
 
+function localizedProjectCopy(text: string): LocalizedProjectCopy {
+  return { zhCNText: text, enUSText: text }
+}
+
 function joinProjectCopy(
   separator: string,
   ...copies: LocalizedProjectCopy[]
@@ -112,9 +116,7 @@ function projectErrorCopy(
   if (error === undefined || error === null || error === '') {
     return projectCopy(fallbackZhCN, fallbackEnUS)
   }
-  // 登记的码按界面语言说明，日文界面没有对应的文案槽；两个槽放同一句，显示时取哪个都对。
-  const shown = appErrorMessage(currentInterfaceLocale(), error)
-  return projectCopy(shown, shown)
+  return localizedProjectCopy(appErrorMessage(currentInterfaceLocale(), error))
 }
 
 function projectOperationCopy(operation: 'create' | 'open'): LocalizedProjectCopy {

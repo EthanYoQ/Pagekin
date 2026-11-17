@@ -45,22 +45,20 @@ const errorCode = /^[A-Z][A-Z0-9_]*$/u
 /**
  * 主进程拒绝时只回 String(err)：多是只有中文的原文，也可能是错误码。登记过的码按界面语言说明；
  * 未登记的码原样附上供反馈定位，并挂在 code 上；其余原文只附在中文说明后面，英文界面只给英文说明。
- * 只用到界面语言：没有运行上下文的调用方传 { uiLocale }，显示时传 currentInterfaceLocale()。
- * 概述按文案语言选（日文界面用英文概述），登记的码按界面语言说明。
  */
 export function workflowMainProcessError(
-  context: { uiLocale: InterfaceLocale },
+  uiLocale: InterfaceLocale,
   error: unknown,
   zhCNSummary: string,
   enUSSummary: string,
 ): Error {
-  const english = copyLocale(context.uiLocale) === 'en-US'
+  const english = copyLocale(uiLocale) === 'en-US'
   const summary = english ? enUSSummary : zhCNSummary
   // String(err) 的前缀是错误类名：多数是 "Error: "，带名字的错误类（ProjectSessionStaleError）是它自己的类名。
   const raw = typeof error === 'string' ? error.trim().replace(/^[A-Za-z]*Error: /u, '') : ''
   if (!raw) return new Error(summary)
   const code = errorCode.test(raw) ? raw : undefined
-  const reason = knownAppErrorMessage(context.uiLocale, raw) ?? (code || !english ? raw : undefined)
+  const reason = knownAppErrorMessage(uiLocale, raw) ?? (code || !english ? raw : undefined)
   const failure = new Error(reason ? `${summary}${english ? ' ' : '：'}${reason}` : summary)
   return code ? Object.assign(failure, { code }) : failure
 }

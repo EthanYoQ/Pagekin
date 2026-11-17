@@ -4,7 +4,8 @@ import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE 
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { projectSessionContextFromProject, sameProjectPathKey, sameProjectSessionContext } from '../../shared/project-session-context'
 import { navigate } from '../../stores/navigation/navigation-intents'
-import { interfaceLocaleFor } from '../../stores/locale-store'
+import { currentInterfaceLocale, errorLocaleForRun } from '../../stores/locale-store'
+import type { InterfaceLocale } from '../../i18n/types'
 import { useProjectStore } from '../../stores/project-store'
 import type { WorkflowRun } from '../../stores/workflow-store'
 import { toast } from '../ui/Toast'
@@ -21,7 +22,7 @@ export interface RunFailure {
   canRestartOutline: boolean
 }
 
-export function runFailure(run: WorkflowRun): RunFailure {
+export function runFailure(run: WorkflowRun, interfaceLocale: InterfaceLocale): RunFailure {
   const failedStep = run.steps.find(step => step.status === 'failed')
   const currentStep = run.steps[run.currentStepIndex] ?? run.steps[0]
   const failedWith = (code: string) => run.errorCode === code || failedStep?.errorCode === code
@@ -31,7 +32,7 @@ export function runFailure(run: WorkflowRun): RunFailure {
     presentation: presentWorkflowFailure(
       run.failureCode ?? currentStep?.failureCode,
       run.error || currentStep?.error,
-      interfaceLocaleFor(run.uiLocale),
+      errorLocaleForRun(run.uiLocale, interfaceLocale),
       run.type === 'chapter_creation' && run.chapterWordsTarget !== undefined && !(currentStep?.result || '').trim(),
       run.promptBudgetReport ?? currentStep?.promptBudgetReport,
       failedStep?.generationActivity ?? currentStep?.generationActivity,
@@ -65,7 +66,7 @@ export function useResumePlotOutline(run: WorkflowRun) {
     try {
       await launchCreativeWorkflow({ workflow: 'generate_architecture', selectedSteps: ['synopsis'], resumeSynopsis: true }, run.projectSession)
     } catch (error) {
-      const detail = displayedErrorMessage(interfaceLocaleFor(run.uiLocale), error)
+      const detail = displayedErrorMessage(errorLocaleForRun(run.uiLocale, currentInterfaceLocale()), error)
       toast.error(run.uiLocale === 'en-US' ? `Failed to start the continuation: ${detail}` : `续写启动失败：${detail}`)
     } finally {
       setResuming(false)

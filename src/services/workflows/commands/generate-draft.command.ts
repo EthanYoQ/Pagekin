@@ -1346,7 +1346,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       })()
       const nextVersion = createResult.version
       if (!createResult.success || !createResult.id) {
-        throw workflowMainProcessError(context, 'error' in createResult ? createResult.error : undefined, '章节草稿保存失败', 'Failed to save the chapter draft.')
+        throw workflowMainProcessError(context.uiLocale, 'error' in createResult ? createResult.error : undefined, '章节草稿保存失败', 'Failed to save the chapter draft.')
       }
       this.assertNotCancelled(context)
       draftPersisted = true
@@ -1375,7 +1375,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             expectedProjectPath,
           )
           if (!result.success || !result.candidate) {
-            throw workflowMainProcessError(context, result.error, '存储层拒绝写入', 'Storage rejected the write.')
+            throw workflowMainProcessError(context.uiLocale, result.error, '存储层拒绝写入', 'Storage rejected the write.')
           }
           callbacks.log(uiText(
             '生成未能安全完成；已收到的可见正文已保存为项目恢复候选，未进入草稿库。',

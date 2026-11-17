@@ -145,7 +145,7 @@ describe('讨论区 #77：服务商上下文超长', () => {
   })
 
   it('写稿卡片说明超长原因，不再让作者调整章节要求', () => {
-    const { presentation } = runFailure(failedDraft("Error invoking remote method 'generation:execute': Error: GENERATION_CONTEXT_LENGTH_EXCEEDED"))
+    const { presentation } = runFailure(failedDraft("Error invoking remote method 'generation:execute': Error: GENERATION_CONTEXT_LENGTH_EXCEEDED"), 'zh-CN')
     expect(presentation.reason).toContain('换用上下文更长的模型')
     expect(presentation.reason).not.toContain('上下文窗口')
     expect(presentation.persistence).toBe('本次未保存草稿或正文章节。')
@@ -155,10 +155,10 @@ describe('讨论区 #77：服务商上下文超长', () => {
     const restore = useLocaleStore.getState()
     try {
       useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
-      const english = runFailure({ ...failedDraft(CODE), uiLocale: 'en-US' })
+      const english = runFailure({ ...failedDraft(CODE), uiLocale: 'en-US' }, 'ja-JP')
       expect(english.presentation.heading).toBe('Workflow did not finish')
       expect(english.presentation.reason).toContain('コンテキストの長いモデル')
-      expect(runFailure(failedDraft(CODE)).presentation.reason).toContain('换用上下文更长的模型')
+      expect(runFailure(failedDraft(CODE), 'ja-JP').presentation.reason).toContain('换用上下文更长的模型')
     } finally {
       useLocaleStore.setState(restore, true)
     }
@@ -171,7 +171,7 @@ describe('讨论区 #77：服务商上下文超长', () => {
   })
 
   it('写稿步骤已有主进程保存的正文时，卡片不说未保存', () => {
-    expect(runFailure(failedDraft('GENERATION_CONTEXT_LENGTH_EXCEEDED', '雨夜，铜钥匙落在门前。')).presentation.persistence).toBeUndefined()
+    expect(runFailure(failedDraft('GENERATION_CONTEXT_LENGTH_EXCEEDED', '雨夜，铜钥匙落在门前。'), 'zh-CN').presentation.persistence).toBeUndefined()
   })
 })
 

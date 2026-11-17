@@ -33,7 +33,7 @@ export const EMPTY_DRAFT: KnowledgeDraft = { docId: null, copy: null, content: '
  * errorCode 优先，因为同一结果里的 error 可能是按系统语言写好的说明。
  */
 function knowledgeFailureMessage(result: { error?: string; errorCode?: string }, zhCNSummary: string, enUSSummary: string): string {
-  return workflowMainProcessError({ uiLocale: currentInterfaceLocale() }, result.errorCode ?? result.error, zhCNSummary, enUSSummary).message
+  return workflowMainProcessError(currentInterfaceLocale(), result.errorCode ?? result.error, zhCNSummary, enUSSummary).message
 }
 
 /**

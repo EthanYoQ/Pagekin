@@ -104,7 +104,6 @@ function promptBudgetAdjustment(
   }
 }
 
-/** 日文界面的标题与说明还没有日文，按英文写；登记过的原因按日文目录说明。 */
 export function presentWorkflowFailure(
   failureCode: WorkflowFailureCode | undefined,
   error: string | undefined,

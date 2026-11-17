@@ -730,7 +730,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       if (!isCharacterProjectSessionCurrent(projectSession)) return
       const result = await ipc.invokeWithProjectSession(projectSession, 'db:character-roster-commit', { ...payload, operationId }, projectKey)
       if (!result.success || !result.receipt) {
-        throw workflowMainProcessError({ uiLocale: currentInterfaceLocale() }, result.error, '角色卡保存失败', 'Could not save the character cards.')
+        throw workflowMainProcessError(currentInterfaceLocale(), result.error, '角色卡保存失败', 'Could not save the character cards.')
       }
       if (!isCharacterProjectSessionCurrent(projectSession)) return
       const savedRosterCards = result.receipt.snapshot.entries.map(characterCardFromRosterEntry)

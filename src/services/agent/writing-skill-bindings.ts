@@ -83,7 +83,7 @@ export async function loadWritingSkillBindings(
     projectSession.projectPath,
   )
   if (!result.success) {
-    throw workflowMainProcessError({ uiLocale: currentInterfaceLocale() }, result.error, '无法读取写作 Skill 绑定', 'Could not read the writing Skill bindings.')
+    throw workflowMainProcessError(currentInterfaceLocale(), result.error, '无法读取写作 Skill 绑定', 'Could not read the writing Skill bindings.')
   }
   try {
     return parseBindings(JSON.parse(result.content))

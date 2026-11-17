@@ -64,7 +64,7 @@ export async function retryDirectoryCharacterSync(
   )
   if (!completed.success || completed.operation?.status !== 'completed') {
     throw workflowMainProcessError(
-      { uiLocale },
+      uiLocale,
       completed.error,
       '蓝图角色提议已保存，但回执未能持久化',
       'The blueprint character proposals were saved, but their receipt could not be stored.',

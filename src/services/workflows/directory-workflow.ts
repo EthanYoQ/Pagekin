@@ -197,7 +197,7 @@ export async function saveChapterBlueprint(
 ): Promise<void> {
   const result = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-upsert', blueprint, expectedProjectPath)
   if (!result.success) {
-    throw workflowMainProcessError({ uiLocale }, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprint.')
+    throw workflowMainProcessError(uiLocale, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprint.')
   }
 }
 
@@ -209,7 +209,7 @@ export async function saveAllBlueprints(
 ): Promise<void> {
   const result = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-upsert-many', blueprints, expectedProjectPath)
   if (!result.success) {
-    throw workflowMainProcessError({ uiLocale }, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprints.')
+    throw workflowMainProcessError(uiLocale, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprints.')
   }
 }
 
@@ -237,7 +237,7 @@ export async function commitDirectoryBlueprintRange(
     expectedProjectPath,
   )
   if (!result.success || !result.receipt) {
-    throw workflowMainProcessError({ uiLocale }, result.error, '提交章节蓝图失败', 'Could not commit the chapter blueprints.')
+    throw workflowMainProcessError(uiLocale, result.error, '提交章节蓝图失败', 'Could not commit the chapter blueprints.')
   }
   globalEventBus.emit('REFRESH_RESOURCE', {
     resources: ['blueprints'],

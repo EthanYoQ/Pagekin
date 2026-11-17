@@ -570,7 +570,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
         context.projectPath,
       )
       if (!commitResult.success) throw workflowMainProcessError(
-        context,
+        context.uiLocale,
         commitResult.error,
         '导入全局事实原子提交失败',
         'The imported global facts could not be committed atomically.',
@@ -837,7 +837,7 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
       )
       if (!commit.success || !commit.receipt) {
         throw workflowMainProcessError(
-          context,
+          context.uiLocale,
           commit.error,
           '导入蓝图未能作为完整范围一次提交并回读。',
           'The imported blueprints could not be committed and read back as one complete range.',

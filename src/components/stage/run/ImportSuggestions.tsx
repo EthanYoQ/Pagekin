@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { ImportFillField, ImportFillSuggestion } from '../../../shared/import-fill-empty'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
-import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
+import { activeInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import type { WorkflowRun } from '../../../stores/workflow-store'
 import { adoptImportSuggestions, loadPendingImportSuggestions } from '../../../services/workflows/import-suggestions'
@@ -41,7 +41,7 @@ const CHOICE_NAMES = new Map<string, Pair>([...POV_OPTIONS, ...STRUCTURE_OPTIONS
 export function ImportSuggestions({ run }: { run: WorkflowRun }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
-  const interfaceLocale = useLocaleStore(s => s.interfaceLocale)
+  const interfaceLocale = useLocaleStore(activeInterfaceLocale)
   const projectId = useProjectStore(s => s.currentProject?.id)
   const projectPath = useProjectStore(s => s.currentProject?.path)
   const sessionLease = useProjectStore(s => s.currentProject?.sessionLease)
@@ -54,12 +54,12 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
       ? current : null
   }, [projectId, projectPath, sessionLease, run.projectPath, run.projectSession?.projectId])
   // 读到的建议与错误记着属于哪个会话：会话换了，新会话读完之前不显示旧会话的内容。
-  const [loaded, setLoaded] = useState<{ session: ProjectSessionContext | null; items: ImportFillSuggestion[]; error: string }>(
-    { session: null, items: [], error: '' })
+  const [loaded, setLoaded] = useState<{ session: ProjectSessionContext | null; items: ImportFillSuggestion[]; failure?: { reason: unknown } }>(
+    { session: null, items: [] })
   const [busy, setBusy] = useState(false)
   const current = loaded.session === session
   const items = current ? loaded.items : []
-  const error = current ? loaded.error : ''
+  const error = current && loaded.failure ? displayedErrorMessage(interfaceLocale, loaded.failure.reason) : ''
 
   const reload = useCallback(async () => (
     session ? loadPendingImportSuggestions(run.id, session, run.projectPath) : []
@@ -67,23 +67,23 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
 
   useEffect(() => {
     let active = true
-    void reload().then(next => { if (active) setLoaded({ session, items: next, error: '' }) })
+    void reload().then(next => { if (active) setLoaded({ session, items: next }) })
       .catch(failure => {
-        if (active) setLoaded(previous => ({ session, items: previous.session === session ? previous.items : [], error: displayedErrorMessage(currentInterfaceLocale(), failure) }))
+        if (active) setLoaded(previous => ({ session, items: previous.session === session ? previous.items : [], failure: { reason: failure } }))
       })
     return () => { active = false }
-  }, [interfaceLocale, locale, reload, session])
+  }, [locale, reload, session])
 
   const adopt = async (chosen: ImportFillSuggestion[]) => {
     if (!session) return
     setBusy(true)
-    setLoaded(previous => ({ ...previous, error: '' }))
+    setLoaded(previous => ({ ...previous, failure: undefined }))
     try {
       await adoptImportSuggestions(chosen, session, run.projectPath, run.id)
       const next = await reload()
-      setLoaded(previous => previous.session === session ? { session, items: next, error: '' } : previous)
+      setLoaded(previous => previous.session === session ? { session, items: next } : previous)
     } catch (failure) {
-      setLoaded(previous => previous.session === session ? { ...previous, error: displayedErrorMessage(currentInterfaceLocale(), failure) } : previous)
+      setLoaded(previous => previous.session === session ? { ...previous, failure: { reason: failure } } : previous)
     } finally {
       setBusy(false)
     }

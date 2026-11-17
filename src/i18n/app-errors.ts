@@ -479,11 +479,11 @@ export function containsHan(value: string): boolean {
   return /\p{Script=Han}/u.test(value)
 }
 
-/**
- * 英文句子后附上原因；原因是中文（主进程未登记的原文）时只给英文概述，不把中文拼进英文句子。
- * 日文界面的原因按日文目录写，日文目录里带汉字的说明都带假名，有假名就不算中文。
- */
+function isChineseOnly(text: string): boolean {
+  return containsHan(text) && !/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text)
+}
+
+/** 英文句子后附上原因；原因是中文（主进程未登记的原文）时只给英文概述，不把中文拼进英文句子。 */
 export function englishWithReason(summary: string, reason: string, separator = ' '): string {
-  const chinese = containsHan(reason) && !/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(reason)
-  return !reason.trim() || chinese ? summary : `${summary}${separator}${reason}`
+  return !reason.trim() || isChineseOnly(reason) ? summary : `${summary}${separator}${reason}`
 }

@@ -664,7 +664,7 @@ async function writeArchToDb(
     ? await ipc.invokeWithProjectSession(projectSession, 'db:project-core-commit-generated', { data: { [key]: cleanContent }, generationRunHandle }, expectedProjectPath)
     : await ipc.invokeWithProjectSession(projectSession, 'db:project-core-update', { [key]: cleanContent }, expectedProjectPath)
   if (!result.success) {
-    throw workflowMainProcessError(context, result.error, '故事架构写入数据库失败', 'Failed to write story architecture to the database.')
+    throw workflowMainProcessError(context.uiLocale, result.error, '故事架构写入数据库失败', 'Failed to write story architecture to the database.')
   }
 
   // 通知 UI 层实时刷新架构完成状态
