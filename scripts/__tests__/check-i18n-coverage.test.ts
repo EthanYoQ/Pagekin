@@ -908,4 +908,20 @@ describe('Japanese copy coverage report (#722)', () => {
       expect(plural.output).toContain('[english-plural]')
     })
   })
+
+  it('reads the parameter object after the Japanese copy when checking English plurals', () => {
+    withFixture({
+      'src/components/shelf/Thread.tsx': [
+        "import { useLocaleStore } from '../../stores/locale-store'",
+        "import { pluralEn } from '../../shared/plural-en'",
+        'export function Thread({ n }: { n: number }) {',
+        '  const text = useLocaleStore(s => s.text)',
+        "  return <p>{text('线索与 {n} 个事件已移除', 'The thread and its {n} {events} are removed', 'スレッドと {n} 件の出来事を削除しました', { n, events: pluralEn(n, 'event') })}</p>",
+        '}',
+      ].join('\n'),
+    }, (root) => {
+      const result = runChecker(root)
+      expect(result.status, result.output).toBe(0)
+    })
+  })
 })

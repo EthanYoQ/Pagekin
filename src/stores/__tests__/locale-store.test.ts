@@ -160,7 +160,7 @@ describe('locale store', () => {
     expect(state.getState().text('保存', 'Save', '保存する')).toBe('Save')
   })
 
-  it('reads English when only the copy language is set over a Japanese interface', async () => {
+  it('lets a copy language set on its own win over a Japanese interface', async () => {
     const state = createStore(createLocaleState({
       loadConfig: async () => ({ locale: 'ja-JP' }),
       saveLocale: vi.fn(async () => ({ success: true })),
