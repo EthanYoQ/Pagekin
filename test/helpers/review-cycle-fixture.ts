@@ -208,7 +208,7 @@ export function seedRevision(db: Database, base: ReturnType<typeof seed>, option
 export function generatedCycle(db: Database, key: string, sameDraft?: ReturnType<typeof seed>,
   options: SeedOptions = {}) {
   const seeded = seed(db, { ...options, key: `review-${key}`, ...(sameDraft
-    ? { source: sameDraft.source, existingDraftId: sameDraft.draftId } : {}) })
+    ? { source: sameDraft.source, existingDraftId: sameDraft.draftId, chapterNumber: sameDraft.chapterNumber } : {}) })
   const cycle = create(db, seeded.call)
   const revision = seedRevision(db, seeded, { key: `revision-${key}`, replacePending: !sameDraft })
   revision.attach.cycleId = cycle.cycleId
