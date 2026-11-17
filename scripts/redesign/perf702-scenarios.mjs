@@ -163,7 +163,7 @@ async function installLedger(app, page) {
     const scratch = new Database(':memory:')
     const statement = Object.getPrototypeOf(scratch.prepare('SELECT 1'))
     scratch.close()
-    const sqlEntry = source => ledger.sql[source.replace(/\s+/gu, ' ')] ??= { calls: 0, rows: 0, ms: 0 }
+    const sqlEntry = source => ledger.sql[source] ??= { calls: 0, rows: 0, ms: 0 }
     for (const method of ['run', 'get', 'all']) {
       const original = statement[method]
       statement[method] = function (...args) {
