@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it } from 'vitest'
 import { installIpcSlowCallLog, IPC_SLOW_CALL_THRESHOLD_MS } from '../ipc-slow-call-log'
@@ -54,6 +56,17 @@ describe('installIpcSlowCallLog', () => {
 
     expect(() => invoke('db:broken')).toThrow('REVIEW_CYCLE_CONFLICT')
     expect(lines).toEqual(['[ipc-slow] db:broken 250ms'])
+  })
+
+  it('主进程在注册任何业务 IPC 之前安装；发版冒烟进程退出前不安装', () => {
+    const main = readFileSync(resolve(process.cwd(), 'electron/main.ts'), 'utf8')
+    const ready = main.slice(main.indexOf('app.whenReady().then('))
+    const installed = ready.indexOf('installIpcSlowCallLog(ipcMain)')
+
+    expect(installed).toBeGreaterThan(ready.indexOf('app.exit(0)'))
+    expect(installed).toBeLessThan(ready.indexOf('registerStartupController('))
+    expect(installed).toBeLessThan(ready.indexOf('registerIPCHandlers()'))
+    expect(installed).toBeLessThan(ready.indexOf('registerUpdateController('))
   })
 
   it('日志写入失败不影响 IPC 结果', () => {
