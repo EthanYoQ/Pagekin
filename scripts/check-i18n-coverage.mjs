@@ -799,21 +799,18 @@ function compareMainErrorBaseline(sites, baseline, violations) {
   return counts
 }
 
-/**
- * 缺日文不算违规；写了日文却是空字符串才算（运行时会退回英文，等于没写）。
- * 工作流与 Agent 的文案跟运行的文案语言走、会写进运行记录，ja-JP 不落库（#725），这里写日文也算违规。
- */
+/** 缺日文不算违规；写了日文却是空字符串才算（运行时会退回英文，等于没写）。 */
 const JA_REPORT_ROOTS = ['src', 'electron']
+/** 这两处的文案跟运行语言走并写进运行记录，ja-JP 不落库（#725），写日文算违规。 */
 const RUN_CODE_ROOTS = ['src/services/workflows/', 'src/services/agent/']
 const jaCopyCallees = new Map([['text', 0], ['localize', 1], ['mainText', 1]])
-/** 冻结的文案语言（Locale）里没有 ja-JP，这样的调用写了日文也读不到。 */
 const frozenCopyLocale = /^(?:copyLocale\(|useLocaleStore\.getState\(\)\.locale$)/u
 
 function isStringCopy(node) {
   return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node)
 }
 
-/** 英文之后的实参：后面还跟着实参或本身是字符串，就是日文；对象字面量是 params；单独一个变量认不出。 */
+/** 英文之后的实参可能是日文也可能是 params：后面还有实参或它是字符串，才确定是日文。 */
 function copyArguments(node, englishIndex) {
   const third = node.arguments[englishIndex + 1]
   if (node.arguments.length > englishIndex + 2 || (third && isStringCopy(third))) return { ja: third, params: node.arguments[englishIndex + 2] }

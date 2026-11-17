@@ -115,7 +115,6 @@ function applyProxyConfig() {
   } catch { /* 忽略 */ }
 }
 
-/** 连接测试失败说明的语言：读不出语言设置时按系统语言，不让它盖掉测试本身的失败。 */
 const failureLocale = () => mainErrorDisplayLocale(app.getLocale())
 
 /**
