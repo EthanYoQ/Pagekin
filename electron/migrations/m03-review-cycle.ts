@@ -309,7 +309,7 @@ function cycleTables(db: Database.Database): CycleTables | null {
   return { mergeTable, draftRows }
 }
 
-/** 全书校验，只给迁移和存档导入用；仓库读写用 verifyM03ReviewCycleById。 */
+/** 全书校验，只在迁移注册表的校验里跑：升级旧作品、verifyProjectSqlite、备份与导出、存档导入。仓库读写用 verifyM03ReviewCycleById。 */
 export function verifyM03ReviewCycle(db: Database.Database): boolean {
   try {
     if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return false
