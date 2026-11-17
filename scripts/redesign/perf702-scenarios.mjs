@@ -336,13 +336,17 @@ async function timeModelAction(context, label, click, done) {
   return operation(context, label, async () => {
     fake.gate.hold()
     const startedAt = performance.now()
-    await click()
-    while (fake.gate.waiting < 1) {
-      if (performance.now() - startedAt > 60_000) { fake.gate.release(); throw new Error(`${label}：60 秒内没有发出模型请求`) }
-      await new Promise(resolve => setTimeout(resolve, 5))
+    let toFirstRequestMs
+    try {
+      await click()
+      while (fake.gate.waiting < 1) {
+        if (performance.now() - startedAt > 60_000) throw new Error(`${label}：60 秒内没有发出模型请求`)
+        await new Promise(resolve => setTimeout(resolve, 5))
+      }
+      toFirstRequestMs = Math.round(performance.now() - startedAt)
+    } finally {
+      fake.gate.release()
     }
-    const toFirstRequestMs = Math.round(performance.now() - startedAt)
-    fake.gate.release()
     await done()
     return { toFirstRequestMs, totalMs: Math.round(performance.now() - startedAt) }
   })
