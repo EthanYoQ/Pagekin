@@ -104,7 +104,6 @@ export class FinalizationGeneration {
         if (!isDeepStrictEqual(finalizationNotesBaseline(this.db, context.slot), context.notesBaseline)) throw new Error('GENERATION_FINALIZATION_NOTES_CHANGED')
         const chapterNotes = proof.artifact.text.trim(), { source } = context.slot
         const facts = buildFinalizedContinuityFacts(source.chapterNumber, chapterNotes, context.identity.content, context.chapterEntities, context.identity)
-        // 按章号取：重开定稿换了 draft，上次生成的要点记在旧 draft 名下。
         const notesLastGenerated = this.db.prepare('SELECT chapter_notes FROM summary_snapshots WHERE chapter_number=? AND draft_id IS NOT NULL ORDER BY id DESC LIMIT 1')
           .pluck().get(source.chapterNumber) as string | undefined
         const blueprintNotes = context.notesBaseline.blueprint.notes
