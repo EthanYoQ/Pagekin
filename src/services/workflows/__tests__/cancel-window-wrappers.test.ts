@@ -5,6 +5,7 @@ import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowStore, type StepCallbacks, type WorkflowContext } from '../../../stores/workflow-store'
 import { GenerationHarnessError, type GenerationSession } from '../../generation/generation-harness'
 import { BaseWorkflowCommand, type CommandExecuteParams, type WorkflowGenerationRuntimeDependencies } from '../commands/base-command'
+import { requireIpcSuccess } from '../../ipc-result'
 import { runPostProcessPipeline } from '../workflow-utils'
 
 // #587 第三轮：包装层只因「取消已请求」就把任何错误改写成取消，store 便把真实失败记成已取消。
@@ -177,6 +178,30 @@ describe('定稿后处理（withRetry）：作者点了取消', () => {
     expect(executor).toHaveBeenCalledOnce()
     expect(markedFailed()).toHaveLength(1)
     expect(finished).toMatchObject({ status: 'cancelled' })
+  })
+
+  it('作者取消后主进程以取消码拒绝写入（requireIpcSuccess）：不记失败，运行与这一步都记已取消', async () => {
+    const finished = await runOneStep(postProcess(true, async () => {
+      cancelRun()
+      requireIpcSuccess({ success: false, error: 'GENERATION_WORKFLOW_CANCELLED' }, '写入章节剧情要点')
+    }))
+
+    expect(markedFailed()).toEqual([])
+    expect(finished).toMatchObject({ status: 'cancelled' })
+    expect(finished.steps[0]).toMatchObject({ status: 'cancelled' })
+    expect(finished.error).toBe('工作流已取消')
+  })
+
+  it('作者没有取消、主进程却返回取消码：照常记失败并重试，失败提示与重试入口都在', async () => {
+    const executor = vi.fn(async () => {
+      requireIpcSuccess({ success: false, error: 'GENERATION_WORKFLOW_CANCELLED' }, '写入章节剧情要点')
+    })
+    const finished = await runOneStep(postProcess(true, executor))
+
+    expect(executor).toHaveBeenCalledTimes(3)
+    expect(markedFailed()).toHaveLength(1)
+    expect(finished).toMatchObject({ status: 'failed' })
+    expect(finished.error).toContain('角色状态更新')
   })
 
   it('这一步因取消中止：不记失败，运行记已取消', async () => {
