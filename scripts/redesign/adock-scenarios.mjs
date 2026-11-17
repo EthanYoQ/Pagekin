@@ -3,12 +3,14 @@ import { randomUUID } from 'node:crypto'
 
 import * as chapterView from './pages/chapter-view.mjs'
 import * as runSheet from './pages/run-sheet.mjs'
+import * as stage from './pages/stage.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 
 const PARAGRAPH = '守塔人说，雾钟是三十年前装上的，从那以后只坏过一次。那一次，北堤外沉了一条船，船名至今没人能在档案里找到。'
 const NOTE = '沉船写得更具体'
 const REVISED = STAGE_SAMPLE.drafts[3].text.replace('北堤外沉了一条船', '北堤外沉了一条运煤的双桅船')
+const FINALIZED = STAGE_SAMPLE.drafts[3].text.replace('钟声比往常早了一刻', '钟声比往常早了半刻')
 
 const LOCK_HINT = '批注修改还在等你处理，修稿或换稿会冲掉它。先接受或取消批注修改。'
 const MORE = Array.from({ length: 80 }, (_, index) => `第 ${index + 1} 次涨潮时，林岚又数了一遍台阶。`).join('\n\n')
@@ -37,7 +39,7 @@ const seedPendingRevision = context => seedStageSample(context, {
 const seedOlderDraft = context => seedStageSample(context, {
   landOnChapter3: false,
   beforeReload: async ({ page, invoke, path, session }) => {
-    const content = STAGE_SAMPLE.finalized[2]
+    const content = FINALIZED
     const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
       chapters: [{ chapterNumber: 3, title: stageChapterTitle(3), content, wordCount: countUnits(content) }] }, path, session)
     assert.equal(imported.success, true, imported.error)
@@ -321,9 +323,7 @@ export const ADOCK_SCENARIOS = {
   'adock-lock-reopen': { model: true, shell: 'stage', setup: seedOlderDraft, run: async ({ page, fake, shoot }) => {
     const measured = {}
     fake.replyReview(prompt => prompt.includes(NOTE) ? REVISED : null)
-    await chapterView.open(page, 3)
-    await chapterView.versionButton(page).click()
-    await page.getByRole('menu', { name: '本章版本' }).getByRole('menuitemradio', { name: /^草稿 v1/ }).click()
+    await stage.openChapterVersion(page, 3, 1)
     const reopen = chapterView.view(page).getByRole('button', { name: '以这一稿重新打开' })
     await reopen.waitFor({ state: 'visible' })
     await annotate(page)
