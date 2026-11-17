@@ -1471,4 +1471,14 @@ describe('ReviewCycleRepository 只校验被读写的那一条循环', () => {
         .toThrow(/FOREIGN KEY constraint failed/u)
     } finally { db.close() }
   })
+
+  it('cycle_id 为 NULL 的合并快照外键挡不住，全书校验仍拒绝', () => {
+    const db = fixture()
+    try {
+      mergedFindingCycle(db, 'merged', '开场时门闩已修好，主角继续前进。')
+      db.prepare('INSERT INTO review_cycle_merges(cycle_id,body) VALUES(NULL,?)').run('无主快照')
+      expect(db.pragma('foreign_key_check')).toEqual([])
+      expect(verifyM03ReviewCycle(db)).toBe(false)
+    } finally { db.close() }
+  })
 })

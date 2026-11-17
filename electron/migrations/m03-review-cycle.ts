@@ -331,6 +331,8 @@ export function verifyM03ReviewCycle(db: Database.Database): boolean {
       'cycle_id TEXT NOT NULL REFERENCES review_cycles(cycle_id) ON DELETE CASCADE',
       "status IN ('unverified','author-waived')", "span_unit='utf16-code-unit'", "status='author-waived'",
     ])) return false
+    // TEXT 主键允许 NULL，外键也不查 NULL：无主快照只有这里能拦下。
+    if (tables.mergeTable && db.prepare('SELECT 1 FROM review_cycle_merges WHERE cycle_id IS NULL LIMIT 1').get()) return false
     const cycles = db.prepare('SELECT * FROM review_cycles ORDER BY cycle_id').all() as CycleRow[]
     return cycles.every(cycle => verifyCycle(db, tables, cycle))
   } catch { return false }
