@@ -29,7 +29,7 @@ for (const file of process.argv.slice(2)) {
   }
 }
 for (const [key, runs] of [...groups].sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true }))) {
-  const fields = Object.keys(runs[0]).filter(field => typeof runs[0][field] === 'number')
+  const fields = [...new Set(runs.flatMap(run => Object.keys(run).filter(field => typeof run[field] === 'number')))]
   const summary = fields.map(field => {
     const values = runs.map(run => run[field]).filter(value => typeof value === 'number')
     return `${field}=${median(values)}[${Math.min(...values)}–${Math.max(...values)}]`
