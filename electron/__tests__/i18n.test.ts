@@ -54,6 +54,20 @@ describe('main-process locale selection', () => {
     expect(mainT('zh-CN', 'error.projectNotOpen')).toBe('先にプロジェクトを開いてください。')
   })
 
+  it('reads optional Japanese main-process copy for a Japanese interface', () => {
+    configUtils.readJsonFile.mockReturnValue({ ...DEFAULT_GLOBAL_CONFIG, locale: 'ja-JP' })
+
+    expect(mainText('zh-CN', '选择文件', 'Choose files', 'ファイルを選択')).toBe('ファイルを選択')
+    expect(mainText('zh-CN', '{n} 个文件', '{n} files', '{n} 件のファイル', { n: 4 })).toBe('4 件のファイル')
+    expect(mainText('zh-CN', '{n} 个文件', '{n} files', { n: 4 })).toBe('4 files')
+    expect(mainText('zh-CN', '选择文件', 'Choose files', '')).toBe('Choose files')
+  })
+
+  it('ignores Japanese main-process copy outside a Japanese interface', () => {
+    expect(mainText('zh-CN', '{n} 个文件', '{n} files', '{n} 件のファイル', { n: 4 })).toBe('4 个文件')
+    expect(mainText('en-US', '{n} 个文件', '{n} files', '{n} 件のファイル', { n: 4 })).toBe('4 files')
+  })
+
   it('localizes colocated main-process dialog copy from the system locale when no preference is stored', () => {
     expect(mainText('zh-CN', '选择文件', 'Choose files')).toBe('选择文件')
     expect(mainText('en-US', '选择文件', 'Choose files')).toBe('Choose files')

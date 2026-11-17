@@ -65,4 +65,27 @@ describe('i18n core', () => {
     expect(localize('en-US', '已关闭 {count} 个文件', 'Closed {count} files', { count: 3 }))
       .toBe('Closed 3 files')
   })
+
+  it('reads optional Japanese copy only for a Japanese interface', () => {
+    expect(localize('ja-JP', '保存', 'Save', '保存する')).toBe('保存する')
+    expect(localize('ja-JP', '保存', 'Save')).toBe('Save')
+    expect(localize('zh-CN', '保存', 'Save', '保存する')).toBe('保存')
+    expect(localize('en-US', '保存', 'Save', '保存する')).toBe('Save')
+  })
+
+  it('interpolates parameters with and without Japanese copy', () => {
+    const params = { count: 3 }
+    expect(localize('ja-JP', '{count} 章', '{count} chapters', '{count} 章分', params)).toBe('3 章分')
+    expect(localize('zh-CN', '{count} 章', '{count} chapters', '{count} 章分', params)).toBe('3 章')
+    expect(localize('en-US', '{count} 章', '{count} chapters', '{count} 章分', params)).toBe('3 chapters')
+    expect(localize('ja-JP', '{count} 章', '{count} chapters', params)).toBe('3 chapters')
+  })
+
+  it('falls back to English when the Japanese copy is empty', () => {
+    expect(localize('ja-JP', '保存', 'Save', '')).toBe('Save')
+  })
+
+  it('keeps a run frozen in a copy language out of Japanese', () => {
+    expect(localize(copyLocale('ja-JP'), '保存', 'Save', '保存する')).toBe('Save')
+  })
 })

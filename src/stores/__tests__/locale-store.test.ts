@@ -140,6 +140,40 @@ describe('locale store', () => {
     expect(state.getState().text('中文', 'English')).toBe('中文')
   })
 
+  it('reads optional Japanese component copy for a Japanese interface', async () => {
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'ja-JP' }),
+      saveLocale: vi.fn(async () => ({ success: true })),
+      systemLocale: () => 'zh-CN',
+      setDocumentLanguage: vi.fn(),
+    }))
+    await state.getState().init()
+    const { text } = state.getState()
+
+    expect(text('第 {n} 章', 'Chapter {n}', '第 {n} 話', { n: 2 })).toBe('第 2 話')
+    expect(text('第 {n} 章', 'Chapter {n}', { n: 2 })).toBe('Chapter 2')
+    expect(text('保存', 'Save', '保存する')).toBe('保存する')
+    expect(text('保存', 'Save')).toBe('Save')
+    await state.getState().setLocale('zh-CN')
+    expect(state.getState().text('保存', 'Save', '保存する')).toBe('保存')
+    await state.getState().setLocale('en-US')
+    expect(state.getState().text('保存', 'Save', '保存する')).toBe('Save')
+  })
+
+  it('reads English when only the copy language is set over a Japanese interface', async () => {
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'ja-JP' }),
+      saveLocale: vi.fn(async () => ({ success: true })),
+      systemLocale: () => 'ja-JP',
+      setDocumentLanguage: vi.fn(),
+    }))
+    await state.getState().init()
+
+    state.setState({ locale: 'zh-CN' })
+
+    expect(state.getState().text('保存', 'Save', '保存する')).toBe('保存')
+  })
+
   it('keeps a later choice when an earlier save of the same language fails last', async () => {
     let failFirstSave: (error: Error) => void = () => {}
     const saveLocale = vi.fn()

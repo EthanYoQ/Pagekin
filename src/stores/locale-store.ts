@@ -1,6 +1,6 @@
 import { create, type StateCreator } from 'zustand'
 import { ipc } from '../services/ipc-client'
-import { copyLocale, localize, resolveInterfaceLocale, storedInterfaceLocale, translate, type MessageKey, type MessageParams } from '../i18n/core'
+import { copyLocale, localize, resolveInterfaceLocale, selectCopy, storedInterfaceLocale, translate, type LocalizedText, type MessageKey, type MessageParams } from '../i18n/core'
 import { displayedErrorMessage } from '../i18n/app-errors'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from '../i18n/types'
 import type { GlobalConfig } from '../shared/ipc-channels'
@@ -16,13 +16,13 @@ export interface LocaleDependencies {
 export interface LocaleState {
   /** Language chosen for the interface, including languages that colocated copy does not have yet. */
   interfaceLocale: InterfaceLocale
-  /** Language of colocated copy (`text`, `localize`) for the interface language: `ja-JP` reads `en-US`. */
+  /** Copy language of the interface language (`ja-JP` reads `en-US`); runs freeze this one. */
   locale: Locale
   initialized: boolean
   init: () => Promise<void>
   setLocale: (locale: InterfaceLocale) => Promise<void>
   t: (key: MessageKey, params?: MessageParams) => string
-  text: (zhCNText: string, enUSText: string, params?: MessageParams) => string
+  text: LocalizedText
 }
 
 function localeFields(interfaceLocale: InterfaceLocale): Pick<LocaleState, 'interfaceLocale' | 'locale'> {
@@ -69,8 +69,8 @@ export function createLocaleState(dependencies: LocaleDependencies): StateCreato
     // functions still resolve the latest locale when called from callbacks.
     const localeReaders = () => ({
       t: (key: MessageKey, params?: MessageParams) => translate(activeInterfaceLocale(get()), key, params),
-      text: (zhCNText: string, enUSText: string, params?: MessageParams) => (
-        localize(get().locale, zhCNText, enUSText, params)
+      text: (zhCNText: string, enUSText: string, jaJPTextOrParams?: string | MessageParams, params?: MessageParams) => (
+        selectCopy(activeInterfaceLocale(get()), zhCNText, enUSText, jaJPTextOrParams, params)
       ),
     })
 
