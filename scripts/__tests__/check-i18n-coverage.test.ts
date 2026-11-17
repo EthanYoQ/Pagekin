@@ -933,7 +933,8 @@ describe('Japanese copy coverage report (#722)', () => {
         "const removedJa = 'スレッドと {n} 件の出来事を削除しました'",
         'export function Thread({ n }: { n: number }) {',
         '  const text = useLocaleStore(s => s.text)',
-        "  return <p>{text('线索与 {n} 个事件已移除', 'The thread and its {n} {events} are removed', removedJa, { n, events: pluralEn(n, 'event') })}</p>",
+        "  const withoutJa = text('线索与 {n} 个事件已移除', 'The thread and its {n} {events} are removed', { n, events: pluralEn(n, 'event') })",
+        "  return <p title={withoutJa}>{text('线索与 {n} 个事件已移除', 'The thread and its {n} {events} are removed', removedJa, { n, events: pluralEn(n, 'event') })}</p>",
         '}',
       ].join('\n'),
     }, (root) => {
@@ -995,7 +996,7 @@ describe('Japanese copy coverage report (#722)', () => {
         expect(result.output).toContain('Japanese copy coverage: 0 calls, 0 with Japanese, 0 missing, 0 undetermined')
         expect(result.output).toContain('Run code (no Japanese; copy follows the run language and is stored): 4 calls')
         expect(result.output).toContain('Frozen copy locale (never shows Japanese): 1 calls')
-        expect(result.output.split('Missing Japanese:\n')[1].split('\n\n')[0]).toBe('')
+        expect(result.output).toContain('Missing Japanese:\n\nUndetermined')
       })
     })
   })
