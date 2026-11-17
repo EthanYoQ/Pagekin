@@ -5,6 +5,7 @@ import { InferGlobalSettingsCommand, InferBlueprintsPerChapterCommand, importGen
 import { useProjectStore } from '../../../../stores/project-store'
 import { useLLMStore } from '../../../../stores/llm-store'
 import type { WorkflowContext } from '../../../../stores/workflow-store'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const oldProject = useProjectStore.getState().currentProject
 const oldModel = useLLMStore.getState().defaultModelId
@@ -69,7 +70,7 @@ it.each(['global', 'style', 'blueprints'] as const)('%s 恢复使用 main 冻结
   const frozenContext = { slot, manifestFingerprint: 'a'.repeat(64), totalChapters: 99, totalWords: 99000, core: { genre: '冻结类型' }, chapters: [{ number: 1, title: '冻结章节', content: '  不可替换的冻结正文  \r\n', wordCount: 10, contentFingerprint: 'b'.repeat(64) }], prompts: { [key]: { key, name: '冻结模板', content: '冻结模板正文 {{sample_text}} {{first_chapter}} {{sample_content}} {{chapter_content}} {{novel_config_summary}}', systemRole: '冻结身份' } } }
   useProjectStore.setState({ currentProject: { id: session.projectId, sessionLease: session.leaseId, path: session.projectPath, novelConfig: { writingStyle: '原文风' } } as never })
   useLLMStore.setState({ defaultModelId: '后来选择的模型' })
-  const context: WorkflowContext = { runId: '重建后的UI运行', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', cancelled: false, data: { importGenerationSlot: slot, importRunExecution: { ownerId: '当前执行' }, chapters: [{ number: 99, content: '不得使用的新章节', title: '后来内容', wordCount: 20 }], novelConfigSummary: '不得使用的新概要' } }
+  const context: WorkflowContext = { runId: '重建后的UI运行', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), cancelled: false, data: { importGenerationSlot: slot, importRunExecution: { ownerId: '当前执行' }, chapters: [{ number: 99, content: '不得使用的新章节', title: '后来内容', wordCount: 20 }], novelConfigSummary: '不得使用的新概要' } }
   const tasks: string[] = []
   const invoke = vi.fn(async (channel: string, request: unknown) => {
     if (channel === 'import-generation:read') { expect(request).toEqual({ slot }); return { view, modelId: '原模型', frozenContext } }

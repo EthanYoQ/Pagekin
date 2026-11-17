@@ -14,7 +14,7 @@ import {
 import { ImportSourceIdentityRepository } from '../repositories/import-source-identity-repository'
 import { loadApplicationImportSourceSecret } from '../services/import-source-identity-secret'
 import { mainText } from '../i18n'
-import { importRunLocale } from './import-run-failure'
+import { importErrorLocale, importRunLocale } from './import-run-failure'
 import { knownAppErrorMessage } from '../../src/i18n/app-errors'
 import {
   windowsSafeFileSystem,
@@ -141,7 +141,7 @@ function importSelectionErrorMessage(
     )
   }
   // 导入运行与检查里作者能照做的码（#474 B1），例如文件检查过期、待确认的导入太多、补选的文件不一致。
-  const known = knownAppErrorMessage(importRunLocale(undefined, locale), code)
+  const known = knownAppErrorMessage(importErrorLocale(importRunLocale(undefined, locale)), code)
   if (known) return known
   return importText(
     locale,

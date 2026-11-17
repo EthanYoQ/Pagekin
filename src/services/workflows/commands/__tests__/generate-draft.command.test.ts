@@ -44,6 +44,7 @@ import {
 import { assembleChapterMaterials } from '../../chapter-materials'
 import { MATERIAL_DECISION_MAX_INPUT_UNITS, materialBudgetFrom, type BeginGenerationRequest, type MaterialBudget } from '../../../../shared/generation-owner-contract'
 import { WorkflowCancelledError } from '../../workflow-cancellation'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 // 默认原样透传真实装配；只有个别测试用 mockImplementationOnce 改写一次返回值，
 // 用来验证命令层对装配结果的独立复核。
@@ -609,6 +610,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
       cancelled: false,
       writingLanguage: options.writingLanguage ?? 'zh-CN',
       uiLocale: options.uiLocale ?? 'zh-CN',
+      interfaceLocale: shown(options.uiLocale ?? 'zh-CN'),
     } as WorkflowContext
     const callbacks: StepCallbacks = {
       log: vi.fn(),

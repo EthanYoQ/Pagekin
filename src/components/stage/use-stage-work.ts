@@ -5,7 +5,7 @@ import { globalEventBus } from '../../shared/event-bus'
 import { sameProjectPathKey, sameProjectSessionContext } from '../../shared/project-session-context'
 import { useDraftStore } from '../../stores/draft-store'
 import { useEditorStore } from '../../stores/editor-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
 import {
   deriveChapters, deriveStages, landingStage, locate, missingSetup, runningChapters,
@@ -54,7 +54,7 @@ export async function refreshStageWork(text: (zh: string, en: string) => string)
     await refreshChapterFacts(working, session)
     if (current()) useStageStore.setState({ spineFacts: session })
   } catch (error) {
-    const reason = displayedErrorMessage(useLocaleStore.getState().locale, error)
+    const reason = displayedErrorMessage(currentInterfaceLocale(), error)
     if (current()) toast.error(text(`项目资源刷新失败：${reason}`, `Could not refresh project resources: ${reason}`))
   }
 }

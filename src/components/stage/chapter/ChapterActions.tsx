@@ -14,7 +14,7 @@ import { countDraftUnits } from '../../../shared/draft-units'
 import { isGenerationModel, preferredGenerationModelId } from '../../../services/workflows/chapter-write-launch'
 import { useEditorStore, type EditorTab } from '../../../stores/editor-store'
 import { useLLMStore } from '../../../stores/llm-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { navigate } from '../../../stores/navigation/navigation-intents'
 import { openChapterPlan } from '../../../stores/navigation/stage-navigation'
 import { useStageStore } from '../../../stores/navigation/stage-store'
@@ -261,7 +261,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
       await swapChapterTab(tab.id, () => openDraftInChapterView(reopened, title, session), before)
     } catch (error) {
       if (!isProjectSessionCurrent(session)) return
-      const reason = displayedErrorMessage(useLocaleStore.getState().locale, error)
+      const reason = displayedErrorMessage(currentInterfaceLocale(), error)
       toast.error(text(`没能重新打开${chapterLabel(chapterNumber, text)}：${reason}`, `Could not reopen ${chapterLabel(chapterNumber, text).toLowerCase()}: ${reason}`))
     }
   })

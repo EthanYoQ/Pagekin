@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { presentWorkflowFailure } from '../ai-output-failure-presentation'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const promptBudgetReport = (sectionName: string) => ({
   totalUtf8Bytes: 13_000,
@@ -16,7 +17,7 @@ const promptBudgetReport = (sectionName: string) => ({
 
 describe('AI output failure presentation', () => {
   it('maps a structured content-filter code to a clear Chinese chapter-draft failure', () => {
-    expect(presentWorkflowFailure('content_filter', 'provider-safe message', 'zh-CN', true)).toEqual({
+    expect(presentWorkflowFailure('content_filter', 'provider-safe message', shown('zh-CN'), true)).toEqual({
       heading: '正文生成被内容策略拦截',
       reason: '模型的内容安全策略拦截了这次输出。',
       persistence: '本次未保存草稿或正文章节。请调整章节要求，或选择符合预期内容政策的模型后重试。',
@@ -24,7 +25,7 @@ describe('AI output failure presentation', () => {
   })
 
   it('maps a structured content-filter code to an English explanation instead of exposing it as prose', () => {
-    expect(presentWorkflowFailure('content_filter', 'provider-safe message', 'en-US', true)).toEqual({
+    expect(presentWorkflowFailure('content_filter', 'provider-safe message', shown('en-US'), true)).toEqual({
       heading: 'Draft generation was blocked by the content policy',
       reason: 'The model safety policy filtered this output.',
       persistence: 'No draft or manuscript chapter was saved. Adjust the chapter request, or choose a model whose policy fits your intended permitted content, then try again.',
@@ -32,7 +33,7 @@ describe('AI output failure presentation', () => {
   })
 
   it('keeps a legacy machine-looking error generic when no structured code was supplied', () => {
-    const presentation = presentWorkflowFailure(undefined, 'finish:content_filter', 'zh-CN', true)
+    const presentation = presentWorkflowFailure(undefined, 'finish:content_filter', shown('zh-CN'), true)
 
     expect(presentation.reason).toBe('finish:content_filter')
     expect(presentation.heading).not.toBe('正文生成被内容策略拦截')
@@ -42,7 +43,7 @@ describe('AI output failure presentation', () => {
     expect(presentWorkflowFailure(
       'prompt_budget_exhausted',
       'safe report summary',
-      'en-US',
+      shown('en-US'),
       false,
       promptBudgetReport('global-guidance'),
     )).toMatchObject({
@@ -55,7 +56,7 @@ describe('AI output failure presentation', () => {
     const presentation = presentWorkflowFailure(
       'prompt_budget_exhausted',
       'safe report summary',
-      'zh-CN',
+      shown('zh-CN'),
       false,
       promptBudgetReport('step-guidance'),
     )
@@ -75,7 +76,7 @@ describe('AI output failure presentation', () => {
     const presentation = presentWorkflowFailure(
       'prompt_budget_exhausted',
       'safe report summary',
-      'en-US',
+      shown('en-US'),
       false,
       promptBudgetReport(sectionName),
     )
@@ -91,7 +92,7 @@ it.each([
   ['UND_ERR_SOCKET', '响应连接中断'],
   [undefined, '具体原因未知'],
 ] as const)('explains safe review transport diagnostics without inferring the upstream cause: %s', (causeCode, reason) => {
-  const presentation = presentWorkflowFailure(undefined, 'generic provider failure', 'zh-CN', false, undefined, {
+  const presentation = presentWorkflowFailure(undefined, 'generic provider failure', shown('zh-CN'), false, undefined, {
     operation: 'review-chapter', diagnostics: { startedAt: 0, elapsedMs: 478000, firstResponseMs: 3000, lastResponseMs: 171000,
       lastOutputMs: null, phase: 'stream', endReason: 'failed', visibleEvents: 0, reasoningEvents: 0, ...(causeCode ? { causeCode } : {}) },
   })
@@ -103,30 +104,30 @@ it.each([
 describe('generation error codes on the run card', () => {
   it('explains a rejected re-review instead of showing the raw IPC error', () => {
     const raw = "Error invoking remote method 'generation:begin': Error: GENERATION_DRAFT_NOT_CURRENT"
-    const review = presentWorkflowFailure(undefined, raw, 'zh-CN', false, undefined, { operation: 'review-chapter' } as never)
+    const review = presentWorkflowFailure(undefined, raw, shown('zh-CN'), false, undefined, { operation: 'review-chapter' } as never)
     expect(review.reason).toContain('当前稿')
     expect(review.reason).not.toContain('Error invoking')
-    const english = presentWorkflowFailure(undefined, raw, 'en-US', false)
+    const english = presentWorkflowFailure(undefined, raw, shown('en-US'), false)
     expect(english.reason).toContain('current draft')
     expect(english.reason).not.toContain('GENERATION_')
   })
 
   it('tells the author what to do when the next chapter cannot be saved', () => {
-    const failure = presentWorkflowFailure(undefined, "Error invoking remote method 'generation:commit-draft': Error: GENERATION_DRAFT_DEPENDENCY_STALE", 'zh-CN', true)
+    const failure = presentWorkflowFailure(undefined, "Error invoking remote method 'generation:commit-draft': Error: GENERATION_DRAFT_DEPENDENCY_STALE", shown('zh-CN'), true)
     expect(failure.heading).toBe('工作流未完成')
     expect(failure.reason).toContain('前一章')
   })
 
   it('英文界面下非 GENERATION_ 前缀的登记码也按界面语言说明，不显示原码（#471）', () => {
-    expect(presentWorkflowFailure(undefined, 'LEGACY_ROSTER_GENERATION_CANCELLED', 'en-US', false).reason)
+    expect(presentWorkflowFailure(undefined, 'LEGACY_ROSTER_GENERATION_CANCELLED', shown('en-US'), false).reason)
       .toBe('Generation was cancelled.')
-    expect(presentWorkflowFailure(undefined, "Error invoking remote method 'character-proposal:approve': Error: CHARACTER_PROPOSAL_SOURCE_CHANGED", 'en-US', false).reason)
+    expect(presentWorkflowFailure(undefined, "Error invoking remote method 'character-proposal:approve': Error: CHARACTER_PROPOSAL_SOURCE_CHANGED", shown('en-US'), false).reason)
       .toBe('The settings, blueprint, or earlier text this generation relied on changed while it ran, so the result was not saved. Generate it again.')
-    expect(presentWorkflowFailure(undefined, 'NO_DEFAULT_MODEL', 'en-US', false).reason)
+    expect(presentWorkflowFailure(undefined, 'NO_DEFAULT_MODEL', shown('en-US'), false).reason)
       .toBe('The model for this generation could not be found. Select or add a model in Settings, then try again.')
   })
 
   it('keeps an uncoded reason as written', () => {
-    expect(presentWorkflowFailure(undefined, '模型服务返回 HTTP 429', 'zh-CN', false).reason).toBe('模型服务返回 HTTP 429')
+    expect(presentWorkflowFailure(undefined, '模型服务返回 HTTP 429', shown('zh-CN'), false).reason).toBe('模型服务返回 HTTP 429')
   })
 })

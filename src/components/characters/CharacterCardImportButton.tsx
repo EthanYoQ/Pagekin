@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { ClipboardPaste, FileUp } from 'lucide-react'
 import { useProjectStore } from '../../stores/project-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { useLLMStore } from '../../stores/llm-store'
 import { routeModelId } from '../../services/model-routing'
 import { navigate } from '../../stores/navigation/navigation-intents'
@@ -93,7 +93,7 @@ function SessionImportButton({ session, disabled }: Props & { session: ProjectSe
         writeImportDraft(sessionKey, { source: draftWhenSelected.source, files: selected })
       }
     } catch (error) {
-      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       if (isProjectSessionCurrent(session)) setBusy(false)
     }
@@ -160,7 +160,7 @@ function SessionImportButton({ session, disabled }: Props & { session: ProjectSe
     } catch (error) {
       if (isProjectSessionCurrent(session)) {
         setOpen(true)
-        toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+        toast.error(appErrorMessage(currentInterfaceLocale(), error))
       }
     } finally {
       if (isProjectSessionCurrent(session)) setBusy(false)

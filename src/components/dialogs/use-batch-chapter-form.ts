@@ -10,7 +10,8 @@ import {
 } from '../../services/workflows/batch-chapter-workflow'
 import { guardChapterWriting } from '../../services/workflow-guards'
 import { ipc } from '../../services/ipc-client'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
+import { errorLocaleForRun } from '../../i18n/core'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { routeStageModel } from '../../shared/model-stage-routing'
 import {
@@ -93,7 +94,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
         if (disposed || !isProjectSessionCurrent(projectSession)) return
         setAuthoritativeStart(null)
         setGaps([])
-        setAuthorityError(displayedErrorMessage(useLocaleStore.getState().locale, cause))
+        setAuthorityError(displayedErrorMessage(currentInterfaceLocale(), cause))
       } finally {
         if (!disposed && isProjectSessionCurrent(projectSession)) setAuthorityLoading(false)
       }
@@ -191,7 +192,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
       if (!guard.ok) {
         setError(frozenLocale === 'en-US'
           ? 'Writing prerequisites are not met. Complete the project setup and previous finalized chapter before starting.'
-          : displayedErrorMessage(frozenLocale, guard.message, '前置条件未满足。'))
+          : displayedErrorMessage(errorLocaleForRun(frozenLocale, currentInterfaceLocale()), guard.message, '前置条件未满足。'))
         return
       }
 
@@ -233,7 +234,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
       onClose()
     } catch (cause) {
       if (!isProjectSessionCurrent(projectSession)) return
-      const message = displayedErrorMessage(useLocaleStore.getState().locale, cause)
+      const message = displayedErrorMessage(currentInterfaceLocale(), cause)
       if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'AUTHORITATIVE_CHAPTER_SEQUENCE_INVALID') {
         setGaps([])
         setAuthorityError(message)
@@ -255,7 +256,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
       requireIpcSuccess(await call(session), action)
       return true
     } catch (cause) {
-      if (isProjectSessionCurrent(session)) setError(displayedErrorMessage(useLocaleStore.getState().locale, cause))
+      if (isProjectSessionCurrent(session)) setError(displayedErrorMessage(currentInterfaceLocale(), cause))
       return false
     } finally {
       setStarting(false)

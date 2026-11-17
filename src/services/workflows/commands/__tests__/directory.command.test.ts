@@ -20,6 +20,7 @@ import {
   retryDirectoryCharacterSync,
 } from '../directory.command'
 import { listPendingDirectoryCharacterSyncs } from '../../directory-character-sync-recovery'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 type Blueprint = {
   chapterNumber: number
@@ -57,7 +58,7 @@ function workflowContext(): WorkflowContext {
       projectPath: projectSnapshot.expectedProjectPath,
     },
     writingLanguage: 'zh-CN',
-    uiLocale: 'zh-CN',
+    uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
     data: { architecture: '故事前提'.repeat(30) },
     cancelled: false,
   }
@@ -1014,7 +1015,7 @@ describe('GenerateDirectoryCommand', () => {
 
     const failure = await command.execute({
       step: {},
-      context: { ...workflowContext(), uiLocale: 'en-US' },
+      context: { ...workflowContext(), uiLocale: 'en-US', interfaceLocale: shown('en-US') },
       callbacks,
     }).then(() => null, error => error as Error)
 
@@ -1038,7 +1039,7 @@ describe('GenerateDirectoryCommand', () => {
     })
     const command = new GenerateDirectoryCommand({ mode: 'full', count: 1 }, projectSnapshot,
       { createRuntime: vi.fn(async () => testRuntime(session)) })
-    const failure = await command.execute({ step: {}, context: { ...workflowContext(), uiLocale: 'en-US' }, callbacks: stepCallbacks() })
+    const failure = await command.execute({ step: {}, context: { ...workflowContext(), uiLocale: 'en-US', interfaceLocale: shown('en-US') }, callbacks: stepCallbacks() })
       .then(() => null, error => error as Error)
     expect(failure?.message).toBe('GENERATION_CONTEXT_LENGTH_EXCEEDED')
   })
@@ -1369,7 +1370,7 @@ describe('GenerateDirectoryCommand', () => {
       { createRuntime: vi.fn(async () => testRuntime(session)) },
     )
 
-    const context = { ...workflowContext(), uiLocale: 'en-US' as const }
+    const context = { ...workflowContext(), uiLocale: 'en-US' as const, interfaceLocale: shown('en-US') }
     const failure = await command.execute({
       step: {},
       context,
@@ -1601,7 +1602,7 @@ describe('GenerateDirectoryCommand', () => {
       committedFailure.retryOperationId,
       projectSnapshot.expectedProjectPath,
       context.projectSession!,
-      'zh-CN',
+      shown('zh-CN'),
     )
 
     expect(retryReceipt).toMatchObject({

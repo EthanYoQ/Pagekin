@@ -29,6 +29,9 @@ import {
 import type { StepCallbacks, WorkflowContext } from '../../../stores/workflow-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowStore } from '../../../stores/workflow-store'
+import { shown } from '../../../i18n/__tests__/shown-locale'
+import { appErrorMessage } from '../../../i18n/app-errors'
+import type { InterfaceLocale } from '../../../i18n/types'
 
 const session = { projectId: 'test-project', leaseId: 'lease-test-project', projectPath: 'C:\\test-project' }
 const executionOwner = 'test-import-executor'
@@ -54,7 +57,7 @@ const callbacks: StepCallbacks = { log: vi.fn(), setProgress: vi.fn(), appendTex
 function context(): WorkflowContext {
   return {
     runId: 'import-run-1', projectPath: session.projectPath, projectSession: session,
-    writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false,
+    writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false,
   }
 }
 
@@ -196,7 +199,7 @@ describe('createImportWorkflow', () => {
     const workflow = createImportWorkflow({
       projectPath: session.projectPath, projectSession: session, run: snapshot, executionOwner,
     })
-    const frozenContext = { ...context(), writingLanguage: 'en-US' as const, uiLocale: 'zh-CN' as const }
+    const frozenContext = { ...context(), writingLanguage: 'en-US' as const, uiLocale: 'zh-CN' as const, interfaceLocale: shown('zh-CN') }
 
     await expect(workflow.steps[3].executor({} as never, frozenContext, callbacks))
       .rejects.toThrow('stop-after-blueprint-prompt-context')
@@ -514,6 +517,7 @@ describe('import workflow failure copy follows the import run locale (#484)', ()
     snapshot: ImportRunSnapshot,
     step: number,
     channels: Record<string, (...args: unknown[]) => unknown>,
+    interfaceLocale: InterfaceLocale = snapshot.locale,
   ): Promise<Error> {
     ipcMocks.invoke.mockImplementation(async (_session, channel: string, ...args: unknown[]) => {
       if (channels[channel]) return channels[channel](...args)
@@ -531,7 +535,7 @@ describe('import workflow failure copy follows the import run locale (#484)', ()
       executionOwner,
       ...(snapshot.purpose === 'author-manuscript' ? { authorChapterNumbers: [1] } : {}),
     })
-    return workflow.steps[step].executor({} as never, { ...context(), uiLocale: snapshot.locale }, callbacks)
+    return workflow.steps[step].executor({} as never, { ...context(), uiLocale: snapshot.locale, interfaceLocale: shown(interfaceLocale) }, callbacks)
       .then(() => new Error('step did not fail'), (error: Error) => error)
   }
 
@@ -587,6 +591,21 @@ describe('import workflow failure copy follows the import run locale (#484)', ()
     })
 
     expect(failure.message).toMatch(expected)
+  })
+
+  it('日文界面、英文运行：登记过的报错用日文目录，没有原因时的兜底仍是英文', async () => {
+    const snapshot = run({ locale: 'en-US', stage: 'global' })
+    const stale = await stepFailure(snapshot, 1, {
+      'db:import-run-effect-receipt-get': () => null,
+      'db:import-run-renew-execution': () => ({ success: true, execution: { ...execution, epoch: 2 } }),
+    }, 'ja-JP')
+    const refused = await stepFailure(snapshot, 1, {
+      'db:import-run-start-resume': () => ({ success: false }),
+    }, 'ja-JP')
+
+    expect(appErrorMessage(shown('ja-JP'), 'IMPORT_RUN_EXECUTION_STALE')).not.toBe(appErrorMessage(shown('en-US'), 'IMPORT_RUN_EXECUTION_STALE'))
+    expect(stale.message).toBe(appErrorMessage(shown('ja-JP'), 'IMPORT_RUN_EXECUTION_STALE'))
+    expect(refused.message).toBe('Could not start or resume the import run.')
   })
 })
 

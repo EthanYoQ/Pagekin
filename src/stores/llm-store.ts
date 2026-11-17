@@ -3,7 +3,7 @@ import { ipc } from '../services/ipc-client'
 import { requireIpcSuccess } from '../services/ipc-result'
 import { alertError } from '../components/ui/AlertDialog'
 import { displayedErrorMessage } from '../i18n/app-errors'
-import { useLocaleStore } from './locale-store'
+import { currentInterfaceLocale, useLocaleStore } from './locale-store'
 import type {
   LocalContextWindowRequest,
   ModelDiscoveryResult,
@@ -110,8 +110,8 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
   deleteModel: async (modelId) => {
     const result = await ipc.invoke('llm:delete-model', modelId)
     if (!result.success) {
-      const { locale, text } = useLocaleStore.getState()
-      alertError(displayedErrorMessage(locale, result.error, text('删除模型失败', 'Could not delete the model.')), {
+      const { text } = useLocaleStore.getState()
+      alertError(displayedErrorMessage(currentInterfaceLocale(), result.error, text('删除模型失败', 'Could not delete the model.')), {
         title: text('模型删除失败', 'Could not delete the model'),
       })
       return false
@@ -132,8 +132,8 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       set({ defaultModelId: modelId })
       return true
     } catch (error) {
-      const { locale, text } = useLocaleStore.getState()
-      alertError(displayedErrorMessage(locale, error), { title: text('模型设置保存失败', 'Model settings could not be saved') })
+      const { text } = useLocaleStore.getState()
+      alertError(displayedErrorMessage(currentInterfaceLocale(), error), { title: text('模型设置保存失败', 'Model settings could not be saved') })
       return false
     }
   },
@@ -147,8 +147,8 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       set({ defaultEmbeddingModelId: modelId })
       return true
     } catch (error) {
-      const { locale, text } = useLocaleStore.getState()
-      alertError(displayedErrorMessage(locale, error), { title: text('模型设置保存失败', 'Model settings could not be saved') })
+      const { text } = useLocaleStore.getState()
+      alertError(displayedErrorMessage(currentInterfaceLocale(), error), { title: text('模型设置保存失败', 'Model settings could not be saved') })
       return false
     }
   },
@@ -159,8 +159,8 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       set({ defaultRerankModelId: modelId })
       return true
     } catch (error) {
-      const { locale, text } = useLocaleStore.getState()
-      alertError(displayedErrorMessage(locale, error), { title: text('模型设置保存失败', 'Model settings could not be saved') })
+      const { text } = useLocaleStore.getState()
+      alertError(displayedErrorMessage(currentInterfaceLocale(), error), { title: text('模型设置保存失败', 'Model settings could not be saved') })
       return false
     }
   },
@@ -172,8 +172,8 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       set({ stageModelIds: result.stageModelIds })
       return true
     } catch (error) {
-      const { locale, text } = useLocaleStore.getState()
-      alertError(displayedErrorMessage(locale, error), { title: text('分工设置没有保存', 'The stage setting was not saved') })
+      const { text } = useLocaleStore.getState()
+      alertError(displayedErrorMessage(currentInterfaceLocale(), error), { title: text('分工设置没有保存', 'The stage setting was not saved') })
       return false
     }
   },

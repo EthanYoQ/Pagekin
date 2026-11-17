@@ -9,7 +9,7 @@ import { globalEventBus } from '../../../shared/event-bus'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { routeStageModel } from '../../../shared/model-stage-routing'
 import { useLLMStore } from '../../../stores/llm-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { toast } from '../../ui/Toast'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
@@ -47,10 +47,10 @@ export function useLaterBlueprintCheck(projectKey: string, finalizationId: strin
       if (outcome.status === 'checked') { setList(outcome.list); setStatus({ kind: 'done' }) } else setStatus({ kind: 'unreadable' })
     }, (error: unknown) => {
       if (!shown()) return
-      const { text, locale } = useLocaleStore.getState()
+      const { text } = useLocaleStore.getState()
       setStatus({ kind: 'failed', message: errorCodeOf(error) === 'GENERATION_GRAPH_BLUEPRINT_REQUIRED'
         ? text('后面的章都已定稿，没有要检查的蓝图。', 'Every later chapter is finalized, so there is no blueprint to check.')
-        : displayedErrorMessage(locale, error, text('蓝图没有改动。这次没查成，再点“检查后续蓝图”。', 'Your blueprints are unchanged. The check did not finish. Choose Check later blueprints again.')) })
+        : displayedErrorMessage(currentInterfaceLocale(), error, text('蓝图没有改动。这次没查成，再点“检查后续蓝图”。', 'Your blueprints are unchanged. The check did not finish. Choose Check later blueprints again.')) })
     })
   }, [finalizationId])
 

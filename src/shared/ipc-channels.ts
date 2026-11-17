@@ -18,7 +18,7 @@ import type { KnowledgeSearchHit } from './knowledge-ranking'
  * IPC 频道定义 — 渲染进程与主进程的类型安全通信契约
  * 所有 IPC 调用都通过此文件定义频道名和参数/返回值类型
  */
-import type { Locale } from '../i18n/types'
+import type { InterfaceLocale } from '../i18n/types'
 import type { StartupChannels } from './startup-contract'
 import type {
   CreativeStrategy,
@@ -201,7 +201,7 @@ export interface GlobalConfig {
   theme: string
   outlineTargetUnits?: number
   blueprintTargetUnits?: number
-  locale?: Locale
+  locale?: InterfaceLocale
   defaultModelId: string | null
   defaultEmbeddingModelId?: string | null
   /** 显式选定的重排档案；缺省时按检索档案自动复用。 */

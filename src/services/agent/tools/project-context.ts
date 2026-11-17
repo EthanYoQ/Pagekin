@@ -2,7 +2,9 @@ import { useProjectStore } from '../../../stores/project-store'
 import type { AgentExecutionContext } from '../tool-registry'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import type { Locale } from '../../../i18n/types'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { errorMessageForModel } from '../../../i18n/app-errors'
+import { errorLocaleForRun } from '../../../i18n/core'
+import { currentInterfaceLocale } from '../../../stores/locale-store'
 import {
   projectSessionContextFromProject,
   sameProjectSessionContext,
@@ -40,7 +42,7 @@ export function agentToolErrorDetail(
   error: unknown,
 ): string | undefined {
   if (error === undefined || error === null || (typeof error === 'string' && !error.trim())) return undefined
-  return displayedErrorMessage(context?.writingLanguage ?? DEFAULT_WRITING_LANGUAGE, error)
+  return errorMessageForModel(context?.writingLanguage ?? DEFAULT_WRITING_LANGUAGE, error)
 }
 
 export function createAgentExecutionContext(
@@ -53,6 +55,7 @@ export function createAgentExecutionContext(
     projectSession: projectSessionContextFromProject(project),
     selectedModelId: frozenModelId,
     uiLocale,
+    interfaceLocale: errorLocaleForRun(uiLocale, currentInterfaceLocale()),
     writingLanguage: project
       ? resolveWritingLanguage(project.novelConfig.writingLanguage)
       : uiLocale,

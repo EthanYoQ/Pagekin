@@ -6,7 +6,7 @@ import { countUnsavedEditorItems } from '../../stores/editor-unsaved'
 import { discardAllEditorChanges } from '../../stores/editor-discard'
 import { sameProjectPathKey } from '../../shared/project-session-context'
 import { ipc } from '../../services/ipc-client'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
 
 export interface ExitRequest {
@@ -55,7 +55,7 @@ export function useWindowCloseGuard() {
       setExitRequest(null)
       setExitError(null)
     } catch (error) {
-      setExitError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      setExitError(displayedErrorMessage(currentInterfaceLocale(), error))
     } finally {
       setExitBusy(false)
     }
@@ -72,7 +72,7 @@ export function useWindowCloseGuard() {
       discardAllEditorChanges()
       setExitRequest(null)
     } catch (error) {
-      setExitError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      setExitError(displayedErrorMessage(currentInterfaceLocale(), error))
     } finally {
       setExitBusy(false)
     }
@@ -88,7 +88,7 @@ export function useWindowCloseGuard() {
       const result = await ipc.invoke('window:resolve-close', request.requestId, 'proceed')
       if (!result.success) throw new Error(text('退出请求已失效，请重试', 'The exit request expired. Try again.'))
     } catch (error) {
-      setExitError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      setExitError(displayedErrorMessage(currentInterfaceLocale(), error))
     } finally {
       setExitBusy(false)
     }

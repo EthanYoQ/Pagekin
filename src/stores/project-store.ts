@@ -17,7 +17,7 @@ import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImport
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
 import { countUnsavedEditorItemsForProject } from './editor-unsaved'
 import { useLayoutStore } from './layout-store'
-import { useLocaleStore } from './locale-store'
+import { currentInterfaceLocale, useLocaleStore } from './locale-store'
 import { requireIpcSuccess } from '../services/ipc-result'
 import {
   projectPathKey,
@@ -83,14 +83,15 @@ function projectCopy(zhCNText: string, enUSText: string): LocalizedProjectCopy {
   return { zhCNText, enUSText }
 }
 
-function joinProjectCopy(
-  separator: string,
-  ...copies: LocalizedProjectCopy[]
-): LocalizedProjectCopy {
-  return projectCopy(
-    copies.map(copy => copy.zhCNText).join(separator),
-    copies.map(copy => copy.enUSText).join(separator),
-  )
+/** 停用项目的提示要等清理结束才弹出，弹出时才按当时的界面语言写。 */
+type ProjectNotice = () => string
+
+function projectNotice(zhCNText: string, enUSText: string): ProjectNotice {
+  return () => projectText(zhCNText, enUSText)
+}
+
+function joinProjectNotices(separator: string, ...notices: ProjectNotice[]): ProjectNotice {
+  return () => notices.map(notice => notice()).join(separator)
 }
 
 function projectError(
@@ -101,21 +102,11 @@ function projectError(
   if (error === undefined || error === null || error === '') {
     return projectText(fallbackZhCN, fallbackEnUS)
   }
-  return appErrorMessage(useLocaleStore.getState().locale, error)
+  return appErrorMessage(currentInterfaceLocale(), error)
 }
 
-function projectErrorCopy(
-  error: unknown,
-  fallbackZhCN = '发生未知错误。',
-  fallbackEnUS = 'Something went wrong.',
-): LocalizedProjectCopy {
-  if (error === undefined || error === null || error === '') {
-    return projectCopy(fallbackZhCN, fallbackEnUS)
-  }
-  return projectCopy(
-    appErrorMessage('zh-CN', error),
-    appErrorMessage('en-US', error),
-  )
+function projectErrorNotice(error: unknown, fallbackZhCN: string, fallbackEnUS: string): ProjectNotice {
+  return () => projectError(error, fallbackZhCN, fallbackEnUS)
 }
 
 function projectOperationCopy(operation: 'create' | 'open'): LocalizedProjectCopy {
@@ -307,8 +298,8 @@ async function callDisableProjectBindingsPreservingDrafts(projectPath: string | 
 async function detachProjectBindings(options: {
   projectPath: string | null
   detachRenderer: () => void
-  message: LocalizedProjectCopy
-  title: LocalizedProjectCopy
+  message: ProjectNotice
+  title: ProjectNotice
   shouldNotify?: () => boolean
 }): Promise<void> {
   options.detachRenderer()
@@ -322,8 +313,8 @@ async function detachProjectBindings(options: {
     if (projectRecoveryInFlight === cleanup) projectRecoveryInFlight = null
   }
   if (options.shouldNotify?.() === false) return
-  const message = projectText(options.message.zhCNText, options.message.enUSText)
-  const title = projectText(options.title.zhCNText, options.title.enUSText)
+  const message = options.message()
+  const title = options.title()
   alertError(
     `${message}\n${projectText(
       '未保存的编辑和草稿已保留；重新打开正确项目后可以继续处理。',
@@ -370,15 +361,15 @@ async function reconcileStaleProjectResponse(options: {
     await detachProjectBindings({
       projectPath: rendererProjectPath,
       detachRenderer: options.detachRenderer,
-      message: joinProjectCopy(
+      message: joinProjectNotices(
         '\n',
-        projectCopy(
+        projectNotice(
           `无法确认过期项目${operation.zhCNText}后的主进程数据库状态。`,
           `Could not verify the main-process database after an obsolete ${operation.enUSText} request.`,
         ),
-        projectErrorCopy(error, '项目数据库状态未知。', 'The project database state is unknown.'),
+        projectErrorNotice(error, '项目数据库状态未知。', 'The project database state is unknown.'),
       ),
-      title: projectCopy(
+      title: projectNotice(
         '无法确认项目数据库状态，已停用项目',
         'Could not verify project database state; the project was disabled',
       ),
@@ -390,11 +381,11 @@ async function reconcileStaleProjectResponse(options: {
   await detachProjectBindings({
     projectPath: rendererProjectPath,
     detachRenderer: options.detachRenderer,
-    message: projectCopy(
+    message: projectNotice(
       `过期的项目${operation.zhCNText}结果表明主进程数据库与当前界面项目不一致。`,
       `The obsolete ${operation.enUSText} result indicates that the main-process database does not match the current project.`,
     ),
-    title: projectCopy(
+    title: projectNotice(
       '项目数据库状态不一致，已停用项目',
       'Project database state does not match; the project was disabled',
     ),
@@ -529,19 +520,19 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         await detachProjectBindings({
           projectPath: unsafeProjectPath,
           detachRenderer: () => set({ currentProject: null, fileTree: [] }),
-          message: joinProjectCopy(
+          message: joinProjectNotices(
             '\n',
-            projectErrorCopy(
+            projectErrorNotice(
               result.error,
               '新项目创建后未能恢复原项目数据库。',
               'Could not restore the previous project database after creating the new project.',
             ),
-            projectCopy(
+            projectNotice(
               '已解除项目界面的可编辑状态以防止继续写入。',
               'The project editor was disabled to prevent further writes.',
             ),
           ),
-          title: projectCopy(
+          title: projectNotice(
             '创建失败，项目数据库不可用',
             'Project creation failed; the project database is unavailable',
           ),
@@ -666,19 +657,19 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         await detachProjectBindings({
           projectPath: unsafeProjectPath,
           detachRenderer: () => set({ currentProject: null, fileTree: [] }),
-          message: joinProjectCopy(
+          message: joinProjectNotices(
             '\n',
-            projectErrorCopy(
+            projectErrorNotice(
               result.error,
               '主进程项目数据库与打开结果不一致。',
               'The main-process project database does not match the open result.',
             ),
-            projectCopy(
+            projectNotice(
               '已解除项目界面的可编辑状态以防止继续写入。',
               'The project editor was disabled to prevent further writes.',
             ),
           ),
-          title: projectCopy(
+          title: projectNotice(
             '打开失败，项目数据库不可用',
             'Project opening failed; the project database is unavailable',
           ),
@@ -696,11 +687,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         await detachProjectBindings({
           projectPath: rendererProjectPath,
           detachRenderer: () => set({ currentProject: null, fileTree: [] }),
-          message: projectCopy(
+          message: projectNotice(
             '项目打开期间检测到新的编辑。主进程已切换项目，当前界面已停用以避免使用旧会话继续写入。',
             'New edits were detected while the project was opening. The main process switched projects, so the editor was disabled to prevent writes through the old session.',
           ),
-          title: projectCopy(
+          title: projectNotice(
             '项目切换期间内容发生变化，已停用项目',
             'Project content changed during the transition; the project was disabled',
           ),
@@ -796,10 +787,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           .map(warning => projectError(warning))
         const repair = result.finalizationRepair
         if (repair?.status === 'failed') {
-          const reason = displayedErrorMessage(useLocaleStore.getState().locale, repair.error)
+          const reason = displayedErrorMessage(currentInterfaceLocale(), repair.error)
           warnings.push(projectText(
             `重复的定稿没能修复，后面的章节可能写不了；下次打开项目会再试一次。原因：${reason}`,
-            englishWithReason('Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.', reason),
+            englishWithReason(currentInterfaceLocale(), 'Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.', reason),
           ))
         }
         if (warnings.length > 0) {
@@ -868,7 +859,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       const result = await ipc.invoke('project:import-legacy-copy', sourceRoot.grantId, target.grantId)
       if (result.state === 'cancelled') return false
       if (result.state === 'blocked') {
-        set({ legacyImportNotice: legacyImportFailureMessage(useLocaleStore.getState().locale, result.code) })
+        set({ legacyImportNotice: legacyImportFailureMessage(currentInterfaceLocale(), result.code) })
         return false
       }
       copiedTo = result.targetRoot
@@ -884,7 +875,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             : importedCopyNotOpenedNotice(result.targetRoot) })
       return opened
     } catch (error) {
-      set({ legacyImportNotice: copiedTo ? importedCopyNotOpenedNotice(copiedTo) : legacyImportFailureMessage(useLocaleStore.getState().locale, error) })
+      set({ legacyImportNotice: copiedTo ? importedCopyNotOpenedNotice(copiedTo) : legacyImportFailureMessage(currentInterfaceLocale(), error) })
       return false
     } finally {
       set({ legacyImportBusy: false })
@@ -1195,7 +1186,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (result.warning) {
         // 主进程已按界面语言写好清理未完成的说明（带原始文件系统错误），不再套「发生错误」。
         alertError(
-          displayedErrorMessage(useLocaleStore.getState().locale, result.warning),
+          displayedErrorMessage(currentInterfaceLocale(), result.warning),
           { title: projectText('项目已删除，部分清理未完成', 'Project deleted with some cleanup incomplete') },
         )
       }
@@ -1280,11 +1271,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           await detachProjectBindings({
             projectPath,
             detachRenderer: () => set({ currentProject: null, fileTree: [] }),
-            message: projectCopy(
+            message: projectNotice(
               '项目数据库关闭期间检测到新的编辑。数据库已关闭，当前界面已停用。',
               'New edits were detected while the project database was closing. The database is closed, so the editor was disabled.',
             ),
-            title: projectCopy(
+            title: projectNotice(
               '项目关闭期间内容发生变化，已停用项目',
               'Project content changed during close; the project was disabled',
             ),

@@ -9,7 +9,7 @@ import {
 } from '../generation/generation-harness'
 import { structuredContractDiagnostic } from '../../shared/structured-contract-diagnostic'
 import type { WritingLanguage } from '../../shared/writing-language'
-import { errorCodeOf, knownAppErrorMessage } from '../../i18n/app-errors'
+import { errorCodeOf, isRegisteredErrorCode } from '../../i18n/app-errors'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 import {
   buildStructuredSyntaxRepairTask,
@@ -582,7 +582,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
         } else {
           // 只保留稳定错误码，不转出主进程以外的原文（可能带凭据或提示词）；没有登记说明的码只进诊断。
           const errorCode = errorCodeOf(error)
-          const message = errorCode && knownAppErrorMessage(writingLanguage, errorCode) ? errorCode : '结构化生成失败'
+          const message = errorCode && isRegisteredErrorCode(errorCode) ? errorCode : '结构化生成失败'
           failure = { code: 'generation_failed', reason: 'server_error', message, ...(errorCode ? { errorCode } : {}) }
         }
         // 取消造成的中止经 terminal 原样交给消费方抛出，各命令的失败包装不能把取消身份丢掉。

@@ -67,6 +67,7 @@ vi.mock('../locale-store', () => ({
 
 import { useDraftStore } from '../draft-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
+import { shown } from '../../i18n/__tests__/shown-locale'
 
 const projectPath = 'C:\\novels\\project-a'
 const projectSession = {
@@ -170,8 +171,8 @@ describe('draft-store merged revision persistence', () => {
     )
 
     expect(result.success).toBe(false)
-    expect(displayedErrorMessage('en-US', result.error)).toBe('The text or status of this draft changed. Reopen the revision comparison, then merge again.')
-    expect(displayedErrorMessage('zh-CN', result.error)).toBe('这一稿的正文或状态已经变化。请重新打开修订对比后再合并。')
+    expect(displayedErrorMessage(shown('en-US'), result.error)).toBe('The text or status of this draft changed. Reopen the revision comparison, then merge again.')
+    expect(displayedErrorMessage(shown('zh-CN'), result.error)).toBe('这一稿的正文或状态已经变化。请重新打开修订对比后再合并。')
   })
 
   it('freezes the editor snapshot before awaiting the merge receipt', async () => {

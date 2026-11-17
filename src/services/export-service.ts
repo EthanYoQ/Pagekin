@@ -9,8 +9,9 @@
 import { ipc } from './ipc-client'
 import { requireIpcSuccess } from './ipc-result'
 import { useWorkflowStore } from '../stores/workflow-store'
-import { useLocaleStore } from '../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
 import { displayedErrorMessage } from '../i18n/app-errors'
+import { errorLocaleForRun } from '../i18n/core'
 import type { Locale } from '../i18n/types'
 import type { FileWriteCommitState, ProjectSessionContext } from '../shared/ipc-channels'
 import type {
@@ -241,6 +242,7 @@ export async function exportNovel(
   projectSession: ProjectSessionContext,
 ): Promise<{ success: boolean; path?: string; error?: string }> {
   const uiLocale = useLocaleStore.getState().locale
+  const errorLocale = errorLocaleForRun(uiLocale, currentInterfaceLocale())
   const text = (zhCNText: string, enUSText: string) => uiLocale === 'en-US' ? enUSText : zhCNText
   const writtenSplitFiles: string[] = []
   let activeWritePath: string | undefined
@@ -459,7 +461,7 @@ export async function exportNovel(
       : activeWritePath && commitState === 'unknown'
         ? unknownSingleWriteDetail(uiLocale, activeWritePath)
         : ''
-    const errorMessage = `${displayedErrorMessage(uiLocale, error)}${partialWriteDetail}`
+    const errorMessage = `${displayedErrorMessage(errorLocale, error)}${partialWriteDetail}`
     addLog('error', text(`导出失败: ${errorMessage}`, `Export failed: ${errorMessage}`), uiLocale)
     return { success: false, error: errorMessage }
   }

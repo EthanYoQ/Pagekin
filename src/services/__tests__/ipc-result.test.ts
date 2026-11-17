@@ -17,3 +17,10 @@ it('falls back to English, not the Chinese action label, when the main process g
   useLocaleStore.setState({ locale: 'zh-CN' })
   expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^保存草稿失败$/u)
 })
+
+it('explains a registered main-process code in Japanese and keeps the inline fallback in English under a Japanese interface (#722)', () => {
+  useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+  expect(() => requireIpcSuccess({ success: false, error: 'Error: GENERATION_PROJECT_SESSION_STALE' }, '保存草稿'))
+    .toThrow(/作品が切り替えられた/u)
+  expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^The operation failed\.$/u)
+})

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { appErrorMessage } from '../../../i18n/app-errors'
-import type { Locale } from '../../../i18n/types'
 import { ipc } from '../../../services/ipc-client'
 import {
   selectPlanningMaterials,
@@ -17,7 +16,7 @@ import { sameProjectSessionContext } from '../../../shared/project-session-conte
 import { knowledgeDraftDirty, type KnowledgeDraft } from '../../../stores/editor-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { routeModelId } from '../../../services/model-routing'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { navigate } from '../../../stores/navigation/navigation-intents'
 import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowStore, workflowResourceConflictMessage } from '../../../stores/workflow-store'
@@ -33,8 +32,8 @@ export const EMPTY_DRAFT: KnowledgeDraft = { docId: null, copy: null, content: '
  * kb 通道返回的失败结果：主进程交的是错误码（#474），按 workflowMainProcessError 的约定接在说明后面。
  * errorCode 优先，因为同一结果里的 error 可能是按系统语言写好的说明。
  */
-function knowledgeFailureMessage(locale: Locale, result: { error?: string; errorCode?: string }, zhCNSummary: string, enUSSummary: string): string {
-  return workflowMainProcessError({ uiLocale: locale }, result.errorCode ?? result.error, zhCNSummary, enUSSummary).message
+function knowledgeFailureMessage(result: { error?: string; errorCode?: string }, zhCNSummary: string, enUSSummary: string): string {
+  return workflowMainProcessError(currentInterfaceLocale(), result.errorCode ?? result.error, zhCNSummary, enUSSummary).message
 }
 
 /**
@@ -71,7 +70,7 @@ export function useKnowledgeIndex() {
       setStatus(unwrapKnowledgeValue(result))
       setStatusError('')
     } catch (error) {
-      if (latest()) setStatusError(appErrorMessage(useLocaleStore.getState().locale, error))
+      if (latest()) setStatusError(appErrorMessage(currentInterfaceLocale(), error))
     }
   }, [])
 
@@ -98,11 +97,11 @@ export function useKnowledgeIndex() {
           ? text('检查完成，当前检索模型不需要重建', 'Check complete. The current retrieval model needs no rebuild.')
           : text(`检索已重建：处理了 ${result.processed} 段资料${result.failed > 0 ? `，${result.failed} 段失败` : ''}`, `Search rebuilt: ${result.processed} ${pluralEn(result.processed, 'passage')} processed${result.failed > 0 ? `, ${result.failed} failed` : ''}`))
       } else {
-        toast.error(knowledgeFailureMessage(useLocaleStore.getState().locale, result, '重建检索失败', 'Could not rebuild search.'))
+        toast.error(knowledgeFailureMessage(result, '重建检索失败', 'Could not rebuild search.'))
       }
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return
-      toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       if (isProjectSessionCurrent(projectSession)) {
         setBackfilling(false)
@@ -192,7 +191,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
       setLoadError('')
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return
-      setLoadError(appErrorMessage(useLocaleStore.getState().locale, error))
+      setLoadError(appErrorMessage(currentInterfaceLocale(), error))
     }
     setDocumentsLoaded(true)
   }, [])
@@ -211,7 +210,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
       if (!isProjectSessionCurrent(session) || readDraft() !== loading) return
       // 读不出来就回到没选资料的样子：不留「正在读取」，作者再点这一份会重读。
       setDraft(EMPTY_DRAFT)
-      toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      toast.error(appErrorMessage(currentInterfaceLocale(), error))
     }
   }
   const openDocumentRef = useRef(openDocument)
@@ -284,12 +283,12 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
     try {
       const result = unwrapKnowledgeValue(await ipc.invokeWithProjectSession(session, 'kb:save-document-copy', docId, current.content, copy.contentHash, session.projectPath))
       if (!isProjectSessionCurrent(session)) return
-      if (!result.success) { toast.error(knowledgeFailureMessage(useLocaleStore.getState().locale, result, '保存失败', 'Save failed.')); return }
+      if (!result.success) { toast.error(knowledgeFailureMessage(result, '保存失败', 'Save failed.')); return }
       if (readDraft() === saving) await openDocument(docId, true)
       clearResults()
       toast.success(text('项目副本已保存；更新检索后，写作时才能查到新内容', 'Project copy saved. Update search so writing can find the new text.'))
     } catch (error) {
-      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       replaceDraft(saving, current)
     }
@@ -304,14 +303,14 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
     try {
       const result = unwrapKnowledgeValue(await ipc.invokeWithProjectSession(session, 'kb:reindex-document-copy', current.docId, session.projectPath))
       if (!isProjectSessionCurrent(session)) return
-      if (!result.success || !result.docId) { toast.error(knowledgeFailureMessage(useLocaleStore.getState().locale, result, '更新检索失败', 'Could not update search.')); return }
+      if (!result.success || !result.docId) { toast.error(knowledgeFailureMessage(result, '更新检索失败', 'Could not update search.')); return }
       await loadData()
       await loadStatus()
       if (readDraft() === reindexing) await openDocument(result.docId, true)
       clearResults()
       toast.success(text('检索已更新，写作时能查到新内容', 'Search updated. Writing can now find the new text.'))
     } catch (error) {
-      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      if (isProjectSessionCurrent(session)) toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       replaceDraft(reindexing, current)
     }
@@ -333,7 +332,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
     } catch (error) {
       if (!latest()) return
       resetResults()
-      toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       if (latest()) setSearching(false)
     }
@@ -365,11 +364,11 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
         globalEventBus.emit('REFRESH_RESOURCE', { resources: ['all'], projectPath: expectedProjectPath, projectSession })
         toast.success(text('知识库已清空', 'Knowledge base cleared'))
       } else {
-        toast.error(knowledgeFailureMessage(useLocaleStore.getState().locale, result, '清空知识库失败', 'Could not clear the knowledge base.'))
+        toast.error(knowledgeFailureMessage(result, '清空知识库失败', 'Could not clear the knowledge base.'))
       }
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return
-      toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       if (isProjectSessionCurrent(projectSession)) setClearing(false)
     }
@@ -411,7 +410,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
       navigate({ kind: 'run', facet: 'tasks' })
       await useWorkflowStore.getState().startWorkflow(extractionWorkflow, true)
     } catch (error) {
-      if (isProjectSessionCurrent(projectSession)) toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+      if (isProjectSessionCurrent(projectSession)) toast.error(appErrorMessage(currentInterfaceLocale(), error))
     } finally {
       setImporting(false)
     }

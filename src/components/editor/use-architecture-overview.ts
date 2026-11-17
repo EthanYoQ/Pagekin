@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { archOutlineSource, readArchCheckpointWithOutline } from '../../services/architecture-service'
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowStore } from '../../stores/workflow-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { ipc } from '../../services/ipc-client'
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { ARCH_STEP_NAMES, judgeArchCore, type ArchStepKey } from '../../services/architecture-step-selection'
@@ -358,7 +358,7 @@ export function useArchitectureOverview(projectKey: string) {
         expectedRecoveryHandle: synopsisHandle,
       }, projectSession)
     } catch (error) {
-      const detail = displayedErrorMessage(useLocaleStore.getState().locale, error)
+      const detail = displayedErrorMessage(currentInterfaceLocale(), error)
       const { toast } = await import('../ui/Toast')
       toast.error(text(`续写启动失败：${detail}`, `Failed to start the continuation: ${detail}`))
     } finally {
@@ -380,7 +380,7 @@ export function useArchitectureOverview(projectKey: string) {
         expectedRecoveryHandle: worldHandle,
       }, projectSession)
     } catch (error) {
-      const detail = displayedErrorMessage(useLocaleStore.getState().locale, error)
+      const detail = displayedErrorMessage(currentInterfaceLocale(), error)
       const { toast } = await import('../ui/Toast')
       toast.error(text(`续写启动失败：${detail}`, `Failed to start the continuation: ${detail}`))
     } finally {
@@ -401,7 +401,7 @@ export function useArchitectureOverview(projectKey: string) {
       const { toast } = await import('../ui/Toast')
       toast.success(text('未完成候选已复制', 'Incomplete candidate copied.'))
     } catch (error) {
-      const detail = displayedErrorMessage(useLocaleStore.getState().locale, error)
+      const detail = displayedErrorMessage(currentInterfaceLocale(), error)
       const { toast } = await import('../ui/Toast')
       toast.error(text(`复制失败：${detail}`, `Copy failed: ${detail}`))
     }

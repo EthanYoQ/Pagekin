@@ -8,7 +8,7 @@ import type { DraftStatus } from '../../../shared/draft-status'
 import { ipc } from '../../../services/ipc-client'
 import { useEditorStore } from '../../../stores/editor-store'
 import { useProjectStore } from '../../../stores/project-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { toast } from '../../ui/Toast'
 import {
@@ -40,8 +40,8 @@ export async function confirmCurrentProjectSession(
 }
 
 function reportFileReadFailure(error: unknown): void {
-  const { locale, text } = useLocaleStore.getState()
-  const reason = displayedErrorMessage(locale, error)
+  const { text } = useLocaleStore.getState()
+  const reason = displayedErrorMessage(currentInterfaceLocale(), error)
   toast.error(text(`无法读取文件：${reason}`, `Could not read file: ${reason}`))
 }
 

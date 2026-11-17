@@ -3,7 +3,7 @@ import { useDraftStore } from '../../../stores/draft-store'
 import { ipc } from '../../../services/ipc-client'
 import { globalEventBus } from '../../../shared/event-bus'
 import type { ProjectData } from '../../../shared/ipc-channels'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { toast } from '../../ui/Toast'
 import {
@@ -55,7 +55,7 @@ export async function deleteDraftVersion({ draft, displayName, projectKey, proje
     return false
   }
   if (!result.success) {
-    const reason = displayedErrorMessage(useLocaleStore.getState().locale, result.error)
+    const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
     toast.error(text(`删除失败\n\n${reason}`, `Delete failed\n\n${reason}`))
     return false
   }

@@ -9,7 +9,7 @@ import type {
   CloudBackupGenerationView,
 } from '../../shared/cloud-backup'
 import { projectSessionContextFromProject } from '../../shared/project-session-context'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
 import { randomUUID } from '../../utils/id'
 import { Button } from '../ui/Button'
@@ -19,7 +19,7 @@ import { Label } from '../ui/Label'
 type Notice = { kind: 'error' | 'success' | 'info'; text: string } | null
 
 // 主进程登记过的码（例如导出目标已存在）按界面语言说明；其余码与渲染端自己的说明原样显示。
-const errorText = (error: unknown) => displayedErrorMessage(useLocaleStore.getState().locale, error)
+const errorText = (error: unknown) => displayedErrorMessage(currentInterfaceLocale(), error)
 
 export default function ProjectBackupPanel() {
   const project = useProjectStore(state => state.currentProject)

@@ -1,18 +1,33 @@
-import { localize, resolveLocale, translate, type MessageKey, type MessageParams } from '../src/i18n/core'
-import type { Locale } from '../src/i18n/types'
+import { copyLocale, localize, resolveInterfaceLocale, storedInterfaceLocale, translate, type MessageKey, type MessageParams } from '../src/i18n/core'
+import type { ErrorDisplayLocale, InterfaceLocale, Locale } from '../src/i18n/types'
 import type { GlobalConfig } from '../src/shared/ipc-channels'
 import { DEFAULT_GLOBAL_CONFIG, GLOBAL_CONFIG_PATH, readJsonFile } from './utils/config-utils'
 
 export function resolveStoredOrSystemLocale(
-  storedLocale: Locale | undefined,
+  storedLocale: unknown,
   systemLocale: string | undefined,
-): Locale {
-  return storedLocale ?? resolveLocale(systemLocale)
+): InterfaceLocale {
+  return storedInterfaceLocale(storedLocale) ?? resolveInterfaceLocale(systemLocale)
 }
 
-export function getMainLocale(systemLocale: string | undefined): Locale {
+/** Interface language of the main process: the stored setting, else the system language. */
+export function getMainInterfaceLocale(systemLocale: string | undefined): ErrorDisplayLocale {
   const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
-  return resolveStoredOrSystemLocale(config.locale, systemLocale)
+  return resolveStoredOrSystemLocale(config.locale, systemLocale) as ErrorDisplayLocale
+}
+
+/** 主进程查报错目录用的界面语言；全局设置读不出时按系统语言，不让查语言的失败盖住原来的报错。 */
+export function mainErrorDisplayLocale(systemLocale: string | undefined): ErrorDisplayLocale {
+  try {
+    return getMainInterfaceLocale(systemLocale)
+  } catch {
+    return resolveInterfaceLocale(systemLocale) as ErrorDisplayLocale
+  }
+}
+
+/** Language of colocated main-process copy (`mainText`): a `ja-JP` interface reads `en-US`. */
+export function getMainLocale(systemLocale: string | undefined): Locale {
+  return copyLocale(getMainInterfaceLocale(systemLocale))
 }
 
 export function mainT(
@@ -20,7 +35,7 @@ export function mainT(
   key: MessageKey,
   params?: MessageParams,
 ): string {
-  return translate(getMainLocale(systemLocale), key, params)
+  return translate(getMainInterfaceLocale(systemLocale), key, params)
 }
 
 export function mainText(

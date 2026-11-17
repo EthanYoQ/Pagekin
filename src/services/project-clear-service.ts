@@ -4,7 +4,7 @@ import { useDraftStore } from '../stores/draft-store'
 import { useEditorStore, type EditorTab } from '../stores/editor-store'
 import { useProjectStore } from '../stores/project-store'
 import { useWorkflowStore } from '../stores/workflow-store'
-import { useLocaleStore } from '../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
 import { knownAppErrorMessage } from '../i18n/app-errors'
 import { globalEventBus } from '../shared/event-bus'
 import type { ProjectClearScope, ProjectSessionContext } from '../shared/ipc-channels'
@@ -107,7 +107,7 @@ function assertResult(result: { success: boolean; error?: string }): void {
   if (!result.success) {
     // 对话框标题已写「清除失败」：中文界面只给主进程原因，英文界面不转出中文原文。
     const { locale, text } = useLocaleStore.getState()
-    throw new Error(knownAppErrorMessage(locale, result.error)
+    throw new Error(knownAppErrorMessage(currentInterfaceLocale(), result.error)
       ?? (result.error && locale !== 'en-US' ? result.error : text('清除项目生成内容失败', 'The generated content could not be cleared.')))
   }
 }

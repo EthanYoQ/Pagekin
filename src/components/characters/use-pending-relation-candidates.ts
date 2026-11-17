@@ -3,11 +3,11 @@ import { ipc } from '../../services/ipc-client'
 import type { PendingFinalizedRelationCandidate } from '../../shared/finalized-continuity'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { useCharacterStore } from '../../stores/character-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale } from '../../stores/locale-store'
 import { appErrorMessage } from '../../i18n/app-errors'
 import { isProjectSessionCurrent } from '../project-session-gate'
 
-const failureText = (cause: unknown) => appErrorMessage(useLocaleStore.getState().locale, cause)
+const failureText = (cause: unknown) => appErrorMessage(currentInterfaceLocale(), cause)
 
 /** 定稿发现的、和作者设定不一致的关系：采用、保留原设定，或以后再说（什么都不记）。 */
 export function usePendingRelationCandidates(session: ProjectSessionContext) {

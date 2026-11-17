@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Lock, RotateCcw } from 'lucide-react'
 import { DRAFT_STATUS_INFO } from '../../../shared/draft-status'
 import { useDraftStore } from '../../../stores/draft-store'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { navigate } from '../../../stores/navigation/navigation-intents'
 import { useProjectStore } from '../../../stores/project-store'
@@ -149,7 +149,7 @@ export default function StageHistory({ projectKey }: { projectKey: string }) {
     } catch (error) {
       if (request !== comparisonRequest.current) return
       setSelectedVersionId(null)
-      const reason = displayedErrorMessage(useLocaleStore.getState().locale, error)
+      const reason = displayedErrorMessage(currentInterfaceLocale(), error)
       toast.error(text(`读取这一稿失败：${reason}`, `Could not read this version: ${reason}`))
     }
   }
@@ -170,7 +170,7 @@ export default function StageHistory({ projectKey }: { projectKey: string }) {
       setSelectedVersionId(null)
       setComparison(null)
     } catch (error) {
-      const reason = displayedErrorMessage(useLocaleStore.getState().locale, error)
+      const reason = displayedErrorMessage(currentInterfaceLocale(), error)
       toast.error(text(`回退失败：${reason}`, `Could not revert: ${reason}`))
     } finally {
       setReverting(false)

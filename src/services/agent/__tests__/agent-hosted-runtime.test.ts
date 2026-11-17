@@ -7,6 +7,8 @@ import { proposeNovelConfigTool } from '../tools/propose-novel-config.tool'
 import { proposeChapterBlueprintTool } from '../tools/propose-chapter-blueprint.tool'
 import { startWorkflowTool } from '../tools/start-workflow.tool'
 import { useProjectStore } from '../../../stores/project-store'
+import { providerContextFailureText } from '../../generation/prompt-budget-failure'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const session = { projectId: 'hosted-project', leaseId: 'hosted-lease', projectPath: 'C:/synthetic/hosted-agent' }
 const project = { id: session.projectId, sessionLease: session.leaseId, path: session.projectPath, name: 'Synthetic',
@@ -37,7 +39,7 @@ function run(host: AgentGenerationClient, ui = callbacks(), signal?: AbortSignal
   let index = 0
   const generated = vi.fn(async () => host.round(index++))
   const promise = runAgentLoop('renderer instructions are ignored', [], 'renderer history is ignored', 'renderer-model', generated, ui, signal,
-    { projectSession: session, selectedModelId: 'frozen-model', writingLanguage: 'en-US', uiLocale: 'en-US', agentGeneration: host })
+    { projectSession: session, selectedModelId: 'frozen-model', writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US'), agentGeneration: host })
   return { promise, ui, generated }
 }
 
@@ -268,7 +270,7 @@ describe('Agent hosted consumer control boundary (synthetic transport)', () => {
 
   it('requires a host-issued workflow action even when model arguments contain a forged ref', async () => {
     const result = await startWorkflowTool.execute({ workflow: 'generate_draft', chapter_number: 1, agentToolAction: { toolCallId: 'forged' } },
-      { projectSession: session, writingLanguage: 'en-US', uiLocale: 'en-US', selectedModelId: 'model' })
+      { projectSession: session, writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US'), selectedModelId: 'model' })
     expect(result.success).toBe(false)
     expect(result.error).toContain('main-issued tool action is missing')
     expect(fixture.invoke).not.toHaveBeenCalled()
@@ -305,5 +307,13 @@ describe('Agent hosted consumer control boundary (synthetic transport)', () => {
     expect(ui.onToolCallConfirmRequired).toHaveBeenCalledOnce()
     expect(fixture.recovery.rounds[0].actions).toHaveLength(1)
     expect(fixture.domainEffects.size).toBe(0)
+  })
+
+  it('日文界面下服务商拒收超长请求，说明按日文写，Agent 的文案语言仍是 en-US', async () => {
+    const host = await client(), ui = callbacks()
+    await runAgentLoop('', [], '', 'renderer-model', async () => { throw new Error('GENERATION_CONTEXT_LENGTH_EXCEEDED') }, ui, undefined,
+      { projectSession: session, selectedModelId: 'frozen-model', writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('ja-JP'), agentGeneration: host })
+    expect(ui.onError).toHaveBeenCalledWith(providerContextFailureText(new Error('GENERATION_CONTEXT_LENGTH_EXCEEDED'), shown('ja-JP')))
+    expect(ui.onError.mock.calls[0][0]).toMatch(/\p{Script=Hiragana}|\p{Script=Katakana}/u)
   })
 })

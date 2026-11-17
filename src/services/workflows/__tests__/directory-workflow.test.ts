@@ -21,6 +21,7 @@ import { StructuredContractDiagnostic } from '../../../shared/structured-contrac
 import { globalEventBus } from '../../../shared/event-bus'
 import { TerminalProviderFailureError } from '../../generation/generation-harness'
 import { isWorkflowCancellation } from '../workflow-cancellation'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const blueprint: ChapterBlueprint = {
   chapterNumber: 1,
@@ -229,12 +230,12 @@ describe('parseTextBlueprintsStrict', () => {
   it('preserves author recovery fields exactly while model parsing retains its existing persistence boundary', () => {
     const fields = { userGuidance: '  作者指导。\r\n', notes: '<think>作者原文</think>', notesUpdatedAt: '2026-10-04T13:00:00.000Z' }
     const raw = JSON.stringify([{ ...blueprint, ...fields }])
-    expect(parseTextBlueprintsStrict(raw, 1, 1, 'zh-CN', 'author')[0]).toMatchObject(fields)
-    expect(parseTextBlueprintsStrict(raw, 1, 1, 'zh-CN')[0]).toMatchObject({ userGuidance: '', notes: '', notesUpdatedAt: '' })
-    expect(() => parseTextBlueprintsStrict(JSON.stringify([{ ...blueprint, notes: 123 }]), 1, 1, 'zh-CN', 'author')).toThrow('invalid_type')
+    expect(parseTextBlueprintsStrict(raw, 1, 1, shown('zh-CN'), 'author')[0]).toMatchObject(fields)
+    expect(parseTextBlueprintsStrict(raw, 1, 1, shown('zh-CN'))[0]).toMatchObject({ userGuidance: '', notes: '', notesUpdatedAt: '' })
+    expect(() => parseTextBlueprintsStrict(JSON.stringify([{ ...blueprint, notes: 123 }]), 1, 1, shown('zh-CN'), 'author')).toThrow('invalid_type')
   })
   it('returns parsed blueprints for valid array input', () => {
-    const result = parseTextBlueprintsStrict(JSON.stringify([{ ...blueprint, relationships: [] }]), 1, 1, 'zh-CN')
+    const result = parseTextBlueprintsStrict(JSON.stringify([{ ...blueprint, relationships: [] }]), 1, 1, shown('zh-CN'))
 
     expect(result).toHaveLength(1)
     expect(result[0].title).toBe('启程')
@@ -242,7 +243,7 @@ describe('parseTextBlueprintsStrict', () => {
 
   it('throws when JSON is malformed', () => {
     try {
-      parseTextBlueprintsStrict('{not json', 1, 3, 'zh-CN')
+      parseTextBlueprintsStrict('{not json', 1, 3, shown('zh-CN'))
       expect.unreachable('expected typed structured diagnostic')
     } catch (error) {
       expect(error).toBeInstanceOf(StructuredContractDiagnostic)
@@ -255,7 +256,7 @@ describe('parseTextBlueprintsStrict', () => {
       JSON.stringify([{ ...blueprint, chapterNumber: 9, relationships: [] }]),
       1,
       3,
-      'zh-CN',
+      shown('zh-CN'),
     )).toThrow('结构化合同诊断 code=unexpected_item path=blueprints field=blueprints')
   })
 
@@ -267,7 +268,7 @@ describe('parseTextBlueprintsStrict', () => {
       ]),
       1,
       1,
-      'zh-CN',
+      shown('zh-CN'),
     )).toThrow('结构化合同诊断 code=duplicate_item path=blueprints field=blueprints')
   })
 
@@ -275,7 +276,7 @@ describe('parseTextBlueprintsStrict', () => {
     const incomplete = { ...blueprint } as Record<string, unknown>
     delete incomplete.relationshipHints
 
-    expect(() => parseTextBlueprintsStrict(JSON.stringify([incomplete]), 1, 1, 'zh-CN'))
+    expect(() => parseTextBlueprintsStrict(JSON.stringify([incomplete]), 1, 1, shown('zh-CN')))
       .toThrow('结构化合同诊断 code=missing_field path=blueprints[0].relationships field=relationships')
   })
 })
@@ -286,28 +287,28 @@ describe('blueprint persistence helpers', () => {
   it('throws when saving one blueprint returns an IPC failure', async () => {
     stubIpcInvoke({ success: false, error: 'DB 未打开' })
 
-    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, 'zh-CN')).rejects.toThrow('保存章节蓝图失败：DB 未打开')
+    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow('保存章节蓝图失败：DB 未打开')
   })
 
   it('英文界面下主进程拒绝保存蓝图：报英文说明，不转出主进程的中文原文（#471）', async () => {
     stubIpcInvoke({ success: false, error: 'Error: 项目数据库未打开' })
 
-    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, 'en-US'))
+    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('en-US')))
       .rejects.toThrow(/^Could not save the chapter blueprint\.$/u)
-    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, 'en-US'))
+    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('en-US')))
       .rejects.toThrow(/^Could not save the chapter blueprints\.$/u)
   })
 
   it('throws when saving many blueprints returns an IPC failure', async () => {
     stubIpcInvoke({ success: false, error: '写入失败' })
 
-    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, 'zh-CN')).rejects.toThrow('写入失败')
+    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow('写入失败')
   })
 
   it('resolves when the IPC save succeeds', async () => {
     const invoke = stubIpcInvoke({ success: true })
 
-    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, 'zh-CN')).resolves.toBeUndefined()
+    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('zh-CN'))).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('db:blueprint-upsert-many', [blueprint], 'C:/NovelA', session)
   })
 
@@ -333,7 +334,7 @@ describe('blueprint persistence helpers', () => {
       { mode: 'replace-range', startChapter: 1, endChapter: 1 },
       'directory-run-1',
       session,
-      'zh-CN',
+      shown('zh-CN'),
     )).resolves.toEqual(receipt)
     expect(invoke).toHaveBeenCalledWith(
       'db:blueprint-commit-range',
@@ -369,7 +370,7 @@ describe('blueprint persistence helpers', () => {
       { mode: 'replace-range', startChapter: 1, endChapter: 1 },
       'directory-run-1',
       session,
-      'zh-CN',
+      shown('zh-CN'),
     )).rejects.toThrow()
     unsubscribe()
 
@@ -385,7 +386,7 @@ describe('blueprint persistence helpers', () => {
       { mode: 'replace-range', startChapter: 1, endChapter: 1 },
       'directory-run-1',
       session,
-      'en-US',
+      shown('en-US'),
     )).rejects.toThrow(/^Could not commit the chapter blueprints\.$/u)
   })
 })
@@ -439,7 +440,7 @@ describe('directory workflow project context', () => {
         projectPath: projectA.path,
         projectSession,
         writingLanguage: 'zh-CN',
-        uiLocale: 'zh-CN',
+        uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
         data: {},
         cancelled: false,
       },
@@ -472,7 +473,7 @@ describe('directory workflow project context', () => {
         projectPath: projectA.path,
         projectSession,
         writingLanguage: 'zh-CN',
-        uiLocale: 'en-US',
+        uiLocale: 'en-US', interfaceLocale: shown('en-US'),
         data: {},
         cancelled: false,
       },
@@ -507,7 +508,7 @@ describe('directory workflow project context', () => {
           projectPath: projectA.path,
           projectSession,
           writingLanguage: 'zh-CN',
-          uiLocale: 'en-US',
+          uiLocale: 'en-US', interfaceLocale: shown('en-US'),
           data: {},
           cancelled: false,
         },
@@ -530,7 +531,7 @@ describe('directory workflow project context', () => {
     vi.spyOn(directoryCommand.GenerateDirectoryCommand.prototype, 'execute').mockRejectedValue(new TerminalProviderFailureError('GENERATION_CONTEXT_LENGTH_EXCEEDED', {} as never))
     const workflow = createDirectoryWorkflow({ mode: 'full' }, projectA.path, projectSession, 'en-US')
     await expect(workflow.steps[1].executor(workflowStep('Generate blueprints'), { runId: 'context-length-run', projectPath: projectA.path, projectSession,
-      writingLanguage: 'zh-CN', uiLocale: 'en-US', data: {}, cancelled: false }, { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }))
+      writingLanguage: 'zh-CN', uiLocale: 'en-US', interfaceLocale: shown('en-US'), data: {}, cancelled: false }, { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }))
       .rejects.toThrow(/^GENERATION_CONTEXT_LENGTH_EXCEEDED$/u)
   })
 
@@ -539,7 +540,7 @@ describe('directory workflow project context', () => {
     const projectSession = { projectId: projectA.id, leaseId: projectA.sessionLease!, projectPath: projectA.path }
     useProjectStore.setState({ currentProject: projectA })
     const context: WorkflowContext = { runId: 'cancel-window-failure-run', projectPath: projectA.path, projectSession,
-      writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false }
+      writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
     const directoryCommand = await import('../commands/directory.command')
     vi.spyOn(directoryCommand.GenerateDirectoryCommand.prototype, 'execute').mockImplementation(async () => {
       context.cancelled = true
@@ -660,7 +661,7 @@ describe('directory workflow project context', () => {
         projectPath: projectA.path,
       },
       writingLanguage: 'zh-CN',
-      uiLocale: 'zh-CN',
+      uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
       data: {
         newBlueprints: [blueprint],
         existingBlueprints: [],

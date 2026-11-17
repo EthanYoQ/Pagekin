@@ -14,6 +14,7 @@ import { clearProjectCustomPrompts, getBuiltinPromptTemplate } from '../../../pr
 import { composeVisibleContinuation } from '../../../../shared/visible-continuation'
 import type { GenerationRecoveryContext, VisibleCompositionReceipt } from '../../../../shared/generation-owner-contract'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, type PlotOutlineProgress } from '../../../../shared/plot-outline-contract'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 /**
  * 情节大纲批次状态机：
@@ -100,7 +101,7 @@ const context: WorkflowContext = {
   projectPath: projectAPath,
   projectSession: { projectId: 'main', leaseId: 'lease-main', projectPath: projectAPath },
   writingLanguage: 'zh-CN',
-  uiLocale: 'zh-CN',
+  uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
   data: {},
   cancelled: false,
 }
@@ -288,6 +289,7 @@ beforeEach(() => {
   context.data = {}
   delete context.generationModelId
   context.uiLocale = 'zh-CN'
+  context.interfaceLocale = shown('zh-CN')
   context.writingLanguage = 'zh-CN'
   context.cancelled = false
   useProjectStore.setState({
@@ -410,6 +412,7 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
   it('uses writing language, not UI locale, for the visible incomplete note', async () => {
     context.writingLanguage = 'en-US'
     context.uiLocale = 'zh-CN'
+    context.interfaceLocale = shown('zh-CN')
     const truncated = `Chapters 1-3: The first clues\n${'The apprentice follows each clue while preserving the causal chain. '.repeat(4)}`
     const generateStream = responseStream([truncated])
     useLLMStore.setState({ defaultModelId: 'model-1' })
@@ -911,6 +914,7 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
   it('CAS 冲突按 UI 语言报错，并只回滚本次 synopsis 字段而保留同期其他阶段字段', async () => {
     context.uiLocale = 'en-US'
+    context.interfaceLocale = shown('en-US')
     const oldBody = '旧的大纲检查点正文'
     const harness = harnessWith({
       synopsis_result: oldBody,
@@ -941,6 +945,7 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
   it('中文界面下主进程拒绝覆盖大纲时说明中文原因，不显示错误码', async () => {
     context.uiLocale = 'zh-CN'
+    context.interfaceLocale = shown('zh-CN')
     harnessWith({
       synopsis_result: '旧的大纲检查点正文',
       synopsis_incomplete: false,

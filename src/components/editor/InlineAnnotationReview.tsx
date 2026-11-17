@@ -6,7 +6,7 @@ import { createEditorInlineGeneration } from '../../services/editor-inline-gener
 import { routeModelId } from '../../services/model-routing'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
 import { EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, type EditorInlineAnnotation } from '../../shared/editor-inline-generation'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { Button } from '../ui/Button'
 
@@ -56,7 +56,6 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
   onCommit: (result: string) => Promise<void>; onCancel: () => void
 }) {
   const text = useLocaleStore(s => s.text)
-  const locale = useLocaleStore(s => s.locale)
   const settingsOpen = useLayoutStore(s => s.settingsOpen)
   const pieces = useMemo(() => splitChanges(before, after), [before, after])
   const [changes, setChanges] = useState<Change[]>(() => pieces.flatMap(piece => piece.kind === 'change'
@@ -136,7 +135,7 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
       update(piece.index, { value: candidate, busy: false, editing: false,
         error: overlap ? text('结果可能与相邻正文重复，请检查或编辑。', 'The result may repeat adjacent text; inspect or edit it.') : '' })
     } catch (cause) {
-      update(piece.index, { busy: false, error: knownAppErrorMessage(locale, cause) ?? text('重新生成失败，请重试', 'Regeneration failed; try again') })
+      update(piece.index, { busy: false, error: knownAppErrorMessage(currentInterfaceLocale(), cause) ?? text('重新生成失败，请重试', 'Regeneration failed; try again') })
     }
     finally { rerollClients.current.delete(client) }
   }

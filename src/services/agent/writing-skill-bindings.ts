@@ -8,7 +8,7 @@ import {
 } from '../../shared/writing-skills'
 import { ipc } from '../ipc-client'
 import { skillRegistry } from './skill-registry'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { workflowMainProcessError } from '../workflows/workflow-project-session'
 
 interface WritingSkillBindingFile {
@@ -83,7 +83,7 @@ export async function loadWritingSkillBindings(
     projectSession.projectPath,
   )
   if (!result.success) {
-    throw workflowMainProcessError({ uiLocale: useLocaleStore.getState().locale }, result.error, '无法读取写作 Skill 绑定', 'Could not read the writing Skill bindings.')
+    throw workflowMainProcessError(currentInterfaceLocale(), result.error, '无法读取写作 Skill 绑定', 'Could not read the writing Skill bindings.')
   }
   try {
     return parseBindings(JSON.parse(result.content))

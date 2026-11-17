@@ -11,6 +11,7 @@ import {
   ExtractPlanningMaterialCharactersCommand as RuntimeCommand,
 } from '../planning-material.command'
 import { useFakeModelStream } from './workflow-generation-runtime.fixture'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 class ExtractPlanningMaterialCharactersCommand extends RuntimeCommand {
   constructor(...args: ConstructorParameters<typeof RuntimeCommand>) {
@@ -25,7 +26,7 @@ const context: WorkflowContext = {
   projectPath,
   projectSession,
   writingLanguage: 'zh-CN',
-  uiLocale: 'zh-CN',
+  uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
   data: {},
   cancelled: false,
 }
@@ -305,7 +306,7 @@ describe('planning material character extraction', () => {
       ])
       await command.execute({
         step: {},
-        context: { ...context, writingLanguage, uiLocale: writingLanguage },
+        context: { ...context, writingLanguage, uiLocale: writingLanguage, interfaceLocale: shown(writingLanguage) },
         callbacks,
       })
 
@@ -436,7 +437,7 @@ describe('planning material character extraction', () => {
     try {
       await command.execute({
         step: {},
-        context: { ...context, writingLanguage: 'en-US', uiLocale: 'en-US' },
+        context: { ...context, writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US') },
         callbacks,
       })
     } catch (error) {

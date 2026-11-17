@@ -6,6 +6,7 @@ import { useLLMStore } from '../../../stores/llm-store'
 import { useWorkflowStore } from '../../../stores/workflow-store'
 import { createWorkflowMainGenerationRuntime, type WorkflowMainGenerationSelection } from '../workflow-main-generation'
 import type { createMainGenerationTransport } from '../../generation/main-generation-transport'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('../../ipc-client', () => ({ ipc: { invokeWithProjectSession: mocks.invoke } }))
@@ -24,7 +25,7 @@ function transport(overrides: Record<string, unknown> = {}) {
 }
 
 function context(overrides: Partial<WorkflowContext> = {}): WorkflowContext {
-  return { runId: 'workflow', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false, ...overrides }
+  return { runId: 'workflow', projectPath: session.projectPath, projectSession: session, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false, ...overrides }
 }
 
 function run(): WorkflowRun | undefined {

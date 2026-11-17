@@ -1,5 +1,5 @@
 import { knownAppErrorMessage } from '../i18n/app-errors'
-import { useLocaleStore } from '../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
 
 export interface IpcMutationResult {
   success: boolean
@@ -20,8 +20,8 @@ export function requireIpcSuccess<T extends IpcMutationResult>(
   fallbackMessage?: string,
 ): T {
   if (!result.success) {
-    const { locale, text } = useLocaleStore.getState()
-    throw new Error(knownAppErrorMessage(locale, result.error)
+    const { text } = useLocaleStore.getState()
+    throw new Error(knownAppErrorMessage(currentInterfaceLocale(), result.error)
       ?? (result.error || fallbackMessage || text(`${action}失败`, 'The operation failed.')))
   }
   return result

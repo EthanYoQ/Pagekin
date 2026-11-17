@@ -30,6 +30,7 @@ import type { WorkflowContext } from '../../../src/stores/workflow-store'
 import * as reviewRevisionMaterials from '../../../src/shared/review-revision-generation'
 import { buildRecoveryEntries, EMPTY_RECOVERY_SOURCES, type ReviewEntry } from '../../../src/components/run/run-recovery'
 import { buildReviewCycleRecheckReport } from '../../../src/shared/review-cycle'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 vi.mock('../../database', () => ({ getProjectDb: vi.fn(), getCurrentProjectPath: vi.fn(() => null) }))
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -274,7 +275,7 @@ describe('review and revision generation through the actual owner and SQLite', (
     })
     vi.stubGlobal('window', { aiNovelAPI: { invoke, on: () => () => {} } })
     const context: WorkflowContext = { runId: 'selected-revision', projectPath, projectSession,
-      generationModelId: selectedModelId, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false }
+      generationModelId: selectedModelId, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
     const callbacks = { log: vi.fn(), appendText: vi.fn(), replaceText: vi.fn(), setProgress: vi.fn() }
     const command = new RefineFromReviewCommand({ draftPath: 'ai-novel://draft/1', draftContent: prose,
       chapterNumber: 1, sourceDraft: { ...saved.source, contentRevision: 1 }, reviewSourceId: confirmation.id,
