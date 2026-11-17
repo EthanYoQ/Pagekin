@@ -26,7 +26,7 @@ export function storedInterfaceLocale(value: unknown): InterfaceLocale | undefin
   return SUPPORTED_LOCALES.includes(value as InterfaceLocale) ? value as InterfaceLocale : undefined
 }
 
-/** Copy language of an interface language: colocated copy has no Japanese yet, so `ja-JP` reads English. */
+/** 界面语言对应的文案语言：ja-JP 读英文。运行与存档只记这一种。 */
 export function copyLocale(locale: InterfaceLocale): Locale {
   return locale === 'zh-CN' ? 'zh-CN' : 'en-US'
 }
@@ -52,17 +52,37 @@ function interpolate(template: string, params: MessageParams = {}): string {
   return template.replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? `{${name}}`))
 }
 
+export interface LocalizedText {
+  (zhCNText: string, enUSText: string, params?: MessageParams): string
+  (zhCNText: string, enUSText: string, jaJPText: string, params?: MessageParams): string
+}
+
+export function selectCopy(
+  locale: InterfaceLocale,
+  zhCNText: string,
+  enUSText: string,
+  jaJPTextOrParams?: string | MessageParams,
+  params?: MessageParams,
+): string {
+  const jaJPText = typeof jaJPTextOrParams === 'string' ? jaJPTextOrParams : undefined
+  const chosen = locale === 'zh-CN' ? zhCNText : locale === 'ja-JP' && jaJPText ? jaJPText : enUSText
+  return interpolate(chosen, typeof jaJPTextOrParams === 'string' ? params : jaJPTextOrParams)
+}
+
 /**
  * Localize short copy that belongs to a single component. Shared language uses
  * the keyed catalog above; colocating one-off copy keeps the catalog focused.
  */
+export function localize(locale: InterfaceLocale, zhCNText: string, enUSText: string, params?: MessageParams): string
+export function localize(locale: InterfaceLocale, zhCNText: string, enUSText: string, jaJPText: string, params?: MessageParams): string
 export function localize(
-  locale: Locale,
+  locale: InterfaceLocale,
   zhCNText: string,
   enUSText: string,
+  jaJPTextOrParams?: string | MessageParams,
   params?: MessageParams,
 ): string {
-  return interpolate(locale === 'zh-CN' ? zhCNText : enUSText, params)
+  return selectCopy(locale, zhCNText, enUSText, jaJPTextOrParams, params)
 }
 
 export function translate(locale: InterfaceLocale, key: MessageKey, params?: MessageParams): string {

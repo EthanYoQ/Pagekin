@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   models: [] as ModelProfile[],
   locale: 'en-US',
   storedLocale: undefined as string | undefined,
+  configUnreadable: false,
 }))
 
 vi.mock('electron', () => ({
@@ -25,9 +26,12 @@ vi.mock('../../utils/config-utils', () => ({
   MODELS_CONFIG_PATH: 'models.json',
   GLOBAL_CONFIG_PATH: 'config.json',
   DEFAULT_GLOBAL_CONFIG: { proxy: { enabled: false } },
-  readJsonFile: vi.fn((filePath: string, fallback: unknown) => filePath === 'models.json'
-    ? mocks.models
-    : filePath === 'config.json' && mocks.storedLocale ? { ...fallback as object, locale: mocks.storedLocale } : fallback),
+  readJsonFile: vi.fn((filePath: string, fallback: unknown) => {
+    if (filePath === 'config.json' && mocks.configUnreadable) throw new Error('EACCES: config.json')
+    return filePath === 'models.json'
+      ? mocks.models
+      : filePath === 'config.json' && mocks.storedLocale ? { ...fallback as object, locale: mocks.storedLocale } : fallback
+  }),
   tryReadJsonFile: vi.fn(() => ({ status: 'missing' })),
   writeJsonFile: vi.fn(),
 }))
@@ -38,6 +42,7 @@ vi.mock('../../llm/llm-factory', () => ({
   },
 }))
 
+import { translate } from '../../../src/i18n/core'
 import { registerLLMController } from '../llm-controller'
 
 const deepSeekModel: ModelProfile = {
@@ -312,6 +317,21 @@ describe('retrieval model connection test', () => {
     }
   })
 
+  it('keeps the explanation of a failed probe when the language setting cannot be read afterwards', async () => {
+    mocks.locale = 'en-US'
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      mocks.configUnreadable = true
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    }))
+    try {
+      const result = await mocks.handlers.get('llm:test-connection')!({}, retrievalModel) as { success: boolean; error: string }
+      expect(result).toEqual({ success: false, error: translate('en-US', 'error.embeddingResponseInvalid') })
+    } finally {
+      mocks.configUnreadable = false
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('refuses an Anthropic-protocol retrieval model without sending any request', async () => {
     mocks.locale = 'en-US'
     const fetchMock = vi.fn()
@@ -456,6 +476,55 @@ describe('connection test timeout', () => {
     expect(result.error).toContain('did not finish within 30 seconds')
   })
 
+})
+
+describe('connection test failures when the language setting cannot be read', () => {
+  const retrievalModel: ModelProfile = { ...deepSeekModel, id: 'bge', modelName: 'bge-m3', baseUrl: 'https://embedding.example/v1', purposes: ['embedding'] }
+
+  beforeEach(() => {
+    mocks.locale = 'en-US'
+    mocks.configUnreadable = true
+  })
+
+  afterEach(() => {
+    mocks.configUnreadable = false
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps the HTTP status of a failed retrieval probe', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('denied', { status: 401 })))
+    const result = await connectionHandler()({}, retrievalModel) as { success: boolean; error: string }
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Retrieval model request failed (HTTP 401)')
+  })
+
+  it('keeps the suggested OpenAI-compatible Ollama address', async () => {
+    const result = await connectionHandler()({}, { ...retrievalModel, baseUrl: 'http://localhost:11434/api' }) as { success: boolean; error: string }
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('http://localhost:11434/v1')
+  })
+
+  it('keeps the HTTP status and service response of a failed generation probe', async () => {
+    mocks.generate.mockResolvedValueOnce({
+      success: false, content: '', finishReason: 'error', error: 'LLM_REQUEST_FAILED',
+      httpFailure: { status: 401, body: 'invalid api key' },
+    })
+    const result = await connectionHandler()({}, deepSeekModel) as { success: boolean; error: string }
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Model request failed (HTTP 401)')
+    expect(result.error).toContain('invalid api key')
+  })
+
+  it('still says the probe timed out', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    mocks.generate.mockImplementationOnce(async (_model: ModelProfile, _messages: unknown, options: { signal?: AbortSignal }) => new Promise((resolve) => {
+      options.signal?.addEventListener('abort', () => resolve({ success: false, content: '', finishReason: 'error', error: 'AbortError' }))
+    }))
+    const pending = connectionHandler()({}, deepSeekModel) as Promise<{ success: boolean; error: string }>
+    await vi.advanceTimersByTimeAsync(30_000)
+    await expect(pending).resolves.toEqual({ success: false, error: translate('en-US', 'error.connectionTestTimeout', { seconds: 30 }) })
+  })
 })
 
 describe('generation model connection test with an empty error body', () => {

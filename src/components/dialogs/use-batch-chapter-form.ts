@@ -190,9 +190,10 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
       const guard = await guardChapterWriting(frozenStart, projectPath, projectSession)
       if (!isProjectSessionCurrent(projectSession)) return
       if (!guard.ok) {
-        setError(frozenLocale === 'en-US'
-          ? 'Writing prerequisites are not met. Complete the project setup and previous finalized chapter before starting.'
-          : displayedErrorMessage(errorLocaleForRun(frozenLocale, currentInterfaceLocale()), guard.message, '前置条件未满足。'))
+        setError(displayedErrorMessage(errorLocaleForRun(frozenLocale, currentInterfaceLocale()), guard.message, text(
+          '前置条件未满足。',
+          'Writing prerequisites are not met. Complete the project setup and previous finalized chapter before starting.',
+        )))
         return
       }
 

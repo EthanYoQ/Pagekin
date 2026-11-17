@@ -5,6 +5,8 @@ import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowStore, type StepCallbacks, type WorkflowContext } from '../../../stores/workflow-store'
 import { GenerationHarnessError, type GenerationSession } from '../../generation/generation-harness'
 import { BaseWorkflowCommand, type CommandExecuteParams, type WorkflowGenerationRuntimeDependencies } from '../commands/base-command'
+import { requireIpcSuccess } from '../../ipc-result'
+import { POST_PROCESS_INTERRUPTED, describeFinalizationStepError, planFinalizationRetry } from '../../../shared/finalization-step-error'
 import { runPostProcessPipeline } from '../workflow-utils'
 
 // #587 第三轮：包装层只因「取消已请求」就把任何错误改写成取消，store 便把真实失败记成已取消。
@@ -23,17 +25,28 @@ function cancelRun() {
 }
 
 let invoke: ReturnType<typeof vi.fn>
+type StoredStep = { stepKey: string; label: string; critical: boolean; ok: boolean; errorMsg: string; attemptCount: number }
+let storedSteps: StoredStep[]
 
 beforeEach(() => {
-  invoke = vi.fn(async (channel: string) => {
+  storedSteps = []
+  const stored = (key: unknown) => storedSteps.find(step => step.stepKey === key)!
+  invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     switch (channel) {
       case 'skills:list-user': return []
       case 'fs:check-exists': return false
       case 'db:post-process-get-latest-run': return null
-      case 'db:post-process-create-run': return { success: true, id: 'post-run-1' }
-      case 'db:post-process-get-steps': return []
-      case 'db:post-process-mark-step-failed': return { success: true }
-      case 'db:post-process-mark-step-ok': return { success: true }
+      case 'db:post-process-create-run':
+        storedSteps = (args[0] as { steps: { key: string; label: string; critical: boolean }[] }).steps
+          .map(step => ({ stepKey: step.key, label: step.label, critical: step.critical, ok: false, errorMsg: '', attemptCount: 0 }))
+        return { success: true, id: 'post-run-1' }
+      case 'db:post-process-get-steps': return storedSteps.map(step => ({ ...step }))
+      case 'db:post-process-mark-step-failed':
+        Object.assign(stored(args[1]), { ok: false, errorMsg: args[2], attemptCount: stored(args[1]).attemptCount + 1 })
+        return { success: true }
+      case 'db:post-process-mark-step-ok':
+        Object.assign(stored(args[1]), { ok: true, errorMsg: '', attemptCount: stored(args[1]).attemptCount + 1 })
+        return { success: true }
       default: throw new Error(`测试未配置桌面调用：${channel}`)
     }
   })
@@ -158,6 +171,13 @@ describe('定稿后处理（withRetry）：作者点了取消', () => {
     callbacks, { retryCount: 2, stopOnFailure, cancellation: context, projectSession: session },
   )
   const markedFailed = () => invoke.mock.calls.filter(([channel]) => channel === 'db:post-process-mark-step-failed')
+  const expectInterruptedWithRetry = () => {
+    const step = storedSteps.find(stored => stored.stepKey === 'character_cards')!
+    expect(markedFailed().map(call => call[3])).toEqual([POST_PROCESS_INTERRUPTED])
+    expect(step).toMatchObject({ ok: false, errorMsg: POST_PROCESS_INTERRUPTED })
+    expect(describeFinalizationStepError(step.errorMsg, zh => zh)).toBe('后处理中途停了，这一步没做完。点「重试」接着做。')
+    expect(planFinalizationRetry({ character_cards: { ok: false, error: step.errorMsg } }).rows.has('character_cards')).toBe(true)
+  }
 
   it('批量创作（失败即停）：取消请求之后这一步写入失败，先记下失败，运行记失败，不重试', async () => {
     const executor = vi.fn(async () => { cancelRun(); throw storageFailure() })
@@ -179,13 +199,37 @@ describe('定稿后处理（withRetry）：作者点了取消', () => {
     expect(finished).toMatchObject({ status: 'cancelled' })
   })
 
-  it('这一步因取消中止：不记失败，运行记已取消', async () => {
+  it('作者取消后主进程以取消码拒绝写入（requireIpcSuccess）：这一步记为中断、可重试，运行与这一步都记已取消', async () => {
+    const finished = await runOneStep(postProcess(true, async () => {
+      cancelRun()
+      requireIpcSuccess({ success: false, error: 'GENERATION_WORKFLOW_CANCELLED' }, '写入章节剧情要点')
+    }))
+
+    expectInterruptedWithRetry()
+    expect(finished).toMatchObject({ status: 'cancelled' })
+    expect(finished.steps[0]).toMatchObject({ status: 'cancelled' })
+    expect(finished.error).toBe('工作流已取消')
+  })
+
+  it('作者没有取消、主进程却返回取消码：照常记失败并重试，失败提示与重试入口都在', async () => {
+    const executor = vi.fn(async () => {
+      requireIpcSuccess({ success: false, error: 'GENERATION_WORKFLOW_CANCELLED' }, '写入章节剧情要点')
+    })
+    const finished = await runOneStep(postProcess(true, executor))
+
+    expect(executor).toHaveBeenCalledTimes(3)
+    expect(markedFailed()).toHaveLength(1)
+    expect(finished).toMatchObject({ status: 'failed' })
+    expect(finished.error).toContain('角色状态更新')
+  })
+
+  it('这一步因取消中止：这一步记为中断、可重试，运行记已取消', async () => {
     const finished = await runOneStep(postProcess(true, async () => {
       cancelRun()
       throw new Error('GENERATION_WORKFLOW_CANCELLED')
     }))
 
-    expect(markedFailed()).toEqual([])
+    expectInterruptedWithRetry()
     expect(finished).toMatchObject({ status: 'cancelled' })
     expect(finished.steps[0]).toMatchObject({ status: 'cancelled' })
   })

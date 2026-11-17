@@ -1,4 +1,4 @@
-import { copyLocale, localize, resolveInterfaceLocale, storedInterfaceLocale, translate, type MessageKey, type MessageParams } from '../src/i18n/core'
+import { copyLocale, resolveInterfaceLocale, selectCopy, storedInterfaceLocale, translate, type MessageKey, type MessageParams } from '../src/i18n/core'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from '../src/i18n/types'
 import type { GlobalConfig } from '../src/shared/ipc-channels'
 import { DEFAULT_GLOBAL_CONFIG, GLOBAL_CONFIG_PATH, readJsonFile } from './utils/config-utils'
@@ -25,7 +25,7 @@ export function mainErrorDisplayLocale(systemLocale: string | undefined): ErrorD
   }
 }
 
-/** Language of colocated main-process copy (`mainText`): a `ja-JP` interface reads `en-US`. */
+/** 主进程界面语言对应的文案语言：ja-JP 读 en-US。 */
 export function getMainLocale(systemLocale: string | undefined): Locale {
   return copyLocale(getMainInterfaceLocale(systemLocale))
 }
@@ -38,11 +38,14 @@ export function mainT(
   return translate(getMainInterfaceLocale(systemLocale), key, params)
 }
 
+export function mainText(systemLocale: string | undefined, zhCNText: string, enUSText: string, params?: MessageParams): string
+export function mainText(systemLocale: string | undefined, zhCNText: string, enUSText: string, jaJPText: string, params?: MessageParams): string
 export function mainText(
   systemLocale: string | undefined,
   zhCNText: string,
   enUSText: string,
+  jaJPTextOrParams?: string | MessageParams,
   params?: MessageParams,
 ): string {
-  return localize(getMainLocale(systemLocale), zhCNText, enUSText, params)
+  return selectCopy(getMainInterfaceLocale(systemLocale), zhCNText, enUSText, jaJPTextOrParams, params)
 }
