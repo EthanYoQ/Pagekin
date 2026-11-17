@@ -10,7 +10,7 @@ const PARAGRAPH = '守塔人说，雾钟是三十年前装上的，从那以后�
 const NOTE = '沉船写得更具体'
 const REVISED = STAGE_SAMPLE.drafts[3].text.replace('北堤外沉了一条船', '北堤外沉了一条运煤的双桅船')
 
-const LOCK_HINT = '批注修改还在等你处理，修稿会冲掉它。先接受或取消批注修改。'
+const LOCK_HINT = '批注修改还在等你处理，修稿或换稿会冲掉它。先接受或取消批注修改。'
 const MORE = Array.from({ length: 80 }, (_, index) => `第 ${index + 1} 次涨潮时，林岚又数了一遍台阶。`).join('\n\n')
 
 // 修稿只改第一段，与批注的那段不重叠。

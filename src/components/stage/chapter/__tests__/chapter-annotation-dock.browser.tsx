@@ -334,7 +334,7 @@ it('作者先关掉审稿报告再加批注，统一修改接受全部写进正�
   expect(useStageStore.getState().sheet).toBeNull()
 })
 
-const LOCK_HINT = '批注修改还在等你处理，修稿会冲掉它。先接受或取消批注修改。'
+const LOCK_HINT = '批注修改还在等你处理，修稿或换稿会冲掉它。先接受或取消批注修改。'
 const refineItem = async () => {
   await act(async () => page.getByRole('button', { name: '更多操作' }).click())
   const item = page.getByRole('menuitem', { name: '直接修稿…' })
@@ -550,4 +550,51 @@ it('本章有另一稿，批注修改审阅摆着：版本切换不可点，审�
   await act(async () => review.getByRole('button', { name: '取消' }).click())
 
   await expect.element(versions).toBeEnabled()
+})
+
+const reviseAll = () => dock().getByRole('button', { name: '统一修改（1）' })
+
+it('本章已有定稿，「以这一稿重新打开」还在进行：不能发起统一修改；重开失败后坞带着原批注回来', async () => {
+  backend.addDraft({ status: 'finalized', version: 2, createdAt: '2026-10-13 20:30:00' })
+  await openChapter({ reviewed: false })
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  let fail!: (error: Error) => void
+  backend.state.reopenGate = new Promise<void>((_, reject) => { fail = reject })
+  backend.state.reopenGate.catch(() => {})
+  const reopen = page.getByRole('button', { name: '以这一稿重新打开' })
+
+  await act(async () => reopen.click())
+
+  await expect.element(reviseAll()).not.toBeInTheDocument()
+  await expect.element(reopen).toBeDisabled()
+
+  await act(async () => fail(new Error('磁盘忙')))
+
+  await expect.element(reviseAll()).toBeVisible()
+  await expect.element(page.getByText('本章批注 · 1')).toBeVisible()
+  await expect.element(reopen).toBeEnabled()
+})
+
+it('本章有另一稿，选了它、它还在读取：不能发起统一修改，版本切换不可点；读完换上那一稿', async () => {
+  backend.addDraft({ status: 'finalized', version: 2, createdAt: '2026-10-13 20:30:00' })
+  await openChapter({ reviewed: false })
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  const answer = backend.invoke.getMockImplementation()!
+  let release!: () => void
+  const read = new Promise<void>(resolve => { release = resolve })
+  backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+    if (channel === 'db:draft-get-full') await read
+    return answer(channel, ...args)
+  })
+  const versions = page.getByRole('button', { name: /^本章版本：/ })
+
+  await act(async () => versions.click())
+  await act(async () => page.getByRole('menuitemradio', { name: /v2/ }).click())
+
+  await expect.element(reviseAll()).not.toBeInTheDocument()
+  await expect.element(versions).toBeDisabled()
+
+  await act(async () => release())
+
+  await expect.element(page.getByRole('button', { name: /^本章版本：定稿/ })).toBeVisible()
 })
