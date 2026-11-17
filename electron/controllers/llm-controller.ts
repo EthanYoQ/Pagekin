@@ -44,7 +44,7 @@ async function testRerankConnection(model: ModelProfile) {
     { kind: 'explicit', profileId: model.id, endpoint: { baseUrl, apiKey, modelName } }, 2)
   if (ranking.method === 'rerank') return { success: true, error: undefined }
   if (!isRerankFailure(ranking.reason)) throw new Error(`RERANK_TEST_UNEXPECTED_${ranking.reason}`)
-  return { success: false, error: failureText(...RERANK_TEST_FAILURES[ranking.reason]) }
+  return { success: false, error: localize(failureLocale(), ...RERANK_TEST_FAILURES[ranking.reason]) }
 }
 
 function loadModelConfigs(): ModelProfile[] {
@@ -115,9 +115,8 @@ function applyProxyConfig() {
   } catch { /* 忽略 */ }
 }
 
-/** 连接测试的失败说明：读不出语言设置时按系统语言写，不让它盖掉测试本身的失败。 */
+/** 连接测试失败说明的语言：读不出语言设置时按系统语言，不让它盖掉测试本身的失败。 */
 const failureLocale = () => mainErrorDisplayLocale(app.getLocale())
-const failureText = (zhCNText: string, enUSText: string) => localize(failureLocale(), zhCNText, enUSText)
 
 /**
  * 连接测试的结果由模型表单原样显示，主进程在这里按界面语言写成说明（#474）：要带上 HTTP 状态、
@@ -126,13 +125,15 @@ const failureText = (zhCNText: string, enUSText: string) => localize(failureLoca
 function connectionTestFailure(failure: unknown): string {
   const detail = failure as { code?: unknown; status?: unknown; suggestedBaseUrl?: unknown } | null
   if (detail?.code === 'EMBEDDING_REQUEST_FAILED') {
-    return failureText(
+    return localize(
+      failureLocale(),
       `检索模型请求失败（HTTP ${String(detail.status)}）。请检查 Base URL、网关与 API Key。`,
       `Retrieval model request failed (HTTP ${String(detail.status)}). Check the Base URL, gateway, and API key.`,
     )
   }
   if (detail?.code === 'EMBEDDING_OLLAMA_NATIVE_URL') {
-    return failureText(
+    return localize(
+      failureLocale(),
       `这是 Ollama 原生的 /api 地址。请把 Base URL 改为 ${String(detail.suggestedBaseUrl)}。`,
       `This is Ollama’s native /api address. Change the Base URL to ${String(detail.suggestedBaseUrl)}.`,
     )
@@ -143,16 +144,18 @@ function connectionTestFailure(failure: unknown): string {
 function providerConnectionFailure(response: Extract<LLMResponse, { success: false }>): string | undefined {
   if (response.error === 'LLM_REQUEST_FAILED' && response.httpFailure) {
     const { status, body } = response.httpFailure
-    const advice = failureText(
+    const advice = localize(
+      failureLocale(),
       `模型请求失败（HTTP ${status}）。请检查 Base URL、API Key 与模型名。`,
       `Model request failed (HTTP ${status}). Check the Base URL, API key, and model name.`,
     )
     return body.trim()
-      ? `${advice}${failureText(`服务返回：${body.trim()}`, ` The service returned: ${body.trim()}`)}`
+      ? `${advice}${localize(failureLocale(), `服务返回：${body.trim()}`, ` The service returned: ${body.trim()}`)}`
       : advice
   }
   if (response.error === 'LLM_RESPONSE_INCOMPLETE') {
-    return failureText(
+    return localize(
+      failureLocale(),
       `模型没有正常完成回复（结束原因：${response.finishReason}）。`,
       `The model did not finish its reply (finish reason: ${response.finishReason}).`,
     )
@@ -352,7 +355,8 @@ export function registerLLMController() {
         if (model.protocol === 'anthropic') {
           return {
             success: false,
-            error: failureText(
+            error: localize(
+              failureLocale(),
               'Anthropic 协议没有向量接口，测不了向量连接。请改用 OpenAI 兼容或 Gemini 协议的向量模型。',
               'The Anthropic protocol has no embedding endpoint, so the embedding connection cannot be tested. Use an OpenAI-compatible or Gemini embedding model.'),
           }
