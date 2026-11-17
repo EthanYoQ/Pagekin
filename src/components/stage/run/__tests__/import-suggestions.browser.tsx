@@ -83,6 +83,48 @@ it('采用进行中切换语言，采用前读到的旧结果晚到也不会让�
   expect(host!.querySelector('.run-suggestion')).toBeNull()
 })
 
+it('采用进行中重新打开同一作品，旧会话的采用结束后不作废新会话的读取', async () => {
+  const core = { genre: '奇幻' }
+  const held: Array<() => void> = []
+  const hold = <T,>(value: () => T) => new Promise<T>(resolve => held.push(() => resolve(value())))
+  Object.defineProperty(window, 'aiNovelAPI', { configurable: true, value: { on: () => () => {}, invoke: async (channel: string, ...args: unknown[]) => {
+    if (channel === 'db:import-run-effect-receipt-get') {
+      return args[1] === 'global' ? { state: 'committed', effectReceipt: { mode: 'fill-empty', suggestions: [{ field: 'genre', current: '', inferred: '科幻' }] } } : null
+    }
+    if (channel === 'db:project-core-get') {
+      const snapshot = { ...core }
+      return hold(() => snapshot)
+    }
+    if (channel === 'db:project-core-update') return hold(() => ({ success: true }))
+    throw new Error(`unexpected ${channel}`)
+  } } })
+  const resume = async (count: number) => {
+    await expect.poll(() => held.length).toBeGreaterThanOrEqual(count)
+    await act(async () => held.splice(0, count).forEach(next => next()))
+  }
+  await act(async () => root!.render(<ImportSuggestions run={run} />))
+  await resume(1)
+  const adoptButton = () => host!.querySelector<HTMLButtonElement>('.run-suggestion button')
+  await expect.poll(adoptButton).not.toBeNull()
+
+  await act(async () => adoptButton()!.click())
+  await expect.poll(() => held.length).toBe(1)
+  const reopened = { ...session, leaseId: '重新打开' }
+  await act(async () => {
+    setActiveProjectSessionContext(reopened)
+    useProjectStore.setState({ currentProject: { id: session.projectId, path: session.projectPath, sessionLease: reopened.leaseId, name: '灯塔', novelConfig: {} } as unknown as ProjectData })
+  })
+  await expect.poll(() => held.length).toBe(2)
+  const [adoptUpdate, reopenedLoad] = held.splice(0, 2)
+  await act(async () => adoptUpdate())
+  await resume(1)
+  await new Promise(resolve => setTimeout(resolve, 50))
+  await act(async () => reopenedLoad())
+  await act(async () => held.splice(0).forEach(next => next()))
+
+  await expect.poll(() => host!.querySelectorAll('.run-suggestion').length).toBe(1)
+})
+
 it('读建议失败后从英文切到日文，报错跟着换成日文', async () => {
   await act(async () => root!.render(<ImportSuggestions run={run} />))
   const alert = () => host!.querySelector('[role="alert"]')?.textContent

@@ -14,6 +14,7 @@ const MINTS = {
 }
 
 const ROOT = join(__dirname, '..', '..', '..')
+const MINT = /\bas ErrorDisplayLocale\b|shown-locale/gu
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
@@ -28,9 +29,13 @@ describe('报错目录的界面语言', () => {
     const found: Record<string, number> = {}
     for (const file of [...sourceFiles(join(ROOT, 'src')), ...sourceFiles(join(ROOT, 'electron'))]) {
       const text = readFileSync(file, 'utf8')
-      const count = (text.match(/\bas ErrorDisplayLocale\b|shown-locale/gu) ?? []).length
+      const count = (text.match(MINT) ?? []).length
       if (count) found[relative(ROOT, file).split(sep).join('/')] = count
     }
     expect(found).toEqual(MINTS)
+  })
+
+  it('跨行写的断言也算一处', () => {
+    expect('const shown = value as\n    ErrorDisplayLocale'.match(MINT)).toHaveLength(1)
   })
 })

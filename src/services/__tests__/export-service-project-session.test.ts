@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { exportNovel } from '../export-service'
+import { translate } from '../../i18n/core'
 import { ipc } from '../ipc-client'
 import { setActiveProjectSessionContext } from '../../shared/project-session-context'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
@@ -50,7 +51,7 @@ vi.mock('../../stores/workflow-store', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
-  useLocaleStore.setState({ locale: 'zh-CN' })
+  useLocaleStore.setState({ locale: 'zh-CN', interfaceLocale: 'zh-CN' })
   setActiveProjectSessionContext(projectSession)
   vi.mocked(ipc.invoke).mockResolvedValue({ success: true } as never)
   vi.mocked(ipc.invokeWithProjectSession).mockImplementation((async (_session: ProjectSessionContext, channel: string) => {
@@ -95,6 +96,23 @@ describe('exportNovel project session ownership', () => {
       error: 'There are no finalized chapters to export.',
     })
     expect(addLog).toHaveBeenCalledWith('info', 'Starting export (Merged Markdown)...', 'en-US')
+  })
+
+  it('导出途中切换界面语言，失败原因仍按开始时的日文界面显示', async () => {
+    useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    const snapshot = vi.mocked(ipc.invokeWithProjectSession).getMockImplementation()!
+    let release!: () => void
+    vi.mocked(ipc.invokeWithProjectSession).mockImplementationOnce((...args) =>
+      new Promise<void>(resolve => { release = resolve }).then(() => snapshot(...args)))
+    vi.mocked(ipc.invoke).mockResolvedValueOnce({ success: false, error: 'PROJECT_NOT_OPEN' } as never)
+
+    const exporting = exportNovel({ format: 'txt', grantId: 'export-grant' }, projectSnapshot, projectSession)
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    useLocaleStore.setState({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
+    release()
+
+    await expect(exporting).resolves.toEqual({ success: false, error: translate('ja-JP', 'error.projectNotOpen') })
+    expect(addLog).toHaveBeenLastCalledWith('error', `Export failed: ${translate('ja-JP', 'error.projectNotOpen')}`, 'en-US')
   })
 
   it('uses an English action and fallback when an export write fails', async () => {
