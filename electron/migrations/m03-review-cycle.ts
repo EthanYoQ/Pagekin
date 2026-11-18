@@ -162,13 +162,21 @@ function effect(row: AttemptRow): Record<string, unknown> | null {
   return receipt.reviewRevisionEffect && typeof receipt.reviewRevisionEffect === 'object'
     ? receipt.reviewRevisionEffect as Record<string, unknown> : null
 }
-function proveEffect(db: Database.Database, row: AttemptRow, expected: {
+/** 封存时被换成占位值的记录（ADR-0030 的 `$ledgerUnreadable`），键是「表:主键」。 */
+function placeholders(db: Database.Database, rootActionId: string): ReadonlySet<string> {
+  return new Set(db.prepare(`SELECT json_extract(item.value,'$.table')||':'||json_extract(item.value,'$.recordId')
+    FROM generation_runs r, json_each(r.binding_json,'$."$ledgerUnreadable"') item
+    WHERE r.root_action_id=? AND item.type='object' AND json_extract(item.value,'$.column')<>'blocked_code'`)
+    .pluck().all(rootActionId).filter((key): key is string => typeof key === 'string'))
+}
+function proveEffect(db: Database.Database, row: AttemptRow, sealed: ReadonlySet<string>, expected: {
   kind: 'review' | 'revision'; id: number; index: number; contentHash: string
   source: { id: number; chapterNumber: number; version: number; status: string; content: string }
   confirmation?: { reviewSourceId: number; content: string; originalReviewContentHash: string;
     snapshot: HumanConfirmedReviewSnapshot }
   recheck?: ReviewCycleRecheckContext
 }): boolean {
+  if (sealed.has(`generation_attempts:${row.attempt_id}`) || sealed.has(`generation_runs:${row.run_id}`)) return false
   const stored = effect(row)
   if (!stored || stored.kind !== expected.kind || stored.id !== expected.id || stored.index !== expected.index
     || stored.contentHash !== expected.contentHash || !HASH.test(String(stored.contextHash))) return false
@@ -222,7 +230,8 @@ function proveEffect(db: Database.Database, row: AttemptRow, expected: {
       artifact_id: string; attempt_id: string; run_id: string; artifact_json: string; revision: number; status: string
     } | undefined
   if (!artifactRow || artifactRow.attempt_id !== row.attempt_id || artifactRow.run_id !== row.run_id
-    || artifactRow.revision !== artifactRef.revision || artifactRow.status === 'discarded') return false
+    || artifactRow.revision !== artifactRef.revision || artifactRow.status === 'discarded'
+    || sealed.has(`generation_artifacts:${artifactRow.artifact_id}`)) return false
   const artifact = JSON.parse(artifactRow.artifact_json) as Record<string, unknown>
   const identity = usage.artifactIdentity as Record<string, unknown> | undefined
   if (artifact.artifactId !== artifactRef.artifactId || artifact.attemptId !== row.attempt_id
@@ -259,7 +268,8 @@ function proveEffect(db: Database.Database, row: AttemptRow, expected: {
           t.attempt_json,t.usage_receipt_json FROM generation_artifacts a JOIN generation_attempts t ON t.attempt_id=a.attempt_id
           WHERE a.artifact_id=?`).get(artifactId) as { attempt_id: string; run_id: string; status: string; artifact_json: string;
             revision: number; ordinal: number; attempt_json: string; usage_receipt_json: string } | undefined
-      if (!candidate || candidate.run_id !== row.run_id || candidate.status === 'discarded' || candidate.ordinal <= previousOrdinal) return false
+      if (!candidate || candidate.run_id !== row.run_id || candidate.status === 'discarded' || candidate.ordinal <= previousOrdinal
+        || sealed.has(`generation_attempts:${candidate.attempt_id}`) || sealed.has(`generation_artifacts:${artifactId}`)) return false
       const visible = JSON.parse(candidate.artifact_json) as Record<string, unknown>
       const physical = JSON.parse(candidate.attempt_json) as Record<string, unknown>
       const candidateUsage = JSON.parse(candidate.usage_receipt_json) as Record<string, unknown>
@@ -403,18 +413,21 @@ function verifyCycle(db: Database.Database, { mergeTable, draftRows }: CycleTabl
     || hash(review.source_content) !== cycle.source_hash) return false
   const root = db.prepare('SELECT action_json,blocked_code FROM generation_roots WHERE root_action_id=?').get(cycle.root_action_id) as {
     action_json: string; blocked_code: string | null } | undefined
-  // 证据尝试都在这条根下；封存的根里是占位值，不能当证据。
-  if (!root || root.blocked_code === GENERATION_LEDGER_UNREADABLE) return false
+  if (!root) return false
+  // 封存根里被换成占位的记录不能当证据。导出会滤掉运行上的 `$` 记账，存档里这份清单为空：
+  // 坏证据的循环在导出时已留在存档外，存档里剩下的证据都是原值。
+  const sealed = root.blocked_code === GENERATION_LEDGER_UNREADABLE ? placeholders(db, cycle.root_action_id) : new Set<string>()
   const action = JSON.parse(root.action_json) as Record<string, unknown>
   if (!nonempty(action.projectId) || !nonempty(action.epoch)) return false
   const attempts = db.prepare(`SELECT a.attempt_id,a.run_id,a.root_action_id,r.root_action_id AS run_root_action_id,
       r.binding_json,a.attempt_json,a.usage_receipt_json
     FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id WHERE a.root_action_id=? ORDER BY a.rowid`)
     .all(cycle.root_action_id) as AttemptRow[]
-  if (attempts.some(row => { const binding = JSON.parse(row.binding_json) as Record<string, unknown>
+  if (attempts.some(row => { if (sealed.has(`generation_runs:${row.run_id}`)) return row.run_root_action_id !== cycle.root_action_id
+    const binding = JSON.parse(row.binding_json) as Record<string, unknown>
     return row.run_root_action_id !== cycle.root_action_id || binding.projectId !== action.projectId || !nonempty(binding.epoch) })) return false
   const reviewIndex = Number(db.prepare('SELECT review_index FROM reviews WHERE id=?').pluck().get(cycle.review_id))
-  const reviewAttempts = attempts.filter(row => proveEffect(db, row, { kind: 'review', id: cycle.review_id,
+  const reviewAttempts = attempts.filter(row => proveEffect(db, row, sealed, { kind: 'review', id: cycle.review_id,
     index: reviewIndex, contentHash: cycle.review_content_hash, source: { id: review.base_draft_id,
       chapterNumber: review.source_draft_chapter_number!, version: review.source_draft_version!,
       status: review.source_draft_status!, content: review.source_content! } }))
@@ -447,7 +460,7 @@ function verifyCycle(db: Database.Database, { mergeTable, draftRows }: CycleTabl
       || revision.source_content !== review.source_content || hash(revision.source_content) !== cycle.source_hash) return false
     const revisionHash = hash(revision.body)
     const revisionIndex = Number(db.prepare('SELECT revision_index FROM revisions WHERE id=?').pluck().get(cycle.revision_id))
-    const revisionAttempts = attempts.filter(row => proveEffect(db, row, { kind: 'revision', id: cycle.revision_id!,
+    const revisionAttempts = attempts.filter(row => proveEffect(db, row, sealed, { kind: 'revision', id: cycle.revision_id!,
       index: revisionIndex, contentHash: revisionHash, source: { id: review.base_draft_id,
         chapterNumber: review.source_draft_chapter_number!, version: review.source_draft_version!,
         status: review.source_draft_status!, content: review.source_content! },
@@ -519,7 +532,7 @@ function verifyCycle(db: Database.Database, { mergeTable, draftRows }: CycleTabl
         || recheckMeta.source_draft_chapter_number !== mergedDraft.chapter_number || recheckMeta.source_draft_version !== mergedDraft.version
         || recheckMeta.source_draft_status !== 'revised' || recheckReview.source_content === null
         || hash(recheckReview.source_content) !== cycle.merged_hash
-        || !proveEffect(db, recheck, { kind: 'review', id: recheckEffect.id as number, index: recheckMeta.review_index,
+        || !proveEffect(db, recheck, sealed, { kind: 'review', id: recheckEffect.id as number, index: recheckMeta.review_index,
           contentHash: hash(recheckReview.body), source: { id: review.base_draft_id, chapterNumber: mergedDraft.chapter_number,
             version: mergedDraft.version, status: recheckMeta.source_draft_status, content: recheckReview.source_content },
           recheck: expectedRecheck })) return false
