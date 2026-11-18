@@ -97,7 +97,6 @@ const databasePath = () => path.join(projectRoot, CANONICAL_PROJECT_DIRECTORY, C
 const cycleOf = (item: { seeded: { reviewId: number } }) =>
   db().prepare('SELECT cycle_id FROM review_cycles WHERE review_id=?').pluck().get(item.seeded.reviewId) as string
 
-/** 存档里 project.db 的全部表，逐行。 */
 async function archiveRows(archivePath: string): Promise<Record<string, Array<Record<string, unknown>>>> {
   const { stagingPath } = await extractPortableProjectArchive({ archivePath, stagingParentPath: fs.mkdtempSync(path.join(base, 'unpack-')) })
   const archived = new Database(path.join(stagingPath, CANONICAL_PROJECT_DATABASE), { readonly: true })
@@ -107,7 +106,6 @@ async function archiveRows(archivePath: string): Promise<Record<string, Array<Re
   } finally { archived.close() }
 }
 
-/** 导出到新路径，返回存档路径和结果。 */
 async function exportTo(): Promise<{ archivePath: string; receipt: Awaited<ReturnType<typeof exportPortableProject>> }> {
   const input = exportInput()
   return { archivePath: input.targetArchivePath, receipt: await exportPortableProject(input) }

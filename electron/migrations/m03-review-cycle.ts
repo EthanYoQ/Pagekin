@@ -327,9 +327,8 @@ export interface UnprovableReviewCycle {
   location: DamagedReviewCycle
 }
 export interface M03Inspection {
-  /** 外键、三张表的结构、无主快照。为假时 unprovable 为空，整本拒绝。 */
+  /** 为假时 unprovable 为空，整本拒绝。 */
   structureOk: boolean
-  /** 逐条校验不过的循环，按 cycle_id 排序。 */
   unprovable: readonly UnprovableReviewCycle[]
 }
 
@@ -369,7 +368,6 @@ export function inspectM03ReviewCycles(db: Database.Database): M03Inspection {
   } catch { return broken }
 }
 
-/** 等于 structureOk 且没有验不过的循环。 */
 export function verifyM03ReviewCycle(db: Database.Database): boolean {
   const { structureOk, unprovable } = inspectM03ReviewCycles(db)
   return structureOk && unprovable.length === 0

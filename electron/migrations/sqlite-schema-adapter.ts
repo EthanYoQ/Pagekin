@@ -10,7 +10,7 @@ export function sqliteSchemaFingerprint(db: BetterSqlite3.Database): string {
 }
 
 export class SqliteSchemaAdapter implements SchemaWriter {
-  /** acceptedReviewCycleFailures：升级前已经验不过的审修循环，迁移后的校验放行它们（no-new-failures）。默认空，从严。 */
+  /** 升级前已验不过的审修循环，迁移后的校验放行它们（no-new-failures）。默认空即从严。 */
   constructor(readonly database: BetterSqlite3.Database, readonly acceptedReviewCycleFailures: ReadonlySet<string> = new Set()) {}
   readUserVersion(): number { return this.database.pragma('user_version', { simple: true }) as number }
   readSchemaFingerprint(): string { return sqliteSchemaFingerprint(this.database) }

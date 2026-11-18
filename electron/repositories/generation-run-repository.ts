@@ -331,7 +331,7 @@ export class GenerationRunRepository {
             const key = rootActionIdempotencyKey(action);
             const openKey = encode([key, request.parentRootActionId ?? null]);
             if (request.operation === 'chapter-blueprint-directory') {
-                // 封存的兄弟不在这里拦：精确命中由下面的 get() 报封存码，新运行由 sealedClaims 拦。
+                // 封存的兄弟不在这里拦：精确命中由 get() 报封存码，新运行由 sealedClaims 拦。
                 const priorRuns = this.db().prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots root ON root.root_action_id=r.root_action_id
                     WHERE json_extract(root.action_json,'$.projectId')=? AND json_extract(root.action_json,'$.operation')=?
                     AND json_extract(root.action_json,'$.uiActionNonce')=? AND root.${UNSEALED_ROOT}`).all(request.projectId, request.operation, request.uiActionNonce) as { run_id: string }[];

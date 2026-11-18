@@ -300,7 +300,7 @@ export interface PortableProjectExportReceipt {
   }
   entryCount: number
   requiresRuntimeFreezeGuard: true
-  /** 验不过、没放进存档的审修循环所在的章。没有时不带这个字段。 */
+  /** 验不过、没放进存档的审修循环所在的章。 */
   omittedReviewCycles?: readonly DamagedReviewCycle[]
 }
 

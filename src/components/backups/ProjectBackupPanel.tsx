@@ -24,7 +24,6 @@ type Notice = { kind: 'error' | 'success' | 'info'; text: string } | null
 const errorText = (error: unknown) => displayedErrorMessage(currentInterfaceLocale(), error)
 const failureReason = (code: string, damaged?: DamagedReviewCycle) =>
   damaged ? damagedReviewCycleMessage(currentInterfaceLocale(), damaged) : code
-// 有审修循环没放进存档时，成功提示后面接一句指明章节。
 const withOmitted = (message: string, omitted?: readonly DamagedReviewCycle[]) => {
   if (!omitted?.length) return message
   const locale = currentInterfaceLocale()

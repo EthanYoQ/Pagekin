@@ -426,14 +426,13 @@ function chapterPhrase(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle &
 
 const located = (damaged: DamagedReviewCycle): damaged is DamagedReviewCycle & { chapterNumber: number } => damaged.chapterNumber !== null
 
-/** 导出、备份因审修循环失败时的说明。指不出章节时按「有一项数据无法安全打包」说明。 */
+/** 指不出章节时按「有一项数据无法安全打包」说明。 */
 export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle): string {
   return located(damaged)
     ? translate(locale, 'error.damagedReviewCycle', { chapter: chapterPhrase(locale, damaged) })
     : translate(locale, 'error.portableUnsafeProjection')
 }
 
-/** 导出、备份成功但有审修循环没放进存档时，接在成功提示后面的一句。 */
 export function omittedReviewCyclesMessage(locale: ErrorDisplayLocale, omitted: readonly DamagedReviewCycle[]): string {
   const [first] = omitted
   if (!first) return ''
