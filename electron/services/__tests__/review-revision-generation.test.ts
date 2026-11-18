@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema'
 import { getDesktopMigrationRegistry, CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
-import { migrateSchema } from '../../migrations/runner'
+import { migrateSchema, verifySchema } from '../../migrations/runner'
 import { createMainGenerationOwner } from '../main-generation-owner'
 import { ModelExecutionLeaseRegistry } from '../model-execution-lease'
 import { readMainGenerationPolicy } from '../main-generation-plan'
@@ -559,6 +559,24 @@ describe('review and revision generation through the actual owner and SQLite', (
     f.owner.suspendForProjectClose()
     f.db.prepare("UPDATE generation_attempts SET usage_receipt_json='{坏' WHERE run_id=?").run(original.handle.runId)
     expect(() => f.reopenStorage().prepareReviewRevision(request)).toThrow('GENERATION_REVIEW_LINEAGE_UNPROVEN')
+  })
+  it('ADR-0030 已提交审稿的尝试读不出：封存后审修循环与封存前一样过不了 M03', async () => {
+    const f = fixture(), request = await f.run(), saved = f.owner.commitReview(request)
+    const verify = () => verifySchema(new SqliteSchemaAdapter(f.db), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
+    f.db.pragma('foreign_keys = ON')
+    verify()
+    expect(ReviewCycleRepository.getByReviewId(saved.id, f.db)).toMatchObject({ reviewId: saved.id })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    f.owner.suspendForProjectClose()
+    f.db.prepare("UPDATE generation_attempts SET attempt_json='{坏' WHERE run_id=?").run(request.handle.runId)
+    expect(verify).toThrow('MIGRATION_VERIFICATION_FAILED')
+    expect(() => ReviewCycleRepository.getByReviewId(saved.id, f.db)).toThrow('REVIEW_CYCLE_CONFLICT')
+    f.reopenStorage()
+    f.db.pragma('foreign_keys = ON')
+    expect(f.db.prepare('SELECT blocked_code FROM generation_roots WHERE root_action_id=?').pluck().get(request.handle.rootActionId))
+      .toBe('GENERATION_LEDGER_UNREADABLE')
+    expect.soft(verify).toThrow('MIGRATION_VERIFICATION_FAILED')
+    expect.soft(() => ReviewCycleRepository.getByReviewId(saved.id, f.db)).toThrow('REVIEW_CYCLE_CONFLICT')
   })
   it('derives review-fix lineage from the saved original review and refuses confirmation changes', async () => {
     const f = fixture(), original = await f.run(), saved = f.owner.commitReview(original)
