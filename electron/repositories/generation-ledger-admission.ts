@@ -67,6 +67,7 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
   type Bad = { cell: number; id: string; root: string; run: string | null; hex: string }
   if (!scan.all().length) return { sealedRootActionIds: [] }
   const roots = db.transaction(() => {
+    const now = Date.now()
     // 拿到写锁后重扫：扫描到加锁之间别的连接可能已经修好了某一格。
     const bad = scan.all() as Bad[]
     for (const item of bad) {
@@ -85,7 +86,8 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       if (item.run) keep.run(encode({ table: cell.table, recordId: item.id, column: cell.column, hex: item.hex }), item.run)
     }
     const previous = db.prepare(`SELECT blocked_code AS code, ${OWNERS.generation_roots.run} AS run FROM generation_roots WHERE root_action_id=?`)
-    const block = db.prepare('UPDATE generation_roots SET blocked_code=?, active_since_ms=NULL WHERE root_action_id=?')
+    const block = db.prepare(`UPDATE generation_roots SET blocked_code=?,
+      active_elapsed_ms=active_elapsed_ms+COALESCE(MAX(0,?-active_since_ms),0), active_since_ms=NULL WHERE root_action_id=?`)
     // 封存的根不会再推进，进行中的尝试按「没发出」或「不知道发没发出」落到终态。
     const settle = db.prepare(`UPDATE generation_attempts SET attempt_json=json_set(attempt_json,'$.status',
       CASE json_extract(attempt_json,'$.status') WHEN 'reserved' THEN 'cancelled-before-dispatch' ELSE 'unknown' END)
@@ -95,7 +97,7 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       const prior = previous.get(root) as { code: string | null; run: string | null } | undefined
       if (prior?.code && prior.code !== GENERATION_LEDGER_UNREADABLE && prior.run)
         keep.run(encode({ table: 'generation_roots', recordId: root, column: 'blocked_code', previous: prior.code }), prior.run)
-      block.run(GENERATION_LEDGER_UNREADABLE, root)
+      block.run(GENERATION_LEDGER_UNREADABLE, now, root)
       settle.run(root)
     }
     return sealed

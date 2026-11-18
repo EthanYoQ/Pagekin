@@ -185,13 +185,15 @@ export class GenerationRunRepository {
     }
     /**
      * 封存的树里有没有某次点击：只读身份键两列，不读任何 JSON 内容列。
-     * 身份键也读不出时认不出是哪次点击，按占用处理。
+     * 身份键也读不出时认不出是哪次点击，按占用处理。`root` 是开这棵树的那次点击。
      */
-    sealedClaims(claims: (click: GenerationClick) => boolean): boolean {
+    sealedClaims(claims: (click: GenerationClick, root: GenerationClick | undefined) => boolean): boolean {
         const rows = this.db().prepare(`SELECT g.idempotency_key AS root_key,r.open_key FROM generation_roots g LEFT JOIN generation_runs r ON r.root_action_id=g.root_action_id
             WHERE NOT (g.${UNSEALED_ROOT})`).all() as { root_key: string; open_key: string | null }[];
-        return rows.some(row => [clickOfRootKey(row.root_key), ...(row.open_key === null ? [] : [clickOfOpenKey(row.open_key)])]
-            .some(click => click === undefined || claims(click)));
+        return rows.some(row => {
+            const root = clickOfRootKey(row.root_key);
+            return [root, ...(row.open_key === null ? [] : [clickOfOpenKey(row.open_key)])].some(click => click === undefined || claims(click, root));
+        });
     }
     assertPlotOutlineWritable(runId: string): void {
         if (this.isPrivatePlanningHistory(runId)) fail('GENERATION_PLANNING_HISTORY_READ_ONLY');
@@ -328,8 +330,6 @@ export class GenerationRunRepository {
             let action: RootAction = { projectId: request.projectId, epoch: request.epoch, operation: request.operation, uiActionNonce: request.uiActionNonce, frozenInputHash: request.frozenInputHash, rootActionId: randomUUID(), status: 'active' };
             const key = rootActionIdempotencyKey(action);
             const openKey = encode([key, request.parentRootActionId ?? null]);
-            if (this.sealedClaims(click => click.projectId === request.projectId && click.operation === request.operation && click.uiActionNonce === request.uiActionNonce))
-                fail(GENERATION_LEDGER_UNREADABLE);
             if (request.operation === 'chapter-blueprint-directory') {
                 const priorRuns = this.db().prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots root ON root.root_action_id=r.root_action_id
                     WHERE json_extract(root.action_json,'$.projectId')=? AND json_extract(root.action_json,'$.operation')=?
@@ -347,6 +347,8 @@ export class GenerationRunRepository {
                     fail('GENERATION_NONCE_CONFLICT');
                 return prior;
             }
+            if (this.sealedClaims(click => click.projectId === request.projectId && click.operation === request.operation && click.uiActionNonce === request.uiActionNonce))
+                fail(GENERATION_LEDGER_UNREADABLE);
             if (request.parentRootActionId) {
                 if (this.authorEditedRoot(request.parentRootActionId)) fail('GENERATION_PLOT_OUTLINE_AUTHOR_SAVED');
                 const parent = this.budget(request.parentRootActionId);
@@ -598,7 +600,9 @@ export class GenerationRunRepository {
             || !isDeepStrictEqual(stored.remainingRange, committed.end_chapter < stored.requestedRange.endChapter
                 ? { startChapter: committed.end_chapter + 1, endChapter: stored.requestedRange.endChapter } : null)) fail('GENERATION_DIRECTORY_PROGRESS_INVALID');
         if (stored.continuationHandle) {
-            if (!completeHandle(stored.continuationHandle)) fail('GENERATION_DIRECTORY_PROGRESS_INVALID');
+            if (!completeHandle(stored.continuationHandle)
+                || this.db().prepare('SELECT root_action_id FROM generation_runs WHERE run_id=?').pluck().get(stored.continuationHandle.runId) !== run.rootActionId)
+                fail('GENERATION_DIRECTORY_PROGRESS_INVALID');
             const child = this.get(stored.continuationHandle.runId);
             if (child.rootActionId !== run.rootActionId || child.binding.projectId !== run.binding.projectId
                 || stored.continuationHandle.rootActionId !== child.rootActionId || stored.continuationHandle.projectId !== child.binding.projectId

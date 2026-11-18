@@ -4,7 +4,8 @@ import type { AgentGenerationContext, AgentGenerationInput, AgentGenerationRecov
 import type { BeginGenerationRequest } from '../../src/shared/generation-owner-contract'
 import type { MainGenerationExecuteReceipt, MainGenerationRunHandle, MainGenerationRunView } from '../../src/services/generation/generation-runtime'
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
-import { GenerationRunRepository, textHash, type DurableGenerationRun, type RunBinding } from '../repositories/generation-run-repository'
+import { GenerationRunRepository, textHash, UNSEALED_ROOT, type DurableGenerationRun, type RunBinding } from '../repositories/generation-run-repository'
+import { GENERATION_LEDGER_UNREADABLE } from '../repositories/generation-ledger-admission'
 import { validateAgentGenerationInput } from './agent-generation-context'
 import { commitAgentDomainTool, isAgentDomainToolCurrent } from './agent-domain-tool-effect'
 import { normalizeAgentPlanningArguments } from '../../src/shared/agent-generation'
@@ -293,12 +294,15 @@ export class AgentGeneration {
   }
   private workflowRegistration(id: string): { action: AgentToolAction; run: DurableGenerationRun; registration: AgentWorkflowRegistration } {
     if (typeof id !== 'string' || !/^agent-workflow:[a-f0-9]{64}$/u.test(id)) throw new Error('GENERATION_AGENT_REGISTRATION_INVALID')
-    const rows = this.db.prepare("SELECT run_id FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.operation')='agent-round'").all() as { run_id: string }[]
+    const rows = this.db.prepare(`SELECT run_id FROM generation_runs WHERE root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})
+      AND json_extract(binding_json,'$.sourceManifest.operation')='agent-round'`).all() as { run_id: string }[]
     const found = rows.flatMap(row => {
       const run = this.runs.get(row.run_id)
       if (run.binding.projectId !== this.scope.projectId) return []
       return this.round(run).actions.filter(action => action.workflow?.registrationId === id).map(action => ({ action, run, registration: action.workflow! }))
     })
+    if (!found.length && this.runs.sealedClaims(click => click.projectId === this.scope.projectId && click.operation === 'agent-round'))
+      throw new Error(GENERATION_LEDGER_UNREADABLE)
     if (found.length !== 1) throw new Error('GENERATION_AGENT_REGISTRATION_MISSING')
     return found[0]!
   }

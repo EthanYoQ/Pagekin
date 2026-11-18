@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { isDeepStrictEqual } from 'node:util'
 import type { BeginGenerationRequest } from '../../src/shared/generation-owner-contract'
 import type { ImportGenerationContext, ImportGenerationSlot } from '../../src/shared/import-generation'
-import { GenerationRunRepository, slotRunNonces, type DurableGenerationRun, type GenerationBudgetReceipt } from '../repositories/generation-run-repository'
+import { GenerationRunRepository, slotRunNonces, type DurableGenerationRun, type GenerationBudgetReceipt, type GenerationClick } from '../repositories/generation-run-repository'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
 import { captureImportGenerationContext, importGenerationSlotKey } from './import-generation-source'
@@ -14,14 +14,24 @@ export function importSlotNonce(slotKey: string, retryOf?: DurableGenerationRun)
 
 const IMPORT_STAGE_OPERATION = { global: 'import-global-facts', style: 'analyze-writing-style', blueprints: 'import-blueprints' } as const
 const IMPORT_OPERATIONS: ReadonlySet<string> = new Set(Object.values(IMPORT_STAGE_OPERATION))
+/** 批次号固定为 done 的阶段：开树点击的槽位键能用导入号重算。 */
+const SINGLE_BATCH_STAGE: Readonly<Record<string, 'global' | 'style'>> = { 'import-global-facts': 'global', 'analyze-writing-style': 'style' }
+
+/** 导入的运行只挂在同一次导入的根下，所以开树点击能证明整棵树属于别的导入；证明不了就算这一次的。 */
+function anotherImport(root: GenerationClick | undefined, importRunId: string): boolean {
+  const stage = root && SINGLE_BATCH_STAGE[root.operation]
+  return !!stage && root.uiActionNonce.startsWith('import:')
+    && root.uiActionNonce.slice('import:'.length).split(':')[0] !== importGenerationSlotKey({ runId: importRunId, stage, batchId: 'done' })
+}
 
 /** Existing import checkpoints own effects; this class only joins their generation runs. */
 export class ImportGeneration {
   constructor(private readonly db: Database.Database, private readonly runs: GenerationRunRepository, private readonly projectId: string) {}
   find(slot: ImportGenerationSlot): DurableGenerationRun | undefined {
     const key = importGenerationSlotKey(slot)
-    // 同一次导入的各阶段互相检查前一阶段的效果，所以封存的树里有任何一次导入就全部拒绝。
-    if (this.runs.sealedClaims(click => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation) && click.uiActionNonce.startsWith('import:'))) throw new Error('GENERATION_LEDGER_UNREADABLE')
+    // 同一次导入的各阶段互相检查前一阶段的效果，绑定被封存后按槽位查不到，所以这一次导入的封存树挡住它的全部阶段。
+    if (this.runs.sealedClaims((click, root) => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation)
+      && click.uiActionNonce.startsWith('import:') && !anotherImport(root, slot.runId))) throw new Error('GENERATION_LEDGER_UNREADABLE')
     const rows = slotRunNonces(this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.importSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[], 'GENERATION_IMPORT_SLOT_AMBIGUOUS')
     let previous: DurableGenerationRun | undefined
     for (const row of rows) {
