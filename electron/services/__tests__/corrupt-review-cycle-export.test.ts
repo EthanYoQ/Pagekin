@@ -160,6 +160,15 @@ describe('M03 只把提供证据的尝试被换成占位算作坏循环（ADR-00
     } finally { restored.close() }
   })
 
+  it('根上只有预算读不出：封存后循环照常验得过，导出不剥掉完好的根动作', async () => {
+    reviewedBook({ finalized: true })
+    db().prepare("UPDATE generation_roots SET budget_json='{坏' WHERE root_action_id='root-review-ch2'").run()
+    reopen()
+    expect(verifyWholeBook).not.toThrow()
+
+    expect(await omittedOnExport()).toBeUndefined()
+  })
+
   it.each([
     ['审稿尝试', 'attempt-review-ch2'],
     ['修稿尝试', 'attempt-revision-ch2'],
