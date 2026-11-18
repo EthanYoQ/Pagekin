@@ -374,4 +374,10 @@ describe('damagedReviewCycleMessage', () => {
       { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt: '2026-02-30 08:05:00' })
     expect(text).toContain('（删除于 2026-02-30 08:05:00）')
   })
+
+  it('删除时间是合法的 ISO 写法时照常按本地时间写，与 SQLite 写法同一时刻显示相同（#702）', () => {
+    const message = (deletedAt: string) => damagedReviewCycleMessage(shown('zh-CN'),
+      { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt })
+    expect(message('2026-11-18T08:05:00.000Z')).toBe(message('2026-11-18 08:05:00'))
+  })
 })

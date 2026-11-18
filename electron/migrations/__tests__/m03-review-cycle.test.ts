@@ -9,7 +9,7 @@ import { initializeLegacyBaselineSchema } from '../baseline-schema'
 import { createLiveRowViews } from '../../../test/helpers/live-row-views'
 import { M01_GENERATION_SQL } from '../m01-generation-runs'
 import { applyM03ReviewCycle, applyM06ReviewCycleMerge, canonicalM03FindingSetHash, createM03Migration,
-  verifyM03ReviewCycle,
+  verifyM03ReviewCycle, assertM03ReviewCycle,
   type M03FindingDescriptor } from '../m03-review-cycle'
 import { buildReviewGenerationReport } from '../../../src/shared/review-generation-report'
 import { buildReviewCycleRecheckReport, type ReviewCycleRecheckContext } from '../../../src/shared/review-cycle'
@@ -175,6 +175,16 @@ describe('M03 review cycle migration', () => {
       expect(verifyM03ReviewCycle(db)).toBe(true)
       db.exec(sql)
       expect(verifyM03ReviewCycle(db)).toBe(false)
+    } finally { db.close() }
+  })
+
+  it('回收站之前的旧版本作品校验失败时也带出坏循环所在的章（#702）', () => {
+    const db = fixture()
+    try {
+      db.transaction(() => applyM03ReviewCycle(db))(); seedValid(db)
+      db.exec("UPDATE generation_attempts SET usage_receipt_json=json_remove(usage_receipt_json,'$.reviewRevisionEffect.index') WHERE attempt_id='attempt-review'")
+      expect(() => assertM03ReviewCycle(db)).toThrow(expect.objectContaining({ code: 'MIGRATION_VERIFICATION_FAILED',
+        damagedReviewCycle: { chapterNumber: 1, chapterTitle: '', location: 'draft', draftVersion: 1 } }))
     } finally { db.close() }
   })
 

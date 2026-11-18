@@ -47,11 +47,11 @@ function reviewedBook({ finalized }: { finalized: boolean }) {
   return items
 }
 
-function finalize(draftId: number, chapterNumber: number) {
+function finalize(draftId: number, chapterNumber: number, chapterTitle = TITLES[chapterNumber - 1]!) {
   const content = db().prepare('SELECT c.body FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?')
     .pluck().get(draftId) as string
   const record = FinalizationRepository.commit({ finalizationId: randomUUID(), draftId,
-    chapterNumber, chapterTitle: TITLES[chapterNumber - 1]!, content, contentHash: sha256(content),
+    chapterNumber, chapterTitle, content, contentHash: sha256(content),
     contentRevision: 1, targetFileName: `第${chapterNumber}章.txt` })
   FinalizationRepository.linkKnowledgeDocument(draftId, `kb-${chapterNumber}-${draftId}`)
   const runId = PostProcessRepository.createRun({ triggerSourceType: 'chapter_finalize',
@@ -61,10 +61,10 @@ function finalize(draftId: number, chapterNumber: number) {
   PostProcessRepository.markStepOk(runId, 'kb_import')
 }
 
-function replaceFinal(chapterNumber: number) {
+function replaceFinal(chapterNumber: number, chapterTitle: string) {
   const reopened = FinalizationRepository.reopen({ chapterNumber })
   if (!reopened.success) throw new Error(reopened.error)
-  finalize(reopened.draftId, chapterNumber)
+  finalize(reopened.draftId, chapterNumber, chapterTitle)
   return reopened.draftId
 }
 
@@ -138,16 +138,18 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章，不�
   it('定稿换成新的一版后旧定稿坏了：写明是旧的那一版', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
-    replaceFinal(2)
+    replaceFinal(2, '沉船（重写）')
+    db().prepare("UPDATE blueprints SET title='雾港' WHERE chapter_number=2").run()
 
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'draft',
+    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '雾港', location: 'draft',
       draftVersion: DraftRepository.getMeta(items[1]!.seeded.draftId)!.version })
   })
 
   it('回收站里旧定稿与定稿两行的删除时间不同：时间和章名都按回收站列出的定稿那一行', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
-    const newer = replaceFinal(2)
+    const newer = replaceFinal(2, '沉船（重写）')
+    db().prepare("UPDATE blueprints SET title='雾港' WHERE chapter_number=2").run()
     await expect(trashService().delete(projectRoot, { draftId: newer, chapterNumber: 2 }))
       .resolves.toMatchObject({ success: true })
     db().prepare("UPDATE drafts_all SET deleted_at='2001-01-01 09:05:00' WHERE id=?").run(items[1]!.seeded.draftId)
@@ -155,7 +157,7 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章，不�
     expect(finalDeletedAt).toMatch(SQLITE_TIME)
     expect(finalDeletedAt).not.toBe('2001-01-01 09:05:00')
 
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt: finalDeletedAt })
+    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船（重写）', location: 'trash', deletedAt: finalDeletedAt })
   })
 
   it('删掉了蓝图但定稿还在：用定稿记下的章名', async () => {
@@ -164,6 +166,13 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章，不�
     db().prepare('DELETE FROM blueprints WHERE chapter_number=2').run()
 
     expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' })
+  })
+
+  it('坏审稿挂到了别章的稿上：对不上审稿记下的章号，就不报位置，免得指错章', async () => {
+    const items = reviewedBook({ finalized: false })
+    db().prepare('UPDATE reviews SET base_draft_id=?, review_index=99 WHERE id=?').run(items[0]!.seeded.draftId, items[1]!.seeded.reviewId)
+
+    expect(await damagedOnExport()).toBeUndefined()
   })
 
   it.each([
