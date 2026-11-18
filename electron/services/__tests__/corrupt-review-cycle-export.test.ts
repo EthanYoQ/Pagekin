@@ -124,6 +124,32 @@ function reopen() {
 
 const verifyWholeBook = () => verifySchema(new SqliteSchemaAdapter(db()), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
 
+/** 应用写不出同根多循环（每次首审都建新根），只能用 SQL 把第 2 章并到第 1 章的根下。 */
+function shareRoot() {
+  db().exec(`UPDATE generation_runs SET root_action_id='root-review-ch1' WHERE root_action_id='root-review-ch2';
+    UPDATE generation_attempts SET root_action_id='root-review-ch1',attempt_json=json_set(attempt_json,'$.rootActionId','root-review-ch1')
+      WHERE root_action_id='root-review-ch2';
+    UPDATE generation_artifacts SET artifact_json=json_set(artifact_json,'$.rootActionId','root-review-ch1')
+      WHERE json_extract(artifact_json,'$.rootActionId')='root-review-ch2';
+    UPDATE review_cycles SET root_action_id='root-review-ch1' WHERE root_action_id='root-review-ch2';
+    DELETE FROM generation_roots WHERE root_action_id='root-review-ch2'`)
+  expect(inspectM03ReviewCycles(db())).toEqual({ structureOk: true, unprovable: [] })
+}
+
+async function expectSharedRootOmitted() {
+  const { archivePath, receipt } = await exportTo()
+  expect(receipt.omittedReviewCycles).toEqual([UNLOCATED])
+  const restoredRoot = path.join(base, `restored-${randomUUID()}`)
+  await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
+  const restored = new Database(path.join(restoredRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true })
+  try {
+    restored.pragma('foreign_keys = ON')
+    expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
+    expect(restored.prepare('SELECT COUNT(*) FROM review_cycles').pluck().get()).toBe(0)
+  } finally { restored.close() }
+  return archivePath
+}
+
 const SEALED_ROOT_DAMAGES: Array<[string, string]> = [
   ['没提供证据的尝试读不出', `INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
     SELECT 'attempt-extra','reservation-extra',run_id,root_action_id,
@@ -232,38 +258,45 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     } finally { restored.close() }
   })
 
-  it('两条循环共用一个根、一条坏了：坏的那章留在存档外，它的收据、运行上下文、产物都不当证据，另一条恢复后照常验得过', async () => {
+  it('两条循环共用一个根、一条坏了：整根留在存档外，健康的那条一并省略，根下的收据、运行上下文、产物都不当证据，不报章节', async () => {
     const items = reviewedBook({ finalized: true })
-    db().exec(`UPDATE generation_runs SET root_action_id='root-review-ch1' WHERE root_action_id='root-review-ch2';
-      UPDATE generation_attempts SET root_action_id='root-review-ch1',attempt_json=json_set(attempt_json,'$.rootActionId','root-review-ch1')
-        WHERE root_action_id='root-review-ch2';
-      UPDATE generation_artifacts SET artifact_json=json_set(artifact_json,'$.rootActionId','root-review-ch1')
-        WHERE json_extract(artifact_json,'$.rootActionId')='root-review-ch2';
-      UPDATE review_cycles SET root_action_id='root-review-ch1' WHERE root_action_id='root-review-ch2';
-      DELETE FROM generation_roots WHERE root_action_id='root-review-ch2'`)
-    expect(inspectM03ReviewCycles(db())).toEqual({ structureOk: true, unprovable: [] })
+    shareRoot()
     breakReviewProof(db(), { seeded: { ...items[1]!.seeded, call: { ...items[1]!.seeded.call, rootActionId: 'root-review-ch1' } } })
 
-    const { archivePath, receipt } = await exportTo()
-    expect(receipt.omittedReviewCycles).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
-    const archived = await archiveRows(archivePath)
-    const ch2 = (id: unknown) => String(id).endsWith('-ch2')
-    expect(archived.generation_attempts!.filter(row => ch2(row.attempt_id))
-      .map(row => String(row.usage_receipt_json ?? '').includes('reviewRevisionEffect'))).toEqual([false, false])
-    expect(archived.generation_runs!.filter(row => ch2(row.run_id))
-      .map(row => String(row.binding_json).includes('reviewRevisionContext'))).toEqual([false, false])
-    expect(archived.generation_artifacts!.filter(row => ch2(row.artifact_id))
-      .map(row => String(row.artifact_json).includes('fingerprint'))).toEqual([false, false])
-    expect(archived.generation_attempts!.filter(row => String(row.attempt_id).endsWith('-ch1'))
-      .map(row => String(row.usage_receipt_json ?? '').includes('reviewRevisionEffect'))).toEqual([true, true])
-    const restoredRoot = path.join(base, 'restored')
-    await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
-    const restored = new Database(path.join(restoredRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true })
-    try {
-      restored.pragma('foreign_keys = ON')
-      expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
-      expect(restored.prepare('SELECT review_id FROM review_cycles').pluck().all()).toEqual([items[0]!.seeded.reviewId])
-    } finally { restored.close() }
+    const archived = await archiveRows(await expectSharedRootOmitted())
+    expect(archived.generation_attempts!.map(row => String(row.usage_receipt_json ?? '').includes('reviewRevisionEffect'))).not.toContain(true)
+    expect(archived.generation_runs!.map(row => String(row.binding_json).includes('reviewRevisionContext'))).not.toContain(true)
+    expect(archived.generation_artifacts!.map(row => String(row.artifact_json).includes('fingerprint'))).not.toContain(true)
+  })
+
+  it('同根坏循环的 recheck_attempt_id 指向健康循环的审稿尝试：整根留在存档外，导出成功，恢复出的书没有循环', async () => {
+    const items = reviewedBook({ finalized: true })
+    shareRoot()
+    db().prepare("UPDATE review_cycles SET recheck_count=1,recheck_attempt_id='attempt-review-ch1' WHERE cycle_id=?").run(cycleOf(items[1]!))
+    expect(inspectM03ReviewCycles(db()).unprovable.map(item => item.cycleId)).toEqual([cycleOf(items[1]!)])
+
+    await expectSharedRootOmitted()
+  })
+
+  it('同根坏循环的审稿收据没有效果编号：整根留在存档外，导出成功，恢复出的书没有循环', async () => {
+    const items = reviewedBook({ finalized: true })
+    shareRoot()
+    db().prepare(`UPDATE generation_attempts SET usage_receipt_json=json_remove(usage_receipt_json,'$.reviewRevisionEffect.id')
+      WHERE attempt_id='attempt-review-ch2'`).run()
+    expect(inspectM03ReviewCycles(db()).unprovable.map(item => item.cycleId)).toEqual([cycleOf(items[1]!)])
+
+    await expectSharedRootOmitted()
+  })
+
+  it('同根两条循环都坏、其中一章的产物投影不过：不按哪一章报', async () => {
+    const items = reviewedBook({ finalized: true })
+    shareRoot()
+    for (const item of items) breakReviewProof(db(), { seeded: { ...item.seeded, call: { ...item.seeded.call, rootActionId: 'root-review-ch1' } } })
+    db().prepare("UPDATE generation_artifacts SET artifact_json='{}' WHERE attempt_id='attempt-review-ch1'").run()
+
+    const error = await exportBook()
+    expect(error).toMatchObject({ message: 'PORTABLE_UNSAFE_PROJECTION' })
+    expect(error).not.toHaveProperty('damagedReviewCycle')
   })
 
   it('去掉坏循环仍过不了投影：照旧失败，带出 #739 的章节提示，源库不变', async () => {

@@ -249,6 +249,24 @@ describe('打开作品时封存读不出的生成记录', () => {
     expect(db.prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='orphan'").pluck().get()).toBe(GENERATION_LEDGER_UNREADABLE)
   })
 
+  it('rowid 超过 2^53：封存的是坏根本身，相邻 rowid 的健康根逐字节不变', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const healthy = "SELECT * FROM generation_roots WHERE root_action_id='healthy-big'"
+    const before = withProjectClosed(db => {
+      db.prepare(`INSERT INTO generation_roots(rowid,root_action_id,idempotency_key,action_json,budget_json)
+        VALUES(9007199254740992,'healthy-big','healthy-big-key','{"projectId":"project"}','{}'),
+          (9007199254740993,'broken-big','broken-big-key','{坏','{}')`).run()
+      return JSON.stringify(db.prepare(healthy).get())
+    })
+
+    initProjectDatabase(projectRoot)
+
+    const db = getProjectDb()!
+    expect(everyCellReadable(db)).toBe(true)
+    expect(db.prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='broken-big'").pluck().get()).toBe(GENERATION_LEDGER_UNREADABLE)
+    expect(JSON.stringify(db.prepare(healthy).get())).toBe(before)
+  })
+
   it('便携导入冻结的记录坏了：照常封存，跨记录的恢复照常，它自己读不出', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { healthy, victim } = seedLedger()
