@@ -9,7 +9,7 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../
 import { migrateSchema } from '../../migrations/runner'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { ProjectPeekService } from '../project-peek'
-import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
+import { attachStatementLedger, breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -352,6 +352,15 @@ describe('当前作品的书库概览只做打开作品时的校验（ADR-0029 �
     breakReviewProof(f.database, book[1]!)
 
     ready(new ProjectPeekService({ scratchRoot: f.scratch }).readCurrent(f.projectId, f.database))
+  })
+
+  it('只扫一遍全库外键', () => {
+    const f = fixture()
+    const ledger = attachStatementLedger(f.database)
+    try {
+      ready(new ProjectPeekService({ scratchRoot: f.scratch }).readCurrent(f.projectId, f.database))
+      expect(ledger.counts.get('PRAGMA foreign_key_check')).toBe(1)
+    } finally { ledger.detach() }
   })
 
   it.each([
