@@ -134,4 +134,16 @@ describe('generation run index', () => {
     expect(lookup.unidentified.map(entry => entry.runId)).toEqual([lost.runId])
     expect(lookup.hits.map(entry => entry.runId)).not.toContain(other.runId)
   })
+
+  it('refuses to write a binding whose manifest operation differs from the click, so the index can classify runs by click', () => {
+    const runs = new GenerationRunRepository(getProjectDb)
+    const mismatched = { ...request('chapter-draft', 'draft'), sourceManifest: { operation: 'batch-chapters' } }
+    expect(() => runs.open(mismatched)).toThrow('GENERATION_BINDING_INVALID')
+    expect(runIndexOf(getProjectDb()!).lookup(() => true).hits).toEqual([])
+    const run = runs.open(request('chapter-draft', 'draft'))
+    const next = { ...run.binding, sourceManifest: { ...run.binding.sourceManifest, operation: 'batch-chapters' } }
+    expect(() => runs.replaceUnstartedBinding(run.runId, run.binding, next)).toThrow('GENERATION_BINDING_INVALID')
+    expect(() => runs.resume(run.runId, next)).toThrow('GENERATION_BINDING_INVALID')
+    expect(runs.get(run.runId).binding).toEqual(run.binding)
+  })
 })
