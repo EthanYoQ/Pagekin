@@ -32,7 +32,7 @@ const openRequest = (uiActionNonce: string, parentRootActionId?: string): OpenGe
   projectId: 'project', epoch: 'epoch', operation: 'chapter-draft', uiActionNonce, frozenInputHash: h, parentRootActionId,
   fingerprint: { chapterBriefHash: h, authorGuidanceHash: h, dependencyHash: h, contextSnapshotHash: h, templateHash: h,
     skillSnapshotHash: h, modelLeaseRevision: h, policyHash: h, outputContractHash: h },
-  contextSnapshotId: 'context', sourceManifest: { kind: 'synthetic-frozen-sources' }, sourceRefs: [],
+  contextSnapshotId: 'context', sourceManifest: { kind: 'synthetic-frozen-sources', operation: 'chapter-draft' }, sourceRefs: [],
   budget: { maxPhysicalRequests: 4, maxTokenLiability: 1000, maxOutputPerRequest: 100, maxActiveElapsedMs: 100000 },
 })
 

@@ -307,6 +307,7 @@ export class GenerationRunRepository {
     }
     open(request: OpenGenerationRunRequest): DurableGenerationRun {
         const frozen = binding(request);
+        if (frozen.sourceManifest.operation !== request.operation) fail('GENERATION_BINDING_INVALID');
         return this.transaction(() => {
             let action: RootAction = { projectId: request.projectId, epoch: request.epoch, operation: request.operation, uiActionNonce: request.uiActionNonce, frozenInputHash: request.frozenInputHash, rootActionId: randomUUID(), status: 'active' };
             const key = rootActionIdempotencyKey(action);
@@ -348,10 +349,16 @@ export class GenerationRunRepository {
             return this.get(runId);
         });
     }
+    /** 运行索引按 open_key 里的点击给候选，原 SQL 按绑定的 sourceManifest.operation 筛；两者不一致的绑定不许写进库。 */
+    private assertClickOperation(runId: string, next: RunBinding): void {
+        const click = clickOfOpenKey(this.db().prepare('SELECT open_key FROM generation_runs WHERE run_id=?').pluck().get(runId));
+        if (click && click.operation !== next.sourceManifest.operation) fail('GENERATION_BINDING_INVALID');
+    }
     replaceUnstartedBinding(runId: string, expected: RunBinding, next: RunBinding): DurableGenerationRun {
         const frozen = binding(next);
         return this.transaction(() => {
             const run = this.get(runId), budget = this.budget(run.rootActionId);
+            this.assertClickOperation(runId, frozen);
             this.assertBlueprintRecoveryWritable(runId);
             this.assertPlotOutlineWritable(runId);
             if (!isDeepStrictEqual(run.binding, expected)) fail('GENERATION_BINDING_CONFLICT');
@@ -846,7 +853,7 @@ export class GenerationRunRepository {
             this.assertBlueprintRecoveryWritable(runId);
             this.assertPlotOutlineWritable(runId);
             const run = this.get(runId), budget = this.budget(run.rootActionId);
-            binding(next);
+            this.assertClickOperation(runId, binding(next));
             if (budget.attempts.some(a => a.status === 'dispatch-marked') || budget.root.status !== 'paused' || budget.blockedCode || next.projectId !== run.binding.projectId)
                 fail('GENERATION_RESUME_REFUSED');
             budget.root.epoch = next.epoch;
