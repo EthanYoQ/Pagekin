@@ -3712,7 +3712,7 @@ describe('main draft persistence and batch lineage', () => {
       const reopened = f.reopen(), list = reopened.listRecovery()
       expect(list.batches.map(batch => batch.batchId).sort()).toEqual(batches.map(batch => batch.batchId).sort())
       expect(list.partial).toBe(true)
-      expect(() => reopened.readBatch(batches[0]!.batchId)).toThrow()
+      expect(reopened.readBatch(batches[0]!.batchId).batchId).toBe(batches[0]!.batchId)
     })
     it('一个运行读不出时照常列出其余运行，并标出部分读取失败', async () => {
       const f = drafting()

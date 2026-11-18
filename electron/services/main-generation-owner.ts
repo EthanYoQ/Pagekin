@@ -1157,8 +1157,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     }
     const batchIds = draftEffects.resumableBatchIds(deps.projectId)
     if (!batchIds.length) return list
-    const { commits, unreadable } = draftEffects.listedBatchCommits()
-    if (unreadable) list.partial = true
+    const commits = draftEffects.batchCommits()
     for (const batchId of batchIds) {
       try {
         const batch = draftEffects.readBatchHistory(batchId, deps.projectId, commits)

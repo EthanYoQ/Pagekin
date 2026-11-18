@@ -26,7 +26,7 @@ const fail = (): never => { throw new Error('GENERATION_REVIEW_CONTEXT_INVALID')
  */
 function draftThreadTasks(db: Database.Database, draftId: number, chapterNumber: number): readonly ChapterThreadTask[] {
   const bindings = db.prepare(`SELECT r.binding_json FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id
-    WHERE json_valid(a.usage_receipt_json) AND json_extract(a.usage_receipt_json,'$.draftCommit.id')=?
+    WHERE json_extract(a.usage_receipt_json,'$.draftCommit.id')=?
       AND json_extract(a.usage_receipt_json,'$.draftCommit.chapterNumber')=?`).pluck().all(draftId, chapterNumber) as string[]
   if (bindings.length !== 1) return []
   const tasks = writtenChapterThreadTasks(bindings[0]!)

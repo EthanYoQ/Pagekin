@@ -543,7 +543,7 @@ describe('review and revision generation through the actual owner and SQLite', (
     expect(f.db.prepare('SELECT usage_receipt_json FROM generation_attempts WHERE run_id=?')
       .pluck().get(history.handle.runId)).toBeNull()
     f.db.prepare('UPDATE generation_attempts SET usage_receipt_json=? WHERE run_id=?').run('{', history.handle.runId)
-    expect(() => f.owner.prepareReviewRevision(request)).toThrow(SyntaxError)
+    expect(() => f.owner.prepareReviewRevision(request)).toThrow()
   })
   it('derives review-fix lineage from the saved original review and refuses confirmation changes', async () => {
     const f = fixture(), original = await f.run(), saved = f.owner.commitReview(original)

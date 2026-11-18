@@ -76,7 +76,7 @@ const DAMAGES: [string, [Cell, string | Buffer][]][] = [
 
 const LEDGER_TABLES = ['generation_roots', 'generation_runs', 'generation_attempts', 'generation_artifacts']
 function ledgerDump(db: Db): string {
-  return JSON.stringify(LEDGER_TABLES.map(table => db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).raw().all()
+  return JSON.stringify(LEDGER_TABLES.map(table => (db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).raw().all() as unknown[][])
     .map(row => row.map(value => Buffer.isBuffer(value) ? `blob:${value.toString('hex')}` : value))))
 }
 

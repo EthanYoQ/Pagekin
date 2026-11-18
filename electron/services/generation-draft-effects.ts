@@ -51,29 +51,18 @@ export class GenerationDraftEffects {
       .all(...(batchId === undefined ? [] : [batchId])) as (AttemptRow & { batch_id: string })[]
     return groupByBatch(rows)
   }
-  /**
-   * 列表用的分组：收据不是合法 JSON 的行读不出批次号，跳过并计数，其余批次照常分组。
-   * 只用于显示；续跑与提交走 readBatch 的严格查询，遇到坏行仍会报错。
-   */
-  listedBatchCommits(): { commits: ReadonlyMap<string, AttemptRow[]>; unreadable: number } {
-    const unreadable = this.db.prepare('SELECT COUNT(*) FROM generation_attempts WHERE NOT json_valid(usage_receipt_json)').pluck().get() as number
-    const batchOf = "CASE WHEN json_valid(usage_receipt_json) THEN json_extract(usage_receipt_json,'$.draftCommit.batchId') END"
-    const rows = this.db.prepare(`SELECT attempt_id,run_id,usage_receipt_json,${batchOf} AS batch_id
-      FROM generation_attempts WHERE ${batchOf} IS NOT NULL ORDER BY rowid`).all() as (AttemptRow & { batch_id: string })[]
-    return { commits: groupByBatch(rows), unreadable }
-  }
   /** settledChapter 这一章按已确认完（已发布、后处理关键步骤都完成）算进度，用于放回删除前已确认完的章：放回会把它重置为待发布、待重导。 */
   /** 还能续写的批次（根运行 id）：active、paused、未阻断，且作者没点「不再恢复」。侧页列出与锁章共用这一条，免得两边判定又分开。 */
   resumableBatchIds(projectId: string): string[] {
     return this.db.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
-      WHERE json_valid(r.binding_json) AND json_extract(r.binding_json,'$.sourceManifest.batchIntent') IS NOT NULL
+      WHERE json_extract(r.binding_json,'$.sourceManifest.batchIntent') IS NOT NULL
       AND json_extract(r.binding_json,'$.projectId')=?
-      AND COALESCE(CASE WHEN json_valid(g.action_json) THEN json_extract(g.action_json,'$.status') END,'') NOT IN ('cancelled','sealed')
+      AND COALESCE(json_extract(g.action_json,'$.status'),'') NOT IN ('cancelled','sealed')
       AND g.blocked_code IS NULL AND json_type(r.binding_json,'$."$recoveryAbandonment"') IS NULL ORDER BY r.created_at_ms DESC, r.rowid DESC`)
       .pluck().all(projectId) as string[]
   }
   unfinishedBatchChapters(projectId: string, settledChapter?: number): ReadonlySet<number> {
-    const { commits } = this.listedBatchCommits()
+    const commits = this.batchCommits()
     const chapters = new Set<number>()
     for (const batchId of this.resumableBatchIds(projectId)) {
       try {
