@@ -38,10 +38,10 @@ Pagekin is maintained by EthanYoQ and is open source under GPL-3.0. The [officia
 
 > ## What's new in 1.5.0
 >
-> - **Trash**: a deleted chapter goes to the trash with all its versions, and you can restore it as it was. After you delete a chapter in the middle, the rest of the book stays writable.
+> - **Trash**: a deleted chapter goes to the trash with all its versions, and you can restore it. After you delete a chapter in the middle, the rest of the book stays writable.
 > - **Reopen to edit**: reopen a finalized chapter. Before you finalize it again, Pagekin lists how the change affects later chapters, and then the AI can check later blueprints.
 > - **Character timeline**: each character records state and relationship changes chapter by chapter. When you write chapter N, the AI gets the characters as they are at chapter N.
-> - **Story-thread reminders**: due and overdue threads always go into the drafting prompt, and review checks each one.
+> - **Story-thread reminders**: up to 6 due and overdue threads become this chapter's tasks in the drafting prompt, and review checks each one.
 > - **Blueprint AI check**: checks unfinalized blueprints against the character timeline for reversed relationships or characters who have died.
 > - **Revise all annotations**: annotate many passages in a chapter, send them to the model together, and accept each change.
 > - **Japanese interface (phase 1)**, the Anthropic protocol, an optional reranking model for the knowledge base, and notifications when work finishes in the background.
@@ -96,13 +96,13 @@ The main button is "Write chapter N". The small popover next to it holds only th
 Blueprints get two checks. Neither one blocks writing.
 
 - **Notice on save**: when an AI-generated blueprint has two characters whose relationship contradicts the timeline, or includes a character who has died, the Blueprint page shows a notice with its basis. Select "This is intentional" to exempt one chapter or the whole book.
-- **AI check**: each click sends one model request that checks every unfinalized blueprint against the character timeline and lists the results by chapter. It is available once at least one chapter is finalized.
+- **AI check**: each click sends one model request that checks unfinalized blueprints against the character timeline in chapter order and lists the results by chapter. For a long book on a model with a small context window, it stops at the last chapter that fits. It is available once at least one chapter is finalized.
 
 ### Story threads: due threads are not forgotten
 
 The Plot & threads page records where the main plot, subplots, and foreshadowing are planted, advanced, or resolved, chapter by chapter.
 
-- When you write a chapter, due and overdue threads always go into the prompt, marked overdue by N chapters or due this chapter. Up to 6 become this chapter's tasks, and review checks each one.
+- When you write a chapter, up to 6 due and overdue threads become this chapter's tasks to advance or resolve. The prompt marks each one as overdue by N chapters or due this chapter, and review checks each one. If more than 6 are due at once, the rest may not reach the prompt, so keep an eye on them.
 - The write popover shows "N threads to handle here". You can move a thread on by 1 or 3 chapters and undo it, or advance a thread that is not due yet.
 - When review finds that a chapter resolved a thread, select "Confirm resolved" after finalization to record it. The thread page marks threads whose payoff chapter is beyond the planned chapter count.
 
@@ -164,7 +164,7 @@ When you write a long novel in a chat window, the usual problems are contradicti
 
 - **Context is built per chapter**: each chapter gets only the blueprint, characters, worldbuilding, earlier summaries, previous chapter, and due threads it needs. The whole book never has to fit in one conversation.
 - **Character states follow the chapter**: chapter N uses the states and relationships as of chapter N, so filling in an earlier chapter does not leak later events.
-- **Threads have due dates**: due threads always reach the prompt, review checks them, and you confirm when one is resolved.
+- **Threads have due dates**: up to 6 due threads become chapter tasks in the prompt, review checks them, and you confirm when one is resolved.
 - **Edits come with an impact list**: before a final is replaced, Pagekin lists what it affects, and the AI can then revise only the later blueprints.
 - **AI never overwrites your text directly**: revisions, annotation edits, inferred settings, and relationship changes appear as diffs or suggestions for you to accept.
 - **Your books stay local, and you pick the model**: data lives in a local SQLite database and your book folder. The model can be a cloud API or a local model.
@@ -195,7 +195,7 @@ Settings include presets for these providers:
 "Custom" only changes the address, model name, and credentials within the three protocols above. It is not an arbitrary HTTP interface. Azure, native KoboldAI, and similar interfaces need dedicated adapters, and a URL swap does not make them work.
 
 - **Model list**: after you enter the address and API key, Pagekin fetches the endpoint's model list. You can also type any model name, including a local model file path (for example with llama.cpp).
-- **Context window**: when you select a model, the context window fills in with its source (from provider, built-in data, default, set by you, or measured). If a provider rejects a chapter as too long, Pagekin reads the real window from the error, trims reference material, and writes the chapter again once.
+- **Context window**: when you select a model, the context window fills in with its source (from provider, built-in data, default, set by you, or measured). When you write a single chapter and the provider rejects it as too long, Pagekin writes it again once if it can read the real window from the error. It saves that window and trims reference material first.
 - **Models by stage**: under Settings → Advanced → Models by stage, assign a model to planning, drafting, review, revision, and post-processing. Stages without one use the default model.
 - **Retrieval model**: semantic search in the knowledge base needs a separate embedding model, and a reranking model is optional. Both are under "Retrieval model" in settings.
 
@@ -247,9 +247,10 @@ ai-novel-writer-mac-x64-<version>-installer.dmg
 | Books, characters, blueprints, drafts, and final chapters | Your book folder and a local SQLite database. |
 | Deleted chapters | The current book's trash. You can restore them until you delete them permanently. |
 | Recovery cards from failed runs | Only in the current book's local database. They never become drafts or final chapters on their own. |
-| Imported reference material | Stays in the local book unless you send it to a cloud model. |
+| Imported reference material | Stored in the local book. With a cloud embedding model, its passages are sent to that model during import. |
 | Local model requests | Sent to the local or LAN inference service you configure. |
 | Cloud model requests | Prompts and context go to the provider you choose. |
+| Knowledge-base import and search | With an embedding model, passages from imported material and final chapters, and search queries, go to that model. With a reranking model, queries and the retrieved passages go to the reranking model. Without either, search runs locally as full-text search. |
 | Model settings and API keys | Stored in the `ai-novel-writer` folder of your app data directory (`%APPDATA%\ai-novel-writer` on Windows, `~/Library/Application Support/ai-novel-writer` on macOS). Protect your OS account and do not share this folder. |
 | App preferences | Stored in the same folder as the model settings. |
 
@@ -269,11 +270,11 @@ Any model behind an OpenAI-compatible Chat Completions API works, such as DeepSe
 
 ### Where is my data stored? Is it uploaded?
 
-On your own computer: the book folder plus a local SQLite database. The relevant prompts, story setup, and context are sent to your configured model service only when you start a generation. WebDAV backup uploads only after you connect WebDAV and start a backup.
+On your own computer: the book folder plus a local SQLite database. The relevant prompts, story setup, and context are sent to your configured model service only when you start a generation. With an embedding model, knowledge-base import sends passages of your material to it, and search sends the query. With a reranking model, search sends the query and the retrieved passages to it. To keep private material local, switch to a local embedding model before you import. WebDAV backup uploads only after you connect WebDAV and start a backup.
 
 ### Can I write offline?
 
-Yes, if your models are local too. With Ollama or another local inference service for both writing and retrieval, requests for drafting, review, revision, and post-processing go only to your computer or LAN. Update checks, importing skills from GitHub, WebDAV backup, and cloud models need a network connection.
+Yes, if your writing model is local too. Without an embedding model, the knowledge base uses local full-text search and needs no network. If you set up an embedding or reranking model, it must be local as well. With Ollama or another local inference service, requests for drafting, review, revision, and post-processing go only to your computer or LAN. Update checks, importing skills from GitHub, WebDAV backup, and cloud models need a network connection.
 
 ### How long can a novel be? Will it stay consistent?
 
@@ -281,7 +282,7 @@ You set the total number of chapters, with no fixed limit. For each chapter, AI 
 
 ### Can I edit a finalized chapter? What if I delete the wrong chapter?
 
-Yes. Select "Reopen to edit" on a finalized chapter. When you finalize it again, it replaces the old final, which stays in version history. Deleted chapters go to the trash, and you can restore them as they were.
+Yes. Select "Reopen to edit" on a finalized chapter. When you finalize it again, it replaces the old final, which stays in version history. Deleted chapters go to the trash, and you can restore them.
 
 ### Can I import a novel I already started and continue it?
 
@@ -293,7 +294,7 @@ A book's writing language can be Chinese or English. Japanese writing is not sup
 
 ### How do I upgrade to 1.5.0?
 
-If you have 1.1.0 or later installed, you get an in-app update notice (on macOS, download the new installer by hand). When 1.5.0 opens a project, it upgrades the project data. After that, 1.4.x and earlier cannot open the project or restore archives exported from 1.5.0, so back up important books first. For a project from an older version, choose "Import" in the library and then "Import an old project copy". Importing creates a new copy and leaves the original project untouched.
+If you have 1.1.0, 1.2.x, 1.3.x, or 1.4.x installed, you get an in-app update notice (on macOS, download the new installer by hand). When 1.5.0 opens a project, it upgrades the project data. After that, 1.4.x and earlier cannot open the project or restore archives exported from 1.5.0, so back up important books first. For a project from an older version, choose "Import" in the library and then "Import an old project copy". Importing creates a new copy and leaves the original project untouched.
 
 ### Can I import skills, such as one that removes the AI tone?
 
