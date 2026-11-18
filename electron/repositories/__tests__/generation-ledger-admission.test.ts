@@ -71,6 +71,7 @@ const DAMAGES: [string, [Cell, string | Buffer][]][] = [
   ['usage_receipt_json 写成字符串', [[USAGE, '"x"']]],
   ['一棵树里三格同时坏', [[ACTION, '{坏'], [BINDING, '{坏'], [USAGE, '{坏']]],
   ['artifact_json 语法坏', [[ARTIFACT, '{坏']]],
+  ['action_json 合法对象后跟 NUL 与尾随字节', [[ACTION, '{"projectId":"project"}\u0000尾巴']]],
 ]
 
 const LEDGER_TABLES = ['generation_roots', 'generation_runs', 'generation_attempts', 'generation_artifacts']
@@ -219,6 +220,23 @@ describe('打开作品时封存读不出的生成记录', () => {
 
     expect(() => repository.recoverInterrupted()).not.toThrow()
     expect(repository.budget(healthy.rootActionId).root.status).toBe('paused')
+    expect(repository.readRunView(victim.run).attempts.map(attempt => attempt.candidate)).toEqual([false])
+  })
+
+  it('记账区原来不是数组：照常打开，原值另存，新记录照常追加', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { victim } = seedLedger()
+    withProjectClosed(db => {
+      db.prepare("UPDATE generation_runs SET binding_json=json_set(binding_json,'$.\"$ledgerUnreadable\"','damaged') WHERE run_id=?").run(victim.run)
+      damage(db, victim, [[ACTION, '{坏']])
+    })
+
+    initProjectDatabase(projectRoot)
+
+    const db = getProjectDb()!
+    expect(everyCellReadable(db)).toBe(true)
+    const stored = JSON.parse(db.prepare("SELECT json_extract(binding_json,'$.\"$ledgerUnreadable\"') FROM generation_runs WHERE run_id=?").pluck().get(victim.run) as string) as unknown[]
+    expect(stored).toEqual([{ previous: 'damaged' }, expect.objectContaining({ table: 'generation_roots', column: 'action_json' })])
   })
 })
 

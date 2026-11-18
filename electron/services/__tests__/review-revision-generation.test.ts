@@ -526,6 +526,7 @@ describe('review and revision generation through the actual owner and SQLite', (
   it('derives review-fix lineage with portable NULL history and rejects malformed history', async () => {
     const f = fixture(), history = await f.run('refine-draft')
     const original = await f.run(), saved = f.owner.commitReview(original)
+    const intact = f.db.prepare('SELECT usage_receipt_json FROM generation_attempts WHERE run_id=?').pluck().get(history.handle.runId)
     // Portable export retains the attempt row while projecting its machine usage receipt to SQL NULL.
     f.db.prepare('UPDATE generation_attempts SET usage_receipt_json=NULL WHERE run_id=?').run(history.handle.runId)
     const snapshot = createHumanConfirmedReviewSnapshot({ sourceReviewId: saved.id, sourceDraft: saved.source,
@@ -543,7 +544,9 @@ describe('review and revision generation through the actual owner and SQLite', (
     expect(f.db.prepare('SELECT usage_receipt_json FROM generation_attempts WHERE run_id=?')
       .pluck().get(history.handle.runId)).toBeNull()
     f.db.prepare('UPDATE generation_attempts SET usage_receipt_json=? WHERE run_id=?').run('{', history.handle.runId)
-    expect(() => f.owner.prepareReviewRevision(request)).toThrow()
+    expect(() => f.owner.prepareReviewRevision(request)).toThrow('malformed JSON')
+    f.db.prepare('UPDATE generation_attempts SET usage_receipt_json=? WHERE run_id=?').run(intact, history.handle.runId)
+    expect(f.owner.prepareReviewRevision(request).parentRootActionId).toBe(original.handle.rootActionId)
   })
   it('derives review-fix lineage from the saved original review and refuses confirmation changes', async () => {
     const f = fixture(), original = await f.run(), saved = f.owner.commitReview(original)

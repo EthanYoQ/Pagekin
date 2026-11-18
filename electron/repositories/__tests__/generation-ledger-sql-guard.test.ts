@@ -48,11 +48,12 @@ function crossRecordLedgerColumns(literal: string): string[] {
   const verb = (/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE)/iu.exec(sql)?.[1] ?? 'FRAGMENT').toUpperCase()
   if (verb === 'INSERT' || verb === 'CREATE') return []
   const where = / WHERE (.*)$/iu.exec(sql)?.[1]
-  if (where !== undefined && KEYS.some(key => new RegExp(`\\b(?:[a-z]+\\.)?${key}\\s*=\\s*(\\?|\\()`, 'u').test(where))) return []
+  // 主键等值只在没有 OR 时才把语句限定到一条记录上。
+  if (where !== undefined && !/\bOR\b/iu.test(where) && KEYS.some(key => new RegExp(`\\b(?:[a-z]+\\.)?${key}\\s*=\\s*(\\?|\\()`, 'u').test(where))) return []
   const head = /^(.*?) FROM /iu.exec(sql)?.[1] ?? ''
   const selected = verb !== 'SELECT' ? [] : LEDGER_JSON_COLUMNS.filter(column =>
     new RegExp(`\\b${column}\\b`, 'u').test(head.replace(/json_[a-z_]+\([^)]*\)/gu, '')) || /SELECT (?:[a-z]+\.)?\*/iu.test(head))
-  return [...new Set([...parsedColumns(where ?? sql), ...selected])]
+  return LEDGER_JSON_COLUMNS.filter(column => parsedColumns(sql).includes(column) || selected.includes(column))
 }
 
 function* sourceFiles(dir: string): Generator<string> {
@@ -79,11 +80,13 @@ describe('跨记录解析的账本 JSON 列都在进门清单里', () => {
     expect(violations(admitted)).toEqual([])
   })
 
-  it('拦得下新写的跨记录解析，放过按主键取数和取值列表里的解析', () => {
+  it('拦得下新写的跨记录解析，只放过按主键取数', () => {
     expect(crossRecordLedgerColumns("SELECT run_id FROM generation_runs WHERE json_extract(open_key,'$[0]')=?")).toEqual(['open_key'])
     expect(crossRecordLedgerColumns('SELECT run_id,binding_json FROM generation_runs ORDER BY rowid')).toEqual(['binding_json'])
     expect(crossRecordLedgerColumns("SELECT json_extract(open_key,'$[0]') FROM generation_runs WHERE run_id=?")).toEqual([])
-    expect(crossRecordLedgerColumns("SELECT json_extract(open_key,'$[0]') AS k FROM generation_runs WHERE status='running'")).toEqual([])
+    expect(crossRecordLedgerColumns("SELECT json_extract(open_key,'$[0]') AS k FROM generation_runs WHERE status='running'")).toEqual(['open_key'])
+    expect(crossRecordLedgerColumns("SELECT json_extract(json_extract(open_key,'$[0]'),'$[2]') AS k FROM generation_runs WHERE json_extract(binding_json,'$.a')=?")).toEqual(['binding_json', 'open_key'])
+    expect(crossRecordLedgerColumns("SELECT run_id FROM generation_runs WHERE run_id=? OR json_extract(open_key,'$[0]')=?")).toEqual(['open_key'])
   })
 
   it('某一列退出清单时，跨记录解析它的现有语句会被报出', () => {

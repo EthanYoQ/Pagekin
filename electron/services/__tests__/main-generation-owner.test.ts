@@ -3714,6 +3714,17 @@ describe('main draft persistence and batch lineage', () => {
       expect(list.partial).toBe(true)
       expect(reopened.readBatch(batches[0]!.batchId).batchId).toBe(batches[0]!.batchId)
     })
+    it('批次已提交一章的收据坏了：封存后这一批不再列出，恢复列表仍标部分读取失败', async () => {
+      const f = drafting()
+      const batch = f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 1 }, targetUnits: 20,
+        uiActionNonce: 'batch-with-bad-commit', modelId: f.model.id, authorInputs, promptKeys: f.begin.promptKeys, skillStages: [] })
+      const generated = await generate(f, { ...f.begin, authorInputs, batchId: batch.batchId, parentRootActionId: batch.rootHandle.rootActionId })
+      f.owner.commitDraft(generated.request)
+      f.db.prepare("UPDATE generation_attempts SET usage_receipt_json='{坏收据' WHERE run_id=?").run(generated.run.handle.runId)
+      const list = f.reopen().listRecovery()
+      expect(list.batches).toEqual([])
+      expect(list.partial).toBe(true)
+    })
     it('一个运行读不出时照常列出其余运行，并标出部分读取失败', async () => {
       const f = drafting()
       const broken = await generate(f, { ...f.begin, uiActionNonce: 'broken', authorInputs })
@@ -4525,6 +4536,7 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
 
     const failures = await failingCalls([
       ['崩溃重开（建负责方）', () => { owner = f.reopen({ crashed: true }) }],
+      ['第一次重开后坏根的尝试已不在进行中', () => { if (inFlight(f.db)) throw new Error('still in flight') }],
       ['list()', () => owner!.list()],
       ['read(健康运行)', () => owner!.read(healthy.handle)],
       ['begin(新的正文生成)', () => owner!.begin({ ...f.begin, uiActionNonce: 'new-after' })],
@@ -4549,7 +4561,7 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     expect(inFlight(f.db)).toBe(false)
     expect(f.db.prepare('SELECT blocked_code FROM generation_roots WHERE root_action_id=?').pluck().get(v.root)).toBe('GENERATION_LEDGER_UNREADABLE')
     const reopened = f.reopen()
-    await expect(reopened.execute({ handle: victim.handle, invocationNonce: 'victim-again', task })).rejects.toThrow()
+    await expect(reopened.resume(victim.handle)).rejects.toThrow(/^GENERATION_(RESUME_REFUSED|RUN_IDENTITY_MISMATCH|POLICY_BUDGET_MISMATCH)$/)
     expect(dispatch).toHaveBeenCalledTimes(1)
     f.db.pragma('wal_checkpoint(TRUNCATE)')
     const copy = path.join(f.root, 'export-copy.db')
@@ -4587,5 +4599,16 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     ])
 
     expect(failures).toEqual([])
+  })
+
+  it('作者已保存的根，带记账的绑定读不出：封存后仍拒绝写入大纲与继续生成', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { f, victim, v } = seed(visibleDraft('第一章正文。'))
+    f.db.prepare("UPDATE generation_runs SET binding_json=json_set(binding_json,'$.\"$runEffects\"',json('{\"plotOutlineAuthorEdit\":{}}')) WHERE run_id=?").run(v.run)
+    set('generation_runs', 'binding_json', 'run_id', 'run', '{坏')(f.db, v)
+    const reopened = f.reopen({ crashed: true })
+
+    expect(() => new GenerationRunRepository(() => f.db).assertPlotOutlineWritable(v.run)).toThrow('GENERATION_LEDGER_UNREADABLE')
+    await expect(reopened.resume(victim.handle)).rejects.toThrow()
   })
 })
