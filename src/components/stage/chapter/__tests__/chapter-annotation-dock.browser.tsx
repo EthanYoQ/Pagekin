@@ -32,6 +32,7 @@ async function openChapter(fields: { content?: string; reviewed: boolean }) {
 
 async function annotate(line: string, note: string) {
   await act(async () => page.getByText(line, { exact: true }).click({ clickCount: 3 }))
+  await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' })).toBeVisible()
   await act(async () => page.getByRole('button', { name: '添加批注' }).click())
   await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill(note))
   await act(async () => page.getByRole('button', { name: '添加批注' }).click())
