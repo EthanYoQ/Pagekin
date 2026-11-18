@@ -10,6 +10,7 @@ import { readMainGenerationPolicy } from '../main-generation-plan'
 import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../generation-source-binding'
 import { getProjectDb, getCurrentProjectPath } from '../../database'
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
+import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
 
@@ -73,6 +74,21 @@ it('freezes manifest-wide counts together when only one overlapping-import chapt
   expect(f.spy).not.toHaveBeenCalled()
 })
 
+it('ADR-0030 导入运行的绑定被封存后，同槽位不能另开新运行',()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(first.handle.runId)
+ admitGenerationLedger(f.db)
+ expect(()=>f.owner.begin({...f.selection,uiActionNonce:'封存后再点'})).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(f.db.prepare('SELECT COUNT(*) FROM generation_runs').pluck().get()).toBe(1)
+})
+it('ADR-0030 同槽位第一条导入运行的 open_key 读不出：报槽位不明',()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(first.handle.runId)
+ expect(()=>f.owner.readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
+})
 it('同slot不同nonce加入同run，并冻结实际manifest正文',()=>{
  const f=fixture(),first=f.owner.begin(f.selection),second=f.owner.begin({...f.selection,uiActionNonce:'另一次点击'})
  expect(second.handle).toEqual(first.handle)

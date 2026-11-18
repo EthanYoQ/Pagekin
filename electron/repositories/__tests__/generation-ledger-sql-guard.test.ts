@@ -89,6 +89,11 @@ describe('跨记录解析的账本 JSON 列都在进门清单里', () => {
     expect(crossRecordLedgerColumns("SELECT json_extract(open_key,'$[0]') AS k FROM generation_runs WHERE status='running'")).toEqual(['open_key'])
     expect(crossRecordLedgerColumns("SELECT json_extract(json_extract(open_key,'$[0]'),'$[2]') AS k FROM generation_runs WHERE json_extract(binding_json,'$.a')=?")).toEqual(['binding_json', 'open_key'])
     expect(crossRecordLedgerColumns("SELECT run_id FROM generation_runs WHERE run_id=? OR json_extract(open_key,'$[0]')=?")).toEqual(['open_key'])
+    expect(crossRecordLedgerColumns("SELECT json_extract(open_key,'$[0]') FROM generation_runs WHERE root_action_id=?")).toEqual(['open_key'])
+    expect(crossRecordLedgerColumns("SELECT open_key -> '$[0]' FROM generation_runs WHERE status='running'")).toEqual(['open_key'])
+    expect(crossRecordLedgerColumns("SELECT run_id FROM generation_runs WHERE binding_json ->> '$.projectId'=?")).toEqual(['binding_json'])
+    expect(crossRecordLedgerColumns('SELECT open_key FROM generation_runs WHERE run_id=?')).toEqual([])
+    expect(crossRecordLedgerColumns("SELECT json_extract(action_json,'$.status') FROM generation_roots WHERE root_action_id=?")).toEqual([])
   })
 
   it('某一列退出清单时，跨记录解析它的现有语句会被报出', () => {

@@ -3724,6 +3724,16 @@ describe('main draft persistence and batch lineage', () => {
       const list = f.reopen().listRecovery()
       expect(list.batches).toEqual([])
       expect(list.partial).toBe(true)
+      expect(() => f.reopen().readBatch(batch.batchId)).toThrow('GENERATION_LEDGER_UNREADABLE')
+    })
+    it('只有一批未完成批次的绑定坏了：恢复列表标部分读取失败', async () => {
+      const f = drafting()
+      const batch = f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 1 }, targetUnits: 20,
+        uiActionNonce: 'batch-with-bad-binding', modelId: f.model.id, authorInputs, promptKeys: f.begin.promptKeys, skillStages: [] })
+      f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(batch.batchId)
+      const list = f.reopen().listRecovery()
+      expect(list.batches).toEqual([])
+      expect(list.partial).toBe(true)
     })
     it('一个运行读不出时照常列出其余运行，并标出部分读取失败', async () => {
       const f = drafting()

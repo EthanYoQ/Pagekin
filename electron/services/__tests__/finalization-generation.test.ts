@@ -14,6 +14,7 @@ import { countDraftUnits } from '../../../src/shared/draft-units'
 import { SummaryRepository } from '../../repositories/summary-repository'
 import { getProjectDb } from '../../database'
 import { GenerationRunRepository, textHash } from '../../repositories/generation-run-repository'
+import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
@@ -820,6 +821,24 @@ it.each(['elapsed', 'blocked'] as const)('#552 作者重试时原 root 已不能
  expect(() => f.owner.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic', retryRunId: f.handle.runId })).toThrow('ROOT_BUDGET_EXHAUSTED')
  expect(f.db.prepare('SELECT COUNT(*) FROM generation_runs').pluck().get()).toBe(1)
  expect(f.dispatch).toHaveBeenCalledTimes(3)
+})
+
+it('ADR-0030 已提交角色卡的运行绑定被封存后，同槽位换模型不能另开新根', async () => {
+ const f = await generated('character_cards')
+ expect(f.owner.commitFinalizationGeneration(f.commitRequest)).toMatchObject({ success: true })
+ vi.spyOn(console, 'warn').mockImplementation(() => {})
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(f.commitRequest.handle.runId)
+ admitGenerationLedger(f.db)
+ const runs = () => f.db.prepare('SELECT COUNT(*) FROM generation_runs').pluck().get()
+ const before = runs()
+ expect(() => f.owner.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic-b' })).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(runs()).toBe(before)
+})
+
+it('ADR-0030 同槽位第一条运行的 open_key 读不出：报槽位冲突，不当作可用的前驱', async () => {
+ const f = await generated('chapter_notes')
+ f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(f.commitRequest.handle.runId)
+ expect(() => f.owner.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic' })).toThrow('GENERATION_FINALIZATION_SLOT_CONFLICT')
 })
 
 it('#569 请求超时把根阻断后又取消了后处理：作者重试另开新根，真正发出请求并可提交', async () => {

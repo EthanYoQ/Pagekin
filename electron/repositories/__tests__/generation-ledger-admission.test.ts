@@ -10,6 +10,7 @@ import { verifyM03ReviewCycleById } from '../../migrations/m03-review-cycle'
 import { getProjectDatabasePath } from '../../services/project-data-locator'
 import { GenerationRunRepository, textHash, type OpenGenerationRunRequest } from '../generation-run-repository'
 import { ADMITTED_LEDGER_CELLS, admitGenerationLedger, GENERATION_LEDGER_UNREADABLE } from '../generation-ledger-admission'
+import { uiActionNonceOfOpenKey } from '../generation-run-repository'
 
 type Db = import('better-sqlite3').Database
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -123,7 +124,9 @@ describe('打开作品时封存读不出的生成记录', () => {
     const kept = keptBytes(db, victim)
     expect(kept.map(item => [item.table, item.column])).toEqual(cells.map(([cell]) => [cell.table, cell.column]))
     cells.forEach(([, value], index) => expect(kept[index]!.bytes.equals(Buffer.from(value))).toBe(true))
-    expect(() => new GenerationRunRepository(getProjectDb).reserve(victim.run, 'again', textHash('again'), 200, 100)).toThrow(/^GENERATION_(DISPATCH_BLOCKED|LEDGER_UNREADABLE)$/)
+    // 绑定被封存的根先被「不能写大纲」挡下，其余只靠根上的阻断码。
+    const expected = cells.some(([cell]) => cell === BINDING) ? GENERATION_LEDGER_UNREADABLE : 'GENERATION_DISPATCH_BLOCKED'
+    expect(() => new GenerationRunRepository(getProjectDb).reserve(victim.run, 'again', textHash('again'), 200, 100)).toThrow(expected)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(GENERATION_LEDGER_UNREADABLE), { rootActionIds: [victim.root] })
   })
 
@@ -236,7 +239,81 @@ describe('打开作品时封存读不出的生成记录', () => {
     const db = getProjectDb()!
     expect(everyCellReadable(db)).toBe(true)
     const stored = JSON.parse(db.prepare("SELECT json_extract(binding_json,'$.\"$ledgerUnreadable\"') FROM generation_runs WHERE run_id=?").pluck().get(victim.run) as string) as unknown[]
-    expect(stored).toEqual([{ previous: 'damaged' }, expect.objectContaining({ table: 'generation_roots', column: 'action_json' })])
+    expect(stored).toEqual([{ previous: '"damaged"' }, expect.objectContaining({ table: 'generation_roots', column: 'action_json' })])
+  })
+
+  it('记账区原来是嵌套到上限的对象：照常打开，原值按文本另存', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { victim } = seedLedger()
+    const deep = '{"a":'.repeat(998) + '1' + '}'.repeat(998)
+    withProjectClosed(db => {
+      db.prepare("UPDATE generation_runs SET binding_json=json_set(binding_json,'$.\"$ledgerUnreadable\"',json(?)) WHERE run_id=?").run(deep, victim.run)
+      damage(db, victim, [[ACTION, '{坏']])
+    })
+
+    initProjectDatabase(projectRoot)
+
+    const db = getProjectDb()!
+    expect(everyCellReadable(db)).toBe(true)
+    const stored = JSON.parse(db.prepare("SELECT json_extract(binding_json,'$.\"$ledgerUnreadable\"') FROM generation_runs WHERE run_id=?").pluck().get(victim.run) as string) as { previous?: string }[]
+    expect(stored[0]!.previous).toBe(deep)
+  })
+
+  it('扫描之后、写锁之前另一连接修好了这一格：不覆盖修好的值', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { victim } = seedLedger()
+    const good = getProjectDb()!.prepare('SELECT action_json FROM generation_roots WHERE root_action_id=?').pluck().get(victim.root) as string
+    closeProjectDatabase()
+    const db = new Database(databasePath), other = new Database(databasePath)
+    try {
+      db.prepare("UPDATE generation_roots SET action_json='{坏' WHERE root_action_id=?").run(victim.root)
+      const transaction = db.transaction.bind(db)
+      vi.spyOn(db, 'transaction').mockImplementation((fn => {
+        other.prepare('UPDATE generation_roots SET action_json=? WHERE root_action_id=?').run(good, victim.root)
+        return transaction(fn)
+      }) as typeof db.transaction)
+
+      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
+
+      expect(db.prepare('SELECT action_json,blocked_code FROM generation_roots WHERE root_action_id=?').get(victim.root)).toEqual({ action_json: good, blocked_code: null })
+      expect(keptBytes(db, victim)).toEqual([])
+    } finally { other.close(); db.close() }
+  })
+
+  it('UTF-16 编码的库：健康账本不被当成坏格子，再进门也不写', () => {
+    const { victim } = seedLedger()
+    const source = getProjectDb()!
+    const tables = ['generation_roots', 'generation_runs', 'generation_attempts', 'generation_artifacts']
+    const ddl = tables.map(table => source.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").pluck().get(table) as string)
+    const rows = tables.map(table => source.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all() as Record<string, unknown>[])
+    const db = new Database(':memory:')
+    try {
+      db.pragma("encoding='UTF-16le'")
+      db.pragma('foreign_keys = OFF')
+      for (const sql of ddl) db.exec(sql)
+      tables.forEach((table, index) => {
+        for (const row of rows[index]!) {
+          const keys = Object.keys(row)
+          db.prepare(`INSERT INTO ${table}(${keys.join(',')}) VALUES(${keys.map(() => '?').join(',')})`).run(...keys.map(key => row[key]))
+        }
+      })
+      expect(db.pragma('encoding', { simple: true })).toBe('UTF-16le')
+      const before = ledgerDump(db)
+
+      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
+      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
+
+      expect(ledgerDump(db)).toBe(before)
+      expect(db.prepare('SELECT blocked_code FROM generation_roots WHERE root_action_id=?').pluck().get(victim.root)).toBeNull()
+    } finally { db.close() }
+  })
+
+  it('open_key 的两层都必须是数组，凑出下标 2 的对象不算读得出', () => {
+    const inner = JSON.stringify(['project', 'chapter-draft', 'nonce', 'hash'])
+    expect(uiActionNonceOfOpenKey(JSON.stringify([inner, null]))).toBe('nonce')
+    expect(uiActionNonceOfOpenKey(JSON.stringify({ 0: JSON.stringify({ 2: 'forged' }) }))).toBeUndefined()
+    expect(uiActionNonceOfOpenKey(JSON.stringify([JSON.stringify({ 2: 'forged' }), null]))).toBeUndefined()
+    expect(uiActionNonceOfOpenKey('{坏')).toBeUndefined()
   })
 })
 
