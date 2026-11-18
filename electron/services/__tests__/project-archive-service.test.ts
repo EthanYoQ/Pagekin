@@ -27,6 +27,7 @@ import { getPortableFieldPolicy, listPortableFieldPolicyKeys } from '../portable
 import { logicalTableName } from '../../migrations/m07-chapter-recycle'
 import { restorePortableProject } from '../project-restore-service'
 import { readPortableRuntimeFreeze } from '../portable-runtime-freeze'
+import { createPortableProjectAssetProvider } from '../portable-project-assets'
 import { ReviewRevisionGeneration } from '../review-revision-generation'
 import { GenerationRunRepository, textHash } from '../../repositories/generation-run-repository'
 import { captureReviewRevisionContext } from '../review-revision-context'
@@ -951,45 +952,35 @@ describe('portable project export service', () => {
     expect(fs.existsSync(f.target)).toBe(false)
   })
 
-  it('detects database and provider asset mutations before archive publication', async () => {
-    const f = fixture()
-    const file = providedFile(f, 'knowledge/a.txt', 'first', 'knowledge-source')
-    await expect(exportPortableProject(input(f, provider([file]), {
-      __testHooks: { afterPortableDatabaseCreated: () => {
-        const db = new Database(f.databasePath)
-        db.prepare("INSERT INTO contents(body) VALUES('late mutation')").run()
-        db.close()
-      } },
-    }))).rejects.toThrow('PORTABLE_SOURCE_CHANGED')
-    expect(fs.existsSync(f.target)).toBe(false)
+  // 维护者 2026-11-19：导出的目标是生成的内容能被正确导出。导出期间作品被写入不再拒绝导出，存档是快照那一刻的内容。
+  it.each(['afterPortableDatabaseCreated', 'afterArchiveBuilt'] as const)(
+    '导出期间（%s）写库、改提示词、回收旧头像，导出照常成功，存档是快照那一刻的内容', async (hook) => {
+      const f = fixture()
+      const seeded = seedProject(f)
+      const promptPath = path.join(f.storage, 'prompts', '章节.json')
+      fs.mkdirSync(path.dirname(promptPath))
+      fs.writeFileSync(promptPath, '{"提示":"快照时"}')
+      const db = new Database(f.databasePath)
+      const avatarPath = path.join(f.storage, ...(db.prepare('SELECT relative_path FROM character_avatar_assets').pluck().get() as string).split('/'))
+      db.close()
+      const writeDuringExport = () => {
+        const writer = new Database(f.databasePath)
+        try { writer.prepare("INSERT INTO contents(body) VALUES('导出期间写入')").run() } finally { writer.close() }
+        fs.writeFileSync(promptPath, '{"提示":"导出期间改的"}')
+        fs.rmSync(avatarPath)
+      }
 
-    const second = fixture()
-    const mutable = providedFile(second, 'knowledge/b.txt', 'before', 'knowledge-source')
-    await expect(exportPortableProject(input(second, provider([mutable], () => {
-      fs.writeFileSync(mutable.sourcePath, 'after')
-      throw new Error('changed')
-    })))).rejects.toThrow('PORTABLE_SOURCE_CHANGED')
-    expect(fs.existsSync(second.target)).toBe(false)
-  })
+      await exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: { [hook]: writeDuringExport } }))
 
-  it('detects source and provider mutations that happen while the archive is being built', async () => {
-    const f = fixture()
-    await expect(exportPortableProject(input(f, provider(), {
-      __testHooks: { afterArchiveBuilt: () => {
-        const db = new Database(f.databasePath)
-        db.prepare("INSERT INTO contents(body) VALUES('archive-time mutation')").run()
-        db.close()
-      } },
-    }))).rejects.toThrow('PORTABLE_SOURCE_CHANGED')
-    expect(fs.existsSync(f.target)).toBe(false)
-
-    const second = fixture()
-    const mutable = providedFile(second, 'knowledge/during-build.txt', 'before', 'knowledge-source')
-    await expect(exportPortableProject(input(second, provider([mutable]), {
-      __testHooks: { afterArchiveBuilt: () => fs.writeFileSync(mutable.sourcePath, 'after!') },
-    }))).rejects.toThrow('PORTABLE_SOURCE_CHANGED')
-    expect(fs.existsSync(second.target)).toBe(false)
-  })
+      const unpacked = await extract(f)
+      const portable = new Database(path.join(unpacked.stagingPath, 'project.db'), { readonly: true })
+      try {
+        expect(portable.prepare('SELECT body FROM contents').pluck().all()).toEqual([seeded.body])
+      } finally { portable.close() }
+      expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"快照时"}')
+      const avatarEntry = unpacked.manifest.entries.find(entry => entry.disposition === 'avatar-asset')!
+      expect(fs.readFileSync(path.join(unpacked.stagingPath, ...avatarEntry.path.split('/')))).toEqual(seeded.avatar)
+    })
 
   it('rechecks the current session after staging and rejects a stale capability', async () => {
     const f = fixture()
