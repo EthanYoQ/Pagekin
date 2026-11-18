@@ -496,6 +496,26 @@ describe('explicit planning recovery with real SQLite', () => {
     expect(owner.readContext(run.handle).planningContinuation).toMatchObject({ state: 'continued', nextHandle: next.handle })
     expect(owner.restart(run.handle, nextInput).handle).toEqual(next.handle)
   })
+  it('ADR-0030 续写出的下一次生成被封存：原运行照常可读、仍算已续写，再续写被拒绝，列举照常', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (_request, options) => {
+      options.onVisible({ kind: 'delta', text: '## 第1章：未完成\n候选原文还未写完' }); return { finishReason: 'length', usage: null }
+    })
+    const f = fixture(dispatch), run = f.owner.begin(outlineSelection(f, 3))
+    for (const nonce of ['normal', 'compact']) await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) })
+    const nextInput = { ...outlineSelection(f, 3), uiActionNonce: 'explicit-next' }
+    const next = f.owner.restart(run.handle, nextInput)
+    f.owner.suspendForProjectClose()
+    damageLedger(f.db, 'binding_json', next.handle)
+    const owner = f.reopen({ crashed: true })
+    expect(owner.read(run.handle).nonReplayable).toBe(true)
+    expect(owner.readContext(run.handle).planningContinuation).toMatchObject({ state: 'continued', nextHandle: { runId: next.handle.runId } })
+    expect(() => owner.restart(run.handle, nextInput)).toThrow('GENERATION_LEDGER_UNREADABLE')
+    expect(await failingLedgerCalls([['list()', () => owner.list()], ['listRecovery()', () => owner.listRecovery()],
+      ['findBlueprintRecovery()', () => owner.findBlueprintRecovery()]])).toEqual([])
+    expect(owner.list().map(item => item.handle.runId)).toEqual([run.handle.runId])
+    expect(dispatch).toHaveBeenCalledTimes(2)
+  })
   it('saves the accepted outline prefix without cost and authorizes only the remaining chapters', async () => {
     const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
       const chapter = Number((request as { task: GenerationTask }).task.purpose.split(':')[2])
