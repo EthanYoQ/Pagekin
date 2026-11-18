@@ -8,7 +8,8 @@ import { parseNarrativeThreadPlanCandidates, parseNarrativeThreadEventCandidates
 import { parseBlueprintContinuityCheck } from '../../src/shared/blueprint-continuity-check'
 import { parseBlueprintContinuitySuggest } from '../../src/shared/blueprint-continuity-suggest'
 import { GenerationRunRepository, textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
-import { readGraphGenerationContext } from './graph-generation-source'
+import { graphGenerationOperations, readGraphGenerationContext } from './graph-generation-source'
+import { candidateRunIds, runIndexOf } from '../repositories/generation-run-index'
 import { PlotTreeRepository } from '../repositories/plot-tree-repository'
 import { NarrativeThreadRepository } from '../repositories/narrative-thread-repository'
 
@@ -140,7 +141,8 @@ export class GraphGeneration {
 /** Binding rebuilds remove only effects already checked against both their immutable proof and actual current rows. */
 export function provenGraphOwnEventIds(db: Database.Database, context: GraphGenerationContext): number[] {
   if (context.kind !== 'event') return []
-  const rows = db.prepare("SELECT run_id FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.graphGenerationContext.key')=?").all(context.key) as { run_id: string }[]
+  const rows = db.prepare("SELECT run_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) AND json_extract(binding_json,'$.sourceManifest.graphGenerationContext.key')=?")
+    .all(candidateRunIds(runIndexOf(db).lookup(click => Object.values<string>(graphGenerationOperations).includes(click.operation))), context.key) as { run_id: string }[]
   if (rows.length > 1) throw new Error('GENERATION_GRAPH_CONTEXT_AMBIGUOUS')
   if (!rows[0]) return []
   const runs = new GenerationRunRepository(() => db), run = runs.get(rows[0].run_id)

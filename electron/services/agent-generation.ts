@@ -6,6 +6,7 @@ import type { MainGenerationExecuteReceipt, MainGenerationRunHandle, MainGenerat
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
 import { GenerationRunRepository, textHash, UNSEALED_ROOT, type DurableGenerationRun, type RunBinding } from '../repositories/generation-run-repository'
 import { GENERATION_LEDGER_UNREADABLE } from '../repositories/generation-ledger-admission'
+import { candidateRunIds, inNonceChain, runIndexOf, type GenerationClick } from '../repositories/generation-run-index'
 import { validateAgentGenerationInput } from './agent-generation-context'
 import { commitAgentDomainTool, isAgentDomainToolCurrent } from './agent-domain-tool-effect'
 import { normalizeAgentPlanningArguments } from '../../src/shared/agent-generation'
@@ -23,6 +24,8 @@ type ActionState = Pick<AgentToolAction, 'status' | 'observation' | 'workflow'> 
 type StoredUsage = { agentActions?: Record<string, ActionState>; agentAuthorSelections?: Record<string, AgentAuthorBlueprintProposal[]>;
   agentSourceTransition?: { actionId: string; beforeHash: string; afterHash: string; binding: RunBinding }; agentControlEpoch?: string }
 
+const agentRound = (click: GenerationClick) => click.operation === 'agent-round'
+
 /** Agent navigation/control lives on existing runs and attempt receipts. No second budget or writer. */
 export class AgentGeneration {
   constructor(private readonly db: Database.Database, private readonly runs: GenerationRunRepository,
@@ -30,7 +33,8 @@ export class AgentGeneration {
     // A renderer-owned tool may have crossed its commit point before the old owner
     // closed. Its unfinished claim is an unknown result, never permission to rerun.
     this.db.transaction(() => {
-      const rows = this.db.prepare("SELECT a.attempt_id,a.usage_receipt_json FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id WHERE json_extract(r.binding_json,'$.projectId')=? AND json_extract(r.binding_json,'$.sourceManifest.operation')='agent-round'").all(scope.projectId) as { attempt_id: string; usage_receipt_json: string | null }[]
+      const rows = this.db.prepare("SELECT a.attempt_id,a.usage_receipt_json FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id WHERE r.run_id IN (SELECT value FROM json_each(?)) AND json_extract(r.binding_json,'$.projectId')=? AND json_extract(r.binding_json,'$.sourceManifest.operation')='agent-round'")
+        .all(candidateRunIds(runIndexOf(this.db).lookup(agentRound)), scope.projectId) as { attempt_id: string; usage_receipt_json: string | null }[]
       for (const row of rows) {
         const usage = JSON.parse(row.usage_receipt_json ?? '{}') as StoredUsage
         if (!usage.agentActions) continue
@@ -69,7 +73,8 @@ export class AgentGeneration {
     return value
   }
   private sessionRuns(key: string): DurableGenerationRun[] {
-    return (this.db.prepare("SELECT run_id FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.agentSession.key')=? ORDER BY rowid").all(key) as { run_id: string }[])
+    return (this.db.prepare("SELECT run_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) AND json_extract(binding_json,'$.sourceManifest.agentSession.key')=? ORDER BY rowid")
+      .all(candidateRunIds(runIndexOf(this.db).lookup(inNonceChain(`agent:${key}`))), key) as { run_id: string }[])
       .map(row => this.runs.get(row.run_id)).filter(run => run.binding.projectId === this.scope.projectId)
       .sort((a, b) => this.navigation(a).roundIndex - this.navigation(b).roundIndex)
   }
@@ -295,7 +300,8 @@ export class AgentGeneration {
   private workflowRegistration(id: string): { action: AgentToolAction; run: DurableGenerationRun; registration: AgentWorkflowRegistration } {
     if (typeof id !== 'string' || !/^agent-workflow:[a-f0-9]{64}$/u.test(id)) throw new Error('GENERATION_AGENT_REGISTRATION_INVALID')
     const rows = this.db.prepare(`SELECT run_id FROM generation_runs WHERE root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})
-      AND json_extract(binding_json,'$.sourceManifest.operation')='agent-round'`).all() as { run_id: string }[]
+      AND run_id IN (SELECT value FROM json_each(?)) AND json_extract(binding_json,'$.sourceManifest.operation')='agent-round'`)
+      .all(candidateRunIds(runIndexOf(this.db).lookup(agentRound))) as { run_id: string }[]
     const found = rows.flatMap(row => {
       const run = this.runs.get(row.run_id)
       if (run.binding.projectId !== this.scope.projectId) return []

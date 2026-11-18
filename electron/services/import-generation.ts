@@ -129,7 +129,8 @@ export class ImportGeneration {
     this.assertSlotRunning(slot)
     const { totalChapters } = captureImportGenerationContext(this.db, slot)
     const key = importGenerationSlotKey(slot)
-    const records = (this.db.prepare("SELECT run_id FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.importSlot.runId')=? ORDER BY rowid").all(slot.runId) as { run_id: string }[])
+    const records = (this.db.prepare("SELECT run_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) AND json_extract(binding_json,'$.sourceManifest.importSlot.runId')=? ORDER BY rowid")
+      .all(candidateRunIds(runIndexOf(this.db).lookup(click => IMPORT_OPERATIONS.has(click.operation))), slot.runId) as { run_id: string }[])
       .map(row => this.runs.get(row.run_id)).filter(run => run.binding.projectId === this.projectId)
     for (const run of records) {
       const prior = this.context(run).slot
