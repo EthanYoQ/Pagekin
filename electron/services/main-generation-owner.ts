@@ -368,7 +368,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         activeElapsedMs: budget.activeElapsedMs, blockedCode: budget.blockedCode }, artifacts, candidates,
       unsavedTails: service.readUnsavedTails().filter(tail => budget.attempts.some(attempt => attempt.attemptId === tail.attemptId)) }
   }
-  /** 本作品没被封存的运行，新的在前；只从库里取身份、状态与操作类型，不解析整份冻结上下文。 */
+  /** 新的在前；只从库里取身份、状态与操作类型，不解析整份冻结上下文。 */
   const runSummaries = () => (deps.database.prepare(`SELECT run_id,root_action_id,status,
       json_extract(binding_json,'$.projectId','$.epoch','$.sourceManifest.operation','$.sourceManifest.batchId','$.sourceManifest.batchIntent') AS identity
       FROM generation_runs WHERE root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})

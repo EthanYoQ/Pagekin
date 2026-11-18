@@ -60,7 +60,7 @@ export interface LedgerAdmission {
 
 /**
  * 打开作品、拿到可写句柄之后调用一次。读不出的格子就地换成中性值，所属的根改写 blocked_code 并停表，
- * 原始字节和根上原来的阻断码记进所属运行绑定的 `$ledgerUnreadable`。封存的根是终态，只有 blocked_code 决定它。
+ * 原始字节和根上原来的阻断码记进所属运行绑定的 `$ledgerUnreadable`。
  */
 export function admitGenerationLedger(db: Db): LedgerAdmission {
   const scan = db.prepare(SCAN)

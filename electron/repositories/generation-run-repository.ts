@@ -111,11 +111,10 @@ function clickOfOpenKey(openKey: string): GenerationClick | undefined {
         return undefined;
     }
 }
-/** open_key 里记的点击号；读不出返回 undefined。 */
 export function uiActionNonceOfOpenKey(openKey: string): string | undefined {
     return clickOfOpenKey(openKey)?.uiActionNonce;
 }
-/** 没被封存的根。封存的根是终态，列举一律跳过。 */
+/** 封存的根是终态：列举跳过它，阻断码也不再改写。 */
 export const UNSEALED_ROOT = `blocked_code IS NOT '${GENERATION_LEDGER_UNREADABLE}'`;
 /** 点击号读不出的运行认不出是不是前驱，所以直接报 conflict。 */
 export function slotRunNonces(rows: readonly { run_id: string; open_key: string }[], conflict: string): { runId: string; nonce: string }[] {
