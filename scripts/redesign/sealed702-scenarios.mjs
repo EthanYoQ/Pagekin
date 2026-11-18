@@ -67,7 +67,7 @@ async function failNextFileTree(app) {
 
 const promptLayers = page => page.evaluate(() => document.querySelectorAll('.pi-prompt-layer').length)
 
-/** 报错框的挂载点移走和下一个提示挂上在同一个任务里，所以等报错框那一层脱离后再数，该弹的提示已经挂上了。 */
+/** 报错框的挂载点移走和下一个提示挂上在同一个任务里，所以报错框那一层脱离时，该弹的提示已经挂上了。 */
 async function acknowledgeLoadError(page, loadError) {
   const layer = await loadError.evaluateHandle(dialog => dialog.closest('.pi-prompt-layer'))
   await loadError.getByRole('button').click()
