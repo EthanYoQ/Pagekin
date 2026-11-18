@@ -208,8 +208,8 @@ export function usePlotThreads(projectKey: string, {
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session || !isProjectSessionPath(session, projectKey)) return
     try {
-      const runs = await ipc.invokeWithProjectSession(session, 'generation:list')
-      if (isProjectSessionCurrent(session)) setGraphRuns(runs.filter(run => ['plot-tree-snapshot', 'narrative-thread-plan-candidate', 'narrative-thread-event-candidate'].includes(run.operation ?? '')))
+      const runs = await ipc.invokeWithProjectSession(session, 'generation:list', ['plot-tree-snapshot', 'narrative-thread-plan-candidate', 'narrative-thread-event-candidate'])
+      if (isProjectSessionCurrent(session)) setGraphRuns(runs)
     } catch { if (isProjectSessionCurrent(session)) setGraphError(text('无法读取生成历史。', 'Could not read generation history.')) }
   }, [projectKey, text])
   useEffect(() => {

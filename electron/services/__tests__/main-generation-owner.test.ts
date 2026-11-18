@@ -511,9 +511,9 @@ describe('explicit planning recovery with real SQLite', () => {
     expect(owner.read(run.handle).nonReplayable).toBe(true)
     expect(owner.readContext(run.handle).planningContinuation).toMatchObject({ state: 'continued', nextHandle: { runId: next.handle.runId } })
     expect(() => owner.restart(run.handle, nextInput)).toThrow('GENERATION_LEDGER_UNREADABLE')
-    expect(await failingLedgerCalls([['list()', () => owner.list()], ['listRecovery()', () => owner.listRecovery()],
+    expect(await failingLedgerCalls([['list()', () => owner.list(['generate-plot-outline'])], ['listRecovery()', () => owner.listRecovery()],
       ['findBlueprintRecovery()', () => owner.findBlueprintRecovery()]])).toEqual([])
-    expect(owner.list().map(item => item.handle.runId)).toEqual([run.handle.runId])
+    expect(owner.list(['generate-plot-outline']).map(item => item.handle.runId)).toEqual([run.handle.runId])
     expect(dispatch).toHaveBeenCalledTimes(2)
   })
   it('saves the accepted outline prefix without cost and authorizes only the remaining chapters', async () => {
@@ -2843,7 +2843,7 @@ describe('main draft persistence and batch lineage', () => {
     }
     const independent = await generate(f, { ...f.begin, authorInputs, uiActionNonce: 'independent' })
     const reopened = f.reopen()
-    expect(reopened.list().map(run => run.handle.runId)).toEqual(expect.arrayContaining([
+    expect(reopened.list(['chapter-draft', 'batch-chapters']).map(run => run.handle.runId)).toEqual(expect.arrayContaining([
       batch.rootHandle.runId, generated.run.handle.runId, independent.run.handle.runId,
     ]))
     expect(reopened.readContext(independent.run.handle).draftSave).toEqual({ kind: 'absent' })
@@ -3737,11 +3737,11 @@ describe('main draft persistence and batch lineage', () => {
       const second = await generate(f, { ...f.begin, uiActionNonce: 'second', authorInputs })
       f.owner.cancel(second.run.handle)
       const reopened = f.reopen()
-      expect(reopened.list()).toEqual([
+      expect(reopened.list(['chapter-draft'])).toEqual([
         { handle: second.run.handle, status: 'cancelled', operation: 'chapter-draft' },
         { handle: first.run.handle, status: 'paused', operation: 'chapter-draft' },
       ])
-      expect(JSON.stringify(reopened.list())).not.toContain(draftText)
+      expect(JSON.stringify(reopened.list(['chapter-draft']))).not.toContain(draftText)
     })
     it('一条生成尝试的收据坏成不是 JSON 时，其余单章候选照常列出，只标部分读取失败', async () => {
       const f = drafting()
@@ -3802,7 +3802,7 @@ describe('main draft persistence and batch lineage', () => {
 it('rejects an empty begin prompt selection without creating a run or dispatching', () => {
   const dispatch = vi.fn(), f = fixture(dispatch)
   expect(() => f.owner.begin({ ...f.begin, promptKeys: [] })).toThrow('GENERATION_BEGIN_INVALID')
-  expect(f.owner.list()).toHaveLength(0)
+  expect(f.owner.list(['chapter-draft'])).toHaveLength(0)
   expect(dispatch).not.toHaveBeenCalled()
 })
 it('refuses resume after selected template bytes change across a real reopen', async () => {
@@ -4599,7 +4599,7 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     const failures = await failingCalls([
       ['崩溃重开（建负责方）', () => { owner = f.reopen({ crashed: true }) }],
       ['第一次重开后坏根的尝试已不在进行中', () => { if (inFlight(f.db)) throw new Error('still in flight') }],
-      ['list()', () => owner!.list()],
+      ['list()', () => owner!.list(['chapter-draft', 'chapter-blueprint-directory'])],
       ['read(健康运行)', () => owner!.read(healthy.handle)],
       ['begin(新的正文生成)', () => owner!.begin({ ...f.begin, uiActionNonce: 'new-after' })],
       ['begin(章节蓝图目录)', () => owner!.begin(directory)],
@@ -4705,7 +4705,7 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     const owner = f.reopen({ crashed: true })
     const repository = () => new GenerationRunRepository(() => f.db)
     expect(await failingLedgerCalls([
-      ['list()', () => owner.list()],
+      ['list()', () => owner.list(['chapter-draft', 'chapter-blueprint-directory'])],
       ['read(健康运行)', () => owner.read(healthy.handle)],
       ['begin(新的正文生成)', () => owner.begin({ ...f.begin, uiActionNonce: 'new-after' })],
       ['begin(另一次蓝图目录)', () => owner.begin({ ...directory, uiActionNonce: 'directory-after' })],
@@ -4792,7 +4792,7 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
 
     const failures = await failingCalls([
       ['崩溃重开（建负责方）', () => { owner = f.reopen({ crashed: true }) }],
-      ['list()', () => owner!.list()],
+      ['list()', () => owner!.list(['chapter-draft'])],
       ['listRecovery()', () => owner!.listRecovery()],
       ['begin(新的正文生成)', () => owner!.begin({ ...f.begin, uiActionNonce: 'new-after' })],
       ['关书', () => owner!.suspendForProjectClose()],

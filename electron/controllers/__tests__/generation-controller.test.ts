@@ -690,7 +690,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
       task: { purpose: 'draft', output: 'visible-text', messages: [{ role: 'user', content: '中文正文' }] } })
     expect(result.outcome.content).toBe('中文候选')
     expect(result.run.ledger?.physicalRequests).toBe(1)
-    expect((await invoke('generation:list'))[0].handle).toEqual(run.handle)
+    expect((await invoke('generation:list', ['draft']))[0].handle).toEqual(run.handle)
     expect((await invoke('generation:read', run.handle)).artifacts[0].text).toBe('中文候选')
     expect(sender.send).toHaveBeenCalledWith('generation:snapshot', expect.objectContaining({ text: '中文候选', durableRevision: 1, status: 'completed' }))
     expect(sender.send).toHaveBeenCalledWith('generation:reasoning', expect.objectContaining({ ...run.handle, text: '临时推理' }))
