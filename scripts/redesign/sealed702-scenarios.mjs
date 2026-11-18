@@ -67,14 +67,13 @@ async function failNextFileTree(app) {
 
 const promptLayers = page => page.evaluate(() => document.querySelectorAll('.pi-prompt-layer').length)
 
-/** 提示层的挂载点同步挂上，对话框由 React 稍后渲染；每一层都渲染出对话框之后再数，才不会数漏。 */
 const promptsRendered = page => page.waitForFunction(() => [...document.querySelectorAll('.pi-prompt-layer')]
   .every(layer => layer.querySelector('[role="dialog"], [role="alertdialog"]')), null, { timeout: 10_000 })
 
 const layerOf = dialog => dialog.evaluateHandle(element => element.closest('.pi-prompt-layer'))
 const detached = (page, layer) => page.waitForFunction(element => !element.isConnected, layer, { timeout: 30_000 })
 
-/** 报错框的挂载点移走和下一个提示挂上在同一个任务里，所以报错框那一层脱离、各层渲染完时，该弹的提示已经在了。 */
+/** 报错框那层移走和下一个提示的挂载点挂上在同一个任务里，但对话框由 React 稍后渲染，所以还要等各层渲染完再数。 */
 async function acknowledgeLoadError(page, loadError) {
   const layer = await layerOf(loadError)
   await loadError.getByRole('button').click()
@@ -82,7 +81,6 @@ async function acknowledgeLoadError(page, loadError) {
   await promptsRendered(page)
 }
 
-/** 拦住下一次 project:open，放行前一直停在主进程里；返回「已拦到」与「放行」。 */
 async function holdNextProjectOpen(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers

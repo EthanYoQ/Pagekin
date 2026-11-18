@@ -795,8 +795,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           ))
         }
         // 每个提示框都画在先弹的上面，所以等作者关掉前一个再弹下一个：报错最先看到。
-        // 这些提示只属于这次打开的会话：换书、关书（含在途的打开随后提交）时撤掉开着的，排队的不再弹。
-        // 按会话比，不看请求序号（换书失败也会推进序号，而这本书仍开着），也不看对象引用（同一会话保存会换对象）。
+        // 按会话比：换书失败也会推进请求序号而这本书仍开着，同一会话保存也会换对象。
         const leftThisProject = new AbortController()
         const abortIfLeft = () => {
           if (!sameProjectSessionContext(openedProjectSession, projectSessionContextFromProject(get().currentProject))) {

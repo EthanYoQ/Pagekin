@@ -104,7 +104,6 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-/** 提示框开着直到作者点掉或调用方撤回；openTitles 是此刻还开着的提示。 */
 function trackPrompts() {
   const openTitles = new Set<string>()
   const acknowledgers = new Map<string, () => void>()
