@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { OctagonAlert } from 'lucide-react'
@@ -16,9 +16,11 @@ export interface InkPromptOptions {
   message: string
   confirmText: string
   cancelText?: string
+  /** 提示所属的事已经不在了（例如作者换了书）：撤回它，结果按取消算。 */
+  signal?: AbortSignal
 }
 
-function InkPrompt({ kind, title, message, confirmText, cancelText, onResolve }: InkPromptOptions & { onResolve: (value: boolean) => void }) {
+function InkPrompt({ kind, title, message, confirmText, cancelText, signal, onResolve }: InkPromptOptions & { onResolve: (value: boolean) => void }) {
   const [open, setOpen] = useState(true)
   /** 第一次的决定。关掉后要淡出 140ms，这期间内容还在、按钮还点得到，后点的不能改写它。 */
   const result = useRef<boolean | null>(null)
@@ -31,6 +33,17 @@ function InkPrompt({ kind, title, message, confirmText, cancelText, onResolve }:
     result.current = value
     setOpen(false)
   }
+
+  useEffect(() => {
+    if (!signal) return
+    const withdraw = () => {
+      if (result.current !== null) return
+      result.current = false
+      setOpen(false)
+    }
+    signal.addEventListener('abort', withdraw, { once: true })
+    return () => signal.removeEventListener('abort', withdraw)
+  }, [signal])
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={next => { if (!next) close(false) }}>
@@ -73,6 +86,7 @@ function InkPrompt({ kind, title, message, confirmText, cancelText, onResolve }:
 /** 在纸墨宿主里渲染一次性的对话框；关闭后卸载挂载点，再以用户的选择 resolve。 */
 export function openInkPrompt(options: InkPromptOptions): Promise<boolean> {
   return new Promise(resolve => {
+    if (options.signal?.aborted) return resolve(false)
     const mount = createInkOverlayMount()
     const root = createRoot(mount)
     const finish = (value: boolean) => {

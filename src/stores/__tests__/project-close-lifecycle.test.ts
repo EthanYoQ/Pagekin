@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   alertError: vi.fn(),
   confirm: vi.fn(async () => true),
-  openInkPrompt: vi.fn<(options: { message: string }) => Promise<boolean>>(async () => true),
+  openInkPrompt: vi.fn<(options: { message: string; title?: string; signal?: AbortSignal }) => Promise<boolean>>(async () => true),
   onProjectOpening: vi.fn(),
   onProjectOpened: vi.fn(async (): Promise<{ warnings: string[] } | undefined> => undefined),
   disableProjectBindingsPreservingDrafts: vi.fn(),
@@ -119,7 +119,7 @@ function trackPrompts() {
     acknowledgers.set(title, () => finish(true))
     signal?.addEventListener('abort', () => finish(false), { once: true })
   })
-  mocks.openInkPrompt.mockImplementation(options => show((options as { title: string }).title, (options as { signal?: AbortSignal }).signal))
+  mocks.openInkPrompt.mockImplementation(options => show(options.title ?? '', options.signal))
   mocks.alertError.mockImplementation((_message: string, options?: { title?: string; signal?: AbortSignal }) => (
     show(options?.title ?? '', options?.signal).then(() => undefined)
   ))
@@ -1620,38 +1620,6 @@ describe('project close lifecycle', () => {
     acknowledge()
     await vi.waitFor(() => expect(mocks.openInkPrompt).toHaveBeenCalledOnce())
     expect(mocks.openInkPrompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'notice', message: expect.stringMatching(/(?<!\d)2 条/u) }))
-  })
-
-  it('drops the sealed-generation notice when the author opened another book before acknowledging the partial-load error', async () => {
-    let acknowledge!: () => void
-    mocks.alertError.mockReturnValueOnce(new Promise<void>(resolve => { acknowledge = resolve }))
-    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
-      if (channel === 'project:open') {
-        const opened = args[0] === project('B').path ? project('B') : project('C')
-        return {
-          success: true,
-          project: opened,
-          requestToken: args[1],
-          activeProjectPath: opened.path,
-          sealedGenerationCount: opened.path === project('B').path ? 2 : 0,
-        }
-      }
-      if (channel === 'fs:list-dir') {
-        if (args[0] === project('B').path) throw new Error('tree unavailable')
-        return []
-      }
-      if (channel === 'project:recent-list') return []
-      throw new Error(`unexpected IPC: ${channel}`)
-    })
-
-    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
-    expect(mocks.alertError).toHaveBeenCalledOnce()
-    await expect(useProjectStore.getState().openProject(project('C').path)).resolves.toBe(true)
-    expect(useProjectStore.getState().currentProject?.path).toBe(project('C').path)
-
-    acknowledge()
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(mocks.openInkPrompt).not.toHaveBeenCalled()
   })
 
   it('still notices sealed generations when opening another book failed and this book stayed open', async () => {

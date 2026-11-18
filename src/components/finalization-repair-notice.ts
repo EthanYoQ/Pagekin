@@ -50,7 +50,7 @@ export function finalizationRepairMessage(repair: DuplicateFinalizationRepair, t
   ].join('\n\n')
 }
 
-export async function showFinalizationRepairNotice(repair: DuplicateFinalizationRepair): Promise<void> {
+export async function showFinalizationRepairNotice(repair: DuplicateFinalizationRepair, signal?: AbortSignal): Promise<void> {
   if (repair.chapters.length === 0) return
   const text = useLocaleStore.getState().text
   await openInkPrompt({
@@ -58,5 +58,6 @@ export async function showFinalizationRepairNotice(repair: DuplicateFinalization
     title: text('已修复重复的定稿', 'Duplicate final versions repaired'),
     message: finalizationRepairMessage(repair, text),
     confirmText: text('知道了', 'Got it'),
+    signal,
   })
 }

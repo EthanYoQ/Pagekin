@@ -14,8 +14,8 @@ export function ledgerSealedNotice(count: number, text: LocalizedText): { title:
   }
 }
 
-export async function showLedgerSealedNotice(count: number | undefined): Promise<void> {
+export async function showLedgerSealedNotice(count: number | undefined, signal?: AbortSignal): Promise<void> {
   if (!count) return
   const text = useLocaleStore.getState().text
-  await openInkPrompt({ kind: 'notice', ...ledgerSealedNotice(count, text), confirmText: text('知道了', 'Got it', '了解') })
+  await openInkPrompt({ kind: 'notice', ...ledgerSealedNotice(count, text), confirmText: text('知道了', 'Got it', '了解'), signal })
 }
