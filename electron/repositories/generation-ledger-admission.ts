@@ -44,8 +44,8 @@ export const ADMITTED_LEDGER_CELLS: readonly AdmittedLedgerCell[] = [
   } },
 ]
 
-// BLOB 里的合法 JSON 过不了导出投影，`null` 过得了 json_valid。
-const readable = (column: string) => `CASE WHEN typeof(${column})='text' AND json_valid(${column}) THEN json_type(${column})='object' ELSE 0 END`
+// BLOB 里的合法 JSON 过不了导出投影，`null` 过得了 json_valid；合法对象后跟 NUL 时 json_valid 只看到 NUL 之前，JSON.parse 看全部。
+const readable = (column: string) => `CASE WHEN typeof(${column})='text' AND instr(CAST(${column} AS BLOB),x'00')=0 AND json_valid(${column}) THEN json_type(${column})='object' ELSE 0 END`
 const SCAN = ADMITTED_LEDGER_CELLS.map((cell, index) => {
   const owner = OWNERS[cell.table]
   return `SELECT ${index} AS cell, ${owner.idColumn} AS id, ${owner.root} AS root, ${owner.run} AS run, hex(CAST(${cell.column} AS BLOB)) AS hex FROM ${cell.table}
@@ -71,8 +71,11 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       db.prepare(`UPDATE ${cell.table} SET ${cell.column}=? WHERE ${OWNERS[cell.table].idColumn}=?`).run(cell.neutral(db, item.id), item.id)
     }
     // 中性值全部写完再记账：记账那条运行自己的绑定可能也在这批坏格子里。
+    // 记账区原来不是数组时，原值包成第一条，不丢也不让追加失败。
+    const kept = `binding_json->'$."$ledgerUnreadable"'`
     const keep = db.prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$ledgerUnreadable"',
-      json_insert(COALESCE(json_extract(binding_json,'$."$ledgerUnreadable"'),'[]'),'$[#]',json(?))) WHERE run_id=?`)
+      json_insert(CASE WHEN ${kept} IS NULL THEN '[]' WHEN json_type(${kept})='array' THEN ${kept} ELSE json_array(json_object('previous',json(${kept}))) END,
+      '$[#]',json(?))) WHERE run_id=?`)
     for (const item of bad) {
       const cell = ADMITTED_LEDGER_CELLS[item.cell]!
       // 没有运行的根无处记账，原始字节不保留。

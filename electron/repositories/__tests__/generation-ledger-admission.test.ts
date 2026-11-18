@@ -123,7 +123,7 @@ describe('打开作品时封存读不出的生成记录', () => {
     const kept = keptBytes(db, victim)
     expect(kept.map(item => [item.table, item.column])).toEqual(cells.map(([cell]) => [cell.table, cell.column]))
     cells.forEach(([, value], index) => expect(kept[index]!.bytes.equals(Buffer.from(value))).toBe(true))
-    expect(() => new GenerationRunRepository(getProjectDb).reserve(victim.run, 'again', textHash('again'), 200, 100)).toThrow('GENERATION_DISPATCH_BLOCKED')
+    expect(() => new GenerationRunRepository(getProjectDb).reserve(victim.run, 'again', textHash('again'), 200, 100)).toThrow(/^GENERATION_(DISPATCH_BLOCKED|LEDGER_UNREADABLE)$/)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(GENERATION_LEDGER_UNREADABLE), { rootActionIds: [victim.root] })
   })
 

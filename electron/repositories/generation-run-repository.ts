@@ -90,6 +90,15 @@ const receiptSelect = `SELECT t.attempt_id,t.run_id,t.rowid AS ordinal,t.attempt
     a.artifact_id,a.run_id AS artifact_run_id,a.artifact_json,a.revision,a.status AS artifact_status
     FROM generation_attempts t LEFT JOIN generation_artifacts a ON a.attempt_id=t.attempt_id`;
 export const textHash = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
+/** open_key 里记的点击号；读不出时返回 undefined，由调用方按重试链不符处理。 */
+export function uiActionNonceOfOpenKey(openKey: string): string | undefined {
+    try {
+        const nonce = (JSON.parse(JSON.parse(openKey)[0]) as unknown[])[2];
+        return typeof nonce === 'string' ? nonce : undefined;
+    } catch {
+        return undefined;
+    }
+}
 const encode = (value: unknown): string => JSON.stringify(value);
 const authorEffectPath = '$."$runEffects"';
 function fail(code: string): never { throw new Error(code); }
@@ -139,9 +148,16 @@ export class GenerationRunRepository {
     private authorEditedRoot(rootId: string): boolean {
         return !!this.db().prepare('SELECT 1 FROM generation_runs WHERE root_action_id=? AND json_type(binding_json,?) IS NOT NULL LIMIT 1').get(rootId, authorEffectPath);
     }
+    /** 绑定在进门时被封存的根：作者保存回执跟着原绑定一起读不出了，按可能已保存处理。 */
+    private bindingSealedRoot(rootId: string): boolean {
+        return !!this.db().prepare(`SELECT 1 FROM generation_runs r, json_each(r.binding_json,'$."$ledgerUnreadable"') e
+            WHERE r.root_action_id=? AND CASE WHEN e.type='object' THEN json_extract(e.value,'$.column') END='binding_json' LIMIT 1`).get(rootId);
+    }
     assertPlotOutlineWritable(runId: string): void {
         if (this.isPrivatePlanningHistory(runId)) fail('GENERATION_PLANNING_HISTORY_READ_ONLY');
-        if (this.authorEditedRoot(this.get(runId).rootActionId)) fail('GENERATION_PLOT_OUTLINE_AUTHOR_SAVED');
+        const rootId = this.get(runId).rootActionId;
+        if (this.authorEditedRoot(rootId)) fail('GENERATION_PLOT_OUTLINE_AUTHOR_SAVED');
+        if (this.bindingSealedRoot(rootId)) fail('GENERATION_LEDGER_UNREADABLE');
     }
     isPrivatePlanningHistory(runId: string): boolean {
         return !!this.db().prepare("SELECT 1 FROM generation_runs WHERE root_action_id=(SELECT root_action_id FROM generation_runs WHERE run_id=?) AND json_extract(binding_json,'$.sourceManifest.policy.planning.outlineProtocol')='chapter-parts-v2' LIMIT 1").get(runId);

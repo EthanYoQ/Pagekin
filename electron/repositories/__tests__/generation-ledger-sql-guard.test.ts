@@ -9,6 +9,7 @@ import { ADMITTED_LEDGER_CELLS } from '../generation-ledger-admission'
  */
 const LEDGER_TABLES = ['generation_roots', 'generation_runs', 'generation_attempts', 'generation_artifacts']
 const LEDGER_JSON_COLUMNS = ['action_json', 'budget_json', 'binding_json', 'attempt_json', 'usage_receipt_json', 'artifact_json', 'open_key', 'idempotency_key']
+const IDENTITY_KEYS = ['open_key', 'idempotency_key']
 const KEYS = ['run_id', 'root_action_id', 'attempt_id', 'artifact_id', 'open_key', 'invocation_nonce', 'reservation_id']
 const ROOT = path.resolve(process.cwd())
 
@@ -51,7 +52,8 @@ function crossRecordLedgerColumns(literal: string): string[] {
   // 主键等值只在没有 OR 时才把语句限定到一条记录上。
   if (where !== undefined && !/\bOR\b/iu.test(where) && KEYS.some(key => new RegExp(`\\b(?:[a-z]+\\.)?${key}\\s*=\\s*(\\?|\\()`, 'u').test(where))) return []
   const head = /^(.*?) FROM /iu.exec(sql)?.[1] ?? ''
-  const selected = verb !== 'SELECT' ? [] : LEDGER_JSON_COLUMNS.filter(column =>
+  // 原样取出的 open_key、idempotency_key 是身份字符串，按 JSON 读的地方走 uiActionNonceOfOpenKey，读不出不抛错。
+  const selected = verb !== 'SELECT' ? [] : LEDGER_JSON_COLUMNS.filter(column => !IDENTITY_KEYS.includes(column)).filter(column =>
     new RegExp(`\\b${column}\\b`, 'u').test(head.replace(/json_[a-z_]+\([^)]*\)/gu, '')) || /SELECT (?:[a-z]+\.)?\*/iu.test(head))
   return LEDGER_JSON_COLUMNS.filter(column => parsedColumns(sql).includes(column) || selected.includes(column))
 }

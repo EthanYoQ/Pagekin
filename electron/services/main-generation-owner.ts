@@ -1155,6 +1155,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         if (!(error instanceof ReviewSourceDeletedError)) list.partial = true
       }
     }
+    if (draftEffects.hasSealedReceipts()) list.partial = true
     const batchIds = draftEffects.resumableBatchIds(deps.projectId)
     if (!batchIds.length) return list
     const commits = draftEffects.batchCommits()

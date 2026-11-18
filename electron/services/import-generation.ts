@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { isDeepStrictEqual } from 'node:util'
 import type { BeginGenerationRequest } from '../../src/shared/generation-owner-contract'
 import type { ImportGenerationContext, ImportGenerationSlot } from '../../src/shared/import-generation'
-import { GenerationRunRepository, type DurableGenerationRun, type GenerationBudgetReceipt } from '../repositories/generation-run-repository'
+import { GenerationRunRepository, uiActionNonceOfOpenKey, type DurableGenerationRun, type GenerationBudgetReceipt } from '../repositories/generation-run-repository'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
 import { captureImportGenerationContext, importGenerationSlotKey } from './import-generation-source'
@@ -17,12 +17,12 @@ export class ImportGeneration {
   constructor(private readonly db: Database.Database, private readonly runs: GenerationRunRepository, private readonly projectId: string) {}
   find(slot: ImportGenerationSlot): DurableGenerationRun | undefined {
     const key = importGenerationSlotKey(slot)
-    const rows = this.db.prepare("SELECT run_id,json_extract(json_extract(open_key,'$[0]'),'$[2]') AS ui_action_nonce FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.importSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; ui_action_nonce: string }[]
+    const rows = this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.importSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[]
     let previous: DurableGenerationRun | undefined
     for (const row of rows) {
       const run = this.runs.get(row.run_id)
       if (run.binding.projectId !== this.projectId) continue
-      if (previous && row.ui_action_nonce !== importSlotNonce(key, previous)) throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS')
+      if (previous && uiActionNonceOfOpenKey(row.open_key) !== importSlotNonce(key, previous)) throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS')
       previous = run
     }
     return previous

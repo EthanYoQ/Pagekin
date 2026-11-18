@@ -4,7 +4,7 @@ import type { FinalizationGenerationEffect, FinalizationGenerationSlot } from '.
 import type { FinalizedCharacterArtifact } from '../../src/shared/finalized-character-generation'
 import type { MainGenerationRunHandle } from '../../src/services/generation/generation-runtime'
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
-import { GenerationRunRepository, textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
+import { GenerationRunRepository, textHash, uiActionNonceOfOpenKey, type DurableGenerationRun } from '../repositories/generation-run-repository'
 import { finalizationSlotKey, readFinalizationGenerationContext, finalizationNotesBaseline } from './finalization-generation-source'
 import { SummaryRepository } from '../repositories/summary-repository'
 import { BlueprintRepository } from '../repositories/blueprint-repository'
@@ -33,12 +33,12 @@ export class FinalizationGeneration {
     private readonly transferOrigin: () => string | undefined = () => undefined) {}
   find(slot: FinalizationGenerationSlot): DurableGenerationRun | undefined {
     const key = finalizationSlotKey(slot)
-    const rows = this.db.prepare("SELECT run_id,json_extract(json_extract(open_key,'$[0]'),'$[2]') AS ui_action_nonce FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.finalizationGenerationSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; ui_action_nonce: string }[]
+    const rows = this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.finalizationGenerationSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[]
     let previous: DurableGenerationRun | undefined
     for (const row of rows) {
       const run = this.runs.get(row.run_id)
       if (run.binding.projectId !== this.projectId || !isDeepStrictEqual(readFinalizationGenerationContext(run).slot, slot)
-        || previous && (this.effectInForce(previous) || row.ui_action_nonce !== `finalization:${key}:retry:${previous.runId}`))
+        || previous && (this.effectInForce(previous) || uiActionNonceOfOpenKey(row.open_key) !== `finalization:${key}:retry:${previous.runId}`))
         throw new Error('GENERATION_FINALIZATION_SLOT_CONFLICT')
       previous = run
     }
