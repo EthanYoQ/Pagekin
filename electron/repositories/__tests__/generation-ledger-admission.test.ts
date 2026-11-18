@@ -202,6 +202,23 @@ describe('打开作品时封存读不出的生成记录', () => {
     } finally { db.close() }
   })
 
+  it.each([
+    ['产物', (db: Db, victim: Victim) => db.prepare("UPDATE generation_artifacts SET artifact_id=NULL, artifact_json='{坏' WHERE attempt_id=?").run(victim.attempt)],
+    ['根', (db: Db) => db.prepare("INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json) VALUES(NULL,'null-key','{坏','{}')").run()],
+  ])('主键为 NULL 的%s读不出：作品照常打开，坏格子换掉，无关运行照常可读，再打开不写库', (_label, corrupt) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { healthy, victim } = seedLedger()
+    withProjectClosed(db => corrupt(db, victim))
+
+    initProjectDatabase(projectRoot)
+
+    expect(everyCellReadable(getProjectDb()!)).toBe(true)
+    expect(new GenerationRunRepository(getProjectDb).get(healthy.runId).runId).toBe(healthy.runId)
+    const first = withProjectClosed(ledgerDump)
+    initProjectDatabase(projectRoot)
+    expect(withProjectClosed(ledgerDump)).toBe(first)
+  })
+
   it('只有根、没有运行的坏根：照常封存，作品照常打开', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     withProjectClosed(db => db.prepare("INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json) VALUES('orphan','orphan-key','{坏','{}')").run())
