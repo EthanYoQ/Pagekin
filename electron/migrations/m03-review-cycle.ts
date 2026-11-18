@@ -14,7 +14,6 @@ const HASH = /^[a-f0-9]{64}$/u
 const CYCLE_STATUSES = new Set(['not-generated', 'generated', 'merge-committed'])
 const FINDING_STATUSES = new Set(['unverified', 'unresolved', 'unknown', 'resolved', 'author-waived'])
 const FINDING_KINDS = new Set(['objective', 'literary'])
-const MANUSCRIPT_STATUSES = new Set(['finalized', 'superseded'])
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const nonempty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const integer = (value: unknown, minimum = 0): value is number => Number.isSafeInteger(value) && (value as number) >= minimum
@@ -355,18 +354,19 @@ function wholeBookVerdict(db: Database.Database): WholeBookVerdict {
 }
 
 function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow): DamagedReviewCycle | undefined {
-  const row = db.prepare(`SELECT d.id, d.chapter_number AS chapterNumber, d.version, d.status, COALESCE(b.title,'') AS chapterTitle
+  const row = db.prepare(`SELECT d.id, d.chapter_number AS chapterNumber, d.version, d.status,
+      COALESCE(NULLIF(b.title,''), o.chapter_title, '') AS chapterTitle
     FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id LEFT JOIN blueprints b ON b.chapter_number=d.chapter_number
-    WHERE r.id=?`).get(cycle.review_id) as { id: number; chapterNumber: number; version: number; status: string; chapterTitle: string } | undefined
+    LEFT JOIN finalization_outbox_all o ON o.draft_id=d.id WHERE r.id=?`).get(cycle.review_id) as { id: number; chapterNumber: number; version: number; status: string; chapterTitle: string } | undefined
   if (!row) return undefined
   if (row.status === 'deleted') {
     // 回收站这一项按删除时定稿的章名显示；同章号可能已重写，蓝图标题是新章的。
-    const entry = db.prepare(`SELECT d.deleted_at AS deletedAt, COALESCE((SELECT o.chapter_title FROM drafts_all p
-      JOIN finalization_outbox_all o ON o.draft_id=p.id WHERE p.deletion_id=d.deletion_id AND p.deleted_from_status='finalized'),'') AS chapterTitle
-      FROM drafts_all d WHERE d.id=?`).get(row.id) as { deletedAt: string; chapterTitle: string }
+    const entry = db.prepare(`SELECT COALESCE(p.deleted_at, d.deleted_at) AS deletedAt, COALESCE(o.chapter_title,'') AS chapterTitle
+      FROM drafts_all d LEFT JOIN drafts_all p ON p.deletion_id=d.deletion_id AND p.deleted_from_status='finalized'
+      LEFT JOIN finalization_outbox_all o ON o.draft_id=p.id WHERE d.id=?`).get(row.id) as { deletedAt: string; chapterTitle: string }
     return { chapterNumber: row.chapterNumber, chapterTitle: entry.chapterTitle, location: 'trash', deletedAt: entry.deletedAt }
   }
-  return MANUSCRIPT_STATUSES.has(row.status)
+  return row.status === 'finalized'
     ? { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, location: 'manuscript' }
     : { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, location: 'draft', draftVersion: row.version }
 }

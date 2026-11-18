@@ -46,11 +46,11 @@ async function switchLocale(page, from, to) {
 
 export const CCH_SCENARIOS = {
   'cch-export-damaged': { model: true, shell: 'stage', setup: async context => {
-    await buildByReviewCycle(context, 2, { saveCheckpoints: false })
-    await context.restart({ beforeLaunch: () => breakReviewProof(path.join(context.roots.projects, BOOK), 2) })
+    await buildByReviewCycle(context, 2, { saveCheckpoints: false,
+      beforeLaunch: () => breakReviewProof(path.join(context.roots.projects, BOOK), 2) })
   }, run: async context => {
     const { page, roots, shoot } = context
-    await stage.openFromLibrary(page, BOOK)
+    await stage.openAfterRestart(page, BOOK)
     await stage.openSettings(page)
     const zh = await exportOnce(context, path.join(roots.projects, 'cch-zh.ainovel'),
       { settings: '设置分组', page: '项目备份', button: '导出本地存档' })
@@ -73,11 +73,11 @@ export const CCH_SCENARIOS = {
     return { zh, ja, en }
   } },
   'cch-trash-damaged': { model: true, shell: 'stage', setup: async context => {
-    await buildByReviewCycle(context, 2, { saveCheckpoints: false })
-    await context.restart({ beforeLaunch: () => breakReviewProof(path.join(context.roots.projects, BOOK), 1) })
+    await buildByReviewCycle(context, 2, { saveCheckpoints: false,
+      beforeLaunch: () => breakReviewProof(path.join(context.roots.projects, BOOK), 1) })
   }, run: async context => {
     const { page, roots, shoot } = context
-    await stage.openFromLibrary(page, BOOK)
+    await stage.openAfterRestart(page, BOOK)
     await openChapter(page, 1)
     await chapterView.more(page, '删除正文…')
     const confirm = page.getByRole('dialog', { name: '删除正文' })

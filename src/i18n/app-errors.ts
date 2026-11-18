@@ -426,7 +426,9 @@ export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: D
       { chapter, version: damaged.draftVersion })
   } else if (damaged.location === 'trash') {
     const deletedAt = sqliteTime(damaged.deletedAt)
-    const when = Number.isNaN(deletedAt.getTime()) ? damaged.deletedAt
+    // Date 会把 2 月 30 日顺延成 3 月 2 日；转回去对不上原值就照原样写。
+    const when = Number.isNaN(deletedAt.getTime()) || deletedAt.toISOString().slice(0, 19).replace('T', ' ') !== damaged.deletedAt
+      ? damaged.deletedAt
       : deletedAt.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
     chapter = localize(locale, '回收站里{chapter}（删除于 {when}）', '{chapter} in the trash (deleted {when})', 'ゴミ箱の{chapter}（{when}削除）',
       { chapter, when })

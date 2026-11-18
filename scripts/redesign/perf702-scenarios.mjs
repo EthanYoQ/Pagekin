@@ -585,7 +585,7 @@ async function reviewCycleChapter(context, chapter, sent) {
 }
 
 /** 比 buildByHand 每章多一个修稿运行和一个复核运行，库的增长接近真实作品。 */
-export async function buildByReviewCycle(context, finalized, { saveCheckpoints = true } = {}) {
+export async function buildByReviewCycle(context, finalized, { saveCheckpoints = true, beforeLaunch } = {}) {
   await seedLargeBook(context, 0)
   const sent = installReviewCycleReplies(context.fake)
   await installLedger(context.app, context.page)
@@ -595,7 +595,7 @@ export async function buildByReviewCycle(context, finalized, { saveCheckpoints =
     chapters.push(await reviewCycleChapter(context, chapter, sent))
     if (saveCheckpoints) await saveCheckpoint(context, chapter)
   }
-  await context.restart()
+  await context.restart({ beforeLaunch })
   installReplies(context.fake)
   return chapters
 }
