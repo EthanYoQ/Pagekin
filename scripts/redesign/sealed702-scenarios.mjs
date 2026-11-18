@@ -17,7 +17,6 @@ const LOCALES = {
     open: page => stage.openFromLibraryEn(page, STAGE_SAMPLE.name) },
 }
 
-/** 两个根各坏两格（共四格），期望报 2：数的是生成（根），不是格子。 */
 function damageTwoRoots(context) {
   writeDb(context, db => {
     const insert = db.prepare('INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json) VALUES(?,?,?,?)')
