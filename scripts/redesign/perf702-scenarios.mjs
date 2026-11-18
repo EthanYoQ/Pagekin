@@ -585,7 +585,7 @@ async function reviewCycleChapter(context, chapter, sent) {
 }
 
 /** 比 buildByHand 每章多一个修稿运行和一个复核运行，库的增长接近真实作品。 */
-async function buildByReviewCycle(context, finalized) {
+export async function buildByReviewCycle(context, finalized) {
   await seedLargeBook(context, 0)
   const sent = installReviewCycleReplies(context.fake)
   await installLedger(context.app, context.page)
