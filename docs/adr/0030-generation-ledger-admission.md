@@ -46,7 +46,7 @@ ADR-0029 承诺一条记录坏了，只有读写它的操作报错。生成账�
 
 身份键和绑定一致，靠的是下面几条：
 
-- 生产代码只有一个开运行入口（`createMainGenerationOwner` 里的 `service.open`）。点击和绑定的 `sourceManifest.operation` 取同一个 `selection.operation`。点击号的格式从 v1.2.0-Preview 起没变过。两列身份键写入后没有 UPDATE。
+- 生产代码只有一个开运行入口（`createMainGenerationOwner` 里的 `service.open`）。点击和绑定的 `sourceManifest.operation` 取同一个 `selection.operation`。点击号由槽位、会话或导入号算出，这部分从 v1.2.0-Preview 起没变。重试另加 `:retry:<运行号>` 后缀：定稿从 v1.2.0-Preview 起就有（60865eec8），导入从 v1.5.0 起（762aeb815）。两列身份键写入后没有 UPDATE。
 - 仓库在三个写入点断言操作一致，不一致报 `GENERATION_BINDING_INVALID`：`open()` 比请求的操作，`replaceUnstartedBinding()` 和 `resume()` 比库里 `open_key` 的点击操作。点击号和绑定里的槽位键、会话键、导入号是否对应，没有断言，靠的是上面那个唯一入口。
 - 应用会写出绑定缺字段的行：进门封存时的占位绑定，导入后的冻结历史（导出投影的绑定不带 `sourceManifest.operation`）。原语句本来就按绑定把它们筛掉，走索引前后结果相同。
 
