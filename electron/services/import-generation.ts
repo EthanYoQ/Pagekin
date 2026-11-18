@@ -12,13 +12,16 @@ export function importSlotNonce(slotKey: string, retryOf?: DurableGenerationRun)
   return `import:${slotKey}${retryOf ? `:retry:${retryOf.runId}` : ''}`
 }
 
+const IMPORT_STAGE_OPERATION = { global: 'import-global-facts', style: 'analyze-writing-style', blueprints: 'import-blueprints' } as const
+const IMPORT_OPERATIONS: ReadonlySet<string> = new Set(Object.values(IMPORT_STAGE_OPERATION))
+
 /** Existing import checkpoints own effects; this class only joins their generation runs. */
 export class ImportGeneration {
   constructor(private readonly db: Database.Database, private readonly runs: GenerationRunRepository, private readonly projectId: string) {}
   find(slot: ImportGenerationSlot): DurableGenerationRun | undefined {
     const key = importGenerationSlotKey(slot)
-    // 导入槽位键是哈希，认不出被封存的运行属于哪一个导入；同一次导入的各阶段还互相检查前一阶段的效果，所以有一条就全部拒绝。
-    if (this.runs.sealedRunClaims(claim => claim.startsWith('import:'))) throw new Error('GENERATION_LEDGER_UNREADABLE')
+    // 同一次导入的各阶段互相检查前一阶段的效果，所以封存的树里有任何一次导入就全部拒绝。
+    if (this.runs.sealedClaims(click => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation) && click.uiActionNonce.startsWith('import:'))) throw new Error('GENERATION_LEDGER_UNREADABLE')
     const rows = slotRunNonces(this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.importSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[], 'GENERATION_IMPORT_SLOT_AMBIGUOUS')
     let previous: DurableGenerationRun | undefined
     for (const row of rows) {
@@ -99,7 +102,7 @@ export class ImportGeneration {
       return undefined
     }
     const existing = this.find(slot)
-    const operation = { global: 'import-global-facts', style: 'analyze-writing-style', blueprints: 'import-blueprints' }[slot.stage]
+    const operation = IMPORT_STAGE_OPERATION[slot.stage]
     const promptKeys = slot.stage === 'global' ? ['infer_novel_config_with_vectors', 'infer_novel_config'] : slot.stage === 'style' ? ['analyze_writing_style'] : ['infer_single_chapter_blueprint']
     if (selection.operation !== operation || !selection.importExecution || selection.batchId || selection.batchIntent
       || selection.agentWorkflowRegistrationId || selection.continueDirectoryOperationId

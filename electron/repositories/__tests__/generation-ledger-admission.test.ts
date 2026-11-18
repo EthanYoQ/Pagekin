@@ -128,11 +128,12 @@ describe('打开作品时封存读不出的生成记录', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(GENERATION_LEDGER_UNREADABLE), { rootActionIds: [victim.root] })
   })
 
-  it('同一棵树里读得出的格子不变；记账那条运行的冻结绑定不变，只多一条原始字节', () => {
+  it('同一棵树里读得出的格子只有进行中的尝试落到终态；记账那条运行的冻结绑定不变，只多一条原始字节', () => {
     const { victim } = seedLedger()
     const db0 = getProjectDb()!
     const budgetBefore = db0.prepare('SELECT budget_json FROM generation_roots WHERE root_action_id=?').pluck().get(victim.root)
-    const attemptBefore = db0.prepare('SELECT attempt_json,usage_receipt_json FROM generation_attempts WHERE attempt_id=?').get(victim.attempt)
+    const attemptBefore = db0.prepare('SELECT attempt_json,usage_receipt_json FROM generation_attempts WHERE attempt_id=?').get(victim.attempt) as { attempt_json: string; usage_receipt_json: string }
+    expect(JSON.parse(attemptBefore.attempt_json).status).toBe('dispatch-marked')
     const artifactBefore = db0.prepare('SELECT artifact_json FROM generation_artifacts WHERE attempt_id=?').pluck().get(victim.attempt)
     const bindingBefore = JSON.parse(db0.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(victim.run) as string) as Record<string, unknown>
     withProjectClosed(db => damage(db, victim, [[ACTION, '{坏']]))
@@ -141,7 +142,8 @@ describe('打开作品时封存读不出的生成记录', () => {
 
     const db = getProjectDb()!
     expect(db.prepare('SELECT budget_json FROM generation_roots WHERE root_action_id=?').pluck().get(victim.root)).toBe(budgetBefore)
-    expect(db.prepare('SELECT attempt_json,usage_receipt_json FROM generation_attempts WHERE attempt_id=?').get(victim.attempt)).toEqual(attemptBefore)
+    expect(db.prepare('SELECT attempt_json,usage_receipt_json FROM generation_attempts WHERE attempt_id=?').get(victim.attempt)).toEqual({ ...attemptBefore,
+      attempt_json: JSON.stringify({ ...JSON.parse(attemptBefore.attempt_json), status: 'unknown' }) })
     expect(db.prepare('SELECT artifact_json FROM generation_artifacts WHERE attempt_id=?').pluck().get(victim.attempt)).toBe(artifactBefore)
     const { $ledgerUnreadable, ...frozen } = JSON.parse(db.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(victim.run) as string) as Record<string, unknown>
     expect(frozen).toEqual(bindingBefore)
@@ -211,7 +213,7 @@ describe('打开作品时封存读不出的生成记录', () => {
     expect(db.prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='orphan'").pluck().get()).toBe(GENERATION_LEDGER_UNREADABLE)
   })
 
-  it('便携导入冻结的记录坏了：照常封存，跨记录的恢复与列表照常', () => {
+  it('便携导入冻结的记录坏了：照常封存，跨记录的恢复照常，它自己读不出', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { healthy, victim } = seedLedger()
     withProjectClosed(db => damage(db, victim, [[ACTION, '{坏']]))
@@ -221,7 +223,7 @@ describe('打开作品时封存读不出的生成记录', () => {
 
     expect(() => repository.recoverInterrupted()).not.toThrow()
     expect(repository.budget(healthy.rootActionId).root.status).toBe('paused')
-    expect(repository.readRunView(victim.run).attempts.map(attempt => attempt.candidate)).toEqual([false])
+    expect(() => repository.readRunView(victim.run)).toThrow(GENERATION_LEDGER_UNREADABLE)
   })
 
   it('记账区原来不是数组：照常打开，原值另存，新记录照常追加', () => {

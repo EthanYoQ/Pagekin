@@ -6,6 +6,8 @@ import { ADMITTED_LEDGER_CELLS } from '../generation-ledger-admission'
 /**
  * 跨记录（没有主键或外键条件）的账本语句要解析的 JSON 列，必须都在进门清单里：
  * 进门只保证清单里的列读得出，清单外的列坏一格就会让无关的扫描整条失败（ADR-0030）。
+ * 这是按字符串字面量做的正则启发式：拼接出来的 SQL、跨几个字面量的语句、子查询里的条件、
+ * 以及在 JS 里 JSON.parse 跨记录取出的列都查不到。
  */
 const LEDGER_TABLES = ['generation_roots', 'generation_runs', 'generation_attempts', 'generation_artifacts']
 const LEDGER_JSON_COLUMNS = ['action_json', 'budget_json', 'binding_json', 'attempt_json', 'usage_receipt_json', 'artifact_json', 'open_key', 'idempotency_key']
@@ -40,24 +42,28 @@ function literals(source: string): { line: number; text: string }[] {
 }
 
 const parsedColumns = (sql: string) => LEDGER_JSON_COLUMNS.filter(column =>
-  new RegExp(`json_[a-z_]+\\([^)]*\\b${column}\\b`, 'u').test(sql) || new RegExp(`\\b${column}\\s*->`, 'u').test(sql))
-const UNIQUE_KEYS: Record<string, string[]> = {
-  generation_roots: ['root_action_id', 'idempotency_key'], generation_runs: ['run_id', 'open_key'],
-  generation_attempts: ['attempt_id', 'reservation_id', 'invocation_nonce'], generation_artifacts: ['artifact_id'],
+  new RegExp(`json_[a-z_]+\\([^)]*\\b${column}\\b`, 'iu').test(sql) || new RegExp(`\\b${column}\\s*->`, 'iu').test(sql))
+/** 每张表的唯一键；整个键都等值限定了，才算只取一条记录。 */
+const UNIQUE_KEYS: Record<string, string[][]> = {
+  generation_roots: [['root_action_id'], ['idempotency_key']], generation_runs: [['run_id'], ['open_key']],
+  generation_attempts: [['attempt_id'], ['reservation_id'], ['run_id', 'invocation_nonce']], generation_artifacts: [['artifact_id']],
 }
 
 function crossRecordLedgerColumns(literal: string): string[] {
   const sql = literal.replace(/\s+/gu, ' ').trim()
   const touchesLedger = LEDGER_TABLES.some(table => new RegExp(`\\b${table}\\b`, 'u').test(sql))
   if (!touchesLedger && !parsedColumns(sql).length) return []
-  if (!/\b(SELECT|INSERT|UPDATE|DELETE|WHERE|json_)\b/u.test(sql)) return []
+  if (!/\b(SELECT|INSERT|UPDATE|DELETE|WHERE)\b|\bjson_/iu.test(sql)) return []
   const verb = (/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE)/iu.exec(sql)?.[1] ?? 'FRAGMENT').toUpperCase()
   if (verb === 'INSERT' || verb === 'CREATE') return []
   const where = / WHERE (.*)$/iu.exec(sql)?.[1]
   // 主键等值只在没有 OR 时才把语句限定到一条记录上。
   const table = /(?:^UPDATE | FROM )(generation_[a-z]+)/iu.exec(sql)?.[1]
-  const keys = table === undefined ? KEYS : UNIQUE_KEYS[table] ?? []
-  if (where !== undefined && !/\bOR\b/iu.test(where) && keys.some(key => new RegExp(`\\b(?:[a-z]+\\.)?${key}\\s*=\\s*(\\?|\\()`, 'u').test(where))) return []
+  const keys = table === undefined ? KEYS.map(key => [key]) : UNIQUE_KEYS[table] ?? []
+  // 联表时主键条件可能只限定了另一张表。
+  const joined = /\bJOIN\b|,/iu.test(/ FROM (.*?)(?: WHERE |$)/iu.exec(sql)?.[1] ?? '')
+  const pinned = (key: string) => new RegExp(`\\b(?:[a-z]+\\.)?${key}\\s*=\\s*(\\?|\\()`, 'iu').test(where ?? '')
+  if (where !== undefined && !joined && !/\bOR\b/iu.test(where) && keys.some(key => key.every(pinned))) return []
   const head = /^(.*?) FROM /iu.exec(sql)?.[1] ?? ''
   // open_key、idempotency_key 是身份字符串，原样取出不算解析。
   const selected = verb !== 'SELECT' ? [] : LEDGER_JSON_COLUMNS.filter(column => !IDENTITY_KEYS.includes(column)).filter(column =>

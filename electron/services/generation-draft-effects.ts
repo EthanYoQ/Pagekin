@@ -126,8 +126,6 @@ export class GenerationDraftEffects {
   }
   private readBatchSnapshot(batchId: string, projectId: string, commits = this.batchCommits(batchId), settledChapter?: number): VerifiedBatchSnapshot {
     const root = this.runs.get(batchId)
-    // 这一批有记录被封存过时，已提交的章可能认不出来，按进度给出会把写过的章再写一遍。
-    if (this.runs.sealedLedgerCells(root.rootActionId).length) throw new Error('GENERATION_LEDGER_UNREADABLE')
     const intent = root.binding.sourceManifest.batchIntent as GenerationBatchIntent
     assertGenerationBatchIntent(intent)
     if (root.binding.projectId !== projectId || root.binding.sourceManifest.operation !== 'batch-chapters') throw new Error('GENERATION_BATCH_IDENTITY_INVALID')

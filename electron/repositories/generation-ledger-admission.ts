@@ -59,8 +59,8 @@ export interface LedgerAdmission {
 }
 
 /**
- * 打开作品、拿到可写句柄之后调用一次。读不出的格子就地换成中性值，所属的根写 blocked_code，
- * 原始字节记进所属运行绑定的 `$ledgerUnreadable`。之后这个句柄上的跨记录查询和 JSON.parse 不会碰到读不出的格子。
+ * 打开作品、拿到可写句柄之后调用一次。读不出的格子就地换成中性值，所属的根改写 blocked_code 并停表，
+ * 原始字节和根上原来的阻断码记进所属运行绑定的 `$ledgerUnreadable`。封存的根是终态，只有 blocked_code 决定它。
  */
 export function admitGenerationLedger(db: Db): LedgerAdmission {
   const scan = db.prepare(SCAN)
@@ -84,9 +84,20 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       // 没有运行的根无处记账，原始字节不保留。
       if (item.run) keep.run(encode({ table: cell.table, recordId: item.id, column: cell.column, hex: item.hex }), item.run)
     }
-    const block = db.prepare('UPDATE generation_roots SET blocked_code=COALESCE(blocked_code,?) WHERE root_action_id=?')
+    const previous = db.prepare(`SELECT blocked_code AS code, ${OWNERS.generation_roots.run} AS run FROM generation_roots WHERE root_action_id=?`)
+    const block = db.prepare('UPDATE generation_roots SET blocked_code=?, active_since_ms=NULL WHERE root_action_id=?')
+    // 封存的根不会再推进，进行中的尝试按「没发出」或「不知道发没发出」落到终态。
+    const settle = db.prepare(`UPDATE generation_attempts SET attempt_json=json_set(attempt_json,'$.status',
+      CASE json_extract(attempt_json,'$.status') WHEN 'reserved' THEN 'cancelled-before-dispatch' ELSE 'unknown' END)
+      WHERE root_action_id=? AND json_extract(attempt_json,'$.status') IN ('reserved','dispatch-marked')`)
     const sealed = [...new Set(bad.map(item => item.root))]
-    for (const root of sealed) block.run(GENERATION_LEDGER_UNREADABLE, root)
+    for (const root of sealed) {
+      const prior = previous.get(root) as { code: string | null; run: string | null } | undefined
+      if (prior?.code && prior.code !== GENERATION_LEDGER_UNREADABLE && prior.run)
+        keep.run(encode({ table: 'generation_roots', recordId: root, column: 'blocked_code', previous: prior.code }), prior.run)
+      block.run(GENERATION_LEDGER_UNREADABLE, root)
+      settle.run(root)
+    }
     return sealed
   }).immediate()
   if (!roots.length) return { sealedRootActionIds: [] }

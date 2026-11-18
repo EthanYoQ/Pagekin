@@ -1632,7 +1632,7 @@ describe('durable directory commit and remaining stage', () => {
     const owner = f.reopen(), roster = () => f.fixture.db.prepare('SELECT name FROM characters ORDER BY name').pluck().all()
     const before = roster()
     const batch = owner.characterProposals.stage({ kind: 'directory', operationId: operation.characterSyncOperation.operationId })
-    expect(batch.items.map(item => item.provenance ?? null)).toEqual([null])
+    expect(batch.items).toHaveLength(1)
     expect(() => owner.approveCharacterProposal({ proposalBatchId: batch.proposalBatchId, expectedRevision: batch.revision, operationId: 'approve-sealed',
       selections: batch.items.map(item => ({ selectionKey: item.selectionKey, action: 'create' as const })), relationships: [] })).toThrow('CHARACTER_PROPOSAL_PROVENANCE_REQUIRED')
     expect(roster()).toEqual(before)

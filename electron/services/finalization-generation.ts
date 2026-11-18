@@ -33,7 +33,7 @@ export class FinalizationGeneration {
     private readonly transferOrigin: () => string | undefined = () => undefined) {}
   find(slot: FinalizationGenerationSlot): DurableGenerationRun | undefined {
     const key = finalizationSlotKey(slot), nonce = `finalization:${key}`
-    if (this.runs.sealedRunClaims(claim => claim === nonce || claim.startsWith(`${nonce}:retry:`))) throw new Error('GENERATION_LEDGER_UNREADABLE')
+    if (this.runs.sealedClaims(click => click.projectId === this.projectId && (click.uiActionNonce === nonce || click.uiActionNonce.startsWith(`${nonce}:retry:`)))) throw new Error('GENERATION_LEDGER_UNREADABLE')
     const rows = slotRunNonces(this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.finalizationGenerationSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[], 'GENERATION_FINALIZATION_SLOT_CONFLICT')
     let previous: DurableGenerationRun | undefined
     for (const row of rows) {
