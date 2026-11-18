@@ -424,7 +424,7 @@ const DAMAGED_REVIEW_CYCLE_NEXT = {
 export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle): string {
   const params = { number: damaged.chapterNumber, title: damaged.chapterTitle }
   const chapter = damaged.chapterTitle
-    ? localize(locale, '第 {number} 章「{title}」', 'Chapter {number} “{title}”', '第{number}章「{title}」', params)
+    ? localize(locale, '第 {number} 章「{title}」', 'Chapter {number} "{title}"', '第{number}章「{title}」', params)
     : localize(locale, '第 {number} 章', 'Chapter {number}', '第{number}章', params)
   const next = damaged.remedy ? DAMAGED_REVIEW_CYCLE_NEXT[damaged.remedy] : 'error.damagedReviewCycleReport'
   return joinSentences(locale, translate(locale, 'error.damagedReviewCycle', { chapter }), translate(locale, next))

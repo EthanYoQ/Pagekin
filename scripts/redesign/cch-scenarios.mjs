@@ -58,21 +58,21 @@ export const CCH_SCENARIOS = {
     const zh = await exportOnce(context, path.join(roots.projects, 'cch-zh.ainovel'),
       { settings: '设置分组', page: '项目备份', button: '导出本地存档' })
     await shoot('cch-1-zh')
-    assert.equal(zh, '作品没有改动。第 2 章「远航之2」有一条审稿记录已损坏，存档没有生成。'
-      + '可以先点「复制本章正文」留底，再点「删除正文…」，并到回收站「彻底删除…」这一章，之后再试。')
+    assert.equal(zh, '作品没有改动。第 2 章「远航之2」有条审稿记录损坏，存档没生成。'
+      + '先「复制本章正文」，再「删除正文…」并在回收站「彻底删除…」，然后重试。')
 
     await switchLocale(page, { settings: '设置分组', appearance: '外观', languageLabel: '界面语言' }, 'ja-JP')
     const ja = await exportOnce(context, path.join(roots.projects, 'cch-ja.ainovel'),
       { settings: 'Settings sections', page: 'Project backup', button: 'Export local archive' })
     await shoot('cch-2-ja')
-    assert.equal(ja, '作品は変更されていません。第2章「远航之2」のレビュー記録が1件破損しているため、アーカイブは作成されませんでした。'
-      + '「Copy chapter text」で本文を控えてから「Delete manuscript…」を選び、ゴミ箱で「Delete permanently…」を選んで、もう一度お試しください。')
+    assert.equal(ja, '作品は変更されていません。第2章「远航之2」のレビュー記録が破損し、アーカイブを作成できませんでした。'
+      + '「Copy chapter text」の後、「Delete manuscript…」とゴミ箱の「Delete permanently…」で削除し、再試行してください。')
 
     await switchLocale(page, { settings: 'Settings sections', appearance: 'Appearance', languageLabel: 'Interface language' }, 'en-US')
     const en = await exportOnce(context, path.join(roots.projects, 'cch-en.ainovel'),
       { settings: 'Settings sections', page: 'Project backup', button: 'Export local archive' })
-    assert.equal(en, 'Your book is unchanged. A review record in Chapter 2 “远航之2” is damaged, so no archive was created. '
-      + 'Keep a copy with “Copy chapter text”, then choose “Delete manuscript…” and “Delete permanently…” in the trash, and try again.')
+    assert.equal(en, 'Your book is unchanged. A review record in Chapter 2 "远航之2" is damaged, so no archive was made. '
+      + 'Use "Copy chapter text", then "Delete manuscript…" and "Delete permanently…" in the trash, and retry.')
     return { zh, ja, en }
   } },
   // 照提示在界面里做一遍：坏的是第 1 章（后面还有定稿章），复制正文、删除正文、到回收站彻底删除，之后导出成功。
@@ -85,7 +85,7 @@ export const CCH_SCENARIOS = {
     await stage.openSettings(page)
     const before = await exportOnce(context, path.join(roots.projects, 'cch-before.ainovel'),
       { settings: '设置分组', page: '项目备份', button: '导出本地存档' })
-    assert.match(before, /^作品没有改动。第 1 章「远航之1」有一条审稿记录已损坏/u)
+    assert.match(before, /^作品没有改动。第 1 章「远航之1」有条审稿记录损坏/u)
     await stage.root(page).getByRole('navigation', { name: '设置分组' }).getByRole('button', { name: /^返回(作品|书房)$/u }).click()
 
     await openChapter(page, 1)
