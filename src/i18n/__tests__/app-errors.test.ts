@@ -368,4 +368,10 @@ describe('damagedReviewCycleMessage', () => {
     expect(text).toContain('（删除于 坏掉的时间）')
     expect(text).not.toContain('Invalid Date')
   })
+
+  it('删除时间是不存在的日期时照原样写出，不被 Date 顺延成别的日子（#702）', () => {
+    const text = damagedReviewCycleMessage(shown('zh-CN'),
+      { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt: '2026-02-30 08:05:00' })
+    expect(text).toContain('（删除于 2026-02-30 08:05:00）')
+  })
 })
