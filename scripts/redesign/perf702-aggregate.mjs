@@ -1,4 +1,5 @@
 // 把 PERF702_LOG 的逐操作记录按「章数-操作」聚合：中位数、范围、次数，外加主进程账本的中位数。
+// 分组键去掉轮次（-r<n>-）和争用记录末尾的序号；批次的章号范围（batch-1-10）是不同的操作，不去。
 // 用法：node scripts/redesign/perf702-aggregate.mjs <timing.jsonl> [更多 jsonl]
 import fs from 'node:fs'
 
@@ -7,9 +8,10 @@ const median = values => {
   const middle = Math.floor(sorted.length / 2)
   return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2)
 }
-/** 操作的主读数：打开取最后一个标记（正文可交互），定稿章同时报正文与后处理卡片的差，模型操作取 toFirstRequestMs 与 totalMs。 */
+/** 操作的主读数：打开取最后一个标记（正文可交互），定稿章同时报正文与后处理卡片的差，模型操作取 toFirstRequestMs 与 totalMs，争用取处理函数耗时与期间探针最慢的一次。 */
 function readings(record) {
   const { ms } = record
+  if (record.handlerMs !== undefined) return { handlerMs: record.handlerMs, baselineMaxMs: record.baseline?.maxMs, duringMaxMs: record.during?.maxMs }
   if (Array.isArray(ms?.marks)) {
     const out = { ms: ms.marks.at(-1), maxFrameGapMs: ms.maxFrameGapMs }
     if (ms.marks.length > 1) Object.assign(out, { firstMarkMs: ms.marks[0], gapMs: ms.marks.at(-1) - ms.marks[0] })
@@ -21,11 +23,10 @@ const groups = new Map()
 for (const file of process.argv.slice(2)) {
   for (const line of fs.readFileSync(file, 'utf8').trim().split('\n')) {
     const record = JSON.parse(line)
-    if (record.label === 'discard') continue
-    const key = record.label.replace(/-r\d+-/u, '-')
+    const key = record.label.replace(/-r\d+-/u, '-').replace(/^(contention-.+)-\d+$/u, '$1')
     const group = groups.get(key) ?? groups.set(key, []).get(key)
     group.push({ ...readings(record), ipcCalls: record.ipcCalls, spawns: record.spawns, sqlCalls: record.sqlCalls, sqlRows: record.sqlRows, sqlMs: record.sqlMs,
-      mainMaxBlockMs: record.mainMaxBlockMs, longTaskMs: record.longTaskMs, ipcTop: Object.entries(record.ipc ?? {})[0] })
+      mainMaxBlockMs: record.mainMaxBlockMs, longTaskMs: record.longTaskMs, ipcTop: Object.entries(record.ipc ?? {})[0], result: record.result })
   }
 }
 for (const [key, runs] of [...groups].sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true }))) {
@@ -35,5 +36,6 @@ for (const [key, runs] of [...groups].sort(([a], [b]) => a.localeCompare(b, 'en'
     return `${field}=${median(values)}[${Math.min(...values)}–${Math.max(...values)}]`
   }).join(' ')
   const top = runs.map(run => run.ipcTop ? `${run.ipcTop[0]}:${run.ipcTop[1].ms}` : '').join(',')
-  console.log(`${key} n=${runs.length} ${summary} | 最慢通道 ${top}`)
+  const results = [...new Set(runs.filter(run => run.result !== undefined).map(run => JSON.stringify(run.result)))]
+  console.log(`${key} n=${runs.length} ${summary} | 最慢通道 ${top}${results.length ? ` | 结果 ${results.join(' / ')}` : ''}`)
 }

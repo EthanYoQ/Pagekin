@@ -670,13 +670,18 @@ async function contention(context, channel) {
   const baseline = await probe()
   const during = probe()
   const label = `contention-${channel.replace(':', '-')}-${context.contentionRuns = (context.contentionRuns ?? 0) + 1}`
-  const handlerMs = await profiled(context, label, () => app.evaluate(async ({ ipcMain }, name) => {
+  // 结果只留形状（数组记条数），对照两边时快却失败的一次一眼能看出来。
+  const { handlerMs, result } = await profiled(context, label, () => app.evaluate(async ({ ipcMain }, name) => {
     const { event, session } = globalThis.__perfSession
     const startedAt = performance.now()
-    await ipcMain._invokeHandlers.get(name)(event, session)
-    return Math.round(performance.now() - startedAt)
+    const answer = await ipcMain._invokeHandlers.get(name)(event, session)
+    const handlerMs = Math.round(performance.now() - startedAt)
+    const shape = (value, depth) => Array.isArray(value) ? value.length
+      : value && typeof value === 'object' ? depth ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shape(item, depth - 1)])) : 'object'
+        : value
+    return { handlerMs, result: shape(answer, 3) }
   }, channel))
-  return log({ label, baseline, during: await during, handlerMs })
+  return log({ label, baseline, during: await during, handlerMs, result })
 }
 
 /** 只有蓝图、没有正文的作品：蓝图页耗时随蓝图条数（PERF702_BLUEPRINTS）的曲线。 */
