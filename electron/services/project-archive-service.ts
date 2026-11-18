@@ -683,18 +683,25 @@ function projectReviewRecheckReceipt(value: unknown): Record<string, unknown> {
 function projectReviewUsage(value: unknown): Record<string, unknown> | null {
   if (value === null) return null
   const usage = parseJson(value) as Record<string, unknown>
-  if (!usage || typeof usage !== 'object' || Array.isArray(usage) || !usage.reviewRevisionEffect) return null
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return null
+  // 效果收据只写在修稿最后一段上；续写前的各段只有产物身份和结束原因，循环校验按组合逐段读这两项。
+  if (!usage.reviewRevisionEffect && !usage.artifactIdentity) return null
   const identity = object(usage.artifactIdentity, ['artifactId', 'epoch', 'fingerprint'])
-  const result = object(usage.result, ['usage', 'finishReason', 'failureCode', 'diagnostics'])
+  // 没结算或请求失败的尝试没有结束原因，只带身份。
+  const result: Record<string, unknown> = usage.result === undefined ? {} : object(usage.result, ['usage', 'finishReason', 'failureCode', 'diagnostics'])
+  const segment = {
+    artifactIdentity: { artifactId: safeId(identity.artifactId), epoch: safeId(identity.epoch),
+      fingerprint: projectReviewFingerprint(identity.fingerprint) },
+    ...(result.finishReason == null ? {} : { result: { finishReason: safeId(result.finishReason) } }),
+  }
+  if (!usage.reviewRevisionEffect) return segment
   const effect = object(usage.reviewRevisionEffect, [
     'kind', 'id', 'index', 'contentHash', 'contextHash', 'artifact', 'compositionHash', 'reportVersion',
   ])
   if (effect.kind !== 'review' && effect.kind !== 'revision') fail('PORTABLE_UNSAFE_PROJECTION')
   if (effect.reportVersion !== undefined && (effect.reportVersion !== 2 || effect.kind !== 'review')) fail('PORTABLE_UNSAFE_PROJECTION')
   const projected: Record<string, unknown> = {
-    artifactIdentity: { artifactId: safeId(identity.artifactId), epoch: safeId(identity.epoch),
-      fingerprint: projectReviewFingerprint(identity.fingerprint) },
-    result: { finishReason: safeId(result.finishReason) },
+    ...segment,
     reviewRevisionEffect: { kind: effect.kind, id: safeInteger(effect.id, 1), index: safeInteger(effect.index, 1),
       contentHash: contentHash(effect.contentHash), contextHash: contentHash(effect.contextHash),
       artifact: projectReviewArtifactRef(effect.artifact),

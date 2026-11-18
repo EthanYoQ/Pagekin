@@ -5,13 +5,13 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { closeProjectDatabase, createProjectDatabase, initProjectDatabase } from '../../database'
+import { closeProjectDatabase, createProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
 import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema'
 import { getDesktopMigrationRegistry } from '../../migrations/desktop-registry'
 import { migrateSchema } from '../../migrations/runner'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
-import { verifyM03ReviewCycle, canonicalM03FindingSetHash } from '../../migrations/m03-review-cycle'
+import { verifyM03ReviewCycle, canonicalM03FindingSetHash, inspectM03ReviewCycles } from '../../migrations/m03-review-cycle'
 import { CANONICAL_PROJECT_DATABASE, createCanonicalProjectManifest } from '../../../src/shared/project-format'
 import { buildReviewGenerationReport } from '../../../src/shared/review-generation-report'
 import type { ReviewCycleRecheckContext } from '../../../src/shared/review-cycle'
@@ -34,6 +34,7 @@ import {
   exportPortableProject,
   PORTABLE_CLEARED_TABLES,
   portableRedactionFor,
+  sanitizePortableDatabase,
   type ExportPortableProjectInput,
   type PortableAssetSnapshot,
   type PortableProvidedFile,
@@ -44,6 +45,17 @@ import {
   createProjectArchiveRoundtripFixture,
   insertAuthorImportReceipts,
 } from '../../../test/desktop/project-archive.fixture'
+import { createMainGenerationOwner } from '../main-generation-owner'
+import { ModelExecutionLeaseRegistry } from '../model-execution-lease'
+import { readMainGenerationPolicy } from '../main-generation-plan'
+import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../generation-source-binding'
+import { ReviewRepository } from '../../repositories/review-repository'
+import { RevisionRepository } from '../../repositories/revision-repository'
+import { createHumanConfirmedReviewSnapshot, renderHumanConfirmedReviewBrief, serializeHumanConfirmedReviewSnapshot } from '../../../src/shared/human-confirmed-review'
+import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
+import type { ModelProfile } from '../../../src/shared/ipc-channels'
+import { composeVisibleContinuation } from '../../../src/shared/visible-continuation'
+import { countDraftUnits } from '../../../src/shared/draft-units'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -1311,5 +1323,139 @@ describe('存档导入仍跑全书审修循环校验（#702）', () => {
     const targetProjectRoot = path.join(f.base, 'restored-broken')
     await expect(restorePortableProject({ archivePath: broken, targetProjectRoot })).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
     expect(fs.existsSync(path.join(targetProjectRoot, '.ai-novel', CANONICAL_PROJECT_DATABASE))).toBe(false)
+  })
+})
+
+describe('修稿续写过一次的审修循环照样能导出（#702）', () => {
+  const prose = '林岚走进北塔，灯火照亮了石阶。'.repeat(20)
+  const prefixText = '林岚走进北塔，月光照亮了石阶。'.repeat(10)
+  const terminalText = '她停在门前，月光照亮了石阶。'.repeat(10)
+  const report = JSON.stringify({ summary: '检查完成', items: [{ category: '表达', severity: 'warning', description: '补充动作细节', quote: '林岚走进北塔' }] })
+  const materialDecision = (prompt: string, included: NonNullable<BeginGenerationRequest['materialDecision']>['included'] = []) => ({
+    version: 1 as const, verdict: 'admitted' as const, promptHash: textHash(prompt),
+    capacity: { maxInputUnits: 18_000, methodVersion: 'utf8-bytes-v1' as const, admittedUnits: included.reduce((sum, item) => sum + item.units, 0) },
+    coverage: { required: included.length, included: included.length, complete: true }, included, omitted: [],
+  })
+
+  /**
+   * 走真实的审修 owner：审稿、作者确认、修稿（两段时首段到上限后续写一次）、合并进草稿。
+   * failedFirst：修稿第一次请求先失败、没有结束原因，作者重试。返回修稿各段的尝试编号。
+   */
+  async function seedOwnerCycle(f: Fixture, segments: 1 | 2, failedFirst = false): Promise<{ attemptIds: string[]; revised: string }> {
+    initProjectDatabase(f.root)
+    const db = getProjectDb()!
+    db.prepare("INSERT INTO project_core(id,project_name,words_per_chapter) VALUES('main','北塔',100)").run()
+    db.prepare("INSERT INTO blueprints(chapter_number,title) VALUES(1,'北塔')").run()
+    db.prepare('INSERT INTO contents(id,body) VALUES(1,?)').run(prose)
+    db.prepare("INSERT INTO drafts_all(id,chapter_number,version,status,content_id,word_count) VALUES(1,1,1,'draft',1,280)").run()
+    const revised = composeVisibleContinuation(prefixText, terminalText)
+    const outputs: Array<readonly [string, 'stop' | 'length'] | 'fail'> = [[report, 'stop'], ...(failedFirst ? ['fail' as const] : []),
+      ...(segments === 2 ? [[prefixText, 'length'], [terminalText, 'stop']] as const : [[revised, 'stop']] as const)]
+    const model: ModelProfile = { id: 'synthetic', name: '合成模型', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1',
+      apiKey: 'synthetic-key', baseUrl: 'https://api.openai.com/v1', temperature: 0.7, maxTokens: 2048, purposes: ['generation'],
+      capabilities: { contextWindowTokens: 32768, maxOutputTokens: 2048, reasoning: false, structuredOutput: true, usage: true } }
+    const loadModel = (id: string) => id === model.id ? model : null
+    const deps = { db, projectStorageRoot: f.storage, globalDataRoot: f.base, readBuiltinPrompt: () => '冻结的合成提示词' }
+    const owner = createMainGenerationOwner({ database: db, projectId: f.projectId, epoch: 'epoch-1', assertCurrent: () => {},
+      leases: new ModelExecutionLeaseRegistry({ loadModel }), loadModel,
+      dispatch: async (_request, options) => {
+        const next = outputs.shift()!
+        if (next === 'fail') throw new Error('NETWORK_ERROR')
+        const [text, finishReason] = next
+        options.onVisible({ kind: 'delta', text })
+        return { finishReason, usage: null }
+      },
+      buildBinding: (selection, modelReceipt, policy) => buildGenerationSourceBinding(deps, { ...selection, projectId: f.projectId,
+        epoch: 'epoch-1', modelReceipt, policy, outputContract: generationOutputContract(selection) }).binding,
+      rebuildBinding: (previous, modelReceipt) => rebuildGenerationSourceBinding(deps, previous, 'epoch-1', modelReceipt,
+        readMainGenerationPolicy(previous.sourceManifest.policy)).binding })
+    const expectedDraft = { chapterNumber: 1, version: 1, status: 'draft' as const, contentHash: textHash(prose) }
+    const begin = (prepared: ReturnType<typeof owner.prepareReviewRevision>, nonce: string) => {
+      const review = prepared.context.operation === 'review-chapter'
+      return owner.begin({ operation: prepared.context.operation, uiActionNonce: nonce, modelId: model.id, chapterNumber: 1,
+        selectedDraftIds: [1], selectedFinalizedDraftIds: [], promptKeys: [review ? 'consistency_check' : 'refine_from_review'],
+        skillStages: [review ? 'review' : 'refinement'], output: review ? 'structured-data' : 'visible-text',
+        reviewRevisionContextId: prepared.contextId, authorInputs: [{ id: 'review-revision-context', text: JSON.stringify(prepared.context) }],
+        ...(prepared.parentRootActionId ? { parentRootActionId: prepared.parentRootActionId } : {}) })
+    }
+    try {
+      const reviewPrepared = owner.prepareReviewRevision({ operation: 'review-chapter', draftId: 1, expectedDraft, authorInputs: [], uiLocale: 'zh-CN' })
+      const reviewView = begin(reviewPrepared, 'review')
+      owner.bindMaterialDecision(reviewView.handle, materialDecision('检查冻结正文'))
+      const reviewRun = await owner.execute({ handle: reviewView.handle, invocationNonce: 'review-run',
+        task: { purpose: 'review-chapter', output: 'structured-data', messages: [{ role: 'user', content: '检查冻结正文' }] } })
+      const reviewArtifact = reviewRun.run.artifacts.at(-1)!
+      const savedReview = owner.commitReview({ contextId: reviewPrepared.contextId, handle: reviewView.handle,
+        artifact: { artifactId: reviewArtifact.artifactId, revision: reviewArtifact.revision, textHash: reviewArtifact.textHash } })
+      const snapshot = createHumanConfirmedReviewSnapshot({ sourceReviewId: savedReview.id, sourceDraft: savedReview.source,
+        summary: '作者确认', authorGuidance: '', items: [{ category: '表达', severity: 'warning', description: '补充动作', decision: 'apply', origin: 'ai' }] })!
+      const confirmationContent = serializeHumanConfirmedReviewSnapshot(snapshot)
+      const confirmation = ReviewRepository.create({ baseDraftId: 1, content: confirmationContent, expectedSource: savedReview.source }, db)
+      const prepared = owner.prepareReviewRevision({ operation: 'refine-from-review', draftId: 1, expectedDraft, authorInputs: [],
+        uiLocale: 'zh-CN', reviewSourceId: confirmation.id, confirmedReviewContent: confirmationContent })
+      const view = begin(prepared, 'revision')
+      const brief = renderHumanConfirmedReviewBrief(snapshot, prepared.context.writingLanguage)
+      owner.bindMaterialDecision(view.handle, materialDecision('按确认修改', [{ sourceId: `review:confirmed:${confirmation.id}`,
+        revision: confirmation.id, contentHash: textHash(brief), category: 'author', required: true, units: Buffer.byteLength(brief) }]))
+      if (failedFirst) {
+        await owner.execute({ handle: view.handle, invocationNonce: 'revision-run-failed', task: { purpose: 'refine-from-review',
+          output: 'visible-text', messages: [{ role: 'user', content: '按确认修改' }] } }).catch(() => undefined)
+      }
+      for (let index = 0; index < segments; index++) {
+        await owner.execute({ handle: view.handle, invocationNonce: `revision-run-${index}`, task: {
+          purpose: index === 0 ? 'refine-from-review' : 'refine-from-review-continuation', output: 'visible-text',
+          messages: [{ role: 'user', content: index === 0 ? '按确认修改' : '从结尾接着写完' }] } })
+      }
+      const candidates = owner.read(view.handle).candidates!
+      expect(candidates).toHaveLength(segments + Number(failedFirst))
+      const artifactIds = candidates.slice(-segments).map(candidate => candidate.artifactId)
+      const composition = owner.composeVisible(view.handle, artifactIds, textHash(revised), 'visible-append-v1')
+      const savedRevision = owner.commitRevision({ contextId: prepared.contextId, handle: view.handle, expectedCompositionHash: composition.textHash })
+      RevisionRepository.mergeIntoDraft({ revisionId: savedRevision.id, targetDraftId: 1, expectedDraftContent: prose,
+        mergedContent: revised, wordCount: countDraftUnits(revised) }, db)
+      expect(inspectM03ReviewCycles(db)).toEqual({ structureOk: true, unprovable: [] })
+      const attemptIds = artifactIds.map(id => db.prepare('SELECT attempt_id FROM generation_artifacts WHERE artifact_id=?').pluck().get(id) as string)
+      if (failedFirst) {
+        expect(db.prepare(`SELECT COUNT(*) FROM generation_attempts WHERE run_id=?
+          AND json_extract(usage_receipt_json,'$.result.finishReason') IS NULL`).pluck().get(view.handle.runId)).toBe(1)
+      }
+      return { attemptIds, revised }
+    } finally {
+      owner.suspendForProjectClose()
+      closeProjectDatabase()
+    }
+  }
+
+  it.each([[1, false], [2, false], [2, true]] as const)('%i 段修稿的循环导出成功，恢复出的副本从严校验没有验不过的循环（修稿先失败一次：%s）', async (segments, failedFirst) => {
+    const f = fixture()
+    const seeded = await seedOwnerCycle(f, segments, failedFirst)
+    const receipt = await exportPortableProject(input(f))
+    expect(receipt.omittedReviewCycles ?? []).toEqual([])
+    const targetRoot = path.join(f.base, 'restored-segments')
+    await restorePortableProject({ archivePath: f.target, targetProjectRoot: targetRoot })
+    const restored = new Database(path.join(targetRoot, '.ai-novel', 'project.db'), { readonly: true })
+    try {
+      restored.pragma('foreign_keys = ON')
+      expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
+      expect(restored.prepare('SELECT body FROM review_cycle_merges').pluck().get()).toBe(seeded.revised)
+    } finally { restored.close() }
+  })
+
+  it('便携副本里续写前那一段的收据还在：保留到上限的结束原因和产物身份，不带别的', async () => {
+    const f = fixture()
+    const { attemptIds: [prefixAttempt] } = await seedOwnerCycle(f, 2)
+    const source = new Database(f.databasePath, { readonly: true })
+    const original = JSON.parse(source.prepare('SELECT usage_receipt_json FROM generation_attempts WHERE attempt_id=?').pluck().get(prefixAttempt) as string)
+    source.close()
+    expect(original.reviewRevisionEffect).toBeUndefined()
+    const copy = path.join(f.base, 'portable-copy.db')
+    fs.copyFileSync(f.databasePath, copy)
+    sanitizePortableDatabase(copy)
+    const portable = new Database(copy, { readonly: true })
+    try {
+      const projected = portable.prepare('SELECT usage_receipt_json FROM generation_attempts WHERE attempt_id=?').pluck().get(prefixAttempt) as string | null
+      expect(projected).not.toBeNull()
+      expect(JSON.parse(projected!)).toEqual({ artifactIdentity: original.artifactIdentity, result: { finishReason: 'length' } })
+    } finally { portable.close() }
   })
 })
