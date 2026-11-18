@@ -54,7 +54,7 @@ const steps = []
 const pass = (stepId, actionId, assertion) => steps.push({ stepId, actionId, outcome: 'PASS', assertion })
 const invoke = (page, channel, ...args) => page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
 /** generation:list 只给身份与状态；要候选、账本时按 handle 逐个读完整视图。 */
-const listRunViews = async (page, context) => Promise.all((await invoke(page, 'generation:list', context)).map(run => invoke(page, 'generation:read', run.handle, context)))
+const listRunViews = async (page, context) => Promise.all((await invoke(page, 'generation:list', ['chapter-draft'], context)).map(run => invoke(page, 'generation:read', run.handle, context)))
 /** 内容区标签：只有两个以上标签时才显示标签条。 */
 const tab = (page, name) => stage.tabList(page).getByRole('tab', { name, exact: true })
 const assertActiveTab = async (page, name, actionId) => {

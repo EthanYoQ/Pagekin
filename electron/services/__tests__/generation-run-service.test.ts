@@ -18,7 +18,7 @@ function fixture() {
     let now = 1000;
     const repository = new GenerationRunRepository(() => db, () => now);
     const h = textHash('frozen'), fingerprint = { chapterBriefHash: h, authorGuidanceHash: h, dependencyHash: h, contextSnapshotHash: h, templateHash: h, skillSnapshotHash: h, modelLeaseRevision: h, policyHash: h, outputContractHash: h };
-    const open: OpenGenerationRunRequest = { projectId: 'project', epoch: 'epoch', operation: 'write', uiActionNonce: 'click', frozenInputHash: h, fingerprint, contextSnapshotId: 'context', sourceManifest: { kind: 'synthetic-frozen-sources' }, sourceRefs: [], budget: { maxPhysicalRequests: 2, maxTokenLiability: 500, maxOutputPerRequest: 100, maxActiveElapsedMs: 10000 } };
+    const open: OpenGenerationRunRequest = { projectId: 'project', epoch: 'epoch', operation: 'write', uiActionNonce: 'click', frozenInputHash: h, fingerprint, contextSnapshotId: 'context', sourceManifest: { kind: 'synthetic-frozen-sources', operation: 'write' }, sourceRefs: [], budget: { maxPhysicalRequests: 2, maxTokenLiability: 500, maxOutputPerRequest: 100, maxActiveElapsedMs: 10000 } };
     const policy = { estimatorVersion: 'fixture-v1', safetyMarginTokens: 10, reasoning: 'included-in-completion' as const, canBoundTotalLiability: true };
     const request = (runId: string, nonce = 'call'): ExecuteGenerationRequest => ({ runId, invocationNonce: nonce, requestHash: textHash(nonce), providerRequest: { prompt: 'author' }, reservedTokens: 200, requestedOutputTokens: 100, inputUpperBoundTokens: 90, reasoningUpperBoundTokens: 0, usagePolicy: policy });
     return { db, repository, open, policy, request, setNow: (value: number) => { now = value; } };
@@ -308,7 +308,7 @@ it('导入的冻结历史上，「不再恢复」与撤销都不写（#686）', 
 });
 describe('运行上的记账跟着运行走（#608）', () => {
     const marked = (manifest: Record<string, unknown> = {}) => {
-        const f = fixture(), run = f.repository.open({ ...f.open, sourceManifest: { ...f.open.sourceManifest, ...manifest } });
+        const f = fixture(), run = f.repository.open({ ...f.open, operation: String(manifest.operation ?? f.open.operation), sourceManifest: { ...f.open.sourceManifest, ...manifest } });
         f.repository.recordRecoveryAbandonment(run.runId, { artifact: 3 });
         f.db.transaction(() => f.repository.recordPlotOutlineCommitWithinTransaction(run.runId)).immediate();
         return { ...f, run };

@@ -223,3 +223,25 @@ it.each<DamagedColumn>(['action_json','binding_json','usage_receipt_json'])('ADR
  expect(await failingCalls(enumerations(next))).toEqual([])
  expect(next.beginGraphGeneration({input:{kind:'plan',chapterNumber:1},modelId:'synthetic',uiActionNonce:'新的点击'}).view.handle.rootActionId).not.toBe(prior.rootActionId)
 })
+
+it('#702 重开后重试同一次点击，返回原来的图谱运行，不另开根、不再付费',async()=>{
+ const f=fixture(),prior=f.begin().view.handle
+ await f.owner.executeGraphGeneration({handle:prior})
+ const next=f.reopen(),roots=rootCount(f.db)
+ expect(next.beginGraphGeneration({input:{kind:'plan',chapterNumber:1},modelId:'synthetic',uiActionNonce:'图谱动作'}).view.handle).toEqual(prior)
+ expect(rootCount(f.db)).toBe(roots)
+ expect(f.spy).toHaveBeenCalledTimes(1)
+})
+
+it('#702 同一次点击按根认：开树运行的 open_key 点击号与根不同，重试原点击仍返回原运行',async()=>{
+ const f=fixture(),prior=f.begin().view.handle
+ await f.owner.executeGraphGeneration({handle:prior})
+ const [click,root]=JSON.parse(f.db.prepare('SELECT open_key FROM generation_runs WHERE run_id=?').pluck().get(prior.runId) as string) as [string,string]
+ const parts=JSON.parse(click) as string[]
+ parts[2]='别的点击'
+ f.db.prepare('UPDATE generation_runs SET open_key=? WHERE run_id=?').run(JSON.stringify([JSON.stringify(parts),root]),prior.runId)
+ const next=f.reopen(),roots=rootCount(f.db)
+ expect(next.beginGraphGeneration({input:{kind:'plan',chapterNumber:1},modelId:'synthetic',uiActionNonce:'图谱动作'}).view.handle).toEqual(prior)
+ expect(rootCount(f.db)).toBe(roots)
+ expect(f.spy).toHaveBeenCalledTimes(1)
+})

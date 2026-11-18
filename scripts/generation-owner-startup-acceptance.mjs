@@ -107,7 +107,7 @@ if (process.argv.includes('--help')) {
       assert.equal((await invoke(session.page, 'generation:execute', request, context)).run.artifacts[0].artifactId, firstArtifactId)
       const read = await invoke(session.page, 'generation:read', oldHandle, context)
       assert.equal(read.artifacts[0].text, visibleText); safeReceipt(read)
-      assert.equal((await invoke(session.page, 'generation:list', context))[0].handle.runId, oldHandle.runId)
+      assert.equal((await invoke(session.page, 'generation:list', ['draft'], context))[0].handle.runId, oldHandle.runId)
       await captureDispatches(session.app, 1)
       results.push({ name: 'public-owner-execute-and-idempotent-reread', outcome: 'PASS', durableTextExact: true, mainPlannerParameter: true, emptyPromptRejected: true })
     } finally { await session.app.close() }

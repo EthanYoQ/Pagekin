@@ -42,6 +42,7 @@ import { clearProjectCustomPrompts } from '../../../src/services/prompt-template
 import { exportPortableProject } from '../../services/project-archive-service'
 import { restorePortableProject } from '../../services/project-restore-service'
 import { readPortableRuntimeFreeze } from '../../services/portable-runtime-freeze'
+import { runIndexOf } from '../../repositories/generation-run-index'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 const model: ModelProfile = { id: 'fixture', name: '合成模型', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1',
@@ -690,7 +691,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
       task: { purpose: 'draft', output: 'visible-text', messages: [{ role: 'user', content: '中文正文' }] } })
     expect(result.outcome.content).toBe('中文候选')
     expect(result.run.ledger?.physicalRequests).toBe(1)
-    expect((await invoke('generation:list'))[0].handle).toEqual(run.handle)
+    expect((await invoke('generation:list', ['draft']))[0].handle).toEqual(run.handle)
     expect((await invoke('generation:read', run.handle)).artifacts[0].text).toBe('中文候选')
     expect(sender.send).toHaveBeenCalledWith('generation:snapshot', expect.objectContaining({ text: '中文候选', durableRevision: 1, status: 'completed' }))
     expect(sender.send).toHaveBeenCalledWith('generation:reasoning', expect.objectContaining({ ...run.handle, text: '临时推理' }))
@@ -921,6 +922,11 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       expect(ProjectCoreRepository.get(restored)!.synopsis).toBe(synopsis)
       expect(restored.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(handle.runId)).toBe('{}')
       expect(readPortableRuntimeFreeze(restoredRoot).isFrozen('generation_runs', handle.runId)).toBe(true)
+      // 导入后的冻结历史原样带着原作品号：只有原作品号能在索引里认出它。
+      const index = runIndexOf(restored)
+      expect(index.lookup(click => click.projectId === session.projectId).hits.map(entry => entry.runId)).toEqual([handle.runId])
+      expect(index.lookup(click => click.projectId !== session.projectId).hits).toEqual([])
+      expect(index.lookup(() => true).unidentified).toEqual([])
       expect(() => readPortableRuntimeFreeze(restoredRoot).assertMutable('generation_roots', handle.rootActionId)).toThrow('PORTABLE_RUNTIME_FROZEN')
     } finally { restored.close() }
     expect(f.fetch).toHaveBeenCalledTimes(2)

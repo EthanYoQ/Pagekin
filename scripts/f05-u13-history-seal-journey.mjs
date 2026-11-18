@@ -220,7 +220,7 @@ async function main() {
     const readSession = await invoke(page2, 'project:open', project.projectPath, randomUUID(), null)
     assert.equal(readSession.success, true, readSession.error)
     const readContext = { projectId: project.projectId, projectPath: project.projectPath, leaseId: readSession.project.sessionLease }
-    const listedRuns = await invoke(page2, 'generation:list', readContext)
+    const listedRuns = await invoke(page2, 'generation:list', ['chapter-draft'], readContext)
     assert.deepEqual(listedRuns.map(run => run.handle.runId).sort(), runs.map(run => run.runId).sort())
     pass('u13-v3-select-history', 'U13.A08', 'Stage run history selected the exact persisted success body then the failed run; main IPC and SQLite retain two distinct chapter-draft run identities',
       { runIds: runs.map(run => run.runId), selectedStatuses: ['completed', 'failed'], selectedSuccessBodySha256: createHash('sha256').update(savedDraft.body).digest('hex') })
