@@ -633,14 +633,6 @@ function assertReviewContext(value: unknown): Record<string, unknown> {
   return context
 }
 
-const GENERATION_RUN_TABLES = new Set(['generation_runs', 'generation_attempts', 'generation_artifacts'])
-
-function projectRunIdentity(value: unknown): Record<string, unknown> {
-  const binding = parseJson(value) as Record<string, unknown> | null
-  if (!binding || typeof binding !== 'object' || Array.isArray(binding)) fail('PORTABLE_UNSAFE_PROJECTION')
-  return { projectId: safeId(binding.projectId), epoch: safeId(binding.epoch) }
-}
-
 function projectReviewBinding(value: unknown): Record<string, unknown> {
   const stored = parseJson(value)
   const frozen = stored && typeof stored === 'object'
@@ -903,12 +895,13 @@ function draftThreadTaskProofs(db: InstanceType<typeof BetterSqlite>, reviewRoot
 
 /**
  * Shared C17 copy-only history projection. Call only on an isolated target staging DB.
- * omitReviewCycles：导出时验不过的审修循环，投影前从副本里删掉（连带意见与合并快照）；最后的校验仍从严，证明存档里没有坏循环。
- * 去掉以后它的根仍过不了投影，就按那一章报 MIGRATION_VERIFICATION_FAILED；其他失败原样抛出。
+ * omitReviewCycles：导出时验不过的审修循环，投影前把它们所在的根上的循环从副本里删掉（连带意见与合并快照）；最后的校验仍从严，证明存档里没有坏循环。
+ * 去掉以后根仍过不了投影，就按那一章报 MIGRATION_VERIFICATION_FAILED；其他失败原样抛出。omittedReviewCycles 每个删掉的根一项。
  */
 export function sanitizePortableDatabase(databasePath: string, options: { omitReviewCycles?: ReadonlyMap<string, DamagedReviewCycle> } = {}): {
   history: HistoryProjection[]
   tableCounts: Record<string, number>
+  omittedReviewCycles: DamagedReviewCycle[]
 } {
   const db = new BetterSqlite(databasePath, { fileMustExist: true })
   try {
@@ -918,26 +911,18 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     if (schemaVersion === undefined) throw new Error('PORTABLE_SCHEMA_UNSUPPORTED')
     const omitted = options.omitReviewCycles ?? new Map<string, DamagedReviewCycle>()
     const sourceSchema = assertPortableSourceSchema(db, schemaVersion, () => new Set(omitted.keys()))
-    // 必须在算 reviewRoots 之前删：去掉循环以后，它的根按普通根投影。
+    // 按根删，与 M03 同一单位：验不过的循环连同同根的循环一起删，这条根就按普通根投影。必须在算 reviewRoots 之前删。
+    // 验不过的循环自己的链接不可信，只取它的根。一根下有几条循环时指不准是哪一章，不报章节。
     const omittedRoots = new Map<string, DamagedReviewCycle>()
-    const runsOfOmittedCycles = new Set<string>()
     if (omitted.size) {
-      const cycleOf = db.prepare('SELECT root_action_id,review_id,revision_id,recheck_attempt_id FROM review_cycles WHERE cycle_id=?')
-      const evidenceOf = db.prepare(`SELECT run_id FROM generation_attempts WHERE root_action_id=?
-        AND (attempt_id=? OR json_valid(usage_receipt_json) AND (
-          json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review' AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.id')=?
-          OR json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='revision' AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.id')=?))`)
-      const omit = db.prepare('DELETE FROM review_cycles WHERE cycle_id=?')
-      db.transaction(() => {
-        for (const [cycleId, location] of omitted) {
-          const cycle = cycleOf.get(cycleId) as { root_action_id: string; review_id: number; revision_id: number | null
-            recheck_attempt_id: string | null }
-          omittedRoots.set(cycle.root_action_id, location)
-          for (const runId of evidenceOf.pluck().all(cycle.root_action_id, cycle.recheck_attempt_id, cycle.review_id, cycle.revision_id))
-            runsOfOmittedCycles.add(runId as string)
-          omit.run(cycleId)
-        }
-      })()
+      const rootOf = db.prepare('SELECT root_action_id FROM review_cycles WHERE cycle_id=?').pluck()
+      const cyclesOn = db.prepare('SELECT COUNT(*) FROM review_cycles WHERE root_action_id=?').pluck()
+      for (const [cycleId, location] of omitted) {
+        const root = rootOf.get(cycleId) as string
+        omittedRoots.set(root, cyclesOn.get(root) === 1 ? location : { chapterNumber: null, chapterTitle: '', inTrash: false })
+      }
+      const omit = db.prepare('DELETE FROM review_cycles WHERE root_action_id=?')
+      db.transaction(() => { for (const root of omittedRoots.keys()) omit.run(root) })()
     }
     const avatarRows = readPortableCharacterAvatarRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
@@ -990,8 +975,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
           : null
         for (const row of rows) {
           const root = table === 'generation_artifacts' ? artifactRoots.get(String(row.artifact_id)) : String(row.root_action_id)
-          const ownedByOmitted = GENERATION_RUN_TABLES.has(table) && runsOfOmittedCycles.has(String(row.run_id))
-          const reviewProof = root !== undefined && reviewRoots.has(root) && !ownedByOmitted
+          const reviewProof = root !== undefined && reviewRoots.has(root)
           try {
             if (hasProjection || hasHistory) {
               const safe = projectionForRow(table, row, columns)
@@ -1014,12 +998,10 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
             if (update) update.run(...updates.map(column => {
               const key = `${table}.${column.name}`
               if (draftProof !== undefined && (key === 'generation_attempts.usage_receipt_json' || key === 'generation_runs.binding_json')) return draftProof
-              if (ownedByOmitted && key === 'generation_runs.binding_json' && root !== undefined && reviewRoots.has(root))
-                return JSON.stringify(projectRunIdentity(row[column.name]))
               return neutralValue(key, column, row[column.name], reviewProof)
             }), row.__portable_rowid__)
           } catch (error) {
-            const location = root === undefined || reviewProof ? undefined : omittedRoots.get(root)
+            const location = root === undefined ? undefined : omittedRoots.get(root)
             if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_UNSAFE_PROJECTION' && location?.chapterNumber != null)
               throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', location)
             throw error
@@ -1037,7 +1019,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     db.exec('VACUUM')
     db.pragma('wal_checkpoint(TRUNCATE)')
     assertPortableSourceSchema(db, schemaVersion)
-    return { history, tableCounts }
+    return { history, tableCounts, omittedReviewCycles: [...omittedRoots.values()] }
   } finally { db.close() }
 }
 
@@ -1361,7 +1343,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
       },
       entryCount: archiveReceipt.entryCount,
       requiresRuntimeFreezeGuard: true,
-      ...(unprovable.length ? { omittedReviewCycles: unprovable.map(item => item.location) } : {}),
+      ...(sanitized.omittedReviewCycles.length ? { omittedReviewCycles: sanitized.omittedReviewCycles } : {}),
     }
   } finally {
     cleanupAttempt(attempt)
