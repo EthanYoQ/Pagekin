@@ -370,7 +370,7 @@ export function assertM03ReviewCycle(db: Database.Database, accepted?: AcceptedR
   if (!unprovable.length) return true
   const prior = accepted?.() ?? new Set<string>()
   const fresh = unprovable.find(item => item.cycleId === null || !prior.has(item.cycleId))
-  if (fresh) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', fresh.location.chapterNumber === null ? undefined : fresh.location)
+  if (fresh) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', fresh.location)
   return true
 }
 
