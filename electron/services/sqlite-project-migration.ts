@@ -253,6 +253,7 @@ export async function backupProjectSqlite(options: {
   safeDirectory(path.dirname(targetPath))
   sourceFile(sourcePath)
   const registry = options.registry ?? getDesktopMigrationRegistry()
+  const targetVersion = options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION
   const snapshot = physicalSnapshot(sourcePath)
   let source: BetterSqlite3.Database | undefined
   try {
@@ -273,14 +274,15 @@ export async function backupProjectSqlite(options: {
         copyQualifiedLegacy(source, staging, columnsBefore, before.fingerprint)
         inspect(staging, registry, 0)
       }
-      migrateSchema(new SqliteSchemaAdapter(staging, accepted), registry, options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION)
+      // 已在目标版本就没有迁移可做，迁移前后的两遍校验与下面 inspect 的那一遍验的是同一份内容。
+      if (before.schemaVersion !== targetVersion) migrateSchema(new SqliteSchemaAdapter(staging, accepted), registry, targetVersion)
       if (JSON.stringify(before.domain) !== JSON.stringify(domain(staging, columnsBefore))) throw new Error('PROJECT_MIGRATION_SQLITE_CONTENT_CHANGED')
       // Missing legacy metadata is derived only after every source row was verified.
       if (legacySchema) {
         initializeCharacterRosterMetadata(staging)
         staging.exec("INSERT OR IGNORE INTO continuity_projection_meta (id) VALUES ('main')")
       }
-      const after = inspect(staging, registry, options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION, accepted, options.variants)
+      const after = inspect(staging, registry, targetVersion, accepted, options.variants)
       snapshot.unchanged()
       staging.pragma('wal_checkpoint(TRUNCATE)')
       const fd = fs.openSync(targetPath, 'r+'); try { fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
