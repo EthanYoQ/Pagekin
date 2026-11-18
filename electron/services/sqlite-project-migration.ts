@@ -293,22 +293,26 @@ function currentSnapshotIdentity(databasePath: string): SqliteContentIdentity | 
   } finally { snapshot.close() }
 }
 
+/** 打开作品和当前作品概览共用的校验。与 v10 迁移校验的差别仅在不跑全书 M03（随章数增长），
+ * 仓库读写改为逐条校验（ADR-0029）。库版本升级时要对照新版本的迁移校验重新核对这里。
+ */
+export function verifyOpenedSchema(db: BetterSqlite3.Database): void {
+  const probe = probeSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry())
+  if (probe.version !== CURRENT_DESKTOP_SCHEMA_VERSION) throw new SchemaMigrationError('SCHEMA_VERSION_MISMATCH')
+  if (!verifyM02CharacterIdentity(db) || !verifyM07ChapterRecycle(db)) {
+    throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED')
+  }
+}
+
 /** A read-only handle on the source reads WAL frames through the live -shm
  * index, which a snapshot rebuilds and may drop, and closing it never
  * checkpoints a WAL that verification refuses.
- *
- * 与 v10 迁移校验的差别仅在不跑全书 M03（随章数增长），仓库读写改为逐条校验（ADR-0029）。
- * 库版本升级时要对照新版本的迁移校验重新核对这里。
  */
 function verifyLiveSchema(databasePath: string): void {
   const reader = new Database(databasePath, { readonly: true, fileMustExist: true })
   try {
     reader.pragma('foreign_keys = ON')
-    const probe = probeSchema(new SqliteSchemaAdapter(reader), getDesktopMigrationRegistry())
-    if (probe.version !== CURRENT_DESKTOP_SCHEMA_VERSION) throw new SchemaMigrationError('SCHEMA_VERSION_MISMATCH')
-    if (!verifyM02CharacterIdentity(reader) || !verifyM07ChapterRecycle(reader)) {
-      throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED')
-    }
+    verifyOpenedSchema(reader)
   } finally { reader.close() }
 }
 

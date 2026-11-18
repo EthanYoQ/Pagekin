@@ -814,7 +814,14 @@ export class GenerationRunRepository {
             }[];
             for (const { root_action_id: id } of roots) {
                 if (this.frozenRoot(id)) continue;
-                for (const attempt of this.budget(id).attempts)
+                let budget: GenerationBudgetReceipt;
+                try { budget = this.budget(id); } catch (error) {
+                    if (!(error instanceof SyntaxError)) throw error;
+                    // 读不出的根留给读写它的那一步报错，不挡其余根恢复（ADR-0029 后果 1）。
+                    console.warn('[generation] GENERATION_ROOT_UNREADABLE skipped during recovery', { rootActionId: id });
+                    continue;
+                }
+                for (const attempt of budget.attempts)
                     if (attempt.status === 'dispatch-marked') {
                         attempt.status = 'unknown';
                         this.db().prepare('UPDATE generation_attempts SET attempt_json=? WHERE attempt_id=?').run(encode(attempt), attempt.attemptId);

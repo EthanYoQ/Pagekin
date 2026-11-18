@@ -338,7 +338,7 @@ export function verifyM03ReviewCycle(db: Database.Database): boolean {
   } catch { return false }
 }
 
-/** 只校验这一条循环；全库外键和结构检查已在打开作品时做过，见 verifyLiveSchema。 */
+/** 只校验这一条循环；全库外键和结构检查已在打开作品时做过，见 verifyOpenedSchema。 */
 export function verifyM03ReviewCycleById(db: Database.Database, cycleId: string): boolean {
   try {
     if (db.pragma('foreign_keys', { simple: true }) !== 1) return false

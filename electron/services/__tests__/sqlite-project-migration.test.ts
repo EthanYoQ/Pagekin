@@ -462,7 +462,7 @@ describe('打开作品不跑全书审修循环校验（#702）', () => {
     return { ...f, db, book }
   }
 
-  it('打开时的校验对应 v10 的迁移校验去掉全书 M03；库版本升级时要重新核对 verifyLiveSchema', () => {
+  it('打开时的校验对应 v10 的迁移校验去掉全书 M03；库版本升级时要重新核对 verifyOpenedSchema', () => {
     expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(10)
   })
 
