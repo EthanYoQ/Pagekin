@@ -7,16 +7,15 @@ type LedgerTable = 'generation_roots' | 'generation_runs' | 'generation_attempts
 type Db = Database.Database
 
 // 四张表的主键都是可为 NULL 的 TEXT PRIMARY KEY，定位行一律用 rowid。
-const OWNERS: Record<LedgerTable, { idColumn: string; root: string; rootRow: string; runRow: string }> = {
-  generation_roots: { idColumn: 'root_action_id', root: 'root_action_id', rootRow: 'rowid',
+const OWNERS: Record<LedgerTable, { idColumn: string; rootRow: string; runRow: string }> = {
+  generation_roots: { idColumn: 'root_action_id', rootRow: 'rowid',
     runRow: '(SELECT r.rowid FROM generation_runs r WHERE r.root_action_id=generation_roots.root_action_id ORDER BY r.rowid LIMIT 1)' },
-  generation_runs: { idColumn: 'run_id', root: 'root_action_id', runRow: 'rowid',
+  generation_runs: { idColumn: 'run_id', runRow: 'rowid',
     rootRow: '(SELECT o.rowid FROM generation_roots o WHERE o.root_action_id=generation_runs.root_action_id)' },
-  generation_attempts: { idColumn: 'attempt_id', root: 'root_action_id',
+  generation_attempts: { idColumn: 'attempt_id',
     rootRow: '(SELECT o.rowid FROM generation_roots o WHERE o.root_action_id=generation_attempts.root_action_id)',
     runRow: '(SELECT r.rowid FROM generation_runs r WHERE r.run_id=generation_attempts.run_id)' },
   generation_artifacts: { idColumn: 'artifact_id',
-    root: '(SELECT t.root_action_id FROM generation_attempts t WHERE t.attempt_id=generation_artifacts.attempt_id)',
     rootRow: '(SELECT o.rowid FROM generation_roots o JOIN generation_attempts t ON t.root_action_id=o.root_action_id WHERE t.attempt_id=generation_artifacts.attempt_id)',
     runRow: '(SELECT r.rowid FROM generation_runs r WHERE r.run_id=generation_artifacts.run_id)' },
 }
@@ -55,7 +54,7 @@ export const ADMITTED_LEDGER_CELLS: readonly AdmittedLedgerCell[] = [
 const readable = (column: string) => `CASE WHEN typeof(${column})='text' AND instr(${column},char(0))=0 AND json_valid(${column}) THEN json_type(${column})='object' ELSE 0 END`
 const SCAN = ADMITTED_LEDGER_CELLS.map((cell, index) => {
   const owner = OWNERS[cell.table]
-  return `SELECT ${index} AS cell, rowid AS row, ${owner.idColumn} AS id, ${owner.root} AS root, ${owner.rootRow} AS rootRow, ${owner.runRow} AS runRow,
+  return `SELECT ${index} AS cell, rowid AS row, ${owner.idColumn} AS id, ${owner.rootRow} AS rootRow, ${owner.runRow} AS runRow,
     hex(CAST(${cell.column} AS BLOB)) AS hex FROM ${cell.table}
     WHERE ${cell.nullable ? `${cell.column} IS NOT NULL AND ` : ''}NOT ${readable(cell.column)}`
 }).join(' UNION ALL ') + ' ORDER BY cell'
@@ -71,7 +70,7 @@ export interface LedgerAdmission {
  */
 export function admitGenerationLedger(db: Db): LedgerAdmission {
   const scan = db.prepare(SCAN)
-  type Bad = { cell: number; row: number; id: string | null; root: string | null; rootRow: number | null; runRow: number | null; hex: string }
+  type Bad = { cell: number; row: number; id: string | null; rootRow: number | null; runRow: number | null; hex: string }
   if (!scan.all().length) return { sealedRootActionIds: [] }
   const roots = db.transaction(() => {
     const now = Date.now()
