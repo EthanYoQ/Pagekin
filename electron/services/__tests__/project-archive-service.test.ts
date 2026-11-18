@@ -1337,10 +1337,8 @@ describe('修稿续写过一次的审修循环照样能导出（#702）', () => 
     coverage: { required: included.length, included: included.length, complete: true }, included, omitted: [],
   })
 
-  /**
-   * 走真实的审修 owner：审稿、作者确认、修稿（两段时首段到上限后续写一次）、合并进草稿。
-   * failedFirst：修稿第一次请求先失败、没有结束原因，作者重试。返回修稿各段的尝试编号。
-   */
+  // 走真实的审修 owner，保证续写分段的落库形态与线上一致。
+  // failedFirst：修稿首个请求失败且没有结束原因，作者重试；返回修稿各段的尝试编号。
   async function seedOwnerCycle(f: Fixture, segments: 1 | 2, failedFirst = false): Promise<{ attemptIds: string[]; revised: string }> {
     initProjectDatabase(f.root)
     const db = getProjectDb()!

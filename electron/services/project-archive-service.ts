@@ -684,7 +684,7 @@ function projectReviewUsage(value: unknown): Record<string, unknown> | null {
   if (value === null) return null
   const usage = parseJson(value) as Record<string, unknown>
   if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return null
-  // 效果收据只写在修稿最后一段上；续写前的各段只有产物身份和结束原因，循环校验按组合逐段读这两项。
+  // 修稿续写时效果收据只落在最后一段，前面各段只有产物身份和结束原因；循环校验会逐段读这两项，所以不能丢。
   if (!usage.reviewRevisionEffect && !usage.artifactIdentity) return null
   const identity = object(usage.artifactIdentity, ['artifactId', 'epoch', 'fingerprint'])
   // 没结算或请求失败的尝试没有结束原因，只带身份。
