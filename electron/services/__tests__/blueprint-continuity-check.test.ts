@@ -11,6 +11,7 @@ import { generationOutputContract } from '../../../src/shared/generation-owner-c
 import { getProjectDb } from '../../database'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
 import { textHash } from '../../repositories/generation-run-repository'
+import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
 
@@ -122,6 +123,20 @@ it('最新一次运行记录读取时抛错：跳过它，取回更早那次的�
   const reopened = f.reopen()
   f.db.prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$.sourceManifest.graphGenerationContextHash','0') WHERE run_id=?`).run(broken.view.handle.runId)
   expect(() => reopened.readGraphGeneration({ handle: broken.view.handle })).toThrow()
+  expect(reopened.readLatestContinuityCheck()?.view.handle.runId).toBe(first.view.handle.runId)
+})
+
+it('ADR-0030 最新一次检查的根被封存：页面取回更早那次的结论，它自己读不出', async () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const f = fixture(reply(JSON.stringify({ findings: [finding()] })))
+  const first = f.begin()
+  await f.owner.executeGraphGeneration({ handle: first.view.handle })
+  const sealed = f.owner.beginGraphGeneration({ input: { kind: 'continuity' }, modelId: 'synthetic', uiActionNonce: '封存' })
+  await f.owner.executeGraphGeneration({ handle: sealed.view.handle })
+  const reopened = f.reopen()
+  f.db.prepare("UPDATE generation_roots SET budget_json='{坏' WHERE root_action_id=?").run(sealed.view.handle.rootActionId)
+  admitGenerationLedger(f.db)
+  expect(() => reopened.readGraphGeneration({ handle: sealed.view.handle })).toThrow('GENERATION_LEDGER_UNREADABLE')
   expect(reopened.readLatestContinuityCheck()?.view.handle.runId).toBe(first.view.handle.runId)
 })
 

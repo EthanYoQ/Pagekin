@@ -4701,6 +4701,16 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     ])).toEqual([])
   })
 
+  it.each(['[]', '["project","chapter-draft"]', '{"0":"project","1":"chapter-draft","2":"x"}'])('封存的根身份键 %s 认不出是哪次点击：按占用处理，新的生成被拒绝', async key => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fixture()
+    const plain = f.owner.begin(f.begin)
+    damageLedger(f.db, 'binding_json', plain.handle)
+    f.db.prepare('UPDATE generation_roots SET idempotency_key=? WHERE root_action_id=?').run(key, plain.handle.rootActionId)
+    const owner = f.reopen({ crashed: true })
+    expect(() => owner.begin({ ...f.begin, uiActionNonce: '别的点击' })).toThrow('GENERATION_LEDGER_UNREADABLE')
+  })
+
   it('点击号恰好以 import: 开头的普通运行被封存：不当作导入运行，导入槽位照常查找', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const f = fixture()
