@@ -6,7 +6,6 @@ import { ADMITTED_LEDGER_CELLS } from '../generation-ledger-admission'
 /**
  * 跨记录（没有主键或外键条件）的账本语句要解析的 JSON 列，必须都在进门清单里：
  * 进门只保证清单里的列读得出，清单外的列坏一格就会让无关的扫描整条失败（ADR-0030）。
- * 按字符串字面量分类：用模板片段拼出的语句按片段各自判断，偏保守。
  */
 const LEDGER_TABLES = ['generation_roots', 'generation_runs', 'generation_attempts', 'generation_artifacts']
 const LEDGER_JSON_COLUMNS = ['action_json', 'budget_json', 'binding_json', 'attempt_json', 'usage_receipt_json', 'artifact_json', 'open_key', 'idempotency_key']
@@ -41,7 +40,6 @@ function literals(source: string): { line: number; text: string }[] {
 
 const parsedColumns = (sql: string) => LEDGER_JSON_COLUMNS.filter(column => new RegExp(`json_[a-z_]+\\([^)]*\\b${column}\\b`, 'u').test(sql))
 
-/** 一条语句在跨记录时会解析的账本 JSON 列；按主键或外键取数的语句返回空。 */
 function crossRecordLedgerColumns(literal: string): string[] {
   const sql = literal.replace(/\s+/gu, ' ').trim()
   const touchesLedger = LEDGER_TABLES.some(table => new RegExp(`\\b${table}\\b`, 'u').test(sql))

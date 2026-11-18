@@ -23,7 +23,6 @@ function fixture() {
     const request = (runId: string, nonce = 'call'): ExecuteGenerationRequest => ({ runId, invocationNonce: nonce, requestHash: textHash(nonce), providerRequest: { prompt: 'author' }, reservedTokens: 200, requestedOutputTokens: 100, inputUpperBoundTokens: 90, reasoningUpperBoundTokens: 0, usagePolicy: policy });
     return { db, repository, open, policy, request, setNow: (value: number) => { now = value; } };
 }
-/** 当前可见的候选正文，按写入顺序。 */
 const candidates = (f: ReturnType<typeof fixture>) => (f.db.prepare("SELECT attempt_id FROM generation_artifacts WHERE status!='discarded' ORDER BY rowid").pluck().all() as string[])
     .map(attemptId => f.repository.receipt(attemptId).artifact!);
 const usage: GenerationProviderUsage = { promptTokens: 50, completionTokens: 50, totalTokens: 100, reasoningTokens: 20, accounting: 'included-in-completion', totalIncludesReasoning: true, trusted: true };

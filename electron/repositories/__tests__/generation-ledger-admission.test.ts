@@ -35,7 +35,6 @@ const openRequest = (uiActionNonce: string, parentRootActionId?: string): OpenGe
   budget: { maxPhysicalRequests: 4, maxTokenLiability: 1000, maxOutputPerRequest: 100, maxActiveElapsedMs: 100000 },
 })
 
-/** 一棵健康的树和一棵受害的树。受害根有两条运行，第一条带一个已派发、有正文快照的尝试。 */
 function seedLedger() {
   const repository = new GenerationRunRepository(getProjectDb)
   const healthy = repository.open(openRequest('healthy'))

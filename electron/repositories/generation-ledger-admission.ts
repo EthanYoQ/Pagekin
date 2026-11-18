@@ -6,7 +6,6 @@ export const GENERATION_LEDGER_UNREADABLE = 'GENERATION_LEDGER_UNREADABLE'
 type LedgerTable = 'generation_roots' | 'generation_runs' | 'generation_attempts' | 'generation_artifacts'
 type Db = Database.Database
 
-/** 每张账本表上，一行属于哪条根、它的原始字节记在哪条运行上。 */
 const OWNERS: Record<LedgerTable, { idColumn: string; root: string; run: string }> = {
   generation_roots: { idColumn: 'root_action_id', root: 'root_action_id',
     run: '(SELECT r.run_id FROM generation_runs r WHERE r.root_action_id=generation_roots.root_action_id ORDER BY r.rowid LIMIT 1)' },
@@ -26,7 +25,7 @@ export interface AdmittedLedgerCell {
 
 const encode = (value: unknown) => JSON.stringify(value)
 
-/** 进门检查覆盖的列，唯一一份清单。扫描与守卫测试都从它推导。 */
+/** 进门检查覆盖的列，守卫测试也读它。 */
 export const ADMITTED_LEDGER_CELLS: readonly AdmittedLedgerCell[] = [
   { table: 'generation_roots', column: 'action_json', nullable: false, neutral: (_db, id) => encode({ projectId: '', epoch: '', operation: 'ledger-unreadable',
     uiActionNonce: '', frozenInputHash: '', rootActionId: id, status: 'paused' }) },
@@ -45,7 +44,7 @@ export const ADMITTED_LEDGER_CELLS: readonly AdmittedLedgerCell[] = [
   } },
 ]
 
-// 存成 TEXT、RFC 8259 合法、顶层是对象，三条同时成立才算读得出。BLOB 里的合法 JSON 过不了导出投影，`null` 过得了 json_valid 却过不了负责方。
+// BLOB 里的合法 JSON 过不了导出投影，`null` 过得了 json_valid。
 const readable = (column: string) => `CASE WHEN typeof(${column})='text' AND json_valid(${column}) THEN json_type(${column})='object' ELSE 0 END`
 const SCAN = ADMITTED_LEDGER_CELLS.map((cell, index) => {
   const owner = OWNERS[cell.table]
@@ -60,8 +59,7 @@ export interface LedgerAdmission {
 
 /**
  * 打开作品、拿到可写句柄之后调用一次。读不出的格子就地换成中性值，所属的根写 blocked_code，
- * 原始字节记进所属运行绑定的 `$ledgerUnreadable`，同一个事务。之后这个句柄上的跨记录查询和 JSON.parse 都不会碰到读不出的格子。
- * 幂等：封存之后再扫是空的，不开事务也不写库。
+ * 原始字节记进所属运行绑定的 `$ledgerUnreadable`。之后这个句柄上的跨记录查询和 JSON.parse 不会碰到读不出的格子。
  */
 export function admitGenerationLedger(db: Db): LedgerAdmission {
   const bad = db.prepare(SCAN).all() as { cell: number; id: string; root: string; run: string | null; hex: string }[]
@@ -77,7 +75,7 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       json_insert(COALESCE(json_extract(binding_json,'$."$ledgerUnreadable"'),'[]'),'$[#]',json(?))) WHERE run_id=?`)
     for (const item of bad) {
       const cell = ADMITTED_LEDGER_CELLS[item.cell]!
-      // 只有根、没有运行的根无处记账；应用自己建根时总是同一事务建运行，这种行只可能来自外部改库。
+      // 没有运行的根无处记账，原始字节不保留。
       if (item.run) keep.run(encode({ table: cell.table, recordId: item.id, column: cell.column, hex: item.hex }), item.run)
     }
     const block = db.prepare('UPDATE generation_roots SET blocked_code=COALESCE(blocked_code,?) WHERE root_action_id=?')
