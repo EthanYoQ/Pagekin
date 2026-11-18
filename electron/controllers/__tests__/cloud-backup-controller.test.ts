@@ -393,6 +393,37 @@ describe('registerCloudBackupController', () => {
     } finally { closeProjectDatabase(); project.dispose() }
   })
 
+  it('真实项目有主键为 NULL、又指不出章节的循环：作者看到「有一项数据无法安全打包」，不是错误码（#702）', async () => {
+    const project = await createProjectArchiveRoundtripFixture()
+    try {
+      initProjectDatabase(project.sourceRoot)
+      const db = getProjectDb()!
+      const items = seedReviewedBook(db, 2, { firstChapter: 31 })
+      db.prepare('UPDATE generation_roots SET budget_json=?').run(JSON.stringify({
+        maxPhysicalRequests: 1, maxTokenLiability: 100, maxOutputPerRequest: 100, maxActiveElapsedMs: 1000 }))
+      const cycleId = db.prepare('SELECT cycle_id FROM review_cycles WHERE review_id=?').pluck().get(items[1]!.seeded.reviewId)
+      db.prepare('DELETE FROM review_cycle_merges WHERE cycle_id=?').run(cycleId)
+      db.prepare('DELETE FROM review_findings WHERE cycle_id=?').run(cycleId)
+      db.prepare('UPDATE review_cycles SET cycle_id=NULL WHERE cycle_id=?').run(cycleId)
+      db.prepare('UPDATE reviews SET source_draft_version=source_draft_version+1 WHERE id=?').run(items[1]!.seeded.reviewId)
+      closeProjectDatabase()
+      const f = fixture({
+        exportPortableProject,
+        portableAssets: createPortableProjectAssetProvider(),
+        assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: session.leaseId, rootPath: project.sourceRoot })),
+        getCurrentProjectPath: vi.fn(() => project.sourceRoot),
+      })
+
+      const result = await f.invoke('cloud-backup:backup', { operationId: OPERATION,
+        projectSession: { ...session, projectPath: project.sourceRoot }, disclosureConfirmed: true }) as CloudBackupFailure
+
+      expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED' })
+      expect(result.damagedReviewCycle && damagedReviewCycleMessage(shown('zh-CN'), result.damagedReviewCycle))
+        .toBe('作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。')
+      expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
+    } finally { closeProjectDatabase(); project.dispose() }
+  })
+
   it('真实项目去掉坏循环仍过不了投影、又指不出章节：作者看到「有一项数据无法安全打包」，不是错误码（#702）', async () => {
     const project = await createProjectArchiveRoundtripFixture()
     try {
