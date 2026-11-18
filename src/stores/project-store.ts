@@ -794,15 +794,21 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             englishWithReason(currentInterfaceLocale(), 'Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.', reason),
           ))
         }
-        // 每个提示框都画在先弹的上面，所以等作者关掉前一个再弹下一个：报错最先看到
+        // 每个提示框都画在先弹的上面，所以等作者关掉前一个再弹下一个：报错最先看到。
+        // 提示框开着时作者可能已换了书，之后的提示只属于这本书，换了就不再弹。
+        // 不看请求序号：换书失败也会推进序号，而这本书仍开着。
+        const stillShowingThisProject = () => sameProjectSessionContext(
+          openedProjectSession,
+          projectSessionContextFromProject(get().currentProject),
+        )
         void (async () => {
           if (warnings.length > 0) {
             await alertError(warnings.join('\n'), {
               title: projectText('项目已打开，部分数据加载失败', 'Project opened with some data unavailable'),
             })
           }
-          if (repair?.status === 'checked') await showFinalizationRepairNotice(repair)
-          await showLedgerSealedNotice(result.sealedGenerationCount)
+          if (repair?.status === 'checked' && stillShowingThisProject()) await showFinalizationRepairNotice(repair)
+          if (stillShowingThisProject()) await showLedgerSealedNotice(result.sealedGenerationCount)
         })()
         return true
       }

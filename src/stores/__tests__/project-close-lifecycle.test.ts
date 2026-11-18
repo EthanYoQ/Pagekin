@@ -1622,6 +1622,36 @@ describe('project close lifecycle', () => {
     expect(mocks.openInkPrompt).not.toHaveBeenCalled()
   })
 
+  it('still notices sealed generations when opening another book failed and this book stayed open', async () => {
+    let acknowledge!: () => void
+    mocks.alertError.mockReturnValueOnce(new Promise<void>(resolve => { acknowledge = resolve }))
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open') {
+        if (args[0] === project('C').path) {
+          return { success: false, project: null, requestToken: args[1], activeProjectPath: project('B').path, error: 'C unavailable' }
+        }
+        return {
+          success: true,
+          project: project('B'),
+          requestToken: args[1],
+          activeProjectPath: project('B').path,
+          sealedGenerationCount: 2,
+        }
+      }
+      if (channel === 'fs:list-dir') throw new Error('tree unavailable')
+      if (channel === 'project:recent-list') return []
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+    await expect(useProjectStore.getState().openProject(project('C').path)).resolves.toBe(false)
+    expect(useProjectStore.getState().currentProject?.path).toBe(project('B').path)
+
+    acknowledge()
+    await vi.waitFor(() => expect(mocks.openInkPrompt).toHaveBeenCalledOnce())
+    expect(mocks.openInkPrompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'notice', message: expect.stringMatching(/(?<!\d)2 条/u) }))
+  })
+
   it('shows the sealed-generation notice only after the author closes the duplicate-finalization repair notice', async () => {
     let closeRepairNotice!: (value: boolean) => void
     mocks.openInkPrompt.mockReturnValueOnce(new Promise<boolean>(resolve => { closeRepairNotice = resolve }))
