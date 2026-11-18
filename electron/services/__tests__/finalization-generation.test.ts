@@ -840,6 +840,13 @@ it('ADR-0030 同槽位第一条运行的 open_key 读不出：报槽位冲突，
  const f = await generated('chapter_notes')
  f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(f.commitRequest.handle.runId)
  expect(() => f.owner.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic' })).toThrow('GENERATION_FINALIZATION_SLOT_CONFLICT')
+ expect(() => f.reopen().beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic' })).toThrow('GENERATION_FINALIZATION_SLOT_CONFLICT')
+})
+
+it("#702 同槽位后面一条运行的点击号读得出但属于别的槽位：仍报槽位冲突", async () => {
+  const f = await generated("chapter_notes")
+  forgeSlotRetry(f.db, f.commitRequest.handle.runId, "finalization:另一个槽位")
+  expect(() => f.reopen().beginFinalizationGeneration({ slot: f.slot, modelId: "synthetic" })).toThrow("GENERATION_FINALIZATION_SLOT_CONFLICT")
 })
 
 it('#569 请求超时把根阻断后又取消了后处理：作者重试另开新根，真正发出请求并可提交', async () => {
@@ -1129,3 +1136,13 @@ it('ADR-0030 取消后没提交效果的要点运行 budget_json 读不出：同
  expect(() => next.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic', retryRunId: f.commitRequest.handle.runId })).toThrow('GENERATION_LEDGER_UNREADABLE')
  expect(rootCount(f.db)).toBe(roots)
 })
+
+/** 照抄一条运行，open_key 里的点击号换成别的槽位：绑定的槽位不变，键仍读得出。 */
+function forgeSlotRetry(db: import("better-sqlite3").Database, runId: string, nonce: string) {
+  const columns = (db.prepare("SELECT name FROM pragma_table_info('generation_runs')").pluck().all() as string[]).filter(name => name !== "run_id" && name !== "open_key")
+  const [click, root] = JSON.parse(db.prepare("SELECT open_key FROM generation_runs WHERE run_id=?").pluck().get(runId) as string) as [string, string]
+  const parts = JSON.parse(click) as string[]
+  parts[2] = nonce
+  db.prepare(`INSERT INTO generation_runs(run_id,open_key,${columns.join(",")}) SELECT ?,?,${columns.join(",")} FROM generation_runs WHERE run_id=?`)
+    .run(`${runId}-forged`, JSON.stringify([JSON.stringify(parts), root]), runId)
+}

@@ -63,7 +63,7 @@ async function invoke(page, channel, ...args) {
   return page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
 }
 /** generation:list 只给身份与状态；要候选、账本时按 handle 逐个读完整视图。 */
-const listRunViews = async (page, context) => Promise.all((await invoke(page, 'generation:list', context)).map(run => invoke(page, 'generation:read', run.handle, context)))
+const listRunViews = async (page, context) => Promise.all((await invoke(page, 'generation:list', ['chapter-draft'], context)).map(run => invoke(page, 'generation:read', run.handle, context)))
 
 async function launch(fixturePort) {
   const env = { ...process.env, AI_NOVEL_APP_DATA_HOME: paths.canonical,

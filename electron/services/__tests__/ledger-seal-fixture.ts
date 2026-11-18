@@ -24,7 +24,7 @@ export const rootCount = (db: Db) => db.prepare('SELECT COUNT(*) FROM generation
 
 export function enumerations(owner: Owner): [string, () => unknown][] {
   return [
-    ['list()', () => owner.list()],
+    ['list()', () => owner.list(['chapter-draft', 'chapter-blueprint-directory', 'review-chapter', 'generate-plot-outline'])],
     ['listRecovery()', () => owner.listRecovery()],
     ['listBatches()', () => owner.listBatches()],
     ['listDirectoryProgress()', () => owner.listDirectoryProgress()],

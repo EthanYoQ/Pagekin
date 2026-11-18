@@ -369,7 +369,7 @@ export interface GenerationOwnerChannels {
   'generation:bind-material-decision': { args: [{ handle: MainGenerationRunHandle; materialDecision: MaterialDecisionReceipt }]; return: MainGenerationRunView }
   'generation:execute': { args: [ExecuteGenerationRequest]; return: MainGenerationExecuteReceipt }
   'generation:read': { args: [MainGenerationRunHandle]; return: MainGenerationRunView }
-  'generation:list': { args: []; return: MainGenerationRunSummary[] }
+  'generation:list': { args: [operations: readonly string[]]; return: MainGenerationRunSummary[] }
   'generation:cancel': { args: [MainGenerationRunHandle]; return: MainGenerationRunView }
   'generation:pause': { args: [MainGenerationRunHandle]; return: MainGenerationRunView }
   'generation:resume': { args: [MainGenerationRunHandle]; return: MainGenerationRunView }

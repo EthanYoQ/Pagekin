@@ -511,9 +511,9 @@ describe('explicit planning recovery with real SQLite', () => {
     expect(owner.read(run.handle).nonReplayable).toBe(true)
     expect(owner.readContext(run.handle).planningContinuation).toMatchObject({ state: 'continued', nextHandle: { runId: next.handle.runId } })
     expect(() => owner.restart(run.handle, nextInput)).toThrow('GENERATION_LEDGER_UNREADABLE')
-    expect(await failingLedgerCalls([['list()', () => owner.list()], ['listRecovery()', () => owner.listRecovery()],
+    expect(await failingLedgerCalls([['list()', () => owner.list(['generate-plot-outline'])], ['listRecovery()', () => owner.listRecovery()],
       ['findBlueprintRecovery()', () => owner.findBlueprintRecovery()]])).toEqual([])
-    expect(owner.list().map(item => item.handle.runId)).toEqual([run.handle.runId])
+    expect(owner.list(['generate-plot-outline']).map(item => item.handle.runId)).toEqual([run.handle.runId])
     expect(dispatch).toHaveBeenCalledTimes(2)
   })
   it('saves the accepted outline prefix without cost and authorizes only the remaining chapters', async () => {
@@ -1410,6 +1410,18 @@ describe('durable directory commit and remaining stage', () => {
     }).immediate()
     return { ...f, fixture: f, selection, run, dispatch, request, commit }
   }
+  it('#702 清空蓝图按绑定里的操作退役蓝图目录运行，open_key 的操作对不上也退役', async () => {
+    const f = directoryFixture('chapter-blueprint-directory'), range = { startChapter: 1, endChapter: 3 }
+    await f.owner.execute({ handle: f.run.handle, invocationNonce: 'original', task: directoryTask })
+    f.commit(f.owner, f.run.handle, f.request('cleared-prefix', 1, 2), range)
+    const [click, root] = JSON.parse(f.fixture.db.prepare('SELECT open_key FROM generation_runs WHERE run_id=?').pluck().get(f.run.handle.runId) as string) as [string, string]
+    const parts = JSON.parse(click) as string[]
+    parts[1] = 'directory'
+    f.fixture.db.prepare('UPDATE generation_runs SET open_key=? WHERE run_id=?').run(JSON.stringify([JSON.stringify(parts), root]), f.run.handle.runId)
+    f.fixture.reopen()
+    BlueprintRepository.clearAll()
+    expect(f.fixture.db.prepare('SELECT json_extract(binding_json,?) FROM generation_runs WHERE run_id=?').pluck().get('$."$blueprintRetirement"', f.run.handle.runId)).toBe('blueprints-cleared')
+  })
   it.each(['blueprint', 'project'] as const)('retires directory recovery through the %s clear while independent generation remains usable', async entry => {
     const f = directoryFixture('chapter-blueprint-directory'), range = { startChapter: 1, endChapter: 3 }
     await f.owner.execute({ handle: f.run.handle, invocationNonce: 'original', task: directoryTask })
@@ -1812,6 +1824,15 @@ describe('durable directory commit and remaining stage', () => {
       expect(f.dispatch).toHaveBeenCalledTimes(1)
     },
   )
+  it('#702 蓝图目录运行带上作者保存标记或退役标记，照常列进目录进度', async () => {
+    const f = directoryFixture('chapter-blueprint-directory')
+    await f.owner.execute({ handle: f.run.handle, invocationNonce: 'first', task: directoryTask })
+    const mark = (path: string, value: string) => f.fixture.db.prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,?,json(?)) WHERE run_id=?`).run(path, value, f.run.handle.runId)
+    mark('$."$runEffects"', JSON.stringify({ blueprintAuthorEdit: {} }))
+    expect(f.owner.listDirectoryProgress()).toEqual({ progress: [], diagnostics: [{ runId: f.run.handle.runId, kind: 'invalid', code: 'GENERATION_BLUEPRINT_AUTHOR_RECEIPT_INVALID' }] })
+    mark('$."$blueprintRetirement"', JSON.stringify('blueprints-cleared'))
+    expect(f.owner.listDirectoryProgress()).toEqual({ progress: [], diagnostics: [{ runId: f.run.handle.runId, kind: 'retired', code: 'GENERATION_BLUEPRINTS_CLEARED' }] })
+  })
   it('rejects invalid persisted progress instead of inferring a replacement range', async () => {
     const f = directoryFixture()
     await f.owner.execute({ handle: f.run.handle, invocationNonce: 'first', task: directoryTask })
@@ -2843,7 +2864,7 @@ describe('main draft persistence and batch lineage', () => {
     }
     const independent = await generate(f, { ...f.begin, authorInputs, uiActionNonce: 'independent' })
     const reopened = f.reopen()
-    expect(reopened.list().map(run => run.handle.runId)).toEqual(expect.arrayContaining([
+    expect(reopened.list(['chapter-draft', 'batch-chapters']).map(run => run.handle.runId)).toEqual(expect.arrayContaining([
       batch.rootHandle.runId, generated.run.handle.runId, independent.run.handle.runId,
     ]))
     expect(reopened.readContext(independent.run.handle).draftSave).toEqual({ kind: 'absent' })
@@ -3612,6 +3633,19 @@ describe('main draft persistence and batch lineage', () => {
       expect(runIds(list.batches)).toEqual([batch.batchId])
       expect(locked()).toEqual(new Set([1]))
     })
+    it('#702 批次运行的 open_key 读得出但操作不是批量写稿：批次写过的章照样锁住', async () => {
+      const f = drafting()
+      f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'第二章')")
+      const batch = f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 2 }, targetUnits: 20,
+        uiActionNonce: 'batch', modelId: f.model.id, authorInputs, promptKeys: f.begin.promptKeys, skillStages: [] })
+      f.owner.commitDraft((await generate(f, { ...f.begin, uiActionNonce: 'child', authorInputs, batchId: batch.batchId, parentRootActionId: batch.rootHandle.rootActionId })).request)
+      const [click, root] = JSON.parse(f.db.prepare('SELECT open_key FROM generation_runs WHERE run_id=?').pluck().get(batch.rootHandle.runId) as string) as [string, string]
+      const parts = JSON.parse(click) as string[]
+      parts[1] = 'chapter-draft'
+      f.db.prepare('UPDATE generation_runs SET open_key=? WHERE run_id=?').run(JSON.stringify([JSON.stringify(parts), root]), batch.rootHandle.runId)
+      f.reopen()
+      expect(new GenerationDraftEffects(f.fixture.db, new GenerationRunRepository(() => f.fixture.db)).unfinishedBatchChapters('project')).toEqual(new Set([1]))
+    })
     it('放弃的批次接着写出下一章，重新列为可续、写过的章重新锁住（#686）', async () => {
       const f = drafting()
       f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'第二章'),(3,'第三章')")
@@ -3737,11 +3771,29 @@ describe('main draft persistence and batch lineage', () => {
       const second = await generate(f, { ...f.begin, uiActionNonce: 'second', authorInputs })
       f.owner.cancel(second.run.handle)
       const reopened = f.reopen()
-      expect(reopened.list()).toEqual([
+      expect(reopened.list(['chapter-draft'])).toEqual([
         { handle: second.run.handle, status: 'cancelled', operation: 'chapter-draft' },
         { handle: first.run.handle, status: 'paused', operation: 'chapter-draft' },
       ])
-      expect(JSON.stringify(reopened.list())).not.toContain(draftText)
+      expect(JSON.stringify(reopened.list(['chapter-draft']))).not.toContain(draftText)
+    })
+    it('#702 运行索引：时钟回拨时仍按记下的创建时间排，点击身份读不出的运行照样列出和恢复', async () => {
+      const f = drafting()
+      const first = await generate(f, { ...f.begin, uiActionNonce: 'first', authorInputs })
+      const second = await generate(f, { ...f.begin, uiActionNonce: 'second', authorInputs })
+      f.db.prepare('UPDATE generation_runs SET created_at_ms=1 WHERE run_id=?').run(second.run.handle.runId)
+      f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(first.run.handle.runId)
+      const reopened = f.reopen()
+      const newestFirst = [first.run.handle.runId, second.run.handle.runId]
+      expect(reopened.list(['chapter-draft']).map(run => run.handle.runId)).toEqual(newestFirst)
+      expect(reopened.listRecovery().drafts.map(draft => draft.view.handle.runId)).toEqual(newestFirst)
+    })
+    it('#702 generation:list 只读调用方要的操作', async () => {
+      const f = drafting()
+      await generate(f, { ...f.begin, uiActionNonce: 'first', authorInputs })
+      const reopened = f.reopen()
+      expect(reopened.list(['generate-plot-outline'])).toEqual([])
+      expect(() => reopened.list([])).toThrow('GENERATION_LIST_OPERATIONS_INVALID')
     })
     it('一条生成尝试的收据坏成不是 JSON 时，其余单章候选照常列出，只标部分读取失败', async () => {
       const f = drafting()
@@ -3802,7 +3854,7 @@ describe('main draft persistence and batch lineage', () => {
 it('rejects an empty begin prompt selection without creating a run or dispatching', () => {
   const dispatch = vi.fn(), f = fixture(dispatch)
   expect(() => f.owner.begin({ ...f.begin, promptKeys: [] })).toThrow('GENERATION_BEGIN_INVALID')
-  expect(f.owner.list()).toHaveLength(0)
+  expect(f.owner.list(['chapter-draft'])).toHaveLength(0)
   expect(dispatch).not.toHaveBeenCalled()
 })
 it('refuses resume after selected template bytes change across a real reopen', async () => {
@@ -4599,7 +4651,7 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     const failures = await failingCalls([
       ['崩溃重开（建负责方）', () => { owner = f.reopen({ crashed: true }) }],
       ['第一次重开后坏根的尝试已不在进行中', () => { if (inFlight(f.db)) throw new Error('still in flight') }],
-      ['list()', () => owner!.list()],
+      ['list()', () => owner!.list(['chapter-draft', 'chapter-blueprint-directory'])],
       ['read(健康运行)', () => owner!.read(healthy.handle)],
       ['begin(新的正文生成)', () => owner!.begin({ ...f.begin, uiActionNonce: 'new-after' })],
       ['begin(章节蓝图目录)', () => owner!.begin(directory)],
@@ -4705,7 +4757,7 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     const owner = f.reopen({ crashed: true })
     const repository = () => new GenerationRunRepository(() => f.db)
     expect(await failingLedgerCalls([
-      ['list()', () => owner.list()],
+      ['list()', () => owner.list(['chapter-draft', 'chapter-blueprint-directory'])],
       ['read(健康运行)', () => owner.read(healthy.handle)],
       ['begin(新的正文生成)', () => owner.begin({ ...f.begin, uiActionNonce: 'new-after' })],
       ['begin(另一次蓝图目录)', () => owner.begin({ ...directory, uiActionNonce: 'directory-after' })],
@@ -4792,7 +4844,7 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
 
     const failures = await failingCalls([
       ['崩溃重开（建负责方）', () => { owner = f.reopen({ crashed: true }) }],
-      ['list()', () => owner!.list()],
+      ['list()', () => owner!.list(['chapter-draft'])],
       ['listRecovery()', () => owner!.listRecovery()],
       ['begin(新的正文生成)', () => owner!.begin({ ...f.begin, uiActionNonce: 'new-after' })],
       ['关书', () => owner!.suspendForProjectClose()],

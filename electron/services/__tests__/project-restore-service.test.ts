@@ -344,7 +344,7 @@ describe('portable project restore service', () => {
       return { usage: null, finishReason: 'stop' }
     } })
     const prior = service.open({ projectId: f.sourceProjectId, epoch: 'source-lease', operation: 'write', uiActionNonce: 'source',
-      frozenInputHash: h, fingerprint, contextSnapshotId: 'source', sourceManifest: { kind: 'fixture' }, sourceRefs: [],
+      frozenInputHash: h, fingerprint, contextSnapshotId: 'source', sourceManifest: { kind: 'fixture', operation: 'write' }, sourceRefs: [],
       budget: { maxPhysicalRequests: 2, maxTokenLiability: 500, maxOutputPerRequest: 100, maxActiveElapsedMs: 10000 } })
     const historical = await service.execute({ runId: prior.runId, invocationNonce: 'source-call', requestHash: h, providerRequest: {},
       reservedTokens: 200, requestedOutputTokens: 100, inputUpperBoundTokens: 90, reasoningUpperBoundTokens: 0,

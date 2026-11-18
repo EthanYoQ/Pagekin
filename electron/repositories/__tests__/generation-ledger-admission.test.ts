@@ -10,7 +10,7 @@ import { verifyM03ReviewCycleById } from '../../migrations/m03-review-cycle'
 import { getProjectDatabasePath } from '../../services/project-data-locator'
 import { GenerationRunRepository, textHash, type OpenGenerationRunRequest } from '../generation-run-repository'
 import { ADMITTED_LEDGER_CELLS, admitGenerationLedger, GENERATION_LEDGER_UNREADABLE } from '../generation-ledger-admission'
-import { uiActionNonceOfOpenKey } from '../generation-run-repository'
+import { uiActionNonceOfOpenKey } from '../generation-run-index'
 
 type Db = import('better-sqlite3').Database
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -32,7 +32,7 @@ const openRequest = (uiActionNonce: string, parentRootActionId?: string): OpenGe
   projectId: 'project', epoch: 'epoch', operation: 'chapter-draft', uiActionNonce, frozenInputHash: h, parentRootActionId,
   fingerprint: { chapterBriefHash: h, authorGuidanceHash: h, dependencyHash: h, contextSnapshotHash: h, templateHash: h,
     skillSnapshotHash: h, modelLeaseRevision: h, policyHash: h, outputContractHash: h },
-  contextSnapshotId: 'context', sourceManifest: { kind: 'synthetic-frozen-sources' }, sourceRefs: [],
+  contextSnapshotId: 'context', sourceManifest: { kind: 'synthetic-frozen-sources', operation: 'chapter-draft' }, sourceRefs: [],
   budget: { maxPhysicalRequests: 4, maxTokenLiability: 1000, maxOutputPerRequest: 100, maxActiveElapsedMs: 100000 },
 })
 

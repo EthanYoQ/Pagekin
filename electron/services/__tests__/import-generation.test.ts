@@ -119,6 +119,13 @@ it('ADR-0030 同槽位第一条导入运行的 open_key 读不出：报槽位不
  const first=f.owner.begin(f.selection)
  f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(first.handle.runId)
  expect(()=>f.owner.readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
+ expect(()=>f.reopenStorage().readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
+})
+it("#702 同槽位后面一条导入运行的点击号读得出但属于别的槽位：仍报槽位不明",()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ forgeSlotRetry(f.db, first.handle.runId, "import:另一个槽位")
+ expect(()=>f.reopenStorage().readImportGeneration(f.slot)).toThrow("GENERATION_IMPORT_SLOT_AMBIGUOUS")
 })
 it('同slot不同nonce加入同run，并冻结实际manifest正文',()=>{
  const f=fixture(),first=f.owner.begin(f.selection),second=f.owner.begin({...f.selection,uiActionNonce:'另一次点击'})
@@ -301,3 +308,13 @@ it('ADR-0030 导入运行的绑定读不出：「这一阶段绑过生成」查�
  expect(effect({generationRunHandle:handle})).toThrow('GENERATION_LEDGER_UNREADABLE')
  expect(f.db.prepare('SELECT COUNT(*) FROM import_run_receipts').pluck().get()).toBe(0)
 })
+
+/** 照抄一条运行，open_key 里的点击号换成别的槽位：绑定的槽位不变，键仍读得出。 */
+function forgeSlotRetry(db: import("better-sqlite3").Database, runId: string, nonce: string) {
+  const columns = (db.prepare("SELECT name FROM pragma_table_info('generation_runs')").pluck().all() as string[]).filter(name => name !== "run_id" && name !== "open_key")
+  const [click, root] = JSON.parse(db.prepare("SELECT open_key FROM generation_runs WHERE run_id=?").pluck().get(runId) as string) as [string, string]
+  const parts = JSON.parse(click) as string[]
+  parts[2] = nonce
+  db.prepare(`INSERT INTO generation_runs(run_id,open_key,${columns.join(",")}) SELECT ?,?,${columns.join(",")} FROM generation_runs WHERE run_id=?`)
+    .run(`${runId}-forged`, JSON.stringify([JSON.stringify(parts), root]), runId)
+}
