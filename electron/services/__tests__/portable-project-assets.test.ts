@@ -61,9 +61,8 @@ describe('production portable project assets', () => {
     expect(snapshot.files.some(file => file.archivePath.includes('avatar') || file.archivePath.includes('lancedb'))).toBe(false)
     const portableKnowledge = snapshot.files.find(file => file.archivePath === PORTABLE_KNOWLEDGE_SOURCE_PATH)!
     expect(parsePortableKnowledgeSnapshot(JSON.parse(portableKnowledge.bytes!.toString('utf8')))).toEqual(knowledge)
-    expect(await snapshot.verifyUnchanged()).toBe(true)
     fs.writeFileSync(path.join(f.storage, 'prompts', '章节.json'), '{"提示":"已变化"}')
-    expect(await snapshot.verifyUnchanged()).toBe(false)
+    expect(snapshot.files.find(file => file.archivePath === 'prompts/章节.json')!.bytes.toString('utf8')).toBe('{"提示":"保持雨夜"}')
   })
 
   it.each([

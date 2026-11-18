@@ -913,7 +913,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     const archivePath = path.join(root, 'outline-author.zip'), restoredRoot = path.join(root, 'restored-author')
     await exportPortableProject({ sourceProjectRoot: session.projectPath, projectSession: session, targetArchivePath: archivePath,
       attemptParentPath: root, assertCurrentContext: context => { expect(context).toEqual(session) },
-      assets: { snapshot: () => ({ files: [], verifyUnchanged: () => {} }) } })
+      assets: { snapshot: () => ({ files: [] }) } })
     await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
     const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
     const restored = new Database(path.join(restoredRoot, '.ai-novel', 'project.db'), { readonly: true })

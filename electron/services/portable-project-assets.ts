@@ -78,7 +78,7 @@ function enumerateRawFiles(storageRoot: string): PortableProvidedFile[] {
     keys.add(key)
     const bytes = fs.readFileSync(entry)
     if (BigInt(bytes.length) !== fileInfo.size) fail()
-    files.push({ id: `raw:${archivePath}`, archivePath, sourcePath: entry,
+    files.push({ id: `raw:${archivePath}`, archivePath, bytes,
       byteSize: bytes.length, sha256: sha256(bytes), disposition: disposition(topLevel) })
   }
   for (const name of CANONICAL_RAW_PROJECT_ASSETS) {
@@ -93,14 +93,6 @@ function enumerateRawFiles(storageRoot: string): PortableProvidedFile[] {
   return files.sort((left, right) => left.archivePath.localeCompare(right.archivePath))
 }
 
-function sameFiles(left: readonly PortableProvidedFile[], right: readonly PortableProvidedFile[]): boolean {
-  return JSON.stringify(left.map(({ id, archivePath, byteSize, sha256, disposition }) => (
-    { id, archivePath, byteSize, sha256, disposition }
-  ))) === JSON.stringify(right.map(({ id, archivePath, byteSize, sha256, disposition }) => (
-    { id, archivePath, byteSize, sha256, disposition }
-  )))
-}
-
 /** Production provider for the canonical raw allowlist plus a strict canonical-text projection. */
 export function createPortableProjectAssetProvider(): PortableAssetProvider {
   return {
@@ -111,7 +103,6 @@ export function createPortableProjectAssetProvider(): PortableAssetProvider {
       const knowledgeFile: PortableProvidedFile = {
         id: 'canonical-knowledge',
         archivePath: PORTABLE_KNOWLEDGE_SOURCE_PATH,
-        sourcePath: '',
         bytes: knowledgeBytes,
         byteSize: knowledgeBytes.length,
         sha256: sha256(knowledgeBytes),
@@ -120,11 +111,6 @@ export function createPortableProjectAssetProvider(): PortableAssetProvider {
       return {
         files: [...rawFiles, knowledgeFile],
         semanticCounts: { 'raw-assets': rawFiles.length, 'knowledge-snapshots': 1 },
-        verifyUnchanged: async () => {
-          const currentRaw = enumerateRawFiles(storageRoot)
-          const currentKnowledge = serializePortableKnowledgeSnapshot(await readPortableKnowledgeSnapshot(storageRoot))
-          return sameFiles(rawFiles, currentRaw) && currentKnowledge.compare(knowledgeBytes) === 0
-        },
       }
     },
   }

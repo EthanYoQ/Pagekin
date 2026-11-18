@@ -1091,7 +1091,7 @@ it('有定稿收据的旧项目复制导入后，替换那一章再写稿、导�
     targetArchivePath: path.join(path.dirname(f.target), 'replaced.ainovel'),
     attemptParentPath: attempts,
     assertCurrentContext: () => undefined,
-    assets: { snapshot: () => ({ files: [], verifyUnchanged: () => undefined }) },
+    assets: { snapshot: () => ({ files: [] }) },
     snapshotGeneration: 'legacy-replaced',
   })).resolves.toBeTruthy()
 })

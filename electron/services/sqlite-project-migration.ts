@@ -52,7 +52,7 @@ export interface ProjectSqliteEvidence {
   preAnnotationDomain?: { tableCounts: Record<string, number>; authorContentHash: string }
 }
 /** 跨版本比对用的内容哈希。每个变体都要全书读一遍，调用方只要它用到的。 */
-export type DomainVariant = 'preIdentityDomain' | 'preAssetDomain' | 'preRecycleDomain' | 'preContinuityDomain' | 'preAnnotationDomain'
+type DomainVariant = 'preIdentityDomain' | 'preAssetDomain' | 'preRecycleDomain' | 'preContinuityDomain' | 'preAnnotationDomain'
 const ALL_DOMAIN_VARIANTS: readonly DomainVariant[] = ['preIdentityDomain', 'preAssetDomain', 'preRecycleDomain', 'preContinuityDomain', 'preAnnotationDomain']
 
 function regular(file: string): void {
@@ -246,7 +246,6 @@ export function verifyProjectSqlite(options: {
  */
 export async function backupProjectSqlite(options: {
   sourceDatabasePath: string; targetDatabasePath: string; registry?: MigrationRegistry; targetVersion?: number; evidence?: ReviewCycleEvidence
-  variants?: readonly DomainVariant[]
 }): Promise<ProjectSqliteEvidence> {
   const sourcePath = path.resolve(options.sourceDatabasePath), targetPath = path.resolve(options.targetDatabasePath)
   if (sourcePath === targetPath || fs.existsSync(targetPath)) throw new Error('PROJECT_MIGRATION_TARGET_EXISTS')
@@ -282,7 +281,7 @@ export async function backupProjectSqlite(options: {
         initializeCharacterRosterMetadata(staging)
         staging.exec("INSERT OR IGNORE INTO continuity_projection_meta (id) VALUES ('main')")
       }
-      const after = inspect(staging, registry, targetVersion, accepted, options.variants)
+      const after = inspect(staging, registry, targetVersion, accepted)
       snapshot.unchanged()
       staging.pragma('wal_checkpoint(TRUNCATE)')
       const fd = fs.openSync(targetPath, 'r+'); try { fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
@@ -291,6 +290,18 @@ export async function backupProjectSqlite(options: {
   } finally { source?.close(); snapshot.close() }
 }
 
+/**
+ * 导出用的源库快照：只读连接一步备份完。这一步持着读事务，拷到的是那一刻已提交的内容，期间别的连接写入也不影响它。
+ * 不迁移、不算内容哈希：导出源是打开时已升级的当前版本，由调用方校验快照。快照只在导出的临时目录里读一遍，不 fsync。
+ */
+export async function snapshotProjectSqlite(options: { sourceDatabasePath: string; targetDatabasePath: string }): Promise<void> {
+  const targetPath = path.resolve(options.targetDatabasePath)
+  sourceFile(options.sourceDatabasePath)
+  const fd = fs.openSync(targetPath, 'wx', 0o600); fs.closeSync(fd)
+  const source = new Database(options.sourceDatabasePath, { readonly: true, fileMustExist: true })
+  try { await source.backup(targetPath, { progress: () => 0x7fffffff }) } finally { source.close() }
+  regular(targetPath)
+}
 
 /** Bytes a reader of the main file and WAL sees. -shm is excluded because opening
  * a handle rewrites it, and an absent WAL reads the same as an empty one.

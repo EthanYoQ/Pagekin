@@ -117,15 +117,12 @@ function fixture(donor = false): Fixture {
   }
 }
 
-function providedFile(fixture: Fixture, archivePath: string, value: string, disposition: PortableProvidedFile['disposition']): PortableProvidedFile {
-  const sourcePath = path.join(fixture.storage, 'explicit-assets', ...archivePath.split('/'))
-  fs.mkdirSync(path.dirname(sourcePath), { recursive: true })
+function providedFile(archivePath: string, value: string, disposition: PortableProvidedFile['disposition']): PortableProvidedFile {
   const bytes = Buffer.from(value, 'utf8')
-  fs.writeFileSync(sourcePath, bytes)
-  return { id: archivePath, archivePath, sourcePath, byteSize: bytes.length, sha256: hash(bytes), disposition }
+  return { id: archivePath, archivePath, bytes, byteSize: bytes.length, sha256: hash(bytes), disposition }
 }
 
-function provider(files: readonly PortableProvidedFile[] = [], verifyUnchanged: () => void = () => undefined): ExportPortableProjectInput['assets'] {
+function provider(files: readonly PortableProvidedFile[] = []): ExportPortableProjectInput['assets'] {
   return {
     snapshot(): PortableAssetSnapshot {
       return {
@@ -134,7 +131,6 @@ function provider(files: readonly PortableProvidedFile[] = [], verifyUnchanged: 
         omittedItems: [],
         transferReceiptIds: [],
         historyProjectionIds: [],
-        verifyUnchanged,
       }
     },
   }
@@ -750,10 +746,10 @@ describe('portable project export service', () => {
     const f = fixture()
     const seeded = seedProject(f)
     const assets = [
-      providedFile(f, 'knowledge/世界观.txt', '城门只在雨夜开启。', 'knowledge-source'),
-      providedFile(f, 'prompts/章节提示.txt', '保持克制。', 'prompt'),
-      providedFile(f, 'skills/悬疑.md', '逐步揭示线索。', 'skill'),
-      providedFile(f, 'candidates/旧候选.txt', '候选正文', 'author-content'),
+      providedFile('knowledge/世界观.txt', '城门只在雨夜开启。', 'knowledge-source'),
+      providedFile('prompts/章节提示.txt', '保持克制。', 'prompt'),
+      providedFile('skills/悬疑.md', '逐步揭示线索。', 'skill'),
+      providedFile('candidates/旧候选.txt', '候选正文', 'author-content'),
     ]
     const before = fs.readFileSync(f.databasePath)
     const contextCalls: string[] = []
@@ -766,7 +762,7 @@ describe('portable project export service', () => {
       requiresRuntimeFreezeGuard: true,
       sourceEvidence: { schemaVersion: 10, tableCount: 55, fieldCount: 520 },
     })
-    expect(contextCalls).toEqual(['lease-current', 'lease-current', 'lease-current'])
+    expect(contextCalls).toEqual(['lease-current', 'lease-current'])
     expect(fs.readFileSync(f.databasePath)).toEqual(before)
     expect(fs.readdirSync(f.attemptParent)).toEqual([])
 
@@ -920,35 +916,12 @@ describe('portable project export service', () => {
     expect(fs.existsSync(f.target)).toBe(false)
   })
 
-  it.each([
-    ['bad relative path', (f: Fixture) => provider([{ ...providedFile(f, 'safe.txt', 'x', 'author-content'), archivePath: '../escape.txt' }])],
-    ['missing file', (f: Fixture) => {
-      const file = providedFile(f, 'safe.txt', 'x', 'author-content')
-      fs.unlinkSync(file.sourcePath)
-      return provider([file])
-    }],
-  ])('rejects %s and leaves the source and target unchanged', async (_label, makeProvider) => {
+  it('rejects a bad relative path and leaves the source and target unchanged', async () => {
     const f = fixture()
     const before = fs.readFileSync(f.databasePath)
-    await expect(exportPortableProject(input(f, makeProvider(f)))).rejects.toThrow(/PORTABLE_(PATH_UNSAFE|ASSET_MISSING)/u)
+    await expect(exportPortableProject(input(f, provider([{ ...providedFile('safe.txt', 'x', 'author-content'), archivePath: '../escape.txt' }]))))
+      .rejects.toThrow('PORTABLE_PATH_UNSAFE')
     expect(fs.readFileSync(f.databasePath)).toEqual(before)
-    expect(fs.existsSync(f.target)).toBe(false)
-  })
-
-  it('rejects provider files outside canonical project storage even with valid metadata', async () => {
-    const f = fixture()
-    const bytes = Buffer.from('outside-secret', 'utf8')
-    const sourcePath = path.join(f.base, 'outside-secret.txt')
-    fs.writeFileSync(sourcePath, bytes)
-    const file: PortableProvidedFile = {
-      id: 'outside-secret',
-      archivePath: 'knowledge/outside.txt',
-      sourcePath,
-      byteSize: bytes.length,
-      sha256: hash(bytes),
-      disposition: 'knowledge-source',
-    }
-    await expect(exportPortableProject(input(f, provider([file])))).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
     expect(fs.existsSync(f.target)).toBe(false)
   })
 
@@ -986,9 +959,9 @@ describe('portable project export service', () => {
     const f = fixture()
     let calls = 0
     await expect(exportPortableProject(input(f, provider(), {
-      assertCurrentContext: () => ++calls < 3,
-    }))).rejects.toThrow('PORTABLE_SOURCE_CHANGED')
-    expect(calls).toBe(3)
+      assertCurrentContext: () => ++calls < 2,
+    }))).rejects.toThrow('PORTABLE_CONTEXT_INVALID')
+    expect(calls).toBe(2)
     expect(fs.existsSync(f.target)).toBe(false)
   })
 
@@ -1002,7 +975,7 @@ describe('portable project export service', () => {
         attemptRoot = root
         fs.writeFileSync(path.join(root, 'keep.txt'), 'not-owned')
       } },
-    }))).rejects.toThrow('PORTABLE_SOURCE_CHANGED')
+    }))).rejects.toThrow('PORTABLE_CONTEXT_INVALID')
     expect(fs.readFileSync(path.join(attemptRoot, 'keep.txt'), 'utf8')).toBe('not-owned')
     expect(fs.existsSync(f.target)).toBe(false)
   })
@@ -1017,7 +990,7 @@ describe('portable project export service', () => {
         fs.writeFileSync(path.join(root, 'keep.txt'), 'replacement')
         replacementRoot = root
       } },
-    }))).rejects.toThrow(/PORTABLE_(ASSET_MISSING|SOURCE_CHANGED)/u)
+    }))).rejects.toThrow('PORTABLE_ASSET_MISSING')
     expect(fs.readFileSync(path.join(replacementRoot, 'keep.txt'), 'utf8')).toBe('replacement')
     expect(fs.existsSync(f.target)).toBe(false)
   })
