@@ -57,7 +57,10 @@ export interface GenerationRunIndex {
 /** 点击号正好是 nonce，或以 nonce 加冒号开头：槽位的重试链、Agent 会话的各轮。 */
 export const inNonceChain = (nonce: string) => (click: GenerationClick) => click.uiActionNonce === nonce || click.uiActionNonce.startsWith(`${nonce}:`)
 
-/** 原 SQL 加上 `run_id IN (SELECT value FROM json_each(?))` 时绑定的参数：命中的和读不出的都算候选。 */
+/**
+ * 原 SQL 加上 `run_id IN (SELECT value FROM json_each(?))` 时绑定的参数：命中的和读不出的都算候选。
+ * 按操作挑候选、原 SQL 按绑定的 `sourceManifest.operation` 筛时，靠的是开运行时两处取同一个操作；仓库不校验这一点。
+ */
 export function candidateRunIds(lookup: RunLookup): string {
     return JSON.stringify([...lookup.hits, ...lookup.unidentified].map(entry => entry.runId))
 }
