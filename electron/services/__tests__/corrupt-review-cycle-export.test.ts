@@ -232,6 +232,40 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     } finally { restored.close() }
   })
 
+  it('两条循环共用一个根、一条坏了：坏的那章留在存档外，它的收据、运行上下文、产物都不当证据，另一条恢复后照常验得过', async () => {
+    const items = reviewedBook({ finalized: true })
+    db().exec(`UPDATE generation_runs SET root_action_id='root-review-ch1' WHERE root_action_id='root-review-ch2';
+      UPDATE generation_attempts SET root_action_id='root-review-ch1',attempt_json=json_set(attempt_json,'$.rootActionId','root-review-ch1')
+        WHERE root_action_id='root-review-ch2';
+      UPDATE generation_artifacts SET artifact_json=json_set(artifact_json,'$.rootActionId','root-review-ch1')
+        WHERE json_extract(artifact_json,'$.rootActionId')='root-review-ch2';
+      UPDATE review_cycles SET root_action_id='root-review-ch1' WHERE root_action_id='root-review-ch2';
+      DELETE FROM generation_roots WHERE root_action_id='root-review-ch2'`)
+    expect(inspectM03ReviewCycles(db())).toEqual({ structureOk: true, unprovable: [] })
+    breakReviewProof(db(), { seeded: { ...items[1]!.seeded, call: { ...items[1]!.seeded.call, rootActionId: 'root-review-ch1' } } })
+
+    const { archivePath, receipt } = await exportTo()
+    expect(receipt.omittedReviewCycles).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+    const archived = await archiveRows(archivePath)
+    const ch2 = (id: unknown) => String(id).endsWith('-ch2')
+    expect(archived.generation_attempts!.filter(row => ch2(row.attempt_id))
+      .map(row => String(row.usage_receipt_json ?? '').includes('reviewRevisionEffect'))).toEqual([false, false])
+    expect(archived.generation_runs!.filter(row => ch2(row.run_id))
+      .map(row => String(row.binding_json).includes('reviewRevisionContext'))).toEqual([false, false])
+    expect(archived.generation_artifacts!.filter(row => ch2(row.artifact_id))
+      .map(row => String(row.artifact_json).includes('fingerprint'))).toEqual([false, false])
+    expect(archived.generation_attempts!.filter(row => String(row.attempt_id).endsWith('-ch1'))
+      .map(row => String(row.usage_receipt_json ?? '').includes('reviewRevisionEffect'))).toEqual([true, true])
+    const restoredRoot = path.join(base, 'restored')
+    await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
+    const restored = new Database(path.join(restoredRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true })
+    try {
+      restored.pragma('foreign_keys = ON')
+      expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
+      expect(restored.prepare('SELECT review_id FROM review_cycles').pluck().all()).toEqual([items[0]!.seeded.reviewId])
+    } finally { restored.close() }
+  })
+
   it('去掉坏循环仍过不了投影：照旧失败，带出 #739 的章节提示，源库不变', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
