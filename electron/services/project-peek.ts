@@ -421,8 +421,9 @@ export class ProjectPeekService {
         upgradeSnapshot(snapshotPath, version)
         database = new Database(snapshotPath, { readonly: true, fileMustExist: true })
       }
-      database.pragma('foreign_keys = ON')
-      verifySchema(new SqliteSchemaAdapter(database, () => unprovableReviewCycleIds(database)), getDesktopMigrationRegistry(), capability.expectedSchemaVersion)
+      const opened = database
+      opened.pragma('foreign_keys = ON')
+      verifySchema(new SqliteSchemaAdapter(opened, () => unprovableReviewCycleIds(opened)), getDesktopMigrationRegistry(), capability.expectedSchemaVersion)
       const physicalRevision = digest(JSON.stringify({
         manifest: capability.manifestFingerprint,
         files: before.map(file => [file.suffix, file.size, file.hash]),
