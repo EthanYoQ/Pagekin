@@ -1,5 +1,4 @@
-// #702：全书审修循环校验挡住导出时，备份页说明是哪一章坏了、怎么处理，不露错误码。
-// 跑法：PERF702_BLUEPRINTS=2 PERF702_FINALIZED=2，书只有两章，第 2 章的审稿证据在重启前被改坏。
+// 跑法：PERF702_BLUEPRINTS=2 PERF702_FINALIZED=2。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
@@ -13,7 +12,7 @@ import { buildByReviewCycle } from './perf702-scenarios.mjs'
 const Database = createRequire(import.meta.url)('better-sqlite3')
 const BOOK = '盐湖'
 
-/** 同 test/helpers/review-cycle-fixture.ts 的 breakReviewProof：这一章审稿运行记下的内容哈希换成另一份。 */
+/** 与 test/helpers/review-cycle-fixture.ts 的 breakReviewProof 保持一致。 */
 function breakReviewProof(projectRoot, chapter) {
   const database = new Database(path.join(projectRoot, '.ai-novel', 'project.db'), { fileMustExist: true })
   try {
@@ -75,7 +74,6 @@ export const CCH_SCENARIOS = {
       + 'Use "Copy chapter text", then "Delete manuscript…" and "Delete permanently…" in the trash, and retry.')
     return { zh, ja, en }
   } },
-  // 照提示在界面里做一遍：坏的是第 1 章（后面还有定稿章），复制正文、删除正文、到回收站彻底删除，之后导出成功。
   'cch-remedy-ui': { model: true, shell: 'stage', setup: async context => {
     await buildByReviewCycle(context, 2)
     await context.restart({ beforeLaunch: () => breakReviewProof(path.join(context.roots.projects, BOOK), 1) })

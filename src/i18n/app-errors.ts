@@ -420,7 +420,6 @@ const DAMAGED_REVIEW_CYCLE_NEXT = {
   'delete-draft': 'error.damagedReviewCycleDeleteDraft',
 } as const satisfies Record<NonNullable<DamagedReviewCycle['remedy']>, MessageKey>
 
-/** 导出、备份被全书审修循环校验挡下时的说明（#702）：哪一章，以及删掉哪一稿能再导出；删了也导不出时只请作者反馈。 */
 export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle): string {
   const params = { number: damaged.chapterNumber, title: damaged.chapterTitle }
   const chapter = damaged.chapterTitle

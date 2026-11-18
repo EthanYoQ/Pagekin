@@ -315,7 +315,6 @@ export function verifyM03ReviewCycle(db: Database.Database): boolean {
   return wholeBookVerdict(db).ok
 }
 
-/** 迁移注册表用的全书校验：过不了时抛 MIGRATION_VERIFICATION_FAILED，能定位到某条循环就带上它所在的章。 */
 export function assertM03ReviewCycle(db: Database.Database): true {
   const verdict = wholeBookVerdict(db)
   if (!verdict.ok) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', verdict.damaged)
@@ -350,22 +349,20 @@ function wholeBookVerdict(db: Database.Database): WholeBookVerdict {
     if (tables.mergeTable && db.prepare('SELECT 1 FROM review_cycle_merges WHERE cycle_id IS NULL LIMIT 1').get()) return failed
     const cycles = db.prepare('SELECT * FROM review_cycles ORDER BY cycle_id').all() as CycleRow[]
     for (const cycle of cycles) {
-      let unreadable = false
-      try { if (verifyCycle(db, tables, cycle)) continue } catch { unreadable = true }
-      return { ok: false, damaged: damagedCycle(db, tables, cycle, unreadable) }
+      let recordUnreadable = false
+      try { if (verifyCycle(db, tables, cycle)) continue } catch { recordUnreadable = true }
+      return { ok: false, damaged: damagedCycle(db, tables, cycle, recordUnreadable) }
     }
     return { ok: true }
   } catch { return failed }
 }
 
-/** 抛错说明这条循环引用的某个 JSON 格子读不出：导出的投影同样会拒绝它，删章不能让导出通过，所以不给办法。 */
-function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow, unreadable: boolean): DamagedReviewCycle | undefined {
+function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow, recordUnreadable: boolean): DamagedReviewCycle | undefined {
   const row = db.prepare(`SELECT d.chapter_number AS chapterNumber, d.status, COALESCE(b.title,'') AS chapterTitle
     FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id LEFT JOIN blueprints b ON b.chapter_number=d.chapter_number
     WHERE r.id=?`).get(cycle.review_id) as { chapterNumber: number; status: string; chapterTitle: string } | undefined
   if (!row) return undefined
-  // 定稿、旧定稿与回收站里的稿只能经回收站彻底删除；其余可编辑的稿直接删这一稿。
-  const remedy = unreadable ? null : ['finalized', 'superseded', 'deleted'].includes(row.status) ? 'delete-manuscript' : 'delete-draft'
+  const remedy = recordUnreadable ? null : ['finalized', 'superseded', 'deleted'].includes(row.status) ? 'delete-manuscript' : 'delete-draft'
   return { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, remedy }
 }
 

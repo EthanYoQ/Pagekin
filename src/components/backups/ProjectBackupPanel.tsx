@@ -21,7 +21,6 @@ type Notice = { kind: 'error' | 'success' | 'info'; text: string } | null
 
 // 主进程登记过的码（例如导出目标已存在）按界面语言说明；其余码与渲染端自己的说明原样显示。
 const errorText = (error: unknown) => displayedErrorMessage(currentInterfaceLocale(), error)
-/** 打包被坏审修循环挡下时，说明换成指明章节的那一句，不露错误码。 */
 const failureReason = (code: string, damaged?: DamagedReviewCycle) =>
   damaged ? damagedReviewCycleMessage(currentInterfaceLocale(), damaged) : code
 

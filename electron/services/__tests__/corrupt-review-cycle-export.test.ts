@@ -14,7 +14,6 @@ import { PostProcessRepository } from '../../repositories/post-process-repositor
 import { ChapterDeletionService } from '../chapter-deletion-service'
 import { exportPortableProject, type ExportPortableProjectInput } from '../project-archive-service'
 
-// #702：导出、备份仍跑全书审修循环校验。失败时错误码不变，带出第一条坏循环所在的章，以及作者删掉哪一稿能让导出通过。
 
 let base = ''
 let projectRoot = ''
@@ -36,7 +35,6 @@ afterEach(() => {
   fs.rmSync(base, { recursive: true, force: true })
 })
 
-/** 第 1、2 章各有一条已合并的审修循环；finalized 时两章都已定稿。 */
 function reviewedBook({ finalized }: { finalized: boolean }) {
   const items = seedReviewedBook(db(), 2)
   db().prepare('UPDATE generation_roots SET budget_json=?').run(JSON.stringify({ maxPhysicalRequests: 1,
