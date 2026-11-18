@@ -9,6 +9,7 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../
 import { migrateSchema } from '../../migrations/runner'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { ProjectPeekService } from '../project-peek'
+import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -341,5 +342,33 @@ describe('ProjectPeekService source-zero-write overview', () => {
     expect(current.excerpt).toContain('雨落在旧车站')
     expect(external).not.toHaveProperty('excerpt')
     expect(f.database.prepare('SELECT total_changes()').pluck().get()).toBe(beforeChanges)
+  })
+})
+
+describe('当前作品的书库概览只做打开作品时的校验（ADR-0029 决定 1）', () => {
+  it('有一条审修循环过不了全书证明时，当前作品的概览照常可用', () => {
+    const f = fixture()
+    const book = seedReviewedBook(f.database, 2, { firstChapter: 2 })
+    breakReviewProof(f.database, book[1]!)
+
+    ready(new ProjectPeekService({ scratchRoot: f.scratch }).readCurrent(f.projectId, f.database))
+  })
+
+  it.each([
+    ['外键损坏', (database: DatabaseHandle) => {
+      database.pragma('foreign_keys = OFF')
+      database.prepare('INSERT INTO review_cycle_merges(cycle_id,body) VALUES(?,?)').run('missing-cycle', '孤儿快照')
+      database.pragma('foreign_keys = ON')
+    }],
+    ['结构不认识', (database: DatabaseHandle) => { database.exec('ALTER TABLE contents ADD COLUMN fork_secret TEXT') }],
+    ['版本不符', (database: DatabaseHandle) => { database.pragma(`user_version = ${CURRENT_DESKTOP_SCHEMA_VERSION - 1}`) }],
+    ['角色身份账目对不上（M02）', (database: DatabaseHandle) => {
+      database.exec("UPDATE character_identity_meta SET legacy_count=legacy_count+1 WHERE id='main'")
+    }],
+  ] as const)('%s的当前作品，概览仍不可用', (_name, damage) => {
+    const f = fixture()
+    damage(f.database)
+
+    expect(new ProjectPeekService({ scratchRoot: f.scratch }).readCurrent(f.projectId, f.database)).toEqual({ state: 'unavailable' })
   })
 })

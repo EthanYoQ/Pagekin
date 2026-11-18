@@ -101,7 +101,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch'], silico
     selectedDraftIds: [], selectedFinalizedDraftIds: [], promptKeys: ['first_chapter_draft'], skillStages: [], output: 'visible-text' }
   return { root, model, modelSource, get db() { return db }, owner: owners[0], begin,
     invalidate: () => { current = false },
-    reopen: () => { owners.at(-1)!.suspendForProjectClose(); db.close(); db = new Database(path.join(root, 'project.db')); epoch = `epoch-${owners.length + 1}`;
+    reopen: ({ crashed = false } = {}) => { if (!crashed) owners.at(-1)!.suspendForProjectClose(); db.close(); db = new Database(path.join(root, 'project.db')); epoch = `epoch-${owners.length + 1}`;
       const owner = makeOwner(); owners.push(owner); return owner },
   }
 }
@@ -4458,4 +4458,42 @@ describe('超长报错里学到真实窗口', () => {
       return { finishReason: 'stop', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2, reasoningTokens: null, accounting: 'included-in-completion', totalIncludesReasoning: true, trusted: true } }
     }
   }
+})
+
+describe('一条生成根读不出时只影响它自己（ADR-0029 后果 1）', () => {
+  const insertUnreadableRoot = (db: import('better-sqlite3').Database) => db
+    .prepare("INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json) VALUES('unreadable-root','unreadable-key','{坏','{}')").run()
+
+  it('崩溃重开后照常恢复其余中断的根，生成照常可用，坏根仍然拒绝读写', async () => {
+    const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (_request, options) => {
+      options.onVisible({ kind: 'delta', text: '第一章正文。' })
+      return { finishReason: 'stop', usage: null }
+    })
+    const f = fixture(dispatch), run = f.owner.begin(f.begin)
+    const interrupted = new GenerationRunRepository(() => f.db).reserve(run.handle.runId, 'in-flight', textHash('in-flight'), 200, 100)
+    new GenerationRunRepository(() => f.db).markDispatched(interrupted.attempt.attemptId)
+    insertUnreadableRoot(f.db)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    cleanups.push(() => warn.mockRestore())
+
+    const owner = f.reopen({ crashed: true })
+
+    const repository = new GenerationRunRepository(() => f.db)
+    expect(repository.receipt(interrupted.attempt.attemptId).attempt.status).toBe('unknown')
+    expect(repository.budget(run.handle.rootActionId).root.status).toBe('paused')
+    expect(f.db.prepare("SELECT action_json FROM generation_roots WHERE root_action_id='unreadable-root'").pluck().get()).toBe('{坏')
+    expect(() => repository.budget('unreadable-root')).toThrow(SyntaxError)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('GENERATION_ROOT_UNREADABLE'), { rootActionId: 'unreadable-root' })
+    const next = owner.begin({ ...f.begin, uiActionNonce: 'after-crash' })
+    await owner.execute({ handle: next.handle, invocationNonce: 'after-crash', task })
+    expect(dispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('带着读不出的根关书不抛错', () => {
+    const f = fixture()
+    insertUnreadableRoot(f.db)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    cleanups.push(() => warn.mockRestore())
+    expect(() => f.owner.suspendForProjectClose()).not.toThrow()
+  })
 })
