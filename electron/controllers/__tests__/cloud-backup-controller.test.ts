@@ -397,6 +397,8 @@ describe('registerCloudBackupController', () => {
     try {
       initProjectDatabase(project.sourceRoot)
       const items = seedReviewedBook(getProjectDb()!, 2, { firstChapter: 31 })
+      getProjectDb()!.prepare('UPDATE generation_roots SET budget_json=? WHERE root_action_id=?').run(JSON.stringify({
+        maxPhysicalRequests: 1, maxTokenLiability: 100, maxOutputPerRequest: 100, maxActiveElapsedMs: 1000 }), items[0]!.seeded.call.rootActionId)
       getProjectDb()!.prepare('UPDATE reviews SET base_draft_id=?, review_index=99 WHERE id=?').run(items[0]!.seeded.draftId, items[1]!.seeded.reviewId)
       getProjectDb()!.prepare("UPDATE generation_roots SET action_json='{}' WHERE root_action_id=?").run(items[1]!.seeded.call.rootActionId)
       closeProjectDatabase()
