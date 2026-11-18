@@ -373,10 +373,7 @@ export function verifyM03ReviewCycle(db: Database.Database): boolean {
   return structureOk && unprovable.length === 0
 }
 
-/**
- * 结构坏了，或有 `accepted` 之外的循环验不过，就拒绝。`accepted` 给出升级前已经验不过的循环（no-new-failures），
- * 只在有循环验不过时才取，健康的书不多扫一遍；导入、恢复不传，从严。
- */
+/** 结构坏了，或有 `accepted` 之外的循环验不过，就拒绝。`accepted` 不传即从严（导入、恢复）。 */
 export function assertM03ReviewCycle(db: Database.Database, accepted?: AcceptedReviewCycleFailures): true {
   const { structureOk, unprovable } = inspectM03ReviewCycles(db)
   if (!structureOk) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED')
@@ -393,12 +390,12 @@ export function unprovableReviewCycleIds(db: Database.Database): ReadonlySet<str
 }
 
 /**
- * 迁移前已经验不过的循环，第一次用到时才扫。原地迁移的库在迁移前的校验通过后调 `settle()`：
- * 那次校验没用到它，说明迁移前没有坏循环，之后取到空集，不会把迁移新弄坏的循环算成已有的。
+ * 迁移前已经验不过的循环，第一次用到时才扫。原地迁移的库，迁移前的校验通过后调 `freezeIfUnread()`：
+ * 那次校验没取它，迁移前就没有坏循环，迁移新弄坏的不能算成已有的。
  */
-export function priorReviewCycleFailures(db: Database.Database): { accepted: AcceptedReviewCycleFailures; settle(): void } {
+export function priorReviewCycleFailures(db: Database.Database): { accepted: AcceptedReviewCycleFailures; freezeIfUnread(): void } {
   let ids: ReadonlySet<string> | undefined
-  return { accepted: () => (ids ??= unprovableReviewCycleIds(db)), settle: () => { ids ??= new Set() } }
+  return { accepted: () => (ids ??= unprovableReviewCycleIds(db)), freezeIfUnread: () => { ids ??= new Set() } }
 }
 
 /**

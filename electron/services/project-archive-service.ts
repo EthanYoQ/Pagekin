@@ -898,7 +898,7 @@ function draftThreadTaskProofs(db: InstanceType<typeof BetterSqlite>, reviewRoot
 
 /**
  * Shared C17 copy-only history projection. Call only on an isolated target staging DB.
- * omitReviewCycles：导出时验不过的审修循环（主键到章节），投影前从副本里删掉（连带意见与合并快照）；最后的校验仍从严，证明存档里没有坏循环。
+ * omitReviewCycles：导出时验不过的审修循环，投影前从副本里删掉（连带意见与合并快照）；最后的校验仍从严，证明存档里没有坏循环。
  * 去掉以后它的根仍过不了投影，就按那一章报 MIGRATION_VERIFICATION_FAILED；其他失败原样抛出。
  */
 export function sanitizePortableDatabase(databasePath: string, options: { omitReviewCycles?: ReadonlyMap<string, DamagedReviewCycle> } = {}): {
@@ -928,11 +928,10 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     const avatarRows = readPortableCharacterAvatarRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
       root_action_id: string }>).map(row => row.root_action_id))
-    // 封存换成占位的记录不是审修证据（M03 不认它），按普通记录投影。
-    const sealed = new Set([...reviewRoots].flatMap(root => [...sealedLedgerRecords(db, root)]))
+    const placeholderRecords = new Set([...reviewRoots].flatMap(root => [...sealedLedgerRecords(db, root)]))
     const runRoots = new Map((db.prepare('SELECT run_id,root_action_id FROM generation_runs').all() as Array<{
       run_id: string; root_action_id: string }>).map(row => [row.run_id, row.root_action_id]))
-    const reviewRuns = new Set([...runRoots].filter(([runId, root]) => reviewRoots.has(root) && !sealed.has(`generation_runs:${runId}`))
+    const reviewRuns = new Set([...runRoots].filter(([runId, root]) => reviewRoots.has(root) && !placeholderRecords.has(`generation_runs:${runId}`))
       .map(([runId]) => runId))
     const draftProofs = draftThreadTaskProofs(db, reviewRoots)
     for (const row of avatarRows) {
@@ -978,7 +977,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
         for (const row of rows) {
           const root = table === 'generation_artifacts' ? runRoots.get(String(row.run_id)) : String(row.root_action_id)
           const reviewProof = (table === 'generation_artifacts' ? reviewRuns.has(String(row.run_id)) : reviewRoots.has(String(row.root_action_id)))
-            && !(table in LEDGER_KEYS && sealed.has(`${table}:${row[LEDGER_KEYS[table]!]}`))
+            && !(table in LEDGER_KEYS && placeholderRecords.has(`${table}:${row[LEDGER_KEYS[table]!]}`))
           try {
             if (hasProjection || hasHistory) {
               const safe = projectionForRow(table, row, columns)
@@ -1004,7 +1003,6 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
               return neutralValue(key, column, row[column.name], reviewProof)
             }), row.__portable_rowid__)
           } catch (error) {
-            // 去掉坏循环后它的根仍过不了投影：按那一章报；其他失败（路径、存储）原样抛出。
             const location = root === undefined ? undefined : omittedRoots.get(root)
             if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_UNSAFE_PROJECTION' && location?.chapterNumber != null)
               throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', location)

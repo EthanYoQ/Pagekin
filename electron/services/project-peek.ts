@@ -311,7 +311,7 @@ function upgradeSnapshot(snapshotPath: string, version: number): void {
     const prior = priorReviewCycleFailures(database)
     const adapter = new SqliteSchemaAdapter(database, prior.accepted)
     verifySchema(adapter, getDesktopMigrationRegistry(), version)
-    prior.settle()
+    prior.freezeIfUnread()
     migrateSchema(adapter, getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
   } finally { database.close() }
 }

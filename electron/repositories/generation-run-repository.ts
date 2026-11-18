@@ -192,8 +192,9 @@ export class GenerationRunRepository {
             WHERE NOT (g.${UNSEALED_ROOT})`).all() as { root_id: string | null; root_key: string; open_key: string | null }[];
         return rows.some(row => {
             const root = clickOfRootKey(row.root_key);
-            // 主键为 NULL 的根挂不上运行，认不出的键也撞不上新点击的键，不能把它当成占用了所有点击。
-            if (row.root_id === null && root === undefined) return false;
+            // 主键为 NULL 的根挂不上运行，认不出的键也撞不上新点击的键。
+            const unclaimable = row.root_id === null && root === undefined;
+            if (unclaimable) return false;
             return [root, ...(row.open_key === null ? [] : [clickOfOpenKey(row.open_key)])].some(click => click === undefined || claims(click, root));
         });
     }

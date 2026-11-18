@@ -358,7 +358,7 @@ export function upgradeProjectSqlite(options: { databasePath: string; registry?:
     const prior = priorFailures(database, options.evidence), accepted = prior?.accepted
     // Revalidate the source identity after acquiring the writable connection.
     const current = inspect(database, registry, before.schemaVersion, accepted)
-    prior?.settle()
+    prior?.freezeIfUnread()
     if (current.fingerprint !== before.fingerprint || JSON.stringify(current.domain) !== JSON.stringify(before.domain)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
     return database.transaction(() => {
       const columnsBefore = domainColumns(database)
