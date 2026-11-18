@@ -1250,8 +1250,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       assertCurrent()
       if (!request || Object.keys(request).some(key => !['modelId','uiActionNonce'].includes(key)) || typeof request.uiActionNonce !== 'string'
         || !request.uiActionNonce.trim() || request.uiActionNonce.length > 256) throw new Error('GENERATION_LEGACY_REQUEST_INVALID')
-      const rows = deps.database.prepare("SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE r.run_id IN (SELECT value FROM json_each(?)) AND json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.uiActionNonce')=? AND json_extract(r.binding_json,'$.sourceManifest.legacyRosterContext') IS NOT NULL")
-        .all(candidateRunIds(runIndexOf(deps.database).lookupTrees(click => click.projectId === deps.projectId && click.uiActionNonce === request.uiActionNonce)),deps.projectId,request.uiActionNonce) as {run_id:string}[]
+      const rows = deps.database.prepare("SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.uiActionNonce')=? AND json_extract(r.binding_json,'$.sourceManifest.legacyRosterContext') IS NOT NULL").all(deps.projectId,request.uiActionNonce) as {run_id:string}[]
       if (rows.length > 1) throw new Error('GENERATION_NONCE_CONFLICT')
       if (rows[0]) return legacyRosterRecovery(repository.get(rows[0].run_id))
       const view = begin({operation:'legacy-character-roster-repair',uiActionNonce:request.uiActionNonce,modelId:request.modelId,
@@ -1320,8 +1319,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       if (!request || Object.keys(request).some(key => !['input', 'modelId', 'uiActionNonce'].includes(key))
         || typeof request.uiActionNonce !== 'string' || !request.uiActionNonce.trim() || request.uiActionNonce.length > 256) throw new Error('GENERATION_GRAPH_INPUT_INVALID')
       const input = validateGraphGenerationInput(request.input)
-      const rows = deps.database.prepare("SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE r.run_id IN (SELECT value FROM json_each(?)) AND json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.uiActionNonce')=? AND json_extract(r.binding_json,'$.sourceManifest.graphGenerationContext') IS NOT NULL")
-        .all(candidateRunIds(runIndexOf(deps.database).lookupTrees(click => click.projectId === deps.projectId && click.uiActionNonce === request.uiActionNonce)), deps.projectId, request.uiActionNonce) as { run_id: string }[]
+      const rows = deps.database.prepare("SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.uiActionNonce')=? AND json_extract(r.binding_json,'$.sourceManifest.graphGenerationContext') IS NOT NULL").all(deps.projectId, request.uiActionNonce) as { run_id: string }[]
       if (rows.length > 1) throw new Error('GENERATION_NONCE_CONFLICT')
       if (rows[0]) {
         const run = repository.get(rows[0].run_id)
@@ -1356,10 +1354,9 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       assertCurrent()
       if (!request || Object.keys(request).some(key => key !== 'finalizationId') || typeof request.finalizationId !== 'string') throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
       const rows = deps.database.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
-        WHERE r.run_id IN (SELECT value FROM json_each(?)) AND json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=?
+        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=?
           AND json_extract(r.binding_json,'$.sourceManifest.graphGenerationInput.finalizationId')=? ORDER BY r.created_at_ms DESC, r.rowid DESC`)
-        .pluck().all(candidateRunIds(runIndexOf(deps.database).lookupTrees(click => click.operation === graphOperations['continuity-suggest'])),
-          deps.projectId, graphOperations['continuity-suggest'], request.finalizationId) as string[]
+        .pluck().all(deps.projectId, graphOperations['continuity-suggest'], request.finalizationId) as string[]
       for (const runId of rows) {
         let recovery: GraphGenerationRecovery
         try { recovery = graphRecovery(repository.get(runId)) } catch { continue }

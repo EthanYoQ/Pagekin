@@ -32,7 +32,6 @@ export function uiActionNonceOfOpenKey(openKey: string): string | undefined {
 /** 一条运行的身份，只取插入后不变的列，不读任何绑定。 */
 export interface RunIndexEntry {
     readonly runId: string
-    readonly rootActionId: string
     /** rowid，表示创建先后。可能超过 2^53，所以是 bigint。 */
     readonly order: bigint
     /** `open_key` 读不出时为 undefined。 */
@@ -50,16 +49,14 @@ export interface RunLookup {
 
 export interface GenerationRunIndex {
     lookup(matches: (click: GenerationClick) => boolean): RunLookup
-    /** 同 lookup，再扩到命中和读不出的运行所在的整棵树：按根的身份找时，根的身份就是开树那条运行的点击。 */
-    lookupTrees(matches: (click: GenerationClick) => boolean): RunLookup
 }
 
-/** 点击号正好是 nonce，或以 nonce 加冒号开头：槽位的重试链、Agent 会话的各轮。 */
+/** 点击号正好是 nonce，或以 nonce 加冒号开头：Agent 会话的各轮。 */
 export const inNonceChain = (nonce: string) => (click: GenerationClick) => click.uiActionNonce === nonce || click.uiActionNonce.startsWith(`${nonce}:`)
 
 /**
  * 原 SQL 加上 `run_id IN (SELECT value FROM json_each(?))` 时绑定的参数：命中的和读不出的都算候选。
- * 按操作挑候选、原 SQL 按绑定的 `sourceManifest.operation` 筛时，靠的是开运行时两处取同一个操作；仓库不校验这一点。
+ * 跨记录认运行只看身份键（ADR-0030）；原 SQL 再按绑定筛，绑定与点击操作在写入时断言一致。
  */
 export function candidateRunIds(lookup: RunLookup): string {
     return JSON.stringify([...lookup.hits, ...lookup.unidentified].map(entry => entry.runId))
@@ -70,7 +67,7 @@ interface Snapshot { entries: RunIndexEntry[]; top: bigint; count: bigint; seale
 const snapshots = new WeakMap<Database.Database, Snapshot>()
 
 function entryOf(row: { row: bigint; run_id: string; root_action_id: string; open_key: unknown }, sealed: ReadonlySet<string>): RunIndexEntry {
-    return { runId: row.run_id, rootActionId: row.root_action_id, order: row.row, click: clickOfOpenKey(row.open_key), sealed: sealed.has(row.root_action_id) }
+    return { runId: row.run_id, order: row.row, click: clickOfOpenKey(row.open_key), sealed: sealed.has(row.root_action_id) }
 }
 
 function fullScan(db: Database.Database, sealed: ReadonlySet<string>): RunIndexEntry[] {
@@ -103,13 +100,10 @@ function entries(db: Database.Database): readonly RunIndexEntry[] {
 }
 
 export function runIndexOf(db: Database.Database): GenerationRunIndex {
-    const lookup = (matches: (click: GenerationClick) => boolean, wholeTrees: boolean): RunLookup => {
-        const all = entries(db)
-        const direct = all.filter(entry => entry.click !== undefined && matches(entry.click))
-        const unidentified = all.filter(entry => entry.click === undefined && !entry.sealed)
-        if (!wholeTrees) return { hits: direct, unidentified }
-        const roots = new Set([...direct, ...unidentified].map(entry => entry.rootActionId))
-        return { hits: all.filter(entry => entry.click !== undefined && roots.has(entry.rootActionId)), unidentified }
+    return {
+        lookup: matches => {
+            const all = entries(db)
+            return { hits: all.filter(entry => entry.click !== undefined && matches(entry.click)), unidentified: all.filter(entry => entry.click === undefined && !entry.sealed) }
+        },
     }
-    return { lookup: matches => lookup(matches, false), lookupTrees: matches => lookup(matches, true) }
 }

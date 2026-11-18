@@ -34,7 +34,7 @@ function recomputed(db: Db): RunIndexEntry[] {
   const rows = db.prepare(`SELECT r.rowid AS row, r.run_id, r.root_action_id, r.open_key, g.blocked_code FROM generation_runs r
     LEFT JOIN generation_roots g ON g.root_action_id=r.root_action_id ORDER BY r.rowid`).safeIntegers().all() as
     { row: bigint; run_id: string; root_action_id: string; open_key: unknown; blocked_code: string | null }[]
-  return rows.map(row => ({ runId: row.run_id, rootActionId: row.root_action_id, order: row.row,
+  return rows.map(row => ({ runId: row.run_id, order: row.row,
     click: clickOfOpenKey(row.open_key), sealed: row.blocked_code === GENERATION_LEDGER_UNREADABLE }))
 }
 
@@ -116,23 +116,6 @@ describe('generation run index', () => {
     const lookup = runIndexOf(db).lookup(() => true)
     expect(lookup.hits.map(entry => [entry.runId, entry.sealed])).toEqual([[healthy.runId, false]])
     expect(lookup.unidentified).toEqual([])
-  })
-
-  it('expands a lookup by root identity to the whole tree, including trees opened by an unreadable identity', () => {
-    const db = getProjectDb()!
-    const runs = new GenerationRunRepository(getProjectDb)
-    const root = runs.open(request('continuity-suggest', 'suggest'))
-    const child = runs.open(request('chapter-draft', 'child', root.rootActionId))
-    const other = runs.open(request('chapter-draft', 'other'))
-    const lost = runs.open(request('continuity-suggest', 'lost'))
-    const lostChild = runs.open(request('chapter-draft', 'lost-child', lost.rootActionId))
-    db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(lost.runId)
-    closeProjectDatabase()
-    initProjectDatabase(projectRoot)
-    const lookup = runIndexOf(getProjectDb()!).lookupTrees(click => click.operation === 'continuity-suggest')
-    expect(lookup.hits.map(entry => entry.runId)).toEqual([root.runId, child.runId, lostChild.runId])
-    expect(lookup.unidentified.map(entry => entry.runId)).toEqual([lost.runId])
-    expect(lookup.hits.map(entry => entry.runId)).not.toContain(other.runId)
   })
 
   it('refuses to write a binding whose manifest operation differs from the click, so the index can classify runs by click', () => {
