@@ -8,7 +8,7 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../
 import { migrateSchema, probeSchema, verifySchema } from '../migrations/runner'
 import { SchemaMigrationError, type MigrationRegistry } from '../migrations/registry'
 import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
-import { M02_ADDED_CHARACTER_COLUMNS, M02_AUXILIARY_TABLES, verifyM02CharacterIdentity } from '../migrations/m02-character-identity'
+import { M02_ADDED_CHARACTER_COLUMNS, M02_AUXILIARY_TABLES, verifyM02CharacterRows } from '../migrations/m02-character-identity'
 import { M03_REVIEW_CYCLE_TABLES } from '../migrations/m03-review-cycle'
 import { M07_DRAFT_COLUMNS, logicalTableName, verifyM07ChapterRecycle } from '../migrations/m07-chapter-recycle'
 import { M08_EXEMPTION_COLUMNS, M08_TABLES } from '../migrations/m08-continuity-foundation'
@@ -297,7 +297,7 @@ function currentSnapshotIdentity(databasePath: string): SqliteContentIdentity | 
 export function verifyOpenedSchema(db: BetterSqlite3.Database): void {
   const probe = probeSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry())
   if (probe.version !== CURRENT_DESKTOP_SCHEMA_VERSION) throw new SchemaMigrationError('SCHEMA_VERSION_MISMATCH')
-  if (!verifyM02CharacterIdentity(db) || !verifyM07ChapterRecycle(db)) {
+  if (!verifyM02CharacterRows(db) || !verifyM07ChapterRecycle(db)) {
     throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED')
   }
 }

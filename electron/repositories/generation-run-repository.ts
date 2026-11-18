@@ -814,13 +814,8 @@ export class GenerationRunRepository {
             }[];
             for (const { root_action_id: id } of roots) {
                 if (this.frozenRoot(id)) continue;
-                let budget: GenerationBudgetReceipt;
-                try { budget = this.budget(id); } catch (error) {
-                    if (!(error instanceof SyntaxError)) throw error;
-                    // 读不出的根留给读写它的那一步报错，不挡其余根恢复（ADR-0029 后果 1）。
-                    console.warn('[generation] GENERATION_ROOT_UNREADABLE skipped during recovery', { rootActionId: id });
-                    continue;
-                }
+                const budget = this.readableBudget(id);
+                if (!budget) continue;
                 for (const attempt of budget.attempts)
                     if (attempt.status === 'dispatch-marked') {
                         attempt.status = 'unknown';
@@ -829,6 +824,14 @@ export class GenerationRunRepository {
                 this.pause(id);
             }
         });
+    }
+    /** 遍历全书的根时用：读不出的根留给读写它的那一步报错，不挡其余根（ADR-0029 后果 1）。 */
+    private readableBudget(rootId: string): GenerationBudgetReceipt | null {
+        try { return this.budget(rootId); } catch (error) {
+            if (!(error instanceof SyntaxError)) throw error;
+            console.warn('[generation] GENERATION_ROOT_UNREADABLE skipped', { rootActionId: rootId });
+            return null;
+        }
     }
     private frozenRoot(rootId: string): boolean {
         return this.authorEditedRoot(rootId) || this.portableFrozenRoot(rootId);
@@ -841,11 +844,16 @@ export class GenerationRunRepository {
         return attemptIds.some(row => this.isFrozen('generation_attempts', row.attempt_id));
     }
     listCandidates(runId?: string): VisibleArtifact[] {
-        const rows = this.db().prepare("SELECT attempt_id FROM generation_artifacts WHERE status!='discarded' AND (? IS NULL OR run_id=?) ORDER BY rowid").all(runId ?? null, runId ?? null) as { attempt_id: string }[];
-        const budget = runId ? this.budget(this.get(runId).rootActionId) : undefined;
+        const rows = this.db().prepare(`SELECT g.attempt_id,t.root_action_id FROM generation_artifacts g JOIN generation_attempts t ON t.attempt_id=g.attempt_id
+            WHERE g.status!='discarded' AND (? IS NULL OR g.run_id=?) ORDER BY g.rowid`).all(runId ?? null, runId ?? null) as { attempt_id: string; root_action_id: string }[];
+        const budgets = new Map<string, GenerationBudgetReceipt | null>();
+        if (runId) { const rootId = this.get(runId).rootActionId; budgets.set(rootId, this.budget(rootId)); }
         // Portable history keeps visible text but has no current execution receipt.
-        return rows.filter(row => !this.isFrozen('generation_attempts', row.attempt_id))
-            .map(row => this.receipt(row.attempt_id, budget).artifact!);
+        return rows.filter(row => !this.isFrozen('generation_attempts', row.attempt_id)).flatMap(row => {
+            if (!budgets.has(row.root_action_id)) budgets.set(row.root_action_id, this.readableBudget(row.root_action_id));
+            const budget = budgets.get(row.root_action_id);
+            return budget ? [this.receipt(row.attempt_id, budget).artifact!] : [];
+        });
     }
     discardCandidate(artifactId: string): void {
         const runId = this.db().prepare('SELECT run_id FROM generation_artifacts WHERE artifact_id=?').pluck().get(artifactId) as string | undefined;
