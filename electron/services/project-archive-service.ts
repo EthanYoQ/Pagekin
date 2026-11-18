@@ -34,7 +34,7 @@ import {
   writePortableProjectArchive,
   type PortableArchiveSource,
 } from './portable-project-archive'
-import { backupProjectSqlite, type ProjectSqliteEvidence } from './sqlite-project-migration'
+import { backupProjectSqlite, type DomainVariant, type ProjectSqliteEvidence } from './sqlite-project-migration'
 import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
 import { SchemaMigrationError } from '../migrations/registry'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
@@ -1068,11 +1068,11 @@ async function verifyFile(file: PortableProvidedFile, allowedRoot: string): Prom
   if (info.size !== file.byteSize || await hashFile(file.sourcePath) !== file.sha256) fail('PORTABLE_SOURCE_CHANGED')
 }
 
+/** 三次快照比对这几个内容哈希，备份也只算这几个。 */
+const COMPARED_VARIANTS: readonly DomainVariant[] = ['preIdentityDomain', 'preAssetDomain']
 function sameEvidence(left: ProjectSqliteEvidence, right: ProjectSqliteEvidence): boolean {
   return left.schemaVersion === right.schemaVersion && left.fingerprint === right.fingerprint
-    && stableJson(left.domain) === stableJson(right.domain)
-    && stableJson(left.preIdentityDomain) === stableJson(right.preIdentityDomain)
-    && stableJson(left.preAssetDomain) === stableJson(right.preAssetDomain)
+    && (['domain', ...COMPARED_VARIANTS] as const).every(key => stableJson(left[key]) === stableJson(right[key]))
 }
 
 async function hashFile(file: string): Promise<string> {
@@ -1160,7 +1160,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
   try {
     const sourceSnapshotPath = path.join(attemptRoot, 'source.db')
     let firstEvidence: ProjectSqliteEvidence
-    try { firstEvidence = await backupProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath, evidence: 'no-new-failures' }) }
+    try { firstEvidence = await backupProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath, evidence: 'no-new-failures', variants: COMPARED_VARIANTS }) }
     catch (error) { return mapSourceChange(error) }
     recordOwnedFile(attempt, sourceSnapshotPath)
     const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
@@ -1272,7 +1272,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     await assertCurrentContext(input, frozenContext, sourceRoot)
     const verificationSnapshotPath = path.join(attemptRoot, 'source-verification.db')
     let secondEvidence: ProjectSqliteEvidence
-    try { secondEvidence = await backupProjectSqlite({ sourceDatabasePath, targetDatabasePath: verificationSnapshotPath, evidence: 'no-new-failures' }) }
+    try { secondEvidence = await backupProjectSqlite({ sourceDatabasePath, targetDatabasePath: verificationSnapshotPath, evidence: 'no-new-failures', variants: COMPARED_VARIANTS }) }
     catch (error) { return mapSourceChange(error) }
     recordOwnedFile(attempt, verificationSnapshotPath)
     if (!sameEvidence(firstEvidence, secondEvidence)) fail('PORTABLE_SOURCE_CHANGED')
@@ -1334,6 +1334,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
       sourceDatabasePath,
       targetDatabasePath: finalVerificationSnapshotPath,
       evidence: 'no-new-failures',
+      variants: COMPARED_VARIANTS,
     }) } catch (error) { return mapSourceChange(error) }
     recordOwnedFile(attempt, finalVerificationSnapshotPath)
     if (!sameEvidence(firstEvidence, finalEvidence)) fail('PORTABLE_SOURCE_CHANGED')
