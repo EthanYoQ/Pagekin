@@ -925,11 +925,10 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     const avatarRows = readPortableCharacterAvatarRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
       root_action_id: string }>).map(row => row.root_action_id))
-    const reviewRuns = new Set((db.prepare('SELECT run_id,root_action_id FROM generation_runs').all() as Array<{
-      run_id: string; root_action_id: string }>).filter(row => reviewRoots.has(row.root_action_id)).map(row => row.run_id))
-    // 产物按它的尝试归根；尝试与产物记的运行对不上的，不归任何根。
+    // 产物、它的尝试、它记的运行三者同根才归这个根；对不上的不归任何根，也不按审稿证据投影。
     const artifactRoots = new Map((db.prepare(`SELECT a.artifact_id,t.root_action_id FROM generation_artifacts a
-      JOIN generation_attempts t ON t.attempt_id=a.attempt_id AND t.run_id=a.run_id`).all() as Array<{
+      JOIN generation_attempts t ON t.attempt_id=a.attempt_id AND t.run_id=a.run_id
+      JOIN generation_runs r ON r.run_id=a.run_id AND r.root_action_id=t.root_action_id`).all() as Array<{
       artifact_id: string; root_action_id: string }>).map(row => [row.artifact_id, row.root_action_id]))
     const draftProofs = draftThreadTaskProofs(db, reviewRoots)
     for (const row of avatarRows) {
@@ -974,7 +973,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
           : null
         for (const row of rows) {
           const root = table === 'generation_artifacts' ? artifactRoots.get(String(row.artifact_id)) : String(row.root_action_id)
-          const reviewProof = table === 'generation_artifacts' ? reviewRuns.has(String(row.run_id)) : reviewRoots.has(String(row.root_action_id))
+          const reviewProof = root !== undefined && reviewRoots.has(root)
           try {
             if (hasProjection || hasHistory) {
               const safe = projectionForRow(table, row, columns)
