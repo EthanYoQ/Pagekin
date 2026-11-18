@@ -1,20 +1,43 @@
-// README 截图：中文与英文界面各走一遍书房、正文单章、蓝图写作选项、架构、角色名单、运行侧页，每一步拍一张。
+// README 截图：中文与英文界面各走一遍书房、正文单章、蓝图写作选项、架构、角色名单、运行侧页，每一步拍一张；
+// 1.5.0 的新功能页（角色时间线、蓝图 AI 检查、批注统一修改、回收站）各一个场景，同一次运行里再按 4:3 拍一张给 README 顶部主图。
 // 预置用公开 IPC，模型走本机假服务；作品内容按界面语言各写一份，英文界面配英文作品。
-// 重拍：node scripts/redesign/drive.mjs --scenario readme-zh|readme-en|readme-hero-zh|readme-hero-en [--theme dark] --out <目录>
+// 重拍：node scripts/redesign/drive.mjs --scenario readme-<zh|en> | readme-hero-<zh|en> | readme-<timeline|check|annotate|trash>-<zh|en> [--theme dark] --out <目录>
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 
 import { chooseProjectDirectoryGrant } from '../project-directory-grant.mjs'
+import { finalizeChapter } from './f491-scenarios.mjs'
 import { FAKE_MODEL } from './fake-model.mjs'
 import * as runSheet from './pages/run-sheet.mjs'
+import * as stage from './pages/stage.mjs'
 import { countUnits, STAGE_SAMPLE } from './stage-sample.mjs'
 
 const ZH = {
+  lang: 'zh',
   locale: 'zh-CN',
   ui: { shelf: '最近的作品', preview: name => `预览《${name}》`, overview: name => `《${name}》概览`, open: name => `打开《${name}》`,
     spine: '创作流程', chapters: '章节', architecture: /^架构/, blueprint: /^蓝图/, castOpen: '打开角色名单', cast: '角色名单',
-    writeOptions: '本次写作选项', write: /^写第 \d+ 章$/, review: '审稿报告', plan: '章节规划' },
+    writeOptions: '本次写作选项', write: /^写第 \d+ 章$/, review: '审稿报告', plan: '章节规划',
+    profileView: '档案视图', currentState: '当前状态', check: 'AI 检查', trash: count => `回收站（${count}）`,
+    selection: '选中文字的操作', annotate: '添加批注', note: '批注意见', annotations: '本章批注', reviseAll: count => `统一修改（${count}）`,
+    annotationReview: '批注修改对比', chapterTab: number => `第 ${number} 章` },
   model: '我的模型',
+  timeline: [
+    { marker: '灯室的门没有锁', evidence: '林岚把纸条夹进父亲的地图里。',
+      state: { location: '灯塔顶层灯室', keyItems: '父亲的地图、钟绳上的纸条', recentEvents: '在灯室找到「别在涨潮时敲钟」的纸条' } },
+    { marker: '守塔人的屋子在灯塔背风的一侧', evidence: '「你父亲也问过钟的事。」',
+      state: { location: '守塔人的屋子', recentEvents: '守塔人说父亲也问过钟的事' },
+      relation: { value: '开始信任', evidence: '他给林岚倒了一杯很淡的茶，自己却只是捧着杯子，看着炉火。' } },
+  ],
+  check: { chapter: 6, relation: '素不相识', keyEvents: '林岚回到小时候常来的灯塔，守塔人一眼认出她，说是看着她长大的。',
+    issue: '第 6 章写守塔人看着林岚长大，时间线上两人素不相识。', suggestion: '改成守塔人只在父亲的信里见过她的名字。' },
+  annotate: {
+    notes: ['把盐写得具体一点，让人看得见', '结尾留一个动作，别直接收住'],
+    revised: [
+      '守塔人的屋子在灯塔背风的一侧，窗玻璃上结着一层白霜似的盐花，指甲一刮就簌簌往下掉。他给林岚倒了一杯很淡的茶，自己却只是捧着杯子，看着炉火。',
+      '「你父亲也问过钟的事。」他说完这句话，就再也没有开口，只是起身往炉子里添了一块木柴。',
+    ],
+  },
   book: {
     name: STAGE_SAMPLE.name, genre: '悬疑', audience: '成年读者', core: STAGE_SAMPLE.core, titles: STAGE_SAMPLE.titles,
     finalized: STAGE_SAMPLE.finalized, drafts: STAGE_SAMPLE.drafts,
@@ -48,15 +71,38 @@ const ZH = {
   shelfBook: { name: '雾港', genre: '悬疑', audience: '成年读者', titles: ['渡口', '潮声', '无名船'],
     core: { coreOutline: '一个摆渡人在雾里接到一位不肯报上姓名的乘客。', premise: '雾港的渡船只在起雾时开。',
       worldbuilding: '雾港靠渡船与对岸相连，渡口的钟决定开船的时刻。', synopsis: '摆渡人要在雾散之前把乘客送到对岸。' },
-    finalized: { 1: '雾从河面上升起来的时候，老周解开了缆绳。\n\n渡口只剩一位乘客，他把帽檐压得很低，一句话也没有说。' } },
+    finalized: { 1: '雾从河面上升起来的时候，老周解开了缆绳。\n\n渡口只剩一位乘客，他把帽檐压得很低，一句话也没有说。' },
+    deleted: { 2: '船过河心，雾浓得看不见船头。老周听见船底擦过一块礁石，像有人在水下轻轻敲了一下。\n\n乘客终于开口，问他对岸的钟今晚还响不响。老周没有回答，只是把桨握得更紧了。' } },
 }
 
 const EN = {
+  lang: 'en',
   locale: 'en-US',
   ui: { shelf: 'Recent books', preview: name => `Preview “${name}”`, overview: name => `“${name}” overview`, open: name => `Open “${name}”`,
     spine: 'Writing flow', chapters: 'Chapters', architecture: /^Architecture/, blueprint: /^Blueprint/, castOpen: 'Open cast', cast: 'Cast',
-    writeOptions: 'Options for this run', write: /^Write chapter \d+$/, review: 'Review report', plan: 'Chapter plan' },
+    writeOptions: 'Options for this run', write: /^Write chapter \d+$/, review: 'Review report', plan: 'Chapter plan',
+    profileView: 'Profile view', currentState: 'Current state', check: 'AI check', trash: count => `Trash (${count})`,
+    selection: 'Actions for the selected text', annotate: 'Add annotation', note: 'Annotation note', annotations: 'Chapter annotations',
+    reviseAll: count => `Revise all (${count})`, annotationReview: 'Annotation revision comparison', chapterTab: number => `Chapter ${number}` },
   model: 'My model',
+  timeline: [
+    { marker: 'The lamp room was unlocked', evidence: 'Mara slipped the note into her father\'s map.',
+      state: { location: 'The lamp room at the top of the lighthouse', keyItems: 'Her father\'s map, the note from the bell rope',
+        recentEvents: 'Found the note "do not ring at high tide" in the lamp room' } },
+    { marker: 'The keeper\'s house sat on the lee side', evidence: '"Your father asked about the bell too," he said, and did not speak again.',
+      state: { location: 'The keeper\'s house', recentEvents: 'The keeper said her father asked about the bell too' },
+      relation: { value: 'Starting to trust him', evidence: 'He poured Mara a weak cup of tea and only held his own, watching the stove.' } },
+  ],
+  check: { chapter: 6, relation: 'Strangers', keyEvents: 'Mara returns to the lighthouse she visited as a child. The keeper recognizes her and says he watched her grow up.',
+    issue: 'Chapter 6 says the keeper watched Mara grow up, but on the timeline the two are strangers.',
+    suggestion: 'Have the keeper know her name only from her father\'s letters.' },
+  annotate: {
+    notes: ['Make the salt concrete enough to see', 'End on a small action instead of a full stop'],
+    revised: [
+      'The keeper\'s house sat on the lee side of the tower, its windows crusted with a white rime of salt that flaked off under a fingernail. He poured Mara a weak cup of tea and only held his own, watching the stove.',
+      '"Your father asked about the bell too," he said. He did not speak again, only got up and fed another log to the stove.',
+    ],
+  },
   book: {
     name: 'Lighthouse', genre: 'Mystery', audience: 'Adult readers',
     core: {
@@ -120,7 +166,8 @@ const EN = {
   shelfBook: { name: 'Fog Harbor', genre: 'Mystery', audience: 'Adult readers', titles: ['The Ferry Landing', 'Tide Voices', 'The Nameless Boat'],
     core: { coreOutline: 'A ferryman takes on a passenger in the fog who will not give his name.', premise: 'The Fog Harbor ferry only runs when the fog comes in.',
       worldbuilding: 'Fog Harbor reaches the far shore only by ferry, and the landing bell decides when it sails.', synopsis: 'The ferryman has to land his passenger before the fog lifts.' },
-    finalized: { 1: 'When the fog rose off the river, old Zhou untied the mooring line.\n\nOnly one passenger was left at the landing. He wore his hat low and said nothing at all.' } },
+    finalized: { 1: 'When the fog rose off the river, old Zhou untied the mooring line.\n\nOnly one passenger was left at the landing. He wore his hat low and said nothing at all.' },
+    deleted: { 2: 'Halfway across, the fog was so thick that Zhou could not see the bow. He heard the hull scrape a rock, as if someone under the water had knocked once.\n\nAt last the passenger spoke. He asked whether the bell on the far shore would ring tonight. Zhou did not answer. He only gripped the oar harder.' } },
 }
 
 /** 章节定位按存储值写（界面按语言显示），12 章一一对应。 */
@@ -149,10 +196,14 @@ async function createBook(context, language, book) {
   return { path, session }
 }
 
-/** 先建书架上的第二本，再建主作品：主作品最近打开，排在书架最前。 */
-async function seed(context, sample) {
+/**
+ * 先建书架上的第二本，再建主作品：主作品最近打开，排在书架最前。
+ * afterShelf 在书架那本还开着时追加数据；beforeLocale 在切界面语言前做，界面此时还是中文。
+ */
+async function seed(context, sample, { afterShelf, beforeLocale } = {}) {
   const { page, invoke, reload } = context
-  await createBook(context, sample.locale, sample.shelfBook)
+  const shelf = await createBook(context, sample.locale, sample.shelfBook)
+  await afterShelf?.(context, shelf)
   const { path, session } = await createBook(context, sample.locale, sample.book)
   assert.equal((await invoke(page, 'llm:save-model', { ...FAKE_MODEL, name: sample.model })).success, true)
   assert.equal((await invoke(page, 'llm:set-default-model', FAKE_MODEL.id)).success, true)
@@ -171,12 +222,14 @@ async function seed(context, sample) {
       assert.equal((await invoke(page, 'db:review-create', { baseDraftId: draft.id, content: review, expectedSource }, path, session)).success, true)
     }
   }
+  await beforeLocale?.(context, { path, session })
   assert.equal((await invoke(page, 'config:set', { locale: sample.locale })).success, true)
   await reload()
   await page.getByRole('list', { name: sample.ui.shelf }).waitFor({ state: 'visible' })
 }
 
 const settle = page => page.waitForTimeout(600)
+const HERO_VIEWPORT = { width: 1440, height: 1080 }
 
 /** 关掉内容区里除 keep 以外的标签，截图里只剩要看的那一页。 */
 async function closeOtherTabs(page, keep) {
@@ -185,6 +238,21 @@ async function closeOtherTabs(page, keep) {
     await closers.first().click()
     await page.waitForTimeout(150)
   }
+}
+
+async function openBook(page, ui, name) {
+  await page.getByRole('list', { name: ui.shelf }).getByRole('button', { name: ui.preview(name) }).click()
+  await page.getByRole('region', { name: ui.overview(name) }).getByRole('button', { name: ui.open(name) }).click()
+  await page.getByRole('navigation', { name: ui.spine }).waitFor({ state: 'visible' })
+}
+
+/** 新功能页先按 README 正文的 1440×900 拍，再放大到 4:3 拍一张给顶部主图。 */
+async function shootBoth(page, shoot, sample, name) {
+  await settle(page)
+  await shoot(`readme-${sample.lang}-${name}`)
+  await page.setViewportSize(HERO_VIEWPORT)
+  await settle(page)
+  await shoot(`hero-${sample.lang}-${name}`)
 }
 
 function walk(sample, { prefix, viewport }) {
@@ -203,7 +271,7 @@ function walk(sample, { prefix, viewport }) {
     await spine.getByRole('list', { name: ui.chapters }).getByRole('button', { name: /^3\D/ }).click()
     await page.getByRole('complementary', { name: ui.review }).waitFor({ state: 'visible', timeout: 20_000 })
     await page.locator('.stage-content .cm-content').getByText(book.drafts[3].text.slice(0, 12)).first().waitFor({ state: 'visible' })
-    await closeOtherTabs(page, sample.locale === 'zh-CN' ? '第 3 章' : 'Chapter 3')
+    await closeOtherTabs(page, ui.chapterTab(3))
     await settle(page)
     await shoot(`${prefix}-chapter`)
 
@@ -242,10 +310,139 @@ const scenario = (sample, options) => ({ model: true, shell: 'stage', setup: con
     await runSheet.anyCard(page).filter({ hasText: /^(上一次运行|Last run)/ }).waitFor({ state: 'visible', timeout: 30_000 })
   } })
 
-export const README_SCENARIOS = {
-  'readme-zh': scenario(ZH, { prefix: 'v130-zh' }),
-  'readme-en': scenario(EN, { prefix: 'v130-en' }),
-  // README 顶部主图（docs/readme-visuals）要 4:3 的完整窗口截图。
-  'readme-hero-zh': scenario(ZH, { prefix: 'hero-zh', viewport: { width: 1440, height: 1080 } }),
-  'readme-hero-en': scenario(EN, { prefix: 'hero-en', viewport: { width: 1440, height: 1080 } }),
+const characterId = (prompt, name) => new RegExp(`"characterId": "([^"]+)",\\s*"name": "${name}"`, 'u').exec(prompt)?.[1]
+
+/** 定稿后处理的角色状态回复：第 3 章写地点、道具与近况，第 4 章改地点与近况，并记下主角对守塔人的关系。证据是该章原句。 */
+function stateReply(sample) {
+  const [hero, keeper] = sample.book.cast.map(([name]) => name)
+  return prompt => {
+    const update = sample.timeline.find(item => prompt.includes(item.marker))
+    if (!update) return '{"updates":[]}'
+    const heroId = characterId(prompt, hero)
+    return JSON.stringify({ updates: [{ characterId: heroId, currentState: update.state, evidence: { text: update.evidence } }],
+      relations: update.relation ? [{ source: heroId, target: characterId(prompt, keeper), relation: update.relation.value, evidence: { text: update.relation.evidence } }] : [] })
+  }
 }
+
+/** 时间线要有定稿派生的节点：在中文界面里真实定稿第 3、4 章，后处理按 stateReply 写入。 */
+async function finalizeThreeAndFour(context, sample) {
+  const { page, fake, reload } = context
+  fake.replyCharacterState(stateReply(sample))
+  await reload()
+  await stage.openFromLibrary(page, sample.book.name)
+  for (const chapterNumber of [3, 4]) await finalizeChapter(page, chapterNumber)
+  await stage.backToLibrary(page, sample.book.name)
+}
+
+const timeline = sample => ({ model: true, shell: 'stage', setup: context => seed(context, sample, { beforeLocale: context => finalizeThreeAndFour(context, sample) }),
+  run: async ({ page, shoot }) => {
+    const { ui, book } = sample
+    await openBook(page, ui, book.name)
+    await page.getByRole('navigation', { name: ui.spine }).getByRole('button', { name: ui.architecture }).click()
+    await page.getByRole('button', { name: ui.castOpen }).click()
+    await page.getByRole('complementary', { name: ui.cast }).getByRole('button', { name: new RegExp(`^${book.cast[0][0]}`) }).click()
+    await page.getByRole('group', { name: ui.profileView }).getByRole('button', { name: ui.currentState, exact: true }).click()
+    const profile = page.locator('.cast-profile')
+    await profile.locator('.cast-timeline-summary').click()
+    await profile.locator('.cast-timeline-chapter').nth(1).waitFor({ state: 'visible' })
+    await profile.locator('.cast-timeline-row').filter({ hasText: sample.timeline[1].relation.value }).locator('.cast-timeline-quote summary').click()
+    await shootBoth(page, shoot, sample, 'timeline')
+  } })
+
+/** 作者给主角和守塔人定了关系，第 6 章蓝图却写两人是老相识；检查回复指向时间线上那条关系节点。 */
+async function seedConflict({ page, invoke }, sample, { path, session }) {
+  const { chapter, relation, keyEvents } = sample.check
+  const roster = await invoke(page, 'db:character-roster-read', path, session)
+  const [hero, keeper] = sample.book.cast.map(([name]) => roster.entries.find(entry => entry.name === name))
+  const committed = await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
+    expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit',
+    entries: roster.entries.map(entry => entry === hero ? { ...entry, relationships: [{ targetCharacterId: keeper.characterId, target: keeper.name, relation }] } : entry) },
+  path, session)
+  assert.equal(committed.success, true, JSON.stringify(committed))
+  const current = await invoke(page, 'db:blueprint-get', chapter, path, session)
+  assert.equal((await invoke(page, 'db:blueprint-upsert', { ...current, keyEvents }, path, session)).success, true)
+}
+
+function conflictReply(sample) {
+  const [hero, keeper] = sample.book.cast.map(([name]) => name)
+  const { chapter, relation, issue, suggestion } = sample.check
+  return prompt => {
+    if (!prompt.includes('"timeline":[')) return null
+    const id = new RegExp(`"id":"(e\\d+)","character":"${hero}","aspect":"relation","target":"${keeper}","value":"${relation}"`, 'u').exec(prompt)?.[1]
+    assert.ok(id, '发给模型的时间线里有主角和守塔人的关系节点')
+    return JSON.stringify({ findings: [{ chapterNumber: chapter, eventIds: [id], issue, suggestion }] })
+  }
+}
+
+const check = sample => ({ model: true, shell: 'stage', setup: context => seed(context, sample, { beforeLocale: (context, main) => seedConflict(context, sample, main) }),
+  run: async ({ page, fake, shoot }) => {
+    const { ui, book } = sample
+    fake.replyReview(conflictReply(sample))
+    await openBook(page, ui, book.name)
+    await page.getByRole('navigation', { name: ui.spine }).getByRole('button', { name: ui.blueprint }).click()
+    await page.getByRole('complementary', { name: ui.plan }).getByRole('button', { name: new RegExp(`^${sample.check.chapter}\\D`) }).click()
+    await page.getByRole('button', { name: ui.check, exact: true }).click()
+    await page.getByText(sample.check.issue, { exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+    await shootBoth(page, shoot, sample, 'check')
+  } })
+
+/** 第 4 章两段各加一条批注，统一修改后停在逐处审阅。 */
+const annotate = sample => ({ model: true, shell: 'stage', setup: context => seed(context, sample),
+  run: async ({ page, fake, shoot }) => {
+    const { ui, book } = sample
+    const { notes, revised } = sample.annotate
+    fake.replyReview(prompt => notes.every(note => prompt.includes(note)) ? revised.join('\n\n') : null)
+    await openBook(page, ui, book.name)
+    await page.getByRole('navigation', { name: ui.spine }).getByRole('list', { name: ui.chapters }).getByRole('button', { name: /^4\D/ }).click()
+    const prose = page.locator('.stage-content .cm-content')
+    const paragraphs = book.drafts[4].text.split('\n\n')
+    await prose.getByText(paragraphs[0].slice(0, 12)).first().waitFor({ state: 'visible' })
+    await closeOtherTabs(page, ui.chapterTab(4))
+    for (const [index, paragraph] of paragraphs.entries()) {
+      await prose.getByText(paragraph).first().click({ clickCount: 3 })
+      const toolbar = page.getByRole('toolbar', { name: ui.selection })
+      await toolbar.getByRole('button', { name: ui.annotate }).click()
+      await toolbar.getByRole('textbox', { name: ui.note }).fill(notes[index])
+      await toolbar.getByRole('button', { name: ui.annotate }).click()
+      await toolbar.waitFor({ state: 'hidden' })
+    }
+    await page.getByRole('region', { name: ui.annotations }).getByRole('button', { name: ui.reviseAll(notes.length) }).click()
+    await page.getByRole('region', { name: ui.annotationReview }).waitFor({ state: 'visible', timeout: 60_000 })
+    await shootBoth(page, shoot, sample, 'annotate')
+  } })
+
+/**
+ * 书架上那本删掉了第 2 章：先导入定稿再用界面同一组 IPC 删除，回收站里留一项。
+ * 导入的定稿没走过知识库，删除时要作者确认知识库里没有这一章，界面也是这一步。
+ */
+async function deleteShelfChapter({ page, invoke }, sample, { path, session }) {
+  const [[number, content]] = Object.entries(sample.shelfBook.deleted)
+  const chapterNumber = Number(number)
+  const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
+    chapters: [{ chapterNumber, title: sample.shelfBook.titles[chapterNumber - 1], content, wordCount: countUnits(content) }] }, path, session)
+  assert.equal(imported.success, true, imported.error)
+  const draft = (await invoke(page, 'db:draft-list', chapterNumber, path, session)).find(item => item.status === 'finalized')
+  const asked = await invoke(page, 'chapter:delete-finalized', { draftId: draft.id, chapterNumber }, path, session)
+  assert.equal(asked.error, 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED', JSON.stringify(asked))
+  const deleted = await invoke(page, 'chapter:confirm-legacy-knowledge-absent', asked.operation.operationId, path, session)
+  assert.equal(deleted.success, true, JSON.stringify(deleted))
+}
+
+const trash = sample => ({ model: true, shell: 'stage', setup: context => seed(context, sample, { afterShelf: (context, shelf) => deleteShelfChapter(context, sample, shelf) }),
+  run: async ({ page, shoot }) => {
+    const { ui } = sample
+    await openBook(page, ui, sample.shelfBook.name)
+    await page.getByRole('navigation', { name: ui.spine }).getByRole('button', { name: ui.trash(1) }).click()
+    await page.getByRole('dialog', { name: ui.trash(1) }).waitFor({ state: 'visible' })
+    await shootBoth(page, shoot, sample, 'trash')
+  } })
+
+export const README_SCENARIOS = Object.fromEntries([ZH, EN].flatMap(sample => [
+  [`readme-${sample.lang}`, scenario(sample, { prefix: `readme-${sample.lang}` })],
+  // README 顶部主图（docs/readme-visuals）要 4:3 的完整窗口截图。
+  [`readme-hero-${sample.lang}`, scenario(sample, { prefix: `hero-${sample.lang}`, viewport: HERO_VIEWPORT })],
+  [`readme-timeline-${sample.lang}`, timeline(sample)],
+  [`readme-check-${sample.lang}`, check(sample)],
+  [`readme-annotate-${sample.lang}`, annotate(sample)],
+  [`readme-trash-${sample.lang}`, trash(sample)],
+]))
