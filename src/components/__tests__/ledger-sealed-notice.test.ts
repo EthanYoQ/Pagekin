@@ -27,6 +27,6 @@ describe('打开作品时封存了生成记录的提示', () => {
     const notice = ledgerSealedNotice(2, textIn('ja-JP'))
     expect(notice.message).toMatch(/^本文は影響を受けていません/)
     expect(notice.message).toContain('2 件')
-    expect(notice.title).not.toMatch(/[A-Za-z]{3}/)
+    expect(notice.title).toBe('読み取れない AI 生成記録があります')
   })
 })

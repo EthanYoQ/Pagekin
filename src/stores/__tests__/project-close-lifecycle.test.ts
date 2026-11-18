@@ -1533,6 +1533,95 @@ describe('project close lifecycle', () => {
     expect(mocks.alertError).not.toHaveBeenCalled()
   })
 
+  it('does not notice again when the next open sealed nothing', async () => {
+    let sealedGenerationCount = 2
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open') {
+        return {
+          success: true,
+          project: project('B'),
+          requestToken: args[1],
+          activeProjectPath: project('B').path,
+          sealedGenerationCount,
+        }
+      }
+      if (channel === 'fs:list-dir' || channel === 'project:recent-list') return []
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+    expect(mocks.openInkPrompt).toHaveBeenCalledOnce()
+
+    sealedGenerationCount = 0
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(mocks.openInkPrompt).toHaveBeenCalledOnce()
+  })
+
+  it('shows the sealed-generation notice only after the author acknowledges the partial-load error', async () => {
+    let acknowledge!: () => void
+    mocks.alertError.mockReturnValueOnce(new Promise<void>(resolve => { acknowledge = resolve }))
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open') {
+        return {
+          success: true,
+          project: project('B'),
+          requestToken: args[1],
+          activeProjectPath: project('B').path,
+          sealedGenerationCount: 2,
+        }
+      }
+      if (channel === 'fs:list-dir') throw new Error('tree unavailable')
+      if (channel === 'project:recent-list') return []
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+
+    expect(mocks.alertError).toHaveBeenCalledWith(
+      expect.stringContaining('tree unavailable'),
+      expect.objectContaining({ title: '项目已打开，部分数据加载失败' }),
+    )
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(mocks.openInkPrompt).not.toHaveBeenCalled()
+
+    acknowledge()
+    await vi.waitFor(() => expect(mocks.openInkPrompt).toHaveBeenCalledOnce())
+    expect(mocks.openInkPrompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'notice', message: expect.stringContaining('2 条') }))
+  })
+
+  it('shows the sealed-generation notice only after the author closes the duplicate-finalization repair notice', async () => {
+    let closeRepairNotice!: (value: boolean) => void
+    mocks.openInkPrompt.mockReturnValueOnce(new Promise<boolean>(resolve => { closeRepairNotice = resolve }))
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open') {
+        return {
+          success: true,
+          project: project('B'),
+          requestToken: args[1],
+          activeProjectPath: project('B').path,
+          finalizationRepair: { status: 'checked', chapters: [
+            { chapterNumber: 3, keptDraftId: 9, keptVersion: 2, cleanupRegistered: false,
+              superseded: [{ draftId: 7, version: 1, knowledgeDocumentId: '', targetFileName: '' }] },
+          ] },
+          sealedGenerationCount: 2,
+        }
+      }
+      if (channel === 'fs:list-dir' || channel === 'project:recent-list') return []
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(mocks.openInkPrompt).toHaveBeenCalledOnce()
+    expect(mocks.openInkPrompt.mock.calls[0]![0].message).toContain('第 3 章')
+
+    closeRepairNotice(true)
+    await vi.waitFor(() => expect(mocks.openInkPrompt).toHaveBeenCalledTimes(2))
+    expect(mocks.openInkPrompt.mock.calls[1]![0].message).toContain('2 条')
+  })
+
   it('opens the project and tells the author once when the duplicate-finalization repair failed', async () => {
     mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
       if (channel === 'project:open') {

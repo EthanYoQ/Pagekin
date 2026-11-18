@@ -170,7 +170,7 @@ describe('打开作品时封存读不出的生成记录', () => {
       db.prepare('UPDATE generation_roots SET budget_json=? WHERE root_action_id=?').run('{坏', healthy.rootActionId)
     })
 
-    expect(initProjectDatabase(projectRoot).sealedRootActionIds).toHaveLength(2)
+    expect([...initProjectDatabase(projectRoot).sealedRootActionIds].sort()).toEqual([victim.root, healthy.rootActionId].sort())
     expect(initProjectDatabase(projectRoot).sealedRootActionIds).toEqual([])
   })
 
