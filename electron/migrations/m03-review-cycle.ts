@@ -354,10 +354,12 @@ function wholeBookVerdict(db: Database.Database): WholeBookVerdict {
 }
 
 function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow): DamagedReviewCycle | undefined {
+  const outboxRows = draftRows === 'drafts_all' ? 'finalization_outbox_all' : 'finalization_outbox'
   const row = db.prepare(`SELECT d.id, d.chapter_number AS chapterNumber, d.version, d.status,
       COALESCE(NULLIF(b.title,''), o.chapter_title, '') AS chapterTitle
-    FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id LEFT JOIN blueprints b ON b.chapter_number=d.chapter_number
-    LEFT JOIN finalization_outbox_all o ON o.draft_id=d.id WHERE r.id=?`).get(cycle.review_id) as { id: number; chapterNumber: number; version: number; status: string; chapterTitle: string } | undefined
+    FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id AND d.chapter_number=r.source_draft_chapter_number
+    LEFT JOIN blueprints b ON b.chapter_number=d.chapter_number
+    LEFT JOIN ${outboxRows} o ON o.draft_id=d.id WHERE r.id=?`).get(cycle.review_id) as { id: number; chapterNumber: number; version: number; status: string; chapterTitle: string } | undefined
   if (!row) return undefined
   if (row.status === 'deleted') {
     // 回收站这一项按删除时定稿的章名显示；同章号可能已重写，蓝图标题是新章的。

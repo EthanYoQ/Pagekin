@@ -1,7 +1,7 @@
 import { copyLocale, localize, translate, type MessageKey } from './core'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
-import { sqliteTime } from '../shared/sqlite-time'
+import { SQLITE_TIMESTAMP, sqliteTime } from '../shared/sqlite-time'
 
 /**
  * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
@@ -427,7 +427,8 @@ export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: D
   } else if (damaged.location === 'trash') {
     const deletedAt = sqliteTime(damaged.deletedAt)
     // Date 会把 2 月 30 日顺延成 3 月 2 日；转回去对不上原值就照原样写。
-    const when = Number.isNaN(deletedAt.getTime()) || deletedAt.toISOString().slice(0, 19).replace('T', ' ') !== damaged.deletedAt
+    const when = Number.isNaN(deletedAt.getTime())
+      || (SQLITE_TIMESTAMP.test(damaged.deletedAt) && deletedAt.toISOString().slice(0, 19).replace('T', ' ') !== damaged.deletedAt)
       ? damaged.deletedAt
       : deletedAt.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
     chapter = localize(locale, '回收站里{chapter}（删除于 {when}）', '{chapter} in the trash (deleted {when})', 'ゴミ箱の{chapter}（{when}削除）',
