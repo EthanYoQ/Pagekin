@@ -65,10 +65,7 @@ async function failNextFileTree(app) {
 
 const promptLayers = page => page.evaluate(() => document.querySelectorAll('.pi-prompt-layer').length)
 
-/**
- * 再打开时让读文件树失败一次，用它的报错框判断渲染端的 openProject 已走到弹提示那一步。
- * 报错框的挂载点移走和下一个提示挂上发生在同一个任务里，所以挂载点清空时还没有提示层，这次就不会再弹。
- */
+/** 报错框的挂载点移走和下一个提示挂上在同一个任务里，所以关掉报错框、挂载点清空时还没有提示层，这次就不会再弹。 */
 async function reopenFencedByLoadError(context, locale) {
   const { page } = context
   await failNextFileTree(context.app)
