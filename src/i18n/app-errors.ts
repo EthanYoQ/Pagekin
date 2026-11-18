@@ -1,6 +1,7 @@
 import { copyLocale, localize, translate, type MessageKey } from './core'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
+import { sqliteTime } from '../shared/sqlite-time'
 
 /**
  * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
@@ -418,13 +419,22 @@ export function importGenerationStopMessage(
 const DAMAGED_REVIEW_CYCLE_NEXT = {
   'delete-manuscript': 'error.damagedReviewCycleDeleteManuscript',
   'delete-draft': 'error.damagedReviewCycleDeleteDraft',
+  'purge-trash': 'error.damagedReviewCyclePurgeTrash',
 } as const satisfies Record<NonNullable<DamagedReviewCycle['remedy']>, MessageKey>
 
 export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle): string {
   const params = { number: damaged.chapterNumber, title: damaged.chapterTitle }
-  const chapter = damaged.chapterTitle
+  let chapter = damaged.chapterTitle
     ? localize(locale, '第 {number} 章「{title}」', 'Chapter {number} "{title}"', '第{number}章「{title}」', params)
     : localize(locale, '第 {number} 章', 'Chapter {number}', '第{number}章', params)
+  if (damaged.remedy === 'delete-draft') {
+    chapter = localize(locale, '{chapter}草稿 v{version}', 'Draft v{version} of {chapter}', '{chapter}のDraft v{version}',
+      { chapter, version: damaged.draftVersion })
+  } else if (damaged.remedy === 'purge-trash') {
+    const when = sqliteTime(damaged.deletedAt).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+    chapter = localize(locale, '回收站里{chapter}（删除于 {when}）', '{chapter} in the trash (deleted {when})', 'ゴミ箱の{chapter}（{when}削除）',
+      { chapter, when })
+  }
   const next = damaged.remedy ? DAMAGED_REVIEW_CYCLE_NEXT[damaged.remedy] : 'error.damagedReviewCycleReport'
   return joinSentences(locale, translate(locale, 'error.damagedReviewCycle', { chapter }), translate(locale, next))
 }

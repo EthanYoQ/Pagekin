@@ -1,4 +1,4 @@
-// 跑法：PERF702_BLUEPRINTS=2 PERF702_FINALIZED=2。
+// 跑法：PERF702_BLUEPRINTS=2。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
@@ -27,15 +27,15 @@ function breakReviewProof(projectRoot, chapter) {
   } finally { database.close() }
 }
 
-const alert = page => stage.root(page).locator('[data-testid="project-backup-panel"] p[role="alert"]')
+const exportAlert = page => stage.root(page).locator('[data-testid="project-backup-panel"] p[role="alert"]')
 
 async function exportOnce(context, archive, { settings, page: pageName, button }) {
   const { app, page } = context
   await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
   await stage.root(page).getByRole('navigation', { name: settings }).getByRole('button', { name: pageName, exact: true }).click()
   await stage.root(page).getByRole('button', { name: button, exact: true }).click()
-  await alert(page).waitFor({ state: 'visible', timeout: 60_000 })
-  const shown = (await alert(page).innerText()).trim()
+  await exportAlert(page).waitFor({ state: 'visible', timeout: 60_000 })
+  const shown = (await exportAlert(page).innerText()).trim()
   assert.equal(fs.existsSync(archive), false, '导出失败时没有写出存档')
   return shown
 }
@@ -43,12 +43,12 @@ async function exportOnce(context, archive, { settings, page: pageName, button }
 async function switchLocale(page, from, to) {
   await stage.root(page).getByRole('navigation', { name: from.settings }).getByRole('button', { name: from.appearance, exact: true }).click()
   await page.getByLabel(from.languageLabel).selectOption(to)
-  await page.getByLabel('Interface language').waitFor({ state: 'visible' })
+  await page.waitForFunction(lang => document.documentElement.lang === lang, to)
 }
 
 export const CCH_SCENARIOS = {
   'cch-export-damaged': { model: true, shell: 'stage', setup: async context => {
-    await buildByReviewCycle(context, 2)
+    await buildByReviewCycle(context, 2, { saveCheckpoints: false })
     await context.restart({ beforeLaunch: () => breakReviewProof(path.join(context.roots.projects, BOOK), 2) })
   }, run: async context => {
     const { page, roots, shoot } = context
@@ -75,7 +75,7 @@ export const CCH_SCENARIOS = {
     return { zh, ja, en }
   } },
   'cch-remedy-ui': { model: true, shell: 'stage', setup: async context => {
-    await buildByReviewCycle(context, 2)
+    await buildByReviewCycle(context, 2, { saveCheckpoints: false })
     await context.restart({ beforeLaunch: () => breakReviewProof(path.join(context.roots.projects, BOOK), 1) })
   }, run: async context => {
     const { page, roots, shoot } = context
@@ -87,12 +87,24 @@ export const CCH_SCENARIOS = {
     await stage.root(page).getByRole('navigation', { name: '设置分组' }).getByRole('button', { name: /^返回(作品|书房)$/u }).click()
 
     await openChapter(page, 1)
+    await page.evaluate(() => {
+      window.__copied = []
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.__copied.push(text) } } })
+    })
     await chapterView.more(page, '复制本章正文')
     await page.getByText('已复制本章正文').first().waitFor({ state: 'visible' })
+    assert.equal((await page.evaluate(() => window.__copied)).length, 1, '复制本章正文交给了剪贴板')
     await chapterView.more(page, '删除正文…')
     const confirm = page.getByRole('dialog', { name: '删除正文' })
     await confirm.getByRole('button', { name: '删除', exact: true }).click()
     await confirm.waitFor({ state: 'hidden' })
+    await page.getByText(/^已把「.+」移到回收站/u).first().waitFor({ state: 'visible', timeout: 30_000 })
+    await stage.openSettings(page)
+    const inTrash = await exportOnce(context, path.join(roots.projects, 'cch-trash.ainovel'),
+      { settings: '设置分组', page: '项目备份', button: '导出本地存档' })
+    await shoot('cch-4-trash')
+    assert.match(inTrash, /^作品没有改动。回收站里第 1 章「远航之1」（删除于 .+）有条审稿记录损坏，存档没生成。到回收站把它「彻底删除…」，然后重试。$/u)
+    await stage.root(page).getByRole('navigation', { name: '设置分组' }).getByRole('button', { name: /^返回(作品|书房)$/u }).click()
     await stage.root(page).getByRole('button', { name: /^回收站（1）$/u }).click()
     const trash = page.getByRole('dialog', { name: /^回收站（1）$/u })
     await trash.getByRole('button', { name: '彻底删除…' }).click()
@@ -111,6 +123,6 @@ export const CCH_SCENARIOS = {
     const notice = stage.root(page).locator('[data-testid="project-backup-panel"] p[role="status"]').filter({ hasText: '本地存档已导出' })
     await notice.waitFor({ state: 'visible', timeout: 60_000 })
     assert.equal(fs.existsSync(archive), true, '彻底删除后存档写到了所选位置')
-    return { before, after: (await notice.innerText()).trim() }
+    return { before, inTrash, after: (await notice.innerText()).trim() }
   } },
 }
