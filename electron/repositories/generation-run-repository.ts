@@ -90,7 +90,7 @@ const receiptSelect = `SELECT t.attempt_id,t.run_id,t.rowid AS ordinal,t.attempt
     a.artifact_id,a.run_id AS artifact_run_id,a.artifact_json,a.revision,a.status AS artifact_status
     FROM generation_attempts t LEFT JOIN generation_artifacts a ON a.attempt_id=t.attempt_id`;
 export const textHash = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
-/** open_key 里记的点击号；读不出时返回 undefined，由调用方按重试链不符处理。 */
+/** open_key 里记的点击号；读不出返回 undefined。 */
 export function uiActionNonceOfOpenKey(openKey: string): string | undefined {
     try {
         const nonce = (JSON.parse(JSON.parse(openKey)[0]) as unknown[])[2];

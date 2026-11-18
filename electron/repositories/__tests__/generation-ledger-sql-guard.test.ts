@@ -52,7 +52,7 @@ function crossRecordLedgerColumns(literal: string): string[] {
   // 主键等值只在没有 OR 时才把语句限定到一条记录上。
   if (where !== undefined && !/\bOR\b/iu.test(where) && KEYS.some(key => new RegExp(`\\b(?:[a-z]+\\.)?${key}\\s*=\\s*(\\?|\\()`, 'u').test(where))) return []
   const head = /^(.*?) FROM /iu.exec(sql)?.[1] ?? ''
-  // 原样取出的 open_key、idempotency_key 是身份字符串，按 JSON 读的地方走 uiActionNonceOfOpenKey，读不出不抛错。
+  // open_key、idempotency_key 是身份字符串，原样取出不算解析。
   const selected = verb !== 'SELECT' ? [] : LEDGER_JSON_COLUMNS.filter(column => !IDENTITY_KEYS.includes(column)).filter(column =>
     new RegExp(`\\b${column}\\b`, 'u').test(head.replace(/json_[a-z_]+\([^)]*\)/gu, '')) || /SELECT (?:[a-z]+\.)?\*/iu.test(head))
   return LEDGER_JSON_COLUMNS.filter(column => parsedColumns(sql).includes(column) || selected.includes(column))

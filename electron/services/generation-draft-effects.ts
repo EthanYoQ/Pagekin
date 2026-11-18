@@ -51,7 +51,7 @@ export class GenerationDraftEffects {
       .all(...(batchId === undefined ? [] : [batchId])) as (AttemptRow & { batch_id: string })[]
     return groupByBatch(rows)
   }
-  /** 有提交收据在进门时被封存过：它原来属于哪一批已读不出，批次列表因此可能不全。只看被阻断的根，不扫全部绑定。 */
+  /** 有提交收据在进门时被封存过：它属于哪一批已读不出，批次列表可能不全。只看被阻断的根，免得扫全部绑定。 */
   hasSealedReceipts(): boolean {
     return !!this.db.prepare(`SELECT 1 FROM generation_roots g JOIN generation_runs r ON r.root_action_id=g.root_action_id,
       json_each(r.binding_json,'$."$ledgerUnreadable"') e
