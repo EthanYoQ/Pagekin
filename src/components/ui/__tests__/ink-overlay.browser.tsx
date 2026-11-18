@@ -240,6 +240,18 @@ describe('命令式弹窗', () => {
     expect(document.querySelector('[aria-hidden="true"][data-aria-hidden]')).toBeNull()
   })
 
+  it('弹出后、渲染完之前就撤回，提示照样撤走并得到结果', async () => {
+    const leftBook = new AbortController()
+    let resolved = false
+    await act(async () => {
+      void alertError('文件树读不出', { signal: leftBook.signal }).then(() => { resolved = true })
+      leftBook.abort()
+    })
+    await promptClosed()
+    expect(resolved).toBe(true)
+    expect(document.querySelector('.pi-prompt-layer')).toBeNull()
+  })
+
   it('已撤回的提示不再弹出，直接得到结果', async () => {
     const leftBook = new AbortController()
     leftBook.abort()
