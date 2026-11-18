@@ -4,7 +4,10 @@ import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { closeProjectDatabase, getProjectDb } from '../../database'
+import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
+import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../../migrations/desktop-registry'
+import { verifySchema } from '../../migrations/runner'
+import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { openCanonicalProjectFixture } from '../../../test/helpers/canonical-project-fixture'
 import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
 import { CANONICAL_PROJECT_DIRECTORY } from '../../../src/shared/project-format'
@@ -68,8 +71,8 @@ function replaceFinal(chapterNumber: number, chapterTitle: string) {
   return reopened.draftId
 }
 
-function exportBook(): Promise<unknown> {
-  const input: ExportPortableProjectInput = {
+function exportInput(): ExportPortableProjectInput {
+  return {
     sourceProjectRoot: projectRoot,
     projectSession: { projectId, projectPath: projectRoot, leaseId: 'lease' },
     targetArchivePath: path.join(base, `${randomUUID()}.ainovel`),
@@ -78,7 +81,10 @@ function exportBook(): Promise<unknown> {
     assets: { snapshot: () => ({ files: [], semanticCounts: { 'provided-assets': 0 }, omittedItems: [],
       transferReceiptIds: [], historyProjectionIds: [], verifyUnchanged: () => undefined }) },
   }
-  return exportPortableProject(input).then(() => 'exported', (error: unknown) => error)
+}
+
+function exportBook(): Promise<unknown> {
+  return exportPortableProject(exportInput()).then(() => 'exported', (error: unknown) => error)
 }
 
 async function damagedOnExport() {
@@ -92,6 +98,42 @@ function trashService() {
     cleaner: { async removeManuscript() {}, async removeKnowledgeDocument() {} },
     finalizations: { retry: async () => { throw new Error('UNUSED') } } })
 }
+
+function reopen() {
+  closeProjectDatabase()
+  initProjectDatabase(projectRoot)
+}
+
+const verifyWholeBook = () => verifySchema(new SqliteSchemaAdapter(db()), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
+
+describe('M03 只把提供证据的尝试被换成占位算作坏循环（ADR-0030，#702）', () => {
+  it('同一根下没提供证据的尝试读不出：封存后这条循环照常验得过，导出不受影响', async () => {
+    reviewedBook({ finalized: true })
+    db().prepare(`INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+      SELECT 'attempt-extra','reservation-extra',run_id,root_action_id,
+        json_set(attempt_json,'$.attemptId','attempt-extra','$.reservationId','reservation-extra'),'[]','invocation-extra'
+      FROM generation_attempts WHERE attempt_id='attempt-review-ch2'`).run()
+    reopen()
+    expect(db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-review-ch2'").pluck().get())
+      .toBe('GENERATION_LEDGER_UNREADABLE')
+
+    expect(verifyWholeBook).not.toThrow()
+    const receipt = await exportPortableProject(exportInput())
+    expect(receipt).not.toHaveProperty('omittedReviewCycles')
+  })
+
+  it.each([
+    ['审稿尝试', 'attempt-review-ch2'],
+    ['修稿尝试', 'attempt-revision-ch2'],
+  ])('%s的 attempt_json 读不出：封存成占位后不能当证据', (_label, attemptId) => {
+    reviewedBook({ finalized: true })
+    verifyWholeBook()
+    db().prepare("UPDATE generation_attempts SET attempt_json='{坏' WHERE attempt_id=?").run(attemptId)
+    reopen()
+
+    expect(verifyWholeBook).toThrow('MIGRATION_VERIFICATION_FAILED')
+  })
+})
 
 describe('有一条坏审修循环的书导出失败时指明是哪一章，不给删除办法（#702）', () => {
   it('对照：两章都完好时照常导出', async () => {
