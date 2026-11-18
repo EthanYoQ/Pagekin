@@ -15,6 +15,8 @@ import type { GenerationTask } from '../../../src/services/generation/generation
 import { planningTargetInstruction } from '../../../src/shared/plot-outline-contract'
 import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../generation-source-binding'
 import { getProjectDb } from '../../database'
+import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
+import { damageLedger, enumerations, failingCalls, rootCount, type DamagedColumn } from './ledger-seal-fixture'
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
@@ -44,7 +46,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch']) {
     rebuildBinding: (previous, modelReceipt) => rebuildGenerationSourceBinding(deps, previous, epoch, modelReceipt, readMainGenerationPolicy(previous.sourceManifest.policy)).binding })
   const owner = makeOwner('epoch-1')
   cleanup.push(() => { owner.suspendForProjectClose(); db.close(); fs.rmSync(root, { recursive: true, force: true }) })
-  const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, 'project.db')); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
+  const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, 'project.db')); admitGenerationLedger(db); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
   const input: AgentGenerationInput = {mode:'planning',uiLocale:'zh-CN',historyMessages:[],userMessage:'帮我检查项目',tools:['read_project_state','start_workflow','propose_novel_config','propose_chapter_blueprint'].map(name=>({name,description:'合成工具',inputSchema:{type:'object'},requiresConfirmation:true,isReadOnly:false,source:'builtin'}))}
   const request={uiActionNonce:'作者动作',modelId:model.id,input}
   const begin=()=>owner.agents.begin(request)
@@ -409,4 +411,16 @@ it('advances all prior Agent rounds after a confirmed config change before a chi
  expect(f.owner.agents.read(recovery.handle).sourceStatus).toBe('current')
  f.db.prepare('UPDATE project_core SET genre=?').run('外部修改')
  expect(()=>f.db.transaction(()=>f.owner.withAgentChildEffect(child.handle,()=>{throw new Error('should not write')}))()).toThrow('GENERATION_AGENT_SOURCE_CHANGED')
+})
+
+it.each<DamagedColumn>(['action_json','binding_json','usage_receipt_json'])('ADR-0030 Agent 第 0 轮已发出，%s 读不出：重开后同一次点击被拒绝，不再付费；其余列举照常',async column=>{
+ const f=fixture(),first=await f.round()
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ f.owner.suspendForProjectClose()
+ damageLedger(f.db,column,first.handle)
+ const next=f.reopenStorage(),roots=rootCount(f.db)
+ expect(()=>next.agents.begin(f.request)).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(rootCount(f.db)).toBe(roots)
+ expect(f.spy).toHaveBeenCalledTimes(1)
+ expect(await failingCalls(enumerations(next))).toEqual([])
 })

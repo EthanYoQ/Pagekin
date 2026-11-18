@@ -11,6 +11,8 @@ import { ModelExecutionLeaseRegistry } from '../model-execution-lease'
 import { readMainGenerationPolicy } from '../main-generation-plan'
 import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../generation-source-binding'
 import { getProjectDb, getCurrentProjectPath } from '../../database'
+import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
+import { damageLedger, enumerations, failingCalls, rootCount, type DamagedColumn } from './ledger-seal-fixture'
 import { generationOutputContract } from '../../../src/shared/generation-owner-contract'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
@@ -41,7 +43,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch']) {
     rebuildBinding: (previous, modelReceipt) => rebuildGenerationSourceBinding(deps, previous, epoch, modelReceipt, readMainGenerationPolicy(previous.sourceManifest.policy)).binding })
   const owner = makeOwner('epoch-1')
   cleanup.push(() => { owner.suspendForProjectClose(); db.close(); fs.rmSync(root, { recursive: true, force: true }) })
-  const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, '.ai-novel', 'project.db')); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
+  const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, '.ai-novel', 'project.db')); admitGenerationLedger(db); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
   return {get db(){return db},owner,spy,reopenStorage,changeTemplate:()=>{templateBody='后来模板 {{selected_text}}'},removeModel:()=>{model=null}}
 }
 
@@ -263,4 +265,21 @@ it.each([
  const f = fixture()
  expect(() => f.owner.beginEditorInline({ input: bad, modelId: 'synthetic', uiActionNonce: '非法批注' })).toThrow('GENERATION_EDITOR_INPUT_INVALID')
  expect(f.spy).not.toHaveBeenCalled()
+})
+
+it.each<DamagedColumn>(['budget_json','action_json','binding_json'])('ADR-0030 选区建议 %s 读不出：恢复列表略去它、照列好的，同一次点击被拒绝，新的点击照常',async column=>{
+ const f=fixture(replying('林岚停下','length'))
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ const good=f.owner.beginEditorInline({...request,uiActionNonce:'好的'}).view.handle
+ const bad=f.owner.beginEditorInline({...request,uiActionNonce:'坏的'}).view.handle
+ f.owner.suspendForProjectClose()
+ damageLedger(f.db,column,bad)
+ const next=f.reopenStorage(),roots=rootCount(f.db)
+ const list=next.listRecovery()
+ expect(list.editors.map(item=>item.view.handle.runId)).toEqual([good.runId])
+ expect(list.partial).toBe(true)
+ expect(()=>next.beginEditorInline({...request,uiActionNonce:'坏的'})).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(rootCount(f.db)).toBe(roots)
+ expect(await failingCalls(enumerations(next))).toEqual([])
+ expect(next.beginEditorInline({...request,uiActionNonce:'新的'}).view.handle.rootActionId).not.toBe(bad.rootActionId)
 })

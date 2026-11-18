@@ -42,7 +42,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch']) {
     rebuildBinding: (previous, modelReceipt) => rebuildGenerationSourceBinding(deps, previous, epoch, modelReceipt, readMainGenerationPolicy(previous.sourceManifest.policy)).binding })
   const owner = makeOwner('epoch-1')
   cleanup.push(() => { owner.suspendForProjectClose(); db.close(); fs.rmSync(root, { recursive: true, force: true }) })
-  const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, '.ai-novel', 'project.db')); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
+  const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, '.ai-novel', 'project.db')); admitGenerationLedger(db); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
   const content='第一章 海港\r\n林岚在港口找到了信。'
   const hash=(value:string)=>createHash('sha256').update(value).digest('hex')
   const chapter={number:1,title:'海港',content,contentSize:Buffer.byteLength(content),contentFingerprint:hash(content)}
@@ -255,4 +255,18 @@ it.each(['missing','expired'] as const)('新ordinal拒绝%s导入执行权限，
  await expect(f.owner.executeImportGeneration({handle,ordinal:0,task,...(kind==='expired'?{execution:f.execution}:{})})).rejects.toThrow()
  expect(f.spy).not.toHaveBeenCalled()
  expect(f.db.prepare('SELECT COUNT(*) FROM generation_attempts').pluck().get()).toBe(0)
+})
+
+it('ADR-0030 导入运行的绑定读不出：「这一阶段绑过生成」查不到它，提交效果仍要求生成句柄，带上它的句柄被拒绝',()=>{
+ const f=fixture()
+ const handle=f.owner.begin(f.selection).handle
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ f.owner.suspendForProjectClose()
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(handle.runId)
+ const next=f.reopenStorage()
+ const effect=(payload:Record<string,unknown>)=>()=>ImportRunRepository.prepareEffectReceipt({runId:f.slot.runId,stage:'global',batchId:'done',effectKey:'global-facts',kind:'project-global-facts',
+  payload:{operationId:'novel-import-global-导入任务',expectedRosterRevision:0,core:{},characterEntries:[],...payload}},f.execution,Date.now(),next.assertImportGenerationSources)
+ expect(effect({})).toThrow('GENERATION_IMPORT_EFFECT_HANDLE_REQUIRED')
+ expect(effect({generationRunHandle:handle})).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(f.db.prepare('SELECT COUNT(*) FROM import_run_receipts').pluck().get()).toBe(0)
 })

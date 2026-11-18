@@ -103,6 +103,15 @@ describe('跨记录解析的账本 JSON 列都在进门清单里', () => {
     expect(crossRecordLedgerColumns("SELECT json_extract(action_json,'$.status') FROM generation_roots WHERE root_action_id=?")).toEqual([])
   })
 
+  it('函数名不分大小写；按身份键豁免要用整个唯一键；联表时主键条件不限定被解析的那张表', () => {
+    expect(crossRecordLedgerColumns("SELECT JSON_EXTRACT(open_key,'$[0]') FROM generation_runs")).toEqual(['open_key'])
+    expect(crossRecordLedgerColumns('SELECT usage_receipt_json FROM generation_attempts WHERE invocation_nonce=?')).toEqual(['usage_receipt_json'])
+    expect(crossRecordLedgerColumns('SELECT usage_receipt_json FROM generation_attempts WHERE run_id=? AND invocation_nonce=?')).toEqual([])
+    expect(crossRecordLedgerColumns("SELECT json_extract(peer.open_key,'$[0]') FROM generation_runs r JOIN generation_runs peer ON peer.root_action_id=r.root_action_id WHERE r.run_id=?")).toEqual(['open_key'])
+    expect(crossRecordLedgerColumns("SELECT json_extract(r.open_key,'$[0]') FROM generation_roots g JOIN generation_runs r ON r.root_action_id=g.root_action_id WHERE g.root_action_id=?")).toEqual(['open_key'])
+    expect(crossRecordLedgerColumns("SELECT json_extract(r.open_key,'$[0]') FROM generation_roots g, generation_runs r WHERE g.root_action_id=?")).toEqual(['open_key'])
+  })
+
   it('某一列退出清单时，跨记录解析它的现有语句会被报出', () => {
     expect(violations(admitted.filter(column => column !== 'binding_json')).length).toBeGreaterThan(0)
   })

@@ -37,6 +37,8 @@ import { ChapterDeletionService } from '../chapter-deletion-service'
 import { GenerationDraftEffects } from '../generation-draft-effects'
 import { sanitizePortableDatabase } from '../project-archive-service'
 import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
+import { ImportGeneration } from '../import-generation'
+import { damageLedger, failingCalls as failingLedgerCalls } from './ledger-seal-fixture'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationKnowledgeSnapshot } from '../../../src/shared/generation-knowledge'
 import type { MainGenerationRunHandle } from '../../../src/services/generation/generation-runtime'
@@ -1597,6 +1599,23 @@ describe('durable directory commit and remaining stage', () => {
     const node = f.db.prepare("SELECT value,effective_chapter,provenance_json FROM character_continuity_events WHERE aspect='relation'").get() as { value: string; effective_chapter: number; provenance_json: string }
     expect(node).toMatchObject({ value: '同行', effective_chapter: 2 })
     expect(JSON.parse(node.provenance_json)).toMatchObject({ kind: 'adopted', operationId: 'approve-hint' })
+  })
+  it('ADR-0030 蓝图提交的目录进度回执读不出：派生的角色提议没有生成出处，批准被拒绝，名单不变', async () => {
+    const f = directoryFixture('chapter-blueprint-directory')
+    await f.owner.execute({ handle: f.run.handle, invocationNonce: 'proposal', task: directoryTask })
+    const request = f.request('sealed-progress', 1, 2)
+    request.blueprints[1] = { ...request.blueprints[1], characters: ['林岚', '周砚'], newCharacterCandidates: [{ name: '周砚', role: 'supporting' }] }
+    f.commit(f.owner, f.run.handle, request, { startChapter: 1, endChapter: 3 })
+    const operation = BlueprintRepository.getCommittedRangeOperation(request.operationId)!
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    f.db.prepare("UPDATE generation_attempts SET usage_receipt_json='{坏' WHERE run_id=? AND json_type(usage_receipt_json,'$.directoryProgress') IS NOT NULL").run(f.run.handle.runId)
+    const owner = f.reopen(), roster = () => f.fixture.db.prepare('SELECT name FROM characters ORDER BY name').pluck().all()
+    const before = roster()
+    const batch = owner.characterProposals.stage({ kind: 'directory', operationId: operation.characterSyncOperation.operationId })
+    expect(batch.items.map(item => item.provenance ?? null)).toEqual([null])
+    expect(() => owner.approveCharacterProposal({ proposalBatchId: batch.proposalBatchId, expectedRevision: batch.revision, operationId: 'approve-sealed',
+      selections: batch.items.map(item => ({ selectionKey: item.selectionKey, action: 'create' as const })), relationships: [] })).toThrow('CHARACTER_PROPOSAL_PROVENANCE_REQUIRED')
+    expect(roster()).toEqual(before)
   })
   describe('蓝图提案的新角色进角色页的待处理建议', () => {
     async function newcomerProposal(candidates = true) {
@@ -4571,7 +4590,9 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     expect(inFlight(f.db)).toBe(false)
     expect(f.db.prepare('SELECT blocked_code FROM generation_roots WHERE root_action_id=?').pluck().get(v.root)).toBe('GENERATION_LEDGER_UNREADABLE')
     const reopened = f.reopen()
-    await expect(reopened.resume(victim.handle)).rejects.toThrow(/^GENERATION_(RESUME_REFUSED|RUN_IDENTITY_MISMATCH|POLICY_BUDGET_MISMATCH)$/)
+    expect(() => reopened.read(victim.handle)).toThrow('GENERATION_LEDGER_UNREADABLE')
+    await expect(reopened.resume(victim.handle)).rejects.toThrow('GENERATION_LEDGER_UNREADABLE')
+    expect(() => reopened.begin({ ...f.begin, uiActionNonce: 'victim' })).toThrow('GENERATION_LEDGER_UNREADABLE')
     expect(dispatch).toHaveBeenCalledTimes(1)
     f.db.pragma('wal_checkpoint(TRUNCATE)')
     const copy = path.join(f.root, 'export-copy.db')
@@ -4579,13 +4600,95 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     expect(() => sanitizePortableDatabase(copy)).not.toThrow()
   })
 
-  it('读得出受害运行时，它显示为不可重放，失败码是 GENERATION_LEDGER_UNREADABLE', async () => {
+  it('根上原来已有别的阻断码：封存改成 GENERATION_LEDGER_UNREADABLE，原码记进封存记录，之后 block() 不再改它', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { f, victim, v } = seed(visibleDraft('第一章正文。'))
+    f.db.prepare("UPDATE generation_roots SET blocked_code='ROOT_BUDGET_EXHAUSTED' WHERE root_action_id=?").run(v.root)
+    set('generation_attempts', 'usage_receipt_json', 'attempt_id', 'attempt', '{坏')(f.db, v)
+    const reopened = f.reopen({ crashed: true })
+    const blocked = () => f.db.prepare('SELECT blocked_code FROM generation_roots WHERE root_action_id=?').pluck().get(v.root)
+    expect(blocked()).toBe('GENERATION_LEDGER_UNREADABLE')
+    const kept = JSON.parse(f.db.prepare(`SELECT json_extract(binding_json,'$."$ledgerUnreadable"') FROM generation_runs WHERE run_id=?`).pluck().get(v.run) as string)
+    expect(kept).toContainEqual(expect.objectContaining({ table: 'generation_roots', recordId: v.root, column: 'blocked_code', previous: 'ROOT_BUDGET_EXHAUSTED' }))
+    new GenerationRunRepository(() => f.db).block(v.root, 'ROOT_BUDGET_EXHAUSTED')
+    expect(blocked()).toBe('GENERATION_LEDGER_UNREADABLE')
+    expect(() => reopened.read(victim.handle)).toThrow('GENERATION_LEDGER_UNREADABLE')
+  })
+
+  it('封存时把树收尾：进行中的尝试落到终态、停表，再打开没有写入', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { f, v } = seed(visibleDraft('第一章正文。'))
+    const repository = new GenerationRunRepository(() => f.db)
+    const reserved = repository.reserve(v.run, 'reserved', textHash('reserved'), 200, 100)
     set('generation_roots', 'action_json', 'root_action_id', 'root', '{坏')(f.db, v)
-    const view = f.reopen({ crashed: true }).read(victim.handle)
-    expect(view).toMatchObject({ nonReplayable: true, ledger: { blockedCode: 'GENERATION_LEDGER_UNREADABLE' } })
-    expect(view.budgetDiagnostics?.map(item => item.failureCode)).toEqual(['GENERATION_LEDGER_UNREADABLE'])
+    const db = new Database(path.join(f.root, 'project.db'))
+    try {
+      admitGenerationLedger(db)
+      const status = (id: string) => db.prepare("SELECT json_extract(attempt_json,'$.status') FROM generation_attempts WHERE attempt_id=?").pluck().get(id)
+      expect([status(v.attempt), status(reserved.attempt.attemptId)]).toEqual(['unknown', 'cancelled-before-dispatch'])
+      expect(db.prepare('SELECT active_since_ms FROM generation_roots WHERE root_action_id=?').pluck().get(v.root)).toBeNull()
+      const before = db.prepare('SELECT total_changes()').pluck().get()
+      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
+      expect(db.prepare('SELECT total_changes()').pluck().get()).toBe(before)
+    } finally { db.close() }
+  })
+
+  it('两批里一批的根读不出：批次列表照列好的那批，读坏的那批报封存码', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fixture()
+    const options = { mode: 'draft_review' as const, range: { startChapter: 1, endChapter: 1 }, targetUnits: 20,
+      modelId: f.model.id, authorInputs: [{ id: 'draft:target-units', text: '20' }], promptKeys: f.begin.promptKeys, skillStages: [] }
+    const good = f.owner.beginBatch({ ...options, uiActionNonce: 'good-batch' })
+    const bad = f.owner.beginBatch({ ...options, uiActionNonce: 'bad-batch' })
+    f.owner.suspendForProjectClose()
+    damageLedger(f.db, 'budget_json', bad.rootHandle)
+    const reopened = f.reopen({ crashed: true })
+    expect(reopened.listBatches().map(batch => batch.batchId)).toEqual([good.batchId])
+    expect(reopened.readBatch(good.batchId).batchId).toBe(good.batchId)
+    expect(() => reopened.readBatch(bad.batchId)).toThrow('GENERATION_LEDGER_UNREADABLE')
+  })
+
+  it.each([['章节蓝图目录', 'budget_json'], ['章节蓝图目录', 'action_json'], ['批次', 'budget_json'], ['批次', 'action_json']] as const)('%s的根 %s 读不出：其余入口照常', async (kind, column) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fixture()
+    const directory: BeginGenerationRequest = { operation: 'chapter-blueprint-directory', uiActionNonce: 'victim-directory', modelId: f.model.id,
+      selectedDraftIds: [], selectedFinalizedDraftIds: [], selectedBlueprintChapterNumbers: [1, 2, 3],
+      promptKeys: ['chapter_blueprint_chunk'], skillStages: ['planning'], output: 'structured-data', authorInputs: [
+        { id: 'planning:target-units', text: '700' }, { id: 'directory:pacing-guidance', text: '先核实证据。' },
+        { id: 'directory:author-config', text: '{"totalChapters":3}' },
+        { id: 'directory:requested-range', text: JSON.stringify({ mode: 'full', startChapter: 1, endChapter: 3 }) }] }
+    const healthy = f.owner.begin(f.begin)
+    const victim = kind === '章节蓝图目录' ? f.owner.begin(directory).handle
+      : f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 1 }, targetUnits: 20, uiActionNonce: 'victim-batch',
+        modelId: f.model.id, authorInputs: [{ id: 'draft:target-units', text: '20' }], promptKeys: f.begin.promptKeys, skillStages: [] }).rootHandle
+    damageLedger(f.db, column, victim)
+    const owner = f.reopen({ crashed: true })
+    const repository = () => new GenerationRunRepository(() => f.db)
+    expect(await failingLedgerCalls([
+      ['list()', () => owner.list()],
+      ['read(健康运行)', () => owner.read(healthy.handle)],
+      ['begin(新的正文生成)', () => owner.begin({ ...f.begin, uiActionNonce: 'new-after' })],
+      ['begin(另一次蓝图目录)', () => owner.begin({ ...directory, uiActionNonce: 'directory-after' })],
+      ['listRecovery()', () => owner.listRecovery()],
+      ['findBlueprintRecovery()', () => owner.findBlueprintRecovery()],
+      ['listBatches()', () => owner.listBatches()],
+      ['listDirectoryProgress()', () => owner.listDirectoryProgress()],
+      ['readLatestContinuityCheck()', () => owner.readLatestContinuityCheck()],
+      ['repository.readDirectoryProgress', () => repository().readDirectoryProgress('no-such-operation', false)],
+      ['清空蓝图时退役恢复稿', () => f.db.transaction(() => repository().retireBlueprintRecoveryWithinTransaction())()],
+      ['删章与重开用的未完批次扫描', () => new GenerationDraftEffects(f.db, repository()).unfinishedBatchChapters('project')],
+      ['关书', () => owner.suspendForProjectClose()],
+    ])).toEqual([])
+  })
+
+  it('点击号恰好以 import: 开头的普通运行被封存：不当作导入运行，导入槽位照常查找', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fixture()
+    const plain = f.owner.begin({ ...f.begin, uiActionNonce: 'import:看起来像导入' })
+    damageLedger(f.db, 'binding_json', plain.handle)
+    f.reopen({ crashed: true })
+    const imports = new ImportGeneration(f.db, new GenerationRunRepository(() => f.db), 'project')
+    expect(imports.find({ runId: '别的导入', stage: 'global', batchId: 'done' })).toBeUndefined()
   })
 
   it.each([

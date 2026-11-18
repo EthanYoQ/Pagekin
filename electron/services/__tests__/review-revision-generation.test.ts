@@ -15,6 +15,7 @@ import { RevisionRepository } from '../../repositories/revision-repository'
 import { ReviewCycleRepository } from '../../repositories/review-cycle-repository'
 import { createHumanConfirmedReviewSnapshot, renderHumanConfirmedReviewBrief, serializeHumanConfirmedReviewSnapshot } from '../../../src/shared/human-confirmed-review'
 import { getProjectDb } from '../../database'
+import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
 import { textHash } from '../../repositories/generation-run-repository'
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
@@ -75,7 +76,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch']) {
     const artifact = result.run.artifacts.at(-1)!
     return { contextId: prepared.contextId, handle: view.handle, artifact: { artifactId: artifact.artifactId, revision: artifact.revision, textHash: artifact.textHash } }
   }
-  const reopenStorage = () => { db.close(); db = new Database(path.join(root, 'project.db')); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); return makeOwner('epoch-2') }
+  const reopenStorage = () => { db.close(); db = new Database(path.join(root, 'project.db')); admitGenerationLedger(db); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); return makeOwner('epoch-2') }
   return { get db() { return db }, owner, makeOwner, reopenStorage, prepare, selection, run, spy, deps }
 }
 describe('review and revision generation through the actual owner and SQLite', () => {
@@ -547,6 +548,17 @@ describe('review and revision generation through the actual owner and SQLite', (
     expect(() => f.owner.prepareReviewRevision(request)).toThrow('malformed JSON')
     f.db.prepare('UPDATE generation_attempts SET usage_receipt_json=? WHERE run_id=?').run(intact, history.handle.runId)
     expect(f.owner.prepareReviewRevision(request).parentRootActionId).toBe(original.handle.rootActionId)
+  })
+  it('ADR-0030 原审稿的收据读不出：确认后修稿认不出出处，拒绝派生', async () => {
+    const f = fixture(), original = await f.run(), saved = f.owner.commitReview(original)
+    const snapshot = createHumanConfirmedReviewSnapshot({ sourceReviewId: saved.id, sourceDraft: saved.source, summary: '作者确认', authorGuidance: '', items: [{ category: '表达', severity: 'warning', description: '补充动作', decision: 'apply', origin: 'ai' }] })
+    const content = serializeHumanConfirmedReviewSnapshot(snapshot!)
+    const confirmation = ReviewRepository.create({ baseDraftId: 1, content, expectedSource: saved.source }, f.db)
+    const request: PrepareReviewRevisionRequest = { operation: 'refine-from-review', draftId: 1, expectedDraft: { chapterNumber: 1, version: 1, status: 'draft', contentHash: textHash(prose) }, authorInputs: [], uiLocale: 'zh-CN', reviewSourceId: confirmation.id, confirmedReviewContent: content }
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    f.owner.suspendForProjectClose()
+    f.db.prepare("UPDATE generation_attempts SET usage_receipt_json='{坏' WHERE run_id=?").run(original.handle.runId)
+    expect(() => f.reopenStorage().prepareReviewRevision(request)).toThrow('GENERATION_REVIEW_LINEAGE_UNPROVEN')
   })
   it('derives review-fix lineage from the saved original review and refuses confirmation changes', async () => {
     const f = fixture(), original = await f.run(), saved = f.owner.commitReview(original)

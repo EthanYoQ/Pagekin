@@ -124,9 +124,7 @@ describe('打开作品时封存读不出的生成记录', () => {
     const kept = keptBytes(db, victim)
     expect(kept.map(item => [item.table, item.column])).toEqual(cells.map(([cell]) => [cell.table, cell.column]))
     cells.forEach(([, value], index) => expect(kept[index]!.bytes.equals(Buffer.from(value))).toBe(true))
-    // 绑定被封存的根先被「不能写大纲」挡下，其余只靠根上的阻断码。
-    const expected = cells.some(([cell]) => cell === BINDING) ? GENERATION_LEDGER_UNREADABLE : 'GENERATION_DISPATCH_BLOCKED'
-    expect(() => new GenerationRunRepository(getProjectDb).reserve(victim.run, 'again', textHash('again'), 200, 100)).toThrow(expected)
+    expect(() => new GenerationRunRepository(getProjectDb).reserve(victim.run, 'again', textHash('again'), 200, 100)).toThrow(GENERATION_LEDGER_UNREADABLE)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(GENERATION_LEDGER_UNREADABLE), { rootActionIds: [victim.root] })
   })
 
@@ -256,7 +254,7 @@ describe('打开作品时封存读不出的生成记录', () => {
     const db = getProjectDb()!
     expect(everyCellReadable(db)).toBe(true)
     const stored = JSON.parse(db.prepare("SELECT json_extract(binding_json,'$.\"$ledgerUnreadable\"') FROM generation_runs WHERE run_id=?").pluck().get(victim.run) as string) as { previous?: string }[]
-    expect(stored[0]!.previous).toBe(deep)
+    expect(stored).toEqual([{ previous: deep }, expect.objectContaining({ table: 'generation_roots', column: 'action_json', recordId: victim.root, hex: Buffer.from('{坏').toString('hex').toUpperCase() })])
   })
 
   it('扫描之后、写锁之前另一连接修好了这一格：不覆盖修好的值', () => {
