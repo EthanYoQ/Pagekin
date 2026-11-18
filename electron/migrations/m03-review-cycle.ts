@@ -418,7 +418,7 @@ function cycleLocation(db: Database.Database, { draftRows }: CycleTables, cycle:
         ownTitle: string | null; blueprintTitle: string | null } | undefined
     if (!row || !integer(row.chapterNumber, 1)) return unknown
     const evidence = db.prepare(`SELECT a.usage_receipt_json, r.binding_json FROM generation_attempts a
-      JOIN generation_runs r ON r.run_id=a.run_id WHERE a.root_action_id=?`).all(cycle.root_action_id) as Array<{
+      JOIN generation_runs r ON r.run_id=a.run_id AND r.root_action_id=a.root_action_id WHERE a.root_action_id=?`).all(cycle.root_action_id) as Array<{
         usage_receipt_json: string | null; binding_json: string }>
     const pinned = evidence.some(item => {
       try {
