@@ -41,7 +41,6 @@ function literals(source: string): { line: number; text: string }[] {
 
 const parsedColumns = (sql: string) => LEDGER_JSON_COLUMNS.filter(column =>
   new RegExp(`json_[a-z_]+\\([^)]*\\b${column}\\b`, 'u').test(sql) || new RegExp(`\\b${column}\\s*->`, 'u').test(sql))
-/** 各表上唯一的键：只有按它们等值才把语句限定到一条记录。 */
 const UNIQUE_KEYS: Record<string, string[]> = {
   generation_roots: ['root_action_id', 'idempotency_key'], generation_runs: ['run_id', 'open_key'],
   generation_attempts: ['attempt_id', 'reservation_id', 'invocation_nonce'], generation_artifacts: ['artifact_id'],

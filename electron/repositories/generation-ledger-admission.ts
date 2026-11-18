@@ -74,7 +74,7 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       db.prepare(`UPDATE ${cell.table} SET ${cell.column}=? WHERE ${OWNERS[cell.table].idColumn}=?`).run(cell.neutral(db, item.id), item.id)
     }
     // 中性值全部写完再记账：记账那条运行自己的绑定可能也在这批坏格子里。
-    // 记账区原来不是数组时，原值按文本存成第一条：不丢，也不加深嵌套。
+    // 原值按文本存：包成对象再放进数组会加深两层，可能超过 SQLite 的嵌套上限。
     const kept = `(binding_json->'$."$ledgerUnreadable"')`
     const keep = db.prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$ledgerUnreadable"',
       json_insert(CASE WHEN ${kept} IS NULL THEN '[]' WHEN json_type(${kept})='array' THEN ${kept} ELSE json_array(json_object('previous',''||${kept})) END,

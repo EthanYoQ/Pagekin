@@ -101,7 +101,7 @@ export function uiActionNonceOfOpenKey(openKey: string): string | undefined {
         return undefined;
     }
 }
-/** 按槽位查到的运行和各自的点击号；有一条读不出就报 conflict，读不出的那条不能当前驱。 */
+/** 点击号读不出的运行认不出是不是前驱，所以直接报 conflict。 */
 export function slotRunNonces(rows: readonly { run_id: string; open_key: string }[], conflict: string): { runId: string; nonce: string }[] {
     return rows.map(row => {
         const nonce = uiActionNonceOfOpenKey(row.open_key);
@@ -158,7 +158,7 @@ export class GenerationRunRepository {
     private authorEditedRoot(rootId: string): boolean {
         return !!this.db().prepare('SELECT 1 FROM generation_runs WHERE root_action_id=? AND json_type(binding_json,?) IS NOT NULL LIMIT 1').get(rootId, authorEffectPath);
     }
-    /** 进门时封存过的格子（ADR-0030）。只读被阻断的根上运行的绑定：封存总会给根留一个阻断码。 */
+    /** 只读被阻断的根上运行的绑定：封存总会给根留一个阻断码。 */
     sealedLedgerCells(rootId?: string): { table: string; column: string; recordId: string }[] {
         return this.db().prepare(`SELECT json_extract(e.value,'$.table') AS "table",json_extract(e.value,'$.column') AS "column",json_extract(e.value,'$.recordId') AS recordId
             FROM generation_roots g JOIN generation_runs r ON r.root_action_id=g.root_action_id, json_each(r.binding_json,'$."$ledgerUnreadable"') e
