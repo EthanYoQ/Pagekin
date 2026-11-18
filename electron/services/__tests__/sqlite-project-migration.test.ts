@@ -511,3 +511,57 @@ describe('打开作品不跑全书审修循环校验（#702）', () => {
     expect(() => verifyProjectSqlite({ databasePath: broken.target })).toThrow('MIGRATION_VERIFICATION_FAILED')
   })
 })
+
+describe('各调用方拿到的内容哈希（#702）', () => {
+  /** 时间戳列改成定值，内容哈希才能写成字面值。 */
+  async function currentBook() {
+    const f = fixture()
+    await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
+    const db = new Database(f.target); handles.push(db)
+    db.pragma('foreign_keys = ON')
+    db.prepare("INSERT INTO character_avatar_unresolved(record_id,disposition,source_reference,source_relative_path,candidate_character_ids_json) VALUES('r1','reference-only','旧头像','avatars/old.png','[]')").run()
+    db.prepare("INSERT INTO consistency_exemptions(stable_fact_key,reason) VALUES('k','作者安排')").run()
+    db.prepare("INSERT INTO annotation_history(draft_id,before_text,after_text,annotations_json) VALUES(1,'前','后','[]')").run()
+    for (const table of db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").pluck().all() as string[]) {
+      for (const column of db.prepare(`SELECT name FROM pragma_table_info('${table}') WHERE name IN ('created_at','updated_at')`).pluck().all() as string[]) {
+        db.prepare(`UPDATE "${table}" SET "${column}"='2026-01-01 00:00:00'`).run()
+      }
+    }
+    db.close()
+    return f
+  }
+
+  const ones = (...tables: string[]) => Object.fromEntries(tables.map(table => [table, 1]))
+  const CURRENT_BOOK = {
+    schemaVersion: 10,
+    fingerprint: 'cfc23088546ad51d63c3b940dc5f43d7061c4fa5092c6eddf293feb3671acb3b',
+    domain: { authorContentHash: 'ac81cf1602c2844f4c6e5eb2c402444e9c16581888e3a6b90df1a431d425c2cb',
+      tableCounts: ones('annotation_history', 'character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preIdentityDomain: { authorContentHash: '3576e040fc66e6de607720e5f1e5d27f0078e2f1fb650c9f518ff55573fca4b4',
+      tableCounts: ones('character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preAssetDomain: { authorContentHash: '6aadf6536419abbb9140648da84e4384d948c9d49e2c434d970aa19df0f072e3',
+      tableCounts: ones('annotation_history', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preRecycleDomain: { authorContentHash: 'a8da0b807e9d343afdbd23b59d654305864ecbcdb5e6570a9535247032849d1f',
+      tableCounts: ones('character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preContinuityDomain: { authorContentHash: 'f4032467743017e14015b25afb889fd7f496fe659e2a51c6aaebe9517828d800',
+      tableCounts: ones('character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preAnnotationDomain: { authorContentHash: '3c729596304c2d698d43f1b1f06dd546c9d5e38637f323dc5772a7b06c83fbea',
+      tableCounts: ones('character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+  }
+
+  it('探测、校验、升级与备份当前版本的书，内容哈希与改前逐字相同', async () => {
+    const f = await currentBook()
+    expect(probeProjectSqlite({ databasePath: f.target })).toEqual(CURRENT_BOOK)
+    expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(CURRENT_BOOK)
+    expect(upgradeProjectSqlite({ databasePath: f.target })).toEqual(CURRENT_BOOK)
+    expect(await backupProjectSqlite({ sourceDatabasePath: f.target, targetDatabasePath: path.join(f.root, 'copy.db') })).toEqual(CURRENT_BOOK)
+  })
+
+  it('旧版本的库只带它那一版有的内容哈希', async () => {
+    const f = fixture()
+    expect(Object.keys(probeProjectSqlite({ databasePath: f.source }))).toEqual(['schemaVersion', 'fingerprint', 'domain'])
+    const v6 = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target, targetVersion: 6 })
+    expect(Object.keys(v6)).toEqual(['schemaVersion', 'fingerprint', 'domain', 'preIdentityDomain', 'preAssetDomain'])
+    expect(probeProjectSqlite({ databasePath: f.target })).toEqual(v6)
+  })
+})
