@@ -86,7 +86,14 @@ export function applyM02CharacterIdentity(db: Database.Database): void {
 }
 export function verifyM02CharacterIdentity(db: Database.Database): boolean {
   try {
-    if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return false
+    if ((db.pragma('foreign_key_check') as unknown[]).length) return false
+  } catch { return false }
+  return verifyM02CharacterRows(db)
+}
+/** 不跑 foreign_key_check；调用方须已做过全库外键检查（verifyOpenedSchema 经 probeSchema 做）。 */
+export function verifyM02CharacterRows(db: Database.Database): boolean {
+  try {
+    if (db.pragma('foreign_keys', { simple: true }) !== 1) return false
     const origins = db.prepare('SELECT o.*,c.legacy_key FROM character_identity_origins o JOIN characters c ON c.character_id=o.character_id').all() as { original_row_json: string; original_hash: string; legacy_key: unknown }[]
     const meta = db.prepare("SELECT revision,legacy_count FROM character_identity_meta WHERE id='main'").get() as { revision: number; legacy_count: number } | undefined
     if (!meta || !Number.isSafeInteger(meta.revision) || meta.revision < 0 || !Number.isSafeInteger(meta.legacy_count) || meta.legacy_count < 0 || origins.length !== meta.legacy_count) return false

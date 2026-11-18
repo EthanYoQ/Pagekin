@@ -226,9 +226,9 @@ export function mergeRows(db: Database, item: ReturnType<typeof generatedCycle>,
   return hash(mergedContent)
 }
 
-export function seedReviewedBook(db: Database, chapters: number) {
+export function seedReviewedBook(db: Database, chapters: number, { firstChapter = 1 } = {}) {
   return Array.from({ length: chapters }, (_, index) => {
-    const chapterNumber = index + 1
+    const chapterNumber = firstChapter + index
     const item = generatedCycle(db, `ch${chapterNumber}`, undefined, {
       chapterNumber, source: `第${chapterNumber}章开场，目标完成。`,
       frozenGoals: { ...defaultGoals, chapterNumber },
@@ -289,4 +289,14 @@ export function attachStatementLedger(db: Database): StatementLedger {
       delete own.prepare; delete own.exec; delete own.pragma
     },
   }
+}
+
+/** 仓库入口自己的检查看不到、只有 M03 证明才发现的损坏：审稿尝试回执指向别的审稿内容。 */
+export function breakReviewProof(db: Database, item: { seeded: { reviewId: number; call: CreateReviewCycleInput } }): void {
+  const changed = db.prepare(`UPDATE generation_attempts
+    SET usage_receipt_json=json_set(usage_receipt_json,'$.reviewRevisionEffect.contentHash',?)
+    WHERE root_action_id=? AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review'
+      AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.id')=?`)
+    .run(hash('另一份审稿'), item.seeded.call.rootActionId, item.seeded.reviewId).changes
+  if (changed !== 1) throw new Error(`breakReviewProof 改了 ${changed} 行`)
 }

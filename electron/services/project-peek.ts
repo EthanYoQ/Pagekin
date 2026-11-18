@@ -20,6 +20,7 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../
 import { migrateSchema, verifySchema } from '../migrations/runner'
 import { CURRENT_DRAFT_STATUS_SQL } from '../../src/shared/draft-status'
 import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
+import { verifyOpenedSchema } from './sqlite-project-migration'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -377,7 +378,7 @@ export class ProjectPeekService {
   readCurrent(projectId: string, database: BetterSqlite3.Database): ProjectOverview {
     try {
       if (!projectId) return UNAVAILABLE
-      verifySchema(new SqliteSchemaAdapter(database), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
+      verifyOpenedSchema(database)
       return aggregateProject(database, projectId, true)
     } catch {
       return UNAVAILABLE

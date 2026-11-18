@@ -8,9 +8,9 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../
 import { migrateSchema, probeSchema, verifySchema } from '../migrations/runner'
 import { SchemaMigrationError, type MigrationRegistry } from '../migrations/registry'
 import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
-import { M02_ADDED_CHARACTER_COLUMNS, M02_AUXILIARY_TABLES } from '../migrations/m02-character-identity'
+import { M02_ADDED_CHARACTER_COLUMNS, M02_AUXILIARY_TABLES, verifyM02CharacterRows } from '../migrations/m02-character-identity'
 import { M03_REVIEW_CYCLE_TABLES } from '../migrations/m03-review-cycle'
-import { M07_DRAFT_COLUMNS, logicalTableName } from '../migrations/m07-chapter-recycle'
+import { M07_DRAFT_COLUMNS, logicalTableName, verifyM07ChapterRecycle } from '../migrations/m07-chapter-recycle'
 import { M08_EXEMPTION_COLUMNS, M08_TABLES } from '../migrations/m08-continuity-foundation'
 import { initializeLegacyBaselineSchema } from '../migrations/baseline-schema'
 import { ensureBaselineBlueprintTables } from '../migrations/baseline-blueprint-schema'
@@ -293,6 +293,15 @@ function currentSnapshotIdentity(databasePath: string): SqliteContentIdentity | 
   } finally { snapshot.close() }
 }
 
+/** 与 v10 迁移校验的差别仅在不跑全书 M03（随章数增长），仓库读写改为逐条校验（ADR-0029）。 */
+export function verifyOpenedSchema(db: BetterSqlite3.Database): void {
+  const probe = probeSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry())
+  if (probe.version !== CURRENT_DESKTOP_SCHEMA_VERSION) throw new SchemaMigrationError('SCHEMA_VERSION_MISMATCH')
+  if (!verifyM02CharacterRows(db) || !verifyM07ChapterRecycle(db)) {
+    throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED')
+  }
+}
+
 /** A read-only handle on the source reads WAL frames through the live -shm
  * index, which a snapshot rebuilds and may drop, and closing it never
  * checkpoints a WAL that verification refuses.
@@ -301,7 +310,7 @@ function verifyLiveSchema(databasePath: string): void {
   const reader = new Database(databasePath, { readonly: true, fileMustExist: true })
   try {
     reader.pragma('foreign_keys = ON')
-    verifySchema(new SqliteSchemaAdapter(reader), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
+    verifyOpenedSchema(reader)
   } finally { reader.close() }
 }
 

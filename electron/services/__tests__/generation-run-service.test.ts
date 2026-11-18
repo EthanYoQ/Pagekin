@@ -334,3 +334,21 @@ describe('运行上的记账跟着运行走（#608）', () => {
         expect(f.repository.get(f.run.runId)).toMatchObject({ status: 'running', binding: { ...f.run.binding, epoch: 'epoch-2' } });
     });
 });
+
+describe('一条生成根读不出时只影响它自己（ADR-0029 后果 1）', () => {
+    it('不限运行的候选列表跳过读不出的根，照常列出其余根的候选', () => {
+        const f = fixture(), healthy = f.repository.open(f.open), broken = f.repository.open({ ...f.open, uiActionNonce: 'broken' });
+        const kept = f.repository.reserve(healthy.runId, 'kept', textHash('kept'), 200, 100);
+        f.repository.snapshot(kept.attempt.attemptId, 0, '健康根的正文');
+        const lost = f.repository.reserve(broken.runId, 'lost', textHash('lost'), 200, 100);
+        f.repository.snapshot(lost.attempt.attemptId, 0, '坏根的正文');
+        f.db.prepare("UPDATE generation_roots SET action_json='{坏' WHERE root_action_id=?").run(broken.rootActionId);
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            expect(f.repository.listCandidates().map(item => item.text)).toEqual(['健康根的正文']);
+            expect(() => f.repository.listCandidates(broken.runId)).toThrow(SyntaxError);
+        }
+        finally { warn.mockRestore(); }
+    });
+});
+
