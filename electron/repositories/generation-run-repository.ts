@@ -10,7 +10,7 @@ import { DRAFT_SHORT_OUTLINE_PURPOSE } from '../../src/shared/draft-short-outlin
 import { countDraftUnits, draftTargetUnitRange } from '../../src/shared/draft-units';
 import { getProjectDb } from '../database';
 import { GENERATION_LEDGER_UNREADABLE } from './generation-ledger-admission';
-import { clickOfOpenKey, clickOfRootKey, uiActionNonceOfOpenKey, type GenerationClick } from './generation-run-index';
+import { candidateRunIds, clickOfOpenKey, clickOfRootKey, runIndexOf, uiActionNonceOfOpenKey, type GenerationClick } from './generation-run-index';
 import type { PortableRuntimeFreezeTable } from '../services/portable-runtime-freeze';
 import { assertReservation, assertAttemptTransition, rootActionIdempotencyKey, type RootAction, type RootBudget, type PhysicalAttempt, type VisibleArtifact, type ProviderUsagePolicy } from '../../src/shared/generation-contract';
 import { isContentHash, sameProjectEpoch, type FrozenInputFingerprint, type SourceRef, type ProjectEpoch } from '../../src/shared/source-ref';
@@ -646,13 +646,16 @@ export class GenerationRunRepository {
         const recovery = this.assertBlueprintRecoveryWritable(rows[0].run_id);
         return recovery.progress.find(item => item.operationId === operationId) ?? fail('GENERATION_DIRECTORY_PROGRESS_INVALID');
     }
+    private blueprintDirectoryCandidates(): string {
+        return candidateRunIds(runIndexOf(this.db()).lookup(click => click.operation === 'chapter-blueprint-directory'));
+    }
     listDirectoryProgress(): DirectoryGenerationCatalog {
         const rows = this.db().prepare(`SELECT r.run_id FROM generation_runs r WHERE r.root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})
-            AND (json_extract(r.binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
+            AND (r.run_id IN (SELECT value FROM json_each(?)) AND (json_extract(r.binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
             OR json_type(r.binding_json,'$."$blueprintRetirement"') IS NOT NULL
-            OR json_type(r.binding_json,'$."$runEffects".blueprintAuthorEdit') IS NOT NULL
+            OR json_type(r.binding_json,'$."$runEffects".blueprintAuthorEdit') IS NOT NULL)
             OR EXISTS (SELECT 1 FROM generation_attempts t WHERE t.run_id=r.run_id AND json_type(t.usage_receipt_json,'$.directoryProgress') IS NOT NULL))
-            ORDER BY r.rowid`).all() as { run_id: string }[];
+            ORDER BY r.rowid`).all(this.blueprintDirectoryCandidates()) as { run_id: string }[];
         const catalog: DirectoryGenerationCatalog = { progress: [], diagnostics: [] };
         for (const row of rows) {
             const recovery = this.readBlueprintRecovery(row.run_id);
@@ -697,8 +700,9 @@ export class GenerationRunRepository {
     }
     retireBlueprintRecoveryWithinTransaction(): void {
         if (!this.db().inTransaction) fail('GENERATION_DIRECTORY_TRANSACTION_REQUIRED');
-        const rows = this.db().prepare(`SELECT run_id,root_action_id FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
-            AND root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})`).all() as { run_id: string; root_action_id: string }[];
+        const rows = this.db().prepare(`SELECT run_id,root_action_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?))
+            AND json_extract(binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
+            AND root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})`).all(this.blueprintDirectoryCandidates()) as { run_id: string; root_action_id: string }[];
         const available = rows.filter(row => !this.portableFrozenRoot(row.root_action_id) && this.readBlueprintRecovery(row.run_id).kind === 'available');
         const retire = this.db().prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$blueprintRetirement"','blueprints-cleared') WHERE run_id=?`);
         for (const row of available) retire.run(row.run_id);
