@@ -462,7 +462,7 @@ describe('M03 review cycle migration', () => {
       const migration = createM03Migration({ database: reader => (reader as SqliteSchemaAdapter).database, verifyKnownSchema: () => true })
       expect(() => migration.verify(new SqliteSchemaAdapter(db))).toThrow(expect.objectContaining({ code: 'MIGRATION_VERIFICATION_FAILED',
         damagedReviewCycle: { chapterNumber: 1, chapterTitle: '', inTrash: false } }))
-      expect(migration.verify(new SqliteSchemaAdapter(db, unprovableReviewCycleIds(db)))).toBe(true)
+      expect(migration.verify(new SqliteSchemaAdapter(db, () => unprovableReviewCycleIds(db)))).toBe(true)
       expect([...unprovableReviewCycleIds(db)]).toEqual(['cycle-1'])
     } finally { db.close() }
   })
@@ -476,7 +476,7 @@ describe('M03 review cycle migration', () => {
       db.pragma('foreign_keys = OFF')
       expect(inspectM03ReviewCycles(db)).toEqual({ structureOk: false, unprovable: [] })
       expect(unprovableReviewCycleIds(db).size).toBe(0)
-      expect(() => assertM03ReviewCycle(db, accepted)).toThrow('MIGRATION_VERIFICATION_FAILED')
+      expect(() => assertM03ReviewCycle(db, () => accepted)).toThrow('MIGRATION_VERIFICATION_FAILED')
     } finally { db.close() }
   })
 

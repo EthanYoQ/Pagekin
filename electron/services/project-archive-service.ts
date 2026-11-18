@@ -35,7 +35,7 @@ import {
   type PortableArchiveSource,
 } from './portable-project-archive'
 import { backupProjectSqlite, type ProjectSqliteEvidence } from './sqlite-project-migration'
-import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
+import { inspectM03ReviewCycles, sealedLedgerRecords, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
 import { SchemaMigrationError } from '../migrations/registry'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import {
@@ -802,6 +802,9 @@ function requiredProjection(key: string, value: unknown): unknown {
   }
 }
 
+const LEDGER_KEYS: Readonly<Record<string, string>> = { generation_roots: 'root_action_id', generation_runs: 'run_id',
+  generation_attempts: 'attempt_id', generation_artifacts: 'artifact_id' }
+
 function neutralValue(key: string, column: { type: string; notnull: number }, value: unknown,
   reviewProof = false): unknown {
   if (reviewProof) {
@@ -895,9 +898,10 @@ function draftThreadTaskProofs(db: InstanceType<typeof BetterSqlite>, reviewRoot
 
 /**
  * Shared C17 copy-only history projection. Call only on an isolated target staging DB.
- * omitReviewCycles：导出时验不过的审修循环，投影前从副本里删掉（连带意见与合并快照）；最后的校验仍从严，证明存档里没有坏循环。
+ * omitReviewCycles：导出时验不过的审修循环（主键到章节），投影前从副本里删掉（连带意见与合并快照）；最后的校验仍从严，证明存档里没有坏循环。
+ * 去掉以后它的根仍过不了投影，就按那一章报 MIGRATION_VERIFICATION_FAILED；其他失败原样抛出。
  */
-export function sanitizePortableDatabase(databasePath: string, options: { omitReviewCycles?: ReadonlySet<string> } = {}): {
+export function sanitizePortableDatabase(databasePath: string, options: { omitReviewCycles?: ReadonlyMap<string, DamagedReviewCycle> } = {}): {
   history: HistoryProjection[]
   tableCounts: Record<string, number>
 } {
@@ -907,17 +911,29 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     db.pragma('secure_delete = ON')
     const schemaVersion = PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS.find(version => version === db.pragma('user_version', { simple: true }))
     if (schemaVersion === undefined) throw new Error('PORTABLE_SCHEMA_UNSUPPORTED')
-    const sourceSchema = assertPortableSourceSchema(db, schemaVersion, options.omitReviewCycles)
+    const omitted = options.omitReviewCycles ?? new Map<string, DamagedReviewCycle>()
+    const sourceSchema = assertPortableSourceSchema(db, schemaVersion, () => new Set(omitted.keys()))
     // 必须在算 reviewRoots 之前删：去掉循环以后，它的根按普通根投影。
-    if (options.omitReviewCycles?.size) {
+    const omittedRoots = new Map<string, DamagedReviewCycle>()
+    if (omitted.size) {
+      const rootOf = db.prepare('SELECT root_action_id FROM review_cycles WHERE cycle_id=?').pluck()
       const omit = db.prepare('DELETE FROM review_cycles WHERE cycle_id=?')
-      db.transaction(() => { for (const cycleId of options.omitReviewCycles!) omit.run(cycleId) })()
+      db.transaction(() => {
+        for (const [cycleId, location] of omitted) {
+          omittedRoots.set(rootOf.get(cycleId) as string, location)
+          omit.run(cycleId)
+        }
+      })()
     }
     const avatarRows = readPortableCharacterAvatarRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
       root_action_id: string }>).map(row => row.root_action_id))
-    const reviewRuns = new Set((db.prepare('SELECT run_id,root_action_id FROM generation_runs').all() as Array<{
-      run_id: string; root_action_id: string }>).filter(row => reviewRoots.has(row.root_action_id)).map(row => row.run_id))
+    // 封存换成占位的记录不是审修证据（M03 不认它），按普通记录投影。
+    const sealed = new Set([...reviewRoots].flatMap(root => [...sealedLedgerRecords(db, root)]))
+    const runRoots = new Map((db.prepare('SELECT run_id,root_action_id FROM generation_runs').all() as Array<{
+      run_id: string; root_action_id: string }>).map(row => [row.run_id, row.root_action_id]))
+    const reviewRuns = new Set([...runRoots].filter(([runId, root]) => reviewRoots.has(root) && !sealed.has(`generation_runs:${runId}`))
+      .map(([runId]) => runId))
     const draftProofs = draftThreadTaskProofs(db, reviewRoots)
     for (const row of avatarRows) {
       if ('recordId' in row) safeId(row.recordId)
@@ -960,31 +976,40 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
           ? db.prepare(`UPDATE ${quote(physical)} SET ${updates.map(column => `${quote(column.name)}=?`).join(',')} WHERE rowid=?`)
           : null
         for (const row of rows) {
-          const reviewProof = table === 'generation_artifacts' ? reviewRuns.has(String(row.run_id))
-            : reviewRoots.has(String(row.root_action_id))
-          if (hasProjection || hasHistory) {
-            const safe = projectionForRow(table, row, columns)
-            const id = recordId(table, row, Number(row.__portable_rowid__))
-            const projectionId = `history:${table}:${id}`
-            history.push({
-              projectionId,
-              table,
-              recordId: id,
-              terminalState: terminalState(row),
-              projection: safe.projection,
-              projectionHash: sha256(stableJson(safe.projection)),
-              excludedFields: safe.excludedFields,
-              nonReplayable: true,
-              originalReceiptVerified: false,
-            })
+          const root = table === 'generation_artifacts' ? runRoots.get(String(row.run_id)) : String(row.root_action_id)
+          const reviewProof = (table === 'generation_artifacts' ? reviewRuns.has(String(row.run_id)) : reviewRoots.has(String(row.root_action_id)))
+            && !(table in LEDGER_KEYS && sealed.has(`${table}:${row[LEDGER_KEYS[table]!]}`))
+          try {
+            if (hasProjection || hasHistory) {
+              const safe = projectionForRow(table, row, columns)
+              const id = recordId(table, row, Number(row.__portable_rowid__))
+              const projectionId = `history:${table}:${id}`
+              history.push({
+                projectionId,
+                table,
+                recordId: id,
+                terminalState: terminalState(row),
+                projection: safe.projection,
+                projectionHash: sha256(stableJson(safe.projection)),
+                excludedFields: safe.excludedFields,
+                nonReplayable: true,
+                originalReceiptVerified: false,
+              })
+            }
+            const draftProof = table === 'generation_attempts' ? draftProofs.receipts.get(String(row.attempt_id))
+              : table === 'generation_runs' ? draftProofs.bindings.get(String(row.run_id)) : undefined
+            if (update) update.run(...updates.map(column => {
+              const key = `${table}.${column.name}`
+              if (draftProof !== undefined && (key === 'generation_attempts.usage_receipt_json' || key === 'generation_runs.binding_json')) return draftProof
+              return neutralValue(key, column, row[column.name], reviewProof)
+            }), row.__portable_rowid__)
+          } catch (error) {
+            // 去掉坏循环后它的根仍过不了投影：按那一章报；其他失败（路径、存储）原样抛出。
+            const location = root === undefined ? undefined : omittedRoots.get(root)
+            if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_UNSAFE_PROJECTION' && location?.chapterNumber != null)
+              throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', location)
+            throw error
           }
-          const draftProof = table === 'generation_attempts' ? draftProofs.receipts.get(String(row.attempt_id))
-            : table === 'generation_runs' ? draftProofs.bindings.get(String(row.run_id)) : undefined
-          if (update) update.run(...updates.map(column => {
-            const key = `${table}.${column.name}`
-            if (draftProof !== undefined && (key === 'generation_attempts.usage_receipt_json' || key === 'generation_runs.binding_json')) return draftProof
-            return neutralValue(key, column, row[column.name], reviewProof)
-          }), row.__portable_rowid__)
           for (const [index, column] of columns.entries()) {
             if (policies[index]!.disposition !== 'validated-relative') continue
             const value = row[column.name]
@@ -1081,8 +1106,8 @@ async function assertCurrentContext(input: ExportPortableProjectInput, context: 
   catch { fail('PORTABLE_SOURCE_CHANGED') }
 }
 
-const cycleIds = (cycles: readonly UnprovableReviewCycle[]): ReadonlySet<string> =>
-  new Set(cycles.flatMap(item => item.cycleId === null ? [] : [item.cycleId]))
+const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string, DamagedReviewCycle> =>
+  new Map(cycles.flatMap(item => item.cycleId === null ? [] : [[item.cycleId, item.location] as const]))
 
 function mapSourceChange(error: unknown): never {
   if (error instanceof ProjectArchiveServiceError) throw error
@@ -1131,7 +1156,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     try {
       sourceSnapshot.pragma('foreign_keys = ON')
       unprovable = inspectM03ReviewCycles(sourceSnapshot).unprovable
-      sourceSchema = assertPortableSourceSchema(sourceSnapshot, undefined, cycleIds(unprovable))
+      sourceSchema = assertPortableSourceSchema(sourceSnapshot, undefined, () => new Set(omittable(unprovable).keys()))
       if (sourceFreeze.active) readPortableCurrentAuthority({ database: sourceSnapshot, projectStorageRoot, projectId: canonicalManifest.projectId })
       avatarRows = readPortableCharacterAvatarRows(sourceSnapshot)
     } finally { sourceSnapshot.close() }
@@ -1141,14 +1166,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     const portableDatabasePath = path.join(attemptRoot, 'project.db')
     fs.copyFileSync(sourceSnapshotPath, portableDatabasePath, fs.constants.COPYFILE_EXCL)
     recordOwnedFile(attempt, portableDatabasePath)
-    let sanitized: ReturnType<typeof sanitizePortableDatabase>
-    try { sanitized = sanitizePortableDatabase(portableDatabasePath, { omitReviewCycles: cycleIds(unprovable) }) }
-    catch (error) {
-      // 去掉坏循环仍过不了投影：照旧失败，指明第一条能定位的章。
-      const located = unprovable.find(item => item.location.chapterNumber !== null)
-      if (located) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', located.location)
-      throw error
-    }
+    const sanitized = sanitizePortableDatabase(portableDatabasePath, { omitReviewCycles: omittable(unprovable) })
     recordOwnedFile(attempt, portableDatabasePath)
     input.__testHooks?.afterPortableDatabaseCreated?.(attemptRoot)
 

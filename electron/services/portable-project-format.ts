@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { getDesktopMigrationRegistry } from '../migrations/desktop-registry'
 import { verifySchema } from '../migrations/runner'
 import { LIVE_ROW_VIEWS, logicalTableName } from '../migrations/m07-chapter-recycle'
-import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
+import { SqliteSchemaAdapter, type AcceptedReviewCycleFailures } from '../migrations/sqlite-schema-adapter'
 import fieldPolicyDocument from './portable-project-field-policy.json'
 
 export const PORTABLE_PROJECT_FORMAT_VERSION = 1 as const
@@ -101,7 +101,7 @@ const fieldsAddedAfter: Readonly<Record<PortableSourceSchemaVersion, ReadonlySet
  */
 export function assertPortableSourceSchema(database: Database.Database,
   version: PortableSourceSchemaVersion = PORTABLE_SOURCE_SCHEMA_VERSION,
-  acceptedReviewCycleFailures?: ReadonlySet<string>): { tables: number; fields: number } {
+  acceptedReviewCycleFailures?: AcceptedReviewCycleFailures): { tables: number; fields: number } {
   try {
     database.pragma('foreign_keys = ON')
     verifySchema(new SqliteSchemaAdapter(database, acceptedReviewCycleFailures), getDesktopMigrationRegistry(), version)

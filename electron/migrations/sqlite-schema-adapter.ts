@@ -10,8 +10,8 @@ export function sqliteSchemaFingerprint(db: BetterSqlite3.Database): string {
 }
 
 export class SqliteSchemaAdapter implements SchemaWriter {
-  /** 升级前已验不过的审修循环，迁移后的校验放行它们（no-new-failures）。默认空即从严。 */
-  constructor(readonly database: BetterSqlite3.Database, readonly acceptedReviewCycleFailures: ReadonlySet<string> = new Set()) {}
+  /** 升级前已验不过的审修循环，校验遇到验不过的循环时才取（no-new-failures）。不传即从严。 */
+  constructor(readonly database: BetterSqlite3.Database, readonly acceptedReviewCycleFailures?: AcceptedReviewCycleFailures) {}
   readUserVersion(): number { return this.database.pragma('user_version', { simple: true }) as number }
   readSchemaFingerprint(): string { return sqliteSchemaFingerprint(this.database) }
   integrityCheck(): boolean { return this.database.pragma('integrity_check', { simple: true }) === 'ok' }
@@ -24,6 +24,8 @@ export class SqliteSchemaAdapter implements SchemaWriter {
   executeMigrationSql(sql: string): void { this.database.exec(sql) }
 }
 
-export function acceptedReviewCycleFailures(reader: SchemaReader): ReadonlySet<string> {
-  return reader instanceof SqliteSchemaAdapter ? reader.acceptedReviewCycleFailures : new Set()
+export type AcceptedReviewCycleFailures = () => ReadonlySet<string>
+
+export function acceptedReviewCycleFailures(reader: SchemaReader): AcceptedReviewCycleFailures | undefined {
+  return reader instanceof SqliteSchemaAdapter ? reader.acceptedReviewCycleFailures : undefined
 }

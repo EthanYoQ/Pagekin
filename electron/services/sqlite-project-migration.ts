@@ -7,9 +7,9 @@ import type BetterSqlite3 from 'better-sqlite3'
 import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../migrations/desktop-registry'
 import { migrateSchema, probeSchema, verifySchema } from '../migrations/runner'
 import { SchemaMigrationError, type MigrationRegistry } from '../migrations/registry'
-import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
+import { SqliteSchemaAdapter, type AcceptedReviewCycleFailures } from '../migrations/sqlite-schema-adapter'
 import { M02_ADDED_CHARACTER_COLUMNS, M02_AUXILIARY_TABLES, verifyM02CharacterRows } from '../migrations/m02-character-identity'
-import { M03_REVIEW_CYCLE_TABLES, unprovableReviewCycleIds } from '../migrations/m03-review-cycle'
+import { M03_REVIEW_CYCLE_TABLES, priorReviewCycleFailures } from '../migrations/m03-review-cycle'
 import { M07_DRAFT_COLUMNS, logicalTableName, verifyM07ChapterRecycle } from '../migrations/m07-chapter-recycle'
 import { M08_EXEMPTION_COLUMNS, M08_TABLES } from '../migrations/m08-continuity-foundation'
 import { initializeLegacyBaselineSchema } from '../migrations/baseline-schema'
@@ -142,9 +142,9 @@ function domain(db: BetterSqlite3.Database, selection = domainColumns(db)): Proj
  * no-new-failures：迁移前已经验不过的循环放行，迁移不许新弄坏一条；打开作品时的升级、导出与备份用它。
  */
 export type ReviewCycleEvidence = 'strict' | 'no-new-failures'
-const acceptedFailures = (db: BetterSqlite3.Database, evidence: ReviewCycleEvidence | undefined) =>
-  evidence === 'no-new-failures' ? unprovableReviewCycleIds(db) : undefined
-function inspect(db: BetterSqlite3.Database, registry: MigrationRegistry, targetVersion?: number, accepted?: ReadonlySet<string>): ProjectSqliteEvidence {
+const priorFailures = (db: BetterSqlite3.Database, evidence: ReviewCycleEvidence | undefined) =>
+  evidence === 'no-new-failures' ? priorReviewCycleFailures(db) : undefined
+function inspect(db: BetterSqlite3.Database, registry: MigrationRegistry, targetVersion?: number, accepted?: AcceptedReviewCycleFailures): ProjectSqliteEvidence {
   const adapter = new SqliteSchemaAdapter(db, accepted)
   const result = targetVersion === undefined ? probeSchema(adapter, registry) : verifySchema(adapter, registry, targetVersion)
   return { schemaVersion: result.version, fingerprint: result.fingerprint, domain: domain(db),
@@ -231,7 +231,7 @@ export function verifyProjectSqlite(options: {
     db.pragma('foreign_keys = ON')
     try {
       const result = inspect(db, options.registry ?? getDesktopMigrationRegistry(), options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION,
-        acceptedFailures(db, options.evidence))
+        priorFailures(db, options.evidence)?.accepted)
       snapshot.unchanged(); return result
     } finally { db.close() }
   } finally { snapshot.close() }
@@ -255,7 +255,7 @@ export async function backupProjectSqlite(options: {
     const columnsBefore = domainColumns(source)
     const before = inspectSource(source, registry, !options.registry)
     const legacySchema = !options.registry && QUALIFIED_LEGACY_SCHEMAS.includes(before.fingerprint)
-    const accepted = acceptedFailures(source, options.evidence)
+    const accepted = priorFailures(source, options.evidence)?.accepted
     // Reserve a new inode before the backup API can open it.
     const fd = fs.openSync(targetPath, 'wx', 0o600); fs.closeSync(fd)
     if (!legacySchema) await source.backup(targetPath)
@@ -355,9 +355,10 @@ export function upgradeProjectSqlite(options: { databasePath: string; registry?:
   const database = new Database(options.databasePath, { fileMustExist: true })
   try {
     database.pragma('foreign_keys = ON')
-    const accepted = acceptedFailures(database, options.evidence)
+    const prior = priorFailures(database, options.evidence), accepted = prior?.accepted
     // Revalidate the source identity after acquiring the writable connection.
     const current = inspect(database, registry, before.schemaVersion, accepted)
+    prior?.settle()
     if (current.fingerprint !== before.fingerprint || JSON.stringify(current.domain) !== JSON.stringify(before.domain)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
     return database.transaction(() => {
       const columnsBefore = domainColumns(database)

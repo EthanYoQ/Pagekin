@@ -10,7 +10,7 @@ import type { ReviewRevisionContext } from '../../src/shared/review-revision-gen
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import { SchemaMigrationError, type MigrationImplementation, type SchemaReader } from './registry'
 import { GENERATION_LEDGER_UNREADABLE } from '../repositories/generation-ledger-admission'
-import { acceptedReviewCycleFailures } from './sqlite-schema-adapter'
+import { acceptedReviewCycleFailures, type AcceptedReviewCycleFailures } from './sqlite-schema-adapter'
 
 const HASH = /^[a-f0-9]{64}$/u
 const CYCLE_STATUSES = new Set(['not-generated', 'generated', 'merge-committed'])
@@ -163,7 +163,7 @@ function effect(row: AttemptRow): Record<string, unknown> | null {
     ? receipt.reviewRevisionEffect as Record<string, unknown> : null
 }
 /** 封存时被换成占位值的记录（ADR-0030 的 `$ledgerUnreadable`），键是「表:主键」。 */
-function placeholders(db: Database.Database, rootActionId: string): ReadonlySet<string> {
+export function sealedLedgerRecords(db: Database.Database, rootActionId: string): ReadonlySet<string> {
   return new Set(db.prepare(`SELECT json_extract(item.value,'$.table')||':'||json_extract(item.value,'$.recordId')
     FROM generation_runs r, json_each(r.binding_json,'$."$ledgerUnreadable"') item
     WHERE r.root_action_id=? AND item.type='object' AND json_extract(item.value,'$.column')<>'blocked_code'`)
@@ -373,16 +373,16 @@ export function verifyM03ReviewCycle(db: Database.Database): boolean {
   return structureOk && unprovable.length === 0
 }
 
-const NO_ACCEPTED_FAILURES: ReadonlySet<string> = new Set()
-
 /**
- * 结构坏了，或有 `accepted` 之外的循环验不过，就拒绝。`accepted` 是升级前已经验不过的循环，
- * 由调用方在迁移前取一次（no-new-failures）；导入、恢复不传，从严。
+ * 结构坏了，或有 `accepted` 之外的循环验不过，就拒绝。`accepted` 给出升级前已经验不过的循环（no-new-failures），
+ * 只在有循环验不过时才取，健康的书不多扫一遍；导入、恢复不传，从严。
  */
-export function assertM03ReviewCycle(db: Database.Database, accepted: ReadonlySet<string> = NO_ACCEPTED_FAILURES): true {
+export function assertM03ReviewCycle(db: Database.Database, accepted?: AcceptedReviewCycleFailures): true {
   const { structureOk, unprovable } = inspectM03ReviewCycles(db)
   if (!structureOk) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED')
-  const fresh = unprovable.find(item => item.cycleId === null || !accepted.has(item.cycleId))
+  if (!unprovable.length) return true
+  const prior = accepted?.() ?? new Set<string>()
+  const fresh = unprovable.find(item => item.cycleId === null || !prior.has(item.cycleId))
   if (fresh) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', fresh.location.chapterNumber === null ? undefined : fresh.location)
   return true
 }
@@ -390,6 +390,15 @@ export function assertM03ReviewCycle(db: Database.Database, accepted: ReadonlySe
 /** 现在验不过的循环主键。没有循环表或结构坏了时为空：那时由 assertM03ReviewCycle 整本拒绝，不存在可放行的循环。 */
 export function unprovableReviewCycleIds(db: Database.Database): ReadonlySet<string> {
   return new Set(inspectM03ReviewCycles(db).unprovable.flatMap(item => item.cycleId === null ? [] : [item.cycleId]))
+}
+
+/**
+ * 迁移前已经验不过的循环，第一次用到时才扫。原地迁移的库在迁移前的校验通过后调 `settle()`：
+ * 那次校验没用到它，说明迁移前没有坏循环，之后取到空集，不会把迁移新弄坏的循环算成已有的。
+ */
+export function priorReviewCycleFailures(db: Database.Database): { accepted: AcceptedReviewCycleFailures; settle(): void } {
+  let ids: ReadonlySet<string> | undefined
+  return { accepted: () => (ids ??= unprovableReviewCycleIds(db)), settle: () => { ids ??= new Set() } }
 }
 
 /**
@@ -458,7 +467,7 @@ function verifyCycle(db: Database.Database, { mergeTable, draftRows }: CycleTabl
   if (!root) return false
   // 封存根里被换成占位的记录不能当证据。导出会滤掉运行上的 `$` 记账，存档里这份清单为空：
   // 坏证据的循环在导出时已留在存档外，存档里剩下的证据都是原值。
-  const sealed = root.blocked_code === GENERATION_LEDGER_UNREADABLE ? placeholders(db, cycle.root_action_id) : new Set<string>()
+  const sealed = root.blocked_code === GENERATION_LEDGER_UNREADABLE ? sealedLedgerRecords(db, cycle.root_action_id) : new Set<string>()
   const action = JSON.parse(root.action_json) as Record<string, unknown>
   if (!nonempty(action.projectId) || !nonempty(action.epoch)) return false
   const attempts = db.prepare(`SELECT a.attempt_id,a.run_id,a.root_action_id,r.root_action_id AS run_root_action_id,
