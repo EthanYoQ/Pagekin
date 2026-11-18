@@ -119,6 +119,7 @@ it('ADR-0030 同槽位第一条导入运行的 open_key 读不出：报槽位不
  const first=f.owner.begin(f.selection)
  f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(first.handle.runId)
  expect(()=>f.owner.readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
+ expect(()=>f.reopenStorage().readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
 })
 it('同slot不同nonce加入同run，并冻结实际manifest正文',()=>{
  const f=fixture(),first=f.owner.begin(f.selection),second=f.owner.begin({...f.selection,uiActionNonce:'另一次点击'})

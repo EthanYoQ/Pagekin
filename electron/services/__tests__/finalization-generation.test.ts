@@ -840,6 +840,7 @@ it('ADR-0030 同槽位第一条运行的 open_key 读不出：报槽位冲突，
  const f = await generated('chapter_notes')
  f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(f.commitRequest.handle.runId)
  expect(() => f.owner.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic' })).toThrow('GENERATION_FINALIZATION_SLOT_CONFLICT')
+ expect(() => f.reopen().beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic' })).toThrow('GENERATION_FINALIZATION_SLOT_CONFLICT')
 })
 
 it('#569 请求超时把根阻断后又取消了后处理：作者重试另开新根，真正发出请求并可提交', async () => {

@@ -3743,6 +3743,24 @@ describe('main draft persistence and batch lineage', () => {
       ])
       expect(JSON.stringify(reopened.list(['chapter-draft']))).not.toContain(draftText)
     })
+    it('#702 运行索引：时钟回拨时仍按记下的创建时间排，点击身份读不出的运行照样列出和恢复', async () => {
+      const f = drafting()
+      const first = await generate(f, { ...f.begin, uiActionNonce: 'first', authorInputs })
+      const second = await generate(f, { ...f.begin, uiActionNonce: 'second', authorInputs })
+      f.db.prepare('UPDATE generation_runs SET created_at_ms=1 WHERE run_id=?').run(second.run.handle.runId)
+      f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(first.run.handle.runId)
+      const reopened = f.reopen()
+      const newestFirst = [first.run.handle.runId, second.run.handle.runId]
+      expect(reopened.list(['chapter-draft']).map(run => run.handle.runId)).toEqual(newestFirst)
+      expect(reopened.listRecovery().drafts.map(draft => draft.view.handle.runId)).toEqual(newestFirst)
+    })
+    it('#702 generation:list 只读调用方要的操作', async () => {
+      const f = drafting()
+      await generate(f, { ...f.begin, uiActionNonce: 'first', authorInputs })
+      const reopened = f.reopen()
+      expect(reopened.list(['generate-plot-outline'])).toEqual([])
+      expect(() => reopened.list([])).toThrow('GENERATION_LIST_OPERATIONS_INVALID')
+    })
     it('一条生成尝试的收据坏成不是 JSON 时，其余单章候选照常列出，只标部分读取失败', async () => {
       const f = drafting()
       const broken = await generate(f, { ...f.begin, uiActionNonce: 'broken-receipt', authorInputs })
