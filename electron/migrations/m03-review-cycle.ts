@@ -363,9 +363,11 @@ function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: 
   if (!row) return undefined
   if (row.status === 'deleted') {
     // 回收站这一项按删除时定稿的章名显示；同章号可能已重写，蓝图标题是新章的。
-    const entry = db.prepare(`SELECT COALESCE(p.deleted_at, d.deleted_at) AS deletedAt, COALESCE(o.chapter_title,'') AS chapterTitle
-      FROM drafts_all d LEFT JOIN drafts_all p ON p.deletion_id=d.deletion_id AND p.deleted_from_status='finalized'
-      LEFT JOIN finalization_outbox_all o ON o.draft_id=p.id WHERE d.id=?`).get(row.id) as { deletedAt: string; chapterTitle: string }
+    const finals = db.prepare(`SELECT p.chapter_number AS chapterNumber, p.deleted_at AS deletedAt, COALESCE(o.chapter_title,'') AS chapterTitle
+      FROM drafts_all d JOIN drafts_all p ON p.deletion_id=d.deletion_id AND p.deleted_from_status='finalized'
+      LEFT JOIN finalization_outbox_all o ON o.draft_id=p.id WHERE d.id=?`).all(row.id) as Array<{ chapterNumber: number; deletedAt: string; chapterTitle: string }>
+    const entry = finals.length === 1 && finals[0]!.chapterNumber === row.chapterNumber ? finals[0]! : undefined
+    if (!entry) return undefined
     return { chapterNumber: row.chapterNumber, chapterTitle: entry.chapterTitle, location: 'trash', deletedAt: entry.deletedAt }
   }
   return row.status === 'finalized'
