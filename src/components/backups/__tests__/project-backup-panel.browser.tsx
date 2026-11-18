@@ -267,11 +267,9 @@ describe('ProjectBackupPanel', () => {
   })
 
   it.each([
-    ['定稿章', { chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' }, '第 2 章「沉船」'],
-    ['回收站里那一项', { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt: '2026-11-18 08:05:00' },
-      `回收站里第 2 章「沉船」（删除于 ${new Date('2026-11-18T08:05:00Z').toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })}）`],
-    ['较旧一稿', { chapterNumber: 2, chapterTitle: '沉船', location: 'draft', draftVersion: 1 }, '第 2 章「沉船」草稿 v1'],
-  ])('导出存档遇到%s的坏审修循环：指明位置并请作者反馈，不给删除办法（#702）', async (_label, damagedReviewCycle, chapter) => {
+    ['正文里', { chapterNumber: 2, chapterTitle: '沉船', inTrash: false }, '第 2 章「沉船」'],
+    ['回收站里', { chapterNumber: 2, chapterTitle: '沉船', inTrash: true }, '回收站里第 2 章「沉船」'],
+  ])('导出存档去掉坏循环仍失败（%s）：指明章节并请作者反馈（#702）', async (_label, damagedReviewCycle, chapter) => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
       if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
@@ -290,7 +288,7 @@ describe('ProjectBackupPanel', () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
       if (channel === 'cloud-backup:backup') return { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED',
-        operationId: 'op-1', damagedReviewCycle: { chapterNumber: 2, chapterTitle: '', location: 'manuscript' } }
+        operationId: 'op-1', damagedReviewCycle: { chapterNumber: 2, chapterTitle: '', inTrash: false } }
       throw new Error(`Unexpected IPC: ${channel}`)
     })
     await renderPanel()
@@ -300,6 +298,46 @@ describe('ProjectBackupPanel', () => {
     await act(async () => button('Back up now').click())
     expect(container.querySelector('[role="alert"]')?.textContent)
       .toBe('Your book is unchanged. A review record in Chapter 2 is damaged, so no archive was made. Please report this message to us.')
+  })
+
+  it.each([
+    ['zh-CN', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }],
+      '本地存档已导出：sha-1。第 2 章「沉船」有条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
+    ['en-US', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }],
+      'Local archive exported: sha-1. A damaged review record in Chapter 2 "沉船" was left out of the archive. The text and reviews are included.'],
+    ['ja-JP', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }],
+      'Local archive exported: sha-1. ゴミ箱の第2章「沉船」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とレビュー内容は含まれています。'],
+  ] as const)('导出存档有坏循环没放进去（%s）：成功提示后面指明章节（#702）', async (locale, omittedReviewCycles, expected) => {
+    useLocaleStore.setState({ locale })
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
+      if (channel === 'project:archive-export') return { success: true, receipt: { targetSha256: 'sha-1', omittedReviewCycles } }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button(locale === 'zh-CN' ? '导出本地存档' : 'Export local archive').click())
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(expected)
+  })
+
+  it('云备份有多条坏循环没放进去：成功提示后面按章号列出条数（#702）', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
+      if (channel === 'cloud-backup:backup') return {
+        success: true, state: 'backup-complete', operationId: 'op-1', generation: GENERATION,
+        backupPoint: 'backup-point-7', bindingSaved: true, binding: BINDING,
+        omittedReviewCycles: [{ chapterNumber: 5, chapterTitle: '', inTrash: false }, { chapterNumber: 2, chapterTitle: '沉船', inTrash: false }],
+      }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    const disclosure = container.querySelector<HTMLInputElement>('input[type="checkbox"][name="cloud-disclosure"]')!
+    await act(async () => disclosure.click())
+    await act(async () => button('立即云备份').click())
+    expect(container.querySelector('[role="status"]')?.textContent)
+      .toBe('云备份完成：generation-1；备份点 backup-point-7。第 2、5 章共有 2 条审稿记录损坏，没放进存档。正文和审稿内容都在。')
   })
 
   it('requires disclosure before upload and shows the backup point and unsaved binding', async () => {

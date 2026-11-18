@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, damagedReviewCycleMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
+import { appErrorMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
 import { shown } from './shown-locale'
 
 describe('localized application errors', () => {
@@ -362,22 +362,31 @@ describe('日文界面的已登记错误', () => {
 })
 
 describe('damagedReviewCycleMessage', () => {
-  it('回收站删除时间读不成日期时照原样写出，不写 Invalid Date（#702）', () => {
-    const text = damagedReviewCycleMessage(shown('zh-CN'),
-      { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt: '坏掉的时间' })
-    expect(text).toContain('（删除于 坏掉的时间）')
-    expect(text).not.toContain('Invalid Date')
+  it.each([
+    ['zh-CN', { chapterNumber: 2, chapterTitle: '沉船', inTrash: false }, '作品没有改动。第 2 章「沉船」有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。'],
+    ['zh-CN', { chapterNumber: 2, chapterTitle: '沉船', inTrash: true }, '作品没有改动。回收站里第 2 章「沉船」有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。'],
+    ['en-US', { chapterNumber: 2, chapterTitle: '', inTrash: false }, 'Your book is unchanged. A review record in Chapter 2 is damaged, so no archive was made. Please report this message to us.'],
+  ] as const)('%s：只写章号、章名和是否在回收站，不写稿的版本和删除时间（#702）', (locale, damaged, expected) => {
+    expect(damagedReviewCycleMessage(shown(locale), damaged)).toBe(expected)
   })
+})
 
-  it('删除时间是不存在的日期时照原样写出，不被 Date 顺延成别的日子（#702）', () => {
-    const text = damagedReviewCycleMessage(shown('zh-CN'),
-      { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt: '2026-02-30 08:05:00' })
-    expect(text).toContain('（删除于 2026-02-30 08:05:00）')
-  })
-
-  it('删除时间是合法的 ISO 写法时照常按本地时间写，与 SQLite 写法同一时刻显示相同（#702）', () => {
-    const message = (deletedAt: string) => damagedReviewCycleMessage(shown('zh-CN'),
-      { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt })
-    expect(message('2026-11-18T08:05:00.000Z')).toBe(message('2026-11-18 08:05:00'))
+describe('omittedReviewCyclesMessage', () => {
+  it.each([
+    ['zh-CN', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }], '第 2 章「沉船」有条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
+    ['zh-CN', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }], '回收站里第 2 章「沉船」有条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
+    ['en-US', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }], 'A damaged review record in Chapter 2 "沉船" was left out of the archive. The text and reviews are included.'],
+    ['ja-JP', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }], '第2章「沉船」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とレビュー内容は含まれています。'],
+    ['zh-CN', [{ chapterNumber: 5, chapterTitle: '', inTrash: false }, { chapterNumber: 2, chapterTitle: '沉船', inTrash: true }, { chapterNumber: 5, chapterTitle: '', inTrash: false }],
+      '第 2、5 章共有 3 条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
+    ['en-US', [{ chapterNumber: 2, chapterTitle: '', inTrash: false }, { chapterNumber: 5, chapterTitle: '', inTrash: false }],
+      '2 damaged review records in Chapters 2, 5 were left out of the archive. The text and reviews are included.'],
+    ['en-US', [{ chapterNumber: 2, chapterTitle: '', inTrash: false }, { chapterNumber: 2, chapterTitle: '', inTrash: true }],
+      '2 damaged review records in Chapter 2 were left out of the archive. The text and reviews are included.'],
+    ['zh-CN', [{ chapterNumber: null, chapterTitle: '', inTrash: false }], '有条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
+    ['zh-CN', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }, { chapterNumber: null, chapterTitle: '', inTrash: false }],
+      '有 2 条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
+  ] as const)('%s：%j', (locale, omitted, expected) => {
+    expect(omittedReviewCyclesMessage(shown(locale), omitted)).toBe(expected)
   })
 })

@@ -8,8 +8,9 @@ import { ReviewRepository } from '../../repositories/review-repository'
 import { initializeLegacyBaselineSchema } from '../baseline-schema'
 import { createLiveRowViews } from '../../../test/helpers/live-row-views'
 import { M01_GENERATION_SQL } from '../m01-generation-runs'
+import { SqliteSchemaAdapter } from '../sqlite-schema-adapter'
 import { applyM03ReviewCycle, applyM06ReviewCycleMerge, canonicalM03FindingSetHash, createM03Migration,
-  verifyM03ReviewCycle, assertM03ReviewCycle,
+  verifyM03ReviewCycle, assertM03ReviewCycle, inspectM03ReviewCycles, unprovableReviewCycleIds,
   type M03FindingDescriptor } from '../m03-review-cycle'
 import { buildReviewGenerationReport } from '../../../src/shared/review-generation-report'
 import { buildReviewCycleRecheckReport, type ReviewCycleRecheckContext } from '../../../src/shared/review-cycle'
@@ -184,7 +185,7 @@ describe('M03 review cycle migration', () => {
       db.transaction(() => applyM03ReviewCycle(db))(); seedValid(db)
       db.exec("UPDATE generation_attempts SET usage_receipt_json=json_remove(usage_receipt_json,'$.reviewRevisionEffect.index') WHERE attempt_id='attempt-review'")
       expect(() => assertM03ReviewCycle(db)).toThrow(expect.objectContaining({ code: 'MIGRATION_VERIFICATION_FAILED',
-        damagedReviewCycle: { chapterNumber: 1, chapterTitle: '', location: 'draft', draftVersion: 1 } }))
+        damagedReviewCycle: { chapterNumber: 1, chapterTitle: '', inTrash: false } }))
     } finally { db.close() }
   })
 
@@ -453,6 +454,32 @@ describe('M03 review cycle migration', () => {
     } finally { db.close() }
   })
 
+  it('v4 登记的校验与其余版本一样：坏循环带出所在的章，升级前已验不过的循环放行（#702）', () => {
+    const db = fixture()
+    try {
+      db.transaction(() => applyM03ReviewCycle(db))(); seedValid(db)
+      db.exec("UPDATE generation_attempts SET usage_receipt_json=json_remove(usage_receipt_json,'$.reviewRevisionEffect.index') WHERE attempt_id='attempt-review'")
+      const migration = createM03Migration({ database: reader => (reader as SqliteSchemaAdapter).database, verifyKnownSchema: () => true })
+      expect(() => migration.verify(new SqliteSchemaAdapter(db))).toThrow(expect.objectContaining({ code: 'MIGRATION_VERIFICATION_FAILED',
+        damagedReviewCycle: { chapterNumber: 1, chapterTitle: '', inTrash: false } }))
+      expect(migration.verify(new SqliteSchemaAdapter(db, unprovableReviewCycleIds(db)))).toBe(true)
+      expect([...unprovableReviewCycleIds(db)]).toEqual(['cycle-1'])
+    } finally { db.close() }
+  })
+
+  it('结构坏了时没有可放行的循环：清单为空，放行集合也挡不住整本拒绝（#702）', () => {
+    const db = fixture()
+    try {
+      db.transaction(() => applyM03ReviewCycle(db))(); seedValid(db)
+      db.exec("UPDATE generation_attempts SET usage_receipt_json=json_remove(usage_receipt_json,'$.reviewRevisionEffect.index') WHERE attempt_id='attempt-review'")
+      const accepted = unprovableReviewCycleIds(db)
+      db.pragma('foreign_keys = OFF')
+      expect(inspectM03ReviewCycles(db)).toEqual({ structureOk: false, unprovable: [] })
+      expect(unprovableReviewCycleIds(db).size).toBe(0)
+      expect(() => assertM03ReviewCycle(db, accepted)).toThrow('MIGRATION_VERIFICATION_FAILED')
+    } finally { db.close() }
+  })
+
   it('creates the registered S11 migration metadata and composes known-schema verification', () => {
     const db = fixture()
     try {
@@ -494,7 +521,7 @@ describe('M06 immutable merged cycle snapshots', () => {
     } finally { db.close() }
   })
 
-  it('rejects an unprovable legacy merge without leaving a snapshot table', () => {
+  it('v6 已验不过的合并不补快照：迁移照常建表，这条循环迁移后照旧验不过，不新增验不过的循环（#702）', () => {
     const db = fixture()
     try {
       db.transaction(() => applyM03ReviewCycle(db))()
@@ -503,9 +530,10 @@ describe('M06 immutable merged cycle snapshots', () => {
         .run(seeded.draftId, seeded.revisionId)
       db.prepare("UPDATE review_cycles SET revision_status='merge-committed',merged_hash=? WHERE cycle_id='cycle-1'")
         .run(hash('unrecoverable historical merge'))
-      expect(verifyM03ReviewCycle(db)).toBe(false)
-      expect(() => db.transaction(() => applyM06ReviewCycleMerge(db))()).toThrow('REVIEW_CYCLE_MIGRATION_SOURCE_INVALID')
-      expect(db.prepare("SELECT name FROM sqlite_master WHERE name='review_cycle_merges'").get()).toBeUndefined()
+      expect([...unprovableReviewCycleIds(db)]).toEqual(['cycle-1'])
+      db.transaction(() => applyM06ReviewCycleMerge(db))()
+      expect(db.prepare('SELECT COUNT(*) FROM review_cycle_merges').pluck().get()).toBe(0)
+      expect([...unprovableReviewCycleIds(db)]).toEqual(['cycle-1'])
       expect(db.prepare("SELECT merged_hash FROM review_cycles WHERE cycle_id='cycle-1'").pluck().get())
         .toBe(hash('unrecoverable historical merge'))
     } finally { db.close() }

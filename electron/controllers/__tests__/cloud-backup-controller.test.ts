@@ -513,7 +513,7 @@ describe('registerCloudBackupController', () => {
 
   it('打包时全书审修循环校验失败：错误码不变，带上坏循环所在的章，不上传（#702）', async () => {
     const f = fixture()
-    const damagedReviewCycle = { chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' as const }
+    const damagedReviewCycle = { chapterNumber: 2, chapterTitle: '沉船', inTrash: false }
     vi.mocked(f.deps.exportPortableProject).mockRejectedValueOnce(
       new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', damagedReviewCycle))
 
@@ -523,6 +523,18 @@ describe('registerCloudBackupController', () => {
       success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', operationId: OPERATION, damagedReviewCycle,
     })
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
+  })
+
+  it('打包时有审修循环没放进存档：照常上传，成功结果带上这些循环所在的章（#702）', async () => {
+    const f = fixture()
+    const omittedReviewCycles = [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }]
+    const exported = vi.mocked(f.deps.exportPortableProject).getMockImplementation()!
+    vi.mocked(f.deps.exportPortableProject).mockImplementationOnce(async input => ({ ...await exported(input), omittedReviewCycles }))
+
+    await expect(f.invoke('cloud-backup:backup', {
+      operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
+    })).resolves.toMatchObject({ success: true, state: 'backup-complete', operationId: OPERATION, omittedReviewCycles })
+    expect(f.deps.webDav.appendGeneration).toHaveBeenCalledOnce()
   })
 
   it('lists every explicit book generation with resolved main-process credentials', async () => {
