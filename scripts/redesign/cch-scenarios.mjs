@@ -1,4 +1,3 @@
-// 跑法：PERF702_BLUEPRINTS=2。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
