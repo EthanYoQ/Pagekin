@@ -1,5 +1,4 @@
-// README 截图：中文与英文界面各走一遍书房、正文单章、蓝图写作选项、架构、角色名单、运行侧页，每一步拍一张；
-// 1.5.0 的新功能页（角色时间线、蓝图 AI 检查、批注统一修改、回收站）各一个场景，同一次运行里再按 4:3 拍一张给 README 顶部主图。
+// README 截图：中文与英文界面各走一遍书房、正文单章、蓝图写作选项、架构、角色名单、运行侧页，每一步拍一张。
 // 预置用公开 IPC，模型走本机假服务；作品内容按界面语言各写一份，英文界面配英文作品。
 // 重拍：node scripts/redesign/drive.mjs --scenario readme-<zh|en> | readme-hero-<zh|en> | readme-<timeline|check|annotate|trash>-<zh|en> [--theme dark] --out <目录>
 import assert from 'node:assert/strict'
@@ -196,10 +195,7 @@ async function createBook(context, language, book) {
   return { path, session }
 }
 
-/**
- * 先建书架上的第二本，再建主作品：主作品最近打开，排在书架最前。
- * afterShelf 在书架那本还开着时追加数据；beforeLocale 在切界面语言前做，界面此时还是中文。
- */
+/** 先建书架上的第二本再建主作品，主作品最近打开才排在书架最前。beforeLocale 在切界面语言前执行。 */
 async function seed(context, sample, { afterShelf, beforeLocale } = {}) {
   const { page, invoke, reload } = context
   const shelf = await createBook(context, sample.locale, sample.shelfBook)
@@ -246,7 +242,6 @@ async function openBook(page, ui, name) {
   await page.getByRole('navigation', { name: ui.spine }).waitFor({ state: 'visible' })
 }
 
-/** 新功能页先按 README 正文的 1440×900 拍，再放大到 4:3 拍一张给顶部主图。 */
 async function shootBoth(page, shoot, sample, name) {
   await settle(page)
   await shoot(`readme-${sample.lang}-${name}`)
@@ -312,7 +307,7 @@ const scenario = (sample, options) => ({ model: true, shell: 'stage', setup: con
 
 const characterId = (prompt, name) => new RegExp(`"characterId": "([^"]+)",\\s*"name": "${name}"`, 'u').exec(prompt)?.[1]
 
-/** 定稿后处理的角色状态回复：第 3 章写地点、道具与近况，第 4 章改地点与近况，并记下主角对守塔人的关系。证据是该章原句。 */
+/** 证据必须是该章原句。 */
 function stateReply(sample) {
   const [hero, keeper] = sample.book.cast.map(([name]) => name)
   return prompt => {
@@ -324,7 +319,7 @@ function stateReply(sample) {
   }
 }
 
-/** 时间线要有定稿派生的节点：在中文界面里真实定稿第 3、4 章，后处理按 stateReply 写入。 */
+/** 时间线节点来自定稿后处理，所以要在中文界面里真实定稿第 3、4 章。 */
 async function finalizeThreeAndFour(context, sample) {
   const { page, fake, reload } = context
   fake.replyCharacterState(stateReply(sample))
@@ -349,7 +344,6 @@ const timeline = sample => ({ model: true, shell: 'stage', setup: context => see
     await shootBoth(page, shoot, sample, 'timeline')
   } })
 
-/** 作者给主角和守塔人定了关系，第 6 章蓝图却写两人是老相识；检查回复指向时间线上那条关系节点。 */
 async function seedConflict({ page, invoke }, sample, { path, session }) {
   const { chapter, relation, keyEvents } = sample.check
   const roster = await invoke(page, 'db:character-roster-read', path, session)
@@ -386,7 +380,6 @@ const check = sample => ({ model: true, shell: 'stage', setup: context => seed(c
     await shootBoth(page, shoot, sample, 'check')
   } })
 
-/** 第 4 章两段各加一条批注，统一修改后停在逐处审阅。 */
 const annotate = sample => ({ model: true, shell: 'stage', setup: context => seed(context, sample),
   run: async ({ page, fake, shoot }) => {
     const { ui, book } = sample
@@ -411,10 +404,7 @@ const annotate = sample => ({ model: true, shell: 'stage', setup: context => see
     await shootBoth(page, shoot, sample, 'annotate')
   } })
 
-/**
- * 书架上那本删掉了第 2 章：先导入定稿再用界面同一组 IPC 删除，回收站里留一项。
- * 导入的定稿没走过知识库，删除时要作者确认知识库里没有这一章，界面也是这一步。
- */
+/** 导入的定稿没走过知识库，删除时要作者确认知识库里没有这一章，所以先导入再删除。 */
 async function deleteShelfChapter({ page, invoke }, sample, { path, session }) {
   const [[number, content]] = Object.entries(sample.shelfBook.deleted)
   const chapterNumber = Number(number)
