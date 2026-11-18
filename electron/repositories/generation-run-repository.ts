@@ -698,9 +698,8 @@ export class GenerationRunRepository {
     }
     retireBlueprintRecoveryWithinTransaction(): void {
         if (!this.db().inTransaction) fail('GENERATION_DIRECTORY_TRANSACTION_REQUIRED');
-        const rows = this.db().prepare(`SELECT run_id,root_action_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?))
-            AND json_extract(binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
-            AND root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})`).all(this.blueprintDirectoryCandidates()) as { run_id: string; root_action_id: string }[];
+        const rows = this.db().prepare(`SELECT run_id,root_action_id FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
+            AND root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})`).all() as { run_id: string; root_action_id: string }[];
         const available = rows.filter(row => !this.portableFrozenRoot(row.root_action_id) && this.readBlueprintRecovery(row.run_id).kind === 'available');
         const retire = this.db().prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$blueprintRetirement"','blueprints-cleared') WHERE run_id=?`);
         for (const row of available) retire.run(row.run_id);
