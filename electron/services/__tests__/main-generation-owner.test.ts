@@ -3621,6 +3621,19 @@ describe('main draft persistence and batch lineage', () => {
       expect(runIds(list.batches)).toEqual([batch.batchId])
       expect(locked()).toEqual(new Set([1]))
     })
+    it('#702 批次运行的 open_key 读得出但操作不是批量写稿：批次写过的章照样锁住', async () => {
+      const f = drafting()
+      f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'第二章')")
+      const batch = f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 2 }, targetUnits: 20,
+        uiActionNonce: 'batch', modelId: f.model.id, authorInputs, promptKeys: f.begin.promptKeys, skillStages: [] })
+      f.owner.commitDraft((await generate(f, { ...f.begin, uiActionNonce: 'child', authorInputs, batchId: batch.batchId, parentRootActionId: batch.rootHandle.rootActionId })).request)
+      const [click, root] = JSON.parse(f.db.prepare('SELECT open_key FROM generation_runs WHERE run_id=?').pluck().get(batch.rootHandle.runId) as string) as [string, string]
+      const parts = JSON.parse(click) as string[]
+      parts[1] = 'chapter-draft'
+      f.db.prepare('UPDATE generation_runs SET open_key=? WHERE run_id=?').run(JSON.stringify([JSON.stringify(parts), root]), batch.rootHandle.runId)
+      f.reopen()
+      expect(new GenerationDraftEffects(f.fixture.db, new GenerationRunRepository(() => f.fixture.db)).unfinishedBatchChapters('project')).toEqual(new Set([1]))
+    })
     it('放弃的批次接着写出下一章，重新列为可续、写过的章重新锁住（#686）', async () => {
       const f = drafting()
       f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'第二章'),(3,'第三章')")
