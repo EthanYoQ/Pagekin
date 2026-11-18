@@ -1,6 +1,8 @@
 // #702 实机场景：作品里有读不出的生成记录，打开时提示一次（报封存的生成条数），再打开不提示。
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 
+import { chooseProjectDirectoryGrant } from '../project-directory-grant.mjs'
 import * as stage from './pages/stage.mjs'
 import { readDb, writeDb } from './f537-scenarios.mjs'
 import { seedStageSample } from './scenarios.mjs'
@@ -65,15 +67,20 @@ async function failNextFileTree(app) {
 
 const promptLayers = page => page.evaluate(() => document.querySelectorAll('.pi-prompt-layer').length)
 
-/** 报错框的挂载点移走和下一个提示挂上在同一个任务里，所以关掉报错框、挂载点清空时还没有提示层，这次就不会再弹。 */
+/** 报错框的挂载点移走和下一个提示挂上在同一个任务里，所以等报错框那一层脱离后再数，该弹的提示已经挂上了。 */
+async function acknowledgeLoadError(page, loadError) {
+  const layer = await loadError.evaluateHandle(dialog => dialog.closest('.pi-prompt-layer'))
+  await loadError.getByRole('button').click()
+  await page.waitForFunction(element => !element.isConnected, layer, { timeout: 10_000 })
+}
+
 async function reopenFencedByLoadError(context, locale) {
   const { page } = context
   await failNextFileTree(context.app)
   await locale.open(page)
   const loadError = page.getByRole('alertdialog')
   await loadError.waitFor({ state: 'visible', timeout: 30_000 })
-  await loadError.getByRole('button').click()
-  await page.waitForFunction(() => document.querySelectorAll('.pi-prompt-layer').length === 0)
+  await acknowledgeLoadError(page, loadError)
   await page.getByRole('navigation', { name: locale.spine }).waitFor({ state: 'visible' })
   return notice(page, locale).count()
 }
@@ -91,7 +98,7 @@ function scenario(key) {
     const measured = { landings, firstNotice: await first.innerText(), sealedRoots: sealedCount(context) }
     assert.equal(measured.sealedRoots, 2)
     assert.ok(reportsCount(measured.firstNotice, locale, measured.sealedRoots), measured.firstNotice)
-    assert.doesNotMatch(measured.firstNotice, /重新生成|generate again|regenerate/iu)
+    assert.doesNotMatch(measured.firstNotice, /重新生成|generate again|regenerate|再生成/iu)
     await settle(page)
     await context.shoot(`sealed702-${key}-first-open`)
     await first.getByRole('button', { name: locale.confirm, exact: true }).click()
@@ -139,8 +146,43 @@ const afterLoadError = { model: true, shell: 'stage', run: async context => {
   return measured
 } }
 
+const switchBeforeAcknowledging = { model: true, shell: 'stage', run: async context => {
+  await seedStageSample(context)
+  const { app, page, roots, invoke } = context
+  const other = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
+    name: '雾岛', genre: '悬疑', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
+  assert.equal(other.success, true, other.error)
+  const landed = await restartIn(context, LOCALES.zh, () => damageTwoRoots(context))
+  await failNextFileTree(context.app)
+
+  await LOCALES.zh.open(context.page)
+  const loadError = context.page.getByRole('alertdialog').filter({ hasText: '项目已打开，部分数据加载失败' })
+  await loadError.waitFor({ state: 'visible', timeout: 30_000 })
+  await context.app.evaluate(({ dialog }, selected) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] })
+  }, other.projectPath)
+  await context.page.keyboard.press('ControlOrMeta+O')
+  const otherBook = stage.root(context.page).locator('[aria-label="《雾岛》作品菜单"]')
+  await otherBook.waitFor({ state: 'visible', timeout: 30_000 })
+
+  await acknowledgeLoadError(context.page, loadError)
+  await settle(context.page)
+  const measured = {
+    landed,
+    sealedNoticesOnOtherBook: await notice(context.page, LOCALES.zh).count(),
+    otherBookOpen: await otherBook.isVisible(),
+    sealedRoots: sealedCount(context),
+  }
+  assert.equal(measured.otherBookOpen, true)
+  assert.equal(measured.sealedNoticesOnOtherBook, 0, '换到雾岛后不弹前一本书的封存提示')
+  assert.equal(measured.sealedRoots, 2)
+  await context.shoot('sealed702-switch-no-notice')
+  return measured
+} }
+
 export const SEALED702_SCENARIOS = {
   'sealed702-after-load-error-zh': afterLoadError,
+  'sealed702-switch-before-ack-zh': switchBeforeAcknowledging,
   'sealed702-open-notice-zh': scenario('zh'),
   'sealed702-open-notice-en': scenario('en'),
   'sealed702-open-notice-ja': scenario('ja'),
