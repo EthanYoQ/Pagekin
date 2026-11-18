@@ -67,12 +67,60 @@ async function failNextFileTree(app) {
 
 const promptLayers = page => page.evaluate(() => document.querySelectorAll('.pi-prompt-layer').length)
 
-/** 报错框的挂载点移走和下一个提示挂上在同一个任务里，所以报错框那一层脱离时，该弹的提示已经挂上了。 */
+/** 提示层的挂载点同步挂上，对话框由 React 稍后渲染；每一层都渲染出对话框之后再数，才不会数漏。 */
+const promptsRendered = page => page.waitForFunction(() => [...document.querySelectorAll('.pi-prompt-layer')]
+  .every(layer => layer.querySelector('[role="dialog"], [role="alertdialog"]')), null, { timeout: 10_000 })
+
+const layerOf = dialog => dialog.evaluateHandle(element => element.closest('.pi-prompt-layer'))
+const detached = (page, layer) => page.waitForFunction(element => !element.isConnected, layer, { timeout: 30_000 })
+
+/** 报错框的挂载点移走和下一个提示挂上在同一个任务里，所以报错框那一层脱离、各层渲染完时，该弹的提示已经在了。 */
 async function acknowledgeLoadError(page, loadError) {
-  const layer = await loadError.evaluateHandle(dialog => dialog.closest('.pi-prompt-layer'))
+  const layer = await layerOf(loadError)
   await loadError.getByRole('button').click()
-  await page.waitForFunction(element => !element.isConnected, layer, { timeout: 10_000 })
+  await detached(page, layer)
+  await promptsRendered(page)
 }
+
+/** 拦住下一次 project:open，放行前一直停在主进程里；返回「已拦到」与「放行」。 */
+async function holdNextProjectOpen(app) {
+  await app.evaluate(({ ipcMain }) => {
+    const handlers = ipcMain._invokeHandlers
+    const original = handlers.get('project:open')
+    let release
+    const gate = new Promise(resolve => { release = resolve })
+    globalThis.sealed702Gate = { held: false, release }
+    handlers.set('project:open', async (...args) => {
+      handlers.set('project:open', original)
+      globalThis.sealed702Gate.held = true
+      await gate
+      return original(...args)
+    })
+  })
+  return {
+    held: () => app.evaluate(() => globalThis.sealed702Gate.held),
+    release: () => app.evaluate(() => globalThis.sealed702Gate.release()),
+  }
+}
+
+async function createOtherBook(context) {
+  const { app, page, roots, invoke } = context
+  const other = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
+    name: '雾岛', genre: '悬疑', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
+  assert.equal(other.success, true, other.error)
+  return other.projectPath
+}
+
+async function pickWithCtrlO(context, projectPath) {
+  await context.app.evaluate(({ dialog }, selected) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] })
+  }, projectPath)
+  await context.page.keyboard.press('ControlOrMeta+O')
+}
+
+/** 提示框开着时外壳被标 aria-hidden，按角色找不到作品菜单，按 aria-label 找。 */
+const bookMenu = (page, name) => stage.root(page).locator(`[aria-label="《${name}》作品菜单"]`)
+const otherBookMenu = page => bookMenu(page, '雾岛')
 
 async function reopenFencedByLoadError(context, locale) {
   const { page } = context
@@ -81,7 +129,6 @@ async function reopenFencedByLoadError(context, locale) {
   const loadError = page.getByRole('alertdialog')
   await loadError.waitFor({ state: 'visible', timeout: 30_000 })
   await acknowledgeLoadError(page, loadError)
-  await page.getByRole('navigation', { name: locale.spine }).waitFor({ state: 'visible' })
   return notice(page, locale).count()
 }
 
@@ -108,6 +155,7 @@ function scenario(key) {
     page = context.page
     measured.secondOpenNotices = await reopenFencedByLoadError(context, locale)
     assert.equal(measured.secondOpenNotices, 0, '再次打开不再提示')
+    await page.getByRole('navigation', { name: locale.spine }).waitFor({ state: 'visible' })
     measured.sealedRootsAfterReopen = sealedCount(context)
     assert.equal(measured.sealedRootsAfterReopen, 2)
     await settle(page)
@@ -148,41 +196,85 @@ const afterLoadError = { model: true, shell: 'stage', run: async context => {
 
 const switchBeforeAcknowledging = { model: true, shell: 'stage', run: async context => {
   await seedStageSample(context)
-  const { app, page, roots, invoke } = context
-  const other = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
-    name: '雾岛', genre: '悬疑', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
-  assert.equal(other.success, true, other.error)
+  const otherPath = await createOtherBook(context)
   const landed = await restartIn(context, LOCALES.zh, () => damageTwoRoots(context))
+  const { page } = context
   await failNextFileTree(context.app)
 
-  await LOCALES.zh.open(context.page)
-  const loadError = context.page.getByRole('alertdialog').filter({ hasText: '项目已打开，部分数据加载失败' })
+  await LOCALES.zh.open(page)
+  const loadError = page.getByRole('alertdialog').filter({ hasText: '项目已打开，部分数据加载失败' })
   await loadError.waitFor({ state: 'visible', timeout: 30_000 })
-  await context.app.evaluate(({ dialog }, selected) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] })
-  }, other.projectPath)
-  await context.page.keyboard.press('ControlOrMeta+O')
-  const otherBook = stage.root(context.page).locator('[aria-label="《雾岛》作品菜单"]')
-  await otherBook.waitFor({ state: 'visible', timeout: 30_000 })
+  const loadErrorLayer = await layerOf(loadError)
+  await pickWithCtrlO(context, otherPath)
+  await otherBookMenu(page).waitFor({ state: 'visible', timeout: 30_000 })
 
-  await acknowledgeLoadError(context.page, loadError)
-  await settle(context.page)
+  await detached(page, loadErrorLayer)
+  await promptsRendered(page)
   const measured = {
     landed,
-    sealedNoticesOnOtherBook: await notice(context.page, LOCALES.zh).count(),
-    otherBookOpen: await otherBook.isVisible(),
+    promptLayersOnOtherBook: await promptLayers(page),
+    sealedNoticesOnOtherBook: await notice(page, LOCALES.zh).count(),
+    otherBookOpen: await otherBookMenu(page).isVisible(),
     sealedRoots: sealedCount(context),
   }
   assert.equal(measured.otherBookOpen, true)
+  assert.equal(measured.promptLayersOnOtherBook, 0, '雾岛打开后样例书的报错框自己撤走，不留在雾岛上')
   assert.equal(measured.sealedNoticesOnOtherBook, 0, '换到雾岛后不弹前一本书的封存提示')
   assert.equal(measured.sealedRoots, 2)
+  await settle(page)
   await context.shoot('sealed702-switch-no-notice')
+  return measured
+} }
+
+const switchStillOpening = { model: true, shell: 'stage', run: async context => {
+  await seedStageSample(context)
+  const otherPath = await createOtherBook(context)
+  const landed = await restartIn(context, LOCALES.zh, () => damageTwoRoots(context))
+  const { page } = context
+  await failNextFileTree(context.app)
+
+  await LOCALES.zh.open(page)
+  const loadError = page.getByRole('alertdialog').filter({ hasText: '项目已打开，部分数据加载失败' })
+  await loadError.waitFor({ state: 'visible', timeout: 30_000 })
+  const gate = await holdNextProjectOpen(context.app)
+  await pickWithCtrlO(context, otherPath)
+  for (const deadline = Date.now() + 30_000; !await gate.held(); await page.waitForTimeout(100)) {
+    assert.ok(Date.now() < deadline, '30 秒内雾岛的 project:open 没有到主进程')
+  }
+
+  await acknowledgeLoadError(page, loadError)
+  const sealed = notice(page, LOCALES.zh)
+  await sealed.waitFor({ state: 'visible', timeout: 10_000 })
+  const measured = {
+    landed,
+    sampleStillOpenWhileHeld: await bookMenu(page, STAGE_SAMPLE.name).isVisible(),
+    noticeWhileOtherBookOpening: await sealed.innerText(),
+  }
+  assert.equal(measured.sampleStillOpenWhileHeld, true, '雾岛还在打开时样例书仍是当前书')
+  assert.ok(reportsCount(measured.noticeWhileOtherBookOpening, LOCALES.zh, 2), measured.noticeWhileOtherBookOpening)
+  await settle(page)
+  await context.shoot('sealed702-still-opening-1-notice-on-sample')
+
+  const sealedLayer = await layerOf(sealed)
+  await gate.release()
+  await otherBookMenu(page).waitFor({ state: 'visible', timeout: 30_000 })
+  await detached(page, sealedLayer)
+  await promptsRendered(page)
+  measured.otherBookOpen = await otherBookMenu(page).isVisible()
+  measured.promptLayersOnOtherBook = await promptLayers(page)
+  measured.sealedRoots = sealedCount(context)
+  assert.equal(measured.otherBookOpen, true)
+  assert.equal(measured.promptLayersOnOtherBook, 0, '雾岛打开后样例书的封存提示撤走，不留在雾岛上')
+  assert.equal(measured.sealedRoots, 2)
+  await settle(page)
+  await context.shoot('sealed702-still-opening-2-other-book')
   return measured
 } }
 
 export const SEALED702_SCENARIOS = {
   'sealed702-after-load-error-zh': afterLoadError,
   'sealed702-switch-before-ack-zh': switchBeforeAcknowledging,
+  'sealed702-switch-still-opening-zh': switchStillOpening,
   'sealed702-open-notice-zh': scenario('zh'),
   'sealed702-open-notice-en': scenario('en'),
   'sealed702-open-notice-ja': scenario('ja'),
