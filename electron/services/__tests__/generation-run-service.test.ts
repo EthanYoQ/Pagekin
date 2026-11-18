@@ -336,3 +336,30 @@ describe('运行上的记账跟着运行走（#608）', () => {
         expect(f.repository.get(f.run.runId)).toMatchObject({ status: 'running', binding: { ...f.run.binding, epoch: 'epoch-2' } });
     });
 });
+describe('启动与关闭作品时的恢复只处理没静止的根（#702）', () => {
+    it('崩溃后：已派发变结果不明，已预留变派发前取消，活动的根变暂停；已暂停、已取消的根上的已派发也变结果不明', () => {
+        const f = fixture(), open = (nonce: string) => f.repository.open({ ...f.open, uiActionNonce: nonce });
+        const reserve = (runId: string) => f.repository.reserve(runId, 'call', textHash('call'), 200, 100).attempt.attemptId;
+        const dispatched = open('dispatched'), reserved = open('reserved'), idle = open('idle'), paused = open('paused'), cancelled = open('cancelled');
+        const inFlight = reserve(dispatched.runId), held = reserve(reserved.runId), pausedInFlight = reserve(paused.runId), cancelledInFlight = reserve(cancelled.runId);
+        for (const id of [inFlight, pausedInFlight, cancelledInFlight]) f.repository.markDispatched(id);
+        f.repository.pause(paused.rootActionId);
+        f.repository.pause(cancelled.rootActionId, true);
+        f.setNow(4000);
+        f.repository.recoverInterrupted();
+        expect([inFlight, held, pausedInFlight, cancelledInFlight].map(id => f.repository.receipt(id).attempt.status))
+            .toEqual(['unknown', 'cancelled-before-dispatch', 'unknown', 'unknown']);
+        expect([dispatched, reserved, idle, paused, cancelled].map(run => [f.repository.budget(run.rootActionId).root.status, f.repository.get(run.runId).status]))
+            .toEqual([['paused', 'paused'], ['paused', 'paused'], ['paused', 'paused'], ['paused', 'paused'], ['cancelled', 'cancelled']]);
+        expect(f.repository.budget(dispatched.rootActionId).activeElapsedMs).toBe(3000);
+    });
+    it('都静止以后再恢复一遍，不改任何一行', () => {
+        const f = fixture(), run = f.repository.open(f.open);
+        f.repository.markDispatched(f.repository.reserve(run.runId, 'call', textHash('call'), 200, 100).attempt.attemptId);
+        f.repository.recoverInterrupted();
+        const changes = () => f.db.prepare('SELECT total_changes()').pluck().get();
+        const before = changes();
+        f.repository.recoverInterrupted();
+        expect(changes()).toBe(before);
+    });
+});
