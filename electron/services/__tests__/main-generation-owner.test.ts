@@ -38,7 +38,7 @@ import { GenerationDraftEffects } from '../generation-draft-effects'
 import { sanitizePortableDatabase } from '../project-archive-service'
 import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
 import { ImportGeneration } from '../import-generation'
-import { damageLedger, failingCalls as failingLedgerCalls } from './ledger-seal-fixture'
+import { damageLedger, failingCalls as failingLedgerCalls, rootCount } from './ledger-seal-fixture'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationKnowledgeSnapshot } from '../../../src/shared/generation-knowledge'
 import type { MainGenerationRunHandle } from '../../../src/services/generation/generation-runtime'
@@ -1819,6 +1819,19 @@ describe('durable directory commit and remaining stage', () => {
     f.fixture.db.exec("UPDATE generation_attempts SET usage_receipt_json=json_set(usage_receipt_json,'$.directoryProgress.requestedRange.endChapter',3.5)")
     expect(f.owner.listDirectoryProgress()).toMatchObject({ progress: [], diagnostics: [{ runId: f.run.handle.runId, kind: 'invalid', code: 'GENERATION_DIRECTORY_PROGRESS_INVALID' }] })
     expect(() => new GenerationRunRepository(() => f.fixture.db).assertBlueprintRecoveryWritable(f.run.handle.runId)).toThrow('GENERATION_DIRECTORY_PROGRESS_INVALID')
+  })
+  it('ADR-0030 进度回执的续跑句柄指向别的、已封存的根：只把这一条标成无效，目录进度列表照常', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = directoryFixture()
+    await f.owner.execute({ handle: f.run.handle, invocationNonce: 'first', task: directoryTask })
+    f.commit(f.owner, f.run.handle, f.request('foreign-prefix', 1, 2), { startChapter: 1, endChapter: 3 })
+    f.owner.begin({ ...f.selection, uiActionNonce: 'remaining', continueDirectoryOperationId: 'foreign-prefix' })
+    const foreign = f.owner.begin({ ...f.fixture.begin, uiActionNonce: '别的根' })
+    damageLedger(f.db, 'budget_json', foreign.handle)
+    admitGenerationLedger(f.db)
+    f.db.prepare(`UPDATE generation_attempts SET usage_receipt_json=json_set(usage_receipt_json,'$.directoryProgress.continuationHandle.runId',?,
+      '$.directoryProgress.continuationHandle.rootActionId',?) WHERE json_type(usage_receipt_json,'$.directoryProgress') IS NOT NULL`).run(foreign.handle.runId, foreign.handle.rootActionId)
+    expect(f.owner.listDirectoryProgress().diagnostics).toContainEqual({ runId: f.run.handle.runId, kind: 'invalid', code: 'GENERATION_DIRECTORY_PROGRESS_INVALID' })
   })
   it.each(['sourceHandle.epoch', 'continuationHandle.epoch'])('rejects progress with missing %s before exposing a typed handle', async field => {
     const f = directoryFixture()
@@ -4641,12 +4654,19 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     const repository = new GenerationRunRepository(() => f.db)
     const reserved = repository.reserve(v.run, 'reserved', textHash('reserved'), 200, 100)
     set('generation_roots', 'action_json', 'root_action_id', 'root', '{坏')(f.db, v)
+    const since = Date.now() - 5_000
+    f.db.prepare('UPDATE generation_roots SET active_elapsed_ms=1000,active_since_ms=? WHERE root_action_id=?').run(since, v.root)
     const db = new Database(path.join(f.root, 'project.db'))
     try {
+      const sealStart = Date.now()
       admitGenerationLedger(db)
+      const sealEnd = Date.now()
       const status = (id: string) => db.prepare("SELECT json_extract(attempt_json,'$.status') FROM generation_attempts WHERE attempt_id=?").pluck().get(id)
       expect([status(v.attempt), status(reserved.attempt.attemptId)]).toEqual(['unknown', 'cancelled-before-dispatch'])
-      expect(db.prepare('SELECT active_since_ms FROM generation_roots WHERE root_action_id=?').pluck().get(v.root)).toBeNull()
+      const clock = db.prepare('SELECT active_elapsed_ms AS elapsed,active_since_ms AS since FROM generation_roots WHERE root_action_id=?').get(v.root) as { elapsed: number; since: number | null }
+      expect(clock.since).toBeNull()
+      expect(clock.elapsed).toBeGreaterThanOrEqual(1000 + sealStart - since)
+      expect(clock.elapsed).toBeLessThanOrEqual(1000 + sealEnd - since)
       const before = db.prepare('SELECT total_changes()').pluck().get()
       expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
       expect(db.prepare('SELECT total_changes()').pluck().get()).toBe(before)
@@ -4709,6 +4729,21 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     f.db.prepare('UPDATE generation_roots SET idempotency_key=? WHERE root_action_id=?').run(key, plain.handle.rootActionId)
     const owner = f.reopen({ crashed: true })
     expect(() => owner.begin({ ...f.begin, uiActionNonce: '别的点击' })).toThrow('GENERATION_LEDGER_UNREADABLE')
+  })
+
+  it('封存的根身份键读不出：健康运行同一次点击的重放照常返回原运行，新的点击仍被拒绝', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fixture()
+    const healthy = f.owner.begin({ ...f.begin, uiActionNonce: '健康的点击' })
+    const plain = f.owner.begin(f.begin)
+    damageLedger(f.db, 'binding_json', plain.handle)
+    f.db.prepare("UPDATE generation_roots SET idempotency_key='[]' WHERE root_action_id=?").run(plain.handle.rootActionId)
+    f.db.prepare(`UPDATE generation_runs SET open_key='["[]",null]' WHERE run_id=?`).run(plain.handle.runId)
+    const owner = f.reopen({ crashed: true })
+    const roots = rootCount(f.db)
+    expect(owner.begin({ ...f.begin, uiActionNonce: '健康的点击' }).handle.runId).toBe(healthy.handle.runId)
+    expect(() => owner.begin({ ...f.begin, uiActionNonce: '别的点击' })).toThrow('GENERATION_LEDGER_UNREADABLE')
+    expect(rootCount(f.db)).toBe(roots)
   })
 
   it('点击号恰好以 import: 开头的普通运行被封存：不当作导入运行，导入槽位照常查找', async () => {

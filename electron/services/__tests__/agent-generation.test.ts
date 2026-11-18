@@ -424,3 +424,23 @@ it.each<DamagedColumn>(['action_json','binding_json','usage_receipt_json'])('ADR
  expect(f.spy).toHaveBeenCalledTimes(1)
  expect(await failingCalls(enumerations(next))).toEqual([])
 })
+
+it('ADR-0030 一轮 Agent 的根被封存：别的会话登记的子流程照常开始，封存那轮登记的子流程被拒绝',async()=>{
+ const f=fixture(async(_r,o)=>{o.onVisible({kind:'delta',text:'<tool_call>{"name":"start_workflow","arguments":{"workflow":"generate_blueprint"}}</tool_call>'});return {finishReason:'stop',usage:null}})
+ const registered=async(uiActionNonce:string)=>{
+  const start=f.owner.agents.begin({...f.request,uiActionNonce})
+  const round=await f.owner.agents.executeRound({handle:start.handle,index:0}),ref=round.rounds[0]!.actions[0]!.ref
+  f.owner.agents.claimTool({ref,confirmed:true})
+  return {handle:round.handle,registration:f.owner.agents.registerWorkflow(ref)}
+ }
+ const sealed=await registered('封存的会话'),healthy=await registered('健康的会话')
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ damageLedger(f.db,'budget_json',sealed.handle)
+ admitGenerationLedger(f.db)
+ const selection: BeginGenerationRequest={operation:'chapter-blueprint-directory',uiActionNonce:'子流程',modelId:'synthetic',promptKeys:['directory'],skillStages:[],selectedDraftIds:[],selectedFinalizedDraftIds:[],output:'structured-data',
+   authorInputs:[{id:'directory:author-config',text:'{"totalChapters":80}'},{id:'directory:requested-range',text:'{"mode":"full","startChapter":1,"endChapter":5}'},{id:'planning:target-units',text:'600'}]}
+ const child=f.owner.begin({...selection,parentRootActionId:healthy.handle.rootActionId,agentWorkflowRegistrationId:healthy.registration.registrationId})
+ expect(child.handle.rootActionId).toBe(healthy.handle.rootActionId)
+ expect(()=>f.owner.begin({...selection,uiActionNonce:'封存那轮的子流程',parentRootActionId:sealed.handle.rootActionId,agentWorkflowRegistrationId:sealed.registration.registrationId}))
+   .toThrow('GENERATION_LEDGER_UNREADABLE')
+})
