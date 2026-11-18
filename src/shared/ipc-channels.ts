@@ -1,4 +1,5 @@
 import type { GenerationOwnerChannels, GenerationOwnerEvents } from './generation-owner-contract'
+import type { DamagedReviewCycle } from './damaged-review-cycle'
 import type { CharacterProposalChannels } from './character-proposal'
 import type { CharacterContinuityTimeline, ContinuityNode } from './character-continuity'
 import type { FinalizedCharacterGenerationChannels } from './finalized-character-generation'
@@ -340,6 +341,7 @@ export type PortableProjectOperationFailure = {
   success: false
   error: string
   errorCode?: PortableProjectOperationErrorCode
+  damagedReviewCycle?: DamagedReviewCycle
 }
 
 export interface ProjectChannels {

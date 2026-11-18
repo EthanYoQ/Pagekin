@@ -11,6 +11,8 @@ import type {
   CloudBackupFailure,
   CloudBackupProjectSessionContext,
 } from '../../src/shared/cloud-backup'
+import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
+import { SchemaMigrationError } from '../migrations/registry'
 import { CANONICAL_PROJECT_DATABASE, CANONICAL_PROJECT_DIRECTORY } from '../../src/shared/project-format'
 import { getCurrentProjectPath } from '../database'
 import {
@@ -111,7 +113,7 @@ export interface CloudBackupControllerDependencies {
 }
 
 class CloudBackupControllerError extends Error {
-  constructor(readonly code: CloudBackupErrorCode) {
+  constructor(readonly code: CloudBackupErrorCode, readonly damagedReviewCycle?: DamagedReviewCycle) {
     super(code)
   }
 }
@@ -182,6 +184,7 @@ function failure(error: unknown, currentOperationId?: string): CloudBackupFailur
     state: code === 'CLOUD_BACKUP_CANCELLED' ? 'cancelled' : 'failed',
     errorCode: code,
     ...(currentOperationId ? { operationId: currentOperationId } : {}),
+    ...(error instanceof CloudBackupControllerError && error.damagedReviewCycle ? { damagedReviewCycle: error.damagedReviewCycle } : {}),
   }
 }
 
@@ -402,9 +405,10 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
               return deps.sameCanonicalProjectRoot(checked.rootPath, sourceProjectRoot)
             },
           })
-        } catch {
+        } catch (error) {
           if (signal.aborted) fail('CLOUD_BACKUP_CANCELLED')
-          throw new CloudBackupControllerError('CLOUD_BACKUP_ARCHIVE_FAILED')
+          throw new CloudBackupControllerError('CLOUD_BACKUP_ARCHIVE_FAILED',
+            error instanceof SchemaMigrationError ? error.damagedReviewCycle : undefined)
         }
         if (signal.aborted) fail('CLOUD_BACKUP_CANCELLED')
         deps.assertCurrentProjectContext(currentSession, deps.getCurrentProjectPath())

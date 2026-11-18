@@ -23,6 +23,7 @@ import { createPortableProjectAssetProvider } from '../services/portable-project
 import { restorePortableProject } from '../services/project-restore-service'
 import { registerRecentProject } from './project-controller'
 import { mainText } from '../i18n'
+import { SchemaMigrationError } from '../migrations/registry'
 
 const require = createRequire(import.meta.url)
 
@@ -66,6 +67,7 @@ function failure(error: unknown) {
     success: false as const,
     error: error instanceof Error ? error.message : String(error),
     ...(errorCode ? { errorCode } : {}),
+    ...(error instanceof SchemaMigrationError && error.damagedReviewCycle ? { damagedReviewCycle: error.damagedReviewCycle } : {}),
   }
 }
 

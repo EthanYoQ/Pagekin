@@ -1,5 +1,6 @@
 import { copyLocale, localize, translate, type MessageKey } from './core'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
+import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
 
 /**
  * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
@@ -412,6 +413,21 @@ export function importGenerationStopMessage(
   if (!stop) return undefined
   if (purpose === 'reference') return translate(locale, REFERENCE_STOP_KEYS[stop])
   return joinSentences(locale, translate(locale, AUTHOR_STOP_REASON_KEYS[stop]), translate(locale, 'error.authorInferenceStopNext'))
+}
+
+const DAMAGED_REVIEW_CYCLE_NEXT = {
+  'delete-manuscript': 'error.damagedReviewCycleDeleteManuscript',
+  'delete-draft': 'error.damagedReviewCycleDeleteDraft',
+} as const satisfies Record<NonNullable<DamagedReviewCycle['remedy']>, MessageKey>
+
+/** 导出、备份被全书审修循环校验挡下时的说明（#702）：哪一章，以及删掉哪一稿能再导出；删了也导不出时只请作者反馈。 */
+export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle): string {
+  const params = { number: damaged.chapterNumber, title: damaged.chapterTitle }
+  const chapter = damaged.chapterTitle
+    ? localize(locale, '第 {number} 章「{title}」', 'Chapter {number} “{title}”', '第{number}章「{title}」', params)
+    : localize(locale, '第 {number} 章', 'Chapter {number}', '第{number}章', params)
+  const next = damaged.remedy ? DAMAGED_REVIEW_CYCLE_NEXT[damaged.remedy] : 'error.damagedReviewCycleReport'
+  return joinSentences(locale, translate(locale, 'error.damagedReviewCycle', { chapter }), translate(locale, next))
 }
 
 function joinSentences(locale: InterfaceLocale, first: string, second: string): string {

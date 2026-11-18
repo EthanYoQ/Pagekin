@@ -7,7 +7,8 @@ import { buildReviewCycleRecheckReport, classifyFindingEvidenceChange, unshownMu
 import { parseHumanConfirmedReviewSnapshot, type HumanConfirmedReviewSnapshot } from '../../src/shared/human-confirmed-review'
 import { composeVisibleContinuation } from '../../src/shared/visible-continuation'
 import type { ReviewRevisionContext } from '../../src/shared/review-revision-generation'
-import type { MigrationImplementation, SchemaReader } from './registry'
+import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
+import { SchemaMigrationError, type MigrationImplementation, type SchemaReader } from './registry'
 
 const HASH = /^[a-f0-9]{64}$/u
 const CYCLE_STATUSES = new Set(['not-generated', 'generated', 'merge-committed'])
@@ -311,13 +312,27 @@ function cycleTables(db: Database.Database): CycleTables | null {
 
 /** 全书校验，只在迁移注册表的校验里跑：升级旧作品、verifyProjectSqlite、备份与导出、存档导入。仓库读写用 verifyM03ReviewCycleById。 */
 export function verifyM03ReviewCycle(db: Database.Database): boolean {
+  return wholeBookVerdict(db).ok
+}
+
+/** 迁移注册表用的全书校验：过不了时抛 MIGRATION_VERIFICATION_FAILED，能定位到某条循环就带上它所在的章。 */
+export function assertM03ReviewCycle(db: Database.Database): true {
+  const verdict = wholeBookVerdict(db)
+  if (!verdict.ok) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', verdict.damaged)
+  return true
+}
+
+type WholeBookVerdict = { ok: true } | { ok: false; damaged?: DamagedReviewCycle }
+
+function wholeBookVerdict(db: Database.Database): WholeBookVerdict {
+  const failed: WholeBookVerdict = { ok: false }
   try {
-    if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return false
+    if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return failed
     const tables = cycleTables(db)
-    if (!tables) return false
+    if (!tables) return failed
     if (tables.mergeTable && !exactSchema(db, 'review_cycle_merges', ['cycle_id', 'body'], [
       'cycle_id TEXT PRIMARY KEY REFERENCES review_cycles(cycle_id) ON DELETE CASCADE', 'body TEXT NOT NULL',
-    ])) return false
+    ])) return failed
     if (!exactSchema(db, 'review_cycles', ['cycle_id', 'root_action_id', 'review_id', 'review_content_hash', 'confirmation_review_id',
       'confirmation_content_hash', 'revision_id', 'source_hash', 'finding_set_hash', 'comparison_version', 'revision_status',
       'merged_hash', 'recheck_count', 'recheck_attempt_id'], [
@@ -330,12 +345,28 @@ export function verifyM03ReviewCycle(db: Database.Database): boolean {
       'target_id', 'kind', 'problem_text', 'expected_text', 'status', 'evidence_hash', 'confirmation_item_index'], [
       'cycle_id TEXT NOT NULL REFERENCES review_cycles(cycle_id) ON DELETE CASCADE',
       "status IN ('unverified','author-waived')", "span_unit='utf16-code-unit'", "status='author-waived'",
-    ])) return false
+    ])) return failed
     // TEXT 主键允许 NULL，外键也不查 NULL：无主快照只有这里能拦下。
-    if (tables.mergeTable && db.prepare('SELECT 1 FROM review_cycle_merges WHERE cycle_id IS NULL LIMIT 1').get()) return false
+    if (tables.mergeTable && db.prepare('SELECT 1 FROM review_cycle_merges WHERE cycle_id IS NULL LIMIT 1').get()) return failed
     const cycles = db.prepare('SELECT * FROM review_cycles ORDER BY cycle_id').all() as CycleRow[]
-    return cycles.every(cycle => verifyCycle(db, tables, cycle))
-  } catch { return false }
+    for (const cycle of cycles) {
+      let unreadable = false
+      try { if (verifyCycle(db, tables, cycle)) continue } catch { unreadable = true }
+      return { ok: false, damaged: damagedCycle(db, tables, cycle, unreadable) }
+    }
+    return { ok: true }
+  } catch { return failed }
+}
+
+/** 抛错说明这条循环引用的某个 JSON 格子读不出：导出的投影同样会拒绝它，删章不能让导出通过，所以不给办法。 */
+function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow, unreadable: boolean): DamagedReviewCycle | undefined {
+  const row = db.prepare(`SELECT d.chapter_number AS chapterNumber, d.status, COALESCE(b.title,'') AS chapterTitle
+    FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id LEFT JOIN blueprints b ON b.chapter_number=d.chapter_number
+    WHERE r.id=?`).get(cycle.review_id) as { chapterNumber: number; status: string; chapterTitle: string } | undefined
+  if (!row) return undefined
+  // 定稿、旧定稿与回收站里的稿只能经回收站彻底删除；其余可编辑的稿直接删这一稿。
+  const remedy = unreadable ? null : ['finalized', 'superseded', 'deleted'].includes(row.status) ? 'delete-manuscript' : 'delete-draft'
+  return { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, remedy }
 }
 
 /** 只校验这一条循环；全库外键和结构检查已在打开作品时做过，见 verifyOpenedSchema。 */
