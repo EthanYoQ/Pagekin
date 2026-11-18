@@ -35,7 +35,7 @@ import {
   type PortableArchiveSource,
 } from './portable-project-archive'
 import { backupProjectSqlite, type ProjectSqliteEvidence } from './sqlite-project-migration'
-import { inspectM03ReviewCycles, sealedLedgerCells, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
+import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
 import { SchemaMigrationError } from '../migrations/registry'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import {
@@ -802,9 +802,6 @@ function requiredProjection(key: string, value: unknown): unknown {
   }
 }
 
-const LEDGER_KEYS: Readonly<Record<string, string>> = { generation_roots: 'root_action_id', generation_runs: 'run_id',
-  generation_attempts: 'attempt_id', generation_artifacts: 'artifact_id' }
-
 function neutralValue(key: string, column: { type: string; notnull: number }, value: unknown,
   reviewProof = false): unknown {
   if (reviewProof) {
@@ -928,11 +925,12 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     const avatarRows = readPortableCharacterAvatarRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
       root_action_id: string }>).map(row => row.root_action_id))
-    const placeholderCells = new Set([...reviewRoots].flatMap(root => [...sealedLedgerCells(db, root)]))
-    const runRoots = new Map((db.prepare('SELECT run_id,root_action_id FROM generation_runs').all() as Array<{
-      run_id: string; root_action_id: string }>).map(row => [row.run_id, row.root_action_id]))
-    const reviewRuns = new Set([...runRoots].filter(([runId, root]) => reviewRoots.has(root) && !placeholderCells.has(`generation_runs:${runId}:binding_json`))
-      .map(([runId]) => runId))
+    const reviewRuns = new Set((db.prepare('SELECT run_id,root_action_id FROM generation_runs').all() as Array<{
+      run_id: string; root_action_id: string }>).filter(row => reviewRoots.has(row.root_action_id)).map(row => row.run_id))
+    // 产物按它的尝试归根；尝试与产物记的运行对不上时不归任何根，投影失败就不按哪一章报。
+    const artifactRoots = new Map((db.prepare(`SELECT a.artifact_id,t.root_action_id FROM generation_artifacts a
+      JOIN generation_attempts t ON t.attempt_id=a.attempt_id AND t.run_id=a.run_id`).all() as Array<{
+      artifact_id: string; root_action_id: string }>).map(row => [row.artifact_id, row.root_action_id]))
     const draftProofs = draftThreadTaskProofs(db, reviewRoots)
     for (const row of avatarRows) {
       if ('recordId' in row) safeId(row.recordId)
@@ -975,7 +973,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
           ? db.prepare(`UPDATE ${quote(physical)} SET ${updates.map(column => `${quote(column.name)}=?`).join(',')} WHERE rowid=?`)
           : null
         for (const row of rows) {
-          const root = table === 'generation_artifacts' ? runRoots.get(String(row.run_id)) : String(row.root_action_id)
+          const root = table === 'generation_artifacts' ? artifactRoots.get(String(row.artifact_id)) : String(row.root_action_id)
           const reviewProof = table === 'generation_artifacts' ? reviewRuns.has(String(row.run_id)) : reviewRoots.has(String(row.root_action_id))
           try {
             if (hasProjection || hasHistory) {
@@ -999,8 +997,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
             if (update) update.run(...updates.map(column => {
               const key = `${table}.${column.name}`
               if (draftProof !== undefined && (key === 'generation_attempts.usage_receipt_json' || key === 'generation_runs.binding_json')) return draftProof
-              const placeholder = table in LEDGER_KEYS && placeholderCells.has(`${table}:${row[LEDGER_KEYS[table]!]}:${column.name}`)
-              return neutralValue(key, column, row[column.name], reviewProof && !placeholder)
+              return neutralValue(key, column, row[column.name], reviewProof)
             }), row.__portable_rowid__)
           } catch (error) {
             const location = root === undefined ? undefined : omittedRoots.get(root)
