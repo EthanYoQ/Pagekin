@@ -283,6 +283,36 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     expect(await omittedOnExport()).toEqual([UNLOCATED])
   })
 
+  it('审稿运行冻结的来源版本与审稿行对不上：不报章节（D4）', async () => {
+    const items = reviewedBook({ finalized: false })
+    db().prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$.sourceManifest.reviewRevisionContext.source.version',
+      json_extract(binding_json,'$.sourceManifest.reviewRevisionContext.source.version')+1)
+      WHERE run_id=(SELECT run_id FROM generation_attempts WHERE root_action_id=? AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review')`)
+      .run(items[1]!.seeded.call.rootActionId)
+
+    expect(await omittedOnExport()).toEqual([UNLOCATED])
+  })
+
+  it('审稿尝试的收据读不出：打开作品时封存成占位，循环留在存档外，指不出章节就不报（证据缺失与证据矛盾同样处理）', async () => {
+    const items = reviewedBook({ finalized: true })
+    db().prepare(`UPDATE generation_attempts SET usage_receipt_json='{坏'
+      WHERE root_action_id=? AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review'`).run(items[1]!.seeded.call.rootActionId)
+    reopen()
+
+    expect(await omittedOnExport()).toEqual([UNLOCATED])
+  })
+
+  it('循环主键为 NULL：无法按主键放行或留在存档外，整本照旧失败并带出章节（已知限制）', async () => {
+    const items = reviewedBook({ finalized: true })
+    const cycleId = cycleOf(items[1]!)
+    db().prepare('DELETE FROM review_cycle_merges WHERE cycle_id=?').run(cycleId)
+    db().prepare('DELETE FROM review_findings WHERE cycle_id=?').run(cycleId)
+    db().prepare('UPDATE review_cycles SET cycle_id=NULL WHERE cycle_id=?').run(cycleId)
+
+    expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
+      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', inTrash: false } })
+  })
+
   it('循环引用的根读不出：打开作品时封存，导出时这条循环留在存档外，照样带出章号和标题', async () => {
     const items = reviewedBook({ finalized: true })
     db().prepare("UPDATE generation_roots SET action_json='{broken' WHERE root_action_id=?").run(items[1]!.seeded.call.rootActionId)

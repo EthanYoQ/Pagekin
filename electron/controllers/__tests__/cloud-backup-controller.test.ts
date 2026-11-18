@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -21,6 +22,8 @@ import { SchemaMigrationError } from '../../migrations/registry'
 import { continuityBaseline, SCHEMA8_CONTINUITY_ARCHIVE, SCHEMA8_EXPECTED_BASELINE } from '../../../test/helpers/schema8-continuity-archive'
 import { createPortableProjectAssetProvider } from '../../services/portable-project-assets'
 import { createProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
+import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
+import { extractPortableProjectArchive } from '../../services/portable-project-archive'
 
 vi.mock('../../utils/remove-directory', async importOriginal => {
   const actual = await importOriginal<typeof import('../../utils/remove-directory')>()
@@ -34,6 +37,7 @@ function busyError(): NodeJS.ErrnoException {
   })
 }
 
+const Sqlite = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const PROJECT = '11111111-1111-4111-8111-111111111111'
 const TARGET_PROJECT = '22222222-2222-4222-8222-222222222222'
 const ACCOUNT = '33333333-3333-4333-8333-333333333333'
@@ -352,6 +356,39 @@ describe('registerCloudBackupController', () => {
       expect(result).toMatchObject({ success: true, state: 'backup-complete', operationId: OPERATION })
       expect(f.deps.webDav.appendGeneration).toHaveBeenCalledWith(expect.objectContaining({ originProjectId: project.sourceProjectId }))
     } finally { project.dispose() }
+  })
+
+  it('真实项目有一条坏审修循环：照常上传，上传的存档里没有这条循环，成功结果指明章节（#702）', async () => {
+    const project = await createProjectArchiveRoundtripFixture()
+    try {
+      initProjectDatabase(project.sourceRoot)
+      const items = seedReviewedBook(getProjectDb()!, 2, { firstChapter: 31 })
+      for (const item of items) getProjectDb()!.prepare('UPDATE generation_roots SET budget_json=? WHERE root_action_id=?').run(JSON.stringify({
+        maxPhysicalRequests: 1, maxTokenLiability: 100, maxOutputPerRequest: 100, maxActiveElapsedMs: 1000 }), item.seeded.call.rootActionId)
+      getProjectDb()!.prepare("INSERT INTO blueprints(chapter_number,title) VALUES(32,'沉船') ON CONFLICT(chapter_number) DO UPDATE SET title=excluded.title").run()
+      breakReviewProof(getProjectDb()!, items[1]!)
+      closeProjectDatabase()
+      const projectSession = { ...session, projectPath: project.sourceRoot }
+      const f = fixture({
+        exportPortableProject,
+        portableAssets: createPortableProjectAssetProvider(),
+        assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: session.leaseId, rootPath: project.sourceRoot })),
+        getCurrentProjectPath: vi.fn(() => project.sourceRoot),
+      })
+      let uploadedCycles: unknown[] = []
+      vi.mocked(f.deps.webDav.appendGeneration).mockImplementationOnce(async input => {
+        const unpacked = await extractPortableProjectArchive({ archivePath: input.archivePath, stagingParentPath: fs.mkdtempSync(path.join(f.root, 'unpack-')) })
+        const archived = new Sqlite(path.join(unpacked.stagingPath, 'project.db'), { readonly: true })
+        try { uploadedCycles = archived.prepare('SELECT review_id FROM review_cycles ORDER BY review_id').pluck().all() } finally { archived.close() }
+        return generation
+      })
+
+      const result = await f.invoke('cloud-backup:backup', { operationId: OPERATION, projectSession, disclosureConfirmed: true })
+
+      expect(result).toMatchObject({ success: true, state: 'backup-complete', operationId: OPERATION,
+        omittedReviewCycles: [{ chapterNumber: 32, chapterTitle: '沉船', inTrash: false }] })
+      expect(uploadedCycles).toEqual([items[0]!.seeded.reviewId])
+    } finally { closeProjectDatabase(); project.dispose() }
   })
 
   it('restores a backup uploaded before M08 as a current project with its continuity baseline', async () => {
