@@ -513,7 +513,7 @@ describe('registerCloudBackupController', () => {
 
   it('打包时全书审修循环校验失败：错误码不变，带上坏循环所在的章，不上传（#702）', async () => {
     const f = fixture()
-    const damagedReviewCycle = { chapterNumber: 2, chapterTitle: '沉船', remedy: null }
+    const damagedReviewCycle = { chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' as const }
     vi.mocked(f.deps.exportPortableProject).mockRejectedValueOnce(
       new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', damagedReviewCycle))
 

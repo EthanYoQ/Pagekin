@@ -73,104 +73,67 @@ function exportBook(): Promise<unknown> {
   return exportPortableProject(input).then(() => 'exported', (error: unknown) => error)
 }
 
+async function damagedOnExport() {
+  const failure = await exportBook()
+  expect(failure).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED' })
+  return (failure as { damagedReviewCycle?: unknown }).damagedReviewCycle
+}
+
 function trashService() {
   return new ChapterDeletionService({ createOperationId: randomUUID,
     cleaner: { async removeManuscript() {}, async removeKnowledgeDocument() {} },
     finalizations: { retry: async () => { throw new Error('UNUSED') } } })
 }
 
-describe('有一条坏审修循环的书导出失败时指明是哪一章（#702）', () => {
+describe('有一条坏审修循环的书导出失败时指明是哪一章，不给删除办法（#702）', () => {
   it('对照：两章都完好时照常导出', async () => {
     reviewedBook({ finalized: true })
     await expect(exportBook()).resolves.toBe('exported')
   })
 
-  it('定稿章的循环坏了：带出章号、标题，删除正文并彻底删除后能导出，只移到回收站不够', async () => {
+  it('定稿章的循环坏了：只带出章号和标题', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
 
-    const failure = await exportBook()
-    expect(failure).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
-      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'delete-manuscript' } })
-
-    const trash = trashService()
-    await expect(trash.delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
-      .resolves.toMatchObject({ success: true })
-    await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
-      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'purge-trash', deletedAt: expect.stringMatching(SQLITE_TIME) } })
-    await expect(trash.purge(projectRoot, { all: true })).resolves.toMatchObject({ success: true })
-    await expect(exportBook()).resolves.toBe('exported')
+    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' })
   })
 
-  it('坏章已在回收站、同章号又写了新章：指向回收站那一项，彻底删除它后能导出，新章还在', async () => {
+  it('坏章已在回收站、同章号又写了新章：指向回收站那一项，用删除时的章名和删除时间', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
-    const trash = trashService()
-    await expect(trash.delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
+    await expect(trashService().delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
       .resolves.toMatchObject({ success: true })
     db().prepare("UPDATE blueprints SET title='新航' WHERE chapter_number=2").run()
-    const rewritten = DraftRepository.create({ chapterNumber: 2, source: 'write', content: '新写的第二章。', wordCount: 7 })
+    DraftRepository.create({ chapterNumber: 2, source: 'write', content: '新写的第二章。', wordCount: 7 })
 
-    const failure = await exportBook()
-    expect(failure).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
-      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'purge-trash', deletedAt: expect.stringMatching(SQLITE_TIME) } })
-
-    await expect(trash.purge(projectRoot, { all: true })).resolves.toMatchObject({ success: true })
-    await expect(exportBook()).resolves.toBe('exported')
-    expect(DraftRepository.getMeta(rewritten)).toMatchObject({ chapterNumber: 2 })
+    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'trash',
+      deletedAt: expect.stringMatching(SQLITE_TIME) })
   })
 
-  it('未定稿章的循环坏了：删除这一稿后能导出', async () => {
+  it('未定稿章的循环坏了：写明是哪一稿', async () => {
     const items = reviewedBook({ finalized: false })
     breakReviewProof(db(), items[1]!)
 
-    await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
-      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'delete-draft', draftVersion: 1 } })
-
-    DraftRepository.delete(items[1]!.seeded.draftId)
-    await expect(exportBook()).resolves.toBe('exported')
+    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'draft', draftVersion: 1 })
   })
 
-  it('坏的是较旧的一稿：指明是哪一版，删掉较新的那稿不管用，删掉指明的那一版才能导出', async () => {
+  it('坏的是较旧的一稿：写明是较旧那一版', async () => {
     const items = reviewedBook({ finalized: false })
     breakReviewProof(db(), items[1]!)
     const newer = DraftRepository.create({ chapterNumber: 2, source: 'rewrite', content: '较新的一稿。', wordCount: 6 })
     const damagedVersion = DraftRepository.getMeta(items[1]!.seeded.draftId)!.version
     expect(DraftRepository.getMeta(newer)!.version).toBeGreaterThan(damagedVersion)
 
-    await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
-      damagedReviewCycle: { chapterNumber: 2, remedy: 'delete-draft', draftVersion: damagedVersion } })
-    DraftRepository.delete(newer)
-    await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED' })
-    DraftRepository.delete(items[1]!.seeded.draftId)
-    await expect(exportBook()).resolves.toBe('exported')
+    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'draft', draftVersion: damagedVersion })
   })
 
-  it('生成记录是合法 JSON 但缺字段：删章修不好，不给删除办法', async () => {
+  it.each([
+    ['缺字段', '{}'],
+    ['读不出', '{broken'],
+  ])('循环引用的生成记录%s：照样带出章号和标题', async (_label, actionJson) => {
     const items = reviewedBook({ finalized: true })
-    db().prepare('UPDATE generation_roots SET action_json=? WHERE root_action_id=?').run('{}', items[1]!.seeded.call.rootActionId)
+    db().prepare('UPDATE generation_roots SET action_json=? WHERE root_action_id=?').run(actionJson, items[1]!.seeded.call.rootActionId)
 
-    await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
-      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: null } })
-
-    const trash = trashService()
-    await expect(trash.delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
-      .resolves.toMatchObject({ success: true })
-    await expect(trash.purge(projectRoot, { all: true })).resolves.toMatchObject({ success: true })
-    await expect(exportBook()).resolves.toMatchObject({ code: 'PORTABLE_UNSAFE_PROJECTION' })
-  })
-
-  it('循环引用的生成记录读不出：带出章号，但不给删章的办法，删了章也导不出', async () => {
-    const items = reviewedBook({ finalized: true })
-    db().prepare('UPDATE generation_roots SET action_json=? WHERE root_action_id=?').run('{broken', items[1]!.seeded.call.rootActionId)
-
-    await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
-      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: null } })
-
-    const trash = trashService()
-    await expect(trash.delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
-      .resolves.toMatchObject({ success: true })
-    await expect(trash.purge(projectRoot, { all: true })).resolves.toMatchObject({ success: true })
-    await expect(exportBook()).resolves.toMatchObject({ code: 'PORTABLE_UNSAFE_PROJECTION' })
+    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' })
   })
 })

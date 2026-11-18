@@ -364,7 +364,7 @@ describe('日文界面的已登记错误', () => {
 describe('damagedReviewCycleMessage', () => {
   it('回收站删除时间读不成日期时照原样写出，不写 Invalid Date（#702）', () => {
     const text = damagedReviewCycleMessage(shown('zh-CN'),
-      { chapterNumber: 2, chapterTitle: '沉船', remedy: 'purge-trash', deletedAt: '坏掉的时间' })
+      { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt: '坏掉的时间' })
     expect(text).toContain('（删除于 坏掉的时间）')
     expect(text).not.toContain('Invalid Date')
   })

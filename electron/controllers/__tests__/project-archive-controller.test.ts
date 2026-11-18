@@ -380,7 +380,7 @@ describe('project:archive-export', () => {
   it('全书审修循环校验失败时，回给界面的结果带上坏循环所在的章（#702）', async () => {
     const root = tempRoot('b01-export-damaged-cycle-')
     const grantId = newTargetGrant(path.join(root, 'damaged.ainovel'))
-    const damagedReviewCycle = { chapterNumber: 2, chapterTitle: '沉船', remedy: 'delete-manuscript' as const }
+    const damagedReviewCycle = { chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' as const }
     mocks.exportPortableProject.mockRejectedValueOnce(
       new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', damagedReviewCycle))
 
