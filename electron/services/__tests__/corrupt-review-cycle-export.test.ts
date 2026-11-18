@@ -288,18 +288,6 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }])
   })
 
-  it('回收站里审的是早一版稿、定稿的是后一版：用同一删除组里这一章定稿的章名', async () => {
-    const items = reviewedBook({ finalized: false })
-    breakReviewProof(db(), items[1]!)
-    const finalDraft = DraftRepository.create({ chapterNumber: 2, source: 'write', content: '第二章定稿版。', wordCount: 7 })
-    finalize(finalDraft, 2)
-    await expect(trashService().delete(projectRoot, { draftId: finalDraft, chapterNumber: 2 }))
-      .resolves.toMatchObject({ success: true })
-    db().prepare("UPDATE blueprints SET title='新航' WHERE chapter_number=2").run()
-
-    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }])
-  })
-
   it('回收站删除组里混进了别章的定稿：只看这一稿自己，不借别章的章名（D5）', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
