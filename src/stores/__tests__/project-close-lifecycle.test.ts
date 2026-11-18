@@ -1527,7 +1527,7 @@ describe('project close lifecycle', () => {
 
     expect(mocks.openInkPrompt).toHaveBeenCalledTimes(notices)
     if (notices) {
-      expect(mocks.openInkPrompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'notice', message: expect.stringContaining('2 条') }))
+      expect(mocks.openInkPrompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'notice', message: expect.stringMatching(/(?<!\d)2 条/u) }))
       expect(mocks.openInkPrompt.mock.calls[0]![0].message).not.toContain('重新生成')
     }
     expect(mocks.alertError).not.toHaveBeenCalled()
@@ -1587,7 +1587,7 @@ describe('project close lifecycle', () => {
 
     acknowledge()
     await vi.waitFor(() => expect(mocks.openInkPrompt).toHaveBeenCalledOnce())
-    expect(mocks.openInkPrompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'notice', message: expect.stringContaining('2 条') }))
+    expect(mocks.openInkPrompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'notice', message: expect.stringMatching(/(?<!\d)2 条/u) }))
   })
 
   it('shows the sealed-generation notice only after the author closes the duplicate-finalization repair notice', async () => {
@@ -1619,7 +1619,7 @@ describe('project close lifecycle', () => {
 
     closeRepairNotice(true)
     await vi.waitFor(() => expect(mocks.openInkPrompt).toHaveBeenCalledTimes(2))
-    expect(mocks.openInkPrompt.mock.calls[1]![0].message).toContain('2 条')
+    expect(mocks.openInkPrompt.mock.calls[1]![0].message).toMatch(/(?<!\d)2 条/u)
   })
 
   it('opens the project and tells the author once when the duplicate-finalization repair failed', async () => {
