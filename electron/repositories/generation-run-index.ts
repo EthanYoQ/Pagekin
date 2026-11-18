@@ -54,6 +54,9 @@ export interface GenerationRunIndex {
     lookupTrees(matches: (click: GenerationClick) => boolean): RunLookup
 }
 
+/** 点击号正好是 nonce，或以 nonce 加冒号开头：槽位的重试链、Agent 会话的各轮。 */
+export const inNonceChain = (nonce: string) => (click: GenerationClick) => click.uiActionNonce === nonce || click.uiActionNonce.startsWith(`${nonce}:`)
+
 /** 原 SQL 加上 `run_id IN (SELECT value FROM json_each(?))` 时绑定的参数：命中的和读不出的都算候选。 */
 export function candidateRunIds(lookup: RunLookup): string {
     return JSON.stringify([...lookup.hits, ...lookup.unidentified].map(entry => entry.runId))
