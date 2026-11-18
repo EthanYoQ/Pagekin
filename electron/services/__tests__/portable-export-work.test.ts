@@ -58,10 +58,14 @@ async function exportWork() {
 
 it('导出的三次快照各只算比对用得上的内容哈希', async () => {
   // 每次快照：快照前 1 遍、复制后核对 1 遍、交给导出比对的 domain 与 preIdentityDomain、preAssetDomain 3 遍。
-  expect((await exportWork()).contentReads).toBeLessThanOrEqual(3 * 5)
+  const { contentReads } = await exportWork()
+  expect(contentReads).toBeGreaterThan(0)
+  expect(contentReads).toBeLessThanOrEqual(3 * 5)
 })
 
 it('每次快照只验一遍全书审修循环', async () => {
   // 三次快照各 1 遍；快照之外：源快照上取省略清单 1 遍、核对字段 1 遍，脱敏前的拷贝 1 遍，导出产物 1 遍。
-  expect((await exportWork()).reviewCycleScans).toBeLessThanOrEqual(3 * 1 + 4)
+  const { reviewCycleScans } = await exportWork()
+  expect(reviewCycleScans).toBeGreaterThan(0)
+  expect(reviewCycleScans).toBeLessThanOrEqual(3 * 1 + 4)
 })
