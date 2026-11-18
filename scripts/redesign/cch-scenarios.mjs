@@ -55,46 +55,30 @@ export const CCH_SCENARIOS = {
     const zh = await exportOnce(context, path.join(roots.projects, 'cch-zh.ainovel'),
       { settings: '设置分组', page: '项目备份', button: '导出本地存档' })
     await shoot('cch-1-zh')
-    assert.equal(zh, '作品没有改动。第 2 章「远航之2」有条审稿记录损坏，存档没生成。'
-      + '先「复制本章正文」，再「删除正文…」并在回收站「彻底删除…」，然后重试。')
+    assert.equal(zh, '作品没有改动。第 2 章「远航之2」有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。')
 
     await switchLocale(page, { settings: '设置分组', appearance: '外观', languageLabel: '界面语言' }, 'ja-JP')
     const ja = await exportOnce(context, path.join(roots.projects, 'cch-ja.ainovel'),
       { settings: 'Settings sections', page: 'Project backup', button: 'Export local archive' })
     await shoot('cch-2-ja')
     assert.equal(ja, '作品は変更されていません。第2章「远航之2」のレビュー記録が破損し、アーカイブを作成できませんでした。'
-      + '「Copy chapter text」の後、「Delete manuscript…」とゴミ箱の「Delete permanently…」で削除し、再試行してください。')
+      + 'このメッセージをご報告ください。')
 
     await switchLocale(page, { settings: 'Settings sections', appearance: 'Appearance', languageLabel: 'Interface language' }, 'en-US')
     const en = await exportOnce(context, path.join(roots.projects, 'cch-en.ainovel'),
       { settings: 'Settings sections', page: 'Project backup', button: 'Export local archive' })
+    await shoot('cch-3-en')
     assert.equal(en, 'Your book is unchanged. A review record in Chapter 2 "远航之2" is damaged, so no archive was made. '
-      + 'Use "Copy chapter text", then "Delete manuscript…" and "Delete permanently…" in the trash, and retry.')
+      + 'Please report this message to us.')
     return { zh, ja, en }
   } },
-  'cch-remedy-ui': { model: true, shell: 'stage', setup: async context => {
+  'cch-trash-damaged': { model: true, shell: 'stage', setup: async context => {
     await buildByReviewCycle(context, 2, { saveCheckpoints: false })
     await context.restart({ beforeLaunch: () => breakReviewProof(path.join(context.roots.projects, BOOK), 1) })
   }, run: async context => {
     const { page, roots, shoot } = context
     await stage.openFromLibrary(page, BOOK)
-    await stage.openSettings(page)
-    const before = await exportOnce(context, path.join(roots.projects, 'cch-before.ainovel'),
-      { settings: '设置分组', page: '项目备份', button: '导出本地存档' })
-    assert.match(before, /^作品没有改动。第 1 章「远航之1」有条审稿记录损坏/u)
-    await stage.closeSettings(page)
-
     await openChapter(page, 1)
-    await page.evaluate(() => {
-      window.__copied = []
-      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.__copied.push(text) } } })
-    })
-    await chapterView.more(page, '复制本章正文')
-    await page.getByText('已复制本章正文').first().waitFor({ state: 'visible' })
-    const firstLine = (await chapterView.prose(page).locator('.cm-line').first().innerText()).trim()
-    const copied = await page.evaluate(() => window.__copied)
-    assert.equal(copied.length, 1, '复制本章正文交给了剪贴板')
-    assert.ok(firstLine && copied[0].includes(firstLine), `剪贴板里是第 1 章正文（首行「${firstLine}」）`)
     await chapterView.more(page, '删除正文…')
     const confirm = page.getByRole('dialog', { name: '删除正文' })
     await confirm.getByRole('button', { name: '删除', exact: true }).click()
@@ -104,26 +88,7 @@ export const CCH_SCENARIOS = {
     const inTrash = await exportOnce(context, path.join(roots.projects, 'cch-trash.ainovel'),
       { settings: '设置分组', page: '项目备份', button: '导出本地存档' })
     await shoot('cch-4-trash')
-    assert.match(inTrash, /^作品没有改动。回收站里第 1 章「远航之1」（删除于 .+）有条审稿记录损坏，存档没生成。到回收站把它「彻底删除…」，然后重试。$/u)
-    await stage.closeSettings(page)
-    await stage.root(page).getByRole('button', { name: /^回收站（1）$/u }).click()
-    const trash = page.getByRole('dialog', { name: /^回收站（1）$/u })
-    await trash.getByRole('button', { name: '彻底删除…' }).click()
-    await shoot('cch-3-purge-confirm')
-    await page.getByRole('button', { name: '彻底删除', exact: true }).click()
-    const emptied = page.getByRole('dialog', { name: '回收站（0）' })
-    await emptied.getByText('回收站是空的').waitFor({ state: 'visible', timeout: 30_000 })
-    await emptied.getByRole('button', { name: '关闭', exact: true }).click()
-    await emptied.waitFor({ state: 'hidden' })
-
-    await stage.openSettings(page)
-    const archive = path.join(roots.projects, 'cch-after.ainovel')
-    await context.app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
-    await stage.showSettingsPage(page, '项目备份')
-    await stage.root(page).getByRole('button', { name: '导出本地存档', exact: true }).click()
-    const notice = stage.root(page).locator('[data-testid="project-backup-panel"] p[role="status"]').filter({ hasText: '本地存档已导出' })
-    await notice.waitFor({ state: 'visible', timeout: 60_000 })
-    assert.equal(fs.existsSync(archive), true, '彻底删除后存档写到了所选位置')
-    return { before, inTrash, after: (await notice.innerText()).trim() }
+    assert.match(inTrash, /^作品没有改动。回收站里第 1 章「远航之1」（删除于 .+）有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。$/u)
+    return { inTrash }
   } },
 }

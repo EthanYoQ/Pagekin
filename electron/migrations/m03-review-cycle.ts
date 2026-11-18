@@ -15,7 +15,6 @@ const CYCLE_STATUSES = new Set(['not-generated', 'generated', 'merge-committed']
 const FINDING_STATUSES = new Set(['unverified', 'unresolved', 'unknown', 'resolved', 'author-waived'])
 const FINDING_KINDS = new Set(['objective', 'literary'])
 const MANUSCRIPT_STATUSES = new Set(['finalized', 'superseded'])
-const EXPORTABLE_ROOT_STATUSES = new Set(['active', 'paused', 'cancelled', 'sealed'])
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const nonempty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const integer = (value: unknown, minimum = 0): value is number => Number.isSafeInteger(value) && (value as number) >= minimum
@@ -350,49 +349,26 @@ function wholeBookVerdict(db: Database.Database): WholeBookVerdict {
     // TEXT 主键允许 NULL，外键也不查 NULL：无主快照只有这里能拦下。
     if (tables.mergeTable && db.prepare('SELECT 1 FROM review_cycle_merges WHERE cycle_id IS NULL LIMIT 1').get()) return failed
     const cycles = db.prepare('SELECT * FROM review_cycles ORDER BY cycle_id').all() as CycleRow[]
-    for (const cycle of cycles) {
-      let recordUnreadable = false
-      try { if (verifyCycle(db, tables, cycle)) continue } catch { recordUnreadable = true }
-      return { ok: false, damaged: damagedCycle(db, tables, cycle, recordUnreadable) }
-    }
-    return { ok: true }
+    const damaged = cycles.find(cycle => { try { return !verifyCycle(db, tables, cycle) } catch { return true } })
+    return damaged ? { ok: false, damaged: damagedCycle(db, tables, damaged) } : { ok: true }
   } catch { return failed }
 }
 
-function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow, recordUnreadable: boolean): DamagedReviewCycle | undefined {
+function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow): DamagedReviewCycle | undefined {
   const row = db.prepare(`SELECT d.id, d.chapter_number AS chapterNumber, d.version, d.status, COALESCE(b.title,'') AS chapterTitle
     FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id LEFT JOIN blueprints b ON b.chapter_number=d.chapter_number
     WHERE r.id=?`).get(cycle.review_id) as { id: number; chapterNumber: number; version: number; status: string; chapterTitle: string } | undefined
   if (!row) return undefined
-  const repairable = !recordUnreadable && generationRecordsSurviveDeletion(db, cycle.root_action_id)
   if (row.status === 'deleted') {
     // 回收站这一项按删除时定稿的章名显示；同章号可能已重写，蓝图标题是新章的。
-    const entry = db.prepare(`SELECT p.deleted_at AS deletedAt, COALESCE(o.chapter_title,'') AS chapterTitle
-      FROM drafts_all d JOIN drafts_all p ON p.deletion_id=d.deletion_id AND p.deleted_from_status='finalized'
-      LEFT JOIN finalization_outbox_all o ON o.draft_id=p.id WHERE d.id=?`).get(row.id) as { deletedAt: string; chapterTitle: string } | undefined
-    const chapterTitle = entry?.chapterTitle ?? ''
-    return repairable && entry
-      ? { chapterNumber: row.chapterNumber, chapterTitle, remedy: 'purge-trash', deletedAt: entry.deletedAt }
-      : { chapterNumber: row.chapterNumber, chapterTitle, remedy: null }
+    const entry = db.prepare(`SELECT d.deleted_at AS deletedAt, COALESCE((SELECT o.chapter_title FROM drafts_all p
+      JOIN finalization_outbox_all o ON o.draft_id=p.id WHERE p.deletion_id=d.deletion_id AND p.deleted_from_status='finalized'),'') AS chapterTitle
+      FROM drafts_all d WHERE d.id=?`).get(row.id) as { deletedAt: string; chapterTitle: string }
+    return { chapterNumber: row.chapterNumber, chapterTitle: entry.chapterTitle, location: 'trash', deletedAt: entry.deletedAt }
   }
-  if (!repairable) return { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, remedy: null }
   return MANUSCRIPT_STATUSES.has(row.status)
-    ? { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, remedy: 'delete-manuscript' }
-    : { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, remedy: 'delete-draft', draftVersion: row.version }
-}
-
-/** 删章、彻底删除都不碰生成根与它的运行、尝试；它们若过不了导出投影，删了照样导不出。 */
-function generationRecordsSurviveDeletion(db: Database.Database, rootActionId: string): boolean {
-  try {
-    const root = db.prepare('SELECT action_json FROM generation_roots WHERE root_action_id=?').get(rootActionId) as { action_json: string } | undefined
-    const action = root && JSON.parse(root.action_json) as Record<string, unknown>
-    if (!action || !nonempty(action.projectId) || !nonempty(action.epoch) || action.rootActionId !== rootActionId
-      || !nonempty(action.operation) || !EXPORTABLE_ROOT_STATUSES.has(action.status as string)) return false
-    const runs = db.prepare(`SELECT r.root_action_id AS runRoot, r.binding_json FROM generation_attempts a
-      JOIN generation_runs r ON r.run_id=a.run_id WHERE a.root_action_id=?`).all(rootActionId) as Array<{ runRoot: string; binding_json: string }>
-    return runs.every(run => { const binding = JSON.parse(run.binding_json) as Record<string, unknown>
-      return run.runRoot === rootActionId && binding.projectId === action.projectId && nonempty(binding.epoch) })
-  } catch { return false }
+    ? { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, location: 'manuscript' }
+    : { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, location: 'draft', draftVersion: row.version }
 }
 
 /** 只校验这一条循环；全库外键和结构检查已在打开作品时做过，见 verifyOpenedSchema。 */
