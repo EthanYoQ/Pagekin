@@ -41,6 +41,7 @@ function InkPrompt({ kind, title, message, confirmText, cancelText, signal, onRe
       result.current = false
       setOpen(false)
     }
+    if (signal.aborted) withdraw()
     signal.addEventListener('abort', withdraw, { once: true })
     return () => signal.removeEventListener('abort', withdraw)
   }, [signal])
