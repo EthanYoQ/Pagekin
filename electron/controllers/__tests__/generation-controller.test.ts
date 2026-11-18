@@ -922,7 +922,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       expect(ProjectCoreRepository.get(restored)!.synopsis).toBe(synopsis)
       expect(restored.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(handle.runId)).toBe('{}')
       expect(readPortableRuntimeFreeze(restoredRoot).isFrozen('generation_runs', handle.runId)).toBe(true)
-      // 导入后的冻结历史原样带着原作品号：索引看得见它，按新作品号查不到它。
+      // 导入后的冻结历史原样带着原作品号：只有原作品号能在索引里认出它。
       const index = runIndexOf(restored)
       expect(index.lookup(click => click.projectId === session.projectId).hits.map(entry => entry.runId)).toEqual([handle.runId])
       expect(index.lookup(click => click.projectId !== session.projectId).hits).toEqual([])

@@ -34,7 +34,6 @@ export interface RunIndexEntry {
     readonly runId: string
     /** rowid，表示创建先后。可能超过 2^53，所以是 bigint。 */
     readonly order: bigint
-    /** `open_key` 读不出时为 undefined。 */
     readonly click: GenerationClick | undefined
     /** 所在的根被进门封存。 */
     readonly sealed: boolean
@@ -55,8 +54,8 @@ export interface GenerationRunIndex {
 export const inNonceChain = (nonce: string) => (click: GenerationClick) => click.uiActionNonce === nonce || click.uiActionNonce.startsWith(`${nonce}:`)
 
 /**
- * 原 SQL 加上 `run_id IN (SELECT value FROM json_each(?))` 时绑定的参数：命中的和读不出的都算候选。
- * 跨记录认运行只看身份键（ADR-0030）；原 SQL 再按绑定筛，绑定与点击操作在写入时断言一致。
+ * 给 `run_id IN (SELECT value FROM json_each(?))` 绑定的参数：命中的和身份读不出的都算候选。
+ * 候选只按身份键取（ADR-0030「跨记录认运行」），查询再按绑定筛；写入时断言绑定与点击的操作一致。
  */
 export function candidateRunIds(lookup: RunLookup): string {
     return JSON.stringify([...lookup.hits, ...lookup.unidentified].map(entry => entry.runId))

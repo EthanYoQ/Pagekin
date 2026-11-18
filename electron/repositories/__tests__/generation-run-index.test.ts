@@ -29,7 +29,6 @@ const request = (operation: string, uiActionNonce: string, parentRootActionId?: 
   budget: { maxPhysicalRequests: 4, maxTokenLiability: 1000, maxOutputPerRequest: 100, maxActiveElapsedMs: 100000 },
 })
 
-/** 从账本现场重算：每条运行的身份，封存看根的阻断码。 */
 function recomputed(db: Db): RunIndexEntry[] {
   const rows = db.prepare(`SELECT r.rowid AS row, r.run_id, r.root_action_id, r.open_key, g.blocked_code FROM generation_runs r
     LEFT JOIN generation_roots g ON g.root_action_id=r.root_action_id ORDER BY r.rowid`).safeIntegers().all() as

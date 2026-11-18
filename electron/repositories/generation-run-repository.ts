@@ -349,7 +349,7 @@ export class GenerationRunRepository {
             return this.get(runId);
         });
     }
-    /** 运行索引按 open_key 里的点击给候选，原 SQL 按绑定的 sourceManifest.operation 筛；两者不一致的绑定不许写进库。 */
+    /** 运行索引按 open_key 里的点击取候选，查询再按绑定的 sourceManifest.operation 筛；两者不一致的绑定不许写进库。 */
     private assertClickOperation(runId: string, next: RunBinding): void {
         const click = clickOfOpenKey(this.db().prepare('SELECT open_key FROM generation_runs WHERE run_id=?').pluck().get(runId));
         if (click && click.operation !== next.sourceManifest.operation) fail('GENERATION_BINDING_INVALID');
