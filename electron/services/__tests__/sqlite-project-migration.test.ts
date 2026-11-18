@@ -565,3 +565,40 @@ describe('各调用方拿到的内容哈希（#702）', () => {
     expect(probeProjectSqlite({ databasePath: f.target })).toEqual(v6)
   })
 })
+
+describe('备份当前版本的书，审修循环照旧按通道校验（#702）', () => {
+  async function currentBookWithCycles() {
+    const f = fixture()
+    await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
+    const db = new Database(f.target); handles.push(db)
+    db.pragma('foreign_keys = ON')
+    return { ...f, db, book: seedReviewedBook(db, 2, { firstChapter: 2 }) }
+  }
+  const backupOf = (f: { root: string; target: string }, evidence: 'strict' | 'no-new-failures') =>
+    backupProjectSqlite({ sourceDatabasePath: f.target, targetDatabasePath: path.join(f.root, `${evidence}.db`), evidence })
+
+  it('证明对不上的循环：严格通道拒绝，no-new-failures 放行', async () => {
+    const f = await currentBookWithCycles()
+    breakReviewProof(f.db, f.book[1]!)
+    f.db.close()
+    await expect(backupOf(f, 'strict')).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
+    expect((await backupOf(f, 'no-new-failures')).schemaVersion).toBe(CURRENT_DESKTOP_SCHEMA_VERSION)
+  })
+
+  it.each([
+    ['合并快照主键为 NULL（结构坏）', (db: BetterSqlite3.Database) => {
+      db.prepare("INSERT INTO review_cycle_merges(cycle_id,body) VALUES(NULL,'无主快照')").run()
+    }],
+    ['循环主键为 NULL', (db: BetterSqlite3.Database, cycleId: string) => {
+      db.prepare('DELETE FROM review_cycle_merges WHERE cycle_id=?').run(cycleId)
+      db.prepare('DELETE FROM review_findings WHERE cycle_id=?').run(cycleId)
+      db.prepare('UPDATE review_cycles SET cycle_id=NULL WHERE cycle_id=?').run(cycleId)
+    }],
+  ] as const)('%s：两个通道都拒绝', async (_name, damage) => {
+    const f = await currentBookWithCycles()
+    damage(f.db, f.db.prepare('SELECT cycle_id FROM review_cycles WHERE review_id=?').pluck().get(f.book[1]!.seeded.reviewId) as string)
+    f.db.close()
+    await expect(backupOf(f, 'strict')).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
+    await expect(backupOf(f, 'no-new-failures')).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
+  })
+})
