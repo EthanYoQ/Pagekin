@@ -12,6 +12,7 @@ import type {
 } from '../shared/ipc-channels'
 import { alertError } from '../components/ui/AlertDialog'
 import { showFinalizationRepairNotice } from '../components/finalization-repair-notice'
+import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
 import { confirm } from '../components/ui/Confirm'
 import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImportFailureMessage } from '../i18n/app-errors'
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
@@ -793,12 +794,31 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             englishWithReason(currentInterfaceLocale(), 'Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.', reason),
           ))
         }
-        if (warnings.length > 0) {
-          alertError(warnings.join('\n'), {
-            title: projectText('项目已打开，部分数据加载失败', 'Project opened with some data unavailable'),
-          })
+        // 每个提示框都画在先弹的上面，所以等作者关掉前一个再弹下一个：报错最先看到。
+        // 按会话比：换书失败也会推进请求序号而这本书仍开着，同一会话保存也会换对象。
+        const leftThisProject = new AbortController()
+        const abortIfLeft = () => {
+          if (!sameProjectSessionContext(openedProjectSession, projectSessionContextFromProject(get().currentProject))) {
+            leftThisProject.abort()
+          }
         }
-        if (repair?.status === 'checked') showFinalizationRepairNotice(repair)
+        abortIfLeft()
+        const stopWatching = useProjectStore.subscribe(abortIfLeft)
+        const { signal } = leftThisProject
+        void (async () => {
+          try {
+            if (warnings.length > 0) {
+              await alertError(warnings.join('\n'), {
+                title: projectText('项目已打开，部分数据加载失败', 'Project opened with some data unavailable'),
+                signal,
+              })
+            }
+            if (repair?.status === 'checked') await showFinalizationRepairNotice(repair, signal)
+            await showLedgerSealedNotice(result.sealedGenerationCount, signal)
+          } finally {
+            stopWatching()
+          }
+        })()
         return true
       }
       if (!isLatestRequest()) return false

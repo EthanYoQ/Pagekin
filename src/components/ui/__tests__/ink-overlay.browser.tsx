@@ -18,6 +18,7 @@ import { toast } from '../Toast'
 import ClearProjectDataDialog from '../../dialogs/ClearProjectDataDialog'
 import StagePalette from '../../stage/StagePalette'
 import { DangerConfirm } from '../DangerConfirm'
+import { openInkPrompt } from '../InkPrompt'
 import { InkDialog } from '../../stage/InkDialog'
 import { Menu } from '../Menu'
 import { withReducedMotion } from './reduced-motion'
@@ -217,6 +218,56 @@ describe('命令式弹窗', () => {
     await userEvent.click(buttonNamed(remaining, '确认'))
     await promptClosed()
     expect(first).toBe(true)
+  })
+
+  it('调用方撤回时提示框照常淡出关闭、得到 false，页面恢复可点；撤回下层时上层另一个提示框仍可点', async () => {
+    const leftBook = new AbortController()
+    let lower: boolean | undefined
+    let upper: boolean | undefined
+    await act(async () => {
+      void openInkPrompt({ kind: 'notice', title: '有 AI 生成记录读不出', message: '有 2 条 AI 生成记录读不出。', confirmText: '知道了', signal: leftBook.signal })
+        .then(value => { lower = value })
+    })
+    await act(async () => { void confirm('切换项目？').then(value => { upper = value }) })
+    expect(document.querySelectorAll('.pi-prompt-layer')).toHaveLength(2)
+
+    await act(async () => leftBook.abort())
+    await promptClosed()
+    expect(lower).toBe(false)
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    const remaining = document.querySelector<HTMLElement>('[role="dialog"]')!
+    expect(remaining.querySelector('.pi-dialog-message')!.textContent).toBe('切换项目？')
+    await userEvent.click(buttonNamed(remaining, '确认'))
+    await promptClosed()
+    expect(upper).toBe(true)
+    expect(document.querySelector('.pi-prompt-layer')).toBeNull()
+    expect(document.body.style.pointerEvents).toBe('')
+    expect(document.querySelector('[aria-hidden="true"][data-aria-hidden]')).toBeNull()
+  })
+
+  it('弹出后、渲染完之前就撤回，提示照样撤走并按取消算', async () => {
+    const leftBook = new AbortController()
+    let answer: boolean | undefined
+    await act(async () => {
+      void openInkPrompt({ kind: 'notice', title: '有 AI 生成记录读不出', message: '有 2 条 AI 生成记录读不出。', confirmText: '知道了', signal: leftBook.signal })
+        .then(value => { answer = value })
+      leftBook.abort()
+    })
+    await promptClosed()
+    expect(answer).toBe(false)
+    expect(document.querySelector('.pi-prompt-layer')).toBeNull()
+  })
+
+  it('已撤回的提示不再弹出，直接按取消算', async () => {
+    const leftBook = new AbortController()
+    leftBook.abort()
+    let answer: boolean | undefined
+    await act(async () => {
+      void openInkPrompt({ kind: 'notice', title: '有 AI 生成记录读不出', message: '有 2 条 AI 生成记录读不出。', confirmText: '知道了', signal: leftBook.signal })
+        .then(value => { answer = value })
+    })
+    expect(answer).toBe(false)
+    expect(document.querySelector('.pi-prompt-layer')).toBeNull()
   })
 
   it('对话框开着时点通知的关闭按钮，通知关闭而对话框不关', async () => {
