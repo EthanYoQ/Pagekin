@@ -325,7 +325,7 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
 |---|---|---|---|---|
 | `cch-export-damaged` | 定稿两章，冷重启前在应用外改坏第 2 章的审稿证据；设置 → 项目备份 → 导出本地存档，存档写出，成功提示是「本地存档已导出：<哈希>。第 2 章「远航之2」有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。」（`cch-1-zh`）；界面切到日本語再导出，前半句是面板的英文文案，后半句为日文（`cch-2-ja`）；切到 English 再导出，章名用直引号（`cch-3-en`） | 项目备份（English） | 是 | #702 |
-| `cch-export-multi` | 同上造书，改坏第 1、2 章：中文提示后半句是「第 1、2 章有审稿记录损坏，没放进存档。正文和其他审稿内容都在。」（`cch-5-multi-zh`）；English 是「Damaged review records in Chapters 1, 2 were left out of the archive. The text and other reviews are included.」（`cch-6-multi-en`） | 项目备份（English） | 是 | #702 |
+| `cch-export-multi` | 同上造书，改坏第 1、2 章：中文提示后半句是「第 1 章「远航之1」、第 2 章「远航之2」有审稿记录损坏，没放进存档。正文和其他审稿内容都在。」（`cch-5-multi-zh`）；English 是「Damaged review records in Chapter 1 "远航之1", Chapter 2 "远航之2" were left out of the archive. The text and other reviews are included.」（`cch-6-multi-en`） | 项目备份（English） | 是 | #702 |
 | `cch-trash-damaged` | 同上造书，改坏第 1 章：在第 1 章「更多操作」点「删除正文…」并确认，移到回收站；回项目备份导出成功，后半句指「回收站里第 1 章「远航之1」」（`cch-4-trash`） | 项目备份（中文） | 是 | #702 |
 | `cch-export-still-fails` | 同上造书，改坏第 2 章的审稿证据，再清空这条根的预算：去掉循环仍过不了投影，红字是「作品没有改动。第 2 章「远航之2」有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。」，没写出存档（`cch-7-still-fails`） | 项目备份（中文） | 是 | #702 |
 

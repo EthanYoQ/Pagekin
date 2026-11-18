@@ -416,16 +416,12 @@ export function importGenerationStopMessage(
   return joinSentences(locale, translate(locale, AUTHOR_STOP_REASON_KEYS[stop]), translate(locale, 'error.authorInferenceStopNext'))
 }
 
-function trashPhrase(locale: ErrorDisplayLocale, chapter: string): string {
-  return localize(locale, '回收站里{chapter}', '{chapter} in the trash', 'ゴミ箱の{chapter}', { chapter })
-}
-
 function chapterPhrase(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle & { chapterNumber: number }): string {
   const params = { number: damaged.chapterNumber, title: damaged.chapterTitle }
   const chapter = damaged.chapterTitle
     ? localize(locale, '第 {number} 章「{title}」', 'Chapter {number} "{title}"', '第{number}章「{title}」', params)
     : localize(locale, '第 {number} 章', 'Chapter {number}', '第{number}章', params)
-  return damaged.inTrash ? trashPhrase(locale, chapter) : chapter
+  return damaged.inTrash ? localize(locale, '回收站里{chapter}', '{chapter} in the trash', 'ゴミ箱の{chapter}', { chapter }) : chapter
 }
 
 const located = (damaged: DamagedReviewCycle): damaged is DamagedReviewCycle & { chapterNumber: number } => damaged.chapterNumber !== null
@@ -445,15 +441,10 @@ export function omittedReviewCyclesMessage(locale: ErrorDisplayLocale, omitted: 
       ? translate(locale, 'backup.omittedReviewCycleOne', { chapter: chapterPhrase(locale, first) })
       : translate(locale, 'backup.omittedReviewCycleUnknownOne')
   }
-  const groups = [false, true].flatMap(inTrash => {
-    const numbers = [...new Set(omitted.filter(located).filter(item => item.inTrash === inTrash).map(item => item.chapterNumber))].sort((a, b) => a - b)
-    if (!numbers.length) return []
-    const list = numbers.join(locale === 'en-US' ? ', ' : '、')
-    const chapters = localize(locale, '第 {list} 章', numbers.length === 1 ? 'Chapter {list}' : 'Chapters {list}', '第{list}章', { list })
-    return [inTrash ? trashPhrase(locale, chapters) : chapters]
-  })
-  if (!groups.length) return translate(locale, 'backup.omittedReviewCycleUnknownMany')
-  const chapters = groups.join(localize(locale, '和', ' and ', 'と'))
+  const places = [...new Map(omitted.filter(located).map(item => [`${item.inTrash}:${item.chapterNumber}:${item.chapterTitle}`, item])).values()]
+    .sort((a, b) => Number(a.inTrash) - Number(b.inTrash) || a.chapterNumber - b.chapterNumber || a.chapterTitle.localeCompare(b.chapterTitle))
+  if (!places.length) return translate(locale, 'backup.omittedReviewCycleUnknownMany')
+  const chapters = places.map(item => chapterPhrase(locale, item)).join(locale === 'en-US' ? ', ' : '、')
   return translate(locale, omitted.every(located) ? 'backup.omittedReviewCycleChapters' : 'backup.omittedReviewCycleChaptersAndOthers', { chapters })
 }
 

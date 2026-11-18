@@ -103,12 +103,12 @@ export const CCH_SCENARIOS = {
     await stage.openAfterRestart(page, BOOK)
     await stage.openSettings(page)
     const zh = await exportOnce(context, path.join(roots.projects, 'cch-multi-zh.ainovel'), ZH, 'status',
-      new RegExp(`^本地存档已导出：${SHA}。第 1、2 章有审稿记录损坏，没放进存档。正文和其他审稿内容都在。$`, 'u'))
+      new RegExp(`^本地存档已导出：${SHA}。第 1 章「远航之1」、第 2 章「远航之2」有审稿记录损坏，没放进存档。正文和其他审稿内容都在。$`, 'u'))
     await shoot('cch-5-multi-zh')
 
     await switchLocale(page, { settings: '设置分组', appearance: '外观', languageLabel: '界面语言' }, 'en-US')
     const en = await exportOnce(context, path.join(roots.projects, 'cch-multi-en.ainovel'), EN, 'status',
-      new RegExp(`^Local archive exported: ${SHA}\\. Damaged review records in Chapters 1, 2 were left out of the archive\\. The text and other reviews are included\\.$`, 'u'))
+      new RegExp(`^Local archive exported: ${SHA}\\. Damaged review records in Chapter 1 "远航之1", Chapter 2 "远航之2" were left out of the archive\\. The text and other reviews are included\\.$`, 'u'))
     await shoot('cch-6-multi-en')
     return { zh, en }
   } },
