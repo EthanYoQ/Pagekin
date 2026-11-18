@@ -10,6 +10,7 @@ import { DRAFT_SHORT_OUTLINE_PURPOSE } from '../../src/shared/draft-short-outlin
 import { countDraftUnits, draftTargetUnitRange } from '../../src/shared/draft-units';
 import { getProjectDb } from '../database';
 import { GENERATION_LEDGER_UNREADABLE } from './generation-ledger-admission';
+import { clickOfOpenKey, clickOfRootKey, uiActionNonceOfOpenKey, type GenerationClick } from './generation-run-index';
 import type { PortableRuntimeFreezeTable } from '../services/portable-runtime-freeze';
 import { assertReservation, assertAttemptTransition, rootActionIdempotencyKey, type RootAction, type RootBudget, type PhysicalAttempt, type VisibleArtifact, type ProviderUsagePolicy } from '../../src/shared/generation-contract';
 import { isContentHash, sameProjectEpoch, type FrozenInputFingerprint, type SourceRef, type ProjectEpoch } from '../../src/shared/source-ref';
@@ -91,29 +92,6 @@ const receiptSelect = `SELECT t.attempt_id,t.run_id,t.rowid AS ordinal,t.attempt
     a.artifact_id,a.run_id AS artifact_run_id,a.artifact_json,a.revision,a.status AS artifact_status
     FROM generation_attempts t LEFT JOIN generation_artifacts a ON a.attempt_id=t.attempt_id`;
 export const textHash = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
-/** 一次点击的身份：根的 idempotency_key 去掉冻结输入哈希。 */
-export interface GenerationClick { projectId: string; operation: string; uiActionNonce: string }
-function clickOfRootKey(key: unknown): GenerationClick | undefined {
-    if (typeof key !== 'string') return undefined;
-    try {
-        const parts: unknown = JSON.parse(key);
-        return Array.isArray(parts) && parts.length >= 3 && parts.slice(0, 3).every(part => typeof part === 'string')
-            ? { projectId: parts[0], operation: parts[1], uiActionNonce: parts[2] } : undefined;
-    } catch {
-        return undefined;
-    }
-}
-function clickOfOpenKey(openKey: string): GenerationClick | undefined {
-    try {
-        const outer: unknown = JSON.parse(openKey);
-        return Array.isArray(outer) ? clickOfRootKey(outer[0]) : undefined;
-    } catch {
-        return undefined;
-    }
-}
-export function uiActionNonceOfOpenKey(openKey: string): string | undefined {
-    return clickOfOpenKey(openKey)?.uiActionNonce;
-}
 /** 封存的根是终态：列举跳过它，阻断码也不再改写。 */
 export const UNSEALED_ROOT = `blocked_code IS NOT '${GENERATION_LEDGER_UNREADABLE}'`;
 /** 点击号读不出的运行认不出是不是前驱，所以直接报 conflict。 */
