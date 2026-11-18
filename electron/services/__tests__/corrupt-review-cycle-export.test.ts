@@ -140,6 +140,26 @@ describe('M03 只把提供证据的尝试被换成占位算作坏循环（ADR-00
     expect(receipt).not.toHaveProperty('omittedReviewCycles')
   })
 
+  it('同一根下没提供证据的运行读不出：封存后导出照常，恢复出的书这条循环仍验得过', async () => {
+    reviewedBook({ finalized: true })
+    db().prepare(`INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+      SELECT 'run-extra',root_action_id,'{坏',status,created_at_ms,'open-extra' FROM generation_runs
+      WHERE run_id=(SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch2')`).run()
+    reopen()
+    expect(verifyWholeBook).not.toThrow()
+
+    const { archivePath, receipt } = await exportTo()
+    expect(receipt).not.toHaveProperty('omittedReviewCycles')
+    const restoredRoot = path.join(base, 'restored')
+    await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
+    const restored = new Database(path.join(restoredRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true })
+    try {
+      restored.pragma('foreign_keys = ON')
+      expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
+      expect(restored.prepare('SELECT COUNT(*) FROM review_cycles').pluck().get()).toBe(2)
+    } finally { restored.close() }
+  })
+
   it.each([
     ['审稿尝试', 'attempt-review-ch2'],
     ['修稿尝试', 'attempt-revision-ch2'],
@@ -204,6 +224,16 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
       damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', inTrash: false } })
     expect(readSqliteContentIdentity(databasePath())).toEqual(before)
+  })
+
+  it('有坏循环，另一章的定稿文件名不安全：报文件名的错，不把坏循环那一章当原因', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    db().prepare("UPDATE finalization_outbox_all SET target_file_name='C:\\outside\\chapter.md' WHERE chapter_number=1").run()
+
+    const error = await exportBook()
+    expect(error).toMatchObject({ message: 'PORTABLE_PATH_UNSAFE' })
+    expect(error).not.toHaveProperty('damagedReviewCycle')
   })
 
   it('两章各有一条坏循环：两条都留在存档外，清单两章都列', async () => {

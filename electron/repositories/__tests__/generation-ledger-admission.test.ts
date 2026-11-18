@@ -213,7 +213,9 @@ describe('打开作品时封存读不出的生成记录', () => {
     initProjectDatabase(projectRoot)
 
     expect(everyCellReadable(getProjectDb()!)).toBe(true)
+    expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM generation_roots WHERE blocked_code=?').pluck().get(GENERATION_LEDGER_UNREADABLE)).toBe(1)
     expect(new GenerationRunRepository(getProjectDb).get(healthy.runId).runId).toBe(healthy.runId)
+    expect(new GenerationRunRepository(getProjectDb).open(openRequest('after-reopen')).runId).toEqual(expect.any(String))
     const first = withProjectClosed(ledgerDump)
     initProjectDatabase(projectRoot)
     expect(withProjectClosed(ledgerDump)).toBe(first)
