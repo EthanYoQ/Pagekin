@@ -4,12 +4,12 @@ import { adoptedRelationships, createCharacterProposalChoices, type CharacterPro
 import type { CharacterProposalBatch, PendingFinalizedCharacterProposalSummary } from '../../shared/character-proposal'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { useCharacterStore } from '../../stores/character-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale } from '../../stores/locale-store'
 import { appErrorMessage } from '../../i18n/app-errors'
 import { isProjectSessionCurrent } from '../project-session-gate'
 
 /** 主进程只回错误码（经 Electron 加上通道前缀）：按界面语言说明，不把原码给作者看。 */
-const failureText = (cause: unknown) => appErrorMessage(useLocaleStore.getState().locale, cause)
+const failureText = (cause: unknown) => appErrorMessage(currentInterfaceLocale(), cause)
 
 /** 定稿或导入产生的待处理角色决策：列出、检查、接受、拒绝。 */
 export function usePendingCharacterProposals(session: ProjectSessionContext) {

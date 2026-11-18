@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 
 import {
@@ -8,6 +8,8 @@ import {
   normalizeBatchChapterCount,
   type BatchChapterWorkflowParams,
 } from '../batch-chapter-workflow'
+import { createBatchRecoveryWorkflow } from '../draft-recovery-workflow'
+import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { useEditorStore } from '../../../stores/editor-store'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -599,5 +601,20 @@ describe('batch chapter workflow completion mode', () => {
       status: 'failed',
       error: 'No blueprint was found for Chapter 2. Batch writing stopped.',
     })
+  })
+})
+
+describe('恢复中断的批量运行', () => {
+  afterEach(() => useLocaleStore.setState({ interfaceLocale: 'zh-CN', locale: 'zh-CN' }))
+
+  it('日文界面下恢复，运行沿用英文文案，不回落成中文', async () => {
+    useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    doubles.batch = { batchId: '中断批次', modelId: '原模型', mode: 'draft_review', range: { startChapter: 1, endChapter: 2 }, targetUnits: 3000,
+      rootHandle: { projectId: 'test-project', epoch: 'lease-test-project', rootActionId: '原预算根', runId: '中断批次' },
+      completedChapters: [], nextChapterNumber: 1, authorInputs: [] }
+
+    await useWorkflowStore.getState().startWorkflow(await createBatchRecoveryWorkflow(projectSession(), '中断批次'))
+
+    expect(useWorkflowStore.getState().history[0]).toMatchObject({ uiLocale: 'en-US', title: 'Batch review drafts · Chapters 1–2' })
   })
 })

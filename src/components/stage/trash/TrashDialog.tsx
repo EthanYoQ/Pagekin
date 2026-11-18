@@ -5,7 +5,7 @@ import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { pluralEn } from '../../../shared/plural-en'
 import { sqliteTime } from '../../../shared/sqlite-time'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { captureProjectSession } from '../../project-session-gate'
 import { Button } from '../../ui/Button'
@@ -75,7 +75,6 @@ export default function TrashDialog({ open, onOpenChange, trash }: {
   trash: ChapterTrash
 }) {
   const text = useLocaleStore(s => s.text)
-  const locale = useLocaleStore(s => s.locale)
   const [busy, setBusy] = useState(false)
   const [ask, setAsk] = useState<PurgeAsk | null>(null)
   const total = trash.entries.length + trash.damaged.length
@@ -140,7 +139,7 @@ export default function TrashDialog({ open, onOpenChange, trash }: {
                 <li key={item.deletionId} className="stage-trash-item" data-damaged="true">
                   <div className="stage-trash-main">
                     <p className="stage-trash-name">{text('有一项读不全', 'An item could not be read')}</p>
-                    <p className="stage-trash-meta">{displayedErrorMessage(locale, item.error)}</p>
+                    <p className="stage-trash-meta">{displayedErrorMessage(currentInterfaceLocale(), item.error)}</p>
                   </div>
                   <div className="stage-trash-actions">
                     <Button variant="danger" size="sm" disabled={busy} onClick={() => askPurge({ kind: 'damaged', deletionId: item.deletionId })}>

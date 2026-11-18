@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { WorkflowContext } from '../../../../stores/workflow-store'
 import { buildFinalizePostProcessSteps, type FinalizePostProcessGeneration } from '../finalize-chapter.command'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const PROJECT_PATH = 'C:\\novels\\A'
 const SESSION = { projectId: 'A', leaseId: 'lease-A', projectPath: PROJECT_PATH }
@@ -13,7 +14,7 @@ function steps(replacesEarlierFinal: boolean) {
 }
 
 function context(): WorkflowContext {
-  return { runId: 'cleanup', projectPath: PROJECT_PATH, projectSession: SESSION, uiLocale: 'zh-CN', writingLanguage: 'zh-CN', data: {}, cancelled: false }
+  return { runId: 'cleanup', projectPath: PROJECT_PATH, projectSession: SESSION, uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), writingLanguage: 'zh-CN', data: {}, cancelled: false }
 }
 
 const callbacks = () => ({ log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() })
@@ -58,7 +59,7 @@ describe('重开再定稿后的清理步骤（ADR-0024）', () => {
     const [knowledge] = steps(true).filter(step => step.key.startsWith('remove_replaced_'))
 
     await expect(knowledge!.executor(callbacks(), undefined)).rejects.toThrow('定稿后处理缺少冻结工作流上下文')
-    await expect(knowledge!.executor(callbacks(), { ...context(), uiLocale: 'en-US', cancelled: true })).rejects.toThrow(/^Workflow was cancelled\.$/u)
+    await expect(knowledge!.executor(callbacks(), { ...context(), uiLocale: 'en-US', interfaceLocale: shown('en-US'), cancelled: true })).rejects.toThrow(/^Workflow was cancelled\.$/u)
     expect(invoke).not.toHaveBeenCalled()
   })
 })

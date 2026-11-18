@@ -11,6 +11,7 @@ import {
 } from '../architecture.command'
 import { createWorkflowRuntimeDependencies, useFakeModelStream, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
 import { clearProjectCustomPrompts, getBuiltinPromptTemplate, type PromptTemplate } from '../../../prompt-templates'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 const projectPath = 'C:\\novels\\世界观恢复测试'
 const otherProjectPath = 'C:\\novels\\另一本书'
@@ -56,7 +57,7 @@ function context(): WorkflowContext {
     projectSession,
     generationModelId: 'world-recovery-model',
     writingLanguage: 'zh-CN',
-    uiLocale: 'zh-CN',
+    uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
     data: { stepGuidance: { worldbuilding: '只写世界观正文，保持因果闭环。' } },
     cancelled: false,
   }

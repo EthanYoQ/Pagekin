@@ -2,21 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import type { WorkflowContext } from '../../../stores/workflow-store'
 import { workflowMainProcessError } from '../workflow-project-session'
-
-function contextIn(uiLocale: WorkflowContext['uiLocale']): WorkflowContext {
-  return {
-    runId: 'run-1',
-    projectPath: 'C:\\tmp\\main-error',
-    projectSession: { projectId: 'project-1', leaseId: 'lease-1', projectPath: 'C:\\tmp\\main-error' },
-    writingLanguage: 'zh-CN',
-    uiLocale,
-    data: {},
-    cancelled: false,
-  }
-}
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const fail = (uiLocale: WorkflowContext['uiLocale'], error: unknown) =>
-  workflowMainProcessError(contextIn(uiLocale), error, '定稿事务未提交', 'The finalization transaction was not committed.')
+  workflowMainProcessError(shown(uiLocale), error, '定稿事务未提交', 'The finalization transaction was not committed.')
 
 describe('workflow failures carrying a main-process error (#466)', () => {
   it('英文界面不转出主进程的中文原文，只给英文说明', () => {
@@ -48,6 +37,12 @@ describe('workflow failures carrying a main-process error (#466)', () => {
     const failure = fail('en-US', 'GENERATION_FINALIZATION_EFFECT_CONFLICT')
     expect(failure.message).toBe('The finalization transaction was not committed. GENERATION_FINALIZATION_EFFECT_CONFLICT')
     expect(failure).toHaveProperty('code', 'GENERATION_FINALIZATION_EFFECT_CONFLICT')
+  })
+
+  it('日文界面：概述用英文文案，登记过的码按日文说明，未登记的中文原文不接上', () => {
+    const fromJapanese = (error: unknown) => workflowMainProcessError(shown('ja-JP'), error, '定稿事务未提交', 'The finalization transaction was not committed.').message
+    expect(fromJapanese('PROJECT_NOT_OPEN')).toBe('The finalization transaction was not committed. 先にプロジェクトを開いてください。')
+    expect(fromJapanese('Error: 项目数据库未打开')).toBe('The finalization transaction was not committed.')
   })
 
   it('主进程没给原因时只给说明', () => {

@@ -22,6 +22,7 @@ import { registerDatabaseController } from '../db-controller'
 import { ModelExecutionLeaseRegistry } from '../../services/model-execution-lease'
 import { projectAccess } from '../../services/project-access'
 import { createProjectDatabase, initProjectDatabase, closeProjectDatabase, getProjectDb } from '../../database'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 const base = path.join(os.tmpdir(), 'an-agent-ipc-')
 const model: ModelProfile = { id: 'synthetic-ipc', name: 'Synthetic IPC', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1',
@@ -127,7 +128,7 @@ describe('Agent registered IPC, actual SQLite and intercepted provider boundary'
     } } })
     const context: WorkflowContext = { runId: definition.runId!, projectPath: session.projectPath, projectSession: session,
       generationModelId: registration.modelId, mainGenerationRootHandle: registration.parentHandle,
-      agentWorkflowRegistrationId: registration.registrationId, writingLanguage: 'zh-CN', uiLocale: 'en-US', data: {}, cancelled: false }
+      agentWorkflowRegistrationId: registration.registrationId, writingLanguage: 'zh-CN', uiLocale: 'en-US', interfaceLocale: shown('en-US'), data: {}, cancelled: false }
     const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
     for (const step of definition.steps) {
       try { await step.executor({ id: step.name, name: step.name, description: step.description, status: 'running', logs: [] }, context, callbacks) }

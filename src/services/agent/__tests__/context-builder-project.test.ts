@@ -16,6 +16,7 @@ import {
   loadProjectCustomPrompts,
   saveProjectCustomPrompt,
 } from '../../prompt-templates'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -200,7 +201,7 @@ describe('agent context project isolation', () => {
         projectPath: 'C:\\novels\\cold-start',
       },
       selectedModelId: 'model-1',
-      uiLocale: 'en-US',
+      uiLocale: 'en-US', interfaceLocale: shown('en-US'),
       writingLanguage: 'en-US',
     })
 
@@ -245,7 +246,7 @@ describe('agent context project isolation', () => {
     const prompt = await buildAgentSystemPrompt('fast', {
       projectSession,
       selectedModelId: 'model-1',
-      uiLocale: 'en-US',
+      uiLocale: 'en-US', interfaceLocale: shown('en-US'),
       writingLanguage: 'en-US',
     })
 

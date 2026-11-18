@@ -6,6 +6,7 @@ import type { CharacterRosterEntry } from '../../../../shared/character-roster'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import { InferGlobalSettingsCommand as RuntimeInferGlobalSettingsCommand } from '../import-novel.command'
 import { useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 class InferGlobalSettingsCommand extends RuntimeInferGlobalSettingsCommand {
   constructor() { super(workflowRuntimeDependencies) }
@@ -29,7 +30,7 @@ function createContext(importRunPurpose: 'reference' | 'author-manuscript' = 're
       projectPath: 'C:\\tmp\\vela-import-test',
     },
     writingLanguage: 'zh-CN',
-    uiLocale: 'zh-CN',
+    uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
     data: {
       importRunPurpose,
       novelConfigSummary: '类型: 玄幻',

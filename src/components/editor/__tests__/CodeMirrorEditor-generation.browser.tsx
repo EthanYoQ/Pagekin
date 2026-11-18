@@ -487,7 +487,7 @@ describe('CodeMirror editor AI generation boundary', () => {
   it('断网或回复中途断开时气泡说明原因，不露出错误码', async () => {
     failureCode = 'NETWORK_ERROR'
     await act(async () => root.render(<CodeMirrorEditor content="原文段落" mode="prose" />))
-    await act(async () => page.getByText('原文段落').click({ clickCount: 3 }))
+    await selectLine('原文段落')
     await act(async () => page.getByRole('button', { name: '润色' }).click())
     await expect.element(page.getByText('没连上模型服务，或回复中途断了。请检查网络或代理后重试。')).toBeVisible()
     expect(page.getByText(/NETWORK_ERROR/).elements()).toHaveLength(0)
@@ -860,7 +860,7 @@ describe('CodeMirror editor AI generation boundary', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     await act(async () => root.render(<CodeMirrorEditor content="甲乙" mode="prose" />))
-    await act(async () => page.getByText('甲乙').click({ clickCount: 3 }))
+    await selectLine('甲乙')
     await act(async () => page.getByRole('button', { name: '润色' }).click())
     await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '替换甲', finishReason: 'stop' } as never))
     await act(async () => root.render(<CodeMirrorEditor content="甲乙" mode="prose" editable={false} />))
@@ -1054,7 +1054,7 @@ it('明确 handle 打开还没发出请求的原运行时直接续跑；服务�
 const CHAPTER_TEXT = `${'守塔人的屋子在灯塔背风的一侧，窗玻璃上积着经年的盐，'.repeat(3)}。\n\n${'他给林岚倒了一杯很淡的茶，自己却只是捧着杯子看着炉火，'.repeat(3)}。`
 const SECOND_PARAGRAPH = '他给林岚倒了一杯很淡的茶'
 const annotateLine = async (text: string, note: string) => {
-  await act(async () => page.getByText(text).click({ clickCount: 3 }))
+  await selectLine(text)
   await act(async () => page.getByRole('button', { name: '添加批注' }).click())
   await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill(note))
   await act(async () => page.getByRole('button', { name: '添加批注' }).click())
@@ -1124,6 +1124,7 @@ describe('annotation panel layout', () => {
     await act(async () => root.render(<CodeMirrorEditor key="doc" mode="document" content={CHAPTER_TEXT} />))
     useLocaleStore.setState({ locale: 'en-US' })
     await act(async () => page.getByText('守塔人的屋子在灯塔背风的一侧').click({ clickCount: 3 }))
+    await expect.element(page.getByRole('toolbar', { name: 'Actions for the selected text' })).toBeVisible()
     await act(async () => page.getByRole('button', { name: 'Add annotation' }).click())
     await act(async () => page.getByRole('textbox', { name: 'Annotation note' }).fill('Saltier'))
     await act(async () => page.getByRole('button', { name: 'Add annotation' }).click())

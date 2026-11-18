@@ -1,5 +1,5 @@
-import { localize, translate, type MessageKey } from './core'
-import type { Locale } from './types'
+import { copyLocale, localize, translate, type MessageKey } from './core'
+import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 
 /**
  * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
@@ -383,18 +383,18 @@ function readMessage(error: unknown): string {
 }
 
 /** 已登记错误码的可读文案；未登记时返回 undefined，由调用方保留原有说明。 */
-export function knownAppErrorMessage(locale: Locale, error: unknown): string | undefined {
+export function knownAppErrorMessage(locale: ErrorDisplayLocale, error: unknown): string | undefined {
   const code = readCode(error)
   return code ? translate(locale, ERROR_KEYS[code]) : undefined
 }
 
-export function legacyImportFailureMessage(locale: Locale, error: unknown): string {
+export function legacyImportFailureMessage(locale: ErrorDisplayLocale, error: unknown): string {
   const copyTargetTooDeep = errorCodeOf(error) === 'PROJECT_STORAGE_PATH_UNSUPPORTED'
   const reason = copyTargetTooDeep
     ? translate(locale, 'error.legacyImportTargetTooDeep')
     : knownAppErrorMessage(locale, error) ?? translate(locale, 'error.legacyImportFailed')
   const kept = translate(locale, 'error.legacyImportNothingChanged')
-  return localize(locale, `${kept}${reason}`, `${kept} ${reason}`)
+  return joinSentences(locale, kept, reason)
 }
 
 const IMPORT_BLOCKED_CODES = new Set(['GENERATION_DISPATCH_BLOCKED', 'GENERATION_DIRECTORY_CONTINUATION_BLOCKED', 'GENERATION_PARENT_INVALID'])
@@ -406,13 +406,16 @@ const IMPORT_BLOCKED_CODES = new Set(['GENERATION_DISPATCH_BLOCKED', 'GENERATION
  * 码不进说明，由调用方记进诊断日志。其余码返回 undefined，交给共用说明。
  */
 export function importGenerationStopMessage(
-  locale: Locale, code: string, inFlight = false, purpose: 'reference' | 'author-manuscript' = 'reference',
+  locale: ErrorDisplayLocale, code: string, inFlight = false, purpose: 'reference' | 'author-manuscript' = 'reference',
 ): string | undefined {
   const stop = importStopKind(code, inFlight)
   if (!stop) return undefined
   if (purpose === 'reference') return translate(locale, REFERENCE_STOP_KEYS[stop])
-  return localize(locale, `${translate(locale, AUTHOR_STOP_REASON_KEYS[stop])}${translate(locale, 'error.authorInferenceStopNext')}`,
-    `${translate(locale, AUTHOR_STOP_REASON_KEYS[stop])} ${translate(locale, 'error.authorInferenceStopNext')}`)
+  return joinSentences(locale, translate(locale, AUTHOR_STOP_REASON_KEYS[stop]), translate(locale, 'error.authorInferenceStopNext'))
+}
+
+function joinSentences(locale: InterfaceLocale, first: string, second: string): string {
+  return locale === 'en-US' ? `${first} ${second}` : `${first}${second}`
 }
 
 type ImportStopKind = 'budget' | 'activeTime' | 'blocked' | 'storage' | 'previousAttempt'
@@ -442,7 +445,7 @@ const AUTHOR_STOP_REASON_KEYS = {
   previousAttempt: 'error.authorInferencePreviousAttemptIncomplete',
 } as const satisfies Record<ImportStopKind, MessageKey>
 
-export function appErrorMessage(locale: Locale, error: unknown): string {
+export function appErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
   return knownAppErrorMessage(locale, error)
     ?? translate(locale, 'error.unknown', { message: readMessage(error) })
 }
@@ -455,10 +458,10 @@ const DISPLAY_PREFIX = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*
  * 与渲染端按界面语言写好的说明都可以直接传进来。登记过的码按界面语言说明；认不出的去掉通道与类名前缀后
  * 保留原文，不吞掉信息；完全没有内容时用该处的兜底说明（调用方用 text(zh, en) 写好）。
  */
-export function displayedErrorMessage(locale: Locale, error: unknown, fallback?: string): string {
+export function displayedErrorMessage(locale: ErrorDisplayLocale, error: unknown, fallback?: string): string {
   const known = knownAppErrorMessage(locale, error)
   if (known) return known
-  return displayedRaw(error).trim().replace(DISPLAY_PREFIX, '') || fallback || localize(locale, '未知错误', 'Unknown error')
+  return displayedRaw(error).trim().replace(DISPLAY_PREFIX, '') || fallback || localize(copyLocale(locale), '未知错误', 'Unknown error')
 }
 
 /** 报错里能给作者看的原文：字符串本身、Error 或普通对象的字符串 message；别的对象没有可读内容，交给兜底。 */
@@ -471,12 +474,24 @@ function displayedRaw(error: unknown): string {
   return error == null ? '' : String(error)
 }
 
-/** 文字里有没有汉字，含扩展区与兼容区；判断原因能否拼进英文句子都用它。 */
 export function containsHan(value: string): boolean {
   return /\p{Script=Han}/u.test(value)
 }
 
-/** 英文句子后附上原因；原因里仍有汉字（主进程未登记的中文原文）时只给英文概述，不把中文拼进英文句子。 */
-export function englishWithReason(summary: string, reason: string, separator = ' '): string {
-  return !reason.trim() || containsHan(reason) ? summary : `${summary}${separator}${reason}`
+/**
+ * 英文句子后附上原因。英文界面下含汉字的原因（主进程未登记的中文原文）不拼进英文句子，只给概述；
+ * 日文界面下原因按日文目录写好，照样附上。
+ */
+export function englishWithReason(locale: ErrorDisplayLocale, summary: string, reason: string, separator = ' '): string {
+  return !reason.trim() || (locale === 'en-US' && containsHan(reason)) ? summary : `${summary}${separator}${reason}`
+}
+
+/** 主进程是否登记过这个码（登记过的码才有目录文案）。 */
+export function isRegisteredErrorCode(error: unknown): boolean {
+  return readCode(error) !== undefined
+}
+
+/** 回给模型的工具结果按作品写作语言说明登记错误；给作者看的报错走 displayedErrorMessage。 */
+export function errorMessageForModel(writingLanguage: Locale, error: unknown): string {
+  return displayedErrorMessage(writingLanguage as ErrorDisplayLocale, error)
 }

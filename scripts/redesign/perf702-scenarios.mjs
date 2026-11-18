@@ -125,15 +125,21 @@ async function profiled({ app, page }, label, action) {
 async function installLedger(app, page) {
   await app.evaluate(({ ipcMain, app: electronApp }, wrapSql) => {
     if (globalThis.__perfLedger) return
-    const ledger = globalThis.__perfLedger = { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {} }
+    const ledger = globalThis.__perfLedger = { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 } }
+    // 跨过快照才结束的调用和子进程：起始窗口已经报出，时长记进当前窗口的 late，不混进当前窗口的各通道。
+    const settle = (current, ms) => { if (current) return true; ledger.late.calls += 1; ledger.late.ms += ms; return false }
     const wrap = (channel, handler) => async (...args) => {
       const session = args.at(-1)
       if (session && typeof session === 'object' && typeof session.leaseId === 'string') globalThis.__perfSession = { event: args[0], session }
       const startedAt = performance.now()
+      const channels = ledger.channels
       try { return await handler(...args) } finally {
-        const entry = ledger.channels[channel] ??= { calls: 0, ms: 0 }
-        entry.calls += 1
-        entry.ms += performance.now() - startedAt
+        const ms = performance.now() - startedAt
+        if (settle(channels === ledger.channels, ms)) {
+          const entry = channels[channel] ??= { calls: 0, ms: 0 }
+          entry.calls += 1
+          entry.ms += ms
+        }
       }
     }
     for (const [channel, handler] of ipcMain._invokeHandlers) ipcMain._invokeHandlers.set(channel, wrap(channel, handler))
@@ -146,12 +152,11 @@ async function installLedger(app, page) {
       const child = spawn(...args)
       const kind = path => String(path).split(/[\\/]/u).pop()
       const name = [args[0], ...(Array.isArray(args[1]) ? args[1].filter(arg => /\.(ps1|exe|cmd|bat)$/iu.test(arg)) : [])].map(kind).join(' ')
-      // 子进程可能在账本换新之后才退出，时长要记回起它时的那一份。
       const bucket = ledger.spawns
       const entry = bucket.kinds[name] ??= { calls: 0, ms: 0 }
       bucket.calls += 1
       entry.calls += 1
-      child.once('exit', () => { const ms = performance.now() - startedAt; bucket.ms += ms; entry.ms += ms })
+      child.once('exit', () => { const ms = performance.now() - startedAt; if (settle(bucket === ledger.spawns, ms)) { bucket.ms += ms; entry.ms += ms } })
       return child
     }
     process.getBuiltinModule('node:module').syncBuiltinESMExports()
@@ -219,8 +224,8 @@ async function installLedger(app, page) {
 
 async function takeLedger(app, page) {
   const main = await app.evaluate(() => {
-    const { channels, spawns, sql, loop } = globalThis.__perfLedger
-    Object.assign(globalThis.__perfLedger, { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {} })
+    const { channels, spawns, sql, loop, late } = globalThis.__perfLedger
+    Object.assign(globalThis.__perfLedger, { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 } })
     const maxBlockMs = Math.round(loop.max / 1e6)
     loop.reset()
     const round = ([key, { calls, ms, rows }]) => [key, { calls, ms: Math.round(ms), ...rows === undefined ? {} : { rows } }]
@@ -234,6 +239,7 @@ async function takeLedger(app, page) {
       sqlMs: Math.round(sqlEntries.reduce((sum, [, entry]) => sum + entry.ms, 0)),
       sqlTop: Object.fromEntries(sqlEntries.sort(([, a], [, b]) => b.ms - a.ms).slice(0, 12).map(round)),
       mainMaxBlockMs: maxBlockMs,
+      lateCalls: late.calls, lateMs: Math.round(late.ms),
     }
   })
   const renderer = await page.evaluate(() => {

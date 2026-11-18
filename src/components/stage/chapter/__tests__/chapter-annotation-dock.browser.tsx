@@ -32,6 +32,7 @@ async function openChapter(fields: { content?: string; reviewed: boolean }) {
 
 async function annotate(line: string, note: string) {
   await act(async () => page.getByText(line, { exact: true }).click({ clickCount: 3 }))
+  await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' })).toBeVisible()
   await act(async () => page.getByRole('button', { name: '添加批注' }).click())
   await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill(note))
   await act(async () => page.getByRole('button', { name: '添加批注' }).click())
@@ -334,7 +335,7 @@ it('作者先关掉审稿报告再加批注，统一修改接受全部写进正�
   expect(useStageStore.getState().sheet).toBeNull()
 })
 
-const LOCK_HINT = '批注修改还在等你处理，修稿会冲掉它。先接受或取消批注修改。'
+const LOCK_HINT = '批注修改还在等你处理，修稿或换稿会冲掉它。先接受或取消批注修改。'
 const refineItem = async () => {
   await act(async () => page.getByRole('button', { name: '更多操作' }).click())
   const item = page.getByRole('menuitem', { name: '直接修稿…' })
@@ -522,4 +523,103 @@ it('批注修改审阅摆着时早先发起的修稿生成完成，作者接受�
   await expect.element(page.getByText('他第三次展开信纸，上面只有两个字：等我。')).toBeVisible()
   await expect.element(page.getByText('有 1 份修稿不能再合并')).toBeVisible()
   await expect.element(page.getByRole('region', { name: '修稿合并' })).not.toBeInTheDocument()
+})
+
+it('本章已有定稿，旧稿上批注修改审阅摆着：「以这一稿重新打开」不可点并提示，审阅留着；点「取消」后恢复可点', async () => {
+  backend.addDraft({ status: 'finalized', version: 2, createdAt: '2026-10-13 20:30:00' })
+  const review = await openAnnotationReview()
+  const reopen = page.getByRole('button', { name: '以这一稿重新打开' })
+
+  await expect.element(reopen).toBeDisabled()
+  await expect.element(page.getByText(LOCK_HINT)).toBeVisible()
+  await expect.element(review).toBeVisible()
+
+  await act(async () => review.getByRole('button', { name: '取消' }).click())
+
+  await expect.element(reopen).toBeEnabled()
+  await expect.element(page.getByText(LOCK_HINT)).not.toBeInTheDocument()
+})
+
+it('本章有另一稿，批注修改审阅摆着：版本切换不可点，审阅留着；点「取消」后恢复可点', async () => {
+  backend.addDraft({ status: 'finalized', version: 2, createdAt: '2026-10-13 20:30:00' })
+  const review = await openAnnotationReview()
+  const versions = page.getByRole('button', { name: /^本章版本：/ })
+
+  await expect.element(versions).toBeDisabled()
+  await expect.element(review).toBeVisible()
+
+  await act(async () => review.getByRole('button', { name: '取消' }).click())
+
+  await expect.element(versions).toBeEnabled()
+})
+
+const reviseAll = () => dock().getByRole('button', { name: '统一修改（1）' })
+
+it('本章已有定稿，「以这一稿重新打开」还在进行：不能发起统一修改；重开失败后坞带着原批注回来', async () => {
+  backend.addDraft({ status: 'finalized', version: 2, createdAt: '2026-10-13 20:30:00' })
+  await openChapter({ reviewed: false })
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  let fail!: (error: Error) => void
+  backend.state.reopenGate = new Promise<void>((_, reject) => { fail = reject })
+  backend.state.reopenGate.catch(() => {})
+  const reopen = page.getByRole('button', { name: '以这一稿重新打开' })
+
+  await act(async () => reopen.click())
+
+  await expect.element(reviseAll()).not.toBeInTheDocument()
+  await expect.element(reopen).toBeDisabled()
+
+  await act(async () => fail(new Error('磁盘忙')))
+
+  await expect.element(reviseAll()).toBeVisible()
+  await expect.element(page.getByText('本章批注 · 1')).toBeVisible()
+  await expect.element(reopen).toBeEnabled()
+})
+
+it('本章有另一稿，选了它、它还在读取：不能发起统一修改，版本切换不可点；读完换上那一稿', async () => {
+  backend.addDraft({ status: 'finalized', version: 2, createdAt: '2026-10-13 20:30:00' })
+  await openChapter({ reviewed: false })
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  const answer = backend.invoke.getMockImplementation()!
+  let release!: () => void
+  const read = new Promise<void>(resolve => { release = resolve })
+  backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+    if (channel === 'db:draft-get-full') await read
+    return answer(channel, ...args)
+  })
+  const versions = page.getByRole('button', { name: /^本章版本：/ })
+
+  await act(async () => versions.click())
+  await act(async () => page.getByRole('menuitemradio', { name: /v2/ }).click())
+
+  await expect.element(reviseAll()).not.toBeInTheDocument()
+  await expect.element(versions).toBeDisabled()
+
+  await act(async () => release())
+
+  await expect.element(page.getByRole('button', { name: /^本章版本：定稿/ })).toBeVisible()
+})
+
+it('选了另一稿、它还在读取时早先发起的修稿生成完成：不在要换走的稿上自动打开修稿合并；读完换上那一稿', async () => {
+  await openChapter({ reviewed: true })
+  const other = backend.addDraft({ status: 'draft', version: 2, createdAt: '2026-10-13 20:30:00' })
+  await act(async () => { await useDraftStore.getState().loadAllDrafts(SESSION.projectPath, SESSION) })
+  const answer = backend.invoke.getMockImplementation()!
+  let release!: () => void
+  const read = new Promise<void>(resolve => { release = resolve })
+  backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+    if (channel === 'db:draft-get-full' && Number(args[0]) === other.id) await read
+    return answer(channel, ...args)
+  })
+
+  await act(async () => page.getByRole('button', { name: /^本章版本：/ }).click())
+  await act(async () => page.getByRole('menuitemradio', { name: /v2/ }).click())
+  await act(async () => { backend.addRevision(backend.state.drafts[0]!) })
+  await reloadChapter()
+
+  await expect.element(page.getByRole('button', { name: '打开修稿合并' })).toBeDisabled()
+  expect(document.querySelector('[role="region"][aria-label="修稿合并"]')).toBeNull()
+
+  await act(async () => release())
+  await expect.element(page.getByRole('button', { name: /^本章版本：草稿 v2/ })).toBeVisible()
 })

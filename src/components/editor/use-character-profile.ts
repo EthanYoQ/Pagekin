@@ -5,7 +5,7 @@ import { CHARACTER_DRAFT_TAB, getProjectEditorDraft, parseProjectEditorDraftLedg
 import { useWorkflowStore } from '../../stores/workflow-store'
 import { useCharacterStore, characterSelectionKey, readCharacterDraftLedger, type CharacterCard } from '../../stores/character-store'
 import { rosterStateChanged } from './character-state-fields'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { formatRelationshipsForEditor } from '../../shared/relationship-presentation'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../project-session-gate'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
@@ -101,9 +101,9 @@ export function useCharacterProfile(projectKey: string) {
     } catch (error) {
       if (isProjectSessionCurrent(projectSession)) {
         setSaveOutcome('failed')
-        const reason = displayedErrorMessage(useLocaleStore.getState().locale, error)
+        const reason = displayedErrorMessage(currentInterfaceLocale(), error)
         setSaveError(reason)
-        addLog('error', text(`角色卡保存失败：${reason}`, englishWithReason('Could not save character cards.', reason)))
+        addLog('error', text(`角色卡保存失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not save character cards.', reason)))
       }
       if (propagateFailure) throw error
     }

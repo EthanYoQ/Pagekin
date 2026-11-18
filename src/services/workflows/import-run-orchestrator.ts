@@ -22,6 +22,7 @@ import type { StepCallbacks } from '../../stores/workflow-store'
 import type { FinalizedDraftImportDraftReceipt, FinalizedDraftImportReceipt } from '../../shared/finalized-draft-import'
 import { appErrorMessage, errorCodeOf, importGenerationStopMessage } from '../../i18n/app-errors'
 import { localize } from '../../i18n/core'
+import type { ErrorDisplayLocale } from '../../i18n/types'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 
 export const IMPORT_CHAPTER_PAGE_SIZE = 100
@@ -43,6 +44,8 @@ interface ImportRunExecutionState {
 export type ImportRunGeneratedEffectCommitter<T> = (payload: unknown) => Promise<T>
 
 export interface ImportRunOrchestratorDependencies {
+  /** 查报错目录用的界面语言，取自工作流上下文；运行记录里的语言仍是 run.locale。 */
+  interfaceLocale: ErrorDisplayLocale
   getRun: (runId: string) => Promise<ImportRunSnapshot | null>
   startOrResume: (runId: string, owner: string) => Promise<ImportRunStartResult>
   renewExecution: (runId: string, execution: ImportRunExecutionLease) => Promise<ImportRunExecutionLease>
@@ -214,7 +217,7 @@ export class ImportRunOrchestrator {
           const renewed = await this.dependencies.renewExecution(run.id, execution.current)
           if (renewed.owner !== initialAuthority.owner || renewed.epoch !== initialAuthority.epoch) {
             // 续租拿回的执行身份变了，与主进程判定的执行代号过期是同一件事，用同一句说明。
-            throw new Error(appErrorMessage(run.locale, 'IMPORT_RUN_EXECUTION_STALE'))
+            throw new Error(appErrorMessage(this.dependencies.interfaceLocale, 'IMPORT_RUN_EXECUTION_STALE'))
           }
           execution.current = renewed
           return execution.current
@@ -335,7 +338,7 @@ export class ImportRunOrchestrator {
         // 生成开始或发送前就被预算、阻断拒绝时报错只有裸码，在这里换成导入的说明，存进运行并抛出同一句；码只进诊断日志。
         // 只改写生成阶段（global、style、blueprints）：非生成阶段抛出的码保留原报错。
         const code = IMPORT_GENERATION_STAGES.has(requestedStage) ? errorCodeOf(error instanceof Error ? error.message : error) : undefined
-        const stopped = code && importGenerationStopMessage(run.locale, code, false, run.purpose)
+        const stopped = code && importGenerationStopMessage(this.dependencies.interfaceLocale, code, false, run.purpose)
         if (stopped) callbacks.log(localize(run.locale, `导入停止原因：${code}`, `Import stop reason: ${code}`))
         const failure = stopped ? new Error(stopped) : error
         try {

@@ -4,6 +4,7 @@ import { useProjectStore } from '../../../../stores/project-store'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import { AnalyzeWritingStyleCommand as RuntimeAnalyzeWritingStyleCommand } from '../analyze-style.command'
 import { workflowRuntimeDependencies } from './workflow-generation-runtime.fixture'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 class AnalyzeWritingStyleCommand extends RuntimeAnalyzeWritingStyleCommand {
   constructor(...args: ConstructorParameters<typeof RuntimeAnalyzeWritingStyleCommand>) {
@@ -22,7 +23,7 @@ const context: WorkflowContext = {
   projectPath: 'C:\\tmp\\vela-style-test',
   projectSession: { projectId: 'project-1', leaseId: 'lease-project-1', projectPath: 'C:\\tmp\\vela-style-test' },
   writingLanguage: 'zh-CN',
-  uiLocale: 'zh-CN',
+  uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
   data: {},
   cancelled: false,
 }
@@ -140,7 +141,7 @@ describe('AnalyzeWritingStyleCommand with imported samples', () => {
     const englishContext: WorkflowContext = {
       ...context,
       writingLanguage: 'zh-CN',
-      uiLocale: 'en-US',
+      uiLocale: 'en-US', interfaceLocale: shown('en-US'),
     }
     const command = new AnalyzeWritingStyleCommand({ sampleTexts: ['夜航 Café 的雨声很急。'] })
     modelReply(command)
@@ -194,7 +195,7 @@ describe('AnalyzeWritingStyleCommand with imported samples', () => {
     const command = new AnalyzeWritingStyleCommand({ sampleTexts: ['短句密集，动作推进快。'] })
     modelReply(command).mockResolvedValue('Tight pacing.')
 
-    await expect(command.execute({ step: {}, context: { ...context, uiLocale: 'en-US' }, callbacks }))
+    await expect(command.execute({ step: {}, context: { ...context, uiLocale: 'en-US', interfaceLocale: shown('en-US') }, callbacks }))
       .rejects.toThrow(/^Failed to save the writing-style profile\.$/u)
   })
 

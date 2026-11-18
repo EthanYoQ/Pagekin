@@ -371,7 +371,7 @@ describe('Windows official in-app update E2E contract', () => {
     expect(workflow).toContain('${{ env.AI_NOVEL_UPDATE_E2E_EVIDENCE_ROOT }}/*.json')
     expect(workflow).not.toContain('path: ${{ env.AI_NOVEL_UPDATE_E2E_EVIDENCE_ROOT }}')
     expect(workflow).toContain('node scripts/windows-in-app-update-e2e.mjs run')
-    expect(workflow).toContain('EthanYoQ/AI-Novel-Writer')
+    expect(workflow).toContain("if: ${{ github.repository == 'EthanYoQ/Pagekin' }}")
     expect(workflow).toContain('v0.5.2')
     expect(workflow).toContain('v0.6.0')
 

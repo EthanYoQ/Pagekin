@@ -9,8 +9,10 @@ import { createWorkflowMainGenerationRuntime } from '../../workflows/workflow-ma
 import type { createMainGenerationTransport } from '../main-generation-transport'
 import { runFinalizationGeneration } from '../../finalization-generation'
 import { describeFinalizationStepError, planFinalizationRetry } from '../../../shared/finalization-step-error'
-import { classifyGenerationFailure, formatGenerationBudgetDiagnostic } from '../prompt-budget-failure'
+import { classifyGenerationFailure, formatGenerationBudgetDiagnostic, providerContextFailureText } from '../prompt-budget-failure'
+import { useLocaleStore } from '../../../stores/locale-store'
 import { presentWorkflowFailure } from '../../../components/panels/ai-output-failure-presentation'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const handle: MainGenerationRunHandle = { projectId: '项目', epoch: '会话', rootActionId: '动作', runId: '运行' }
 const task: GenerationTask = { purpose: 'chapter-draft', output: 'visible-text', messages: [{ role: 'user', content: '写第 9 章' }] }
@@ -68,7 +70,7 @@ describe('讨论区 #77：上下文超长码在每条消费路径上都保留', 
     })
     vi.stubGlobal('window', { aiNovelAPI: { invoke } })
     const context: WorkflowContext = { runId: 'workflow', projectPath: project.projectPath, projectSession: project,
-      generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false }
+      generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
     const runtime = await createWorkflowMainGenerationRuntime({ context, callbacks: { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn(), setGenerationActivity },
       selection: { operation: 'import-global-facts', promptKeys: [], skillStages: [], output: 'structured-data',
         importSlot: { runId: 'import-run', stage: 'global', batchId: 'done' } } },
@@ -91,7 +93,7 @@ describe('讨论区 #77：上下文超长码在每条消费路径上都保留', 
     })
     vi.stubGlobal('window', { aiNovelAPI: { invoke } })
     const context: WorkflowContext = { runId: 'workflow', projectPath: project.projectPath, projectSession: project,
-      generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', data: {}, cancelled: false }
+      generationModelId: 'model', writingLanguage: 'zh-CN', uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }
     const runtime = await createWorkflowMainGenerationRuntime({ context, callbacks: { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn(), setGenerationActivity },
       selection: { operation: 'import-global-facts', promptKeys: [], skillStages: [], output: 'structured-data',
         importSlot: { runId: 'import-run', stage: 'global', batchId: 'done' } } },
@@ -138,26 +140,45 @@ describe('讨论区 #77：服务商上下文超长', () => {
     ['zh-CN', ['作品内容没有变动', '换用上下文更长的模型', '调低最大输出 Tokens', '「设置」', '再重新生成'], '上下文窗口'],
     ['en-US', ['Your work is unchanged', 'model with a longer context', 'lower Max output tokens', 'In Settings', 'then generate again'], 'Context Window'],
   ] as const)('%s 文案建议换模型、调低最大输出，不指向上下文窗口设置', (locale, advice, stale) => {
-    const message = knownAppErrorMessage(locale, new Error('GENERATION_CONTEXT_LENGTH_EXCEEDED'))
+    const message = knownAppErrorMessage(shown(locale), new Error('GENERATION_CONTEXT_LENGTH_EXCEEDED'))
     for (const phrase of advice) expect(message).toContain(phrase)
     expect(message).not.toContain(stale)
   })
 
   it('写稿卡片说明超长原因，不再让作者调整章节要求', () => {
-    const { presentation } = runFailure(failedDraft("Error invoking remote method 'generation:execute': Error: GENERATION_CONTEXT_LENGTH_EXCEEDED"))
+    const { presentation } = runFailure(failedDraft("Error invoking remote method 'generation:execute': Error: GENERATION_CONTEXT_LENGTH_EXCEEDED"), shown('zh-CN'))
     expect(presentation.reason).toContain('换用上下文更长的模型')
     expect(presentation.reason).not.toContain('上下文窗口')
     expect(presentation.persistence).toBe('本次未保存草稿或正文章节。')
   })
 
+  it('日文界面看英文冻结的运行：标题仍是英文文案，登记的原因按日文说明；中文运行不受影响', () => {
+    const restore = useLocaleStore.getState()
+    try {
+      useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+      const english = runFailure({ ...failedDraft(CODE), uiLocale: 'en-US' }, shown('ja-JP'))
+      expect(english.presentation.heading).toBe('Workflow did not finish')
+      expect(english.presentation.reason).toContain('コンテキストの長いモデル')
+      expect(runFailure(failedDraft(CODE), shown('ja-JP')).presentation.reason).toContain('换用上下文更长的模型')
+    } finally {
+      useLocaleStore.setState(restore, true)
+    }
+  })
+
+  it('服务商拒收超长请求时的说明按传入的界面语言写', () => {
+    expect(providerContextFailureText(new Error(CODE), shown('ja-JP'))).toContain('コンテキストの長いモデル')
+    expect(providerContextFailureText(new Error(CODE), shown('zh-CN'))).toContain('换用上下文更长的模型')
+    expect(providerContextFailureText(new Error('HTTP 500'), shown('ja-JP'))).toBeUndefined()
+  })
+
   it('写稿步骤已有主进程保存的正文时，卡片不说未保存', () => {
-    expect(runFailure(failedDraft('GENERATION_CONTEXT_LENGTH_EXCEEDED', '雨夜，铜钥匙落在门前。')).presentation.persistence).toBeUndefined()
+    expect(runFailure(failedDraft('GENERATION_CONTEXT_LENGTH_EXCEEDED', '雨夜，铜钥匙落在门前。'), shown('zh-CN')).presentation.persistence).toBeUndefined()
   })
 })
 
 describe('讨论区 #77：上下文超长说明不被其他展示覆盖', () => {
   it('审稿卡片优先显示登记说明，不被 HTTP 400 诊断覆盖', () => {
-    const presentation = presentWorkflowFailure(undefined, `Error invoking remote method 'generation:execute': Error: ${CODE}`, 'zh-CN', false, undefined,
+    const presentation = presentWorkflowFailure(undefined, `Error invoking remote method 'generation:execute': Error: ${CODE}`, shown('zh-CN'), false, undefined,
       { operation: 'review-chapter', diagnostics: { startedAt: 1, elapsedMs: 20, httpStatus: 400, phase: 'response', endReason: 'failed', errorCode: 'HTTP_ERROR', visibleEvents: 0, reasoningEvents: 0, firstResponseMs: 20, lastResponseMs: 20, lastOutputMs: null } })
     expect(presentation.reason).toContain('换用上下文更长的模型')
   })

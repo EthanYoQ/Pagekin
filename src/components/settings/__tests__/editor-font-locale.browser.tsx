@@ -47,6 +47,8 @@ describe('editor font locale', () => {
     const fonts = [...(appearance?.querySelectorAll('select') ?? [])]
       .filter(select => [...select.options].some(option => option.value === 'noto-sans-sc'))
     expect(fonts.map(select => select.value)).toEqual(['noto-sans-sc', 'lxgw-wenkai'])
-    expect(appearance?.textContent).not.toMatch(hanPattern)
+    const copy = appearance?.cloneNode(true) as HTMLElement
+    copy.querySelector('option[value="ja-JP"]')?.remove()
+    expect(copy.textContent).not.toMatch(hanPattern)
   })
 })

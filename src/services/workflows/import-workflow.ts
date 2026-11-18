@@ -127,6 +127,7 @@ function productionDependencies(
     return result
   }
   return {
+    interfaceLocale: context.interfaceLocale,
     getRun: runId => ipc.invokeWithProjectSession(session, 'db:import-run-get', runId, projectPath),
     startOrResume: async (runId, owner) => {
       const start = required(
@@ -212,7 +213,7 @@ function productionDependencies(
           committed.characterSyncOperation.operationId,
           projectPath,
           session,
-          run.locale,
+          context.interfaceLocale,
         )
         return
       }

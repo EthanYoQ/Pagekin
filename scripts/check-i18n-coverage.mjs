@@ -415,7 +415,8 @@ function inspectRendererFile(violations, root, file, sourceFile) {
     if (isLocalizedCall(node, sourceFile)) {
       const englishIndex = englishArgumentIndex.get(callName(node, sourceFile)) ?? 1
       const english = node.arguments[englishIndex]
-      if (english) inspectEnglishCounts(violations, root, file, sourceFile, english, node.arguments[englishIndex + 1])
+      const { params, unknown } = copyArguments(node, englishIndex)
+      if (english) inspectEnglishCounts(violations, root, file, sourceFile, english, params ?? unknown)
     }
     if (
       promptSettings
@@ -798,8 +799,157 @@ function compareMainErrorBaseline(sites, baseline, violations) {
   return counts
 }
 
+/** 缺日文不算违规；写了日文却是空字符串才算（运行时会退回英文，等于没写）。 */
+const JA_REPORT_ROOTS = ['src', 'electron']
+/** 这两处的文案跟运行语言走并写进运行记录，ja-JP 不落库（#725），写日文算违规。 */
+const RUN_CODE_ROOTS = ['src/services/workflows/', 'src/services/agent/']
+const jaCopyCallees = new Map([['text', 0], ['localize', 1], ['mainText', 1]])
+const frozenCopyLocale = /^(?:copyLocale\(|useLocaleStore\.getState\(\)\.locale$)/u
+
+function isStringCopy(node) {
+  return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node)
+}
+
+/** 英文之后的实参可能是日文也可能是 params：后面还有实参或它是字符串，才确定是日文。 */
+function copyArguments(node, englishIndex) {
+  const third = node.arguments[englishIndex + 1]
+  if (node.arguments.length > englishIndex + 2 || (third && isStringCopy(third))) return { ja: third, params: node.arguments[englishIndex + 2] }
+  if (!third || ts.isObjectLiteralExpression(third)) return { params: third }
+  return { unknown: third }
+}
+
+function jaCopyCallee(node, sourceFile) {
+  const callee = callName(node, sourceFile)
+  const name = jaCopyCallees.has(callee) ? callee : callee.endsWith('.text') ? 'text' : undefined
+  if (!name) return undefined
+  // response.text() 这类同名方法不带中英两段文案。
+  const enough = node.arguments.length >= jaCopyCallees.get(name) + 2 || node.arguments.some(ts.isSpreadElement)
+  return enough ? name : undefined
+}
+
+function isFunctionValue(node) {
+  return Boolean(node) && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
+}
+
+/** 本文件自己写的 text、localize 是本地包装，不是共用文案函数。 */
+function declaresCopyFunction(statement, name) {
+  if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return 'local'
+  if (!ts.isVariableStatement(statement)) return undefined
+  for (const declaration of statement.declarationList.declarations) {
+    if (ts.isIdentifier(declaration.name) && declaration.name.text === name) return isFunctionValue(declaration.initializer) ? 'local' : 'shared'
+    if (ts.isObjectBindingPattern(declaration.name) && declaration.name.elements.some(element => element.name.getText() === name)) return 'shared'
+  }
+  return undefined
+}
+
+function copyFunctionBinding(node, name) {
+  for (let scope = node.parent; scope; scope = scope.parent) {
+    if (ts.isFunctionLike(scope) && scope.parameters?.some(parameter => parameter.name.getText() === name)) return 'shared'
+    const statements = ts.isBlock(scope) || ts.isSourceFile(scope) || ts.isModuleBlock(scope) ? scope.statements : undefined
+    for (const statement of statements ?? []) {
+      const found = declaresCopyFunction(statement, name)
+      if (found) return found
+    }
+  }
+  return 'shared'
+}
+
+function classifyJaCopyCall(node, sourceFile) {
+  const callee = jaCopyCallee(node, sourceFile)
+  if (!callee) return undefined
+  if (ts.isIdentifier(node.expression) && copyFunctionBinding(node, callee) === 'local') return { callee, status: 'local' }
+  const englishIndex = jaCopyCallees.get(callee) + 1
+  const locale = callee === 'text' ? undefined : node.arguments[0]?.getText(sourceFile)
+  if (node.arguments.slice(0, englishIndex + 2).some(ts.isSpreadElement)) return { callee, locale, status: 'undetermined' }
+  const { ja, unknown } = copyArguments(node, englishIndex)
+  if (ja) return { callee, locale, status: isStringCopy(ja) && !ts.isTemplateExpression(ja) && ja.text.trim() === '' ? 'empty' : 'translated' }
+  if (unknown) return { callee, locale, status: 'undetermined' }
+  return { callee, locale, status: locale && frozenCopyLocale.test(locale) ? 'copy-locale' : 'missing' }
+}
+
+const isRunCode = file => RUN_CODE_ROOTS.some(root => file.startsWith(root))
+
+function collectJaCopyCalls(root) {
+  const calls = []
+  for (const relative of JA_REPORT_ROOTS) {
+    for (const file of filesAt(path.join(root, relative))) {
+      const relativeFile = relativePath(root, file)
+      if (!/\.tsx?$/u.test(file) || testOrDeclarationFile.test(file) || relativeFile.split('/').includes('__tests__')) continue
+      const sourceFile = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true,
+        file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+      const visit = (node) => {
+        const call = ts.isCallExpression(node) && classifyJaCopyCall(node, sourceFile)
+        if (call) {
+          const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+          calls.push({ ...call, file: relativeFile, line })
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(sourceFile)
+    }
+  }
+  return calls
+}
+
+function jaViolations(calls) {
+  return calls.flatMap((call) => {
+    const at = `${call.file}:${call.line}`
+    if (isRunCode(call.file) && (call.status === 'translated' || call.status === 'empty')) {
+      return [`${at} [run-code-ja] ${call.callee}() 在运行代码里写了日文：这里的文案跟运行语言走、会写进运行记录，ja-JP 不落库（#725），删掉日文参数 (copy here follows the run language and is stored in run records; do not add Japanese)`]
+    }
+    return call.status === 'empty' ? [`${at} [empty-ja] ${call.callee}() 的日文是空字符串：写上日文，或删掉这个参数`] : []
+  })
+}
+
+function countBy(calls, key) {
+  const counts = new Map()
+  for (const call of calls) {
+    const group = key(call)
+    const entry = counts.get(group) ?? { calls: 0, missing: 0 }
+    entry.calls += 1
+    if (call.status === 'missing') entry.missing += 1
+    counts.set(group, entry)
+  }
+  return [...counts].sort(([a], [b]) => a.localeCompare(b))
+}
+
+export function reportJapaneseCoverage(root = process.cwd(), area = '') {
+  const prefix = area.replaceAll('\\', '/').replace(/\/$/u, '')
+  const calls = collectJaCopyCalls(root).filter(call => !prefix || call.file === prefix || call.file.startsWith(`${prefix}/`))
+  const shared = calls.filter(call => call.status !== 'local')
+  const runCode = shared.filter(call => isRunCode(call.file))
+  const counted = shared.filter(call => !isRunCode(call.file) && call.status !== 'copy-locale')
+  const total = status => counted.filter(call => call.status === status).length
+  const describe = call => `${call.file}:${call.line}\t${call.callee}${call.locale ? `(${call.locale})` : ''}`
+  const lines = [
+    `Japanese copy coverage${prefix ? ` under ${prefix}` : ''}: ${counted.length} calls, ${total('translated')} with Japanese, ${total('missing')} missing, ${total('undetermined')} undetermined; ${calls.length - shared.length} calls to local wrappers skipped`,
+    `Run code (no Japanese; copy follows the run language and is stored): ${runCode.length} calls under ${RUN_CODE_ROOTS.join(', ')}`,
+    `Frozen copy locale (never shows Japanese): ${shared.filter(call => !isRunCode(call.file) && call.status === 'copy-locale').length} calls whose first argument is copyLocale(...) or useLocaleStore.getState().locale`,
+    'Other localize/mainText calls count as missing even when their first argument is a frozen copy locale held in a variable; without type information the checker cannot tell it from an interface locale.',
+    '',
+    'By top-level directory (missing / calls):',
+    ...countBy(counted, call => call.file.split('/').slice(0, 2).join('/')).map(([group, entry]) => `  ${group}\t${entry.missing} / ${entry.calls}`),
+    '',
+    'By directory (missing / calls):',
+    ...countBy(counted, call => path.posix.dirname(call.file)).map(([group, entry]) => `  ${group}\t${entry.missing} / ${entry.calls}`),
+    '',
+    'Missing Japanese:',
+    ...counted.filter(call => call.status === 'missing').map(describe),
+    '',
+    'Undetermined (spread arguments, or a lone variable after the English copy):',
+    ...counted.filter(call => call.status === 'undetermined').map(describe),
+  ]
+  console.log(lines.join('\n'))
+  const violations = jaViolations(calls)
+  if (violations.length > 0) {
+    console.error(`\nFound ${violations.length} Japanese copy problem(s):\n${violations.join('\n')}`)
+    return 1
+  }
+  return 0
+}
+
 export function collectI18nCoverageViolations(root = process.cwd()) {
-  const violations = []
+  const violations = jaViolations(collectJaCopyCalls(root))
   const rendererRoots = [
     ...I18N_COVERAGE_BOUNDARIES.rendererRoots,
     ...I18N_COVERAGE_BOUNDARIES.rendererErrorBoundaries,
@@ -903,5 +1053,9 @@ export function listMainErrorSites(root = process.cwd()) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv.includes('--update-baseline')) process.exitCode = updateMainErrorBaseline()
   else if (process.argv.includes('--list-main-errors')) process.exitCode = listMainErrorSites()
+  else if (process.argv.includes('--ja-report')) {
+    const area = process.argv[process.argv.indexOf('--ja-report') + 1]
+    process.exitCode = reportJapaneseCoverage(process.cwd(), area?.startsWith('--') ? '' : area)
+  }
   else process.exitCode = runI18nCoverageCheck()
 }

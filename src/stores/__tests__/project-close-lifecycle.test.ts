@@ -6,6 +6,7 @@ import {
   registerEditorExitSaveHandler,
   useEditorStore,
 } from '../editor-store'
+import { translate } from '../../i18n/core'
 import { useLocaleStore } from '../locale-store'
 import { useProjectStore } from '../project-store'
 import { useWorkflowStore } from '../workflow-store'
@@ -1097,6 +1098,42 @@ describe('project close lifecycle', () => {
       expect(mocks.alertError).not.toHaveBeenCalled()
     } finally {
       cancelSpy.mockRestore()
+    }
+  })
+
+  it('停用项目的提示等清理完才定语言：清理期间切到日文，登记的原因按日文说明', async () => {
+    const oldOpenResult = deferred<{ success: boolean; project: ProjectData; requestToken: string; activeProjectPath: string; databaseRestored: boolean; dbReady: boolean }>()
+    const cancelSpy = vi.spyOn(useWorkflowStore.getState(), 'cancelProjectWorkflowsAndWait')
+      .mockResolvedValueOnce()
+      .mockRejectedValueOnce(new Error('cancel timeout'))
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open' && args[0] === project('B').path) {
+        return oldOpenResult.promise.then(result => ({ ...result, requestToken: args[1] as string }))
+      }
+      if (channel === 'project:open') throw new Error('new open must fail before IPC')
+      if (channel === 'project:get-runtime-context') throw new Error('PROJECT_NOT_OPEN')
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+    mocks.disableProjectBindingsPreservingDrafts.mockImplementationOnce(() => {
+      useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    })
+    mocks.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    useLocaleStore.setState({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
+
+    try {
+      const openingB = useProjectStore.getState().openProject(project('B').path)
+      await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('project:open', project('B').path, expect.any(String), project('A').path))
+      await expect(useProjectStore.getState().openProject(project('C').path)).resolves.toBe(false)
+      oldOpenResult.resolve({ success: true, project: project('B'), requestToken: '', activeProjectPath: project('B').path, databaseRestored: true, dbReady: true })
+      await expect(openingB).resolves.toBe(false)
+
+      expect(mocks.alertError).toHaveBeenCalledWith(
+        expect.stringContaining(translate('ja-JP', 'error.projectNotOpen')),
+        expect.objectContaining({ title: 'Could not verify project database state; the project was disabled' }),
+      )
+    } finally {
+      cancelSpy.mockRestore()
+      useLocaleStore.setState({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
     }
   })
 

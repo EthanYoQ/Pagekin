@@ -11,7 +11,7 @@ vi.mock('../utils/config-utils', async (importOriginal) => {
   return { ...actual, readJsonFile: configUtils.readJsonFile }
 })
 
-import { mainText, resolveStoredOrSystemLocale } from '../i18n'
+import { getMainLocale, mainT, mainText, resolveStoredOrSystemLocale } from '../i18n'
 import { DEFAULT_GLOBAL_CONFIG } from '../utils/config-utils'
 
 describe('main-process locale selection', () => {
@@ -35,6 +35,37 @@ describe('main-process locale selection', () => {
 
   it('defaults other system locales to English', () => {
     expect(resolveStoredOrSystemLocale(undefined, 'de-DE')).toBe('en-US')
+  })
+
+  it('maps Japanese system locales to Japanese', () => {
+    expect(resolveStoredOrSystemLocale(undefined, 'ja-JP')).toBe('ja-JP')
+    expect(resolveStoredOrSystemLocale('ja-JP', 'zh-CN')).toBe('ja-JP')
+  })
+
+  it('ignores an unknown stored locale', () => {
+    expect(resolveStoredOrSystemLocale('ko-KR', 'zh-CN')).toBe('zh-CN')
+  })
+
+  it('reads colocated main-process copy in English and catalog messages in Japanese for a Japanese interface', () => {
+    configUtils.readJsonFile.mockReturnValue({ ...DEFAULT_GLOBAL_CONFIG, locale: 'ja-JP' })
+
+    expect(getMainLocale('zh-CN')).toBe('en-US')
+    expect(mainText('zh-CN', '选择文件', 'Choose files')).toBe('Choose files')
+    expect(mainT('zh-CN', 'error.projectNotOpen')).toBe('先にプロジェクトを開いてください。')
+  })
+
+  it('reads optional Japanese main-process copy for a Japanese interface', () => {
+    configUtils.readJsonFile.mockReturnValue({ ...DEFAULT_GLOBAL_CONFIG, locale: 'ja-JP' })
+
+    expect(mainText('zh-CN', '选择文件', 'Choose files', 'ファイルを選択')).toBe('ファイルを選択')
+    expect(mainText('zh-CN', '{n} 个文件', '{n} files', '{n} 件のファイル', { n: 4 })).toBe('4 件のファイル')
+    expect(mainText('zh-CN', '{n} 个文件', '{n} files', { n: 4 })).toBe('4 files')
+    expect(mainText('zh-CN', '选择文件', 'Choose files', '')).toBe('Choose files')
+  })
+
+  it('ignores Japanese main-process copy outside a Japanese interface', () => {
+    expect(mainText('zh-CN', '{n} 个文件', '{n} files', '{n} 件のファイル', { n: 4 })).toBe('4 个文件')
+    expect(mainText('en-US', '{n} 个文件', '{n} files', '{n} 件のファイル', { n: 4 })).toBe('4 files')
   })
 
   it('localizes colocated main-process dialog copy from the system locale when no preference is stored', () => {

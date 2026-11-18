@@ -975,7 +975,8 @@ try {
   if ($hasPreviousVersion) {
     if (-not [string]::IsNullOrWhiteSpace($PreviousPortableZipPath)) {
       $portableExtractRoot = Join-Path $smokeRoot 'previous-portable'
-      Expand-Archive -LiteralPath (Resolve-Path -LiteralPath $PreviousPortableZipPath).Path -DestinationPath $portableExtractRoot -Force
+      Add-Type -AssemblyName System.IO.Compression.FileSystem
+      [System.IO.Compression.ZipFile]::ExtractToDirectory((Resolve-Path -LiteralPath $PreviousPortableZipPath).Path, $portableExtractRoot)
       $productExecutableNames = @(Get-AiNovelProductExecutableNames)
       $portableExecutable = Get-ChildItem -LiteralPath $portableExtractRoot -Recurse -File |
         Where-Object { $productExecutableNames -contains $_.Name } |

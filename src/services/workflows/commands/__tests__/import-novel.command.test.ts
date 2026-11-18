@@ -14,6 +14,7 @@ import { contextLengthRejectingDependencies } from './context-length-runtime.fix
 import { isWorkflowCancellation } from '../../workflow-cancellation'
 import { GenerationHarnessError } from '../../../generation/generation-harness'
 import { closedNovelConfig, unclosedNovelConfig } from '../../__tests__/import-inference-syntax.fixture'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 class InferBlueprintsPerChapterCommand extends RuntimeInferBlueprintsPerChapterCommand {
   constructor() { super(workflowRuntimeDependencies) }
@@ -51,7 +52,7 @@ function createContext(): WorkflowContext {
       projectPath: 'C:\\tmp\\vela-import-test',
     },
     writingLanguage: 'zh-CN',
-    uiLocale: 'zh-CN',
+    uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'),
     data: {
       novelConfigSummary: '类型: 玄幻',
       chapters: [
@@ -242,6 +243,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
     const context = createContext()
     context.writingLanguage = 'en-US'
     context.uiLocale = 'zh-CN'
+    context.interfaceLocale = shown('zh-CN')
     const configSummary = 'A time-loop mystery at “夜航 Café”.'
     context.data.novelConfigSummary = configSummary
     context.data.chapters = [{
@@ -325,7 +327,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       .execute({ step: {}, context: createContext(), callbacks: { ...callbacks, log } })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage('zh-CN', 'ROOT_BUDGET_EXHAUSTED')}`)
+    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED')}`)
     expect((failure as Error).message).not.toContain('ROOT_BUDGET_EXHAUSTED')
     expect(log.mock.calls.flat().some(line => String(line).includes('ROOT_BUDGET_EXHAUSTED'))).toBe(true)
   })
@@ -358,7 +360,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       .catch((error: Error) => error)
 
     expect(isWorkflowCancellation(failure)).toBe(false)
-    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage('zh-CN', 'ROOT_BUDGET_EXHAUSTED')}`)
+    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED')}`)
   })
 
   it('does not point an English request-limit stop at the token settings', async () => {
@@ -367,12 +369,13 @@ describe('InferBlueprintsPerChapterCommand', () => {
     const runtime = { execute: (operation: (scope: { session: typeof session }) => Promise<unknown>) => operation({ session }) }
     const context = createContext()
     context.uiLocale = 'en-US'
+    context.interfaceLocale = shown('en-US')
 
     const failure = await new RuntimeInferBlueprintsPerChapterCommand({ createRuntime: async () => runtime } as never)
       .execute({ step: {}, context, callbacks })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toContain(importGenerationStopMessage('en-US', 'ROOT_BUDGET_EXHAUSTED'))
+    expect((failure as Error).message).toContain(importGenerationStopMessage(shown('en-US'), 'ROOT_BUDGET_EXHAUSTED'))
     expect((failure as Error).message).not.toMatch(/token/iu)
   })
 
@@ -386,7 +389,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       .execute({ step: {}, context: createContext(), callbacks })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage('zh-CN', 'GENERATION_STORAGE_FAILED')}`)
+    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage(shown('zh-CN'), 'GENERATION_STORAGE_FAILED')}`)
     expect((failure as Error).message).toContain('继续导入')
   })
 
@@ -401,7 +404,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       .execute({ step: {}, context, callbacks })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage('zh-CN', 'ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript')}`)
+    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript')}`)
     expect((failure as Error).message).not.toContain('重新开始')
   })
 
@@ -608,6 +611,7 @@ describe('InferGlobalSettingsCommand', () => {
     const context = createContext()
     context.writingLanguage = 'en-US'
     context.uiLocale = 'en-US'
+    context.interfaceLocale = shown('en-US')
     context.writingSkills = Object.freeze({
       planning: Object.freeze({
         skillId: 'user:import-planning', name: 'Import planning', stage: 'planning' as const,
@@ -834,7 +838,7 @@ describe('InferGlobalSettingsCommand', () => {
       .execute({ step: {}, context: createContext(), callbacks: { ...callbacks, log } })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(importGenerationStopMessage('zh-CN', 'GENERATION_STORAGE_FAILED', true))
+    expect((failure as Error).message).toBe(importGenerationStopMessage(shown('zh-CN'), 'GENERATION_STORAGE_FAILED', true))
     expect((failure as Error).message).toContain('继续导入')
     expect(log.mock.calls.flat().some(line => String(line).includes('GENERATION_STORAGE_FAILED'))).toBe(true)
   })
@@ -850,7 +854,7 @@ describe('InferGlobalSettingsCommand', () => {
       .execute({ step: {}, context: createContext(), callbacks: { ...callbacks, log } })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(importGenerationStopMessage('zh-CN', 'ROOT_BUDGET_EXHAUSTED', true))
+    expect((failure as Error).message).toBe(importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED', true))
     expect(log.mock.calls.flat().some(line => String(line).includes('ROOT_BUDGET_EXHAUSTED'))).toBe(true)
   })
 

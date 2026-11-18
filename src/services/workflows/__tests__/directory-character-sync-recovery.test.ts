@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../blueprint-character-sync', () => ({ syncBlueprintCharacterCandidates: vi.fn().mockResolvedValue(undefined) }))
 
 import { retryAllPendingDirectoryCharacterSyncs, retryDirectoryCharacterSync } from '../directory-character-sync-recovery'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 const session = { projectId: 'NovelA', leaseId: 'lease-NovelA', projectPath: 'C:/NovelA' }
 
@@ -20,7 +21,7 @@ describe('蓝图角色同步重试的失败说明按界面语言显示（#471）
   it('英文界面：待重试的操作不存在时说明是英文', async () => {
     stubIpc({ 'db:blueprint-character-sync-get': null })
 
-    await expect(retryDirectoryCharacterSync('op-1', 'C:/NovelA', session, 'en-US'))
+    await expect(retryDirectoryCharacterSync('op-1', 'C:/NovelA', session, shown('en-US')))
       .rejects.toThrow(/^The pending blueprint character-proposal operation no longer exists\.$/u)
   })
 
@@ -31,7 +32,7 @@ describe('蓝图角色同步重试的失败说明按界面语言显示（#471）
       'db:blueprint-character-sync-complete': { success: false, error: 'Error: 项目数据库未打开' },
     })
 
-    await expect(retryAllPendingDirectoryCharacterSyncs('C:/NovelA', session, 'en-US'))
+    await expect(retryAllPendingDirectoryCharacterSyncs('C:/NovelA', session, shown('en-US')))
       .rejects.toThrow(/^The blueprint character proposals were saved, but their receipt could not be stored\.$/u)
   })
 
@@ -41,7 +42,7 @@ describe('蓝图角色同步重试的失败说明按界面语言显示（#471）
       'db:blueprint-character-sync-complete': { success: false, error: 'Error: 项目数据库未打开' },
     })
 
-    await expect(retryDirectoryCharacterSync('op-1', 'C:/NovelA', session, 'zh-CN'))
+    await expect(retryDirectoryCharacterSync('op-1', 'C:/NovelA', session, shown('zh-CN')))
       .rejects.toThrow(/^蓝图角色提议已保存，但回执未能持久化：项目数据库未打开$/u)
   })
 })

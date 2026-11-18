@@ -531,7 +531,9 @@ describe('Windows installer smoke contract', () => {
 
     expect(script).toContain('$PreviousInstallerPath')
     expect(script).toContain('$PreviousPortableZipPath')
-    expect(script).toContain('Expand-Archive')
+    expect(script).not.toContain('Expand-Archive')
+    expect(script).toContain('Add-Type -AssemblyName System.IO.Compression.FileSystem')
+    expect(script).toContain('[System.IO.Compression.ZipFile]::ExtractToDirectory((Resolve-Path -LiteralPath $PreviousPortableZipPath).Path, $portableExtractRoot)')
     expect(script).toContain('Install-Silently')
     expect(script).toContain('$InstallerTimeoutSeconds')
     expect(script).toContain('$PostExitQuietSeconds = 5')

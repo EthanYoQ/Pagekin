@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { knownAppErrorMessage } from '../app-errors'
+import { shown } from './shown-locale'
 
 /**
  * 生成 IPC 会把任何 GENERATION_* 码原样转给渲染端，工作流失败面板对未登记的码只能显示原码。
@@ -818,7 +819,7 @@ function coveredCodesInSource(): Map<string, string> {
 }
 
 const unregistered = new Set(Object.values(UNREGISTERED).flat())
-const isRegistered = (code: string) => knownAppErrorMessage('zh-CN', code) !== undefined
+const isRegistered = (code: string) => knownAppErrorMessage(shown('zh-CN'), code) !== undefined
 
 describe('error codes that reach the workflow failure panel', () => {
   const codes = coveredCodesInSource()

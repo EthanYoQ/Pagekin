@@ -463,3 +463,79 @@ describe('替换后的影响提示', () => {
     await expect.element(page.getByText('Chapter 4 was written before this change. It may not match the new text and is not changed automatically.')).toBeVisible()
   })
 })
+
+describe('换稿进行中', () => {
+  it('定稿章的重新打开请求还没回来：「重新打开修改」不可点，重开只发一次；回来后换上重开稿', async () => {
+    const final = backend.addDraft({ status: 'finalized' })
+    let release!: () => void
+    backend.state.reopenGate = new Promise(resolve => { release = resolve })
+    await mount()
+    await openDraft(final.id)
+
+    await click('重新打开修改')
+    await act(async () => page.getByRole('dialog', { name: '重新打开第 3 章？' }).getByRole('button', { name: '重新打开', exact: true }).click())
+    await vi.waitFor(() => expect(backend.writes('chapter:reopen')).toHaveLength(1))
+
+    await expect.element(page.getByRole('button', { name: '重新打开修改', exact: true })).toBeDisabled()
+
+    await act(async () => release())
+    const reopened = backend.state.drafts.at(-1)!
+    await vi.waitFor(() => expect(activeTab()?.draftId).toBe(reopened.id))
+    expect(backend.writes('chapter:reopen')).toHaveLength(1)
+  })
+
+  it('选了另一稿、它还在读取：AI 审稿、定稿、删除这一稿都不可点，提示写正在切换；读完换上那一稿', async () => {
+    const current = backend.addDraft({ status: 'draft' })
+    const other = backend.addDraft({ status: 'draft', version: 2, content: REVISED, createdAt: '2026-10-13 20:30:00' })
+    await mount()
+    await openDraft(current.id)
+    const answer = backend.invoke.getMockImplementation()!
+    let release!: () => void
+    const read = new Promise<void>(resolve => { release = resolve })
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:draft-get-full') await read
+      return answer(channel, ...args)
+    })
+
+    await act(async () => page.getByRole('button', { name: /^本章版本：/ }).click())
+    await act(async () => page.getByRole('menuitemradio', { name: /v2/ }).click())
+
+    await expect.element(page.getByRole('button', { name: 'AI 审稿', exact: true })).toBeDisabled()
+    await expect.element(page.getByText('正在切换稿件…')).toBeVisible()
+    await click('更多操作')
+    await expect.element(page.getByRole('menuitem', { name: '定稿…' })).toBeDisabled()
+    await expect.element(page.getByRole('menuitem', { name: '删除这一稿…' })).toBeDisabled()
+
+    await act(async () => release())
+    await vi.waitFor(() => expect(activeTab()?.draftId).toBe(other.id))
+  })
+
+  it('删除这一稿的请求还没回来：版本切换不可点，提示写正在切换；删完换上另一稿', async () => {
+    const current = backend.addDraft({ status: 'draft' })
+    const other = backend.addDraft({ status: 'draft', version: 2, content: REVISED, createdAt: '2026-10-13 20:30:00' })
+    await mount()
+    await openDraft(current.id)
+    const answer = backend.invoke.getMockImplementation()!
+    let release!: () => void
+    const deleting = new Promise<void>(resolve => { release = resolve })
+    let asked = 0
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:draft-delete') {
+        asked += 1
+        await deleting
+      }
+      return answer(channel, ...args)
+    })
+
+    await click('更多操作')
+    await act(async () => page.getByRole('menuitem', { name: '删除这一稿…' }).click())
+    await act(async () => page.getByRole('dialog', { name: '删除第 3 章 v1？' }).getByRole('button', { name: '删除这一稿', exact: true }).click())
+    await vi.waitFor(() => expect(asked).toBe(1))
+
+    await expect.element(page.getByRole('button', { name: /^本章版本：/ })).toBeDisabled()
+    await expect.element(page.getByText('正在切换稿件…')).toBeVisible()
+
+    await act(async () => release())
+    await vi.waitFor(() => expect(activeTab()?.draftId).toBe(other.id))
+  })
+})

@@ -48,6 +48,69 @@ describe('locale store', () => {
     expect(state.getState().locale).toBe('en-US')
   })
 
+  it('selects a Japanese interface from a Japanese system locale and reads colocated copy in English', async () => {
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({}),
+      saveLocale: vi.fn(async () => ({ success: true })),
+      systemLocale: () => 'ja-JP',
+      setDocumentLanguage: vi.fn(),
+    }))
+
+    await state.getState().init()
+
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    expect(state.getState().text('中文', 'English')).toBe('English')
+    expect(state.getState().t('error.projectNotOpen')).toBe('先にプロジェクトを開いてください。')
+  })
+
+  it('persists a Japanese choice and sets the document language to Japanese', async () => {
+    const saveLocale = vi.fn().mockResolvedValue({ success: true })
+    const setDocumentLanguage = vi.fn()
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({}),
+      saveLocale,
+      systemLocale: () => 'zh-CN',
+      setDocumentLanguage,
+    }))
+
+    await state.getState().setLocale('ja-JP')
+
+    expect(saveLocale).toHaveBeenCalledWith('ja-JP')
+    expect(setDocumentLanguage).toHaveBeenCalledWith('ja-JP')
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+  })
+
+  it('ignores an unknown stored locale and falls back to the operating-system locale', async () => {
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'ko-KR' as never }),
+      saveLocale: vi.fn(async () => ({ success: true })),
+      systemLocale: () => 'zh-CN',
+      setDocumentLanguage: vi.fn(),
+    }))
+
+    await state.getState().init()
+
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
+  })
+
+  it('lets a locale set on its own win over a stale interface language', async () => {
+    const saveLocale = vi.fn(async () => ({ success: true }))
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'ja-JP' }),
+      saveLocale,
+      systemLocale: () => 'ja-JP',
+      setDocumentLanguage: vi.fn(),
+    }))
+    await state.getState().init()
+
+    state.setState({ locale: 'zh-CN' })
+
+    expect(state.getState().t('error.projectNotOpen')).toBe('请先打开项目。')
+    await state.getState().setLocale('ja-JP')
+    expect(saveLocale).toHaveBeenCalledWith('ja-JP')
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+  })
+
   it('notifies components that subscribe only to locale readers', async () => {
     const state = createStore(createLocaleState({
       loadConfig: async () => ({}),
@@ -75,6 +138,95 @@ describe('locale store', () => {
     expect(state.getState().text('中文', 'English')).toBe('English')
     await state.getState().setLocale('zh-CN')
     expect(state.getState().text('中文', 'English')).toBe('中文')
+  })
+
+  it('reads optional Japanese component copy for a Japanese interface', async () => {
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'ja-JP' }),
+      saveLocale: vi.fn(async () => ({ success: true })),
+      systemLocale: () => 'zh-CN',
+      setDocumentLanguage: vi.fn(),
+    }))
+    await state.getState().init()
+    const { text } = state.getState()
+
+    expect(text('第 {n} 章', 'Chapter {n}', '第 {n} 話', { n: 2 })).toBe('第 2 話')
+    expect(text('第 {n} 章', 'Chapter {n}', { n: 2 })).toBe('Chapter 2')
+    expect(text('保存', 'Save', '保存する')).toBe('保存する')
+    expect(text('保存', 'Save')).toBe('Save')
+    await state.getState().setLocale('zh-CN')
+    expect(state.getState().text('保存', 'Save', '保存する')).toBe('保存')
+    await state.getState().setLocale('en-US')
+    expect(state.getState().text('保存', 'Save', '保存する')).toBe('Save')
+  })
+
+  it('lets a copy language set on its own win over a Japanese interface', async () => {
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'ja-JP' }),
+      saveLocale: vi.fn(async () => ({ success: true })),
+      systemLocale: () => 'ja-JP',
+      setDocumentLanguage: vi.fn(),
+    }))
+    await state.getState().init()
+
+    state.setState({ locale: 'zh-CN' })
+
+    expect(state.getState().text('保存', 'Save', '保存する')).toBe('保存')
+  })
+
+  it('keeps a later choice when an earlier save of the same language fails last', async () => {
+    let failFirstSave: (error: Error) => void = () => {}
+    const saveLocale = vi.fn()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { failFirstSave = reject }))
+      .mockResolvedValue({ success: true })
+    const reportError = vi.fn()
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({}),
+      saveLocale,
+      systemLocale: () => 'en-US',
+      setDocumentLanguage: vi.fn(),
+      reportError,
+    }))
+
+    const firstJapanese = state.getState().setLocale('ja-JP')
+    await state.getState().setLocale('zh-CN')
+    await state.getState().setLocale('ja-JP')
+    failFirstSave(new Error('disk full'))
+    await firstJapanese
+
+    expect(state.getState()).toMatchObject({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    expect(reportError).not.toHaveBeenCalled()
+  })
+
+  // 两次连续选择 zh-CN → en-US → ja-JP，各自成败、谁先返回，八种组合。
+  // 主进程按发出顺序写配置，失败的不写：保存下来的是最后一次成功的选择。
+  const outcomes = [true, false].flatMap(first => [true, false].flatMap(second =>
+    [false, true].map(secondSettlesFirst => [first, second, secondSettlesFirst] as const)))
+  it.each(outcomes)('shows the saved language once both saves settle (first ok %s, second ok %s, second settles first %s)', async (firstOk, secondOk, secondSettlesFirst) => {
+    const settle: Array<() => void> = []
+    const saveLocale = vi.fn(() => new Promise<{ success: boolean; error?: string }>(resolve => {
+      const ok = settle.length === 0 ? firstOk : secondOk
+      settle.push(() => resolve(ok ? { success: true } : { success: false, error: 'disk full' }))
+    }))
+    const reportError = vi.fn()
+    const state = createStore(createLocaleState({
+      loadConfig: async () => ({ locale: 'zh-CN' }),
+      saveLocale,
+      systemLocale: () => 'zh-CN',
+      setDocumentLanguage: vi.fn(),
+      reportError,
+    }))
+    await state.getState().init()
+
+    const first = state.getState().setLocale('en-US')
+    const second = state.getState().setLocale('ja-JP')
+    await vi.waitFor(() => expect(saveLocale).toHaveBeenCalledTimes(2))
+    for (const index of secondSettlesFirst ? [1, 0] : [0, 1]) settle[index]()
+    await Promise.all([first, second])
+
+    const saved = secondOk ? 'ja-JP' : firstOk ? 'en-US' : 'zh-CN'
+    expect(state.getState().interfaceLocale).toBe(saved)
+    expect(reportError).toHaveBeenCalledTimes(saved === 'ja-JP' ? 0 : 1)
   })
 
   it.each([

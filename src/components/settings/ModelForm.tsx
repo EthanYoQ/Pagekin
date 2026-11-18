@@ -11,7 +11,7 @@ import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
 import { NativeSelect } from '../ui/NativeSelect'
 import { cn } from '../../lib/utils'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
 import { ModelReasoningOverrideSettings, ModelCapabilitySources, ProjectCreativeStrategySettings } from './ReasoningPolicySettings'
 import { openModelProviderResource } from './model-provider-resource'
@@ -102,14 +102,13 @@ export function ModelForm({
   presets: ProviderPreset[]
 }) {
   const text = useLocaleStore(s => s.text)
-  const locale = useLocaleStore(s => s.locale)
   const [showKey, setShowKey] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const saveHintId = useId()
 
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean, error?: string } | null>(null)
-  const testFailure = testResult && !testResult.success ? displayedErrorMessage(locale, testResult.error) : ''
+  const testFailure = testResult && !testResult.success ? displayedErrorMessage(currentInterfaceLocale(), testResult.error) : ''
   const testConnection = useLLMStore(s => s.testConnection)
   const discoverModels = useLLMStore(s => s.discoverModels)
   const discoverLocalContextWindow = useLLMStore(s => s.discoverLocalContextWindow)
@@ -667,7 +666,7 @@ export function ModelForm({
         <div className={`text-xs p-2 rounded ${testResult.success ? 'bg-green-500/10 text-[var(--color-success-text)] border border-green-500/20' : 'bg-red-500/10 text-[var(--color-error-text)] border border-red-500/20'} break-all`}>
           {testResult.success
             ? text('连接成功', 'Connection succeeded')
-            : text(`连接失败：${testFailure}`, englishWithReason('Connection failed', testFailure, ': '))}
+            : text(`连接失败：${testFailure}`, englishWithReason(currentInterfaceLocale(), 'Connection failed', testFailure, ': '))}
         </div>
       )}
     </div>

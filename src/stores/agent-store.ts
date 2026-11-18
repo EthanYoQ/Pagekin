@@ -26,6 +26,7 @@ import { useLocaleStore } from './locale-store'
 import { useLLMStore } from './llm-store'
 import { useEditorStore } from './editor-store'
 import type { Locale } from '../i18n/types'
+import { errorLocaleForRun } from '../i18n/core'
 import { APP_BRAND } from '../shared/brand'
 
 export const AGENT_GENERATION_BUDGET = Object.freeze({
@@ -583,7 +584,8 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         },
         abortController.signal,
         Object.freeze({ ...executionContext, selectedModelId: recovery.modelId, writingLanguage: recovery.context.writingLanguage,
-          uiLocale: recovery.context.input.uiLocale, agentGeneration: client }),
+          uiLocale: recovery.context.input.uiLocale, interfaceLocale: errorLocaleForRun(recovery.context.input.uiLocale, executionContext.interfaceLocale),
+          agentGeneration: client }),
       )
     } catch (error) {
       if (get().activeRequestId !== assistantMsg.id) return

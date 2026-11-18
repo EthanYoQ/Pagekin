@@ -4,7 +4,7 @@ import { globalEventBus } from '../../../shared/event-bus'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { formatResourceUri } from '../../../shared/project-paths'
 import { ipc } from '../../../services/ipc-client'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { useProjectStore } from '../../../stores/project-store'
 import { toast } from '../../ui/Toast'
@@ -57,7 +57,7 @@ export function useIncompleteDeletions(projectPath: string) {
       globalEventBus.emit('REFRESH_RESOURCE', { resources: ['drafts', 'fileTree'], projectPath, projectSession })
       toast.success(text(`第${operation.chapterNumber}章清理完成。在软件外改过的正文文件会保留。`, `Chapter ${operation.chapterNumber} cleanup is done. A manuscript file you edited outside Pagekin is kept.`))
     } else {
-      const reason = displayedErrorMessage(useLocaleStore.getState().locale, result.error)
+      const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
       toast.error(text(`重试清理失败\n\n${reason}`, `Cleanup retry failed\n\n${reason}`))
     }
   }

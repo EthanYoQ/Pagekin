@@ -53,6 +53,7 @@ import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, joinPlotOutlineEntries, pl
 import { synopsisForDraftChapter } from '../../../src/services/workflows/commands/generate-draft.command'
 import { parseTextBlueprintsStrict } from '../../../src/services/workflows/directory-workflow'
 import { ProjectCoreRepository, type ProjectCoreSynopsisCommitRequest } from '../../repositories/project-core-repository'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 vi.mock('../../database', () => ({ getProjectDb: vi.fn(), getCurrentProjectPath: vi.fn(() => null) }))
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const cleanups: (() => void)[] = []
@@ -613,7 +614,7 @@ describe('explicit planning recovery with real SQLite', () => {
       newCharacterCandidates: characters.map(name => ({ name, role: 'supporting' as const })),
       userGuidance: '  作者指导保留原字节。\r\n', notes: '<think>作者备注中的原文标签</think>\n第二行。', notesUpdatedAt: '2026-10-04T13:00:00.000Z' }
     const request: BlueprintRangeCommitRequest = { mode: 'replace-range', operationId: 'author-blueprint', startChapter: 1, endChapter: 1,
-      blueprints: parseTextBlueprintsStrict(JSON.stringify([repaired]), 1, 1, 'zh-CN', 'author'), authorRecovery: { sourceHandle: run.handle, leaseEpoch: context.blueprintRecovery!.leaseEpoch } }
+      blueprints: parseTextBlueprintsStrict(JSON.stringify([repaired]), 1, 1, shown('zh-CN'), 'author'), authorRecovery: { sourceHandle: run.handle, leaseEpoch: context.blueprintRecovery!.leaseEpoch } }
     const save = () => f.db.transaction(() => f.owner.commitBlueprintAuthorEdit(request)).immediate()
     const saved = save()
     expect(saved.authorEdit).toMatchObject({ committedRange: { from: 1, to: 1 }, remainingRange: { from: 2, to: 3 } })
@@ -649,7 +650,7 @@ describe('explicit planning recovery with real SQLite', () => {
     await f.owner.execute({ handle: run.handle, invocationNonce: 'failed', task: { ...task, purpose: 'chapter-blueprint-directory', output: 'structured-data' } })
     const context = f.owner.readContext(run.handle)
     f.db.transaction(() => f.owner.commitBlueprintAuthorEdit({ mode: 'replace-range', operationId: 'author-whole-range', startChapter: 1, endChapter: 3,
-      blueprints: parseTextBlueprintsStrict(JSON.stringify([blueprint(1), blueprint(2), blueprint(3)]), 1, 3, 'zh-CN', 'author'),
+      blueprints: parseTextBlueprintsStrict(JSON.stringify([blueprint(1), blueprint(2), blueprint(3)]), 1, 3, shown('zh-CN'), 'author'),
       authorRecovery: { sourceHandle: run.handle, leaseEpoch: context.blueprintRecovery!.leaseEpoch } })).immediate()
     expect(f.owner.readContext(run.handle)).toMatchObject({ planningContinuation: { state: 'complete' }, blueprintRecovery: { writeState: 'author-saved' } })
     expect(f.owner.listRecovery().planning).toEqual([])
@@ -665,7 +666,7 @@ describe('explicit planning recovery with real SQLite', () => {
     f.db.transaction(() => repository.recordPlotOutlineCommitWithinTransaction(run.handle.runId)).immediate()
     f.db.transaction(() => kind === 'blueprint'
       ? f.owner.commitBlueprintAuthorEdit({ mode: 'replace-range', operationId: 'author-blueprint', startChapter: 1, endChapter: 1,
-        blueprints: parseTextBlueprintsStrict(JSON.stringify([blueprint(1)]), 1, 1, 'zh-CN', 'author'),
+        blueprints: parseTextBlueprintsStrict(JSON.stringify([blueprint(1)]), 1, 1, shown('zh-CN'), 'author'),
         authorRecovery: { sourceHandle: run.handle, leaseEpoch: context.blueprintRecovery!.leaseEpoch } })
       : f.owner.commitPlotOutlineAuthorEdit({ synopsis: renderPlotOutlineSynopsis(outlineEntry(1), 1, context.plotOutline!.sourceExpected), expected: context.plotOutline!.sourceExpected,
         authorRecovery: { sourceHandle: run.handle, leaseEpoch: context.plotOutlineRecovery!.leaseEpoch, operationId: 'author-outline', committedRange: { from: 1, to: 1 } } })).immediate()
@@ -699,7 +700,7 @@ describe('explicit planning recovery with real SQLite', () => {
     const range = { startChapter: 1, endChapter: 3 }
     f.db.transaction(() => {
       const receipt = BlueprintRepository.commitRange({ mode: 'replace-range', operationId: 'regenerate-prefix', startChapter: 1, endChapter: 1,
-        blueprints: parseTextBlueprintsStrict(JSON.stringify([regenerated]), 1, 1, 'zh-CN') }, () => f.owner.assertSourcesCurrent(run.handle, range))
+        blueprints: parseTextBlueprintsStrict(JSON.stringify([regenerated]), 1, 1, shown('zh-CN')) }, () => f.owner.assertSourcesCurrent(run.handle, range))
       f.owner.recordDirectoryCommit(run.handle, range, receipt)
     }).immediate()
     expect(BlueprintRepository.getAll().find(item => item.chapterNumber === 1)).toMatchObject({ keyEvents: '重新生成后的关键事件。', ...authored })

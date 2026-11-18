@@ -3,7 +3,7 @@ import { useProjectStore } from '../../stores/project-store'
 import { guardArchitectureGeneration, guardCharacterRegeneration } from '../../services/workflow-guards'
 import { ARCH_STEP_NAMES, createDefaultArchitectureSelection, type ArchStepKey } from '../../services/architecture-step-selection'
 import { toast } from '../ui/Toast'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { ipc } from '../../services/ipc-client'
 import { assertPlanningActionRange, DEFAULT_PLANNING_ACTION_CHAPTERS, DEFAULT_PLANNING_TARGET_UNITS, parsePlanningTargetUnits, PLANNING_ACTION_CHAPTER_LIMIT, PLANNING_TARGET_UNITS_LIMIT, plotOutlineLastChapter, plotOutlineNextChapter, plotOutlineRangeEffect, type PlotOutlineRangeEffect, type PlotOutlineRangeSource } from '../../shared/plot-outline-contract'
 import { displayedErrorMessage } from '../../i18n/app-errors'
@@ -47,7 +47,6 @@ export function useArchitectureConfirmForm({
 }: ArchitectureConfirmFormOptions) {
   const currentProject = useProjectStore(s => s.currentProject)
   const text = useLocaleStore(s => s.text)
-  const locale = useLocaleStore(s => s.locale)
 
   // 默认：未确认的全部勾选；或使用 initialSelectedSteps 覆盖
   const [checked, setChecked] = useState<Record<ArchStepKey, boolean>>(() => {
@@ -70,7 +69,7 @@ export function useArchitectureConfirmForm({
     void ipc.invoke('config:get').then(config => {
       if (!disposed) setTargetUnits(String(parsePlanningTargetUnits(config.outlineTargetUnits)))
     }).catch(error => {
-      if (!disposed) setGuardError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      if (!disposed) setGuardError(displayedErrorMessage(currentInterfaceLocale(), error))
     }).finally(() => { if (!disposed) setPreferenceLoading(false) })
     return () => { disposed = true; setPreferenceLoading(true) }
   }, [isOpen])
@@ -204,14 +203,14 @@ export function useArchitectureConfirmForm({
       // 前置校验 1：小说配置是否填写
       const configGuard = guardArchitectureGeneration()
       if (!configGuard.ok) {
-        setGuardError(displayedErrorMessage(locale, configGuard.message, text('配置校验失败', 'Configuration validation failed.')))
+        setGuardError(displayedErrorMessage(currentInterfaceLocale(), configGuard.message, text('配置校验失败', 'Configuration validation failed.')))
         return
       }
 
       // 范围合法性（超出总章数或起大于止）
       const resolution = resolveSynopsisRange()
       if (!resolution.ok) {
-        setGuardError(displayedErrorMessage(locale, resolution.message, boundsIssue))
+        setGuardError(displayedErrorMessage(currentInterfaceLocale(), resolution.message, boundsIssue))
         return
       }
 
@@ -219,7 +218,7 @@ export function useArchitectureConfirmForm({
       if (selectedSteps.includes('characters') && archStatus.characters) {
         const charGuard = await guardCharacterRegeneration()
         if (!charGuard.ok) {
-          setGuardError(displayedErrorMessage(useLocaleStore.getState().locale, charGuard.message, text('角色卡不可重新生成', 'Character cards cannot be regenerated.')))
+          setGuardError(displayedErrorMessage(currentInterfaceLocale(), charGuard.message, text('角色卡不可重新生成', 'Character cards cannot be regenerated.')))
           return
         }
       }
@@ -244,7 +243,7 @@ export function useArchitectureConfirmForm({
       const stepNames = selectedSteps.map(k => text(...ARCH_STEP_NAMES[k])).join(text('、', ', '))
       toast.info(text(`已提交：正在生成${stepNames}...`, `Submitted: generating ${stepNames}...`))
     } catch (error) {
-      setGuardError(displayedErrorMessage(useLocaleStore.getState().locale, error))
+      setGuardError(displayedErrorMessage(currentInterfaceLocale(), error))
     } finally {
       setIsConfirming(false)
     }

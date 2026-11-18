@@ -187,7 +187,7 @@ export function assertImportCompletionNotStopped(
   context: CommandExecuteParams['context'],
 ): void {
   const code = completion.receipt.failureCode
-  const stopped = code && importGenerationStopMessage(context.uiLocale, code, true, importRunPurpose(context))
+  const stopped = code && importGenerationStopMessage(context.interfaceLocale, code, true, importRunPurpose(context))
   if (!stopped) return
   callbacks.log(workflowUiText(context, `导入停止原因：${code}`, `Import stop reason: ${code}`))
   throw new Error(stopped)
@@ -570,7 +570,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
         context.projectPath,
       )
       if (!commitResult.success) throw workflowMainProcessError(
-        context,
+        context.interfaceLocale,
         commitResult.error,
         '导入全局事实原子提交失败',
         'The imported global facts could not be committed atomically.',
@@ -808,11 +808,11 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
       if (batch.failure.code === 'invalid_output') await this.discardRejectedImportOutput(callbacks)
       const { errorCode } = batch.failure
       if (errorCode) callbacks.log(text(`蓝图推演停止原因：${errorCode}`, `Blueprint inference stop reason: ${errorCode}`))
-      const reason = (errorCode && importGenerationStopMessage(context.uiLocale, errorCode, batch.failure.code === 'deadline', importRunPurpose(context)))
-        || displayedErrorMessage(context.uiLocale, batch.failure.message)
+      const reason = (errorCode && importGenerationStopMessage(context.interfaceLocale, errorCode, batch.failure.code === 'deadline', importRunPurpose(context)))
+        || displayedErrorMessage(context.interfaceLocale, batch.failure.message)
       throw new Error(text(
         `蓝图推演失败：${reason}`,
-        englishWithReason(`Blueprint inference failed (${batch.failure.reason}).`, reason),
+        englishWithReason(context.interfaceLocale, `Blueprint inference failed (${batch.failure.reason}).`, reason),
       ))
     }
 
@@ -837,7 +837,7 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
       )
       if (!commit.success || !commit.receipt) {
         throw workflowMainProcessError(
-          context,
+          context.interfaceLocale,
           commit.error,
           '导入蓝图未能作为完整范围一次提交并回读。',
           'The imported blueprints could not be committed and read back as one complete range.',
@@ -857,7 +857,7 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
         commitReceipt.characterSyncOperation.operationId,
         context.projectPath,
         projectSession,
-        context.uiLocale,
+        context.interfaceLocale,
       )
       context.data.blueprintCharacterSyncReceipt = syncReceipt
     } catch {

@@ -4,7 +4,7 @@ import { useProjectStore } from '../../stores/project-store'
 import { registerEditorExitSaveHandler, useEditorStore } from '../../stores/editor-store'
 import { routeModelId } from '../../services/model-routing'
 import { useWorkflowStore } from '../../stores/workflow-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import type { NovelConfig, ProjectData } from '../../shared/ipc-channels'
 import { resolveWritingLanguage } from '../../shared/writing-language'
 import type { GeneratableField } from '../../services/workflows/commands/generate-field.command'
@@ -92,7 +92,7 @@ export function useNovelConfigForm(projectKey: string) {
       if (isProjectSessionCurrent(projectSession)) {
         setSaveOutcome('failed')
         console.error('[NovelConfigEditor] 保存失败:', error)
-        const reason = displayedErrorMessage(useLocaleStore.getState().locale, error)
+        const reason = displayedErrorMessage(currentInterfaceLocale(), error)
         addLog('error', text(`保存失败：${reason}`, `Save failed: ${reason}`))
       }
       if (propagateFailure) throw error
@@ -139,6 +139,7 @@ export function useNovelConfigForm(projectKey: string) {
           projectSession,
           writingLanguage: resolveWritingLanguage(currentProject?.novelConfig.writingLanguage),
           uiLocale: useLocaleStore.getState().locale,
+          interfaceLocale: currentInterfaceLocale(),
           data: {},
           cancelled: false,
         },
@@ -151,7 +152,7 @@ export function useNovelConfigForm(projectKey: string) {
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
       const draftChanged = e instanceof Error && e.message === 'GENERATION_AUTHOR_DRAFT_CHANGED'
-      const reason = displayedErrorMessage(useLocaleStore.getState().locale, e)
+      const reason = displayedErrorMessage(currentInterfaceLocale(), e)
       addLog('error', draftChanged
         ? text(
           '生成期间小说配置已修改。已保留你的修改，请按当前配置重新生成。',

@@ -17,7 +17,7 @@ import { CharacterCardImportButton } from '../characters/CharacterCardImportButt
 import CodeMirrorEditor from './CodeMirrorEditor'
 import { SaveFeedback, type SaveOutcome } from './save-feedback'
 import { useProjectStore } from '../../stores/project-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { createArchitectureWorkflow } from '../../services/workflows/architecture-workflow'
 import { renderPlotOutlineSynopsis, validPlotOutlineAuthorPrefix, type PlotOutlineRangeSource } from '../../shared/plot-outline-contract'
@@ -140,7 +140,7 @@ function ArchFileViewerSession({
   }, [recoveryTab?.planningRecovery])
   useEffect(() => {
     if (!hasRecovery) return
-    void refreshRecovery().catch(error => setRecoveryError(appErrorMessage(useLocaleStore.getState().locale, error)))
+    void refreshRecovery().catch(error => setRecoveryError(appErrorMessage(currentInterfaceLocale(), error)))
   }, [hasRecovery, refreshRecovery])
 
   // 磁盘上的内容（已保存的基准）
@@ -337,9 +337,9 @@ function ArchFileViewerSession({
       }
     } catch (error) {
       if (isProjectSessionCurrent(projectSession)) {
-        if (recoveryRef.current) setRecoveryError(appErrorMessage(useLocaleStore.getState().locale, error))
+        if (recoveryRef.current) setRecoveryError(appErrorMessage(currentInterfaceLocale(), error))
         setSaveOutcome('failed')
-        toast.error(appErrorMessage(useLocaleStore.getState().locale, error))
+        toast.error(appErrorMessage(currentInterfaceLocale(), error))
       }
       // Exit-save must reject so the caller cannot close an unsaved document.
       if (propagateFailure) throw error
@@ -368,7 +368,7 @@ function ArchFileViewerSession({
         await refreshRecovery()
         setRecoveryError('')
       } catch (error) {
-        setRecoveryError(appErrorMessage(useLocaleStore.getState().locale, error))
+        setRecoveryError(appErrorMessage(currentInterfaceLocale(), error))
       }
       return
     }
@@ -555,7 +555,7 @@ function ArchFileViewerSession({
         synopsisRange: continuation.remainingRange, targetUnits: continuation.targetUnits, restartFrom: continuation.sourceHandle,
       }))
       await refreshRecovery()
-    } catch (error) { setRecoveryError(appErrorMessage(useLocaleStore.getState().locale, error)) }
+    } catch (error) { setRecoveryError(appErrorMessage(currentInterfaceLocale(), error)) }
     finally { setContinuing(false) }
   }
   const generated = initialContent.length > 50 && !initialContent.includes('待生成')

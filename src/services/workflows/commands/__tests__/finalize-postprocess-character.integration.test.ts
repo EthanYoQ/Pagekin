@@ -41,6 +41,7 @@ import { useFakeModelStream, type FakeGenerateStream } from './workflow-generati
 import { createRepairFinalizeWorkflow } from '../../chapter-workflow'
 import { getChapterFinalizeScope, readPostProcessStatus } from '../../workflow-utils'
 import { FinalizationRepository } from '../../../../../electron/repositories/finalization-repository'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 type ModelMessages = Parameters<FakeGenerateStream>[0]
 
 let projectPath = ''
@@ -373,7 +374,7 @@ beforeEach(() => {
     projectPath,
     projectSession: { projectId: 'test', leaseId: 'lease-test', projectPath },
     writingLanguage: 'en-US',
-    uiLocale: 'en-US',
+    uiLocale: 'en-US', interfaceLocale: shown('en-US'),
     data: {},
     cancelled: false,
   }

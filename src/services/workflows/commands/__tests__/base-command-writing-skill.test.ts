@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { GenerationSession, GenerationTask } from '../../../generation/generation-harness'
 import type { CommandExecuteParams, WorkflowGenerationRuntimeDependencies } from '../base-command'
+import { shown } from '../../../../i18n/__tests__/shown-locale'
 
 describe('BaseWorkflowCommand writing skill injection', () => {
   it('does not infer a writing skill from the model reasoning stage', async () => {
@@ -43,7 +44,7 @@ describe('BaseWorkflowCommand writing skill injection', () => {
       context: {
         runId: 'analysis-run', projectPath: 'C:/novels/project',
         projectSession: { projectId: 'project', projectPath: 'C:/novels/project', leaseId: 'lease' },
-        writingLanguage: 'en-US', uiLocale: 'en-US', data: {}, cancelled: false,
+        writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US'), data: {}, cancelled: false,
         writingSkills: Object.freeze({
           review: Object.freeze({
             skillId: 'user:review-craft', name: 'Review craft', stage: 'review', source: 'user',
@@ -109,7 +110,7 @@ describe('BaseWorkflowCommand writing skill injection', () => {
       context: {
         runId: 'skill-run', projectPath: 'C:/novels/project',
         projectSession: { projectId: 'project', projectPath: 'C:/novels/project', leaseId: 'lease' },
-        writingLanguage: 'en-US', uiLocale: 'en-US', data: {}, cancelled: false,
+        writingLanguage: 'en-US', uiLocale: 'en-US', interfaceLocale: shown('en-US'), data: {}, cancelled: false,
         writingSkills: Object.freeze({ drafting: frozenSkill }),
       },
       callbacks,

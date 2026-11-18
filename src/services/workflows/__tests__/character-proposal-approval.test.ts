@@ -7,6 +7,7 @@ import { createCharacterProposalChoices } from '../../character-proposal-choices
 import { AdoptGeneratedCharactersCommand } from '../commands/architecture.command'
 import { createArchitectureWorkflow } from '../architecture-workflow'
 import { createPlanningMaterialCharacterExtractionWorkflow } from '../planning-material-workflow'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 const session = { projectId: 'project', leaseId: 'epoch', projectPath: 'C:/synthetic/project' }
 function batch(): CharacterProposalBatch {
   return { proposalBatchId: 'batch', revision: 7, status: 'pending-approval', source: { kind: 'directory', operationId: 'source' },
@@ -18,7 +19,7 @@ function batch(): CharacterProposalBatch {
     ] }
 }
 const callbacks: StepCallbacks = { log: vi.fn(), appendText: vi.fn(), setProgress: vi.fn() }
-function context(): WorkflowContext { return { runId: 'run', projectPath: session.projectPath, projectSession: session, data: { characterProposalBatch: batch() }, cancelled: false, uiLocale: 'zh-CN', writingLanguage: 'zh-CN' } as WorkflowContext }
+function context(): WorkflowContext { return { runId: 'run', projectPath: session.projectPath, projectSession: session, data: { characterProposalBatch: batch() }, cancelled: false, uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), writingLanguage: 'zh-CN' } as WorkflowContext }
 beforeEach(() => useProjectStore.setState({ currentProject: { id: session.projectId, sessionLease: session.leaseId, path: session.projectPath, novelConfig: {} } as never }))
 afterEach(() => { vi.unstubAllGlobals(); useProjectStore.setState({ currentProject: null }) })
 describe('explicit character proposal adoption', () => {
