@@ -33,7 +33,7 @@ Pagekin is maintained by EthanYoQ and is open source under GPL-3.0. The [officia
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/v130-hero-en.webp" alt="Pagekin 1.3.0 interface: product summary on the left and real screenshots of the library, chapter view, blueprint, run sheet, architecture, and cast on the right" width="100%" />
+  <img src="docs/assets/readme/pagekin-hero-en.webp" alt="Pagekin 1.5.0 interface: product summary on the left and real screenshots of the library, chapter view, character timeline, blueprint AI check, annotation revision, and run sheet on the right" width="100%" />
 </p>
 
 > ## What's new in 1.5.0
@@ -56,7 +56,7 @@ Pagekin works in the order a novel gets written: you are the author, it is your 
 
 The library lists every book you have written. Select a cover to preview it: the current step, word count, final chapters, and characters. You can start a new book or import a copy of a project from an older version.
 
-![Library with two books on the shelf and the preview and progress of "Lighthouse" on the right](docs/assets/readme/v130-en-library.webp)
+![Library with two books on the shelf and the preview and progress of "Lighthouse" on the right](docs/assets/readme/screens/en/library.webp)
 
 ### Breakdown, imitation, continuation, and rewriting
 
@@ -71,11 +71,11 @@ The library lists every book you have written. Select a cover to preview it: the
 
 The setup page records the genre, audience, writing language, total chapters, and words per chapter. The architecture page has four sections: premise, cast, worldbuilding, and plot outline. AI can generate each section, or you can write it yourself. When all four are confirmed, move on to chapter blueprints.
 
-![Architecture page with the premise, cast, worldbuilding, and plot outline all confirmed](docs/assets/readme/v130-en-architecture.webp)
+![Architecture page with the premise, cast, worldbuilding, and plot outline all confirmed](docs/assets/readme/screens/en/architecture.webp)
 
 The cast is edited alongside the architecture. Each character has a profile, a current state, and a relationship graph. You can paste character cards or import them from a file.
 
-![Cast page with four characters on the left and the profile of the protagonist Mara Lind on the right](docs/assets/readme/v130-en-cast.webp)
+![Cast page with four characters on the left and the profile of the protagonist Mara Lind on the right](docs/assets/readme/screens/en/cast.webp)
 
 ### Character timeline: characters as they are at chapter N
 
@@ -85,18 +85,22 @@ Above a character's current state, the cast page shows "Timeline · N changes". 
 - Finalization records relationship changes in the same request, with no extra requests. When a change differs from your setting, a pending suggestion offers Adopt, Keep my setting, and Decide later.
 - New characters and relationships that the model proposes while it generates blueprints also become pending suggestions. You create each one, match it to an existing character, or skip it.
 
+![Cast page, Current state: Mara Lind's timeline expanded, listing location, recent events, and her relation to The Keeper for chapters 4 and 3, with the source text of the chapter 4 relation open](docs/assets/readme/screens/en/timeline.webp)
+
 ### Chapter blueprints: plan each chapter before writing
 
 The blueprint page plans the book chapter by chapter. Each chapter states the protagonist's goal, the conflict and turn, the suspense hook, and the characters who appear. AI can generate blueprints in chapter ranges, and an interrupted run can continue.
 
 The main button is "Write chapter N". The small popover next to it holds only the options for this run: which model to use and an optional line of author guidance. To write several chapters in a row, use "Batch write", up to 10 chapters at a time.
 
-![Blueprint page with chapter 3 "The Fog Bell" selected and the options popover for "Write chapter 3" open](docs/assets/readme/v130-en-blueprint.webp)
+![Blueprint page with chapter 3 "The Fog Bell" selected and the options popover for "Write chapter 3" open](docs/assets/readme/screens/en/blueprint.webp)
 
 Blueprints get two checks. Neither one blocks writing.
 
 - **Notice on save**: when an AI-generated blueprint has two characters whose relationship contradicts the timeline, or includes a character who has died, the Blueprint page shows a notice with its basis. Select "This is intentional" to exempt one chapter or the whole book.
 - **AI check**: each click sends one model request that checks unfinalized blueprints against the character timeline and lists the results by chapter. It needs a character timeline and saved blueprints. In a long book whose unfinalized blueprints do not fit in one request, only the earlier chapters are checked, and the result names the last one ("Checked through chapter N" or "AI check reached chapter N").
+
+![Blueprint page after AI check: the summary says the check reached chapter 12, and chapter 6 shows the conflict, its basis, and a suggestion](docs/assets/readme/screens/en/check.webp)
 
 ### Story threads: reminders by due chapter
 
@@ -110,12 +114,14 @@ The Plot & threads page records where the main plot, subplots, and foreshadowing
 
 The single-chapter view takes a chapter from unwritten to final. After AI writes a draft, you can edit it yourself or ask AI to review it. The review report lists each note. You check or ignore each one, and you can add your own. The revision comes back as a diff that you confirm paragraph by paragraph, so nothing is overwritten. When it reads right, finalize the chapter.
 
-![Single-chapter view: the setup, architecture, blueprint, and manuscript steps on the left, chapter 3 prose in the middle, and the review report on the right](docs/assets/readme/v130-en-chapter.webp)
+![Single-chapter view: the setup, architecture, blueprint, and manuscript steps on the left, chapter 3 prose in the middle, and the review report on the right](docs/assets/readme/screens/en/chapter.webp)
 
 While writing, AI receives this chapter's blueprint, the related characters, the worldbuilding, summaries of earlier chapters, the full previous chapter, and the threads this chapter should handle, not a chat transcript of the whole book.
 
 - **Revise all annotations**: select text and choose "Add annotation". After you annotate several passages, select "Revise all (N)" to send them to the model together. Removed text shows in red and added text in green. You can edit, regenerate, or accept each change, or choose "Accept all". The chapter page keeps the annotation history.
 - **Keyboard writing**: Tab inserts two full-width spaces as a paragraph indent, and a whole chapter can be written with the keyboard alone. Ctrl/⌘+F searches the chapter.
+
+![Chapter 4 after revising two annotations at once: removed text in red, added text in green, with Cancel and Accept all at the bottom right](docs/assets/readme/screens/en/annotate.webp)
 
 ### Post-processing, Reopen to edit, and Trash
 
@@ -124,6 +130,8 @@ After each chapter is finalized, Pagekin imports the final text into the knowled
 - **Reopen to edit**: on a finalized chapter, select "Reopen to edit". The current final is copied into a reopened draft that you edit, review, and revise as usual. The finalize dialog first lists how the replacement affects later chapters, character states, and thread confirmations. The old final stays in version history as "Replaced final", read-only.
 - **Check later blueprints**: after a replacement, the AI suggests changes for later unfinalized chapters, with the basis and a before-and-after view. You choose Accept or Don't use for each one. It changes blueprints only, never chapter text.
 - **Trash**: when you choose "Delete manuscript…" on a finalized chapter, its text and all its versions go to the trash, where you can Restore or Delete permanently. "Delete chapter…" on a blueprint and "Delete this draft…" on a draft skip the trash and cannot be undone. After you delete a chapter in the middle, you can use "Rewrite chapter N" to write it again in place.
+
+![Trash for "Fog Harbor": chapter 2 "Tide Voices" with its deletion time, word count, and version count, ready to restore or delete permanently](docs/assets/readme/screens/en/trash.webp)
 
 ### Knowledge base and search: reference material while drafting
 
@@ -138,7 +146,7 @@ Every generation run appears in the run sheet, with In progress, History, and Di
 
 If a run fails, the text written so far is kept as a recovery card that you can adopt, copy, or dismiss. When Pagekin is in the background, it shows a system notification when writing, review, revision, finalization, or batch writing ends. Turn this off with "Notify me in the background" under Settings → Appearance.
 
-![Run sheet writing chapter 3 with live output appearing sentence by sentence](docs/assets/readme/v130-en-run.webp)
+![Run sheet writing chapter 3 with live output appearing sentence by sentence](docs/assets/readme/screens/en/run.webp)
 
 ### Versions, export, and backup
 
@@ -156,7 +164,7 @@ Only self-contained SKILL.md prompts are supported. Scripts, hooks, subagents, a
 
 Appearance offers light and dark. The interface is available in Chinese, English, and Japanese. The Japanese interface is in phase 1: the interface frame and error messages are in Japanese, and other text stays in English. A book's writing language can be Chinese or English.
 
-![Single-chapter view in the dark theme](docs/assets/readme/v130-en-chapter-dark.webp)
+![Single-chapter view in the dark theme](docs/assets/readme/screens/en/chapter-dark.webp)
 
 ## How it differs from writing a novel in an AI chat
 

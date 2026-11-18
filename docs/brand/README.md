@@ -44,7 +44,7 @@
 
 ### README 主视觉
 
-README 当前的主视觉是 [`v130-hero-zh.webp`](../assets/readme/v130-hero-zh.webp) 和 [`v130-hero-en.webp`](../assets/readme/v130-hero-en.webp)。它们由 [`product-proof-split-v1.html`](../readme-visuals/product-proof-split-v1.html) 按 [`hero-data.js`](../readme-visuals/hero-data.js) 合成，截图清单见 [`visual-manifest.json`](../readme-visuals/visual-manifest.json)。
+README 当前的主视觉是 [`pagekin-hero-zh.webp`](../assets/readme/pagekin-hero-zh.webp) 和 [`pagekin-hero-en.webp`](../assets/readme/pagekin-hero-en.webp)。它们由 [`product-proof-split-v1.html`](../readme-visuals/product-proof-split-v1.html) 按 [`hero-data.js`](../readme-visuals/hero-data.js) 合成，截图清单见 [`visual-manifest.json`](../readme-visuals/visual-manifest.json)。
 
 ### 改名前的旧素材
 
@@ -54,7 +54,7 @@ README 当前的主视觉是 [`v130-hero-zh.webp`](../assets/readme/v130-hero-zh
 | --- | --- | --- |
 | <img src="../assets/readme/ai-novel-writer-logo-transparent.png" width="64" alt="旧 Logo：蓝色羽毛笔" /> | [`ai-novel-writer-logo-transparent.png`](../assets/readme/ai-novel-writer-logo-transparent.png) | 旧 Logo（蓝色羽毛笔），不是书页精灵。2026-07-19 由提交 `fbe41e09` 加入，早于 2026-10-18 的改名提交 `88fb1ad7` |
 | 无预览 | [`hero-zh.svg`](../assets/readme/hero-zh.svg)、[`hero-en.svg`](../assets/readme/hero-en.svg) | 旧主视觉，SVG 标题仍是「AI 小说作家」 |
-| 无预览 | [`hero-zh-v2.png`](../assets/readme/hero-zh-v2.png)、[`hero-en-v2.png`](../assets/readme/hero-en-v2.png)、[`hero-captures/zh/`](../assets/readme/hero-captures/zh/)、[`hero-captures/en/`](../assets/readme/hero-captures/en/) | 旧主视觉的位图版和它用的截图。同目录下的 `v130/` 是当前主视觉的截图 |
+| 无预览 | [`hero-zh-v2.png`](../assets/readme/hero-zh-v2.png)、[`hero-en-v2.png`](../assets/readme/hero-en-v2.png)、[`hero-captures/zh/`](../assets/readme/hero-captures/zh/)、[`hero-captures/en/`](../assets/readme/hero-captures/en/) | 旧主视觉的位图版和它用的截图。当前主视觉的截图在 [`hero/`](../assets/readme/hero/) |
 
 改名前的应用图标没有留在当前目录里。要取回，运行 `git show 895e01f1:build/icon.png`（`icon.ico`、`icon.icns` 同理）。
 
