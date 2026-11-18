@@ -651,9 +651,7 @@ export class GenerationRunRepository {
     }
     listDirectoryProgress(): DirectoryGenerationCatalog {
         const rows = this.db().prepare(`SELECT r.run_id FROM generation_runs r WHERE r.root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})
-            AND (r.run_id IN (SELECT value FROM json_each(?)) AND (json_extract(r.binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
-            OR json_type(r.binding_json,'$."$blueprintRetirement"') IS NOT NULL
-            OR json_type(r.binding_json,'$."$runEffects".blueprintAuthorEdit') IS NOT NULL)
+            AND (r.run_id IN (SELECT value FROM json_each(?)) AND json_extract(r.binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
             OR EXISTS (SELECT 1 FROM generation_attempts t WHERE t.run_id=r.run_id AND json_type(t.usage_receipt_json,'$.directoryProgress') IS NOT NULL))
             ORDER BY r.rowid`).all(this.blueprintDirectoryCandidates()) as { run_id: string }[];
         const catalog: DirectoryGenerationCatalog = { progress: [], diagnostics: [] };

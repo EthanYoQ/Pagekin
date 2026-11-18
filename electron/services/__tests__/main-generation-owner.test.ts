@@ -1812,6 +1812,15 @@ describe('durable directory commit and remaining stage', () => {
       expect(f.dispatch).toHaveBeenCalledTimes(1)
     },
   )
+  it('#702 蓝图目录运行带上作者保存标记或退役标记，照常列进目录进度', async () => {
+    const f = directoryFixture('chapter-blueprint-directory')
+    await f.owner.execute({ handle: f.run.handle, invocationNonce: 'first', task: directoryTask })
+    const mark = (path: string, value: string) => f.fixture.db.prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,?,json(?)) WHERE run_id=?`).run(path, value, f.run.handle.runId)
+    mark('$."$runEffects"', JSON.stringify({ blueprintAuthorEdit: {} }))
+    expect(f.owner.listDirectoryProgress()).toEqual({ progress: [], diagnostics: [{ runId: f.run.handle.runId, kind: 'invalid', code: 'GENERATION_BLUEPRINT_AUTHOR_RECEIPT_INVALID' }] })
+    mark('$."$blueprintRetirement"', JSON.stringify('blueprints-cleared'))
+    expect(f.owner.listDirectoryProgress()).toEqual({ progress: [], diagnostics: [{ runId: f.run.handle.runId, kind: 'retired', code: 'GENERATION_BLUEPRINTS_CLEARED' }] })
+  })
   it('rejects invalid persisted progress instead of inferring a replacement range', async () => {
     const f = directoryFixture()
     await f.owner.execute({ handle: f.run.handle, invocationNonce: 'first', task: directoryTask })
