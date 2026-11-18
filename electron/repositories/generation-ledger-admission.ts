@@ -60,8 +60,8 @@ const SCAN = ADMITTED_LEDGER_CELLS.map((cell, index) => {
 }).join(' UNION ALL ') + ' ORDER BY cell'
 
 export interface LedgerAdmission {
-  /** 这次打开新封存的根。作品没有读不出的格子时为空，且没有任何写入。 */
-  sealedRootActionIds: readonly string[]
+  /** 这次打开新封存的根数，主键为 NULL 的根也算。作品没有读不出的格子时为 0，且没有任何写入。 */
+  sealedRootCount: number
 }
 
 /**
@@ -71,8 +71,8 @@ export interface LedgerAdmission {
 export function admitGenerationLedger(db: Db): LedgerAdmission {
   const scan = db.prepare(SCAN)
   type Bad = { cell: number; row: number; id: string | null; rootRow: number | null; runRow: number | null; hex: string }
-  if (!scan.all().length) return { sealedRootActionIds: [] }
-  const roots = db.transaction(() => {
+  if (!scan.all().length) return { sealedRootCount: 0 }
+  const sealed = db.transaction(() => {
     const now = Date.now()
     // 拿到写锁后重扫：扫描到加锁之间别的连接可能已经修好了某一格。
     const bad = scan.all() as Bad[]
@@ -100,20 +100,15 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       WHERE root_action_id=? AND json_extract(attempt_json,'$.status') IN ('reserved','dispatch-marked')`)
     // 找不到所属根的坏格子（孤儿行）只换中性值，没有根可封存。
     const rootRows = [...new Set(bad.map(item => item.rootRow).filter((row): row is number => row !== null))]
-    const sealed: string[] = []
-    for (const rootRow of rootRows) {
+    return rootRows.map(rootRow => {
       const prior = previous.get(rootRow) as { id: string | null; code: string | null; runRow: number | null }
       if (prior.code && prior.code !== GENERATION_LEDGER_UNREADABLE && prior.runRow !== null)
         keep.run(encode({ table: 'generation_roots', recordId: prior.id, column: 'blocked_code', previous: prior.code }), prior.runRow)
       block.run(GENERATION_LEDGER_UNREADABLE, now, rootRow)
-      if (prior.id !== null) {
-        settle.run(prior.id)
-        sealed.push(prior.id)
-      }
-    }
-    return sealed
+      if (prior.id !== null) settle.run(prior.id)
+      return prior.id
+    })
   }).immediate()
-  if (!roots.length) return { sealedRootActionIds: [] }
-  console.warn(`[generation] ${GENERATION_LEDGER_UNREADABLE} sealed`, { rootActionIds: roots })
-  return { sealedRootActionIds: roots }
+  if (sealed.length) console.warn(`[generation] ${GENERATION_LEDGER_UNREADABLE} sealed`, { rootActionIds: sealed })
+  return { sealedRootCount: sealed.length }
 }
