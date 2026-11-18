@@ -320,7 +320,7 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 
 ## 坏审修循环不挡导出，留在存档外并指明章节（#702）
 
-场景在 `scripts/redesign/cch-scenarios.mjs`，书用 `perf702-scenarios.mjs` 的 `buildByReviewCycle` 走真实审修循环造，不存性能检查点。跑法：`PERF702_BLUEPRINTS=2`。存档文件名里的哈希每次不同，断言按 64 位十六进制匹配。
+场景在 `scripts/redesign/cch-scenarios.mjs`，书用 `perf702-scenarios.mjs` 的 `buildByReviewCycle` 走真实审修循环造，不存性能检查点。跑法：`PERF702_BLUEPRINTS=2`。成功提示里的哈希每次不同，断言按 64 位十六进制匹配。
 
 | 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
 |---|---|---|---|---|

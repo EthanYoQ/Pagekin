@@ -303,11 +303,11 @@ describe('ProjectBackupPanel', () => {
 
   it.each([
     ['zh-CN', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }],
-      '本地存档已导出：sha-1。第 2 章「沉船」有条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
+      '本地存档已导出：sha-1。第 2 章「沉船」有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。'],
     ['en-US', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }],
-      'Local archive exported: sha-1. A damaged review record in Chapter 2 "沉船" was left out of the archive. The text and reviews are included.'],
+      'Local archive exported: sha-1. A damaged review record in Chapter 2 "沉船" was left out of the archive. The text and other reviews are included.'],
     ['ja-JP', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }],
-      'Local archive exported: sha-1. ゴミ箱の第2章「沉船」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とレビュー内容は含まれています。'],
+      'Local archive exported: sha-1. ゴミ箱の第2章「沉船」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。'],
   ] as const)('导出存档有坏循环没放进去（%s）：成功提示后面指明章节（#702）', async (locale, omittedReviewCycles, expected) => {
     useLocaleStore.setState({ interfaceLocale: locale, locale: copyLocale(locale) })
     invoke.mockImplementation(async (channel: string) => {
@@ -338,7 +338,7 @@ describe('ProjectBackupPanel', () => {
     await act(async () => disclosure.click())
     await act(async () => button('立即云备份').click())
     expect(container.querySelector('[role="status"]')?.textContent)
-      .toBe('云备份完成：generation-1；备份点 backup-point-7。第 2、5 章有审稿记录损坏，没放进存档。正文和审稿内容都在。')
+      .toBe('云备份完成：generation-1；备份点 backup-point-7。第 2、5 章有审稿记录损坏，没放进存档。正文和其他审稿内容都在。')
   })
 
   it('requires disclosure before upload and shows the backup point and unsaved binding', async () => {

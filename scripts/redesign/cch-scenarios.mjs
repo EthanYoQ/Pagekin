@@ -54,7 +54,8 @@ async function exportOnce(context, archive, { settings, page: pageName, button }
   while (!expected.test(shown)) {
     if (Date.now() > deadline) assert.fail(`等不到导出提示，最后看到：${shown || '（无）'}`)
     await page.waitForTimeout(200)
-    shown = await notice(page, role).count() ? (await notice(page, role).innerText()).trim() : ''
+    const notices = (await notice(page, role).allInnerTexts()).map(text => text.trim())
+    shown = notices.find(text => expected.test(text)) ?? notices.join(' | ')
   }
   assert.equal(fs.existsSync(archive), role === 'status', role === 'status' ? '导出成功时写出了存档' : '导出失败时没有写出存档')
   return shown
@@ -79,17 +80,17 @@ export const CCH_SCENARIOS = {
     await stage.openAfterRestart(page, BOOK)
     await stage.openSettings(page)
     const zh = await exportOnce(context, path.join(roots.projects, 'cch-zh.ainovel'), ZH, 'status',
-      new RegExp(`^本地存档已导出：${SHA}。第 2 章「远航之2」有条审稿记录损坏，没放进存档。正文和审稿内容都在。$`, 'u'))
+      new RegExp(`^本地存档已导出：${SHA}。第 2 章「远航之2」有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。$`, 'u'))
     await shoot('cch-1-zh')
 
     await switchLocale(page, { settings: '设置分组', appearance: '外观', languageLabel: '界面语言' }, 'ja-JP')
     const ja = await exportOnce(context, path.join(roots.projects, 'cch-ja.ainovel'), EN, 'status',
-      new RegExp(`^Local archive exported: ${SHA}\\. 第2章「远航之2」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とレビュー内容は含まれています。$`, 'u'))
+      new RegExp(`^Local archive exported: ${SHA}\\. 第2章「远航之2」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。$`, 'u'))
     await shoot('cch-2-ja')
 
     await switchLocale(page, { settings: 'Settings sections', appearance: 'Appearance', languageLabel: 'Interface language' }, 'en-US')
     const en = await exportOnce(context, path.join(roots.projects, 'cch-en.ainovel'), EN, 'status',
-      new RegExp(`^Local archive exported: ${SHA}\\. A damaged review record in Chapter 2 "远航之2" was left out of the archive\\. The text and reviews are included\\.$`, 'u'))
+      new RegExp(`^Local archive exported: ${SHA}\\. A damaged review record in Chapter 2 "远航之2" was left out of the archive\\. The text and other reviews are included\\.$`, 'u'))
     await shoot('cch-3-en')
     return { zh, ja, en }
   } },
@@ -102,12 +103,12 @@ export const CCH_SCENARIOS = {
     await stage.openAfterRestart(page, BOOK)
     await stage.openSettings(page)
     const zh = await exportOnce(context, path.join(roots.projects, 'cch-multi-zh.ainovel'), ZH, 'status',
-      new RegExp(`^本地存档已导出：${SHA}。第 1、2 章有审稿记录损坏，没放进存档。正文和审稿内容都在。$`, 'u'))
+      new RegExp(`^本地存档已导出：${SHA}。第 1、2 章有审稿记录损坏，没放进存档。正文和其他审稿内容都在。$`, 'u'))
     await shoot('cch-5-multi-zh')
 
     await switchLocale(page, { settings: '设置分组', appearance: '外观', languageLabel: '界面语言' }, 'en-US')
     const en = await exportOnce(context, path.join(roots.projects, 'cch-multi-en.ainovel'), EN, 'status',
-      new RegExp(`^Local archive exported: ${SHA}\\. Damaged review records in Chapters 1, 2 were left out of the archive\\. The text and reviews are included\\.$`, 'u'))
+      new RegExp(`^Local archive exported: ${SHA}\\. Damaged review records in Chapters 1, 2 were left out of the archive\\. The text and other reviews are included\\.$`, 'u'))
     await shoot('cch-6-multi-en')
     return { zh, en }
   } },
@@ -125,7 +126,7 @@ export const CCH_SCENARIOS = {
     await page.getByText(/^已把「.+」移到回收站/u).first().waitFor({ state: 'visible', timeout: 30_000 })
     await stage.openSettings(page)
     const inTrash = await exportOnce(context, path.join(roots.projects, 'cch-trash.ainovel'), ZH, 'status',
-      new RegExp(`^本地存档已导出：${SHA}。回收站里第 1 章「远航之1」有条审稿记录损坏，没放进存档。正文和审稿内容都在。$`, 'u'))
+      new RegExp(`^本地存档已导出：${SHA}。回收站里第 1 章「远航之1」有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。$`, 'u'))
     await shoot('cch-4-trash')
     return { inTrash }
   } },
