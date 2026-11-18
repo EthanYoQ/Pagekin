@@ -1,3 +1,4 @@
+import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import type { MigrationId } from '../../src/shared/project-storage'
 
 /** The desktop-only schema lane. Version 0 is unversioned legacy, not a known schema. */
@@ -56,7 +57,7 @@ export interface MigrationRegistry {
 }
 
 export class SchemaMigrationError extends Error {
-  constructor(readonly code: string) {
+  constructor(readonly code: string, readonly damagedReviewCycle?: DamagedReviewCycle) {
     super(code)
     this.name = 'SchemaMigrationError'
   }

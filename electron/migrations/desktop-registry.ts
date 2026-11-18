@@ -3,7 +3,7 @@ import { createMigrationRegistry, type MigrationRegistry, type SchemaReader } fr
 import { createM01Migration, M01_GENERATION_SQL } from './m01-generation-runs'
 import { applyM02CharacterIdentity, createM02Migration, verifyM02CharacterIdentity } from './m02-character-identity'
 import { applyM03ReviewCycle, applyM06ReviewCycleMerge, createM03Migration, createM06Migration,
-  verifyM03ReviewCycle } from './m03-review-cycle'
+  assertM03ReviewCycle } from './m03-review-cycle'
 import { applyM04ImportEffectLedger, createM04Migration } from './m04-import-effect-ledger'
 import { applyM05CharacterAssets, createM05Migration } from './m05-character-assets'
 import { applyM07ChapterRecycle, createM07Migration, verifyM07ChapterRecycle } from './m07-chapter-recycle'
@@ -70,12 +70,12 @@ export function getDesktopMigrationRegistry(): MigrationRegistry {
     const importEffectSchemas = schemas(5), importEffectFingerprints = new Set(importEffectSchemas.map(item => item.fingerprint))
     const m04 = createM04Migration({ database: native,
       verifyKnownSchema: db => importEffectFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && verifyM03ReviewCycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) })
     for (const db of references) db.transaction(() => applyM05CharacterAssets(db))()
     const characterAssetSchemas = schemas(6), characterAssetFingerprints = new Set(characterAssetSchemas.map(item => item.fingerprint))
     const m05 = createM05Migration({ database: native,
       verifyKnownSchema: db => characterAssetFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && verifyM03ReviewCycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) })
     for (const db of references) db.transaction(() => applyM06ReviewCycleMerge(db))()
     const mergeSnapshotSchemas = schemas(7), mergeSnapshotFingerprints = new Set(mergeSnapshotSchemas.map(item => item.fingerprint))
     const m06 = createM06Migration({ database: native,
@@ -85,17 +85,17 @@ export function getDesktopMigrationRegistry(): MigrationRegistry {
     const recycleSchemas = schemas(8), recycleFingerprints = new Set(recycleSchemas.map(item => item.fingerprint))
     const m07 = createM07Migration({ database: native,
       verifyKnownSchema: db => recycleFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && verifyM03ReviewCycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) })
     for (const db of references) db.transaction(() => applyM08ContinuityFoundation(db))()
     const continuitySchemas = schemas(9), continuityFingerprints = new Set(continuitySchemas.map(item => item.fingerprint))
     const m08 = createM08Migration({ database: native,
       verifyKnownSchema: db => continuityFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && verifyM03ReviewCycle(native(db)) && verifyM07ChapterRecycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) && verifyM07ChapterRecycle(native(db)) })
     for (const db of references) db.transaction(() => applyM09AnnotationHistory(db))()
     const annotationSchemas = schemas(10), annotationFingerprints = new Set(annotationSchemas.map(item => item.fingerprint))
     const m09 = createM09Migration({ database: native,
       verifyKnownSchema: db => annotationFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && verifyM03ReviewCycle(native(db)) && verifyM07ChapterRecycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) && verifyM07ChapterRecycle(native(db)) })
     installed = createMigrationRegistry([m00, m01, m02, m03, m04, m05, m06, m07, m08, m09], [
       ...sourceSchemas, ...baselineSchemas.map(schema => ({ ...schema, version: 0 })),
       ...baselineSchemas, ...generationSchemas, ...identitySchemas,

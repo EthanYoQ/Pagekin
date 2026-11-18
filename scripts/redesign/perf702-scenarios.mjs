@@ -19,7 +19,7 @@ import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
 import { STAGE_SAMPLE, countUnits } from './stage-sample.mjs'
 
-const BOOK = '盐湖'
+export const BOOK = '盐湖'
 const BLUEPRINTS = Number(process.env.PERF702_BLUEPRINTS ?? 200)
 const CHAPTER_UNITS = 3000
 const CHARACTERS = ['林岚', '守塔人', '沈默', '许青', '老周', '阿禾', '程远', '苏梅', '韩九', '小满', '陆川', '白鹭']
@@ -585,7 +585,7 @@ async function reviewCycleChapter(context, chapter, sent) {
 }
 
 /** 比 buildByHand 每章多一个修稿运行和一个复核运行，库的增长接近真实作品。 */
-async function buildByReviewCycle(context, finalized) {
+export async function buildByReviewCycle(context, finalized, { saveCheckpoints = true, beforeLaunch } = {}) {
   await seedLargeBook(context, 0)
   const sent = installReviewCycleReplies(context.fake)
   await installLedger(context.app, context.page)
@@ -593,9 +593,9 @@ async function buildByReviewCycle(context, finalized) {
   const chapters = []
   for (let chapter = 1; chapter <= finalized; chapter++) {
     chapters.push(await reviewCycleChapter(context, chapter, sent))
-    await saveCheckpoint(context, chapter)
+    if (saveCheckpoints) await saveCheckpoint(context, chapter)
   }
-  await context.restart()
+  await context.restart({ beforeLaunch })
   installReplies(context.fake)
   return chapters
 }
