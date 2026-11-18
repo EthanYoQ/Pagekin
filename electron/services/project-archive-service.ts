@@ -633,6 +633,14 @@ function assertReviewContext(value: unknown): Record<string, unknown> {
   return context
 }
 
+const GENERATION_RUN_TABLES = new Set(['generation_runs', 'generation_attempts', 'generation_artifacts'])
+
+function projectRunIdentity(value: unknown): Record<string, unknown> {
+  const binding = parseJson(value) as Record<string, unknown> | null
+  if (!binding || typeof binding !== 'object' || Array.isArray(binding)) fail('PORTABLE_UNSAFE_PROJECTION')
+  return { projectId: safeId(binding.projectId), epoch: safeId(binding.epoch) }
+}
+
 function projectReviewBinding(value: unknown): Record<string, unknown> {
   const stored = parseJson(value)
   const frozen = stored && typeof stored === 'object'
@@ -912,12 +920,22 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     const sourceSchema = assertPortableSourceSchema(db, schemaVersion, () => new Set(omitted.keys()))
     // 必须在算 reviewRoots 之前删：去掉循环以后，它的根按普通根投影。
     const omittedRoots = new Map<string, DamagedReviewCycle>()
+    // 同一个根下可能还有保留的循环；被删循环自己的尝试、运行、产物不能借那条根当证据。
+    const omittedRuns = new Set<string>()
     if (omitted.size) {
-      const rootOf = db.prepare('SELECT root_action_id FROM review_cycles WHERE cycle_id=?').pluck()
+      const cycleOf = db.prepare('SELECT root_action_id,review_id,revision_id,recheck_attempt_id FROM review_cycles WHERE cycle_id=?')
+      const evidenceOf = db.prepare(`SELECT run_id FROM generation_attempts WHERE root_action_id=?
+        AND (attempt_id=? OR json_valid(usage_receipt_json) AND (
+          json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review' AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.id')=?
+          OR json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='revision' AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.id')=?))`)
       const omit = db.prepare('DELETE FROM review_cycles WHERE cycle_id=?')
       db.transaction(() => {
         for (const [cycleId, location] of omitted) {
-          omittedRoots.set(rootOf.get(cycleId) as string, location)
+          const cycle = cycleOf.get(cycleId) as { root_action_id: string; review_id: number; revision_id: number | null
+            recheck_attempt_id: string | null }
+          omittedRoots.set(cycle.root_action_id, location)
+          for (const runId of evidenceOf.pluck().all(cycle.root_action_id, cycle.recheck_attempt_id, cycle.review_id, cycle.revision_id))
+            omittedRuns.add(runId as string)
           omit.run(cycleId)
         }
       })()
@@ -973,7 +991,8 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
           : null
         for (const row of rows) {
           const root = table === 'generation_artifacts' ? artifactRoots.get(String(row.artifact_id)) : String(row.root_action_id)
-          const reviewProof = root !== undefined && reviewRoots.has(root)
+          const ownedByOmitted = GENERATION_RUN_TABLES.has(table) && omittedRuns.has(String(row.run_id))
+          const reviewProof = root !== undefined && reviewRoots.has(root) && !ownedByOmitted
           try {
             if (hasProjection || hasHistory) {
               const safe = projectionForRow(table, row, columns)
@@ -996,10 +1015,13 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
             if (update) update.run(...updates.map(column => {
               const key = `${table}.${column.name}`
               if (draftProof !== undefined && (key === 'generation_attempts.usage_receipt_json' || key === 'generation_runs.binding_json')) return draftProof
+              // 保留循环按根核对每条运行的项目与纪元，被删循环的运行只留这两项。
+              if (ownedByOmitted && key === 'generation_runs.binding_json' && root !== undefined && reviewRoots.has(root))
+                return JSON.stringify(projectRunIdentity(row[column.name]))
               return neutralValue(key, column, row[column.name], reviewProof)
             }), row.__portable_rowid__)
           } catch (error) {
-            const location = root === undefined ? undefined : omittedRoots.get(root)
+            const location = root === undefined || reviewProof ? undefined : omittedRoots.get(root)
             if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_UNSAFE_PROJECTION' && location?.chapterNumber != null)
               throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', location)
             throw error
