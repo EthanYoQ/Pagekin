@@ -396,8 +396,13 @@ function cycleLocation(db: Database.Database, { draftRows }: CycleTables, cycle:
   const unknown: DamagedReviewCycle = { chapterNumber: null, chapterTitle: '', inTrash: false }
   try {
     const outboxRows = draftRows === 'drafts_all' ? 'finalization_outbox_all' : 'finalization_outbox'
+    // 回收站里显示的是同一删除组里这一章的定稿，审的可能是被它替换的旧定稿。
+    const trashTitle = draftRows === 'drafts_all'
+      ? `(SELECT CASE WHEN COUNT(*)=1 THEN MAX(o.chapter_title) END FROM drafts_all p JOIN finalization_outbox_all o ON o.draft_id=p.id
+          WHERE d.status='deleted' AND p.deletion_id=d.deletion_id AND p.chapter_number=d.chapter_number AND p.deleted_from_status='finalized')`
+      : 'NULL'
     const row = db.prepare(`SELECT d.id, d.chapter_number AS chapterNumber, d.version, d.status,
-        (SELECT o.chapter_title FROM ${outboxRows} o WHERE o.draft_id=d.id LIMIT 1) AS ownTitle,
+        COALESCE(${trashTitle}, (SELECT o.chapter_title FROM ${outboxRows} o WHERE o.draft_id=d.id LIMIT 1)) AS ownTitle,
         (SELECT NULLIF(b.title,'') FROM blueprints b WHERE b.chapter_number=d.chapter_number LIMIT 1) AS blueprintTitle
       FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id AND d.chapter_number=r.source_draft_chapter_number
         AND d.version=r.source_draft_version
