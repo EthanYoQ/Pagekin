@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   alertError: vi.fn(),
   confirm: vi.fn(async () => true),
+  openInkPrompt: vi.fn(async () => true),
   onProjectOpening: vi.fn(),
   onProjectOpened: vi.fn(async (): Promise<{ warnings: string[] } | undefined> => undefined),
   disableProjectBindingsPreservingDrafts: vi.fn(),
@@ -43,6 +44,11 @@ vi.mock('../../components/ui/AlertDialog', () => ({
 
 vi.mock('../../components/ui/Confirm', () => ({
   confirm: mocks.confirm,
+}))
+
+vi.mock('../../components/ui/InkPrompt', async importOriginal => ({
+  ...await importOriginal<typeof import('../../components/ui/InkPrompt')>(),
+  openInkPrompt: mocks.openInkPrompt,
 }))
 
 vi.mock('../../services/project-service', () => ({
@@ -1496,6 +1502,35 @@ describe('project close lifecycle', () => {
       expect.stringContaining('draft index unavailable'),
       expect.objectContaining({ title: '项目已打开，部分数据加载失败' }),
     )
+  })
+
+  it.each([
+    ['this open sealed two generations', 2, 1],
+    ['nothing was sealed', 0, 0],
+    ['an older main process sent no count', undefined, 0],
+  ])('opens the project and notices sealed generations once when %s', async (_case, sealedGenerationCount, notices) => {
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open') {
+        return {
+          success: true,
+          project: project('B'),
+          requestToken: args[1],
+          activeProjectPath: project('B').path,
+          sealedGenerationCount,
+        }
+      }
+      if (channel === 'fs:list-dir' || channel === 'project:recent-list') return []
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+
+    expect(mocks.openInkPrompt).toHaveBeenCalledTimes(notices)
+    if (notices) {
+      expect(mocks.openInkPrompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'notice', message: expect.stringContaining('2 条') }))
+      expect(mocks.openInkPrompt.mock.calls[0]![0].message).not.toContain('重新生成')
+    }
+    expect(mocks.alertError).not.toHaveBeenCalled()
   })
 
   it('opens the project and tells the author once when the duplicate-finalization repair failed', async () => {

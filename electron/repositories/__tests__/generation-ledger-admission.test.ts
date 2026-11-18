@@ -162,6 +162,23 @@ describe('打开作品时封存读不出的生成记录', () => {
     expect(withProjectClosed(ledgerDump)).toBe(first)
   })
 
+  it('initProjectDatabase 报出这次新封存的根：两个根坏三格报 2，再打开报 0', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { healthy, victim } = seedLedger()
+    withProjectClosed(db => {
+      damage(db, victim, [[ACTION, '{坏'], [USAGE, '{坏']])
+      db.prepare('UPDATE generation_roots SET budget_json=? WHERE root_action_id=?').run('{坏', healthy.rootActionId)
+    })
+
+    expect(initProjectDatabase(projectRoot).sealedRootActionIds).toHaveLength(2)
+    expect(initProjectDatabase(projectRoot).sealedRootActionIds).toEqual([])
+  })
+
+  it('健康的书打开：initProjectDatabase 不报封存', () => {
+    seedLedger()
+    expect(initProjectDatabase(projectRoot).sealedRootActionIds).toEqual([])
+  })
+
   it('封存过的库再进门：不封存、不提交任何写入', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { victim } = seedLedger()
