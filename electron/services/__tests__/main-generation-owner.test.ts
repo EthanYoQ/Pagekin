@@ -4746,6 +4746,28 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
     expect(rootCount(f.db)).toBe(roots)
   })
 
+  it('同一点击号的蓝图目录兄弟运行被封存：健康运行的精确重放照常，精确命中封存运行与新运行仍报封存码', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fixture()
+    const directory = (pacing: string): BeginGenerationRequest => ({ operation: 'chapter-blueprint-directory', uiActionNonce: '同一次点击', modelId: f.model.id,
+      selectedDraftIds: [], selectedFinalizedDraftIds: [], selectedBlueprintChapterNumbers: [1, 2, 3],
+      promptKeys: ['chapter_blueprint_chunk'], skillStages: ['planning'], output: 'structured-data', authorInputs: [
+        { id: 'planning:target-units', text: '700' }, { id: 'directory:pacing-guidance', text: pacing },
+        { id: 'directory:author-config', text: '{"totalChapters":3}' },
+        { id: 'directory:requested-range', text: JSON.stringify({ mode: 'full', startChapter: 1, endChapter: 3 }) }] })
+    const healthy = f.owner.begin(directory('先核实证据。'))
+    const sibling = f.owner.begin(directory('换一种节奏。'))
+    expect(sibling.handle.rootActionId).not.toBe(healthy.handle.rootActionId)
+    damageLedger(f.db, 'binding_json', sibling.handle)
+    const owner = f.reopen({ crashed: true })
+    const roots = rootCount(f.db)
+
+    expect(owner.begin(directory('先核实证据。')).handle.runId).toBe(healthy.handle.runId)
+    expect(() => owner.begin(directory('换一种节奏。'))).toThrow('GENERATION_LEDGER_UNREADABLE')
+    expect(() => owner.begin(directory('第三种。'))).toThrow('GENERATION_LEDGER_UNREADABLE')
+    expect(rootCount(f.db)).toBe(roots)
+  })
+
   it('点击号恰好以 import: 开头的普通运行被封存：不当作导入运行，导入槽位照常查找', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const f = fixture()
