@@ -925,7 +925,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     const avatarRows = readPortableCharacterAvatarRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
       root_action_id: string }>).map(row => row.root_action_id))
-    // 产物、它的尝试、它记的运行三者同根才归这个根；对不上的不归任何根，也不按审稿证据投影。
+    // 对不上根的产物不归章，也不按审稿证据投影。
     const artifactRoots = new Map((db.prepare(`SELECT a.artifact_id,t.root_action_id FROM generation_artifacts a
       JOIN generation_attempts t ON t.attempt_id=a.attempt_id AND t.run_id=a.run_id
       JOIN generation_runs r ON r.run_id=a.run_id AND r.root_action_id=t.root_action_id`).all() as Array<{
