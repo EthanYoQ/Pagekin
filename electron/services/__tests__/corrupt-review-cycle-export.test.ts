@@ -23,7 +23,7 @@ const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').dig
 const db = () => getProjectDb()!
 
 beforeEach(() => {
-  base = fs.mkdtempSync(path.join(os.tmpdir(), 'corrupt-cycle-'))
+  base = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'corrupt-cycle-'))
   projectRoot = path.join(base, 'book')
   fs.mkdirSync(projectRoot)
   openCanonicalProjectFixture(projectRoot)
@@ -35,6 +35,9 @@ afterEach(() => {
   fs.rmSync(base, { recursive: true, force: true })
 })
 
+const TITLES = ['雾钟', '沉船']
+const SQLITE_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u
+
 function reviewedBook({ finalized }: { finalized: boolean }) {
   const items = seedReviewedBook(db(), 2)
   db().prepare('UPDATE generation_roots SET budget_json=?').run(JSON.stringify({ maxPhysicalRequests: 1,
@@ -44,7 +47,7 @@ function reviewedBook({ finalized }: { finalized: boolean }) {
     const content = db().prepare('SELECT c.body FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?')
       .pluck().get(item.seeded.draftId) as string
     const record = FinalizationRepository.commit({ finalizationId: randomUUID(), draftId: item.seeded.draftId,
-      chapterNumber: item.seeded.chapterNumber, chapterTitle: '', content, contentHash: sha256(content),
+      chapterNumber: item.seeded.chapterNumber, chapterTitle: TITLES[item.seeded.chapterNumber - 1]!, content, contentHash: sha256(content),
       contentRevision: 1, targetFileName: `第${item.seeded.chapterNumber}章.txt` })
     FinalizationRepository.linkKnowledgeDocument(item.seeded.draftId, `kb-${item.seeded.chapterNumber}`)
     const runId = PostProcessRepository.createRun({ triggerSourceType: 'chapter_finalize',
@@ -94,9 +97,27 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章（#702
     await expect(trash.delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
       .resolves.toMatchObject({ success: true })
     await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
-      damagedReviewCycle: { chapterNumber: 2, remedy: 'delete-manuscript' } })
+      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'purge-trash', deletedAt: expect.stringMatching(SQLITE_TIME) } })
     await expect(trash.purge(projectRoot, { all: true })).resolves.toMatchObject({ success: true })
     await expect(exportBook()).resolves.toBe('exported')
+  })
+
+  it('坏章已在回收站、同章号又写了新章：指向回收站那一项，彻底删除它后能导出，新章还在', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    const trash = trashService()
+    await expect(trash.delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
+      .resolves.toMatchObject({ success: true })
+    db().prepare("UPDATE blueprints SET title='新航' WHERE chapter_number=2").run()
+    const rewritten = DraftRepository.create({ chapterNumber: 2, source: 'write', content: '新写的第二章。', wordCount: 7 })
+
+    const failure = await exportBook()
+    expect(failure).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
+      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'purge-trash', deletedAt: expect.stringMatching(SQLITE_TIME) } })
+
+    await expect(trash.purge(projectRoot, { all: true })).resolves.toMatchObject({ success: true })
+    await expect(exportBook()).resolves.toBe('exported')
+    expect(DraftRepository.getMeta(rewritten)).toMatchObject({ chapterNumber: 2 })
   })
 
   it('未定稿章的循环坏了：删除这一稿后能导出', async () => {
@@ -104,10 +125,39 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章（#702
     breakReviewProof(db(), items[1]!)
 
     await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
-      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'delete-draft' } })
+      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'delete-draft', draftVersion: 1 } })
 
     DraftRepository.delete(items[1]!.seeded.draftId)
     await expect(exportBook()).resolves.toBe('exported')
+  })
+
+  it('坏的是较旧的一稿：指明是哪一版，删掉较新的那稿不管用，删掉指明的那一版才能导出', async () => {
+    const items = reviewedBook({ finalized: false })
+    breakReviewProof(db(), items[1]!)
+    const newer = DraftRepository.create({ chapterNumber: 2, source: 'rewrite', content: '较新的一稿。', wordCount: 6 })
+    const damagedVersion = DraftRepository.getMeta(items[1]!.seeded.draftId)!.version
+    expect(DraftRepository.getMeta(newer)!.version).toBeGreaterThan(damagedVersion)
+
+    await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
+      damagedReviewCycle: { chapterNumber: 2, remedy: 'delete-draft', draftVersion: damagedVersion } })
+    DraftRepository.delete(newer)
+    await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED' })
+    DraftRepository.delete(items[1]!.seeded.draftId)
+    await expect(exportBook()).resolves.toBe('exported')
+  })
+
+  it('生成记录是合法 JSON 但缺字段：删章修不好，不给删除办法', async () => {
+    const items = reviewedBook({ finalized: true })
+    db().prepare('UPDATE generation_roots SET action_json=? WHERE root_action_id=?').run('{}', items[1]!.seeded.call.rootActionId)
+
+    await expect(exportBook()).resolves.toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
+      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: null } })
+
+    const trash = trashService()
+    await expect(trash.delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
+      .resolves.toMatchObject({ success: true })
+    await expect(trash.purge(projectRoot, { all: true })).resolves.toMatchObject({ success: true })
+    await expect(exportBook()).resolves.toMatchObject({ code: 'PORTABLE_UNSAFE_PROJECTION' })
   })
 
   it('循环引用的生成记录读不出：带出章号，但不给删章的办法，删了章也导不出', async () => {
@@ -118,8 +168,9 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章（#702
       damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: null } })
 
     const trash = trashService()
-    await trash.delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 })
-    await trash.purge(projectRoot, { all: true })
+    await expect(trash.delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
+      .resolves.toMatchObject({ success: true })
+    await expect(trash.purge(projectRoot, { all: true })).resolves.toMatchObject({ success: true })
     await expect(exportBook()).resolves.toMatchObject({ code: 'PORTABLE_UNSAFE_PROJECTION' })
   })
 })

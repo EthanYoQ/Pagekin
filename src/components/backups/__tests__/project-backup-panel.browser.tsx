@@ -284,6 +284,40 @@ describe('ProjectBackupPanel', () => {
     expect(alert).not.toContain('MIGRATION_VERIFICATION_FAILED')
   })
 
+  it('导出存档遇到回收站里那一章的坏审修循环：指向回收站那一项和删除时间，不让删正文（#702）', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
+      if (channel === 'project:archive-export') return { success: false, error: 'MIGRATION_VERIFICATION_FAILED',
+        damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'purge-trash', deletedAt: '2026-11-18 08:05:00' } }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('导出本地存档').click())
+    const alert = container.querySelector('[role="alert"]')?.textContent ?? ''
+    expect(alert).toContain('回收站里第 2 章「沉船」')
+    expect(alert).toContain(new Date('2026-11-18T08:05:00Z').toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }))
+    expect(alert).toContain('「彻底删除…」')
+    expect(alert).not.toContain('删除正文')
+  })
+
+  it('导出存档遇到较旧一稿的坏审修循环：写明是草稿几（#702）', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
+      if (channel === 'project:archive-export') return { success: false, error: 'MIGRATION_VERIFICATION_FAILED',
+        damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'delete-draft', draftVersion: 1 } }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('导出本地存档').click())
+    const alert = container.querySelector('[role="alert"]')?.textContent ?? ''
+    expect(alert).toContain('第 2 章「沉船」草稿 v1')
+    expect(alert).toContain('「删除这一稿…」')
+  })
+
   it('云备份遇到读不出的坏审修循环：说明是哪一章，不给删章的办法（#702）', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
     invoke.mockImplementation(async (channel: string) => {
