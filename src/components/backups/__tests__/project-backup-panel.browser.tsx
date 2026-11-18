@@ -266,6 +266,43 @@ describe('ProjectBackupPanel', () => {
     }
   })
 
+  it('导出存档遇到坏审修循环：说明是哪一章，并给出删掉它的按钮名（#702）', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
+      if (channel === 'project:archive-export') return { success: false, error: 'MIGRATION_VERIFICATION_FAILED',
+        damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', remedy: 'delete-manuscript' } }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('导出本地存档').click())
+    const alert = container.querySelector('[role="alert"]')?.textContent ?? ''
+    expect(alert).toContain('第 2 章「沉船」')
+    expect(alert).toContain('「删除正文…」')
+    expect(alert).toContain('「彻底删除…」')
+    expect(alert).not.toContain('MIGRATION_VERIFICATION_FAILED')
+  })
+
+  it('云备份遇到读不出的坏审修循环：说明是哪一章，不给删章的办法（#702）', async () => {
+    useLocaleStore.setState({ locale: 'en-US' })
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
+      if (channel === 'cloud-backup:backup') return { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED',
+        operationId: 'op-1', damagedReviewCycle: { chapterNumber: 2, chapterTitle: '', remedy: null } }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    const disclosure = container.querySelector<HTMLInputElement>('input[type="checkbox"][name="cloud-disclosure"]')!
+    await act(async () => disclosure.click())
+    await act(async () => button('Back up now').click())
+    const alert = container.querySelector('[role="alert"]')?.textContent ?? ''
+    expect(alert).toContain('Chapter 2')
+    expect(alert).not.toContain('Delete')
+    expect(alert).not.toContain('CLOUD_BACKUP_ARCHIVE_FAILED')
+  })
+
   it('requires disclosure before upload and shows the backup point and unsaved binding', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }

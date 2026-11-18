@@ -10,6 +10,7 @@ import type {
   PortableProjectRestoreRequest,
   ProjectChannels,
 } from '../../../src/shared/ipc-channels'
+import { SchemaMigrationError } from '../../migrations/registry'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
 
@@ -374,6 +375,19 @@ describe('project:archive-export', () => {
     expect(mocks.exportPortableProject).toHaveBeenCalledWith(expect.objectContaining({
       targetArchivePath: path.join(fs.realpathSync.native(root), 'chosen.ainovel'),
     }))
+  })
+
+  it('全书审修循环校验失败时，回给界面的结果带上坏循环所在的章（#702）', async () => {
+    const root = tempRoot('b01-export-damaged-cycle-')
+    const grantId = newTargetGrant(path.join(root, 'damaged.ainovel'))
+    const damagedReviewCycle = { chapterNumber: 2, chapterTitle: '沉船', remedy: 'delete-manuscript' as const }
+    mocks.exportPortableProject.mockRejectedValueOnce(
+      new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', damagedReviewCycle))
+
+    await expect(handler('project:archive-export')(event(), {
+      targetArchiveGrantId: grantId,
+      projectSession: projectSession(),
+    })).resolves.toEqual({ success: false, error: 'MIGRATION_VERIFICATION_FAILED', damagedReviewCycle })
   })
 
   const invalidGrantCases: Array<{

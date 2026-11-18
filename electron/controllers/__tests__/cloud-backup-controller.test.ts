@@ -17,6 +17,7 @@ import { exportPortableProject } from '../../services/project-archive-service'
 import { restorePortableProject } from '../../services/project-restore-service'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
+import { SchemaMigrationError } from '../../migrations/registry'
 import { continuityBaseline, SCHEMA8_CONTINUITY_ARCHIVE, SCHEMA8_EXPECTED_BASELINE } from '../../../test/helpers/schema8-continuity-archive'
 import { createPortableProjectAssetProvider } from '../../services/portable-project-assets'
 import { createProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
@@ -506,6 +507,20 @@ describe('registerCloudBackupController', () => {
     finishExport()
     await expect(pending).resolves.toEqual({
       success: false, state: 'cancelled', errorCode: 'CLOUD_BACKUP_CANCELLED', operationId: OPERATION,
+    })
+    expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
+  })
+
+  it('打包时全书审修循环校验失败：错误码不变，带上坏循环所在的章，不上传（#702）', async () => {
+    const f = fixture()
+    const damagedReviewCycle = { chapterNumber: 2, chapterTitle: '沉船', remedy: null }
+    vi.mocked(f.deps.exportPortableProject).mockRejectedValueOnce(
+      new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', damagedReviewCycle))
+
+    await expect(f.invoke('cloud-backup:backup', {
+      operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
+    })).resolves.toEqual({
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', operationId: OPERATION, damagedReviewCycle,
     })
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
   })
