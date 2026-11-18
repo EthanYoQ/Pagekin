@@ -149,6 +149,7 @@ const ERROR_KEYS = {
   GENERATION_REVIEW_REPLACEMENT_LIMIT: 'error.generationRequestFailed',
   GENERATION_DRAFT_SHORT_OUTLINE_FAILED: 'error.generationDraftIncomplete',
   GENERATION_STORAGE_FAILED: 'error.generationStorageFailed',
+  GENERATION_LEDGER_UNREADABLE: 'error.generationLedgerUnreadable',
   GENERATION_MODEL_MISSING: 'error.generationModelMissing',
   GENERATION_MODEL_REQUIRED: 'error.generationModelMissing',
   GENERATION_AGENT_MODEL_REQUIRED: 'error.generationModelMissing',

@@ -9,6 +9,7 @@ import { DRAFT_RECONCILE_PURPOSE } from '../../src/shared/draft-reconciliation';
 import { DRAFT_SHORT_OUTLINE_PURPOSE } from '../../src/shared/draft-short-outline';
 import { countDraftUnits, draftTargetUnitRange } from '../../src/shared/draft-units';
 import { getProjectDb } from '../database';
+import { GENERATION_LEDGER_UNREADABLE } from './generation-ledger-admission';
 import type { PortableRuntimeFreezeTable } from '../services/portable-runtime-freeze';
 import { assertReservation, assertAttemptTransition, rootActionIdempotencyKey, type RootAction, type RootBudget, type PhysicalAttempt, type VisibleArtifact, type ProviderUsagePolicy } from '../../src/shared/generation-contract';
 import { isContentHash, sameProjectEpoch, type FrozenInputFingerprint, type SourceRef, type ProjectEpoch } from '../../src/shared/source-ref';
@@ -90,6 +91,39 @@ const receiptSelect = `SELECT t.attempt_id,t.run_id,t.rowid AS ordinal,t.attempt
     a.artifact_id,a.run_id AS artifact_run_id,a.artifact_json,a.revision,a.status AS artifact_status
     FROM generation_attempts t LEFT JOIN generation_artifacts a ON a.attempt_id=t.attempt_id`;
 export const textHash = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
+/** 一次点击的身份：根的 idempotency_key 去掉冻结输入哈希。 */
+export interface GenerationClick { projectId: string; operation: string; uiActionNonce: string }
+function clickOfRootKey(key: unknown): GenerationClick | undefined {
+    if (typeof key !== 'string') return undefined;
+    try {
+        const parts: unknown = JSON.parse(key);
+        return Array.isArray(parts) && parts.length >= 3 && parts.slice(0, 3).every(part => typeof part === 'string')
+            ? { projectId: parts[0], operation: parts[1], uiActionNonce: parts[2] } : undefined;
+    } catch {
+        return undefined;
+    }
+}
+function clickOfOpenKey(openKey: string): GenerationClick | undefined {
+    try {
+        const outer: unknown = JSON.parse(openKey);
+        return Array.isArray(outer) ? clickOfRootKey(outer[0]) : undefined;
+    } catch {
+        return undefined;
+    }
+}
+export function uiActionNonceOfOpenKey(openKey: string): string | undefined {
+    return clickOfOpenKey(openKey)?.uiActionNonce;
+}
+/** 封存的根是终态：列举跳过它，阻断码也不再改写。 */
+export const UNSEALED_ROOT = `blocked_code IS NOT '${GENERATION_LEDGER_UNREADABLE}'`;
+/** 点击号读不出的运行认不出是不是前驱，所以直接报 conflict。 */
+export function slotRunNonces(rows: readonly { run_id: string; open_key: string }[], conflict: string): { runId: string; nonce: string }[] {
+    return rows.map(row => {
+        const nonce = uiActionNonceOfOpenKey(row.open_key);
+        if (nonce === undefined) fail(conflict);
+        return { runId: row.run_id, nonce };
+    });
+}
 const encode = (value: unknown): string => JSON.stringify(value);
 const authorEffectPath = '$."$runEffects"';
 function fail(code: string): never { throw new Error(code); }
@@ -130,6 +164,7 @@ export class GenerationRunRepository {
         } | undefined;
         if (!row)
             fail('GENERATION_RUN_MISSING');
+        this.assertUnsealed(row.root_action_id);
         return { runId: row.run_id, rootActionId: row.root_action_id, binding: splitStoredBinding(row.binding_json).frozen, status: row.status };
     }
     private replaceFrozenBinding(runId: string, frozen: RunBinding): void {
@@ -138,6 +173,27 @@ export class GenerationRunRepository {
     }
     private authorEditedRoot(rootId: string): boolean {
         return !!this.db().prepare('SELECT 1 FROM generation_runs WHERE root_action_id=? AND json_type(binding_json,?) IS NOT NULL LIMIT 1').get(rootId, authorEffectPath);
+    }
+    private sealed(rootId: string): boolean {
+        return this.db().prepare('SELECT blocked_code FROM generation_roots WHERE root_action_id=?').pluck().get(rootId) === GENERATION_LEDGER_UNREADABLE;
+    }
+    private assertUnsealed(rootId: string): void {
+        if (this.sealed(rootId)) fail(GENERATION_LEDGER_UNREADABLE);
+    }
+    hasSealedRoot(): boolean {
+        return !!this.db().prepare(`SELECT 1 FROM generation_roots WHERE NOT (${UNSEALED_ROOT}) LIMIT 1`).get();
+    }
+    /**
+     * 封存的树里有没有某次点击：只读身份键两列，不读任何 JSON 内容列。
+     * 身份键也读不出时认不出是哪次点击，按占用处理。`root` 是开这棵树的那次点击。
+     */
+    sealedClaims(claims: (click: GenerationClick, root: GenerationClick | undefined) => boolean): boolean {
+        const rows = this.db().prepare(`SELECT g.idempotency_key AS root_key,r.open_key FROM generation_roots g LEFT JOIN generation_runs r ON r.root_action_id=g.root_action_id
+            WHERE NOT (g.${UNSEALED_ROOT})`).all() as { root_key: string; open_key: string | null }[];
+        return rows.some(row => {
+            const root = clickOfRootKey(row.root_key);
+            return [root, ...(row.open_key === null ? [] : [clickOfOpenKey(row.open_key)])].some(click => click === undefined || claims(click, root));
+        });
     }
     assertPlotOutlineWritable(runId: string): void {
         if (this.isPrivatePlanningHistory(runId)) fail('GENERATION_PLANNING_HISTORY_READ_ONLY');
@@ -194,6 +250,8 @@ export class GenerationRunRepository {
             || receipt.sourceHandle.runId !== runId || receipt.sourceHandle.rootActionId !== source.rootActionId
             || receipt.sourceHandle.projectId !== source.binding.projectId || receipt.nextHandle.projectId !== source.binding.projectId
             || receipt.nextHandle.rootActionId === source.rootActionId) fail('GENERATION_PLANNING_CONTINUATION_INVALID');
+        // 续写出的那次生成被封存了：续写确实发生过，回执照存的给出。
+        if (this.sealed(receipt.nextHandle.rootActionId)) return receipt;
         const next = this.get(receipt.nextHandle.runId);
         if (next.rootActionId !== receipt.nextHandle.rootActionId || next.binding.projectId !== source.binding.projectId)
             fail('GENERATION_PLANNING_CONTINUATION_INVALID');
@@ -252,6 +310,8 @@ export class GenerationRunRepository {
         } | undefined;
         if (!row)
             fail('GENERATION_ROOT_MISSING');
+        if (row.blocked_code === GENERATION_LEDGER_UNREADABLE)
+            fail(GENERATION_LEDGER_UNREADABLE);
         const attempts = this.db().prepare('SELECT attempt_json FROM generation_attempts WHERE root_action_id=? ORDER BY rowid').all(rootId) as {
             attempt_json: string;
         }[];
@@ -287,6 +347,8 @@ export class GenerationRunRepository {
                     fail('GENERATION_NONCE_CONFLICT');
                 return prior;
             }
+            if (this.sealedClaims(click => click.projectId === request.projectId && click.operation === request.operation && click.uiActionNonce === request.uiActionNonce))
+                fail(GENERATION_LEDGER_UNREADABLE);
             if (request.parentRootActionId) {
                 if (this.authorEditedRoot(request.parentRootActionId)) fail('GENERATION_PLOT_OUTLINE_AUTHOR_SAVED');
                 const parent = this.budget(request.parentRootActionId);
@@ -538,7 +600,9 @@ export class GenerationRunRepository {
             || !isDeepStrictEqual(stored.remainingRange, committed.end_chapter < stored.requestedRange.endChapter
                 ? { startChapter: committed.end_chapter + 1, endChapter: stored.requestedRange.endChapter } : null)) fail('GENERATION_DIRECTORY_PROGRESS_INVALID');
         if (stored.continuationHandle) {
-            if (!completeHandle(stored.continuationHandle)) fail('GENERATION_DIRECTORY_PROGRESS_INVALID');
+            if (!completeHandle(stored.continuationHandle)
+                || this.db().prepare('SELECT root_action_id FROM generation_runs WHERE run_id=?').pluck().get(stored.continuationHandle.runId) !== run.rootActionId)
+                fail('GENERATION_DIRECTORY_PROGRESS_INVALID');
             const child = this.get(stored.continuationHandle.runId);
             if (child.rootActionId !== run.rootActionId || child.binding.projectId !== run.binding.projectId
                 || stored.continuationHandle.rootActionId !== child.rootActionId || stored.continuationHandle.projectId !== child.binding.projectId
@@ -601,10 +665,11 @@ export class GenerationRunRepository {
         return recovery.progress.find(item => item.operationId === operationId) ?? fail('GENERATION_DIRECTORY_PROGRESS_INVALID');
     }
     listDirectoryProgress(): DirectoryGenerationCatalog {
-        const rows = this.db().prepare(`SELECT r.run_id FROM generation_runs r WHERE json_extract(r.binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
+        const rows = this.db().prepare(`SELECT r.run_id FROM generation_runs r WHERE r.root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})
+            AND (json_extract(r.binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
             OR json_type(r.binding_json,'$."$blueprintRetirement"') IS NOT NULL
             OR json_type(r.binding_json,'$."$runEffects".blueprintAuthorEdit') IS NOT NULL
-            OR EXISTS (SELECT 1 FROM generation_attempts t WHERE t.run_id=r.run_id AND json_type(t.usage_receipt_json,'$.directoryProgress') IS NOT NULL)
+            OR EXISTS (SELECT 1 FROM generation_attempts t WHERE t.run_id=r.run_id AND json_type(t.usage_receipt_json,'$.directoryProgress') IS NOT NULL))
             ORDER BY r.rowid`).all() as { run_id: string }[];
         const catalog: DirectoryGenerationCatalog = { progress: [], diagnostics: [] };
         for (const row of rows) {
@@ -650,7 +715,8 @@ export class GenerationRunRepository {
     }
     retireBlueprintRecoveryWithinTransaction(): void {
         if (!this.db().inTransaction) fail('GENERATION_DIRECTORY_TRANSACTION_REQUIRED');
-        const rows = this.db().prepare("SELECT run_id,root_action_id FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'").all() as { run_id: string; root_action_id: string }[];
+        const rows = this.db().prepare(`SELECT run_id,root_action_id FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
+            AND root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})`).all() as { run_id: string; root_action_id: string }[];
         const available = rows.filter(row => !this.portableFrozenRoot(row.root_action_id) && this.readBlueprintRecovery(row.run_id).kind === 'available');
         const retire = this.db().prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$blueprintRetirement"','blueprints-cleared') WHERE run_id=?`);
         for (const row of available) retire.run(row.run_id);
@@ -774,7 +840,7 @@ export class GenerationRunRepository {
     }
     block(rootId: string, code: string): void {
         if (this.authorEditedRoot(rootId)) fail('GENERATION_PLOT_OUTLINE_AUTHOR_SAVED');
-        this.db().prepare('UPDATE generation_roots SET blocked_code=? WHERE root_action_id=?').run(code, rootId);
+        this.db().prepare(`UPDATE generation_roots SET blocked_code=? WHERE root_action_id=? AND ${UNSEALED_ROOT}`).run(code, rootId);
     }
     pause(rootId: string, cancel = false): void {
         this.transaction(() => {
@@ -809,14 +875,12 @@ export class GenerationRunRepository {
     }
     recoverInterrupted(): void {
         this.transaction(() => {
-            const roots = this.db().prepare('SELECT root_action_id FROM generation_roots').all() as {
+            const roots = this.db().prepare(`SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT}`).all() as {
                 root_action_id: string;
             }[];
             for (const { root_action_id: id } of roots) {
                 if (this.frozenRoot(id)) continue;
-                const budget = this.readableBudget(id);
-                if (!budget) continue;
-                for (const attempt of budget.attempts)
+                for (const attempt of this.budget(id).attempts)
                     if (attempt.status === 'dispatch-marked') {
                         attempt.status = 'unknown';
                         this.db().prepare('UPDATE generation_attempts SET attempt_json=? WHERE attempt_id=?').run(encode(attempt), attempt.attemptId);
@@ -824,14 +888,6 @@ export class GenerationRunRepository {
                 this.pause(id);
             }
         });
-    }
-    /** 遍历全书的根时用：读不出的根留给读写它的那一步报错，不挡其余根（ADR-0029 后果 1）。 */
-    private readableBudget(rootId: string): GenerationBudgetReceipt | null {
-        try { return this.budget(rootId); } catch (error) {
-            if (!(error instanceof SyntaxError)) throw error;
-            console.warn('[generation] GENERATION_ROOT_UNREADABLE skipped', { rootActionId: rootId });
-            return null;
-        }
     }
     private frozenRoot(rootId: string): boolean {
         return this.authorEditedRoot(rootId) || this.portableFrozenRoot(rootId);
@@ -842,18 +898,6 @@ export class GenerationRunRepository {
         if (runIds.some(row => this.isFrozen('generation_runs', row.run_id))) return true;
         const attemptIds = this.db().prepare('SELECT attempt_id FROM generation_attempts WHERE root_action_id=?').all(rootId) as { attempt_id: string }[];
         return attemptIds.some(row => this.isFrozen('generation_attempts', row.attempt_id));
-    }
-    listCandidates(runId?: string): VisibleArtifact[] {
-        const rows = this.db().prepare(`SELECT g.attempt_id,t.root_action_id FROM generation_artifacts g JOIN generation_attempts t ON t.attempt_id=g.attempt_id
-            WHERE g.status!='discarded' AND (? IS NULL OR g.run_id=?) ORDER BY g.rowid`).all(runId ?? null, runId ?? null) as { attempt_id: string; root_action_id: string }[];
-        const budgets = new Map<string, GenerationBudgetReceipt | null>();
-        if (runId) { const rootId = this.get(runId).rootActionId; budgets.set(rootId, this.budget(rootId)); }
-        // Portable history keeps visible text but has no current execution receipt.
-        return rows.filter(row => !this.isFrozen('generation_attempts', row.attempt_id)).flatMap(row => {
-            if (!budgets.has(row.root_action_id)) budgets.set(row.root_action_id, this.readableBudget(row.root_action_id));
-            const budget = budgets.get(row.root_action_id);
-            return budget ? [this.receipt(row.attempt_id, budget).artifact!] : [];
-        });
     }
     discardCandidate(artifactId: string): void {
         const runId = this.db().prepare('SELECT run_id FROM generation_artifacts WHERE artifact_id=?').pluck().get(artifactId) as string | undefined;

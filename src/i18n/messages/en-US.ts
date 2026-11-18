@@ -70,6 +70,7 @@ export const enUS = {
   'error.generationNetworkFailed': 'Could not reach the model service, or the reply broke off midway. Check your network or proxy, then try again.',
   'error.generationContextLengthExceeded': 'Your work is unchanged. The prompt is longer than the model accepts, so nothing was generated. In Settings, switch to a model with a longer context or lower Max output tokens, then generate again.',
   'error.generationStorageFailed': 'The generated text could not be written to local storage. Check free disk space and write access to the book folder, then try again.',
+  'error.generationLedgerUnreadable': 'Your manuscript is unaffected. This AI generation record was damaged and has been disabled.',
   'error.generationModelMissing': 'The model for this generation could not be found. Select or add a model in Settings, then try again.',
   'error.generationStopped': 'This generation was stopped, paused, or used up its allowance, so it cannot send more requests to the model. Generate again if you need to.',
   'error.generationParentInvalid': 'The generation this one continues has ended or was blocked, so it cannot send more requests to the model. Generate again if you need to.',

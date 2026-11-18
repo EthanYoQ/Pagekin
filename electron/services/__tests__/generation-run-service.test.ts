@@ -23,6 +23,8 @@ function fixture() {
     const request = (runId: string, nonce = 'call'): ExecuteGenerationRequest => ({ runId, invocationNonce: nonce, requestHash: textHash(nonce), providerRequest: { prompt: 'author' }, reservedTokens: 200, requestedOutputTokens: 100, inputUpperBoundTokens: 90, reasoningUpperBoundTokens: 0, usagePolicy: policy });
     return { db, repository, open, policy, request, setNow: (value: number) => { now = value; } };
 }
+const candidates = (f: ReturnType<typeof fixture>) => (f.db.prepare("SELECT attempt_id FROM generation_artifacts WHERE status!='discarded' ORDER BY rowid").pluck().all() as string[])
+    .map(attemptId => f.repository.receipt(attemptId).artifact!);
 const usage: GenerationProviderUsage = { promptTokens: 50, completionTokens: 50, totalTokens: 100, reasoningTokens: 20, accounting: 'included-in-completion', totalIncludesReasoning: true, trusted: true };
 describe('single durable generation owner', () => {
     it('rejects an invalid reservation before dispatch independently of unknown model liability', async () => {
@@ -82,7 +84,7 @@ describe('single durable generation owner', () => {
     it('releases only undispatched cancellation and uses one cancelled root terminal', () => { const f = fixture(), run = f.repository.open(f.open); const a = f.repository.reserve(run.runId, 'a', textHash('a'), 200, 100); f.repository.pause(run.rootActionId, true); f.repository.pause(run.rootActionId, true); expect(f.repository.receipt(a.attempt.attemptId).attempt.status).toBe('cancelled-before-dispatch'); expect(() => f.repository.markDispatched(a.attempt.attemptId)).toThrow('GENERATION_DISPATCH_BLOCKED'); });
     it('CAS snapshots reject rollback and acknowledge idempotent same revision', () => { const f = fixture(), run = f.repository.open(f.open), a = f.repository.reserve(run.runId, 'a', textHash('a'), 200, 100); const saved = f.repository.snapshot(a.attempt.attemptId, 0, '原文'); expect(f.repository.snapshot(a.attempt.attemptId, 0, '原文')).toEqual(saved); expect(() => f.repository.snapshot(a.attempt.attemptId, 0, '改变')).toThrow(); expect(() => f.repository.snapshot(a.attempt.attemptId, 1, '原')).toThrow(); expect(f.repository.receipt(a.attempt.attemptId).artifact?.text).toBe('原文'); });
     it('normalizes cumulative and trustworthy event IDs without string guessing', async () => { const f = fixture(), dispatch = vi.fn(async (_request, options) => { options.onVisible({ kind: 'delta', text: '甲', eventId: '1' }); options.onVisible({ kind: 'delta', text: '甲', eventId: '1' }); options.onVisible({ kind: 'delta', text: '甲' }); options.onVisible({ kind: 'cumulative', text: '甲甲乙' }); return { usage, finishReason: 'stop' }; }); const service = createGenerationRunService({ repository: f.repository, dispatch }), run = service.open(f.open), receipt = await service.execute(f.request(run.runId)); expect(receipt.artifact?.text).toBe('甲甲乙'); expect(receipt.artifact?.revision).toBe(1); });
-    it('flushes a large prefix before completion and keeps attempts separate', async () => { const f = fixture(); const dispatch = vi.fn(async (_request, options) => { options.onVisible({ kind: 'delta', text: 'a'.repeat(4096) }); expect(f.repository.listCandidates().at(-1)?.revision).toBe(1); options.onVisible({ kind: 'delta', text: 'tail' }); return { usage, finishReason: 'stop' }; }); const service = createGenerationRunService({ repository: f.repository, dispatch }), run = service.open(f.open); const a = await service.execute(f.request(run.runId)), b = await service.execute(f.request(run.runId, 'second')); expect(a.artifact?.revision).toBe(2); expect(b.artifact?.artifactId).not.toBe(a.artifact?.artifactId); expect(b.artifact?.text.length).toBe(4100); });
+    it('flushes a large prefix before completion and keeps attempts separate', async () => { const f = fixture(); const dispatch = vi.fn(async (_request, options) => { options.onVisible({ kind: 'delta', text: 'a'.repeat(4096) }); expect(candidates(f).at(-1)?.revision).toBe(1); options.onVisible({ kind: 'delta', text: 'tail' }); return { usage, finishReason: 'stop' }; }); const service = createGenerationRunService({ repository: f.repository, dispatch }), run = service.open(f.open); const a = await service.execute(f.request(run.runId)), b = await service.execute(f.request(run.runId, 'second')); expect(a.artifact?.revision).toBe(2); expect(b.artifact?.artifactId).not.toBe(a.artifact?.artifactId); expect(b.artifact?.text.length).toBe(4100); });
     it('does not persist thinking and preserves prior visible content as unknown', async () => { const f = fixture(); const service = createGenerationRunService({ repository: f.repository, dispatch: async (_r, o) => { o.onVisible({ kind: 'delta', text: 'visible' }); o.onVisible({ kind: 'delta', text: '<think>hidden</think>' }); return { usage, finishReason: 'stop' }; } }), run = service.open(f.open), result = await service.execute(f.request(run.runId)); expect(result.artifact?.text).toBe('visible'); expect(result.attempt.status).toBe('unknown'); });
     it('sends provider reasoning only to the volatile display callback', async () => {
         const f = fixture(), shown: Array<{ attemptId: string; text: string }> = [];
@@ -129,9 +131,9 @@ it('flushes by the one-second timer and reports only committed revisions', async
     }) => void;
     const service = createGenerationRunService({ repository: f.repository, onSnapshot: event => updates.push(event), dispatch: async (_r, o) => { o.onVisible({ kind: 'delta', text: 'prefix' }); return new Promise(resolve => { finish = resolve; }); } }), run = service.open(f.open);
     const operation = service.execute(f.request(run.runId));
-    expect(f.repository.listCandidates()[0].revision).toBe(0);
+    expect(candidates(f)[0].revision).toBe(0);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(f.repository.listCandidates()[0].revision).toBe(1);
+    expect(candidates(f)[0].revision).toBe(1);
     expect(updates).toContainEqual(expect.objectContaining({ durableRevision: 1, durableText: 'prefix' }));
     finish({ usage, finishReason: 'stop' });
     await operation;
@@ -204,7 +206,7 @@ it('a failed reservation transaction cannot leave an artifact without its ledger
     f.db.exec("CREATE TRIGGER fail_artifact BEFORE INSERT ON generation_artifacts BEGIN SELECT RAISE(ABORT,'fixture disk failure'); END");
     expect(() => f.repository.reserve(run.runId, 'nonce', textHash('x'), 200, 100)).toThrow('fixture disk failure');
     expect(f.repository.budget(run.rootActionId).attempts).toHaveLength(0);
-    expect(f.repository.listCandidates()).toHaveLength(0);
+    expect(candidates(f)).toHaveLength(0);
 });
 
 it('times out an uncooperative provider and ignores its late success', async () => {
@@ -253,7 +255,7 @@ it.each(['artifactId','epoch','fingerprint'])('rejects altered saved artifact id
  expect(f.repository.readRunView(run.runId).attempts[0]!.receipt.artifact).toEqual(receipt.artifact);
  const artifact={...receipt.artifact!};if(field==='fingerprint')artifact.fingerprint={...artifact.fingerprint,authorGuidanceHash:textHash('wrong')};else artifact[field as 'artifactId'|'epoch']='wrong';
  f.db.prepare('UPDATE generation_artifacts SET artifact_json=? WHERE artifact_id=?').run(JSON.stringify(artifact),receipt.artifact!.artifactId);
- expect(()=>f.repository.receipt(receipt.attempt.attemptId)).toThrow('ARTIFACT_INTEGRITY_FAILED');expect(()=>f.repository.listCandidates()).toThrow('ARTIFACT_INTEGRITY_FAILED');
+ expect(()=>f.repository.receipt(receipt.attempt.attemptId)).toThrow('ARTIFACT_INTEGRITY_FAILED');
  expect(()=>f.repository.readRunView(run.runId)).toThrow('ARTIFACT_INTEGRITY_FAILED');
 });
 it('retains the immutable old artifact epoch after authorized resume in a new epoch',async()=>{
@@ -276,7 +278,7 @@ it('refuses project close until an explicitly discarded unsaved tail is acknowle
     const f=fixture();let chunks!:(event:{kind:'delta';text:string})=>void;
     const service=createGenerationRunService({repository:f.repository,dispatch:async(_r,o)=>{chunks=o.onVisible;return new Promise(()=>{})}}),run=service.open(f.open);
     const pending=service.execute(f.request(run.runId));chunks({kind:'delta',text:'saved'.repeat(1024)});
-    const durable=f.repository.listCandidates()[0];expect(durable.revision).toBe(1);
+    const durable=candidates(f)[0];expect(durable.revision).toBe(1);
     vi.spyOn(f.repository,'snapshot').mockImplementation(()=>{throw new Error('disk full')});
     chunks({kind:'delta',text:'未保存尾部\r\n原字节'});
     expect(()=>service.suspendForProjectClose()).toThrow('GENERATION_UNSAVED_TAIL_PRESENT');
@@ -334,21 +336,3 @@ describe('运行上的记账跟着运行走（#608）', () => {
         expect(f.repository.get(f.run.runId)).toMatchObject({ status: 'running', binding: { ...f.run.binding, epoch: 'epoch-2' } });
     });
 });
-
-describe('一条生成根读不出时只影响它自己（ADR-0029 后果 1）', () => {
-    it('不限运行的候选列表跳过读不出的根，照常列出其余根的候选', () => {
-        const f = fixture(), healthy = f.repository.open(f.open), broken = f.repository.open({ ...f.open, uiActionNonce: 'broken' });
-        const kept = f.repository.reserve(healthy.runId, 'kept', textHash('kept'), 200, 100);
-        f.repository.snapshot(kept.attempt.attemptId, 0, '健康根的正文');
-        const lost = f.repository.reserve(broken.runId, 'lost', textHash('lost'), 200, 100);
-        f.repository.snapshot(lost.attempt.attemptId, 0, '坏根的正文');
-        f.db.prepare("UPDATE generation_roots SET action_json='{坏' WHERE root_action_id=?").run(broken.rootActionId);
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        try {
-            expect(f.repository.listCandidates().map(item => item.text)).toEqual(['健康根的正文']);
-            expect(() => f.repository.listCandidates(broken.runId)).toThrow(SyntaxError);
-        }
-        finally { warn.mockRestore(); }
-    });
-});
-

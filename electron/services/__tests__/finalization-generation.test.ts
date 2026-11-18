@@ -14,6 +14,8 @@ import { countDraftUnits } from '../../../src/shared/draft-units'
 import { SummaryRepository } from '../../repositories/summary-repository'
 import { getProjectDb } from '../../database'
 import { GenerationRunRepository, textHash } from '../../repositories/generation-run-repository'
+import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
+import { damageLedger, enumerations, failingCalls, rootCount, type DamagedColumn } from './ledger-seal-fixture'
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
@@ -67,7 +69,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch'], option
     transferOrigin: options.transferOrigin,
   })
   const owner=makeOwner('epoch')
-  const reopen=()=>{owner.suspendForProjectClose();db.close();db=new Database(path.join(root,'.ai-novel','project.db'));deps.db=db;vi.mocked(getProjectDb).mockReturnValue(db);const next=makeOwner('epoch-2');cleanup.unshift(()=>next.suspendForProjectClose());return next}
+  const reopen=()=>{owner.suspendForProjectClose();db.close();db=new Database(path.join(root,'.ai-novel','project.db'));admitGenerationLedger(db);deps.db=db;vi.mocked(getProjectDb).mockReturnValue(db);const next=makeOwner('epoch-2');cleanup.unshift(()=>next.suspendForProjectClose());return next}
   cleanup.push(() => { owner.suspendForProjectClose(); db.close(); fs.rmSync(root, { recursive: true, force: true }) })
   const prepared = owner.readFinalizedCharacterContext(1)
   const selection: BeginGenerationRequest = { operation: 'finalized-character-state', uiActionNonce: 'extract', modelId: model.id, chapterNumber: 1,
@@ -822,6 +824,24 @@ it.each(['elapsed', 'blocked'] as const)('#552 作者重试时原 root 已不能
  expect(f.dispatch).toHaveBeenCalledTimes(3)
 })
 
+it('ADR-0030 已提交角色卡的运行绑定被封存后，同槽位换模型不能另开新根', async () => {
+ const f = await generated('character_cards')
+ expect(f.owner.commitFinalizationGeneration(f.commitRequest)).toMatchObject({ success: true })
+ vi.spyOn(console, 'warn').mockImplementation(() => {})
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(f.commitRequest.handle.runId)
+ admitGenerationLedger(f.db)
+ const runs = () => f.db.prepare('SELECT COUNT(*) FROM generation_runs').pluck().get()
+ const before = runs()
+ expect(() => f.owner.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic-b' })).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(runs()).toBe(before)
+})
+
+it('ADR-0030 同槽位第一条运行的 open_key 读不出：报槽位冲突，不当作可用的前驱', async () => {
+ const f = await generated('chapter_notes')
+ f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(f.commitRequest.handle.runId)
+ expect(() => f.owner.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic' })).toThrow('GENERATION_FINALIZATION_SLOT_CONFLICT')
+})
+
 it('#569 请求超时把根阻断后又取消了后处理：作者重试另开新根，真正发出请求并可提交', async () => {
  const f = fixture()
  const slot: FinalizationGenerationSlot = { source: f.prepared.context.source, stepKey: 'character_cards' }
@@ -1063,4 +1083,49 @@ it('#420 生成记录写入失败后点重试：报出写入失败本身，而�
  await expect(f.owner.executeFinalizationGeneration({ handle, recoverFrom })).rejects.toThrow('GENERATION_STORAGE_FAILED')
  expect(f.dispatch).toHaveBeenCalledTimes(1)
  f.owner.discardCandidate(handle, f.artifactOf(failed).artifactId)
+})
+
+it('ADR-0030 已取消的定稿运行 action_json 读不出：重开后不能提交', async () => {
+ const f = await generated()
+ vi.spyOn(console, 'warn').mockImplementation(() => {})
+ f.owner.cancelFinalizationGeneration({ handle: f.commitRequest.handle })
+ expect(() => f.owner.commitFinalizationGeneration(f.commitRequest)).toThrow('GENERATION_ACTION_CANCELLED')
+ f.owner.suspendForProjectClose()
+ damageLedger(f.db, 'action_json', f.commitRequest.handle)
+ const next = f.reopen()
+ expect(() => next.commitFinalizationGeneration(f.commitRequest)).toThrow('GENERATION_LEDGER_UNREADABLE')
+})
+
+it.each<DamagedColumn>(['binding_json', 'action_json', 'usage_receipt_json', 'artifact_json', 'budget_json'])('ADR-0030 已提交角色卡的运行 %s 读不出：同槽位换模型被拒绝，不另开新根；其余列举照常', async column => {
+ const f = await generated('character_cards')
+ vi.spyOn(console, 'warn').mockImplementation(() => {})
+ f.owner.commitFinalizationGeneration(f.commitRequest)
+ f.owner.suspendForProjectClose()
+ damageLedger(f.db, column, f.commitRequest.handle)
+ const next = f.reopen(), roots = rootCount(f.db)
+ expect(() => next.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic-b' })).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(rootCount(f.db)).toBe(roots)
+ expect(await failingCalls(enumerations(next))).toEqual([])
+})
+
+it.each([['character_cards', 'chapter_notes'], ['chapter_notes', 'character_cards']] as const)('ADR-0030 %s 的运行绑定读不出：同一章的 %s 不能开跑', async (sealed, other) => {
+ const f = await generated(sealed)
+ vi.spyOn(console, 'warn').mockImplementation(() => {})
+ f.owner.commitFinalizationGeneration(f.commitRequest)
+ f.owner.suspendForProjectClose()
+ damageLedger(f.db, 'binding_json', f.commitRequest.handle)
+ const next = f.reopen(), roots = rootCount(f.db)
+ expect(() => next.beginFinalizationGeneration({ slot: { ...f.slot, stepKey: other }, modelId: 'synthetic' })).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(rootCount(f.db)).toBe(roots)
+})
+
+it('ADR-0030 取消后没提交效果的要点运行 budget_json 读不出：同槽位重试被拒绝，不另开新根', async () => {
+ const f = await generated('chapter_notes')
+ vi.spyOn(console, 'warn').mockImplementation(() => {})
+ f.owner.cancelFinalizationGeneration({ handle: f.commitRequest.handle })
+ f.owner.suspendForProjectClose()
+ damageLedger(f.db, 'budget_json', f.commitRequest.handle)
+ const next = f.reopen(), roots = rootCount(f.db)
+ expect(() => next.beginFinalizationGeneration({ slot: f.slot, modelId: 'synthetic', retryRunId: f.commitRequest.handle.runId })).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(rootCount(f.db)).toBe(roots)
 })

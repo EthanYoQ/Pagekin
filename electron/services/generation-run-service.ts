@@ -342,7 +342,6 @@ export function createGenerationRunService(deps: GenerationRunServiceDependencie
         readUnsavedTails: (): readonly GenerationUnsavedTail[] => Object.freeze([...unsavedTails.values()]),
         get: (runId: string) => deps.repository.get(runId),
         readAttempt: (attemptId: string) => deps.repository.receipt(attemptId),
-        listCandidates: () => deps.repository.listCandidates(),
         discardCandidate: (id: string) => {
             deps.repository.discardCandidate(id);
             for (const [attemptId, tail] of unsavedTails) if (tail.artifactId === id) unsavedTails.delete(attemptId);

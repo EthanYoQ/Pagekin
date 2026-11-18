@@ -9,6 +9,7 @@ import { composeVisibleContinuation } from '../../src/shared/visible-continuatio
 import type { ReviewRevisionContext } from '../../src/shared/review-revision-generation'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import { SchemaMigrationError, type MigrationImplementation, type SchemaReader } from './registry'
+import { GENERATION_LEDGER_UNREADABLE } from '../repositories/generation-ledger-admission'
 
 const HASH = /^[a-f0-9]{64}$/u
 const CYCLE_STATUSES = new Set(['not-generated', 'generated', 'merge-committed'])
@@ -400,9 +401,12 @@ function verifyCycle(db: Database.Database, { mergeTable, draftRows }: CycleTabl
   if (!review || !integer(review.source_draft_chapter_number, 1) || !integer(review.source_draft_version, 1)
     || !nonempty(review.source_draft_status) || review.source_content === null || hash(review.body) !== cycle.review_content_hash
     || hash(review.source_content) !== cycle.source_hash) return false
-  const root = db.prepare('SELECT action_json FROM generation_roots WHERE root_action_id=?').get(cycle.root_action_id) as { action_json: string } | undefined
-  const action = root && JSON.parse(root.action_json) as Record<string, unknown>
-  if (!action || !nonempty(action.projectId) || !nonempty(action.epoch)) return false
+  const root = db.prepare('SELECT action_json,blocked_code FROM generation_roots WHERE root_action_id=?').get(cycle.root_action_id) as {
+    action_json: string; blocked_code: string | null } | undefined
+  // 证据尝试都在这条根下；封存的根里是占位值，不能当证据。
+  if (!root || root.blocked_code === GENERATION_LEDGER_UNREADABLE) return false
+  const action = JSON.parse(root.action_json) as Record<string, unknown>
+  if (!nonempty(action.projectId) || !nonempty(action.epoch)) return false
   const attempts = db.prepare(`SELECT a.attempt_id,a.run_id,a.root_action_id,r.root_action_id AS run_root_action_id,
       r.binding_json,a.attempt_json,a.usage_receipt_json
     FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id WHERE a.root_action_id=? ORDER BY a.rowid`)

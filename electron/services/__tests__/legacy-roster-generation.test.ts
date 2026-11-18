@@ -9,6 +9,8 @@ import { readMainGenerationPolicy } from '../main-generation-plan'
 import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../generation-source-binding'
 import { generationOutputContract } from '../../../src/shared/generation-owner-contract'
 import { getProjectDb } from '../../database'
+import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
+import { damageLedger, enumerations, failingCalls, rootCount, type DamagedColumn } from './ledger-seal-fixture'
 
 
 
@@ -61,7 +63,7 @@ function fixture(dispatch?:GenerationRunServiceDependencies['dispatch']) {
  const owner=make('epoch-1');const owners=[owner]
  cleanup.push(()=>{owners.forEach(item=>item.suspendForProjectClose());db.close();fs.rmSync(root,{recursive:true,force:true})})
  return {owner,get db(){return db},spy,begin:()=>owner.beginLegacyRosterGeneration({modelId:'synthetic',uiActionNonce:'旧名单修复'}),
-  removeModel:()=>{model=null},reopen:()=>{owners.at(-1)!.suspendForProjectClose();db.close();db=new Database(file);deps.db=db;vi.mocked(getProjectDb).mockReturnValue(db);const next=make('epoch-2');owners.push(next);return next}}
+  removeModel:()=>{model=null},reopen:()=>{owners.at(-1)!.suspendForProjectClose();db.close();db=new Database(file);admitGenerationLedger(db);deps.db=db;vi.mocked(getProjectDb).mockReturnValue(db);const next=make('epoch-2');owners.push(next);return next}}
 }
 it('旧名单专属main读真实原文，generic入口/child/restart拒绝，stage不写角色',async()=>{
  const f=fixture(),handle=f.begin().view.handle
@@ -165,4 +167,17 @@ it('既有卡片采用经owner真实source无模型，不能进入Markdown模型
  const receipt=f.owner.adoptLegacyCards({operationId:'直接采用',expectedRevision:source.snapshot.revision,expectedIdentityRevision:source.identityRevision,expectedFactsHash:source.factsHash,expectedLegacyHash:source.legacyHash})
  expect(receipt).toMatchObject({success:true,activeIds:['原ID'],snapshot:{status:'ready'}})
  expect(f.spy).not.toHaveBeenCalled()
+})
+
+it.each<DamagedColumn>(['action_json','binding_json','usage_receipt_json'])('ADR-0030 已发出的旧名单修复 %s 读不出：重开后同一次点击被拒绝，不再付费；其余列举照常',async column=>{
+ const f=fixture(),prior=f.begin().view.handle
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ await f.owner.executeLegacyRosterGeneration({handle:prior})
+ f.owner.suspendForProjectClose()
+ damageLedger(f.db,column,prior)
+ const next=f.reopen(),roots=rootCount(f.db)
+ expect(()=>next.beginLegacyRosterGeneration({modelId:'synthetic',uiActionNonce:'旧名单修复'})).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(rootCount(f.db)).toBe(roots)
+ expect(f.spy).toHaveBeenCalledTimes(1)
+ expect(await failingCalls(enumerations(next))).toEqual([])
 })

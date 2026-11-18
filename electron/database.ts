@@ -14,6 +14,7 @@ import { SqliteSchemaAdapter } from './migrations/sqlite-schema-adapter'
 import { openCanonicalProjectData, deactivateProjectData, getNewProjectDatabasePath, getProjectDatabasePath } from './services/project-data-locator'
 import { readSqliteContentIdentity } from './services/sqlite-project-migration'
 import { POST_PROCESS_INTERRUPTED } from '../src/shared/finalization-step-error'
+import { admitGenerationLedger } from './repositories/generation-ledger-admission'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -50,6 +51,7 @@ export function initProjectDatabase(projectPath: string): void {
     database.pragma('journal_mode = WAL')
     database.pragma('foreign_keys = ON')
     fenceProjectSession(database)
+    admitGenerationLedger(database)
     projectDb = database
     currentProjectPath = projectPath
   } catch (error) {

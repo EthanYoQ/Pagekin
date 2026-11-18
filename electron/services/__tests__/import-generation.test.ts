@@ -10,6 +10,7 @@ import { readMainGenerationPolicy } from '../main-generation-plan'
 import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../generation-source-binding'
 import { getProjectDb, getCurrentProjectPath } from '../../database'
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
+import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
 
@@ -41,21 +42,28 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch']) {
     rebuildBinding: (previous, modelReceipt) => rebuildGenerationSourceBinding(deps, previous, epoch, modelReceipt, readMainGenerationPolicy(previous.sourceManifest.policy)).binding })
   const owner = makeOwner('epoch-1')
   cleanup.push(() => { owner.suspendForProjectClose(); db.close(); fs.rmSync(root, { recursive: true, force: true }) })
-  const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, '.ai-novel', 'project.db')); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
+  const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, '.ai-novel', 'project.db')); admitGenerationLedger(db); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
   const content='第一章 海港\r\n林岚在港口找到了信。'
   const hash=(value:string)=>createHash('sha256').update(value).digest('hex')
-  const chapter={number:1,title:'海港',content,contentSize:Buffer.byteLength(content),contentFingerprint:hash(content)}
-  ImportRunRepository.prepare({runId:'导入任务',purpose:'reference',sourceFingerprint:'a'.repeat(64),locale:'zh-CN',sourceDisplay:[{displayName:'参考小说.txt',mediaType:'text/plain',size:chapter.contentSize}],chapters:[chapter]})
-  const execution=ImportRunRepository.startOrResume('导入任务','合成执行器').execution
-  const binding=ImportRunRepository.resolveReferenceImportAuthority('导入任务',execution,1)
-  const documentId=hash(`reference-import:${binding.stableKey}`)
-  db.prepare("INSERT INTO import_reference_documents(document_id,idempotency_key_hash,content_hash,chunk_set_hash,expected_chunk_count,corpus_kind,state) VALUES(?,?,?,?,1,'reference','committed')").run(documentId,hash(binding.stableKey),binding.contentFingerprint,hash('合成块'))
-  ImportRunRepository.commitReferenceImportReceipt('导入任务',execution,1,documentId)
-  ImportRunRepository.completeBatch('导入任务','knowledge',createImportRunChapterBatchCheckpointId([chapter]),execution)
-  ImportRunRepository.advanceStage('导入任务','knowledge','global',execution)
-  const slot={runId:'导入任务',stage:'global' as const,batchId:'done'}
-  const selection:BeginGenerationRequest={operation:'import-global-facts',uiActionNonce:'首次导入',modelId:model.id,promptKeys:['infer_novel_config_with_vectors','infer_novel_config'],skillStages:['planning'],selectedDraftIds:[],selectedFinalizedDraftIds:[],output:'structured-data',importSlot:slot,importExecution:{owner:execution.owner,epoch:execution.epoch}}
-  return {get db(){return db},owner,spy,reopenStorage,selection,slot,content,execution}
+  const chapterOf=(text:string)=>({number:1,title:'海港',content:text,contentSize:Buffer.byteLength(text),contentFingerprint:hash(text)})
+  const importAtGlobal=(runId:string,sourceFingerprint:string,text=content)=>{
+    const chapter=chapterOf(text)
+    ImportRunRepository.prepare({runId,purpose:'reference',sourceFingerprint,locale:'zh-CN',sourceDisplay:[{displayName:'参考小说.txt',mediaType:'text/plain',size:chapter.contentSize}],chapters:[chapter]})
+    const execution=ImportRunRepository.startOrResume(runId,'合成执行器').execution
+    const number=db.prepare('SELECT chapter_number FROM import_run_chapters WHERE run_id=?').pluck().get(runId) as number
+    const binding=ImportRunRepository.resolveReferenceImportAuthority(runId,execution,number)
+    const documentId=hash(`reference-import:${binding.stableKey}`)
+    db.prepare("INSERT INTO import_reference_documents(document_id,idempotency_key_hash,content_hash,chunk_set_hash,expected_chunk_count,corpus_kind,state) VALUES(?,?,?,?,1,'reference','committed')").run(documentId,hash(binding.stableKey),binding.contentFingerprint,hash('合成块'))
+    ImportRunRepository.commitReferenceImportReceipt(runId,execution,number,documentId)
+    ImportRunRepository.completeBatch(runId,'knowledge',createImportRunChapterBatchCheckpointId([{...chapter,number}]),execution)
+    ImportRunRepository.advanceStage(runId,'knowledge','global',execution)
+    const slot={runId,stage:'global' as const,batchId:'done'}
+    const selection:BeginGenerationRequest={operation:'import-global-facts',uiActionNonce:`首次导入:${runId}`,modelId:model.id,promptKeys:['infer_novel_config_with_vectors','infer_novel_config'],skillStages:['planning'],selectedDraftIds:[],selectedFinalizedDraftIds:[],output:'structured-data',importSlot:slot,importExecution:{owner:execution.owner,epoch:execution.epoch}}
+    return {slot,selection,execution}
+  }
+  const {slot,selection,execution}=importAtGlobal('导入任务','a'.repeat(64))
+  const batchId=createImportRunChapterBatchCheckpointId([chapterOf(content)])
+  return {get db(){return db},owner,spy,reopenStorage,selection,slot,content,execution,importAtGlobal,batchId}
 }
 
 import { createHash } from 'node:crypto'
@@ -73,6 +81,45 @@ it('freezes manifest-wide counts together when only one overlapping-import chapt
   expect(f.spy).not.toHaveBeenCalled()
 })
 
+it('ADR-0030 导入运行的绑定被封存后，同槽位不能另开新运行',()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(first.handle.runId)
+ admitGenerationLedger(f.db)
+ expect(()=>f.owner.begin({...f.selection,uiActionNonce:'封存后再点'})).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(f.db.prepare('SELECT COUNT(*) FROM generation_runs').pluck().get()).toBe(1)
+})
+it('ADR-0030 一次导入的运行被封存：同一次导入的其他阶段、批次仍被拒绝，别的导入照常开始',()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(first.handle.runId)
+ admitGenerationLedger(f.db)
+ expect(()=>f.owner.readImportGeneration({runId:'导入任务',stage:'style',batchId:'done'})).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(()=>f.owner.readImportGeneration({runId:'导入任务',stage:'blueprints',batchId:f.batchId})).toThrow('GENERATION_LEDGER_UNREADABLE')
+ f.db.prepare("UPDATE import_runs SET status='cancelled' WHERE id='导入任务'").run()
+ const other=f.importAtGlobal('另一次导入','b'.repeat(64),'第一章 山城\r\n林岚在山城读完了信。')
+ expect(f.owner.readImportGeneration(other.slot)).toBeNull()
+ expect(f.owner.begin(other.selection).handle.rootActionId).not.toBe(first.handle.rootActionId)
+})
+it('ADR-0030 已知限制：封存的导入树从蓝图批次开的根，认不出属于哪次导入，别的导入也被拒绝',()=>{
+ const f=fixture()
+ f.db.prepare("UPDATE import_runs SET stage='blueprints' WHERE id='导入任务'").run()
+ const first=f.owner.begin({...f.selection,operation:'import-blueprints',promptKeys:['infer_single_chapter_blueprint'],importSlot:{runId:'导入任务',stage:'blueprints',batchId:f.batchId}})
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(first.handle.runId)
+ admitGenerationLedger(f.db)
+ f.db.prepare("UPDATE import_runs SET status='cancelled' WHERE id='导入任务'").run()
+ const other=f.importAtGlobal('另一次导入','b'.repeat(64),'第一章 山城\r\n林岚在山城读完了信。')
+ expect(()=>f.owner.readImportGeneration(other.slot)).toThrow('GENERATION_LEDGER_UNREADABLE')
+})
+it('ADR-0030 同槽位第一条导入运行的 open_key 读不出：报槽位不明',()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(first.handle.runId)
+ expect(()=>f.owner.readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
+})
 it('同slot不同nonce加入同run，并冻结实际manifest正文',()=>{
  const f=fixture(),first=f.owner.begin(f.selection),second=f.owner.begin({...f.selection,uiActionNonce:'另一次点击'})
  expect(second.handle).toEqual(first.handle)
@@ -239,4 +286,18 @@ it.each(['missing','expired'] as const)('新ordinal拒绝%s导入执行权限，
  await expect(f.owner.executeImportGeneration({handle,ordinal:0,task,...(kind==='expired'?{execution:f.execution}:{})})).rejects.toThrow()
  expect(f.spy).not.toHaveBeenCalled()
  expect(f.db.prepare('SELECT COUNT(*) FROM generation_attempts').pluck().get()).toBe(0)
+})
+
+it('ADR-0030 导入运行的绑定读不出：「这一阶段绑过生成」查不到它，提交效果仍要求生成句柄，带上它的句柄被拒绝',()=>{
+ const f=fixture()
+ const handle=f.owner.begin(f.selection).handle
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ f.owner.suspendForProjectClose()
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(handle.runId)
+ const next=f.reopenStorage()
+ const effect=(payload:Record<string,unknown>)=>()=>ImportRunRepository.prepareEffectReceipt({runId:f.slot.runId,stage:'global',batchId:'done',effectKey:'global-facts',kind:'project-global-facts',
+  payload:{operationId:'novel-import-global-导入任务',expectedRosterRevision:0,core:{},characterEntries:[],...payload}},f.execution,Date.now(),next.assertImportGenerationSources)
+ expect(effect({})).toThrow('GENERATION_IMPORT_EFFECT_HANDLE_REQUIRED')
+ expect(effect({generationRunHandle:handle})).toThrow('GENERATION_LEDGER_UNREADABLE')
+ expect(f.db.prepare('SELECT COUNT(*) FROM import_run_receipts').pluck().get()).toBe(0)
 })
