@@ -825,7 +825,7 @@ function neutralValue(key: string, column: { type: string; notnull: number }, va
   return /INT|REAL|NUM|DEC|BOOL/u.test(column.type.toUpperCase()) ? 0 : ''
 }
 
-function recordId(table: string, row: Record<string, unknown>, rowid: number): string {
+function recordId(table: string, row: Record<string, unknown>, rowid: string): string {
   const fields = HISTORY_ID_COLUMNS[table] ?? []
   if (!fields.length) return `${table}:${rowid}`
   return fields.map(field => safeId(row[field])).join(':')
@@ -964,7 +964,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
           && !portableRedactionFor(table, column.name))) fail('PORTABLE_UNSAFE_PROJECTION')
         const hasProjection = policies.some(policy => policy.disposition === 'redacted-projection')
         const hasHistory = policies.some(policy => policy.disposition === 'historical-nonreplayable')
-        const rows = db.prepare(`SELECT rowid AS __portable_rowid__, * FROM ${quote(physical)}`).all() as Array<Record<string, unknown>>
+        const rows = db.prepare(`SELECT CAST(rowid AS TEXT) AS __portable_rowid__, * FROM ${quote(physical)}`).all() as Array<Record<string, unknown>>
         tableCounts[`table.${table}`] = rows.length
         const updates = columns.filter((_column, index) => {
           const disposition = policies[index]!.disposition
@@ -979,7 +979,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
           try {
             if (hasProjection || hasHistory) {
               const safe = projectionForRow(table, row, columns)
-              const id = recordId(table, row, Number(row.__portable_rowid__))
+              const id = recordId(table, row, String(row.__portable_rowid__))
               const projectionId = `history:${table}:${id}`
               history.push({
                 projectionId,
@@ -995,11 +995,11 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
             }
             const draftProof = table === 'generation_attempts' ? draftProofs.receipts.get(String(row.attempt_id))
               : table === 'generation_runs' ? draftProofs.bindings.get(String(row.run_id)) : undefined
-            if (update) update.run(...updates.map(column => {
+            if (update && update.run(...updates.map(column => {
               const key = `${table}.${column.name}`
               if (draftProof !== undefined && (key === 'generation_attempts.usage_receipt_json' || key === 'generation_runs.binding_json')) return draftProof
               return neutralValue(key, column, row[column.name], reviewProof)
-            }), row.__portable_rowid__)
+            }), BigInt(String(row.__portable_rowid__))).changes !== 1) throw new Error('PORTABLE_REDACTION_MISSED_ROW')
           } catch (error) {
             const location = root === undefined ? undefined : omittedRoots.get(root)
             if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_UNSAFE_PROJECTION' && location?.chapterNumber != null)
