@@ -188,10 +188,13 @@ export class GenerationRunRepository {
      * 身份键也读不出时认不出是哪次点击，按占用处理。`root` 是开这棵树的那次点击。
      */
     sealedClaims(claims: (click: GenerationClick, root: GenerationClick | undefined) => boolean): boolean {
-        const rows = this.db().prepare(`SELECT g.idempotency_key AS root_key,r.open_key FROM generation_roots g LEFT JOIN generation_runs r ON r.root_action_id=g.root_action_id
-            WHERE NOT (g.${UNSEALED_ROOT})`).all() as { root_key: string; open_key: string | null }[];
+        const rows = this.db().prepare(`SELECT g.root_action_id AS root_id,g.idempotency_key AS root_key,r.open_key FROM generation_roots g LEFT JOIN generation_runs r ON r.root_action_id=g.root_action_id
+            WHERE NOT (g.${UNSEALED_ROOT})`).all() as { root_id: string | null; root_key: string; open_key: string | null }[];
         return rows.some(row => {
             const root = clickOfRootKey(row.root_key);
+            // 主键为 NULL 的根挂不上运行，认不出的键也撞不上新点击的键。
+            const unclaimable = row.root_id === null && root === undefined;
+            if (unclaimable) return false;
             return [root, ...(row.open_key === null ? [] : [clickOfOpenKey(row.open_key)])].some(click => click === undefined || claims(click, root));
         });
     }
@@ -331,9 +334,10 @@ export class GenerationRunRepository {
             const key = rootActionIdempotencyKey(action);
             const openKey = encode([key, request.parentRootActionId ?? null]);
             if (request.operation === 'chapter-blueprint-directory') {
+                // 封存的兄弟不在这里拦：精确命中由 get() 报封存码，新运行由 sealedClaims 拦。
                 const priorRuns = this.db().prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots root ON root.root_action_id=r.root_action_id
                     WHERE json_extract(root.action_json,'$.projectId')=? AND json_extract(root.action_json,'$.operation')=?
-                    AND json_extract(root.action_json,'$.uiActionNonce')=?`).all(request.projectId, request.operation, request.uiActionNonce) as { run_id: string }[];
+                    AND json_extract(root.action_json,'$.uiActionNonce')=? AND root.${UNSEALED_ROOT}`).all(request.projectId, request.operation, request.uiActionNonce) as { run_id: string }[];
                 for (const prior of priorRuns) this.assertBlueprintRecoveryWritable(prior.run_id);
             }
             const existing = this.db().prepare('SELECT run_id FROM generation_runs WHERE open_key=?').get(openKey) as {

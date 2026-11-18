@@ -170,13 +170,13 @@ describe('打开作品时封存读不出的生成记录', () => {
       db.prepare('UPDATE generation_roots SET budget_json=? WHERE root_action_id=?').run('{坏', healthy.rootActionId)
     })
 
-    expect([...initProjectDatabase(projectRoot).sealedRootActionIds].sort()).toEqual([victim.root, healthy.rootActionId].sort())
-    expect(initProjectDatabase(projectRoot).sealedRootActionIds).toEqual([])
+    expect(initProjectDatabase(projectRoot).sealedRootCount).toBe(2)
+    expect(initProjectDatabase(projectRoot).sealedRootCount).toBe(0)
   })
 
   it('健康的书打开：initProjectDatabase 不报封存', () => {
     seedLedger()
-    expect(initProjectDatabase(projectRoot).sealedRootActionIds).toEqual([])
+    expect(initProjectDatabase(projectRoot).sealedRootCount).toBe(0)
   })
 
   it('封存过的库再进门：不封存、不提交任何写入', () => {
@@ -188,7 +188,7 @@ describe('打开作品时封存读不出的生成记录', () => {
     const db = new Database(databasePath), observer = new Database(databasePath)
     try {
       const version = observer.pragma('data_version', { simple: true })
-      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
+      expect(admitGenerationLedger(db).sealedRootCount).toBe(0)
       expect(observer.pragma('data_version', { simple: true })).toBe(version)
     } finally { db.close(); observer.close() }
   })
@@ -200,7 +200,7 @@ describe('打开作品时封存读不出的生成记录', () => {
     try {
       const version = writer.pragma('data_version', { simple: true })
       writer.exec('BEGIN IMMEDIATE')
-      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
+      expect(admitGenerationLedger(db).sealedRootCount).toBe(0)
       writer.exec('ROLLBACK')
       expect(writer.pragma('data_version', { simple: true })).toBe(version)
     } finally { db.close(); writer.close() }
@@ -219,6 +219,25 @@ describe('打开作品时封存读不出的生成记录', () => {
     } finally { db.close() }
   })
 
+  it.each([
+    ['产物', (db: Db, victim: Victim) => db.prepare("UPDATE generation_artifacts SET artifact_id=NULL, artifact_json='{坏' WHERE attempt_id=?").run(victim.attempt)],
+    ['根', (db: Db) => db.prepare("INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json) VALUES(NULL,'null-key','{坏','{}')").run()],
+  ])('主键为 NULL 的%s读不出：作品照常打开，坏格子换掉，无关运行照常可读，再打开不写库', (_label, corrupt) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { healthy, victim } = seedLedger()
+    withProjectClosed(db => corrupt(db, victim))
+
+    expect(initProjectDatabase(projectRoot).sealedRootCount).toBe(1)
+
+    expect(everyCellReadable(getProjectDb()!)).toBe(true)
+    expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM generation_roots WHERE blocked_code=?').pluck().get(GENERATION_LEDGER_UNREADABLE)).toBe(1)
+    expect(new GenerationRunRepository(getProjectDb).get(healthy.runId).runId).toBe(healthy.runId)
+    expect(new GenerationRunRepository(getProjectDb).open(openRequest('after-reopen')).runId).toEqual(expect.any(String))
+    const first = withProjectClosed(ledgerDump)
+    initProjectDatabase(projectRoot)
+    expect(withProjectClosed(ledgerDump)).toBe(first)
+  })
+
   it('只有根、没有运行的坏根：照常封存，作品照常打开', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     withProjectClosed(db => db.prepare("INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json) VALUES('orphan','orphan-key','{坏','{}')").run())
@@ -228,6 +247,30 @@ describe('打开作品时封存读不出的生成记录', () => {
     const db = getProjectDb()!
     expect(everyCellReadable(db)).toBe(true)
     expect(db.prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='orphan'").pluck().get()).toBe(GENERATION_LEDGER_UNREADABLE)
+  })
+
+  it('rowid 超过 2^53：封存、记账落在坏根和它自己的运行上，相邻 rowid 的健康根与运行逐字节不变', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const healthy = "SELECT r.*,n.binding_json FROM generation_roots r JOIN generation_runs n USING(root_action_id) WHERE root_action_id='healthy-big'"
+    const before = withProjectClosed(db => {
+      db.exec(`INSERT INTO generation_roots(rowid,root_action_id,idempotency_key,action_json,budget_json,blocked_code)
+          VALUES(9007199254740992,'healthy-big','healthy-big-key','{"projectId":"project"}','{}',NULL),
+            (9007199254740993,'broken-big','broken-big-key','{坏','{}','ROOT_BUDGET_EXHAUSTED');
+        INSERT INTO generation_runs(rowid,run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+          VALUES(9007199254740992,'healthy-big-run','healthy-big','{"projectId":"project"}','open',0,'healthy-big-open'),
+            (9007199254740993,'broken-big-run','broken-big','{"projectId":"project"}','open',0,'broken-big-open')`)
+      return JSON.stringify(db.prepare(healthy).get())
+    })
+
+    initProjectDatabase(projectRoot)
+
+    const db = getProjectDb()!
+    expect(everyCellReadable(db)).toBe(true)
+    expect(db.prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='broken-big'").pluck().get()).toBe(GENERATION_LEDGER_UNREADABLE)
+    expect(JSON.stringify(db.prepare(healthy).get())).toBe(before)
+    const kept = JSON.parse(db.prepare(`SELECT json_extract(binding_json,'$."$ledgerUnreadable"') FROM generation_runs WHERE run_id='broken-big-run'`)
+      .pluck().get() as string) as Array<{ column: string }>
+    expect(kept.map(item => item.column)).toEqual(['action_json', 'blocked_code'])
   })
 
   it('便携导入冻结的记录坏了：照常封存，跨记录的恢复照常，它自己读不出', () => {
@@ -290,7 +333,7 @@ describe('打开作品时封存读不出的生成记录', () => {
         return transaction(fn)
       }) as typeof db.transaction)
 
-      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
+      expect(admitGenerationLedger(db).sealedRootCount).toBe(0)
 
       expect(db.prepare('SELECT action_json,blocked_code FROM generation_roots WHERE root_action_id=?').get(victim.root)).toEqual({ action_json: good, blocked_code: null })
       expect(keptBytes(db, victim)).toEqual([])
@@ -317,8 +360,8 @@ describe('打开作品时封存读不出的生成记录', () => {
       expect(db.pragma('encoding', { simple: true })).toBe('UTF-16le')
       const before = ledgerDump(db)
 
-      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
-      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
+      expect(admitGenerationLedger(db).sealedRootCount).toBe(0)
+      expect(admitGenerationLedger(db).sealedRootCount).toBe(0)
 
       expect(ledgerDump(db)).toBe(before)
       expect(db.prepare('SELECT blocked_code FROM generation_roots WHERE root_action_id=?').pluck().get(victim.root)).toBeNull()
@@ -343,7 +386,7 @@ describe('被审修循环引用的根被封存', () => {
       const cycles = db.prepare('SELECT cycle_id,root_action_id FROM review_cycles ORDER BY cycle_id').all() as { cycle_id: string; root_action_id: string }[]
       db.prepare("UPDATE generation_roots SET action_json='{坏' WHERE root_action_id=?").run(cycles[0]!.root_action_id)
 
-      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([cycles[0]!.root_action_id])
+      expect(admitGenerationLedger(db).sealedRootCount).toBe(1)
 
       expect(verifyM03ReviewCycleById(db, cycles[0]!.cycle_id)).toBe(false)
       expect(verifyM03ReviewCycleById(db, cycles[1]!.cycle_id)).toBe(true)

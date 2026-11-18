@@ -4,16 +4,28 @@ import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { closeProjectDatabase, getProjectDb } from '../../database'
+import { createRequire } from 'node:module'
+import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
+import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../../migrations/desktop-registry'
+import { inspectM03ReviewCycles, unprovableReviewCycleIds } from '../../migrations/m03-review-cycle'
+import { createMigrationRegistry, type SchemaWriter } from '../../migrations/registry'
+import { verifySchema } from '../../migrations/runner'
+import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
+import { extractPortableProjectArchive } from '../portable-project-archive'
+import { ProjectPeekService } from '../project-peek'
+import { restorePortableProject } from '../project-restore-service'
+import { readSqliteContentIdentity, upgradeProjectSqlite } from '../sqlite-project-migration'
 import { openCanonicalProjectFixture } from '../../../test/helpers/canonical-project-fixture'
 import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
-import { CANONICAL_PROJECT_DIRECTORY } from '../../../src/shared/project-format'
+import { CANONICAL_PROJECT_DATABASE, CANONICAL_PROJECT_DIRECTORY } from '../../../src/shared/project-format'
 import { DraftRepository } from '../../repositories/draft-repository'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
 import { PostProcessRepository } from '../../repositories/post-process-repository'
 import { ChapterDeletionService } from '../chapter-deletion-service'
 import { exportPortableProject, type ExportPortableProjectInput } from '../project-archive-service'
 
+
+const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 
 let base = ''
 let projectRoot = ''
@@ -36,7 +48,6 @@ afterEach(() => {
 })
 
 const TITLES = ['雾钟', '沉船']
-const SQLITE_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u
 
 function reviewedBook({ finalized }: { finalized: boolean }) {
   const items = seedReviewedBook(db(), 2)
@@ -61,15 +72,8 @@ function finalize(draftId: number, chapterNumber: number, chapterTitle = TITLES[
   PostProcessRepository.markStepOk(runId, 'kb_import')
 }
 
-function replaceFinal(chapterNumber: number, chapterTitle: string) {
-  const reopened = FinalizationRepository.reopen({ chapterNumber })
-  if (!reopened.success) throw new Error(reopened.error)
-  finalize(reopened.draftId, chapterNumber, chapterTitle)
-  return reopened.draftId
-}
-
-function exportBook(): Promise<unknown> {
-  const input: ExportPortableProjectInput = {
+function exportInput(): ExportPortableProjectInput {
+  return {
     sourceProjectRoot: projectRoot,
     projectSession: { projectId, projectPath: projectRoot, leaseId: 'lease' },
     targetArchivePath: path.join(base, `${randomUUID()}.ainovel`),
@@ -78,13 +82,33 @@ function exportBook(): Promise<unknown> {
     assets: { snapshot: () => ({ files: [], semanticCounts: { 'provided-assets': 0 }, omittedItems: [],
       transferReceiptIds: [], historyProjectionIds: [], verifyUnchanged: () => undefined }) },
   }
-  return exportPortableProject(input).then(() => 'exported', (error: unknown) => error)
 }
 
-async function damagedOnExport() {
-  const failure = await exportBook()
-  expect(failure).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED' })
-  return (failure as { damagedReviewCycle?: unknown }).damagedReviewCycle
+function exportBook(): Promise<unknown> {
+  return exportPortableProject(exportInput()).then(() => 'exported', (error: unknown) => error)
+}
+
+async function omittedOnExport() {
+  return (await exportPortableProject(exportInput())).omittedReviewCycles
+}
+
+const UNLOCATED = { chapterNumber: null, chapterTitle: '', inTrash: false }
+const databasePath = () => path.join(projectRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE)
+const cycleOf = (item: { seeded: { reviewId: number } }) =>
+  db().prepare('SELECT cycle_id FROM review_cycles WHERE review_id=?').pluck().get(item.seeded.reviewId) as string
+
+async function archiveRows(archivePath: string): Promise<Record<string, Array<Record<string, unknown>>>> {
+  const { stagingPath } = await extractPortableProjectArchive({ archivePath, stagingParentPath: fs.mkdtempSync(path.join(base, 'unpack-')) })
+  const archived = new Database(path.join(stagingPath, CANONICAL_PROJECT_DATABASE), { readonly: true })
+  try {
+    const tables = archived.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all() as string[]
+    return Object.fromEntries(tables.map(table => [table, archived.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all() as Array<Record<string, unknown>>]))
+  } finally { archived.close() }
+}
+
+async function exportTo(): Promise<{ archivePath: string; receipt: Awaited<ReturnType<typeof exportPortableProject>> }> {
+  const input = exportInput()
+  return { archivePath: input.targetArchivePath, receipt: await exportPortableProject(input) }
 }
 
 function trashService() {
@@ -93,20 +117,286 @@ function trashService() {
     finalizations: { retry: async () => { throw new Error('UNUSED') } } })
 }
 
-describe('有一条坏审修循环的书导出失败时指明是哪一章，不给删除办法（#702）', () => {
-  it('对照：两章都完好时照常导出', async () => {
+function reopen() {
+  closeProjectDatabase()
+  initProjectDatabase(projectRoot)
+}
+
+const verifyWholeBook = () => verifySchema(new SqliteSchemaAdapter(db()), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
+
+/** 应用写不出同根多循环（每次首审都建新根），只能用 SQL 把第 2 章并到第 1 章的根下。 */
+function shareRoot() {
+  db().exec(`UPDATE generation_runs SET root_action_id='root-review-ch1' WHERE root_action_id='root-review-ch2';
+    UPDATE generation_attempts SET root_action_id='root-review-ch1',attempt_json=json_set(attempt_json,'$.rootActionId','root-review-ch1')
+      WHERE root_action_id='root-review-ch2';
+    UPDATE generation_artifacts SET artifact_json=json_set(artifact_json,'$.rootActionId','root-review-ch1')
+      WHERE json_extract(artifact_json,'$.rootActionId')='root-review-ch2';
+    UPDATE review_cycles SET root_action_id='root-review-ch1' WHERE root_action_id='root-review-ch2';
+    DELETE FROM generation_roots WHERE root_action_id='root-review-ch2'`)
+  expect(inspectM03ReviewCycles(db())).toEqual({ structureOk: true, unprovable: [] })
+}
+
+async function expectSharedRootOmitted() {
+  const { archivePath, receipt } = await exportTo()
+  expect(receipt.omittedReviewCycles).toEqual([UNLOCATED])
+  const restoredRoot = path.join(base, `restored-${randomUUID()}`)
+  await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
+  const restored = new Database(path.join(restoredRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true })
+  try {
+    restored.pragma('foreign_keys = ON')
+    expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
+    expect(restored.prepare('SELECT COUNT(*) FROM review_cycles').pluck().get()).toBe(0)
+  } finally { restored.close() }
+  return archivePath
+}
+
+const SEALED_ROOT_DAMAGES: Array<[string, string]> = [
+  ['没提供证据的尝试读不出', `INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+    SELECT 'attempt-extra','reservation-extra',run_id,root_action_id,
+      json_set(attempt_json,'$.attemptId','attempt-extra','$.reservationId','reservation-extra'),'[]','invocation-extra'
+    FROM generation_attempts WHERE attempt_id='attempt-review-ch2'`],
+  ['带尝试的兄弟运行读不出', `INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+      SELECT 'run-extra',root_action_id,'{坏',status,created_at_ms,'open-extra' FROM generation_runs
+      WHERE run_id=(SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch2');
+    INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+      SELECT 'attempt-extra','reservation-extra','run-extra',root_action_id,
+        json_set(attempt_json,'$.attemptId','attempt-extra','$.reservationId','reservation-extra'),'{}','invocation-extra'
+      FROM generation_attempts WHERE attempt_id='attempt-review-ch2'`],
+  ['兄弟尝试的 attempt_json 读不出、收据读得出', `INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+    SELECT 'attempt-extra','reservation-extra',run_id,root_action_id,'{坏','{"reviewRevisionEffect":{"kind":"review"}}','invocation-extra'
+    FROM generation_attempts WHERE attempt_id='attempt-review-ch2'`],
+  ['只有预算读不出', "UPDATE generation_roots SET budget_json='{坏' WHERE root_action_id='root-review-ch2'"],
+]
+
+describe('封存的根整根不当证据：引用它的循环留在存档外并指明章节（ADR-0030，#702）', () => {
+  it.each(SEALED_ROOT_DAMAGES)('%s：导出成功、第 2 章审稿记录留在存档外，存档里这条根没有审稿证据，恢复出的书没有坏循环', async (_label, sql) => {
     reviewedBook({ finalized: true })
-    await expect(exportBook()).resolves.toBe('exported')
+    db().exec(sql)
+    reopen()
+    expect(db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-review-ch2'").pluck().get())
+      .toBe('GENERATION_LEDGER_UNREADABLE')
+
+    const { archivePath, receipt } = await exportTo()
+    expect(receipt.omittedReviewCycles).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+    const archived = await archiveRows(archivePath)
+    expect(archived.generation_attempts!.filter(row => row.root_action_id === 'root-review-ch2'
+      && String(row.usage_receipt_json ?? '').includes('reviewRevisionEffect'))).toEqual([])
+    const restoredRoot = path.join(base, 'restored')
+    await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
+    const restored = new Database(path.join(restoredRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true })
+    try {
+      restored.pragma('foreign_keys = ON')
+      expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
+      expect(restored.prepare('SELECT COUNT(*) FROM review_cycles').pluck().get()).toBe(1)
+    } finally { restored.close() }
   })
 
-  it('定稿章的循环坏了：只带出章号和标题', async () => {
+  it('封存的审稿运行 rowid 超过 2^53：存档里这条运行既没有原来的绑定，也没有封存时记下的原始字节', async () => {
+    reviewedBook({ finalized: true })
+    db().exec("UPDATE generation_roots SET budget_json='{坏' WHERE root_action_id='root-review-ch2'")
+    reopen()
+    const runId = db().prepare(`SELECT run_id FROM generation_runs WHERE root_action_id='root-review-ch2'
+      AND binding_json->'$."$ledgerUnreadable"' IS NOT NULL`).pluck().get() as string
+    expect(db().prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(runId)).toContain('reviewRevisionContext')
+    db().prepare('UPDATE generation_runs SET rowid=9007199254740993 WHERE run_id=?').run(runId)
+
+    const { archivePath, receipt } = await exportTo()
+    expect(receipt.omittedReviewCycles).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+    const archived = (await archiveRows(archivePath)).generation_runs!.find(row => row.run_id === runId)!
+    expect(archived.binding_json).not.toContain('$ledgerUnreadable')
+    expect(archived.binding_json).not.toContain('reviewRevisionContext')
+  })
+
+  it('封存的根没被审修循环引用：导出照常，没有省略清单', async () => {
+    reviewedBook({ finalized: true })
+    db().prepare(`INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json)
+      SELECT 'root-free','root-free-key',json_set(action_json,'$.rootActionId','root-free'),'{坏' FROM generation_roots
+      WHERE root_action_id='root-review-ch2'`).run()
+    reopen()
+    expect(db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-free'").pluck().get())
+      .toBe('GENERATION_LEDGER_UNREADABLE')
+
+    expect(await exportPortableProject(exportInput())).not.toHaveProperty('omittedReviewCycles')
+  })
+
+  it.each([
+    ['审稿尝试', 'attempt-review-ch2'],
+    ['修稿尝试', 'attempt-revision-ch2'],
+  ])('%s的 attempt_json 读不出：封存成占位后不能当证据', (_label, attemptId) => {
+    reviewedBook({ finalized: true })
+    verifyWholeBook()
+    db().prepare("UPDATE generation_attempts SET attempt_json='{坏' WHERE attempt_id=?").run(attemptId)
+    reopen()
+
+    expect(verifyWholeBook).toThrow('MIGRATION_VERIFICATION_FAILED')
+  })
+})
+
+describe('有坏审修循环的书照常导出，坏循环留在存档外并指明章节（ADR-0029，#702）', () => {
+  it('对照：两章都完好时照常导出，结果里没有省略清单', async () => {
+    reviewedBook({ finalized: true })
+    expect(await exportPortableProject(exportInput())).not.toHaveProperty('omittedReviewCycles')
+  })
+
+  it('定稿章的循环坏了：导出成功、源库不变，存档里只少这条循环的证据行，其余逐行与先删掉这条循环的同一本书一致', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
+    const cycleId = cycleOf(items[1]!)
+    const before = readSqliteContentIdentity(databasePath())
 
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' })
+    const damaged = await exportTo()
+    expect(readSqliteContentIdentity(databasePath())).toEqual(before)
+    expect(damaged.receipt.omittedReviewCycles).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+    const archived = await archiveRows(damaged.archivePath)
+    expect(archived.review_cycles!.map(row => row.cycle_id)).toEqual([cycleOf(items[0]!)])
+    expect(archived.review_findings!.filter(row => row.cycle_id === cycleId)).toEqual([])
+    expect(archived.review_cycle_merges!.filter(row => row.cycle_id === cycleId)).toEqual([])
+    expect(db().prepare('SELECT COUNT(*) FROM review_cycle_merges WHERE cycle_id=?').pluck().get(cycleId)).toBe(1)
+
+    db().prepare('DELETE FROM review_cycles WHERE cycle_id=?').run(cycleId)
+    const twin = await exportTo()
+    expect(twin.receipt).not.toHaveProperty('omittedReviewCycles')
+    expect(archived).toEqual(await archiveRows(twin.archivePath))
   })
 
-  it('坏章已在回收站、同章号又写了新章：指向回收站那一项，用删除时的章名和删除时间', async () => {
+  it('往返：这份存档恢复成新书，新书里没有坏循环，另一章的循环照常', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    const { archivePath } = await exportTo()
+    const restoredRoot = path.join(base, 'restored')
+
+    await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
+    const restored = new Database(path.join(restoredRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true })
+    try {
+      restored.pragma('foreign_keys = ON')
+      expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
+      expect(restored.prepare('SELECT COUNT(*) FROM review_cycles').pluck().get()).toBe(1)
+    } finally { restored.close() }
+  })
+
+  it('两条循环共用一个根、一条坏了：整根留在存档外，健康的那条一并省略，根下的收据、运行上下文、产物都不当证据，不报章节', async () => {
+    const items = reviewedBook({ finalized: true })
+    shareRoot()
+    breakReviewProof(db(), { seeded: { ...items[1]!.seeded, call: { ...items[1]!.seeded.call, rootActionId: 'root-review-ch1' } } })
+
+    const archived = await archiveRows(await expectSharedRootOmitted())
+    expect(archived.generation_attempts!.map(row => String(row.usage_receipt_json ?? '').includes('reviewRevisionEffect'))).not.toContain(true)
+    expect(archived.generation_runs!.map(row => String(row.binding_json).includes('reviewRevisionContext'))).not.toContain(true)
+    expect(archived.generation_artifacts!.map(row => String(row.artifact_json).includes('fingerprint'))).not.toContain(true)
+  })
+
+  it('同根坏循环的 recheck_attempt_id 指向健康循环的审稿尝试：整根留在存档外，导出成功，恢复出的书没有循环', async () => {
+    const items = reviewedBook({ finalized: true })
+    shareRoot()
+    db().prepare("UPDATE review_cycles SET recheck_count=1,recheck_attempt_id='attempt-review-ch1' WHERE cycle_id=?").run(cycleOf(items[1]!))
+    expect(inspectM03ReviewCycles(db()).unprovable.map(item => item.cycleId)).toEqual([cycleOf(items[1]!)])
+
+    await expectSharedRootOmitted()
+  })
+
+  it('同根坏循环的审稿收据没有效果编号：整根留在存档外，导出成功，恢复出的书没有循环', async () => {
+    const items = reviewedBook({ finalized: true })
+    shareRoot()
+    db().prepare(`UPDATE generation_attempts SET usage_receipt_json=json_remove(usage_receipt_json,'$.reviewRevisionEffect.id')
+      WHERE attempt_id='attempt-review-ch2'`).run()
+    expect(inspectM03ReviewCycles(db()).unprovable.map(item => item.cycleId)).toEqual([cycleOf(items[1]!)])
+
+    await expectSharedRootOmitted()
+  })
+
+  it('同根两条循环都坏、其中一章的产物投影不过：不按哪一章报', async () => {
+    const items = reviewedBook({ finalized: true })
+    shareRoot()
+    for (const item of items) breakReviewProof(db(), { seeded: { ...item.seeded, call: { ...item.seeded.call, rootActionId: 'root-review-ch1' } } })
+    db().prepare("UPDATE generation_artifacts SET artifact_json='{}' WHERE attempt_id='attempt-review-ch1'").run()
+
+    expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED', damagedReviewCycle: UNLOCATED })
+  })
+
+  it('去掉坏循环仍过不了投影：照旧失败，带出 #739 的章节提示，源库不变', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    db().prepare("UPDATE generation_roots SET budget_json='{}' WHERE root_action_id=?").run(items[1]!.seeded.call.rootActionId)
+    const before = readSqliteContentIdentity(databasePath())
+
+    expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
+      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', inTrash: false } })
+    expect(readSqliteContentIdentity(databasePath())).toEqual(before)
+  })
+
+  it('有坏循环，另一章的定稿文件名不安全：报文件名的错，不把坏循环那一章当原因', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    db().prepare("UPDATE finalization_outbox_all SET target_file_name='C:\\outside\\chapter.md' WHERE chapter_number=1").run()
+
+    const error = await exportBook()
+    expect(error).toMatchObject({ message: 'PORTABLE_PATH_UNSAFE' })
+    expect(error).not.toHaveProperty('damagedReviewCycle')
+  })
+
+  it('产物挂着第 1 章的尝试、第 2 章的运行，投影不过：链接对不上，不按哪一章报', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    const chapter2Run = db().prepare("SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch2'").pluck().get()
+    db().prepare("UPDATE generation_artifacts SET run_id=?, artifact_json='{}' WHERE attempt_id='attempt-review-ch1'").run(chapter2Run)
+
+    const error = await exportBook()
+    expect(error).toMatchObject({ message: 'PORTABLE_UNSAFE_PROJECTION' })
+    expect(error).not.toHaveProperty('damagedReviewCycle')
+  })
+
+  it('产物记在第 2 章的审稿运行下、尝试却在别的根：不按审稿证据投影，存档里不留指纹', async () => {
+    reviewedBook({ finalized: true })
+    db().exec(`INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json)
+        SELECT 'root-free','root-free-key',json_set(action_json,'$.rootActionId','root-free'),budget_json FROM generation_roots
+        WHERE root_action_id='root-review-ch2';
+      INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+        SELECT 'run-free','root-free',binding_json,status,created_at_ms,'open-free' FROM generation_runs
+        WHERE run_id=(SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch2');
+      INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+        SELECT 'attempt-free','reservation-free','run-free','root-free',
+          json_set(attempt_json,'$.attemptId','attempt-free','$.reservationId','reservation-free','$.rootActionId','root-free'),NULL,'invocation-free'
+        FROM generation_attempts WHERE attempt_id='attempt-review-ch2';
+      INSERT INTO generation_artifacts(artifact_id,attempt_id,run_id,artifact_json,revision,status)
+        SELECT 'artifact-free','attempt-free',run_id,
+          json_set(artifact_json,'$.artifactId','artifact-free','$.attemptId','attempt-free','$.rootActionId','root-free'),revision,status
+        FROM generation_artifacts WHERE attempt_id='attempt-review-ch2'`)
+
+    const { archivePath, receipt } = await exportTo()
+    expect(receipt).not.toHaveProperty('omittedReviewCycles')
+    const artifacts = (await archiveRows(archivePath)).generation_artifacts!
+    const fingerprintOf = (id: string) => JSON.parse(String(artifacts.find(row => row.artifact_id === id)!.artifact_json)).fingerprint
+    expect(fingerprintOf(String(db().prepare("SELECT artifact_id FROM generation_artifacts WHERE attempt_id='attempt-review-ch2'").pluck().get())))
+      .toEqual(expect.any(Object))
+    expect(fingerprintOf('artifact-free')).toBeUndefined()
+  })
+
+  it('第 2 章的修稿尝试和它的产物挂到第 1 章的运行上，投影不过：运行与尝试不同根，不按哪一章报', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    const chapter1Run = db().prepare("SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch1'").pluck().get()
+    db().prepare("UPDATE generation_attempts SET run_id=? WHERE attempt_id='attempt-revision-ch2'").run(chapter1Run)
+    db().prepare("UPDATE generation_artifacts SET run_id=?, artifact_json='{}' WHERE attempt_id='attempt-revision-ch2'").run(chapter1Run)
+
+    const error = await exportBook()
+    expect(error).toMatchObject({ message: 'PORTABLE_UNSAFE_PROJECTION' })
+    expect(error).not.toHaveProperty('damagedReviewCycle')
+  })
+
+  it('两章各有一条坏循环：两条都留在存档外，清单两章都列', async () => {
+    const items = reviewedBook({ finalized: true })
+    for (const item of items) breakReviewProof(db(), item)
+
+    const { archivePath, receipt } = await exportTo()
+    expect(receipt.omittedReviewCycles).toHaveLength(2)
+    expect(receipt.omittedReviewCycles).toEqual(expect.arrayContaining([
+      { chapterNumber: 1, chapterTitle: '雾钟', inTrash: false },
+      { chapterNumber: 2, chapterTitle: '沉船', inTrash: false },
+    ]))
+    expect((await archiveRows(archivePath)).review_cycles).toEqual([])
+  })
+
+  it('坏章已在回收站、同章号又写了新章：标明在回收站，用它自己定稿时的章名', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
     await expect(trashService().delete(projectRoot, { draftId: items[1]!.seeded.draftId, chapterNumber: 2 }))
@@ -114,53 +404,24 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章，不�
     db().prepare("UPDATE blueprints SET title='新航' WHERE chapter_number=2").run()
     DraftRepository.create({ chapterNumber: 2, source: 'write', content: '新写的第二章。', wordCount: 7 })
 
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'trash',
-      deletedAt: expect.stringMatching(SQLITE_TIME) })
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }])
   })
 
-  it('未定稿章的循环坏了：写明是哪一稿', async () => {
-    const items = reviewedBook({ finalized: false })
-    breakReviewProof(db(), items[1]!)
-
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'draft', draftVersion: 1 })
-  })
-
-  it('坏的是较旧的一稿：写明是较旧那一版', async () => {
-    const items = reviewedBook({ finalized: false })
-    breakReviewProof(db(), items[1]!)
-    const newer = DraftRepository.create({ chapterNumber: 2, source: 'rewrite', content: '较新的一稿。', wordCount: 6 })
-    const damagedVersion = DraftRepository.getMeta(items[1]!.seeded.draftId)!.version
-    expect(DraftRepository.getMeta(newer)!.version).toBeGreaterThan(damagedVersion)
-
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'draft', draftVersion: damagedVersion })
-  })
-
-  it('定稿换成新的一版后旧定稿坏了：写明是旧的那一版', async () => {
+  it('审的是旧定稿、换成改名的新定稿后整章进回收站：用回收站里那一项（新定稿）的章名', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
-    replaceFinal(2, '沉船（重写）')
-    db().prepare("UPDATE blueprints SET title='雾港' WHERE chapter_number=2").run()
-
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '雾港', location: 'draft',
-      draftVersion: DraftRepository.getMeta(items[1]!.seeded.draftId)!.version })
-  })
-
-  it('回收站里旧定稿与定稿两行的删除时间不同：时间和章名都按回收站列出的定稿那一行', async () => {
-    const items = reviewedBook({ finalized: true })
-    breakReviewProof(db(), items[1]!)
-    const newer = replaceFinal(2, '沉船（重写）')
-    db().prepare("UPDATE blueprints SET title='雾港' WHERE chapter_number=2").run()
-    await expect(trashService().delete(projectRoot, { draftId: newer, chapterNumber: 2 }))
+    const reopened = FinalizationRepository.reopen({ chapterNumber: 2 })
+    if (!reopened.success) throw new Error(reopened.error)
+    finalize(reopened.draftId, 2, '暗礁')
+    expect(db().prepare('SELECT status FROM drafts_all WHERE id=?').pluck().get(items[1]!.seeded.draftId)).toBe('superseded')
+    await expect(trashService().delete(projectRoot, { draftId: reopened.draftId, chapterNumber: 2 }))
       .resolves.toMatchObject({ success: true })
-    db().prepare("UPDATE drafts_all SET deleted_at='2001-01-01 09:05:00' WHERE id=?").run(items[1]!.seeded.draftId)
-    const finalDeletedAt = db().prepare('SELECT deleted_at FROM drafts_all WHERE id=?').pluck().get(newer) as string
-    expect(finalDeletedAt).toMatch(SQLITE_TIME)
-    expect(finalDeletedAt).not.toBe('2001-01-01 09:05:00')
+    db().prepare("UPDATE blueprints SET title='新航' WHERE chapter_number=2").run()
 
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船（重写）', location: 'trash', deletedAt: finalDeletedAt })
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '暗礁', inTrash: true }])
   })
 
-  it('回收站删除组里混进了别章的定稿：不借别章的章名和时间，不报位置', async () => {
+  it('回收站删除组里混进了别章的定稿：只看这一稿自己，不借别章的章名（D5）', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
     const trash = trashService()
@@ -169,7 +430,14 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章，不�
     db().prepare('UPDATE drafts_all SET deletion_id=(SELECT deletion_id FROM drafts_all WHERE id=?) WHERE id=?')
       .run(items[0]!.seeded.draftId, items[1]!.seeded.draftId)
 
-    expect(await damagedOnExport()).toBeUndefined()
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }])
+  })
+
+  it('未定稿章的循环坏了：报章号和蓝图章名，不报稿的版本', async () => {
+    const items = reviewedBook({ finalized: false })
+    breakReviewProof(db(), items[1]!)
+
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
   })
 
   it('删掉了蓝图但定稿还在：用定稿记下的章名', async () => {
@@ -177,23 +445,162 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章，不�
     breakReviewProof(db(), items[1]!)
     db().prepare('DELETE FROM blueprints WHERE chapter_number=2').run()
 
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' })
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
   })
 
-  it('坏审稿挂到了别章的稿上：对不上审稿记下的章号，就不报位置，免得指错章', async () => {
+  it('坏审稿挂到了别章的稿上：对不上审稿记下的章号，不报章节', async () => {
     const items = reviewedBook({ finalized: false })
     db().prepare('UPDATE reviews SET base_draft_id=?, review_index=99 WHERE id=?').run(items[0]!.seeded.draftId, items[1]!.seeded.reviewId)
 
-    expect(await damagedOnExport()).toBeUndefined()
+    expect(await omittedOnExport()).toEqual([UNLOCATED])
+  })
+
+  it('循环的 review_id 改指别章的审稿：证据指向的不是这次审稿，不报章节（D1）', async () => {
+    const items = reviewedBook({ finalized: true })
+    const other = db().prepare('SELECT id FROM reviews WHERE base_draft_id=? AND id NOT IN (SELECT review_id FROM review_cycles) ORDER BY id LIMIT 1')
+      .pluck().get(items[0]!.seeded.draftId) as number
+    expect(other).toEqual(expect.any(Number))
+    db().prepare('UPDATE review_cycles SET review_id=? WHERE review_id=?').run(other, items[1]!.seeded.reviewId)
+
+    expect(await omittedOnExport()).toEqual([UNLOCATED])
+  })
+
+  it('审稿尝试挂到了别的根的运行上：不拿别的根的运行定位章节', async () => {
+    const items = reviewedBook({ finalized: true })
+    const attemptId = 'attempt-review-ch2'
+    db().prepare(`INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+      SELECT 'run-foreign',?,binding_json,status,created_at_ms,'open-foreign' FROM generation_runs
+      WHERE run_id=(SELECT run_id FROM generation_attempts WHERE attempt_id=?)`).run(items[0]!.seeded.call.rootActionId, attemptId)
+    db().prepare("UPDATE generation_artifacts SET run_id='run-foreign' WHERE attempt_id=?").run(attemptId)
+    db().prepare("UPDATE generation_attempts SET run_id='run-foreign' WHERE attempt_id=?").run(attemptId)
+
+    expect(await omittedOnExport()).toEqual([UNLOCATED])
+  })
+
+  it('审稿记下的稿版本与冻结的来源对不上：不报章节（D4）', async () => {
+    const items = reviewedBook({ finalized: false })
+    db().prepare('UPDATE reviews SET source_draft_version=source_draft_version+1 WHERE id=?').run(items[1]!.seeded.reviewId)
+
+    expect(await omittedOnExport()).toEqual([UNLOCATED])
+  })
+
+  it('审稿运行冻结的来源版本与审稿行对不上：不报章节（D4）', async () => {
+    const items = reviewedBook({ finalized: false })
+    db().prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$.sourceManifest.reviewRevisionContext.source.version',
+      json_extract(binding_json,'$.sourceManifest.reviewRevisionContext.source.version')+1)
+      WHERE run_id=(SELECT run_id FROM generation_attempts WHERE root_action_id=? AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review')`)
+      .run(items[1]!.seeded.call.rootActionId)
+
+    expect(await omittedOnExport()).toEqual([UNLOCATED])
+  })
+
+  it('审稿尝试的收据读不出：打开作品时封存成占位，循环留在存档外，指不出章节就不报（证据缺失与证据矛盾同样处理）', async () => {
+    const items = reviewedBook({ finalized: true })
+    db().prepare(`UPDATE generation_attempts SET usage_receipt_json='{坏'
+      WHERE root_action_id=? AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review'`).run(items[1]!.seeded.call.rootActionId)
+    reopen()
+
+    expect(await omittedOnExport()).toEqual([UNLOCATED])
+  })
+
+  it('循环主键为 NULL：无法按主键放行或留在存档外，整本照旧失败并带出章节（已知限制）', async () => {
+    const items = reviewedBook({ finalized: true })
+    const cycleId = cycleOf(items[1]!)
+    db().prepare('DELETE FROM review_cycle_merges WHERE cycle_id=?').run(cycleId)
+    db().prepare('DELETE FROM review_findings WHERE cycle_id=?').run(cycleId)
+    db().prepare('UPDATE review_cycles SET cycle_id=NULL WHERE cycle_id=?').run(cycleId)
+
+    expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
+      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', inTrash: false } })
+  })
+
+  it('循环引用的根读不出：打开作品时封存，导出时这条循环留在存档外，照样带出章号和标题', async () => {
+    const items = reviewedBook({ finalized: true })
+    db().prepare("UPDATE generation_roots SET action_json='{broken' WHERE root_action_id=?").run(items[1]!.seeded.call.rootActionId)
+    reopen()
+
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+  })
+
+  it('循环引用的根缺字段：去掉循环仍过不了投影，照旧失败并带出章号和标题', async () => {
+    const items = reviewedBook({ finalized: true })
+    db().prepare("UPDATE generation_roots SET action_json='{}' WHERE root_action_id=?").run(items[1]!.seeded.call.rootActionId)
+
+    expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED',
+      damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', inTrash: false } })
+  })
+})
+
+describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-0029，#702）', () => {
+  /** 拆掉 M09 建的表，让这本书回到 v9，再走真实的 v9→v10 升级。 */
+  function downgradeToV9() {
+    closeProjectDatabase()
+    const raw = new Database(databasePath())
+    try {
+      raw.exec('DROP INDEX idx_annotation_history_draft; DROP TABLE annotation_history')
+      raw.pragma('user_version = 9')
+    } finally { raw.close() }
+  }
+
+  it('有坏循环的 v9 书打开时升级成功，验不过的循环集合不变', () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    const before = [...unprovableReviewCycleIds(db())]
+    expect(before).toEqual([cycleOf(items[1]!)])
+    downgradeToV9()
+
+    initProjectDatabase(projectRoot)
+    expect(db().pragma('user_version', { simple: true })).toBe(CURRENT_DESKTOP_SCHEMA_VERSION)
+    expect([...unprovableReviewCycleIds(db())]).toEqual(before)
   })
 
   it.each([
-    ['缺字段', '{}'],
-    ['读不出', '{broken'],
-  ])('循环引用的生成记录%s：照样带出章号和标题', async (_label, actionJson) => {
-    const items = reviewedBook({ finalized: true })
-    db().prepare('UPDATE generation_roots SET action_json=? WHERE root_action_id=?').run(actionJson, items[1]!.seeded.call.rootActionId)
+    ['升级前还没封存', false],
+    ['升级前已封存', true],
+  ])('循环的根坏了预算的 v9 书（%s）：打开时升级成功，根被封存', (_label, sealedFirst) => {
+    reviewedBook({ finalized: true })
+    db().prepare("UPDATE generation_roots SET budget_json='{坏' WHERE root_action_id='root-review-ch2'").run()
+    if (sealedFirst) reopen()
+    downgradeToV9()
 
-    expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船', location: 'manuscript' })
+    initProjectDatabase(projectRoot)
+    expect(db().pragma('user_version', { simple: true })).toBe(CURRENT_DESKTOP_SCHEMA_VERSION)
+    expect(db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-review-ch2'").pluck().get())
+      .toBe('GENERATION_LEDGER_UNREADABLE')
+  })
+
+  it('迁移弄坏了原本好的循环：升级被拒绝，带出新弄坏的那一章，书停在原版本', () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    downgradeToV9()
+    const desktop = getDesktopMigrationRegistry()
+    const registry = createMigrationRegistry(desktop.implementations.map(step => step.id !== 'M09' ? step : {
+      ...step,
+      migrate(reader: SchemaWriter) {
+        step.migrate(reader)
+        breakReviewProof((reader as SqliteSchemaAdapter).database, items[0]!)
+      },
+    }), desktop.recognizedSchemas)
+
+    expect(() => upgradeProjectSqlite({ databasePath: databasePath(), registry, evidence: 'no-new-failures' }))
+      .toThrow(expect.objectContaining({ code: 'MIGRATION_VERIFICATION_FAILED',
+        damagedReviewCycle: { chapterNumber: 1, chapterTitle: '雾钟', inTrash: false } }))
+    const raw = new Database(databasePath(), { readonly: true })
+    try { expect(raw.pragma('user_version', { simple: true })).toBe(9) } finally { raw.close() }
+  })
+
+  it.each([
+    ['当前版本', false],
+    ['v9', true],
+  ])('书库卡片读有坏循环的%s书：照常显示', (_label, older) => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    db().prepare("INSERT INTO project_core(id,project_name) VALUES('main','雾港')").run()
+    if (older) downgradeToV9()
+    else closeProjectDatabase()
+    const service = new ProjectPeekService({ scratchRoot: path.join(base, 'peek') })
+    const capability = service.issueCapability(projectRoot)!
+
+    expect(service.peek(capability.capabilityId)).toMatchObject({ state: 'ready', finalizedChapters: 2 })
   })
 })

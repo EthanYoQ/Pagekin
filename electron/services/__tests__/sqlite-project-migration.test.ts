@@ -497,7 +497,7 @@ describe('打开作品不跑全书审修循环校验（#702）', () => {
     expect(() => openProjectSqlite({ databasePath: f.target })).toThrow(code)
   })
 
-  it('打开要升级的旧版本作品时走迁移通道，仍跑全书校验', async () => {
+  it('打开要升级的旧版本作品：已有的坏循环不拦升级，但仍不算证据（ADR-0029）', async () => {
     const healthy = await projectWithReviewCycles(9)
     healthy.db.close()
     expect(() => openProjectSqlite({ databasePath: healthy.target })).not.toThrow()
@@ -506,7 +506,8 @@ describe('打开作品不跑全书审修循环校验（#702）', () => {
     const broken = await projectWithReviewCycles(9)
     breakReviewProof(broken.db, broken.book[1]!)
     broken.db.close()
-    expect(() => openProjectSqlite({ databasePath: broken.target })).toThrow('MIGRATION_VERIFICATION_FAILED')
-    expect(probeProjectSqlite({ databasePath: broken.target }).schemaVersion).toBe(9)
+    expect(() => openProjectSqlite({ databasePath: broken.target })).not.toThrow()
+    expect(probeProjectSqlite({ databasePath: broken.target }).schemaVersion).toBe(10)
+    expect(() => verifyProjectSqlite({ databasePath: broken.target })).toThrow('MIGRATION_VERIFICATION_FAILED')
   })
 })

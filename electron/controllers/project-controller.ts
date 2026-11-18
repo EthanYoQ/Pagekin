@@ -628,7 +628,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         if (recent?.projectId && recent.projectId !== trustedProject.projectId) {
           throw new Error('PROJECT_OPEN_RECENT_IDENTITY_CHANGED')
         }
-        const { sealedRootActionIds } = initProjectDatabase(resolvedProjectPath)
+        const { sealedRootCount } = initProjectDatabase(resolvedProjectPath)
         const openedDatabase = getProjectDb()
         if (openedDatabase) adoptTransferredCharacterContinuityOnOpen({ database: openedDatabase,
           projectRoot: resolvedProjectPath, projectId: trustedProject.projectId })
@@ -721,7 +721,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           requestToken,
           ...databaseState,
           finalizationRepair,
-          sealedGenerationCount: sealedRootActionIds.length,
+          sealedGenerationCount: sealedRootCount,
         }
       } catch (error) {
         let rollbackError: unknown

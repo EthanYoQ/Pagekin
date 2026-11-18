@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type BetterSqlite3 from 'better-sqlite3'
-import type { SchemaWriter } from './registry'
+import type { SchemaReader, SchemaWriter } from './registry'
 
 export function sqliteSchemaFingerprint(db: BetterSqlite3.Database): string {
   const schema = db.prepare("SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").all()
@@ -10,7 +10,8 @@ export function sqliteSchemaFingerprint(db: BetterSqlite3.Database): string {
 }
 
 export class SqliteSchemaAdapter implements SchemaWriter {
-  constructor(readonly database: BetterSqlite3.Database) {}
+  /** 升级前已验不过的审修循环（no-new-failures）；不传即从严。 */
+  constructor(readonly database: BetterSqlite3.Database, readonly acceptedReviewCycleFailures?: AcceptedReviewCycleFailures) {}
   readUserVersion(): number { return this.database.pragma('user_version', { simple: true }) as number }
   readSchemaFingerprint(): string { return sqliteSchemaFingerprint(this.database) }
   integrityCheck(): boolean { return this.database.pragma('integrity_check', { simple: true }) === 'ok' }
@@ -21,4 +22,10 @@ export class SqliteSchemaAdapter implements SchemaWriter {
     this.database.pragma(`user_version = ${version}`)
   }
   executeMigrationSql(sql: string): void { this.database.exec(sql) }
+}
+
+export type AcceptedReviewCycleFailures = () => ReadonlySet<string>
+
+export function acceptedReviewCycleFailures(reader: SchemaReader): AcceptedReviewCycleFailures | undefined {
+  return reader instanceof SqliteSchemaAdapter ? reader.acceptedReviewCycleFailures : undefined
 }
