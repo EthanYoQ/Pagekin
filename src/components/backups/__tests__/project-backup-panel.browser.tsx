@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { copyLocale } from '../../../i18n/core'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import ProjectBackupPanel from '../ProjectBackupPanel'
@@ -71,7 +72,7 @@ async function renderPanel() {
 }
 
 beforeEach(() => {
-  useLocaleStore.setState({ locale: 'zh-CN' })
+  useLocaleStore.setState({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
   useProjectStore.setState({ currentProject: PROJECT })
   invoke = vi.fn(async (channel: string) => channel === 'cloud-backup:view'
     ? { success: true, state: 'unconfigured', binding: null, account: null }
@@ -308,7 +309,7 @@ describe('ProjectBackupPanel', () => {
     ['ja-JP', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }],
       'Local archive exported: sha-1. ゴミ箱の第2章「沉船」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とレビュー内容は含まれています。'],
   ] as const)('导出存档有坏循环没放进去（%s）：成功提示后面指明章节（#702）', async (locale, omittedReviewCycles, expected) => {
-    useLocaleStore.setState({ locale })
+    useLocaleStore.setState({ interfaceLocale: locale, locale: copyLocale(locale) })
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
       if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
