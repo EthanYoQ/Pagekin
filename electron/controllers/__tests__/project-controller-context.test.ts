@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   createdVelaDirectories: new Set<string>(),
   failCorePaths: new Set<string>(),
   failInitPaths: new Set<string>(),
-  sealedRootActionIds: [] as string[],
+  sealedRootCount: 0,
   onCoreGet: null as null | (() => void),
   projectCoreGet: vi.fn(),
   projectCoreInit: vi.fn(),
@@ -105,7 +105,7 @@ vi.mock('../../database', () => ({
       throw new Error(`cannot initialize ${resolved}`)
     }
     mocks.currentProjectPath = resolved
-    return { sealedRootActionIds: mocks.sealedRootActionIds }
+    return { sealedRootCount: mocks.sealedRootCount }
   }),
 }))
 
@@ -231,7 +231,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.repairDuplicateFinalizations.mockReturnValue({ chapters: [] })
-  mocks.sealedRootActionIds = []
+  mocks.sealedRootCount = 0
   mocks.currentProjectPath = projectA
   mocks.existingPaths = new Set([
     projectA,
@@ -498,11 +498,11 @@ describe('project controller project identity', () => {
   })
 
   it('returns how many generations this open sealed, and 0 for a healthy book', async () => {
-    mocks.sealedRootActionIds = ['root-1', 'root-2']
+    mocks.sealedRootCount = 2
     await expect(handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'sealed-B', projectA))
       .resolves.toMatchObject({ success: true, sealedGenerationCount: 2 })
 
-    mocks.sealedRootActionIds = []
+    mocks.sealedRootCount = 0
     await expect(handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'sealed-B-again', projectB))
       .resolves.toMatchObject({ success: true, sealedGenerationCount: 0 })
   })

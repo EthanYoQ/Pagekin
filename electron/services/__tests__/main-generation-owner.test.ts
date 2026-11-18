@@ -4668,7 +4668,7 @@ describe('生成记录读不出时只影响读写它的操作（ADR-0030 进门�
       expect(clock.elapsed).toBeGreaterThanOrEqual(1000 + sealStart - since)
       expect(clock.elapsed).toBeLessThanOrEqual(1000 + sealEnd - since)
       const before = db.prepare('SELECT total_changes()').pluck().get()
-      expect(admitGenerationLedger(db).sealedRootActionIds).toEqual([])
+      expect(admitGenerationLedger(db).sealedRootCount).toBe(0)
       expect(db.prepare('SELECT total_changes()').pluck().get()).toBe(before)
     } finally { db.close() }
   })

@@ -124,49 +124,57 @@ function reopen() {
 
 const verifyWholeBook = () => verifySchema(new SqliteSchemaAdapter(db()), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
 
-describe('M03 只把提供证据的尝试被换成占位算作坏循环（ADR-0030，#702）', () => {
-  it('同一根下没提供证据的尝试读不出：封存后这条循环照常验得过，导出不受影响', async () => {
+const SEALED_ROOT_DAMAGES: Array<[string, string]> = [
+  ['没提供证据的尝试读不出', `INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+    SELECT 'attempt-extra','reservation-extra',run_id,root_action_id,
+      json_set(attempt_json,'$.attemptId','attempt-extra','$.reservationId','reservation-extra'),'[]','invocation-extra'
+    FROM generation_attempts WHERE attempt_id='attempt-review-ch2'`],
+  ['带尝试的兄弟运行读不出', `INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+      SELECT 'run-extra',root_action_id,'{坏',status,created_at_ms,'open-extra' FROM generation_runs
+      WHERE run_id=(SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch2');
+    INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+      SELECT 'attempt-extra','reservation-extra','run-extra',root_action_id,
+        json_set(attempt_json,'$.attemptId','attempt-extra','$.reservationId','reservation-extra'),'{}','invocation-extra'
+      FROM generation_attempts WHERE attempt_id='attempt-review-ch2'`],
+  ['兄弟尝试的 attempt_json 读不出、收据读得出', `INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+    SELECT 'attempt-extra','reservation-extra',run_id,root_action_id,'{坏','{"reviewRevisionEffect":{"kind":"review"}}','invocation-extra'
+    FROM generation_attempts WHERE attempt_id='attempt-review-ch2'`],
+  ['只有预算读不出', "UPDATE generation_roots SET budget_json='{坏' WHERE root_action_id='root-review-ch2'"],
+]
+
+describe('封存的根整根不当证据：引用它的循环留在存档外并指明章节（ADR-0030，#702）', () => {
+  it.each(SEALED_ROOT_DAMAGES)('%s：导出成功、第 2 章审稿记录留在存档外，存档里这条根没有审稿证据，恢复出的书没有坏循环', async (_label, sql) => {
     reviewedBook({ finalized: true })
-    db().prepare(`INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
-      SELECT 'attempt-extra','reservation-extra',run_id,root_action_id,
-        json_set(attempt_json,'$.attemptId','attempt-extra','$.reservationId','reservation-extra'),'[]','invocation-extra'
-      FROM generation_attempts WHERE attempt_id='attempt-review-ch2'`).run()
+    db().exec(sql)
     reopen()
     expect(db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-review-ch2'").pluck().get())
       .toBe('GENERATION_LEDGER_UNREADABLE')
 
-    expect(verifyWholeBook).not.toThrow()
-    const receipt = await exportPortableProject(exportInput())
-    expect(receipt).not.toHaveProperty('omittedReviewCycles')
-  })
-
-  it('同一根下没提供证据的运行读不出：封存后导出照常，恢复出的书这条循环仍验得过', async () => {
-    reviewedBook({ finalized: true })
-    db().prepare(`INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
-      SELECT 'run-extra',root_action_id,'{坏',status,created_at_ms,'open-extra' FROM generation_runs
-      WHERE run_id=(SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch2')`).run()
-    reopen()
-    expect(verifyWholeBook).not.toThrow()
-
     const { archivePath, receipt } = await exportTo()
-    expect(receipt).not.toHaveProperty('omittedReviewCycles')
+    expect(receipt.omittedReviewCycles).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+    const archived = await archiveRows(archivePath)
+    expect(archived.generation_attempts!.filter(row => row.root_action_id === 'root-review-ch2'
+      && String(row.usage_receipt_json ?? '').includes('reviewRevisionEffect'))).toEqual([])
     const restoredRoot = path.join(base, 'restored')
     await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
     const restored = new Database(path.join(restoredRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true })
     try {
       restored.pragma('foreign_keys = ON')
       expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
-      expect(restored.prepare('SELECT COUNT(*) FROM review_cycles').pluck().get()).toBe(2)
+      expect(restored.prepare('SELECT COUNT(*) FROM review_cycles').pluck().get()).toBe(1)
     } finally { restored.close() }
   })
 
-  it('根上只有预算读不出：封存后循环照常验得过，导出不剥掉完好的根动作', async () => {
+  it('封存的根没被审修循环引用：导出照常，没有省略清单', async () => {
     reviewedBook({ finalized: true })
-    db().prepare("UPDATE generation_roots SET budget_json='{坏' WHERE root_action_id='root-review-ch2'").run()
+    db().prepare(`INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json)
+      SELECT 'root-free','root-free-key',json_set(action_json,'$.rootActionId','root-free'),'{坏' FROM generation_roots
+      WHERE root_action_id='root-review-ch2'`).run()
     reopen()
-    expect(verifyWholeBook).not.toThrow()
+    expect(db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-free'").pluck().get())
+      .toBe('GENERATION_LEDGER_UNREADABLE')
 
-    expect(await omittedOnExport()).toBeUndefined()
+    expect(await exportPortableProject(exportInput())).not.toHaveProperty('omittedReviewCycles')
   })
 
   it.each([
@@ -245,6 +253,17 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     expect(error).not.toHaveProperty('damagedReviewCycle')
   })
 
+  it('产物挂着第 1 章的尝试、第 2 章的运行，投影不过：链接对不上，不按哪一章报', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    const chapter2Run = db().prepare("SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch2'").pluck().get()
+    db().prepare("UPDATE generation_artifacts SET run_id=?, artifact_json='{}' WHERE attempt_id='attempt-review-ch1'").run(chapter2Run)
+
+    const error = await exportBook()
+    expect(error).toMatchObject({ message: 'PORTABLE_UNSAFE_PROJECTION' })
+    expect(error).not.toHaveProperty('damagedReviewCycle')
+  })
+
   it('两章各有一条坏循环：两条都留在存档外，清单两章都列', async () => {
     const items = reviewedBook({ finalized: true })
     for (const item of items) breakReviewProof(db(), item)
@@ -265,6 +284,18 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
       .resolves.toMatchObject({ success: true })
     db().prepare("UPDATE blueprints SET title='新航' WHERE chapter_number=2").run()
     DraftRepository.create({ chapterNumber: 2, source: 'write', content: '新写的第二章。', wordCount: 7 })
+
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }])
+  })
+
+  it('回收站里审的是早一版稿、定稿的是后一版：用同一删除组里这一章定稿的章名', async () => {
+    const items = reviewedBook({ finalized: false })
+    breakReviewProof(db(), items[1]!)
+    const finalDraft = DraftRepository.create({ chapterNumber: 2, source: 'write', content: '第二章定稿版。', wordCount: 7 })
+    finalize(finalDraft, 2)
+    await expect(trashService().delete(projectRoot, { draftId: finalDraft, chapterNumber: 2 }))
+      .resolves.toMatchObject({ success: true })
+    db().prepare("UPDATE blueprints SET title='新航' WHERE chapter_number=2").run()
 
     expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }])
   })
@@ -400,6 +431,21 @@ describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-002
     initProjectDatabase(projectRoot)
     expect(db().pragma('user_version', { simple: true })).toBe(CURRENT_DESKTOP_SCHEMA_VERSION)
     expect([...unprovableReviewCycleIds(db())]).toEqual(before)
+  })
+
+  it.each([
+    ['升级前还没封存', false],
+    ['升级前已封存', true],
+  ])('循环的根坏了预算的 v9 书（%s）：打开时升级成功，根被封存', (_label, sealedFirst) => {
+    reviewedBook({ finalized: true })
+    db().prepare("UPDATE generation_roots SET budget_json='{坏' WHERE root_action_id='root-review-ch2'").run()
+    if (sealedFirst) reopen()
+    downgradeToV9()
+
+    initProjectDatabase(projectRoot)
+    expect(db().pragma('user_version', { simple: true })).toBe(CURRENT_DESKTOP_SCHEMA_VERSION)
+    expect(db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-review-ch2'").pluck().get())
+      .toBe('GENERATION_LEDGER_UNREADABLE')
   })
 
   it('迁移弄坏了原本好的循环：升级被拒绝，带出新弄坏的那一章，书停在原版本', () => {

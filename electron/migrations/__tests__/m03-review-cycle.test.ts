@@ -14,6 +14,7 @@ import { applyM03ReviewCycle, applyM06ReviewCycleMerge, canonicalM03FindingSetHa
   type M03FindingDescriptor } from '../m03-review-cycle'
 import { buildReviewGenerationReport } from '../../../src/shared/review-generation-report'
 import { buildReviewCycleRecheckReport, type ReviewCycleRecheckContext } from '../../../src/shared/review-cycle'
+import { composeVisibleContinuation } from '../../../src/shared/visible-continuation'
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -216,6 +217,44 @@ describe('M03 review cycle migration', () => {
         .pluck().get() as string) as { visibleComposition: { artifactIds: string[] } }
       receipt.visibleComposition.artifactIds.unshift('artifact-attempt-review')
       db.prepare("UPDATE generation_attempts SET usage_receipt_json=? WHERE attempt_id='attempt-revision'").run(JSON.stringify(receipt))
+      expect(verifyM03ReviewCycle(db)).toBe(false)
+    } finally { db.close() }
+  })
+
+  it('修稿组合的前缀产物属于本运行，但它的尝试挪到了别的根和运行：不当证据', () => {
+    const db = fixture()
+    try {
+      db.transaction(() => applyM03ReviewCycle(db))()
+      const { revisionId } = seedValid(db)
+      const fingerprint = (JSON.parse(db.prepare("SELECT binding_json FROM generation_runs WHERE run_id='run-attempt-revision'")
+        .pluck().get() as string) as { fingerprint: Record<string, string> }).fingerprint
+      const prefixText = '雨夜。'
+      const prefix = { artifactId: 'artifact-prefix', attemptId: 'attempt-prefix', rootActionId: 'root-1', projectId: 'project',
+        epoch: 'epoch', fingerprint, revision: 1, text: prefixText, textHash: hash(prefixText) }
+      db.prepare(`INSERT INTO generation_attempts(rowid,attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+        VALUES(0,'attempt-prefix','reservation-prefix','run-attempt-revision','root-1',?,?,'nonce-prefix')`).run(
+        JSON.stringify({ attemptId: 'attempt-prefix', reservationId: 'reservation-prefix', rootActionId: 'root-1', status: 'settled',
+          reservedTokens: 100, requestedOutputTokens: 100, actualTokens: 1 }),
+        JSON.stringify({ artifactIdentity: { artifactId: prefix.artifactId, epoch: 'epoch', fingerprint }, result: { usage: null, finishReason: 'stop' } }))
+      db.prepare("INSERT INTO generation_artifacts VALUES('artifact-prefix','attempt-prefix','run-attempt-revision',?,1,'partial')").run(JSON.stringify(prefix))
+      const terminal = JSON.parse(db.prepare("SELECT artifact_json FROM generation_artifacts WHERE artifact_id='artifact-attempt-revision'")
+        .pluck().get() as string) as { artifactId: string; revision: number; text: string; textHash: string }
+      const composed = composeVisibleContinuation(prefixText, terminal.text)
+      db.prepare('UPDATE contents SET body=? WHERE id=(SELECT content_id FROM revisions WHERE id=?)').run(composed, revisionId)
+      const usage = JSON.parse(db.prepare("SELECT usage_receipt_json FROM generation_attempts WHERE attempt_id='attempt-revision'")
+        .pluck().get() as string) as { reviewRevisionEffect: Record<string, unknown>; visibleComposition: Record<string, unknown> }
+      usage.reviewRevisionEffect.contentHash = usage.reviewRevisionEffect.compositionHash = hash(composed)
+      usage.visibleComposition = { algorithm: 'visible-append-v1', textHash: hash(composed), artifactIds: [prefix.artifactId, terminal.artifactId],
+        sources: [{ artifactId: prefix.artifactId, revision: 1, textHash: prefix.textHash },
+          { artifactId: terminal.artifactId, revision: terminal.revision, textHash: terminal.textHash }] }
+      db.prepare("UPDATE generation_attempts SET usage_receipt_json=? WHERE attempt_id='attempt-revision'").run(JSON.stringify(usage))
+      expect(verifyM03ReviewCycle(db)).toBe(true)
+
+      db.exec(`INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json)
+          SELECT 'root-other','key-root-other',action_json,budget_json FROM generation_roots WHERE root_action_id='root-1';
+        INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+          SELECT 'run-other','root-other',binding_json,status,created_at_ms,'open-other' FROM generation_runs WHERE run_id='run-attempt-revision';
+        UPDATE generation_attempts SET run_id='run-other', root_action_id='root-other' WHERE attempt_id='attempt-prefix'`)
       expect(verifyM03ReviewCycle(db)).toBe(false)
     } finally { db.close() }
   })
