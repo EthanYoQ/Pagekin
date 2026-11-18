@@ -349,10 +349,10 @@ export function verifyM03ReviewCycleById(db: Database.Database, cycleId: string)
 }
 
 function verifyCycle(db: Database.Database, { mergeTable, draftRows }: CycleTables, cycle: CycleRow): boolean {
-  const snapshot = mergeTable ? db.prepare('SELECT body FROM review_cycle_merges WHERE cycle_id=?')
+  const mergeSnapshot = mergeTable ? db.prepare('SELECT body FROM review_cycle_merges WHERE cycle_id=?')
     .get(cycle.cycle_id) as { body: string } | undefined : undefined
   // 已合并 ⇔ 有合并快照行；孤儿快照由全书校验的 foreign_key_check 挡。
-  if (mergeTable && (cycle.revision_status === 'merge-committed') !== Boolean(snapshot)) return false
+  if (mergeTable && (cycle.revision_status === 'merge-committed') !== Boolean(mergeSnapshot)) return false
   if (!nonempty(cycle.cycle_id) || !nonempty(cycle.root_action_id) || !integer(cycle.review_id, 1)
     || !HASH.test(cycle.review_content_hash) || !HASH.test(cycle.source_hash) || !HASH.test(cycle.finding_set_hash)
     || !integer(cycle.comparison_version, 1) || !CYCLE_STATUSES.has(cycle.revision_status)
@@ -424,7 +424,7 @@ function verifyCycle(db: Database.Database, { mergeTable, draftRows }: CycleTabl
   if (cycle.revision_status === 'merge-committed') {
     if (!revision || revision.status !== 'merged' || revision.merged_to_draft_id !== revision.base_draft_id
       || revision.base_draft_id !== review.base_draft_id || !cycle.merged_hash || !HASH.test(cycle.merged_hash)) return false
-    const merged = mergeTable ? snapshot : db.prepare('SELECT c.body FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?')
+    const merged = mergeTable ? mergeSnapshot : db.prepare('SELECT c.body FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?')
       .get(revision.merged_to_draft_id) as { body: string } | undefined
     if (!merged || typeof merged.body !== 'string' || hash(merged.body) !== cycle.merged_hash) return false
     const mergedBody = merged.body
