@@ -45,7 +45,8 @@ export const ADMITTED_LEDGER_CELLS: readonly AdmittedLedgerCell[] = [
 ]
 
 // BLOB 里的合法 JSON 过不了导出投影，`null` 过得了 json_valid；合法对象后跟 NUL 时 json_valid 只看到 NUL 之前，JSON.parse 看全部。
-const readable = (column: string) => `CASE WHEN typeof(${column})='text' AND instr(CAST(${column} AS BLOB),x'00')=0 AND json_valid(${column}) THEN json_type(${column})='object' ELSE 0 END`
+// NUL 按字符查：UTF-16 库里转成 BLOB 的健康文本也带零字节。
+const readable = (column: string) => `CASE WHEN typeof(${column})='text' AND instr(${column},char(0))=0 AND json_valid(${column}) THEN json_type(${column})='object' ELSE 0 END`
 const SCAN = ADMITTED_LEDGER_CELLS.map((cell, index) => {
   const owner = OWNERS[cell.table]
   return `SELECT ${index} AS cell, ${owner.idColumn} AS id, ${owner.root} AS root, ${owner.run} AS run, hex(CAST(${cell.column} AS BLOB)) AS hex FROM ${cell.table}
@@ -62,19 +63,21 @@ export interface LedgerAdmission {
  * 原始字节记进所属运行绑定的 `$ledgerUnreadable`。之后这个句柄上的跨记录查询和 JSON.parse 不会碰到读不出的格子。
  */
 export function admitGenerationLedger(db: Db): LedgerAdmission {
-  const bad = db.prepare(SCAN).all() as { cell: number; id: string; root: string; run: string | null; hex: string }[]
-  if (!bad.length) return { sealedRootActionIds: [] }
-  const roots = [...new Set(bad.map(item => item.root))]
-  db.transaction(() => {
+  const scan = db.prepare(SCAN)
+  type Bad = { cell: number; id: string; root: string; run: string | null; hex: string }
+  if (!scan.all().length) return { sealedRootActionIds: [] }
+  const roots = db.transaction(() => {
+    // 拿到写锁后重扫：扫描到加锁之间别的连接可能已经修好了某一格。
+    const bad = scan.all() as Bad[]
     for (const item of bad) {
       const cell = ADMITTED_LEDGER_CELLS[item.cell]!
       db.prepare(`UPDATE ${cell.table} SET ${cell.column}=? WHERE ${OWNERS[cell.table].idColumn}=?`).run(cell.neutral(db, item.id), item.id)
     }
     // 中性值全部写完再记账：记账那条运行自己的绑定可能也在这批坏格子里。
-    // 记账区原来不是数组时，原值包成第一条，不丢也不让追加失败。
-    const kept = `binding_json->'$."$ledgerUnreadable"'`
+    // 记账区原来不是数组时，原值按文本存成第一条：不丢，也不加深嵌套。
+    const kept = `(binding_json->'$."$ledgerUnreadable"')`
     const keep = db.prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$ledgerUnreadable"',
-      json_insert(CASE WHEN ${kept} IS NULL THEN '[]' WHEN json_type(${kept})='array' THEN ${kept} ELSE json_array(json_object('previous',json(${kept}))) END,
+      json_insert(CASE WHEN ${kept} IS NULL THEN '[]' WHEN json_type(${kept})='array' THEN ${kept} ELSE json_array(json_object('previous',''||${kept})) END,
       '$[#]',json(?))) WHERE run_id=?`)
     for (const item of bad) {
       const cell = ADMITTED_LEDGER_CELLS[item.cell]!
@@ -82,8 +85,11 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       if (item.run) keep.run(encode({ table: cell.table, recordId: item.id, column: cell.column, hex: item.hex }), item.run)
     }
     const block = db.prepare('UPDATE generation_roots SET blocked_code=COALESCE(blocked_code,?) WHERE root_action_id=?')
-    for (const root of roots) block.run(GENERATION_LEDGER_UNREADABLE, root)
+    const sealed = [...new Set(bad.map(item => item.root))]
+    for (const root of sealed) block.run(GENERATION_LEDGER_UNREADABLE, root)
+    return sealed
   }).immediate()
+  if (!roots.length) return { sealedRootActionIds: [] }
   console.warn(`[generation] ${GENERATION_LEDGER_UNREADABLE} sealed`, { rootActionIds: roots })
   return { sealedRootActionIds: roots }
 }

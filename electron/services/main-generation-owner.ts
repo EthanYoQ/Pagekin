@@ -1155,7 +1155,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         if (!(error instanceof ReviewSourceDeletedError)) list.partial = true
       }
     }
-    if (draftEffects.hasSealedReceipts()) list.partial = true
+    // 有记录被封存过时，它原来属于哪一项可能已读不出，列表可能不全。
+    if (repository.sealedLedgerCells().length) list.partial = true
     const batchIds = draftEffects.resumableBatchIds(deps.projectId)
     if (!batchIds.length) return list
     const commits = draftEffects.batchCommits()

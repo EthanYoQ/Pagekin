@@ -39,7 +39,13 @@ function literals(source: string): { line: number; text: string }[] {
   return out
 }
 
-const parsedColumns = (sql: string) => LEDGER_JSON_COLUMNS.filter(column => new RegExp(`json_[a-z_]+\\([^)]*\\b${column}\\b`, 'u').test(sql))
+const parsedColumns = (sql: string) => LEDGER_JSON_COLUMNS.filter(column =>
+  new RegExp(`json_[a-z_]+\\([^)]*\\b${column}\\b`, 'u').test(sql) || new RegExp(`\\b${column}\\s*->`, 'u').test(sql))
+/** 各表上唯一的键：只有按它们等值才把语句限定到一条记录。 */
+const UNIQUE_KEYS: Record<string, string[]> = {
+  generation_roots: ['root_action_id', 'idempotency_key'], generation_runs: ['run_id', 'open_key'],
+  generation_attempts: ['attempt_id', 'reservation_id', 'invocation_nonce'], generation_artifacts: ['artifact_id'],
+}
 
 function crossRecordLedgerColumns(literal: string): string[] {
   const sql = literal.replace(/\s+/gu, ' ').trim()
@@ -50,7 +56,9 @@ function crossRecordLedgerColumns(literal: string): string[] {
   if (verb === 'INSERT' || verb === 'CREATE') return []
   const where = / WHERE (.*)$/iu.exec(sql)?.[1]
   // 主键等值只在没有 OR 时才把语句限定到一条记录上。
-  if (where !== undefined && !/\bOR\b/iu.test(where) && KEYS.some(key => new RegExp(`\\b(?:[a-z]+\\.)?${key}\\s*=\\s*(\\?|\\()`, 'u').test(where))) return []
+  const table = /(?:^UPDATE | FROM )(generation_[a-z]+)/iu.exec(sql)?.[1]
+  const keys = table === undefined ? KEYS : UNIQUE_KEYS[table] ?? []
+  if (where !== undefined && !/\bOR\b/iu.test(where) && keys.some(key => new RegExp(`\\b(?:[a-z]+\\.)?${key}\\s*=\\s*(\\?|\\()`, 'u').test(where))) return []
   const head = /^(.*?) FROM /iu.exec(sql)?.[1] ?? ''
   // open_key、idempotency_key 是身份字符串，原样取出不算解析。
   const selected = verb !== 'SELECT' ? [] : LEDGER_JSON_COLUMNS.filter(column => !IDENTITY_KEYS.includes(column)).filter(column =>

@@ -93,11 +93,21 @@ export const textHash = (text: string) => createHash('sha256').update(text, 'utf
 /** open_key 里记的点击号；读不出返回 undefined。 */
 export function uiActionNonceOfOpenKey(openKey: string): string | undefined {
     try {
-        const nonce = (JSON.parse(JSON.parse(openKey)[0]) as unknown[])[2];
-        return typeof nonce === 'string' ? nonce : undefined;
+        const outer: unknown = JSON.parse(openKey);
+        if (!Array.isArray(outer) || typeof outer[0] !== 'string') return undefined;
+        const inner: unknown = JSON.parse(outer[0]);
+        return Array.isArray(inner) && typeof inner[2] === 'string' ? inner[2] : undefined;
     } catch {
         return undefined;
     }
+}
+/** 按槽位查到的运行和各自的点击号；有一条读不出就报 conflict，读不出的那条不能当前驱。 */
+export function slotRunNonces(rows: readonly { run_id: string; open_key: string }[], conflict: string): { runId: string; nonce: string }[] {
+    return rows.map(row => {
+        const nonce = uiActionNonceOfOpenKey(row.open_key);
+        if (nonce === undefined) fail(conflict);
+        return { runId: row.run_id, nonce };
+    });
 }
 const encode = (value: unknown): string => JSON.stringify(value);
 const authorEffectPath = '$."$runEffects"';
@@ -148,16 +158,30 @@ export class GenerationRunRepository {
     private authorEditedRoot(rootId: string): boolean {
         return !!this.db().prepare('SELECT 1 FROM generation_runs WHERE root_action_id=? AND json_type(binding_json,?) IS NOT NULL LIMIT 1').get(rootId, authorEffectPath);
     }
-    /** 绑定在进门时被封存的根：作者保存回执跟着原绑定一起读不出了，按可能已保存处理。 */
-    private bindingSealedRoot(rootId: string): boolean {
-        return !!this.db().prepare(`SELECT 1 FROM generation_runs r, json_each(r.binding_json,'$."$ledgerUnreadable"') e
-            WHERE r.root_action_id=? AND CASE WHEN e.type='object' THEN json_extract(e.value,'$.column') END='binding_json' LIMIT 1`).get(rootId);
+    /** 进门时封存过的格子（ADR-0030）。只读被阻断的根上运行的绑定：封存总会给根留一个阻断码。 */
+    sealedLedgerCells(rootId?: string): { table: string; column: string; recordId: string }[] {
+        return this.db().prepare(`SELECT json_extract(e.value,'$.table') AS "table",json_extract(e.value,'$.column') AS "column",json_extract(e.value,'$.recordId') AS recordId
+            FROM generation_roots g JOIN generation_runs r ON r.root_action_id=g.root_action_id, json_each(r.binding_json,'$."$ledgerUnreadable"') e
+            WHERE g.blocked_code IS NOT NULL${rootId === undefined ? '' : ' AND g.root_action_id=?'} AND e.type='object'`)
+            .all(...(rootId === undefined ? [] : [rootId])) as { table: string; column: string; recordId: string }[];
+    }
+    /**
+     * 绑定被封存的运行里有没有占着某个槽位的：槽位键随绑定一起没了，只剩 open_key 里的点击号可认。
+     * 点击号也读不出时判定不了，按占用处理。
+     */
+    sealedRunClaims(claims: (nonce: string) => boolean): boolean {
+        const openKey = this.db().prepare('SELECT open_key FROM generation_runs WHERE run_id=?').pluck();
+        return this.sealedLedgerCells().filter(cell => cell.column === 'binding_json').some(cell => {
+            const nonce = uiActionNonceOfOpenKey(openKey.get(cell.recordId) as string);
+            return nonce === undefined || claims(nonce);
+        });
     }
     assertPlotOutlineWritable(runId: string): void {
         if (this.isPrivatePlanningHistory(runId)) fail('GENERATION_PLANNING_HISTORY_READ_ONLY');
         const rootId = this.get(runId).rootActionId;
         if (this.authorEditedRoot(rootId)) fail('GENERATION_PLOT_OUTLINE_AUTHOR_SAVED');
-        if (this.bindingSealedRoot(rootId)) fail('GENERATION_LEDGER_UNREADABLE');
+        // 作者保存回执跟着原绑定一起读不出了，按可能已保存处理。
+        if (this.sealedLedgerCells(rootId).some(cell => cell.column === 'binding_json')) fail('GENERATION_LEDGER_UNREADABLE');
     }
     isPrivatePlanningHistory(runId: string): boolean {
         return !!this.db().prepare("SELECT 1 FROM generation_runs WHERE root_action_id=(SELECT root_action_id FROM generation_runs WHERE run_id=?) AND json_extract(binding_json,'$.sourceManifest.policy.planning.outlineProtocol')='chapter-parts-v2' LIMIT 1").get(runId);

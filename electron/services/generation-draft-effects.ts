@@ -51,12 +51,6 @@ export class GenerationDraftEffects {
       .all(...(batchId === undefined ? [] : [batchId])) as (AttemptRow & { batch_id: string })[]
     return groupByBatch(rows)
   }
-  /** 有提交收据在进门时被封存过：它属于哪一批已读不出，批次列表可能不全。只看被阻断的根，免得扫全部绑定。 */
-  hasSealedReceipts(): boolean {
-    return !!this.db.prepare(`SELECT 1 FROM generation_roots g JOIN generation_runs r ON r.root_action_id=g.root_action_id,
-      json_each(r.binding_json,'$."$ledgerUnreadable"') e
-      WHERE g.blocked_code IS NOT NULL AND CASE WHEN e.type='object' THEN json_extract(e.value,'$.column') END='usage_receipt_json' LIMIT 1`).get()
-  }
   /** settledChapter 这一章按已确认完（已发布、后处理关键步骤都完成）算进度，用于放回删除前已确认完的章：放回会把它重置为待发布、待重导。 */
   /** 还能续写的批次（根运行 id）：active、paused、未阻断，且作者没点「不再恢复」。侧页列出与锁章共用这一条，免得两边判定又分开。 */
   resumableBatchIds(projectId: string): string[] {
@@ -131,7 +125,10 @@ export class GenerationDraftEffects {
     return { ...snapshot.progress, sourceCurrent: snapshot.sourceConflict === null }
   }
   private readBatchSnapshot(batchId: string, projectId: string, commits = this.batchCommits(batchId), settledChapter?: number): VerifiedBatchSnapshot {
-    const root = this.runs.get(batchId), intent = root.binding.sourceManifest.batchIntent as GenerationBatchIntent
+    const root = this.runs.get(batchId)
+    // 这一批有记录被封存过时，已提交的章可能认不出来，按进度给出会把写过的章再写一遍。
+    if (this.runs.sealedLedgerCells(root.rootActionId).length) throw new Error('GENERATION_LEDGER_UNREADABLE')
+    const intent = root.binding.sourceManifest.batchIntent as GenerationBatchIntent
     assertGenerationBatchIntent(intent)
     if (root.binding.projectId !== projectId || root.binding.sourceManifest.operation !== 'batch-chapters') throw new Error('GENERATION_BATCH_IDENTITY_INVALID')
     const completedChapters: GenerationBatchProgress['completedChapters'] = []

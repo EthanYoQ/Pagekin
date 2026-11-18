@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { isDeepStrictEqual } from 'node:util'
 import type { BeginGenerationRequest } from '../../src/shared/generation-owner-contract'
 import type { ImportGenerationContext, ImportGenerationSlot } from '../../src/shared/import-generation'
-import { GenerationRunRepository, uiActionNonceOfOpenKey, type DurableGenerationRun, type GenerationBudgetReceipt } from '../repositories/generation-run-repository'
+import { GenerationRunRepository, slotRunNonces, type DurableGenerationRun, type GenerationBudgetReceipt } from '../repositories/generation-run-repository'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
 import { captureImportGenerationContext, importGenerationSlotKey } from './import-generation-source'
@@ -17,12 +17,14 @@ export class ImportGeneration {
   constructor(private readonly db: Database.Database, private readonly runs: GenerationRunRepository, private readonly projectId: string) {}
   find(slot: ImportGenerationSlot): DurableGenerationRun | undefined {
     const key = importGenerationSlotKey(slot)
-    const rows = this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.importSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[]
+    // 导入槽位键是哈希，认不出被封存的运行属于哪一个导入；同一次导入的各阶段还互相检查前一阶段的效果，所以有一条就全部拒绝。
+    if (this.runs.sealedRunClaims(claim => claim.startsWith('import:'))) throw new Error('GENERATION_LEDGER_UNREADABLE')
+    const rows = slotRunNonces(this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.importSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[], 'GENERATION_IMPORT_SLOT_AMBIGUOUS')
     let previous: DurableGenerationRun | undefined
     for (const row of rows) {
-      const run = this.runs.get(row.run_id)
+      const run = this.runs.get(row.runId)
       if (run.binding.projectId !== this.projectId) continue
-      if (previous && uiActionNonceOfOpenKey(row.open_key) !== importSlotNonce(key, previous)) throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS')
+      if (previous && row.nonce !== importSlotNonce(key, previous)) throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS')
       previous = run
     }
     return previous

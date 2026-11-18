@@ -3731,7 +3731,7 @@ describe('main draft persistence and batch lineage', () => {
       const batch = f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 1 }, targetUnits: 20,
         uiActionNonce: 'batch-with-bad-binding', modelId: f.model.id, authorInputs, promptKeys: f.begin.promptKeys, skillStages: [] })
       f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(batch.batchId)
-      const list = f.reopen().listRecovery()
+      const list = f.reopen({ crashed: true }).listRecovery()
       expect(list.batches).toEqual([])
       expect(list.partial).toBe(true)
     })
