@@ -1,3 +1,5 @@
+import type { DamagedReviewCycle } from './damaged-review-cycle'
+
 export interface CloudBackupProjectSessionContext {
   projectId: string
   leaseId: string
@@ -73,6 +75,7 @@ export interface CloudBackupFailure {
   state: 'cancelled' | 'failed'
   errorCode: CloudBackupErrorCode
   operationId?: string
+  damagedReviewCycle?: DamagedReviewCycle
 }
 
 export interface CloudBackupConnectRequest {

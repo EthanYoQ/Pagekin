@@ -7,7 +7,8 @@ import { buildReviewCycleRecheckReport, classifyFindingEvidenceChange, unshownMu
 import { parseHumanConfirmedReviewSnapshot, type HumanConfirmedReviewSnapshot } from '../../src/shared/human-confirmed-review'
 import { composeVisibleContinuation } from '../../src/shared/visible-continuation'
 import type { ReviewRevisionContext } from '../../src/shared/review-revision-generation'
-import type { MigrationImplementation, SchemaReader } from './registry'
+import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
+import { SchemaMigrationError, type MigrationImplementation, type SchemaReader } from './registry'
 
 const HASH = /^[a-f0-9]{64}$/u
 const CYCLE_STATUSES = new Set(['not-generated', 'generated', 'merge-committed'])
@@ -311,13 +312,26 @@ function cycleTables(db: Database.Database): CycleTables | null {
 
 /** 全书校验，只在迁移注册表的校验里跑：升级旧作品、verifyProjectSqlite、备份与导出、存档导入。仓库读写用 verifyM03ReviewCycleById。 */
 export function verifyM03ReviewCycle(db: Database.Database): boolean {
+  return wholeBookVerdict(db).ok
+}
+
+export function assertM03ReviewCycle(db: Database.Database): true {
+  const verdict = wholeBookVerdict(db)
+  if (!verdict.ok) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', verdict.damaged)
+  return true
+}
+
+type WholeBookVerdict = { ok: true } | { ok: false; damaged?: DamagedReviewCycle }
+
+function wholeBookVerdict(db: Database.Database): WholeBookVerdict {
+  const failed: WholeBookVerdict = { ok: false }
   try {
-    if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return false
+    if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return failed
     const tables = cycleTables(db)
-    if (!tables) return false
+    if (!tables) return failed
     if (tables.mergeTable && !exactSchema(db, 'review_cycle_merges', ['cycle_id', 'body'], [
       'cycle_id TEXT PRIMARY KEY REFERENCES review_cycles(cycle_id) ON DELETE CASCADE', 'body TEXT NOT NULL',
-    ])) return false
+    ])) return failed
     if (!exactSchema(db, 'review_cycles', ['cycle_id', 'root_action_id', 'review_id', 'review_content_hash', 'confirmation_review_id',
       'confirmation_content_hash', 'revision_id', 'source_hash', 'finding_set_hash', 'comparison_version', 'revision_status',
       'merged_hash', 'recheck_count', 'recheck_attempt_id'], [
@@ -330,12 +344,35 @@ export function verifyM03ReviewCycle(db: Database.Database): boolean {
       'target_id', 'kind', 'problem_text', 'expected_text', 'status', 'evidence_hash', 'confirmation_item_index'], [
       'cycle_id TEXT NOT NULL REFERENCES review_cycles(cycle_id) ON DELETE CASCADE',
       "status IN ('unverified','author-waived')", "span_unit='utf16-code-unit'", "status='author-waived'",
-    ])) return false
+    ])) return failed
     // TEXT 主键允许 NULL，外键也不查 NULL：无主快照只有这里能拦下。
-    if (tables.mergeTable && db.prepare('SELECT 1 FROM review_cycle_merges WHERE cycle_id IS NULL LIMIT 1').get()) return false
+    if (tables.mergeTable && db.prepare('SELECT 1 FROM review_cycle_merges WHERE cycle_id IS NULL LIMIT 1').get()) return failed
     const cycles = db.prepare('SELECT * FROM review_cycles ORDER BY cycle_id').all() as CycleRow[]
-    return cycles.every(cycle => verifyCycle(db, tables, cycle))
-  } catch { return false }
+    const damaged = cycles.find(cycle => { try { return !verifyCycle(db, tables, cycle) } catch { return true } })
+    return damaged ? { ok: false, damaged: damagedCycle(db, tables, damaged) } : { ok: true }
+  } catch { return failed }
+}
+
+function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow): DamagedReviewCycle | undefined {
+  const outboxRows = draftRows === 'drafts_all' ? 'finalization_outbox_all' : 'finalization_outbox'
+  const row = db.prepare(`SELECT d.id, d.chapter_number AS chapterNumber, d.version, d.status,
+      COALESCE(NULLIF(b.title,''), o.chapter_title, '') AS chapterTitle
+    FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id AND d.chapter_number=r.source_draft_chapter_number
+    LEFT JOIN blueprints b ON b.chapter_number=d.chapter_number
+    LEFT JOIN ${outboxRows} o ON o.draft_id=d.id WHERE r.id=?`).get(cycle.review_id) as { id: number; chapterNumber: number; version: number; status: string; chapterTitle: string } | undefined
+  if (!row) return undefined
+  if (row.status === 'deleted') {
+    // 回收站这一项按删除时定稿的章名显示；同章号可能已重写，蓝图标题是新章的。
+    const finals = db.prepare(`SELECT p.chapter_number AS chapterNumber, p.deleted_at AS deletedAt, COALESCE(o.chapter_title,'') AS chapterTitle
+      FROM drafts_all d JOIN drafts_all p ON p.deletion_id=d.deletion_id AND p.deleted_from_status='finalized'
+      LEFT JOIN finalization_outbox_all o ON o.draft_id=p.id WHERE d.id=?`).all(row.id) as Array<{ chapterNumber: number; deletedAt: string; chapterTitle: string }>
+    const entry = finals.length === 1 && finals[0]!.chapterNumber === row.chapterNumber ? finals[0]! : undefined
+    if (!entry) return undefined
+    return { chapterNumber: row.chapterNumber, chapterTitle: entry.chapterTitle, location: 'trash', deletedAt: entry.deletedAt }
+  }
+  return row.status === 'finalized'
+    ? { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, location: 'manuscript' }
+    : { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, location: 'draft', draftVersion: row.version }
 }
 
 /** 只校验这一条循环；全库外键和结构检查已在打开作品时做过，见 verifyOpenedSchema。 */

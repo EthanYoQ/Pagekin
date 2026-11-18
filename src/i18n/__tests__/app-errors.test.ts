@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
+import { appErrorMessage, damagedReviewCycleMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
 import { shown } from './shown-locale'
 
 describe('localized application errors', () => {
@@ -358,5 +358,26 @@ describe('日文界面的已登记错误', () => {
     expect(englishWithReason(shown('ja-JP'), 'Could not merge the revision.', japanese)).toBe(`Could not merge the revision. ${japanese}`)
     expect(englishWithReason(shown('en-US'), 'Could not merge the revision.', '项目数据库未打开：ファイル.md')).toBe('Could not merge the revision.')
     expect(englishWithReason(shown('en-US'), 'Could not merge the revision.', 'disk full')).toBe('Could not merge the revision. disk full')
+  })
+})
+
+describe('damagedReviewCycleMessage', () => {
+  it('回收站删除时间读不成日期时照原样写出，不写 Invalid Date（#702）', () => {
+    const text = damagedReviewCycleMessage(shown('zh-CN'),
+      { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt: '坏掉的时间' })
+    expect(text).toContain('（删除于 坏掉的时间）')
+    expect(text).not.toContain('Invalid Date')
+  })
+
+  it('删除时间是不存在的日期时照原样写出，不被 Date 顺延成别的日子（#702）', () => {
+    const text = damagedReviewCycleMessage(shown('zh-CN'),
+      { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt: '2026-02-30 08:05:00' })
+    expect(text).toContain('（删除于 2026-02-30 08:05:00）')
+  })
+
+  it('删除时间是合法的 ISO 写法时照常按本地时间写，与 SQLite 写法同一时刻显示相同（#702）', () => {
+    const message = (deletedAt: string) => damagedReviewCycleMessage(shown('zh-CN'),
+      { chapterNumber: 2, chapterTitle: '沉船', location: 'trash', deletedAt })
+    expect(message('2026-11-18T08:05:00.000Z')).toBe(message('2026-11-18 08:05:00'))
   })
 })
