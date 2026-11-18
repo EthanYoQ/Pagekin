@@ -35,7 +35,7 @@ import {
   type PortableArchiveSource,
 } from './portable-project-archive'
 import { backupProjectSqlite, type ProjectSqliteEvidence } from './sqlite-project-migration'
-import { inspectM03ReviewCycles, sealedLedgerRecords, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
+import { inspectM03ReviewCycles, sealedLedgerCells, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
 import { SchemaMigrationError } from '../migrations/registry'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import {
@@ -928,10 +928,10 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     const avatarRows = readPortableCharacterAvatarRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
       root_action_id: string }>).map(row => row.root_action_id))
-    const placeholderRecords = new Set([...reviewRoots].flatMap(root => [...sealedLedgerRecords(db, root)]))
+    const placeholderCells = new Set([...reviewRoots].flatMap(root => [...sealedLedgerCells(db, root)]))
     const runRoots = new Map((db.prepare('SELECT run_id,root_action_id FROM generation_runs').all() as Array<{
       run_id: string; root_action_id: string }>).map(row => [row.run_id, row.root_action_id]))
-    const reviewRuns = new Set([...runRoots].filter(([runId, root]) => reviewRoots.has(root) && !placeholderRecords.has(`generation_runs:${runId}`))
+    const reviewRuns = new Set([...runRoots].filter(([runId, root]) => reviewRoots.has(root) && !placeholderCells.has(`generation_runs:${runId}:binding_json`))
       .map(([runId]) => runId))
     const draftProofs = draftThreadTaskProofs(db, reviewRoots)
     for (const row of avatarRows) {
@@ -976,8 +976,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
           : null
         for (const row of rows) {
           const root = table === 'generation_artifacts' ? runRoots.get(String(row.run_id)) : String(row.root_action_id)
-          const reviewProof = (table === 'generation_artifacts' ? reviewRuns.has(String(row.run_id)) : reviewRoots.has(String(row.root_action_id)))
-            && !(table in LEDGER_KEYS && placeholderRecords.has(`${table}:${row[LEDGER_KEYS[table]!]}`))
+          const reviewProof = table === 'generation_artifacts' ? reviewRuns.has(String(row.run_id)) : reviewRoots.has(String(row.root_action_id))
           try {
             if (hasProjection || hasHistory) {
               const safe = projectionForRow(table, row, columns)
@@ -1000,7 +999,8 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
             if (update) update.run(...updates.map(column => {
               const key = `${table}.${column.name}`
               if (draftProof !== undefined && (key === 'generation_attempts.usage_receipt_json' || key === 'generation_runs.binding_json')) return draftProof
-              return neutralValue(key, column, row[column.name], reviewProof)
+              const placeholder = table in LEDGER_KEYS && placeholderCells.has(`${table}:${row[LEDGER_KEYS[table]!]}:${column.name}`)
+              return neutralValue(key, column, row[column.name], reviewProof && !placeholder)
             }), row.__portable_rowid__)
           } catch (error) {
             const location = root === undefined ? undefined : omittedRoots.get(root)

@@ -162,12 +162,16 @@ function effect(row: AttemptRow): Record<string, unknown> | null {
   return receipt.reviewRevisionEffect && typeof receipt.reviewRevisionEffect === 'object'
     ? receipt.reviewRevisionEffect as Record<string, unknown> : null
 }
-/** 封存时被换成占位值的记录（ADR-0030 的 `$ledgerUnreadable`），键是「表:主键」。 */
-export function sealedLedgerRecords(db: Database.Database, rootActionId: string): ReadonlySet<string> {
-  return new Set(db.prepare(`SELECT json_extract(item.value,'$.table')||':'||json_extract(item.value,'$.recordId')
+/** 封存时被换成占位值的格子（ADR-0030 的 `$ledgerUnreadable`），键是「表:主键:列」。 */
+export function sealedLedgerCells(db: Database.Database, rootActionId: string): ReadonlySet<string> {
+  return new Set(db.prepare(`SELECT json_extract(item.value,'$.table')||':'||json_extract(item.value,'$.recordId')||':'||json_extract(item.value,'$.column')
     FROM generation_runs r, json_each(r.binding_json,'$."$ledgerUnreadable"') item
     WHERE r.root_action_id=? AND item.type='object' AND json_extract(item.value,'$.column')<>'blocked_code'`)
     .pluck().all(rootActionId).filter((key): key is string => typeof key === 'string'))
+}
+/** 有格子被换成占位值的记录，键是「表:主键」。 */
+function sealedLedgerRecords(db: Database.Database, rootActionId: string): ReadonlySet<string> {
+  return new Set([...sealedLedgerCells(db, rootActionId)].map(key => key.slice(0, key.lastIndexOf(':'))))
 }
 function proveEffect(db: Database.Database, row: AttemptRow, sealed: ReadonlySet<string>, expected: {
   kind: 'review' | 'revision'; id: number; index: number; contentHash: string
