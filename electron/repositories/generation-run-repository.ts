@@ -188,10 +188,12 @@ export class GenerationRunRepository {
      * 身份键也读不出时认不出是哪次点击，按占用处理。`root` 是开这棵树的那次点击。
      */
     sealedClaims(claims: (click: GenerationClick, root: GenerationClick | undefined) => boolean): boolean {
-        const rows = this.db().prepare(`SELECT g.idempotency_key AS root_key,r.open_key FROM generation_roots g LEFT JOIN generation_runs r ON r.root_action_id=g.root_action_id
-            WHERE NOT (g.${UNSEALED_ROOT})`).all() as { root_key: string; open_key: string | null }[];
+        const rows = this.db().prepare(`SELECT g.root_action_id AS root_id,g.idempotency_key AS root_key,r.open_key FROM generation_roots g LEFT JOIN generation_runs r ON r.root_action_id=g.root_action_id
+            WHERE NOT (g.${UNSEALED_ROOT})`).all() as { root_id: string | null; root_key: string; open_key: string | null }[];
         return rows.some(row => {
             const root = clickOfRootKey(row.root_key);
+            // 主键为 NULL 的根挂不上运行，认不出的键也撞不上新点击的键，不能把它当成占用了所有点击。
+            if (row.root_id === null && root === undefined) return false;
             return [root, ...(row.open_key === null ? [] : [clickOfOpenKey(row.open_key)])].some(click => click === undefined || claims(click, root));
         });
     }
