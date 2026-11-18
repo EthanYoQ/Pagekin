@@ -47,6 +47,7 @@ export const zhCN = {
   'error.damagedReviewCycle': '作品没有改动。{chapter}有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。',
   'backup.omittedReviewCycleOne': '{chapter}有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'backup.omittedReviewCycleChapters': '{chapters}有审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
+  'backup.omittedReviewCycleChaptersAndOthers': '{chapters}等处有审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'backup.omittedReviewCycleUnknownOne': '有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'backup.omittedReviewCycleUnknownMany': '有几条审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'error.externalFileGrantExpired': '所选文件或文件夹的访问授权已失效，请重新选择。',

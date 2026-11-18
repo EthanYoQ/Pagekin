@@ -416,12 +416,16 @@ export function importGenerationStopMessage(
   return joinSentences(locale, translate(locale, AUTHOR_STOP_REASON_KEYS[stop]), translate(locale, 'error.authorInferenceStopNext'))
 }
 
+function trashPhrase(locale: ErrorDisplayLocale, chapter: string): string {
+  return localize(locale, '回收站里{chapter}', '{chapter} in the trash', 'ゴミ箱の{chapter}', { chapter })
+}
+
 function chapterPhrase(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle & { chapterNumber: number }): string {
   const params = { number: damaged.chapterNumber, title: damaged.chapterTitle }
   const chapter = damaged.chapterTitle
     ? localize(locale, '第 {number} 章「{title}」', 'Chapter {number} "{title}"', '第{number}章「{title}」', params)
     : localize(locale, '第 {number} 章', 'Chapter {number}', '第{number}章', params)
-  return damaged.inTrash ? localize(locale, '回收站里{chapter}', '{chapter} in the trash', 'ゴミ箱の{chapter}', { chapter }) : chapter
+  return damaged.inTrash ? trashPhrase(locale, chapter) : chapter
 }
 
 const located = (damaged: DamagedReviewCycle): damaged is DamagedReviewCycle & { chapterNumber: number } => damaged.chapterNumber !== null
@@ -433,6 +437,7 @@ export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: D
     : translate(locale, 'error.portableUnsafeProjection')
 }
 
+/** 多条时列章号，正文章和回收站章分开；有指不出章节的，再加一句泛称。 */
 export function omittedReviewCyclesMessage(locale: ErrorDisplayLocale, omitted: readonly DamagedReviewCycle[]): string {
   const [first] = omitted
   if (!first) return ''
@@ -441,11 +446,16 @@ export function omittedReviewCyclesMessage(locale: ErrorDisplayLocale, omitted: 
       ? translate(locale, 'backup.omittedReviewCycleOne', { chapter: chapterPhrase(locale, first) })
       : translate(locale, 'backup.omittedReviewCycleUnknownOne')
   }
-  if (!omitted.every(located)) return translate(locale, 'backup.omittedReviewCycleUnknownMany')
-  const numbers = [...new Set(omitted.map(item => item.chapterNumber))].sort((a, b) => a - b)
-  const list = numbers.join(locale === 'en-US' ? ', ' : '、')
-  const chapters = localize(locale, '第 {list} 章', numbers.length === 1 ? 'Chapter {list}' : 'Chapters {list}', '第{list}章', { list })
-  return translate(locale, 'backup.omittedReviewCycleChapters', { chapters })
+  const groups = [false, true].flatMap(inTrash => {
+    const numbers = [...new Set(omitted.filter(located).filter(item => item.inTrash === inTrash).map(item => item.chapterNumber))].sort((a, b) => a - b)
+    if (!numbers.length) return []
+    const list = numbers.join(locale === 'en-US' ? ', ' : '、')
+    const chapters = localize(locale, '第 {list} 章', numbers.length === 1 ? 'Chapter {list}' : 'Chapters {list}', '第{list}章', { list })
+    return [inTrash ? trashPhrase(locale, chapters) : chapters]
+  })
+  if (!groups.length) return translate(locale, 'backup.omittedReviewCycleUnknownMany')
+  const chapters = groups.join(localize(locale, '和', ' and ', 'と'))
+  return translate(locale, omitted.every(located) ? 'backup.omittedReviewCycleChapters' : 'backup.omittedReviewCycleChaptersAndOthers', { chapters })
 }
 
 function joinSentences(locale: InterfaceLocale, first: string, second: string): string {

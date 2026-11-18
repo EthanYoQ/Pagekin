@@ -48,6 +48,7 @@ export const jaJP = {
   'error.damagedReviewCycle': '作品は変更されていません。{chapter}のレビュー記録が破損し、アーカイブを作成できませんでした。このメッセージをご報告ください。',
   'backup.omittedReviewCycleOne': '{chapter}のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
   'backup.omittedReviewCycleChapters': '{chapters}のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
+  'backup.omittedReviewCycleChaptersAndOthers': '{chapters}などのレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
   'backup.omittedReviewCycleUnknownOne': '破損したレビュー記録1件をアーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
   'backup.omittedReviewCycleUnknownMany': '破損したレビュー記録をいくつかアーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
   'error.externalFileGrantExpired': '選択したファイルまたはフォルダーへのアクセス権の期限が切れました。選び直してください。',

@@ -45,6 +45,7 @@ export const enUS = {
   'error.damagedReviewCycle': 'Your book is unchanged. A review record in {chapter} is damaged, so no archive was made. Please report this message to us.',
   'backup.omittedReviewCycleOne': 'A damaged review record in {chapter} was left out of the archive. The text and other reviews are included.',
   'backup.omittedReviewCycleChapters': 'Damaged review records in {chapters} were left out of the archive. The text and other reviews are included.',
+  'backup.omittedReviewCycleChaptersAndOthers': 'Damaged review records in {chapters} and elsewhere were left out of the archive. The text and other reviews are included.',
   'backup.omittedReviewCycleUnknownOne': 'A damaged review record was left out of the archive. The text and other reviews are included.',
   'backup.omittedReviewCycleUnknownMany': 'Some damaged review records were left out of the archive. The text and other reviews are included.',
   'error.externalFileGrantExpired': 'Access to the selected file or folder has expired. Choose it again.',
