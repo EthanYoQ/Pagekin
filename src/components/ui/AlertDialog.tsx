@@ -14,6 +14,8 @@ interface AlertOptions {
   title?: string
   /** 确认按钮文字，默认「确定」 */
   confirmText?: string
+  /** 见 InkPromptOptions.signal */
+  signal?: AbortSignal
 }
 
 /**
@@ -29,5 +31,6 @@ export function alertError(message: string, options?: AlertOptions): Promise<voi
     title: options?.title ?? text('发生错误', 'Error'),
     message,
     confirmText: options?.confirmText ?? text('确定', 'OK'),
+    signal: options?.signal,
   }).then(() => undefined)
 }
