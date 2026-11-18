@@ -90,7 +90,7 @@ export function verifyM02CharacterIdentity(db: Database.Database): boolean {
   } catch { return false }
   return verifyM02CharacterRows(db)
 }
-/** 调用方刚跑过全库外键检查时用，见 verifyOpenedSchema。 */
+/** 不跑 foreign_key_check；调用方须已做过全库外键检查（verifyOpenedSchema 经 probeSchema 做）。 */
 export function verifyM02CharacterRows(db: Database.Database): boolean {
   try {
     if (db.pragma('foreign_keys', { simple: true }) !== 1) return false
