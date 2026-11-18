@@ -418,7 +418,7 @@ async function deleteShelfChapter({ page, invoke }, sample, { path, session }) {
   assert.equal(deleted.success, true, JSON.stringify(deleted))
 }
 
-const trash = sample => ({ model: true, shell: 'stage', setup: context => seed(context, sample, { afterShelf: (context, shelf) => deleteShelfChapter(context, sample, shelf) }),
+const trash = sample => ({ shell: 'stage', setup: context => seed(context, sample, { afterShelf: (context, shelf) => deleteShelfChapter(context, sample, shelf) }),
   run: async ({ page, shoot }) => {
     const { ui } = sample
     await openBook(page, ui, sample.shelfBook.name)
