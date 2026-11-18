@@ -1439,6 +1439,27 @@ describe('修稿续写过一次的审修循环照样能导出（#702）', () => 
     } finally { restored.close() }
   })
 
+  it('没被组合用到的失败尝试收据读不全：不挡导出，这条收据照旧不进副本', async () => {
+    const f = fixture()
+    await seedOwnerCycle(f, 2, true)
+    const failed = "json_extract(usage_receipt_json,'$.artifactIdentity') IS NOT NULL AND json_extract(usage_receipt_json,'$.result.finishReason') IS NULL"
+    const db = new Database(f.databasePath)
+    try {
+      expect(db.prepare(`UPDATE generation_attempts SET usage_receipt_json=json_remove(usage_receipt_json,'$.artifactIdentity.epoch') WHERE ${failed}`).run().changes).toBe(1)
+      db.pragma('foreign_keys = ON')
+      expect(inspectM03ReviewCycles(db)).toEqual({ structureOk: true, unprovable: [] })
+    } finally { db.close() }
+    await exportPortableProject(input(f))
+    const targetRoot = path.join(f.base, 'restored-unused-receipt')
+    await restorePortableProject({ archivePath: f.target, targetProjectRoot: targetRoot })
+    const restored = new Database(path.join(targetRoot, '.ai-novel', 'project.db'), { readonly: true })
+    try {
+      restored.pragma('foreign_keys = ON')
+      expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
+      expect(restored.prepare(`SELECT COUNT(*) FROM generation_attempts WHERE usage_receipt_json IS NULL`).pluck().get()).toBe(1)
+    } finally { restored.close() }
+  })
+
   it('便携副本里续写前那一段的收据还在：保留到上限的结束原因和产物身份，不带别的', async () => {
     const f = fixture()
     const { attemptIds: [prefixAttempt] } = await seedOwnerCycle(f, 2)
