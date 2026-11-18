@@ -338,7 +338,7 @@ describe('ProjectBackupPanel', () => {
     await act(async () => disclosure.click())
     await act(async () => button('立即云备份').click())
     expect(container.querySelector('[role="status"]')?.textContent)
-      .toBe('云备份完成：generation-1；备份点 backup-point-7。第 2、5 章有审稿记录损坏，没放进存档。正文和其他审稿内容都在。')
+      .toBe('云备份完成：generation-1；备份点 backup-point-7。第 2 章「沉船」、第 5 章有审稿记录损坏，没放进存档。正文和其他审稿内容都在。')
   })
 
   it('requires disclosure before upload and shows the backup point and unsaved binding', async () => {

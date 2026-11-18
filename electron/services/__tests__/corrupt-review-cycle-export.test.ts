@@ -264,6 +264,44 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     expect(error).not.toHaveProperty('damagedReviewCycle')
   })
 
+  it('产物记在第 2 章的审稿运行下、尝试却在别的根：不按审稿证据投影，存档里不留指纹', async () => {
+    reviewedBook({ finalized: true })
+    db().exec(`INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json)
+        SELECT 'root-free','root-free-key',json_set(action_json,'$.rootActionId','root-free'),budget_json FROM generation_roots
+        WHERE root_action_id='root-review-ch2';
+      INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+        SELECT 'run-free','root-free',binding_json,status,created_at_ms,'open-free' FROM generation_runs
+        WHERE run_id=(SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch2');
+      INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+        SELECT 'attempt-free','reservation-free','run-free','root-free',
+          json_set(attempt_json,'$.attemptId','attempt-free','$.reservationId','reservation-free','$.rootActionId','root-free'),NULL,'invocation-free'
+        FROM generation_attempts WHERE attempt_id='attempt-review-ch2';
+      INSERT INTO generation_artifacts(artifact_id,attempt_id,run_id,artifact_json,revision,status)
+        SELECT 'artifact-free','attempt-free',run_id,
+          json_set(artifact_json,'$.artifactId','artifact-free','$.attemptId','attempt-free','$.rootActionId','root-free'),revision,status
+        FROM generation_artifacts WHERE attempt_id='attempt-review-ch2'`)
+
+    const { archivePath, receipt } = await exportTo()
+    expect(receipt).not.toHaveProperty('omittedReviewCycles')
+    const artifacts = (await archiveRows(archivePath)).generation_artifacts!
+    const fingerprintOf = (id: string) => JSON.parse(String(artifacts.find(row => row.artifact_id === id)!.artifact_json)).fingerprint
+    expect(fingerprintOf(String(db().prepare("SELECT artifact_id FROM generation_artifacts WHERE attempt_id='attempt-review-ch2'").pluck().get())))
+      .toEqual(expect.any(Object))
+    expect(fingerprintOf('artifact-free')).toBeUndefined()
+  })
+
+  it('第 2 章的修稿尝试和它的产物挂到第 1 章的运行上，投影不过：运行与尝试不同根，不按哪一章报', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    const chapter1Run = db().prepare("SELECT run_id FROM generation_attempts WHERE attempt_id='attempt-review-ch1'").pluck().get()
+    db().prepare("UPDATE generation_attempts SET run_id=? WHERE attempt_id='attempt-revision-ch2'").run(chapter1Run)
+    db().prepare("UPDATE generation_artifacts SET run_id=?, artifact_json='{}' WHERE attempt_id='attempt-revision-ch2'").run(chapter1Run)
+
+    const error = await exportBook()
+    expect(error).toMatchObject({ message: 'PORTABLE_UNSAFE_PROJECTION' })
+    expect(error).not.toHaveProperty('damagedReviewCycle')
+  })
+
   it('两章各有一条坏循环：两条都留在存档外，清单两章都列', async () => {
     const items = reviewedBook({ finalized: true })
     for (const item of items) breakReviewProof(db(), item)
@@ -286,6 +324,19 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     DraftRepository.create({ chapterNumber: 2, source: 'write', content: '新写的第二章。', wordCount: 7 })
 
     expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }])
+  })
+
+  it('审的是旧定稿、换成改名的新定稿后整章进回收站：用回收站里那一项（新定稿）的章名', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    const { draftId: edition } = FinalizationRepository.reopen({ chapterNumber: 2 })
+    finalize(edition, 2, '暗礁')
+    expect(db().prepare('SELECT status FROM drafts_all WHERE id=?').pluck().get(items[1]!.seeded.draftId)).toBe('superseded')
+    await expect(trashService().delete(projectRoot, { draftId: edition, chapterNumber: 2 }))
+      .resolves.toMatchObject({ success: true })
+    db().prepare("UPDATE blueprints SET title='新航' WHERE chapter_number=2").run()
+
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '暗礁', inTrash: true }])
   })
 
   it('回收站删除组里混进了别章的定稿：只看这一稿自己，不借别章的章名（D5）', async () => {
