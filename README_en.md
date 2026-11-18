@@ -96,7 +96,7 @@ The main button is "Write chapter N". The small popover next to it holds only th
 Blueprints get two checks. Neither one blocks writing.
 
 - **Notice on save**: when an AI-generated blueprint has two characters whose relationship contradicts the timeline, or includes a character who has died, the Blueprint page shows a notice with its basis. Select "This is intentional" to exempt one chapter or the whole book.
-- **AI check**: each click sends one model request that checks unfinalized blueprints against the character timeline in chapter order and lists the results by chapter. For a long book on a model with a small context window, it stops at the last chapter that fits. It is available once at least one chapter is finalized.
+- **AI check**: each click sends one model request that checks unfinalized blueprints against the character timeline in chapter order and lists the results by chapter. For a long book on a model with a small context window, it stops at the last chapter that fits. It needs saved blueprints and a character timeline: at least one finalized chapter whose character-state post-processing has finished.
 
 ### Story threads: due threads are not forgotten
 
@@ -122,13 +122,13 @@ While writing, AI receives this chapter's blueprint, the related characters, the
 After each chapter is finalized, Pagekin imports the final text into the knowledge base, generates chapter notes, and updates character states and relationships. If post-processing fails or is cancelled, the final text is already saved, and you can retry the unfinished steps.
 
 - **Reopen to edit**: on a finalized chapter, select "Reopen to edit". The current final is copied into a reopened draft that you edit, review, and revise as usual. The finalize dialog first lists how the replacement affects later chapters, character states, and thread confirmations. The old final stays in version history as "Replaced final", read-only.
-- **Check later blueprints**: after a replacement, the AI suggests at most one change for each later unfinalized chapter, with its basis and a before-and-after view. You choose Accept or Don't use for each one. It changes blueprints only, never chapter text.
+- **Check later blueprints**: after a replacement, the AI suggests at most one change for each later unfinalized chapter, with its basis and a before-and-after view. You choose Accept or Don't use for each one. It changes blueprints only, never chapter text. For a long book on a model with a small context window, it covers only the chapters that fit.
 - **Trash**: a deleted chapter and all its versions go to the trash, where you can Restore or Delete permanently. After you delete a chapter in the middle, you can use "Rewrite chapter N" to write it again in place.
 
 ### Knowledge base and search: reference material while drafting
 
 - Import reference material (.txt, .md). Final chapters go into the knowledge base during post-processing.
-- With an embedding model, search is semantic. Without one, local full-text search is used, and Chinese queries are split into words so passages with only some of the words still match.
+- With an embedding model, search is semantic. The embedding model is the one under Settings → Retrieval model. If none is set and the default model supports embeddings (including an older profile with no purposes recorded), Pagekin uses the default model. With neither, search is local full-text search, and Chinese queries are split into words so passages with only some of the words still match.
 - Under Settings → Retrieval model, you can add an optional reranking model. Search then collects more passages, reranks them, and keeps the most relevant ones. If reranking fails, results keep their original order.
 - When you fill in a chapter in the middle, search does not return final text from that chapter or later ones, so the draft does not borrow later plot.
 
@@ -250,7 +250,7 @@ ai-novel-writer-mac-x64-<version>-installer.dmg
 | Imported reference material | Stored in the local book. With a cloud embedding model, its passages are sent to that model during import. |
 | Local model requests | Sent to the local or LAN inference service you configure. |
 | Cloud model requests | Prompts and context go to the provider you choose. |
-| Knowledge-base import and search | With an embedding model, passages from imported material and final chapters, and search queries, go to that model. With a reranking model, queries and the retrieved passages go to the reranking model. Without either, search runs locally as full-text search. |
+| Knowledge-base import and search | With an embedding model (the retrieval model, or the default model when it supports embeddings and no retrieval model is set), passages from imported material and final chapters, and search queries, go to that model. With a reranking model, queries and the retrieved passages go to the reranking model. Without an embedding model, search runs locally as full-text search. |
 | Model settings and API keys | Stored in the `ai-novel-writer` folder of your app data directory (`%APPDATA%\ai-novel-writer` on Windows, `~/Library/Application Support/ai-novel-writer` on macOS). Protect your OS account and do not share this folder. |
 | App preferences | Stored in the same folder as the model settings. |
 
@@ -274,7 +274,7 @@ On your own computer: the book folder plus a local SQLite database. The relevant
 
 ### Can I write offline?
 
-Yes, if your writing model is local too. Without an embedding model, the knowledge base uses local full-text search and needs no network. If you set up an embedding or reranking model, it must be local as well. With Ollama or another local inference service, requests for drafting, review, revision, and post-processing go only to your computer or LAN. Update checks, importing skills from GitHub, WebDAV backup, and cloud models need a network connection.
+Yes, if every model you use is on your computer or LAN: the default model, any models assigned under Models by stage, and the retrieval and reranking models. Without a retrieval model, a default model that supports embeddings is used for the knowledge base, so it must be local too. With no embedding model at all, the knowledge base uses local full-text search and needs no network. Update checks, importing skills from GitHub, WebDAV backup, and cloud models need a network connection.
 
 ### How long can a novel be? Will it stay consistent?
 
