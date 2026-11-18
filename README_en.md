@@ -38,7 +38,7 @@ Pagekin is maintained by EthanYoQ and is open source under GPL-3.0. The [officia
 
 > ## What's new in 1.5.0
 >
-> - **Trash**: a deleted chapter goes to the trash with all its versions, and you can restore it. After you delete a chapter in the middle, the rest of the book stays writable.
+> - **Trash**: when you choose "Delete manuscript…" on a finalized chapter, its text and all its versions go to the trash, and you can restore them. After you delete a chapter in the middle, the rest of the book stays writable.
 > - **Reopen to edit**: reopen a finalized chapter. Before you finalize it again, Pagekin lists how the change affects later chapters, and then the AI can check later blueprints.
 > - **Character timeline**: each character records state and relationship changes chapter by chapter. When you write chapter N, the AI gets the characters as they are at chapter N.
 > - **Story-thread reminders**: threads have due chapters. When you reach them, the threads to handle become this chapter's tasks in the drafting prompt, and review checks them.
@@ -96,7 +96,7 @@ The main button is "Write chapter N". The small popover next to it holds only th
 Blueprints get two checks. Neither one blocks writing.
 
 - **Notice on save**: when an AI-generated blueprint has two characters whose relationship contradicts the timeline, or includes a character who has died, the Blueprint page shows a notice with its basis. Select "This is intentional" to exempt one chapter or the whole book.
-- **AI check**: each click sends one model request that checks unfinalized blueprints against the character timeline and lists the results by chapter. It needs a character timeline and saved blueprints.
+- **AI check**: each click sends one model request that checks unfinalized blueprints against the character timeline and lists the results by chapter. It needs a character timeline and saved blueprints. In a long book whose unfinalized blueprints do not fit in one request, only the earlier chapters are checked, and the result names the last one ("Checked through chapter N" or "AI check reached chapter N").
 
 ### Story threads: reminders by due chapter
 
@@ -123,7 +123,7 @@ After each chapter is finalized, Pagekin imports the final text into the knowled
 
 - **Reopen to edit**: on a finalized chapter, select "Reopen to edit". The current final is copied into a reopened draft that you edit, review, and revise as usual. The finalize dialog first lists how the replacement affects later chapters, character states, and thread confirmations. The old final stays in version history as "Replaced final", read-only.
 - **Check later blueprints**: after a replacement, the AI suggests changes for later unfinalized chapters, with the basis and a before-and-after view. You choose Accept or Don't use for each one. It changes blueprints only, never chapter text.
-- **Trash**: a deleted chapter and all its versions go to the trash, where you can Restore or Delete permanently. After you delete a chapter in the middle, you can use "Rewrite chapter N" to write it again in place.
+- **Trash**: when you choose "Delete manuscript…" on a finalized chapter, its text and all its versions go to the trash, where you can Restore or Delete permanently. "Delete chapter…" on a blueprint and "Delete this draft…" on a draft skip the trash and cannot be undone. After you delete a chapter in the middle, you can use "Rewrite chapter N" to write it again in place.
 
 ### Knowledge base and search: reference material while drafting
 
@@ -245,7 +245,7 @@ ai-novel-writer-mac-x64-<version>-installer.dmg
 | Data or behavior | Location or destination |
 | --- | --- |
 | Books, characters, blueprints, drafts, and final chapters | Your book folder and a local SQLite database. |
-| Deleted chapters | The current book's trash. You can restore them until you delete them permanently. |
+| Finalized chapters deleted with "Delete manuscript…" | The current book's trash. You can restore them until you delete them permanently. |
 | Recovery cards from failed runs | Only in the current book's local database. They never become drafts or final chapters on their own. |
 | Imported reference material | Stored in the local book. With an embedding model (including the default model as a fallback), its passages are sent to that model during import. |
 | Local model requests | Sent to the local or LAN inference service you configure. |
@@ -270,7 +270,7 @@ Any model behind an OpenAI-compatible Chat Completions API works, such as DeepSe
 
 ### Where is my data stored? Is it uploaded?
 
-On your own computer: the book folder plus a local SQLite database. Operations that use a model, such as drafting, review, and the breakdown and post-processing after a novel import, send the relevant text, setup, and context to the model service you configured. With an embedding model (including the default model as a fallback), knowledge-base import sends passages of your material to it, and search sends the query. With a reranking model, search sends the query and the retrieved passages to it. To keep private material local, switch to local models before you import. WebDAV backup uploads only after you connect WebDAV and start a backup.
+On your own computer: the book folder plus a local SQLite database. Operations that use a model, such as drafting, review, and the breakdown and post-processing after a novel import, send the relevant text, setup, and context to the model service you configured. With an embedding model (including the default model as a fallback), knowledge-base import sends passages of your material to it, and search sends the query. With a reranking model, search sends the query and the retrieved passages to it. To keep private material local, before you import, switch the default model to a local one and also set the Retrieval model to a local model or clear it (once cleared, the default model fills in). WebDAV backup uploads only after you connect WebDAV and start a backup.
 
 ### Can I write offline?
 
@@ -282,7 +282,7 @@ You set the total number of chapters, with no fixed limit. For each chapter, AI 
 
 ### Can I edit a finalized chapter? What if I delete the wrong chapter?
 
-Yes. Select "Reopen to edit" on a finalized chapter. When you finalize it again, it replaces the old final, which stays in version history. Deleted chapters go to the trash, and you can restore them.
+Yes. Select "Reopen to edit" on a finalized chapter. When you finalize it again, it replaces the old final, which stays in version history. Finalized chapters deleted with "Delete manuscript…" go to the trash, and you can restore them.
 
 ### Can I import a novel I already started and continue it?
 
