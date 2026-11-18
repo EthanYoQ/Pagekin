@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { selectCopy } from '../../i18n/core'
+import { useLocaleStore } from '../../stores/locale-store'
 import { ledgerSealedNotice } from '../ledger-sealed-notice'
 
-const textIn = (locale: 'zh-CN' | 'en-US' | 'ja-JP') =>
-  (zh: string, en: string, ja?: string) => selectCopy(locale, zh, en, ja)
+const textIn = (locale: 'zh-CN' | 'en-US' | 'ja-JP') => {
+  useLocaleStore.setState({ interfaceLocale: locale, locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US' })
+  return useLocaleStore.getState().text
+}
 
 describe('打开作品时封存了生成记录的提示', () => {
   it('中文先说正文没受影响，报条数，只请作者反馈，不叫作者重新生成', () => {
@@ -15,8 +17,9 @@ describe('打开作品时封存了生成记录的提示', () => {
   })
 
   it('英文按条数变单复数，不叫作者重新生成', () => {
-    expect(ledgerSealedNotice(1, textIn('en-US')).message).toContain('1 AI generation record couldn’t be read and was disabled')
-    expect(ledgerSealedNotice(2, textIn('en-US')).message).toContain('2 AI generation records couldn’t be read and were disabled')
+    expect(ledgerSealedNotice(1, textIn('en-US')).title).toBe("An AI generation record couldn't be read")
+    expect(ledgerSealedNotice(1, textIn('en-US')).message).toContain("1 AI generation record couldn't be read and was disabled")
+    expect(ledgerSealedNotice(2, textIn('en-US')).message).toContain("2 AI generation records couldn't be read and were disabled")
     expect(ledgerSealedNotice(2, textIn('en-US')).message).not.toMatch(/generate again|regenerate/iu)
   })
 

@@ -12,6 +12,7 @@ import type {
 } from '../shared/ipc-channels'
 import { alertError } from '../components/ui/AlertDialog'
 import { showFinalizationRepairNotice } from '../components/finalization-repair-notice'
+import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
 import { confirm } from '../components/ui/Confirm'
 import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImportFailureMessage } from '../i18n/app-errors'
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
@@ -799,6 +800,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           })
         }
         if (repair?.status === 'checked') showFinalizationRepairNotice(repair)
+        showLedgerSealedNotice(result.sealedGenerationCount)
         return true
       }
       if (!isLatestRequest()) return false

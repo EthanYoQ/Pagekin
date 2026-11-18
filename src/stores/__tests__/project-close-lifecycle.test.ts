@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   alertError: vi.fn(),
   confirm: vi.fn(async () => true),
-  openInkPrompt: vi.fn(async () => true),
+  openInkPrompt: vi.fn<(options: { message: string }) => Promise<boolean>>(async () => true),
   onProjectOpening: vi.fn(),
   onProjectOpened: vi.fn(async (): Promise<{ warnings: string[] } | undefined> => undefined),
   disableProjectBindingsPreservingDrafts: vi.fn(),

@@ -395,6 +395,8 @@ export interface ProjectChannels {
       legacyImportSource?: ProjectDirectoryGrant
       errorCode?: AppErrorCode
       finalizationRepair?: FinalizationRepairOnOpen
+      /** 这次打开时新封存的生成（根）条数，见 ADR-0030。 */
+      sealedGenerationCount?: number
     }
   }
   'project:save': {
