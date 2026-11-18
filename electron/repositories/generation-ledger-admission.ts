@@ -25,7 +25,7 @@ export interface AdmittedLedgerCell {
   column: string
   nullable: boolean
   /** 契约类型的合法取值，并且不会被任何跨记录查询的条件选中。 */
-  neutral(db: Db, rowid: number): string
+  neutral(db: Db, rowid: bigint): string
 }
 
 const encode = (value: unknown) => JSON.stringify(value)
@@ -49,6 +49,7 @@ export const ADMITTED_LEDGER_CELLS: readonly AdmittedLedgerCell[] = [
   } },
 ]
 
+// rowid 是 64 位整数，超过 2^53 时按 number 读会落到相邻行，扫描和定位一律按 bigint 读。
 // BLOB 里的合法 JSON 过不了导出投影，`null` 过得了 json_valid；合法对象后跟 NUL 时 json_valid 只看到 NUL 之前，JSON.parse 看全部。
 // NUL 按字符查：UTF-16 库里转成 BLOB 的健康文本也带零字节。
 const readable = (column: string) => `CASE WHEN typeof(${column})='text' AND instr(${column},char(0))=0 AND json_valid(${column}) THEN json_type(${column})='object' ELSE 0 END`
@@ -69,15 +70,15 @@ export interface LedgerAdmission {
  * 原始字节和根上原来的阻断码记进所属运行绑定的 `$ledgerUnreadable`。
  */
 export function admitGenerationLedger(db: Db): LedgerAdmission {
-  const scan = db.prepare(SCAN)
-  type Bad = { cell: number; row: number; id: string | null; rootRow: number | null; runRow: number | null; hex: string }
+  const scan = db.prepare(SCAN).safeIntegers()
+  type Bad = { cell: bigint; row: bigint; id: string | null; rootRow: bigint | null; runRow: bigint | null; hex: string }
   if (!scan.all().length) return { sealedRootCount: 0 }
   const sealed = db.transaction(() => {
     const now = Date.now()
     // 拿到写锁后重扫：扫描到加锁之间别的连接可能已经修好了某一格。
     const bad = scan.all() as Bad[]
     for (const item of bad) {
-      const cell = ADMITTED_LEDGER_CELLS[item.cell]!
+      const cell = ADMITTED_LEDGER_CELLS[Number(item.cell)]!
       db.prepare(`UPDATE ${cell.table} SET ${cell.column}=? WHERE rowid=?`).run(cell.neutral(db, item.row), item.row)
     }
     // 中性值全部写完再记账：记账那条运行自己的绑定可能也在这批坏格子里。
@@ -87,11 +88,11 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       json_insert(CASE WHEN ${kept} IS NULL THEN '[]' WHEN json_type(${kept})='array' THEN ${kept} ELSE json_array(json_object('previous',''||${kept})) END,
       '$[#]',json(?))) WHERE rowid=?`)
     for (const item of bad) {
-      const cell = ADMITTED_LEDGER_CELLS[item.cell]!
+      const cell = ADMITTED_LEDGER_CELLS[Number(item.cell)]!
       // 没有运行的根无处记账，原始字节不保留。
       if (item.runRow !== null) keep.run(encode({ table: cell.table, recordId: item.id, column: cell.column, hex: item.hex }), item.runRow)
     }
-    const previous = db.prepare(`SELECT root_action_id AS id, blocked_code AS code, ${OWNERS.generation_roots.runRow} AS runRow FROM generation_roots WHERE rowid=?`)
+    const previous = db.prepare(`SELECT root_action_id AS id, blocked_code AS code, ${OWNERS.generation_roots.runRow} AS runRow FROM generation_roots WHERE rowid=?`).safeIntegers()
     const block = db.prepare(`UPDATE generation_roots SET blocked_code=?,
       active_elapsed_ms=active_elapsed_ms+COALESCE(MAX(0,?-active_since_ms),0), active_since_ms=NULL WHERE rowid=?`)
     // 封存的根不会再推进，进行中的尝试按「没发出」或「不知道发没发出」落到终态。
@@ -99,9 +100,9 @@ export function admitGenerationLedger(db: Db): LedgerAdmission {
       CASE json_extract(attempt_json,'$.status') WHEN 'reserved' THEN 'cancelled-before-dispatch' ELSE 'unknown' END)
       WHERE root_action_id=? AND json_extract(attempt_json,'$.status') IN ('reserved','dispatch-marked')`)
     // 找不到所属根的坏格子（孤儿行）只换中性值，没有根可封存。
-    const rootRows = [...new Set(bad.map(item => item.rootRow).filter((row): row is number => row !== null))]
+    const rootRows = [...new Set(bad.map(item => item.rootRow).filter((row): row is bigint => row !== null))]
     return rootRows.map(rootRow => {
-      const prior = previous.get(rootRow) as { id: string | null; code: string | null; runRow: number | null }
+      const prior = previous.get(rootRow) as { id: string | null; code: string | null; runRow: bigint | null }
       if (prior.code && prior.code !== GENERATION_LEDGER_UNREADABLE && prior.runRow !== null)
         keep.run(encode({ table: 'generation_roots', recordId: prior.id, column: 'blocked_code', previous: prior.code }), prior.runRow)
       block.run(GENERATION_LEDGER_UNREADABLE, now, rootRow)
