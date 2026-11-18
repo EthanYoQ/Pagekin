@@ -794,13 +794,16 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             englishWithReason(currentInterfaceLocale(), 'Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.', reason),
           ))
         }
-        if (warnings.length > 0) {
-          alertError(warnings.join('\n'), {
-            title: projectText('项目已打开，部分数据加载失败', 'Project opened with some data unavailable'),
-          })
-        }
-        if (repair?.status === 'checked') showFinalizationRepairNotice(repair)
-        showLedgerSealedNotice(result.sealedGenerationCount)
+        // 每个提示框都画在先弹的上面，所以等作者关掉前一个再弹下一个：报错最先看到
+        void (async () => {
+          if (warnings.length > 0) {
+            await alertError(warnings.join('\n'), {
+              title: projectText('项目已打开，部分数据加载失败', 'Project opened with some data unavailable'),
+            })
+          }
+          if (repair?.status === 'checked') await showFinalizationRepairNotice(repair)
+          await showLedgerSealedNotice(result.sealedGenerationCount)
+        })()
         return true
       }
       if (!isLatestRequest()) return false
