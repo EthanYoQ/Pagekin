@@ -514,6 +514,17 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
       damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', inTrash: false } })
   })
 
+  it('循环主键为 NULL、又指不出章节：整本照旧失败，带出不定位的说明，不只剩错误码', async () => {
+    const items = reviewedBook({ finalized: false })
+    const cycleId = cycleOf(items[1]!)
+    db().prepare('DELETE FROM review_cycle_merges WHERE cycle_id=?').run(cycleId)
+    db().prepare('DELETE FROM review_findings WHERE cycle_id=?').run(cycleId)
+    db().prepare('UPDATE review_cycles SET cycle_id=NULL WHERE cycle_id=?').run(cycleId)
+    db().prepare('UPDATE reviews SET source_draft_version=source_draft_version+1 WHERE id=?').run(items[1]!.seeded.reviewId)
+
+    expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED', damagedReviewCycle: UNLOCATED })
+  })
+
   it('循环引用的根读不出：打开作品时封存，导出时这条循环留在存档外，照样带出章号和标题', async () => {
     const items = reviewedBook({ finalized: true })
     db().prepare("UPDATE generation_roots SET action_json='{broken' WHERE root_action_id=?").run(items[1]!.seeded.call.rootActionId)

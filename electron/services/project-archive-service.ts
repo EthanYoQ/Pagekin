@@ -680,21 +680,39 @@ function projectReviewRecheckReceipt(value: unknown): Record<string, unknown> {
     }) }
 }
 
+function projectReviewSegment(usage: Record<string, unknown>): Record<string, unknown> {
+  const identity = object(usage.artifactIdentity, ['artifactId', 'epoch', 'fingerprint'])
+  // 没结算或请求失败的尝试没有结束原因，只带身份。
+  const result: Record<string, unknown> = usage.result === undefined ? {} : object(usage.result, ['usage', 'finishReason', 'failureCode', 'diagnostics'])
+  return {
+    artifactIdentity: { artifactId: safeId(identity.artifactId), epoch: safeId(identity.epoch),
+      fingerprint: projectReviewFingerprint(identity.fingerprint) },
+    ...(result.finishReason == null ? {} : { result: { finishReason: safeId(result.finishReason) } }),
+  }
+}
+
 function projectReviewUsage(value: unknown): Record<string, unknown> | null {
   if (value === null) return null
   const usage = parseJson(value) as Record<string, unknown>
-  if (!usage || typeof usage !== 'object' || Array.isArray(usage) || !usage.reviewRevisionEffect) return null
-  const identity = object(usage.artifactIdentity, ['artifactId', 'epoch', 'fingerprint'])
-  const result = object(usage.result, ['usage', 'finishReason', 'failureCode', 'diagnostics'])
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return null
+  if (!usage.reviewRevisionEffect) {
+    if (!usage.artifactIdentity) return null
+    // 修稿续写时效果收据只落在最后一段，前面各段只有产物身份和结束原因；循环校验会逐段读这两项，所以不能丢。
+    // 投影不过的就不带：没被组合用到的尝试本来就不是证据，被用到的会在副本最后的从严校验里被拦下。
+    try { return projectReviewSegment(usage) }
+    catch (error) {
+      if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_UNSAFE_PROJECTION') return null
+      throw error
+    }
+  }
+  const segment = projectReviewSegment(usage)
   const effect = object(usage.reviewRevisionEffect, [
     'kind', 'id', 'index', 'contentHash', 'contextHash', 'artifact', 'compositionHash', 'reportVersion',
   ])
   if (effect.kind !== 'review' && effect.kind !== 'revision') fail('PORTABLE_UNSAFE_PROJECTION')
   if (effect.reportVersion !== undefined && (effect.reportVersion !== 2 || effect.kind !== 'review')) fail('PORTABLE_UNSAFE_PROJECTION')
   const projected: Record<string, unknown> = {
-    artifactIdentity: { artifactId: safeId(identity.artifactId), epoch: safeId(identity.epoch),
-      fingerprint: projectReviewFingerprint(identity.fingerprint) },
-    result: { finishReason: safeId(result.finishReason) },
+    ...segment,
     reviewRevisionEffect: { kind: effect.kind, id: safeInteger(effect.id, 1), index: safeInteger(effect.index, 1),
       contentHash: contentHash(effect.contentHash), contextHash: contentHash(effect.contextHash),
       artifact: projectReviewArtifactRef(effect.artifact),
