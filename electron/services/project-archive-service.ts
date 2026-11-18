@@ -895,8 +895,9 @@ function draftThreadTaskProofs(db: InstanceType<typeof BetterSqlite>, reviewRoot
 
 /**
  * Shared C17 copy-only history projection. Call only on an isolated target staging DB.
- * omitReviewCycles：导出时验不过的审修循环，投影前把它们所在的根上的循环从副本里删掉（连带意见与合并快照）；最后的校验仍从严，证明存档里没有坏循环。
- * 去掉以后根仍过不了投影，就按那一章报 MIGRATION_VERIFICATION_FAILED；其他失败原样抛出。omittedReviewCycles 每个删掉的根一项。
+ * omitReviewCycles：导出时验不过的审修循环。按根处理，与审修循环的校验同一单位：这些循环所在的根下的全部循环，投影前连同意见与合并快照从副本里删掉；
+ * 最后的校验仍从严，证明存档里没有坏循环。删掉以后根仍过不了投影，就按那一章报 MIGRATION_VERIFICATION_FAILED；其他失败原样抛出。
+ * 返回的 omittedReviewCycles 每个删掉的根一项，一根下有多条循环时不带章节。
  */
 export function sanitizePortableDatabase(databasePath: string, options: { omitReviewCycles?: ReadonlyMap<string, DamagedReviewCycle> } = {}): {
   history: HistoryProjection[]
@@ -911,8 +912,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
     if (schemaVersion === undefined) throw new Error('PORTABLE_SCHEMA_UNSUPPORTED')
     const omitted = options.omitReviewCycles ?? new Map<string, DamagedReviewCycle>()
     const sourceSchema = assertPortableSourceSchema(db, schemaVersion, () => new Set(omitted.keys()))
-    // 按根删，与 M03 同一单位：验不过的循环连同同根的循环一起删，这条根就按普通根投影。必须在算 reviewRoots 之前删。
-    // 验不过的循环自己的链接不可信，只取它的根。一根下有几条循环时指不准是哪一章，不报章节。
+    // 必须在算 reviewRoots 之前删，删掉后这条根才会按普通根投影。验不过的循环自己的链接不可信，只取它的根。
     const omittedRoots = new Map<string, DamagedReviewCycle>()
     if (omitted.size) {
       const rootOf = db.prepare('SELECT root_action_id FROM review_cycles WHERE cycle_id=?').pluck()
