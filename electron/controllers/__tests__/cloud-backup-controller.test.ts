@@ -5,7 +5,8 @@ import { createRequire } from 'node:module'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { CloudBackupProjectSessionContext } from '../../../src/shared/cloud-backup'
+import type { CloudBackupFailure, CloudBackupProjectSessionContext } from '../../../src/shared/cloud-backup'
+import { damagedReviewCycleMessage } from '../../../src/i18n/app-errors'
 import type { CloudProjectBinding } from '../../services/cloud-project-binding-store'
 import { ExternalFileGrantService } from '../../services/external-file-grant-service'
 import { WebDavBackupError } from '../../services/webdav-backup-service'
@@ -388,6 +389,31 @@ describe('registerCloudBackupController', () => {
       expect(result).toMatchObject({ success: true, state: 'backup-complete', operationId: OPERATION,
         omittedReviewCycles: [{ chapterNumber: 32, chapterTitle: '沉船', inTrash: false }] })
       expect(uploadedCycles).toEqual([items[0]!.seeded.reviewId])
+    } finally { closeProjectDatabase(); project.dispose() }
+  })
+
+  it('真实项目去掉坏循环仍过不了投影、又指不出章节：作者看到「有一项数据无法安全打包」，不是错误码（#702）', async () => {
+    const project = await createProjectArchiveRoundtripFixture()
+    try {
+      initProjectDatabase(project.sourceRoot)
+      const items = seedReviewedBook(getProjectDb()!, 2, { firstChapter: 31 })
+      getProjectDb()!.prepare('UPDATE reviews SET base_draft_id=?, review_index=99 WHERE id=?').run(items[0]!.seeded.draftId, items[1]!.seeded.reviewId)
+      getProjectDb()!.prepare("UPDATE generation_roots SET action_json='{}' WHERE root_action_id=?").run(items[1]!.seeded.call.rootActionId)
+      closeProjectDatabase()
+      const f = fixture({
+        exportPortableProject,
+        portableAssets: createPortableProjectAssetProvider(),
+        assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: session.leaseId, rootPath: project.sourceRoot })),
+        getCurrentProjectPath: vi.fn(() => project.sourceRoot),
+      })
+
+      const result = await f.invoke('cloud-backup:backup', { operationId: OPERATION,
+        projectSession: { ...session, projectPath: project.sourceRoot }, disclosureConfirmed: true }) as CloudBackupFailure
+
+      expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED' })
+      expect(result.damagedReviewCycle && damagedReviewCycleMessage('zh-CN', result.damagedReviewCycle))
+        .toBe('作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。')
+      expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
     } finally { closeProjectDatabase(); project.dispose() }
   })
 

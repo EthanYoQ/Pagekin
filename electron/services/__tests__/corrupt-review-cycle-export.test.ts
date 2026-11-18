@@ -191,6 +191,22 @@ describe('封存的根整根不当证据：引用它的循环留在存档外并�
     } finally { restored.close() }
   })
 
+  it('封存的审稿运行 rowid 超过 2^53：存档里这条运行既没有原来的绑定，也没有封存时记下的原始字节', async () => {
+    reviewedBook({ finalized: true })
+    db().exec("UPDATE generation_roots SET budget_json='{坏' WHERE root_action_id='root-review-ch2'")
+    reopen()
+    const runId = db().prepare(`SELECT run_id FROM generation_runs WHERE root_action_id='root-review-ch2'
+      AND binding_json->'$."$ledgerUnreadable"' IS NOT NULL`).pluck().get() as string
+    expect(db().prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(runId)).toContain('reviewRevisionContext')
+    db().prepare('UPDATE generation_runs SET rowid=9007199254740993 WHERE run_id=?').run(runId)
+
+    const { archivePath, receipt } = await exportTo()
+    expect(receipt.omittedReviewCycles).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+    const archived = (await archiveRows(archivePath)).generation_runs!.find(row => row.run_id === runId)!
+    expect(archived.binding_json).not.toContain('$ledgerUnreadable')
+    expect(archived.binding_json).not.toContain('reviewRevisionContext')
+  })
+
   it('封存的根没被审修循环引用：导出照常，没有省略清单', async () => {
     reviewedBook({ finalized: true })
     db().prepare(`INSERT INTO generation_roots(root_action_id,idempotency_key,action_json,budget_json)
@@ -294,9 +310,7 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     for (const item of items) breakReviewProof(db(), { seeded: { ...item.seeded, call: { ...item.seeded.call, rootActionId: 'root-review-ch1' } } })
     db().prepare("UPDATE generation_artifacts SET artifact_json='{}' WHERE attempt_id='attempt-review-ch1'").run()
 
-    const error = await exportBook()
-    expect(error).toMatchObject({ message: 'PORTABLE_UNSAFE_PROJECTION' })
-    expect(error).not.toHaveProperty('damagedReviewCycle')
+    expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED', damagedReviewCycle: UNLOCATED })
   })
 
   it('去掉坏循环仍过不了投影：照旧失败，带出 #739 的章节提示，源库不变', async () => {
