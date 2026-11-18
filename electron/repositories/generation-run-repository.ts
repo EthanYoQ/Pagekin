@@ -97,7 +97,7 @@ function clickOfRootKey(key: unknown): GenerationClick | undefined {
     if (typeof key !== 'string') return undefined;
     try {
         const parts: unknown = JSON.parse(key);
-        return Array.isArray(parts) && parts.slice(0, 3).every(part => typeof part === 'string')
+        return Array.isArray(parts) && parts.length >= 3 && parts.slice(0, 3).every(part => typeof part === 'string')
             ? { projectId: parts[0], operation: parts[1], uiActionNonce: parts[2] } : undefined;
     } catch {
         return undefined;
