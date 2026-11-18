@@ -219,6 +219,36 @@ describe('命令式弹窗', () => {
     expect(first).toBe(true)
   })
 
+  it('调用方撤回时提示框照常淡出关闭、得到 false，页面恢复可点；撤回下层时上层另一个提示框仍可点', async () => {
+    const leftBook = new AbortController()
+    let lowerResolved = false
+    let upper: boolean | undefined
+    await act(async () => { void alertError('文件树读不出', { title: '项目已打开，部分数据加载失败', signal: leftBook.signal }).then(() => { lowerResolved = true }) })
+    await act(async () => { void confirm('切换项目？').then(value => { upper = value }) })
+    expect(document.querySelectorAll('.pi-prompt-layer')).toHaveLength(2)
+
+    await act(async () => leftBook.abort())
+    await promptClosed()
+    expect(lowerResolved).toBe(true)
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull()
+    const remaining = document.querySelector<HTMLElement>('[role="dialog"]')!
+    await userEvent.click(buttonNamed(remaining, '确认'))
+    await promptClosed()
+    expect(upper).toBe(true)
+    expect(document.querySelector('.pi-prompt-layer')).toBeNull()
+    expect(document.body.style.pointerEvents).toBe('')
+    expect(document.querySelector('[aria-hidden="true"][data-aria-hidden]')).toBeNull()
+  })
+
+  it('已撤回的提示不再弹出，直接得到结果', async () => {
+    const leftBook = new AbortController()
+    leftBook.abort()
+    let resolved = false
+    await act(async () => { void alertError('文件树读不出', { signal: leftBook.signal }).then(() => { resolved = true }) })
+    expect(resolved).toBe(true)
+    expect(document.querySelector('.pi-prompt-layer')).toBeNull()
+  })
+
   it('对话框开着时点通知的关闭按钮，通知关闭而对话框不关', async () => {
     await act(async () => { void confirm('切换项目？') })
     await act(async () => toast.info('已复制安全诊断'))

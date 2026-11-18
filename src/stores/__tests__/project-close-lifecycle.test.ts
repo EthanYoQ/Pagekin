@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import type { ProjectData } from '../../shared/ipc-channels'
 import { registerProjectTransitionDraft } from '../../services/project-transition'
@@ -103,6 +103,38 @@ function deferred<T>() {
   const promise = new Promise<T>(next => { resolve = next })
   return { promise, resolve }
 }
+
+/** 提示框开着直到作者点掉或调用方撤回；openTitles 是此刻还开着的提示。 */
+function trackPrompts() {
+  const openTitles = new Set<string>()
+  const acknowledgers = new Map<string, () => void>()
+  const show = (title: string, signal?: AbortSignal) => new Promise<boolean>(resolve => {
+    if (signal?.aborted) return resolve(false)
+    const finish = (value: boolean) => {
+      if (!openTitles.delete(title)) return
+      acknowledgers.delete(title)
+      resolve(value)
+    }
+    openTitles.add(title)
+    acknowledgers.set(title, () => finish(true))
+    signal?.addEventListener('abort', () => finish(false), { once: true })
+  })
+  mocks.openInkPrompt.mockImplementation(options => show((options as { title: string }).title, (options as { signal?: AbortSignal }).signal))
+  mocks.alertError.mockImplementation((_message: string, options?: { title?: string; signal?: AbortSignal }) => (
+    show(options?.title ?? '', options?.signal).then(() => undefined)
+  ))
+  onTestFinished(() => {
+    mocks.openInkPrompt.mockReset()
+    mocks.alertError.mockReset()
+  })
+  return {
+    openTitles,
+    acknowledge: (title: string) => acknowledgers.get(title)!(),
+  }
+}
+
+const LOAD_ERROR_TITLE = '项目已打开，部分数据加载失败'
+const SEALED_TITLE = '有 AI 生成记录读不出'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -1650,6 +1682,97 @@ describe('project close lifecycle', () => {
     acknowledge()
     await vi.waitFor(() => expect(mocks.openInkPrompt).toHaveBeenCalledOnce())
     expect(mocks.openInkPrompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'notice', message: expect.stringMatching(/(?<!\d)2 条/u) }))
+  })
+
+  function openBookWithLoadErrorAndSealed(otherBook: () => Promise<unknown>) {
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open') {
+        if (args[0] === project('C').path) return otherBook().then(result => ({ requestToken: args[1], ...result as object }))
+        return {
+          success: true,
+          project: project('B'),
+          requestToken: args[1],
+          activeProjectPath: project('B').path,
+          sealedGenerationCount: 2,
+        }
+      }
+      if (channel === 'fs:list-dir') {
+        if (args[0] === project('B').path) throw new Error('tree unavailable')
+        return []
+      }
+      if (channel === 'project:recent-list') return []
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+  }
+  const openedC = { success: true, project: project('C'), activeProjectPath: project('C').path, sealedGenerationCount: 0 }
+
+  it("closes this book's sealed-generation notice when another book that was still opening commits under it", async () => {
+    const prompts = trackPrompts()
+    const releaseC = deferred<void>()
+    openBookWithLoadErrorAndSealed(() => releaseC.promise.then(() => openedC))
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+    const openingC = useProjectStore.getState().openProject(project('C').path)
+    prompts.acknowledge(LOAD_ERROR_TITLE)
+    await vi.waitFor(() => expect([...prompts.openTitles]).toEqual([SEALED_TITLE]))
+    expect(useProjectStore.getState().currentProject?.path).toBe(project('B').path)
+
+    releaseC.resolve()
+    await expect(openingC).resolves.toBe(true)
+    expect(useProjectStore.getState().currentProject?.path).toBe(project('C').path)
+    expect([...prompts.openTitles]).toEqual([])
+  })
+
+  it("closes this book's load error when another book opens while it is still showing", async () => {
+    const prompts = trackPrompts()
+    openBookWithLoadErrorAndSealed(async () => openedC)
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+    expect([...prompts.openTitles]).toEqual([LOAD_ERROR_TITLE])
+    await expect(useProjectStore.getState().openProject(project('C').path)).resolves.toBe(true)
+
+    expect([...prompts.openTitles]).toEqual([])
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect([...prompts.openTitles]).toEqual([])
+  })
+
+  it("keeps this book's sealed-generation notice when the other book was still opening and then failed", async () => {
+    const prompts = trackPrompts()
+    const releaseC = deferred<void>()
+    openBookWithLoadErrorAndSealed(() => releaseC.promise.then(() => ({ success: false, project: null, activeProjectPath: project('B').path, error: 'C unavailable' })))
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+    const openingC = useProjectStore.getState().openProject(project('C').path)
+    prompts.acknowledge(LOAD_ERROR_TITLE)
+    await vi.waitFor(() => expect([...prompts.openTitles]).toEqual([SEALED_TITLE]))
+
+    releaseC.resolve()
+    await expect(openingC).resolves.toBe(false)
+    expect(useProjectStore.getState().currentProject?.path).toBe(project('B').path)
+    expect([...prompts.openTitles]).toEqual([SEALED_TITLE, '打开项目失败'])
+  })
+
+  it("keeps this book's notices while the same session saves a new project snapshot", async () => {
+    const prompts = trackPrompts()
+    openBookWithLoadErrorAndSealed(async () => openedC)
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+    useProjectStore.setState(state => ({ currentProject: { ...state.currentProject!, characterStates: '林岚受伤' } }))
+    expect([...prompts.openTitles]).toEqual([LOAD_ERROR_TITLE])
+    prompts.acknowledge(LOAD_ERROR_TITLE)
+    await vi.waitFor(() => expect([...prompts.openTitles]).toEqual([SEALED_TITLE]))
+  })
+
+  it("closes this book's sealed-generation notice when the book is closed", async () => {
+    const prompts = trackPrompts()
+    openBookWithLoadErrorAndSealed(async () => openedC)
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
+    prompts.acknowledge(LOAD_ERROR_TITLE)
+    await vi.waitFor(() => expect([...prompts.openTitles]).toEqual([SEALED_TITLE]))
+    useProjectStore.setState({ currentProject: null })
+
+    expect([...prompts.openTitles]).toEqual([])
   })
 
   it('shows the sealed-generation notice only after the author closes the duplicate-finalization repair notice', async () => {
