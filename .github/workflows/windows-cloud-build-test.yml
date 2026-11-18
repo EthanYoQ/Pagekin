@@ -91,7 +91,7 @@ jobs:
       - name: Download verified v0.2.5 portable migration input
         shell: pwsh
         run: |
-          $portableUrl = 'https://github.com/EthanYoQ/AI-Novel-Writer/releases/download/v0.2.5/AI-Novel-Writer-0.2.5-windows-x64.zip'
+          $portableUrl = 'https://github.com/EthanYoQ/Pagekin/releases/download/v0.2.5/AI-Novel-Writer-0.2.5-windows-x64.zip'
           $expectedSha256 = '22b38b7337a456882bf130ccb898f17616fffb85d6c8b8b3d0ee431409f18531'
           $portableZip = Join-Path $env:RUNNER_TEMP 'AI-Novel-Writer-0.2.5-windows-x64.zip'
           Invoke-WebRequest -Uri $portableUrl -OutFile $portableZip
@@ -120,9 +120,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $expectedName = 'ai-novel-writer-setup-1.1.0.exe'
-          $expectedUrl = "https://github.com/EthanYoQ/AI-Novel-Writer/releases/download/v1.1.0/$expectedName"
+          $expectedUrl = "https://github.com/EthanYoQ/Pagekin/releases/download/v1.1.0/$expectedName"
           $expectedHash = '54b436aeab43a8b00affb768e1db083f3e6b90ef25ebf1cd2dd6779a500c7f88'
-          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/EthanYoQ/AI-Novel-Writer/releases/tags/v1.1.0' -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json' }
+          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/EthanYoQ/Pagekin/releases/tags/v1.1.0' -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json' }
           $assets = @($release.assets | Where-Object { $_.name -eq $expectedName })
           if ($release.tag_name -ne 'v1.1.0' -or $release.draft -or $release.prerelease -or $assets.Count -ne 1 -or
               $assets[0].browser_download_url -ne $expectedUrl -or $assets[0].digest -ne "sha256:$expectedHash" -or

@@ -147,12 +147,16 @@ describe('Windows cloud build workflow contract', () => {
     expect(workflow).toContain('release-evidence-v2.mjs finalize --platform windows')
 
     const portableDownload = namedStep(workflow, 'Download verified v0.2.5 portable migration input')
+    expect(portableDownload).toContain("$portableUrl = 'https://github.com/EthanYoQ/Pagekin/releases/download/v0.2.5/AI-Novel-Writer-0.2.5-windows-x64.zip'")
     expect(portableDownload).toContain("$portableZip = Join-Path $env:RUNNER_TEMP 'AI-Novel-Writer-0.2.5-windows-x64.zip'")
     expect(portableDownload).toContain('"AI_NOVEL_PREVIOUS_PORTABLE_ZIP=$portableZip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8')
 
     const v110Download = namedStep(workflow, 'Download verified official v1.1.0 setup')
     const v110Upgrade = namedStep(workflow, 'Qualify v1.1.0 installed setup upgrade')
     expect(v110Download).toContain("releases/tags/v1.1.0")
+    expect(v110Download).toContain("Invoke-RestMethod -Uri 'https://api.github.com/repos/EthanYoQ/Pagekin/releases/tags/v1.1.0'")
+    expect(v110Download).toContain('$expectedUrl = "https://github.com/EthanYoQ/Pagekin/releases/download/v1.1.0/$expectedName"')
+    expect(v110Download).not.toContain('AI-Novel-Writer')
     expect(v110Download).toContain('54b436aeab43a8b00affb768e1db083f3e6b90ef25ebf1cd2dd6779a500c7f88')
     expect(v110Download).toContain("$release.draft -or $release.prerelease")
     expect(v110Download).toContain(".runtime\\.cache\\s14c-v110-setup")
