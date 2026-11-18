@@ -160,6 +160,18 @@ describe('有一条坏审修循环的书导出失败时指明是哪一章，不�
     expect(await damagedOnExport()).toEqual({ chapterNumber: 2, chapterTitle: '沉船（重写）', location: 'trash', deletedAt: finalDeletedAt })
   })
 
+  it('回收站删除组里混进了别章的定稿：不借别章的章名和时间，不报位置', async () => {
+    const items = reviewedBook({ finalized: true })
+    breakReviewProof(db(), items[1]!)
+    const trash = trashService()
+    for (const item of items) await expect(trash.delete(projectRoot, { draftId: item.seeded.draftId, chapterNumber: item.seeded.chapterNumber }))
+      .resolves.toMatchObject({ success: true })
+    db().prepare('UPDATE drafts_all SET deletion_id=(SELECT deletion_id FROM drafts_all WHERE id=?) WHERE id=?')
+      .run(items[0]!.seeded.draftId, items[1]!.seeded.draftId)
+
+    expect(await damagedOnExport()).toBeUndefined()
+  })
+
   it('删掉了蓝图但定稿还在：用定稿记下的章名', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
