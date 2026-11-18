@@ -927,7 +927,7 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
       root_action_id: string }>).map(row => row.root_action_id))
     const reviewRuns = new Set((db.prepare('SELECT run_id,root_action_id FROM generation_runs').all() as Array<{
       run_id: string; root_action_id: string }>).filter(row => reviewRoots.has(row.root_action_id)).map(row => row.run_id))
-    // 产物按它的尝试归根；尝试与产物记的运行对不上时不归任何根，投影失败就不按哪一章报。
+    // 产物按它的尝试归根；尝试与产物记的运行对不上的，不归任何根。
     const artifactRoots = new Map((db.prepare(`SELECT a.artifact_id,t.root_action_id FROM generation_artifacts a
       JOIN generation_attempts t ON t.attempt_id=a.attempt_id AND t.run_id=a.run_id`).all() as Array<{
       artifact_id: string; root_action_id: string }>).map(row => [row.artifact_id, row.root_action_id]))

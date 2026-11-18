@@ -437,7 +437,6 @@ export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: D
     : translate(locale, 'error.portableUnsafeProjection')
 }
 
-/** 多条时列章号，正文章和回收站章分开；有指不出章节的，再加一句泛称。 */
 export function omittedReviewCyclesMessage(locale: ErrorDisplayLocale, omitted: readonly DamagedReviewCycle[]): string {
   const [first] = omitted
   if (!first) return ''

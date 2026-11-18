@@ -60,7 +60,7 @@ const SCAN = ADMITTED_LEDGER_CELLS.map((cell, index) => {
 }).join(' UNION ALL ') + ' ORDER BY cell'
 
 export interface LedgerAdmission {
-  /** 这次打开新封存的根数，主键为 NULL 的根也算。作品没有读不出的格子时为 0，且没有任何写入。 */
+  /** 这次打开新封存的根数，主键为 NULL 的根也算。 */
   sealedRootCount: number
 }
 
