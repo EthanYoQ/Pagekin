@@ -422,6 +422,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
           || currentBinding.lastSelectedParentGenerationIds.some((parent, index) => parent !== captured.parents[index])) {
           fail('CLOUD_BACKUP_BINDING_CONFLICT')
         }
+        const omitted = receipt.omittedReviewCycles ? { omittedReviewCycles: receipt.omittedReviewCycles } : {}
         const remoteAccount = account(deps.credentialStore, captured.accountId)
         const remoteGeneration = await deps.webDav.appendGeneration({
           account: remoteAccount,
@@ -448,6 +449,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
             backupPoint: receipt.snapshotGeneration,
             bindingSaved: true,
             binding: saved,
+            ...omitted,
           }
         } catch {
           return {
@@ -458,6 +460,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
             backupPoint: receipt.snapshotGeneration,
             bindingSaved: false,
             binding: null,
+            ...omitted,
           }
         }
       } finally {

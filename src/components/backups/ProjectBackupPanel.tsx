@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Archive, Cloud, Download, Upload } from 'lucide-react'
 
-import { damagedReviewCycleMessage, displayedErrorMessage } from '../../i18n/app-errors'
+import { damagedReviewCycleMessage, displayedErrorMessage, omittedReviewCyclesMessage } from '../../i18n/app-errors'
+import { copyLocale } from '../../i18n/core'
 import { ipc } from '../../services/ipc-client'
 import type {
   CloudBackupAccountView,
@@ -23,6 +24,13 @@ type Notice = { kind: 'error' | 'success' | 'info'; text: string } | null
 const errorText = (error: unknown) => displayedErrorMessage(currentInterfaceLocale(), error)
 const failureReason = (code: string, damaged?: DamagedReviewCycle) =>
   damaged ? damagedReviewCycleMessage(currentInterfaceLocale(), damaged) : code
+// 有审修循环没放进存档时，成功提示后面接一句指明章节。
+const withOmitted = (message: string, omitted?: readonly DamagedReviewCycle[]) => {
+  if (!omitted?.length) return message
+  const locale = currentInterfaceLocale()
+  // 前半句是面板自己的文案，日文界面下是英文，按它的语言接标点。
+  return `${message}${copyLocale(locale) === 'en-US' ? '. ' : '。'}${omittedReviewCyclesMessage(locale, omitted)}`
+}
 
 export default function ProjectBackupPanel() {
   const project = useProjectStore(state => state.currentProject)
@@ -149,7 +157,7 @@ function ProjectBackupPanelSession({
     if (!target) return
     const result = await ipc.invoke('project:archive-export', { targetArchiveGrantId: target.grantId, projectSession })
     if (!result.success) throw new Error(failureReason(result.errorCode || result.error, result.damagedReviewCycle))
-    setNotice({ kind: 'success', text: text(`本地存档已导出：${result.receipt.targetSha256}`, `Local archive exported: ${result.receipt.targetSha256}`) })
+    setNotice({ kind: 'success', text: withOmitted(text(`本地存档已导出：${result.receipt.targetSha256}`, `Local archive exported: ${result.receipt.targetSha256}`), result.receipt.omittedReviewCycles) })
   })
 
   const connectAndBind = () => run(async () => {
@@ -225,7 +233,7 @@ function ProjectBackupPanelSession({
       const result = await ipc.invoke('cloud-backup:backup', { operationId, projectSession, disclosureConfirmed: true })
       if (!result.success) throw new Error(failureReason(result.errorCode, result.damagedReviewCycle))
       if (result.binding) updateBinding(result.binding)
-      setNotice({ kind: 'success', text: text(`云备份完成：${result.generation.generationId}；备份点 ${result.backupPoint}${result.bindingSaved ? '' : '；绑定未保存'}`, `Cloud backup complete: ${result.generation.generationId}; backup point ${result.backupPoint}${result.bindingSaved ? '' : '; binding not saved'}`) })
+      setNotice({ kind: 'success', text: withOmitted(text(`云备份完成：${result.generation.generationId}；备份点 ${result.backupPoint}${result.bindingSaved ? '' : '；绑定未保存'}`, `Cloud backup complete: ${result.generation.generationId}; backup point ${result.backupPoint}${result.bindingSaved ? '' : '; binding not saved'}`), result.omittedReviewCycles) })
     } finally {
       setActiveOperationId(current => current === operationId ? null : current)
     }

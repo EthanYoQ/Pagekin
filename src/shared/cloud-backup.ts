@@ -153,6 +153,8 @@ export interface CloudBackupChannels {
       backupPoint: string
       bindingSaved: boolean
       binding: CloudBackupBindingView | null
+      /** 验不过、没放进这次备份的审修循环所在的章。没有时不带这个字段。 */
+      omittedReviewCycles?: readonly DamagedReviewCycle[]
     } | CloudBackupFailure
   }
   'cloud-backup:list': {

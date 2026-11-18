@@ -12,7 +12,7 @@ import { applyM09AnnotationHistory, createM09Migration } from './m09-annotation-
 import { createM00Migration } from './m00-baseline'
 import { initializeLegacyBaselineSchema, applyBaselineTables } from './baseline-schema'
 import { ensureBaselineBlueprintTables } from './baseline-blueprint-schema'
-import { SqliteSchemaAdapter, sqliteSchemaFingerprint } from './sqlite-schema-adapter'
+import { acceptedReviewCycleFailures, SqliteSchemaAdapter, sqliteSchemaFingerprint } from './sqlite-schema-adapter'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -49,6 +49,7 @@ export function getDesktopMigrationRegistry(): MigrationRegistry {
       if (!(db instanceof SqliteSchemaAdapter)) throw new Error('SQLITE_SCHEMA_ADAPTER_REQUIRED')
       return db.database
     }
+    const reviewCycles = (db: SchemaReader) => assertM03ReviewCycle(native(db), acceptedReviewCycleFailures(db))
     const m00 = createM00Migration({
       applyKnownBaseline(db) {
         applyBaselineTables(native(db))
@@ -70,12 +71,12 @@ export function getDesktopMigrationRegistry(): MigrationRegistry {
     const importEffectSchemas = schemas(5), importEffectFingerprints = new Set(importEffectSchemas.map(item => item.fingerprint))
     const m04 = createM04Migration({ database: native,
       verifyKnownSchema: db => importEffectFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && reviewCycles(db) })
     for (const db of references) db.transaction(() => applyM05CharacterAssets(db))()
     const characterAssetSchemas = schemas(6), characterAssetFingerprints = new Set(characterAssetSchemas.map(item => item.fingerprint))
     const m05 = createM05Migration({ database: native,
       verifyKnownSchema: db => characterAssetFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && reviewCycles(db) })
     for (const db of references) db.transaction(() => applyM06ReviewCycleMerge(db))()
     const mergeSnapshotSchemas = schemas(7), mergeSnapshotFingerprints = new Set(mergeSnapshotSchemas.map(item => item.fingerprint))
     const m06 = createM06Migration({ database: native,
@@ -85,17 +86,17 @@ export function getDesktopMigrationRegistry(): MigrationRegistry {
     const recycleSchemas = schemas(8), recycleFingerprints = new Set(recycleSchemas.map(item => item.fingerprint))
     const m07 = createM07Migration({ database: native,
       verifyKnownSchema: db => recycleFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && reviewCycles(db) })
     for (const db of references) db.transaction(() => applyM08ContinuityFoundation(db))()
     const continuitySchemas = schemas(9), continuityFingerprints = new Set(continuitySchemas.map(item => item.fingerprint))
     const m08 = createM08Migration({ database: native,
       verifyKnownSchema: db => continuityFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) && verifyM07ChapterRecycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && reviewCycles(db) && verifyM07ChapterRecycle(native(db)) })
     for (const db of references) db.transaction(() => applyM09AnnotationHistory(db))()
     const annotationSchemas = schemas(10), annotationFingerprints = new Set(annotationSchemas.map(item => item.fingerprint))
     const m09 = createM09Migration({ database: native,
       verifyKnownSchema: db => annotationFingerprints.has(sqliteSchemaFingerprint(native(db)))
-        && verifyM02CharacterIdentity(native(db)) && assertM03ReviewCycle(native(db)) && verifyM07ChapterRecycle(native(db)) })
+        && verifyM02CharacterIdentity(native(db)) && reviewCycles(db) && verifyM07ChapterRecycle(native(db)) })
     installed = createMigrationRegistry([m00, m01, m02, m03, m04, m05, m06, m07, m08, m09], [
       ...sourceSchemas, ...baselineSchemas.map(schema => ({ ...schema, version: 0 })),
       ...baselineSchemas, ...generationSchemas, ...identitySchemas,

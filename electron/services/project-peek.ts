@@ -20,6 +20,7 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../
 import { migrateSchema, verifySchema } from '../migrations/runner'
 import { CURRENT_DRAFT_STATUS_SQL } from '../../src/shared/draft-status'
 import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
+import { unprovableReviewCycleIds } from '../migrations/m03-review-cycle'
 import { verifyOpenedSchema } from './sqlite-project-migration'
 
 const require = createRequire(import.meta.url)
@@ -306,7 +307,8 @@ function upgradeSnapshot(snapshotPath: string, version: number): void {
   const database = new Database(snapshotPath, { fileMustExist: true })
   try {
     database.pragma('foreign_keys = ON')
-    const adapter = new SqliteSchemaAdapter(database)
+    // 与打开作品同一要求：已有的坏审修循环不挡升级，升级不许新弄坏一条（ADR-0029）。
+    const adapter = new SqliteSchemaAdapter(database, unprovableReviewCycleIds(database))
     verifySchema(adapter, getDesktopMigrationRegistry(), version)
     migrateSchema(adapter, getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
   } finally { database.close() }
@@ -418,7 +420,7 @@ export class ProjectPeekService {
         database = new Database(snapshotPath, { readonly: true, fileMustExist: true })
       }
       database.pragma('foreign_keys = ON')
-      verifySchema(new SqliteSchemaAdapter(database), getDesktopMigrationRegistry(), capability.expectedSchemaVersion)
+      verifySchema(new SqliteSchemaAdapter(database, unprovableReviewCycleIds(database)), getDesktopMigrationRegistry(), capability.expectedSchemaVersion)
       const physicalRevision = digest(JSON.stringify({
         manifest: capability.manifestFingerprint,
         files: before.map(file => [file.suffix, file.size, file.hash]),

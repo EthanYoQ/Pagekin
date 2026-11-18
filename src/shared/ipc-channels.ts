@@ -300,6 +300,8 @@ export interface PortableProjectExportReceipt {
   }
   entryCount: number
   requiresRuntimeFreezeGuard: true
+  /** 验不过、没放进存档的审修循环所在的章。没有时不带这个字段。 */
+  omittedReviewCycles?: readonly DamagedReviewCycle[]
 }
 
 /** 归档与恢复副本位置分别来自 dialog:select-project-archive 与 dialog:select-project-restore-target 的授权。 */

@@ -9,7 +9,7 @@ import { migrateSchema, probeSchema, verifySchema } from '../migrations/runner'
 import { SchemaMigrationError, type MigrationRegistry } from '../migrations/registry'
 import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
 import { M02_ADDED_CHARACTER_COLUMNS, M02_AUXILIARY_TABLES, verifyM02CharacterRows } from '../migrations/m02-character-identity'
-import { M03_REVIEW_CYCLE_TABLES } from '../migrations/m03-review-cycle'
+import { M03_REVIEW_CYCLE_TABLES, unprovableReviewCycleIds } from '../migrations/m03-review-cycle'
 import { M07_DRAFT_COLUMNS, logicalTableName, verifyM07ChapterRecycle } from '../migrations/m07-chapter-recycle'
 import { M08_EXEMPTION_COLUMNS, M08_TABLES } from '../migrations/m08-continuity-foundation'
 import { initializeLegacyBaselineSchema } from '../migrations/baseline-schema'
@@ -137,8 +137,15 @@ function domain(db: BetterSqlite3.Database, selection = domainColumns(db)): Proj
   }
   return { tableCounts, authorContentHash: digest.digest('hex') }
 }
-function inspect(db: BetterSqlite3.Database, registry: MigrationRegistry, targetVersion?: number): ProjectSqliteEvidence {
-  const adapter = new SqliteSchemaAdapter(db)
+/**
+ * 迁移通道对审修循环证据的要求（ADR-0029）。strict：任何一条验不过就整本拒绝，导入、恢复用它。
+ * no-new-failures：迁移前已经验不过的循环放行，迁移不许新弄坏一条；打开作品时的升级、导出与备份用它。
+ */
+export type ReviewCycleEvidence = 'strict' | 'no-new-failures'
+const acceptedFailures = (db: BetterSqlite3.Database, evidence: ReviewCycleEvidence | undefined) =>
+  evidence === 'no-new-failures' ? unprovableReviewCycleIds(db) : undefined
+function inspect(db: BetterSqlite3.Database, registry: MigrationRegistry, targetVersion?: number, accepted?: ReadonlySet<string>): ProjectSqliteEvidence {
+  const adapter = new SqliteSchemaAdapter(db, accepted)
   const result = targetVersion === undefined ? probeSchema(adapter, registry) : verifySchema(adapter, registry, targetVersion)
   return { schemaVersion: result.version, fingerprint: result.fingerprint, domain: domain(db),
     ...(result.version >= 3 ? { preIdentityDomain: domain(db, domainColumns(db, true)) } : {}),
@@ -215,13 +222,17 @@ export function probeProjectSqlite(options: { databasePath: string; registry?: M
     } finally { db.close() }
   } finally { snapshot.close() }
 }
-export function verifyProjectSqlite(options: { databasePath: string; registry?: MigrationRegistry; targetVersion?: number }): ProjectSqliteEvidence {
+export function verifyProjectSqlite(options: {
+  databasePath: string; registry?: MigrationRegistry; targetVersion?: number; evidence?: ReviewCycleEvidence
+}): ProjectSqliteEvidence {
   const snapshot = physicalSnapshot(options.databasePath)
   try {
     const db = new Database(snapshot.file, { readonly: true, fileMustExist: true })
     db.pragma('foreign_keys = ON')
     try {
-      const result = inspect(db, options.registry ?? getDesktopMigrationRegistry(), options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION); snapshot.unchanged(); return result
+      const result = inspect(db, options.registry ?? getDesktopMigrationRegistry(), options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION,
+        acceptedFailures(db, options.evidence))
+      snapshot.unchanged(); return result
     } finally { db.close() }
   } finally { snapshot.close() }
 }
@@ -229,7 +240,7 @@ export function verifyProjectSqlite(options: { databasePath: string; registry?: 
  * SQLite backup captures committed WAL pages. No business DB/session is exposed.
  */
 export async function backupProjectSqlite(options: {
-  sourceDatabasePath: string; targetDatabasePath: string; registry?: MigrationRegistry; targetVersion?: number
+  sourceDatabasePath: string; targetDatabasePath: string; registry?: MigrationRegistry; targetVersion?: number; evidence?: ReviewCycleEvidence
 }): Promise<ProjectSqliteEvidence> {
   const sourcePath = path.resolve(options.sourceDatabasePath), targetPath = path.resolve(options.targetDatabasePath)
   if (sourcePath === targetPath || fs.existsSync(targetPath)) throw new Error('PROJECT_MIGRATION_TARGET_EXISTS')
@@ -244,6 +255,7 @@ export async function backupProjectSqlite(options: {
     const columnsBefore = domainColumns(source)
     const before = inspectSource(source, registry, !options.registry)
     const legacySchema = !options.registry && QUALIFIED_LEGACY_SCHEMAS.includes(before.fingerprint)
+    const accepted = acceptedFailures(source, options.evidence)
     // Reserve a new inode before the backup API can open it.
     const fd = fs.openSync(targetPath, 'wx', 0o600); fs.closeSync(fd)
     if (!legacySchema) await source.backup(targetPath)
@@ -255,14 +267,14 @@ export async function backupProjectSqlite(options: {
         copyQualifiedLegacy(source, staging, columnsBefore, before.fingerprint)
         inspect(staging, registry, 0)
       }
-      migrateSchema(new SqliteSchemaAdapter(staging), registry, options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION)
+      migrateSchema(new SqliteSchemaAdapter(staging, accepted), registry, options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION)
       if (JSON.stringify(before.domain) !== JSON.stringify(domain(staging, columnsBefore))) throw new Error('PROJECT_MIGRATION_SQLITE_CONTENT_CHANGED')
       // Missing legacy metadata is derived only after every source row was verified.
       if (legacySchema) {
         initializeCharacterRosterMetadata(staging)
         staging.exec("INSERT OR IGNORE INTO continuity_projection_meta (id) VALUES ('main')")
       }
-      const after = inspect(staging, registry, options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION)
+      const after = inspect(staging, registry, options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION, accepted)
       snapshot.unchanged()
       staging.pragma('wal_checkpoint(TRUNCATE)')
       const fd = fs.openSync(targetPath, 'r+'); try { fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
@@ -323,7 +335,7 @@ function verifyLiveSchema(databasePath: string): void {
 export function openProjectSqlite(options: { databasePath: string }): SqliteContentIdentity {
   let identity = currentSnapshotIdentity(options.databasePath)
   if (!identity) {
-    upgradeProjectSqlite({ databasePath: options.databasePath })
+    upgradeProjectSqlite({ databasePath: options.databasePath, evidence: 'no-new-failures' })
     identity = currentSnapshotIdentity(options.databasePath)
     if (!identity) throw new SchemaMigrationError('SCHEMA_VERSION_MISMATCH')
   }
@@ -334,7 +346,7 @@ export function openProjectSqlite(options: { databasePath: string }): SqliteCont
 /** Canonical-only upgrade seam. Caller validates its manifest and excludes business
  * writers first. Probe never opens the source; the single lane owns the transaction.
  */
-export function upgradeProjectSqlite(options: { databasePath: string; registry?: MigrationRegistry }): ProjectSqliteEvidence {
+export function upgradeProjectSqlite(options: { databasePath: string; registry?: MigrationRegistry; evidence?: ReviewCycleEvidence }): ProjectSqliteEvidence {
   const registry = options.registry ?? getDesktopMigrationRegistry()
   const before = probeProjectSqlite({ databasePath: options.databasePath, registry })
   if (before.schemaVersion === CURRENT_DESKTOP_SCHEMA_VERSION) return verifyProjectSqlite({ ...options, registry })
@@ -343,13 +355,14 @@ export function upgradeProjectSqlite(options: { databasePath: string; registry?:
   const database = new Database(options.databasePath, { fileMustExist: true })
   try {
     database.pragma('foreign_keys = ON')
+    const accepted = acceptedFailures(database, options.evidence)
     // Revalidate the source identity after acquiring the writable connection.
-    const current = inspect(database, registry, before.schemaVersion)
+    const current = inspect(database, registry, before.schemaVersion, accepted)
     if (current.fingerprint !== before.fingerprint || JSON.stringify(current.domain) !== JSON.stringify(before.domain)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
     return database.transaction(() => {
       const columnsBefore = domainColumns(database)
-      migrateSchema(new SqliteSchemaAdapter(database), registry, CURRENT_DESKTOP_SCHEMA_VERSION)
-      const after = inspect(database, registry, CURRENT_DESKTOP_SCHEMA_VERSION)
+      migrateSchema(new SqliteSchemaAdapter(database, accepted), registry, CURRENT_DESKTOP_SCHEMA_VERSION)
+      const after = inspect(database, registry, CURRENT_DESKTOP_SCHEMA_VERSION, accepted)
       if (JSON.stringify(before.domain) !== JSON.stringify(domain(database, columnsBefore))) throw new Error('PROJECT_MIGRATION_SQLITE_CONTENT_CHANGED')
       return after
     }).immediate()

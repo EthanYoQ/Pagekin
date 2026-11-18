@@ -35,6 +35,9 @@ import {
   type PortableArchiveSource,
 } from './portable-project-archive'
 import { backupProjectSqlite, type ProjectSqliteEvidence } from './sqlite-project-migration'
+import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
+import { SchemaMigrationError } from '../migrations/registry'
+import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import {
   PORTABLE_TRANSFER_AUTHORITY_PATH,
   createPortableTransferAuthority,
@@ -227,6 +230,8 @@ export interface ExportPortableProjectReceipt {
   }
   entryCount: number
   requiresRuntimeFreezeGuard: true
+  /** 验不过、没放进存档的审修循环所在的章（ADR-0029）。没有时不带这个字段。 */
+  omittedReviewCycles?: readonly DamagedReviewCycle[]
 }
 
 interface HistoryProjection {
@@ -888,8 +893,11 @@ function draftThreadTaskProofs(db: InstanceType<typeof BetterSqlite>, reviewRoot
   return { receipts, bindings }
 }
 
-/** Shared C17 copy-only history projection. Call only on an isolated target staging DB. */
-export function sanitizePortableDatabase(databasePath: string): {
+/**
+ * Shared C17 copy-only history projection. Call only on an isolated target staging DB.
+ * omitReviewCycles：导出时验不过的审修循环，投影前从副本里删掉（连带意见与合并快照）；最后的校验仍从严，证明存档里没有坏循环。
+ */
+export function sanitizePortableDatabase(databasePath: string, options: { omitReviewCycles?: ReadonlySet<string> } = {}): {
   history: HistoryProjection[]
   tableCounts: Record<string, number>
 } {
@@ -899,7 +907,12 @@ export function sanitizePortableDatabase(databasePath: string): {
     db.pragma('secure_delete = ON')
     const schemaVersion = PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS.find(version => version === db.pragma('user_version', { simple: true }))
     if (schemaVersion === undefined) throw new Error('PORTABLE_SCHEMA_UNSUPPORTED')
-    const sourceSchema = assertPortableSourceSchema(db, schemaVersion)
+    const sourceSchema = assertPortableSourceSchema(db, schemaVersion, options.omitReviewCycles)
+    // 必须在算 reviewRoots 之前删：去掉循环以后，它的根按普通根投影。
+    if (options.omitReviewCycles?.size) {
+      const omit = db.prepare('DELETE FROM review_cycles WHERE cycle_id=?')
+      db.transaction(() => { for (const cycleId of options.omitReviewCycles!) omit.run(cycleId) })()
+    }
     const avatarRows = readPortableCharacterAvatarRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
       root_action_id: string }>).map(row => row.root_action_id))
@@ -1068,6 +1081,9 @@ async function assertCurrentContext(input: ExportPortableProjectInput, context: 
   catch { fail('PORTABLE_SOURCE_CHANGED') }
 }
 
+const cycleIds = (cycles: readonly UnprovableReviewCycle[]): ReadonlySet<string> =>
+  new Set(cycles.flatMap(item => item.cycleId === null ? [] : [item.cycleId]))
+
 function mapSourceChange(error: unknown): never {
   if (error instanceof ProjectArchiveServiceError) throw error
   if (error instanceof Error && error.message === 'PROJECT_MIGRATION_SOURCE_CHANGED') fail('PORTABLE_SOURCE_CHANGED')
@@ -1104,15 +1120,18 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
   try {
     const sourceSnapshotPath = path.join(attemptRoot, 'source.db')
     let firstEvidence: ProjectSqliteEvidence
-    try { firstEvidence = await backupProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath }) }
+    try { firstEvidence = await backupProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath, evidence: 'no-new-failures' }) }
     catch (error) { return mapSourceChange(error) }
     recordOwnedFile(attempt, sourceSnapshotPath)
     const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
     const sourceSnapshot = new BetterSqlite(sourceSnapshotPath, { readonly: true, fileMustExist: true })
     let avatarRows: ReturnType<typeof readPortableCharacterAvatarRows>
     let sourceSchema: ReturnType<typeof assertPortableSourceSchema>
+    let unprovable: readonly UnprovableReviewCycle[]
     try {
-      sourceSchema = assertPortableSourceSchema(sourceSnapshot)
+      sourceSnapshot.pragma('foreign_keys = ON')
+      unprovable = inspectM03ReviewCycles(sourceSnapshot).unprovable
+      sourceSchema = assertPortableSourceSchema(sourceSnapshot, undefined, cycleIds(unprovable))
       if (sourceFreeze.active) readPortableCurrentAuthority({ database: sourceSnapshot, projectStorageRoot, projectId: canonicalManifest.projectId })
       avatarRows = readPortableCharacterAvatarRows(sourceSnapshot)
     } finally { sourceSnapshot.close() }
@@ -1122,7 +1141,14 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     const portableDatabasePath = path.join(attemptRoot, 'project.db')
     fs.copyFileSync(sourceSnapshotPath, portableDatabasePath, fs.constants.COPYFILE_EXCL)
     recordOwnedFile(attempt, portableDatabasePath)
-    const sanitized = sanitizePortableDatabase(portableDatabasePath)
+    let sanitized: ReturnType<typeof sanitizePortableDatabase>
+    try { sanitized = sanitizePortableDatabase(portableDatabasePath, { omitReviewCycles: cycleIds(unprovable) }) }
+    catch (error) {
+      // 去掉坏循环仍过不了投影：照旧失败，指明第一条能定位的章。
+      const located = unprovable.find(item => item.location.chapterNumber !== null)
+      if (located) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', located.location)
+      throw error
+    }
     recordOwnedFile(attempt, portableDatabasePath)
     input.__testHooks?.afterPortableDatabaseCreated?.(attemptRoot)
 
@@ -1213,7 +1239,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     await assertCurrentContext(input, frozenContext, sourceRoot)
     const verificationSnapshotPath = path.join(attemptRoot, 'source-verification.db')
     let secondEvidence: ProjectSqliteEvidence
-    try { secondEvidence = await backupProjectSqlite({ sourceDatabasePath, targetDatabasePath: verificationSnapshotPath }) }
+    try { secondEvidence = await backupProjectSqlite({ sourceDatabasePath, targetDatabasePath: verificationSnapshotPath, evidence: 'no-new-failures' }) }
     catch (error) { return mapSourceChange(error) }
     recordOwnedFile(attempt, verificationSnapshotPath)
     if (!sameEvidence(firstEvidence, secondEvidence)) fail('PORTABLE_SOURCE_CHANGED')
@@ -1274,6 +1300,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     try { finalEvidence = await backupProjectSqlite({
       sourceDatabasePath,
       targetDatabasePath: finalVerificationSnapshotPath,
+      evidence: 'no-new-failures',
     }) } catch (error) { return mapSourceChange(error) }
     recordOwnedFile(attempt, finalVerificationSnapshotPath)
     if (!sameEvidence(firstEvidence, finalEvidence)) fail('PORTABLE_SOURCE_CHANGED')
@@ -1302,6 +1329,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
       },
       entryCount: archiveReceipt.entryCount,
       requiresRuntimeFreezeGuard: true,
+      ...(unprovable.length ? { omittedReviewCycles: unprovable.map(item => item.location) } : {}),
     }
   } finally {
     cleanupAttempt(attempt)

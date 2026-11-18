@@ -100,10 +100,11 @@ const fieldsAddedAfter: Readonly<Record<PortableSourceSchemaVersion, ReadonlySet
  * 字段策略在所有版本里都按原名登记受管表（drafts，不是 drafts_all）。
  */
 export function assertPortableSourceSchema(database: Database.Database,
-  version: PortableSourceSchemaVersion = PORTABLE_SOURCE_SCHEMA_VERSION): { tables: number; fields: number } {
+  version: PortableSourceSchemaVersion = PORTABLE_SOURCE_SCHEMA_VERSION,
+  acceptedReviewCycleFailures?: ReadonlySet<string>): { tables: number; fields: number } {
   try {
     database.pragma('foreign_keys = ON')
-    verifySchema(new SqliteSchemaAdapter(database), getDesktopMigrationRegistry(), version)
+    verifySchema(new SqliteSchemaAdapter(database, acceptedReviewCycleFailures), getDesktopMigrationRegistry(), version)
   } catch { formatError('PORTABLE_SCHEMA_UNSUPPORTED') }
   const expected = new Map([...fieldPolicy].filter(([key]) => !fieldsAddedAfter[version].has(key)))
   const admittedViews = version >= 8 ? liveRowViews : new Set<string>()

@@ -10,6 +10,7 @@ import type { ReviewRevisionContext } from '../../src/shared/review-revision-gen
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import { SchemaMigrationError, type MigrationImplementation, type SchemaReader } from './registry'
 import { GENERATION_LEDGER_UNREADABLE } from '../repositories/generation-ledger-admission'
+import { acceptedReviewCycleFailures } from './sqlite-schema-adapter'
 
 const HASH = /^[a-f0-9]{64}$/u
 const CYCLE_STATUSES = new Set(['not-generated', 'generated', 'merge-committed'])
@@ -119,20 +120,19 @@ export const M06_REVIEW_CYCLE_MERGE_SQL = `CREATE TABLE review_cycle_merges (
  body TEXT NOT NULL
 );`
 
-/** Only a still-current, hash-matched v6 merge can supply a historical snapshot. */
+/**
+ * Only a still-current, hash-matched v6 merge can supply a historical snapshot.
+ * 哈希对不上的合并在 v6 已经验不过，这里不补快照，迁移后照旧验不过；放不放行由通道的校验决定（ADR-0029）。
+ */
 export function applyM06ReviewCycleMerge(db: Database.Database): void {
   if (!db.inTransaction) throw new Error('REVIEW_CYCLE_MIGRATION_TRANSACTION_REQUIRED')
-  if (!verifyM03ReviewCycle(db)) throw new Error('REVIEW_CYCLE_MIGRATION_SOURCE_INVALID')
   const merged = db.prepare(`SELECT rc.cycle_id,rc.merged_hash,c.body FROM review_cycles rc
     JOIN revisions r ON r.id=rc.revision_id JOIN drafts d ON d.id=r.base_draft_id
     JOIN contents c ON c.id=d.content_id WHERE rc.revision_status='merge-committed'`).all() as Array<{
       cycle_id: string; merged_hash: string; body: string }>
   db.exec(M06_REVIEW_CYCLE_MERGE_SQL)
   const insert = db.prepare('INSERT INTO review_cycle_merges(cycle_id,body) VALUES(?,?)')
-  for (const row of merged) {
-    if (hash(row.body) !== row.merged_hash) throw new Error('REVIEW_CYCLE_MIGRATION_SOURCE_INVALID')
-    insert.run(row.cycle_id, row.body)
-  }
+  for (const row of merged) if (hash(row.body) === row.merged_hash) insert.run(row.cycle_id, row.body)
 }
 
 interface CycleRow {
@@ -321,28 +321,32 @@ function cycleTables(db: Database.Database): CycleTables | null {
   return { mergeTable, draftRows }
 }
 
-/** 全书校验，只在迁移注册表的校验里跑：升级旧作品、verifyProjectSqlite、备份与导出、存档导入。仓库读写用 verifyM03ReviewCycleById。 */
-export function verifyM03ReviewCycle(db: Database.Database): boolean {
-  return wholeBookVerdict(db).ok
+export interface UnprovableReviewCycle {
+  /** TEXT 主键允许 NULL；为 NULL 的循环无法按主键放行，总是算新增失败。 */
+  cycleId: string | null
+  location: DamagedReviewCycle
+}
+export interface M03Inspection {
+  /** 外键、三张表的结构、无主快照。为假时 unprovable 为空，整本拒绝。 */
+  structureOk: boolean
+  /** 逐条校验不过的循环，按 cycle_id 排序。 */
+  unprovable: readonly UnprovableReviewCycle[]
 }
 
-export function assertM03ReviewCycle(db: Database.Database): true {
-  const verdict = wholeBookVerdict(db)
-  if (!verdict.ok) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', verdict.damaged)
-  return true
-}
-
-type WholeBookVerdict = { ok: true } | { ok: false; damaged?: DamagedReviewCycle }
-
-function wholeBookVerdict(db: Database.Database): WholeBookVerdict {
-  const failed: WholeBookVerdict = { ok: false }
+/**
+ * 全书校验，只在迁移注册表的校验里跑：升级旧作品、verifyProjectSqlite、备份与导出、存档导入。仓库读写用 verifyM03ReviewCycleById。
+ * 验不过的循环列成清单，由调用方按通道决定放不放行（ADR-0029）。
+ */
+export function inspectM03ReviewCycles(db: Database.Database): M03Inspection {
+  const broken: M03Inspection = { structureOk: false, unprovable: [] }
   try {
-    if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return failed
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='review_cycles'").get()) return broken
+    if (db.pragma('foreign_keys', { simple: true }) !== 1 || (db.pragma('foreign_key_check') as unknown[]).length) return broken
     const tables = cycleTables(db)
-    if (!tables) return failed
+    if (!tables) return broken
     if (tables.mergeTable && !exactSchema(db, 'review_cycle_merges', ['cycle_id', 'body'], [
       'cycle_id TEXT PRIMARY KEY REFERENCES review_cycles(cycle_id) ON DELETE CASCADE', 'body TEXT NOT NULL',
-    ])) return failed
+    ])) return broken
     if (!exactSchema(db, 'review_cycles', ['cycle_id', 'root_action_id', 'review_id', 'review_content_hash', 'confirmation_review_id',
       'confirmation_content_hash', 'revision_id', 'source_hash', 'finding_set_hash', 'comparison_version', 'revision_status',
       'merged_hash', 'recheck_count', 'recheck_attempt_id'], [
@@ -355,35 +359,75 @@ function wholeBookVerdict(db: Database.Database): WholeBookVerdict {
       'target_id', 'kind', 'problem_text', 'expected_text', 'status', 'evidence_hash', 'confirmation_item_index'], [
       'cycle_id TEXT NOT NULL REFERENCES review_cycles(cycle_id) ON DELETE CASCADE',
       "status IN ('unverified','author-waived')", "span_unit='utf16-code-unit'", "status='author-waived'",
-    ])) return failed
+    ])) return broken
     // TEXT 主键允许 NULL，外键也不查 NULL：无主快照只有这里能拦下。
-    if (tables.mergeTable && db.prepare('SELECT 1 FROM review_cycle_merges WHERE cycle_id IS NULL LIMIT 1').get()) return failed
+    if (tables.mergeTable && db.prepare('SELECT 1 FROM review_cycle_merges WHERE cycle_id IS NULL LIMIT 1').get()) return broken
     const cycles = db.prepare('SELECT * FROM review_cycles ORDER BY cycle_id').all() as CycleRow[]
-    const damaged = cycles.find(cycle => { try { return !verifyCycle(db, tables, cycle) } catch { return true } })
-    return damaged ? { ok: false, damaged: damagedCycle(db, tables, damaged) } : { ok: true }
-  } catch { return failed }
+    const unprovable = cycles.filter(cycle => { try { return !verifyCycle(db, tables, cycle) } catch { return true } })
+      .map(cycle => ({ cycleId: typeof cycle.cycle_id === 'string' ? cycle.cycle_id : null, location: cycleLocation(db, tables, cycle) }))
+    return { structureOk: true, unprovable }
+  } catch { return broken }
 }
 
-function damagedCycle(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow): DamagedReviewCycle | undefined {
-  const outboxRows = draftRows === 'drafts_all' ? 'finalization_outbox_all' : 'finalization_outbox'
-  const row = db.prepare(`SELECT d.id, d.chapter_number AS chapterNumber, d.version, d.status,
-      COALESCE(NULLIF(b.title,''), o.chapter_title, '') AS chapterTitle
-    FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id AND d.chapter_number=r.source_draft_chapter_number
-    LEFT JOIN blueprints b ON b.chapter_number=d.chapter_number
-    LEFT JOIN ${outboxRows} o ON o.draft_id=d.id WHERE r.id=?`).get(cycle.review_id) as { id: number; chapterNumber: number; version: number; status: string; chapterTitle: string } | undefined
-  if (!row) return undefined
-  if (row.status === 'deleted') {
-    // 回收站这一项按删除时定稿的章名显示；同章号可能已重写，蓝图标题是新章的。
-    const finals = db.prepare(`SELECT p.chapter_number AS chapterNumber, p.deleted_at AS deletedAt, COALESCE(o.chapter_title,'') AS chapterTitle
-      FROM drafts_all d JOIN drafts_all p ON p.deletion_id=d.deletion_id AND p.deleted_from_status='finalized'
-      LEFT JOIN finalization_outbox_all o ON o.draft_id=p.id WHERE d.id=?`).all(row.id) as Array<{ chapterNumber: number; deletedAt: string; chapterTitle: string }>
-    const entry = finals.length === 1 && finals[0]!.chapterNumber === row.chapterNumber ? finals[0]! : undefined
-    if (!entry) return undefined
-    return { chapterNumber: row.chapterNumber, chapterTitle: entry.chapterTitle, location: 'trash', deletedAt: entry.deletedAt }
-  }
-  return row.status === 'finalized'
-    ? { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, location: 'manuscript' }
-    : { chapterNumber: row.chapterNumber, chapterTitle: row.chapterTitle, location: 'draft', draftVersion: row.version }
+/** 等于 structureOk 且没有验不过的循环。 */
+export function verifyM03ReviewCycle(db: Database.Database): boolean {
+  const { structureOk, unprovable } = inspectM03ReviewCycles(db)
+  return structureOk && unprovable.length === 0
+}
+
+const NO_ACCEPTED_FAILURES: ReadonlySet<string> = new Set()
+
+/**
+ * 结构坏了，或有 `accepted` 之外的循环验不过，就拒绝。`accepted` 是升级前已经验不过的循环，
+ * 由调用方在迁移前取一次（no-new-failures）；导入、恢复不传，从严。
+ */
+export function assertM03ReviewCycle(db: Database.Database, accepted: ReadonlySet<string> = NO_ACCEPTED_FAILURES): true {
+  const { structureOk, unprovable } = inspectM03ReviewCycles(db)
+  if (!structureOk) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED')
+  const fresh = unprovable.find(item => item.cycleId === null || !accepted.has(item.cycleId))
+  if (fresh) throw new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', fresh.location.chapterNumber === null ? undefined : fresh.location)
+  return true
+}
+
+/** 现在验不过的循环主键。没有循环表或结构坏了时为空：那时由 assertM03ReviewCycle 整本拒绝，不存在可放行的循环。 */
+export function unprovableReviewCycleIds(db: Database.Database): ReadonlySet<string> {
+  return new Set(inspectM03ReviewCycles(db).unprovable.flatMap(item => item.cycleId === null ? [] : [item.cycleId]))
+}
+
+/**
+ * 这条循环属于哪一章。循环自己的审稿证据要指向这次审稿，冻结的来源（草稿、章号、版本）要与审稿行和草稿行一致，
+ * 才报章节；任何一处对不上或读不出，就不报，免得指错章。
+ */
+function cycleLocation(db: Database.Database, { draftRows }: CycleTables, cycle: CycleRow): DamagedReviewCycle {
+  const unknown: DamagedReviewCycle = { chapterNumber: null, chapterTitle: '', inTrash: false }
+  try {
+    const outboxRows = draftRows === 'drafts_all' ? 'finalization_outbox_all' : 'finalization_outbox'
+    const row = db.prepare(`SELECT d.id, d.chapter_number AS chapterNumber, d.version, d.status,
+        (SELECT o.chapter_title FROM ${outboxRows} o WHERE o.draft_id=d.id LIMIT 1) AS ownTitle,
+        (SELECT NULLIF(b.title,'') FROM blueprints b WHERE b.chapter_number=d.chapter_number LIMIT 1) AS blueprintTitle
+      FROM reviews r JOIN ${draftRows} d ON d.id=r.base_draft_id AND d.chapter_number=r.source_draft_chapter_number
+        AND d.version=r.source_draft_version
+      WHERE r.id=?`).get(cycle.review_id) as { id: number; chapterNumber: number; version: number; status: string
+        ownTitle: string | null; blueprintTitle: string | null } | undefined
+    if (!row || !integer(row.chapterNumber, 1)) return unknown
+    const evidence = db.prepare(`SELECT a.usage_receipt_json, r.binding_json FROM generation_attempts a
+      JOIN generation_runs r ON r.run_id=a.run_id WHERE a.root_action_id=?`).all(cycle.root_action_id) as Array<{
+        usage_receipt_json: string | null; binding_json: string }>
+    const pinned = evidence.some(item => {
+      try {
+        const stored = item.usage_receipt_json ? (JSON.parse(item.usage_receipt_json) as { reviewRevisionEffect?: Record<string, unknown> }).reviewRevisionEffect : undefined
+        if (stored?.kind !== 'review' || stored.id !== cycle.review_id) return false
+        const binding = JSON.parse(item.binding_json) as { sourceManifest?: { reviewRevisionContext?: { source?: Record<string, unknown> } } }
+        const source = binding.sourceManifest?.reviewRevisionContext?.source
+        return source?.id === row.id && source.chapterNumber === row.chapterNumber && source.version === row.version
+      } catch { return false }
+    })
+    if (!pinned) return unknown
+    const inTrash = row.status === 'deleted'
+    // 回收站里那一项按它自己定稿时的章名；同章号可能已重写，蓝图标题是新章的。
+    const chapterTitle = (inTrash ? row.ownTitle : row.blueprintTitle ?? row.ownTitle) ?? ''
+    return { chapterNumber: row.chapterNumber, chapterTitle, inTrash }
+  } catch { return unknown }
 }
 
 /** 只校验这一条循环；全库外键和结构检查已在打开作品时做过，见 verifyOpenedSchema。 */
@@ -628,7 +672,7 @@ export function createM03Migration(deps: {
   verifyKnownSchema: (reader: SchemaReader) => boolean
 }): MigrationImplementation {
   return { id: 'M03', from: 3, to: 4, owner: 'S11', migrate: reader => applyM03ReviewCycle(deps.database(reader)),
-    verify: reader => deps.verifyKnownSchema(reader) && verifyM03ReviewCycle(deps.database(reader)) }
+    verify: reader => deps.verifyKnownSchema(reader) && assertM03ReviewCycle(deps.database(reader), acceptedReviewCycleFailures(reader)) }
 }
 
 export function createM06Migration(deps: {
@@ -636,5 +680,5 @@ export function createM06Migration(deps: {
   verifyKnownSchema: (reader: SchemaReader) => boolean
 }): MigrationImplementation {
   return { id: 'M06', from: 6, to: 7, owner: 'S11', migrate: reader => applyM06ReviewCycleMerge(deps.database(reader)),
-    verify: reader => deps.verifyKnownSchema(reader) && verifyM03ReviewCycle(deps.database(reader)) }
+    verify: reader => deps.verifyKnownSchema(reader) && assertM03ReviewCycle(deps.database(reader), acceptedReviewCycleFailures(reader)) }
 }

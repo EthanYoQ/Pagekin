@@ -1,7 +1,6 @@
 import { copyLocale, localize, translate, type MessageKey } from './core'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
-import { SQLITE_TIMESTAMP, sqliteTime } from '../shared/sqlite-time'
 
 /**
  * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
@@ -417,25 +416,37 @@ export function importGenerationStopMessage(
   return joinSentences(locale, translate(locale, AUTHOR_STOP_REASON_KEYS[stop]), translate(locale, 'error.authorInferenceStopNext'))
 }
 
-export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle): string {
+function chapterPhrase(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle & { chapterNumber: number }): string {
   const params = { number: damaged.chapterNumber, title: damaged.chapterTitle }
-  let chapter = damaged.chapterTitle
+  const chapter = damaged.chapterTitle
     ? localize(locale, '第 {number} 章「{title}」', 'Chapter {number} "{title}"', '第{number}章「{title}」', params)
     : localize(locale, '第 {number} 章', 'Chapter {number}', '第{number}章', params)
-  if (damaged.location === 'draft') {
-    chapter = localize(locale, '{chapter}草稿 v{version}', 'Draft v{version} of {chapter}', '{chapter}のDraft v{version}',
-      { chapter, version: damaged.draftVersion })
-  } else if (damaged.location === 'trash') {
-    const deletedAt = sqliteTime(damaged.deletedAt)
-    // Date 会把 2 月 30 日顺延成 3 月 2 日；转回去对不上原值就照原样写。
-    const when = Number.isNaN(deletedAt.getTime())
-      || (SQLITE_TIMESTAMP.test(damaged.deletedAt) && deletedAt.toISOString().slice(0, 19).replace('T', ' ') !== damaged.deletedAt)
-      ? damaged.deletedAt
-      : deletedAt.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
-    chapter = localize(locale, '回收站里{chapter}（删除于 {when}）', '{chapter} in the trash (deleted {when})', 'ゴミ箱の{chapter}（{when}削除）',
-      { chapter, when })
-  }
+  return damaged.inTrash ? localize(locale, '回收站里{chapter}', '{chapter} in the trash', 'ゴミ箱の{chapter}', { chapter }) : chapter
+}
+
+const located = (damaged: DamagedReviewCycle): damaged is DamagedReviewCycle & { chapterNumber: number } => damaged.chapterNumber !== null
+
+/** 导出、备份因审修循环失败时的说明。 */
+export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle): string {
+  const chapter = located(damaged) ? chapterPhrase(locale, damaged) : localize(locale, '有一章', 'One chapter', 'ある章')
   return translate(locale, 'error.damagedReviewCycle', { chapter })
+}
+
+/** 导出、备份成功但有审修循环没放进存档时，接在成功提示后面的一句。 */
+export function omittedReviewCyclesMessage(locale: ErrorDisplayLocale, omitted: readonly DamagedReviewCycle[]): string {
+  const [first] = omitted
+  if (!first) return ''
+  if (omitted.length === 1) {
+    return located(first)
+      ? translate(locale, 'backup.omittedReviewCycleOne', { chapter: chapterPhrase(locale, first) })
+      : translate(locale, 'backup.omittedReviewCycleUnknownOne')
+  }
+  const count = omitted.length
+  if (!omitted.every(located)) return translate(locale, 'backup.omittedReviewCycleUnknownMany', { count })
+  const numbers = [...new Set(omitted.map(item => item.chapterNumber))].sort((a, b) => a! - b!)
+  const list = numbers.join(locale === 'en-US' ? ', ' : '、')
+  const chapters = localize(locale, '第 {list} 章', numbers.length === 1 ? 'Chapter {list}' : 'Chapters {list}', '第{list}章', { list })
+  return translate(locale, 'backup.omittedReviewCycleChapters', { chapters, count })
 }
 
 function joinSentences(locale: InterfaceLocale, first: string, second: string): string {
