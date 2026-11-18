@@ -304,6 +304,18 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     expect(await omittedOnExport()).toEqual([UNLOCATED])
   })
 
+  it('审稿尝试挂到了别的根的运行上：不拿别的根的运行定位章节', async () => {
+    const items = reviewedBook({ finalized: true })
+    const attemptId = 'attempt-review-ch2'
+    db().prepare(`INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+      SELECT 'run-foreign',?,binding_json,status,created_at_ms,'open-foreign' FROM generation_runs
+      WHERE run_id=(SELECT run_id FROM generation_attempts WHERE attempt_id=?)`).run(items[0]!.seeded.call.rootActionId, attemptId)
+    db().prepare("UPDATE generation_artifacts SET run_id='run-foreign' WHERE attempt_id=?").run(attemptId)
+    db().prepare("UPDATE generation_attempts SET run_id='run-foreign' WHERE attempt_id=?").run(attemptId)
+
+    expect(await omittedOnExport()).toEqual([UNLOCATED])
+  })
+
   it('审稿记下的稿版本与冻结的来源对不上：不报章节（D4）', async () => {
     const items = reviewedBook({ finalized: false })
     db().prepare('UPDATE reviews SET source_draft_version=source_draft_version+1 WHERE id=?').run(items[1]!.seeded.reviewId)
