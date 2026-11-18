@@ -1410,6 +1410,18 @@ describe('durable directory commit and remaining stage', () => {
     }).immediate()
     return { ...f, fixture: f, selection, run, dispatch, request, commit }
   }
+  it('#702 清空蓝图按绑定里的操作退役蓝图目录运行，open_key 的操作对不上也退役', async () => {
+    const f = directoryFixture('chapter-blueprint-directory'), range = { startChapter: 1, endChapter: 3 }
+    await f.owner.execute({ handle: f.run.handle, invocationNonce: 'original', task: directoryTask })
+    f.commit(f.owner, f.run.handle, f.request('cleared-prefix', 1, 2), range)
+    const [click, root] = JSON.parse(f.fixture.db.prepare('SELECT open_key FROM generation_runs WHERE run_id=?').pluck().get(f.run.handle.runId) as string) as [string, string]
+    const parts = JSON.parse(click) as string[]
+    parts[1] = 'directory'
+    f.fixture.db.prepare('UPDATE generation_runs SET open_key=? WHERE run_id=?').run(JSON.stringify([JSON.stringify(parts), root]), f.run.handle.runId)
+    f.fixture.reopen()
+    BlueprintRepository.clearAll()
+    expect(f.fixture.db.prepare('SELECT json_extract(binding_json,?) FROM generation_runs WHERE run_id=?').pluck().get('$."$blueprintRetirement"', f.run.handle.runId)).toBe('blueprints-cleared')
+  })
   it.each(['blueprint', 'project'] as const)('retires directory recovery through the %s clear while independent generation remains usable', async entry => {
     const f = directoryFixture('chapter-blueprint-directory'), range = { startChapter: 1, endChapter: 3 }
     await f.owner.execute({ handle: f.run.handle, invocationNonce: 'original', task: directoryTask })
