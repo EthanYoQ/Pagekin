@@ -964,7 +964,7 @@ tables={'project_core':['id','project_name','characters_arch','core_outline','wo
  'finalization_outbox':['finalization_id','draft_id','content_hash','content_snapshot']}
 rows={}
 for table,columns in tables.items():
-  query='select '+','.join(columns)+' from '+table+' order by rowid'
+  query='select '+','.join(columns)+' from '+table+' order by '+','.join(columns)
   source=list(a.execute(query)); target=list(b.execute(query))
   assert source==target,(table,source,target)
   rows[table]=len(source)
