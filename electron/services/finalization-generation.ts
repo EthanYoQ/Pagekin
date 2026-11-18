@@ -5,7 +5,6 @@ import type { FinalizedCharacterArtifact } from '../../src/shared/finalized-char
 import type { MainGenerationRunHandle } from '../../src/services/generation/generation-runtime'
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
 import { GenerationRunRepository, slotRunNonces, textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
-import { candidateRunIds, inNonceChain, runIndexOf } from '../repositories/generation-run-index'
 import { finalizationSlotKey, readFinalizationGenerationContext, finalizationNotesBaseline } from './finalization-generation-source'
 import { SummaryRepository } from '../repositories/summary-repository'
 import { BlueprintRepository } from '../repositories/blueprint-repository'
@@ -35,8 +34,7 @@ export class FinalizationGeneration {
   find(slot: FinalizationGenerationSlot): DurableGenerationRun | undefined {
     const key = finalizationSlotKey(slot), nonce = `finalization:${key}`
     if (this.runs.sealedClaims(click => click.projectId === this.projectId && (click.uiActionNonce === nonce || click.uiActionNonce.startsWith(`${nonce}:retry:`)))) throw new Error('GENERATION_LEDGER_UNREADABLE')
-    const rows = slotRunNonces(this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) AND json_extract(binding_json,'$.sourceManifest.finalizationGenerationSlotKey')=? ORDER BY rowid")
-      .all(candidateRunIds(runIndexOf(this.db).lookup(inNonceChain(nonce))), key) as { run_id: string; open_key: string }[], 'GENERATION_FINALIZATION_SLOT_CONFLICT')
+    const rows = slotRunNonces(this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.finalizationGenerationSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[], 'GENERATION_FINALIZATION_SLOT_CONFLICT')
     let previous: DurableGenerationRun | undefined
     for (const row of rows) {
       const run = this.runs.get(row.runId)
