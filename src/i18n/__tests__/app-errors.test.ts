@@ -366,6 +366,7 @@ describe('damagedReviewCycleMessage', () => {
     ['zh-CN', { chapterNumber: 2, chapterTitle: '沉船', inTrash: false }, '作品没有改动。第 2 章「沉船」有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。'],
     ['zh-CN', { chapterNumber: 2, chapterTitle: '沉船', inTrash: true }, '作品没有改动。回收站里第 2 章「沉船」有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。'],
     ['en-US', { chapterNumber: 2, chapterTitle: '', inTrash: false }, 'Your book is unchanged. A review record in Chapter 2 is damaged, so no archive was made. Please report this message to us.'],
+    ['zh-CN', { chapterNumber: null, chapterTitle: '', inTrash: false }, '作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。'],
   ] as const)('%s：只写章号、章名和是否在回收站，不写稿的版本和删除时间（#702）', (locale, damaged, expected) => {
     expect(damagedReviewCycleMessage(shown(locale), damaged)).toBe(expected)
   })
@@ -378,14 +379,14 @@ describe('omittedReviewCyclesMessage', () => {
     ['en-US', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }], 'A damaged review record in Chapter 2 "沉船" was left out of the archive. The text and reviews are included.'],
     ['ja-JP', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }], '第2章「沉船」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とレビュー内容は含まれています。'],
     ['zh-CN', [{ chapterNumber: 5, chapterTitle: '', inTrash: false }, { chapterNumber: 2, chapterTitle: '沉船', inTrash: true }, { chapterNumber: 5, chapterTitle: '', inTrash: false }],
-      '第 2、5 章共有 3 条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
+      '第 2、5 章有审稿记录损坏，没放进存档。正文和审稿内容都在。'],
     ['en-US', [{ chapterNumber: 2, chapterTitle: '', inTrash: false }, { chapterNumber: 5, chapterTitle: '', inTrash: false }],
-      '2 damaged review records in Chapters 2, 5 were left out of the archive. The text and reviews are included.'],
+      'Damaged review records in Chapters 2, 5 were left out of the archive. The text and reviews are included.'],
     ['en-US', [{ chapterNumber: 2, chapterTitle: '', inTrash: false }, { chapterNumber: 2, chapterTitle: '', inTrash: true }],
-      '2 damaged review records in Chapter 2 were left out of the archive. The text and reviews are included.'],
+      'Damaged review records in Chapter 2 were left out of the archive. The text and reviews are included.'],
     ['zh-CN', [{ chapterNumber: null, chapterTitle: '', inTrash: false }], '有条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
     ['zh-CN', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }, { chapterNumber: null, chapterTitle: '', inTrash: false }],
-      '有 2 条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
+      '有几条审稿记录损坏，没放进存档。正文和审稿内容都在。'],
   ] as const)('%s：%j', (locale, omitted, expected) => {
     expect(omittedReviewCyclesMessage(shown(locale), omitted)).toBe(expected)
   })

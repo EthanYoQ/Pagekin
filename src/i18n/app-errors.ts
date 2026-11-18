@@ -426,10 +426,11 @@ function chapterPhrase(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle &
 
 const located = (damaged: DamagedReviewCycle): damaged is DamagedReviewCycle & { chapterNumber: number } => damaged.chapterNumber !== null
 
-/** 导出、备份因审修循环失败时的说明。 */
+/** 导出、备份因审修循环失败时的说明。指不出章节时按「有一项数据无法安全打包」说明。 */
 export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle): string {
-  const chapter = located(damaged) ? chapterPhrase(locale, damaged) : localize(locale, '有一章', 'One chapter', 'ある章')
-  return translate(locale, 'error.damagedReviewCycle', { chapter })
+  return located(damaged)
+    ? translate(locale, 'error.damagedReviewCycle', { chapter: chapterPhrase(locale, damaged) })
+    : translate(locale, 'error.portableUnsafeProjection')
 }
 
 /** 导出、备份成功但有审修循环没放进存档时，接在成功提示后面的一句。 */
@@ -441,12 +442,11 @@ export function omittedReviewCyclesMessage(locale: ErrorDisplayLocale, omitted: 
       ? translate(locale, 'backup.omittedReviewCycleOne', { chapter: chapterPhrase(locale, first) })
       : translate(locale, 'backup.omittedReviewCycleUnknownOne')
   }
-  const count = omitted.length
-  if (!omitted.every(located)) return translate(locale, 'backup.omittedReviewCycleUnknownMany', { count })
-  const numbers = [...new Set(omitted.map(item => item.chapterNumber))].sort((a, b) => a! - b!)
+  if (!omitted.every(located)) return translate(locale, 'backup.omittedReviewCycleUnknownMany')
+  const numbers = [...new Set(omitted.map(item => item.chapterNumber))].sort((a, b) => a - b)
   const list = numbers.join(locale === 'en-US' ? ', ' : '、')
   const chapters = localize(locale, '第 {list} 章', numbers.length === 1 ? 'Chapter {list}' : 'Chapters {list}', '第{list}章', { list })
-  return translate(locale, 'backup.omittedReviewCycleChapters', { chapters, count })
+  return translate(locale, 'backup.omittedReviewCycleChapters', { chapters })
 }
 
 function joinSentences(locale: InterfaceLocale, first: string, second: string): string {

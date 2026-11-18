@@ -322,7 +322,7 @@ describe('ProjectBackupPanel', () => {
     expect(container.querySelector('[role="status"]')?.textContent).toBe(expected)
   })
 
-  it('云备份有多条坏循环没放进去：成功提示后面按章号列出条数（#702）', async () => {
+  it('云备份有多条坏循环没放进去：成功提示后面按章号列出（#702）', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
       if (channel === 'cloud-backup:backup') return {
@@ -338,7 +338,7 @@ describe('ProjectBackupPanel', () => {
     await act(async () => disclosure.click())
     await act(async () => button('立即云备份').click())
     expect(container.querySelector('[role="status"]')?.textContent)
-      .toBe('云备份完成：generation-1；备份点 backup-point-7。第 2、5 章共有 2 条审稿记录损坏，没放进存档。正文和审稿内容都在。')
+      .toBe('云备份完成：generation-1；备份点 backup-point-7。第 2、5 章有审稿记录损坏，没放进存档。正文和审稿内容都在。')
   })
 
   it('requires disclosure before upload and shows the backup point and unsaved binding', async () => {
