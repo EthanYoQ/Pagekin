@@ -6,10 +6,9 @@ import path from 'node:path'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
 import { openChapter } from './f491-scenarios.mjs'
-import { buildByReviewCycle } from './perf702-scenarios.mjs'
+import { BOOK, buildByReviewCycle } from './perf702-scenarios.mjs'
 
 const Database = createRequire(import.meta.url)('better-sqlite3')
-const BOOK = '盐湖'
 
 /** 与 test/helpers/review-cycle-fixture.ts 的 breakReviewProof 保持一致。 */
 function breakReviewProof(projectRoot, chapter) {
@@ -22,7 +21,7 @@ function breakReviewProof(projectRoot, chapter) {
       SET usage_receipt_json=json_set(usage_receipt_json,'$.reviewRevisionEffect.contentHash',?)
       WHERE root_action_id=? AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review'
         AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.id')=?`).run('0'.repeat(64), cycle.rootActionId, cycle.reviewId).changes
-    assert.equal(changed, 1, `改坏了第 ${chapter} 章那一条审稿证据`)
+    assert.equal(changed, 1, `第 ${chapter} 章应改坏一条审稿证据，实际改了 ${changed} 条`)
   } finally { database.close() }
 }
 
@@ -83,7 +82,7 @@ export const CCH_SCENARIOS = {
     const before = await exportOnce(context, path.join(roots.projects, 'cch-before.ainovel'),
       { settings: '设置分组', page: '项目备份', button: '导出本地存档' })
     assert.match(before, /^作品没有改动。第 1 章「远航之1」有条审稿记录损坏/u)
-    await stage.root(page).getByRole('navigation', { name: '设置分组' }).getByRole('button', { name: /^返回(作品|书房)$/u }).click()
+    await stage.closeSettings(page)
 
     await openChapter(page, 1)
     await page.evaluate(() => {
@@ -92,7 +91,10 @@ export const CCH_SCENARIOS = {
     })
     await chapterView.more(page, '复制本章正文')
     await page.getByText('已复制本章正文').first().waitFor({ state: 'visible' })
-    assert.equal((await page.evaluate(() => window.__copied)).length, 1, '复制本章正文交给了剪贴板')
+    const firstLine = (await chapterView.prose(page).locator('.cm-line').first().innerText()).trim()
+    const copied = await page.evaluate(() => window.__copied)
+    assert.equal(copied.length, 1, '复制本章正文交给了剪贴板')
+    assert.ok(firstLine && copied[0].includes(firstLine), `剪贴板里是第 1 章正文（首行「${firstLine}」）`)
     await chapterView.more(page, '删除正文…')
     const confirm = page.getByRole('dialog', { name: '删除正文' })
     await confirm.getByRole('button', { name: '删除', exact: true }).click()
@@ -103,7 +105,7 @@ export const CCH_SCENARIOS = {
       { settings: '设置分组', page: '项目备份', button: '导出本地存档' })
     await shoot('cch-4-trash')
     assert.match(inTrash, /^作品没有改动。回收站里第 1 章「远航之1」（删除于 .+）有条审稿记录损坏，存档没生成。到回收站把它「彻底删除…」，然后重试。$/u)
-    await stage.root(page).getByRole('navigation', { name: '设置分组' }).getByRole('button', { name: /^返回(作品|书房)$/u }).click()
+    await stage.closeSettings(page)
     await stage.root(page).getByRole('button', { name: /^回收站（1）$/u }).click()
     const trash = page.getByRole('dialog', { name: /^回收站（1）$/u })
     await trash.getByRole('button', { name: '彻底删除…' }).click()

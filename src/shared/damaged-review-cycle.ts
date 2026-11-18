@@ -1,4 +1,4 @@
-/** remedy 为 null：坏在删章删不掉的生成记录上，删了也过不了校验。 */
+/** remedy 为 null：删掉这一章也导不出，只请作者反馈。 */
 export type DamagedReviewCycle = { chapterNumber: number; chapterTitle: string } & (
   | { remedy: 'delete-manuscript' | null }
   | { remedy: 'delete-draft'; draftVersion: number }

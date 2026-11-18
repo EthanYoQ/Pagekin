@@ -431,7 +431,9 @@ export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: D
     chapter = localize(locale, '{chapter}草稿 v{version}', 'Draft v{version} of {chapter}', '{chapter}のDraft v{version}',
       { chapter, version: damaged.draftVersion })
   } else if (damaged.remedy === 'purge-trash') {
-    const when = sqliteTime(damaged.deletedAt).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+    const deletedAt = sqliteTime(damaged.deletedAt)
+    const when = Number.isNaN(deletedAt.getTime()) ? damaged.deletedAt
+      : deletedAt.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
     chapter = localize(locale, '回收站里{chapter}（删除于 {when}）', '{chapter} in the trash (deleted {when})', 'ゴミ箱の{chapter}（{when}削除）',
       { chapter, when })
   }

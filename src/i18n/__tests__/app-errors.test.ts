@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
+import { appErrorMessage, damagedReviewCycleMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
 import { shown } from './shown-locale'
 
 describe('localized application errors', () => {
@@ -358,5 +358,14 @@ describe('日文界面的已登记错误', () => {
     expect(englishWithReason(shown('ja-JP'), 'Could not merge the revision.', japanese)).toBe(`Could not merge the revision. ${japanese}`)
     expect(englishWithReason(shown('en-US'), 'Could not merge the revision.', '项目数据库未打开：ファイル.md')).toBe('Could not merge the revision.')
     expect(englishWithReason(shown('en-US'), 'Could not merge the revision.', 'disk full')).toBe('Could not merge the revision. disk full')
+  })
+})
+
+describe('damagedReviewCycleMessage', () => {
+  it('回收站删除时间读不成日期时照原样写出，不写 Invalid Date（#702）', () => {
+    const text = damagedReviewCycleMessage(shown('zh-CN'),
+      { chapterNumber: 2, chapterTitle: '沉船', remedy: 'purge-trash', deletedAt: '坏掉的时间' })
+    expect(text).toContain('（删除于 坏掉的时间）')
+    expect(text).not.toContain('Invalid Date')
   })
 })

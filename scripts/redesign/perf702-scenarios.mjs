@@ -19,7 +19,7 @@ import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
 import { STAGE_SAMPLE, countUnits } from './stage-sample.mjs'
 
-const BOOK = '盐湖'
+export const BOOK = '盐湖'
 const BLUEPRINTS = Number(process.env.PERF702_BLUEPRINTS ?? 200)
 const CHAPTER_UNITS = 3000
 const CHARACTERS = ['林岚', '守塔人', '沈默', '许青', '老周', '阿禾', '程远', '苏梅', '韩九', '小满', '陆川', '白鹭']
