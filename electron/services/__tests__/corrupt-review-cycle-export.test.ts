@@ -329,10 +329,11 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
   it('审的是旧定稿、换成改名的新定稿后整章进回收站：用回收站里那一项（新定稿）的章名', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
-    const { draftId: edition } = FinalizationRepository.reopen({ chapterNumber: 2 })
-    finalize(edition, 2, '暗礁')
+    const reopened = FinalizationRepository.reopen({ chapterNumber: 2 })
+    if (!reopened.success) throw new Error(reopened.error)
+    finalize(reopened.draftId, 2, '暗礁')
     expect(db().prepare('SELECT status FROM drafts_all WHERE id=?').pluck().get(items[1]!.seeded.draftId)).toBe('superseded')
-    await expect(trashService().delete(projectRoot, { draftId: edition, chapterNumber: 2 }))
+    await expect(trashService().delete(projectRoot, { draftId: reopened.draftId, chapterNumber: 2 }))
       .resolves.toMatchObject({ success: true })
     db().prepare("UPDATE blueprints SET title='新航' WHERE chapter_number=2").run()
 
