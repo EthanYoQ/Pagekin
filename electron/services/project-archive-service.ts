@@ -995,11 +995,12 @@ export function sanitizePortableDatabase(databasePath: string, options: { omitRe
             }
             const draftProof = table === 'generation_attempts' ? draftProofs.receipts.get(String(row.attempt_id))
               : table === 'generation_runs' ? draftProofs.bindings.get(String(row.run_id)) : undefined
-            if (update && update.run(...updates.map(column => {
+            const changed = update?.run(...updates.map(column => {
               const key = `${table}.${column.name}`
               if (draftProof !== undefined && (key === 'generation_attempts.usage_receipt_json' || key === 'generation_runs.binding_json')) return draftProof
               return neutralValue(key, column, row[column.name], reviewProof)
-            }), BigInt(String(row.__portable_rowid__))).changes !== 1) throw new Error('PORTABLE_REDACTION_MISSED_ROW')
+            }), BigInt(String(row.__portable_rowid__))).changes
+            if (changed !== undefined && changed !== 1) throw new Error('PORTABLE_REDACTION_MISSED_ROW')
           } catch (error) {
             const location = root === undefined ? undefined : omittedRoots.get(root)
             if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_UNSAFE_PROJECTION' && location)

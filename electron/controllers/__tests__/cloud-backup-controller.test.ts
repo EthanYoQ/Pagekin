@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CloudBackupFailure, CloudBackupProjectSessionContext } from '../../../src/shared/cloud-backup'
 import { damagedReviewCycleMessage } from '../../../src/i18n/app-errors'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 import type { CloudProjectBinding } from '../../services/cloud-project-binding-store'
 import { ExternalFileGrantService } from '../../services/external-file-grant-service'
 import { WebDavBackupError } from '../../services/webdav-backup-service'
@@ -413,7 +414,7 @@ describe('registerCloudBackupController', () => {
         projectSession: { ...session, projectPath: project.sourceRoot }, disclosureConfirmed: true }) as CloudBackupFailure
 
       expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED' })
-      expect(result.damagedReviewCycle && damagedReviewCycleMessage('zh-CN', result.damagedReviewCycle))
+      expect(result.damagedReviewCycle && damagedReviewCycleMessage(shown('zh-CN'), result.damagedReviewCycle))
         .toBe('作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。')
       expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
     } finally { closeProjectDatabase(); project.dispose() }
