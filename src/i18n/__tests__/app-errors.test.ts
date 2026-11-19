@@ -37,11 +37,12 @@ describe('localized application errors', () => {
     expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain(code)
   })
 
-  it('导出中途意外停止：说明作品没动、存档没生成、再点哪个按钮，不露原码（#702）', () => {
+  it('导出中途意外停止：说明作品没动、所选位置可能已有存档、换名再导，不露原码（#702）', () => {
     const code = 'PORTABLE_EXPORT_INTERRUPTED'
-    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。导出中途意外停止，存档没有生成。请再点「导出本地存档」。')
-    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. Export stopped unexpectedly, so no archive was created. Click Export local archive again.')
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。导出中途意外停止，所选位置可能留下了存档文件。请换个文件名，再点「导出本地存档」。')
+    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. Export stopped unexpectedly, and an archive file may remain at the chosen location. Click Export local archive again and choose a new file name.')
     expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain(code)
+    expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain('作成されませんでした')
   })
 
   it.each(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])('恢复时存档被改（%s）：不叫作者去点导出（#744）', code => {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -139,6 +140,135 @@ describe('在 worker 线程里导出', () => {
     await stopping
     expect(fs.existsSync(path.join(outDir, 'closed.ainovel'))).toBe(false)
     expect(leftovers(outDir)).toEqual([])
+  }, 60_000)
+
+  it('在途数读到 0 时临时目录已经删掉（退出应用靠它等清理）', async () => {
+    const { outDir, input } = await project()
+    const controller = new AbortController()
+    let seen!: () => void
+    const counted = new Promise<string[]>(resolve => {
+      seen = () => {
+        const poll = () => portableExportsRunning() === 0 ? resolve(leftovers(outDir)) : setImmediate(poll)
+        poll()
+      }
+    })
+
+    const result = outcome(exportPortableProjectInWorker({
+      ...input('quit.ainovel'),
+      signal: controller.signal,
+      onProgress: phase => { if (phase === 'snapshot') { controller.abort(new Error('CLOUD_BACKUP_CANCELLED')); seen() } },
+    }, worker))
+
+    expect(await counted).toEqual([])
+    expect(await result).toMatchObject({ ok: false, message: 'CLOUD_BACKUP_CANCELLED' })
+  }, 60_000)
+
+  it('停止导出时，worker 真正退出之后主进程才放开知识库闸门', async () => {
+    const { fixture, outDir, input } = await project()
+    const started = path.join(outDir, 'gated-work-started')
+    const marker = path.join(outDir, 'gated-work-finished')
+    const script = path.join(outDir, 'gated.mjs')
+    // 拿到闸门后卡在同步子进程里：terminate 打断不了，worker 要等子进程写完标记才真正退出。
+    const child = `const fs = require('fs'); fs.writeFileSync(${JSON.stringify(started)}, 'x'); setTimeout(() => fs.writeFileSync(${JSON.stringify(marker)}, 'x'), 800)`
+    fs.writeFileSync(script, [
+      'import { execFileSync } from "node:child_process"',
+      'import path from "node:path"',
+      'import { parentPort, workerData } from "node:worker_threads"',
+      `parentPort.once("message", () => execFileSync(process.execPath, ["-e", ${JSON.stringify(child)}]))`,
+      'parentPort.postMessage({ type: "gate-enter", id: 1, projectStorageRoot: path.join(workerData.sourceProjectRoot, ".ai-novel") })',
+    ].join('\n'))
+    const controller = new AbortController()
+
+    const result = outcome(exportPortableProjectInWorker({ ...input('gated-stop.ainovel'), signal: controller.signal }, { ...worker, workerScript: script }))
+    while (!fs.existsSync(started)) await new Promise(resolve => setTimeout(resolve, 10))
+    controller.abort(new Error('CLOUD_BACKUP_CANCELLED'))
+    const finishedWhenAcquired = await withKnowledgeSourceGate(fixture.sourceStorage, async () => fs.existsSync(marker))
+
+    expect(finishedWhenAcquired).toBe(true)
+    expect(await result).toMatchObject({ ok: false, message: 'CLOUD_BACKUP_CANCELLED' })
+    expect(leftovers(outDir)).toEqual([])
+  }, 60_000)
+
+  it('停止一本书的导出：等它和停止期间新起的导出都清理完才返回', async () => {
+    const { fixture, outDir, input } = await project()
+    let second: Promise<unknown> | undefined
+    let stopping: Promise<void> | undefined
+
+    const first = outcome(exportPortableProjectInWorker({
+      ...input('first.ainovel'),
+      onProgress: phase => {
+        if (phase !== 'snapshot' || stopping) return
+        stopping = stopPortableExports(fixture.sourceRoot)
+        second = outcome(exportPortableProjectInWorker(input('second.ainovel'), worker))
+      },
+    }, worker))
+    await first
+    await stopping
+
+    expect(portableExportsRunning()).toBe(0)
+    expect(leftovers(outDir)).toEqual([])
+    expect(await second).toMatchObject({ ok: false, code: 'PORTABLE_CONTEXT_INVALID' })
+  }, 60_000)
+
+  it('目标在作品目录里：拒绝，且拒绝前没在那里建临时目录', async () => {
+    const { fixture, input } = await project()
+    const inside = path.join(fixture.sourceRoot, 'exports')
+    fs.mkdirSync(inside)
+    const created: string[] = []
+    const watcher = fs.watch(inside, (_event, name) => { if (name) created.push(String(name)) })
+
+    const result = await outcome(exportPortableProjectInWorker({
+      ...input('x.ainovel'), targetArchivePath: path.join(inside, 'x.ainovel'), attemptParentPath: inside,
+    }, worker))
+    await new Promise(resolve => setTimeout(resolve, 200))
+    watcher.close()
+
+    expect(result).toMatchObject({ ok: false, code: 'PORTABLE_TARGET_INSIDE_SOURCE' })
+    expect(created).toEqual([])
+  }, 60_000)
+
+  it('存档一发布就算导出完成：这时停止也报成功，不会报失败又留下存档', async () => {
+    const { fixture, outDir, input } = await project()
+    const target = path.join(outDir, 'committed.ainovel')
+    const script = path.join(outDir, 'commit.mjs')
+    fs.writeFileSync(script, [
+      'import fs from "node:fs"',
+      'import { parentPort, workerData } from "node:worker_threads"',
+      'if (workerData.commit) Atomics.compareExchange(workerData.commit, 0, 0, 1)',
+      'fs.writeFileSync(workerData.targetArchivePath, "archive")',
+      'parentPort.postMessage({ type: "progress", phase: "package" })',
+      'setTimeout(() => parentPort.postMessage({ type: "done", receipt: { targetSha256: "sha" } }), 300)',
+    ].join('\n'))
+
+    const result = await outcome(exportPortableProjectInWorker({
+      ...input('committed.ainovel'),
+      onProgress: phase => { if (phase === 'package') void stopPortableExports(fixture.sourceRoot) },
+    }, { ...worker, workerScript: script }))
+
+    expect(result).toEqual({ ok: true })
+    expect(fs.existsSync(target)).toBe(true)
+    expect(leftovers(outDir)).toEqual([])
+  }, 60_000)
+
+  it('真实导出：存档出现那一刻停止，结果要么成功且存档在，要么失败且存档不在', async () => {
+    const { fixture, outDir, input } = await project()
+    const target = path.join(outDir, 'race.ainovel')
+    let stopping: Promise<void> | undefined
+    const watch = () => { if (fs.existsSync(target)) stopping = stopPortableExports(fixture.sourceRoot); else setImmediate(watch) }
+
+    const result = await outcome(exportPortableProjectInWorker({
+      ...input('race.ainovel'), onProgress: phase => { if (phase === 'package') watch() },
+    }, worker))
+    await stopping
+
+    expect({ ok: result.ok, archive: fs.existsSync(target) }).toEqual({ ok: result.ok, archive: result.ok })
+    expect(leftovers(outDir)).toEqual([])
+  }, 60_000)
+
+  it('回执里的 sha256 就是目标文件的 sha256', async () => {
+    const { outDir, input } = await project()
+    const receipt = await exportPortableProjectInWorker(input('sha.ainovel'), worker)
+    expect(receipt.targetSha256).toBe(createHash('sha256').update(fs.readFileSync(path.join(outDir, 'sha.ainovel'))).digest('hex'))
   }, 60_000)
 
   it.each([

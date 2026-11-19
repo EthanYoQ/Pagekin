@@ -7,6 +7,7 @@ import * as electron from 'electron'
 
 import { withKnowledgeSourceGate } from './knowledge-source-gate'
 import {
+  claimStop,
   rehydrateExportError,
   type HostToWorker,
   type PortableExportJob,
@@ -15,6 +16,7 @@ import {
 } from './portable-export-job'
 import {
   ProjectArchiveServiceError,
+  assertPortableExportPaths,
   type ExportPortableProjectInput,
   type ExportPortableProjectReceipt,
 } from './project-archive-service'
@@ -41,7 +43,8 @@ const projectKey = (root: string) => process.platform === 'win32' ? path.resolve
 
 /**
  * 导出在 worker 线程里跑，主进程只应答会话核对与知识库闸门、转发进度。
- * 主进程在 attemptParentPath 下建一个 .pe- 目录交给 worker，结束后不论成败（含取消、worker 崩溃）都由主进程删掉。
+ * 主进程在 attemptParentPath 下建一个 .pe- 目录交给 worker。结束后不论成败（含取消、worker 崩溃），
+ * 都等 worker 真正退出才放开闸门、删目录、注销在途登记：退出应用和关库靠在途登记判断还要不要等。
  */
 export async function exportPortableProjectInWorker(
   input: PortableExportInWorkerInput,
@@ -49,7 +52,9 @@ export async function exportPortableProjectInWorker(
 ): Promise<ExportPortableProjectReceipt> {
   const { assertCurrentContext, onProgress, signal, ...job } = input
   signal?.throwIfAborted()
+  assertPortableExportPaths(job)
   const runRoot = fs.mkdtempSync(path.join(path.resolve(job.attemptParentPath), '.pe-'))
+  const commit = new Int32Array(new SharedArrayBuffer(4))
   const runIdentity = fs.lstatSync(runRoot, { bigint: true })
   let markCleaned!: () => void
   const entry: RunningExport = { sourceProjectRoot: projectKey(job.sourceProjectRoot), stop: () => {}, cleaned: new Promise(resolve => { markCleaned = resolve }) }
@@ -59,9 +64,10 @@ export async function exportPortableProjectInWorker(
   let worker: Worker | undefined
   try {
     return await new Promise<ExportPortableProjectReceipt>((resolve, reject) => {
-      const thread = worker = new Worker(workerScript, { workerData: { ...job, attemptParentPath: runRoot, electronExports } satisfies PortableExportWorkerData })
+      const thread = worker = new Worker(workerScript, { workerData: { ...job, attemptParentPath: runRoot, electronExports, commit } satisfies PortableExportWorkerData })
       const reply = (message: HostToWorker) => { if (!finished) thread.postMessage(message) }
-      entry.stop = error => { reject(error); void thread.terminate() }
+      const fail = (error: Error) => { reject(error); void thread.terminate() }
+      entry.stop = error => { if (claimStop(commit)) fail(error) }
       running.add(entry)
       onAbort = () => entry.stop(signal!.reason instanceof Error ? signal!.reason : new Error('PORTABLE_EXPORT_ABORTED'))
       signal?.addEventListener('abort', onAbort, { once: true })
@@ -96,26 +102,26 @@ export async function exportPortableProjectInWorker(
       })
       thread.once('error', error => {
         console.error('[portable-export] worker 出错', error)
-        entry.stop(new ProjectArchiveServiceError('PORTABLE_EXPORT_INTERRUPTED'))
+        fail(new ProjectArchiveServiceError('PORTABLE_EXPORT_INTERRUPTED'))
       })
       thread.once('exit', () => reject(new ProjectArchiveServiceError('PORTABLE_EXPORT_INTERRUPTED')))
     })
   } finally {
     finished = true
     if (onAbort) signal?.removeEventListener('abort', onAbort)
-    running.delete(entry)
-    releaseGate?.()
     await worker?.terminate()
-    removeRunRoot(runRoot, runIdentity)
+    releaseGate?.()
+    await removeRunRoot(runRoot, runIdentity)
+    running.delete(entry)
     markCleaned()
   }
 }
 
-function removeRunRoot(root: string, identity: fs.BigIntStats): void {
+async function removeRunRoot(root: string, identity: fs.BigIntStats): Promise<void> {
   try {
-    const actual = fs.lstatSync(root, { bigint: true })
+    const actual = await fs.promises.lstat(root, { bigint: true })
     if (!actual.isDirectory() || actual.isSymbolicLink() || actual.dev !== identity.dev || actual.ino !== identity.ino) return
-    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   } catch (error) {
     console.warn('[portable-export] 临时目录没删掉', { root, code: (error as NodeJS.ErrnoException).code })
   }
@@ -127,9 +133,12 @@ function removeRunRoot(root: string, identity: fs.BigIntStats): void {
  */
 export async function stopPortableExports(sourceProjectRoot?: string): Promise<void> {
   const key = sourceProjectRoot === undefined ? undefined : projectKey(sourceProjectRoot)
-  const entries = [...running].filter(entry => key === undefined || entry.sourceProjectRoot === key)
-  for (const entry of entries) entry.stop(new ProjectArchiveServiceError('PORTABLE_CONTEXT_INVALID'))
-  await Promise.all(entries.map(entry => entry.cleaned))
+  const matching = () => [...running].filter(entry => key === undefined || entry.sourceProjectRoot === key)
+  // 等待期间可能又起了新的导出，停到这本书一个不剩为止。
+  for (let entries = matching(); entries.length > 0; entries = matching()) {
+    for (const entry of entries) entry.stop(new ProjectArchiveServiceError('PORTABLE_CONTEXT_INVALID'))
+    await Promise.all(entries.map(entry => entry.cleaned))
+  }
 }
 
 export function portableExportsRunning(): number {

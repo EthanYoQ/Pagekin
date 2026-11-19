@@ -226,6 +226,8 @@ export interface ExportPortableProjectInput {
   /** worker 里跑时经主进程取主进程那把锁；默认是本进程的 withKnowledgeSourceGate。 */
   withSourceGate?<T>(projectStorageRoot: string, operation: () => Promise<T>): Promise<T>
   onProgress?(phase: PortableExportPhase): void
+  /** 发布前最后一步，同步调用。worker 里用它和主进程的停止抢提交点：抛错就不发布。 */
+  beforePublish?(): void
   /** @internal Deterministic mutation/failure injection. */
   __testHooks?: {
     afterPortableDatabaseCreated?(attemptRoot: string): void
@@ -1216,14 +1218,23 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
 /** 只比 dev、ino：写库会改大小和修改时间，不改身份。 */
 interface SourceDatabasePin { database?: fs.BigIntStats }
 
+/** 导出写任何东西之前的核对：会话形状对、目标与临时目录不在作品里、路径上没有链接。worker 宿主建临时目录前也调它。 */
+export function assertPortableExportPaths(
+  input: Pick<ExportPortableProjectInput, 'sourceProjectRoot' | 'targetArchivePath' | 'attemptParentPath' | 'projectSession'>,
+): void {
+  const sourceRoot = path.resolve(input.sourceProjectRoot)
+  const attemptParent = path.resolve(input.attemptParentPath)
+  assertContextShape(input.projectSession, sourceRoot)
+  if (contained(sourceRoot, path.resolve(input.targetArchivePath)) || contained(sourceRoot, attemptParent)) fail('PORTABLE_TARGET_INSIDE_SOURCE')
+  safeDirectory(sourceRoot)
+  safeDirectory(attemptParent)
+}
+
 async function exportPortableProjectOnce(input: ExportPortableProjectInput, source: SourceDatabasePin): Promise<ExportPortableProjectReceipt> {
   const sourceRoot = path.resolve(input.sourceProjectRoot)
   const targetPath = path.resolve(input.targetArchivePath)
   const attemptParent = path.resolve(input.attemptParentPath)
-  assertContextShape(input.projectSession, sourceRoot)
-  if (contained(sourceRoot, targetPath) || contained(sourceRoot, attemptParent)) fail('PORTABLE_TARGET_INSIDE_SOURCE')
-  safeDirectory(sourceRoot)
-  safeDirectory(attemptParent)
+  assertPortableExportPaths(input)
   const frozenContext = Object.freeze({ ...input.projectSession })
   await assertCurrentContext(input, frozenContext, sourceRoot)
   const projectStorageRoot = path.join(sourceRoot, CANONICAL_PROJECT_DIRECTORY)
@@ -1428,6 +1439,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
 
     await assertCurrentContext(input, frozenContext, sourceRoot)
     assertSameDatabase()
+    input.beforePublish?.()
     const targetInfo = publishStagedArchive(stagedArchivePath, targetPath)
     return {
       originProjectId: canonicalManifest.projectId,

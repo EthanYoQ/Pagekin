@@ -120,6 +120,12 @@ function yieldToPendingOpenRequests(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve))
 }
 
+/** 换库前等当前这本书的在途导出停完：worker 还在读它时关库，会读到半关的库。 */
+async function stopExportsOfClosingProject(): Promise<void> {
+  const closing = getCurrentProjectPath()
+  if (closing) await stopPortableExports(closing)
+}
+
 interface ProjectDatabaseState {
   databaseRestored: boolean
   dbReady: boolean
@@ -474,6 +480,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     latestProjectOpenRequestToken = requestToken
     return serializeProjectOpen(async () => {
       await yieldToPendingOpenRequests()
+      await stopExportsOfClosingProject()
       const isLatestRequest = () => latestProjectOpenRequestToken === requestToken
       const rollbackBoundary = captureProjectRollbackBoundary()
       if (!isLatestRequest()) {
@@ -586,6 +593,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     return serializeProjectOpen(async () => {
       // 让已经发出的后续打开请求先登记身份，避免旧请求抢先切换全局数据库。
       await yieldToPendingOpenRequests()
+      await stopExportsOfClosingProject()
       const isLatestRequest = () => latestProjectOpenRequestToken === requestToken
       const rollbackBoundary = captureProjectRollbackBoundary()
       if (!isLatestRequest()) {

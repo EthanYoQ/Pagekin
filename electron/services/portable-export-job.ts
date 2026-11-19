@@ -26,6 +26,24 @@ export interface PortableExportJob {
 export interface PortableExportWorkerData extends PortableExportJob {
   /** 主进程里 electron 模块的导出名，worker 照着造一个空模块。 */
   electronExports: string[]
+  /** 共享的提交标志，见 claimPublish 与 claimStop。 */
+  commit: Int32Array
+}
+
+const OPEN = 0
+const PUBLISHING = 1
+const STOPPED = 2
+
+/**
+ * 发布存档是提交点。worker 发布前、主进程从外部停止前都抢这一个标志，先到的说了算：
+ * worker 抢到就一定把结果交回来，主进程不再报失败；主进程抢到，worker 就不发布。消息在路上时也不会两边各判一次。
+ */
+export function claimPublish(commit: Int32Array): boolean {
+  return Atomics.compareExchange(commit, 0, OPEN, PUBLISHING) !== STOPPED
+}
+
+export function claimStop(commit: Int32Array): boolean {
+  return Atomics.compareExchange(commit, 0, OPEN, STOPPED) !== PUBLISHING
 }
 
 /** 跨线程会丢掉错误的类和 code，按两个控制器认的几种错误逐一带过去。 */
@@ -65,7 +83,7 @@ export function rehydrateExportError(error: SerializedExportError): Error {
 }
 
 /** 会话核对与知识库闸门都问主进程，worker 里不持有。 */
-export async function runPortableExportJob(port: MessagePort, job: PortableExportJob): Promise<void> {
+export async function runPortableExportJob(port: MessagePort, job: PortableExportJob, commit: Int32Array): Promise<void> {
   const post = (message: WorkerToHost) => port.postMessage(message)
   const waiting = new Map<number, (ok: boolean) => void>()
   let nextId = 0
@@ -91,6 +109,9 @@ export async function runPortableExportJob(port: MessagePort, job: PortableExpor
         try { return await operation() } finally { post({ type: 'gate-exit' }) }
       },
       onProgress: phase => post({ type: 'progress', phase }),
+      beforePublish() {
+        if (!claimPublish(commit)) throw new ProjectArchiveServiceError('PORTABLE_CONTEXT_INVALID')
+      },
     })
     post({ type: 'done', receipt })
   } catch (error) {
