@@ -79,17 +79,17 @@ node scripts/redesign/drive.mjs --scenario chapter-switch --shell stage --out <�
 | `stage-library-delete` | 当前作品的书本菜单「删除作品…」，输入「灯」时「删除作品」禁用；`after` 输入完整书名后可用，再取消，文件夹仍在 | 删除确认（名字不对） | 否 | lane 5 |
 | `stage-update-card` | 夹具更新源（`stubUpdates` 替换主进程的更新 IPC，安装只计数）；设定页改一项未保存，回书房点「下载更新」再点「立即重启更新」，出现「请先处理未保存的修改」与「返回保存」；`after` 返回保存，安装次数为 0 | 更新拦截 | 否 | lane 10 |
 | `stage-setup-required` | 新外壳新建「雾岛」，写核心大纲、选类型，不选目标读者：「下一步：故事架构」禁用，提示「选好目标读者就能继续」并由 `aria-describedby` 关联；设定页唯一的主按钮；对比度；`after` 选目标读者后点下一步，先保存再到架构 | 必填未齐 | 否 | lane 6 |
-| `stage-setup-fill` | 示例作品的设定页点「AI 补全其余设定」，确认扩写已有内容；夹具按配置 JSON 合同返回（`FIXTURE_CONFIG`），世界观被填上、核心大纲保留作者原文；再改世界观，设定变为未保存 | 补全后的世界观 | 是 | lane 7 |
+| `stage-setup-fill` | 示例作品的设定页点「AI 补全其余设定」，确认扩写已有内容；夹具按配置 JSON 合同返回（`FIXTURE_CONFIG`），世界观被填上并标 AI、核心大纲保留作者原文；再改世界观，AI 标记消失，设定变为未保存；对比度 | 补全后的世界观 | 是 | lane 7 |
 | `stage-settings-groups` | 从流程脊打开设置：分组为常用（AI 模型、外观）、高级（检索模型、网络代理、提示词模板、写作 Skills）、其他（项目备份、关于与更新），落在 AI 模型，位置为「设置 / AI 模型」；外观里放大到 105% 再还原；外观页没有主按钮；对比度；`after` 按 Esc 回到第 3 章 | 外观 | 否 | You see、缩放移入外观 |
 | `stage-settings-dark` | 设置 → 外观 → 主题选「深色」，外壳变深色；`context.restart()` 退出应用再用同一隔离目录冷启动，仍是深色，外观里「深色」仍选中；深色对比度 | 深色外观 | 否 | lane 8 |
 | `stage-settings-model` | 设置 → AI 模型，夹具模型的更多操作「删除模型…」出现危险确认；`after` 取消，模型还在 | 删除模型确认 | 否 | lane 9 |
 | `stage-first-model` | 全新配置的空书房点「还没有连接 AI 模型」里的「添加模型」，落在设置的 AI 模型，空状态「还没有添加模型」，唯一的主按钮是添加模型 | 首次使用的模型页 | 否 | 附录 A 首次使用 |
-| `stage-rd5-tour` | 30–60 秒的 RD-5 导览：空书房、新建「雾岛」进入设定页、写核心大纲并补齐必填、展开「文风」、下一步到架构、设置的 AI 模型与外观（切深色再切回）、关于与更新、回书房看书架、删除作品确认（名字不对时禁用）。配 `--video` 录评审视频 | 书房 | 否 | Review gate |
+| `stage-rd5-tour` | 30–60 秒的 RD-5 导览：空书房、新建「雾岛」进入设定页、写核心大纲并补齐必填、点进设定细则的「文风」、下一步到架构、设置的 AI 模型与外观（切深色再切回）、关于与更新、回书房看书架、删除作品确认（名字不对时禁用）。配 `--video` 录评审视频 | 书房 | 否 | Review gate |
 | `library-timing` | 计时会话（与 `startup-timing` 同样先预启动一次，另用公开 IPC 新建 20 部作品）：`readyToShowToInteractiveMs`（书房「新建作品」可见），以及页面里记下的 `renderInteractiveMs`（「新建作品」进入 DOM）与 `renderShelfMs`（20 个「预览《书名》」按钮都进入 DOM），都以导航开始为 0。旧欢迎页与新书房的书本按钮同名，所以对 trunk 也能跑 | 不截图 | 否 | perf |
 | `stage-lazy-retry` | 主进程 `webRequest` 拦下设定页代码块（`blockChunks`），重载后打开示例作品点「设定」，出现「页面没有载入」与「重试」；`after` 放行后点重试，设定页出现，且请求日志里有带 `?retry=` 的设定页代码块 | 载入失败 | 否 | RD-5 修复第 1 轮 |
 | `stage-setup-save-fail` | 设定页改一句后让 `project:save` 返回失败（`failProjectSaves` 换掉主进程处理函数）：Ctrl S 与「下一步」都在页脚出现 role=alert 的失败说明，仍停在设定、仍是未保存；`after` 换回处理函数再点保存，变为已保存、失败说明消失 | 保存失败 | 否 | RD-5 修复第 1 轮 |
 | `stage-error-code-display` | 主进程的错误码在显示处按界面语言说明（#474）：选好上级文件夹后换成同名新文件夹再新建作品，断言 `measured.createAfterParentReplaced` 是主进程原样返回的 `Error: EXTERNAL_FILE_GRANT_TARGET_CHANGED`；试改名打开着的作品文件夹（Windows 上被作品库占用，`measured.rename` 为 `EPERM`；改得动也立刻改回），再让 `kb:clear-all` 返回 `PROJECT_SESSION_STALE`；中文、英文各从知识库清空一次，提示是登记的说明、没有裸错误码 | 中文、英文的报错提示（`stage-error-code-display-zh`、`-en`） | 否 | #474 渲染层消费处 |
-| `stage-setup-short` | 新建「雾岛」：必填项先不标红；1440×900、1280×800、1280×720 下「类型」「目标读者」都在底栏之上；`after` 点开「全局写作要求」，面板不在底栏后面、焦点在它的输入框里 | 1280×720 设定页 | 否 | RD-5 修复第 1 轮 |
+| `stage-setup-short` | 新建「雾岛」：必填项先不标红；1440×900、1280×800、1280×720 下「类型」「目标读者」「叙事视角」「故事结构」「写作语言」都在底栏之上；`after` 把窗口恢复到 1440×900 | 1280×720 设定页 | 否 | RD-5 修复第 1 轮 |
 | `stage-settings-legacy` | 模型编辑表单的输入框 40px 高；`context.shoot` 中途拍下模型编辑、提示词模板、写作 Skills；项目备份页只有「导出本地存档」一个实心主按钮 | 项目备份 | 否 | RD-5 修复第 1 轮 |
 | `stage-settings-leave` | 编辑夹具模型改名，输入框里按 Esc 设置页不关；焦点移出后 Esc 弹「放弃未保存的修改？」；`after` 继续编辑修改还在，「返回作品」再确认放弃才关；再开设置页从 Ctrl K 选「角色」，设置页收起、「角色」标签选中 | 放弃确认 | 否 | RD-5 修复第 1 轮 |
 | `stage-settings-leave-work` | 作品里开着两个标签，设置页改了夹具模型名、不保存：标签条不显示；依次从流程脊阶段「架构」、流程脊资料「剧情与伏笔」、Ctrl K「蓝图」、Ctrl P「旧港」、Ctrl K「回到书房」、作品菜单「回到书房」离开，每次先弹「放弃未保存的修改？」，「继续编辑」后设置页与输入都在，再走一次选「放弃修改」才到去处 | 每个入口的确认（`leave-<入口>`） | 否 | RD-5 修复第 2 轮 |
