@@ -125,7 +125,7 @@ async function profiled({ app, page }, label, action) {
 async function installLedger(app, page) {
   await app.evaluate(({ ipcMain, app: electronApp }, wrapSql) => {
     if (globalThis.__perfLedger) return
-    const ledger = globalThis.__perfLedger = { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 } }
+    const ledger = globalThis.__perfLedger = { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 }, inflight: 0 }
     // 跨过快照才结束的调用和子进程：起始窗口已经报出，时长记进当前窗口的 late，不混进当前窗口的各通道。
     const settle = (current, ms) => { if (current) return true; ledger.late.calls += 1; ledger.late.ms += ms; return false }
     const wrap = (channel, handler) => async (...args) => {
@@ -133,7 +133,9 @@ async function installLedger(app, page) {
       if (session && typeof session === 'object' && typeof session.leaseId === 'string') globalThis.__perfSession = { event: args[0], session }
       const startedAt = performance.now()
       const channels = ledger.channels
+      ledger.inflight += 1
       try { return await handler(...args) } finally {
+        ledger.inflight -= 1
         const ms = performance.now() - startedAt
         if (settle(channels === ledger.channels, ms)) {
           const entry = channels[channel] ??= { calls: 0, ms: 0 }
@@ -160,15 +162,19 @@ async function installLedger(app, page) {
       return child
     }
     process.getBuiltinModule('node:module').syncBuiltinESMExports()
-    const histogram = ledger.loop = process.getBuiltinModule('node:perf_hooks').monitorEventLoopDelay({ resolution: 5 })
-    histogram.enable()
+    // 不用 monitorEventLoopDelay：它 reset() 后丢掉第一个间隔，操作一开始就卡住的那段会读成 0。
+    // 这里记相邻两次定时器的最大间隔，取账本时把还没结束的那段间隔也算上。
+    const loop = ledger.loop = { last: performance.now(), max: 0 }
+    setInterval(() => { const now = performance.now(); loop.max = Math.max(loop.max, now - loop.last); loop.last = now }, 5).unref()
     if (!wrapSql) return
     const require = process.getBuiltinModule('node:module').createRequire(process.getBuiltinModule('node:path').join(electronApp.getAppPath(), 'package.json'))
     const Database = require('better-sqlite3')
     const scratch = new Database(':memory:')
     const statement = Object.getPrototypeOf(scratch.prepare('SELECT 1'))
     scratch.close()
-    const sqlEntry = source => ledger.sql[source] ??= { calls: 0, rows: 0, ms: 0 }
+    // ms 是同一句 SQL 全部调用的合计；maxMs 是最长的一次调用，只有它能和 mainMaxBlockMs 对照。
+    const sqlEntry = source => ledger.sql[source] ??= { calls: 0, rows: 0, ms: 0, maxMs: 0 }
+    const charge = (entry, ms) => { entry.ms += ms; entry.maxMs = Math.max(entry.maxMs, ms) }
     for (const method of ['run', 'get', 'all']) {
       const original = statement[method]
       statement[method] = function (...args) {
@@ -176,7 +182,7 @@ async function installLedger(app, page) {
         const result = original.apply(this, args)
         const entry = sqlEntry(this.source)
         entry.calls += 1
-        entry.ms += performance.now() - startedAt
+        charge(entry, performance.now() - startedAt)
         entry.rows += method === 'all' ? result.length : method === 'get' ? (result === undefined ? 0 : 1) : result.changes
         return result
       }
@@ -191,7 +197,7 @@ async function installLedger(app, page) {
         next() {
           const startedAt = performance.now()
           const step = inner.next()
-          entry.ms += performance.now() - startedAt
+          charge(entry, performance.now() - startedAt)
           if (!step.done) entry.rows += 1
           return step
         },
@@ -205,7 +211,7 @@ async function installLedger(app, page) {
       const result = exec.call(this, source)
       const entry = sqlEntry(source)
       entry.calls += 1
-      entry.ms += performance.now() - startedAt
+      charge(entry, performance.now() - startedAt)
       return result
     }
   }, process.env.PERF702_SQL !== '0')
@@ -222,13 +228,20 @@ async function installLedger(app, page) {
   })
 }
 
-async function takeLedger(app, page) {
-  const main = await app.evaluate(() => {
+/** stallBeforeMs 只给正对照用：取账前在主进程里同步占住这么久，定时器来不及走下一拍。 */
+async function takeLedger(app, page, stallBeforeMs = 0) {
+  const main = await app.evaluate((_electron, stallBeforeMs) => {
+    const stalledAt = performance.now()
+    while (performance.now() - stalledAt < stallBeforeMs) { /* 同步忙等 */ }
     const { channels, spawns, sql, loop, late } = globalThis.__perfLedger
     Object.assign(globalThis.__perfLedger, { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 } })
-    const maxBlockMs = Math.round(loop.max / 1e6)
-    loop.reset()
-    const round = ([key, { calls, ms, rows }]) => [key, { calls, ms: Math.round(ms), ...rows === undefined ? {} : { rows } }]
+    // 下一个窗口从这一刻算起：不重置 last，窗口前没走完的那一拍会被下一拍再算一次。
+    const now = performance.now()
+    const maxBlockMs = Math.round(Math.max(loop.max, now - loop.last))
+    loop.max = 0
+    loop.last = now
+    const round = ([key, { calls, ms, rows, maxMs }]) => [key, { calls, ms: Math.round(ms), ...rows === undefined ? {} : { rows },
+      ...maxMs === undefined ? {} : { maxMs: Math.round(maxMs) } }]
     const sqlEntries = Object.entries(sql)
     return {
       ipcCalls: Object.values(channels).reduce((sum, entry) => sum + entry.calls, 0),
@@ -238,10 +251,11 @@ async function takeLedger(app, page) {
       sqlRows: sqlEntries.reduce((sum, [, entry]) => sum + entry.rows, 0),
       sqlMs: Math.round(sqlEntries.reduce((sum, [, entry]) => sum + entry.ms, 0)),
       sqlTop: Object.fromEntries(sqlEntries.sort(([, a], [, b]) => b.ms - a.ms).slice(0, 12).map(round)),
+      sqlMaxCallMs: Math.round(sqlEntries.reduce((max, [, entry]) => Math.max(max, entry.maxMs), 0)),
       mainMaxBlockMs: maxBlockMs,
       lateCalls: late.calls, lateMs: Math.round(late.ms),
     }
-  })
+  }, stallBeforeMs)
   const renderer = await page.evaluate(() => {
     const value = window.__perfLong
     if (!value) return { longTasks: null }
@@ -700,7 +714,217 @@ async function timeBlueprintsOnly(context, rounds = Number(process.env.PERF702_R
   return { blueprints: BLUEPRINTS, runs }
 }
 
+/**
+ * mainMaxBlockMs 的正对照：主进程里同步占住 500 ms，读数必须约 500 ms。
+ * 三条路径：渲染端 invoke 进来的处理函数里忙等、同一处跑一条约 500 ms 的 SQL（原生代码里的时间）、libuv 定时器回调里忙等。
+ */
+async function blockControls(context) {
+  const { app, page, invoke } = context
+  await installLedger(app, page)
+  const results = { idle: await operation(context, 'control-idle', () => page.waitForTimeout(1000)) }
+  const sqlRows = await app.evaluate(({ app: electronApp }) => {
+    const require = process.getBuiltinModule('node:module').createRequire(process.getBuiltinModule('node:path').join(electronApp.getAppPath(), 'package.json'))
+    const Database = require('better-sqlite3')
+    const db = globalThis.__perfControlDb ??= new Database(':memory:')
+    const count = db.prepare('WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL SELECT x + 1 FROM c WHERE x < ?) SELECT count(*) AS n FROM c')
+    const startedAt = performance.now()
+    count.get(1_000_000)
+    return Math.round(1_000_000 * 500 / (performance.now() - startedAt))
+  })
+  const blockInHandler = kind => app.evaluate(({ ipcMain }, { kind, sqlRows }) => {
+    const original = ipcMain._invokeHandlers.get('config:get')
+    globalThis.__perfControlRestore = () => ipcMain._invokeHandlers.set('config:get', original)
+    ipcMain._invokeHandlers.set('config:get', async (...args) => {
+      globalThis.__perfControlRestore()
+      const startedAt = performance.now()
+      if (kind === 'sql') globalThis.__perfControlDb.prepare('WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL SELECT x + 1 FROM c WHERE x < ?) SELECT count(*) AS n FROM c').get(sqlRows)
+      else while (performance.now() - startedAt < 500) { /* 同步忙等 */ }
+      globalThis.__perfControlBlockedMs = Math.round(performance.now() - startedAt)
+      return original(...args)
+    })
+  }, { kind, sqlRows })
+  for (const kind of ['js', 'sql']) {
+    await blockInHandler(kind)
+    results[`ipc-${kind}`] = await operation(context, `control-ipc-${kind}`, async () => {
+      await invoke(page, 'config:get')
+      return { blockedMs: await app.evaluate(() => globalThis.__perfControlBlockedMs) }
+    })
+  }
+  await takeLedger(app, page, 300)
+  const idleAfterStall = await profiled(context, 'control-stall-before-window', () => page.waitForTimeout(500))
+  // 反向对照：停顿发生在上一个窗口，这一窗口只该读到空闲值。
+  results.stallBeforeWindow = log({ label: 'control-stall-before-window', ms: idleAfterStall, ...await takeLedger(app, page), prompts: {} })
+  results.timer = await operation(context, 'control-timer-js', async () => {
+    await app.evaluate(() => new Promise(resolve => setTimeout(() => {
+      const startedAt = performance.now()
+      while (performance.now() - startedAt < 500) { /* 同步忙等 */ }
+      resolve()
+    }, 0)))
+    return { blockedMs: 500 }
+  })
+  return results
+}
+
+/** 等界面打开作品后的后台读取跑完：连续 quietMs 没有新完成的 invoke、也没有在途的 invoke 才返回，免得把它们的主进程占用算进导出。 */
+async function waitForQuietIpc(app, quietMs = 2_000, deadlineMs = 60_000) {
+  const total = () => app.evaluate(() => globalThis.__perfLedger.inflight > 0 ? -1
+    : Object.values(globalThis.__perfLedger.channels).reduce((sum, entry) => sum + entry.calls, 0))
+  const deadline = Date.now() + deadlineMs
+  let last = await total(), since = Date.now()
+  while (Date.now() - since < quietMs) {
+    assert.ok(Date.now() < deadline, `${deadlineMs} ms 内界面一直在调主进程`)
+    await new Promise(resolve => setTimeout(resolve, 250))
+    const now = await total()
+    if (now !== last || now === -1) { last = now; since = Date.now() }
+  }
+}
+
+/**
+ * 探针是渲染端每 20 ms 一次轻量 IPC，最长往返就是作者能感到的卡。
+ * writes 为真时导出期间每 150 ms 保存一次第 finalized+1 章草稿，记成功次数（边写边导）。
+ */
+async function timeExport(context, finalized, { rounds = Number(process.env.PERF702_ROUNDS ?? 1), writes = false } = {}) {
+  const { app, page, roots, invoke } = context
+  await installLedger(app, page)
+  await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(page).isVisible()) await stage.openFromLibrary(page, BOOK)
+  await stage.spine(page).waitFor({ state: 'visible', timeout: 60_000 })
+  const session = await app.evaluate(() => globalThis.__perfSession?.session)
+  assert.ok(session?.leaseId, '记下了界面打开作品的会话')
+  const draft = writes ? await invoke(page, 'db:draft-create', { chapterNumber: finalized + 1, version: 1, source: 'write',
+    content: chapterMarker(finalized + 1), wordCount: 10 }, session.projectPath, session) : null
+  if (writes) assert.equal(draft.success, true, draft.error)
+  const runs = []
+  for (let round = 1; round <= rounds; round++) {
+    const archive = path.join(roots.projects, `export-${round}-${randomUUID()}.ainovel`)
+    await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
+    const grant = await invoke(page, 'dialog:select-project-archive-export', BOOK)
+    await waitForQuietIpc(app)
+    runs.push(await operation(context, `${finalized}-export-r${round}${writes ? '-writing' : ''}`, async () => {
+      const result = await page.evaluate(async ({ grantId, session, draftId, writes }) => {
+        let done = false, saves = 0, saveFailures = 0, probes = 0, probeMaxMs = 0
+        const probe = (async () => {
+          while (!done) {
+            const startedAt = performance.now()
+            await window.aiNovelAPI.invoke('config:get')
+            probeMaxMs = Math.max(probeMaxMs, performance.now() - startedAt)
+            probes += 1
+            await new Promise(resolve => setTimeout(resolve, 20))
+          }
+        })()
+        const startedAt = performance.now()
+        // 先发导出再开始保存，只数导出结束前完成的保存：导出前或导出后才落地的不算边写边导。
+        const exporting = window.aiNovelAPI.invoke('project:archive-export', { targetArchiveGrantId: grantId, projectSession: session })
+        let totalMs = 0
+        const settled = exporting.finally(() => { totalMs = Math.round(performance.now() - startedAt); done = true })
+        const writer = (async () => {
+          while (writes && !done) {
+            const saved = await window.aiNovelAPI.invoke('db:draft-update-content', draftId, `边写边导第 ${saves + saveFailures + 1} 次保存。`, 12, session.projectPath, session)
+            if (done) break
+            if (saved?.success) saves += 1
+            else saveFailures += 1
+            await new Promise(resolve => setTimeout(resolve, 150))
+          }
+        })()
+        const exported = await settled
+        await Promise.all([probe, writer])
+        return { totalMs, success: exported.success, errorCode: exported.success ? undefined : exported.errorCode ?? exported.error,
+          sha256: exported.success ? exported.receipt.targetSha256 : undefined, probes, probeMaxMs: Math.round(probeMaxMs),
+          ...writes ? { saves, saveFailures } : {} }
+      }, { grantId: grant.grantId, session, draftId: draft?.id, writes })
+      // 导出失败或没出存档时耗时没有意义，场景直接判失败，免得失败被当成变快。
+      assert.equal(result.success, true, `导出失败：${result.errorCode}`)
+      assert.ok(fs.existsSync(archive), '导出报成功但存档不在')
+      // 边写边导要证明的是导出期间照常能存：至少一次与导出重叠的成功保存，且没有失败。
+      if (writes) assert.ok(result.saves > 0 && result.saveFailures === 0, `导出期间的保存：成功 ${result.saves}，失败 ${result.saveFailures}`)
+      return { ...result, archiveExists: true, leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
+    }))
+  }
+  return { finalized, runs }
+}
+
+async function exportPhases(context) {
+  const { app, page, roots, shoot } = context
+  await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(page).isVisible()) await stage.openFromLibrary(page, BOOK)
+  await stage.openSettings(page)
+  await stage.showSettingsPage(page, '项目备份')
+  const archive = path.join(roots.projects, `phases-${randomUUID()}.ainovel`)
+  await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
+  const panel = stage.root(page).getByTestId('project-backup-panel')
+  // 阶段文字一闪而过：点之前就开始记出现过的阶段，导出完再核对，截图不要求阶段还在。
+  await page.evaluate(labels => {
+    const seen = window.__exportPhases = []
+    const record = () => {
+      for (const [phase, label] of labels) {
+        if (!seen.includes(phase) && [...document.querySelectorAll('[data-testid="project-backup-panel"] [role="status"]')].some(node => node.textContent?.includes(label))) seen.push(phase)
+      }
+    }
+    new MutationObserver(record).observe(document.body, { subtree: true, childList: true, characterData: true })
+  }, [['snapshot', '正在读取作品…'], ['package', '正在打包存档…']])
+  await panel.getByRole('button', { name: '导出本地存档', exact: true }).click()
+  const done = panel.locator('p[role="status"]').filter({ hasText: /^本地存档已导出：[0-9a-f]{64}$/u })
+  const shot = []
+  const deadline = Date.now() + 120_000
+  while (!await done.isVisible()) {
+    assert.ok(Date.now() < deadline, '导出 120 s 内没有完成')
+    for (const phase of await page.evaluate(() => window.__exportPhases)) {
+      if (!shot.includes(phase)) { shot.push(phase); await shoot(`export-phase-${phase}`) }
+    }
+    await page.waitForTimeout(50)
+  }
+  const seen = await page.evaluate(() => window.__exportPhases)
+  assert.deepEqual(seen, ['snapshot', 'package'], '读取与打包两个阶段都要依次出现')
+  assert.equal(await panel.getByRole('status').filter({ hasText: /^正在/u }).count(), 0, '导出完不再显示阶段')
+  return { seen, archiveExists: fs.existsSync(archive), leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
+}
+
+/** 导出进行中关库（#702）：关库要等 worker 退出、临时目录删完才返回，作品重启后照常能打开。 */
+async function exportThenClose(context) {
+  const { app, page, roots, invoke } = context
+  await installLedger(app, page)
+  await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(page).isVisible()) await stage.openFromLibrary(page, BOOK)
+  await stage.spine(page).waitFor({ state: 'visible', timeout: 60_000 })
+  const session = await app.evaluate(() => globalThis.__perfSession?.session)
+  assert.ok(session?.leaseId, '记下了界面打开作品的会话')
+  const archive = path.join(roots.projects, `close-${randomUUID()}.ainovel`)
+  await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
+  const grant = await invoke(page, 'dialog:select-project-archive-export', BOOK)
+  const leftovers = () => fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-'))
+  await page.evaluate(({ grantId, session }) => {
+    window.__closeExport = window.aiNovelAPI.invoke('project:archive-export', { targetArchiveGrantId: grantId, projectSession: session })
+  }, { grantId: grant.grantId, session })
+  const deadline = Date.now() + 30_000
+  while (leftovers().length === 0) {
+    assert.ok(Date.now() < deadline, '30 s 内没见到导出的临时目录')
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  const closed = await invoke(page, 'db:close', session.projectPath, session)
+  const leftoversWhenClosed = leftovers()
+  const exported = await page.evaluate(() => window.__closeExport)
+  await context.restart()
+  await stage.spine(context.page).or(stage.cover(context.page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(context.page).isVisible()) await stage.openFromLibrary(context.page, BOOK)
+  await stage.spine(context.page).waitFor({ state: 'visible', timeout: 60_000 })
+  const result = { closed, leftoversWhenClosed, exportSuccess: exported.success, exportError: exported.success ? undefined : exported.errorCode ?? exported.error,
+    archiveExists: fs.existsSync(archive), leftoversAfterRestart: leftovers(), reopened: true }
+  assert.equal(closed?.success, true, `关库成功：${JSON.stringify(closed)}`)
+  assert.deepEqual(leftoversWhenClosed, [], '关库返回时临时目录已删')
+  assert.equal(result.archiveExists, exported.success, '导出成功才有存档，失败不留存档')
+  return result
+}
+
 export const PERF702_SCENARIOS = {
+  'perf702-export-phases': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
+    run: exportPhases },
+  'perf702-block-control': { model: true, shell: 'stage', run: blockControls },
+  'perf702-export-close': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
+    run: exportThenClose },
+  'perf702-export': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
+    run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
+  'perf702-export-writing': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
+    run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112), { writes: true }) },
   'perf702-reuse': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
     run: context => timeLargeBook(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
   'perf702-contention': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },

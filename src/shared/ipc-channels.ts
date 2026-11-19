@@ -286,6 +286,15 @@ export type ProjectOpenTarget = string | ProjectDirectoryGrant
 export interface PortableProjectExportRequest {
   targetArchiveGrantId: string
   projectSession: ProjectSessionContext
+  /** 原样回送在进度事件里：同一窗口可能有上一次导出还没停，界面只认自己这次的。 */
+  exportId?: string
+}
+
+/** 导出与云备份打包的阶段，按顺序：读取作品、检查、整理、打包。资料被改时整次重来，阶段会从头再走一遍。 */
+export type PortableExportPhase = 'snapshot' | 'check' | 'tidy' | 'package'
+
+export interface PortableExportEvents {
+  'portable-export:progress': { exportId?: string; phase: PortableExportPhase; round: number }
 }
 
 export interface PortableProjectExportReceipt {
@@ -331,6 +340,7 @@ export type PortableProjectOperationErrorCode =
   | 'PORTABLE_ASSET_UNSAFE'
   | 'PORTABLE_CONTEXT_INVALID'
   | 'PORTABLE_EXPORT_AVATAR_DAMAGED'
+  | 'PORTABLE_EXPORT_INTERRUPTED'
   | 'PORTABLE_EXPORT_SOURCE_CHANGED'
   | 'PORTABLE_GRANT_INVALID'
   | 'PORTABLE_SCHEMA_UNSUPPORTED'
@@ -1394,7 +1404,7 @@ export interface MCPChannels {
 
 // ===== 合并所有频道 =====
 export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CloudBackupChannels & GraphGenerationChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
-export type AllEventChannels = GenerationOwnerEvents & UpdateStateEvents & WindowEvents
+export type AllEventChannels = GenerationOwnerEvents & UpdateStateEvents & WindowEvents & PortableExportEvents
 
 /** 提取 invoke 频道名 */
 export type InvokeChannel = keyof AllInvokeChannels

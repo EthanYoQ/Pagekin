@@ -1,6 +1,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import { closeProjectDatabase, getCurrentProjectPath, getProjectDb } from '../database'
+import { stopPortableExports } from '../services/portable-export-host'
 import type { MainGenerationRunHandle } from '../../src/services/generation/generation-runtime'
 import { assertGenerationSourcesCurrent, assertGenerationSynopsisCommit, commitGenerationPlotOutlineAuthorEdit, commitGenerationBlueprintAuthorEdit, assertImportGenerationSourcesCurrent, recordGenerationDirectoryCommit, recordGenerationPlotOutlineCommit, withGenerationAgentChildEffect } from './generation-controller'
 import { projectAccess } from '../services/project-access'
@@ -172,6 +173,12 @@ export function registerDatabaseController() {
   const ipcMain = { handle: registerProjectDatabaseHandler }
   ipcMain.handle('db:close', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    // 导出 worker 还在读这本书时不能关库；等它停完后作品可能已换或被重新打开，路径和会话都再核对一次。
+    // 导出登记用的是会话作品根；传入路径的大小写可能与它不同。
+    const lease = projectAccess.captureCurrentSession()
+    await stopPortableExports(lease?.rootPath ?? getCurrentProjectPath()!)
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    if (lease) projectAccess.assertCurrentSession(lease)
     closeProjectDatabase()
     projectAccess.invalidateCurrentSession()
     return { success: true }

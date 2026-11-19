@@ -500,19 +500,39 @@ describe('portable project export service', () => {
     const exportLog = (warn: { mock: { calls: unknown[][] } }) =>
       warn.mock.calls.filter(call => String(call[0]).startsWith('[portable-export]')).map(call => JSON.stringify(call))
 
-    it('提示词被原子替换：重来一次并记一行日志，存档里是完整的新内容', async () => {
+    it('提示词被原子替换：重来一次并记一行日志，阶段带着第几轮从头再报一遍，存档里是完整的新内容', async () => {
       const f = fixture()
       const file = prompt(f, '{"提示":"快照时"}')
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       let replaced = false
+      const progress: string[] = []
 
-      await exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: { afterPortableDatabaseCreated: () => {
+      await exportPortableProject(input(f, createPortableProjectAssetProvider(), { onProgress: (phase, round) => progress.push(`${round}:${phase}`), __testHooks: { afterPortableDatabaseCreated: () => {
         if (replaced) return
         replaced = true
         replaceAtomically(file, '{"提示":"导出期间改的"}')
       } } }))
 
+      expect(progress).toEqual(['1:snapshot', '1:check', '1:tidy', '1:package', '2:snapshot', '2:check', '2:tidy', '2:package'])
       expect(exportLog(warn)).toEqual([expect.stringContaining('PORTABLE_ARCHIVE_SOURCE_CHANGED')])
+      const unpacked = await extract(f)
+      expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"导出期间改的"}')
+    })
+
+    it('调用方给了临时目录（worker 宿主）：重来也用它，不再往下建一层，结束后目录留给调用方且已清空', async () => {
+      const f = fixture()
+      const file = prompt(f, '{"提示":"快照时"}')
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const attemptRoot = fs.mkdtempSync(path.join(f.attemptParent, '.pe-'))
+      const roots: string[] = []
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider(), { attemptRoot, __testHooks: { afterPortableDatabaseCreated: root => {
+        roots.push(root)
+        if (roots.length === 1) replaceAtomically(file, '{"提示":"导出期间改的"}')
+      } } }))
+
+      expect(roots).toEqual([attemptRoot, attemptRoot])
+      expect(fs.readdirSync(attemptRoot)).toEqual([])
       const unpacked = await extract(f)
       expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"导出期间改的"}')
     })

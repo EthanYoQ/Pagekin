@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   currentProjectPath: 'C:/projects/A',
   handlers: new Map<string, IpcHandler>(),
   closeProjectDatabase: vi.fn(),
+  stopPortableExports: vi.fn<(projectPath?: string) => Promise<void>>(async () => {}),
   invalidateCurrentSession: vi.fn(),
   assertCurrentProjectContext: vi.fn(),
   captureCurrentSession: vi.fn(),
@@ -221,6 +222,7 @@ vi.mock('../../repositories/import-source-identity-repository', () => ({
   },
 }))
 
+vi.mock('../../services/portable-export-host', () => ({ stopPortableExports: mocks.stopPortableExports }))
 vi.mock('../../services/import-source-identity-secret', () => ({
   loadApplicationImportSourceSecret: vi.fn(() => Buffer.alloc(32, 1)),
 }))
@@ -1199,6 +1201,40 @@ describe('database controller project context guard', () => {
     expect(mocks.recoveryUpdatePending).toHaveBeenCalledOnce()
     expect(mocks.recoveryUpdatePending).toHaveBeenCalledWith('candidate-1', '候选正文')
     expect(mocks.recoveryResolve).toHaveBeenCalledOnce()
+  })
+
+  it('关库前等这本书的在途导出停完，等待期间换了书就不关（#702）', async () => {
+    let stopped!: () => void
+    mocks.stopPortableExports.mockImplementationOnce(() => new Promise<void>(resolve => { stopped = resolve }))
+
+    const closing = handler('db:close')({}, 'C:/projects/A')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(mocks.stopPortableExports).toHaveBeenCalledWith('C:/projects/A')
+    expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
+    stopped()
+    await expect(closing).resolves.toEqual({ success: true })
+    expect(mocks.closeProjectDatabase).toHaveBeenCalledOnce()
+
+    mocks.closeProjectDatabase.mockClear()
+    mocks.stopPortableExports.mockImplementationOnce(async () => { mocks.currentProjectPath = 'C:/projects/B' })
+    await expect(handler('db:close')({}, 'C:/projects/A')).resolves.toMatchObject({ success: false })
+    expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
+  })
+
+  it('调用方路径大小写和打开时不同：按当前作品的路径停导出，不按调用方的拼写（#702）', async () => {
+    await expect(handler('db:close')({}, 'c:/PROJECTS/a')).resolves.toEqual({ success: true })
+
+    expect(mocks.stopPortableExports).toHaveBeenCalledWith('C:/projects/A')
+    expect(mocks.closeProjectDatabase).toHaveBeenCalledOnce()
+  })
+
+  it('等导出停完后原会话已失效（同一路径被重新打开）就不关库（#702）', async () => {
+    mocks.stopPortableExports.mockImplementationOnce(async () => {
+      mocks.assertCurrentSession.mockImplementationOnce(() => { throw new Error('PROJECT_SESSION_STALE') })
+    })
+
+    await expect(handler('db:close')({}, 'C:/projects/A')).resolves.toMatchObject({ success: false })
+    expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
   })
 
   it('closes only the explicitly matched project database', async () => {
