@@ -9,7 +9,7 @@ import {
   resolveNarrativeThreadDormantThreshold,
 } from '../../../shared/narrative-thread'
 import { resolveWritingLanguage, type WritingLanguage } from '../../../shared/writing-language'
-import { aiSourceOf, configText } from '../../../shared/novel-config-ai-sources'
+import { aiSourceOf, configText, type AiSources } from '../../../shared/novel-config-ai-sources'
 import { sameProjectPathKey } from '../../../shared/project-session-context'
 import type { GeneratableField } from '../../../services/workflows/commands/generate-field.command'
 import { useEditorStore } from '../../../stores/editor-store'
@@ -36,9 +36,9 @@ type Form = ReturnType<typeof useNovelConfigForm>
 type SheetMark = 'empty' | 'ai-filled' | 'ai-expanded' | null
 
 
-function sheetMark(config: NovelConfig, field: SheetField['id']): SheetMark {
+function sheetMark(config: NovelConfig, aiSources: AiSources | undefined, field: SheetField['id']): SheetMark {
   if (!configText(config[field]).trim()) return 'empty'
-  const source = aiSourceOf(config, field)
+  const source = aiSourceOf(config, aiSources, field)
   return source ? `ai-${source}` : null
 }
 
@@ -143,12 +143,12 @@ function SheetMarkLabel({ mark }: { mark: SheetMark }) {
   )
 }
 
-function SheetRow({ field, config, form, aiReason }: { field: SheetField; config: NovelConfig; form: Form; aiReason: string | null }) {
+function SheetRow({ field, config, aiSources, form, aiReason }: { field: SheetField; config: NovelConfig; aiSources: AiSources | undefined; form: Form; aiReason: string | null }) {
   const text = useLocaleStore(s => s.text)
   const controlId = useId()
   const descId = useId()
   const name = text(...field.name)
-  const mark = sheetMark(config, field.id)
+  const mark = sheetMark(config, aiSources, field.id)
   return (
     <div className="stage-setup-row" data-empty={mark === 'empty' || undefined}>
       <div className="stage-setup-row-side">
@@ -188,6 +188,7 @@ function OptionSelect<V extends string>({ id, value, options, onChange }: {
 function SetupSession({ projectKey }: { projectKey: string }) {
   const text = useLocaleStore(s => s.text)
   const form = useNovelConfigForm(projectKey)
+  const aiSources = useProjectStore(s => s.currentProject?.aiSources)
   const modelMissing = useModelMissing('planning')
   const filling = useWorkflowStore(s => s.activeRuns.some(run => run.type === 'config_generation' && sameProjectPathKey(run.projectPath, projectKey)))
   const [expandFields, setExpandFields] = useState<string[] | null>(null)
@@ -223,7 +224,7 @@ function SetupSession({ projectKey }: { projectKey: string }) {
   const outline = configText(config.coreOutline)
   const aiReason = modelMissing ? text('先在设置里添加 AI 模型', 'Add an AI model in Settings first') : null
   const fillReason = aiReason ?? (outline.trim() ? null : text('先写核心大纲，AI 按它补全其余设定', 'Write the core outline first; AI fills in the rest from it'))
-  const marks = SHEET_FIELDS.map(field => sheetMark(config, field.id))
+  const marks = SHEET_FIELDS.map(field => sheetMark(config, aiSources, field.id))
   const markCount = (mark: SheetMark) => marks.filter(item => item === mark).length
   const sheetCount = [
     text(`${SHEET_FIELDS.length} 项`, `${SHEET_FIELDS.length} ${pluralEn(SHEET_FIELDS.length, 'item')}`),
@@ -350,7 +351,7 @@ function SetupSession({ projectKey }: { projectKey: string }) {
               <h2 id={`${baseId}-sheet`} className="stage-setup-sheet-title">{text('设定细则', 'Details')}</h2>
               <span className="stage-setup-sheet-count" role="status">{sheetCount}</span>
             </div>
-            {SHEET_FIELDS.map(field => <SheetRow key={field.id} field={field} config={config} form={form} aiReason={aiReason} />)}
+            {SHEET_FIELDS.map(field => <SheetRow key={field.id} field={field} config={config} aiSources={aiSources} form={form} aiReason={aiReason} />)}
           </section>
 
           <section className="stage-setup-outline" data-missing={isMissing('coreOutline') || undefined}>

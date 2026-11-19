@@ -642,9 +642,10 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     else fs.writeFileSync(template, JSON.stringify({ key: 'first_chapter_draft', content: '作者新模板' }))
     const before = ProjectCoreRepository.get()
     const result = await mocks.handlers.get('db:project-core-commit-generated')!({ sender },
-      { data: { worldbuilding: '不得覆盖的生成设定' }, generationRunHandle: run.handle }, session.projectPath, session)
+      { data: { worldbuilding: '不得覆盖的生成设定' }, aiSources: { worldSetting: { kind: 'filled', hash: '0000abcd' } }, generationRunHandle: run.handle }, session.projectPath, session)
     expect(result).toMatchObject({ success: false, error: expect.stringContaining('GENERATION_SOURCE_CHANGED') })
     expect(ProjectCoreRepository.get()).toEqual(before)
+    expect(ProjectCoreRepository.getAiSources()).toEqual({})
     expect((await invoke('generation:read', run.handle)).candidates?.[0].text).toBe('中文候选')
   })
   it('checks live source bytes and writes once in the same actual SQLite transaction', async () => {
@@ -663,7 +664,8 @@ describe('generation public IPC with actual project authority and SQLite', () =>
       return originalUpdate(data)
     })
     expect(await mocks.handlers.get('db:project-core-commit-generated')!({ sender },
-      { data: { worldbuilding: '正式设定', narrativePov: 'first_person' }, generationRunHandle: run.handle }, session.projectPath, session)).toEqual({ success: true })
+      { data: { worldbuilding: '正式设定', narrativePov: 'first_person' }, aiSources: { worldSetting: { kind: 'filled', hash: '0000abcd' } }, generationRunHandle: run.handle }, session.projectPath, session)).toEqual({ success: true })
+    expect(ProjectCoreRepository.getAiSources()).toEqual({ worldSetting: { kind: 'filled', hash: '0000abcd' } })
     expect(writes).toHaveBeenCalledTimes(1)
     expect(sourceTransactions.length).toBeGreaterThan(0)
     expect(sourceTransactions.every(Boolean)).toBe(true)

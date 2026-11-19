@@ -243,15 +243,15 @@ describe('explicit editor dirty integration', () => {
     const pending = deferred<{ success: boolean }>()
     invoke.mockReturnValue(pending.promise)
     const saving = useProjectStore.getState().commitGeneratedNovelConfig(
-      { ...generated, aiSources: recordAiSources(original.novelConfig, generated) }, original.novelConfig, projectSession(original), handle)
+      generated, original.novelConfig, projectSession(original), handle, undefined, recordAiSources(original.novelConfig, original.aiSources, generated))
     useProjectStore.getState().updateNovelConfig({ worldSetting: '作者等待时写的世界观' })
     pending.resolve({ success: true })
     await expect(saving).rejects.toThrow('GENERATION_SAVED_WITH_NEWER_AUTHOR_DRAFT')
-    const config = useProjectStore.getState().currentProject!.novelConfig
+    const { novelConfig: config, aiSources } = useProjectStore.getState().currentProject!
     expect(config.worldSetting).toBe('作者等待时写的世界观')
-    expect(aiSourceOf(config, 'worldSetting')).toBeNull()
+    expect(aiSourceOf(config, aiSources, 'worldSetting')).toBeNull()
     expect(config.goldenFinger).toBe('读潮位刻痕。')
-    expect(aiSourceOf(config, 'goldenFinger')).toBe('filled')
+    expect(aiSourceOf(config, aiSources, 'goldenFinger')).toBe('filled')
   })
   it('unbinds project A character data before openProject publishes project B and loads B', async () => {
     const fileTree = deferred<[]>()

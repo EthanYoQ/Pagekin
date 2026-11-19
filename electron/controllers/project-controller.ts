@@ -168,12 +168,6 @@ function narrativeThreadSettingsCoreUpdate(
     : { narrativeThreadDormantChapterThreshold: novelConfig.narrativeThreadDormantChapterThreshold }
 }
 
-function aiSourcesCoreUpdate(
-  novelConfig: ProjectData['novelConfig'],
-): Pick<Partial<ProjectCoreData>, 'aiSources'> {
-  return novelConfig.aiSources === undefined ? {} : { aiSources: novelConfig.aiSources }
-}
-
 /** 项目配置读写必须显式携带当前会话租约，路径本身不是授权。 */
 function assertRequiredProjectSession(
   projectId: string,
@@ -671,9 +665,8 @@ export function registerProjectController(options: ProjectControllerOptions = {}
             globalGuidance: updatedCoreData.globalGuidance,
             writingStyle: updatedCoreData.writingStyle,
             referenceWorks: updatedCoreData.referenceWorks,
-            // 没有标记的作品不带这一项，旧作品读出的设定与升级前逐字相同。
-            ...(Object.keys(updatedCoreData.aiSources).length > 0 ? { aiSources: updatedCoreData.aiSources } : {}),
           },
+          aiSources: ProjectCoreRepository.getAiSources(),
           characterStates: updatedCoreData.characterStates,
           createdAt: new Date().toISOString(), // 数据库中实际上有，但这里先提供时间值避免前端报错
           updatedAt: new Date().toISOString(),
@@ -795,7 +788,6 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           protagonistProfile: data.novelConfig.protagonistProfile,
           writingStyle: data.novelConfig.writingStyle ?? '',
           referenceWorks: data.novelConfig.referenceWorks ?? '',
-          ...aiSourcesCoreUpdate(data.novelConfig),
         })
       }
 
@@ -811,6 +803,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
       if (!db) throw new Error('PROJECT_NOT_OPEN')
       db.transaction(() => {
         ProjectCoreRepository.update(coreUpdate)
+        if (data.aiSources) ProjectCoreRepository.setAiSources(data.aiSources)
       })()
 
       // 最近项目是导航便利数据，不属于项目核心提交。写入失败不能把已经
@@ -865,7 +858,6 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           protagonistProfile: data.novelConfig.protagonistProfile,
           writingStyle: data.novelConfig.writingStyle ?? '',
           referenceWorks: data.novelConfig.referenceWorks ?? '',
-          ...aiSourcesCoreUpdate(data.novelConfig),
         })
       }
       return { success: true }

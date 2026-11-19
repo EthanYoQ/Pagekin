@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   sealedRootCount: 0,
   onCoreGet: null as null | (() => void),
   coreAiSources: {} as Record<string, unknown>,
+  setAiSources: vi.fn(),
   projectCoreGet: vi.fn(),
   projectCoreInit: vi.fn(),
   projectCoreUpdate: vi.fn(),
@@ -156,9 +157,10 @@ vi.mock('../../repositories/project-core-repository', () => ({
         writingStyle: '',
         referenceWorks: '',
         characterStates: '',
-        aiSources: mocks.coreAiSources,
       }
     }),
+    getAiSources: () => mocks.coreAiSources,
+    setAiSources: mocks.setAiSources,
     init: mocks.projectCoreInit,
     update: mocks.projectCoreUpdate,
   },
@@ -1133,19 +1135,17 @@ describe('project controller project identity', () => {
     }))
   })
 
-  it('设定细则的 AI 来源标记随保存写入，重开作品时带回；没有标记的作品不带这一项', async () => {
+  it('设定细则的 AI 来源标记随保存写入，重开作品时与设定并列带回，不进设定', async () => {
     const aiSources = { worldSetting: { kind: 'filled', hash: '1a2b3c4d' } }
-    const data = { path: projectA, sessionLease: 'lease-project-A', name: 'Project A', novelConfig: { genre: 'fantasy', aiSources } }
+    const data = { path: projectA, sessionLease: 'lease-project-A', name: 'Project A', novelConfig: { genre: 'fantasy' }, aiSources }
     await expect(handler('project:save')({}, 'project-A', data, projectA, projectSession())).resolves.toMatchObject({ success: true })
-    await expect(handler('project:update-config')({}, 'project-A', data, projectA, projectSession())).resolves.toEqual({ success: true })
-    expect(mocks.projectCoreUpdate.mock.calls.map(call => call[0].aiSources)).toEqual([aiSources, aiSources])
+    expect(mocks.setAiSources).toHaveBeenCalledWith(aiSources)
 
-    type Opened = { project: { novelConfig: Record<string, unknown> } }
-    const opened = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'ai-sources-plain', projectA) as Opened
-    expect(opened.project.novelConfig).not.toHaveProperty('aiSources')
     mocks.coreAiSources = aiSources
-    const reopened = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'ai-sources-marked', projectB) as Opened
-    expect(reopened.project.novelConfig.aiSources).toEqual(aiSources)
+    type Opened = { project: { novelConfig: Record<string, unknown>; aiSources: unknown } }
+    const reopened = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'ai-sources-marked', projectA) as Opened
+    expect(reopened.project.aiSources).toEqual(aiSources)
+    expect(reopened.project.novelConfig).not.toHaveProperty('aiSources')
   })
 
   it('persists the project writing language independently from the application locale', async () => {

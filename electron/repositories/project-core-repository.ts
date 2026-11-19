@@ -35,7 +35,6 @@ export interface ProjectCoreRow {
     core_outline: string
     world_setting: string
     protagonist_profile: string
-    ai_sources?: string
     premise: string
     worldbuilding: string
     characters_arch: string
@@ -65,7 +64,6 @@ export interface ProjectCoreData {
     coreOutline: string
     worldSetting: string
     protagonistProfile: string
-    aiSources: AiSources
     premise: string
     worldbuilding: string
     charactersArch: string
@@ -121,7 +119,6 @@ function rowToData(row: ProjectCoreRow): ProjectCoreData {
         coreOutline: row.core_outline,
         worldSetting: row.world_setting,
         protagonistProfile: row.protagonist_profile,
-        aiSources: parseAiSources(row.ai_sources),
         premise: row.premise,
         worldbuilding: row.worldbuilding,
         charactersArch: row.characters_arch,
@@ -140,6 +137,18 @@ export class ProjectCoreRepository {
         ).get('main') as ProjectCoreRow | undefined
 
         return row ? rowToData(row) : null
+    }
+
+    /** 设定细则的 AI 来源标记。不在 ProjectCoreData 里：设定会被整份哈希、比对、写进提示词，标记只给设定页看。 */
+    static getAiSources(db = getProjectDb()): AiSources {
+        if (!db) return {}
+        const row = db.prepare("SELECT ai_sources FROM project_core WHERE id = 'main'").get() as { ai_sources: string } | undefined
+        return parseAiSources(row?.ai_sources)
+    }
+
+    static setAiSources(sources: AiSources, db = getProjectDb()): void {
+        if (!db) throw new Error('PROJECT_NOT_OPEN')
+        db.prepare("UPDATE project_core SET ai_sources = ? WHERE id = 'main'").run(JSON.stringify(parseAiSources(sources)))
     }
 
     /** 初始化项目配置（创建项目时调用） */
@@ -183,7 +192,6 @@ export class ProjectCoreRepository {
             coreOutline: 'core_outline',
             worldSetting: 'world_setting',
             protagonistProfile: 'protagonist_profile',
-            aiSources: 'ai_sources',
             premise: 'premise',
             worldbuilding: 'worldbuilding',
             synopsis: 'synopsis',
@@ -199,7 +207,7 @@ export class ProjectCoreRepository {
                 const value = (data as Record<string, unknown>)[camel]
                 values.push(camel === 'narrativeThreadDormantChapterThreshold'
                     ? resolveNarrativeThreadDormantThreshold(value)
-                    : camel === 'aiSources' ? JSON.stringify(parseAiSources(value)) : value)
+                    : value)
             }
         }
 

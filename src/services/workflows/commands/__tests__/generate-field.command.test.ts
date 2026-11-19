@@ -164,7 +164,9 @@ describe('GenerateFieldCommand project identity', () => {
     expect(observedPrompts.join('\n')).toContain(authorText)
     expect(useProjectStore.getState().currentProject?.novelConfig.worldSetting)
       .toBe(`${authorText}\n\n${addition}`)
-    expect(aiSourceOf(useProjectStore.getState().currentProject!.novelConfig, 'worldSetting')).toBe('expanded')
+    const { novelConfig, aiSources } = useProjectStore.getState().currentProject!
+    expect(aiSourceOf(novelConfig, aiSources, 'worldSetting')).toBe('expanded')
+    expect(novelConfig).not.toHaveProperty('aiSources')
   })
 
   it('模型没补内容时，单项生成后会话里的设定与重开作品读出的逐字相同，草稿恢复不判为设定已变', async () => {
@@ -309,8 +311,8 @@ describe('GenerateFieldCommand project identity', () => {
     expect(String(callLlm.mock.calls[1]?.[0])).toContain('只重新生成“全局写作要求”字段')
     expect(updateNovelConfig).toHaveBeenCalledWith({
       globalGuidance: `作者原有长篇要求，不受生成规则条数限制。\n\n${replacement}`,
-      aiSources: { globalGuidance: { kind: 'expanded', hash: expect.any(String) } },
     }, context.projectSession)
+    expect(useProjectStore.getState().currentProject!.aiSources).toEqual({ globalGuidance: { kind: 'expanded', hash: expect.any(String) } })
     expect(saveProject).toHaveBeenCalledOnce()
   })
 
@@ -334,9 +336,8 @@ describe('GenerateFieldCommand project identity', () => {
     await expect(command.execute({ step: {}, context, callbacks })).resolves.toContain(replacement)
 
     expect(callLlm).toHaveBeenCalledTimes(2)
-    expect(updateNovelConfig).toHaveBeenCalledWith({
-      globalGuidance: replacement, aiSources: { globalGuidance: { kind: 'filled', hash: expect.any(String) } },
-    }, context.projectSession)
+    expect(updateNovelConfig).toHaveBeenCalledWith({ globalGuidance: replacement }, context.projectSession)
+    expect(useProjectStore.getState().currentProject!.aiSources).toEqual({ globalGuidance: { kind: 'filled', hash: expect.any(String) } })
     expect(saveProject).toHaveBeenCalledOnce()
   })
 

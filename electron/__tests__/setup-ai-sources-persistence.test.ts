@@ -42,15 +42,16 @@ describe('设定细则的 AI 来源标记随作品保存', () => {
     initProjectDatabase(root)
     ProjectCoreRepository.init('雾城记')
     const before = ProjectCoreRepository.get()!
-    expect(before.aiSources).toEqual({})
+    expect(ProjectCoreRepository.getAiSources()).toEqual({})
     const written = { worldSetting: '雾城', goldenFinger: '回溯' }
-    ProjectCoreRepository.update({ ...written, aiSources: recordAiSources(before, written) })
+    ProjectCoreRepository.update(written)
+    ProjectCoreRepository.setAiSources(recordAiSources(before, {}, written))
     closeProjectDatabase()
 
     initProjectDatabase(root)
     const reopened = ProjectCoreRepository.get()!
-    expect(aiSourceOf(reopened, 'worldSetting')).toBe('filled')
-    expect(aiSourceOf(reopened, 'goldenFinger')).toBe('filled')
+    expect(aiSourceOf(reopened, ProjectCoreRepository.getAiSources(), 'worldSetting')).toBe('filled')
+    expect(aiSourceOf(reopened, ProjectCoreRepository.getAiSources(), 'goldenFinger')).toBe('filled')
   })
 
   it('库里的标记坏了也能打开，全部按作者内容显示', () => {
@@ -62,9 +63,8 @@ describe('设定细则的 AI 来源标记随作品保存', () => {
     closeProjectDatabase()
 
     initProjectDatabase(root)
-    const reopened = ProjectCoreRepository.get()!
-    expect(reopened.aiSources).toEqual({})
-    expect(reopened.worldSetting).toBe('雾城')
+    expect(ProjectCoreRepository.getAiSources()).toEqual({})
+    expect(ProjectCoreRepository.get()!.worldSetting).toBe('雾城')
   })
 
   it('有标记的作品，ProjectCoreRepository.get 读出的设定与 M10 前逐字相同', () => {

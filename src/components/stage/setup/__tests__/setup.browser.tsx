@@ -14,7 +14,7 @@ import { useProjectStore } from '../../../../stores/project-store'
 import { useWorkflowStore } from '../../../../stores/workflow-store'
 import { IS_MAC } from '../../shortcut-keys'
 import { useStageShortcuts } from '../../use-stage-shortcuts'
-import { recordAiSources } from '../../../../shared/novel-config-ai-sources'
+import { recordAiSources, type AiSources } from '../../../../shared/novel-config-ai-sources'
 import StageSetup from '../StageSetup'
 
 const COMMAND = IS_MAC ? { metaKey: true } : { ctrlKey: true }
@@ -38,9 +38,9 @@ const BLANK: Partial<NovelConfig> = {
 let root: Root | undefined
 let host: HTMLDivElement | undefined
 
-function project(config: Partial<NovelConfig>) {
+function project(config: Partial<NovelConfig>, aiSources?: AiSources) {
   setActiveProjectSessionContext(SESSION)
-  useProjectStore.setState({ currentProject: { id: 'island', sessionLease: 'lease-1', name: '雾岛', path: PATH, novelConfig: { ...BLANK, ...config } } as unknown as ProjectData })
+  useProjectStore.setState({ currentProject: { id: 'island', sessionLease: 'lease-1', name: '雾岛', path: PATH, novelConfig: { ...BLANK, ...config }, aiSources } as unknown as ProjectData })
 }
 
 function Shortcuts() {
@@ -397,7 +397,7 @@ describe('设定页', () => {
   it('设定细则的行内标记与表头计数一致：AI 整项写的标「AI 填写」，在作者原文后补写的标「AI 扩写」，作者一改就消失', async () => {
     const before: Partial<NovelConfig> = { worldSetting: '旧港以潮汐计时。' }
     const written = { protagonistProfile: '林岚，测绘师。', worldSetting: '旧港以潮汐计时。\n\n灯塔归港务局。', goldenFinger: '读潮位刻痕。' }
-    project({ ...before, ...written, writingStyle: '短句。', aiSources: recordAiSources(before, written) })
+    project({ ...before, ...written, writingStyle: '短句。' }, recordAiSources(before, {}, written))
     await mount()
     expect(sheetMarks()).toEqual({ 主角人设: 'AI 填写', 世界观: 'AI 扩写', 金手指: 'AI 填写', 文风: null, 全局写作要求: '未填', 参考作品: '未填' })
     expect(sheetCount()).toBe('6 项 · 2 项未填 · 2 项 AI 填写 · 1 项 AI 扩写')

@@ -645,6 +645,8 @@ export interface ProjectData {
   /** 主进程签发；仅与 id 组合为会话凭据，path 不是授权。 */
   sessionLease?: string
   novelConfig: NovelConfig
+  /** 设定细则里哪些项是 AI 写的，只给设定页看，所以不放进 novelConfig。 */
+  aiSources?: AiSources
   characterStates: string
   createdAt: string
   updatedAt: string
@@ -674,8 +676,6 @@ export interface NovelConfig {
   globalGuidance: string
   writingStyle?: string
   referenceWorks?: string
-  /** 设定细则里哪些项是 AI 写的；不进提示词。旧作品没有这一项，全部按作者内容。 */
-  aiSources?: AiSources
 }
 
 export interface FileNode {
@@ -918,7 +918,7 @@ export interface DatabaseChannels {
     return: { success: boolean; error?: string }
   }
   'db:project-core-commit-generated': {
-    args: [request: { data: Partial<ProjectCoreData>; generationRunHandle: import('../services/generation/generation-runtime').MainGenerationRunHandle }, expectedProjectPath: string]
+    args: [request: { data: Partial<ProjectCoreData>; aiSources?: AiSources; generationRunHandle: import('../services/generation/generation-runtime').MainGenerationRunHandle }, expectedProjectPath: string]
     return: { success: boolean; error?: string }
   }
   'db:project-core-synopsis-commit': {

@@ -1,5 +1,6 @@
 import { decodeCharacterDetails } from '../../../../shared/character-proposal-parser'
-import { aiSourceOf } from '../../../../shared/novel-config-ai-sources'
+import { aiSourceOf, type AiSourceField } from '../../../../shared/novel-config-ai-sources'
+import type { NovelConfig } from '../../../../shared/ipc-channels'
 import { proposalRuntimeFixture, proposalBatchFixture } from './character-proposal-runtime.fixture'
 import { contextLengthRejectingDependencies } from './context-length-runtime.fixture'
 import type { CharacterProposalSource, CharacterProposalBatch } from '../../../../shared/character-proposal'
@@ -204,6 +205,10 @@ const context: WorkflowContext = {
   cancelled: false,
 }
 
+/** AI 补全后这一项的标记：设定取交给设定页的那份，标记取 store 里与设定并列存的那份。 */
+const savedMark = (generated: Partial<NovelConfig>, field: AiSourceField) =>
+  aiSourceOf(generated, useProjectStore.getState().currentProject!.aiSources, field)
+
 function project(path: string) {
   return {
     id: 'main',
@@ -269,8 +274,8 @@ describe('GenerateConfigCommand error boundaries', () => {
           goldenFinger: '',
           protagonistProfile: '',
           globalGuidance: authorGuidance,
-          aiSources: { referenceWorks: { kind: 'filled', hash: 'stale000' } },
         },
+        aiSources: { referenceWorks: { kind: 'filled', hash: 'stale000' } },
       } as never,
       saveProject: vi.fn().mockResolvedValue(true),
     })
@@ -298,9 +303,9 @@ describe('GenerateConfigCommand error boundaries', () => {
     }))
     expect(userPrompt).not.toContain('aiSources')
     const generated = onGenerated.mock.calls[0]![0]
-    expect(aiSourceOf(generated, 'worldSetting')).toBe('filled')
-    expect(aiSourceOf(generated, 'globalGuidance')).toBe('expanded')
-    expect(aiSourceOf(generated, 'referenceWorks')).toBeNull()
+    expect(savedMark(generated, 'worldSetting')).toBe('filled')
+    expect(savedMark(generated, 'globalGuidance')).toBe('expanded')
+    expect(savedMark(generated, 'referenceWorks')).toBeNull()
   })
 
   it('AI 补全交回设定页的设定只有设定字段，不带 AI 标记', async () => {
@@ -338,7 +343,7 @@ describe('GenerateConfigCommand error boundaries', () => {
 
     const generated = onGenerated.mock.calls[0]![0]
     expect(generated.referenceWorks).toBe(`${authorReferences}\n\n《雪中悍刀行》`)
-    expect(aiSourceOf(generated, 'referenceWorks')).toBe('expanded')
+    expect(savedMark(generated, 'referenceWorks')).toBe('expanded')
   })
 
   it.each([
@@ -360,7 +365,7 @@ describe('GenerateConfigCommand error boundaries', () => {
 
     const generated = onGenerated.mock.calls[0]![0]
     expect(generated[field]).toBe(expected)
-    expect(aiSourceOf(generated, field)).toBe(mark)
+    expect(savedMark(generated, field)).toBe(mark)
   })
 
   it.each([

@@ -10,7 +10,7 @@ export type AiSourceField = typeof AI_SOURCE_FIELDS[number]
 /** filled：整项由 AI 写；expanded：AI 在作者原文后面补写。 */
 export type AiSourceKind = 'filled' | 'expanded'
 export type AiSources = Partial<Record<AiSourceField, { kind: AiSourceKind; hash: string }>>
-type AiSourceInput = { readonly [K in AiSourceField]?: unknown } & { readonly aiSources?: AiSources }
+type AiSourceText = { readonly [K in AiSourceField]?: unknown }
 
 /** FNV-1a 32 位。只用来判断「还是不是 AI 写的那段」，不防篡改。 */
 function fingerprint(value: string): string {
@@ -25,22 +25,22 @@ function fingerprint(value: string): string {
 /** 读出的设定值类型不对时按空文本算：坏数据不让设定页、流程脊或 AI 补全崩。 */
 export const configText = (value: unknown): string => (typeof value === 'string' ? value : '')
 
-const textOf = (config: AiSourceInput, field: AiSourceField): string => configText(config[field])
+const textOf = (config: AiSourceText, field: AiSourceField): string => configText(config[field])
 
 /** 这一项此刻是不是 AI 的内容；作者改过、空着或记录对不上都是 null。 */
-export function aiSourceOf(config: AiSourceInput, field: AiSourceField): AiSourceKind | null {
-  const entry = config.aiSources?.[field]
+export function aiSourceOf(config: AiSourceText, sources: AiSources | undefined, field: AiSourceField): AiSourceKind | null {
+  const entry = sources?.[field]
   const value = textOf(config, field)
   return entry && value.trim() && entry.hash === fingerprint(value) ? entry.kind : null
 }
 
 /** filled：原来空着或原来就是 AI 写的；expanded：原来有作者内容；没变的项保留仍然有效的旧标记。 */
-export function recordAiSources(before: AiSourceInput, written: AiSourceInput): AiSources {
+export function recordAiSources(before: AiSourceText, sources: AiSources | undefined, written: AiSourceText): AiSources {
   const after = { ...before, ...written }
   const next: AiSources = {}
   for (const field of AI_SOURCE_FIELDS) {
     const value = textOf(after, field)
-    const previous = aiSourceOf(before, field)
+    const previous = aiSourceOf(before, sources, field)
     if (Object.hasOwn(written, field) && value.trim() && value !== textOf(before, field)) {
       const authorTextBefore = textOf(before, field).trim() !== '' && previous !== 'filled'
       next[field] = { kind: authorTextBefore ? 'expanded' : 'filled', hash: fingerprint(value) }
@@ -66,11 +66,4 @@ export function parseAiSources(raw: unknown): AiSources {
     }
   }
   return sources
-}
-
-/** 标记只给界面看，设定进提示词前去掉。 */
-export function withoutAiSources<T extends { aiSources?: unknown }>(config: T): Omit<T, 'aiSources'> {
-  const rest = { ...config }
-  delete rest.aiSources
-  return rest
 }
