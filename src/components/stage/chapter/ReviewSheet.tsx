@@ -165,7 +165,7 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
               : text('本章目标检查不完整，尚有待核实项。', 'Chapter goal review is incomplete and needs verification.')}
         </p>
       )}
-      {cycle?.revisionStatus === 'merge-committed' && cycle.recheckDisposition === 'required' && (
+      {cycle?.revisionStatus === 'merge-committed' && cycle.recheckDisposition === 'required' && !cycle.restoredHistory && (
         <Notice
           tone="warn"
           title={text('合并后复验还没完成', 'The post-merge recheck is incomplete')}

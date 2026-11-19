@@ -1506,4 +1506,15 @@ describe('审稿数据标出恢复前的审修循环（#702）', () => {
     expect(() => cycleRead(db => db.prepare("UPDATE generation_runs SET binding_json='{' WHERE root_action_id='root-review'").run()))
       .toThrow('REVIEW_CYCLE_CONFLICT')
   })
+
+  it('根运行缺失或 binding 读不出：不判成恢复前', () => {
+    const db = fixture()
+    try {
+      create(db, seed(db).call)
+      expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(true)
+      expect(ReviewCycleRepository.isRestoredHistory('root-missing', 'restored-project', db)).toBe(false)
+      db.prepare("UPDATE generation_runs SET binding_json='{' WHERE root_action_id='root-review'").run()
+      expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(false)
+    } finally { db.close() }
+  })
 })

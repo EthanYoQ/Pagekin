@@ -1022,30 +1022,36 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     expect([...seen].filter(label => label.includes('意见修稿'))).toEqual([])
   })
 
-  it('合并过、复验没完成：提示指向重新审稿，审稿报告里没有「重试合并后复验」；没导出过的书照常有', async () => {
-    const recheckPending = { revisionStatus: 'merge-committed' as const, recheckDisposition: 'required' as const, mergedHash: 'b'.repeat(64) }
+  const recheckPending = { revisionStatus: 'merge-committed' as const, recheckDisposition: 'required' as const, mergedHash: 'b'.repeat(64) }
+  async function openRecheckPending(restoredHistory: boolean) {
     const draft = backend.addDraft({ status: 'revised' })
-    restoredReview(draft, recheckPending)
+    if (restoredHistory) restoredReview(draft, recheckPending)
+    else {
+      const review = backend.addReview(draft)
+      backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, ...recheckPending })
+    }
     await mount()
     await openDraft(draft.id)
-    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    await expect.element(page.getByRole('button', { name: '定稿', exact: true })).toBeVisible()
+  }
+  const openReport = async () => {
     await click('更多操作')
     await act(async () => page.getByRole('menuitem', { name: '审稿报告' }).click())
     await expect.element(page.getByRole('complementary', { name: /审稿/ }).getByText('前后矛盾').first()).toBeVisible()
-    expect(page.getByRole('button', { name: '重试合并后复验' }).elements()).toEqual([])
+  }
 
-    await act(async () => root?.unmount())
-    host?.remove()
-    const fresh = backend.addDraft({ status: 'revised' })
-    const review = backend.addReview(fresh)
-    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, ...recheckPending })
-    useEditorStore.setState({ tabs: [], activeTabId: null, draftLedgers: {} })
-    useStageStore.setState({ sheet: null })
-    await mount()
-    await openDraft(fresh.id)
+  it('合并过、复验没完成：提示指向重新审稿，审稿报告里没有「重试合并后复验」', async () => {
+    await openRecheckPending(true)
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    await expect.element(page.getByRole('button', { name: '重新审稿', exact: true })).toBeVisible()
+    await openReport()
+    expect(page.getByRole('button', { name: '重试合并后复验' }).elements()).toEqual([])
+  })
+
+  it('没导出过的书，合并过、复验没完成：照常提示并在审稿报告里摆「重试合并后复验」', async () => {
+    await openRecheckPending(false)
     await expect.element(page.getByText('合并后复验还没完成，可在审稿报告里重试')).toBeVisible()
-    await click('更多操作')
-    await act(async () => page.getByRole('menuitem', { name: '审稿报告' }).click())
+    await openReport()
     await expect.element(page.getByRole('button', { name: '重试合并后复验' })).toBeVisible()
   })
 

@@ -121,9 +121,8 @@ export class ReviewRevisionGeneration {
       ...(context.recheck ? { reviewCycle: { cycleId: context.recheck.cycleId, revisionStatus: 'merge-committed',
         recheckCount: cycle?.disposition === 'completed' ? 1 : 0, disposition: cycle?.disposition ?? 'required' } } : {}) } }
   }
-  /** 恢复会换新 projectId，恢复前的审修循环只是历史，不能接着修稿或复核（ADR-0018 C17）。 */
   private assertNotRestoredHistory(run: DurableGenerationRun): void {
-    if (run.binding.projectId !== this.scope.projectId) throw new Error('GENERATION_REVIEW_RESTORED_HISTORY')
+    if (ReviewCycleRepository.isRestoredHistory(run.rootActionId, this.scope.projectId, this.db)) throw new Error('GENERATION_REVIEW_RESTORED_HISTORY')
   }
   private parent(context: ReviewRevisionContext): { parentRootActionId?: string; modelId?: string } {
     if (context.recheck) {
