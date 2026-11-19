@@ -234,7 +234,7 @@ function matchesReviewSource(
 
 /**
  * 一份审稿报告的持久化复验周期：确认快照指向原始审稿，周期也按原始审稿读。
- * 挑报告时已读过一次（firstRead），先用它；refreshKey 变了重读，reloadCycle 在复验后重读。
+ * firstRead 是挑报告时已读到的周期，自己的读回来之前先用它。
  */
 export function useReviewCycle({ reportText, reviewId, projectKey, firstRead, refreshKey }: {
   reportText: string
@@ -270,7 +270,7 @@ export function useReviewCycle({ reportText, reviewId, projectKey, firstRead, re
         projectSession.projectPath).catch(() => undefined)
       if (cancelled || !isProjectSessionCurrent(projectSession)) return
       if (next !== undefined) setLoadedCycle({ reviewId: cycleReviewId, cycle: next })
-      // 读失败不等于没有周期：已读到过就留着，恢复前的审稿不会退回可修稿（#702）；一次都没读到才按没有周期摆出动作条。
+      // 读失败不是「没有周期」：留着已读到的，否则恢复前的审稿会退回可修稿（#702）。
       else if (!hasFirstRead) setLoadedCycle(current => current.reviewId === cycleReviewId ? current : { reviewId: cycleReviewId, cycle: null })
     })()
     return () => { cancelled = true }

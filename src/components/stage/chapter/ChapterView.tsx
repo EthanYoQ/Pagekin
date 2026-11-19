@@ -33,7 +33,7 @@ type ShownCycle = { reviewId: number; cycle: ReviewCycleProjection | null }
 /**
  * 这一稿显示哪份审稿与原文：最新一份有复验周期的审稿（确认后的清单按它指向的原审稿算），都没有周期（旧审稿）时取最新一份。
  * 合并后的自动复验另存一份审稿，它没有自己的周期，逐项结果写回原审稿的周期；显示原审稿才看得到复验完成几项与逐项结果。
- * 审稿记录变化时重读。挑的时候读到的周期一并交出，动作条先用它；那次读失败就不交，动作条等自己的读。
+ * 审稿记录变化时重读。读周期失败时不带 cycle，动作条自己再读。
  */
 function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
   const key = reviews.map(review => review.id).join(',')

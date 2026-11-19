@@ -30,7 +30,7 @@ export interface RevisionMeta {
     wordCount: number
     createdAt: string
     updatedAt: string
-    /** 修出它的审修循环来自恢复前，合并后不会复验（#702）。只有待合并列表带它。 */
+    /** 修出它的审修循环来自恢复前，合并后不会自动复验。只有待合并列表带它。 */
     restoredHistory?: true
 }
 

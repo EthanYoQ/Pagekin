@@ -24,7 +24,7 @@ async function runOnce(page, action) {
 const EDITED_PARAGRAPH = '你父亲也问过钟的事'
 const EDIT = '钟声停了。'
 
-/** 第 4 章审稿（同 x2-recheck，带正文证据的本章目标意见，合并后需要复验）、修稿后稍后再合并，导出并恢复，在副本里打开第 4 章。 */
+/** 同 x2-recheck 的审稿（带正文证据，合并后本应复验），修稿后导出恢复，在副本里打开第 4 章。 */
 async function openRestoredPendingRevision(context, label) {
   const { page, fake } = context
   fake.replyReview(JSON.stringify({ summary: '本章目标还没落地。', items: [
@@ -44,7 +44,7 @@ async function openRestoredPendingRevision(context, label) {
   await chapterView.merge(page).waitFor({ state: 'visible', timeout: 30_000 })
 }
 
-/** 合并照常，之后假模型不再收到请求：恢复前的循环不自动复验，也不留失败运行。 */
+/** 恢复前的循环合并后不触发复验：假模型不再收到请求，也不留失败运行。 */
 async function mergeAndExpectNoRecheck(page, fake, chats) {
   await chapterView.merge(page).getByRole('button', { name: '全部用修稿' }).click()
   await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
@@ -91,7 +91,7 @@ export const R702_SCENARIOS = {
     await shoot('r702-3-restored-merge')
     return { chats: fake.chats.length }
   } },
-  /** Codex 在 #746 复现的路径：恢复后改稿、重新审稿，再把正文改回去，恢复前的修稿又能合并。 */
+  /** 回归路径（#746）：恢复后改稿并重新审稿，再把正文改回去，恢复前的修稿又能合并。 */
   'r702-rereview-old-revision': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
     const { page, fake, shoot } = context
     await openRestoredPendingRevision(context, 'r702-rereview-old-revision')

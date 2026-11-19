@@ -1135,10 +1135,7 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await expect.element(page.getByText(/合并后会自动复验/)).toBeVisible()
   })
 
-  /**
-   * 单章视图对同一份审稿读两次审修循环：挑报告时一次（ChapterView），摆出动作条后重读一次（review-checklist）。
-   * 两次读在 IPC 上参数相同、没有别的先后标记，只能从调用栈分开；改了这两处的文件位置，这里跟着改。
-   */
+  /** 同一份审稿读两次审修循环（ChapterView 挑报告时、review-checklist 摆出动作条后）。两次读的 IPC 参数相同，只能靠调用栈区分；挪了这两处，这里跟着改。 */
   function failCycleRead(which: 'ChapterView' | 'review-checklist') {
     const answer = backend.invoke.getMockImplementation()!
     const failed = { count: 0 }
