@@ -78,11 +78,17 @@ function projectText(zhCNText: string, enUSText: string): string {
   return useLocaleStore.getState().text(zhCNText, enUSText)
 }
 
-/** 长篇打开要等一会儿，第一次在新版打开还要升级；开得快时不弹，免得提示一闪而过。 */
+let pendingOpens = 0
+let openingNoticeTimer: ReturnType<typeof setTimeout> | undefined
+let closeOpeningNotice: (() => void) | undefined
+
+/**
+ * 长篇打开要等一会儿，第一次在新版打开还要升级；开得快时不弹，免得提示一闪而过。
+ * 在途的打开共用一条提示，最后一次开完才收起。
+ */
 async function withOpeningNotice<T>(opening: Promise<T>): Promise<T> {
-  let close: (() => void) | undefined
-  const timer = setTimeout(() => {
-    close = pushToast({ tone: 'info', duration: 0, message: projectText(
+  if (pendingOpens++ === 0) openingNoticeTimer = setTimeout(() => {
+    closeOpeningNotice = pushToast({ tone: 'info', duration: 0, message: projectText(
       '正在打开作品…\n\n长篇要多等一会儿，第一次在新版打开会更久。',
       'Opening the book…\n\nLong books take a moment, longer the first time in this version.',
     ) })
@@ -90,8 +96,11 @@ async function withOpeningNotice<T>(opening: Promise<T>): Promise<T> {
   try {
     return await opening
   } finally {
-    clearTimeout(timer)
-    close?.()
+    if (--pendingOpens === 0) {
+      clearTimeout(openingNoticeTimer)
+      closeOpeningNotice?.()
+      closeOpeningNotice = undefined
+    }
   }
 }
 

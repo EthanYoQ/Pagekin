@@ -594,7 +594,6 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     return serializeProjectOpen(async () => {
       // 让已经发出的后续打开请求先登记身份，避免旧请求抢先切换全局数据库。
       await yieldToPendingOpenRequests()
-      await stopExportsOfClosingProject()
       const isLatestRequest = () => latestProjectOpenRequestToken === requestToken
       const rollbackBoundary = captureProjectRollbackBoundary()
       if (!isLatestRequest()) {
@@ -645,6 +644,8 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         if (!isLatestRequest()) {
           return { success: false, project: null, requestToken, stale: true, ...databaseStateForRollbackBoundary(rollbackBoundary) }
         }
+        // 校验期间旧书照常开着、可能又起了导出，所以紧挨换库再停。
+        await stopExportsOfClosingProject()
         const { sealedRootCount } = initProjectDatabase(resolvedProjectPath, verified)
         const openedDatabase = getProjectDb()
         if (openedDatabase) adoptTransferredCharacterContinuityOnOpen({ database: openedDatabase,
