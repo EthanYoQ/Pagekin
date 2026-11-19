@@ -617,7 +617,8 @@ describe('导出的源库快照只取打开时那本书（#744）', () => {
       return (openSync as (...args: unknown[]) => number)(file, ...rest)
     }) as typeof fs.openSync)
 
-    await expect(snapshotProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: target }))
+    const sourceIdentity = fs.lstatSync(f.source, { bigint: true })
+    await expect(snapshotProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: target, sourceIdentity }))
       .rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED')
   })
 })

@@ -296,19 +296,23 @@ export async function backupProjectSqlite(options: {
  * SQLite 按路径打开源库，打开前后主库文件必须是同一个（dev、ino），否则打开的可能是被换进来的另一本书。
  * 不比大小：导出期间应用自己写库、检查点会改它。
  */
-export async function snapshotProjectSqlite(options: { sourceDatabasePath: string; targetDatabasePath: string }): Promise<void> {
+export async function snapshotProjectSqlite(options: {
+  sourceDatabasePath: string
+  targetDatabasePath: string
+  sourceIdentity: Pick<fs.BigIntStats, 'dev' | 'ino'>
+}): Promise<void> {
   const sourcePath = path.resolve(options.sourceDatabasePath), targetPath = path.resolve(options.targetDatabasePath)
-  const identity = () => {
+  const assertPinned = () => {
     sourceFile(sourcePath)
     const info = fs.lstatSync(sourcePath, { bigint: true })
-    return `${info.dev}:${info.ino}`
+    if (info.dev !== options.sourceIdentity.dev || info.ino !== options.sourceIdentity.ino) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
   }
-  const before = identity()
+  assertPinned()
   const fd = fs.openSync(targetPath, 'wx', 0o600); fs.closeSync(fd)
   const source = new Database(sourcePath, { readonly: true, fileMustExist: true })
   try {
     await source.backup(targetPath, { progress: () => 0x7fffffff })
-    if (identity() !== before) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
+    assertPinned()
   } finally { source.close() }
   regular(targetPath)
 }

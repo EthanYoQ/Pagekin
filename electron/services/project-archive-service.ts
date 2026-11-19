@@ -1246,7 +1246,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
         // 排队等闸门期间作品可能被关掉或换掉，取快照前重查。
         await assertCurrentContext(input, frozenContext, sourceRoot)
         if (!sameObject(regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING'), checkedDatabase)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
-        try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath }) }
+        try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath, sourceIdentity: checkedDatabase }) }
         finally { recordOwnedFileIfPresent(attempt, sourceSnapshotPath) }
         const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
         const sourceSnapshot = new BetterSqlite(sourceSnapshotPath, { readonly: true, fileMustExist: true })
