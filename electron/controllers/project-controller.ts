@@ -32,6 +32,7 @@ import {
 import { projectAccess, ProjectSessionStaleError, type ProjectSessionLease } from '../services/project-access'
 import { assertExpectedProjectPath, assertRequiredExpectedProjectPath } from '../utils/project-context'
 import { sanitizeProjectName } from './project-path'
+import { stopPortableExports } from '../services/portable-export-host'
 import { projectStoragePreflightFailure } from '../services/project-storage-preflight'
 import { projectPeekService } from '../services/project-peek'
 import { probeProjectSqlite } from '../services/sqlite-project-migration'
@@ -934,6 +935,12 @@ export function registerProjectController(options: ProjectControllerOptions = {}
       deletingCurrentProject = true
 
       if (deletingCurrentProject) {
+        // 在途导出占着知识库闸门和源库句柄，先停掉再关库删目录；等待期间作品可能被切走，停完再核对一次。
+        await stopPortableExports(resolvedPath)
+        projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
+        if (!sameProjectPath(getCurrentProjectPath(), resolvedPath)) {
+          throw new ProjectSessionStaleError('PROJECT_SESSION_DATABASE_MISMATCH')
+        }
         closeVectorConnection(resolvedPath)
         closeProjectDatabase()
         databaseClosed = true

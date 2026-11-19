@@ -28,8 +28,6 @@ const mocks = vi.hoisted(() => ({
   },
   exportPortableProject: vi.fn(),
   restorePortableProject: vi.fn(),
-  portableAssets: { snapshot: vi.fn() },
-  createPortableProjectAssetProvider: vi.fn(),
   registerRecentProject: vi.fn(),
   assertCurrentProjectContext: vi.fn(),
   sameCanonicalProjectRoot: vi.fn(),
@@ -42,7 +40,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('electron', () => ({
-  app: { getLocale: () => 'zh-CN' },
+  app: { getLocale: () => 'zh-CN', on: vi.fn() },
   ipcMain: {
     handle: vi.fn((channel: string, handler: IpcHandler) => mocks.handlers.set(channel, handler)),
   },
@@ -53,6 +51,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../../database', () => ({
   getCurrentProjectPath: () => mocks.currentProjectPath,
+  onProjectDatabaseBeforeClose: vi.fn(),
   getProjectDb: () => mocks.database,
   initProjectDatabase: mocks.initProjectDatabase,
   createProjectDatabase: mocks.createProjectDatabase,
@@ -69,15 +68,11 @@ vi.mock('../../i18n', () => ({
   mainText: (_locale: unknown, zhCNText: string) => zhCNText,
 }))
 
-vi.mock('../../services/project-archive-service', () => ({
-  exportPortableProject: mocks.exportPortableProject,
+vi.mock('../../services/portable-export-host', () => ({
+  exportPortableProjectInWorker: mocks.exportPortableProject,
 }))
 vi.mock('../../services/project-restore-service', () => ({
   restorePortableProject: mocks.restorePortableProject,
-}))
-vi.mock('../../services/portable-project-assets', () => ({
-  createPortableProjectAssetProvider: mocks.createPortableProjectAssetProvider
-    .mockReturnValue(mocks.portableAssets),
 }))
 vi.mock('../project-controller', () => ({
   registerRecentProject: mocks.registerRecentProject,
@@ -109,7 +104,7 @@ function handler(channel: keyof ProjectChannels): IpcHandler {
 }
 
 function event(webContentsId = SENDER_ID) {
-  return { sender: { id: webContentsId, once: vi.fn() } }
+  return { sender: { id: webContentsId, once: vi.fn(), send: vi.fn(), isDestroyed: () => false } }
 }
 
 function tempRoot(prefix: string): string {
@@ -307,19 +302,22 @@ describe('project archive choosers issue sender-bound grants instead of raw path
 })
 
 describe('project:archive-export', () => {
-  it('binds export to the current session, the chooser grant, and the production asset provider', async () => {
+  it('binds export to the current session and the chooser grant, and forwards phases to the asking window', async () => {
     const root = tempRoot('b01-export-flow-')
     mocks.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: path.join(root, 'current.ainovel') })
     const selected = await handler('dialog:select-project-archive-export')(event(), '项目') as ExternalFileGrant
     mocks.exportPortableProject.mockImplementation(async (input) => {
       expect(await input.assertCurrentContext(input.projectSession, input.sourceProjectRoot)).toBe(true)
+      input.onProgress('snapshot')
+      input.onProgress('package')
       return archiveReceipt
     })
+    const asking = event()
     const sessionBefore = { ...mocks.activeSession }
     const databaseBefore = mocks.database
     const targetArchivePath = path.join(fs.realpathSync.native(root), 'current.ainovel')
 
-    await expect(handler('project:archive-export')(event(), {
+    await expect(handler('project:archive-export')(asking, {
       targetArchiveGrantId: selected.grantId,
       projectSession: projectSession(),
     })).resolves.toEqual({ success: true, receipt: archiveReceipt })
@@ -329,9 +327,11 @@ describe('project:archive-export', () => {
       sourceProjectRoot: mocks.activeSession.rootPath,
       targetArchivePath,
       attemptParentPath: path.dirname(targetArchivePath),
-      assets: mocks.portableAssets,
     }))
-    expect(mocks.createPortableProjectAssetProvider).toHaveBeenCalledTimes(1)
+    expect(asking.sender.send.mock.calls).toEqual([
+      ['portable-export:progress', { phase: 'snapshot' }],
+      ['portable-export:progress', { phase: 'package' }],
+    ])
     expect(mocks.assertCurrentProjectContext).toHaveBeenCalledTimes(2)
     expect(mocks.activeSession).toEqual(sessionBefore)
     expect(mocks.database).toBe(databaseBefore)

@@ -22,7 +22,8 @@ export default defineConfig({
   plugins: [tailwindcss(), react(), electron({
     main: {
       // Shortcut of `build.lib.entry`.
-      entry: 'electron/main.ts',
+      // 导出在 worker 线程里跑，worker 入口单独产出 dist-electron/portable-export-worker.js。
+      entry: { main: 'electron/main.ts', 'portable-export-worker': 'electron/services/portable-export-worker.ts' },
       vite: {
         build: {
           // 强制输出 CommonJS，保证 better-sqlite3 等 native 模块能正常加载

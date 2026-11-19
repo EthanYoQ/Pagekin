@@ -9,7 +9,7 @@ import { writtenChapterThreadTasks } from '../../src/shared/narrative-thread'
 import { readPortableCurrentAuthority } from './portable-current-authority'
 import { parsePortableRuntimeFreeze, readPortableRuntimeFreeze } from './portable-runtime-freeze'
 
-import type { ProjectSessionContext } from '../../src/shared/ipc-channels'
+import type { PortableExportPhase, ProjectSessionContext } from '../../src/shared/ipc-channels'
 import {
   CANONICAL_PROJECT_DATABASE,
   CANONICAL_PROJECT_DIRECTORY,
@@ -166,6 +166,7 @@ export type ProjectArchiveServiceErrorCode =
   | 'PORTABLE_ASSET_UNSAFE'
   | 'PORTABLE_CONTEXT_INVALID'
   | 'PORTABLE_EXPORT_AVATAR_DAMAGED'
+  | 'PORTABLE_EXPORT_INTERRUPTED'
   | 'PORTABLE_EXPORT_SOURCE_CHANGED'
   | 'PORTABLE_TARGET_INSIDE_SOURCE'
   | 'PORTABLE_UNSAFE_PROJECTION'
@@ -222,6 +223,9 @@ export interface ExportPortableProjectInput {
   assets: PortableAssetProvider
   now?: () => Date
   snapshotGeneration?: string
+  /** 知识库闸门。worker 里跑时由主进程持有主进程那把锁，默认是本进程的 withKnowledgeSourceGate。 */
+  withSourceGate?<T>(projectStorageRoot: string, operation: () => Promise<T>): Promise<T>
+  onProgress?(phase: PortableExportPhase): void
   /** @internal Deterministic mutation/failure injection. */
   __testHooks?: {
     afterPortableDatabaseCreated?(attemptRoot: string): void
@@ -1243,14 +1247,17 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
   const attemptRoot = attempt.root
   try {
     const sourceSnapshotPath = path.join(attemptRoot, 'source.db')
+    const gate = input.withSourceGate ?? withKnowledgeSourceGate
+    input.onProgress?.('snapshot')
     // 知识库的写入都持这把闸门。从取库快照到读完知识库一直持着，存档里的知识库就是库快照那一刻的，不会比库新。
     const { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided } =
-      await withKnowledgeSourceGate(projectStorageRoot, async () => {
+      await gate(projectStorageRoot, async () => {
         // 排队等闸门期间作品可能被关掉或换掉，取快照前重查。
         await assertCurrentContext(input, frozenContext, sourceRoot)
         assertSameDatabase()
         try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath, sourceIdentity: checkedDatabase }) }
         finally { recordOwnedFileIfPresent(attempt, sourceSnapshotPath) }
+        input.onProgress?.('check')
         const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
         const sourceSnapshot = new BetterSqlite(sourceSnapshotPath, { readonly: true, fileMustExist: true })
         let avatarRows: ReturnType<typeof readPortableCharacterAvatarRows>
@@ -1303,6 +1310,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
         return { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided }
       })
 
+    input.onProgress?.('tidy')
     const portableDatabasePath = path.join(attemptRoot, 'project.db')
     fs.copyFileSync(sourceSnapshotPath, portableDatabasePath, fs.constants.COPYFILE_EXCL)
     recordOwnedFile(attempt, portableDatabasePath)
@@ -1406,6 +1414,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
       historyProjectionIds,
     }
     const stagedArchivePath = path.join(attemptRoot, 'portable-project.archive')
+    input.onProgress?.('package')
     const archiveReceipt = await assetPhase(() => {
       for (const sourcePath of projectSources) assertSourceStillOwned(sourcePath)
       return writePortableProjectArchive({ manifest, sources, targetPath: stagedArchivePath })

@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { CloudBackupFailure, CloudBackupProjectSessionContext } from '../../../src/shared/cloud-backup'
 import { damagedReviewCycleMessage, displayedErrorMessage } from '../../../src/i18n/app-errors'
@@ -16,13 +16,14 @@ import {
   type CloudBackupControllerDependencies,
 } from '../cloud-backup-controller'
 import { removeDirectoryWithWindowsRetry } from '../../utils/remove-directory'
-import { exportPortableProject, ProjectArchiveServiceError } from '../../services/project-archive-service'
+import { ProjectArchiveServiceError } from '../../services/project-archive-service'
+import { exportPortableProjectInWorker, portableExportsRunning, type PortableExportWorkerOptions } from '../../services/portable-export-host'
+import { portableExportWorkerForTest } from '../../../test/helpers/portable-export-worker'
 import { restorePortableProject } from '../../services/project-restore-service'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
 import { SchemaMigrationError } from '../../migrations/registry'
 import { continuityBaseline, SCHEMA8_CONTINUITY_ARCHIVE, SCHEMA8_EXPECTED_BASELINE } from '../../../test/helpers/schema8-continuity-archive'
-import { createPortableProjectAssetProvider } from '../../services/portable-project-assets'
 import { createProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
 import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
 import { extractPortableProjectArchive } from '../../services/portable-project-archive'
@@ -145,7 +146,6 @@ function fixture(overrides: Partial<CloudBackupControllerDependencies> = {}) {
         requiresRuntimeFreezeGuard: true as const,
       }
     }),
-    portableAssets: { snapshot: vi.fn() },
     assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: 'lease-a', rootPath: session.projectPath })),
     getCurrentProjectPath: vi.fn(() => session.projectPath),
     sameCanonicalProjectRoot: vi.fn(() => true),
@@ -176,6 +176,9 @@ function fixture(overrides: Partial<CloudBackupControllerDependencies> = {}) {
   }
   return { deps, invoke, order, root, grants, clock, restoreTarget }
 }
+
+let worker: PortableExportWorkerOptions
+beforeAll(async () => { worker = await portableExportWorkerForTest() }, 60_000)
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -341,14 +344,35 @@ describe('registerCloudBackupController', () => {
     expect(fs.readdirSync(path.join(f.root, 'cloud-backup-staging'))).toEqual([])
   })
 
+  it('导出途中取消：worker 终止，不上传，暂存目录里不留临时目录（#702）', async () => {
+    const project = await createProjectArchiveRoundtripFixture()
+    try {
+      const f = fixture({
+        exportPortableProject: input => exportPortableProjectInWorker({
+          ...input,
+          onProgress: phase => { if (phase === 'snapshot') void f.invoke('cloud-backup:cancel', OPERATION) },
+        }, worker),
+        assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: session.leaseId, rootPath: project.sourceRoot })),
+        getCurrentProjectPath: vi.fn(() => project.sourceRoot),
+      })
+
+      const result = await f.invoke('cloud-backup:backup', { operationId: OPERATION,
+        projectSession: { ...session, projectPath: project.sourceRoot }, disclosureConfirmed: true })
+
+      expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_CANCELLED' })
+      expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
+      expect(fs.readdirSync(path.join(f.root, 'cloud-backup-staging'))).toEqual([])
+      expect(portableExportsRunning()).toBe(0)
+    } finally { project.dispose() }
+  })
+
   it('backs up a real project whose author import left several effect receipts (#607)', async () => {
     const project = await createProjectArchiveRoundtripFixture()
     try {
       expect(project.sourceProjectId).toBe(PROJECT)
       const projectSession = { ...session, projectPath: project.sourceRoot }
       const f = fixture({
-        exportPortableProject,
-        portableAssets: createPortableProjectAssetProvider(),
+        exportPortableProject: input => exportPortableProjectInWorker(input, worker),
         assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: session.leaseId, rootPath: project.sourceRoot })),
         getCurrentProjectPath: vi.fn(() => project.sourceRoot),
       })
@@ -372,8 +396,7 @@ describe('registerCloudBackupController', () => {
       closeProjectDatabase()
       const projectSession = { ...session, projectPath: project.sourceRoot }
       const f = fixture({
-        exportPortableProject,
-        portableAssets: createPortableProjectAssetProvider(),
+        exportPortableProject: input => exportPortableProjectInWorker(input, worker),
         assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: session.leaseId, rootPath: project.sourceRoot })),
         getCurrentProjectPath: vi.fn(() => project.sourceRoot),
       })
@@ -408,8 +431,7 @@ describe('registerCloudBackupController', () => {
       db.prepare('UPDATE reviews SET source_draft_version=source_draft_version+1 WHERE id=?').run(items[1]!.seeded.reviewId)
       closeProjectDatabase()
       const f = fixture({
-        exportPortableProject,
-        portableAssets: createPortableProjectAssetProvider(),
+        exportPortableProject: input => exportPortableProjectInWorker(input, worker),
         assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: session.leaseId, rootPath: project.sourceRoot })),
         getCurrentProjectPath: vi.fn(() => project.sourceRoot),
       })
@@ -435,8 +457,7 @@ describe('registerCloudBackupController', () => {
       getProjectDb()!.prepare("UPDATE generation_roots SET action_json='{}' WHERE root_action_id=?").run(items[1]!.seeded.call.rootActionId)
       closeProjectDatabase()
       const f = fixture({
-        exportPortableProject,
-        portableAssets: createPortableProjectAssetProvider(),
+        exportPortableProject: input => exportPortableProjectInWorker(input, worker),
         assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: session.leaseId, rootPath: project.sourceRoot })),
         getCurrentProjectPath: vi.fn(() => project.sourceRoot),
       })
