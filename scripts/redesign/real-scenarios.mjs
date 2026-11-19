@@ -659,7 +659,7 @@ export const REAL_SCENARIOS = {
     return { materials: points.map(({ point, materials }) => ({ point, materials })), results }
   } },
 
-  /** #702：设定文档没有章号。从架构页世界观一节点「编辑」打开，逐段选中点续写，再用界面发出的同一请求各跑若干次；臂按运行实际带的材料记。 */
+  /** #702：设定文档没有章号；臂按每次运行实际带的材料记，不预设。 */
   'real-editor-nochapter-ab': { real: true, setup: async context => {
     const file = process.env[EDITOR_NOCHAPTER_DOC]
     assert.ok(file && fs.existsSync(file), `环境变量 ${EDITOR_NOCHAPTER_DOC} 指向设定文档夹具 JSON`)
