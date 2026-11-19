@@ -133,13 +133,17 @@ function domainColumns(db: BetterSqlite3.Database, preIdentity = false, preAsset
 function domain(db: BetterSqlite3.Database, selection = domainColumns(db)): ProjectSqliteEvidence['domain'] {
   const tableCounts: Record<string, number> = {}, digest = createHash('sha256')
   for (const { name, columns } of selection) {
-    const rows = db.prepare(`SELECT ${columns.map(quoteIdentifier).join(',')} FROM ${quoteIdentifier(name)}`).safeIntegers().raw().all()
-    const encoded = rows.map(row => JSON.stringify(row, (_key, value: unknown) =>
-      typeof value === 'bigint' ? { integer: value.toString() } : value)).sort()
-    if (encoded.length) {
-      tableCounts[logicalTableName(name)] = encoded.length
-      digest.update(JSON.stringify([logicalTableName(name), encoded]))
+    const encoded: string[] = []
+    for (const row of db.prepare(`SELECT ${columns.map(quoteIdentifier).join(',')} FROM ${quoteIdentifier(name)}`).safeIntegers().raw().iterate()) {
+      encoded.push(JSON.stringify(row, (_key, value: unknown) => typeof value === 'bigint' ? { integer: value.toString() } : value))
     }
+    if (!encoded.length) continue
+    encoded.sort()
+    tableCounts[logicalTableName(name)] = encoded.length
+    // 逐行喂入 JSON.stringify([表名, encoded]) 的同一串字节：整表拼成一个字符串会撞 V8 的字符串上限，摘要值又已写进迁移日志。
+    digest.update(`[${JSON.stringify(logicalTableName(name))},[`)
+    encoded.forEach((row, index) => digest.update((index ? ',' : '') + JSON.stringify(row)))
+    digest.update(']]')
   }
   return { tableCounts, authorContentHash: digest.digest('hex') }
 }
