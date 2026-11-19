@@ -31,14 +31,8 @@ import {
 import { getGlobalDataRoot } from '../services/app-data-locator'
 import { externalFileGrants } from '../services/external-file-grant-service'
 import { projectAccess } from '../services/project-access'
-import {
-  exportPortableProject,
-  ProjectArchiveServiceError,
-  type ExportPortableProjectInput,
-  type ExportPortableProjectReceipt,
-  type PortableAssetProvider,
-} from '../services/project-archive-service'
-import { createPortableProjectAssetProvider } from '../services/portable-project-assets'
+import { ProjectArchiveServiceError, type ExportPortableProjectReceipt } from '../services/project-archive-service'
+import { exportPortableProjectInWorker, type PortableExportInWorkerInput } from '../services/portable-export-host'
 import {
   restorePortableProject,
   type RestorePortableProjectInput,
@@ -98,9 +92,8 @@ export interface CloudBackupControllerDependencies {
   credentialStore: CredentialStoreFacade
   bindingStore: BindingStoreFacade
   webDav: WebDavFacade
-  exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt>
+  exportPortableProject(input: PortableExportInWorkerInput): Promise<ExportPortableProjectReceipt>
   restorePortableProject(input: RestorePortableProjectInput): Promise<RestorePortableProjectReceipt>
-  portableAssets: PortableAssetProvider
   assertCurrentProjectContext(context: CloudBackupProjectSessionContext | undefined, currentProjectPath: string | null): ActiveProject
   getCurrentProjectPath(): string | null
   sameCanonicalProjectRoot(left: string, right: string): boolean
@@ -249,9 +242,8 @@ function productionDependencies(): CloudBackupControllerDependencies {
     credentialStore: new CloudCredentialStore({ safeStorage }),
     bindingStore: new CloudProjectBindingStore(),
     webDav: new WebDavBackupService(),
-    exportPortableProject,
+    exportPortableProject: input => exportPortableProjectInWorker(input),
     restorePortableProject,
-    portableAssets: createPortableProjectAssetProvider(),
     assertCurrentProjectContext: (context, currentPath) => projectAccess.assertCurrentProjectContext(context, currentPath),
     getCurrentProjectPath,
     sameCanonicalProjectRoot: (left, right) => projectAccess.sameCanonicalProjectRoot(left, right),
@@ -400,7 +392,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
             projectSession: currentSession,
             targetArchivePath: archivePath,
             attemptParentPath: stagingRoot,
-            assets: deps.portableAssets,
+            signal,
             assertCurrentContext(context, sourceProjectRoot) {
               const checked = deps.assertCurrentProjectContext(context, deps.getCurrentProjectPath())
               return deps.sameCanonicalProjectRoot(checked.rootPath, sourceProjectRoot)

@@ -42,6 +42,23 @@ function breakRootBudget(projectRoot, chapter) {
   })
 }
 
+/** 静止树打开时不查绑定，只有导出前的全量进门封存它（#749）。 */
+function addUnreadableSiblingRun(projectRoot, chapter) {
+  withBook(projectRoot, database => {
+    const { rootActionId } = cycleOf(database, chapter)
+    const review = database.prepare(`SELECT attempt_id AS attemptId, run_id AS runId FROM generation_attempts
+      WHERE root_action_id=? AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review'`).get(rootActionId)
+    assert.ok(review, `第 ${chapter} 章有一次审稿尝试`)
+    database.prepare(`INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+      SELECT 'run-extra',root_action_id,'{坏',status,created_at_ms,'open-extra' FROM generation_runs WHERE run_id=?`).run(review.runId)
+    database.prepare(`INSERT INTO generation_attempts(attempt_id,reservation_id,run_id,root_action_id,attempt_json,usage_receipt_json,invocation_nonce)
+      SELECT 'attempt-extra','reservation-extra','run-extra',root_action_id,
+        json_set(attempt_json,'$.attemptId','attempt-extra','$.reservationId','reservation-extra'),'{}','invocation-extra'
+      FROM generation_attempts WHERE attempt_id=?`).run(review.attemptId)
+    database.prepare("UPDATE generation_roots SET action_json=json_set(action_json,'$.status','paused')").run()
+  })
+}
+
 const notice = (page, role) => stage.root(page).locator(`[data-testid="project-backup-panel"] p[role="${role}"]`)
 
 async function exportOnce(context, archive, { settings, page: pageName, button }, role, expected) {
@@ -129,6 +146,18 @@ export const CCH_SCENARIOS = {
       new RegExp(`^本地存档已导出：${SHA}。回收站里第 1 章「远航之1」有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。$`, 'u'))
     await shoot('cch-4-trash')
     return { inTrash }
+  } },
+  'cch-export-sealed-ledger': { model: true, shell: 'stage', setup: async context => {
+    await buildByReviewCycle(context, 2, { saveCheckpoints: false,
+      beforeLaunch: () => addUnreadableSiblingRun(path.join(context.roots.projects, BOOK), 2) })
+  }, run: async context => {
+    const { page, roots, shoot } = context
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    const zh = await exportOnce(context, path.join(roots.projects, 'cch-sealed-zh.ainovel'), ZH, 'status',
+      new RegExp(`^本地存档已导出：${SHA}。第 2 章「远航之2」有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。$`, 'u'))
+    await shoot('cch-8-sealed-ledger')
+    return { zh }
   } },
   'cch-export-still-fails': { model: true, shell: 'stage', setup: async context => {
     await buildByReviewCycle(context, 2, { saveCheckpoints: false, beforeLaunch: () => {

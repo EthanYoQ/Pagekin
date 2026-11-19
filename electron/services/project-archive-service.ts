@@ -9,7 +9,7 @@ import { writtenChapterThreadTasks } from '../../src/shared/narrative-thread'
 import { readPortableCurrentAuthority } from './portable-current-authority'
 import { parsePortableRuntimeFreeze, readPortableRuntimeFreeze } from './portable-runtime-freeze'
 
-import type { ProjectSessionContext } from '../../src/shared/ipc-channels'
+import type { PortableExportPhase, ProjectSessionContext } from '../../src/shared/ipc-channels'
 import {
   CANONICAL_PROJECT_DATABASE,
   CANONICAL_PROJECT_DIRECTORY,
@@ -173,6 +173,7 @@ export type ProjectArchiveServiceErrorCode =
   | 'PORTABLE_ASSET_UNSAFE'
   | 'PORTABLE_CONTEXT_INVALID'
   | 'PORTABLE_EXPORT_AVATAR_DAMAGED'
+  | 'PORTABLE_EXPORT_INTERRUPTED'
   | 'PORTABLE_EXPORT_SOURCE_CHANGED'
   | 'PORTABLE_TARGET_INSIDE_SOURCE'
   | 'PORTABLE_UNSAFE_PROJECTION'
@@ -225,10 +226,20 @@ export interface ExportPortableProjectInput {
   projectSession: ProjectSessionContext
   targetArchivePath: string
   attemptParentPath: string
+  /** 调用方在 attemptParentPath 下建好并负责删除，直接当临时目录；省掉一层嵌套，避免超出 Windows 路径长度上限。 */
+  attemptRoot?: string
   assertCurrentContext(context: Readonly<ProjectSessionContext>, sourceProjectRoot: string): boolean | void | Promise<boolean | void>
   assets: PortableAssetProvider
   now?: () => Date
   snapshotGeneration?: string
+  /** worker 里跑时经主进程取主进程那把锁；默认是本进程的 withKnowledgeSourceGate。 */
+  withSourceGate?<T>(projectStorageRoot: string, operation: () => Promise<T>): Promise<T>
+  /** 进门要写主进程持有的库，worker 里跑时由主进程代做。 */
+  admitSourceLedger?(sourceProjectRoot: string): Promise<void>
+  /** round 从 1 起；资料被改而整次重来时加一。 */
+  onProgress?(phase: PortableExportPhase, round: number): void
+  /** 发布前最后一步，同步调用。worker 里用它和主进程的停止抢提交点：抛错就不发布。 */
+  beforePublish?(): void
   /** @internal Deterministic mutation/failure injection. */
   __testHooks?: {
     afterPortableDatabaseCreated?(attemptRoot: string): void
@@ -269,6 +280,7 @@ interface OwnedAttempt {
   root: string
   rootIdentity: fs.BigIntStats
   files: Map<string, fs.BigIntStats>
+  callerOwnsRoot: boolean
 }
 
 function fail(code: ProjectArchiveServiceErrorCode): never {
@@ -317,13 +329,13 @@ function regularFile(file: string, missingCode: ProjectArchiveServiceErrorCode):
   }
 }
 
-function prepareAttempt(parent: string): OwnedAttempt {
-  const root = fs.mkdtempSync(path.join(parent, '.pe-'))
+function prepareAttempt(parent: string, given: string | undefined): OwnedAttempt {
+  const root = given ?? fs.mkdtempSync(path.join(parent, '.pe-'))
   fs.chmodSync(root, 0o700)
   const rootIdentity = fs.lstatSync(root, { bigint: true })
   if (!rootIdentity.isDirectory() || rootIdentity.isSymbolicLink()
     || normalizedPath(fs.realpathSync.native(root)) !== normalizedPath(root)) fail('PORTABLE_ASSET_UNSAFE')
-  return { root, rootIdentity, files: new Map() }
+  return { root, rootIdentity, files: new Map(), callerOwnsRoot: given !== undefined }
 }
 
 function recordOwnedFile(attempt: OwnedAttempt, file: string): void {
@@ -352,6 +364,7 @@ function cleanupAttempt(attempt: OwnedAttempt): void {
         && normalizedPath(fs.realpathSync.native(file)) === normalizedPath(file)) fs.unlinkSync(file)
     } catch { /* Preserve missing, replaced, linked, or otherwise unknown content. */ }
   }
+  if (attempt.callerOwnsRoot) return
   try {
     const actual = fs.lstatSync(attempt.root, { bigint: true })
     if (actual.isDirectory() && !actual.isSymbolicLink() && sameObject(attempt.rootIdentity, actual)
@@ -1204,14 +1217,14 @@ const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string
 /** 资料阶段出错：丢掉这次的临时目录，整次重来一次，仍失败报第二次的错。重来时库文件已被换掉就拒绝。本地导出和云备份都走这里。 */
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
   const source: SourceDatabasePin = {}
-  try { return await exportPortableProjectOnce(input, source) }
+  try { return await exportPortableProjectOnce(input, source, 1) }
   catch (error) {
     if (!(error instanceof AssetPhaseFailure)) throw error
     const code = failureCode(error.failure)
     if (code && NOT_RETRIED.has(code)) throw error.failure
     console.warn('[portable-export] 资料阶段出错，整次重来一次', { code })
   }
-  try { return await exportPortableProjectOnce(input, source) }
+  try { return await exportPortableProjectOnce(input, source, 2) }
   catch (error) {
     const failure = error instanceof AssetPhaseFailure ? error.failure : error
     if (sourceChanged(failure)) fail('PORTABLE_EXPORT_SOURCE_CHANGED')
@@ -1222,14 +1235,23 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
 /** 只比 dev、ino：写库会改大小和修改时间，不改身份。 */
 interface SourceDatabasePin { database?: fs.BigIntStats }
 
-async function exportPortableProjectOnce(input: ExportPortableProjectInput, source: SourceDatabasePin): Promise<ExportPortableProjectReceipt> {
+/** 必须先于任何写入。worker 宿主建临时目录前也要调它。 */
+export function assertPortableExportPaths(
+  input: Pick<ExportPortableProjectInput, 'sourceProjectRoot' | 'targetArchivePath' | 'attemptParentPath' | 'projectSession'>,
+): void {
+  const sourceRoot = path.resolve(input.sourceProjectRoot)
+  const attemptParent = path.resolve(input.attemptParentPath)
+  assertContextShape(input.projectSession, sourceRoot)
+  if (contained(sourceRoot, path.resolve(input.targetArchivePath)) || contained(sourceRoot, attemptParent)) fail('PORTABLE_TARGET_INSIDE_SOURCE')
+  safeDirectory(sourceRoot)
+  safeDirectory(attemptParent)
+}
+
+async function exportPortableProjectOnce(input: ExportPortableProjectInput, source: SourceDatabasePin, round: number): Promise<ExportPortableProjectReceipt> {
   const sourceRoot = path.resolve(input.sourceProjectRoot)
   const targetPath = path.resolve(input.targetArchivePath)
   const attemptParent = path.resolve(input.attemptParentPath)
-  assertContextShape(input.projectSession, sourceRoot)
-  if (contained(sourceRoot, targetPath) || contained(sourceRoot, attemptParent)) fail('PORTABLE_TARGET_INSIDE_SOURCE')
-  safeDirectory(sourceRoot)
-  safeDirectory(attemptParent)
+  assertPortableExportPaths(input)
   const frozenContext = Object.freeze({ ...input.projectSession })
   await assertCurrentContext(input, frozenContext, sourceRoot)
   const projectStorageRoot = path.join(sourceRoot, CANONICAL_PROJECT_DIRECTORY)
@@ -1250,21 +1272,24 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
   if (canonicalManifest.projectId !== frozenContext.projectId) fail('PORTABLE_CONTEXT_INVALID')
   // 被拒的导出不能封存源库；重来不改变源库状态，不必再进门。发布时仍以不覆盖为准。
   if (fs.lstatSync(targetPath, { throwIfNoEntry: false })) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_TARGET_EXISTS')
-  if (firstAttempt) admitWholeLedgerOfOpenProject(sourceRoot)
+  if (firstAttempt) await (input.admitSourceLedger ?? admitWholeLedgerOfOpenProject)(sourceRoot)
   const snapshotGeneration = input.snapshotGeneration ?? randomUUID()
   const createdAt = (input.now?.() ?? new Date()).toISOString()
-  const attempt = prepareAttempt(attemptParent)
+  const attempt = prepareAttempt(attemptParent, input.attemptRoot)
   const attemptRoot = attempt.root
   try {
     const sourceSnapshotPath = path.join(attemptRoot, 'source.db')
+    const gate = input.withSourceGate ?? withKnowledgeSourceGate
+    input.onProgress?.('snapshot', round)
     // 知识库的写入都持这把闸门。从取库快照到读完知识库一直持着，存档里的知识库就是库快照那一刻的，不会比库新。
     const { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided } =
-      await withKnowledgeSourceGate(projectStorageRoot, async () => {
+      await gate(projectStorageRoot, async () => {
         // 排队等闸门期间作品可能被关掉或换掉，取快照前重查。
         await assertCurrentContext(input, frozenContext, sourceRoot)
         assertSameDatabase()
         try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath, sourceIdentity: checkedDatabase }) }
         finally { recordOwnedFileIfPresent(attempt, sourceSnapshotPath) }
+        input.onProgress?.('check', round)
         const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
         const sourceSnapshot = new BetterSqlite(sourceSnapshotPath, { readonly: true, fileMustExist: true })
         let avatarRows: ReturnType<typeof readPortableCharacterAvatarRows>
@@ -1317,6 +1342,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
         return { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided }
       })
 
+    input.onProgress?.('tidy', round)
     const portableDatabasePath = path.join(attemptRoot, 'project.db')
     fs.copyFileSync(sourceSnapshotPath, portableDatabasePath, fs.constants.COPYFILE_EXCL)
     recordOwnedFile(attempt, portableDatabasePath)
@@ -1420,6 +1446,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
       historyProjectionIds,
     }
     const stagedArchivePath = path.join(attemptRoot, 'portable-project.archive')
+    input.onProgress?.('package', round)
     const archiveReceipt = await assetPhase(() => {
       for (const sourcePath of projectSources) assertSourceStillOwned(sourcePath)
       return writePortableProjectArchive({ manifest, sources, targetPath: stagedArchivePath })
@@ -1433,6 +1460,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
 
     await assertCurrentContext(input, frozenContext, sourceRoot)
     assertSameDatabase()
+    input.beforePublish?.()
     const targetInfo = publishStagedArchive(stagedArchivePath, targetPath)
     return {
       originProjectId: canonicalManifest.projectId,
