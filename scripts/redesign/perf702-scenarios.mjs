@@ -125,7 +125,7 @@ async function profiled({ app, page }, label, action) {
 async function installLedger(app, page) {
   await app.evaluate(({ ipcMain, app: electronApp }, wrapSql) => {
     if (globalThis.__perfLedger) return
-    const ledger = globalThis.__perfLedger = { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 } }
+    const ledger = globalThis.__perfLedger = { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 }, inflight: 0 }
     // 跨过快照才结束的调用和子进程：起始窗口已经报出，时长记进当前窗口的 late，不混进当前窗口的各通道。
     const settle = (current, ms) => { if (current) return true; ledger.late.calls += 1; ledger.late.ms += ms; return false }
     const wrap = (channel, handler) => async (...args) => {
@@ -133,7 +133,9 @@ async function installLedger(app, page) {
       if (session && typeof session === 'object' && typeof session.leaseId === 'string') globalThis.__perfSession = { event: args[0], session }
       const startedAt = performance.now()
       const channels = ledger.channels
+      ledger.inflight += 1
       try { return await handler(...args) } finally {
+        ledger.inflight -= 1
         const ms = performance.now() - startedAt
         if (settle(channels === ledger.channels, ms)) {
           const entry = channels[channel] ??= { calls: 0, ms: 0 }
@@ -753,23 +755,24 @@ async function blockControls(context) {
   return results
 }
 
-/**
- * 112 章书导出本地存档：总耗时、主进程最长停顿、渲染端每 20 ms 一次轻量 IPC 的最长往返（作者能感到的卡）。
- * writes 为真时导出期间每 150 ms 保存一次第 finalized+1 章草稿，记成功次数（边写边导）。
- */
-/** 等界面打开作品后的后台读取跑完：连续 quietMs 没有新的 invoke 才返回，免得把它们的主进程占用算进导出。 */
+/** 等界面打开作品后的后台读取跑完：连续 quietMs 没有新完成的 invoke、也没有在途的 invoke 才返回，免得把它们的主进程占用算进导出。 */
 async function waitForQuietIpc(app, quietMs = 2_000, deadlineMs = 60_000) {
-  const total = () => app.evaluate(() => Object.values(globalThis.__perfLedger.channels).reduce((sum, entry) => sum + entry.calls, 0))
+  const total = () => app.evaluate(() => globalThis.__perfLedger.inflight > 0 ? -1
+    : Object.values(globalThis.__perfLedger.channels).reduce((sum, entry) => sum + entry.calls, 0))
   const deadline = Date.now() + deadlineMs
   let last = await total(), since = Date.now()
   while (Date.now() - since < quietMs) {
     assert.ok(Date.now() < deadline, `${deadlineMs} ms 内界面一直在调主进程`)
     await new Promise(resolve => setTimeout(resolve, 250))
     const now = await total()
-    if (now !== last) { last = now; since = Date.now() }
+    if (now !== last || now === -1) { last = now; since = Date.now() }
   }
 }
 
+/**
+ * 112 章书导出本地存档：总耗时、主进程最长停顿、渲染端每 20 ms 一次轻量 IPC 的最长往返（作者能感到的卡）。
+ * writes 为真时导出期间每 150 ms 保存一次第 finalized+1 章草稿，记成功次数（边写边导）。
+ */
 async function timeExport(context, finalized, { rounds = Number(process.env.PERF702_ROUNDS ?? 1), writes = false } = {}) {
   const { app, page, roots, invoke } = context
   await installLedger(app, page)
