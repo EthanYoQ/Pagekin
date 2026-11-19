@@ -132,7 +132,7 @@ export function newMainGenerationPolicy(selection: BeginGenerationRequest, model
       : 3 + (2 * 8 - Math.ceil(8 / 3)) + 1), 0)
       + (planning.intent.synopsisRange ? 2 * (planning.intent.synopsisRange.to - planning.intent.synopsisRange.from + 1) : 0)
     : MAIN_GENERATION_POLICY.budget.maxPhysicalRequests
-  const liability = Math.max(...(['drafting', 'planning', 'review', 'general'] as const).flatMap(stage =>
+  const liability = Math.max(...REASONING_STAGES.flatMap(stage =>
     CREATIVE_STRATEGIES.map(strategy => resolvePhysicalLiability(model, strategy, stage).reservationCeiling)))
   return Object.freeze({ ...MAIN_GENERATION_POLICY, version: 's07-capacity-v2', ...(planning ? { planning } : {}),
     budget: scaledRootBudget(selection.batchIntent ? requests * BATCH_ROOT_PHYSICAL_REQUESTS_PER_CHAPTER : requests, cap, liability) })
