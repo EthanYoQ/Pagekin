@@ -26,7 +26,6 @@ export interface PortableExportJob {
 export interface PortableExportWorkerData extends PortableExportJob {
   /** 主进程里 electron 模块的导出名，worker 照着造一个空模块。 */
   electronExports: string[]
-  /** 共享的提交标志，见 claimPublish 与 claimStop。 */
   commit: Int32Array
 }
 

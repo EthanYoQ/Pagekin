@@ -1218,7 +1218,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
 /** 只比 dev、ino：写库会改大小和修改时间，不改身份。 */
 interface SourceDatabasePin { database?: fs.BigIntStats }
 
-/** 导出写任何东西之前的核对：会话形状对、目标与临时目录不在作品里、路径上没有链接。worker 宿主建临时目录前也调它。 */
+/** 必须先于任何写入。worker 宿主建临时目录前也要调它。 */
 export function assertPortableExportPaths(
   input: Pick<ExportPortableProjectInput, 'sourceProjectRoot' | 'targetArchivePath' | 'attemptParentPath' | 'projectSession'>,
 ): void {
