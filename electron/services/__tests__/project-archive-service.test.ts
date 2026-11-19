@@ -542,10 +542,10 @@ describe('portable project export service', () => {
       const other = fixture()
       const assets = provider()
 
-      await expect(exportPortableProject(input(f, { snapshot: () => {
+      await expect(exportPortableProject(input(f, { snapshot: request => {
         fs.renameSync(f.databasePath, path.join(f.base, '原书.db'))
         fs.copyFileSync(other.databasePath, f.databasePath)
-        return assets.snapshot()
+        return assets.snapshot(request)
       } }))).rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED')
       expect(fs.existsSync(f.target)).toBe(false)
     })

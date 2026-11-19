@@ -1228,6 +1228,9 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
   const checkedDatabase = regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING')
   if (source.database && !sameObject(source.database, checkedDatabase)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
   source.database = checkedDatabase
+  const assertSameDatabase = () => {
+    if (!sameObject(regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING'), checkedDatabase)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
+  }
   const canonicalManifestPath = path.join(projectStorageRoot, 'project.json')
   regularFile(canonicalManifestPath, 'PORTABLE_ASSET_MISSING')
   const canonicalManifest = parseCanonicalProjectManifest(JSON.parse(
@@ -1245,7 +1248,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
       await withKnowledgeSourceGate(projectStorageRoot, async () => {
         // 排队等闸门期间作品可能被关掉或换掉，取快照前重查。
         await assertCurrentContext(input, frozenContext, sourceRoot)
-        if (!sameObject(regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING'), checkedDatabase)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
+        assertSameDatabase()
         try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath, sourceIdentity: checkedDatabase }) }
         finally { recordOwnedFileIfPresent(attempt, sourceSnapshotPath) }
         const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
@@ -1415,6 +1418,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
     input.__testHooks?.afterArchiveBuilt?.(stagedArchivePath)
 
     await assertCurrentContext(input, frozenContext, sourceRoot)
+    assertSameDatabase()
     const targetInfo = publishStagedArchive(stagedArchivePath, targetPath)
     return {
       originProjectId: canonicalManifest.projectId,
