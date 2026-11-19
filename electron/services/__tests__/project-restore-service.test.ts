@@ -126,7 +126,7 @@ function exportInput(f: Fixture): ExportPortableProjectInput {
     targetArchivePath: f.archive,
     attemptParentPath: f.attemptParent,
     assertCurrentContext: () => undefined,
-    assets: { snapshot: () => ({ files: [], verifyUnchanged: () => undefined }) },
+    assets: { snapshot: () => ({ files: [] }) },
     snapshotGeneration: 'restore-roundtrip-1',
     now: () => new Date('2026-09-21T00:00:00.000Z'),
   }
