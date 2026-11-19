@@ -1942,6 +1942,16 @@ describe('单章蓝图的字段直接可读（#702）', () => {
     await expect.element(page.getByRole('button', { name: '完成编辑章节要点' })).toBeVisible()
   })
 
+  it('卡片开着时 AI 生成蓝图或定稿后处理写回了这一章：空的要点换成排版，长字段照样随内容长高', async () => {
+    await renderPage(1)
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).toHaveValue('')
+    stored = [long(1, '旧港'), ...stored.slice(1)]
+    await refreshBlueprints()
+    await expect.element(page.getByRole('region', { name: '第 1 章蓝图' }).getByRole('strong')).toHaveTextContent('林岚')
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).not.toBeInTheDocument()
+    expect(innerScrolls()).toEqual([])
+  })
+
   it('滚到卡片底部再换章，卡片回到顶上；「保存此章」一直在可见区域里', async () => {
     stored = [long(1, '旧港'), long(2, '北堤')]
     Object.assign(container!.style, { height: '700px', display: 'flex', flexDirection: 'column' })

@@ -92,7 +92,8 @@ function fraction(done: number, total: number): StageProgress {
 }
 
 export function missingSetup(config: WorkFacts['config']): SetupField[] {
-  const blank = (value: string | undefined) => !value?.trim()
+  // 读出的值类型不对时按没填算，不让流程脊和设定页因为一项坏数据整页崩。
+  const blank = (value: unknown) => typeof value !== 'string' || !value.trim()
   // 与主进程的作品概览同一口径：章数、字数都得是正的安全整数。
   const count = (value: number) => Number.isSafeInteger(value) && value > 0
   return SETUP_FIELDS.filter(field => field === 'length'

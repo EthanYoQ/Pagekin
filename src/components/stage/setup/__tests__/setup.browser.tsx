@@ -14,6 +14,7 @@ import { useProjectStore } from '../../../../stores/project-store'
 import { useWorkflowStore } from '../../../../stores/workflow-store'
 import { IS_MAC } from '../../shortcut-keys'
 import { useStageShortcuts } from '../../use-stage-shortcuts'
+import { recordAiSources } from '../../../../shared/novel-config-ai-sources'
 import StageSetup from '../StageSetup'
 
 const COMMAND = IS_MAC ? { metaKey: true } : { ctrlKey: true }
@@ -69,6 +70,11 @@ const next = () => byName(/^下一步：故事架构/)!
 const hint = () => host!.querySelector('.stage-setup-foot [role="status"]')!.textContent
 const field = (label: RegExp) => [...host!.querySelectorAll<HTMLSelectElement | HTMLTextAreaElement>('select, textarea')]
   .find(control => label.test(control.labels?.[0]?.textContent ?? ''))!
+const requiredLabel = (name: string) => [...host!.querySelectorAll('.stage-setup-label')].find(label => label.textContent?.startsWith(name))!
+const sheetRow = (name: string) => [...host!.querySelectorAll('.stage-setup-row')].find(row => row.querySelector('label')?.textContent === name)!
+const sheetMarks = () => Object.fromEntries([...host!.querySelectorAll('.stage-setup-row')]
+  .map(row => [row.querySelector('label')!.textContent, row.querySelector('[data-mark]')?.textContent ?? null]))
+const sheetCount = () => host!.querySelector('.stage-setup-sheet-count')!.textContent
 
 async function click(element: HTMLElement | undefined) {
   expect(element, '要点击的元素存在').toBeTruthy()
@@ -204,7 +210,7 @@ describe('设定页', () => {
   it('新作品三项必填先用中性的「必填」；离开空着的一项或只差最后一项时才标红', async () => {
     project({})
     await mount()
-    const labels = () => [...host!.querySelectorAll('.stage-setup-label')].slice(0, 4).map(label => [label.textContent, label.hasAttribute('data-missing')])
+    const labels = () => ['核心大纲', '类型', '篇幅', '目标读者'].map(name => [requiredLabel(name).textContent, requiredLabel(name).hasAttribute('data-missing')])
     expect(labels()).toEqual([['核心大纲 · 必填', false], ['类型 · 必填', false], ['篇幅', false], ['目标读者 · 必填', false]])
 
     const outline = field(/^核心大纲/) as HTMLTextAreaElement
@@ -216,7 +222,7 @@ describe('设定页', () => {
   it('篇幅没填全时，焦点离开篇幅也标红，与其他必填项同一时机', async () => {
     project({ wordsPerChapter: 0 })
     await mount()
-    const length = () => [...host!.querySelectorAll('.stage-setup-label')][2]
+    const length = () => requiredLabel('篇幅')
     expect([length().textContent, length().hasAttribute('data-missing')]).toEqual(['篇幅 · 必填', false])
 
     const chapters = host!.querySelector<HTMLInputElement>('input[aria-label="总章数"]')!
@@ -227,18 +233,18 @@ describe('设定页', () => {
   it('篇幅超出安全整数时仍算没填全，与预览卡（主进程按安全整数判断）一致', async () => {
     project({ totalChapters: 2 ** 53 })
     await mount()
-    expect([...host!.querySelectorAll('.stage-setup-label')][2].textContent).toBe('篇幅 · 必填')
+    expect(requiredLabel('篇幅').textContent).toBe('篇幅 · 必填')
   })
 
-  it('点开一项更多设定：面板滚进视野，焦点落在面板的输入框里', async () => {
+  it('新书：基本设定与设定细则都排在核心大纲之上，六项细则都标「未填」，底栏写明还差的必填项', async () => {
     project({})
     await mount()
-    const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView')
-    await click(byName(/^世界观/))
-    const panel = host!.querySelector('[aria-label="世界观"]')!
-    expect(scrolled.mock.contexts).toContain(panel)
-    expect(scrolled).toHaveBeenCalledWith({ block: 'nearest' })
-    expect(document.activeElement).toBe(panel.querySelector('textarea'))
+    const order = ['.stage-setup-basics', '.stage-setup-sheet', '.stage-setup-outline'].map(selector => host!.querySelector(selector)!)
+    expect(order[0].compareDocumentPosition(order[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(order[1].compareDocumentPosition(order[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(sheetCount()).toBe('6 项 · 6 项未填')
+    expect(Object.values(sheetMarks())).toEqual(['未填', '未填', '未填', '未填', '未填', '未填'])
+    expect(hint()).toBe('还差 3 项：核心大纲、类型、目标读者')
   })
 
   it('AI 按钮不可用时读屏能听到原因', async () => {
@@ -359,26 +365,58 @@ describe('设定页', () => {
     expect(useLayoutStore.getState()).toMatchObject({ settingsOpen: true, settingsSection: 'llm' })
   })
 
-  it('更多设定点开才出现，每项可以单独收起', async () => {
-    project({ subGenre: '海港悬疑' })
+  it('基本设定八项不用点开就能改；叙事视角、故事结构恒有值，不标「未填」', async () => {
+    project({ subGenre: '海港悬疑', narrativePOV: 'first_person' })
     await mount()
-    const chip = byName(/^细分类型/)!
-    expect(chip.textContent).toBe('细分类型 · 海港悬疑')
-    expect(chip.getAttribute('aria-expanded')).toBe('false')
-    expect(host!.querySelector('[aria-label="细分类型"]')).toBeNull()
+    const basics = host!.querySelector('.stage-setup-basics')!
+    expect([...basics.querySelectorAll('.stage-setup-field > .stage-setup-label')].map(label => label.textContent))
+      .toEqual(['类型 · 必填', '篇幅', '目标读者 · 必填', '叙事视角', '故事结构', '细分类型', '写作语言', '伏笔沉寂提醒'])
+    expect(basics.querySelector('[data-mark]')).toBeNull()
+    expect((field(/^叙事视角$/) as HTMLSelectElement).value).toBe('first_person')
+    await choose(field(/^故事结构$/) as HTMLSelectElement, 'kishotenketsu')
+    expect(useProjectStore.getState().currentProject?.novelConfig.plotStructure).toBe('kishotenketsu')
+    await choose(field(/^写作语言$/) as HTMLSelectElement, 'en-US')
+    expect(useProjectStore.getState().currentProject?.novelConfig.writingLanguage).toBe('en-US')
+    expect(host!.querySelector<HTMLInputElement>('input[placeholder^="如：修仙"]')?.value).toBe('海港悬疑')
+  })
 
-    await click(chip)
-    expect(chip.getAttribute('aria-expanded')).toBe('true')
-    expect(host!.querySelector<HTMLInputElement>('[aria-label="细分类型"] input')?.value).toBe('海港悬疑')
-    await click(byName('收起「细分类型」'))
-    expect(host!.querySelector('[aria-label="细分类型"]')).toBeNull()
+  it('设定细则的行内标记与表头计数一致：AI 整项写的标「AI 填写」，在作者原文后补写的标「AI 扩写」，作者一改就消失', async () => {
+    const before: Partial<NovelConfig> = { worldSetting: '旧港以潮汐计时。' }
+    const written = { protagonistProfile: '林岚，测绘师。', worldSetting: '旧港以潮汐计时。\n\n灯塔归港务局。', goldenFinger: '读潮位刻痕。' }
+    project({ ...before, ...written, writingStyle: '短句。', aiSources: recordAiSources(before, written) })
+    await mount()
+    expect(sheetMarks()).toEqual({ 主角人设: 'AI 填写', 世界观: 'AI 扩写', 金手指: 'AI 填写', 文风: null, 全局写作要求: '未填', 参考作品: '未填' })
+    expect(sheetCount()).toBe('6 项 · 2 项未填 · 2 项 AI 填写 · 1 项 AI 扩写')
+
+    await write(sheetRow('金手指').querySelector('textarea')!, '读潮位刻痕，误差一个朔望月。')
+    expect(sheetMarks().金手指).toBeNull()
+    expect(sheetCount()).toBe('6 项 · 2 项未填 · 1 项 AI 填写 · 1 项 AI 扩写')
+  })
+
+  it('长内容的设定细则与核心大纲都随内容长高，不在框里滚动', async () => {
+    const long = Array.from({ length: 14 }, (_, line) => `第 ${line + 1} 行：旧港的雾钟每晚报时，一天比一天早一刻。`).join('\n')
+    project({ coreOutline: long, protagonistProfile: long, worldSetting: long, goldenFinger: long, writingStyle: long, globalGuidance: long, referenceWorks: long })
+    await mount()
+    const textareas = [...host!.querySelectorAll<HTMLTextAreaElement>('.stage-setup textarea')]
+    expect(textareas).toHaveLength(7)
+    expect(textareas.filter(node => node.scrollHeight > node.clientHeight + 1).map(node => node.labels?.[0]?.textContent)).toEqual([])
+  })
+
+  it('某项设定读出的不是文本时，这一行显示为空、可以照常填写，整页不崩；视角不在选项里时留着原值', async () => {
+    project({ worldSetting: 42 as never, genre: 7 as never, narrativePOV: 'second_person' as never, coreOutline: null as never })
+    await mount()
+    expect(sheetMarks().世界观).toBe('未填')
+    expect((field(/^叙事视角$/) as HTMLSelectElement).value).toBe('second_person')
+    expect(requiredLabel('类型').textContent).toBe('类型 · 必填')
+    await write(sheetRow('世界观').querySelector('textarea')!, '旧港以潮汐计时。')
+    expect(useProjectStore.getState().currentProject?.novelConfig.worldSetting).toBe('旧港以潮汐计时。')
+    expect(sheetMarks().世界观).toBeNull()
   })
 
   it('伏笔沉寂提醒清空后重新输入：退格删掉 5 再输 7 得 7，不是 17；空着离开回到默认的 3 章', async () => {
     project({ narrativeThreadDormantChapterThreshold: 5 })
     await mount()
-    await click(byName(/^高级/))
-    const input = host!.querySelector<HTMLInputElement>('.stage-setup-adv-ctl input')!
+    const input = host!.querySelector<HTMLInputElement>('input[aria-label="伏笔沉寂提醒（章）"]')!
     // 上一条用例留下的提示会挡住指针，直接聚焦后用键盘输入。
     await act(async () => input.focus())
     await userEvent.keyboard('{End}{Backspace}')

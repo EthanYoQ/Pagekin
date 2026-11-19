@@ -31,7 +31,6 @@ async function mount(theme: 'light' | 'dark') {
         <div className="stage-book" data-tone="paper" style={{ width: 120 }}><button type="button" className="stage-book-cover">灯塔</button></div>
         <div className="stage-book" data-tone="paper" data-selected="" style={{ width: 120 }}><button type="button" className="stage-book-cover">雾钟</button></div>
       </div>
-      <button type="button" className="stage-chip">题材</button>
       <button type="button" className="stage-set-theme" role="radio" aria-checked={false}>纸墨</button>
       <button type="button" className="stage-set-link">外观</button>
     </>,
@@ -60,9 +59,9 @@ async function pressed(element: HTMLElement) {
 }
 
 describe('新外壳自写的卡片、标签与导航有按压反馈', () => {
-  it.each(['light', 'dark'] as const)('%s 主题开始卡、封面、设定标签、主题单选、设置导航按下时与聚焦未按下时不同', async (theme) => {
+  it.each(['light', 'dark'] as const)('%s 主题开始卡、封面、主题单选、设置导航按下时与聚焦未按下时不同', async (theme) => {
     const container = await mount(theme)
-    for (const selector of ['.stage-start', '.stage-book-cover', '.stage-chip', '.stage-set-theme', '.stage-set-link']) {
+    for (const selector of ['.stage-start', '.stage-book-cover', '.stage-set-theme', '.stage-set-link']) {
       const element = container.querySelector<HTMLElement>(selector)!
       await userEvent.hover(document.body, { position: { x: 1, y: 1 } })
       element.focus()

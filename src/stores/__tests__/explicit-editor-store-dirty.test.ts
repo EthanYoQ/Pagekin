@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ProjectData } from '../../shared/ipc-channels'
+import { aiSourceOf, recordAiSources } from '../../shared/novel-config-ai-sources'
 import { useCharacterStore, type CharacterCard } from '../character-store'
 import { useEditorStore } from '../editor-store'
 import { useProjectStore } from '../project-store'
@@ -225,6 +226,22 @@ describe('explicit editor dirty integration', () => {
     await expect(saving).rejects.toThrow('GENERATION_SAVED_WITH_NEWER_AUTHOR_DRAFT')
     expect(useProjectStore.getState().currentProject?.novelConfig.coreOutline).toBe('作者等待时新写')
     expect(getProjectEditorDraft(parseProjectEditorDraftLedger(draftLedgerContent(CONFIG_DRAFT_TAB.id)), original.path)).toBeDefined()
+  })
+  it('单项 AI 生成提交期间作者改了同一项：作者的文字留下且不标 AI；作者没动的那项照常标 AI 填写', async () => {
+    const original = project(), handle = { projectId: original.id, epoch: original.sessionLease!, rootActionId: 'root', runId: 'run' }
+    const generated = { worldSetting: '旧港以潮汐计时。', goldenFinger: '读潮位刻痕。' }
+    const pending = deferred<{ success: boolean }>()
+    invoke.mockReturnValue(pending.promise)
+    const saving = useProjectStore.getState().commitGeneratedNovelConfig(
+      { ...generated, aiSources: recordAiSources(original.novelConfig, generated) }, original.novelConfig, projectSession(original), handle)
+    useProjectStore.getState().updateNovelConfig({ worldSetting: '作者等待时写的世界观' })
+    pending.resolve({ success: true })
+    await expect(saving).rejects.toThrow('GENERATION_SAVED_WITH_NEWER_AUTHOR_DRAFT')
+    const config = useProjectStore.getState().currentProject!.novelConfig
+    expect(config.worldSetting).toBe('作者等待时写的世界观')
+    expect(aiSourceOf(config, 'worldSetting')).toBeNull()
+    expect(config.goldenFinger).toBe('读潮位刻痕。')
+    expect(aiSourceOf(config, 'goldenFinger')).toBe('filled')
   })
   it('unbinds project A character data before openProject publishes project B and loads B', async () => {
     const fileTree = deferred<[]>()
