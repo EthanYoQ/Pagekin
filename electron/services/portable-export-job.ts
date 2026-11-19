@@ -64,7 +64,7 @@ export function rehydrateExportError(error: SerializedExportError): Error {
   }
 }
 
-/** 在 worker 里跑完整的导出（含资料阶段整次重来）。会话核对与知识库闸门问主进程。 */
+/** 会话核对与知识库闸门都问主进程，worker 里不持有。 */
 export async function runPortableExportJob(port: MessagePort, job: PortableExportJob): Promise<void> {
   const post = (message: WorkerToHost) => port.postMessage(message)
   const waiting = new Map<number, (ok: boolean) => void>()

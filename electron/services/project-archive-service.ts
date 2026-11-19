@@ -223,7 +223,7 @@ export interface ExportPortableProjectInput {
   assets: PortableAssetProvider
   now?: () => Date
   snapshotGeneration?: string
-  /** 知识库闸门。worker 里跑时由主进程持有主进程那把锁，默认是本进程的 withKnowledgeSourceGate。 */
+  /** worker 里跑时经主进程取主进程那把锁；默认是本进程的 withKnowledgeSourceGate。 */
   withSourceGate?<T>(projectStorageRoot: string, operation: () => Promise<T>): Promise<T>
   onProgress?(phase: PortableExportPhase): void
   /** @internal Deterministic mutation/failure injection. */

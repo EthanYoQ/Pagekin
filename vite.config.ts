@@ -22,7 +22,7 @@ export default defineConfig({
   plugins: [tailwindcss(), react(), electron({
     main: {
       // Shortcut of `build.lib.entry`.
-      // 导出在 worker 线程里跑，worker 入口单独产出 dist-electron/portable-export-worker.js。
+      // worker 线程只能按文件路径加载，导出 worker 要单独产出一个入口，不能并进 main。
       entry: { main: 'electron/main.ts', 'portable-export-worker': 'electron/services/portable-export-worker.ts' },
       vite: {
         build: {

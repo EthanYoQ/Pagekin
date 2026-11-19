@@ -162,7 +162,7 @@ async function installLedger(app, page) {
       return child
     }
     process.getBuiltinModule('node:module').syncBuiltinESMExports()
-    // 不用 monitorEventLoopDelay：它 reset() 后丢掉第一个间隔，操作一开始就卡住的那段读成 0（export-p2 正对照）。
+    // 不用 monitorEventLoopDelay：它 reset() 后丢掉第一个间隔，操作一开始就卡住的那段会读成 0。
     // 这里记相邻两次定时器的最大间隔，取账本时把还没结束的那段间隔也算上。
     const loop = ledger.loop = { last: performance.now(), max: 0 }
     setInterval(() => { const now = performance.now(); loop.max = Math.max(loop.max, now - loop.last); loop.last = now }, 5).unref()
@@ -770,7 +770,7 @@ async function waitForQuietIpc(app, quietMs = 2_000, deadlineMs = 60_000) {
 }
 
 /**
- * 112 章书导出本地存档：总耗时、主进程最长停顿、渲染端每 20 ms 一次轻量 IPC 的最长往返（作者能感到的卡）。
+ * 探针是渲染端每 20 ms 一次轻量 IPC，最长往返就是作者能感到的卡。
  * writes 为真时导出期间每 150 ms 保存一次第 finalized+1 章草稿，记成功次数（边写边导）。
  */
 async function timeExport(context, finalized, { rounds = Number(process.env.PERF702_ROUNDS ?? 1), writes = false } = {}) {
@@ -825,7 +825,6 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
   return { finalized, runs }
 }
 
-/** 从备份页点「导出本地存档」：读取作品和打包两个阶段各截一张，导出完再截一张。 */
 async function exportPhases(context) {
   const { app, page, roots, shoot } = context
   await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
