@@ -3,6 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
+import { isDeepStrictEqual } from 'node:util'
 import type BetterSqlite3 from 'better-sqlite3'
 import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../migrations/desktop-registry'
 import { migrateSchema, probeSchema, verifySchema } from '../migrations/runner'
@@ -406,7 +407,9 @@ export function upgradeProjectSqlite(options: { databasePath: string; registry?:
       const columnsBefore = domainColumns(database)
       migrateSchema(new SqliteSchemaAdapter(database, accepted), registry, CURRENT_DESKTOP_SCHEMA_VERSION)
       const after = inspect(database, registry, CURRENT_DESKTOP_SCHEMA_VERSION, accepted)
-      if (JSON.stringify(before.domain) !== JSON.stringify(domain(database, columnsBefore))) throw new Error('PROJECT_MIGRATION_SQLITE_CONTENT_CHANGED')
+      // 迁移没加列时，改前那一列选取的摘要就是 after.domain，不再整本读一遍。
+      const unchanged = isDeepStrictEqual(columnsBefore, domainColumns(database)) ? after.domain : domain(database, columnsBefore)
+      if (JSON.stringify(before.domain) !== JSON.stringify(unchanged)) throw new Error('PROJECT_MIGRATION_SQLITE_CONTENT_CHANGED')
       return after
     }).immediate()
   } finally { database.close() }
