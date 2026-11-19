@@ -550,6 +550,29 @@ describe('project controller project identity', () => {
     expect(mocks.initCalls).toEqual([projectB])
   })
 
+  it('project:open：另一本书校验失败时，当前这本书原样开着，不关库重开', async () => {
+    mocks.verifyCanonicalProjectData.mockRejectedValueOnce(new Error('CORRUPT_SCHEMA'))
+    const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-corrupt', projectA)
+    expect(result).toMatchObject({
+      success: false, activeProjectPath: projectA, databaseRestored: true, dbReady: true,
+      error: expect.stringContaining('CORRUPT_SCHEMA'),
+    })
+    expect(mocks.initCalls).toEqual([])
+    expect(mocks.currentProjectPath).toBe(projectA)
+  })
+
+  it('project:open：等旧书导出停下期间又打开了别的书，这次作废，不先换库再回滚', async () => {
+    let stopped!: () => void
+    mocks.stopPortableExports.mockImplementationOnce(() => new Promise<void>(resolve => { stopped = resolve }))
+    const older = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-while-stopping', projectA)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const newer = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD), 'open-D-after-stop', projectA)
+    stopped()
+    await expect(older).resolves.toMatchObject({ success: false, stale: true, activeProjectPath: projectA })
+    await expect(newer).resolves.toMatchObject({ success: true, activeProjectPath: projectD })
+    expect(mocks.initCalls).toEqual([projectD])
+  })
+
   it('project:open：worker 校验期间又打开了别的书，这次作废，不换库', async () => {
     let verified!: (value: unknown) => void
     mocks.verifyCanonicalProjectData.mockImplementationOnce(() => new Promise(resolve => { verified = resolve }))
@@ -785,7 +808,7 @@ describe('project controller project identity', () => {
       dbReady: true,
     })
 
-    expect(mocks.initCalls).toEqual([projectA])
+    expect(mocks.initCalls).toEqual([])
     expect(mocks.initCalls).not.toContain(ordinaryDirectory)
   })
 
@@ -842,7 +865,7 @@ describe('project controller project identity', () => {
       expect(result).not.toHaveProperty('legacyImportSource')
       expect(mocks.issueDirectory).not.toHaveBeenCalled()
       expect(mocks.initCalls).not.toContain(projectB)
-      expect(mocks.initCalls).toEqual([projectA])
+      expect(mocks.initCalls).toEqual([])
       expect(mocks.currentProjectPath).toBe(projectA)
     },
   )
@@ -858,7 +881,7 @@ describe('project controller project identity', () => {
       databaseRestored: true,
       dbReady: true,
     })
-    expect(mocks.initCalls).toEqual([projectA])
+    expect(mocks.initCalls).toEqual([])
     expect(mocks.initCalls).not.toContain(ordinaryDirectory)
   })
 
