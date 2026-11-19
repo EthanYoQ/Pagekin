@@ -587,7 +587,7 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
         add('plot-outline:origin', 0, stable(plotOutlineSource), 'author-constraint', 'main captured original project facts and synopsis for final outline compare-and-set');
     }
     const agentContext = agentInput && agentPrompt ? buildAgentGenerationContext(agentInput, facts.core, facts.language, agentPrompt.selected, agentPrompt.builtin) : undefined;
-    const editorInlineContext = editorInlineInput ? buildEditorInlineContext(editorInlineInput, facts.language, importPrompts.edit_selected_text!, input.editorInlineInputTokens, input.editorInlineContext?.materials) : undefined;
+    const editorInlineContext = editorInlineInput ? buildEditorInlineContext(editorInlineInput, facts.language, importPrompts.edit_selected_text!, input.editorInlineInputTokens, input.editorInlineContext) : undefined;
     const finalizationContext = input.finalizationGenerationSlot ? captureFinalizationGenerationContext(deps.db, input.finalizationGenerationSlot, input, facts.language,
         importPrompts[input.finalizationGenerationSlot.stepKey === 'chapter_notes' ? 'generate_chapter_notes' : 'update_character_cards']!, input.finalizationGenerationContext) : undefined;
     if (finalizationContext) add('finalization-generation-context', 0, JSON.stringify(finalizationContext), 'finalized-fact', 'main captured finalization identity, original field baselines and selected prompt');

@@ -108,13 +108,19 @@ function selectMaterials(context: EditorInlineContext, inputTokens: number): Edi
   }
   return { included, omitted }
 }
-/** 有章节上下文时按额度选一次材料；重建时传回 frozen，不按当时的模型重选。 */
-export function buildEditorInlineContext(input: EditorInlineInput, writingLanguage: WritingLanguage, template: PromptTemplate, inputTokens = Infinity, frozen?: EditorInlineMaterials): EditorInlineContext {
+/**
+ * 有章节上下文时按额度选一次材料；没有章号的续写带空材料，标明它插在选区之后。
+ * 重建时传回开跑时冻结的上下文，沿用它的材料（升级前的运行没有材料，照旧替换选区）。
+ */
+export function buildEditorInlineContext(input: EditorInlineInput, writingLanguage: WritingLanguage, template: PromptTemplate, inputTokens = Infinity,
+  frozen?: Pick<EditorInlineContext, 'materials'>): EditorInlineContext {
   const valid = validateEditorInlineInput(input)
   if (template.key !== 'edit_selected_text' || typeof template.content !== 'string') throw new Error('GENERATION_EDITOR_TEMPLATE_INVALID')
   const context: EditorInlineContext = { ...valid, kind: 'author-draft', documentHash: textHash(valid.documentText), writingLanguage, template: structuredClone(template) }
-  if (!valid.chapterContext) return context
-  return { ...context, materials: frozen ? structuredClone(frozen) : selectMaterials(context, inputTokens) }
+  const materials = frozen ? frozen.materials && structuredClone(frozen.materials)
+    : valid.chapterContext ? selectMaterials(context, inputTokens)
+    : valid.action === 'continue' ? { included: [], omitted: [] } : undefined
+  return materials ? { ...context, materials } : context
 }
 export function readEditorInlineContext(run: DurableGenerationRun): EditorInlineContext {
   const context = run.binding.sourceManifest.editorInlineContext as EditorInlineContext | undefined

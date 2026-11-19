@@ -1,6 +1,6 @@
 import { buildEditorInlineContext, editorInlineTask } from '../editor-inline-generation'
 import { composePromptSystemRole, getBuiltinPromptTemplate } from '../../../src/services/builtin-prompt-templates'
-import type { EditorInlineContext } from '../../../src/shared/editor-inline-generation'
+import { editorInlineInsertsAfterSelection, type EditorInlineContext } from '../../../src/shared/editor-inline-generation'
 import { prepareCanonicalStorageFixture } from '../../../test/helpers/canonical-project-fixture'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -46,7 +46,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch']) {
   const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, '.ai-novel', 'project.db')); admitGenerationLedger(db); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
   return {get db(){return db},deps,owner,spy,reopenStorage,changeTemplate:()=>{templateBody='后来模板 {{selected_text}}'},removeModel:()=>{model=null},
     setContextWindow:(tokens:number)=>{model={...model!,capabilities:{...model!.capabilities!,contextWindowTokens:tokens}}},
-    useLocalModelWithoutWindow:()=>{const { contextWindowTokens: _unset, ...capabilities } = model!.capabilities!; model={...model!,provider:'ollama',baseUrl:'http://127.0.0.1:11434/v1',apiKey:'',capabilities}}}
+    useLocalModelWithoutWindow:()=>{model={...model!,provider:'ollama',baseUrl:'http://127.0.0.1:11434/v1',apiKey:'',capabilities:{...model!.capabilities!,contextWindowTokens:null}}}}
 }
 
 import { createHash } from 'node:crypto'
@@ -200,7 +200,7 @@ it.each([
  const system=systemOf(buildEditorInlineContext({...input,action:'instruct',instruction},language,template))
  expect(system).toContain(template.systemRole!)
  for(const phrase of rule) expect(system).toContain(phrase)
- for(const action of ['refine','expand','continue','dialogue'] as const){
+ for(const action of ['refine','expand','dialogue'] as const){
   const fixed=systemOf(buildEditorInlineContext({...input,action},language,template))
   expect(fixed).toBe(composePromptSystemRole(template,language))
  }
@@ -289,24 +289,30 @@ it.each<DamagedColumn>(['budget_json','action_json','binding_json'])('ADR-0030 �
 const goldenTaskHashes: Record<string, string> = {
  'zh-CN:refine': '116ae4fe35271b4582088310ab93d047b61f4614a2199a3c9fc2aac11d5d5c55',
  'zh-CN:expand': '00ee948f9d1f2634d8ce337eb151700f257c912a76536e3841cb2c9816b60d0b',
- 'zh-CN:continue': '6f16834101cfc627a6b4070a5c11b55d7345e4f04cadc75f885b5caa69d11ea3',
  'zh-CN:dialogue': '01246c75d7f17f2472652668b99eaaf33db5be5e210897ad223cb869fe5b3c00',
  'zh-CN:instruct': 'ca9a0b6f9e4eb04110cd14ec3a85016edfbd16ec85b689446be94089921925e1',
  'zh-CN:batch-instruct': '17414d1a8ca7c0a1ad5c49ce088b2042224129e534ca8a4a74f2a7a0afafe235',
  'en-US:refine': '964d523853dc659450b0768711acd9ed1133539274855b6670e9d198b5235c1f',
  'en-US:expand': 'a386fc5ca0bc6144e3b5ea5b227910fd0f3a6a9c204804574d01337d2da373db',
- 'en-US:continue': '900932fb948c72824f032074bb58fa0b31a0637220ec95338f32ee9b2fd23439',
  'en-US:dialogue': 'b46d32caa7d9baaa24d72da35da37e3b72c69f93f7097b1e023517b866d1e5cc',
  'en-US:instruct': '101431623ba5976f33c7cb85875a88378f66cf4e0cc3b35215a1050bf23a33f4',
  'en-US:batch-instruct': '850c6121820e28d1c392d81c1d1491be821e24579034cb4c26eb175d09a7abe8',
 }
-const goldenRequests = [{ action: 'refine' }, { action: 'expand' }, { action: 'continue' }, { action: 'dialogue' }, { action: 'instruct', instruction: '改成第一人称' },
+const goldenRequests = [{ action: 'refine' }, { action: 'expand' }, { action: 'dialogue' }, { action: 'instruct', instruction: '改成第一人称' },
  { action: 'batch-instruct', from: 0, to: input.documentText.length, selectedText: input.documentText, annotations: [{ id: 'a', from: 1, to: 5, selectedText: '😀林岚', instruction: '改冷' }] }] as const
-it.each(['zh-CN', 'en-US'] as const)('%s 没有章号时（架构文档、恢复稿、升级前的运行），发给模型的任务与改动前逐字节相同', language => {
+it.each(['zh-CN', 'en-US'] as const)('%s 没有章号时（架构文档、恢复稿、升级前的运行），续写以外的任务与改动前逐字节相同', language => {
  for (const request of goldenRequests) {
   const context = buildEditorInlineContext({ ...input, ...request } as never, language, getBuiltinPromptTemplate('edit_selected_text', language)!)
   expect(createHash('sha256').update(JSON.stringify(editorInlineTask(context))).digest('hex'), request.action).toBe(goldenTaskHashes[`${language}:${request.action}`])
  }
+})
+it('没有章号的续写也告诉模型只写接续的新内容，接受时插在选区之后', async () => {
+ const f = fixture(replying('乙丙', 'stop'))
+ const recovery = f.owner.beginEditorInline({ input: { ...input, action: 'continue' }, modelId: 'synthetic', uiActionNonce: '无章号续写' })
+ expect(editorInlineInsertsAfterSelection(recovery.context)).toBe(true)
+ await f.owner.executeEditorInline(recovery.view.handle)
+ const system = (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
+ expect(system).toContain('只输出紧接在它后面的新内容')
 })
 it('改动前留下的运行清单重建后比较仍相等，建议仍可应用', () => {
  const f = fixture()
@@ -314,6 +320,7 @@ it('改动前留下的运行清单重建后比较仍相等，建议仍可应用'
  for (const binding of Object.values(legacy)) {
   const rebuilt = rebuildGenerationSourceBinding(f.deps, binding, 'epoch-2', undefined, readMainGenerationPolicy(binding.sourceManifest.policy)).binding
   expect(compareGenerationSourceBindings(binding, rebuilt)).toBe(true)
+  expect(editorInlineInsertsAfterSelection(rebuilt.sourceManifest.editorInlineContext as never), JSON.stringify(binding.sourceManifest.editorInlineInput)).toBe(false)
  }
 })
 
