@@ -43,7 +43,7 @@ const projectKey = (root: string) => process.platform === 'win32' ? path.resolve
 
 /**
  * 导出在 worker 线程里跑，主进程只应答会话核对与知识库闸门、转发进度。
- * 主进程在 attemptParentPath 下建一个 .pe- 目录交给 worker。结束后不论成败（含取消、worker 崩溃），
+ * 主进程在 attemptParentPath 下建一个 .pe- 目录交给 worker 直接当临时目录。结束后不论成败（含取消、worker 崩溃），
  * 都等 worker 真正退出才放开闸门、删目录、注销在途登记：退出应用和关库靠在途登记判断还要不要等。
  */
 export async function exportPortableProjectInWorker(
@@ -64,7 +64,7 @@ export async function exportPortableProjectInWorker(
   let worker: Worker | undefined
   try {
     return await new Promise<ExportPortableProjectReceipt>((resolve, reject) => {
-      const thread = worker = new Worker(workerScript, { workerData: { ...job, attemptParentPath: runRoot, electronExports, commit } satisfies PortableExportWorkerData })
+      const thread = worker = new Worker(workerScript, { workerData: { ...job, attemptRoot: runRoot, electronExports, commit } satisfies PortableExportWorkerData })
       const reply = (message: HostToWorker) => { if (!finished) thread.postMessage(message) }
       const fail = (error: Error) => { reject(error); void thread.terminate() }
       entry.stop = error => { if (claimStop(commit)) fail(error) }

@@ -178,7 +178,7 @@ describe('在 worker 线程里导出', () => {
       'import { execFileSync } from "node:child_process"',
       'import path from "node:path"',
       'import { parentPort, workerData } from "node:worker_threads"',
-      'const outDir = path.dirname(workerData.attemptParentPath)',
+      'const outDir = workerData.attemptParentPath',
       'parentPort.once("message", () => execFileSync(process.execPath, [path.join(outDir, "gated-child.cjs"), path.join(outDir, "gated-work-started"), path.join(outDir, "gated-work-finished")]))',
       'parentPort.postMessage({ type: "gate-enter", id: 1, projectStorageRoot: path.join(workerData.sourceProjectRoot, ".ai-novel") })',
     ].join('\n'))
@@ -282,6 +282,17 @@ describe('在 worker 线程里导出', () => {
     expect(receipt.targetSha256).toBe(createHash('sha256').update(fs.readFileSync(path.join(outDir, 'sha.ainovel'))).digest('hex'))
   }, 60_000)
 
+  it('目标目录长到 225 个字符，主线程导出能成功的，worker 导出也能成功', async () => {
+    const { outDir, input } = await project()
+    const deep = path.join(outDir, 'd'.repeat(225 - outDir.length - 1))
+    fs.mkdirSync(deep)
+    const at = (name: string): PortableExportInWorkerInput => ({ ...input(name), targetArchivePath: path.join(deep, name), attemptParentPath: deep })
+
+    expect(await outcome(onMainThread(at('m.ainovel')))).toEqual({ ok: true })
+    expect(await outcome(exportPortableProjectInWorker(at('w.ainovel'), worker))).toEqual({ ok: true })
+    expect(leftovers(deep)).toEqual([])
+  }, 60_000)
+
   it('worker 崩溃时日志不带路径：报错原文可能含用户名或作品目录', async () => {
     const { outDir, input } = await project()
     const script = path.join(outDir, 'crash-path.mjs')
@@ -309,7 +320,7 @@ describe('在 worker 线程里导出', () => {
       'import fs from "node:fs"',
       'import path from "node:path"',
       'import { workerData } from "node:worker_threads"',
-      'fs.writeFileSync(path.join(workerData.attemptParentPath, "half.db"), "x")',
+      'fs.writeFileSync(path.join(workerData.attemptRoot, "half.db"), "x")',
       ending,
     ].join('\n'))
 

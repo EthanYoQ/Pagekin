@@ -24,6 +24,7 @@ export interface PortableExportJob {
 }
 
 export interface PortableExportWorkerData extends PortableExportJob {
+  attemptRoot: string
   /** 主进程里 electron 模块的导出名，worker 照着造一个空模块。 */
   electronExports: string[]
   commit: Int32Array
@@ -82,7 +83,7 @@ export function rehydrateExportError(error: SerializedExportError): Error {
 }
 
 /** 会话核对与知识库闸门都问主进程，worker 里不持有。 */
-export async function runPortableExportJob(port: MessagePort, job: PortableExportJob, commit: Int32Array): Promise<void> {
+export async function runPortableExportJob(port: MessagePort, job: PortableExportJob & { attemptRoot: string }, commit: Int32Array): Promise<void> {
   const post = (message: WorkerToHost) => port.postMessage(message)
   const waiting = new Map<number, (ok: boolean) => void>()
   let nextId = 0
@@ -99,6 +100,7 @@ export async function runPortableExportJob(port: MessagePort, job: PortableExpor
       projectSession: job.projectSession,
       targetArchivePath: job.targetArchivePath,
       attemptParentPath: job.attemptParentPath,
+      attemptRoot: job.attemptRoot,
       snapshotGeneration: job.snapshotGeneration,
       now: job.now === undefined ? undefined : () => new Date(job.now!),
       assets: createPortableProjectAssetProvider(),

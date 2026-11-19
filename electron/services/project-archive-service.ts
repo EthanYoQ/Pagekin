@@ -219,6 +219,8 @@ export interface ExportPortableProjectInput {
   projectSession: ProjectSessionContext
   targetArchivePath: string
   attemptParentPath: string
+  /** 调用方在 attemptParentPath 下建好、导出后自己删的目录，直接当临时目录。worker 宿主用它，免得多套一层撞上 Windows 路径长度上限。 */
+  attemptRoot?: string
   assertCurrentContext(context: Readonly<ProjectSessionContext>, sourceProjectRoot: string): boolean | void | Promise<boolean | void>
   assets: PortableAssetProvider
   now?: () => Date
@@ -268,6 +270,7 @@ interface OwnedAttempt {
   root: string
   rootIdentity: fs.BigIntStats
   files: Map<string, fs.BigIntStats>
+  callerOwnsRoot: boolean
 }
 
 function fail(code: ProjectArchiveServiceErrorCode): never {
@@ -316,13 +319,13 @@ function regularFile(file: string, missingCode: ProjectArchiveServiceErrorCode):
   }
 }
 
-function prepareAttempt(parent: string): OwnedAttempt {
-  const root = fs.mkdtempSync(path.join(parent, '.pe-'))
+function prepareAttempt(parent: string, given: string | undefined): OwnedAttempt {
+  const root = given ?? fs.mkdtempSync(path.join(parent, '.pe-'))
   fs.chmodSync(root, 0o700)
   const rootIdentity = fs.lstatSync(root, { bigint: true })
   if (!rootIdentity.isDirectory() || rootIdentity.isSymbolicLink()
     || normalizedPath(fs.realpathSync.native(root)) !== normalizedPath(root)) fail('PORTABLE_ASSET_UNSAFE')
-  return { root, rootIdentity, files: new Map() }
+  return { root, rootIdentity, files: new Map(), callerOwnsRoot: given !== undefined }
 }
 
 function recordOwnedFile(attempt: OwnedAttempt, file: string): void {
@@ -351,6 +354,7 @@ function cleanupAttempt(attempt: OwnedAttempt): void {
         && normalizedPath(fs.realpathSync.native(file)) === normalizedPath(file)) fs.unlinkSync(file)
     } catch { /* Preserve missing, replaced, linked, or otherwise unknown content. */ }
   }
+  if (attempt.callerOwnsRoot) return
   try {
     const actual = fs.lstatSync(attempt.root, { bigint: true })
     if (actual.isDirectory() && !actual.isSymbolicLink() && sameObject(attempt.rootIdentity, actual)
@@ -1254,7 +1258,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
   if (canonicalManifest.projectId !== frozenContext.projectId) fail('PORTABLE_CONTEXT_INVALID')
   const snapshotGeneration = input.snapshotGeneration ?? randomUUID()
   const createdAt = (input.now?.() ?? new Date()).toISOString()
-  const attempt = prepareAttempt(attemptParent)
+  const attempt = prepareAttempt(attemptParent, input.attemptRoot)
   const attemptRoot = attempt.root
   try {
     const sourceSnapshotPath = path.join(attemptRoot, 'source.db')

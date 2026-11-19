@@ -517,6 +517,24 @@ describe('portable project export service', () => {
       expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"导出期间改的"}')
     })
 
+    it('调用方给了临时目录（worker 宿主）：重来也用它，不再往下建一层，结束后目录留给调用方且已清空', async () => {
+      const f = fixture()
+      const file = prompt(f, '{"提示":"快照时"}')
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const attemptRoot = fs.mkdtempSync(path.join(f.attemptParent, '.pe-'))
+      const roots: string[] = []
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider(), { attemptRoot, __testHooks: { afterPortableDatabaseCreated: root => {
+        roots.push(root)
+        if (roots.length === 1) replaceAtomically(file, '{"提示":"导出期间改的"}')
+      } } }))
+
+      expect(roots).toEqual([attemptRoot, attemptRoot])
+      expect(fs.readdirSync(attemptRoot)).toEqual([])
+      const unpacked = await extract(f)
+      expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"导出期间改的"}')
+    })
+
     it('第一次导出途中库文件被换成另一本书、资料又被改：重来时拒绝，不发布另一本书的内容', async () => {
       const f = fixture()
       seedProject(f)
