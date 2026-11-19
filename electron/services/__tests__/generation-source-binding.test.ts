@@ -310,6 +310,13 @@ describe('main rebuilt generation sources', () => {
         const f = fixture(); f.input.authorInputs = value as unknown as GenerationSourceBindingInput['authorInputs'];
         expect(() => f.build()).toThrow('GENERATION_AUTHOR_INPUT_INVALID');
     });
+    it.each([
+        ['review-revision-context', 'GENERATION_REVIEW_CONTEXT_TOO_LARGE'],
+        ['planning-material:0', 'GENERATION_AUTHOR_INPUT_TOO_LARGE'],
+    ])('names the 8 MiB overflow by what overflowed: %s (#702)', (id, code) => {
+        const f = fixture(); f.input.authorInputs = [{ id, text: 'x'.repeat(8 * 1024 * 1024 + 1) }];
+        expect(() => f.build()).toThrow(code);
+    });
     it('binds explicitly selected blueprint rows and empty planning slots', () => {
         const f = fixture(); f.input.selectedBlueprintChapterNumbers = [2, 3];
         const original = f.build();

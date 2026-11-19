@@ -32,8 +32,8 @@ describe('localized application errors', () => {
 
   it('导出时头像文件坏了：说明作品没动、哪类资料坏了、在哪个按钮修，不说资料被改（#744）', () => {
     const code = 'PORTABLE_EXPORT_AVATAR_DAMAGED'
-    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。有个角色头像文件损坏了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。')
-    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. A character avatar file is damaged, so no archive was created. On the character page, click Choose avatar for the character whose avatar is missing, then Export local archive again.')
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。有个角色头像文件坏了或不见了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。')
+    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. A character avatar file is damaged or missing, so no archive was created. On the character page, click Choose avatar for the character whose avatar is missing, then Export local archive again.')
     expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain(code)
   })
 
@@ -88,6 +88,13 @@ describe('generation error codes from the main process', () => {
       expect(message).toContain(button)
       expect(message).not.toBe(knownAppErrorMessage(shown(locale), generic))
     }
+  })
+
+  it.each(['GENERATION_REVIEW_CONTEXT_TOO_LARGE', 'GENERATION_MATERIAL_DECISION_INVALID'])('前文超出 AI 一次能带的上限（%s）：说实话，不叫作者精简（#702）', code => {
+    const error = new Error(`Error invoking remote method 'generation:begin': Error: ${code}`)
+    expect(knownAppErrorMessage(shown('zh-CN'), error)).toBe('正文没有改动。这本书的前文超过了 AI 一次能带的上限，这次没有生成。请把这条提示反馈给我们。')
+    expect(knownAppErrorMessage(shown('en-US'), error)).toBe("Your text is unchanged. This book's earlier chapters are more than the AI can take in one request, so nothing was generated. Please report this message to us.")
+    expect(knownAppErrorMessage(shown('ja-JP'), error)).not.toContain(code)
   })
 
   it('leaves unregistered codes and prose to the caller', () => {

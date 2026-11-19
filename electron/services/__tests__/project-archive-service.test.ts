@@ -551,7 +551,7 @@ describe('portable project export service', () => {
         replaceAtomically(file, '{"提示":"导出期间改的"}')
         fs.renameSync(f.databasePath, path.join(f.base, '原书.db'))
         fs.copyFileSync(other.databasePath, f.databasePath)
-      } } }))).rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED')
+      } } }))).rejects.toThrow('PORTABLE_EXPORT_SOURCE_CHANGED')
       expect(fs.existsSync(f.target)).toBe(false)
       expect(fs.readdirSync(f.attemptParent)).toEqual([])
     })
@@ -566,7 +566,7 @@ describe('portable project export service', () => {
         fs.renameSync(f.databasePath, path.join(f.base, '原书.db'))
         fs.copyFileSync(other.databasePath, f.databasePath)
         return assets.snapshot(request)
-      } }))).rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED')
+      } }))).rejects.toThrow('PORTABLE_EXPORT_SOURCE_CHANGED')
       expect(fs.existsSync(f.target)).toBe(false)
     })
 
@@ -725,6 +725,37 @@ describe('portable project export service', () => {
       expect(fs.readdirSync(f.attemptParent)).toEqual([])
     })
 
+    it('角色头像文件不见了：报头像损坏，作者能在人物页重选（#702）', async () => {
+      const f = fixture()
+      seedProject(f)
+      const db = new Database(f.databasePath, { readonly: true })
+      const relativePath = db.prepare('SELECT relative_path FROM character_avatar_assets').pluck().get() as string
+      db.close()
+      fs.rmSync(path.join(f.storage, ...relativePath.split('/')))
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_AVATAR_DAMAGED')
+    })
+
+    it.each(['坏了', '不见了'])('没归到任何角色的旧头像文件%s：单独报出，不叫作者去人物页重选（#702）', async damage => {
+      const f = fixture()
+      seedProject(f)
+      const db = new Database(f.databasePath)
+      db.exec(`INSERT INTO character_avatar_unresolved(record_id,disposition,source_reference,source_relative_path,
+        preserved_relative_path,content_hash,mime,byte_size,candidate_character_ids_json)
+        SELECT 'orphan-1','orphan','character-delete:'||character_id,relative_path,relative_path,content_hash,mime,byte_size,'[]'
+        FROM character_avatar_assets`)
+      db.exec('DELETE FROM character_avatar_assets')
+      const relativePath = db.prepare('SELECT preserved_relative_path FROM character_avatar_unresolved').pluck().get() as string
+      db.close()
+      const file = path.join(f.storage, ...relativePath.split('/'))
+      if (damage === '坏了') fs.writeFileSync(file, Buffer.alloc(fs.statSync(file).size, 0))
+      else fs.rmSync(file)
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED')
+    })
+
     it('作者删掉一份技能文件：重来一次，存档里没有它', async () => {
       const f = fixture()
       prompt(f, '{"提示":"留着"}')
@@ -775,6 +806,26 @@ describe('portable project export service', () => {
       expect(exportLog(warn)).toHaveLength(1)
       expect(fs.existsSync(f.target)).toBe(false)
       expect(fs.readdirSync(f.attemptParent)).toEqual([])
+    })
+
+    it('两轮打包时资料都恰好被删：报资料有改动，不说不安全（#702）', async () => {
+      const f = fixture()
+      const file = prompt(f, '{"提示":"同步软件来回删"}')
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const lstatSync = fs.lstatSync.bind(fs) as (...args: unknown[]) => unknown
+      let packaging = false
+      vi.spyOn(fs, 'lstatSync').mockImplementation(((target: fs.PathLike, options?: { throwIfNoEntry?: boolean }) => {
+        if (!packaging || path.resolve(String(target)) !== path.resolve(file) || options?.throwIfNoEntry === false) return lstatSync(target, options)
+        packaging = false
+        fs.rmSync(file)
+        try { return lstatSync(target, options) }
+        finally { fs.writeFileSync(file, '{"提示":"同步软件来回删"}') }
+      }) as typeof fs.lstatSync)
+
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider(), {
+        onProgress: phase => { packaging = phase === 'package' },
+      }))).rejects.toThrow('PORTABLE_EXPORT_SOURCE_CHANGED')
+      expect(fs.existsSync(f.target)).toBe(false)
     })
 
     it('打包前资料被换成指向项目外文件的硬链接（字节相同）：拒绝导出', async () => {
@@ -986,7 +1037,7 @@ describe('portable project export service', () => {
         fs.copyFileSync(other.databasePath, f.databasePath)
       })
 
-      try { await expect(exportPortableProject(input(f))).rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED') }
+      try { await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_SOURCE_CHANGED') }
       finally { gateRequests.onRequest = undefined }
       await gate.held
       expect(fs.existsSync(f.target)).toBe(false)
@@ -1010,7 +1061,7 @@ describe('portable project export service', () => {
         }) as typeof fs.lstatSync)
       })
 
-      try { await expect(exportPortableProject(input(f))).rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED') }
+      try { await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_SOURCE_CHANGED') }
       finally { gateRequests.onRequest = undefined }
       await gate.held
       expect(fs.existsSync(f.target)).toBe(false)

@@ -327,6 +327,62 @@ describe('ProjectBackupPanel', () => {
       .toBe(`作品没有改动。${chapter}有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。`)
   })
 
+  it.each([
+    [{ errorCode: 'PORTABLE_CONTEXT_INVALID', error: 'PORTABLE_CONTEXT_INVALID' },
+      '作品没有改动。导出途中作品被关掉或换掉了，存档没有生成。请重新打开这部作品，再点「导出本地存档」。'],
+    [{ errorCode: 'PORTABLE_ASSET_UNSAFE', error: 'PORTABLE_ASSET_UNSAFE' },
+      '作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。'],
+    [{ errorCode: 'PORTABLE_ARCHIVE_SOURCE_UNSAFE', error: 'PORTABLE_ARCHIVE_SOURCE_UNSAFE' },
+      '作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。'],
+    [{ error: 'MIGRATION_VERIFICATION_FAILED' },
+      '作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。'],
+    [{ errorCode: 'PORTABLE_EXPORT_AVATAR_DAMAGED', error: 'PORTABLE_EXPORT_AVATAR_DAMAGED' },
+      '作品没有改动。有个角色头像文件坏了或不见了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。'],
+    [{ errorCode: 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED', error: 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED' },
+      '作品没有改动。一张没归到任何角色名下的旧头像文件坏了或不见了，存档没有生成。请把这条提示反馈给我们。'],
+  ])('导出存档失败时说出原因，不露原码：%o（#702）', async (failure, expected) => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
+      if (channel === 'project:archive-export') return { success: false, ...failure }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('导出本地存档').click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(expected)
+  })
+
+  it.each(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])('从本地存档恢复时存档被改动或移走（%s）：说出原因，不露原码（#702）', async errorCode => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive') return { grantId: 'archive-grant', displayName: 'book.anovel' }
+      if (channel === 'dialog:select-project-restore-target') return { grantId: 'restore-target-grant', displayName: 'book-restored' }
+      if (channel === 'project:archive-restore') return { success: false, errorCode, error: errorCode }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('从本地存档恢复副本').click())
+    expect(container.querySelector('[role="alert"]')?.textContent)
+      .toBe('没有新建副本。恢复途中存档文件被改动或移走了。请确认存档还在原处，再点「从本地存档恢复副本」。')
+  })
+
+  it('云备份打包失败、指不出原因：说明没上传，并指向能看到具体原因的本地导出（#702）', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
+      if (channel === 'cloud-backup:backup') return { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', operationId: 'op-1' }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    const disclosure = container.querySelector<HTMLInputElement>('input[type="checkbox"][name="cloud-disclosure"]')!
+    await act(async () => disclosure.click())
+    await act(async () => button('立即云备份').click())
+    expect(container.querySelector('[role="alert"]')?.textContent)
+      .toBe('作品没有改动。打包这部作品时出了错，没有上传。点「导出本地存档」能看到具体原因。')
+  })
+
   it('云备份遇到坏审修循环：英文界面指明章号并请作者反馈，不给删除办法（#702）', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
     invoke.mockImplementation(async (channel: string) => {
