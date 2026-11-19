@@ -687,7 +687,7 @@ describe('portable project export service', () => {
     })
   })
 
-  describe('资料超出存档上限：拷之前就拒绝，不先把资料写到目标盘（#744）', () => {
+  describe('资料超出存档上限：不把资料写到目标盘（#744）', () => {
     const MiB = 1024 * 1024
     afterEach(() => {
       vi.restoreAllMocks()

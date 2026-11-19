@@ -1090,7 +1090,7 @@ function verifyFile(file: PortableProvidedFile, projectStorageRoot: string): voi
   portablePathKey(file.archivePath)
 }
 
-/** 打包按路径重读、比快照时的 sha，但不查硬链接。快照后被删掉的算资料有改动。 */
+/** 打包器不查硬链接，这里补上。快照后被删掉的算资料有改动。 */
 function assertSourceStillOwned(sourcePath: string): void {
   const info = fs.lstatSync(sourcePath, { bigint: true, throwIfNoEntry: false })
   if (!info) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
@@ -1098,6 +1098,10 @@ function assertSourceStillOwned(sourcePath: string): void {
 }
 
 const RETRIED_ARCHIVE_ERRORS = new Set(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])
+
+export function isPortableSourceChangedError(error: unknown): error is PortableProjectArchiveError {
+  return error instanceof PortableProjectArchiveError && RETRIED_ARCHIVE_ERRORS.has(error.code)
+}
 
 async function hashFile(file: string): Promise<string> {
   const digest = createHash('sha256')
@@ -1152,7 +1156,7 @@ const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
   try { return await exportPortableProjectOnce(input) }
   catch (error) {
-    if (!(error instanceof PortableProjectArchiveError) || !RETRIED_ARCHIVE_ERRORS.has(error.code)) throw error
+    if (!isPortableSourceChangedError(error)) throw error
     console.warn('[portable-export] 导出期间资料有改动，整次重来一次', { code: error.code })
     return exportPortableProjectOnce(input)
   }

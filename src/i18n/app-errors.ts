@@ -72,7 +72,7 @@ const ERROR_KEYS = {
   PROJECT_ARCHIVE_TARGET_EXISTS: 'error.projectArchiveTargetExists',
   // 导出或云备份时有一列登记为脱敏投影却没有投影办法（#611），整次打包中止，作品不动。
   PORTABLE_UNSAFE_PROJECTION: 'error.portableUnsafeProjection',
-  // 导出期间资料被改，整次重来一次后仍被改（#744）。两个码都只在重来之后才报给作者。
+  // 两个码都只在整次重来一次后资料仍被改时才报给作者。
   PORTABLE_ARCHIVE_SOURCE_CHANGED: 'error.portableSourceChanged',
   PORTABLE_ARCHIVE_SOURCE_UNSAFE: 'error.portableSourceChanged',
   CLOUD_BACKUP_SOURCE_CHANGED: 'error.cloudBackupSourceChanged',
