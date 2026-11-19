@@ -268,6 +268,17 @@ export function createProviderCatalog(): ProviderPreset[] {
         },
       },
       {
+        name: 'deepseek-ai/DeepSeek-V4.1-Flash',
+        // 只登记推理参数：2026-11-19 直连实测 enable_thinking:false 时 reasoning_tokens 为 0，
+        // enable_thinking:true 加 reasoning_effort:high 照常思考。JSON 模式与容量未核实，不登记。
+        reasoningMapping: {
+          adapter: 'siliconflow-v4-thinking',
+          supportedEfforts: ['high', 'max'],
+          providerValues: { high: 'high', max: 'max' },
+        },
+        maxTokens: 16_384,
+      },
+      {
         name: 'deepseek-ai/DeepSeek-V4-Pro',
         // JSON mode: https://docs.siliconflow.cn/docs/userguide/guides/json-mode
         structuredOutput: true,

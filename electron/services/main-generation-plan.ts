@@ -6,7 +6,7 @@ import { resolveGenerationParameters, resolveGenerationCapabilityConstraints } f
 import { planTaskBudget, S07_TASK_BUDGET_POLICY, type TaskBudgetDecision } from '../../src/services/generation/task-budget-planner'
 import type { LLMGenerateOptions } from '../llm/provider.interface'
 import type { CreativeStrategy, GenerationReasoningStage } from '../../src/shared/reasoning-types'
-import { CREATIVE_STRATEGIES } from '../../src/shared/reasoning-types'
+import { CREATIVE_STRATEGIES, REASONING_STAGES } from '../../src/shared/reasoning-types'
 import { isDeepStrictEqual } from 'node:util'
 import { materialBudgetFrom, type ArchitecturePlanningIntent, type BeginGenerationRequest, type MaterialBudget, type PlanningGenerationScope } from '../../src/shared/generation-owner-contract'
 import { contextWindowOutputCap, resolveContextWindow } from '../../src/shared/model-profile-draft'
@@ -205,7 +205,7 @@ export function assertSemanticGenerationTask(task: GenerationTask): void {
     || task.messages.some(message => !message || !['system', 'user', 'assistant'].includes(message.role)
       || typeof message.content !== 'string')
     || Object.keys(task).some(key => !['purpose', 'output', 'messages', 'reasoningStage', 'promptBudget', 'budgetDemand'].includes(key))
-    || task.reasoningStage !== undefined && !['drafting', 'planning', 'review', 'general'].includes(task.reasoningStage)) {
+    || task.reasoningStage !== undefined && !REASONING_STAGES.includes(task.reasoningStage)) {
     throw new Error('GENERATION_SEMANTIC_TASK_INVALID')
   }
   if (task.budgetDemand !== undefined) {

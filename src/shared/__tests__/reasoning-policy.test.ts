@@ -316,3 +316,52 @@ describe('推理映射与协议是否匹配', () => {
     expect(reasoningAdapterFitsProtocol(protocol, adapter)).toBe(fits)
   })
 })
+
+describe('定稿后整理要点与角色状态（extraction）', () => {
+  const base: ModelProfile = { ...geminiModel, provider: 'siliconflow', protocol: 'openai', baseUrl: 'https://api.siliconflow.cn/v1' }
+  const silicon = (modelName: string): ModelProfile => ({ ...base, modelName })
+  const deepseek: ModelProfile = { ...geminiModel, provider: 'deepseek', protocol: 'openai', baseUrl: 'https://api.deepseek.com', modelName: 'deepseek-v4-flash' }
+  const grok: ModelProfile = { ...geminiModel, provider: 'xai', protocol: 'openai', baseUrl: 'https://api.x.ai/v1', modelName: 'grok-4.5' }
+  const qwen = silicon('Qwen/Qwen3.8-27B')
+  const strategies = ['auto', 'fluent-drafting', 'consistency-first', 'deep-planning'] as const
+
+  it.each(['deepseek-ai/DeepSeek-V4-Flash', 'deepseek-ai/DeepSeek-V4.1-Flash', 'deepseek-ai/DeepSeek-V4-Pro'])('硅基 %s 自动档关思考，不论项目策略', modelName => {
+    for (const creativeStrategy of strategies) {
+      for (const reasoningOverride of [undefined, 'auto'] as const) {
+        expect(resolveReasoningPolicy({ model: { ...silicon(modelName), reasoningOverride }, creativeStrategy, stage: 'extraction' }).providerDirective)
+          .toEqual({ adapter: 'siliconflow-v4-thinking', reasoningEffort: 'off' })
+      }
+    }
+  })
+
+  it('官方 DeepSeek 自动档关思考', () => {
+    expect(resolveReasoningPolicy({ model: deepseek, stage: 'extraction' }).providerDirective)
+      .toEqual({ adapter: 'deepseek-v4-thinking', thinking: 'disabled' })
+  })
+
+  it.each([['grok', grok], ['Qwen', qwen]] as const)('%s 没有关思考的映射：照旧按审稿的档位', (_name, model) => {
+    for (const creativeStrategy of strategies) {
+      expect(resolveReasoningPolicy({ model, creativeStrategy, stage: 'extraction' }))
+        .toEqual(resolveReasoningPolicy({ model, creativeStrategy, stage: 'review' }))
+    }
+  })
+
+  it.each(['off', 'low', 'medium', 'high', 'xhigh', 'max'] as const)('作者选了 %s：与审稿阶段发同样的参数', reasoningOverride => {
+    for (const model of [silicon('deepseek-ai/DeepSeek-V4-Flash'), silicon('deepseek-ai/DeepSeek-V4.1-Flash'), deepseek, grok, qwen]) {
+      expect(resolveReasoningPolicy({ model: { ...model, reasoningOverride }, stage: 'extraction' }))
+        .toEqual(resolveReasoningPolicy({ model: { ...model, reasoningOverride }, stage: 'review' }))
+    }
+  })
+
+  it.each(['high', 'max'] as const)('硅基 V4.1 Flash 作者选 %s 时照发思考参数', reasoningOverride => {
+    expect(resolveReasoningPolicy({ model: { ...silicon('deepseek-ai/DeepSeek-V4.1-Flash'), reasoningOverride }, stage: 'extraction' }).providerDirective)
+      .toEqual({ adapter: 'siliconflow-v4-thinking', reasoningEffort: reasoningOverride })
+  })
+
+  it('其他阶段的自动档照旧交给硅基默认', () => {
+    for (const stage of ['drafting', 'planning', 'review', 'general'] as const) {
+      expect(resolveReasoningPolicy({ model: silicon('deepseek-ai/DeepSeek-V4.1-Flash'), stage }))
+        .toMatchObject({ effective: null, status: 'unsupported' })
+    }
+  })
+})

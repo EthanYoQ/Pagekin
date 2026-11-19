@@ -53,7 +53,7 @@ export function finalizationGenerationTask(context: FinalizationGenerationContex
       fields: character.fields.map(field => ({ field: field.field, value: field.value, provenance: field.provenance })) }))
   const prompt = renderPrompt(context.template, { chapter_content: context.identity.content, chapter_number: String(context.slot.source.chapterNumber), chapter_title: context.chapterTitle,
     existing_cards_json: JSON.stringify(cards, null, 2) }, context.writingLanguage)
-  return { purpose: characters ? 'finalized-character-state' : 'finalized-chapter-notes', reasoningStage: 'review', output: characters ? 'structured-data' : 'visible-text',
+  return { purpose: characters ? 'finalized-character-state' : 'finalized-chapter-notes', reasoningStage: 'extraction', output: characters ? 'structured-data' : 'visible-text',
     messages: [{ role: 'system', content: composePromptSystemRole(context.template, context.writingLanguage) },
       { role: 'user', content: characters ? [prompt, contract, replacedFinalRestatement(context, originProjectId)].filter(Boolean).join('\n\n') : prompt }] }
 }

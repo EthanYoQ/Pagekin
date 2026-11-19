@@ -706,6 +706,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       providerRequest: { runId: run.runId, model, task, plan, conversationId: run.rootActionId } satisfies ProviderRequest, reservedTokens: plan.reservedTokens,
       requestedOutputTokens: plan.requestedOutputTokens, inputUpperBoundTokens: plan.inputUpperBoundTokens,
       reasoningUpperBoundTokens: plan.reasoningUpperBoundTokens, usagePolicy: plan.usagePolicy, purpose: task.purpose,
+      reasoning: plan.options.reasoning ?? null,
       ...(plan.budgetDecision ? { budgetDecision: plan.budgetDecision } : {}),
       ...(run.binding.sourceManifest.importSlot || materialDecision?.shortOutlinePromptHash || repository.readPlotOutline(run.runId) ? { replayTask: task } : {}),
       ...(reconciliationInjected ? { reconciliationInjected } : {}),

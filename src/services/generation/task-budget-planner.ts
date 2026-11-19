@@ -1,4 +1,4 @@
-import type { GenerationReasoningStage } from '../../shared/reasoning-types'
+import { REASONING_STAGES, type GenerationReasoningStage } from '../../shared/reasoning-types'
 import type { WritingLanguage } from '../../shared/writing-language'
 
 export const S07_TASK_BUDGET_POLICY = Object.freeze({
@@ -19,8 +19,8 @@ export const S07_TASK_BUDGET_POLICY = Object.freeze({
       // Drafting/planning values are calibrated against the immutable chapter
       // blueprint fields and a frozen dense fixture. They size a request; they
       // do not promise that every contract-maximum payload fits one item.
-      'zh-CN': Object.freeze({ drafting: 3_072, planning: 3_072, review: 512, general: 512 }),
-      'en-US': Object.freeze({ drafting: 2_048, planning: 2_048, review: 384, general: 384 }),
+      'zh-CN': Object.freeze({ drafting: 3_072, planning: 3_072, review: 512, general: 512, extraction: 512 }),
+      'en-US': Object.freeze({ drafting: 2_048, planning: 2_048, review: 384, general: 384, extraction: 384 }),
     }),
   }),
 })
@@ -201,7 +201,7 @@ function maximumItemsFor(
  * main owner remains solely responsible for reserving, dispatching and settling.
  */
 export function planTaskBudget(input: TaskBudgetPlannerInput): TaskBudgetDecision {
-  if (!input || !['drafting', 'planning', 'review', 'general'].includes(input.stage)
+  if (!input || !REASONING_STAGES.includes(input.stage)
     || !input.demand || !['draft-units', 'structured-items'].includes(input.demand.kind)
     || !['zh-CN', 'en-US'].includes(input.demand.writingLanguage)
     || typeof input.inputEstimate?.estimatorVersion !== 'string'
