@@ -1193,14 +1193,15 @@ const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string
 
 /** 资料阶段出错：丢掉这次的临时目录，整次重来一次，仍失败报第二次的错。本地导出和云备份都走这里。 */
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
-  try { return await exportPortableProjectOnce(input) }
+  const source: SourceDatabasePin = {}
+  try { return await exportPortableProjectOnce(input, source) }
   catch (error) {
     if (!(error instanceof AssetPhaseFailure)) throw error
     const code = failureCode(error.failure)
     if (code && NOT_RETRIED.has(code)) throw error.failure
     console.warn('[portable-export] 资料阶段出错，整次重来一次', { code })
   }
-  try { return await exportPortableProjectOnce(input) }
+  try { return await exportPortableProjectOnce(input, source) }
   catch (error) {
     const failure = error instanceof AssetPhaseFailure ? error.failure : error
     if (sourceChanged(failure)) fail('PORTABLE_EXPORT_SOURCE_CHANGED')
@@ -1208,7 +1209,10 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
   }
 }
 
-async function exportPortableProjectOnce(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
+/** 第一次导出时库文件的身份。重来时库文件已被换掉就拒绝，写库不改身份。 */
+interface SourceDatabasePin { database?: fs.BigIntStats }
+
+async function exportPortableProjectOnce(input: ExportPortableProjectInput, source: SourceDatabasePin): Promise<ExportPortableProjectReceipt> {
   const sourceRoot = path.resolve(input.sourceProjectRoot)
   const targetPath = path.resolve(input.targetArchivePath)
   const attemptParent = path.resolve(input.attemptParentPath)
@@ -1222,6 +1226,8 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput): Pro
   safeDirectory(projectStorageRoot)
   const sourceDatabasePath = path.join(projectStorageRoot, CANONICAL_PROJECT_DATABASE)
   const checkedDatabase = regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING')
+  if (source.database && !sameObject(source.database, checkedDatabase)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
+  source.database = checkedDatabase
   const canonicalManifestPath = path.join(projectStorageRoot, 'project.json')
   regularFile(canonicalManifestPath, 'PORTABLE_ASSET_MISSING')
   const canonicalManifest = parseCanonicalProjectManifest(JSON.parse(
