@@ -473,6 +473,28 @@ describe('portable project export service', () => {
       const unpacked = await extractPortableProjectArchive({ archivePath: f.target, stagingParentPath: f.extractParent })
       expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe(prompt)
     })
+
+    it('别的程序在拷资料途中原地改写同样大小的内容：拒绝导出，不打包新旧混合的字节', async () => {
+      const f = fixture()
+      const sourcePath = path.join(f.storage, 'prompts', '长篇设定.txt')
+      fs.mkdirSync(path.dirname(sourcePath))
+      const size = 3 * 1024 * 1024
+      fs.writeFileSync(sourcePath, Buffer.alloc(size, 'a'))
+      const readSync = fs.readSync.bind(fs) as (...args: unknown[]) => number
+      let rewritten = false
+      vi.spyOn(fs, 'readSync').mockImplementation(((...args: unknown[]) => {
+        const read = readSync(...args)
+        if (!rewritten && read === 1024 * 1024) {
+          rewritten = true
+          fs.writeFileSync(sourcePath, Buffer.alloc(size, 'b'))
+        }
+        return read
+      }) as typeof fs.readSync)
+
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+      expect(rewritten).toBe(true)
+      expect(fs.readdirSync(f.attemptParent)).toEqual([])
+    })
   })
 
   it('资料文件逐个拷进导出临时目录，不整份留在内存里交给打包', async () => {

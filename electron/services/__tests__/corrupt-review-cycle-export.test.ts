@@ -540,6 +540,15 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     expect(await exportBook()).toMatchObject({ code: 'CORRUPT_SCHEMA', damagedReviewCycle: undefined })
   })
 
+  it('源库快照校验不过：快照和 SQLite 打开时生成的旁文件一并清掉，不留临时目录', async () => {
+    reviewedBook({ finalized: true })
+    db().pragma('foreign_keys = OFF')
+    db().prepare("INSERT INTO character_aliases(character_id,name,source_key,valid_from) VALUES('不存在的角色','阿澈','author',1)").run()
+
+    expect(await exportBook()).toMatchObject({ code: 'CORRUPT_SCHEMA' })
+    expect(fs.readdirSync(base).filter(name => name.startsWith('.pe-'))).toEqual([])
+  })
+
   it('循环引用的根读不出：打开作品时封存，导出时这条循环留在存档外，照样带出章号和标题', async () => {
     const items = reviewedBook({ finalized: true })
     db().prepare("UPDATE generation_roots SET action_json='{broken' WHERE root_action_id=?").run(items[1]!.seeded.call.rootActionId)
