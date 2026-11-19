@@ -780,7 +780,7 @@ test.for([
     const preparedNext = owner.prepareReviewRevision({ operation: 'review-chapter', draftId: 2,
       expectedDraft: { chapterNumber: 2, version: 1, status: 'draft', contentHash: hash(nextContent) },
       authorInputs: [{ id: 'review-focus', text: focus }], uiLocale: 'zh-CN' })
-    assert.deepEqual(preparedNext.context.history, [], 'accepted revised predecessor is not forged finalized history')
+    assert.deepEqual(preparedNext.materials.history, [], 'accepted revised predecessor is not forged finalized history')
     const next = owner.begin({ ...begin, chapterNumber: 2, selectedDraftIds: [2], uiActionNonce: 'next', reviewRevisionContextId: preparedNext.contextId,
       authorInputs: [{ id: 'review-revision-context', text: JSON.stringify(preparedNext.context) }] })
     const { useProjectStore } = await import('../../src/stores/project-store')
@@ -2335,7 +2335,8 @@ function continuityResults(dir, { condensedIndex = null, primaryText, savedUnits
           db.exec('CREATE TABLE IF NOT EXISTS generation_attempts(attempt_id,run_id,attempt_json,usage_receipt_json); CREATE TABLE IF NOT EXISTS generation_artifacts(attempt_id,artifact_json); CREATE TABLE IF NOT EXISTS generation_runs(run_id,root_action_id,binding_json); CREATE TABLE IF NOT EXISTS contents(id,body); CREATE TABLE IF NOT EXISTS reviews(id,content_id); CREATE TABLE IF NOT EXISTS drafts(id,chapter_number,version,content_id); DELETE FROM generation_attempts; DELETE FROM generation_artifacts; DELETE FROM generation_runs; DELETE FROM contents; DELETE FROM reviews; DELETE FROM drafts;')
           db.prepare('INSERT INTO generation_attempts VALUES(?,?,?,?)').run(terminal.attemptId, handle.runId, JSON.stringify({ status: 'settled' }), JSON.stringify({ purpose: 'review-chapter', result: { finishReason: 'stop' }, reviewRevisionEffect: effect }))
           db.prepare('INSERT INTO generation_artifacts VALUES(?,?)').run(terminal.attemptId, JSON.stringify({ ...effect.artifact, text: rawReport }))
-          db.prepare('INSERT INTO generation_runs VALUES(?,?,?)').run(handle.runId, handle.rootActionId, JSON.stringify({ projectId, epoch, sourceManifest: { reviewRevisionContext: reviewContext } }))
+          db.prepare('INSERT INTO generation_runs VALUES(?,?,?)').run(handle.runId, handle.rootActionId, JSON.stringify({ projectId, epoch, sourceManifest: { reviewRevisionContext: reviewContext, reviewRevisionContextHash: hash(JSON.stringify(reviewContext)),
+            authorInputs: [{ id: 'review-revision-context', text: JSON.stringify(reviewContext) }] } }))
           db.prepare('INSERT INTO contents VALUES(1,?),(2,?)').run(manuscriptContent, reportBody)
           db.exec(`INSERT INTO reviews VALUES(1,2); INSERT INTO drafts VALUES(${manuscriptId},2,1,1);`)
         } finally { db.close() }
