@@ -228,6 +228,8 @@ export interface ExportPortableProjectInput {
   snapshotGeneration?: string
   /** worker 里跑时经主进程取主进程那把锁；默认是本进程的 withKnowledgeSourceGate。 */
   withSourceGate?<T>(projectStorageRoot: string, operation: () => Promise<T>): Promise<T>
+  /** 进门要写主进程开着的那本书的库，worker 里跑时请主进程做；默认是本进程的 admitWholeLedgerOfOpenProject。 */
+  admitSourceLedger?(sourceProjectRoot: string): Promise<void>
   /** round 从 1 起；资料被改而整次重来时加一。 */
   onProgress?(phase: PortableExportPhase, round: number): void
   /** 发布前最后一步，同步调用。worker 里用它和主进程的停止抢提交点：抛错就不发布。 */
@@ -1262,7 +1264,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
   if (canonicalManifest.projectId !== frozenContext.projectId) fail('PORTABLE_CONTEXT_INVALID')
   // 被拒的导出不能封存源库；重来不改变源库状态，不必再进门。发布时仍以不覆盖为准。
   if (fs.lstatSync(targetPath, { throwIfNoEntry: false })) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_TARGET_EXISTS')
-  if (firstAttempt) admitWholeLedgerOfOpenProject(sourceRoot)
+  if (firstAttempt) await (input.admitSourceLedger ?? admitWholeLedgerOfOpenProject)(sourceRoot)
   const snapshotGeneration = input.snapshotGeneration ?? randomUUID()
   const createdAt = (input.now?.() ?? new Date()).toISOString()
   const attempt = prepareAttempt(attemptParent, input.attemptRoot)

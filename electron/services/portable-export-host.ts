@@ -5,10 +5,12 @@ import { Worker } from 'node:worker_threads'
 
 import * as electron from 'electron'
 
+import { admitWholeLedgerOfOpenProject } from '../database'
 import { withKnowledgeSourceGate } from './knowledge-source-gate'
 import {
   claimStop,
   rehydrateExportError,
+  serializeExportError,
   type HostToWorker,
   type PortableExportJob,
   type PortableExportWorkerData,
@@ -42,7 +44,7 @@ const running = new Set<RunningExport>()
 const projectKey = (root: string) => process.platform === 'win32' ? path.resolve(root).toLowerCase() : path.resolve(root)
 
 /**
- * 导出在 worker 线程里跑，主进程只应答会话核对与知识库闸门、转发进度。
+ * 导出在 worker 线程里跑，主进程只应答会话核对、知识库闸门与进门，转发进度。
  * 主进程在 attemptParentPath 下建一个 .pe- 目录交给 worker。结束后不论成败（含取消、worker 崩溃），
  * 都等 worker 真正退出才放开闸门、删目录、注销在途登记：退出应用和关库靠在途登记判断还要不要等。
  */
@@ -88,6 +90,14 @@ export async function exportPortableProjectInWorker(
               releaseGate = release
               reply({ id: message.id, ok: true })
             }))
+            return
+          case 'admit':
+            try {
+              admitWholeLedgerOfOpenProject(job.sourceProjectRoot)
+              reply({ id: message.id, ok: true })
+            } catch (error) {
+              reply({ id: message.id, ok: false, error: serializeExportError(error) })
+            }
             return
           case 'gate-exit':
             releaseGate?.()

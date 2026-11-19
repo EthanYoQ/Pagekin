@@ -58,10 +58,11 @@ export type WorkerToHost =
   | { type: 'context'; id: number; context: ProjectSessionContext; sourceProjectRoot: string }
   | { type: 'gate-enter'; id: number; projectStorageRoot: string }
   | { type: 'gate-exit' }
+  | { type: 'admit'; id: number }
   | { type: 'done'; receipt: ExportPortableProjectReceipt }
   | { type: 'failed'; error: SerializedExportError }
 
-export interface HostToWorker { id: number; ok: boolean }
+export interface HostToWorker { id: number; ok: boolean; error?: SerializedExportError }
 
 type HostQuestion<T = Extract<WorkerToHost, { id: number }>> = T extends unknown ? Omit<T, 'id'> : never
 
@@ -82,14 +83,14 @@ export function rehydrateExportError(error: SerializedExportError): Error {
   }
 }
 
-/** 会话核对与知识库闸门都问主进程，worker 里不持有。 */
+/** 会话核对、知识库闸门、进门都问主进程，worker 里不持有。 */
 export async function runPortableExportJob(port: MessagePort, job: PortableExportJob & { attemptRoot: string }, commit: Int32Array): Promise<void> {
   const post = (message: WorkerToHost) => port.postMessage(message)
-  const waiting = new Map<number, (ok: boolean) => void>()
+  const waiting = new Map<number, (reply: HostToWorker) => void>()
   let nextId = 0
-  const onReply = ({ id, ok }: HostToWorker) => { waiting.get(id)?.(ok); waiting.delete(id) }
+  const onReply = (reply: HostToWorker) => { waiting.get(reply.id)?.(reply); waiting.delete(reply.id) }
   port.on('message', onReply)
-  const ask = (message: HostQuestion) => new Promise<boolean>(resolve => {
+  const ask = (message: HostQuestion) => new Promise<HostToWorker>(resolve => {
     const id = ++nextId
     waiting.set(id, resolve)
     post({ ...message, id } as WorkerToHost)
@@ -104,10 +105,14 @@ export async function runPortableExportJob(port: MessagePort, job: PortableExpor
       snapshotGeneration: job.snapshotGeneration,
       now: job.now === undefined ? undefined : () => new Date(job.now!),
       assets: createPortableProjectAssetProvider(),
-      assertCurrentContext: (context, sourceProjectRoot) => ask({ type: 'context', context: { ...context }, sourceProjectRoot }),
+      assertCurrentContext: async (context, sourceProjectRoot) => (await ask({ type: 'context', context: { ...context }, sourceProjectRoot })).ok,
       async withSourceGate(projectStorageRoot, operation) {
         await ask({ type: 'gate-enter', projectStorageRoot })
         try { return await operation() } finally { post({ type: 'gate-exit' }) }
+      },
+      async admitSourceLedger() {
+        const { error } = await ask({ type: 'admit' })
+        if (error) throw rehydrateExportError(error)
       },
       onProgress: (phase, round) => post({ type: 'progress', phase, round }),
       beforePublish() {
