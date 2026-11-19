@@ -667,7 +667,7 @@ describe('registerCloudBackupController', () => {
 
     expect(result).toMatchObject({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AVATAR_DAMAGED' })
     expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
-      .toBe('作品没有改动。有个角色头像文件损坏了，没有上传。请在人物页给头像没显示的角色「选择头像」，再点「立即云备份」。')
+      .toBe('作品没有改动。有个角色头像文件坏了或不见了，没有上传。请在人物页给头像没显示的角色「选择头像」，再点「立即云备份」。')
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
   })
 

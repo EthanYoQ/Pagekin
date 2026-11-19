@@ -648,7 +648,7 @@ describe('portable project export service', () => {
 
       await exportPortableProject(input(f))
 
-      expect(exportLog(warn)).toEqual([expect.stringContaining('PORTABLE_ASSET_MISSING')])
+      expect(exportLog(warn)).toEqual([expect.stringContaining('PORTABLE_EXPORT_AVATAR_DAMAGED')])
       await swap.expectNewAvatar()
     })
 
@@ -1621,7 +1621,7 @@ describe('portable project export service', () => {
       character_id,asset_revision,relative_path,content_hash,mime,byte_size,source_reference
     ) VALUES(?,1,'avatars/missing.png',?,'image/png',32,'missing.png')`).run(characterId, 'a'.repeat(64))
     missingDb.close()
-    await expect(exportPortableProject(input(missing))).rejects.toThrow('PORTABLE_ASSET_MISSING')
+    await expect(exportPortableProject(input(missing))).rejects.toThrow('PORTABLE_EXPORT_AVATAR_DAMAGED')
     expect(fs.existsSync(missing.target)).toBe(false)
   })
 

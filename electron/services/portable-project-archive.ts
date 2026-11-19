@@ -261,6 +261,7 @@ function assertRegularSource(sourcePath: string): fs.BigIntStats {
     }
   } catch (error) {
     if (error instanceof PortableProjectArchiveError) throw error
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') fail('PORTABLE_ARCHIVE_SOURCE_CHANGED')
     fail('PORTABLE_ARCHIVE_SOURCE_UNSAFE')
   }
   return info

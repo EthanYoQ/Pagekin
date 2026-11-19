@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Archive, Cloud, Download, Loader2, Upload } from 'lucide-react'
 
-import { damagedReviewCycleMessage, displayedErrorMessage, omittedReviewCyclesMessage } from '../../i18n/app-errors'
+import { archiveFailureMessage, displayedErrorMessage, omittedReviewCyclesMessage } from '../../i18n/app-errors'
 import { copyLocale } from '../../i18n/core'
 import { ipc } from '../../services/ipc-client'
 import type {
@@ -27,8 +27,8 @@ const progressStep = ({ phase, round }: ExportProgress) => round * EXPORT_PHASES
 
 // 主进程登记过的码（例如导出目标已存在）按界面语言说明；其余码与渲染端自己的说明原样显示。
 const errorText = (error: unknown) => displayedErrorMessage(currentInterfaceLocale(), error)
-const failureReason = (code: string, damaged?: DamagedReviewCycle) =>
-  damaged ? damagedReviewCycleMessage(currentInterfaceLocale(), damaged) : code
+const failureReason = (operation: 'export' | 'restore', code: string, damaged?: DamagedReviewCycle) =>
+  archiveFailureMessage(currentInterfaceLocale(), operation, code, damaged)
 const withOmitted = (message: string, omitted?: readonly DamagedReviewCycle[]) => {
   if (!omitted?.length) return message
   const locale = currentInterfaceLocale()
@@ -140,7 +140,7 @@ function ProjectBackupPanelSession({
     const target = await ipc.invoke('dialog:select-project-restore-target', project ? `${project.name}-恢复副本` : text('恢复副本', 'Restored copy'))
     if (!target) return
     const result = await ipc.invoke('project:archive-restore', { archiveGrantId: archive.grantId, targetGrantId: target.grantId })
-    if (!result.success) throw new Error(result.errorCode || result.error)
+    if (!result.success) throw new Error(failureReason('restore', result.errorCode || result.error))
     setNotice({ kind: 'success', text: text(`已恢复新副本 ${result.receipt.targetProjectId}：${result.receipt.targetProjectRoot}`, `Restored copy ${result.receipt.targetProjectId}: ${result.receipt.targetProjectRoot}`) })
   })
 
@@ -168,7 +168,7 @@ function ProjectBackupPanelSession({
     })
     const result = await ipc.invoke('project:archive-export', { targetArchiveGrantId: target.grantId, projectSession, exportId })
       .finally(() => { stopListening(); setExportProgress(null) })
-    if (!result.success) throw new Error(failureReason(result.errorCode || result.error, result.damagedReviewCycle))
+    if (!result.success) throw new Error(failureReason('export', result.errorCode || result.error, result.damagedReviewCycle))
     setNotice({ kind: 'success', text: withOmitted(text(`本地存档已导出：${result.receipt.targetSha256}`, `Local archive exported: ${result.receipt.targetSha256}`), result.receipt.omittedReviewCycles) })
   })
 
@@ -243,7 +243,7 @@ function ProjectBackupPanelSession({
     setActiveOperationId(operationId)
     try {
       const result = await ipc.invoke('cloud-backup:backup', { operationId, projectSession, disclosureConfirmed: true })
-      if (!result.success) throw new Error(failureReason(result.errorCode, result.damagedReviewCycle))
+      if (!result.success) throw new Error(failureReason('export', result.errorCode, result.damagedReviewCycle))
       if (result.binding) updateBinding(result.binding)
       setNotice({ kind: 'success', text: withOmitted(text(`云备份完成：${result.generation.generationId}；备份点 ${result.backupPoint}${result.bindingSaved ? '' : '；绑定未保存'}`, `Cloud backup complete: ${result.generation.generationId}; backup point ${result.backupPoint}${result.bindingSaved ? '' : '; binding not saved'}`), result.omittedReviewCycles) })
     } finally {
