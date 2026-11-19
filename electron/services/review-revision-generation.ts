@@ -121,6 +121,9 @@ export class ReviewRevisionGeneration {
       ...(context.recheck ? { reviewCycle: { cycleId: context.recheck.cycleId, revisionStatus: 'merge-committed',
         recheckCount: cycle?.disposition === 'completed' ? 1 : 0, disposition: cycle?.disposition ?? 'required' } } : {}) } }
   }
+  private assertNotRestoredHistory(run: DurableGenerationRun): void {
+    if (ReviewCycleRepository.isRestoredHistory(run.rootActionId, this.scope.projectId, this.db)) throw new Error('GENERATION_REVIEW_RESTORED_HISTORY')
+  }
   private parent(context: ReviewRevisionContext): { parentRootActionId?: string; modelId?: string } {
     if (context.recheck) {
       const plan = ReviewCycleRepository.planRecheck(context.recheck.cycleId, this.db)
@@ -133,8 +136,8 @@ export class ReviewRevisionGeneration {
       })
       if (matching.length !== 1) throw new Error('GENERATION_REVIEW_LINEAGE_UNPROVEN')
       const parentRun = this.runs.get(matching[0]!.run_id)
-      if (parentRun.rootActionId !== plan.rootActionId || parentRun.binding.projectId !== this.scope.projectId)
-        throw new Error('GENERATION_REVIEW_LINEAGE_UNPROVEN')
+      this.assertNotRestoredHistory(parentRun)
+      if (parentRun.rootActionId !== plan.rootActionId) throw new Error('GENERATION_REVIEW_LINEAGE_UNPROVEN')
       return { parentRootActionId: plan.rootActionId,
         modelId: (parentRun.binding.sourceManifest.modelReceipt as { modelId: string }).modelId }
     }
@@ -144,8 +147,10 @@ export class ReviewRevisionGeneration {
       return effect?.kind === 'review' && effect.id === context.confirmation!.snapshot.sourceReviewId
     })
     if (matching.length !== 1) throw new Error('GENERATION_REVIEW_LINEAGE_UNPROVEN')
-    const run = this.runs.get(matching[0]!.run_id), saved = this.saved(run)
-    if (run.binding.projectId !== this.scope.projectId || !saved || saved.receipt.kind !== 'review'
+    const run = this.runs.get(matching[0]!.run_id)
+    this.assertNotRestoredHistory(run)
+    const saved = this.saved(run)
+    if (!saved || saved.receipt.kind !== 'review'
       || saved.receipt.contentHash !== context.confirmation.originalReviewContentHash
       || !isDeepStrictEqual(saved.receipt.source, context.source)) throw new Error('GENERATION_REVIEW_LINEAGE_UNPROVEN')
     return { parentRootActionId: run.rootActionId, modelId: (run.binding.sourceManifest.modelReceipt as { modelId: string }).modelId }

@@ -508,11 +508,18 @@ function recheckContext(cycle: RecheckCycleRow, db: Database.Database): ReviewCy
 }
 
 export class ReviewCycleRepository {
-  static getByReviewId(reviewId: number, db: Database.Database): ReviewCycleProjection | null {
+  /** 恢复会换新 projectId，以此认出恢复前的循环（ADR-0018 C17）。 */
+  static isRestoredHistory(rootActionId: string, projectId: string, db: Database.Database): boolean {
+    return Boolean(db.prepare(`SELECT 1 FROM generation_roots WHERE root_action_id=? AND json_valid(action_json)
+      AND json_type(action_json,'$.projectId')='text' AND json_extract(action_json,'$.projectId') NOT IN ('', ?)`).get(rootActionId, projectId))
+  }
+
+  static getByReviewId(reviewId: number, db: Database.Database, projectId?: string): ReviewCycleProjection | null {
     if (!integer(reviewId, 1)) invalid()
-    const cycle = db.prepare(`SELECT cycle_id,review_id,revision_status,merged_hash,recheck_count
-      FROM review_cycles WHERE review_id=? AND review_id IN (SELECT id FROM reviews WHERE ${LIVE_PARENT})`).get(reviewId) as { cycle_id: string; review_id: number;
-        revision_status: ReviewCycleProjection['revisionStatus']; merged_hash: string | null; recheck_count: 0 | 1 } | undefined
+    const cycle = db.prepare(`SELECT cycle_id,root_action_id,review_id,revision_status,merged_hash,recheck_count
+      FROM review_cycles WHERE review_id=? AND review_id IN (SELECT id FROM reviews WHERE ${LIVE_PARENT})`).get(reviewId) as { cycle_id: string;
+        root_action_id: string; review_id: number; revision_status: ReviewCycleProjection['revisionStatus']; merged_hash: string | null;
+        recheck_count: 0 | 1 } | undefined
     if (!cycle) return null
     if (!verifyM03ReviewCycleById(db, cycle.cycle_id)) conflict()
     const review = db.prepare(`SELECT r.source_content,c.body FROM reviews r
@@ -549,6 +556,7 @@ export class ReviewCycleRepository {
       recheckCount: cycle.recheck_count, findings: persisted.map(row => ({ findingId: row.finding_id,
         reviewItemIndex: itemIndex.get(row.finding_id) ?? null, category: row.category, kind: row.kind, status: row.status,
         ...(row.target_id ? { targetId: row.target_id } : {}) })) }
+    if (projectId && this.isRestoredHistory(cycle.root_action_id, projectId, db)) projection.restoredHistory = true
     if (cycle.revision_status === 'merge-committed') {
       if (cycle.merged_hash && isCurrentMergedCycle(cycle.cycle_id, cycle.merged_hash, db)) {
         projection.recheckDisposition = this.planRecheck(cycle.cycle_id, db).disposition

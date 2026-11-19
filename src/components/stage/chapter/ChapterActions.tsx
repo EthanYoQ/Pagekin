@@ -81,6 +81,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   whileSwitching: (run: () => Promise<void>) => Promise<void>
 }) {
   const text = useLocaleStore(s => s.text)
+  const t = useLocaleStore(s => s.t)
   const locale = useLocaleStore(s => s.locale)
   const models = useLLMStore(s => s.models)
   const defaultModelId = useLLMStore(s => s.defaultModelId)
@@ -124,6 +125,8 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
     if (useStageStore.getState().sheet?.kind !== 'run') useStageStore.setState({ sheet: { kind: 'review', filePath } })
   }, [review, stage, filePath])
   const included = includedCount(checklist.items)
+  const restored = checklist.cycle?.restoredHistory === true
+  const restoredHint = t('error.generationReviewRestoredHistory')
   const busy = draft.isChapterBusy || switching
   const annotating = annotation !== null
   const reviseLocked = busy || annotating
@@ -283,7 +286,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   const moreGroups: MenuGroupSpec[] = [
     { id: 'chapter', items: [
       ...(editable ? [{ id: 'refine', label: text('直接修稿…', 'Revise directly…'), disabled: reviseLocked, onSelect: () => { setRefinePrompt(''); setAsk('refine') } }] : []),
-      ...(editable && stage !== 'revised' && !(stage === 'reviewed' && nothingToRevise) ? [{ id: 'finalize', label: text('定稿…', 'Finalize…'), disabled: finalizeLocked, onSelect: () => draft.requestFinalize(() => setAsk('finalize')) }] : []),
+      ...(editable && stage !== 'revised' && !(stage === 'reviewed' && nothingToRevise && !restored) ? [{ id: 'finalize', label: text('定稿…', 'Finalize…'), disabled: finalizeLocked, onSelect: () => draft.requestFinalize(() => setAsk('finalize')) }] : []),
       ...(review && !sheetOpen && !focus ? [{ id: 'report', label: text('审稿报告', 'Review report'), onSelect: () => setSheet(true) }] : []),
       { id: 'history', label: text('版本历史', 'Version history'), onSelect: () => navigate({ kind: 'resource', page: 'history' }) },
       { id: 'copy', label: text('复制本章正文', 'Copy chapter text'), onSelect: copyBody },
@@ -301,7 +304,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   const revisedHint = recheck?.recheckDisposition === 'completed'
     ? text(`复验完成：${resolved} / ${recheck.findings.length} 项意见已解决`, `Recheck done: ${resolved} of ${recheck.findings.length} ${pluralEn(recheck.findings.length, 'note')} resolved`)
     : recheck?.recheckDisposition === 'required'
-      ? text('合并后复验还没完成，可在审稿报告里重试', 'The post-merge recheck is incomplete; retry it in the review report')
+      ? restored ? restoredHint : text('合并后复验还没完成，可在审稿报告里重试', 'The post-merge recheck is incomplete; retry it in the review report')
       : text('修稿已合并，可以定稿', 'The revision is merged and ready to finalize')
 
   const bar = (() => {
@@ -321,6 +324,13 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
           </>
         )
       case 'reviewed':
+        if (restored) return (
+          <>
+            <Button variant="primary" disabled={busy} onClick={startReview}><Search size={15} aria-hidden />{text('重新审稿', 'Review again')}</Button>
+            {more}
+            <span className="stage-ch-hint">{lockHint ?? restoredHint}</span>
+          </>
+        )
         return (
           <>
             {confirmWaived ? (
@@ -481,7 +491,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
         <MergeView
           data={draft.mergeData}
           versionLabel={versionLabel}
-          recheck={opened?.type === 'review-fix'}
+          recheck={opened?.type === 'review-fix' && !restored}
           onComplete={draft.completeMerge}
           onLater={() => { setMergeLater(true); draft.closeMerge() }}
         />

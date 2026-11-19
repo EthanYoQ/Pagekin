@@ -5,7 +5,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import '../../../../index.css'
 
 import type { ProjectData } from '../../../../shared/ipc-channels'
-import { parseHumanConfirmedReviewSnapshot } from '../../../../shared/human-confirmed-review'
+import type { ReviewCycleProjection } from '../../../../shared/review-cycle'
+import { createHumanConfirmedReviewSnapshot, parseHumanConfirmedReviewSnapshot, serializeHumanConfirmedReviewSnapshot } from '../../../../shared/human-confirmed-review'
 import { globalEventBus } from '../../../../shared/event-bus'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
 import { useDraftStore } from '../../../../stores/draft-store'
@@ -972,5 +973,146 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
       expect(hits(input)).toBe(true)
       expect(hits(primary.element())).toBe(true)
     })
+  })
+})
+
+describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => {
+  const RESTORED = '审稿内容都还在，但它是作品从备份恢复前做的，不能接着按它修稿或复验。点「重新审稿」，再按新意见修稿。'
+  const restoredReview = (draft: ReturnType<typeof backend.addDraft>, patch: Partial<ReviewCycleProjection> = {}) => {
+    const review = backend.addReview(draft)
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, restoredHistory: true, ...patch })
+    return review
+  }
+
+  it('已审稿：主按钮是重新审稿并说明原因，没有按意见修稿与确认不修改；点它只启动新审稿，不写确认记录', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '重新审稿', exact: true })).toBeVisible()
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    expect(page.getByRole('button', { name: '重新审稿', exact: true }).elements()).toHaveLength(1)
+    expect(page.getByRole('button', { name: /项意见修稿$|^确认不修改$|^修稿选项$/ }).elements()).toEqual([])
+    await expect.element(page.getByRole('complementary', { name: /审稿/ }).getByText('前后矛盾').first()).toBeVisible()
+
+    await click('重新审稿')
+    await vi.waitFor(() => expect(workflows.createReviewOnlyWorkflow).toHaveBeenCalledOnce())
+    expect(workflows.createReviewOnlyWorkflow.mock.calls[0][0]).not.toHaveProperty('reviewCycleId')
+    expect(started()).toHaveLength(1)
+    expect(workflows.createRefineFromReviewWorkflow).not.toHaveBeenCalled()
+    expect(backend.writes('db:review-create')).toEqual([])
+  })
+
+  it('审稿报告只能看：没有勾选、编辑、「不修改此项」、添加意见与修稿指导，页脚不说会用于修稿', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft, { findings: [{ findingId: 'restored-finding', reviewItemIndex: 0, category: '前后矛盾', kind: 'literary', status: 'unverified' }] })
+    await mount()
+    await openDraft(draft.id)
+    const sheet = page.getByRole('complementary', { name: /审稿/ })
+    await expect.element(sheet.getByText('前后矛盾').first()).toBeVisible()
+    const root = sheet.element()
+    expect(sheet.getByRole('button', { name: '不修改此项' }).elements()).toEqual([])
+    expect(root.querySelectorAll('input, textarea, select')).toHaveLength(0)
+    expect(sheet.getByRole('button', { name: /^(编辑|添加我的意见|不修改此项)$/ }).elements()).toEqual([])
+    expect(root.textContent).not.toContain('总体修稿指导')
+    expect(root.textContent).not.toContain('勾选的意见会用于修稿')
+  })
+
+  it('审稿报告只能看时，确认记录里作者写的意见、纳入与否、修稿指导照样读得到', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    const ai = restoredReview(draft)
+    const snapshot = createHumanConfirmedReviewSnapshot({
+      sourceReviewId: ai.id, cycleId: `cycle-${ai.id}`, summary: '', authorGuidance: '先把动机前后理顺。',
+      sourceDraft: { id: draft.id, chapterNumber: draft.chapterNumber, version: draft.version, status: draft.status, content: draft.content },
+      items: [
+        { category: '作者意见', severity: 'warning', description: '列车晚点的原因要交代。', quote: '车窗外的雨', decision: 'apply', origin: 'author' },
+        { category: '作者意见', severity: 'warning', description: '站台广播可以删。', decision: 'ignore', origin: 'author' },
+      ],
+    })!
+    backend.addReview(draft, serializeHumanConfirmedReviewSnapshot(snapshot))
+    await mount()
+    await openDraft(draft.id)
+    const sheet = page.getByRole('complementary', { name: /审稿/ })
+    await expect.element(sheet.getByText('作者意见', { exact: false }).first()).toBeVisible()
+    const issues = sheet.element().querySelector('.stage-ch-issues')!
+    expect(issues.querySelector('.stage-ch-issue-text')?.textContent).toBe('列车晚点的原因要交代。')
+    expect([...issues.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map(box => ({ checked: box.checked, disabled: box.disabled })))
+      .toEqual([{ checked: true, disabled: true }, { checked: false, disabled: true }])
+    expect(issues.querySelector('.stage-ch-issue-quote')?.textContent).toBe('车窗外的雨')
+    expect([...sheet.element().querySelectorAll('.stage-ch-sheet-note')].map(note => note.textContent)).toContain('总体修稿指导：先把动机前后理顺。')
+    expect(sheet.element().querySelectorAll('input:not(:disabled), textarea, select')).toHaveLength(0)
+  })
+
+  it('读不出逐条意见的恢复前审稿：提示只叫作者看原文，不提已经不出现的「添加我的意见」', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    const review = backend.addReview(draft, '')
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, restoredHistory: true })
+    await mount()
+    await openDraft(draft.id)
+    const sheet = page.getByRole('complementary', { name: /审稿/ })
+    await expect.element(sheet.getByText(/这份报告读不出逐条意见/)).toBeVisible()
+    expect(sheet.element().textContent).not.toContain('添加我的意见')
+  })
+
+  it('审稿数据读回来之前不摆主按钮：恢复前的审稿不会先闪一下按意见修稿', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const answer = backend.invoke.getMockImplementation()!
+    let reads = 0
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && ++reads > 1) await new Promise(resolve => setTimeout(resolve, 150))
+      return answer(channel, ...args)
+    })
+    await mount()
+    const seen = new Set<string>()
+    const observer = new MutationObserver(() => host!.querySelectorAll('.stage-ch-actions .pi-btn').forEach(button => seen.add(button.textContent ?? '')))
+    observer.observe(host!, { subtree: true, childList: true, characterData: true })
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '重新审稿', exact: true })).toBeVisible()
+    observer.disconnect()
+    expect([...seen].filter(label => label.includes('意见修稿'))).toEqual([])
+  })
+
+  const recheckPending = { revisionStatus: 'merge-committed' as const, recheckDisposition: 'required' as const, mergedHash: 'b'.repeat(64) }
+  async function openRecheckPending(restoredHistory: boolean) {
+    const draft = backend.addDraft({ status: 'revised' })
+    if (restoredHistory) restoredReview(draft, recheckPending)
+    else {
+      const review = backend.addReview(draft)
+      backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, ...recheckPending })
+    }
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '定稿', exact: true })).toBeVisible()
+  }
+  const openReport = async () => {
+    await click('更多操作')
+    await act(async () => page.getByRole('menuitem', { name: '审稿报告' }).click())
+    await expect.element(page.getByRole('complementary', { name: /审稿/ }).getByText('前后矛盾').first()).toBeVisible()
+  }
+
+  it('合并过、复验没完成：提示指向重新审稿，审稿报告里没有「重试合并后复验」', async () => {
+    await openRecheckPending(true)
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    await expect.element(page.getByRole('button', { name: '重新审稿', exact: true })).toBeVisible()
+    await openReport()
+    expect(page.getByRole('button', { name: '重试合并后复验' }).elements()).toEqual([])
+  })
+
+  it('没导出过的书，合并过、复验没完成：照常提示并在审稿报告里摆「重试合并后复验」', async () => {
+    await openRecheckPending(false)
+    await expect.element(page.getByText('合并后复验还没完成，可在审稿报告里重试')).toBeVisible()
+    await openReport()
+    await expect.element(page.getByRole('button', { name: '重试合并后复验' })).toBeVisible()
+  })
+
+  it('恢复前的待合并修稿：合并视图不说合并后会复验', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    backend.addRevision(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
   })
 })

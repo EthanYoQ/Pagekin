@@ -61,6 +61,7 @@ export const zhCN = {
   'error.generationProjectSessionRequired': '这次操作没有带上当前作品的会话，结果不可用。请重新打开作品后再操作。',
   'error.generationDraftNotCurrent': '这一稿已不是这一章的当前稿（有更新的稿或已定稿），结果没有保存。请打开当前稿后再操作。',
   'error.generationReviewLineageUnproven': '这份审稿没有可追溯的生成记录，不能直接按它修稿。请先重新审稿，再按新的意见修稿。',
+  'error.generationReviewRestoredHistory': '审稿内容都还在，但它是作品从备份恢复前做的，不能接着按它修稿或复验。点「重新审稿」，再按新意见修稿。',
   'error.generationReviewSourceDeleted': '这次审稿或修稿针对的章节已移到回收站，生成记录都还在，只是不再显示。从回收站恢复这一章后可以再看。',
   'error.generationDraftDependencyStale': '这一章依据的前文稿已被改动，本次正文没有保存。请先重写或定稿前一章的当前稿，再重新写这一章。',
   'error.generationDraftDependencyInvalid': '这一章记录的前文来源无法识别，本次正文没有保存。请重新写这一章；如果反复出现，请反馈给我们。',

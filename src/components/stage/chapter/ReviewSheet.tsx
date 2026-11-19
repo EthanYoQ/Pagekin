@@ -37,6 +37,8 @@ function IssueCard({ item, checklist, onEdit }: {
   const [editing, setEditing] = useState(item.origin === 'author')
   const copy = severityCopy(item.severity, text)
   const isPass = item.severity === 'pass'
+  const readOnly = isPass || checklist.cycle?.restoredHistory === true
+  const showFields = editing && !readOnly
   const finding = checklist.cycle?.findings.find(candidate => item.findingId
     ? candidate.findingId === item.findingId
     : candidate.reviewItemIndex === item.reviewItemIndex)
@@ -45,18 +47,18 @@ function IssueCard({ item, checklist, onEdit }: {
   const body = (
     <span className="stage-ch-issue-body">
       <span className="stage-ch-issue-tag" data-severity={item.severity}>{tag}</span>
-      {!editing && <span className="stage-ch-issue-text">{item.description || text('（未填写）', '(empty)')}</span>}
-      {!editing && item.quote && <q className="stage-ch-issue-quote">{item.quote}</q>}
+      {!showFields && <span className="stage-ch-issue-text">{item.description || text('（未填写）', '(empty)')}</span>}
+      {!showFields && item.quote && <q className="stage-ch-issue-quote">{item.quote}</q>}
       {item.sourceChapter && <span className="stage-ch-issue-meta">{text(`来源：第${item.sourceChapter}章`, `Source: Chapter ${item.sourceChapter}`)}</span>}
       <FindingStatus item={item} checklist={checklist} />
     </span>
   )
   return (
-    <div className="stage-ch-issue" data-on={!isPass && item.decision === 'apply'} data-severity={item.severity}>
-      {isPass
+    <div className="stage-ch-issue" data-on={!readOnly && item.decision === 'apply'} data-severity={item.severity}>
+      {isPass || readOnly && !checklist.confirmed
         ? <div className="stage-ch-issue-pass">{body}</div>
-        : <Check checked={item.decision === 'apply'} onChange={checked => onEdit({ decision: checked ? 'apply' : 'ignore' })} label={body} />}
-      {editing && !isPass && (
+        : <Check checked={item.decision === 'apply'} disabled={readOnly} onChange={checked => onEdit({ decision: checked ? 'apply' : 'ignore' })} label={body} />}
+      {showFields && (
         <div className="stage-ch-issue-fields">
           <div className="stage-ch-issue-row">
             <input className="pi-input" aria-label={text('问题分类', 'Issue category')} value={item.category} onChange={event => onEdit({ category: event.target.value })} />
@@ -92,7 +94,7 @@ function IssueCard({ item, checklist, onEdit }: {
           />
         </div>
       )}
-      {!isPass && (
+      {!readOnly && (
         <div className="stage-ch-issue-actions">
           <span className="stage-ch-issue-hint">{copy.actionLabel}</span>
           {item.origin === 'ai' && (
@@ -124,6 +126,7 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
 }) {
   const text = useLocaleStore(s => s.text)
   const { items, cycle } = checklist
+  const readOnly = cycle?.restoredHistory === true
   const actionable = items.filter(item => item.severity !== 'pass')
   const passed = items.length - actionable.length
   const count = (severity: EditableReviewItem['severity']) => items.filter(item => item.severity === severity).length
@@ -140,7 +143,7 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
       subtitle={subtitle}
       closeLabel={text('关闭审稿报告', 'Close review report')}
       onClose={onClose}
-      footer={(
+      footer={readOnly ? undefined : (
         <div className="stage-ch-sheet-foot">
           <span>{text('勾选的意见会用于修稿', 'Checked notes are used for the revision')}</span>
           <span className="stage-ch-sheet-count">{includedCount(items)} / {actionable.length}</span>
@@ -165,7 +168,7 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
               : text('本章目标检查不完整，尚有待核实项。', 'Chapter goal review is incomplete and needs verification.')}
         </p>
       )}
-      {cycle?.revisionStatus === 'merge-committed' && cycle.recheckDisposition === 'required' && (
+      {cycle?.revisionStatus === 'merge-committed' && cycle.recheckDisposition === 'required' && !cycle.restoredHistory && (
         <Notice
           tone="warn"
           title={text('合并后复验还没完成', 'The post-merge recheck is incomplete')}
@@ -186,7 +189,9 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
       {actionable.length === 0 && (
         <p className="stage-ch-sheet-note">
           {!checklist.reportRead
-            ? text('这份报告读不出逐条意见。展开下方「查看原始 AI 审稿文本」自己看，要改的用「添加我的意见」记下。', 'No individual notes could be read from this report. Open “View original AI review text” below to read it, and use “Add my note” for anything to change.')
+            ? readOnly
+              ? text('这份报告读不出逐条意见。展开下方「查看原始 AI 审稿文本」自己看。', 'No individual notes could be read from this report. Open “View original AI review text” below to read it.')
+              : text('这份报告读不出逐条意见。展开下方「查看原始 AI 审稿文本」自己看，要改的用「添加我的意见」记下。', 'No individual notes could be read from this report. Open “View original AI review text” below to read it, and use “Add my note” for anything to change.')
             : checklist.goalReview && checklist.goalReview.coverage !== 'complete'
               ? text('暂无已确认的检查结果', 'No confirmed review results yet')
               : text('审稿通过，未发现问题', 'Review passed. No issues found.')}
@@ -195,10 +200,12 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
       <div className="stage-ch-issues">
         {actionable.map(item => <IssueCard key={item.id} item={item} checklist={checklist} onEdit={patch => edit(item, patch)} />)}
       </div>
-      <Button variant="text" size="sm" className="stage-ch-add" onClick={() => { checklist.addAuthorItem(); checklist.setEditingChecklist(true) }}>
+      {!readOnly && <Button variant="text" size="sm" className="stage-ch-add" onClick={() => { checklist.addAuthorItem(); checklist.setEditingChecklist(true) }}>
         <Plus size={14} aria-hidden />{text('添加我的意见', 'Add my note')}
-      </Button>
-      <details className="stage-write-more stage-ch-guidance" open={Boolean(checklist.authorGuidance) || undefined}>
+      </Button>}
+      {readOnly ? checklist.authorGuidance && (
+        <p className="stage-ch-sheet-note">{text('总体修稿指导：', 'Overall revision guidance: ')}{checklist.authorGuidance}</p>
+      ) : <details className="stage-write-more stage-ch-guidance" open={Boolean(checklist.authorGuidance) || undefined}>
         <summary>{text('总体修稿指导', 'Overall revision guidance')}<small>{text('可选', 'Optional')}</small></summary>
         <textarea
           className="pi-input stage-ch-textarea"
@@ -208,7 +215,7 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
           placeholder={text('例如：优先修复角色动机的前后不一致，保持本章克制的节奏。', 'For example: fix the inconsistent motivation first and keep this chapter’s restrained pace.')}
           onChange={event => { checklist.setAuthorGuidance(event.target.value); checklist.setEditingChecklist(true) }}
         />
-      </details>
+      </details>}
       {checklist.confirmed && !checklist.editingChecklist && (
         <p className="stage-ch-sheet-note" role="status">{text('清单已确认，保存为新的不可变快照；原始 AI 审稿没有被修改。', 'The checklist is confirmed as a new immutable snapshot; the original AI review is unchanged.')}</p>
       )}
