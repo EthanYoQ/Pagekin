@@ -456,6 +456,23 @@ describe('portable project export service', () => {
       await expect(exportPortableProject(input(f))).rejects.toThrow('ENOSPC')
       expect(fs.readdirSync(f.attemptParent)).toEqual([])
     })
+
+    it('拷资料时一次只写进去一部分：接着写完，存档里的资料完整', async () => {
+      const f = fixture()
+      const prompt = '{"提示":"保持雨夜，城门只在子时开"}'
+      fs.mkdirSync(path.join(f.storage, 'prompts'))
+      fs.writeFileSync(path.join(f.storage, 'prompts', '章节.json'), prompt)
+      const writeSync = fs.writeSync.bind(fs) as (...args: unknown[]) => number
+      vi.spyOn(fs, 'writeSync').mockImplementation(((descriptor: number, buffer: unknown, offset?: unknown, length?: unknown, ...rest: unknown[]) =>
+        Buffer.isBuffer(buffer) && typeof length === 'number' && length > 1
+          ? writeSync(descriptor, buffer, offset, Math.floor(length / 2), ...rest)
+          : writeSync(descriptor, buffer, offset, length, ...rest)) as typeof fs.writeSync)
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+      vi.restoreAllMocks()
+      const unpacked = await extractPortableProjectArchive({ archivePath: f.target, stagingParentPath: f.extractParent })
+      expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe(prompt)
+    })
   })
 
   it('资料文件逐个拷进导出临时目录，不整份留在内存里交给打包', async () => {
