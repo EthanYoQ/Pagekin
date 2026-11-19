@@ -106,6 +106,15 @@ describe('静止树的绑定读不出（#702 S2，ADR-0030 决定 7）', () => {
       .toEqual([[healthy.runId, false], [quiet.runId, true]])
   })
 
+  it('改坏的库里有运行号为 NULL 的行：跨记录认运行略过它，别的运行照常认出', () => {
+    const repository = new GenerationRunRepository(getProjectDb)
+    const healthy = settledRun(repository, 'healthy'), orphan = repository.open(openRequest('orphan'))
+    getProjectDb()!.prepare('UPDATE generation_runs SET run_id=NULL WHERE run_id=?').run(orphan.runId)
+    const fresh = new GenerationRunRepository(getProjectDb)
+    expect(fresh.recognizedRuns(click => click.operation === 'chapter-draft', () => true).map(run => run.runId)).toEqual([healthy.runId])
+    expect(fresh.runsOfOperation('chapter-draft')).toEqual([healthy.runId])
+  })
+
   it('导出中性化成 {} 的绑定读得出：身份缺作品号，不算读不出', () => {
     const run = settledRun(new GenerationRunRepository(getProjectDb), 'neutral')
     setBinding(getProjectDb()!, run.runId, '{}')
