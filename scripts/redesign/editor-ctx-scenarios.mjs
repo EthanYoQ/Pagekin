@@ -70,7 +70,7 @@ export const EDITOR_CTX_SCENARIOS = {
   } },
 
   /**
-   * 目标行为 8：112 章定稿的书，第 113 章选中开头一段点续写，量点击到主进程收到 begin（渲染层备料）、begin 本身（主进程绑定）、点击到模型收到请求。
+   * 112 章定稿的书，第 113 章选中开头一段点续写，量点击到主进程收到 begin（渲染层备料）、begin 本身（主进程绑定）、点击到模型收到请求。
    * 同一个驱动配 --app-root 指向 master 构建跑对照。每会话先热身一次再量 EDCTX_RUNS 次（默认 7）。
    */
   'edctx-perf-112': { model: true, shell: 'stage', setup: async context => {
