@@ -23,6 +23,12 @@ describe('localized application errors', () => {
     expect(displayedErrorMessage(shown('en-US'), new Error('PORTABLE_UNSAFE_PROJECTION'))).toContain('Your book is unchanged.')
   })
 
+  it.each(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])('导出重来一次资料仍被改（%s）：说明作品没动、资料被改了、再点哪个按钮，不露原码（#744）', code => {
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。导出时资料被改了，存档没有生成。请再点「导出本地存档」。')
+    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. Files changed during export, so no archive was created. Click Export local archive again.')
+    expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain(code)
+  })
+
   it('preserves an unknown error as localized diagnostic text', () => {
     expect(appErrorMessage(shown('en-US'), new Error('disk full'))).toBe('Something went wrong: disk full')
   })
