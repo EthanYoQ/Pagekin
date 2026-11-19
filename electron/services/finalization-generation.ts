@@ -4,8 +4,9 @@ import type { FinalizationGenerationEffect, FinalizationGenerationSlot } from '.
 import type { FinalizedCharacterArtifact } from '../../src/shared/finalized-character-generation'
 import type { MainGenerationRunHandle } from '../../src/services/generation/generation-runtime'
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
-import { GenerationRunRepository, slotRunNonces, textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
-import { finalizationSlotKey, readFinalizationGenerationContext, finalizationNotesBaseline } from './finalization-generation-source'
+import { GenerationRunRepository, textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
+import { runIndexOf } from '../repositories/generation-run-index'
+import { finalizationSlotClick, finalizationSlotKey, readFinalizationGenerationContext, finalizationNotesBaseline } from './finalization-generation-source'
 import { SummaryRepository } from '../repositories/summary-repository'
 import { BlueprintRepository } from '../repositories/blueprint-repository'
 import { parseDependencies } from '../repositories/draft-repository'
@@ -34,12 +35,16 @@ export class FinalizationGeneration {
   find(slot: FinalizationGenerationSlot): DurableGenerationRun | undefined {
     const key = finalizationSlotKey(slot), nonce = `finalization:${key}`
     if (this.runs.sealedClaims(click => click.projectId === this.projectId && (click.uiActionNonce === nonce || click.uiActionNonce.startsWith(`${nonce}:retry:`)))) throw new Error('GENERATION_LEDGER_UNREADABLE')
-    const rows = slotRunNonces(this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.finalizationGenerationSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[], 'GENERATION_FINALIZATION_SLOT_CONFLICT')
+    const slotClick = finalizationSlotClick(slot)
+    const { hits, unidentified } = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && slotClick(click))
+    // 点击号读不出的运行认不出是不是前驱，按主键读它的绑定，是这个槽位的就报冲突。
+    if (unidentified.some(entry => this.runs.get(entry.runId).binding.sourceManifest?.finalizationGenerationSlotKey === key))
+      throw new Error('GENERATION_FINALIZATION_SLOT_CONFLICT')
     let previous: DurableGenerationRun | undefined
-    for (const row of rows) {
-      const run = this.runs.get(row.runId)
-      if (run.binding.projectId !== this.projectId || !isDeepStrictEqual(readFinalizationGenerationContext(run).slot, slot)
-        || previous && (this.effectInForce(previous) || row.nonce !== `finalization:${key}:retry:${previous.runId}`))
+    for (const entry of hits) {
+      const run = this.runs.get(entry.runId)
+      if (!isDeepStrictEqual(readFinalizationGenerationContext(run).slot, slot)
+        || previous && (this.effectInForce(previous) || entry.click!.uiActionNonce !== `finalization:${key}:retry:${previous.runId}`))
         throw new Error('GENERATION_FINALIZATION_SLOT_CONFLICT')
       previous = run
     }

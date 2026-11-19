@@ -6,6 +6,14 @@ export const plan = page => page.getByRole('complementary', { name: '章节规�
 export const planItem = (page, number) => plan(page).getByRole('button', { name: new RegExp(`^${number}\\D`) })
 export const card = page => page.getByRole('region', { name: /^第 \d+ 章蓝图$/ })
 export const titleInput = page => card(page).getByRole('textbox', { name: '章节标题' })
+
+export async function notesBox(chapterCard) {
+  const edit = chapterCard.getByRole('button', { name: '编辑章节要点', exact: true })
+  const box = chapterCard.getByRole('textbox', { name: /^章节要点/ })
+  await edit.or(box).first().waitFor({ state: 'visible' })
+  if (await edit.isVisible()) await edit.click()
+  return box
+}
 export const writeButton = page => page.getByRole('button', { name: /^写第 \d+ 章$/ })
 export const writeOptions = page => page.getByRole('button', { name: '本次写作选项' })
 export const popover = page => page.getByRole('dialog', { name: '本次写作选项' })

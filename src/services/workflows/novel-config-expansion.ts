@@ -1,4 +1,5 @@
 import type { NovelConfig } from '../../shared/ipc-channels'
+import { configText } from '../../shared/novel-config-ai-sources'
 
 export const GENERATED_GLOBAL_GUIDANCE_MAX_CHARS = 600
 export const GENERATED_GLOBAL_GUIDANCE_MIN_RULES = 4
@@ -33,6 +34,7 @@ export const EXPANDABLE_NOVEL_CONFIG_FIELDS = [
   'protagonistProfile',
   'globalGuidance',
   'writingStyle',
+  'referenceWorks',
 ] as const satisfies readonly (keyof NovelConfig)[]
 
 const AUTHOR_CHOICE_FIELDS = [
@@ -43,11 +45,12 @@ const AUTHOR_CHOICE_FIELDS = [
   'narrativePOV',
 ] as const satisfies readonly (keyof NovelConfig)[]
 
-export function preserveAuthorText(existing: string | undefined, generated: string | undefined): string {
-  const authorText = existing?.trim() ?? ''
-  const generatedText = generated?.trim() ?? ''
+export function preserveAuthorText(existing: unknown, generated: unknown): string {
+  const authorText = configText(existing).trim()
+  const generatedText = configText(generated).trim()
   if (!authorText) return generatedText
-  if (!generatedText || generatedText.includes(authorText)) return generatedText || authorText
+  if (!generatedText || generatedText === authorText) return configText(existing)
+  if (generatedText.includes(authorText)) return generatedText
   return `${authorText}\n\n${generatedText}`
 }
 

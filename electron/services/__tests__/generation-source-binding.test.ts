@@ -8,6 +8,7 @@ import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema
 import { createLiveRowViews } from '../../../test/helpers/live-row-views';
 import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../../migrations/desktop-registry';
 import { migrateSchema } from '../../migrations/runner';
+import { M10_AI_SOURCES_SQL } from '../../migrations/m10-ai-sources';
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter';
 import { buildGenerationSourceBinding, rebuildGenerationSourceBinding, compareGenerationSourceBindings, type GenerationSourceBindingInput } from '../generation-source-binding';
 import { currentDerivedCharacterFields } from '../current-character-projection';
@@ -378,6 +379,13 @@ describe('main rebuilt generation sources', () => {
         expect(() => f.build()).toThrow('PORTABLE_CURRENT_AUTHORITY_INVALID');
     });
     it('keeps binding hashes stable across epoch and timestamp/log-only changes', () => { const f = fixture(), a = f.build(); f.db.exec("UPDATE project_core SET updated_at='later';UPDATE drafts_all SET updated_at='later';UPDATE blueprints SET notes='cache',notes_updated_at='later'"); const b = rebuildGenerationSourceBinding(f.deps, a.binding, 'next'); expect(b.binding.epoch).toBe('next'); expect(compareGenerationSourceBindings(a.binding, b.binding)).toBe(true); });
+    it('resumes a run started before M10 after the upgrade adds Setup AI-source marks', () => {
+        const f = fixture(), before = f.build();
+        f.db.exec(M10_AI_SOURCES_SQL);
+        expect(compareGenerationSourceBindings(before.binding, rebuildGenerationSourceBinding(f.deps, before.binding, 'next').binding)).toBe(true);
+        f.db.prepare("UPDATE project_core SET ai_sources=? WHERE id='main'").run(JSON.stringify({ worldSetting: { kind: 'filled', hash: '0000abcd' } }));
+        expect(compareGenerationSourceBindings(before.binding, rebuildGenerationSourceBinding(f.deps, before.binding, 'next').binding)).toBe(true);
+    });
     // 回归（s10b-2）：冻结的审修上下文绝不携带会话租约，否则重开项目（新 epoch）后重建
     // binding 会以 GENERATION_REVIEW_CONTEXT_CHANGED 假失败，审稿/修稿的续跑随之被破坏。
     it('resumes a review/refine run after a reopen because the frozen review context carries no session lease', () => {

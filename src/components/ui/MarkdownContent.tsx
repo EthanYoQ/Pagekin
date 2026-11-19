@@ -22,7 +22,7 @@ export default function MarkdownContent({ content, streaming }: MarkdownContentP
           <ThinkingBlock key={`think-${i}`} content={seg.content} streaming={streaming && i === segments.length - 1} />
         ) : (
           <React.Fragment key={`md-${i}`}>
-            {renderLines(seg.content.split('\n'))}
+            {renderLines(seg.content.split(/\r?\n/))}
           </React.Fragment>
         )
       )}
@@ -59,21 +59,21 @@ function renderLines(lines: string[]): React.ReactNode {
     if (line.startsWith('### ')) {
       elements.push(
         <div key={i} className="font-semibold mt-3 mb-1 text-sm"
-          style={{ color: 'var(--color-text)' }}>
+          style={{ color: 'var(--ink)' }}>
           {renderInline(line.slice(4))}
         </div>
       )
     } else if (line.startsWith('## ')) {
       elements.push(
         <div key={i} className="font-semibold mt-3 mb-1 text-sm"
-          style={{ color: 'var(--color-text)' }}>
+          style={{ color: 'var(--ink)' }}>
           {renderInline(line.slice(3))}
         </div>
       )
     } else if (line.startsWith('# ')) {
       elements.push(
         <div key={i} className="font-bold mt-3 mb-1 text-base"
-          style={{ color: 'var(--color-text)' }}>
+          style={{ color: 'var(--ink)' }}>
           {renderInline(line.slice(2))}
         </div>
       )
@@ -82,7 +82,7 @@ function renderLines(lines: string[]): React.ReactNode {
     else if (line.match(/^[-*+] /)) {
       elements.push(
         <div key={i} className="flex gap-1.5 my-0.5">
-          <span style={{ color: 'var(--color-text-muted)' }} className="flex-shrink-0 mt-[1px]">•</span>
+          <span style={{ color: 'var(--ink-3)' }} className="flex-shrink-0 mt-[1px]">•</span>
           <span>{renderInline(line.slice(2))}</span>
         </div>
       )
@@ -93,7 +93,7 @@ function renderLines(lines: string[]): React.ReactNode {
       if (match) {
         elements.push(
           <div key={i} className="flex gap-1.5 my-0.5">
-            <span style={{ color: 'var(--color-text-muted)' }} className="flex-shrink-0 min-w-[16px]">
+            <span style={{ color: 'var(--ink-3)' }} className="flex-shrink-0 min-w-[16px]">
               {match[1]}.
             </span>
             <span>{renderInline(match[2])}</span>
@@ -104,7 +104,7 @@ function renderLines(lines: string[]): React.ReactNode {
     // 分隔线
     else if (line.match(/^---+$/) || line.match(/^===+$/)) {
       elements.push(
-        <hr key={i} className="my-2" style={{ borderColor: 'var(--color-border)' }} />
+        <hr key={i} className="my-2" style={{ borderColor: 'var(--rule-strong)' }} />
       )
     }
     // 引用块
@@ -114,8 +114,8 @@ function renderLines(lines: string[]): React.ReactNode {
           key={i}
           className="pl-3 py-0.5 my-1 text-xs italic"
           style={{
-            borderLeft: '3px solid var(--color-accent)',
-            color: 'var(--color-text-secondary)',
+            borderLeft: '3px solid var(--accent)',
+            color: 'var(--ink-2)',
           }}
         >
           {renderInline(line.slice(2))}
@@ -169,7 +169,7 @@ function renderInline(text: string): React.ReactNode {
     if (token.startsWith('**') && token.endsWith('**')) {
       parts.push(
         <strong key={match.index} className="font-semibold"
-          style={{ color: 'var(--color-text)' }}>
+          style={{ color: 'var(--ink)' }}>
           {token.slice(2, -2)}
         </strong>
       )
@@ -181,9 +181,9 @@ function renderInline(text: string): React.ReactNode {
           key={match.index}
           className="px-1 py-0.5 rounded text-xs font-mono"
           style={{
-            backgroundColor: 'var(--color-hover)',
-            color: 'var(--color-accent)',
-            border: '1px solid var(--color-border)',
+            backgroundColor: 'var(--wash)',
+            color: 'var(--accent)',
+            border: '1px solid var(--rule-strong)',
           }}
         >
           {token.slice(1, -1)}
@@ -215,24 +215,24 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   return (
     <div
       className="my-2 rounded-lg overflow-hidden"
-      style={{ border: '1px solid var(--color-border)' }}
+      style={{ border: '1px solid var(--rule-strong)' }}
     >
       {/* 代码块标题栏 */}
       <div
         className="flex items-center justify-between px-3 py-1.5"
         style={{
-          backgroundColor: 'var(--color-hover)',
-          borderBottom: '1px solid var(--color-border)',
+          backgroundColor: 'var(--wash)',
+          borderBottom: '1px solid var(--rule-strong)',
         }}
       >
-        <span className="text-[0.7rem] font-mono" style={{ color: 'var(--color-text-muted)' }}>
+        <span className="text-[0.7rem] font-mono" style={{ color: 'var(--ink-3)' }}>
           {lang || 'text'}
         </span>
         <button
           onClick={handleCopy}
           className="text-[0.7rem] px-2 py-0.5 rounded transition-opacity hover:opacity-100 opacity-60"
-          style={{ color: 'var(--color-text-secondary)' }}
-          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-border)')}
+          style={{ color: 'var(--ink-2)' }}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--rule-strong)')}
           onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
         >
           {text('复制', 'Copy')}
@@ -242,8 +242,8 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       <pre
         className="p-3 text-xs leading-relaxed font-mono whitespace-pre-wrap break-all"
         style={{
-          backgroundColor: 'var(--color-editor-bg)',
-          color: 'var(--color-text)',
+          backgroundColor: 'var(--surface)',
+          color: 'var(--ink)',
           margin: 0,
         }}
       >
@@ -261,7 +261,7 @@ export function StreamingCursor() {
     <span
       className="inline-block w-[3px] h-3 ml-0.5 rounded-sm align-middle"
       style={{
-        backgroundColor: 'var(--color-accent)',
+        backgroundColor: 'var(--accent)',
         animation: 'agent-cursor-blink 0.8s ease-in-out infinite',
       }}
     />
@@ -280,27 +280,27 @@ function ThinkingBlock({ content, streaming }: { content: string; streaming?: bo
     <div
       className="my-2 rounded-lg overflow-hidden transition-all duration-200"
       style={{
-        border: '1px solid var(--color-border)',
-        backgroundColor: 'color-mix(in srgb, var(--color-accent) 3%, transparent)',
+        border: '1px solid var(--rule-strong)',
+        backgroundColor: 'color-mix(in srgb, var(--accent) 3%, transparent)',
       }}
     >
       {/* 头部：点击可展开/折叠 */}
       <button
         onClick={() => setExpanded(v => !v)}
         className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors"
-        style={{ color: 'var(--color-text-muted)' }}
-        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-hover)')}
+        style={{ color: 'var(--ink-3)' }}
+        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--wash)')}
         onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
       >
-        <Brain size={13} style={{ color: 'var(--color-accent)', opacity: 0.7 }} />
-        <span className="font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+        <Brain size={13} style={{ color: 'var(--accent)', opacity: 0.7 }} />
+        <span className="font-medium" style={{ color: 'var(--ink-2)' }}>
           {streaming ? text('正在思考…', 'Thinking…') : text('思考过程', 'Thinking process')}
         </span>
         {streaming && (
           <span
             className="inline-block w-1.5 h-1.5 rounded-full ml-1"
             style={{
-              backgroundColor: 'var(--color-accent)',
+              backgroundColor: 'var(--accent)',
               animation: 'tool-pulse 1.2s ease-in-out infinite',
             }}
           />
@@ -317,8 +317,8 @@ function ThinkingBlock({ content, streaming }: { content: string; streaming?: bo
         <div
           className="px-3 pb-2 text-xs leading-relaxed"
           style={{
-            color: 'var(--color-text-muted)',
-            borderTop: '1px solid var(--color-border)',
+            color: 'var(--ink-3)',
+            borderTop: '1px solid var(--rule-strong)',
             maxHeight: 300,
             overflowY: 'auto',
             whiteSpace: 'pre-wrap',
@@ -351,17 +351,17 @@ function MarkdownTable({ lines }: { lines: string[] }) {
   const bodyRows = lines.slice(startRow).map(parseRow)
 
   return (
-    <div className="my-2 overflow-x-auto rounded-md" style={{ border: '1px solid var(--color-border)' }}>
+    <div className="my-2 overflow-x-auto rounded-md" style={{ border: '1px solid var(--rule-strong)' }}>
       <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
         <thead>
-          <tr style={{ backgroundColor: 'var(--color-hover)' }}>
+          <tr style={{ backgroundColor: 'var(--wash)' }}>
             {headerCells.map((cell, j) => (
               <th
                 key={j}
                 className="px-3 py-1.5 text-left font-semibold"
                 style={{
-                  color: 'var(--color-text)',
-                  borderBottom: '1px solid var(--color-border)',
+                  color: 'var(--ink)',
+                  borderBottom: '1px solid var(--rule-strong)',
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -375,13 +375,13 @@ function MarkdownTable({ lines }: { lines: string[] }) {
             <tr
               key={ri}
               style={{
-                borderBottom: ri < bodyRows.length - 1 ? '1px solid var(--color-border)' : undefined,
+                borderBottom: ri < bodyRows.length - 1 ? '1px solid var(--rule-strong)' : undefined,
               }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-hover)')}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--wash)')}
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
               {row.map((cell, ci) => (
-                <td key={ci} className="px-3 py-1.5" style={{ color: 'var(--color-text-secondary)' }}>
+                <td key={ci} className="px-3 py-1.5" style={{ color: 'var(--ink-2)' }}>
                   {renderInline(cell)}
                 </td>
               ))}

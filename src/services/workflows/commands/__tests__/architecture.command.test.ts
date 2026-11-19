@@ -1,4 +1,6 @@
 import { decodeCharacterDetails } from '../../../../shared/character-proposal-parser'
+import { aiSourceOf, type AiSourceField } from '../../../../shared/novel-config-ai-sources'
+import type { NovelConfig } from '../../../../shared/ipc-channels'
 import { proposalRuntimeFixture, proposalBatchFixture } from './character-proposal-runtime.fixture'
 import { contextLengthRejectingDependencies } from './context-length-runtime.fixture'
 import type { CharacterProposalSource, CharacterProposalBatch } from '../../../../shared/character-proposal'
@@ -203,6 +205,9 @@ const context: WorkflowContext = {
   cancelled: false,
 }
 
+const savedMark = (generated: Partial<NovelConfig>, field: AiSourceField) =>
+  aiSourceOf(generated, useProjectStore.getState().currentProject!.aiSources, field)
+
 function project(path: string) {
   return {
     id: 'main',
@@ -269,6 +274,7 @@ describe('GenerateConfigCommand error boundaries', () => {
           protagonistProfile: '',
           globalGuidance: authorGuidance,
         },
+        aiSources: { referenceWorks: { kind: 'filled', hash: 'stale000' } },
       } as never,
       saveProject: vi.fn().mockResolvedValue(true),
     })
@@ -294,6 +300,71 @@ describe('GenerateConfigCommand error boundaries', () => {
       worldSetting: JSON.parse(validConfigJson).worldSetting,
       globalGuidance: `${authorGuidance}\n\n${JSON.parse(validConfigJson).globalGuidance}`,
     }))
+    expect(userPrompt).not.toContain('aiSources')
+    const generated = onGenerated.mock.calls[0]![0]
+    expect(savedMark(generated, 'worldSetting')).toBe('filled')
+    expect(savedMark(generated, 'globalGuidance')).toBe('expanded')
+    expect(savedMark(generated, 'referenceWorks')).toBeNull()
+  })
+
+  it('AI 补全交回设定页的设定只有设定字段，不带 AI 标记', async () => {
+    const onGenerated = vi.fn()
+    useProjectStore.setState({
+      currentProject: { ...project(projectAPath), novelConfig: { genre: '悬疑' } } as never,
+      saveProject: vi.fn().mockResolvedValue(true),
+    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
+        streamCallbacks.onDone?.(validConfigJson, undefined, 'stop')
+        return 'config-expansion-request'
+      }) })
+
+    await new GenerateConfigCommand('扩写现有设定', 10, 2500, onGenerated).execute({ step: {}, context, callbacks })
+
+    expect(onGenerated.mock.calls[0]![0]).not.toHaveProperty('aiSources')
+    expect(useProjectStore.getState().currentProject!.novelConfig).not.toHaveProperty('aiSources')
+  })
+
+  it('keeps the author references when AI fill returns different ones', async () => {
+    const authorReferences = '《白鲸》的追猎结构'
+    const onGenerated = vi.fn()
+    useProjectStore.setState({
+      currentProject: { ...project(projectAPath), novelConfig: { genre: '悬疑', referenceWorks: authorReferences } } as never,
+      saveProject: vi.fn().mockResolvedValue(true),
+    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
+        streamCallbacks.onDone?.(JSON.stringify({ ...JSON.parse(validConfigJson), referenceWorks: '《雪中悍刀行》' }), undefined, 'stop')
+        return 'config-expansion-request'
+      }) })
+
+    await new GenerateConfigCommand('扩写现有设定', 10, 2500, onGenerated).execute({ step: {}, context, callbacks })
+
+    const generated = onGenerated.mock.calls[0]![0]
+    expect(generated.referenceWorks).toBe(`${authorReferences}\n\n《雪中悍刀行》`)
+    expect(savedMark(generated, 'referenceWorks')).toBe('expanded')
+  })
+
+  it.each([
+    ['a saved field is not text', { worldSetting: 42 as never }, 'worldSetting', JSON.parse(validConfigJson).worldSetting, 'filled'],
+    ['the model adds nothing to the author references', { referenceWorks: '《白鲸》\n' }, 'referenceWorks', '《白鲸》\n', null],
+  ] as const)('AI fill commits the model result when %s', async (_label, saved, field, expected, mark) => {
+    const onGenerated = vi.fn()
+    useProjectStore.setState({
+      currentProject: { ...project(projectAPath), novelConfig: { genre: '悬疑', ...saved } } as never,
+      saveProject: vi.fn().mockResolvedValue(true),
+    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
+        streamCallbacks.onDone?.(validConfigJson, undefined, 'stop')
+        return 'config-expansion-request'
+      }) })
+
+    await new GenerateConfigCommand('扩写现有设定', 10, 2500, onGenerated).execute({ step: {}, context, callbacks })
+
+    const generated = onGenerated.mock.calls[0]![0]
+    expect(generated[field]).toBe(expected)
+    expect(savedMark(generated, field)).toBe(mark)
   })
 
   it.each([

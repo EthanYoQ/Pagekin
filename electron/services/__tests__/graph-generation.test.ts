@@ -168,6 +168,13 @@ it.each(['plan','event'] as const)('旧%s过滤后的已存index和ACK可重放�
  effect.index=1;effect.receipt={...saved,index:1};effect.receiptHash=textHash(JSON.stringify(effect.receipt))
  f.db.prepare('UPDATE generation_attempts SET usage_receipt_json=? WHERE attempt_id=?').run(JSON.stringify(usage),row.attempt_id)
  expect(()=>next.readGraphGeneration({handle})).toThrow('GENERATION_GRAPH_EFFECT_INVALID')
+ if(saved.kind==='event'){
+  // ADR-0030：开树点击读不出、绑定读得出，重开后自己确认过的事件仍认得出。
+  f.db.prepare('UPDATE generation_attempts SET usage_receipt_json=? WHERE attempt_id=?').run(sealed,row.attempt_id)
+  f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(handle.runId)
+  f.reopen()
+  expect(provenGraphOwnEventIds(f.db,opened.context)).toEqual([saved.event.id])
+ }
 })
 
 it('来源变化与伪artifact拒绝采用，写入失败回滚effect和计划',async()=>{

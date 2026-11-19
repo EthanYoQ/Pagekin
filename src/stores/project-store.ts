@@ -10,6 +10,7 @@ import type {
   NovelConfig,
   FileNode,
 } from '../shared/ipc-channels'
+import type { AiSources } from '../shared/novel-config-ai-sources'
 import { alertError } from '../components/ui/AlertDialog'
 import { showFinalizationRepairNotice } from '../components/finalization-repair-notice'
 import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
@@ -243,6 +244,7 @@ function toPlainProjectData(p: ProjectData): ProjectData {
     path: p.path,
     sessionLease: p.sessionLease,
     novelConfig: p.novelConfig ? { ...p.novelConfig } : p.novelConfig,
+    aiSources: p.aiSources,
     characterStates: p.characterStates,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
@@ -420,6 +422,8 @@ interface ProjectState {
   saveProject: (expectedProjectSession?: ProjectSessionContext) => Promise<boolean>
   /** 更新小说配置 */
   updateNovelConfig: (config: Partial<NovelConfig>, expectedProjectSession?: ProjectSessionContext) => void
+  /** 下次保存时随设定落库。 */
+  setAiSources: (sources: AiSources, expectedProjectSession: ProjectSessionContext) => void
   /**
    * 主进程已经写进库的设定字段，发布到界面并记为已保存。
    * keepUnsavedEdits：作者在设定页改过、还没保存的字段保持作者的值（仍算未保存）；否则一律换成库里的值。
@@ -430,7 +434,9 @@ interface ProjectState {
   commitGeneratedNovelConfig: (config: Partial<NovelConfig>, expectedConfig: NovelConfig, expectedProjectSession: ProjectSessionContext,
     generationRunHandle: import('../services/generation/generation-runtime').MainGenerationRunHandle,
     /** Existing guarded main effect, such as an import receipt; replaces the direct core write and may return the fields it actually saved. */
-    persistEffect?: () => Promise<Partial<NovelConfig> | void>) => Promise<boolean>
+    persistEffect?: () => Promise<Partial<NovelConfig> | void>,
+    /** AI 写入后的来源标记，与设定在同一事务里落库。 */
+    aiSources?: AiSources) => Promise<boolean>
   /** 放弃指定项目的配置草稿并恢复到已保存基准。 */
   discardNovelConfigDraft: (
     projectPath: string,
@@ -957,7 +963,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
   },
 
-  commitGeneratedNovelConfig: async (generated, expectedConfig, expectedProjectSession, generationRunHandle, persistEffect) => {
+  commitGeneratedNovelConfig: async (generated, expectedConfig, expectedProjectSession, generationRunHandle, persistEffect, aiSources) => {
     const project = get().currentProject
     if (!project || !sameProjectSessionContext(expectedProjectSession, projectSessionContextFromProject(project))
       || JSON.stringify(project.novelConfig) !== JSON.stringify(expectedConfig)) throw new Error('GENERATION_AUTHOR_DRAFT_CHANGED')
@@ -967,7 +973,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (persistEffect) config = (await persistEffect()) ?? generated
     else {
       const result = await ipc.invokeWithProjectSession(expectedProjectSession, 'db:project-core-commit-generated',
-        { data, generationRunHandle }, project.path)
+        { data, aiSources, generationRunHandle }, project.path)
       if (!result.success) throw new Error(result.error || 'GENERATION_FORMAL_COMMIT_FAILED')
     }
     const current = get().currentProject
@@ -982,7 +988,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         if (JSON.stringify(current.novelConfig[key]) === JSON.stringify(expectedConfig[key])) Object.assign(next, { [key]: saved[key] })
       }
     }
-    set({ currentProject: { ...current, novelConfig: next } })
+    set({ currentProject: { ...current, novelConfig: next, ...(aiSources ? { aiSources } : {}) } })
     persistConfigDraftLedger(settleProjectEditorSave(ledger, project.path, saved, next))
     // The formal effect succeeded. A concurrent author edit remains a dirty draft,
     // and callers must not run callbacks that replace it with an older full config.
@@ -1027,6 +1033,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       project.novelConfig,
       nextConfig,
     ))
+  },
+
+  setAiSources: (aiSources, expectedProjectSession) => {
+    const project = get().currentProject
+    if (!project || !sameProjectSessionContext(expectedProjectSession, projectSessionContextFromProject(project))) return
+    set({ currentProject: { ...project, aiSources } })
   },
 
   discardNovelConfigDraft: (projectPath, expectedProjectSession) => {

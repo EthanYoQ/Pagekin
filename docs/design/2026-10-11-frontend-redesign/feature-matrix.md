@@ -36,9 +36,9 @@
 | ID | 功能 | 当前入口 | 前置条件/状态依赖 | 备注 | 新位置（纸墨外壳规范入口；验证截图） |
 |---|---|---|---|---|---|
 | F-015 | 打开小说配置 | panels/sidebar/ProjectTree.tsx:291；panels/sidebar/ProjectTree.tsx:297（右键“打开小说配置”）；panels/EditorArea.tsx:192（打开项目时自动打开） | 已打开项目 | 切换项目时会重新激活该项目的配置标签 | 流程脊「设定」→ 设定页；[RD-10-matrix-setup](review/RD-10-matrix-setup.png) |
-| F-016 | 编辑配置字段：写作语言、类型、细分类型、受众、故事结构、叙事视角、总章数、每章字数 | editor/NovelConfigEditor.tsx:220，editor/NovelConfigEditor.tsx:263，editor/NovelConfigEditor.tsx:305 | 配置标签 | 故事结构、叙事视角带提示（tipItems） | 设定页首屏：核心大纲、类型、篇幅、目标读者，写作语言在大纲卡底；细分类型、故事结构、叙事视角等在「更多设定」；[RD-10-matrix-setup](review/RD-10-matrix-setup.png) |
-| F-017 | 沉寂提醒阈值与“恢复默认值” | editor/NovelConfigEditor.tsx:342，editor/NovelConfigEditor.tsx:358 | 配置标签 | 排在核心大纲之前（UX-03） | 设定页「更多设定 · 高级」：沉寂提醒阈值与恢复默认值；[RD-10-matrix-setup](review/RD-10-matrix-setup.png) |
-| F-018 | 编辑核心大纲、世界观、金手指、主角人设、全局写作要求、文风、参考作品 | editor/NovelConfigEditor.tsx:380，editor/NovelConfigEditor.tsx:456 | 配置标签 | 无 | 设定页核心大纲与「更多设定」里世界观、金手指、主角人设、全局写作要求、文风、参考作品各面板；[RD-10-matrix-setup](review/RD-10-matrix-setup.png) |
+| F-016 | 编辑配置字段：写作语言、类型、细分类型、受众、故事结构、叙事视角、总章数、每章字数 | editor/NovelConfigEditor.tsx:220，editor/NovelConfigEditor.tsx:263，editor/NovelConfigEditor.tsx:305 | 配置标签 | 故事结构、叙事视角带提示（tipItems） | 设定页「基本设定」八项：类型、篇幅、目标读者、叙事视角、故事结构、细分类型、写作语言、伏笔沉寂提醒（#702）；[RD-10-matrix-setup](review/RD-10-matrix-setup.png) |
+| F-017 | 沉寂提醒阈值与“恢复默认值” | editor/NovelConfigEditor.tsx:342，editor/NovelConfigEditor.tsx:358 | 配置标签 | 排在核心大纲之前（UX-03） | 设定页「基本设定」的伏笔沉寂提醒，下方常驻说明写默认值；空着离开回到默认值，不再单设「恢复默认」（#702）；[RD-10-matrix-setup](review/RD-10-matrix-setup.png) |
+| F-018 | 编辑核心大纲、世界观、金手指、主角人设、全局写作要求、文风、参考作品 | editor/NovelConfigEditor.tsx:380，editor/NovelConfigEditor.tsx:456 | 配置标签 | 无 | 设定页「设定细则」六行（主角人设、世界观、金手指、文风、全局写作要求、参考作品）与最后的核心大纲（#702）；[RD-10-matrix-setup](review/RD-10-matrix-setup.png) |
 | F-019 | 单字段“AI 生成”（6 个字段各一个） | editor/NovelConfigEditor.tsx:515 | 配置标签；任一字段生成中时全部禁用 | 字段：:383、:394、:405、:416、:427、:443 | 核心大纲卡与各长字段面板的「AI 生成」；[RD-10-matrix-setup-fill](review/RD-10-matrix-setup-fill.png) |
 | F-020 | AI 填充配置（打开生成配置对话框） | editor/NovelConfigEditor.tsx:205 | 配置标签 | 无 | 设定页底栏「AI 补全其余设定」；[RD-10-matrix-setup-fill](review/RD-10-matrix-setup-fill.png) |
 | F-021 | 生成配置对话框：规模参数、创作脑洞、一键生成；已有内容时二次确认“继续扩写” | dialogs/GenerateConfigDialog.tsx:289；dialogs/GenerateConfigDialog.tsx:270（⌘/Ctrl+Enter）；dialogs/GenerateConfigDialog.tsx:102 | 对话框已打开 | 快捷键只在脑洞输入框内生效 | 「AI 补全其余设定」以核心大纲为脑洞、篇幅为规模；已有作者内容时纸墨确认扩写（不再弹重复的脑洞表单）；[RD-10-matrix-setup-fill](review/RD-10-matrix-setup-fill.png) |

@@ -21,6 +21,7 @@ import {
   isGeneratedGlobalGuidanceValid,
   preserveAuthorText,
 } from '../novel-config-expansion'
+import { recordAiSources } from '../../../shared/novel-config-ai-sources'
 
 /**
  * 支持的单字段生成 Key
@@ -34,7 +35,7 @@ export type GeneratableField =
   | 'globalGuidance'
   | 'writingStyle'
 
-type FieldGenerationInput = Pick<ProjectData, 'name' | 'novelConfig'>
+type FieldGenerationInput = Pick<ProjectData, 'name' | 'novelConfig' | 'aiSources'>
 
 const FIELD_OPERATIONS = {
   coreOutline: 'generate-field:core-outline',
@@ -72,6 +73,7 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
     const expectedInput: FieldGenerationInput = structuredClone({
       name: currentProject.name,
       novelConfig: currentProject.novelConfig,
+      aiSources: currentProject.aiSources,
     })
     return this.executeWithGenerationRuntime('text', params, () => this.executeWithinGeneration(params, expectedInput), {
       authorInputs: [{ id: 'field:author-config', text: JSON.stringify(expectedInput.novelConfig) }],
@@ -199,15 +201,20 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
 
     // updateNovelConfig 是同步操作，此处检查与修改之间不会让出事件循环。
     this.assertNotCancelled(context)
-    const { updateNovelConfig, saveProject } = projectState
+    const { updateNovelConfig, setAiSources, saveProject } = projectState
     const expandedResult = preserveAuthorText(config[this.fieldKey], cleanResult)
+    const written: Partial<NovelConfig> = { [this.fieldKey]: expandedResult }
+    const aiSources = recordAiSources(config, expectedInput.aiSources, written)
     const mainOwned = this.requireGenerationExecution().mainOwned
     let generatedSaved = false
     if (mainOwned) {
       const handle = context.mainGenerationRunHandle
       if (!handle) throw new Error('GENERATION_COMMIT_HANDLE_REQUIRED')
-      generatedSaved = await projectState.commitGeneratedNovelConfig({ [this.fieldKey]: expandedResult }, expectedConfig, projectSession, handle)
-    } else updateNovelConfig({ [this.fieldKey]: expandedResult }, projectSession)
+      generatedSaved = await projectState.commitGeneratedNovelConfig(written, expectedConfig, projectSession, handle, undefined, aiSources)
+    } else {
+      updateNovelConfig(written, projectSession)
+      setAiSources(aiSources, projectSession)
+    }
     if (!sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),

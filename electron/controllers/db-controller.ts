@@ -27,6 +27,7 @@ import { commitAuthorCharacterRoster } from '../services/character-roster-author
 import { readCharacterContinuityTimeline } from '../repositories/character-continuity-repository'
 import { CharacterRosterRepository } from '../repositories/character-roster-repository'
 import type { CharacterRosterCommitRequest } from '../../src/shared/character-roster'
+import type { AiSources } from '../../src/shared/novel-config-ai-sources'
 import type { BlueprintForPreflight } from '../../src/shared/consistency-preflight'
 import { DraftRepository } from '../repositories/draft-repository'
 import { validateEditorInlineInput } from '../services/editor-inline-generation'
@@ -207,7 +208,7 @@ export function registerDatabaseController() {
   })
 
   ipcMain.handle('db:project-core-commit-generated', async (
-    _event, request: { data: Partial<ProjectCoreData>; generationRunHandle: MainGenerationRunHandle }, expectedProjectPath: string,
+    _event, request: { data: Partial<ProjectCoreData>; aiSources?: AiSources; generationRunHandle: MainGenerationRunHandle }, expectedProjectPath: string,
   ) => {
     try {
       assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
@@ -216,6 +217,7 @@ export function registerDatabaseController() {
       database.transaction(() => withGenerationAgentChildEffect(request.generationRunHandle, () => {
         assertGenerationSourcesCurrent(request.generationRunHandle)
         ProjectCoreRepository.update(request.data)
+        if (request.aiSources) ProjectCoreRepository.setAiSources(request.aiSources)
       })).immediate()
       return { success: true }
     } catch (error) { return { success: false, error: String(error) } }

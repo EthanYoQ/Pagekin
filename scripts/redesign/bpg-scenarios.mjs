@@ -51,13 +51,15 @@ async function readChapter(page, chapterNumber) {
   return {
     title: await card.getByRole('textbox', { name: '章节标题' }).inputValue(),
     userGuidance: await card.getByRole('textbox', { name: /^作者微操指导/ }).inputValue(),
-    notes: await card.getByRole('textbox', { name: /^章节要点/ }).inputValue(),
+    notes: await (await blueprint.notesBox(card)).inputValue(),
   }
 }
 
-async function fillAndSave(page, chapterNumber, field, value) {
+const guidanceBox = async card => card.getByRole('textbox', { name: /^作者微操指导/ })
+
+async function fillAndSave(page, chapterNumber, boxOf, value) {
   await blueprint.planItem(page, chapterNumber).click()
-  await chapterCard(page, chapterNumber).getByRole('textbox', { name: field }).fill(value)
+  await (await boxOf(chapterCard(page, chapterNumber))).fill(value)
   await stage.saveStatus(page).getByText('未保存').waitFor({ state: 'visible' })
   await page.keyboard.press('ControlOrMeta+s')
   await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
@@ -66,8 +68,8 @@ async function fillAndSave(page, chapterNumber, field, value) {
 export const BPG_SCENARIOS = {
   'bpg-regenerate-keeps-guidance': { model: true, shell: 'stage', setup: withEmptyAuthorFields, run: async ({ page, fake }) => {
     await blueprint.open(page)
-    await fillAndSave(page, 1, /^章节要点/, NOTES)
-    await fillAndSave(page, 2, /^作者微操指导/, GUIDANCE)
+    await fillAndSave(page, 1, blueprint.notesBox, NOTES)
+    await fillAndSave(page, 2, guidanceBox, GUIDANCE)
     const before = { 1: await readChapter(page, 1), 2: await readChapter(page, 2) }
     assert.deepEqual([before[1].notes, before[2].userGuidance], [NOTES, GUIDANCE], '作者字段在重新生成前已保存')
 
