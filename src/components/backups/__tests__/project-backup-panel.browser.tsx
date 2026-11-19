@@ -34,6 +34,7 @@ const originalLocale = useLocaleStore.getState()
 let container: HTMLDivElement
 let root: Root
 let invoke: ReturnType<typeof vi.fn>
+let listeners: Map<string, (payload: unknown) => void>
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -77,7 +78,12 @@ beforeEach(() => {
   invoke = vi.fn(async (channel: string) => channel === 'cloud-backup:view'
     ? { success: true, state: 'unconfigured', binding: null, account: null }
     : { success: true })
-  Object.defineProperty(window, 'aiNovelAPI', { configurable: true, value: { invoke } })
+  listeners = new Map()
+  const on = vi.fn((channel: string, callback: (payload: unknown) => void) => {
+    listeners.set(channel, callback)
+    return () => { listeners.delete(channel) }
+  })
+  Object.defineProperty(window, 'aiNovelAPI', { configurable: true, value: { invoke, on } })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -92,6 +98,33 @@ afterEach(async () => {
 })
 
 describe('ProjectBackupPanel', () => {
+  it('导出时显示当前阶段，晚到的旧阶段不往回跳，导出结束后不再显示（#702）', async () => {
+    const exported = deferred<unknown>()
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
+      if (channel === 'project:archive-export') return exported.promise
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+    const phase = () => container.querySelector('[data-testid="project-backup-panel"] section [role="status"]')?.textContent
+    const emit = async (value: string) => act(async () => listeners.get('portable-export:progress')?.({ phase: value }))
+
+    await act(async () => button('导出本地存档').click())
+    expect(phase()).toBe('正在读取作品…')
+    await emit('check')
+    expect(phase()).toBe('正在检查资料…')
+    await emit('snapshot')
+    expect(phase()).toBe('正在检查资料…')
+    await emit('package')
+    expect(phase()).toBe('正在打包存档…')
+
+    await act(async () => exported.resolve({ success: true, receipt: { targetSha256: 'export-hash' } }))
+    expect(phase()).toBeUndefined()
+    expect(listeners.has('portable-export:progress')).toBe(false)
+    expect(container.textContent).toContain('export-hash')
+  })
+
   it('restores a local archive with no open project', async () => {
     useProjectStore.setState({ currentProject: null })
     invoke.mockImplementation(async (channel: string) => {
