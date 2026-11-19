@@ -219,7 +219,7 @@ export interface ExportPortableProjectInput {
   projectSession: ProjectSessionContext
   targetArchivePath: string
   attemptParentPath: string
-  /** 调用方在 attemptParentPath 下建好、导出后自己删的目录，直接当临时目录。worker 宿主用它，免得多套一层撞上 Windows 路径长度上限。 */
+  /** 调用方在 attemptParentPath 下建好并负责删除，直接当临时目录；省掉一层嵌套，避免超出 Windows 路径长度上限。 */
   attemptRoot?: string
   assertCurrentContext(context: Readonly<ProjectSessionContext>, sourceProjectRoot: string): boolean | void | Promise<boolean | void>
   assets: PortableAssetProvider
@@ -227,7 +227,7 @@ export interface ExportPortableProjectInput {
   snapshotGeneration?: string
   /** worker 里跑时经主进程取主进程那把锁；默认是本进程的 withKnowledgeSourceGate。 */
   withSourceGate?<T>(projectStorageRoot: string, operation: () => Promise<T>): Promise<T>
-  /** round 从 1 起：资料被改整次重来时是 2，阶段从 snapshot 再走一遍。 */
+  /** round 从 1 起；资料被改而整次重来时加一。 */
   onProgress?(phase: PortableExportPhase, round: number): void
   /** 发布前最后一步，同步调用。worker 里用它和主进程的停止抢提交点：抛错就不发布。 */
   beforePublish?(): void

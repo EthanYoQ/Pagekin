@@ -160,9 +160,9 @@ function ProjectBackupPanelSession({
   const exportLocal = () => run(async () => {
     const target = await ipc.invoke('dialog:select-project-archive-export', project.name)
     if (!target) return
-    // 阶段只是提示：漏收或晚到的旧阶段不往回跳，也不影响导出结果。整次重来时 round 加一，阶段从头显示。
     setExportProgress({ phase: 'snapshot', round: 1 })
     const exportId = crypto.randomUUID()
+    // 阶段只是提示：晚到或漏收的旧阶段不往回跳，也不影响导出结果。
     const stopListening = ipc.on('portable-export:progress', ({ exportId: from, phase, round }) => {
       if (from === exportId) setExportProgress(current => current && progressStep({ phase, round }) <= progressStep(current) ? current : { phase, round })
     })

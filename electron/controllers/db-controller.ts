@@ -173,7 +173,7 @@ export function registerDatabaseController() {
   ipcMain.handle('db:close', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     // 导出 worker 还在读这本书时不能关库；等它停完后作品可能已换或被重新打开，路径和会话都再核对一次。
-    // 导出按会话里的作品根登记，按它停；调用方的拼写在区分大小写的系统上对不上。
+    // 导出登记用的是会话作品根；传入路径的大小写可能与它不同。
     const lease = projectAccess.captureCurrentSession()
     await stopPortableExports(lease?.rootPath ?? getCurrentProjectPath()!)
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
