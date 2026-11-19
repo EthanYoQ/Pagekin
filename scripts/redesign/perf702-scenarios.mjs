@@ -350,7 +350,7 @@ async function timeOnce(context, finalized, round, suffix = '') {
   return { open, blueprints, manuscript, finalChapter }
 }
 
-const RUNNING = '.stage-capsule:not([data-tone="ok"])'
+export const RUNNING = '.stage-capsule:not([data-tone="ok"])'
 
 /** 门关着时点 target，到第一个模型请求卡在门上（模型之前的软件耗时）；放行后等 done() 返回，记总耗时。 */
 async function timeModelAction(context, label, click, done) {
@@ -432,7 +432,7 @@ function draftReply(prompt) {
   return chapterText(Number(task[1] ?? task[2]))
 }
 
-function installReplies(fake) {
+export function installReplies(fake) {
   fake.replyCharacterState(characterStates)
   fake.replyReview(draftReply)
 }
