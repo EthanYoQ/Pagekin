@@ -85,37 +85,51 @@ describe('installIpcSlowCallLog', () => {
     expect(() => invoke('db:slow-broken')).toThrow('ORIGINAL')
   })
 
-  it('事件循环迟到超过阈值时写一行迟到多久和在途的异步通道；回来以后不再算在途', async () => {
+  it('异步处理函数 await 之后又占住主线程、随即结束：迟到那一行记下它', async () => {
+    vi.useFakeTimers()
+    const { register, invoke, lines, elapse } = harness()
+    register('generation:list-recovery', 0, async () => {
+      await Promise.resolve()
+      elapse(EVENT_LOOP_SAMPLE_MS + 330)
+      return 'done'
+    })
+    await expect(invoke('generation:list-recovery')).resolves.toBe('done')
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+    expect(lines).toEqual(['[event-loop-lag] 330ms 期间开始或结束的通道 generation:list-recovery'])
+  })
+
+  it('只在等待、这一段里没开始也没结束的通道不算：长时间的模型调用不会出现在每一行里', async () => {
     vi.useFakeTimers()
     const { register, invoke, lines, elapse } = harness()
     let finish!: (value: string) => void
-    register('generation:list-recovery', 0, () => new Promise<string>(resolve => { finish = resolve }))
-    const answer = invoke('generation:list-recovery')
-
+    register('generation:execute', 0, () => new Promise<string>(resolve => { finish = resolve }))
+    register('db:slow-sync', 0, () => 'ok')
+    const answer = invoke('generation:execute')
     elapse(EVENT_LOOP_SAMPLE_MS)
     vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
-    elapse(EVENT_LOOP_SAMPLE_MS + 450)
+
+    elapse(EVENT_LOOP_SAMPLE_MS + 400)
     vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
-    expect(lines).toEqual(['[event-loop-lag] 450ms 在途 generation:list-recovery'])
+    invoke('db:slow-sync')
+    elapse(EVENT_LOOP_SAMPLE_MS + 250)
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+    expect(lines).toEqual(['[event-loop-lag] 400ms 期间开始或结束的通道 无', '[event-loop-lag] 250ms 期间开始或结束的通道 db:slow-sync'])
 
     finish('done')
     await expect(answer).resolves.toBe('done')
-    elapse(EVENT_LOOP_SAMPLE_MS + 300)
-    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
-    expect(lines.at(-1)).toBe('[event-loop-lag] 300ms 在途 无')
   })
 
-  it('迟到不超过阈值不写；异步处理函数失败后同样不再算在途', async () => {
+  it('迟到不超过阈值不写；失败的异步调用照样按结束算', async () => {
     vi.useFakeTimers()
     const { register, invoke, lines, elapse } = harness()
     register('kb:broken', 0, () => Promise.reject(new Error('KB_DOWN')))
-    await expect(invoke('kb:broken')).rejects.toThrow('KB_DOWN')
-
     elapse(EVENT_LOOP_SAMPLE_MS + IPC_SLOW_CALL_THRESHOLD_MS)
     vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
     expect(lines).toEqual([])
+
+    await expect(invoke('kb:broken')).rejects.toThrow('KB_DOWN')
     elapse(EVENT_LOOP_SAMPLE_MS + 250)
     vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
-    expect(lines).toEqual(['[event-loop-lag] 250ms 在途 无'])
+    expect(lines).toEqual(['[event-loop-lag] 250ms 期间开始或结束的通道 kb:broken'])
   })
 })
