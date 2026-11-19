@@ -9,11 +9,10 @@ import { chapterPhase } from '../../../stores/navigation/stage-progress'
 import { useStageStore, type StageSheet } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
 import type { ReviewEntry } from '../../../services/draft-index'
-import type { ReviewCycleProjection } from '../../../shared/review-cycle'
 import { ipc } from '../../../services/ipc-client'
 import { confirmationSourceReviewId, parseHumanConfirmedReviewSnapshot } from '../../../shared/human-confirmed-review'
 import CodeMirrorEditor, { type AnnotationRevision } from '../../editor/CodeMirrorEditor'
-import { useReviewCycle } from '../../editor/review-checklist'
+import { nextCycleReadSeq, useReviewCycle, type CycleRead } from '../../editor/review-checklist'
 import { useDraftActions } from '../../editor/use-draft-actions'
 import { sameProjectSessionContext } from '../../../shared/project-session-context'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
@@ -28,8 +27,6 @@ import VersionSwitcher from './VersionSwitcher'
 import AnnotationRevisionHistory from './AnnotationRevisionHistory'
 import { pluralEn } from '../../../shared/plural-en'
 
-type ShownCycle = { reviewId: number; cycle: ReviewCycleProjection | null }
-
 /**
  * 这一稿显示哪份审稿与原文：最新一份有复验周期的审稿（确认后的清单按它指向的原审稿算），都没有周期（旧审稿）时取最新一份。
  * 合并后的自动复验另存一份审稿，它没有自己的周期，逐项结果写回原审稿的周期；显示原审稿才看得到复验完成几项与逐项结果。
@@ -37,7 +34,7 @@ type ShownCycle = { reviewId: number; cycle: ReviewCycleProjection | null }
  */
 function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
   const key = reviews.map(review => review.id).join(',')
-  const [report, setReport] = useState<{ key: string; id: number; content: string; cycle?: ShownCycle } | null>(null)
+  const [report, setReport] = useState<{ key: string; id: number; content: string; cycle?: CycleRead } | null>(null)
   useEffect(() => {
     if (reviews.length === 0) return
     const session = captureProjectSession(useProjectStore.getState().currentProject)
@@ -45,17 +42,18 @@ function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
     let cancelled = false
     const live = () => !cancelled && isProjectSessionCurrent(session)
     void (async () => {
-      let shown: { id: number; content: string; cycle?: ShownCycle } | null = null
+      let shown: { id: number; content: string; cycle?: CycleRead } | null = null
       for (const entry of [...reviews].reverse()) {
         // 读不出原文时按空报告处理：动作条照常出现，侧页里没有可勾选的意见，作者可以重新审稿。
         const content = await readDraftBody(formatResourceUri({ kind: 'review', id: entry.id }), projectKey, session).catch(() => '')
         if (!live()) return
         const cycleReviewId = confirmationSourceReviewId(parseHumanConfirmedReviewSnapshot(content), entry.id)
+        const seq = nextCycleReadSeq()
         const cycle = await ipc.invokeWithProjectSession(session, 'db:review-cycle-get', cycleReviewId, session.projectPath).catch(() => undefined)
         if (!live()) return
-        shown ??= { id: entry.id, content, cycle: cycle === undefined ? undefined : { reviewId: cycleReviewId, cycle } }
+        shown ??= { id: entry.id, content, cycle: cycle === undefined ? undefined : { reviewId: cycleReviewId, cycle, seq } }
         if (cycle) {
-          shown = { id: entry.id, content, cycle: { reviewId: cycleReviewId, cycle } }
+          shown = { id: entry.id, content, cycle: { reviewId: cycleReviewId, cycle, seq } }
           break
         }
       }
