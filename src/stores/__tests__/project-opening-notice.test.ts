@@ -55,6 +55,22 @@ describe('打开作品要等一会儿时告诉作者（#702）', () => {
     expect(closeToast).toHaveBeenCalledOnce()
   })
 
+  it('先点的那次先结束，后点的还在等：提示留到后点的那次开完才收起', async () => {
+    answerOpenAfter(3_000)
+    const first = useProjectStore.getState().openProject('C:\\novels\\long')
+    await vi.advanceTimersByTimeAsync(1_000)
+    answerOpenAfter(5_000)
+    const second = useProjectStore.getState().openProject('C:\\novels\\other')
+
+    await vi.advanceTimersByTimeAsync(2_500)
+    await first
+    expect(closeToast).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(2_500)
+    await second
+    expect(closeToast).toHaveBeenCalledOnce()
+  })
+
   it('很快开好的书不弹提示', async () => {
     answerOpenAfter(100)
     await Promise.all([useProjectStore.getState().openProject('C:\\novels\\short'), vi.advanceTimersByTimeAsync(1_000)])

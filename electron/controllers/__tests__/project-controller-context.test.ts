@@ -533,6 +533,23 @@ describe('project controller project identity', () => {
     expect(mocks.initVerified).toEqual([{ verifiedIn: 'worker', projectPath: projectB }])
   })
 
+  it('project:open：worker 校验期间当前这本书又开始导出，换库前也要等它停完', async () => {
+    let verified!: (value: unknown) => void
+    mocks.verifyCanonicalProjectData.mockImplementationOnce(() => new Promise(resolve => { verified = resolve }))
+    const opening = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-export-during-verify', projectA)
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    let stopped!: () => void
+    mocks.stopPortableExports.mockImplementationOnce(() => new Promise<void>(resolve => { stopped = resolve }))
+    verified({ verifiedIn: 'worker', projectPath: projectB })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(mocks.stopPortableExports).toHaveBeenLastCalledWith(projectA)
+    expect(mocks.initCalls).toEqual([])
+    stopped()
+    await expect(opening).resolves.toMatchObject({ success: true, activeProjectPath: projectB })
+    expect(mocks.initCalls).toEqual([projectB])
+  })
+
   it('project:open：worker 校验期间又打开了别的书，这次作废，不换库', async () => {
     let verified!: (value: unknown) => void
     mocks.verifyCanonicalProjectData.mockImplementationOnce(() => new Promise(resolve => { verified = resolve }))
