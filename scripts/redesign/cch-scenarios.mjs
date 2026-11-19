@@ -177,8 +177,6 @@ export const CCH_SCENARIOS = {
   } },
 }
 
-// #702 报错文案：导出遇到坏掉的孤儿头像、审稿时前文超过 8 MiB，作者看到的是原因而不是原码。
-/** 插一张没归到任何角色的旧头像，文件内容和库里记的哈希对不上（等同文件坏了）。 */
 function addDamagedOrphanAvatar(projectRoot) {
   const relativePath = `avatars/${'a'.repeat(64)}/${'0'.repeat(20)}-${'b'.repeat(64)}.png`
   const file = path.join(projectRoot, '.ai-novel', ...relativePath.split('/'))
@@ -253,7 +251,6 @@ Object.assign(CCH_SCENARIOS, {
   } },
 })
 
-/** 从本地存档恢复：两次选择框依次答存档文件和副本所在文件夹，等红字。 */
 async function restoreOnce(context, archive, parent, expected) {
   const { app, page } = context
   await app.evaluate(({ dialog }, answers) => {

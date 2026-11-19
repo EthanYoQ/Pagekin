@@ -475,7 +475,6 @@ const ARCHIVE_FAILURE_KEYS = {
   },
 } as const satisfies Record<'export' | 'restore', Record<string, MessageKey>>
 
-/** 导出、云备份打包与恢复失败时给作者看的说明；坏审修循环带着定位时指明章节。 */
 export function archiveFailureMessage(
   locale: ErrorDisplayLocale, operation: keyof typeof ARCHIVE_FAILURE_KEYS, code: string, damaged?: DamagedReviewCycle,
 ): string {
