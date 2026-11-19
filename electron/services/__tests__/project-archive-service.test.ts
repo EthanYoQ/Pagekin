@@ -431,6 +431,53 @@ describe('portable project export service', () => {
     expect(fs.readdirSync(f.attemptParent)).toEqual([])
   })
 
+  describe('导出中途失败，临时目录不留作品内容（#744）', () => {
+    afterEach(() => { vi.restoreAllMocks() })
+
+    it('源库快照失败：已预留的快照文件和临时目录都删掉', async () => {
+      const f = fixture()
+      seedProject(f)
+      vi.spyOn(Database.prototype, 'backup').mockRejectedValue(new Error('SQLITE_IOERR'))
+
+      await expect(exportPortableProject(input(f))).rejects.toThrow('SQLITE_IOERR')
+      expect(fs.readdirSync(f.attemptParent)).toEqual([])
+    })
+
+    it('写临时文件写到一半磁盘满：写了一半的文件和临时目录都删掉', async () => {
+      const f = fixture()
+      seedProject(f)
+      const writeFileSync = fs.writeFileSync.bind(fs)
+      vi.spyOn(fs, 'writeFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, data: unknown, ...rest: unknown[]) => {
+        if (typeof file !== 'number') return (writeFileSync as (...args: unknown[]) => void)(file, data, ...rest)
+        fs.writeSync(file, Buffer.from('写了一半'))
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+      }) as typeof fs.writeFileSync)
+
+      await expect(exportPortableProject(input(f))).rejects.toThrow('ENOSPC')
+      expect(fs.readdirSync(f.attemptParent)).toEqual([])
+    })
+  })
+
+  it('资料文件逐个拷进导出临时目录，不整份留在内存里交给打包', async () => {
+    const f = fixture()
+    fs.mkdirSync(path.join(f.storage, 'prompts'))
+    fs.writeFileSync(path.join(f.storage, 'prompts', '章节.json'), '{"提示":"保持雨夜"}')
+    const real = createPortableProjectAssetProvider()
+    let seen: PortableProvidedFile | undefined
+    const assets: ExportPortableProjectInput['assets'] = {
+      async snapshot(request) {
+        const result = await real.snapshot(request)
+        seen = result.files.find(file => file.archivePath === 'prompts/章节.json')
+        return result
+      },
+    }
+
+    await exportPortableProject(input(f, assets))
+    expect(seen).toBeDefined()
+    expect(seen!.bytes).toBeUndefined()
+    expect(path.relative(f.attemptParent, String((seen as { stagedPath?: string }).stagedPath)).startsWith('.pe-')).toBe(true)
+  })
+
   it('rejects an export whose combined frozen history cannot be read back', async () => {
     const f = fixture()
     seedProject(f)

@@ -8,7 +8,7 @@ import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema
 import { ensureBaselineBlueprintTables } from '../../migrations/baseline-blueprint-schema'
 import { sqliteSchemaFingerprint } from '../../migrations/sqlite-schema-adapter'
 import { logicalTableName } from '../../migrations/m07-chapter-recycle'
-import { backupProjectSqlite, openProjectSqlite, probeProjectSqlite, verifyProjectSqlite, upgradeProjectSqlite } from '../sqlite-project-migration'
+import { backupProjectSqlite, openProjectSqlite, probeProjectSqlite, snapshotProjectSqlite, verifyProjectSqlite, upgradeProjectSqlite } from '../sqlite-project-migration'
 import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
 import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
 import { CharacterRosterRepository } from '../../repositories/character-roster-repository'
@@ -600,5 +600,24 @@ describe('备份当前版本的书，审修循环照旧按通道校验（#702）
     f.db.close()
     await expect(backupOf(f, 'strict')).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
     await expect(backupOf(f, 'no-new-failures')).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
+  })
+})
+
+describe('导出的源库快照只取打开时那本书（#744）', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('预留快照文件到打开源库之间，源库被换成另一本书的库：拒绝，不把那本书拷进快照', async () => {
+    const f = fixture(), other = fixture()
+    other.db.prepare("UPDATE project_core SET project_name='另一本书' WHERE id='main'").run()
+    f.db.close(); other.db.close()
+    const target = path.join(f.root, 'snapshot.db')
+    const openSync = fs.openSync.bind(fs)
+    vi.spyOn(fs, 'openSync').mockImplementation(((file: fs.PathLike, ...rest: unknown[]) => {
+      if (path.resolve(String(file)) === path.resolve(target) && fs.existsSync(other.source)) fs.renameSync(other.source, f.source)
+      return (openSync as (...args: unknown[]) => number)(file, ...rest)
+    }) as typeof fs.openSync)
+
+    await expect(snapshotProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: target }))
+      .rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED')
   })
 })
