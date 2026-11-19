@@ -753,8 +753,105 @@ async function blockControls(context) {
   return results
 }
 
+/**
+ * 112 章书导出本地存档：总耗时、主进程最长停顿、渲染端每 20 ms 一次轻量 IPC 的最长往返（作者能感到的卡）。
+ * writes 为真时导出期间每 150 ms 保存一次第 finalized+1 章草稿，记成功次数（边写边导）。
+ */
+/** 等界面打开作品后的后台读取跑完：连续 quietMs 没有新的 invoke 才返回，免得把它们的主进程占用算进导出。 */
+async function waitForQuietIpc(app, quietMs = 2_000, deadlineMs = 60_000) {
+  const total = () => app.evaluate(() => Object.values(globalThis.__perfLedger.channels).reduce((sum, entry) => sum + entry.calls, 0))
+  const deadline = Date.now() + deadlineMs
+  let last = await total(), since = Date.now()
+  while (Date.now() - since < quietMs) {
+    assert.ok(Date.now() < deadline, `${deadlineMs} ms 内界面一直在调主进程`)
+    await new Promise(resolve => setTimeout(resolve, 250))
+    const now = await total()
+    if (now !== last) { last = now; since = Date.now() }
+  }
+}
+
+async function timeExport(context, finalized, { rounds = Number(process.env.PERF702_ROUNDS ?? 1), writes = false } = {}) {
+  const { app, page, roots, invoke } = context
+  await installLedger(app, page)
+  await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(page).isVisible()) await stage.openFromLibrary(page, BOOK)
+  await stage.spine(page).waitFor({ state: 'visible', timeout: 60_000 })
+  const session = await app.evaluate(() => globalThis.__perfSession?.session)
+  assert.ok(session?.leaseId, '记下了界面打开作品的会话')
+  const draft = writes ? await invoke(page, 'db:draft-create', { chapterNumber: finalized + 1, version: 1, source: 'write',
+    content: chapterMarker(finalized + 1), wordCount: 10 }, session.projectPath, session) : null
+  if (writes) assert.equal(draft.success, true, draft.error)
+  const runs = []
+  for (let round = 1; round <= rounds; round++) {
+    const archive = path.join(roots.projects, `export-${round}-${randomUUID()}.ainovel`)
+    await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
+    const grant = await invoke(page, 'dialog:select-project-archive-export', BOOK)
+    await waitForQuietIpc(app)
+    runs.push(await operation(context, `${finalized}-export-r${round}${writes ? '-writing' : ''}`, async () => {
+      const result = await page.evaluate(async ({ grantId, session, draftId, writes }) => {
+        let done = false, saves = 0, saveFailures = 0, probes = 0, probeMaxMs = 0
+        const probe = (async () => {
+          while (!done) {
+            const startedAt = performance.now()
+            await window.aiNovelAPI.invoke('config:get')
+            probeMaxMs = Math.max(probeMaxMs, performance.now() - startedAt)
+            probes += 1
+            await new Promise(resolve => setTimeout(resolve, 20))
+          }
+        })()
+        const writer = (async () => {
+          while (writes && !done) {
+            const saved = await window.aiNovelAPI.invoke('db:draft-update-content', draftId, `边写边导第 ${saves + saveFailures + 1} 次保存。`, 12, session.projectPath, session)
+            if (saved?.success) saves += 1
+            else saveFailures += 1
+            await new Promise(resolve => setTimeout(resolve, 150))
+          }
+        })()
+        const startedAt = performance.now()
+        const exported = await window.aiNovelAPI.invoke('project:archive-export', { targetArchiveGrantId: grantId, projectSession: session })
+        const totalMs = Math.round(performance.now() - startedAt)
+        done = true
+        await Promise.all([probe, writer])
+        return { totalMs, success: exported.success, errorCode: exported.success ? undefined : exported.errorCode ?? exported.error,
+          sha256: exported.success ? exported.receipt.targetSha256 : undefined, probes, probeMaxMs: Math.round(probeMaxMs),
+          ...writes ? { saves, saveFailures } : {} }
+      }, { grantId: grant.grantId, session, draftId: draft?.id, writes })
+      return { ...result, archiveExists: fs.existsSync(archive), leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
+    }))
+  }
+  return { finalized, runs }
+}
+
+/** 从备份页点「导出本地存档」：读取作品和打包两个阶段各截一张，导出完再截一张。 */
+async function exportPhases(context) {
+  const { app, page, roots, shoot } = context
+  await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(page).isVisible()) await stage.openFromLibrary(page, BOOK)
+  await stage.openSettings(page)
+  await stage.showSettingsPage(page, '项目备份')
+  const archive = path.join(roots.projects, `phases-${randomUUID()}.ainovel`)
+  await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
+  const panel = stage.root(page).getByTestId('project-backup-panel')
+  await panel.getByRole('button', { name: '导出本地存档', exact: true }).click()
+  const seen = []
+  for (const [phase, label] of [['snapshot', '正在读取作品…'], ['package', '正在打包存档…']]) {
+    await panel.getByRole('status').filter({ hasText: label }).waitFor({ state: 'visible', timeout: 120_000 })
+    seen.push(phase)
+    await shoot(`export-phase-${phase}`)
+  }
+  await panel.locator('p[role="status"]').filter({ hasText: /^本地存档已导出：[0-9a-f]{64}$/u }).waitFor({ state: 'visible', timeout: 120_000 })
+  assert.equal(await panel.getByRole('status').filter({ hasText: /^正在/u }).count(), 0, '导出完不再显示阶段')
+  return { seen, archiveExists: fs.existsSync(archive), leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
+}
+
 export const PERF702_SCENARIOS = {
+  'perf702-export-phases': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
+    run: exportPhases },
   'perf702-block-control': { model: true, shell: 'stage', run: blockControls },
+  'perf702-export': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
+    run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
+  'perf702-export-writing': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
+    run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112), { writes: true }) },
   'perf702-reuse': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
     run: context => timeLargeBook(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
   'perf702-contention': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
