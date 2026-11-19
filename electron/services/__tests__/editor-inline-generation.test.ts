@@ -45,7 +45,8 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch']) {
   cleanup.push(() => { owner.suspendForProjectClose(); db.close(); fs.rmSync(root, { recursive: true, force: true }) })
   const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, '.ai-novel', 'project.db')); admitGenerationLedger(db); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
   return {get db(){return db},deps,owner,spy,reopenStorage,changeTemplate:()=>{templateBody='后来模板 {{selected_text}}'},removeModel:()=>{model=null},
-    setContextWindow:(tokens:number)=>{model={...model!,capabilities:{...model!.capabilities!,contextWindowTokens:tokens}}}}
+    setContextWindow:(tokens:number)=>{model={...model!,capabilities:{...model!.capabilities!,contextWindowTokens:tokens}}},
+    useLocalModelWithoutWindow:()=>{const { contextWindowTokens: _unset, ...capabilities } = model!.capabilities!; model={...model!,provider:'ollama',baseUrl:'http://127.0.0.1:11434/v1',apiKey:'',capabilities}}}
 }
 
 import { createHash } from 'node:crypto'
@@ -359,6 +360,15 @@ it('模型窗口小时可选材料按固定顺序被裁（先线索后人物）�
  const binding = JSON.parse(f.db.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(both.view.handle.runId) as string)
  const widerModel = { ...binding.sourceManifest.modelReceipt, capabilityEvidence: { ...binding.sourceManifest.modelReceipt.capabilityEvidence, contextWindowTokens: 200000 } }
  expect(rebuildGenerationSourceBinding(f.deps, binding, 'epoch-3', widerModel).binding.sourceManifest.editorInlineContext).toEqual(binding.sourceManifest.editorInlineContext)
+})
+it('本机模型没填窗口时按写正文同一份额度（本机默认窗口）裁可选材料，不按通用默认窗口多塞', async () => {
+ const f = fixture(replying('钥匙在石缝里。', 'stop'))
+ f.useLocalModelWithoutWindow()
+ const recovery = f.owner.beginEditorInline(continued(chapterContext([block('style', 'STYLE_SENTINEL', true), block('blueprint', 'BLUEPRINT_SENTINEL', true),
+  block('characters', 'CHARACTER_SENTINEL', false), block('threads', `THREAD_SENTINEL${'线'.repeat(3000)}`, false)])))
+ expect(recovery.context.materials?.omitted).toEqual([{ kind: 'threads', reason: 'budget' }])
+ await f.owner.executeEditorInline(recovery.view.handle)
+ expect(userOf(f)).toContain('CHARACTER_SENTINEL')
 })
 it('某个人物或线索读不出时只略去该块并记进运行记录，生成照常', async () => {
  const f = fixture(replying('钥匙在石缝里。', 'stop'))
