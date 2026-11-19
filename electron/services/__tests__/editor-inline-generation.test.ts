@@ -345,17 +345,20 @@ it('章内续写把选区前的本章正文和本章蓝图放在模板段之前�
   expect(user.indexOf(expected), expected).toBeLessThan(template)
  }
 })
-it('选区后面还有本章正文时，续写规则要求接上它、不与它矛盾；选区在章末时不提', async () => {
+it('选区后面还有本章正文时，续写规则与末尾提醒点名后文第一句作为停止点、不与后文矛盾；选区在章末时不提', async () => {
  const f = fixture(replying('钥匙在石缝里。', 'stop'))
  const systemOf = () => (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
  await f.owner.executeEditorInline(f.owner.beginEditorInline(continued()).view.handle)
- expect(systemOf()).toContain('不能与它矛盾')
+ expect(systemOf()).toContain('后文第一句是「门后是长廊。」。续写停在这句之前')
+ expect(systemOf()).toContain('不能与后文矛盾')
+ expect(userOf(f).endsWith('（提醒：续写停在后文第一句「门后是长廊。」之前。不换地方，不写后文和蓝图里后面的事；写一到两段，不超过选中正文的两倍长。）')).toBe(true)
  const atEnd = { modelId: 'synthetic', uiActionNonce: '章末续写', input: { action: 'continue' as const, documentText: chapterDoc.slice(0, selFrom + sel.length),
   from: selFrom, to: selFrom + sel.length, selectedText: sel, chapterContext: chapterContext() } as never }
  await f.owner.executeEditorInline(f.owner.beginEditorInline(atEnd).view.handle)
- expect(systemOf()).not.toContain('不能与它矛盾')
+ expect(systemOf()).not.toContain('后文')
+ expect(userOf(f)).not.toContain('提醒')
 })
-it('后文太长只摘开头时，材料标明后面还有，续写规则要求写到后文开头能接上为止', async () => {
+it('后文太长只摘开头时，材料标明后面还有，续写规则仍以后文第一句为停止点', async () => {
  const f = fixture(replying('钥匙在石缝里。', 'stop'))
  const systemOf = () => (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
  const longDoc = `${chapterDoc}${'两人走到地下室楼梯口。'.repeat(80)}陈默在第一步前停下。`
@@ -364,7 +367,7 @@ it('后文太长只摘开头时，材料标明后面还有，续写规则要求�
  const user = userOf(f), after = user.slice(user.indexOf('【选中正文之后的本章正文】'))
  expect(after).not.toContain('陈默在第一步前停下')
  expect(after).toContain('后面还有')
- expect(systemOf()).toContain('写到后文开头能直接接上为止')
+ expect(systemOf()).toContain('后文第一句是「门后是长廊。」')
  await f.owner.executeEditorInline(f.owner.beginEditorInline(continued(chapterContext(), '短后文续写')).view.handle)
  expect(userOf(f)).not.toContain('后面还有')
 })
