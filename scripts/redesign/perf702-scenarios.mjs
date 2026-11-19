@@ -724,6 +724,9 @@ export const PERF702_SCENARIOS = {
         assert.equal(reopened.success, true, reopened.error)
         return { totalMs: Math.round(performance.now() - startedAt) }
       })
+      // 直接调 project:open 换了会话，渲染端要重载才认新会话（同 reuseBuilt）。
+      await context.reload()
+      await stage.spine(context.page).or(stage.cover(context.page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
       return { opened, results, closed, quiesced, switched }
     } },
   'perf702-blueprints': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 0); await context.restart() },
