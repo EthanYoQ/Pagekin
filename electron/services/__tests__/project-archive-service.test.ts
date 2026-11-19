@@ -517,6 +517,25 @@ describe('portable project export service', () => {
       expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"导出期间改的"}')
     })
 
+    it('第一次导出途中库文件被换成另一本书、资料又被改：重来时拒绝，不发布另一本书的内容', async () => {
+      const f = fixture()
+      seedProject(f)
+      const file = prompt(f, '{"提示":"快照时"}')
+      const other = fixture()
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      let replaced = false
+
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: { afterPortableDatabaseCreated: () => {
+        if (replaced) return
+        replaced = true
+        replaceAtomically(file, '{"提示":"导出期间改的"}')
+        fs.renameSync(f.databasePath, path.join(f.base, '原书.db'))
+        fs.copyFileSync(other.databasePath, f.databasePath)
+      } } }))).rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED')
+      expect(fs.existsSync(f.target)).toBe(false)
+      expect(fs.readdirSync(f.attemptParent)).toEqual([])
+    })
+
     it('别的程序在读资料途中原地改写同样大小的内容、又把修改时间改回去：存档里是完整的新内容，不是新旧混合', async () => {
       const f = fixture()
       const size = 3 * 1024 * 1024
