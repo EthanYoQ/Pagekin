@@ -36,7 +36,8 @@ function IssueCard({ item, checklist, onEdit }: {
   const text = useLocaleStore(s => s.text)
   const [editing, setEditing] = useState(item.origin === 'author')
   const copy = severityCopy(item.severity, text)
-  const readOnly = item.severity === 'pass' || checklist.cycle?.restoredHistory === true
+  const isPass = item.severity === 'pass'
+  const readOnly = isPass || checklist.cycle?.restoredHistory === true
   const showFields = editing && !readOnly
   const finding = checklist.cycle?.findings.find(candidate => item.findingId
     ? candidate.findingId === item.findingId
@@ -54,9 +55,9 @@ function IssueCard({ item, checklist, onEdit }: {
   )
   return (
     <div className="stage-ch-issue" data-on={!readOnly && item.decision === 'apply'} data-severity={item.severity}>
-      {readOnly
+      {isPass || readOnly && !checklist.confirmed
         ? <div className="stage-ch-issue-pass">{body}</div>
-        : <Check checked={item.decision === 'apply'} onChange={checked => onEdit({ decision: checked ? 'apply' : 'ignore' })} label={body} />}
+        : <Check checked={item.decision === 'apply'} disabled={readOnly} onChange={checked => onEdit({ decision: checked ? 'apply' : 'ignore' })} label={body} />}
       {showFields && (
         <div className="stage-ch-issue-fields">
           <div className="stage-ch-issue-row">
