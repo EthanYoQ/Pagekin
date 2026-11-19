@@ -257,6 +257,20 @@ describe('封存的根整根不当证据：引用它的循环留在存档外并�
       expect(restored.prepare('SELECT COUNT(*) FROM review_cycles').pluck().get()).toBe(1)
     } finally { restored.close() }
   })
+
+  it.each([
+    ['目标在作品目录内', 'PORTABLE_TARGET_INSIDE_SOURCE', (input: ExportPortableProjectInput) => ({ ...input, targetArchivePath: path.join(projectRoot, 'backup.ainovel') })],
+    ['会话已不是当前作品', 'PORTABLE_CONTEXT_INVALID', (input: ExportPortableProjectInput) => ({ ...input, assertCurrentContext: () => false })],
+  ] as const)('%s：导出被拒，静止树里读不出的绑定不被封存', async (_label, code, reject) => {
+    reviewedBook({ finalized: true })
+    db().exec(SEALED_ROOT_DAMAGES.find(([label]) => label === '带尝试的兄弟运行读不出')![1])
+    db().prepare("UPDATE generation_roots SET action_json=json_set(action_json,'$.status','paused')").run()
+    reopen()
+    const blocked = () => db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-review-ch2'").pluck().get()
+
+    await expect(exportPortableProject(reject(exportInput()))).rejects.toThrow(code)
+    expect(blocked()).toBeNull()
+  })
 })
 
 describe('有坏审修循环的书照常导出，坏循环留在存档外并指明章节（ADR-0029，#702）', () => {
