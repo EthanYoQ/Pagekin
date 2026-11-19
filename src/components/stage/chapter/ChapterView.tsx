@@ -10,9 +10,10 @@ import { useStageStore, type StageSheet } from '../../../stores/navigation/stage
 import { useProjectStore } from '../../../stores/project-store'
 import type { ReviewEntry } from '../../../services/draft-index'
 import { ipc } from '../../../services/ipc-client'
+import type { ReviewCycleProjection } from '../../../shared/review-cycle'
 import { confirmationSourceReviewId, parseHumanConfirmedReviewSnapshot } from '../../../shared/human-confirmed-review'
 import CodeMirrorEditor, { type AnnotationRevision } from '../../editor/CodeMirrorEditor'
-import { nextCycleReadSeq, useReviewCycle, type CycleRead } from '../../editor/review-checklist'
+import { reviewSession } from '../../editor/review-checklist'
 import { useDraftActions } from '../../editor/use-draft-actions'
 import { sameProjectSessionContext } from '../../../shared/project-session-context'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
@@ -27,14 +28,16 @@ import VersionSwitcher from './VersionSwitcher'
 import AnnotationRevisionHistory from './AnnotationRevisionHistory'
 import { pluralEn } from '../../../shared/plural-en'
 
+interface ShownReview { key: string; id: number; content: string; cycle: ReviewCycleProjection | null }
+
 /**
  * 这一稿显示哪份审稿与原文：最新一份有复验周期的审稿（确认后的清单按它指向的原审稿算），都没有周期（旧审稿）时取最新一份。
  * 合并后的自动复验另存一份审稿，它没有自己的周期，逐项结果写回原审稿的周期；显示原审稿才看得到复验完成几项与逐项结果。
- * 审稿记录变化时重读。读周期失败时不带 cycle，动作条自己再读。
+ * 审稿记录或 refreshKey 变化时重读。某份审稿的周期读失败就停，不往更旧的找：先前显示的正是这一份就原样留着，否则显示最新一份、不带周期。
  */
-function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
+function useShownReview(reviews: readonly ReviewEntry[], projectKey: string, refreshKey: string) {
   const key = reviews.map(review => review.id).join(',')
-  const [report, setReport] = useState<{ key: string; id: number; content: string; cycle?: CycleRead } | null>(null)
+  const [report, setReport] = useState<ShownReview | null>(null)
   useEffect(() => {
     if (reviews.length === 0) return
     const session = captureProjectSession(useProjectStore.getState().currentProject)
@@ -42,25 +45,29 @@ function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
     let cancelled = false
     const live = () => !cancelled && isProjectSessionCurrent(session)
     void (async () => {
-      let shown: { id: number; content: string; cycle?: CycleRead } | null = null
+      let shown: Omit<ShownReview, 'key'> | null = null
       for (const entry of [...reviews].reverse()) {
         // 读不出原文时按空报告处理：动作条照常出现，侧页里没有可勾选的意见，作者可以重新审稿。
         const content = await readDraftBody(formatResourceUri({ kind: 'review', id: entry.id }), projectKey, session).catch(() => '')
         if (!live()) return
         const cycleReviewId = confirmationSourceReviewId(parseHumanConfirmedReviewSnapshot(content), entry.id)
-        const seq = nextCycleReadSeq()
         const cycle = await ipc.invokeWithProjectSession(session, 'db:review-cycle-get', cycleReviewId, session.projectPath).catch(() => undefined)
         if (!live()) return
-        shown ??= { id: entry.id, content, cycle: cycle === undefined ? undefined : { reviewId: cycleReviewId, cycle, seq } }
+        if (cycle === undefined) {
+          const fallback = shown ?? { id: entry.id, content, cycle: null }
+          setReport(previous => previous?.id === entry.id ? { ...previous, key } : { key, ...fallback })
+          return
+        }
+        shown ??= { id: entry.id, content, cycle }
         if (cycle) {
-          shown = { id: entry.id, content, cycle: { reviewId: cycleReviewId, cycle, seq } }
+          shown = { id: entry.id, content, cycle }
           break
         }
       }
-      if (shown) setReport({ key: reviews.map(review => review.id).join(','), ...shown })
+      if (shown) setReport({ key, ...shown })
     })()
     return () => { cancelled = true }
-  }, [reviews, projectKey])
+  }, [reviews, key, projectKey, refreshKey])
   return report?.key === key ? report : null
 }
 
@@ -98,10 +105,10 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   const draft = useDraftActions({ tabId: tab.id, filePath, content: tab.content ?? '', projectKey })
   const chapterNumber = draft.meta?.chapterNumber ?? tab.chapterNumber
   const { blueprint } = useChapterBlueprint(chapterNumber, projectKey)
-  const latest = useShownReview(draft.reviews, projectKey)
-  const review = useReviewCycle({ reportText: latest?.content ?? '', reviewId: latest?.id, projectKey, firstRead: latest?.cycle,
-    // 复验完成时新增一份审稿而显示的仍是原审稿，审稿记录也算进来，周期随之重读。
-    refreshKey: `${draft.status}:${draft.pendingRevisions.map(revision => revision.id).join(',')}:${draft.reviews.map(entry => entry.id).join(',')}` })
+  const latest = useShownReview(draft.reviews, projectKey,
+    // 修稿生成、合并提交会改审修循环而审稿报告不变，周期随之重读。
+    `${draft.status}:${draft.pendingRevisions.map(revision => revision.id).join(',')}`)
+  const review = reviewSession(latest?.content ?? '', latest?.id, projectKey)
   const [charCount, setCharCount] = useState(() => countDraftUnits(tab.content ?? ''))
   const [annotationHistoryRevision, setAnnotationHistoryRevision] = useState(0)
   // 沉浸写作底部的字数进度，目标取设定里的每章字数。
@@ -115,7 +122,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     ? s.chapterFacts.byDraft[draft.meta.id]
     : undefined)
   // 数据没读全就摆动作条会闪别的主按钮，还会重置清单状态。
-  const reviewReady = draft.loaded && (draft.reviews.length === 0 || latest !== null && review.cycleLoaded)
+  const reviewReady = draft.loaded && (draft.reviews.length === 0 || latest !== null)
   const stage = draft.loaded && draft.meta
     ? draft.status === 'archived' || draft.status === 'superseded' ? draft.status : chapterPhase(draft.status, facts)
     : null
@@ -190,7 +197,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
               title={title}
               draft={draft}
               facts={facts}
-              review={latest ? { report: latest.content, reviewId: latest.id, snapshot: review.snapshot, cycle: review.cycle, reloadCycle: review.reloadCycle } : null}
+              review={latest ? { report: latest.content, reviewId: latest.id, snapshot: review.snapshot, cycle: latest.cycle } : null}
               focus={focus}
               annotation={annotationRevision}
               switching={switching}

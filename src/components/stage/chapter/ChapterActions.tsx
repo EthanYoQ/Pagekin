@@ -54,7 +54,6 @@ interface LatestReview {
   reviewId: number
   snapshot: HumanConfirmedReviewSnapshot | null
   cycle: ReviewCycleProjection | null
-  reloadCycle: () => Promise<ReviewCycleProjection | null>
 }
 
 type Ask = 'refine' | 'finalize' | 'delete' | 'discard' | 'reopen' | null
@@ -99,7 +98,6 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
     projectKey,
     initialSnapshot: review?.snapshot ?? null,
     cycle: review?.cycle ?? null,
-    reloadCycle: review?.reloadCycle ?? (async () => null),
   })
   const dims = reviewDimensions(text)
   const [checkedDims, setCheckedDims] = useState<Record<string, boolean>>(() => Object.fromEntries(dims.map(dim => [dim.key, true])))
