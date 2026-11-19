@@ -28,6 +28,16 @@ export interface OpenGenerationRunRequest extends RunBinding {
     budget: RootBudget;
     parentRootActionId?: string;
 }
+export interface RunIdentity {
+    runId: string;
+    rootActionId: string;
+    status: string;
+    projectId: string | undefined;
+    epoch: string | undefined;
+    operation: string | undefined;
+    batchId: string | null;
+    batchRoot: boolean;
+}
 export interface DurableGenerationRun {
     runId: string;
     rootActionId: string;
@@ -144,6 +154,28 @@ export class GenerationRunRepository {
             if (isLedgerUnreadable(error)) return undefined;
             throw error;
         }
+    }
+    /**
+     * 列举用的身份，按主键只取五个字段：审稿绑定动辄几百 KB，整条读进 JS 解析要慢几倍。
+     * 绑定读不出或根被封存时为 undefined；读得出但缺字段（如导出时中性化成 {} 的历史）照常返回，由调用方按作品号筛掉。
+     */
+    runIdentity(runId: string): RunIdentity | undefined {
+        let row: { rootActionId: string; status: string; identity: string | null } | undefined;
+        try {
+            row = this.db().prepare(`SELECT root_action_id AS rootActionId, status, json_extract(CASE WHEN typeof(binding_json)='text' AND instr(binding_json,char(0))=0 THEN binding_json END,
+                '$.projectId','$.epoch','$.sourceManifest.operation','$.sourceManifest.batchId','$.sourceManifest.batchIntent') AS identity FROM generation_runs WHERE run_id=?`).get(runId) as typeof row;
+        }
+        catch (error) {
+            if (error instanceof Error && /malformed JSON/u.test(error.message)) return undefined;
+            throw error;
+        }
+        if (!row || this.sealed(row.rootActionId)) return undefined;
+        const [projectId, epoch, operation, batchId, batchIntent] = JSON.parse(row.identity ?? '[]') as unknown[];
+        // 取不到作品号的少见：再判一次可读，分开「读不出」和「读得出但缺字段」。每条都判要把几百 KB 的绑定多解析一遍。
+        if (typeof projectId !== 'string' && !this.db().prepare(`SELECT ${readableLedgerJson('binding_json')} FROM generation_runs WHERE run_id=?`).pluck().get(runId)) return undefined;
+        const text = (value: unknown) => typeof value === 'string' ? value : undefined;
+        return { runId, rootActionId: row.rootActionId, status: row.status, projectId: text(projectId), epoch: text(epoch), operation: text(operation),
+            batchId: text(batchId) ?? null, batchRoot: Boolean(batchIntent) };
     }
     /**
      * 某种操作的运行：身份对上、根没封存的，加上身份读不出、按主键读绑定认得出是这种操作（和这个作品）的。

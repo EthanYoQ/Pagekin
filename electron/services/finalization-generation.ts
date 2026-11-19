@@ -5,8 +5,8 @@ import type { FinalizedCharacterArtifact } from '../../src/shared/finalized-char
 import type { MainGenerationRunHandle } from '../../src/services/generation/generation-runtime'
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
 import { GenerationRunRepository, textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
-import { inNonceChain, runIndexOf } from '../repositories/generation-run-index'
-import { finalizationSlotKey, readFinalizationGenerationContext, finalizationNotesBaseline } from './finalization-generation-source'
+import { runIndexOf } from '../repositories/generation-run-index'
+import { finalizationSlotClick, finalizationSlotKey, readFinalizationGenerationContext, finalizationNotesBaseline } from './finalization-generation-source'
 import { SummaryRepository } from '../repositories/summary-repository'
 import { BlueprintRepository } from '../repositories/blueprint-repository'
 import { parseDependencies } from '../repositories/draft-repository'
@@ -35,7 +35,8 @@ export class FinalizationGeneration {
   find(slot: FinalizationGenerationSlot): DurableGenerationRun | undefined {
     const key = finalizationSlotKey(slot), nonce = `finalization:${key}`
     if (this.runs.sealedClaims(click => click.projectId === this.projectId && (click.uiActionNonce === nonce || click.uiActionNonce.startsWith(`${nonce}:retry:`)))) throw new Error('GENERATION_LEDGER_UNREADABLE')
-    const { hits, unidentified } = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && inNonceChain(nonce)(click))
+    const slotClick = finalizationSlotClick(slot)
+    const { hits, unidentified } = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && slotClick(click))
     // 点击号读不出的运行认不出是不是前驱，按主键读它的绑定，是这个槽位的就报冲突。
     if (unidentified.some(entry => this.runs.get(entry.runId).binding.sourceManifest?.finalizationGenerationSlotKey === key))
       throw new Error('GENERATION_FINALIZATION_SLOT_CONFLICT')

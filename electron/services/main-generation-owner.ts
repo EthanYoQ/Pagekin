@@ -14,6 +14,7 @@ import { DRAFT_RECONCILE_PURPOSE, stripDraftReconciliationBlock, withoutDraftRec
 import { DRAFT_SHORT_OUTLINE_PURPOSE, draftShortOutlineBlock, stripDraftShortOutlineBlock } from '../../src/shared/draft-short-outline'
 import { GenerationRunRepository, textHash, type DurableGenerationRun, type RunBinding, type GenerationExecutionReceipt } from '../repositories/generation-run-repository'
 import { candidateRunIds, runIndexOf } from '../repositories/generation-run-index'
+import { isLedgerUnreadable } from '../repositories/generation-ledger-admission'
 import { getCurrentProjectPath } from '../database'
 import { ModelExecutionLeaseRegistry, createModelExecutionLeaseReceipt } from './model-execution-lease'
 import { createGenerationRunService, GENERATION_STOPPED, type GenerationRunServiceDependencies } from './generation-run-service'
@@ -371,18 +372,16 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   }
   const newestFirst = (candidates: string) => deps.database.prepare('SELECT run_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) ORDER BY created_at_ms DESC, rowid DESC')
     .pluck().all(candidates) as string[]
-  /** 这几种操作的运行，新的在前，略去 skip 里的。绑定按主键读，读不出的略过并调 unreadable，只有读写它的操作报错。 */
+  /** 这几种操作的运行，新的在前，略去 skip 里的。身份按主键读，读不出的略过并调 unreadable，只有读写它的操作报错。 */
   const runSummaries = (operations: readonly string[], skip?: ReadonlySet<string>, unreadable?: () => void) =>
     newestFirst(candidateRunIds(runIndexOf(deps.database).lookup(click => operations.includes(click.operation)), { skip, unidentified: 'include' })).flatMap(runId => {
-      const run = repository.readableRun(runId)
+      const run = repository.runIdentity(runId)
       if (!run) { unreadable?.(); return [] }
-      // 冻结历史的绑定可能没有 sourceManifest，按缺字段处理，由下面的作品号、操作筛掉。
-      const { projectId, epoch } = run.binding
-      const sourceManifest = run.binding.sourceManifest as { operation?: string; batchId?: string; batchIntent?: unknown } | undefined
-      const { operation, batchId, batchIntent } = sourceManifest ?? {}
-      return { handle: { projectId, epoch, rootActionId: run.rootActionId, runId }, status: run.status as MainGenerationRunView['status'], operation,
-        batchId: batchId ?? null, batchRoot: Boolean(batchIntent) }
-    }).filter(run => run.handle.projectId === deps.projectId && operations.includes(run.operation ?? ''))
+      const { projectId, epoch, operation } = run
+      if (projectId !== deps.projectId || epoch === undefined || operation === undefined || !operations.includes(operation)) return []
+      return { handle: { projectId, epoch, rootActionId: run.rootActionId, runId }, status: run.status as MainGenerationRunView['status'],
+        operation, batchId: run.batchId, batchRoot: run.batchRoot }
+    })
   /** 同一次点击开出的树里的运行：按根认点击（根的 action_json 在进门清单里），封存的根是中性值，认不上。 */
   const sameClick = (uiActionNonce: string, operations: readonly string[]) => deps.database.prepare(`SELECT r.run_id FROM generation_runs r
       JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE json_extract(g.action_json,'$.projectId')=?
@@ -1170,7 +1169,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     }
     // 封存的生成不列出，列表因此不全。
     if (repository.hasSealedRoot()) list.partial = true
-    const batchIds = draftEffects.resumableBatchIds(deps.projectId)
+    const batchIds = draftEffects.resumableBatchIds(deps.projectId, () => { list.partial = true })
     if (!batchIds.length) return list
     const commits = draftEffects.batchCommits()
     for (const batchId of batchIds) {
@@ -1718,7 +1717,13 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     listBatches: () => {
       assertCurrent()
       const commits = draftEffects.batchCommits()
-      return runSummaries(['batch-chapters']).filter(run => run.batchRoot).map(run => draftEffects.readBatchHistory(run.handle.runId, deps.projectId, commits))
+      return runSummaries(['batch-chapters']).filter(run => run.batchRoot).flatMap(run => {
+        try { return [draftEffects.readBatchHistory(run.handle.runId, deps.projectId, commits)] }
+        catch (error) {
+          if (isLedgerUnreadable(error)) return []
+          throw error
+        }
+      })
     },
     confirmBatchFinalization: (request: { batchId: string; chapterNumber: number; finalizationId: string }) => {
       const batch = readBatch(request.batchId)

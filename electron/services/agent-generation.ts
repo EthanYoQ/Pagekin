@@ -73,7 +73,9 @@ export class AgentGeneration {
     return value
   }
   private sessionRuns(key: string): DurableGenerationRun[] {
-    return runIndexOf(this.db).lookup(inNonceChain(`agent:${key}`)).hits.map(entry => this.runs.get(entry.runId))
+    const { hits, unidentified } = runIndexOf(this.db).lookup(inNonceChain(`agent:${key}`))
+    // 点击号读不出的轮次按绑定认回，漏认会把已发出的一轮当成没开始，再付一次费。
+    return [...hits.map(entry => this.runs.get(entry.runId)), ...unidentified.flatMap(entry => this.runs.readableRun(entry.runId) ?? [])]
       .filter(run => run.binding.projectId === this.scope.projectId && (run.binding.sourceManifest?.agentSession as { key?: unknown } | undefined)?.key === key)
       .sort((a, b) => this.navigation(a).roundIndex - this.navigation(b).roundIndex)
   }

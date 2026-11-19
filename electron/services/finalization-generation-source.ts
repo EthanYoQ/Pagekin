@@ -8,7 +8,14 @@ import type { GenerationTask } from '../../src/services/generation/generation-ha
 import type { WritingLanguage } from '../../src/shared/writing-language'
 import { SummaryRepository } from '../repositories/summary-repository'
 import { textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
+import { inNonceChain, type GenerationClick } from '../repositories/generation-run-index'
 
+const finalizationOperation = (slot: FinalizationGenerationSlot) => slot.stepKey === 'chapter_notes' ? 'finalized-chapter-notes' : 'finalized-character-state'
+/** 这个槽位的点击：操作对得上、点击号在槽位的链上。跨记录认定稿运行只看它（ADR-0030）。 */
+export function finalizationSlotClick(slot: FinalizationGenerationSlot): (click: GenerationClick) => boolean {
+  const operation = finalizationOperation(slot), inChain = inNonceChain(`finalization:${finalizationSlotKey(slot)}`)
+  return click => click.operation === operation && inChain(click)
+}
 export function finalizationSlotKey(slot: FinalizationGenerationSlot): string {
   if (!slot || Object.keys(slot).some(key => !['source', 'stepKey'].includes(key)) || !['chapter_notes', 'character_cards'].includes(slot.stepKey)
     || !slot.source || Object.keys(slot.source).some(key => !['draftId', 'chapterNumber', 'finalizationId', 'contentHash'].includes(key))
@@ -42,7 +49,7 @@ export function readFinalizationGenerationContext(run: DurableGenerationRun): Fi
     || finalizationSlotKey(context.slot) !== manifest.finalizationGenerationSlotKey
     || context.identity.projectId !== run.binding.projectId || context.identity.epoch !== manifest.finalizationGenerationOriginEpoch
     || !isDeepStrictEqual(context.slot.source, context.identity.source) || textHash(context.identity.content) !== context.slot.source.contentHash
-    || manifest.operation !== (context.slot.stepKey === 'chapter_notes' ? 'finalized-chapter-notes' : 'finalized-character-state')) throw new Error('GENERATION_FINALIZATION_CONTEXT_INVALID')
+    || manifest.operation !== finalizationOperation(context.slot)) throw new Error('GENERATION_FINALIZATION_CONTEXT_INVALID')
   return structuredClone(context)
 }
 export function finalizationGenerationTask(context: FinalizationGenerationContext, originProjectId?: string): GenerationTask {

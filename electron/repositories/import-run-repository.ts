@@ -36,8 +36,8 @@ import type {
 import type { AuthorManuscriptImportPreview } from '../../src/shared/author-manuscript-import'
 import { getCurrentProjectPath, getProjectDb } from '../database'
 import { readPortableRuntimeFreeze } from '../services/portable-runtime-freeze'
-import { inNonceChain, runIndexOf } from './generation-run-index'
-import { importGenerationSlotKey } from '../services/import-generation-source'
+import { runIndexOf } from './generation-run-index'
+import { importSlotClick } from '../services/import-generation-source'
 import type { ImportGenerationSlot } from '../../src/shared/import-generation'
 import { BlueprintRepository, type BlueprintRangeCommitRequest } from './blueprint-repository'
 import { ImportGlobalFactsRepository } from './import-global-facts-repository'
@@ -1440,9 +1440,9 @@ function overlappingResumableSourceRun(runId: string, purpose: ImportPurpose): I
 
 /** 槽位不合法就不可能开过；封存的运行不算。 */
 function boundImportSlot(slot: ImportGenerationSlot): boolean {
-  let key: string
-  try { key = importGenerationSlotKey(slot) } catch { return false }
-  return runIndexOf(db()).lookup(inNonceChain(`import:${key}`)).hits.some(entry => !entry.sealed)
+  let slotClick: ReturnType<typeof importSlotClick>
+  try { slotClick = importSlotClick(slot) } catch { return false }
+  return runIndexOf(db()).lookup(slotClick).hits.some(entry => !entry.sealed)
 }
 
 export class ImportRunRepository {

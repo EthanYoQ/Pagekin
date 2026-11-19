@@ -3,17 +3,16 @@ import { isDeepStrictEqual } from 'node:util'
 import type { BeginGenerationRequest } from '../../src/shared/generation-owner-contract'
 import type { ImportGenerationContext, ImportGenerationSlot } from '../../src/shared/import-generation'
 import { GenerationRunRepository, type DurableGenerationRun, type GenerationBudgetReceipt } from '../repositories/generation-run-repository'
-import { inNonceChain, runIndexOf, type GenerationClick } from '../repositories/generation-run-index'
+import { clickOfRootKey, runIndexOf, type GenerationClick } from '../repositories/generation-run-index'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
-import { captureImportGenerationContext, importGenerationSlotKey } from './import-generation-source'
+import { captureImportGenerationContext, importGenerationSlotKey, importSlotClick, IMPORT_STAGE_OPERATION } from './import-generation-source'
 import { rootBudgetExhausted } from '../../src/shared/generation-contract'
 
 export function importSlotNonce(slotKey: string, retryOf?: DurableGenerationRun): string {
   return `import:${slotKey}${retryOf ? `:retry:${retryOf.runId}` : ''}`
 }
 
-const IMPORT_STAGE_OPERATION = { global: 'import-global-facts', style: 'analyze-writing-style', blueprints: 'import-blueprints' } as const
 const IMPORT_OPERATIONS: ReadonlySet<string> = new Set(Object.values(IMPORT_STAGE_OPERATION))
 /** 批次号固定为 done 的阶段：开树点击的槽位键能用导入号重算。 */
 const SINGLE_BATCH_STAGE: Readonly<Record<string, 'global' | 'style'>> = { 'import-global-facts': 'global', 'analyze-writing-style': 'style' }
@@ -33,7 +32,7 @@ export class ImportGeneration {
     // 同一次导入的各阶段互相检查前一阶段的效果，绑定被封存后按槽位查不到，所以这一次导入的封存树挡住它的全部阶段。
     if (this.runs.sealedClaims((click, root) => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation)
       && click.uiActionNonce.startsWith('import:') && !anotherImport(root, slot.runId))) throw new Error('GENERATION_LEDGER_UNREADABLE')
-    const { hits, unidentified } = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && inNonceChain(importSlotNonce(key))(click))
+    const { hits, unidentified } = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && importSlotClick(slot)(click))
     // 点击号读不出的运行认不出是不是前驱，按主键读它的绑定，是这个槽位的就报歧义。
     if (unidentified.some(entry => this.runs.get(entry.runId).binding.sourceManifest?.importSlotKey === key)) throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS')
     let previous: DurableGenerationRun | undefined
@@ -129,9 +128,11 @@ export class ImportGeneration {
     this.assertSlotRunning(slot)
     const { totalChapters } = captureImportGenerationContext(this.db, slot)
     const key = importGenerationSlotKey(slot)
-    // 绑定读不出的阶段认不出属于哪次导入，get() 报封存码，这次导入停下，不跳过它的效果检查。
+    // 绑定读不出的阶段，开树点击证明属于别的导入就略过；证明不了就报封存码，这次导入停下，不跳过它的效果检查。
+    const rootKeyOf = this.db.prepare('SELECT g.idempotency_key FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE r.run_id=?').pluck()
     const records = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation)).hits
-      .filter(entry => !entry.sealed).map(entry => this.runs.get(entry.runId))
+      .filter(entry => !entry.sealed).flatMap(entry => this.runs.readableRun(entry.runId)
+        ?? (anotherImport(clickOfRootKey(rootKeyOf.get(entry.runId)), slot.runId) ? [] : this.runs.get(entry.runId)))
       .filter(run => (run.binding.sourceManifest?.importSlot as { runId?: unknown } | undefined)?.runId === slot.runId)
     for (const run of records) {
       const prior = this.context(run).slot
