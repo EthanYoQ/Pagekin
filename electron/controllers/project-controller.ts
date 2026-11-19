@@ -608,6 +608,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
       }
 
       let legacyImportSource: ProjectDirectoryGrant | undefined
+      let switchedDatabase = false
       try {
         const recent = typeof target === 'string'
           ? loadRecentProjects().find(project => project.path === target) : undefined
@@ -641,11 +642,13 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         const verified = sameProjectPath(getCurrentProjectPath(), resolvedProjectPath)
           ? undefined
           : await verifyCanonicalProjectData(resolvedProjectPath)
-        if (!isLatestRequest()) {
-          return { success: false, project: null, requestToken, stale: true, ...databaseStateForRollbackBoundary(rollbackBoundary) }
-        }
+        const staleBeforeSwitch = () =>
+          ({ success: false, project: null, requestToken, stale: true, ...databaseStateForRollbackBoundary(rollbackBoundary) })
+        if (!isLatestRequest()) return staleBeforeSwitch()
         // 校验期间旧书照常开着、可能又起了导出，所以紧挨换库再停。
         await stopExportsOfClosingProject()
+        if (!isLatestRequest()) return staleBeforeSwitch()
+        switchedDatabase = true
         const { sealedRootCount } = initProjectDatabase(resolvedProjectPath, verified)
         const openedDatabase = getProjectDb()
         if (openedDatabase) adoptTransferredCharacterContinuityOnOpen({ database: openedDatabase,
@@ -746,8 +749,11 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         let rollbackError: unknown
         let databaseState: ProjectDatabaseState
         try {
+          // 还没换库就失败时旧书原样开着；关库重开只会打扰它在途的导出和生成。
           databaseState = requireReadyDatabase(
-            restoreProjectRollbackBoundary(rollbackBoundary),
+            switchedDatabase
+              ? restoreProjectRollbackBoundary(rollbackBoundary)
+              : databaseStateForRollbackBoundary(rollbackBoundary),
             'PROJECT_ROLLBACK_DATABASE_UNAVAILABLE',
           )
         } catch (restoreError) {
