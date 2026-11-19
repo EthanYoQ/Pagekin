@@ -304,6 +304,27 @@ describe('审稿数据随审稿一并标出恢复前的审修循环（#702）', 
       .toMatchObject({ revisionStatus: 'merge-committed', recheckDisposition: 'required', restoredHistory: true })
   })
 
+  it('恢复前留着待合并的修稿：待合并修稿列表标恢复前，合并视图据此不说会复验', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    const saved = await reviseFromConfirmation(original.owner, confirmed)
+    const restoredRoot = await exportAndRestore()
+
+    ownerFor(restoredRoot, 'epoch-restored')
+    expect(RevisionRepository.getPending(1, projectIdOf(restoredRoot))).toMatchObject([{ id: saved.id, restoredHistory: true }])
+  })
+
+  it('没导出过的书：待合并修稿不带恢复前的字段', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    const saved = await reviseFromConfirmation(original.owner, confirmed)
+    const [pending] = RevisionRepository.getPending(1, projectIdOf(projectRoot))
+    expect(pending).toMatchObject({ id: saved.id })
+    expect(pending).not.toHaveProperty('restoredHistory')
+  })
+
   it('没导出过的书：合并按审稿修出的稿，回执照常带复验', async () => {
     const original = ownerFor(projectRoot, 'epoch-1')
     seedChapter(original.db)

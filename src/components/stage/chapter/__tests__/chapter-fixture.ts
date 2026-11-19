@@ -55,7 +55,7 @@ interface Draft {
 interface Review { id: number; baseDraftId: number; reviewIndex: number; content: string; source: Draft; createdAt: string }
 interface Revision {
   id: number; baseDraftId: number; revisionIndex: number; revisionType: 'refine' | 'review-fix'; status: 'pending' | 'merged' | 'discarded'
-  content: string; source: Draft | null; createdAt: string; updatedAt: string
+  content: string; source: Draft | null; createdAt: string; updatedAt: string; restoredHistory?: true
 }
 
 /**
@@ -94,7 +94,8 @@ export function createChapterBackend() {
   })
   const source = (draft: Draft) => ({ id: draft.id, chapterNumber: draft.chapterNumber, version: draft.version, status: draft.status, content: draft.content })
   const revisionMeta = (revision: Revision) => ({ id: revision.id, baseDraftId: revision.baseDraftId, revisionIndex: revision.revisionIndex, revisionType: revision.revisionType,
-    status: revision.status, mergedToDraftId: null, userPrompt: '', reviewSourceId: null, contentId: revision.id, wordCount: 0, createdAt: revision.createdAt, updatedAt: revision.updatedAt })
+    status: revision.status, mergedToDraftId: null, userPrompt: '', reviewSourceId: null, contentId: revision.id, wordCount: 0, createdAt: revision.createdAt, updatedAt: revision.updatedAt,
+    ...(revision.restoredHistory ? { restoredHistory: true } : {}) })
   const byId = (id: unknown) => state.drafts.find(draft => draft.id === Number(id))
 
   const invoke = vi.fn(async (channel: string, ...args: unknown[]): Promise<unknown> => {

@@ -1109,10 +1109,49 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
   it('恢复前的待合并修稿：合并视图不说合并后会复验', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     restoredReview(draft)
-    backend.addRevision(draft)
+    Object.assign(backend.addRevision(draft), { restoredHistory: true })
     await mount()
     await openDraft(draft.id)
     await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
     expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
+  })
+
+  it('恢复后重新审过稿、正文又改回去，恢复前的修稿能合并了：合并视图按这份修稿认循环，不说会复验', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    backend.addReview(draft)
+    Object.assign(backend.addRevision(draft), { restoredHistory: true })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
+  })
+
+  it('没导出过的书：按审稿修出的待合并修稿，合并视图照常说会复验', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    backend.addReview(draft)
+    backend.addRevision(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText(/合并后会自动复验/)).toBeVisible()
+  })
+
+  it('再读一次审修循环失败：恢复前的审稿仍以重新审稿为主按钮，报告只读', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const answer = backend.invoke.getMockImplementation()!
+    let reads = 0
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && ++reads > 1) throw new Error('PROJECT_DATABASE_BUSY')
+      return answer(channel, ...args)
+    })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    await vi.waitFor(() => expect(reads).toBeGreaterThan(1))
+    expect(page.getByRole('button', { name: '重新审稿', exact: true }).elements()).toHaveLength(1)
+    expect(page.getByRole('button', { name: /项意见修稿$|^确认不修改$|^修稿选项$/ }).elements()).toEqual([])
+    const sheet = page.getByRole('complementary', { name: /审稿/ })
+    await expect.element(sheet.getByText('前后矛盾').first()).toBeVisible()
+    expect(sheet.element().querySelectorAll('input:not(:disabled), textarea, select')).toHaveLength(0)
   })
 })
