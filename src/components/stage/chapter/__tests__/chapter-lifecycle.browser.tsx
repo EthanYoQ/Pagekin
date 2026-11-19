@@ -1139,15 +1139,19 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     const draft = backend.addDraft({ status: 'draft' })
     restoredReview(draft)
     const answer = backend.invoke.getMockImplementation()!
-    let reads = 0
+    let rereads = 0
     backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
-      if (channel === 'db:review-cycle-get' && ++reads > 1) throw new Error('PROJECT_DATABASE_BUSY')
+      // 挑报告时那次读照常；动作条自己的重读（review-checklist）失败。
+      if (channel === 'db:review-cycle-get' && new Error().stack?.includes('review-checklist')) {
+        rereads += 1
+        throw new Error('PROJECT_DATABASE_BUSY')
+      }
       return answer(channel, ...args)
     })
     await mount()
     await openDraft(draft.id)
     await expect.element(page.getByText(RESTORED)).toBeVisible()
-    await vi.waitFor(() => expect(reads).toBeGreaterThan(1))
+    await vi.waitFor(() => expect(rereads).toBeGreaterThan(0))
     expect(page.getByRole('button', { name: '重新审稿', exact: true }).elements()).toHaveLength(1)
     expect(page.getByRole('button', { name: /项意见修稿$|^确认不修改$|^修稿选项$/ }).elements()).toEqual([])
     const sheet = page.getByRole('complementary', { name: /审稿/ })
