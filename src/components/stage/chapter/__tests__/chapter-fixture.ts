@@ -56,6 +56,8 @@ interface Review { id: number; baseDraftId: number; reviewIndex: number; content
 interface Revision {
   id: number; baseDraftId: number; revisionIndex: number; revisionType: 'refine' | 'review-fix'; status: 'pending' | 'merged' | 'discarded'
   content: string; source: Draft | null; createdAt: string; updatedAt: string
+  /** 修出它的审修循环来自恢复前；unbound 是存档时循环读坏被省略、修稿留着却没有循环。 */
+  restoredHistory?: true; unbound?: true
 }
 
 /**
@@ -94,7 +96,8 @@ export function createChapterBackend() {
   })
   const source = (draft: Draft) => ({ id: draft.id, chapterNumber: draft.chapterNumber, version: draft.version, status: draft.status, content: draft.content })
   const revisionMeta = (revision: Revision) => ({ id: revision.id, baseDraftId: revision.baseDraftId, revisionIndex: revision.revisionIndex, revisionType: revision.revisionType,
-    status: revision.status, mergedToDraftId: null, userPrompt: '', reviewSourceId: null, contentId: revision.id, wordCount: 0, createdAt: revision.createdAt, updatedAt: revision.updatedAt })
+    status: revision.status, mergedToDraftId: null, userPrompt: '', reviewSourceId: null, contentId: revision.id, wordCount: 0, createdAt: revision.createdAt, updatedAt: revision.updatedAt,
+    ...(revision.revisionType === 'review-fix' && !revision.restoredHistory && !revision.unbound ? { recheckOnMerge: true } : {}) })
   const byId = (id: unknown) => state.drafts.find(draft => draft.id === Number(id))
 
   const invoke = vi.fn(async (channel: string, ...args: unknown[]): Promise<unknown> => {

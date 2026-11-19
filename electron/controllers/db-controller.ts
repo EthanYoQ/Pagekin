@@ -1130,7 +1130,7 @@ export function registerDatabaseController() {
 
   ipcMain.handle('db:revision-get-pending', async (_event, baseDraftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    return RevisionRepository.getPending(baseDraftId)
+    return RevisionRepository.getPending(baseDraftId, projectAccess.captureCurrentSession()?.projectId)
   })
 
   ipcMain.handle('db:revision-get-full', async (_event, id: number, expectedProjectPath: string) => {

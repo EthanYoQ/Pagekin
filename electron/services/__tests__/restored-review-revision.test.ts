@@ -304,6 +304,42 @@ describe('审稿数据随审稿一并标出恢复前的审修循环（#702）', 
       .toMatchObject({ revisionStatus: 'merge-committed', recheckDisposition: 'required', restoredHistory: true })
   })
 
+  it('恢复前留着待合并的修稿：待合并列表不说合并后会复验；没有循环的直接修稿也不说', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    const saved = await reviseFromConfirmation(original.owner, confirmed)
+    const restoredRoot = await exportAndRestore()
+
+    ownerFor(restoredRoot, 'epoch-restored')
+    const direct = RevisionRepository.create({ baseDraftId: 1, revisionType: 'refine', content: revised, wordCount: countDraftUnits(revised),
+      expectedSource: { id: 1, chapterNumber: 1, version: 1, status: 'draft', content: source } })
+    const pending = RevisionRepository.getPending(1, projectIdOf(restoredRoot))
+    expect(pending.map(revision => revision.id)).toEqual([saved.id, direct.id])
+    expect(pending.map(revision => revision.recheckOnMerge)).toEqual([undefined, undefined])
+  })
+
+  it('恢复后重新审稿修出的稿：待合并列表说合并后会复验', async () => {
+    ownerFor(projectRoot, 'epoch-1')
+    seedChapter(getProjectDb()!)
+    const restoredRoot = await exportAndRestore()
+
+    const restored = ownerFor(restoredRoot, 'epoch-restored')
+    const fresh = await reviewAndConfirm(restored.owner, restored.db, unrevised, 'fresh-review')
+    const saved = await reviseFromConfirmation(restored.owner, fresh)
+    const [pending] = RevisionRepository.getPending(1, projectIdOf(restoredRoot))
+    expect(pending).toMatchObject({ id: saved.id, recheckOnMerge: true })
+  })
+
+  it('没导出过的书：按审稿修出的待合并修稿说合并后会复验', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    const saved = await reviseFromConfirmation(original.owner, confirmed)
+    const [pending] = RevisionRepository.getPending(1, projectIdOf(projectRoot))
+    expect(pending).toMatchObject({ id: saved.id, recheckOnMerge: true })
+  })
+
   it('没导出过的书：合并按审稿修出的稿，回执照常带复验', async () => {
     const original = ownerFor(projectRoot, 'epoch-1')
     seedChapter(original.db)

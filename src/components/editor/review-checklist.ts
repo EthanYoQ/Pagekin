@@ -232,52 +232,14 @@ function matchesReviewSource(
     && source.content === content
 }
 
-/** 一份审稿报告的持久化复验周期：确认快照指向原始审稿，周期也按原始审稿读。reloadCycle 在复验后重读。 */
-export function useReviewCycle({ reportText, reviewId, projectKey, cycle, refreshKey }: {
-  reportText: string
-  reviewId?: number
-  projectKey: string
-  cycle?: ReviewCycleProjection | null
-  /** 变化时重读周期：修稿生成、合并提交都会改它，而审稿报告本身不变。 */
-  refreshKey?: string
-}) {
+/** 审稿报告的确认快照与会话键：会话键只在底层不可变报告变了时变，挂载方拿它作 key，可编辑清单随之重置。 */
+export function reviewSession(reportText: string, reviewId: number | undefined, projectKey: string) {
   const snapshot = parseHumanConfirmedReviewSnapshot(reportText)
-  const cycleReviewId = confirmationSourceReviewId(snapshot, reviewId)
-  // 读回的周期记着属于哪份审稿：重新审稿后新周期读回来之前，不把上一份审稿的周期当成这一份的。
-  const [loadedCycle, setLoadedCycle] = useState<{ reviewId: number | undefined; cycle: ReviewCycleProjection | null }>(
-    () => ({ reviewId: cycle === undefined ? undefined : cycleReviewId, cycle: cycle ?? null }))
-
-  const reloadCycle = async (): Promise<ReviewCycleProjection | null> => {
-    if (!isReviewId(cycleReviewId)) return null
-    const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
-    if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) return null
-    const next = await ipc.invokeWithProjectSession(projectSession, 'db:review-cycle-get', cycleReviewId,
-      projectSession.projectPath)
-    if (isProjectSessionCurrent(projectSession)) setLoadedCycle({ reviewId: cycleReviewId, cycle: next })
-    return next
-  }
-
-  useEffect(() => {
-    if (cycle !== undefined || !isReviewId(cycleReviewId)) return
-    const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
-    if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) return
-    let cancelled = false
-    void (async () => {
-      const next = await ipc.invokeWithProjectSession(projectSession, 'db:review-cycle-get', cycleReviewId,
-        projectSession.projectPath).catch(() => null)
-      if (!cancelled && isProjectSessionCurrent(projectSession)) setLoadedCycle({ reviewId: cycleReviewId, cycle: next })
-    })()
-    return () => { cancelled = true }
-  }, [cycleReviewId, cycle, projectKey, refreshKey])
-
-  const cycleLoaded = cycle !== undefined || !isReviewId(cycleReviewId) || loadedCycle.reviewId === cycleReviewId
-  const resolvedCycle = cycle !== undefined ? cycle : loadedCycle.reviewId === cycleReviewId ? loadedCycle.cycle : null
-  // 报告可以原地更新；会话键只在底层不可变报告变了时变，可编辑清单随之重置。
   const sessionKey = String(reviewId ?? 'untracked')
     + ':' + String(snapshot?.sourceReviewId ?? 'raw')
     + ':' + projectKey
     + ':' + reportText
-  return { snapshot, cycle: resolvedCycle, cycleLoaded, reloadCycle, sessionKey }
+  return { snapshot, sessionKey }
 }
 
 export interface ReviewChecklistInput {
@@ -292,12 +254,10 @@ export interface ReviewChecklistInput {
   projectKey: string
   initialSnapshot: HumanConfirmedReviewSnapshot | null
   cycle?: ReviewCycleProjection | null
-  reloadCycle: () => Promise<ReviewCycleProjection | null>
 }
 
 /**
  * 审稿清单：逐项纳入或忽略、作者补充问题与总体指导、确认为不可变快照、按确认意见修稿、合并后复验。
- * 单章视图的审稿侧页用它；挂载方用 useReviewCycle 的 sessionKey 作 key，报告变了就重置。
  */
 export function useReviewChecklist({
   reportText,
@@ -308,7 +268,6 @@ export function useReviewChecklist({
   reviewId,
   initialSnapshot,
   cycle,
-  reloadCycle,
 }: ReviewChecklistInput) {
   const text = useLocaleStore(s => s.text)
   const parsedReport = parseReport(reportText, text('综合检查', 'General review'))
@@ -698,7 +657,7 @@ export function useReviewChecklist({
 
   const retryRequiredRecheck = async () => {
     if (!cycle || cycle.revisionStatus !== 'merge-committed' || cycle.recheckDisposition !== 'required'
-      || !cycle.mergedHash || !draftPath) return
+      || !cycle.mergedHash || !draftPath || !isReviewId(sourceReviewId)) return
     const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) {
       setRecheckMessage({ kind: 'error', text: text(
@@ -753,7 +712,8 @@ export function useReviewChecklist({
         '复验任务未完成；可在修复模型或资源问题后再次重试。',
         'The recheck did not complete. Fix the model or resource issue and retry.',
       ))
-      const refreshed = await reloadCycle()
+      // 界面上的循环由复验完成的广播触发重读；这里只读一次决定提示。
+      const refreshed = await ipc.invokeWithProjectSession(projectSession, 'db:review-cycle-get', sourceReviewId, projectSession.projectPath)
       if (!isProjectSessionCurrent(projectSession)) return
       if (refreshed?.recheckDisposition !== 'completed') throw new Error(text(
         '复验已运行，但持久化状态仍未完成，请重试。',

@@ -9,7 +9,7 @@ import {
 } from '../vector-store'
 import { CANONICAL_RAW_PROJECT_ASSETS } from './project-format-migration'
 import { portablePathKey } from './portable-project-format'
-import type { PortableAssetProvider, PortableProvidedFile } from './project-archive-service'
+import type { PortableAssetProvider, PortableProvidedFile, PortableSourceDigest } from './project-archive-service'
 
 export const PORTABLE_KNOWLEDGE_SOURCE_PATH = 'portable-knowledge-source.json'
 
@@ -48,7 +48,7 @@ function physicalFile(file: string, root: string): fs.BigIntStats {
   return info
 }
 
-function enumerateRawFiles(storageRoot: string): PortableProvidedFile[] {
+function enumerateRawFiles(storageRoot: string, digestFile: (sourcePath: string, checked: fs.BigIntStats) => PortableSourceDigest): PortableProvidedFile[] {
   physicalDirectory(storageRoot, storageRoot)
   const topKeys = new Set<string>()
   for (const name of fs.readdirSync(storageRoot)) {
@@ -76,10 +76,8 @@ function enumerateRawFiles(storageRoot: string): PortableProvidedFile[] {
     const key = portablePathKey(archivePath)
     if (keys.has(key)) fail()
     keys.add(key)
-    const bytes = fs.readFileSync(entry)
-    if (BigInt(bytes.length) !== fileInfo.size) fail()
-    files.push({ id: `raw:${archivePath}`, archivePath, sourcePath: entry,
-      byteSize: bytes.length, sha256: sha256(bytes), disposition: disposition(topLevel) })
+    const { byteSize, sha256: digest } = digestFile(entry, fileInfo)
+    files.push({ id: `raw:${archivePath}`, archivePath, sourcePath: entry, byteSize, sha256: digest, disposition: disposition(topLevel) })
   }
   for (const name of CANONICAL_RAW_PROJECT_ASSETS) {
     const entry = path.join(storageRoot, name)
@@ -93,25 +91,16 @@ function enumerateRawFiles(storageRoot: string): PortableProvidedFile[] {
   return files.sort((left, right) => left.archivePath.localeCompare(right.archivePath))
 }
 
-function sameFiles(left: readonly PortableProvidedFile[], right: readonly PortableProvidedFile[]): boolean {
-  return JSON.stringify(left.map(({ id, archivePath, byteSize, sha256, disposition }) => (
-    { id, archivePath, byteSize, sha256, disposition }
-  ))) === JSON.stringify(right.map(({ id, archivePath, byteSize, sha256, disposition }) => (
-    { id, archivePath, byteSize, sha256, disposition }
-  )))
-}
-
 /** Production provider for the canonical raw allowlist plus a strict canonical-text projection. */
 export function createPortableProjectAssetProvider(): PortableAssetProvider {
   return {
-    async snapshot({ sourceProjectRoot }) {
+    async snapshot({ sourceProjectRoot, digestFile }) {
       const storageRoot = path.join(path.resolve(sourceProjectRoot), CANONICAL_PROJECT_DIRECTORY)
-      const rawFiles = enumerateRawFiles(storageRoot)
+      const rawFiles = enumerateRawFiles(storageRoot, digestFile)
       const knowledgeBytes = serializePortableKnowledgeSnapshot(await readPortableKnowledgeSnapshot(storageRoot))
       const knowledgeFile: PortableProvidedFile = {
         id: 'canonical-knowledge',
         archivePath: PORTABLE_KNOWLEDGE_SOURCE_PATH,
-        sourcePath: '',
         bytes: knowledgeBytes,
         byteSize: knowledgeBytes.length,
         sha256: sha256(knowledgeBytes),
@@ -120,11 +109,6 @@ export function createPortableProjectAssetProvider(): PortableAssetProvider {
       return {
         files: [...rawFiles, knowledgeFile],
         semanticCounts: { 'raw-assets': rawFiles.length, 'knowledge-snapshots': 1 },
-        verifyUnchanged: async () => {
-          const currentRaw = enumerateRawFiles(storageRoot)
-          const currentKnowledge = serializePortableKnowledgeSnapshot(await readPortableKnowledgeSnapshot(storageRoot))
-          return sameFiles(rawFiles, currentRaw) && currentKnowledge.compare(knowledgeBytes) === 0
-        },
       }
     },
   }

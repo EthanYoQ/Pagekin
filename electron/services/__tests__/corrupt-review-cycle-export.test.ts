@@ -80,7 +80,7 @@ function exportInput(): ExportPortableProjectInput {
     attemptParentPath: base,
     assertCurrentContext: () => undefined,
     assets: { snapshot: () => ({ files: [], semanticCounts: { 'provided-assets': 0 }, omittedItems: [],
-      transferReceiptIds: [], historyProjectionIds: [], verifyUnchanged: () => undefined }) },
+      transferReceiptIds: [], historyProjectionIds: [] }) },
   }
 }
 
@@ -523,6 +523,30 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     db().prepare('UPDATE reviews SET source_draft_version=source_draft_version+1 WHERE id=?').run(items[1]!.seeded.reviewId)
 
     expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED', damagedReviewCycle: UNLOCATED })
+  })
+
+  it('合并快照主键为 NULL（结构坏）：整本照旧失败，报审修循环校验失败', async () => {
+    reviewedBook({ finalized: true })
+    db().prepare("INSERT INTO review_cycle_merges(cycle_id,body) VALUES(NULL,'无主快照')").run()
+
+    expect(await exportBook()).toMatchObject({ code: 'MIGRATION_VERIFICATION_FAILED' })
+  })
+
+  it('审修循环以外的外键断了：整本照旧失败，报库损坏，不算成审修循环的错', async () => {
+    reviewedBook({ finalized: true })
+    db().pragma('foreign_keys = OFF')
+    db().prepare("INSERT INTO character_aliases(character_id,name,source_key,valid_from) VALUES('不存在的角色','阿澈','author',1)").run()
+
+    expect(await exportBook()).toMatchObject({ code: 'CORRUPT_SCHEMA', damagedReviewCycle: undefined })
+  })
+
+  it('源库快照校验不过：快照和 SQLite 打开时生成的旁文件一并清掉，不留临时目录', async () => {
+    reviewedBook({ finalized: true })
+    db().pragma('foreign_keys = OFF')
+    db().prepare("INSERT INTO character_aliases(character_id,name,source_key,valid_from) VALUES('不存在的角色','阿澈','author',1)").run()
+
+    expect(await exportBook()).toMatchObject({ code: 'CORRUPT_SCHEMA' })
+    expect(fs.readdirSync(base).filter(name => name.startsWith('.pe-'))).toEqual([])
   })
 
   it('循环引用的根读不出：打开作品时封存，导出时这条循环留在存档外，照样带出章号和标题', async () => {
