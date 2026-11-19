@@ -725,6 +725,20 @@ describe('registerCloudBackupController', () => {
     })
   })
 
+  it('所选云端世代的存档文件对不上校验：说世代坏了、换一个世代，不叫作者改地址（#702）', async () => {
+    const f = fixture()
+    const target = f.restoreTarget('damaged-generation')
+    vi.mocked(f.deps.webDav.downloadGeneration).mockRejectedValue(new WebDavBackupError('WEBDAV_REMOTE_INVALID'))
+
+    const result = await f.invoke('cloud-backup:restore-copy', {
+      operationId: OTHER_OPERATION, localEndpointAccountId: ACCOUNT, cloudBookId: BOOK, generationId: GENERATION, targetGrantId: target.grantId,
+    }) as CloudBackupFailure
+
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
+      .toBe('没有新建副本。所选云端世代的存档文件坏了。请选另一个云端世代，再点「恢复所选云端世代为副本」。')
+    expect(f.deps.restorePortableProject).not.toHaveBeenCalled()
+  })
+
   it('restores a copy without switching sessions and reports independent binding and recent-list failures', async () => {
     const f = fixture()
     const restored = f.restoreTarget('restored')
