@@ -24,7 +24,7 @@ import type { AgentGenerationInput } from '../../src/shared/agent-generation';
 import { buildAgentGenerationContext, validateAgentGenerationInput } from './agent-generation-context';
 import type { ImportGenerationSlot } from '../../src/shared/import-generation';
 import { captureImportGenerationContext, importGenerationSlotKey } from './import-generation-source';
-import type { EditorInlineInput } from '../../src/shared/editor-inline-generation';
+import type { EditorInlineContext, EditorInlineInput } from '../../src/shared/editor-inline-generation';
 import { buildEditorInlineContext, validateEditorInlineInput, editorInlineTask } from './editor-inline-generation';
 import type { FinalizationGenerationContext, FinalizationGenerationSlot } from '../../src/shared/finalization-generation';
 import { captureFinalizationGenerationContext, finalizationSlotKey, finalizationGenerationTask } from './finalization-generation-source';
@@ -62,6 +62,8 @@ export interface GenerationSourceBindingInput {
     agentWorkflowRegistrationId?: string;
     importSlot?: ImportGenerationSlot;
     editorInlineInput?: EditorInlineInput;
+    /** 重建时从清单带回，沿用开跑时冻结的材料。 */
+    editorInlineContext?: EditorInlineContext;
     /** Main freezes the initial identity for lost-response navigation across resume. */
     editorInlineOriginEpoch?: string;
     finalizationGenerationSlot?: FinalizationGenerationSlot;
@@ -583,11 +585,13 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
         add('plot-outline:origin', 0, stable(plotOutlineSource), 'author-constraint', 'main captured original project facts and synopsis for final outline compare-and-set');
     }
     const agentContext = agentInput && agentPrompt ? buildAgentGenerationContext(agentInput, facts.core, facts.language, agentPrompt.selected, agentPrompt.builtin) : undefined;
-    const editorInlineContext = editorInlineInput ? buildEditorInlineContext(editorInlineInput, facts.language, importPrompts.edit_selected_text!) : undefined;
+    const editorInlineContext = editorInlineInput ? buildEditorInlineContext(editorInlineInput, facts.language, importPrompts.edit_selected_text!, continuityInputTokens(input.modelReceipt), input.editorInlineContext?.materials) : undefined;
     const finalizationContext = input.finalizationGenerationSlot ? captureFinalizationGenerationContext(deps.db, input.finalizationGenerationSlot, input, facts.language,
         importPrompts[input.finalizationGenerationSlot.stepKey === 'chapter_notes' ? 'generate_chapter_notes' : 'update_character_cards']!, input.finalizationGenerationContext) : undefined;
     if (finalizationContext) add('finalization-generation-context', 0, JSON.stringify(finalizationContext), 'finalized-fact', 'main captured finalization identity, original field baselines and selected prompt');
     if (editorInlineContext) add('editor-inline:author-draft', 0, JSON.stringify(editorInlineContext), 'author-constraint', 'explicit unsaved author manuscript and UTF16 selection; not a canonical document');
+    for (const block of editorInlineContext?.materials?.included ?? [])
+        add(`editor-context:${block.kind}`, 0, block.text, block.kind === 'characters' || block.kind === 'threads' ? 'unconfirmed-continuity' : 'author-constraint', 'chapter material frozen when the author started this editor run');
     const importContext = input.importSlot ? captureImportGenerationContext(deps.db, input.importSlot) : undefined;
     if (importContext) importContext.prompts = importPrompts;
     if (importContext) add(`import-manifest:${importGenerationSlotKey(importContext.slot)}`, 0, stable(importContext), 'unconfirmed-continuity', 'persisted reference import material for this exact checkpoint');
@@ -633,7 +637,7 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
     // 避免改动无关操作的指纹；有裁决时同一份 source 集配上不同准入也必须
     // 得到不同的 contextSnapshotId，恢复无法悄悄换一份材料裁决继续。
     const contextHash = materialDecisionHash ? hash(stable([contextSourcesHash, materialDecisionHash])) : contextSourcesHash;
-    const context: ContextSnapshot = { projectId: input.projectId, epoch: input.epoch, id: `context:${contextHash}`, hash: contextHash, ...(transferAuthority ? { transferAuthority } : {}), sources: contextSources, omissions: [], estimate: { methodVersion: 'utf8-bytes-v1', inputUnits: materials.reduce((sum, item) => sum + Buffer.byteLength(item.text), 0) } };
+    const context: ContextSnapshot = { projectId: input.projectId, epoch: input.epoch, id: `context:${contextHash}`, hash: contextHash, ...(transferAuthority ? { transferAuthority } : {}), sources: contextSources, omissions: (editorInlineContext?.materials?.omitted ?? []).map(item => ({ sourceId: `editor-context:${item.kind}`, reason: item.reason, required: false })), estimate: { methodVersion: 'utf8-bytes-v1', inputUnits: materials.reduce((sum, item) => sum + Buffer.byteLength(item.text), 0) } };
     const fingerprint = { chapterBriefHash: hash(stable(facts.brief)), authorGuidanceHash: hash(stable(authorInputs.length ? [facts.core, authorInputs] : facts.core)), dependencyHash: hash(stable(materials.filter(item => /^(draft|finalized):/.test(item.ref.sourceId)).map(item => ({ ...item.ref, epoch: undefined })))), contextSnapshotHash: contextHash, templateHash: hash(stable(assets)), skillSnapshotHash: hash(stable(skills)), modelLeaseRevision: hash(stable(modelReceipt)), policyHash: hash(stable(input.policy)), outputContractHash: hash(stable(input.outputContract)) };
     return { binding: { projectId: input.projectId, epoch: input.epoch, fingerprint, contextSnapshotId: context.id, sourceRefs: materials.map(item => item.ref), sourceManifest }, context, materials };
 }

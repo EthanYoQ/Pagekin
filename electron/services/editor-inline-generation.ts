@@ -1,5 +1,7 @@
 import { textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
-import { EDITOR_INLINE_ANNOTATION_MAX_COUNT, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, type EditorInlineAnnotation, type EditorInlineInput, type EditorInlineContext } from '../../src/shared/editor-inline-generation'
+import { EDITOR_CONTEXT_PLAN, EDITOR_CONTEXT_TRIM_ORDER, EDITOR_INLINE_ANNOTATION_MAX_COUNT, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, editorInlineInsertsAfterSelection,
+  type EditorContextBlock, type EditorContextKind, type EditorContextOmission, type EditorInlineAnnotation, type EditorInlineInput, type EditorInlineContext, type EditorInlineMaterials } from '../../src/shared/editor-inline-generation'
+import { estimateMaterialTokens } from '../../src/shared/generation-owner-contract'
 import type { WritingLanguage } from '../../src/shared/writing-language'
 import { composePromptSystemRole, type PromptTemplate } from '../../src/services/builtin-prompt-templates'
 import { renderPrompt } from '../../src/shared/render-prompt'
@@ -38,22 +40,81 @@ function validAnnotations(input: EditorInlineInput): boolean {
   return true
 }
 
+function validChapterContext(input: EditorInlineInput): boolean {
+  const context = input.chapterContext
+  if (context === undefined) return !Object.hasOwn(input, 'chapterContext')
+  const readable = new Map(EDITOR_CONTEXT_PLAN[input.action].flatMap(entry => 'maxChars' in entry ? [] : [[entry.kind, entry.required] as const]))
+  if (!context || typeof context !== 'object' || Array.isArray(context) || Object.keys(context).sort().join() !== 'blocks,chapterNumber,unreadable,version'
+    || context.version !== 1 || !Number.isSafeInteger(context.chapterNumber) || context.chapterNumber < 1
+    || !Array.isArray(context.blocks) || !Array.isArray(context.unreadable)) return false
+  const seen = new Set<string>()
+  for (const block of context.blocks) {
+    if (!block || typeof block !== 'object' || Array.isArray(block) || Object.keys(block).sort().join() !== 'kind,required,text'
+      || readable.get(block.kind as never) !== block.required || typeof block.text !== 'string' || !block.text.trim() || seen.has(block.kind)) return false
+    seen.add(block.kind)
+  }
+  for (const kind of context.unreadable) {
+    if (!readable.has(kind) || seen.has(kind)) return false
+    seen.add(kind)
+  }
+  return true
+}
+
 export function validateEditorInlineInput(input: EditorInlineInput): EditorInlineInput {
   if (!input || typeof input !== 'object' || Array.isArray(input)
-    || Object.keys(input).some(key => !['action', 'documentText', 'from', 'to', 'selectedText', 'instruction', 'annotations', 'filePath'].includes(key))
+    || Object.keys(input).some(key => !['action', 'documentText', 'from', 'to', 'selectedText', 'instruction', 'annotations', 'filePath', 'chapterContext'].includes(key))
     || input.filePath !== undefined && (typeof input.filePath !== 'string' || !input.filePath)
     || !validInstruction(input) || typeof input.documentText !== 'string' || typeof input.selectedText !== 'string'
     || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to) || input.from < 0 || input.to <= input.from
     || input.to > input.documentText.length || input.documentText.slice(input.from, input.to) !== input.selectedText
-    || !validAnnotations(input)
-    || Buffer.byteLength(input.documentText, 'utf8') > 8 * 1024 * 1024) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+    || !validAnnotations(input) || !validChapterContext(input)
+    || Buffer.byteLength(input.documentText + (input.chapterContext?.blocks.map(block => block.text).join('') ?? ''), 'utf8') > 8 * 1024 * 1024) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
   const { filePath, ...rest } = input
   return structuredClone(filePath === undefined ? rest : input)
 }
-export function buildEditorInlineContext(input: EditorInlineInput, writingLanguage: WritingLanguage, template: PromptTemplate): EditorInlineContext {
+const sentenceEnd = /(?:\r?\n\s*\r?\n|[。！？!?…][”’"'）)\]】」』]*|\.[”’"')\]]*(?=\s|$))/gu
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff
+/** 选区前最后 maxChars 字，从其中第一个句末之后开始。 */
+function textBefore(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text.trim()
+  let tail = text.slice(-maxChars)
+  if (isLowSurrogate(tail.charCodeAt(0))) tail = tail.slice(1)
+  const boundary = new RegExp(sentenceEnd.source, 'u').exec(tail)
+  return (boundary ? tail.slice(boundary.index + boundary[0].length).trim() : '') || tail.trim()
+}
+/** 选区后最前 maxChars 字，截到其中最后一个句末。 */
+function textAfter(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text.trim()
+  let head = text.slice(0, maxChars)
+  if (isLowSurrogate(text.charCodeAt(maxChars))) head = head.slice(0, -1)
+  const end = [...head.matchAll(sentenceEnd)].at(-1)
+  return (end ? head.slice(0, end.index + end[0].length).trim() : '') || head.trim()
+}
+function selectMaterials(context: EditorInlineContext, inputTokens: number): EditorInlineMaterials {
+  const chapter = context.chapterContext!
+  const supplied = new Map(chapter.blocks.map(block => [block.kind, block.text]))
+  let included: EditorContextBlock[] = EDITOR_CONTEXT_PLAN[context.action].flatMap(entry => {
+    const text = !('maxChars' in entry) ? supplied.get(entry.kind)
+      : entry.kind === 'preceding' ? textBefore(context.documentText.slice(0, context.from), entry.maxChars) : textAfter(context.documentText.slice(context.to), entry.maxChars)
+    return text ? [{ kind: entry.kind, text, required: entry.required }] : []
+  })
+  const omitted: EditorContextOmission[] = chapter.unreadable.map(kind => ({ kind, reason: 'unreadable' }))
+  const tokens = (blocks: EditorContextBlock[]) => estimateMaterialTokens(Buffer.byteLength(JSON.stringify(editorInlineTask({ ...context, materials: { included: blocks, omitted } }).messages), 'utf8'))
+  for (const kind of EDITOR_CONTEXT_TRIM_ORDER) {
+    if (tokens(included) <= inputTokens) break
+    if (!included.some(block => block.kind === kind && !block.required)) continue
+    included = included.filter(block => block.kind !== kind)
+    omitted.push({ kind, reason: 'budget' })
+  }
+  return { included, omitted }
+}
+/** 有章节上下文时按额度选一次材料；重建时传回 frozen，不按当时的模型重选。 */
+export function buildEditorInlineContext(input: EditorInlineInput, writingLanguage: WritingLanguage, template: PromptTemplate, inputTokens = Infinity, frozen?: EditorInlineMaterials): EditorInlineContext {
   const valid = validateEditorInlineInput(input)
   if (template.key !== 'edit_selected_text' || typeof template.content !== 'string') throw new Error('GENERATION_EDITOR_TEMPLATE_INVALID')
-  return { ...valid, kind: 'author-draft', documentHash: textHash(valid.documentText), writingLanguage, template: structuredClone(template) }
+  const context: EditorInlineContext = { ...valid, kind: 'author-draft', documentHash: textHash(valid.documentText), writingLanguage, template: structuredClone(template) }
+  if (!valid.chapterContext) return context
+  return { ...context, materials: frozen ? structuredClone(frozen) : selectMaterials(context, inputTokens) }
 }
 export function readEditorInlineContext(run: DurableGenerationRun): EditorInlineContext {
   const context = run.binding.sourceManifest.editorInlineContext as EditorInlineContext | undefined
@@ -64,7 +125,8 @@ export function readEditorInlineContext(run: DurableGenerationRun): EditorInline
   const frozen = { action: context.action, documentText: context.documentText, from: context.from, to: context.to, selectedText: context.selectedText,
     ...(context.action === 'instruct' ? { instruction: context.instruction } : {}),
     ...(context.action === 'batch-instruct' ? { annotations: context.annotations } : {}),
-    ...(context.filePath !== undefined ? { filePath: context.filePath } : {}) }
+    ...(context.filePath !== undefined ? { filePath: context.filePath } : {}),
+    ...(context.chapterContext !== undefined ? { chapterContext: context.chapterContext } : {}) }
   if (!isDeepStrictEqual(input, frozen)) throw new Error('GENERATION_EDITOR_CONTEXT_INVALID')
   return structuredClone(context)
 }
@@ -101,9 +163,12 @@ function editInstruction(context: EditorInlineContext, english: boolean): string
     ? `Revise this passage as the author's note asks. The note outranks every other preference.\n${context.instruction}`
     : `按作者意见修改这部分。作者意见优先于其他任何偏好。\n${context.instruction}`
 }
+const continueRule = ['这次是续写：选中的正文是续写的起点，保持原样。只输出紧接在它后面的新内容，不要重复、改写或总结选中的正文。',
+  'This is a continuation: the selected prose is where it starts, and it stays as it is. Output only the new text that follows it; do not repeat, rewrite, or summarize the selected prose.'] as const
 function systemRole(context: EditorInlineContext): Pick<PromptTemplate, 'systemRole'> {
-  if (context.action !== 'instruct' && context.action !== 'batch-instruct') return context.template
   const english = context.writingLanguage === 'en-US'
+  if (editorInlineInsertsAfterSelection(context)) return { systemRole: [context.template.systemRole?.trim(), continueRule[english ? 1 : 0]].filter(Boolean).join('\n') }
+  if (context.action !== 'instruct' && context.action !== 'batch-instruct') return context.template
   const noteRule = english
     ? "The author's note is itself the newest explicit author fact. Where the note conflicts with the preservation requirements above, or with the explicit-facts clause of the contract below, follow the note; keep everything the note does not mention."
     : '作者这次的批注意见本身就是最新的作者明确事实。意见与上述保留要求冲突时，或与下文合同里「作者与项目的明确事实」那一条冲突时，以作者意见为准；意见没提到的部分照常保留。'
@@ -114,10 +179,28 @@ function systemRole(context: EditorInlineContext): Pick<PromptTemplate, 'systemR
     : ''
   return { systemRole: [context.template.systemRole?.trim(), noteRule, batchRule].filter(Boolean).join('\n') }
 }
+const materialLabels: Record<EditorContextKind, readonly [string, string]> = {
+  style: ['【文风、视角与全局要求】', '[Style, point of view, and global requirements]'],
+  blueprint: ['【本章蓝图】', '[Chapter plan]'],
+  characters: ['【出场人物（截至本章）】', '[Characters as of this chapter]'],
+  threads: ['【相关活跃线索（截至本章）】', '[Relevant active threads as of this chapter]'],
+  'previous-ending': ['【上一章结尾】', '[End of the previous chapter]'],
+  preceding: ['【选中正文之前的本章正文】', '[Chapter text before the selection]'],
+  following: ['【选中正文之后的本章正文】', '[Chapter text after the selection]'],
+}
+function materialsText(materials: EditorInlineMaterials, english: boolean): string {
+  if (!materials.included.length) return ''
+  const header = english ? '[Chapter context: reference only, so the result fits what comes before and after. Do not repeat or rewrite it.]'
+    : '【本章上下文：只作参考，让结果接得上前因后果；不要复述，也不要改写这些内容】'
+  return [header, ...materials.included.map(block => `${materialLabels[block.kind][english ? 1 : 0]}\n${block.text}`)].join('\n\n')
+}
 export function editorInlineTask(context: EditorInlineContext): GenerationTask {
   const { template, writingLanguage } = context
+  const english = writingLanguage === 'en-US'
+  const prompt = renderPrompt(template, { edit_instruction: editInstruction(context, english), selected_text: context.selectedText }, writingLanguage)
+  const materials = context.materials ? materialsText(context.materials, english) : ''
   return { purpose: `editor-ai-${context.action}`, reasoningStage: context.action === 'refine' ? 'review' : 'drafting', output: 'visible-text', messages: [
     { role: 'system', content: composePromptSystemRole(systemRole(context), writingLanguage) },
-    { role: 'user', content: renderPrompt(template, { edit_instruction: editInstruction(context, writingLanguage === 'en-US'), selected_text: context.selectedText }, writingLanguage) },
+    { role: 'user', content: materials ? `${materials}\n\n${prompt}` : prompt },
   ] }
 }

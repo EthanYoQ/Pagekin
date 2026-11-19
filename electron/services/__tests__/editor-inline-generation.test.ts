@@ -9,7 +9,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { createMainGenerationOwner } from '../main-generation-owner'
 import { ModelExecutionLeaseRegistry } from '../model-execution-lease'
 import { readMainGenerationPolicy } from '../main-generation-plan'
-import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../generation-source-binding'
+import { buildGenerationSourceBinding, compareGenerationSourceBindings, rebuildGenerationSourceBinding } from '../generation-source-binding'
 import { getProjectDb, getCurrentProjectPath } from '../../database'
 import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
 import { damageLedger, enumerations, failingCalls, rootCount, type DamagedColumn } from './ledger-seal-fixture'
@@ -44,7 +44,8 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch']) {
   const owner = makeOwner('epoch-1')
   cleanup.push(() => { owner.suspendForProjectClose(); db.close(); fs.rmSync(root, { recursive: true, force: true }) })
   const reopenStorage = () => { owner.suspendForProjectClose(); db.close(); db = new Database(path.join(root, '.ai-novel', 'project.db')); admitGenerationLedger(db); deps.db = db; vi.mocked(getProjectDb).mockReturnValue(db); const next=makeOwner('epoch-2'); cleanup.unshift(()=>next.suspendForProjectClose()); return next }
-  return {get db(){return db},owner,spy,reopenStorage,changeTemplate:()=>{templateBody='后来模板 {{selected_text}}'},removeModel:()=>{model=null}}
+  return {get db(){return db},deps,owner,spy,reopenStorage,changeTemplate:()=>{templateBody='后来模板 {{selected_text}}'},removeModel:()=>{model=null},
+    setContextWindow:(tokens:number)=>{model={...model!,capabilities:{...model!.capabilities!,contextWindowTokens:tokens}}}}
 }
 
 import { createHash } from 'node:crypto'
@@ -282,4 +283,104 @@ it.each<DamagedColumn>(['budget_json','action_json','binding_json'])('ADR-0030 �
  expect(rootCount(f.db)).toBe(roots)
  expect(await failingCalls(enumerations(next))).toEqual([])
  expect(next.beginEditorInline({...request,uiActionNonce:'新的'}).view.handle.rootActionId).not.toBe(bad.rootActionId)
+})
+
+const goldenTaskHashes: Record<string, string> = {
+ 'zh-CN:refine': '116ae4fe35271b4582088310ab93d047b61f4614a2199a3c9fc2aac11d5d5c55',
+ 'zh-CN:expand': '00ee948f9d1f2634d8ce337eb151700f257c912a76536e3841cb2c9816b60d0b',
+ 'zh-CN:continue': '6f16834101cfc627a6b4070a5c11b55d7345e4f04cadc75f885b5caa69d11ea3',
+ 'zh-CN:dialogue': '01246c75d7f17f2472652668b99eaaf33db5be5e210897ad223cb869fe5b3c00',
+ 'zh-CN:instruct': 'ca9a0b6f9e4eb04110cd14ec3a85016edfbd16ec85b689446be94089921925e1',
+ 'zh-CN:batch-instruct': '17414d1a8ca7c0a1ad5c49ce088b2042224129e534ca8a4a74f2a7a0afafe235',
+ 'en-US:refine': '964d523853dc659450b0768711acd9ed1133539274855b6670e9d198b5235c1f',
+ 'en-US:expand': 'a386fc5ca0bc6144e3b5ea5b227910fd0f3a6a9c204804574d01337d2da373db',
+ 'en-US:continue': '900932fb948c72824f032074bb58fa0b31a0637220ec95338f32ee9b2fd23439',
+ 'en-US:dialogue': 'b46d32caa7d9baaa24d72da35da37e3b72c69f93f7097b1e023517b866d1e5cc',
+ 'en-US:instruct': '101431623ba5976f33c7cb85875a88378f66cf4e0cc3b35215a1050bf23a33f4',
+ 'en-US:batch-instruct': '850c6121820e28d1c392d81c1d1491be821e24579034cb4c26eb175d09a7abe8',
+}
+const goldenRequests = [{ action: 'refine' }, { action: 'expand' }, { action: 'continue' }, { action: 'dialogue' }, { action: 'instruct', instruction: '改成第一人称' },
+ { action: 'batch-instruct', from: 0, to: input.documentText.length, selectedText: input.documentText, annotations: [{ id: 'a', from: 1, to: 5, selectedText: '😀林岚', instruction: '改冷' }] }] as const
+it.each(['zh-CN', 'en-US'] as const)('%s 没有章号时（架构文档、恢复稿、升级前的运行），发给模型的任务与改动前逐字节相同', language => {
+ for (const request of goldenRequests) {
+  const context = buildEditorInlineContext({ ...input, ...request } as never, language, getBuiltinPromptTemplate('edit_selected_text', language)!)
+  expect(createHash('sha256').update(JSON.stringify(editorInlineTask(context))).digest('hex'), request.action).toBe(goldenTaskHashes[`${language}:${request.action}`])
+ }
+})
+it('改动前留下的运行清单重建后比较仍相等，建议仍可应用', () => {
+ const f = fixture()
+ const legacy = JSON.parse(fs.readFileSync('test/fixtures/editor-inline-v1-bindings.json', 'utf8')) as Record<string, Parameters<typeof rebuildGenerationSourceBinding>[1]>
+ for (const binding of Object.values(legacy)) {
+  const rebuilt = rebuildGenerationSourceBinding(f.deps, binding, 'epoch-2', undefined, readMainGenerationPolicy(binding.sourceManifest.policy)).binding
+  expect(compareGenerationSourceBindings(binding, rebuilt)).toBe(true)
+ }
+})
+
+const sel = '林岚推开北塔的门。'
+const chapterDoc = `${'第三十章前文铺垫。'.repeat(8)}${sel}${'门后是长廊。'.repeat(4)}`
+const selFrom = chapterDoc.indexOf(sel)
+const block = (kind: string, text: string, required: boolean) => ({ kind, text, required })
+const chapterContext = (blocks = [block('style', 'STYLE_SENTINEL 第三人称', true), block('blueprint', 'BLUEPRINT_SENTINEL 林岚在北塔找到钥匙', true),
+ block('characters', 'CHARACTER_SENTINEL 林岚左臂有伤', false), block('threads', 'THREAD_SENTINEL 青铜钥匙', false)], unreadable: string[] = []) =>
+ ({ version: 1, chapterNumber: 30, blocks, unreadable })
+const continued = (context = chapterContext(), nonce = '章内续写') => ({ modelId: 'synthetic', uiActionNonce: nonce,
+ input: { action: 'continue' as const, documentText: chapterDoc, from: selFrom, to: selFrom + sel.length, selectedText: sel, chapterContext: context } as never })
+const userOf = (f: ReturnType<typeof fixture>) => (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'user')!.content
+
+it('章内续写把选区前的本章正文和本章蓝图放在模板段之前发给模型', async () => {
+ const f = fixture(replying('钥匙在石缝里。', 'stop'))
+ const handle = f.owner.beginEditorInline(continued()).view.handle
+ await f.owner.executeEditorInline(handle)
+ const user = userOf(f), template = user.indexOf('固定作者模板')
+ for (const expected of ['第三十章前文铺垫。', 'BLUEPRINT_SENTINEL', 'STYLE_SENTINEL', 'CHARACTER_SENTINEL', 'THREAD_SENTINEL', '门后是长廊。']) {
+  expect(user, expected).toContain(expected)
+  expect(user.indexOf(expected), expected).toBeLessThan(template)
+ }
+})
+it('模型窗口小时可选材料按固定顺序被裁（先线索后人物），必需材料保留，被裁项记进运行记录并在重开后不变', async () => {
+ const f = fixture(replying('钥匙在石缝里。', 'stop'))
+ f.setContextWindow(8000)
+ const hugeThreads = chapterContext([block('style', 'STYLE_SENTINEL', true), block('blueprint', 'BLUEPRINT_SENTINEL', true),
+  block('characters', 'CHARACTER_SENTINEL', false), block('threads', `THREAD_SENTINEL${'线'.repeat(6000)}`, false)])
+ const onlyThreads = f.owner.beginEditorInline(continued(hugeThreads, '只裁线索'))
+ expect(onlyThreads.context.materials?.omitted).toEqual([{ kind: 'threads', reason: 'budget' }])
+ await f.owner.executeEditorInline(onlyThreads.view.handle)
+ expect(userOf(f)).toContain('CHARACTER_SENTINEL')
+ expect(userOf(f)).not.toContain('THREAD_SENTINEL')
+ const hugeCharacters = chapterContext([block('style', 'STYLE_SENTINEL', true), block('blueprint', `BLUEPRINT_SENTINEL${'蓝'.repeat(4000)}`, true),
+  block('characters', `CHARACTER_SENTINEL${'人'.repeat(4000)}`, false), block('threads', 'THREAD_SENTINEL', false)])
+ const both = f.owner.beginEditorInline(continued(hugeCharacters, '两项都裁'))
+ expect(both.context.materials?.omitted).toEqual([{ kind: 'threads', reason: 'budget' }, { kind: 'characters', reason: 'budget' }])
+ await f.owner.executeEditorInline(both.view.handle)
+ expect(userOf(f)).toContain('BLUEPRINT_SENTINEL')
+ const reopened = f.reopenStorage().readEditorInlineRecovery(both.view.handle)
+ expect(reopened.sourceStatus).toBe('current')
+ expect(reopened.context.materials).toEqual(both.context.materials)
+ const binding = JSON.parse(f.db.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(both.view.handle.runId) as string)
+ const widerModel = { ...binding.sourceManifest.modelReceipt, capabilityEvidence: { ...binding.sourceManifest.modelReceipt.capabilityEvidence, contextWindowTokens: 200000 } }
+ expect(rebuildGenerationSourceBinding(f.deps, binding, 'epoch-3', widerModel).binding.sourceManifest.editorInlineContext).toEqual(binding.sourceManifest.editorInlineContext)
+})
+it('某个人物或线索读不出时只略去该块并记进运行记录，生成照常', async () => {
+ const f = fixture(replying('钥匙在石缝里。', 'stop'))
+ const recovery = f.owner.beginEditorInline(continued(chapterContext([block('style', 'STYLE_SENTINEL', true), block('blueprint', 'BLUEPRINT_SENTINEL', true)], ['characters', 'threads'])))
+ expect(recovery.context.materials?.omitted).toEqual([{ kind: 'characters', reason: 'unreadable' }, { kind: 'threads', reason: 'unreadable' }])
+ const receipt = await f.owner.executeEditorInline(recovery.view.handle)
+ expect(receipt.outcome.status).toBe('completed')
+})
+it('开运行后人物状态或本章蓝图变了，建议仍可应用', () => {
+ const f = fixture()
+ const handle = f.owner.beginEditorInline(continued()).view.handle
+ f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(30,'后来补的蓝图')")
+ f.db.exec("INSERT INTO characters(name,cs_mental_state) VALUES('林岚','后台更新的心理状态')")
+ expect(f.owner.readEditorInlineRecovery(handle).sourceStatus).toBe('current')
+ expect(f.reopenStorage().readEditorInlineRecovery(handle).sourceStatus).toBe('current')
+})
+it.each([
+ ['工具表外的块', chapterContext([block('style', 'S', true), block('blueprint', 'B', true), block('preceding', '伪造前文', true)])],
+ ['必需标记与工具表不符', chapterContext([block('style', 'S', true), block('blueprint', 'B', false)])],
+ ['同一块两次', chapterContext([block('style', 'S', true), block('style', 'S2', true)])],
+ ['章号不合法', { ...chapterContext(), chapterNumber: 0 }],
+])('章节上下文%s时拒绝开始运行', (_name, bad) => {
+ const f = fixture()
+ expect(() => f.owner.beginEditorInline(continued(bad as never))).toThrow('GENERATION_EDITOR_INPUT_INVALID')
 })

@@ -16,6 +16,48 @@ export type EditorInlineAnnotation = {
 export type EditorInlineRequest = { action: EditorInlineFixedAction }
   | { action: 'instruct'; instruction: string }
   | { action: 'batch-instruct'; annotations: EditorInlineAnnotation[] }
+/** 渲染层从库里读的块。 */
+export type EditorContextReadKind = 'style' | 'blueprint' | 'characters' | 'threads' | 'previous-ending'
+/** 主进程从冻结的正文里切的块。 */
+export type EditorContextDocumentKind = 'preceding' | 'following'
+export type EditorContextKind = EditorContextReadKind | EditorContextDocumentKind
+export type EditorContextBlock = { kind: EditorContextKind; text: string; required: boolean }
+type EditorContextPlanEntry = { kind: EditorContextReadKind; required: boolean } | { kind: EditorContextDocumentKind; required: true; maxChars: number }
+
+/** 每个工具带哪些块，按发给模型的顺序排。 */
+export const EDITOR_CONTEXT_PLAN: Readonly<Record<EditorInlineRequest['action'], readonly EditorContextPlanEntry[]>> = (() => {
+  const style = { kind: 'style', required: true } as const
+  const blueprint = { kind: 'blueprint', required: true } as const
+  const characters = { kind: 'characters', required: false } as const
+  const threads = { kind: 'threads', required: false } as const
+  const near = [{ kind: 'preceding', required: true, maxChars: 500 }, { kind: 'following', required: true, maxChars: 500 }] as const
+  return {
+    refine: [style, ...near],
+    expand: [style, blueprint, characters, ...near],
+    instruct: [style, blueprint, characters, ...near],
+    dialogue: [style, blueprint, { kind: 'characters', required: true }, ...near],
+    continue: [style, blueprint, characters, threads, { kind: 'previous-ending', required: false },
+      { kind: 'preceding', required: true, maxChars: 3000 }, { kind: 'following', required: true, maxChars: 600 }],
+    'batch-instruct': [style, blueprint, characters, threads],
+  }
+})()
+/** 窗口不够时可选块被裁的先后。 */
+export const EDITOR_CONTEXT_TRIM_ORDER: readonly EditorContextReadKind[] = ['previous-ending', 'threads', 'characters']
+/** 选区前的正文短于这个字数时，续写才去读上一章结尾。 */
+export const EDITOR_CONTEXT_PREVIOUS_ENDING_BELOW = 800
+
+/** 章内编辑时渲染层备好的候选块；架构文档、恢复稿和升级前的运行没有。 */
+export type EditorInlineChapterContext = {
+  version: 1
+  chapterNumber: number
+  blocks: EditorContextBlock[]
+  /** 读不出而略去的块。 */
+  unreadable: EditorContextReadKind[]
+}
+export type EditorContextOmission = { kind: EditorContextKind; reason: 'budget' | 'unreadable' }
+/** 主进程开跑时选定并冻结的材料，重建时原样沿用。 */
+export type EditorInlineMaterials = { included: EditorContextBlock[]; omitted: EditorContextOmission[] }
+
 export type EditorInlineInput = EditorInlineRequest & {
   documentText: string
   from: number
@@ -23,13 +65,18 @@ export type EditorInlineInput = EditorInlineRequest & {
   selectedText: string
   /** 发起时所在稿的 filePath；升级前的运行没有。 */
   filePath?: string
+  chapterContext?: EditorInlineChapterContext
 }
 export type EditorInlineContext = EditorInlineInput & {
   kind: 'author-draft'
   documentHash: string
   writingLanguage: WritingLanguage
   template: PromptTemplate
+  materials?: EditorInlineMaterials
 }
+/** 带本章材料的续写只输出接续的新内容，接受时插在选区之后；其余情况替换选区。 */
+export const editorInlineInsertsAfterSelection = (context: Pick<EditorInlineContext, 'action' | 'materials'>) =>
+  context.action === 'continue' && context.materials !== undefined
 export interface EditorInlineRecovery {
   view: MainGenerationRunView
   modelId: string
