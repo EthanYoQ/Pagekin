@@ -59,7 +59,7 @@ describe('installed M07 lane', () => {
         receipts: rows(db, 'SELECT * FROM chapter_deletion_operations'),
       }
       const result = migrateSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry(), 8)
-      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(10)
+      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(11)
       expect(result.completedSteps).toEqual(['M07'])
       const v8 = getDesktopMigrationRegistry().recognizedSchemas.filter(schema => schema.version === 8).map(schema => schema.fingerprint)
       expect(v8).toContain(sqliteSchemaFingerprint(db))

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useProjectStore } from '../../../../stores/project-store'
+import { aiSourceOf } from '../../../../shared/novel-config-ai-sources'
 import { useLLMStore } from '../../../../stores/llm-store'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import { GenerateFieldCommand as RuntimeGenerateFieldCommand } from '../generate-field.command'
@@ -163,6 +164,7 @@ describe('GenerateFieldCommand project identity', () => {
     expect(observedPrompts.join('\n')).toContain(authorText)
     expect(useProjectStore.getState().currentProject?.novelConfig.worldSetting)
       .toBe(`${authorText}\n\n${addition}`)
+    expect(aiSourceOf(useProjectStore.getState().currentProject!.novelConfig, 'worldSetting')).toBe('expanded')
   })
 
   it('sends a complete English configuration without Chinese model instructions', async () => {
@@ -290,6 +292,7 @@ describe('GenerateFieldCommand project identity', () => {
     expect(String(callLlm.mock.calls[1]?.[0])).toContain('只重新生成“全局写作要求”字段')
     expect(updateNovelConfig).toHaveBeenCalledWith({
       globalGuidance: `作者原有长篇要求，不受生成规则条数限制。\n\n${replacement}`,
+      aiSources: { globalGuidance: { kind: 'expanded', hash: expect.any(String) } },
     }, context.projectSession)
     expect(saveProject).toHaveBeenCalledOnce()
   })
@@ -314,7 +317,9 @@ describe('GenerateFieldCommand project identity', () => {
     await expect(command.execute({ step: {}, context, callbacks })).resolves.toContain(replacement)
 
     expect(callLlm).toHaveBeenCalledTimes(2)
-    expect(updateNovelConfig).toHaveBeenCalledWith({ globalGuidance: replacement }, context.projectSession)
+    expect(updateNovelConfig).toHaveBeenCalledWith({
+      globalGuidance: replacement, aiSources: { globalGuidance: { kind: 'filled', hash: expect.any(String) } },
+    }, context.projectSession)
     expect(saveProject).toHaveBeenCalledOnce()
   })
 

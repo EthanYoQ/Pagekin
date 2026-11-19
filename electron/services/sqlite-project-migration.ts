@@ -12,6 +12,7 @@ import { M02_ADDED_CHARACTER_COLUMNS, M02_AUXILIARY_TABLES, verifyM02CharacterRo
 import { M03_REVIEW_CYCLE_TABLES, priorReviewCycleFailures } from '../migrations/m03-review-cycle'
 import { M07_DRAFT_COLUMNS, logicalTableName, verifyM07ChapterRecycle } from '../migrations/m07-chapter-recycle'
 import { M08_EXEMPTION_COLUMNS, M08_TABLES } from '../migrations/m08-continuity-foundation'
+import { M10_PROJECT_CORE_COLUMNS } from '../migrations/m10-ai-sources'
 import { initializeLegacyBaselineSchema } from '../migrations/baseline-schema'
 import { ensureBaselineBlueprintTables } from '../migrations/baseline-blueprint-schema'
 import { initializeCharacterRosterMetadata } from '../repositories/character-roster-schema'
@@ -50,10 +51,11 @@ export interface ProjectSqliteEvidence {
   preRecycleDomain?: { tableCounts: Record<string, number>; authorContentHash: string }
   preContinuityDomain?: { tableCounts: Record<string, number>; authorContentHash: string }
   preAnnotationDomain?: { tableCounts: Record<string, number>; authorContentHash: string }
+  preAiSourcesDomain?: { tableCounts: Record<string, number>; authorContentHash: string }
 }
 /** 跨版本比对用的内容哈希。每个变体都要全书读一遍，调用方只要它用到的。 */
-type DomainVariant = 'preIdentityDomain' | 'preAssetDomain' | 'preRecycleDomain' | 'preContinuityDomain' | 'preAnnotationDomain'
-const ALL_DOMAIN_VARIANTS: readonly DomainVariant[] = ['preIdentityDomain', 'preAssetDomain', 'preRecycleDomain', 'preContinuityDomain', 'preAnnotationDomain']
+type DomainVariant = 'preIdentityDomain' | 'preAssetDomain' | 'preRecycleDomain' | 'preContinuityDomain' | 'preAnnotationDomain' | 'preAiSourcesDomain'
+const ALL_DOMAIN_VARIANTS: readonly DomainVariant[] = ['preIdentityDomain', 'preAssetDomain', 'preRecycleDomain', 'preContinuityDomain', 'preAnnotationDomain', 'preAiSourcesDomain']
 
 function regular(file: string): void {
   const info = fs.lstatSync(file)
@@ -114,7 +116,7 @@ const quoteIdentifier = (value: string) => '"' + value.replaceAll('"', '""') + '
 const M05_ASSET_TABLES = ['character_avatar_assets', 'character_avatar_unresolved'] as const
 // 跨版本比对正文时，后来迁移加的表和列不算，M08 补的基线节点同理。
 function domainColumns(db: BetterSqlite3.Database, preIdentity = false, preAsset = false, preRecycle = preIdentity,
-  preContinuity = preRecycle, preAnnotation = preContinuity): DomainColumns {
+  preContinuity = preRecycle, preAnnotation = preContinuity, preAiSources = preAnnotation): DomainColumns {
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[]
   const postLegacyTables = [...M02_AUXILIARY_TABLES, ...M03_REVIEW_CYCLE_TABLES, ...M05_ASSET_TABLES] as readonly string[]
   return tables.filter(({ name }) => (!preAnnotation || name !== 'annotation_history')
@@ -124,7 +126,8 @@ function domainColumns(db: BetterSqlite3.Database, preIdentity = false, preAsset
     columns: (db.prepare(`PRAGMA table_info(${quoteIdentifier(name)})`).all() as { name: string }[]).map(column => column.name)
       .filter(column => !preIdentity || name !== 'characters' || !(M02_ADDED_CHARACTER_COLUMNS as readonly string[]).includes(column))
       .filter(column => !preRecycle || logicalTableName(name) !== 'drafts' || !(M07_DRAFT_COLUMNS as readonly string[]).includes(column))
-      .filter(column => !preContinuity || name !== 'consistency_exemptions' || !(M08_EXEMPTION_COLUMNS as readonly string[]).includes(column)),
+      .filter(column => !preContinuity || name !== 'consistency_exemptions' || !(M08_EXEMPTION_COLUMNS as readonly string[]).includes(column))
+      .filter(column => !preAiSources || name !== 'project_core' || !(M10_PROJECT_CORE_COLUMNS as readonly string[]).includes(column)),
   }))
 }
 function domain(db: BetterSqlite3.Database, selection = domainColumns(db)): ProjectSqliteEvidence['domain'] {
@@ -157,7 +160,8 @@ function inspect(db: BetterSqlite3.Database, registry: MigrationRegistry, target
     ...(want('preAssetDomain', 6) ? { preAssetDomain: domain(db, domainColumns(db, false, true)) } : {}),
     ...(want('preRecycleDomain', 8) ? { preRecycleDomain: domain(db, domainColumns(db, false, false, true)) } : {}),
     ...(want('preContinuityDomain', 9) ? { preContinuityDomain: domain(db, domainColumns(db, false, false, false, true)) } : {}),
-    ...(want('preAnnotationDomain', 10) ? { preAnnotationDomain: domain(db, domainColumns(db, false, false, false, false, true)) } : {}) }
+    ...(want('preAnnotationDomain', 10) ? { preAnnotationDomain: domain(db, domainColumns(db, false, false, false, false, true)) } : {}),
+    ...(want('preAiSourcesDomain', 11) ? { preAiSourcesDomain: domain(db, domainColumns(db, false, false, false, false, false, true)) } : {}) }
 }
 function qualifiedLegacySource(db: BetterSqlite3.Database): string | null {
   const adapter = new SqliteSchemaAdapter(db)

@@ -1,4 +1,5 @@
 import type { GenerationOwnerChannels, GenerationOwnerEvents } from './generation-owner-contract'
+import type { AiSources } from './novel-config-ai-sources'
 import type { DamagedReviewCycle } from './damaged-review-cycle'
 import type { CharacterProposalChannels } from './character-proposal'
 import type { CharacterContinuityTimeline, ContinuityNode } from './character-continuity'
@@ -673,6 +674,8 @@ export interface NovelConfig {
   globalGuidance: string
   writingStyle?: string
   referenceWorks?: string
+  /** 设定细则里哪些项是 AI 写的；不进提示词。旧作品没有这一项，全部按作者内容。 */
+  aiSources?: AiSources
 }
 
 export interface FileNode {

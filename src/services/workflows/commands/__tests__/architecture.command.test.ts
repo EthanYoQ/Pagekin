@@ -1,4 +1,5 @@
 import { decodeCharacterDetails } from '../../../../shared/character-proposal-parser'
+import { aiSourceOf } from '../../../../shared/novel-config-ai-sources'
 import { proposalRuntimeFixture, proposalBatchFixture } from './character-proposal-runtime.fixture'
 import { contextLengthRejectingDependencies } from './context-length-runtime.fixture'
 import type { CharacterProposalSource, CharacterProposalBatch } from '../../../../shared/character-proposal'
@@ -268,6 +269,7 @@ describe('GenerateConfigCommand error boundaries', () => {
           goldenFinger: '',
           protagonistProfile: '',
           globalGuidance: authorGuidance,
+          aiSources: { referenceWorks: { kind: 'filled', hash: 'stale000' } },
         },
       } as never,
       saveProject: vi.fn().mockResolvedValue(true),
@@ -294,6 +296,11 @@ describe('GenerateConfigCommand error boundaries', () => {
       worldSetting: JSON.parse(validConfigJson).worldSetting,
       globalGuidance: `${authorGuidance}\n\n${JSON.parse(validConfigJson).globalGuidance}`,
     }))
+    expect(userPrompt).not.toContain('aiSources')
+    const generated = onGenerated.mock.calls[0]![0]
+    expect(aiSourceOf(generated, 'worldSetting')).toBe('filled')
+    expect(aiSourceOf(generated, 'globalGuidance')).toBe('expanded')
+    expect(aiSourceOf(generated, 'referenceWorks')).toBeNull()
   })
 
   it.each([

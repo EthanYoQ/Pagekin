@@ -51,6 +51,7 @@ import {
 } from '../novel-config-expansion'
 import { displayedErrorMessage, englishWithReason, knownAppErrorMessage } from '../../../i18n/app-errors'
 import { pluralEn } from '../../../shared/plural-en'
+import { recordAiSources, withoutAiSources } from '../../../shared/novel-config-ai-sources'
 import { WorkflowCancelledError } from '../workflow-cancellation'
 
 // --- 基础工具库 ---
@@ -706,6 +707,7 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
     const writingLanguage = workflowWritingLanguage(context)
     assertArchitectureProjectSessionCurrent(projectSession, context)
     const existingConfig = expectedConfig
+    const promptConfig = withoutAiSources(existingConfig)
     callbacks.log(text(
       '正在调度配置专家 AI，准备解析您的脑洞...',
       'Preparing the configuration model to structure your story idea...',
@@ -726,11 +728,11 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
       this.wordsPerChapter,
       writingLanguage,
     )
-    const authorConfigContext = Object.keys(existingConfig).length > 0
+    const authorConfigContext = Object.keys(promptConfig).length > 0
       ? promptLanguageText(
           writingLanguage,
-          `【作者已有配置】\n以下非空内容和选择是作者权威输入：长文本只能在保留原文的基础上补充，类型、受众、结构与视角选择不得改写。\n${JSON.stringify(existingConfig, null, 2)}`,
-          `[Existing author configuration]\nThe following non-empty content and choices are authoritative. Preserve long-form text and only add useful details; do not change the author's genre, audience, structure, or point-of-view choices.\n${JSON.stringify(existingConfig, null, 2)}`,
+          `【作者已有配置】\n以下非空内容和选择是作者权威输入：长文本只能在保留原文的基础上补充，类型、受众、结构与视角选择不得改写。\n${JSON.stringify(promptConfig, null, 2)}`,
+          `[Existing author configuration]\nThe following non-empty content and choices are authoritative. Preserve long-form text and only add useful details; do not change the author's genre, audience, structure, or point-of-view choices.\n${JSON.stringify(promptConfig, null, 2)}`,
         )
       : ''
     const originalTask = [promptBuilder.build(), authorConfigContext, configJSONContract]
@@ -840,7 +842,8 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
         'The current project changed, so the generated configuration was not applied.',
       ))
     }
-    const generatedConfig = mergeExpandedNovelConfig(existingConfig, parsed)
+    const merged = mergeExpandedNovelConfig(existingConfig, parsed)
+    const generatedConfig = { ...merged, aiSources: recordAiSources(existingConfig, merged) }
     const mainOwned = this.requireGenerationExecution().mainOwned
     if (mainOwned) {
       const handle = context.mainGenerationRunHandle
@@ -2159,7 +2162,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     const representedConfig: Record<string, unknown> = { genre: config.genre, totalChapters: sourceExpected.totalChapters,
       wordsPerChapter: sourceExpected.wordsPerChapter, plotStructure: config.plotStructure, narrativePOV: config.narrativePOV,
       globalGuidance: sourceExpected.globalGuidance, writingLanguage: language }
-    const additionalConfig = Object.fromEntries(Object.entries(config).filter(([key, value]) => representedConfig[key] !== value))
+    const additionalConfig = Object.fromEntries(Object.entries(withoutAiSources(config)).filter(([key, value]) => representedConfig[key] !== value))
     const originalPrompt = [promptBuilder.build(), ...(Object.keys(additionalConfig).length ? [promptLanguageText(language,
       `【其余冻结作者配置，须保留全部硬要求】\n${JSON.stringify(additionalConfig)}`,
       `[Additional frozen author configuration; preserve all hard requirements]\n${JSON.stringify(additionalConfig)}`)] : [])].join('\n\n')

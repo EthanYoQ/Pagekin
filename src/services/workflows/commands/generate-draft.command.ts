@@ -757,6 +757,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       'worldSetting',
       'goldenFinger',
       'protagonistProfile',
+      'aiSources',
     ])
     const novelConfigFacts = Object.fromEntries(
       Object.entries(novelConfig).filter(([key]) => !promptOnlyConfigKeys.has(key)),

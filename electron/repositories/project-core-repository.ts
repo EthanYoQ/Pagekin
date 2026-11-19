@@ -12,6 +12,7 @@ import {
     type WritingLanguage,
 } from '../../src/shared/writing-language'
 import { resolveNarrativeThreadDormantThreshold } from '../../src/shared/narrative-thread'
+import { parseAiSources, type AiSources } from '../../src/shared/novel-config-ai-sources'
 
 /** project_core 表行类型 */
 export interface ProjectCoreRow {
@@ -34,6 +35,7 @@ export interface ProjectCoreRow {
     core_outline: string
     world_setting: string
     protagonist_profile: string
+    ai_sources?: string
     premise: string
     worldbuilding: string
     characters_arch: string
@@ -63,6 +65,7 @@ export interface ProjectCoreData {
     coreOutline: string
     worldSetting: string
     protagonistProfile: string
+    aiSources: AiSources
     premise: string
     worldbuilding: string
     charactersArch: string
@@ -118,6 +121,7 @@ function rowToData(row: ProjectCoreRow): ProjectCoreData {
         coreOutline: row.core_outline,
         worldSetting: row.world_setting,
         protagonistProfile: row.protagonist_profile,
+        aiSources: parseAiSources(row.ai_sources),
         premise: row.premise,
         worldbuilding: row.worldbuilding,
         charactersArch: row.characters_arch,
@@ -179,6 +183,7 @@ export class ProjectCoreRepository {
             coreOutline: 'core_outline',
             worldSetting: 'world_setting',
             protagonistProfile: 'protagonist_profile',
+            aiSources: 'ai_sources',
             premise: 'premise',
             worldbuilding: 'worldbuilding',
             synopsis: 'synopsis',
@@ -194,7 +199,7 @@ export class ProjectCoreRepository {
                 const value = (data as Record<string, unknown>)[camel]
                 values.push(camel === 'narrativeThreadDormantChapterThreshold'
                     ? resolveNarrativeThreadDormantThreshold(value)
-                    : value)
+                    : camel === 'aiSources' ? JSON.stringify(parseAiSources(value)) : value)
             }
         }
 

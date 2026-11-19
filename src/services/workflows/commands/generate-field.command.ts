@@ -21,6 +21,7 @@ import {
   isGeneratedGlobalGuidanceValid,
   preserveAuthorText,
 } from '../novel-config-expansion'
+import { recordAiSources } from '../../../shared/novel-config-ai-sources'
 
 /**
  * 支持的单字段生成 Key
@@ -201,13 +202,15 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
     this.assertNotCancelled(context)
     const { updateNovelConfig, saveProject } = projectState
     const expandedResult = preserveAuthorText(config[this.fieldKey], cleanResult)
+    const written: Partial<NovelConfig> = { [this.fieldKey]: expandedResult }
+    written.aiSources = recordAiSources(config, written)
     const mainOwned = this.requireGenerationExecution().mainOwned
     let generatedSaved = false
     if (mainOwned) {
       const handle = context.mainGenerationRunHandle
       if (!handle) throw new Error('GENERATION_COMMIT_HANDLE_REQUIRED')
-      generatedSaved = await projectState.commitGeneratedNovelConfig({ [this.fieldKey]: expandedResult }, expectedConfig, projectSession, handle)
-    } else updateNovelConfig({ [this.fieldKey]: expandedResult }, projectSession)
+      generatedSaved = await projectState.commitGeneratedNovelConfig(written, expectedConfig, projectSession, handle)
+    } else updateNovelConfig(written, projectSession)
     if (!sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),
