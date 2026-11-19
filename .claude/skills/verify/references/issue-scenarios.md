@@ -356,6 +356,6 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 
 | 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
 |---|---|---|---|---|
-| `fspeed-finalize` | 默认定稿第 3 到 6 章，每章记从点「确认定稿」到「已定稿，只读」、到运行结束各发了哪些 `fs:` IPC（`fsBeforeReadOnly`、`fsBeforeRunEnd`），修后两者都没有写作 Skill 快照的 `fs:check-exists` 与刷新文件树的 `fs:list-dir`；每章两次对话请求，后处理步骤 attempts 为 1 | 正文（中文） | 是 | #702 |
+| `fspeed-finalize` | 默认定稿第 3 到 6 章，每章记从点「确认定稿」到「已定稿，只读」、到运行结束各发了哪些 `fs:` IPC（`fsBeforeReadOnly`、`fsBeforeRunEnd`），修后两者都没有写作 Skill 快照的 `fs:check-exists`；刷新文件树的 `fs:list-dir` 照样发（`fileTree` 记它的起止），只是运行结束不等它；每章两次对话请求，后处理步骤 attempts 为 1 | 正文（中文） | 是 | #702 |
 | `fspeed-still-processing` | 假模型闸门卡住第 3 章定稿后处理，去第 4 章点「写作此章」：不起运行，提示是「第 3 章已定稿，后台还在整理这一章，很快就好，请稍后再试。」，不是「处理失败」（`fspeed-still-processing-notice`）；放行后第 3 章后处理跑完 | 正文（中文） | 是 | #702 |
 | `real-fspeed-finalize` | 真实模型逐章定稿（默认 3 到 23 章），记计时、每次对话请求的 `enable_thinking`、`reasoning_effort`、思考字数和可见回复全文，以及步骤结果与重试；用于开关思考的质量门禁与修前修后交替计时 | 正文（中文） | 真实 | #702 |
