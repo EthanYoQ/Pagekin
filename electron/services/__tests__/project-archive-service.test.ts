@@ -922,7 +922,7 @@ describe('portable project export service', () => {
     it('目标文件已存在', async () => {
       const f = fixture()
       fs.writeFileSync(f.target, '作者原有的文件')
-      await expectSingleRun(f, {}, 'PORTABLE_ARCHIVE_TARGET_EXISTS', 1)
+      await expectSingleRun(f, {}, 'PORTABLE_ARCHIVE_TARGET_EXISTS', 0)
       expect(fs.readFileSync(f.target, 'utf8')).toBe('作者原有的文件')
     })
 
