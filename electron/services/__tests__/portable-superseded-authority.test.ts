@@ -65,7 +65,7 @@ async function exportAndRestore(base: string, project: OpenProject, label: strin
     targetArchivePath: archive,
     attemptParentPath: attempts,
     assertCurrentContext: () => undefined,
-    assets: { snapshot: () => ({ files: [], verifyUnchanged: () => undefined }) },
+    assets: { snapshot: () => ({ files: [] }) },
     snapshotGeneration: `superseded-${label}`,
   })
   const target = path.join(base, `${label}-恢复`)

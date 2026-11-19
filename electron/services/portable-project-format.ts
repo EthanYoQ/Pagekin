@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { getDesktopMigrationRegistry } from '../migrations/desktop-registry'
+import { SchemaMigrationError } from '../migrations/registry'
 import { verifySchema } from '../migrations/runner'
 import { LIVE_ROW_VIEWS, logicalTableName } from '../migrations/m07-chapter-recycle'
 import { SqliteSchemaAdapter, type AcceptedReviewCycleFailures } from '../migrations/sqlite-schema-adapter'
@@ -102,10 +103,30 @@ const fieldsAddedAfter: Readonly<Record<PortableSourceSchemaVersion, ReadonlySet
 export function assertPortableSourceSchema(database: Database.Database,
   version: PortableSourceSchemaVersion = PORTABLE_SOURCE_SCHEMA_VERSION,
   acceptedReviewCycleFailures?: AcceptedReviewCycleFailures): { tables: number; fields: number } {
-  try {
-    database.pragma('foreign_keys = ON')
-    verifySchema(new SqliteSchemaAdapter(database, acceptedReviewCycleFailures), getDesktopMigrationRegistry(), version)
-  } catch { formatError('PORTABLE_SCHEMA_UNSUPPORTED') }
+  try { verifyPortableSource(database, version, acceptedReviewCycleFailures) } catch { formatError('PORTABLE_SCHEMA_UNSUPPORTED') }
+  return portableSchemaFields(database, version)
+}
+
+const UNSUPPORTED_EXPORT_SOURCE = new Set(['UNRECOGNIZED_SCHEMA', 'NEWER_SCHEMA_READ_ONLY', 'SCHEMA_VERSION_MISMATCH'])
+
+/** 导出的源库：版本不对报不支持；库损坏、审修循环验不过照迁移通道原样报出错误码和章节。 */
+export function assertPortableExportSource(database: Database.Database,
+  acceptedReviewCycleFailures: AcceptedReviewCycleFailures): { tables: number; fields: number } {
+  try { verifyPortableSource(database, PORTABLE_SOURCE_SCHEMA_VERSION, acceptedReviewCycleFailures) }
+  catch (error) {
+    if (error instanceof SchemaMigrationError && UNSUPPORTED_EXPORT_SOURCE.has(error.code)) formatError('PORTABLE_SCHEMA_UNSUPPORTED')
+    throw error
+  }
+  return portableSchemaFields(database, PORTABLE_SOURCE_SCHEMA_VERSION)
+}
+
+function verifyPortableSource(database: Database.Database, version: PortableSourceSchemaVersion,
+  acceptedReviewCycleFailures?: AcceptedReviewCycleFailures): void {
+  database.pragma('foreign_keys = ON')
+  verifySchema(new SqliteSchemaAdapter(database, acceptedReviewCycleFailures), getDesktopMigrationRegistry(), version)
+}
+
+function portableSchemaFields(database: Database.Database, version: PortableSourceSchemaVersion): { tables: number; fields: number } {
   const expected = new Map([...fieldPolicy].filter(([key]) => !fieldsAddedAfter[version].has(key)))
   const admittedViews = version >= 8 ? liveRowViews : new Set<string>()
   const actual = new Set<string>()

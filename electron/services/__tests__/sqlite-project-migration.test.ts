@@ -8,7 +8,7 @@ import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema
 import { ensureBaselineBlueprintTables } from '../../migrations/baseline-blueprint-schema'
 import { sqliteSchemaFingerprint } from '../../migrations/sqlite-schema-adapter'
 import { logicalTableName } from '../../migrations/m07-chapter-recycle'
-import { backupProjectSqlite, openProjectSqlite, probeProjectSqlite, verifyProjectSqlite, upgradeProjectSqlite } from '../sqlite-project-migration'
+import { backupProjectSqlite, openProjectSqlite, probeProjectSqlite, snapshotProjectSqlite, verifyProjectSqlite, upgradeProjectSqlite } from '../sqlite-project-migration'
 import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
 import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
 import { CharacterRosterRepository } from '../../repositories/character-roster-repository'
@@ -509,5 +509,116 @@ describe('打开作品不跑全书审修循环校验（#702）', () => {
     expect(() => openProjectSqlite({ databasePath: broken.target })).not.toThrow()
     expect(probeProjectSqlite({ databasePath: broken.target }).schemaVersion).toBe(10)
     expect(() => verifyProjectSqlite({ databasePath: broken.target })).toThrow('MIGRATION_VERIFICATION_FAILED')
+  })
+})
+
+describe('各调用方拿到的内容哈希（#702）', () => {
+  /** 时间戳列改成定值，内容哈希才能写成字面值。 */
+  async function currentBook() {
+    const f = fixture()
+    await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
+    const db = new Database(f.target); handles.push(db)
+    db.pragma('foreign_keys = ON')
+    db.prepare("INSERT INTO character_avatar_unresolved(record_id,disposition,source_reference,source_relative_path,candidate_character_ids_json) VALUES('r1','reference-only','旧头像','avatars/old.png','[]')").run()
+    db.prepare("INSERT INTO consistency_exemptions(stable_fact_key,reason) VALUES('k','作者安排')").run()
+    db.prepare("INSERT INTO annotation_history(draft_id,before_text,after_text,annotations_json) VALUES(1,'前','后','[]')").run()
+    for (const table of db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").pluck().all() as string[]) {
+      for (const column of db.prepare(`SELECT name FROM pragma_table_info('${table}') WHERE name IN ('created_at','updated_at')`).pluck().all() as string[]) {
+        db.prepare(`UPDATE "${table}" SET "${column}"='2026-01-01 00:00:00'`).run()
+      }
+    }
+    db.close()
+    return f
+  }
+
+  const ones = (...tables: string[]) => Object.fromEntries(tables.map(table => [table, 1]))
+  const CURRENT_BOOK = {
+    schemaVersion: 10,
+    fingerprint: 'cfc23088546ad51d63c3b940dc5f43d7061c4fa5092c6eddf293feb3671acb3b',
+    domain: { authorContentHash: 'ac81cf1602c2844f4c6e5eb2c402444e9c16581888e3a6b90df1a431d425c2cb',
+      tableCounts: ones('annotation_history', 'character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preIdentityDomain: { authorContentHash: '3576e040fc66e6de607720e5f1e5d27f0078e2f1fb650c9f518ff55573fca4b4',
+      tableCounts: ones('character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preAssetDomain: { authorContentHash: '6aadf6536419abbb9140648da84e4384d948c9d49e2c434d970aa19df0f072e3',
+      tableCounts: ones('annotation_history', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preRecycleDomain: { authorContentHash: 'a8da0b807e9d343afdbd23b59d654305864ecbcdb5e6570a9535247032849d1f',
+      tableCounts: ones('character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preContinuityDomain: { authorContentHash: 'f4032467743017e14015b25afb889fd7f496fe659e2a51c6aaebe9517828d800',
+      tableCounts: ones('character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    preAnnotationDomain: { authorContentHash: '3c729596304c2d698d43f1b1f06dd546c9d5e38637f323dc5772a7b06c83fbea',
+      tableCounts: ones('character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+  }
+
+  it('探测、校验、升级与备份当前版本的书，内容哈希与改前逐字相同', async () => {
+    const f = await currentBook()
+    expect(probeProjectSqlite({ databasePath: f.target })).toEqual(CURRENT_BOOK)
+    expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(CURRENT_BOOK)
+    expect(upgradeProjectSqlite({ databasePath: f.target })).toEqual(CURRENT_BOOK)
+    expect(await backupProjectSqlite({ sourceDatabasePath: f.target, targetDatabasePath: path.join(f.root, 'copy.db') })).toEqual(CURRENT_BOOK)
+  })
+
+  it('旧版本的库只带它那一版有的内容哈希', async () => {
+    const f = fixture()
+    expect(Object.keys(probeProjectSqlite({ databasePath: f.source }))).toEqual(['schemaVersion', 'fingerprint', 'domain'])
+    const v6 = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target, targetVersion: 6 })
+    expect(Object.keys(v6)).toEqual(['schemaVersion', 'fingerprint', 'domain', 'preIdentityDomain', 'preAssetDomain'])
+    expect(probeProjectSqlite({ databasePath: f.target })).toEqual(v6)
+  })
+})
+
+describe('备份当前版本的书，审修循环照旧按通道校验（#702）', () => {
+  async function currentBookWithCycles() {
+    const f = fixture()
+    await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
+    const db = new Database(f.target); handles.push(db)
+    db.pragma('foreign_keys = ON')
+    return { ...f, db, book: seedReviewedBook(db, 2, { firstChapter: 2 }) }
+  }
+  const backupOf = (f: { root: string; target: string }, evidence: 'strict' | 'no-new-failures') =>
+    backupProjectSqlite({ sourceDatabasePath: f.target, targetDatabasePath: path.join(f.root, `${evidence}.db`), evidence })
+
+  it('证明对不上的循环：严格通道拒绝，no-new-failures 放行', async () => {
+    const f = await currentBookWithCycles()
+    breakReviewProof(f.db, f.book[1]!)
+    f.db.close()
+    await expect(backupOf(f, 'strict')).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
+    expect((await backupOf(f, 'no-new-failures')).schemaVersion).toBe(CURRENT_DESKTOP_SCHEMA_VERSION)
+  })
+
+  it.each([
+    ['合并快照主键为 NULL（结构坏）', (db: BetterSqlite3.Database) => {
+      db.prepare("INSERT INTO review_cycle_merges(cycle_id,body) VALUES(NULL,'无主快照')").run()
+    }],
+    ['循环主键为 NULL', (db: BetterSqlite3.Database, cycleId: string) => {
+      db.prepare('DELETE FROM review_cycle_merges WHERE cycle_id=?').run(cycleId)
+      db.prepare('DELETE FROM review_findings WHERE cycle_id=?').run(cycleId)
+      db.prepare('UPDATE review_cycles SET cycle_id=NULL WHERE cycle_id=?').run(cycleId)
+    }],
+  ] as const)('%s：两个通道都拒绝', async (_name, damage) => {
+    const f = await currentBookWithCycles()
+    damage(f.db, f.db.prepare('SELECT cycle_id FROM review_cycles WHERE review_id=?').pluck().get(f.book[1]!.seeded.reviewId) as string)
+    f.db.close()
+    await expect(backupOf(f, 'strict')).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
+    await expect(backupOf(f, 'no-new-failures')).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
+  })
+})
+
+describe('导出的源库快照只取打开时那本书（#744）', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('预留快照文件到打开源库之间，源库被换成另一本书的库：拒绝，不把那本书拷进快照', async () => {
+    const f = fixture(), other = fixture()
+    other.db.prepare("UPDATE project_core SET project_name='另一本书' WHERE id='main'").run()
+    f.db.close(); other.db.close()
+    const target = path.join(f.root, 'snapshot.db')
+    const openSync = fs.openSync.bind(fs)
+    vi.spyOn(fs, 'openSync').mockImplementation(((file: fs.PathLike, ...rest: unknown[]) => {
+      if (path.resolve(String(file)) === path.resolve(target) && fs.existsSync(other.source)) fs.renameSync(other.source, f.source)
+      return (openSync as (...args: unknown[]) => number)(file, ...rest)
+    }) as typeof fs.openSync)
+
+    const sourceIdentity = fs.lstatSync(f.source, { bigint: true })
+    await expect(snapshotProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: target, sourceIdentity }))
+      .rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED')
   })
 })

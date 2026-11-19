@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CloudBackupFailure, CloudBackupProjectSessionContext } from '../../../src/shared/cloud-backup'
-import { damagedReviewCycleMessage } from '../../../src/i18n/app-errors'
+import { damagedReviewCycleMessage, displayedErrorMessage } from '../../../src/i18n/app-errors'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
 import type { CloudProjectBinding } from '../../services/cloud-project-binding-store'
 import { ExternalFileGrantService } from '../../services/external-file-grant-service'
@@ -16,7 +16,7 @@ import {
   type CloudBackupControllerDependencies,
 } from '../cloud-backup-controller'
 import { removeDirectoryWithWindowsRetry } from '../../utils/remove-directory'
-import { exportPortableProject } from '../../services/project-archive-service'
+import { exportPortableProject, ProjectArchiveServiceError } from '../../services/project-archive-service'
 import { restorePortableProject } from '../../services/project-restore-service'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
@@ -619,6 +619,34 @@ describe('registerCloudBackupController', () => {
     })).resolves.toEqual({
       success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', operationId: OPERATION, damagedReviewCycle,
     })
+    expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
+  })
+
+  it('打包时资料重来一次仍被改：作者看到「备份时资料被改了」和该点的按钮，不是错误码，不上传（#744）', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.exportPortableProject).mockRejectedValueOnce(new ProjectArchiveServiceError('PORTABLE_EXPORT_SOURCE_CHANGED'))
+
+    const result = await f.invoke('cloud-backup:backup', {
+      operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
+    }) as CloudBackupFailure
+
+    expect(result).toMatchObject({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_SOURCE_CHANGED' })
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
+      .toBe('作品没有改动。备份时资料被改了，没有上传。请再点「立即云备份」。')
+    expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
+  })
+
+  it('头像文件坏了：作者看到「头像文件损坏了」和该点的按钮，不说资料被改，不上传（#744）', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.exportPortableProject).mockRejectedValueOnce(new ProjectArchiveServiceError('PORTABLE_EXPORT_AVATAR_DAMAGED'))
+
+    const result = await f.invoke('cloud-backup:backup', {
+      operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
+    }) as CloudBackupFailure
+
+    expect(result).toMatchObject({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AVATAR_DAMAGED' })
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
+      .toBe('作品没有改动。有个角色头像文件损坏了，没有上传。请在人物页给头像没显示的角色「选择头像」，再点「立即云备份」。')
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
   })
 

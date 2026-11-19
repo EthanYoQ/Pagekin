@@ -72,6 +72,10 @@ const ERROR_KEYS = {
   PROJECT_ARCHIVE_TARGET_EXISTS: 'error.projectArchiveTargetExists',
   // 导出或云备份时有一列登记为脱敏投影却没有投影办法（#611），整次打包中止，作品不动。
   PORTABLE_UNSAFE_PROJECTION: 'error.portableUnsafeProjection',
+  PORTABLE_EXPORT_SOURCE_CHANGED: 'error.portableSourceChanged',
+  CLOUD_BACKUP_SOURCE_CHANGED: 'error.cloudBackupSourceChanged',
+  PORTABLE_EXPORT_AVATAR_DAMAGED: 'error.portableAvatarDamaged',
+  CLOUD_BACKUP_AVATAR_DAMAGED: 'error.cloudBackupAvatarDamaged',
   // 选择文件或文件夹后授权已过期、用尽或被撤销（例如选完很久才确认）。
   EXTERNAL_FILE_GRANT_NOT_FOUND: 'error.externalFileGrantExpired',
   EXTERNAL_FILE_GRANT_EXPIRED: 'error.externalFileGrantExpired',

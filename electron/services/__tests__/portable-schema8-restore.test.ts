@@ -69,7 +69,7 @@ describe('恢复 M08 之前导出的便携包（schema 8）', { timeout: 60_000 
     await exportPortableProject({ sourceProjectRoot: target,
       projectSession: { projectId: receipt.targetProjectId, projectPath: target, leaseId: 'lease-again' },
       targetArchivePath: archive, attemptParentPath: attempts, assertCurrentContext: () => undefined,
-      assets: { snapshot: () => ({ files: [], verifyUnchanged: () => undefined }) }, snapshotGeneration: 'after-schema8' })
+      assets: { snapshot: () => ({ files: [] }) }, snapshotGeneration: 'after-schema8' })
     const second = path.join(base, '再恢复')
     await restorePortableProject({ archivePath: archive, targetProjectRoot: second })
     initProjectDatabase(second)

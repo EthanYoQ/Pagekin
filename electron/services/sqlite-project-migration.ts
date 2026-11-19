@@ -51,6 +51,9 @@ export interface ProjectSqliteEvidence {
   preContinuityDomain?: { tableCounts: Record<string, number>; authorContentHash: string }
   preAnnotationDomain?: { tableCounts: Record<string, number>; authorContentHash: string }
 }
+/** 跨版本比对用的内容哈希。每个变体都要全书读一遍，调用方只要它用到的。 */
+type DomainVariant = 'preIdentityDomain' | 'preAssetDomain' | 'preRecycleDomain' | 'preContinuityDomain' | 'preAnnotationDomain'
+const ALL_DOMAIN_VARIANTS: readonly DomainVariant[] = ['preIdentityDomain', 'preAssetDomain', 'preRecycleDomain', 'preContinuityDomain', 'preAnnotationDomain']
 
 function regular(file: string): void {
   const info = fs.lstatSync(file)
@@ -144,15 +147,17 @@ function domain(db: BetterSqlite3.Database, selection = domainColumns(db)): Proj
 export type ReviewCycleEvidence = 'strict' | 'no-new-failures'
 const priorFailures = (db: BetterSqlite3.Database, evidence: ReviewCycleEvidence | undefined) =>
   evidence === 'no-new-failures' ? priorReviewCycleFailures(db) : undefined
-function inspect(db: BetterSqlite3.Database, registry: MigrationRegistry, targetVersion?: number, accepted?: AcceptedReviewCycleFailures): ProjectSqliteEvidence {
+function inspect(db: BetterSqlite3.Database, registry: MigrationRegistry, targetVersion?: number, accepted?: AcceptedReviewCycleFailures,
+  variants = ALL_DOMAIN_VARIANTS): ProjectSqliteEvidence {
   const adapter = new SqliteSchemaAdapter(db, accepted)
   const result = targetVersion === undefined ? probeSchema(adapter, registry) : verifySchema(adapter, registry, targetVersion)
+  const want = (variant: DomainVariant, since: number) => result.version >= since && variants.includes(variant)
   return { schemaVersion: result.version, fingerprint: result.fingerprint, domain: domain(db),
-    ...(result.version >= 3 ? { preIdentityDomain: domain(db, domainColumns(db, true)) } : {}),
-    ...(result.version >= 6 ? { preAssetDomain: domain(db, domainColumns(db, false, true)) } : {}),
-    ...(result.version >= 8 ? { preRecycleDomain: domain(db, domainColumns(db, false, false, true)) } : {}),
-    ...(result.version >= 9 ? { preContinuityDomain: domain(db, domainColumns(db, false, false, false, true)) } : {}),
-    ...(result.version >= 10 ? { preAnnotationDomain: domain(db, domainColumns(db, false, false, false, false, true)) } : {}) }
+    ...(want('preIdentityDomain', 3) ? { preIdentityDomain: domain(db, domainColumns(db, true)) } : {}),
+    ...(want('preAssetDomain', 6) ? { preAssetDomain: domain(db, domainColumns(db, false, true)) } : {}),
+    ...(want('preRecycleDomain', 8) ? { preRecycleDomain: domain(db, domainColumns(db, false, false, true)) } : {}),
+    ...(want('preContinuityDomain', 9) ? { preContinuityDomain: domain(db, domainColumns(db, false, false, false, true)) } : {}),
+    ...(want('preAnnotationDomain', 10) ? { preAnnotationDomain: domain(db, domainColumns(db, false, false, false, false, true)) } : {}) }
 }
 function qualifiedLegacySource(db: BetterSqlite3.Database): string | null {
   const adapter = new SqliteSchemaAdapter(db)
@@ -160,11 +165,11 @@ function qualifiedLegacySource(db: BetterSqlite3.Database): string | null {
   return adapter.readUserVersion() === 0 && QUALIFIED_LEGACY_SCHEMAS.includes(fingerprint)
     && adapter.integrityCheck() && adapter.foreignKeyCheck() ? fingerprint : null
 }
-function inspectSource(db: BetterSqlite3.Database, registry: MigrationRegistry, allowLegacy: boolean): ProjectSqliteEvidence {
+function inspectSource(db: BetterSqlite3.Database, registry: MigrationRegistry, allowLegacy: boolean, variants?: readonly DomainVariant[]): ProjectSqliteEvidence {
   const fingerprint = allowLegacy && qualifiedLegacySource(db)
   return fingerprint
     ? { schemaVersion: 0, fingerprint, domain: domain(db) }
-    : inspect(db, registry)
+    : inspect(db, registry, undefined, undefined, variants)
 }
 function copyQualifiedLegacy(source: BetterSqlite3.Database, staging: BetterSqlite3.Database, sourceColumns: DomainColumns, fingerprint: string): void {
   initializeLegacyBaselineSchema(staging)
@@ -247,13 +252,14 @@ export async function backupProjectSqlite(options: {
   safeDirectory(path.dirname(targetPath))
   sourceFile(sourcePath)
   const registry = options.registry ?? getDesktopMigrationRegistry()
+  const targetVersion = options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION
   const snapshot = physicalSnapshot(sourcePath)
   let source: BetterSqlite3.Database | undefined
   try {
     source = new Database(snapshot.file, { readonly: true, fileMustExist: true })
     source.pragma('foreign_keys = ON')
     const columnsBefore = domainColumns(source)
-    const before = inspectSource(source, registry, !options.registry)
+    const before = inspectSource(source, registry, !options.registry, [])
     const legacySchema = !options.registry && QUALIFIED_LEGACY_SCHEMAS.includes(before.fingerprint)
     const accepted = priorFailures(source, options.evidence)?.accepted
     // Reserve a new inode before the backup API can open it.
@@ -267,14 +273,15 @@ export async function backupProjectSqlite(options: {
         copyQualifiedLegacy(source, staging, columnsBefore, before.fingerprint)
         inspect(staging, registry, 0)
       }
-      migrateSchema(new SqliteSchemaAdapter(staging, accepted), registry, options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION)
+      // 已在目标版本就没有迁移可做，迁移前后的两遍校验与下面 inspect 的那一遍验的是同一份内容。
+      if (before.schemaVersion !== targetVersion) migrateSchema(new SqliteSchemaAdapter(staging, accepted), registry, targetVersion)
       if (JSON.stringify(before.domain) !== JSON.stringify(domain(staging, columnsBefore))) throw new Error('PROJECT_MIGRATION_SQLITE_CONTENT_CHANGED')
       // Missing legacy metadata is derived only after every source row was verified.
       if (legacySchema) {
         initializeCharacterRosterMetadata(staging)
         staging.exec("INSERT OR IGNORE INTO continuity_projection_meta (id) VALUES ('main')")
       }
-      const after = inspect(staging, registry, options.targetVersion ?? CURRENT_DESKTOP_SCHEMA_VERSION, accepted)
+      const after = inspect(staging, registry, targetVersion, accepted)
       snapshot.unchanged()
       staging.pragma('wal_checkpoint(TRUNCATE)')
       const fd = fs.openSync(targetPath, 'r+'); try { fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
@@ -283,6 +290,32 @@ export async function backupProjectSqlite(options: {
   } finally { source?.close(); snapshot.close() }
 }
 
+/**
+ * 导出用的源库快照：只读连接一步备份完。这一步持着读事务，拷到的是那一刻已提交的内容，期间别的连接写入也不影响它。
+ * 不迁移、不算内容哈希：导出源是打开时已升级的当前版本，由调用方校验快照。快照只在导出的临时目录里读一遍，不 fsync。
+ * SQLite 按路径打开源库，打开前后主库文件必须是同一个（dev、ino），否则打开的可能是被换进来的另一本书。
+ * 不比大小：导出期间应用自己写库、检查点会改它。
+ */
+export async function snapshotProjectSqlite(options: {
+  sourceDatabasePath: string
+  targetDatabasePath: string
+  sourceIdentity: Pick<fs.BigIntStats, 'dev' | 'ino'>
+}): Promise<void> {
+  const sourcePath = path.resolve(options.sourceDatabasePath), targetPath = path.resolve(options.targetDatabasePath)
+  const assertPinned = () => {
+    sourceFile(sourcePath)
+    const info = fs.lstatSync(sourcePath, { bigint: true })
+    if (info.dev !== options.sourceIdentity.dev || info.ino !== options.sourceIdentity.ino) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
+  }
+  assertPinned()
+  const fd = fs.openSync(targetPath, 'wx', 0o600); fs.closeSync(fd)
+  const source = new Database(sourcePath, { readonly: true, fileMustExist: true })
+  try {
+    await source.backup(targetPath, { progress: () => 0x7fffffff })
+    assertPinned()
+  } finally { source.close() }
+  regular(targetPath)
+}
 
 /** Bytes a reader of the main file and WAL sees. -shm is excluded because opening
  * a handle rewrites it, and an absent WAL reads the same as an empty one.

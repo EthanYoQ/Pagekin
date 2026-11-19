@@ -28,9 +28,9 @@ describe('workflow failures carrying a main-process error (#466)', () => {
   })
 
   it('带名字的错误类转来的未登记码同样附上并保留在 code 上', () => {
-    const failure = fail('en-US', 'PortableProjectArchiveError: PORTABLE_SOURCE_CHANGED')
-    expect(failure.message).toBe('The finalization transaction was not committed. PORTABLE_SOURCE_CHANGED')
-    expect(failure).toHaveProperty('code', 'PORTABLE_SOURCE_CHANGED')
+    const failure = fail('en-US', 'PortableProjectArchiveError: PORTABLE_ARCHIVE_INVALID')
+    expect(failure.message).toBe('The finalization transaction was not committed. PORTABLE_ARCHIVE_INVALID')
+    expect(failure).toHaveProperty('code', 'PORTABLE_ARCHIVE_INVALID')
   })
 
   it('未登记的错误码原样附上供反馈定位，并保留在 code 上', () => {

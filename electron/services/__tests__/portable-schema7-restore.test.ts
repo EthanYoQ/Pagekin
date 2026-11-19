@@ -66,7 +66,7 @@ describe('恢复 M07 之前导出的便携包（schema 7）', { timeout: 60_000 
     await exportPortableProject({ sourceProjectRoot: target,
       projectSession: { projectId: receipt.targetProjectId, projectPath: target, leaseId: 'lease-again' },
       targetArchivePath: archive, attemptParentPath: attempts, assertCurrentContext: () => undefined,
-      assets: { snapshot: () => ({ files: [], verifyUnchanged: () => undefined }) }, snapshotGeneration: 'after-schema7' })
+      assets: { snapshot: () => ({ files: [] }) }, snapshotGeneration: 'after-schema7' })
     const second = path.join(base, '再恢复')
     await restorePortableProject({ archivePath: archive, targetProjectRoot: second })
     initProjectDatabase(second)

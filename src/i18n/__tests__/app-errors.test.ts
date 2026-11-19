@@ -23,6 +23,25 @@ describe('localized application errors', () => {
     expect(displayedErrorMessage(shown('en-US'), new Error('PORTABLE_UNSAFE_PROJECTION'))).toContain('Your book is unchanged.')
   })
 
+  it('导出重来一次资料仍被改：说明作品没动、资料被改了、再点哪个按钮，不露原码（#744）', () => {
+    const code = 'PORTABLE_EXPORT_SOURCE_CHANGED'
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。导出时资料被改了，存档没有生成。请再点「导出本地存档」。')
+    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. Files changed during export, so no archive was created. Click Export local archive again.')
+    expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain(code)
+  })
+
+  it('导出时头像文件坏了：说明作品没动、哪类资料坏了、在哪个按钮修，不说资料被改（#744）', () => {
+    const code = 'PORTABLE_EXPORT_AVATAR_DAMAGED'
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。有个角色头像文件损坏了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。')
+    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. A character avatar file is damaged, so no archive was created. On the character page, click Choose avatar for the character whose avatar is missing, then Export local archive again.')
+    expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain(code)
+  })
+
+  it.each(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])('恢复时存档被改（%s）：不叫作者去点导出（#744）', code => {
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).not.toContain('导出')
+    expect(displayedErrorMessage(shown('en-US'), new Error(code))).not.toContain('Export')
+  })
+
   it('preserves an unknown error as localized diagnostic text', () => {
     expect(appErrorMessage(shown('en-US'), new Error('disk full'))).toBe('Something went wrong: disk full')
   })
