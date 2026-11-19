@@ -33,7 +33,7 @@ import { externalFileGrants } from '../services/external-file-grant-service'
 import { projectAccess } from '../services/project-access'
 import {
   exportPortableProject,
-  isPortableSourceChangedError,
+  ProjectArchiveServiceError,
   type ExportPortableProjectInput,
   type ExportPortableProjectReceipt,
   type PortableAssetProvider,
@@ -408,7 +408,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
           })
         } catch (error) {
           if (signal.aborted) fail('CLOUD_BACKUP_CANCELLED')
-          if (isPortableSourceChangedError(error)) fail('CLOUD_BACKUP_SOURCE_CHANGED')
+          if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_EXPORT_SOURCE_CHANGED') fail('CLOUD_BACKUP_SOURCE_CHANGED')
           throw new CloudBackupControllerError('CLOUD_BACKUP_ARCHIVE_FAILED',
             error instanceof SchemaMigrationError ? error.damagedReviewCycle : undefined)
         }

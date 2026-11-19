@@ -165,6 +165,7 @@ export type ProjectArchiveServiceErrorCode =
   | 'PORTABLE_ASSET_MISSING'
   | 'PORTABLE_ASSET_UNSAFE'
   | 'PORTABLE_CONTEXT_INVALID'
+  | 'PORTABLE_EXPORT_SOURCE_CHANGED'
   | 'PORTABLE_TARGET_INSIDE_SOURCE'
   | 'PORTABLE_UNSAFE_PROJECTION'
 
@@ -1091,6 +1092,15 @@ function verifyFile(file: PortableProvidedFile, projectStorageRoot: string): voi
 }
 
 /** 打包器不查硬链接，这里补上。快照后被删掉的算资料有改动。 */
+/** 打包器查过之后、打开之前资料被删，它报的是原始 ENOENT。 */
+function missingSource(error: unknown, sourcePaths: Iterable<string>): boolean {
+  const missing = (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' ? (error as NodeJS.ErrnoException).path : undefined
+  if (!missing) return false
+  const resolved = normalizedPath(path.resolve(missing))
+  for (const sourcePath of sourcePaths) if (normalizedPath(path.resolve(sourcePath)) === resolved) return true
+  return false
+}
+
 function assertSourceStillOwned(sourcePath: string): void {
   const info = fs.lstatSync(sourcePath, { bigint: true, throwIfNoEntry: false })
   if (!info) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
@@ -1099,9 +1109,10 @@ function assertSourceStillOwned(sourcePath: string): void {
 
 const RETRIED_ARCHIVE_ERRORS = new Set(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])
 
-export function isPortableSourceChangedError(error: unknown): error is PortableProjectArchiveError {
+function sourceChanged(error: unknown): error is PortableProjectArchiveError {
   return error instanceof PortableProjectArchiveError && RETRIED_ARCHIVE_ERRORS.has(error.code)
 }
+
 
 async function hashFile(file: string): Promise<string> {
   const digest = createHash('sha256')
@@ -1156,9 +1167,13 @@ const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
   try { return await exportPortableProjectOnce(input) }
   catch (error) {
-    if (!isPortableSourceChangedError(error)) throw error
+    if (!sourceChanged(error)) throw error
     console.warn('[portable-export] 导出期间资料有改动，整次重来一次', { code: error.code })
-    return exportPortableProjectOnce(input)
+  }
+  try { return await exportPortableProjectOnce(input) }
+  catch (error) {
+    if (sourceChanged(error)) fail('PORTABLE_EXPORT_SOURCE_CHANGED')
+    throw error
   }
 }
 
@@ -1352,6 +1367,10 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput): Pro
     for (const sourcePath of projectSources) assertSourceStillOwned(sourcePath)
     const stagedArchivePath = path.join(attemptRoot, 'portable-project.archive')
     const archiveReceipt = await writePortableProjectArchive({ manifest, sources, targetPath: stagedArchivePath })
+      .catch((error: unknown) => {
+        if (missingSource(error, projectSources)) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+        throw error
+      })
     recordOwnedFile(attempt, stagedArchivePath)
     input.__testHooks?.afterArchiveBuilt?.(stagedArchivePath)
 

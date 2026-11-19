@@ -25,7 +25,7 @@ import { continuityBaseline, SCHEMA8_CONTINUITY_ARCHIVE, SCHEMA8_EXPECTED_BASELI
 import { createPortableProjectAssetProvider } from '../../services/portable-project-assets'
 import { createProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
 import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
-import { extractPortableProjectArchive, PortableProjectArchiveError } from '../../services/portable-project-archive'
+import { extractPortableProjectArchive } from '../../services/portable-project-archive'
 
 vi.mock('../../utils/remove-directory', async importOriginal => {
   const actual = await importOriginal<typeof import('../../utils/remove-directory')>()
