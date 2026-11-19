@@ -6,8 +6,17 @@ import { closeProjectDatabase, createProjectDatabase, getProjectDb, initProjectD
 import { ProjectCoreRepository } from '../repositories/project-core-repository'
 import { createCanonicalProjectManifest } from '../../src/shared/project-format'
 import { aiSourceOf, recordAiSources } from '../../src/shared/novel-config-ai-sources'
+import { isAgentDomainToolCurrent } from '../services/agent-domain-tool-effect'
+import { textHash } from '../repositories/generation-run-repository'
 
 const roots: string[] = []
+
+/** origin/master（M10 之前）rowToData 的键与顺序。 */
+const PRE_M10_CORE_KEYS = ['projectName', 'genre', 'subGenre', 'targetAudience', 'totalChapters', 'wordsPerChapter', 'writingLanguage',
+  'creativeStrategy', 'narrativeThreadDormantChapterThreshold', 'plotStructure', 'narrativePov', 'writingStyle', 'referenceWorks',
+  'globalGuidance', 'goldenFinger', 'coreOutline', 'worldSetting', 'protagonistProfile', 'premise', 'worldbuilding', 'charactersArch',
+  'synopsis', 'characterStates']
+const MARKS = JSON.stringify({ worldSetting: { kind: 'filled', hash: '0000abcd' } })
 
 function project(): string {
   const base = path.resolve('.runtime/.cache/setup-ai-sources')
@@ -56,5 +65,23 @@ describe('设定细则的 AI 来源标记随作品保存', () => {
     const reopened = ProjectCoreRepository.get()!
     expect(reopened.aiSources).toEqual({})
     expect(reopened.worldSetting).toBe('雾城')
+  })
+
+  it('有标记的作品，ProjectCoreRepository.get 读出的设定与 M10 前逐字相同', () => {
+    initProjectDatabase(project())
+    ProjectCoreRepository.init('雾城记')
+    getProjectDb()!.prepare("UPDATE project_core SET world_setting='雾城', ai_sources=? WHERE id='main'").run(MARKS)
+    expect(Object.keys(ProjectCoreRepository.get()!)).toEqual(PRE_M10_CORE_KEYS)
+  })
+
+  it('M10 前记下的 Agent 设定回执，升级后重放仍判为当前', () => {
+    initProjectDatabase(project())
+    ProjectCoreRepository.init('雾城记')
+    ProjectCoreRepository.update({ worldSetting: '雾城' })
+    const core = ProjectCoreRepository.get() as unknown as Record<string, unknown>
+    const preM10 = Object.fromEntries(PRE_M10_CORE_KEYS.map(key => [key, core[key]]))
+    getProjectDb()!.prepare("UPDATE project_core SET ai_sources=? WHERE id='main'").run(MARKS)
+    const receipt = { kind: 'config' as const, toolCallId: 'tool-1', changes: { worldSetting: '雾城' }, beforeHash: '', afterHash: textHash(JSON.stringify(preM10)) }
+    expect(isAgentDomainToolCurrent(getProjectDb()!, receipt)).toBe(true)
   })
 })

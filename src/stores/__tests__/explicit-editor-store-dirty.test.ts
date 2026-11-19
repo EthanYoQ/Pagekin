@@ -227,6 +227,16 @@ describe('explicit editor dirty integration', () => {
     expect(useProjectStore.getState().currentProject?.novelConfig.coreOutline).toBe('作者等待时新写')
     expect(getProjectEditorDraft(parseProjectEditorDraftLedger(draftLedgerContent(CONFIG_DRAFT_TAB.id)), original.path)).toBeDefined()
   })
+  it('AI 补全提交成功后设定页不算未保存；作者再改一项才算', async () => {
+    const original = project(), handle = { projectId: original.id, epoch: original.sessionLease!, rootActionId: 'root', runId: 'run' }
+    const generated = { worldSetting: '旧港以潮汐计时。', goldenFinger: '读潮位刻痕。' }
+    invoke.mockResolvedValue({ success: true })
+    await expect(useProjectStore.getState().commitGeneratedNovelConfig(generated, original.novelConfig, projectSession(original), handle)).resolves.toBe(true)
+    useProjectStore.getState().updateNovelConfig(generated)
+    expect(visibleEditor('config')?.dirty ?? false).toBe(false)
+    useProjectStore.getState().updateNovelConfig({ coreOutline: '作者改了大纲' })
+    expect(visibleEditor('config')?.dirty).toBe(true)
+  })
   it('单项 AI 生成提交期间作者改了同一项：作者的文字留下且不标 AI；作者没动的那项照常标 AI 填写', async () => {
     const original = project(), handle = { projectId: original.id, epoch: original.sessionLease!, rootActionId: 'root', runId: 'run' }
     const generated = { worldSetting: '旧港以潮汐计时。', goldenFinger: '读潮位刻痕。' }

@@ -167,6 +167,23 @@ describe('GenerateFieldCommand project identity', () => {
     expect(aiSourceOf(useProjectStore.getState().currentProject!.novelConfig, 'worldSetting')).toBe('expanded')
   })
 
+  it('模型没补内容时，单项生成后会话里的设定与重开作品读出的逐字相同，草稿恢复不判为设定已变', async () => {
+    const saved = { genre: '悬疑', worldSetting: '旧港以潮汐计时。' }
+    useProjectStore.setState({
+      currentProject: { ...project(projectAPath), novelConfig: { ...saved } } as never,
+      saveProject: vi.fn(async () => true),
+    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
+        streamCallbacks.onDone?.(saved.worldSetting, undefined, 'stop')
+        return 'field-request'
+      }) })
+
+    await new GenerateFieldCommand('worldSetting').execute({ step: {}, context, callbacks })
+
+    expect(JSON.stringify(useProjectStore.getState().currentProject!.novelConfig)).toBe(JSON.stringify(saved))
+  })
+
   it('sends a complete English configuration without Chinese model instructions', async () => {
     const longOutline = `A detective follows a forged flight manifest. ${'The clue remains authoritative. '.repeat(24)}`
     useProjectStore.setState({

@@ -185,8 +185,8 @@ export const UXR_SCENARIOS = {
     assert.deepEqual(afterFill.marks, { empty: 1, filled: 4, expanded: 1 }, '行内标记与表头计数一致')
     await shoot('uxr-setup-new-filled')
     const scrolls = await innerScrolls(page, '.stage-setup textarea')
-    const save = stage.setupFoot(page).getByRole('button', { name: /^保存/ })
-    if (await save.isVisible()) await save.click()
+    const unsavedAfterFill = await stage.setupFoot(page).getByRole('button', { name: /^保存/ }).isVisible()
+    assert.equal(unsavedAfterFill, false, 'AI 补全已写进库，设定页不算未保存')
     await stage.saveStatus(page).filter({ hasText: '已保存' }).waitFor({ state: 'visible' })
     await context.restart()
     await stage.openAfterRestart(context.page, STAGE_SAMPLE.name)
@@ -195,7 +195,7 @@ export const UXR_SCENARIOS = {
     const reopened = await setupFacts(context.page)
     assert.deepEqual([reopened.sheetCount, reopened.marks], [afterFill.sheetCount, afterFill.marks], '冷重启再打开，标记与计数不变')
     await context.shoot('uxr-setup-new-reopened')
-    return { empty, afterFill, reopened, scrolls }
+    return { empty, afterFill, unsavedAfterFill, reopened, scrolls }
   } },
   'uxr-bp-long': { model: false, shell: 'stage', setup: seedLongBlueprints, run: async ({ page, shoot }) => {
     await blueprint.open(page)

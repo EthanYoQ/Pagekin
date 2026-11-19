@@ -303,6 +303,24 @@ describe('GenerateConfigCommand error boundaries', () => {
     expect(aiSourceOf(generated, 'referenceWorks')).toBeNull()
   })
 
+  it('AI 补全交回设定页的设定只有设定字段，不带 AI 标记', async () => {
+    const onGenerated = vi.fn()
+    useProjectStore.setState({
+      currentProject: { ...project(projectAPath), novelConfig: { genre: '悬疑' } } as never,
+      saveProject: vi.fn().mockResolvedValue(true),
+    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
+        streamCallbacks.onDone?.(validConfigJson, undefined, 'stop')
+        return 'config-expansion-request'
+      }) })
+
+    await new GenerateConfigCommand('扩写现有设定', 10, 2500, onGenerated).execute({ step: {}, context, callbacks })
+
+    expect(onGenerated.mock.calls[0]![0]).not.toHaveProperty('aiSources')
+    expect(useProjectStore.getState().currentProject!.novelConfig).not.toHaveProperty('aiSources')
+  })
+
   it('keeps the author references when AI fill returns different ones', async () => {
     const authorReferences = '《白鲸》的追猎结构'
     const onGenerated = vi.fn()
