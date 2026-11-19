@@ -16,7 +16,7 @@ import {
   type CloudBackupControllerDependencies,
 } from '../cloud-backup-controller'
 import { removeDirectoryWithWindowsRetry } from '../../utils/remove-directory'
-import { exportPortableProject } from '../../services/project-archive-service'
+import { exportPortableProject, ProjectArchiveServiceError } from '../../services/project-archive-service'
 import { restorePortableProject } from '../../services/project-restore-service'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
@@ -624,7 +624,7 @@ describe('registerCloudBackupController', () => {
 
   it('打包时资料重来一次仍被改：作者看到「备份时资料被改了」和该点的按钮，不是错误码，不上传（#744）', async () => {
     const f = fixture()
-    vi.mocked(f.deps.exportPortableProject).mockRejectedValueOnce(new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED'))
+    vi.mocked(f.deps.exportPortableProject).mockRejectedValueOnce(new ProjectArchiveServiceError('PORTABLE_EXPORT_SOURCE_CHANGED'))
 
     const result = await f.invoke('cloud-backup:backup', {
       operationId: OPERATION, projectSession: session, disclosureConfirmed: true,

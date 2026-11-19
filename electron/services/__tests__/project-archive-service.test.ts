@@ -589,6 +589,26 @@ describe('portable project export service', () => {
       expect(unpacked.manifest.entries.map(entry => entry.path)).not.toContain('skills/旧技能.md')
     })
 
+    it('打包器打开资料前它刚被删掉：重来一次，存档里没有它', async () => {
+      const f = fixture()
+      prompt(f, '{"提示":"留着"}')
+      const skill = path.join(f.storage, 'skills', '旧技能.md')
+      fs.mkdirSync(path.dirname(skill))
+      fs.writeFileSync(skill, '打包时被删')
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const open = fs.promises.open.bind(fs.promises)
+      vi.spyOn(fs.promises, 'open').mockImplementation(((target: fs.PathLike, ...rest: [fs.OpenMode?, fs.Mode?]) => {
+        if (String(target).endsWith('旧技能.md')) fs.rmSync(skill, { force: true })
+        return open(target, ...rest)
+      }) as typeof fs.promises.open)
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
+      expect(exportLog(warn)).toEqual([expect.stringContaining('PORTABLE_ARCHIVE_SOURCE_CHANGED')])
+      const unpacked = await extract(f)
+      expect(unpacked.manifest.entries.map(entry => entry.path)).not.toContain('skills/旧技能.md')
+    })
+
     it('重来一次资料又被改：报资料有改动，不发布存档，临时目录清干净', async () => {
       const f = fixture()
       const file = prompt(f, '{"提示":"快照时"}')
@@ -597,7 +617,7 @@ describe('portable project export service', () => {
 
       await expect(exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: {
         afterPortableDatabaseCreated: () => replaceAtomically(file, `{"提示":"第 ${++round} 次改的"}`),
-      } }))).rejects.toThrow('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+      } }))).rejects.toThrow('PORTABLE_EXPORT_SOURCE_CHANGED')
 
       expect(exportLog(warn)).toHaveLength(1)
       expect(fs.existsSync(f.target)).toBe(false)
