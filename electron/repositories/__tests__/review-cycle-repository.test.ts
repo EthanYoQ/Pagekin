@@ -1507,13 +1507,15 @@ describe('审稿数据标出恢复前的审修循环（#702）', () => {
       .toThrow('REVIEW_CYCLE_CONFLICT')
   })
 
-  it('根缺失或根的身份读不出（坏 JSON、打开时换成的中性值）：不判成恢复前', () => {
+  it('根缺失或根的身份读不出（坏 JSON、打开时换成的中性值、不是字符串）：不判成恢复前', () => {
     const db = fixture()
     try {
       create(db, seed(db).call)
       expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(true)
       expect(ReviewCycleRepository.isRestoredHistory('root-missing', 'restored-project', db)).toBe(false)
       db.prepare("UPDATE generation_roots SET action_json=json_set(action_json,'$.projectId','') WHERE root_action_id='root-review'").run()
+      expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(false)
+      db.prepare("UPDATE generation_roots SET action_json=json_set(action_json,'$.projectId',123) WHERE root_action_id='root-review'").run()
       expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(false)
       db.prepare("UPDATE generation_roots SET action_json='{' WHERE root_action_id='root-review'").run()
       expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(false)

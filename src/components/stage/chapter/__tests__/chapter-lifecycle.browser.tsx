@@ -1043,6 +1043,17 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     expect(sheet.element().querySelectorAll('input:not(:disabled), textarea, select')).toHaveLength(0)
   })
 
+  it('读不出逐条意见的恢复前审稿：提示只叫作者看原文，不提已经不出现的「添加我的意见」', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    const review = backend.addReview(draft, '')
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, restoredHistory: true })
+    await mount()
+    await openDraft(draft.id)
+    const sheet = page.getByRole('complementary', { name: /审稿/ })
+    await expect.element(sheet.getByText(/这份报告读不出逐条意见/)).toBeVisible()
+    expect(sheet.element().textContent).not.toContain('添加我的意见')
+  })
+
   it('审稿数据读回来之前不摆主按钮：恢复前的审稿不会先闪一下按意见修稿', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     restoredReview(draft)
