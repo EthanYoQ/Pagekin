@@ -171,9 +171,14 @@ function editInstruction(context: EditorInlineContext, english: boolean): string
 }
 const continueRule = ['这次是续写：选中的正文是续写的起点，保持原样。只输出紧接在它后面的新内容，不要重复、改写或总结选中的正文。',
   'This is a continuation: the selected prose is where it starts, and it stays as it is. Output only the new text that follows it; do not repeat, rewrite, or summarize the selected prose.'] as const
+const followingRule = ['选中正文之后的本章正文是已经写定的情节：续写要自然接上它，不能与它矛盾，也不要提前写出或重复它的内容。',
+  'The chapter text after the selection is settled plot: the continuation must lead naturally into it, must not contradict it, and must not anticipate or repeat it.'] as const
 function systemRole(context: EditorInlineContext): Pick<PromptTemplate, 'systemRole'> {
   const english = context.writingLanguage === 'en-US'
-  if (editorInlineInsertsAfterSelection(context)) return { systemRole: [context.template.systemRole?.trim(), continueRule[english ? 1 : 0]].filter(Boolean).join('\n') }
+  if (editorInlineInsertsAfterSelection(context)) {
+    const following = context.materials!.included.some(block => block.kind === 'following')
+    return { systemRole: [context.template.systemRole?.trim(), continueRule[english ? 1 : 0], following && followingRule[english ? 1 : 0]].filter(Boolean).join('\n') }
+  }
   if (context.action !== 'instruct' && context.action !== 'batch-instruct') return context.template
   const noteRule = english
     ? "The author's note is itself the newest explicit author fact. Where the note conflicts with the preservation requirements above, or with the explicit-facts clause of the contract below, follow the note; keep everything the note does not mention."

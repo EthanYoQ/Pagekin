@@ -345,6 +345,16 @@ it('章内续写把选区前的本章正文和本章蓝图放在模板段之前�
   expect(user.indexOf(expected), expected).toBeLessThan(template)
  }
 })
+it('选区后面还有本章正文时，续写规则要求接上它、不与它矛盾；选区在章末时不提', async () => {
+ const f = fixture(replying('钥匙在石缝里。', 'stop'))
+ const systemOf = () => (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
+ await f.owner.executeEditorInline(f.owner.beginEditorInline(continued()).view.handle)
+ expect(systemOf()).toContain('不能与它矛盾')
+ const atEnd = { modelId: 'synthetic', uiActionNonce: '章末续写', input: { action: 'continue' as const, documentText: chapterDoc.slice(0, selFrom + sel.length),
+  from: selFrom, to: selFrom + sel.length, selectedText: sel, chapterContext: chapterContext() } as never }
+ await f.owner.executeEditorInline(f.owner.beginEditorInline(atEnd).view.handle)
+ expect(systemOf()).not.toContain('不能与它矛盾')
+})
 it('模型窗口小时可选材料按固定顺序被裁（先线索后人物），必需材料保留，被裁项记进运行记录并在重开后不变', async () => {
  const f = fixture(replying('钥匙在石缝里。', 'stop'))
  f.setContextWindow(8000)
