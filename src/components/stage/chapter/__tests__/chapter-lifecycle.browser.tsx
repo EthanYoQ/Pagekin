@@ -1198,4 +1198,34 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await openDraft(draft.id)
     await expect.element(page.getByRole('button', { name: /项意见修稿$/ })).toBeVisible()
   })
+
+  it('重读还没回来就重新打开了作品：旧会话读回的循环被丢弃，按新会话读到的摆', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    const review = restoredReview(draft)
+    const answer = backend.invoke.getMockImplementation()!
+    let release = () => {}
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const held = vi.fn()
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && held.mock.calls.length === 0 && new Error().stack?.includes('review-checklist')) {
+        held()
+        const stale = await answer(channel, ...args)
+        await gate
+        return stale
+      }
+      return answer(channel, ...args)
+    })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    await vi.waitFor(() => expect(held).toHaveBeenCalledOnce())
+
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, restoredHistory: undefined })
+    setActiveProjectSessionContext({ ...SESSION, leaseId: 'reopened-lease' })
+    await act(async () => useProjectStore.setState({ currentProject: { ...chapterProject(), sessionLease: 'reopened-lease' } }))
+    await expect.element(page.getByRole('button', { name: '按 2 项意见修稿' })).toBeVisible()
+    await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 100)) })
+    await expect.element(page.getByRole('button', { name: '按 2 项意见修稿' })).toBeVisible()
+    expect(page.getByText(RESTORED).elements()).toEqual([])
+  })
 })
