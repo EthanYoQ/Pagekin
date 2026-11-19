@@ -228,12 +228,18 @@ async function installLedger(app, page) {
   })
 }
 
-async function takeLedger(app, page) {
-  const main = await app.evaluate(() => {
+/** stallBeforeMs 只给正对照用：取账前在主进程里同步占住这么久，定时器来不及走下一拍。 */
+async function takeLedger(app, page, stallBeforeMs = 0) {
+  const main = await app.evaluate((_electron, stallBeforeMs) => {
+    const stalledAt = performance.now()
+    while (performance.now() - stalledAt < stallBeforeMs) { /* 同步忙等 */ }
     const { channels, spawns, sql, loop, late } = globalThis.__perfLedger
     Object.assign(globalThis.__perfLedger, { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 } })
-    const maxBlockMs = Math.round(Math.max(loop.max, performance.now() - loop.last))
+    // 下一个窗口从这一刻算起：不重置 last，窗口前没走完的那一拍会被下一拍再算一次。
+    const now = performance.now()
+    const maxBlockMs = Math.round(Math.max(loop.max, now - loop.last))
     loop.max = 0
+    loop.last = now
     const round = ([key, { calls, ms, rows, maxMs }]) => [key, { calls, ms: Math.round(ms), ...rows === undefined ? {} : { rows },
       ...maxMs === undefined ? {} : { maxMs: Math.round(maxMs) } }]
     const sqlEntries = Object.entries(sql)
@@ -249,7 +255,7 @@ async function takeLedger(app, page) {
       mainMaxBlockMs: maxBlockMs,
       lateCalls: late.calls, lateMs: Math.round(late.ms),
     }
-  })
+  }, stallBeforeMs)
   const renderer = await page.evaluate(() => {
     const value = window.__perfLong
     if (!value) return { longTasks: null }
@@ -744,6 +750,10 @@ async function blockControls(context) {
       return { blockedMs: await app.evaluate(() => globalThis.__perfControlBlockedMs) }
     })
   }
+  await takeLedger(app, page, 300)
+  const idleAfterStall = await profiled(context, 'control-stall-before-window', () => page.waitForTimeout(500))
+  // 反向对照：停顿发生在上一个窗口，这一窗口只该读到空闲值。
+  results.stallBeforeWindow = log({ label: 'control-stall-before-window', ms: idleAfterStall, ...await takeLedger(app, page), prompts: {} })
   results.timer = await operation(context, 'control-timer-js', async () => {
     await app.evaluate(() => new Promise(resolve => setTimeout(() => {
       const startedAt = performance.now()
@@ -802,18 +812,21 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
             await new Promise(resolve => setTimeout(resolve, 20))
           }
         })()
+        const startedAt = performance.now()
+        // 先发导出再开始保存，只数导出结束前完成的保存：导出前或导出后才落地的不算边写边导。
+        const exporting = window.aiNovelAPI.invoke('project:archive-export', { targetArchiveGrantId: grantId, projectSession: session })
+        let totalMs = 0
+        const settled = exporting.finally(() => { totalMs = Math.round(performance.now() - startedAt); done = true })
         const writer = (async () => {
           while (writes && !done) {
             const saved = await window.aiNovelAPI.invoke('db:draft-update-content', draftId, `边写边导第 ${saves + saveFailures + 1} 次保存。`, 12, session.projectPath, session)
+            if (done) break
             if (saved?.success) saves += 1
             else saveFailures += 1
             await new Promise(resolve => setTimeout(resolve, 150))
           }
         })()
-        const startedAt = performance.now()
-        const exported = await window.aiNovelAPI.invoke('project:archive-export', { targetArchiveGrantId: grantId, projectSession: session })
-        const totalMs = Math.round(performance.now() - startedAt)
-        done = true
+        const exported = await settled
         await Promise.all([probe, writer])
         return { totalMs, success: exported.success, errorCode: exported.success ? undefined : exported.errorCode ?? exported.error,
           sha256: exported.success ? exported.receipt.targetSha256 : undefined, probes, probeMaxMs: Math.round(probeMaxMs),
@@ -834,14 +847,29 @@ async function exportPhases(context) {
   const archive = path.join(roots.projects, `phases-${randomUUID()}.ainovel`)
   await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
   const panel = stage.root(page).getByTestId('project-backup-panel')
+  // 阶段文字一闪而过：点之前就开始记出现过的阶段，导出完再核对，截图不要求阶段还在。
+  await page.evaluate(labels => {
+    const seen = window.__exportPhases = []
+    const record = () => {
+      for (const [phase, label] of labels) {
+        if (!seen.includes(phase) && [...document.querySelectorAll('[data-testid="project-backup-panel"] [role="status"]')].some(node => node.textContent?.includes(label))) seen.push(phase)
+      }
+    }
+    new MutationObserver(record).observe(document.body, { subtree: true, childList: true, characterData: true })
+  }, [['snapshot', '正在读取作品…'], ['package', '正在打包存档…']])
   await panel.getByRole('button', { name: '导出本地存档', exact: true }).click()
-  const seen = []
-  for (const [phase, label] of [['snapshot', '正在读取作品…'], ['package', '正在打包存档…']]) {
-    await panel.getByRole('status').filter({ hasText: label }).waitFor({ state: 'visible', timeout: 120_000 })
-    seen.push(phase)
-    await shoot(`export-phase-${phase}`)
+  const done = panel.locator('p[role="status"]').filter({ hasText: /^本地存档已导出：[0-9a-f]{64}$/u })
+  const shot = []
+  const deadline = Date.now() + 120_000
+  while (!await done.isVisible()) {
+    assert.ok(Date.now() < deadline, '导出 120 s 内没有完成')
+    for (const phase of await page.evaluate(() => window.__exportPhases)) {
+      if (!shot.includes(phase)) { shot.push(phase); await shoot(`export-phase-${phase}`) }
+    }
+    await page.waitForTimeout(50)
   }
-  await panel.locator('p[role="status"]').filter({ hasText: /^本地存档已导出：[0-9a-f]{64}$/u }).waitFor({ state: 'visible', timeout: 120_000 })
+  const seen = await page.evaluate(() => window.__exportPhases)
+  assert.deepEqual(seen, ['snapshot', 'package'], '读取与打包两个阶段都要依次出现')
   assert.equal(await panel.getByRole('status').filter({ hasText: /^正在/u }).count(), 0, '导出完不再显示阶段')
   return { seen, archiveExists: fs.existsSync(archive), leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
 }
