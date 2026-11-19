@@ -34,7 +34,6 @@ function chapterList(fallback) {
   })
 }
 
-/** 包住主进程的 IPC 与对话请求：记下每次 IPC 的起止，和每次对话请求的参数、思考字数、可见回复全文。 */
 async function instrument(app) {
   await app.evaluate(({ ipcMain }) => {
     globalThis.__fspeedIpc = []
@@ -90,7 +89,6 @@ async function instrument(app) {
   })
 }
 
-/** 新建作品：4 个角色、23 章蓝图、前两章定稿导入、chapters 各建一版待定稿正文；接好模型后从书房打开。 */
 async function seed(context, fakeMode, chapters) {
   const { app, page, roots, invoke, reload } = context
   await trackOpenedSession(app)
@@ -144,7 +142,6 @@ async function clearCompletionToasts(page) {
 
 const hits = (text, groups) => groups.some(group => group.every(word => text.includes(word)))
 
-/** 定稿一章并等后处理结束：计时、IPC、对话请求、步骤记录、按夹具预埋项初筛。 */
 async function finalizeOne(context, chapterNumber) {
   const { app, page } = context
   await openChapter(page, chapterNumber)
@@ -165,7 +162,7 @@ async function finalizeOne(context, chapterNumber) {
   const run = await context.invoke(page, 'db:post-process-get-latest-run', 'chapter_finalize', String(chapterNumber), session.projectPath, session)
   const steps = run ? (await context.invoke(page, 'db:post-process-get-steps', run.id, session.projectPath, session))
     .map(s => ({ key: s.stepKey, ok: Boolean(s.ok), attempts: s.attemptCount, error: s.errorMsg || undefined })) : []
-  // 回复读完才有全文，最多再等 30 秒。
+  // 对话回复体是异步读的，要等读完才有全文。
   let chats = []
   for (let waited = 0; waited < 30_000; waited += 500) {
     chats = await app.evaluate(() => globalThis.__fspeedChats ?? [])
@@ -173,7 +170,7 @@ async function finalizeOne(context, chapterNumber) {
     await page.waitForTimeout(500)
   }
   chats = chats.map(chat => ({ ...chat, t0: chat.t0 - t0 }))
-  // 文件树照样刷新，只是运行不等它；IPC 结束才记账，最多再等 8 秒。
+  // 运行不等文件树刷新，它的 IPC 记账比运行结束晚，所以要轮询。
   let fileTree = null
   for (let waited = 0; waited < 8_000 && !fileTree; waited += 500) {
     fileTree = (await app.evaluate(() => globalThis.__fspeedIpc)).filter(e => e.channel === 'fs:list-dir').map(e => `@${e.t0 - t0}+${e.t1 - e.t0}`).at(-1) ?? null
@@ -214,7 +211,6 @@ async function finalizeAll(context, chapters) {
   }
 }
 
-/** 第 3 章后处理卡在第一次模型调用时，到第 4 章点「写作此章」：不起运行，提示说上一章还在整理。 */
 async function stillProcessing(context) {
   const { page, fake } = context
   await openChapter(page, 3)
