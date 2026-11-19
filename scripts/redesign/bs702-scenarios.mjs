@@ -65,29 +65,44 @@ const startProbe = page => page.evaluate(() => {
   })()
 })
 
+const stopProbe = page => page.evaluate(() => { window.__bs702Probe.stop = true; return { maxMs: window.__bs702Probe.maxMs, probes: window.__bs702Probe.probes } })
+
 /**
- * 从书房点封面预览、再点打开，各记耗时。要升级的书预览和打开都在主进程同步跑：期间 Playwright 的点击与截图都经主进程，
- * 一样被挡住，所以只在前后各截一张，被挡多久看探针的最长往返和控制台的 event-loop-lag。
+ * 从书房点封面预览、再点打开，各记耗时与这一段里探针的最长往返（主进程被挡多久）。预览要等概览读完，不只是卡片出现。
+ * `shots` 为真时在打开途中截一张，主进程被挡住时截图同样会被挡。
  */
-async function upgradeFromLibrary(context, label) {
+async function upgradeFromLibrary(context, label, { shots = true } = {}) {
   const { page, shoot } = context
   const target = path.join(context.roots.projects, BOOK)
   const before = proofs(target).userVersion
-  await shoot(`${label}-library`)
-  await startProbe(page)
+  if (shots) await shoot(`${label}-library`)
   const timed = async action => { const startedAt = performance.now(); await action(); return Math.round(performance.now() - startedAt) }
+  await startProbe(page)
   const previewMs = await timed(async () => {
     await stage.cover(page, BOOK).click({ timeout: 300_000 })
-    await stage.overview(page, BOOK).waitFor({ state: 'visible', timeout: 300_000 })
+    await stage.overview(page, BOOK).and(page.locator('[aria-busy="false"]')).waitFor({ state: 'visible', timeout: 300_000 })
   })
-  await shoot(`${label}-preview`)
+  const preview = await stopProbe(page)
+  if (shots) await shoot(`${label}-preview`)
+  await startProbe(page)
   const openMs = await timed(async () => {
     await stage.overview(page, BOOK).getByRole('button', { name: `打开《${BOOK}》` }).click({ timeout: 300_000 })
+    if (shots) {
+      await page.getByText('正在打开作品').waitFor({ state: 'visible', timeout: 10_000 })
+      await shoot(`${label}-opening`)
+    }
     await stage.spine(page).waitFor({ state: 'visible', timeout: 300_000 })
   })
-  const probe = await page.evaluate(() => { window.__bs702Probe.stop = true; return { maxMs: window.__bs702Probe.maxMs, probes: window.__bs702Probe.probes } })
-  await shoot(`${label}-opened`)
-  return { before, after: proofs(target).userVersion, previewMs, openMs, mainBlockedMaxMs: probe.maxMs, probes: probe.probes }
+  const open = await stopProbe(page)
+  if (shots) await shoot(`${label}-opened`)
+  return { before, after: proofs(target).userVersion, previewMs, previewBlockedMaxMs: preview.maxMs, openMs, openBlockedMaxMs: open.maxMs, probes: preview.probes + open.probes }
+}
+
+/** 预览、打开各自让主进程停顿不超过这么久，作者不会觉得窗口卡住。 */
+const MAIN_BLOCKED_BUDGET_MS = 500
+const assertResponsive = measured => {
+  const over = Object.entries(measured).filter(([key, value]) => key.endsWith('BlockedMaxMs') && value > MAIN_BLOCKED_BUDGET_MS)
+  assert.deepEqual(over, [], `主进程停顿超过 ${MAIN_BLOCKED_BUDGET_MS} ms：${JSON.stringify(measured)}`)
 }
 
 export const BS702_SCENARIOS = {
@@ -114,6 +129,7 @@ export const BS702_SCENARIOS = {
     installReplies(context.fake)
     const upgrade = await upgradeFromLibrary(context, 'bs702-upgrade')
     assert.deepEqual([upgrade.before, upgrade.after], [10, 12])
+    assertResponsive(upgrade)
     const { page } = context, next = Number(process.env.PERF702_FINALIZED ?? 112) + 1
     await chapterView.open(page, next)
     await chapterView.view(page).getByRole('button', { name: '写作此章', exact: true }).click()
@@ -130,6 +146,20 @@ export const BS702_SCENARIOS = {
     const after = proofs(path.join(context.roots.projects, BOOK))
     assert.equal(after.last, 2, '新开的审稿写的是 v2 证明')
     return { upgrade, reviewMs, proofs: after }
+  } },
+  // 只量数：库版本 10 的书从书房预览、打开（升级），重启后再预览、打开同一本（已是 12，对照）。
+  'bs702-upgrade-perf': { model: true, shell: 'stage', setup: async context => {
+    installReplies(context.fake)
+    await copyFixtureThenRevert(context)
+  }, run: async context => {
+    const upgrade = await upgradeFromLibrary(context, 'bs702-perf', { shots: false })
+    assert.deepEqual([upgrade.before, upgrade.after], [10, 12])
+    await context.restart()
+    const current = await upgradeFromLibrary(context, 'bs702-perf-current', { shots: false })
+    assert.deepEqual([current.before, current.after], [12, 12])
+    const measured = { upgrade, current }
+    assertResponsive({ ...upgrade, currentPreviewBlockedMaxMs: current.previewBlockedMaxMs, currentOpenBlockedMaxMs: current.openBlockedMaxMs })
+    return measured
   } },
   'real-bs702-112': { real: true, setup: async context => { await copyFixtureThenRevert(context, { real: true }) }, run: async context => {
     const upgrade = await upgradeFromLibrary(context, 'real-bs702-upgrade')

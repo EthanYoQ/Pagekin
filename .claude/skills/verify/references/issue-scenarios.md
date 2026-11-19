@@ -353,7 +353,8 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `merge-pick-tab-switch` | 示例作品第 4 章审稿、修稿（假模型回三段修稿），合并视图里第 1、3 段选用修稿（`merge-pick-tab-switch-1-picked`）；点第 3 章标签再点回第 4 章，合并视图仍是「已选 2 处用修稿」（`merge-pick-tab-switch-2-returned`）；完成合并后库里草稿正文含第 1、3 段修稿、不含第 1 段原稿（`merge-pick-tab-switch-3-merged`） | 正文（中文） | 是 | #752 |
 | `merge-pick-merge-later` | 同 `merge-pick-tab-switch`，离开方式换成「稍后再合并」后点「打开修稿合并」（`merge-pick-merge-later-*`） | 正文（中文） | 是 | #752 |
 | `bs702-cycle12` | 假模型按审稿、修稿、合并复核、定稿写 12 章，库版本 12、36 条审修证明都是 v2；导出再恢复两轮，副本里仍是 v2、条数不变；在副本里打开第 12 章（`bs702-cycle12-restored`） | 正文（中文） | 是 | #702 |
-| `bs702-upgrade-open` | 要 `PERF702_FIXTURE`（库版本 10 的书）。从书房点封面预览、再打开，分别记耗时与主进程最长阻塞（`bs702-upgrade-library`、`-preview`、`-opened`）；库升到 12 后写第 113 章并开一次审稿，新证明是 v2（`bs702-upgrade-review`） | 书房、正文（中文） | 是 | #702 |
+| `bs702-upgrade-open` | 要 `PERF702_FIXTURE`（库版本 10 的书）。从书房点封面预览、再打开，分别记耗时与主进程最长阻塞，任一段超过 500 ms 即失败；打开等待中截 `bs702-upgrade-opening`（`bs702-upgrade-library`、`-preview`、`-opened`）；库升到 12 后写第 113 章并开一次审稿，新证明是 v2（`bs702-upgrade-review`） | 书房、正文（中文） | 是 | #702 |
+| `bs702-upgrade-perf` | 要 `PERF702_FIXTURE`。不截图，只量：先预览、打开库版本 10 的书（升级），重启后再预览、打开同一本（已是 12），四段的耗时与主进程最长阻塞写进结果，任一段超过 500 ms 即失败 | 书房（中文） | 否 | #702 |
 | `real-bs702-112` | 同上夹具接真实模型：升级打开后写第 113 章、审稿、修稿、合并（`real-bs702-merged`），新证明是 v2 | 正文（中文） | 是 | #702 |
 
 ## 定稿加速（#702）
