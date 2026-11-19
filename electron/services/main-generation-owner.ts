@@ -28,7 +28,7 @@ import { decodeBlueprintAuthorPayload } from '../../src/shared/blueprint-semanti
 import { GenerationDraftEffects, assertGenerationBatchIntent } from './generation-draft-effects'
 import { CharacterProposalService } from './character-proposal-service'
 import { proveCharacterProposal } from './generation-character-proposal-proof'
-import { compareGenerationSourceBindings, planningBlueprintSourceHash, recordedModelName } from './generation-source-binding'
+import { compareGenerationSourceBindings, planningBlueprintSourceHash, PROJECT_CORE_NON_SOURCE_COLUMNS, recordedModelName } from './generation-source-binding'
 import type { GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge'
 import type { PrepareDraftContextRequest, PreparedDraftContext } from '../../src/shared/generation-owner-contract'
 import { FinalizedCharacterGeneration } from './finalized-character-generation'
@@ -784,7 +784,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   const plotOutlineTargetCurrent = (run: DurableGenerationRun, outline: PlotOutlineProgress, target: string): boolean => {
     const raw = deps.database.prepare("SELECT * FROM project_core WHERE id='main'").get() as Record<string, unknown> | undefined
     if (!raw || raw.synopsis !== target) return false
-    const core = Object.fromEntries(Object.entries(raw).filter(([key]) => !['created_at', 'updated_at', 'character_states', 'plot_tree_snapshot'].includes(key)))
+    const core = Object.fromEntries(Object.entries(raw).filter(([key]) => !PROJECT_CORE_NON_SOURCE_COLUMNS.includes(key)))
     const origin = run.binding.sourceManifest.plotOutlineSource as PlotOutlineSource
     if (!isDeepStrictEqual({ ...core, synopsis: outline.sourceExpected.synopsis }, origin.core)) throw new Error('GENERATION_SOURCE_CHANGED')
     const current = deps.rebuildBinding(run.binding, currentModelReceipt(run.binding))

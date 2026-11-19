@@ -51,6 +51,7 @@ import {
 } from '../novel-config-expansion'
 import { displayedErrorMessage, englishWithReason, knownAppErrorMessage } from '../../../i18n/app-errors'
 import { pluralEn } from '../../../shared/plural-en'
+import { recordAiSources, type AiSources } from '../../../shared/novel-config-ai-sources'
 import { WorkflowCancelledError } from '../workflow-cancellation'
 
 // --- 基础工具库 ---
@@ -692,15 +693,16 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
 
   async execute(params: CommandExecuteParams): Promise<string> {
     assertArchitectureProjectSessionCurrent(requireWorkflowProjectSession(params.context), params.context)
-    const expectedConfig = structuredClone(useProjectStore.getState().currentProject!.novelConfig)
-    return this.executeWithGenerationRuntime('structured', params, () => this.executeWithinGeneration(params, expectedConfig), {
+    const { novelConfig, aiSources } = useProjectStore.getState().currentProject!
+    const expectedConfig = structuredClone(novelConfig)
+    return this.executeWithGenerationRuntime('structured', params, () => this.executeWithinGeneration(params, expectedConfig, aiSources), {
       authorInputs: [{ id: 'config:author-config', text: JSON.stringify(expectedConfig) }, { id: 'config:author-idea', text: this.idea }, { id: 'config:requested-size', text: JSON.stringify({ totalChapters: this.totalChapters, wordsPerChapter: this.wordsPerChapter }) }],
       operation: 'generate-global-config', promptKeys: ['generate_global_config'], skillStages: ['planning'], output: 'structured-data',
       outputOverrides: [{ purpose: 'generate-global-guidance-replacement', output: 'visible-text' }],
     })
   }
 
-  private async executeWithinGeneration({ context, callbacks }: CommandExecuteParams, expectedConfig: NovelConfig): Promise<string> {
+  private async executeWithinGeneration({ context, callbacks }: CommandExecuteParams, expectedConfig: NovelConfig, expectedSources: AiSources | undefined): Promise<string> {
     const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
     const projectSession = requireWorkflowProjectSession(context)
     const writingLanguage = workflowWritingLanguage(context)
@@ -841,11 +843,12 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
       ))
     }
     const generatedConfig = mergeExpandedNovelConfig(existingConfig, parsed)
+    const aiSources = recordAiSources(existingConfig, expectedSources, generatedConfig)
     const mainOwned = this.requireGenerationExecution().mainOwned
     if (mainOwned) {
       const handle = context.mainGenerationRunHandle
       if (!handle) throw new Error('GENERATION_COMMIT_HANDLE_REQUIRED')
-      const committed = await useProjectStore.getState().commitGeneratedNovelConfig(generatedConfig, expectedConfig, projectSession, handle)
+      const committed = await useProjectStore.getState().commitGeneratedNovelConfig(generatedConfig, expectedConfig, projectSession, handle, undefined, aiSources)
       if (!committed) throw new Error('GENERATION_CONFIG_COMMIT_FAILED')
     }
     this.onGenerated(generatedConfig)
@@ -859,6 +862,7 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
         'The current project changed, so the generated configuration was not saved.',
       ))
     }
+    if (!mainOwned) useProjectStore.getState().setAiSources(aiSources, projectSession)
     const saved = mainOwned || await useProjectStore.getState().saveProject(projectSession)
     this.assertNotCancelled(context)
 

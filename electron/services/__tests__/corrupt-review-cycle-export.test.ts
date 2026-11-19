@@ -567,12 +567,11 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
 })
 
 describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-0029，#702）', () => {
-  /** 拆掉 M09 建的表，让这本书回到 v9，再走真实的 v9→v10 升级。 */
   function downgradeToV9() {
     closeProjectDatabase()
     const raw = new Database(databasePath())
     try {
-      raw.exec('DROP INDEX idx_annotation_history_draft; DROP TABLE annotation_history')
+      raw.exec('DROP INDEX idx_annotation_history_draft; DROP TABLE annotation_history; ALTER TABLE project_core DROP COLUMN ai_sources')
       raw.pragma('user_version = 9')
     } finally { raw.close() }
   }

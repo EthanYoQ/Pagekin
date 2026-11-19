@@ -158,7 +158,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
         revision: kind === 'existing' ? 7 : 0,
         ...(kind === 'empty' ? {} : { legacyMarkdown: raw }),
       })
-      expect(target.prepare('SELECT rowid,* FROM project_core').get()).toEqual(originalCore)
+      expect(target.prepare('SELECT rowid,* FROM project_core').get()).toEqual({ ...(originalCore as object), ai_sources: '{}' })
       expect((target.prepare('SELECT name,seq FROM sqlite_sequence').all() as Array<{ name: string; seq: number }>)
         .map(row => ({ ...row, name: logicalTableName(row.name) })).sort((a, b) => a.name < b.name ? -1 : 1)).toEqual(sequences)
       expect(target.prepare('SELECT COUNT(*) FROM llm_calls').pluck().get()).toBe(0)
@@ -183,7 +183,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
       schemaVersion: 0, fingerprint: '2504dde08865f758f654d38ae3d972420c28fa60d1f747e92898390455272de6',
     })
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(10)
+    expect(result.schemaVersion).toBe(11)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid,project_name,genre,global_guidance,characters_arch FROM project_core').get())
@@ -221,7 +221,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
   it('copies qualified v1.0.0 old columns, rowids, and sequence into schema9 staging', async () => {
     const f = legacyV100Fixture(), before = bytes(f.root)
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(10)
+    expect(result.schemaVersion).toBe(11)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid FROM project_core WHERE id=?').pluck().get('main')).toBe(7)
@@ -258,7 +258,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
       schemaVersion: 0, fingerprint: 'c536a35e30f51f681843a2a07a48592cc80e9840abeb7898fcd463297128ccf8',
     })
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(10)
+    expect(result.schemaVersion).toBe(11)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid,core_outline,world_setting,protagonist_profile FROM project_core').get())
@@ -309,7 +309,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
     const before = bytes(f.root)
     expect(probeProjectSqlite({ databasePath: f.source })).toMatchObject({ schemaVersion: 0, fingerprint })
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(10)
+    expect(result.schemaVersion).toBe(11)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     for (const [index, table] of preservedTables.entries()) {
@@ -352,7 +352,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
   it('copies qualified v1.1.0 rows and sequence through canonical staging to schema9 without writing the source', async () => {
     const f = legacyV110Fixture(), before = bytes(f.root)
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(10)
+    expect(result.schemaVersion).toBe(11)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid FROM project_core WHERE id=?').pluck().get('main')).toBe(7)
@@ -424,11 +424,11 @@ it('upgrades a qualified schema 6 file to schema 9 without changing author conte
  const before=await backupProjectSqlite({sourceDatabasePath:f.source,targetDatabasePath:f.target,targetVersion:6})
  expect(before.schemaVersion).toBe(6)
  const upgraded=upgradeProjectSqlite({databasePath:f.target})
- expect(upgraded.schemaVersion).toBe(10)
+ expect(upgraded.schemaVersion).toBe(11)
  expect(upgraded.preRecycleDomain).toEqual(before.domain)
  expect(verifyProjectSqlite({databasePath:f.target})).toEqual(upgraded)
 })
-it.each([[6, 'preRecycleDomain'], [8, 'preContinuityDomain'], [9, 'preAnnotationDomain']] as const)(
+it.each([[6, 'preRecycleDomain'], [8, 'preContinuityDomain'], [9, 'preAnnotationDomain'], [10, 'preAiSourcesDomain']] as const)(
  'upgrades a schema %i file with character state to schema 9; only the M08 baseline and columns are new', async (version, field) => {
  const f=fixture()
  await backupProjectSqlite({sourceDatabasePath:f.source,targetDatabasePath:f.target,targetVersion:version})
@@ -462,8 +462,8 @@ describe('打开作品不跑全书审修循环校验（#702）', () => {
     return { ...f, db, book }
   }
 
-  it('打开时的校验对应 v10 的迁移校验去掉全书 M03；库版本升级时要重新核对 verifyOpenedSchema', () => {
-    expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(10)
+  it('打开时的校验对应 v11 的迁移校验去掉全书 M03；库版本升级时要重新核对 verifyOpenedSchema', () => {
+    expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(11)
   })
 
   it('有一条审修循环只过不了全书 M03 证明的作品照常打开，迁移通道的全书校验仍拒绝它', async () => {
@@ -501,13 +501,13 @@ describe('打开作品不跑全书审修循环校验（#702）', () => {
     const healthy = await projectWithReviewCycles(9)
     healthy.db.close()
     expect(() => openProjectSqlite({ databasePath: healthy.target })).not.toThrow()
-    expect(probeProjectSqlite({ databasePath: healthy.target }).schemaVersion).toBe(10)
+    expect(probeProjectSqlite({ databasePath: healthy.target }).schemaVersion).toBe(11)
 
     const broken = await projectWithReviewCycles(9)
     breakReviewProof(broken.db, broken.book[1]!)
     broken.db.close()
     expect(() => openProjectSqlite({ databasePath: broken.target })).not.toThrow()
-    expect(probeProjectSqlite({ databasePath: broken.target }).schemaVersion).toBe(10)
+    expect(probeProjectSqlite({ databasePath: broken.target }).schemaVersion).toBe(11)
     expect(() => verifyProjectSqlite({ databasePath: broken.target })).toThrow('MIGRATION_VERIFICATION_FAILED')
   })
 })
@@ -533,13 +533,13 @@ describe('各调用方拿到的内容哈希（#702）', () => {
 
   const ones = (...tables: string[]) => Object.fromEntries(tables.map(table => [table, 1]))
   const CURRENT_BOOK = {
-    schemaVersion: 10,
-    fingerprint: 'cfc23088546ad51d63c3b940dc5f43d7061c4fa5092c6eddf293feb3671acb3b',
-    domain: { authorContentHash: 'ac81cf1602c2844f4c6e5eb2c402444e9c16581888e3a6b90df1a431d425c2cb',
+    schemaVersion: 11,
+    fingerprint: 'd4cee8a1b61a50ea652efa3a0bcadd4ecfb9ede7f3dbfd90ff31e671fcb5e680',
+    domain: { authorContentHash: '7048c93ac46636ea4caddcd1aa4b6189f747f6b8930a05de61328cf886e7661f',
       tableCounts: ones('annotation_history', 'character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
     preIdentityDomain: { authorContentHash: '3576e040fc66e6de607720e5f1e5d27f0078e2f1fb650c9f518ff55573fca4b4',
       tableCounts: ones('character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
-    preAssetDomain: { authorContentHash: '6aadf6536419abbb9140648da84e4384d948c9d49e2c434d970aa19df0f072e3',
+    preAssetDomain: { authorContentHash: 'b2741a832b9f5463a103b7684d3321e4c20b77abf546f40f7f9a14524f31fd40',
       tableCounts: ones('annotation_history', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
     preRecycleDomain: { authorContentHash: 'a8da0b807e9d343afdbd23b59d654305864ecbcdb5e6570a9535247032849d1f',
       tableCounts: ones('character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
@@ -547,6 +547,9 @@ describe('各调用方拿到的内容哈希（#702）', () => {
       tableCounts: ones('character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
     preAnnotationDomain: { authorContentHash: '3c729596304c2d698d43f1b1f06dd546c9d5e38637f323dc5772a7b06c83fbea',
       tableCounts: ones('character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
+    /** 加 ai_sources 列之前的哈希，等于 v10 时的 domain。 */
+    preAiSourcesDomain: { authorContentHash: 'ac81cf1602c2844f4c6e5eb2c402444e9c16581888e3a6b90df1a431d425c2cb',
+      tableCounts: ones('annotation_history', 'character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },
   }
 
   it('探测、校验、升级与备份当前版本的书，内容哈希与改前逐字相同', async () => {

@@ -1891,3 +1891,94 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('AI check reached chapter 3. These chapters conflict with the timeline.')).toBeVisible()
   })
 })
+
+describe('单章蓝图的字段直接可读（#702）', () => {
+  const LONG = Array.from({ length: 12 }, (_, line) => `第 ${line + 1} 行：林岚在灯塔里又量了一遍潮位，钟声还是早了一刻。`).join('\n')
+  const NOTES = ['## 剧情节点', '- [转折] 潮汐表被整册拆走', '- **林岚**：认出父亲的字迹'].join('\n')
+  const long = (chapterNumber: number, title: string): ChapterBlueprint => ({
+    ...blueprint(chapterNumber, title), purpose: LONG, keyEvents: LONG, suspenseHook: LONG, userGuidance: LONG, notes: NOTES,
+  })
+  const innerScrolls = () => [...document.querySelectorAll<HTMLTextAreaElement>('.stage-bp-card textarea')]
+    .filter(node => node.scrollHeight > node.clientHeight + 1).map(node => node.id)
+
+  it('长内容的每个字段都随内容长高，不在框里滚动；冲突与转折、悬念钩子上下排', async () => {
+    stored = [long(1, '旧港'), long(2, '北堤')]
+    await renderPage(1)
+    await expect.element(page.getByRole('region', { name: '第 1 章蓝图' })).toBeVisible()
+    const editNotes = document.querySelector<HTMLButtonElement>('button[aria-label="编辑章节要点"]')
+    if (editNotes) await act(async () => editNotes.click())
+    expect(document.querySelectorAll('.stage-bp-card textarea')).toHaveLength(5)
+    expect(innerScrolls()).toEqual([])
+    const conflict = page.getByRole('textbox', { name: '冲突与转折' }).element().getBoundingClientRect()
+    const hook = page.getByRole('textbox', { name: '悬念钩子' }).element().getBoundingClientRect()
+    expect(hook.top).toBeGreaterThanOrEqual(conflict.bottom)
+  })
+
+  it('章节要点里一长串不断行的网址在排版里也折行，卡片不横向滚动', async () => {
+    stored = [{ ...long(1, '旧港'), notes: `- 资料：https://example.com/${'tidetable'.repeat(60)}` }]
+    await renderPage(1)
+    await expect.element(page.getByRole('region', { name: '第 1 章蓝图' })).toBeVisible()
+    const read = document.querySelector<HTMLElement>('.stage-bp-notes-read')!
+    const card = document.querySelector<HTMLElement>('.stage-bp-card')!
+    expect([read.scrollWidth, card.scrollWidth]).toEqual([read.clientWidth, card.clientWidth])
+  })
+
+  it('有内容的章节要点排成 Markdown 读，点「编辑」换成原文，换章自动收起', async () => {
+    stored = [long(1, '旧港'), long(2, '北堤')]
+    await renderPage(1)
+    await expect.element(page.getByRole('region', { name: '第 1 章蓝图' }).getByRole('strong')).toHaveTextContent('林岚')
+    expect(document.querySelector('.stage-bp-notes-read li, .stage-bp-notes-read div')).not.toBeNull()
+    expect(document.querySelector('.stage-bp-notes-read')?.textContent).not.toContain('**')
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).not.toBeInTheDocument()
+
+    await act(async () => page.getByRole('button', { name: '编辑章节要点' }).click())
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).toHaveValue(NOTES)
+    expect(document.activeElement).toBe(page.getByRole('textbox', { name: /^章节要点/ }).element())
+
+    await act(async () => page.getByRole('button', { name: /^2\D/ }).click())
+    await expect.element(page.getByRole('region', { name: '第 2 章蓝图' })).toBeVisible()
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).not.toBeInTheDocument()
+    await expect.element(page.getByRole('button', { name: '编辑章节要点' })).toBeVisible()
+
+    await act(async () => page.getByRole('button', { name: /^1\D/ }).click())
+    await expect.element(page.getByRole('region', { name: '第 1 章蓝图' })).toBeVisible()
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).not.toBeInTheDocument()
+    await expect.element(page.getByRole('button', { name: '编辑章节要点', exact: true })).toBeVisible()
+  })
+
+  it('空着的章节要点直接是输入框，从空白写起不会在打第一个字时换成排版', async () => {
+    await renderPage(1)
+    const notes = page.getByRole('textbox', { name: /^章节要点/ })
+    await expect.element(notes).toHaveValue('')
+    await act(async () => notes.fill('林岚'))
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).toHaveValue('林岚')
+    await expect.element(page.getByRole('button', { name: '完成编辑章节要点' })).toBeVisible()
+  })
+
+  it('卡片开着时 AI 生成蓝图或定稿后处理写回了这一章：空的要点换成排版，长字段照样随内容长高', async () => {
+    await renderPage(1)
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).toHaveValue('')
+    stored = [long(1, '旧港'), ...stored.slice(1)]
+    await refreshBlueprints()
+    await expect.element(page.getByRole('region', { name: '第 1 章蓝图' }).getByRole('strong')).toHaveTextContent('林岚')
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).not.toBeInTheDocument()
+    expect(innerScrolls()).toEqual([])
+  })
+
+  it('滚到卡片底部再换章，卡片回到顶上；「保存此章」一直在可见区域里', async () => {
+    stored = [long(1, '旧港'), long(2, '北堤')]
+    Object.assign(container!.style, { height: '700px', display: 'flex', flexDirection: 'column' })
+    await renderPage(1)
+    await act(async () => { Object.assign((container!.firstElementChild as HTMLElement).style, { height: '100%', display: 'flex', flexDirection: 'column' }) })
+    const scroller = document.querySelector<HTMLElement>('.stage-bp-card')!
+    await act(async () => { scroller.scrollTop = scroller.scrollHeight })
+    expect(scroller.scrollTop).toBeGreaterThan(0)
+    const save = page.getByRole('button', { name: '保存此章' }).element().getBoundingClientRect()
+    const viewport = scroller.getBoundingClientRect()
+    expect(save.top).toBeGreaterThanOrEqual(viewport.top)
+    expect(save.bottom).toBeLessThanOrEqual(viewport.bottom)
+    await act(async () => page.getByRole('button', { name: /^2\D/ }).click())
+    await expect.element(page.getByRole('region', { name: '第 2 章蓝图' })).toBeVisible()
+    expect(scroller.scrollTop).toBe(0)
+  })
+})
