@@ -346,8 +346,21 @@ describe('定稿后整理要点与角色状态（extraction）', () => {
     }
   })
 
+  it.each(['deepseek-ai/DeepSeek-V4-Flash', 'deepseek-ai/DeepSeek-V4.1-Flash'])('硅基 %s 作者选了关闭：同样关思考，不比自动档慢', modelName => {
+    expect(resolveReasoningPolicy({ model: { ...silicon(modelName), reasoningOverride: 'off' }, stage: 'extraction' }).providerDirective)
+      .toEqual({ adapter: 'siliconflow-v4-thinking', reasoningEffort: 'off' })
+  })
+
+  it.each(['gemini-3.8-flash', 'gemini-3.1-pro-preview'])('%s 关不掉思考：自动档照旧按审稿的档位', modelName => {
+    const gemini3: ModelProfile = { ...geminiModel, id: modelName, modelName }
+    for (const creativeStrategy of strategies) {
+      expect(resolveReasoningPolicy({ model: gemini3, creativeStrategy, stage: 'extraction' }))
+        .toEqual(resolveReasoningPolicy({ model: gemini3, creativeStrategy, stage: 'review' }))
+    }
+  })
+
   it.each(['off', 'low', 'medium', 'high', 'xhigh', 'max'] as const)('作者选了 %s：与审稿阶段发同样的参数', reasoningOverride => {
-    for (const model of [silicon('deepseek-ai/DeepSeek-V4-Flash'), silicon('deepseek-ai/DeepSeek-V4.1-Flash'), deepseek, grok, qwen]) {
+    for (const model of [...reasoningOverride === 'off' ? [] : [silicon('deepseek-ai/DeepSeek-V4-Flash'), silicon('deepseek-ai/DeepSeek-V4.1-Flash')], deepseek, grok, qwen]) {
       expect(resolveReasoningPolicy({ model: { ...model, reasoningOverride }, stage: 'extraction' }))
         .toEqual(resolveReasoningPolicy({ model: { ...model, reasoningOverride }, stage: 'review' }))
     }
