@@ -252,3 +252,54 @@ Object.assign(CCH_SCENARIOS, {
     return { zh }
   } },
 })
+
+/** 从本地存档恢复：两次选择框依次答存档文件和副本所在文件夹，等红字。 */
+async function restoreOnce(context, archive, parent, expected) {
+  const { app, page } = context
+  await app.evaluate(({ dialog }, answers) => {
+    const queue = [...answers]
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [queue.shift()] })
+  }, [archive, parent])
+  await stage.root(page).getByRole('navigation', { name: ZH.settings }).getByRole('button', { name: ZH.page, exact: true }).click()
+  await stage.root(page).getByRole('button', { name: '从本地存档恢复副本', exact: true }).click()
+  const shown = notice(page, 'alert').filter({ hasText: expected })
+  await shown.waitFor({ state: 'visible', timeout: 60_000 })
+  return (await shown.innerText()).trim()
+}
+
+Object.assign(CCH_SCENARIOS, {
+  'ec-restore-not-archive': { model: true, shell: 'stage', setup: async context => {
+    await seedLargeBook(context, 1)
+  }, run: async context => {
+    const { page, roots, shoot } = context
+    const archive = path.join(roots.projects, '下载了一半.ainovel')
+    fs.writeFileSync(archive, 'PK\u0003\u0004 not a whole archive')
+    const parent = path.join(roots.projects, 'restore-here')
+    fs.mkdirSync(parent)
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    const zh = await restoreOnce(context, archive, parent,
+      /^没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。$/u)
+    assert.deepEqual(fs.readdirSync(parent), [], '没有留下副本或暂存')
+    await shoot('ec-4-restore-not-archive')
+    return { zh }
+  } },
+  'ec-cloud-endpoint': { model: true, shell: 'stage', setup: async context => {
+    await seedLargeBook(context, 1)
+  }, run: async context => {
+    const { page, shoot } = context
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    await stage.root(page).getByRole('navigation', { name: ZH.settings }).getByRole('button', { name: ZH.page, exact: true }).click()
+    const panel = stage.root(page).locator('[data-testid="project-backup-panel"]')
+    await panel.getByLabel('WebDAV 地址').fill('http://dav.example.com/dav/')
+    await panel.getByLabel('用户名').fill('writer')
+    await panel.getByLabel('密码或应用密钥').fill('app-secret')
+    await panel.getByLabel('云书标识').fill('my-book')
+    await panel.getByRole('button', { name: '连接并绑定', exact: true }).click()
+    const shown = notice(page, 'alert').filter({ hasText: /^没有连接。WebDAV 地址要以 https:\/\/ 开头，不能带 \? 或 #。请改好地址，再点「连接并绑定」。$/u })
+    await shown.waitFor({ state: 'visible', timeout: 30_000 })
+    await shoot('ec-6-cloud-endpoint')
+    return { zh: (await shown.innerText()).trim() }
+  } },
+})
