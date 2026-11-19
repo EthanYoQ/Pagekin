@@ -711,7 +711,7 @@ export const PERF702_SCENARIOS = {
       // 回书房放在最后：争用调用用的是打开时截下的会话。回书房不关库（关库在打开别的作品、删除作品时）。
       const { page } = context, finalized = Number(process.env.PERF702_FINALIZED ?? 112)
       await stage.root(page).getByRole('banner').getByRole('button', { name: `《${BOOK}》作品菜单` }).click()
-      const closed = await operation(context, `${finalized}-r1-close`, () =>
+      const closed = await operation(context, `${finalized}-r1-return-to-library`, () =>
         msFromClickTo(page, page.getByRole('menuitem', { name: '回到书房' }), [['[aria-label="最近的作品"]', BOOK]]))
       // 第一轮进蓝图页时已把生成记录落到暂停与终态；重启后再走一轮，量的是静止以后的打开与启动恢复。
       await context.restart()
