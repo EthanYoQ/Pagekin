@@ -1106,6 +1106,45 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await expect.element(page.getByRole('button', { name: '重试合并后复验' })).toBeVisible()
   })
 
+  it('重试复验期间换成了新审稿、新审稿的循环读失败：旧审稿迟到的重读不把动作条收走', async () => {
+    const draft = backend.addDraft({ status: 'revised' })
+    const old = backend.addReview(draft)
+    backend.state.cycles.set(old.id, { ...backend.state.cycles.get(old.id)!, ...recheckPending })
+    await mount()
+    await openDraft(draft.id)
+    await openReport()
+    const answer = backend.invoke.getMockImplementation()!
+    const oldReads = vi.fn()
+    const freshFailures = vi.fn()
+    let fresh = 0
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && new Error().stack?.includes('review-checklist')) {
+        if (args[0] === fresh) {
+          freshFailures()
+          throw new Error('PROJECT_DATABASE_BUSY')
+        }
+        if (args[0] === old.id) oldReads()
+      }
+      return answer(channel, ...args)
+    })
+    startWorkflow.mockImplementation(async () => {
+      fresh = backend.addReview(draft).id
+      await act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'review', projectPath: SESSION.projectPath, projectSession: SESSION, runId: 'other-review' }))
+      await expect.element(page.getByRole('complementary', { name: /审稿/ }).getByText('前后矛盾').first()).toBeVisible()
+      await vi.waitFor(() => expect(freshFailures).toHaveBeenCalled())
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+      expect(host!.querySelector('.stage-ch-actions .pi-btn')).not.toBeNull()
+      backend.state.cycles.set(old.id, { ...backend.state.cycles.get(old.id)!, recheckDisposition: 'completed', recheckCount: 1 })
+      useWorkflowStore.setState({ history: [{ id: 'recheck-run', status: 'completed' } as never] })
+      return 'recheck-run'
+    })
+    await click('重试合并后复验')
+    await vi.waitFor(() => expect(startWorkflow).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(oldReads).toHaveBeenCalled())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)) })
+    expect(host!.querySelector('.stage-ch-actions .pi-btn')).not.toBeNull()
+  })
+
   it('恢复前的待合并修稿：合并视图不说合并后会复验', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     restoredReview(draft)
