@@ -229,7 +229,7 @@ export interface ExportPortableProjectInput {
   snapshotGeneration?: string
   /** worker 里跑时经主进程取主进程那把锁；默认是本进程的 withKnowledgeSourceGate。 */
   withSourceGate?<T>(projectStorageRoot: string, operation: () => Promise<T>): Promise<T>
-  /** 进门要写主进程开着的那本书的库，worker 里跑时请主进程做；默认是本进程的 admitWholeLedgerOfOpenProject。 */
+  /** 进门要写主进程持有的库，worker 里跑时由主进程代做。 */
   admitSourceLedger?(sourceProjectRoot: string): Promise<void>
   /** round 从 1 起；资料被改而整次重来时加一。 */
   onProgress?(phase: PortableExportPhase, round: number): void

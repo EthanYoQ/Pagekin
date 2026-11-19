@@ -44,7 +44,7 @@ const running = new Set<RunningExport>()
 const projectKey = (root: string) => process.platform === 'win32' ? path.resolve(root).toLowerCase() : path.resolve(root)
 
 /**
- * 导出在 worker 线程里跑，主进程只应答会话核对、知识库闸门与进门，转发进度。
+ * 导出在 worker 线程里跑，主进程只应答 worker 的提问并转发进度。
  * 主进程在 attemptParentPath 下建一个 .pe- 目录交给 worker。结束后不论成败（含取消、worker 崩溃），
  * 都等 worker 真正退出才放开闸门、删目录、注销在途登记：退出应用和关库靠在途登记判断还要不要等。
  */

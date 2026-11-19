@@ -112,7 +112,6 @@ async function archiveRows(archivePath: string): Promise<Record<string, Array<Re
   } finally { archived.close() }
 }
 
-/** 生产路径：本地导出与云备份都经宿主在 worker 里跑。 */
 function exportInWorker({ sourceProjectRoot, projectSession, targetArchivePath, attemptParentPath, assertCurrentContext }: ExportPortableProjectInput) {
   return exportPortableProjectInWorker({ sourceProjectRoot, projectSession, targetArchivePath, attemptParentPath, assertCurrentContext }, worker)
 }

@@ -42,7 +42,7 @@ function breakRootBudget(projectRoot, chapter) {
   })
 }
 
-/** 与 corrupt-review-cycle-export 测试「带尝试的兄弟运行读不出」一致：打开时不查静止树的绑定，只有导出前的全量进门封存它（#749）。 */
+/** 静止树打开时不查绑定，只有导出前的全量进门封存它（#749）。 */
 function addUnreadableSiblingRun(projectRoot, chapter) {
   withBook(projectRoot, database => {
     const { rootActionId } = cycleOf(database, chapter)

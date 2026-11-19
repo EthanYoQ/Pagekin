@@ -83,7 +83,6 @@ export function rehydrateExportError(error: SerializedExportError): Error {
   }
 }
 
-/** 会话核对、知识库闸门、进门都问主进程，worker 里不持有。 */
 export async function runPortableExportJob(port: MessagePort, job: PortableExportJob & { attemptRoot: string }, commit: Int32Array): Promise<void> {
   const post = (message: WorkerToHost) => port.postMessage(message)
   const waiting = new Map<number, (reply: HostToWorker) => void>()
