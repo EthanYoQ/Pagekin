@@ -94,6 +94,9 @@ const receiptSelect = `SELECT t.attempt_id,t.run_id,t.rowid AS ordinal,t.attempt
 export const textHash = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 /** 封存的根是终态：列举跳过它，阻断码也不再改写。 */
 export const UNSEALED_ROOT = `blocked_code IS NOT '${GENERATION_LEDGER_UNREADABLE}'`;
+/** 没静止的根：还在 active，或有已预留、已派发的尝试。只有它们在崩溃或关闭时需要落到暂停与终态。 */
+export const UNSETTLED_ROOT = `(json_extract(action_json,'$.status')='active' OR root_action_id IN (SELECT root_action_id FROM generation_attempts
+    WHERE json_extract(attempt_json,'$.status') IN ('reserved','dispatch-marked')))`;
 /** 点击号读不出的运行认不出是不是前驱，所以直接报 conflict。 */
 export function slotRunNonces(rows: readonly { run_id: string; open_key: string }[], conflict: string): { runId: string; nonce: string }[] {
     return rows.map(row => {
@@ -865,10 +868,8 @@ export class GenerationRunRepository {
     }
     recoverInterrupted(): void {
         this.transaction(() => {
-            const roots = this.db().prepare(`SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT}`).all() as {
-                root_action_id: string;
-            }[];
-            for (const { root_action_id: id } of roots) {
+            const roots = this.db().prepare(`SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT} AND ${UNSETTLED_ROOT}`).pluck().all() as string[];
+            for (const id of roots) {
                 if (this.frozenRoot(id)) continue;
                 for (const attempt of this.budget(id).attempts)
                     if (attempt.status === 'dispatch-marked') {

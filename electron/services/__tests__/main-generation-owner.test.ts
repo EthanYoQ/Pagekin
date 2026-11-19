@@ -39,6 +39,7 @@ import { sanitizePortableDatabase } from '../project-archive-service'
 import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
 import { ImportGeneration } from '../import-generation'
 import { damageLedger, failingCalls as failingLedgerCalls, rootCount } from './ledger-seal-fixture'
+import { bindingReads, countBySource, recordExecutions } from './statement-log'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationKnowledgeSnapshot } from '../../../src/shared/generation-knowledge'
 import type { MainGenerationRunHandle } from '../../../src/services/generation/generation-runtime'
@@ -3633,7 +3634,7 @@ describe('main draft persistence and batch lineage', () => {
       expect(runIds(list.batches)).toEqual([batch.batchId])
       expect(locked()).toEqual(new Set([1]))
     })
-    it('#702 批次运行的 open_key 读得出但操作不是批量写稿：批次写过的章照样锁住', async () => {
+    it('#702 批次运行的 open_key 读得出但操作不是批量写稿：恢复列表漏列这个批次，写过的章照样锁住', async () => {
       const f = drafting()
       f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'第二章')")
       const batch = f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 2 }, targetUnits: 20,
@@ -3643,7 +3644,7 @@ describe('main draft persistence and batch lineage', () => {
       const parts = JSON.parse(click) as string[]
       parts[1] = 'chapter-draft'
       f.db.prepare('UPDATE generation_runs SET open_key=? WHERE run_id=?').run(JSON.stringify([JSON.stringify(parts), root]), batch.rootHandle.runId)
-      f.reopen()
+      expect(f.reopen().listRecovery().batches).toEqual([])
       expect(new GenerationDraftEffects(f.fixture.db, new GenerationRunRepository(() => f.fixture.db)).unfinishedBatchChapters('project')).toEqual(new Set([1]))
     })
     it('放弃的批次接着写出下一章，重新列为可续、写过的章重新锁住（#686）', async () => {
@@ -3847,6 +3848,102 @@ describe('main draft persistence and batch lineage', () => {
       const list = f.reopen().listRecovery()
       expect(runIds(list.drafts)).toEqual([intact.run.handle.runId])
       expect(list.partial).toBe(true)
+    })
+  })
+
+  describe('恢复只看没结束的运行（#702）', () => {
+    const runIds = (items: readonly { view: { handle: { runId: string } } }[]) => items.map(item => item.view.handle.runId)
+    const reviewPrompt = '检查冻结正文'
+    const report = JSON.stringify({ summary: '检查完成', items: [{ category: '表达', severity: 'warning', description: '补充动作细节', quote: '林岚' }] })
+    function reviewing() {
+      const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
+        options.onVisible({ kind: 'delta', text: JSON.stringify(request).includes(reviewPrompt) ? report : `${draftText}\n点我继续生成后续内容` })
+        return { finishReason: 'stop', usage: null }
+      })
+      const f = fixture(dispatch)
+      return { ...f, fixture: f, dispatch }
+    }
+    async function savedChapter(f: ReturnType<typeof reviewing>, index: number) {
+      const draft = await generate(f, { ...f.begin, uiActionNonce: `draft-${index}`, authorInputs })
+      const saved = f.owner.commitDraft(draft.request)
+      const prepared = f.owner.prepareReviewRevision({ operation: 'review-chapter', draftId: saved.id, authorInputs: [], uiLocale: 'zh-CN',
+        expectedDraft: { chapterNumber: 1, version: saved.version, status: 'draft', contentHash: textHash(saved.content) } })
+      const view = f.owner.begin({ operation: 'review-chapter', uiActionNonce: `review-${index}`, modelId: f.model.id, chapterNumber: 1,
+        selectedDraftIds: [saved.id], selectedFinalizedDraftIds: [], promptKeys: ['consistency_check'], skillStages: ['review'], output: 'structured-data',
+        reviewRevisionContextId: prepared.contextId, authorInputs: [{ id: 'review-revision-context', text: JSON.stringify(prepared.context) }] })
+      f.owner.bindMaterialDecision(view.handle, { version: 1, verdict: 'admitted', promptHash: textHash(reviewPrompt),
+        capacity: { maxInputUnits: 18_000, methodVersion: 'utf8-bytes-v1', admittedUnits: 0 }, coverage: { required: 0, included: 0, complete: true }, included: [], omitted: [] })
+      const executed = await f.owner.execute({ handle: view.handle, invocationNonce: 'review',
+        task: { purpose: 'review-chapter', output: 'structured-data', messages: [{ role: 'user', content: reviewPrompt }] } })
+      const artifact = executed.run.artifacts.at(-1)!
+      const review = { contextId: prepared.contextId, handle: view.handle, artifact: { artifactId: artifact.artifactId, revision: artifact.revision, textHash: artifact.textHash } }
+      f.owner.commitReview(review)
+      return { draft, review }
+    }
+    async function book(chapters: number) {
+      const f = reviewing(), saved = []
+      for (let index = 1; index <= chapters; index++) saved.push(await savedChapter(f, index))
+      const unsaved = await generate(f, { ...f.begin, uiActionNonce: 'unsaved', authorInputs })
+      const owner = f.reopen()
+      const savedRuns = saved.flatMap(item => [item.draft.run.handle, item.review.handle])
+      const db = f.fixture.db
+      const known = new Set(db.prepare('SELECT run_id FROM generation_runs UNION SELECT root_action_id FROM generation_roots').pluck().all() as string[])
+      const measure = <T>(action: () => T) => {
+        const { result, executions } = recordExecutions(db, action)
+        const reads = bindingReads(executions, known)
+        return { result, counts: countBySource(executions), reads,
+          onSaved: reads.filter(read => read.keys === 'all' || savedRuns.some(handle => read.keys !== 'all' && (read.keys.has(handle.runId) || read.keys.has(handle.rootActionId))))
+            .map(read => read.source) }
+      }
+      return { db, owner, unsaved, measure }
+    }
+    it('已保存的审稿、写稿各 3 条与各 12 条时，恢复列表、蓝图恢复、运行列表、启动恢复执行的语句相同，读绑定的语句都不落在已保存的运行上', async () => {
+      const [small, large] = [await book(3), await book(12)]
+      const calls = (b: Awaited<ReturnType<typeof book>>) => ({
+        recovery: b.measure(() => b.owner.listRecovery()),
+        blueprint: b.measure(() => b.owner.findBlueprintRecovery()),
+        list: b.measure(() => [b.owner.list(['legacy-character-roster-repair']), b.owner.list(['plot-tree-snapshot', 'narrative-thread-plan-candidate', 'narrative-thread-event-candidate'])]),
+        startup: b.measure(() => new GenerationRunRepository(() => b.db).recoverInterrupted()),
+      })
+      const [a, b] = [calls(small), calls(large)]
+      for (const [book, measured] of [[small, a], [large, b]] as const) {
+        expect(runIds(measured.recovery.result.drafts)).toEqual([book.unsaved.run.handle.runId])
+        expect(measured.recovery.result).toMatchObject({ reviews: [], planning: [], editors: [], batches: [], partial: false })
+        expect(measured.recovery.reads.some(read => read.keys !== 'all' && read.keys.has(book.unsaved.run.handle.runId))).toBe(true)
+      }
+      for (const name of ['recovery', 'blueprint', 'list', 'startup'] as const) {
+        expect({ [name]: b[name].counts }).toEqual({ [name]: a[name].counts })
+        expect({ [name]: b[name].onSaved }).toEqual({ [name]: [] })
+      }
+    })
+    it.each(['审稿', '写稿'] as const)('已保存的%s运行证据对不上：恢复列表不再标部分读不出，条目不变；读写这条运行照旧报错', async kind => {
+      const f = reviewing(), { draft, review } = await savedChapter(f, 1)
+      const unsaved = await generate(f, { ...f.begin, uiActionNonce: 'unsaved', authorInputs })
+      if (kind === '审稿') f.fixture.db.prepare("UPDATE contents SET body=body||'（外部改动）' WHERE id=(SELECT content_id FROM reviews)").run()
+      else f.fixture.db.prepare("UPDATE generation_attempts SET usage_receipt_json=json_set(usage_receipt_json,'$.draftCommit.contentHash',?) WHERE run_id=? AND json_type(usage_receipt_json,'$.draftCommit') IS NOT NULL")
+        .run('0'.repeat(64), draft.run.handle.runId)
+      const owner = f.reopen(), list = owner.listRecovery()
+      expect(runIds(list.drafts)).toEqual([unsaved.run.handle.runId])
+      expect(list).toMatchObject({ reviews: [], partial: false })
+      if (kind === '审稿') expect(() => owner.commitReview(review)).toThrow('GENERATION_REVIEW_RECEIPT_INVALID')
+      else expect(() => owner.commitDraft(draft.request)).toThrow('GENERATION_DRAFT_RECEIPT_INVALID')
+    })
+    it('收据里的写稿标记是 null：和读写稿效果的地方一样按没保存算，照旧列出', async () => {
+      const f = reviewing(), { draft } = await savedChapter(f, 1)
+      const unsaved = await generate(f, { ...f.begin, uiActionNonce: 'unsaved', authorInputs })
+      f.fixture.db.prepare("UPDATE generation_attempts SET usage_receipt_json=json_set(usage_receipt_json,'$.draftCommit',json('null')) WHERE run_id=? AND json_type(usage_receipt_json,'$.draftCommit')='object'")
+        .run(draft.run.handle.runId)
+      expect(runIds(f.reopen().listRecovery().drafts)).toEqual([unsaved.run.handle.runId, draft.run.handle.runId])
+    })
+    // 启动恢复和恢复列表按尝试的 JSON 跨记录选根、选运行；读不出的格子在打开时已由准入换成中性值，这两条语句不会读到坏 JSON。
+    it.each(['attempt_json', 'usage_receipt_json'] as const)('已保存运行的尝试 %s 读不出：重开后启动恢复与恢复列表照常', async column => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const f = reviewing(), { draft } = await savedChapter(f, 1)
+      const unsaved = await generate(f, { ...f.begin, uiActionNonce: 'unsaved', authorInputs })
+      f.fixture.db.prepare(`UPDATE generation_attempts SET ${column}='{坏' WHERE run_id=?`).run(draft.run.handle.runId)
+      const owner = f.reopen({ crashed: true })
+      expect(runIds(owner.listRecovery().drafts)).toEqual([unsaved.run.handle.runId])
+      expect(() => new GenerationRunRepository(() => f.fixture.db).recoverInterrupted()).not.toThrow()
     })
   })
 })

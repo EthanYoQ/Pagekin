@@ -318,10 +318,10 @@ async function msFromClickTo(page, target, marks, deadlineMs = 60_000) {
  * 冷启动后的一轮：打开作品、进蓝图页、回正文、换到最后一章定稿（正文与定稿后处理卡片各计一次）。
  * 从点击到目标内容出现在画面上；每项另记主进程与渲染进程账本。
  */
-async function timeOnce(context, finalized, round) {
+async function timeOnce(context, finalized, round, suffix = '') {
   const { app, page } = context
   await installLedger(app, page)
-  const label = name => `${finalized}-r${round}-${name}`
+  const label = name => `${finalized}-r${round}-${name}${suffix}`
   await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
   if (await stage.spine(page).isVisible()) await stage.backToLibrary(page, BOOK)
   await stage.previewBook(page, BOOK)
@@ -670,13 +670,18 @@ async function contention(context, channel) {
   const baseline = await probe()
   const during = probe()
   const label = `contention-${channel.replace(':', '-')}-${context.contentionRuns = (context.contentionRuns ?? 0) + 1}`
-  const handlerMs = await profiled(context, label, () => app.evaluate(async ({ ipcMain }, name) => {
+  // 结果只留形状（数组记条数、文字记字数，不写正文），对照两边时快却失败的一次一眼能看出来。
+  const { handlerMs, result } = await profiled(context, label, () => app.evaluate(async ({ ipcMain }, name) => {
     const { event, session } = globalThis.__perfSession
     const startedAt = performance.now()
-    await ipcMain._invokeHandlers.get(name)(event, session)
-    return Math.round(performance.now() - startedAt)
+    const answer = await ipcMain._invokeHandlers.get(name)(event, session)
+    const handlerMs = Math.round(performance.now() - startedAt)
+    const shape = (value, depth) => Array.isArray(value) ? value.length
+      : value && typeof value === 'object' ? depth ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shape(item, depth - 1)])) : 'object'
+        : typeof value === 'string' ? `text(${value.length})` : value
+    return { handlerMs, result: shape(answer, 3) }
   }, channel))
-  return log({ label, baseline, during: await during, handlerMs })
+  return log({ label, baseline, during: await during, handlerMs, result })
 }
 
 /** 只有蓝图、没有正文的作品：蓝图页耗时随蓝图条数（PERF702_BLUEPRINTS）的曲线。 */
@@ -703,7 +708,26 @@ export const PERF702_SCENARIOS = {
       const opened = await timeOnce(context, Number(process.env.PERF702_FINALIZED ?? 112), 1)
       const results = []
       for (let round = 0; round < 3; round++) for (const channel of ['generation:list-recovery', 'generation:find-blueprint-recovery']) results.push(await contention(context, channel))
-      return { opened, results }
+      // 回书房放在最后：争用调用用的是打开时截下的会话。回书房不关库（关库在打开别的作品、删除作品时）。
+      const { page } = context, finalized = Number(process.env.PERF702_FINALIZED ?? 112)
+      await stage.root(page).getByRole('banner').getByRole('button', { name: `《${BOOK}》作品菜单` }).click()
+      const closed = await operation(context, `${finalized}-r1-return-to-library`, () =>
+        msFromClickTo(page, page.getByRole('menuitem', { name: '回到书房' }), [['[aria-label="最近的作品"]', BOOK]]))
+      // 第一轮进蓝图页时已把生成记录落到暂停与终态；重启后再走一轮，量的是静止以后的打开与启动恢复。
+      await context.restart()
+      const quiesced = await timeOnce(context, finalized, 2, '-quiesced')
+      // 再打开同一本书会先关上一次的库：关库前生成拥有者要把记录落到暂停与终态，这就是关闭作品的恢复。
+      const grant = await chooseProjectDirectoryGrant(context.app, context.page, path.join(context.roots.projects, BOOK), 'project-open')
+      const switched = await operation(context, `${finalized}-r2-reopen-same-quiesced`, async () => {
+        const startedAt = performance.now()
+        const reopened = await context.invoke(context.page, 'project:open', { grantId: grant.grantId }, randomUUID(), null)
+        assert.equal(reopened.success, true, reopened.error)
+        return { totalMs: Math.round(performance.now() - startedAt) }
+      })
+      // 直接调 project:open 换了会话，渲染端要重载才认新会话（同 reuseBuilt）。
+      await context.reload()
+      await stage.spine(context.page).or(stage.cover(context.page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+      return { opened, results, closed, quiesced, switched }
     } },
   'perf702-blueprints': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 0); await context.restart() },
     run: context => timeBlueprintsOnly(context) },

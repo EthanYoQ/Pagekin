@@ -52,14 +52,17 @@ export class GenerationDraftEffects {
     return groupByBatch(rows)
   }
   /** settledChapter 这一章按已确认完（已发布、后处理关键步骤都完成）算进度，用于放回删除前已确认完的章：放回会把它重置为待发布、待重导。 */
-  /** 还能续写的批次（根运行 id）：active、paused、未阻断，且作者没点「不再恢复」。侧页列出与锁章共用这一条，免得两边判定又分开。 */
-  resumableBatchIds(projectId: string): string[] {
+  /**
+   * 还能续写的批次（根运行 id）：active、paused、未阻断，且作者没点「不再恢复」。侧页列出与锁章共用这一条，免得两边判定又分开。
+   * 侧页列出只在 candidates（运行索引给的候选）里选；锁章不传，对全部运行按绑定选，漏选会漏锁章（ADR-0030「跨记录认运行」）。
+   */
+  resumableBatchIds(projectId: string, candidates?: string): string[] {
     return this.db.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
-      WHERE json_extract(r.binding_json,'$.sourceManifest.batchIntent') IS NOT NULL
+      WHERE ${candidates === undefined ? '' : 'r.run_id IN (SELECT value FROM json_each(?)) AND '}json_extract(r.binding_json,'$.sourceManifest.batchIntent') IS NOT NULL
       AND json_extract(r.binding_json,'$.projectId')=?
       AND COALESCE(json_extract(g.action_json,'$.status'),'') NOT IN ('cancelled','sealed')
       AND g.blocked_code IS NULL AND json_type(r.binding_json,'$."$recoveryAbandonment"') IS NULL ORDER BY r.created_at_ms DESC, r.rowid DESC`)
-      .pluck().all(projectId) as string[]
+      .pluck().all(...(candidates === undefined ? [] : [candidates]), projectId) as string[]
   }
   unfinishedBatchChapters(projectId: string, settledChapter?: number): ReadonlySet<number> {
     const commits = this.batchCommits()
