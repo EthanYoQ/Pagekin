@@ -83,7 +83,6 @@ const ERROR_KEYS = {
   GENERATION_PROJECT_SESSION_REQUIRED: 'error.generationProjectSessionRequired',
   GENERATION_DRAFT_NOT_CURRENT: 'error.generationDraftNotCurrent',
   GENERATION_REVIEW_LINEAGE_UNPROVEN: 'error.generationReviewLineageUnproven',
-  // 从备份恢复前的审修循环只是历史（#702）：老章节上按旧审稿修稿或复验都报这一条。
   GENERATION_REVIEW_RESTORED_HISTORY: 'error.generationReviewRestoredHistory',
   // 源稿所在章节进了回收站（#564）：恢复稿里的原文不再显示。
   GENERATION_REVIEW_SOURCE_DELETED: 'error.generationReviewSourceDeleted',

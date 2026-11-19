@@ -100,7 +100,6 @@ function seedChapter(db: Database.Database) {
 
 const expectedDraft = (draft: DraftState) => ({ chapterNumber: 1, version: 1, status: draft.status, contentHash: textHash(draft.content) })
 
-/** 审稿并保存，作者确认审稿。返回确认稿，供按确认稿修稿。 */
 async function reviewAndConfirm(owner: Owner, db: Database.Database, draft: DraftState = unrevised, nonce = 'review') {
   const prepared = owner.prepareReviewRevision({ operation: 'review-chapter', draftId: 1,
     expectedDraft: expectedDraft(draft), authorInputs: [], uiLocale: 'zh-CN' })
@@ -144,7 +143,6 @@ function merge(db: Database.Database, revisionId: number, from: string, to: stri
     mergedContent: to, wordCount: countDraftUnits(to) }, db)
 }
 
-/** 对最近一次合并的审修循环做复核，模型给出合并稿里的新证据。 */
 async function recheck(owner: Owner, db: Database.Database, merged: string, evidenceQuote: string) {
   const cycle = db.prepare("SELECT cycle_id,merged_hash FROM review_cycles WHERE revision_status='merge-committed' ORDER BY rowid DESC LIMIT 1")
     .get() as { cycle_id: string; merged_hash: string }
@@ -164,7 +162,6 @@ async function recheck(owner: Owner, db: Database.Database, merged: string, evid
     artifact: { artifactId: artifact.artifactId, revision: artifact.revision, textHash: artifact.textHash } }) }
 }
 
-/** 重新审稿、确认、按新确认稿修稿、合并、复核，整条审修循环走完。 */
 async function completeFreshCycle(owner: Owner, db: Database.Database, from: DraftState, to: string, evidenceQuote: string) {
   outputs = [reportQuoting(from.quote), to]
   const fresh = await reviewAndConfirm(owner, db, from, 'fresh-review')

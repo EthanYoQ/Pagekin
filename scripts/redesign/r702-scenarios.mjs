@@ -1,5 +1,3 @@
-// #702 实机场景：示例作品第 4 章 AI 审稿后导出本地存档、恢复成新副本。在副本的第 4 章点「按 N 项意见修稿」，
-// 运行侧页说明这份审稿是恢复前做的、点「重新审稿」；点了重新审稿后，按新意见修稿能生成修稿。
 import assert from 'node:assert/strict'
 
 import * as chapterView from './pages/chapter-view.mjs'
@@ -9,7 +7,7 @@ import { seedStageSample } from './scenarios.mjs'
 
 const RESTORED_HISTORY = '审稿内容都还在，但它是作品从备份恢复前做的，不能接着按它修稿或复验。点「重新审稿」，再按新意见修稿。'
 
-/** 运行胶囊出现过一次并已结束：审稿与修稿都在后台跑，结束前不能点下一步。 */
+/** 审稿与修稿在后台跑，必须等运行胶囊出现并消失后才能点下一步。 */
 async function runOnce(page, action) {
   await page.evaluate(() => {
     window.__r702Runs = { count: 0 }
