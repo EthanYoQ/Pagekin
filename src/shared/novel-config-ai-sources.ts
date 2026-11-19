@@ -10,7 +10,6 @@ export type AiSourceField = typeof AI_SOURCE_FIELDS[number]
 /** filled：整项由 AI 写；expanded：AI 在作者原文后面补写。 */
 export type AiSourceKind = 'filled' | 'expanded'
 export type AiSources = Partial<Record<AiSourceField, { kind: AiSourceKind; hash: string }>>
-/** 设定或作品核心数据里与标记有关的部分；值类型不对时按空内容处理。 */
 type AiSourceInput = { readonly [K in AiSourceField]?: unknown } & { readonly aiSources?: AiSources }
 
 /** FNV-1a 32 位。只用来判断「还是不是 AI 写的那段」，不防篡改。 */
@@ -35,10 +34,7 @@ export function aiSourceOf(config: AiSourceInput, field: AiSourceField): AiSourc
   return entry && value.trim() && entry.hash === fingerprint(value) ? entry.kind : null
 }
 
-/**
- * AI 写入一批设定之后的标记：内容变了且不空的项记下来，原来空着或原来就是整项 AI 写的记 filled，
- * 原来有作者内容的记 expanded；没变的项保留仍然有效的旧标记。
- */
+/** filled：原来空着或原来就是 AI 写的；expanded：原来有作者内容；没变的项保留仍然有效的旧标记。 */
 export function recordAiSources(before: AiSourceInput, written: AiSourceInput): AiSources {
   const after = { ...before, ...written }
   const next: AiSources = {}

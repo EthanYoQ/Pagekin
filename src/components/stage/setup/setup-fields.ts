@@ -37,7 +37,7 @@ export const ONE_MISSING_HINT: Record<SetupField, Pair> = {
   targetAudience: ['选好目标读者就能继续', 'Choose target readers to continue'],
 }
 
-/** 设定细则的一项：名字、常驻说明、占位提示；aiField 是可单独让 AI 生成的字段。 */
+/** aiField：可单独让 AI 生成的字段。 */
 export type SheetField = { id: AiSourceField; name: Pair; desc: Pair; placeholder: Pair; aiField?: GeneratableField }
 
 const SHEET_COPY: Record<AiSourceField, Omit<SheetField, 'id'>> = {
@@ -61,5 +61,5 @@ const SHEET_COPY: Record<AiSourceField, Omit<SheetField, 'id'>> = {
     placeholder: ['如：参考《证道》的修炼体系', 'e.g. the magic system of a favourite series'] },
 }
 
-/** 设定细则六项，顺序与 AI 来源标记的字段表一致：先故事（主角、世界、卖点），再写法（文风、全局要求、参考）。 */
+/** 顺序与 AI 来源标记的字段表一致。 */
 export const SHEET_FIELDS: readonly SheetField[] = AI_SOURCE_FIELDS.map(id => ({ id, ...SHEET_COPY[id] }))

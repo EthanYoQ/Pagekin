@@ -33,7 +33,6 @@ import { ONE_MISSING_HINT, POV_OPTIONS, REQUIRED_NAMES, SHEET_FIELDS, STRUCTURE_
 import { pluralEn } from '../../../shared/plural-en'
 
 type Form = ReturnType<typeof useNovelConfigForm>
-/** 设定细则一行的状态：空着、AI 整项填写、AI 在作者原文后扩写；作者自己的内容不标。 */
 type SheetMark = 'empty' | 'ai-filled' | 'ai-expanded' | null
 
 /** 读出的设定值类型不对时按空文本显示，这一行照常可改，不让整页崩。 */
@@ -51,7 +50,6 @@ function authorPlace(): string {
   return JSON.stringify([useEditorStore.getState().activeTabId, sidebarView, settingsOpen])
 }
 
-/** 设定页：先是基本设定八项与设定细则六项，最后是核心大纲。核心大纲加类型、篇幅、目标读者四项必填即可往下走。 */
 export default function StageSetup({ projectKey }: { projectKey: string }) {
   const currentProject = useProjectStore(s => s.currentProject)
   return <SetupSession key={novelConfigSessionKey(currentProject, projectKey)} projectKey={projectKey} />
@@ -147,7 +145,6 @@ function SheetMarkLabel({ mark }: { mark: SheetMark }) {
   )
 }
 
-/** 设定细则里的一行：左边是名字和状态，中间直接是内容（随内容长高），右边是单项 AI 生成。 */
 function SheetRow({ field, config, form, aiReason }: { field: SheetField; config: NovelConfig; form: Form; aiReason: string | null }) {
   const text = useLocaleStore(s => s.text)
   const controlId = useId()

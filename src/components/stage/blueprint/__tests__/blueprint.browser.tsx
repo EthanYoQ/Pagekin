@@ -1905,7 +1905,6 @@ describe('单章蓝图的字段直接可读（#702）', () => {
     stored = [long(1, '旧港'), long(2, '北堤')]
     await renderPage(1)
     await expect.element(page.getByRole('region', { name: '第 1 章蓝图' })).toBeVisible()
-    // 有内容的要点先排成读的样子；点开编辑后五个字段都是输入框。
     const editNotes = document.querySelector<HTMLButtonElement>('button[aria-label="编辑章节要点"]')
     if (editNotes) await act(async () => editNotes.click())
     expect(document.querySelectorAll('.stage-bp-card textarea')).toHaveLength(5)
@@ -1932,7 +1931,6 @@ describe('单章蓝图的字段直接可读（#702）', () => {
     await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).not.toBeInTheDocument()
     await expect.element(page.getByRole('button', { name: '编辑章节要点' })).toBeVisible()
 
-    // 换回刚才编辑的那一章，要点仍是排版，不重新打开编辑态。
     await act(async () => page.getByRole('button', { name: /^1\D/ }).click())
     await expect.element(page.getByRole('region', { name: '第 1 章蓝图' })).toBeVisible()
     await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).not.toBeInTheDocument()

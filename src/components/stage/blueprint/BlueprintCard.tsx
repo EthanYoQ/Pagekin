@@ -155,7 +155,7 @@ export default function BlueprintCard({ blueprint, row, saving, onField, onSave,
   )
 }
 
-/** 章节要点：有内容时排成 Markdown 读，点「编辑」才换成原文；编辑态随章重置（按章号重新挂载），换走再换回仍是排版。空着时直接是输入框。 */
+/** 编辑态按章号重新挂载：换走再换回仍是排版。 */
 function Notes({ blueprint, id, onChange }: { blueprint: ChapterBlueprint; id: string; onChange: (value: string) => void }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)

@@ -1,4 +1,3 @@
-// 设定页「基本设定＋设定细则」与蓝图页字段直接可读（#702）：截图、无框内滚动、AI 来源标记、112 章换章耗时。
 import assert from 'node:assert/strict'
 
 import * as blueprint from './pages/blueprint.mjs'
@@ -29,7 +28,6 @@ const seedFilled = context => seedStageSample(context, { landOnChapter3: false, 
   assert.equal(core.success, true, core.error)
 } })
 
-/** 新书只留一项作者原文，AI 补全后它应标「AI 扩写」，其余补上的标「AI 填写」。 */
 const AUTHOR_STYLE = '少用形容词，多写手上的动作。'
 
 const seedNew = context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
@@ -38,7 +36,6 @@ const seedNew = context => seedStageSample(context, { landOnChapter3: false, bef
   assert.equal(core.success, true, core.error)
 } })
 
-/** 页面上内容要在框里滚动的多行输入框：scrollHeight 超出 clientHeight。 */
 const innerScrolls = (page, selector) => page.locator(selector).evaluateAll(nodes => nodes
   .filter(node => node.scrollHeight > node.clientHeight + 1)
   .map(node => `${node.getAttribute('aria-label') ?? node.id}: ${node.scrollHeight}>${node.clientHeight}`))
@@ -114,10 +111,7 @@ async function blueprintFacts(page, number) {
   }, number)
 }
 
-/**
- * 112 章里按固定顺序来回换 20 次章。React 在点击事件后的微任务里同步提交离散更新，在它之后排的微任务跑完时这一章已提交，
- * 所以 commitMs 是换章的渲染与提交耗时，不受帧率取整（committed 核对确实提交了）；layoutMs 再读一次 scrollHeight 强制样式与排版；twoFramesMs 是点击到两帧之后，含绘制。
- */
+/** commitMs：点击后排的微任务里这一章已提交，不受帧率取整；layoutMs：再读 scrollHeight 强制排版；twoFramesMs：点击到两帧之后，含绘制。 */
 async function measureSwitching(page) {
   return page.evaluate(async () => {
     const items = [...document.querySelectorAll('.stage-bp-plan-item')]

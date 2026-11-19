@@ -329,7 +329,6 @@
   color: var(--ink-3);
 }
 
-/* 字段就是一段可以直接改的文字：没有边框，随内容长高，不在框里滚动。 */
 .stage-bp-ctl {
   box-sizing: border-box;
   width: calc(100% + 20px);

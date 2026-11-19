@@ -1,5 +1,5 @@
 /* ================= 设定页 ================= */
-/* 880 宽的版心：先是基本设定与设定细则（设定级内容放在最上面，不收进标签按钮），核心大纲在最后，底部一条操作栏。 */
+/* 设定级内容排在核心大纲之上，不收进标签按钮。 */
 .stage-setup {
   display: flex;
   flex-direction: column;
@@ -130,7 +130,7 @@
   background: var(--accent-soft);
 }
 
-/* ---------- 基本设定：八项短设定，宽时四列两行，窄了自己折成三列、两列 ---------- */
+/* ---------- 基本设定 ---------- */
 .stage-setup-basics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
@@ -214,7 +214,7 @@
   color: var(--ink-3);
 }
 
-/* ---------- 设定细则：一张卡里的分隔线行，名字与状态｜内容（随内容长高）｜单项 AI 生成 ---------- */
+/* ---------- 设定细则 ---------- */
 .stage-setup-sheet {
   padding: var(--s-4) var(--s-6) var(--s-2);
   border-radius: var(--radius-panel);
@@ -305,7 +305,6 @@
   box-shadow: var(--focus-ring);
 }
 
-/* 说明在这一项空着或正在写时出现，填好的项只留内容。 */
 .stage-setup-row-desc {
   display: none;
   margin: var(--s-1) 0 0;
@@ -386,7 +385,7 @@
   font-size: var(--fs-12);
 }
 
-/* 矮窗口（1280×720 等）：首屏要放下基本设定，收紧留白，缺模型提示并成一行，大纲输入框先矮一些（随内容长高）。 */
+/* 矮窗口（1280×720）：首屏要放下基本设定。 */
 @media (max-height: 760px) {
   .stage-setup-inner {
     padding-top: var(--s-6);
