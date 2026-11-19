@@ -11,7 +11,7 @@ stubElectron(electronExports)
 // 先装好 electron 桩再动态 import：静态 import 会先于 stubElectron 执行。
 void Promise.all([import('./sqlite-project-migration'), import('./project-peek'), import('./project-sqlite-host'), import('../repositories/generation-ledger-admission')])
   .then(([migration, peek, host, ledger]) => {
-    // 长篇扫一遍账本要几百毫秒。这里对同一份字节扫，主进程核对内容身份相同，账本干净就不再扫。
+    // 账本扫描结果随内容身份一起交回，主进程据此省掉一次整库扫描。
     const open = (databasePath: string): OpenedProjectSqlite => {
       const identity = migration.openProjectSqlite({ databasePath })
       const reader = new Database(databasePath, { readonly: true, fileMustExist: true })
