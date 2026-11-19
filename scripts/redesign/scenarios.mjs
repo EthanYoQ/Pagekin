@@ -815,10 +815,11 @@ export const STAGE_SCENARIOS = {
     const world = stage.setupDetail(page, '世界观')
     assert.equal(await world.inputValue(), FIXTURE_CONFIG.worldSetting, 'AI 补全写进了世界观')
     assert.ok((await stage.setupOutline(page).inputValue()).startsWith(STAGE_SAMPLE.core.coreOutline), 'AI 补全保留了作者写的核心大纲')
-    await world.fill('旧港以潮汐计时。')
+    assert.deepEqual(await chromeContrastFailures(page), [], '设定页文字对比度不足')
+  }, after: async ({ page }) => {
+    await stage.setupDetail(page, '世界观').fill('旧港以潮汐计时。')
     assert.equal(await stage.setupDetailRow(page, '世界观').locator('[data-mark]').count(), 0, '作者改过的世界观不再标 AI')
     await stage.saveStatus(page).filter({ hasText: '未保存' }).waitFor({ state: 'visible' })
-    assert.deepEqual(await chromeContrastFailures(page), [], '设定页文字对比度不足')
   } },
   'stage-settings-groups': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
     await stage.openSettings(page)

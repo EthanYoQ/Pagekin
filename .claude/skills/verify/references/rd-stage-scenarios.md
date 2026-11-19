@@ -79,7 +79,7 @@ node scripts/redesign/drive.mjs --scenario chapter-switch --shell stage --out <�
 | `stage-library-delete` | 当前作品的书本菜单「删除作品…」，输入「灯」时「删除作品」禁用；`after` 输入完整书名后可用，再取消，文件夹仍在 | 删除确认（名字不对） | 否 | lane 5 |
 | `stage-update-card` | 夹具更新源（`stubUpdates` 替换主进程的更新 IPC，安装只计数）；设定页改一项未保存，回书房点「下载更新」再点「立即重启更新」，出现「请先处理未保存的修改」与「返回保存」；`after` 返回保存，安装次数为 0 | 更新拦截 | 否 | lane 10 |
 | `stage-setup-required` | 新外壳新建「雾岛」，写核心大纲、选类型，不选目标读者：「下一步：故事架构」禁用，提示「选好目标读者就能继续」并由 `aria-describedby` 关联；设定页唯一的主按钮；对比度；`after` 选目标读者后点下一步，先保存再到架构 | 必填未齐 | 否 | lane 6 |
-| `stage-setup-fill` | 示例作品的设定页点「AI 补全其余设定」，确认扩写已有内容；夹具按配置 JSON 合同返回（`FIXTURE_CONFIG`），世界观被填上并标 AI、核心大纲保留作者原文；再改世界观，AI 标记消失，设定变为未保存；对比度 | 补全后的世界观 | 是 | lane 7 |
+| `stage-setup-fill` | 示例作品的设定页点「AI 补全其余设定」，确认扩写已有内容；夹具按配置 JSON 合同返回（`FIXTURE_CONFIG`），世界观被填上并标 AI、核心大纲保留作者原文；对比度；`after` 再改世界观，AI 标记消失，设定变为未保存 | 补全后的世界观 | 是 | lane 7 |
 | `stage-settings-groups` | 从流程脊打开设置：分组为常用（AI 模型、外观）、高级（检索模型、网络代理、提示词模板、写作 Skills）、其他（项目备份、关于与更新），落在 AI 模型，位置为「设置 / AI 模型」；外观里放大到 105% 再还原；外观页没有主按钮；对比度；`after` 按 Esc 回到第 3 章 | 外观 | 否 | You see、缩放移入外观 |
 | `stage-settings-dark` | 设置 → 外观 → 主题选「深色」，外壳变深色；`context.restart()` 退出应用再用同一隔离目录冷启动，仍是深色，外观里「深色」仍选中；深色对比度 | 深色外观 | 否 | lane 8 |
 | `stage-settings-model` | 设置 → AI 模型，夹具模型的更多操作「删除模型…」出现危险确认；`after` 取消，模型还在 | 删除模型确认 | 否 | lane 9 |
