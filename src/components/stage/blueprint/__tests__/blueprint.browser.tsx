@@ -1931,6 +1931,12 @@ describe('单章蓝图的字段直接可读（#702）', () => {
     await expect.element(page.getByRole('region', { name: '第 2 章蓝图' })).toBeVisible()
     await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).not.toBeInTheDocument()
     await expect.element(page.getByRole('button', { name: '编辑章节要点' })).toBeVisible()
+
+    // 换回刚才编辑的那一章，要点仍是排版，不重新打开编辑态。
+    await act(async () => page.getByRole('button', { name: /^1\D/ }).click())
+    await expect.element(page.getByRole('region', { name: '第 1 章蓝图' })).toBeVisible()
+    await expect.element(page.getByRole('textbox', { name: /^章节要点/ })).not.toBeInTheDocument()
+    await expect.element(page.getByRole('button', { name: '编辑章节要点', exact: true })).toBeVisible()
   })
 
   it('空着的章节要点直接是输入框，从空白写起不会在打第一个字时换成排版', async () => {

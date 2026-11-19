@@ -149,23 +149,22 @@ export default function BlueprintCard({ blueprint, row, saving, onField, onSave,
           />
         </div>
 
-        <Notes blueprint={blueprint} id={ids.notes} onChange={value => onField('notes', value)} />
+        <Notes key={blueprint.chapterNumber} blueprint={blueprint} id={ids.notes} onChange={value => onField('notes', value)} />
       </div>
     </section>
   )
 }
 
-/** 章节要点：有内容时排成 Markdown 读，点「编辑」才换成原文；编辑态只属于当前这一章，换章自动收起。空着时直接是输入框。 */
+/** 章节要点：有内容时排成 Markdown 读，点「编辑」才换成原文；编辑态随章重置（按章号重新挂载），换走再换回仍是排版。空着时直接是输入框。 */
 function Notes({ blueprint, id, onChange }: { blueprint: ChapterBlueprint; id: string; onChange: (value: string) => void }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
-  const number = blueprint.chapterNumber
-  const [editingChapter, setEditingChapter] = useState<number | null>(null)
+  const [editingNotes, setEditingNotes] = useState(false)
   const hasNotes = blueprint.notes.trim() !== ''
-  const editing = editingChapter === number || !hasNotes
+  const editing = editingNotes || !hasNotes
   const input = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => { if (editingChapter === number) input.current?.focus() }, [editingChapter, number])
-  const toggle = () => setEditingChapter(editingChapter === number ? null : number)
+  useEffect(() => { if (editingNotes) input.current?.focus() }, [editingNotes])
+  const toggle = () => setEditingNotes(!editingNotes)
 
   return (
     <div className="stage-bp-field stage-bp-notes">
@@ -177,9 +176,9 @@ function Notes({ blueprint, id, onChange }: { blueprint: ChapterBlueprint; id: s
             : text('定稿后自动生成，也可以先手写给 AI 参考', 'Generated after finalization; you can also write them first for reference')}</em>
         </label>
         {hasNotes && (
-          <Button variant="text" size="sm" aria-label={editingChapter === number ? text('完成编辑章节要点', 'Finish editing chapter notes') : text('编辑章节要点', 'Edit chapter notes')} onClick={toggle}>
-            {editingChapter === number ? <Check size={13} aria-hidden /> : <Pencil size={13} aria-hidden />}
-            {editingChapter === number ? text('完成', 'Done') : text('编辑', 'Edit')}
+          <Button variant="text" size="sm" aria-label={editingNotes ? text('完成编辑章节要点', 'Finish editing chapter notes') : text('编辑章节要点', 'Edit chapter notes')} onClick={toggle}>
+            {editingNotes ? <Check size={13} aria-hidden /> : <Pencil size={13} aria-hidden />}
+            {editingNotes ? text('完成', 'Done') : text('编辑', 'Edit')}
           </Button>
         )}
       </div>
@@ -187,7 +186,7 @@ function Notes({ blueprint, id, onChange }: { blueprint: ChapterBlueprint; id: s
         ? <textarea ref={input} id={id} className="stage-bp-ctl" rows={1} value={blueprint.notes}
             placeholder={text('还没有要点，支持 Markdown', 'No notes yet. Markdown works here')} onChange={event => {
               // 从空白开始写也留在输入框里，不在打出第一个字时换成排版。
-              if (editingChapter !== number) setEditingChapter(number)
+              if (!editingNotes) setEditingNotes(true)
               onChange(event.target.value)
             }} />
         : <div className="stage-bp-notes-read"><MarkdownContent content={blueprint.notes} /></div>}

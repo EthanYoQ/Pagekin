@@ -9,7 +9,7 @@ export const titleInput = page => card(page).getByRole('textbox', { name: '章�
 
 /** 章节要点的原文输入框。有内容时要点排成 Markdown，先点「编辑章节要点」才出现输入框；空着时直接是输入框。 */
 export async function notesBox(chapterCard) {
-  const edit = chapterCard.getByRole('button', { name: '编辑章节要点' })
+  const edit = chapterCard.getByRole('button', { name: '编辑章节要点', exact: true })
   const box = chapterCard.getByRole('textbox', { name: /^章节要点/ })
   await edit.or(box).first().waitFor({ state: 'visible' })
   if (await edit.isVisible()) await edit.click()
