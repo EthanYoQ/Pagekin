@@ -621,7 +621,8 @@ describe('portable project export service', () => {
       archiveLimits.current.maxEntryBytes = 2 * MiB
       const [file] = prompts(f, [MiB])
       const otherProgram = fs.openSync(file!, 'a')
-      const appendByOtherProgram = fs.writeSync.bind(fs, otherProgram, Buffer.alloc(4 * MiB, 'b'))
+      const writeByOtherProgram = fs.writeSync.bind(fs) as (descriptor: number, bytes: Buffer) => number
+      const appendByOtherProgram = () => writeByOtherProgram(otherProgram, Buffer.alloc(4 * MiB, 'b'))
       const readSync = fs.readSync.bind(fs) as (...args: unknown[]) => number
       let grown = false
       vi.spyOn(fs, 'readSync').mockImplementation(((...args: unknown[]) => {
