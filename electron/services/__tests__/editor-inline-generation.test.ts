@@ -345,6 +345,18 @@ it('章内续写把选区前的本章正文和本章蓝图放在模板段之前�
   expect(user.indexOf(expected), expected).toBeLessThan(template)
  }
 })
+it('没有章号的续写也从文档正文切选区前后文，后文第一句作为停止点，不带按章材料', async () => {
+ const f = fixture(replying('钥匙在石缝里。', 'stop'))
+ const recovery = f.owner.beginEditorInline({ modelId: 'synthetic', uiActionNonce: '无章号前后文', input: { action: 'continue' as const,
+  documentText: chapterDoc, from: selFrom, to: selFrom + sel.length, selectedText: sel } as never })
+ expect(recovery.context.materials!.included.map(item => item.kind)).toEqual(['preceding', 'following'])
+ await f.owner.executeEditorInline(recovery.view.handle)
+ const system = (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
+ expect(userOf(f)).toContain('第三十章前文铺垫。')
+ expect(userOf(f)).toContain('门后是长廊。')
+ expect(system).toContain('后文第一句是「门后是长廊。」。续写停在这句之前')
+ expect(userOf(f).endsWith('（提醒：续写停在后文第一句「门后是长廊。」之前。不换地方，不写后文和蓝图里后面的事；写一到两段，不超过选中正文的两倍长。）')).toBe(true)
+})
 it('选区后面还有本章正文时，续写规则与末尾提醒点名后文第一句作为停止点、不与后文矛盾；选区在章末时不提', async () => {
  const f = fixture(replying('钥匙在石缝里。', 'stop'))
  const systemOf = () => (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
