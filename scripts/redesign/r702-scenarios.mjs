@@ -97,16 +97,21 @@ export const R702_SCENARIOS = {
     await openRestoredPendingRevision(context, 'r702-rereview-old-revision')
     await chapterView.merge(page).getByRole('button', { name: '稍后再合并' }).click()
     await chapterView.merge(page).waitFor({ state: 'detached' })
+    // 改动加在全文末尾的新段：Ctrl+End 不受折行影响，退格就能原样删回。
+    const original = await chapterView.prose(page).innerText()
     await chapterView.prose(page).getByText(EDITED_PARAGRAPH).first().click()
-    await page.keyboard.press('End')
-    await page.keyboard.type(EDIT)
+    await page.keyboard.press('Control+End')
+    await page.keyboard.type(`
+${EDIT}`)
     await stage.saveWithCtrlS(page)
-    await runOnce(page, () => chapterView.primary(page).click())
+    // 保存后待合并列表刷新前主按钮还是「打开修稿合并」，按名字点才会等到重新审稿。
+    await runOnce(page, () => chapterView.view(page).getByRole('button', { name: '重新审稿', exact: true }).click({ timeout: 30_000 }))
     await chapterView.reviseButton(page).waitFor({ state: 'visible', timeout: 30_000 })
 
     await chapterView.prose(page).getByText(EDITED_PARAGRAPH).first().click()
-    await page.keyboard.press('End')
-    for (let typed = EDIT.length; typed > 0; typed--) await page.keyboard.press('Backspace')
+    await page.keyboard.press('Control+End')
+    for (let typed = EDIT.length + 1; typed > 0; typed--) await page.keyboard.press('Backspace')
+    assert.equal(await chapterView.prose(page).innerText(), original, '正文要原样改回')
     await stage.saveWithCtrlS(page)
     await chapterView.merge(page).waitFor({ state: 'visible', timeout: 30_000 })
     assert.equal(await chapterView.merge(page).getByText(/合并后会自动复验/u).count(), 0, '合并的是恢复前的修稿：显示的虽是新审稿，合并视图也不说会复验')
