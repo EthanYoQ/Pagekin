@@ -82,20 +82,22 @@ function textBefore(text: string, maxChars: number): string {
   const boundary = new RegExp(sentenceEnd.source, 'u').exec(tail)
   return (boundary ? tail.slice(boundary.index + boundary[0].length).trim() : '') || tail.trim()
 }
-/** 选区后最前 maxChars 字，截到其中最后一个句末。 */
-function textAfter(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text.trim()
+const cutMark = ['……（本章后面还有，这里只摘开头）', '… (the chapter goes on; only its opening is shown)'] as const
+/** 选区后最前 maxChars 字，截到其中最后一个句末；截过就标明后面还有，免得模型把摘录末尾当成章末。 */
+function textAfter(text: string, maxChars: number, english: boolean): string {
+  if (text.trimEnd().length <= maxChars) return text.trim()
   let head = text.slice(0, maxChars)
   if (isLowSurrogate(text.charCodeAt(maxChars))) head = head.slice(0, -1)
   const end = [...head.matchAll(sentenceEnd)].at(-1)
-  return (end ? head.slice(0, end.index + end[0].length).trim() : '') || head.trim()
+  return `${(end ? head.slice(0, end.index + end[0].length).trim() : '') || head.trim()}
+${cutMark[english ? 1 : 0]}`
 }
 function selectMaterials(context: EditorInlineContext, inputTokens: number): EditorInlineMaterials {
   const chapter = context.chapterContext!
   const supplied = new Map(chapter.blocks.map(block => [block.kind, block.text]))
   let included: EditorContextBlock[] = EDITOR_CONTEXT_PLAN[context.action].flatMap(entry => {
     const text = !('maxChars' in entry) ? supplied.get(entry.kind)
-      : entry.kind === 'preceding' ? textBefore(context.documentText.slice(0, context.from), entry.maxChars) : textAfter(context.documentText.slice(context.to), entry.maxChars)
+      : entry.kind === 'preceding' ? textBefore(context.documentText.slice(0, context.from), entry.maxChars) : textAfter(context.documentText.slice(context.to), entry.maxChars, context.writingLanguage === 'en-US')
     return text ? [{ kind: entry.kind, text, required: entry.required }] : []
   })
   const omitted: EditorContextOmission[] = chapter.unreadable.map(kind => ({ kind, reason: 'unreadable' }))
@@ -171,8 +173,8 @@ function editInstruction(context: EditorInlineContext, english: boolean): string
 }
 const continueRule = ['这次是续写：选中的正文是续写的起点，保持原样。只输出紧接在它后面的新内容，不要重复、改写或总结选中的正文。',
   'This is a continuation: the selected prose is where it starts, and it stays as it is. Output only the new text that follows it; do not repeat, rewrite, or summarize the selected prose.'] as const
-const followingRule = ['选中正文之后的本章正文是已经写定的情节：续写要自然接上它，不能与它矛盾，也不要提前写出或重复它的内容。',
-  'The chapter text after the selection is settled plot: the continuation must lead naturally into it, must not contradict it, and must not anticipate or repeat it.'] as const
+const followingRule = ['选中正文之后的本章正文是已经写定的情节，续写夹在选中正文和它之间：写到后文开头能直接接上为止，不能与它矛盾，不要写它里面或它之后的事，也不要重复它。',
+  'The chapter text after the selection is settled plot, and the continuation sits between the selection and it: stop where its opening can pick up, do not contradict it, do not write events inside or after it, and do not repeat it.'] as const
 function systemRole(context: EditorInlineContext): Pick<PromptTemplate, 'systemRole'> {
   const english = context.writingLanguage === 'en-US'
   if (editorInlineInsertsAfterSelection(context)) {

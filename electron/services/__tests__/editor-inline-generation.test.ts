@@ -355,6 +355,19 @@ it('选区后面还有本章正文时，续写规则要求接上它、不与它�
  await f.owner.executeEditorInline(f.owner.beginEditorInline(atEnd).view.handle)
  expect(systemOf()).not.toContain('不能与它矛盾')
 })
+it('后文太长只摘开头时，材料标明后面还有，续写规则要求写到后文开头能接上为止', async () => {
+ const f = fixture(replying('钥匙在石缝里。', 'stop'))
+ const systemOf = () => (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
+ const longDoc = `${chapterDoc}${'两人走到地下室楼梯口。'.repeat(80)}陈默在第一步前停下。`
+ await f.owner.executeEditorInline(f.owner.beginEditorInline({ modelId: 'synthetic', uiActionNonce: '长后文续写', input: { action: 'continue' as const,
+  documentText: longDoc, from: selFrom, to: selFrom + sel.length, selectedText: sel, chapterContext: chapterContext() } as never }).view.handle)
+ const user = userOf(f), after = user.slice(user.indexOf('【选中正文之后的本章正文】'))
+ expect(after).not.toContain('陈默在第一步前停下')
+ expect(after).toContain('后面还有')
+ expect(systemOf()).toContain('写到后文开头能直接接上为止')
+ await f.owner.executeEditorInline(f.owner.beginEditorInline(continued(chapterContext(), '短后文续写')).view.handle)
+ expect(userOf(f)).not.toContain('后面还有')
+})
 it('模型窗口小时可选材料按固定顺序被裁（先线索后人物），必需材料保留，被裁项记进运行记录并在重开后不变', async () => {
  const f = fixture(replying('钥匙在石缝里。', 'stop'))
  f.setContextWindow(8000)
