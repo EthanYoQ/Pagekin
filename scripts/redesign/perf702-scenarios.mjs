@@ -670,7 +670,7 @@ async function contention(context, channel) {
   const baseline = await probe()
   const during = probe()
   const label = `contention-${channel.replace(':', '-')}-${context.contentionRuns = (context.contentionRuns ?? 0) + 1}`
-  // 结果只留形状（数组记条数），对照两边时快却失败的一次一眼能看出来。
+  // 结果只留形状（数组记条数、文字记字数，不写正文），对照两边时快却失败的一次一眼能看出来。
   const { handlerMs, result } = await profiled(context, label, () => app.evaluate(async ({ ipcMain }, name) => {
     const { event, session } = globalThis.__perfSession
     const startedAt = performance.now()
@@ -678,7 +678,7 @@ async function contention(context, channel) {
     const handlerMs = Math.round(performance.now() - startedAt)
     const shape = (value, depth) => Array.isArray(value) ? value.length
       : value && typeof value === 'object' ? depth ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shape(item, depth - 1)])) : 'object'
-        : value
+        : typeof value === 'string' ? `text(${value.length})` : value
     return { handlerMs, result: shape(answer, 3) }
   }, channel))
   return log({ label, baseline, during: await during, handlerMs, result })
