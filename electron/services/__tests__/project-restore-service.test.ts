@@ -778,6 +778,25 @@ describe('portable project restore service', () => {
     expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('keep')
   })
 
+  it('作者在选择器里选了链接文件夹：恢复报目标不安全，原文件夹不动（#702）', async () => {
+    const f = await exportedFixture()
+    const real = path.join(f.base, 'real-folder')
+    const linked = path.join(f.base, 'linked-folder')
+    fs.mkdirSync(real)
+    fs.symlinkSync(real, linked, 'junction')
+    await expect(restorePortableProject({ archivePath: f.archive, targetProjectRoot: path.join(linked, '雨夜-恢复副本') }))
+      .rejects.toThrow('PORTABLE_RESTORE_UNSAFE_TARGET')
+    expect(fs.readdirSync(real)).toEqual([])
+  })
+
+  it('作者选了不是存档的文件：恢复报存档无效（#702）', async () => {
+    const f = fixture()
+    const notArchive = path.join(f.base, '随便一个文件.ainovel')
+    fs.writeFileSync(notArchive, '这不是存档')
+    await expect(restorePortableProject({ archivePath: notArchive, targetProjectRoot: f.targetRoot }))
+      .rejects.toThrow('PORTABLE_ARCHIVE_INVALID')
+  })
+
   it('has no partial final target before commit and a complete project after commit', async () => {
     const f = await exportedFixture()
     await expect(restorePortableProject({

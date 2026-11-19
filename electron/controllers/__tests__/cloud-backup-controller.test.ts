@@ -8,9 +8,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { CloudBackupFailure, CloudBackupProjectSessionContext } from '../../../src/shared/cloud-backup'
 import { damagedReviewCycleMessage, displayedErrorMessage } from '../../../src/i18n/app-errors'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
-import type { CloudProjectBinding } from '../../services/cloud-project-binding-store'
 import { ExternalFileGrantService } from '../../services/external-file-grant-service'
-import { WebDavBackupError } from '../../services/webdav-backup-service'
+import { WebDavBackupError, WebDavBackupService } from '../../services/webdav-backup-service'
+import { CloudProjectBindingStore, type CloudProjectBinding } from '../../services/cloud-project-binding-store'
 import {
   registerCloudBackupController,
   type CloudBackupControllerDependencies,
@@ -221,6 +221,36 @@ describe('registerCloudBackupController', () => {
     expect(result).toEqual({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AUTH_FAILED' })
     expect(f.deps.credentialStore.save).not.toHaveBeenCalled()
     expect(JSON.stringify(result)).not.toContain('top-secret')
+  })
+
+  it.each(['http://dav.example.test/root/', 'dav.example.test/root', 'https://dav.example.test/root/?token=1'])(
+    '作者填的 WebDAV 地址不合规（%s）：说清地址要求，不露原码（#702）', async endpoint => {
+      const fetchImpl = vi.fn()
+      const f = fixture({ webDav: new WebDavBackupService({ fetchImpl }) })
+
+      const result = await f.invoke('cloud-backup:connect', { endpoint, username: 'writer', secret: 'top-secret' }) as CloudBackupFailure
+
+      expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
+        .toBe('没有连接。WebDAV 地址要以 https:// 开头，不能带 ? 或 #。请改好地址，再点「连接并绑定」。')
+      expect(fetchImpl).not.toHaveBeenCalled()
+      expect(f.deps.credentialStore.save).not.toHaveBeenCalled()
+    })
+
+  it('作者填的云书标识有中文：绑定和刷新云端世代都说清标识要求，不露原码（#702）', async () => {
+    const fetchImpl = vi.fn()
+    const storeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud-binding-store-'))
+    roots.push(storeRoot)
+    const f = fixture({ webDav: new WebDavBackupService({ fetchImpl }), bindingStore: new CloudProjectBindingStore(storeRoot) })
+    const expected = '作品没有改动。云书标识只能用英文字母、数字和 . _ : @ + -，且以字母或数字开头。请改好云书标识再试。'
+
+    const bound = await f.invoke('cloud-backup:confirm-binding', {
+      projectSession: session, localEndpointAccountId: ACCOUNT, cloudBookId: '我的书', lastSelectedParentGenerationIds: [], expectedRevision: null,
+    }) as CloudBackupFailure
+    const listed = await f.invoke('cloud-backup:list', { localEndpointAccountId: ACCOUNT, cloudBookId: '我的书' }) as CloudBackupFailure
+
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(bound.errorCode))).toBe(expected)
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(listed.errorCode))).toBe(expected)
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('revalidates the current project for view and explicit binding confirmation', async () => {

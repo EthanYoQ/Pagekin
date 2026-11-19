@@ -368,6 +368,58 @@ describe('ProjectBackupPanel', () => {
       .toBe('没有新建副本。恢复途中存档文件被改动或移走了。请确认存档还在原处，再点「从本地存档恢复副本」。')
   })
 
+  it.each([
+    ['PORTABLE_ARCHIVE_INVALID', '没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。'],
+    ['PORTABLE_SCHEMA_UNSUPPORTED', '没有新建副本。这个存档来自更新版本的书童。请先升级书童，再点「从本地存档恢复副本」。'],
+    ['PORTABLE_RESTORE_UNSAFE_TARGET', '没有新建副本。所选文件夹是链接文件夹或在链接里，书童不在这类位置建副本。请换一个普通文件夹，再点「从本地存档恢复副本」。'],
+    ['PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '没有新建副本。所选文件夹写不进去，可能没有权限或磁盘满了。请换一个文件夹，再点「从本地存档恢复副本」。'],
+  ])('从本地存档恢复失败（%s）：说出原因，不露原码（#702）', async (errorCode, expected) => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive') return { grantId: 'archive-grant', displayName: 'book.anovel' }
+      if (channel === 'dialog:select-project-restore-target') return { grantId: 'restore-target-grant', displayName: 'book-restored' }
+      if (channel === 'project:archive-restore') return { success: false, errorCode, error: errorCode }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('从本地存档恢复副本').click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(expected)
+  })
+
+  it.each([
+    ['CLOUD_BACKUP_AUTH_FAILED', '作品没有改动。WebDAV 没接受这组用户名和密码。请核对后重新填写，再点「连接并绑定」。'],
+    ['CLOUD_BACKUP_NETWORK_FAILED', '作品没有改动。连不上 WebDAV 服务器。请检查网络和 WebDAV 地址，再试一次。'],
+    ['CLOUD_BACKUP_REMOTE_INVALID', '作品没有改动。这个地址上的服务器没有按 WebDAV 回应。请核对 WebDAV 地址，再试一次。'],
+    ['CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE', '作品没有改动。本机没存这个 WebDAV 账号的密码。请重新填写密码，再点「连接并绑定」。'],
+    ['CLOUD_BACKUP_CANCELLED', '已取消，作品没有改动。'],
+    ['CLOUD_BACKUP_RESTORE_FAILED', '没有新建副本。云端存档已下载，但没能恢复成副本。请把这条提示反馈给我们。'],
+    ['CLOUD_BACKUP_FAILED', '作品没有改动。云备份出了意外错误。请再试一次；还不行，请把这条提示反馈给我们。'],
+    ['CLOUD_BACKUP_ENDPOINT_INVALID', '没有连接。WebDAV 地址要以 https:// 开头，不能带 ? 或 #。请改好地址，再点「连接并绑定」。'],
+    ['CLOUD_BACKUP_BOOK_ID_INVALID', '作品没有改动。云书标识只能用英文字母、数字和 . _ : @ + -，且以字母或数字开头。请改好云书标识再试。'],
+  ])('云备份操作失败（%s）：说出原因，不露原码（#702）', async (errorCode, expected) => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
+      if (channel === 'cloud-backup:list') return { success: false, state: 'failed', errorCode }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('刷新云端世代').click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(expected)
+  })
+
+  it('读取云备份配置失败：说出原因，不露原码（#702）', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_FAILED' }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    expect(container.querySelector('[role="alert"]')?.textContent)
+      .toBe('作品没有改动。云备份出了意外错误。请再试一次；还不行，请把这条提示反馈给我们。')
+  })
+
   it('云备份打包失败、指不出原因：说明没上传，并指向能看到具体原因的本地导出（#702）', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
