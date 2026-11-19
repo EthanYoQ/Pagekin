@@ -125,7 +125,6 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
     if (useStageStore.getState().sheet?.kind !== 'run') useStageStore.setState({ sheet: { kind: 'review', filePath } })
   }, [review, stage, filePath])
   const included = includedCount(checklist.items)
-  // 恢复前的审修循环只能看：主按钮直接是重新审稿，不让作者先点一次修稿或复验再失败。
   const restored = checklist.cycle?.restoredHistory === true
   const restoredHint = t('error.generationReviewRestoredHistory')
   const busy = draft.isChapterBusy || switching

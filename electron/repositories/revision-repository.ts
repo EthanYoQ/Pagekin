@@ -61,7 +61,7 @@ export interface MergeRevisionReceipt {
     }
 }
 
-/** 回执带上循环才会自动复验；恢复前的循环复验必然失败，合并照常但不带它（#702）。 */
+/** 恢复前的循环复验必然失败，所以回执不带它，免得自动发起复验（#702）。 */
 function mergedReviewCycle(request: MergeRevisionRequest, db: import('better-sqlite3').Database, projectId: string | undefined): MergeRevisionReceipt['reviewCycle'] {
     if (!hasReviewCycleSchema(db)) return undefined
     const committed = ReviewCycleRepository.commitMergedRevision({

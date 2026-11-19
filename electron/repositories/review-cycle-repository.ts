@@ -508,7 +508,7 @@ function recheckContext(cycle: RecheckCycleRow, db: Database.Database): ReviewCy
 }
 
 export class ReviewCycleRepository {
-  /** 恢复会换新 projectId，原书的审修循环在恢复的书里只是历史（ADR-0018 C17）。根运行缺失或读不出时不算。 */
+  /** 恢复会换新 projectId，以此认出恢复前的循环（ADR-0018 C17）。 */
   static isRestoredHistory(rootActionId: string, projectId: string, db: Database.Database): boolean {
     return Boolean(db.prepare(`SELECT 1 FROM generation_runs WHERE root_action_id=? AND json_valid(binding_json)
       AND json_extract(binding_json,'$.projectId')<>? LIMIT 1`).get(rootActionId, projectId))

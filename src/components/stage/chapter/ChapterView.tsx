@@ -113,7 +113,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   const facts = useStageStore(s => draft.meta && s.chapterFacts && session && sameProjectSessionContext(s.chapterFacts.session, session)
     ? s.chapterFacts.byDraft[draft.meta.id]
     : undefined)
-  // 这一稿的记录、最新审稿和它的审稿数据都读出来之前不摆动作条：先按不全的数据摆会闪一下别的主按钮，清单状态也会被重置。
+  // 数据没读全就摆动作条会闪别的主按钮，还会重置清单状态。
   const reviewReady = draft.loaded && (draft.reviews.length === 0 || latest !== null && review.cycleLoaded)
   const stage = draft.loaded && draft.meta
     ? draft.status === 'archived' || draft.status === 'superseded' ? draft.status : chapterPhase(draft.status, facts)
