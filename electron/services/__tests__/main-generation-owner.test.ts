@@ -3928,6 +3928,16 @@ describe('main draft persistence and batch lineage', () => {
       if (kind === '审稿') expect(() => owner.commitReview(review)).toThrow('GENERATION_REVIEW_RECEIPT_INVALID')
       else expect(() => owner.commitDraft(draft.request)).toThrow('GENERATION_DRAFT_RECEIPT_INVALID')
     })
+    // 启动恢复和恢复列表按尝试的 JSON 跨记录选根、选运行；读不出的格子在打开时已由准入换成中性值，这两条语句不会读到坏 JSON。
+    it.each(['attempt_json', 'usage_receipt_json'] as const)('已保存运行的尝试 %s 读不出：重开后启动恢复与恢复列表照常', async column => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const f = reviewing(), { draft } = await savedChapter(f, 1)
+      const unsaved = await generate(f, { ...f.begin, uiActionNonce: 'unsaved', authorInputs })
+      f.fixture.db.prepare(`UPDATE generation_attempts SET ${column}='{坏' WHERE run_id=?`).run(draft.run.handle.runId)
+      const owner = f.reopen({ crashed: true })
+      expect(runIds(owner.listRecovery().drafts)).toEqual([unsaved.run.handle.runId])
+      expect(() => new GenerationRunRepository(() => f.fixture.db).recoverInterrupted()).not.toThrow()
+    })
   })
 })
 
