@@ -43,6 +43,8 @@ export const enUS = {
   'error.projectArchiveTargetExists': 'The target file already exists. Choose another file name; project archives never overwrite existing files.',
   'error.portableSourceChanged': 'Your book is unchanged. Files changed during export, so no archive was created. Click Export local archive again.',
   'error.cloudBackupSourceChanged': 'Your book is unchanged. Files changed during backup, so nothing was uploaded. Click Back up now again.',
+  'error.portableAvatarDamaged': 'Your book is unchanged. A character avatar file is damaged, so no archive was created. Click Replace avatar on the character page, then Export local archive again.',
+  'error.cloudBackupAvatarDamaged': 'Your book is unchanged. A character avatar file is damaged, so nothing was uploaded. Click Replace avatar on the character page, then Back up now again.',
   'error.portableUnsafeProjection': 'Your book is unchanged. One piece of data could not be packaged safely, so no archive was created. Please report this message to us.',
   'error.damagedReviewCycle': 'Your book is unchanged. A review record in {chapter} is damaged, so no archive was made. Please report this message to us.',
   'backup.omittedReviewCycleOne': 'A damaged review record in {chapter} was left out of the archive. The text and other reviews are included.',

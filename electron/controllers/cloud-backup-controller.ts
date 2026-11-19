@@ -409,6 +409,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
         } catch (error) {
           if (signal.aborted) fail('CLOUD_BACKUP_CANCELLED')
           if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_EXPORT_SOURCE_CHANGED') fail('CLOUD_BACKUP_SOURCE_CHANGED')
+          if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_EXPORT_AVATAR_DAMAGED') fail('CLOUD_BACKUP_AVATAR_DAMAGED')
           throw new CloudBackupControllerError('CLOUD_BACKUP_ARCHIVE_FAILED',
             error instanceof SchemaMigrationError ? error.damagedReviewCycle : undefined)
         }

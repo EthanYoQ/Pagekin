@@ -165,6 +165,7 @@ export type ProjectArchiveServiceErrorCode =
   | 'PORTABLE_ASSET_MISSING'
   | 'PORTABLE_ASSET_UNSAFE'
   | 'PORTABLE_CONTEXT_INVALID'
+  | 'PORTABLE_EXPORT_AVATAR_DAMAGED'
   | 'PORTABLE_EXPORT_SOURCE_CHANGED'
   | 'PORTABLE_TARGET_INSIDE_SOURCE'
   | 'PORTABLE_UNSAFE_PROJECTION'
@@ -1064,20 +1065,30 @@ function writeOwnedFile(attempt: OwnedAttempt, file: string, bytes: Buffer): voi
 
 const DIGEST_CHUNK_BYTES = 1024 * 1024
 
+function sourceChangedDuringExport(): never {
+  throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+}
+
 /** 打开后再查路径上没有链接、路径指向的仍是打开的这个文件：查过之后父目录被换成联接也拦得下。 */
 function digestCheckedFile(sourcePath: string, checked: fs.BigIntStats): PortableSourceDigest {
   const source = fs.openSync(sourcePath, 'r')
   try {
     const opened = fs.fstatSync(source, { bigint: true })
-    if (!sameObject(opened, checked) || opened.nlink !== 1n) fail('PORTABLE_ASSET_UNSAFE')
+    if (!sameObject(opened, checked)) sourceChangedDuringExport()
+    if (opened.nlink !== 1n) fail('PORTABLE_ASSET_UNSAFE')
     safeDirectory(path.dirname(sourcePath))
-    if (!sameObject(fs.lstatSync(sourcePath, { bigint: true }), opened)) fail('PORTABLE_ASSET_UNSAFE')
+    if (!sameObject(fs.lstatSync(sourcePath, { bigint: true }), opened)) sourceChangedDuringExport()
     if (opened.size > BigInt(DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxEntryBytes)) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
+    const size = Number(opened.size)
     const digest = createHash('sha256'), buffer = Buffer.allocUnsafe(DIGEST_CHUNK_BYTES)
     let byteSize = 0
-    for (let read = 0; (read = fs.readSync(source, buffer, 0, buffer.length, null)) > 0; byteSize += read) {
+    while (byteSize < size) {
+      const read = fs.readSync(source, buffer, 0, Math.min(buffer.length, size - byteSize), null)
+      if (read === 0) break
       digest.update(buffer.subarray(0, read))
+      byteSize += read
     }
+    if (byteSize !== size || fs.readSync(source, buffer, 0, 1, null) > 0) sourceChangedDuringExport()
     return { byteSize, sha256: digest.digest('hex') }
   } finally { fs.closeSync(source) }
 }
@@ -1103,14 +1114,31 @@ function missingSource(error: unknown, sourcePaths: Iterable<string>): boolean {
 /** 打包器不查硬链接，这里补上。快照后被删掉的算资料有改动。 */
 function assertSourceStillOwned(sourcePath: string): void {
   const info = fs.lstatSync(sourcePath, { bigint: true, throwIfNoEntry: false })
-  if (!info) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+  if (!info) sourceChangedDuringExport()
   if (info.nlink !== 1n) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_UNSAFE')
 }
 
-const RETRIED_ARCHIVE_ERRORS = new Set(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])
+/** 资料阶段（核对头像与资料、打包）里抛的错。库一侧的错不经过这里，永不重来。 */
+class AssetPhaseFailure extends Error {
+  constructor(readonly failure: unknown) { super('PORTABLE_ASSET_PHASE_FAILED') }
+}
 
-function sourceChanged(error: unknown): error is PortableProjectArchiveError {
-  return error instanceof PortableProjectArchiveError && RETRIED_ARCHIVE_ERRORS.has(error.code)
+async function assetPhase<T>(work: () => T | Promise<T>): Promise<T> {
+  try { return await work() }
+  catch (error) { throw new AssetPhaseFailure(error) }
+}
+
+/** 资料阶段里也不重来：重来也不会变。 */
+const NOT_RETRIED = new Set(['PORTABLE_ARCHIVE_LIMIT_EXCEEDED'])
+
+function failureCode(error: unknown): string | undefined {
+  const { code, message } = (typeof error === 'object' && error !== null ? error : {}) as { code?: unknown; message?: unknown }
+  if (typeof code === 'string') return code
+  return typeof message === 'string' && /^[A-Z][A-Z0-9_]*$/u.test(message) ? message : undefined
+}
+
+function sourceChanged(error: unknown): boolean {
+  return error instanceof PortableProjectArchiveError && error.code === 'PORTABLE_ARCHIVE_SOURCE_CHANGED'
 }
 
 
@@ -1163,17 +1191,20 @@ async function assertCurrentContext(input: ExportPortableProjectInput, context: 
 const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string, DamagedReviewCycle> =>
   new Map(cycles.flatMap(item => item.cycleId === null ? [] : [[item.cycleId, item.location] as const]))
 
-/** 资料在快照之后、打包之前被改了：丢掉这次的临时目录，整次重来一次，仍变才报错。本地导出和云备份都走这里。 */
+/** 资料阶段出错：丢掉这次的临时目录，整次重来一次，仍失败报第二次的错。本地导出和云备份都走这里。 */
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
   try { return await exportPortableProjectOnce(input) }
   catch (error) {
-    if (!sourceChanged(error)) throw error
-    console.warn('[portable-export] 导出期间资料有改动，整次重来一次', { code: error.code })
+    if (!(error instanceof AssetPhaseFailure)) throw error
+    const code = failureCode(error.failure)
+    if (code && NOT_RETRIED.has(code)) throw error.failure
+    console.warn('[portable-export] 资料阶段出错，整次重来一次', { code })
   }
   try { return await exportPortableProjectOnce(input) }
   catch (error) {
-    if (sourceChanged(error)) fail('PORTABLE_EXPORT_SOURCE_CHANGED')
-    throw error
+    const failure = error instanceof AssetPhaseFailure ? error.failure : error
+    if (sourceChanged(failure)) fail('PORTABLE_EXPORT_SOURCE_CHANGED')
+    throw failure
   }
 }
 
@@ -1230,34 +1261,35 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput): Pro
           recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-shm`)
         }
 
-        const avatarReferenceProjections: Array<Record<string, unknown>> = []
-        const digestFile = (sourcePath: string, checked: fs.BigIntStats) => {
-          if (!contained(projectStorageRoot, path.resolve(sourcePath))) fail('PORTABLE_ASSET_UNSAFE')
-          return digestCheckedFile(sourcePath, checked)
-        }
-        const avatarFiles: Array<{ entry: PortableProjectManifestEntry; sourcePath: string }> = []
-        for (const row of avatarRows) {
-          if (row.kind === 'unresolved-reference') {
-            avatarReferenceProjections.push({ ...row, nonReplayable: true })
-            continue
+        const { avatarFiles, avatarReferenceProjections, provided } = await assetPhase(async () => {
+          const avatarReferenceProjections: Array<Record<string, unknown>> = []
+          const digestFile = (sourcePath: string, checked: fs.BigIntStats) => {
+            if (!contained(projectStorageRoot, path.resolve(sourcePath))) fail('PORTABLE_ASSET_UNSAFE')
+            return digestCheckedFile(sourcePath, checked)
           }
-          const relativePath = portablePathKey(row.relativePath)
-          if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
-          const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
-          if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
-          const digest = digestFile(sourcePath, regularFile(sourcePath, 'PORTABLE_ASSET_MISSING'))
-          if (digest.byteSize !== row.byteSize || digest.sha256 !== row.contentHash) {
-            throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+          const avatarFiles: Array<{ entry: PortableProjectManifestEntry; sourcePath: string }> = []
+          for (const row of avatarRows) {
+            if (row.kind === 'unresolved-reference') {
+              avatarReferenceProjections.push({ ...row, nonReplayable: true })
+              continue
+            }
+            const relativePath = portablePathKey(row.relativePath)
+            if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
+            const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
+            if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
+            const digest = digestFile(sourcePath, regularFile(sourcePath, 'PORTABLE_ASSET_MISSING'))
+            if (digest.byteSize !== row.byteSize || digest.sha256 !== row.contentHash) fail('PORTABLE_EXPORT_AVATAR_DAMAGED')
+            avatarFiles.push({ entry: { path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
+              disposition: 'avatar-asset' }, sourcePath })
           }
-          avatarFiles.push({ entry: { path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
-            disposition: 'avatar-asset' }, sourcePath })
-        }
-        const provided = await input.assets.snapshot({
-          sourceProjectRoot: sourceRoot,
-          sourceDatabasePath: sourceSnapshotPath,
-          projectSession: frozenContext,
-          snapshotGeneration,
-          digestFile,
+          const provided = await input.assets.snapshot({
+            sourceProjectRoot: sourceRoot,
+            sourceDatabasePath: sourceSnapshotPath,
+            projectSession: frozenContext,
+            snapshotGeneration,
+            digestFile,
+          })
+          return { avatarFiles, avatarReferenceProjections, provided }
         })
         return { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided }
       })
@@ -1364,13 +1396,15 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput): Pro
       transferReceiptIds: [transferAuthority.receiptId, ...(provided.transferReceiptIds ?? [])],
       historyProjectionIds,
     }
-    for (const sourcePath of projectSources) assertSourceStillOwned(sourcePath)
     const stagedArchivePath = path.join(attemptRoot, 'portable-project.archive')
-    const archiveReceipt = await writePortableProjectArchive({ manifest, sources, targetPath: stagedArchivePath })
-      .catch((error: unknown) => {
-        if (missingSource(error, projectSources)) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
-        throw error
-      })
+    const archiveReceipt = await assetPhase(() => {
+      for (const sourcePath of projectSources) assertSourceStillOwned(sourcePath)
+      return writePortableProjectArchive({ manifest, sources, targetPath: stagedArchivePath })
+        .catch((error: unknown) => {
+          if (missingSource(error, projectSources)) sourceChangedDuringExport()
+          throw error
+        })
+    })
     recordOwnedFile(attempt, stagedArchivePath)
     input.__testHooks?.afterArchiveBuilt?.(stagedArchivePath)
 
