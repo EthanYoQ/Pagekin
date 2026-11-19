@@ -18,7 +18,8 @@ export interface ProjectSqliteWorkerOptions {
 export type ProjectSqliteJob =
   | { kind: 'open'; databasePath: string }
   | { kind: 'peek'; request: PeekSnapshotRequest }
-type JobResult<J extends ProjectSqliteJob> = J extends { kind: 'open' } ? SqliteContentIdentity : ProjectOverview
+export interface OpenedProjectSqlite { identity: SqliteContentIdentity; ledgerNeedsAdmission: boolean }
+type JobResult<J extends ProjectSqliteJob> = J extends { kind: 'open' } ? OpenedProjectSqlite : ProjectOverview
 
 export interface ProjectSqliteWorkerData { job: ProjectSqliteJob; electronExports: string[] }
 

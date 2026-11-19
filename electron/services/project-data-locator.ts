@@ -61,13 +61,13 @@ export function getProjectDataRoot(projectPath: string): string {
 export function getProjectDatabasePath(projectPath: string): string { return path.join(getProjectDataRoot(projectPath), CANONICAL_PROJECT_DATABASE) }
 export function deactivateProjectData(projectPath: string): void { admitted.delete(key(projectPath)) }
 
-export interface VerifiedProjectData { manifest: ReturnType<typeof manifestState>; identity: SqliteContentIdentity }
+export interface VerifiedProjectData { manifest: ReturnType<typeof manifestState>; identity: SqliteContentIdentity; ledgerNeedsAdmission: boolean }
 
 /** 升级与校验放进 worker：长篇升级时主进程不卡。 */
 export async function verifyCanonicalProjectData(projectPath: string, worker?: Partial<ProjectSqliteWorkerOptions>): Promise<VerifiedProjectData> {
   const manifest = manifestState(projectPath)
-  const identity = await runProjectSqliteJobInWorker({ kind: 'open', databasePath: path.join(manifest.root, CANONICAL_PROJECT_DATABASE) }, worker)
-  return { manifest, identity }
+  const opened = await runProjectSqliteJobInWorker({ kind: 'open', databasePath: path.join(manifest.root, CANONICAL_PROJECT_DATABASE) }, worker)
+  return { manifest, ...opened }
 }
 
 /** Project open upgrades when needed and admits on that same verified pass. */

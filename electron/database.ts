@@ -52,7 +52,8 @@ export function initProjectDatabase(projectPath: string, upgraded?: VerifiedProj
     database.pragma('journal_mode = WAL')
     database.pragma('foreign_keys = ON')
     fenceProjectSession(database)
-    const admission = admitGenerationLedger(database)
+    // worker 在同一份字节上扫过账本（上面核对过内容身份），干净就不再扫。
+    const admission = upgraded?.ledgerNeedsAdmission === false ? { sealedRootCount: 0 } : admitGenerationLedger(database)
     projectDb = database
     currentProjectPath = projectPath
     return admission
