@@ -324,6 +324,28 @@ describe('GenerateConfigCommand error boundaries', () => {
   })
 
   it.each([
+    ['a saved field is not text', { worldSetting: 42 as never }, 'worldSetting', JSON.parse(validConfigJson).worldSetting, 'filled'],
+    ['the model adds nothing to the author references', { referenceWorks: '《白鲸》\n' }, 'referenceWorks', '《白鲸》\n', null],
+  ] as const)('AI fill commits the model result when %s', async (_label, saved, field, expected, mark) => {
+    const onGenerated = vi.fn()
+    useProjectStore.setState({
+      currentProject: { ...project(projectAPath), novelConfig: { genre: '悬疑', ...saved } } as never,
+      saveProject: vi.fn().mockResolvedValue(true),
+    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
+        streamCallbacks.onDone?.(validConfigJson, undefined, 'stop')
+        return 'config-expansion-request'
+      }) })
+
+    await new GenerateConfigCommand('扩写现有设定', 10, 2500, onGenerated).execute({ step: {}, context, callbacks })
+
+    const generated = onGenerated.mock.calls[0]![0]
+    expect(generated[field]).toBe(expected)
+    expect(aiSourceOf(generated, field)).toBe(mark)
+  })
+
+  it.each([
     { uiLocale: 'zh-CN', writingLanguage: 'zh-CN', expected: '你是一位经验丰富的小说编辑', unexpected: 'You are an experienced fiction editor' },
     { uiLocale: 'en-US', writingLanguage: 'zh-CN', expected: '你是一位经验丰富的小说编辑', unexpected: 'You are an experienced fiction editor' },
     { uiLocale: 'zh-CN', writingLanguage: 'en-US', expected: 'You are an experienced fiction editor', unexpected: '你是一位经验丰富的小说编辑' },

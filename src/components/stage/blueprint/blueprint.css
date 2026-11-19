@@ -383,6 +383,7 @@
 
 .stage-bp-notes-read {
   padding: 4px 0;
+  overflow-wrap: anywhere;
   font: var(--fs-14)/1.8 var(--font-ui);
   color: var(--ink);
 }

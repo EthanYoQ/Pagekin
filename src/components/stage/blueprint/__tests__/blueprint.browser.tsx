@@ -1914,6 +1914,15 @@ describe('单章蓝图的字段直接可读（#702）', () => {
     expect(hook.top).toBeGreaterThanOrEqual(conflict.bottom)
   })
 
+  it('章节要点里一长串不断行的网址在排版里也折行，卡片不横向滚动', async () => {
+    stored = [{ ...long(1, '旧港'), notes: `- 资料：https://example.com/${'tidetable'.repeat(60)}` }]
+    await renderPage(1)
+    await expect.element(page.getByRole('region', { name: '第 1 章蓝图' })).toBeVisible()
+    const read = document.querySelector<HTMLElement>('.stage-bp-notes-read')!
+    const card = document.querySelector<HTMLElement>('.stage-bp-card')!
+    expect([read.scrollWidth, card.scrollWidth]).toEqual([read.clientWidth, card.clientWidth])
+  })
+
   it('有内容的章节要点排成 Markdown 读，点「编辑」换成原文，换章自动收起', async () => {
     stored = [long(1, '旧港'), long(2, '北堤')]
     await renderPage(1)
