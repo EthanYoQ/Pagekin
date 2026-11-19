@@ -259,11 +259,17 @@ describe('在 worker 线程里导出', () => {
     const { fixture, outDir, input } = await project()
     const target = path.join(outDir, 'race.ainovel')
     let stopping: Promise<void> | undefined
-    const watch = () => { if (fs.existsSync(target)) stopping = stopPortableExports(fixture.sourceRoot); else setImmediate(watch) }
+    let settled = false
+    // 导出在打包后失败时存档永远不会出现：落定后就不再轮询，免得测试结束后还在调度。
+    const watch = () => {
+      if (settled) return
+      if (fs.existsSync(target)) stopping = stopPortableExports(fixture.sourceRoot)
+      else setImmediate(watch)
+    }
 
     const result = await outcome(exportPortableProjectInWorker({
       ...input('race.ainovel'), onProgress: phase => { if (phase === 'package') watch() },
-    }, worker))
+    }, worker)).finally(() => { settled = true })
     await stopping
 
     expect({ ok: result.ok, archive: fs.existsSync(target) }).toEqual({ ok: result.ok, archive: result.ok })
