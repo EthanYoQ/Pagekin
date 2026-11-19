@@ -48,4 +48,34 @@ export const R702_SCENARIOS = {
     await shoot('r702-3-fresh-revise')
     return { label }
   } },
+  'r702-restored-merge': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
+    const { page, fake, shoot } = context
+    // 审稿同 x2-recheck：带正文证据的本章目标意见，合并后才需要复验。
+    fake.replyReview(JSON.stringify({ summary: '本章目标还没落地。', items: [
+      { category: '连续性', severity: 'warning', description: '核对钟声提前一刻与潮位的关系。', quote: '他给林岚倒了一杯很淡的茶' },
+    ], goalReviews: [{ id: 'ch4:keyEvents:1', status: 'unmet', description: '林岚还没有在灯塔里找到新的线索。',
+      evidence: [{ quote: '守塔人的屋子在灯塔背风的一侧' }] }] }))
+    await chapterView.open(page, 4)
+    await runOnce(page, () => chapterView.review(page))
+    await runOnce(page, () => chapterView.reviseButton(page).click())
+    await chapterView.merge(page).getByRole('button', { name: '稍后再合并' }).click()
+    await chapterView.merge(page).waitFor({ state: 'detached' })
+
+    const restoredRoot = await exportAndRestore(context, context.samplePath, 'r702-restored-merge')
+    await openInUi(context, restoredRoot)
+    if (!await stage.chapterButton(page, 4).isVisible()) await stage.stageButton(page, '正文').click()
+    await chapterView.open(page, 4)
+    await chapterView.merge(page).waitFor({ state: 'visible', timeout: 30_000 })
+    assert.equal(await chapterView.merge(page).getByText(/合并后会自动复验/u).count(), 0, '恢复前的修稿：合并视图不说会复验')
+    await chapterView.merge(page).getByRole('button', { name: '全部用修稿' }).click()
+    await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
+    await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+    await chapterView.hint(page).getByText(RESTORED_HISTORY, { exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+    await page.waitForTimeout(3000)
+    assert.equal(fake.chats.length, 2, '只有审稿与修稿两次请求，合并后没有发起复验')
+    assert.equal(await page.locator('.stage-capsule').count(), 0, '合并后没有自动发起复验，也就没有失败的运行')
+    assert.equal(await page.getByText(/自动复验未启动/u).count(), 0, '不提示自动复验未启动')
+    await shoot('r702-3-restored-merge')
+    return { chats: fake.chats.length }
+  } },
 }

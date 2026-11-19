@@ -510,8 +510,8 @@ function recheckContext(cycle: RecheckCycleRow, db: Database.Database): ReviewCy
 export class ReviewCycleRepository {
   /** 恢复会换新 projectId，以此认出恢复前的循环（ADR-0018 C17）。 */
   static isRestoredHistory(rootActionId: string, projectId: string, db: Database.Database): boolean {
-    return Boolean(db.prepare(`SELECT 1 FROM generation_runs WHERE root_action_id=? AND json_valid(binding_json)
-      AND json_extract(binding_json,'$.projectId')<>? LIMIT 1`).get(rootActionId, projectId))
+    return Boolean(db.prepare(`SELECT 1 FROM generation_roots WHERE root_action_id=? AND json_valid(action_json)
+      AND json_extract(action_json,'$.projectId') NOT IN ('', ?)`).get(rootActionId, projectId))
   }
 
   static getByReviewId(reviewId: number, db: Database.Database, projectId?: string): ReviewCycleProjection | null {

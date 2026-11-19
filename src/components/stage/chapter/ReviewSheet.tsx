@@ -36,7 +36,8 @@ function IssueCard({ item, checklist, onEdit }: {
   const text = useLocaleStore(s => s.text)
   const [editing, setEditing] = useState(item.origin === 'author')
   const copy = severityCopy(item.severity, text)
-  const isPass = item.severity === 'pass'
+  // 通过项和恢复前的审稿（ADR-0018 C17）只能看。
+  const readOnly = item.severity === 'pass' || checklist.cycle?.restoredHistory === true
   const finding = checklist.cycle?.findings.find(candidate => item.findingId
     ? candidate.findingId === item.findingId
     : candidate.reviewItemIndex === item.reviewItemIndex)
@@ -52,11 +53,11 @@ function IssueCard({ item, checklist, onEdit }: {
     </span>
   )
   return (
-    <div className="stage-ch-issue" data-on={!isPass && item.decision === 'apply'} data-severity={item.severity}>
-      {isPass
+    <div className="stage-ch-issue" data-on={!readOnly && item.decision === 'apply'} data-severity={item.severity}>
+      {readOnly
         ? <div className="stage-ch-issue-pass">{body}</div>
         : <Check checked={item.decision === 'apply'} onChange={checked => onEdit({ decision: checked ? 'apply' : 'ignore' })} label={body} />}
-      {editing && !isPass && (
+      {editing && !readOnly && (
         <div className="stage-ch-issue-fields">
           <div className="stage-ch-issue-row">
             <input className="pi-input" aria-label={text('问题分类', 'Issue category')} value={item.category} onChange={event => onEdit({ category: event.target.value })} />
@@ -92,7 +93,7 @@ function IssueCard({ item, checklist, onEdit }: {
           />
         </div>
       )}
-      {!isPass && (
+      {!readOnly && (
         <div className="stage-ch-issue-actions">
           <span className="stage-ch-issue-hint">{copy.actionLabel}</span>
           {item.origin === 'ai' && (
@@ -124,6 +125,7 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
 }) {
   const text = useLocaleStore(s => s.text)
   const { items, cycle } = checklist
+  const readOnly = cycle?.restoredHistory === true
   const actionable = items.filter(item => item.severity !== 'pass')
   const passed = items.length - actionable.length
   const count = (severity: EditableReviewItem['severity']) => items.filter(item => item.severity === severity).length
@@ -140,7 +142,7 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
       subtitle={subtitle}
       closeLabel={text('关闭审稿报告', 'Close review report')}
       onClose={onClose}
-      footer={(
+      footer={readOnly ? undefined : (
         <div className="stage-ch-sheet-foot">
           <span>{text('勾选的意见会用于修稿', 'Checked notes are used for the revision')}</span>
           <span className="stage-ch-sheet-count">{includedCount(items)} / {actionable.length}</span>
@@ -195,10 +197,10 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
       <div className="stage-ch-issues">
         {actionable.map(item => <IssueCard key={item.id} item={item} checklist={checklist} onEdit={patch => edit(item, patch)} />)}
       </div>
-      <Button variant="text" size="sm" className="stage-ch-add" onClick={() => { checklist.addAuthorItem(); checklist.setEditingChecklist(true) }}>
+      {!readOnly && <Button variant="text" size="sm" className="stage-ch-add" onClick={() => { checklist.addAuthorItem(); checklist.setEditingChecklist(true) }}>
         <Plus size={14} aria-hidden />{text('添加我的意见', 'Add my note')}
-      </Button>
-      <details className="stage-write-more stage-ch-guidance" open={Boolean(checklist.authorGuidance) || undefined}>
+      </Button>}
+      {!readOnly && <details className="stage-write-more stage-ch-guidance" open={Boolean(checklist.authorGuidance) || undefined}>
         <summary>{text('总体修稿指导', 'Overall revision guidance')}<small>{text('可选', 'Optional')}</small></summary>
         <textarea
           className="pi-input stage-ch-textarea"
@@ -208,7 +210,7 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
           placeholder={text('例如：优先修复角色动机的前后不一致，保持本章克制的节奏。', 'For example: fix the inconsistent motivation first and keep this chapter’s restrained pace.')}
           onChange={event => { checklist.setAuthorGuidance(event.target.value); checklist.setEditingChecklist(true) }}
         />
-      </details>
+      </details>}
       {checklist.confirmed && !checklist.editingChecklist && (
         <p className="stage-ch-sheet-note" role="status">{text('清单已确认，保存为新的不可变快照；原始 AI 审稿没有被修改。', 'The checklist is confirmed as a new immutable snapshot; the original AI review is unchanged.')}</p>
       )}
