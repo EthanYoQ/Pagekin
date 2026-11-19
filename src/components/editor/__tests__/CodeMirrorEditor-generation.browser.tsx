@@ -1175,11 +1175,11 @@ describe('annotation panel layout', () => {
 
 describe('章内选区生成带本章材料', () => {
   const blueprint = { chapterNumber: 30, title: '北塔', role: '', purpose: '', keyEvents: '林岚在北塔找到钥匙', characters: [], suspenseHook: '', userGuidance: '', notes: '', notesUpdatedAt: '' }
-  const chapterReads = (options: { omitted?: { kind: string; reason: string }[]; blueprintRead?: Promise<void> } = {}) => {
+  const chapterReads = (options: { omitted?: { kind: string; reason: string }[]; blueprintRead?: Promise<void>; threads?: unknown[] } = {}) => {
     const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<{ context: Record<string, unknown> }>
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
       if (channel === 'db:blueprint-get') { await options.blueprintRead; return blueprint }
-      if (channel === 'db:narrative-thread-list-relevant') return []
+      if (channel === 'db:narrative-thread-list-relevant') return options.threads ?? []
       if (channel === 'db:draft-get-finalized') return null
       const result = await base(channel, ...args)
       const input = (args[0] as { input?: { chapterContext?: unknown } }).input
@@ -1211,6 +1211,16 @@ describe('章内选区生成带本章材料', () => {
     await selectLine('林岚推开北塔的门。')
     await act(async () => page.getByRole('button', { name: '续写' }).click())
     await expect.element(page.getByText('线索、人物没带上：模型窗口不够')).toBeVisible()
+  })
+
+  it('相关线索超出条数上限时，预览气泡里说另有几条没带上', async () => {
+    deferStream = true
+    chapterReads({ threads: Array.from({ length: 7 }, (_, index) => ({ id: index + 1, title: `线索${index + 1}`, type: '伏笔', targetStartChapter: 20, targetEndChapter: 40,
+      authorIntent: '要有交代', status: 'planted', dormantChapters: 0, overdue: false, createdAt: '', updatedAt: '', events: [] })) })
+    await act(async () => root.render(<CodeMirrorEditor content="林岚推开北塔的门。" mode="prose" filePath="drafts/30-1.md" chapterNumber={30} />))
+    await selectLine('林岚推开北塔的门。')
+    await act(async () => page.getByRole('button', { name: '续写' }).click())
+    await expect.element(page.getByText('另有 1 条线索没带上：超出条数或长度上限')).toBeVisible()
   })
 
   it('备料期间换了章，旧的材料作废，不发起生成', async () => {

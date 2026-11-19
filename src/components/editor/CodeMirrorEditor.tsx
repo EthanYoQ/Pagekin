@@ -17,6 +17,7 @@ import { createEditorInlineGeneration } from '../../services/editor-inline-gener
 import { EDITOR_INLINE_ANNOTATION_MAX_COUNT, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, editorInlineInsertsAfterSelection, type EditorContextKind, type EditorInlineAnnotation, type EditorInlineContext, type EditorInlineFixedAction, type EditorInlineRequest } from '../../shared/editor-inline-generation'
 import { prepareEditorChapterContext } from '../../services/editor-chapter-context'
 import { continuationInsert } from './continuation-insert'
+import { pluralEn } from '../../shared/plural-en'
 import { useProjectStore } from '../../stores/project-store'
 import { resolveWritingLanguage } from '../../shared/writing-language'
 import type { NovelConfig } from '../../shared/ipc-channels'
@@ -102,9 +103,9 @@ const TRIMMED_LABELS: Partial<Record<EditorContextKind, readonly [string, string
   threads: ['线索', 'threads', '伏線'],
   'previous-ending': ['上一章结尾', 'the previous chapter ending', '前章の結末'],
 }
-const materialsView = (context: EditorInlineContext) => ({ insertsAfter: editorInlineInsertsAfterSelection(context),
-  trimmed: (context.materials?.omitted ?? []).flatMap(item => item.reason === 'budget' ? [item.kind] : []) })
-const NO_MATERIALS: ReturnType<typeof materialsView> = { insertsAfter: false, trimmed: [] }
+const materialsView = (context: EditorInlineContext, threadsLeftOut = 0) => ({ insertsAfter: editorInlineInsertsAfterSelection(context),
+  trimmed: (context.materials?.omitted ?? []).flatMap(item => item.reason === 'budget' ? [item.kind] : []), threadsLeftOut })
+const NO_MATERIALS: ReturnType<typeof materialsView> = { insertsAfter: false, trimmed: [], threadsLeftOut: 0 }
 const actionLabel = (action: EditorInlineRequest['action']): Label => action === 'instruct' ? NOTE_LABEL : action === 'batch-instruct' ? BATCH_NOTE_LABEL : AI_ACTIONS.find(item => item.key === action)!.label
 const setAnnotationDecorations = StateEffect.define<DecorationSet>()
 const annotationDecorationField = StateField.define<DecorationSet>({
@@ -585,7 +586,7 @@ export default function CodeMirrorEditor({
       setActiveNote(request.action === 'instruct' ? request.instruction : request.action === 'batch-instruct' ? uiText(`共 ${request.annotations.length} 条批注`, `${request.annotations.length} annotations`) : null)
       setNoteDraft(null); setAiResult(''); setAiError(null); setMaterials(NO_MATERIALS)
       const novelConfig: Partial<NovelConfig> = useProjectStore.getState().currentProject?.novelConfig ?? {}
-      const chapterContext = chapterNumber === undefined ? undefined : await prepareEditorChapterContext({ session, novelConfig,
+      const prepared = chapterNumber === undefined ? undefined : await prepareEditorChapterContext({ session, novelConfig,
         language: resolveWritingLanguage(novelConfig.writingLanguage), chapterNumber, action: request.action, precedingChars: targetRange.from })
       // 备料期间换了章、作品或又点了一次：这次的材料作废，什么都不发。
       if (requestSequence !== aiRequestSequenceRef.current) return
@@ -593,14 +594,14 @@ export default function CodeMirrorEditor({
         setAiResult(null); setActiveAIAction(null); setBubbleOpen(false)
         return
       }
-      const input = chapterContext ? { ...base, chapterContext } : base
+      const input = prepared ? { ...base, chapterContext: prepared.context } : base
       aiTargetRef.current = { ...input, requestSequence, filePath, sessionKey: JSON.stringify(session), insertsAfter: false }
       const client = createEditorInlineGeneration(session)
       inlineRef.current = client
       const recovery = await client.open({ input, modelId: routeModelId('editor-inline') ?? '', uiActionNonce: crypto.randomUUID() })
       if (requestSequence !== aiRequestSequenceRef.current) return
       aiTargetRef.current.insertsAfter = editorInlineInsertsAfterSelection(recovery.context)
-      setMaterials(materialsView(recovery.context))
+      setMaterials(materialsView(recovery.context, prepared?.threadsLeftOut))
       onGenerationHandle?.(recovery.view.handle)
       const receipt = await client.execute()
       if (requestSequence !== aiRequestSequenceRef.current) return
@@ -877,6 +878,10 @@ export default function CodeMirrorEditor({
                 `${materials.trimmed.map(kind => TRIMMED_LABELS[kind]![0]).join('、')}没带上：模型窗口不够`,
                 `Left out ${materials.trimmed.map(kind => TRIMMED_LABELS[kind]![1]).join(', ')}: the model window is too small`,
                 `${materials.trimmed.map(kind => TRIMMED_LABELS[kind]![2]).join('、')}は含めていません：モデルのウィンドウが足りません`)}</p>}
+              {materials.threadsLeftOut > 0 && !materials.trimmed.includes('threads') && <p className="cm-selbar-hint" role="note">{uiText(
+                `另有 ${materials.threadsLeftOut} 条线索没带上：超出条数或长度上限`,
+                `Left out ${materials.threadsLeftOut} more ${pluralEn(materials.threadsLeftOut, 'thread')}: over the count or length limit`,
+                `ほかに${materials.threadsLeftOut}件の伏線は含めていません：件数か長さの上限を超えています`)}</p>}
               {aiError ? (
                 <>
                   <p className="cm-selbar-error" role="alert">{aiError}</p>

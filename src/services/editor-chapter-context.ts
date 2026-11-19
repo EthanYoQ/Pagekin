@@ -11,7 +11,7 @@ import type { WritingLanguage } from '../shared/writing-language'
 /** 读不出（抛错或名册待修）记 unreadable；读到空就不带这一块。 */
 type Read = { text: string } | 'unreadable'
 
-/** 章内编辑时给主进程备候选块。读哪些块只看工具表。 */
+/** 章内编辑时给主进程备候选块。读哪些块只看工具表。threadsLeftOut 是相关线索里超出条数或长度上限、没进线索块的条数，只给编辑器提示用。 */
 export async function prepareEditorChapterContext(request: {
   session: ProjectSessionContext
   novelConfig: Partial<NovelConfig>
@@ -20,11 +20,12 @@ export async function prepareEditorChapterContext(request: {
   action: EditorInlineRequest['action']
   /** 选区前本章正文的字数。 */
   precedingChars: number
-}): Promise<EditorInlineChapterContext> {
+}): Promise<{ context: EditorInlineChapterContext; threadsLeftOut: number }> {
   const { session, language, chapterNumber } = request
   const path = session.projectPath
   const say = (zh: string, en: string) => promptLanguageText(language, zh, en)
   const wanted = new Map(EDITOR_CONTEXT_PLAN[request.action].flatMap(entry => 'maxChars' in entry ? [] : [[entry.kind, entry.required] as const]))
+  let threadsLeftOut = 0
   const blueprint = wanted.has('blueprint') || wanted.has('characters') || wanted.has('threads')
     ? await ipc.invokeWithProjectSession(session, 'db:blueprint-get', chapterNumber, path).catch(() => undefined) : null
   const names = blueprint?.characters ?? []
@@ -48,7 +49,10 @@ export async function prepareEditorChapterContext(request: {
     },
     threads: async () => {
       const threads = await listRelevantNarrativeThreads(path, session, { chapterNumber, title: blueprint?.title ?? '', keyEvents: blueprint?.keyEvents ?? '', characters: names })
-      return threads === null ? 'unreadable' : { text: activeNarrativeThreadBlock(threads, chapterNumber, language).lines.join('\n') }
+      if (threads === null) return 'unreadable'
+      const block = activeNarrativeThreadBlock(threads, chapterNumber, language)
+      threadsLeftOut = block.leftOut
+      return { text: block.lines.join('\n') }
     },
     'previous-ending': async () => {
       if (chapterNumber === 1 || request.precedingChars >= EDITOR_CONTEXT_PREVIOUS_ENDING_BELOW) return { text: '' }
@@ -71,5 +75,5 @@ export async function prepareEditorChapterContext(request: {
   const order = [...wanted.keys()]
   blocks.sort((a, b) => order.indexOf(a.kind as EditorContextReadKind) - order.indexOf(b.kind as EditorContextReadKind))
   unreadable.sort((a, b) => order.indexOf(a) - order.indexOf(b))
-  return { version: 1, chapterNumber, blocks, unreadable }
+  return { context: { version: 1, chapterNumber, blocks, unreadable }, threadsLeftOut }
 }

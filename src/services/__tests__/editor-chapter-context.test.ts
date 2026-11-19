@@ -26,8 +26,9 @@ const reads = {
   'db:draft-get-finalized': () => ({ id: 29 }),
   'db:draft-get-full': () => ({ id: 29, content: '第二十九章的结尾，雨停了。' }),
 }
-const prepare = (action: 'continue' | 'refine' | 'dialogue', precedingChars = 0) => prepareEditorChapterContext({ session, novelConfig: { narrativePOV: 'first_person', writingStyle: '冷峻' },
+const prepareWithCounts = (action: 'continue' | 'refine' | 'dialogue', precedingChars = 0) => prepareEditorChapterContext({ session, novelConfig: { narrativePOV: 'first_person', writingStyle: '冷峻' },
   language: 'zh-CN', chapterNumber: 30, action, precedingChars })
+const prepare = async (action: 'continue' | 'refine' | 'dialogue', precedingChars = 0) => (await prepareWithCounts(action, precedingChars)).context
 afterEach(() => vi.unstubAllGlobals())
 
 it('改第 30 章时，人物状态和线索证据只取到第 30 章为止', async () => {
@@ -60,4 +61,15 @@ it('人物名册或线索读不出时只记 unreadable，其余块照常备好',
   expect(context.blocks.map(block => block.kind)).toEqual(['style', 'blueprint'])
   bridge({ ...reads, 'db:narrative-thread-list-relevant': () => { throw new Error('SQLITE_BUSY') } })
   expect((await prepare('continue')).unreadable).toEqual(['threads'])
+})
+it('相关线索超出条数或长度上限时，记下没带上的条数', async () => {
+  const many = Array.from({ length: 7 }, (_, index) => ({ ...thread, id: index + 1, title: `线索${index + 1}` }))
+  bridge({ ...reads, 'db:narrative-thread-list-relevant': () => many })
+  const trimmed = await prepareWithCounts('continue')
+  expect(trimmed.context.blocks.find(block => block.kind === 'threads')?.text).not.toContain('线索7')
+  expect(trimmed.threadsLeftOut).toBe(1)
+  bridge({ ...reads, 'db:narrative-thread-list-relevant': () => [{ ...thread, authorIntent: '长'.repeat(1300) }] })
+  const tooLong = await prepareWithCounts('continue')
+  expect(tooLong.context.blocks.map(block => block.kind)).not.toContain('threads')
+  expect(tooLong.threadsLeftOut).toBe(1)
 })
