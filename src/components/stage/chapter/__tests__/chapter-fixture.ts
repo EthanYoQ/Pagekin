@@ -55,7 +55,9 @@ interface Draft {
 interface Review { id: number; baseDraftId: number; reviewIndex: number; content: string; source: Draft; createdAt: string }
 interface Revision {
   id: number; baseDraftId: number; revisionIndex: number; revisionType: 'refine' | 'review-fix'; status: 'pending' | 'merged' | 'discarded'
-  content: string; source: Draft | null; createdAt: string; updatedAt: string; restoredHistory?: true
+  content: string; source: Draft | null; createdAt: string; updatedAt: string
+  /** 修出它的审修循环来自恢复前；unbound 是存档时循环读坏被省略、修稿留着却没有循环。 */
+  restoredHistory?: true; unbound?: true
 }
 
 /**

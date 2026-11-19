@@ -1126,6 +1126,16 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
   })
 
+  it('待合并修稿的循环在存档里读坏被省略：合并视图不说会复验', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    Object.assign(backend.addRevision(draft), { unbound: true })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
+  })
+
   it('没导出过的书：按审稿修出的待合并修稿，合并视图照常说会复验', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     backend.addReview(draft)
@@ -1194,6 +1204,27 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await mount()
     await openDraft(draft.id)
     await expect.element(page.getByRole('button', { name: /项意见修稿$/ })).toBeVisible()
+  })
+
+  it('先前两次都读不出、之后挑报告时读到了恢复前的循环：动作条按读到的摆，不沿用读失败', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const answer = backend.invoke.getMockImplementation()!
+    let pickFails = true
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      const stack = new Error().stack ?? ''
+      if (channel === 'db:review-cycle-get' && (stack.includes('review-checklist') || pickFails && stack.includes('ChapterView'))) throw new Error('PROJECT_DATABASE_BUSY')
+      return answer(channel, ...args)
+    })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: /项意见修稿$/ })).toBeVisible()
+
+    pickFails = false
+    backend.state.cycles.delete(backend.addReview(draft, '').id)
+    await act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'review', projectPath: SESSION.projectPath, projectSession: SESSION, runId: 'later-review' }))
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    expect(page.getByRole('button', { name: /项意见修稿$/ }).elements()).toEqual([])
   })
 
   it('重读还没回来就重新打开了作品：旧会话读回的循环被丢弃，按新会话读到的摆', async () => {
