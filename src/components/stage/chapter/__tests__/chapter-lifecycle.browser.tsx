@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import '../../../../index.css'
 
 import type { ProjectData } from '../../../../shared/ipc-channels'
+import type { ReviewCycleProjection } from '../../../../shared/review-cycle'
 import { parseHumanConfirmedReviewSnapshot } from '../../../../shared/human-confirmed-review'
 import { globalEventBus } from '../../../../shared/event-bus'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
@@ -972,5 +973,89 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
       expect(hits(input)).toBe(true)
       expect(hits(primary.element())).toBe(true)
     })
+  })
+})
+
+describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => {
+  const RESTORED = '审稿内容都还在，但它是作品从备份恢复前做的，不能接着按它修稿或复验。点「重新审稿」，再按新意见修稿。'
+  const restoredReview = (draft: ReturnType<typeof backend.addDraft>, patch: Partial<ReviewCycleProjection> = {}) => {
+    const review = backend.addReview(draft)
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, restoredHistory: true, ...patch })
+    return review
+  }
+
+  it('已审稿：主按钮是重新审稿并说明原因，没有按意见修稿与确认不修改；点它只启动新审稿，不写确认记录', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '重新审稿', exact: true })).toBeVisible()
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    expect(page.getByRole('button', { name: '重新审稿', exact: true }).elements()).toHaveLength(1)
+    expect(page.getByRole('button', { name: /项意见修稿$|^确认不修改$|^修稿选项$/ }).elements()).toEqual([])
+    await expect.element(page.getByRole('complementary', { name: /审稿/ }).getByText('前后矛盾').first()).toBeVisible()
+
+    await click('重新审稿')
+    await vi.waitFor(() => expect(workflows.createReviewOnlyWorkflow).toHaveBeenCalledOnce())
+    expect(workflows.createReviewOnlyWorkflow.mock.calls[0][0]).not.toHaveProperty('reviewCycleId')
+    expect(started()).toHaveLength(1)
+    expect(workflows.createRefineFromReviewWorkflow).not.toHaveBeenCalled()
+    expect(backend.writes('db:review-create')).toEqual([])
+  })
+
+  it('审稿数据读回来之前不摆主按钮：恢复前的审稿不会先闪一下按意见修稿', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const answer = backend.invoke.getMockImplementation()!
+    let reads = 0
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && ++reads > 1) await new Promise(resolve => setTimeout(resolve, 150))
+      return answer(channel, ...args)
+    })
+    await mount()
+    const seen = new Set<string>()
+    const observer = new MutationObserver(() => host!.querySelectorAll('.stage-ch-actions .pi-btn').forEach(button => seen.add(button.textContent ?? '')))
+    observer.observe(host!, { subtree: true, childList: true, characterData: true })
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '重新审稿', exact: true })).toBeVisible()
+    observer.disconnect()
+    expect([...seen].filter(label => label.includes('意见修稿'))).toEqual([])
+  })
+
+  it('合并过、复验没完成：提示指向重新审稿，审稿报告里没有「重试合并后复验」；没导出过的书照常有', async () => {
+    const recheckPending = { revisionStatus: 'merge-committed' as const, recheckDisposition: 'required' as const, mergedHash: 'b'.repeat(64) }
+    const draft = backend.addDraft({ status: 'revised' })
+    restoredReview(draft, recheckPending)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    await click('更多操作')
+    await act(async () => page.getByRole('menuitem', { name: '审稿报告' }).click())
+    await expect.element(page.getByRole('complementary', { name: /审稿/ }).getByText('前后矛盾').first()).toBeVisible()
+    expect(page.getByRole('button', { name: '重试合并后复验' }).elements()).toEqual([])
+
+    await act(async () => root?.unmount())
+    host?.remove()
+    const fresh = backend.addDraft({ status: 'revised' })
+    const review = backend.addReview(fresh)
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, ...recheckPending })
+    useEditorStore.setState({ tabs: [], activeTabId: null, draftLedgers: {} })
+    useStageStore.setState({ sheet: null })
+    await mount()
+    await openDraft(fresh.id)
+    await expect.element(page.getByText('合并后复验还没完成，可在审稿报告里重试')).toBeVisible()
+    await click('更多操作')
+    await act(async () => page.getByRole('menuitem', { name: '审稿报告' }).click())
+    await expect.element(page.getByRole('button', { name: '重试合并后复验' })).toBeVisible()
+  })
+
+  it('恢复前的待合并修稿：合并视图不说合并后会复验', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    backend.addRevision(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
   })
 })

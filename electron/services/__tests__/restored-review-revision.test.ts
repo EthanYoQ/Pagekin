@@ -16,6 +16,7 @@ import { exportPortableProject } from '../project-archive-service'
 import { restorePortableProject } from '../project-restore-service'
 import { ReviewRepository } from '../../repositories/review-repository'
 import { RevisionRepository } from '../../repositories/revision-repository'
+import { ReviewCycleRepository } from '../../repositories/review-cycle-repository'
 import { textHash } from '../../repositories/generation-run-repository'
 import { createHumanConfirmedReviewSnapshot, renderHumanConfirmedReviewBrief, serializeHumanConfirmedReviewSnapshot } from '../../../src/shared/human-confirmed-review'
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
@@ -259,6 +260,58 @@ describe('从存档恢复的书在老章节上审修（#702）', () => {
     const restoredRoot = await exportAndRestore()
 
     expect(ownerFor(restoredRoot, 'epoch-restored').owner.listRecovery()).toMatchObject({ partial: false })
+  })
+})
+
+describe('审稿数据随审稿一并标出恢复前的审修循环（#702）', () => {
+  const cycleOf = (db: Database.Database, reviewId: number, root: string) => ReviewCycleRepository.getByReviewId(reviewId, db, projectIdOf(root))
+  const latestReviewId = (db: Database.Database) =>
+    (db.prepare('SELECT review_id FROM review_cycles ORDER BY rowid DESC LIMIT 1').get() as { review_id: number }).review_id
+
+  it('恢复前的审稿标恢复前，与按它修稿报的错一致；同章重新审稿后新的审稿数据不再标', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    const restoredRoot = await exportAndRestore()
+
+    const restored = ownerFor(restoredRoot, 'epoch-restored')
+    expect(cycleOf(restored.db, confirmed.snapshot.sourceReviewId, restoredRoot)).toMatchObject({ restoredHistory: true })
+    await expect(reviseFromConfirmation(restored.owner, confirmed)).rejects.toThrow('GENERATION_REVIEW_RESTORED_HISTORY')
+    await completeFreshCycle(restored.owner, restored.db, unrevised, revised, waxed.quote)
+    expect(cycleOf(restored.db, latestReviewId(restored.db), restoredRoot)).not.toHaveProperty('restoredHistory')
+  })
+
+  it('没导出过的书：审稿数据不带恢复前的字段', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    expect(cycleOf(original.db, confirmed.snapshot.sourceReviewId, projectRoot)).not.toHaveProperty('restoredHistory')
+  })
+
+  it('恢复前留着待合并的修稿：恢复后合并照常，回执不带复验，不会自动发起必然失败的复验', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    const saved = await reviseFromConfirmation(original.owner, confirmed)
+    const restoredRoot = await exportAndRestore()
+
+    const restored = ownerFor(restoredRoot, 'epoch-restored')
+    const receipt = RevisionRepository.mergeIntoDraft({ revisionId: saved.id, targetDraftId: 1, expectedDraftContent: source,
+      mergedContent: revised, wordCount: countDraftUnits(revised) }, restored.db, projectIdOf(restoredRoot))
+    expect(receipt).toMatchObject({ status: 'revised', idempotent: false })
+    expect(receipt).not.toHaveProperty('reviewCycle')
+    expect(cycleOf(restored.db, confirmed.snapshot.sourceReviewId, restoredRoot))
+      .toMatchObject({ revisionStatus: 'merge-committed', recheckDisposition: 'required', restoredHistory: true })
+  })
+
+  it('没导出过的书：合并按审稿修出的稿，回执照常带复验', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    const saved = await reviseFromConfirmation(original.owner, confirmed)
+    const receipt = RevisionRepository.mergeIntoDraft({ revisionId: saved.id, targetDraftId: 1, expectedDraftContent: source,
+      mergedContent: revised, wordCount: countDraftUnits(revised) }, original.db, projectIdOf(projectRoot))
+    expect(receipt.reviewCycle).toMatchObject({ disposition: 'required' })
   })
 })
 
