@@ -874,10 +874,48 @@ async function exportPhases(context) {
   return { seen, archiveExists: fs.existsSync(archive), leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
 }
 
+/** 导出进行中关库（#702）：关库要等 worker 退出、临时目录删完才返回，作品重启后照常能打开。 */
+async function exportThenClose(context) {
+  const { app, page, roots, invoke } = context
+  await installLedger(app, page)
+  await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(page).isVisible()) await stage.openFromLibrary(page, BOOK)
+  await stage.spine(page).waitFor({ state: 'visible', timeout: 60_000 })
+  const session = await app.evaluate(() => globalThis.__perfSession?.session)
+  assert.ok(session?.leaseId, '记下了界面打开作品的会话')
+  const archive = path.join(roots.projects, `close-${randomUUID()}.ainovel`)
+  await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
+  const grant = await invoke(page, 'dialog:select-project-archive-export', BOOK)
+  const leftovers = () => fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-'))
+  await page.evaluate(({ grantId, session }) => {
+    window.__closeExport = window.aiNovelAPI.invoke('project:archive-export', { targetArchiveGrantId: grantId, projectSession: session })
+  }, { grantId: grant.grantId, session })
+  const deadline = Date.now() + 30_000
+  while (leftovers().length === 0) {
+    assert.ok(Date.now() < deadline, '30 s 内没见到导出的临时目录')
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  const closed = await invoke(page, 'db:close', session.projectPath, session)
+  const leftoversWhenClosed = leftovers()
+  const exported = await page.evaluate(() => window.__closeExport)
+  await context.restart()
+  await stage.spine(context.page).or(stage.cover(context.page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(context.page).isVisible()) await stage.openFromLibrary(context.page, BOOK)
+  await stage.spine(context.page).waitFor({ state: 'visible', timeout: 60_000 })
+  const result = { closed, leftoversWhenClosed, exportSuccess: exported.success, exportError: exported.success ? undefined : exported.errorCode ?? exported.error,
+    archiveExists: fs.existsSync(archive), leftoversAfterRestart: leftovers(), reopened: true }
+  assert.equal(closed?.success, true, `关库成功：${JSON.stringify(closed)}`)
+  assert.deepEqual(leftoversWhenClosed, [], '关库返回时临时目录已删')
+  assert.equal(result.archiveExists, exported.success, '导出成功才有存档，失败不留存档')
+  return result
+}
+
 export const PERF702_SCENARIOS = {
   'perf702-export-phases': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
     run: exportPhases },
   'perf702-block-control': { model: true, shell: 'stage', run: blockControls },
+  'perf702-export-close': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
+    run: exportThenClose },
   'perf702-export': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
     run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
   'perf702-export-writing': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
