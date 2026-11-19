@@ -55,9 +55,10 @@ beforeEach(async () => {
     if (channel === 'editor-inline:begin') {
       leaseRequestCount += 1
       if (deferFirstLease && leaseRequestCount === 1) return new Promise((_resolve, reject) => { rejectFirstLease = reject })
-      const input = (args[0] as { input: { documentText: string } }).input
+      const input = (args[0] as { input: { action: string; documentText: string } }).input
       const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input.documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
-      const recovery = { view: { handle: { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: 'root', runId: `run-${leaseRequestCount}` }, status: 'running', artifacts: [] }, modelId: 'editor-model', sourceStatus: 'current', context: { ...input, kind: 'author-draft', documentHash: hash } }
+      const recovery = { view: { handle: { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: 'root', runId: `run-${leaseRequestCount}` }, status: 'running', artifacts: [] }, modelId: 'editor-model', sourceStatus: 'current',
+        context: { ...input, kind: 'author-draft', documentHash: hash, ...(input.action === 'continue' ? { materials: { included: [], omitted: [] } } : {}) } }
       recoveries.set(recovery.view.handle.runId, recovery)
       return recovery
     }
@@ -1188,22 +1189,19 @@ describe('章内选区生成带本章材料', () => {
   }
   const begins = () => invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:begin').map(([, request]) => (request as { input: Record<string, unknown> }).input)
 
-  it('接受续写后选区原文还在，续写接在选区之后', async () => {
+  it('接受续写后选区原文还在，续写作为新的一段接在选区之后', async () => {
     deferStream = true
     chapterReads()
     await act(async () => root.render(<CodeMirrorEditor content={'林岚推开北塔的门。\n\n门后是长廊。'} mode="prose" filePath="drafts/30-1.md" chapterNumber={30} />))
     const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
     await selectLine('林岚推开北塔的门。', { exact: true })
-    const selectionEnd = view.state.selection.main.to
     await act(async () => page.getByRole('button', { name: '续写' }).click())
     await expect.poll(() => pendingRequestId).not.toBeNull()
     expect(begins()[0]).toEqual(expect.objectContaining({ chapterContext: expect.objectContaining({ chapterNumber: 30,
       blocks: expect.arrayContaining([expect.objectContaining({ kind: 'blueprint', text: expect.stringContaining('林岚在北塔找到钥匙') })]) }) }))
     await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '风从塔顶灌下来。', finishReason: 'stop' } as never))
     await act(async () => page.getByRole('button', { name: '插入' }).click())
-    const doc = '林岚推开北塔的门。\n\n门后是长廊。'
-    expect(view.state.doc.toString()).toBe(`${doc.slice(0, selectionEnd)}风从塔顶灌下来。${doc.slice(selectionEnd)}`)
-    expect(view.state.doc.toString()).toContain('林岚推开北塔的门。')
+    expect(view.state.doc.toString()).toBe('林岚推开北塔的门。\n\n风从塔顶灌下来。\n\n门后是长廊。')
   })
 
   it('可选材料被裁时，预览气泡里有一行短提示', async () => {
@@ -1229,7 +1227,7 @@ describe('章内选区生成带本章材料', () => {
     await expect.element(page.getByText('续写预览')).not.toBeInTheDocument()
   })
 
-  it('没有章号的编辑器（架构文档、恢复稿）照旧只发选区，续写仍替换选区', async () => {
+  it('没有章号的编辑器（架构文档、恢复稿）照旧只发选区，续写也插在选区之后', async () => {
     deferStream = true
     await act(async () => root.render(<CodeMirrorEditor content="甲乙" mode="prose" />))
     const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
@@ -1237,8 +1235,8 @@ describe('章内选区生成带本章材料', () => {
     await act(async () => page.getByRole('button', { name: '续写' }).click())
     await expect.poll(() => pendingRequestId).not.toBeNull()
     expect(Object.hasOwn(begins()[0]!, 'chapterContext')).toBe(false)
-    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '甲乙丙', finishReason: 'stop' } as never))
-    await act(async () => page.getByRole('button', { name: '替换' }).click())
-    expect(view.state.doc.toString()).toBe('甲乙丙')
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '丙丁。', finishReason: 'stop' } as never))
+    await act(async () => page.getByRole('button', { name: '插入' }).click())
+    expect(view.state.doc.toString()).toBe('甲乙\n\n丙丁。')
   })
 })

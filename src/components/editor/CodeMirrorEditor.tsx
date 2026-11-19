@@ -16,6 +16,7 @@ import type { MainGenerationRunHandle } from '../../services/generation/generati
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
 import { EDITOR_INLINE_ANNOTATION_MAX_COUNT, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, editorInlineInsertsAfterSelection, type EditorContextKind, type EditorInlineAnnotation, type EditorInlineContext, type EditorInlineFixedAction, type EditorInlineRequest } from '../../shared/editor-inline-generation'
 import { prepareEditorChapterContext } from '../../services/editor-chapter-context'
+import { continuationInsert } from './continuation-insert'
 import { useProjectStore } from '../../stores/project-store'
 import { resolveWritingLanguage } from '../../shared/writing-language'
 import type { NovelConfig } from '../../shared/ipc-channels'
@@ -674,7 +675,7 @@ export default function CodeMirrorEditor({
         return
       }
       view.dispatch({
-        changes: target.insertsAfter ? { from: target.to, insert: aiResult } : { from: target.from, to: target.to, insert: aiResult }
+        changes: target.insertsAfter ? continuationInsert(target.documentText, target.to, aiResult) : { from: target.from, to: target.to, insert: aiResult }
       })
       if (target.action === 'batch-instruct') setAnnotations([])
     }
