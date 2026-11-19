@@ -543,18 +543,14 @@ describe('portable project export service', () => {
       expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json')).equals(Buffer.alloc(size, 'b'))).toBe(true)
     })
 
-    it('换了头像、旧头像文件被回收：重来一次，存档里是新头像', async () => {
-      const f = fixture()
-      seedProject(f)
+    function avatarSwap(f: Fixture) {
       const db = new Database(f.databasePath, { readonly: true })
       const old = db.prepare('SELECT character_id, relative_path FROM character_avatar_assets').get() as { character_id: string; relative_path: string }
       db.close()
       const avatar = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40, 7)])
       const relativePath = `avatars/${hash(old.character_id)}/2-${hash(avatar)}.png`
-      vi.spyOn(console, 'warn').mockImplementation(() => {})
       let replaced = false
-
-      await exportPortableProject(input(f, provider(), { __testHooks: { afterPortableDatabaseCreated: () => {
+      const replaceOnce = () => {
         if (replaced) return
         replaced = true
         fs.writeFileSync(path.join(f.storage, ...relativePath.split('/')), avatar)
@@ -564,12 +560,116 @@ describe('portable project export service', () => {
             .run(relativePath, hash(avatar), avatar.length, old.character_id)
         } finally { writer.close() }
         fs.rmSync(path.join(f.storage, ...old.relative_path.split('/')))
-      } } }))
+      }
+      const expectNewAvatar = async () => {
+        const unpacked = await extract(f)
+        const entry = unpacked.manifest.entries.find(item => item.disposition === 'avatar-asset')!
+        expect(entry.path).toBe(relativePath)
+        expect(fs.readFileSync(path.join(unpacked.stagingPath, ...entry.path.split('/')))).toEqual(avatar)
+      }
+      return { replaceOnce, expectNewAvatar }
+    }
 
+    it('换了头像、旧头像文件被回收：重来一次，存档里是新头像', async () => {
+      const f = fixture()
+      seedProject(f)
+      const swap = avatarSwap(f)
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await exportPortableProject(input(f, provider(), { __testHooks: { afterPortableDatabaseCreated: swap.replaceOnce } }))
+
+      await swap.expectNewAvatar()
+    })
+
+    it('库快照取完、核对头像之前换了头像并回收旧文件：重来一次，存档里是新头像', async () => {
+      const f = fixture()
+      seedProject(f)
+      const swap = avatarSwap(f)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const backup = Database.prototype.backup
+      vi.spyOn(Database.prototype, 'backup').mockImplementation(async function (this: InstanceType<typeof Database>, ...args: Parameters<typeof backup>) {
+        const result = await backup.apply(this, args)
+        swap.replaceOnce()
+        return result
+      })
+
+      await exportPortableProject(input(f))
+
+      expect(exportLog(warn)).toEqual([expect.stringContaining('PORTABLE_ASSET_MISSING')])
+      await swap.expectNewAvatar()
+    })
+
+    it('快照算哈希时资料刚被原子替换，打开的不是查过的那个文件：重来一次，存档里是完整的新内容', async () => {
+      const f = fixture()
+      const file = prompt(f, '{"提示":"快照时"}')
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const openSync = fs.openSync.bind(fs) as (...args: unknown[]) => number
+      let replaced = false
+      vi.spyOn(fs, 'openSync').mockImplementation(((target: unknown, ...rest: unknown[]) => {
+        if (!replaced && typeof target === 'string' && path.resolve(target) === path.resolve(file)) {
+          replaced = true
+          replaceAtomically(file, '{"提示":"打开前刚换的"}')
+        }
+        return openSync(target, ...rest)
+      }) as typeof fs.openSync)
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
+      expect(exportLog(warn)).toEqual([expect.stringContaining('PORTABLE_ARCHIVE_SOURCE_CHANGED')])
       const unpacked = await extract(f)
-      const entry = unpacked.manifest.entries.find(item => item.disposition === 'avatar-asset')!
-      expect(entry.path).toBe(relativePath)
-      expect(fs.readFileSync(path.join(unpacked.stagingPath, ...entry.path.split('/')))).toEqual(avatar)
+      expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"打开前刚换的"}')
+    })
+
+    it('算哈希途中资料被追加变大：只读到核对时的大小，当作资料被改重来，不读过存档上限', async () => {
+      const MiB = 1024 * 1024
+      archiveLimits.current.maxEntryBytes = 2 * MiB
+      try {
+        const f = fixture()
+        const file = prompt(f, Buffer.alloc(MiB + MiB / 2, 'a'))
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const openSync = fs.openSync.bind(fs) as (...args: unknown[]) => number
+        const readSync = fs.readSync.bind(fs) as (...args: unknown[]) => number
+        const watched = new Set<number>()
+        let bytesRead = 0, grown = false
+        vi.spyOn(fs, 'openSync').mockImplementation(((target: unknown, ...rest: unknown[]) => {
+          const descriptor = openSync(target, ...rest)
+          if (typeof target === 'string' && path.resolve(target) === path.resolve(file)) watched.add(descriptor)
+          return descriptor
+        }) as typeof fs.openSync)
+        vi.spyOn(fs, 'readSync').mockImplementation(((descriptor: number, ...rest: unknown[]) => {
+          const read = readSync(descriptor, ...rest)
+          if (!watched.has(descriptor)) return read
+          bytesRead += read
+          if (!grown) {
+            grown = true
+            fs.appendFileSync(file, Buffer.alloc(2 * MiB, 'b'))
+          }
+          return read
+        }) as typeof fs.readSync)
+
+        await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
+
+        expect(grown).toBe(true)
+        expect(bytesRead).toBeLessThanOrEqual(2 * MiB)
+        expect(exportLog(warn)).toEqual([expect.stringContaining('PORTABLE_ARCHIVE_SOURCE_CHANGED')])
+        expect(fs.readdirSync(f.attemptParent)).toEqual([])
+      } finally { Object.assign(archiveLimits.current, archiveLimits.defaults) }
+    })
+
+    it('头像文件坏了、和库行对不上：重来一次仍对不上，报头像损坏，不说资料被改', async () => {
+      const f = fixture()
+      const { avatar } = seedProject(f)
+      const db = new Database(f.databasePath, { readonly: true })
+      const relativePath = db.prepare('SELECT relative_path FROM character_avatar_assets').pluck().get() as string
+      db.close()
+      fs.writeFileSync(path.join(f.storage, ...relativePath.split('/')), Buffer.alloc(avatar.length, 0))
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_AVATAR_DAMAGED')
+
+      expect(exportLog(warn)).toEqual([expect.stringContaining('PORTABLE_EXPORT_AVATAR_DAMAGED')])
+      expect(fs.existsSync(f.target)).toBe(false)
+      expect(fs.readdirSync(f.attemptParent)).toEqual([])
     })
 
     it('作者删掉一份技能文件：重来一次，存档里没有它', async () => {
@@ -754,6 +854,59 @@ describe('portable project export service', () => {
 
       await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
       expect(written.bytes).toBeLessThanOrEqual(3 * MiB)
+    })
+  })
+
+  describe('与资料无关、重来也不会变的错误：只跑一遍，不重来（#744）', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+      Object.assign(archiveLimits.current, archiveLimits.defaults)
+    })
+
+    function counted(f: Fixture) {
+      const assets = createPortableProjectAssetProvider()
+      const runs = { snapshots: 0 }
+      fs.mkdirSync(path.join(f.storage, 'prompts'), { recursive: true })
+      fs.writeFileSync(path.join(f.storage, 'prompts', '设定.txt'), Buffer.alloc(3 * 1024 * 1024, 'a'))
+      return { runs, assets: { snapshot: (request: Parameters<typeof assets.snapshot>[0]) => { runs.snapshots += 1; return assets.snapshot(request) } } }
+    }
+
+    async function expectSingleRun(f: Fixture, overrides: Partial<ExportPortableProjectInput>, code: string, snapshots: number) {
+      const { runs, assets } = counted(f)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      await expect(exportPortableProject(input(f, assets, overrides))).rejects.toThrow(code)
+      expect(runs.snapshots).toBe(snapshots)
+      expect(warn.mock.calls.filter(call => String(call[0]).startsWith('[portable-export]'))).toEqual([])
+      expect(fs.readdirSync(f.attemptParent)).toEqual([])
+    }
+
+    it('存档上限', async () => {
+      const f = fixture()
+      archiveLimits.current.maxEntryBytes = 2 * 1024 * 1024
+      await expectSingleRun(f, {}, 'PORTABLE_ARCHIVE_LIMIT_EXCEEDED', 1)
+    })
+
+    it('目标文件已存在', async () => {
+      const f = fixture()
+      fs.writeFileSync(f.target, '作者原有的文件')
+      await expectSingleRun(f, {}, 'PORTABLE_ARCHIVE_TARGET_EXISTS', 1)
+      expect(fs.readFileSync(f.target, 'utf8')).toBe('作者原有的文件')
+    })
+
+    it('目标在作品目录里', async () => {
+      const f = fixture()
+      await expectSingleRun(f, { targetArchivePath: path.join(f.root, '副本.ainovel') }, 'PORTABLE_TARGET_INSIDE_SOURCE', 0)
+    })
+
+    it('上下文无效', async () => {
+      const f = fixture()
+      await expectSingleRun(f, { projectSession: { ...f.session, leaseId: 'lease-stale' } }, 'PORTABLE_CONTEXT_INVALID', 0)
+    })
+
+    it('打包完、发布前作品被关掉', async () => {
+      const f = fixture()
+      let checks = 0
+      await expectSingleRun(f, { assertCurrentContext: () => ++checks < 3 }, 'PORTABLE_CONTEXT_INVALID', 1)
     })
   })
 

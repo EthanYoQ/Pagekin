@@ -30,6 +30,13 @@ describe('localized application errors', () => {
     expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain(code)
   })
 
+  it('导出时头像文件坏了：说明作品没动、哪类资料坏了、在哪个按钮修，不说资料被改（#744）', () => {
+    const code = 'PORTABLE_EXPORT_AVATAR_DAMAGED'
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。有个角色头像文件损坏了，存档没有生成。请在人物页「更换头像」后再点「导出本地存档」。')
+    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. A character avatar file is damaged, so no archive was created. Click Replace avatar on the character page, then Export local archive again.')
+    expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain(code)
+  })
+
   it.each(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])('恢复时存档被改（%s）：不叫作者去点导出（#744）', code => {
     expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).not.toContain('导出')
     expect(displayedErrorMessage(shown('en-US'), new Error(code))).not.toContain('Export')

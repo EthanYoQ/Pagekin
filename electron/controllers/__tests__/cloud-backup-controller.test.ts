@@ -636,6 +636,20 @@ describe('registerCloudBackupController', () => {
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
   })
 
+  it('头像文件坏了：作者看到「头像文件损坏了」和该点的按钮，不说资料被改，不上传（#744）', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.exportPortableProject).mockRejectedValueOnce(new ProjectArchiveServiceError('PORTABLE_EXPORT_AVATAR_DAMAGED'))
+
+    const result = await f.invoke('cloud-backup:backup', {
+      operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
+    }) as CloudBackupFailure
+
+    expect(result).toMatchObject({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AVATAR_DAMAGED' })
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
+      .toBe('作品没有改动。有个角色头像文件损坏了，没有上传。请在人物页「更换头像」后再点「立即云备份」。')
+    expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
+  })
+
   it('打包时有审修循环没放进存档：照常上传，成功结果带上这些循环所在的章（#702）', async () => {
     const f = fixture()
     const omittedReviewCycles = [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }]
