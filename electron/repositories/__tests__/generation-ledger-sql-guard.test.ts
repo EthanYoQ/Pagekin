@@ -97,9 +97,9 @@ function outerLedgerColumns(sql: string): string[] {
   const narrowed = where !== undefined && !/\bOR\b/iu.test(where)
   if (narrowed && !joined && keys.some(key => key.every(pinned))) return []
   // 绑定可以按根解析：一棵树的运行有限，读不出时仓库报封存码（ADR-0030 决定 7）。别的列按根仍算跨记录。
-  // 联表时，根条件要约束到运行表：直接钉运行表的根，或经 ON 用运行表的主键或根与别的表的同名列对上。CROSS JOIN、逗号联表约束不到。
+  // 联表时，根条件要约束到运行表：直接钉运行表的根，或经 ON 用运行表的主键或根与别的表的同名列对上。CROSS JOIN、逗号联表、ON 里带 OR 都约束不到。
   const runs = /\bgeneration_runs(?: (?:AS )?(?!(?:ON|JOIN|CROSS|LEFT|INNER)\b)([a-z]+))?/iu.exec(from)?.[1]
-  const linked = !joined || (!/\bCROSS JOIN\b|,/iu.test(from) && runs !== undefined
+  const linked = !joined || (!/\bCROSS JOIN\b|,|\bOR\b/iu.test(from) && runs !== undefined
     && (new RegExp(`\\b${runs}\\.root_action_id\\s*=\\s*(\\?|\\(|@[a-z]+)`, 'iu').test(where ?? '')
       || new RegExp(`\\bON\\b.*\\b(?:${runs}\\.(run_id|root_action_id)\\s*=\\s*[a-z]+\\.\\1|[a-z]+\\.(run_id|root_action_id)\\s*=\\s*${runs}\\.\\2)\\b`, 'iu').test(from)))
   const byRoot = narrowed && linked && pinned('root_action_id')
