@@ -168,13 +168,18 @@ describe('在 worker 线程里导出', () => {
     const started = path.join(outDir, 'gated-work-started')
     const marker = path.join(outDir, 'gated-work-finished')
     const script = path.join(outDir, 'gated.mjs')
-    // 拿到闸门后卡在同步子进程里：terminate 打断不了，worker 要等子进程写完标记才真正退出。
-    const child = `const fs = require('fs'); fs.writeFileSync(${JSON.stringify(started)}, 'x'); setTimeout(() => fs.writeFileSync(${JSON.stringify(marker)}, 'x'), 800)`
+    // 拿到闸门后卡在同步子进程里：terminate 打断不了，worker 要等子进程写完标记才真正退出。路径经参数传，不拼进源码。
+    fs.writeFileSync(path.join(outDir, 'gated-child.cjs'), [
+      'const fs = require("node:fs")',
+      'fs.writeFileSync(process.argv[2], "x")',
+      'setTimeout(() => fs.writeFileSync(process.argv[3], "x"), 800)',
+    ].join('\n'))
     fs.writeFileSync(script, [
       'import { execFileSync } from "node:child_process"',
       'import path from "node:path"',
       'import { parentPort, workerData } from "node:worker_threads"',
-      `parentPort.once("message", () => execFileSync(process.execPath, ["-e", ${JSON.stringify(child)}]))`,
+      'const outDir = path.dirname(workerData.attemptParentPath)',
+      'parentPort.once("message", () => execFileSync(process.execPath, [path.join(outDir, "gated-child.cjs"), path.join(outDir, "gated-work-started"), path.join(outDir, "gated-work-finished")]))',
       'parentPort.postMessage({ type: "gate-enter", id: 1, projectStorageRoot: path.join(workerData.sourceProjectRoot, ".ai-novel") })',
     ].join('\n'))
     const controller = new AbortController()
