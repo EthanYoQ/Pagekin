@@ -118,6 +118,8 @@ function safeMetadata(value: unknown): void {
             safeMetadata(entry);
         }
 }
+/** 不算生成来源的 project_core 列：时间戳、派生状态，以及只给界面看的 AI 来源标记（M10 加列不让升级前开跑的任务判为来源已变）。 */
+export const PROJECT_CORE_NON_SOURCE_COLUMNS = ['created_at', 'updated_at', 'character_states', 'plot_tree_snapshot', 'ai_sources'];
 // llama-server 不加 --alias 时，模型 id 就是模型文件路径。
 export function recordedModelName(modelName: string): string {
     return PRIVATE_PATH.test(modelName) || /^\/\//.test(modelName) ? modelName.split(/[\\/]/).filter(Boolean).pop() ?? '' : modelName;
@@ -385,7 +387,7 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
         const raw = deps.db.prepare("SELECT * FROM project_core WHERE id='main'").get() as Record<string, unknown> | undefined;
         if (!raw)
             fail('GENERATION_PROJECT_CORE_MISSING');
-        const core = without(raw, ['created_at', 'updated_at', 'character_states', 'plot_tree_snapshot']);
+        const core = without(raw, PROJECT_CORE_NON_SOURCE_COLUMNS);
         const language: WritingLanguage = core.writing_language === 'en-US' ? 'en-US' : 'zh-CN';
         add('project-core:main', 0, stable(core), 'author-constraint', 'current project settings');
         if (input.legacyRosterKey) {

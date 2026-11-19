@@ -15,7 +15,7 @@ export interface ImportGenerationContext {
   manifestFingerprint: string
   totalChapters: number
   totalWords: number
-  core: ProjectCoreData
+  core: Omit<ProjectCoreData, 'aiSources'>
   prompts: Record<string, PromptTemplate>
   chapters: { number: number; title: string; content: string; contentFingerprint: string; wordCount: number }[]
 }

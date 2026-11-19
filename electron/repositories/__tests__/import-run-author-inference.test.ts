@@ -192,6 +192,15 @@ describe('作者原稿运行的反推阶段', () => {
     expect(context.totalChapters).toBe(3)
   })
 
+  it('反推生成冻结的作品设定不带设定细则的 AI 来源标记', () => {
+    authorRunAt('global')
+    getProjectDb()!.prepare("UPDATE project_core SET ai_sources=? WHERE id='main'").run(JSON.stringify({ worldSetting: { kind: 'filled', hash: '0000abcd' } }))
+
+    const context = captureImportGenerationContext(getProjectDb()!, { runId: RUN_ID, stage: 'global', batchId: 'done' })
+
+    expect(JSON.stringify(context.core)).not.toContain('0000abcd')
+  })
+
   it('已有蓝图的章不需要本次运行的检查点，蓝图阶段在每章都有蓝图后才能推进', () => {
     BlueprintRepository.upsert({ ...blueprint(2), title: '作者写的第2章蓝图', userGuidance: '作者的微操' })
     const execution = authorRunAt('blueprints')

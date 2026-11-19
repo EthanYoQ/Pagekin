@@ -4,6 +4,7 @@ import { countDraftUnits } from '../../src/shared/draft-units'
 import { createImportRunChapterBatchCheckpointId, parseImportRunChapterBatchCheckpointId } from '../../src/shared/import-run'
 import type { ImportGenerationContext, ImportGenerationSlot } from '../../src/shared/import-generation'
 import { ProjectCoreRepository } from '../repositories/project-core-repository'
+import { withoutAiSources } from '../../src/shared/novel-config-ai-sources'
 
 export function validateImportGenerationSlot(slot: ImportGenerationSlot): void {
   if (!slot || typeof slot !== 'object' || Array.isArray(slot) || Object.keys(slot).some(key => !['runId', 'stage', 'batchId'].includes(key))
@@ -36,5 +37,5 @@ export function captureImportGenerationContext(db: Database.Database, slot: Impo
   if (range && createImportRunChapterBatchCheckpointId(chapters) !== slot.batchId) throw new Error('GENERATION_IMPORT_CHECKPOINT_CHANGED')
   const core = ProjectCoreRepository.get(db)
   if (!core || Buffer.byteLength(JSON.stringify(chapters), 'utf8') > 8 * 1024 * 1024) throw new Error('GENERATION_IMPORT_CONTEXT_LIMIT')
-  return { slot: { ...slot }, manifestFingerprint: run.manifest_fingerprint, totalChapters: run.manifest_chapter_count, totalWords: run.manifest_word_count, chapters, core, prompts: {} }
+  return { slot: { ...slot }, manifestFingerprint: run.manifest_fingerprint, totalChapters: run.manifest_chapter_count, totalWords: run.manifest_word_count, chapters, core: withoutAiSources(core), prompts: {} }
 }
