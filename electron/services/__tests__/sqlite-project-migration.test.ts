@@ -560,6 +560,37 @@ describe('各调用方拿到的内容哈希（#702）', () => {
     expect(await backupProjectSqlite({ sourceDatabasePath: f.target, targetDatabasePath: path.join(f.root, 'copy.db') })).toEqual(CURRENT_BOOK)
   })
 
+  /** 改前的整表拼串算法，迁移日志里存着它算出的值。 */
+  function legacyAuthorContentHash(db: BetterSqlite3.Database): string {
+    const digest = createHash('sha256')
+    for (const name of db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all() as string[]) {
+      const columns = (db.prepare(`PRAGMA table_info("${name}")`).all() as { name: string }[]).map(column => `"${column.name}"`)
+      const encoded = db.prepare(`SELECT ${columns.join(',')} FROM "${name}"`).safeIntegers().raw().all().map(row => JSON.stringify(row,
+        (_key, value: unknown) => typeof value === 'bigint' ? { integer: value.toString() } : value)).sort()
+      if (encoded.length) digest.update(JSON.stringify([logicalTableName(name), encoded]))
+    }
+    return digest.digest('hex')
+  }
+
+  it('多行表逐行算出的内容哈希与改前整表拼串的逐字节相同', async () => {
+    const f = await currentBook()
+    const db = new Database(f.target); handles.push(db)
+    db.pragma('foreign_keys = ON')
+    const tricky = '引号" 反斜杠\\ 换行\n 扩展区𠀀'
+    for (const id of ['root-b', 'root-a']) {
+      db.prepare("INSERT INTO generation_roots(root_action_id, idempotency_key, action_json, budget_json) VALUES (?, ?, ?, '{}')").run(id, id, JSON.stringify({ tricky }))
+    }
+    for (const id of ['run-2', 'run-1']) {
+      db.prepare("INSERT INTO generation_runs(run_id, root_action_id, binding_json, status, created_at_ms, open_key) VALUES (?, 'root-a', ?, 'paused', ?, ?)")
+        .run(id, JSON.stringify({ id, tricky }), 2n ** 60n, id)
+    }
+    const expected = legacyAuthorContentHash(db)
+    db.close()
+    const probed = probeProjectSqlite({ databasePath: f.target })
+    expect(probed.domain.tableCounts).toMatchObject({ generation_roots: 2, generation_runs: 2 })
+    expect(probed.domain.authorContentHash).toBe(expected)
+  })
+
   it('旧版本的库只带它那一版有的内容哈希', async () => {
     const f = fixture()
     expect(Object.keys(probeProjectSqlite({ databasePath: f.source }))).toEqual(['schemaVersion', 'fingerprint', 'domain'])
