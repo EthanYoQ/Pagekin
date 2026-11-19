@@ -1221,6 +1221,13 @@ describe('database controller project context guard', () => {
     expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
   })
 
+  it('调用方路径大小写和打开时不同：按当前作品的路径停导出，不按调用方的拼写（#702）', async () => {
+    await expect(handler('db:close')({}, 'c:/PROJECTS/a')).resolves.toEqual({ success: true })
+
+    expect(mocks.stopPortableExports).toHaveBeenCalledWith('C:/projects/A')
+    expect(mocks.closeProjectDatabase).toHaveBeenCalledOnce()
+  })
+
   it('等导出停完后原会话已失效（同一路径被重新打开）就不关库（#702）', async () => {
     mocks.stopPortableExports.mockImplementationOnce(async () => {
       mocks.assertCurrentSession.mockImplementationOnce(() => { throw new Error('PROJECT_SESSION_STALE') })
