@@ -22,7 +22,7 @@ export default function MarkdownContent({ content, streaming }: MarkdownContentP
           <ThinkingBlock key={`think-${i}`} content={seg.content} streaming={streaming && i === segments.length - 1} />
         ) : (
           <React.Fragment key={`md-${i}`}>
-            {renderLines(seg.content.split('\n'))}
+            {renderLines(seg.content.split(/\r?\n/))}
           </React.Fragment>
         )
       )}
