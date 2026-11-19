@@ -57,8 +57,8 @@ export const inNonceChain = (nonce: string) => (click: GenerationClick) => click
  * 给 `run_id IN (SELECT value FROM json_each(?))` 绑定的参数：命中的和身份读不出的都算候选。
  * 候选只按身份键取（ADR-0030「跨记录认运行」），查询再按绑定筛；写入时断言绑定与点击的操作一致。
  */
-export function candidateRunIds(lookup: RunLookup): string {
-    return JSON.stringify([...lookup.hits, ...lookup.unidentified].map(entry => entry.runId))
+export function candidateRunIds(lookup: RunLookup, skip?: ReadonlySet<string>): string {
+    return JSON.stringify([...lookup.hits, ...lookup.unidentified].map(entry => entry.runId).filter(runId => !skip?.has(runId)))
 }
 
 interface Snapshot { entries: RunIndexEntry[]; top: bigint; count: bigint; sealed: ReadonlySet<string> }

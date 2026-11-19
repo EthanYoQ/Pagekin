@@ -1,23 +1,30 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
-import { describe, expect, it } from 'vitest'
-import { installIpcSlowCallLog, IPC_SLOW_CALL_THRESHOLD_MS } from '../ipc-slow-call-log'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { EVENT_LOOP_SAMPLE_MS, installIpcSlowCallLog, IPC_SLOW_CALL_THRESHOLD_MS } from '../ipc-slow-call-log'
 
 type Listener = Parameters<IpcMain['handle']>[1]
+
+const stops: (() => void)[] = []
+afterEach(() => {
+  for (const stop of stops.splice(0)) stop()
+  vi.useRealTimers()
+})
 
 function harness(options: { log?: (line: string) => void } = {}) {
   const handlers = new Map<string, Listener>()
   const ipc = { handle: (channel: string, listener: Listener) => { handlers.set(channel, listener) } }
   let clock = 0
   const lines: string[] = []
-  installIpcSlowCallLog(ipc, { now: () => clock, log: options.log ?? (line => lines.push(line)) })
+  stops.push(installIpcSlowCallLog(ipc, { now: () => clock, log: options.log ?? (line => lines.push(line)) }))
   const register = (channel: string, syncMs: number, body: () => unknown) => ipc.handle(channel, () => {
     clock += syncMs
     return body()
   })
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)!({} as IpcMainInvokeEvent, ...args)
-  return { register, invoke, lines }
+  const elapse = (ms: number) => { clock += ms }
+  return { register, invoke, lines, elapse }
 }
 
 describe('installIpcSlowCallLog', () => {
@@ -34,7 +41,7 @@ describe('installIpcSlowCallLog', () => {
   it('参数原样传给处理函数', () => {
     const handlers = new Map<string, Listener>()
     const ipc = { handle: (channel: string, listener: Listener) => { handlers.set(channel, listener) } }
-    installIpcSlowCallLog(ipc, { log: () => {} })
+    stops.push(installIpcSlowCallLog(ipc, { log: () => {} }))
     const event = {} as IpcMainInvokeEvent
     let received: unknown[] = []
     ipc.handle('echo', (...args) => { received = args; return 'done' })
@@ -76,5 +83,63 @@ describe('installIpcSlowCallLog', () => {
 
     expect(invoke('db:slow')).toBe('value')
     expect(() => invoke('db:slow-broken')).toThrow('ORIGINAL')
+  })
+
+  it('异步处理函数前一段开始，这一段 await 之后又占住主线程、随即结束：迟到那一行记下它', async () => {
+    vi.useFakeTimers()
+    const { register, invoke, lines, elapse } = harness()
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    register('generation:list-recovery', 0, async () => {
+      await gate
+      elapse(EVENT_LOOP_SAMPLE_MS + 330)
+      return 'done'
+    })
+    const answer = invoke('generation:list-recovery')
+    elapse(EVENT_LOOP_SAMPLE_MS)
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+
+    release()
+    await expect(answer).resolves.toBe('done')
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+    expect(lines).toEqual(['[event-loop-lag] 330ms 期间开始或结束的通道 generation:list-recovery'])
+  })
+
+  it('只在等待、这一段里没开始也没结束的通道不算：长时间的模型调用不会出现在每一行里', async () => {
+    vi.useFakeTimers()
+    const { register, invoke, lines, elapse } = harness()
+    let finish!: (value: string) => void
+    register('generation:execute', 0, () => new Promise<string>(resolve => { finish = resolve }))
+    register('db:slow-sync', 0, () => 'ok')
+    const answer = invoke('generation:execute')
+    elapse(EVENT_LOOP_SAMPLE_MS)
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+
+    elapse(EVENT_LOOP_SAMPLE_MS + 400)
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+    invoke('db:slow-sync')
+    elapse(EVENT_LOOP_SAMPLE_MS + 250)
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+    expect(lines).toEqual(['[event-loop-lag] 400ms 期间开始或结束的通道 无', '[event-loop-lag] 250ms 期间开始或结束的通道 db:slow-sync'])
+
+    finish('done')
+    await expect(answer).resolves.toBe('done')
+  })
+
+  it('迟到不超过阈值不写；失败的异步调用照样按结束算', async () => {
+    vi.useFakeTimers()
+    const { register, invoke, lines, elapse } = harness()
+    let fail!: (error: Error) => void
+    register('kb:broken', 0, () => new Promise((_resolve, reject) => { fail = reject }))
+    const answer = invoke('kb:broken')
+    elapse(EVENT_LOOP_SAMPLE_MS + IPC_SLOW_CALL_THRESHOLD_MS)
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+    expect(lines).toEqual([])
+
+    fail(new Error('KB_DOWN'))
+    await expect(answer).rejects.toThrow('KB_DOWN')
+    elapse(EVENT_LOOP_SAMPLE_MS + 250)
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+    expect(lines).toEqual(['[event-loop-lag] 250ms 期间开始或结束的通道 kb:broken'])
   })
 })
