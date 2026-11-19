@@ -643,6 +643,80 @@ describe('portable project export service', () => {
     })
   })
 
+  describe('导出排在知识库闸门后面等待时，作品被换掉或关掉（#744）', () => {
+    afterEach(() => { vi.restoreAllMocks() })
+
+    function holdGate(f: Fixture) {
+      activateCanonicalProjectData(f.root)
+      let release!: () => void
+      const held = withKnowledgeSourceGate(getProjectDataRoot(f.root), () => new Promise<void>(resolve => { release = resolve }))
+      return { held, whenExportQueues: (action: () => void) => {
+        gateRequests.onRequest = () => { gateRequests.onRequest = undefined; action(); release() }
+      } }
+    }
+
+    it('等待期间库文件被换成另一本书：拒绝导出，不发布另一本书的内容', async () => {
+      const f = fixture()
+      seedProject(f)
+      const other = fixture()
+      const gate = holdGate(f)
+      gate.whenExportQueues(() => {
+        fs.renameSync(f.databasePath, `${f.databasePath}.原书`)
+        fs.copyFileSync(other.databasePath, f.databasePath)
+      })
+
+      try { await expect(exportPortableProject(input(f))).rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED') }
+      finally { gateRequests.onRequest = undefined }
+      await gate.held
+      expect(fs.existsSync(f.target)).toBe(false)
+    })
+
+    it('等待期间作品被关掉：拒绝导出，源目录里不多出 SQLite 旁文件', async () => {
+      const f = fixture()
+      seedProject(f)
+      const sidecars = () => fs.readdirSync(f.storage).filter(name => /^project\.db-(wal|shm)$/u.test(name)).sort()
+      const before = sidecars()
+      let closed = false
+      const gate = holdGate(f)
+      gate.whenExportQueues(() => { closed = true })
+
+      try {
+        await expect(exportPortableProject(input(f, provider(), {
+          assertCurrentContext: () => { if (closed) throw new Error('closed') },
+        }))).rejects.toThrow('PORTABLE_CONTEXT_INVALID')
+      } finally { gateRequests.onRequest = undefined }
+      await gate.held
+      expect(sidecars()).toEqual(before)
+      expect(fs.existsSync(f.target)).toBe(false)
+    })
+  })
+
+  it('列资料途中作品存储目录被换成指向项目外的联接：拒绝导出，项目外的字节不进存档（#744）', async () => {
+    const f = fixture()
+    const prompt = path.join(f.storage, 'prompts', '章节.txt')
+    fs.mkdirSync(path.dirname(prompt))
+    fs.writeFileSync(prompt, '作者自己的提示词')
+    const outside = path.join(f.base, '项目外存储')
+    fs.mkdirSync(path.join(outside, 'prompts'), { recursive: true })
+    fs.writeFileSync(path.join(outside, 'prompts', '章节.txt'), Buffer.alloc(fs.statSync(prompt).size, 'x'))
+    const lstatSync = fs.lstatSync.bind(fs) as (...args: unknown[]) => fs.Stats
+    let swapped = false
+    vi.spyOn(fs, 'lstatSync').mockImplementation(((target: unknown, ...rest: unknown[]) => {
+      if (!swapped && typeof target === 'string' && path.resolve(target) === prompt) {
+        swapped = true
+        fs.renameSync(f.storage, `${f.storage}-原目录`)
+        fs.symlinkSync(outside, f.storage, 'junction')
+      }
+      return lstatSync(target, ...rest)
+    }) as typeof fs.lstatSync)
+
+    try {
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
+    } finally { vi.restoreAllMocks() }
+    expect(swapped).toBe(true)
+    expect(fs.existsSync(f.target)).toBe(false)
+  })
+
   it('导出时知识库正在导入，草稿保存先提交：存档里的知识库不比库新（#744）', async () => {
     const f = fixture()
     seedProject(f)
