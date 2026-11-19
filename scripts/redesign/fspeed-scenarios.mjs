@@ -2,10 +2,14 @@
 // 环境变量：
 //   FSPEED_CHAPTERS  只定稿这些章，写成 3-10 或 3,5,7；默认假模型 3-6、真实模型 3-23。
 //   FSPEED_LOG       每章定稿完追加一行 JSON，场景中途失败也不丢已量到的数。
+//   FSPEED_TEXT      换用另一份正文计时：模块路径，导出 CHAPTERS 或 PROBE_CHAPTERS（章号到正文）。夹具每章只有两三百字，
+//                    比真实章节短得多；换了正文就不按预埋项初筛。
 // 修前对照用 --app-root 指向修前构建，场景文件仍用这里的。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { chooseProjectDirectoryGrant } from '../project-directory-grant.mjs'
 import { FAKE_MODEL } from './fake-model.mjs'
@@ -17,6 +21,9 @@ import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 
 const BOOK = '潮汐与钟'
 const TOTAL_CHAPTERS = 23
+const textModule = process.env.FSPEED_TEXT ? await import(pathToFileURL(path.resolve(process.env.FSPEED_TEXT)).href) : null
+const TEXT_OVERRIDE = textModule ? textModule.CHAPTERS ?? textModule.PROBE_CHAPTERS : null
+const chapterText = number => TEXT_OVERRIDE ? TEXT_OVERRIDE[number] : QUALITY_CHAPTERS[number].text
 
 function chapterList(fallback) {
   const spec = process.env.FSPEED_CHAPTERS?.trim()
@@ -118,7 +125,7 @@ async function seed(context, fakeMode, chapters) {
       wordCount: countUnits(STAGE_SAMPLE.finalized[number]) })) }, projectPath, session)
   assert.equal(imported.success, true, imported.error)
   for (const number of chapters) {
-    const content = QUALITY_CHAPTERS[number].text
+    const content = chapterText(number)
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: number, version: 1, source: 'write', content, wordCount: countUnits(content) }, projectPath, session)
     assert.equal(draft.success, true, draft.error)
   }
@@ -175,9 +182,9 @@ async function finalizeOne(context, chapterNumber) {
   const isCharacter = chat => /角色|character/iu.test(chat.system) && /状态|state/iu.test(chat.system)
   const notesText = chats.filter(chat => !isCharacter(chat)).map(chat => chat.content ?? '').join('\n')
   const characterText = chats.filter(isCharacter).map(chat => chat.content ?? '').join('\n')
-  const fixture = QUALITY_CHAPTERS[chapterNumber]
+  const fixture = TEXT_OVERRIDE ? { events: [], states: [] } : QUALITY_CHAPTERS[chapterNumber]
   const record = {
-    chapterNumber, units: countUnits(fixture.text), readOnlyMs, runEndMs,
+    chapterNumber, units: countUnits(chapterText(chapterNumber)), readOnlyMs, runEndMs,
     // 可写下一章：知识库与要点两个关键步骤都记了结果（第二个标记）。
     writableMs: marks[1] ? marks[1].start + marks[1].ms : null,
     settledMs: marks.at(-1) ? marks.at(-1).start + marks.at(-1).ms : null,

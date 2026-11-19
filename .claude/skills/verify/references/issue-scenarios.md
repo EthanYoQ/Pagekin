@@ -352,7 +352,7 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 
 ## 定稿加速（#702）
 
-场景在 `scripts/redesign/fspeed-scenarios.mjs`，夹具正文在 `finalize-quality-fixture.mjs`（第 3 到 23 章，每章预埋 3 条关键事件，部分章预埋人物状态变化）。`FSPEED_CHAPTERS` 选章（`3-10` 或 `3,5,7`），`FSPEED_LOG` 每章追加一行 JSON。修前对照用 `--app-root` 指向修前构建。`measured.summary` 给只读、可写下一章、后处理全部结束三个中位数，和按关键词初筛漏掉的事件与状态；漏项要人逐条看 `notesText`、`characterText` 复核。
+场景在 `scripts/redesign/fspeed-scenarios.mjs`，夹具正文在 `finalize-quality-fixture.mjs`（第 3 到 23 章，每章预埋 3 条关键事件，部分章预埋人物状态变化）。`FSPEED_CHAPTERS` 选章（`3-10` 或 `3,5,7`），`FSPEED_LOG` 每章追加一行 JSON。夹具每章只有两三百字，计时要接近真实章节长度时用 `FSPEED_TEXT` 指向一个导出 `CHAPTERS`（或 `PROBE_CHAPTERS`）的正文模块，换了正文就不按预埋项初筛。修前对照用 `--app-root` 指向修前构建。`measured.summary` 给只读、可写下一章、后处理全部结束三个中位数，和按关键词初筛漏掉的事件与状态；漏项要人逐条看 `notesText`、`characterText` 复核。
 
 | 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
 |---|---|---|---|---|
