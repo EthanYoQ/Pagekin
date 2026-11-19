@@ -7,19 +7,23 @@ import { useWorkflowStore, workflowResourceConflictMessage } from '../../stores/
 import { toast } from '../ui/Toast'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { pluralEn } from '../../shared/plural-en'
+import { configText } from '../../shared/novel-config-ai-sources'
 
 type Text = (zh: string, en: string) => string
 
 /** 已有作者内容的长字段：AI 填充会保留原文并追加，开始前要让作者确认扩写。 */
 export function configFieldsToExpand(config: Partial<NovelConfig> | undefined, text: Text): string[] {
-  const fields: string[] = []
-  if (config?.coreOutline?.trim()) fields.push(text('核心大纲', 'Core outline'))
-  if (config?.worldSetting?.trim()) fields.push(text('世界观设定', 'World setting'))
-  if (config?.goldenFinger?.trim()) fields.push(text('金手指体系', 'Special advantage'))
-  if (config?.protagonistProfile?.trim()) fields.push(text('主角人设', 'Protagonist profile'))
-  if (config?.globalGuidance?.trim()) fields.push(text('全局写作要求', 'Global writing guidance'))
-  if (config?.subGenre?.trim()) fields.push(text('细分类型', 'Subgenre'))
-  return fields
+  const labels: [unknown, string][] = [
+    [config?.coreOutline, text('核心大纲', 'Core outline')],
+    [config?.worldSetting, text('世界观设定', 'World setting')],
+    [config?.goldenFinger, text('金手指体系', 'Special advantage')],
+    [config?.protagonistProfile, text('主角人设', 'Protagonist profile')],
+    [config?.globalGuidance, text('全局写作要求', 'Global writing guidance')],
+    [config?.writingStyle, text('文风', 'Writing style')],
+    [config?.referenceWorks, text('参考作品', 'Reference works')],
+    [config?.subGenre, text('细分类型', 'Subgenre')],
+  ]
+  return labels.filter(([value]) => configText(value).trim()).map(([, label]) => label)
 }
 
 /**

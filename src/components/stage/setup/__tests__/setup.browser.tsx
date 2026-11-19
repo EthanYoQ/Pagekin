@@ -338,6 +338,20 @@ describe('设定页', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
+  it('某项设定读出的不是文本时 AI 补全照常走到扩写确认；文风、参考作品有作者内容也列进确认', async () => {
+    project({ coreOutline: '雾钟提前一刻响起。', worldSetting: 42 as never, writingStyle: '短句为主。', referenceWorks: '《白鲸》' })
+    await mount()
+    await click(byName('AI 补全其余设定'))
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect([...dialog.querySelectorAll('li')].map(item => item.textContent)).toEqual(['核心大纲', '文风', '参考作品'])
+  })
+
+  it('设定细则的计数是读屏会播报的状态', async () => {
+    project({ coreOutline: '雾钟提前一刻响起。', writingStyle: '短句为主。', referenceWorks: '《白鲸》' })
+    await mount()
+    expect([...document.querySelectorAll('[role="status"]')].map(node => node.textContent)).toContain('6 项 · 4 项未填')
+  })
+
   it('另一个任务占着设定时 AI 补全不启动，扩写确认留着', async () => {
     project({ coreOutline: '雾钟提前一刻响起。', worldSetting: '旧港以潮汐计时。' })
     useWorkflowStore.setState({ getResourceConflict: () => ({ title: '生成架构' }) } as never)
@@ -400,6 +414,16 @@ describe('设定页', () => {
     const textareas = [...host!.querySelectorAll<HTMLTextAreaElement>('.stage-setup textarea')]
     expect(textareas).toHaveLength(7)
     expect(textareas.filter(node => node.scrollHeight > node.clientHeight + 1).map(node => node.labels?.[0]?.textContent)).toEqual([])
+  })
+
+  it('窄窗口（1024 宽、缩放 150% 时主区约 420px）：设定细则的输入框仍占满一行，名字与状态移到上面', async () => {
+    project({ worldSetting: '旧港以潮汐计时。' })
+    await mount()
+    host!.style.width = '420px'
+    const sheet = host!.querySelector<HTMLElement>('.stage-setup-sheet')!
+    const widths = [...sheet.querySelectorAll<HTMLTextAreaElement>('.stage-setup-row-input')].map(node => node.getBoundingClientRect().width)
+    expect(widths).toHaveLength(6)
+    expect(widths.filter(width => width < sheet.clientWidth * 0.6)).toEqual([])
   })
 
   it('某项设定读出的不是文本时，这一行显示为空、可以照常填写，整页不崩；视角不在选项里时留着原值', async () => {

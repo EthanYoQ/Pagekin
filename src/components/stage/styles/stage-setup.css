@@ -216,6 +216,7 @@
 
 /* ---------- 设定细则 ---------- */
 .stage-setup-sheet {
+  container-type: inline-size;
   padding: var(--s-4) var(--s-6) var(--s-2);
   border-radius: var(--radius-panel);
   background: var(--paper);
@@ -330,6 +331,18 @@
 .stage-shell .stage-setup-row .stage-setup-ai:hover:not(:disabled),
 .stage-shell .stage-setup-row[data-empty] .stage-setup-ai:not(:disabled) {
   color: var(--accent);
+}
+
+/* 窄窗口（1024 宽、缩放 150%）放不下三列：名字与状态、AI 生成排一行，内容占满下一行。 */
+@container (width < 480px) {
+  .stage-setup-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .stage-setup-row-main {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 /* ---------- 底部操作栏 ---------- */

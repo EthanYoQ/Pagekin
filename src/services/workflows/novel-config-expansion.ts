@@ -33,6 +33,7 @@ export const EXPANDABLE_NOVEL_CONFIG_FIELDS = [
   'protagonistProfile',
   'globalGuidance',
   'writingStyle',
+  'referenceWorks',
 ] as const satisfies readonly (keyof NovelConfig)[]
 
 const AUTHOR_CHOICE_FIELDS = [

@@ -22,10 +22,10 @@ function fingerprint(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
-const textOf = (config: AiSourceInput, field: AiSourceField): string => {
-  const value = config[field]
-  return typeof value === 'string' ? value : ''
-}
+/** 读出的设定值类型不对时按空文本算：坏数据不让设定页、流程脊或 AI 补全崩。 */
+export const configText = (value: unknown): string => (typeof value === 'string' ? value : '')
+
+const textOf = (config: AiSourceInput, field: AiSourceField): string => configText(config[field])
 
 /** 这一项此刻是不是 AI 的内容；作者改过、空着或记录对不上都是 null。 */
 export function aiSourceOf(config: AiSourceInput, field: AiSourceField): AiSourceKind | null {

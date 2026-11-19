@@ -303,6 +303,26 @@ describe('GenerateConfigCommand error boundaries', () => {
     expect(aiSourceOf(generated, 'referenceWorks')).toBeNull()
   })
 
+  it('keeps the author references when AI fill returns different ones', async () => {
+    const authorReferences = '《白鲸》的追猎结构'
+    const onGenerated = vi.fn()
+    useProjectStore.setState({
+      currentProject: { ...project(projectAPath), novelConfig: { genre: '悬疑', referenceWorks: authorReferences } } as never,
+      saveProject: vi.fn().mockResolvedValue(true),
+    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
+        streamCallbacks.onDone?.(JSON.stringify({ ...JSON.parse(validConfigJson), referenceWorks: '《雪中悍刀行》' }), undefined, 'stop')
+        return 'config-expansion-request'
+      }) })
+
+    await new GenerateConfigCommand('扩写现有设定', 10, 2500, onGenerated).execute({ step: {}, context, callbacks })
+
+    const generated = onGenerated.mock.calls[0]![0]
+    expect(generated.referenceWorks).toBe(`${authorReferences}\n\n《雪中悍刀行》`)
+    expect(aiSourceOf(generated, 'referenceWorks')).toBe('expanded')
+  })
+
   it.each([
     { uiLocale: 'zh-CN', writingLanguage: 'zh-CN', expected: '你是一位经验丰富的小说编辑', unexpected: 'You are an experienced fiction editor' },
     { uiLocale: 'en-US', writingLanguage: 'zh-CN', expected: '你是一位经验丰富的小说编辑', unexpected: 'You are an experienced fiction editor' },

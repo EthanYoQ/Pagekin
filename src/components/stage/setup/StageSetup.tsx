@@ -9,7 +9,7 @@ import {
   resolveNarrativeThreadDormantThreshold,
 } from '../../../shared/narrative-thread'
 import { resolveWritingLanguage, type WritingLanguage } from '../../../shared/writing-language'
-import { aiSourceOf } from '../../../shared/novel-config-ai-sources'
+import { aiSourceOf, configText } from '../../../shared/novel-config-ai-sources'
 import { sameProjectPathKey } from '../../../shared/project-session-context'
 import type { GeneratableField } from '../../../services/workflows/commands/generate-field.command'
 import { useEditorStore } from '../../../stores/editor-store'
@@ -35,11 +35,9 @@ import { pluralEn } from '../../../shared/plural-en'
 type Form = ReturnType<typeof useNovelConfigForm>
 type SheetMark = 'empty' | 'ai-filled' | 'ai-expanded' | null
 
-/** 读出的设定值类型不对时按空文本显示，这一行照常可改，不让整页崩。 */
-const textOf = (value: unknown): string => (typeof value === 'string' ? value : '')
 
 function sheetMark(config: NovelConfig, field: SheetField['id']): SheetMark {
-  if (!textOf(config[field]).trim()) return 'empty'
+  if (!configText(config[field]).trim()) return 'empty'
   const source = aiSourceOf(config, field)
   return source ? `ai-${source}` : null
 }
@@ -158,7 +156,7 @@ function SheetRow({ field, config, form, aiReason }: { field: SheetField; config
         <SheetMarkLabel mark={mark} />
       </div>
       <div className="stage-setup-row-main">
-        <textarea id={controlId} className="stage-setup-row-input" rows={1} value={textOf(config[field.id])}
+        <textarea id={controlId} className="stage-setup-row-input" rows={1} value={configText(config[field.id])}
           placeholder={text(...field.placeholder)} aria-describedby={descId} onChange={event => form.update(field.id, event.target.value)} />
         <p id={descId} className="stage-setup-row-desc">{text(...field.desc)}</p>
         {field.aiField && <GenerateError field={field.aiField} label={name} form={form} />}
@@ -178,7 +176,7 @@ function OptionSelect<V extends string>({ id, value, options, onChange }: {
   onChange: (value: V) => void
 }) {
   const text = useLocaleStore(s => s.text)
-  const current = textOf(value) || options[0][0]
+  const current = configText(value) || options[0][0]
   return (
     <select id={id} className="stage-select" value={current} onChange={event => onChange(event.target.value as V)}>
       {!options.some(([option]) => option === current) && <option value={current}>{current}</option>}
@@ -222,7 +220,7 @@ function SetupSession({ projectKey }: { projectKey: string }) {
       ? text(...ONE_MISSING_HINT[missing[0]])
       : text(`还差 ${missing.length} 项：${missing.map(field => REQUIRED_NAMES[field][0]).join('、')}`,
         `${missing.length} left: ${missing.map(field => REQUIRED_NAMES[field][1]).join(', ')}`)
-  const outline = textOf(config.coreOutline)
+  const outline = configText(config.coreOutline)
   const aiReason = modelMissing ? text('先在设置里添加 AI 模型', 'Add an AI model in Settings first') : null
   const fillReason = aiReason ?? (outline.trim() ? null : text('先写核心大纲，AI 按它补全其余设定', 'Write the core outline first; AI fills in the rest from it'))
   const marks = SHEET_FIELDS.map(field => sheetMark(config, field.id))
@@ -259,8 +257,8 @@ function SetupSession({ projectKey }: { projectKey: string }) {
     navigate({ kind: 'stage', stage: 'architecture' })
   }
 
-  const genre = textOf(config.genre)
-  const audience = textOf(config.targetAudience)
+  const genre = configText(config.genre)
+  const audience = configText(config.targetAudience)
   return (
     <div className="stage-setup">
       <div className="stage-setup-scroll">
@@ -320,7 +318,7 @@ function SetupSession({ projectKey }: { projectKey: string }) {
             </div>
             <div className="stage-setup-field">
               <label className="stage-setup-label" htmlFor={`${baseId}-sub`}>{text('细分类型', 'Subgenre')}</label>
-              <input id={`${baseId}-sub`} className="pi-input" value={textOf(config.subGenre)}
+              <input id={`${baseId}-sub`} className="pi-input" value={configText(config.subGenre)}
                 placeholder={text('如：修仙/重生/末世', 'e.g. cultivation / rebirth')} onChange={event => form.update('subGenre', event.target.value)} />
             </div>
             <div className="stage-setup-field">
@@ -350,7 +348,7 @@ function SetupSession({ projectKey }: { projectKey: string }) {
           <section className="stage-setup-sheet" aria-labelledby={`${baseId}-sheet`}>
             <div className="stage-setup-sheet-head">
               <h2 id={`${baseId}-sheet`} className="stage-setup-sheet-title">{text('设定细则', 'Details')}</h2>
-              <span className="stage-setup-sheet-count">{sheetCount}</span>
+              <span className="stage-setup-sheet-count" role="status">{sheetCount}</span>
             </div>
             {SHEET_FIELDS.map(field => <SheetRow key={field.id} field={field} config={config} form={form} aiReason={aiReason} />)}
           </section>
