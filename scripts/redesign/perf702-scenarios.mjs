@@ -160,15 +160,19 @@ async function installLedger(app, page) {
       return child
     }
     process.getBuiltinModule('node:module').syncBuiltinESMExports()
-    const histogram = ledger.loop = process.getBuiltinModule('node:perf_hooks').monitorEventLoopDelay({ resolution: 5 })
-    histogram.enable()
+    // 不用 monitorEventLoopDelay：它 reset() 后丢掉第一个间隔，操作一开始就卡住的那段读成 0（export-p2 正对照）。
+    // 这里记相邻两次定时器的最大间隔，取账本时把还没结束的那段间隔也算上。
+    const loop = ledger.loop = { last: performance.now(), max: 0 }
+    setInterval(() => { const now = performance.now(); loop.max = Math.max(loop.max, now - loop.last); loop.last = now }, 5).unref()
     if (!wrapSql) return
     const require = process.getBuiltinModule('node:module').createRequire(process.getBuiltinModule('node:path').join(electronApp.getAppPath(), 'package.json'))
     const Database = require('better-sqlite3')
     const scratch = new Database(':memory:')
     const statement = Object.getPrototypeOf(scratch.prepare('SELECT 1'))
     scratch.close()
-    const sqlEntry = source => ledger.sql[source] ??= { calls: 0, rows: 0, ms: 0 }
+    // ms 是同一句 SQL 全部调用的合计；maxMs 是最长的一次调用，只有它能和 mainMaxBlockMs 对照。
+    const sqlEntry = source => ledger.sql[source] ??= { calls: 0, rows: 0, ms: 0, maxMs: 0 }
+    const charge = (entry, ms) => { entry.ms += ms; entry.maxMs = Math.max(entry.maxMs, ms) }
     for (const method of ['run', 'get', 'all']) {
       const original = statement[method]
       statement[method] = function (...args) {
@@ -176,7 +180,7 @@ async function installLedger(app, page) {
         const result = original.apply(this, args)
         const entry = sqlEntry(this.source)
         entry.calls += 1
-        entry.ms += performance.now() - startedAt
+        charge(entry, performance.now() - startedAt)
         entry.rows += method === 'all' ? result.length : method === 'get' ? (result === undefined ? 0 : 1) : result.changes
         return result
       }
@@ -191,7 +195,7 @@ async function installLedger(app, page) {
         next() {
           const startedAt = performance.now()
           const step = inner.next()
-          entry.ms += performance.now() - startedAt
+          charge(entry, performance.now() - startedAt)
           if (!step.done) entry.rows += 1
           return step
         },
@@ -205,7 +209,7 @@ async function installLedger(app, page) {
       const result = exec.call(this, source)
       const entry = sqlEntry(source)
       entry.calls += 1
-      entry.ms += performance.now() - startedAt
+      charge(entry, performance.now() - startedAt)
       return result
     }
   }, process.env.PERF702_SQL !== '0')
@@ -226,9 +230,10 @@ async function takeLedger(app, page) {
   const main = await app.evaluate(() => {
     const { channels, spawns, sql, loop, late } = globalThis.__perfLedger
     Object.assign(globalThis.__perfLedger, { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 } })
-    const maxBlockMs = Math.round(loop.max / 1e6)
-    loop.reset()
-    const round = ([key, { calls, ms, rows }]) => [key, { calls, ms: Math.round(ms), ...rows === undefined ? {} : { rows } }]
+    const maxBlockMs = Math.round(Math.max(loop.max, performance.now() - loop.last))
+    loop.max = 0
+    const round = ([key, { calls, ms, rows, maxMs }]) => [key, { calls, ms: Math.round(ms), ...rows === undefined ? {} : { rows },
+      ...maxMs === undefined ? {} : { maxMs: Math.round(maxMs) } }]
     const sqlEntries = Object.entries(sql)
     return {
       ipcCalls: Object.values(channels).reduce((sum, entry) => sum + entry.calls, 0),
@@ -238,6 +243,7 @@ async function takeLedger(app, page) {
       sqlRows: sqlEntries.reduce((sum, [, entry]) => sum + entry.rows, 0),
       sqlMs: Math.round(sqlEntries.reduce((sum, [, entry]) => sum + entry.ms, 0)),
       sqlTop: Object.fromEntries(sqlEntries.sort(([, a], [, b]) => b.ms - a.ms).slice(0, 12).map(round)),
+      sqlMaxCallMs: Math.round(sqlEntries.reduce((max, [, entry]) => Math.max(max, entry.maxMs), 0)),
       mainMaxBlockMs: maxBlockMs,
       lateCalls: late.calls, lateMs: Math.round(late.ms),
     }
@@ -700,7 +706,55 @@ async function timeBlueprintsOnly(context, rounds = Number(process.env.PERF702_R
   return { blueprints: BLUEPRINTS, runs }
 }
 
+/**
+ * mainMaxBlockMs 的正对照：主进程里同步占住 500 ms，读数必须约 500 ms。
+ * 三条路径：渲染端 invoke 进来的处理函数里忙等、同一处跑一条约 500 ms 的 SQL（原生代码里的时间）、libuv 定时器回调里忙等。
+ */
+async function blockControls(context) {
+  const { app, page, invoke } = context
+  await installLedger(app, page)
+  const results = { idle: await operation(context, 'control-idle', () => page.waitForTimeout(1000)) }
+  const sqlRows = await app.evaluate(({ app: electronApp }) => {
+    const require = process.getBuiltinModule('node:module').createRequire(process.getBuiltinModule('node:path').join(electronApp.getAppPath(), 'package.json'))
+    const Database = require('better-sqlite3')
+    const db = globalThis.__perfControlDb ??= new Database(':memory:')
+    const count = db.prepare('WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL SELECT x + 1 FROM c WHERE x < ?) SELECT count(*) AS n FROM c')
+    const startedAt = performance.now()
+    count.get(1_000_000)
+    return Math.round(1_000_000 * 500 / (performance.now() - startedAt))
+  })
+  const blockInHandler = kind => app.evaluate(({ ipcMain }, { kind, sqlRows }) => {
+    const original = ipcMain._invokeHandlers.get('config:get')
+    globalThis.__perfControlRestore = () => ipcMain._invokeHandlers.set('config:get', original)
+    ipcMain._invokeHandlers.set('config:get', async (...args) => {
+      globalThis.__perfControlRestore()
+      const startedAt = performance.now()
+      if (kind === 'sql') globalThis.__perfControlDb.prepare('WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL SELECT x + 1 FROM c WHERE x < ?) SELECT count(*) AS n FROM c').get(sqlRows)
+      else while (performance.now() - startedAt < 500) { /* 同步忙等 */ }
+      globalThis.__perfControlBlockedMs = Math.round(performance.now() - startedAt)
+      return original(...args)
+    })
+  }, { kind, sqlRows })
+  for (const kind of ['js', 'sql']) {
+    await blockInHandler(kind)
+    results[`ipc-${kind}`] = await operation(context, `control-ipc-${kind}`, async () => {
+      await invoke(page, 'config:get')
+      return { blockedMs: await app.evaluate(() => globalThis.__perfControlBlockedMs) }
+    })
+  }
+  results.timer = await operation(context, 'control-timer-js', async () => {
+    await app.evaluate(() => new Promise(resolve => setTimeout(() => {
+      const startedAt = performance.now()
+      while (performance.now() - startedAt < 500) { /* 同步忙等 */ }
+      resolve()
+    }, 0)))
+    return { blockedMs: 500 }
+  })
+  return results
+}
+
 export const PERF702_SCENARIOS = {
+  'perf702-block-control': { model: true, shell: 'stage', run: blockControls },
   'perf702-reuse': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
     run: context => timeLargeBook(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
   'perf702-contention': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
