@@ -22,6 +22,8 @@ import { Label } from '../ui/Label'
 type Notice = { kind: 'error' | 'success' | 'info'; text: string } | null
 
 const EXPORT_PHASES: readonly PortableExportPhase[] = ['snapshot', 'check', 'tidy', 'package']
+type ExportProgress = { phase: PortableExportPhase; round: number }
+const progressStep = ({ phase, round }: ExportProgress) => round * EXPORT_PHASES.length + EXPORT_PHASES.indexOf(phase)
 
 // 主进程登记过的码（例如导出目标已存在）按界面语言说明；其余码与渲染端自己的说明原样显示。
 const errorText = (error: unknown) => displayedErrorMessage(currentInterfaceLocale(), error)
@@ -72,7 +74,7 @@ function ProjectBackupPanelSession({
   const [loadingView, setLoadingView] = useState(Boolean(projectSession))
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
-  const [exportPhase, setExportPhase] = useState<PortableExportPhase | null>(null)
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
   const [activeOperationId, setActiveOperationId] = useState<string | null>(null)
   const [confirmClearCredential, setConfirmClearCredential] = useState(false)
   const [sessionOnlyCredential, setSessionOnlyCredential] = useState(false)
@@ -158,14 +160,14 @@ function ProjectBackupPanelSession({
   const exportLocal = () => run(async () => {
     const target = await ipc.invoke('dialog:select-project-archive-export', project.name)
     if (!target) return
-    // 阶段只是提示：漏收或晚到的旧阶段不往回跳，也不影响导出结果。
-    setExportPhase('snapshot')
+    // 阶段只是提示：漏收或晚到的旧阶段不往回跳，也不影响导出结果。整次重来时 round 加一，阶段从头显示。
+    setExportProgress({ phase: 'snapshot', round: 1 })
     const exportId = crypto.randomUUID()
-    const stopListening = ipc.on('portable-export:progress', ({ exportId: from, phase }) => {
-      if (from === exportId) setExportPhase(current => current && EXPORT_PHASES.indexOf(phase) <= EXPORT_PHASES.indexOf(current) ? current : phase)
+    const stopListening = ipc.on('portable-export:progress', ({ exportId: from, phase, round }) => {
+      if (from === exportId) setExportProgress(current => current && progressStep({ phase, round }) <= progressStep(current) ? current : { phase, round })
     })
     const result = await ipc.invoke('project:archive-export', { targetArchiveGrantId: target.grantId, projectSession, exportId })
-      .finally(() => { stopListening(); setExportPhase(null) })
+      .finally(() => { stopListening(); setExportProgress(null) })
     if (!result.success) throw new Error(failureReason(result.errorCode || result.error, result.damagedReviewCycle))
     setNotice({ kind: 'success', text: withOmitted(text(`本地存档已导出：${result.receipt.targetSha256}`, `Local archive exported: ${result.receipt.targetSha256}`), result.receipt.omittedReviewCycles) })
   })
@@ -316,14 +318,14 @@ function ProjectBackupPanelSession({
         <Button type="button" onClick={() => void exportLocal()} disabled={busy}><Upload size={14} />{text('导出本地存档', 'Export local archive')}</Button>
         <Button type="button" variant="outline" onClick={() => void restoreLocal()} disabled={busy}><Download size={14} />{text('从本地存档恢复副本', 'Restore a copy from local archive')}</Button>
       </div>
-      {exportPhase && <div role="status" className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+      {exportProgress && <div role="status" className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
         <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden />
         {{
           snapshot: text('正在读取作品…', 'Reading your book…'),
           check: text('正在检查资料…', 'Checking your book…'),
           tidy: text('正在整理…', 'Tidying up…'),
           package: text('正在打包存档…', 'Packing the archive…'),
-        }[exportPhase]}
+        }[exportProgress.phase]}
       </div>}
     </section>
 

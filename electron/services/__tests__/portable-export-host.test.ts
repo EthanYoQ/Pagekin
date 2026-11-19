@@ -59,14 +59,14 @@ async function outcome(promise: Promise<unknown>) {
 describe('在 worker 线程里导出', () => {
   it('存档与主线程导出逐字节相同，阶段按顺序报出，临时目录不留', async () => {
     const { outDir, input } = await project()
-    const phases: PortableExportPhase[] = []
+    const phases: string[] = []
 
-    const inWorker = await exportPortableProjectInWorker({ ...input('worker.ainovel'), onProgress: phase => phases.push(phase) }, worker)
+    const inWorker = await exportPortableProjectInWorker({ ...input('worker.ainovel'), onProgress: (phase, round) => phases.push(`${round}:${phase}`) }, worker)
     const onMain = await onMainThread(input('main.ainovel'))
 
     expect(inWorker).toEqual(onMain)
     expect(fs.readFileSync(path.join(outDir, 'worker.ainovel')).equals(fs.readFileSync(path.join(outDir, 'main.ainovel')))).toBe(true)
-    expect(phases).toEqual(['snapshot', 'check', 'tidy', 'package'])
+    expect(phases).toEqual(['1:snapshot', '1:check', '1:tidy', '1:package'])
     expect(leftovers(outDir)).toEqual([])
     expect(portableExportsRunning()).toBe(0)
   }, 60_000)

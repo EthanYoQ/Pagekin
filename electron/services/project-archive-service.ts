@@ -227,7 +227,8 @@ export interface ExportPortableProjectInput {
   snapshotGeneration?: string
   /** worker 里跑时经主进程取主进程那把锁；默认是本进程的 withKnowledgeSourceGate。 */
   withSourceGate?<T>(projectStorageRoot: string, operation: () => Promise<T>): Promise<T>
-  onProgress?(phase: PortableExportPhase): void
+  /** round 从 1 起：资料被改整次重来时是 2，阶段从 snapshot 再走一遍。 */
+  onProgress?(phase: PortableExportPhase, round: number): void
   /** 发布前最后一步，同步调用。worker 里用它和主进程的停止抢提交点：抛错就不发布。 */
   beforePublish?(): void
   /** @internal Deterministic mutation/failure injection. */
@@ -1204,14 +1205,14 @@ const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string
 /** 资料阶段出错：丢掉这次的临时目录，整次重来一次，仍失败报第二次的错。重来时库文件已被换掉就拒绝。本地导出和云备份都走这里。 */
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
   const source: SourceDatabasePin = {}
-  try { return await exportPortableProjectOnce(input, source) }
+  try { return await exportPortableProjectOnce(input, source, 1) }
   catch (error) {
     if (!(error instanceof AssetPhaseFailure)) throw error
     const code = failureCode(error.failure)
     if (code && NOT_RETRIED.has(code)) throw error.failure
     console.warn('[portable-export] 资料阶段出错，整次重来一次', { code })
   }
-  try { return await exportPortableProjectOnce(input, source) }
+  try { return await exportPortableProjectOnce(input, source, 2) }
   catch (error) {
     const failure = error instanceof AssetPhaseFailure ? error.failure : error
     if (sourceChanged(failure)) fail('PORTABLE_EXPORT_SOURCE_CHANGED')
@@ -1234,7 +1235,7 @@ export function assertPortableExportPaths(
   safeDirectory(attemptParent)
 }
 
-async function exportPortableProjectOnce(input: ExportPortableProjectInput, source: SourceDatabasePin): Promise<ExportPortableProjectReceipt> {
+async function exportPortableProjectOnce(input: ExportPortableProjectInput, source: SourceDatabasePin, round: number): Promise<ExportPortableProjectReceipt> {
   const sourceRoot = path.resolve(input.sourceProjectRoot)
   const targetPath = path.resolve(input.targetArchivePath)
   const attemptParent = path.resolve(input.attemptParentPath)
@@ -1263,7 +1264,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
   try {
     const sourceSnapshotPath = path.join(attemptRoot, 'source.db')
     const gate = input.withSourceGate ?? withKnowledgeSourceGate
-    input.onProgress?.('snapshot')
+    input.onProgress?.('snapshot', round)
     // 知识库的写入都持这把闸门。从取库快照到读完知识库一直持着，存档里的知识库就是库快照那一刻的，不会比库新。
     const { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided } =
       await gate(projectStorageRoot, async () => {
@@ -1272,7 +1273,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
         assertSameDatabase()
         try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath, sourceIdentity: checkedDatabase }) }
         finally { recordOwnedFileIfPresent(attempt, sourceSnapshotPath) }
-        input.onProgress?.('check')
+        input.onProgress?.('check', round)
         const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
         const sourceSnapshot = new BetterSqlite(sourceSnapshotPath, { readonly: true, fileMustExist: true })
         let avatarRows: ReturnType<typeof readPortableCharacterAvatarRows>
@@ -1325,7 +1326,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
         return { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided }
       })
 
-    input.onProgress?.('tidy')
+    input.onProgress?.('tidy', round)
     const portableDatabasePath = path.join(attemptRoot, 'project.db')
     fs.copyFileSync(sourceSnapshotPath, portableDatabasePath, fs.constants.COPYFILE_EXCL)
     recordOwnedFile(attempt, portableDatabasePath)
@@ -1429,7 +1430,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
       historyProjectionIds,
     }
     const stagedArchivePath = path.join(attemptRoot, 'portable-project.archive')
-    input.onProgress?.('package')
+    input.onProgress?.('package', round)
     const archiveReceipt = await assetPhase(() => {
       for (const sourcePath of projectSources) assertSourceStillOwned(sourcePath)
       return writePortableProjectArchive({ manifest, sources, targetPath: stagedArchivePath })

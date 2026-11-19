@@ -113,7 +113,7 @@ interface ArchiveGrantEvent {
   sender: {
     id: number
     once: (event: 'destroyed', listener: () => void) => unknown
-    send: (channel: 'portable-export:progress', payload: { exportId?: string; phase: PortableExportPhase }) => void
+    send: (channel: 'portable-export:progress', payload: { exportId?: string; phase: PortableExportPhase; round: number }) => void
     isDestroyed: () => boolean
   }
 }
@@ -222,8 +222,8 @@ export function registerProjectArchiveController(
         projectSession: request.projectSession,
         targetArchivePath,
         attemptParentPath: path.dirname(path.resolve(targetArchivePath)),
-        onProgress(phase) {
-          if (!event.sender.isDestroyed()) event.sender.send('portable-export:progress', { exportId: request.exportId, phase })
+        onProgress(phase, round) {
+          if (!event.sender.isDestroyed()) event.sender.send('portable-export:progress', { exportId: request.exportId, phase, round })
         },
         assertCurrentContext(context, sourceProjectRoot) {
           const current = projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())

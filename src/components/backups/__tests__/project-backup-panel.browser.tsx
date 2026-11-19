@@ -98,7 +98,7 @@ afterEach(async () => {
 })
 
 describe('ProjectBackupPanel', () => {
-  it('导出时显示当前阶段，晚到的旧阶段不往回跳，导出结束后不再显示（#702）', async () => {
+  it('导出时显示当前阶段，晚到的旧阶段不往回跳，资料被改整次重来时从读取作品重新显示，导出结束后不再显示（#702）', async () => {
     const exported = deferred<unknown>()
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
@@ -109,7 +109,7 @@ describe('ProjectBackupPanel', () => {
     await renderPanel()
     const phase = () => container.querySelector('[data-testid="project-backup-panel"] section [role="status"]')?.textContent
     const exportId = () => (invoke.mock.calls.find(([channel]) => channel === 'project:archive-export')?.[1] as { exportId?: string } | undefined)?.exportId
-    const emit = async (value: string, id = exportId()) => act(async () => listeners.get('portable-export:progress')?.({ exportId: id, phase: value }))
+    const emit = async (value: string, id = exportId(), round = 1) => act(async () => listeners.get('portable-export:progress')?.({ exportId: id, phase: value, round }))
 
     await act(async () => button('导出本地存档').click())
     expect(phase()).toBe('正在读取作品…')
@@ -122,6 +122,12 @@ describe('ProjectBackupPanel', () => {
     expect(phase()).toBe('正在检查资料…')
     await emit('package')
     expect(phase()).toBe('正在打包存档…')
+    await emit('snapshot', exportId(), 2)
+    expect(phase()).toBe('正在读取作品…')
+    await emit('check', exportId(), 2)
+    expect(phase()).toBe('正在检查资料…')
+    await emit('package', exportId(), 1)
+    expect(phase()).toBe('正在检查资料…')
 
     await act(async () => exported.resolve({ success: true, receipt: { targetSha256: 'export-hash' } }))
     expect(phase()).toBeUndefined()

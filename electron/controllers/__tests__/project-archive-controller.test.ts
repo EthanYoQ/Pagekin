@@ -309,8 +309,8 @@ describe('project:archive-export', () => {
     const selected = await handler('dialog:select-project-archive-export')(event(), '项目') as ExternalFileGrant
     mocks.exportPortableProject.mockImplementation(async (input) => {
       expect(await input.assertCurrentContext(input.projectSession, input.sourceProjectRoot)).toBe(true)
-      input.onProgress('snapshot')
-      input.onProgress('package')
+      input.onProgress('snapshot', 1)
+      input.onProgress('package', 2)
       return archiveReceipt
     })
     const asking = event()
@@ -331,8 +331,8 @@ describe('project:archive-export', () => {
       attemptParentPath: path.dirname(targetArchivePath),
     }))
     expect(asking.sender.send.mock.calls).toEqual([
-      ['portable-export:progress', { exportId: 'export-1', phase: 'snapshot' }],
-      ['portable-export:progress', { exportId: 'export-1', phase: 'package' }],
+      ['portable-export:progress', { exportId: 'export-1', phase: 'snapshot', round: 1 }],
+      ['portable-export:progress', { exportId: 'export-1', phase: 'package', round: 2 }],
     ])
     expect(mocks.assertCurrentProjectContext).toHaveBeenCalledTimes(2)
     expect(mocks.activeSession).toEqual(sessionBefore)

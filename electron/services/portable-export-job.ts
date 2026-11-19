@@ -54,7 +54,7 @@ export type SerializedExportError =
   | { kind: 'error'; message: string; code?: string }
 
 export type WorkerToHost =
-  | { type: 'progress'; phase: PortableExportPhase }
+  | { type: 'progress'; phase: PortableExportPhase; round: number }
   | { type: 'context'; id: number; context: ProjectSessionContext; sourceProjectRoot: string }
   | { type: 'gate-enter'; id: number; projectStorageRoot: string }
   | { type: 'gate-exit' }
@@ -109,7 +109,7 @@ export async function runPortableExportJob(port: MessagePort, job: PortableExpor
         await ask({ type: 'gate-enter', projectStorageRoot })
         try { return await operation() } finally { post({ type: 'gate-exit' }) }
       },
-      onProgress: phase => post({ type: 'progress', phase }),
+      onProgress: (phase, round) => post({ type: 'progress', phase, round }),
       beforePublish() {
         if (!claimPublish(commit)) throw new ProjectArchiveServiceError('PORTABLE_CONTEXT_INVALID')
       },

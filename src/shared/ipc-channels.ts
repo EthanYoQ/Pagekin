@@ -293,7 +293,7 @@ export interface PortableProjectExportRequest {
 export type PortableExportPhase = 'snapshot' | 'check' | 'tidy' | 'package'
 
 export interface PortableExportEvents {
-  'portable-export:progress': { exportId?: string; phase: PortableExportPhase }
+  'portable-export:progress': { exportId?: string; phase: PortableExportPhase; round: number }
 }
 
 export interface PortableProjectExportReceipt {

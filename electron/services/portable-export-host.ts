@@ -74,7 +74,7 @@ export async function exportPortableProjectInWorker(
       thread.on('message', (message: WorkerToHost) => {
         switch (message.type) {
           case 'progress':
-            try { onProgress?.(message.phase) } catch { /* 进度只是提示，丢了不影响导出。 */ }
+            try { onProgress?.(message.phase, message.round) } catch { /* 进度只是提示，丢了不影响导出。 */ }
             return
           case 'context':
             void Promise.resolve()
