@@ -1148,7 +1148,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     }
     // 已保存的审修、写稿不再列出，也不再重证（ADR-0029 决定 1）；这次打开里还有没落盘尾段的照旧列出。
     const saved = deps.database.prepare(`SELECT run_id FROM generation_attempts
-      WHERE json_type(usage_receipt_json,'$.reviewRevisionEffect') IS NOT NULL OR json_type(usage_receipt_json,'$.draftCommit') IS NOT NULL`).pluck().all() as string[]
+      WHERE json_type(usage_receipt_json,'$.reviewRevisionEffect')='object' OR json_type(usage_receipt_json,'$.draftCommit')='object'`).pluck().all() as string[]
     for (const run of runSummaries([...RECOVERY_KIND.keys()], new Set(saved.filter(runId => !tailedRuns.has(runId))))) {
       const kind = RECOVERY_KIND.get(run.operation ?? '')
       if (!kind || (kind === 'draft' && run.batchId)) continue
