@@ -943,10 +943,14 @@ export function registerProjectController(options: ProjectControllerOptions = {}
       deletingCurrentProject = true
 
       if (deletingCurrentProject) {
-        // 在途导出占着知识库闸门和源库句柄，先停掉再关库删目录；等待期间作品可能被切走，停完再核对一次。
+        // 在途导出占着知识库闸门和源库句柄，先停掉再关库删目录；等待期间作品可能被切走、目录可能被换，停完按删除授权重新核对。
         await stopPortableExports(resolvedPath)
         projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
-        if (!sameProjectPath(getCurrentProjectPath(), resolvedPath)) {
+        const reauthorized = projectAccess.authorizeDeletion({
+          projectId: activeSession.projectId,
+          leaseId: activeSession.leaseId,
+        }, projectPath)
+        if (!sameProjectPath(getCurrentProjectPath(), resolvedPath) || !sameProjectPath(reauthorized, resolvedPath)) {
           throw new ProjectSessionStaleError('PROJECT_SESSION_DATABASE_MISMATCH')
         }
         closeVectorConnection(resolvedPath)

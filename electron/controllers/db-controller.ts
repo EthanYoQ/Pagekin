@@ -172,9 +172,11 @@ export function registerDatabaseController() {
   const ipcMain = { handle: registerProjectDatabaseHandler }
   ipcMain.handle('db:close', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    // 导出 worker 还在读这本书时不能关库；等它停完后作品可能已换，再核对一次。
+    // 导出 worker 还在读这本书时不能关库；等它停完后作品可能已换或被重新打开，路径和会话都再核对一次。
+    const lease = projectAccess.captureCurrentSession()
     await stopPortableExports(expectedProjectPath)
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    if (lease) projectAccess.assertCurrentSession(lease)
     closeProjectDatabase()
     projectAccess.invalidateCurrentSession()
     return { success: true }

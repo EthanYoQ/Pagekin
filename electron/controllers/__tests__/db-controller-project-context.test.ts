@@ -1221,6 +1221,15 @@ describe('database controller project context guard', () => {
     expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
   })
 
+  it('等导出停完后原会话已失效（同一路径被重新打开）就不关库（#702）', async () => {
+    mocks.stopPortableExports.mockImplementationOnce(async () => {
+      mocks.assertCurrentSession.mockImplementationOnce(() => { throw new Error('PROJECT_SESSION_STALE') })
+    })
+
+    await expect(handler('db:close')({}, 'C:/projects/A')).resolves.toMatchObject({ success: false })
+    expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
+  })
+
   it('closes only the explicitly matched project database', async () => {
     await expect(handler('db:close')({}, 'C:/projects/A'))
       .resolves.toEqual({ success: true })

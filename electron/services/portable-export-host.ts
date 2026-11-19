@@ -101,7 +101,8 @@ export async function exportPortableProjectInWorker(
         }
       })
       thread.once('error', error => {
-        console.error('[portable-export] worker 出错', error)
+        // 报错原文可能含用户名或作品目录，只记类型与错误码。
+        console.error('[portable-export] worker 出错', (error as Error).name, (error as NodeJS.ErrnoException).code)
         fail(new ProjectArchiveServiceError('PORTABLE_EXPORT_INTERRUPTED'))
       })
       thread.once('exit', () => reject(new ProjectArchiveServiceError('PORTABLE_EXPORT_INTERRUPTED')))
@@ -123,7 +124,7 @@ async function removeRunRoot(root: string, identity: fs.BigIntStats): Promise<vo
     if (!actual.isDirectory() || actual.isSymbolicLink() || actual.dev !== identity.dev || actual.ino !== identity.ino) return
     await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   } catch (error) {
-    console.warn('[portable-export] 临时目录没删掉', { root, code: (error as NodeJS.ErrnoException).code })
+    console.warn('[portable-export] 临时目录没删掉', (error as NodeJS.ErrnoException).code)
   }
 }
 

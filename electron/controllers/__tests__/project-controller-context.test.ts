@@ -1236,6 +1236,20 @@ describe('project controller project identity', () => {
     expect(mocks.projectAccess.assertCurrentProjectContext).not.toHaveBeenCalled()
   })
 
+  it('等导出停完后重新核对删除目标：目录在等待期间被换掉就不关库也不删（#702）', async () => {
+    mocks.stopPortableExports.mockImplementationOnce(async () => {
+      mocks.projectAccess.authorizeDeletion.mockImplementationOnce(() => { throw new Error('PROJECT_IDENTITY_CHANGED') })
+    })
+
+    await expect(handler('project:delete')({}, projectA, 'project-A', 'lease-project-A', projectSession())).resolves.toMatchObject({
+      success: false,
+      directoryDeleted: false,
+      error: expect.stringContaining('PROJECT_IDENTITY_CHANGED'),
+    })
+    expect(mocks.removeDirectoryWithWindowsRetry).not.toHaveBeenCalled()
+    expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
+  })
+
   it('reopens the active database and reports failure when the project directory remains', async () => {
     mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce(() => {
       throw new Error('directory locked')

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { createProjectArchiveRoundtripFixture, type ProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
 import { portableExportWorkerForTest } from '../../../test/helpers/portable-export-worker'
@@ -274,6 +274,23 @@ describe('在 worker 线程里导出', () => {
     const { outDir, input } = await project()
     const receipt = await exportPortableProjectInWorker(input('sha.ainovel'), worker)
     expect(receipt.targetSha256).toBe(createHash('sha256').update(fs.readFileSync(path.join(outDir, 'sha.ainovel'))).digest('hex'))
+  }, 60_000)
+
+  it('worker 崩溃时日志不带路径：报错原文可能含用户名或作品目录', async () => {
+    const { outDir, input } = await project()
+    const script = path.join(outDir, 'crash-path.mjs')
+    fs.writeFileSync(script, [
+      'import { workerData } from "node:worker_threads"',
+      'throw new Error(workerData.sourceProjectRoot)',
+    ].join('\n'))
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const result = await outcome(exportPortableProjectInWorker(input('crash-path.ainovel'), { ...worker, workerScript: script }))
+      expect(result).toMatchObject({ ok: false, code: 'PORTABLE_EXPORT_INTERRUPTED' })
+      const root = input('x').sourceProjectRoot
+      const printed = logged.mock.calls.flat().map(value => value instanceof Error ? `${value.message} ${value.stack}` : String(value)).join(' ')
+      expect(printed).not.toContain(path.basename(root))
+    } finally { logged.mockRestore() }
   }, 60_000)
 
   it.each([
