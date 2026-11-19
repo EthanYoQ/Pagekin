@@ -19,11 +19,15 @@ export const S07_TASK_BUDGET_POLICY = Object.freeze({
       // Drafting/planning values are calibrated against the immutable chapter
       // blueprint fields and a frozen dense fixture. They size a request; they
       // do not promise that every contract-maximum payload fits one item.
-      'zh-CN': Object.freeze({ drafting: 3_072, planning: 3_072, review: 512, general: 512, extraction: 512 }),
-      'en-US': Object.freeze({ drafting: 2_048, planning: 2_048, review: 384, general: 384, extraction: 384 }),
+      'zh-CN': Object.freeze({ drafting: 3_072, planning: 3_072, review: 512, general: 512 }),
+      'en-US': Object.freeze({ drafting: 2_048, planning: 2_048, review: 384, general: 384 }),
     }),
   }),
 })
+
+// 这张表随生成运行存档，升级前的运行要按原样读回，所以提取阶段不加列，按审稿的条目大小算。
+const itemTokens = (writingLanguage: WritingLanguage, stage: GenerationReasoningStage) =>
+  S07_TASK_BUDGET_POLICY.structuredItems.tokensPerItem[writingLanguage][stage === 'extraction' ? 'review' : stage]
 
 export type TaskBudgetDemand =
   | {
@@ -183,7 +187,7 @@ function outputTokensFor(
       + Math.ceil(quantity * rate.numerator / rate.denominator)
   }
   return S07_TASK_BUDGET_POLICY.structuredItems.baseTokens
-    + quantity * S07_TASK_BUDGET_POLICY.structuredItems.tokensPerItem[demand.writingLanguage][stage]
+    + quantity * itemTokens(demand.writingLanguage, stage)
 }
 
 function maximumItemsFor(
@@ -193,7 +197,7 @@ function maximumItemsFor(
 ): number {
   const usable = availableOutputTokens - S07_TASK_BUDGET_POLICY.structuredItems.baseTokens
   if (usable <= 0) return 0
-  return Math.floor(usable / S07_TASK_BUDGET_POLICY.structuredItems.tokensPerItem[demand.writingLanguage][stage])
+  return Math.floor(usable / itemTokens(demand.writingLanguage, stage))
 }
 
 /**
