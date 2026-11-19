@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import * as lance from '@lancedb/lancedb'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -10,6 +11,7 @@ import {
   verifyPortableKnowledgeSnapshot,
 } from '../../vector-store'
 import { createPortableProjectAssetProvider, PORTABLE_KNOWLEDGE_SOURCE_PATH } from '../portable-project-assets'
+import type { PortableStagedFile } from '../project-archive-service'
 
 const roots: string[] = []
 const knowledge = {
@@ -28,6 +30,18 @@ function fixture() {
   fs.writeFileSync(path.join(storage, 'project.db'), 'db')
   fs.writeFileSync(path.join(storage, 'project.json'), '{}')
   return { root, storage }
+}
+
+/** 导出服务的 stageFile 的替身：拷进作品目录外的临时目录。 */
+function stage(root: string): (sourcePath: string) => PortableStagedFile {
+  const directory = fs.mkdtempSync(path.join(root, 'staged-'))
+  let next = 0
+  return sourcePath => {
+    const stagedPath = path.join(directory, String(next++))
+    fs.copyFileSync(sourcePath, stagedPath)
+    const bytes = fs.readFileSync(stagedPath)
+    return { stagedPath, byteSize: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
+  }
 }
 
 afterEach(() => {
@@ -52,6 +66,7 @@ describe('production portable project assets', () => {
       sourceDatabasePath: path.join(f.storage, 'project.db'),
       projectSession: { projectId: 'p', projectPath: f.root, leaseId: 'l' },
       snapshotGeneration: 'g',
+      stageFile: stage(f.root),
     })
 
     expect(snapshot.files.map(file => file.archivePath)).toEqual([
@@ -62,7 +77,7 @@ describe('production portable project assets', () => {
     const portableKnowledge = snapshot.files.find(file => file.archivePath === PORTABLE_KNOWLEDGE_SOURCE_PATH)!
     expect(parsePortableKnowledgeSnapshot(JSON.parse(portableKnowledge.bytes!.toString('utf8')))).toEqual(knowledge)
     fs.writeFileSync(path.join(f.storage, 'prompts', '章节.json'), '{"提示":"已变化"}')
-    expect(snapshot.files.find(file => file.archivePath === 'prompts/章节.json')!.bytes.toString('utf8')).toBe('{"提示":"保持雨夜"}')
+    expect(fs.readFileSync(snapshot.files.find(file => file.archivePath === 'prompts/章节.json')!.stagedPath!, 'utf8')).toBe('{"提示":"保持雨夜"}')
   })
 
   it.each([
@@ -93,7 +108,7 @@ describe('production portable project assets', () => {
 
     await expect(createPortableProjectAssetProvider().snapshot({ sourceProjectRoot: f.root,
       sourceDatabasePath: path.join(f.storage, 'project.db'),
-      projectSession: { projectId: 'p', projectPath: f.root, leaseId: 'l' }, snapshotGeneration: 'g' }))
+      projectSession: { projectId: 'p', projectPath: f.root, leaseId: 'l' }, snapshotGeneration: 'g', stageFile: stage(f.root) }))
       .rejects.toThrow('PORTABLE_KNOWLEDGE_INVALID')
   })
 
@@ -102,7 +117,7 @@ describe('production portable project assets', () => {
     fs.writeFileSync(path.join(unknown.storage, 'unknown.txt'), 'x')
     await expect(createPortableProjectAssetProvider().snapshot({ sourceProjectRoot: unknown.root,
       sourceDatabasePath: '', projectSession: { projectId: 'p', projectPath: unknown.root, leaseId: 'l' },
-      snapshotGeneration: 'g' })).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
+      snapshotGeneration: 'g', stageFile: stage(unknown.root) })).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
 
     const linked = fixture()
     fs.mkdirSync(path.join(linked.storage, 'prompts'))
@@ -110,7 +125,7 @@ describe('production portable project assets', () => {
     fs.linkSync(path.join(linked.storage, 'prompts', 'one.txt'), path.join(linked.storage, 'prompts', 'two.txt'))
     await expect(createPortableProjectAssetProvider().snapshot({ sourceProjectRoot: linked.root,
       sourceDatabasePath: '', projectSession: { projectId: 'p', projectPath: linked.root, leaseId: 'l' },
-      snapshotGeneration: 'g' })).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
+      snapshotGeneration: 'g', stageFile: stage(linked.root) })).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
 
     const collision = fixture()
     fs.mkdirSync(path.join(collision.storage, 'prompts'))
@@ -118,7 +133,7 @@ describe('production portable project assets', () => {
     fs.writeFileSync(path.join(collision.storage, 'prompts', 'Ａ.txt'), 'b')
     await expect(createPortableProjectAssetProvider().snapshot({ sourceProjectRoot: collision.root,
       sourceDatabasePath: '', projectSession: { projectId: 'p', projectPath: collision.root, leaseId: 'l' },
-      snapshotGeneration: 'g' })).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
+      snapshotGeneration: 'g', stageFile: stage(collision.root) })).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
 
     const linkedDirectory = fixture()
     const outside = path.join(linkedDirectory.root, 'outside')
@@ -127,7 +142,7 @@ describe('production portable project assets', () => {
     fs.symlinkSync(outside, path.join(linkedDirectory.storage, 'prompts'), 'junction')
     await expect(createPortableProjectAssetProvider().snapshot({ sourceProjectRoot: linkedDirectory.root,
       sourceDatabasePath: '', projectSession: { projectId: 'p', projectPath: linkedDirectory.root, leaseId: 'l' },
-      snapshotGeneration: 'g' })).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
+      snapshotGeneration: 'g', stageFile: stage(linkedDirectory.root) })).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
   })
 
   it('rebuilds and strictly verifies canonical full text without embeddings', async () => {

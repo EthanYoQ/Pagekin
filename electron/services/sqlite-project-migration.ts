@@ -293,13 +293,23 @@ export async function backupProjectSqlite(options: {
 /**
  * 导出用的源库快照：只读连接一步备份完。这一步持着读事务，拷到的是那一刻已提交的内容，期间别的连接写入也不影响它。
  * 不迁移、不算内容哈希：导出源是打开时已升级的当前版本，由调用方校验快照。快照只在导出的临时目录里读一遍，不 fsync。
+ * SQLite 按路径打开源库，打开前后主库文件必须是同一个（dev、ino），否则打开的可能是被换进来的另一本书。
+ * 不比大小：导出期间应用自己写库、检查点会改它。
  */
 export async function snapshotProjectSqlite(options: { sourceDatabasePath: string; targetDatabasePath: string }): Promise<void> {
-  const targetPath = path.resolve(options.targetDatabasePath)
-  sourceFile(options.sourceDatabasePath)
+  const sourcePath = path.resolve(options.sourceDatabasePath), targetPath = path.resolve(options.targetDatabasePath)
+  const identity = () => {
+    sourceFile(sourcePath)
+    const info = fs.lstatSync(sourcePath, { bigint: true })
+    return `${info.dev}:${info.ino}`
+  }
+  const before = identity()
   const fd = fs.openSync(targetPath, 'wx', 0o600); fs.closeSync(fd)
-  const source = new Database(options.sourceDatabasePath, { readonly: true, fileMustExist: true })
-  try { await source.backup(targetPath, { progress: () => 0x7fffffff }) } finally { source.close() }
+  const source = new Database(sourcePath, { readonly: true, fileMustExist: true })
+  try {
+    await source.backup(targetPath, { progress: () => 0x7fffffff })
+    if (identity() !== before) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
+  } finally { source.close() }
   regular(targetPath)
 }
 

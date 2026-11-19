@@ -21,6 +21,7 @@ import {
   PORTABLE_PROJECT_FORMAT_VERSION,
   PORTABLE_SOURCE_SCHEMA_VERSION,
   PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS,
+  assertPortableExportSource,
   assertPortableSourceSchema,
   getPortableFieldPolicy,
   portablePathKey,
@@ -36,7 +37,7 @@ import {
 } from './portable-project-archive'
 import { snapshotProjectSqlite } from './sqlite-project-migration'
 import { sqliteSchemaFingerprint } from '../migrations/sqlite-schema-adapter'
-import { assertM03ReviewCycle, inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
+import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
 import { SchemaMigrationError } from '../migrations/registry'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import {
@@ -172,11 +173,19 @@ export class ProjectArchiveServiceError extends Error {
   }
 }
 
+/** 取快照时拷进本次导出私有目录的文件，存档只用这份。 */
+export interface PortableStagedFile {
+  stagedPath: string
+  byteSize: number
+  sha256: string
+}
+
+/** 内容二选一：bytes 是生成的小文件，stagedPath 来自 snapshot 的 stageFile。 */
 export interface PortableProvidedFile {
   id: string
   archivePath: string
-  /** 取快照时已读入的字节，存档只用这份。 */
-  bytes: Buffer
+  bytes?: Buffer
+  stagedPath?: string
   byteSize: number
   sha256: string
   disposition: Exclude<PortableEntryDisposition, 'portable-database' | 'avatar-asset'>
@@ -196,6 +205,7 @@ export interface PortableAssetProvider {
     sourceDatabasePath: string
     projectSession: Readonly<ProjectSessionContext>
     snapshotGeneration: string
+    stageFile(sourcePath: string): PortableStagedFile
   }): PortableAssetSnapshot | Promise<PortableAssetSnapshot>
 }
 
@@ -1040,16 +1050,45 @@ export function sanitizePortableDatabase(databasePath: string, options: {
   } finally { db.close() }
 }
 
-function writePrivateFile(file: string, bytes: Buffer): void {
+/** 先建文件并登记再写：写到一半失败（如磁盘满），清理也认得它。 */
+function openOwnedFile(attempt: OwnedAttempt, file: string): number {
   const descriptor = fs.openSync(file, 'wx', 0o600)
+  try { recordOwnedFile(attempt, file) } catch (error) { fs.closeSync(descriptor); throw error }
+  return descriptor
+}
+
+function writeOwnedFile(attempt: OwnedAttempt, file: string, bytes: Buffer): void {
+  const descriptor = openOwnedFile(attempt, file)
   try { fs.writeFileSync(descriptor, bytes); fs.fsyncSync(descriptor) }
   finally { fs.closeSync(descriptor) }
 }
 
+const STAGE_CHUNK_BYTES = 1024 * 1024
+
+/** 同步边拷边算 sha，内存只占一块缓冲。同步做完，导出期间的写入插不进来。 */
+function copyOwnedFile(attempt: OwnedAttempt, file: string, sourcePath: string): PortableStagedFile {
+  const source = fs.openSync(sourcePath, 'r')
+  try {
+    const target = openOwnedFile(attempt, file)
+    try {
+      const digest = createHash('sha256'), buffer = Buffer.allocUnsafe(STAGE_CHUNK_BYTES)
+      let byteSize = 0
+      for (let read = 0; (read = fs.readSync(source, buffer, 0, buffer.length, null)) > 0; byteSize += read) {
+        digest.update(buffer.subarray(0, read))
+        fs.writeSync(target, buffer, 0, read)
+      }
+      fs.fsyncSync(target)
+      return { stagedPath: file, byteSize, sha256: digest.digest('hex') }
+    } finally { fs.closeSync(target) }
+  } finally { fs.closeSync(source) }
+}
+
 /** 字节与声明的大小、sha 对不上时，打包逐文件流式核对会拒绝，这里只查元数据。 */
-function verifyFile(file: PortableProvidedFile): void {
-  if (!file.id || !PROVIDED_DISPOSITIONS.has(file.disposition) || !Buffer.isBuffer(file.bytes)
-    || file.bytes.length !== file.byteSize || !HASH.test(file.sha256)) fail('PORTABLE_ASSET_UNSAFE')
+function verifyFile(file: PortableProvidedFile, attempt: OwnedAttempt): void {
+  const content = file.stagedPath === undefined
+    ? Buffer.isBuffer(file.bytes) && file.bytes.length === file.byteSize
+    : file.bytes === undefined && attempt.files.has(path.resolve(file.stagedPath))
+  if (!file.id || !PROVIDED_DISPOSITIONS.has(file.disposition) || !content || !HASH.test(file.sha256)) fail('PORTABLE_ASSET_UNSAFE')
   portablePathKey(file.archivePath)
 }
 
@@ -1128,8 +1167,8 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
   const attemptRoot = attempt.root
   try {
     const sourceSnapshotPath = path.join(attemptRoot, 'source.db')
-    await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath })
-    recordOwnedFile(attempt, sourceSnapshotPath)
+    try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath }) }
+    finally { recordOwnedFileIfPresent(attempt, sourceSnapshotPath) }
     const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
     const sourceSnapshot = new BetterSqlite(sourceSnapshotPath, { readonly: true, fileMustExist: true })
     let avatarRows: ReturnType<typeof readPortableCharacterAvatarRows>
@@ -1139,12 +1178,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     try {
       // 校验时才知道有没有验不过的审修循环，有才再扫一遍取清单放行；健康的书只扫一遍。
       const accepted = () => new Set(omittable(unprovable = inspectM03ReviewCycles(sourceSnapshot).unprovable).keys())
-      try { sourceSchema = assertPortableSourceSchema(sourceSnapshot, undefined, accepted) }
-      catch (error) {
-        // 放不过的循环（主键为 NULL、结构坏）照迁移通道报出章节，其余失败照旧。
-        assertM03ReviewCycle(sourceSnapshot, accepted)
-        throw error
-      }
+      sourceSchema = assertPortableExportSource(sourceSnapshot, accepted)
       sourceFingerprint = sqliteSchemaFingerprint(sourceSnapshot)
       if (sourceFreeze.active) readPortableCurrentAuthority({ database: sourceSnapshot, projectStorageRoot, projectId: canonicalManifest.projectId })
       avatarRows = readPortableCharacterAvatarRows(sourceSnapshot)
@@ -1152,9 +1186,11 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-wal`)
     recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-shm`)
 
-    // 头像和资料的字节紧接着库快照读下，导出期间换头像、改提示词不影响这份存档。
+    // 头像和资料紧接着库快照拷进私有目录，导出期间换头像、改提示词不影响这份存档。
     const avatarReferenceProjections: Array<Record<string, unknown>> = []
-    const avatarFiles: Array<{ entry: PortableProjectManifestEntry; bytes: Buffer }> = []
+    let stagedFiles = 0
+    const stageFile = (sourcePath: string) => copyOwnedFile(attempt, path.join(attemptRoot, `staged-${stagedFiles++}`), sourcePath)
+    const avatarFiles: Array<{ entry: PortableProjectManifestEntry; stagedPath: string }> = []
     for (const row of avatarRows) {
       if (row.kind === 'unresolved-reference') {
         avatarReferenceProjections.push({ ...row, nonReplayable: true })
@@ -1166,13 +1202,14 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
       if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
       regularFile(sourcePath, 'PORTABLE_ASSET_MISSING')
       avatarFiles.push({ entry: { path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
-        disposition: 'avatar-asset' }, bytes: fs.readFileSync(sourcePath) })
+        disposition: 'avatar-asset' }, stagedPath: stageFile(sourcePath).stagedPath })
     }
     const provided = await input.assets.snapshot({
       sourceProjectRoot: sourceRoot,
       sourceDatabasePath: sourceSnapshotPath,
       projectSession: frozenContext,
       snapshotGeneration,
+      stageFile,
     })
 
     const portableDatabasePath = path.join(attemptRoot, 'project.db')
@@ -1210,22 +1247,17 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     recordOwnedFileIfPresent(attempt, `${portableDatabasePath}-shm`)
     const transferBytes = serializePortableTransferAuthority(transferAuthority)
     const transferPath = path.join(attemptRoot, 'portable-transfer-authority.json')
-    writePrivateFile(transferPath, transferBytes)
-    recordOwnedFile(attempt, transferPath)
+    writeOwnedFile(attempt, transferPath, transferBytes)
     addSource({ path: PORTABLE_TRANSFER_AUTHORITY_PATH, byteSize: transferBytes.length,
       sha256: sha256(transferBytes), disposition: 'transfer-receipt' }, transferPath)
 
-    const keepBytes = (name: string, bytes: Buffer) => {
-      const file = path.join(attemptRoot, name)
-      writePrivateFile(file, bytes)
-      recordOwnedFile(attempt, file)
-      return file
-    }
-    for (const [index, { entry, bytes }] of avatarFiles.entries()) addSource(entry, keepBytes(`avatar-${index}`, bytes))
+    for (const { entry, stagedPath } of avatarFiles) addSource(entry, stagedPath)
     for (const [index, file] of provided.files.entries()) {
-      verifyFile(file)
+      verifyFile(file, attempt)
+      const keptPath = file.stagedPath ?? path.join(attemptRoot, `provided-${index}`)
+      if (file.stagedPath === undefined) writeOwnedFile(attempt, keptPath, file.bytes!)
       addSource({ path: file.archivePath, byteSize: file.byteSize, sha256: file.sha256,
-        disposition: file.disposition }, keepBytes(`provided-${index}`, file.bytes))
+        disposition: file.disposition }, keptPath)
     }
 
     const historyDocument = {
@@ -1240,8 +1272,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     const historyBytes = Buffer.from(stableJson(historyDocument), 'utf8')
     parsePortableRuntimeFreeze(historyBytes)
     const historyPath = path.join(attemptRoot, 'portable-runtime-freeze.json')
-    writePrivateFile(historyPath, historyBytes)
-    recordOwnedFile(attempt, historyPath)
+    writeOwnedFile(attempt, historyPath, historyBytes)
     addSource({ path: 'portable-runtime-freeze.json', byteSize: historyBytes.length,
       sha256: sha256(historyBytes), disposition: 'history-projection' }, historyPath)
 
