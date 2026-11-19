@@ -32,7 +32,6 @@ function fixture() {
   return { root, storage }
 }
 
-/** 导出服务的 stageFile 的替身：拷进作品目录外的临时目录。 */
 function stage(root: string): (sourcePath: string) => PortableStagedFile {
   const directory = fs.mkdtempSync(path.join(root, 'staged-'))
   let next = 0

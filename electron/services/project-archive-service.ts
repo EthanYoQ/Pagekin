@@ -923,7 +923,7 @@ function draftThreadTaskProofs(db: InstanceType<typeof BetterSqlite>, reviewRoot
  * omitReviewCycles：导出时验不过的审修循环。按根处理，与审修循环的校验同一单位：这些循环所在的根下的全部循环，投影前连同意见与合并快照从副本里删掉；
  * 最后的校验仍从严，证明存档里没有坏循环。删掉以后根仍过不了投影，就带着这个根的定位报 MIGRATION_VERIFICATION_FAILED（指不出章节时定位不带章节）；其他失败原样抛出。
  * 返回的 omittedReviewCycles 每个删掉的根一项，一根下有多条循环时不带章节。
- * verifiedSchema：调用方已对字节相同的库跑过 assertPortableSourceSchema 时传它的结果，这里不再重验。
+ * verifiedSchema：调用方已对字节相同的库跑过 assertPortableExportSource 时传它的结果，这里不再重验。
  */
 export function sanitizePortableDatabase(databasePath: string, options: {
   omitReviewCycles?: ReadonlyMap<string, DamagedReviewCycle>
