@@ -4,9 +4,9 @@ import type { AgentGenerationContext, AgentGenerationInput, AgentGenerationRecov
 import type { BeginGenerationRequest } from '../../src/shared/generation-owner-contract'
 import type { MainGenerationExecuteReceipt, MainGenerationRunHandle, MainGenerationRunView } from '../../src/services/generation/generation-runtime'
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
-import { GenerationRunRepository, textHash, UNSEALED_ROOT, type DurableGenerationRun, type RunBinding } from '../repositories/generation-run-repository'
+import { GenerationRunRepository, textHash, type DurableGenerationRun, type RunBinding } from '../repositories/generation-run-repository'
 import { GENERATION_LEDGER_UNREADABLE } from '../repositories/generation-ledger-admission'
-import { candidateRunIds, inNonceChain, runIndexOf, type GenerationClick } from '../repositories/generation-run-index'
+import { inNonceChain, runIndexOf, type GenerationClick } from '../repositories/generation-run-index'
 import { validateAgentGenerationInput } from './agent-generation-context'
 import { commitAgentDomainTool, isAgentDomainToolCurrent } from './agent-domain-tool-effect'
 import { normalizeAgentPlanningArguments } from '../../src/shared/agent-generation'
@@ -33,8 +33,8 @@ export class AgentGeneration {
     // A renderer-owned tool may have crossed its commit point before the old owner
     // closed. Its unfinished claim is an unknown result, never permission to rerun.
     this.db.transaction(() => {
-      const rows = this.db.prepare("SELECT a.attempt_id,a.usage_receipt_json FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id WHERE r.run_id IN (SELECT value FROM json_each(?)) AND json_extract(r.binding_json,'$.projectId')=? AND json_extract(r.binding_json,'$.sourceManifest.operation')='agent-round'")
-        .all(candidateRunIds(runIndexOf(this.db).lookup(agentRound)), scope.projectId) as { attempt_id: string; usage_receipt_json: string | null }[]
+      const rows = this.db.prepare('SELECT attempt_id,usage_receipt_json FROM generation_attempts WHERE run_id IN (SELECT value FROM json_each(?))')
+        .all(JSON.stringify(this.runs.runsOfOperation('agent-round', scope.projectId))) as { attempt_id: string; usage_receipt_json: string | null }[]
       for (const row of rows) {
         const usage = JSON.parse(row.usage_receipt_json ?? '{}') as StoredUsage
         if (!usage.agentActions) continue
@@ -67,15 +67,14 @@ export class AgentGeneration {
     return context
   }
   private navigation(run: DurableGenerationRun): { key: string; roundIndex: number } {
-    const value = run.binding.sourceManifest.agentSession as { key: string; roundIndex: number } | undefined
+    const value = run.binding.sourceManifest?.agentSession as { key: string; roundIndex: number } | undefined
     if (!value || !/^[a-f0-9]{64}$/u.test(value.key) || !Number.isSafeInteger(value.roundIndex) || value.roundIndex < 0 || value.roundIndex >= 8)
       throw new Error('GENERATION_AGENT_NAVIGATION_INVALID')
     return value
   }
   private sessionRuns(key: string): DurableGenerationRun[] {
-    return (this.db.prepare("SELECT run_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) AND json_extract(binding_json,'$.sourceManifest.agentSession.key')=? ORDER BY rowid")
-      .all(candidateRunIds(runIndexOf(this.db).lookup(inNonceChain(`agent:${key}`))), key) as { run_id: string }[])
-      .map(row => this.runs.get(row.run_id)).filter(run => run.binding.projectId === this.scope.projectId)
+    return runIndexOf(this.db).lookup(inNonceChain(`agent:${key}`)).hits.map(entry => this.runs.get(entry.runId))
+      .filter(run => run.binding.projectId === this.scope.projectId && (run.binding.sourceManifest?.agentSession as { key?: unknown } | undefined)?.key === key)
       .sort((a, b) => this.navigation(a).roundIndex - this.navigation(b).roundIndex)
   }
   private modelId(run: DurableGenerationRun): string { return (run.binding.sourceManifest.modelReceipt as { modelId: string }).modelId }
@@ -299,12 +298,9 @@ export class AgentGeneration {
   }
   private workflowRegistration(id: string): { action: AgentToolAction; run: DurableGenerationRun; registration: AgentWorkflowRegistration } {
     if (typeof id !== 'string' || !/^agent-workflow:[a-f0-9]{64}$/u.test(id)) throw new Error('GENERATION_AGENT_REGISTRATION_INVALID')
-    const rows = this.db.prepare(`SELECT run_id FROM generation_runs WHERE root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})
-      AND run_id IN (SELECT value FROM json_each(?)) AND json_extract(binding_json,'$.sourceManifest.operation')='agent-round'`)
-      .all(candidateRunIds(runIndexOf(this.db).lookup(agentRound))) as { run_id: string }[]
-    const found = rows.flatMap(row => {
-      const run = this.runs.get(row.run_id)
-      if (run.binding.projectId !== this.scope.projectId) return []
+    const found = runIndexOf(this.db).lookup(agentRound).hits.flatMap(entry => {
+      const run = entry.sealed ? undefined : this.runs.readableRun(entry.runId)
+      if (run?.binding.projectId !== this.scope.projectId) return []
       return this.round(run).actions.filter(action => action.workflow?.registrationId === id).map(action => ({ action, run, registration: action.workflow! }))
     })
     if (!found.length && this.runs.sealedClaims(click => click.projectId === this.scope.projectId && click.operation === 'agent-round'))

@@ -1411,7 +1411,8 @@ describe('durable directory commit and remaining stage', () => {
     }).immediate()
     return { ...f, fixture: f, selection, run, dispatch, request, commit }
   }
-  it('#702 清空蓝图按绑定里的操作退役蓝图目录运行，open_key 的操作对不上也退役', async () => {
+  it('ADR-0030 跨记录认运行只看身份键：open_key 的操作不是蓝图目录的运行，清空蓝图时不按绑定认它、不退役', async () => {
+    // 写入时绑定的操作与点击一致（assertClickOperation），这种行只能是改坏的库。
     const f = directoryFixture('chapter-blueprint-directory'), range = { startChapter: 1, endChapter: 3 }
     await f.owner.execute({ handle: f.run.handle, invocationNonce: 'original', task: directoryTask })
     f.commit(f.owner, f.run.handle, f.request('cleared-prefix', 1, 2), range)
@@ -1421,7 +1422,7 @@ describe('durable directory commit and remaining stage', () => {
     f.fixture.db.prepare('UPDATE generation_runs SET open_key=? WHERE run_id=?').run(JSON.stringify([JSON.stringify(parts), root]), f.run.handle.runId)
     f.fixture.reopen()
     BlueprintRepository.clearAll()
-    expect(f.fixture.db.prepare('SELECT json_extract(binding_json,?) FROM generation_runs WHERE run_id=?').pluck().get('$."$blueprintRetirement"', f.run.handle.runId)).toBe('blueprints-cleared')
+    expect(f.fixture.db.prepare('SELECT json_extract(binding_json,?) FROM generation_runs WHERE run_id=?').pluck().get('$."$blueprintRetirement"', f.run.handle.runId)).toBeNull()
   })
   it.each(['blueprint', 'project'] as const)('retires directory recovery through the %s clear while independent generation remains usable', async entry => {
     const f = directoryFixture('chapter-blueprint-directory'), range = { startChapter: 1, endChapter: 3 }
@@ -3634,7 +3635,8 @@ describe('main draft persistence and batch lineage', () => {
       expect(runIds(list.batches)).toEqual([batch.batchId])
       expect(locked()).toEqual(new Set([1]))
     })
-    it('#702 批次运行的 open_key 读得出但操作不是批量写稿：恢复列表漏列这个批次，写过的章照样锁住', async () => {
+    it('ADR-0030 跨记录认运行只看身份键：批次运行的 open_key 读得出但操作不是批量写稿，不列这个批次，写过的章也不锁', async () => {
+      // 写入时绑定的操作与点击一致（assertClickOperation），这种行只能是改坏的库。
       const f = drafting()
       f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'第二章')")
       const batch = f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: 1, endChapter: 2 }, targetUnits: 20,
@@ -3645,7 +3647,7 @@ describe('main draft persistence and batch lineage', () => {
       parts[1] = 'chapter-draft'
       f.db.prepare('UPDATE generation_runs SET open_key=? WHERE run_id=?').run(JSON.stringify([JSON.stringify(parts), root]), batch.rootHandle.runId)
       expect(f.reopen().listRecovery().batches).toEqual([])
-      expect(new GenerationDraftEffects(f.fixture.db, new GenerationRunRepository(() => f.fixture.db)).unfinishedBatchChapters('project')).toEqual(new Set([1]))
+      expect(new GenerationDraftEffects(f.fixture.db, new GenerationRunRepository(() => f.fixture.db)).unfinishedBatchChapters('project')).toEqual(new Set())
     })
     it('放弃的批次接着写出下一章，重新列为可续、写过的章重新锁住（#686）', async () => {
       const f = drafting()

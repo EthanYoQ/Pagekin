@@ -15,7 +15,7 @@ import { SummaryRepository } from '../repositories/summary-repository'
 import { ConsistencyExemptionRepository } from '../repositories/consistency-exemption-repository'
 import { ReviewRepository } from '../repositories/review-repository'
 import { ReviewCycleRepository } from '../repositories/review-cycle-repository'
-import { textHash } from '../repositories/generation-run-repository'
+import { GenerationRunRepository, textHash } from '../repositories/generation-run-repository'
 
 export const REVIEW_REVISION_OPERATIONS = ['review-chapter', 'refine-draft', 'refine-from-review'] as const
 const fail = (): never => { throw new Error('GENERATION_REVIEW_CONTEXT_INVALID') }
@@ -25,11 +25,11 @@ const fail = (): never => { throw new Error('GENERATION_REVIEW_CONTEXT_INVALID')
  * 版本恢复等另起新草稿的路径找不到记录，与旧草稿一样不加线索目标。
  */
 function draftThreadTasks(db: Database.Database, draftId: number, chapterNumber: number): readonly ChapterThreadTask[] {
-  const bindings = db.prepare(`SELECT r.binding_json FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id
-    WHERE json_extract(a.usage_receipt_json,'$.draftCommit.id')=?
-      AND json_extract(a.usage_receipt_json,'$.draftCommit.chapterNumber')=?`).pluck().all(draftId, chapterNumber) as string[]
-  if (bindings.length !== 1) return []
-  const tasks = writtenChapterThreadTasks(bindings[0]!)
+  const runIds = db.prepare(`SELECT run_id FROM generation_attempts WHERE json_extract(usage_receipt_json,'$.draftCommit.id')=?
+      AND json_extract(usage_receipt_json,'$.draftCommit.chapterNumber')=?`).pluck().all(draftId, chapterNumber) as string[]
+  if (runIds.length !== 1) return []
+  const run = new GenerationRunRepository(() => db).readableRun(runIds[0]!)
+  const tasks = run ? writtenChapterThreadTasks(JSON.stringify(run.binding)) : null
   if (!tasks) console.warn('[narrative-thread] 写稿记录里的线索任务读不出，这份稿的审稿不加线索目标', { draftId })
   return tasks ?? []
 }

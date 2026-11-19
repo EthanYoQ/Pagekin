@@ -2,8 +2,8 @@ import type Database from 'better-sqlite3'
 import { isDeepStrictEqual } from 'node:util'
 import type { BeginGenerationRequest } from '../../src/shared/generation-owner-contract'
 import type { ImportGenerationContext, ImportGenerationSlot } from '../../src/shared/import-generation'
-import { GenerationRunRepository, slotRunNonces, type DurableGenerationRun, type GenerationBudgetReceipt } from '../repositories/generation-run-repository'
-import { candidateRunIds, runIndexOf, type GenerationClick } from '../repositories/generation-run-index'
+import { GenerationRunRepository, type DurableGenerationRun, type GenerationBudgetReceipt } from '../repositories/generation-run-repository'
+import { inNonceChain, runIndexOf, type GenerationClick } from '../repositories/generation-run-index'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
 import { captureImportGenerationContext, importGenerationSlotKey } from './import-generation-source'
@@ -33,12 +33,13 @@ export class ImportGeneration {
     // 同一次导入的各阶段互相检查前一阶段的效果，绑定被封存后按槽位查不到，所以这一次导入的封存树挡住它的全部阶段。
     if (this.runs.sealedClaims((click, root) => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation)
       && click.uiActionNonce.startsWith('import:') && !anotherImport(root, slot.runId))) throw new Error('GENERATION_LEDGER_UNREADABLE')
-    const rows = slotRunNonces(this.db.prepare("SELECT run_id,open_key FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.importSlotKey')=? ORDER BY rowid").all(key) as { run_id: string; open_key: string }[], 'GENERATION_IMPORT_SLOT_AMBIGUOUS')
+    const { hits, unidentified } = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && inNonceChain(importSlotNonce(key))(click))
+    // 点击号读不出的运行认不出是不是前驱，按主键读它的绑定，是这个槽位的就报歧义。
+    if (unidentified.some(entry => this.runs.get(entry.runId).binding.sourceManifest?.importSlotKey === key)) throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS')
     let previous: DurableGenerationRun | undefined
-    for (const row of rows) {
-      const run = this.runs.get(row.runId)
-      if (run.binding.projectId !== this.projectId) continue
-      if (previous && row.nonce !== importSlotNonce(key, previous)) throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS')
+    for (const entry of hits) {
+      const run = this.runs.get(entry.runId)
+      if (previous && entry.click!.uiActionNonce !== importSlotNonce(key, previous)) throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS')
       previous = run
     }
     return previous
@@ -128,9 +129,10 @@ export class ImportGeneration {
     this.assertSlotRunning(slot)
     const { totalChapters } = captureImportGenerationContext(this.db, slot)
     const key = importGenerationSlotKey(slot)
-    const records = (this.db.prepare("SELECT run_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) AND json_extract(binding_json,'$.sourceManifest.importSlot.runId')=? ORDER BY rowid")
-      .all(candidateRunIds(runIndexOf(this.db).lookup(click => IMPORT_OPERATIONS.has(click.operation))), slot.runId) as { run_id: string }[])
-      .map(row => this.runs.get(row.run_id)).filter(run => run.binding.projectId === this.projectId)
+    // 绑定读不出的阶段认不出属于哪次导入，get() 报封存码，这次导入停下，不跳过它的效果检查。
+    const records = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation)).hits
+      .filter(entry => !entry.sealed).map(entry => this.runs.get(entry.runId))
+      .filter(run => (run.binding.sourceManifest?.importSlot as { runId?: unknown } | undefined)?.runId === slot.runId)
     for (const run of records) {
       const prior = this.context(run).slot
       if (importGenerationSlotKey(prior) === key) continue

@@ -36,7 +36,9 @@ import type {
 import type { AuthorManuscriptImportPreview } from '../../src/shared/author-manuscript-import'
 import { getCurrentProjectPath, getProjectDb } from '../database'
 import { readPortableRuntimeFreeze } from '../services/portable-runtime-freeze'
-import { candidateRunIds, runIndexOf } from './generation-run-index'
+import { inNonceChain, runIndexOf } from './generation-run-index'
+import { importGenerationSlotKey } from '../services/import-generation-source'
+import type { ImportGenerationSlot } from '../../src/shared/import-generation'
 import { BlueprintRepository, type BlueprintRangeCommitRequest } from './blueprint-repository'
 import { ImportGlobalFactsRepository } from './import-global-facts-repository'
 import type { ImportGlobalFactsMode, ImportGlobalFactsRequest } from '../../src/shared/import-global-facts'
@@ -1436,6 +1438,13 @@ function overlappingResumableSourceRun(runId: string, purpose: ImportPurpose): I
   `).get(runId, runId, purpose) as ImportRunRow | undefined
 }
 
+/** 这个导入阶段有没有开过生成：按槽位算出的点击号查身份键，封存的不算。槽位不合法就不可能开过。 */
+function boundImportSlot(slot: ImportGenerationSlot): boolean {
+  let key: string
+  try { key = importGenerationSlotKey(slot) } catch { return false }
+  return runIndexOf(db()).lookup(inNonceChain(`import:${key}`)).hits.some(entry => !entry.sealed)
+}
+
 export class ImportRunRepository {
   static parsedSourceStatus(runId: string, sourceId: string): 'pending' | 'completed' | 'failed' | undefined {
     const row = db().prepare(`
@@ -2377,8 +2386,7 @@ export class ImportRunRepository {
       if (request.stage === 'global' || request.stage === 'style' || request.stage === 'blueprints') {
         const handle = (request.payload as { generationRunHandle?: MainGenerationRunHandle }).generationRunHandle
         const hasGenerationTable = db().prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='generation_runs'").pluck().get()
-        const bound = hasGenerationTable && db().prepare("SELECT 1 FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) AND json_extract(binding_json,'$.sourceManifest.importSlot.runId')=? AND json_extract(binding_json,'$.sourceManifest.importSlot.stage')=? AND json_extract(binding_json,'$.sourceManifest.importSlot.batchId')=?")
-          .pluck().get(candidateRunIds(runIndexOf(db()).lookup(click => click.uiActionNonce.startsWith('import:'))), request.runId, request.stage, batchId)
+        const bound = hasGenerationTable && boundImportSlot({ runId: request.runId, stage: request.stage, batchId })
         if ((assertGenerationSources || bound) && !handle) throw new Error('GENERATION_IMPORT_EFFECT_HANDLE_REQUIRED')
         if (assertGenerationSources && handle) assertGenerationSources(handle, { runId: request.runId, stage: request.stage as 'global' | 'style' | 'blueprints', batchId })
       }

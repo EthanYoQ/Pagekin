@@ -121,11 +121,12 @@ it('ADR-0030 同槽位第一条导入运行的 open_key 读不出：报槽位不
  expect(()=>f.owner.readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
  expect(()=>f.reopenStorage().readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
 })
-it("#702 同槽位后面一条导入运行的点击号读得出但属于别的槽位：仍报槽位不明",()=>{
+it("ADR-0030 跨记录认运行只看身份键：点击号属于别的槽位的导入运行不算这个槽位的，绑定里写的槽位不看",()=>{
+ // 写入时绑定与点击一致，这种行只能是改坏的库。
  const f=fixture()
  const first=f.owner.begin(f.selection)
  forgeSlotRetry(f.db, first.handle.runId, "import:另一个槽位")
- expect(()=>f.reopenStorage().readImportGeneration(f.slot)).toThrow("GENERATION_IMPORT_SLOT_AMBIGUOUS")
+ expect(f.reopenStorage().readImportGeneration(f.slot)?.view.handle).toEqual(first.handle)
 })
 it('同slot不同nonce加入同run，并冻结实际manifest正文',()=>{
  const f=fixture(),first=f.owner.begin(f.selection),second=f.owner.begin({...f.selection,uiActionNonce:'另一次点击'})
