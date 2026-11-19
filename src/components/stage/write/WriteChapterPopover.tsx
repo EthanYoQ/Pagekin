@@ -122,7 +122,7 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
           show()
           return
         case 'pending':
-          setMessage({ text: outcome.message, pending: true })
+          setMessage({ text: displayedErrorMessage(currentInterfaceLocale(), outcome.message), pending: true })
           show()
           return
         default:
