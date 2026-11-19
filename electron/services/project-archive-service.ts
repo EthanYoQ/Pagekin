@@ -1191,7 +1191,7 @@ async function assertCurrentContext(input: ExportPortableProjectInput, context: 
 const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string, DamagedReviewCycle> =>
   new Map(cycles.flatMap(item => item.cycleId === null ? [] : [[item.cycleId, item.location] as const]))
 
-/** 资料阶段出错：丢掉这次的临时目录，整次重来一次，仍失败报第二次的错。本地导出和云备份都走这里。 */
+/** 资料阶段出错：丢掉这次的临时目录，整次重来一次，仍失败报第二次的错。重来时库文件已被换掉就拒绝。本地导出和云备份都走这里。 */
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
   const source: SourceDatabasePin = {}
   try { return await exportPortableProjectOnce(input, source) }
@@ -1209,7 +1209,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
   }
 }
 
-/** 第一次导出时库文件的身份。重来时库文件已被换掉就拒绝，写库不改身份。 */
+/** 只比 dev、ino：写库会改大小和修改时间，不改身份。 */
 interface SourceDatabasePin { database?: fs.BigIntStats }
 
 async function exportPortableProjectOnce(input: ExportPortableProjectInput, source: SourceDatabasePin): Promise<ExportPortableProjectReceipt> {
