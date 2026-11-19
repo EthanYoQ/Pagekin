@@ -160,9 +160,11 @@ function ProjectBackupPanelSession({
     if (!target) return
     // 阶段只是提示：漏收或晚到的旧阶段不往回跳，也不影响导出结果。
     setExportPhase('snapshot')
-    const stopListening = ipc.on('portable-export:progress', ({ phase }) => setExportPhase(current =>
-      current && EXPORT_PHASES.indexOf(phase) <= EXPORT_PHASES.indexOf(current) ? current : phase))
-    const result = await ipc.invoke('project:archive-export', { targetArchiveGrantId: target.grantId, projectSession })
+    const exportId = crypto.randomUUID()
+    const stopListening = ipc.on('portable-export:progress', ({ exportId: from, phase }) => {
+      if (from === exportId) setExportPhase(current => current && EXPORT_PHASES.indexOf(phase) <= EXPORT_PHASES.indexOf(current) ? current : phase)
+    })
+    const result = await ipc.invoke('project:archive-export', { targetArchiveGrantId: target.grantId, projectSession, exportId })
       .finally(() => { stopListening(); setExportPhase(null) })
     if (!result.success) throw new Error(failureReason(result.errorCode || result.error, result.damagedReviewCycle))
     setNotice({ kind: 'success', text: withOmitted(text(`本地存档已导出：${result.receipt.targetSha256}`, `Local archive exported: ${result.receipt.targetSha256}`), result.receipt.omittedReviewCycles) })

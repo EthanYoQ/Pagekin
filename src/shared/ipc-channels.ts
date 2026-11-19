@@ -285,13 +285,15 @@ export type ProjectOpenTarget = string | ProjectDirectoryGrant
 export interface PortableProjectExportRequest {
   targetArchiveGrantId: string
   projectSession: ProjectSessionContext
+  /** 原样回送在进度事件里：同一窗口可能有上一次导出还没停，界面只认自己这次的。 */
+  exportId?: string
 }
 
 /** 导出与云备份打包的阶段，按顺序：读取作品、检查、整理、打包。资料被改时整次重来，阶段会从头再走一遍。 */
 export type PortableExportPhase = 'snapshot' | 'check' | 'tidy' | 'package'
 
 export interface PortableExportEvents {
-  'portable-export:progress': { phase: PortableExportPhase }
+  'portable-export:progress': { exportId?: string; phase: PortableExportPhase }
 }
 
 export interface PortableProjectExportReceipt {

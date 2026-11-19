@@ -287,6 +287,7 @@ describe('project archive choosers issue sender-bound grants instead of raw path
     expectTypeOf<PortableProjectExportRequest>().toEqualTypeOf<{
       targetArchiveGrantId: string
       projectSession: PortableProjectExportRequest['projectSession']
+      exportId?: string
     }>()
     expectTypeOf<PortableProjectRestoreRequest>().toEqualTypeOf<{
       archiveGrantId: string
@@ -320,6 +321,7 @@ describe('project:archive-export', () => {
     await expect(handler('project:archive-export')(asking, {
       targetArchiveGrantId: selected.grantId,
       projectSession: projectSession(),
+      exportId: 'export-1',
     })).resolves.toEqual({ success: true, receipt: archiveReceipt })
 
     expect(mocks.exportPortableProject).toHaveBeenCalledTimes(1)
@@ -329,8 +331,8 @@ describe('project:archive-export', () => {
       attemptParentPath: path.dirname(targetArchivePath),
     }))
     expect(asking.sender.send.mock.calls).toEqual([
-      ['portable-export:progress', { phase: 'snapshot' }],
-      ['portable-export:progress', { phase: 'package' }],
+      ['portable-export:progress', { exportId: 'export-1', phase: 'snapshot' }],
+      ['portable-export:progress', { exportId: 'export-1', phase: 'package' }],
     ])
     expect(mocks.assertCurrentProjectContext).toHaveBeenCalledTimes(2)
     expect(mocks.activeSession).toEqual(sessionBefore)

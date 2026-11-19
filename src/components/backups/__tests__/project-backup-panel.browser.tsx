@@ -108,9 +108,13 @@ describe('ProjectBackupPanel', () => {
     })
     await renderPanel()
     const phase = () => container.querySelector('[data-testid="project-backup-panel"] section [role="status"]')?.textContent
-    const emit = async (value: string) => act(async () => listeners.get('portable-export:progress')?.({ phase: value }))
+    const exportId = () => (invoke.mock.calls.find(([channel]) => channel === 'project:archive-export')?.[1] as { exportId?: string } | undefined)?.exportId
+    const emit = async (value: string, id = exportId()) => act(async () => listeners.get('portable-export:progress')?.({ exportId: id, phase: value }))
 
     await act(async () => button('导出本地存档').click())
+    expect(phase()).toBe('正在读取作品…')
+    expect(exportId()).toEqual(expect.any(String))
+    await emit('package', 'another-export')
     expect(phase()).toBe('正在读取作品…')
     await emit('check')
     expect(phase()).toBe('正在检查资料…')
@@ -279,7 +283,7 @@ describe('ProjectBackupPanel', () => {
     await act(async () => button('导出本地存档').click())
     expect(invoke).toHaveBeenCalledWith('dialog:select-project-archive-export', '第一部小说')
     expect(invoke).toHaveBeenCalledWith('project:archive-export', {
-      targetArchiveGrantId: 'export-grant', projectSession: SESSION,
+      targetArchiveGrantId: 'export-grant', projectSession: SESSION, exportId: expect.any(String),
     })
     expect(container.textContent).toContain('export-hash')
 
