@@ -8,7 +8,7 @@ import { parseHumanConfirmedReviewSnapshot, type HumanConfirmedReviewSnapshot } 
 import { composeVisibleContinuation } from '../../src/shared/visible-continuation'
 import type { ReviewRevisionContext } from '../../src/shared/review-revision-generation'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
-import { frozenReviewSource, readReviewProof } from '../../src/shared/review-proof'
+import { unverifiedReviewSource, readReviewProof } from '../../src/shared/review-proof'
 import { SchemaMigrationError, type MigrationImplementation, type SchemaReader } from './registry'
 import { GENERATION_LEDGER_UNREADABLE } from '../repositories/generation-ledger-admission'
 import { acceptedReviewCycleFailures, type AcceptedReviewCycleFailures } from './sqlite-schema-adapter'
@@ -415,7 +415,7 @@ function cycleLocation(db: Database.Database, { draftRows }: CycleTables, cycle:
       try {
         const stored = item.usage_receipt_json ? (JSON.parse(item.usage_receipt_json) as { reviewRevisionEffect?: Record<string, unknown> }).reviewRevisionEffect : undefined
         if (stored?.kind !== 'review' || stored.id !== cycle.review_id) return false
-        const source = frozenReviewSource((JSON.parse(item.binding_json) as { sourceManifest?: unknown }).sourceManifest)
+        const source = unverifiedReviewSource((JSON.parse(item.binding_json) as { sourceManifest?: unknown }).sourceManifest)
         return source?.id === row.id && source.chapterNumber === row.chapterNumber && source.version === row.version
       } catch { return false }
     })

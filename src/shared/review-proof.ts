@@ -1,6 +1,5 @@
 import type { ReviewRevisionContext } from './review-revision-generation'
 
-/** 落盘的审修证明。现在只有 v1 全文形：上下文原样冻结，哈希可由它重算。 */
 export type ReviewProofRead =
   | { kind: 'absent' }
   | { kind: 'unproven' }
@@ -9,7 +8,7 @@ export type ReviewProofRead =
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 
-/** 审修证明的唯一解析点。字段是否齐全、来源是否当前由调用方按各自的规则判。 */
+/** 只验证明自洽：全文、哈希、作者输入副本互相印证。字段是否齐全、来源是否当前由调用方判。 */
 export function readReviewProof(manifest: unknown, sha256: (text: string) => string): ReviewProofRead {
   const stored = record(manifest)
   if (stored?.reviewRevisionContext === undefined) return { kind: 'absent' }
@@ -22,7 +21,6 @@ export function readReviewProof(manifest: unknown, sha256: (text: string) => str
     : { kind: 'unproven' }
 }
 
-/** 冻结的来源稿身份，不验证明，只用来给验不过的循环指章节。 */
-export function frozenReviewSource(manifest: unknown): Record<string, unknown> | undefined {
+export function unverifiedReviewSource(manifest: unknown): Record<string, unknown> | undefined {
   return record(record(record(manifest)?.reviewRevisionContext)?.source)
 }
