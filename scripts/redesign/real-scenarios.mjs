@@ -705,7 +705,7 @@ export const REAL_SCENARIOS = {
         const receipt = await invoke(page, 'editor-inline:execute', { handle: recovery.view.handle }, session)
         assert.equal(receipt.outcome.status, 'completed', `续写完成：${receipt.outcome.receipt?.failureCode ?? ''}`)
         await invoke(page, 'editor-inline:delivered', { handle: recovery.view.handle }, session)
-        return { ...job, arm: recovery.context.materials.included.length ? 'after' : 'before', output: receipt.outcome.content }
+        return { ...job, arm: recovery.context.materials.included.length ? 'after' : 'before', filePath: recovery.context.filePath, output: receipt.outcome.content }
       })))
     return { materials: points.map(({ point, materials }) => ({ point, materials })), results }
   } },
