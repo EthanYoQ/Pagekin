@@ -70,7 +70,7 @@ node scripts/redesign/drive.mjs --scenario chapter-switch --shell stage --out <�
 
 ## 书房、设定与设置（RD-5 起）
 
-书房、设定页与设置页的页面对象也在 `pages/stage.mjs`：书架是列表「最近的作品」，封面按钮叫「预览《书名》」，右侧概览是区域「《书名》概览」，里面唯一的主按钮是「打开《书名》」（只预览的书）或「继续写作 · 下一步」（当前作品）；每本书的更多操作是「《书名》更多操作」菜单。`openFromLibrary` 先点封面再点「打开《书名》」，`openFromPalette` 从 Ctrl K 打开（同一部作品也会开新的会话）。新建作品的对话框旧外壳叫「新建小说项目」，新外壳叫「新建作品」，`bookshelf.createProject` 两种都认。设定页的核心大纲是文本框「核心大纲」（缺这项时名字带「 · 必填」），三项必填是下拉「类型」「目标读者」与一组「篇幅」，更多设定是按钮组「更多设定」，展开的每项是同名区域；`dirtySetup` 在核心大纲末尾补一句。假模型认出配置 JSON 合同的提示词时返回 `FIXTURE_CONFIG`。设置页是导航「设置分组」，每页标题是一级标题；`openSettings` 从流程脊打开，`showSettingsPage` 切页，`closeSettings` 点「返回作品／返回书房」。
+书房、设定页与设置页的页面对象也在 `pages/stage.mjs`：书架是列表「最近的作品」，封面按钮叫「预览《书名》」，右侧概览是区域「《书名》概览」，里面唯一的主按钮是「打开《书名》」（只预览的书）或「继续写作 · 下一步」（当前作品）；每本书的更多操作是「《书名》更多操作」菜单。`openFromLibrary` 先点封面再点「打开《书名》」，`openFromPalette` 从 Ctrl K 打开（同一部作品也会开新的会话）。新建作品的对话框旧外壳叫「新建小说项目」，新外壳叫「新建作品」，`bookshelf.createProject` 两种都认。设定页从上到下是区域「基本设定」（下拉「类型」「目标读者」「叙事视角」「故事结构」「写作语言」、一组「篇幅」、文本框「细分类型」、数字框「伏笔沉寂提醒（章）」）、区域「设定细则」（六行，每行一个同名文本框，状态标记带 data-mark：empty、ai-filled、ai-expanded；`setupDetail`、`setupDetailRow` 取它们）和最后的文本框「核心大纲」（缺这项时名字带「 · 必填」）；`dirtySetup` 在核心大纲末尾补一句。假模型认出配置 JSON 合同的提示词时返回 `FIXTURE_CONFIG`。设置页是导航「设置分组」，每页标题是一级标题；`openSettings` 从流程脊打开，`showSettingsPage` 切页，`closeSettings` 点「返回作品／返回书房」。
 
 | 名称 | 检查 | 截图停在 | 夹具模型 | 对应计划 |
 |---|---|---|---|---|

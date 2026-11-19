@@ -253,9 +253,10 @@ export const settingsNavElement = page => root(page).locator('.stage-set-nav')
 /** 设置里沿用旧面板的那几页（模型编辑、提示词模板、写作 Skills、项目备份）。 */
 export const legacySettings = page => root(page).locator('.stage-set-legacy')
 export const setupFill = page => root(page).getByRole('button', { name: /^(AI 补全其余设定|AI 正在补全…)$/ })
-export const setupChip = (page, name) => root(page).getByRole('group', { name: '更多设定' }).getByRole('button', { name: new RegExp(`^${escape(name)}`) })
-export const setupPanel = (page, name) => root(page).getByRole('region', { name })
-/** 三项必填的下拉；名字在缺这一项时带「 · 必填」。 */
+/** 设定细则里的一行与它的输入框。 */
+export const setupDetailRow = (page, name) => root(page).locator('.stage-setup-row').filter({ has: page.getByText(name, { exact: true }) })
+export const setupDetail = (page, name) => root(page).getByRole('region', { name: '设定细则' }).getByRole('textbox', { name, exact: true })
+/** 基本设定里的下拉；必填项的名字在缺这一项时带「 · 必填」。 */
 export const setupField = (page, name) => root(page).getByRole('combobox', { name: new RegExp(`^${escape(name)}`) })
 
 /** 在核心大纲末尾补一句，让设定标签变成未保存。 */

@@ -29,9 +29,12 @@ const seedFilled = context => seedStageSample(context, { landOnChapter3: false, 
   assert.equal(core.success, true, core.error)
 } })
 
+/** 新书只留一项作者原文，AI 补全后它应标「AI 扩写」，其余补上的标「AI 填写」。 */
+const AUTHOR_STYLE = '少用形容词，多写手上的动作。'
+
 const seedNew = context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
   const core = await invoke(page, 'db:project-core-update', { coreOutline: '', genre: '', targetAudience: '', subGenre: '', worldSetting: '', goldenFinger: '',
-    protagonistProfile: '', writingStyle: '', globalGuidance: '', referenceWorks: '' }, path, session)
+    protagonistProfile: '', writingStyle: AUTHOR_STYLE, globalGuidance: '', referenceWorks: '' }, path, session)
   assert.equal(core.success, true, core.error)
 } })
 
@@ -168,7 +171,8 @@ export const UXR_SCENARIOS = {
     await shoot('uxr-setup-filled-bottom')
     return { top, scrolls, expectedOutlineUnits: countUnits(LONG_OUTLINE) }
   } },
-  'uxr-setup-new': { model: true, shell: 'stage', setup: seedNew, run: async ({ page, shoot }) => {
+  'uxr-setup-new': { model: true, shell: 'stage', setup: seedNew, run: async context => {
+    const { page, shoot } = context
     await stage.stageButton(page, '设定').click()
     await stage.setupOutline(page).waitFor({ state: 'visible' })
     const empty = await setupFacts(page)
@@ -183,8 +187,21 @@ export const UXR_SCENARIOS = {
     await page.getByRole('button', { name: /^AI 补全其余设定$/ }).waitFor({ state: 'visible', timeout: 20_000 })
     await page.locator('.stage-setup-scroll').evaluate(node => { node.scrollTop = 0 })
     const afterFill = await setupFacts(page)
+    assert.equal(afterFill.sheetCount, '6 项 · 1 项未填 · 4 项 AI 填写 · 1 项 AI 扩写', '表头计数')
+    assert.deepEqual(afterFill.marks, { empty: 1, filled: 4, expanded: 1 }, '行内标记与表头计数一致')
     await shoot('uxr-setup-new-filled')
-    return { empty, afterFill, scrolls: await innerScrolls(page, '.stage-setup textarea') }
+    const scrolls = await innerScrolls(page, '.stage-setup textarea')
+    const save = stage.setupFoot(page).getByRole('button', { name: /^保存/ })
+    if (await save.isVisible()) await save.click()
+    await stage.saveStatus(page).filter({ hasText: '已保存' }).waitFor({ state: 'visible' })
+    await context.restart()
+    await stage.openAfterRestart(context.page, STAGE_SAMPLE.name)
+    await stage.stageButton(context.page, '设定').click()
+    await stage.setupOutline(context.page).waitFor({ state: 'visible' })
+    const reopened = await setupFacts(context.page)
+    assert.deepEqual([reopened.sheetCount, reopened.marks], [afterFill.sheetCount, afterFill.marks], '冷重启再打开，标记与计数不变')
+    await context.shoot('uxr-setup-new-reopened')
+    return { empty, afterFill, reopened, scrolls }
   } },
   'uxr-bp-long': { model: false, shell: 'stage', setup: seedLongBlueprints, run: async ({ page, shoot }) => {
     await blueprint.open(page)
