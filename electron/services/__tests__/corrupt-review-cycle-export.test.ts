@@ -262,6 +262,7 @@ describe('封存的根整根不当证据：引用它的循环留在存档外并�
     ['目标在作品目录内', 'PORTABLE_TARGET_INSIDE_SOURCE', (input: ExportPortableProjectInput) => ({ ...input, targetArchivePath: path.join(projectRoot, 'backup.ainovel') })],
     ['会话已不是当前作品', 'PORTABLE_CONTEXT_INVALID', (input: ExportPortableProjectInput) => ({ ...input, assertCurrentContext: () => false })],
     ['会话的作品号与目录里的作品不符', 'PORTABLE_CONTEXT_INVALID', (input: ExportPortableProjectInput) => ({ ...input, projectSession: { ...input.projectSession, projectId: 'other-book' } })],
+    ['目标文件已存在', 'PORTABLE_ARCHIVE_TARGET_EXISTS', (input: ExportPortableProjectInput) => { fs.writeFileSync(input.targetArchivePath, 'old'); return input }],
   ] as const)('%s：导出被拒，静止树里读不出的绑定不被封存', async (_label, code, reject) => {
     reviewedBook({ finalized: true })
     db().exec(SEALED_ROOT_DAMAGES.find(([label]) => label === '带尝试的兄弟运行读不出')![1])

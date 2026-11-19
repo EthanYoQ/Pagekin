@@ -179,6 +179,8 @@ describe('跨记录解析的账本 JSON 列都在进门清单里', () => {
     expect(crossRecordLedgerColumns('SELECT r.binding_json FROM generation_roots g JOIN generation_runs r ON r.status=g.blocked_code WHERE g.root_action_id=?')).toEqual(['binding_json'])
     expect(crossRecordLedgerColumns('SELECT r.binding_json FROM generation_roots g JOIN generation_runs r ON r.status=g.blocked_code WHERE r.root_action_id=?')).toEqual([])
     expect(crossRecordLedgerColumns("SELECT r.binding_json FROM generation_roots g JOIN generation_runs r ON r.root_action_id=g.root_action_id OR r.status='running' WHERE g.root_action_id=?")).toEqual(['binding_json'])
+    expect(crossRecordLedgerColumns("SELECT json_extract(binding_json,'$.a') FROM generation_runs WHERE run_id=(run_id)")).toEqual(['binding_json'])
+    expect(crossRecordLedgerColumns("SELECT json_extract(binding_json,'$.a') FROM generation_runs WHERE root_action_id=(root_action_id)")).toEqual(['binding_json'])
   })
 
   it('子查询里的主键条件不限定外层语句', () => {
