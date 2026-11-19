@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { CANONICAL_PROJECT_DATABASE, CANONICAL_PROJECT_DIRECTORY, parseCanonicalProjectManifest } from '../../src/shared/project-format'
+import { runProjectSqliteJobInWorker, type ProjectSqliteWorkerOptions } from './project-sqlite-host'
 import { openProjectSqlite, verifyProjectSqlite, type SqliteContentIdentity } from './sqlite-project-migration'
 
 const admitted = new Map<string, { root: string; manifestHash: string }>()
@@ -60,12 +61,22 @@ export function getProjectDataRoot(projectPath: string): string {
 export function getProjectDatabasePath(projectPath: string): string { return path.join(getProjectDataRoot(projectPath), CANONICAL_PROJECT_DATABASE) }
 export function deactivateProjectData(projectPath: string): void { admitted.delete(key(projectPath)) }
 
+/** 在 worker 里跑完的升级与校验，交给 openCanonicalProjectData 收尾。 */
+export interface VerifiedProjectData { manifest: ReturnType<typeof manifestState>; identity: SqliteContentIdentity }
+
+/** 打开前的升级与校验放进 worker：长篇升级要半分钟，主进程等它时照常响应。 */
+export async function verifyCanonicalProjectData(projectPath: string, worker?: Partial<ProjectSqliteWorkerOptions>): Promise<VerifiedProjectData> {
+  const manifest = manifestState(projectPath)
+  const identity = await runProjectSqliteJobInWorker({ kind: 'open', databasePath: path.join(manifest.root, CANONICAL_PROJECT_DATABASE) }, worker)
+  return { manifest, identity }
+}
+
 /** Project open upgrades when needed and admits on that same verified pass. */
-export function openCanonicalProjectData(projectPath: string): SqliteContentIdentity {
-  const before = manifestState(projectPath)
-  const verified = openProjectSqlite({ databasePath: path.join(before.root, CANONICAL_PROJECT_DATABASE) })
+export function openCanonicalProjectData(projectPath: string, verified?: VerifiedProjectData): SqliteContentIdentity {
+  const before = verified?.manifest ?? manifestState(projectPath)
+  const identity = verified?.identity ?? openProjectSqlite({ databasePath: path.join(before.root, CANONICAL_PROJECT_DATABASE) })
   const after = manifestState(projectPath)
   if (before.manifestHash !== after.manifestHash) throw new Error('PROJECT_MANIFEST_CHANGED')
   admitted.set(key(projectPath), before)
-  return verified
+  return identity
 }

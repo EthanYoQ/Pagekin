@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   currentProjectPath: '',
   existingPaths: new Set<string>(),
   initCalls: [] as string[],
+  initVerified: [] as unknown[],
+  verifyCanonicalProjectData: vi.fn(),
   createCalls: [] as string[],
   createdVelaDirectories: new Set<string>(),
   failCorePaths: new Set<string>(),
@@ -99,9 +101,10 @@ vi.mock('../../database', () => ({
     : null,
 
   createProjectDatabase: vi.fn((projectPath: string) => { mocks.createCalls.push(path.resolve(projectPath)) }),
-  initProjectDatabase: vi.fn((projectPath: string) => {
+  initProjectDatabase: vi.fn((projectPath: string, verified?: unknown) => {
     const resolved = path.resolve(projectPath)
     mocks.initCalls.push(resolved)
+    mocks.initVerified.push(verified)
     // Mirrors the production initializer's `.vela/vela.db` parent creation.
     mocks.createdVelaDirectories.add(path.join(resolved, '.vela'))
     if (mocks.failInitPaths.has(resolved)) {
@@ -203,6 +206,7 @@ vi.mock('../../repositories/finalization-repository', () => ({
 }))
 
 vi.mock('../../services/portable-export-host', () => ({ stopPortableExports: mocks.stopPortableExports }))
+vi.mock('../../services/project-data-locator', () => ({ verifyCanonicalProjectData: mocks.verifyCanonicalProjectData }))
 
 import { registerProjectController } from '../project-controller'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
@@ -250,6 +254,8 @@ beforeEach(() => {
     path.join(projectD, '.vela'),
   ])
   mocks.initCalls = []
+  mocks.initVerified = []
+  mocks.verifyCanonicalProjectData.mockImplementation(async (projectPath: string) => ({ verifiedIn: 'worker', projectPath }))
   mocks.createCalls = []
   mocks.createdVelaDirectories = new Set()
   mocks.failCorePaths = new Set()
@@ -509,6 +515,42 @@ describe('project controller project identity', () => {
     stopped()
     await expect(switching).resolves.toMatchObject({ success: true })
     expect(mocks.initCalls).not.toEqual([])
+  })
+
+  // #702：长篇升级要半分钟，放在 worker 里跑；期间旧书照常开着，验完才换库。
+  it('project:open：另一本书在 worker 里升级校验，验完才换库，换库用的就是这次校验', async () => {
+    let verified!: (value: unknown) => void
+    mocks.verifyCanonicalProjectData.mockImplementationOnce(() => new Promise(resolve => { verified = resolve }))
+
+    const opening = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-upgrading', projectA)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(mocks.verifyCanonicalProjectData).toHaveBeenCalledExactlyOnceWith(projectB)
+    expect(mocks.currentProjectPath).toBe(projectA)
+    expect(mocks.initCalls).toEqual([])
+    verified({ verifiedIn: 'worker', projectPath: projectB })
+    await expect(opening).resolves.toMatchObject({ success: true, activeProjectPath: projectB })
+    expect(mocks.initCalls).toEqual([projectB])
+    expect(mocks.initVerified).toEqual([{ verifiedIn: 'worker', projectPath: projectB }])
+  })
+
+  it('project:open：worker 校验期间又打开了别的书，这次作废，不换库', async () => {
+    let verified!: (value: unknown) => void
+    mocks.verifyCanonicalProjectData.mockImplementationOnce(() => new Promise(resolve => { verified = resolve }))
+
+    const older = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-superseded', projectA)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const newer = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD), 'open-D-latest', projectA)
+    verified({ verifiedIn: 'worker', projectPath: projectB })
+    await expect(older).resolves.toMatchObject({ success: false, stale: true, activeProjectPath: projectA })
+    await expect(newer).resolves.toMatchObject({ success: true, activeProjectPath: projectD })
+    expect(mocks.initCalls).toEqual([projectD])
+  })
+
+  it('project:open：重开正开着的这本书不进 worker，主进程照旧校验', async () => {
+    await expect(handler('project:open')({ sender: { id: 17 } }, selectedProject(projectA), 'reopen-A', projectA))
+      .resolves.toMatchObject({ success: true, activeProjectPath: projectA })
+    expect(mocks.verifyCanonicalProjectData).not.toHaveBeenCalled()
+    expect(mocks.initVerified).toEqual([undefined])
   })
 
   it('opens the project and reports what the duplicate-finalization repair found', async () => {

@@ -34,6 +34,7 @@ import { assertExpectedProjectPath, assertRequiredExpectedProjectPath } from '..
 import { sanitizeProjectName } from './project-path'
 import { stopPortableExports } from '../services/portable-export-host'
 import { projectStoragePreflightFailure } from '../services/project-storage-preflight'
+import { verifyCanonicalProjectData } from '../services/project-data-locator'
 import { projectPeekService } from '../services/project-peek'
 import { probeProjectSqlite } from '../services/sqlite-project-migration'
 import { mainText } from '../i18n'
@@ -637,7 +638,14 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         if (recent?.projectId && recent.projectId !== trustedProject.projectId) {
           throw new Error('PROJECT_OPEN_RECENT_IDENTITY_CHANGED')
         }
-        const { sealedRootCount } = initProjectDatabase(resolvedProjectPath)
+        // 升级与校验在 worker 里跑，期间旧书照常开着；重开当前这本时主进程正持有它，仍在主线程校验（它已是当前版本）。
+        const verified = sameProjectPath(getCurrentProjectPath(), resolvedProjectPath)
+          ? undefined
+          : await verifyCanonicalProjectData(resolvedProjectPath)
+        if (!isLatestRequest()) {
+          return { success: false, project: null, requestToken, stale: true, ...databaseStateForRollbackBoundary(rollbackBoundary) }
+        }
+        const { sealedRootCount } = initProjectDatabase(resolvedProjectPath, verified)
         const openedDatabase = getProjectDb()
         if (openedDatabase) adoptTransferredCharacterContinuityOnOpen({ database: openedDatabase,
           projectRoot: resolvedProjectPath, projectId: trustedProject.projectId })

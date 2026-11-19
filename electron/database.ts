@@ -12,7 +12,7 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from './m
 import { SchemaMigrationError } from './migrations/registry'
 import { migrateSchema } from './migrations/runner'
 import { SqliteSchemaAdapter } from './migrations/sqlite-schema-adapter'
-import { openCanonicalProjectData, deactivateProjectData, getNewProjectDatabasePath, getProjectDatabasePath } from './services/project-data-locator'
+import { openCanonicalProjectData, deactivateProjectData, getNewProjectDatabasePath, getProjectDatabasePath, type VerifiedProjectData } from './services/project-data-locator'
 import { readSqliteContentIdentity } from './services/sqlite-project-migration'
 import { POST_PROCESS_INTERRUPTED } from '../src/shared/finalization-step-error'
 import { admitGenerationLedger, type LedgerAdmission } from './repositories/generation-ledger-admission'
@@ -37,11 +37,11 @@ export function createProjectDatabase(projectPath: string, importSourceSecret?: 
 }
 
 /** Existing projects are verified before acquiring a writable handle or fencing. */
-export function initProjectDatabase(projectPath: string): LedgerAdmission {
+export function initProjectDatabase(projectPath: string, upgraded?: VerifiedProjectData): LedgerAdmission {
   closeProjectDatabase()
   let database: BetterSqlite3.Database | undefined
   try {
-    const verified = openCanonicalProjectData(projectPath)
+    const verified = openCanonicalProjectData(projectPath, upgraded)
     const databasePath = getProjectDatabasePath(projectPath)
     database = new Database(databasePath, { fileMustExist: true })
     // Compare before any statement: an unused handle has not opened the WAL, so closing it on refusal cannot checkpoint.
