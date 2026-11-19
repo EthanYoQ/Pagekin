@@ -43,6 +43,8 @@ export const zhCN = {
   'error.projectDeleteFailed': '项目文件夹删除失败。请关闭正在使用其中文件的程序后重试。',
   'error.projectRecentListUpdateFailed': '最近项目列表暂未更新，项目本身不受影响。',
   'error.projectArchiveTargetExists': '目标文件已存在，请选择其他文件名。项目存档不会覆盖已有文件。',
+  'error.portableSourceChanged': '作品没有改动。导出时资料被改了，存档没有生成。请再点「导出本地存档」。',
+  'error.cloudBackupSourceChanged': '作品没有改动。备份时资料被改了，没有上传。请再点「立即云备份」。',
   'error.portableUnsafeProjection': '作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。',
   'error.damagedReviewCycle': '作品没有改动。{chapter}有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。',
   'backup.omittedReviewCycleOne': '{chapter}有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。',

@@ -41,6 +41,8 @@ export const enUS = {
   'error.projectDeleteFailed': 'Could not delete the project folder. Close any program that is using files in it, then try again.',
   'error.projectRecentListUpdateFailed': 'The recent project list was not updated. The project itself is unaffected.',
   'error.projectArchiveTargetExists': 'The target file already exists. Choose another file name; project archives never overwrite existing files.',
+  'error.portableSourceChanged': 'Your book is unchanged. Files changed during export, so no archive was created. Click Export local archive again.',
+  'error.cloudBackupSourceChanged': 'Your book is unchanged. Files changed during backup, so nothing was uploaded. Click Back up now again.',
   'error.portableUnsafeProjection': 'Your book is unchanged. One piece of data could not be packaged safely, so no archive was created. Please report this message to us.',
   'error.damagedReviewCycle': 'Your book is unchanged. A review record in {chapter} is damaged, so no archive was made. Please report this message to us.',
   'backup.omittedReviewCycleOne': 'A damaged review record in {chapter} was left out of the archive. The text and other reviews are included.',

@@ -52,6 +52,7 @@ import {
   type WebDavAccount,
   type WebDavGeneration,
 } from '../services/webdav-backup-service'
+import { PortableProjectArchiveError } from '../services/portable-project-archive'
 import { removeDirectoryWithWindowsRetry } from '../utils/remove-directory'
 import { registerRecentProject, type RecentProject } from './project-controller'
 
@@ -119,6 +120,9 @@ class CloudBackupControllerError extends Error {
 }
 
 function fail(code: CloudBackupErrorCode): never { throw new CloudBackupControllerError(code) }
+
+/** 导出已整次重来过一次，资料仍在被改。 */
+const SOURCE_CHANGED_ARCHIVE_ERRORS = new Set(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('CLOUD_BACKUP_INPUT_INVALID')
@@ -407,6 +411,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
           })
         } catch (error) {
           if (signal.aborted) fail('CLOUD_BACKUP_CANCELLED')
+          if (error instanceof PortableProjectArchiveError && SOURCE_CHANGED_ARCHIVE_ERRORS.has(error.code)) fail('CLOUD_BACKUP_SOURCE_CHANGED')
           throw new CloudBackupControllerError('CLOUD_BACKUP_ARCHIVE_FAILED',
             error instanceof SchemaMigrationError ? error.damagedReviewCycle : undefined)
         }
