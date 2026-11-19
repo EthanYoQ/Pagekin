@@ -42,7 +42,7 @@ const RELATION_CHAPTERS = {
 }
 
 /** 记下界面打开作品拿到的会话（包一层主进程的 project:open），驱动读库时不必重开作品。重启后要重新装。 */
-async function trackOpenedSession(app) {
+export async function trackOpenedSession(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
     const original = handlers.get('project:open')
@@ -55,7 +55,7 @@ async function trackOpenedSession(app) {
   })
 }
 
-async function uiSession(app) {
+export async function uiSession(app) {
   const session = await app.evaluate(() => globalThis.__driveOpened)
   assert.ok(session?.leaseId, '记下了界面打开作品的会话')
   return session
@@ -121,7 +121,7 @@ async function seedRelationBook(context) {
 }
 
 /** 页面里进行中的运行胶囊挂上来过几次；点下触发运行的按钮之前取一次，交给 untilRunEnds。 */
-async function runsStarted(page) {
+export async function runsStarted(page) {
   return page.evaluate(() => {
     if (!window.__realRunsStarted) {
       window.__realRunsStarted = { count: 0 }
@@ -149,7 +149,7 @@ async function runSheetText(page) {
  * 等这次运行挂出胶囊、再等顶栏不再有进行中的胶囊，返回毫秒数。
  * 运行停在「等你确认」时，按作者的默认选择确认，记进 confirmations。
  */
-async function untilRunEnds(page, before, what, confirmations = []) {
+export async function untilRunEnds(page, before, what, confirmations = []) {
   const started = Date.now()
   for (;;) {
     const state = await page.evaluate(({ before, selector }) => ({
@@ -177,7 +177,7 @@ async function runAndWait(page, trigger, what, confirmations) {
   return untilRunEnds(page, before, what, confirmations)
 }
 
-async function openChapter(page, chapterNumber) {
+export async function openChapter(page, chapterNumber) {
   if (!await stage.chapterButton(page, chapterNumber).isVisible()) await stage.stageButton(page, '正文').click()
   await chapterView.open(page, chapterNumber)
 }
