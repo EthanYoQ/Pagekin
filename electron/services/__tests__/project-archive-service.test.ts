@@ -12,7 +12,7 @@ import { getDesktopMigrationRegistry } from '../../migrations/desktop-registry'
 import { migrateSchema } from '../../migrations/runner'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { verifyM03ReviewCycle, canonicalM03FindingSetHash, inspectM03ReviewCycles } from '../../migrations/m03-review-cycle'
-import { CANONICAL_PROJECT_DATABASE, createCanonicalProjectManifest } from '../../../src/shared/project-format'
+import { CANONICAL_PROJECT_DATABASE, CANONICAL_PROJECT_DIRECTORY, createCanonicalProjectManifest } from '../../../src/shared/project-format'
 import { buildReviewGenerationReport } from '../../../src/shared/review-generation-report'
 import type { ReviewCycleRecheckContext } from '../../../src/shared/review-cycle'
 import type { GenerationTransportDiagnostics } from '../../../src/shared/generation-contract'
@@ -57,6 +57,29 @@ import { generationOutputContract, type BeginGenerationRequest } from '../../../
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import { composeVisibleContinuation } from '../../../src/shared/visible-continuation'
 import { countDraftUnits } from '../../../src/shared/draft-units'
+
+import { withKnowledgeSourceGate } from '../knowledge-source-gate'
+import { activateCanonicalProjectData, getProjectDataRoot } from '../project-data-locator'
+import { PORTABLE_KNOWLEDGE_SOURCE_PATH } from '../portable-project-assets'
+
+const archiveLimits = vi.hoisted(() => ({ current: {} as Record<string, number>, defaults: {} as Record<string, number> }))
+vi.mock('../portable-project-format', async importOriginal => {
+  const actual = await importOriginal<typeof import('../portable-project-format')>()
+  Object.assign(archiveLimits.defaults, actual.DEFAULT_PORTABLE_ARCHIVE_LIMITS)
+  Object.assign(archiveLimits.current, actual.DEFAULT_PORTABLE_ARCHIVE_LIMITS)
+  return { ...actual, DEFAULT_PORTABLE_ARCHIVE_LIMITS: archiveLimits.current }
+})
+const gateRequests = vi.hoisted(() => ({ onRequest: undefined as undefined | (() => void) }))
+vi.mock('../knowledge-source-gate', async importOriginal => {
+  const actual = await importOriginal<typeof import('../knowledge-source-gate')>()
+  return {
+    ...actual,
+    withKnowledgeSourceGate: <T>(root: string, operation: () => T | Promise<T>) => {
+      gateRequests.onRequest?.()
+      return actual.withKnowledgeSourceGate(root, operation)
+    },
+  }
+})
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
@@ -495,6 +518,161 @@ describe('portable project export service', () => {
       expect(rewritten).toBe(true)
       expect(fs.readdirSync(f.attemptParent)).toEqual([])
     })
+  })
+
+  describe('查过之后、打开之前，文件所在目录被换成指向项目外的联接（#744）', () => {
+    afterEach(() => { vi.restoreAllMocks() })
+
+    function swapDirectoryBeforeOpen(f: Fixture, file: string) {
+      const directory = path.dirname(file)
+      const outside = fs.mkdtempSync(path.join(f.base, '项目外-'))
+      fs.writeFileSync(path.join(outside, path.basename(file)), Buffer.alloc(fs.statSync(file).size, 'x'))
+      const openSync = fs.openSync.bind(fs) as (...args: unknown[]) => number
+      const state = { swapped: false }
+      vi.spyOn(fs, 'openSync').mockImplementation(((target: unknown, ...rest: unknown[]) => {
+        if (!state.swapped && typeof target === 'string' && path.resolve(target) === path.resolve(file)) {
+          state.swapped = true
+          fs.renameSync(directory, `${outside}-原目录`)
+          fs.symlinkSync(outside, directory, 'junction')
+        }
+        return openSync(target, ...rest)
+      }) as typeof fs.openSync)
+      return state
+    }
+
+    it('资料：拒绝导出，项目外的字节不进存档', async () => {
+      const f = fixture()
+      const prompt = path.join(f.storage, 'prompts', '章节.txt')
+      fs.mkdirSync(path.dirname(prompt))
+      fs.writeFileSync(prompt, '作者自己的提示词')
+      const state = swapDirectoryBeforeOpen(f, prompt)
+
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
+      expect(state.swapped).toBe(true)
+      expect(fs.existsSync(f.target)).toBe(false)
+      expect(fs.readdirSync(f.attemptParent)).toEqual([])
+    })
+
+    it('头像：拒绝导出，项目外的字节不进存档', async () => {
+      const f = fixture()
+      seedProject(f)
+      const db = new Database(f.databasePath, { readonly: true })
+      const relativePath = db.prepare('SELECT relative_path FROM character_avatar_assets').pluck().get() as string
+      db.close()
+      const state = swapDirectoryBeforeOpen(f, path.join(f.storage, ...relativePath.split('/')))
+
+      await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
+      expect(state.swapped).toBe(true)
+      expect(fs.existsSync(f.target)).toBe(false)
+    })
+  })
+
+  describe('资料超出存档上限：拷之前就拒绝，不先把资料写到目标盘（#744）', () => {
+    const MiB = 1024 * 1024
+    afterEach(() => {
+      vi.restoreAllMocks()
+      Object.assign(archiveLimits.current, archiveLimits.defaults)
+    })
+
+    function countWrittenBytes() {
+      const counter = { bytes: 0 }
+      const writeSync = fs.writeSync.bind(fs) as (...args: unknown[]) => number
+      vi.spyOn(fs, 'writeSync').mockImplementation(((...args: unknown[]) => {
+        const written = writeSync(...args)
+        counter.bytes += written
+        return written
+      }) as typeof fs.writeSync)
+      return counter
+    }
+
+    function prompts(f: Fixture, sizes: readonly number[]): string[] {
+      fs.mkdirSync(path.join(f.storage, 'prompts'))
+      return sizes.map((size, index) => {
+        const file = path.join(f.storage, 'prompts', `设定-${index}.txt`)
+        fs.writeFileSync(file, Buffer.alloc(size, 'a'))
+        return file
+      })
+    }
+
+    it('单份资料超过单项上限', async () => {
+      const f = fixture()
+      archiveLimits.current.maxEntryBytes = 2 * MiB
+      prompts(f, [3 * MiB])
+      const written = countWrittenBytes()
+
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
+      expect(written.bytes).toBeLessThan(MiB)
+      expect(fs.readdirSync(f.attemptParent)).toEqual([])
+    })
+
+    it('每份都没超单项上限，加起来超过总量上限', async () => {
+      const f = fixture()
+      archiveLimits.current.maxEntryBytes = 2 * MiB
+      archiveLimits.current.maxTotalBytes = 3 * MiB
+      prompts(f, [2 * MiB, 2 * MiB])
+      const written = countWrittenBytes()
+
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
+      expect(written.bytes).toBeLessThanOrEqual(3 * MiB)
+    })
+
+    it('拷的途中资料变大，超过单项上限就停', async () => {
+      const f = fixture()
+      archiveLimits.current.maxEntryBytes = 2 * MiB
+      const [file] = prompts(f, [MiB])
+      const readSync = fs.readSync.bind(fs) as (...args: unknown[]) => number
+      let grown = false
+      vi.spyOn(fs, 'readSync').mockImplementation(((...args: unknown[]) => {
+        const read = readSync(...args)
+        if (!grown && read === MiB) {
+          grown = true
+          fs.appendFileSync(file!, Buffer.alloc(4 * MiB, 'b'))
+        }
+        return read
+      }) as typeof fs.readSync)
+      const written = countWrittenBytes()
+
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
+      expect(grown).toBe(true)
+      expect(written.bytes).toBeLessThanOrEqual(2 * MiB)
+    })
+  })
+
+  it('导出时知识库正在导入，草稿保存先提交：存档里的知识库不比库新（#744）', async () => {
+    const f = fixture()
+    seedProject(f)
+    let knowledge = '知识库：只有第一章'
+    let finishImport!: () => void
+    activateCanonicalProjectData(f.root)
+    const importing = withKnowledgeSourceGate(getProjectDataRoot(f.root), () => new Promise<void>(resolve => {
+      finishImport = () => { knowledge = '知识库：已收进第二章'; resolve() }
+    }))
+    gateRequests.onRequest = () => {
+      gateRequests.onRequest = undefined
+      const db = new Database(f.databasePath)
+      try {
+        db.prepare('INSERT INTO contents(id,body) VALUES(2,?)').run('第二章草稿')
+        db.prepare(`INSERT INTO drafts_all(id,chapter_number,version,status,source,content_id,word_count,source_dependencies)
+          VALUES(2,2,1,'draft','write',2,5,'[]')`).run()
+      } finally { db.close() }
+      finishImport()
+    }
+    const assets: ExportPortableProjectInput['assets'] = {
+      async snapshot({ sourceProjectRoot }) {
+        const text = await withKnowledgeSourceGate(path.join(path.resolve(sourceProjectRoot), CANONICAL_PROJECT_DIRECTORY), () => knowledge)
+        return { files: [providedFile(PORTABLE_KNOWLEDGE_SOURCE_PATH, text, 'knowledge-source')] }
+      },
+    }
+
+    try { await exportPortableProject(input(f, assets)) }
+    finally { gateRequests.onRequest = undefined }
+    await importing
+    const unpacked = await extract(f)
+    expect(fs.readFileSync(path.join(unpacked.stagingPath, PORTABLE_KNOWLEDGE_SOURCE_PATH), 'utf8')).toBe('知识库：已收进第二章')
+    const archived = new Database(path.join(unpacked.stagingPath, CANONICAL_PROJECT_DATABASE), { readonly: true })
+    try {
+      expect(archived.prepare('SELECT body FROM contents WHERE id = 2').pluck().get()).toBe('第二章草稿')
+    } finally { archived.close() }
   })
 
   it('资料文件逐个拷进导出临时目录，不整份留在内存里交给打包', async () => {
