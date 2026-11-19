@@ -1126,9 +1126,9 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
   })
 
-  it('待合并修稿的循环在存档里读坏被省略：合并视图不说会复验', async () => {
+  it('待合并修稿的循环在存档里读坏被省略：显示的是当前作品的审稿，合并视图也不说会复验', async () => {
     const draft = backend.addDraft({ status: 'draft' })
-    restoredReview(draft)
+    backend.addReview(draft)
     Object.assign(backend.addRevision(draft), { unbound: true })
     await mount()
     await openDraft(draft.id)
@@ -1225,6 +1225,20 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'review', projectPath: SESSION.projectPath, projectSession: SESSION, runId: 'later-review' }))
     await expect.element(page.getByText(RESTORED)).toBeVisible()
     expect(page.getByRole('button', { name: /项意见修稿$/ }).elements()).toEqual([])
+  })
+
+  it('复验完成后挑报告时读到了完成，动作条自己的重读失败：按读到的完成摆，不沿用先前的复验没完成', async () => {
+    const draft = backend.addDraft({ status: 'revised' })
+    const review = backend.addReview(draft)
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, ...recheckPending })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText('合并后复验还没完成，可在审稿报告里重试')).toBeVisible()
+
+    failCycleRead('review-checklist')
+    backend.addRecheck(draft, review, ['resolved', 'unresolved'])
+    await act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'review', projectPath: SESSION.projectPath, projectSession: SESSION, runId: 'recheck' }))
+    await expect.element(page.getByText('复验完成：1 / 2 项意见已解决')).toBeVisible()
   })
 
   it('重读还没回来就重新打开了作品：旧会话读回的循环被丢弃，按新会话读到的摆', async () => {
