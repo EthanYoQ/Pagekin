@@ -1091,7 +1091,6 @@ function verifyFile(file: PortableProvidedFile, projectStorageRoot: string): voi
   portablePathKey(file.archivePath)
 }
 
-/** 打包器不查硬链接，这里补上。快照后被删掉的算资料有改动。 */
 /** 打包器查过之后、打开之前资料被删，它报的是原始 ENOENT。 */
 function missingSource(error: unknown, sourcePaths: Iterable<string>): boolean {
   const missing = (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' ? (error as NodeJS.ErrnoException).path : undefined
@@ -1101,6 +1100,7 @@ function missingSource(error: unknown, sourcePaths: Iterable<string>): boolean {
   return false
 }
 
+/** 打包器不查硬链接，这里补上。快照后被删掉的算资料有改动。 */
 function assertSourceStillOwned(sourcePath: string): void {
   const info = fs.lstatSync(sourcePath, { bigint: true, throwIfNoEntry: false })
   if (!info) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
