@@ -1075,7 +1075,7 @@ function copyOwnedFile(attempt: OwnedAttempt, file: string, sourcePath: string):
       let byteSize = 0
       for (let read = 0; (read = fs.readSync(source, buffer, 0, buffer.length, null)) > 0; byteSize += read) {
         digest.update(buffer.subarray(0, read))
-        fs.writeSync(target, buffer, 0, read)
+        for (let written = 0; written < read;) written += fs.writeSync(target, buffer, written, read - written)
       }
       fs.fsyncSync(target)
       return { stagedPath: file, byteSize, sha256: digest.digest('hex') }
