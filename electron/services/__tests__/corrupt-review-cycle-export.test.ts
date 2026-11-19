@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createRequire } from 'node:module'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
@@ -24,6 +24,8 @@ import { PostProcessRepository } from '../../repositories/post-process-repositor
 import { ChapterDeletionService } from '../chapter-deletion-service'
 import { GenerationRunRepository } from '../../repositories/generation-run-repository'
 import { exportPortableProject, type ExportPortableProjectInput } from '../project-archive-service'
+import { exportPortableProjectInWorker, type PortableExportWorkerOptions } from '../portable-export-host'
+import { portableExportWorkerForTest } from '../../../test/helpers/portable-export-worker'
 
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -31,6 +33,9 @@ const Database = createRequire(import.meta.url)('better-sqlite3') as typeof impo
 let base = ''
 let projectRoot = ''
 let projectId = ''
+let worker: PortableExportWorkerOptions
+
+beforeAll(async () => { worker = await portableExportWorkerForTest() }, 60_000)
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
 const db = () => getProjectDb()!
@@ -105,6 +110,11 @@ async function archiveRows(archivePath: string): Promise<Record<string, Array<Re
     const tables = archived.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all() as string[]
     return Object.fromEntries(tables.map(table => [table, archived.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all() as Array<Record<string, unknown>>]))
   } finally { archived.close() }
+}
+
+/** 生产路径：本地导出与云备份都经宿主在 worker 里跑。 */
+function exportInWorker({ sourceProjectRoot, projectSession, targetArchivePath, attemptParentPath, assertCurrentContext }: ExportPortableProjectInput) {
+  return exportPortableProjectInWorker({ sourceProjectRoot, projectSession, targetArchivePath, attemptParentPath, assertCurrentContext }, worker)
 }
 
 async function exportTo(): Promise<{ archivePath: string; receipt: Awaited<ReturnType<typeof exportPortableProject>> }> {
@@ -245,7 +255,9 @@ describe('封存的根整根不当证据：引用它的循环留在存档外并�
     expect(blocked()).toBeNull()
     expect(read).toThrow('GENERATION_LEDGER_UNREADABLE')
 
-    const { archivePath, receipt } = await exportTo()
+    const input = exportInput()
+    const receipt = await exportInWorker(input)
+    const archivePath = input.targetArchivePath
     expect(receipt.omittedReviewCycles).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
     expect(blocked()).toBe('GENERATION_LEDGER_UNREADABLE')
     expect(read).toThrow('GENERATION_LEDGER_UNREADABLE')
@@ -270,8 +282,9 @@ describe('封存的根整根不当证据：引用它的循环留在存档外并�
     reopen()
     const blocked = () => db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-review-ch2'").pluck().get()
 
-    await expect(exportPortableProject(reject(exportInput()))).rejects.toThrow(code)
+    await expect(exportInWorker(reject(exportInput()))).rejects.toThrow(code)
     expect(blocked()).toBeNull()
+    expect(fs.readdirSync(base).filter(name => name.startsWith('.pe-'))).toEqual([])
   })
 })
 
