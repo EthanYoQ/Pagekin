@@ -18,6 +18,7 @@ import {
 import { logicalTableName } from '../migrations/m07-chapter-recycle'
 import { readPortableCharacterAvatarRows } from '../repositories/character-asset-repository'
 import {
+  DEFAULT_PORTABLE_ARCHIVE_LIMITS,
   PORTABLE_PROJECT_FORMAT_VERSION,
   PORTABLE_SOURCE_SCHEMA_VERSION,
   PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS,
@@ -205,7 +206,8 @@ export interface PortableAssetProvider {
     sourceDatabasePath: string
     projectSession: Readonly<ProjectSessionContext>
     snapshotGeneration: string
-    stageFile(sourcePath: string): PortableStagedFile
+    /** checked 是调用方查过项目根与链接时 lstat 到的身份，打开的文件必须就是它。 */
+    stageFile(sourcePath: string, checked: fs.BigIntStats): PortableStagedFile
   }): PortableAssetSnapshot | Promise<PortableAssetSnapshot>
 }
 
@@ -292,11 +294,11 @@ function safeDirectory(directory: string): void {
   }
 }
 
-function regularFile(file: string, missingCode: ProjectArchiveServiceErrorCode): fs.Stats {
+function regularFile(file: string, missingCode: ProjectArchiveServiceErrorCode): fs.BigIntStats {
   try {
     const absolute = path.resolve(file)
-    const info = fs.lstatSync(absolute)
-    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1
+    const info = fs.lstatSync(absolute, { bigint: true })
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1n
       || normalizedPath(fs.realpathSync.native(absolute)) !== normalizedPath(absolute)) fail('PORTABLE_ASSET_UNSAFE')
     return info
   } catch (error) {
@@ -1066,18 +1068,22 @@ function writeOwnedFile(attempt: OwnedAttempt, file: string, bytes: Buffer): voi
 const STAGE_CHUNK_BYTES = 1024 * 1024
 
 /**
- * 同步边拷边算 sha，内存只占一块缓冲。同步做完，应用自己的写入插不进来；
- * 别的程序在拷的途中改了源文件（大小或修改时间变了），拷到的可能新旧混合，就拒绝。
+ * 同步做完，应用自己的写入插不进来；别的程序在拷的途中改了源文件（大小或修改时间变了），
+ * 拷到的可能新旧混合，就拒绝。超出存档上限的在写目标盘之前就拒绝。
  */
-function copyOwnedFile(attempt: OwnedAttempt, file: string, sourcePath: string): PortableStagedFile {
+function copyOwnedFile(attempt: OwnedAttempt, file: string, sourcePath: string, checked: fs.BigIntStats, remainingBytes: number): PortableStagedFile {
   const source = fs.openSync(sourcePath, 'r')
   try {
+    const before = fs.fstatSync(source, { bigint: true })
+    if (!sameObject(before, checked) || !before.isFile() || before.nlink !== 1n) fail('PORTABLE_ASSET_UNSAFE')
+    const limit = Math.min(DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxEntryBytes, remainingBytes)
+    if (before.size > BigInt(limit)) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
     const target = openOwnedFile(attempt, file)
     try {
-      const before = fs.fstatSync(source, { bigint: true })
       const digest = createHash('sha256'), buffer = Buffer.allocUnsafe(STAGE_CHUNK_BYTES)
       let byteSize = 0
       for (let read = 0; (read = fs.readSync(source, buffer, 0, buffer.length, null)) > 0; byteSize += read) {
+        if (byteSize + read > limit) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
         digest.update(buffer.subarray(0, read))
         for (let written = 0; written < read;) written += fs.writeSync(target, buffer, written, read - written)
       }
@@ -1198,8 +1204,13 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
 
     // 头像和资料紧接着库快照拷进私有目录，导出期间换头像、改提示词不影响这份存档。
     const avatarReferenceProjections: Array<Record<string, unknown>> = []
-    let stagedFiles = 0
-    const stageFile = (sourcePath: string) => copyOwnedFile(attempt, path.join(attemptRoot, `staged-${stagedFiles++}`), sourcePath)
+    let stagedFiles = 0, stagedBytes = 0
+    const stageFile = (sourcePath: string, checked: fs.BigIntStats) => {
+      const staged = copyOwnedFile(attempt, path.join(attemptRoot, `staged-${stagedFiles++}`), sourcePath, checked,
+        DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxTotalBytes - stagedBytes)
+      stagedBytes += staged.byteSize
+      return staged
+    }
     const avatarFiles: Array<{ entry: PortableProjectManifestEntry; stagedPath: string }> = []
     for (const row of avatarRows) {
       if (row.kind === 'unresolved-reference') {
@@ -1210,9 +1221,9 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
       if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
       const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
       if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
-      regularFile(sourcePath, 'PORTABLE_ASSET_MISSING')
+      const checked = regularFile(sourcePath, 'PORTABLE_ASSET_MISSING')
       avatarFiles.push({ entry: { path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
-        disposition: 'avatar-asset' }, stagedPath: stageFile(sourcePath).stagedPath })
+        disposition: 'avatar-asset' }, stagedPath: stageFile(sourcePath, checked).stagedPath })
     }
     const provided = await input.assets.snapshot({
       sourceProjectRoot: sourceRoot,
@@ -1239,7 +1250,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     }
     const databaseInfo = regularFile(portableDatabasePath, 'PORTABLE_ASSET_MISSING')
     const portableDatabaseSha256 = await hashFile(portableDatabasePath)
-    addSource({ path: CANONICAL_PROJECT_DATABASE, byteSize: databaseInfo.size,
+    addSource({ path: CANONICAL_PROJECT_DATABASE, byteSize: Number(databaseInfo.size),
       sha256: portableDatabaseSha256, disposition: 'portable-database' }, portableDatabasePath)
 
     const portableDatabase = new BetterSqlite(portableDatabasePath, { readonly: true, fileMustExist: true })

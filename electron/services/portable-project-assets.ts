@@ -48,7 +48,7 @@ function physicalFile(file: string, root: string): fs.BigIntStats {
   return info
 }
 
-function enumerateRawFiles(storageRoot: string, stageFile: (sourcePath: string) => PortableStagedFile): PortableProvidedFile[] {
+function enumerateRawFiles(storageRoot: string, stageFile: (sourcePath: string, checked: fs.BigIntStats) => PortableStagedFile): PortableProvidedFile[] {
   physicalDirectory(storageRoot, storageRoot)
   const topKeys = new Set<string>()
   for (const name of fs.readdirSync(storageRoot)) {
@@ -76,7 +76,7 @@ function enumerateRawFiles(storageRoot: string, stageFile: (sourcePath: string) 
     const key = portablePathKey(archivePath)
     if (keys.has(key)) fail()
     keys.add(key)
-    const { stagedPath, byteSize, sha256: digest } = stageFile(entry)
+    const { stagedPath, byteSize, sha256: digest } = stageFile(entry, fileInfo)
     if (BigInt(byteSize) !== fileInfo.size) fail()
     files.push({ id: `raw:${archivePath}`, archivePath, stagedPath, byteSize, sha256: digest, disposition: disposition(topLevel) })
   }

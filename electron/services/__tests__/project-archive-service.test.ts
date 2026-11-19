@@ -620,19 +620,23 @@ describe('portable project export service', () => {
       const f = fixture()
       archiveLimits.current.maxEntryBytes = 2 * MiB
       const [file] = prompts(f, [MiB])
+      const otherProgram = fs.openSync(file!, 'a')
+      const appendByOtherProgram = fs.writeSync.bind(fs, otherProgram, Buffer.alloc(4 * MiB, 'b'))
       const readSync = fs.readSync.bind(fs) as (...args: unknown[]) => number
       let grown = false
       vi.spyOn(fs, 'readSync').mockImplementation(((...args: unknown[]) => {
         const read = readSync(...args)
         if (!grown && read === MiB) {
           grown = true
-          fs.appendFileSync(file!, Buffer.alloc(4 * MiB, 'b'))
+          appendByOtherProgram()
         }
         return read
       }) as typeof fs.readSync)
       const written = countWrittenBytes()
 
-      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
+      try {
+        await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
+      } finally { fs.closeSync(otherProgram) }
       expect(grown).toBe(true)
       expect(written.bytes).toBeLessThanOrEqual(2 * MiB)
     })
