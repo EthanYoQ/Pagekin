@@ -129,6 +129,8 @@ export interface MergeData {
   originalContent: string
   modifiedContent: string
   revisionPath: string
+  /** 作者在合并视图里逐段选择的存放键，见 merge-segments 的 mergeChoicesKey。 */
+  choicesKey: string
   targetSnapshot: { content: string; contentRevision: number }
   staleReason: string | null
 }
@@ -629,6 +631,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       originalContent: source?.content ?? '',
       modifiedContent: revision.content,
       revisionPath: revPath,
+      choicesKey: mergeChoicesKey(projectSession.projectId, rev.id),
       targetSnapshot,
       staleReason,
     })
@@ -675,7 +678,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       if (!isProjectSessionCurrent(projectSession)) return false
       if (result.success) {
         closeMerge()
-        forgetMergeChoices(mergeChoicesKey(projectKey, mergeData.revisionPath))
+        forgetMergeChoices(mergeData.choicesKey)
         setMeta(prev => prev ? { ...prev, status: 'revised' } : prev)
         // 标签上的稿状态优先于元数据，合并后同步改成已修稿，否则界面仍按合并前的状态显示。
         useEditorStore.setState(state => ({
@@ -709,7 +712,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       for (const id of ids) {
         const result = await ipc.invokeWithProjectSession(projectSession, 'db:revision-mark-discarded', id, projectSession.projectPath)
         if (!result.success) throw new Error(result.error)
-        forgetMergeChoices(mergeChoicesKey(projectKey, formatResourceUri({ kind: 'revision', id })))
+        forgetMergeChoices(mergeChoicesKey(projectSession.projectId, id))
       }
     } catch (error) {
       const reason = displayedErrorMessage(currentInterfaceLocale(), error)

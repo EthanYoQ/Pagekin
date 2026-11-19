@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Check } from 'lucide-react'
 import { pluralEn } from '../../../shared/plural-en'
 import { useLocaleStore } from '../../../stores/locale-store'
-import { mergeChoicesKey, useMergeSegments, type HunkPick } from '../../editor/merge-segments'
+import { useMergeSegments, type HunkPick } from '../../editor/merge-segments'
 import type { MergeData } from '../../editor/use-draft-actions'
 import { Button } from '../../ui/Button'
 import { Notice } from '../../ui/Notice'
@@ -17,8 +17,7 @@ function sameLabel(lines: readonly string[] | undefined): boolean {
  * 修稿合并（ThreeWayMerge 的数据逻辑）：每处改动选用原稿、用修稿或手动编辑，也可以全部用原稿、全部用修稿。
  * 完成合并交出的正文就是按选择拼出的文字；稍后再合并只收起视图，修稿仍待合并。
  */
-export default function MergeView({ projectKey, data, versionLabel, recheck, onComplete, onLater }: {
-  projectKey: string
+export default function MergeView({ data, versionLabel, recheck, onComplete, onLater }: {
   data: MergeData
   versionLabel: string
   /** 按审稿意见修出的稿合并后会自动复验；直接修稿没有复验。 */
@@ -27,7 +26,7 @@ export default function MergeView({ projectKey, data, versionLabel, recheck, onC
   onLater: () => void
 }) {
   const text = useLocaleStore(s => s.text)
-  const merge = useMergeSegments(data.originalContent, data.modifiedContent, mergeChoicesKey(projectKey, data.revisionPath))
+  const merge = useMergeSegments(data.originalContent, data.modifiedContent, data.choicesKey)
   const [busy, setBusy] = useState(false)
   const pickOf = (index: number): HunkPick => merge.picks[index] ?? 'original'
   const revisedCount = merge.hunks.filter(hunk => pickOf(hunk.index) === 'revised').length

@@ -14,7 +14,7 @@ let root: Root | undefined
 let host: HTMLDivElement | undefined
 let completed: string[]
 
-const data = { originalContent: ORIGINAL, modifiedContent: REVISED, revisionPath: 'ai-novel://revision/9', targetSnapshot: { content: ORIGINAL, contentRevision: 0 }, staleReason: null }
+const data = { originalContent: ORIGINAL, modifiedContent: REVISED, revisionPath: 'ai-novel://revision/9', choicesKey: 'project-1:9', targetSnapshot: { content: ORIGINAL, contentRevision: 0 }, staleReason: null }
 
 async function mount(onLater = vi.fn()) {
   host = document.createElement('div')
@@ -22,7 +22,7 @@ async function mount(onLater = vi.fn()) {
   document.body.append(host)
   root = createRoot(host)
   await act(async () => root!.render(
-    <MergeView projectKey="/projects/rain" data={data} versionLabel="草稿 v1" recheck onComplete={async text => { completed.push(text); return true }} onLater={onLater} />,
+    <MergeView data={data} versionLabel="草稿 v1" recheck onComplete={async text => { completed.push(text); return true }} onLater={onLater} />,
   ))
 }
 
