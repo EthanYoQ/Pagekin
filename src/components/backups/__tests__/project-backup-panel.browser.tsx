@@ -371,7 +371,6 @@ describe('ProjectBackupPanel', () => {
   it.each([
     ['PORTABLE_ARCHIVE_INVALID', '没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。'],
     ['PORTABLE_SCHEMA_UNSUPPORTED', '没有新建副本。这个存档来自更新版本的书童。请先升级书童，再点「从本地存档恢复副本」。'],
-    ['PORTABLE_RESTORE_UNSAFE_TARGET', '没有新建副本。所选文件夹是链接文件夹或在链接里，书童不在这类位置建副本。请换一个普通文件夹，再点「从本地存档恢复副本」。'],
     ['PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '没有新建副本。所选文件夹写不进去，可能没有权限或磁盘满了。请换一个文件夹，再点「从本地存档恢复副本」。'],
   ])('从本地存档恢复失败（%s）：说出原因，不露原码（#702）', async (errorCode, expected) => {
     invoke.mockImplementation(async (channel: string) => {

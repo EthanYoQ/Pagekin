@@ -58,7 +58,6 @@ export const jaJP = {
   'error.restoreArchiveChanged': 'コピーは作成されていません。復元中にアーカイブファイルが変更または移動されました。アーカイブが元の場所にあることを確認してから、もう一度「Restore a copy from local archive」をクリックしてください。',
   'error.restoreArchiveInvalid': 'コピーは作成されていません。選んだファイルは完全な Pagekin のアーカイブではありません。破損しているか、ダウンロードが終わっていない可能性があります。別のアーカイブを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。',
   'error.restoreArchiveNewer': 'コピーは作成されていません。このアーカイブは新しいバージョンの Pagekin で作成されました。Pagekin を更新してから、もう一度「Restore a copy from local archive」をクリックしてください。',
-  'error.restoreTargetLinked': 'コピーは作成されていません。選んだフォルダーはリンクか、リンクされたフォルダーの中にあるため、Pagekin はそこにコピーを作成しません。通常のフォルダーを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。',
   'error.restoreTargetUnwritable': 'コピーは作成されていません。選んだフォルダーに書き込めません。権限がないか、ディスクがいっぱいの可能性があります。別のフォルダーを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。',
   'error.cloudBackupAuthFailed': '作品は変更されていません。WebDAV がこのユーザー名とパスワードを受け付けませんでした。確認して入力し直してから、「Connect and bind」をクリックしてください。',
   'error.cloudBackupNetworkFailed': '作品は変更されていません。WebDAV サーバーに接続できませんでした。ネットワークと WebDAV のアドレスを確認してから、もう一度お試しください。',

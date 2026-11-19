@@ -55,7 +55,6 @@ export const enUS = {
   'error.restoreArchiveChanged': 'No copy was created. The archive file was changed or moved during restore. Make sure it is still in place, then click Restore a copy from local archive again.',
   'error.restoreArchiveInvalid': 'No copy was created. The chosen file is not a complete Pagekin archive; it may be damaged or not fully downloaded. Choose another archive, then click Restore a copy from local archive again.',
   'error.restoreArchiveNewer': 'No copy was created. This archive was made by a newer version of Pagekin. Update Pagekin, then click Restore a copy from local archive again.',
-  'error.restoreTargetLinked': 'No copy was created. The chosen folder is a link or inside a linked folder, and Pagekin does not create copies there. Choose a regular folder, then click Restore a copy from local archive again.',
   'error.restoreTargetUnwritable': 'No copy was created. The chosen folder cannot be written to; you may lack permission or the disk may be full. Choose another folder, then click Restore a copy from local archive again.',
   'error.cloudBackupAuthFailed': 'Your book is unchanged. WebDAV did not accept this username and password. Check them, enter them again, then click Connect and bind.',
   'error.cloudBackupNetworkFailed': 'Your book is unchanged. Could not reach the WebDAV server. Check your network and the WebDAV endpoint, then try again.',

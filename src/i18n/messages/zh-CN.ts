@@ -57,7 +57,6 @@ export const zhCN = {
   'error.restoreArchiveChanged': '没有新建副本。恢复途中存档文件被改动或移走了。请确认存档还在原处，再点「从本地存档恢复副本」。',
   'error.restoreArchiveInvalid': '没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。',
   'error.restoreArchiveNewer': '没有新建副本。这个存档来自更新版本的书童。请先升级书童，再点「从本地存档恢复副本」。',
-  'error.restoreTargetLinked': '没有新建副本。所选文件夹是链接文件夹或在链接里，书童不在这类位置建副本。请换一个普通文件夹，再点「从本地存档恢复副本」。',
   'error.restoreTargetUnwritable': '没有新建副本。所选文件夹写不进去，可能没有权限或磁盘满了。请换一个文件夹，再点「从本地存档恢复副本」。',
   'error.cloudBackupAuthFailed': '作品没有改动。WebDAV 没接受这组用户名和密码。请核对后重新填写，再点「连接并绑定」。',
   'error.cloudBackupNetworkFailed': '作品没有改动。连不上 WebDAV 服务器。请检查网络和 WebDAV 地址，再试一次。',
