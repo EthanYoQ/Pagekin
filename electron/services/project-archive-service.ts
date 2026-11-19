@@ -1076,7 +1076,7 @@ function copyOwnedFile(attempt: OwnedAttempt, file: string, sourcePath: string, 
   const source = fs.openSync(sourcePath, 'r')
   try {
     const before = fs.fstatSync(source, { bigint: true })
-    if (!sameObject(before, checked) || !before.isFile() || before.nlink !== 1n) fail('PORTABLE_ASSET_UNSAFE')
+    if (!sameObject(before, checked) || before.nlink !== 1n) fail('PORTABLE_ASSET_UNSAFE')
     const limit = Math.min(DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxEntryBytes, remainingBytes)
     if (before.size > BigInt(limit)) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
     const target = openOwnedFile(attempt, file)
