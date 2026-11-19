@@ -11,7 +11,7 @@ export function continuationInsert(doc: string, selectionEnd: number, output: st
   const gap = trailing + leading, rest = doc.slice(to)
   const separator = [...doc.slice(0, from).matchAll(LINE_BREAKS)].at(-1)?.[0] || (rest && gap)
     || [...rest.matchAll(/(?:\r?\n)+(?=[^\r\n])/g)][0]?.[0] || '\n\n'
-  const indent = /^[ \t　]*/.exec(doc.slice(doc.lastIndexOf('\n', from - 1) + 1))![0]
+  const indent = /^[ \t\u3000]*/.exec(doc.slice(doc.lastIndexOf('\n', from - 1) + 1))![0]
   const body = output.split(LINE_BREAKS).map(line => line.trim()).filter(Boolean).map(line => indent + line).join(separator)
   return { from, to, insert: (from > 0 ? separator : '') + body + (rest ? gap || separator : gap) }
 }

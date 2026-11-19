@@ -55,6 +55,8 @@ export const EDITOR_CTX_SCENARIOS = {
     const text = await prose.innerText()
     assert.ok(text.indexOf(SELECTED) >= 0 && text.indexOf(SELECTED) < text.indexOf(firstLine(FIXTURE_PROSE)), '原文还在，续写在它后面')
     assert.ok(text.indexOf(firstLine(FIXTURE_PROSE)) < text.indexOf(NEXT), '下一段仍在续写之后')
+    const lines = text.split('\n').map(line => line.trim())
+    assert.ok(lines.includes(SELECTED.trim()) && lines.some(line => line.startsWith(firstLine(FIXTURE_PROSE).trim().slice(0, 12))), '续写另起一段，选中的段落完整保留')
     await shoot('edctx-continue-inserted')
   } },
 
