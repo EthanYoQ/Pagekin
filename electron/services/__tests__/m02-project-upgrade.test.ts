@@ -29,7 +29,6 @@ describe('M02 real SQLite source projection and admission', () => {
     const f = fixture(), before = probeProjectSqlite({ databasePath: f.file })
     const after = upgradeProjectSqlite({ databasePath: f.file })
     expect(before.schemaVersion).toBe(2); expect(after.schemaVersion).toBe(CURRENT_DESKTOP_SCHEMA_VERSION)
-    // 升级只返回 domain，跨版本的变体由迁移通道的校验给出。
     const verified = verifyProjectSqlite({ databasePath: f.file })
     expect(verified.preIdentityDomain).toEqual(before.domain)
     expect(after.domain).not.toEqual(before.domain)

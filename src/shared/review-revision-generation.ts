@@ -82,11 +82,9 @@ export type ReviewRevisionContextV1 = { version: 1 } & ReviewRevisionMaterials
 export type ReviewRevisionContextV2 = { version: 2 } & Pick<ReviewRevisionMaterials, 'operation' | 'source' | 'sourceHash'
   | 'writingLanguage' | 'uiLocale' | 'authorInputs' | 'frozenGoals' | 'preflightFindings' | 'confirmation' | 'recheck'>
   & { wordsPerChapter: number; inputHash: string }
-/** 运行里冻结的审修证明。 */
 export type ReviewRevisionContext = ReviewRevisionContextV1 | ReviewRevisionContextV2
 export const reviewWordsPerChapter = (context: ReviewRevisionContext): number =>
   context.version === 1 ? context.config.wordsPerChapter : context.wordsPerChapter
-/** v1 原样冻结整份材料；v2 只留保存与续跑要读的字段，其余由 inputHash 证明。 */
 export function freezeReviewRevisionContext(materials: ReviewRevisionMaterials, version: 1 | 2,
   sha256: (text: string) => string): ReviewRevisionContext {
   if (version === 1) return { version: 1, ...materials }

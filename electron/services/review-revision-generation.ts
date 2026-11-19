@@ -45,7 +45,7 @@ export class ReviewRevisionGeneration {
     this.contexts.set(prepared.contextId, prepared)
     return structuredClone(prepared)
   }
-  /** 按冻结时的证明版本重新捕获；数据库里的材料变了就拒绝。 */
+  /** 数据库里的材料变了就拒绝。 */
   private recapture(context: ReviewRevisionContext): ReviewRevisionMaterials {
     const current = captureReviewRevisionContext(this.db, reviewRevisionRequest(context), this.scope.projectId, context.recheck?.version, context.version)
     if (!isDeepStrictEqual(context, current.frozen)) throw new Error('GENERATION_REVIEW_CONTEXT_CHANGED')

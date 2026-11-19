@@ -347,7 +347,7 @@ function currentSnapshotIdentity(databasePath: string): SqliteContentIdentity | 
   } finally { snapshot.close() }
 }
 
-/** 与 v12 迁移校验（M11 沿用 M10）的差别仅在不跑全书 M03（随章数增长），仓库读写改为逐条校验（ADR-0029）。 */
+/** 打开时的校验：不跑全书 M03（耗时随章数增长），仓库读写改为逐条校验（ADR-0029）。 */
 export function verifyOpenedSchema(db: BetterSqlite3.Database): void {
   const probe = probeSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry())
   if (probe.version !== CURRENT_DESKTOP_SCHEMA_VERSION) throw new SchemaMigrationError('SCHEMA_VERSION_MISMATCH')
