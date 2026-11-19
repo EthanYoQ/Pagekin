@@ -92,7 +92,7 @@ export interface MainGenerationOwnerDependencies {
   leases: ModelExecutionLeaseRegistry
   loadModel: (id: string) => ModelProfile | null
   rememberContextWindow?: (model: ModelProfile, windowTokens: number) => void
-  buildBinding: (selection: BeginGenerationRequest & { knowledgeSnapshot?: GenerationKnowledgeSnapshot; finalizedCharacterContextHash?: string; reviewRevisionContext?: ReviewRevisionContext; agentInput?: AgentGenerationInput; agentSession?: { key: string; roundIndex: number }; editorInlineInput?: EditorInlineInput; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; legacyRosterKey?: string }, model: SafeGenerationModelReceipt, policy: MainGenerationPolicy) => RunBinding
+  buildBinding: (selection: BeginGenerationRequest & { knowledgeSnapshot?: GenerationKnowledgeSnapshot; finalizedCharacterContextHash?: string; reviewRevisionContext?: ReviewRevisionContext; agentInput?: AgentGenerationInput; agentSession?: { key: string; roundIndex: number }; editorInlineInput?: EditorInlineInput; editorInlineInputTokens?: number; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; legacyRosterKey?: string }, model: SafeGenerationModelReceipt, policy: MainGenerationPolicy) => RunBinding
   rebuildBinding: (previous: RunBinding, model: SafeGenerationModelReceipt) => RunBinding
   beforeDispatch?: () => void
   onSnapshot?: (snapshot: MainGenerationSnapshot) => void
@@ -540,7 +540,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         throw new Error('GENERATION_MATERIAL_DECISION_REQUIRED')
       const binding = deps.buildBinding({ ...selection, ...(prepared ? { knowledgeSnapshot: prepared.knowledgeSnapshot } : {}),
         ...(finalizedCharacterContextHash ? { finalizedCharacterContextHash } : {}),
-        ...(reviewRevision ? { reviewRevisionContext: reviewRevision.context } : {}) }, safeGenerationModelReceipt(lease), policy)
+        ...(reviewRevision ? { reviewRevisionContext: reviewRevision.context } : {}),
+        ...(selection.editorInlineInput ? { editorInlineInputTokens: resolveMaterialBudget(deps.leases.resolve(lease.leaseId), policy.budget.maxOutputPerRequest).inputTokens } : {}) }, safeGenerationModelReceipt(lease), policy)
       if (!isDeepStrictEqual(binding.sourceManifest.policy, policy)) throw new Error('GENERATION_POLICY_BINDING_MISMATCH')
       if (prepared && !preparationMatches(prepared.binding, binding)) throw new Error('GENERATION_DRAFT_PREPARATION_CHANGED')
       if (binding.projectId !== deps.projectId || binding.epoch !== deps.epoch) throw new Error('GENERATION_BINDING_INVALID')
