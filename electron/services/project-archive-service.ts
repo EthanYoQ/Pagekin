@@ -1195,8 +1195,6 @@ const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string
 
 /** 资料阶段出错：丢掉这次的临时目录，整次重来一次，仍失败报第二次的错。重来时库文件已被换掉就拒绝。本地导出和云备份都走这里。 */
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
-  // 源库快照之前、重来之外：进门只看源库状态，重来不改变它。
-  admitWholeLedgerOfOpenProject(input.sourceProjectRoot)
   const source: SourceDatabasePin = {}
   try { return await exportPortableProjectOnce(input, source) }
   catch (error) {
@@ -1226,6 +1224,8 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
   safeDirectory(attemptParent)
   const frozenContext = Object.freeze({ ...input.projectSession })
   await assertCurrentContext(input, frozenContext, sourceRoot)
+  // 目标与会话校验之后、源库快照之前，只在第一次进门：被拒的导出不留封存，重来不改变源库状态。
+  if (!source.database) admitWholeLedgerOfOpenProject(sourceRoot)
   const projectStorageRoot = path.join(sourceRoot, CANONICAL_PROJECT_DIRECTORY)
   safeDirectory(projectStorageRoot)
   const sourceDatabasePath = path.join(projectStorageRoot, CANONICAL_PROJECT_DATABASE)
