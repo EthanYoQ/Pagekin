@@ -3596,6 +3596,36 @@ ${headingPrefix}第3章：潮门
     )
   })
 
+  it('重写第 30 章时，线索证据和档案里作者设定的状态都只取到第 30 章为止', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
+    const event = (id: number, chapterNumber: number, evidence: string) => ({
+      id, planId: 1, draftId: id, type: 'progressing' as const, evidence, reason: '推进', chapterNumber, chapterTitle: '', createdAt: '' })
+    const { context, callbacks, command } = setup({
+      runtime,
+      chapterNumber: 30,
+      characters: ['林岚'],
+      wordsTarget: 500,
+      previousFinalizedContent: '第二十九章定稿原文。',
+      narrativeThreads: [{ ...threadView(1, '青铜钥匙', 20, 40), events: [event(11, 12, '钥匙落进井里'), event(12, 31, 'LATER_THREAD_EVIDENCE')] }],
+      characterCards: [{ name: '林岚', role: 'protagonist', currentState: {
+        location: '北塔', mentalState: 'LATER_AUTHOR_STATE',
+        provenance: { location: { kind: 'author', chapterNumber: 30 }, mentalState: { kind: 'author', chapterNumber: 31 } },
+      } }],
+    })
+
+    await command.execute({ step: {}, context, callbacks })
+
+    const prompt = observedTask?.messages.find(message => message.role === 'user')?.content ?? ''
+    expect(prompt).toContain('来源第12章：钥匙落进井里')
+    expect(prompt).toContain('location@chapter30: 北塔')
+    expect(prompt).not.toContain('LATER_THREAD_EVIDENCE')
+    expect(prompt).not.toContain('LATER_AUTHOR_STATE')
+  })
+
   const threadView = (id: number, title: string, targetStartChapter: number, targetEndChapter: number): NarrativeThreadView => ({
     id, title, type: '伏笔', targetStartChapter, targetEndChapter, authorIntent: `${title}要有交代。`,
     status: 'planned', dormantChapters: 0, overdue: false, events: [], createdAt: '', updatedAt: '',

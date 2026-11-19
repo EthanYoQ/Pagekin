@@ -8,6 +8,7 @@ import { parseHumanConfirmedReviewSnapshot, type HumanConfirmedReviewSnapshot } 
 import { composeVisibleContinuation } from '../../src/shared/visible-continuation'
 import type { ReviewRevisionContext } from '../../src/shared/review-revision-generation'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
+import { unverifiedReviewSource, readReviewProof } from '../../src/shared/review-proof'
 import { SchemaMigrationError, type MigrationImplementation, type SchemaReader } from './registry'
 import { GENERATION_LEDGER_UNREADABLE } from '../repositories/generation-ledger-admission'
 import { acceptedReviewCycleFailures, type AcceptedReviewCycleFailures } from './sqlite-schema-adapter'
@@ -178,29 +179,27 @@ function proveEffect(db: Database.Database, row: AttemptRow, expected: {
     : ['artifact', 'contentHash', 'contextHash', 'id', 'index', 'kind', ...(stored.reportVersion === 2 ? ['reportVersion'] : [])]
   if (Object.keys(stored).sort().join() !== allowed.join()) return false
   const binding = JSON.parse(row.binding_json) as Record<string, unknown>
-  const manifest = binding.sourceManifest as Record<string, unknown> | undefined
-  const context = manifest?.reviewRevisionContext as Record<string, unknown> | undefined
-  const source = context?.source as Record<string, unknown> | undefined
-  const confirmation = context?.confirmation as Record<string, unknown> | undefined
-  const recheck = context?.recheck as Record<string, unknown> | undefined
+  const proof = readReviewProof(binding.sourceManifest, hash)
+  if (proof.kind !== 'recomputable' || stored.contextHash !== proof.contextHash
+    || (binding.sourceManifest as Record<string, unknown>).operation !== proof.context.operation) return false
+  const context = proof.context as unknown as Record<string, unknown>
+  const source = context.source as Record<string, unknown> | undefined
+  const confirmation = context.confirmation as Record<string, unknown> | undefined
+  const recheck = context.recheck as Record<string, unknown> | undefined
   const validRecheckVersionPair = !expected.recheck || recheck?.version === 1
     && (expected.recheck.version === 1 || expected.recheck.version === 2)
     || recheck?.version === 2 && expected.recheck.version === 2
   const frozenRecheck = validRecheckVersionPair && expected.recheck && recheck
     ? { ...expected.recheck, version: recheck.version } : expected.recheck
-  const sourceHash = hash(expected.source.content)
-  if (!context || context.version !== 1 || context.operation !== (expected.kind === 'review' ? 'review-chapter' : 'refine-from-review')
+  if (context.operation !== (expected.kind === 'review' ? 'review-chapter' : 'refine-from-review')
     || !source || Object.keys(source).sort().join() !== 'chapterNumber,content,id,status,version'
     || source.id !== expected.source.id || source.chapterNumber !== expected.source.chapterNumber
     || source.version !== expected.source.version || source.status !== expected.source.status || source.content !== expected.source.content
-    || context.sourceHash !== sourceHash || stored.contextHash !== hash(JSON.stringify(context))
     || !context.config || !['zh-CN', 'en-US'].includes(String(context.writingLanguage))
     || !['zh-CN', 'en-US'].includes(String(context.uiLocale)) || !Array.isArray(context.authorInputs)
     || typeof context.characterStates !== 'string' || typeof context.worldbuilding !== 'string'
     || !Array.isArray(context.history) || !Array.isArray(context.blueprints) || !context.frozenGoals
     || !Array.isArray(context.preflightFindings)
-    || manifest?.reviewRevisionContextHash !== stored.contextHash || manifest.operation !== context.operation
-    || JSON.stringify(manifest.authorInputs) !== JSON.stringify([{ id: 'review-revision-context', text: JSON.stringify(context) }])
     || (expected.kind === 'review' && (confirmation !== undefined
       || !validRecheckVersionPair || !isDeepStrictEqual(recheck, frozenRecheck)))
     || (expected.kind === 'revision' && (!expected.confirmation || !confirmation
@@ -416,8 +415,7 @@ function cycleLocation(db: Database.Database, { draftRows }: CycleTables, cycle:
       try {
         const stored = item.usage_receipt_json ? (JSON.parse(item.usage_receipt_json) as { reviewRevisionEffect?: Record<string, unknown> }).reviewRevisionEffect : undefined
         if (stored?.kind !== 'review' || stored.id !== cycle.review_id) return false
-        const binding = JSON.parse(item.binding_json) as { sourceManifest?: { reviewRevisionContext?: { source?: Record<string, unknown> } } }
-        const source = binding.sourceManifest?.reviewRevisionContext?.source
+        const source = unverifiedReviewSource((JSON.parse(item.binding_json) as { sourceManifest?: unknown }).sourceManifest)
         return source?.id === row.id && source.chapterNumber === row.chapterNumber && source.version === row.version
       } catch { return false }
     })

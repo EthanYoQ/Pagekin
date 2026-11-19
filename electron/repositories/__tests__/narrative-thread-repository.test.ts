@@ -222,6 +222,25 @@ describe('NarrativeThreadRepository', () => {
     }).map(thread => thread.id)).not.toContain(unrelated.id)
   })
 
+  it('改第 4 章时，线索的状态和证据都只算到第 3 章：第 5 章才回收的线索仍是本章的活跃线索', () => {
+    const key = NarrativeThreadRepository.createPlan({
+      title: '青铜钥匙', type: '伏笔', targetStartChapter: 2, targetEndChapter: 6, authorIntent: '第五章用钥匙打开地宫。',
+    })
+    const texts: Record<number, string> = { 2: '林岚在钟绳上取下青铜钥匙。', 5: '钥匙插进地宫的锁孔，门开了。' }
+    const receipt = FinalizedDraftImportRepository.commit(projectRoot, {
+      operationId: 'thread-as-of-chapter',
+      chapters: [1, 2, 3, 4, 5].map(n => ({ chapterNumber: n, title: `第${n}章`, content: texts[n] ?? `第${n}章正文。`, wordCount: countDraftUnits(texts[n] ?? `第${n}章正文。`) })),
+    })
+    const draftOf = (n: number) => receipt.drafts.find(draft => draft.chapterNumber === n)!.draftId
+    NarrativeThreadRepository.confirmEvent({ planId: key.id, draftId: draftOf(2), type: 'planted', evidence: '取下青铜钥匙', reason: '埋下。' })
+    NarrativeThreadRepository.confirmEvent({ planId: key.id, draftId: draftOf(5), type: 'resolved', evidence: '门开了', reason: '回收。' })
+
+    const [thread] = NarrativeThreadRepository.listRelevantActive({ chapterNumber: 4, title: '雾夜', keyEvents: '林岚等涨潮。', characters: [] })
+    expect(thread).toMatchObject({ id: key.id, status: 'planted' })
+    expect(thread!.events.map(event => event.chapterNumber)).toEqual([2])
+    expect(NarrativeThreadRepository.listRelevantActive({ chapterNumber: 6, title: '雾夜', keyEvents: '', characters: [] })).toEqual([])
+  })
+
   it('#301: a thread planned for chapters 1–2 stays relevant when chapter 6 is written after chapters 1–5 are final', () => {
     const overdue = NarrativeThreadRepository.createPlan({
       title: '青铜钥匙', type: '伏笔', targetStartChapter: 1, targetEndChapter: 2, authorIntent: '第二章揭示钥匙能打开地宫。',

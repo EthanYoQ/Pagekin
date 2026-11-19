@@ -694,3 +694,39 @@ describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-002
     expect(service.peek(capability.capabilityId)).toMatchObject({ state: 'ready', finalizedChapters: 2 })
   })
 })
+
+describe('审修证明的各读取方：读不出时作者看到的结果不变（#702 PR 1a）', () => {
+  const reviewRunOf = (item: { seeded: { call: { rootActionId: string } } }) => db().prepare(`SELECT run_id FROM generation_attempts
+    WHERE root_action_id=? AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review'`).pluck().get(item.seeded.call.rootActionId) as string
+  const editBinding = (runId: string, path: string, value: unknown) => db().prepare(
+    'UPDATE generation_runs SET binding_json=json_set(binding_json,?,json(?)) WHERE run_id=?').run(path, JSON.stringify(value), runId)
+
+  it('M03：已保存审稿的上下文哈希对不上，这条循环验不过；冻结的来源还在，导出省略它时照样指明第 2 章', async () => {
+    const items = reviewedBook({ finalized: true })
+    editBinding(reviewRunOf(items[1]!), '$.sourceManifest.reviewRevisionContextHash', sha256('别的上下文'))
+
+    expect(unprovableReviewCycleIds(db())).toEqual(new Set([cycleOf(items[1]!)]))
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+  })
+
+  it('M03：已保存审稿的作者输入副本与上下文对不上，这条循环验不过', () => {
+    const items = reviewedBook({ finalized: true })
+    editBinding(reviewRunOf(items[1]!), '$.sourceManifest.authorInputs', [{ id: 'review-revision-context', text: '{}' }])
+
+    expect(unprovableReviewCycleIds(db())).toEqual(new Set([cycleOf(items[1]!)]))
+  })
+
+  it.each([
+    ['读得出', null, 'exported'],
+    ['的上下文哈希对不上', '$.sourceManifest.reviewRevisionContextHash', expect.objectContaining({ code: 'PORTABLE_UNSAFE_PROJECTION' })],
+    ['的作者输入副本对不上', '$.sourceManifest.authorInputs[0].text', expect.objectContaining({ code: 'PORTABLE_UNSAFE_PROJECTION' })],
+  ])('导出：没保存的审稿运行证明%s时，整本导出的结果', async (_label, path, outcome) => {
+    const items = reviewedBook({ finalized: true })
+    db().prepare(`INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+      SELECT 'run-unsaved',root_action_id,binding_json,status,created_at_ms,'open-unsaved' FROM generation_runs WHERE run_id=?`)
+      .run(reviewRunOf(items[0]!))
+    if (path) editBinding('run-unsaved', path, sha256('别的上下文'))
+
+    expect(await exportBook()).toEqual(outcome)
+  })
+})

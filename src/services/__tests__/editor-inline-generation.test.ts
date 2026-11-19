@@ -150,3 +150,12 @@ it('批注统一修改：恢复带回全部批注，main 回的批注与提交�
   bridge(vi.fn(async () => stored))
   await expect(createEditorInlineGeneration(session).open({ input: { ...batch, annotations: [annotations[0]] }, modelId: '模型', uiActionNonce: '动作' })).rejects.toThrow('EDITOR_INLINE_CONTEXT_MISMATCH')
 })
+it('章内编辑：main 回的本章材料候选与提交的不同就拒绝', async () => {
+  const chapterContext = { version: 1 as const, chapterNumber: 30, blocks: [{ kind: 'blueprint' as const, text: '林岚找到钥匙', required: true }], unreadable: [] }
+  const withContext = { ...input, chapterContext }
+  const stored = { ...await recovery(), context: { ...(await recovery()).context, ...withContext } }
+  bridge(vi.fn(async () => stored))
+  expect((await createEditorInlineGeneration(session).open({ input: withContext, modelId: '模型', uiActionNonce: '动作' })).context.chapterContext).toEqual(chapterContext)
+  bridge(vi.fn(async () => stored))
+  await expect(createEditorInlineGeneration(session).open({ input: { ...withContext, chapterContext: { ...chapterContext, chapterNumber: 31 } }, modelId: '模型', uiActionNonce: '动作' })).rejects.toThrow('EDITOR_INLINE_CONTEXT_MISMATCH')
+})
