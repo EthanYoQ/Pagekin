@@ -61,6 +61,7 @@ const UNREADABLE_BINDINGS: [string, string | Buffer][] = [
   ['写成 []', '[]'],
   ['合法对象后跟 NUL 与尾随字节', '{"projectId":"project"}\u0000尾巴'],
   ['存成 BLOB', Buffer.from('{"projectId":"project"}')],
+  ['JSON5（json_extract 认、json_valid 不认）', '{projectId:"project",epoch:"epoch",sourceManifest:{operation:"chapter-draft"}}'],
 ]
 
 describe('静止树的绑定读不出（#702 S2，ADR-0030 决定 7）', () => {

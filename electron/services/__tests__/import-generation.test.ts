@@ -149,6 +149,16 @@ it('ADR-0030 别的导入的阶段绑定读不出、开树点击证明属于别�
  const third=f.importAtGlobal('第三次导入','c'.repeat(64),'第一章 河谷\r\n林岚在河谷收起了信。')
  expect(()=>f.owner.begin(third.selection)).toThrow('GENERATION_LEDGER_UNREADABLE')
 })
+it('ADR-0030 独立分析文风的运行绑定读不出：它的点击证明不是导入，新的导入照常开始',()=>{
+ const f=fixture()
+ const style=f.owner.begin({operation:'analyze-writing-style',uiActionNonce:'独立分析文风',modelId:'synthetic',promptKeys:['analyze_writing_style'],skillStages:[],selectedDraftIds:[],selectedFinalizedDraftIds:[],output:'visible-text'})
+ new GenerationRunRepository(()=>f.db).pause(style.handle.rootActionId,true)
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(style.handle.runId)
+ expect(f.owner.begin(f.selection).handle.rootActionId).not.toBe(style.handle.rootActionId)
+})
+it('ADR-0030 前一阶段的 open_key 读不出、绑定读得出：下一阶段仍认它为前驱，沿用原根和模型',async()=>{
+ await globalEffect('inference',(db,runId)=>db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(runId))
+})
 it('同slot不同nonce加入同run，并冻结实际manifest正文',()=>{
  const f=fixture(),first=f.owner.begin(f.selection),second=f.owner.begin({...f.selection,uiActionNonce:'另一次点击'})
  expect(second.handle).toEqual(first.handle)
@@ -207,7 +217,7 @@ it('持久replayTask被篡改时拒绝回读，不新增派发',async()=>{
  expect(f.spy).toHaveBeenCalledTimes(1)
 })
 
-async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needless-retry' | 'endpoint' | 'forged' | 'dropped' | 'rejected-delta' = 'unproven') {
+async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needless-retry' | 'endpoint' | 'forged' | 'dropped' | 'rejected-delta' = 'unproven', beforeStyle?: (db: InstanceType<typeof Database>, globalRunId: string) => void) {
  const core={genre:'现实',subGenre:'冒险',targetAudience:'通用',totalChapters:1,wordsPerChapter:900,plotStructure:'three_act',narrativePov:'third_limited',goldenFinger:'无',globalGuidance:'克制',premise:'海港来信',coreOutline:'寻找来信者',worldSetting:'海港',protagonistProfile:'林岚',worldbuilding:'海港街巷',synopsis:'找到信件'}
  const card = {name:'林岚',role:'protagonist',gender:'未知',age:'18',appearance:'朴素',personality:'谨慎',background:'港口居民',abilities:'观察',motivation:'寻信',relationships:[] as { target: string; relation: string }[],arc:'成长',notes:'待确认'}
  const generated = ['林岚','苏绾','顾岩'].map((name, index) => ({ ...card, name, role: index ? 'supporting' : 'protagonist',
@@ -239,6 +249,7 @@ async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needle
  expect(f.db.prepare('SELECT genre FROM project_core').pluck().get()).toBe('现实')
  ImportRunRepository.advanceStage(f.slot.runId,'global','style',f.execution)
  const styleSlot={...f.slot,stage:'style' as const}
+ beforeStyle?.(f.db, handle.runId)
  const style=f.owner.begin({...f.selection,operation:'analyze-writing-style',promptKeys:['analyze_writing_style'],skillStages:[],output:'visible-text',modelId:'后来不同模型',importSlot:styleSlot})
  expect(style.handle.rootActionId).toBe(handle.rootActionId)
  expect(f.owner.readImportGeneration(styleSlot)?.modelId).toBe('synthetic')
