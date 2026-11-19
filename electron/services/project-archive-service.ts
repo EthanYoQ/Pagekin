@@ -1240,7 +1240,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
     fs.readFileSync(canonicalManifestPath, 'utf8'),
   ))
   if (canonicalManifest.projectId !== frozenContext.projectId) fail('PORTABLE_CONTEXT_INVALID')
-  // 目标与会话都校验过、源库快照之前，只在第一次进门：被拒的导出不留封存，重来不改变源库状态。
+  // 被拒的导出不能封存源库；重来不改变源库状态，不必再进门。
   if (firstAttempt) admitWholeLedgerOfOpenProject(sourceRoot)
   const snapshotGeneration = input.snapshotGeneration ?? randomUUID()
   const createdAt = (input.now?.() ?? new Date()).toISOString()

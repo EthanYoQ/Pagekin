@@ -33,7 +33,7 @@ export class ImportGeneration {
     if (this.runs.sealedClaims((click, root) => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation)
       && click.uiActionNonce.startsWith('import:') && !anotherImport(root, slot.runId))) throw new Error('GENERATION_LEDGER_UNREADABLE')
     const { hits, unidentified } = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && importSlotClick(slot)(click))
-    // 点击号读不出的运行认不出是不是前驱：开树点击证明不是这次导入的略过，其余按主键读它的绑定，是这个槽位的就报歧义。
+    // 点击号读不出，认不出是不是前驱；不能证明属于别的导入的，只能读绑定判断。
     if (unidentified.some(entry => !this.notThisImport(entry.runId, slot.runId)
       && this.runs.get(entry.runId).binding.sourceManifest?.importSlotKey === key)) throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS')
     let previous: DurableGenerationRun | undefined
