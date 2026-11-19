@@ -175,7 +175,7 @@ export class ProjectArchiveServiceError extends Error {
 export interface PortableProvidedFile {
   id: string
   archivePath: string
-  /** 取快照时读下的字节，导出期间源文件再改也不影响存档。 */
+  /** 取快照时已读入的字节，存档只用这份。 */
   bytes: Buffer
   byteSize: number
   sha256: string

@@ -925,7 +925,7 @@ describe('portable project export service', () => {
     expect(fs.existsSync(f.target)).toBe(false)
   })
 
-  // 维护者 2026-11-19：导出的目标是生成的内容能被正确导出。导出期间作品被写入不再拒绝导出，存档是快照那一刻的内容。
+  // 依据维护者 2026-11-19 原话：「目标是生成的内容可以被正确导出就可以了」。
   it.each(['afterPortableDatabaseCreated', 'afterArchiveBuilt'] as const)(
     '导出期间（%s）写库、改提示词、回收旧头像，导出照常成功，存档是快照那一刻的内容', async (hook) => {
       const f = fixture()
