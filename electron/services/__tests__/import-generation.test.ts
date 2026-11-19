@@ -11,6 +11,7 @@ import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '..
 import { getProjectDb, getCurrentProjectPath } from '../../database'
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
 import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
+import { GenerationRunRepository } from '../../repositories/generation-run-repository'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
 
@@ -127,6 +128,26 @@ it("ADR-0030 跨记录认运行只看身份键：点击号属于别的槽位的�
  const first=f.owner.begin(f.selection)
  forgeSlotRetry(f.db, first.handle.runId, "import:另一个槽位")
  expect(f.reopenStorage().readImportGeneration(f.slot)?.view.handle).toEqual(first.handle)
+})
+it("ADR-0030 跨记录认运行只看身份键：点击号同槽位、操作不是导入的运行不算前驱",()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ forgeOtherOperation(f.db, first.handle.runId, "chapter-draft")
+ expect(f.reopenStorage().readImportGeneration(f.slot)?.view.handle).toEqual(first.handle)
+})
+it('ADR-0030 别的导入的阶段绑定读不出、开树点击证明属于别的导入：新的导入照常开始；证明不了的报记录已损坏',()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ // 作者取消了那次导入，它的树静止；之后它的绑定坏了，打开时的进门不查静止树。
+ new GenerationRunRepository(()=>f.db).pause(first.handle.rootActionId,true)
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(first.handle.runId)
+ f.db.prepare("UPDATE import_runs SET status='cancelled' WHERE id='导入任务'").run()
+ const other=f.importAtGlobal('另一次导入','b'.repeat(64),'第一章 山城\r\n林岚在山城读完了信。')
+ expect(f.owner.begin(other.selection).handle.rootActionId).not.toBe(first.handle.rootActionId)
+ f.db.prepare("UPDATE import_runs SET status='cancelled' WHERE id='另一次导入'").run()
+ f.db.prepare("UPDATE generation_roots SET idempotency_key='{坏' WHERE root_action_id=?").run(first.handle.rootActionId)
+ const third=f.importAtGlobal('第三次导入','c'.repeat(64),'第一章 河谷\r\n林岚在河谷收起了信。')
+ expect(()=>f.owner.begin(third.selection)).toThrow('GENERATION_LEDGER_UNREADABLE')
 })
 it('同slot不同nonce加入同run，并冻结实际manifest正文',()=>{
  const f=fixture(),first=f.owner.begin(f.selection),second=f.owner.begin({...f.selection,uiActionNonce:'另一次点击'})
@@ -318,4 +339,13 @@ function forgeSlotRetry(db: import("better-sqlite3").Database, runId: string, no
   parts[2] = nonce
   db.prepare(`INSERT INTO generation_runs(run_id,open_key,${columns.join(",")}) SELECT ?,?,${columns.join(",")} FROM generation_runs WHERE run_id=?`)
     .run(`${runId}-forged`, JSON.stringify([JSON.stringify(parts), root]), runId)
+}
+
+function forgeOtherOperation(db: import("better-sqlite3").Database, runId: string, operation: string) {
+  const columns = (db.prepare("SELECT name FROM pragma_table_info('generation_runs')").pluck().all() as string[]).filter(name => !["run_id", "open_key", "binding_json"].includes(name))
+  const [click, root] = JSON.parse(db.prepare("SELECT open_key FROM generation_runs WHERE run_id=?").pluck().get(runId) as string) as [string, string]
+  const parts = JSON.parse(click) as string[]
+  parts[1] = operation
+  db.prepare(`INSERT INTO generation_runs(run_id,open_key,binding_json,${columns.join(",")}) SELECT ?,?,json_remove(json_set(binding_json,'$.sourceManifest.operation',?),'$.sourceManifest.importSlotKey'),${columns.join(",")} FROM generation_runs WHERE run_id=?`)
+    .run(`${runId}-other`, JSON.stringify([JSON.stringify(parts), root]), operation, runId)
 }

@@ -91,6 +91,8 @@ describe('静止树的绑定读不出（#702 S2，ADR-0030 决定 7）', () => {
       try { read(); return [`${name}: 没报错`] } catch (error) { return (error as Error).message === GENERATION_LEDGER_UNREADABLE ? [] : [`${name}: ${(error as Error).message}`] }
     })).toEqual([])
     expect(repository.readableRun(quiet.runId)).toBeUndefined()
+    expect(repository.runIdentity(quiet.runId)).toBeUndefined()
+    expect(repository.runIdentity(healthy.runId)).toMatchObject({ projectId: 'project', operation: 'chapter-draft', batchRoot: false })
     expect(repository.get(healthy.runId).binding.projectId).toBe('project')
     expect(repository.isPrivatePlanningHistory(healthy.runId)).toBe(false)
     expect(runIndexOf(db).lookup(click => click.operation === 'chapter-draft').hits.map(entry => entry.runId)).toEqual([healthy.runId, quiet.runId])
@@ -101,6 +103,12 @@ describe('静止树的绑定读不出（#702 S2，ADR-0030 决定 7）', () => {
     expect(blockedCode(db, healthy.rootActionId)).toBeNull()
     expect(runIndexOf(db).lookup(click => click.operation === 'chapter-draft').hits.map(entry => [entry.runId, entry.sealed]))
       .toEqual([[healthy.runId, false], [quiet.runId, true]])
+  })
+
+  it('导出中性化成 {} 的绑定读得出：身份缺作品号，不算读不出', () => {
+    const run = settledRun(new GenerationRunRepository(getProjectDb), 'neutral')
+    setBinding(getProjectDb()!, run.runId, '{}')
+    expect(new GenerationRunRepository(getProjectDb).runIdentity(run.runId)).toMatchObject({ runId: run.runId, projectId: undefined, operation: undefined })
   })
 
   it('没静止的树（根还是 active）绑定读不出：打开时照常封存', () => {

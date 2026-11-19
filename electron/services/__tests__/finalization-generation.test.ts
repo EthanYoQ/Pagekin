@@ -850,6 +850,12 @@ it("ADR-0030 跨记录认运行只看身份键：点击号属于别的槽位的�
   expect(() => f.reopen().beginFinalizationGeneration({ slot: f.slot, modelId: "synthetic" })).not.toThrow("GENERATION_FINALIZATION_SLOT_CONFLICT")
 })
 
+it("ADR-0030 跨记录认运行只看身份键：点击号同槽位、操作不是这一步定稿的运行不算前驱", async () => {
+  const f = await generated("chapter_notes")
+  forgeOtherOperation(f.db, f.commitRequest.handle.runId, "chapter-draft")
+  expect(f.reopen().beginFinalizationGeneration({ slot: f.slot, modelId: "synthetic" }).view.handle).toEqual(f.commitRequest.handle)
+})
+
 it('#569 请求超时把根阻断后又取消了后处理：作者重试另开新根，真正发出请求并可提交', async () => {
  const f = fixture()
  const slot: FinalizationGenerationSlot = { source: f.prepared.context.source, stepKey: 'character_cards' }
@@ -1146,4 +1152,13 @@ function forgeSlotRetry(db: import("better-sqlite3").Database, runId: string, no
   parts[2] = nonce
   db.prepare(`INSERT INTO generation_runs(run_id,open_key,${columns.join(",")}) SELECT ?,?,${columns.join(",")} FROM generation_runs WHERE run_id=?`)
     .run(`${runId}-forged`, JSON.stringify([JSON.stringify(parts), root]), runId)
+}
+
+function forgeOtherOperation(db: import("better-sqlite3").Database, runId: string, operation: string) {
+  const columns = (db.prepare("SELECT name FROM pragma_table_info('generation_runs')").pluck().all() as string[]).filter(name => !["run_id", "open_key", "binding_json"].includes(name))
+  const [click, root] = JSON.parse(db.prepare("SELECT open_key FROM generation_runs WHERE run_id=?").pluck().get(runId) as string) as [string, string]
+  const parts = JSON.parse(click) as string[]
+  parts[1] = operation
+  db.prepare(`INSERT INTO generation_runs(run_id,open_key,binding_json,${columns.join(",")}) SELECT ?,?,json_remove(json_set(binding_json,'$.sourceManifest.operation',?),'$.sourceManifest.finalizationGenerationSlotKey'),${columns.join(",")} FROM generation_runs WHERE run_id=?`)
+    .run(`${runId}-other`, JSON.stringify([JSON.stringify(parts), root]), operation, runId)
 }

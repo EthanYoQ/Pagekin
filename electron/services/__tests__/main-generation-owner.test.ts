@@ -3649,6 +3649,27 @@ describe('main draft persistence and batch lineage', () => {
       expect(f.reopen().listRecovery().batches).toEqual([])
       expect(new GenerationDraftEffects(f.fixture.db, new GenerationRunRepository(() => f.fixture.db)).unfinishedBatchChapters('project')).toEqual(new Set())
     })
+    const twoBatches = async () => {
+      const f = drafting()
+      f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'第二章')")
+      const batchOf = (chapter: number) => f.owner.beginBatch({ mode: 'draft_review', range: { startChapter: chapter, endChapter: chapter }, targetUnits: 20,
+        uiActionNonce: `batch-${chapter}`, modelId: f.model.id, authorInputs, promptKeys: f.begin.promptKeys, skillStages: [] })
+      const damaged = batchOf(1), healthy = batchOf(2)
+      const child = await generate(f, { ...f.begin, uiActionNonce: 'child', authorInputs, batchId: damaged.batchId, parentRootActionId: damaged.rootHandle.rootActionId })
+      f.owner.commitDraft(child.request)
+      return { f, damaged, healthy, child }
+    }
+    it('ADR-0030 静止批次里一章的绑定读不出：批次历史只略过这一批，别的批次照常列出', async () => {
+      const { f, damaged, healthy, child } = await twoBatches()
+      f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(child.run.handle.runId)
+      expect(f.owner.listBatches().map(batch => batch.batchId)).toEqual([healthy.batchId])
+      expect(() => f.owner.readBatch(damaged.batchId)).toThrow('GENERATION_LEDGER_UNREADABLE')
+    })
+    it('ADR-0030 静止批次的根绑定读不出：恢复列表不列它，并标部分读不出', async () => {
+      const { f, damaged } = await twoBatches()
+      f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(damaged.rootHandle.runId)
+      expect(f.owner.listRecovery()).toMatchObject({ partial: true })
+    })
     it('放弃的批次接着写出下一章，重新列为可续、写过的章重新锁住（#686）', async () => {
       const f = drafting()
       f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'第二章'),(3,'第三章')")

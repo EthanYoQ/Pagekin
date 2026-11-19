@@ -91,12 +91,17 @@ function outerLedgerColumns(sql: string): string[] {
   const table = /(?:^UPDATE | FROM )(generation_[a-z]+)/iu.exec(sql)?.[1]
   const keys = [['rowid'], ...table === undefined ? KEYS.map(key => [key]) : UNIQUE_KEYS[table] ?? []]
   // 联表时主键条件可能只限定了另一张表。
-  const joined = /\bJOIN\b|,/iu.test(/ FROM (.*?)(?: WHERE |$)/iu.exec(sql)?.[1] ?? '')
+  const from = / FROM (.*?)(?: WHERE |$)/iu.exec(sql)?.[1] ?? ''
+  const joined = /\bJOIN\b|,/iu.test(from)
   const pinned = (key: string) => new RegExp(`\\b(?:[a-z]+\\.)?${key}\\s*=\\s*(\\?|\\(|@[a-z]+)`, 'iu').test(where ?? '')
   const narrowed = where !== undefined && !/\bOR\b/iu.test(where)
   if (narrowed && !joined && keys.some(key => key.every(pinned))) return []
   // 绑定可以按根解析：一棵树的运行有限，读不出时仓库报封存码（ADR-0030 决定 7）。别的列按根仍算跨记录。
-  const byRoot = narrowed && pinned('root_action_id')
+  // 联表时，运行表要经 ON 的列相等挂到别的表上，根条件才约束得到它的绑定；CROSS JOIN、逗号联表约束不到。
+  const runs = /\bgeneration_runs(?: (?:AS )?(?!(?:ON|JOIN|CROSS|LEFT|INNER)\b)([a-z]+))?/iu.exec(from)?.[1]
+  const linked = !joined || (!/\bCROSS JOIN\b|,/iu.test(from) && runs !== undefined
+    && new RegExp(`\\bON\\b.*\\b(?:${runs}\\.[a-z_]+\\s*=\\s*[a-z]+\\.[a-z_]+|[a-z]+\\.[a-z_]+\\s*=\\s*${runs}\\.[a-z_]+)`, 'iu').test(from))
+  const byRoot = narrowed && linked && pinned('root_action_id')
   const head = /^(.*?) FROM /iu.exec(sql)?.[1] ?? ''
   // open_key、idempotency_key 是身份字符串，原样取出不算解析。
   const selected = verb !== 'SELECT' ? [] : LEDGER_JSON_COLUMNS.filter(column => !IDENTITY_KEYS.includes(column)).filter(column =>
@@ -163,6 +168,13 @@ describe('跨记录解析的账本 JSON 列都在进门清单里', () => {
     expect(crossRecordLedgerColumns("UPDATE generation_runs SET binding_json=json_set(binding_json,'$.a',?) WHERE rowid=?")).toEqual([])
     expect(crossRecordLedgerColumns("SELECT json_extract(binding_json,'$.a') FROM generation_runs WHERE root_action_id=? OR status='running'")).toEqual(['binding_json'])
     expect(crossRecordLedgerColumns("SELECT r.binding_json FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id WHERE json_extract(a.usage_receipt_json,'$.d')=?")).toEqual(['binding_json', 'usage_receipt_json'])
+    expect(crossRecordLedgerColumns("SELECT json_extract(r.binding_json,'$.a') FROM generation_roots g JOIN generation_runs r ON r.root_action_id=g.root_action_id WHERE g.root_action_id=?")).toEqual([])
+  })
+
+  it('按根豁免要求根条件经联表约束到读绑定的那张表上', () => {
+    expect(crossRecordLedgerColumns('SELECT r.binding_json FROM generation_roots g CROSS JOIN generation_runs r WHERE g.root_action_id=?')).toEqual(['binding_json'])
+    expect(crossRecordLedgerColumns('SELECT r.binding_json FROM generation_roots g, generation_runs r WHERE g.root_action_id=?')).toEqual(['binding_json'])
+    expect(crossRecordLedgerColumns('SELECT r.binding_json FROM generation_roots g JOIN generation_runs r ON g.status=? WHERE g.root_action_id=?')).toEqual(['binding_json'])
   })
 
   it('子查询里的主键条件不限定外层语句', () => {
