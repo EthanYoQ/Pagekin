@@ -281,6 +281,7 @@ describe('写第 3 章前第 2 章没准备好时，提示指向现在能点到�
 
       expect(result.message).toContain('「定稿后处理」')
       expect(result.message).not.toContain('后台还在整理')
+      expect(result.pending).toBeUndefined()
     } finally {
       useWorkflowStore.setState({ activeRuns: [] })
     }

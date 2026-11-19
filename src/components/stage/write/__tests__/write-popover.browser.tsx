@@ -192,6 +192,16 @@ function launched() {
   }
 }
 
+const textColor = (element: Element) => getComputedStyle(element).color
+
+function dangerColor() {
+  const probe = document.querySelector('.paper-ink')!.appendChild(document.createElement('span'))
+  probe.style.color = 'var(--danger)'
+  const color = textColor(probe)
+  probe.remove()
+  return color
+}
+
 /** 写作按钮与页面里一样靠右，弹层向左展开。 */
 async function render(node: React.ReactNode) {
   await act(async () => root?.render(<div className="paper-ink"><div style={{ display: 'flex', justifyContent: 'flex-end' }}>{node}</div></div>))
@@ -639,17 +649,23 @@ describe('写作此章弹层', () => {
     useWorkflowStore.setState({ activeRuns: [{ id: 'finalize-4', projectPath: PROJECT_PATH, resourceKeys: ['chapter:4'], title: '第 4 章 · 定稿', status: 'running' } as never] })
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
     await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
-    const alert = page.getByRole('dialog', { name: '本次写作选项' }).getByRole('alert')
-    await expect.element(alert).toHaveTextContent('第 4 章已定稿，后台还在整理这一章，很快就好，请稍后再试。')
-    await expect.element(alert).not.toHaveTextContent('失败')
+    const dialog = page.getByRole('dialog', { name: '本次写作选项' })
+    const note = dialog.getByRole('status')
+    await expect.element(note).toHaveTextContent('第 4 章已定稿，后台还在整理这一章，很快就好，请稍后再试。')
+    await expect.element(note).not.toHaveTextContent('失败')
+    expect(dialog.getByRole('alert').query()).toBeNull()
+    expect(textColor(note.element())).toBe(textColor(dialog.getByText('这些选项只用于本次写作').element()))
+    expect(textColor(note.element())).not.toBe(dangerColor())
     expect(startWorkflow).not.toHaveBeenCalled()
   })
 
-  it('上一章定稿后处理真失败了：照旧指向失败的步骤', async () => {
+  it('上一章定稿后处理真失败了：照旧用错误样式指向失败的步骤', async () => {
     previousPostProcess = 'failed'
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
     await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
-    await expect.element(page.getByRole('dialog', { name: '本次写作选项' }).getByRole('alert')).toHaveTextContent('处理「定稿后处理」里失败的步骤')
+    const alert = page.getByRole('dialog', { name: '本次写作选项' }).getByRole('alert')
+    await expect.element(alert).toHaveTextContent('处理「定稿后处理」里失败的步骤')
+    expect(textColor(alert.element())).toBe(dangerColor())
     expect(startWorkflow).not.toHaveBeenCalled()
   })
 

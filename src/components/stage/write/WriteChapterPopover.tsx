@@ -56,7 +56,7 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
   const [guidance, setGuidance] = useState<string | null>(null)
   const [knowledgeHint, setKnowledgeHint] = useState('')
   const [preflight, setPreflight] = useState<ConsistencyPreflightResult | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<{ text: string; pending?: true } | null>(null)
   const [busy, setBusy] = useState(false)
   const [starting, setStarting] = useState(false)
   const modelFieldId = useId()
@@ -121,8 +121,12 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
           setPreflight(outcome.preflight)
           show()
           return
+        case 'pending':
+          setMessage({ text: outcome.message, pending: true })
+          show()
+          return
         default:
-          setMessage(displayedErrorMessage(currentInterfaceLocale(), outcome.message))
+          setMessage({ text: displayedErrorMessage(currentInterfaceLocale(), outcome.message) })
           show()
       }
     } finally {
@@ -142,7 +146,7 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
       if (!result.success) throw new Error(result.error || failure)
       return session
     } catch (error) {
-      if (isProjectSessionCurrent(session)) setMessage(displayedErrorMessage(currentInterfaceLocale(), error))
+      if (isProjectSessionCurrent(session)) setMessage({ text: displayedErrorMessage(currentInterfaceLocale(), error) })
       return null
     } finally {
       setBusy(false)
@@ -244,7 +248,9 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
             onRevoke={exemption => void revokeArrangement(exemption)}
           />
         )}
-        {message && <p className="stage-write-error" role="alert">{message}</p>}
+        {message && (message.pending
+          ? <p className="stage-write-thread-note" role="status">{message.text}</p>
+          : <p className="stage-write-error" role="alert">{message.text}</p>)}
         <p className="stage-write-foot">{text(`这些选项只用于本次写作，点「${label}」开始。`, `These options apply to this run only. Choose “${label}” to start.`)}</p>
       </SplitAction>
       {align === 'start' && threadHint}

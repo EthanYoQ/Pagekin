@@ -29,6 +29,8 @@ export interface GuardResult {
   message?: string
   /** 用于跳转引导的目标动作标识 */
   action?: 'open-config' | 'open-world-building' | 'open-blueprint'
+  /** 只是还没轮到（上一章还在整理），不是出错，界面不用错误样式。 */
+  pending?: true
 }
 
 function captureGuardProject(
@@ -243,6 +245,7 @@ export async function guardChapterWriting(
       if (stillRunning) {
         return {
           ok: false,
+          pending: true,
           message: localize(
             shown(),
             `第 ${prevChapter} 章已定稿，后台还在整理这一章，很快就好，请稍后再试。`,
