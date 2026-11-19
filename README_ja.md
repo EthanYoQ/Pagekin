@@ -327,7 +327,7 @@ Windows のインストーラーは署名されておらず、Mac のインス�
 
 ## ソースからビルドする
 
-Node.js 22.14 以降と、リポジトリで固定されている pnpm のバージョンが必要です。
+Node.js 22.15 以降と、リポジトリで固定されている pnpm のバージョンが必要です。
 
 ```sh
 git clone https://github.com/EthanYoQ/Pagekin.git

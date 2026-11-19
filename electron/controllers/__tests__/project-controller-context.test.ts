@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   projectCoreInit: vi.fn(),
   projectCoreUpdate: vi.fn(),
   closeProjectDatabase: vi.fn(),
+  stopPortableExports: vi.fn<(projectPath?: string) => Promise<void>>(async () => {}),
   transaction: vi.fn((operation: () => void) => operation),
   writeJsonFile: vi.fn(),
   recentProjects: [] as Array<{ name: string; path: string; updatedAt: string; projectId?: string }>,
@@ -200,6 +201,8 @@ vi.mock('../../services/legacy-project-copy-import', () => ({
 vi.mock('../../repositories/finalization-repository', () => ({
   FinalizationRepository: { repairDuplicateFinalizations: mocks.repairDuplicateFinalizations },
 }))
+
+vi.mock('../../services/portable-export-host', () => ({ stopPortableExports: mocks.stopPortableExports }))
 
 import { registerProjectController } from '../project-controller'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
@@ -489,6 +492,23 @@ describe('project controller project identity', () => {
     expect(mocks.projectAccess.adoptLegacyProject).toHaveBeenCalled()
     expect(mocks.projectAccess.beginSession).toHaveBeenCalled()
     expect(mocks.createCalls).toEqual([])
+  })
+
+  it.each([
+    ['project:open', () => handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'request-open-B-after-export', projectA)],
+    ['project:create', () => handler('project:create')({ sender: { id: 17 } },
+      { name: 'C', parentGrantId: `selected:${path.resolve('C:/projects')}`, genre: 'fantasy', targetAudience: 'all' }, 'request-create-C-after-export')],
+  ])('%s：先等当前这本书的在途导出停完，再换库（#702）', async (_channel, run) => {
+    let stopped!: () => void
+    mocks.stopPortableExports.mockImplementationOnce(() => new Promise<void>(resolve => { stopped = resolve }))
+
+    const switching = run()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(mocks.stopPortableExports).toHaveBeenCalledWith(projectA)
+    expect(mocks.initCalls).toEqual([])
+    stopped()
+    await expect(switching).resolves.toMatchObject({ success: true })
+    expect(mocks.initCalls).not.toEqual([])
   })
 
   it('opens the project and reports what the duplicate-finalization repair found', async () => {
@@ -1232,6 +1252,20 @@ describe('project controller project identity', () => {
     ])
     expect(mocks.removeDirectoryWithWindowsRetry).not.toHaveBeenCalled()
     expect(mocks.projectAccess.assertCurrentProjectContext).not.toHaveBeenCalled()
+  })
+
+  it('等导出停完后重新核对删除目标：目录在等待期间被换掉就不关库也不删（#702）', async () => {
+    mocks.stopPortableExports.mockImplementationOnce(async () => {
+      mocks.projectAccess.authorizeDeletion.mockImplementationOnce(() => { throw new Error('PROJECT_IDENTITY_CHANGED') })
+    })
+
+    await expect(handler('project:delete')({}, projectA, 'project-A', 'lease-project-A', projectSession())).resolves.toMatchObject({
+      success: false,
+      directoryDeleted: false,
+      error: expect.stringContaining('PROJECT_IDENTITY_CHANGED'),
+    })
+    expect(mocks.removeDirectoryWithWindowsRetry).not.toHaveBeenCalled()
+    expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
   })
 
   it('reopens the active database and reports failure when the project directory remains', async () => {

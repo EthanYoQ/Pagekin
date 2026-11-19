@@ -6,20 +6,20 @@ import { showOpenDialogInLastDirectory, showSaveDialogInLastDirectory } from '..
 
 import type {
   ExternalFileGrant,
+  PortableExportPhase,
   PortableProjectOperationErrorCode,
   PortableProjectExportRequest,
   PortableProjectRestoreRequest,
 } from '../../src/shared/ipc-channels'
 import { CANONICAL_PROJECT_DATABASE, CANONICAL_PROJECT_DIRECTORY } from '../../src/shared/project-format'
-import { getCurrentProjectPath } from '../database'
+import { getCurrentProjectPath, onProjectDatabaseBeforeClose } from '../database'
 import {
   ExternalFileGrantService,
   externalFileGrants,
   type IssuedExternalFileGrant,
 } from '../services/external-file-grant-service'
 import { projectAccess } from '../services/project-access'
-import { exportPortableProject } from '../services/project-archive-service'
-import { createPortableProjectAssetProvider } from '../services/portable-project-assets'
+import { exportPortableProjectInWorker, portableExportsRunning, stopPortableExports } from '../services/portable-export-host'
 import { restorePortableProject } from '../services/project-restore-service'
 import { registerRecentProject } from './project-controller'
 import { mainText } from '../i18n'
@@ -31,7 +31,6 @@ function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
 }
 const BetterSqlite = require('better-sqlite3') as typeof import('better-sqlite3')
-const portableAssets = createPortableProjectAssetProvider()
 const ARCHIVE_EXTENSION = 'ainovel'
 /** 选择器签发的一次性授权；恢复需要连续选择两次，故留出足够的选择时间。 */
 const ARCHIVE_GRANT_TTL_MS = 10 * 60 * 1_000
@@ -46,6 +45,7 @@ const PORTABLE_ERROR_CODES = new Set<PortableProjectOperationErrorCode>([
   'PORTABLE_ASSET_UNSAFE',
   'PORTABLE_CONTEXT_INVALID',
   'PORTABLE_EXPORT_AVATAR_DAMAGED',
+  'PORTABLE_EXPORT_INTERRUPTED',
   'PORTABLE_EXPORT_SOURCE_CHANGED',
   'PORTABLE_GRANT_INVALID',
   'PORTABLE_SCHEMA_UNSUPPORTED',
@@ -113,6 +113,8 @@ interface ArchiveGrantEvent {
   sender: {
     id: number
     once: (event: 'destroyed', listener: () => void) => unknown
+    send: (channel: 'portable-export:progress', payload: { exportId?: string; phase: PortableExportPhase; round: number }) => void
+    isDestroyed: () => boolean
   }
 }
 
@@ -148,6 +150,12 @@ function resolveGrantedPath(
 export function registerProjectArchiveController(
   grants: ExternalFileGrantService = externalFileGrants,
 ): void {
+  onProjectDatabaseBeforeClose(({ projectPath }) => { void stopPortableExports(projectPath) })
+  app.on('will-quit', event => {
+    if (portableExportsRunning() === 0) return
+    event.preventDefault()
+    void stopPortableExports().finally(() => app.quit())
+  })
   ipcMain.handle('dialog:select-project-archive-export', async (event: ArchiveGrantEvent, suggestedName: string) => {
     const result = await showSaveDialogInLastDirectory('project-archive', {
       title: text('导出项目存档', 'Export project archive'),
@@ -209,12 +217,14 @@ export function registerProjectArchiveController(
         getCurrentProjectPath(),
       )
       const targetArchivePath = resolveGrantedPath(grants, event, request.targetArchiveGrantId, 'create')
-      const receipt = await exportPortableProject({
+      const receipt = await exportPortableProjectInWorker({
         sourceProjectRoot: active.rootPath,
         projectSession: request.projectSession,
         targetArchivePath,
         attemptParentPath: path.dirname(path.resolve(targetArchivePath)),
-        assets: portableAssets,
+        onProgress(phase, round) {
+          if (!event.sender.isDestroyed()) event.sender.send('portable-export:progress', { exportId: request.exportId, phase, round })
+        },
         assertCurrentContext(context, sourceProjectRoot) {
           const current = projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
           return projectAccess.sameCanonicalProjectRoot(current.rootPath, sourceProjectRoot)
