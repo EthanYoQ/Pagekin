@@ -205,7 +205,6 @@ const context: WorkflowContext = {
   cancelled: false,
 }
 
-/** AI 补全后这一项的标记：设定取交给设定页的那份，标记取 store 里与设定并列存的那份。 */
 const savedMark = (generated: Partial<NovelConfig>, field: AiSourceField) =>
   aiSourceOf(generated, useProjectStore.getState().currentProject!.aiSources, field)
 

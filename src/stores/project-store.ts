@@ -422,7 +422,7 @@ interface ProjectState {
   saveProject: (expectedProjectSession?: ProjectSessionContext) => Promise<boolean>
   /** 更新小说配置 */
   updateNovelConfig: (config: Partial<NovelConfig>, expectedProjectSession?: ProjectSessionContext) => void
-  /** 设定细则的 AI 来源标记；下次保存时随设定写进库。 */
+  /** 下次保存时随设定落库。 */
   setAiSources: (sources: AiSources, expectedProjectSession: ProjectSessionContext) => void
   /**
    * 主进程已经写进库的设定字段，发布到界面并记为已保存。

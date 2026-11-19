@@ -645,7 +645,7 @@ export interface ProjectData {
   /** 主进程签发；仅与 id 组合为会话凭据，path 不是授权。 */
   sessionLease?: string
   novelConfig: NovelConfig
-  /** 设定细则里哪些项是 AI 写的，只给设定页看，所以不放进 novelConfig。 */
+  /** 与 novelConfig 并列，只给设定页用。 */
   aiSources?: AiSources
   characterStates: string
   createdAt: string

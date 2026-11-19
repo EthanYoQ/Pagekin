@@ -139,7 +139,7 @@ export class ProjectCoreRepository {
         return row ? rowToData(row) : null
     }
 
-    /** 设定细则的 AI 来源标记。不在 ProjectCoreData 里：设定会被整份哈希、比对、写进提示词，标记只给设定页看。 */
+    /** 不在 ProjectCoreData 里：设定整份参与哈希、比对和提示词。 */
     static getAiSources(db = getProjectDb()): AiSources {
         if (!db) return {}
         const row = db.prepare("SELECT ai_sources FROM project_core WHERE id = 'main'").get() as { ai_sources: string } | undefined
