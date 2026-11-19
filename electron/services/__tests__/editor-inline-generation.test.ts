@@ -447,3 +447,40 @@ it.each([
  const f = fixture()
  expect(() => f.owner.beginEditorInline(continued(bad as never))).toThrow('GENERATION_EDITOR_INPUT_INVALID')
 })
+
+const settingDoc = '# 雾港\n\n雾港是北方一座半废弃的港城，三面环山。\n\n渔市的老人们记得沉船那一夜。\n\n每年十月起，海雾午后从湾口涌进来。'
+const settingSel = '渔市的老人们记得沉船那一夜。'
+const settingContinue = (filePath: string | undefined, atEnd: boolean, language: 'zh-CN' | 'en-US', frozen?: { materials?: undefined }) => {
+ const documentText = atEnd ? settingDoc.slice(0, settingDoc.indexOf(settingSel) + settingSel.length) : settingDoc
+ const from = documentText.indexOf(settingSel)
+ return editorInlineTask(buildEditorInlineContext({ action: 'continue', documentText, from, to: from + settingSel.length, selectedText: settingSel,
+  ...(filePath ? { filePath } : {}) } as never, language, getBuiltinPromptTemplate('edit_selected_text', language)!, Infinity, frozen)).messages
+}
+const promptHash = (messages: unknown) => createHash('sha256').update(JSON.stringify(messages)).digest('hex')
+it.each([
+ ['zh-CN', false, '2c21debfcc697f75735e2cd67932070b21b92342a6c637be04b5a052ea5e5769'], ['zh-CN', true, '1fd89372392372249da5a184414976fd1137a42bc488033b235b005369bbf783'],
+ ['en-US', false, '366d97851355c872fe61077a232266efc97923c062badb4b3ce3d43f01fd0e4e'], ['en-US', true, '6a9a6f45d6ce911968f3b4951e6cb8c7b3b9562ec7878e5689ab61cc3e4ba07f'],
+] as const)('%s 不是设定文档的无章号续写（恢复稿、没有文件路径）提示与改动前逐字节相同（选区在末尾 %s）', (language, atEnd, hash) => {
+ for (const filePath of [undefined, 'ai-novel://recovery/candidate-1']) expect(promptHash(settingContinue(filePath, atEnd, language)), filePath).toBe(hash)
+})
+it.each([['zh-CN', 'bc53b520bad0b328b63e3a2a58995d70cb5cc78bf6d073081b995e7af3b27ba5'], ['en-US', 'aab14495386917524ba444ac2de1eee2ebc21eb4b97e87a933b302630eff2c30']] as const)('%s 升级前冻结的设定文档续写（没有材料，替换选区）提示与改动前逐字节相同', (language, hash) => {
+ expect(promptHash(settingContinue('ai-novel://core/worldbuilding', false, language, { materials: undefined }))).toBe(hash)
+})
+it.each([false, true])('设定文档里的续写照原文体裁写：提示说明体裁，不提人物动机与情节，材料标为文档（选区在末尾 %s）', atEnd => {
+ const [system, user] = settingContinue('ai-novel://core/worldbuilding', atEnd, 'zh-CN').map(message => message.content)
+ expect(system).toContain('原文是设定、资料、大纲这类说明性文字时，续写也只写说明性的内容')
+ expect(user).toContain('照原文的体裁和写法往下写。')
+ expect(user).toContain('【文档上下文：')
+ expect(user).toContain('【选中正文之前的文档】')
+ if (!atEnd) expect(user).toContain('【选中正文之后的文档】')
+ for (const novelish of ['人物动机', '情节', '人物手里', '本章正文】', '本章上下文']) expect(system + user, novelish).not.toContain(novelish)
+})
+it.each([false, true])('英文设定文档里的续写同样照原文体裁写（选区在末尾 %s）', atEnd => {
+ const [system, user] = settingContinue('ai-novel://core/worldbuilding', atEnd, 'en-US').map(message => message.content)
+ expect(system).toContain('expository text such as setting notes')
+ expect(user).toContain('Continue in the same form and manner as the original.')
+ expect(user).toContain('[Document context:')
+ expect(user).toContain('[Document text before the selection]')
+ if (!atEnd) expect(user).toContain('[Document text after the selection]')
+ for (const novelish of ['character motivation', 'What the characters hold', 'Chapter text', 'Chapter context']) expect(system + user, novelish).not.toContain(novelish)
+})
