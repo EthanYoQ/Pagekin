@@ -100,7 +100,8 @@ function entries(db: Database.Database): readonly RunIndexEntry[] {
 export function runIndexOf(db: Database.Database): GenerationRunIndex {
     return {
         lookup: matches => {
-            const all = entries(db)
+            // 主键可为 NULL：改坏的库里没有运行号的行按主键读不到，不当候选，和 run_id IN (…) 认不到它一致。
+            const all = entries(db).filter(entry => entry.runId !== null)
             return { hits: all.filter(entry => entry.click !== undefined && matches(entry.click)), unidentified: all.filter(entry => entry.click === undefined && !entry.sealed) }
         },
     }
