@@ -174,7 +174,6 @@ const continueStart = ['这次是续写：选中的正文是续写的起点，�
   'This is a continuation: the selected prose is where it starts, and it stays as it is. Output only the new text that follows it, starting right where its last sentence ends; do not repeat, rewrite, or summarize the selected prose.'] as const
 const continueRule = [`${continueStart[0]}人物手里有什么、已经放下什么，以前文和选中正文为准，放下的东西不再拿回手里。`,
   `${continueStart[1]} What the characters hold or have put down follows the earlier text and the selection; nothing already put down is picked up again.`] as const
-/** 设定文档（架构页的世界观、大纲等）没有章号；不明说体裁，模型会把续写写成小说场面。升级前冻结、没有材料的运行不算。 */
 const continuesSettingDocument = (context: EditorInlineContext) => editorInlineInsertsAfterSelection(context) && context.filePath?.startsWith('ai-novel://core/') === true
 const settingDocument = {
   instruction: ['照原文的体裁和写法往下写。', 'Continue in the same form and manner as the original.'],
