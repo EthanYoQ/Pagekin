@@ -182,7 +182,7 @@ async function finalizeOne(context, chapterNumber) {
   const fixture = TEXT_OVERRIDE ? { events: [], states: [] } : QUALITY_CHAPTERS[chapterNumber]
   const record = {
     chapterNumber, units: countUnits(chapterText(chapterNumber)), readOnlyMs, runEndMs,
-    // 可写下一章：知识库与要点两个关键步骤都记了成功（第二个标记）；有一步失败守卫仍拦着，不算。
+    // 可写下一章：知识库与要点两步都成功才算；任一失败时守卫仍拦着。
     writableMs: marks[1] && steps.filter(s => s.key === 'kb_import' || s.key === 'chapter_notes').every(s => s.ok) ? marks[1].start + marks[1].ms : null,
     settledMs: marks.at(-1) ? marks.at(-1).start + marks.at(-1).ms : null,
     fsBeforeReadOnly: fsCalls.filter(e => e.start < readOnlyMs).map(e => `${e.ch}@${e.start}+${e.ms}`),

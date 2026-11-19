@@ -99,7 +99,7 @@ export function resolveReasoningPolicy(input: {
   stage?: GenerationReasoningStage
 }): ReasoningPolicyResolution {
   const resolution = resolveStageReasoning(input)
-  // 关不掉思考的服务商（不支持，或像 Gemini 3 那样被抬到最低一档），提取照旧按审稿的档位发。
+  // 提取阶段对关不掉思考的服务商（不支持，或像 Gemini 3 那样被抬到最低一档）沿用审稿档位。
   return input.stage === 'extraction' && (resolution.status === 'unsupported' || resolution.status === 'forced')
     ? resolveStageReasoning({ ...input, stage: 'review' })
     : resolution
@@ -128,7 +128,7 @@ function resolveStageReasoning(input: Parameters<typeof resolveReasoningPolicy>[
   // Only explicit, documented SiliconFlow choices are supported. Preserve
   // automatic requests and never force off/low/medium up to high.
   if (!input.model.reasoningMapping && mapping.adapter === 'siliconflow-v4-thinking') {
-    // 只有提取会关思考（enable_thinking:false 实测可用），自动档与作者选「关闭」都关；其余阶段仍交给服务商默认。
+    // 只有提取阶段关思考（enable_thinking:false 实测可用）；其余阶段交给服务商默认。
     if (input.stage === 'extraction' && requested === 'off') {
       return { requested, effective: 'off', status: 'mapped', source, providerDirective: { adapter: mapping.adapter, reasoningEffort: 'off' } }
     }

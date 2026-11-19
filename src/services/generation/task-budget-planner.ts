@@ -25,7 +25,7 @@ export const S07_TASK_BUDGET_POLICY = Object.freeze({
   }),
 })
 
-// 这张表随生成运行存档，升级前的运行要按原样读回，所以提取阶段不加列，按审稿的条目大小算。
+// 这张表随生成运行存档，已存档的运行要按原样读回，所以提取阶段不加列，按审稿的条目大小算。
 const itemTokens = (writingLanguage: WritingLanguage, stage: GenerationReasoningStage) =>
   S07_TASK_BUDGET_POLICY.structuredItems.tokensPerItem[writingLanguage][stage === 'extraction' ? 'review' : stage]
 
