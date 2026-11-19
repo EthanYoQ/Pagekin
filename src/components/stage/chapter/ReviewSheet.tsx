@@ -37,6 +37,7 @@ function IssueCard({ item, checklist, onEdit }: {
   const [editing, setEditing] = useState(item.origin === 'author')
   const copy = severityCopy(item.severity, text)
   const readOnly = item.severity === 'pass' || checklist.cycle?.restoredHistory === true
+  const showFields = editing && !readOnly
   const finding = checklist.cycle?.findings.find(candidate => item.findingId
     ? candidate.findingId === item.findingId
     : candidate.reviewItemIndex === item.reviewItemIndex)
@@ -45,8 +46,8 @@ function IssueCard({ item, checklist, onEdit }: {
   const body = (
     <span className="stage-ch-issue-body">
       <span className="stage-ch-issue-tag" data-severity={item.severity}>{tag}</span>
-      {!editing && <span className="stage-ch-issue-text">{item.description || text('（未填写）', '(empty)')}</span>}
-      {!editing && item.quote && <q className="stage-ch-issue-quote">{item.quote}</q>}
+      {!showFields && <span className="stage-ch-issue-text">{item.description || text('（未填写）', '(empty)')}</span>}
+      {!showFields && item.quote && <q className="stage-ch-issue-quote">{item.quote}</q>}
       {item.sourceChapter && <span className="stage-ch-issue-meta">{text(`来源：第${item.sourceChapter}章`, `Source: Chapter ${item.sourceChapter}`)}</span>}
       <FindingStatus item={item} checklist={checklist} />
     </span>
@@ -56,7 +57,7 @@ function IssueCard({ item, checklist, onEdit }: {
       {readOnly
         ? <div className="stage-ch-issue-pass">{body}</div>
         : <Check checked={item.decision === 'apply'} onChange={checked => onEdit({ decision: checked ? 'apply' : 'ignore' })} label={body} />}
-      {editing && !readOnly && (
+      {showFields && (
         <div className="stage-ch-issue-fields">
           <div className="stage-ch-issue-row">
             <input className="pi-input" aria-label={text('问题分类', 'Issue category')} value={item.category} onChange={event => onEdit({ category: event.target.value })} />
@@ -199,7 +200,9 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
       {!readOnly && <Button variant="text" size="sm" className="stage-ch-add" onClick={() => { checklist.addAuthorItem(); checklist.setEditingChecklist(true) }}>
         <Plus size={14} aria-hidden />{text('添加我的意见', 'Add my note')}
       </Button>}
-      {!readOnly && <details className="stage-write-more stage-ch-guidance" open={Boolean(checklist.authorGuidance) || undefined}>
+      {readOnly ? checklist.authorGuidance && (
+        <p className="stage-ch-sheet-note">{text('总体修稿指导：', 'Overall revision guidance: ')}{checklist.authorGuidance}</p>
+      ) : <details className="stage-write-more stage-ch-guidance" open={Boolean(checklist.authorGuidance) || undefined}>
         <summary>{text('总体修稿指导', 'Overall revision guidance')}<small>{text('可选', 'Optional')}</small></summary>
         <textarea
           className="pi-input stage-ch-textarea"
