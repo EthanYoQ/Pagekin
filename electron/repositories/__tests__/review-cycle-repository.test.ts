@@ -1482,3 +1482,43 @@ describe('ReviewCycleRepository 只校验被读写的那一条循环', () => {
     } finally { db.close() }
   })
 })
+
+describe('审稿数据标出恢复前的审修循环（#702）', () => {
+  const cycleRead = (breakRun?: (db: import('better-sqlite3').Database) => void) => {
+    const db = fixture()
+    try {
+      const seeded = seed(db)
+      create(db, seeded.call)
+      breakRun?.(db)
+      return { here: ReviewCycleRepository.getByReviewId(seeded.reviewId, db, 'project'),
+        restored: ReviewCycleRepository.getByReviewId(seeded.reviewId, db, 'restored-project') }
+    } finally { db.close() }
+  }
+
+  it('审稿运行属于别的 projectId（书是恢复来的）时标恢复前；属于当前作品时不带这个字段', () => {
+    const { here, restored } = cycleRead()
+    expect(restored).toMatchObject({ restoredHistory: true })
+    expect(here).not.toHaveProperty('restoredHistory')
+    expect({ ...restored, restoredHistory: undefined }).toEqual({ ...here, restoredHistory: undefined })
+  })
+
+  it('根运行的 binding 读不出：照旧报读坏，不判成恢复前', () => {
+    expect(() => cycleRead(db => db.prepare("UPDATE generation_runs SET binding_json='{' WHERE root_action_id='root-review'").run()))
+      .toThrow('REVIEW_CYCLE_CONFLICT')
+  })
+
+  it('根缺失或根的身份读不出（坏 JSON、打开时换成的中性值、不是字符串）：不判成恢复前', () => {
+    const db = fixture()
+    try {
+      create(db, seed(db).call)
+      expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(true)
+      expect(ReviewCycleRepository.isRestoredHistory('root-missing', 'restored-project', db)).toBe(false)
+      db.prepare("UPDATE generation_roots SET action_json=json_set(action_json,'$.projectId','') WHERE root_action_id='root-review'").run()
+      expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(false)
+      db.prepare("UPDATE generation_roots SET action_json=json_set(action_json,'$.projectId',123) WHERE root_action_id='root-review'").run()
+      expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(false)
+      db.prepare("UPDATE generation_roots SET action_json='{' WHERE root_action_id='root-review'").run()
+      expect(ReviewCycleRepository.isRestoredHistory('root-review', 'restored-project', db)).toBe(false)
+    } finally { db.close() }
+  })
+})

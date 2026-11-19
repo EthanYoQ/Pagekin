@@ -29,6 +29,8 @@ export interface ReviewCycleProjection {
   mergedHash?: string
   recheckCount: 0 | 1
   recheckDisposition?: 'required' | 'not-required' | 'completed'
+  /** 循环是作品从备份恢复前做的，只能看（ADR-0018 C17）。 */
+  restoredHistory?: true
   findings: ReviewCycleFindingProjection[]
 }
 

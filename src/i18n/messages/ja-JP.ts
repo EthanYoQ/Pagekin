@@ -58,6 +58,7 @@ export const jaJP = {
   'error.generationProjectSessionRequired': 'この操作には開いている作品のセッションが含まれていなかったため、結果は利用できません。作品を開き直してから、もう一度お試しください。',
   'error.generationDraftNotCurrent': 'この草稿はもう章の現在の草稿ではない（新しい草稿があるか、定稿された）ため、結果は保存されませんでした。現在の草稿を開いてから、もう一度お試しください。',
   'error.generationReviewLineageUnproven': 'このレビューには追跡できる生成記録がないため、改稿に使えません。章をもう一度レビューしてから、新しいレビューをもとに改稿してください。',
+  'error.generationReviewRestoredHistory': 'レビューの内容は残っていますが、作品をバックアップから復元する前のものなので、改稿や再検証には使えません。「Review again」をクリックして、新しいレビューをもとに改稿してください。',
   'error.generationReviewSourceDeleted': 'このレビューまたは改稿の対象の章はゴミ箱にあります。生成記録は残っていますが、表示されません。もう一度表示するには、ゴミ箱から章を復元してください。',
   'error.generationDraftDependencyStale': 'この章の執筆に使った以前の草稿が変更されたため、新しい本文は保存されませんでした。前の章の現在の草稿を書き直すか定稿してから、この章をもう一度書いてください。',
   'error.generationDraftDependencyInvalid': 'この章に記録されている参照元を読み取れなかったため、新しい本文は保存されませんでした。章をもう一度書いてください。繰り返し発生する場合は、ご報告ください。',

@@ -42,12 +42,24 @@ describe('generation error codes from the main process', () => {
     ['Error: GENERATION_REQUEST_FAILED', '重试'],
     ["Error invoking remote method 'finalization-generation:commit': Error: FINALIZED_CHARACTER_SOURCE_CONFLICT", '当前状态'],
     ["Error invoking remote method 'finalization-generation:commit': Error: FINALIZED_CHARACTER_FIELD_CONFLICT", '生成期间'],
+    ["Error invoking remote method 'review-revision:prepare': Error: GENERATION_REVIEW_RESTORED_HISTORY", '恢复前'],
   ])('turns %s into a full sentence without the IPC wrapper', (raw, hint) => {
     for (const error of [raw, new Error(raw)]) {
       const zh = knownAppErrorMessage(shown('zh-CN'), error)
       expect(zh).toContain(hint)
       expect(zh).not.toMatch(/Error invoking|GENERATION_|FINALIZED_/u)
       expect(knownAppErrorMessage(shown('en-US'), error)).toMatch(/^[A-Z][^_]+\.$/u)
+    }
+  })
+
+  it('tells the author a pre-restore review cannot drive a revision or recheck, and names the Review again button (#702)', () => {
+    const error = new Error("Error invoking remote method 'review-revision:prepare': Error: GENERATION_REVIEW_RESTORED_HISTORY")
+    const generic = new Error('GENERATION_REVIEW_LINEAGE_UNPROVEN')
+    for (const [locale, restored, button] of [['zh-CN', '恢复', '「重新审稿」'], ['en-US', 'restore', '“Review again”'], ['ja-JP', '復元', '「Review again」']] as const) {
+      const message = knownAppErrorMessage(shown(locale), error)
+      expect(message).toContain(restored)
+      expect(message).toContain(button)
+      expect(message).not.toBe(knownAppErrorMessage(shown(locale), generic))
     }
   })
 

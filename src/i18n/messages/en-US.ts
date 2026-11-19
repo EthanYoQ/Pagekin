@@ -55,6 +55,7 @@ export const enUS = {
   'error.generationProjectSessionRequired': 'This action did not carry the session of the open book, so its result is unavailable. Reopen the book and try again.',
   'error.generationDraftNotCurrent': "This draft is no longer the chapter's current draft (a newer draft exists or it was finalized), so the result was not saved. Open the current draft and try again.",
   'error.generationReviewLineageUnproven': 'This review has no traceable generation record, so it cannot drive a revision. Review the chapter again, then revise from the new review.',
+  'error.generationReviewRestoredHistory': 'This review is still here, but it was made before the book was restored from a backup, so it cannot drive a revision or recheck. Click “Review again”, then revise from the new review.',
   'error.generationReviewSourceDeleted': 'The chapter this review or revision was for is in the trash. The generation record is kept but hidden. Restore the chapter from the trash to see it again.',
   'error.generationDraftDependencyStale': 'An earlier draft this chapter was written from has changed, so the new prose was not saved. Rewrite or finalize the current draft of the previous chapter, then write this chapter again.',
   'error.generationDraftDependencyInvalid': 'The sources recorded for this chapter could not be read, so the new prose was not saved. Write the chapter again. If it keeps happening, report it.',
