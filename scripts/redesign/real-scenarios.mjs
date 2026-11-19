@@ -573,4 +573,165 @@ export const REAL_SCENARIOS = {
     return { importMs: ms, vectorless, stats, semanticTop: hits.slice(0, 3).map(hit => ({ score: hit.score, text: String(hit.text ?? hit.content ?? '').slice(0, 60) })),
       uiResults: uiResults.slice(0, 400), confirmations }
   } },
+
+  /** #702：第 4 章选中第一段点续写，真实模型回复后点「插入」：原文还在、续写接在后面；这次运行带上了蓝图、人物与上一章结尾。 */
+  'real-editor-context': { real: true, setup: context => seedBook(context, { finalized: [1, 2, 3] }), run: async context => {
+    const { app, page } = context
+    await app.evaluate(({ ipcMain }) => {
+      const original = ipcMain._invokeHandlers.get('editor-inline:begin')
+      ipcMain._invokeHandlers.set('editor-inline:begin', async (...args) => {
+        const result = await original(...args)
+        globalThis.__editorBegin = result?.context?.materials
+        return result
+      })
+    })
+    const text = STAGE_SAMPLE.drafts[4].text
+    assert.equal((await read(context, 'db:draft-create', { chapterNumber: 4, version: 1, source: 'write', content: text, wordCount: countUnits(text) })).success, true)
+    await openChapter(page, 4)
+    const selected = text.split('\n')[0]
+    const prose = chapterView.prose(page)
+    await prose.getByText(selected).first().click({ clickCount: 3 })
+    const toolbar = page.getByRole('toolbar', { name: '选中文字的操作' })
+    await toolbar.getByRole('button', { name: '续写' }).click()
+    const insert = toolbar.getByRole('button', { name: '插入', disabled: false })
+    await insert.waitFor({ state: 'visible', timeout: MODEL_WAIT })
+    await insert.click()
+    await prose.getByText(selected).first().waitFor({ state: 'visible' })
+    const after = await prose.innerText()
+    const materials = await app.evaluate(() => globalThis.__editorBegin)
+    const kinds = materials.included.map(block => block.kind)
+    for (const kind of ['blueprint', 'characters', 'previous-ending']) assert.ok(kinds.includes(kind), `运行带上了 ${kind}：${kinds.join('、')}`)
+    assert.ok(after.includes(selected) && after.indexOf(selected) < after.indexOf('你父亲也问过钟的事'), '选中的原文还在，下一段仍在后面')
+    assert.ok(countUnits(after) > countUnits(text), '正文变长了')
+    return { kinds, omitted: materials.omitted, addedUnits: countUnits(after) - countUnits(text), prose: after }
+  } },
+
+  'real-editor-context-ab': { real: true, setup: async context => {
+    const file = process.env[EDITOR_CONTEXT_BOOK]
+    assert.ok(file && fs.existsSync(file), `环境变量 ${EDITOR_CONTEXT_BOOK} 指向夹具书 JSON`)
+    context.evalBook = JSON.parse(fs.readFileSync(file, 'utf8'))
+    context.evalText = await seedEvalBook(context, context.evalBook)
+  }, run: async context => {
+    const { app, page, invoke } = context
+    const runs = Number(process.env.EDITOR_CONTEXT_RUNS ?? 5)
+    await app.evaluate(({ ipcMain }) => {
+      const original = ipcMain._invokeHandlers.get('editor-inline:begin')
+      globalThis.__editorBegins = []
+      ipcMain._invokeHandlers.set('editor-inline:begin', async (event, request, ...rest) => {
+        const result = await original(event, request, ...rest)
+        globalThis.__editorBegins.push({ request, materials: result?.context?.materials })
+        return result
+      })
+    })
+    await openChapter(page, 13)
+    const prose = chapterView.prose(page)
+    const toolbar = page.getByRole('toolbar', { name: '选中文字的操作' })
+    const points = []
+    for (const [index, paragraph] of context.evalBook.chapter13.entries()) {
+      // 点段首左上角：上一个续写点的浮动工具条可能盖在段落中间。
+      await prose.getByText(paragraph.slice(0, 20)).first().click({ clickCount: 3, position: { x: 40, y: 8 } })
+      await toolbar.getByRole('button', { name: '续写' }).click()
+      await toolbar.getByRole('button', { name: '插入', disabled: false }).waitFor({ state: 'visible', timeout: MODEL_WAIT })
+      await toolbar.getByRole('button', { name: '取消' }).click()
+      const begun = (await app.evaluate(() => globalThis.__editorBegins)).at(-1)
+      assert.equal(begun.request.input.selectedText.trim(), paragraph, `续写点 ${index + 1} 选中的是第 ${index + 1} 段`)
+      points.push({ point: index + 1, request: begun.request, materials: begun.materials })
+    }
+    const kinds = points.map(point => point.materials.included.map(block => block.kind))
+    for (const kind of ['style', 'blueprint', 'characters', 'threads']) assert.ok(kinds.every(list => list.includes(kind)), `每个续写点都带上了 ${kind}：${JSON.stringify(kinds)}`)
+    assert.ok(kinds.slice(1).every(list => list.includes('preceding')) && kinds.slice(0, -1).every(list => list.includes('following')), `段首以外带前文，段末以外带后文：${JSON.stringify(kinds)}`)
+    const session = await uiSession(app)
+    const generate = async input => {
+      const recovery = await invoke(page, 'editor-inline:begin', { input, modelId: points[0].request.modelId, uiActionNonce: randomUUID() }, session)
+      const receipt = await invoke(page, 'editor-inline:execute', { handle: recovery.view.handle }, session)
+      assert.equal(receipt.outcome.status, 'completed', `续写完成：${receipt.outcome.receipt?.failureCode ?? ''}`)
+      await invoke(page, 'editor-inline:delivered', { handle: recovery.view.handle }, session)
+      return { output: receipt.outcome.content, user: recovery.context.materials?.included.map(block => block.kind) ?? [] }
+    }
+    const jobs = points.flatMap(({ point, request }) => {
+      const { chapterContext: _chapter, ...control } = request.input
+      return [['context', request.input], ['control', control]].flatMap(([arm, input]) => Array.from({ length: runs }, (_, run) => ({ point, arm, run: run + 1, input })))
+    })
+    const results = []
+    for (let start = 0; start < jobs.length; start += 5)
+      results.push(...await Promise.all(jobs.slice(start, start + 5).map(async ({ input, ...job }) => ({ ...job, ...await generate(input) }))))
+    return { materials: points.map(({ point, materials }) => ({ point, materials })), results }
+  } },
 }
+
+/** 第 13 章蓝图：钥匙和撕页两条约束只放在线索里，这样线索块是否带上能从续写里看出来。 */
+const EVAL_BLUEPRINT = { chapterNumber: 13, title: '雨夜旧楼', role: '发展', purpose: '林岚找到父亲失踪那晚去过的地下档案室，但门打不开',
+  keyEvents: '雨夜林岚独自去港务局旧楼；陈默跟来，说档案柜锁着需要钥匙；陈默不敢下地下室，转身离开；林岚一个人站在地下室门前，柜子本章不打开',
+  characters: ['林岚', '陈默'], suspenseHook: '地下室门缝里有光' }
+const EVAL_THREADS = [
+  { title: '七字钥匙', targetStartChapter: 3, targetEndChapter: 20, authorIntent: '钥匙能开什么要到很后面才揭开，此前不得用它打开任何东西，也不让人物猜到它的用处',
+    events: [[3, 'planted', '把钥匙收进外套左口袋']] },
+  { title: '撕掉的名录页', targetStartChapter: 6, targetEndChapter: 24, authorIntent: '撕页的人留到结局，之前不揭示，也不让任何人物说出或猜出是谁',
+    events: [[6, 'planted', '最后一页被人撕掉了']] },
+  { title: '提前的钟声', targetStartChapter: 2, targetEndChapter: 18, authorIntent: '周砚与钟声的关系慢慢收紧；两人反目后不再对话，周砚不再出场帮林岚',
+    events: [[7, 'planted', '灯塔的钟比规定时间早响了'], [10, 'progressing', '从今天起，别再进灯塔']] },
+  { title: '父亲失踪那晚', targetStartChapter: 11, targetEndChapter: 16, authorIntent: '父亲那晚去过港务局旧楼；地下室的线索本章只到门口，不进去',
+    events: [[12, 'planted', '十七，夜九时，旧楼后门']] },
+]
+/** 人物状态按章变化：作者在第 4、7、10 章各改一次。 */
+const EVAL_STATES = [
+  [4, '林岚', { physicalState: '左臂骨裂，用绷带吊在胸前，只能用右手做事' }],
+  [6, '陈默', { recentEvents: '告诉林岚沉船名录最后一页被人撕掉，不知道是谁撕的' }],
+  [7, '林岚', { keyItems: '外套左口袋里有一把柄上刻「七」字的青铜钥匙，不知道能开什么；父亲的黄铜罗盘已扔进海里，身上没有罗盘' }],
+  [10, '林岚', { recentEvents: '当面质问周砚提前敲钟的事，两人彻底反目，周砚禁止她再进灯塔' }],
+]
+
+/** 夹具书种进真实作品库：设定、三人名册与逐章状态、第 1–12 章定稿、四条线索与确认、第 13 章蓝图与草稿。 */
+async function seedEvalBook(context, book) {
+  const { app, page, roots, invoke, reload } = context
+  await trackOpenedSession(app)
+  const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
+    name: '雾港', genre: '悬疑', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
+  assert.equal(created.success, true, created.error)
+  const opened = await invoke(page, 'project:open', created.projectPath, randomUUID(), null)
+  assert.equal(opened.success, true, opened.error)
+  const projectPath = created.projectPath
+  const session = { projectId: created.projectId, projectPath, leaseId: opened.project.sessionLease }
+  const call = async (channel, ...args) => {
+    const result = await invoke(page, channel, ...args, projectPath, session)
+    assert.notEqual(result?.success, false, `${channel}：${result?.error}`)
+    return result
+  }
+  await context.installRealModels()
+  await call('db:project-core-update', { totalChapters: 30, wordsPerChapter: 2000, narrativePov: 'third_limited',
+    writingStyle: '冷峻克制，短句多，少比喻', globalGuidance: '只写林岚看得到、听得到的事；不替人物解释动机' })
+  const person = (name, role, age, personality, background) => ({ characterId: `draft:${randomUUID()}`, name, role, gender: '', age, appearance: '',
+    personality, background, abilities: '', motivation: '', relationships: [], arc: '', notes: '' })
+  let roster = await invoke(page, 'db:character-roster-read', projectPath, session)
+  const commit = entries => call('db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
+    expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries })
+  await commit([person('林岚', 'protagonist', '28', '冷静、执拗', '档案员，来雾港查父亲林远舟三十年前失踪的事'),
+    person('陈默', 'supporting', '35', '热心但胆小', '港务局职员'), person('周砚', 'supporting', '60', '沉默寡言', '白塔守塔人')])
+  for (const [chapter, name, state] of EVAL_STATES) {
+    roster = await invoke(page, 'db:character-roster-read', projectPath, session)
+    await commit(roster.entries.map(entry => entry.name !== name ? entry : { ...entry, currentState: { location: '', powerLevel: '', physicalState: '',
+      mentalState: '', keyItems: '', recentEvents: '', ...entry.currentState, ...state, updatedAtChapter: chapter } }))
+  }
+  for (const chapter of book.chapters)
+    await call('db:blueprint-upsert', { chapterNumber: chapter.n, title: chapter.title, role: '发展', purpose: '', keyEvents: '', characters: ['林岚'] })
+  await call('db:blueprint-upsert', EVAL_BLUEPRINT)
+  const imported = await call('db:draft-import-finalized-batch', { operationId: randomUUID(),
+    chapters: book.chapters.map(chapter => ({ chapterNumber: chapter.n, title: chapter.title, content: chapter.text, wordCount: countUnits(chapter.text) })) })
+  const draftOf = n => imported.receipt.drafts.find(draft => draft.chapterNumber === n).draftId
+  for (const { events, ...plan } of EVAL_THREADS) {
+    const created = await call('db:narrative-thread-plan-create', { ...plan, type: '伏笔' })
+    for (const [chapter, type, evidence] of events)
+      await call('db:narrative-thread-event-confirm', { planId: created.plan.id, draftId: draftOf(chapter), type, evidence, reason: '作者确认' })
+  }
+  const text = book.chapter13.join('\n\n')
+  await call('db:draft-create', { chapterNumber: 13, version: 1, source: 'write', content: text, wordCount: countUnits(text) })
+  await reload()
+  await stage.openFromLibrary(page, '雾港')
+  return text
+}
+
+/**
+ * #702 真实模型对照：第 13 章逐段选中点续写，界面备好的本章材料随 begin 发出；同一份输入带与不带 chapterContext 各跑若干次。
+ * 对照臂就是没有章号的编辑器那条路：同样的续写规则与插入方式，只差本章材料。夹具书只在本机，路径由 EDITOR_CONTEXT_BOOK 给出。
+ */
+const EDITOR_CONTEXT_BOOK = 'EDITOR_CONTEXT_BOOK'

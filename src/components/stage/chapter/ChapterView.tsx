@@ -221,6 +221,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 paragraphIndent
                 content={tab.content ?? ''}
                 filePath={filePath}
+                chapterNumber={chapterNumber}
                 recoveryHandle={recovery?.handle}
                 recoveryNonce={recovery?.nonce}
                 editable={editable && !switching}

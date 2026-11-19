@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createRequire } from 'node:module'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
@@ -22,6 +22,7 @@ import { DraftRepository } from '../../repositories/draft-repository'
 import { FinalizationRepository } from '../../repositories/finalization-repository'
 import { PostProcessRepository } from '../../repositories/post-process-repository'
 import { ChapterDeletionService } from '../chapter-deletion-service'
+import { GenerationRunRepository } from '../../repositories/generation-run-repository'
 import { exportPortableProject, type ExportPortableProjectInput } from '../project-archive-service'
 
 
@@ -229,6 +230,48 @@ describe('封存的根整根不当证据：引用它的循环留在存档外并�
     reopen()
 
     expect(verifyWholeBook).toThrow('MIGRATION_VERIFICATION_FAILED')
+  })
+
+  it('静止的审稿树里一条运行的绑定读不出：打开不封存；导出前的全量进门封存它，导出成功并指明章节，同一会话里读这次生成报记录已损坏', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    reviewedBook({ finalized: true })
+    db().exec(SEALED_ROOT_DAMAGES.find(([label]) => label === '带尝试的兄弟运行读不出')![1])
+    // 正常关闭过的书：根都暂停、尝试都已落定，这些树静止，打开时不查它们的绑定。
+    db().prepare("UPDATE generation_roots SET action_json=json_set(action_json,'$.status','paused')").run()
+    const runId = 'run-extra'
+    reopen()
+    const blocked = () => db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-review-ch2'").pluck().get()
+    const read = () => new GenerationRunRepository(getProjectDb).get(runId)
+    expect(blocked()).toBeNull()
+    expect(read).toThrow('GENERATION_LEDGER_UNREADABLE')
+
+    const { archivePath, receipt } = await exportTo()
+    expect(receipt.omittedReviewCycles).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+    expect(blocked()).toBe('GENERATION_LEDGER_UNREADABLE')
+    expect(read).toThrow('GENERATION_LEDGER_UNREADABLE')
+    const restoredRoot = path.join(base, 'restored')
+    await restorePortableProject({ archivePath, targetProjectRoot: restoredRoot })
+    const restored = new Database(path.join(restoredRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true })
+    try {
+      expect(inspectM03ReviewCycles(restored)).toEqual({ structureOk: true, unprovable: [] })
+      expect(restored.prepare('SELECT COUNT(*) FROM review_cycles').pluck().get()).toBe(1)
+    } finally { restored.close() }
+  })
+
+  it.each([
+    ['目标在作品目录内', 'PORTABLE_TARGET_INSIDE_SOURCE', (input: ExportPortableProjectInput) => ({ ...input, targetArchivePath: path.join(projectRoot, 'backup.ainovel') })],
+    ['会话已不是当前作品', 'PORTABLE_CONTEXT_INVALID', (input: ExportPortableProjectInput) => ({ ...input, assertCurrentContext: () => false })],
+    ['会话的作品号与目录里的作品不符', 'PORTABLE_CONTEXT_INVALID', (input: ExportPortableProjectInput) => ({ ...input, projectSession: { ...input.projectSession, projectId: 'other-book' } })],
+    ['目标文件已存在', 'PORTABLE_ARCHIVE_TARGET_EXISTS', (input: ExportPortableProjectInput) => { fs.writeFileSync(input.targetArchivePath, 'old'); return input }],
+  ] as const)('%s：导出被拒，静止树里读不出的绑定不被封存', async (_label, code, reject) => {
+    reviewedBook({ finalized: true })
+    db().exec(SEALED_ROOT_DAMAGES.find(([label]) => label === '带尝试的兄弟运行读不出')![1])
+    db().prepare("UPDATE generation_roots SET action_json=json_set(action_json,'$.status','paused')").run()
+    reopen()
+    const blocked = () => db().prepare("SELECT blocked_code FROM generation_roots WHERE root_action_id='root-review-ch2'").pluck().get()
+
+    await expect(exportPortableProject(reject(exportInput()))).rejects.toThrow(code)
+    expect(blocked()).toBeNull()
   })
 })
 
@@ -636,5 +679,41 @@ describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-002
     const capability = service.issueCapability(projectRoot)!
 
     expect(service.peek(capability.capabilityId)).toMatchObject({ state: 'ready', finalizedChapters: 2 })
+  })
+})
+
+describe('审修证明的各读取方：读不出时作者看到的结果不变（#702 PR 1a）', () => {
+  const reviewRunOf = (item: { seeded: { call: { rootActionId: string } } }) => db().prepare(`SELECT run_id FROM generation_attempts
+    WHERE root_action_id=? AND json_extract(usage_receipt_json,'$.reviewRevisionEffect.kind')='review'`).pluck().get(item.seeded.call.rootActionId) as string
+  const editBinding = (runId: string, path: string, value: unknown) => db().prepare(
+    'UPDATE generation_runs SET binding_json=json_set(binding_json,?,json(?)) WHERE run_id=?').run(path, JSON.stringify(value), runId)
+
+  it('M03：已保存审稿的上下文哈希对不上，这条循环验不过；冻结的来源还在，导出省略它时照样指明第 2 章', async () => {
+    const items = reviewedBook({ finalized: true })
+    editBinding(reviewRunOf(items[1]!), '$.sourceManifest.reviewRevisionContextHash', sha256('别的上下文'))
+
+    expect(unprovableReviewCycleIds(db())).toEqual(new Set([cycleOf(items[1]!)]))
+    expect(await omittedOnExport()).toEqual([{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }])
+  })
+
+  it('M03：已保存审稿的作者输入副本与上下文对不上，这条循环验不过', () => {
+    const items = reviewedBook({ finalized: true })
+    editBinding(reviewRunOf(items[1]!), '$.sourceManifest.authorInputs', [{ id: 'review-revision-context', text: '{}' }])
+
+    expect(unprovableReviewCycleIds(db())).toEqual(new Set([cycleOf(items[1]!)]))
+  })
+
+  it.each([
+    ['读得出', null, 'exported'],
+    ['的上下文哈希对不上', '$.sourceManifest.reviewRevisionContextHash', expect.objectContaining({ code: 'PORTABLE_UNSAFE_PROJECTION' })],
+    ['的作者输入副本对不上', '$.sourceManifest.authorInputs[0].text', expect.objectContaining({ code: 'PORTABLE_UNSAFE_PROJECTION' })],
+  ])('导出：没保存的审稿运行证明%s时，整本导出的结果', async (_label, path, outcome) => {
+    const items = reviewedBook({ finalized: true })
+    db().prepare(`INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+      SELECT 'run-unsaved',root_action_id,binding_json,status,created_at_ms,'open-unsaved' FROM generation_runs WHERE run_id=?`)
+      .run(reviewRunOf(items[0]!))
+    if (path) editBinding('run-unsaved', path, sha256('别的上下文'))
+
+    expect(await exportBook()).toEqual(outcome)
   })
 })

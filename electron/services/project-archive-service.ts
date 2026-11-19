@@ -41,7 +41,9 @@ import { withKnowledgeSourceGate } from './knowledge-source-gate'
 import { sqliteSchemaFingerprint } from '../migrations/sqlite-schema-adapter'
 import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
 import { SchemaMigrationError } from '../migrations/registry'
+import { admitWholeLedgerOfOpenProject } from '../database'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
+import { readReviewProof } from '../../src/shared/review-proof'
 import {
   PORTABLE_TRANSFER_AUTHORITY_PATH,
   createPortableTransferAuthority,
@@ -653,18 +655,11 @@ function projectReviewBinding(value: unknown): Record<string, unknown> {
     fingerprint: projectReviewFingerprint(binding.fingerprint),
   }
   const manifest = binding.sourceManifest as Record<string, unknown> | undefined
-  if (manifest?.reviewRevisionContext === undefined) return projected
-  const context = assertReviewContext(manifest.reviewRevisionContext)
-  const encoded = JSON.stringify(context)
-  const source = object(context.source, ['id', 'chapterNumber', 'version', 'status', 'content'])
-  if (Buffer.byteLength(encoded, 'utf8') > 16 * 1024 * 1024
-    || contentHash(context.sourceHash) !== sha256(safeString(source.content))
-    || contentHash(manifest.reviewRevisionContextHash) !== sha256(encoded)
-    || JSON.stringify(manifest.authorInputs) !== JSON.stringify([{ id: 'review-revision-context', text: encoded }])) {
-    fail('PORTABLE_UNSAFE_PROJECTION')
-  }
-  projected.sourceManifest = { operation: safeId(manifest.operation), reviewRevisionContext: context,
-    reviewRevisionContextHash: manifest.reviewRevisionContextHash, authorInputs: manifest.authorInputs }
+  const proof = readReviewProof(manifest, sha256)
+  if (proof.kind === 'absent') return projected
+  if (proof.kind !== 'recomputable' || Buffer.byteLength(proof.contextJson, 'utf8') > 16 * 1024 * 1024) fail('PORTABLE_UNSAFE_PROJECTION')
+  projected.sourceManifest = { operation: safeId(manifest?.operation), reviewRevisionContext: assertReviewContext(proof.context),
+    reviewRevisionContextHash: proof.contextHash, authorInputs: manifest?.authorInputs }
   return projected
 }
 
@@ -893,19 +888,20 @@ function projectionForRow(
 function draftThreadTaskProofs(db: InstanceType<typeof BetterSqlite>, reviewRoots: ReadonlySet<string>): {
   receipts: Map<string, string>; bindings: Map<string, string>
 } {
-  const rows = db.prepare(`SELECT a.attempt_id,a.run_id,a.root_action_id,r.binding_json,
-      json_extract(a.usage_receipt_json,'$.draftCommit.id') AS draft_id,
-      json_extract(a.usage_receipt_json,'$.draftCommit.chapterNumber') AS chapter_number,
-      json_type(a.usage_receipt_json,'$.draftCommit.id') AS draft_id_type,
-      json_type(a.usage_receipt_json,'$.draftCommit.chapterNumber') AS chapter_number_type
-    FROM generation_attempts a JOIN generation_runs r ON r.run_id=a.run_id
-    WHERE json_valid(a.usage_receipt_json) AND json_extract(a.usage_receipt_json,'$.draftCommit.id') IS NOT NULL`).all() as Array<{
-    attempt_id: string; run_id: string; root_action_id: string; binding_json: string; draft_id: unknown; chapter_number: unknown
+  const rows = db.prepare(`SELECT attempt_id,run_id,root_action_id,
+      json_extract(usage_receipt_json,'$.draftCommit.id') AS draft_id,
+      json_extract(usage_receipt_json,'$.draftCommit.chapterNumber') AS chapter_number,
+      json_type(usage_receipt_json,'$.draftCommit.id') AS draft_id_type,
+      json_type(usage_receipt_json,'$.draftCommit.chapterNumber') AS chapter_number_type
+    FROM generation_attempts WHERE json_valid(usage_receipt_json) AND json_extract(usage_receipt_json,'$.draftCommit.id') IS NOT NULL`).all() as Array<{
+    attempt_id: string; run_id: string; root_action_id: string; draft_id: unknown; chapter_number: unknown
     draft_id_type: string; chapter_number_type: string | null }>
+  // 跨记录只按收据选（ADR-0030）。
+  const bindingOf = db.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck()
   const receipts = new Map<string, string>(), bindings = new Map<string, string>()
   for (const row of rows) {
     if (reviewRoots.has(row.root_action_id)) continue
-    const tasks = writtenChapterThreadTasks(row.binding_json)
+    const tasks = writtenChapterThreadTasks(bindingOf.get(row.run_id) as string)
     if (!tasks || row.draft_id_type !== 'integer' || row.chapter_number_type !== 'integer'
       || !Number.isSafeInteger(row.draft_id) || !Number.isSafeInteger(row.chapter_number)) {
       console.warn('[portable-export] 写稿记录里的线索任务读不出，这份稿的线索任务不随副本带走', { draftId: row.draft_id })
@@ -1226,6 +1222,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
   safeDirectory(projectStorageRoot)
   const sourceDatabasePath = path.join(projectStorageRoot, CANONICAL_PROJECT_DATABASE)
   const checkedDatabase = regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING')
+  const firstAttempt = !source.database
   if (source.database && !sameObject(source.database, checkedDatabase)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
   source.database = checkedDatabase
   const assertSameDatabase = () => {
@@ -1237,6 +1234,9 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
     fs.readFileSync(canonicalManifestPath, 'utf8'),
   ))
   if (canonicalManifest.projectId !== frozenContext.projectId) fail('PORTABLE_CONTEXT_INVALID')
+  // 被拒的导出不能封存源库；重来不改变源库状态，不必再进门。发布时仍以不覆盖为准。
+  if (fs.lstatSync(targetPath, { throwIfNoEntry: false })) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_TARGET_EXISTS')
+  if (firstAttempt) admitWholeLedgerOfOpenProject(sourceRoot)
   const snapshotGeneration = input.snapshotGeneration ?? randomUUID()
   const createdAt = (input.now?.() ?? new Date()).toISOString()
   const attempt = prepareAttempt(attemptParent)

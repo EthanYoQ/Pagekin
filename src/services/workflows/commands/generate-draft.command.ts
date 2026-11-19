@@ -50,12 +50,12 @@ import {
 } from '../../generation/generation-harness'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
-import { chapterThreadTasks, isChapterThreadTaskSchedule, narrativeThreadSchedule, parseChapterThreadTasks, type ChapterThreadTask, type NarrativeThreadView } from '../../../shared/narrative-thread'
+import { chapterThreadTasks, parseChapterThreadTasks, type ChapterThreadTask } from '../../../shared/narrative-thread'
+import { activeNarrativeThreadBlock, listRelevantNarrativeThreads, readCharacterProfiles, threadScheduleNote } from '../chapter-context-readers'
 import { promptLanguageText } from '../../prompt-language'
 import { countDraftUnits, draftTargetUnitRange } from '../../../shared/draft-units'
 import type { RecoveryChapterSource } from '../../../shared/recovery-candidate'
-import { CHARACTER_STATE_TEXT_FIELDS, type CharacterRosterEntry } from '../../../shared/character-roster'
-import { characterTimelinePromptLines, type CharacterTimelinePromptLines } from '../../../shared/character-timeline-prompt'
+import type { CharacterTimelinePromptLines } from '../../../shared/character-timeline-prompt'
 import {
   assembleChapterMaterials,
   ChapterMaterialCapacityError,
@@ -75,8 +75,6 @@ const NEXT_CHAPTER_HEAD_MAX_CHARS = 1200
 const CROSS_CHAPTER_REUSE_CJK_NGRAM_CHARS = 8
 const CROSS_CHAPTER_REUSE_ENGLISH_NGRAM_CHARS = 20
 const CROSS_CHAPTER_REUSE_LONG_RUN_CHARS = 80
-const ACTIVE_THREAD_CONTEXT_MAX_CHARS = 1200
-const ACTIVE_THREAD_CONTEXT_MAX_ITEMS = 6
 const STREAM_PREVIEW_INTERVAL_MS = 250
 
 type ChapterHeading = Readonly<{
@@ -294,15 +292,6 @@ const CHARACTER_TIMELINE_INPUT_ID = 'draft:character-timeline'
 function recordedCharacterTimeline(authorInputs: readonly { id: string; text: string }[]): CharacterTimelinePromptLines {
   const text = authorInputs.find(input => input.id === CHARACTER_TIMELINE_INPUT_ID)?.text
   return text === undefined ? {} : JSON.parse(text) as CharacterTimelinePromptLines
-}
-
-function threadScheduleNote(schedule: ChapterThreadTask['schedule']): { zhCN: string; enUS: string } {
-  if (schedule.kind === 'overdue') {
-    return { zhCN: `已逾期 ${schedule.chaptersOverdue} 章`, enUS: `overdue by ${schedule.chaptersOverdue} ${pluralEn(schedule.chaptersOverdue, 'chapter')}` }
-  }
-  return schedule.kind === 'assigned'
-    ? { zhCN: '作者指定本章推进', enUS: 'assigned by the author to this chapter' }
-    : { zhCN: '本章到期', enUS: 'due this chapter' }
 }
 
 function threadTaskLines(tasks: readonly ChapterThreadTask[]): { zhCN: string[]; enUS: string[] } {
@@ -632,7 +621,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         cleanDraftText: saved.content, id: saved.id, nextVersion: saved.version, mergedGuidance: '',
         targetChars: Number(earlyRecovery.authorInputs.find(input => input.id === 'draft:target-units')?.text) })
     }
-    const threadsAtStart = this.resumeHandle ? undefined : await this.listRelevantNarrativeThreads(expectedProjectPath, projectSession)
+    const threadsAtStart = this.resumeHandle ? undefined : await listRelevantNarrativeThreads(expectedProjectPath, projectSession, this.chapterInfo)
     if (threadsAtStart === null) callbacks.log(uiText(
       '  伏笔线索没能读取：本章不列线索硬任务，正文照常写；可到「剧情与伏笔」查看线索。',
       '  Narrative threads could not be read: this chapter has no thread tasks and is written as usual. Check them under Plot & threads.',
@@ -650,10 +639,11 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     }
     if (defaultMain) context.generationModelId = workflowGenerationModelId(context) || routeModelId('chapter-draft') || undefined
     const prepareFromCurrentRoster = async () => {
-      const characterMaterial = await this.readCharacterProfiles(
+      const characterMaterial = await readCharacterProfiles(
         expectedProjectPath,
         projectSession,
         writingLanguage,
+        this.chapterInfo.chapterNumber,
         this.chapterInfo.characters,
         this.resumeHandle ? recordedCharacterTimeline(earlyRecovery?.authorInputs ?? []) : undefined,
       )
@@ -839,8 +829,8 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         .withPreviousEnding('')
         .withShortSummary('')
     }
-    const activeThreads = this.activeNarrativeThreadBlock(threadsAtStart !== undefined ? threadsAtStart ?? []
-      : await this.listRelevantNarrativeThreads(expectedProjectPath, projectSession) ?? [], writingLanguage)
+    const activeThreads = activeNarrativeThreadBlock(threadsAtStart !== undefined ? threadsAtStart ?? []
+      : await listRelevantNarrativeThreads(expectedProjectPath, projectSession, this.chapterInfo) ?? [], this.chapterInfo.chapterNumber, writingLanguage)
 
     if (defaultMain && earlyRecovery?.selectedDraftIds.length && !earlyRecovery.selectedDrafts)
       throw new Error('GENERATION_DRAFT_SOURCE_CHANGED')
@@ -1885,106 +1875,6 @@ ${params.candidate.text}`,
     } catch { return '' }
   }
 
-  private async readCharacterProfiles(
-    projectPath: string,
-    projectSession: ProjectSessionContext,
-    writingLanguage: WritingLanguage,
-    relevantCharacterNames: readonly string[],
-    recordedTimeline: CharacterTimelinePromptLines | undefined,
-  ): Promise<{ text: string; timeline: CharacterTimelinePromptLines; timelineUnits: number; timelineUnavailable: boolean; rosterRevision?: number }> {
-    const unavailable = (text: string, rosterRevision?: number) => ({ text, timeline: {}, timelineUnits: 0, timelineUnavailable: false, rosterRevision })
-    try {
-      const roster = await ipc.invokeWithProjectSession(projectSession, 'db:character-roster-read', projectPath)
-      if (roster.status !== 'ready' && roster.status !== 'empty') {
-        return unavailable(promptLanguageText(
-          writingLanguage,
-          '（角色资料来源未知或待修复；未作为作者事实注入）',
-          '(character-profile provenance is unknown or needs repair; it was not injected as author fact)',
-        ), roster.revision)
-      }
-      const profiles: string[] = []
-      const relevantNames = new Set(relevantCharacterNames.map(name => name.trim()).filter(Boolean))
-      const selected = new Set<typeof roster.entries[number]>()
-      for (const name of relevantNames) {
-        const named = roster.entries.filter(card => card.name === name)
-        const renamed = roster.entries.filter(card => card.name !== name && card.characterId
-          && roster.aliases?.some(alias => alias.name === name && alias.characterId === card.characterId))
-        // 旧名被另一角色复用时无法判断蓝图指谁，宁可不注入也不注入错的档案或中断写稿。
-        if (renamed.length === 0) for (const card of named) selected.add(card)
-        else if (named.length === 0 && renamed.length === 1) selected.add(renamed[0])
-      }
-      const read = recordedTimeline ?? await this.readCharacterTimeline(projectPath, projectSession, writingLanguage, roster.entries, selected)
-      const timeline = read ?? {}
-      let timelineUnits = 0
-      for (const card of selected) {
-        const timelineLines = card.characterId ? timeline[card.characterId] : undefined
-        const facts = [
-          card.gender && `gender: ${card.gender}`,
-          card.age && `age: ${card.age}`,
-          card.appearance && `appearance: ${card.appearance}`,
-          card.personality && `personality: ${card.personality}`,
-          card.background && `background: ${card.background}`,
-          card.abilities && `abilities: ${card.abilities}`,
-          card.motivation && `motivation: ${card.motivation}`,
-          card.arc && `arc: ${card.arc}`,
-          card.notes && `notes: ${card.notes}`,
-        ].filter(Boolean)
-        if (!timelineLines) for (const relationship of card.relationships ?? []) {
-          const target = relationship.target?.trim()
-          const relation = relationship.relation?.trim()
-          if (target && relation) facts.push(`relationship: ${target} (${relation})`)
-        }
-        const legacyRelationshipNotes = card.legacyRelationshipNotes?.trim()
-        if (legacyRelationshipNotes) {
-          facts.push(promptLanguageText(
-            writingLanguage,
-            `relationship（legacy 来源未知）: ${legacyRelationshipNotes}`,
-            `relationship (legacy provenance unknown): ${legacyRelationshipNotes}`,
-          ))
-        }
-        if (timelineLines) {
-          facts.push(...timelineLines)
-          timelineUnits += new TextEncoder().encode(timelineLines.map(line => ` | ${line}`).join('')).length
-        } else for (const field of CHARACTER_STATE_TEXT_FIELDS) {
-          const provenance = card.currentState?.provenance?.[field]
-          const value = card.currentState?.[field]?.trim()
-          if (provenance?.kind === 'author' && value) {
-            facts.push(`${field}@chapter${provenance.chapterNumber}: ${value}`)
-          }
-        }
-        profiles.push(`${card.name} (${card.role || 'unknown'})${facts.length ? ` | ${facts.join(' | ')}` : ''}`)
-      }
-      return { text: profiles.length > 0 ? profiles.join('\n') : '', timeline, timelineUnits, timelineUnavailable: read === null, rosterRevision: roster.revision }
-    } catch {
-      return unavailable(promptLanguageText(
-        writingLanguage,
-        '（角色资料读取失败；未把旧 currentState 或 characters_arch 当作作者事实）',
-        '(character profiles unavailable; legacy currentState and characters_arch were not treated as author facts)',
-      ))
-    }
-  }
-
-  private async readCharacterTimeline(
-    projectPath: string,
-    projectSession: ProjectSessionContext,
-    language: WritingLanguage,
-    entries: readonly CharacterRosterEntry[],
-    selected: ReadonlySet<CharacterRosterEntry>,
-  ): Promise<CharacterTimelinePromptLines | null> {
-    const characterIds = [...selected].flatMap(card => card.characterId ?? [])
-    try {
-      return characterTimelinePromptLines({
-        nodes: await ipc.invokeWithProjectSession(projectSession, 'db:character-continuity-nodes', characterIds, projectPath),
-        chapter: this.chapterInfo.chapterNumber,
-        characterIds,
-        currentNames: new Map(entries.flatMap(card => card.characterId ? [[card.characterId, card.name] as const] : [])),
-        language,
-      })
-    } catch {
-      return null
-    }
-  }
-
   private async readFinalizedMaterials(
     projectPath: string,
     currentChapter: number,
@@ -2137,63 +2027,5 @@ ${params.candidate.text}`,
       } catch { /* Existing guard owns absence; do not invent a source identity. */ }
     }
     return { sources, locatedFactCandidates: selected.reduce((sum, item) => sum + item.evidence.length, 0) }
-  }
-
-  /** 读取失败返回 null，与没有相关线索区分开。 */
-  private async listRelevantNarrativeThreads(
-    projectPath: string,
-    projectSession: ProjectSessionContext,
-  ): Promise<NarrativeThreadView[] | null> {
-    try {
-      return await ipc.invokeWithProjectSession(
-        projectSession,
-        'db:narrative-thread-list-relevant',
-        {
-          chapterNumber: this.chapterInfo.chapterNumber,
-          title: this.chapterInfo.title,
-          keyEvents: this.chapterInfo.keyEvents,
-          characters: [...this.chapterInfo.characters],
-        },
-        projectPath,
-      )
-    } catch {
-      return null
-    }
-  }
-
-  private activeNarrativeThreadBlock(
-    threads: readonly NarrativeThreadView[],
-    writingLanguage: WritingLanguage,
-  ): { text: string; count: number; leftOut: number } {
-    const header = promptLanguageText(
-      writingLanguage,
-      '【当前相关活跃叙事线索】',
-      '[Relevant active narrative threads]',
-    )
-    const lines: string[] = []
-    let usedChars = header.length + 1
-    for (const thread of threads) {
-      if (lines.length === ACTIVE_THREAD_CONTEXT_MAX_ITEMS) break
-      const source = thread.events.at(-1)
-      const schedule = narrativeThreadSchedule(thread, this.chapterInfo.chapterNumber)
-      const note = schedule && isChapterThreadTaskSchedule(schedule) ? threadScheduleNote(schedule) : null
-      const mark = note ? promptLanguageText(writingLanguage, `${note.zhCN}；`, `${note.enUS}; `) : ''
-      const line = promptLanguageText(
-        writingLanguage,
-        `- ${thread.title} [${thread.status}]（${mark}目标第${thread.targetStartChapter}–${thread.targetEndChapter}章；作者意图：${thread.authorIntent}${source ? `；来源第${source.chapterNumber}章：${source.evidence}` : ''}）`,
-        `- ${thread.title} [${thread.status}] (${mark}target Chapters ${thread.targetStartChapter}–${thread.targetEndChapter}; author intent: ${thread.authorIntent}${source ? `; source Chapter ${source.chapterNumber}: ${source.evidence}` : ''})`,
-      )
-      const nextLength = line.length + (lines.length > 0 ? 1 : 0)
-      if (usedChars + nextLength > ACTIVE_THREAD_CONTEXT_MAX_CHARS) continue
-      lines.push(line)
-      usedChars += nextLength
-    }
-    const leftOut = threads.length - lines.length
-    if (lines.length === 0) return { text: '', count: 0, leftOut }
-    return {
-      text: `${header}\n${lines.join('\n')}`,
-      count: lines.length,
-      leftOut,
-    }
   }
 }

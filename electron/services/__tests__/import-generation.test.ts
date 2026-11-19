@@ -11,6 +11,7 @@ import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '..
 import { getProjectDb, getCurrentProjectPath } from '../../database'
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
 import { admitGenerationLedger } from '../../repositories/generation-ledger-admission'
+import { GenerationRunRepository } from '../../repositories/generation-run-repository'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
 
@@ -121,11 +122,51 @@ it('ADR-0030 同槽位第一条导入运行的 open_key 读不出：报槽位不
  expect(()=>f.owner.readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
  expect(()=>f.reopenStorage().readImportGeneration(f.slot)).toThrow('GENERATION_IMPORT_SLOT_AMBIGUOUS')
 })
-it("#702 同槽位后面一条导入运行的点击号读得出但属于别的槽位：仍报槽位不明",()=>{
+it("ADR-0030 跨记录认运行只看身份键：点击号属于别的槽位的导入运行不算这个槽位的，绑定里写的槽位不看",()=>{
+ // 写入时绑定与点击一致，这种行只能是改坏的库。
  const f=fixture()
  const first=f.owner.begin(f.selection)
  forgeSlotRetry(f.db, first.handle.runId, "import:另一个槽位")
- expect(()=>f.reopenStorage().readImportGeneration(f.slot)).toThrow("GENERATION_IMPORT_SLOT_AMBIGUOUS")
+ expect(f.reopenStorage().readImportGeneration(f.slot)?.view.handle).toEqual(first.handle)
+})
+it("ADR-0030 跨记录认运行只看身份键：点击号同槽位、操作不是导入的运行不算前驱",()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ forgeOtherOperation(f.db, first.handle.runId, "chapter-draft")
+ expect(f.reopenStorage().readImportGeneration(f.slot)?.view.handle).toEqual(first.handle)
+})
+it('ADR-0030 别的导入的阶段绑定读不出、开树点击证明属于别的导入：新的导入照常开始；证明不了的报记录已损坏',()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ // 作者取消了那次导入，它的树静止；之后它的绑定坏了，打开时的进门不查静止树。
+ new GenerationRunRepository(()=>f.db).pause(first.handle.rootActionId,true)
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(first.handle.runId)
+ f.db.prepare("UPDATE import_runs SET status='cancelled' WHERE id='导入任务'").run()
+ const other=f.importAtGlobal('另一次导入','b'.repeat(64),'第一章 山城\r\n林岚在山城读完了信。')
+ expect(f.owner.begin(other.selection).handle.rootActionId).not.toBe(first.handle.rootActionId)
+ f.db.prepare("UPDATE import_runs SET status='cancelled' WHERE id='另一次导入'").run()
+ f.db.prepare("UPDATE generation_roots SET idempotency_key='{坏' WHERE root_action_id=?").run(first.handle.rootActionId)
+ const third=f.importAtGlobal('第三次导入','c'.repeat(64),'第一章 河谷\r\n林岚在河谷收起了信。')
+ expect(()=>f.owner.begin(third.selection)).toThrow('GENERATION_LEDGER_UNREADABLE')
+})
+it('ADR-0030 别的导入的阶段 open_key 与绑定都读不出、开树点击证明属于别的导入：新的导入照常开始',()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ new GenerationRunRepository(()=>f.db).pause(first.handle.rootActionId,true)
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏',open_key='{坏' WHERE run_id=?").run(first.handle.runId)
+ f.db.prepare("UPDATE import_runs SET status='cancelled' WHERE id='导入任务'").run()
+ const other=f.importAtGlobal('另一次导入','b'.repeat(64),'第一章 山城\r\n林岚在山城读完了信。')
+ expect(f.owner.begin(other.selection).handle.rootActionId).not.toBe(first.handle.rootActionId)
+})
+it('ADR-0030 独立分析文风的运行绑定读不出：它的点击证明不是导入，新的导入照常开始',()=>{
+ const f=fixture()
+ const style=f.owner.begin({operation:'analyze-writing-style',uiActionNonce:'独立分析文风',modelId:'synthetic',promptKeys:['analyze_writing_style'],skillStages:[],selectedDraftIds:[],selectedFinalizedDraftIds:[],output:'visible-text'})
+ new GenerationRunRepository(()=>f.db).pause(style.handle.rootActionId,true)
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE run_id=?").run(style.handle.runId)
+ expect(f.owner.begin(f.selection).handle.rootActionId).not.toBe(style.handle.rootActionId)
+})
+it('ADR-0030 前一阶段的 open_key 读不出、绑定读得出：下一阶段仍认它为前驱，沿用原根和模型',async()=>{
+ await globalEffect('inference',(db,runId)=>db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(runId))
 })
 it('同slot不同nonce加入同run，并冻结实际manifest正文',()=>{
  const f=fixture(),first=f.owner.begin(f.selection),second=f.owner.begin({...f.selection,uiActionNonce:'另一次点击'})
@@ -185,7 +226,7 @@ it('持久replayTask被篡改时拒绝回读，不新增派发',async()=>{
  expect(f.spy).toHaveBeenCalledTimes(1)
 })
 
-async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needless-retry' | 'endpoint' | 'forged' | 'dropped' | 'rejected-delta' = 'unproven') {
+async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needless-retry' | 'endpoint' | 'forged' | 'dropped' | 'rejected-delta' = 'unproven', beforeStyle?: (db: InstanceType<typeof Database>, globalRunId: string) => void) {
  const core={genre:'现实',subGenre:'冒险',targetAudience:'通用',totalChapters:1,wordsPerChapter:900,plotStructure:'three_act',narrativePov:'third_limited',goldenFinger:'无',globalGuidance:'克制',premise:'海港来信',coreOutline:'寻找来信者',worldSetting:'海港',protagonistProfile:'林岚',worldbuilding:'海港街巷',synopsis:'找到信件'}
  const card = {name:'林岚',role:'protagonist',gender:'未知',age:'18',appearance:'朴素',personality:'谨慎',background:'港口居民',abilities:'观察',motivation:'寻信',relationships:[] as { target: string; relation: string }[],arc:'成长',notes:'待确认'}
  const generated = ['林岚','苏绾','顾岩'].map((name, index) => ({ ...card, name, role: index ? 'supporting' : 'protagonist',
@@ -217,6 +258,7 @@ async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needle
  expect(f.db.prepare('SELECT genre FROM project_core').pluck().get()).toBe('现实')
  ImportRunRepository.advanceStage(f.slot.runId,'global','style',f.execution)
  const styleSlot={...f.slot,stage:'style' as const}
+ beforeStyle?.(f.db, handle.runId)
  const style=f.owner.begin({...f.selection,operation:'analyze-writing-style',promptKeys:['analyze_writing_style'],skillStages:[],output:'visible-text',modelId:'后来不同模型',importSlot:styleSlot})
  expect(style.handle.rootActionId).toBe(handle.rootActionId)
  expect(f.owner.readImportGeneration(styleSlot)?.modelId).toBe('synthetic')
@@ -317,4 +359,13 @@ function forgeSlotRetry(db: import("better-sqlite3").Database, runId: string, no
   parts[2] = nonce
   db.prepare(`INSERT INTO generation_runs(run_id,open_key,${columns.join(",")}) SELECT ?,?,${columns.join(",")} FROM generation_runs WHERE run_id=?`)
     .run(`${runId}-forged`, JSON.stringify([JSON.stringify(parts), root]), runId)
+}
+
+function forgeOtherOperation(db: import("better-sqlite3").Database, runId: string, operation: string) {
+  const columns = (db.prepare("SELECT name FROM pragma_table_info('generation_runs')").pluck().all() as string[]).filter(name => !["run_id", "open_key", "binding_json"].includes(name))
+  const [click, root] = JSON.parse(db.prepare("SELECT open_key FROM generation_runs WHERE run_id=?").pluck().get(runId) as string) as [string, string]
+  const parts = JSON.parse(click) as string[]
+  parts[1] = operation
+  db.prepare(`INSERT INTO generation_runs(run_id,open_key,binding_json,${columns.join(",")}) SELECT ?,?,json_remove(json_set(binding_json,'$.sourceManifest.operation',?),'$.sourceManifest.importSlotKey'),${columns.join(",")} FROM generation_runs WHERE run_id=?`)
+    .run(`${runId}-other`, JSON.stringify([JSON.stringify(parts), root]), operation, runId)
 }

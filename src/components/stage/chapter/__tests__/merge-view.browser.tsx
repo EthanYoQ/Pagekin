@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
 import { useLocaleStore } from '../../../../stores/locale-store'
+import { useStageStore } from '../../../../stores/navigation/stage-store'
 import MergeView from '../MergeView'
 import { ORIGINAL, REVISED } from './chapter-fixture'
 
@@ -13,7 +14,7 @@ let root: Root | undefined
 let host: HTMLDivElement | undefined
 let completed: string[]
 
-const data = { originalContent: ORIGINAL, modifiedContent: REVISED, revisionPath: 'ai-novel://revision/9', targetSnapshot: { content: ORIGINAL, contentRevision: 0 }, staleReason: null }
+const data = { originalContent: ORIGINAL, modifiedContent: REVISED, revisionPath: 'ai-novel://revision/9', choicesKey: 'project-1:9', targetSnapshot: { content: ORIGINAL, contentRevision: 0 }, staleReason: null }
 
 async function mount(onLater = vi.fn()) {
   host = document.createElement('div')
@@ -32,6 +33,7 @@ const choose = (paragraph: number, option: '用原稿' | '用修稿' | '手动�
 beforeEach(() => {
   completed = []
   useLocaleStore.setState({ locale: 'zh-CN' })
+  useStageStore.setState({ mergeChoices: {} })
 })
 
 afterEach(async () => {

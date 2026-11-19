@@ -10,8 +10,9 @@ import { DRAFT_RECONCILE_PURPOSE } from '../../src/shared/draft-reconciliation';
 import { DRAFT_SHORT_OUTLINE_PURPOSE } from '../../src/shared/draft-short-outline';
 import { countDraftUnits, draftTargetUnitRange } from '../../src/shared/draft-units';
 import { getProjectDb } from '../database';
-import { GENERATION_LEDGER_UNREADABLE } from './generation-ledger-admission';
-import { candidateRunIds, clickOfOpenKey, clickOfRootKey, runIndexOf, uiActionNonceOfOpenKey, type GenerationClick } from './generation-run-index';
+import { GENERATION_LEDGER_UNREADABLE, UNSETTLED_ROOTS, isLedgerUnreadable, parseLedgerObject, readableLedgerJson } from './generation-ledger-admission';
+import { clickOfOpenKey, clickOfRootKey, runIndexOf, type GenerationClick, type RunIndexEntry } from './generation-run-index';
+const byOrder = (a: RunIndexEntry, b: RunIndexEntry) => a.order < b.order ? -1 : a.order > b.order ? 1 : 0;
 import type { PortableRuntimeFreezeTable } from '../services/portable-runtime-freeze';
 import { assertReservation, assertAttemptTransition, rootActionIdempotencyKey, type RootAction, type RootBudget, type PhysicalAttempt, type VisibleArtifact, type ProviderUsagePolicy } from '../../src/shared/generation-contract';
 import { isContentHash, sameProjectEpoch, type FrozenInputFingerprint, type SourceRef, type ProjectEpoch } from '../../src/shared/source-ref';
@@ -28,6 +29,16 @@ export interface OpenGenerationRunRequest extends RunBinding {
     frozenInputHash: string;
     budget: RootBudget;
     parentRootActionId?: string;
+}
+export interface RunIdentity {
+    runId: string;
+    rootActionId: string;
+    status: string;
+    projectId: string | undefined;
+    epoch: string | undefined;
+    operation: string | undefined;
+    batchId: string | null;
+    batchRoot: boolean;
 }
 export interface DurableGenerationRun {
     runId: string;
@@ -95,17 +106,6 @@ const receiptSelect = `SELECT t.attempt_id,t.run_id,t.rowid AS ordinal,t.attempt
 export const textHash = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 /** 封存的根是终态：列举跳过它，阻断码也不再改写。 */
 export const UNSEALED_ROOT = `blocked_code IS NOT '${GENERATION_LEDGER_UNREADABLE}'`;
-/** 没静止的根：还在 active，或有已预留、已派发的尝试。只有它们在崩溃或关闭时需要落到暂停与终态。 */
-export const UNSETTLED_ROOT = `(json_extract(action_json,'$.status')='active' OR root_action_id IN (SELECT root_action_id FROM generation_attempts
-    WHERE json_extract(attempt_json,'$.status') IN ('reserved','dispatch-marked')))`;
-/** 点击号读不出的运行认不出是不是前驱，所以直接报 conflict。 */
-export function slotRunNonces(rows: readonly { run_id: string; open_key: string }[], conflict: string): { runId: string; nonce: string }[] {
-    return rows.map(row => {
-        const nonce = uiActionNonceOfOpenKey(row.open_key);
-        if (nonce === undefined) fail(conflict);
-        return { runId: row.run_id, nonce };
-    });
-}
 const encode = (value: unknown): string => JSON.stringify(value);
 const authorEffectPath = '$."$runEffects"';
 function fail(code: string): never { throw new Error(code); }
@@ -119,8 +119,8 @@ function binding(request: RunBinding): RunBinding {
     return JSON.parse(encode({ projectId: request.projectId, epoch: request.epoch, fingerprint: request.fingerprint, contextSnapshotId: request.contextSnapshotId, sourceManifest: request.sourceManifest, sourceRefs: request.sourceRefs }));
 }
 /** `$` 开头的键是运行上的记账，不属于冻结绑定；重写冻结绑定时必须带回。 */
-function splitStoredBinding(json: string): { frozen: RunBinding; records: Record<string, unknown> } {
-    const entries = Object.entries(JSON.parse(json) as Record<string, unknown>);
+function splitStoredBinding(json: unknown): { frozen: RunBinding; records: Record<string, unknown> } {
+    const entries = Object.entries(parseLedgerObject(json) ?? fail(GENERATION_LEDGER_UNREADABLE));
     return { frozen: Object.fromEntries(entries.filter(([key]) => !key.startsWith('$'))) as unknown as RunBinding,
         records: Object.fromEntries(entries.filter(([key]) => key.startsWith('$'))) };
 }
@@ -141,7 +141,7 @@ export class GenerationRunRepository {
         const row = this.db().prepare('SELECT * FROM generation_runs WHERE run_id=?').get(runId) as {
             run_id: string;
             root_action_id: string;
-            binding_json: string;
+            binding_json: unknown;
             status: string;
         } | undefined;
         if (!row)
@@ -149,12 +149,66 @@ export class GenerationRunRepository {
         this.assertUnsealed(row.root_action_id);
         return { runId: row.run_id, rootActionId: row.root_action_id, binding: splitStoredBinding(row.binding_json).frozen, status: row.status };
     }
+    /** 列举用：绑定读不出或根被封存的运行略过，只有读写它的操作报错。 */
+    readableRun(runId: string): DurableGenerationRun | undefined {
+        try { return this.get(runId); }
+        catch (error) {
+            if (isLedgerUnreadable(error)) return undefined;
+            throw error;
+        }
+    }
+    /**
+     * 列举用的身份，按主键只取五个字段：审稿绑定动辄几百 KB，整条读进 JS 解析要慢几倍。
+     * 绑定读不出或根被封存时为 undefined；读得出但缺字段（如导出时中性化成 {} 的历史）照常返回，由调用方按作品号筛掉。
+     */
+    runIdentity(runId: string): RunIdentity | undefined {
+        const row = this.db().prepare(`SELECT root_action_id AS rootActionId, status, ${readableLedgerJson('binding_json')} AS ok, json_extract(CASE WHEN ${readableLedgerJson('binding_json')} THEN binding_json END,
+            '$.projectId','$.epoch','$.sourceManifest.operation','$.sourceManifest.batchId','$.sourceManifest.batchIntent') AS identity FROM generation_runs WHERE run_id=?`).get(runId) as
+            { rootActionId: string; status: string; ok: number; identity: string | null } | undefined;
+        if (!row?.ok || this.sealed(row.rootActionId)) return undefined;
+        const [projectId, epoch, operation, batchId, batchIntent] = JSON.parse(row.identity ?? '[]') as unknown[];
+        const text = (value: unknown) => typeof value === 'string' ? value : undefined;
+        return { runId, rootActionId: row.rootActionId, status: row.status, projectId: text(projectId), epoch: text(epoch), operation: text(operation),
+            batchId: text(batchId) ?? null, batchRoot: Boolean(batchIntent) };
+    }
+    /**
+     * 跨记录认运行（ADR-0030）：点击对得上的，加上点击号读不出、按主键读绑定由 recognize 认出的，按开出的先后排。
+     * 绑定读不出（含封存）的交给 unreadable：返回 [] 是略过，抛错是失败关闭；默认略过。
+     */
+    recognizedRuns(matches: (click: GenerationClick) => boolean, recognize: (binding: RunBinding) => boolean,
+        unreadable: (entry: RunIndexEntry) => DurableGenerationRun[] = () => []): DurableGenerationRun[] {
+        const { hits, unidentified } = runIndexOf(this.db()).lookup(matches);
+        return [...hits, ...unidentified].sort(byOrder).flatMap(entry => {
+            const run = this.readableRun(entry.runId);
+            if (!run) return unreadable(entry);
+            return entry.click !== undefined || recognize(run.binding) ? [run] : [];
+        });
+    }
+    /**
+     * 某种操作的运行：身份对上、根没封存的，加上身份读不出、按主键读绑定认得出是这种操作（和这个作品）的。
+     * 绑定也读不出的认不出，不算。给拿到候选就直接动手、后面不再按绑定筛的查找用。
+     */
+    runsOfOperation(operation: string, projectId?: string): string[] {
+        const { hits, unidentified } = runIndexOf(this.db()).lookup(click => click.operation === operation && (projectId === undefined || click.projectId === projectId));
+        const recognized = unidentified.filter(entry => {
+            const binding = this.readableRun(entry.runId)?.binding;
+            return binding?.sourceManifest?.operation === operation && (projectId === undefined || binding.projectId === projectId);
+        });
+        return [...hits.filter(entry => !entry.sealed), ...recognized].sort(byOrder).map(entry => entry.runId);
+    }
+    /** 按主键取绑定里的一个值；绑定读不出时报封存码，不让 SQLite 的解析错误漏给作者。 */
+    private bindingAt(runId: string, path: string): { type: string | null; value: unknown } | undefined {
+        const row = this.db().prepare(`SELECT ${readableLedgerJson('binding_json')} AS ok, json_type(CASE WHEN ${readableLedgerJson('binding_json')} THEN binding_json END,?) AS type,
+            json_extract(CASE WHEN ${readableLedgerJson('binding_json')} THEN binding_json END,?) AS value FROM generation_runs WHERE run_id=?`).get(path, path, runId) as { ok: number; type: string | null; value: unknown } | undefined;
+        if (row && !row.ok) fail(GENERATION_LEDGER_UNREADABLE);
+        return row;
+    }
     private replaceFrozenBinding(runId: string, frozen: RunBinding): void {
         const { records } = splitStoredBinding(this.db().prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(runId) as string);
         this.db().prepare('UPDATE generation_runs SET binding_json=? WHERE run_id=?').run(encode({ ...frozen, ...records }), runId);
     }
     private authorEditedRoot(rootId: string): boolean {
-        return !!this.db().prepare('SELECT 1 FROM generation_runs WHERE root_action_id=? AND json_type(binding_json,?) IS NOT NULL LIMIT 1').get(rootId, authorEffectPath);
+        return this.anyInTree(rootId, authorEffectPath);
     }
     private sealed(rootId: string): boolean {
         return this.db().prepare('SELECT blocked_code FROM generation_roots WHERE root_action_id=?').pluck().get(rootId) === GENERATION_LEDGER_UNREADABLE;
@@ -185,7 +239,16 @@ export class GenerationRunRepository {
         if (this.authorEditedRoot(this.get(runId).rootActionId)) fail('GENERATION_PLOT_OUTLINE_AUTHOR_SAVED');
     }
     isPrivatePlanningHistory(runId: string): boolean {
-        return !!this.db().prepare("SELECT 1 FROM generation_runs WHERE root_action_id=(SELECT root_action_id FROM generation_runs WHERE run_id=?) AND json_extract(binding_json,'$.sourceManifest.policy.planning.outlineProtocol')='chapter-parts-v2' LIMIT 1").get(runId);
+        const rootId = this.db().prepare('SELECT root_action_id FROM generation_runs WHERE run_id=?').pluck().get(runId) as string | undefined;
+        return rootId !== undefined && this.anyInTree(rootId, '$.sourceManifest.policy.planning.outlineProtocol', 'chapter-parts-v2');
+    }
+    /** 树里有没有一条运行的绑定在 path 上有值（给了 equals 时要等于它）；树里有读不出的绑定时报封存码，不按「没有」放行。 */
+    private anyInTree(rootId: string, path: string, equals?: string): boolean {
+        const found = this.db().prepare(`SELECT max(CASE WHEN NOT ${readableLedgerJson('binding_json')} THEN 2
+            WHEN @equals IS NULL AND json_type(binding_json,@path) IS NOT NULL OR json_extract(binding_json,@path)=@equals THEN 1 ELSE 0 END)
+            FROM generation_runs WHERE root_action_id=@root`).pluck().get({ path, equals: equals ?? null, root: rootId }) as number | null;
+        if (found === 2) fail(GENERATION_LEDGER_UNREADABLE);
+        return found === 1;
     }
     plotOutlineAuthorEditReceipt(runId: string, operationId: string, committedRange: PlotOutlineRange, synopsisHash: string): PlotOutlineAuthorEditReceipt {
         const run = this.get(runId), policy = plotOutlinePolicy(run.binding.sourceManifest);
@@ -203,7 +266,7 @@ export class GenerationRunRepository {
             synopsisHash, payloadHash: textHash(encode([sourceHandle, operationId, committedRange.from, committedRange.to, synopsisHash, expected])), idempotent: false };
     }
     readPlotOutlineAuthorEdit(runId: string): PlotOutlineAuthorEditReceipt | null {
-        const stored = this.db().prepare('SELECT json_extract(binding_json,?) FROM generation_runs WHERE run_id=?').pluck().get(authorEffectPath, runId);
+        const stored = this.bindingAt(runId, authorEffectPath)?.value;
         if (stored === null || stored === undefined) return null;
         const value = JSON.parse(String(stored)) as { plotOutlineAuthorEdit?: PlotOutlineAuthorEditReceipt; planningContinuation?: PlanningContinuationReceipt };
         const receipt = value?.plotOutlineAuthorEdit;
@@ -226,7 +289,7 @@ export class GenerationRunRepository {
         if (result.changes !== 1) fail('GENERATION_PLOT_OUTLINE_AUTHOR_RECEIPT_CONFLICT');
     }
     readPlanningContinuation(runId: string): PlanningContinuationReceipt | null {
-        const stored = this.db().prepare('SELECT json_extract(binding_json,?) FROM generation_runs WHERE run_id=?').pluck().get(`${authorEffectPath}.planningContinuation`, runId);
+        const stored = this.bindingAt(runId, `${authorEffectPath}.planningContinuation`)?.value;
         if (stored === null || stored === undefined) return null;
         const receipt = JSON.parse(String(stored)) as PlanningContinuationReceipt;
         const source = this.get(runId);
@@ -235,15 +298,16 @@ export class GenerationRunRepository {
             || receipt.sourceHandle.runId !== runId || receipt.sourceHandle.rootActionId !== source.rootActionId
             || receipt.sourceHandle.projectId !== source.binding.projectId || receipt.nextHandle.projectId !== source.binding.projectId
             || receipt.nextHandle.rootActionId === source.rootActionId) fail('GENERATION_PLANNING_CONTINUATION_INVALID');
-        // 续写出的那次生成被封存了：续写确实发生过，回执照存的给出。
+        // 续写出的那次生成被封存了或绑定读不出：续写确实发生过，回执照存的给出。读写那次生成的操作自己报封存码。
         if (this.sealed(receipt.nextHandle.rootActionId)) return receipt;
-        const next = this.get(receipt.nextHandle.runId);
+        const next = this.readableRun(receipt.nextHandle.runId);
+        if (!next) return receipt;
         if (next.rootActionId !== receipt.nextHandle.rootActionId || next.binding.projectId !== source.binding.projectId)
             fail('GENERATION_PLANNING_CONTINUATION_INVALID');
         return { ...receipt, nextHandle: { ...receipt.nextHandle, epoch: next.binding.epoch } };
     }
     readBlueprintAuthorEdit(runId: string): BlueprintAuthorEditReceipt | null {
-        const stored = this.db().prepare('SELECT json_extract(binding_json,?) FROM generation_runs WHERE run_id=?').pluck().get(`${authorEffectPath}.blueprintAuthorEdit`, runId);
+        const stored = this.bindingAt(runId, `${authorEffectPath}.blueprintAuthorEdit`)?.value;
         if (stored === null || stored === undefined) return null;
         const receipt = JSON.parse(String(stored)) as BlueprintAuthorEditReceipt;
         const run = this.get(runId);
@@ -353,7 +417,7 @@ export class GenerationRunRepository {
             return this.get(runId);
         });
     }
-    /** 运行索引按 open_key 里的点击取候选，查询再按绑定的 sourceManifest.operation 筛；两者不一致的绑定不许写进库。 */
+    /** 跨记录认运行只看 open_key 里的点击（ADR-0030），所以绑定的 sourceManifest.operation 和点击不一致的不许写进库。 */
     private assertClickOperation(runId: string, next: RunBinding): void {
         const click = clickOfOpenKey(this.db().prepare('SELECT open_key FROM generation_runs WHERE run_id=?').pluck().get(runId));
         if (click && click.operation !== next.sourceManifest.operation) fail('GENERATION_BINDING_INVALID');
@@ -613,8 +677,7 @@ export class GenerationRunRepository {
         visiting.add(runId);
         try {
             const run = this.get(runId);
-            const marker = this.db().prepare(`SELECT json_type(binding_json,'$."$blueprintRetirement"') AS type,
-                json_extract(binding_json,'$."$blueprintRetirement"') AS value FROM generation_runs WHERE run_id=?`).get(runId) as { type: string | null; value: unknown };
+            const marker = this.bindingAt(runId, '$."$blueprintRetirement"')!;
             if (marker.type !== null) {
                 if (run.binding.sourceManifest.operation !== 'chapter-blueprint-directory' || marker.value !== 'blueprints-cleared')
                     return invalid('GENERATION_DIRECTORY_PROGRESS_INVALID');
@@ -658,28 +721,35 @@ export class GenerationRunRepository {
         return recovery.progress.find(item => item.operationId === operationId) ?? fail('GENERATION_DIRECTORY_PROGRESS_INVALID');
     }
     private blueprintDirectoryCandidates(): string {
-        return candidateRunIds(runIndexOf(this.db()).lookup(click => click.operation === 'chapter-blueprint-directory'));
+        return JSON.stringify(this.runsOfOperation('chapter-blueprint-directory'));
     }
     listDirectoryProgress(): DirectoryGenerationCatalog {
         const rows = this.db().prepare(`SELECT r.run_id FROM generation_runs r WHERE r.root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})
-            AND (r.run_id IN (SELECT value FROM json_each(?)) AND json_extract(r.binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
+            AND (r.run_id IN (SELECT value FROM json_each(?))
             OR EXISTS (SELECT 1 FROM generation_attempts t WHERE t.run_id=r.run_id AND json_type(t.usage_receipt_json,'$.directoryProgress') IS NOT NULL))
             ORDER BY r.rowid`).all(this.blueprintDirectoryCandidates()) as { run_id: string }[];
         const catalog: DirectoryGenerationCatalog = { progress: [], diagnostics: [] };
         for (const row of rows) {
-            const recovery = this.readBlueprintRecovery(row.run_id);
-            if (recovery.kind === 'available') catalog.progress.push(...recovery.progress);
-            else catalog.diagnostics.push(recovery.diagnostic);
+            const recovery = this.readableBlueprintRecovery(row.run_id);
+            if (recovery?.kind === 'available') catalog.progress.push(...recovery.progress);
+            else if (recovery) catalog.diagnostics.push(recovery.diagnostic);
         }
         return catalog;
+    }
+    private readableBlueprintRecovery(runId: string): BlueprintRecoveryRead | undefined {
+        try { return this.readBlueprintRecovery(runId); }
+        catch (error) {
+            if (isLedgerUnreadable(error)) return undefined;
+            throw error;
+        }
     }
     createdAtMs(runId: string): number {
         return this.db().prepare('SELECT created_at_ms FROM generation_runs WHERE run_id=?').pluck().get(runId) as number;
     }
     /** 作者点「不再恢复」时这次运行列出的输出（artifactId → 字数）；没放弃或已撤销为 null。 */
     recoveryAbandonment(runId: string): Readonly<Record<string, number>> | null {
-        const shown = this.db().prepare(`SELECT json_extract(binding_json,'$."$recoveryAbandonment"') FROM generation_runs WHERE run_id=?`).pluck().get(runId) as string | null;
-        return shown === null ? null : JSON.parse(shown) as Record<string, number>;
+        const shown = this.bindingAt(runId, '$."$recoveryAbandonment"')?.value as string | null | undefined;
+        return shown == null ? null : JSON.parse(shown) as Record<string, number>;
     }
     /** 只在运行上记一笔，冻结的绑定、尝试、候选原文都不动；从别处导入的冻结历史不写。 */
     recordRecoveryAbandonment(runId: string, shown: Readonly<Record<string, number>>): void {
@@ -692,7 +762,7 @@ export class GenerationRunRepository {
     }
     /** 选区建议发出了请求、气泡还没回执显示过。升级前的运行没有这一笔。 */
     editorInlineAwaitingDelivery(runId: string): boolean {
-        return this.db().prepare(`SELECT json_type(binding_json,'$."$editorInlineAwaitingDelivery"') FROM generation_runs WHERE run_id=?`).pluck().get(runId) != null;
+        return this.bindingAt(runId, '$."$editorInlineAwaitingDelivery"')?.type != null;
     }
     markEditorInlineAwaitingDelivery(runId: string): void {
         this.db().prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$editorInlineAwaitingDelivery"','awaiting') WHERE run_id=?`).run(runId);
@@ -701,7 +771,7 @@ export class GenerationRunRepository {
         this.db().prepare(`UPDATE generation_runs SET binding_json=json_remove(binding_json,'$."$editorInlineAwaitingDelivery"') WHERE run_id=?`).run(runId);
     }
     plotOutlineCommitted(runId: string): boolean {
-        return this.db().prepare(`SELECT json_type(binding_json,'$."$plotOutlineCommitted"') FROM generation_runs WHERE run_id=?`).pluck().get(runId) != null;
+        return this.bindingAt(runId, '$."$plotOutlineCommitted"')?.type != null;
     }
     recordPlotOutlineCommitWithinTransaction(runId: string): void {
         if (!this.db().inTransaction) fail('GENERATION_PLOT_OUTLINE_TRANSACTION_REQUIRED');
@@ -709,9 +779,10 @@ export class GenerationRunRepository {
     }
     retireBlueprintRecoveryWithinTransaction(): void {
         if (!this.db().inTransaction) fail('GENERATION_DIRECTORY_TRANSACTION_REQUIRED');
-        const rows = this.db().prepare(`SELECT run_id,root_action_id FROM generation_runs WHERE json_extract(binding_json,'$.sourceManifest.operation')='chapter-blueprint-directory'
-            AND root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})`).all() as { run_id: string; root_action_id: string }[];
-        const available = rows.filter(row => !this.portableFrozenRoot(row.root_action_id) && this.readBlueprintRecovery(row.run_id).kind === 'available');
+        const rows = this.db().prepare('SELECT run_id,root_action_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?))')
+            .all(this.blueprintDirectoryCandidates()) as { run_id: string; root_action_id: string }[];
+        // 绑定读不出的运行续跑不了（get() 先报封存码），不用退役。
+        const available = rows.filter(row => !this.portableFrozenRoot(row.root_action_id) && this.readableBlueprintRecovery(row.run_id)?.kind === 'available');
         const retire = this.db().prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$blueprintRetirement"','blueprints-cleared') WHERE run_id=?`);
         for (const row of available) retire.run(row.run_id);
     }
@@ -869,7 +940,7 @@ export class GenerationRunRepository {
     }
     recoverInterrupted(): void {
         this.transaction(() => {
-            const roots = this.db().prepare(`SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT} AND ${UNSETTLED_ROOT}`).pluck().all() as string[];
+            const roots = this.db().prepare(UNSETTLED_ROOTS).pluck().all() as string[];
             for (const id of roots) {
                 if (this.frozenRoot(id)) continue;
                 for (const attempt of this.budget(id).attempts)
