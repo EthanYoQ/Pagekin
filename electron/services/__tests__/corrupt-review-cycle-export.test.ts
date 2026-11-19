@@ -567,7 +567,6 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
 })
 
 describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-0029，#702）', () => {
-  /** 拆掉 M09、M10 建的表和列，让这本书回到 v9，再走真实的 v9 起的升级。 */
   function downgradeToV9() {
     closeProjectDatabase()
     const raw = new Database(databasePath())

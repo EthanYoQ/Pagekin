@@ -118,7 +118,7 @@ function safeMetadata(value: unknown): void {
             safeMetadata(entry);
         }
 }
-/** 不算生成来源的 project_core 列：时间戳、派生状态，以及只给界面看的 AI 来源标记（M10 加列不让升级前开跑的任务判为来源已变）。 */
+/** ai_sources 只给界面用；排除它，升级前开跑的任务才不会被判为来源已变。 */
 export const PROJECT_CORE_NON_SOURCE_COLUMNS = ['created_at', 'updated_at', 'character_states', 'plot_tree_snapshot', 'ai_sources'];
 // llama-server 不加 --alias 时，模型 id 就是模型文件路径。
 export function recordedModelName(modelName: string): string {

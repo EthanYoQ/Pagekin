@@ -333,7 +333,7 @@
   color: var(--accent);
 }
 
-/* 窄窗口（1024 宽、缩放 150%）放不下三列：名字与状态、AI 生成排一行，内容占满下一行。 */
+/* 1024 宽、缩放 150% 时三列放不下。 */
 @container (width < 480px) {
   .stage-setup-row {
     grid-template-columns: minmax(0, 1fr) auto;
