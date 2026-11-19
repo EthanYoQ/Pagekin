@@ -37,6 +37,7 @@ import {
   type PortableArchiveSource,
 } from './portable-project-archive'
 import { snapshotProjectSqlite } from './sqlite-project-migration'
+import { withKnowledgeSourceGate } from './knowledge-source-gate'
 import { sqliteSchemaFingerprint } from '../migrations/sqlite-schema-adapter'
 import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
 import { SchemaMigrationError } from '../migrations/registry'
@@ -1181,57 +1182,62 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
   const attemptRoot = attempt.root
   try {
     const sourceSnapshotPath = path.join(attemptRoot, 'source.db')
-    try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath }) }
-    finally { recordOwnedFileIfPresent(attempt, sourceSnapshotPath) }
-    const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
-    const sourceSnapshot = new BetterSqlite(sourceSnapshotPath, { readonly: true, fileMustExist: true })
-    let avatarRows: ReturnType<typeof readPortableCharacterAvatarRows>
-    let sourceSchema: ReturnType<typeof assertPortableSourceSchema>
-    let sourceFingerprint: string
-    let unprovable: readonly UnprovableReviewCycle[] = []
-    try {
-      // 校验时才知道有没有验不过的审修循环，有才再扫一遍取清单放行；健康的书只扫一遍。
-      const accepted = () => new Set(omittable(unprovable = inspectM03ReviewCycles(sourceSnapshot).unprovable).keys())
-      sourceSchema = assertPortableExportSource(sourceSnapshot, accepted)
-      sourceFingerprint = sqliteSchemaFingerprint(sourceSnapshot)
-      if (sourceFreeze.active) readPortableCurrentAuthority({ database: sourceSnapshot, projectStorageRoot, projectId: canonicalManifest.projectId })
-      avatarRows = readPortableCharacterAvatarRows(sourceSnapshot)
-    } finally {
-      sourceSnapshot.close()
-      recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-wal`)
-      recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-shm`)
-    }
+    // 知识库的写入都持这把闸门。从取库快照到读完知识库一直持着，存档里的知识库就是库快照那一刻的，不会比库新。
+    const { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided } =
+      await withKnowledgeSourceGate(projectStorageRoot, async () => {
+        try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath }) }
+        finally { recordOwnedFileIfPresent(attempt, sourceSnapshotPath) }
+        const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
+        const sourceSnapshot = new BetterSqlite(sourceSnapshotPath, { readonly: true, fileMustExist: true })
+        let avatarRows: ReturnType<typeof readPortableCharacterAvatarRows>
+        let sourceSchema: ReturnType<typeof assertPortableSourceSchema>
+        let sourceFingerprint: string
+        let unprovable: readonly UnprovableReviewCycle[] = []
+        try {
+          // 校验时才知道有没有验不过的审修循环，有才再扫一遍取清单放行；健康的书只扫一遍。
+          const accepted = () => new Set(omittable(unprovable = inspectM03ReviewCycles(sourceSnapshot).unprovable).keys())
+          sourceSchema = assertPortableExportSource(sourceSnapshot, accepted)
+          sourceFingerprint = sqliteSchemaFingerprint(sourceSnapshot)
+          if (sourceFreeze.active) readPortableCurrentAuthority({ database: sourceSnapshot, projectStorageRoot, projectId: canonicalManifest.projectId })
+          avatarRows = readPortableCharacterAvatarRows(sourceSnapshot)
+        } finally {
+          sourceSnapshot.close()
+          recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-wal`)
+          recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-shm`)
+        }
 
-    // 头像和资料紧接着库快照拷进私有目录，导出期间换头像、改提示词不影响这份存档。
-    const avatarReferenceProjections: Array<Record<string, unknown>> = []
-    let stagedFiles = 0, stagedBytes = 0
-    const stageFile = (sourcePath: string, checked: fs.BigIntStats) => {
-      const staged = copyOwnedFile(attempt, path.join(attemptRoot, `staged-${stagedFiles++}`), sourcePath, checked,
-        DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxTotalBytes - stagedBytes)
-      stagedBytes += staged.byteSize
-      return staged
-    }
-    const avatarFiles: Array<{ entry: PortableProjectManifestEntry; stagedPath: string }> = []
-    for (const row of avatarRows) {
-      if (row.kind === 'unresolved-reference') {
-        avatarReferenceProjections.push({ ...row, nonReplayable: true })
-        continue
-      }
-      const relativePath = portablePathKey(row.relativePath)
-      if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
-      const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
-      if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
-      const checked = regularFile(sourcePath, 'PORTABLE_ASSET_MISSING')
-      avatarFiles.push({ entry: { path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
-        disposition: 'avatar-asset' }, stagedPath: stageFile(sourcePath, checked).stagedPath })
-    }
-    const provided = await input.assets.snapshot({
-      sourceProjectRoot: sourceRoot,
-      sourceDatabasePath: sourceSnapshotPath,
-      projectSession: frozenContext,
-      snapshotGeneration,
-      stageFile,
-    })
+        // 头像和资料紧接着库快照拷进私有目录，导出期间换头像、改提示词不影响这份存档。
+        const avatarReferenceProjections: Array<Record<string, unknown>> = []
+        let stagedFiles = 0, stagedBytes = 0
+        const stageFile = (sourcePath: string, checked: fs.BigIntStats) => {
+          const staged = copyOwnedFile(attempt, path.join(attemptRoot, `staged-${stagedFiles++}`), sourcePath, checked,
+            DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxTotalBytes - stagedBytes)
+          stagedBytes += staged.byteSize
+          return staged
+        }
+        const avatarFiles: Array<{ entry: PortableProjectManifestEntry; stagedPath: string }> = []
+        for (const row of avatarRows) {
+          if (row.kind === 'unresolved-reference') {
+            avatarReferenceProjections.push({ ...row, nonReplayable: true })
+            continue
+          }
+          const relativePath = portablePathKey(row.relativePath)
+          if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
+          const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
+          if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
+          const checked = regularFile(sourcePath, 'PORTABLE_ASSET_MISSING')
+          avatarFiles.push({ entry: { path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
+            disposition: 'avatar-asset' }, stagedPath: stageFile(sourcePath, checked).stagedPath })
+        }
+        const provided = await input.assets.snapshot({
+          sourceProjectRoot: sourceRoot,
+          sourceDatabasePath: sourceSnapshotPath,
+          projectSession: frozenContext,
+          snapshotGeneration,
+          stageFile,
+        })
+        return { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided }
+      })
 
     const portableDatabasePath = path.join(attemptRoot, 'project.db')
     fs.copyFileSync(sourceSnapshotPath, portableDatabasePath, fs.constants.COPYFILE_EXCL)
