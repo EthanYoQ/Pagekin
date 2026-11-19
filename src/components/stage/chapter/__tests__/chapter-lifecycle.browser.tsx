@@ -1018,13 +1018,16 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     expect(root.textContent).not.toContain('勾选的意见会用于修稿')
   })
 
-  it('审稿报告只能看时，确认记录里作者写的意见与修稿指导照样读得到', async () => {
+  it('审稿报告只能看时，确认记录里作者写的意见、纳入与否、修稿指导照样读得到', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     const ai = restoredReview(draft)
     const snapshot = createHumanConfirmedReviewSnapshot({
       sourceReviewId: ai.id, cycleId: `cycle-${ai.id}`, summary: '', authorGuidance: '先把动机前后理顺。',
       sourceDraft: { id: draft.id, chapterNumber: draft.chapterNumber, version: draft.version, status: draft.status, content: draft.content },
-      items: [{ category: '作者意见', severity: 'warning', description: '列车晚点的原因要交代。', quote: '车窗外的雨', decision: 'apply', origin: 'author' }],
+      items: [
+        { category: '作者意见', severity: 'warning', description: '列车晚点的原因要交代。', quote: '车窗外的雨', decision: 'apply', origin: 'author' },
+        { category: '作者意见', severity: 'warning', description: '站台广播可以删。', decision: 'ignore', origin: 'author' },
+      ],
     })!
     backend.addReview(draft, serializeHumanConfirmedReviewSnapshot(snapshot))
     await mount()
@@ -1033,9 +1036,11 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await expect.element(sheet.getByText('作者意见', { exact: false }).first()).toBeVisible()
     const issues = sheet.element().querySelector('.stage-ch-issues')!
     expect(issues.querySelector('.stage-ch-issue-text')?.textContent).toBe('列车晚点的原因要交代。')
+    expect([...issues.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map(box => ({ checked: box.checked, disabled: box.disabled })))
+      .toEqual([{ checked: true, disabled: true }, { checked: false, disabled: true }])
     expect(issues.querySelector('.stage-ch-issue-quote')?.textContent).toBe('车窗外的雨')
     expect([...sheet.element().querySelectorAll('.stage-ch-sheet-note')].map(note => note.textContent)).toContain('总体修稿指导：先把动机前后理顺。')
-    expect(sheet.element().querySelectorAll('input, textarea, select')).toHaveLength(0)
+    expect(sheet.element().querySelectorAll('input:not(:disabled), textarea, select')).toHaveLength(0)
   })
 
   it('审稿数据读回来之前不摆主按钮：恢复前的审稿不会先闪一下按意见修稿', async () => {
