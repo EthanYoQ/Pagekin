@@ -425,8 +425,9 @@ it('upgrades a qualified schema 6 file to schema 9 without changing author conte
  expect(before.schemaVersion).toBe(6)
  const upgraded=upgradeProjectSqlite({databasePath:f.target})
  expect(upgraded.schemaVersion).toBe(12)
- expect(upgraded.preRecycleDomain).toEqual(before.domain)
- expect(verifyProjectSqlite({databasePath:f.target})).toEqual(upgraded)
+ const verified=verifyProjectSqlite({databasePath:f.target})
+ expect(verified.preRecycleDomain).toEqual(before.domain)
+ expect(verified).toMatchObject(upgraded)
 })
 it.each([[6, 'preRecycleDomain'], [8, 'preContinuityDomain'], [9, 'preAnnotationDomain'], [10, 'preAiSourcesDomain']] as const)(
  'upgrades a schema %i file with character state to schema 9; only the M08 baseline and columns are new', async (version, field) => {
@@ -439,7 +440,7 @@ it.each([[6, 'preRecycleDomain'], [8, 'preContinuityDomain'], [9, 'preAnnotation
  } finally { db.close() }
  const before=verifyProjectSqlite({databasePath:f.target,targetVersion:version})
  const upgraded=upgradeProjectSqlite({databasePath:f.target})
- expect(upgraded[field]).toEqual(before.domain)
+ expect(verifyProjectSqlite({databasePath:f.target})[field]).toEqual(before.domain)
  expect(upgraded.domain.tableCounts.character_continuity_events ?? 0).toBe(version < 9 ? 1 : 0)
 })
 it('resolves a trusted system scratch junction before validating its private snapshot', () => {
