@@ -149,6 +149,15 @@ it('ADR-0030 别的导入的阶段绑定读不出、开树点击证明属于别�
  const third=f.importAtGlobal('第三次导入','c'.repeat(64),'第一章 河谷\r\n林岚在河谷收起了信。')
  expect(()=>f.owner.begin(third.selection)).toThrow('GENERATION_LEDGER_UNREADABLE')
 })
+it('ADR-0030 别的导入的阶段 open_key 与绑定都读不出、开树点击证明属于别的导入：新的导入照常开始',()=>{
+ const f=fixture()
+ const first=f.owner.begin(f.selection)
+ new GenerationRunRepository(()=>f.db).pause(first.handle.rootActionId,true)
+ f.db.prepare("UPDATE generation_runs SET binding_json='{坏',open_key='{坏' WHERE run_id=?").run(first.handle.runId)
+ f.db.prepare("UPDATE import_runs SET status='cancelled' WHERE id='导入任务'").run()
+ const other=f.importAtGlobal('另一次导入','b'.repeat(64),'第一章 山城\r\n林岚在山城读完了信。')
+ expect(f.owner.begin(other.selection).handle.rootActionId).not.toBe(first.handle.rootActionId)
+})
 it('ADR-0030 独立分析文风的运行绑定读不出：它的点击证明不是导入，新的导入照常开始',()=>{
  const f=fixture()
  const style=f.owner.begin({operation:'analyze-writing-style',uiActionNonce:'独立分析文风',modelId:'synthetic',promptKeys:['analyze_writing_style'],skillStages:[],selectedDraftIds:[],selectedFinalizedDraftIds:[],output:'visible-text'})
