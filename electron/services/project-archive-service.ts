@@ -1071,12 +1071,15 @@ const STAGE_CHUNK_BYTES = 1024 * 1024
 /**
  * 同步做完，应用自己的写入插不进来；别的程序在拷的途中改了源文件（大小或修改时间变了），
  * 拷到的可能新旧混合，就拒绝。超出存档上限的在写目标盘之前就拒绝。
+ * 打开后再查路径上没有链接、路径指向的仍是打开的这个文件：查过之后父目录被换成联接也拦得下。
  */
 function copyOwnedFile(attempt: OwnedAttempt, file: string, sourcePath: string, checked: fs.BigIntStats, remainingBytes: number): PortableStagedFile {
   const source = fs.openSync(sourcePath, 'r')
   try {
     const before = fs.fstatSync(source, { bigint: true })
     if (!sameObject(before, checked) || before.nlink !== 1n) fail('PORTABLE_ASSET_UNSAFE')
+    safeDirectory(path.dirname(sourcePath))
+    if (!sameObject(fs.lstatSync(sourcePath, { bigint: true }), before)) fail('PORTABLE_ASSET_UNSAFE')
     const limit = Math.min(DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxEntryBytes, remainingBytes)
     if (before.size > BigInt(limit)) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
     const target = openOwnedFile(attempt, file)
@@ -1169,7 +1172,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
   const projectStorageRoot = path.join(sourceRoot, CANONICAL_PROJECT_DIRECTORY)
   safeDirectory(projectStorageRoot)
   const sourceDatabasePath = path.join(projectStorageRoot, CANONICAL_PROJECT_DATABASE)
-  regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING')
+  const checkedDatabase = regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING')
   const canonicalManifestPath = path.join(projectStorageRoot, 'project.json')
   regularFile(canonicalManifestPath, 'PORTABLE_ASSET_MISSING')
   const canonicalManifest = parseCanonicalProjectManifest(JSON.parse(
@@ -1185,6 +1188,9 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     // 知识库的写入都持这把闸门。从取库快照到读完知识库一直持着，存档里的知识库就是库快照那一刻的，不会比库新。
     const { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided } =
       await withKnowledgeSourceGate(projectStorageRoot, async () => {
+        // 排队等闸门期间作品可能被关掉或换掉，取快照前重查。
+        await assertCurrentContext(input, frozenContext, sourceRoot)
+        if (!sameObject(regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING'), checkedDatabase)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
         try { await snapshotProjectSqlite({ sourceDatabasePath, targetDatabasePath: sourceSnapshotPath }) }
         finally { recordOwnedFileIfPresent(attempt, sourceSnapshotPath) }
         const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
@@ -1210,6 +1216,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
         const avatarReferenceProjections: Array<Record<string, unknown>> = []
         let stagedFiles = 0, stagedBytes = 0
         const stageFile = (sourcePath: string, checked: fs.BigIntStats) => {
+          if (!contained(projectStorageRoot, path.resolve(sourcePath))) fail('PORTABLE_ASSET_UNSAFE')
           const staged = copyOwnedFile(attempt, path.join(attemptRoot, `staged-${stagedFiles++}`), sourcePath, checked,
             DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxTotalBytes - stagedBytes)
           stagedBytes += staged.byteSize

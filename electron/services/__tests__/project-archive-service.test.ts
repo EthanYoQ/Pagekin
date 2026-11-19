@@ -1105,7 +1105,7 @@ describe('portable project export service', () => {
       requiresRuntimeFreezeGuard: true,
       sourceEvidence: { schemaVersion: 10, tableCount: 55, fieldCount: 520 },
     })
-    expect(contextCalls).toEqual(['lease-current', 'lease-current'])
+    expect(contextCalls).toEqual(['lease-current', 'lease-current', 'lease-current'])
     expect(fs.readFileSync(f.databasePath)).toEqual(before)
     expect(fs.readdirSync(f.attemptParent)).toEqual([])
 
@@ -1313,7 +1313,7 @@ describe('portable project export service', () => {
     let attemptRoot = ''
     let calls = 0
     await expect(exportPortableProject(input(f, provider(), {
-      assertCurrentContext: () => ++calls === 1,
+      assertCurrentContext: () => ++calls < 3,
       __testHooks: { afterPortableDatabaseCreated: root => {
         attemptRoot = root
         fs.writeFileSync(path.join(root, 'keep.txt'), 'not-owned')
