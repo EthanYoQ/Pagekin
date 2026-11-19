@@ -659,6 +659,20 @@ describe('写作此章弹层', () => {
     expect(startWorkflow).not.toHaveBeenCalled()
   })
 
+  it('批量创作：上一章还在整理时也说明还在处理，不用错误样式', async () => {
+    previousPostProcess = 'running'
+    useWorkflowStore.setState({ activeRuns: [{ id: 'finalize-4', projectPath: PROJECT_PATH, resourceKeys: ['chapter:4'], title: '第 4 章 · 定稿', status: 'running' } as never] })
+    await render(<BatchWriteDialog isOpen startChapterNumber={5} onClose={vi.fn()} />)
+    const dialog = page.getByRole('dialog', { name: '批量创作' })
+    await act(async () => dialog.getByLabelText(/写几章/).fill('1'))
+    await act(async () => dialog.getByRole('button', { name: '开始写 1 章' }).click())
+    const note = dialog.getByRole('status')
+    await expect.element(note).toHaveTextContent('第 4 章已定稿，后台还在整理这一章，很快就好，请稍后再试。')
+    expect(dialog.getByRole('alert').query()).toBeNull()
+    expect(textColor(note.element())).toBe(textColor(dialog.getByText('将写第 5～5 章').element()))
+    expect(startWorkflow).not.toHaveBeenCalled()
+  })
+
   it('上一章定稿后处理真失败了：照旧用错误样式指向失败的步骤', async () => {
     previousPostProcess = 'failed'
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)

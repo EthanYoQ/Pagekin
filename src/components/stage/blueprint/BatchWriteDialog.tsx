@@ -162,6 +162,7 @@ function BatchWriteDialogSession(props: BatchChapterProps) {
         )}
 
         {message && <p className="stage-dialog-error stage-bp-prewrap" role="alert">{message}</p>}
+        {!message && form.pendingNote && <p className="stage-bp-dialog-hint stage-bp-prewrap" role="status">{form.pendingNote}</p>}
       </div>
     </InkDialog>
   )
