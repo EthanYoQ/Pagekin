@@ -15,7 +15,6 @@ export interface ProjectSqliteWorkerOptions {
   electronExports: string[]
 }
 
-/** 整本读库的活：打开时升级并校验，书房预览读快照。 */
 export type ProjectSqliteJob =
   | { kind: 'open'; databasePath: string }
   | { kind: 'peek'; request: PeekSnapshotRequest }
@@ -41,7 +40,6 @@ function rehydrateWorkerError(error: SerializedWorkerError): Error {
   return Object.assign(new Error(error.message), { name: error.name }, error.code === undefined ? {} : { code: error.code })
 }
 
-/** 在 worker 线程里跑一件活，主进程只等结果。worker 跑完或出错都会退出。 */
 export async function runProjectSqliteJobInWorker<J extends ProjectSqliteJob>(
   job: J,
   { workerScript = WORKER_SCRIPT, electronExports = Object.keys(electron) }: Partial<ProjectSqliteWorkerOptions> = {},

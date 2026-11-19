@@ -638,7 +638,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         if (recent?.projectId && recent.projectId !== trustedProject.projectId) {
           throw new Error('PROJECT_OPEN_RECENT_IDENTITY_CHANGED')
         }
-        // 升级与校验在 worker 里跑，期间旧书照常开着；重开当前这本时主进程正持有它，仍在主线程校验（它已是当前版本）。
+        // 重开当前这本时主进程正持有它，不另起 worker 校验（它已是当前版本）。
         const verified = sameProjectPath(getCurrentProjectPath(), resolvedProjectPath)
           ? undefined
           : await verifyCanonicalProjectData(resolvedProjectPath)

@@ -43,7 +43,6 @@ interface CapabilityState extends ManifestState {
   capabilityId: string
 }
 
-/** worker 读一份私有快照要的全部输入。 */
 export interface PeekSnapshotRequest {
   databasePath: string
   projectId: string
@@ -311,7 +310,7 @@ function aggregateProject(
   })
 }
 
-/** 在私有快照上按库自己的版本校验后统计，不升级：概览读的表和列各版本都在，升级要等打开时再做。 */
+/** 不升级：概览读的表和列各版本都在，升级留到打开作品时。 */
 export function readPeekSnapshot(request: PeekSnapshotRequest): ProjectOverview {
   const before = sourceState(request.databasePath)
   fs.mkdirSync(request.scratchRoot, { recursive: true })
@@ -401,7 +400,6 @@ export class ProjectPeekService {
     }
   }
 
-  /** 读快照在 worker 里跑：长篇整库复制、校验要一两秒，主进程照常响应。 */
   async peek(capabilityId: string): Promise<ProjectOverview> {
     const capability = this.capabilities.get(capabilityId)
     if (!capability) return UNAVAILABLE

@@ -6,6 +6,7 @@ import { stubElectron } from './worker-electron-stub'
 const { job, electronExports } = workerData as ProjectSqliteWorkerData
 
 stubElectron(electronExports)
+// 先装好 electron 桩再动态 import：静态 import 会先于 stubElectron 执行。
 void Promise.all([import('./sqlite-project-migration'), import('./project-peek'), import('./project-sqlite-host')])
   .then(([migration, peek, host]) => {
     let message: ProjectSqliteWorkerMessage

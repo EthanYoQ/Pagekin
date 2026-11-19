@@ -78,7 +78,7 @@ function projectText(zhCNText: string, enUSText: string): string {
   return useLocaleStore.getState().text(zhCNText, enUSText)
 }
 
-/** 长篇第一次在新版打开要先升级，得等一会儿；半秒还没开好，就告诉作者正在打开。 */
+/** 长篇第一次在新版打开要先升级，得等一会儿；开得快时不弹，免得提示一闪而过。 */
 async function withOpeningNotice<T>(opening: Promise<T>): Promise<T> {
   let close: (() => void) | undefined
   const timer = setTimeout(() => {
