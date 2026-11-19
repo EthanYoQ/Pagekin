@@ -74,7 +74,7 @@ export type EditorInlineContext = EditorInlineInput & {
   template: PromptTemplate
   materials?: EditorInlineMaterials
 }
-/** 开跑时带了材料（章内是本章材料，没有章号是空材料）的续写只输出接续的新内容，接受时插在选区之后；升级前的续写和其他工具替换选区。 */
+/** 开跑时带了材料（章内是本章材料，没有章号只有前文和后文）的续写只输出接续的新内容，接受时插在选区之后；升级前的续写和其他工具替换选区。 */
 export const editorInlineInsertsAfterSelection = (context: Pick<EditorInlineContext, 'action' | 'materials'>) =>
   context.action === 'continue' && context.materials !== undefined
 export interface EditorInlineRecovery {

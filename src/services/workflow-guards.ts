@@ -29,6 +29,8 @@ export interface GuardResult {
   message?: string
   /** 用于跳转引导的目标动作标识 */
   action?: 'open-config' | 'open-world-building' | 'open-blueprint'
+  /** 只是还没轮到（上一章还在整理），不是出错，界面不用错误样式。 */
+  pending?: true
 }
 
 function captureGuardProject(
@@ -235,6 +237,23 @@ export async function guardChapterWriting(
     const prevScope = getChapterFinalizeScope(prevChapter)
     const prevStatus = await readPostProcessStatus(projectPath, prevScope, projectSession)
     if (prevStatus && !prevStatus.allCriticalPassed) {
+      // 关键步骤都没记失败、且还有运行占着上一章：只是还没跑完。批量运行一直占着本批各章，所以必须先看有没有记失败。
+      const { useWorkflowStore, workflowResourceKey } = await import('../stores/workflow-store')
+      const criticalFailed = Object.values(prevStatus.steps).some(step => step.critical && !step.ok && step.error)
+      const stillRunning = !criticalFailed && useWorkflowStore.getState().activeRuns.some(run => sameProjectPathKey(run.projectPath, projectPath)
+        && run.resourceKeys?.includes(workflowResourceKey('chapter', prevChapter)))
+      if (stillRunning) {
+        return {
+          ok: false,
+          pending: true,
+          message: localize(
+            shown(),
+            `第 ${prevChapter} 章已定稿，后台还在整理这一章，很快就好，请稍后再试。`,
+            `Chapter ${prevChapter} is finalized and is still being processed in the background. This won't take long; try again in a moment.`,
+            `第${prevChapter}章は定稿済みで、バックグラウンドでまだ整理しています。まもなく終わるので、少し待ってからもう一度お試しください。`,
+          ),
+        }
+      }
       const failedLabels = getFailedStepLabels(prevStatus)
       return {
         ok: false,

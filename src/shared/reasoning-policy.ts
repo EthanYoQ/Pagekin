@@ -11,11 +11,12 @@ import type {
 } from './reasoning-types'
 import { CREATIVE_STRATEGIES, isGeminiThinkingLevel, REASONING_EFFORTS } from './reasoning-types'
 
+// extraction 是定稿后从正文整理要点和角色状态。思考 token 占这两步九成以上的耗时，作者要等它们完成才能写下一章。
 const STAGE_REQUESTS: Readonly<Record<CreativeStrategy, Readonly<Record<GenerationReasoningStage, ReasoningEffort>>>> = {
-  auto: { drafting: 'low', planning: 'medium', review: 'high', general: 'low' },
-  'fluent-drafting': { drafting: 'off', planning: 'low', review: 'low', general: 'low' },
-  'consistency-first': { drafting: 'low', planning: 'high', review: 'high', general: 'medium' },
-  'deep-planning': { drafting: 'low', planning: 'max', review: 'high', general: 'medium' },
+  auto: { drafting: 'low', planning: 'medium', review: 'high', general: 'low', extraction: 'off' },
+  'fluent-drafting': { drafting: 'off', planning: 'low', review: 'low', general: 'low', extraction: 'off' },
+  'consistency-first': { drafting: 'low', planning: 'high', review: 'high', general: 'medium', extraction: 'off' },
+  'deep-planning': { drafting: 'low', planning: 'max', review: 'high', general: 'medium', extraction: 'off' },
 }
 
 const EFFORT_RANK: Readonly<Record<ReasoningEffort, number>> = {
@@ -97,6 +98,14 @@ export function resolveReasoningPolicy(input: {
   creativeStrategy?: CreativeStrategy
   stage?: GenerationReasoningStage
 }): ReasoningPolicyResolution {
+  const resolution = resolveStageReasoning(input)
+  // 提取阶段对关不掉思考的服务商（不支持，或像 Gemini 3 那样被抬到最低一档）沿用审稿档位。
+  return input.stage === 'extraction' && (resolution.status === 'unsupported' || resolution.status === 'forced')
+    ? resolveStageReasoning({ ...input, stage: 'review' })
+    : resolution
+}
+
+function resolveStageReasoning(input: Parameters<typeof resolveReasoningPolicy>[0]): ReasoningPolicyResolution {
   const strategy = CREATIVE_STRATEGIES.includes(input.creativeStrategy as CreativeStrategy)
     ? input.creativeStrategy as CreativeStrategy
     : 'auto'
@@ -118,9 +127,14 @@ export function resolveReasoningPolicy(input: {
   }
   // Only explicit, documented SiliconFlow choices are supported. Preserve
   // automatic requests and never force off/low/medium up to high.
-  if (!input.model.reasoningMapping && mapping.adapter === 'siliconflow-v4-thinking'
-    && (source !== 'model-override' || requested !== 'high' && requested !== 'max')) {
-    return { requested, effective: null, status: 'unsupported', source }
+  if (!input.model.reasoningMapping && mapping.adapter === 'siliconflow-v4-thinking') {
+    // 只有提取阶段关思考（enable_thinking:false 实测可用）；其余阶段交给服务商默认。
+    if (input.stage === 'extraction' && requested === 'off') {
+      return { requested, effective: 'off', status: 'mapped', source, providerDirective: { adapter: mapping.adapter, reasoningEffort: 'off' } }
+    }
+    if (source !== 'model-override' || requested !== 'high' && requested !== 'max') {
+      return { requested, effective: null, status: 'unsupported', source }
+    }
   }
 
   const resolved = closestEffectiveEffort(requested, mapping)

@@ -2,6 +2,7 @@ import { parsePlanningTargetUnits, DEFAULT_PLANNING_TARGET_UNITS } from '../../s
 import { isDeepStrictEqual } from 'node:util';
 import { createHash, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import type { ProviderReasoningDirective } from '../../src/shared/reasoning-types';
 import type { VisibleCompositionReceipt, VisibleCompositionAlgorithm, DirectoryGenerationProgress, DirectoryGenerationCatalog, BlueprintRecoveryDiagnostic, PlanningContinuationReceipt, BlueprintAuthorEditReceipt, GenerationAuthorInput } from '../../src/shared/generation-owner-contract';
 import { composeVisibleContinuation, VISIBLE_CONTINUATION_VERSION } from '../../src/shared/visible-continuation';
 import { composeDraftVisibleContinuation, DRAFT_CONDENSE_PURPOSE, isDraftVisibleTextVersion, sanitizeDraftText } from '../../src/shared/draft-visible-text';
@@ -446,7 +447,7 @@ export class GenerationRunRepository {
             fail('GENERATION_INVOCATION_CONFLICT');
         return this.receipt(row.attempt_id);
     }
-    reserve(runId: string, nonce: string, requestHash: string, reservedTokens: number, requestedOutputTokens: number, usagePolicy?: ProviderUsagePolicy, purpose?: string, replayTask?: import('../../src/services/generation/generation-harness').GenerationTask, budgetDecision?: import('../../src/services/generation/task-budget-planner').TaskBudgetDecision, reconciliationInjected?: boolean): GenerationExecutionReceipt {
+    reserve(runId: string, nonce: string, requestHash: string, reservedTokens: number, requestedOutputTokens: number, usagePolicy?: ProviderUsagePolicy, purpose?: string, replayTask?: import('../../src/services/generation/generation-harness').GenerationTask, budgetDecision?: import('../../src/services/generation/task-budget-planner').TaskBudgetDecision, reconciliationInjected?: boolean, reasoning?: ProviderReasoningDirective | null): GenerationExecutionReceipt {
         return this.transaction(() => {
             this.assertBlueprintRecoveryWritable(runId);
             this.assertPlotOutlineWritable(runId);
@@ -470,7 +471,7 @@ export class GenerationRunRepository {
             assertReservation(budget.root, budget.policy, budget.attempts, attempt, budget.activeElapsedMs);
             this.db().prepare('INSERT INTO generation_attempts VALUES(?,?,?,?,?,?,?)').run(attempt.attemptId, attempt.reservationId, runId, run.rootActionId, encode(attempt), encode({ requestHash, usagePolicy: usagePolicy ?? null }), nonce);
             const artifact: VisibleArtifact = { artifactId: randomUUID(), attemptId: attempt.attemptId, rootActionId: run.rootActionId, projectId: run.binding.projectId, epoch: run.binding.epoch, fingerprint: run.binding.fingerprint, revision: 0, text: '', textHash: textHash('') };
-            this.db().prepare('UPDATE generation_attempts SET usage_receipt_json=? WHERE attempt_id=?').run(encode({ requestHash, usagePolicy: usagePolicy ?? null, ...(purpose ? { purpose } : {}), ...(replayTask ? { replayTask } : {}), ...(budgetDecision ? { budgetDecision } : {}), ...(reconciliationInjected ? { reconciliationInjected: true } : {}), artifactIdentity: { artifactId: artifact.artifactId, epoch: artifact.epoch, fingerprint: artifact.fingerprint } }), attempt.attemptId);
+            this.db().prepare('UPDATE generation_attempts SET usage_receipt_json=? WHERE attempt_id=?').run(encode({ requestHash, usagePolicy: usagePolicy ?? null, ...(purpose ? { purpose } : {}), ...(replayTask ? { replayTask } : {}), ...(budgetDecision ? { budgetDecision } : {}), ...(reconciliationInjected ? { reconciliationInjected: true } : {}), ...(reasoning !== undefined ? { reasoning } : {}), artifactIdentity: { artifactId: artifact.artifactId, epoch: artifact.epoch, fingerprint: artifact.fingerprint } }), attempt.attemptId);
             this.db().prepare('INSERT INTO generation_artifacts VALUES(?,?,?,?,?,?)').run(artifact.artifactId, attempt.attemptId, runId, encode(artifact), 0, 'partial');
             return this.receipt(attempt.attemptId);
         });

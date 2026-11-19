@@ -49,6 +49,8 @@ export interface ExecuteGenerationRequest {
     replayTask?: import('../../src/services/generation/generation-harness').GenerationTask;
     /** 首稿提示经主进程复核确实带有生成前定稿对账注入块；恢复据此决定续写/压缩是否沿用对账结果。 */
     reconciliationInjected?: boolean;
+    /** 这次请求实际发给服务商的推理参数；null 表示没发，用服务商默认。 */
+    reasoning?: import('../../src/shared/reasoning-types').ProviderReasoningDirective | null;
 }
 /** 作者暂停、取消、重开或本次运行总时长用尽时中止请求的原因；调用记录据此记为已取消，而不是服务商失败。存储失败、流不合规与关闭作品的中止不带它。 */
 export const GENERATION_STOPPED = new DOMException('GENERATION_STOPPED', 'AbortError');
@@ -130,7 +132,7 @@ export function createGenerationRunService(deps: GenerationRunServiceDependencie
                 throw new Error('GENERATION_RESERVATION_INVALID');
             let receipt: GenerationExecutionReceipt;
             try {
-                receipt = deps.repository.reserve(request.runId, request.invocationNonce, requestHash, request.reservedTokens, request.requestedOutputTokens, policy, request.purpose, request.replayTask, request.budgetDecision, request.reconciliationInjected);
+                receipt = deps.repository.reserve(request.runId, request.invocationNonce, requestHash, request.reservedTokens, request.requestedOutputTokens, policy, request.purpose, request.replayTask, request.budgetDecision, request.reconciliationInjected, request.reasoning);
             }
             catch (error) {
                 if (!/BUDGET|RESERVATION|EPOCH|DISPATCH|INVOCATION|CANCELLED/.test(error instanceof Error ? error.message : '')) {

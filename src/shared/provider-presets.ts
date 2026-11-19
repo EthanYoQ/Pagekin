@@ -268,6 +268,16 @@ export function createProviderCatalog(): ProviderPreset[] {
         },
       },
       {
+        name: 'deepseek-ai/DeepSeek-V4.1-Flash',
+        // 只登记推理参数；JSON 模式与容量未核实，不登记。
+        reasoningMapping: {
+          adapter: 'siliconflow-v4-thinking',
+          supportedEfforts: ['high', 'max'],
+          providerValues: { high: 'high', max: 'max' },
+        },
+        maxTokens: 16_384,
+      },
+      {
         name: 'deepseek-ai/DeepSeek-V4-Pro',
         // JSON mode: https://docs.siliconflow.cn/docs/userguide/guides/json-mode
         structuredOutput: true,

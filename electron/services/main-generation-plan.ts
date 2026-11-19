@@ -6,7 +6,7 @@ import { resolveGenerationParameters, resolveGenerationCapabilityConstraints } f
 import { planTaskBudget, S07_TASK_BUDGET_POLICY, type TaskBudgetDecision } from '../../src/services/generation/task-budget-planner'
 import type { LLMGenerateOptions } from '../llm/provider.interface'
 import type { CreativeStrategy, GenerationReasoningStage } from '../../src/shared/reasoning-types'
-import { CREATIVE_STRATEGIES } from '../../src/shared/reasoning-types'
+import { CREATIVE_STRATEGIES, REASONING_STAGES } from '../../src/shared/reasoning-types'
 import { isDeepStrictEqual } from 'node:util'
 import { materialBudgetFrom, type ArchitecturePlanningIntent, type BeginGenerationRequest, type MaterialBudget, type PlanningGenerationScope } from '../../src/shared/generation-owner-contract'
 import { contextWindowOutputCap, resolveContextWindow } from '../../src/shared/model-profile-draft'
@@ -132,7 +132,7 @@ export function newMainGenerationPolicy(selection: BeginGenerationRequest, model
       : 3 + (2 * 8 - Math.ceil(8 / 3)) + 1), 0)
       + (planning.intent.synopsisRange ? 2 * (planning.intent.synopsisRange.to - planning.intent.synopsisRange.from + 1) : 0)
     : MAIN_GENERATION_POLICY.budget.maxPhysicalRequests
-  const liability = Math.max(...(['drafting', 'planning', 'review', 'general'] as const).flatMap(stage =>
+  const liability = Math.max(...REASONING_STAGES.flatMap(stage =>
     CREATIVE_STRATEGIES.map(strategy => resolvePhysicalLiability(model, strategy, stage).reservationCeiling)))
   return Object.freeze({ ...MAIN_GENERATION_POLICY, version: 's07-capacity-v2', ...(planning ? { planning } : {}),
     budget: scaledRootBudget(selection.batchIntent ? requests * BATCH_ROOT_PHYSICAL_REQUESTS_PER_CHAPTER : requests, cap, liability) })
@@ -205,7 +205,7 @@ export function assertSemanticGenerationTask(task: GenerationTask): void {
     || task.messages.some(message => !message || !['system', 'user', 'assistant'].includes(message.role)
       || typeof message.content !== 'string')
     || Object.keys(task).some(key => !['purpose', 'output', 'messages', 'reasoningStage', 'promptBudget', 'budgetDemand'].includes(key))
-    || task.reasoningStage !== undefined && !['drafting', 'planning', 'review', 'general'].includes(task.reasoningStage)) {
+    || task.reasoningStage !== undefined && !REASONING_STAGES.includes(task.reasoningStage)) {
     throw new Error('GENERATION_SEMANTIC_TASK_INVALID')
   }
   if (task.budgetDemand !== undefined) {

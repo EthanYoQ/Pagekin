@@ -428,6 +428,7 @@ export function createFinalizeWorkflow(
     uiLocale,
     ...finalizeResourceClaims(params.chapterNumber),
     backgroundNotice: { stage: 'finalize', chapterNumber: params.chapterNumber },
+    withoutWritingSkills: true,
     title: localize(uiLocale,
       `第 ${params.chapterNumber} 章 · 定稿`,
       `Chapter ${params.chapterNumber} · Finalize`,
@@ -484,6 +485,7 @@ export function createRepairFinalizeWorkflow(
     projectSession: workflowProjectSession(projectPath, sourceProjectSession, uiLocale),
     uiLocale,
     ...finalizeResourceClaims(chapterNumber),
+    withoutWritingSkills: true,
     title: text(
       `第 ${chapterNumber} 章 · 修复后处理`,
       `Chapter ${chapterNumber} · Repair post-processing`,

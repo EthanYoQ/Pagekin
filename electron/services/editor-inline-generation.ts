@@ -93,14 +93,14 @@ function textAfter(text: string, maxChars: number, english: boolean): string {
 ${cutMark[english ? 1 : 0]}`
 }
 function selectMaterials(context: EditorInlineContext, inputTokens: number): EditorInlineMaterials {
-  const chapter = context.chapterContext!
-  const supplied = new Map(chapter.blocks.map(block => [block.kind, block.text]))
+  const chapter = context.chapterContext
+  const supplied = new Map(chapter?.blocks.map(block => [block.kind, block.text]))
   let included: EditorContextBlock[] = EDITOR_CONTEXT_PLAN[context.action].flatMap(entry => {
     const text = !('maxChars' in entry) ? supplied.get(entry.kind)
       : entry.kind === 'preceding' ? textBefore(context.documentText.slice(0, context.from), entry.maxChars) : textAfter(context.documentText.slice(context.to), entry.maxChars, context.writingLanguage === 'en-US')
     return text ? [{ kind: entry.kind, text, required: entry.required }] : []
   })
-  const omitted: EditorContextOmission[] = chapter.unreadable.map(kind => ({ kind, reason: 'unreadable' }))
+  const omitted: EditorContextOmission[] = (chapter?.unreadable ?? []).map(kind => ({ kind, reason: 'unreadable' }))
   const tokens = (blocks: EditorContextBlock[]) => estimateMaterialTokens(Buffer.byteLength(JSON.stringify(editorInlineTask({ ...context, materials: { included: blocks, omitted } }).messages), 'utf8'))
   for (const kind of EDITOR_CONTEXT_TRIM_ORDER) {
     if (tokens(included) <= inputTokens) break
@@ -111,7 +111,7 @@ function selectMaterials(context: EditorInlineContext, inputTokens: number): Edi
   return { included, omitted }
 }
 /**
- * 有章节上下文时按额度选一次材料；没有章号的续写带空材料，标明它插在选区之后。
+ * 有章节上下文或是续写时按额度选一次材料；没有章号的续写只有前文和后文。
  * 重建时传回开跑时冻结的上下文，沿用它的材料（升级前的运行没有材料，照旧替换选区）。
  */
 export function buildEditorInlineContext(input: EditorInlineInput, writingLanguage: WritingLanguage, template: PromptTemplate, inputTokens = Infinity,
@@ -120,8 +120,7 @@ export function buildEditorInlineContext(input: EditorInlineInput, writingLangua
   if (template.key !== 'edit_selected_text' || typeof template.content !== 'string') throw new Error('GENERATION_EDITOR_TEMPLATE_INVALID')
   const context: EditorInlineContext = { ...valid, kind: 'author-draft', documentHash: textHash(valid.documentText), writingLanguage, template: structuredClone(template) }
   const materials = frozen ? frozen.materials && structuredClone(frozen.materials)
-    : valid.chapterContext ? selectMaterials(context, inputTokens)
-    : valid.action === 'continue' ? { included: [], omitted: [] } : undefined
+    : valid.chapterContext || valid.action === 'continue' ? selectMaterials(context, inputTokens) : undefined
   return materials ? { ...context, materials } : context
 }
 export function readEditorInlineContext(run: DurableGenerationRun): EditorInlineContext {
@@ -173,7 +172,7 @@ function editInstruction(context: EditorInlineContext, english: boolean): string
 }
 const continueRule = ['这次是续写：选中的正文是续写的起点，保持原样。只输出紧接在它后面的新内容，第一句直接接着选中正文的最后一句往下写，不要重复、改写或总结选中的正文。人物手里有什么、已经放下什么，以前文和选中正文为准，放下的东西不再拿回手里。',
   'This is a continuation: the selected prose is where it starts, and it stays as it is. Output only the new text that follows it, starting right where its last sentence ends; do not repeat, rewrite, or summarize the selected prose. What the characters hold or have put down follows the earlier text and the selection; nothing already put down is picked up again.'] as const
-/** 有后文的续写插在中间，后文第一句就是停止点；章末或没有章号时没有。 */
+/** 有后文的续写插在中间，后文第一句就是停止点；选区在末尾时没有。 */
 function followingOpening(context: EditorInlineContext): string | undefined {
   const following = editorInlineInsertsAfterSelection(context) ? context.materials!.included.find(block => block.kind === 'following')?.text : undefined
   if (!following) return undefined

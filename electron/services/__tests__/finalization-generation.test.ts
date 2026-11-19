@@ -31,7 +31,7 @@ const cleanup: (() => void)[] = []
 afterEach(() => { for (const dispose of cleanup.splice(0)) dispose(); vi.restoreAllMocks() })
 const prose = '林岚走进了北塔。'
 
-function fixture(dispatch?: GenerationRunServiceDependencies['dispatch'], options: { content?: string; writingLanguage?: 'en-US'; builtinPrompts?: boolean; seed?: (db: import('better-sqlite3').Database) => void; transferOrigin?: () => string | undefined; secondCharacter?: boolean } = {}) {
+function fixture(dispatch?: GenerationRunServiceDependencies['dispatch'], options: { content?: string; writingLanguage?: 'en-US'; builtinPrompts?: boolean; seed?: (db: import('better-sqlite3').Database) => void; transferOrigin?: () => string | undefined; secondCharacter?: boolean; model?: Partial<ModelProfile> } = {}) {
   const content = options.content ?? prose
   const base = path.resolve('.runtime/.cache/novel-quality-modernization/finalization-generation-tests')
   fs.mkdirSync(base, { recursive: true })
@@ -49,7 +49,7 @@ function fixture(dispatch?: GenerationRunServiceDependencies['dispatch'], option
   options.seed?.(db)
   const model: ModelProfile = { id: 'synthetic', name: '合成模型', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1',
     apiKey: 'synthetic-fixture-key', baseUrl: 'https://api.openai.com/v1', temperature: 0.7, maxTokens: 2048, purposes: ['generation'],
-    capabilities: { contextWindowTokens: 32768, maxOutputTokens: 2048, reasoning: false, structuredOutput: true, usage: true } }
+    capabilities: { contextWindowTokens: 32768, maxOutputTokens: 2048, reasoning: false, structuredOutput: true, usage: true }, ...options.model }
   const response = (updates = [{ characterId, currentState: { location: '北塔' }, evidence: { start: 0, end: content.length, text: content } }]) => JSON.stringify({ updates })
   const dispatchSpy = vi.fn<GenerationRunServiceDependencies['dispatch']>(dispatch ?? (async (_request, options) => {
     options.onVisible({ kind: 'delta', text: response() }); return { finishReason: 'stop', usage: null }
@@ -1162,3 +1162,24 @@ function forgeOtherOperation(db: import("better-sqlite3").Database, runId: strin
   db.prepare(`INSERT INTO generation_runs(run_id,open_key,binding_json,${columns.join(",")}) SELECT ?,?,json_remove(json_set(binding_json,'$.sourceManifest.operation',?),'$.sourceManifest.finalizationGenerationSlotKey'),${columns.join(",")} FROM generation_runs WHERE run_id=?`)
     .run(`${runId}-other`, JSON.stringify([JSON.stringify(parts), root]), operation, runId)
 }
+
+const SILICON_V41 = { provider: 'siliconflow', baseUrl: 'https://api.siliconflow.cn/v1', modelName: 'deepseek-ai/DeepSeek-V4.1-Flash' } as const
+const sentReasoning = (request: unknown) => (request as { plan: { options: { reasoning?: unknown } } }).plan.options.reasoning
+it.each(['chapter_notes', 'character_cards'] as const)('%s：硅基 V4.1 Flash 自动档关思考，生成记录记下这次的推理参数', async stepKey => {
+  const f = fixture(stepKey === 'chapter_notes' ? async (_r, o) => { o.onVisible({ kind: 'delta', text: '林岚进入北塔。' }); return { finishReason: 'stop', usage: null } } : undefined,
+    { model: { ...SILICON_V41, reasoningOverride: 'auto' } })
+  const recovery = f.owner.beginFinalizationGeneration({ slot: { source: f.prepared.context.source, stepKey }, modelId: 'synthetic' })
+  await f.owner.executeFinalizationGeneration({ handle: recovery.view.handle })
+  const off = { adapter: 'siliconflow-v4-thinking', reasoningEffort: 'off' }
+  expect(f.dispatch).toHaveBeenCalledOnce()
+  expect(sentReasoning(f.dispatch.mock.calls[0]![0])).toEqual(off)
+  expect(JSON.parse(f.db.prepare('SELECT usage_receipt_json FROM generation_attempts').pluck().get() as string).reasoning).toEqual(off)
+})
+it.each(['high', 'max'] as const)('作者选了 %s：定稿后整理照发思考参数并记进生成记录', async reasoningOverride => {
+  const f = fixture(undefined, { model: { ...SILICON_V41, reasoningOverride } })
+  const recovery = f.owner.beginFinalizationGeneration({ slot: { source: f.prepared.context.source, stepKey: 'character_cards' }, modelId: 'synthetic' })
+  await f.owner.executeFinalizationGeneration({ handle: recovery.view.handle })
+  const chosen = { adapter: 'siliconflow-v4-thinking', reasoningEffort: reasoningOverride }
+  expect(sentReasoning(f.dispatch.mock.calls[0]![0])).toEqual(chosen)
+  expect(JSON.parse(f.db.prepare('SELECT usage_receipt_json FROM generation_attempts').pluck().get() as string).reasoning).toEqual(chosen)
+})
