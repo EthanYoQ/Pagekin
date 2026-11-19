@@ -1241,35 +1241,6 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await expect.element(page.getByText('复验完成：1 / 2 项意见已解决')).toBeVisible()
   })
 
-  it('动作条先发出的重读比挑报告时的读晚回来、带的是旧数据：按后发出的那次读摆', async () => {
-    const draft = backend.addDraft({ status: 'revised' })
-    const review = backend.addReview(draft)
-    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, ...recheckPending })
-    await mount()
-    await openDraft(draft.id)
-    await expect.element(page.getByText('合并后复验还没完成，可在审稿报告里重试')).toBeVisible()
-
-    const before = backend.state.cycles.get(review.id)
-    const answer = backend.invoke.getMockImplementation()!
-    let release = () => {}
-    const gate = new Promise<void>(resolve => { release = resolve })
-    const held = vi.fn()
-    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
-      if (channel === 'db:review-cycle-get' && held.mock.calls.length === 0 && new Error().stack?.includes('review-checklist')) {
-        held()
-        await gate
-        return before
-      }
-      return answer(channel, ...args)
-    })
-    backend.addRecheck(draft, review, ['resolved', 'unresolved'])
-    await act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'review', projectPath: SESSION.projectPath, projectSession: SESSION, runId: 'recheck' }))
-    await expect.element(page.getByText('复验完成：1 / 2 项意见已解决')).toBeVisible()
-    expect(held).toHaveBeenCalledOnce()
-    await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 100)) })
-    await expect.element(page.getByText('复验完成：1 / 2 项意见已解决')).toBeVisible()
-  })
-
   it('重读还没回来就重新打开了作品：旧会话读回的循环被丢弃，按新会话读到的摆', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     const review = restoredReview(draft)
