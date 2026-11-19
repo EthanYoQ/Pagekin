@@ -6,7 +6,7 @@ import type { MainGenerationExecuteReceipt, MainGenerationRunHandle, MainGenerat
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
 import { GenerationRunRepository, textHash, type DurableGenerationRun, type RunBinding } from '../repositories/generation-run-repository'
 import { GENERATION_LEDGER_UNREADABLE } from '../repositories/generation-ledger-admission'
-import { inNonceChain, runIndexOf, type GenerationClick } from '../repositories/generation-run-index'
+import { inNonceChain, type GenerationClick } from '../repositories/generation-run-index'
 import { validateAgentGenerationInput } from './agent-generation-context'
 import { commitAgentDomainTool, isAgentDomainToolCurrent } from './agent-domain-tool-effect'
 import { normalizeAgentPlanningArguments } from '../../src/shared/agent-generation'
@@ -73,9 +73,9 @@ export class AgentGeneration {
     return value
   }
   private sessionRuns(key: string): DurableGenerationRun[] {
-    const { hits, unidentified } = runIndexOf(this.db).lookup(inNonceChain(`agent:${key}`))
-    // 点击号读不出的轮次按绑定认回，漏认会把已发出的一轮当成没开始，再付一次费。
-    return [...hits.map(entry => this.runs.get(entry.runId)), ...unidentified.flatMap(entry => this.runs.readableRun(entry.runId) ?? [])]
+    // 点击号读不出的轮次按绑定认回，漏认会把已发出的一轮当成没开始，再付一次费；点击认得出、绑定读不出的报封存码。
+    return this.runs.recognizedRuns(inNonceChain(`agent:${key}`), binding => (binding.sourceManifest?.agentSession as { key?: unknown } | undefined)?.key === key,
+      entry => entry.click ? [this.runs.get(entry.runId)] : [])
       .filter(run => run.binding.projectId === this.scope.projectId && (run.binding.sourceManifest?.agentSession as { key?: unknown } | undefined)?.key === key)
       .sort((a, b) => this.navigation(a).roundIndex - this.navigation(b).roundIndex)
   }
@@ -300,9 +300,8 @@ export class AgentGeneration {
   }
   private workflowRegistration(id: string): { action: AgentToolAction; run: DurableGenerationRun; registration: AgentWorkflowRegistration } {
     if (typeof id !== 'string' || !/^agent-workflow:[a-f0-9]{64}$/u.test(id)) throw new Error('GENERATION_AGENT_REGISTRATION_INVALID')
-    const found = runIndexOf(this.db).lookup(agentRound).hits.flatMap(entry => {
-      const run = entry.sealed ? undefined : this.runs.readableRun(entry.runId)
-      if (run?.binding.projectId !== this.scope.projectId) return []
+    const found = this.runs.recognizedRuns(agentRound, binding => binding.sourceManifest?.operation === 'agent-round').flatMap(run => {
+      if (run.binding.projectId !== this.scope.projectId) return []
       return this.round(run).actions.filter(action => action.workflow?.registrationId === id).map(action => ({ action, run, registration: action.workflow! }))
     })
     if (!found.length && this.runs.sealedClaims(click => click.projectId === this.scope.projectId && click.operation === 'agent-round'))

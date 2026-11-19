@@ -10,7 +10,8 @@ import { DRAFT_SHORT_OUTLINE_PURPOSE } from '../../src/shared/draft-short-outlin
 import { countDraftUnits, draftTargetUnitRange } from '../../src/shared/draft-units';
 import { getProjectDb } from '../database';
 import { GENERATION_LEDGER_UNREADABLE, UNSETTLED_ROOTS, isLedgerUnreadable, parseLedgerObject, readableLedgerJson } from './generation-ledger-admission';
-import { clickOfOpenKey, clickOfRootKey, runIndexOf, type GenerationClick } from './generation-run-index';
+import { clickOfOpenKey, clickOfRootKey, runIndexOf, type GenerationClick, type RunIndexEntry } from './generation-run-index';
+const byOrder = (a: RunIndexEntry, b: RunIndexEntry) => a.order < b.order ? -1 : a.order > b.order ? 1 : 0;
 import type { PortableRuntimeFreezeTable } from '../services/portable-runtime-freeze';
 import { assertReservation, assertAttemptTransition, rootActionIdempotencyKey, type RootAction, type RootBudget, type PhysicalAttempt, type VisibleArtifact, type ProviderUsagePolicy } from '../../src/shared/generation-contract';
 import { isContentHash, sameProjectEpoch, type FrozenInputFingerprint, type SourceRef, type ProjectEpoch } from '../../src/shared/source-ref';
@@ -160,22 +161,27 @@ export class GenerationRunRepository {
      * 绑定读不出或根被封存时为 undefined；读得出但缺字段（如导出时中性化成 {} 的历史）照常返回，由调用方按作品号筛掉。
      */
     runIdentity(runId: string): RunIdentity | undefined {
-        let row: { rootActionId: string; status: string; identity: string | null } | undefined;
-        try {
-            row = this.db().prepare(`SELECT root_action_id AS rootActionId, status, json_extract(CASE WHEN typeof(binding_json)='text' AND instr(binding_json,char(0))=0 THEN binding_json END,
-                '$.projectId','$.epoch','$.sourceManifest.operation','$.sourceManifest.batchId','$.sourceManifest.batchIntent') AS identity FROM generation_runs WHERE run_id=?`).get(runId) as typeof row;
-        }
-        catch (error) {
-            if (error instanceof Error && /malformed JSON/u.test(error.message)) return undefined;
-            throw error;
-        }
-        if (!row || this.sealed(row.rootActionId)) return undefined;
+        const row = this.db().prepare(`SELECT root_action_id AS rootActionId, status, ${readableLedgerJson('binding_json')} AS ok, json_extract(CASE WHEN ${readableLedgerJson('binding_json')} THEN binding_json END,
+            '$.projectId','$.epoch','$.sourceManifest.operation','$.sourceManifest.batchId','$.sourceManifest.batchIntent') AS identity FROM generation_runs WHERE run_id=?`).get(runId) as
+            { rootActionId: string; status: string; ok: number; identity: string | null } | undefined;
+        if (!row?.ok || this.sealed(row.rootActionId)) return undefined;
         const [projectId, epoch, operation, batchId, batchIntent] = JSON.parse(row.identity ?? '[]') as unknown[];
-        // 取不到作品号的少见：再判一次可读，分开「读不出」和「读得出但缺字段」。每条都判要把几百 KB 的绑定多解析一遍。
-        if (typeof projectId !== 'string' && !this.db().prepare(`SELECT ${readableLedgerJson('binding_json')} FROM generation_runs WHERE run_id=?`).pluck().get(runId)) return undefined;
         const text = (value: unknown) => typeof value === 'string' ? value : undefined;
         return { runId, rootActionId: row.rootActionId, status: row.status, projectId: text(projectId), epoch: text(epoch), operation: text(operation),
             batchId: text(batchId) ?? null, batchRoot: Boolean(batchIntent) };
+    }
+    /**
+     * 跨记录认运行（ADR-0030）：点击对得上的，加上点击号读不出、按主键读绑定由 recognize 认出的，按开出的先后排。
+     * 绑定读不出（含封存）的交给 unreadable：返回 [] 是略过，抛错是失败关闭；默认略过。
+     */
+    recognizedRuns(matches: (click: GenerationClick) => boolean, recognize: (binding: RunBinding) => boolean,
+        unreadable: (entry: RunIndexEntry) => DurableGenerationRun[] = () => []): DurableGenerationRun[] {
+        const { hits, unidentified } = runIndexOf(this.db()).lookup(matches);
+        return [...hits, ...unidentified].sort(byOrder).flatMap(entry => {
+            const run = this.readableRun(entry.runId);
+            if (!run) return unreadable(entry);
+            return entry.click !== undefined || recognize(run.binding) ? [run] : [];
+        });
     }
     /**
      * 某种操作的运行：身份对上、根没封存的，加上身份读不出、按主键读绑定认得出是这种操作（和这个作品）的。
@@ -187,7 +193,7 @@ export class GenerationRunRepository {
             const binding = this.readableRun(entry.runId)?.binding;
             return binding?.sourceManifest?.operation === operation && (projectId === undefined || binding.projectId === projectId);
         });
-        return [...hits.filter(entry => !entry.sealed), ...recognized].map(entry => entry.runId);
+        return [...hits.filter(entry => !entry.sealed), ...recognized].sort(byOrder).map(entry => entry.runId);
     }
     /** 按主键取绑定里的一个值；绑定读不出时报封存码，不让 SQLite 的解析错误漏给作者。 */
     private bindingAt(runId: string, path: string): { type: string | null; value: unknown } | undefined {

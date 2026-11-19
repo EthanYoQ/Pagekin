@@ -9,7 +9,6 @@ import { parseBlueprintContinuityCheck } from '../../src/shared/blueprint-contin
 import { parseBlueprintContinuitySuggest } from '../../src/shared/blueprint-continuity-suggest'
 import { GenerationRunRepository, textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
 import { graphGenerationOperations, readGraphGenerationContext } from './graph-generation-source'
-import { runIndexOf } from '../repositories/generation-run-index'
 import { PlotTreeRepository } from '../repositories/plot-tree-repository'
 import { NarrativeThreadRepository } from '../repositories/narrative-thread-repository'
 
@@ -143,8 +142,8 @@ export function provenGraphOwnEventIds(db: Database.Database, context: GraphGene
   if (context.kind !== 'event') return []
   const runs = new GenerationRunRepository(() => db)
   // 绑定读不出的运行略过：它自己确认过的事件会被当成外部改动报冲突，不放行。
-  const matches = runIndexOf(db).lookup(click => Object.values<string>(graphGenerationOperations).includes(click.operation)).hits
-    .filter(entry => !entry.sealed).flatMap(entry => runs.readableRun(entry.runId) ?? [])
+  const operations: readonly unknown[] = Object.values(graphGenerationOperations)
+  const matches = runs.recognizedRuns(click => operations.includes(click.operation), binding => operations.includes(binding.sourceManifest?.operation))
     .filter(run => (run.binding.sourceManifest?.graphGenerationContext as { key?: unknown } | undefined)?.key === context.key)
   if (matches.length > 1) throw new Error('GENERATION_GRAPH_CONTEXT_AMBIGUOUS')
   const run = matches[0]

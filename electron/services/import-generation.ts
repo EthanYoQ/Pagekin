@@ -128,11 +128,15 @@ export class ImportGeneration {
     this.assertSlotRunning(slot)
     const { totalChapters } = captureImportGenerationContext(this.db, slot)
     const key = importGenerationSlotKey(slot)
-    // 绑定读不出的阶段，开树点击证明属于别的导入就略过；证明不了就报封存码，这次导入停下，不跳过它的效果检查。
+    // 绑定读不出的阶段，开树点击证明不是这次导入就略过；证明不了就报封存码，这次导入停下，不跳过它的效果检查。
     const rootKeyOf = this.db.prepare('SELECT g.idempotency_key FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE r.run_id=?').pluck()
-    const records = runIndexOf(this.db).lookup(click => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation)).hits
-      .filter(entry => !entry.sealed).flatMap(entry => this.runs.readableRun(entry.runId)
-        ?? (anotherImport(clickOfRootKey(rootKeyOf.get(entry.runId)), slot.runId) ? [] : this.runs.get(entry.runId)))
+    const notThisImport = (runId: string) => {
+      const root = clickOfRootKey(rootKeyOf.get(runId))
+      return root !== undefined && (!root.uiActionNonce.startsWith('import:') || anotherImport(root, slot.runId))
+    }
+    const records = this.runs.recognizedRuns(click => click.projectId === this.projectId && IMPORT_OPERATIONS.has(click.operation) && click.uiActionNonce.startsWith('import:'),
+      binding => binding.projectId === this.projectId && IMPORT_OPERATIONS.has(String(binding.sourceManifest?.operation)),
+      entry => { if (entry.sealed || notThisImport(entry.runId)) return []; throw new Error('GENERATION_LEDGER_UNREADABLE') })
       .filter(run => (run.binding.sourceManifest?.importSlot as { runId?: unknown } | undefined)?.runId === slot.runId)
     for (const run of records) {
       const prior = this.context(run).slot
