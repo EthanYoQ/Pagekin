@@ -372,7 +372,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   }
   const newestFirst = (candidates: string) => deps.database.prepare('SELECT run_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) ORDER BY created_at_ms DESC, rowid DESC')
     .pluck().all(candidates) as string[]
-  /** 这几种操作的运行，新的在前，略去 skip 里的。身份按主键读，读不出的略过并调 unreadable，只有读写它的操作报错。 */
+  /** 读不出的运行略过并调 unreadable，列举本身不报错，只有读写它的操作才报错。 */
   const runSummaries = (operations: readonly string[], skip?: ReadonlySet<string>, unreadable?: () => void) =>
     newestFirst(candidateRunIds(runIndexOf(deps.database).lookup(click => operations.includes(click.operation)), { skip, unidentified: 'include' })).flatMap(runId => {
       const run = repository.runIdentity(runId)

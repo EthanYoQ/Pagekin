@@ -55,7 +55,7 @@ export class GenerationDraftEffects {
   /** settledChapter 这一章按已确认完（已发布、后处理关键步骤都完成）算进度，用于放回删除前已确认完的章：放回会把它重置为待发布、待重导。 */
   /**
    * 还能续写的批次（根运行 id）：active、paused、未阻断，且作者没点「不再恢复」。侧页列出与锁章共用这一条，免得两边判定又分开。
-   * 候选按身份键取（ADR-0030「跨记录认运行」），批次意图与「不再恢复」按主键读。绑定读不出的批次续不了，不列也不锁章，并调 unreadable。
+   * 绑定读不出的批次续不了：不列出、不锁章，并调 unreadable（候选的取法见 ADR-0030）。
    */
   resumableBatchIds(projectId: string, unreadable?: () => void): string[] {
     const ids = this.db.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id

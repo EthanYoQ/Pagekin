@@ -7,7 +7,7 @@ import { ProjectCoreRepository } from '../repositories/project-core-repository'
 import { inNonceChain, type GenerationClick } from '../repositories/generation-run-index'
 
 export const IMPORT_STAGE_OPERATION = { global: 'import-global-facts', style: 'analyze-writing-style', blueprints: 'import-blueprints' } as const
-/** 这个槽位的点击：操作是这一阶段的、点击号在槽位的链上。跨记录认导入运行只看它（ADR-0030）。 */
+/** 跨记录认导入运行只看这个槽位的点击（ADR-0030）。 */
 export function importSlotClick(slot: ImportGenerationSlot): (click: GenerationClick) => boolean {
   const operation = IMPORT_STAGE_OPERATION[slot.stage], inChain = inNonceChain(`import:${importGenerationSlotKey(slot)}`)
   return click => click.operation === operation && inChain(click)

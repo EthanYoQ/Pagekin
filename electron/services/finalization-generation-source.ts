@@ -11,7 +11,7 @@ import { textHash, type DurableGenerationRun } from '../repositories/generation-
 import { inNonceChain, type GenerationClick } from '../repositories/generation-run-index'
 
 const finalizationOperation = (slot: FinalizationGenerationSlot) => slot.stepKey === 'chapter_notes' ? 'finalized-chapter-notes' : 'finalized-character-state'
-/** 这个槽位的点击：操作对得上、点击号在槽位的链上。跨记录认定稿运行只看它（ADR-0030）。 */
+/** 跨记录认定稿运行只看这个槽位的点击（ADR-0030）。 */
 export function finalizationSlotClick(slot: FinalizationGenerationSlot): (click: GenerationClick) => boolean {
   const operation = finalizationOperation(slot), inChain = inNonceChain(`finalization:${finalizationSlotKey(slot)}`)
   return click => click.operation === operation && inChain(click)
