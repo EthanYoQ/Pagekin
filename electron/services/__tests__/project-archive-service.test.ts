@@ -958,6 +958,30 @@ describe('portable project export service', () => {
       expect(fs.existsSync(f.target)).toBe(false)
     })
 
+    it('取到闸门、核对过库文件之后才换成另一本书：拒绝导出，不发布另一本书的内容', async () => {
+      const f = fixture()
+      seedProject(f)
+      const other = fixture()
+      const lstatSync = fs.lstatSync.bind(fs)
+      const gate = holdGate(f)
+      gate.whenExportQueues(() => {
+        const spy = vi.spyOn(fs, 'lstatSync').mockImplementation(((file: fs.PathLike, ...rest: unknown[]) => {
+          const info = (lstatSync as (...args: unknown[]) => unknown)(file, ...rest)
+          if (path.resolve(String(file)) === path.resolve(f.databasePath)) {
+            spy.mockRestore()
+            fs.renameSync(f.databasePath, `${f.databasePath}.原书`)
+            fs.copyFileSync(other.databasePath, f.databasePath)
+          }
+          return info
+        }) as typeof fs.lstatSync)
+      })
+
+      try { await expect(exportPortableProject(input(f))).rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED') }
+      finally { gateRequests.onRequest = undefined }
+      await gate.held
+      expect(fs.existsSync(f.target)).toBe(false)
+    })
+
     it('等待期间作品被关掉：拒绝导出，源目录里不多出 SQLite 旁文件', async () => {
       const f = fixture()
       seedProject(f)
