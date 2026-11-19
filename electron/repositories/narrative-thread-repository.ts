@@ -260,7 +260,7 @@ export class NarrativeThreadRepository {
     return narrativeThreadReviewCandidates(this.list(db), reviewed)
   }
 
-  /** 写第 N 章参考的线索：逾期、到期、区间内的必选，区间未到的只在名字命中时选；逾期最久的排最前。 */
+  /** 写第 N 章参考的线索：逾期、到期、区间内的必选，区间未到的只在名字命中时选；逾期最久的排最前。状态和事件只算第 N 章之前定稿的章。 */
   static listRelevantActive(context: NarrativeThreadChapterContext, db = requireDb()): NarrativeThreadView[] {
     const currentText = `${context.title}\n${context.keyEvents}`
     const characters = context.characters.map(character => character.trim()).filter(Boolean)
@@ -275,6 +275,7 @@ export class NarrativeThreadRepository {
         || (thread.title.length >= 2 && currentText.includes(thread.title))
     }
     return this.list(db)
+      .map(thread => narrativeThreadView(thread, thread.events.filter(event => event.chapterNumber < context.chapterNumber), context.chapterNumber - 1))
       .flatMap((thread) => {
         const schedule = narrativeThreadSchedule(thread, context.chapterNumber)
         if (!schedule || schedule.kind === 'terminal' || (schedule.kind === 'later' && !mentioned(thread))) return []
