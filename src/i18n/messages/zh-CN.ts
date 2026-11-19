@@ -46,6 +46,7 @@ export const zhCN = {
   'error.portableSourceChanged': '作品没有改动。导出时资料被改了，存档没有生成。请再点「导出本地存档」。',
   'error.cloudBackupSourceChanged': '作品没有改动。备份时资料被改了，没有上传。请再点「立即云备份」。',
   'error.portableAvatarDamaged': '作品没有改动。有个角色头像文件损坏了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。',
+  'error.portableExportInterrupted': '作品没有改动。导出中途意外停止，存档没有生成。请再点「导出本地存档」。',
   'error.cloudBackupAvatarDamaged': '作品没有改动。有个角色头像文件损坏了，没有上传。请在人物页给头像没显示的角色「选择头像」，再点「立即云备份」。',
   'error.portableUnsafeProjection': '作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。',
   'error.damagedReviewCycle': '作品没有改动。{chapter}有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。',

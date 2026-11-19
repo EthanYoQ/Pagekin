@@ -44,6 +44,7 @@ export const enUS = {
   'error.portableSourceChanged': 'Your book is unchanged. Files changed during export, so no archive was created. Click Export local archive again.',
   'error.cloudBackupSourceChanged': 'Your book is unchanged. Files changed during backup, so nothing was uploaded. Click Back up now again.',
   'error.portableAvatarDamaged': 'Your book is unchanged. A character avatar file is damaged, so no archive was created. On the character page, click Choose avatar for the character whose avatar is missing, then Export local archive again.',
+  'error.portableExportInterrupted': 'Your book is unchanged. Export stopped unexpectedly, so no archive was created. Click Export local archive again.',
   'error.cloudBackupAvatarDamaged': 'Your book is unchanged. A character avatar file is damaged, so nothing was uploaded. On the character page, click Choose avatar for the character whose avatar is missing, then Back up now again.',
   'error.portableUnsafeProjection': 'Your book is unchanged. One piece of data could not be packaged safely, so no archive was created. Please report this message to us.',
   'error.damagedReviewCycle': 'Your book is unchanged. A review record in {chapter} is damaged, so no archive was made. Please report this message to us.',

@@ -47,6 +47,7 @@ export const jaJP = {
   'error.portableSourceChanged': '作品は変更されていません。エクスポート中に資料が変更されたため、アーカイブは作成されませんでした。もう一度「Export local archive」をクリックしてください。',
   'error.cloudBackupSourceChanged': '作品は変更されていません。バックアップ中に資料が変更されたため、アップロードされませんでした。もう一度「Back up now」をクリックしてください。',
   'error.portableAvatarDamaged': '作品は変更されていません。キャラクターのアバター画像が破損しているため、アーカイブは作成されませんでした。人物ページでアバターが表示されないキャラクターの「Choose avatar」をクリックしてから、もう一度「Export local archive」をクリックしてください。',
+  'error.portableExportInterrupted': '作品は変更されていません。エクスポートが途中で止まったため、アーカイブは作成されませんでした。もう一度「Export local archive」をクリックしてください。',
   'error.cloudBackupAvatarDamaged': '作品は変更されていません。キャラクターのアバター画像が破損しているため、アップロードされませんでした。人物ページでアバターが表示されないキャラクターの「Choose avatar」をクリックしてから、もう一度「Back up now」をクリックしてください。',
   'error.portableUnsafeProjection': '作品は変更されていません。データの一部を安全にパッケージ化できなかったため、アーカイブは作成されませんでした。このメッセージをご報告ください。',
   'error.damagedReviewCycle': '作品は変更されていません。{chapter}のレビュー記録が破損し、アーカイブを作成できませんでした。このメッセージをご報告ください。',
