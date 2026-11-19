@@ -225,13 +225,13 @@ function copyQualifiedLegacy(source: BetterSqlite3.Database, staging: BetterSqli
     if ((staging.pragma('foreign_key_check') as unknown[]).length) throw new Error('PROJECT_MIGRATION_SQLITE_CONTENT_CHANGED')
   })()
 }
-export function probeProjectSqlite(options: { databasePath: string; registry?: MigrationRegistry }): ProjectSqliteEvidence {
+export function probeProjectSqlite(options: { databasePath: string; registry?: MigrationRegistry; variants?: readonly DomainVariant[] }): ProjectSqliteEvidence {
   const snapshot = physicalSnapshot(options.databasePath)
   try {
     const db = new Database(snapshot.file, { readonly: true, fileMustExist: true })
     db.pragma('foreign_keys = ON')
     try {
-      const result = inspectSource(db, options.registry ?? getDesktopMigrationRegistry(), !options.registry); snapshot.unchanged(); return result
+      const result = inspectSource(db, options.registry ?? getDesktopMigrationRegistry(), !options.registry, options.variants); snapshot.unchanged(); return result
     } finally { db.close() }
   } finally { snapshot.close() }
 }
@@ -389,7 +389,8 @@ export function openProjectSqlite(options: { databasePath: string }): SqliteCont
  */
 export function upgradeProjectSqlite(options: { databasePath: string; registry?: MigrationRegistry; evidence?: ReviewCycleEvidence }): ProjectSqliteEvidence {
   const registry = options.registry ?? getDesktopMigrationRegistry()
-  const before = probeProjectSqlite({ databasePath: options.databasePath, registry })
+  // 升级前的两遍只比 domain，跨版本的变体留给升级后那一遍：一个变体就是全书再读一遍。
+  const before = probeProjectSqlite({ databasePath: options.databasePath, registry, variants: [] })
   if (before.schemaVersion === CURRENT_DESKTOP_SCHEMA_VERSION) return verifyProjectSqlite({ ...options, registry })
   if (before.schemaVersion < 1) throw new Error('CANONICAL_SCHEMA_UPGRADE_UNSUPPORTED')
   sourceFile(options.databasePath)
@@ -398,7 +399,7 @@ export function upgradeProjectSqlite(options: { databasePath: string; registry?:
     database.pragma('foreign_keys = ON')
     const prior = priorFailures(database, options.evidence), accepted = prior?.accepted
     // Revalidate the source identity after acquiring the writable connection.
-    const current = inspect(database, registry, before.schemaVersion, accepted)
+    const current = inspect(database, registry, before.schemaVersion, accepted, [])
     prior?.freezeIfUnread()
     if (current.fingerprint !== before.fingerprint || JSON.stringify(current.domain) !== JSON.stringify(before.domain)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
     return database.transaction(() => {
