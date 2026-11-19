@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { HunkPick } from '../../components/editor/merge-segments'
 import type { MainGenerationRunHandle } from '../../services/generation/generation-runtime'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import type { ChapterFacts } from './stage-progress'
@@ -44,6 +45,13 @@ interface StageState {
   chapterFacts: { session: ProjectSessionContext; byDraft: Readonly<Record<number, ChapterFacts>> } | null
   /** 流程脊为这次打开读完过一遍各稿的审稿与修稿记录。没读完时流程脊不列阶段与章节，章节阶段不会先按稿状态估计再改。 */
   spineFacts: ProjectSessionContext | null
+  /** 修稿合并里作者的逐段选择与各段文字，按项目与修稿记录存：换章、稍后再合并后重新打开都接着用；合并或丢弃修稿时清掉。 */
+  mergeChoices: Readonly<Record<string, MergeChoices>>
+}
+
+export interface MergeChoices {
+  picks: Readonly<Record<number, HunkPick>>
+  segTexts: Readonly<Record<number, string>>
 }
 
 /** 外壳的界面状态。书房与作品的切换在 layout-store 的 sidebarView。 */
@@ -59,4 +67,5 @@ export const useStageStore = create<StageState>()(() => ({
   coveredProseFile: null,
   chapterFacts: null,
   spineFacts: null,
+  mergeChoices: {},
 }))

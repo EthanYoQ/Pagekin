@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
+import { useStageStore, type MergeChoices } from '../../stores/navigation/stage-store'
 
 // ===== 类型定义 =====
 export interface Hunk {
@@ -252,22 +253,36 @@ export function computeSegments(original: string, modified: string): DiffSegment
 /** 一处改动用哪一版：原稿、修稿，或作者手动改过的文字。 */
 export type HunkPick = 'original' | 'revised' | 'edit'
 
+/** 一份修稿的逐段选择在 stage store 里的键；修稿记录 id 只在同一作品里唯一。 */
+export const mergeChoicesKey = (projectKey: string, revisionPath: string) => `${projectKey}\n${revisionPath}`
+
+export function forgetMergeChoices(key: string) {
+  useStageStore.setState(state => {
+    const mergeChoices = { ...state.mergeChoices }
+    delete mergeChoices[key]
+    return { mergeChoices }
+  })
+}
+
 /**
  * 修稿合并的数据：段落对齐后的片段、每处改动的选择与每段的合并文字。
  * 单章视图的合并视图用它；合并结果就是各段文字按顺序以换行连接。
  */
-export function useMergeSegments(originalContent: string, modifiedContent: string) {
+export function useMergeSegments(originalContent: string, modifiedContent: string, choicesKey: string) {
   const segments = useMemo(() => computeSegments(originalContent, modifiedContent), [originalContent, modifiedContent])
   const hunks = useMemo(() => segments.filter(s => s.type === 'hunk').map(s => s.hunk!), [segments])
-  const [picks, setPicks] = useState<Record<number, HunkPick>>({})
-  const [segTexts, setSegTexts] = useState<Record<number, string>>(() => {
-    const init: Record<number, string> = {}
+  const initial = useMemo<MergeChoices>(() => {
+    const segTexts: Record<number, string> = {}
     segments.forEach((s, i) => {
-      if (s.type === 'same') init[i] = (s.lines || []).join('\n')
-      else if (s.hunk) init[i] = s.hunk.originalLines.join('\n')
+      if (s.type === 'same') segTexts[i] = (s.lines || []).join('\n')
+      else if (s.hunk) segTexts[i] = s.hunk.originalLines.join('\n')
     })
-    return init
-  })
+    return { picks: {}, segTexts }
+  }, [segments])
+  const { picks, segTexts } = useStageStore(s => s.mergeChoices[choicesKey]) ?? initial
+  const update = useCallback((change: (prev: MergeChoices) => MergeChoices) => useStageStore.setState(state => ({
+    mergeChoices: { ...state.mergeChoices, [choicesKey]: change(state.mergeChoices[choicesKey] ?? initial) },
+  })), [choicesKey, initial])
 
   const hunkSegIdx = useMemo(() => {
     const m: Record<number, number> = {}
@@ -277,16 +292,19 @@ export function useMergeSegments(originalContent: string, modifiedContent: strin
 
   /** 选原稿或修稿时这一段换成那一版的文字；选手动编辑时保留当前文字，等作者改。 */
   const choose = useCallback((hunkIndex: number, pick: HunkPick) => {
-    setPicks(prev => ({ ...prev, [hunkIndex]: pick }))
     const hunk = hunks.find(h => h.index === hunkIndex)
     const si = hunkSegIdx[hunkIndex]
-    if (!hunk || si === undefined || pick === 'edit') return
-    setSegTexts(p => ({ ...p, [si]: (pick === 'revised' ? hunk.modifiedLines : hunk.originalLines).join('\n') }))
-  }, [hunks, hunkSegIdx])
+    update(prev => ({
+      picks: { ...prev.picks, [hunkIndex]: pick },
+      segTexts: !hunk || si === undefined || pick === 'edit'
+        ? prev.segTexts
+        : { ...prev.segTexts, [si]: (pick === 'revised' ? hunk.modifiedLines : hunk.originalLines).join('\n') },
+    }))
+  }, [hunks, hunkSegIdx, update])
 
   const editSegment = useCallback((segIndex: number, value: string) => {
-    setSegTexts(p => ({ ...p, [segIndex]: value }))
-  }, [])
+    update(prev => ({ ...prev, segTexts: { ...prev.segTexts, [segIndex]: value } }))
+  }, [update])
 
   const chooseAll = useCallback((pick: 'original' | 'revised') => {
     const next: Record<number, HunkPick> = {}
@@ -295,9 +313,8 @@ export function useMergeSegments(originalContent: string, modifiedContent: strin
       next[h.index] = pick
       texts[hunkSegIdx[h.index]] = (pick === 'revised' ? h.modifiedLines : h.originalLines).join('\n')
     })
-    setPicks(next)
-    setSegTexts(p => ({ ...p, ...texts }))
-  }, [hunks, hunkSegIdx])
+    update(prev => ({ picks: next, segTexts: { ...prev.segTexts, ...texts } }))
+  }, [hunks, hunkSegIdx, update])
 
   const mergedText = useCallback(() => segments.map((_, i) => segTexts[i] ?? '').join('\n'), [segments, segTexts])
 

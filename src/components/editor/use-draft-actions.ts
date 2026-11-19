@@ -29,6 +29,7 @@ import { countDraftUnits } from '../../shared/draft-units'
 import { globalEventBus } from '../../shared/event-bus'
 import { sameProjectSessionContext } from '../../shared/project-session-context'
 import type { SaveOutcome } from './save-feedback'
+import { forgetMergeChoices, mergeChoicesKey } from './merge-segments'
 import type { EditorInlineAnnotation } from '../../shared/editor-inline-generation'
 import { guardRepairPostProcess } from '../../services/workflow-guards'
 import {
@@ -674,6 +675,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       if (!isProjectSessionCurrent(projectSession)) return false
       if (result.success) {
         closeMerge()
+        forgetMergeChoices(mergeChoicesKey(projectKey, mergeData.revisionPath))
         setMeta(prev => prev ? { ...prev, status: 'revised' } : prev)
         // 标签上的稿状态优先于元数据，合并后同步改成已修稿，否则界面仍按合并前的状态显示。
         useEditorStore.setState(state => ({
@@ -707,6 +709,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       for (const id of ids) {
         const result = await ipc.invokeWithProjectSession(projectSession, 'db:revision-mark-discarded', id, projectSession.projectPath)
         if (!result.success) throw new Error(result.error)
+        forgetMergeChoices(mergeChoicesKey(projectKey, formatResourceUri({ kind: 'revision', id })))
       }
     } catch (error) {
       const reason = displayedErrorMessage(currentInterfaceLocale(), error)

@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
 import { useLocaleStore } from '../../../../stores/locale-store'
+import { useStageStore } from '../../../../stores/navigation/stage-store'
 import MergeView from '../MergeView'
 import { ORIGINAL, REVISED } from './chapter-fixture'
 
@@ -21,7 +22,7 @@ async function mount(onLater = vi.fn()) {
   document.body.append(host)
   root = createRoot(host)
   await act(async () => root!.render(
-    <MergeView data={data} versionLabel="草稿 v1" recheck onComplete={async text => { completed.push(text); return true }} onLater={onLater} />,
+    <MergeView projectKey="/projects/rain" data={data} versionLabel="草稿 v1" recheck onComplete={async text => { completed.push(text); return true }} onLater={onLater} />,
   ))
 }
 
@@ -32,6 +33,7 @@ const choose = (paragraph: number, option: '用原稿' | '用修稿' | '手动�
 beforeEach(() => {
   completed = []
   useLocaleStore.setState({ locale: 'zh-CN' })
+  useStageStore.setState({ mergeChoices: {} })
 })
 
 afterEach(async () => {

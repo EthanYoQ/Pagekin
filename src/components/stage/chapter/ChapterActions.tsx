@@ -487,6 +487,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
       )}
       {draft.mergeData && (
         <MergeView
+          projectKey={projectKey}
           data={draft.mergeData}
           versionLabel={versionLabel}
           recheck={opened?.recheckOnMerge === true}
