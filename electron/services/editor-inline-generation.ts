@@ -165,13 +165,25 @@ function editInstruction(context: EditorInlineContext, english: boolean): string
       ? `Revise the complete chapter according to every annotation below. Each note applies to its corresponding original passage. Keep passages without annotations unchanged unless a change is required for continuity.\n\n${annotations}`
       : `按下面的全部批注修改完整章节。每条意见只针对对应原文；未批注的内容保持原样，确为衔接所必需时除外。\n\n${annotations}`
   }
-  if (context.action !== 'instruct') return instructions[context.action][english ? 1 : 0]
+  if (context.action !== 'instruct') return (continuesSettingDocument(context) ? settingDocument.instruction : instructions[context.action])[english ? 1 : 0]
   return english
     ? `Revise this passage as the author's note asks. The note outranks every other preference.\n${context.instruction}`
     : `按作者意见修改这部分。作者意见优先于其他任何偏好。\n${context.instruction}`
 }
-const continueRule = ['这次是续写：选中的正文是续写的起点，保持原样。只输出紧接在它后面的新内容，第一句直接接着选中正文的最后一句往下写，不要重复、改写或总结选中的正文。人物手里有什么、已经放下什么，以前文和选中正文为准，放下的东西不再拿回手里。',
-  'This is a continuation: the selected prose is where it starts, and it stays as it is. Output only the new text that follows it, starting right where its last sentence ends; do not repeat, rewrite, or summarize the selected prose. What the characters hold or have put down follows the earlier text and the selection; nothing already put down is picked up again.'] as const
+const continueStart = ['这次是续写：选中的正文是续写的起点，保持原样。只输出紧接在它后面的新内容，第一句直接接着选中正文的最后一句往下写，不要重复、改写或总结选中的正文。',
+  'This is a continuation: the selected prose is where it starts, and it stays as it is. Output only the new text that follows it, starting right where its last sentence ends; do not repeat, rewrite, or summarize the selected prose.'] as const
+const continueRule = [`${continueStart[0]}人物手里有什么、已经放下什么，以前文和选中正文为准，放下的东西不再拿回手里。`,
+  `${continueStart[1]} What the characters hold or have put down follows the earlier text and the selection; nothing already put down is picked up again.`] as const
+/** 设定文档（架构页的世界观、大纲等）没有章号；不明说体裁，模型会把续写写成小说场面。升级前冻结、没有材料的运行不算。 */
+const continuesSettingDocument = (context: EditorInlineContext) => editorInlineInsertsAfterSelection(context) && context.filePath?.startsWith('ai-novel://core/') === true
+const settingDocument = {
+  instruction: ['照原文的体裁和写法往下写。', 'Continue in the same form and manner as the original.'],
+  continueRule: [`${continueStart[0]}先看原文是什么体裁：原文是设定、资料、大纲这类说明性文字时，续写也只写说明性的内容，用同样的陈述口吻补充设定事实，不写具体场景和对白，不写某个人物在某一刻做了什么；原文是小说正文时，照小说正文续写。`,
+    `${continueStart[1]} First see what kind of text the original is: when it is expository text such as setting notes, reference material, or an outline, the continuation is expository too, adding setting facts in the same declarative voice, with no concrete scenes or dialogue and nothing about what a character did at a particular moment; when the original is novel prose, continue it as novel prose.`],
+  header: ['【文档上下文：只作参考，让结果接得上前因后果；不要复述，也不要改写这些内容】', '[Document context: reference only, so the result fits what comes before and after. Do not repeat or rewrite it.]'],
+  preceding: ['【选中正文之前的文档】', '[Document text before the selection]'],
+  following: ['【选中正文之后的文档】', '[Document text after the selection]'],
+} as const
 /** 有后文的续写插在中间，后文第一句就是停止点；选区在末尾时没有。 */
 function followingOpening(context: EditorInlineContext): string | undefined {
   const following = editorInlineInsertsAfterSelection(context) ? context.materials!.included.find(block => block.kind === 'following')?.text : undefined
@@ -188,7 +200,8 @@ function systemRole(context: EditorInlineContext): Pick<PromptTemplate, 'systemR
   const english = context.writingLanguage === 'en-US'
   if (editorInlineInsertsAfterSelection(context)) {
     const first = followingOpening(context)
-    return { systemRole: [context.template.systemRole?.trim(), continueRule[english ? 1 : 0], first && followingRule(first, english)].filter(Boolean).join('\n') }
+    const rule = (continuesSettingDocument(context) ? settingDocument.continueRule : continueRule)[english ? 1 : 0]
+    return { systemRole: [context.template.systemRole?.trim(), rule, first && followingRule(first, english)].filter(Boolean).join('\n') }
   }
   if (context.action !== 'instruct' && context.action !== 'batch-instruct') return context.template
   const noteRule = english
@@ -210,17 +223,19 @@ const materialLabels: Record<EditorContextKind, readonly [string, string]> = {
   preceding: ['【选中正文之前的本章正文】', '[Chapter text before the selection]'],
   following: ['【选中正文之后的本章正文】', '[Chapter text after the selection]'],
 }
-function materialsText(materials: EditorInlineMaterials, english: boolean): string {
+function materialsText(materials: EditorInlineMaterials, english: boolean, document: boolean): string {
   if (!materials.included.length) return ''
-  const header = english ? '[Chapter context: reference only, so the result fits what comes before and after. Do not repeat or rewrite it.]'
+  const language = english ? 1 : 0
+  const header = document ? settingDocument.header[language] : english ? '[Chapter context: reference only, so the result fits what comes before and after. Do not repeat or rewrite it.]'
     : '【本章上下文：只作参考，让结果接得上前因后果；不要复述，也不要改写这些内容】'
-  return [header, ...materials.included.map(block => `${materialLabels[block.kind][english ? 1 : 0]}\n${block.text}`)].join('\n\n')
+  const label = (kind: EditorContextKind) => (document && (kind === 'preceding' || kind === 'following') ? settingDocument[kind] : materialLabels[kind])[language]
+  return [header, ...materials.included.map(block => `${label(block.kind)}\n${block.text}`)].join('\n\n')
 }
 export function editorInlineTask(context: EditorInlineContext): GenerationTask {
   const { template, writingLanguage } = context
   const english = writingLanguage === 'en-US'
   const prompt = renderPrompt(template, { edit_instruction: editInstruction(context, english), selected_text: context.selectedText }, writingLanguage)
-  const materials = context.materials ? materialsText(context.materials, english) : ''
+  const materials = context.materials ? materialsText(context.materials, english, continuesSettingDocument(context)) : ''
   const first = followingOpening(context)
   const stop = !first ? '' : english
     ? `\n\n(Reminder: the continuation stops before the following text's first sentence, "${first}". Stay in the same place, write nothing the following text or the chapter plan has later, and keep it to one or two paragraphs, no more than twice the selection's length.)`
