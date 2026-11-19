@@ -47,6 +47,7 @@ let committedHints: Record<number, unknown>
 let persistedBlueprint: ChapterBlueprint
 let threadViews: NarrativeThreadView[]
 let threadIpc: (channel: string, ...args: unknown[]) => Promise<unknown>
+let previousPostProcess: 'running' | 'failed' | null
 
 const storedThreadIpc = async (channel: string, ...args: unknown[]): Promise<unknown> => {
   if (channel === 'db:narrative-thread-list') return threadViews
@@ -145,7 +146,8 @@ function installIpc() {
     if (channel === 'finalized-character:list-relation-candidates') return pendingRelations
     if (channel === 'db:character-get-all') return [{ id: 1 }]
     if (channel === 'db:draft-get-finalized') return { chapterNumber: Number(args[0]) }
-    if (channel === 'db:post-process-get-latest-run') return null
+    if (channel === 'db:post-process-get-latest-run') return previousPostProcess && { id: 'post-4', sourceLabel: '第4章定稿', allCriticalPassed: false, createdAt: '', updatedAt: '' }
+    if (channel === 'db:post-process-get-steps') return [{ stepKey: 'chapter_notes', label: '章节剧情要点', critical: true, ok: false, errorMsg: previousPostProcess === 'failed' ? '模型返回的格式不对' : '', lastAttemptAt: '', attemptCount: previousPostProcess === 'failed' ? 3 : 0 }]
     if (channel === 'db:continuity-list-before') {
       await continuityGate
       return continuityProjections
@@ -211,6 +213,7 @@ beforeEach(async () => {
   persistedBlueprint = BLUEPRINT
   threadViews = []
   threadIpc = storedThreadIpc
+  previousPostProcess = null
   startWorkflow = vi.fn(async () => 'write-popover-run')
   useLocaleStore.setState({ locale: 'zh-CN' })
   pendingRelations = []
@@ -628,6 +631,25 @@ describe('写作此章弹层', () => {
     await render(<WriteChapterPopover chapterNumber={7} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 7 章" />)
     await act(async () => page.getByRole('button', { name: '写第 7 章' }).click())
     await expect.element(page.getByRole('dialog', { name: '本次写作选项' }).getByRole('alert')).toHaveTextContent('第 7 章现在还不能写。现在可以写第 5 章')
+    expect(startWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('上一章定稿后还在整理时点写作：说明还在处理，不说处理失败', async () => {
+    previousPostProcess = 'running'
+    useWorkflowStore.setState({ activeRuns: [{ id: 'finalize-4', projectPath: PROJECT_PATH, resourceKeys: ['chapter:4'], title: '第 4 章 · 定稿', status: 'running' } as never] })
+    await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
+    await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
+    const alert = page.getByRole('dialog', { name: '本次写作选项' }).getByRole('alert')
+    await expect.element(alert).toHaveTextContent('第 4 章已定稿，后台还在整理这一章，很快就好，请稍后再试。')
+    await expect.element(alert).not.toHaveTextContent('失败')
+    expect(startWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('上一章定稿后处理真失败了：照旧指向失败的步骤', async () => {
+    previousPostProcess = 'failed'
+    await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
+    await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
+    await expect.element(page.getByRole('dialog', { name: '本次写作选项' }).getByRole('alert')).toHaveTextContent('处理「定稿后处理」里失败的步骤')
     expect(startWorkflow).not.toHaveBeenCalled()
   })
 

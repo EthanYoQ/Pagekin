@@ -235,6 +235,21 @@ export async function guardChapterWriting(
     const prevScope = getChapterFinalizeScope(prevChapter)
     const prevStatus = await readPostProcessStatus(projectPath, prevScope, projectSession)
     if (prevStatus && !prevStatus.allCriticalPassed) {
+      // 定稿或重试后处理的运行还占着上一章：步骤没失败，只是还没跑完。
+      const { useWorkflowStore, workflowResourceKey } = await import('../stores/workflow-store')
+      const stillRunning = useWorkflowStore.getState().activeRuns.some(run => sameProjectPathKey(run.projectPath, projectPath)
+        && run.resourceKeys?.includes(workflowResourceKey('chapter', prevChapter)))
+      if (stillRunning) {
+        return {
+          ok: false,
+          message: localize(
+            shown(),
+            `第 ${prevChapter} 章已定稿，后台还在整理这一章，很快就好，请稍后再试。`,
+            `Chapter ${prevChapter} is finalized and is still being processed in the background. This won't take long; try again in a moment.`,
+            `第${prevChapter}章は定稿済みで、バックグラウンドでまだ整理しています。まもなく終わるので、少し待ってからもう一度お試しください。`,
+          ),
+        }
+      }
       const failedLabels = getFailedStepLabels(prevStatus)
       return {
         ok: false,

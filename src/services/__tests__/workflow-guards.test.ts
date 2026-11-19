@@ -35,6 +35,7 @@ let currentProject: typeof project | null = project
 vi.mock('../../stores/project-store', () => ({
   useProjectStore: {
     getState: vi.fn(() => ({ currentProject })),
+    subscribe: vi.fn(() => () => {}),
   },
 }))
 
