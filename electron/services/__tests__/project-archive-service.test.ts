@@ -482,7 +482,7 @@ describe('portable project export service', () => {
 
   })
 
-  describe('导出期间资料被改：整次重来一次，存档里每份资料都是完整的一版（#744）', () => {
+  describe('资料阶段出错：整次重来一次，存档里每份资料都是完整的一版（#744）', () => {
     afterEach(() => { vi.restoreAllMocks() })
 
     function prompt(f: Fixture, content: string | Buffer): string {

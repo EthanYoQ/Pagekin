@@ -1118,7 +1118,7 @@ function assertSourceStillOwned(sourcePath: string): void {
   if (info.nlink !== 1n) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_UNSAFE')
 }
 
-/** 资料阶段（核对头像与资料、打包）里抛的错。库一侧的错不经过这里，永不重来。 */
+/** 只包住资料阶段的错。库一侧的错不包，所以永远不会被重来。 */
 class AssetPhaseFailure extends Error {
   constructor(readonly failure: unknown) { super('PORTABLE_ASSET_PHASE_FAILED') }
 }
