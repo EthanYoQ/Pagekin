@@ -235,9 +235,10 @@ export async function guardChapterWriting(
     const prevScope = getChapterFinalizeScope(prevChapter)
     const prevStatus = await readPostProcessStatus(projectPath, prevScope, projectSession)
     if (prevStatus && !prevStatus.allCriticalPassed) {
-      // 定稿或重试后处理的运行还占着上一章：步骤没失败，只是还没跑完。
+      // 关键步骤都没记失败、且还有运行占着上一章：只是还没跑完。批量运行一直占着本批各章，所以必须先看有没有记失败。
       const { useWorkflowStore, workflowResourceKey } = await import('../stores/workflow-store')
-      const stillRunning = useWorkflowStore.getState().activeRuns.some(run => sameProjectPathKey(run.projectPath, projectPath)
+      const criticalFailed = Object.values(prevStatus.steps).some(step => step.critical && !step.ok && step.error)
+      const stillRunning = !criticalFailed && useWorkflowStore.getState().activeRuns.some(run => sameProjectPathKey(run.projectPath, projectPath)
         && run.resourceKeys?.includes(workflowResourceKey('chapter', prevChapter)))
       if (stillRunning) {
         return {

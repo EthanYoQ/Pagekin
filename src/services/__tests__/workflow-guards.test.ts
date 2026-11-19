@@ -272,6 +272,20 @@ describe('写第 3 章前第 2 章没准备好时，提示指向现在能点到�
     if (state === 'post-process-failed') expect(result.message).toContain('「定稿后处理」')
   })
 
+  it('批量运行占着第 2 章、第 2 章关键步骤已记失败：照旧说失败，不说还在整理', async () => {
+    chapterTwo('post-process-failed')
+    const { useWorkflowStore } = await import('../../stores/workflow-store')
+    useWorkflowStore.setState({ activeRuns: [{ id: 'batch', projectPath, resourceKeys: ['chapter:2', 'chapter:3'], title: '批量自动定稿', status: 'running' } as never] })
+    try {
+      const result = await guardChapterWriting(3, projectPath, projectSession)
+
+      expect(result.message).toContain('「定稿后处理」')
+      expect(result.message).not.toContain('后台还在整理')
+    } finally {
+      useWorkflowStore.setState({ activeRuns: [] })
+    }
+  })
+
   it.each(['not-finalized', 'post-process-failed'] as const)('%s: the English message points to Manuscript, not the removed Drafts entry', async state => {
     chapterTwo(state)
     useLocaleStore.setState({ locale: 'en-US' })
