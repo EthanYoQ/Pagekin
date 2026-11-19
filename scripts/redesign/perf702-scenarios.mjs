@@ -835,6 +835,8 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
       // 导出失败或没出存档时耗时没有意义，场景直接判失败，免得失败被当成变快。
       assert.equal(result.success, true, `导出失败：${result.errorCode}`)
       assert.ok(fs.existsSync(archive), '导出报成功但存档不在')
+      // 边写边导要证明的是导出期间照常能存：至少一次与导出重叠的成功保存，且没有失败。
+      if (writes) assert.ok(result.saves > 0 && result.saveFailures === 0, `导出期间的保存：成功 ${result.saves}，失败 ${result.saveFailures}`)
       return { ...result, archiveExists: true, leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
     }))
   }
