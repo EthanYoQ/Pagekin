@@ -353,6 +353,68 @@ describe('单章视图的主按钮随五种状态变化', () => {
     expect(activeTab()?.content).toBe(REVISED)
   })
 
+  describe('作者的逐段选择跟着这份修稿走（#752）', () => {
+    const choose = (paragraph: number, option: '用修稿' | '手动编辑') =>
+      act(async () => page.getByRole('group', { name: `第 ${paragraph} 段用哪一版` }).getByRole('button', { name: option }).click())
+    const MERGED = [
+      '雨从傍晚开始就没有停过。',
+      '最后一班列车晚点了十七分钟，广播里的道歉一遍遍落进空站台。',
+      '他第三次展开信纸。',
+      '他想起旧报纸上那则很短的消息。',
+    ].join('\n\n')
+    const pick = async () => {
+      await choose(2, '用修稿')
+      await choose(4, '手动编辑')
+      await act(async () => page.getByRole('textbox', { name: '第 4 段的合并文字' }).fill('他想起旧报纸上那则很短的消息。'))
+      await expect.element(page.getByText('2 处改动：已选 1 处用修稿，1 处手动编辑')).toBeVisible()
+    }
+    const mergedContents = () => backend.writes('db:revision-merge').map(args => (args[0] as { mergedContent: string }).mergedContent)
+
+    it('离开这一章再回来：合并视图仍是作者选好的样子，完成合并写入的是这些选择', async () => {
+      const draft = backend.addDraft({ status: 'draft' })
+      backend.addReview(draft)
+      backend.addRevision(draft)
+      await mount()
+      await openDraft(draft.id)
+      await pick()
+      await act(async () => root!.unmount())
+      host!.remove()
+      await mount()
+      await expect.element(page.getByText('2 处改动：已选 1 处用修稿，1 处手动编辑')).toBeVisible()
+      await expect.element(page.getByRole('textbox', { name: '第 4 段的合并文字' })).toHaveValue('他想起旧报纸上那则很短的消息。')
+      await click('完成合并')
+      await vi.waitFor(() => expect(mergedContents()).toEqual([MERGED]))
+    })
+
+    it('稍后再合并后重新打开：选择还在', async () => {
+      const draft = backend.addDraft({ status: 'draft' })
+      backend.addReview(draft)
+      backend.addRevision(draft)
+      await mount()
+      await openDraft(draft.id)
+      await pick()
+      await click('稍后再合并')
+      await click('打开修稿合并')
+      await expect.element(page.getByText('2 处改动：已选 1 处用修稿，1 处手动编辑')).toBeVisible()
+      await click('完成合并')
+      await vi.waitFor(() => expect(mergedContents()).toEqual([MERGED]))
+    })
+
+    it('合并完再修出一份新修稿：新修稿从原稿开始选，不带上一份的选择', async () => {
+      const draft = backend.addDraft({ status: 'draft' })
+      backend.addReview(draft)
+      backend.addRevision(draft)
+      await mount()
+      await openDraft(draft.id)
+      await choose(2, '用修稿')
+      await click('完成合并')
+      await expect.element(page.getByRole('button', { name: '定稿', exact: true })).toBeVisible()
+      backend.addRevision(draft, 'refine')
+      await act(async () => useStageStore.setState({ chapterRequest: { session: SESSION, filePath: activeTab()!.filePath! } }))
+      await expect.element(page.getByText('1 处改动：已选 0 处用修稿，0 处手动编辑')).toBeVisible()
+    })
+  })
+
   it('合并后自动复验成功：写明复验完成几项，审稿报告打开的是原审稿与逐项复验结果', async () => {
     const draft = backend.addDraft({ status: 'revised' })
     const review = backend.addReview(draft)

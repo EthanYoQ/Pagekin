@@ -874,3 +874,60 @@ export const CHAPTER_SCENARIOS = {
     return { ...await typingLatency(page, content, keys), shell: await isStage(page) ? 'stage' : 'writer' }
   } },
 }
+
+/** #752：作者在合并视图里逐段选好后离开再回来（换章标签、稍后再合并），合并写进库里的仍是作者的选择。 */
+const MERGE_PICK = {
+  p1: '守塔人的屋子在灯塔背风的一侧，窗玻璃上积着经年的盐。他给林岚倒了一杯很淡的茶，自己却只是捧着杯子，看着炉火。',
+  p1r: '守塔人的屋子在灯塔背风的一侧，窗玻璃上积着三十年的盐。他给林岚倒了一杯很淡的茶，自己却只是捧着杯子，盯着炉火出神。',
+  p2r: '「你父亲也问过钟的事，」他顿了顿，「问得比你还急。」说完这句话，他就再也没有开口。',
+  p3r: '炉火噼啪一声，林岚注意到墙上挂着一张褪色的航海图，图上的北堤被人用红笔圈了三次。',
+}
+const MERGE_AWAY = {
+  'tab-switch': async page => {
+    await stage.tab(page, /第 3 章/).click()
+    await chapterView.view(page).waitFor({ state: 'visible' })
+    await stage.tab(page, /第 4 章/).click()
+  },
+  'merge-later': async page => {
+    await chapterView.merge(page).getByRole('button', { name: '稍后再合并' }).click()
+    await chapterView.view(page).getByRole('button', { name: '打开修稿合并' }).click()
+  },
+}
+const mergeHint = page => chapterView.merge(page).locator('.stage-ch-hint')
+const mergePickScenario = away => ({ model: true, shell: 'stage', setup: seed(), run: async context => {
+  const { page, fake, invoke, projectPath, shoot } = context
+  const flat = text => text.replace(/\s+/g, '')
+  fake.replyReview(prompt => prompt.includes('【已确认纳入本次修稿的审稿项】') ? [MERGE_PICK.p1r, MERGE_PICK.p2r, MERGE_PICK.p3r].join('\n\n') : null)
+  await chapterView.open(page, 4)
+  const reviewing = await runsStarted(page)
+  await chapterView.review(page)
+  await waitRunDone(page, reviewing)
+  const revising = await runsStarted(page)
+  await chapterView.reviseButton(page).click()
+  await chapterView.merge(page).waitFor({ state: 'visible', timeout: 60_000 })
+  await waitRunDone(page, revising)
+  const groups = chapterView.merge(page).getByRole('group', { name: /用哪一版$/ })
+  await groups.nth(0).getByRole('button', { name: '用修稿' }).click()
+  await groups.nth(2).getByRole('button', { name: '用修稿' }).click()
+  const picked = await mergeHint(page).innerText()
+  await shoot(`merge-pick-${away}-1-picked`)
+  await MERGE_AWAY[away](page)
+  await chapterView.merge(page).waitFor({ state: 'visible', timeout: 30_000 })
+  const returned = await mergeHint(page).innerText()
+  await shoot(`merge-pick-${away}-2-returned`)
+  assert.equal(returned, picked, '回来后合并视图仍是作者选好的样子')
+  await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
+  await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+  await waitRunDone(page)
+  await shoot(`merge-pick-${away}-3-merged`)
+  const session = await reopenForReading(context)
+  const [draft] = await invoke(page, 'db:draft-list', 4, projectPath, session)
+  const saved = flat((await invoke(page, 'db:draft-get-full', draft.id, projectPath, session)).content)
+  const has = Object.fromEntries(['p1', 'p1r', 'p3r'].map(key => [key, saved.includes(flat(MERGE_PICK[key]))]))
+  assert.deepEqual(has, { p1: false, p1r: true, p3r: true }, '库里的草稿正文按作者的逐段选择合并')
+  return { picked, returned, status: draft.status, has }
+} })
+Object.assign(CHAPTER_SCENARIOS, {
+  'merge-pick-tab-switch': mergePickScenario('tab-switch'),
+  'merge-pick-merge-later': mergePickScenario('merge-later'),
+})
