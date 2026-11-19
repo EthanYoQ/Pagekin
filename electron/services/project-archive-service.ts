@@ -1065,17 +1065,25 @@ function writeOwnedFile(attempt: OwnedAttempt, file: string, bytes: Buffer): voi
 
 const STAGE_CHUNK_BYTES = 1024 * 1024
 
-/** 同步边拷边算 sha，内存只占一块缓冲。同步做完，导出期间的写入插不进来。 */
+/**
+ * 同步边拷边算 sha，内存只占一块缓冲。同步做完，应用自己的写入插不进来；
+ * 别的程序在拷的途中改了源文件（大小或修改时间变了），拷到的可能新旧混合，就拒绝。
+ */
 function copyOwnedFile(attempt: OwnedAttempt, file: string, sourcePath: string): PortableStagedFile {
   const source = fs.openSync(sourcePath, 'r')
   try {
     const target = openOwnedFile(attempt, file)
     try {
+      const before = fs.fstatSync(source, { bigint: true })
       const digest = createHash('sha256'), buffer = Buffer.allocUnsafe(STAGE_CHUNK_BYTES)
       let byteSize = 0
       for (let read = 0; (read = fs.readSync(source, buffer, 0, buffer.length, null)) > 0; byteSize += read) {
         digest.update(buffer.subarray(0, read))
         for (let written = 0; written < read;) written += fs.writeSync(target, buffer, written, read - written)
+      }
+      const after = fs.fstatSync(source, { bigint: true })
+      if (BigInt(byteSize) !== before.size || after.size !== before.size || after.mtimeNs !== before.mtimeNs) {
+        throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
       }
       fs.fsyncSync(target)
       return { stagedPath: file, byteSize, sha256: digest.digest('hex') }
@@ -1182,9 +1190,11 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
       sourceFingerprint = sqliteSchemaFingerprint(sourceSnapshot)
       if (sourceFreeze.active) readPortableCurrentAuthority({ database: sourceSnapshot, projectStorageRoot, projectId: canonicalManifest.projectId })
       avatarRows = readPortableCharacterAvatarRows(sourceSnapshot)
-    } finally { sourceSnapshot.close() }
-    recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-wal`)
-    recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-shm`)
+    } finally {
+      sourceSnapshot.close()
+      recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-wal`)
+      recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-shm`)
+    }
 
     // 头像和资料紧接着库快照拷进私有目录，导出期间换头像、改提示词不影响这份存档。
     const avatarReferenceProjections: Array<Record<string, unknown>> = []
