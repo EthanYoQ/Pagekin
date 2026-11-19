@@ -78,13 +78,13 @@ function projectText(zhCNText: string, enUSText: string): string {
   return useLocaleStore.getState().text(zhCNText, enUSText)
 }
 
-/** 长篇第一次在新版打开要先升级，得等一会儿；开得快时不弹，免得提示一闪而过。 */
+/** 长篇打开要等一会儿，第一次在新版打开还要升级；开得快时不弹，免得提示一闪而过。 */
 async function withOpeningNotice<T>(opening: Promise<T>): Promise<T> {
   let close: (() => void) | undefined
   const timer = setTimeout(() => {
     close = pushToast({ tone: 'info', duration: 0, message: projectText(
-      '正在打开作品…\n\n长篇第一次在新版打开要先升级，请稍候。',
-      'Opening the book…\n\nA long book upgrades once the first time it opens in this version.',
+      '正在打开作品…\n\n长篇要多等一会儿，第一次在新版打开会更久。',
+      'Opening the book…\n\nLong books take a moment, longer the first time in this version.',
     ) })
   }, 500)
   try {
