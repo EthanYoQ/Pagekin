@@ -314,6 +314,23 @@ it('没有章号的续写也告诉模型只写接续的新内容，接受时插�
  const system = (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
  expect(system).toContain('只输出紧接在它后面的新内容')
 })
+const continueAt = (language: 'zh-CN' | 'en-US', withChapter: boolean) => JSON.stringify(editorInlineTask(buildEditorInlineContext({ action: 'continue',
+ documentText: chapterDoc, from: selFrom, to: selFrom + sel.length, selectedText: sel, ...(withChapter ? { chapterContext: chapterContext() } : {}) } as never,
+ language, getBuiltinPromptTemplate('edit_selected_text', language)!)).messages)
+it.each([
+ ['zh-CN', ['情节', '人物动机', '人物手里', '本章正文', '本章上下文'], ['【选中正文之前的文档】', '【选中正文之后的文档】']],
+ ['en-US', ['causality and character motivation', 'What the characters hold', 'Chapter text', 'Chapter context'], ['[Document text before the selection]', '[Document text after the selection]']],
+] as const)('%s 没有章号的续写照原文体裁写：提示里没有情节、人物这类小说措辞，材料标签是文档', (language, absent, present) => {
+ const sent = continueAt(language, false)
+ for (const word of absent) expect(sent, word).not.toContain(word)
+ for (const label of present) expect(sent, label).toContain(label)
+})
+it.each([
+ ['zh-CN', 'e155a59b96e08e0045e656f667d27ff4dcba36b599fcb5d6ec21d265d39a8dfa'],
+ ['en-US', 'd03af6cad6ca36c40195c4d8e0bd25cd9b2743f99be8a9abdafff00e988704b2'],
+] as const)('%s 章内带后文的续写提示与改动前逐字节相同', (language, hash) => {
+ expect(createHash('sha256').update(continueAt(language, true)).digest('hex')).toBe(hash)
+})
 it('改动前留下的运行清单重建后比较仍相等，建议仍可应用', () => {
  const f = fixture()
  const legacy = JSON.parse(fs.readFileSync('test/fixtures/editor-inline-v1-bindings.json', 'utf8')) as Record<string, Parameters<typeof rebuildGenerationSourceBinding>[1]>
