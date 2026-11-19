@@ -108,7 +108,6 @@ export const R702_SCENARIOS = {
     await page.keyboard.press('End')
     for (let typed = EDIT.length; typed > 0; typed--) await page.keyboard.press('Backspace')
     await stage.saveWithCtrlS(page)
-    if (!await chapterView.merge(page).isVisible()) await chapterView.primary(page).click()
     await chapterView.merge(page).waitFor({ state: 'visible', timeout: 30_000 })
     assert.equal(await chapterView.merge(page).getByText(/合并后会自动复验/u).count(), 0, '合并的是恢复前的修稿：显示的虽是新审稿，合并视图也不说会复验')
     await shoot('r702-4-rereview-old-revision')
