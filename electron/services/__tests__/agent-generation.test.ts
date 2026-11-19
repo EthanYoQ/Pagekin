@@ -425,6 +425,31 @@ it.each<DamagedColumn>(['action_json','binding_json','usage_receipt_json'])('ADR
  expect(await failingCalls(enumerations(next))).toEqual([])
 })
 
+it('ADR-0030 后一轮的 open_key 读不出、绑定读得出：重开后这一轮仍按绑定认回，不再付费重发',async()=>{
+ const f=fixture(),first=await f.round(),action=first.rounds[0]!.actions[0]!
+ f.owner.agents.claimTool({ref:action.ref,confirmed:true})
+ f.owner.agents.finishTool({ref:action.ref,status:'completed',observation:'真实工具结果'})
+ const second=await f.owner.agents.executeRound({handle:first.handle,index:1})
+ f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(second.rounds[1]!.handle.runId)
+ const next=f.reopenStorage()
+ await next.agents.executeRound({handle:first.handle,index:1})
+ expect(f.spy).toHaveBeenCalledTimes(2)
+})
+
+it('ADR-0030 登记子流程那一轮的 open_key 读不出、绑定读得出：子流程照常开始',async()=>{
+ const f=fixture(async(_r,o)=>{o.onVisible({kind:'delta',text:'<tool_call>{"name":"start_workflow","arguments":{"workflow":"generate_blueprint"}}</tool_call>'});return {finishReason:'stop',usage:null}})
+ const result=await f.round(),ref=result.rounds[0]!.actions[0]!.ref
+ f.owner.agents.claimTool({ref,confirmed:true});const registration=f.owner.agents.registerWorkflow(ref)
+ f.db.prepare("UPDATE generation_runs SET open_key='{坏' WHERE run_id=?").run(result.handle.runId)
+ // 重开会把在途工具置为结果不明；改用进门封存一棵无关的树，让运行索引从库里重读。
+ vi.spyOn(console,'warn').mockImplementation(()=>{})
+ damageLedger(f.db,'budget_json',f.owner.agents.begin({...f.request,uiActionNonce:'无关的会话'}).handle)
+ expect(admitGenerationLedger(f.db).sealedRootCount).toBe(1)
+ const child=f.owner.begin({operation:'chapter-blueprint-directory',uiActionNonce:'子流程',modelId:'synthetic',promptKeys:['directory'],skillStages:[],selectedDraftIds:[],selectedFinalizedDraftIds:[],output:'structured-data',parentRootActionId:result.handle.rootActionId,agentWorkflowRegistrationId:registration.registrationId,
+   authorInputs:[{id:'directory:author-config',text:'{"totalChapters":80}'},{id:'directory:requested-range',text:'{"mode":"full","startChapter":1,"endChapter":5}'},{id:'planning:target-units',text:'600'}]})
+ expect(child.handle.rootActionId).toBe(result.handle.rootActionId)
+})
+
 it('ADR-0030 一轮 Agent 的根被封存：别的会话登记的子流程照常开始，封存那轮登记的子流程被拒绝',async()=>{
  const f=fixture(async(_r,o)=>{o.onVisible({kind:'delta',text:'<tool_call>{"name":"start_workflow","arguments":{"workflow":"generate_blueprint"}}</tool_call>'});return {finishReason:'stop',usage:null}})
  const registered=async(uiActionNonce:string)=>{

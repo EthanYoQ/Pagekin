@@ -12,6 +12,7 @@ import {
     type WritingLanguage,
 } from '../../src/shared/writing-language'
 import { resolveNarrativeThreadDormantThreshold } from '../../src/shared/narrative-thread'
+import { parseAiSources, type AiSources } from '../../src/shared/novel-config-ai-sources'
 
 /** project_core 表行类型 */
 export interface ProjectCoreRow {
@@ -136,6 +137,18 @@ export class ProjectCoreRepository {
         ).get('main') as ProjectCoreRow | undefined
 
         return row ? rowToData(row) : null
+    }
+
+    /** 不在 ProjectCoreData 里：设定整份参与哈希、比对和提示词。 */
+    static getAiSources(db = getProjectDb()): AiSources {
+        if (!db) return {}
+        const row = db.prepare("SELECT ai_sources FROM project_core WHERE id = 'main'").get() as { ai_sources: string } | undefined
+        return parseAiSources(row?.ai_sources)
+    }
+
+    static setAiSources(sources: AiSources, db = getProjectDb()): void {
+        if (!db) throw new Error('PROJECT_NOT_OPEN')
+        db.prepare("UPDATE project_core SET ai_sources = ? WHERE id = 'main'").run(JSON.stringify(parseAiSources(sources)))
     }
 
     /** 初始化项目配置（创建项目时调用） */

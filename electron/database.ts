@@ -6,6 +6,7 @@
  */
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
+import path from 'node:path'
 import { initializeLegacyBaselineSchema } from './migrations/baseline-schema'
 import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from './migrations/desktop-registry'
 import { SchemaMigrationError } from './migrations/registry'
@@ -58,6 +59,13 @@ export function initProjectDatabase(projectPath: string): LedgerAdmission {
   } catch (error) {
     database?.close(); deactivateProjectData(projectPath); throw error
   }
+}
+
+/** 只在开着的这本书的句柄上跑；书没开着时导出自己会拒绝，这里不动。 */
+export function admitWholeLedgerOfOpenProject(projectRoot: string): LedgerAdmission {
+  if (!projectDb || currentProjectPath === null || path.relative(path.resolve(currentProjectPath), path.resolve(projectRoot)) !== '')
+    return { sealedRootCount: 0 }
+  return admitGenerationLedger(projectDb, 'whole')
 }
 
 export interface ProjectDatabaseBeforeCloseContext { projectPath: string; database: BetterSqlite3.Database }

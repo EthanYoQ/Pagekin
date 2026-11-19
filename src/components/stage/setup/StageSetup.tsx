@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowRight, ChevronUp, LoaderCircle, RotateCcw, Sparkles } from 'lucide-react'
+import { useId, useState } from 'react'
+import { ArrowRight, LoaderCircle, Sparkles } from 'lucide-react'
 import type { NovelConfig } from '../../../shared/ipc-channels'
 import { countDraftUnits } from '../../../shared/draft-units'
 import {
@@ -9,6 +9,7 @@ import {
   resolveNarrativeThreadDormantThreshold,
 } from '../../../shared/narrative-thread'
 import { resolveWritingLanguage, type WritingLanguage } from '../../../shared/writing-language'
+import { aiSourceOf, configText, type AiSources } from '../../../shared/novel-config-ai-sources'
 import { sameProjectPathKey } from '../../../shared/project-session-context'
 import type { GeneratableField } from '../../../services/workflows/commands/generate-field.command'
 import { useEditorStore } from '../../../stores/editor-store'
@@ -28,12 +29,18 @@ import { InkDialog } from '../InkDialog'
 import ModelMissingNotice from '../ModelMissingNotice'
 import { commandLabel } from '../shortcut-keys'
 import { useModelMissing } from '../use-model-missing'
-import { MORE_FIELDS, ONE_MISSING_HINT, POV_OPTIONS, REQUIRED_NAMES, STRUCTURE_OPTIONS, type MoreField } from './setup-fields'
+import { ONE_MISSING_HINT, POV_OPTIONS, REQUIRED_NAMES, SHEET_FIELDS, STRUCTURE_OPTIONS, type SheetField } from './setup-fields'
 import { pluralEn } from '../../../shared/plural-en'
 
 type Form = ReturnType<typeof useNovelConfigForm>
-type Text = (zh: string, en: string) => string
-type PanelId = MoreField['id'] | 'advanced'
+type SheetMark = 'empty' | 'ai-filled' | 'ai-expanded' | null
+
+
+function sheetMark(config: NovelConfig, aiSources: AiSources | undefined, field: SheetField['id']): SheetMark {
+  if (!configText(config[field]).trim()) return 'empty'
+  const source = aiSourceOf(config, aiSources, field)
+  return source ? `ai-${source}` : null
+}
 
 /** 作者此刻在哪：活动标签、书房还是作品、设置页开没开。 */
 function authorPlace(): string {
@@ -41,7 +48,6 @@ function authorPlace(): string {
   return JSON.stringify([useEditorStore.getState().activeTabId, sidebarView, settingsOpen])
 }
 
-/** 设定页：一段核心大纲加类型、篇幅、目标读者三项必填即可往下走；其余设定收在「更多设定」与「高级」里。 */
 export default function StageSetup({ projectKey }: { projectKey: string }) {
   const currentProject = useProjectStore(s => s.currentProject)
   return <SetupSession key={novelConfigSessionKey(currentProject, projectKey)} projectKey={projectKey} />
@@ -125,138 +131,69 @@ function RequiredLabel({ htmlFor, id, name, missing, alert }: { htmlFor?: string
   )
 }
 
-function chipValue(field: MoreField, config: NovelConfig, text: Text): string {
-  if (field.kind === 'pov') {
-    const option = POV_OPTIONS.find(([value]) => value === (config.narrativePOV || 'third_limited'))
-    return option ? text(...option[1]) : ''
-  }
-  if (field.kind === 'structure') {
-    const option = STRUCTURE_OPTIONS.find(([value]) => value === (config.plotStructure || 'three_act'))
-    return option ? text(...option[1]) : ''
-  }
-  if (field.kind === 'line') return config.subGenre?.trim() ?? ''
-  return ''
-}
-
-function isFilled(field: MoreField, config: NovelConfig): boolean {
-  if (field.kind === 'pov' || field.kind === 'structure') return true
-  return Boolean((config[field.id] ?? '').trim())
-}
-
-/** 点开的面板可能落在底栏后面：挂上时滚进视野，焦点交给面板里的输入框。 */
-function useRevealOnOpen() {
-  const ref = useRef<HTMLElement>(null)
-  useEffect(() => {
-    const panel = ref.current
-    if (!panel) return
-    panel.scrollIntoView({ block: 'nearest' })
-    panel.querySelector<HTMLElement>('input, select, textarea')?.focus({ preventScroll: true })
-  }, [])
-  return ref
-}
-
-function MorePanel({ field, config, form, aiReason, onCollapse }: {
-  field: MoreField
-  config: NovelConfig
-  form: Form
-  aiReason: string | null
-  onCollapse: () => void
-}) {
+function SheetMarkLabel({ mark }: { mark: SheetMark }) {
   const text = useLocaleStore(s => s.text)
-  const ref = useRevealOnOpen()
-  const controlId = useId()
-  const name = text(...field.name)
-  let control: ReactNode
-  if (field.kind === 'pov') {
-    control = (
-      <select id={controlId} className="stage-select" value={config.narrativePOV || 'third_limited'}
-        onChange={event => form.update('narrativePOV', event.target.value as NovelConfig['narrativePOV'])}>
-        {POV_OPTIONS.map(([value, label]) => <option key={value} value={value}>{text(...label)}</option>)}
-      </select>
-    )
-  } else if (field.kind === 'structure') {
-    control = (
-      <select id={controlId} className="stage-select" value={config.plotStructure || 'three_act'}
-        onChange={event => form.update('plotStructure', event.target.value as NovelConfig['plotStructure'])}>
-        {STRUCTURE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{text(...label)}</option>)}
-      </select>
-    )
-  } else if (field.kind === 'line') {
-    control = (
-      <input id={controlId} className="pi-input" value={config.subGenre ?? ''} placeholder={text(...field.placeholder)}
-        onChange={event => form.update('subGenre', event.target.value)} />
-    )
-  } else {
-    control = (
-      <textarea id={controlId} className="stage-setup-textarea" value={config[field.id] ?? ''} placeholder={text(...field.placeholder)}
-        onChange={event => form.update(field.id, event.target.value)} />
-    )
-  }
+  if (!mark) return null
+  if (mark === 'empty') return <span className="stage-setup-mark" data-mark={mark}>{text('未填', 'Empty')}</span>
   return (
-    <section ref={ref} className="stage-setup-panel" aria-label={name}>
-      <div className="stage-setup-panel-head">
-        <div>
-          <label className="stage-setup-panel-title" htmlFor={controlId}>{name}</label>
-          {field.kind === 'text' && <p className="stage-setup-panel-desc">{text(...field.desc)}</p>}
-        </div>
-        {field.kind === 'text' && field.aiField && <AiButton field={field.aiField} label={name} form={form} disabledReason={aiReason} />}
-        <Button variant="icon" size="sm" aria-label={text(`收起「${name}」`, `Collapse “${name}”`)} onClick={onCollapse}>
-          <ChevronUp size={15} aria-hidden="true" />
-        </Button>
-      </div>
-      {control}
-      {field.kind === 'text' && field.aiField && <GenerateError field={field.aiField} label={name} form={form} />}
-    </section>
+    <span className="stage-setup-mark" data-mark={mark} data-ai>
+      <Sparkles size={12} aria-hidden="true" />
+      {mark === 'ai-filled' ? text('AI 填写', 'AI-written') : text('AI 扩写', 'AI-expanded')}
+    </span>
   )
 }
 
-function AdvancedPanel({ config, form, onCollapse }: { config: NovelConfig; form: Form; onCollapse: () => void }) {
+function SheetRow({ field, config, aiSources, form, aiReason }: { field: SheetField; config: NovelConfig; aiSources: AiSources | undefined; form: Form; aiReason: string | null }) {
   const text = useLocaleStore(s => s.text)
-  const ref = useRevealOnOpen()
-  const inputId = useId()
-  const threshold = resolveNarrativeThreadDormantThreshold(config.narrativeThreadDormantChapterThreshold)
+  const controlId = useId()
+  const descId = useId()
+  const name = text(...field.name)
+  const mark = sheetMark(config, aiSources, field.id)
   return (
-    <section ref={ref} className="stage-setup-panel" aria-label={text('高级', 'Advanced')}>
-      <div className="stage-setup-panel-head">
-        <div>
-          <p className="stage-setup-panel-title">{text('高级', 'Advanced')}</p>
-          <p className="stage-setup-panel-desc">{text('只影响这部作品。', 'Applies to this book only.')}</p>
-        </div>
-        <Button variant="icon" size="sm" aria-label={text('收起「高级」', 'Collapse “Advanced”')} onClick={onCollapse}>
-          <ChevronUp size={15} aria-hidden="true" />
-        </Button>
+    <div className="stage-setup-row" data-empty={mark === 'empty' || undefined}>
+      <div className="stage-setup-row-side">
+        <label className="stage-setup-row-name" htmlFor={controlId}>{name}</label>
+        <SheetMarkLabel mark={mark} />
       </div>
-      <div className="stage-setup-adv-row">
-        <div>
-          <label className="stage-setup-label" htmlFor={inputId}>{text('伏笔沉寂提醒（章）', 'Dormant thread reminder (chapters)')}</label>
-          <p className="stage-setup-panel-desc">{text(
-            `一条伏笔连续这么多章没有推进，剧情页会提醒你。默认 ${DEFAULT_NARRATIVE_THREAD_DORMANT_THRESHOLD} 章。`,
-            `The plot page flags a thread that has not moved for this many chapters. Default ${DEFAULT_NARRATIVE_THREAD_DORMANT_THRESHOLD}.`,
-          )}</p>
-        </div>
-        <div className="stage-setup-adv-ctl">
-          <NumberInput id={inputId} value={config.narrativeThreadDormantChapterThreshold as unknown === '' ? '' : threshold}
-            fallback={DEFAULT_NARRATIVE_THREAD_DORMANT_THRESHOLD} min={MIN_NARRATIVE_THREAD_DORMANT_THRESHOLD} max={MAX_NARRATIVE_THREAD_DORMANT_THRESHOLD} label={text('伏笔沉寂提醒（章）', 'Dormant thread reminder (chapters)')}
-            onChange={value => form.update('narrativeThreadDormantChapterThreshold', (value === '' ? '' : resolveNarrativeThreadDormantThreshold(value)) as number)} />
-          <Button variant="text" size="sm" disabled={threshold === DEFAULT_NARRATIVE_THREAD_DORMANT_THRESHOLD}
-            onClick={() => form.update('narrativeThreadDormantChapterThreshold', DEFAULT_NARRATIVE_THREAD_DORMANT_THRESHOLD)}>
-            <RotateCcw size={13} aria-hidden="true" />{text('恢复默认', 'Restore default')}
-          </Button>
-        </div>
+      <div className="stage-setup-row-main">
+        <textarea id={controlId} className="stage-setup-row-input" rows={1} value={configText(config[field.id])}
+          placeholder={text(...field.placeholder)} aria-describedby={descId} onChange={event => form.update(field.id, event.target.value)} />
+        <p id={descId} className="stage-setup-row-desc">{text(...field.desc)}</p>
+        {field.aiField && <GenerateError field={field.aiField} label={name} form={form} />}
       </div>
-    </section>
+      <div className="stage-setup-row-act">
+        {field.aiField && <AiButton field={field.aiField} label={name} form={form} disabledReason={aiReason} />}
+      </div>
+    </div>
+  )
+}
+
+/** 下拉的值不在选项里（旧数据或坏数据）时，把原值作为一项留着，不悄悄显示成第一项。 */
+function OptionSelect<V extends string>({ id, value, options, onChange }: {
+  id: string
+  value: unknown
+  options: readonly (readonly [V, readonly [string, string]])[]
+  onChange: (value: V) => void
+}) {
+  const text = useLocaleStore(s => s.text)
+  const current = configText(value) || options[0][0]
+  return (
+    <select id={id} className="stage-select" value={current} onChange={event => onChange(event.target.value as V)}>
+      {!options.some(([option]) => option === current) && <option value={current}>{current}</option>}
+      {options.map(([option, label]) => <option key={option} value={option}>{text(...label)}</option>)}
+    </select>
   )
 }
 
 function SetupSession({ projectKey }: { projectKey: string }) {
   const text = useLocaleStore(s => s.text)
   const form = useNovelConfigForm(projectKey)
+  const aiSources = useProjectStore(s => s.currentProject?.aiSources)
   const modelMissing = useModelMissing('planning')
   const filling = useWorkflowStore(s => s.activeRuns.some(run => run.type === 'config_generation' && sameProjectPathKey(run.projectPath, projectKey)))
-  const [open, setOpen] = useState<ReadonlySet<PanelId>>(() => new Set())
   const [expandFields, setExpandFields] = useState<string[] | null>(null)
   const [left, setLeft] = useState<ReadonlySet<SetupField>>(() => new Set())
-  const outlineId = useId()
+  const baseId = useId()
   const hintId = useId()
   const lengthId = useId()
   const fillReasonId = useId()
@@ -278,25 +215,29 @@ function SetupSession({ projectKey }: { projectKey: string }) {
   const leave = (field: SetupField) => {
     if (isMissing(field) && !left.has(field)) setLeft(previous => new Set(previous).add(field))
   }
-  const toggle = (id: PanelId) => setOpen(previous => {
-    const next = new Set(previous)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    return next
-  })
   const hint = missing.length === 0
     ? text('设定已齐，可以往下走', 'Setup is complete. Ready for the next step.')
     : missing.length === 1
       ? text(...ONE_MISSING_HINT[missing[0]])
       : text(`还差 ${missing.length} 项：${missing.map(field => REQUIRED_NAMES[field][0]).join('、')}`,
         `${missing.length} left: ${missing.map(field => REQUIRED_NAMES[field][1]).join(', ')}`)
+  const outline = configText(config.coreOutline)
   const aiReason = modelMissing ? text('先在设置里添加 AI 模型', 'Add an AI model in Settings first') : null
-  const fillReason = aiReason ?? (config.coreOutline.trim() ? null : text('先写核心大纲，AI 按它补全其余设定', 'Write the core outline first; AI fills in the rest from it'))
+  const fillReason = aiReason ?? (outline.trim() ? null : text('先写核心大纲，AI 按它补全其余设定', 'Write the core outline first; AI fills in the rest from it'))
+  const marks = SHEET_FIELDS.map(field => sheetMark(config, aiSources, field.id))
+  const markCount = (mark: SheetMark) => marks.filter(item => item === mark).length
+  const sheetCount = [
+    text(`${SHEET_FIELDS.length} 项`, `${SHEET_FIELDS.length} ${pluralEn(SHEET_FIELDS.length, 'item')}`),
+    markCount('empty') && text(`${markCount('empty')} 项未填`, `${markCount('empty')} empty`),
+    markCount('ai-filled') && text(`${markCount('ai-filled')} 项 AI 填写`, `${markCount('ai-filled')} AI-written`),
+    markCount('ai-expanded') && text(`${markCount('ai-expanded')} 项 AI 扩写`, `${markCount('ai-expanded')} AI-expanded`),
+  ].filter(Boolean).join(' · ')
+  const threshold = resolveNarrativeThreadDormantThreshold(config.narrativeThreadDormantChapterThreshold)
 
   const startFill = () => {
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session) return
-    if (startConfigGeneration({ idea: config.coreOutline, projectSession: session, onGenerated: form.applyGeneratedTo(session) })) setExpandFields(null)
+    if (startConfigGeneration({ idea: outline, projectSession: session, onGenerated: form.applyGeneratedTo(session) })) setExpandFields(null)
   }
   const requestFill = () => {
     const fields = configFieldsToExpand(config, text)
@@ -317,8 +258,8 @@ function SetupSession({ projectKey }: { projectKey: string }) {
     navigate({ kind: 'stage', stage: 'architecture' })
   }
 
-  const genre = config.genre
-  const audience = config.targetAudience
+  const genre = configText(config.genre)
+  const audience = configText(config.targetAudience)
   return (
     <div className="stage-setup">
       <div className="stage-setup-scroll">
@@ -328,45 +269,19 @@ function SetupSession({ projectKey }: { projectKey: string }) {
               <span className="stage-setup-numeral" aria-hidden="true">i</span>
               <span className="stage-eyebrow">{text('第一步 · 设定', 'Step one · Setup')}</span>
             </div>
-            <h1 className="stage-setup-title">{text('用一两句话，说说这个故事。', 'Tell this story in a sentence or two.')}</h1>
+            <h1 className="stage-setup-title">{text('先定下这本书的设定。', 'Set up this book.')}</h1>
             <p className="stage-setup-lede">{text(
-              '只要这一段和下面三项，就能往下走。其余设定可以交给 AI 补全，之后随时能改。',
-              'This paragraph and the three fields below are all you need to move on. AI can fill in the rest, and you can change anything later.',
+              '类型、篇幅、目标读者和核心大纲必填。其余可以空着，写好核心大纲后交给 AI 补全，之后随时能改。',
+              'Genre, length, target readers and the core outline are required. Leave the rest blank and let AI fill it in from the outline; you can change anything later.',
             )}</p>
           </header>
 
           {modelMissing && <ModelMissingNotice />}
 
-          <section className="stage-setup-outline" data-missing={isMissing('coreOutline') || undefined}>
-            <div className="stage-setup-outline-head">
-              <RequiredLabel htmlFor={outlineId} name={text('核心大纲', 'Core outline')} missing={isMissing('coreOutline')} alert={alert('coreOutline')} />
-              <AiButton field="coreOutline" label={text('核心大纲', 'Core outline')} form={form} disabledReason={aiReason} />
-            </div>
-            <textarea
-              id={outlineId}
-              className="stage-setup-outline-input"
-              value={config.coreOutline}
-              placeholder={text('谁，在哪里，想要什么，又被什么挡住了路。', 'Who, where, what they want, and what stands in the way.')}
-              onChange={event => form.update('coreOutline', event.target.value)}
-              onBlur={() => leave('coreOutline')}
-            />
-            <div className="stage-setup-outline-foot">
-              <label className="stage-setup-language">
-                {text('写作语言', 'Writing language')}
-                <select value={resolveWritingLanguage(config.writingLanguage)} onChange={event => form.update('writingLanguage', event.target.value as WritingLanguage)}>
-                  <option value="zh-CN">{text('简体中文', 'Simplified Chinese')}</option>
-                  <option value="en-US">English</option>
-                </select>
-              </label>
-              <span className="pi-num-ui">{text(`${countDraftUnits(config.coreOutline)} 字`, `${countDraftUnits(config.coreOutline)} ${pluralEn(countDraftUnits(config.coreOutline), 'word')}`)}</span>
-            </div>
-            <GenerateError field="coreOutline" label={text('核心大纲', 'Core outline')} form={form} />
-          </section>
-
-          <div className="stage-setup-required">
+          <section className="stage-setup-basics" aria-label={text('基本设定', 'Basics')}>
             <div className="stage-setup-field">
-              <RequiredLabel htmlFor={`${outlineId}-genre`} name={text('类型', 'Genre')} missing={isMissing('genre')} alert={alert('genre')} />
-              <select id={`${outlineId}-genre`} className="stage-select" data-placeholder={!genre || undefined} value={genre}
+              <RequiredLabel htmlFor={`${baseId}-genre`} name={text('类型', 'Genre')} missing={isMissing('genre')} alert={alert('genre')} />
+              <select id={`${baseId}-genre`} className="stage-select" data-placeholder={!genre || undefined} value={genre}
                 onChange={event => form.update('genre', event.target.value)} onBlur={() => leave('genre')}>
                 <option value="" disabled>{text('请选择', 'Choose')}</option>
                 {genre && !NOVEL_GENRES.includes(genre) && <option value={genre}>{genre}</option>}
@@ -386,36 +301,78 @@ function SetupSession({ projectKey }: { projectKey: string }) {
               </div>
             </div>
             <div className="stage-setup-field">
-              <RequiredLabel htmlFor={`${outlineId}-audience`} name={text('目标读者', 'Target readers')} missing={isMissing('targetAudience')} alert={alert('targetAudience')} />
-              <select id={`${outlineId}-audience`} className="stage-select" data-placeholder={!audience || undefined} value={audience}
+              <RequiredLabel htmlFor={`${baseId}-audience`} name={text('目标读者', 'Target readers')} missing={isMissing('targetAudience')} alert={alert('targetAudience')} />
+              <select id={`${baseId}-audience`} className="stage-select" data-placeholder={!audience || undefined} value={audience}
                 onChange={event => form.update('targetAudience', event.target.value)} onBlur={() => leave('targetAudience')}>
                 <option value="" disabled>{text('请选择', 'Choose')}</option>
                 {audience && !Object.hasOwn(AUDIENCE_EN, audience) && <option value={audience}>{audience}</option>}
                 {Object.entries(AUDIENCE_EN).map(([value, labelEn]) => <option key={value} value={value}>{text(value, labelEn)}</option>)}
               </select>
             </div>
-          </div>
+            <div className="stage-setup-field">
+              <label className="stage-setup-label" htmlFor={`${baseId}-pov`}>{text('叙事视角', 'Point of view')}</label>
+              <OptionSelect id={`${baseId}-pov`} value={config.narrativePOV} options={POV_OPTIONS} onChange={value => form.update('narrativePOV', value)} />
+            </div>
+            <div className="stage-setup-field">
+              <label className="stage-setup-label" htmlFor={`${baseId}-structure`}>{text('故事结构', 'Story structure')}</label>
+              <OptionSelect id={`${baseId}-structure`} value={config.plotStructure} options={STRUCTURE_OPTIONS} onChange={value => form.update('plotStructure', value)} />
+            </div>
+            <div className="stage-setup-field">
+              <label className="stage-setup-label" htmlFor={`${baseId}-sub`}>{text('细分类型', 'Subgenre')}</label>
+              <input id={`${baseId}-sub`} className="pi-input" value={configText(config.subGenre)}
+                placeholder={text('如：修仙/重生/末世', 'e.g. cultivation / rebirth')} onChange={event => form.update('subGenre', event.target.value)} />
+            </div>
+            <div className="stage-setup-field">
+              <label className="stage-setup-label" htmlFor={`${baseId}-language`}>{text('写作语言', 'Writing language')}</label>
+              <select id={`${baseId}-language`} className="stage-select" value={resolveWritingLanguage(config.writingLanguage)}
+                onChange={event => form.update('writingLanguage', event.target.value as WritingLanguage)}>
+                <option value="zh-CN">{text('简体中文', 'Simplified Chinese')}</option>
+                <option value="en-US">English</option>
+              </select>
+            </div>
+            <div className="stage-setup-field">
+              <label className="stage-setup-label" htmlFor={`${baseId}-thread`}>{text('伏笔沉寂提醒', 'Dormant thread reminder')}</label>
+              <div className="stage-setup-length">
+                <NumberInput id={`${baseId}-thread`} value={config.narrativeThreadDormantChapterThreshold as unknown === '' ? '' : threshold}
+                  fallback={DEFAULT_NARRATIVE_THREAD_DORMANT_THRESHOLD} min={MIN_NARRATIVE_THREAD_DORMANT_THRESHOLD} max={MAX_NARRATIVE_THREAD_DORMANT_THRESHOLD}
+                  label={text('伏笔沉寂提醒（章）', 'Dormant thread reminder (chapters)')}
+                  onChange={value => form.update('narrativeThreadDormantChapterThreshold', (value === '' ? '' : resolveNarrativeThreadDormantThreshold(value)) as number)} />
+                <span>{text('章没推进就提醒', 'chapters idle')}</span>
+              </div>
+              <p className="stage-setup-field-note">{text(
+                `在剧情页标出。默认 ${DEFAULT_NARRATIVE_THREAD_DORMANT_THRESHOLD} 章，只影响这部作品。`,
+                `Flagged on the plot page. Default ${DEFAULT_NARRATIVE_THREAD_DORMANT_THRESHOLD}; this book only.`,
+              )}</p>
+            </div>
+          </section>
 
-          <div className="stage-setup-chips" role="group" aria-label={text('更多设定', 'More settings')}>
-            <span className="stage-setup-chips-label" aria-hidden="true">{text('更多设定', 'More settings')}</span>
-            {MORE_FIELDS.map(field => {
-              const value = chipValue(field, config, text)
-              return (
-                <button key={field.id} type="button" className="stage-chip" aria-expanded={open.has(field.id)}
-                  data-filled={isFilled(field, config) || undefined} onClick={() => toggle(field.id)}>
-                  {text(...field.name)}{value && <span className="stage-chip-value"> · {value}</span>}
-                </button>
-              )
-            })}
-            <button type="button" className="stage-chip" data-dashed aria-expanded={open.has('advanced')} onClick={() => toggle('advanced')}>
-              {text('高级', 'Advanced')}
-            </button>
-          </div>
+          <section className="stage-setup-sheet" aria-labelledby={`${baseId}-sheet`}>
+            <div className="stage-setup-sheet-head">
+              <h2 id={`${baseId}-sheet`} className="stage-setup-sheet-title">{text('设定细则', 'Details')}</h2>
+              <span className="stage-setup-sheet-count" role="status">{sheetCount}</span>
+            </div>
+            {SHEET_FIELDS.map(field => <SheetRow key={field.id} field={field} config={config} aiSources={aiSources} form={form} aiReason={aiReason} />)}
+          </section>
 
-          {MORE_FIELDS.filter(field => open.has(field.id)).map(field => (
-            <MorePanel key={field.id} field={field} config={config} form={form} aiReason={aiReason} onCollapse={() => toggle(field.id)} />
-          ))}
-          {open.has('advanced') && <AdvancedPanel config={config} form={form} onCollapse={() => toggle('advanced')} />}
+          <section className="stage-setup-outline" data-missing={isMissing('coreOutline') || undefined}>
+            <div className="stage-setup-outline-head">
+              <RequiredLabel htmlFor={baseId} name={text('核心大纲', 'Core outline')} missing={isMissing('coreOutline')} alert={alert('coreOutline')} />
+              <AiButton field="coreOutline" label={text('核心大纲', 'Core outline')} form={form} disabledReason={aiReason} />
+            </div>
+            <textarea
+              id={baseId}
+              className="stage-setup-outline-input"
+              value={outline}
+              placeholder={text('谁，在哪里，想要什么，又被什么挡住了路。', 'Who, where, what they want, and what stands in the way.')}
+              onChange={event => form.update('coreOutline', event.target.value)}
+              onBlur={() => leave('coreOutline')}
+            />
+            <div className="stage-setup-outline-foot">
+              <span>{text('用一两句话说说这个故事，AI 按它补全其余设定。', 'Tell the story in a sentence or two; AI fills in the rest from it.')}</span>
+              <span className="pi-num-ui">{text(`${countDraftUnits(outline)} 字`, `${countDraftUnits(outline)} ${pluralEn(countDraftUnits(outline), 'word')}`)}</span>
+            </div>
+            <GenerateError field="coreOutline" label={text('核心大纲', 'Core outline')} form={form} />
+          </section>
         </div>
       </div>
 

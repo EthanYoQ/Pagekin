@@ -71,7 +71,7 @@ function project(id: string, writingLanguage: 'zh-CN' | 'en-US'): ProjectData {
 }
 
 function writingLanguageSelect(): HTMLSelectElement {
-  const select = document.querySelector('.stage-setup-language select')
+  const select = [...document.querySelectorAll('label')].find(label => /^(写作语言|Writing language)$/.test(label.textContent ?? ''))?.control
   if (!(select instanceof HTMLSelectElement)) throw new Error('Missing project writing language selector')
   return select
 }
@@ -243,7 +243,7 @@ describe('project writing language', () => {
     expect(useProjectStore.getState().currentProject?.novelConfig.coreOutline).toBe(originalOutline)
   })
 
-  it('shows the project-scoped dormant-thread threshold with its range, default, and a bilingual reset', async () => {
+  it('shows the project-scoped dormant-thread threshold with its range and default in both languages', async () => {
     const currentProject = project('quality-setting', 'zh-CN')
     currentProject.novelConfig.narrativeThreadDormantChapterThreshold = 9
     useLocaleStore.setState({ locale: 'zh-CN' })
@@ -255,24 +255,19 @@ describe('project writing language', () => {
     })
 
     await mount(<StageSetup projectKey={currentProject.path} />)
-    await act(async () => page.getByRole('button', { name: /^高级/ }).click())
-    await expect.element(page.getByText('伏笔沉寂提醒（章）', { exact: true })).toBeVisible()
-    await expect.element(page.getByText('一条伏笔连续这么多章没有推进，剧情页会提醒你。默认 3 章。', { exact: true })).toBeVisible()
-    const threshold = document.querySelector('.stage-setup-adv-ctl input')
+    await expect.element(page.getByText('伏笔沉寂提醒', { exact: true })).toBeVisible()
+    await expect.element(page.getByText('在剧情页标出。默认 3 章，只影响这部作品。', { exact: true })).toBeVisible()
+    const threshold = page.getByRole('spinbutton', { name: '伏笔沉寂提醒（章）' }).element()
     if (!(threshold instanceof HTMLInputElement)) throw new Error('Missing narrative thread threshold input')
     expect({ value: threshold.value, min: threshold.min, max: threshold.max }).toEqual({ value: '9', min: '1', max: '50' })
-
-    await act(async () => page.getByRole('button', { name: '恢复默认' }).click())
-    expect(useProjectStore.getState().currentProject?.novelConfig.narrativeThreadDormantChapterThreshold).toBe(3)
-    expect(threshold.value).toBe('3')
 
     await act(async () => {
       useLocaleStore.setState({ locale: 'en-US' })
       root?.render(<StageSetup projectKey={currentProject.path} />)
     })
-    await expect.element(page.getByText('Dormant thread reminder (chapters)', { exact: true })).toBeVisible()
-    await expect.element(page.getByText('The plot page flags a thread that has not moved for this many chapters. Default 3.', { exact: true })).toBeVisible()
-    await expect.element(page.getByRole('button', { name: 'Restore default' })).toBeDisabled()
+    await expect.element(page.getByText('Dormant thread reminder', { exact: true })).toBeVisible()
+    await expect.element(page.getByText('Flagged on the plot page. Default 3; this book only.', { exact: true })).toBeVisible()
+    await expect.element(page.getByRole('spinbutton', { name: 'Dormant thread reminder (chapters)' })).toHaveValue(9)
   })
 
   it('propagates configuration save failure to the exit gate', async () => {

@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { openCanonicalProjectFixture } from '../../../test/helpers/canonical-project-fixture'
 import { reviewCycleDatabase, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
-import { verifyM03ReviewCycleById } from '../../migrations/m03-review-cycle'
+import { inspectM03ReviewCycles, verifyM03ReviewCycleById } from '../../migrations/m03-review-cycle'
 import { getProjectDatabasePath } from '../../services/project-data-locator'
 import { GenerationRunRepository, textHash, type OpenGenerationRunRequest } from '../generation-run-repository'
 import { ADMITTED_LEDGER_CELLS, admitGenerationLedger, GENERATION_LEDGER_UNREADABLE } from '../generation-ledger-admission'
-import { uiActionNonceOfOpenKey } from '../generation-run-index'
+import { clickOfOpenKey } from '../generation-run-index'
 
 type Db = import('better-sqlite3').Database
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -370,10 +370,10 @@ describe('打开作品时封存读不出的生成记录', () => {
 
   it('open_key 的两层都必须是数组，凑出下标 2 的对象不算读得出', () => {
     const inner = JSON.stringify(['project', 'chapter-draft', 'nonce', 'hash'])
-    expect(uiActionNonceOfOpenKey(JSON.stringify([inner, null]))).toBe('nonce')
-    expect(uiActionNonceOfOpenKey(JSON.stringify({ 0: JSON.stringify({ 2: 'forged' }) }))).toBeUndefined()
-    expect(uiActionNonceOfOpenKey(JSON.stringify([JSON.stringify({ 2: 'forged' }), null]))).toBeUndefined()
-    expect(uiActionNonceOfOpenKey('{坏')).toBeUndefined()
+    expect(clickOfOpenKey(JSON.stringify([inner, null]))?.uiActionNonce).toBe('nonce')
+    expect(clickOfOpenKey(JSON.stringify({ 0: JSON.stringify({ 2: 'forged' }) }))?.uiActionNonce).toBeUndefined()
+    expect(clickOfOpenKey(JSON.stringify([JSON.stringify({ 2: 'forged' }), null]))?.uiActionNonce).toBeUndefined()
+    expect(clickOfOpenKey('{坏')?.uiActionNonce).toBeUndefined()
   })
 })
 
@@ -391,6 +391,22 @@ describe('被审修循环引用的根被封存', () => {
       expect(verifyM03ReviewCycleById(db, cycles[0]!.cycle_id)).toBe(false)
       expect(verifyM03ReviewCycleById(db, cycles[1]!.cycle_id)).toBe(true)
       expect(db.pragma('foreign_key_check')).toEqual([])
+    } finally { db.close() }
+  })
+
+  it('静止的审稿树里绑定读不出、没被封存：M03 只判这一条循环验不过，不抛错，其余循环照常', () => {
+    const db = reviewCycleDatabase()
+    try {
+      seedReviewedBook(db, 2)
+      db.prepare("UPDATE generation_roots SET action_json=json_set(action_json,'$.status','paused')").run()
+      const cycles = db.prepare('SELECT cycle_id,root_action_id FROM review_cycles ORDER BY cycle_id').all() as { cycle_id: string; root_action_id: string }[]
+      db.prepare("UPDATE generation_runs SET binding_json='{坏' WHERE root_action_id=?").run(cycles[0]!.root_action_id)
+
+      expect(admitGenerationLedger(db).sealedRootCount).toBe(0)
+
+      expect(verifyM03ReviewCycleById(db, cycles[0]!.cycle_id)).toBe(false)
+      expect(verifyM03ReviewCycleById(db, cycles[1]!.cycle_id)).toBe(true)
+      expect(inspectM03ReviewCycles(db).unprovable.map(item => item.cycleId)).toEqual([cycles[0]!.cycle_id])
     } finally { db.close() }
   })
 })

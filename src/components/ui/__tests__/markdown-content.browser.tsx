@@ -38,3 +38,11 @@ describe('模型输出里的思考过程', () => {
     expect(host.querySelector('button')?.textContent).toBe(heading)
   })
 })
+
+describe('Windows 换行（CRLF）的文本', () => {
+  it('编号列表每一行都按编号行显示', async () => {
+    await act(async () => root.render(<MarkdownContent content={'1. 主角入城\r\n2. 盟友背叛\r\n3. 夜探档案馆'} />))
+    expect([...host.querySelectorAll('.assistant-content > div')].map(row => row.textContent))
+      .toEqual(['1.主角入城', '2.盟友背叛', '3.夜探档案馆'])
+  })
+})

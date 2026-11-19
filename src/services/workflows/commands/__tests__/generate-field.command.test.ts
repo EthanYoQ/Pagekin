@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useProjectStore } from '../../../../stores/project-store'
+import { aiSourceOf } from '../../../../shared/novel-config-ai-sources'
 import { useLLMStore } from '../../../../stores/llm-store'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import { GenerateFieldCommand as RuntimeGenerateFieldCommand } from '../generate-field.command'
@@ -163,6 +164,26 @@ describe('GenerateFieldCommand project identity', () => {
     expect(observedPrompts.join('\n')).toContain(authorText)
     expect(useProjectStore.getState().currentProject?.novelConfig.worldSetting)
       .toBe(`${authorText}\n\n${addition}`)
+    const { novelConfig, aiSources } = useProjectStore.getState().currentProject!
+    expect(aiSourceOf(novelConfig, aiSources, 'worldSetting')).toBe('expanded')
+    expect(novelConfig).not.toHaveProperty('aiSources')
+  })
+
+  it('模型没补内容时，单项生成后会话里的设定与重开作品读出的逐字相同，草稿恢复不判为设定已变', async () => {
+    const saved = { genre: '悬疑', worldSetting: '旧港以潮汐计时。' }
+    useProjectStore.setState({
+      currentProject: { ...project(projectAPath), novelConfig: { ...saved } } as never,
+      saveProject: vi.fn(async () => true),
+    })
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: vi.fn(async (_messages, streamCallbacks) => {
+        streamCallbacks.onDone?.(saved.worldSetting, undefined, 'stop')
+        return 'field-request'
+      }) })
+
+    await new GenerateFieldCommand('worldSetting').execute({ step: {}, context, callbacks })
+
+    expect(JSON.stringify(useProjectStore.getState().currentProject!.novelConfig)).toBe(JSON.stringify(saved))
   })
 
   it('sends a complete English configuration without Chinese model instructions', async () => {
@@ -291,6 +312,7 @@ describe('GenerateFieldCommand project identity', () => {
     expect(updateNovelConfig).toHaveBeenCalledWith({
       globalGuidance: `作者原有长篇要求，不受生成规则条数限制。\n\n${replacement}`,
     }, context.projectSession)
+    expect(useProjectStore.getState().currentProject!.aiSources).toEqual({ globalGuidance: { kind: 'expanded', hash: expect.any(String) } })
     expect(saveProject).toHaveBeenCalledOnce()
   })
 
@@ -315,6 +337,7 @@ describe('GenerateFieldCommand project identity', () => {
 
     expect(callLlm).toHaveBeenCalledTimes(2)
     expect(updateNovelConfig).toHaveBeenCalledWith({ globalGuidance: replacement }, context.projectSession)
+    expect(useProjectStore.getState().currentProject!.aiSources).toEqual({ globalGuidance: { kind: 'filled', hash: expect.any(String) } })
     expect(saveProject).toHaveBeenCalledOnce()
   })
 

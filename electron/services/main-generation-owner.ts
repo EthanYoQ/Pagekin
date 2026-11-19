@@ -12,8 +12,9 @@ import type { CreativeStrategy } from '../../src/shared/reasoning-types'
 import { TERMINAL_PROVIDER_FAILURE_CODES, rootBudgetExhausted, tokenLiability } from '../../src/shared/generation-contract'
 import { DRAFT_RECONCILE_PURPOSE, stripDraftReconciliationBlock, withoutDraftReconciliationArtifacts } from '../../src/shared/draft-reconciliation'
 import { DRAFT_SHORT_OUTLINE_PURPOSE, draftShortOutlineBlock, stripDraftShortOutlineBlock } from '../../src/shared/draft-short-outline'
-import { GenerationRunRepository, UNSEALED_ROOT, textHash, type DurableGenerationRun, type RunBinding, type GenerationExecutionReceipt } from '../repositories/generation-run-repository'
+import { GenerationRunRepository, textHash, type DurableGenerationRun, type RunBinding, type GenerationExecutionReceipt } from '../repositories/generation-run-repository'
 import { candidateRunIds, runIndexOf } from '../repositories/generation-run-index'
+import { isLedgerUnreadable } from '../repositories/generation-ledger-admission'
 import { getCurrentProjectPath } from '../database'
 import { ModelExecutionLeaseRegistry, createModelExecutionLeaseReceipt } from './model-execution-lease'
 import { createGenerationRunService, GENERATION_STOPPED, type GenerationRunServiceDependencies } from './generation-run-service'
@@ -28,7 +29,7 @@ import { decodeBlueprintAuthorPayload } from '../../src/shared/blueprint-semanti
 import { GenerationDraftEffects, assertGenerationBatchIntent } from './generation-draft-effects'
 import { CharacterProposalService } from './character-proposal-service'
 import { proveCharacterProposal } from './generation-character-proposal-proof'
-import { compareGenerationSourceBindings, planningBlueprintSourceHash, recordedModelName } from './generation-source-binding'
+import { compareGenerationSourceBindings, planningBlueprintSourceHash, PROJECT_CORE_NON_SOURCE_COLUMNS, recordedModelName } from './generation-source-binding'
 import type { GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge'
 import type { PrepareDraftContextRequest, PreparedDraftContext } from '../../src/shared/generation-owner-contract'
 import { FinalizedCharacterGeneration } from './finalized-character-generation'
@@ -369,16 +370,23 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         activeElapsedMs: budget.activeElapsedMs, blockedCode: budget.blockedCode }, artifacts, candidates,
       unsavedTails: service.readUnsavedTails().filter(tail => budget.attempts.some(attempt => attempt.attemptId === tail.attemptId)) }
   }
-  /** 这几种操作的运行，新的在前，略去 skip 里的；只从库里取身份、状态与操作类型，不解析整份冻结上下文。 */
-  const runSummaries = (operations: readonly string[], skip?: ReadonlySet<string>) => (deps.database.prepare(`SELECT run_id,root_action_id,status,
-      json_extract(binding_json,'$.projectId','$.epoch','$.sourceManifest.operation','$.sourceManifest.batchId','$.sourceManifest.batchIntent') AS identity
-      FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) AND root_action_id IN (SELECT root_action_id FROM generation_roots WHERE ${UNSEALED_ROOT})
-      ORDER BY created_at_ms DESC, rowid DESC`).all(candidateRunIds(runIndexOf(deps.database).lookup(click => operations.includes(click.operation)), skip)) as { run_id: string; root_action_id: string; status: MainGenerationRunView['status']; identity: string }[])
-    .map(row => {
-      const [projectId, epoch, operation, batchId, batchIntent] = JSON.parse(row.identity) as [string, string, string | null, string | null, unknown]
-      return { handle: { projectId, epoch, rootActionId: row.root_action_id, runId: row.run_id }, status: row.status, operation: operation ?? undefined,
-        batchId, batchRoot: Boolean(batchIntent) }
-    }).filter(run => run.handle.projectId === deps.projectId && operations.includes(run.operation ?? ''))
+  const newestFirst = (candidates: string) => deps.database.prepare('SELECT run_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) ORDER BY created_at_ms DESC, rowid DESC')
+    .pluck().all(candidates) as string[]
+  /** 读不出的运行略过并调 unreadable，列举本身不报错，只有读写它的操作才报错。 */
+  const runSummaries = (operations: readonly string[], skip?: ReadonlySet<string>, unreadable?: () => void) =>
+    newestFirst(candidateRunIds(runIndexOf(deps.database).lookup(click => operations.includes(click.operation)), { skip, unidentified: 'include' })).flatMap(runId => {
+      const run = repository.runIdentity(runId)
+      if (!run) { unreadable?.(); return [] }
+      const { projectId, epoch, operation } = run
+      if (projectId !== deps.projectId || epoch === undefined || operation === undefined || !operations.includes(operation)) return []
+      return { handle: { projectId, epoch, rootActionId: run.rootActionId, runId }, status: run.status as MainGenerationRunView['status'],
+        operation, batchId: run.batchId, batchRoot: run.batchRoot }
+    })
+  /** 同一次点击开出的树里的运行：按根认点击（根的 action_json 在进门清单里），封存的根是中性值，认不上。 */
+  const sameClick = (uiActionNonce: string, operations: readonly string[]) => deps.database.prepare(`SELECT r.run_id FROM generation_runs r
+      JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE json_extract(g.action_json,'$.projectId')=?
+      AND json_extract(g.action_json,'$.uiActionNonce')=? AND json_extract(g.action_json,'$.operation') IN (SELECT value FROM json_each(?))`)
+    .pluck().all(deps.projectId, uiActionNonce, JSON.stringify(operations)) as string[]
   const list = (operations: readonly string[]): MainGenerationRunSummary[] => {
     assertCurrent()
     if (!Array.isArray(operations) || !operations.length || operations.length > 16 || operations.some(operation => typeof operation !== 'string' || !operation))
@@ -785,7 +793,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   const plotOutlineTargetCurrent = (run: DurableGenerationRun, outline: PlotOutlineProgress, target: string): boolean => {
     const raw = deps.database.prepare("SELECT * FROM project_core WHERE id='main'").get() as Record<string, unknown> | undefined
     if (!raw || raw.synopsis !== target) return false
-    const core = Object.fromEntries(Object.entries(raw).filter(([key]) => !['created_at', 'updated_at', 'character_states', 'plot_tree_snapshot'].includes(key)))
+    const core = Object.fromEntries(Object.entries(raw).filter(([key]) => !PROJECT_CORE_NON_SOURCE_COLUMNS.includes(key)))
     const origin = run.binding.sourceManifest.plotOutlineSource as PlotOutlineSource
     if (!isDeepStrictEqual({ ...core, synopsis: outline.sourceExpected.synopsis }, origin.core)) throw new Error('GENERATION_SOURCE_CHANGED')
     const current = deps.rebuildBinding(run.binding, currentModelReceipt(run.binding))
@@ -1148,10 +1156,10 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       },
     }
     // 已保存的审修、写稿不再列出，也不再重证（ADR-0029 决定 1）；这次打开里还有没落盘尾段的照旧列出。
-    const candidates = candidateRunIds(runIndexOf(deps.database).lookup(click => RECOVERY_KIND.has(click.operation)))
+    const candidates = candidateRunIds(runIndexOf(deps.database).lookup(click => RECOVERY_KIND.has(click.operation)), { unidentified: 'include' })
     const saved = deps.database.prepare(`SELECT run_id FROM generation_attempts WHERE run_id IN (SELECT value FROM json_each(?))
       AND (json_type(usage_receipt_json,'$.reviewRevisionEffect')='object' OR json_type(usage_receipt_json,'$.draftCommit')='object')`).pluck().all(candidates) as string[]
-    for (const run of runSummaries([...RECOVERY_KIND.keys()], new Set(saved.filter(runId => !tailedRuns.has(runId))))) {
+    for (const run of runSummaries([...RECOVERY_KIND.keys()], new Set(saved.filter(runId => !tailedRuns.has(runId))), () => { list.partial = true })) {
       const kind = RECOVERY_KIND.get(run.operation ?? '')
       if (!kind || (kind === 'draft' && run.batchId)) continue
       try {
@@ -1162,7 +1170,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     }
     // 封存的生成不列出，列表因此不全。
     if (repository.hasSealedRoot()) list.partial = true
-    const batchIds = draftEffects.resumableBatchIds(deps.projectId, candidateRunIds(runIndexOf(deps.database).lookup(click => click.operation === 'batch-chapters')))
+    const batchIds = draftEffects.resumableBatchIds(deps.projectId, () => { list.partial = true })
     if (!batchIds.length) return list
     const commits = draftEffects.batchCommits()
     for (const batchId of batchIds) {
@@ -1252,9 +1260,9 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       assertCurrent()
       if (!request || Object.keys(request).some(key => !['modelId','uiActionNonce'].includes(key)) || typeof request.uiActionNonce !== 'string'
         || !request.uiActionNonce.trim() || request.uiActionNonce.length > 256) throw new Error('GENERATION_LEGACY_REQUEST_INVALID')
-      const rows = deps.database.prepare("SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.uiActionNonce')=? AND json_extract(r.binding_json,'$.sourceManifest.legacyRosterContext') IS NOT NULL").all(deps.projectId,request.uiActionNonce) as {run_id:string}[]
+      const rows = sameClick(request.uiActionNonce, ['legacy-character-roster-repair'])
       if (rows.length > 1) throw new Error('GENERATION_NONCE_CONFLICT')
-      if (rows[0]) return legacyRosterRecovery(repository.get(rows[0].run_id))
+      if (rows[0]) return legacyRosterRecovery(repository.get(rows[0]))
       const view = begin({operation:'legacy-character-roster-repair',uiActionNonce:request.uiActionNonce,modelId:request.modelId,
         selectedDraftIds:[],selectedFinalizedDraftIds:[],promptKeys:['legacy-roster'],skillStages:[],output:'structured-data',legacyRosterKey:randomUUID()},false,false,false,false,false,true)
       return legacyRosterRecovery(repository.get(view.handle.runId))
@@ -1321,10 +1329,10 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       if (!request || Object.keys(request).some(key => !['input', 'modelId', 'uiActionNonce'].includes(key))
         || typeof request.uiActionNonce !== 'string' || !request.uiActionNonce.trim() || request.uiActionNonce.length > 256) throw new Error('GENERATION_GRAPH_INPUT_INVALID')
       const input = validateGraphGenerationInput(request.input)
-      const rows = deps.database.prepare("SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.uiActionNonce')=? AND json_extract(r.binding_json,'$.sourceManifest.graphGenerationContext') IS NOT NULL").all(deps.projectId, request.uiActionNonce) as { run_id: string }[]
+      const rows = sameClick(request.uiActionNonce, Object.values(graphOperations))
       if (rows.length > 1) throw new Error('GENERATION_NONCE_CONFLICT')
       if (rows[0]) {
-        const run = repository.get(rows[0].run_id)
+        const run = repository.get(rows[0])
         if (!isDeepStrictEqual(readGraphGenerationContext(run).input, input)) throw new Error('GENERATION_NONCE_CONFLICT')
         return graphRecovery(run)
       }
@@ -1355,13 +1363,14 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     listContinuitySuggestions: (request: GraphGenerationChannels['graph-generation:suggestions']['args'][0]): ContinuitySuggestionList | null => {
       assertCurrent()
       if (!request || Object.keys(request).some(key => key !== 'finalizationId') || typeof request.finalizationId !== 'string') throw new Error('GENERATION_GRAPH_REQUEST_INVALID')
-      const rows = deps.database.prepare(`SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id
-        WHERE json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.operation')=?
-          AND json_extract(r.binding_json,'$.sourceManifest.graphGenerationInput.finalizationId')=? ORDER BY r.created_at_ms DESC, r.rowid DESC`)
-        .pluck().all(deps.projectId, graphOperations['continuity-suggest'], request.finalizationId) as string[]
+      const rows = newestFirst(candidateRunIds(runIndexOf(deps.database).lookup(click => click.projectId === deps.projectId && click.operation === graphOperations['continuity-suggest']), { unidentified: 'include' }))
       for (const runId of rows) {
         let recovery: GraphGenerationRecovery
-        try { recovery = graphRecovery(repository.get(runId)) } catch { continue }
+        try {
+          const run = repository.get(runId)
+          if ((run.binding.sourceManifest?.graphGenerationInput as { finalizationId?: unknown } | undefined)?.finalizationId !== request.finalizationId) continue
+          recovery = graphRecovery(run)
+        } catch { continue }
         const { context, result } = recovery
         if (context.kind !== 'continuity-suggest' || result?.kind !== 'continuity-suggest') continue
         const statuses = BlueprintSuggestionRepository.materialize(deps.database, request.finalizationId, runId, context.chapters, result)
@@ -1709,7 +1718,13 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     listBatches: () => {
       assertCurrent()
       const commits = draftEffects.batchCommits()
-      return runSummaries(['batch-chapters']).filter(run => run.batchRoot).map(run => draftEffects.readBatchHistory(run.handle.runId, deps.projectId, commits))
+      return runSummaries(['batch-chapters']).filter(run => run.batchRoot).flatMap(run => {
+        try { return [draftEffects.readBatchHistory(run.handle.runId, deps.projectId, commits)] }
+        catch (error) {
+          if (isLedgerUnreadable(error)) return []
+          throw error
+        }
+      })
     },
     confirmBatchFinalization: (request: { batchId: string; chapterNumber: number; finalizationId: string }) => {
       const batch = readBatch(request.batchId)

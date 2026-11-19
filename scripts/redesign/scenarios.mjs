@@ -554,8 +554,9 @@ const CHROME_CONTRAST = [
   ['.stage-library-title', 4.5], ['.stage-eyebrow', 4.5], ['.stage-start-text > b', 4.5], ['.stage-start-text > span', 4.5],
   ['.stage-shelf-title', 4.5], ['.stage-shelf-hint', 4.5], ['.stage-book-title', 4.5], ['.stage-book-name', 4.5], ['.stage-book-meta', 4.5],
   ['.stage-ov-title', 4.5], ['.stage-ov-meta', 4.5], ['.stage-ov-bar-label', 4.5], ['.stage-ov .pi-stat-label', 4.5],
-  ['.stage-setup-title', 4.5], ['.stage-setup-lede', 4.5], ['.stage-setup-label', 4.5], ['.stage-setup-hint', 4.5], ['.stage-chip', 4.5],
-  ['.stage-setup-panel-title', 4.5], ['.stage-setup-panel-desc', 4.5], ['.stage-setup-outline-foot', 4.5],
+  ['.stage-setup-title', 4.5], ['.stage-setup-lede', 4.5], ['.stage-setup-label', 4.5], ['.stage-setup-hint', 4.5],
+  ['.stage-setup-sheet-title', 4.5], ['.stage-setup-sheet-count', 4.5], ['.stage-setup-row-name', 4.5], ['.stage-setup-mark', 4.5],
+  ['.stage-setup-field-note', 4.5], ['.stage-setup-outline-foot', 4.5],
   ['.stage-set-title', 4.5], ['.stage-set-lede', 4.5], ['.stage-set-link', 4.5], ['.stage-set-required', 4.5], ['.stage-set-group-label', 4.5], ['.stage-set-row-title', 4.5],
   ['.stage-set-row-desc', 4.5], ['.stage-set-model-name', 4.5], ['.stage-set-model-meta', 4.5], ['.stage-badge', 4.5], ['.stage-set-theme-name', 4.5],
   ['.stage-set-theme-desc', 4.5], ['.pi-empty-title', 4.5], ['.pi-empty-text', 4.5],
@@ -797,19 +798,12 @@ export const STAGE_SCENARIOS = {
     for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1280, height: 720 }]) {
       await page.setViewportSize(size)
       const foot = await stage.setupFoot(page).boundingBox()
-      for (const name of ['类型', '目标读者']) {
+      for (const name of ['类型', '目标读者', '叙事视角', '故事结构', '写作语言']) {
         const box = await stage.setupField(page, name).boundingBox()
         assert.ok(box.y + box.height <= foot.y, `${size.width}×${size.height} 首屏看得到「${name}」：底边 ${box.y + box.height}，底栏 ${foot.y}`)
       }
     }
   }, after: async ({ page }) => {
-    await stage.setupChip(page, '全局写作要求').click()
-    const panel = stage.setupPanel(page, '全局写作要求')
-    await panel.waitFor({ state: 'visible' })
-    const foot = await stage.setupFoot(page).boundingBox()
-    const box = await panel.boundingBox()
-    assert.ok(box.y + box.height <= foot.y + 1, `点开的面板滚进视野，不在底栏后面：底边 ${box.y + box.height}，底栏 ${foot.y}`)
-    assert.equal(await panel.getByRole('textbox').evaluate(node => node === document.activeElement), true, '焦点落在面板的输入框里')
     await page.setViewportSize({ width: 1440, height: 900 })
   } },
   'stage-setup-fill': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
@@ -817,14 +811,15 @@ export const STAGE_SCENARIOS = {
     await stage.setupFill(page).click()
     const confirm = page.getByRole('dialog', { name: '扩写已有的设定？' })
     await confirm.getByRole('button', { name: '继续扩写', exact: true }).click()
-    await stage.setupChip(page, '世界观').and(page.locator('[data-filled]')).waitFor({ state: 'visible', timeout: 20_000 })
-    await stage.setupChip(page, '世界观').click()
-    const world = stage.setupPanel(page, '世界观').getByRole('textbox')
+    await stage.setupDetailRow(page, '世界观').locator('[data-mark^="ai-"]').waitFor({ state: 'visible', timeout: 20_000 })
+    const world = stage.setupDetail(page, '世界观')
     assert.equal(await world.inputValue(), FIXTURE_CONFIG.worldSetting, 'AI 补全写进了世界观')
     assert.ok((await stage.setupOutline(page).inputValue()).startsWith(STAGE_SAMPLE.core.coreOutline), 'AI 补全保留了作者写的核心大纲')
-    await world.fill('旧港以潮汐计时。')
-    await stage.saveStatus(page).filter({ hasText: '未保存' }).waitFor({ state: 'visible' })
     assert.deepEqual(await chromeContrastFailures(page), [], '设定页文字对比度不足')
+  }, after: async ({ page }) => {
+    await stage.setupDetail(page, '世界观').fill('旧港以潮汐计时。')
+    assert.equal(await stage.setupDetailRow(page, '世界观').locator('[data-mark]').count(), 0, '作者改过的世界观不再标 AI')
+    await stage.saveStatus(page).filter({ hasText: '未保存' }).waitFor({ state: 'visible' })
   } },
   'stage-settings-groups': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
     await stage.openSettings(page)
@@ -1280,10 +1275,8 @@ export const STAGE_SCENARIOS = {
     await pause(1800)
     await stage.setupField(page, '目标读者').selectOption('全龄')
     await pause(1500)
-    await stage.setupChip(page, '文风').click()
+    await stage.setupDetail(page, '文风').click()
     await pause(1500)
-    await stage.setupChip(page, '文风').click()
-    await pause(600)
     await stage.setupNext(page).click()
     await page.getByRole('navigation', { name: '位置' }).getByText('架构', { exact: true }).waitFor({ state: 'visible' })
     await pause(1500)

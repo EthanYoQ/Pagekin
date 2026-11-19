@@ -1,4 +1,5 @@
 import type { GenerationOwnerChannels, GenerationOwnerEvents } from './generation-owner-contract'
+import type { AiSources } from './novel-config-ai-sources'
 import type { DamagedReviewCycle } from './damaged-review-cycle'
 import type { CharacterProposalChannels } from './character-proposal'
 import type { CharacterContinuityTimeline, ContinuityNode } from './character-continuity'
@@ -644,6 +645,8 @@ export interface ProjectData {
   /** 主进程签发；仅与 id 组合为会话凭据，path 不是授权。 */
   sessionLease?: string
   novelConfig: NovelConfig
+  /** 与 novelConfig 并列，只给设定页用。 */
+  aiSources?: AiSources
   characterStates: string
   createdAt: string
   updatedAt: string
@@ -915,7 +918,7 @@ export interface DatabaseChannels {
     return: { success: boolean; error?: string }
   }
   'db:project-core-commit-generated': {
-    args: [request: { data: Partial<ProjectCoreData>; generationRunHandle: import('../services/generation/generation-runtime').MainGenerationRunHandle }, expectedProjectPath: string]
+    args: [request: { data: Partial<ProjectCoreData>; aiSources?: AiSources; generationRunHandle: import('../services/generation/generation-runtime').MainGenerationRunHandle }, expectedProjectPath: string]
     return: { success: boolean; error?: string }
   }
   'db:project-core-synopsis-commit': {

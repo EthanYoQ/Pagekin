@@ -1,3 +1,4 @@
+import { configText } from '../../shared/novel-config-ai-sources'
 import type { DraftMeta } from '../../services/draft-index'
 import type { NovelConfig } from '../../shared/ipc-channels'
 import type { ReviewCycleProjection } from '../../shared/review-cycle'
@@ -92,7 +93,7 @@ function fraction(done: number, total: number): StageProgress {
 }
 
 export function missingSetup(config: WorkFacts['config']): SetupField[] {
-  const blank = (value: string | undefined) => !value?.trim()
+  const blank = (value: unknown) => !configText(value).trim()
   // 与主进程的作品概览同一口径：章数、字数都得是正的安全整数。
   const count = (value: number) => Number.isSafeInteger(value) && value > 0
   return SETUP_FIELDS.filter(field => field === 'length'

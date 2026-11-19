@@ -666,6 +666,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
             writingStyle: updatedCoreData.writingStyle,
             referenceWorks: updatedCoreData.referenceWorks,
           },
+          aiSources: ProjectCoreRepository.getAiSources(),
           characterStates: updatedCoreData.characterStates,
           createdAt: new Date().toISOString(), // 数据库中实际上有，但这里先提供时间值避免前端报错
           updatedAt: new Date().toISOString(),
@@ -802,6 +803,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
       if (!db) throw new Error('PROJECT_NOT_OPEN')
       db.transaction(() => {
         ProjectCoreRepository.update(coreUpdate)
+        if (data.aiSources) ProjectCoreRepository.setAiSources(data.aiSources)
       })()
 
       // 最近项目是导航便利数据，不属于项目核心提交。写入失败不能把已经

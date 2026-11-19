@@ -181,7 +181,7 @@ async function authorFields(page, chapterNumber) {
   return {
     userGuidance: await card.getByRole('textbox', { name: /^作者微操指导/ }).inputValue(),
     suspenseHook: await card.getByRole('textbox', { name: /^悬念钩子/ }).inputValue(),
-    notes: await card.getByRole('textbox', { name: /^章节要点/ }).inputValue(),
+    notes: await (await blueprint.notesBox(card)).inputValue(),
   }
 }
 
@@ -254,7 +254,7 @@ export const BLUEPRINT_SCENARIOS = {
     await nullChapterFieldsAfterFilled(page)
     await nullChapterCard(page).getByRole('textbox', { name: /^作者微操指导/ }).press('End')
     await page.keyboard.type('补一句')
-    await nullChapterCard(page).getByRole('textbox', { name: /^章节要点/ }).press('End')
+    await (await blueprint.notesBox(nullChapterCard(page))).press('End')
     await page.keyboard.type('补一条')
     await stage.saveWithCtrlS(page)
     measured.dbAfterTyping = await raw()
