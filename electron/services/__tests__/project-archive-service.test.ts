@@ -743,7 +743,8 @@ describe('portable project export service', () => {
     function holdGate(f: Fixture) {
       activateCanonicalProjectData(f.root)
       let release!: () => void
-      const held = withKnowledgeSourceGate(getProjectDataRoot(f.root), () => new Promise<void>(resolve => { release = resolve }))
+      const released = new Promise<void>(resolve => { release = resolve })
+      const held = withKnowledgeSourceGate(getProjectDataRoot(f.root), () => released)
       return { held, whenExportQueues: (action: () => void) => {
         gateRequests.onRequest = () => { gateRequests.onRequest = undefined; action(); release() }
       } }
@@ -817,9 +818,10 @@ describe('portable project export service', () => {
     let knowledge = '知识库：只有第一章'
     let finishImport!: () => void
     activateCanonicalProjectData(f.root)
-    const importing = withKnowledgeSourceGate(getProjectDataRoot(f.root), () => new Promise<void>(resolve => {
+    const imported = new Promise<void>(resolve => {
       finishImport = () => { knowledge = '知识库：已收进第二章'; resolve() }
-    }))
+    })
+    const importing = withKnowledgeSourceGate(getProjectDataRoot(f.root), () => imported)
     gateRequests.onRequest = () => {
       gateRequests.onRequest = undefined
       const db = new Database(f.databasePath)
