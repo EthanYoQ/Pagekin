@@ -536,6 +536,20 @@ describe('portable project export service', () => {
       expect(fs.readdirSync(f.attemptParent)).toEqual([])
     })
 
+    it('库快照取完、列资料时库被换成另一本书：拒绝发布，不把两本书拼进一个存档', async () => {
+      const f = fixture()
+      seedProject(f)
+      const other = fixture()
+      const assets = provider()
+
+      await expect(exportPortableProject(input(f, { snapshot: () => {
+        fs.renameSync(f.databasePath, path.join(f.base, '原书.db'))
+        fs.copyFileSync(other.databasePath, f.databasePath)
+        return assets.snapshot()
+      } }))).rejects.toThrow('PROJECT_MIGRATION_SOURCE_CHANGED')
+      expect(fs.existsSync(f.target)).toBe(false)
+    })
+
     it('别的程序在读资料途中原地改写同样大小的内容、又把修改时间改回去：存档里是完整的新内容，不是新旧混合', async () => {
       const f = fixture()
       const size = 3 * 1024 * 1024
