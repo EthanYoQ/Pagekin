@@ -314,6 +314,14 @@ it('没有章号的续写也告诉模型只写接续的新内容，接受时插�
  const system = (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
  expect(system).toContain('只输出紧接在它后面的新内容')
 })
+it.each([
+ ['zh-CN', 'e155a59b96e08e0045e656f667d27ff4dcba36b599fcb5d6ec21d265d39a8dfa'],
+ ['en-US', 'd03af6cad6ca36c40195c4d8e0bd25cd9b2743f99be8a9abdafff00e988704b2'],
+] as const)('%s 章内带后文的续写提示与改动前逐字节相同', (language, hash) => {
+ const messages = editorInlineTask(buildEditorInlineContext({ action: 'continue', documentText: chapterDoc, from: selFrom, to: selFrom + sel.length,
+  selectedText: sel, chapterContext: chapterContext() } as never, language, getBuiltinPromptTemplate('edit_selected_text', language)!)).messages
+ expect(createHash('sha256').update(JSON.stringify(messages)).digest('hex')).toBe(hash)
+})
 it('改动前留下的运行清单重建后比较仍相等，建议仍可应用', () => {
  const f = fixture()
  const legacy = JSON.parse(fs.readFileSync('test/fixtures/editor-inline-v1-bindings.json', 'utf8')) as Record<string, Parameters<typeof rebuildGenerationSourceBinding>[1]>
@@ -344,6 +352,18 @@ it('章内续写把选区前的本章正文和本章蓝图放在模板段之前�
   expect(user, expected).toContain(expected)
   expect(user.indexOf(expected), expected).toBeLessThan(template)
  }
+})
+it('没有章号的续写也从文档正文切选区前后文，后文第一句作为停止点，不带按章材料', async () => {
+ const f = fixture(replying('钥匙在石缝里。', 'stop'))
+ const recovery = f.owner.beginEditorInline({ modelId: 'synthetic', uiActionNonce: '无章号前后文', input: { action: 'continue' as const,
+  documentText: chapterDoc, from: selFrom, to: selFrom + sel.length, selectedText: sel } as never })
+ expect(recovery.context.materials!.included.map(item => item.kind)).toEqual(['preceding', 'following'])
+ await f.owner.executeEditorInline(recovery.view.handle)
+ const system = (f.spy.mock.calls.at(-1)![0] as { task: { messages: { role: string; content: string }[] } }).task.messages.find(m => m.role === 'system')!.content
+ expect(userOf(f)).toContain('第三十章前文铺垫。')
+ expect(userOf(f)).toContain('门后是长廊。')
+ expect(system).toContain('后文第一句是「门后是长廊。」。续写停在这句之前')
+ expect(userOf(f).endsWith('（提醒：续写停在后文第一句「门后是长廊。」之前。不换地方，不写后文和蓝图里后面的事；写一到两段，不超过选中正文的两倍长。）')).toBe(true)
 })
 it('选区后面还有本章正文时，续写规则与末尾提醒点名后文第一句作为停止点、不与后文矛盾；选区在章末时不提', async () => {
  const f = fixture(replying('钥匙在石缝里。', 'stop'))
@@ -426,4 +446,41 @@ it.each([
 ])('章节上下文%s时拒绝开始运行', (_name, bad) => {
  const f = fixture()
  expect(() => f.owner.beginEditorInline(continued(bad as never))).toThrow('GENERATION_EDITOR_INPUT_INVALID')
+})
+
+const settingDoc = '# 雾港\n\n雾港是北方一座半废弃的港城，三面环山。\n\n渔市的老人们记得沉船那一夜。\n\n每年十月起，海雾午后从湾口涌进来。'
+const settingSel = '渔市的老人们记得沉船那一夜。'
+const settingContinue = (filePath: string | undefined, atEnd: boolean, language: 'zh-CN' | 'en-US', frozen?: { materials?: undefined }) => {
+ const documentText = atEnd ? settingDoc.slice(0, settingDoc.indexOf(settingSel) + settingSel.length) : settingDoc
+ const from = documentText.indexOf(settingSel)
+ return editorInlineTask(buildEditorInlineContext({ action: 'continue', documentText, from, to: from + settingSel.length, selectedText: settingSel,
+  ...(filePath ? { filePath } : {}) } as never, language, getBuiltinPromptTemplate('edit_selected_text', language)!, Infinity, frozen)).messages
+}
+const promptHash = (messages: unknown) => createHash('sha256').update(JSON.stringify(messages)).digest('hex')
+it.each([
+ ['zh-CN', false, '2c21debfcc697f75735e2cd67932070b21b92342a6c637be04b5a052ea5e5769'], ['zh-CN', true, '1fd89372392372249da5a184414976fd1137a42bc488033b235b005369bbf783'],
+ ['en-US', false, '366d97851355c872fe61077a232266efc97923c062badb4b3ce3d43f01fd0e4e'], ['en-US', true, '6a9a6f45d6ce911968f3b4951e6cb8c7b3b9562ec7878e5689ab61cc3e4ba07f'],
+] as const)('%s 不是设定文档的无章号续写（恢复稿、没有文件路径）提示与改动前逐字节相同（选区在末尾 %s）', (language, atEnd, hash) => {
+ for (const filePath of [undefined, 'ai-novel://recovery/candidate-1']) expect(promptHash(settingContinue(filePath, atEnd, language)), filePath).toBe(hash)
+})
+it.each([['zh-CN', 'bc53b520bad0b328b63e3a2a58995d70cb5cc78bf6d073081b995e7af3b27ba5'], ['en-US', 'aab14495386917524ba444ac2de1eee2ebc21eb4b97e87a933b302630eff2c30']] as const)('%s 升级前冻结的设定文档续写（没有材料，替换选区）提示与改动前逐字节相同', (language, hash) => {
+ expect(promptHash(settingContinue('ai-novel://core/worldbuilding', false, language, { materials: undefined }))).toBe(hash)
+})
+it.each([false, true])('设定文档里的续写照原文体裁写：提示说明体裁，不提人物动机与情节，材料标为文档（选区在末尾 %s）', atEnd => {
+ const [system, user] = settingContinue('ai-novel://core/worldbuilding', atEnd, 'zh-CN').map(message => message.content)
+ expect(system).toContain('原文是设定、资料、大纲这类说明性文字时，续写也只写说明性的内容')
+ expect(user).toContain('照原文的体裁和写法往下写。')
+ expect(user).toContain('【文档上下文：')
+ expect(user).toContain('【选中正文之前的文档】')
+ if (!atEnd) expect(user).toContain('【选中正文之后的文档】')
+ for (const novelish of ['人物动机', '情节', '人物手里', '本章正文】', '本章上下文']) expect(system + user, novelish).not.toContain(novelish)
+})
+it.each([false, true])('英文设定文档里的续写同样照原文体裁写（选区在末尾 %s）', atEnd => {
+ const [system, user] = settingContinue('ai-novel://core/worldbuilding', atEnd, 'en-US').map(message => message.content)
+ expect(system).toContain('expository text such as setting notes')
+ expect(user).toContain('Continue in the same form and manner as the original.')
+ expect(user).toContain('[Document context:')
+ expect(user).toContain('[Document text before the selection]')
+ if (!atEnd) expect(user).toContain('[Document text after the selection]')
+ for (const novelish of ['character motivation', 'What the characters hold', 'Chapter text', 'Chapter context']) expect(system + user, novelish).not.toContain(novelish)
 })

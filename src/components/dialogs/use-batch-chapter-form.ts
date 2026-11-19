@@ -56,6 +56,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
     normalizeChapterWordsTarget(currentProject?.novelConfig.wordsPerChapter)
   ))
   const [error, setError] = useState<string | null>(null)
+  const [pendingNote, setPendingNote] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [completionMode, setCompletionMode] = useState<BatchChapterCompletionMode>('draft_review')
   const [confirmingAutoFinalize, setConfirmingAutoFinalize] = useState(false)
@@ -119,6 +120,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
     const projectSession = captureProjectSession(currentProject)
     if (!projectSession) return
     const projectPath = projectSession.projectPath
+    setPendingNote(null)
     if (completionMode === 'auto_finalize' && !confirmingAutoFinalize) {
       setConfirmingAutoFinalize(true)
       setError(null)
@@ -189,6 +191,11 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
       if (!isProjectSessionCurrent(projectSession)) return
       const guard = await guardChapterWriting(frozenStart, projectPath, projectSession)
       if (!isProjectSessionCurrent(projectSession)) return
+      if (guard.pending) {
+        setError(null)
+        setPendingNote(guard.message ?? null)
+        return
+      }
       if (!guard.ok) {
         setError(displayedErrorMessage(errorLocaleForRun(frozenLocale, currentInterfaceLocale()), guard.message, text(
           '前置条件未满足。',
@@ -281,7 +288,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
   }
 
   return {
-    text, currentProject, chapterCount, setChapterCount, chapterWordsTarget, setChapterWordsTarget, error, setError, starting,
+    text, currentProject, chapterCount, setChapterCount, chapterWordsTarget, setChapterWordsTarget, error, setError, pendingNote, starting,
     completionMode, setCompletionMode, confirmingAutoFinalize, setConfirmingAutoFinalize, authorityError, authorityLoading,
     consistencyPreflight, generationModels, selectedGenerationModelId, setGenerationModelId, modelSelectionError,
     normalizedCount, start, end, gaps, handleStart, saveArrangement, revokeArrangement,

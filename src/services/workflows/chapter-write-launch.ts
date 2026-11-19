@@ -158,6 +158,8 @@ export type ChapterWriteOutcome =
   | { kind: 'authority-error'; message: string }
   /** 模型、章号、前置条件或资源冲突不满足，写明原因。 */
   | { kind: 'blocked'; message: string }
+  /** 上一章还在整理，稍后就能写，不是出错。 */
+  | { kind: 'pending'; message: string }
   /** 一致性预检发现线索，等作者处理；exemptions 一并返回供撤销。 */
   | { kind: 'preflight'; preflight: ConsistencyPreflightResult }
   | { kind: 'started' }
@@ -205,7 +207,7 @@ export async function launchChapterWrite({
     return { kind: 'blocked', message: unavailableModel }
   }
   if (!guard.ok) {
-    return { kind: 'blocked', message: guard.message || text('前置条件未满足', 'Prerequisites are not met.') }
+    return { kind: guard.pending ? 'pending' : 'blocked', message: guard.message || text('前置条件未满足', 'Prerequisites are not met.') }
   }
 
   if (!ignoreFindingsOnce) {

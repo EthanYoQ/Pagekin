@@ -255,6 +255,8 @@ export interface WorkflowDefinition {
   onComplete?: WorkflowCompleteAction
   /** 完成或失败时，窗口不在前台则弹系统通知。 */
   backgroundNotice?: BackgroundNotice
+  /** 不调用写作 Skill 的工作流不冻快照：冻一次要读两次盘，Windows 上每次 1.5 到 2.5 秒。 */
+  withoutWritingSkills?: true
 }
 
 function isCurrentWorkflowSession(
@@ -642,7 +644,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     }
 
     try {
-      context.writingSkills = await freezeWritingSkillsSnapshot(projectSession, writingLanguage)
+      context.writingSkills = definition.withoutWritingSkills ? {} : await freezeWritingSkillsSnapshot(projectSession, writingLanguage)
     } catch (error) {
       if (stoppedByCancellation(context, error)) {
         await cancelBeforeFirstStep()

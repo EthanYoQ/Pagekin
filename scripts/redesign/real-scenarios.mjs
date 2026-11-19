@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { chooseProjectDirectoryGrant } from '../project-directory-grant.mjs'
+import * as arch from './pages/architecture.mjs'
 import * as blueprint from './pages/blueprint.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as refs from './pages/refs.mjs'
@@ -42,7 +43,7 @@ const RELATION_CHAPTERS = {
 }
 
 /** 记下界面打开作品拿到的会话（包一层主进程的 project:open），驱动读库时不必重开作品。重启后要重新装。 */
-async function trackOpenedSession(app) {
+export async function trackOpenedSession(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
     const original = handlers.get('project:open')
@@ -55,7 +56,7 @@ async function trackOpenedSession(app) {
   })
 }
 
-async function uiSession(app) {
+export async function uiSession(app) {
   const session = await app.evaluate(() => globalThis.__driveOpened)
   assert.ok(session?.leaseId, '记下了界面打开作品的会话')
   return session
@@ -68,7 +69,7 @@ async function read(context, channel, ...args) {
 }
 
 /** 预置作品：设定、林岚、8 章蓝图，finalized 里的章以作者原稿定稿导入；接上真实模型后从书房打开。 */
-async function seedBook(context, { finalized = [] } = {}) {
+async function seedBook(context, { finalized = [], core: coreFields = {} } = {}) {
   const { app, page, roots, invoke, reload } = context
   await trackOpenedSession(app)
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
@@ -86,7 +87,7 @@ async function seedBook(context, { finalized = [] } = {}) {
     entries: [{ characterId: `draft:${randomUUID()}`, name: '林岚', role: 'protagonist', gender: '女', age: '28', appearance: '',
       personality: '冷静、执拗', background: '旧港潮汐记录的测绘师。', abilities: '读潮位刻痕', motivation: '查明失踪地图的来源。',
       relationships: [], arc: '', notes: '' }] }, projectPath, session)).success, true)
-  const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters: TOTAL_CHAPTERS, wordsPerChapter: WORDS_PER_CHAPTER }, projectPath, session)
+  const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters: TOTAL_CHAPTERS, wordsPerChapter: WORDS_PER_CHAPTER, ...coreFields }, projectPath, session)
   assert.equal(core.success, true, core.error)
   for (let chapterNumber = 1; chapterNumber <= TOTAL_CHAPTERS; chapterNumber++) {
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber, title: stageChapterTitle(chapterNumber), role: '发展',
@@ -121,7 +122,7 @@ async function seedRelationBook(context) {
 }
 
 /** 页面里进行中的运行胶囊挂上来过几次；点下触发运行的按钮之前取一次，交给 untilRunEnds。 */
-async function runsStarted(page) {
+export async function runsStarted(page) {
   return page.evaluate(() => {
     if (!window.__realRunsStarted) {
       window.__realRunsStarted = { count: 0 }
@@ -149,7 +150,7 @@ async function runSheetText(page) {
  * 等这次运行挂出胶囊、再等顶栏不再有进行中的胶囊，返回毫秒数。
  * 运行停在「等你确认」时，按作者的默认选择确认，记进 confirmations。
  */
-async function untilRunEnds(page, before, what, confirmations = []) {
+export async function untilRunEnds(page, before, what, confirmations = []) {
   const started = Date.now()
   for (;;) {
     const state = await page.evaluate(({ before, selector }) => ({
@@ -177,7 +178,7 @@ async function runAndWait(page, trigger, what, confirmations) {
   return untilRunEnds(page, before, what, confirmations)
 }
 
-async function openChapter(page, chapterNumber) {
+export async function openChapter(page, chapterNumber) {
   if (!await stage.chapterButton(page, chapterNumber).isVisible()) await stage.stageButton(page, '正文').click()
   await chapterView.open(page, chapterNumber)
 }
@@ -657,6 +658,57 @@ export const REAL_SCENARIOS = {
       results.push(...await Promise.all(jobs.slice(start, start + 5).map(async ({ input, ...job }) => ({ ...job, ...await generate(input) }))))
     return { materials: points.map(({ point, materials }) => ({ point, materials })), results }
   } },
+
+  /** #702：设定文档没有章号；臂按每次运行实际带的材料记，不预设。 */
+  'real-editor-nochapter-ab': { real: true, setup: async context => {
+    const file = process.env[EDITOR_NOCHAPTER_DOC]
+    assert.ok(file && fs.existsSync(file), `环境变量 ${EDITOR_NOCHAPTER_DOC} 指向设定文档夹具 JSON`)
+    context.evalDoc = JSON.parse(fs.readFileSync(file, 'utf8'))
+    await seedBook(context, { core: { worldbuilding: context.evalDoc.document } })
+  }, run: async context => {
+    const { app, page, invoke } = context
+    const runs = Number(process.env.EDITOR_CONTEXT_RUNS ?? 5)
+    await app.evaluate(({ ipcMain }) => {
+      const original = ipcMain._invokeHandlers.get('editor-inline:begin')
+      globalThis.__editorBegins = []
+      ipcMain._invokeHandlers.set('editor-inline:begin', async (event, request, ...rest) => {
+        const result = await original(event, request, ...rest)
+        globalThis.__editorBegins.push({ request, materials: result?.context?.materials })
+        return result
+      })
+    })
+    await arch.open(page)
+    await arch.section(page, 'worldbuilding').getByRole('button', { name: '编辑', exact: true }).click()
+    const document = page.locator('.cm-content')
+    await document.getByText(context.evalDoc.points[0].slice(0, 20)).first().waitFor({ state: 'visible' })
+    const toolbar = page.getByRole('toolbar', { name: '选中文字的操作' })
+    const points = []
+    for (const [index, paragraph] of context.evalDoc.points.entries()) {
+      await document.getByText(paragraph.slice(0, 20)).first().click({ clickCount: 3, position: { x: 40, y: 8 } })
+      await toolbar.getByRole('button', { name: '续写' }).click()
+      await toolbar.getByRole('button', { name: '插入', disabled: false }).waitFor({ state: 'visible', timeout: MODEL_WAIT })
+      await toolbar.getByRole('button', { name: '取消' }).click()
+      const begun = (await app.evaluate(() => globalThis.__editorBegins)).at(-1)
+      assert.equal(begun.request.input.selectedText.trim(), paragraph, `续写点 ${index + 1} 选中的是夹具第 ${index + 1} 段`)
+      assert.equal(begun.request.input.chapterContext, undefined, '设定文档没有章号，不带本章材料')
+      points.push({ point: index + 1, request: begun.request, materials: begun.materials })
+    }
+    const kinds = points.map(({ materials }) => materials.included.map(block => block.kind).join())
+    assert.ok(kinds.every(list => list === '') || kinds.every((list, index) => list === (index < kinds.length - 1 ? 'preceding,following' : 'preceding')),
+      `各点要么都不带材料（改前），要么都带前文、末段以外带后文：${JSON.stringify(kinds)}`)
+    const session = await uiSession(app)
+    const jobs = points.flatMap(({ point, request }) => Array.from({ length: runs }, (_, run) => ({ point, run: run + 1, request })))
+    const results = []
+    for (let start = 0; start < jobs.length; start += 5)
+      results.push(...await Promise.all(jobs.slice(start, start + 5).map(async ({ request, ...job }) => {
+        const recovery = await invoke(page, 'editor-inline:begin', { input: request.input, modelId: request.modelId, uiActionNonce: randomUUID() }, session)
+        const receipt = await invoke(page, 'editor-inline:execute', { handle: recovery.view.handle }, session)
+        assert.equal(receipt.outcome.status, 'completed', `续写完成：${receipt.outcome.receipt?.failureCode ?? ''}`)
+        await invoke(page, 'editor-inline:delivered', { handle: recovery.view.handle }, session)
+        return { ...job, arm: recovery.context.materials.included.length ? 'after' : 'before', filePath: recovery.context.filePath, output: receipt.outcome.content }
+      })))
+    return { materials: points.map(({ point, materials }) => ({ point, materials })), results }
+  } },
 }
 
 /** 第 13 章蓝图：钥匙和撕页两条约束只放在线索里，这样线索块是否带上能从续写里看出来。 */
@@ -735,3 +787,5 @@ async function seedEvalBook(context, book) {
  * 对照臂就是没有章号的编辑器那条路：同样的续写规则与插入方式，只差本章材料。夹具书只在本机，路径由 EDITOR_CONTEXT_BOOK 给出。
  */
 const EDITOR_CONTEXT_BOOK = 'EDITOR_CONTEXT_BOOK'
+/** 设定文档续写对照的夹具：{ document, points }，points 是 document 里要逐个选中续写的段落。夹具只在本机。 */
+const EDITOR_NOCHAPTER_DOC = 'EDITOR_NOCHAPTER_DOC'

@@ -95,8 +95,8 @@ export class OpenAIProvider implements ILLMProvider {
 
     if (opts.reasoning?.adapter === 'siliconflow-v4-thinking'
       && resolveModelProfileReasoningMapping(model)?.adapter === 'siliconflow-v4-thinking') {
-      body.enable_thinking = true
-      body.reasoning_effort = opts.reasoning.reasoningEffort
+      body.enable_thinking = opts.reasoning.reasoningEffort !== 'off'
+      if (body.enable_thinking) body.reasoning_effort = opts.reasoning.reasoningEffort
     }
 
     if (opts.reasoning?.adapter === 'deepseek-v4-thinking'

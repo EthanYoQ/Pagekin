@@ -1,4 +1,4 @@
-import type { GenerationReasoningStage } from '../../shared/reasoning-types'
+import { REASONING_STAGES, type GenerationReasoningStage } from '../../shared/reasoning-types'
 import type { WritingLanguage } from '../../shared/writing-language'
 
 export const S07_TASK_BUDGET_POLICY = Object.freeze({
@@ -24,6 +24,10 @@ export const S07_TASK_BUDGET_POLICY = Object.freeze({
     }),
   }),
 })
+
+// 这张表随生成运行存档，已存档的运行要按原样读回，所以提取阶段不加列，按审稿的条目大小算。
+const itemTokens = (writingLanguage: WritingLanguage, stage: GenerationReasoningStage) =>
+  S07_TASK_BUDGET_POLICY.structuredItems.tokensPerItem[writingLanguage][stage === 'extraction' ? 'review' : stage]
 
 export type TaskBudgetDemand =
   | {
@@ -183,7 +187,7 @@ function outputTokensFor(
       + Math.ceil(quantity * rate.numerator / rate.denominator)
   }
   return S07_TASK_BUDGET_POLICY.structuredItems.baseTokens
-    + quantity * S07_TASK_BUDGET_POLICY.structuredItems.tokensPerItem[demand.writingLanguage][stage]
+    + quantity * itemTokens(demand.writingLanguage, stage)
 }
 
 function maximumItemsFor(
@@ -193,7 +197,7 @@ function maximumItemsFor(
 ): number {
   const usable = availableOutputTokens - S07_TASK_BUDGET_POLICY.structuredItems.baseTokens
   if (usable <= 0) return 0
-  return Math.floor(usable / S07_TASK_BUDGET_POLICY.structuredItems.tokensPerItem[demand.writingLanguage][stage])
+  return Math.floor(usable / itemTokens(demand.writingLanguage, stage))
 }
 
 /**
@@ -201,7 +205,7 @@ function maximumItemsFor(
  * main owner remains solely responsible for reserving, dispatching and settling.
  */
 export function planTaskBudget(input: TaskBudgetPlannerInput): TaskBudgetDecision {
-  if (!input || !['drafting', 'planning', 'review', 'general'].includes(input.stage)
+  if (!input || !REASONING_STAGES.includes(input.stage)
     || !input.demand || !['draft-units', 'structured-items'].includes(input.demand.kind)
     || !['zh-CN', 'en-US'].includes(input.demand.writingLanguage)
     || typeof input.inputEstimate?.estimatorVersion !== 'string'
