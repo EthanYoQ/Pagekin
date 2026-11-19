@@ -1135,27 +1135,67 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await expect.element(page.getByText(/合并后会自动复验/)).toBeVisible()
   })
 
-  it('再读一次审修循环失败：恢复前的审稿仍以重新审稿为主按钮，报告只读', async () => {
-    const draft = backend.addDraft({ status: 'draft' })
-    restoredReview(draft)
+  /**
+   * 单章视图对同一份审稿读两次审修循环：挑报告时一次（ChapterView），摆出动作条后重读一次（review-checklist）。
+   * 两次读在 IPC 上参数相同、没有别的先后标记，只能从调用栈分开；改了这两处的文件位置，这里跟着改。
+   */
+  function failCycleRead(which: 'ChapterView' | 'review-checklist') {
     const answer = backend.invoke.getMockImplementation()!
-    let rereads = 0
+    const failed = { count: 0 }
     backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
-      // 挑报告时那次读照常；动作条自己的重读（review-checklist）失败。
-      if (channel === 'db:review-cycle-get' && new Error().stack?.includes('review-checklist')) {
-        rereads += 1
+      if (channel === 'db:review-cycle-get' && new Error().stack?.includes(which)) {
+        failed.count += 1
         throw new Error('PROJECT_DATABASE_BUSY')
       }
       return answer(channel, ...args)
     })
+    return failed
+  }
+  const watchActionLabels = () => {
+    const seen = new Set<string>()
+    const observer = new MutationObserver(() => host!.querySelectorAll('.stage-ch-actions .pi-btn').forEach(button => seen.add(button.textContent ?? '')))
+    observer.observe(host!, { subtree: true, childList: true, characterData: true })
+    return { seen, stop: () => observer.disconnect() }
+  }
+
+  it('再读一次审修循环失败：恢复前的审稿仍以重新审稿为主按钮，报告只读', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const rereads = failCycleRead('review-checklist')
     await mount()
     await openDraft(draft.id)
     await expect.element(page.getByText(RESTORED)).toBeVisible()
-    await vi.waitFor(() => expect(rereads).toBeGreaterThan(0))
+    await vi.waitFor(() => expect(rereads.count).toBeGreaterThan(0))
     expect(page.getByRole('button', { name: '重新审稿', exact: true }).elements()).toHaveLength(1)
     expect(page.getByRole('button', { name: /项意见修稿$|^确认不修改$|^修稿选项$/ }).elements()).toEqual([])
     const sheet = page.getByRole('complementary', { name: /审稿/ })
     await expect.element(sheet.getByText('前后矛盾').first()).toBeVisible()
     expect(sheet.element().querySelectorAll('input:not(:disabled), textarea, select')).toHaveLength(0)
+  })
+
+  it('挑报告时那次读失败、重读成功：恢复前的审稿不先闪一下按意见修稿', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const picks = failCycleRead('ChapterView')
+    await mount()
+    const labels = watchActionLabels()
+    await openDraft(draft.id)
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    labels.stop()
+    expect(picks.count).toBeGreaterThan(0)
+    expect([...labels.seen].filter(label => label.includes('意见修稿'))).toEqual([])
+  })
+
+  it('两次都读不出审修循环：照旧按没有循环摆出动作条，作者仍能操作', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const answer = backend.invoke.getMockImplementation()!
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get') throw new Error('PROJECT_DATABASE_BUSY')
+      return answer(channel, ...args)
+    })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: /项意见修稿$/ })).toBeVisible()
   })
 })

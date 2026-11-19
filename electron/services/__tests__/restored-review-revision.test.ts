@@ -312,7 +312,24 @@ describe('审稿数据随审稿一并标出恢复前的审修循环（#702）', 
     const restoredRoot = await exportAndRestore()
 
     ownerFor(restoredRoot, 'epoch-restored')
-    expect(RevisionRepository.getPending(1, projectIdOf(restoredRoot))).toMatchObject([{ id: saved.id, restoredHistory: true }])
+    const direct = RevisionRepository.create({ baseDraftId: 1, revisionType: 'refine', content: revised, wordCount: countDraftUnits(revised),
+      expectedSource: { id: 1, chapterNumber: 1, version: 1, status: 'draft', content: source } })
+    const pending = RevisionRepository.getPending(1, projectIdOf(restoredRoot))
+    expect(pending).toMatchObject([{ id: saved.id, restoredHistory: true }, { id: direct.id }])
+    expect(pending[1]).not.toHaveProperty('restoredHistory')
+  })
+
+  it('恢复后重新审稿修出的稿：待合并修稿列表不标恢复前', async () => {
+    ownerFor(projectRoot, 'epoch-1')
+    seedChapter(getProjectDb()!)
+    const restoredRoot = await exportAndRestore()
+
+    const restored = ownerFor(restoredRoot, 'epoch-restored')
+    const fresh = await reviewAndConfirm(restored.owner, restored.db, unrevised, 'fresh-review')
+    const saved = await reviseFromConfirmation(restored.owner, fresh)
+    const [pending] = RevisionRepository.getPending(1, projectIdOf(restoredRoot))
+    expect(pending).toMatchObject({ id: saved.id, revisionType: 'review-fix' })
+    expect(pending).not.toHaveProperty('restoredHistory')
   })
 
   it('没导出过的书：待合并修稿不带恢复前的字段', async () => {
