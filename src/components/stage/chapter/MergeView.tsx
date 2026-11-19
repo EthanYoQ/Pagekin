@@ -26,7 +26,7 @@ export default function MergeView({ data, versionLabel, recheck, onComplete, onL
   onLater: () => void
 }) {
   const text = useLocaleStore(s => s.text)
-  const merge = useMergeSegments(data.originalContent, data.modifiedContent)
+  const merge = useMergeSegments(data.originalContent, data.modifiedContent, data.choicesKey)
   const [busy, setBusy] = useState(false)
   const pickOf = (index: number): HunkPick => merge.picks[index] ?? 'original'
   const revisedCount = merge.hunks.filter(hunk => pickOf(hunk.index) === 'revised').length

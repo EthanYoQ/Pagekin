@@ -349,3 +349,5 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `uxr-bp-long` | 112 章、第 5 章长蓝图：卡片没有一个输入框要在框里滚动，列表「112 章」、选中行与卡片章号一致（`uxr-bp-long-top`）；滚到底再换章卡片回顶、要点编辑态收起；底部与要点编辑态各一张（`uxr-bp-long-bottom`、`uxr-bp-long-notes-edit`） | 蓝图（中文） | 否 | #702 |
 | `uxr-bp-new` | 示例作品第 6 章：钩子、指导、要点为空，空要点直接是输入框（`uxr-bp-new`） | 蓝图（中文） | 否 | #702 |
 | `uxr-bp-switch-bench` | 112 章蓝图按固定顺序来回换 20 次章，先热身一轮再测 5 轮，返回点击到提交、到排版、到两帧后的中位与最大耗时和长任务数；每次都换到点的那一章。无截图，结果在场景 JSON | 蓝图（中文） | 否 | #702 |
+| `merge-pick-tab-switch` | 示例作品第 4 章审稿、修稿（假模型回三段修稿），合并视图里第 1、3 段选用修稿（`merge-pick-tab-switch-1-picked`）；点第 3 章标签再点回第 4 章，合并视图仍是「已选 2 处用修稿」（`merge-pick-tab-switch-2-returned`）；完成合并后库里草稿正文含第 1、3 段修稿、不含第 1 段原稿（`merge-pick-tab-switch-3-merged`） | 正文（中文） | 是 | #752 |
+| `merge-pick-merge-later` | 同 `merge-pick-tab-switch`，离开方式换成「稍后再合并」后点「打开修稿合并」（`merge-pick-merge-later-*`） | 正文（中文） | 是 | #752 |
