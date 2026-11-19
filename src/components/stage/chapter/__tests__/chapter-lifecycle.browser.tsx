@@ -1003,6 +1003,20 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     expect(backend.writes('db:review-create')).toEqual([])
   })
 
+  it('审稿报告只能看：没有勾选、编辑、添加意见与修稿指导，页脚不说会用于修稿', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    await mount()
+    await openDraft(draft.id)
+    const sheet = page.getByRole('complementary', { name: /审稿/ })
+    await expect.element(sheet.getByText('前后矛盾').first()).toBeVisible()
+    const root = sheet.element()
+    expect(root.querySelectorAll('input, textarea, select')).toHaveLength(0)
+    expect(sheet.getByRole('button', { name: /^(编辑|添加我的意见|不修改此项)$/ }).elements()).toEqual([])
+    expect(root.textContent).not.toContain('总体修稿指导')
+    expect(root.textContent).not.toContain('勾选的意见会用于修稿')
+  })
+
   it('审稿数据读回来之前不摆主按钮：恢复前的审稿不会先闪一下按意见修稿', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     restoredReview(draft)
