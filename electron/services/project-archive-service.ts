@@ -43,6 +43,7 @@ import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migration
 import { SchemaMigrationError } from '../migrations/registry'
 import { admitWholeLedgerOfOpenProject } from '../database'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
+import { readReviewProof } from '../../src/shared/review-proof'
 import {
   PORTABLE_TRANSFER_AUTHORITY_PATH,
   createPortableTransferAuthority,
@@ -654,18 +655,11 @@ function projectReviewBinding(value: unknown): Record<string, unknown> {
     fingerprint: projectReviewFingerprint(binding.fingerprint),
   }
   const manifest = binding.sourceManifest as Record<string, unknown> | undefined
-  if (manifest?.reviewRevisionContext === undefined) return projected
-  const context = assertReviewContext(manifest.reviewRevisionContext)
-  const encoded = JSON.stringify(context)
-  const source = object(context.source, ['id', 'chapterNumber', 'version', 'status', 'content'])
-  if (Buffer.byteLength(encoded, 'utf8') > 16 * 1024 * 1024
-    || contentHash(context.sourceHash) !== sha256(safeString(source.content))
-    || contentHash(manifest.reviewRevisionContextHash) !== sha256(encoded)
-    || JSON.stringify(manifest.authorInputs) !== JSON.stringify([{ id: 'review-revision-context', text: encoded }])) {
-    fail('PORTABLE_UNSAFE_PROJECTION')
-  }
-  projected.sourceManifest = { operation: safeId(manifest.operation), reviewRevisionContext: context,
-    reviewRevisionContextHash: manifest.reviewRevisionContextHash, authorInputs: manifest.authorInputs }
+  const proof = readReviewProof(manifest, sha256)
+  if (proof.kind === 'absent') return projected
+  if (proof.kind !== 'recomputable' || Buffer.byteLength(proof.contextJson, 'utf8') > 16 * 1024 * 1024) fail('PORTABLE_UNSAFE_PROJECTION')
+  projected.sourceManifest = { operation: safeId(manifest?.operation), reviewRevisionContext: assertReviewContext(proof.context),
+    reviewRevisionContextHash: proof.contextHash, authorInputs: manifest?.authorInputs }
   return projected
 }
 

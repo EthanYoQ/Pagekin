@@ -6,6 +6,7 @@ import type { BeginGenerationRequest } from '../../src/shared/generation-owner-c
 import type { PrepareReviewRevisionRequest, PreparedReviewRevisionContext, ReviewGenerationCommitRequest,
   RevisionGenerationCommitRequest, ReviewRevisionCommitReceipt, ReviewRevisionContext, ReviewRevisionRecovery } from '../../src/shared/review-revision-generation'
 import { buildReviewGenerationReport, type ReviewReportVersion } from '../../src/shared/review-generation-report'
+import { readReviewProof } from '../../src/shared/review-proof'
 import { buildReviewCycleRecheckReport, isNoopRevision, recheckCommitPolicy } from '../../src/shared/review-cycle'
 import { countDraftUnits } from '../../src/shared/draft-units'
 import { assertMateriallyCompleteRevision } from '../../src/services/workflows/commands/refinement-completeness'
@@ -43,14 +44,11 @@ export class ReviewRevisionGeneration {
     return structuredClone(prepared)
   }
   private context(run: DurableGenerationRun): ReviewRevisionContext {
-    const context = run.binding.sourceManifest.reviewRevisionContext as ReviewRevisionContext | undefined
-    if (!context || context.version !== 1 || context.operation !== run.binding.sourceManifest.operation
-      || !REVIEW_REVISION_OPERATIONS.includes(context.operation)
-      || run.binding.sourceManifest.reviewRevisionContextHash !== contextHash(context)
-      || context.sourceHash !== textHash(context.source.content)
-      || !isDeepStrictEqual(run.binding.sourceManifest.authorInputs, [{ id: 'review-revision-context', text: JSON.stringify(context) }]))
+    const proof = readReviewProof(run.binding.sourceManifest, textHash)
+    if (proof.kind !== 'recomputable' || proof.context.operation !== run.binding.sourceManifest.operation
+      || !REVIEW_REVISION_OPERATIONS.includes(proof.context.operation))
       throw new Error('GENERATION_REVIEW_CONTEXT_UNPROVEN')
-    return context
+    return proof.context
   }
   private attempts(runId?: string): AttemptRow[] {
     return (runId ? this.db.prepare('SELECT attempt_id,run_id,usage_receipt_json FROM generation_attempts WHERE run_id=? ORDER BY rowid').all(runId)

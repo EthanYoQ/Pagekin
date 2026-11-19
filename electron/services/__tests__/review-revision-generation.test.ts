@@ -100,6 +100,18 @@ describe('review and revision generation through the actual owner and SQLite', (
     expect(f.owner.listRecovery()).toMatchObject({ reviews: [], partial: false })
     expect(f.owner.readReviewRevisionRecovery(request.handle).saved).toEqual(saved)
   })
+  it.each([
+    ['上下文哈希', '$.sourceManifest.reviewRevisionContextHash', textHash('别的上下文')],
+    ['作者输入副本', '$.sourceManifest.authorInputs[0].text', '{}'],
+    ['操作', '$.sourceManifest.operation', 'refine-draft'],
+  ])('冻结证明的%s对不上：审修恢复稿读不出，报证明无效（#702 PR 1a）', async (_label, field, value) => {
+    const f = fixture()
+    const request = await f.run()
+    expect(f.owner.readReviewRevisionRecovery(request.handle).canResume).toBe(true)
+    f.db.prepare('UPDATE generation_runs SET binding_json=json_set(binding_json,?,?) WHERE run_id=?').run(field, value, request.handle.runId)
+
+    expect(() => f.owner.readReviewRevisionRecovery(request.handle)).toThrow('GENERATION_REVIEW_CONTEXT_UNPROVEN')
+  })
   it('没保存、不能续跑、也没写出任何字的审修不列；写出过字的仍列出供复制（#686）', async () => {
     const f = fixture()
     const empty = f.owner.begin({ ...f.selection(f.prepare()), uiActionNonce: 'empty' })
