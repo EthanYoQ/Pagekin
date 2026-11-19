@@ -4,7 +4,8 @@ import { isDeepStrictEqual } from 'node:util'
 import type { MainGenerationRunHandle, MainGenerationSnapshot } from '../../src/services/generation/generation-runtime'
 import type { BeginGenerationRequest } from '../../src/shared/generation-owner-contract'
 import type { PrepareReviewRevisionRequest, PreparedReviewRevisionContext, ReviewGenerationCommitRequest,
-  RevisionGenerationCommitRequest, ReviewRevisionCommitReceipt, ReviewRevisionContext, ReviewRevisionRecovery } from '../../src/shared/review-revision-generation'
+  RevisionGenerationCommitRequest, ReviewRevisionCommitReceipt, ReviewRevisionContext, ReviewRevisionMaterials, ReviewRevisionRecovery } from '../../src/shared/review-revision-generation'
+import { reviewWordsPerChapter } from '../../src/shared/review-revision-generation'
 import { buildReviewGenerationReport, type ReviewReportVersion } from '../../src/shared/review-generation-report'
 import { readReviewProof } from '../../src/shared/review-proof'
 import { buildReviewCycleRecheckReport, isNoopRevision, recheckCommitPolicy } from '../../src/shared/review-cycle'
@@ -37,11 +38,18 @@ export class ReviewRevisionGeneration {
   constructor(private readonly db: Database.Database, private readonly runs: GenerationRunRepository,
     private readonly scope: { projectId: string; epoch: string }, private readonly assertCurrent: () => void) {}
 
-  private remember(context: ReviewRevisionContext, lineage: { parentRootActionId?: string; modelId?: string } = {}): PreparedReviewRevisionContext {
-    const prepared = { contextId: randomUUID(), context: structuredClone(context), ...lineage }
+  private remember(context: ReviewRevisionContext, materials: ReviewRevisionMaterials,
+    lineage: { parentRootActionId?: string; modelId?: string } = {}): PreparedReviewRevisionContext {
+    const prepared = { contextId: randomUUID(), context: structuredClone(context), materials: structuredClone(materials), ...lineage }
     if (this.contexts.size >= 64) this.contexts.delete(this.contexts.keys().next().value!)
     this.contexts.set(prepared.contextId, prepared)
     return structuredClone(prepared)
+  }
+  /** 按冻结时的证明版本重新捕获；数据库里的材料变了就拒绝。 */
+  private recapture(context: ReviewRevisionContext): ReviewRevisionMaterials {
+    const current = captureReviewRevisionContext(this.db, reviewRevisionRequest(context), this.scope.projectId, context.recheck?.version, context.version)
+    if (!isDeepStrictEqual(context, current.frozen)) throw new Error('GENERATION_REVIEW_CONTEXT_CHANGED')
+    return current.materials
   }
   private context(run: DurableGenerationRun): ReviewRevisionContext {
     const proof = readReviewProof(run.binding.sourceManifest, textHash)
@@ -156,8 +164,8 @@ export class ReviewRevisionGeneration {
   prepare(request: PrepareReviewRevisionRequest): PreparedReviewRevisionContext {
     this.assertCurrent()
     return this.db.transaction(() => {
-      const context = captureReviewRevisionContext(this.db, request, this.scope.projectId)
-      return this.remember(context, this.parent(context))
+      const { frozen, materials } = captureReviewRevisionContext(this.db, request, this.scope.projectId)
+      return this.remember(frozen, materials, this.parent(frozen))
     })()
   }
   admit(selection: BeginGenerationRequest): PreparedReviewRevisionContext | undefined {
@@ -181,9 +189,8 @@ export class ReviewRevisionGeneration {
       || (prepared.parentRootActionId === undefined && selection.parentRootActionId !== undefined)
       // The confirmed review proves lineage, not the model choice of a new revision stage.
       || !context.confirmation && prepared.modelId && selection.modelId !== prepared.modelId) throw new Error('GENERATION_REVIEW_CONTEXT_MISMATCH')
-    if (!isDeepStrictEqual(context, captureReviewRevisionContext(this.db, reviewRevisionRequest(context), this.scope.projectId,
-      context.recheck?.version))
-      || !isDeepStrictEqual(this.parent(context), prepared.parentRootActionId ? { parentRootActionId: prepared.parentRootActionId, modelId: prepared.modelId } : {}))
+    this.recapture(context)
+    if (!isDeepStrictEqual(this.parent(context), prepared.parentRootActionId ? { parentRootActionId: prepared.parentRootActionId, modelId: prepared.modelId } : {}))
       throw new Error('GENERATION_REVIEW_CONTEXT_CHANGED')
     return structuredClone(prepared)
   }
@@ -256,7 +263,7 @@ export class ReviewRevisionGeneration {
       this.proveArtifact(run, artifact)
       const content = composition.text.trim()
       if (!content) throw new Error('GENERATION_REVIEW_REVISION_EMPTY')
-      assertMateriallyCompleteRevision(context.source.content, content, context.config.wordsPerChapter, context.uiLocale)
+      assertMateriallyCompleteRevision(context.source.content, content, reviewWordsPerChapter(context), context.uiLocale)
       if (isNoopRevision(context.source.content, content)) throw new Error('GENERATION_REVIEW_REVISION_NOOP')
       const result = RevisionRepository.replacePending({ baseDraftId: context.source.id,
         revisionType: context.operation === 'refine-from-review' ? 'review-fix' : 'refine',
@@ -306,14 +313,18 @@ export class ReviewRevisionGeneration {
       && !attemptedPurposes.includes('review-chapter-rebuild')) canResume = false
     if (!saved && context.operation !== 'review-chapter' && composition && lastCompositionFinishReason === 'stop') {
       try {
-        assertMateriallyCompleteRevision(context.source.content, composition.text, context.config.wordsPerChapter, context.uiLocale)
+        assertMateriallyCompleteRevision(context.source.content, composition.text, reviewWordsPerChapter(context), context.uiLocale)
         if (isNoopRevision(context.source.content, composition.text.trim())) canResume = false
       } catch { canResume = false }
     }
     return { handle: handleOf(run), context: structuredClone(context), modelId: (run.binding.sourceManifest.modelReceipt as { modelId: string }).modelId,
       sourceStatus: current ? 'current' : 'conflict', canResume, ...(saved ? { saved } : {}),
-      ...(canResume && !saved ? { contextId: this.remember(context, this.parent(context)).contextId } : {}), ...(composition ? { composition } : {}),
+      ...(canResume && !saved ? this.resumable(context) : {}), ...(composition ? { composition } : {}),
       lastCompositionFinishReason, ...(latestArtifact ? { latestArtifact, latestArtifactFinishReason } : {}), attemptedPurposes }
+  }
+  private resumable(context: ReviewRevisionContext): Pick<ReviewRevisionRecovery, 'contextId' | 'materials'> {
+    const materials = this.recapture(context)
+    return { contextId: this.remember(context, materials, this.parent(context)).contextId, materials: structuredClone(materials) }
   }
   close(): void { this.contexts.clear() }
 }

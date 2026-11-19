@@ -60,7 +60,6 @@ export type VisibleCompositionAlgorithm = 'visible-append-v1' | typeof import('.
 export const MATERIAL_DECISION_RECEIPT_VERSION = 1
 export const MATERIAL_DECISION_UNIT_METHOD_VERSION = 'utf8-bytes-v1' as const
 export const MATERIAL_DECISION_MAX_INPUT_UNITS = 8 * 1024 * 1024
-export const MATERIAL_DECISION_MAX_SOURCES = 1_024
 export const MATERIAL_DECISION_CATEGORIES = [
   'author', 'finalized-history', 'future-plan', 'derived-locator', 'reference',
 ] as const

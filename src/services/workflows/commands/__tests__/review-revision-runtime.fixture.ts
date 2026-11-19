@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { WorkflowGenerationRuntimeDependencies } from '../base-command'
 import type { ReviewRevisionCommandSource } from '../review-revision-command'
-import type { PrepareReviewRevisionRequest, PreparedReviewRevisionContext, ReviewRevisionRecovery } from '../../../../shared/review-revision-generation'
+import { freezeReviewRevisionContext, type PrepareReviewRevisionRequest, type PreparedReviewRevisionContext,
+  type ReviewRevisionMaterials, type ReviewRevisionRecovery } from '../../../../shared/review-revision-generation'
 import type { MainGenerationSnapshot } from '../../../generation/generation-runtime'
 import { freezeChapterGoals } from '../../../../shared/chapter-goal-review'
 import { buildReviewGenerationReport } from '../../../../shared/review-generation-report'
@@ -70,14 +71,14 @@ export class ReviewRevisionRuntimeFixture {
       const project = useProjectStore.getState().currentProject!
       const config = structuredClone(currentConfig)
       const core = await this.optional<Record<string, string>>('db:project-core-get', {})
-      const blueprints = await this.optional<PreparedReviewRevisionContext['context']['blueprints']>('db:blueprint-get-all', [])
-      const blueprint = await this.optional<PreparedReviewRevisionContext['context']['blueprints'][number] | null>('db:blueprint-get', null, source.chapterNumber)
+      const blueprints = await this.optional<ReviewRevisionMaterials['blueprints']>('db:blueprint-get-all', [])
+      const blueprint = await this.optional<ReviewRevisionMaterials['blueprints'][number] | null>('db:blueprint-get', null, source.chapterNumber)
       if (!blueprints.length && blueprint) blueprints.push(blueprint)
-      const projections = await this.optional<NonNullable<PreparedReviewRevisionContext['context']['history'][number]['projection']>[]>('db:continuity-list-before', []).catch(() => [])
+      const projections = await this.optional<NonNullable<ReviewRevisionMaterials['history'][number]['projection']>[]>('db:continuity-list-before', []).catch(() => [])
       const exemptions = await this.optional<Parameters<typeof findBlueprintContinuityRisks>[2]>('db:consistency-exemption-list', [])
       const characters = await this.optional<Array<{ name: string; role?: string; currentState?: Record<string, unknown> }>>('db:character-get-all', [])
-      const frozen: PreparedReviewRevisionContext['context'] = {
-        version: 1, operation: request.operation, source, sourceHash: digest(source.content), config,
+      const frozen: ReviewRevisionMaterials = {
+        operation: request.operation, source, sourceHash: digest(source.content), config,
         writingLanguage: config.writingLanguage ?? this.writingLanguage, uiLocale: request.uiLocale,
         authorInputs: request.authorInputs, characterStates: characters.map(c => `${c.name} (${c.role || 'unknown'})`).join('\n'),
         worldbuilding: core.worldbuilding || '', history: projections.map(p => ({ draftId: p.draftId,
@@ -106,7 +107,7 @@ export class ReviewRevisionRuntimeFixture {
             sourceSpan: { start: 0, end: 4, unit: 'utf16-code-unit' }, occurrence: 1,
             sourceExcerpt: source.content.slice(0, 4) }] }
       }
-      this.prepared = { contextId: 'fixture-context', context: structuredClone(frozen),
+      this.prepared = { contextId: 'fixture-context', context: freezeReviewRevisionContext(frozen, 2, digest), materials: structuredClone(frozen),
         ...(request.operation === 'refine-from-review' || frozen.recheck
           ? { parentRootActionId: this.parentRootActionId, modelId: this.parentModelId } : {}) }
       this.recovery = undefined
@@ -180,7 +181,8 @@ export class ReviewRevisionRuntimeFixture {
       this.activeHandle = handle
       main.context.mainGenerationRunHandle = handle
       main.context.mainGenerationRootHandle = handle
-      if (!this.recovery) this.recovery = { handle, context: structuredClone(this.prepared!.context), contextId: this.prepared!.contextId,
+      if (!this.recovery) this.recovery = { handle, context: structuredClone(this.prepared!.context), materials: structuredClone(this.prepared!.materials),
+        contextId: this.prepared!.contextId,
         modelId: options.modelId ?? 'model-a', sourceStatus: 'current', canResume: true, attemptedPurposes: [] }
       await main.selection.onRunOpened?.(handle)
       const runtime = await dependencies.createRuntime(options)

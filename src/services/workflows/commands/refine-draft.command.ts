@@ -36,7 +36,7 @@ export class RefineDraftCommand extends ReviewRevisionCommand {
     if (this.recovery?.composition && this.recovery.lastCompositionFinishReason === 'stop') {
       return this.generateRevision(prepared, params, '', '')
     }
-    const frozen = prepared.context
+    const frozen = prepared.materials
     const language = frozen.writingLanguage
     params.callbacks.log(workflowUiText(params.context, '正在精修章节...', 'Refining the chapter...'))
     const projectSession = requireWorkflowProjectSession(params.context)

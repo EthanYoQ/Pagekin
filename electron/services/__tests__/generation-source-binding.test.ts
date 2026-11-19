@@ -395,9 +395,9 @@ describe('main rebuilt generation sources', () => {
             expectedDraft: { chapterNumber: 2, version: 1, status: 'draft', contentHash: textHash('原文\r\n汉字。') },
             authorInputs: [], uiLocale: 'zh-CN' };
         // 主进程在**会话-1** 捕获；项目 id 与会话无关，租约不进身份。
-        const reviewRevisionContext = captureReviewRevisionContext(f.db, request, f.input.projectId);
-        expect(reviewRevisionContext.history[0]!.identity).toMatchObject({ projectId: 'p', sourceId: 'finalized:3', revision: 3, provenance: 'finalized' });
-        expect(reviewRevisionContext.history[0]!.identity).not.toHaveProperty('epoch');
+        const { frozen: reviewRevisionContext, materials } = captureReviewRevisionContext(f.db, request, f.input.projectId);
+        expect(materials.history[0]!.identity).toMatchObject({ projectId: 'p', sourceId: 'finalized:3', revision: 3, provenance: 'finalized' });
+        expect(materials.history[0]!.identity).not.toHaveProperty('epoch');
         const input: GenerationSourceBindingInput = { ...f.input, operation: 'review-chapter', chapterNumber: 2,
             selectedDraftIds: [1], selectedFinalizedDraftIds: [], promptKeys: ['consistency_check'], skillStages: ['review'],
             reviewRevisionContext };
@@ -677,10 +677,10 @@ describe('material decision receipt binding (S10B step 3)', () => {
     it('binds and restores the complete required review receipt above the former 24k local allowance', async () => {
         const f = receiptFixture();
         f.db.prepare('UPDATE project_core SET global_guidance=?').run('作者独有事实。'.repeat(1_200));
-        const context = captureReviewRevisionContext(f.db, { operation: 'review-chapter', draftId: 1,
+        const { frozen: context, materials } = captureReviewRevisionContext(f.db, { operation: 'review-chapter', draftId: 1,
             expectedDraft: { chapterNumber: 2, version: 1, status: 'draft', contentHash: textHash('原文\r\n汉字。') },
             authorInputs: [], uiLocale: 'zh-CN' }, f.input.projectId);
-        const admission = await selectFrozenReviewRevisionMaterials(context, { projectId: f.input.projectId, epoch: f.input.epoch }, DEFAULT_MATERIAL_ADMISSION, 0);
+        const admission = await selectFrozenReviewRevisionMaterials(materials, { projectId: f.input.projectId, epoch: f.input.epoch }, DEFAULT_MATERIAL_ADMISSION, 0);
         expect(admission.decision.capacity.admittedUnits).toBeGreaterThan(24_000);
         expect(admission.decision.capacity.maxInputUnits).toBe(MATERIAL_DECISION_MAX_INPUT_UNITS);
         expect(admission.decision.coverage.complete).toBe(true);

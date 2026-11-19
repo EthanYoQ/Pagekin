@@ -12,7 +12,7 @@ import type { WritingLanguage } from '../../src/shared/writing-language';
 import { CURRENT_DRAFT_STATUS_SQL, WORKING_DRAFT_STATUSES } from '../../src/shared/draft-status';
 import type { RunBinding } from '../repositories/generation-run-repository';
 import type { GenerationAuthorInput, GenerationBatchIntent, MaterialBudget, MaterialDecisionIncludedSource, MaterialDecisionOmittedSource, MaterialDecisionReceipt } from '../../src/shared/generation-owner-contract';
-import { DEFAULT_CONTEXT_WINDOW_TOKENS, materialBudgetFrom, MATERIAL_BUDGET_WINDOW_SOURCES,MATERIAL_DECISION_CATEGORIES, MATERIAL_DECISION_MAX_INPUT_UNITS, MATERIAL_DECISION_MAX_SOURCES,
+import { DEFAULT_CONTEXT_WINDOW_TOKENS, materialBudgetFrom, MATERIAL_BUDGET_WINDOW_SOURCES,MATERIAL_DECISION_CATEGORIES, MATERIAL_DECISION_MAX_INPUT_UNITS,
     MATERIAL_DECISION_OMISSION_REASONS, MATERIAL_DECISION_RECEIPT_VERSION, MATERIAL_DECISION_SOURCE_ID,
     MATERIAL_DECISION_UNIT_METHOD_VERSION } from '../../src/shared/generation-owner-contract';
 import type { GenerationKnowledgeSnapshot } from '../../src/shared/generation-knowledge';
@@ -210,7 +210,7 @@ function decisionFields(value: unknown, allowed: readonly string[]): Record<stri
     return record;
 }
 function decisionSources(value: unknown, kind: 'included' | 'omitted'): (MaterialDecisionIncludedSource | MaterialDecisionOmittedSource)[] {
-    if (!Array.isArray(value) || value.length > MATERIAL_DECISION_MAX_SOURCES)
+    if (!Array.isArray(value))
         fail('GENERATION_MATERIAL_DECISION_INVALID');
     return value.map(entry => {
         const record = decisionFields(entry, kind === 'included'
@@ -294,8 +294,7 @@ function freezeMaterialDecision(value: unknown): MaterialDecisionReceipt {
     const admittedUnits = frozen.included.reduce((sum, item) => sum + item.units, 0);
     const disallowedIntersection = frozen.omitted.some(item => includedIdentities.includes(decisionIdentity(item))
         && item.reason !== 'locator-statement-not-evidence' && item.reason !== 'evidence-not-locatable');
-    if (frozen.included.length + frozen.omitted.length > MATERIAL_DECISION_MAX_SOURCES
-        || new Set(includedIdentities).size !== includedIdentities.length
+    if (new Set(includedIdentities).size !== includedIdentities.length
         || new Set(omittedEvents).size !== omittedEvents.length || disallowedIntersection
         || !isDeepStrictEqual(frozen.included, sortedIncluded) || !isDeepStrictEqual(frozen.omitted, sortedOmitted)
         || admittedUnits !== frozen.capacity.admittedUnits || admittedUnits > frozen.capacity.maxInputUnits
@@ -339,6 +338,9 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
     if (input.promptKeys.some(key => !/^[A-Za-z0-9_-]{1,128}$/.test(key)) || input.skillStages.some(stage => !WRITING_SKILL_STAGES.includes(stage)))
         fail('GENERATION_ASSET_ID_INVALID');
     const dataVersion = deps.db.pragma('data_version', { simple: true }), changes = deps.db.prepare('SELECT total_changes()').pluck().get();
+    const frozenReview = input.reviewRevisionContext;
+    const reviewMaterials = frozenReview && captureReviewRevisionContext(deps.db, reviewRevisionRequest(frozenReview), input.projectId, frozenReview.recheck?.version, frozenReview.version);
+    if (reviewMaterials && !isDeepStrictEqual(frozenReview, reviewMaterials.frozen)) fail('GENERATION_REVIEW_CONTEXT_CHANGED');
     const modelReceipt = modelProjection(input.modelReceipt, verbatimModelName);
     const materialDecision = input.materialDecision === undefined ? undefined : freezeMaterialDecision(input.materialDecision);
     if (materialDecision && !['chapter-draft', 'review-chapter', 'refine-draft', 'refine-from-review'].includes(input.operation))
@@ -352,7 +354,7 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
             fail('GENERATION_MATERIAL_DECISION_INVALID');
     }
     if (materialDecision && ['review-chapter', 'refine-draft', 'refine-from-review'].includes(input.operation)) {
-        const context = input.reviewRevisionContext;
+        const context = reviewMaterials?.materials;
         const reviewSourceId = context?.confirmation?.reviewSourceId;
         // Historical confirmations had one author-category receipt. Preserve that frozen contract.
         const legacyConfirmation = input.operation === 'refine-from-review' && Number.isSafeInteger(reviewSourceId) && reviewSourceId! > 0
@@ -407,11 +409,8 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
             const blueprints = deps.db.prepare('SELECT * FROM blueprints ORDER BY chapter_number').all() as Record<string, unknown>[];
             add('agent-blueprints:all', 0, stable(blueprints.map(row => without(row, ['created_at', 'updated_at', 'notes_updated_at']))), 'unconfirmed-continuity', 'actual author plans guarded across Agent tool confirmations');
         }
-        if (input.reviewRevisionContext) {
-            const currentContext = captureReviewRevisionContext(deps.db, reviewRevisionRequest(input.reviewRevisionContext), input.projectId, input.reviewRevisionContext.recheck?.version);
-            if (!isDeepStrictEqual(input.reviewRevisionContext, currentContext)) fail('GENERATION_REVIEW_CONTEXT_CHANGED');
-            add('review-revision-context', 0, JSON.stringify(currentContext), 'author-constraint', 'main-verified frozen manuscript, author decisions and review material');
-        }
+        if (reviewMaterials)
+            add('review-revision-context', 0, JSON.stringify(reviewMaterials.frozen), 'author-constraint', 'main-verified frozen manuscript, author decisions and review material');
         if (input.operation === 'chapter-draft') {
             add('characters:all', 0, stable(currentCharacterProjection(deps.db, input.projectId, transferAuthority?.originProjectId)), 'author-constraint', 'current structured character facts consumed by drafting');
             const relationships = deps.db.prepare('SELECT * FROM character_relationships ORDER BY relationship_id').all() as Record<string, unknown>[];

@@ -146,10 +146,10 @@ describe('review/revision consumers using the main contract (synthetic transport
         const result = await invoke(channel, ...args)
         if (channel === 'review-revision:prepare') {
           const prepared = result as NonNullable<typeof f.fixture.prepared>
-          prepared.context.predecessor = { draftId: 8, chapterNumber: 0, chapterTitle: '', content: predecessor,
+          prepared.materials.predecessor = { draftId: 8, chapterNumber: 0, chapterTitle: '', content: predecessor,
             identity: { projectId: session.projectId, sourceId: 'candidate:8', revision: 1,
               contentHash: hash(predecessor), provenance: 'generated' } }
-          prepared.context.frozenGoals = { chapterNumber: 1, coverage: 'complete',
+          prepared.materials.frozenGoals = prepared.context.frozenGoals = { chapterNumber: 1, coverage: 'complete',
             items: [{ id: 'ch1:keyEvents:1', text: 'Carry the parcel' }] }
           f.fixture.prepared = structuredClone(prepared)
         }
@@ -210,7 +210,7 @@ describe('review/revision consumers using the main contract (synthetic transport
         const result = await original(channel, ...args)
         if (channel === 'review-revision:prepare') {
           const prepared = result as NonNullable<typeof f.fixture.prepared>
-          prepared.context.blueprints = [{ chapterNumber: 1, title: 'Current', keyEvents: '', characters: [],
+          prepared.materials.blueprints = [{ chapterNumber: 1, title: 'Current', keyEvents: '', characters: [],
             role: '', purpose: '', suspenseHook: '', notes: '', userGuidance: 'CURRENT_AUTHOR_TIME' },
           { chapterNumber: 2, title: 'Future', keyEvents: 'FUTURE_PLAN', characters: [],
             role: '', purpose: '', suspenseHook: '', notes: '', userGuidance: '' }]
@@ -237,7 +237,7 @@ describe('review/revision consumers using the main contract (synthetic transport
       expect(prompt).toContain(language === 'zh-CN' ? '正文自身明确写出的跨日或时间间隔优先于同日默认' : 'An explicit day change or time gap in the manuscript takes priority over the same-day default')
       expect(prompt).toContain(language === 'zh-CN' ? '前面最近的明确时点' : 'nearest preceding explicit time')
       expect(prompt).toContain(language === 'zh-CN' ? 'AI 建议中的具体时点不构成来源依据' : 'A specific time proposed by AI is not source evidence')
-      const author = reviewRevisionAuthorMaterial(f.fixture.prepared!.context)
+      const author = reviewRevisionAuthorMaterial(f.fixture.prepared!.materials)
       const boundary = language === 'zh-CN' ? '【后续蓝图/计划｜非既定历史】' : '[Future blueprints/plans | not established history]'
       expect(author.split(boundary)[0]).toContain('CURRENT_AUTHOR_TIME')
       expect(author.split(boundary)[0]).not.toContain('FUTURE_PLAN')
@@ -249,7 +249,7 @@ describe('review/revision consumers using the main contract (synthetic transport
         expect(prompt).toContain(language === 'zh-CN' ? '【时间一致性检查】' : '[Temporal consistency checks]')
         expect(prompt).toContain(language === 'zh-CN' ? 'pass 简述实际核对的对象、来源与对照结果即可' : 'Briefly state the actual subject, source checked and comparison result for a pass')
       }
-      if (operation === 'refine-from-review') expect(prompt).toContain(reviewRevisionAiBrief(f.fixture.prepared!.context))
+      if (operation === 'refine-from-review') expect(prompt).toContain(reviewRevisionAiBrief(f.fixture.prepared!.materials))
       if (operation === 'recheck') expect(prompt).toContain(language === 'zh-CN' ? '不能判为 resolved' : 'must not be marked resolved')
       if (operation !== 'refine-from-review') expect(prompt).toContain(language === 'zh-CN' ? '单纯超出约定字数只作非阻断提示' : 'Exceeding the agreed length alone is a nonblocking notice')
       vi.restoreAllMocks()
@@ -264,7 +264,7 @@ describe('review/revision consumers using the main contract (synthetic transport
       const result = await invoke(channel, ...args)
       if (channel === 'review-revision:prepare') {
         const prepared = result as NonNullable<typeof f.fixture.prepared>
-        prepared.context.history = [2, 3, 4].map(chapterNumber => {
+        prepared.materials.history = [2, 3, 4].map(chapterNumber => {
           const content = `第${chapterNumber}章定稿。`.repeat(300)
           return { draftId: chapterNumber * 10, chapterNumber, chapterTitle: '', content,
             identity: { projectId: session.projectId, sourceId: `finalized:${chapterNumber * 10}`, revision: chapterNumber * 10, contentHash: hash(content), provenance: 'finalized' as const } }
@@ -291,8 +291,8 @@ describe('review/revision consumers using the main contract (synthetic transport
       const result = await invoke(channel, ...args)
       if (channel === 'review-revision:prepare') {
         const prepared = result as NonNullable<typeof f.fixture.prepared>
-        prepared.context.config.worldSetting = setting
-        prepared.context.predecessor = { draftId: 8, chapterNumber: 0, chapterTitle: '', content: predecessor,
+        prepared.materials.config.worldSetting = setting
+        prepared.materials.predecessor = { draftId: 8, chapterNumber: 0, chapterTitle: '', content: predecessor,
           identity: { projectId: session.projectId, sourceId: 'candidate:8', revision: 1,
             contentHash: hash(predecessor), provenance: 'generated' } }
         frozenBytes = JSON.stringify(prepared.context)
@@ -303,10 +303,10 @@ describe('review/revision consumers using the main contract (synthetic transport
     await f.command(operation).execute(f.args)
     expect(JSON.stringify(f.fixture.prepared!.context)).toBe(frozenBytes)
     const prompt = f.provider.mock.calls[0]![0].find(message => message.role === 'user')!.content
-    const author = reviewRevisionAuthorMaterial(f.fixture.prepared!.context)
+    const author = reviewRevisionAuthorMaterial(f.fixture.prepared!.materials)
     expect(prompt).toContain(author)
     expect(prompt).toContain(predecessor)
-    if (operation === 'refine-from-review') expect(prompt).toContain(reviewRevisionAiBrief(f.fixture.prepared!.context))
+    if (operation === 'refine-from-review') expect(prompt).toContain(reviewRevisionAiBrief(f.fixture.prepared!.materials))
     expect(f.fixture.materialDecisions[0]?.capacity.admittedUnits).toBeGreaterThan(24_000)
     expect(f.fixture.materialDecisions[0]?.capacity.maxInputUnits).toBe(MATERIAL_DECISION_MAX_INPUT_UNITS)
     expect(f.fixture.materialDecisions[0]?.coverage.complete).toBe(true)
@@ -325,15 +325,15 @@ describe('review/revision consumers using the main contract (synthetic transport
         const result = await invoke(channel, ...args)
         if (channel === 'review-revision:prepare') {
           const prepared = result as NonNullable<typeof f.fixture.prepared>
-          prepared.context.config.coreOutline = prefix
-          prepared.context.config.worldSetting = setting
-          prepared.context.worldbuilding = prefix
+          prepared.materials.config.coreOutline = prefix
+          prepared.materials.config.worldSetting = setting
+          prepared.materials.worldbuilding = prefix
           f.fixture.prepared = structuredClone(prepared)
         }
         return result
       })
       await f.command(operation).execute(f.args)
-      const frozen = f.fixture.prepared!.context
+      const frozen = f.fixture.prepared!.materials
       expect(frozen.config.coreOutline).toBe(prefix)
       expect(frozen.config.worldSetting).toBe(setting)
       expect(frozen.worldbuilding).toBe(prefix)
@@ -358,13 +358,13 @@ describe('review/revision consumers using the main contract (synthetic transport
         const result = await invoke(channel, ...args)
         if (channel === 'review-revision:prepare') {
           const prepared = result as NonNullable<typeof f.fixture.prepared>
-          prepared.context.worldbuilding = '作者硬事实：钟楼没有地下室。'
-          prepared.context.predecessor = { draftId: 8, chapterNumber: 0, chapterTitle: '', content: '已选保存前驱：角色仍未定稿。',
+          prepared.materials.worldbuilding = '作者硬事实：钟楼没有地下室。'
+          prepared.materials.predecessor = { draftId: 8, chapterNumber: 0, chapterTitle: '', content: '已选保存前驱：角色仍未定稿。',
             identity: { projectId: session.projectId, sourceId: 'candidate:8', revision: 1,
               contentHash: hash('已选保存前驱：角色仍未定稿。'), provenance: 'generated' } }
-          prepared.context.blueprints = [{ chapterNumber: 1, title: '开门', keyEvents: '本章必须交出印章', characters: [], role: '', purpose: '', suspenseHook: '', userGuidance: '', notes: '' }]
-          if (prepared.context.confirmation) prepared.context.confirmation.snapshot = {
-            ...prepared.context.confirmation.snapshot, items: [
+          prepared.materials.blueprints = [{ chapterNumber: 1, title: '开门', keyEvents: '本章必须交出印章', characters: [], role: '', purpose: '', suspenseHook: '', userGuidance: '', notes: '' }]
+          for (const target of [prepared.context, prepared.materials]) if (target.confirmation) target.confirmation.snapshot = {
+            ...target.confirmation.snapshot, items: [
               { category: '地点', severity: 'warning', description: '把钟楼改成地下室。', decision: 'apply', origin: 'ai' },
               { category: '作者要求', severity: 'warning', description: '保留钟楼场景。', decision: 'apply', origin: 'author' },
             ],
@@ -409,6 +409,7 @@ describe('review/revision consumers using the main contract (synthetic transport
         const snapshot = prepared.context.confirmation!.snapshot
         prepared.context.confirmation!.snapshot = { ...snapshot, items: [...snapshot.items,
           { category: '作者要求', severity: 'warning', description: authorRequest, decision: 'apply', origin: 'author' }] }
+        prepared.materials.confirmation!.snapshot = prepared.context.confirmation!.snapshot
         frozenBytes = JSON.stringify(prepared.context)
         f.fixture.prepared = structuredClone(prepared)
       }
@@ -422,7 +423,7 @@ describe('review/revision consumers using the main contract (synthetic transport
     const reportEnd = writingLanguage === 'zh-CN' ? '\n【待修稿内容】\n' : '\n[Source manuscript]\n'
     const [basis, rest] = prompt.split(reportStart)
     const report = rest!.split(reportEnd)[0]!
-    const author = reviewRevisionAuthorMaterial(frozen)
+    const author = reviewRevisionAuthorMaterial(f.fixture.prepared!.materials)
     const ai = reviewRevisionAiBrief(frozen)
     expect(basis).toContain(author)
     expect(basis).toContain(predecessor)
@@ -465,8 +466,8 @@ describe('review/revision consumers using the main contract (synthetic transport
     expect(prompt).toContain('CUSTOM_REVIEW_TASK')
     expect(prompt).toContain('CUSTOM_AUTHOR_GUIDANCE')
     expect(prompt).toContain(source.content)
-    expect(prompt).toContain(reviewRevisionAiBrief(f.fixture.prepared!.context))
-    expect(prompt).toContain(reviewRevisionAuthorMaterial(f.fixture.prepared!.context))
+    expect(prompt).toContain(reviewRevisionAiBrief(f.fixture.prepared!.materials))
+    expect(prompt).toContain(reviewRevisionAuthorMaterial(f.fixture.prepared!.materials))
     expect(prompt).toContain('【完整修稿任务合同】')
     expect(f.fixture.materialDecisions[0]?.promptHash).toBe(hash(prompt))
     expect(f.fixture.selections[0]).toMatchObject({ parentRootActionId: 'fixture-review-root' })
@@ -480,7 +481,7 @@ describe('review/revision consumers using the main contract (synthetic transport
       const result = await invoke(channel, ...args)
       if (channel === 'review-revision:prepare') {
         const prepared = result as NonNullable<typeof f.fixture.prepared>
-        prepared.context.worldbuilding = 'A'.repeat(MATERIAL_DECISION_MAX_INPUT_UNITS + 1)
+        prepared.materials.worldbuilding = 'A'.repeat(MATERIAL_DECISION_MAX_INPUT_UNITS + 1)
         f.fixture.prepared = structuredClone(prepared)
       }
       return result

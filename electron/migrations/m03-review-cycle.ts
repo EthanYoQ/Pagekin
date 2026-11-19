@@ -195,11 +195,12 @@ function proveEffect(db: Database.Database, row: AttemptRow, expected: {
     || !source || Object.keys(source).sort().join() !== 'chapterNumber,content,id,status,version'
     || source.id !== expected.source.id || source.chapterNumber !== expected.source.chapterNumber
     || source.version !== expected.source.version || source.status !== expected.source.status || source.content !== expected.source.content
-    || !context.config || !['zh-CN', 'en-US'].includes(String(context.writingLanguage))
+    || !['zh-CN', 'en-US'].includes(String(context.writingLanguage))
     || !['zh-CN', 'en-US'].includes(String(context.uiLocale)) || !Array.isArray(context.authorInputs)
-    || typeof context.characterStates !== 'string' || typeof context.worldbuilding !== 'string'
-    || !Array.isArray(context.history) || !Array.isArray(context.blueprints) || !context.frozenGoals
-    || !Array.isArray(context.preflightFindings)
+    || (context.version === 1 ? !context.config || typeof context.characterStates !== 'string' || typeof context.worldbuilding !== 'string'
+      || !Array.isArray(context.history) || !Array.isArray(context.blueprints)
+      : !integer(context.wordsPerChapter) || !HASH.test(String(context.inputHash)))
+    || !context.frozenGoals || !Array.isArray(context.preflightFindings)
     || (expected.kind === 'review' && (confirmation !== undefined
       || !validRecheckVersionPair || !isDeepStrictEqual(recheck, frozenRecheck)))
     || (expected.kind === 'revision' && (!expected.confirmation || !confirmation

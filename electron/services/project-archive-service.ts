@@ -134,6 +134,11 @@ const REVIEW_CONTEXT_FIELDS = [
   'characterStates', 'worldbuilding', 'history', 'blueprints', 'frozenGoals', 'preflightFindings',
   'confirmation', 'recheck', 'predecessor',
 ] as const
+/** v2 证明不带整份材料，v1 才有的字段出现在 v2 里同样拒绝（ADR-0031）。 */
+const REVIEW_CONTEXT_V2_FIELDS = [
+  'version', 'operation', 'source', 'sourceHash', 'writingLanguage', 'uiLocale', 'authorInputs',
+  'frozenGoals', 'preflightFindings', 'wordsPerChapter', 'confirmation', 'recheck', 'inputHash',
+] as const
 const HISTORY_ID_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   blueprint_character_sync_operations: ['operation_id'],
   blueprint_commit_operations: ['operation_id'],
@@ -567,13 +572,7 @@ function reviewHistoryItem(value: unknown): void {
   }
 }
 
-function assertReviewContext(value: unknown): Record<string, unknown> {
-  const context = object(value, REVIEW_CONTEXT_FIELDS)
-  if (context.version !== 1 || !['review-chapter', 'refine-draft', 'refine-from-review'].includes(String(context.operation))) {
-    fail('PORTABLE_UNSAFE_PROJECTION')
-  }
-  reviewSource(context.source)
-  contentHash(context.sourceHash)
+function reviewV1Materials(context: Record<string, unknown>): void {
   const config = object(context.config, ['writingLanguage', 'creativeStrategy',
     'narrativeThreadDormantChapterThreshold', 'genre', 'subGenre', 'targetAudience', 'totalChapters',
     'wordsPerChapter', 'plotStructure', 'narrativePOV', 'coreOutline', 'worldSetting', 'goldenFinger',
@@ -582,11 +581,7 @@ function assertReviewContext(value: unknown): Record<string, unknown> {
     'plotStructure', 'narrativePOV', 'coreOutline', 'worldSetting', 'goldenFinger', 'protagonistProfile',
     'globalGuidance', 'writingStyle', 'referenceWorks'])
   reviewIntegerFields(config, ['narrativeThreadDormantChapterThreshold', 'totalChapters', 'wordsPerChapter'])
-  reviewTextFields(context, ['writingLanguage', 'uiLocale', 'characterStates', 'worldbuilding'])
-  for (const value of reviewArray(context.authorInputs)) {
-    const input = object(value, ['id', 'text'])
-    reviewTextFields(input, ['id', 'text'])
-  }
+  reviewTextFields(context, ['characterStates', 'worldbuilding'])
   reviewArray(context.history).forEach(reviewHistoryItem)
   if (context.predecessor !== undefined) reviewHistoryItem(context.predecessor)
   for (const value of reviewArray(context.blueprints)) {
@@ -596,6 +591,25 @@ function assertReviewContext(value: unknown): Record<string, unknown> {
     reviewTextFields(blueprint, ['title', 'role', 'purpose', 'keyEvents', 'suspenseHook', 'userGuidance', 'notes'])
     reviewArray(blueprint.characters).forEach(item => safeString(item))
   }
+}
+
+function assertReviewContext(value: unknown): Record<string, unknown> {
+  const v2 = (value as Record<string, unknown> | null | undefined)?.version === 2
+  const context = object(value, v2 ? REVIEW_CONTEXT_V2_FIELDS : REVIEW_CONTEXT_FIELDS)
+  if (context.version !== 1 && !v2 || !['review-chapter', 'refine-draft', 'refine-from-review'].includes(String(context.operation))) {
+    fail('PORTABLE_UNSAFE_PROJECTION')
+  }
+  reviewSource(context.source)
+  contentHash(context.sourceHash)
+  reviewTextFields(context, ['writingLanguage', 'uiLocale'])
+  for (const value of reviewArray(context.authorInputs)) {
+    const input = object(value, ['id', 'text'])
+    reviewTextFields(input, ['id', 'text'])
+  }
+  if (v2) {
+    reviewIntegerFields(context, ['wordsPerChapter'])
+    contentHash(context.inputHash)
+  } else reviewV1Materials(context)
   const goals = object(context.frozenGoals, ['chapterNumber', 'coverage', 'items'])
   reviewIntegerFields(goals, ['chapterNumber'])
   reviewTextFields(goals, ['coverage'])

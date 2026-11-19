@@ -20,7 +20,8 @@ export async function createReviewRevisionRecoveryWorkflow(projectSession: Proje
   if (!recovery.saved && !recovery.canResume) throw new Error('GENERATION_REVIEW_RECOVERY_COPY_ONLY')
   const params = { draftPath: formatResourceUri({ kind: 'draft', id: source.id }), draftContent: source.content,
     chapterNumber: source.chapterNumber, recoveryHandle: handle }
-  const blueprint = frozen.blueprints.find(item => item.chapterNumber === source.chapterNumber)
+  // 已保存的只打开收据，用不到蓝图；续跑时主进程一定给出材料。
+  const blueprint = recovery.materials?.blueprints.find(item => item.chapterNumber === source.chapterNumber)
   const command = frozen.operation === 'review-chapter' ? new ReviewChapterCommand(params)
     : frozen.operation === 'refine-from-review' ? new RefineFromReviewCommand(params)
       : new RefineDraftCommand({ ...params, chapterInfo: { projectPath: session.projectPath, chapterNumber: source.chapterNumber,

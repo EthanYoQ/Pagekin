@@ -25,10 +25,7 @@ const Database = createRequire(import.meta.url)('better-sqlite3') as typeof impo
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const dispose of cleanup.splice(0)) dispose(); vi.restoreAllMocks() })
 
-type Prepared = { contextId: string; frozen?: unknown; materials?: unknown; context?: unknown }
-const storedText = (prepared: Prepared) => JSON.stringify(prepared.frozen ?? prepared.context)
-const promptView = (prepared: Prepared) => (prepared.materials ?? prepared.context) as Parameters<typeof selectFrozenReviewRevisionMaterials>[0]
-const REVIEW_OUTPUT = JSON.stringify({ summary: '检查完成', items: [] })
+const REVIEW_OUTPUT = JSON.stringify({ summary: '检查完成', items: [{ category: '表达', severity: 'pass', description: '没有问题' }] })
 const model: ModelProfile = { id: 'synthetic', name: '合成模型', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1', apiKey: 'synthetic-key',
   baseUrl: 'https://api.openai.com/v1', temperature: 0.7, maxTokens: 2048, purposes: ['generation'],
   capabilities: { contextWindowTokens: 32768, maxOutputTokens: 2048, reasoning: false, structuredOutput: true, usage: true } }
@@ -68,10 +65,10 @@ function owner(f: ReturnType<typeof project>, epoch = 'epoch-1') {
 
 function prepareReview(f: ReturnType<typeof project>, o: ReturnType<typeof owner>) {
   const prepared = o.prepareReviewRevision({ operation: 'review-chapter', draftId: f.sid,
-    expectedDraft: { chapterNumber: f.sid, version: 1, status: 'draft', contentHash: textHash(f.source) }, authorInputs: [], uiLocale: 'zh-CN' }) as Prepared
+    expectedDraft: { chapterNumber: f.sid, version: 1, status: 'draft', contentHash: textHash(f.source) }, authorInputs: [], uiLocale: 'zh-CN' })
   const selection: BeginGenerationRequest = { operation: 'review-chapter', uiActionNonce: 'action', modelId: model.id, chapterNumber: f.sid,
     selectedDraftIds: [f.sid], selectedFinalizedDraftIds: [], promptKeys: ['consistency_check'], skillStages: ['review'], output: 'structured-data',
-    reviewRevisionContextId: prepared.contextId, authorInputs: [{ id: 'review-revision-context', text: storedText(prepared) }] }
+    reviewRevisionContextId: prepared.contextId, authorInputs: [{ id: 'review-revision-context', text: JSON.stringify(prepared.context) }] }
   return { prepared, selection }
 }
 
@@ -107,15 +104,15 @@ function deadCharacterContext(priorChapters: number) {
   db.prepare("INSERT INTO drafts_all(id,chapter_number,version,status,content_id) VALUES(10000,?,1,'draft',10000)").run(target)
   db.prepare('INSERT INTO blueprints(chapter_number,title,characters,key_events) VALUES(?,?,?,?)').run(target, '归来', JSON.stringify(['林岚']), '林岚归来')
   const captured = captureReviewRevisionContext(db, { operation: 'review-chapter', draftId: 10_000,
-    expectedDraft: { chapterNumber: target, version: 1, status: 'draft', contentHash: textHash(source) }, authorInputs: [], uiLocale: 'zh-CN' }, 'project') as unknown
-  return ((captured as { frozen?: unknown }).frozen ?? captured) as Record<string, unknown> & { preflightFindings: unknown[] }
+    expectedDraft: { chapterNumber: target, version: 1, status: 'draft', contentHash: textHash(source) }, authorInputs: [], uiLocale: 'zh-CN' }, 'project')
+  return captured.frozen
 }
 
 describe('新写入的审修证明不随前文章数增长（#702 PR 2）', () => {
   it('去掉预检命中后，前文 3 章与 48 章的冻结上下文相差不超过 64 字节', () => {
     const bytes = (chapters: number) => {
-      const { preflightFindings: _findings, ...rest } = deadCharacterContext(chapters)
-      return Buffer.byteLength(JSON.stringify(rest))
+      const context = deadCharacterContext(chapters)
+      return Buffer.byteLength(JSON.stringify({ ...context, preflightFindings: [] }))
     }
     expect(Math.abs(bytes(48) - bytes(3))).toBeLessThanOrEqual(64)
   })
@@ -134,7 +131,7 @@ describe('长篇能开 AI 审稿（#702 PR 2）', () => {
     const f = project(Array.from({ length: 1100 }, (_, index) => `第${index + 1}章。林岚走进北塔。`))
     const o = owner(f), { prepared, selection } = prepareReview(f, o)
     const view = o.begin(selection)
-    const admission = await selectFrozenReviewRevisionMaterials(promptView(prepared), { projectId: 'project', epoch: 'epoch-1' }, DEFAULT_MATERIAL_ADMISSION, 0)
+    const admission = await selectFrozenReviewRevisionMaterials(prepared.materials, { projectId: 'project', epoch: 'epoch-1' }, DEFAULT_MATERIAL_ADMISSION, 0)
     expect(admission.decision.included.length + admission.decision.omitted.length).toBeGreaterThan(1024)
     o.bindMaterialDecision(view.handle, { ...admission.decision, promptHash: textHash('检查冻结正文') })
     const run = await o.execute({ handle: view.handle, invocationNonce: 'review-run',
@@ -168,13 +165,13 @@ describe('续跑仍按捕获时的来源比对（#702 PR 2）', () => {
     const f = project(['第1章。林岚走进北塔。', '第2章。林岚离开北塔。'])
     const first = owner(f), { prepared, selection } = prepareReview(f, first)
     const view = first.begin(selection)
-    const before = await selectFrozenReviewRevisionMaterials(promptView(prepared), { projectId: 'project', epoch: 'epoch-1' }, DEFAULT_MATERIAL_ADMISSION, 0)
+    const before = await selectFrozenReviewRevisionMaterials(prepared.materials, { projectId: 'project', epoch: 'epoch-1' }, DEFAULT_MATERIAL_ADMISSION, 0)
     first.suspendForProjectClose()
     const reopened = owner(f, 'epoch-2')
-    const recovery = reopened.readReviewRevisionRecovery(view.handle) as unknown as Prepared & { canResume: boolean }
+    const recovery = reopened.readReviewRevisionRecovery(view.handle)
     expect(recovery.canResume).toBe(true)
-    const after = await selectFrozenReviewRevisionMaterials(promptView(recovery), { projectId: 'project', epoch: 'epoch-2' }, DEFAULT_MATERIAL_ADMISSION, 0)
+    const after = await selectFrozenReviewRevisionMaterials(recovery.materials!, { projectId: 'project', epoch: 'epoch-2' }, DEFAULT_MATERIAL_ADMISSION, 0)
     expect(after.admitted.map(item => item.text)).toEqual(before.admitted.map(item => item.text))
-    expect(storedProof(f.db, view.handle.runId).contextJson).toBe(storedText(prepared))
+    expect(storedProof(f.db, view.handle.runId).contextJson).toBe(JSON.stringify(prepared.context))
   })
 })

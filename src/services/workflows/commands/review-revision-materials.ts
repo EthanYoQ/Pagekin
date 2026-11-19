@@ -1,10 +1,10 @@
-import { reviewRevisionAiBrief, reviewRevisionAuthorMaterial, type ReviewRevisionContext } from '../../../shared/review-revision-generation'
+import { reviewRevisionAiBrief, reviewRevisionAuthorMaterial, type ReviewRevisionMaterials } from '../../../shared/review-revision-generation'
 import type { MaterialAdmission } from '../../../shared/generation-owner-contract'
 import { hashAuthorText } from '../../../shared/source-ref'
 import { promptLanguageText } from '../../prompt-language'
 import { selectReviewRevisionMaterials, unknownReviewMaterialIdentity, type ChapterMaterialIdentity, type ReviewRevisionMaterial } from '../chapter-materials'
 
-export function reviewHistoryMaterials(frozen: ReviewRevisionContext, current: ChapterMaterialIdentity): ReviewRevisionMaterial[] {
+export function reviewHistoryMaterials(frozen: ReviewRevisionMaterials, current: ChapterMaterialIdentity): ReviewRevisionMaterial[] {
   const text = (zh: string, en: string) => promptLanguageText(frozen.writingLanguage, zh, en)
   return [...frozen.history, ...(frozen.predecessor ? [frozen.predecessor] : [])].map(item => ({
     identity: item.identity ?? unknownReviewMaterialIdentity(current),
@@ -21,7 +21,7 @@ export function reviewHistoryMaterials(frozen: ReviewRevisionContext, current: C
   }))
 }
 
-export async function selectFrozenReviewRevisionMaterials(frozen: ReviewRevisionContext, current: ChapterMaterialIdentity,
+export async function selectFrozenReviewRevisionMaterials(frozen: ReviewRevisionMaterials, current: ChapterMaterialIdentity,
   admission: MaterialAdmission, nonMaterialUnits: number, historyRenderedCopies = 1) {
   const author = reviewRevisionAuthorMaterial(frozen)
   const ai = reviewRevisionAiBrief(frozen)

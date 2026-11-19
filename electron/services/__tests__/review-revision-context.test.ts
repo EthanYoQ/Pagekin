@@ -27,7 +27,7 @@ function fixture() {
   const request: PrepareReviewRevisionRequest = { operation: 'review-chapter', draftId: 1,
     expectedDraft: { chapterNumber: 2, version: 1, status: 'draft', contentHash: textHash(' 原稿\r\n结尾 ') },
     authorInputs: [{ id: 'review-focus', text: ' 保留原文\r\n ' }], uiLocale: 'zh-CN' }
-  return { db, request, capture: () => captureReviewRevisionContext(db, request, PROJECT_ID) }
+  return { db, request, capture: () => captureReviewRevisionContext(db, request, PROJECT_ID).materials }
 }
 
 function confirmation(f: ReturnType<typeof fixture>) {

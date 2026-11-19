@@ -1678,14 +1678,14 @@ describe('写稿时冻结的线索任务跟着便携副本走（#623 后续）',
     } finally { db.close() }
   }
 
-  function reviewGoals(databasePath: string, draftId: number): ReturnType<typeof captureReviewRevisionContext>['frozenGoals'] {
+  function reviewGoals(databasePath: string, draftId: number): ReturnType<typeof captureReviewRevisionContext>['materials']['frozenGoals'] {
     const db = new Database(databasePath)
     try {
       const draft = db.prepare('SELECT d.chapter_number AS chapterNumber,d.version,d.status,c.body FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?')
         .get(draftId) as { chapterNumber: number; version: number; status: 'draft'; body: string }
       return captureReviewRevisionContext(db, { operation: 'review-chapter', draftId, authorInputs: [], uiLocale: 'zh-CN',
         expectedDraft: { chapterNumber: draft.chapterNumber, version: draft.version, status: draft.status, contentHash: textHash(draft.body) } },
-      'project').frozenGoals
+      'project').materials.frozenGoals
     } finally { db.close() }
   }
 
