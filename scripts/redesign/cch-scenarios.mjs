@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -6,7 +7,8 @@ import path from 'node:path'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
 import { openChapter } from './f491-scenarios.mjs'
-import { BOOK, buildByReviewCycle } from './perf702-scenarios.mjs'
+import { BOOK, buildByReviewCycle, chapterMarker, chapterText, chapterTitle, seedLargeBook } from './perf702-scenarios.mjs'
+import { countUnits } from './stage-sample.mjs'
 
 const Database = createRequire(import.meta.url)('better-sqlite3')
 
@@ -174,3 +176,79 @@ export const CCH_SCENARIOS = {
     return { zh }
   } },
 }
+
+// #702 报错文案：导出遇到坏掉的孤儿头像、审稿时前文超过 8 MiB，作者看到的是原因而不是原码。
+/** 插一张没归到任何角色的旧头像，文件内容和库里记的哈希对不上（等同文件坏了）。 */
+function addDamagedOrphanAvatar(projectRoot) {
+  const relativePath = `avatars/${'a'.repeat(64)}/${'0'.repeat(20)}-${'b'.repeat(64)}.png`
+  const file = path.join(projectRoot, '.ai-novel', ...relativePath.split('/'))
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'))
+  withBook(projectRoot, database => {
+    database.prepare(`INSERT INTO character_avatar_unresolved(record_id,disposition,source_reference,source_relative_path,
+      preserved_relative_path,content_hash,mime,byte_size,candidate_character_ids_json) VALUES ('orphan-ec','orphan','character-delete:gone',?,?,?,'image/png',?,'[]')`)
+      .run(relativePath, relativePath, '1'.repeat(64), fs.statSync(file).size)
+  })
+}
+
+/** 每章约 3 MiB，三章定稿合起来超过审修上下文的 8 MiB 上限。 */
+function hugeChapter(number) {
+  const body = chapterText(number)
+  return [body, ...Array.from({ length: 340 }, () => body.slice(chapterMarker(number).length))].join('\n\n')
+}
+
+Object.assign(CCH_SCENARIOS, {
+  'ec-export-orphan-avatar': { model: true, shell: 'stage', setup: async context => {
+    await seedLargeBook(context, 1)
+    await context.restart({ beforeLaunch: () => addDamagedOrphanAvatar(path.join(context.roots.projects, BOOK)) })
+  }, run: async context => {
+    const { page, roots, shoot } = context
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    const zh = await exportOnce(context, path.join(roots.projects, 'ec-orphan.ainovel'), ZH, 'alert',
+      /^作品没有改动。一张没归到任何角色名下的旧头像文件坏了或不见了，存档没有生成。请把这条提示反馈给我们。$/u)
+    await shoot('ec-1-orphan-avatar')
+    return { zh }
+  } },
+  'ec-review-overflow': { model: true, shell: 'stage', setup: async context => {
+    const { page, invoke, reload } = context
+    const { projectPath } = await seedLargeBook(context, 0)
+    const opened = await invoke(page, 'project:open', projectPath, randomUUID(), null)
+    assert.equal(opened.success, true, opened.error)
+    const session = { projectId: opened.project.id, projectPath, leaseId: opened.project.sessionLease }
+    for (const number of [1, 2, 3]) {
+      const content = hugeChapter(number)
+      const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
+        chapters: [{ chapterNumber: number, title: chapterTitle(number), content, wordCount: countUnits(content) }] }, projectPath, session)
+      assert.equal(imported.success, true, imported.error)
+    }
+    const draft = chapterText(4)
+    const created = await invoke(page, 'db:draft-create', { chapterNumber: 4, version: 1, source: 'write', content: draft, wordCount: countUnits(draft) }, projectPath, session)
+    assert.equal(created.success, true, created.error)
+    await reload()
+  }, run: async context => {
+    const { page, shoot } = context
+    await stage.openFromLibrary(page, BOOK)
+    await chapterView.open(page, 4)
+    await chapterView.view(page).getByRole('button', { name: 'AI 审稿', exact: true }).click()
+    const shown = page.getByText('这本书的前文超过了 AI 一次能带的上限', { exact: false }).first()
+    await shown.waitFor({ state: 'visible', timeout: 120_000 })
+    await shoot('ec-2-review-overflow')
+    return { text: (await shown.innerText()).trim() }
+  } },
+})
+
+Object.assign(CCH_SCENARIOS, {
+  'ec-export-unknown-file': { model: true, shell: 'stage', setup: async context => {
+    await seedLargeBook(context, 1)
+    await context.restart({ beforeLaunch: () => fs.writeFileSync(path.join(context.roots.projects, BOOK, '.ai-novel', 'desktop.ini'), '[.ShellClassInfo]\r\n') })
+  }, run: async context => {
+    const { page, roots, shoot } = context
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    const zh = await exportOnce(context, path.join(roots.projects, 'ec-unknown.ainovel'), ZH, 'alert',
+      /^作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。$/u)
+    await shoot('ec-3-unknown-file')
+    return { zh }
+  } },
+})
