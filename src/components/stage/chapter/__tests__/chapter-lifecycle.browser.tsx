@@ -1058,9 +1058,8 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     const draft = backend.addDraft({ status: 'draft' })
     restoredReview(draft)
     const answer = backend.invoke.getMockImplementation()!
-    let reads = 0
     backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
-      if (channel === 'db:review-cycle-get' && ++reads > 1) await new Promise(resolve => setTimeout(resolve, 150))
+      if (channel === 'db:review-cycle-get') await new Promise(resolve => setTimeout(resolve, 150))
       return answer(channel, ...args)
     })
     await mount()
@@ -1106,13 +1105,244 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await expect.element(page.getByRole('button', { name: '重试合并后复验' })).toBeVisible()
   })
 
+  it('重试复验期间换成了新审稿、新审稿的循环读失败：旧审稿迟到的重读不把动作条收走', async () => {
+    const draft = backend.addDraft({ status: 'revised' })
+    const old = backend.addReview(draft)
+    backend.state.cycles.set(old.id, { ...backend.state.cycles.get(old.id)!, ...recheckPending })
+    await mount()
+    await openDraft(draft.id)
+    await openReport()
+    const answer = backend.invoke.getMockImplementation()!
+    const oldReads = vi.fn()
+    const freshFailures = vi.fn()
+    let fresh = 0
+    let recheckReturned = false
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && args[0] === fresh) {
+        freshFailures()
+        throw new Error('PROJECT_DATABASE_BUSY')
+      }
+      if (channel === 'db:review-cycle-get' && args[0] === old.id && recheckReturned) oldReads()
+      return answer(channel, ...args)
+    })
+    startWorkflow.mockImplementation(async () => {
+      fresh = backend.addReview(draft).id
+      await act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'review', projectPath: SESSION.projectPath, projectSession: SESSION, runId: 'other-review' }))
+      await expect.element(page.getByRole('complementary', { name: /审稿/ }).getByText('前后矛盾').first()).toBeVisible()
+      await vi.waitFor(() => expect(freshFailures).toHaveBeenCalled())
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+      expect(host!.querySelector('.stage-ch-actions .pi-btn')).not.toBeNull()
+      backend.state.cycles.set(old.id, { ...backend.state.cycles.get(old.id)!, recheckDisposition: 'completed', recheckCount: 1 })
+      useWorkflowStore.setState({ history: [{ id: 'recheck-run', status: 'completed' } as never] })
+      recheckReturned = true
+      return 'recheck-run'
+    })
+    await click('重试合并后复验')
+    await vi.waitFor(() => expect(startWorkflow).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(oldReads).toHaveBeenCalled())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)) })
+    expect(host!.querySelector('.stage-ch-actions .pi-btn')).not.toBeNull()
+  })
+
+  it('重试合并后复验跑完：动作条显示复验完成', async () => {
+    const draft = backend.addDraft({ status: 'revised' })
+    const review = backend.addReview(draft)
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, ...recheckPending })
+    await mount()
+    await openDraft(draft.id)
+    await openReport()
+    startWorkflow.mockImplementation(async () => {
+      backend.addRecheck(draft, review, ['resolved', 'unresolved'])
+      useWorkflowStore.setState({ history: [{ id: 'recheck-run', status: 'completed' } as never] })
+      await act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'review', projectPath: SESSION.projectPath, projectSession: SESSION, runId: 'recheck-run' }))
+      return 'recheck-run'
+    })
+    await click('重试合并后复验')
+    await expect.element(page.getByText('复验完成：1 / 2 项意见已解决')).toBeVisible()
+    expect(page.getByText('合并后复验还没完成，可在审稿报告里重试').elements()).toEqual([])
+  })
+
+  it('最新审稿的循环读失败、更早的审稿有循环：仍显示最新一份，不退回更早的', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const newest = backend.addReview(draft, JSON.stringify({ summary: '', items: [{ category: '人物动机', severity: 'error', description: '他为什么留下没有交代。' }] }))
+    failCycleReads(newest.id)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '按 1 项意见修稿' })).toBeVisible()
+    await expect.element(page.getByRole('complementary', { name: /审稿/ }).getByText('人物动机').first()).toBeVisible()
+    expect(page.getByText(RESTORED).elements()).toEqual([])
+  })
+
   it('恢复前的待合并修稿：合并视图不说合并后会复验', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     restoredReview(draft)
-    backend.addRevision(draft)
+    Object.assign(backend.addRevision(draft), { restoredHistory: true })
     await mount()
     await openDraft(draft.id)
     await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
     expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
+  })
+
+  it('恢复后重新审过稿、正文又改回去，恢复前的修稿能合并了：合并视图按这份修稿认循环，不说会复验', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    backend.addReview(draft)
+    Object.assign(backend.addRevision(draft), { restoredHistory: true })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
+  })
+
+  it('待合并修稿的循环在存档里读坏被省略：显示的是当前作品的审稿，合并视图也不说会复验', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    backend.addReview(draft)
+    Object.assign(backend.addRevision(draft), { unbound: true })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    expect(page.getByText(/合并后会自动复验/).elements()).toEqual([])
+  })
+
+  it('没导出过的书：按审稿修出的待合并修稿，合并视图照常说会复验', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    backend.addReview(draft)
+    backend.addRevision(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText(/合并后会自动复验/)).toBeVisible()
+  })
+
+  /** 之后的审修循环读都失败；给了审稿 id 时只让那份审稿的读失败。 */
+  function failCycleReads(only?: number) {
+    const answer = backend.invoke.getMockImplementation()!
+    const failed = { count: 0 }
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && (only === undefined || args[0] === only)) {
+        failed.count += 1
+        throw new Error('PROJECT_DATABASE_BUSY')
+      }
+      return answer(channel, ...args)
+    })
+    return failed
+  }
+  const refreshChapter = (runId: string) => act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'review', projectPath: SESSION.projectPath, projectSession: SESSION, runId }))
+
+  it('刷新时读审修循环失败：恢复前的审稿仍以重新审稿为主按钮，报告只读', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    const rereads = failCycleReads()
+    await refreshChapter('refresh')
+    await vi.waitFor(() => expect(rereads.count).toBeGreaterThan(0))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    expect(page.getByRole('button', { name: '重新审稿', exact: true }).elements()).toHaveLength(1)
+    expect(page.getByRole('button', { name: /项意见修稿$|^确认不修改$|^修稿选项$/ }).elements()).toEqual([])
+    const sheet = page.getByRole('complementary', { name: /审稿/ })
+    await expect.element(sheet.getByText('前后矛盾').first()).toBeVisible()
+    expect(sheet.element().querySelectorAll('input:not(:disabled), textarea, select')).toHaveLength(0)
+  })
+
+  it('打开时那次读审修循环失败：先按没有循环摆，下次刷新读到恢复前的循环就换成重新审稿', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const answer = backend.invoke.getMockImplementation()!
+    let fail = true
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && fail) throw new Error('PROJECT_DATABASE_BUSY')
+      return answer(channel, ...args)
+    })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: /项意见修稿$/ })).toBeVisible()
+
+    fail = false
+    await refreshChapter('refresh')
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    expect(page.getByRole('button', { name: /项意见修稿$/ }).elements()).toEqual([])
+  })
+
+  it('两次都读不出审修循环：照旧按没有循环摆出动作条，作者仍能操作', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const answer = backend.invoke.getMockImplementation()!
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get') throw new Error('PROJECT_DATABASE_BUSY')
+      return answer(channel, ...args)
+    })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: /项意见修稿$/ })).toBeVisible()
+  })
+
+  it('先前读不出、之后新增审稿时读到了恢复前的循环：动作条按读到的摆，不沿用读失败', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    restoredReview(draft)
+    const answer = backend.invoke.getMockImplementation()!
+    let fail = true
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && fail) throw new Error('PROJECT_DATABASE_BUSY')
+      return answer(channel, ...args)
+    })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: /项意见修稿$/ })).toBeVisible()
+
+    fail = false
+    backend.state.cycles.delete(backend.addReview(draft, '').id)
+    await refreshChapter('later-review')
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    expect(page.getByRole('button', { name: /项意见修稿$/ }).elements()).toEqual([])
+  })
+
+  it('复验完成那次刷新读原审稿的循环失败：留着先前显示的原审稿，不换成复验那份', async () => {
+    const draft = backend.addDraft({ status: 'revised' })
+    const review = backend.addReview(draft)
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, ...recheckPending })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText('合并后复验还没完成，可在审稿报告里重试')).toBeVisible()
+
+    const rereads = failCycleReads(review.id)
+    backend.addRecheck(draft, review, ['resolved', 'unresolved'])
+    await refreshChapter('recheck')
+    await vi.waitFor(() => expect(rereads.count).toBeGreaterThan(0))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await expect.element(page.getByText('合并后复验还没完成，可在审稿报告里重试')).toBeVisible()
+    await openReport()
+  })
+
+  it('刷新的读还没回来就重新打开了作品：旧会话读回的循环被丢弃，按新会话读到的摆', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    const review = restoredReview(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText(RESTORED)).toBeVisible()
+    const answer = backend.invoke.getMockImplementation()!
+    let release = () => {}
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const held = vi.fn()
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:review-cycle-get' && held.mock.calls.length === 0) {
+        held()
+        const stale = await answer(channel, ...args)
+        await gate
+        return stale
+      }
+      return answer(channel, ...args)
+    })
+    await refreshChapter('refresh')
+    await vi.waitFor(() => expect(held).toHaveBeenCalledOnce())
+
+    backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, restoredHistory: undefined })
+    setActiveProjectSessionContext({ ...SESSION, leaseId: 'reopened-lease' })
+    await act(async () => useProjectStore.setState({ currentProject: { ...chapterProject(), sessionLease: 'reopened-lease' } }))
+    await expect.element(page.getByRole('button', { name: '按 2 项意见修稿' })).toBeVisible()
+    await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 100)) })
+    await expect.element(page.getByRole('button', { name: '按 2 项意见修稿' })).toBeVisible()
+    expect(page.getByText(RESTORED).elements()).toEqual([])
   })
 })
