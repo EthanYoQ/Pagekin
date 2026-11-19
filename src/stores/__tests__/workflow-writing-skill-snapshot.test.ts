@@ -6,6 +6,7 @@ vi.mock('../../services/agent/writing-skill-bindings', () => ({ freezeWritingSki
 import { useLocaleStore } from '../locale-store'
 import { useProjectStore } from '../project-store'
 import { useWorkflowStore, type WorkflowContext } from '../workflow-store'
+import { createChapterWorkflow, createFinalizeWorkflow, createRepairFinalizeWorkflow } from '../../services/workflows/chapter-workflow'
 
 const projectPath = 'C:\\novels\\skill-snapshot'
 const projectSession = {
@@ -121,5 +122,28 @@ describe('workflow writing skill snapshot', () => {
     expect(useWorkflowStore.getState().history[0].writingSkills).toEqual([{
       stage: 'drafting', skillId: 'user:scene-craft', name: 'Scene craft', source: 'user', utf8Bytes: 21,
     }])
+  })
+
+  it.each([
+    ['定稿', () => createFinalizeWorkflow({ projectPath, chapterNumber: 3, chapterTitle: '三', draftPath: 'd', draftContent: '正文' }, projectSession)],
+    ['修复后处理', () => createRepairFinalizeWorkflow(3, projectPath, projectSession, 'chapter_notes')],
+  ])('%s不等写作 Skill 快照就开始第一步', async (_name, definition) => {
+    freezeWritingSkillsSnapshot.mockReturnValue(new Promise(() => {}))
+    const executor = vi.fn().mockResolvedValue(undefined)
+
+    await useWorkflowStore.getState().startWorkflow({ ...definition(), steps: [{ name: 'finalize', description: 'finalize', executor }] })
+
+    expect(executor).toHaveBeenCalledOnce()
+    expect(freezeWritingSkillsSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('写稿仍先冻快照再开始第一步', async () => {
+    freezeWritingSkillsSnapshot.mockRejectedValue(new Error('Writing skill binding target is missing: user:gone'))
+    const executor = vi.fn().mockResolvedValue(undefined)
+    const definition = createChapterWorkflow({ projectPath, chapterNumber: 3, title: '三', role: '', purpose: '', characters: [], keyEvents: '' }, projectSession)
+
+    await useWorkflowStore.getState().startWorkflow({ ...definition, steps: [{ name: 'write', description: 'write', executor }] })
+
+    expect(executor).not.toHaveBeenCalled()
   })
 })
