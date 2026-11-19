@@ -572,6 +572,23 @@ describe('portable project export service', () => {
       expect(fs.readFileSync(path.join(unpacked.stagingPath, ...entry.path.split('/')))).toEqual(avatar)
     })
 
+    it('作者删掉一份技能文件：重来一次，存档里没有它', async () => {
+      const f = fixture()
+      prompt(f, '{"提示":"留着"}')
+      const skill = path.join(f.storage, 'skills', '旧技能.md')
+      fs.mkdirSync(path.dirname(skill))
+      fs.writeFileSync(skill, '删掉的技能')
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: {
+        afterPortableDatabaseCreated: () => fs.rmSync(skill, { force: true }),
+      } }))
+
+      const unpacked = await extract(f)
+      expect(unpacked.manifest.entries.map(entry => entry.path)).toContain('prompts/章节.json')
+      expect(unpacked.manifest.entries.map(entry => entry.path)).not.toContain('skills/旧技能.md')
+    })
+
     it('重来一次资料又被改：报资料有改动，不发布存档，临时目录清干净', async () => {
       const f = fixture()
       const file = prompt(f, '{"提示":"快照时"}')

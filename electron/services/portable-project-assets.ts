@@ -9,7 +9,7 @@ import {
 } from '../vector-store'
 import { CANONICAL_RAW_PROJECT_ASSETS } from './project-format-migration'
 import { portablePathKey } from './portable-project-format'
-import type { PortableAssetProvider, PortableProvidedFile, PortableStagedFile } from './project-archive-service'
+import type { PortableAssetProvider, PortableProvidedFile, PortableSourceDigest } from './project-archive-service'
 
 export const PORTABLE_KNOWLEDGE_SOURCE_PATH = 'portable-knowledge-source.json'
 
@@ -48,7 +48,7 @@ function physicalFile(file: string, root: string): fs.BigIntStats {
   return info
 }
 
-function enumerateRawFiles(storageRoot: string, stageFile: (sourcePath: string, checked: fs.BigIntStats) => PortableStagedFile): PortableProvidedFile[] {
+function enumerateRawFiles(storageRoot: string, digestFile: (sourcePath: string, checked: fs.BigIntStats) => PortableSourceDigest): PortableProvidedFile[] {
   physicalDirectory(storageRoot, storageRoot)
   const topKeys = new Set<string>()
   for (const name of fs.readdirSync(storageRoot)) {
@@ -76,9 +76,8 @@ function enumerateRawFiles(storageRoot: string, stageFile: (sourcePath: string, 
     const key = portablePathKey(archivePath)
     if (keys.has(key)) fail()
     keys.add(key)
-    const { stagedPath, byteSize, sha256: digest } = stageFile(entry, fileInfo)
-    if (BigInt(byteSize) !== fileInfo.size) fail()
-    files.push({ id: `raw:${archivePath}`, archivePath, stagedPath, byteSize, sha256: digest, disposition: disposition(topLevel) })
+    const { byteSize, sha256: digest } = digestFile(entry, fileInfo)
+    files.push({ id: `raw:${archivePath}`, archivePath, sourcePath: entry, byteSize, sha256: digest, disposition: disposition(topLevel) })
   }
   for (const name of CANONICAL_RAW_PROJECT_ASSETS) {
     const entry = path.join(storageRoot, name)
@@ -95,9 +94,9 @@ function enumerateRawFiles(storageRoot: string, stageFile: (sourcePath: string, 
 /** Production provider for the canonical raw allowlist plus a strict canonical-text projection. */
 export function createPortableProjectAssetProvider(): PortableAssetProvider {
   return {
-    async snapshot({ sourceProjectRoot, stageFile }) {
+    async snapshot({ sourceProjectRoot, digestFile }) {
       const storageRoot = path.join(path.resolve(sourceProjectRoot), CANONICAL_PROJECT_DIRECTORY)
-      const rawFiles = enumerateRawFiles(storageRoot, stageFile)
+      const rawFiles = enumerateRawFiles(storageRoot, digestFile)
       const knowledgeBytes = serializePortableKnowledgeSnapshot(await readPortableKnowledgeSnapshot(storageRoot))
       const knowledgeFile: PortableProvidedFile = {
         id: 'canonical-knowledge',

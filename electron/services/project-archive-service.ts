@@ -175,19 +175,18 @@ export class ProjectArchiveServiceError extends Error {
   }
 }
 
-/** 取快照时拷进本次导出私有目录的文件，存档只用这份。 */
-export interface PortableStagedFile {
-  stagedPath: string
+/** 快照时读到的大小与 sha。打包按路径重读并比这份 sha，对不上就整次重来。 */
+export interface PortableSourceDigest {
   byteSize: number
   sha256: string
 }
 
-/** 内容二选一：bytes 是生成的小文件，stagedPath 来自 snapshot 的 stageFile。 */
+/** 内容二选一：bytes 是生成的小文件，sourcePath 是作品存储目录里交给 digestFile 算过的文件。 */
 export interface PortableProvidedFile {
   id: string
   archivePath: string
   bytes?: Buffer
-  stagedPath?: string
+  sourcePath?: string
   byteSize: number
   sha256: string
   disposition: Exclude<PortableEntryDisposition, 'portable-database' | 'avatar-asset'>
@@ -208,7 +207,7 @@ export interface PortableAssetProvider {
     projectSession: Readonly<ProjectSessionContext>
     snapshotGeneration: string
     /** checked 是调用方查过项目根与链接时 lstat 到的身份，打开的文件必须就是它。 */
-    stageFile(sourcePath: string, checked: fs.BigIntStats): PortableStagedFile
+    digestFile(sourcePath: string, checked: fs.BigIntStats): PortableSourceDigest
   }): PortableAssetSnapshot | Promise<PortableAssetSnapshot>
 }
 
@@ -1054,61 +1053,51 @@ export function sanitizePortableDatabase(databasePath: string, options: {
 }
 
 /** 先建文件并登记再写：写到一半失败（如磁盘满），清理也认得它。 */
-function openOwnedFile(attempt: OwnedAttempt, file: string): number {
-  const descriptor = fs.openSync(file, 'wx', 0o600)
-  try { recordOwnedFile(attempt, file) } catch (error) { fs.closeSync(descriptor); throw error }
-  return descriptor
-}
-
 function writeOwnedFile(attempt: OwnedAttempt, file: string, bytes: Buffer): void {
-  const descriptor = openOwnedFile(attempt, file)
-  try { fs.writeFileSync(descriptor, bytes); fs.fsyncSync(descriptor) }
-  finally { fs.closeSync(descriptor) }
+  const descriptor = fs.openSync(file, 'wx', 0o600)
+  try {
+    recordOwnedFile(attempt, file)
+    fs.writeFileSync(descriptor, bytes); fs.fsyncSync(descriptor)
+  } finally { fs.closeSync(descriptor) }
 }
 
-const STAGE_CHUNK_BYTES = 1024 * 1024
+const DIGEST_CHUNK_BYTES = 1024 * 1024
 
-/**
- * 同步做完，应用自己的写入插不进来；别的程序在拷的途中改了源文件（大小或修改时间变了），
- * 拷到的可能新旧混合，就拒绝。超出存档上限的在写目标盘之前就拒绝。
- * 打开后再查路径上没有链接、路径指向的仍是打开的这个文件：查过之后父目录被换成联接也拦得下。
- */
-function copyOwnedFile(attempt: OwnedAttempt, file: string, sourcePath: string, checked: fs.BigIntStats, remainingBytes: number): PortableStagedFile {
+/** 打开后再查路径上没有链接、路径指向的仍是打开的这个文件：查过之后父目录被换成联接也拦得下。 */
+function digestCheckedFile(sourcePath: string, checked: fs.BigIntStats): PortableSourceDigest {
   const source = fs.openSync(sourcePath, 'r')
   try {
-    const before = fs.fstatSync(source, { bigint: true })
-    if (!sameObject(before, checked) || before.nlink !== 1n) fail('PORTABLE_ASSET_UNSAFE')
+    const opened = fs.fstatSync(source, { bigint: true })
+    if (!sameObject(opened, checked) || opened.nlink !== 1n) fail('PORTABLE_ASSET_UNSAFE')
     safeDirectory(path.dirname(sourcePath))
-    if (!sameObject(fs.lstatSync(sourcePath, { bigint: true }), before)) fail('PORTABLE_ASSET_UNSAFE')
-    const limit = Math.min(DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxEntryBytes, remainingBytes)
-    if (before.size > BigInt(limit)) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
-    const target = openOwnedFile(attempt, file)
-    try {
-      const digest = createHash('sha256'), buffer = Buffer.allocUnsafe(STAGE_CHUNK_BYTES)
-      let byteSize = 0
-      for (let read = 0; (read = fs.readSync(source, buffer, 0, buffer.length, null)) > 0; byteSize += read) {
-        if (byteSize + read > limit) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
-        digest.update(buffer.subarray(0, read))
-        for (let written = 0; written < read;) written += fs.writeSync(target, buffer, written, read - written)
-      }
-      const after = fs.fstatSync(source, { bigint: true })
-      if (BigInt(byteSize) !== before.size || after.size !== before.size || after.mtimeNs !== before.mtimeNs) {
-        throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
-      }
-      fs.fsyncSync(target)
-      return { stagedPath: file, byteSize, sha256: digest.digest('hex') }
-    } finally { fs.closeSync(target) }
+    if (!sameObject(fs.lstatSync(sourcePath, { bigint: true }), opened)) fail('PORTABLE_ASSET_UNSAFE')
+    if (opened.size > BigInt(DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxEntryBytes)) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
+    const digest = createHash('sha256'), buffer = Buffer.allocUnsafe(DIGEST_CHUNK_BYTES)
+    let byteSize = 0
+    for (let read = 0; (read = fs.readSync(source, buffer, 0, buffer.length, null)) > 0; byteSize += read) {
+      digest.update(buffer.subarray(0, read))
+    }
+    return { byteSize, sha256: digest.digest('hex') }
   } finally { fs.closeSync(source) }
 }
 
 /** 字节与声明的大小、sha 对不上时，打包逐文件流式核对会拒绝，这里只查元数据。 */
-function verifyFile(file: PortableProvidedFile, attempt: OwnedAttempt): void {
-  const content = file.stagedPath === undefined
+function verifyFile(file: PortableProvidedFile, projectStorageRoot: string): void {
+  const content = file.sourcePath === undefined
     ? Buffer.isBuffer(file.bytes) && file.bytes.length === file.byteSize
-    : file.bytes === undefined && attempt.files.has(path.resolve(file.stagedPath))
+    : file.bytes === undefined && contained(projectStorageRoot, path.resolve(file.sourcePath))
   if (!file.id || !PROVIDED_DISPOSITIONS.has(file.disposition) || !content || !HASH.test(file.sha256)) fail('PORTABLE_ASSET_UNSAFE')
   portablePathKey(file.archivePath)
 }
+
+/** 打包按路径重读、比快照时的 sha，但不查硬链接。快照后被删掉的算资料有改动。 */
+function assertSourceStillOwned(sourcePath: string): void {
+  const info = fs.lstatSync(sourcePath, { bigint: true, throwIfNoEntry: false })
+  if (!info) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+  if (info.nlink !== 1n) throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_UNSAFE')
+}
+
+const RETRIED_ARCHIVE_ERRORS = new Set(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])
 
 async function hashFile(file: string): Promise<string> {
   const digest = createHash('sha256')
@@ -1159,7 +1148,17 @@ async function assertCurrentContext(input: ExportPortableProjectInput, context: 
 const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string, DamagedReviewCycle> =>
   new Map(cycles.flatMap(item => item.cycleId === null ? [] : [[item.cycleId, item.location] as const]))
 
+/** 资料在快照之后、打包之前被改了：丢掉这次的临时目录，整次重来一次，仍变才报错。本地导出和云备份都走这里。 */
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
+  try { return await exportPortableProjectOnce(input) }
+  catch (error) {
+    if (!(error instanceof PortableProjectArchiveError) || !RETRIED_ARCHIVE_ERRORS.has(error.code)) throw error
+    console.warn('[portable-export] 导出期间资料有改动，整次重来一次', { code: error.code })
+    return exportPortableProjectOnce(input)
+  }
+}
+
+async function exportPortableProjectOnce(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
   const sourceRoot = path.resolve(input.sourceProjectRoot)
   const targetPath = path.resolve(input.targetArchivePath)
   const attemptParent = path.resolve(input.attemptParentPath)
@@ -1212,17 +1211,12 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
           recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-shm`)
         }
 
-        // 头像和资料紧接着库快照拷进私有目录，导出期间换头像、改提示词不影响这份存档。
         const avatarReferenceProjections: Array<Record<string, unknown>> = []
-        let stagedFiles = 0, stagedBytes = 0
-        const stageFile = (sourcePath: string, checked: fs.BigIntStats) => {
+        const digestFile = (sourcePath: string, checked: fs.BigIntStats) => {
           if (!contained(projectStorageRoot, path.resolve(sourcePath))) fail('PORTABLE_ASSET_UNSAFE')
-          const staged = copyOwnedFile(attempt, path.join(attemptRoot, `staged-${stagedFiles++}`), sourcePath, checked,
-            DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxTotalBytes - stagedBytes)
-          stagedBytes += staged.byteSize
-          return staged
+          return digestCheckedFile(sourcePath, checked)
         }
-        const avatarFiles: Array<{ entry: PortableProjectManifestEntry; stagedPath: string }> = []
+        const avatarFiles: Array<{ entry: PortableProjectManifestEntry; sourcePath: string }> = []
         for (const row of avatarRows) {
           if (row.kind === 'unresolved-reference') {
             avatarReferenceProjections.push({ ...row, nonReplayable: true })
@@ -1232,16 +1226,19 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
           if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
           const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
           if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
-          const checked = regularFile(sourcePath, 'PORTABLE_ASSET_MISSING')
+          const digest = digestFile(sourcePath, regularFile(sourcePath, 'PORTABLE_ASSET_MISSING'))
+          if (digest.byteSize !== row.byteSize || digest.sha256 !== row.contentHash) {
+            throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+          }
           avatarFiles.push({ entry: { path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
-            disposition: 'avatar-asset' }, stagedPath: stageFile(sourcePath, checked).stagedPath })
+            disposition: 'avatar-asset' }, sourcePath })
         }
         const provided = await input.assets.snapshot({
           sourceProjectRoot: sourceRoot,
           sourceDatabasePath: sourceSnapshotPath,
           projectSession: frozenContext,
           snapshotGeneration,
-          stageFile,
+          digestFile,
         })
         return { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided }
       })
@@ -1285,13 +1282,17 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     addSource({ path: PORTABLE_TRANSFER_AUTHORITY_PATH, byteSize: transferBytes.length,
       sha256: sha256(transferBytes), disposition: 'transfer-receipt' }, transferPath)
 
-    for (const { entry, stagedPath } of avatarFiles) addSource(entry, stagedPath)
+    const projectSources = avatarFiles.map(({ sourcePath }) => sourcePath)
+    for (const { entry, sourcePath } of avatarFiles) addSource(entry, sourcePath)
     for (const [index, file] of provided.files.entries()) {
-      verifyFile(file, attempt)
-      const keptPath = file.stagedPath ?? path.join(attemptRoot, `provided-${index}`)
-      if (file.stagedPath === undefined) writeOwnedFile(attempt, keptPath, file.bytes!)
+      verifyFile(file, projectStorageRoot)
+      let sourcePath = file.sourcePath
+      if (sourcePath === undefined) {
+        sourcePath = path.join(attemptRoot, `provided-${index}`)
+        writeOwnedFile(attempt, sourcePath, file.bytes!)
+      } else projectSources.push(sourcePath)
       addSource({ path: file.archivePath, byteSize: file.byteSize, sha256: file.sha256,
-        disposition: file.disposition }, keptPath)
+        disposition: file.disposition }, sourcePath)
     }
 
     const historyDocument = {
@@ -1344,6 +1345,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
       transferReceiptIds: [transferAuthority.receiptId, ...(provided.transferReceiptIds ?? [])],
       historyProjectionIds,
     }
+    for (const sourcePath of projectSources) assertSourceStillOwned(sourcePath)
     const stagedArchivePath = path.join(attemptRoot, 'portable-project.archive')
     const archiveReceipt = await writePortableProjectArchive({ manifest, sources, targetPath: stagedArchivePath })
     recordOwnedFile(attempt, stagedArchivePath)
