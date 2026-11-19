@@ -282,7 +282,7 @@ export function useReviewCycle({ reportText, reviewId, projectKey, firstRead, re
         projectSession.projectPath).catch(() => undefined)
       if (cancelled || !isProjectSessionCurrent(projectSession)) return
       if (next !== undefined) setLoadedCycle(keepLater({ reviewId: cycleReviewId, cycle: next, seq }))
-      // 读失败不是「没有周期」：留着已读到的，否则恢复前的审稿会退回可修稿（#702）。一次都没读到才按没有周期摆，之后任何成功读都能换掉它。
+      // 读失败不是「没有周期」：留着已读到的，否则恢复前的审稿会退回可修稿（#702）。都没读到时占位 seq 为 0，任何成功读都能换掉。
       else setLoadedCycle(current => current?.reviewId === cycleReviewId ? current : { reviewId: cycleReviewId, cycle: null, seq: 0 })
     })()
     return () => { cancelled = true }
