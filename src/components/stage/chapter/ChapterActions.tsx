@@ -491,7 +491,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
         <MergeView
           data={draft.mergeData}
           versionLabel={versionLabel}
-          recheck={opened?.type === 'review-fix' && !opened.restoredHistory}
+          recheck={opened?.recheckOnMerge === true}
           onComplete={draft.completeMerge}
           onLater={() => { setMergeLater(true); draft.closeMerge() }}
         />

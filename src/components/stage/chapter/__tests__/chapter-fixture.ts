@@ -97,7 +97,7 @@ export function createChapterBackend() {
   const source = (draft: Draft) => ({ id: draft.id, chapterNumber: draft.chapterNumber, version: draft.version, status: draft.status, content: draft.content })
   const revisionMeta = (revision: Revision) => ({ id: revision.id, baseDraftId: revision.baseDraftId, revisionIndex: revision.revisionIndex, revisionType: revision.revisionType,
     status: revision.status, mergedToDraftId: null, userPrompt: '', reviewSourceId: null, contentId: revision.id, wordCount: 0, createdAt: revision.createdAt, updatedAt: revision.updatedAt,
-    ...(revision.restoredHistory ? { restoredHistory: true } : {}) })
+    ...(revision.revisionType === 'review-fix' && !revision.restoredHistory && !revision.unbound ? { recheckOnMerge: true } : {}) })
   const byId = (id: unknown) => state.drafts.find(draft => draft.id === Number(id))
 
   const invoke = vi.fn(async (channel: string, ...args: unknown[]): Promise<unknown> => {

@@ -30,8 +30,8 @@ export interface RevisionMeta {
     wordCount: number
     createdAt: string
     updatedAt: string
-    /** 修出它的审修循环来自恢复前，合并后不会自动复验。只有待合并列表带它。 */
-    restoredHistory?: true
+    /** 合并后会自动复验：修稿属于审修循环，且循环不是恢复前的（#702）。与 mergedReviewCycle 同一判别；只有待合并列表带它。 */
+    recheckOnMerge?: true
 }
 
 /** 修稿完整数据（含正文） */
@@ -246,13 +246,14 @@ export class RevisionRepository {
       ORDER BY revision_index ASC
     `).all(baseDraftId) as Record<string, unknown>[]
 
-        const cycleRoot = projectId && hasReviewCycleSchema(db)
+        const cycleRoot = hasReviewCycleSchema(db)
             ? db.prepare('SELECT root_action_id FROM review_cycles WHERE revision_id = ?').pluck()
             : null
         return rows.map(row => {
             const meta = rowToMeta(row)
             const root = cycleRoot?.get(meta.id) as string | undefined
-            return root && ReviewCycleRepository.isRestoredHistory(root, projectId!, db) ? { ...meta, restoredHistory: true } : meta
+            const restored = root !== undefined && Boolean(projectId) && ReviewCycleRepository.isRestoredHistory(root, projectId!, db)
+            return root !== undefined && !restored ? { ...meta, recheckOnMerge: true } : meta
         })
     }
 

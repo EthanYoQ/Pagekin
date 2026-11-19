@@ -247,8 +247,8 @@ export function useReviewCycle({ reportText, reviewId, projectKey, firstRead, re
   const snapshot = parseHumanConfirmedReviewSnapshot(reportText)
   const cycleReviewId = confirmationSourceReviewId(snapshot, reviewId)
   // 读回的周期记着属于哪份审稿：重新审稿后新周期读回来之前，不把上一份审稿的周期当成这一份的。
-  const [loadedCycle, setLoadedCycle] = useState<{ reviewId: number | undefined; cycle: ReviewCycleProjection | null }>({ reviewId: undefined, cycle: null })
-  const hasFirstRead = firstRead?.reviewId === cycleReviewId
+  // failed 记着这次是读失败才落的 null：之后挑报告时读到了，就用读到的。
+  const [loadedCycle, setLoadedCycle] = useState<{ reviewId: number | undefined; cycle: ReviewCycleProjection | null; failed?: true }>({ reviewId: undefined, cycle: null })
 
   const reloadCycle = async (): Promise<ReviewCycleProjection | null> => {
     if (!isReviewId(cycleReviewId)) return null
@@ -271,12 +271,13 @@ export function useReviewCycle({ reportText, reviewId, projectKey, firstRead, re
       if (cancelled || !isProjectSessionCurrent(projectSession)) return
       if (next !== undefined) setLoadedCycle({ reviewId: cycleReviewId, cycle: next })
       // 读失败不是「没有周期」：留着已读到的，否则恢复前的审稿会退回可修稿（#702）。
-      else if (!hasFirstRead) setLoadedCycle(current => current.reviewId === cycleReviewId ? current : { reviewId: cycleReviewId, cycle: null })
+      else setLoadedCycle(current => current.reviewId === cycleReviewId && !current.failed ? current : { reviewId: cycleReviewId, cycle: null, failed: true })
     })()
     return () => { cancelled = true }
-  }, [cycleReviewId, projectKey, refreshKey, hasFirstRead])
+  }, [cycleReviewId, projectKey, refreshKey])
 
-  const known = loadedCycle.reviewId === cycleReviewId ? loadedCycle : hasFirstRead ? firstRead : undefined
+  const own = loadedCycle.reviewId === cycleReviewId ? loadedCycle : undefined
+  const known = own && !own.failed ? own : firstRead?.reviewId === cycleReviewId ? firstRead : own
   const cycleLoaded = !isReviewId(cycleReviewId) || known !== undefined
   const resolvedCycle = known?.cycle ?? null
   // 报告可以原地更新；会话键只在底层不可变报告变了时变，可编辑清单随之重置。
