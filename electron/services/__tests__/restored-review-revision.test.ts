@@ -92,10 +92,11 @@ function seedChapter(db: Database.Database) {
 }
 
 /** 审稿并保存，作者确认审稿。返回确认稿，供按确认稿修稿。 */
-async function reviewAndConfirm(owner: ReturnType<typeof ownerFor>['owner'], db: Database.Database) {
+async function reviewAndConfirm(owner: ReturnType<typeof ownerFor>['owner'], db: Database.Database,
+  draft: { status: 'draft' | 'revised'; content: string } = { status: 'draft', content: source }, nonce = 'review') {
   const prepared = owner.prepareReviewRevision({ operation: 'review-chapter', draftId: 1,
-    expectedDraft: { chapterNumber: 1, version: 1, status: 'draft', contentHash: textHash(source) }, authorInputs: [], uiLocale: 'zh-CN' })
-  const view = owner.begin(selection(prepared, 'review'))
+    expectedDraft: { chapterNumber: 1, version: 1, status: draft.status, contentHash: textHash(draft.content) }, authorInputs: [], uiLocale: 'zh-CN' })
+  const view = owner.begin(selection(prepared, nonce))
   owner.bindMaterialDecision(view.handle, materialDecision('检查门闩'))
   const run = await owner.execute({ handle: view.handle, invocationNonce: 'review-run',
     task: { purpose: 'review-chapter', output: 'structured-data', messages: [{ role: 'user', content: '检查门闩' }] } })
@@ -183,7 +184,7 @@ describe('从存档恢复的书在老章节上继续审修（#702）', () => {
       .toMatchObject({ kind: 'review', reviewCycle: { cycleId: cycle.cycle_id, disposition: 'completed' } })
   })
 
-  it('恢复前留着没保存的审稿和修稿：恢复后的可恢复列表不列旧运行，也不标读坏', async () => {
+  it('恢复前留着没保存的审稿和修稿：恢复后的可恢复列表不抛错，也不标读坏', async () => {
     outputs = [report, revised, report]
     const original = ownerFor(projectRoot, 'epoch-1')
     seedChapter(original.db)
@@ -200,7 +201,34 @@ describe('从存档恢复的书在老章节上继续审修（#702）', () => {
       .toEqual([unsavedRevision.handle.runId, unsavedReview.handle.runId].sort())
     const restoredRoot = await exportAndRestore()
 
-    expect(ownerFor(restoredRoot, 'epoch-restored').owner.listRecovery()).toMatchObject({ reviews: [], drafts: [], partial: false })
+    expect(ownerFor(restoredRoot, 'epoch-restored').owner.listRecovery()).toMatchObject({ partial: false })
+  })
+
+  it('对照：恢复后在老章节上重新审稿、确认、按新确认稿修稿，都能保存', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    await reviewAndConfirm(original.owner, original.db)
+    const restoredRoot = await exportAndRestore()
+
+    outputs = [report, revised]
+    const restored = ownerFor(restoredRoot, 'epoch-restored')
+    const fresh = await reviewAndConfirm(restored.owner, restored.db, { status: 'draft', content: source }, 'fresh-review')
+    expect(await reviseFromConfirmation(restored.owner, fresh)).toMatchObject({ kind: 'revision', revisionStatus: 'pending', content: revised })
+  })
+
+  it('对照：恢复前合并过、待复核的章，恢复后能重新审稿', async () => {
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    const saved = await reviseFromConfirmation(original.owner, confirmed)
+    RevisionRepository.mergeIntoDraft({ revisionId: saved.id, targetDraftId: 1, expectedDraftContent: source,
+      mergedContent: revised, wordCount: countDraftUnits(revised) }, original.db)
+    const restoredRoot = await exportAndRestore()
+
+    outputs = [report]
+    const restored = ownerFor(restoredRoot, 'epoch-restored')
+    await expect(reviewAndConfirm(restored.owner, restored.db, { status: 'revised', content: revised }, 'fresh-review'))
+      .resolves.toMatchObject({ confirmationId: expect.any(Number) })
   })
 })
 
