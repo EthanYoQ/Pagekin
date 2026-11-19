@@ -6,6 +6,7 @@
  */
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
+import path from 'node:path'
 import { initializeLegacyBaselineSchema } from './migrations/baseline-schema'
 import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from './migrations/desktop-registry'
 import { SchemaMigrationError } from './migrations/registry'
@@ -58,6 +59,16 @@ export function initProjectDatabase(projectPath: string): LedgerAdmission {
   } catch (error) {
     database?.close(); deactivateProjectData(projectPath); throw error
   }
+}
+
+/**
+ * 导出与备份前的全量进门（ADR-0030）：打开作品只查没静止的树，静止树的绑定在这里查，坏的照常封存。
+ * 只在开着的这本书的句柄上跑；书没开着时导出自己会因不是当前作品而拒绝，这里不动。
+ */
+export function admitWholeLedgerOfOpenProject(projectRoot: string): LedgerAdmission {
+  if (!projectDb || currentProjectPath === null || path.relative(path.resolve(currentProjectPath), path.resolve(projectRoot)) !== '')
+    return { sealedRootCount: 0 }
+  return admitGenerationLedger(projectDb, 'whole')
 }
 
 export interface ProjectDatabaseBeforeCloseContext { projectPath: string; database: BetterSqlite3.Database }

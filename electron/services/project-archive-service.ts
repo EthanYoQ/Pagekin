@@ -41,6 +41,7 @@ import { withKnowledgeSourceGate } from './knowledge-source-gate'
 import { sqliteSchemaFingerprint } from '../migrations/sqlite-schema-adapter'
 import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migrations/m03-review-cycle'
 import { SchemaMigrationError } from '../migrations/registry'
+import { admitWholeLedgerOfOpenProject } from '../database'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import {
   PORTABLE_TRANSFER_AUTHORITY_PATH,
@@ -1194,6 +1195,8 @@ const omittable = (cycles: readonly UnprovableReviewCycle[]): ReadonlyMap<string
 
 /** 资料阶段出错：丢掉这次的临时目录，整次重来一次，仍失败报第二次的错。重来时库文件已被换掉就拒绝。本地导出和云备份都走这里。 */
 export async function exportPortableProject(input: ExportPortableProjectInput): Promise<ExportPortableProjectReceipt> {
+  // 源库快照之前、重来之外：进门只看源库状态，重来不改变它。
+  admitWholeLedgerOfOpenProject(input.sourceProjectRoot)
   const source: SourceDatabasePin = {}
   try { return await exportPortableProjectOnce(input, source) }
   catch (error) {
