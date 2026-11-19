@@ -44,3 +44,9 @@ describe('续写插在选区之后，作为独立段落', () => {
     expect(accept('甲段。', '甲段。', '续写。')).toBe('甲段。\n\n续写。')
   })
 })
+
+it('设定文档（Markdown）里续写，嵌套列表和代码缩进照原样保留', () => {
+  const doc = '## 势力\n\n- 港务局'
+  const change = continuationInsert(doc, doc.length, '\n- 灯塔\n  - 周砚\n\n```\n  旧钟\n```\n', false)
+  expect(doc.slice(0, change.from) + change.insert + doc.slice(change.to)).toBe('## 势力\n\n- 港务局\n\n- 灯塔\n  - 周砚\n\n```\n  旧钟\n```')
+})

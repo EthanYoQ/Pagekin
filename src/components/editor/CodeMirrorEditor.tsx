@@ -676,7 +676,7 @@ export default function CodeMirrorEditor({
         return
       }
       view.dispatch({
-        changes: target.insertsAfter ? continuationInsert(target.documentText, target.to, aiResult) : { from: target.from, to: target.to, insert: aiResult }
+        changes: target.insertsAfter ? continuationInsert(target.documentText, target.to, aiResult, mode === 'prose') : { from: target.from, to: target.to, insert: aiResult }
       })
       if (target.action === 'batch-instruct') setAnnotations([])
     }
