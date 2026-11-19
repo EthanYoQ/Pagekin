@@ -92,6 +92,7 @@ export async function exportPortableProjectInWorker(
             }))
             return
           case 'admit':
+            if (finished) return
             try {
               admitWholeLedgerOfOpenProject(job.sourceProjectRoot)
               reply({ id: message.id, ok: true })

@@ -293,6 +293,13 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     expect(await exportPortableProject(exportInput())).not.toHaveProperty('omittedReviewCycles')
   })
 
+  it('完好的书经 worker 导出：源库内容不变，结果里没有省略清单', async () => {
+    reviewedBook({ finalized: true })
+    const before = readSqliteContentIdentity(databasePath())
+    expect(await exportInWorker(exportInput())).not.toHaveProperty('omittedReviewCycles')
+    expect(readSqliteContentIdentity(databasePath())).toEqual(before)
+  })
+
   it('定稿章的循环坏了：导出成功、源库不变，存档里只少这条循环的证据行，其余逐行与先删掉这条循环的同一本书一致', async () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)

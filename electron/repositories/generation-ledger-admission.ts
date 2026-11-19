@@ -95,11 +95,16 @@ export interface LedgerAdmission {
  * 读不出的格子就地换成中性值，所属的根改写 blocked_code 并停表，原始字节和根上原来的阻断码记进所属运行绑定的 `$ledgerUnreadable`。
  * 打开作品、拿到可写句柄之后按 `open` 调一次，绑定只查没静止的树；导出与备份前按 `whole` 调，绑定查全部。
  */
+/** 只读，可以在别的连接上跑：导出时在 worker 里先查，完好的书不用到主进程扫一遍。 */
+export function ledgerNeedsAdmission(db: Db, scope: 'open' | 'whole' = 'open'): boolean {
+  // 选没静止的树要读 action_json、attempt_json，它们读得出才能查绑定。
+  return db.prepare(SCAN).safeIntegers().get() !== undefined || db.prepare(BINDING_SCAN[scope]).safeIntegers().get('[]', '[]') !== undefined
+}
+
 export function admitGenerationLedger(db: Db, scope: 'open' | 'whole' = 'open'): LedgerAdmission {
+  if (!ledgerNeedsAdmission(db, scope)) return { sealedRootCount: 0 }
   const scan = db.prepare(SCAN).safeIntegers(), bindings = db.prepare(BINDING_SCAN[scope]).safeIntegers()
   type Bad = { cell: bigint; row: bigint; id: string | null; rootRow: bigint | null; runRow: bigint | null; hex: string }
-  // 选没静止的树要读 action_json、attempt_json，它们读得出才能查绑定。
-  if (!scan.all().length && !bindings.all('[]', '[]').length) return { sealedRootCount: 0 }
   const rows = (values: (bigint | null)[]) => `[${[...new Set(values.filter(value => value !== null))].join(',')}]`
   const neutralize = (bad: Bad[]) => {
     for (const item of bad) {

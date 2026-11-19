@@ -1,8 +1,12 @@
+import { createRequire } from 'node:module'
+import path from 'node:path'
 import type { MessagePort } from 'node:worker_threads'
 
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
 import type { PortableExportPhase, ProjectSessionContext } from '../../src/shared/ipc-channels'
+import { CANONICAL_PROJECT_DATABASE, CANONICAL_PROJECT_DIRECTORY } from '../../src/shared/project-format'
 import { SchemaMigrationError } from '../migrations/registry'
+import { ledgerNeedsAdmission } from '../repositories/generation-ledger-admission'
 import { PortableProjectArchiveError, type PortableProjectArchiveErrorCode } from './portable-project-archive'
 import { createPortableProjectAssetProvider } from './portable-project-assets'
 import {
@@ -44,6 +48,16 @@ export function claimPublish(commit: Int32Array): boolean {
 
 export function claimStop(commit: Int32Array): boolean {
   return Atomics.compareExchange(commit, 0, OPEN, STOPPED) !== PUBLISHING
+}
+
+const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
+
+/** 扫描整本账要半秒，放在 worker 里只读地查；查不了就当要进门。 */
+function sourceLedgerNeedsAdmission(sourceProjectRoot: string): boolean {
+  try {
+    const db = new Database(path.join(sourceProjectRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true, fileMustExist: true })
+    try { return ledgerNeedsAdmission(db, 'whole') } finally { db.close() }
+  } catch { return true }
 }
 
 /** 跨线程会丢掉错误的类和 code，按两个控制器认的几种错误逐一带过去。 */
@@ -109,7 +123,8 @@ export async function runPortableExportJob(port: MessagePort, job: PortableExpor
         await ask({ type: 'gate-enter', projectStorageRoot })
         try { return await operation() } finally { post({ type: 'gate-exit' }) }
       },
-      async admitSourceLedger() {
+      async admitSourceLedger(sourceProjectRoot) {
+        if (!sourceLedgerNeedsAdmission(sourceProjectRoot)) return
         const { error } = await ask({ type: 'admit' })
         if (error) throw rehydrateExportError(error)
       },
