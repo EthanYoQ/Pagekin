@@ -547,7 +547,7 @@ describe('ProjectBackupPanel', () => {
     await renderPanel()
 
     await act(async () => button('刷新云端世代').click())
-    expect(container.textContent).toContain('CLOUD_BACKUP_NETWORK_FAILED')
+    expect(container.textContent).toContain('连不上 WebDAV 服务器')
     expect(useProjectStore.getState().currentProject).toBe(PROJECT)
 
     await act(async () => button('刷新云端世代').click())
@@ -558,7 +558,7 @@ describe('ProjectBackupPanel', () => {
       operationId: expect.any(String), localEndpointAccountId: 'account-1', cloudBookId: 'cloud-book',
       generationId: 'generation-1', targetGrantId: 'cloud-target-grant',
     })
-    expect(container.textContent).toContain('CLOUD_BACKUP_RESTORE_FAILED')
+    expect(container.textContent).toContain('没能恢复成副本')
     expect(useProjectStore.getState().currentProject).toBe(PROJECT)
   })
 

@@ -148,6 +148,10 @@ function webDavFailure(code: WebDavBackupError['code']): CloudBackupErrorCode {
   return 'CLOUD_BACKUP_FAILED'
 }
 
+function webDavInputRejected(error: unknown): boolean {
+  return error instanceof WebDavBackupError && error.code === 'WEBDAV_INPUT_INVALID'
+}
+
 function errorCode(error: unknown): CloudBackupErrorCode {
   if (error instanceof CloudBackupControllerError) return error.code
   if (error instanceof WebDavBackupError) return webDavFailure(error.code)
@@ -299,7 +303,8 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
         ...(saved.warning ? { warning: saved.warning } : {}),
       }
     } catch (error) {
-      return failure(error)
+      // 用户名和密码界面上已要求填写，连接时被判不合规的只会是作者填的地址。
+      return failure(webDavInputRejected(error) ? new CloudBackupControllerError('CLOUD_BACKUP_ENDPOINT_INVALID') : error)
     }
   })
 
@@ -359,7 +364,9 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
       return { success: true as const, state: 'configured' as const, binding,
         ...(staleCredentialRetained ? { staleCredentialRetained: true as const } : {}) }
     } catch (error) {
-      return failure(error)
+      // 账号与父世代都来自主进程，作者手填的只有云书标识。
+      return failure(error instanceof Error && error.message === 'CLOUD_BINDING_INPUT_INVALID'
+        ? new CloudBackupControllerError('CLOUD_BACKUP_BOOK_ID_INVALID') : error)
     }
   })
 
@@ -475,7 +482,8 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
       })
       return { success: true as const, state: 'listed' as const, generations }
     } catch (error) {
-      return failure(error)
+      // 地址连接时已核过，这里不合规的只会是作者手填的云书标识。
+      return failure(webDavInputRejected(error) ? new CloudBackupControllerError('CLOUD_BACKUP_BOOK_ID_INVALID') : error)
     }
   })
 

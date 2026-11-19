@@ -82,6 +82,16 @@ const ERROR_KEYS = {
   PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED: 'error.portableUnresolvedAvatarDamaged',
   // 云备份把打包时的其他失败都收成这一个码；同样的作品点「导出本地存档」会报出具体原因。
   CLOUD_BACKUP_ARCHIVE_FAILED: 'error.cloudBackupArchiveFailed',
+  CLOUD_BACKUP_AUTH_FAILED: 'error.cloudBackupAuthFailed',
+  CLOUD_BACKUP_NETWORK_FAILED: 'error.cloudBackupNetworkFailed',
+  CLOUD_BACKUP_REMOTE_INVALID: 'error.cloudBackupRemoteInvalid',
+  CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE: 'error.cloudBackupCredentialUnavailable',
+  CLOUD_BACKUP_CANCELLED: 'error.cloudBackupCancelled',
+  // 云端恢复把本地恢复的各种失败收成这一个码，原因没带回来。
+  CLOUD_BACKUP_RESTORE_FAILED: 'error.cloudBackupRestoreFailed',
+  CLOUD_BACKUP_FAILED: 'error.cloudBackupFailed',
+  CLOUD_BACKUP_ENDPOINT_INVALID: 'error.cloudBackupEndpointInvalid',
+  CLOUD_BACKUP_BOOK_ID_INVALID: 'error.cloudBackupBookIdInvalid',
   // 选择文件或文件夹后授权已过期、用尽或被撤销（例如选完很久才确认）。
   EXTERNAL_FILE_GRANT_NOT_FOUND: 'error.externalFileGrantExpired',
   EXTERNAL_FILE_GRANT_EXPIRED: 'error.externalFileGrantExpired',
@@ -459,6 +469,10 @@ const ARCHIVE_FAILURE_KEYS = {
   restore: {
     PORTABLE_ARCHIVE_SOURCE_CHANGED: 'error.restoreArchiveChanged',
     PORTABLE_ARCHIVE_SOURCE_UNSAFE: 'error.restoreArchiveChanged',
+    PORTABLE_ARCHIVE_INVALID: 'error.restoreArchiveInvalid',
+    PORTABLE_SCHEMA_UNSUPPORTED: 'error.restoreArchiveNewer',
+    PORTABLE_RESTORE_UNSAFE_TARGET: 'error.restoreTargetLinked',
+    PORTABLE_ARCHIVE_TARGET_UNWRITABLE: 'error.restoreTargetUnwritable',
   },
 } as const satisfies Record<'export' | 'restore', Record<string, MessageKey>>
 

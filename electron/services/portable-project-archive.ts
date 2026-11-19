@@ -22,6 +22,8 @@ export type PortableProjectArchiveErrorCode =
   | 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'
   | 'PORTABLE_ARCHIVE_PUBLISH_UNSUPPORTED'
   | 'PORTABLE_ARCHIVE_TARGET_EXISTS'
+  | 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE'
+  | 'PORTABLE_SCHEMA_UNSUPPORTED'
 
 export class PortableProjectArchiveError extends Error {
   constructor(readonly code: PortableProjectArchiveErrorCode) {
@@ -752,6 +754,9 @@ export async function extractPortableProjectArchive(input: ExtractPortableProjec
     }
   } catch (error) {
     if (error instanceof PortableProjectArchiveError) throw error
+    if (error instanceof Error && error.message === 'PORTABLE_SCHEMA_UNSUPPORTED') fail('PORTABLE_SCHEMA_UNSUPPORTED')
+    // 存档在进来前已打开，读它不会报这几种；它们来自往所选文件夹里写解包暂存。
+    if (['EACCES', 'EPERM', 'ENOSPC', 'EROFS'].includes((error as NodeJS.ErrnoException).code ?? '')) fail('PORTABLE_ARCHIVE_TARGET_UNWRITABLE')
     throw new PortableProjectArchiveError('PORTABLE_ARCHIVE_INVALID')
   } finally {
     zip?.close()

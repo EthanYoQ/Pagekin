@@ -99,7 +99,7 @@ function ProjectBackupPanelSession({
     void ipc.invoke('cloud-backup:view', projectSession).then(result => {
       if (!active) return
       if (!result.success) {
-        setNotice({ kind: 'error', text: result.errorCode })
+        setNotice({ kind: 'error', text: errorText(result.errorCode) })
         return
       }
       updateBinding(result.binding)
