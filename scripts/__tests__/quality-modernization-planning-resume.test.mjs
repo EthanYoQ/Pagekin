@@ -30,7 +30,7 @@ test.skipIf(!inputPath)('saved-outline continuation uses real owners and SQLite 
   const adapter = path.join(evidence, 'adapter')
   fs.mkdirSync(path.join(adapter, 'scripts/fixtures'), { recursive: true })
   for (const name of ['src', 'electron', 'node_modules', 'test']) fs.symlinkSync(path.join(ROOT, name), path.join(adapter, name), 'junction')
-  for (const name of ['quality-modernization-driver.mjs', 'quality-modernization-run.mjs', 'quality-modernization-receipt.mjs'])
+  for (const name of ['quality-modernization-driver.mjs', 'quality-modernization-run.mjs', 'quality-modernization-receipt.mjs', 'review-proof-read.mjs'])
     fs.copyFileSync(path.join(ROOT, 'scripts', name), path.join(adapter, 'scripts', name))
   fs.copyFileSync(path.join(ROOT, 'scripts/fixtures/quality-modernization-production.fixture.mjs'), path.join(adapter, 'scripts/fixtures/quality-modernization-production.fixture.mjs'))
   const protocolFile = path.join(adapter, 'docs/research/novel-quality-modernization/protocol.json')
