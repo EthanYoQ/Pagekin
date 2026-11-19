@@ -9,7 +9,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { chooseProjectDirectoryGrant } from '../project-directory-grant.mjs'
-import { frozenReviewContext } from '../review-proof-read.mjs'
+import { reviewProof } from '../review-proof-read.mjs'
 import { exportAndRestore, openInUi } from './f491-scenarios.mjs'
 import { FAKE_MODEL } from './fake-model.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
@@ -25,8 +25,8 @@ function proofs(projectPath) {
   try {
     const userVersion = db.prepare('PRAGMA user_version').get().user_version
     const runs = db.prepare('SELECT binding_json FROM generation_runs ORDER BY rowid').all()
-      .map(row => JSON.parse(row.binding_json).sourceManifest).filter(manifest => manifest.reviewRevisionContext !== undefined)
-      .map(manifest => { const context = frozenReviewContext(manifest); return { version: context.version, bytes: Buffer.byteLength(JSON.stringify(context)) } })
+      .map(row => reviewProof(JSON.parse(row.binding_json).sourceManifest)).filter(proof => proof.kind !== 'absent')
+      .map(proof => { assert.equal(proof.kind, 'recomputable'); return { version: proof.context.version, bytes: Buffer.byteLength(proof.contextJson) } })
     return { userVersion, versions: [...new Set(runs.map(run => run.version))], count: runs.length, last: runs.at(-1)?.version, maxBytes: Math.max(0, ...runs.map(run => run.bytes)) }
   } finally { db.close() }
 }
