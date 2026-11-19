@@ -1224,12 +1224,11 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
   safeDirectory(attemptParent)
   const frozenContext = Object.freeze({ ...input.projectSession })
   await assertCurrentContext(input, frozenContext, sourceRoot)
-  // 目标与会话校验之后、源库快照之前，只在第一次进门：被拒的导出不留封存，重来不改变源库状态。
-  if (!source.database) admitWholeLedgerOfOpenProject(sourceRoot)
   const projectStorageRoot = path.join(sourceRoot, CANONICAL_PROJECT_DIRECTORY)
   safeDirectory(projectStorageRoot)
   const sourceDatabasePath = path.join(projectStorageRoot, CANONICAL_PROJECT_DATABASE)
   const checkedDatabase = regularFile(sourceDatabasePath, 'PORTABLE_ASSET_MISSING')
+  const firstAttempt = !source.database
   if (source.database && !sameObject(source.database, checkedDatabase)) throw new Error('PROJECT_MIGRATION_SOURCE_CHANGED')
   source.database = checkedDatabase
   const assertSameDatabase = () => {
@@ -1241,6 +1240,8 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
     fs.readFileSync(canonicalManifestPath, 'utf8'),
   ))
   if (canonicalManifest.projectId !== frozenContext.projectId) fail('PORTABLE_CONTEXT_INVALID')
+  // 目标与会话都校验过、源库快照之前，只在第一次进门：被拒的导出不留封存，重来不改变源库状态。
+  if (firstAttempt) admitWholeLedgerOfOpenProject(sourceRoot)
   const snapshotGeneration = input.snapshotGeneration ?? randomUUID()
   const createdAt = (input.now?.() ?? new Date()).toISOString()
   const attempt = prepareAttempt(attemptParent)
