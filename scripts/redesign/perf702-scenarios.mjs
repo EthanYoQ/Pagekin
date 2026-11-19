@@ -716,7 +716,15 @@ export const PERF702_SCENARIOS = {
       // 第一轮进蓝图页时已把生成记录落到暂停与终态；重启后再走一轮，量的是静止以后的打开与启动恢复。
       await context.restart()
       const quiesced = await timeOnce(context, finalized, 2, '-quiesced')
-      return { opened, results, closed, quiesced }
+      // 再打开同一本书会先关上一次的库：关库前生成拥有者要把记录落到暂停与终态，这就是关闭作品的恢复。
+      const grant = await chooseProjectDirectoryGrant(context.app, context.page, path.join(context.roots.projects, BOOK), 'project-open')
+      const switched = await operation(context, `${finalized}-r2-reopen-same-quiesced`, async () => {
+        const startedAt = performance.now()
+        const reopened = await context.invoke(context.page, 'project:open', { grantId: grant.grantId }, randomUUID(), null)
+        assert.equal(reopened.success, true, reopened.error)
+        return { totalMs: Math.round(performance.now() - startedAt) }
+      })
+      return { opened, results, closed, quiesced, switched }
     } },
   'perf702-blueprints': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 0); await context.restart() },
     run: context => timeBlueprintsOnly(context) },
