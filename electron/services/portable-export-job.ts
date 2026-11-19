@@ -52,7 +52,6 @@ export function claimStop(commit: Int32Array): boolean {
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 
-/** 扫描整本账要半秒，放在 worker 里只读地查；查不了就当要进门。 */
 function sourceLedgerNeedsAdmission(sourceProjectRoot: string): boolean {
   try {
     const db = new Database(path.join(sourceProjectRoot, CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE), { readonly: true, fileMustExist: true })
