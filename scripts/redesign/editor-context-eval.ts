@@ -1,7 +1,9 @@
 // 编辑器续写带不带本章材料的真实模型对照（#702）。两组只差材料：续写规则、模板、选区都相同。
-// 输出盲评文件（组别打乱，只有编号）与揭盲表，冲突由人按四类判定后填回 judged.json。
-// 运行：node node_modules/esbuild/bin/esbuild scripts/redesign/editor-context-eval.ts --bundle --platform=node --format=esm --packages=external --alias:electron=<空桩> --outfile=.runtime/edctx/eval.mjs（输出要在工作树内才找得到依赖；electron 换成导出 app、nativeImage 的空桩）
-//      再 node .runtime/edctx/eval.mjs --book .audit/shutong-sweep/batch11/editor-context/book.json --out <目录> [--runs 5]
+// 输出盲评文件（组别打乱，只有编号）与揭盲表，冲突由人按四类判定后填进 judged.tsv。
+// 运行（在工作树根目录，输出放工作树内才找得到依赖）：
+//   node node_modules/esbuild/bin/esbuild scripts/redesign/editor-context-eval.ts --bundle --platform=node --format=esm --packages=external --alias:electron=./scripts/redesign/editor-context-eval-electron-stub.mjs --outfile=.runtime/edctx/eval.mjs
+//   node .runtime/edctx/eval.mjs --book <夹具书 JSON> --out <目录> [--runs 5]
+// 夹具书只在本机：.audit/shutong-sweep/batch11/editor-context/book.json。
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'

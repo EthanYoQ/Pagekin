@@ -603,6 +603,6 @@ export const REAL_SCENARIOS = {
     for (const kind of ['blueprint', 'characters', 'previous-ending']) assert.ok(kinds.includes(kind), `运行带上了 ${kind}：${kinds.join('、')}`)
     assert.ok(after.includes(selected) && after.indexOf(selected) < after.indexOf('你父亲也问过钟的事'), '选中的原文还在，下一段仍在后面')
     assert.ok(countUnits(after) > countUnits(text), '正文变长了')
-    return { kinds, omitted: materials.omitted, addedUnits: countUnits(after) - countUnits(text) }
+    return { kinds, omitted: materials.omitted, addedUnits: countUnits(after) - countUnits(text), prose: after }
   } },
 }
