@@ -53,19 +53,26 @@ async function copyFixtureThenRevert(context, { real = false } = {}) {
 
 /** 渲染端每 100 ms 发一次轻量 IPC，记最长往返：主进程同步升级时它会被挡住。 */
 const startProbe = page => page.evaluate(() => {
-  window.__bs702Probe = { maxMs: 0, probes: 0, stop: false }
-  void (async () => {
-    while (!window.__bs702Probe.stop) {
+  const probe = { maxMs: 0, probes: 0, stop: false }
+  probe.done = (async () => {
+    while (!probe.stop) {
       const startedAt = performance.now()
       await window.aiNovelAPI.invoke('config:get')
-      window.__bs702Probe.maxMs = Math.max(window.__bs702Probe.maxMs, Math.round(performance.now() - startedAt))
-      window.__bs702Probe.probes++
+      probe.maxMs = Math.max(probe.maxMs, Math.round(performance.now() - startedAt))
+      probe.probes++
       await new Promise(resolve => setTimeout(resolve, 100))
     }
   })()
+  window.__bs702Probe = probe
 })
 
-const stopProbe = page => page.evaluate(() => { window.__bs702Probe.stop = true; return { maxMs: window.__bs702Probe.maxMs, probes: window.__bs702Probe.probes } })
+/** 等在途的那次往返回来再报数，否则恰好卡在末尾的那次会漏记。 */
+const stopProbe = page => page.evaluate(async () => {
+  const probe = window.__bs702Probe
+  probe.stop = true
+  await probe.done
+  return { maxMs: probe.maxMs, probes: probe.probes }
+})
 
 /**
  * 从书房点封面预览、再点打开，各记耗时与这一段里探针的最长往返（主进程被挡多久）。预览要等概览读完，不只是卡片出现。
