@@ -3,17 +3,27 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema'
 import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../../migrations/desktop-registry'
 import { migrateSchema } from '../../migrations/runner'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
-import { ProjectPeekService } from '../project-peek'
+import { ProjectPeekService, readPeekSnapshot } from '../project-peek'
+import type { ProjectSqliteWorkerOptions } from '../project-sqlite-host'
+import { projectSqliteWorkerForTest } from '../../../test/helpers/portable-export-worker'
 import { attachStatementLedger, breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
+
+vi.mock('../../migrations/runner', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../migrations/runner')>()
+  return { ...actual, migrateSchema: vi.fn(actual.migrateSchema) }
+})
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
 type DatabaseHandle = import('better-sqlite3').Database
+
+let worker: ProjectSqliteWorkerOptions
+beforeAll(async () => { worker = await projectSqliteWorkerForTest() }, 60_000)
 
 const roots: string[] = []
 const handles: DatabaseHandle[] = []
@@ -127,31 +137,31 @@ function ready<T extends { state: string }>(overview: T): asserts overview is T 
 }
 
 describe('ProjectPeekService source-zero-write overview', () => {
-  it('accepts only a live opaque capability and invalidates it on revoke or manifest drift', () => {
+  it('accepts only a live opaque capability and invalidates it on revoke or manifest drift', async () => {
     const f = fixture()
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
     const capability = service.issueCapability(f.root)
     expect(capability).toEqual({ capabilityId: expect.any(String), projectId: f.projectId })
-    expect(service.peek(`${capability!.capabilityId}-tampered`)).toEqual({ state: 'unavailable' })
+    expect(await service.peek(`${capability!.capabilityId}-tampered`)).toEqual({ state: 'unavailable' })
 
-    ready(service.peek(capability!.capabilityId))
+    ready(await service.peek(capability!.capabilityId))
     service.revokeCapability(capability!.capabilityId)
-    expect(service.peek(capability!.capabilityId)).toEqual({ state: 'unavailable' })
+    expect(await service.peek(capability!.capabilityId)).toEqual({ state: 'unavailable' })
 
     const replacement = service.issueCapability(f.root)!
     fs.writeFileSync(path.join(f.storage, 'project.json'), JSON.stringify(manifest(randomUUID())))
-    expect(service.peek(replacement.capabilityId)).toEqual({ state: 'unavailable' })
+    expect(await service.peek(replacement.capabilityId)).toEqual({ state: 'unavailable' })
   })
 
-  it('never changes source DB/WAL/SHM, creates no source sidecar, and cleans its exact attempt', () => {
+  it('never changes source DB/WAL/SHM, creates no source sidecar, and cleans its exact attempt', async () => {
     const f = fixture({ journalMode: 'wal' })
     addChapter(f.database, 1, { blueprint: true, draft: true, review: true, finalized: true })
     const userVersion = f.database.pragma('user_version', { simple: true })
     const outbox = f.database.prepare('SELECT COUNT(*) AS count FROM finalization_outbox').get()
     const before = sourceState(f.databasePath)
     expect(Object.keys(before)).toEqual(['', '-wal', '-shm'])
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
-    const overview = service.peek(service.issueCapability(f.root)!.capabilityId)
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
+    const overview = await service.peek(service.issueCapability(f.root)!.capabilityId)
 
     ready(overview)
     expect(sourceState(f.databasePath)).toEqual(before)
@@ -161,22 +171,22 @@ describe('ProjectPeekService source-zero-write overview', () => {
     expect(fs.readdirSync(f.scratch)).toEqual([])
   })
 
-  it('creates no WAL/SHM beside a source database that had none', () => {
+  it('creates no WAL/SHM beside a source database that had none', async () => {
     const f = fixture()
     const before = sourceState(f.databasePath)
     expect(Object.keys(before)).toEqual([''])
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
-    ready(service.peek(service.issueCapability(f.root)!.capabilityId))
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
+    ready(await service.peek(service.issueCapability(f.root)!.capabilityId))
     expect(sourceState(f.databasePath)).toEqual(before)
     expect(fs.existsSync(`${f.databasePath}-wal`)).toBe(false)
     expect(fs.existsSync(`${f.databasePath}-shm`)).toBe(false)
   })
 
-  it('refuses legacy roots plus old, future, and forked desktop schemas', () => {
+  it('refuses legacy roots plus old, future, and forked desktop schemas', async () => {
     const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-project-peek-legacy-'))
     roots.push(legacyRoot)
     fs.mkdirSync(path.join(legacyRoot, '.vela'))
-    const service = new ProjectPeekService({ scratchRoot: path.join(legacyRoot, 'scratch') })
+    const service = new ProjectPeekService({ scratchRoot: path.join(legacyRoot, 'scratch'), worker })
     expect(service.issueCapability(legacyRoot)).toBeNull()
 
     const old = fixture({ schemaVersion: 5 })
@@ -185,25 +195,34 @@ describe('ProjectPeekService source-zero-write overview', () => {
     const fork = fixture()
     fork.database.exec('CREATE TABLE unrecognized_fork (id INTEGER PRIMARY KEY)')
     for (const candidate of [old, future, fork]) {
-      const candidateService = new ProjectPeekService({ scratchRoot: candidate.scratch })
+      const candidateService = new ProjectPeekService({ scratchRoot: candidate.scratch, worker })
       const capability = candidateService.issueCapability(candidate.root)!
-      expect(candidateService.peek(capability.capabilityId)).toEqual({ state: 'unavailable' })
+      expect(await candidateService.peek(capability.capabilityId)).toEqual({ state: 'unavailable' })
     }
   })
 
-  // 最近项目列表在正常打开升级之前就预览，旧 schema 也必须照常统计。
-  it.each([7, 8, 9])('previews a schema-%i project by migrating only its private snapshot, leaving the source as it was', version => {
-    const f = fixture({ schemaVersion: version, journalMode: 'wal' })
-    seedCore(f.database)
-    addChapter(f.database, 1, { blueprint: true, draft: true, review: true, finalized: true })
-    addChapter(f.database, 2, { draft: true })
-    f.database.prepare("INSERT INTO characters(character_id,name,cs_location) VALUES('c1','林澈','北门')").run()
+  // 最近项目列表在正常打开升级之前就预览，旧 schema 也必须照常统计，结果与已升级的书一样。
+  it.each([7, 8, 9, 10, 11])('previews a schema-%i project like a current one, leaving the source as it was', async version => {
+    const book = (schemaVersion: number) => {
+      const f = fixture({ schemaVersion, journalMode: 'wal' })
+      if (schemaVersion !== CURRENT_DESKTOP_SCHEMA_VERSION) seedCore(f.database)
+      addChapter(f.database, 1, { blueprint: true, draft: true, review: true, finalized: true })
+      addChapter(f.database, 2, { draft: true })
+      f.database.prepare("INSERT INTO characters(character_id,name,cs_location) VALUES('c1','林澈','北门')").run()
+      return f
+    }
+    const peek = (f: ReturnType<typeof book>) => {
+      const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
+      return service.peek(service.issueCapability(f.root)!.capabilityId)
+    }
+    const current = await peek(book(CURRENT_DESKTOP_SCHEMA_VERSION))
+    const f = book(version)
     const before = sourceState(f.databasePath)
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
-    const overview = service.peek(service.issueCapability(f.root)!.capabilityId)
+    const overview = await peek(f)
 
     ready(overview)
-    expect(overview).toMatchObject({ projectId: f.projectId, name: '雨夜来信', totalWords: 24, finalizedChapters: 1 })
+    ready(current)
+    expect(overview).toMatchObject({ ...current, projectId: f.projectId, revision: overview.revision, name: '雨夜来信', totalWords: 24, finalizedChapters: 1 })
     expect(overview.stages.find(stage => stage.id === 'drafting')).toEqual({ id: 'drafting', status: 'in-progress', count: 2 })
     expect(sourceState(f.databasePath)).toEqual(before)
     expect(f.database.pragma('user_version', { simple: true })).toBe(version)
@@ -211,13 +230,23 @@ describe('ProjectPeekService source-zero-write overview', () => {
     expect(fs.readdirSync(f.scratch)).toEqual([])
   })
 
-  it('reports conservative counts and never marks one chapter as a completed multi-chapter plan', () => {
+  // 预览只读概览要的表；在副本上整本升级一遍，作者点一下封面就要等升级那么久（#702）。
+  it('previews an older book without running the migration lane', () => {
+    const f = fixture({ schemaVersion: CURRENT_DESKTOP_SCHEMA_VERSION - 1 })
+    seedCore(f.database)
+    addChapter(f.database, 1, { draft: true, finalized: true })
+    vi.mocked(migrateSchema).mockClear()
+    ready(readPeekSnapshot({ databasePath: f.databasePath, projectId: f.projectId, manifestFingerprint: 'manifest', scratchRoot: f.scratch }))
+    expect(migrateSchema).not.toHaveBeenCalled()
+  })
+
+  it('reports conservative counts and never marks one chapter as a completed multi-chapter plan', async () => {
     const f = fixture()
     f.database.prepare("UPDATE project_core SET premise='前提', worldbuilding='世界观'").run()
     f.database.prepare("INSERT INTO characters (character_id,name,retired) VALUES ('c1','林舟',0),('c2','已退场',1)").run()
     addChapter(f.database, 1, { blueprint: true, draft: true, review: true, finalized: true })
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
-    const overview = service.peek(service.issueCapability(f.root)!.capabilityId)
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
+    const overview = await service.peek(service.issueCapability(f.root)!.capabilityId)
 
     ready(overview)
     expect(overview).toMatchObject({
@@ -241,45 +270,45 @@ describe('ProjectPeekService source-zero-write overview', () => {
     ])
   })
 
-  it('reports setup readiness from the four required fields and the planned chapter count, not the nine-field count', () => {
+  it('reports setup readiness from the four required fields and the planned chapter count, not the nine-field count', async () => {
     const f = fixture()
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
-    const peek = () => {
-      const overview = service.peek(service.issueCapability(f.root)!.capabilityId)
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
+    const peek = async () => {
+      const overview = await service.peek(service.issueCapability(f.root)!.capabilityId)
       ready(overview)
       return { setupReady: overview.setupReady, plannedChapters: overview.plannedChapters, configuration: overview.stages[0].count }
     }
-    expect(peek()).toEqual({ setupReady: true, plannedChapters: 3, configuration: 9 })
+    expect(await peek()).toEqual({ setupReady: true, plannedChapters: 3, configuration: 9 })
     f.database.prepare("UPDATE project_core SET world_setting='', golden_finger=''").run()
-    expect(peek()).toEqual({ setupReady: true, plannedChapters: 3, configuration: 7 })
+    expect(await peek()).toEqual({ setupReady: true, plannedChapters: 3, configuration: 7 })
     f.database.prepare("UPDATE project_core SET target_audience=' '").run()
-    expect(peek()).toMatchObject({ setupReady: false })
+    expect(await peek()).toMatchObject({ setupReady: false })
     f.database.prepare("UPDATE project_core SET target_audience='成年读者', words_per_chapter=0").run()
-    expect(peek()).toMatchObject({ setupReady: false })
+    expect(await peek()).toMatchObject({ setupReady: false })
   })
 
-  it('does not count a finalized status whose frozen outbox fact is inconsistent', () => {
+  it('does not count a finalized status whose frozen outbox fact is inconsistent', async () => {
     const f = fixture()
     f.database.prepare('UPDATE project_core SET total_chapters=1').run()
     addChapter(f.database, 1, { draft: true, finalized: true })
     f.database.prepare("UPDATE finalization_outbox_all SET content_hash='not-the-content-hash'").run()
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
-    const overview = service.peek(service.issueCapability(f.root)!.capabilityId)
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
+    const overview = await service.peek(service.issueCapability(f.root)!.capabilityId)
 
     ready(overview)
     expect(overview.finalizedChapters).toBe(0)
     expect(overview.stages[5]).toEqual({ id: 'finalization', status: 'not-started', count: 0 })
   })
 
-  it('uses unknown for an unknown plan, in-progress once data exists, and only completes full planned coverage', () => {
+  it('uses unknown for an unknown plan, in-progress once data exists, and only completes full planned coverage', async () => {
     const unknown = fixture()
     unknown.database.prepare('UPDATE project_core SET total_chapters=0').run()
-    const unknownService = new ProjectPeekService({ scratchRoot: unknown.scratch })
-    const empty = unknownService.peek(unknownService.issueCapability(unknown.root)!.capabilityId)
+    const unknownService = new ProjectPeekService({ scratchRoot: unknown.scratch, worker })
+    const empty = await unknownService.peek(unknownService.issueCapability(unknown.root)!.capabilityId)
     ready(empty)
     expect(empty.stages.slice(2).map(stage => stage.status)).toEqual(['unknown', 'unknown', 'unknown', 'unknown'])
     unknown.database.prepare("INSERT INTO blueprints (chapter_number,title) VALUES (7,'片段')").run()
-    const withData = unknownService.peek(unknownService.issueCapability(unknown.root)!.capabilityId)
+    const withData = await unknownService.peek(unknownService.issueCapability(unknown.root)!.capabilityId)
     ready(withData)
     expect(withData.stages[2]).toEqual({ id: 'blueprint', status: 'in-progress', count: 1 })
 
@@ -287,22 +316,22 @@ describe('ProjectPeekService source-zero-write overview', () => {
     complete.database.prepare('UPDATE project_core SET total_chapters=2').run()
     addChapter(complete.database, 1, { blueprint: true, draft: true, review: true, finalized: true })
     addChapter(complete.database, 2, { blueprint: true, draft: true, review: true, finalized: true })
-    const completeService = new ProjectPeekService({ scratchRoot: complete.scratch })
-    const overview = completeService.peek(completeService.issueCapability(complete.root)!.capabilityId)
+    const completeService = new ProjectPeekService({ scratchRoot: complete.scratch, worker })
+    const overview = await completeService.peek(completeService.issueCapability(complete.root)!.capabilityId)
     ready(overview)
     expect(overview.stages.slice(2).map(stage => stage.status)).toEqual(['completed', 'completed', 'completed', 'completed'])
   })
 
-  it('does not count a finalized draft without an authoritative outbox receipt', () => {
+  it('does not count a finalized draft without an authoritative outbox receipt', async () => {
     const f = fixture()
     const content = f.database.prepare('INSERT INTO contents (body) VALUES (?)').run('缺少定稿回执的正文')
     f.database.prepare(`
       INSERT INTO drafts_all (chapter_number,version,status,source,content_id,word_count)
       VALUES (1,1,'finalized','write',?,10)
     `).run(content.lastInsertRowid)
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
 
-    const external = service.peek(service.issueCapability(f.root)!.capabilityId)
+    const external = await service.peek(service.issueCapability(f.root)!.capabilityId)
     const current = service.readCurrent(f.projectId, f.database)
     ready(external)
     ready(current)
@@ -319,7 +348,7 @@ describe('ProjectPeekService source-zero-write overview', () => {
       INSERT INTO drafts_all (chapter_number,version,status,source,content_id,word_count)
       VALUES (1,2,'reviewed','revise',?,30)
     `).run(reviewed.lastInsertRowid)
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
     const current = service.readCurrent(f.projectId, f.database)
 
     ready(current)
@@ -329,13 +358,13 @@ describe('ProjectPeekService source-zero-write overview', () => {
     expect(current.stages[3]).toEqual({ id: 'drafting', status: 'in-progress', count: 1 })
   })
 
-  it('allows an excerpt only for the already-open current database and performs SELECT-only aggregation', () => {
+  it('allows an excerpt only for the already-open current database and performs SELECT-only aggregation', async () => {
     const f = fixture()
     addChapter(f.database, 1, { draft: true })
     const beforeChanges = f.database.prepare('SELECT total_changes()').pluck().get()
-    const service = new ProjectPeekService({ scratchRoot: f.scratch })
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
     const current = service.readCurrent(f.projectId, f.database)
-    const external = service.peek(service.issueCapability(f.root)!.capabilityId)
+    const external = await service.peek(service.issueCapability(f.root)!.capabilityId)
 
     ready(current)
     ready(external)

@@ -25,7 +25,7 @@ import { ChapterDeletionService } from '../chapter-deletion-service'
 import { GenerationRunRepository } from '../../repositories/generation-run-repository'
 import { exportPortableProject, type ExportPortableProjectInput } from '../project-archive-service'
 import { exportPortableProjectInWorker, type PortableExportWorkerOptions } from '../portable-export-host'
-import { portableExportWorkerForTest } from '../../../test/helpers/portable-export-worker'
+import { portableExportWorkerForTest, projectSqliteWorkerForTest } from '../../../test/helpers/portable-export-worker'
 
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -704,16 +704,16 @@ describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-002
   it.each([
     ['当前版本', false],
     ['v9', true],
-  ])('书库卡片读有坏循环的%s书：照常显示', (_label, older) => {
+  ])('书库卡片读有坏循环的%s书：照常显示', async (_label, older) => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
     db().prepare("INSERT INTO project_core(id,project_name) VALUES('main','雾港')").run()
     if (older) downgradeToV9()
     else closeProjectDatabase()
-    const service = new ProjectPeekService({ scratchRoot: path.join(base, 'peek') })
+    const service = new ProjectPeekService({ scratchRoot: path.join(base, 'peek'), worker: await projectSqliteWorkerForTest() })
     const capability = service.issueCapability(projectRoot)!
 
-    expect(service.peek(capability.capabilityId)).toMatchObject({ state: 'ready', finalizedChapters: 2 })
+    expect(await service.peek(capability.capabilityId)).toMatchObject({ state: 'ready', finalizedChapters: 2 })
   })
 })
 
