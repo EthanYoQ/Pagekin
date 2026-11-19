@@ -15,8 +15,7 @@ export interface IpcSlowCallLogOptions {
  * 之后注册的每个 invoke 处理函数都计时：同步段（调用到处理函数返回）超过阈值，写一行通道名和耗时。
  * 主进程被同步段占住时整个应用假死，异步等待不占主进程，所以不计。
  * 异步处理函数在 await 之后的同步段也会占住主进程，单个调用的计时看不到它；
- * 所以另每 100 ms 采样一次事件循环，迟到超过阈值时写一行迟到多久和当时在途的通道。
- * 返回停止采样的函数。
+ * 所以另按 EVENT_LOOP_SAMPLE_MS 采样事件循环，迟到超过阈值时写一行迟到多久和当时在途的通道。
  */
 export function installIpcSlowCallLog(ipc: Pick<IpcMain, 'handle'>, options: IpcSlowCallLogOptions = {}): () => void {
   const thresholdMs = options.thresholdMs ?? IPC_SLOW_CALL_THRESHOLD_MS

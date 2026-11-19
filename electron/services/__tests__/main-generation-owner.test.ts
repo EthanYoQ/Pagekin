@@ -3863,7 +3863,6 @@ describe('main draft persistence and batch lineage', () => {
       const f = fixture(dispatch)
       return { ...f, fixture: f, dispatch }
     }
-    /** 一条已保存的写稿运行，加一条审它、已保存的审稿运行。 */
     async function savedChapter(f: ReturnType<typeof reviewing>, index: number) {
       const draft = await generate(f, { ...f.begin, uiActionNonce: `draft-${index}`, authorInputs })
       const saved = f.owner.commitDraft(draft.request)
