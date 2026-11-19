@@ -8,7 +8,8 @@ export const CREATIVE_STRATEGIES = [
 export type CreativeStrategy = typeof CREATIVE_STRATEGIES[number]
 
 /** Controlled semantic stage used by product callers; never inferred from a diagnostic name. */
-export type GenerationReasoningStage = 'drafting' | 'planning' | 'review' | 'general'
+export const REASONING_STAGES = ['drafting', 'planning', 'review', 'general', 'extraction'] as const
+export type GenerationReasoningStage = typeof REASONING_STAGES[number]
 
 export const REASONING_EFFORTS = ['off', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 export type ReasoningEffort = typeof REASONING_EFFORTS[number]
@@ -37,7 +38,7 @@ export function reasoningAdapterFitsProtocol(protocol: unknown, adapter: Provide
 export type ProviderReasoningDirective =
   | {
       adapter: 'siliconflow-v4-thinking'
-      reasoningEffort: 'high' | 'max'
+      reasoningEffort: 'off' | 'high' | 'max'
     }
   | {
       adapter: 'openai-reasoning-effort'

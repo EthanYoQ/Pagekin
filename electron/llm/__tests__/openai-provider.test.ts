@@ -261,6 +261,23 @@ describe('SiliconFlow explicit reasoning requests', () => {
     expect(requestBody(fetchMock)).not.toHaveProperty('enable_thinking')
     expect(requestBody(fetchMock)).not.toHaveProperty('reasoning_effort')
   })
+
+  it.each(['deepseek-ai/DeepSeek-V4-Flash', 'deepseek-ai/DeepSeek-V4.1-Flash'])('定稿后整理在自动档下对 %s 发 enable_thinking:false', async modelName => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ choices: [] }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const model = { ...silicon, provider: 'siliconflow' as const, modelName, reasoningOverride: 'auto' as const }
+    await new OpenAIProvider().generate(model, [], resolveGenerationParameters(model, { reasoningStage: 'extraction' }))
+    expect(requestBody(fetchMock)).toMatchObject({ model: modelName, enable_thinking: false })
+    expect(requestBody(fetchMock)).not.toHaveProperty('reasoning_effort')
+  })
+
+  it.each(['high', 'max'] as const)('定稿后整理时作者选了 %s，V4.1 Flash 照发思考参数', async reasoningOverride => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ choices: [] }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const model = { ...silicon, provider: 'siliconflow' as const, modelName: 'deepseek-ai/DeepSeek-V4.1-Flash', reasoningOverride }
+    await new OpenAIProvider().generate(model, [], resolveGenerationParameters(model, { reasoningStage: 'extraction' }))
+    expect(requestBody(fetchMock)).toMatchObject({ enable_thinking: true, reasoning_effort: reasoningOverride })
+  })
 })
 
 describe('OpenAIProvider non-streaming cancellation', () => {
