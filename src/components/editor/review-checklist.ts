@@ -234,7 +234,7 @@ function matchesReviewSource(
 
 /**
  * 一份审稿报告的持久化复验周期：确认快照指向原始审稿，周期也按原始审稿读。
- * firstRead 是挑报告时已读到的周期，自己的读回来之前先用它。
+ * firstRead 是挑报告时读到的周期，到了就用它，自己的读成功了再换上。
  */
 export function useReviewCycle({ reportText, reviewId, projectKey, firstRead, refreshKey }: {
   reportText: string
@@ -247,8 +247,13 @@ export function useReviewCycle({ reportText, reviewId, projectKey, firstRead, re
   const snapshot = parseHumanConfirmedReviewSnapshot(reportText)
   const cycleReviewId = confirmationSourceReviewId(snapshot, reviewId)
   // 读回的周期记着属于哪份审稿：重新审稿后新周期读回来之前，不把上一份审稿的周期当成这一份的。
-  // failed 记着这次是读失败才落的 null：之后挑报告时读到了，就用读到的。
-  const [loadedCycle, setLoadedCycle] = useState<{ reviewId: number | undefined; cycle: ReviewCycleProjection | null; failed?: true }>({ reviewId: undefined, cycle: null })
+  // 存的是最近一次读成功的结果，挑报告时的读也算：它比之前存的新，到了就换上。
+  const [loadedCycle, setLoadedCycle] = useState<{ reviewId: number | undefined; cycle: ReviewCycleProjection | null }>(firstRead ?? { reviewId: undefined, cycle: null })
+  const [adopted, setAdopted] = useState(firstRead)
+  if (firstRead !== adopted) {
+    setAdopted(firstRead)
+    if (firstRead) setLoadedCycle(firstRead)
+  }
 
   const reloadCycle = async (): Promise<ReviewCycleProjection | null> => {
     if (!isReviewId(cycleReviewId)) return null
@@ -271,13 +276,12 @@ export function useReviewCycle({ reportText, reviewId, projectKey, firstRead, re
       if (cancelled || !isProjectSessionCurrent(projectSession)) return
       if (next !== undefined) setLoadedCycle({ reviewId: cycleReviewId, cycle: next })
       // 读失败不是「没有周期」：留着已读到的，否则恢复前的审稿会退回可修稿（#702）。
-      else setLoadedCycle(current => current.reviewId === cycleReviewId && !current.failed ? current : { reviewId: cycleReviewId, cycle: null, failed: true })
+      else setLoadedCycle(current => current.reviewId === cycleReviewId ? current : { reviewId: cycleReviewId, cycle: null })
     })()
     return () => { cancelled = true }
   }, [cycleReviewId, projectKey, refreshKey])
 
-  const own = loadedCycle.reviewId === cycleReviewId ? loadedCycle : undefined
-  const known = own && !own.failed ? own : firstRead?.reviewId === cycleReviewId ? firstRead : own
+  const known = loadedCycle.reviewId === cycleReviewId ? loadedCycle : undefined
   const cycleLoaded = !isReviewId(cycleReviewId) || known !== undefined
   const resolvedCycle = known?.cycle ?? null
   // 报告可以原地更新；会话键只在底层不可变报告变了时变，可编辑清单随之重置。
