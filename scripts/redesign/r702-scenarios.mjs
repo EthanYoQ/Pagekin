@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
 import { exportAndRestore, openInUi } from './f491-scenarios.mjs'
+import { documentEndKey } from './keys.mjs'
 import { seedStageSample } from './scenarios.mjs'
 
 const RESTORED_HISTORY = '审稿内容都还在，但它是作品从备份恢复前做的，不能接着按它修稿或复验。点「重新审稿」，再按新意见修稿。'
@@ -97,10 +98,10 @@ export const R702_SCENARIOS = {
     await openRestoredPendingRevision(context, 'r702-rereview-old-revision')
     await chapterView.merge(page).getByRole('button', { name: '稍后再合并' }).click()
     await chapterView.merge(page).waitFor({ state: 'detached' })
-    // 改动加在全文末尾的新段：Ctrl+End 不受折行影响，退格就能原样删回。
+    // 改动加在全文末尾的新段：跳到全文末尾不受折行影响，退格就能原样删回。
     const original = await chapterView.prose(page).innerText()
     await chapterView.prose(page).getByText(EDITED_PARAGRAPH).first().click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     await page.keyboard.type(`
 ${EDIT}`)
     await stage.saveWithCtrlS(page)
@@ -109,7 +110,7 @@ ${EDIT}`)
     await chapterView.reviseButton(page).waitFor({ state: 'visible', timeout: 30_000 })
 
     await chapterView.prose(page).getByText(EDITED_PARAGRAPH).first().click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(documentEndKey())
     for (let typed = EDIT.length + 1; typed > 0; typed--) await page.keyboard.press('Backspace')
     assert.equal(await chapterView.prose(page).innerText(), original, '正文要原样改回')
     await stage.saveWithCtrlS(page)
