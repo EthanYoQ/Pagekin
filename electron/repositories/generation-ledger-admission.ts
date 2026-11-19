@@ -35,7 +35,6 @@ export interface AdmittedLedgerCell {
 
 const encode = (value: unknown) => JSON.stringify(value)
 
-/** 对全部记录检查的列，守卫测试也读它。 */
 export const ADMITTED_LEDGER_CELLS: readonly AdmittedLedgerCell[] = [
   { table: 'generation_roots', column: 'action_json', nullable: false, neutral: (db, rowid) => encode({ projectId: '', epoch: '', operation: 'ledger-unreadable',
     uiActionNonce: '', frozenInputHash: '', rootActionId: db.prepare('SELECT root_action_id FROM generation_roots WHERE rowid=?').pluck().get(rowid), status: 'paused' }) },
@@ -82,7 +81,7 @@ const scanOf = (cell: AdmittedLedgerCell, scope = '1') => {
     WHERE (${scope}) AND ${cell.nullable ? `${cell.column} IS NOT NULL AND ` : ''}NOT ${readableLedgerJson(cell.column)}`
 }
 const SCAN = ADMITTED_LEDGER_CELLS.map(cell => scanOf(cell)).join(' UNION ALL ') + ' ORDER BY cell'
-// 要封存的树和要记账的运行另外查绑定：封存要往它们的绑定里记原始字节。两个参数是根和运行的 rowid 列表。
+// 封存要往它们的绑定里记原始字节，所以这两类运行的绑定另外查。
 const sealing = `root_action_id IN (SELECT root_action_id FROM generation_roots WHERE rowid IN (SELECT value FROM json_each(?)))
   OR rowid IN (SELECT value FROM json_each(?))`
 const BINDING_SCAN = { open: scanOf(BINDING, `root_action_id IN (${UNSETTLED_ROOTS}) OR ${sealing}`), whole: scanOf(BINDING, `1 OR ${sealing}`) }

@@ -61,10 +61,7 @@ export function initProjectDatabase(projectPath: string): LedgerAdmission {
   }
 }
 
-/**
- * 导出与备份前的全量进门（ADR-0030）：打开作品只查没静止的树，静止树的绑定在这里查，坏的照常封存。
- * 只在开着的这本书的句柄上跑；书没开着时导出自己会因不是当前作品而拒绝，这里不动。
- */
+/** 只在开着的这本书的句柄上跑；书没开着时导出自己会拒绝，这里不动。 */
 export function admitWholeLedgerOfOpenProject(projectRoot: string): LedgerAdmission {
   if (!projectDb || currentProjectPath === null || path.relative(path.resolve(currentProjectPath), path.resolve(projectRoot)) !== '')
     return { sealedRootCount: 0 }

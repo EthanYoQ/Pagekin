@@ -369,7 +369,6 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         activeElapsedMs: budget.activeElapsedMs, blockedCode: budget.blockedCode }, artifacts, candidates,
       unsavedTails: service.readUnsavedTails().filter(tail => budget.attempts.some(attempt => attempt.attemptId === tail.attemptId)) }
   }
-  /** 运行索引给的候选，新的在前。 */
   const newestFirst = (candidates: string) => deps.database.prepare('SELECT run_id FROM generation_runs WHERE run_id IN (SELECT value FROM json_each(?)) ORDER BY created_at_ms DESC, rowid DESC')
     .pluck().all(candidates) as string[]
   /** 这几种操作的运行，新的在前，略去 skip 里的。绑定按主键读，读不出的略过并调 unreadable，只有读写它的操作报错。 */

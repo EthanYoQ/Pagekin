@@ -1438,7 +1438,7 @@ function overlappingResumableSourceRun(runId: string, purpose: ImportPurpose): I
   `).get(runId, runId, purpose) as ImportRunRow | undefined
 }
 
-/** 这个导入阶段有没有开过生成：按槽位算出的点击号查身份键，封存的不算。槽位不合法就不可能开过。 */
+/** 槽位不合法就不可能开过；封存的运行不算。 */
 function boundImportSlot(slot: ImportGenerationSlot): boolean {
   let key: string
   try { key = importGenerationSlotKey(slot) } catch { return false }

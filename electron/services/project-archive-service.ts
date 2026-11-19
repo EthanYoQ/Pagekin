@@ -902,7 +902,7 @@ function draftThreadTaskProofs(db: InstanceType<typeof BetterSqlite>, reviewRoot
     FROM generation_attempts WHERE json_valid(usage_receipt_json) AND json_extract(usage_receipt_json,'$.draftCommit.id') IS NOT NULL`).all() as Array<{
     attempt_id: string; run_id: string; root_action_id: string; draft_id: unknown; chapter_number: unknown
     draft_id_type: string; chapter_number_type: string | null }>
-  // 绑定按主键读：跨记录只按收据选（ADR-0030）。
+  // 跨记录只按收据选（ADR-0030）。
   const bindingOf = db.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck()
   const receipts = new Map<string, string>(), bindings = new Map<string, string>()
   for (const row of rows) {

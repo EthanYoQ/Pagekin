@@ -82,7 +82,6 @@ function fullScan(db: Database.Database, sealed: ReadonlySet<string>): RunIndexE
 function entries(db: Database.Database): readonly RunIndexEntry[] {
     const { count, top } = db.prepare('SELECT count(*) AS count, coalesce(max(rowid), 0) AS top FROM generation_runs').safeIntegers().get() as { count: bigint; top: bigint }
     const sealings = sealingsOf(db)
-    // 封存过就整表重读：已缓存条目的 sealed 标记要跟着变。
     const prior = snapshots.get(db)?.sealings === sealings ? snapshots.get(db) : undefined
     if (prior && prior.count === count && prior.top === top) return prior.entries
     const sealed = prior?.sealed ?? new Set(db.prepare('SELECT root_action_id FROM generation_roots WHERE blocked_code=?').pluck().all(GENERATION_LEDGER_UNREADABLE) as string[])
