@@ -55,9 +55,10 @@ beforeEach(async () => {
     if (channel === 'editor-inline:begin') {
       leaseRequestCount += 1
       if (deferFirstLease && leaseRequestCount === 1) return new Promise((_resolve, reject) => { rejectFirstLease = reject })
-      const input = (args[0] as { input: { documentText: string } }).input
+      const input = (args[0] as { input: { action: string; documentText: string } }).input
       const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input.documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
-      const recovery = { view: { handle: { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: 'root', runId: `run-${leaseRequestCount}` }, status: 'running', artifacts: [] }, modelId: 'editor-model', sourceStatus: 'current', context: { ...input, kind: 'author-draft', documentHash: hash } }
+      const recovery = { view: { handle: { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: 'root', runId: `run-${leaseRequestCount}` }, status: 'running', artifacts: [] }, modelId: 'editor-model', sourceStatus: 'current',
+        context: { ...input, kind: 'author-draft', documentHash: hash, ...(input.action === 'continue' ? { materials: { included: [], omitted: [] } } : {}) } }
       recoveries.set(recovery.view.handle.runId, recovery)
       return recovery
     }
@@ -1169,5 +1170,83 @@ describe('annotation panel layout', () => {
     await act(async () => page.getByRole('button', { name: '定位批注 1' }).click())
 
     await expect.poll(() => annotationInView(scroller)).toBe(true)
+  })
+})
+
+describe('章内选区生成带本章材料', () => {
+  const blueprint = { chapterNumber: 30, title: '北塔', role: '', purpose: '', keyEvents: '林岚在北塔找到钥匙', characters: [], suspenseHook: '', userGuidance: '', notes: '', notesUpdatedAt: '' }
+  const chapterReads = (options: { omitted?: { kind: string; reason: string }[]; blueprintRead?: Promise<void>; threads?: unknown[] } = {}) => {
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<{ context: Record<string, unknown> }>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:blueprint-get') { await options.blueprintRead; return blueprint }
+      if (channel === 'db:narrative-thread-list-relevant') return options.threads ?? []
+      if (channel === 'db:draft-get-finalized') return null
+      const result = await base(channel, ...args)
+      const input = (args[0] as { input?: { chapterContext?: unknown } }).input
+      if (channel === 'editor-inline:begin' && input?.chapterContext) result.context.materials = { included: [], omitted: options.omitted ?? [] }
+      return result
+    })
+  }
+  const begins = () => invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:begin').map(([, request]) => (request as { input: Record<string, unknown> }).input)
+
+  it('接受续写后选区原文还在，续写作为新的一段接在选区之后', async () => {
+    deferStream = true
+    chapterReads()
+    await act(async () => root.render(<CodeMirrorEditor content={'林岚推开北塔的门。\n\n门后是长廊。'} mode="prose" filePath="drafts/30-1.md" chapterNumber={30} />))
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
+    await selectLine('林岚推开北塔的门。', { exact: true })
+    await act(async () => page.getByRole('button', { name: '续写' }).click())
+    await expect.poll(() => pendingRequestId).not.toBeNull()
+    expect(begins()[0]).toEqual(expect.objectContaining({ chapterContext: expect.objectContaining({ chapterNumber: 30,
+      blocks: expect.arrayContaining([expect.objectContaining({ kind: 'blueprint', text: expect.stringContaining('林岚在北塔找到钥匙') })]) }) }))
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '风从塔顶灌下来。', finishReason: 'stop' } as never))
+    await act(async () => page.getByRole('button', { name: '插入' }).click())
+    expect(view.state.doc.toString()).toBe('林岚推开北塔的门。\n\n风从塔顶灌下来。\n\n门后是长廊。')
+  })
+
+  it('可选材料被裁时，预览气泡里有一行短提示', async () => {
+    deferStream = true
+    chapterReads({ omitted: [{ kind: 'threads', reason: 'budget' }, { kind: 'characters', reason: 'budget' }, { kind: 'previous-ending', reason: 'unreadable' }] })
+    await act(async () => root.render(<CodeMirrorEditor content="林岚推开北塔的门。" mode="prose" filePath="drafts/30-1.md" chapterNumber={30} />))
+    await selectLine('林岚推开北塔的门。')
+    await act(async () => page.getByRole('button', { name: '续写' }).click())
+    await expect.element(page.getByText('线索、人物没带上：模型窗口不够')).toBeVisible()
+  })
+
+  it('相关线索超出条数上限时，预览气泡里说另有几条没带上', async () => {
+    deferStream = true
+    chapterReads({ threads: Array.from({ length: 7 }, (_, index) => ({ id: index + 1, title: `线索${index + 1}`, type: '伏笔', targetStartChapter: 20, targetEndChapter: 40,
+      authorIntent: '要有交代', status: 'planted', dormantChapters: 0, overdue: false, createdAt: '', updatedAt: '', events: [] })) })
+    await act(async () => root.render(<CodeMirrorEditor content="林岚推开北塔的门。" mode="prose" filePath="drafts/30-1.md" chapterNumber={30} />))
+    await selectLine('林岚推开北塔的门。')
+    await act(async () => page.getByRole('button', { name: '续写' }).click())
+    await expect.element(page.getByText('另有 1 条线索没带上：超出条数或长度上限')).toBeVisible()
+  })
+
+  it('备料期间换了章，旧的材料作废，不发起生成', async () => {
+    let release!: () => void
+    chapterReads({ blueprintRead: new Promise<void>(resolve => { release = resolve }) })
+    await act(async () => root.render(<CodeMirrorEditor content="林岚推开北塔的门。" mode="prose" filePath="drafts/30-1.md" chapterNumber={30} />))
+    await selectLine('林岚推开北塔的门。')
+    await act(async () => page.getByRole('button', { name: '续写' }).click())
+    await expect.poll(() => invoke.mock.calls.some(([channel]) => channel === 'db:blueprint-get')).toBe(true)
+    await act(async () => root.render(<CodeMirrorEditor content="林岚推开北塔的门。" mode="prose" filePath="drafts/31-1.md" chapterNumber={31} />))
+    await act(async () => release())
+    await nextFrames()
+    expect(begins()).toEqual([])
+    await expect.element(page.getByText('续写预览')).not.toBeInTheDocument()
+  })
+
+  it('没有章号的编辑器（架构文档、恢复稿）照旧只发选区，续写也插在选区之后', async () => {
+    deferStream = true
+    await act(async () => root.render(<CodeMirrorEditor content="甲乙" mode="prose" />))
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
+    await selectLine('甲乙')
+    await act(async () => page.getByRole('button', { name: '续写' }).click())
+    await expect.poll(() => pendingRequestId).not.toBeNull()
+    expect(Object.hasOwn(begins()[0]!, 'chapterContext')).toBe(false)
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '丙丁。', finishReason: 'stop' } as never))
+    await act(async () => page.getByRole('button', { name: '插入' }).click())
+    expect(view.state.doc.toString()).toBe('甲乙\n\n丙丁。')
   })
 })

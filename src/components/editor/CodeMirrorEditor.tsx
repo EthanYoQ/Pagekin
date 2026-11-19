@@ -14,7 +14,13 @@ import { proseTab } from './prose-tab'
 import { useThemeStore } from '../../stores/theme-store'
 import type { MainGenerationRunHandle } from '../../services/generation/generation-runtime'
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
-import { EDITOR_INLINE_ANNOTATION_MAX_COUNT, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, type EditorInlineAnnotation, type EditorInlineFixedAction, type EditorInlineRequest } from '../../shared/editor-inline-generation'
+import { EDITOR_INLINE_ANNOTATION_MAX_COUNT, EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, editorInlineInsertsAfterSelection, type EditorContextKind, type EditorInlineAnnotation, type EditorInlineContext, type EditorInlineFixedAction, type EditorInlineRequest } from '../../shared/editor-inline-generation'
+import { prepareEditorChapterContext } from '../../services/editor-chapter-context'
+import { continuationInsert } from './continuation-insert'
+import { pluralEn } from '../../shared/plural-en'
+import { useProjectStore } from '../../stores/project-store'
+import { resolveWritingLanguage } from '../../shared/writing-language'
+import type { NovelConfig } from '../../shared/ipc-channels'
 import { editorCanContinue } from '../../shared/recovery-actions'
 import { routeModelId } from '../../services/model-routing'
 import { countDraftUnits } from '../../shared/draft-units'
@@ -22,7 +28,7 @@ import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-stor
 import { useLayoutStore } from '../../stores/layout-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
 import { isTerminalProviderFailure } from '../../services/generation/generation-harness'
-import { getActiveProjectSessionContext } from '../../shared/project-session-context'
+import { getActiveProjectSessionContext, sameProjectSessionContext } from '../../shared/project-session-context'
 import { livePreview, paperHeadFacet, type PaperHead } from './live-preview'
 import InlineAnnotationReview from './InlineAnnotationReview'
 import { commandKeyLabel, isComposing } from '../stage/shortcut-keys'
@@ -30,6 +36,8 @@ import { commandKeyLabel, isComposing } from '../stage/shortcut-keys'
 export type CodeMirrorEditorProps = {
   content: string
   filePath?: string
+  /** 章内正文才有；有它时选区生成带上本章材料。 */
+  chapterNumber?: number
   recoveryHandle?: MainGenerationRunHandle
   /** 同一运行再次请求恢复时换一个值，让读取失败后的再一次请求重新读取。 */
   recoveryNonce?: number
@@ -90,6 +98,14 @@ const AI_ACTIONS: readonly { key: EditorInlineFixedAction; label: Label }[] = [
 const NOTE_LABEL: Label = ['按意见改', 'Revise with note']
 const ANNOTATE_LABEL: Label = ['添加批注', 'Add annotation']
 const BATCH_NOTE_LABEL: Label = ['批量批注修改', 'Batch annotation revision']
+const TRIMMED_LABELS: Partial<Record<EditorContextKind, readonly [string, string, string]>> = {
+  characters: ['人物', 'characters', '人物'],
+  threads: ['线索', 'threads', '伏線'],
+  'previous-ending': ['上一章结尾', 'the previous chapter ending', '前章の結末'],
+}
+const materialsView = (context: EditorInlineContext, threadsLeftOut = 0) => ({ insertsAfter: editorInlineInsertsAfterSelection(context),
+  trimmed: (context.materials?.omitted ?? []).flatMap(item => item.reason === 'budget' ? [item.kind] : []), threadsLeftOut })
+const NO_MATERIALS: ReturnType<typeof materialsView> = { insertsAfter: false, trimmed: [], threadsLeftOut: 0 }
 const actionLabel = (action: EditorInlineRequest['action']): Label => action === 'instruct' ? NOTE_LABEL : action === 'batch-instruct' ? BATCH_NOTE_LABEL : AI_ACTIONS.find(item => item.key === action)!.label
 const setAnnotationDecorations = StateEffect.define<DecorationSet>()
 const annotationDecorationField = StateField.define<DecorationSet>({
@@ -107,6 +123,7 @@ const annotationDecorationField = StateField.define<DecorationSet>({
 export default function CodeMirrorEditor({
   content,
   filePath,
+  chapterNumber,
   recoveryHandle,
   recoveryNonce,
   onGenerationHandle,
@@ -225,7 +242,9 @@ export default function CodeMirrorEditor({
     filePath?: string
     sessionKey: string
     annotations?: EditorInlineAnnotation[]
+    insertsAfter: boolean
   } | null>(null)
+  const [materials, setMaterials] = useState(NO_MATERIALS)
 
   const editableRef = useRef(editable)
   const draftReadonlyRef = useRef(draftReadonly)
@@ -260,7 +279,8 @@ export default function CodeMirrorEditor({
     void client.open({ handle }).then(recovery => {
       if (sequence !== aiRequestSequenceRef.current) return
       const target = recovery.context
-      aiTargetRef.current = { ...target, requestSequence: sequence, filePath, sessionKey: JSON.stringify(session) }
+      aiTargetRef.current = { ...target, requestSequence: sequence, filePath, sessionKey: JSON.stringify(session), insertsAfter: editorInlineInsertsAfterSelection(target) }
+      setMaterials(materialsView(target))
       const candidates = recovery.view.candidates ?? recovery.view.artifacts
       const latest = candidates.at(-1)
       aiCandidateRef.current = latest ? { artifactId: latest.artifactId, textHash: latest.textHash } : null
@@ -555,18 +575,33 @@ export default function CodeMirrorEditor({
       if (!session) throw new Error('EDITOR_INLINE_PROJECT_REQUIRED')
       const view = editorRef.current.view
       requestSequence = ++aiRequestSequenceRef.current
-      const input = { ...request, from: targetRange.from, to: targetRange.to,
-        selectedText: view.state.sliceDoc(targetRange.from, targetRange.to), documentText: view.state.doc.toString(), ...(filePath ? { filePath } : {}) }
-      aiTargetRef.current = { ...input, requestSequence, filePath, sessionKey: JSON.stringify(session) }
+      const documentText = view.state.doc.toString()
+      const base = { ...request, from: targetRange.from, to: targetRange.to,
+        selectedText: view.state.sliceDoc(targetRange.from, targetRange.to), documentText, ...(filePath ? { filePath } : {}) }
       inlineRef.current?.detach()
-      const client = createEditorInlineGeneration(session)
-      inlineRef.current = client
+      inlineRef.current = null
+      aiTargetRef.current = null
       aiCandidateRef.current = null
       setActiveAIAction(request.action)
       setActiveNote(request.action === 'instruct' ? request.instruction : request.action === 'batch-instruct' ? uiText(`共 ${request.annotations.length} 条批注`, `${request.annotations.length} annotations`) : null)
-      setNoteDraft(null); setAiResult(''); setAiError(null)
+      setNoteDraft(null); setAiResult(''); setAiError(null); setMaterials(NO_MATERIALS)
+      const novelConfig: Partial<NovelConfig> = useProjectStore.getState().currentProject?.novelConfig ?? {}
+      const prepared = chapterNumber === undefined ? undefined : await prepareEditorChapterContext({ session, novelConfig,
+        language: resolveWritingLanguage(novelConfig.writingLanguage), chapterNumber, action: request.action, precedingChars: targetRange.from })
+      // 备料期间换了章、作品或又点了一次：这次的材料作废，什么都不发。
+      if (requestSequence !== aiRequestSequenceRef.current) return
+      if (filePathRef.current !== filePath || !sameProjectSessionContext(session, getActiveProjectSessionContext())) {
+        setAiResult(null); setActiveAIAction(null); setBubbleOpen(false)
+        return
+      }
+      const input = prepared ? { ...base, chapterContext: prepared.context } : base
+      aiTargetRef.current = { ...input, requestSequence, filePath, sessionKey: JSON.stringify(session), insertsAfter: false }
+      const client = createEditorInlineGeneration(session)
+      inlineRef.current = client
       const recovery = await client.open({ input, modelId: routeModelId('editor-inline') ?? '', uiActionNonce: crypto.randomUUID() })
       if (requestSequence !== aiRequestSequenceRef.current) return
+      aiTargetRef.current.insertsAfter = editorInlineInsertsAfterSelection(recovery.context)
+      setMaterials(materialsView(recovery.context, prepared?.threadsLeftOut))
       onGenerationHandle?.(recovery.view.handle)
       const receipt = await client.execute()
       if (requestSequence !== aiRequestSequenceRef.current) return
@@ -641,7 +676,7 @@ export default function CodeMirrorEditor({
         return
       }
       view.dispatch({
-        changes: { from: target.from, to: target.to, insert: aiResult }
+        changes: target.insertsAfter ? continuationInsert(target.documentText, target.to, aiResult, mode === 'prose') : { from: target.from, to: target.to, insert: aiResult }
       })
       if (target.action === 'batch-instruct') setAnnotations([])
     }
@@ -839,6 +874,14 @@ export default function CodeMirrorEditor({
                   : uiText('AI 预览', 'AI preview')}
               </div>
               {activeNote && <p className="cm-selbar-note-quote">{activeNote}</p>}
+              {materials.trimmed.length > 0 && <p className="cm-selbar-hint" role="note">{uiText(
+                `${materials.trimmed.map(kind => TRIMMED_LABELS[kind]![0]).join('、')}没带上：模型窗口不够`,
+                `Left out ${materials.trimmed.map(kind => TRIMMED_LABELS[kind]![1]).join(', ')}: the model window is too small`,
+                `${materials.trimmed.map(kind => TRIMMED_LABELS[kind]![2]).join('、')}は含めていません：モデルのウィンドウが足りません`)}</p>}
+              {materials.threadsLeftOut > 0 && !materials.trimmed.includes('threads') && <p className="cm-selbar-hint" role="note">{uiText(
+                `另有 ${materials.threadsLeftOut} 条线索没带上：超出条数或长度上限`,
+                `Left out ${materials.threadsLeftOut} more ${pluralEn(materials.threadsLeftOut, 'thread')}: over the count or length limit`,
+                `ほかに${materials.threadsLeftOut}件の伏線は含めていません：件数か長さの上限を超えています`)}</p>}
               {aiError ? (
                 <>
                   <p className="cm-selbar-error" role="alert">{aiError}</p>
@@ -858,7 +901,7 @@ export default function CodeMirrorEditor({
                   size="sm"
                   disabled={aiResult === '' || aiError !== null}
                   onClick={handleAcceptAI}
-                ><Check size={13} aria-hidden="true" />{uiText('替换', 'Replace')}</Button>
+                ><Check size={13} aria-hidden="true" />{materials.insertsAfter ? uiText('插入', 'Insert') : uiText('替换', 'Replace')}</Button>
               </div>
             </div>
           ) : noteDraft !== null ? (

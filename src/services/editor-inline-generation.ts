@@ -7,7 +7,8 @@ import type { EditorInlineInput, EditorInlineRecovery } from '../shared/editor-i
 const hasEpoch = (handle: MainGenerationRunHandle) => typeof handle.epoch === 'string' && handle.epoch.trim().length > 0
 const identity = (handle: MainGenerationRunHandle) => JSON.stringify([handle.projectId, handle.rootActionId, handle.runId])
 const authorInput = (input: EditorInlineInput) => [input.action, input.documentText, input.from, input.to, input.selectedText,
-  input.action === 'instruct' ? input.instruction : input.action === 'batch-instruct' ? JSON.stringify(input.annotations) : undefined, input.filePath]
+  input.action === 'instruct' ? input.instruction : input.action === 'batch-instruct' ? JSON.stringify(input.annotations) : undefined, input.filePath,
+  input.chapterContext && JSON.stringify(input.chapterContext)]
 const sameAuthorInput = (a: EditorInlineInput, b: EditorInlineInput) => authorInput(a).every((value, index) => value === authorInput(b)[index])
 
 /** Main owns the task, model, nonce and budget. This adapter only holds navigation. */
