@@ -45,7 +45,7 @@ interface StageState {
   chapterFacts: { session: ProjectSessionContext; byDraft: Readonly<Record<number, ChapterFacts>> } | null
   /** 流程脊为这次打开读完过一遍各稿的审稿与修稿记录。没读完时流程脊不列阶段与章节，章节阶段不会先按稿状态估计再改。 */
   spineFacts: ProjectSessionContext | null
-  /** 修稿合并里作者的逐段选择与各段文字，按项目与修稿记录存：换章、稍后再合并后重新打开都接着用；合并或丢弃修稿时清掉。 */
+  /** 修稿合并里作者的逐段选择与各段文字，合并视图卸载后重新打开接着用；合并或丢弃修稿时清掉。 */
   mergeChoices: Readonly<Record<string, MergeChoices>>
 }
 

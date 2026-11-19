@@ -129,7 +129,6 @@ export interface MergeData {
   originalContent: string
   modifiedContent: string
   revisionPath: string
-  /** 作者在合并视图里逐段选择的存放键，见 merge-segments 的 mergeChoicesKey。 */
   choicesKey: string
   targetSnapshot: { content: string; contentRevision: number }
   staleReason: string | null

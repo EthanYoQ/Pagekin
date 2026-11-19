@@ -253,7 +253,7 @@ export function computeSegments(original: string, modified: string): DiffSegment
 /** 一处改动用哪一版：原稿、修稿，或作者手动改过的文字。 */
 export type HunkPick = 'original' | 'revised' | 'edit'
 
-/** 一份修稿的逐段选择在 stage store 里的键；修稿记录 id 只在同一作品里唯一，且自增不复用。 */
+/** 修稿记录 id 只在同一作品里唯一（自增不复用），所以键要带项目 id。 */
 export const mergeChoicesKey = (projectId: string, revisionId: number) => `${projectId}:${revisionId}`
 
 export function forgetMergeChoices(key: string) {
