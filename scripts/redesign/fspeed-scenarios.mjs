@@ -149,8 +149,8 @@ async function finalizeOne(context, chapterNumber) {
   await instrument(app)
   await app.evaluate(() => { globalThis.__fspeedIpc = []; globalThis.__fspeedChats = [] })
   const before = await runsStarted(page)
-  const t0 = Date.now()
-  await chapterView.finalize(page, chapterNumber)
+  let t0
+  await chapterView.finalize(page, chapterNumber, { beforeConfirm: () => { t0 = Date.now() } })
   const readOnlyMs = Date.now() - t0
   await untilRunEnds(page, before, `第 ${chapterNumber} 章定稿`)
   const runEndMs = Date.now() - t0
@@ -200,7 +200,7 @@ async function finalizeOne(context, chapterNumber) {
 async function finalizeAll(context, chapters) {
   const runs = []
   for (const number of chapters) runs.push(await finalizeOne(context, number))
-  const median = values => { const sorted = values.filter(v => v !== null).sort((a, b) => a - b); return sorted[Math.floor((sorted.length - 1) / 2)] ?? null }
+  const median = values => { const sorted = values.filter(v => v !== null).sort((a, b) => a - b); const middle = sorted.length >> 1; return sorted.length === 0 ? null : sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2 }
   return {
     summary: { chapters, readOnlyMedianMs: median(runs.map(r => r.readOnlyMs)), writableMedianMs: median(runs.map(r => r.writableMs)),
       settledMedianMs: median(runs.map(r => r.settledMs)), eventsMissed: runs.flatMap(r => r.events.filter(e => !e.hit).map(e => e.id)),
@@ -225,7 +225,9 @@ async function stillProcessing(context) {
   await notice.waitFor({ state: 'visible', timeout: 10_000 })
   await page.waitForTimeout(400)
   await context.shoot('fspeed-still-processing-notice')
+  // 第二个运行会把同一个胶囊原地换成「N 项运行中」，不新增节点，所以两样都看。
   const newRun = await page.evaluate(b => window.__realRunsStarted.count > b, runsBeforeWrite)
+    || await page.locator('.stage-capsule').filter({ hasText: '项运行中' }).count() > 0
   assert.equal(newRun, false, '上一章后处理在跑时不起写作运行')
   fake.gate.release()
   await untilRunEnds(page, before, '第 3 章定稿')
