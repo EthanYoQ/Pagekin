@@ -50,7 +50,7 @@ export const R702_SCENARIOS = {
   } },
   'r702-restored-merge': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
     const { page, fake, shoot } = context
-    // 审稿同 x2-recheck：带正文证据的本章目标意见，合并后才需要复验。
+    // 审稿同 x2-recheck。
     fake.replyReview(JSON.stringify({ summary: '本章目标还没落地。', items: [
       { category: '连续性', severity: 'warning', description: '核对钟声提前一刻与潮位的关系。', quote: '他给林岚倒了一杯很淡的茶' },
     ], goalReviews: [{ id: 'ch4:keyEvents:1', status: 'unmet', description: '林岚还没有在灯塔里找到新的线索。',

@@ -1005,7 +1005,6 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
 
   it('审稿报告只能看：没有勾选、编辑、「不修改此项」、添加意见与修稿指导，页脚不说会用于修稿', async () => {
     const draft = backend.addDraft({ status: 'draft' })
-    // 未解决的 AI 意见在当前作品的循环里会给「不修改此项」（CodeRabbit 5969174057）。
     restoredReview(draft, { findings: [{ findingId: 'restored-finding', reviewItemIndex: 0, category: '前后矛盾', kind: 'literary', status: 'unverified' }] })
     await mount()
     await openDraft(draft.id)

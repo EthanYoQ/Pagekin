@@ -36,7 +36,6 @@ function IssueCard({ item, checklist, onEdit }: {
   const text = useLocaleStore(s => s.text)
   const [editing, setEditing] = useState(item.origin === 'author')
   const copy = severityCopy(item.severity, text)
-  // 通过项和恢复前的审稿（ADR-0018 C17）只能看。
   const readOnly = item.severity === 'pass' || checklist.cycle?.restoredHistory === true
   const finding = checklist.cycle?.findings.find(candidate => item.findingId
     ? candidate.findingId === item.findingId
