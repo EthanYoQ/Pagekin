@@ -30,6 +30,8 @@ export interface RevisionMeta {
     wordCount: number
     createdAt: string
     updatedAt: string
+    /** 修出它的审修循环来自恢复前，合并后不会复验（#702）。只有待合并列表带它。 */
+    restoredHistory?: true
 }
 
 /** 修稿完整数据（含正文） */
@@ -234,7 +236,7 @@ export class RevisionRepository {
     }
 
     /** 获取某草稿的所有 pending 修稿 */
-    static getPending(baseDraftId: number): RevisionMeta[] {
+    static getPending(baseDraftId: number, projectId?: string): RevisionMeta[] {
         const db = getProjectDb()
         if (!db) return []
 
@@ -244,7 +246,14 @@ export class RevisionRepository {
       ORDER BY revision_index ASC
     `).all(baseDraftId) as Record<string, unknown>[]
 
-        return rows.map(rowToMeta)
+        const cycleRoot = projectId && hasReviewCycleSchema(db)
+            ? db.prepare('SELECT root_action_id FROM review_cycles WHERE revision_id = ?').pluck()
+            : null
+        return rows.map(row => {
+            const meta = rowToMeta(row)
+            const root = cycleRoot?.get(meta.id) as string | undefined
+            return root && ReviewCycleRepository.isRestoredHistory(root, projectId!, db) ? { ...meta, restoredHistory: true } : meta
+        })
     }
 
     /** 获取修稿完整数据 */

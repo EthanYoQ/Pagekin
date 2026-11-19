@@ -41,6 +41,7 @@ export interface RevisionEntry {
   status: 'pending' | 'merged' | 'discarded'
   createdAt: string
   mergedToDraftId?: number
+  restoredHistory?: true
 
   // 虚拟文件路径字段，供 UI 展示或查内容使用
   fileName: string

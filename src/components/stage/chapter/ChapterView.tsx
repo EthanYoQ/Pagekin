@@ -9,6 +9,7 @@ import { chapterPhase } from '../../../stores/navigation/stage-progress'
 import { useStageStore, type StageSheet } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
 import type { ReviewEntry } from '../../../services/draft-index'
+import type { ReviewCycleProjection } from '../../../shared/review-cycle'
 import { ipc } from '../../../services/ipc-client'
 import { confirmationSourceReviewId, parseHumanConfirmedReviewSnapshot } from '../../../shared/human-confirmed-review'
 import CodeMirrorEditor, { type AnnotationRevision } from '../../editor/CodeMirrorEditor'
@@ -27,14 +28,16 @@ import VersionSwitcher from './VersionSwitcher'
 import AnnotationRevisionHistory from './AnnotationRevisionHistory'
 import { pluralEn } from '../../../shared/plural-en'
 
+type ShownCycle = { reviewId: number; cycle: ReviewCycleProjection | null }
+
 /**
  * 这一稿显示哪份审稿与原文：最新一份有复验周期的审稿（确认后的清单按它指向的原审稿算），都没有周期（旧审稿）时取最新一份。
  * 合并后的自动复验另存一份审稿，它没有自己的周期，逐项结果写回原审稿的周期；显示原审稿才看得到复验完成几项与逐项结果。
- * 审稿记录变化时重读。
+ * 审稿记录变化时重读。挑的时候读到的周期一并交出，动作条先用它；那次读失败就不交，动作条等自己的读。
  */
 function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
   const key = reviews.map(review => review.id).join(',')
-  const [report, setReport] = useState<{ key: string; id: number; content: string } | null>(null)
+  const [report, setReport] = useState<{ key: string; id: number; content: string; cycle?: ShownCycle } | null>(null)
   useEffect(() => {
     if (reviews.length === 0) return
     const session = captureProjectSession(useProjectStore.getState().currentProject)
@@ -42,17 +45,17 @@ function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
     let cancelled = false
     const live = () => !cancelled && isProjectSessionCurrent(session)
     void (async () => {
-      let shown: { id: number; content: string } | null = null
+      let shown: { id: number; content: string; cycle?: ShownCycle } | null = null
       for (const entry of [...reviews].reverse()) {
         // 读不出原文时按空报告处理：动作条照常出现，侧页里没有可勾选的意见，作者可以重新审稿。
         const content = await readDraftBody(formatResourceUri({ kind: 'review', id: entry.id }), projectKey, session).catch(() => '')
         if (!live()) return
-        shown ??= { id: entry.id, content }
         const cycleReviewId = confirmationSourceReviewId(parseHumanConfirmedReviewSnapshot(content), entry.id)
-        const cycle = await ipc.invokeWithProjectSession(session, 'db:review-cycle-get', cycleReviewId, session.projectPath).catch(() => null)
+        const cycle = await ipc.invokeWithProjectSession(session, 'db:review-cycle-get', cycleReviewId, session.projectPath).catch(() => undefined)
         if (!live()) return
+        shown ??= { id: entry.id, content, cycle: cycle === undefined ? undefined : { reviewId: cycleReviewId, cycle } }
         if (cycle) {
-          shown = { id: entry.id, content }
+          shown = { id: entry.id, content, cycle: { reviewId: cycleReviewId, cycle } }
           break
         }
       }
@@ -98,7 +101,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   const chapterNumber = draft.meta?.chapterNumber ?? tab.chapterNumber
   const { blueprint } = useChapterBlueprint(chapterNumber, projectKey)
   const latest = useShownReview(draft.reviews, projectKey)
-  const review = useReviewCycle({ reportText: latest?.content ?? '', reviewId: latest?.id, projectKey,
+  const review = useReviewCycle({ reportText: latest?.content ?? '', reviewId: latest?.id, projectKey, firstRead: latest?.cycle,
     // 复验完成时新增一份审稿而显示的仍是原审稿，审稿记录也算进来，周期随之重读。
     refreshKey: `${draft.status}:${draft.pendingRevisions.map(revision => revision.id).join(',')}:${draft.reviews.map(entry => entry.id).join(',')}` })
   const [charCount, setCharCount] = useState(() => countDraftUnits(tab.content ?? ''))

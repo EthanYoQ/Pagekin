@@ -232,20 +232,23 @@ function matchesReviewSource(
     && source.content === content
 }
 
-/** 一份审稿报告的持久化复验周期：确认快照指向原始审稿，周期也按原始审稿读。reloadCycle 在复验后重读。 */
-export function useReviewCycle({ reportText, reviewId, projectKey, cycle, refreshKey }: {
+/**
+ * 一份审稿报告的持久化复验周期：确认快照指向原始审稿，周期也按原始审稿读。
+ * 挑报告时已读过一次（firstRead），先用它；refreshKey 变了重读，reloadCycle 在复验后重读。
+ */
+export function useReviewCycle({ reportText, reviewId, projectKey, firstRead, refreshKey }: {
   reportText: string
   reviewId?: number
   projectKey: string
-  cycle?: ReviewCycleProjection | null
+  firstRead?: { reviewId: number; cycle: ReviewCycleProjection | null }
   /** 变化时重读周期：修稿生成、合并提交都会改它，而审稿报告本身不变。 */
   refreshKey?: string
 }) {
   const snapshot = parseHumanConfirmedReviewSnapshot(reportText)
   const cycleReviewId = confirmationSourceReviewId(snapshot, reviewId)
   // 读回的周期记着属于哪份审稿：重新审稿后新周期读回来之前，不把上一份审稿的周期当成这一份的。
-  const [loadedCycle, setLoadedCycle] = useState<{ reviewId: number | undefined; cycle: ReviewCycleProjection | null }>(
-    () => ({ reviewId: cycle === undefined ? undefined : cycleReviewId, cycle: cycle ?? null }))
+  const [loadedCycle, setLoadedCycle] = useState<{ reviewId: number | undefined; cycle: ReviewCycleProjection | null }>({ reviewId: undefined, cycle: null })
+  const hasFirstRead = firstRead?.reviewId === cycleReviewId
 
   const reloadCycle = async (): Promise<ReviewCycleProjection | null> => {
     if (!isReviewId(cycleReviewId)) return null
@@ -258,20 +261,24 @@ export function useReviewCycle({ reportText, reviewId, projectKey, cycle, refres
   }
 
   useEffect(() => {
-    if (cycle !== undefined || !isReviewId(cycleReviewId)) return
+    if (!isReviewId(cycleReviewId)) return
     const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) return
     let cancelled = false
     void (async () => {
       const next = await ipc.invokeWithProjectSession(projectSession, 'db:review-cycle-get', cycleReviewId,
-        projectSession.projectPath).catch(() => null)
-      if (!cancelled && isProjectSessionCurrent(projectSession)) setLoadedCycle({ reviewId: cycleReviewId, cycle: next })
+        projectSession.projectPath).catch(() => undefined)
+      if (cancelled || !isProjectSessionCurrent(projectSession)) return
+      if (next !== undefined) setLoadedCycle({ reviewId: cycleReviewId, cycle: next })
+      // 读失败不等于没有周期：已读到过就留着，恢复前的审稿不会退回可修稿（#702）；一次都没读到才按没有周期摆出动作条。
+      else if (!hasFirstRead) setLoadedCycle(current => current.reviewId === cycleReviewId ? current : { reviewId: cycleReviewId, cycle: null })
     })()
     return () => { cancelled = true }
-  }, [cycleReviewId, cycle, projectKey, refreshKey])
+  }, [cycleReviewId, projectKey, refreshKey, hasFirstRead])
 
-  const cycleLoaded = cycle !== undefined || !isReviewId(cycleReviewId) || loadedCycle.reviewId === cycleReviewId
-  const resolvedCycle = cycle !== undefined ? cycle : loadedCycle.reviewId === cycleReviewId ? loadedCycle.cycle : null
+  const known = loadedCycle.reviewId === cycleReviewId ? loadedCycle : hasFirstRead ? firstRead : undefined
+  const cycleLoaded = !isReviewId(cycleReviewId) || known !== undefined
+  const resolvedCycle = known?.cycle ?? null
   // 报告可以原地更新；会话键只在底层不可变报告变了时变，可编辑清单随之重置。
   const sessionKey = String(reviewId ?? 'untracked')
     + ':' + String(snapshot?.sourceReviewId ?? 'raw')
