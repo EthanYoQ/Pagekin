@@ -573,4 +573,36 @@ export const REAL_SCENARIOS = {
     return { importMs: ms, vectorless, stats, semanticTop: hits.slice(0, 3).map(hit => ({ score: hit.score, text: String(hit.text ?? hit.content ?? '').slice(0, 60) })),
       uiResults: uiResults.slice(0, 400), confirmations }
   } },
+
+  /** #702：第 4 章选中第一段点续写，真实模型回复后点「插入」：原文还在、续写接在后面；这次运行带上了蓝图、人物与上一章结尾。 */
+  'real-editor-context': { real: true, setup: context => seedBook(context, { finalized: [1, 2, 3] }), run: async context => {
+    const { app, page } = context
+    await app.evaluate(({ ipcMain }) => {
+      const original = ipcMain._invokeHandlers.get('editor-inline:begin')
+      ipcMain._invokeHandlers.set('editor-inline:begin', async (...args) => {
+        const result = await original(...args)
+        globalThis.__editorBegin = result?.context?.materials
+        return result
+      })
+    })
+    const text = STAGE_SAMPLE.drafts[4].text
+    assert.equal((await read(context, 'db:draft-create', { chapterNumber: 4, version: 1, source: 'write', content: text, wordCount: countUnits(text) })).success, true)
+    await openChapter(page, 4)
+    const selected = text.split('\n')[0]
+    const prose = chapterView.prose(page)
+    await prose.getByText(selected).first().click({ clickCount: 3 })
+    const toolbar = page.getByRole('toolbar', { name: '选中文字的操作' })
+    await toolbar.getByRole('button', { name: '续写' }).click()
+    const insert = toolbar.getByRole('button', { name: '插入', disabled: false })
+    await insert.waitFor({ state: 'visible', timeout: MODEL_WAIT })
+    await insert.click()
+    await prose.getByText(selected).first().waitFor({ state: 'visible' })
+    const after = await prose.innerText()
+    const materials = await app.evaluate(() => globalThis.__editorBegin)
+    const kinds = materials.included.map(block => block.kind)
+    for (const kind of ['blueprint', 'characters', 'previous-ending']) assert.ok(kinds.includes(kind), `运行带上了 ${kind}：${kinds.join('、')}`)
+    assert.ok(after.includes(selected) && after.indexOf(selected) < after.indexOf('你父亲也问过钟的事'), '选中的原文还在，下一段仍在后面')
+    assert.ok(countUnits(after) > countUnits(text), '正文变长了')
+    return { kinds, omitted: materials.omitted, addedUnits: countUnits(after) - countUnits(text) }
+  } },
 }
