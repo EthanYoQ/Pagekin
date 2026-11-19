@@ -619,6 +619,22 @@ describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-002
     } finally { raw.close() }
   }
 
+  it.each([
+    ['没有坏循环', false],
+    ['有坏循环', true],
+  ])('%s的 v11 书打开时升到 12，验不过的循环集合不变', (_label, broken) => {
+    const items = reviewedBook({ finalized: true })
+    if (broken) breakReviewProof(db(), items[1]!)
+    const before = [...unprovableReviewCycleIds(db())]
+    closeProjectDatabase()
+    const raw = new Database(databasePath())
+    try { raw.pragma('user_version = 11') } finally { raw.close() }
+
+    initProjectDatabase(projectRoot)
+    expect(db().pragma('user_version', { simple: true })).toBe(12)
+    expect([...unprovableReviewCycleIds(db())]).toEqual(before)
+  })
+
   it('有坏循环的 v9 书打开时升级成功，验不过的循环集合不变', () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)

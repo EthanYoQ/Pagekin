@@ -5,24 +5,33 @@ import { describe, expect, it } from 'vitest'
 const ROOT = path.resolve(__dirname, '../../..')
 const READ_POINT = 'src/shared/review-proof.ts'
 const capturedBindingInput = (file: string, before: string) => file === 'electron/services/generation-source-binding.ts' && before.endsWith('input')
-const MANIFEST_READ = /(?:\?\.|\.)reviewRevisionContext(?:Hash)?\b|\$\.sourceManifest\.reviewRevisionContext|\[\s*['"]reviewRevisionContext/gu
+const MANIFEST_READ = /(?:\?\.|\.)reviewRevisionContext(?:Hash)?\b|\$\.sourceManifest\.reviewRevisionContext|\[\s*['"]reviewRevisionContext|\{[^}]*\breviewRevisionContext(?:Hash)?\b[^}]*\}\s*=(?!=)/gu
 
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap(entry => {
     const relative = `${dir}/${entry.name}`
     if (entry.isDirectory()) return entry.name === '__tests__' ? [] : sourceFiles(relative)
-    return /\.tsx?$/u.test(entry.name) && !/\.(test|browser)\.tsx?$/u.test(entry.name) ? [relative] : []
+    return /\.(?:tsx?|mjs)$/u.test(entry.name) && !/\.(test|browser)\.(?:tsx?|mjs)$/u.test(entry.name) ? [relative] : []
   })
+}
+
+function directReads(file: string, text: string): string[] {
+  return text.split('\n').flatMap((line, index) => [...line.matchAll(MANIFEST_READ)]
+    .filter(match => !capturedBindingInput(file, line.slice(0, match.index)))
+    .map(() => `${file}:${index + 1}`))
 }
 
 describe('审修证明只在 readReviewProof 一处解析（#702 不变式 1）', () => {
   it('非测试代码不直接读 sourceManifest 里的审修上下文', () => {
-    const reads = ['electron', 'src'].flatMap(sourceFiles).filter(file => file !== READ_POINT).flatMap(file =>
-      fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n').flatMap((line, index) =>
-        [...line.matchAll(MANIFEST_READ)]
-          .filter(match => !capturedBindingInput(file, line.slice(0, match.index)))
-          .map(() => `${file}:${index + 1}`)))
+    const reads = ['electron', 'src', 'scripts'].flatMap(sourceFiles).filter(file => file !== READ_POINT)
+      .flatMap(file => directReads(file, fs.readFileSync(path.join(ROOT, file), 'utf8')))
 
     expect(reads).toEqual([])
+  })
+
+  it('解构读取也算直接读', () => {
+    expect(directReads('a.ts', 'const { reviewRevisionContext } = manifest')).toEqual(['a.ts:1'])
+    expect(directReads('a.ts', 'const { operation, reviewRevisionContextHash: hash } = binding.sourceManifest')).toEqual(['a.ts:1'])
+    expect(directReads('a.ts', 'if ({ reviewRevisionContext: x } === y) return')).toEqual([])
   })
 })
