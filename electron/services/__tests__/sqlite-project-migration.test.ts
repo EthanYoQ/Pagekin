@@ -183,7 +183,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
       schemaVersion: 0, fingerprint: '2504dde08865f758f654d38ae3d972420c28fa60d1f747e92898390455272de6',
     })
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid,project_name,genre,global_guidance,characters_arch FROM project_core').get())
@@ -221,7 +221,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
   it('copies qualified v1.0.0 old columns, rowids, and sequence into schema9 staging', async () => {
     const f = legacyV100Fixture(), before = bytes(f.root)
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid FROM project_core WHERE id=?').pluck().get('main')).toBe(7)
@@ -258,7 +258,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
       schemaVersion: 0, fingerprint: 'c536a35e30f51f681843a2a07a48592cc80e9840abeb7898fcd463297128ccf8',
     })
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid,core_outline,world_setting,protagonist_profile FROM project_core').get())
@@ -309,7 +309,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
     const before = bytes(f.root)
     expect(probeProjectSqlite({ databasePath: f.source })).toMatchObject({ schemaVersion: 0, fingerprint })
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     for (const [index, table] of preservedTables.entries()) {
@@ -352,7 +352,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
   it('copies qualified v1.1.0 rows and sequence through canonical staging to schema9 without writing the source', async () => {
     const f = legacyV110Fixture(), before = bytes(f.root)
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid FROM project_core WHERE id=?').pluck().get('main')).toBe(7)
@@ -424,7 +424,7 @@ it('upgrades a qualified schema 6 file to schema 9 without changing author conte
  const before=await backupProjectSqlite({sourceDatabasePath:f.source,targetDatabasePath:f.target,targetVersion:6})
  expect(before.schemaVersion).toBe(6)
  const upgraded=upgradeProjectSqlite({databasePath:f.target})
- expect(upgraded.schemaVersion).toBe(11)
+ expect(upgraded.schemaVersion).toBe(12)
  expect(upgraded.preRecycleDomain).toEqual(before.domain)
  expect(verifyProjectSqlite({databasePath:f.target})).toEqual(upgraded)
 })
@@ -462,8 +462,8 @@ describe('打开作品不跑全书审修循环校验（#702）', () => {
     return { ...f, db, book }
   }
 
-  it('打开时的校验对应 v11 的迁移校验去掉全书 M03；库版本升级时要重新核对 verifyOpenedSchema', () => {
-    expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(11)
+  it('打开时的校验对应 v12 的迁移校验去掉全书 M03；库版本升级时要重新核对 verifyOpenedSchema', () => {
+    expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(12)
   })
 
   it('有一条审修循环只过不了全书 M03 证明的作品照常打开，迁移通道的全书校验仍拒绝它', async () => {
@@ -501,13 +501,13 @@ describe('打开作品不跑全书审修循环校验（#702）', () => {
     const healthy = await projectWithReviewCycles(9)
     healthy.db.close()
     expect(() => openProjectSqlite({ databasePath: healthy.target })).not.toThrow()
-    expect(probeProjectSqlite({ databasePath: healthy.target }).schemaVersion).toBe(11)
+    expect(probeProjectSqlite({ databasePath: healthy.target }).schemaVersion).toBe(12)
 
     const broken = await projectWithReviewCycles(9)
     breakReviewProof(broken.db, broken.book[1]!)
     broken.db.close()
     expect(() => openProjectSqlite({ databasePath: broken.target })).not.toThrow()
-    expect(probeProjectSqlite({ databasePath: broken.target }).schemaVersion).toBe(11)
+    expect(probeProjectSqlite({ databasePath: broken.target }).schemaVersion).toBe(12)
     expect(() => verifyProjectSqlite({ databasePath: broken.target })).toThrow('MIGRATION_VERIFICATION_FAILED')
   })
 })
@@ -533,7 +533,7 @@ describe('各调用方拿到的内容哈希（#702）', () => {
 
   const ones = (...tables: string[]) => Object.fromEntries(tables.map(table => [table, 1]))
   const CURRENT_BOOK = {
-    schemaVersion: 11,
+    schemaVersion: 12,
     fingerprint: 'd4cee8a1b61a50ea652efa3a0bcadd4ecfb9ede7f3dbfd90ff31e671fcb5e680',
     domain: { authorContentHash: '7048c93ac46636ea4caddcd1aa4b6189f747f6b8930a05de61328cf886e7661f',
       tableCounts: ones('annotation_history', 'character_avatar_unresolved', 'character_identity_meta', 'character_roster_meta', 'consistency_exemptions', 'contents', 'continuity_projection_meta', 'drafts', 'project_core', 'text_metric_versions') },

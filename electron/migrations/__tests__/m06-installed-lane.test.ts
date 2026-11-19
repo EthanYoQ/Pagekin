@@ -23,7 +23,7 @@ describe('installed M06 lane', () => {
     try {
       const before = db.prepare('SELECT body FROM contents').pluck().get()
       const result = migrateSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry(), 7)
-      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(11)
+      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(12)
       expect(result.completedSteps).toEqual(['M06'])
       expect(db.prepare('SELECT body FROM contents').pluck().get()).toBe(before)
       expect(db.prepare('SELECT COUNT(*) FROM review_cycle_merges').pluck().get()).toBe(0)

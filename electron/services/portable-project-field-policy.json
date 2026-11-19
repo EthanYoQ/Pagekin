@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 11,
+  "schemaVersion": 12,
   "rules": {
     "D": ["preserve-domain", "signed-domain-value", "portable-domain-copy"],
     "H": ["historical-nonreplayable", "nonreplayable-history", "portable-history-projector"],

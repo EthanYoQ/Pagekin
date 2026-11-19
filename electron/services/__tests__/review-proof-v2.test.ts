@@ -6,7 +6,7 @@ import { initializeLegacyBaselineSchema } from '../../migrations/baseline-schema
 import { getDesktopMigrationRegistry, CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { migrateSchema } from '../../migrations/runner'
-import { createMainGenerationOwner } from '../main-generation-owner'
+import { createMainGenerationOwner, type MainGenerationOwnerDependencies } from '../main-generation-owner'
 import { ModelExecutionLeaseRegistry } from '../model-execution-lease'
 import { readMainGenerationPolicy } from '../main-generation-plan'
 import { buildGenerationSourceBinding, rebuildGenerationSourceBinding } from '../generation-source-binding'
@@ -58,10 +58,10 @@ function owner(f: ReturnType<typeof project>, epoch = 'epoch-1') {
   const instance = createMainGenerationOwner({ database: f.db, projectId: 'project', epoch, assertCurrent: () => {},
     leases: new ModelExecutionLeaseRegistry({ loadModel }), loadModel,
     dispatch: vi.fn(async (_r: unknown, o: { onVisible: (v: unknown) => void }) => { o.onVisible({ kind: 'delta', text: REVIEW_OUTPUT }); return { finishReason: 'stop', usage: null } }) as never,
-    buildBinding: (selection, modelReceipt, policy) => buildGenerationSourceBinding(deps, { ...selection, projectId: 'project', epoch, modelReceipt, policy,
-      outputContract: generationOutputContract(selection) }).binding,
-    rebuildBinding: (previous, modelReceipt) => rebuildGenerationSourceBinding(deps, previous, epoch, modelReceipt,
-      readMainGenerationPolicy(previous.sourceManifest.policy)).binding } as never)
+    buildBinding: ((selection, modelReceipt, policy) => buildGenerationSourceBinding(deps, { ...selection, projectId: 'project', epoch, modelReceipt, policy,
+      outputContract: generationOutputContract(selection) }).binding) satisfies MainGenerationOwnerDependencies['buildBinding'],
+    rebuildBinding: ((previous, modelReceipt) => rebuildGenerationSourceBinding(deps, previous, epoch, modelReceipt,
+      readMainGenerationPolicy(previous.sourceManifest.policy)).binding) satisfies MainGenerationOwnerDependencies['rebuildBinding'] } as never)
   cleanup.unshift(() => instance.suspendForProjectClose())
   return instance
 }

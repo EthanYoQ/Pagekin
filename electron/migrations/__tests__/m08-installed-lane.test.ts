@@ -85,9 +85,9 @@ describe('installed M08 lane', () => {
         relationships: db.prepare('SELECT * FROM character_relationships ORDER BY relationship_id').all(),
       }
       const result = migrateSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
-      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(11)
-      expect(result.completedSteps).toEqual(['M08', 'M09', 'M10'])
-      expect(verifySchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry(), 11).version).toBe(11)
+      expect(CURRENT_DESKTOP_SCHEMA_VERSION).toBe(12)
+      expect(result.completedSteps).toEqual(['M08', 'M09', 'M10', 'M11'])
+      expect(verifySchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry(), 12).version).toBe(12)
       expect(events(db)).toEqual(EXPECTED_BASELINE)
       expect(db.prepare('SELECT * FROM characters ORDER BY character_id').all()).toEqual(before.characters)
       expect(db.prepare('SELECT * FROM character_relationships ORDER BY relationship_id').all()).toEqual(before.relationships)

@@ -7,9 +7,9 @@ import { SqliteSchemaAdapter, type AcceptedReviewCycleFailures } from '../migrat
 import fieldPolicyDocument from './portable-project-field-policy.json'
 
 export const PORTABLE_PROJECT_FORMAT_VERSION = 1 as const
-export const PORTABLE_SOURCE_SCHEMA_VERSION = 11 as const
+export const PORTABLE_SOURCE_SCHEMA_VERSION = 12 as const
 /** 可恢复的旧包版本：v1.2.0-Preview 到 v1.4.0 导出的是 7，之后到 M08 之前是 8。 */
-export const PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS = Object.freeze([7, 8, 9, 10, PORTABLE_SOURCE_SCHEMA_VERSION] as const)
+export const PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS = Object.freeze([7, 8, 9, 10, 11, PORTABLE_SOURCE_SCHEMA_VERSION] as const)
 export type PortableSourceSchemaVersion = typeof PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS[number]
 
 export type PortableFieldDisposition = 'preserve-domain' | 'historical-nonreplayable'
@@ -94,6 +94,7 @@ const fieldsAddedAfter: Readonly<Record<PortableSourceSchemaVersion, ReadonlySet
   9: new Set([...m09Fields, ...m10Fields]),
   10: m10Fields,
   11: new Set(),
+  12: new Set(),
 }
 
 /**
