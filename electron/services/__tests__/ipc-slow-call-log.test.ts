@@ -85,15 +85,22 @@ describe('installIpcSlowCallLog', () => {
     expect(() => invoke('db:slow-broken')).toThrow('ORIGINAL')
   })
 
-  it('异步处理函数 await 之后又占住主线程、随即结束：迟到那一行记下它', async () => {
+  it('异步处理函数前一段开始，这一段 await 之后又占住主线程、随即结束：迟到那一行记下它', async () => {
     vi.useFakeTimers()
     const { register, invoke, lines, elapse } = harness()
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
     register('generation:list-recovery', 0, async () => {
-      await Promise.resolve()
+      await gate
       elapse(EVENT_LOOP_SAMPLE_MS + 330)
       return 'done'
     })
-    await expect(invoke('generation:list-recovery')).resolves.toBe('done')
+    const answer = invoke('generation:list-recovery')
+    elapse(EVENT_LOOP_SAMPLE_MS)
+    vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
+
+    release()
+    await expect(answer).resolves.toBe('done')
     vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
     expect(lines).toEqual(['[event-loop-lag] 330ms 期间开始或结束的通道 generation:list-recovery'])
   })
@@ -122,12 +129,15 @@ describe('installIpcSlowCallLog', () => {
   it('迟到不超过阈值不写；失败的异步调用照样按结束算', async () => {
     vi.useFakeTimers()
     const { register, invoke, lines, elapse } = harness()
-    register('kb:broken', 0, () => Promise.reject(new Error('KB_DOWN')))
+    let fail!: (error: Error) => void
+    register('kb:broken', 0, () => new Promise((_resolve, reject) => { fail = reject }))
+    const answer = invoke('kb:broken')
     elapse(EVENT_LOOP_SAMPLE_MS + IPC_SLOW_CALL_THRESHOLD_MS)
     vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
     expect(lines).toEqual([])
 
-    await expect(invoke('kb:broken')).rejects.toThrow('KB_DOWN')
+    fail(new Error('KB_DOWN'))
+    await expect(answer).rejects.toThrow('KB_DOWN')
     elapse(EVENT_LOOP_SAMPLE_MS + 250)
     vi.advanceTimersByTime(EVENT_LOOP_SAMPLE_MS)
     expect(lines).toEqual(['[event-loop-lag] 250ms 期间开始或结束的通道 kb:broken'])
