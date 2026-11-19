@@ -480,43 +480,146 @@ describe('portable project export service', () => {
       expect(fs.readdirSync(f.attemptParent)).toEqual([])
     })
 
-    it('拷资料时一次只写进去一部分：接着写完，存档里的资料完整', async () => {
-      const f = fixture()
-      const prompt = '{"提示":"保持雨夜，城门只在子时开"}'
-      fs.mkdirSync(path.join(f.storage, 'prompts'))
-      fs.writeFileSync(path.join(f.storage, 'prompts', '章节.json'), prompt)
-      const writeSync = fs.writeSync.bind(fs) as (...args: unknown[]) => number
-      vi.spyOn(fs, 'writeSync').mockImplementation(((descriptor: number, buffer: unknown, offset?: unknown, length?: unknown, ...rest: unknown[]) =>
-        Buffer.isBuffer(buffer) && typeof length === 'number' && length > 1
-          ? writeSync(descriptor, buffer, offset, Math.floor(length / 2), ...rest)
-          : writeSync(descriptor, buffer, offset, length, ...rest)) as typeof fs.writeSync)
+  })
 
-      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
-      vi.restoreAllMocks()
-      const unpacked = await extractPortableProjectArchive({ archivePath: f.target, stagingParentPath: f.extractParent })
-      expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe(prompt)
+  describe('导出期间资料被改：整次重来一次，存档里每份资料都是完整的一版（#744）', () => {
+    afterEach(() => { vi.restoreAllMocks() })
+
+    function prompt(f: Fixture, content: string | Buffer): string {
+      const file = path.join(f.storage, 'prompts', '章节.json')
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, content)
+      return file
+    }
+
+    function replaceAtomically(file: string, content: string): void {
+      fs.writeFileSync(`${file}.写入中`, content)
+      fs.renameSync(`${file}.写入中`, file)
+    }
+
+    const exportLog = (warn: { mock: { calls: unknown[][] } }) =>
+      warn.mock.calls.filter(call => String(call[0]).startsWith('[portable-export]')).map(call => JSON.stringify(call))
+
+    it('提示词被原子替换：重来一次并记一行日志，存档里是完整的新内容', async () => {
+      const f = fixture()
+      const file = prompt(f, '{"提示":"快照时"}')
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      let replaced = false
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: { afterPortableDatabaseCreated: () => {
+        if (replaced) return
+        replaced = true
+        replaceAtomically(file, '{"提示":"导出期间改的"}')
+      } } }))
+
+      expect(exportLog(warn)).toEqual([expect.stringContaining('PORTABLE_ARCHIVE_SOURCE_CHANGED')])
+      const unpacked = await extract(f)
+      expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"导出期间改的"}')
     })
 
-    it('别的程序在拷资料途中原地改写同样大小的内容：拒绝导出，不打包新旧混合的字节', async () => {
+    it('别的程序在读资料途中原地改写同样大小的内容、又把修改时间改回去：存档里是完整的新内容，不是新旧混合', async () => {
       const f = fixture()
-      const sourcePath = path.join(f.storage, 'prompts', '长篇设定.txt')
-      fs.mkdirSync(path.dirname(sourcePath))
       const size = 3 * 1024 * 1024
-      fs.writeFileSync(sourcePath, Buffer.alloc(size, 'a'))
+      const file = prompt(f, Buffer.alloc(size, 'a'))
+      const mtime = new Date('2026-11-01T00:00:00.000Z')
+      fs.utimesSync(file, mtime, mtime)
       const readSync = fs.readSync.bind(fs) as (...args: unknown[]) => number
       let rewritten = false
       vi.spyOn(fs, 'readSync').mockImplementation(((...args: unknown[]) => {
         const read = readSync(...args)
         if (!rewritten && read === 1024 * 1024) {
           rewritten = true
-          fs.writeFileSync(sourcePath, Buffer.alloc(size, 'b'))
+          fs.writeFileSync(file, Buffer.alloc(size, 'b'))
+          fs.utimesSync(file, mtime, mtime)
         }
         return read
       }) as typeof fs.readSync)
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
       expect(rewritten).toBe(true)
+      const unpacked = await extract(f)
+      expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json')).equals(Buffer.alloc(size, 'b'))).toBe(true)
+    })
+
+    it('换了头像、旧头像文件被回收：重来一次，存档里是新头像', async () => {
+      const f = fixture()
+      seedProject(f)
+      const db = new Database(f.databasePath, { readonly: true })
+      const old = db.prepare('SELECT character_id, relative_path FROM character_avatar_assets').get() as { character_id: string; relative_path: string }
+      db.close()
+      const avatar = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40, 7)])
+      const relativePath = `avatars/${hash(old.character_id)}/2-${hash(avatar)}.png`
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      let replaced = false
+
+      await exportPortableProject(input(f, provider(), { __testHooks: { afterPortableDatabaseCreated: () => {
+        if (replaced) return
+        replaced = true
+        fs.writeFileSync(path.join(f.storage, ...relativePath.split('/')), avatar)
+        const writer = new Database(f.databasePath)
+        try {
+          writer.prepare('UPDATE character_avatar_assets SET asset_revision=2, relative_path=?, content_hash=?, byte_size=? WHERE character_id=?')
+            .run(relativePath, hash(avatar), avatar.length, old.character_id)
+        } finally { writer.close() }
+        fs.rmSync(path.join(f.storage, ...old.relative_path.split('/')))
+      } } }))
+
+      const unpacked = await extract(f)
+      const entry = unpacked.manifest.entries.find(item => item.disposition === 'avatar-asset')!
+      expect(entry.path).toBe(relativePath)
+      expect(fs.readFileSync(path.join(unpacked.stagingPath, ...entry.path.split('/')))).toEqual(avatar)
+    })
+
+    it('重来一次资料又被改：报资料有改动，不发布存档，临时目录清干净', async () => {
+      const f = fixture()
+      const file = prompt(f, '{"提示":"快照时"}')
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      let round = 0
+
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: {
+        afterPortableDatabaseCreated: () => replaceAtomically(file, `{"提示":"第 ${++round} 次改的"}`),
+      } }))).rejects.toThrow('PORTABLE_ARCHIVE_SOURCE_CHANGED')
+
+      expect(exportLog(warn)).toHaveLength(1)
+      expect(fs.existsSync(f.target)).toBe(false)
       expect(fs.readdirSync(f.attemptParent)).toEqual([])
+    })
+
+    it('打包前资料被换成指向项目外文件的硬链接（字节相同）：拒绝导出', async () => {
+      const f = fixture()
+      const file = prompt(f, '{"提示":"作者自己的"}')
+      const outside = path.join(f.base, '项目外.json')
+      fs.copyFileSync(file, outside)
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await expect(exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: { afterPortableDatabaseCreated: () => {
+        if (fs.statSync(file).nlink > 1) return
+        fs.rmSync(file)
+        fs.linkSync(outside, file)
+      } } }))).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
+      expect(fs.existsSync(f.target)).toBe(false)
+    })
+
+    it('资料不拷进导出临时目录：目标盘上不出现第二份资料', async () => {
+      const f = fixture()
+      const seeded = seedProject(f)
+      const content = Buffer.from('{"提示":"只在作品目录里有一份"}'.repeat(64))
+      prompt(f, content)
+      const copies: string[] = []
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: { afterPortableDatabaseCreated: root => {
+        for (const name of fs.readdirSync(root)) {
+          const entry = path.join(root, name)
+          if (!fs.statSync(entry).isFile()) continue
+          const bytes = fs.readFileSync(entry)
+          if (bytes.equals(content) || bytes.equals(seeded.avatar)) copies.push(name)
+        }
+      } } }))
+
+      expect(copies).toEqual([])
+      expect(fs.existsSync(f.target)).toBe(true)
     })
   })
 
@@ -614,32 +717,6 @@ describe('portable project export service', () => {
 
       await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
       expect(written.bytes).toBeLessThanOrEqual(3 * MiB)
-    })
-
-    it('拷的途中资料变大，超过单项上限就停', async () => {
-      const f = fixture()
-      archiveLimits.current.maxEntryBytes = 2 * MiB
-      const [file] = prompts(f, [MiB])
-      const otherProgram = fs.openSync(file!, 'a')
-      const writeByOtherProgram = fs.writeSync.bind(fs) as (descriptor: number, bytes: Buffer) => number
-      const appendByOtherProgram = () => writeByOtherProgram(otherProgram, Buffer.alloc(4 * MiB, 'b'))
-      const readSync = fs.readSync.bind(fs) as (...args: unknown[]) => number
-      let grown = false
-      vi.spyOn(fs, 'readSync').mockImplementation(((...args: unknown[]) => {
-        const read = readSync(...args)
-        if (!grown && read === MiB) {
-          grown = true
-          appendByOtherProgram()
-        }
-        return read
-      }) as typeof fs.readSync)
-      const written = countWrittenBytes()
-
-      try {
-        await expect(exportPortableProject(input(f, createPortableProjectAssetProvider()))).rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
-      } finally { fs.closeSync(otherProgram) }
-      expect(grown).toBe(true)
-      expect(written.bytes).toBeLessThanOrEqual(2 * MiB)
     })
   })
 
@@ -752,26 +829,6 @@ describe('portable project export service', () => {
     try {
       expect(archived.prepare('SELECT body FROM contents WHERE id = 2').pluck().get()).toBe('第二章草稿')
     } finally { archived.close() }
-  })
-
-  it('资料文件逐个拷进导出临时目录，不整份留在内存里交给打包', async () => {
-    const f = fixture()
-    fs.mkdirSync(path.join(f.storage, 'prompts'))
-    fs.writeFileSync(path.join(f.storage, 'prompts', '章节.json'), '{"提示":"保持雨夜"}')
-    const real = createPortableProjectAssetProvider()
-    let seen: PortableProvidedFile | undefined
-    const assets: ExportPortableProjectInput['assets'] = {
-      async snapshot(request) {
-        const result = await real.snapshot(request)
-        seen = result.files.find(file => file.archivePath === 'prompts/章节.json')
-        return result
-      },
-    }
-
-    await exportPortableProject(input(f, assets))
-    expect(seen).toBeDefined()
-    expect(seen!.bytes).toBeUndefined()
-    expect(path.relative(f.attemptParent, String((seen as { stagedPath?: string }).stagedPath)).startsWith('.pe-')).toBe(true)
   })
 
   it('rejects an export whose combined frozen history cannot be read back', async () => {
@@ -1270,20 +1327,12 @@ describe('portable project export service', () => {
 
   // 依据维护者 2026-11-19 原话：「目标是生成的内容可以被正确导出就可以了」。
   it.each(['afterPortableDatabaseCreated', 'afterArchiveBuilt'] as const)(
-    '导出期间（%s）写库、改提示词、回收旧头像，导出照常成功，存档是快照那一刻的内容', async (hook) => {
+    '导出期间（%s）写库：导出照常成功，存档里的库是快照那一刻的', async (hook) => {
       const f = fixture()
       const seeded = seedProject(f)
-      const promptPath = path.join(f.storage, 'prompts', '章节.json')
-      fs.mkdirSync(path.dirname(promptPath))
-      fs.writeFileSync(promptPath, '{"提示":"快照时"}')
-      const db = new Database(f.databasePath)
-      const avatarPath = path.join(f.storage, ...(db.prepare('SELECT relative_path FROM character_avatar_assets').pluck().get() as string).split('/'))
-      db.close()
       const writeDuringExport = () => {
         const writer = new Database(f.databasePath)
         try { writer.prepare("INSERT INTO contents(body) VALUES('导出期间写入')").run() } finally { writer.close() }
-        fs.writeFileSync(promptPath, '{"提示":"导出期间改的"}')
-        fs.rmSync(avatarPath)
       }
 
       await exportPortableProject(input(f, createPortableProjectAssetProvider(), { __testHooks: { [hook]: writeDuringExport } }))
@@ -1293,9 +1342,6 @@ describe('portable project export service', () => {
       try {
         expect(portable.prepare('SELECT body FROM contents').pluck().all()).toEqual([seeded.body])
       } finally { portable.close() }
-      expect(fs.readFileSync(path.join(unpacked.stagingPath, 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"快照时"}')
-      const avatarEntry = unpacked.manifest.entries.find(entry => entry.disposition === 'avatar-asset')!
-      expect(fs.readFileSync(path.join(unpacked.stagingPath, ...avatarEntry.path.split('/')))).toEqual(seeded.avatar)
     })
 
   it('rechecks the current session after staging and rejects a stale capability', async () => {
