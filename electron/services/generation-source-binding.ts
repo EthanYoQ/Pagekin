@@ -180,7 +180,7 @@ function freezeAuthorInputs(value: unknown): GenerationAuthorInput[] {
             fail('GENERATION_AUTHOR_INPUT_INVALID');
         ids.add(item.id);
         bytes += Buffer.byteLength(item.text, 'utf8');
-        if (bytes > 8 * 1024 * 1024) fail('GENERATION_AUTHOR_INPUT_TOO_LARGE');
+        if (bytes > 8 * 1024 * 1024) fail(item.id === 'review-revision-context' ? 'GENERATION_REVIEW_CONTEXT_TOO_LARGE' : 'GENERATION_AUTHOR_INPUT_TOO_LARGE');
         return { id: item.id, text: item.text };
     });
 }

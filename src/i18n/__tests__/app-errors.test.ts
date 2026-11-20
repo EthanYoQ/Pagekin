@@ -32,8 +32,8 @@ describe('localized application errors', () => {
 
   it('导出时头像文件坏了：说明作品没动、哪类资料坏了、在哪个按钮修，不说资料被改（#744）', () => {
     const code = 'PORTABLE_EXPORT_AVATAR_DAMAGED'
-    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。有个角色头像文件损坏了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。')
-    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. A character avatar file is damaged, so no archive was created. On the character page, click Choose avatar for the character whose avatar is missing, then Export local archive again.')
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(code))).toBe('作品没有改动。有个角色头像文件坏了或不见了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。')
+    expect(displayedErrorMessage(shown('en-US'), new Error(code))).toBe('Your book is unchanged. A character avatar file is damaged or missing, so no archive was created. On the character page, click Choose avatar for the character whose avatar is missing, then Export local archive again.')
     expect(displayedErrorMessage(shown('ja-JP'), new Error(code))).not.toContain(code)
   })
 
@@ -87,6 +87,30 @@ describe('generation error codes from the main process', () => {
       expect(message).toContain(restored)
       expect(message).toContain(button)
       expect(message).not.toBe(knownAppErrorMessage(shown(locale), generic))
+    }
+  })
+
+  it('审稿或修稿交给 AI 的内容合计超过上限：点出前文以外的组成，并叫作者缩短设定或附加修稿要求（#702）', () => {
+    const error = new Error("Error invoking remote method 'generation:begin': Error: GENERATION_REVIEW_CONTEXT_TOO_LARGE")
+    for (const [locale, parts, shorten] of [
+      ['zh-CN', ['前文', '设定', '本章正文', '附加修稿要求'], /精简设定或「附加修稿要求」/u],
+      ['en-US', ['earlier chapters', 'settings', 'this chapter', 'Additional guidance'], /Shorten your settings or “Additional guidance”/u],
+      ['ja-JP', ['前の章', '設定', 'この章の本文', 'Additional guidance'], /設定や「Additional guidance」を短く/u],
+    ] as const) {
+      const message = knownAppErrorMessage(shown(locale), error)!
+      for (const part of parts) expect(message).toContain(part)
+      expect(message).toMatch(shorten)
+      expect(message).not.toContain('GENERATION_REVIEW_CONTEXT_TOO_LARGE')
+    }
+  })
+
+  it('写作材料没能核对上（定稿回执、来源上限或旧审稿都会报）：不猜是审稿，也不叫作者再点「AI 审稿」（#702）', () => {
+    const error = new Error("Error invoking remote method 'generation:resume': Error: GENERATION_MATERIAL_DECISION_INVALID")
+    for (const [locale, kept, review] of [['zh-CN', '作品内容没有变动', /审稿/u], ['en-US', 'Your book is unchanged', /review/iu], ['ja-JP', '作品の内容は変更されていません', /レビュー|review/iu]] as const) {
+      const message = knownAppErrorMessage(shown(locale), error)!
+      expect(message).toContain(kept)
+      expect(message).not.toMatch(review)
+      expect(message).not.toContain('GENERATION_MATERIAL_DECISION_INVALID')
     }
   })
 

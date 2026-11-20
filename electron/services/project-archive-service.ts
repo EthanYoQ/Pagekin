@@ -168,6 +168,7 @@ export type ProjectArchiveServiceErrorCode =
   | 'PORTABLE_ASSET_UNSAFE'
   | 'PORTABLE_CONTEXT_INVALID'
   | 'PORTABLE_EXPORT_AVATAR_DAMAGED'
+  | 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED'
   | 'PORTABLE_EXPORT_INTERRUPTED'
   | 'PORTABLE_EXPORT_SOURCE_CHANGED'
   | 'PORTABLE_TARGET_INSIDE_SOURCE'
@@ -1150,6 +1151,11 @@ function sourceChanged(error: unknown): boolean {
   return error instanceof PortableProjectArchiveError && error.code === 'PORTABLE_ARCHIVE_SOURCE_CHANGED'
 }
 
+/** 库文件被换掉时，核对库身份的几处（含取快照）报的是迁移通道的码，作者看到的应是导出时资料被改。 */
+function databaseReplaced(error: unknown): boolean {
+  return error instanceof Error && error.message === 'PROJECT_MIGRATION_SOURCE_CHANGED'
+}
+
 
 async function hashFile(file: string): Promise<string> {
   const digest = createHash('sha256')
@@ -1205,6 +1211,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
   const source: SourceDatabasePin = {}
   try { return await exportPortableProjectOnce(input, source, 1) }
   catch (error) {
+    if (databaseReplaced(error)) fail('PORTABLE_EXPORT_SOURCE_CHANGED')
     if (!(error instanceof AssetPhaseFailure)) throw error
     const code = failureCode(error.failure)
     if (code && NOT_RETRIED.has(code)) throw error.failure
@@ -1213,7 +1220,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
   try { return await exportPortableProjectOnce(input, source, 2) }
   catch (error) {
     const failure = error instanceof AssetPhaseFailure ? error.failure : error
-    if (sourceChanged(failure)) fail('PORTABLE_EXPORT_SOURCE_CHANGED')
+    if (sourceChanged(failure) || databaseReplaced(failure)) fail('PORTABLE_EXPORT_SOURCE_CHANGED')
     throw failure
   }
 }
@@ -1311,8 +1318,10 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
             if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
             const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
             if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
-            const digest = digestFile(sourcePath, regularFile(sourcePath, 'PORTABLE_ASSET_MISSING'))
-            if (digest.byteSize !== row.byteSize || digest.sha256 !== row.contentHash) fail('PORTABLE_EXPORT_AVATAR_DAMAGED')
+            // 没归属角色的旧头像在人物页修不了，和角色头像分开报。
+            const damaged = row.kind === 'bound' ? 'PORTABLE_EXPORT_AVATAR_DAMAGED' : 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED'
+            const digest = digestFile(sourcePath, regularFile(sourcePath, damaged))
+            if (digest.byteSize !== row.byteSize || digest.sha256 !== row.contentHash) fail(damaged)
             avatarFiles.push({ entry: { path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
               disposition: 'avatar-asset' }, sourcePath })
           }

@@ -140,6 +140,27 @@ describe('portable project archive', () => {
       .rejects.toThrow('PORTABLE_ARCHIVE_LIMIT_EXCEEDED')
   })
 
+  it('更新版本书童导出的存档：报版本不支持，不说存档坏了（#702）', async () => {
+    const root = temporaryRoot()
+    const bytes = Buffer.from('第一章')
+    const archivePath = writeArchive(root, archiveWith([{ name: 'chapter.txt', bytes }],
+      manifest([entry('chapter.txt', bytes)], { sourceSchemaVersion: 99 as PortableProjectManifest['sourceSchemaVersion'] })))
+    await expect(extractPortableProjectArchive({ archivePath, stagingParentPath: stagingParent(root) }))
+      .rejects.toMatchObject({ code: 'PORTABLE_SCHEMA_UNSUPPORTED' })
+  })
+
+  it.each(['EACCES', 'EPERM', 'ENOSPC'])('所选文件夹写不进去（%s）：报写不进去，不说存档坏了（#702）', async errno => {
+    const root = temporaryRoot()
+    const bytes = Buffer.from('第一章')
+    const archivePath = writeArchive(root, archiveWith([{ name: 'chapter.txt', bytes }]))
+    const parent = stagingParent(root)
+    vi.spyOn(fs, 'mkdtempSync').mockImplementationOnce(() => {
+      throw Object.assign(new Error(`${errno}: mkdtemp`), { code: errno, syscall: 'mkdtemp' })
+    })
+    await expect(extractPortableProjectArchive({ archivePath, stagingParentPath: parent }))
+      .rejects.toMatchObject({ code: 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE' })
+  })
+
   it('流式写入并解包中文路径，保留大文件字节与hash', async () => {
     const root = temporaryRoot()
     const first = Buffer.from('第一章：雨夜。\nCafé 灯火未熄。', 'utf8')

@@ -77,6 +77,23 @@ const ERROR_KEYS = {
   PORTABLE_EXPORT_AVATAR_DAMAGED: 'error.portableAvatarDamaged',
   PORTABLE_EXPORT_INTERRUPTED: 'error.portableExportInterrupted',
   CLOUD_BACKUP_AVATAR_DAMAGED: 'error.cloudBackupAvatarDamaged',
+  PORTABLE_CONTEXT_INVALID: 'error.portableContextInvalid',
+  PORTABLE_ASSET_UNSAFE: 'error.portableAssetUnsafe',
+  PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED: 'error.portableUnresolvedAvatarDamaged',
+  // 云备份把打包时的其他失败都收成这一个码；同样的作品点「导出本地存档」会报出具体原因。
+  CLOUD_BACKUP_ARCHIVE_FAILED: 'error.cloudBackupArchiveFailed',
+  CLOUD_BACKUP_AUTH_FAILED: 'error.cloudBackupAuthFailed',
+  CLOUD_BACKUP_NETWORK_FAILED: 'error.cloudBackupNetworkFailed',
+  CLOUD_BACKUP_REMOTE_INVALID: 'error.cloudBackupRemoteInvalid',
+  CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE: 'error.cloudBackupCredentialUnavailable',
+  CLOUD_BACKUP_CANCELLED: 'error.cloudBackupCancelled',
+  // 云端恢复把本地恢复的各种失败收成这一个码，原因没带回来。
+  CLOUD_BACKUP_RESTORE_FAILED: 'error.cloudBackupRestoreFailed',
+  CLOUD_BACKUP_FAILED: 'error.cloudBackupFailed',
+  CLOUD_BACKUP_ENDPOINT_INVALID: 'error.cloudBackupEndpointInvalid',
+  CLOUD_BACKUP_CREDENTIAL_INVALID: 'error.cloudBackupCredentialInvalid',
+  CLOUD_BACKUP_BOOK_ID_INVALID: 'error.cloudBackupBookIdInvalid',
+  CLOUD_BACKUP_GENERATION_DAMAGED: 'error.cloudBackupGenerationDamaged',
   // 选择文件或文件夹后授权已过期、用尽或被撤销（例如选完很久才确认）。
   EXTERNAL_FILE_GRANT_NOT_FOUND: 'error.externalFileGrantExpired',
   EXTERNAL_FILE_GRANT_EXPIRED: 'error.externalFileGrantExpired',
@@ -170,6 +187,9 @@ const ERROR_KEYS = {
   GENERATION_PLANNING_RECOVERY_IN_FLIGHT: 'error.generationBusy',
   GENERATION_KNOWLEDGE_BUSY: 'error.generationKnowledgeBusy',
   GENERATION_AUTHOR_INPUT_TOO_LARGE: 'error.generationInputTooLarge',
+  GENERATION_REVIEW_CONTEXT_TOO_LARGE: 'error.reviewContextOverLimit',
+  // 定稿与草稿回执校验、来源条数上限、旧审稿续跑都报这个码，文案不猜是哪一种。
+  GENERATION_MATERIAL_DECISION_INVALID: 'error.generationMaterialUnverified',
   GENERATION_IMPORT_CONTEXT_LIMIT: 'error.generationInputTooLarge',
   GENERATION_DRAFT_REQUIRED_PREDECESSOR_NOT_ADMITTED: 'error.generationInputTooLarge',
   GENERATION_COMPOSITION_NO_PROGRESS: 'error.generationNoProgress',
@@ -437,6 +457,32 @@ export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: D
   return located(damaged)
     ? translate(locale, 'error.damagedReviewCycle', { chapter: chapterPhrase(locale, damaged) })
     : translate(locale, 'error.portableUnsafeProjection')
+}
+
+/**
+ * 同一个码在导出和恢复里指的是不同的文件：导出时是作品里的资料，恢复时是所选的存档。
+ * MIGRATION_VERIFICATION_FAILED 打开作品时也会报，只在导出这里按「有一项数据无法安全打包」说明。
+ */
+const ARCHIVE_FAILURE_KEYS = {
+  export: {
+    PORTABLE_ARCHIVE_SOURCE_UNSAFE: 'error.portableAssetUnsafe',
+    MIGRATION_VERIFICATION_FAILED: 'error.portableUnsafeProjection',
+  },
+  restore: {
+    PORTABLE_ARCHIVE_SOURCE_CHANGED: 'error.restoreArchiveChanged',
+    PORTABLE_ARCHIVE_SOURCE_UNSAFE: 'error.restoreArchiveChanged',
+    PORTABLE_ARCHIVE_INVALID: 'error.restoreArchiveInvalid',
+    PORTABLE_SCHEMA_UNSUPPORTED: 'error.restoreArchiveNewer',
+    PORTABLE_ARCHIVE_TARGET_UNWRITABLE: 'error.restoreTargetUnwritable',
+  },
+} as const satisfies Record<'export' | 'restore', Record<string, MessageKey>>
+
+export function archiveFailureMessage(
+  locale: ErrorDisplayLocale, operation: keyof typeof ARCHIVE_FAILURE_KEYS, code: string, damaged?: DamagedReviewCycle,
+): string {
+  if (damaged) return damagedReviewCycleMessage(locale, damaged)
+  const key = (ARCHIVE_FAILURE_KEYS[operation] as Record<string, MessageKey>)[code]
+  return key ? translate(locale, key) : displayedErrorMessage(locale, code)
 }
 
 export function omittedReviewCyclesMessage(locale: ErrorDisplayLocale, omitted: readonly DamagedReviewCycle[]): string {

@@ -17,6 +17,7 @@ import { CANONICAL_PROJECT_DATABASE, CANONICAL_PROJECT_DIRECTORY } from '../../s
 import { getCurrentProjectPath } from '../database'
 import {
   CloudCredentialStore,
+  normalizeWebDavEndpoint,
   type CloudCredentialMetadata,
   type CloudCredentialSaveInput,
   type CloudCredentialSaveResult,
@@ -146,6 +147,10 @@ function webDavFailure(code: WebDavBackupError['code']): CloudBackupErrorCode {
   if (['WEBDAV_NOT_FOUND', 'WEBDAV_REMOTE_CONFLICT', 'WEBDAV_REMOTE_INVALID',
     'WEBDAV_DAV_RESPONSE_INVALID', 'WEBDAV_RESPONSE_TOO_LARGE'].includes(code)) return 'CLOUD_BACKUP_REMOTE_INVALID'
   return 'CLOUD_BACKUP_FAILED'
+}
+
+function webDavInputRejected(error: unknown): boolean {
+  return error instanceof WebDavBackupError && error.code === 'WEBDAV_INPUT_INVALID'
 }
 
 function errorCode(error: unknown): CloudBackupErrorCode {
@@ -288,6 +293,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
         username: string(request.username),
         secret: string(request.secret),
       }
+      try { normalizeWebDavEndpoint(candidate.endpoint) } catch { fail('CLOUD_BACKUP_ENDPOINT_INVALID') }
       await deps.webDav.checkConnection(candidate)
       let saved: CloudCredentialSaveResult
       try { saved = deps.credentialStore.save(candidate) }
@@ -299,7 +305,8 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
         ...(saved.warning ? { warning: saved.warning } : {}),
       }
     } catch (error) {
-      return failure(error)
+      // 地址已先核过，这里不合规的是用户名或密码（例如粘贴带进来的控制字符）。
+      return failure(webDavInputRejected(error) ? new CloudBackupControllerError('CLOUD_BACKUP_CREDENTIAL_INVALID') : error)
     }
   })
 
@@ -359,7 +366,9 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
       return { success: true as const, state: 'configured' as const, binding,
         ...(staleCredentialRetained ? { staleCredentialRetained: true as const } : {}) }
     } catch (error) {
-      return failure(error)
+      // 账号与父世代都来自主进程，作者手填的只有云书标识。
+      return failure(error instanceof Error && error.message === 'CLOUD_BINDING_INPUT_INVALID'
+        ? new CloudBackupControllerError('CLOUD_BACKUP_BOOK_ID_INVALID') : error)
     }
   })
 
@@ -475,7 +484,8 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
       })
       return { success: true as const, state: 'listed' as const, generations }
     } catch (error) {
-      return failure(error)
+      // 地址连接时已核过，这里不合规的只会是作者手填的云书标识。
+      return failure(webDavInputRejected(error) ? new CloudBackupControllerError('CLOUD_BACKUP_BOOK_ID_INVALID') : error)
     }
   })
 
@@ -498,13 +508,19 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
       const stagingRoot = createStagingRoot(dataRoot, id)
       const archivePath = path.join(stagingRoot, 'restore.ainovel')
       try {
-        await deps.webDav.downloadGeneration({
-          account: remoteAccount,
-          cloudBookId,
-          generationId,
-          targetArchivePath: archivePath,
-          signal,
-        })
+        try {
+          await deps.webDav.downloadGeneration({
+            account: remoteAccount,
+            cloudBookId,
+            generationId,
+            targetArchivePath: archivePath,
+            signal,
+          })
+        } catch (error) {
+          // 这个世代是从列表里选的，地址已连通过；回应不对是这个世代在云端的文件坏了。
+          if (error instanceof WebDavBackupError && error.code === 'WEBDAV_REMOTE_INVALID') fail('CLOUD_BACKUP_GENERATION_DAMAGED')
+          throw error
+        }
         let receipt: RestorePortableProjectReceipt
         try {
           receipt = await deps.restorePortableProject({ archivePath, targetProjectRoot, signal })

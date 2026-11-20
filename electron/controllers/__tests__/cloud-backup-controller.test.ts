@@ -8,9 +8,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { CloudBackupFailure, CloudBackupProjectSessionContext } from '../../../src/shared/cloud-backup'
 import { damagedReviewCycleMessage, displayedErrorMessage } from '../../../src/i18n/app-errors'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
-import type { CloudProjectBinding } from '../../services/cloud-project-binding-store'
 import { ExternalFileGrantService } from '../../services/external-file-grant-service'
-import { WebDavBackupError } from '../../services/webdav-backup-service'
+import { WebDavBackupError, WebDavBackupService } from '../../services/webdav-backup-service'
+import { CloudProjectBindingStore, type CloudProjectBinding } from '../../services/cloud-project-binding-store'
 import {
   registerCloudBackupController,
   type CloudBackupControllerDependencies,
@@ -221,6 +221,47 @@ describe('registerCloudBackupController', () => {
     expect(result).toEqual({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AUTH_FAILED' })
     expect(f.deps.credentialStore.save).not.toHaveBeenCalled()
     expect(JSON.stringify(result)).not.toContain('top-secret')
+  })
+
+  it.each(['http://dav.example.test/root/', 'dav.example.test/root', 'https://dav.example.test/root/?token=1', 'https://writer:pw@dav.example.test/root/'])(
+    '作者填的 WebDAV 地址不合规（%s）：说清地址要求，不露原码（#702）', async endpoint => {
+      const fetchImpl = vi.fn()
+      const f = fixture({ webDav: new WebDavBackupService({ fetchImpl }) })
+
+      const result = await f.invoke('cloud-backup:connect', { endpoint, username: 'writer', secret: 'top-secret' }) as CloudBackupFailure
+
+      expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
+        .toBe('没有连接。WebDAV 地址要是 https:// 开头的完整网址，不能带 ?、# 或用户名密码。请改好地址，再点「连接并绑定」。')
+      expect(fetchImpl).not.toHaveBeenCalled()
+      expect(f.deps.credentialStore.save).not.toHaveBeenCalled()
+    })
+
+  it('作者粘贴的密码带了制表符：说是用户名或密码的问题，不叫作者改地址（#702）', async () => {
+    const fetchImpl = vi.fn()
+    const f = fixture({ webDav: new WebDavBackupService({ fetchImpl }) })
+
+    const result = await f.invoke('cloud-backup:connect', { endpoint: 'https://dav.example.test/root/', username: 'writer', secret: 'top-secret	' }) as CloudBackupFailure
+
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
+      .toBe('没有连接。用户名或密码里带了看不见的字符（比如复制时带进来的制表符）。请重新输入，再点「连接并绑定」。')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('作者填的云书标识有中文：绑定和刷新云端世代都说清标识要求，不露原码（#702）', async () => {
+    const fetchImpl = vi.fn()
+    const storeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud-binding-store-'))
+    roots.push(storeRoot)
+    const f = fixture({ webDav: new WebDavBackupService({ fetchImpl }), bindingStore: new CloudProjectBindingStore(storeRoot) })
+    const expected = '作品没有改动。云书标识只能用英文字母、数字和 . _ : @ + -，且以字母或数字开头。请改好云书标识再试。'
+
+    const bound = await f.invoke('cloud-backup:confirm-binding', {
+      projectSession: session, localEndpointAccountId: ACCOUNT, cloudBookId: '我的书', lastSelectedParentGenerationIds: [], expectedRevision: null,
+    }) as CloudBackupFailure
+    const listed = await f.invoke('cloud-backup:list', { localEndpointAccountId: ACCOUNT, cloudBookId: '我的书' }) as CloudBackupFailure
+
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(bound.errorCode))).toBe(expected)
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(listed.errorCode))).toBe(expected)
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('revalidates the current project for view and explicit binding confirmation', async () => {
@@ -667,7 +708,7 @@ describe('registerCloudBackupController', () => {
 
     expect(result).toMatchObject({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AVATAR_DAMAGED' })
     expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
-      .toBe('作品没有改动。有个角色头像文件损坏了，没有上传。请在人物页给头像没显示的角色「选择头像」，再点「立即云备份」。')
+      .toBe('作品没有改动。有个角色头像文件坏了或不见了，没有上传。请在人物页给头像没显示的角色「选择头像」，再点「立即云备份」。')
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
   })
 
@@ -693,6 +734,20 @@ describe('registerCloudBackupController', () => {
       account: { endpoint: 'https://dav.example.test/root/', username: 'writer', secret: 'top-secret' },
       cloudBookId: BOOK,
     })
+  })
+
+  it('所选云端世代的存档文件对不上校验：说世代坏了、换一个世代，不叫作者改地址（#702）', async () => {
+    const f = fixture()
+    const target = f.restoreTarget('damaged-generation')
+    vi.mocked(f.deps.webDav.downloadGeneration).mockRejectedValue(new WebDavBackupError('WEBDAV_REMOTE_INVALID'))
+
+    const result = await f.invoke('cloud-backup:restore-copy', {
+      operationId: OTHER_OPERATION, localEndpointAccountId: ACCOUNT, cloudBookId: BOOK, generationId: GENERATION, targetGrantId: target.grantId,
+    }) as CloudBackupFailure
+
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
+      .toBe('没有新建副本。所选云端世代的存档文件坏了。请选另一个云端世代，再点「恢复所选云端世代为副本」。')
+    expect(f.deps.restorePortableProject).not.toHaveBeenCalled()
   })
 
   it('restores a copy without switching sessions and reports independent binding and recent-list failures', async () => {

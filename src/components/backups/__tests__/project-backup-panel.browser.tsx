@@ -327,6 +327,113 @@ describe('ProjectBackupPanel', () => {
       .toBe(`作品没有改动。${chapter}有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。`)
   })
 
+  it.each([
+    [{ errorCode: 'PORTABLE_CONTEXT_INVALID', error: 'PORTABLE_CONTEXT_INVALID' },
+      '作品没有改动。导出途中作品被关掉或换掉了，存档没有生成。请重新打开这部作品，再点「导出本地存档」。'],
+    [{ errorCode: 'PORTABLE_ASSET_UNSAFE', error: 'PORTABLE_ASSET_UNSAFE' },
+      '作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。'],
+    [{ errorCode: 'PORTABLE_ARCHIVE_SOURCE_UNSAFE', error: 'PORTABLE_ARCHIVE_SOURCE_UNSAFE' },
+      '作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。'],
+    [{ error: 'MIGRATION_VERIFICATION_FAILED' },
+      '作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。'],
+    [{ errorCode: 'PORTABLE_EXPORT_AVATAR_DAMAGED', error: 'PORTABLE_EXPORT_AVATAR_DAMAGED' },
+      '作品没有改动。有个角色头像文件坏了或不见了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。'],
+    [{ errorCode: 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED', error: 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED' },
+      '作品没有改动。一张没归到任何角色名下的旧头像文件坏了或不见了，存档没有生成。请把这条提示反馈给我们。'],
+  ])('导出存档失败时说出原因，不露原码：%o（#702）', async (failure, expected) => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
+      if (channel === 'project:archive-export') return { success: false, ...failure }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('导出本地存档').click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(expected)
+  })
+
+  it.each(['PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE'])('从本地存档恢复时存档被改动或移走（%s）：说出原因，不露原码（#702）', async errorCode => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive') return { grantId: 'archive-grant', displayName: 'book.anovel' }
+      if (channel === 'dialog:select-project-restore-target') return { grantId: 'restore-target-grant', displayName: 'book-restored' }
+      if (channel === 'project:archive-restore') return { success: false, errorCode, error: errorCode }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('从本地存档恢复副本').click())
+    expect(container.querySelector('[role="alert"]')?.textContent)
+      .toBe('没有新建副本。恢复途中存档文件被改动或移走了。请确认存档还在原处，再点「从本地存档恢复副本」。')
+  })
+
+  it.each([
+    ['PORTABLE_ARCHIVE_INVALID', '没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。'],
+    ['PORTABLE_SCHEMA_UNSUPPORTED', '没有新建副本。这个存档来自更新版本的书童。请先升级书童，再点「从本地存档恢复副本」。'],
+    ['PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '没有新建副本。所选文件夹写不进去，可能没有权限或磁盘满了。请换一个文件夹，再点「从本地存档恢复副本」。'],
+  ])('从本地存档恢复失败（%s）：说出原因，不露原码（#702）', async (errorCode, expected) => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive') return { grantId: 'archive-grant', displayName: 'book.anovel' }
+      if (channel === 'dialog:select-project-restore-target') return { grantId: 'restore-target-grant', displayName: 'book-restored' }
+      if (channel === 'project:archive-restore') return { success: false, errorCode, error: errorCode }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('从本地存档恢复副本').click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(expected)
+  })
+
+  it.each([
+    ['CLOUD_BACKUP_AUTH_FAILED', '作品没有改动。WebDAV 没接受这组用户名和密码。请核对后重新填写，再点「连接并绑定」。'],
+    ['CLOUD_BACKUP_NETWORK_FAILED', '作品没有改动。连不上 WebDAV 服务器。请检查网络和 WebDAV 地址，再试一次。'],
+    ['CLOUD_BACKUP_REMOTE_INVALID', '作品没有改动。这个地址上的服务器没有按 WebDAV 回应。请核对 WebDAV 地址，再试一次。'],
+    ['CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE', '作品没有改动。本机没存这个 WebDAV 账号的密码。请重新填写密码，再点「连接并绑定」。'],
+    ['CLOUD_BACKUP_CANCELLED', '已取消，作品没有改动。'],
+    ['CLOUD_BACKUP_RESTORE_FAILED', '没有新建副本。云端存档已下载，但没能恢复成副本。请把这条提示反馈给我们。'],
+    ['CLOUD_BACKUP_FAILED', '作品没有改动。云备份出了意外错误。请再试一次；还不行，请把这条提示反馈给我们。'],
+    ['CLOUD_BACKUP_ENDPOINT_INVALID', '没有连接。WebDAV 地址要是 https:// 开头的完整网址，不能带 ?、# 或用户名密码。请改好地址，再点「连接并绑定」。'],
+    ['CLOUD_BACKUP_BOOK_ID_INVALID', '作品没有改动。云书标识只能用英文字母、数字和 . _ : @ + -，且以字母或数字开头。请改好云书标识再试。'],
+  ])('云备份操作失败（%s）：说出原因，不露原码（#702）', async (errorCode, expected) => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
+      if (channel === 'cloud-backup:list') return { success: false, state: 'failed', errorCode }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('刷新云端世代').click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(expected)
+  })
+
+  it('读取云备份配置失败：说出原因，不露原码（#702）', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_FAILED' }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    expect(container.querySelector('[role="alert"]')?.textContent)
+      .toBe('作品没有改动。云备份出了意外错误。请再试一次；还不行，请把这条提示反馈给我们。')
+  })
+
+  it('云备份打包失败、指不出原因：说明没上传，并指向能看到具体原因的本地导出（#702）', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
+      if (channel === 'cloud-backup:backup') return { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', operationId: 'op-1' }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    const disclosure = container.querySelector<HTMLInputElement>('input[type="checkbox"][name="cloud-disclosure"]')!
+    await act(async () => disclosure.click())
+    await act(async () => button('立即云备份').click())
+    expect(container.querySelector('[role="alert"]')?.textContent)
+      .toBe('作品没有改动。打包这部作品时出了错，没有上传。点「导出本地存档」能看到具体原因。')
+  })
+
   it('云备份遇到坏审修循环：英文界面指明章号并请作者反馈，不给删除办法（#702）', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
     invoke.mockImplementation(async (channel: string) => {
@@ -439,7 +546,7 @@ describe('ProjectBackupPanel', () => {
     await renderPanel()
 
     await act(async () => button('刷新云端世代').click())
-    expect(container.textContent).toContain('CLOUD_BACKUP_NETWORK_FAILED')
+    expect(container.textContent).toContain('连不上 WebDAV 服务器')
     expect(useProjectStore.getState().currentProject).toBe(PROJECT)
 
     await act(async () => button('刷新云端世代').click())
@@ -450,7 +557,7 @@ describe('ProjectBackupPanel', () => {
       operationId: expect.any(String), localEndpointAccountId: 'account-1', cloudBookId: 'cloud-book',
       generationId: 'generation-1', targetGrantId: 'cloud-target-grant',
     })
-    expect(container.textContent).toContain('CLOUD_BACKUP_RESTORE_FAILED')
+    expect(container.textContent).toContain('没能恢复成副本')
     expect(useProjectStore.getState().currentProject).toBe(PROJECT)
   })
 
