@@ -763,6 +763,18 @@ describe('大纲恢复稿页面（#702）', () => {
     expect(page().querySelector('details pre')?.textContent).toBe(rejected)
     noModel()
   })
+  it('生成中打开恢复稿、之后第 3 章停下：原始候选显示第 3 章的回复，不是打开时的草稿', async () => {
+    context = stoppedAtChapter3()
+    const opening = structuredClone(context)
+    opening.plotOutlineRecovery!.rejectedReply = null
+    opening.plotOutlineRecovery!.writeState = { kind: 'blocked', reason: 'in-flight' }
+    openPlanningRecoveryDraft(opening, session.projectPath, '恢复稿')
+    const tab = useEditorStore.getState().tabs[0]
+    await act(async () => root.render(<ArchFileViewer tabId={tab.id} filePath="ai-novel://core/synopsis" projectKey={session.projectPath} content={tab.content ?? ''} savedContent={tab.savedContent ?? ''} />))
+    await vi.waitFor(() => expect(page().querySelector('[role="status"]')?.textContent).toContain('第 3 章那次的回复在「原始候选」里。'))
+    expect(page().querySelector('details pre')?.textContent).toBe(rejected)
+    noModel()
+  })
   it('打开后不改一个字直接保存：写进第 1–2 章，之后能继续生成第 3–5 章', async () => {
     context = stoppedAtChapter3()
     const draft = context.plotOutlineRecovery!.draft
