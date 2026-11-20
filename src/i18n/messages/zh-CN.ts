@@ -120,7 +120,7 @@ export const zhCN = {
   'error.generationBusy': '还有生成正在进行，请等它结束后再试。',
   'error.generationKnowledgeBusy': '知识库正在更新，请稍后再生成。',
   'error.generationInputTooLarge': '这次要交给模型的设定、前文或正文太大，放不进去，没有生成。请精简后重试。',
-  'error.reviewContextOverLimit': '正文没有改动。本章正文连同你填的要求太长，超过 AI 一次能处理的上限，没有生成。缩短本章正文或你填的要求后重试。',
+  'error.reviewContextOverLimit': '正文没有改动。本章正文连同你填的要求太长，超过 AI 一次能处理的上限，没有生成。缩短本章正文或你填的要求后重试；还不行，请把这条提示反馈给我们。',
   'error.generationMaterialUnverified': '作品内容没有变动。这次生成用到的材料没能核对上，没有生成。请重试；反复出现，请把这条提示反馈给我们。',
   'error.generationNoProgress': '模型这次续写没有新增足够的内容，没有并入结果。请重试。',
   'error.generationRevisionUnchanged': '修稿结果为空或与原稿相同，没有保存。请调整修改意见后重试。',
