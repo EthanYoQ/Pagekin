@@ -180,7 +180,7 @@ function proveEffect(db: Database.Database, row: AttemptRow, expected: {
   if (Object.keys(stored).sort().join() !== allowed.join()) return false
   const binding = JSON.parse(row.binding_json) as Record<string, unknown>
   const proof = readReviewProof(binding.sourceManifest, hash)
-  if (proof.kind !== 'recomputable' || stored.contextHash !== proof.contextHash
+  if (proof.kind === 'absent' || proof.kind === 'unproven' || stored.contextHash !== proof.contextHash
     || (binding.sourceManifest as Record<string, unknown>).operation !== proof.context.operation) return false
   const context = proof.context as unknown as Record<string, unknown>
   const source = context.source as Record<string, unknown> | undefined

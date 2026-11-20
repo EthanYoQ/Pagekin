@@ -25,7 +25,6 @@ interface Effect {
 interface AttemptRow { attempt_id: string; run_id: string; usage_receipt_json: string }
 const handleOf = (run: DurableGenerationRun): MainGenerationRunHandle => ({ projectId: run.binding.projectId,
   epoch: run.binding.epoch, rootActionId: run.rootActionId, runId: run.runId })
-const contextHash = (context: ReviewRevisionContext) => textHash(JSON.stringify(context))
 
 /** 审稿或修稿的来源稿已进回收站。恢复列表跳过它，不算读取失败。 */
 export class ReviewSourceDeletedError extends Error {
@@ -51,12 +50,16 @@ export class ReviewRevisionGeneration {
     if (!isDeepStrictEqual(context, current.frozen)) throw new Error('GENERATION_REVIEW_CONTEXT_CHANGED')
     return current.materials
   }
-  private context(run: DurableGenerationRun): ReviewRevisionContext {
+  /** 封存的证明只出现在导出存档里，它的哈希只和收据比（ADR-0031 决定 7）。 */
+  private proof(run: DurableGenerationRun): { context: ReviewRevisionContext; contextHash: string } {
     const proof = readReviewProof(run.binding.sourceManifest, textHash)
-    if (proof.kind !== 'recomputable' || proof.context.operation !== run.binding.sourceManifest.operation
+    if (proof.kind === 'absent' || proof.kind === 'unproven' || proof.context.operation !== run.binding.sourceManifest.operation
       || !REVIEW_REVISION_OPERATIONS.includes(proof.context.operation))
       throw new Error('GENERATION_REVIEW_CONTEXT_UNPROVEN')
-    return proof.context
+    return proof
+  }
+  private context(run: DurableGenerationRun): ReviewRevisionContext {
+    return this.proof(run).context
   }
   private attempts(runId?: string): AttemptRow[] {
     return (runId ? this.db.prepare('SELECT attempt_id,run_id,usage_receipt_json FROM generation_attempts WHERE run_id=? ORDER BY rowid').all(runId)
@@ -106,10 +109,10 @@ export class ReviewRevisionGeneration {
     if (rows.length > 1) throw new Error('GENERATION_REVIEW_RECEIPT_INVALID')
     if (!rows[0]) return undefined
     const effect = JSON.parse(rows[0].usage_receipt_json).reviewRevisionEffect as Effect
-    const context = this.context(run), proof = this.proveArtifact(run, effect.artifact)
+    const { context, contextHash } = this.proof(run), proof = this.proveArtifact(run, effect.artifact)
     if (effect.reportVersion !== undefined && (effect.reportVersion !== 2 || effect.kind !== 'review'))
       throw new Error('GENERATION_REVIEW_RECEIPT_INVALID')
-    if (proof.row.attempt_id !== rows[0].attempt_id || effect.contextHash !== contextHash(context)
+    if (proof.row.attempt_id !== rows[0].attempt_id || effect.contextHash !== contextHash
       || effect.kind !== (context.operation === 'review-chapter' ? 'review' : 'revision')) throw new Error('GENERATION_REVIEW_RECEIPT_INVALID')
     const row = effect.kind === 'review' ? ReviewRepository.getFull(effect.id, this.db) : RevisionRepository.getFull(effect.id, this.db)
     const index = row && ('reviewIndex' in row ? row.reviewIndex : row.revisionIndex)
@@ -201,7 +204,7 @@ export class ReviewRevisionGeneration {
     const proof = this.proveArtifact(run, artifact), row = this.attempts(run.runId).find(row => row.attempt_id === proof.row.attempt_id)!
     const usage = JSON.parse(row.usage_receipt_json)
     this.db.prepare('UPDATE generation_attempts SET usage_receipt_json=? WHERE attempt_id=?').run(JSON.stringify({ ...usage,
-      reviewRevisionEffect: { ...effect, artifact, contextHash: contextHash(this.context(run)) } }), row.attempt_id)
+      reviewRevisionEffect: { ...effect, artifact, contextHash: this.proof(run).contextHash } }), row.attempt_id)
     return this.saved(run)!.receipt
   }
   commitReview(request: ReviewGenerationCommitRequest, assertSources: (handle: MainGenerationRunHandle) => void): ReviewRevisionCommitReceipt {

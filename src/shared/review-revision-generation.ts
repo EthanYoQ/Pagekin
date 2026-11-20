@@ -87,11 +87,13 @@ export const reviewWordsPerChapter = (context: ReviewRevisionContext): number =>
   context.version === 1 ? context.config.wordsPerChapter : context.wordsPerChapter
 export function freezeReviewRevisionContext(materials: ReviewRevisionMaterials, version: 1 | 2,
   sha256: (text: string) => string): ReviewRevisionContext {
-  if (version === 1) return { version: 1, ...materials }
+  return version === 1 ? { version: 1, ...materials } : reviewRevisionContextV2(materials, sha256(JSON.stringify(materials)))
+}
+/** v2 只留保存与续跑要读的字段；inputHash 由调用方给出。 */
+export function reviewRevisionContextV2(materials: ReviewRevisionMaterials, inputHash: string): ReviewRevisionContextV2 {
   const { operation, source, sourceHash, writingLanguage, uiLocale, authorInputs, frozenGoals, preflightFindings, confirmation, recheck } = materials
   return { version: 2, operation, source, sourceHash, writingLanguage, uiLocale, authorInputs, frozenGoals, preflightFindings,
-    wordsPerChapter: materials.config.wordsPerChapter, ...(confirmation ? { confirmation } : {}), ...(recheck ? { recheck } : {}),
-    inputHash: sha256(JSON.stringify(materials)) }
+    wordsPerChapter: materials.config.wordsPerChapter, ...(confirmation ? { confirmation } : {}), ...(recheck ? { recheck } : {}), inputHash }
 }
 
 /** Task approval does not turn an AI-proposed replacement into an author fact. */

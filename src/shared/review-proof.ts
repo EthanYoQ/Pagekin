@@ -1,9 +1,14 @@
-import type { ReviewRevisionContext } from './review-revision-generation'
+import type { ReviewRevisionContext, ReviewRevisionContextV2 } from './review-revision-generation'
 
+/** 导出时封存的 v1 证明：只留 v2 字段，inputHash 取原 v1 上下文的哈希，也就是收据里的 contextHash（ADR-0031）。 */
+export type SealedReviewRevisionContext = ReviewRevisionContextV2 & { rewrittenFrom: 1 }
+
+/** contextHash 是收据里应记的哈希。sealed 的这个哈希只能和收据比，不能从证明重算。 */
 export type ReviewProofRead =
   | { kind: 'absent' }
   | { kind: 'unproven' }
   | { kind: 'recomputable'; context: ReviewRevisionContext; contextJson: string; contextHash: string }
+  | { kind: 'sealed'; context: SealedReviewRevisionContext; contextJson: string; contextHash: string }
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
@@ -15,10 +20,11 @@ export function readReviewProof(manifest: unknown, sha256: (text: string) => str
   const context = record(stored.reviewRevisionContext), source = record(context?.source)
   if (!context || context.version !== 1 && context.version !== 2 || typeof source?.content !== 'string') return { kind: 'unproven' }
   const contextJson = JSON.stringify(context), contextHash = sha256(contextJson)
-  return stored.reviewRevisionContextHash === contextHash && context.sourceHash === sha256(source.content)
-    && JSON.stringify(stored.authorInputs) === JSON.stringify([{ id: 'review-revision-context', text: contextJson }])
-    ? { kind: 'recomputable', context: context as unknown as ReviewRevisionContext, contextJson, contextHash }
-    : { kind: 'unproven' }
+  if (stored.reviewRevisionContextHash !== contextHash || context.sourceHash !== sha256(source.content)
+    || JSON.stringify(stored.authorInputs) !== JSON.stringify([{ id: 'review-revision-context', text: contextJson }])) return { kind: 'unproven' }
+  return context.version === 2 && context.rewrittenFrom === 1
+    ? { kind: 'sealed', context: context as unknown as SealedReviewRevisionContext, contextJson, contextHash: String(context.inputHash) }
+    : { kind: 'recomputable', context: context as unknown as ReviewRevisionContext, contextJson, contextHash }
 }
 
 export function unverifiedReviewSource(manifest: unknown): Record<string, unknown> | undefined {

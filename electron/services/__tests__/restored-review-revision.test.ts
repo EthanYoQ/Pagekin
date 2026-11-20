@@ -291,6 +291,7 @@ describe('升级前写下的审修循环导出时封存（#702 PR 3）', () => {
     const restored = ownerFor(restoredRoot, 'epoch-restored')
     expect(proofKinds(restored.db)).toEqual(['sealed', 'sealed', 'sealed'])
     expect(inspectM03ReviewCycles(restored.db)).toEqual({ structureOk: true, unprovable: [] })
+    expect(restored.owner.listRecovery()).toMatchObject({ partial: false })
     await completeFreshCycle(restored.owner, restored.db, waxed, reinforced, '门闩上的裂纹已用铁箍加固')
     expect(proofKinds(restored.db)).toEqual(['sealed', 'sealed', 'sealed', 'v2', 'v2', 'v2'])
   })
