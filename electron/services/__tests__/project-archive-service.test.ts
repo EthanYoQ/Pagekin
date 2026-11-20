@@ -780,6 +780,19 @@ describe('portable project export service', () => {
       expect(fs.readFileSync(path.join(restoredRoot, '.ai-novel', 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"留着"}')
     })
 
+    it('作者建了和系统文件同名的文件夹：文件夹里的资料照常进存档，恢复后还在（#702）', async () => {
+      const f = fixture()
+      const skill = path.join(f.storage, 'skills', 'Thumbs.db', '技能.md')
+      fs.mkdirSync(path.dirname(skill), { recursive: true })
+      fs.writeFileSync(skill, '作者的技能')
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
+      const restoredRoot = path.join(f.base, 'restored-system-named-folder')
+      await restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot })
+      expect(fs.readFileSync(path.join(restoredRoot, '.ai-novel', 'skills', 'Thumbs.db', '技能.md'), 'utf8')).toBe('作者的技能')
+    })
+
     it.runIf(process.platform === 'win32')('Windows 上系统文件名大小写不同也照常导出（#702）', async () => {
       const f = fixture()
       for (const name of ['DESKTOP.INI', 'thumbs.db', '.ds_store']) fs.writeFileSync(path.join(f.storage, name), '系统写的')
