@@ -940,6 +940,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     ) => {
     let resolvedPath: string
     let deletedProjectId: string
+    let deletedLeaseId: string
     let deletingCurrentProject = false
     let databaseClosed = false
     try {
@@ -948,6 +949,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         getCurrentProjectPath(),
       )
       deletedProjectId = activeSession.projectId
+      deletedLeaseId = activeSession.leaseId
       resolvedPath = projectAccess.authorizeDeletion({
         projectId: activeSession.projectId,
         leaseId: activeSession.leaseId,
@@ -1017,7 +1019,8 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         'The project folder was deleted, but its local cloud backup binding was not cleaned up yet',
       )
     }
-    projectAccess.invalidateCurrentSession()
+    // 删目录时没占着打开队列，期间可能已经开了另一本书。
+    if (projectAccess.captureCurrentSession()?.leaseId === deletedLeaseId) projectAccess.invalidateCurrentSession()
     try {
       removeRecentProject(resolvedPath)
       return {
