@@ -773,6 +773,7 @@ describe('大纲恢复稿页面（#702）', () => {
     expect(notice.getAttribute('data-tone')).toBe('warn')
     expect(notice.textContent).toContain('不能保存，也不能继续生成')
     expect(notice.textContent).toContain('请从第 1 章重新生成情节大纲')
+    expect(notice.textContent).not.toContain('待完成第 3 至 5 章')
     expect(button('保存恢复大纲').disabled).toBe(true)
     expect(button('继续生成缺少的章节').disabled).toBe(true)
     expect(endInput().disabled).toBe(true)

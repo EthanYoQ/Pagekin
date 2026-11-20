@@ -32,7 +32,8 @@ export function outlineRecoveryView(
   ].filter(Boolean).join(text('', ' '))
   const view = (phase: OutlineRecoveryView['phase'], tone: NoticeTone, title: string, line: string | null): OutlineRecoveryView => ({
     phase, continuable, primary: continuable ? 'continue' : phase === 'editable' ? 'save' : null,
-    notice: { tone, title, lines: [line, next].filter((item): item is string => Boolean(item)) },
+    // 不能写回时作者要按说明从本批起始章重新生成，再列「待完成第几章」会和它对不上。
+    notice: { tone, title, lines: [line, phase !== 'blocked' && next].filter((item): item is string => Boolean(item)) },
   })
 
   if (!candidate || !outline) {
