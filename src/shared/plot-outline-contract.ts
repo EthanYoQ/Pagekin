@@ -320,6 +320,12 @@ function stripStaleCoverageNotes(text: string): string {
   return rest
 }
 
+/** 去掉末尾所有应用写的覆盖说明，换成写到第 to 章的那一条；全书已写完时不写。 */
+export function withPlotOutlineCoverageNote(synopsis: string, to: number, expected: Pick<ProjectCoreSynopsisExpected, 'totalChapters' | 'writingLanguage'>): string {
+  const title = renderPlotOutlineSynopsis('', expected.totalChapters, expected)
+  return stripStaleCoverageNotes(synopsis.trimEnd()) + renderPlotOutlineSynopsis('', to, expected).slice(title.length)
+}
+
 /** 去掉第一个章节标题之前的那一行标准标题（可能写在作者前言之后、可能是 CRLF 换行）；其余前置文字原样保留。 */
 function stripStandardTitle(text: string, title: string): string {
   const firstEntry = headings(text)[0]?.index ?? text.length

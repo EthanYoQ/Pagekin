@@ -20,7 +20,7 @@ import { useProjectStore } from '../../stores/project-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { createArchitectureWorkflow } from '../../services/workflows/architecture-workflow'
-import { renderPlotOutlineSynopsis, validPlotOutlineAuthorPrefix, type PlotOutlineRangeSource } from '../../shared/plot-outline-contract'
+import { validPlotOutlineAuthorPrefix, withPlotOutlineCoverageNote, type PlotOutlineRangeSource } from '../../shared/plot-outline-contract'
 import { useWorkflowStore } from '../../stores/workflow-store'
 import { outlineProgress } from '../../shared/plot-outline-checkpoint'
 import { archOutlineSource, readArchCheckpoint } from '../../services/architecture-service'
@@ -259,13 +259,7 @@ function ArchFileViewerSession({
         if (!submission) {
           const committedRange = { from: progress.range.from, to: Number(authorEndRef.current) }
           let synopsis = md.trimEnd()
-          if (!validPlotOutlineAuthorPrefix(synopsis, progress, committedRange)) {
-            const expected = progress.sourceExpected
-            const title = renderPlotOutlineSynopsis('', expected.totalChapters, expected)
-            const oldTail = renderPlotOutlineSynopsis('', candidate.completeChapters.at(-1) ?? progress.range.from, expected).slice(title.length)
-            if (oldTail && candidate.draft.endsWith(oldTail) && synopsis.endsWith(oldTail)) synopsis = synopsis.slice(0, -oldTail.length)
-            synopsis = synopsis.trimEnd() + renderPlotOutlineSynopsis('', committedRange.to, expected).slice(title.length)
-          }
+          if (!validPlotOutlineAuthorPrefix(synopsis, progress, committedRange)) synopsis = withPlotOutlineCoverageNote(synopsis, committedRange.to, progress.sourceExpected)
           if (!validPlotOutlineAuthorPrefix(synopsis, progress, committedRange)) throw new Error(text('请保留连续完整章节，并移除所选保存终点之后的未完成内容。原有范围外内容须保持不变。', 'Keep complete consecutive chapters and remove incomplete content after the selected ending chapter. Preserve the original content outside this range.'))
           submission = {
             ...submittedSnapshot, status: 'pending', channel: 'db:project-core-synopsis-commit',
