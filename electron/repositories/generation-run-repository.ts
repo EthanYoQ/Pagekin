@@ -46,6 +46,12 @@ export interface DurableGenerationRun {
     binding: RunBinding;
     status: string;
 }
+/** 角色名单返回后，按名单实际人数给根加的额。 */
+export interface CharacterRosterBudget {
+    manifestArtifactId: string;
+    characters: number;
+    budget: RootBudget;
+}
 export interface GenerationBudgetReceipt {
     root: RootAction;
     policy: RootBudget;
@@ -349,6 +355,26 @@ export class GenerationRunRepository {
         if (result.changes !== 1) fail('GENERATION_PLANNING_CONTINUATION_CONFLICT');
         this.readPlanningContinuation(receipt.sourceHandle.runId);
     }
+    /** 开根时冻结的预算，不含名单返回后加的额。 */
+    frozenBudget(rootId: string): RootBudget {
+        const budget = this.db().prepare('SELECT budget_json FROM generation_roots WHERE root_action_id=?').pluck().get(rootId) as string | undefined;
+        return budget === undefined ? fail('GENERATION_ROOT_MISSING') : JSON.parse(budget);
+    }
+    characterRosters(rootId: string): (CharacterRosterBudget & { runId: string })[] {
+        const rows = this.db().prepare(`SELECT run_id, json_extract(CASE WHEN ${readableLedgerJson('binding_json')} THEN binding_json END,'$."$characterRoster"') AS roster
+            FROM generation_runs WHERE root_action_id=? ORDER BY rowid`).all(rootId) as { run_id: string; roster: string | null }[];
+        return rows.flatMap(row => row.roster === null ? [] : [{ runId: row.run_id, ...JSON.parse(row.roster) as CharacterRosterBudget }]);
+    }
+    /** 每个角色运行只记一次；budget_json 不改，加额只在这份记账里。 */
+    recordCharacterRoster(runId: string, roster: CharacterRosterBudget): void {
+        this.transaction(() => {
+            const original = this.db().prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(runId) as string | undefined;
+            if (original === undefined) fail('GENERATION_RUN_MISSING');
+            const binding = JSON.parse(original);
+            if (binding.$characterRoster) return;
+            this.db().prepare('UPDATE generation_runs SET binding_json=? WHERE run_id=?').run(encode({ ...binding, $characterRoster: roster }), runId);
+        });
+    }
     budget(rootId: string): GenerationBudgetReceipt {
         const row = this.db().prepare('SELECT * FROM generation_roots WHERE root_action_id=?').get(rootId) as {
             action_json: string;
@@ -364,7 +390,9 @@ export class GenerationRunRepository {
         const attempts = this.db().prepare('SELECT attempt_json FROM generation_attempts WHERE root_action_id=? ORDER BY rowid').all(rootId) as {
             attempt_json: string;
         }[];
-        return { root: JSON.parse(row.action_json), policy: JSON.parse(row.budget_json), activeElapsedMs: row.active_elapsed_ms + (row.active_since_ms === null ? 0 : Math.max(0, this.now() - row.active_since_ms)), attempts: attempts.map(row => JSON.parse(row.attempt_json)), blockedCode: row.blocked_code };
+        const policy = this.characterRosters(rootId).reduce<RootBudget>((largest, roster) =>
+            roster.budget.maxPhysicalRequests > largest.maxPhysicalRequests ? roster.budget : largest, JSON.parse(row.budget_json));
+        return { root: JSON.parse(row.action_json), policy, activeElapsedMs: row.active_elapsed_ms + (row.active_since_ms === null ? 0 : Math.max(0, this.now() - row.active_since_ms)), attempts: attempts.map(row => JSON.parse(row.attempt_json)), blockedCode: row.blocked_code };
     }
     attemptCount(runId: string): number {
         return this.db().prepare('SELECT COUNT(*) FROM generation_attempts WHERE run_id=?').pluck().get(runId) as number;
@@ -394,7 +422,7 @@ export class GenerationRunRepository {
                 this.assertBlueprintRecoveryWritable(existing.run_id);
                 this.assertPlotOutlineWritable(existing.run_id);
                 const prior = this.get(existing.run_id);
-                if (!isDeepStrictEqual(prior.binding.sourceManifest, frozen.sourceManifest) || !isDeepStrictEqual(prior.binding.sourceRefs.map(ref => { const copy: Partial<SourceRef> = { ...ref }; delete copy.epoch; return copy; }), frozen.sourceRefs.map(ref => { const copy: Partial<SourceRef> = { ...ref }; delete copy.epoch; return copy; })) || encode(prior.binding.fingerprint) !== encode(frozen.fingerprint) || prior.binding.contextSnapshotId !== frozen.contextSnapshotId || encode(this.budget(prior.rootActionId).policy) !== encode(request.budget))
+                if (!isDeepStrictEqual(prior.binding.sourceManifest, frozen.sourceManifest) || !isDeepStrictEqual(prior.binding.sourceRefs.map(ref => { const copy: Partial<SourceRef> = { ...ref }; delete copy.epoch; return copy; }), frozen.sourceRefs.map(ref => { const copy: Partial<SourceRef> = { ...ref }; delete copy.epoch; return copy; })) || encode(prior.binding.fingerprint) !== encode(frozen.fingerprint) || prior.binding.contextSnapshotId !== frozen.contextSnapshotId || encode(this.frozenBudget(prior.rootActionId)) !== encode(request.budget))
                     fail('GENERATION_NONCE_CONFLICT');
                 return prior;
             }

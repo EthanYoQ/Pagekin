@@ -139,7 +139,7 @@ export function proveCharacterProposal(db: Database.Database, runs: GenerationRu
   }
   if (source.kind !== 'generation' || !['architecture', 'planning-material'].includes(source.inputKind)
     || Object.keys(source).some(key => !['kind', 'inputKind', 'handle', 'artifacts', 'manifestArtifactId'].includes(key))
-    || !Array.isArray(source.artifacts) || !source.artifacts.length || source.artifacts.length > 64
+    || !Array.isArray(source.artifacts) || !source.artifacts.length
     || new Set(source.artifacts.map(item => item.artifactId)).size !== source.artifacts.length) throw new Error('CHARACTER_PROPOSAL_SOURCE_INVALID')
   const run = runs.get(source.handle.runId)
   if (run.binding.projectId !== projectId || source.handle.projectId !== projectId || run.rootActionId !== source.handle.rootActionId)
