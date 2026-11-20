@@ -158,10 +158,7 @@ function fortyReply(prompt) {
   }) })
 }
 
-/**
- * 与真实模型测试同样的输出上限 8192。夹具默认 4096 时名单上界只有 34 位（4096 ÷ 119），真实模型一次也写不下 40 位，
- * 假模型却照样回 40 位，请求数会超过按上限推出的预算。
- */
+/** 与真实模型测试同样的输出上限 8192。 */
 const WIDE_MODEL = Object.freeze({ ...FAKE_MODEL, id: 'charcap-wide', name: '8192 输出夹具', modelName: 'gpt-4.1-mini', maxTokens: 8192,
   capabilities: { contextWindowTokens: 131_072, maxOutputTokens: 8192, reasoning: false, structuredOutput: true, usage: true },
   capabilitySources: { contextWindowTokens: 'manual', maxOutputTokens: 'manual', reasoning: 'preset', structuredOutput: 'preset', usage: 'preset' } })
@@ -183,6 +180,37 @@ const seedFortyBook = (model = WIDE_MODEL) => async context => {
   assert.equal(updated.success, true, updated.error)
   await reload()
   await stage.openFromLibrary(page, '盐河四十人')
+}
+
+async function confirmFortyCast(context, shot) {
+  const { page, fake } = context
+  fake.replyReview(fortyReply)
+  await arch.open(page)
+  await arch.primary(page).click()
+  await arch.dialog(page).waitFor({ state: 'visible' })
+  await arch.selectOnly(page, ['characters'])
+  await arch.startGenerate(page)
+  await runSheet.openFromPalette(page)
+  const card = runSheet.anyCard(page).filter({ hasText: '等你确认' }).first()
+  await card.waitFor({ state: 'visible', timeout: 180_000 })
+  const adoption = card.getByRole('combobox', { name: /^采用方式：/u })
+  const candidates = await adoption.count()
+  const lastName = await adoption.last().getAttribute('aria-label')
+  const relations = await card.getByRole('checkbox').filter({ hasText: '' }).count()
+  await card.scrollIntoViewIfNeeded()
+  await context.shoot(shot)
+  const physical = fake.chats.length
+  const promptBytes = fake.chats.map(chat => Buffer.byteLength(chat.messages.map(message => message.content).join(''), 'utf8'))
+  await card.getByRole('button', { name: /确认/ }).first().click()
+  await runSheet.waitForRunDone(page)
+  await page.keyboard.press('Escape')
+  const session = await context.app.evaluate(() => globalThis.__driveOpened)
+  const cards = await roster(context, session)
+  const measured = { candidates, lastName, relations, requests: physical, maxPromptBytes: Math.max(...promptBytes), cards: cards.length,
+    cardRelationships: cards.reduce((sum, item) => sum + item.relationships.length, 0) }
+  assert.equal(candidates, 40, `确认卡列出 40 位：${JSON.stringify(measured)}`)
+  assert.equal(cards.length, 40, `确认后名单 40 张卡：${JSON.stringify(measured)}`)
+  return measured
 }
 
 export const CHARCAP_SCENARIOS = {
@@ -243,58 +271,11 @@ export const CHARCAP_SCENARIOS = {
     return { file, ...measured }
   } },
 
-  /** 名单 40 位：确认卡列出全部 40 位候选，确认后名单里 40 张卡。截图停在确认卡。 */
-  'charcap-arch-forty': { model: true, shell: 'stage', setup: seedFortyBook(), run: async context => {
-    const { page, fake } = context
-    fake.replyReview(fortyReply)
-    await arch.open(page)
-    await arch.primary(page).click()
-    await arch.dialog(page).waitFor({ state: 'visible' })
-    await arch.selectOnly(page, ['characters'])
-    await arch.startGenerate(page)
-    await runSheet.openFromPalette(page)
-    const card = runSheet.anyCard(page).filter({ hasText: '等你确认' }).first()
-    await card.waitFor({ state: 'visible', timeout: 120_000 })
-    const adoption = card.getByRole('combobox', { name: /^采用方式：/u })
-    const candidates = await adoption.count()
-    const lastName = await adoption.last().getAttribute('aria-label')
-    const relations = await card.getByRole('checkbox').filter({ hasText: '' }).count()
-    await card.scrollIntoViewIfNeeded()
-    await context.shoot('charcap-arch-forty-confirm')
-    const physical = fake.chats.length
-    const promptBytes = fake.chats.map(chat => Buffer.byteLength(chat.messages.map(message => message.content).join(''), 'utf8'))
-    await card.getByRole('button', { name: /确认/ }).first().click()
-    await runSheet.waitForRunDone(page)
-    await page.keyboard.press('Escape')
-    const session = await context.app.evaluate(() => globalThis.__driveOpened)
-    const cards = await roster(context, session)
-    const measured = { candidates, lastName, relations, requests: physical, maxPromptBytes: Math.max(...promptBytes), cards: cards.length,
-      cardRelationships: cards.reduce((sum, item) => sum + item.relationships.length, 0) }
-    assert.equal(candidates, 40, `确认卡列出 40 位：${JSON.stringify(measured)}`)
-    assert.equal(cards.length, 40, `确认后名单 40 张卡：${JSON.stringify(measured)}`)
-    return measured
-  } },
+  /** 名单 40 位、输出上限 8192：确认卡列出全部 40 位候选，确认后名单里 40 张卡。截图停在确认卡。 */
+  'charcap-arch-forty': { model: true, shell: 'stage', setup: seedFortyBook(), run: context => confirmFortyCast(context, 'charcap-arch-forty-confirm') },
 
-  /** 输出上限 4096 时上界只够 34 位（4096 ÷ 119）；假模型偏回 40 位，额度用完时作者看到原因和办法。 */
-  'charcap-arch-forty-4096': { model: true, shell: 'stage', setup: seedFortyBook(FAKE_MODEL), run: async context => {
-    const { page, fake } = context
-    fake.replyReview(fortyReply)
-    await arch.open(page)
-    await arch.primary(page).click()
-    await arch.dialog(page).waitFor({ state: 'visible' })
-    await arch.selectOnly(page, ['characters'])
-    await arch.startGenerate(page)
-    await runSheet.openFromPalette(page)
-    const ended = runSheet.anyCard(page).filter({ hasText: /等你确认|失败|出错|已停止/u }).first()
-    await ended.waitFor({ state: 'visible', timeout: 180_000 })
-    await page.waitForTimeout(800)
-    const card = await ended.innerText()
-    await context.shoot('charcap-arch-forty-4096')
-    const measured = { requests: fake.chats.length, card }
-    assert.match(card, /已有角色没有变动。人物太多，这次生成的额度（请求次数与时长）用完了/u, `说明请求次数用完：${JSON.stringify(measured)}`)
-    assert.doesNotMatch(card, /[A-Z_]{8,}|收据/u, '不露原始错误码与收据')
-    return measured
-  } },
+  /** 输出上限 4096：详情每张单独一次请求，根预算按名单 40 位算（70 次），照样走到确认卡、40 张卡。 */
+  'charcap-arch-forty-4096': { model: true, shell: 'stage', setup: seedFortyBook(FAKE_MODEL), run: context => confirmFortyCast(context, 'charcap-arch-forty-4096') },
 
   /** 名单三次都撞输出上限：运行卡写明已有角色没动、人物太多、去哪调、用哪个按钮补。 */
   'charcap-arch-truncated': { model: true, shell: 'stage', setup: seedFortyBook(), run: async context => {

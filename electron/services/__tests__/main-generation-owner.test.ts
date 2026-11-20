@@ -913,7 +913,7 @@ describe('frozen planning roots', () => {
   it('freezes the complete architecture on premise, shares liability with synopsis, and restores its exact chapter policy', async () => {
     const fetch = syntheticStream(), f = planningFixture()
     const root = f.owner.begin(architectureSelection(f, fullIntent))
-    expect(root.ledger!.policy).toEqual({ maxPhysicalRequests: 579, maxTokenLiability: 151781376, maxOutputPerRequest: 65536, maxActiveElapsedMs: 65137500 })
+    expect(root.ledger!.policy).toEqual({ maxPhysicalRequests: 32, maxTokenLiability: 8388608, maxOutputPerRequest: 65536, maxActiveElapsedMs: 3600000 })
     const repository = new GenerationRunRepository(() => f.db)
     const policy = repository.get(root.handle.runId).binding.sourceManifest.policy
     expect(policy).toMatchObject({ version: 's07-capacity-v2', planning: { kind: 'architecture', intent: fullIntent, outlineProtocol: PLOT_OUTLINE_PROTOCOL }, budget: root.ledger!.policy })
@@ -2588,6 +2588,70 @@ describe('main generation owner with actual SQLite and provider adapter', () => 
     expect(reopened.read(resumed.handle).artifacts).toHaveLength(1)
     expect(reopened.read(resumed.handle).candidates).toHaveLength(2)
     expect(dispatch).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('character cast budget follows the returned roster', () => {
+  const castMember = (index: number) => ({ slotId: `slot-${index}`, name: `人物${index}`,
+    role: index === 0 ? 'protagonist' : 'supporting', narrativeDuty: '查清盐引旧账', relations: [] })
+  const castDetail = (index: number) => ({ slotId: `slot-${index}`, name: `人物${index}`, role: index === 0 ? 'protagonist' : 'supporting',
+    gender: '未知', age: 30, ...Object.fromEntries(CHARACTER_DETAIL_DESCRIPTION_FIELDS.map(field => [field, '盐商旧账的知情人'])),
+    currentState: { ...Object.fromEntries(CHARACTER_STATE_TEXT_FIELDS.map(field => [field, '扬州'])), updatedAtChapter: 1 } })
+  function castRun(people: number, maxOutputTokens: number) {
+    const outputs = [JSON.stringify({ slots: Array.from({ length: people }, (_, index) => castMember(index)) }),
+      ...Array.from({ length: people }, (_, index) => JSON.stringify({ entries: [castDetail(index)] }))]
+    const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (_request, options) => {
+      options.onVisible({ kind: 'delta', text: outputs[dispatch.mock.calls.length - 1] ?? '{"entries":[]}' }); return { finishReason: 'stop', usage: null }
+    })
+    const f = fixture(dispatch)
+    Object.assign(f.model, { maxTokens: maxOutputTokens,
+      capabilities: { contextWindowTokens: 262144, maxOutputTokens: 65536, reasoning: false, structuredOutput: true, usage: true } })
+    const run = f.owner.begin({ ...f.begin, operation: 'character-architecture', output: 'structured-data',
+      promptKeys: ['character_dynamics'], skillStages: ['planning'] })
+    const request = (purpose: string, nonce: string) => f.owner.execute({ handle: run.handle, invocationNonce: nonce,
+      task: { ...task, purpose, output: 'structured-data' } })
+    return Object.assign(f, { run, dispatch, request })
+  }
+  async function requestsUntilRefused(f: ReturnType<typeof castRun>, limit: number) {
+    await f.request('character-architecture-manifest', 'manifest')
+    for (let index = 0; index < limit; index++) {
+      const refused = await f.request('character-architecture-details', `details-${index}`).then(() => false, (error: Error) => {
+        if (!error.message.includes('ROOT_BUDGET_EXHAUSTED')) throw error
+        return true
+      })
+      if (refused) break
+    }
+    return f.dispatch.mock.calls.length
+  }
+
+  it.each([65536, 4096])('lets a 40-person cast send 70 requests at max output %i, enough to cut every three-person batch down to single cards', async maxOutputTokens => {
+    const f = castRun(40, maxOutputTokens)
+    expect(await requestsUntilRefused(f, 120)).toBe(3 + (2 * 40 - Math.ceil(40 / 3)) + 1)
+    expect(f.owner.read(f.run.handle).ledger!.policy).toMatchObject({ maxPhysicalRequests: 70, maxActiveElapsedMs: 70 * 112_500 })
+  })
+
+  it('sizes the roster request alone before the roster returns and keeps the frozen root budget across a reopen', async () => {
+    const f = castRun(40, 65536)
+    expect(f.owner.read(f.run.handle).ledger!.policy.maxPhysicalRequests).toBe(MAIN_GENERATION_POLICY.budget.maxPhysicalRequests)
+    const frozen = f.db.prepare('SELECT budget_json FROM generation_roots WHERE root_action_id=?').pluck().get(f.run.handle.rootActionId)
+    await requestsUntilRefused(f, 1)
+    expect(f.db.prepare('SELECT budget_json FROM generation_roots WHERE root_action_id=?').pluck().get(f.run.handle.rootActionId)).toBe(frozen)
+    const reopened = f.reopen(), resumed = await reopened.resume(f.run.handle)
+    expect(resumed.ledger!.policy.maxPhysicalRequests).toBe(70)
+    f.db.prepare(`UPDATE generation_runs SET binding_json=json_set(binding_json,'$."$characterRoster".budget.maxPhysicalRequests',500) WHERE run_id=?`).run(f.run.handle.runId)
+    await expect(reopened.execute({ handle: resumed.handle, invocationNonce: 'tampered', task: { ...task, purpose: 'character-architecture-details', output: 'structured-data' } }))
+      .rejects.toThrow('GENERATION_POLICY_BUDGET_MISMATCH')
+  })
+
+  it('stages a card for each of 70 people when every batch was split into single cards', async () => {
+    const f = castRun(70, 65536)
+    await f.request('character-architecture-manifest', 'manifest')
+    for (let index = 0; index < 70; index++) await f.request('character-architecture-details', `details-${index}`)
+    const artifacts = f.owner.read(f.run.handle).artifacts
+    expect(artifacts).toHaveLength(71)
+    const batch = f.owner.characterProposals.stage({ kind: 'generation', inputKind: 'architecture', handle: f.run.handle,
+      manifestArtifactId: artifacts[0].artifactId, artifacts: artifacts.map(({ artifactId, revision, textHash }) => ({ artifactId, revision, textHash })) })
+    expect(batch.items.map(item => item.fields.name)).toEqual(Array.from({ length: 70 }, (_, index) => `人物${index}`))
   })
 })
 

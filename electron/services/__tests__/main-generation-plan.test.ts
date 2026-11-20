@@ -3,7 +3,7 @@ import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationTask } from '../../../src/services/generation/generation-harness'
 import type { GenerationBudgetReceipt } from '../../repositories/generation-run-repository'
 import { createModelExecutionLeaseReceipt } from '../model-execution-lease'
-import { batchRootBudget, buildMainGenerationPlan, MAIN_GENERATION_POLICY, newMainGenerationPolicy } from '../main-generation-plan'
+import { batchRootBudget, buildMainGenerationPlan, characterRosterBudget, MAIN_GENERATION_POLICY, newMainGenerationPolicy } from '../main-generation-plan'
 import { CREATIVE_STRATEGIES } from '../../../src/shared/reasoning-types'
 import type { BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
 import { settleProviderUsage } from '../generation-run-service'
@@ -158,13 +158,17 @@ describe('main generation physical liability planning without provider calls', (
   it('keeps the temporary S05 policy finite and explicit', () => {
     expect(MAIN_GENERATION_POLICY.budget).toEqual({ maxPhysicalRequests: 32, maxTokenLiability: 2097152, maxOutputPerRequest: 32768, maxActiveElapsedMs: 3600000 })
   })
-  it.each([14, 40])('lets a %i-person cast finish its roster and details even when every three-person batch is cut off once', people => {
-    const selection: BeginGenerationRequest = { operation: 'character-architecture', uiActionNonce: 'cast', modelId: '合成模型',
-      selectedDraftIds: [], selectedFinalizedDraftIds: [], promptKeys: ['character_dynamics'], skillStages: ['planning'], output: 'structured-data',
-      authorInputs: [{ id: 'architecture:planning-intent', text: JSON.stringify({ version: 'architecture-action-v1', priorSteps: ['characters'], synopsisRange: null }) }] }
-    const fullBatches = Math.floor(people / 3), rest = people % 3
-    const requests = 1 + fullBatches * 3 + (rest === 2 ? 3 : rest) + 1
-    expect(newMainGenerationPolicy(selection, silicon()).budget.maxPhysicalRequests).toBeGreaterThanOrEqual(requests)
+  it.each([14, 40, 70])('sizes a whole architecture action for a %i-person cast whose every batch is cut down to single cards', people => {
+    const selection: BeginGenerationRequest = { operation: 'generate-core-seed', uiActionNonce: 'cast', modelId: '合成模型',
+      selectedDraftIds: [], selectedFinalizedDraftIds: [], promptKeys: ['premise'], skillStages: ['planning'], output: 'visible-text',
+      authorInputs: [{ id: 'architecture:author-config', text: '{"totalChapters":200}' }, { id: 'architecture:planning-intent', text: JSON.stringify({
+        version: 'architecture-action-v1', priorSteps: ['premise', 'characters', 'worldbuilding'], synopsisRange: { from: 1, to: 10 } }) }] }
+    const policy = newMainGenerationPolicy(selection, silicon())
+    const batches = Array.from({ length: Math.ceil(people / 3) }, (_, index) => Math.min(3, people - index * 3))
+    const castRequests = 1 + 2 + batches.reduce((sum, size) => sum + 2 * size - 1, 0) + 1
+    const requests = Math.max(policy.budget.maxPhysicalRequests, 1 + 2 + 2 * 10 + castRequests)
+    expect(characterRosterBudget(policy, people)).toEqual({ maxPhysicalRequests: requests, maxOutputPerRequest: policy.budget.maxOutputPerRequest,
+      maxTokenLiability: policy.budget.maxTokenLiability / policy.budget.maxPhysicalRequests * requests, maxActiveElapsedMs: requests * 112_500 })
   })
   it('scales batch roots by chapter count without shrinking below the single-root policy', () => {
     expect(batchRootBudget(1)).toEqual(MAIN_GENERATION_POLICY.budget)
