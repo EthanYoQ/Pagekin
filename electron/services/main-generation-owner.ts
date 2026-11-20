@@ -872,7 +872,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   /**
    * 拿不准就列出：多列的一份作者能自己放弃，误藏的一份作者根本不知道还在。
    * 导入原稿的 fill-empty 提交会把原有行原样记账，所以还要求这一章开跑以后确实变过。
-   * 大纲只认这次运行的正式写入；升级前写入的没有这一笔，退而看这一批原文是否还在正式大纲里。
+   * 大纲只认这次运行的正式写入，或作者已把这一批补完保存；升级前写入的没有这一笔，退而看这一批原文是否还在正式大纲里。
    */
   const planningSuperseded = (run: DurableGenerationRun, outline: PlotOutlineProgress | null, remaining: PlanningContinuation['remainingRange']): boolean => {
     if (outline) return repository.readPlotOutlineAuthorEdit(run.runId)?.remainingRange === null
