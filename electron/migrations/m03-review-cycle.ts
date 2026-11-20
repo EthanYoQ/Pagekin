@@ -23,6 +23,17 @@ const integer = (value: unknown, minimum = 0): value is number => Number.isSafeI
 const record = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object'
   && !Array.isArray(value) ? value as Record<string, unknown> : null
 
+/**
+ * 证明里随版本不同的那几项。封存只把 v1 的这几项换成 v2 的，其余核对原样；
+ * 封存前后这一项都过，循环的结论才不因封存改变（ADR-0031 决定 8）。
+ */
+export function versionedProofFieldsOk(context: Record<string, unknown>): boolean {
+  return context.version === 1
+    ? !!context.config && typeof context.characterStates === 'string' && typeof context.worldbuilding === 'string'
+      && Array.isArray(context.history) && Array.isArray(context.blueprints)
+    : integer(context.wordsPerChapter) && HASH.test(String(context.inputHash))
+}
+
 export const M03_REVIEW_CYCLE_TABLES = Object.freeze(['review_cycles', 'review_findings'] as const)
 
 export interface M03FindingDescriptor {
@@ -197,9 +208,7 @@ function proveEffect(db: Database.Database, row: AttemptRow, expected: {
     || source.version !== expected.source.version || source.status !== expected.source.status || source.content !== expected.source.content
     || !['zh-CN', 'en-US'].includes(String(context.writingLanguage))
     || !['zh-CN', 'en-US'].includes(String(context.uiLocale)) || !Array.isArray(context.authorInputs)
-    || (context.version === 1 ? !context.config || typeof context.characterStates !== 'string' || typeof context.worldbuilding !== 'string'
-      || !Array.isArray(context.history) || !Array.isArray(context.blueprints)
-      : !integer(context.wordsPerChapter) || !HASH.test(String(context.inputHash)))
+    || !versionedProofFieldsOk(context)
     || !context.frozenGoals || !Array.isArray(context.preflightFindings)
     || (expected.kind === 'review' && (confirmation !== undefined
       || !validRecheckVersionPair || !isDeepStrictEqual(recheck, frozenRecheck)))

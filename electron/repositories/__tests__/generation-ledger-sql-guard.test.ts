@@ -20,6 +20,8 @@ const BINDING_FILES = [
   'electron/repositories/generation-run-repository.ts', 'electron/repositories/generation-ledger-admission.ts',
   'electron/migrations/m01-generation-runs.ts', 'electron/migrations/m03-review-cycle.ts',
   'electron/services/project-archive-service.ts', 'electron/services/portable-project-field-policy.json',
+  // 按主键读写；跨记录只扫进门清单里的收据列。
+  'electron/services/review-proof-tidy.ts',
 ]
 
 function literals(source: string): { line: number; text: string }[] {
@@ -189,7 +191,7 @@ describe('跨记录解析的账本 JSON 列都在进门清单里', () => {
     expect(crossRecordLedgerColumns("SELECT json_extract(binding_json,'$.a') FROM generation_runs WHERE root_action_id=(SELECT root_action_id FROM generation_runs WHERE run_id=?)")).toEqual([])
   })
 
-  it('binding_json 这个词只出现在仓库、进门、M01、M03 和导出投影里', () => {
+  it('binding_json 这个词只出现在仓库、进门、M01、M03、导出投影和打开时的证明整理里', () => {
     const files = [...sourceFiles(path.join(ROOT, 'electron')), ...sourceFiles(path.join(ROOT, 'src')), path.join(ROOT, 'electron/services/portable-project-field-policy.json')]
     const users = files.filter(file => fs.readFileSync(file, 'utf8').includes('binding_json'))
       .map(file => path.relative(ROOT, file).replace(/\\/gu, '/'))

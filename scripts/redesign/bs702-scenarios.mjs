@@ -2,8 +2,8 @@
 //   bs702-cycle12       假模型按审稿、修稿、合并复核、定稿写 12 章，证明全是 v2；导出再恢复两轮都通过，副本里证明仍是 v2。
 //   bs702-upgrade-open  PERF702_FIXTURE（库版本 10 的 112 章书）从书房打开，量升级耗时与主进程无响应时长，升级中截图；再写第 113 章并开一次审稿。
 //   real-bs702-112      同一夹具接真实模型，写第 113 章、审稿、修稿、合并。
-//   bs702-seal          PERF702_FIXTURE（库版本 10、审修证明是 v1 的书）打开升级后，再按审修循环写 2 章（v2）；导出再恢复两轮，
-//                       老证明封存、新证明仍是 v2，恢复走从严校验；恢复出的书里重新打开第 3 章再 AI 审稿。
+//   bs702-seal          PERF702_FIXTURE（库版本 10、审修证明是 v1 的书）打开升级（同时整理源库，老证明封存）后，再按审修循环写 2 章（v2）；
+//                       导出再恢复两轮，老证明仍是封存形、新证明仍是 v2，恢复走从严校验；恢复出的书里重新打开第 3 章再 AI 审稿。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -189,13 +189,15 @@ export const BS702_SCENARIOS = {
     installReplies(context.fake)
     const written = proofs(source)
     assert.deepEqual([written.userVersion, written.kinds[2]], [12, 6], JSON.stringify(written))
+    assert.ok(written.kinds.sealed > 0, `打开时已整理源库：${JSON.stringify(written)}`)
+    const v1Total = (kinds) => (kinds.sealed ?? 0) + (kinds[1] ?? 0)
     const first = await exportAndRestore(context, source, 'bs702-seal-1')
     const second = await exportAndRestore(context, first, 'bs702-seal-2')
     const restored = [proofs(first), proofs(second)]
     for (const copy of restored) {
       assert.equal(copy.kinds[2], 6, JSON.stringify(copy))
-      assert.equal((copy.kinds.sealed ?? 0) + (copy.kinds[1] ?? 0), written.kinds[1], JSON.stringify(copy))
-      assert.ok(copy.kinds.sealed > 0, JSON.stringify(copy))
+      assert.equal(v1Total(copy.kinds), v1Total(written.kinds), JSON.stringify(copy))
+      assert.ok((copy.kinds.sealed ?? 0) >= written.kinds.sealed, `副本的封存条数不少于源：${JSON.stringify(copy)}`)
     }
     await openInUi(context, second)
     await chapterView.open(page, 3)

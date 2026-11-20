@@ -38,7 +38,7 @@ ADR-0029 承诺一条记录坏了，只有读写它的操作报错。生成账�
 7. **清单只有一份**（`ADMITTED_LEDGER_CELLS`），里面没有 `binding_json`。扫描语句从它推导。
    - **绑定只在仓库里按主键或按根解析；跨记录认出一条运行只看身份键。** 仓库之外要绑定里的内容，先按身份键或尝试拿到运行号，再经仓库按主键读（`get()`、`readableRun()`）。
    - 守卫测试扫源码：跨记录语句在条件或取值列表里解析的账本 JSON 列必须在清单里。单表、条件里没有 OR、整个唯一键或 rowid 都等值限定的语句不算跨记录。`binding_json` 另外允许按根等值限定（`root_action_id=?`，没有 OR）：一棵树的运行有限，读不出时由仓库报封存码。子查询单独判，里面的主键条件不限定外层语句。
-   - 守卫是按字符串字面量做的正则启发式，拼接的 SQL 和在 JS 里解析的列查不到。所以另有一条文本扫描：`binding_json` 这个词只许出现在仓库、进门模块、M01 结构、M03 和导出投影（`project-archive-service.ts`、`portable-project-field-policy.json`）里。它不解析 SQL，不会漏报。
+   - 守卫是按字符串字面量做的正则启发式，拼接的 SQL 和在 JS 里解析的列查不到。所以另有一条文本扫描：`binding_json` 这个词只许出现在仓库、进门模块、M01 结构、M03、导出投影（`project-archive-service.ts`、`portable-project-field-policy.json`）和打开时的证明整理（`review-proof-tidy.ts`，按主键读写，见 ADR-0031 决定 8）里。它不解析 SQL，不会漏报。
    - `open_key` 不进清单：它是唯一身份键，换成中性值会让同一次点击的重试找不到原来的运行。运行索引原样取出 `open_key`，在代码里解析。
 
 ## 跨记录认运行

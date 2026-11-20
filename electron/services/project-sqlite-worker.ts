@@ -9,11 +9,13 @@ const { job, electronExports } = workerData as ProjectSqliteWorkerData
 
 stubElectron(electronExports)
 // 先装好 electron 桩再动态 import：静态 import 会先于 stubElectron 执行。
-void Promise.all([import('./sqlite-project-migration'), import('./project-peek'), import('./project-sqlite-host'), import('../repositories/generation-ledger-admission')])
-  .then(([migration, peek, host, ledger]) => {
+void Promise.all([import('./sqlite-project-migration'), import('./project-peek'), import('./project-sqlite-host'), import('../repositories/generation-ledger-admission'), import('./review-proof-tidy')])
+  .then(([migration, peek, host, ledger, proofs]) => {
     // 账本扫描结果随内容身份一起交回，主进程据此省掉一次整库扫描。
     const open = (databasePath: string): OpenedProjectSqlite => {
-      const identity = migration.openProjectSqlite({ databasePath })
+      let identity = migration.openProjectSqlite({ databasePath })
+      // 此时主进程还没持有这本书，可以独占改写；改过就重新校验。
+      if (proofs.tidyReviewProofs(databasePath)) identity = migration.openProjectSqlite({ databasePath })
       const reader = new Database(databasePath, { readonly: true, fileMustExist: true })
       try { return { identity, ledgerNeedsAdmission: ledger.ledgerNeedsAdmission(reader) } } finally { reader.close() }
     }

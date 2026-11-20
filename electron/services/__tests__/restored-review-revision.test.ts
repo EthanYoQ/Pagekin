@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { openCanonicalProjectFixture } from '../../../test/helpers/canonical-project-fixture'
@@ -25,6 +25,9 @@ import type { PreparedReviewRevisionContext } from '../../../src/shared/review-r
 import { countDraftUnits } from '../../../src/shared/draft-units'
 import { readReviewProof } from '../../../src/shared/review-proof'
 import { inspectM03ReviewCycles } from '../../migrations/m03-review-cycle'
+import { verifyCanonicalProjectData } from '../project-data-locator'
+import type { ProjectSqliteWorkerOptions } from '../project-sqlite-host'
+import { projectSqliteWorkerForTest } from '../../../test/helpers/portable-export-worker'
 
 /** 置真后，新开的审修运行冻结成库版本 12 之前的 v1 全文证明，模拟升级前的书童写下的审修循环。 */
 let freezeAsV1 = false
@@ -294,6 +297,71 @@ describe('升级前写下的审修循环导出时封存（#702 PR 3）', () => {
     expect(restored.owner.listRecovery()).toMatchObject({ partial: false })
     await completeFreshCycle(restored.owner, restored.db, waxed, reinforced, '门闩上的裂纹已用铁箍加固')
     expect(proofKinds(restored.db)).toEqual(['sealed', 'sealed', 'sealed', 'v2', 'v2', 'v2'])
+  })
+})
+
+describe('打开老书整理源库后，升级前开始的审修循环在源库里接着走完（#702 PR 4）', () => {
+  let worker: ProjectSqliteWorkerOptions
+  beforeAll(async () => { worker = await projectSqliteWorkerForTest() }, 60_000)
+  const proofKinds = (db: Database.Database) => (db.prepare('SELECT binding_json FROM generation_runs ORDER BY rowid').pluck().all() as string[])
+    .map(json => readReviewProof(JSON.parse(json).sourceManifest, textHash))
+    .flatMap(proof => proof.kind === 'absent' ? [] : [proof.kind === 'recomputable' ? `v${proof.context.version}` : proof.kind])
+
+  /** 老书的设定写得长：v1 证明连同副本超过整理的 64 KB 预筛。 */
+  function oldBook() {
+    freezeAsV1 = true
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    original.db.prepare("UPDATE project_core SET world_setting=? WHERE id='main'").run('北塔的规矩：夜里不点灯，门闩只许守塔人碰。'.repeat(1200))
+    return original
+  }
+
+  /** 关闭后重新打开，校验与整理在 worker 里完成。 */
+  async function reopen() {
+    freezeAsV1 = false
+    for (const owner of owners.splice(0)) owner.suspendForProjectClose()
+    closeProjectDatabase()
+    initProjectDatabase(projectRoot, await verifyCanonicalProjectData(projectRoot, worker))
+    return ownerFor(projectRoot, 'epoch-1')
+  }
+
+  it('确认了审稿还没修：整理后按它修稿、合并、复核能走完', async () => {
+    const original = oldBook()
+    const confirmed = await reviewAndConfirm(original.owner, original.db)
+    const reopened = await reopen()
+    expect(proofKinds(reopened.db)).toEqual(['sealed'])
+
+    const saved = await reviseFromConfirmation(reopened.owner, confirmed)
+    merge(reopened.db, saved.id, source, revised)
+    const done = await recheck(reopened.owner, reopened.db, revised, waxed.quote)
+    expect(done.receipt).toMatchObject({ kind: 'review', reviewCycle: { cycleId: done.cycleId, disposition: 'completed' } })
+    expect(proofKinds(reopened.db)).toEqual(['sealed', 'v2', 'v2'])
+  })
+
+  it('修稿保存了待合并：整理后合并、复核能走完', async () => {
+    const original = oldBook()
+    const saved = await reviseFromConfirmation(original.owner, await reviewAndConfirm(original.owner, original.db))
+    const reopened = await reopen()
+    expect(proofKinds(reopened.db)).toEqual(['sealed', 'sealed'])
+
+    merge(reopened.db, saved.id, source, revised)
+    const done = await recheck(reopened.owner, reopened.db, revised, waxed.quote)
+    expect(done.receipt).toMatchObject({ kind: 'review', reviewCycle: { cycleId: done.cycleId, disposition: 'completed' } })
+  })
+
+  it('合并了待复核：整理后复核能走完；导出恢复后从严校验通过，在这章重新审稿、修稿、合并、复核能走完', async () => {
+    const original = oldBook()
+    const saved = await reviseFromConfirmation(original.owner, await reviewAndConfirm(original.owner, original.db))
+    merge(original.db, saved.id, source, revised)
+    const reopened = await reopen()
+    expect(proofKinds(reopened.db)).toEqual(['sealed', 'sealed'])
+
+    const done = await recheck(reopened.owner, reopened.db, revised, waxed.quote)
+    expect(done.receipt).toMatchObject({ kind: 'review', reviewCycle: { cycleId: done.cycleId, disposition: 'completed' } })
+    const restoredRoot = await exportAndRestore()
+    const restored = ownerFor(restoredRoot, 'epoch-restored')
+    expect(inspectM03ReviewCycles(restored.db)).toEqual({ structureOk: true, unprovable: [] })
+    await completeFreshCycle(restored.owner, restored.db, waxed, reinforced, '门闩上的裂纹已用铁箍加固')
   })
 })
 
