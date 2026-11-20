@@ -1214,6 +1214,12 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
       ? [{ ...receipt.visibleArtifact, purpose: receipt.purpose, finishReason: receipt.finishReason }] : [])
     if (!detailExecution.ok) {
       if (detailExecution.failure.terminal) throw detailExecution.failure.terminal
+      if (detailExecution.failure.reason === 'root_budget') {
+        throw new Error(text(
+          '已有角色没有变动。人物太多，这次生成的请求次数用完了：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。',
+          'Your existing characters are unchanged. The cast used up this run’s requests: raise Max output tokens in the model’s Advanced settings and generate again, or add people with Paste or import cards on the Cast page.',
+        ))
+      }
       const diagnostic = detailExecution.failure.diagnostic
       const attempts = detailExecution.receipt.attempts.length > 0
         ? detailExecution.receipt.attempts
