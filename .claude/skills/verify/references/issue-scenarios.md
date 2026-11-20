@@ -370,3 +370,6 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `fspeed-finalize` | 默认定稿第 3 到 6 章，每章记从点「确认定稿」到「已定稿，只读」、到运行结束各发了哪些 `fs:` IPC（`fsBeforeReadOnly`、`fsBeforeRunEnd`），修后两者都没有写作 Skill 快照的 `fs:check-exists`；刷新文件树的 `fs:list-dir` 照样发（`fileTree` 记它的起止），只是运行结束不等它；每章两次对话请求，后处理步骤 attempts 为 1 | 正文（中文） | 是 | #702 |
 | `fspeed-still-processing` | 假模型闸门卡住第 3 章定稿后处理，去第 4 章点「写作此章」：不起运行，提示是「第 3 章已定稿，后台还在整理这一章，很快就好，请稍后再试。」，不是「处理失败」（`fspeed-still-processing-notice`）；放行后第 3 章后处理跑完 | 正文（中文） | 是 | #702 |
 | `real-fspeed-finalize` | 真实模型逐章定稿（默认 3 到 23 章），记计时、每次对话请求的 `enable_thinking`、`reasoning_effort`、思考字数和可见回复全文，以及步骤结果与重试；用于开关思考的质量门禁与修前修后交替计时 | 正文（中文） | 真实 | #702 |
+| `orui-outline-recovery` | 假模型让第 3 章两次都回整本的阶段大纲，从架构页点「编辑恢复稿」：恢复稿页页头是「补齐中断的大纲」，保存终点 2、继续（停用）与主按钮「保存恢复大纲」在同一行，提示写「第 1–2 章已写好，第 3 章没写成」「保存后才能继续生成」（`orui-outline-recovery-stopped`）；删掉第 3 章那段保存后，正式大纲有第 1、2 章，提示「本次恢复已保存，后续修改仅供复制。」，保存与终点停用，主按钮换成「继续生成缺少的章节」（`orui-outline-recovery-saved`） | 架构（中文） | 是 | #702 |
+| `orui-outline-recovery-blocked` | 同一份恢复稿打开后改模型设置，点「重新读取恢复状态」：提示「不能保存，也不能继续生成」并叫作者从第 1 章重新生成，保存与继续都停用，页上没有主按钮 | 架构（中文） | 是 | #702 |
+| `orui-outline-recovery-en` | 同一份恢复稿切到英文界面：页头与按钮没有中文，提示写「Chapters 1–2 are written; chapter 3 is not」 | 架构（英文） | 是 | #702 |
