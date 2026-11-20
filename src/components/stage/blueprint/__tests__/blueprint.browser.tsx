@@ -14,7 +14,7 @@ import { setActiveProjectSessionContext } from '../../../../shared/project-sessi
 import { disposeProjectService, initProjectService } from '../../../../services/project-service'
 import type { ChapterBlueprint } from '../../../../services/workflows/directory-workflow'
 import { editorSaveHandler, useEditorStore } from '../../../../stores/editor-store'
-import { useCharacterStore } from '../../../../stores/character-store'
+import { EMPTY_CARD, useCharacterStore } from '../../../../stores/character-store'
 import { useLLMStore } from '../../../../stores/llm-store'
 import { useLocaleStore } from '../../../../stores/locale-store'
 import { useStageStore } from '../../../../stores/navigation/stage-store'
@@ -148,6 +148,10 @@ function installIpc() {
     if (channel === 'db:blueprint-character-sync-list-pending') return []
     if (channel === 'db:project-core-get') return projectCore
     if (channel === 'db:character-get-all') return [{ id: 1 }]
+    if (channel === 'db:character-roster-read') return {
+      revision: 1, identityRevision: 1, status: 'ready',
+      entries: [{ ...EMPTY_CARD, characterId: 'z', name: '路人', relationships: [] }, { ...EMPTY_CARD, characterId: 'a', name: '林岚', relationships: [] }],
+    }
     throw new Error(`unexpected IPC ${channel}`)
   })
   Object.defineProperty(window, 'aiNovelAPI', {
@@ -898,6 +902,22 @@ describe('蓝图阶段', () => {
         await act(async () => page.getByRole('button', { name: '去看这个角色' }).click())
         expect(useEditorStore.getState().tabs.map(tab => tab.type)).toContain('character')
         expect(useCharacterStore.getState().selectedId).toBe('a')
+      } finally {
+        useCharacterStore.setState(original)
+      }
+    })
+
+    it('角色名单还在随打开作品读取时点按钮，读完选中的仍是关系所属的人', async () => {
+      planned()
+      const original = useCharacterStore.getState()
+      useCharacterStore.getState().beginProjectLoad(PROJECT_PATH)
+      try {
+        await renderPage()
+        await save()
+        await act(async () => page.getByRole('button', { name: '去看这个角色' }).click())
+        await act(async () => useCharacterStore.getState().load(PROJECT_PATH, SESSION))
+        const { characters, selectedId } = useCharacterStore.getState()
+        expect(characters.find(card => card.characterId === selectedId)?.name).toBe('林岚')
       } finally {
         useCharacterStore.setState(original)
       }

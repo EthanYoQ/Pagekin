@@ -274,14 +274,13 @@ function StepOutput({ content, live, text }: { content: string; live: boolean; t
 function RunFailureNotice({ run, primary }: { run: WorkflowRun; primary: boolean }) {
   const text = (zh: string, en: string) => run.uiLocale === 'en-US' ? en : zh
   const interfaceLocale = useLocaleStore(activeInterfaceLocale)
-  const { presentation, errorCode, canResumeOutline, canRestartOutline } = runFailure(run, interfaceLocale)
+  const { presentation, canResumeOutline, canRestartOutline } = runFailure(run, interfaceLocale)
   const current = useProjectStore(() => isCurrentSessionRun(run))
   const outline = useResumePlotOutline(run)
   const openConfig = presentation.action === 'open-novel-config' && presentation.actionLabel
   return (
     <Notice tone="danger" title={presentation.heading}>
       <p>{presentation.reason}</p>
-      {errorCode && <p className="run-note">{text('错误码：', 'Error code: ')}{errorCode}</p>}
       {presentation.persistence && <p>{presentation.persistence}</p>}
       {presentation.guidance && <p>{presentation.guidance}</p>}
       {canResumeOutline && (
