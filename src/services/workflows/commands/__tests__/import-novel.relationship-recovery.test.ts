@@ -164,7 +164,7 @@ function stubNoCommitIpc() {
   })
 }
 
-function respondWith(responses: unknown[], finishReasons: Array<'stop' | 'length'> = []) {
+function respondWith(responses: unknown[], finishReasons: Array<'stop' | 'length' | 'error'> = []) {
   const serialized = responses.map(response => typeof response === 'string' ? response : JSON.stringify(response))
   let callCount = 0
   const generateStream = vi.fn<FakeGenerateStream>(
@@ -173,7 +173,8 @@ function respondWith(responses: unknown[], finishReasons: Array<'stop' | 'length
       if (output === undefined) throw new Error('unexpected import inference request')
       const finishReason = finishReasons[callCount] ?? 'stop'
       callCount += 1
-      streamCallbacks.onDone?.(output, undefined, finishReason)
+      if (finishReason === 'error') streamCallbacks.onError?.('NETWORK_ERROR')
+      else streamCallbacks.onDone?.(output, undefined, finishReason)
       return `request-${callCount}`
     },
   )
@@ -379,7 +380,7 @@ describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {
 
     await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
 
-    expect(JSON.stringify(generateStream.mock.calls[1][0])).toContain(JSON.stringify(JSON.stringify(['韩烁'])).slice(1, -1))
+    expect(JSON.stringify(generateStream.mock.calls[1][0])).toContain(JSON.stringify(JSON.stringify([{ name: '韩烁' }])).slice(1, -1))
     const entries = committedEntries(invoke)
     expect(entries.map(entry => entry.name)).toEqual(['陆舟', '苏绾', '顾岩', '韩烁'])
     expect(relationshipsOf(entries).陆舟).toEqual([
@@ -400,17 +401,67 @@ describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {
     expect(relationshipsOf(entries).陆舟).toEqual([{ target: '韩烁', relation: '旧债牵连' }])
   })
 
-  it('still fails before commit when the correction reply is truncated', async () => {
-    const invoke = stubNoCommitIpc()
-    const generateStream = respondWith(
-      [withMissingEndpoint(), { characterCards: [card('韩烁', 'supporting')] }],
-      ['stop', 'length'],
-    )
+  it.each(['length', 'error'] as const)('keeps the first round and earlier batches when a card batch ends with %s, and asks for no more batches', async (failure) => {
+    const invoke = stubSuccessfulImportIpc()
+    const others = Array.from({ length: 40 }, (_, index) => `路人${index + 1}`)
+    const initial = { ...validInference(), otherCharacters: others.map(name => ({ name, role: 'minor', note: '原稿人物' })) }
+    initial.characterCards[0].relationships.push({ target: '路人4', relation: '旧识' })
+    const deltas = [0, 1, 2].map(batch => ({ characterCards: others.slice(batch * 3, batch * 3 + 3).map(name => card(name, 'minor')) }))
+    const generateStream = respondWith([initial, ...deltas], ['stop', 'stop', failure])
 
-    await expect(new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks }))
-      .rejects.toThrow()
+    await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
+
+    expect(generateStream).toHaveBeenCalledTimes(3)
+    const entries = committedEntries(invoke)
+    expect(entries.map(entry => entry.name)).toEqual(['陆舟', '苏绾', '顾岩', '路人1', '路人2', '路人3'])
+    expect(relationshipsOf(entries).陆舟).toEqual([])
+    const logged = vi.mocked(callbacks.log).mock.calls.map(([line]) => line).join('\n')
+    expect(logged).toMatch(/37 位人物没有补出角色卡：路人4、/)
+    expect(logged).toMatch(/已丢弃 1 条关系/)
+  })
+
+  it('stops asking for batches once the request budget is used up and still commits', async () => {
+    const invoke = stubSuccessfulImportIpc()
+    const others = Array.from({ length: 60 }, (_, index) => `路人${index + 1}`)
+    const initial = { ...validInference(), otherCharacters: others.map(name => ({ name, role: 'minor', note: '原稿人物' })) }
+    const deltas = Array.from({ length: 20 }, (_, batch) => ({ characterCards: others.slice(batch * 3, batch * 3 + 3).map(name => card(name, 'minor')) }))
+    const generateStream = respondWith([initial, ...deltas])
+
+    await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
+
+    expect(generateStream).toHaveBeenCalledTimes(16)
+    expect(committedEntries(invoke)).toHaveLength(3 + 45)
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/15 位人物没有补出角色卡：路人46、/))
+  })
+
+  it('asks for a card for someone who shares a name with a main card, and keeps both', async () => {
+    const invoke = stubSuccessfulImportIpc()
+    const initial = { ...validInference(), otherCharacters: [{ name: '王宁', role: 'minor', note: '渡口船夫' }] }
+    initial.characterCards[1].name = '王宁'
+    const generateStream = respondWith([initial, { characterCards: [card('王宁', 'minor')] }])
+
+    await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
 
     expect(generateStream).toHaveBeenCalledTimes(2)
-    expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('db:import-global-facts-commit')
+    expect(JSON.stringify(generateStream.mock.calls[1][0])).toContain('渡口船夫')
+    expect(committedEntries(invoke).map(entry => [entry.name, entry.role])).toEqual([
+      ['陆舟', 'protagonist'], ['王宁', 'supporting'], ['顾岩', 'antagonist'], ['王宁', 'minor']])
+  })
+
+  it('asks for two listed people with the same name in separate batches and keeps both', async () => {
+    const invoke = stubSuccessfulImportIpc()
+    const initial = { ...validInference(), otherCharacters: [
+      { name: '王宁', role: 'minor', note: '渡口船夫' }, { name: '王宁', role: 'minor', note: '茶馆掌柜' }, { name: '林照', role: 'minor', note: '书生' }] }
+    const generateStream = respondWith([initial,
+      { characterCards: [card('王宁', 'minor'), card('林照', 'minor')] },
+      { characterCards: [card('王宁', 'supporting')] }])
+
+    await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
+
+    expect(generateStream).toHaveBeenCalledTimes(3)
+    expect(JSON.stringify(generateStream.mock.calls[2][0])).toContain('茶馆掌柜')
+    expect(committedEntries(invoke).map(entry => [entry.name, entry.role])).toEqual([
+      ['陆舟', 'protagonist'], ['苏绾', 'supporting'], ['顾岩', 'antagonist'], ['王宁', 'minor'], ['林照', 'minor'], ['王宁', 'supporting']])
+    expect(callbacks.log).not.toHaveBeenCalledWith(expect.stringMatching(/没有补出/))
   })
 })

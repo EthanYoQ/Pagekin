@@ -227,6 +227,33 @@ describe('planning authorization before confirmation', () => {
   expect(repository.get(child.handle.runId).binding.sourceManifest.policy).toHaveProperty('planning.kind','directory')
   expect(f.owner.read(child.handle).ledger!.physicalRequests).toBe(2)
  })
+ it('grows the shared Agent root by the character requests a 40-person cast needs once the roster returns', async () => {
+  const people = 40
+  const f=fixture(async (request, options) => {
+   const purpose = (request as { task: GenerationTask }).task.purpose
+   options.onVisible({ kind:'delta', text: purpose === 'agent'
+    ? `<tool_call>${JSON.stringify({name:'start_workflow',arguments:{workflow:'generate_architecture'}})}</tool_call>`
+    : purpose === 'character-architecture-manifest'
+     ? JSON.stringify({ slots: Array.from({ length: people }, (_, index) => ({ slotId:`slot-${index}`, name:`人物${index}`,
+      role: index === 0 ? 'protagonist' : 'supporting', narrativeDuty:'查清旧账', relations:[] })) })
+     : '{"entries":[]}' })
+   return { finishReason:'stop', usage:null }
+  })
+  f.db.prepare('UPDATE project_core SET total_chapters=80').run()
+  const result=await f.round(),action=result.rounds[0].actions[0]
+  f.owner.agents.claimTool({ref:action.ref,confirmed:true})
+  const registration=f.owner.agents.registerWorkflow(action.ref), { from, to, targetUnits } = registration.planning!
+  const child=f.owner.begin({operation:'character-architecture',uiActionNonce:'agent-cast',modelId:'synthetic',promptKeys:['character_dynamics'],skillStages:['planning'],
+   selectedDraftIds:[],selectedFinalizedDraftIds:[],output:'structured-data',parentRootActionId:result.handle.rootActionId,agentWorkflowRegistrationId:registration.registrationId,
+   authorInputs:[{id:'architecture:planning-intent',text:JSON.stringify({version:'architecture-action-v1',priorSteps:['characters'],synopsisRange:{from,to}})},
+    {id:'architecture:author-config',text:'{"totalChapters":80}'},{id:'planning:target-units',text:String(targetUnits)}]})
+  expect(child.ledger!.policy.maxPhysicalRequests).toBe(MAIN_GENERATION_POLICY.budget.maxPhysicalRequests)
+  for (const purpose of ['character-architecture-manifest','character-architecture-details'])
+   await f.owner.execute({handle:child.handle,invocationNonce:purpose,task:{purpose,output:'structured-data',messages:[{role:'user',content:'角色'}]}})
+  const characterSteps = (n: number) => 3 + (2 * n - Math.ceil(n / 3)) + 1
+  expect(f.owner.read(child.handle).ledger!.policy.maxPhysicalRequests)
+   .toBe(MAIN_GENERATION_POLICY.budget.maxPhysicalRequests + characterSteps(people) - characterSteps(0))
+ })
  it('keeps a saved old Agent root and its registered planning child at the exact old budget across reopen', async () => {
   const f=fixture(planningDispatch({workflow:'generate_blueprint'}))
   Object.assign(f.model,{provider:'deepseek',baseUrl:'https://api.deepseek.com',modelName:'deepseek-v4-flash',maxTokens:65536,
