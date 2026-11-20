@@ -312,7 +312,7 @@ it('场景声明的前置不齐时不启动应用：退出码 3，逐项写出�
 
   const fixture = drive('--scenario', 'perf702-export')
   assert.equal(fixture.status, 3, fixture.stderr)
-  assert.match(fixture.stderr, /未跑 perf702-export：\n缺环境变量 PERF702_FIXTURE，设置方法：指向库版本 10 的 112 章夹具目录/)
+  assert.match(fixture.stderr, /未跑 perf702-export：\n缺环境变量 PERF702_FIXTURE，设置方法：指向 112 章夹具目录/)
   const [result] = JSON.parse(fs.readFileSync(path.join(out, 'perf702-export-light.json'), 'utf8'))
   assert.equal(result.notRun.length, 1)
   assert.deepEqual(JSON.parse(fixture.stdout), result, 'stdout 与结果 JSON 报同一条未跑记录')
