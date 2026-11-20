@@ -69,7 +69,7 @@ async function read(context, channel, ...args) {
 }
 
 /** 预置作品：设定、林岚、8 章蓝图，finalized 里的章以作者原稿定稿导入；接上真实模型后从书房打开。 */
-async function seedBook(context, { finalized = [], core: coreFields = {} } = {}) {
+export async function seedBook(context, { finalized = [], core: coreFields = {} } = {}) {
   const { app, page, roots, invoke, reload } = context
   await trackOpenedSession(app)
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
