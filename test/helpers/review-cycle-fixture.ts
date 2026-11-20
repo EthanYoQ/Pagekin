@@ -4,6 +4,7 @@ import type BetterSqlite3 from 'better-sqlite3'
 import { buildReviewGenerationReport } from '../../src/shared/review-generation-report'
 import type { FrozenChapterGoals } from '../../src/shared/chapter-goal-review'
 import type { ConsistencyFinding } from '../../src/shared/consistency-preflight'
+import type { ReviewFinalizedMaterial } from '../../src/shared/review-revision-generation'
 import { initializeLegacyBaselineSchema } from '../../electron/migrations/baseline-schema'
 import { M01_GENERATION_SQL } from '../../electron/migrations/m01-generation-runs'
 import { applyM03ReviewCycle, applyM06ReviewCycleMerge } from '../../electron/migrations/m03-review-cycle'
@@ -45,6 +46,8 @@ export interface SeedOptions {
   corruptBody?: string
   effect?: 'valid' | 'none' | 'wrong-effect' | 'wrong-artifact'
   chapterNumber?: number
+  /** 冻结进 v1 证明的前文，审稿与修稿两条运行都带。 */
+  history?: readonly ReviewFinalizedMaterial[]
 }
 
 export function seed(db: Database, options: SeedOptions = {}): {
@@ -57,6 +60,7 @@ export function seed(db: Database, options: SeedOptions = {}): {
   reviewBody: string
   frozenGoals: FrozenChapterGoals
   preflight: readonly ConsistencyFinding[]
+  history: readonly ReviewFinalizedMaterial[]
 } {
   const key = options.key ?? 'review'
   const chapterNumber = options.chapterNumber ?? 1
@@ -64,6 +68,7 @@ export function seed(db: Database, options: SeedOptions = {}): {
   const sourceStatus = options.sourceStatus ?? 'draft'
   const frozenGoals = options.frozenGoals ?? defaultGoals
   const preflight = options.preflight ?? []
+  const history = options.history ?? []
   const modelContent = JSON.stringify(options.model ?? defaultModel)
   const generatedBody = JSON.stringify(buildReviewGenerationReport({ content: modelContent, sourceContent: source,
     frozenGoals, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', preflightFindings: preflight }), null, 2)
@@ -89,9 +94,9 @@ export function seed(db: Database, options: SeedOptions = {}): {
     const runId = `run-${key}`
     const artifactId = `artifact-${key}`
     const context = { version: 1, operation: 'review-chapter', sourceHash: hash(source),
-      source: { id: draftId, chapterNumber, version: 1, status: sourceStatus, content: source }, config: {},
+      source: { id: draftId, chapterNumber, version: 1, status: sourceStatus, content: source }, config: { wordsPerChapter: 100 },
       writingLanguage: 'zh-CN', uiLocale: 'zh-CN', authorInputs: [], characterStates: '（暂无）', worldbuilding: '',
-      history: [], blueprints: [], frozenGoals, preflightFindings: preflight }
+      history, blueprints: [], frozenGoals, preflightFindings: preflight }
     const contextHash = hash(JSON.stringify(context))
     const fingerprint = Object.fromEntries(['chapterBriefHash', 'authorGuidanceHash', 'dependencyHash', 'contextSnapshotHash',
       'templateHash', 'skillSnapshotHash', 'modelLeaseRevision', 'policyHash', 'outputContractHash']
@@ -116,7 +121,7 @@ export function seed(db: Database, options: SeedOptions = {}): {
       .run(artifactId, attemptId, runId, JSON.stringify(artifact), 1, 'partial')
   }
 
-  return { reviewId, source, sourceStatus, draftId, chapterNumber, reviewBody: body, frozenGoals, preflight,
+  return { reviewId, source, sourceStatus, draftId, chapterNumber, reviewBody: body, frozenGoals, preflight, history,
     call: { rootActionId, reviewId, reviewContentHash: hash(body), source: {
     projectId: 'project', epoch: 'epoch', sourceId: `draft:${draftId}`, revision: 1, contentHash: hash(source),
   } } }
@@ -169,9 +174,9 @@ export function seedRevision(db: Database, base: ReturnType<typeof seed>, option
   const runId = `run-${key}`
   const artifactId = `artifact-${key}`
   const context = { version: 1, operation: 'refine-from-review', sourceHash: hash(base.source),
-    source: { id: base.draftId, chapterNumber: base.chapterNumber, version: 1, status: base.sourceStatus, content: base.source }, config: {},
+    source: { id: base.draftId, chapterNumber: base.chapterNumber, version: 1, status: base.sourceStatus, content: base.source }, config: { wordsPerChapter: 100 },
     writingLanguage: 'zh-CN', uiLocale: 'zh-CN', authorInputs: [], characterStates: '（暂无）', worldbuilding: '',
-    history: [], blueprints: [], frozenGoals: base.frozenGoals, preflightFindings: base.preflight,
+    history: base.history, blueprints: [], frozenGoals: base.frozenGoals, preflightFindings: base.preflight,
     confirmation: { reviewSourceId: confirmationId, content: confirmationBody,
       originalReviewContentHash: hash(base.reviewBody), snapshot } }
   const contextHash = hash(JSON.stringify(context))
@@ -226,12 +231,14 @@ export function mergeRows(db: Database, item: ReturnType<typeof generatedCycle>,
   return hash(mergedContent)
 }
 
-export function seedReviewedBook(db: Database, chapters: number, { firstChapter = 1 } = {}) {
+export function seedReviewedBook(db: Database, chapters: number, { firstChapter = 1, history }: {
+  firstChapter?: number; history?: (chapterNumber: number) => ReviewFinalizedMaterial[]
+} = {}) {
   return Array.from({ length: chapters }, (_, index) => {
     const chapterNumber = firstChapter + index
     const item = generatedCycle(db, `ch${chapterNumber}`, undefined, {
       chapterNumber, source: `第${chapterNumber}章开场，目标完成。`,
-      frozenGoals: { ...defaultGoals, chapterNumber },
+      frozenGoals: { ...defaultGoals, chapterNumber }, history: history?.(chapterNumber),
     })
     const mergedHash = mergeRows(db, item, `${item.seeded.source}\n第${chapterNumber}章合并。`)
     db.transaction(() => ReviewCycleRepository.commitMergedRevision({ revisionId: item.revision.revisionId, mergedHash }, db))()
