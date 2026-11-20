@@ -1,5 +1,3 @@
-// 角色卡数量不设上限（batch11 character-cap）：真实模型下 14 位人物的生成架构与导入原稿都要拿到 14 张卡；
-// 假模型下老书（已有蓝图、8 张卡）还能新建与粘贴导入，40 位候选的确认卡能走完。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
