@@ -793,7 +793,7 @@ describe('大纲恢复稿页面（#702）', () => {
     expect(button('继续生成缺少的章节').disabled).toBe(false)
     noModel()
   })
-  it('保存过第 1–2 章后来源变了：仍写明不能保存也不能继续、要重新生成，不显示已保存与待完成范围', async () => {
+  it('保存过第 1–2 章后来源变了：仍说已保存，写明不能接着生成、从第 3 章重新生成，不说不能保存、不列待完成范围', async () => {
     context = stoppedAtChapter3()
     context.plotOutlineRecovery!.saved = { kind: 'author-edit', operationId: 'saved-before', sourceHandle: handle, requestedRange: { from: 1, to: 5 },
       committedRange: { from: 1, to: 2 }, remainingRange: { from: 3, to: 5 }, synopsisHash: 'a'.repeat(64), payloadHash: 'b'.repeat(64), idempotent: false }
@@ -801,9 +801,11 @@ describe('大纲恢复稿页面（#702）', () => {
     context.planningContinuation!.state = 'source-changed'
     await render('outline')
     const notice = page().querySelector('[role="status"]')!
-    expect(notice.textContent).toContain('不能保存，也不能继续生成')
-    expect(notice.textContent).toContain('请从第 1 章重新生成情节大纲')
-    expect(notice.textContent).not.toContain('本次恢复已保存')
+    expect(notice.textContent).toContain('本次恢复已保存')
+    expect(notice.textContent).toContain('请从第 3 章重新生成情节大纲')
+    expect(notice.textContent).not.toContain('不能保存')
+    expect(notice.textContent).not.toContain('待完成第 3 至 5 章')
+    expect(button('继续生成缺少的章节').disabled).toBe(true)
     expect(primaryButtons()).toEqual([])
     noModel()
   })
