@@ -37,7 +37,6 @@ const originalStage = useStageStore.getState()
 let root: Root | undefined
 let container: HTMLDivElement | undefined
 let startWorkflow: ReturnType<typeof vi.fn>
-let writtenLogs: unknown[]
 let continuityProjections: unknown[]
 let exemptions: { stableFactKey: string; reason: string; revoked: boolean; chapterNumber: number | null }[]
 let exemptionSave: () => Promise<{ success: boolean; error?: string }>
@@ -163,11 +162,6 @@ function installIpc() {
       return { success: true }
     }
     if (channel.startsWith('db:narrative-thread-')) return threadIpc(channel, ...args)
-    if (channel === 'fs:read-json') return { success: false }
-    if (channel === 'fs:write-json') {
-      writtenLogs.push(args[1])
-      return { success: true }
-    }
     throw new Error(`unexpected IPC ${channel}`)
   })
   Object.defineProperty(window, 'aiNovelAPI', {
@@ -176,19 +170,19 @@ function installIpc() {
   })
 }
 
-/** 一次启动交给工作流的全部输入：ChapterInfo、选项，以及工作流定义里可比较的字段。 */
+/** 一次启动交给工作流的全部输入：ChapterInfo、选项，工作流定义里可比较的字段，以及启动途中读写过的作品文件。 */
 function launched() {
   expect(createChapterWorkflow).toHaveBeenCalledOnce()
   expect(startWorkflow).toHaveBeenCalledOnce()
   const [chapterInfo, session, options] = createChapterWorkflow.mock.calls[0]
   const definition = startWorkflow.mock.calls[0][0] as WorkflowDefinition
   const { steps, onComplete, projectSession, ...fields } = definition
-  const [log] = writtenLogs as { lastUsed: unknown }[]
+  const invoke = (window as unknown as { aiNovelAPI: { invoke: ReturnType<typeof vi.fn> } }).aiNovelAPI.invoke
   return {
     chapterInfo, session, options, fields, projectSession,
     steps: steps.map(step => step.name), onComplete: onComplete?.message,
     stepByStep: startWorkflow.mock.calls[0][1],
-    savedParams: log?.lastUsed,
+    projectFileCalls: invoke.mock.calls.map(([channel]) => String(channel)).filter(channel => channel.startsWith('fs:')),
   }
 }
 
@@ -213,7 +207,6 @@ beforeEach(async () => {
   await vi.waitFor(() => expect([window.innerWidth, window.innerHeight]).toEqual([1280, 900]))
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   createChapterWorkflow.mockClear()
-  writtenLogs = []
   continuityProjections = []
   exemptions = []
   exemptionSave = async () => ({ success: true })
@@ -269,8 +262,7 @@ function expectedLaunch(changes: { generationModelId: string; userGuidance: stri
     steps: ['写稿'],
     onComplete: '第5章草稿已生成',
     stepByStep: false,
-    savedParams: { chapterNumber: 5, title: '不要回头', role: '转折', purpose: '让林舟第一次违背信上的警告。',
-      keyEvents: '阅读灯熄灭三次；老周查票时叫出林舟母亲的名字。', characters: '林舟、老周、阿满', userGuidance, wordsTarget: 2600 },
+    projectFileCalls: [],
   }
 }
 
