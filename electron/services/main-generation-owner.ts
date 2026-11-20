@@ -830,8 +830,11 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const remainingRange = outline ? saved ? saved.remainingRange : outline.range
       : blueprintSaved ? blueprintSaved.remainingRange : progress ? progress.remainingRange ? { from: progress.remainingRange.startChapter, to: progress.remainingRange.endChapter } : null
         : { from: scope!.startChapter, to: scope!.endChapter }
+    const unsavedNext = outline && !saved
+      ? outline.range.from + (outline.composition?.chapters?.length ?? 0) + (outline.cursor.kind === 'accept' ? 1 : 0) : undefined
+    const missingRange = unsavedNext === undefined ? remainingRange : unsavedNext <= outline!.range.to ? { from: unsavedNext, to: outline!.range.to } : null
     const target = inputs?.find(input => input.id === 'planning:target-units')
-    const base = { sourceHandle: handleOf(run), remainingRange, targetUnits: parsePlanningTargetUnits(target ? Number(target.text) : undefined) }
+    const base = { sourceHandle: handleOf(run), remainingRange: missingRange, targetUnits: parsePlanningTargetUnits(target ? Number(target.text) : undefined) }
     const continued = repository.readPlanningContinuation(run.runId)
     if (continued) return { ...base, state: 'continued', nextHandle: continued.nextHandle }
     if (outline && plotOutlineSourceInvalid(outline)) return { ...base, state: 'source-invalid' }
@@ -872,8 +875,9 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
    * 大纲只认这次运行的正式写入；升级前写入的没有这一笔，退而看这一批原文是否还在正式大纲里。
    */
   const planningSuperseded = (run: DurableGenerationRun, outline: PlotOutlineProgress | null, remaining: PlanningContinuation['remainingRange']): boolean => {
+    if (outline) return repository.readPlotOutlineAuthorEdit(run.runId)?.remainingRange === null
+      || repository.plotOutlineCommitted(run.runId) || plotOutlineBatchInFormalOutline(outline)
     if (!remaining) return true
-    if (outline) return repository.plotOutlineCommitted(run.runId) || plotOutlineBatchInFormalOutline(outline)
     const chapters = Array.from({ length: remaining.to - remaining.from + 1 }, (_, index) => remaining.from + index)
     const matchesCommit = BlueprintRepository.commitMatcherAfter(remaining, repository.createdAtMs(run.runId), deps.database)
     return chapters.every(chapter => matchesCommit(chapter)
