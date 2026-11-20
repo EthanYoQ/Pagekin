@@ -23,6 +23,16 @@ import { generationOutputContract, type BeginGenerationRequest } from '../../../
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { PreparedReviewRevisionContext } from '../../../src/shared/review-revision-generation'
 import { countDraftUnits } from '../../../src/shared/draft-units'
+import { readReviewProof } from '../../../src/shared/review-proof'
+import { inspectM03ReviewCycles } from '../../migrations/m03-review-cycle'
+
+/** 置真后，新开的审修运行冻结成库版本 12 之前的 v1 全文证明，模拟升级前的书童写下的审修循环。 */
+let freezeAsV1 = false
+vi.mock('../review-revision-context', async importOriginal => {
+  const actual = await importOriginal<typeof import('../review-revision-context')>()
+  return { ...actual, captureReviewRevisionContext: (...[db, request, projectId, recheckVersion, version]: Parameters<typeof actual.captureReviewRevisionContext>) =>
+    actual.captureReviewRevisionContext(db, request, projectId, recheckVersion, version ?? (freezeAsV1 ? 1 : 2)) }
+})
 
 const opening = '林岚走进北塔，灯火照亮了石阶。'.repeat(20)
 const source = opening + '门闩上的裂纹仍在。'
@@ -57,6 +67,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  freezeAsV1 = false
   for (const owner of owners.splice(0)) owner.suspendForProjectClose()
   closeProjectDatabase()
   fs.rmSync(base, { recursive: true, force: true })
@@ -260,6 +271,29 @@ describe('从存档恢复的书在老章节上审修（#702）', () => {
     const restoredRoot = await exportAndRestore()
 
     expect(ownerFor(restoredRoot, 'epoch-restored').owner.listRecovery()).toMatchObject({ partial: false })
+  })
+})
+
+describe('升级前写下的审修循环导出时封存（#702 PR 3）', () => {
+  const proofKinds = (db: Database.Database) => (db.prepare('SELECT binding_json FROM generation_runs ORDER BY rowid').pluck().all() as string[])
+    .map(json => readReviewProof(JSON.parse(json).sourceManifest, textHash))
+    .flatMap(proof => proof.kind === 'absent' ? [] : [proof.kind === 'recomputable' ? `v${proof.context.version}` : proof.kind])
+
+  it('老章节走完一轮 v1 审修：恢复后证明是封存形、从严校验通过；在老章节重新审稿、修稿、合并、复核能走完', async () => {
+    freezeAsV1 = true
+    const original = ownerFor(projectRoot, 'epoch-1')
+    seedChapter(original.db)
+    await completeFreshCycle(original.owner, original.db, unrevised, revised, waxed.quote)
+    freezeAsV1 = false
+    expect(proofKinds(original.db)).toEqual(['v1', 'v1', 'v1'])
+    const restoredRoot = await exportAndRestore()
+
+    const restored = ownerFor(restoredRoot, 'epoch-restored')
+    expect(proofKinds(restored.db)).toEqual(['sealed', 'sealed', 'sealed'])
+    expect(inspectM03ReviewCycles(restored.db)).toEqual({ structureOk: true, unprovable: [] })
+    expect(restored.owner.listRecovery()).toMatchObject({ partial: false })
+    await completeFreshCycle(restored.owner, restored.db, waxed, reinforced, '门闩上的裂纹已用铁箍加固')
+    expect(proofKinds(restored.db)).toEqual(['sealed', 'sealed', 'sealed', 'v2', 'v2', 'v2'])
   })
 })
 

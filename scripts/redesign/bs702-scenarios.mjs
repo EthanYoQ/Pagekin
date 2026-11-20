@@ -2,6 +2,8 @@
 //   bs702-cycle12       假模型按审稿、修稿、合并复核、定稿写 12 章，证明全是 v2；导出再恢复两轮都通过，副本里证明仍是 v2。
 //   bs702-upgrade-open  PERF702_FIXTURE（库版本 10 的 112 章书）从书房打开，量升级耗时与主进程无响应时长，升级中截图；再写第 113 章并开一次审稿。
 //   real-bs702-112      同一夹具接真实模型，写第 113 章、审稿、修稿、合并。
+//   bs702-seal          PERF702_FIXTURE（库版本 10、审修证明是 v1 的书）打开升级后，再按审修循环写 2 章（v2）；导出再恢复两轮，
+//                       老证明封存、新证明仍是 v2，恢复走从严校验；恢复出的书里重新打开第 3 章再 AI 审稿。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -14,7 +16,7 @@ import { exportAndRestore, openInUi } from './f491-scenarios.mjs'
 import { FAKE_MODEL } from './fake-model.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
-import { BOOK, buildByReviewCycle, chapterMarker, installReplies, RUNNING } from './perf702-scenarios.mjs'
+import { BOOK, buildByReviewCycle, chapterMarker, installLedger, installReplies, installReviewCycleReplies, reuseBuilt, reviewCycleChapter, RUNNING } from './perf702-scenarios.mjs'
 import { reviewReviseMerge, writeChapter } from './real-scenarios.mjs'
 
 const fixtureBook = () => path.join(process.env.PERF702_FIXTURE ?? assert.fail('PERF702_FIXTURE 未设置'), 'projects', BOOK)
@@ -26,8 +28,13 @@ function proofs(projectPath) {
     const userVersion = db.prepare('PRAGMA user_version').get().user_version
     const runs = db.prepare('SELECT binding_json FROM generation_runs ORDER BY rowid').all()
       .map(row => reviewProof(JSON.parse(row.binding_json).sourceManifest)).filter(proof => proof.kind !== 'absent')
-      .map(proof => { assert.equal(proof.kind, 'recomputable'); return { version: proof.context.version, bytes: Buffer.byteLength(proof.contextJson) } })
-    return { userVersion, versions: [...new Set(runs.map(run => run.version))], count: runs.length, last: runs.at(-1)?.version, maxBytes: Math.max(0, ...runs.map(run => run.bytes)) }
+      .map(proof => {
+        assert.ok(['recomputable', 'sealed'].includes(proof.kind), proof.kind)
+        return { version: proof.kind === 'sealed' ? 'sealed' : proof.context.version, bytes: Buffer.byteLength(proof.contextJson) }
+      })
+    const kinds = {}
+    for (const run of runs) kinds[run.version] = (kinds[run.version] ?? 0) + 1
+    return { userVersion, versions: [...new Set(runs.map(run => run.version))], kinds, count: runs.length, last: runs.at(-1)?.version, maxBytes: Math.max(0, ...runs.map(run => run.bytes)) }
   } finally { db.close() }
 }
 
@@ -167,6 +174,42 @@ export const BS702_SCENARIOS = {
     const measured = { upgrade, current }
     assertResponsive({ ...upgrade, currentPreviewBlockedMaxMs: current.previewBlockedMaxMs, currentOpenBlockedMaxMs: current.openBlockedMaxMs })
     return measured
+  } },
+  'bs702-seal': { model: true, shell: 'stage', setup: async context => {
+    installReplies(context.fake)
+    await reuseBuilt(context)
+    await context.restart()
+  }, run: async context => {
+    const { page } = context, source = path.join(context.roots.projects, BOOK), old = Number(process.env.PERF702_FINALIZED ?? 10)
+    await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+    if (!await stage.spine(page).isVisible()) await stage.openFromLibrary(page, BOOK)
+    await installLedger(context.app, page)
+    const sent = installReviewCycleReplies(context.fake)
+    for (const chapter of [old + 1, old + 2]) await reviewCycleChapter(context, chapter, sent)
+    installReplies(context.fake)
+    const written = proofs(source)
+    assert.deepEqual([written.userVersion, written.kinds[2]], [12, 6], JSON.stringify(written))
+    const first = await exportAndRestore(context, source, 'bs702-seal-1')
+    const second = await exportAndRestore(context, first, 'bs702-seal-2')
+    const restored = [proofs(first), proofs(second)]
+    for (const copy of restored) {
+      assert.equal(copy.kinds[2], 6, JSON.stringify(copy))
+      assert.equal((copy.kinds.sealed ?? 0) + (copy.kinds[1] ?? 0), written.kinds[1], JSON.stringify(copy))
+      assert.ok(copy.kinds.sealed > 0, JSON.stringify(copy))
+    }
+    await openInUi(context, second)
+    await chapterView.open(page, 3)
+    await chapterView.view(page).getByRole('button', { name: '重新打开修改' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: '重新打开', exact: true }).click()
+    await chapterView.view(page).getByRole('button', { name: 'AI 审稿', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
+    await chapterView.review(page)
+    const failed = page.getByText('工作流未完成')
+    await stage.root(page).locator(RUNNING).waitFor({ state: 'detached', timeout: 120_000 })
+    assert.equal(await failed.count(), 0, '恢复出的书里第 3 章的 AI 审稿没有完成')
+    await context.shoot('bs702-seal-rereview')
+    const after = proofs(second)
+    assert.equal(after.kinds[2], restored[1].kinds[2] + 1, '重新审稿新写了一条 v2 证明')
+    return { written, restored, after }
   } },
   'real-bs702-112': { real: true, setup: async context => { await copyFixtureThenRevert(context, { real: true }) }, run: async context => {
     const upgrade = await upgradeFromLibrary(context, 'real-bs702-upgrade')

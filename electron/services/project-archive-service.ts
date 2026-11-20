@@ -43,7 +43,8 @@ import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migration
 import { SchemaMigrationError } from '../migrations/registry'
 import { admitWholeLedgerOfOpenProject } from '../database'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
-import { readReviewProof } from '../../src/shared/review-proof'
+import { readReviewProof, type SealedReviewRevisionContext } from '../../src/shared/review-proof'
+import { reviewRevisionContextV2, type ReviewRevisionContextV1 } from '../../src/shared/review-revision-generation'
 import {
   PORTABLE_TRANSFER_AUTHORITY_PATH,
   createPortableTransferAuthority,
@@ -137,7 +138,7 @@ const REVIEW_CONTEXT_FIELDS = [
 /** v2 证明不带整份材料，v1 才有的字段出现在 v2 里同样拒绝（ADR-0031）。 */
 const REVIEW_CONTEXT_V2_FIELDS = [
   'version', 'operation', 'source', 'sourceHash', 'writingLanguage', 'uiLocale', 'authorInputs',
-  'frozenGoals', 'preflightFindings', 'wordsPerChapter', 'confirmation', 'recheck', 'inputHash',
+  'frozenGoals', 'preflightFindings', 'wordsPerChapter', 'confirmation', 'recheck', 'inputHash', 'rewrittenFrom',
 ] as const
 const HISTORY_ID_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   blueprint_character_sync_operations: ['operation_id'],
@@ -621,7 +622,7 @@ function assertReviewContext(value: unknown): Record<string, unknown> {
     reviewTextFields(input, ['id', 'text'])
   }
   if (v2) {
-    reviewIntegerFields(context, ['wordsPerChapter'])
+    reviewIntegerFields(context, ['wordsPerChapter', 'rewrittenFrom'])
     contentHash(context.inputHash)
   } else reviewV1Materials(context)
   const goals = object(context.frozenGoals, ['chapterNumber', 'coverage', 'items'])
@@ -671,7 +672,12 @@ function assertReviewContext(value: unknown): Record<string, unknown> {
   return context
 }
 
-function projectReviewBinding(value: unknown): Record<string, unknown> {
+/** 已保存的 v1 全文证明在存档里封存（ADR-0031 决定 7）：收据里的原哈希放进 inputHash，前文等材料不再随存档带走。 */
+function sealReviewContext(context: ReviewRevisionContextV1, contextHash: string): SealedReviewRevisionContext {
+  return { ...reviewRevisionContextV2(context, contextHash), rewrittenFrom: 1 }
+}
+
+function projectReviewBinding(value: unknown, saved: boolean): Record<string, unknown> {
   const stored = parseJson(value)
   const frozen = stored && typeof stored === 'object'
     ? Object.fromEntries(Object.entries(stored).filter(([key]) => !key.startsWith('$'))) : stored
@@ -685,9 +691,12 @@ function projectReviewBinding(value: unknown): Record<string, unknown> {
   const manifest = binding.sourceManifest as Record<string, unknown> | undefined
   const proof = readReviewProof(manifest, sha256)
   if (proof.kind === 'absent') return projected
-  if (proof.kind !== 'recomputable' || Buffer.byteLength(proof.contextJson, 'utf8') > 16 * 1024 * 1024) fail('PORTABLE_UNSAFE_PROJECTION')
-  projected.sourceManifest = { operation: safeId(manifest?.operation), reviewRevisionContext: assertReviewContext(proof.context),
-    reviewRevisionContextHash: proof.contextHash, authorInputs: manifest?.authorInputs }
+  if (proof.kind === 'unproven' || Buffer.byteLength(proof.contextJson, 'utf8') > 16 * 1024 * 1024) fail('PORTABLE_UNSAFE_PROJECTION')
+  const context = saved && proof.kind === 'recomputable' && proof.context.version === 1
+    ? sealReviewContext(proof.context, proof.contextHash) : proof.context
+  const contextJson = JSON.stringify(context)
+  projected.sourceManifest = { operation: safeId(manifest?.operation), reviewRevisionContext: assertReviewContext(context),
+    reviewRevisionContextHash: sha256(contextJson), authorInputs: [{ id: 'review-revision-context', text: contextJson }] }
   return projected
 }
 
@@ -852,10 +861,10 @@ function requiredProjection(key: string, value: unknown): unknown {
 }
 
 function neutralValue(key: string, column: { type: string; notnull: number }, value: unknown,
-  reviewProof = false): unknown {
+  reviewProof = false, savedRun = false): unknown {
   if (reviewProof) {
     if (key === 'generation_roots.action_json') return JSON.stringify(projectGenerationAction(value, true))
-    if (key === 'generation_runs.binding_json') return JSON.stringify(projectReviewBinding(value))
+    if (key === 'generation_runs.binding_json') return JSON.stringify(projectReviewBinding(value, savedRun))
     if (key === 'generation_attempts.usage_receipt_json') {
       const usage = projectReviewUsage(value)
       return usage === null ? null : JSON.stringify(usage)
@@ -987,6 +996,8 @@ export function sanitizePortableDatabase(databasePath: string, options: {
       JOIN generation_runs r ON r.run_id=a.run_id AND r.root_action_id=t.root_action_id`).all() as Array<{
       artifact_id: string; root_action_id: string }>).map(row => [row.artifact_id, row.root_action_id]))
     const draftProofs = draftThreadTaskProofs(db, reviewRoots)
+    const savedRuns = new Set(db.prepare(`SELECT DISTINCT run_id FROM generation_attempts
+      WHERE json_type(usage_receipt_json,'$.reviewRevisionEffect')='object'`).pluck().all() as string[])
     for (const row of avatarRows) {
       if ('recordId' in row) safeId(row.recordId)
       if ('characterId' in row) safeId(row.characterId)
@@ -1052,7 +1063,7 @@ export function sanitizePortableDatabase(databasePath: string, options: {
             const changed = update?.run(...updates.map(column => {
               const key = `${table}.${column.name}`
               if (draftProof !== undefined && (key === 'generation_attempts.usage_receipt_json' || key === 'generation_runs.binding_json')) return draftProof
-              return neutralValue(key, column, row[column.name], reviewProof)
+              return neutralValue(key, column, row[column.name], reviewProof, savedRuns.has(String(row.run_id)))
             }), BigInt(String(row.__portable_rowid__))).changes
             if (changed !== undefined && changed !== 1) throw new Error('PORTABLE_REDACTION_MISSED_ROW')
           } catch (error) {

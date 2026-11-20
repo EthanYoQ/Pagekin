@@ -34,7 +34,7 @@ function proofVersions(): unknown[] {
 }
 
 describe('恢复库版本 11 导出的便携包', { timeout: 60_000 }, () => {
-  it('升到 12，旧审修证明原样是 v1，从严校验通过；再导出再恢复照样通过', async () => {
+  it('升到 12，旧审修证明原样是 v1，从严校验通过；再导出时封存，再恢复照样通过', async () => {
     const base = workspace(), target = path.join(base, '恢复')
     const receipt = await restorePortableProject({ archivePath: SCHEMA11_REVIEW_ARCHIVE, targetProjectRoot: target })
     initProjectDatabase(target)
@@ -52,7 +52,7 @@ describe('恢复库版本 11 导出的便携包', { timeout: 60_000 }, () => {
     const second = path.join(base, '再恢复')
     await restorePortableProject({ archivePath: archive, targetProjectRoot: second })
     initProjectDatabase(second)
-    expect(proofVersions()).toEqual([1, 1])
+    expect(proofVersions()).toEqual(['sealed', 'sealed'])
     expect(inspectM03ReviewCycles(getProjectDb()!)).toEqual({ structureOk: true, unprovable: [] })
   })
 })

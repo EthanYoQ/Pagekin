@@ -294,7 +294,7 @@ function seedMergedCycle(f: Fixture, config: Record<string, unknown> = {}, reche
     const operation = kind === 'review' ? 'review-chapter' : 'refine-from-review'
     const context = { version: 1, operation, sourceHash: hash(frozenSource),
       source: { id: draftId, chapterNumber: 1, version: 1, status: recheck ? 'revised' : 'draft', content: frozenSource },
-      config, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', authorInputs: [], characterStates: '（暂无）',
+      config: { wordsPerChapter: 3000, ...config }, writingLanguage: 'zh-CN', uiLocale: 'zh-CN', authorInputs: [], characterStates: '（暂无）',
       worldbuilding: '', history: [], blueprints: [],
       frozenGoals: { chapterNumber: 1, coverage: 'not_configured', items: [] }, preflightFindings: [],
       ...(confirmation ? { confirmation } : {}), ...(recheck ? { recheck } : {}) }
@@ -1291,19 +1291,30 @@ describe('portable project export service', () => {
     expect(fs.existsSync(f.target)).toBe(false)
   })
 
-  it.each([
+  const configSecrets = [
     ['secretRef', 'private-credential-sentinel'],
     ['machinePath', 'C:\\Users\\EthanQ\\private-machine-sentinel'],
-  ])('fails closed for a merged cycle context containing %s', async (key, sentinel) => {
+    ['text', 'private-credential-sentinel'],
+  ] as const
+
+  it.each(configSecrets)('seals saved proofs, so a %s hidden in their config never reaches the archive', async (key, sentinel) => {
     const f = fixture()
     seedMergedCycle(f, { [key]: sentinel })
-    await expect(exportPortableProject(input(f))).rejects.toMatchObject({ code: 'PORTABLE_UNSAFE_PROJECTION' })
-    expect(fs.existsSync(f.target)).toBe(false)
+    await exportPortableProject(input(f))
+    const targetRoot = path.join(f.base, 'restored-sealed')
+    await restorePortableProject({ archivePath: f.target, targetProjectRoot: targetRoot })
+    const restored = fs.readFileSync(path.join(targetRoot, '.ai-novel', 'project.db'))
+    expect(restored.includes(Buffer.from(sentinel.split('\\').at(-1)!))).toBe(false)
   })
 
-  it('rejects a secret hidden in the wrong config field while the source cycle remains valid', async () => {
+  it.each(configSecrets)('fails closed for an unsaved run whose v1 context config contains %s', async (key, sentinel) => {
     const f = fixture()
-    seedMergedCycle(f, { text: 'private-credential-sentinel' })
+    seedMergedCycle(f, { [key]: sentinel })
+    const db = new Database(f.databasePath)
+    try {
+      db.prepare(`INSERT INTO generation_runs(run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+        SELECT 'run-unsaved',root_action_id,binding_json,status,3,'open-unsaved' FROM generation_runs WHERE run_id='run-review'`).run()
+    } finally { db.close() }
     await expect(exportPortableProject(input(f))).rejects.toMatchObject({ code: 'PORTABLE_UNSAFE_PROJECTION' })
     expect(fs.existsSync(f.target)).toBe(false)
   })

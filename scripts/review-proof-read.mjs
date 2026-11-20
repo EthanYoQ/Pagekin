@@ -9,7 +9,7 @@ const bundle = buildSync({ entryPoints: [path.join(ROOT, 'src/shared/review-proo
 const { readReviewProof } = await import(`data:text/javascript;base64,${Buffer.from(bundle).toString('base64')}`)
 const sha256 = text => createHash('sha256').update(text).digest('hex')
 
-/** 三态读取（absent / unproven / recomputable），与生产同一实现。 */
+/** 读取结果（absent / unproven / recomputable / sealed），与生产同一实现。 */
 export const reviewProof = sourceManifest => readReviewProof(sourceManifest, sha256)
 
 /** 脚本读运行里冻结的审修证明，与生产同走 readReviewProof；v1、v2 都认。 */

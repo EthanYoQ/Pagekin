@@ -122,7 +122,7 @@ async function profiled({ app, page }, label, action) {
  * 每条 SQL 的执行次数、返回行数与耗时；事件循环最长一次阻塞。渲染进程记 longtask。
  * 次数与机器快慢无关，章数翻倍时它涨不涨，比毫秒更能说明问题。每次启动后都要重装。
  */
-async function installLedger(app, page) {
+export async function installLedger(app, page) {
   await app.evaluate(({ ipcMain, app: electronApp }, wrapSql) => {
     if (globalThis.__perfLedger) return
     const ledger = globalThis.__perfLedger = { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 }, inflight: 0 }
@@ -523,7 +523,7 @@ function revisedText(chapter) {
     .replace(goalQuote(chapter), `远处的航标灯亮了1盏。${REVISION_NOTE}`)
 }
 
-function installReviewCycleReplies(fake) {
+export function installReviewCycleReplies(fake) {
   const sent = { write: 0, review: 0, revision: 0, recheck: 0 }
   fake.replyCharacterState(characterStates)
   fake.replyReview(prompt => {
@@ -549,7 +549,7 @@ function installReviewCycleReplies(fake) {
   return sent
 }
 
-async function reviewCycleChapter(context, chapter, sent) {
+export async function reviewCycleChapter(context, chapter, sent) {
   const { page } = context
   const before = { ...sent }
   const settled = async kind => {
@@ -621,7 +621,7 @@ const written = finalized => ({ model: true, shell: 'stage', setup: async contex
  * 复用一份已造好的书：把 PERF702_FIXTURE 里的作品复制进本轮隔离目录再打开。
  * 112 章批量造书要十几分钟，计时、录 profile、新旧构建对比都从同一份数据出发。
  */
-async function reuseBuilt(context) {
+export async function reuseBuilt(context) {
   const { app, page, roots, invoke, reload } = context
   const source = path.join(process.env.PERF702_FIXTURE ?? assert.fail('PERF702_FIXTURE 未设置'), 'projects', BOOK)
   const target = path.join(roots.projects, BOOK)
@@ -837,7 +837,7 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
       assert.ok(fs.existsSync(archive), '导出报成功但存档不在')
       // 边写边导要证明的是导出期间照常能存：至少一次与导出重叠的成功保存，且没有失败。
       if (writes) assert.ok(result.saves > 0 && result.saveFailures === 0, `导出期间的保存：成功 ${result.saves}，失败 ${result.saveFailures}`)
-      return { ...result, archiveExists: true, leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
+      return { ...result, archiveExists: true, archiveBytes: fs.statSync(archive).size, leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
     }))
   }
   return { finalized, runs }
