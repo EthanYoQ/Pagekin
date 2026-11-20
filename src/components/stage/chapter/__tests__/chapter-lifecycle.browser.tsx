@@ -905,6 +905,24 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     await expect.element(page.getByRole('dialog', { name: '定稿第 3 章？' })).toBeVisible()
   })
 
+  it('读到章末用 Shift+Tab 在动作条里走到定稿：纸面停在章末，不跳回去', async () => {
+    const draft = backend.addDraft({ status: 'revised', content: LONG })
+    await mount()
+    await openDraft(draft.id)
+    const finalize = page.getByRole('button', { name: '定稿', exact: true })
+    await expect.element(finalize).toBeVisible()
+    expect(await scrollToEndAndHit('定稿')).toBe(true)
+    const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
+    const end = scroller.scrollTop
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>('.stage-ch-actions-sticky button:not(:disabled)')]
+    buttons.at(-1)!.focus({ preventScroll: true })
+    for (let step = 1; step < buttons.length; step++) {
+      await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
+      expect(scroller.scrollTop).toBe(end)
+    }
+    expect(document.activeElement).toBe(finalize.element())
+  })
+
   it('已审稿且审稿报告开着：滚到正文末尾，修稿主按钮仍在视口里', async () => {
     const draft = backend.addDraft({ status: 'draft', content: LONG })
     backend.addReview(draft)
