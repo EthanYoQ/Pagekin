@@ -114,6 +114,18 @@ export function importRunRequestBound(chapterCount: number): number {
   return 2 * MAIN_GENERATION_POLICY.budget.maxPhysicalRequests + planBlueprintGenerationCost(chapterCount).recoveryCallBound
 }
 
+/**
+ * 角色步骤的请求上界。开跑时还不知道名单有几位，但名单要在一次回复里写完，所以人数不超过
+ * 「最大输出 Tokens ÷ 每位至少占的 token」。每位按 119 token 算：batch11 character-cap 的 20 次真实名单
+ * （DeepSeek V4 Flash，6–40 位）每位 119.5–236.7 token，取最小值。
+ * 请求数 = 名单 1 次 + 名单截断后整份重写 2 次 + 详情每批 3 位 + 每批截断后拆半多出的 2 次 + 唯一一次语法修复。
+ */
+const MIN_ROSTER_TOKENS_PER_CHARACTER = 119
+function characterStepRequestBound(maxOutputTokens: number): number {
+  const detailBatches = Math.ceil(Math.floor(maxOutputTokens / MIN_ROSTER_TOKENS_PER_CHARACTER) / 3)
+  return 1 + 2 + detailBatches * 3 + 1
+}
+
 export function newMainGenerationPolicy(selection: BeginGenerationRequest, model: ModelProfile, importChapterCount?: number): MainGenerationPolicy {
   const planning = planningGenerationScope(selection)
   if (planning) {
@@ -129,7 +141,7 @@ export function newMainGenerationPolicy(selection: BeginGenerationRequest, model
     : planning?.kind === 'directory'
     ? planBlueprintGenerationCost(planning.requestedRange.endChapter - planning.requestedRange.startChapter + 1).recoveryCallBound
     : planning?.kind === 'architecture' ? planning.intent.priorSteps.reduce((sum, step) => sum + (step === 'premise' ? 1 : step === 'worldbuilding' ? 2
-      : 3 + (2 * 8 - Math.ceil(8 / 3)) + 1), 0)
+      : characterStepRequestBound(cap)), 0)
       + (planning.intent.synopsisRange ? 2 * (planning.intent.synopsisRange.to - planning.intent.synopsisRange.from + 1) : 0)
     : MAIN_GENERATION_POLICY.budget.maxPhysicalRequests
   const liability = Math.max(...REASONING_STAGES.flatMap(stage =>

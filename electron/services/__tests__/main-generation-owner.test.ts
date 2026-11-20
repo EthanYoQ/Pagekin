@@ -913,7 +913,7 @@ describe('frozen planning roots', () => {
   it('freezes the complete architecture on premise, shares liability with synopsis, and restores its exact chapter policy', async () => {
     const fetch = syntheticStream(), f = planningFixture()
     const root = f.owner.begin(architectureSelection(f, fullIntent))
-    expect(root.ledger!.policy).toEqual({ maxPhysicalRequests: 40, maxTokenLiability: 10485760, maxOutputPerRequest: 65536, maxActiveElapsedMs: 4500000 })
+    expect(root.ledger!.policy).toEqual({ maxPhysicalRequests: 579, maxTokenLiability: 151781376, maxOutputPerRequest: 65536, maxActiveElapsedMs: 65137500 })
     const repository = new GenerationRunRepository(() => f.db)
     const policy = repository.get(root.handle.runId).binding.sourceManifest.policy
     expect(policy).toMatchObject({ version: 's07-capacity-v2', planning: { kind: 'architecture', intent: fullIntent, outlineProtocol: PLOT_OUTLINE_PROTOCOL }, budget: root.ledger!.policy })

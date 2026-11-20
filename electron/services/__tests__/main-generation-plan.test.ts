@@ -158,6 +158,14 @@ describe('main generation physical liability planning without provider calls', (
   it('keeps the temporary S05 policy finite and explicit', () => {
     expect(MAIN_GENERATION_POLICY.budget).toEqual({ maxPhysicalRequests: 32, maxTokenLiability: 2097152, maxOutputPerRequest: 32768, maxActiveElapsedMs: 3600000 })
   })
+  it.each([14, 40])('lets a %i-person cast finish its roster and details even when every three-person batch is cut off once', people => {
+    const selection: BeginGenerationRequest = { operation: 'character-architecture', uiActionNonce: 'cast', modelId: '合成模型',
+      selectedDraftIds: [], selectedFinalizedDraftIds: [], promptKeys: ['character_dynamics'], skillStages: ['planning'], output: 'structured-data',
+      authorInputs: [{ id: 'architecture:planning-intent', text: JSON.stringify({ version: 'architecture-action-v1', priorSteps: ['characters'], synopsisRange: null }) }] }
+    const fullBatches = Math.floor(people / 3), rest = people % 3
+    const requests = 1 + fullBatches * 3 + (rest === 2 ? 3 : rest) + 1
+    expect(newMainGenerationPolicy(selection, silicon()).budget.maxPhysicalRequests).toBeGreaterThanOrEqual(requests)
+  })
   it('scales batch roots by chapter count without shrinking below the single-root policy', () => {
     expect(batchRootBudget(1)).toEqual(MAIN_GENERATION_POLICY.budget)
     expect(batchRootBudget(4)).toEqual(MAIN_GENERATION_POLICY.budget)

@@ -85,7 +85,6 @@ export interface CharacterDetailOutput extends Omit<CharacterRosterEntry, 'relat
 }
 
 const MIN_CHARACTER_SLOTS = 3
-const MAX_CHARACTER_SLOTS = 8
 export const CHARACTER_DETAIL_DESCRIPTION_MAX_CHARS = 120
 export const CHARACTER_STATE_TEXT_MAX_CHARS = 80
 export const CHARACTER_DETAIL_DESCRIPTION_FIELDS = [
@@ -160,9 +159,7 @@ export function decodeCharacterIdentityManifest(content: string): CharacterIdent
   const parsed = JSON.parse(extractSingleCompleteJsonObject(content)) as { slots?: unknown }
   if (!Array.isArray(parsed.slots)) throw new Error('角色身份清单缺少 slots')
   if (Object.keys(parsed).some(key => key !== 'slots')) throw new Error('角色身份清单包含未知字段')
-  if (parsed.slots.length < MIN_CHARACTER_SLOTS || parsed.slots.length > MAX_CHARACTER_SLOTS) {
-    throw new Error(`角色身份清单必须包含 ${MIN_CHARACTER_SLOTS}–${MAX_CHARACTER_SLOTS} 个角色`)
-  }
+  if (parsed.slots.length < MIN_CHARACTER_SLOTS) throw new Error(`角色身份清单至少要有 ${MIN_CHARACTER_SLOTS} 个角色`)
   const slots = parsed.slots.map((candidate, index) => {
     if (!isRecord(candidate)) throw new Error(`角色身份清单第 ${index + 1} 项无效`)
     if (Object.keys(candidate).some(key => !['slotId', 'name', 'role', 'narrativeDuty', 'relations'].includes(key))) {
