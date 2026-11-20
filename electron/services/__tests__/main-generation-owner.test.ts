@@ -479,7 +479,8 @@ describe('explicit planning recovery with real SQLite', () => {
     const f = fixture(dispatch), run = f.owner.begin(outlineSelection(f, 3))
     for (const nonce of ['normal', 'compact']) await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) })
     const attempts = f.db.prepare('SELECT * FROM generation_attempts').all()
-    expect(f.owner.readContext(run.handle)).toMatchObject({ plotOutlineRecovery: { draft: expect.stringContaining(raw) }, planningContinuation: { state: 'ready', remainingRange: { from: 1, to: 3 }, targetUnits: 600 } })
+    expect(f.owner.readContext(run.handle)).toMatchObject({ plotOutlineRecovery: { rejectedReply: raw }, planningContinuation: { state: 'ready', remainingRange: { from: 1, to: 3 }, targetUnits: 600 } })
+    expect(f.owner.readContext(run.handle).plotOutlineRecovery!.draft).not.toContain('候选原文还未写完')
     const nextInput = { ...outlineSelection(f, 3), uiActionNonce: 'explicit-next' }
     const next = f.owner.restart(run.handle, nextInput)
     expect(next.handle.rootActionId).not.toBe(run.handle.rootActionId)
@@ -517,20 +518,30 @@ describe('explicit planning recovery with real SQLite', () => {
     expect(owner.list(['generate-plot-outline']).map(item => item.handle.runId)).toEqual([run.handle.runId])
     expect(dispatch).toHaveBeenCalledTimes(2)
   })
-  it('第 1–5 章任务停在第 3 章：恢复卡缺的是第 3–5 章，与恢复稿已含的第 1、2 章一致', async () => {
+  it('第 1–5 章任务停在第 3 章：恢复稿正文只有第 1、2 章，第 3 章的回复单独给出；原样保存后能续第 3–5 章', async () => {
+    const rejected = '# 全书情节大纲\n\n## 第一阶段：建置（第1–24章）\n林岚抵达旧港。'
     const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
       const chapter = Number((request as { task: GenerationTask }).task.purpose.split(':')[2])
-      options.onVisible({ kind: 'delta', text: outlineEntry(chapter) }); return { finishReason: chapter === 3 ? 'length' : 'stop', usage: null }
+      options.onVisible({ kind: 'delta', text: chapter === 3 ? rejected : outlineEntry(chapter) }); return { finishReason: chapter === 3 ? 'length' : 'stop', usage: null }
     })
     const f = fixture(dispatch), run = f.owner.begin(outlineSelection(f, 5))
     for (const nonce of ['one', 'two']) { await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) }); acceptOutline(f.owner, run.handle) }
     for (const nonce of ['normal-three', 'compact-three']) await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) })
-    const context = f.owner.readContext(run.handle)
-    expect(context.plotOutline?.cursor).toEqual({ kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' })
-    expect(context.plotOutlineRecovery?.completeChapters).toEqual([1, 2])
-    for (const chapter of [1, 2, 3]) expect(context.plotOutlineRecovery?.draft).toContain(outlineEntry(chapter))
+    const context = f.owner.readContext(run.handle), outline = context.plotOutline!, recovery = context.plotOutlineRecovery!
+    expect(outline.cursor).toEqual({ kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' })
+    expect(recovery.completeChapters).toEqual([1, 2])
+    expect(recovery.draft).toBe(renderPlotOutlineRange([1, 2].map(outlineEntry).join('\n\n'), { from: 1, to: 2 }, outline.sourceExpected))
+    expect(recovery.draft).not.toContain('全书情节大纲')
+    expect(recovery.rejectedReply).toBe(rejected)
     expect(context.planningContinuation).toMatchObject({ state: 'save-prefix', remainingRange: { from: 3, to: 5 } })
     expect(context.planningDraft?.standing).toBe('open')
+
+    const payload: ProjectCoreSynopsisCommitRequest = { synopsis: recovery.draft, expected: outline.sourceExpected,
+      authorRecovery: { sourceHandle: run.handle, leaseEpoch: recovery.leaseEpoch, operationId: 'as-opened', committedRange: { from: 1, to: 2 } } }
+    f.db.transaction(() => f.owner.commitPlotOutlineAuthorEdit(payload)).immediate()
+    expect(ProjectCoreRepository.get(f.db)!.synopsis).toBe(recovery.draft)
+    const next = f.owner.restart(run.handle, { ...outlineSelection(f, 5, 3), uiActionNonce: 'continue-missing' })
+    expect(next.plotOutline?.range).toEqual({ from: 3, to: 5 })
   })
   it('saves the accepted outline prefix without cost and authorizes only the remaining chapters', async () => {
     const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {

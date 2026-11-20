@@ -65,7 +65,7 @@ export const I764_SCENARIOS = {
     await runSheet.openFromPalette(page)
     await runSheet.lastRun(page).getByText('第 3 章两次都没写成完整的单章大纲', { exact: false }).waitFor({ timeout: 90_000 })
     const shown = await runSheet.sheet(page).innerText()
-    assert.match(shown, /恢复稿里有已写好的章节和第 3 章最后一次的回复，正式大纲没动。第 3 章两次都没写成完整的单章大纲，自动生成停在这里。到「架构」页点「编辑恢复稿」补写这一章，或重新生成。/u)
+    assert.match(shown, /恢复稿里有已写好的章节，第 3 章最后一次的回复在「原始候选」里，正式大纲没动。第 3 章两次都没写成完整的单章大纲，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。/u)
     assert.match(shown, /缺第 3–5 章/u)
     assert.doesNotMatch(shown, /缺第 1–5 章/u)
     assert.doesNotMatch(shown, /attempts-exhausted/u)
@@ -78,8 +78,12 @@ export const I764_SCENARIOS = {
     await edit.click()
     const recovery = page.getByLabel('大纲恢复')
     await recovery.getByText(/待完成第 3 至 5 章/u).waitFor({ timeout: 20_000 })
-    const draft = await page.locator('main').innerText()
-    for (const heading of [/第1章/u, /第2章/u, /林岚抵达旧港/u]) assert.match(draft, heading)
+    const body = await recovery.locator('.cm-content').innerText()
+    for (const heading of [/第1章/u, /第2章/u]) assert.match(body, heading)
+    assert.doesNotMatch(body, /林岚抵达旧港/u, '第 3 章的回复不在正文里')
+    assert.match(await recovery.getByRole('status').innerText(), /第 3 章那次的回复在「原始候选」里/u)
+    await recovery.locator('summary').click()
+    assert.match(await recovery.locator('details pre').innerText(), /林岚抵达旧港/u, '第 3 章的回复在原始候选里')
     await context.shoot('i764-outline-stopped-draft')
   } },
 

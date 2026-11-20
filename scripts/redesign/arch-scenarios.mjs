@@ -634,15 +634,17 @@ export const ARCH_SCENARIOS = {
 
   /**
    * #702：大纲恢复稿页。第 3 章两次都回整本的阶段大纲，恢复稿停在第 3 章：页头里保存终点、继续与保存在一处，提示写明第 1–2 章已写好、第 3 章没写成。
-   * 删掉第 3 章那段保存后变成只读，主按钮换成继续生成。
+   * 正文只有第 1、2 章，第 3 章的回复在「原始候选」里；不改一个字直接保存后变成只读，主按钮换成继续生成。
    */
   'orui-outline-recovery': { model: true, shell: 'stage', setup: seedArch({ clear: ['synopsis'], totalChapters: 24 }), run: async context => {
     const { page } = context
     const recovery = await openStoppedOutlineDraft(context)
     const stopped = await recovery.innerText()
     assert.match(stopped, /第 1–2 章已写好，第 3 章没写成/)
-    assert.match(stopped, /删掉正文里第 2 章之后的内容再保存/)
-    assert.match(stopped, /保存后才能继续生成。待完成第 3 至 5 章/)
+    assert.match(stopped, /保存后可继续生成。待完成第 3 至 5 章/)
+    assert.match(stopped, /第 3 章那次的回复在「原始候选」里/)
+    assert.doesNotMatch(stopped, /删掉/)
+    assert.doesNotMatch(await recovery.locator('.cm-content').innerText(), /全书情节大纲/, '第 3 章的回复不在正文里')
     assert.equal(await recovery.getByLabel('保存到第几章').inputValue(), '2')
     assert.deepEqual(await recovery.locator('.pi-btn--primary').allInnerTexts(), ['保存恢复大纲'])
     assert.equal(await recovery.getByRole('button', { name: '继续生成缺少的章节' }).isEnabled(), false)
@@ -652,11 +654,9 @@ export const ARCH_SCENARIOS = {
     await page.keyboard.press('Escape')
     await runSheet.sheet(page).waitFor({ state: 'hidden' })
     await recovery.locator('summary').click()
-    const written = (await recovery.locator('details pre').innerText()).split('# 全书情节大纲')[0].trimEnd()
+    assert.match(await recovery.locator('details pre').innerText(), /^# 全书情节大纲/, '原始候选里是第 3 章的回复')
+    await context.shoot('orui-outline-recovery-original')
     await recovery.locator('summary').click()
-    await recovery.locator('.cm-content').click()
-    await page.keyboard.press('ControlOrMeta+A')
-    await page.keyboard.insertText(written)
     await recovery.getByRole('button', { name: '保存恢复大纲' }).click()
     await recovery.getByText('本次恢复已保存，后续修改仅供复制。').waitFor({ timeout: 20_000 })
     assert.deepEqual(Object.keys(outlineChapters((await readCore(context)).synopsis)).map(Number), [1, 2], '正式大纲写进了第 1、2 章')
@@ -665,6 +665,23 @@ export const ARCH_SCENARIOS = {
     assert.deepEqual(await recovery.locator('.pi-btn--primary').allInnerTexts(), ['继续生成缺少的章节'])
     assert.match(await recovery.innerText(), /待完成第 3 至 5 章/)
     await context.shoot('orui-outline-recovery-saved')
+  } },
+  /** #702 选 C：打开停在第 3 章的恢复稿，不删任何内容，直接保存、再继续生成，正式大纲写满第 1–5 章。 */
+  'orui-outline-recovery-continue': { model: true, shell: 'stage', setup: seedArch({ clear: ['synopsis'], totalChapters: 24 }), run: async context => {
+    const { page, fake } = context
+    const recovery = await openStoppedOutlineDraft(context)
+    await recovery.getByRole('button', { name: '保存恢复大纲' }).click()
+    await recovery.getByText('本次恢复已保存，后续修改仅供复制。').waitFor({ timeout: 20_000 })
+    fake.replyReview(null)
+    await recovery.getByRole('button', { name: '继续生成缺少的章节' }).click()
+    await waitForRunDone(page)
+    const chapters = Object.keys(outlineChapters((await readCore(context)).synopsis)).map(Number)
+    assert.deepEqual(chapters, [1, 2, 3, 4, 5], '正式大纲写满第 1–5 章')
+    if (await runSheet.sheet(page).count() > 0) await page.keyboard.press('Escape')
+    await openArchitecture(page)
+    await arch.waitReady(page)
+    await context.shoot('orui-outline-recovery-continue')
+    return { chapters }
   } },
   /** #702：同一份恢复稿，打开后模型设置变了。重新读取后提示不能保存也不能继续、从第 1 章重新生成，页上没有主按钮。 */
   'orui-outline-recovery-blocked': { model: true, shell: 'stage', setup: seedArch({ clear: ['synopsis'], totalChapters: 24 }), run: async context => {
@@ -678,6 +695,14 @@ export const ARCH_SCENARIOS = {
     assert.equal(await recovery.getByRole('button', { name: '继续生成缺少的章节' }).isEnabled(), false)
     assert.equal(await recovery.locator('.pi-btn--primary').count(), 0)
     await context.shoot('orui-outline-recovery-blocked')
+    await runSheet.openFromPalette(page)
+    const card = runSheet.recovery(page).getByRole('article').filter({ hasText: /大纲恢复稿 · 第 1–5 章/ })
+    await card.waitFor({ state: 'visible', timeout: 10_000 })
+    const cardText = await card.innerText()
+    assert.match(cardText, /请从第 1 章重新生成情节大纲/)
+    assert.doesNotMatch(cardText, /缺第/, '恢复卡不再同时写「缺第 3–5 章」')
+    await context.shoot('orui-outline-recovery-blocked-sheet')
+    return { cardText }
   } },
   /** #702：英文界面下的同一页，页头与提示没有中文；运行侧页并排时页头折行、不溢出。 */
   'orui-outline-recovery-en': { model: true, shell: 'stage', setup: seedArch({ clear: ['synopsis'], totalChapters: 24 }), run: async context => {
