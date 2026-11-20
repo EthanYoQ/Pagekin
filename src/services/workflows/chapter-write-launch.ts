@@ -121,8 +121,7 @@ export type ChapterWriteOutcome =
   | { kind: 'started' }
 
 /**
- * 启动单章写作工作流。写作弹层走这里：
- * 权威章号、写作前置条件、一致性预检、ChapterInfo 组装与资源冲突检查都只在这一处。
+ * 启动单章写作工作流，写作弹层走这里。
  */
 export async function launchChapterWrite({
   session, form, generationModelId, wordsPerChapter, ignoreFindingsOnce, locale,

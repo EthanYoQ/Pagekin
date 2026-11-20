@@ -11,8 +11,12 @@ import { STAGE_SAMPLE } from './stage-sample.mjs'
 const settle = page => page.waitForTimeout(400)
 
 const LOCALES = {
+  // 打开后的提示框会把外壳标 aria-hidden，按角色等不到流程脊，所以只点「打开」，由调用方等提示框。
   zh: { config: 'zh-CN', title: '有 AI 生成记录读不出', unit: ' 条', confirm: '知道了', spine: '创作流程',
-    open: page => stage.openFromLibrary(page, STAGE_SAMPLE.name) },
+    open: async page => {
+      await stage.cover(page, STAGE_SAMPLE.name).click()
+      await stage.overview(page, STAGE_SAMPLE.name).getByRole('button', { name: `打开《${STAGE_SAMPLE.name}》` }).click()
+    } },
   en: { config: 'en-US', title: "Some AI generation records couldn't be read", unit: ' AI generation records', confirm: 'Got it', spine: 'Writing flow',
     open: page => stage.openFromLibraryEn(page, STAGE_SAMPLE.name) },
   ja: { config: 'ja-JP', title: '読み取れない AI 生成記録があります', unit: ' 件', confirm: '了解', spine: 'Writing flow',

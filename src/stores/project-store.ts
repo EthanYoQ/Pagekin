@@ -763,7 +763,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             ? result.project!.novelConfig : restored.value },
           projectSessionEpoch: state.projectSessionEpoch + 1,
         }))
-        // 默认落点与提交同步落下：之后读最近项目、初始化项目资源期间作者的导航（回书房、开运行侧页、换侧栏）都在它之后，不会被改回。
+        // 默认落点与提交同步落下，之后作者的导航不会被它改回。
         navigate({ kind: 'stage' })
         const partialLoadWarnings: string[] = []
         // Opening a project revokes old shelf preview capabilities in main.

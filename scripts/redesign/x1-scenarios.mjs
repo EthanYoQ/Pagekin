@@ -55,7 +55,7 @@ export async function untilHeld(app, channel, timeoutMs = 15_000) {
 
 export const releaseChannel = (app, channel) => app.evaluate((_, channel) => globalThis.__driveHolds[channel].release(), channel)
 
-/** 下一次 project:open 之后的第一次读最近作品卡在门上：这时作品已经提交，openProject 还没返回。书房自己读最近作品不受影响。 */
+/** 把 project:open 提交之后的第一次读最近作品卡在门上；书房自己的读取不受影响。 */
 async function holdRecentListAfterOpen(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -683,8 +683,7 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #403：作者回过一次书房（书房的布局与之后再回书房完全相同），从书房的 Ctrl K 重新打开作品，打开返回前进作品又回书房，
-  // 返回后不被换回作品。落点晚到的版本只比较提交前后的布局，两次都是作者亲手回的书房，比较通过。
+  // #403：作者回过书房后从书房重新打开作品，打开返回前又回书房，返回后不被换回作品。
   'x1-library-return': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
     await stage.backToLibrary(page, STAGE_SAMPLE.name)
     await holdRecentListAfterOpen(app)

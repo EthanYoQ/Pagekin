@@ -115,7 +115,6 @@ export function initProjectService(): void {
     ))
   )
 
-  // 定稿完成 → 刷新草稿 + 角色 + 同步编辑器 Tab
   disposers.push(
     globalEventBus.on('FINALIZE_COMPLETE', (payload) => runProjectEventTask(
       () => text('定稿后的项目刷新失败', 'Could not refresh project data after finalization'),
