@@ -1400,6 +1400,20 @@ describe('project controller project identity', () => {
     expect(mocks.removeDirectoryWithWindowsRetry).toHaveBeenCalledWith(projectA)
   })
 
+  it('删目录期间另一本书打开完成，删完不清掉新书的会话', async () => {
+    let removed!: () => void
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce((target: string) => new Promise<void>(resolve => {
+      removed = () => { mocks.existingPaths.delete(path.resolve(target)); resolve() }
+    }))
+    const deleting = handler('project:delete')({}, projectA, 'project-A', 'lease-project-A', projectSession())
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const opened = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-during-delete', null)
+    expect(opened).toMatchObject({ success: true, activeProjectPath: projectB })
+    removed()
+    await expect(deleting).resolves.toMatchObject({ success: true, directoryDeleted: true })
+    expect(mocks.activeSession).toMatchObject({ rootPath: projectB, leaseId: (opened as { project: { sessionLease: string } }).project.sessionLease })
+  })
+
   it('rejects deletion without a current project session context before touching the filesystem', async () => {
     await expect(handler('project:delete')({}, projectA)).resolves.toMatchObject({
       success: false,
