@@ -913,7 +913,6 @@ async function exportThenClose(context) {
   return result
 }
 
-/** 场景开头由驱动核对：缺这个变量时不启动应用，报「未跑」和设置方法。 */
 export const NEEDS_FIXTURE = { env: { PERF702_FIXTURE: `指向库版本 10 的 112 章夹具目录（里面有 projects/${BOOK}）。用 perf702-112 加 PERF702_SAVE 造一份，取 <SAVE>/112；定稿章数不是 112 时同时设 PERF702_FINALIZED` } }
 
 const REUSED = { model: true, shell: 'stage', requires: NEEDS_FIXTURE, setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() } }

@@ -44,7 +44,7 @@ export const reviseButton = page => view(page).getByRole('button', { name: /^按
 /**
  * 定稿：已修稿或审稿无可修时入口是主按钮，否则在「更多」里，两者不同时出现。
  * 先打开「更多」，再等两个入口之一可见：动作条重绘的空档里两者都不在，等到哪个就点哪个。
- * untilReadOnly 为 false 时不等只读（定稿后会跳到别的页面时）。
+ * 定稿后会跳到别的页面时 untilReadOnly 传 false。
  */
 export async function finalize(page, chapterNumber, { untilReadOnly = true, beforeConfirm } = {}) {
   const button = view(page).getByRole('button', { name: '定稿', exact: true })
