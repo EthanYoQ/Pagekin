@@ -130,8 +130,7 @@ function architectureRequestBound(intent: ArchitecturePlanningIntent, characters
 
 /** 名单返回后的根预算：冻结意图按实际人数重算，只升不降，每次请求的时长与 token 责任不变。 */
 export function characterRosterBudget(policy: MainGenerationPolicy, characters: number): RootBudget {
-  if (policy.planning?.kind !== 'architecture' || !policy.planning.intent.priorSteps.includes('characters')
-    || !Number.isSafeInteger(characters) || characters < 0) throw new Error('GENERATION_PLANNING_BUDGET_INVALID')
+  if (policy.planning?.kind !== 'architecture') throw new Error('GENERATION_PLANNING_BUDGET_INVALID')
   const { budget } = policy
   return scaledRootBudget(Math.max(budget.maxPhysicalRequests, architectureRequestBound(policy.planning.intent, characters)),
     budget.maxOutputPerRequest, budget.maxTokenLiability / budget.maxPhysicalRequests)

@@ -183,8 +183,9 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const manifest = runAttempts(run.runId).filter(attempt => attempt.purpose === 'character-architecture-manifest')
       .map(attempt => repository.receipt(attempt.attemptId))
       .filter(receipt => ['settled', 'unknown'].includes(receipt.attempt.status) && receipt.result?.finishReason === 'stop').at(-1)?.artifact
+    if (!manifest) return
     const policy = rootPolicy(run.rootActionId)
-    if (!manifest || policy.planning?.kind !== 'architecture') return
+    if (policy.planning?.kind !== 'architecture') return
     let characters: number
     try { characters = decodeCharacterIdentityManifest(manifest.text).length } catch { return }
     repository.recordCharacterRoster(run.runId, { manifestArtifactId: manifest.artifactId, characters, budget: characterRosterBudget(policy, characters) })

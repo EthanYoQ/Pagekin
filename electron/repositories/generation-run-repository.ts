@@ -368,9 +368,7 @@ export class GenerationRunRepository {
     /** 每个角色运行只记一次；budget_json 不改，加额只在这份记账里。 */
     recordCharacterRoster(runId: string, roster: CharacterRosterBudget): void {
         this.transaction(() => {
-            const original = this.db().prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(runId) as string | undefined;
-            if (original === undefined) fail('GENERATION_RUN_MISSING');
-            const binding = JSON.parse(original);
+            const binding = JSON.parse(this.db().prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(runId) as string);
             if (binding.$characterRoster) return;
             this.db().prepare('UPDATE generation_runs SET binding_json=? WHERE run_id=?').run(encode({ ...binding, $characterRoster: roster }), runId);
         });
