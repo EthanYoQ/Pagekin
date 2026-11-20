@@ -90,16 +90,17 @@ describe('generation error codes from the main process', () => {
     }
   })
 
-  it('审稿或修稿交给 AI 的内容超过上限：前文、设定、蓝图已不计入，只叫作者缩短本章正文或自己填的要求（#702）', () => {
+  it('审稿或修稿交给 AI 的内容超过上限：前文、设定、蓝图已不计入，叫作者缩短本章正文或自己填的要求，缩了仍超限时有反馈出路（#702）', () => {
     const error = new Error("Error invoking remote method 'generation:begin': Error: GENERATION_REVIEW_CONTEXT_TOO_LARGE")
-    for (const [locale, notCounted, shorten] of [
-      ['zh-CN', /前文|设定|蓝图/u, /缩短本章正文或你填的要求/u],
-      ['en-US', /earlier chapters|settings|blueprint/iu, /Shorten this chapter or your guidance/u],
-      ['ja-JP', /前の章|設定|ブループリント/u, /この章の本文か指示を短く/u],
+    for (const [locale, notCounted, shorten, fallback] of [
+      ['zh-CN', /前文|设定|蓝图/u, /缩短本章正文或你填的要求/u, /反馈给我们/u],
+      ['en-US', /earlier chapters|settings|blueprint/iu, /Shorten this chapter or your guidance/u, /report this message to us/u],
+      ['ja-JP', /前の章|設定|ブループリント/u, /この章の本文か指示を短く/u, /このメッセージをご報告ください/u],
     ] as const) {
       const message = knownAppErrorMessage(shown(locale), error)!
       expect(message).not.toMatch(notCounted)
       expect(message).toMatch(shorten)
+      expect(message).toMatch(fallback)
       expect(message).not.toContain('GENERATION_REVIEW_CONTEXT_TOO_LARGE')
     }
   })
