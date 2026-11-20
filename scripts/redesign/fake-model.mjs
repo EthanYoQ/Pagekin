@@ -149,6 +149,7 @@ export async function startFakeModel(diagnostics) {
   let plotTree = false
   let failedProse = false
   let review = null
+  let cutAtLength = null
   let characterState = null
   let keylessEmbeddings = false
   let failedRerank = false
@@ -188,6 +189,8 @@ export async function startFakeModel(diagnostics) {
   const failProse = (failed = true) => { failedProse = failed }
   /** 之后的审稿（含合并后的复验）回这份 JSON；不调用时回默认审稿。也可传函数：它对任意提示词返回非空文本时就回这段文本（含修稿请求），返回空值时照常作答；它给出的回复一律记作 review。 */
   const replyReview = content => { review = content }
+  /** 提示词满足条件的请求以 finish_reason: length 结束，模拟输出上限截断。 */
+  const stopAtLength = predicate => { cutAtLength = predicate }
   /** 之后的定稿后处理角色状态更新回 build(提示词) 给出的 JSON 文本；不调用时回空的 updates。 */
   const replyCharacterState = build => { characterState = build }
   /** 之后不带 Key 的嵌入请求也照常回向量，模拟不需要 Key 的本机检索服务；传 false 恢复拒绝。 */
@@ -282,7 +285,7 @@ export async function startFakeModel(diagnostics) {
       response.destroy()
       return
     }
-    const finish = kind === 'prose' && failedProse ? 'content_filter' : 'stop'
+    const finish = kind === 'prose' && failedProse ? 'content_filter' : cutAtLength?.(prompt) ? 'length' : 'stop'
     if (kind === 'prose' && stream) {
       for (const [index, chunk] of stream.chunks.entries()) {
         response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk }, finish_reason: null }] })}\n\n`)
@@ -298,6 +301,6 @@ export async function startFakeModel(diagnostics) {
   })
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
   server.unref()
-  return { port: server.address().port, requests, chats, gate, streamProse, streamLog, replyCharacterCards, breakCharacterState, dropCharacterState, replyPlotTree, failProse, replyReview, replyCharacterState, acceptKeylessEmbeddings, failRerank, replyImport, replyDirectoryBlueprints, rejectContextLength, embeddingAuthorizations,
+  return { port: server.address().port, requests, chats, gate, streamProse, streamLog, replyCharacterCards, breakCharacterState, dropCharacterState, replyPlotTree, failProse, replyReview, stopAtLength, replyCharacterState, acceptKeylessEmbeddings, failRerank, replyImport, replyDirectoryBlueprints, rejectContextLength, embeddingAuthorizations,
     close: () => new Promise(resolve => { server.closeAllConnections(); server.close(() => resolve()) }) }
 }

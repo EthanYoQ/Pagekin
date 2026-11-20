@@ -166,15 +166,15 @@ const WIDE_MODEL = Object.freeze({ ...FAKE_MODEL, id: 'charcap-wide', name: '819
   capabilities: { contextWindowTokens: 131_072, maxOutputTokens: 8192, reasoning: false, structuredOutput: true, usage: true },
   capabilitySources: { contextWindowTokens: 'manual', maxOutputTokens: 'manual', reasoning: 'preset', structuredOutput: 'preset', usage: 'preset' } })
 
-async function seedFortyBook(context) {
+const seedFortyBook = (model = WIDE_MODEL) => async context => {
   const { app, page, roots, invoke, reload } = context
   await trackOpenedSession(app)
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
     name: '盐河四十人', genre: '历史', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
   assert.equal(created.success, true, created.error)
   context.samplePath = created.projectPath
-  assert.equal((await invoke(page, 'llm:save-model', WIDE_MODEL)).success, true)
-  assert.equal((await invoke(page, 'llm:set-default-model', WIDE_MODEL.id)).success, true)
+  assert.equal((await invoke(page, 'llm:save-model', model)).success, true)
+  assert.equal((await invoke(page, 'llm:set-default-model', model.id)).success, true)
   const opened = await invoke(page, 'project:open', created.projectPath, randomUUID(), null)
   assert.equal(opened.success, true, opened.error)
   const session = { projectId: created.projectId, projectPath: created.projectPath, leaseId: opened.project.sessionLease }
@@ -224,7 +224,10 @@ export const CHARCAP_SCENARIOS = {
     await dialog.getByRole('button', { name: /^确认导入（\d+ 章）$/u, disabled: false }).click()
     await dialog.waitFor({ state: 'hidden' })
     const ms = await untilDone(page, before, seen)
-    const sheet = await sheetText(page)
+    await runSheet.openFromPalette(page)
+    await runSheet.tab(page, '诊断').click()
+    await page.waitForTimeout(500)
+    const sheet = await runSheet.sheet(page).innerText()
     await context.shoot('real-charcap-import-sheet')
     await page.keyboard.press('Escape')
     const session = await app.evaluate(() => globalThis.__driveOpened)
@@ -233,14 +236,15 @@ export const CHARCAP_SCENARIOS = {
     const missing = CAST.filter(name => !cards.some(card => card.name === name))
     const relationships = cards.reduce((sum, card) => sum + card.relationships.length, 0)
     const dropped = /已丢弃 (\d+) 条关系/u.exec(sheet)?.[1] ?? '0'
-    const measured = { ms, cardCount: cards.length, missing, relationships, droppedRelationships: Number(dropped), requests: rows.length, byPurpose: requestsByPurpose(rows) }
+    const unfilled = /(\d+) 位人物没有补出角色卡/u.exec(sheet)?.[1] ?? '0'
+    const measured = { ms, cardCount: cards.length, missing, relationships, droppedRelationships: Number(dropped), unfilled: Number(unfilled), requests: rows.length, byPurpose: requestsByPurpose(rows) }
     const file = save('import', { ...measured, seen, sheet, cards, chat: await app.evaluate(() => globalThis.__charcapLog), ledger: rows })
     assert.deepEqual(missing, [], `原稿里的人物都有卡：${file}`)
     return { file, ...measured }
   } },
 
   /** 名单 40 位：确认卡列出全部 40 位候选，确认后名单里 40 张卡。截图停在确认卡。 */
-  'charcap-arch-forty': { model: true, shell: 'stage', setup: seedFortyBook, run: async context => {
+  'charcap-arch-forty': { model: true, shell: 'stage', setup: seedFortyBook(), run: async context => {
     const { page, fake } = context
     fake.replyReview(fortyReply)
     await arch.open(page)
@@ -268,6 +272,52 @@ export const CHARCAP_SCENARIOS = {
       cardRelationships: cards.reduce((sum, item) => sum + item.relationships.length, 0) }
     assert.equal(candidates, 40, `确认卡列出 40 位：${JSON.stringify(measured)}`)
     assert.equal(cards.length, 40, `确认后名单 40 张卡：${JSON.stringify(measured)}`)
+    return measured
+  } },
+
+  /** 输出上限 4096 时上界只够 34 位（4096 ÷ 119）；假模型偏回 40 位，请求次数用完时作者看到原因和办法。 */
+  'charcap-arch-forty-4096': { model: true, shell: 'stage', setup: seedFortyBook(FAKE_MODEL), run: async context => {
+    const { page, fake } = context
+    fake.replyReview(fortyReply)
+    await arch.open(page)
+    await arch.primary(page).click()
+    await arch.dialog(page).waitFor({ state: 'visible' })
+    await arch.selectOnly(page, ['characters'])
+    await arch.startGenerate(page)
+    await runSheet.openFromPalette(page)
+    const ended = runSheet.anyCard(page).filter({ hasText: /等你确认|失败|出错|已停止/u }).first()
+    await ended.waitFor({ state: 'visible', timeout: 180_000 })
+    await page.waitForTimeout(800)
+    const card = await ended.innerText()
+    await context.shoot('charcap-arch-forty-4096')
+    const measured = { requests: fake.chats.length, card }
+    assert.match(card, /已有角色没有变动。人物太多，这次生成的请求次数用完了/u, `说明请求次数用完：${JSON.stringify(measured)}`)
+    assert.doesNotMatch(card, /[A-Z_]{8,}|收据/u, '不露原始错误码与收据')
+    return measured
+  } },
+
+  /** 名单三次都撞输出上限：运行卡写明已有角色没动、人物太多、去哪调、用哪个按钮补。 */
+  'charcap-arch-truncated': { model: true, shell: 'stage', setup: seedFortyBook(), run: async context => {
+    const { page, fake } = context
+    const manifest = prompt => prompt.includes('【身份清单合同】')
+    fake.replyReview(prompt => manifest(prompt) ? JSON.stringify({ slots: FORTY.map((_, index) => fortySlot(index)) }).slice(0, 900) : null)
+    fake.stopAtLength(manifest)
+    await arch.open(page)
+    await arch.primary(page).click()
+    await arch.dialog(page).waitFor({ state: 'visible' })
+    await arch.selectOnly(page, ['characters'])
+    await arch.startGenerate(page)
+    await runSheet.openFromPalette(page)
+    const message = runSheet.sheet(page).getByText(/人物太多，模型一次写不下/u).first()
+    await message.waitFor({ state: 'visible', timeout: 120_000 })
+    const shown = await message.innerText()
+    await message.scrollIntoViewIfNeeded()
+    await context.shoot('charcap-arch-truncated')
+    const manifestRequests = fake.chats.filter(chat => manifest(chat.messages.map(item => item.content).join('\n'))).length
+    const measured = { shown, manifestRequests }
+    assert.equal(manifestRequests, 3, `名单请求 1 次加整份重写 2 次：${JSON.stringify(measured)}`)
+    assert.match(shown, /已有角色没有变动。人物太多，模型一次写不下：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 \/ 导入角色卡」补上。/u)
+    assert.doesNotMatch(shown, /[A-Z_]{8,}/u, '不露原始错误码')
     return measured
   } },
 
