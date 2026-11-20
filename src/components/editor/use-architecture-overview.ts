@@ -31,7 +31,7 @@ import { DEFAULT_PLANNING_ACTION_CHAPTERS } from '../../shared/plot-outline-cont
 import type { GenerationRecoveryContext } from '../../shared/generation-owner-contract'
 import type { ArchitectureConfirmFormOptions } from '../dialogs/use-architecture-confirm-form'
 import { openPlanningRecoveryDraft } from '../../stores/editor-store'
-import { outlineSourceChangedBlocked, planningTitle } from '../run/run-recovery'
+import { outlineRecoveryGuide, outlineRecoveryViewOnly, planningTitle } from '../run/run-recovery'
 import { planningRecoverable } from '../../shared/planning-recovery'
 import { outlineProgress, type OutlineProgress } from '../../shared/plot-outline-checkpoint'
 import type { PlotOutlineRangeSource } from '../../shared/plot-outline-contract'
@@ -63,6 +63,7 @@ interface GenerateIntent {
 export function useArchitectureOverview(projectKey: string) {
   const currentProject = useProjectStore(s => s.currentProject)
   const text = useLocaleStore(s => s.text)
+  const locale = useLocaleStore(s => s.locale)
   const projectMatches = currentProject?.path === projectKey
   const latestArchitectureTerminalRunId = useWorkflowStore(state => (
     state.history.find(run => run.type === 'architecture_generation' && run.projectPath === projectKey)?.id ?? null
@@ -425,11 +426,9 @@ export function useArchitectureOverview(projectKey: string) {
   /** 普通生成入口；steps 是「AI 生成此节」那一节，不携带续批预填。 */
   const openGenerateDialog = (steps?: ArchStepKey[]) => setGenerateIntent({ steps })
 
-  /**
-   * 恢复稿因来源已变不能写回时，本批的章节范围：作者从它的起始章重新生成；能写回或没有恢复稿时为 null。
-   * 这里的恢复稿只在检查点记着本批未完成时读取，即正式大纲没有写入这一批；候选生成完、正式保存被拒也一样要重新生成。
-   */
-  const outlineRestartRange = planningRecovery && outlineSourceChangedBlocked(planningRecovery) ? planningRecovery.plotOutline?.range ?? null : null
+  /** 恢复稿要作者重新生成时的章节范围（与恢复稿页、运行侧页恢复卡同一张表）；不用重新生成或没有恢复稿时为 null。 */
+  const outlineRecovery = planningRecovery ? outlineRecoveryGuide(planningRecovery, undefined, locale) : null
+  const outlineRestartRange = outlineRecovery?.restart ?? null
   const openOutlineRestart = () => {
     if (outlineRestartRange) setGenerateIntent({ steps: ['synopsis'], synopsisRange: { from: outlineRestartRange.from, to: outlineRestartRange.to } })
   }
@@ -444,7 +443,7 @@ export function useArchitectureOverview(projectKey: string) {
       else void loadStatus()
     }).catch(async () => {
       if (!isProjectSessionCurrent(session)) return
-      const [zh, en] = outlineSourceChangedBlocked(planningRecovery) ? ['查看恢复稿', 'View recovery draft'] : ['编辑恢复稿', 'Edit recovery draft']
+      const [zh, en] = outlineRecoveryViewOnly(outlineRecovery) ? ['查看恢复稿', 'View recovery draft'] : ['编辑恢复稿', 'Edit recovery draft']
       const { toast } = await import('../ui/Toast')
       toast.error(useLocaleStore.getState().text(`恢复稿还在，但没能打开\n\n读取时出错。请再点一次「${zh}」。`,
         `The recovery draft is still there but did not open.\n\nReading it failed. Click ${en} again.`))
@@ -508,6 +507,7 @@ export function useArchitectureOverview(projectKey: string) {
     openGenerateDialog,
     openRecoveryDraft,
     outlineRestartRange,
+    outlineRestartNote: outlineRecovery?.restart ? outlineRecovery.note : null,
     openOutlineRestart,
   }
 }
