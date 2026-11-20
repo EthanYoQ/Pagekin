@@ -100,6 +100,14 @@ async function roster(context, session) {
   return (read.entries ?? []).map(card => ({ name: card.name, role: card.role, relationships: card.relationships ?? [] }))
 }
 
+/** 导入反推的角色是待作者批准的提议，不直接进名单：读这份提议里的人物与关系。 */
+async function importedProposal(context, session) {
+  const pending = await context.invoke(context.page, 'character-proposal:list-pending-finalized', session)
+  const batches = await Promise.all(pending.filter(item => item.importOperationId).map(item =>
+    context.invoke(context.page, 'character-proposal:read-pending-finalized', { proposalBatchId: item.proposalBatchId }, session)))
+  return batches.flatMap(batch => batch.items.map(item => ({ name: item.fields.name, role: item.fields.role, relationships: item.relationships ?? [] })))
+}
+
 /** 物理请求数按台账里的尝试计（不按 fetch 计，重试与修复也算）。 */
 function requestsByPurpose(rows) {
   const counts = {}
@@ -220,7 +228,7 @@ export const CHARCAP_SCENARIOS = {
     await context.shoot('real-charcap-import-sheet')
     await page.keyboard.press('Escape')
     const session = await app.evaluate(() => globalThis.__driveOpened)
-    const cards = await roster(context, session)
+    const cards = await importedProposal(context, session)
     const rows = ledger(context.samplePath)
     const missing = CAST.filter(name => !cards.some(card => card.name === name))
     const relationships = cards.reduce((sum, card) => sum + card.relationships.length, 0)
