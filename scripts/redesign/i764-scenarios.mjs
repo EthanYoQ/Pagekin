@@ -1,5 +1,3 @@
-// #764：推理强度调到「高」后生成情节大纲。用真实模型跑架构页的情节大纲生成，记下每次尝试的原文、实发推理参数与作者看到的结果。
-// SILICONFLOW_REASONING_OVERRIDE 选推理强度，I764_STRUCTURE 选故事结构，I764_CONTINUE=1 时再续写第 6–10 章，I764_OUT 改原始输出目录。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
@@ -57,7 +55,6 @@ async function generateOutline(page, trigger) {
 const WHOLE_BOOK = '# 全书情节大纲\n\n## 第一阶段：建置（第1–24章）\n林岚抵达旧港。\n\n## 第二阶段：对抗（第25–90章）\n档案断线。'
 
 export const I764_SCENARIOS = {
-  /** 第 3 章两次都回整本的阶段大纲：运行侧页说明保住了什么、哪一章出了什么问题、去点「编辑恢复稿」，不露内部原因码。 */
   'i764-outline-stopped': { model: true, shell: 'stage', setup: seedArch({ clear: ['synopsis'], totalChapters: 24 }), run: async context => {
     const { page, fake } = context
     fake.replyReview(prompt => prompt.includes('本次只写第 3 章') ? WHOLE_BOOK : null)
