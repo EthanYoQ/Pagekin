@@ -368,7 +368,7 @@ export function plotOutlineSourceInvalid(progress: Pick<PlotOutlineProgress, 'cu
   return progress.cursor.kind === 'stopped' && progress.cursor.reason === 'source-invalid'
 }
 
-/** 恢复稿正文只有连续写好的章节，停下那章的回复不进正文；一章都没写好时留一个空章标题供作者补写。 */
+/** 恢复稿正文只放连续写好的章节；停下那章的回复不进正文，见 rejectedReply。 */
 export function plotOutlineRecoveryDraft(progress: PlotOutlineProgress): string {
   // 来源无效时拼不回正式大纲，只留已生成的章节供复制。
   if (plotOutlineSourceInvalid(progress)) return progress.composition?.text ?? ''

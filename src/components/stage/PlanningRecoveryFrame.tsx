@@ -11,7 +11,6 @@ interface PlanningRecoveryFrameProps {
   end: { value: string; min?: number; max?: number; disabled: boolean; onChange: (value: string) => void }
   proceed: { disabled: boolean; onClick: () => void }
   save: { label: string; title?: string; disabled: boolean; onClick: () => void }
-  /** 流程上的下一步；两个动作都做不了时没有主按钮。 */
   primary: 'save' | 'continue' | null
   tools?: ReactNode
   notices: ReactNode
@@ -20,10 +19,7 @@ interface PlanningRecoveryFrameProps {
   children: ReactNode
 }
 
-/**
- * 大纲恢复稿与蓝图恢复稿共用的页面骨架：页头里是保存终点、继续生成与保存，下面依次是提示条、原始候选和纸面编辑器。
- * 样式沿用蓝图页的 `.stage-bp*`。
- */
+/** 大纲与蓝图恢复稿共用的骨架；样式沿用蓝图页的 `.stage-bp*`。 */
 export function PlanningRecoveryFrame({ label, eyebrow, heading, busy, end, proceed, save, primary, tools, notices, error, original, children }: PlanningRecoveryFrameProps) {
   const text = useLocaleStore(state => state.text)
   const endId = useId()

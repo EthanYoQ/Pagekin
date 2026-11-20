@@ -8,7 +8,6 @@ export interface OutlineRecoveryView {
   phase: 'editable' | 'saved' | 'waiting' | 'blocked'
   notice: { tone: NoticeTone; title: string; lines: string[] }
   continuable: boolean
-  /** 流程上的下一步：能接着生成就是继续，否则是保存。 */
   primary: 'save' | 'continue' | null
 }
 
@@ -16,7 +15,6 @@ type Text = (zh: string, en: string) => string
 
 const span = (chapters: readonly number[]) => chapters.length > 1 ? `${chapters[0]}–${chapters.at(-1)}` : `${chapters[0]}`
 
-/** 大纲恢复稿页的状态、说明与主操作，全部由主进程给的恢复上下文和本标签的保存快照推出。 */
 export function outlineRecoveryView(
   recovery: GenerationRecoveryContext,
   snapshot: 'pending' | 'saved' | undefined,

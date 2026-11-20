@@ -709,7 +709,6 @@ describe('planning recovery editors', () => {
 describe('大纲恢复稿页面（#702）', () => {
   const written = '## 第1章：灯下第1夜\n林岚核对雾钟。\n\n## 第2章：灯下第2夜\n林岚再核对一遍。'
   const rejected = '# 全书情节大纲\n\n## 第一阶段：建置（第1–24章）\n林岚抵达旧港。'
-  /** 第 1–5 章这一批写好了第 1、2 章，第 3 章两次都回了整本的阶段大纲。 */
   function stoppedAtChapter3(): GenerationRecoveryContext {
     const stopped = fixture('outline')
     const outline = stopped.plotOutline!, candidate = stopped.plotOutlineRecovery!
