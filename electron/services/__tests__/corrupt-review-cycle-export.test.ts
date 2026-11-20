@@ -25,7 +25,7 @@ import { ChapterDeletionService } from '../chapter-deletion-service'
 import { GenerationRunRepository } from '../../repositories/generation-run-repository'
 import { exportPortableProject, type ExportPortableProjectInput } from '../project-archive-service'
 import { exportPortableProjectInWorker, type PortableExportWorkerOptions } from '../portable-export-host'
-import { portableExportWorkerForTest } from '../../../test/helpers/portable-export-worker'
+import { portableExportWorkerForTest, projectSqliteWorkerForTest } from '../../../test/helpers/portable-export-worker'
 
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -638,6 +638,22 @@ describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-002
     } finally { raw.close() }
   }
 
+  it.each([
+    ['没有坏循环', false],
+    ['有坏循环', true],
+  ])('%s的 v11 书打开时升到 12，验不过的循环集合不变', (_label, broken) => {
+    const items = reviewedBook({ finalized: true })
+    if (broken) breakReviewProof(db(), items[1]!)
+    const before = [...unprovableReviewCycleIds(db())]
+    closeProjectDatabase()
+    const raw = new Database(databasePath())
+    try { raw.pragma('user_version = 11') } finally { raw.close() }
+
+    initProjectDatabase(projectRoot)
+    expect(db().pragma('user_version', { simple: true })).toBe(12)
+    expect([...unprovableReviewCycleIds(db())]).toEqual(before)
+  })
+
   it('有坏循环的 v9 书打开时升级成功，验不过的循环集合不变', () => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
@@ -688,16 +704,16 @@ describe('升级通道放行已有的坏循环，不放行新弄坏的（ADR-002
   it.each([
     ['当前版本', false],
     ['v9', true],
-  ])('书库卡片读有坏循环的%s书：照常显示', (_label, older) => {
+  ])('书库卡片读有坏循环的%s书：照常显示', async (_label, older) => {
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
     db().prepare("INSERT INTO project_core(id,project_name) VALUES('main','雾港')").run()
     if (older) downgradeToV9()
     else closeProjectDatabase()
-    const service = new ProjectPeekService({ scratchRoot: path.join(base, 'peek') })
+    const service = new ProjectPeekService({ scratchRoot: path.join(base, 'peek'), worker: await projectSqliteWorkerForTest() })
     const capability = service.issueCapability(projectRoot)!
 
-    expect(service.peek(capability.capabilityId)).toMatchObject({ state: 'ready', finalizedChapters: 2 })
+    expect(await service.peek(capability.capabilityId)).toMatchObject({ state: 'ready', finalizedChapters: 2 })
   })
 })
 

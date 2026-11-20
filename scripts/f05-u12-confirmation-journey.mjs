@@ -13,6 +13,7 @@ import * as blueprintPage from './redesign/pages/blueprint.mjs'
 import * as runSheet from './redesign/pages/run-sheet.mjs'
 import * as stage from './redesign/pages/stage.mjs'
 import { resolveWindowsExecutable } from './product-identity.mjs'
+import { frozenReviewContext } from './review-proof-read.mjs'
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const option = name => process.argv.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
@@ -517,10 +518,10 @@ async function main() {
     assert.deepEqual(afterGeneration.runs.filter(row => beforeGeneration.runs.some(before => before.runId === row.runId)),
       beforeGeneration.runs, 'no-op changed an existing generation binding')
     assert.equal(newRuns.length, 1, 'no-op did not create exactly one fresh generation run')
-    const noOpContext = JSON.parse(newRuns[0].binding).sourceManifest
-    assert.equal(noOpContext.operation, 'refine-from-review')
-    assert.equal(noOpContext.reviewRevisionContext.confirmation.reviewSourceId, confirmedReview.id)
-    assert.deepEqual(noOpContext.reviewRevisionContext.source, liveSourceDraft)
+    const noOpManifest = JSON.parse(newRuns[0].binding).sourceManifest, noOpContext = frozenReviewContext(noOpManifest)
+    assert.equal(noOpManifest.operation, 'refine-from-review')
+    assert.equal(noOpContext.confirmation.reviewSourceId, confirmedReview.id)
+    assert.deepEqual(noOpContext.source, liveSourceDraft)
     assert.equal(newAttempts.length, 1, 'no-op did not retain exactly one provider attempt')
     assert.equal(newAttempts[0].runId, newRuns[0].runId)
     assert.equal(newAttempts[0].rootActionId, newRuns[0].rootActionId)

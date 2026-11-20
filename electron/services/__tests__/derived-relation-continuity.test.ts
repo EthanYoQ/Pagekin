@@ -1350,7 +1350,7 @@ describe('作者对派生关系的决定，预检和建议说法一致', () => {
       expect(await preflight(plan(9, null))).toHaveLength(1)
 
       const context = captureReviewRevisionContext(db(), { operation: 'review-chapter', draftId, authorInputs: [], uiLocale: 'zh-CN',
-        expectedDraft: { chapterNumber: 9, version: 1, status: 'draft', contentHash: sha256(body) } }, PROJECT_ID)
+        expectedDraft: { chapterNumber: 9, version: 1, status: 'draft', contentHash: sha256(body) } }, PROJECT_ID).materials
       expect(context.preflightFindings).toEqual([])
     })
   })

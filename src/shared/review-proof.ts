@@ -13,7 +13,7 @@ export function readReviewProof(manifest: unknown, sha256: (text: string) => str
   const stored = record(manifest)
   if (stored?.reviewRevisionContext === undefined) return { kind: 'absent' }
   const context = record(stored.reviewRevisionContext), source = record(context?.source)
-  if (!context || context.version !== 1 || typeof source?.content !== 'string') return { kind: 'unproven' }
+  if (!context || context.version !== 1 && context.version !== 2 || typeof source?.content !== 'string') return { kind: 'unproven' }
   const contextJson = JSON.stringify(context), contextHash = sha256(contextJson)
   return stored.reviewRevisionContextHash === contextHash && context.sourceHash === sha256(source.content)
     && JSON.stringify(stored.authorInputs) === JSON.stringify([{ id: 'review-revision-context', text: contextJson }])

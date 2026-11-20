@@ -70,7 +70,7 @@ export class RefineFromReviewCommand extends ReviewRevisionCommand {
     if (this.recovery?.composition && this.recovery.lastCompositionFinishReason === 'stop') {
       return this.generateRevision(prepared, params, '', '')
     }
-    const frozen = prepared.context
+    const frozen = prepared.materials
     const confirmation = frozen.confirmation?.snapshot
     if (!confirmation?.sourceDraft || !hasIncludedReviewItems(confirmation)) throw new Error(workflowUiText(params.context,
       '缺少有效的已确认审稿清单，请重新确认。', 'A valid confirmed review checklist is required. Confirm the review again.'))

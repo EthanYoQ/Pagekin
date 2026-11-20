@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   currentProjectPath: '',
   existingPaths: new Set<string>(),
   initCalls: [] as string[],
+  initVerified: [] as unknown[],
+  verifyCanonicalProjectData: vi.fn(),
   createCalls: [] as string[],
   createdVelaDirectories: new Set<string>(),
   failCorePaths: new Set<string>(),
@@ -99,9 +101,10 @@ vi.mock('../../database', () => ({
     : null,
 
   createProjectDatabase: vi.fn((projectPath: string) => { mocks.createCalls.push(path.resolve(projectPath)) }),
-  initProjectDatabase: vi.fn((projectPath: string) => {
+  initProjectDatabase: vi.fn((projectPath: string, verified?: unknown) => {
     const resolved = path.resolve(projectPath)
     mocks.initCalls.push(resolved)
+    mocks.initVerified.push(verified)
     // Mirrors the production initializer's `.vela/vela.db` parent creation.
     mocks.createdVelaDirectories.add(path.join(resolved, '.vela'))
     if (mocks.failInitPaths.has(resolved)) {
@@ -203,6 +206,7 @@ vi.mock('../../repositories/finalization-repository', () => ({
 }))
 
 vi.mock('../../services/portable-export-host', () => ({ stopPortableExports: mocks.stopPortableExports }))
+vi.mock('../../services/project-data-locator', () => ({ verifyCanonicalProjectData: mocks.verifyCanonicalProjectData }))
 
 import { registerProjectController } from '../project-controller'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
@@ -250,6 +254,8 @@ beforeEach(() => {
     path.join(projectD, '.vela'),
   ])
   mocks.initCalls = []
+  mocks.initVerified = []
+  mocks.verifyCanonicalProjectData.mockImplementation(async (projectPath: string) => ({ verifiedIn: 'worker', projectPath }))
   mocks.createCalls = []
   mocks.createdVelaDirectories = new Set()
   mocks.failCorePaths = new Set()
@@ -511,6 +517,82 @@ describe('project controller project identity', () => {
     expect(mocks.initCalls).not.toEqual([])
   })
 
+  // #702：长篇升级要半分钟，放在 worker 里跑；期间旧书照常开着，验完才换库。
+  it('project:open：另一本书在 worker 里升级校验，验完才换库，换库用的就是这次校验', async () => {
+    let verified!: (value: unknown) => void
+    mocks.verifyCanonicalProjectData.mockImplementationOnce(() => new Promise(resolve => { verified = resolve }))
+
+    const opening = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-upgrading', projectA)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(mocks.verifyCanonicalProjectData).toHaveBeenCalledExactlyOnceWith(projectB)
+    expect(mocks.currentProjectPath).toBe(projectA)
+    expect(mocks.initCalls).toEqual([])
+    verified({ verifiedIn: 'worker', projectPath: projectB })
+    await expect(opening).resolves.toMatchObject({ success: true, activeProjectPath: projectB })
+    expect(mocks.initCalls).toEqual([projectB])
+    expect(mocks.initVerified).toEqual([{ verifiedIn: 'worker', projectPath: projectB }])
+  })
+
+  it('project:open：worker 校验期间当前这本书又开始导出，换库前也要等它停完', async () => {
+    let verified!: (value: unknown) => void
+    mocks.verifyCanonicalProjectData.mockImplementationOnce(() => new Promise(resolve => { verified = resolve }))
+    const opening = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-export-during-verify', projectA)
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    let stopped!: () => void
+    mocks.stopPortableExports.mockImplementationOnce(() => new Promise<void>(resolve => { stopped = resolve }))
+    verified({ verifiedIn: 'worker', projectPath: projectB })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(mocks.stopPortableExports).toHaveBeenLastCalledWith(projectA)
+    expect(mocks.initCalls).toEqual([])
+    stopped()
+    await expect(opening).resolves.toMatchObject({ success: true, activeProjectPath: projectB })
+    expect(mocks.initCalls).toEqual([projectB])
+  })
+
+  it('project:open：另一本书校验失败时，当前这本书原样开着，不关库重开', async () => {
+    mocks.verifyCanonicalProjectData.mockRejectedValueOnce(new Error('CORRUPT_SCHEMA'))
+    const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-corrupt', projectA)
+    expect(result).toMatchObject({
+      success: false, activeProjectPath: projectA, databaseRestored: true, dbReady: true,
+      error: expect.stringContaining('CORRUPT_SCHEMA'),
+    })
+    expect(mocks.initCalls).toEqual([])
+    expect(mocks.currentProjectPath).toBe(projectA)
+  })
+
+  it('project:open：等旧书导出停下期间又打开了别的书，这次作废，不先换库再回滚', async () => {
+    let stopped!: () => void
+    mocks.stopPortableExports.mockImplementationOnce(() => new Promise<void>(resolve => { stopped = resolve }))
+    const older = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-while-stopping', projectA)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const newer = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD), 'open-D-after-stop', projectA)
+    stopped()
+    await expect(older).resolves.toMatchObject({ success: false, stale: true, activeProjectPath: projectA })
+    await expect(newer).resolves.toMatchObject({ success: true, activeProjectPath: projectD })
+    expect(mocks.initCalls).toEqual([projectD])
+  })
+
+  it('project:open：worker 校验期间又打开了别的书，这次作废，不换库', async () => {
+    let verified!: (value: unknown) => void
+    mocks.verifyCanonicalProjectData.mockImplementationOnce(() => new Promise(resolve => { verified = resolve }))
+
+    const older = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-superseded', projectA)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const newer = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD), 'open-D-latest', projectA)
+    verified({ verifiedIn: 'worker', projectPath: projectB })
+    await expect(older).resolves.toMatchObject({ success: false, stale: true, activeProjectPath: projectA })
+    await expect(newer).resolves.toMatchObject({ success: true, activeProjectPath: projectD })
+    expect(mocks.initCalls).toEqual([projectD])
+  })
+
+  it('project:open：重开正开着的这本书不进 worker，主进程照旧校验', async () => {
+    await expect(handler('project:open')({ sender: { id: 17 } }, selectedProject(projectA), 'reopen-A', projectA))
+      .resolves.toMatchObject({ success: true, activeProjectPath: projectA })
+    expect(mocks.verifyCanonicalProjectData).not.toHaveBeenCalled()
+    expect(mocks.initVerified).toEqual([undefined])
+  })
+
   it('opens the project and reports what the duplicate-finalization repair found', async () => {
     const chapters = [{ chapterNumber: 2, keptDraftId: 3, keptVersion: 2,
       superseded: [{ draftId: 2, version: 1, knowledgeDocumentId: 'doc-2', targetFileName: '第2章.txt' }] }]
@@ -726,7 +808,7 @@ describe('project controller project identity', () => {
       dbReady: true,
     })
 
-    expect(mocks.initCalls).toEqual([projectA])
+    expect(mocks.initCalls).toEqual([])
     expect(mocks.initCalls).not.toContain(ordinaryDirectory)
   })
 
@@ -783,7 +865,7 @@ describe('project controller project identity', () => {
       expect(result).not.toHaveProperty('legacyImportSource')
       expect(mocks.issueDirectory).not.toHaveBeenCalled()
       expect(mocks.initCalls).not.toContain(projectB)
-      expect(mocks.initCalls).toEqual([projectA])
+      expect(mocks.initCalls).toEqual([])
       expect(mocks.currentProjectPath).toBe(projectA)
     },
   )
@@ -799,7 +881,7 @@ describe('project controller project identity', () => {
       databaseRestored: true,
       dbReady: true,
     })
-    expect(mocks.initCalls).toEqual([projectA])
+    expect(mocks.initCalls).toEqual([])
     expect(mocks.initCalls).not.toContain(ordinaryDirectory)
   })
 
@@ -1316,6 +1398,20 @@ describe('project controller project identity', () => {
     expect(mocks.currentProjectPath).toBe('')
     expect(mocks.projectAccess.invalidateCurrentSession).toHaveBeenCalledOnce()
     expect(mocks.removeDirectoryWithWindowsRetry).toHaveBeenCalledWith(projectA)
+  })
+
+  it('删目录期间另一本书打开完成，删完不清掉新书的会话', async () => {
+    let removed!: () => void
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce((target: string) => new Promise<void>(resolve => {
+      removed = () => { mocks.existingPaths.delete(path.resolve(target)); resolve() }
+    }))
+    const deleting = handler('project:delete')({}, projectA, 'project-A', 'lease-project-A', projectSession())
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const opened = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-during-delete', null)
+    expect(opened).toMatchObject({ success: true, activeProjectPath: projectB })
+    removed()
+    await expect(deleting).resolves.toMatchObject({ success: true, directoryDeleted: true })
+    expect(mocks.activeSession).toMatchObject({ rootPath: projectB, leaseId: (opened as { project: { sessionLease: string } }).project.sessionLease })
   })
 
   it('rejects deletion without a current project session context before touching the filesystem', async () => {

@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { createHash, randomUUID } from 'node:crypto'
 import { buildSync } from 'esbuild'
+import { frozenReviewContext } from './review-proof-read.mjs'
 import { reconcileDispatchedAttempts } from './quality-modernization-run.mjs'
 import { countProjectedDraftUnits, isExpectedReferenceEvidenceFailure, isVerifiedDirectPersistedDraftEvidence, isVerifiedRecoverySupplementEvidence,
   readVerifiedDirectPersistedDraftEvidence, readVerifiedRecoveryCandidateSupplement, targetUnitRange, acceptedTargetUnits } from './quality-modernization-receipt.mjs'
@@ -3616,7 +3617,7 @@ export function validateAiReviewedManuscript(result) {
         WHERE a.attempt_id=? AND a.run_id=?`).get(terminal.attemptId, operation.handle.runId)
       if (!row) throw new Error('AI_REVIEW_OWNER_MISSING')
       const usage = JSON.parse(row.usage_receipt_json), artifact = JSON.parse(row.artifact_json), binding = JSON.parse(row.binding_json)
-      const context = binding.sourceManifest.reviewRevisionContext, effect = usage.reviewRevisionEffect
+      const context = frozenReviewContext(binding.sourceManifest), effect = usage.reviewRevisionEffect
       const reportBody = db.prepare('SELECT c.body FROM reviews r JOIN contents c ON c.id=r.content_id WHERE r.id=?').pluck().get(saved.reviewId)
       if (JSON.parse(row.attempt_json).status !== 'settled' || terminal.status !== 'settled' || attempt.finishReason !== 'stop'
         || usage.result?.finishReason !== 'stop' || !['review-chapter', 'review-chapter-rebuild'].includes(usage.purpose)
@@ -3760,7 +3761,7 @@ export function validateAiReviewedManuscript(result) {
       const terminal = result.ownerTerminal.find(item => item.attemptId === attempts.at(-1).binding.actual.attemptId)
       const run = db.prepare('SELECT binding_json,root_action_id FROM generation_runs WHERE run_id=?').get(operation.handle.runId)
       const binding = JSON.parse(run.binding_json)
-      const context = binding.sourceManifest.reviewRevisionContext
+      const context = frozenReviewContext(binding.sourceManifest)
       const effects = db.prepare('SELECT usage_receipt_json,attempt_json FROM generation_attempts WHERE run_id=?').all(operation.handle.runId)
         .filter(row => JSON.parse(row.usage_receipt_json)?.reviewRevisionEffect)
       const persistedRevision = db.prepare('SELECT r.status,r.review_source_id,c.body FROM revisions r JOIN contents c ON c.id=r.content_id WHERE r.id=?').get(chain.revision.revisionId)

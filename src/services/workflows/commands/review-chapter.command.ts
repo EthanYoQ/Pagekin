@@ -40,7 +40,7 @@ export class ReviewChapterCommand extends ReviewRevisionCommand {
 
   protected async generateAndCommit(prepared: PreparedReviewRevisionContext, params: CommandExecuteParams) {
     if (canCommitRecoveredReview(this.recovery)) return this.commitReview(prepared, params)
-    const frozen = prepared.context
+    const frozen = prepared.materials
     const language = frozen.writingLanguage
     const text = (zh: string, en: string) => workflowUiText(params.context, zh, en)
     params.callbacks.log(text('准备启动一致性审查引擎...', 'Preparing the continuity review...'))

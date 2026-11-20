@@ -3,6 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
+import { isDeepStrictEqual } from 'node:util'
 import type BetterSqlite3 from 'better-sqlite3'
 import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../migrations/desktop-registry'
 import { migrateSchema, probeSchema, verifySchema } from '../migrations/runner'
@@ -346,7 +347,7 @@ function currentSnapshotIdentity(databasePath: string): SqliteContentIdentity | 
   } finally { snapshot.close() }
 }
 
-/** 与 v10 迁移校验的差别仅在不跑全书 M03（随章数增长），仓库读写改为逐条校验（ADR-0029）。 */
+/** 打开时的校验：不跑全书 M03（耗时随章数增长），仓库读写改为逐条校验（ADR-0029）。 */
 export function verifyOpenedSchema(db: BetterSqlite3.Database): void {
   const probe = probeSchema(new SqliteSchemaAdapter(db), getDesktopMigrationRegistry())
   if (probe.version !== CURRENT_DESKTOP_SCHEMA_VERSION) throw new SchemaMigrationError('SCHEMA_VERSION_MISMATCH')
@@ -389,7 +390,7 @@ export function openProjectSqlite(options: { databasePath: string }): SqliteCont
  */
 export function upgradeProjectSqlite(options: { databasePath: string; registry?: MigrationRegistry; evidence?: ReviewCycleEvidence }): ProjectSqliteEvidence {
   const registry = options.registry ?? getDesktopMigrationRegistry()
-  // 升级前的两遍只比 domain，跨版本的变体留给升级后那一遍：一个变体就是全书再读一遍。
+  // 升级前后都只算 domain：一个变体就是全书再读一遍，生产调用方都不读升级的返回值。要变体的走 verifyProjectSqlite。
   const before = probeProjectSqlite({ databasePath: options.databasePath, registry, variants: [] })
   if (before.schemaVersion === CURRENT_DESKTOP_SCHEMA_VERSION) return verifyProjectSqlite({ ...options, registry })
   if (before.schemaVersion < 1) throw new Error('CANONICAL_SCHEMA_UPGRADE_UNSUPPORTED')
@@ -405,8 +406,10 @@ export function upgradeProjectSqlite(options: { databasePath: string; registry?:
     return database.transaction(() => {
       const columnsBefore = domainColumns(database)
       migrateSchema(new SqliteSchemaAdapter(database, accepted), registry, CURRENT_DESKTOP_SCHEMA_VERSION)
-      const after = inspect(database, registry, CURRENT_DESKTOP_SCHEMA_VERSION, accepted)
-      if (JSON.stringify(before.domain) !== JSON.stringify(domain(database, columnsBefore))) throw new Error('PROJECT_MIGRATION_SQLITE_CONTENT_CHANGED')
+      const after = inspect(database, registry, CURRENT_DESKTOP_SCHEMA_VERSION, accepted, [])
+      // 迁移没加列时，改前那一列选取的摘要就是 after.domain，不再整本读一遍。
+      const unchanged = isDeepStrictEqual(columnsBefore, domainColumns(database)) ? after.domain : domain(database, columnsBefore)
+      if (JSON.stringify(before.domain) !== JSON.stringify(unchanged)) throw new Error('PROJECT_MIGRATION_SQLITE_CONTENT_CHANGED')
       return after
     }).immediate()
   } finally { database.close() }

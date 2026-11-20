@@ -186,7 +186,7 @@ export async function openChapter(page, chapterNumber) {
 const proseUnits = async page => countUnits(await chapterView.prose(page).innerText())
 
 /** 在待写章的单章视图点「写作此章」，等真实模型写完、正文出现。 */
-async function writeChapter(page, chapterNumber, confirmations) {
+export async function writeChapter(page, chapterNumber, confirmations) {
   await openChapter(page, chapterNumber)
   const ms = await runAndWait(page, () => chapterView.view(page).getByRole('button', { name: '写作此章', exact: true }).click(),
     `写第 ${chapterNumber} 章`, confirmations)
@@ -222,7 +222,7 @@ async function finalizeAndPostProcess(page, chapterNumber) {
 }
 
 /** 审稿、按意见修稿、全部用修稿、完成合并；审稿没有可修的意见时主按钮直接是「定稿」，改由作者添一条意见再修稿。 */
-async function reviewReviseMerge(page, chapterNumber, confirmations) {
+export async function reviewReviseMerge(page, chapterNumber, confirmations) {
   const measured = {}
   measured.reviewMs = await runAndWait(page, () => chapterView.view(page).getByRole('button', { name: 'AI 审稿', exact: true }).click(),
     `第 ${chapterNumber} 章审稿`, confirmations)

@@ -56,9 +56,8 @@ export interface ReviewFinalizedMaterial {
   /** 主进程捕获的来源身份；渲染层据此做准入，不据此编造事实。 */
   identity?: ReviewMaterialIdentity
 }
-/** Main-issued frozen prompt and normalization inputs; not a second writable fact store. */
-export interface ReviewRevisionContext {
-  version: 1
+/** 主进程捕获的审修材料：渲染端据此拼提示词，绑定构建与续跑都重新捕获并比对。 */
+export interface ReviewRevisionMaterials {
   operation: ReviewRevisionOperation
   source: ExpectedDraftSource
   sourceHash: string
@@ -77,16 +76,33 @@ export interface ReviewRevisionContext {
   confirmation?: { reviewSourceId: number; content: string; originalReviewContentHash: string; snapshot: HumanConfirmedReviewSnapshot }
   recheck?: ReviewCycleRecheckContext
 }
+/** 库版本 12 之前写入的审修证明：整份材料原样冻结。旧运行续跑仍写这一版。 */
+export type ReviewRevisionContextV1 = { version: 1 } & ReviewRevisionMaterials
+/** 库版本 12 起写入的审修证明：只留保存与续跑要读的字段，其余材料由 inputHash 证明（ADR-0031）。 */
+export type ReviewRevisionContextV2 = { version: 2 } & Pick<ReviewRevisionMaterials, 'operation' | 'source' | 'sourceHash'
+  | 'writingLanguage' | 'uiLocale' | 'authorInputs' | 'frozenGoals' | 'preflightFindings' | 'confirmation' | 'recheck'>
+  & { wordsPerChapter: number; inputHash: string }
+export type ReviewRevisionContext = ReviewRevisionContextV1 | ReviewRevisionContextV2
+export const reviewWordsPerChapter = (context: ReviewRevisionContext): number =>
+  context.version === 1 ? context.config.wordsPerChapter : context.wordsPerChapter
+export function freezeReviewRevisionContext(materials: ReviewRevisionMaterials, version: 1 | 2,
+  sha256: (text: string) => string): ReviewRevisionContext {
+  if (version === 1) return { version: 1, ...materials }
+  const { operation, source, sourceHash, writingLanguage, uiLocale, authorInputs, frozenGoals, preflightFindings, confirmation, recheck } = materials
+  return { version: 2, operation, source, sourceHash, writingLanguage, uiLocale, authorInputs, frozenGoals, preflightFindings,
+    wordsPerChapter: materials.config.wordsPerChapter, ...(confirmation ? { confirmation } : {}), ...(recheck ? { recheck } : {}),
+    inputHash: sha256(JSON.stringify(materials)) }
+}
 
 /** Task approval does not turn an AI-proposed replacement into an author fact. */
-export function reviewRevisionAiBrief(context: ReviewRevisionContext): string {
+export function reviewRevisionAiBrief(context: Pick<ReviewRevisionMaterials, 'confirmation' | 'writingLanguage'>): string {
   const snapshot = context.confirmation?.snapshot
   return snapshot ? renderHumanConfirmedReviewBrief({ ...snapshot, authorGuidance: '',
     items: snapshot.items.filter(item => item.origin === 'ai') }, context.writingLanguage) : ''
 }
 
 /** One immutable author-material block shared by renderer admission and main hash validation. */
-export function reviewRevisionAuthorMaterial(context: ReviewRevisionContext): string {
+export function reviewRevisionAuthorMaterial(context: ReviewRevisionMaterials): string {
   const text = (zh: string, en: string) => writingLanguageText(context.writingLanguage, zh, en)
   const snapshot = context.confirmation?.snapshot
   // Keep each source label, but emit an identical text/prefix only at its longest source.
@@ -127,6 +143,7 @@ export function reviewRevisionAuthorMaterial(context: ReviewRevisionContext): st
 export interface PreparedReviewRevisionContext {
   contextId: string
   context: ReviewRevisionContext
+  materials: ReviewRevisionMaterials
   /** Derived by main from the saved original AI review, never supplied as authority by renderer. */
   parentRootActionId?: string
   modelId?: string
@@ -156,6 +173,8 @@ export interface ReviewRevisionCommitReceipt {
 export interface ReviewRevisionRecovery {
   handle: MainGenerationRunHandle
   context: ReviewRevisionContext
+  /** 只在可续跑（带 contextId）时给出。 */
+  materials?: ReviewRevisionMaterials
   modelId: string
   sourceStatus: 'current' | 'conflict'
   /** False when a terminal candidate failed deterministic save validation and is copy-only. */

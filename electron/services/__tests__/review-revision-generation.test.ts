@@ -227,7 +227,7 @@ describe('review and revision generation through the actual owner and SQLite', (
     ].join('\n\n'), ['【当前及未来蓝图/计划｜非既定历史】', JSON.stringify(context.blueprints, null, 2)].join('\n\n')))
     const f = fixture(), prepared = f.prepare(), selection = f.selection(prepared)
     const view = f.owner.begin(selection)
-    const admission = await selectFrozenReviewRevisionMaterials(prepared.context, { projectId: 'project', epoch: 'epoch-1' }, f.owner.readContext(view.handle).materialAdmission!, 0)
+    const admission = await selectFrozenReviewRevisionMaterials(prepared.materials, { projectId: 'project', epoch: 'epoch-1' }, f.owner.readContext(view.handle).materialAdmission!, 0)
     const prompt = admission.admitted.map(item => item.text).join('\n\n')
     expect(prompt).toContain('【当前及未来蓝图/计划｜非既定历史】')
     f.owner.bindMaterialDecision(view.handle, { ...admission.decision, promptHash: textHash(prompt) })
@@ -321,10 +321,10 @@ describe('review and revision generation through the actual owner and SQLite', (
     f.db.prepare('UPDATE drafts_all SET source_dependencies=? WHERE id=1').run(JSON.stringify([{ kind: 'candidate', draftId: 2, contentHash: textHash('已选前驱：钥匙已经交出。') }]))
     const request: PrepareReviewRevisionRequest = { operation: 'review-chapter', draftId: 1,
       expectedDraft: { chapterNumber: 2, version: 1, status: 'draft', contentHash: textHash(prose) }, authorInputs: [], uiLocale: 'zh-CN' }
-    const frozen = f.owner.prepareReviewRevision(request).context
-    expect(frozen.predecessor).toMatchObject({ draftId: 2, content: '已选前驱：钥匙已经交出。',
+    const { materials } = f.owner.prepareReviewRevision(request)
+    expect(materials.predecessor).toMatchObject({ draftId: 2, content: '已选前驱：钥匙已经交出。',
       identity: { sourceId: 'candidate:2', revision: 1, provenance: 'generated' } })
-    expect(JSON.stringify(frozen)).not.toContain('未选版本：钥匙仍在手中。')
+    expect(JSON.stringify(materials)).not.toContain('未选版本：钥匙仍在手中。')
     f.db.exec("UPDATE contents SET body='前驱已被改动' WHERE id=2")
     expect(() => f.owner.prepareReviewRevision(request)).toThrow('GENERATION_REVIEW_HISTORY_CHANGED')
   })
@@ -334,7 +334,7 @@ describe('review and revision generation through the actual owner and SQLite', (
     // 审修先开运行、后选材：收据绑定前额度来自运行冻结的模型。
     const frozenAdmission = f.owner.readContext(view.handle).materialAdmission!
     expect(frozenAdmission).toMatchObject({ kind: 'budget', budget: { reservedOutputTokens: expect.any(Number) } })
-    const admission = await selectFrozenReviewRevisionMaterials(prepared.context, { projectId: 'project', epoch: 'epoch-1' }, frozenAdmission, 0)
+    const admission = await selectFrozenReviewRevisionMaterials(prepared.materials, { projectId: 'project', epoch: 'epoch-1' }, frozenAdmission, 0)
     const prompt = admission.admitted.map(material => material.text).join('\n\n')
     f.owner.bindMaterialDecision(view.handle, { ...admission.decision, promptHash: textHash(prompt) })
     await f.owner.execute({ handle: view.handle, invocationNonce: 'materials', task: { purpose: 'review-chapter',
@@ -759,7 +759,9 @@ describe('review and revision generation through the actual owner and SQLite', (
       targetId: finding.target_id, resolved: true, evidenceQuote: '门闩上的裂纹已用石蜡封住', reason: '正文出现新证据。' }] })}\n\`\`\`\n说明结束`
     const storedBinding = JSON.parse(f.db.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?')
       .pluck().get(recheckView.handle.runId) as string)
-    storedBinding.sourceManifest.reviewRevisionContext.recheck.version = 1
+    // 升级前开跑的复核是整份 v1 证明，复核契约也是 v1。
+    storedBinding.sourceManifest.reviewRevisionContext = { version: 1, ...recheckPrepared.materials,
+      recheck: { ...recheckPrepared.materials.recheck!, version: 1 } }
     const frozenContext = JSON.stringify(storedBinding.sourceManifest.reviewRevisionContext)
     storedBinding.sourceManifest.reviewRevisionContextHash = textHash(frozenContext)
     storedBinding.sourceManifest.authorInputs = [{ id: 'review-revision-context', text: frozenContext }]
@@ -775,7 +777,7 @@ describe('review and revision generation through the actual owner and SQLite', (
       const resumed = await reopened.resume(recheckView.handle)
       const recovery = reopened.readReviewRevisionRecovery(resumed.handle)
       expect(recovery).toMatchObject({ sourceStatus: 'current', canResume: true,
-        context: { recheck: { version: 1, cycleId: cycle.cycle_id } } })
+        context: { version: 1, recheck: { version: 1, cycleId: cycle.cycle_id } } })
       const commit = { contextId: recovery.contextId!, handle: resumed.handle,
         artifact: { artifactId: recheckArtifact.artifactId, revision: recheckArtifact.revision, textHash: recheckArtifact.textHash } }
       const digest = (owner: typeof reopened, current = owner.readReviewRevisionRecovery(resumed.handle)) => (buildRecoveryEntries({

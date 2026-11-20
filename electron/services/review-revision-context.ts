@@ -1,7 +1,8 @@
 import type Database from 'better-sqlite3'
 import { isDeepStrictEqual } from 'node:util'
 import type { ExpectedDraftSource, NovelConfig } from '../../src/shared/ipc-channels'
-import type { PrepareReviewRevisionRequest, ReviewMaterialIdentity, ReviewRevisionContext } from '../../src/shared/review-revision-generation'
+import { freezeReviewRevisionContext, type PrepareReviewRevisionRequest, type ReviewMaterialIdentity, type ReviewRevisionContext,
+  type ReviewRevisionMaterials } from '../../src/shared/review-revision-generation'
 import { parseHumanConfirmedReviewSnapshot, serializeHumanConfirmedReviewSnapshot } from '../../src/shared/human-confirmed-review'
 import { freezeChapterGoals, withChapterThreadGoals } from '../../src/shared/chapter-goal-review'
 import { writtenChapterThreadTasks, type ChapterThreadTask } from '../../src/shared/narrative-thread'
@@ -35,7 +36,8 @@ function draftThreadTasks(db: Database.Database, draftId: number, chapterNumber:
 }
 
 /** Reconstruct only the original author selection, never a newer manuscript or confirmation. */
-export function reviewRevisionRequest(context: ReviewRevisionContext): PrepareReviewRevisionRequest {
+export function reviewRevisionRequest(context: Pick<ReviewRevisionMaterials, 'operation' | 'source' | 'sourceHash' | 'authorInputs'
+  | 'uiLocale' | 'confirmation' | 'recheck'>): PrepareReviewRevisionRequest {
   return { operation: context.operation, draftId: context.source.id,
     expectedDraft: { chapterNumber: context.source.chapterNumber, version: context.source.version,
       status: context.source.status, contentHash: context.sourceHash },
@@ -52,7 +54,7 @@ export function reviewRevisionRequest(context: ReviewRevisionContext): PrepareRe
  * a reopen. The live lease is attached to the `SourceRef` at the point of use instead.
  */
 export function captureReviewRevisionContext(db: Database.Database, request: PrepareReviewRevisionRequest,
-  projectId: string, frozenRecheckVersion?: 1 | 2): ReviewRevisionContext {
+  projectId: string, frozenRecheckVersion?: 1 | 2, version: 1 | 2 = 2): { frozen: ReviewRevisionContext; materials: ReviewRevisionMaterials } {
   if (!request || Object.keys(request).some(key => !['operation', 'draftId', 'expectedDraft', 'reviewSourceId', 'confirmedReviewContent', 'reviewCycleId', 'expectedMergedHash', 'authorInputs', 'uiLocale'].includes(key))
     || !REVIEW_REVISION_OPERATIONS.includes(request.operation) || !Number.isSafeInteger(request.draftId) || request.draftId < 1
     || !['zh-CN', 'en-US'].includes(request.uiLocale) || !request.expectedDraft
@@ -66,14 +68,14 @@ export function captureReviewRevisionContext(db: Database.Database, request: Pre
   const recheckRequested = request.reviewCycleId !== undefined || request.expectedMergedHash !== undefined
   if (recheckRequested && (request.operation !== 'review-chapter' || typeof request.reviewCycleId !== 'string'
     || !request.reviewCycleId.trim() || typeof request.expectedMergedHash !== 'string')) fail()
-  return db.transaction((): ReviewRevisionContext => {
+  const materials = db.transaction((): ReviewRevisionMaterials => {
     const source = db.prepare('SELECT d.id,d.chapter_number AS chapterNumber,d.version,d.status,c.body AS content FROM drafts d JOIN contents c ON c.id=d.content_id WHERE d.id=?')
       .get(request.draftId) as ExpectedDraftSource | undefined
     const latest = source && db.prepare(`SELECT id FROM drafts WHERE chapter_number=? AND status IN (${CURRENT_DRAFT_STATUS_SQL}) ORDER BY version DESC,id DESC LIMIT 1`).pluck().get(source.chapterNumber)
     if (!source || latest !== source.id || !isDeepStrictEqual(request.expectedDraft,
       { chapterNumber: source.chapterNumber, version: source.version, status: source.status, contentHash: textHash(source.content) }))
       throw new Error('GENERATION_REVIEW_SOURCE_CHANGED')
-    let recheck: ReviewRevisionContext['recheck']
+    let recheck: ReviewRevisionMaterials['recheck']
     if (recheckRequested) {
       const plan = ReviewCycleRepository.planRecheck(request.reviewCycleId!, db)
       if (plan.disposition !== 'required' || !plan.context || plan.context.mergedHash !== request.expectedMergedHash
@@ -88,7 +90,7 @@ export function captureReviewRevisionContext(db: Database.Database, request: Pre
       plotStructure: core.plotStructure as NovelConfig['plotStructure'], narrativePOV: core.narrativePov as NovelConfig['narrativePOV'],
       writingStyle: core.writingStyle, referenceWorks: core.referenceWorks, globalGuidance: core.globalGuidance,
       goldenFinger: core.goldenFinger, coreOutline: core.coreOutline, worldSetting: core.worldSetting, protagonistProfile: core.protagonistProfile }
-    let confirmation: ReviewRevisionContext['confirmation']
+    let confirmation: ReviewRevisionMaterials['confirmation']
     if (request.operation === 'refine-from-review') {
       if (!Number.isSafeInteger(request.reviewSourceId) || request.reviewSourceId! < 1 || typeof request.confirmedReviewContent !== 'string') fail()
       const stored = ReviewRepository.getFull(request.reviewSourceId!, db)
@@ -129,7 +131,7 @@ export function captureReviewRevisionContext(db: Database.Database, request: Pre
     // The draft already records the author's selected predecessor. Never substitute a newer row.
     const dependencies = JSON.parse(db.prepare('SELECT source_dependencies FROM drafts WHERE id=?').pluck().get(source.id) as string)
     if (!Array.isArray(dependencies)) throw new Error('GENERATION_REVIEW_HISTORY_CHANGED')
-    let predecessor: ReviewRevisionContext['predecessor']
+    let predecessor: ReviewRevisionMaterials['predecessor']
     for (const dependency of dependencies) {
       if (dependency?.kind !== undefined && dependency.kind !== 'candidate') continue
       if (!Number.isSafeInteger(dependency?.draftId) || typeof dependency.contentHash !== 'string')
@@ -158,7 +160,7 @@ export function captureReviewRevisionContext(db: Database.Database, request: Pre
         ? `${card.name} (${card.role || 'unknown'}) author state (time-bound to the annotated chapter, not permanent): ${JSON.stringify(fields)}`
         : `${card.name}（${card.role || '未知'}）作者状态（按标注章节理解，非永久约束）: ${JSON.stringify(fields)}`]
     })
-    return { version: 1, operation: request.operation, source, sourceHash: textHash(source.content), config,
+    return { operation: request.operation, source, sourceHash: textHash(source.content), config,
       writingLanguage: core.writingLanguage, uiLocale: request.uiLocale, authorInputs: structuredClone(request.authorInputs),
       characterStates: stateLines.join('\n') || (core.writingLanguage === 'en-US' ? '(none)' : '（暂无）'),
       worldbuilding: core.worldbuilding, history, blueprints, ...(predecessor ? { predecessor } : {}),
@@ -167,4 +169,5 @@ export function captureReviewRevisionContext(db: Database.Database, request: Pre
       preflightFindings: currentBlueprint ? findBlueprintContinuityRisks(history.flatMap(item => item.projection ? [item.projection] : []), currentBlueprint, ConsistencyExemptionRepository.list(db)) : [],
       ...(confirmation ? { confirmation } : {}), ...(recheck ? { recheck } : {}) }
   })()
+  return { frozen: freezeReviewRevisionContext(materials, version, textHash), materials }
 }

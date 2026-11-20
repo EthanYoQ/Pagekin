@@ -18,6 +18,7 @@ import { selectOwnerDispatch, targetUnitsGateEvidence, createAttemptSupervisor, 
   readBoundedRevisionSource, assertBoundedRevisionSource, boundedRevisionItems,
   scenarioAuthorSetting, scenarioAuthorSettingLines, draftCondenseFor, draftRecoveryFor, structuredRecoveryFor, structuredRequestRange, blueprintRecoveryDecoder,
   assertSharedInputDiagnostic, validateAiReviewedManuscript, validatePairedReceipt, reviewLengthRecoveryFor } from '../quality-modernization-driver.mjs'
+import { frozenReviewContext } from '../review-proof-read.mjs'
 import { projectRecoveryCandidateSupplement, recordPersistedDraftObservation, safeReceiptDiagnostic } from '../quality-modernization-receipt.mjs'
 import { safeTransportError } from '../../src/shared/generation-contract'
 import { resolveOpenAIChatCompletionsUrl } from '../../electron/llm/openai-compatible-endpoint'
@@ -439,7 +440,7 @@ test('isolated production commands persist the selected phase operations', async
         }
         if (copiedRun && channel === 'review-revision:prepare') {
           if (r3Run || savedRun) {
-            const frozen = boundedSource.context, actual = result.context
+            const frozen = boundedSource.context, actual = result.materials
             for (const key of ['config', 'worldbuilding', 'characterStates', 'blueprints', 'frozenGoals'])
               assert.deepEqual(actual[key], frozen[key], 'R3_NATIVE_MATERIAL_DRIFT:' + key)
             assert.deepEqual(actual.history.map(item => [item.chapterNumber, item.content]),
@@ -1790,7 +1791,7 @@ test('isolated production commands persist the selected phase operations', async
       assert.deepEqual(usage.reviewRevisionEffect, provenance.effect, 'SAVED_NATIVE_APPROVAL_EFFECT_DRIFT')
       assert.equal(usage.reviewRevisionEffect.id, approval.reviewId, 'SAVED_NATIVE_APPROVAL_EFFECT_MISMATCH')
       const selection = aiReviewFinalManuscriptSelection({ rawContent: raw.text, savedContent: stored.content,
-        context: JSON.parse(row.binding_json).sourceManifest.reviewRevisionContext })
+        context: frozenReviewContext(JSON.parse(row.binding_json).sourceManifest) })
       const report = JSON.parse(stored.content)
       const indexes = approval.findingIds.map(id => {
         const finding = cycle.findings.find(item => item.findingId === id)
@@ -2137,7 +2138,7 @@ test('isolated production commands persist the selected phase operations', async
               .filter(row => JSON.parse(row.usage_receipt_json)?.reviewRevisionEffect?.id === stored.id)
             assert.equal(rows.length, 1, 'AI_REVIEW_FORMAL_EFFECT_NOT_UNIQUE')
             const row = rows[0], usage = JSON.parse(row.usage_receipt_json), raw = JSON.parse(row.artifact_json)
-            const binding = JSON.parse(row.binding_json), context = binding.sourceManifest.reviewRevisionContext
+            const binding = JSON.parse(row.binding_json), context = frozenReviewContext(binding.sourceManifest)
             const physical = receipt.attempts.find(attempt => attempt.binding.actual.attemptId === row.attempt_id)
             assert.equal(JSON.parse(row.attempt_json).status, 'settled', 'AI_REVIEW_OWNER_NOT_SETTLED')
             assert.equal(usage.result.finishReason, 'stop', 'AI_REVIEW_OWNER_NOT_STOP')

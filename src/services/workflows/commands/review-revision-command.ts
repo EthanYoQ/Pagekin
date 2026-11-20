@@ -1,7 +1,8 @@
 import { BaseWorkflowCommand, injectWritingSkillIntoTask, type CommandExecuteParams, type WorkflowGenerationRuntimeDependencies } from './base-command'
 import type { MainGenerationRunHandle } from '../../generation/generation-runtime'
 import { DEFAULT_MATERIAL_ADMISSION, type GenerationAuthorInput, type MaterialAdmission, type MaterialDecisionDraft } from '../../../shared/generation-owner-contract'
-import type { PreparedReviewRevisionContext, ReviewRevisionContext, ReviewRevisionOperation, ReviewRevisionRecovery, ReviewRevisionCommitReceipt } from '../../../shared/review-revision-generation'
+import { reviewWordsPerChapter, type PreparedReviewRevisionContext, type ReviewRevisionContext, type ReviewRevisionOperation,
+  type ReviewRevisionRecovery, type ReviewRevisionCommitReceipt } from '../../../shared/review-revision-generation'
 import type { FrozenDraftSourceIdentity } from '../chapter-workflow'
 import { hashAuthorText } from '../../../shared/source-ref'
 import type { DraftStatus } from '../../../shared/draft-status'
@@ -60,8 +61,8 @@ export abstract class ReviewRevisionCommand extends BaseWorkflowCommand<string> 
       if (this.recovery.saved) return this.openReceipt(this.recovery.saved, this.recovery.context, params)
       if (this.recovery.sourceStatus !== 'current') throw new Error('SOURCE_DRAFT_CHANGED')
       if (!this.recovery.canResume) throw new Error('GENERATION_REVIEW_RECOVERY_COPY_ONLY')
-      if (!this.recovery.contextId) throw new Error('SOURCE_DRAFT_CHANGED')
-      prepared = { contextId: this.recovery.contextId, context: this.recovery.context, modelId: this.recovery.modelId }
+      if (!this.recovery.contextId || !this.recovery.materials) throw new Error('SOURCE_DRAFT_CHANGED')
+      prepared = { contextId: this.recovery.contextId, context: this.recovery.context, materials: this.recovery.materials, modelId: this.recovery.modelId }
     } else {
       const source = this.sourceParams.sourceDraft ?? await this.readSelectedSource(params)
       if (source.chapterNumber !== this.sourceParams.chapterNumber || !this.sourceParams.draftContent) throw new Error('SOURCE_DRAFT_CHANGED')
@@ -98,7 +99,7 @@ export abstract class ReviewRevisionCommand extends BaseWorkflowCommand<string> 
       reviewRevisionContextId: prepared.contextId,
       selectedDraftIds: finalized ? [] : [prepared.context.source.id],
       selectedFinalizedDraftIds: finalized ? [prepared.context.source.id] : [],
-      selectedBlueprintChapterNumbers: prepared.context.blueprints.map(blueprint => blueprint.chapterNumber),
+      selectedBlueprintChapterNumbers: prepared.materials.blueprints.map(blueprint => blueprint.chapterNumber),
       authorInputs: [{ id: 'review-revision-context', text: JSON.stringify(prepared.context) }],
       ...(prepared.parentRootActionId ? { parentRootActionId: prepared.parentRootActionId } : {}),
       ...(this.recovery ? { resumeHandle: this.recovery.handle } : {}),
@@ -161,7 +162,7 @@ export abstract class ReviewRevisionCommand extends BaseWorkflowCommand<string> 
 
   protected async generateRevision(prepared: PreparedReviewRevisionContext, params: CommandExecuteParams,
     taskPrompt: string, systemPrompt: string): Promise<ReviewRevisionCommitReceipt> {
-    const frozen = prepared.context
+    const frozen = prepared.materials
     let composition = this.recovery?.composition
     if (!composition || this.recovery?.lastCompositionFinishReason !== 'stop') {
       const priorAttempts = this.recovery?.attemptedPurposes.filter(purpose => purpose === this.operation || purpose.startsWith(`${this.operation}-`)).length ?? 0
@@ -230,7 +231,7 @@ export abstract class ReviewRevisionCommand extends BaseWorkflowCommand<string> 
       })
       context.data.refined = receipt.content
       context.data.refinedPath = sourcePath
-      const units = countDraftUnits(receipt.content), target = frozen.config.wordsPerChapter
+      const units = countDraftUnits(receipt.content), target = reviewWordsPerChapter(frozen)
       callbacks.log(this.operation === 'refine-from-review'
         ? text(`审稿修复完成（${units} 字），修订稿版本 r${receipt.index}`,
           `Review-based revision complete (${units} ${pluralEn(units, 'word')}); revision r${receipt.index} is ready.`)

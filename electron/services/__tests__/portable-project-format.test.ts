@@ -73,7 +73,7 @@ afterEach(() => {
 describe('portable v9 field policy', () => {
   it('与实际当前registry双向精确匹配55表521字段，放行M07的四个live视图，并包含两个lazy表', () => {
     const { database } = openCurrent()
-    expect(database.pragma('user_version', { simple: true })).toBe(11)
+    expect(database.pragma('user_version', { simple: true })).toBe(12)
     const tables = database.prepare("SELECT name FROM pragma_table_list WHERE schema='main' AND type='table' AND name NOT LIKE 'sqlite_%'")
       .all() as Array<{ name: string }>
     const fieldCount = tables.reduce((count, table) => count
@@ -175,7 +175,7 @@ describe('portable v9 field policy', () => {
         if (mode === 'extra-table') mutate.exec('CREATE TABLE future_portable_data(id TEXT)')
         if (mode === 'extra-field') mutate.exec('ALTER TABLE contents ADD COLUMN future_payload TEXT')
         if (mode === 'unregistered-avatar') mutate.exec('ALTER TABLE characters ADD COLUMN avatar TEXT')
-        if (mode === 'higher-version') mutate.pragma('user_version = 12')
+        if (mode === 'higher-version') mutate.pragma('user_version = 13')
         if (mode === 'lower-version') mutate.pragma('user_version = 5')
         if (mode === 'extra-view') mutate.exec('CREATE VIEW future_portable_view AS SELECT id FROM contents')
         if (mode === 'altered-live-view') mutate.exec('DROP VIEW drafts; CREATE VIEW drafts AS SELECT * FROM drafts_all')
@@ -209,7 +209,7 @@ describe('portable v9 field policy', () => {
       expect(assertPortableSourceSchema(database, 9)).toEqual({ tables: 54, fields: 514 })
       migrateSchema(new SqliteSchemaAdapter(database), getDesktopMigrationRegistry(), 10)
       expect(assertPortableSourceSchema(database, 10)).toEqual({ tables: 55, fields: 520 })
-      migrateSchema(new SqliteSchemaAdapter(database), getDesktopMigrationRegistry(), 11)
+      migrateSchema(new SqliteSchemaAdapter(database), getDesktopMigrationRegistry(), 12)
       expect(assertPortableSourceSchema(database)).toEqual({ tables: 55, fields: 521 })
     } finally { database.close() }
   })
@@ -323,7 +323,7 @@ describe('portable manifest v1', () => {
   })
 
   it('拒绝未知格式、非法hash、非安全整数和声明总量不符', () => {
-    for (const version of [6, 12, '9', null]) {
+    for (const version of [6, 13, '9', null]) {
       expect(() => parsePortableProjectManifest(manifest({ sourceSchemaVersion: version })), String(version)).toThrow('PORTABLE_SCHEMA_UNSUPPORTED')
     }
     expect(() => parsePortableProjectManifest(manifest({ entries: [{

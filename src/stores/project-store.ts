@@ -15,6 +15,7 @@ import { alertError } from '../components/ui/AlertDialog'
 import { showFinalizationRepairNotice } from '../components/finalization-repair-notice'
 import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
 import { confirm } from '../components/ui/Confirm'
+import { pushToast } from '../components/ui/ToastStack'
 import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImportFailureMessage } from '../i18n/app-errors'
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
 import { countUnsavedEditorItemsForProject } from './editor-unsaved'
@@ -75,6 +76,29 @@ type LocalizedProjectCopy = Readonly<{
 
 function projectText(zhCNText: string, enUSText: string): string {
   return useLocaleStore.getState().text(zhCNText, enUSText)
+}
+
+let pendingOpens = 0
+let openingNoticeTimer: ReturnType<typeof setTimeout> | undefined
+let closeOpeningNotice: (() => void) | undefined
+
+/** 长篇打开要等一会儿，第一次在新版打开还要升级；开得快时不弹，免得提示一闪而过。 */
+async function withOpeningNotice<T>(opening: Promise<T>): Promise<T> {
+  if (pendingOpens++ === 0) openingNoticeTimer = setTimeout(() => {
+    closeOpeningNotice = pushToast({ tone: 'info', duration: 0, message: projectText(
+      '正在打开作品…\n\n长篇要多等一会儿，第一次在新版打开会更久。',
+      'Opening the book…\n\nLong books take a moment, longer the first time in this version.',
+    ) })
+  }, 500)
+  try {
+    return await opening
+  } finally {
+    if (--pendingOpens === 0) {
+      clearTimeout(openingNoticeTimer)
+      closeOpeningNotice?.()
+      closeOpeningNotice = undefined
+    }
+  }
 }
 
 function importedCopyNotOpenedNotice(targetRoot: string): string {
@@ -641,7 +665,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           || !isPreparedProjectTransitionCurrent(rendererProject, preparedTransition)
         ) return false
       }
-      const result = await ipc.invoke('project:open', target, requestToken, rendererProjectPath)
+      const result = await withOpeningNotice(ipc.invoke('project:open', target, requestToken, rendererProjectPath))
       if (!isLatestRequest() || result.stale || result.requestToken !== requestToken) {
         await reconcileStaleProjectResponse({
           getRendererProjectPath: () => get().currentProject?.path ?? null,

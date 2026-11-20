@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
 import { freezeChapterGoals } from '../../../shared/chapter-goal-review'
-import type { ReviewRevisionContext } from '../../../shared/review-revision-generation'
+import type { ReviewRevisionMaterials } from '../../../shared/review-revision-generation'
 import { MATERIAL_DECISION_MAX_INPUT_UNITS, materialBudgetFrom, type MaterialAdmission } from '../../../shared/generation-owner-contract'
 import {
   ChapterMaterialCapacityError,
@@ -159,18 +159,18 @@ function admissionOutcomeFrom(error: unknown): AdmissionOutcome {
     failure: { code: error.code, decision: error.decision.decision } }
 }
 
-function frozenHistoryItem(chapterNumber: number, content: string): ReviewRevisionContext['history'][number] {
+function frozenHistoryItem(chapterNumber: number, content: string): ReviewRevisionMaterials['history'][number] {
   return { draftId: chapterNumber, chapterNumber, chapterTitle: `第${chapterNumber}章`, content,
     identity: { projectId: PARITY_IDENTITY.projectId, sourceId: `finalized:${chapterNumber}`, revision: chapterNumber,
       contentHash: sha(content), provenance: 'finalized' } }
 }
 
 /** 把「一份必需材料 + 若干可选材料」映射成一份冻结上下文里的定稿历史。 */
-function frozenHistory(required: string, optional: readonly string[]): ReviewRevisionContext {
+function frozenHistory(required: string, optional: readonly string[]): ReviewRevisionMaterials {
   return {
-    version: 1, operation: 'review-chapter',
+    operation: 'review-chapter',
     source: { id: 1, chapterNumber: SOURCE_CHAPTER, version: 1, status: 'draft', content: '待审正文。' },
-    sourceHash: sha('待审正文。'), config: {} as ReviewRevisionContext['config'],
+    sourceHash: sha('待审正文。'), config: {} as ReviewRevisionMaterials['config'],
     writingLanguage: 'zh-CN', uiLocale: 'zh-CN', authorInputs: [], characterStates: '', worldbuilding: '',
     history: [frozenHistoryItem(SOURCE_CHAPTER - 1, required),
       ...optional.map((content, index) => frozenHistoryItem(SOURCE_CHAPTER - 2 - index, content))],

@@ -16,19 +16,20 @@ import type {
   ProjectPeekCapability,
   ReadyProjectOverview,
 } from '../../src/shared/project-overview'
-import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../migrations/desktop-registry'
-import { migrateSchema, verifySchema } from '../migrations/runner'
+import { getDesktopMigrationRegistry } from '../migrations/desktop-registry'
+import { verifySchema } from '../migrations/runner'
 import { CURRENT_DRAFT_STATUS_SQL } from '../../src/shared/draft-status'
 import { SqliteSchemaAdapter } from '../migrations/sqlite-schema-adapter'
-import { priorReviewCycleFailures, unprovableReviewCycleIds } from '../migrations/m03-review-cycle'
+import { unprovableReviewCycleIds } from '../migrations/m03-review-cycle'
+import { runProjectSqliteJobInWorker, type ProjectSqliteWorkerOptions } from './project-sqlite-host'
 import { verifyOpenedSchema } from './sqlite-project-migration'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
 const UNAVAILABLE: ProjectOverview = Object.freeze({ state: 'unavailable' })
 const SQLITE_SUFFIXES = ['', '-wal', '-shm'] as const
-/** v1.2.0-Preview 写出的 7 是最早能在私有快照上迁移的版本。 */
-const OLDEST_SNAPSHOT_UPGRADABLE_SCHEMA_VERSION = 7
+/** 概览读的表和列自 v1.2.0-Preview 写出的 7 起都在，更早的库要先打开升级。 */
+const OLDEST_PEEKABLE_SCHEMA_VERSION = 7
 
 interface ManifestState {
   rootPath: string
@@ -40,7 +41,13 @@ interface ManifestState {
 
 interface CapabilityState extends ManifestState {
   capabilityId: string
-  expectedSchemaVersion: number
+}
+
+export interface PeekSnapshotRequest {
+  databasePath: string
+  projectId: string
+  manifestFingerprint: string
+  scratchRoot: string
 }
 
 interface PhysicalFileState {
@@ -55,6 +62,7 @@ interface PhysicalFileState {
 export interface ProjectPeekServiceOptions {
   scratchRoot?: string
   newCapabilityId?: () => string
+  worker?: Partial<ProjectSqliteWorkerOptions>
 }
 
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
@@ -302,23 +310,53 @@ function aggregateProject(
   })
 }
 
-/** 只写这份私有快照，不碰原库。 */
-function upgradeSnapshot(snapshotPath: string, version: number): void {
-  const database = new Database(snapshotPath, { fileMustExist: true })
+/** 不升级：概览读的表和列各版本都在，升级留到打开作品时。 */
+export function readPeekSnapshot(request: PeekSnapshotRequest): ProjectOverview {
+  const before = sourceState(request.databasePath)
+  fs.mkdirSync(request.scratchRoot, { recursive: true })
+  const attempt = fs.mkdtempSync(path.join(request.scratchRoot, 'attempt-'))
+  const snapshotPath = path.join(attempt, 'snapshot.db')
+  let database: BetterSqlite3.Database | undefined
   try {
-    database.pragma('foreign_keys = ON')
-    // 与打开作品同一要求：已有的坏审修循环不挡升级，升级不许新弄坏一条（ADR-0029）。
-    const prior = priorReviewCycleFailures(database)
-    const adapter = new SqliteSchemaAdapter(database, prior.accepted)
+    fs.writeFileSync(path.join(attempt, '.vibe-owner.json'), JSON.stringify({
+      owner: 'AI-Novel-Writer project peek',
+      sourceProject: request.projectId,
+      createdAt: new Date().toISOString(),
+      ttlHours: 1,
+      reason: 'Ephemeral read-only project overview snapshot.',
+      cleanupCommand: `Remove-Item -LiteralPath '${attempt.replaceAll("'", "''")}' -Recurse -Force`,
+    }), { flag: 'wx' })
+    for (const file of before) fs.copyFileSync(
+      request.databasePath + file.suffix,
+      snapshotPath + file.suffix,
+      fs.constants.COPYFILE_EXCL,
+    )
+    const copied = sourceState(snapshotPath)
+    const after = sourceState(request.databasePath)
+    if (!sameSnapshotContent(before, copied) || JSON.stringify(before) !== JSON.stringify(after)) {
+      throw new Error('PROJECT_PEEK_SOURCE_CHANGED')
+    }
+    const opened = database = new Database(snapshotPath, { readonly: true, fileMustExist: true })
+    opened.pragma('foreign_keys = ON')
+    const adapter = new SqliteSchemaAdapter(opened, () => unprovableReviewCycleIds(opened))
+    const version = adapter.readUserVersion()
+    if (version < OLDEST_PEEKABLE_SCHEMA_VERSION) throw new Error('PROJECT_PEEK_SCHEMA_TOO_OLD')
     verifySchema(adapter, getDesktopMigrationRegistry(), version)
-    prior.freezeIfUnread()
-    migrateSchema(adapter, getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION)
-  } finally { database.close() }
+    const physicalRevision = digest(JSON.stringify({
+      manifest: request.manifestFingerprint,
+      files: before.map(file => [file.suffix, file.size, file.hash]),
+    }))
+    return aggregateProject(opened, request.projectId, false, physicalRevision)
+  } finally {
+    database?.close()
+    fs.rmSync(attempt, { recursive: true, force: true })
+  }
 }
 
 export class ProjectPeekService {
   private readonly scratchRoot: string
   private readonly newCapabilityId: () => string
+  private readonly worker: Partial<ProjectSqliteWorkerOptions> | undefined
   private readonly capabilities = new Map<string, CapabilityState>()
   private readonly capabilityByRoot = new Map<string, string>()
 
@@ -330,6 +368,7 @@ export class ProjectPeekService {
       'project-peek',
     ))
     this.newCapabilityId = options.newCapabilityId ?? randomUUID
+    this.worker = options.worker
   }
 
   issueCapability(projectPath: string): ProjectPeekCapability | null {
@@ -344,12 +383,7 @@ export class ProjectPeekService {
       }
       if (existingId) this.revokeCapability(existingId)
       const capabilityId = this.newCapabilityId()
-      const capability: CapabilityState = {
-        ...state,
-        capabilityId,
-        expectedSchemaVersion: CURRENT_DESKTOP_SCHEMA_VERSION,
-      }
-      this.capabilities.set(capabilityId, capability)
+      this.capabilities.set(capabilityId, { ...state, capabilityId })
       this.capabilityByRoot.set(pathKey(state.rootPath), capabilityId)
       return Object.freeze({ capabilityId, projectId: state.projectId })
     } catch {
@@ -366,13 +400,18 @@ export class ProjectPeekService {
     }
   }
 
-  peek(capabilityId: string): ProjectOverview {
+  async peek(capabilityId: string): Promise<ProjectOverview> {
     const capability = this.capabilities.get(capabilityId)
     if (!capability) return UNAVAILABLE
     try {
       const current = readManifest(capability.rootPath)
       if (!this.matchesCapability(capability, current)) return UNAVAILABLE
-      const overview = this.readSnapshot(capability)
+      const overview = await runProjectSqliteJobInWorker({ kind: 'peek', request: {
+        databasePath: capability.databasePath,
+        projectId: capability.projectId,
+        manifestFingerprint: capability.manifestFingerprint,
+        scratchRoot: this.scratchRoot,
+      } }, this.worker)
       return this.matchesCapability(capability, readManifest(capability.rootPath)) ? overview : UNAVAILABLE
     } catch {
       return UNAVAILABLE
@@ -389,59 +428,12 @@ export class ProjectPeekService {
     }
   }
 
-  private readSnapshot(capability: CapabilityState): ProjectOverview {
-    const before = sourceState(capability.databasePath)
-    fs.mkdirSync(this.scratchRoot, { recursive: true })
-    const attempt = fs.mkdtempSync(path.join(this.scratchRoot, 'attempt-'))
-    const snapshotPath = path.join(attempt, 'snapshot.db')
-    let database: BetterSqlite3.Database | undefined
-    try {
-      fs.writeFileSync(path.join(attempt, '.vibe-owner.json'), JSON.stringify({
-        owner: 'AI-Novel-Writer project peek',
-        sourceProject: capability.projectId,
-        createdAt: new Date().toISOString(),
-        ttlHours: 1,
-        reason: 'Ephemeral read-only project overview snapshot.',
-        cleanupCommand: `Remove-Item -LiteralPath '${attempt.replaceAll("'", "''")}' -Recurse -Force`,
-      }), { flag: 'wx' })
-      for (const file of before) fs.copyFileSync(
-        capability.databasePath + file.suffix,
-        snapshotPath + file.suffix,
-        fs.constants.COPYFILE_EXCL,
-      )
-      const copied = sourceState(snapshotPath)
-      const after = sourceState(capability.databasePath)
-      if (!sameSnapshotContent(before, copied) || JSON.stringify(before) !== JSON.stringify(after)) {
-        throw new Error('PROJECT_PEEK_SOURCE_CHANGED')
-      }
-      database = new Database(snapshotPath, { readonly: true, fileMustExist: true })
-      const version = new SqliteSchemaAdapter(database).readUserVersion()
-      if (version >= OLDEST_SNAPSHOT_UPGRADABLE_SCHEMA_VERSION && version < CURRENT_DESKTOP_SCHEMA_VERSION) {
-        database.close()
-        upgradeSnapshot(snapshotPath, version)
-        database = new Database(snapshotPath, { readonly: true, fileMustExist: true })
-      }
-      const opened = database
-      opened.pragma('foreign_keys = ON')
-      verifySchema(new SqliteSchemaAdapter(opened, () => unprovableReviewCycleIds(opened)), getDesktopMigrationRegistry(), capability.expectedSchemaVersion)
-      const physicalRevision = digest(JSON.stringify({
-        manifest: capability.manifestFingerprint,
-        files: before.map(file => [file.suffix, file.size, file.hash]),
-      }))
-      return aggregateProject(database, capability.projectId, false, physicalRevision)
-    } finally {
-      database?.close()
-      fs.rmSync(attempt, { recursive: true, force: true })
-    }
-  }
-
   private matchesCapability(capability: CapabilityState, current: ManifestState): boolean {
     return current.rootPath === capability.rootPath
       && current.databasePath === capability.databasePath
       && current.projectId === capability.projectId
       && current.manifestFingerprint === capability.manifestFingerprint
       && current.storageVersion === capability.storageVersion
-      && capability.expectedSchemaVersion === CURRENT_DESKTOP_SCHEMA_VERSION
   }
 }
 

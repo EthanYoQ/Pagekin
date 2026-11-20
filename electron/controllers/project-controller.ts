@@ -34,6 +34,7 @@ import { assertExpectedProjectPath, assertRequiredExpectedProjectPath } from '..
 import { sanitizeProjectName } from './project-path'
 import { stopPortableExports } from '../services/portable-export-host'
 import { projectStoragePreflightFailure } from '../services/project-storage-preflight'
+import { verifyCanonicalProjectData } from '../services/project-data-locator'
 import { projectPeekService } from '../services/project-peek'
 import { probeProjectSqlite } from '../services/sqlite-project-migration'
 import { mainText } from '../i18n'
@@ -593,7 +594,6 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     return serializeProjectOpen(async () => {
       // 让已经发出的后续打开请求先登记身份，避免旧请求抢先切换全局数据库。
       await yieldToPendingOpenRequests()
-      await stopExportsOfClosingProject()
       const isLatestRequest = () => latestProjectOpenRequestToken === requestToken
       const rollbackBoundary = captureProjectRollbackBoundary()
       if (!isLatestRequest()) {
@@ -608,6 +608,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
       }
 
       let legacyImportSource: ProjectDirectoryGrant | undefined
+      let currentProjectClosed = false
       try {
         const recent = typeof target === 'string'
           ? loadRecentProjects().find(project => project.path === target) : undefined
@@ -637,7 +638,18 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         if (recent?.projectId && recent.projectId !== trustedProject.projectId) {
           throw new Error('PROJECT_OPEN_RECENT_IDENTITY_CHANGED')
         }
-        const { sealedRootCount } = initProjectDatabase(resolvedProjectPath)
+        // 重开当前这本时主进程正持有它，不另起 worker 校验（它已是当前版本）。
+        const verified = sameProjectPath(getCurrentProjectPath(), resolvedProjectPath)
+          ? undefined
+          : await verifyCanonicalProjectData(resolvedProjectPath)
+        const staleBeforeSwitch = () =>
+          ({ success: false, project: null, requestToken, stale: true, ...databaseStateForRollbackBoundary(rollbackBoundary) })
+        if (!isLatestRequest()) return staleBeforeSwitch()
+        // 校验期间旧书照常开着、可能又起了导出，所以紧挨换库再停。
+        await stopExportsOfClosingProject()
+        if (!isLatestRequest()) return staleBeforeSwitch()
+        currentProjectClosed = true
+        const { sealedRootCount } = initProjectDatabase(resolvedProjectPath, verified)
         const openedDatabase = getProjectDb()
         if (openedDatabase) adoptTransferredCharacterContinuityOnOpen({ database: openedDatabase,
           projectRoot: resolvedProjectPath, projectId: trustedProject.projectId })
@@ -738,7 +750,9 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         let databaseState: ProjectDatabaseState
         try {
           databaseState = requireReadyDatabase(
-            restoreProjectRollbackBoundary(rollbackBoundary),
+            currentProjectClosed
+              ? restoreProjectRollbackBoundary(rollbackBoundary)
+              : databaseStateForRollbackBoundary(rollbackBoundary),
             'PROJECT_ROLLBACK_DATABASE_UNAVAILABLE',
           )
         } catch (restoreError) {
@@ -926,6 +940,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     ) => {
     let resolvedPath: string
     let deletedProjectId: string
+    let deletedLeaseId: string
     let deletingCurrentProject = false
     let databaseClosed = false
     try {
@@ -934,6 +949,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         getCurrentProjectPath(),
       )
       deletedProjectId = activeSession.projectId
+      deletedLeaseId = activeSession.leaseId
       resolvedPath = projectAccess.authorizeDeletion({
         projectId: activeSession.projectId,
         leaseId: activeSession.leaseId,
@@ -1003,7 +1019,8 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         'The project folder was deleted, but its local cloud backup binding was not cleaned up yet',
       )
     }
-    projectAccess.invalidateCurrentSession()
+    // 删目录时没占着打开队列，期间可能已经开了另一本书。
+    if (projectAccess.captureCurrentSession()?.leaseId === deletedLeaseId) projectAccess.invalidateCurrentSession()
     try {
       removeRecentProject(resolvedPath)
       return {

@@ -611,7 +611,7 @@ test('saved first-review continuation preserves old files, counts the exact hist
     fs.mkdirSync(adapter)
     for (const name of ['src', 'electron', 'node_modules']) fs.symlinkSync(path.join(ROOT, name), path.join(adapter, name), 'junction')
     fs.mkdirSync(path.join(scripts, 'fixtures'), { recursive: true })
-    for (const name of ['quality-modernization-driver.mjs', 'quality-modernization-run.mjs', 'quality-modernization-receipt.mjs', 'fixtures/quality-modernization-production.fixture.mjs'])
+    for (const name of ['quality-modernization-driver.mjs', 'quality-modernization-run.mjs', 'quality-modernization-receipt.mjs', 'review-proof-read.mjs', 'fixtures/quality-modernization-production.fixture.mjs'])
       fs.copyFileSync(path.join(ROOT, 'scripts', name), path.join(scripts, name))
     const phase = 'saved-native-review-diagnostic', policy = structuredClone(savedPolicy), slot = policy.sources[0]
     delete policy.savedReviewContinuation.controlResume
