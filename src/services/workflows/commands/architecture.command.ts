@@ -49,7 +49,7 @@ import {
   isGeneratedGlobalGuidanceValid,
   mergeExpandedNovelConfig,
 } from '../novel-config-expansion'
-import { displayedErrorMessage, englishWithReason, knownAppErrorMessage } from '../../../i18n/app-errors'
+import { displayedErrorMessage, englishWithReason, errorCodeOf, knownAppErrorMessage } from '../../../i18n/app-errors'
 import { pluralEn } from '../../../shared/plural-en'
 import { recordAiSources, type AiSources } from '../../../shared/novel-config-ai-sources'
 import { WorkflowCancelledError } from '../workflow-cancellation'
@@ -149,13 +149,7 @@ export class PlotOutlineResumeAvailableError extends Error {
  */
 export const PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE = 'architecture-synopsis-source-changed'
 
-/**
- * 主进程按冻结来源拒绝下一次请求时抛出的错误码（main-generation-owner.ts assertSourcesCurrent）：
- * 模型设置变了是 GENERATION_SOURCE_CHANGED_MODEL，其余来源是 GENERATION_SOURCE_CHANGED。经 IPC 后 code 属性丢失、
- * 外面还包着「Error invoking remote method …」，只能匹配 message；两侧的断言排除更长的码
- * （如 _DURING_SNAPSHOT、FINALIZATION_GENERATION_SOURCE_CHANGED）。第 1 组有值即为模型设置变了。
- */
-const PLOT_OUTLINE_SOURCE_CHANGED_PATTERN = /(?<![A-Z_])GENERATION_SOURCE_CHANGED(_MODEL)?(?![A-Z_])/u
+const PLOT_OUTLINE_SOURCE_CHANGED_CODES = new Set(['GENERATION_SOURCE_CHANGED', 'GENERATION_SOURCE_CHANGED_MODEL'])
 
 export class PlotOutlineSourceChangedError extends Error {
   readonly code = PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE
@@ -2229,10 +2223,10 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           await this.callLLMResult(`${originalPrompt}\n\n${plotOutlineRequestContract(outline, cursor.chapterNumber, cursor.attempt)}`,
             `${promptBuilder.getSystemRole()}\n\n${planningTargetInstruction('outline', outline.targetUnits, language)}`, requestCallbacks, { purpose: plotOutlinePurpose(cursor.chapterNumber, cursor.attempt), reasoningStage: 'planning', writingSkillStage: 'planning' }, context)
         } catch (error) {
-          const changed = error instanceof Error ? PLOT_OUTLINE_SOURCE_CHANGED_PATTERN.exec(error.message) : null
-          if (!changed) throw error
+          const code = errorCodeOf(error)
+          if (!code || !PLOT_OUTLINE_SOURCE_CHANGED_CODES.has(code)) throw error
           const { from } = outline.range, stoppedAt = cursor.chapterNumber
-          const cause = changed[1]
+          const cause = code === 'GENERATION_SOURCE_CHANGED_MODEL'
             ? text('生成途中模型设置被修改', 'The model settings were changed during generation')
             : text('生成途中作品设定、提示词模板或写作 Skill 被修改', 'The book settings, a prompt template or a writing skill changed during generation')
           const lastKept = stoppedAt - 1
@@ -2258,7 +2252,8 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       requireIpcSuccess(committed, text('保存完整情节大纲', 'Save the complete plot outline'))
     } catch (error) {
       // 最后一章生成完、正式保存前来源变了：主进程在保存这一步只报通用码，不分模型还是其他来源。
-      if (!(error instanceof Error && PLOT_OUTLINE_SOURCE_CHANGED_PATTERN.test(error.message))) throw error
+      const code = errorCodeOf(error)
+      if (!code || !PLOT_OUTLINE_SOURCE_CHANGED_CODES.has(code)) throw error
       const { from, to } = outline.range
       const chapters = from === to ? text(`第 ${from} 章`, `chapter ${from}`) : text(`第 ${from}–${to} 章`, `chapters ${from}–${to}`)
       throw new PlotOutlineSourceChangedError(text(

@@ -12,10 +12,8 @@ import type { WorkflowRun } from '../../stores/workflow-store'
 import { toast } from '../ui/Toast'
 import { presentWorkflowFailure, type WorkflowFailurePresentation } from '../panels/ai-output-failure-presentation'
 
-/** 运行侧页为一次失败的运行显示的内容：标题、原因、错误码，以及能接着做什么。 */
 export interface RunFailure {
   title: string
-  errorCode?: string
   presentation: WorkflowFailurePresentation
   /** 情节大纲生成被截断且已完成部分已保存：可以从断点续写。 */
   canResumeOutline: boolean
@@ -29,7 +27,6 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
   const failedWith = (code: string) => run.errorCode === code || failedStep?.errorCode === code
   return {
     title: run.title,
-    errorCode: run.errorCode ?? failedStep?.errorCode,
     presentation: presentWorkflowFailure(
       run.failureCode ?? currentStep?.failureCode,
       run.error || currentStep?.error,
