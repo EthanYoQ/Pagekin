@@ -24,6 +24,7 @@ test('preflight uses the same selector and has no dispatch allowance', () => {
 
 const inputPath = process.env.QUALITY_PLANNING_RESUME_TEST_INPUT
 test.skipIf(!inputPath)('saved-outline continuation uses real owners and SQLite with a synthetic provider', async () => {
+  fs.mkdirSync(path.join(ROOT, '.runtime/.cache/novel-quality-modernization'), { recursive: true })
   const evidence = process.env.QUALITY_PLANNING_RESUME_TEST_EVIDENCE
     ?? fs.mkdtempSync(path.join(ROOT, '.runtime/.cache/novel-quality-modernization/planning-resume-test-'))
   fs.mkdirSync(evidence, { recursive: true })

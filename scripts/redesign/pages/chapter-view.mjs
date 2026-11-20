@@ -41,11 +41,21 @@ export async function review(page) {
 
 export const reviseButton = page => view(page).getByRole('button', { name: /^按 \d+ 项意见修稿$/ })
 
-/** 定稿：已修稿时点主按钮，否则从「更多」里点；untilReadOnly 为 false 时不等只读（定稿后会跳到别的页面时）。 */
+/**
+ * 定稿：已修稿或审稿无可修时入口是主按钮，否则在「更多」里，两者不同时出现。
+ * 先打开「更多」，再等两个入口之一可见：动作条重绘的空档里两者都不在，等到哪个就点哪个。
+ * 定稿后会跳到别的页面时 untilReadOnly 传 false。
+ */
 export async function finalize(page, chapterNumber, { untilReadOnly = true, beforeConfirm } = {}) {
   const button = view(page).getByRole('button', { name: '定稿', exact: true })
-  if (await button.count() > 0) await button.click()
-  else await more(page, '定稿…')
+  const item = page.getByRole('menuitem', { name: '定稿…' })
+  await view(page).getByRole('button', { name: '更多操作' }).click()
+  await item.or(button).first().waitFor({ state: 'visible' })
+  if (await item.isVisible()) await item.click()
+  else {
+    await page.keyboard.press('Escape')
+    await button.click()
+  }
   const confirm = finalizeDialog(page, chapterNumber).getByRole('button', { name: '确认定稿', exact: true })
   await confirm.waitFor({ state: 'visible' })
   beforeConfirm?.()

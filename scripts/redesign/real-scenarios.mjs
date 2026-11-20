@@ -608,7 +608,7 @@ export const REAL_SCENARIOS = {
     return { kinds, omitted: materials.omitted, addedUnits: countUnits(after) - countUnits(text), prose: after }
   } },
 
-  'real-editor-context-ab': { real: true, setup: async context => {
+  'real-editor-context-ab': { real: true, requires: { env: { EDITOR_CONTEXT_BOOK: '指向本机的夹具书 JSON（batch11 用过 .audit/shutong-sweep/batch11/editor-context/book.json）' } }, setup: async context => {
     const file = process.env[EDITOR_CONTEXT_BOOK]
     assert.ok(file && fs.existsSync(file), `环境变量 ${EDITOR_CONTEXT_BOOK} 指向夹具书 JSON`)
     context.evalBook = JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -661,7 +661,7 @@ export const REAL_SCENARIOS = {
   } },
 
   /** #702：设定文档没有章号；臂按每次运行实际带的材料记，不预设。 */
-  'real-editor-nochapter-ab': { real: true, setup: async context => {
+  'real-editor-nochapter-ab': { real: true, requires: { env: { EDITOR_NOCHAPTER_DOC: '指向本机的设定文档夹具 JSON（{ document, points }；batch11 用过 .audit/shutong-sweep/batch11/nochapter-narrative/fixtures/p5.json）' } }, setup: async context => {
     const file = process.env[EDITOR_NOCHAPTER_DOC]
     assert.ok(file && fs.existsSync(file), `环境变量 ${EDITOR_NOCHAPTER_DOC} 指向设定文档夹具 JSON`)
     context.evalDoc = JSON.parse(fs.readFileSync(file, 'utf8'))

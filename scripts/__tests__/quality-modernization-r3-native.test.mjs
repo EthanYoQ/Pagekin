@@ -18,6 +18,7 @@ import { removeTemporaryTree } from '../../test/helpers/remove-temporary-tree.mj
 
 const phase = 'r3-native-revision-diagnostic'
 const protocol = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/research/novel-quality-modernization/protocol.json')))
+fs.mkdirSync(path.join(ROOT, '.runtime/.cache/novel-quality-modernization'), { recursive: true })
 
 test('native bridge checks the configured official path for GLM and retains the DeepSeek path', () => {
   const fixture = fs.readFileSync(path.join(ROOT, 'scripts/fixtures/quality-modernization-production.fixture.mjs'), 'utf8')

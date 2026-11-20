@@ -3,9 +3,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import { spawnSync } from 'node:child_process'
 import { afterEach, it, vi } from 'vitest'
 vi.mock('playwright', () => ({ _electron: { launch: () => { throw new Error('UNIT_TEST_MUST_NOT_LAUNCH_ELECTRON') } } }))
-import { appearanceWrite, assertBuilt, captureFailure, driveSessions, finishRealSession, harvestModelLog, idleMemory, createIsolatedRoots, isolatedEnvironment, launchArgs, parseArgs,
+import { appearanceWrite, assertBuilt, captureFailure, driveSessions, finishRealSession, harvestModelLog, idleMemory, createIsolatedRoots, isolatedEnvironment, launchArgs, missingPrerequisites, parseArgs,
   releaseSessionRoot, scanRunForSecret, sessionIsClean, writeConsoleLog } from '../drive.mjs'
 import { fileStamps } from '../real-model.mjs'
 import { BASELINE_SESSIONS, SCENARIOS } from '../scenarios.mjs'
@@ -299,4 +300,30 @@ it('本次产出里有目录遍历不了时记进 keyScan.unreadable，退出码
   assert.equal(exitCode, 1)
   const [result] = JSON.parse(fs.readFileSync(path.join(out, 'real-x-light.json'), 'utf8'))
   assert.deepEqual(result.keyScan.unreadable, [{ file: sub, reason: 'EACCES' }])
+})
+
+it('场景声明的前置不齐时不启动应用：退出码 3，逐项写出缺什么、怎么设，结果 JSON 记 notRun', () => {
+  const appRoot = tempParent()
+  fs.mkdirSync(path.join(appRoot, 'dist-electron'))
+  fs.writeFileSync(path.join(appRoot, 'dist-electron', 'main.js'), '')
+  const out = path.join(appRoot, 'out')
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'PERF702_FIXTURE' && key !== 'NODE_OPTIONS'))
+  const drive = (...args) => spawnSync(process.execPath, ['scripts/redesign/drive.mjs', '--app-root', appRoot, '--out', out, ...args], { encoding: 'utf8', env })
+
+  const fixture = drive('--scenario', 'perf702-export')
+  assert.equal(fixture.status, 3, fixture.stderr)
+  assert.match(fixture.stderr, /未跑 perf702-export：\n缺环境变量 PERF702_FIXTURE，设置方法：指向 112 章夹具目录/)
+  const [result] = JSON.parse(fs.readFileSync(path.join(out, 'perf702-export-light.json'), 'utf8'))
+  assert.equal(result.notRun.length, 1)
+  assert.deepEqual(JSON.parse(fixture.stdout), result, 'stdout 与结果 JSON 报同一条未跑记录')
+
+  const light = drive('--scenario', 'arch-dark')
+  assert.equal(light.status, 3, light.stderr)
+  assert.match(light.stderr, /缺 --theme dark，设置方法：命令加 --theme dark/)
+})
+
+it('前置齐全时没有缺项', () => {
+  const requires = { env: { PERF702_FIXTURE: '设置方法' }, theme: 'dark' }
+  assert.deepEqual(missingPrerequisites({ requires }, { theme: 'dark' }, { PERF702_FIXTURE: 'C:/fixture' }), [])
+  assert.deepEqual(missingPrerequisites({}, { theme: 'light' }, {}), [])
 })
