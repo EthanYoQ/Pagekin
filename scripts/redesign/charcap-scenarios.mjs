@@ -275,7 +275,7 @@ export const CHARCAP_SCENARIOS = {
   'charcap-arch-forty': { model: true, shell: 'stage', setup: seedFortyBook(), run: context => confirmFortyCast(context, 'charcap-arch-forty-confirm') },
 
   /** 输出上限 4096：详情每张单独一次请求，根预算按名单 40 位算（70 次），照样走到确认卡、40 张卡。 */
-  'charcap-arch-forty-4096': { model: true, shell: 'stage', setup: seedFortyBook(FAKE_MODEL), run: context => confirmFortyCast(context, 'charcap-arch-forty-4096') },
+  'charcap-arch-forty-4096': { model: true, shell: 'stage', setup: seedFortyBook(FAKE_MODEL), run: context => confirmFortyCast(context, 'charcap-arch-forty-4096-confirm') },
 
   /** 名单三次都撞输出上限：运行卡写明已有角色没动、人物太多、去哪调、用哪个按钮补。 */
   'charcap-arch-truncated': { model: true, shell: 'stage', setup: seedFortyBook(), run: async context => {
