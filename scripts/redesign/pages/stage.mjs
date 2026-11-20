@@ -37,7 +37,16 @@ export const overview = (page, name) => page.getByRole('region', { name: `《${n
 
 export async function previewBook(page, name) {
   await cover(page, name).click()
-  await overview(page, name).waitFor({ state: 'visible' })
+  const region = overview(page, name)
+  await region.waitFor({ state: 'visible' })
+  const stats = region.locator('.pi-stats')
+  const reason = region.locator('.stage-ov-status').filter({ hasNotText: '正在读取' })
+  try {
+    await stats.or(reason).first().waitFor({ state: 'visible' })
+  } catch (error) {
+    throw new Error(`《${name}》的预览一直停在「正在读取这部作品…」`, { cause: error })
+  }
+  if (await reason.isVisible()) throw new Error(`《${name}》的预览读不到：${await reason.textContent()}`)
 }
 
 /** 英文界面的书房：封面是「Preview “书名”」，概览里的主按钮是「Open “书名”」。 */
@@ -51,7 +60,8 @@ export async function openFromLibraryEn(page, name) {
  * 正打开着的这本书点封面回到「继续」概览，那里没有「打开」，改用 Ctrl K 重新打开（新的项目会话）。
  */
 export async function openFromLibrary(page, name) {
-  await previewBook(page, name)
+  await cover(page, name).click()
+  await overview(page, name).waitFor({ state: 'visible' })
   if (await overview(page, name).locator('.stage-eyebrow').filter({ hasText: /^继续$/ }).count() > 0) return openFromPalette(page, name)
   await overview(page, name).getByRole('button', { name: `打开《${name}》` }).click()
   await spine(page).waitFor({ state: 'visible' })
