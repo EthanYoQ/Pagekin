@@ -635,10 +635,12 @@ async function main() {
   }
   const missing = sessions.flatMap(([, names]) => names.flatMap(name => missingPrerequisites(SCENARIOS[name], options)))
   if (missing.length) {
+    const result = { scenario: options.scenario, theme: options.theme, notRun: missing }
     process.stderr.write(`未跑 ${options.scenario}：\n${missing.join('\n')}\n`)
-    fs.writeFileSync(path.join(options.out, `${options.scenario}-${options.theme}.json`),
-      JSON.stringify([{ scenario: options.scenario, theme: options.theme, notRun: missing }], null, 2))
-    process.exit(NOT_RUN)
+    process.stdout.write(`${JSON.stringify(result)}\n`)
+    fs.writeFileSync(path.join(options.out, `${options.scenario}-${options.theme}.json`), JSON.stringify([result], null, 2))
+    process.exitCode = NOT_RUN
+    return
   }
   process.exitCode = await driveSessions({ sessions, options, realKey })
 }
