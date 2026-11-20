@@ -115,7 +115,7 @@ beforeEach(() => {
     return result
   })
   useEditorStore.setState({ tabs: [], activeTabId: null, draftLedgers: {} })
-  useProjectStore.setState({ currentProject: project(PROJECT_A), fileTree: [], loading: false })
+  useProjectStore.setState({ currentProject: project(PROJECT_A), loading: false })
   useCharacterStore.getState().reset()
 })
 

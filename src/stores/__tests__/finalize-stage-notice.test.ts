@@ -72,7 +72,6 @@ beforeEach(() => {
   useWorkflowStore.setState({ activeRuns: [], history: [], globalLogs: [], waitingRuns: {}, currentRun: null, waitingForConfirm: false, waitingAfterStepIndex: -1 })
   useProjectStore.setState({
     currentProject: { id: session.projectId, name: 'Notice', path: projectPath, sessionLease: session.leaseId, novelConfig: {} } as never,
-    refreshFileTree: vi.fn().mockResolvedValue(undefined),
   })
   useLocaleStore.setState({ locale: 'zh-CN', initialized: true })
 })

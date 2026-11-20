@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   invokeWithProjectSession,
-  refreshFileTree,
   syncTabContent,
   markTabSaved,
   settleMergedRevision,
@@ -11,7 +10,6 @@ const {
   workflowHistory,
 } = vi.hoisted(() => ({
   invokeWithProjectSession: vi.fn(),
-  refreshFileTree: vi.fn(),
   syncTabContent: vi.fn(),
   markTabSaved: vi.fn(),
   settleMergedRevision: vi.fn(),
@@ -40,7 +38,6 @@ vi.mock('../project-store', () => ({
         path: 'C:\\novels\\project-a',
         sessionLease: 'lease-a',
       },
-      refreshFileTree,
     }),
   },
 }))
@@ -80,13 +77,11 @@ describe('draft-store merged revision persistence', () => {
   beforeEach(() => {
     workflowHistory.length = 0
     invokeWithProjectSession.mockReset()
-    refreshFileTree.mockReset()
     syncTabContent.mockReset()
     markTabSaved.mockReset()
     settleMergedRevision.mockReset()
     startWorkflow.mockReset()
     editorTabs.splice(0)
-    refreshFileTree.mockResolvedValue(undefined)
     startWorkflow.mockResolvedValue('recheck')
 
     invokeWithProjectSession.mockImplementation(async (_session: unknown, channel: string) => {
@@ -159,7 +154,6 @@ describe('draft-store merged revision persistence', () => {
       expect.anything(),
       projectPath,
     )
-    expect(refreshFileTree).not.toHaveBeenCalled()
   })
 
   it('keeps the main-process code readable when the merge is rejected (#474)', async () => {

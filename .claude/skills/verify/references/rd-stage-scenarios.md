@@ -201,7 +201,7 @@ node scripts/redesign/drive.mjs --scenario typing-latency --app-root <trunk 工�
 node scripts/redesign/drive.mjs --scenario typing-latency --shell stage --out <目录>
 ```
 
-草稿、审稿、合并、定稿、1280 与沉浸写作各场景都用 `contrastFailures` 核对单章视图的文字对比度（正文与合并栏 4.5，说明文字 3）。屏幕外窗口的动画帧可能被系统节流，`chapter-open` 与 `typing-latency` 都同时报不依赖动画帧的 DOM 口径。RD-X1 起打开作品的默认落点随提交同步落下，读文件树期间打开的运行侧页不再被收起（`x1-run-sheet-keep`）；`afterProjectOpenSettles` 的 2 秒等待是之前留下的，保留无害。审稿侧页属于单章视图，不随落点收起。
+草稿、审稿、合并、定稿、1280 与沉浸写作各场景都用 `contrastFailures` 核对单章视图的文字对比度（正文与合并栏 4.5，说明文字 3）。屏幕外窗口的动画帧可能被系统节流，`chapter-open` 与 `typing-latency` 都同时报不依赖动画帧的 DOM 口径。RD-X1 起打开作品的默认落点随提交同步落下，打开返回前打开的运行侧页不再被收起（`x1-run-sheet-keep`）；`afterProjectOpenSettles` 的 2 秒等待是之前留下的，保留无害。审稿侧页属于单章视图，不随落点收起。
 
 ## 作品资料页（RD-9 起）
 

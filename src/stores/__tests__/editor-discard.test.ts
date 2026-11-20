@@ -120,7 +120,7 @@ beforeEach(() => {
     return result
   })
   useEditorStore.setState({ tabs: [], activeTabId: null, draftLedgers: {} })
-  useProjectStore.setState({ currentProject: project('A'), fileTree: [], loading: false })
+  useProjectStore.setState({ currentProject: project('A'), loading: false })
   useCharacterStore.setState({
     characters: [character('旧名')],
     selectedName: '旧名',

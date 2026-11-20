@@ -106,6 +106,4 @@ export async function adoptImportSuggestions(
     publish(adopted.filter(editedSinceClick), 'current')
     if (isProjectSessionCurrent(session)) publishAdoptedArchitecture(core, new Set(items.map(item => item.field)), session, runId)
   }
-  // 设定已经写进库；文件树只影响架构文件的显示，刷新失败等下次打开时再读。
-  await useProjectStore.getState().refreshFileTree(projectPath, undefined, session).catch(() => undefined)
 }

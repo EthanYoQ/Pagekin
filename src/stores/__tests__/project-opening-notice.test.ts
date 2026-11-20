@@ -34,7 +34,7 @@ beforeEach(() => {
   invoke.mockReset()
   pushToast.mockClear()
   closeToast.mockClear()
-  useProjectStore.setState({ currentProject: null, fileTree: [], loading: false })
+  useProjectStore.setState({ currentProject: null, loading: false })
 })
 afterEach(() => { vi.useRealTimers() })
 

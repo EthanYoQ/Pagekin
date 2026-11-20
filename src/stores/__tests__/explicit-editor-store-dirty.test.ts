@@ -158,7 +158,7 @@ beforeEach(() => {
     activeTabId: 'config',
     draftLedgers: {},
   })
-  useProjectStore.setState({ currentProject: project(), fileTree: [], loading: false })
+  useProjectStore.setState({ currentProject: project(), loading: false })
   useCharacterStore.setState({
     characters: [character('主角')],
     selectedName: '主角',
@@ -254,8 +254,8 @@ describe('explicit editor dirty integration', () => {
     expect(aiSourceOf(config, aiSources, 'goldenFinger')).toBe('filled')
   })
   it('unbinds project A character data before openProject publishes project B and loads B', async () => {
-    const fileTree = deferred<[]>()
-    const fileTreeRequested = deferred<void>()
+    const recentList = deferred<[]>()
+    const recentListRequested = deferred<void>()
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
       if (channel === 'project:open') {
         return {
@@ -265,10 +265,9 @@ describe('explicit editor dirty integration', () => {
           activeProjectPath: projectB().path,
         }
       }
-      if (channel === 'fs:list-dir') {
-        expect(args[0]).toBe(projectB().path)
-        fileTreeRequested.resolve()
-        return fileTree.promise
+      if (channel === 'project:recent-list') {
+        recentListRequested.resolve()
+        return recentList.promise
       }
       if (channel === 'db:character-roster-read') {
         expect(args).toEqual([projectB().path])
@@ -279,12 +278,8 @@ describe('explicit editor dirty integration', () => {
     })
 
     const opening = useProjectStore.getState().openProject(projectB().path)
-    await Promise.race([fileTreeRequested.promise, opening])
-    expect(invoke).toHaveBeenCalledWith(
-      'fs:list-dir',
-      projectB().path,
-      projectB().path,
-    )
+    await Promise.race([recentListRequested.promise, opening])
+    expect(invoke).toHaveBeenCalledWith('project:recent-list')
 
     expect(useProjectStore.getState().currentProject?.path).toBe(projectB().path)
     expect(useCharacterStore.getState()).toMatchObject({
@@ -297,7 +292,7 @@ describe('explicit editor dirty integration', () => {
     await expect(useCharacterStore.getState().saveAll(projectB().path))
       .rejects.toThrow(/切换项目/)
 
-    fileTree.resolve([])
+    recentList.resolve([])
     await expect(opening).resolves.toBe(true)
     expect(alertError).toHaveBeenCalledWith(
       expect.stringContaining('unexpected IPC'),

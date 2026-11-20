@@ -96,7 +96,6 @@ beforeEach(async () => {
   useEditorStore.getState().clearTabs()
   useProjectStore.setState({
     currentProject: project as never,
-    refreshFileTree: vi.fn().mockResolvedValue(undefined),
   })
   useDraftStore.setState({ draftsByChapter: {}, loadAllDrafts: vi.fn().mockResolvedValue(undefined) })
   useWorkflowStore.setState({ activeRuns: [], history: [], globalLogs: [], waitingRuns: {} })

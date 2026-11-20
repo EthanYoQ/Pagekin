@@ -55,6 +55,31 @@ export async function untilHeld(app, channel, timeoutMs = 15_000) {
 
 export const releaseChannel = (app, channel) => app.evaluate((_, channel) => globalThis.__driveHolds[channel].release(), channel)
 
+/** 下一次 project:open 之后的第一次读最近作品卡在门上：这时作品已经提交，openProject 还没返回。书房自己读最近作品不受影响。 */
+async function holdRecentListAfterOpen(app) {
+  await app.evaluate(({ ipcMain }) => {
+    const handlers = ipcMain._invokeHandlers
+    const open = handlers.get('project:open')
+    const recent = handlers.get('project:recent-list')
+    const gate = Promise.withResolvers()
+    const state = { waiting: 0, release: gate.resolve }
+    ;(globalThis.__driveHolds ??= {})['project:recent-list'] = state
+    let opened = false
+    handlers.set('project:open', async (...args) => {
+      handlers.set('project:open', open)
+      opened = true
+      return open(...args)
+    })
+    handlers.set('project:recent-list', async (...args) => {
+      if (!opened) return recent(...args)
+      handlers.set('project:recent-list', recent)
+      state.waiting++
+      try { await gate.promise } finally { state.waiting-- }
+      return recent(...args)
+    })
+  })
+}
+
 /** 记下这些通道之后每次调用所属的作品路径（取调用参数最后的项目会话）。 */
 export async function recordCalls(app, channels) {
   const missing = await app.evaluate(({ ipcMain }, channels) => {
@@ -190,12 +215,12 @@ async function enterWorkAfterOpening(page) {
   await stage.spine(page).waitFor({ state: 'visible' })
 }
 
-/** 从书房打开灯塔，读文件树卡在主进程门上。 */
-async function openWithSlowFileTree(app, page) {
+/** 从书房打开灯塔，打开提交后读最近作品卡在主进程门上。 */
+async function openWithSlowRecentList(app, page) {
   await stage.previewBook(page, STAGE_SAMPLE.name)
-  await holdChannel(app, 'fs:list-dir')
+  await holdRecentListAfterOpen(app)
   await stage.overview(page, STAGE_SAMPLE.name).getByRole('button', { name: `打开《${STAGE_SAMPLE.name}》` }).click()
-  await untilHeld(app, 'fs:list-dir')
+  await untilHeld(app, 'project:recent-list')
   await enterWorkAfterOpening(page)
 }
 
@@ -658,32 +683,32 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #403：作者回过一次书房（书房的布局与之后再回书房完全相同），从书房的 Ctrl K 重新打开作品，读完文件树前进作品又回书房，
-  // 读完后不被换回作品。落点晚到的版本只比较提交前后的布局，两次都是作者亲手回的书房，比较通过。
+  // #403：作者回过一次书房（书房的布局与之后再回书房完全相同），从书房的 Ctrl K 重新打开作品，打开返回前进作品又回书房，
+  // 返回后不被换回作品。落点晚到的版本只比较提交前后的布局，两次都是作者亲手回的书房，比较通过。
   'x1-library-return': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
     await stage.backToLibrary(page, STAGE_SAMPLE.name)
-    await holdChannel(app, 'fs:list-dir')
+    await holdRecentListAfterOpen(app)
     await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).fill(STAGE_SAMPLE.name)
     await stage.palette(page).getByRole('option', { name: `打开《${STAGE_SAMPLE.name}》` }).click()
-    await untilHeld(app, 'fs:list-dir')
+    await untilHeld(app, 'project:recent-list')
     await enterWorkAfterOpening(page)
     await stage.backToLibrary(page, STAGE_SAMPLE.name)
-    await releaseChannel(app, 'fs:list-dir')
+    await releaseChannel(app, 'project:recent-list')
     await page.waitForTimeout(2000)
     const after = { library: await stage.shelf(page).isVisible(), spine: await stage.spine(page).isVisible() }
-    assert.deepEqual(after, { library: true, spine: false }, '读完文件树后仍在书房')
+    assert.deepEqual(after, { library: true, spine: false }, '打开返回后仍在书房')
     return after
   } },
 
-  // #395：打开作品、读完文件树前打开运行侧页，读完后侧页仍开着。
+  // #395：打开作品、打开返回前打开运行侧页，返回后侧页仍开着。
   'x1-run-sheet-keep': { model: false, shell: 'stage', setup: context => seedStageSample(context, { open: false }), run: async ({ app, page }) => {
-    await openWithSlowFileTree(app, page)
+    await openWithSlowRecentList(app, page)
     await runSheet.openFromPalette(page)
-    await releaseChannel(app, 'fs:list-dir')
+    await releaseChannel(app, 'project:recent-list')
     await page.waitForTimeout(2000)
     const after = { runSheet: await runSheet.sheet(page).isVisible() }
-    assert.deepEqual(after, { runSheet: true }, '读完文件树后运行侧页仍开着')
+    assert.deepEqual(after, { runSheet: true }, '打开返回后运行侧页仍开着')
     return after
   } },
 }

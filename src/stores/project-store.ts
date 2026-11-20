@@ -8,7 +8,6 @@ import type {
   ProjectData,
   ProjectSessionContext,
   NovelConfig,
-  FileNode,
 } from '../shared/ipc-channels'
 import type { AiSources } from '../shared/novel-config-ai-sources'
 import { alertError } from '../components/ui/AlertDialog'
@@ -49,7 +48,6 @@ import {
   type ProjectTransitionDraftSnapshot,
 } from '../services/project-transition'
 
-let refreshFileTreeRequestSequence = 0
 let openProjectRequestSequence = 0
 let recentProjectsRequestSequence = 0
 let closeProjectInFlight: Promise<boolean> | null = null
@@ -423,8 +421,6 @@ async function reconcileStaleProjectResponse(options: {
 interface ProjectState {
   /** 当前打开的项目 */
   currentProject: ProjectData | null
-  /** 项目文件树 */
-  fileTree: FileNode[]
   /** 最近项目列表 */
   recentProjects: ProjectChannels['project:recent-list']['return']
   /** 这次启动已经读到过一次最近项目；读到之前空列表不代表书架是空的。 */
@@ -466,12 +462,6 @@ interface ProjectState {
     projectPath: string,
     expectedProjectSession: ProjectSessionContext,
   ) => void
-  /** 刷新文件树 */
-  refreshFileTree: (
-    expectedProjectPath?: string,
-    expectedProjectSessionEpoch?: number,
-    expectedProjectSession?: ProjectSessionContext,
-  ) => Promise<void>
   /** 加载最近项目 */
   loadRecentProjects: () => Promise<void>
   /** 只移除最近项目记录，不删除项目目录或数据 */
@@ -486,7 +476,6 @@ interface ProjectState {
 
 export const useProjectStore = create<ProjectState>()((set, get) => ({
   currentProject: null,
-  fileTree: [],
   recentProjects: [],
   recentProjectsLoaded: false,
   loading: false,
@@ -541,7 +530,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       ) {
         await reconcileStaleProjectResponse({
           getRendererProjectPath: () => get().currentProject?.path ?? null,
-          detachRenderer: () => set({ currentProject: null, fileTree: [] }),
+          detachRenderer: () => set({ currentProject: null }),
           operation: 'create',
         })
         return false
@@ -550,7 +539,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         const unsafeProjectPath = get().currentProject?.path ?? rendererProjectPath
         await detachProjectBindings({
           projectPath: unsafeProjectPath,
-          detachRenderer: () => set({ currentProject: null, fileTree: [] }),
+          detachRenderer: () => set({ currentProject: null }),
           message: joinProjectNotices(
             '\n',
             projectErrorNotice(
@@ -669,7 +658,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (!isLatestRequest() || result.stale || result.requestToken !== requestToken) {
         await reconcileStaleProjectResponse({
           getRendererProjectPath: () => get().currentProject?.path ?? null,
-          detachRenderer: () => set({ currentProject: null, fileTree: [] }),
+          detachRenderer: () => set({ currentProject: null }),
           operation: 'open',
         })
         return false
@@ -687,7 +676,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         const unsafeProjectPath = get().currentProject?.path ?? rendererProjectPath
         await detachProjectBindings({
           projectPath: unsafeProjectPath,
-          detachRenderer: () => set({ currentProject: null, fileTree: [] }),
+          detachRenderer: () => set({ currentProject: null }),
           message: joinProjectNotices(
             '\n',
             projectErrorNotice(
@@ -717,7 +706,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       ) {
         await detachProjectBindings({
           projectPath: rendererProjectPath,
-          detachRenderer: () => set({ currentProject: null, fileTree: [] }),
+          detachRenderer: () => set({ currentProject: null }),
           message: projectNotice(
             '项目打开期间检测到新的编辑。主进程已切换项目，当前界面已停用以避免使用旧会话继续写入。',
             'New edits were detected while the project was opening. The main process switched projects, so the editor was disabled to prevent writes through the old session.',
@@ -754,7 +743,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         if (!isLatestRequest()) {
           await reconcileStaleProjectResponse({
             getRendererProjectPath: () => get().currentProject?.path ?? null,
-            detachRenderer: () => set({ currentProject: null, fileTree: [] }),
+            detachRenderer: () => set({ currentProject: null }),
             operation: 'open',
           })
           return false
@@ -774,7 +763,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             ? result.project!.novelConfig : restored.value },
           projectSessionEpoch: state.projectSessionEpoch + 1,
         }))
-        // 默认落点与提交同步落下：之后读文件树、最近项目期间作者的导航（回书房、开运行侧页、换侧栏）都在它之后，不会被改回。
+        // 默认落点与提交同步落下：之后读最近项目、初始化项目资源期间作者的导航（回书房、开运行侧页、换侧栏）都在它之后，不会被改回。
         navigate({ kind: 'stage' })
         const partialLoadWarnings: string[] = []
         // Opening a project revokes old shelf preview capabilities in main.
@@ -784,23 +773,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         } catch (recentError) {
           set({ recentProjects: [] })
           partialLoadWarnings.push(String(recentError))
-        }
-        // 核心项目身份已经提交。文件树属于可降级的第二层视图，
-        // 失败不能再把这个已打开的项目报告成整体打开失败。
-        try {
-          await get().refreshFileTree(result.project.path)
-        } catch (fileTreeError) {
-          if (
-            !isLatestRequest()
-            || !sameRendererProject(get().currentProject, result.project)
-          ) {
-            // 已返回项目已经提交到渲染进程；旧请求不再拥有后续视图刷新，
-            // 但主进程与当前界面已由当前请求或更新请求负责保持一致。
-            return false
-          }
-          console.error('[Project] 项目文件树加载失败:', fileTreeError)
-          partialLoadWarnings.push(String(fileTreeError))
-          set({ fileTree: [] })
         }
         // 此后渲染进程已经提交返回项目；过期状态只影响派生视图，可以安全退出。
         if (!isLatestRequest()) return false
@@ -876,7 +848,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (mainOpenWasAccepted) {
         const detached = await reconcileStaleProjectResponse({
           getRendererProjectPath: () => get().currentProject?.path ?? null,
-          detachRenderer: () => set({ currentProject: null, fileTree: [] }),
+          detachRenderer: () => set({ currentProject: null }),
           operation: 'open',
         })
         if (detached) return false
@@ -1089,43 +1061,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     persistConfigDraftLedger(discardProjectEditorDraft(ledger, projectPath))
   },
 
-  refreshFileTree: async (expectedProjectPath, expectedProjectSessionEpoch, expectedProjectSession) => {
-    const state = get()
-    const project = state.currentProject
-    if (
-      !project
-      || (expectedProjectPath && !sameProjectPathKey(project.path, expectedProjectPath))
-      || (
-        expectedProjectSessionEpoch !== undefined
-        && state.projectSessionEpoch !== expectedProjectSessionEpoch
-      )
-    ) return
-    const projectSession = projectSessionContextFromProject(project)
-    if (!projectSession) return
-    if (
-      expectedProjectSession
-      && !sameProjectSessionContext(expectedProjectSession, projectSession)
-    ) return
-    const projectPath = project.path
-    const projectSessionEpoch = expectedProjectSessionEpoch ?? state.projectSessionEpoch
-    const requestId = ++refreshFileTreeRequestSequence
-    const tree = await ipc.invokeWithProjectSession(
-      projectSession,
-      'fs:list-dir',
-      projectPath,
-      projectPath,
-    )
-    if (
-      requestId !== refreshFileTreeRequestSequence
-      || !sameProjectSessionContext(
-        projectSession,
-        projectSessionContextFromProject(get().currentProject),
-      )
-      || get().projectSessionEpoch !== projectSessionEpoch
-    ) return
-    set({ fileTree: tree })
-  },
-
   loadRecentProjects: async () => {
     const requestId = ++recentProjectsRequestSequence
     let list: ProjectChannels['project:recent-list']['return']
@@ -1215,7 +1150,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         ) {
           // 删除失败后主进程数据库也未能恢复，继续保留可写界面会制造
           // “看似打开、实际无数据库”的危险半状态。先解除所有项目绑定。
-          set({ currentProject: null, fileTree: [] })
+          set({ currentProject: null })
           try {
             await callProjectClosed(projectPath)
           } catch (cleanupError) {
@@ -1249,7 +1184,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
       const currentProject = get().currentProject
       if (sameProjectSessionContext(projectSession, projectSessionContextFromProject(currentProject))) {
-        set({ currentProject: null, fileTree: [] })
+        set({ currentProject: null })
         try {
           await callProjectClosed(projectPath)
         } catch (cleanupError) {
@@ -1326,7 +1261,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         if (!isPreparedProjectTransitionCurrent(project, preparedTransition)) {
           await detachProjectBindings({
             projectPath,
-            detachRenderer: () => set({ currentProject: null, fileTree: [] }),
+            detachRenderer: () => set({ currentProject: null }),
             message: projectNotice(
               '项目数据库关闭期间检测到新的编辑。数据库已关闭，当前界面已停用。',
               'New edits were detected while the project database was closing. The database is closed, so the editor was disabled.',
@@ -1343,7 +1278,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           projectSessionContextFromProject(get().currentProject),
         )) return false
         if (preparedTransition.decision === 'discard') discardProjectTransitionDrafts(projectPath)
-        set({ currentProject: null, fileTree: [] })
+        set({ currentProject: null })
         try {
           await callProjectClosed(projectPath)
         } catch (cleanupError) {

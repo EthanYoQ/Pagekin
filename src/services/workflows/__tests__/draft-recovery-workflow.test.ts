@@ -34,8 +34,7 @@ function bridge(recovery: GenerationRecoveryContext) {
   })
   vi.stubGlobal('window', { aiNovelAPI: { invoke, on: () => () => {} } })
   useProjectStore.setState({ currentProject: { id: session.projectId, path: session.projectPath,
-    sessionLease: session.leaseId, name: '合成恢复测试', novelConfig: {} } as never,
-    refreshFileTree: vi.fn().mockResolvedValue(undefined) })
+    sessionLease: session.leaseId, name: '合成恢复测试', novelConfig: {} } as never })
   return invoke
 }
 
