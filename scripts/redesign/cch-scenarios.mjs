@@ -229,7 +229,7 @@ Object.assign(CCH_SCENARIOS, {
     await stage.openFromLibrary(page, BOOK)
     await chapterView.open(page, 4)
     await chapterView.view(page).getByRole('button', { name: 'AI 审稿', exact: true }).click()
-    const shown = page.getByText('这本书的前文超过了 AI 一次能带的上限', { exact: false }).first()
+    const shown = page.getByText('本章正文和附加修稿要求合计超过上限', { exact: false }).first()
     await shown.waitFor({ state: 'visible', timeout: 120_000 })
     await shoot('ec-2-review-overflow')
     return { text: (await shown.innerText()).trim() }
