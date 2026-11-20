@@ -404,3 +404,28 @@ describe('character store project context', () => {
     expect(invoke).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('读名单期间选中角色', () => {
+  it('重读名单期间点了另一位，读完选中的是那一位', async () => {
+    invoke.mockResolvedValueOnce([character('甲'), character('乙')])
+    await useCharacterStore.getState().load(PROJECT_A)
+    let release!: (cards: CharacterCard[]) => void
+    invoke.mockReturnValueOnce(new Promise(resolve => { release = resolve }))
+    const reload = useCharacterStore.getState().load(PROJECT_A)
+
+    useCharacterStore.getState().setSelectedId('id:乙')
+    release([character('甲'), character('乙')])
+    await reload
+
+    expect(useCharacterStore.getState()).toMatchObject({ selectedId: 'id:乙', selectedName: '乙' })
+  })
+
+  it('选中的人读完后已不在名单里，落到第一位，不报错', async () => {
+    useCharacterStore.getState().beginProjectLoad(PROJECT_A)
+    useCharacterStore.getState().setSelectedId('id:已删除')
+    invoke.mockResolvedValueOnce([character('甲'), character('乙')])
+    await useCharacterStore.getState().load(PROJECT_A)
+
+    expect(useCharacterStore.getState()).toMatchObject({ selectedId: 'id:甲', selectedName: '甲', lastError: null })
+  })
+})
