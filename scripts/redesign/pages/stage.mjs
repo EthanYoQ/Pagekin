@@ -59,7 +59,8 @@ export async function openFromLibraryEn(page, name) {
  * 正打开着的这本书点封面回到「继续」概览，那里没有「打开」，改用 Ctrl K 重新打开（新的项目会话）。
  */
 export async function openFromLibrary(page, name) {
-  await previewBook(page, name)
+  await cover(page, name).click()
+  await overview(page, name).waitFor({ state: 'visible' })
   if (await overview(page, name).locator('.stage-eyebrow').filter({ hasText: /^继续$/ }).count() > 0) return openFromPalette(page, name)
   await overview(page, name).getByRole('button', { name: `打开《${name}》` }).click()
   await spine(page).waitFor({ state: 'visible' })
