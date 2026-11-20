@@ -46,14 +46,11 @@ import {
 import {
   importInferenceJsonContract,
   type ImportInferenceResult,
-  decodeImportInferenceJson,
   decodeRecoveredImportInference,
   importEndpointRecoveryTargets,
   IMPORT_INFERENCE_ROUNDS,
-  MAX_IMPORT_INFERENCE_CHARACTER_CARDS,
   parseImportInferenceJsonObject,
 } from './import-inference-contract'
-import { StructuredContractDiagnostic } from '../../../shared/structured-contract-diagnostic'
 import type {
   ImportGlobalFactsReceipt,
   ImportGlobalFactsRequest,
@@ -94,6 +91,7 @@ export function frozenImportContext(context: WorkflowContext): ImportGenerationC
 }
 
 const SHA256_HEX = /^[a-f0-9]{64}$/u
+const IMPORT_CARD_BATCH_SIZE = 3
 type UiText = (zhCNText: string, enUSText: string) => string
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -217,28 +215,34 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     context: CommandExecuteParams['context'],
   ): Promise<ImportInferenceResult> {
     const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
-    const decoded = async <T>(decode: () => T): Promise<T> => {
-      try { return decode() } catch (error) { await this.discardRejectedImportOutput(callbacks); throw error }
-    }
+    let recoveryTargets: string[]
     try {
-      return decodeImportInferenceJson(rawResult)
+      decodeRecoveredImportInference(rawResult, [], text)
+      recoveryTargets = importEndpointRecoveryTargets(rawResult, text)
     } catch (error) {
-      if (!(error instanceof StructuredContractDiagnostic)
-        || error.code !== 'relationship_endpoint_not_in_characters') {
-        await this.discardRejectedImportOutput(callbacks)
-        throw error
-      }
+      await this.discardRejectedImportOutput(callbacks)
+      throw error
     }
-
-    const recoveryTargets = await decoded(() => importEndpointRecoveryTargets(rawResult, text))
-    const delta = recoveryTargets.length === 0 ? null : await this.requestImportEndpointCards(rawResult, recoveryTargets, callbacks, context)
-    const { result, droppedRelationships } = await decoded(() => decodeRecoveredImportInference(rawResult, delta, text))
+    const deltas: string[] = []
+    for (let offset = 0; offset < recoveryTargets.length; offset += IMPORT_CARD_BATCH_SIZE) {
+      const sofar = decodeRecoveredImportInference(rawResult, deltas, text).result.characterCards
+      deltas.push(await this.requestImportEndpointCards(rawResult, sofar,
+        recoveryTargets.slice(offset, offset + IMPORT_CARD_BATCH_SIZE), callbacks, context))
+    }
+    const { result, droppedRelationships } = decodeRecoveredImportInference(rawResult, deltas, text)
+    const missing = recoveryTargets.filter(name => !result.characterCards.some(card => card.name === name))
+    if (missing.length > 0) {
+      callbacks.log(text(
+        `${missing.length} 位人物没有补出角色卡：${missing.join('、')}。导入后可在「角色名单」用「新建角色」或「粘贴 / 导入角色卡」补上。`,
+        `${missing.length} ${missing.length === 1 ? 'person has' : 'people have'} no character card yet: ${missing.join(', ')}. After the import, add them on the Cast page with New character or Paste or import cards.`,
+      ))
+    }
     if (droppedRelationships.length > 0) {
       const dropped = droppedRelationships.map(item => `${item.source}→${item.target}（${item.relation}）`).join('、')
       const droppedEn = droppedRelationships.map(item => `${item.source}→${item.target} (${item.relation})`).join(', ')
       callbacks.log(text(
-        `已丢弃 ${droppedRelationships.length} 条关系（对象没有角色卡）：${dropped}。这是导入推演的上限（最多 ${MAX_IMPORT_INFERENCE_CHARACTER_CARDS} 张角色卡），不是你的设置；导入后可在「角色名单」手动补上。`,
-        `Dropped ${droppedRelationships.length} relationship(s) whose target has no character card: ${droppedEn}. This is an import-inference limit (at most ${MAX_IMPORT_INFERENCE_CHARACTER_CARDS} character cards), not one of your settings; you can add them on the Cast page after the import.`,
+        `已丢弃 ${droppedRelationships.length} 条关系（对象没有角色卡）：${dropped}。导入后可在「角色名单」手动补上。`,
+        `Dropped ${droppedRelationships.length} relationship(s) whose target has no character card: ${droppedEn}. You can add them on the Cast page after the import.`,
       ))
     }
     return result
@@ -246,6 +250,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
 
   private async requestImportEndpointCards(
     rawResult: string,
+    existingCards: ImportInferenceResult['characterCards'],
     unresolvedTargets: string[],
     callbacks: CommandExecuteParams['callbacks'],
     context: CommandExecuteParams['context'],
@@ -253,17 +258,17 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     const frozen = frozenImportContext(context)
     const writingLanguage = frozen?.core.writingLanguage ?? workflowWritingLanguage(context)
     const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
-    const originalRoot = parseImportInferenceJsonObject(rawResult)
+    const originalRoot = { ...parseImportInferenceJsonObject(rawResult), characterCards: existingCards }
     callbacks.log(text(
-      `导入推演关系端点缺少 ${unresolvedTargets.length} 张角色卡，正在执行一次受限补卡校正`,
-      `${unresolvedTargets.length} relationship ${unresolvedTargets.length === 1 ? 'endpoint is' : 'endpoints are'} missing a character card; running one bounded correction`,
+      `正在补 ${unresolvedTargets.length} 张角色卡：${unresolvedTargets.join('、')}`,
+      `Adding ${unresolvedTargets.length} character ${unresolvedTargets.length === 1 ? 'card' : 'cards'}: ${unresolvedTargets.join(', ')}`,
     ))
     const correction = await this.callLLMResult(
       promptLanguageText(
         writingLanguage,
         [
           '【导入推演受限补卡校正】',
-          '上一轮完整 JSON 已可解析，但 characterCards.relationships.target 引用了 characterCards 中不存在的角色名。',
+          '上一轮完整 JSON 已可解析，但 otherCharacters 名单或 characterCards.relationships.target 里有人还没有角色卡。',
           '只输出一个完整 JSON 对象，不要 Markdown、解释或思考过程。',
           '只允许输出严格 delta，顶层必须且只能包含 characterCards。',
           `characterCards 必须新增且只新增这些缺失角色 name：${JSON.stringify(unresolvedTargets)}`,
@@ -277,7 +282,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
         ].join('\n'),
         [
           '[Bounded import-inference endpoint-card correction]',
-          'The previous complete JSON is parseable, but characterCards.relationships.target references names absent from characterCards.',
+          'The previous complete JSON is parseable, but otherCharacters or characterCards.relationships.target names people who still have no character card.',
           'Output one complete JSON object only, with no Markdown, explanation, or reasoning.',
           'Return a strict delta whose only top-level field is characterCards.',
           `Add exactly these missing character names and no others: ${JSON.stringify(unresolvedTargets)}`,

@@ -35,13 +35,12 @@ function importCharacterEntriesFromArtifacts(db: Database.Database, runs: Genera
   }
   const accepted = rounds.map(round => round.repair === undefined ? round.inference
     : preservesStructuredJsonEvidence(round.inference, round.repair) ? round.repair : null)
-  if (!rounds.length || rounds.length > IMPORT_INFERENCE_ROUNDS || endpoint.length > 1
+  if (!rounds.length || rounds.length > IMPORT_INFERENCE_ROUNDS
     || accepted.slice(0, -1).some(text => text !== null)) return null
   const original = accepted.at(-1)
   if (!original) return null
-  const delta = endpoint[0] ? output(endpoint[0]) : null
   try {
-    return decodeRecoveredImportInference(original, delta, (_zh, en) => en).result.characterCards
+    return decodeRecoveredImportInference(original, endpoint.map(output), (_zh, en) => en).result.characterCards
   } catch { return null }
 }
 

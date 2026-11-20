@@ -220,61 +220,54 @@ afterEach(() => {
 })
 
 describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {
-  it.each(['reference', 'author-manuscript'] as const)('%s import requests only the most-referenced endpoints that fit in eight cards and commits after dropping the rest', async (purpose) => {
+  it.each(['reference', 'author-manuscript'] as const)('%s import gives every named person a card: main cards first, the rest in batches of three, keeping relationships to later batches', async (purpose) => {
     const invoke = stubSuccessfulImportIpc()
-    const initial = validInference()
-    initial.characterCards.push(card('林照', 'supporting'), card('白榆', 'supporting'), card('沈珩', 'minor'))
-    initial.characterCards[0].relationships.push(
-      { target: '苏绾', relation: '同窗' },
-      { target: '秦川', relation: '师徒' },
-      { target: '韩烁', relation: '旧债牵连' },
-    )
-    initial.characterCards[1].relationships.push({ target: '韩烁', relation: '旧识' })
-    initial.characterCards[2].relationships.push({ target: '叶宁', relation: '暗中相助' })
-    const delta = { characterCards: [card('韩烁', 'supporting'), card('秦川', 'minor')] }
-    const generateStream = respondWith([initial, delta])
+    const others = ['林照', '白榆', '沈珩', '周砚', '秦若', '叶宁', '韩烁', '秦川', '许砚', '唐霁', '闻策']
+    const initial = { ...validInference(), otherCharacters: others.map(name => ({ name, role: 'supporting', note: '原稿里出场的人物' })) }
+    initial.characterCards[0].relationships.push({ target: '苏绾', relation: '同窗' }, { target: '闻策', relation: '旧债牵连' })
+    const batches = [others.slice(0, 3), others.slice(3, 6), others.slice(6, 9), others.slice(9)]
+    const deltas = batches.map(names => ({ characterCards: names.map(name => card(name, 'supporting')) }))
+    deltas[0].characterCards[0].relationships.push({ target: '唐霁', relation: '师兄' })
+    const generateStream = respondWith([initial, ...deltas])
 
     await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(purpose), callbacks })
 
-    expect(generateStream).toHaveBeenCalledTimes(2)
-    expect(JSON.stringify(generateStream.mock.calls[1][0])).toContain(JSON.stringify(JSON.stringify(['韩烁', '秦川'])).slice(1, -1))
+    expect(generateStream).toHaveBeenCalledTimes(5)
     const entries = committedEntries(invoke)
-    expect(entries.map(entry => entry.name)).toEqual(['陆舟', '苏绾', '顾岩', '林照', '白榆', '沈珩', '韩烁', '秦川'])
+    expect(entries.map(entry => entry.name)).toEqual(['陆舟', '苏绾', '顾岩', ...others])
     expect(relationshipsOf(entries)).toMatchObject({
-      陆舟: [
-        { target: '苏绾', relation: '同窗' },
-        { target: '秦川', relation: '师徒' },
-        { target: '韩烁', relation: '旧债牵连' },
-      ],
-      苏绾: [{ target: '韩烁', relation: '旧识' }],
-      顾岩: [],
+      陆舟: [{ target: '苏绾', relation: '同窗' }, { target: '闻策', relation: '旧债牵连' }],
+      林照: [{ target: '唐霁', relation: '师兄' }],
     })
-    expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/顾岩→叶宁.*角色/))
+    expect(callbacks.log).not.toHaveBeenCalledWith(expect.stringMatching(/已丢弃/))
   })
 
-  it('drops a dangling relationship without a correction request when the first round already has eight cards', async () => {
+  it('still asks for cards when the first round is complete but lists people without cards', async () => {
     const invoke = stubSuccessfulImportIpc()
-    const initial = validInference()
-    initial.characterCards.push(
-      card('林照', 'supporting'),
-      card('白榆', 'supporting'),
-      card('沈珩', 'minor'),
-      card('周砚', 'minor'),
-      card('秦若', 'minor'),
-    )
-    initial.characterCards[0].relationships.push(
-      { target: '苏绾', relation: '同窗' },
-      { target: '韩烁', relation: '旧债牵连' },
-    )
-    const generateStream = respondWith([initial])
+    const initial = { ...validInference(), otherCharacters: [{ name: '韩烁', role: 'minor', note: '码头脚夫' }] }
+    const generateStream = respondWith([initial, { characterCards: [card('韩烁', 'minor')] }])
 
     await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
 
-    expect(generateStream).toHaveBeenCalledOnce()
-    const entries = committedEntries(invoke)
-    expect(entries).toHaveLength(8)
-    expect(relationshipsOf(entries).陆舟).toEqual([{ target: '苏绾', relation: '同窗' }])
-    expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/陆舟→韩烁.*角色/))
+    expect(generateStream).toHaveBeenCalledTimes(2)
+    expect(committedEntries(invoke).map(entry => entry.name)).toEqual(['陆舟', '苏绾', '顾岩', '韩烁'])
+  })
+
+  it('keeps the batches that came back right and tells the author who is still missing a card', async () => {
+    const invoke = stubSuccessfulImportIpc()
+    const others = ['林照', '白榆', '沈珩', '周砚']
+    const initial = { ...validInference(), otherCharacters: others.map(name => ({ name, role: 'supporting', note: '原稿人物' })) }
+    initial.characterCards[0].relationships.push({ target: '周砚', relation: '旧识' })
+    const generateStream = respondWith([initial, { characterCards: others.slice(0, 3).map(name => card(name, 'supporting')) }, { characterCards: [card('任意新增', 'minor')] }])
+
+    await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
+
+    expect(generateStream).toHaveBeenCalledTimes(3)
+    expect(committedEntries(invoke).map(entry => entry.name)).toEqual(['陆舟', '苏绾', '顾岩', '林照', '白榆', '沈珩'])
+    const logged = vi.mocked(callbacks.log).mock.calls.map(([line]) => line).join('\n')
+    expect(logged).toMatch(/周砚/)
+    expect(logged).toMatch(/新建角色/)
+    expect(logged).not.toMatch(/最多 8/)
   })
 
   it('still fails a first round whose relationship violates another contract rule', async () => {
@@ -299,7 +292,7 @@ describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {
     await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
 
     expect(generateStream).toHaveBeenCalledTimes(2)
-    expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('受限补卡校正'))
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining('正在补 1 张角色卡：韩烁'))
     expect(invoke).toHaveBeenLastCalledWith(
       'db:import-global-facts-commit',
       expect.objectContaining({

@@ -1198,14 +1198,14 @@ describe('导入 slot 的输出没通过校验', () => {
     expect(discarded()).toEqual([])
   })
 
-  it('补卡后去掉悬空关系仍解析不了（后面的角色自指）：丢弃这个运行的全部候选', async () => {
+  it('首轮去掉悬空关系仍解析不了（角色自指）：不再请求补卡，丢弃这个运行的候选', async () => {
     const inference = validInference()
     inference.characterCards[0]!.relationships = [{ target: '无名氏', relation: '旧识' }] as never
     inference.characterCards[1]!.relationships = [{ target: inference.characterCards[1]!.name, relation: '自省' }] as never
     const { runtime, session, discarded, context } = mainOwnedImport(JSON.stringify(inference), channel => channel === 'kb:search' ? [] : { success: true })
     await expect(new RuntimeInferGlobalSettingsCommand({ createRuntime: async () => runtime } as never)
       .execute({ step: {}, context, callbacks })).rejects.toThrow(/relationship_self_reference/)
-    expect(session.complete).toHaveBeenCalledTimes(2)
+    expect(session.complete).toHaveBeenCalledTimes(1)
     expect(discarded()).toEqual(['artifact-1', 'artifact-2'])
   })
 
