@@ -177,15 +177,17 @@ export const CCH_SCENARIOS = {
   } },
 }
 
+const OPERATING_SYSTEM_FILES = ['desktop.ini', 'Thumbs.db', '.DS_Store']
+const ORPHAN_AVATAR_PATH = `avatars/${'a'.repeat(64)}/${'0'.repeat(20)}-${'b'.repeat(64)}.png`
+
 function addDamagedOrphanAvatar(projectRoot) {
-  const relativePath = `avatars/${'a'.repeat(64)}/${'0'.repeat(20)}-${'b'.repeat(64)}.png`
-  const file = path.join(projectRoot, '.ai-novel', ...relativePath.split('/'))
+  const file = path.join(projectRoot, '.ai-novel', ...ORPHAN_AVATAR_PATH.split('/'))
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'))
   withBook(projectRoot, database => {
     database.prepare(`INSERT INTO character_avatar_unresolved(record_id,disposition,source_reference,source_relative_path,
       preserved_relative_path,content_hash,mime,byte_size,candidate_character_ids_json) VALUES ('orphan-ec','orphan','character-delete:gone',?,?,?,'image/png',?,'[]')`)
-      .run(relativePath, relativePath, '1'.repeat(64), fs.statSync(file).size)
+      .run(ORPHAN_AVATAR_PATH, ORPHAN_AVATAR_PATH, '1'.repeat(64), fs.statSync(file).size)
   })
 }
 
@@ -196,17 +198,30 @@ function hugeChapter(number) {
 }
 
 Object.assign(CCH_SCENARIOS, {
-  'ec-export-orphan-avatar': { model: true, shell: 'stage', setup: async context => {
+  'export-skip-leftovers': { model: true, shell: 'stage', setup: async context => {
     await seedLargeBook(context, 1)
-    await context.restart({ beforeLaunch: () => addDamagedOrphanAvatar(path.join(context.roots.projects, BOOK)) })
+    await context.restart({ beforeLaunch: () => {
+      const projectRoot = path.join(context.roots.projects, BOOK)
+      addDamagedOrphanAvatar(projectRoot)
+      for (const name of OPERATING_SYSTEM_FILES) fs.writeFileSync(path.join(projectRoot, '.ai-novel', name), '系统写的')
+    } })
   }, run: async context => {
     const { page, roots, shoot } = context
     await stage.openAfterRestart(page, BOOK)
     await stage.openSettings(page)
-    const zh = await exportOnce(context, path.join(roots.projects, 'ec-orphan.ainovel'), ZH, 'alert',
-      /^作品没有改动。一张没归到任何角色名下的旧头像文件坏了或不见了，存档没有生成。请把这条提示反馈给我们。$/u)
-    await shoot('ec-1-orphan-avatar')
-    return { zh }
+    const archive = path.join(roots.projects, 'leftovers.ainovel')
+    const zh = await exportOnce(context, archive, ZH, 'status', new RegExp(`^本地存档已导出：${SHA}$`, 'u'))
+    await shoot('export-skip-1-exported')
+    const parent = path.join(roots.projects, 'restore-leftovers')
+    fs.mkdirSync(parent)
+    const restored = await restoreOnce(context, archive, parent, 'status', /^已恢复新副本 /u)
+    const [copy] = fs.readdirSync(parent)
+    const storage = path.join(parent, copy, '.ai-novel')
+    assert.deepEqual(OPERATING_SYSTEM_FILES.filter(name => fs.existsSync(path.join(storage, name))), [], '副本里没有系统文件')
+    assert.equal(fs.existsSync(path.join(storage, ORPHAN_AVATAR_PATH)), false, '副本里没有坏的孤儿头像')
+    const opened = await context.invoke(page, 'project:open', path.join(parent, copy), randomUUID(), null)
+    assert.equal(opened.success, true, opened.error)
+    return { zh, restored }
   } },
   'ec-review-overflow': { model: true, shell: 'stage', setup: async context => {
     const { page, invoke, reload } = context
@@ -236,22 +251,7 @@ Object.assign(CCH_SCENARIOS, {
   } },
 })
 
-Object.assign(CCH_SCENARIOS, {
-  'ec-export-unknown-file': { model: true, shell: 'stage', setup: async context => {
-    await seedLargeBook(context, 1)
-    await context.restart({ beforeLaunch: () => fs.writeFileSync(path.join(context.roots.projects, BOOK, '.ai-novel', 'desktop.ini'), '[.ShellClassInfo]\r\n') })
-  }, run: async context => {
-    const { page, roots, shoot } = context
-    await stage.openAfterRestart(page, BOOK)
-    await stage.openSettings(page)
-    const zh = await exportOnce(context, path.join(roots.projects, 'ec-unknown.ainovel'), ZH, 'alert',
-      /^作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。$/u)
-    await shoot('ec-3-unknown-file')
-    return { zh }
-  } },
-})
-
-async function restoreOnce(context, archive, parent, expected) {
+async function restoreOnce(context, archive, parent, role, expected) {
   const { app, page } = context
   await app.evaluate(({ dialog }, answers) => {
     const queue = [...answers]
@@ -259,7 +259,7 @@ async function restoreOnce(context, archive, parent, expected) {
   }, [archive, parent])
   await stage.root(page).getByRole('navigation', { name: ZH.settings }).getByRole('button', { name: ZH.page, exact: true }).click()
   await stage.root(page).getByRole('button', { name: '从本地存档恢复副本', exact: true }).click()
-  const shown = notice(page, 'alert').filter({ hasText: expected })
+  const shown = notice(page, role).filter({ hasText: expected })
   await shown.waitFor({ state: 'visible', timeout: 60_000 })
   return (await shown.innerText()).trim()
 }
@@ -275,7 +275,7 @@ Object.assign(CCH_SCENARIOS, {
     fs.mkdirSync(parent)
     await stage.openAfterRestart(page, BOOK)
     await stage.openSettings(page)
-    const zh = await restoreOnce(context, archive, parent,
+    const zh = await restoreOnce(context, archive, parent, 'alert',
       /^没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。$/u)
     assert.deepEqual(fs.readdirSync(parent), [], '没有留下副本或暂存')
     await shoot('ec-4-restore-not-archive')

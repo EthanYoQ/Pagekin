@@ -1206,16 +1206,18 @@ describe('portable project export service', () => {
 
   it.each(['character-delete', 'runtime-replace', 'runtime-remove'])('exports %s avatar provenance with its retained asset', async provenance => {
     const f = fixture()
-    seedProject(f)
+    const { avatar } = seedProject(f)
     const db = new Database(f.databasePath)
     db.exec(`INSERT INTO character_avatar_unresolved(record_id,disposition,source_reference,source_relative_path,
       preserved_relative_path,content_hash,mime,byte_size,candidate_character_ids_json)
       SELECT 'orphan-1','orphan','${provenance}:'||character_id,relative_path,relative_path,content_hash,mime,byte_size,'[]'
       FROM character_avatar_assets`)
+    const relativePath = db.prepare('SELECT preserved_relative_path FROM character_avatar_unresolved').pluck().get() as string
     db.exec('DELETE FROM character_avatar_assets'); db.close()
     await exportPortableProject(input(f))
     const restoredRoot = path.join(f.base, 'restored-avatar')
     await restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot })
+    expect(fs.readFileSync(path.join(restoredRoot, '.ai-novel', ...relativePath.split('/')))).toEqual(avatar)
     const restored = new Database(path.join(restoredRoot, '.ai-novel', 'project.db'), { readonly: true })
     try { expect(restored.prepare('SELECT source_reference FROM character_avatar_unresolved').pluck().get()).toMatch(new RegExp(`^${provenance}:`)) }
     finally { restored.close() }
