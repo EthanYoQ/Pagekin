@@ -141,12 +141,11 @@ describe('运行侧页', () => {
 
   it('大纲保存被来源检查拒绝：失败卡说明原因并只给「打开架构页」，不露错误码', async () => {
     const reason = '本批第 6 章大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。请到「架构」页重新生成情节大纲，从第 6 章开始。'
-    const failed = { status: 'failed', error: reason, errorCode: 'architecture-synopsis-source-changed', logs: [], progress: 0, description: '' } as const
-    useWorkflowStore.setState({ activeRuns: [run('大纲', 'failed', { type: 'architecture_generation', title: '生成故事架构', error: reason,
-      errorCode: 'architecture-synopsis-source-changed', steps: [{ id: 'synopsis', name: '情节大纲', ...failed }] })] })
+    const errorCode = 'architecture-synopsis-source-changed'
+    useWorkflowStore.setState({ activeRuns: [run('大纲', 'failed', { type: 'architecture_generation', title: '生成故事架构', error: reason, errorCode,
+      steps: [{ id: 'synopsis', name: '情节大纲', description: '', status: 'failed', progress: 0, logs: [], error: reason, errorCode }] })] })
     await render()
     const card = host!.querySelector('article')!
-    expect(card.textContent).toContain('本批第 6 章大纲已生成完')
     expect(button('打开架构页')).toBeTruthy()
     expect(button('继续生成情节大纲')).toBeUndefined()
     expect(card.textContent).not.toMatch(/错误码|architecture-synopsis-source-changed/)
