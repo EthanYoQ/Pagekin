@@ -275,7 +275,7 @@ export const CHARCAP_SCENARIOS = {
     return measured
   } },
 
-  /** 输出上限 4096 时上界只够 34 位（4096 ÷ 119）；假模型偏回 40 位，请求次数用完时作者看到原因和办法。 */
+  /** 输出上限 4096 时上界只够 34 位（4096 ÷ 119）；假模型偏回 40 位，额度用完时作者看到原因和办法。 */
   'charcap-arch-forty-4096': { model: true, shell: 'stage', setup: seedFortyBook(FAKE_MODEL), run: async context => {
     const { page, fake } = context
     fake.replyReview(fortyReply)
@@ -291,7 +291,7 @@ export const CHARCAP_SCENARIOS = {
     const card = await ended.innerText()
     await context.shoot('charcap-arch-forty-4096')
     const measured = { requests: fake.chats.length, card }
-    assert.match(card, /已有角色没有变动。人物太多，这次生成的请求次数用完了/u, `说明请求次数用完：${JSON.stringify(measured)}`)
+    assert.match(card, /已有角色没有变动。人物太多，这次生成的额度（请求次数与时长）用完了/u, `说明请求次数用完：${JSON.stringify(measured)}`)
     assert.doesNotMatch(card, /[A-Z_]{8,}|收据/u, '不露原始错误码与收据')
     return measured
   } },

@@ -1320,7 +1320,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
 
     const failure = await command.execute({ step: {}, context: { ...context, data: {}, cancelled: false }, callbacks }).catch((error: Error) => error)
     expect(failure).toBeInstanceOf(Error)
-    expect((failure as Error).message).toBe('已有角色没有变动。人物太多，这次生成的请求次数用完了：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。')
+    expect((failure as Error).message).toBe('已有角色没有变动。人物太多，这次生成的额度（请求次数与时长）用完了：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。')
   })
 
   it('rejects a manifest without a protagonist before generating details or committing', async () => {
