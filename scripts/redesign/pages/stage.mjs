@@ -35,9 +35,18 @@ export const shelf = page => page.getByRole('list', { name: '最近的作品' })
 export const cover = (page, name) => shelf(page).getByRole('button', { name: `预览《${name}》` })
 export const overview = (page, name) => page.getByRole('region', { name: `《${name}》概览` })
 
+/** 概览在后台读取，读完才有统计；读不到时显示原因。等到其一，读不到就把原因当失败报出来。 */
 export async function previewBook(page, name) {
   await cover(page, name).click()
-  await overview(page, name).waitFor({ state: 'visible' })
+  const region = overview(page, name)
+  const stats = region.locator('.pi-stats')
+  const reason = region.locator('.stage-ov-status').filter({ hasNotText: '正在读取' })
+  try {
+    await stats.or(reason).first().waitFor({ state: 'visible' })
+  } catch (error) {
+    throw new Error(`《${name}》的预览一直停在「正在读取这部作品…」`, { cause: error })
+  }
+  if (await reason.isVisible()) throw new Error(`《${name}》的预览读不到：${await reason.textContent()}`)
 }
 
 /** 英文界面的书房：封面是「Preview “书名”」，概览里的主按钮是「Open “书名”」。 */
