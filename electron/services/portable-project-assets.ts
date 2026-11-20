@@ -23,7 +23,7 @@ const KNOWN_OMITTED_TOP_LEVEL = new Set([
 // Windows 和 macOS 默认卷不区分大小写，同一个文件可能被写成 Desktop.ini。
 const fileNameKey = (name: string) => process.platform === 'win32' || process.platform === 'darwin' ? name.toLowerCase() : name
 const OPERATING_SYSTEM_FILES = new Set(['desktop.ini', 'Thumbs.db', '.DS_Store'].map(fileNameKey))
-const operatingSystemFile = (name: string) => OPERATING_SYSTEM_FILES.has(fileNameKey(name))
+const operatingSystemFile = (name: string, info: fs.BigIntStats) => info.isFile() && OPERATING_SYSTEM_FILES.has(fileNameKey(name))
 
 function fail(): never { throw new Error('PORTABLE_ASSET_UNSAFE') }
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
@@ -57,8 +57,8 @@ function enumerateRawFiles(storageRoot: string, digestFile: (sourcePath: string,
   physicalDirectory(storageRoot, storageRoot)
   const topKeys = new Set<string>()
   for (const name of fs.readdirSync(storageRoot)) {
-    if (operatingSystemFile(name)) continue
     const topLevel = fs.lstatSync(path.join(storageRoot, name), { bigint: true })
+    if (operatingSystemFile(name, topLevel)) continue
     if (topLevel.isSymbolicLink()) fail()
     if (name === 'knowledge-copies' && !topLevel.isDirectory()) fail()
     const key = portablePathKey(name)
@@ -72,9 +72,10 @@ function enumerateRawFiles(storageRoot: string, digestFile: (sourcePath: string,
   const visit = (topLevel: string, entry: string) => {
     const info = fs.lstatSync(entry, { bigint: true })
     if (info.isSymbolicLink()) fail()
+    if (operatingSystemFile(path.basename(entry), info)) return
     if (info.isDirectory()) {
       physicalDirectory(entry, storageRoot)
-      for (const child of fs.readdirSync(entry).sort()) if (!operatingSystemFile(child)) visit(topLevel, path.join(entry, child))
+      for (const child of fs.readdirSync(entry).sort()) visit(topLevel, path.join(entry, child))
       return
     }
     const fileInfo = physicalFile(entry, storageRoot)
