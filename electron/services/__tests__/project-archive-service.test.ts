@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { closeProjectDatabase, createProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
@@ -737,7 +737,9 @@ describe('portable project export service', () => {
       await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_AVATAR_DAMAGED')
     })
 
-    it.each(['坏了', '不见了'])('没归到任何角色的旧头像文件%s：照常导出，存档里没有它，恢复成功（#702）', async damage => {
+    it.each(['坏了', '不见了', '被写成超过单条上限的大文件'])('没归到任何角色的旧头像文件%s：照常导出，存档里没有它，恢复成功（#702）', async damage => {
+      archiveLimits.current.maxEntryBytes = 2 * 1024 * 1024
+      onTestFinished(() => { Object.assign(archiveLimits.current, archiveLimits.defaults) })
       const f = fixture()
       seedProject(f)
       const db = new Database(f.databasePath)
@@ -750,7 +752,8 @@ describe('portable project export service', () => {
       db.close()
       const file = path.join(f.storage, ...relativePath.split('/'))
       if (damage === '坏了') fs.writeFileSync(file, Buffer.alloc(fs.statSync(file).size, 0))
-      else fs.rmSync(file)
+      else if (damage === '不见了') fs.rmSync(file)
+      else fs.writeFileSync(file, Buffer.alloc(3 * 1024 * 1024, 1))
 
       await exportPortableProject(input(f))
 
