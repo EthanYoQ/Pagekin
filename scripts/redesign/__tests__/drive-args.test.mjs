@@ -307,7 +307,7 @@ it('场景声明的前置不齐时不启动应用：退出码 3，逐项写出�
   fs.mkdirSync(path.join(appRoot, 'dist-electron'))
   fs.writeFileSync(path.join(appRoot, 'dist-electron', 'main.js'), '')
   const out = path.join(appRoot, 'out')
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'PERF702_FIXTURE'))
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'PERF702_FIXTURE' && key !== 'NODE_OPTIONS'))
   const drive = (...args) => spawnSync(process.execPath, ['scripts/redesign/drive.mjs', '--app-root', appRoot, '--out', out, ...args], { encoding: 'utf8', env })
 
   const fixture = drive('--scenario', 'perf702-export')
