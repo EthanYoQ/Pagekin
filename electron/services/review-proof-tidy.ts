@@ -15,7 +15,7 @@ const SAVED_REVIEW_RUNS = `SELECT DISTINCT run_id AS runId, json_extract(usage_r
     THEN json_type(usage_receipt_json,'$.reviewRevisionEffect')='object' END`
 
 /**
- * 能封存的行和封存后的绑定，只读。已保存、验过、收据对得上的 v1，且封存前后 M03 的版本相关核对都过：
+ * 能封存的行和封存后的绑定，只读。已保存、验过、收据对得上的 v1，封存前后 M03 的版本相关核对都过、其余字段不变：
  * 循环原来验不过的，封了也不能变成验得过。64 KB 以下的不动：留着也是合法的 v1，导出时照样封存。
  */
 function* sealableProofs(db: BetterSqlite3.Database): Generator<{ runId: string; binding: string }> {
@@ -28,6 +28,8 @@ function* sealableProofs(db: BetterSqlite3.Database): Generator<{ runId: string;
     if (!versionedProofFieldsOk(proof.context as unknown as Record<string, unknown>)) continue
     const sealed = sealReviewContext(proof.context, proof.contextHash)
     if (!versionedProofFieldsOk(sealed as unknown as Record<string, unknown>)) continue
+    // 封存丢掉假值的 confirmation、recheck；M03 判显式的假值为坏、缺省为好，丢了会改结论。
+    if (['confirmation', 'recheck'].some(key => key in proof.context && !(key in sealed))) continue
     yield { runId, binding: JSON.stringify({ ...binding, sourceManifest: { ...binding.sourceManifest as object, ...reviewProofFields(sealed, sha256) } }) }
   }
 }

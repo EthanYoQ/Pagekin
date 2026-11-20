@@ -177,7 +177,9 @@ describe('打开老书时整理源库里的旧审修证明（#702 PR 4）', () =
     seedReviewedBook(db, 3, { firstChapter: 60, history: priorChapters })
     rewriteProof(db, 'run-review-ch60', context => { (context.config as Record<string, unknown>).wordsPerChapter = '三千' })
     rewriteProof(db, 'run-review-ch61', context => { delete context.config })
-    const damaged = ['run-review-ch60', 'run-review-ch61']
+    // 封存时假值的 confirmation 会被丢掉：显式 null 在 M03 里验不过，丢了就验得过。
+    rewriteProof(db, 'run-review-ch62', context => { context.confirmation = null })
+    const damaged = ['run-review-ch60', 'run-review-ch61', 'run-review-ch62']
     const kept = damaged.map(runId => [runId, bindingOf(db, runId)])
     const unprovable = inspectM03ReviewCycles(db).unprovable
 
