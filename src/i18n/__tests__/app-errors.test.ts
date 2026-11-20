@@ -90,17 +90,28 @@ describe('generation error codes from the main process', () => {
     }
   })
 
-  it.each(['GENERATION_REVIEW_CONTEXT_TOO_LARGE'])('前文超出 AI 一次能带的上限（%s）：说实话，不叫作者精简（#702）', code => {
-    const error = new Error(`Error invoking remote method 'generation:begin': Error: ${code}`)
-    expect(knownAppErrorMessage(shown('zh-CN'), error)).toBe('正文没有改动。这本书的前文超过了 AI 一次能带的上限，这次没有生成。请把这条提示反馈给我们。')
-    expect(knownAppErrorMessage(shown('en-US'), error)).toBe("Your text is unchanged. This book's earlier chapters are more than the AI can take in one request, so nothing was generated. Please report this message to us.")
-    expect(knownAppErrorMessage(shown('ja-JP'), error)).not.toContain(code)
+  it('审稿或修稿交给 AI 的内容合计超过上限：点出前文以外的组成，并叫作者缩短设定或附加修稿要求（#702）', () => {
+    const error = new Error("Error invoking remote method 'generation:begin': Error: GENERATION_REVIEW_CONTEXT_TOO_LARGE")
+    for (const [locale, parts, shorten] of [
+      ['zh-CN', ['前文', '设定', '本章正文', '附加修稿要求'], /精简设定或「附加修稿要求」/u],
+      ['en-US', ['earlier chapters', 'settings', 'this chapter', 'Additional guidance'], /Shorten your settings or “Additional guidance”/u],
+      ['ja-JP', ['前の章', '設定', 'この章の本文', 'Additional guidance'], /設定や「Additional guidance」を短く/u],
+    ] as const) {
+      const message = knownAppErrorMessage(shown(locale), error)!
+      for (const part of parts) expect(message).toContain(part)
+      expect(message).toMatch(shorten)
+      expect(message).not.toContain('GENERATION_REVIEW_CONTEXT_TOO_LARGE')
+    }
   })
 
-  it('审稿材料和当初记下的对不上（例如升级后接着跑旧审稿）：不说前文超限，叫作者重新审稿（#702）', () => {
+  it('写作材料没能核对上（定稿回执、来源上限或旧审稿都会报）：不猜是审稿，也不叫作者再点「AI 审稿」（#702）', () => {
     const error = new Error("Error invoking remote method 'generation:resume': Error: GENERATION_MATERIAL_DECISION_INVALID")
-    expect(knownAppErrorMessage(shown('zh-CN'), error)).toBe('正文没有改动。这次审稿带的前文和当初记下的对不上，没有生成。请重新点「AI 审稿」；还不行，请把这条提示反馈给我们。')
-    expect(knownAppErrorMessage(shown('ja-JP'), error)).not.toContain('GENERATION_MATERIAL_DECISION_INVALID')
+    for (const [locale, kept, review] of [['zh-CN', '作品内容没有变动', /审稿/u], ['en-US', 'Your book is unchanged', /review/iu], ['ja-JP', '作品の内容は変更されていません', /レビュー|review/iu]] as const) {
+      const message = knownAppErrorMessage(shown(locale), error)!
+      expect(message).toContain(kept)
+      expect(message).not.toMatch(review)
+      expect(message).not.toContain('GENERATION_MATERIAL_DECISION_INVALID')
+    }
   })
 
   it('leaves unregistered codes and prose to the caller', () => {
