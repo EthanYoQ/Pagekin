@@ -1347,7 +1347,9 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
             const orphan = row.kind === 'unresolved'
             if (orphan && !fs.lstatSync(sourcePath, { throwIfNoEntry: false })) continue
             const damaged = orphan ? 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED' : 'PORTABLE_EXPORT_AVATAR_DAMAGED'
-            const digest = digestFile(sourcePath, regularFile(sourcePath, damaged))
+            const checked = regularFile(sourcePath, damaged)
+            if (orphan && checked.size !== BigInt(row.byteSize)) continue
+            const digest = digestFile(sourcePath, checked)
             if (digest.byteSize !== row.byteSize || digest.sha256 !== row.contentHash) {
               if (orphan) continue
               fail(damaged)
