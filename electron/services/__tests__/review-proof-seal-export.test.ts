@@ -8,6 +8,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { inspectM03ReviewCycles } from '../../migrations/m03-review-cycle'
 import { extractPortableProjectArchive, writePortableProjectArchive } from '../portable-project-archive'
+import {
+  createPortableTransferAuthority,
+  parsePortableTransferAuthority,
+  PORTABLE_TRANSFER_AUTHORITY_PATH,
+  serializePortableTransferAuthority,
+} from '../portable-transfer-authority'
 import { exportPortableProject, type ExportPortableProjectInput } from '../project-archive-service'
 import { restorePortableProject } from '../project-restore-service'
 import { openCanonicalProjectFixture } from '../../../test/helpers/canonical-project-fixture'
@@ -18,6 +24,7 @@ import type { ReviewFinalizedMaterial } from '../../../src/shared/review-revisio
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
+const sha256Bytes = (value: Buffer) => createHash('sha256').update(value).digest('hex')
 
 let base = ''
 let projectRoot = ''
@@ -92,19 +99,32 @@ function savedProofs(db: import('better-sqlite3').Database): SavedProof[] {
 
 const verifiedStrictly = (db: import('better-sqlite3').Database) => inspectM03ReviewCycles(db)
 
-/** 解开存档，改存档库里某条运行的绑定或收据，再按原样重新打包（条目哈希随之更新）。 */
+/** 解开存档，改存档库里某条运行的绑定或收据，再重签转移凭据、重新打包：否则恢复在 M03 之前就因凭据不符被拒。 */
 async function tamperedArchive(archivePath: string, edit: (db: import('better-sqlite3').Database) => void): Promise<string> {
   const unpacked = await extractPortableProjectArchive({ archivePath, stagingParentPath: fs.mkdtempSync(path.join(base, 'unpack-')) })
-  const databaseFile = path.join(unpacked.stagingPath, CANONICAL_PROJECT_DATABASE)
+  const file = (entryPath: string) => path.join(unpacked.stagingPath, ...entryPath.split('/'))
+  const databaseFile = file(CANONICAL_PROJECT_DATABASE)
   const archived = new Database(databaseFile)
   try { edit(archived) } finally { archived.close() }
-  const bytes = fs.readFileSync(databaseFile)
+  const portableDatabaseSha256 = sha256Bytes(fs.readFileSync(databaseFile))
+  const previous = parsePortableTransferAuthority(JSON.parse(fs.readFileSync(file(PORTABLE_TRANSFER_AUTHORITY_PATH), 'utf8')))
+  const reader = new Database(databaseFile, { readonly: true, fileMustExist: true })
+  let authority
+  try {
+    authority = createPortableTransferAuthority({ database: reader, originProjectId: previous.originProjectId,
+      snapshotGeneration: previous.snapshotGeneration, portableDatabaseSha256 })
+  } finally { reader.close() }
+  const authorityBytes = serializePortableTransferAuthority(authority)
+  fs.writeFileSync(file(PORTABLE_TRANSFER_AUTHORITY_PATH), authorityBytes)
   const entries = unpacked.manifest.entries.map(entry => entry.path === CANONICAL_PROJECT_DATABASE
-    ? { ...entry, byteSize: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') } : entry)
+    ? { ...entry, byteSize: fs.statSync(databaseFile).size, sha256: portableDatabaseSha256 }
+    : entry.path === PORTABLE_TRANSFER_AUTHORITY_PATH ? { ...entry, byteSize: authorityBytes.length, sha256: sha256Bytes(authorityBytes) } : entry)
   const total = entries.reduce((sum, entry) => sum + entry.byteSize, 0)
   const target = path.join(base, `tampered-${randomUUID()}.ainovel`)
-  await writePortableProjectArchive({ manifest: { ...unpacked.manifest, entries, declaredUncompressedBytes: total, declaredCompressedBytes: total },
-    sources: entries.map(entry => ({ entry, sourcePath: path.join(unpacked.stagingPath, ...entry.path.split('/')) })), targetPath: target })
+  await writePortableProjectArchive({
+    manifest: { ...unpacked.manifest, entries, declaredUncompressedBytes: total, declaredCompressedBytes: total,
+      transferReceiptIds: unpacked.manifest.transferReceiptIds.map(id => id === previous.receiptId ? authority.receiptId : id) },
+    sources: entries.map(entry => ({ entry, sourcePath: file(entry.path) })), targetPath: target })
   return target
 }
 
@@ -141,7 +161,11 @@ describe('导出时封存老章节的审修证明（#702 PR 3）', () => {
   it('封存过的书再导出再恢复：证明仍是封存形，从严校验通过；源库里的全文证明不动', { timeout: 120_000 }, async () => {
     reviewedBook(3)
     const source = savedProofs(getProjectDb()!)
-    const once = await restore((await exportBook()).archivePath)
+    const bindings = () => getProjectDb()!.prepare('SELECT run_id,binding_json FROM generation_runs ORDER BY run_id').all()
+    const before = bindings()
+    const exported = await exportBook()
+    expect(bindings()).toEqual(before)
+    const once = await restore(exported.archivePath)
     projectRoot = once
     projectId = JSON.parse(fs.readFileSync(path.join(once, CANONICAL_PROJECT_DIRECTORY, 'project.json'), 'utf8')).projectId
     await restore((await exportBook()).archivePath)
@@ -189,7 +213,7 @@ describe('导出时封存老章节的审修证明（#702 PR 3）', () => {
         source.content += '作者没写过的句子。'
         context.sourceHash = sha256(source.content)
       }, 'self-consistent'))
-      await expect(rejected(archivePath)).rejects.toThrow()
+      await expect(rejected(archivePath)).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
     })
 
     it('改封存形里的字段，不改封存哈希：拒绝', { timeout: 60_000 }, async () => {
@@ -197,7 +221,7 @@ describe('导出时封存老章节的审修证明（#702 PR 3）', () => {
         expect(context.rewrittenFrom).toBe(1)
         context.wordsPerChapter = 9999
       }, 'context-only'))
-      await expect(rejected(archivePath)).rejects.toThrow()
+      await expect(rejected(archivePath)).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
     })
 
     it('改收据里的上下文哈希：拒绝', { timeout: 60_000 }, async () => {
@@ -207,7 +231,7 @@ describe('导出时封存老章节的审修证明（#702 PR 3）', () => {
         db.prepare(`UPDATE generation_attempts SET usage_receipt_json=json_set(usage_receipt_json,'$.reviewRevisionEffect.contextHash',?)
           WHERE run_id='run-review-ch1'`).run(sha256('另一份上下文'))
       })
-      await expect(rejected(archivePath)).rejects.toThrow()
+      await expect(rejected(archivePath)).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
     })
 
     it('去掉 rewrittenFrom，清单哈希与作者输入改成自洽的 v2：拒绝', { timeout: 60_000 }, async () => {
@@ -215,7 +239,7 @@ describe('导出时封存老章节的审修证明（#702 PR 3）', () => {
         expect(context.rewrittenFrom).toBe(1)
         delete context.rewrittenFrom
       }, 'self-consistent'))
-      await expect(rejected(archivePath)).rejects.toThrow()
+      await expect(rejected(archivePath)).rejects.toThrow('MIGRATION_VERIFICATION_FAILED')
     })
   })
 })

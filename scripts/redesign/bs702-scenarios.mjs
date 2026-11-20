@@ -208,7 +208,7 @@ export const BS702_SCENARIOS = {
     assert.equal(await failed.count(), 0, '恢复出的书里第 3 章的 AI 审稿没有完成')
     await context.shoot('bs702-seal-rereview')
     const after = proofs(second)
-    assert.equal(after.last, 2, '重新审稿写的是 v2 证明')
+    assert.equal(after.kinds[2], restored[1].kinds[2] + 1, '重新审稿新写了一条 v2 证明')
     return { written, restored, after }
   } },
   'real-bs702-112': { real: true, setup: async context => { await copyFixtureThenRevert(context, { real: true }) }, run: async context => {
