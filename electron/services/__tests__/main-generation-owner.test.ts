@@ -543,6 +543,30 @@ describe('explicit planning recovery with real SQLite', () => {
     const next = f.owner.restart(run.handle, { ...outlineSelection(f, 5, 3), uiActionNonce: 'continue-missing' })
     expect(next.plotOutline?.range).toEqual({ from: 3, to: 5 })
   })
+  it('重写的范围里有旧的合并条目「第4–5章」、生成停在组内第 5 章：恢复稿照常读出，不把组拆开；补完第 5 章能保存，只存到第 4 章会被拒', async () => {
+    const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
+      const chapter = Number((request as { task: GenerationTask }).task.purpose.split(':')[2])
+      options.onVisible({ kind: 'delta', text: outlineEntry(chapter) }); return { finishReason: chapter === 5 ? 'length' : 'stop', usage: null }
+    })
+    const f = fixture(dispatch), expected = { totalChapters: 7, writingLanguage: 'zh-CN' as const }
+    const grouped = [outlineEntry(1), outlineEntry(2), outlineEntry(3), '## 第4–5章：旧的合并条目\n旧事。', outlineEntry(6), outlineEntry(7)].join('\n\n')
+    f.db.prepare('UPDATE project_core SET synopsis=?,total_chapters=7').run(renderPlotOutlineSynopsis(grouped, 7, expected))
+    const run = f.owner.begin(outlineSelection(f, 7, 3))
+    for (const nonce of ['three', 'four']) { await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) }); acceptOutline(f.owner, run.handle) }
+    for (const nonce of ['normal-five', 'compact-five']) await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) })
+
+    const context = f.owner.readContext(run.handle), outline = context.plotOutline!, recovery = context.plotOutlineRecovery!
+    expect(recovery.completeChapters).toEqual([3, 4])
+    expect(recovery.rejectedReply).toBe(outlineEntry(5).trim())
+    expect(recovery.draft).toBe(renderPlotOutlineRange([3, 4].map(outlineEntry).join('\n\n') + '\n\n## 第5章：', { from: 3, to: 5 }, outline.sourceExpected))
+    expect(recovery.draft).not.toContain('旧的合并条目')
+    const save = (synopsis: string, to: number, operationId: string) => () => f.db.transaction(() => f.owner.commitPlotOutlineAuthorEdit({ synopsis, expected: outline.sourceExpected,
+      authorRecovery: { sourceHandle: run.handle, leaseEpoch: recovery.leaseEpoch, operationId, committedRange: { from: 3, to } } })).immediate()
+    expect(save(renderPlotOutlineRange([3, 4].map(outlineEntry).join('\n\n'), { from: 3, to: 5 }, outline.sourceExpected), 4, 'split-group')).toThrow('GENERATION_PLOT_OUTLINE_AUTHOR_EDIT_INVALID')
+    const completed = recovery.draft.replace('## 第5章：', outlineEntry(5).trim())
+    save(completed, 5, 'completed-group')()
+    expect(ProjectCoreRepository.get(f.db)!.synopsis).toBe(completed)
+  })
   it('saves the accepted outline prefix without cost and authorizes only the remaining chapters', async () => {
     const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
       const chapter = Number((request as { task: GenerationTask }).task.purpose.split(':')[2])
