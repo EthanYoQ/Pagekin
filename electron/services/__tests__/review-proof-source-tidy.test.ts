@@ -159,6 +159,33 @@ describe('打开老书时整理源库里的旧审修证明（#702 PR 4）', () =
       .every(item => item.proofKind === 'sealed')).toBe(true)
   })
 
+  it('自洽、收据也对得上，但封存形缺字段的老证明不封：验不过的循环不因整理变多', { timeout: 120_000 }, async () => {
+    const db = getProjectDb()!
+    seedReviewedBook(db, 3, { firstChapter: 60, history: priorChapters })
+    /** 改证明里的上下文，再把清单哈希、作者输入副本和收据哈希一起改到自洽。 */
+    const rewrite = (runId: string, change: (context: Record<string, unknown>) => void) => {
+      const binding = JSON.parse(bindingOf(db, runId))
+      const context = binding.sourceManifest.reviewRevisionContext
+      change(context)
+      const contextJson = JSON.stringify(context)
+      binding.sourceManifest.reviewRevisionContextHash = sha256(contextJson)
+      binding.sourceManifest.authorInputs = [{ id: 'review-revision-context', text: contextJson }]
+      db.prepare('UPDATE generation_runs SET binding_json=? WHERE run_id=?').run(JSON.stringify(binding), runId)
+      db.prepare(`UPDATE generation_attempts SET usage_receipt_json=json_set(usage_receipt_json,'$.reviewRevisionEffect.contextHash',?)
+        WHERE run_id=?`).run(sha256(contextJson), runId)
+    }
+    rewrite('run-review-ch60', context => { (context.config as Record<string, unknown>).wordsPerChapter = '三千' })
+    rewrite('run-review-ch61', context => { delete context.config })
+    const kept = ['run-review-ch60', 'run-review-ch61'].map(runId => [runId, bindingOf(db, runId)])
+    const unprovable = inspectM03ReviewCycles(db).unprovable
+
+    const opened = await reopen()
+    expect(kept.map(([runId]) => [runId, bindingOf(opened, runId)])).toEqual(kept)
+    expect(inspectM03ReviewCycles(opened).unprovable).toEqual(unprovable)
+    expect(savedProofs(opened).filter(item => !['run-review-ch60', 'run-review-ch61'].includes(item.runId))
+      .every(item => item.proofKind === 'sealed')).toBe(true)
+  })
+
   it('库文件只读、整理写不进去：照常打开，书不变；能写之后下次打开再整理', { timeout: 120_000 }, async () => {
     const db = getProjectDb()!
     seedReviewedBook(db, 2, { firstChapter: 60, history: priorChapters })

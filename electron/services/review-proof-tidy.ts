@@ -29,6 +29,9 @@ export function sealSavedReviewProofs(db: BetterSqlite3.Database): number {
       if (!found || !binding) continue
       const proof = readReviewProof(binding.sourceManifest, sha256)
       if (proof.kind !== 'recomputable' || proof.context.version !== 1 || proof.contextHash !== receiptHash) continue
+      // 封存形的每章字数取自 v1 配置，M03 要它是非负整数；取不到的封了反而验不过，留着全文。
+      const words: unknown = (proof.context.config as { wordsPerChapter?: unknown } | undefined)?.wordsPerChapter
+      if (!Number.isSafeInteger(words) || (words as number) < 0) continue
       write.run(JSON.stringify({ ...binding, sourceManifest: { ...binding.sourceManifest as object,
         ...reviewProofFields(sealReviewContext(proof.context, proof.contextHash), sha256) } }), found.row)
       sealed++
@@ -42,17 +45,18 @@ export function sealSavedReviewProofs(db: BetterSqlite3.Database): number {
  * 整理不是打开的前提，失败只记一条警告。返回是否可能改过库：改过调用方要重算内容身份。
  */
 export function tidyReviewProofs(databasePath: string): boolean {
-  let db: BetterSqlite3.Database | undefined
+  let db: BetterSqlite3.Database | undefined, changed = false
   try {
     db = new Database(databasePath, { fileMustExist: true })
-    const sealed = sealSavedReviewProofs(db)
+    changed = sealSavedReviewProofs(db) > 0
     const free = db.pragma('freelist_count', { simple: true }) as number
-    if (free * 2 <= (db.pragma('page_count', { simple: true }) as number)) return sealed > 0
+    if (free * 2 <= (db.pragma('page_count', { simple: true }) as number)) return changed
+    changed = true
     db.exec('VACUUM')
     db.pragma('wal_checkpoint(TRUNCATE)')
     return true
   } catch (error) {
     console.warn('[review-proof] 整理源库没做完，照常打开', { code: (error as { code?: unknown }).code, message: (error as Error).message })
-    return true
+    return changed
   } finally { db?.close() }
 }
