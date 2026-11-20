@@ -694,7 +694,7 @@ export const ARCH_SCENARIOS = {
     assert.equal(await recovery.getByRole('button', { name: '保存恢复大纲' }).isEnabled(), false)
     assert.equal(await recovery.getByRole('button', { name: '继续生成缺少的章节' }).isEnabled(), false)
     assert.equal(await recovery.locator('.pi-btn--primary').count(), 0)
-    await context.shoot('orui-outline-recovery-blocked')
+    await context.shoot('orui-outline-recovery-blocked-page')
     await runSheet.openFromPalette(page)
     const card = runSheet.recovery(page).getByRole('article').filter({ hasText: /大纲恢复稿 · 第 1–5 章/ })
     await card.waitFor({ state: 'visible', timeout: 10_000 })
