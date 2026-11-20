@@ -528,6 +528,7 @@ describe('explicit planning recovery with real SQLite', () => {
     const context = f.owner.readContext(run.handle)
     expect(context.plotOutline?.cursor).toEqual({ kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' })
     expect(context.plotOutlineRecovery?.completeChapters).toEqual([1, 2])
+    for (const chapter of [1, 2, 3]) expect(context.plotOutlineRecovery?.draft).toContain(outlineEntry(chapter))
     expect(context.planningContinuation).toMatchObject({ state: 'save-prefix', remainingRange: { from: 3, to: 5 } })
     expect(context.planningDraft?.standing).toBe('open')
   })

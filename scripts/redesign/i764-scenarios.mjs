@@ -65,14 +65,21 @@ export const I764_SCENARIOS = {
     await runSheet.openFromPalette(page)
     await runSheet.lastRun(page).getByText('第 3 章两次都没写成完整的单章大纲', { exact: false }).waitFor({ timeout: 90_000 })
     const shown = await runSheet.sheet(page).innerText()
-    assert.match(shown, /第 3 章两次都没写成完整的单章大纲，自动生成停在这里。恢复稿里有已写好的章节和这一章最后一次的回复，正式大纲没动。到「架构」页点「编辑恢复稿」补写这一章，或重新生成。/u)
+    assert.match(shown, /恢复稿里有已写好的章节和第 3 章最后一次的回复，正式大纲没动。第 3 章两次都没写成完整的单章大纲，自动生成停在这里。到「架构」页点「编辑恢复稿」补写这一章，或重新生成。/u)
     assert.match(shown, /缺第 3–5 章/u)
     assert.doesNotMatch(shown, /缺第 1–5 章/u)
     assert.doesNotMatch(shown, /attempts-exhausted/u)
     await context.shoot('i764-outline-stopped-sheet')
     await page.keyboard.press('Escape')
     await arch.waitReady(page)
-    await arch.section(page, 'synopsis').getByRole('button', { name: '编辑恢复稿' }).waitFor({ timeout: 20_000 })
+    const edit = arch.section(page, 'synopsis').getByRole('button', { name: '编辑恢复稿' })
+    await edit.waitFor({ timeout: 20_000 })
+    await edit.click()
+    const recovery = page.getByLabel('大纲恢复')
+    await recovery.getByText(/待完成第 3 至 5 章/u).waitFor({ timeout: 20_000 })
+    const draft = await page.locator('main').innerText()
+    for (const heading of [/第1章/u, /第2章/u, /林岚抵达旧港/u]) assert.match(draft, heading)
+    await context.shoot('i764-outline-stopped-draft')
   } },
 
   'real-764-outline': { real: true, setup: context => seedBook(context, { characters: CHARACTERS, core: { synopsis: '', premise: PREMISE, worldbuilding: WORLD,
