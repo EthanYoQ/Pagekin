@@ -695,7 +695,7 @@ export const ARCH_SCENARIOS = {
     const overflow = await recovery.evaluate(element => element.scrollWidth - element.clientWidth)
     assert.equal(overflow, 0, '侧页并排时恢复稿页不横向溢出')
     await context.shoot('orui-outline-recovery-en-sheet')
-    await page.keyboard.press('Escape')
+    await runSheet.sheet(page).getByRole('button', { name: 'Close run sheet' }).click()
     await runSheet.sheet(page).waitFor({ state: 'hidden' })
     await context.shoot('orui-outline-recovery-en')
   } },
