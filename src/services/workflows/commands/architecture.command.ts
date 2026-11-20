@@ -2194,12 +2194,12 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         'unknown-completion': text(`第 ${n} 章的回复没有正常结束`, `The reply for chapter ${n} did not finish normally`),
         'in-flight': text(`第 ${n} 章上一次请求还没有结果`, `The previous request for chapter ${n} has no result yet`),
       }[cursor.reason]
-      const kept = cursor.reason === 'in-flight'
-        ? text('恢复稿里有已写好的章节', 'The recovery draft has the finished chapters')
-        : text('恢复稿里有已写好的章节和这一章最后一次的回复', 'The recovery draft has the finished chapters and the last reply for this chapter')
+      const kept = cursor.reason === 'attempts-exhausted'
+        ? text(`恢复稿里有已写好的章节和第 ${n} 章最后一次的回复`, `The recovery draft has the finished chapters and the last reply for chapter ${n}`)
+        : text('恢复稿里有已写好的章节', 'The recovery draft has the finished chapters')
       return new Error(text(
-        `${problem}，自动生成停在这里。${kept}，正式大纲没动。到「架构」页点「编辑恢复稿」补写这一章，或重新生成。`,
-        `${problem}, so generation stopped there. ${kept}; the saved outline is unchanged. Open Architecture and choose Edit recovery draft to finish this chapter, or generate again.`))
+        `${kept}，正式大纲没动。${problem}，自动生成停在这里。到「架构」页点「编辑恢复稿」补写这一章，或重新生成。`,
+        `${kept}; the saved outline is unchanged. ${problem}, so generation stopped there. Open Architecture and choose Edit recovery draft to finish this chapter, or generate again.`))
     }
     const requestCallbacks = { ...callbacks, setProgress: () => {} }
     const publishProgress = (outline: PlotOutlineProgress) => {

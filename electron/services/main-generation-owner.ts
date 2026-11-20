@@ -827,14 +827,12 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     if (recovery && recovery.progress.length > 1) throw new Error('GENERATION_DIRECTORY_PROGRESS_INVALID')
     const blueprintSaved = recovery?.authorEdit
     const progress = recovery?.progress[0]
-    const remainingRange = outline ? saved ? saved.remainingRange : outline.range
+    const unsavedNext = outline ? outline.range.from + (outline.composition?.chapters?.length ?? 0) + (outline.cursor.kind === 'accept' ? 1 : 0) : 0
+    const remainingRange = outline ? saved ? saved.remainingRange : unsavedNext <= outline.range.to ? { from: unsavedNext, to: outline.range.to } : outline.range
       : blueprintSaved ? blueprintSaved.remainingRange : progress ? progress.remainingRange ? { from: progress.remainingRange.startChapter, to: progress.remainingRange.endChapter } : null
         : { from: scope!.startChapter, to: scope!.endChapter }
-    const unsavedNext = outline && !saved
-      ? outline.range.from + (outline.composition?.chapters?.length ?? 0) + (outline.cursor.kind === 'accept' ? 1 : 0) : undefined
-    const missingRange = unsavedNext === undefined ? remainingRange : unsavedNext <= outline!.range.to ? { from: unsavedNext, to: outline!.range.to } : null
     const target = inputs?.find(input => input.id === 'planning:target-units')
-    const base = { sourceHandle: handleOf(run), remainingRange: missingRange, targetUnits: parsePlanningTargetUnits(target ? Number(target.text) : undefined) }
+    const base = { sourceHandle: handleOf(run), remainingRange, targetUnits: parsePlanningTargetUnits(target ? Number(target.text) : undefined) }
     const continued = repository.readPlanningContinuation(run.runId)
     if (continued) return { ...base, state: 'continued', nextHandle: continued.nextHandle }
     if (outline && plotOutlineSourceInvalid(outline)) return { ...base, state: 'source-invalid' }
@@ -872,12 +870,11 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
   /**
    * 拿不准就列出：多列的一份作者能自己放弃，误藏的一份作者根本不知道还在。
    * 导入原稿的 fill-empty 提交会把原有行原样记账，所以还要求这一章开跑以后确实变过。
-   * 大纲只认这次运行的正式写入，或作者已把这一批补完保存；升级前写入的没有这一笔，退而看这一批原文是否还在正式大纲里。
+   * 大纲只认这次运行的正式写入；升级前写入的没有这一笔，退而看这一批原文是否还在正式大纲里。
    */
   const planningSuperseded = (run: DurableGenerationRun, outline: PlotOutlineProgress | null, remaining: PlanningContinuation['remainingRange']): boolean => {
-    if (outline) return repository.readPlotOutlineAuthorEdit(run.runId)?.remainingRange === null
-      || repository.plotOutlineCommitted(run.runId) || plotOutlineBatchInFormalOutline(outline)
     if (!remaining) return true
+    if (outline) return repository.plotOutlineCommitted(run.runId) || plotOutlineBatchInFormalOutline(outline)
     const chapters = Array.from({ length: remaining.to - remaining.from + 1 }, (_, index) => remaining.from + index)
     const matchesCommit = BlueprintRepository.commitMatcherAfter(remaining, repository.createdAtMs(run.runId), deps.database)
     return chapters.every(chapter => matchesCommit(chapter)
