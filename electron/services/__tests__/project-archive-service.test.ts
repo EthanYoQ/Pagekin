@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { closeProjectDatabase, createProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
 import { BlueprintRepository } from '../../repositories/blueprint-repository'
@@ -737,7 +737,9 @@ describe('portable project export service', () => {
       await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_AVATAR_DAMAGED')
     })
 
-    it.each(['坏了', '不见了'])('没归到任何角色的旧头像文件%s：单独报出，不叫作者去人物页重选（#702）', async damage => {
+    it.each(['坏了', '不见了', '被写成超过单条上限的大文件'])('没归到任何角色的旧头像文件%s：照常导出，存档里没有它，恢复成功（#702）', async damage => {
+      archiveLimits.current.maxEntryBytes = 2 * 1024 * 1024
+      onTestFinished(() => { Object.assign(archiveLimits.current, archiveLimits.defaults) })
       const f = fixture()
       seedProject(f)
       const db = new Database(f.databasePath)
@@ -750,10 +752,57 @@ describe('portable project export service', () => {
       db.close()
       const file = path.join(f.storage, ...relativePath.split('/'))
       if (damage === '坏了') fs.writeFileSync(file, Buffer.alloc(fs.statSync(file).size, 0))
-      else fs.rmSync(file)
-      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      else if (damage === '不见了') fs.rmSync(file)
+      else fs.writeFileSync(file, Buffer.alloc(3 * 1024 * 1024, 1))
 
-      await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED')
+      await exportPortableProject(input(f))
+
+      const unpacked = await extract(f)
+      expect(unpacked.manifest.entries.map(entry => entry.path)).not.toContain(relativePath)
+      const restoredRoot = path.join(f.base, 'restored-orphan')
+      await restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot })
+      expect(fs.existsSync(path.join(restoredRoot, '.ai-novel', ...relativePath.split('/')))).toBe(false)
+    })
+
+    it('作品目录里有系统自动生成的 desktop.ini、Thumbs.db、.DS_Store：照常导出，存档里没有它们，恢复成功（#702）', async () => {
+      const f = fixture()
+      prompt(f, '{"提示":"留着"}')
+      const systemFiles = ['desktop.ini', 'Thumbs.db', '.DS_Store']
+      for (const name of systemFiles) {
+        fs.writeFileSync(path.join(f.storage, name), '系统写的')
+        fs.writeFileSync(path.join(f.storage, 'prompts', name), '系统写的')
+      }
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
+      const paths = (await extract(f)).manifest.entries.map(entry => entry.path)
+      expect(paths).toContain('prompts/章节.json')
+      expect(paths.filter(item => systemFiles.includes(path.posix.basename(item)))).toEqual([])
+      const restoredRoot = path.join(f.base, 'restored-system-files')
+      await restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot })
+      expect(fs.readFileSync(path.join(restoredRoot, '.ai-novel', 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"留着"}')
+    })
+
+    it('作者建了和系统文件同名的文件夹：文件夹里的资料照常进存档，恢复后还在（#702）', async () => {
+      const f = fixture()
+      const skill = path.join(f.storage, 'skills', 'Thumbs.db', '技能.md')
+      fs.mkdirSync(path.dirname(skill), { recursive: true })
+      fs.writeFileSync(skill, '作者的技能')
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
+      const restoredRoot = path.join(f.base, 'restored-system-named-folder')
+      await restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot })
+      expect(fs.readFileSync(path.join(restoredRoot, '.ai-novel', 'skills', 'Thumbs.db', '技能.md'), 'utf8')).toBe('作者的技能')
+    })
+
+    it.runIf(process.platform === 'win32')('Windows 上系统文件名大小写不同也照常导出（#702）', async () => {
+      const f = fixture()
+      for (const name of ['DESKTOP.INI', 'thumbs.db', '.ds_store']) fs.writeFileSync(path.join(f.storage, name), '系统写的')
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
+      expect(fs.existsSync(f.target)).toBe(true)
     })
 
     it('作者删掉一份技能文件：重来一次，存档里没有它', async () => {
@@ -1173,16 +1222,18 @@ describe('portable project export service', () => {
 
   it.each(['character-delete', 'runtime-replace', 'runtime-remove'])('exports %s avatar provenance with its retained asset', async provenance => {
     const f = fixture()
-    seedProject(f)
+    const { avatar } = seedProject(f)
     const db = new Database(f.databasePath)
     db.exec(`INSERT INTO character_avatar_unresolved(record_id,disposition,source_reference,source_relative_path,
       preserved_relative_path,content_hash,mime,byte_size,candidate_character_ids_json)
       SELECT 'orphan-1','orphan','${provenance}:'||character_id,relative_path,relative_path,content_hash,mime,byte_size,'[]'
       FROM character_avatar_assets`)
+    const relativePath = db.prepare('SELECT preserved_relative_path FROM character_avatar_unresolved').pluck().get() as string
     db.exec('DELETE FROM character_avatar_assets'); db.close()
     await exportPortableProject(input(f))
     const restoredRoot = path.join(f.base, 'restored-avatar')
     await restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot })
+    expect(fs.readFileSync(path.join(restoredRoot, '.ai-novel', ...relativePath.split('/')))).toEqual(avatar)
     const restored = new Database(path.join(restoredRoot, '.ai-novel', 'project.db'), { readonly: true })
     try { expect(restored.prepare('SELECT source_reference FROM character_avatar_unresolved').pluck().get()).toMatch(new RegExp(`^${provenance}:`)) }
     finally { restored.close() }

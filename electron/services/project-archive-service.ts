@@ -1300,7 +1300,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
     const gate = input.withSourceGate ?? withKnowledgeSourceGate
     input.onProgress?.('snapshot', round)
     // 知识库的写入都持这把闸门。从取库快照到读完知识库一直持着，存档里的知识库就是库快照那一刻的，不会比库新。
-    const { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided } =
+    const { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarFiles, avatarReferenceProjections, provided } =
       await gate(projectStorageRoot, async () => {
         // 排队等闸门期间作品可能被关掉或换掉，取快照前重查。
         await assertCurrentContext(input, frozenContext, sourceRoot)
@@ -1343,10 +1343,17 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
             if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
             const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
             if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
-            // 没归属角色的旧头像在人物页修不了，和角色头像分开报。
-            const damaged = row.kind === 'bound' ? 'PORTABLE_EXPORT_AVATAR_DAMAGED' : 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED'
-            const digest = digestFile(sourcePath, regularFile(sourcePath, damaged))
-            if (digest.byteSize !== row.byteSize || digest.sha256 !== row.contentHash) fail(damaged)
+            // 没归属角色的旧头像坏了或不见了，作者修不了，不进存档；角色头像坏了照报，作者能在人物页重选。
+            const orphan = row.kind === 'unresolved'
+            if (orphan && !fs.lstatSync(sourcePath, { throwIfNoEntry: false })) continue
+            const damaged = orphan ? 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED' : 'PORTABLE_EXPORT_AVATAR_DAMAGED'
+            const checked = regularFile(sourcePath, damaged)
+            if (orphan && checked.size !== BigInt(row.byteSize)) continue
+            const digest = digestFile(sourcePath, checked)
+            if (digest.byteSize !== row.byteSize || digest.sha256 !== row.contentHash) {
+              if (orphan) continue
+              fail(damaged)
+            }
             avatarFiles.push({ entry: { path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
               disposition: 'avatar-asset' }, sourcePath })
           }
@@ -1359,7 +1366,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
           })
           return { avatarFiles, avatarReferenceProjections, provided }
         })
-        return { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarRows, avatarFiles, avatarReferenceProjections, provided }
+        return { sourceFreeze, sourceSchema, sourceFingerprint, unprovable, avatarFiles, avatarReferenceProjections, provided }
       })
 
     input.onProgress?.('tidy', round)
@@ -1450,7 +1457,7 @@ async function exportPortableProjectOnce(input: ExportPortableProjectInput, sour
       semanticCounts: {
         ...(provided.semanticCounts ?? {}),
         ...sanitized.tableCounts,
-        avatars: avatarRows.filter(row => row.kind !== 'unresolved-reference').length,
+        avatars: avatarFiles.length,
         'avatar-references': avatarReferenceProjections.length,
       },
       omittedItems: [
