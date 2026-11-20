@@ -191,8 +191,10 @@ function addDamagedOrphanAvatar(projectRoot) {
   })
 }
 
-/** 每份副本约 9 KB：340 份约 3 MiB，960 份超过审修上下文的 8 MiB 上限。 */
-function hugeChapter(number, copies = 340) {
+const COPIES_FOR_3_MIB = 340
+const COPIES_OVER_REVIEW_LIMIT = 960
+
+function hugeChapter(number, copies = COPIES_FOR_3_MIB) {
   const body = chapterText(number)
   return [body, ...Array.from({ length: copies }, () => body.slice(chapterMarker(number).length))].join('\n\n')
 }
@@ -235,7 +237,7 @@ Object.assign(CCH_SCENARIOS, {
         chapters: [{ chapterNumber: number, title: chapterTitle(number), content, wordCount: countUnits(content) }] }, projectPath, session)
       assert.equal(imported.success, true, imported.error)
     }
-    const draft = hugeChapter(4, 960)
+    const draft = hugeChapter(4, COPIES_OVER_REVIEW_LIMIT)
     const created = await invoke(page, 'db:draft-create', { chapterNumber: 4, version: 1, source: 'write', content: draft, wordCount: countUnits(draft) }, projectPath, session)
     assert.equal(created.success, true, created.error)
     await reload()
