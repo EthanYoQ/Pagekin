@@ -74,6 +74,7 @@ export const I764_SCENARIOS = {
     await arch.waitReady(page)
     const edit = arch.section(page, 'synopsis').getByRole('button', { name: '编辑恢复稿' })
     await edit.waitFor({ timeout: 20_000 })
+    await context.shoot('i764-outline-stopped-arch')
     await edit.click()
     const recovery = page.getByLabel('大纲恢复')
     await recovery.getByText(/待完成第 3 至 5 章/u).waitFor({ timeout: 20_000 })
