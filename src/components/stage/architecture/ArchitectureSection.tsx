@@ -1,7 +1,6 @@
 import { Copy, Ellipsis, Eye, EyeOff, PenLine, RotateCw, Sparkles, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { ARCH_STEP_NAMES, type ArchStepKey } from '../../../services/architecture-step-selection'
-import { outlineSourceChangedNote } from '../../run/run-recovery'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { LegacyRosterRecoveryPanel } from '../../editor/LegacyRosterRecoveryPanel'
 import type { ArchitectureOverview } from '../../editor/use-architecture-overview'
@@ -29,12 +28,11 @@ function CandidateNotice({ sectionKey, overview }: { sectionKey: 'worldbuilding'
   const editDraft = sectionKey === 'synopsis' && overview.planningRecovery !== null
   // 来源已变的恢复稿不能写回：主动作是从本批起始章重新生成，打开恢复稿只作查看。
   const restart = sectionKey === 'synopsis' ? overview.outlineRestartRange : null
-  const locale = useLocaleStore(s => s.locale)
   const filled = Boolean(overview.archStatus[sectionKey])
   let note = state.handle
     ? text('续写从停下的地方接着生成，不会改动已保存的部分。', 'Resuming continues from where it stopped and leaves saved content alone.')
     : text('无法确认这份候选的来源，只能查看或复制，然后重新生成。', 'The source of this candidate cannot be confirmed. View or copy it, then generate again.')
-  if (restart && overview.planningRecovery) note = outlineSourceChangedNote(overview.planningRecovery, locale) ?? note
+  if (restart) note = overview.outlineRestartNote ?? note
   const resume = () => editDraft
     ? overview.openRecoveryDraft()
     : void (sectionKey === 'synopsis' ? overview.handleResumeSynopsis() : overview.handleResumeWorldBuilding())

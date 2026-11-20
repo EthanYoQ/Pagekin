@@ -893,7 +893,8 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     const context = await invoke('generation:read-context', { handle })
     expect(context.plotOutlineRecovery).toMatchObject({ sourceHandle: handle, leaseEpoch: session.leaseId,
       completeChapters: [], writeState: { kind: 'ready' } })
-    expect(context.plotOutlineRecovery!.draft).toContain('FAILED-CANDIDATE')
+    expect(context.plotOutlineRecovery!.rejectedReply).toContain('FAILED-CANDIDATE')
+    expect(context.plotOutlineRecovery!.draft).not.toContain('FAILED-CANDIDATE')
     const synopsis = renderPlotOutlineSynopsis('## 第1章：作者补齐\n作者核对证词，归还钥匙。', 1, context.plotOutline!.sourceExpected)
     const payload = { synopsis, expected: context.plotOutline!.sourceExpected,
       authorRecovery: { sourceHandle: handle, leaseEpoch: session.leaseId, operationId: 'author-recovery-1', committedRange: { from: 1, to: 1 } } }
@@ -966,8 +967,8 @@ describe('chapter outline command through registered main IPC and formal CAS', (
   it('keeps both failed whole-chapter candidates and the formal original after double LENGTH', async () => {
     const f = outlineFixture({ compact: 'fails' }), commit = vi.spyOn(ProjectCoreRepository, 'commitSynopsis')
     const failure: Error = await f.execute().catch(error => error)
-    expect(failure.message).toBe('恢复稿里有已写好的章节和第 1 章最后一次的回复，正式大纲没动。第 1 章两次都没写成完整的单章大纲，自动生成停在这里。'
-      + '到「架构」页点「编辑恢复稿」补写这一章，或重新生成。')
+    expect(failure.message).toBe('恢复稿里有已写好的章节，第 1 章最后一次的回复在「原始候选」里，正式大纲没动。第 1 章两次都没写成完整的单章大纲，自动生成停在这里。'
+      + '到「架构」页点「编辑恢复稿」接着生成。')
     expect(ProjectCoreRepository.get()?.synopsis).toBe('旧正式大纲')
     expect(commit).not.toHaveBeenCalled()
     const handle = f.navigation().synopsis_generation_handle

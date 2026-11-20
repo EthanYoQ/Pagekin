@@ -358,6 +358,23 @@ describe('规划恢复稿', () => {
     expect(outlineSourceChangedNote(recovery, 'zh-CN')).toContain('从第 6 章重新生成')
   })
 
+  it.each(['source-changed', 'source-invalid'] as const)('%s 的大纲恢复卡不列「缺第几章」，只按说明重新生成；能写回的照常列', reason => {
+    const outline = (writeState: object) => ({ handle, plotOutline: { range: { from: 1, to: 5 }, cursor: { kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' }, sourceExpected: { synopsis: '' } },
+      plotOutlineRecovery: { writeState, inFormalOutline: false }, planningContinuation: { state: reason, remainingRange: { from: 3, to: 5 } } }) as never
+    const [blocked] = buildRecoveryEntries({ ...EMPTY_RECOVERY_SOURCES, planning: [outline({ kind: 'blocked', reason })] }, 'zh-CN')
+    expect(blocked.kind === 'planning' && blocked.meta).not.toContain('缺第')
+    const [ready] = buildRecoveryEntries({ ...EMPTY_RECOVERY_SOURCES, planning: [outline({ kind: 'ready' })] }, 'zh-CN')
+    expect(ready.kind === 'planning' && ready.meta).toContain('缺第 3–5 章')
+  })
+
+  it('已经接着生成过的大纲恢复卡照常列「缺第几章」（主进程对它也报 source-changed）', () => {
+    const recovery = { handle, plotOutline: { range: { from: 1, to: 5 }, cursor: { kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' }, sourceExpected: { synopsis: '' } },
+      plotOutlineRecovery: { writeState: { kind: 'blocked', reason: 'source-changed' }, inFormalOutline: false },
+      planningContinuation: { state: 'continued', remainingRange: { from: 3, to: 5 } } } as never
+    const [entry] = buildRecoveryEntries({ ...EMPTY_RECOVERY_SOURCES, planning: [recovery] }, 'zh-CN')
+    expect(entry.kind === 'planning' && entry.meta).toContain('缺第 3–5 章')
+  })
+
   it('只有一章的大纲恢复稿标题写「第 6 章」，不写成「第 6–6 章」', () => {
     const recovery = { handle, plotOutlineRecovery: {}, plotOutline: { range: { from: 6, to: 6 } } } as never
     expect(buildRecoveryEntries({ ...EMPTY_RECOVERY_SOURCES, planning: [recovery] }, 'zh-CN')[0].title).toBe('大纲恢复稿 · 第 6 章')

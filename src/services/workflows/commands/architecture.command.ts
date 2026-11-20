@@ -2195,11 +2195,11 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         'in-flight': text(`第 ${n} 章上一次请求还没有结果`, `The previous request for chapter ${n} has no result yet`),
       }[cursor.reason]
       const kept = cursor.reason === 'attempts-exhausted'
-        ? text(`恢复稿里有已写好的章节和第 ${n} 章最后一次的回复`, `The recovery draft has the finished chapters and the last reply for chapter ${n}`)
+        ? text(`恢复稿里有已写好的章节，第 ${n} 章最后一次的回复在「原始候选」里`, `The recovery draft has the finished chapters; the last reply for chapter ${n} is under Original candidate`)
         : text('恢复稿里有已写好的章节', 'The recovery draft has the finished chapters')
       return new Error(text(
-        `${kept}，正式大纲没动。${problem}，自动生成停在这里。到「架构」页点「编辑恢复稿」补写这一章，或重新生成。`,
-        `${kept}; the saved outline is unchanged. ${problem}, so generation stopped there. Open Architecture and choose Edit recovery draft to finish this chapter, or generate again.`))
+        `${kept}，正式大纲没动。${problem}，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。`,
+        `${kept}; the saved outline is unchanged. ${problem}, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going.`))
     }
     const requestCallbacks = { ...callbacks, setProgress: () => {} }
     const publishProgress = (outline: PlotOutlineProgress) => {

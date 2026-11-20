@@ -89,8 +89,8 @@ describe('chapter Markdown outline contract', () => {
     expect(validPlotOutlineAuthorPrefix(`${head}\n\n${join(1, 2, 3)}\n\n${tail(3)}`, progress, { from: 3, to: 3 })).toBe(true)
 
     const recovery = plotOutlineRecoveryDraft({ ...progress, protocol: PLOT_OUTLINE_PROTOCOL, content: PLOT_OUTLINE_CONTENT, targetUnits: 600,
-      cursor: { kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' }, composition: null }, join(3))
-    expect(recovery).toBe(`${head}\n\n${join(1, 2, 3)}\n\n${tail(3)}`)
+      cursor: { kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' }, composition: null })
+    expect(recovery).toBe(`${head}\n\n${join(1, 2)}\n\n${language === 'zh-CN' ? '## 第3章：' : '## Chapter 3:'}\n\n${tail(3)}`)
   })
 
   it.each([

@@ -41,7 +41,7 @@ function fixture(kind: 'outline' | 'blueprint'): GenerationRecoveryContext {
   return { ...common, plotOutline: { protocol: 'chapter-outline-v3', range: { from: 1, to: 3 }, content: { maxAttemptsPerChapter: 2 },
     targetUnits: 600, cursor: { kind: 'stopped', chapterNumber: 1, reason: 'attempts-exhausted' }, sourceExpected: { ...sourceExpected },
     confirmedPrefix: '', composition: null },
-  plotOutlineRecovery: { sourceHandle: handle, leaseEpoch: session.leaseId, draft: '# 情节大纲\n\n## 第1章：未完成\n', completeChapters: [], writeState: { kind: 'ready' }, saved: null, inFormalOutline: false } }
+  plotOutlineRecovery: { sourceHandle: handle, leaseEpoch: session.leaseId, draft: '# 情节大纲\n\n## 第1章：未完成\n', completeChapters: [], writeState: { kind: 'ready' }, saved: null, inFormalOutline: false, rejectedReply: null } }
 }
 const blueprintText = JSON.stringify([{ chapterNumber: 1, title: '雨夜', role: '建置', purpose: '寻找证据', keyEvents: '找到信件',
   characters: ['沈砺'], relationships: [], suspenseHook: '信封有新线索', userGuidance: '保留作者指示', notes: '作者笔记', notesUpdatedAt: '2026-10-04T00:00:00Z' }])
@@ -117,6 +117,13 @@ function button(label: string): HTMLButtonElement {
   const found = [...container.querySelectorAll('button')].find(item => item.textContent === label)
   if (!found) throw new Error(`Missing button ${label}`)
   return found
+}
+async function setEnd(value: string) {
+  const input = container.querySelector<HTMLInputElement>('input[type="number"]')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
 }
 function noModel() { expect(invoke.mock.calls.some(([channel]) => channel === 'generation:execute' || channel === 'generation:begin' || channel === 'generation:restart')).toBe(false) }
 
@@ -217,7 +224,7 @@ describe('planning recovery editors', () => {
     invoke.mockRejectedValueOnce(new Error('Recovery context reload failed'))
     await act(async () => {
       if (source === 'button') {
-        container.querySelector<HTMLButtonElement>('button[title="从磁盘重新加载（AI 生成完成后可点击刷新）"]')!.click()
+        container.querySelector<HTMLButtonElement>('button[title="重新读取恢复状态"]')!.click()
       } else {
         globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'architecture_generation', projectPath: session.projectPath, projectSession: session, runId: 'completed-recovery' })
       }
@@ -242,12 +249,13 @@ describe('planning recovery editors', () => {
 
   for (const language of ['zh-CN', 'en-US'] as const) {
     for (const keepTail of [true, false]) {
-      it(`outline author tail ${language} saves a completed prefix with ${keepTail ? 'old' : 'deleted'} machine progress`, async () => {
+      it(`outline author tail ${language} saves an author-completed chapter with ${keepTail ? 'old' : 'deleted'} machine progress`, async () => {
         const english = language === 'en-US'
         const title = english ? '# Plot Outline' : '# 情节大纲'
         const body = english ? '## Chapter 1: Rain\nThe author keeps every clue.\n\n> Author note: preserve this quotation.' : '## 第1章：雨夜\n作者保留每一条线索。\n\n> 作者笔记：保留这段引文。'
-        const oldTail = english ? '> This outline covers chapters 1-2 of 3; the remaining chapters will be generated in later batches.' : '> 本大纲已覆盖至第 2 章（全书 3 章），其余章节将在后续批次继续生成。'
-        const newTail = english ? '> This outline covers chapters 1-1 of 3; the remaining chapters will be generated in later batches.' : '> 本大纲已覆盖至第 1 章（全书 3 章），其余章节将在后续批次继续生成。'
+        const authored = english ? '## Chapter 2: Dawn\nThe author finishes this chapter.' : '## 第2章：黎明\n作者自己写完这一章。'
+        const oldTail = english ? '> This outline covers chapters 1-1 of 3; the remaining chapters will be generated in later batches.' : '> 本大纲已覆盖至第 1 章（全书 3 章），其余章节将在后续批次继续生成。'
+        const newTail = english ? '> This outline covers chapters 1-2 of 3; the remaining chapters will be generated in later batches.' : '> 本大纲已覆盖至第 2 章（全书 3 章），其余章节将在后续批次继续生成。'
         context = fixture('outline')
         if (!context.plotOutline || !context.plotOutlineRecovery) throw new Error('Missing outline fixture')
         context.plotOutline.sourceExpected.writingLanguage = language
@@ -255,14 +263,14 @@ describe('planning recovery editors', () => {
         context.plotOutline.cursor = { kind: 'stopped', chapterNumber: 2, reason: 'attempts-exhausted' }
         context.plotOutlineRecovery.completeChapters = [1]
         const prefix = `${title}\n\n${body}`
-        const original = `${prefix}\n\n${english ? '## Chapter 2: Unfinished' : '## 第2章：未完成'}\n截断\n\n${oldTail}`
-        context.plotOutlineRecovery.draft = original
+        context.plotOutlineRecovery.draft = `${prefix}\n\n${oldTail}`
         await render('outline')
-        await edit(prefix + (keepTail ? `\n\n${oldTail}` : ''))
-        await act(async () => button('保存').click())
-        const expected = `${prefix}\n\n${newTail}`
-        expect(savedPayload).toMatchObject({ synopsis: expected, expected: context.plotOutline.sourceExpected, authorRecovery: { committedRange: { from: 1, to: 1 } } })
-        expect(useEditorStore.getState().tabs[0]).toMatchObject({ content: expected, savedContent: expected, originalContent: original, dirty: false })
+        await edit(`${prefix}\n\n${authored}` + (keepTail ? `\n\n${oldTail}` : ''))
+        await setEnd('2')
+        await act(async () => button('保存恢复大纲').click())
+        const expected = `${prefix}\n\n${authored}\n\n${newTail}`
+        expect(savedPayload).toMatchObject({ synopsis: expected, expected: context.plotOutline.sourceExpected, authorRecovery: { committedRange: { from: 1, to: 2 } } })
+        expect(useEditorStore.getState().tabs[0]).toMatchObject({ content: expected, savedContent: expected, dirty: false })
         expect(editor().state.doc.toString()).toBe(expected)
         await act(async () => editor().contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 's', code: 'KeyS', ctrlKey: true, bubbles: true, cancelable: true })))
         expect(invoke.mock.calls.filter(([name]) => name === 'db:project-core-synopsis-commit')).toHaveLength(1)
@@ -270,11 +278,28 @@ describe('planning recovery editors', () => {
       })
     }
   }
+  it('正文末尾留着更晚一章的旧覆盖说明（第 3 章）时保存到第 2 章：只剩一条覆盖说明，写第 2 章', async () => {
+    context = fixture('outline')
+    if (!context.plotOutline || !context.plotOutlineRecovery) throw new Error('Missing outline fixture')
+    context.plotOutline.sourceExpected.totalChapters = 4
+    const note = (n: number) => `> 本大纲已覆盖至第 ${n} 章（全书 4 章），其余章节将在后续批次继续生成。`
+    const prefix = '# 情节大纲\n\n## 第1章：雨夜\n作者保留每一条线索。'
+    context.plotOutline.composition = { algorithm: 'chapter-outline-v3', text: '## 第1章：雨夜\n作者保留每一条线索。', textHash: 'a'.repeat(64), artifactIds: ['chapter-1'], sources: [], chapters: [{ chapterNumber: 1, artifactIds: ['chapter-1'], textHash: 'a'.repeat(64) }] }
+    context.plotOutline.cursor = { kind: 'stopped', chapterNumber: 2, reason: 'attempts-exhausted' }
+    context.plotOutlineRecovery.completeChapters = [1]
+    context.plotOutlineRecovery.draft = `${prefix}\n\n${note(1)}`
+    await render('outline')
+    await edit(`${prefix}\n\n## 第2章：黎明\n作者自己写完这一章。\n\n${note(3)}`)
+    await setEnd('2')
+    await act(async () => button('保存恢复大纲').click())
+    expect(savedPayload).toMatchObject({ synopsis: `${prefix}\n\n## 第2章：黎明\n作者自己写完这一章。\n\n${note(2)}`, authorRecovery: { committedRange: { from: 1, to: 2 } } })
+    noModel()
+  })
   it('outline author tail preserves an edited quotation instead of treating it as machine progress', async () => {
     context = fixture('outline')
     const authored = '# 情节大纲\n\n## 第1章：雨夜\n作者正文。\n\n> 本大纲已覆盖至第 2 章（全书 3 章），其余章节将在后续批次继续生成。作者要求保留。'
     await render('outline'); await edit(authored)
-    await act(async () => button('保存').click())
+    await act(async () => button('保存恢复大纲').click())
     const expected = authored + '\n\n> 本大纲已覆盖至第 1 章（全书 3 章），其余章节将在后续批次继续生成。'
     expect(savedPayload).toMatchObject({ synopsis: expected })
     expect(editor().state.doc.toString()).toBe(expected)
@@ -291,7 +316,7 @@ describe('planning recovery editors', () => {
     await render('outline')
     const authored = '# 情节大纲\n\n## 第1章：原章\n' + (changed ? '被篡改的原文。' : '不可改写的原文。') + '\n\n## 第2章：恢复\n作者补齐的正文。'
     await edit(authored)
-    await act(async () => button('保存').click())
+    await act(async () => button('保存恢复大纲').click())
     if (changed) {
       expect(savedPayload).toBeUndefined()
       expect(editor().state.doc.toString()).toBe(authored)
@@ -309,7 +334,7 @@ describe('planning recovery editors', () => {
     const canonical = authored + '\n\n> 本大纲已覆盖至第 1 章（全书 3 章），其余章节将在后续批次继续生成。'
     await edit(authored)
     pendingSave = async () => { throw new Error('IPC_ACK_LOST_AFTER_COMMIT') }
-    await act(async () => button('保存').click())
+    await act(async () => button('保存恢复大纲').click())
     expect(savedPayload).toMatchObject({ synopsis: canonical })
     const first = structuredClone(savedPayload)
     const later = authored + '\n作者在回包丢失后继续输入。'
@@ -317,7 +342,7 @@ describe('planning recovery editors', () => {
     await act(async () => root.render(null))
     await render('outline')
     pendingSave = async () => ({ success: true })
-    await act(async () => button('保存').click())
+    await act(async () => button('保存恢复大纲').click())
     expect(savedPayload).toEqual(first)
     expect(useEditorStore.getState().tabs[0]).toMatchObject({ content: laterEdit ? later : canonical, savedContent: canonical, dirty: laterEdit })
     expect(editor().state.doc.toString()).toBe(laterEdit ? later : canonical)
@@ -394,7 +419,7 @@ describe('planning recovery editors', () => {
           recordAuthorReceipt()
           throw new Error('IPC_ACK_LOST_AFTER_COMMIT')
         }
-        await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+        await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
         const later = validText().replace('找到信件', '找到新的信件')
         await edit(later)
         await act(async () => {
@@ -415,7 +440,7 @@ describe('planning recovery editors', () => {
         if (retry === 'exit') {
           await act(async () => { await expect(saveDirtyEditorChangesForExit(session.projectPath)).rejects.toThrow('保存期间仍有未保存修改') })
         } else if (retry === 'shortcut') await shortcutSave()
-        else await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+        else await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
         await vi.waitFor(() => expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(2))
         const expected = structuredClone(first)
         if (retry === 'new-lease') {
@@ -434,16 +459,16 @@ describe('planning recovery editors', () => {
           view.contentDOM.dispatchEvent(new ClipboardEvent('copy', { bubbles: true, cancelable: true, clipboardData: data }))
         })
         expect(data.getData('text/plain')).toBe(later)
-        expect(button(kind === 'outline' ? '保存' : '保存恢复蓝图').disabled).toBe(true)
+        expect(button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').disabled).toBe(true)
         noModel()
       })
     }
     it(`${kind} invalid first text can be corrected before any submission freezes`, async () => {
       context = fixture(kind); await render(kind); await edit('未完成内容')
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(0)
       await edit(validText())
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(1)
       expect(useEditorStore.getState().tabs[0]).toMatchObject({ savedContent: validText(), dirty: false }); noModel()
     })
@@ -451,7 +476,7 @@ describe('planning recovery editors', () => {
       context = fixture(kind); await render(kind); await edit(validText())
       let finish: ((value: unknown) => void) | undefined
       pendingSave = () => new Promise(resolve => { finish = resolve })
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       await vi.waitFor(() => expect(finish).toBeDefined())
       const first = structuredClone(savedPayload)
       const later = validText().replace('找到信件', '找到新的信件')
@@ -467,7 +492,7 @@ describe('planning recovery editors', () => {
       await act(async () => root.render(null))
       await render(kind)
       pendingSave = async () => ({ success: true })
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(2)
       expect(savedPayload).toMatchObject({ authorRecovery: { leaseEpoch: 'lease-2' } })
       if (!first || typeof first !== 'object' || !('authorRecovery' in first)
@@ -478,11 +503,11 @@ describe('planning recovery editors', () => {
     })
     it(`${kind} explicit uncommitted rejection permits corrected text on retry`, async () => {
       context = fixture(kind); rejectSave = '作者内容未通过检查'; await render(kind); await edit(validText())
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
       const later = validText().replace('找到信件', '找到新的信件')
       await edit(later); rejectSave = undefined
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(2)
       expect(savedPayload).toMatchObject(kind === 'outline' ? { synopsis: later } : { blueprints: [{ keyEvents: '找到新的信件' }] })
       expect(useEditorStore.getState().tabs[0]).toMatchObject({ savedContent: later, dirty: false }); noModel()
@@ -490,15 +515,15 @@ describe('planning recovery editors', () => {
     it(`${kind} a rejected replay cannot release an earlier unknown submission`, async () => {
       context = fixture(kind); await render(kind); await edit(validText())
       pendingSave = async () => { throw new Error('IPC_ACK_UNKNOWN') }
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       const first = structuredClone(savedPayload)
       await edit(validText().replace('找到信件', '找到新的信件'))
       pendingSave = async () => ({ success: false, error: 'AUTHOR_RECEIPT_CONFLICT' })
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(savedPayload).toEqual(first)
       expect(useEditorStore.getState().tabs[0].savedContent).toBe('')
       pendingSave = async () => ({ success: true })
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(3)
       expect(savedPayload).toEqual(first)
       expect(useEditorStore.getState().tabs[0]).toMatchObject({ savedContent: validText(), dirty: true }); noModel()
@@ -506,7 +531,7 @@ describe('planning recovery editors', () => {
     it(`${kind} edits double-length candidate and saves only through author recovery`, async () => {
       context = fixture(kind); await render(kind); await edit(validText())
       const operationId = useEditorStore.getState().tabs[0].planningSaveOperationId
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(1)
       expect(savedPayload).toMatchObject({ authorRecovery: { sourceHandle: handle, leaseEpoch: session.leaseId } })
       expect(savedPayload).toMatchObject(kind === 'outline' ? { expected: sourceExpected, synopsis: validText(), authorRecovery: { operationId, committedRange: { from: 1, to: 1 } } }
@@ -516,7 +541,7 @@ describe('planning recovery editors', () => {
     })
     it(`${kind} preserves dirty and operation identity after conflict and retry`, async () => {
       context = fixture(kind); rejectSave = '来源已变化'; await render(kind); await edit(validText())
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
       const first = savedPayload
       await act(async () => { await expect(saveDirtyEditorChangesForExit(session.projectPath)).rejects.toThrow('来源已变化') })
@@ -621,7 +646,7 @@ describe('planning recovery editors', () => {
         context = { ...context, planningContinuation: { sourceHandle: handle, remainingRange: { from: 2, to: 3 }, targetUnits: 600, state: 'ready' } }
         return { success: true }
       }
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       noModel()
       expect(container.textContent).toContain('待完成第 2 至 3 章')
       await act(async () => button('继续生成缺少的章节').click())
@@ -695,5 +720,176 @@ describe('planning recovery editors', () => {
     await act(async () => saveDirtyEditorChangesForExit(session.projectPath))
     expect(save).toHaveBeenCalledOnce()
     dispose(); noModel()
+  })
+})
+
+describe('大纲恢复稿页面（#702）', () => {
+  const written = '## 第1章：灯下第1夜\n林岚核对雾钟。\n\n## 第2章：灯下第2夜\n林岚再核对一遍。'
+  const rejected = '# 全书情节大纲\n\n## 第一阶段：建置（第1–24章）\n林岚抵达旧港。'
+  function stoppedAtChapter3(): GenerationRecoveryContext {
+    const stopped = fixture('outline')
+    const outline = stopped.plotOutline!, candidate = stopped.plotOutlineRecovery!
+    outline.sourceExpected.totalChapters = 5
+    outline.range = { from: 1, to: 5 }
+    outline.cursor = { kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' }
+    outline.composition = { algorithm: 'chapter-outline-v3', text: written, textHash: 'a'.repeat(64), artifactIds: ['chapter-1', 'chapter-2'], sources: [],
+      chapters: [1, 2].map(chapterNumber => ({ chapterNumber, artifactIds: [`chapter-${chapterNumber}`], textHash: 'a'.repeat(64) })) }
+    candidate.completeChapters = [1, 2]
+    candidate.draft = renderPlotOutlineRange(written, { from: 1, to: 2 }, outline.sourceExpected)
+    candidate.rejectedReply = rejected
+    stopped.planningContinuation = { sourceHandle: handle, remainingRange: { from: 3, to: 5 }, targetUnits: 600, state: 'save-prefix' }
+    return stopped
+  }
+  const page = () => container.querySelector('[aria-label="大纲恢复"], [aria-label="Outline recovery"]')!
+  const primaryButtons = () => [...page().querySelectorAll('button.pi-btn--primary')].map(item => item.textContent)
+  const endInput = () => page().querySelector<HTMLInputElement>('input[type="number"]')!
+
+  it('停在第 3 章：写明哪几章写好了、哪一章没写成，保存按钮与保存终点在同一处，主按钮只有保存', async () => {
+    context = stoppedAtChapter3()
+    await render('outline')
+    expect(page().querySelector('h1')?.textContent).toBe('补齐中断的大纲')
+    expect(page().querySelector('[role="status"]')?.textContent).toContain('第 1–2 章已写好，第 3 章没写成')
+    expect(page().textContent).toContain('待完成第 3 至 5 章，每章目标 600 字。')
+    const head = page().querySelector('header')!
+    expect(head.contains(endInput())).toBe(true)
+    expect(endInput().value).toBe('2')
+    expect(head.contains(button('保存恢复大纲'))).toBe(true)
+    expect(primaryButtons()).toEqual(['保存恢复大纲'])
+    expect(button('继续生成缺少的章节').disabled).toBe(true)
+    expect(page().textContent).toContain('保存后可继续生成。')
+    expect(page().querySelector('[role="status"]')?.textContent).toContain('第 3 章那次的回复在「原始候选」里。')
+    expect(page().textContent).not.toContain('删掉')
+    expect(editor().state.doc.toString()).not.toContain('全书情节大纲')
+    expect(page().querySelector('details pre')?.textContent).toBe(rejected)
+    noModel()
+  })
+  it('生成中打开恢复稿、之后第 3 章停下：原始候选显示第 3 章的回复，不是打开时的草稿', async () => {
+    context = stoppedAtChapter3()
+    const opening = structuredClone(context)
+    opening.plotOutlineRecovery!.rejectedReply = null
+    opening.plotOutlineRecovery!.writeState = { kind: 'blocked', reason: 'in-flight' }
+    openPlanningRecoveryDraft(opening, session.projectPath, '恢复稿')
+    const tab = useEditorStore.getState().tabs[0]
+    await act(async () => root.render(<ArchFileViewer tabId={tab.id} filePath="ai-novel://core/synopsis" projectKey={session.projectPath} content={tab.content ?? ''} savedContent={tab.savedContent ?? ''} />))
+    await vi.waitFor(() => expect(page().querySelector('[role="status"]')?.textContent).toContain('第 3 章那次的回复在「原始候选」里。'))
+    expect(page().querySelector('details pre')?.textContent).toBe(rejected)
+    noModel()
+  })
+  it('打开后不改一个字直接保存：写进第 1–2 章，之后能继续生成第 3–5 章', async () => {
+    context = stoppedAtChapter3()
+    const draft = context.plotOutlineRecovery!.draft
+    await render('outline')
+    pendingSave = async () => {
+      context = structuredClone(context)
+      context.plotOutlineRecovery!.writeState = { kind: 'blocked', reason: 'author-saved' }
+      context.planningContinuation = { sourceHandle: handle, remainingRange: { from: 3, to: 5 }, targetUnits: 600, state: 'ready' }
+      return { success: true }
+    }
+    await act(async () => button('保存恢复大纲').click())
+    expect(savedPayload).toMatchObject({ synopsis: draft, authorRecovery: { committedRange: { from: 1, to: 2 } } })
+    await vi.waitFor(() => expect(primaryButtons()).toEqual(['继续生成缺少的章节']))
+    await act(async () => button('继续生成缺少的章节').click())
+    await vi.waitFor(() => expect(invoke.mock.calls.some(([channel]) => channel === 'generation:restart')).toBe(true))
+  })
+  it('一章都没写成：主按钮是继续生成，保存仍可用', async () => {
+    await render('outline')
+    expect(page().querySelector('[role="status"]')?.textContent).toContain('第 1 章没写成')
+    expect(page().querySelector('[role="status"]')?.textContent).toContain('以「## 第1章：」开头')
+    expect(primaryButtons()).toEqual(['继续生成缺少的章节'])
+    expect(button('保存恢复大纲').disabled).toBe(false)
+    noModel()
+  })
+  it('保存之后只读：提示已保存，保存按钮与保存终点停用，主按钮换成继续生成', async () => {
+    context = stoppedAtChapter3()
+    await render('outline')
+    await edit(renderPlotOutlineRange(written, { from: 1, to: 2 }, context.plotOutline!.sourceExpected))
+    pendingSave = async () => {
+      context = structuredClone(context)
+      const receipt = { operationId: useEditorStore.getState().tabs[0].planningSaveOperationId!, sourceHandle: handle,
+        requestedRange: { from: 1, to: 5 }, committedRange: { from: 1, to: 2 }, remainingRange: { from: 3, to: 5 } }
+      context.plotOutlineRecovery!.saved = { ...receipt, kind: 'author-edit', synopsisHash: 'a'.repeat(64), payloadHash: 'b'.repeat(64), idempotent: false }
+      context.plotOutlineRecovery!.writeState = { kind: 'blocked', reason: 'author-saved' }
+      context.planningContinuation = { sourceHandle: handle, remainingRange: { from: 3, to: 5 }, targetUnits: 600, state: 'ready' }
+      return { success: true }
+    }
+    await act(async () => button('保存恢复大纲').click())
+    expect(savedPayload).toMatchObject({ authorRecovery: { committedRange: { from: 1, to: 2 } } })
+    await vi.waitFor(() => expect(page().querySelector('[role="status"]')?.textContent).toContain('本次恢复已保存，后续修改仅供复制。'))
+    expect(page().textContent).toContain('待完成第 3 至 5 章')
+    expect(button('保存恢复大纲').disabled).toBe(true)
+    expect(endInput().disabled).toBe(true)
+    expect(primaryButtons()).toEqual(['继续生成缺少的章节'])
+    expect(button('继续生成缺少的章节').disabled).toBe(false)
+    noModel()
+  })
+  it('保存过第 1–2 章后来源变了：仍说已保存，写明不能接着生成、从第 3 章重新生成，不说不能保存、不列待完成范围', async () => {
+    context = stoppedAtChapter3()
+    context.plotOutlineRecovery!.saved = { kind: 'author-edit', operationId: 'saved-before', sourceHandle: handle, requestedRange: { from: 1, to: 5 },
+      committedRange: { from: 1, to: 2 }, remainingRange: { from: 3, to: 5 }, synopsisHash: 'a'.repeat(64), payloadHash: 'b'.repeat(64), idempotent: false }
+    context.plotOutlineRecovery!.writeState = { kind: 'blocked', reason: 'source-changed' }
+    context.planningContinuation!.state = 'source-changed'
+    await render('outline')
+    const notice = page().querySelector('[role="status"]')!
+    expect(notice.textContent).toContain('本次恢复已保存')
+    expect(notice.textContent).toContain('请从第 3 章重新生成情节大纲')
+    expect(notice.textContent).not.toContain('不能保存')
+    expect(notice.textContent).not.toContain('待完成第 3 至 5 章')
+    expect(button('继续生成缺少的章节').disabled).toBe(true)
+    expect(primaryButtons()).toEqual([])
+    noModel()
+  })
+  it('已经接着生成过的恢复稿：不说来源变了、不说不能继续，「继续生成」是主按钮且可点，保存停用', async () => {
+    context = stoppedAtChapter3()
+    context.plotOutlineRecovery!.writeState = { kind: 'blocked', reason: 'source-changed' }
+    context.planningContinuation = { sourceHandle: handle, remainingRange: { from: 3, to: 5 }, targetUnits: 600, state: 'continued',
+      nextHandle: { ...handle, rootActionId: 'root-2', runId: 'run-2' } }
+    await render('outline')
+    const notice = page().querySelector('[role="status"]')!
+    expect(notice.textContent).toContain('已经接着生成过')
+    expect(notice.textContent).not.toContain('不能继续生成')
+    expect(notice.textContent).not.toContain('变了')
+    expect(primaryButtons()).toEqual(['继续生成缺少的章节'])
+    expect(button('继续生成缺少的章节').disabled).toBe(false)
+    expect(button('保存恢复大纲').disabled).toBe(true)
+    noModel()
+  })
+  it('来源变了被挡：写明不能保存也不能继续、该怎么办，没有主按钮', async () => {
+    context = stoppedAtChapter3()
+    context.plotOutlineRecovery!.writeState = { kind: 'blocked', reason: 'source-changed' }
+    context.planningContinuation!.state = 'source-changed'
+    await render('outline')
+    const notice = page().querySelector('[role="status"]')!
+    expect(notice.getAttribute('data-tone')).toBe('warn')
+    expect(notice.textContent).toContain('不能保存，也不能继续生成')
+    expect(notice.textContent).toContain('请从第 1 章重新生成情节大纲')
+    expect(notice.textContent).not.toContain('待完成第 3 至 5 章')
+    expect(button('保存恢复大纲').disabled).toBe(true)
+    expect(button('继续生成缺少的章节').disabled).toBe(true)
+    expect(endInput().disabled).toBe(true)
+    expect(primaryButtons()).toEqual([])
+    noModel()
+  })
+  it('生成还在进行：写明要等生成结束，保存与继续都停用', async () => {
+    context = stoppedAtChapter3()
+    context.plotOutlineRecovery!.writeState = { kind: 'blocked', reason: 'in-flight' }
+    context.planningContinuation!.state = 'in-flight'
+    await render('outline')
+    expect(page().querySelector('[role="status"]')?.textContent).toContain('大纲还在生成')
+    expect(button('保存恢复大纲').disabled).toBe(true)
+    expect(button('继续生成缺少的章节').disabled).toBe(true)
+    expect(primaryButtons()).toEqual([])
+    noModel()
+  })
+  it('英文界面：页头、提示与按钮都是英文', async () => {
+    useLocaleStore.setState({ locale: 'en-US' })
+    context = stoppedAtChapter3()
+    await render('outline')
+    expect(page().querySelector('h1')?.textContent).toBe('Finish the interrupted outline')
+    const notice = page().querySelector('[role="status"]')!
+    expect(notice.textContent).toContain('Chapters 1–2 are written; chapter 3 is not')
+    expect(notice.textContent).not.toMatch(/\p{Script=Han}/u)
+    expect(page().querySelector('header')?.textContent).not.toMatch(/\p{Script=Han}/u)
+    expect(primaryButtons()).toEqual(['Save recovered outline'])
+    noModel()
   })
 })

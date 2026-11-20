@@ -329,7 +329,7 @@ describe('chapter outline main authority', () => {
     expect(resumed.plotOutline!.cursor).toEqual({ kind: 'stopped', chapterNumber: 1, reason: 'unknown-completion' })
     await expect(owner.execute({ handle: resumed.handle, invocationNonce: 'never-replay', task: last })).rejects.toThrow('GENERATION_DISPATCH_PLOT_OUTLINE_CURSOR')
     expect(new GenerationRunRepository(() => f.db).budget(run.handle.rootActionId).attempts).toEqual(before.attempts)
-    expect(owner.readContext(resumed.handle).plotOutlineRecovery!.draft).toContain(outlineEntry(1))
+    expect(owner.readContext(resumed.handle).plotOutlineRecovery).toMatchObject({ rejectedReply: outlineEntry(1), draft: expect.not.stringContaining('线索1') })
     expect(dispatch).toHaveBeenCalledTimes(before.attempts.length)
   })
 
@@ -479,7 +479,8 @@ describe('explicit planning recovery with real SQLite', () => {
     const f = fixture(dispatch), run = f.owner.begin(outlineSelection(f, 3))
     for (const nonce of ['normal', 'compact']) await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) })
     const attempts = f.db.prepare('SELECT * FROM generation_attempts').all()
-    expect(f.owner.readContext(run.handle)).toMatchObject({ plotOutlineRecovery: { draft: expect.stringContaining(raw) }, planningContinuation: { state: 'ready', remainingRange: { from: 1, to: 3 }, targetUnits: 600 } })
+    expect(f.owner.readContext(run.handle)).toMatchObject({ plotOutlineRecovery: { rejectedReply: raw }, planningContinuation: { state: 'ready', remainingRange: { from: 1, to: 3 }, targetUnits: 600 } })
+    expect(f.owner.readContext(run.handle).plotOutlineRecovery!.draft).not.toContain('候选原文还未写完')
     const nextInput = { ...outlineSelection(f, 3), uiActionNonce: 'explicit-next' }
     const next = f.owner.restart(run.handle, nextInput)
     expect(next.handle.rootActionId).not.toBe(run.handle.rootActionId)
@@ -517,20 +518,54 @@ describe('explicit planning recovery with real SQLite', () => {
     expect(owner.list(['generate-plot-outline']).map(item => item.handle.runId)).toEqual([run.handle.runId])
     expect(dispatch).toHaveBeenCalledTimes(2)
   })
-  it('第 1–5 章任务停在第 3 章：恢复卡缺的是第 3–5 章，与恢复稿已含的第 1、2 章一致', async () => {
+  it('第 1–5 章任务停在第 3 章：恢复稿正文只有第 1、2 章，第 3 章的回复单独给出；原样保存后能续第 3–5 章', async () => {
+    const rejected = '# 全书情节大纲\n\n## 第一阶段：建置（第1–24章）\n林岚抵达旧港。'
     const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
       const chapter = Number((request as { task: GenerationTask }).task.purpose.split(':')[2])
-      options.onVisible({ kind: 'delta', text: outlineEntry(chapter) }); return { finishReason: chapter === 3 ? 'length' : 'stop', usage: null }
+      options.onVisible({ kind: 'delta', text: chapter === 3 ? rejected : outlineEntry(chapter) }); return { finishReason: chapter === 3 ? 'length' : 'stop', usage: null }
     })
     const f = fixture(dispatch), run = f.owner.begin(outlineSelection(f, 5))
     for (const nonce of ['one', 'two']) { await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) }); acceptOutline(f.owner, run.handle) }
     for (const nonce of ['normal-three', 'compact-three']) await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) })
-    const context = f.owner.readContext(run.handle)
-    expect(context.plotOutline?.cursor).toEqual({ kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' })
-    expect(context.plotOutlineRecovery?.completeChapters).toEqual([1, 2])
-    for (const chapter of [1, 2, 3]) expect(context.plotOutlineRecovery?.draft).toContain(outlineEntry(chapter))
+    const context = f.owner.readContext(run.handle), outline = context.plotOutline!, recovery = context.plotOutlineRecovery!
+    expect(outline.cursor).toEqual({ kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' })
+    expect(recovery.completeChapters).toEqual([1, 2])
+    expect(recovery.draft).toBe(renderPlotOutlineRange([1, 2].map(outlineEntry).join('\n\n'), { from: 1, to: 2 }, outline.sourceExpected))
+    expect(recovery.draft).not.toContain('全书情节大纲')
+    expect(recovery.rejectedReply).toBe(rejected)
     expect(context.planningContinuation).toMatchObject({ state: 'save-prefix', remainingRange: { from: 3, to: 5 } })
     expect(context.planningDraft?.standing).toBe('open')
+
+    const payload: ProjectCoreSynopsisCommitRequest = { synopsis: recovery.draft, expected: outline.sourceExpected,
+      authorRecovery: { sourceHandle: run.handle, leaseEpoch: recovery.leaseEpoch, operationId: 'as-opened', committedRange: { from: 1, to: 2 } } }
+    f.db.transaction(() => f.owner.commitPlotOutlineAuthorEdit(payload)).immediate()
+    expect(ProjectCoreRepository.get(f.db)!.synopsis).toBe(recovery.draft)
+    const next = f.owner.restart(run.handle, { ...outlineSelection(f, 5, 3), uiActionNonce: 'continue-missing' })
+    expect(next.plotOutline?.range).toEqual({ from: 3, to: 5 })
+  })
+  it('重写的范围里有旧的合并条目「第4–5章」、生成停在组内第 5 章：恢复稿照常读出，不把组拆开；补完第 5 章能保存，只存到第 4 章会被拒', async () => {
+    const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
+      const chapter = Number((request as { task: GenerationTask }).task.purpose.split(':')[2])
+      options.onVisible({ kind: 'delta', text: outlineEntry(chapter) }); return { finishReason: chapter === 5 ? 'length' : 'stop', usage: null }
+    })
+    const f = fixture(dispatch), expected = { totalChapters: 7, writingLanguage: 'zh-CN' as const }
+    const grouped = [outlineEntry(1), outlineEntry(2), outlineEntry(3), '## 第4–5章：旧的合并条目\n旧事。', outlineEntry(6), outlineEntry(7)].join('\n\n')
+    f.db.prepare('UPDATE project_core SET synopsis=?,total_chapters=7').run(renderPlotOutlineSynopsis(grouped, 7, expected))
+    const run = f.owner.begin(outlineSelection(f, 7, 3))
+    for (const nonce of ['three', 'four']) { await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) }); acceptOutline(f.owner, run.handle) }
+    for (const nonce of ['normal-five', 'compact-five']) await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) })
+
+    const context = f.owner.readContext(run.handle), outline = context.plotOutline!, recovery = context.plotOutlineRecovery!
+    expect(recovery.completeChapters).toEqual([3, 4])
+    expect(recovery.rejectedReply).toBe(outlineEntry(5).trim())
+    expect(recovery.draft).toBe(renderPlotOutlineRange([3, 4].map(outlineEntry).join('\n\n') + '\n\n## 第5章：', { from: 3, to: 5 }, outline.sourceExpected))
+    expect(recovery.draft).not.toContain('旧的合并条目')
+    const save = (synopsis: string, to: number, operationId: string) => () => f.db.transaction(() => f.owner.commitPlotOutlineAuthorEdit({ synopsis, expected: outline.sourceExpected,
+      authorRecovery: { sourceHandle: run.handle, leaseEpoch: recovery.leaseEpoch, operationId, committedRange: { from: 3, to } } })).immediate()
+    expect(save(renderPlotOutlineRange([3, 4].map(outlineEntry).join('\n\n'), { from: 3, to: 5 }, outline.sourceExpected), 4, 'split-group')).toThrow('GENERATION_PLOT_OUTLINE_AUTHOR_EDIT_INVALID')
+    const completed = recovery.draft.replace('## 第5章：', outlineEntry(5).trim())
+    save(completed, 5, 'completed-group')()
+    expect(ProjectCoreRepository.get(f.db)!.synopsis).toBe(completed)
   })
   it('saves the accepted outline prefix without cost and authorizes only the remaining chapters', async () => {
     const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
@@ -4014,14 +4049,14 @@ it('uses one OpenCode conversation header across attempts and changes it for ind
  expect(fetch.mock.calls.map(([,options])=>(options.headers as Record<string,string>)['x-opencode-session']))
    .toEqual([run.handle.rootActionId,run.handle.rootActionId,other.handle.rootActionId])
 })
-it('keeps the next plot-outline recovery chapter empty instead of duplicating the accepted chapter',async()=>{
+it('恢复稿只含一次已接受的第 1 章，不再预留第 2 章的空标题',async()=>{
  const f=fixture(async(_r,o)=>{o.onVisible({kind:'delta',text:outlineEntry(1)});return {finishReason:'stop',usage:null}})
  const run=f.owner.begin(outlineSelection(f,2))
  await f.owner.execute({handle:run.handle,invocationNonce:'first',task:outlineTask(run.plotOutline!)})
  acceptOutline(f.owner,run.handle)
  const recovery=f.owner.readContext(run.handle).plotOutlineRecovery!
  expect(recovery.draft.split(outlineEntry(1))).toHaveLength(2)
- expect(recovery.draft).toContain('## 第2章：')
+ expect(recovery.draft).not.toContain('## 第2章')
 })
 
 describe('next chapter after editing a reviewed batch draft (#438)', () => {

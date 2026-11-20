@@ -13,6 +13,7 @@ import { buildReviewCycleRecheckReport, recheckCommitPolicy, type ReviewCycleRec
 import { parseReviewGenerationResult } from '../../shared/review-generation-report'
 import type { ReviewRevisionRecovery } from '../../shared/review-revision-generation'
 import { workflowResourceKey, type WorkflowRun } from '../../stores/workflow-store'
+import type { NoticeTone } from '../ui/Notice'
 
 /**
  * 运行中断后可以接着做的事。运行侧页从这里取标题、提示、可复制的文字与动作是否可用，
@@ -184,10 +185,75 @@ export function planningTitle(recovery: Pick<GenerationRecoveryContext, 'plotOut
     : t(`蓝图恢复稿 · 第 ${chapters} 章`, `Blueprint recovery draft · ch. ${chapters}`)
 }
 
-/** 时间按作者电脑的时区。 */
-export function planningMeta(recovery: Pick<GenerationRecoveryContext, 'planningContinuation' | 'planningDraft'>, locale: Locale): string {
+type OutlineRecoverySource = Pick<GenerationRecoveryContext, 'plotOutline' | 'plotOutlineRecovery' | 'planningContinuation'>
+
+/** 大纲恢复稿在（已保存 × 写状态 × 续写状态）表里的哪一格，以及这一格给作者的说明和主操作。 */
+export interface OutlineRecoveryGuide {
+  kind: 'unavailable' | 'regenerate' | 'continued' | 'saved' | 'waiting' | 'editable'
+  tone: NoticeTone
+  title: string | null
+  note: string | null
+  continuable: boolean
+  primary: 'save' | 'continue' | null
+  showRemaining: boolean
+  restart: { from: number; to: number } | null
+}
+
+export function outlineRecoveryGuide(recovery: OutlineRecoverySource, snapshot: 'pending' | 'saved' | undefined, locale: Locale): OutlineRecoveryGuide {
   const t = lang(locale)
-  const remaining = recovery.planningContinuation?.remainingRange
+  const candidate = recovery.plotOutlineRecovery, outline = recovery.plotOutline, continuation = recovery.planningContinuation
+  const continuable = Boolean(continuation?.remainingRange) && ['ready', 'continued'].includes(continuation?.state ?? '')
+  const guide = (kind: OutlineRecoveryGuide['kind'], tone: NoticeTone, title: string | null, note: string | null,
+    restart: OutlineRecoveryGuide['restart'] = null): OutlineRecoveryGuide => ({
+    kind, tone, title, note, restart, continuable: kind === 'regenerate' ? false : continuable,
+    primary: kind === 'regenerate' ? null : continuable ? 'continue' : kind === 'editable' ? 'save' : null,
+    showRemaining: kind !== 'regenerate' && kind !== 'unavailable',
+  })
+  const unavailable = () => guide('unavailable', 'warn', t('恢复内容暂时无法读取', 'Recovery content is unavailable'), t('请重新打开恢复稿。', 'Reopen the recovery draft.'))
+  if (!candidate) return unavailable()
+  const blocked = candidate.writeState?.kind === 'blocked' ? candidate.writeState.reason : null
+  const resendingSave = snapshot === 'pending' && Boolean(candidate.saved)
+  const saved = snapshot === 'saved' || snapshot !== 'pending' && Boolean(candidate.saved || blocked === 'author-saved')
+
+  if (continuation?.state === 'continued') {
+    const back = t('点「继续生成缺少的章节」回到那一次生成。', 'Click “Generate remaining chapters” to go back to that run.')
+    return guide('continued', 'info', saved ? t('本次恢复已保存，也已接着生成过', 'This recovery is saved and was already continued')
+      : t('这批大纲已经接着生成过', 'This outline batch was already continued'),
+    saved ? continuable ? back : null : continuable ? t(`不能再保存。${back}`, `It can no longer be saved. ${back}`) : t('不能再保存。', 'It can no longer be saved.'))
+  }
+  if ((blocked === 'source-changed' || blocked === 'source-invalid') && !resendingSave) {
+    const remaining = candidate.saved?.remainingRange
+    if (saved && remaining) {
+      return guide('regenerate', 'warn', t('本次恢复已保存，但不能接着生成', 'This recovery is saved, but generation cannot continue'),
+        t(`保存后正式大纲、模型设置、作品设定、提示词模板或写作 Skill 有改动。请从第 ${remaining.from} 章重新生成情节大纲。`,
+          `The outline, model settings, book settings, a prompt template, or a writing skill changed after saving. Generate the plot outline again from chapter ${remaining.from}.`),
+        remaining)
+    }
+    if (!saved) {
+      return guide('regenerate', 'warn', t('不能保存，也不能继续生成', 'This draft cannot be saved or continued'),
+        outlineSourceInvalidNote(recovery, locale) ?? outlineSourceChangedNote(recovery, locale), blocked === 'source-changed' ? outline?.range ?? null : null)
+    }
+  }
+  if (saved) {
+    return guide('saved', 'ok', t('本次恢复已保存，后续修改仅供复制。', 'This recovery is saved. Further edits can only be copied.'),
+      continuable ? t('点「继续生成缺少的章节」接着生成。', 'Click “Generate remaining chapters” to keep going.') : null)
+  }
+  if (blocked === 'in-flight') {
+    return guide('waiting', 'info', t('大纲还在生成', 'The outline is still generating'),
+      t('生成结束后才能保存或继续。恢复稿可以先编辑、复制。', 'Save or continue after it finishes. You can edit or copy this draft meanwhile.'))
+  }
+  return outline ? guide('editable', 'info', null, null) : unavailable()
+}
+
+export function outlineRecoveryViewOnly(guide: Pick<OutlineRecoveryGuide, 'kind'> | null): boolean {
+  return guide?.kind === 'regenerate' || guide?.kind === 'continued'
+}
+
+/** 时间按作者电脑的时区。 */
+export function planningMeta(recovery: Pick<GenerationRecoveryContext, 'planningContinuation' | 'planningDraft' | 'plotOutlineRecovery' | 'plotOutline'>, locale: Locale): string {
+  const t = lang(locale)
+  const regenerate = recovery.plotOutlineRecovery && outlineRecoveryGuide(recovery, undefined, locale).kind === 'regenerate'
+  const remaining = regenerate ? undefined : recovery.planningContinuation?.remainingRange
   const createdAt = recovery.planningDraft?.createdAtMs
   return [
     remaining && t(`缺第 ${chapterSpan(remaining)} 章`, `Missing ch. ${chapterSpan(remaining)}`),
@@ -214,7 +280,7 @@ export function outlineSourceInvalidNote(recovery: Pick<GenerationRecoveryContex
 }
 
 /** 大纲恢复稿因来源（模型设置、作品设定、提示词模板或写作 Skill）已变而被封锁写回。 */
-export function outlineSourceChangedBlocked(recovery: Pick<GenerationRecoveryContext, 'plotOutlineRecovery'>): boolean {
+function outlineSourceChangedBlocked(recovery: Pick<GenerationRecoveryContext, 'plotOutlineRecovery'>): boolean {
   const writeState = recovery.plotOutlineRecovery?.writeState
   return writeState?.kind === 'blocked' && writeState.reason === 'source-changed'
 }
@@ -240,15 +306,14 @@ export function outlineSourceChangedNote(recovery: Pick<GenerationRecoveryContex
 
 function planningEntry(recovery: GenerationRecoveryContext, locale: Locale, earlier: PlanningEntry[] = []): PlanningEntry {
   const t = lang(locale)
-  const sourceChanged = outlineSourceChangedNote(recovery, locale)
+  const guide = recovery.plotOutlineRecovery ? outlineRecoveryGuide(recovery, undefined, locale) : null
   return {
     kind: 'planning',
     key: recovery.handle.runId,
     title: planningTitle(recovery, locale),
     meta: planningMeta(recovery, locale),
-    note: outlineSourceInvalidNote(recovery, locale) ?? sourceChanged
-      ?? t('自动生成已保留候选。可编辑并本地保存，或明确继续缺少的章节。', 'The candidate is preserved. Edit and save it locally, or explicitly generate the remaining chapters.'),
-    actionLabel: sourceChanged ? t('查看恢复稿', 'View recovery draft') : t('编辑恢复稿', 'Edit recovery draft'),
+    note: guide?.note ?? t('自动生成已保留候选。可编辑并本地保存，或明确继续缺少的章节。', 'The candidate is preserved. Edit and save it locally, or explicitly generate the remaining chapters.'),
+    actionLabel: outlineRecoveryViewOnly(guide) ? t('查看恢复稿', 'View recovery draft') : t('编辑恢复稿', 'Edit recovery draft'),
     canDismiss: recovery.planningContinuation?.state !== 'in-flight',
     earlier,
     labels: {
