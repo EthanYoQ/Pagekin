@@ -118,7 +118,7 @@ export const enUS = {
   'error.generationBusy': 'Another generation is still running. Wait for it to finish, then try again.',
   'error.generationKnowledgeBusy': 'The knowledge base is updating. Wait a moment, then generate again.',
   'error.generationInputTooLarge': 'The settings, earlier text, or prose for this request are too large to give to the model, so nothing was generated. Shorten them, then try again.',
-  'error.reviewContextOverLimit': 'Your text is unchanged. The earlier chapters, settings, blueprints, this chapter and your additional guidance together are over the limit the AI can take, so nothing was generated. Shorten your settings or “Additional guidance” and try again; if that does not help, please report this message to us.',
+  'error.reviewContextOverLimit': 'Your text is unchanged. This chapter, together with the guidance you entered, is over the limit the AI can take, so nothing was generated. Shorten this chapter or your guidance and try again.',
   'error.generationMaterialUnverified': 'Your book is unchanged. The material for this generation could not be verified, so nothing was generated. Try again; if it keeps happening, please report this message to us.',
   'error.generationNoProgress': 'The model continuation did not add enough new text, so it was not added to the result. Try again.',
   'error.generationRevisionUnchanged': 'The revision came back empty or identical to the original, so it was not saved. Adjust the review notes, then try again.',
