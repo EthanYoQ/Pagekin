@@ -187,10 +187,7 @@ export function planningTitle(recovery: Pick<GenerationRecoveryContext, 'plotOut
 
 type OutlineRecoverySource = Pick<GenerationRecoveryContext, 'plotOutline' | 'plotOutlineRecovery' | 'planningContinuation'>
 
-/**
- * 大纲恢复稿在（已保存 × 写状态 × 续写状态）表里的哪一格，以及这一格给作者的说明和主操作。
- * 恢复稿页、运行侧页恢复卡、架构页都从这里取，不各自判断。editable 格的标题和说明由恢复稿页按写好的章节给出。
- */
+/** 大纲恢复稿在（已保存 × 写状态 × 续写状态）表里的哪一格，以及这一格给作者的说明和主操作。 */
 export interface OutlineRecoveryGuide {
   kind: 'unavailable' | 'regenerate' | 'continued' | 'saved' | 'waiting' | 'editable'
   tone: NoticeTone
@@ -199,7 +196,6 @@ export interface OutlineRecoveryGuide {
   continuable: boolean
   primary: 'save' | 'continue' | null
   showRemaining: boolean
-  /** 要作者重新生成的章节范围；不需要重新生成时为 null。 */
   restart: { from: number; to: number } | null
 }
 
@@ -249,12 +245,11 @@ export function outlineRecoveryGuide(recovery: OutlineRecoverySource, snapshot: 
   return outline ? guide('editable', 'info', null, null) : unavailable()
 }
 
-/** 恢复稿只能查看、不能再改写回的格子。 */
 export function outlineRecoveryViewOnly(guide: Pick<OutlineRecoveryGuide, 'kind'> | null): boolean {
   return guide?.kind === 'regenerate' || guide?.kind === 'continued'
 }
 
-/** 时间按作者电脑的时区。大纲恢复稿要重新生成时不列「缺第几章」，免得和说明对不上。 */
+/** 时间按作者电脑的时区。 */
 export function planningMeta(recovery: Pick<GenerationRecoveryContext, 'planningContinuation' | 'planningDraft' | 'plotOutlineRecovery' | 'plotOutline'>, locale: Locale): string {
   const t = lang(locale)
   const regenerate = recovery.plotOutlineRecovery && outlineRecoveryGuide(recovery, undefined, locale).kind === 'regenerate'

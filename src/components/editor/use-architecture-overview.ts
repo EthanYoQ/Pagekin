@@ -426,7 +426,6 @@ export function useArchitectureOverview(projectKey: string) {
   /** 普通生成入口；steps 是「AI 生成此节」那一节，不携带续批预填。 */
   const openGenerateDialog = (steps?: ArchStepKey[]) => setGenerateIntent({ steps })
 
-  /** 恢复稿要作者重新生成时的章节范围（与恢复稿页、运行侧页恢复卡同一张表）；不用重新生成或没有恢复稿时为 null。 */
   const outlineRecovery = planningRecovery ? outlineRecoveryGuide(planningRecovery, undefined, locale) : null
   const outlineRestartRange = outlineRecovery?.restart ?? null
   const openOutlineRestart = () => {
