@@ -69,7 +69,7 @@ async function read(context, channel, ...args) {
 }
 
 /** 预置作品：设定、林岚、8 章蓝图，finalized 里的章以作者原稿定稿导入；接上真实模型后从书房打开。 */
-async function seedBook(context, { finalized = [], core: coreFields = {} } = {}) {
+export async function seedBook(context, { finalized = [], core: coreFields = {}, characters = [] } = {}) {
   const { app, page, roots, invoke, reload } = context
   await trackOpenedSession(app)
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
@@ -86,7 +86,8 @@ async function seedBook(context, { finalized = [], core: coreFields = {} } = {})
     expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit',
     entries: [{ characterId: `draft:${randomUUID()}`, name: '林岚', role: 'protagonist', gender: '女', age: '28', appearance: '',
       personality: '冷静、执拗', background: '旧港潮汐记录的测绘师。', abilities: '读潮位刻痕', motivation: '查明失踪地图的来源。',
-      relationships: [], arc: '', notes: '' }] }, projectPath, session)).success, true)
+      relationships: [], arc: '', notes: '' }, ...characters.map(character => ({ characterId: `draft:${randomUUID()}`, gender: '', age: '', appearance: '',
+      abilities: '', relationships: [], arc: '', notes: '', ...character }))] }, projectPath, session)).success, true)
   const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters: TOTAL_CHAPTERS, wordsPerChapter: WORDS_PER_CHAPTER, ...coreFields }, projectPath, session)
   assert.equal(core.success, true, core.error)
   for (let chapterNumber = 1; chapterNumber <= TOTAL_CHAPTERS; chapterNumber++) {

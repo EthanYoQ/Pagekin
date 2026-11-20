@@ -517,6 +517,21 @@ describe('explicit planning recovery with real SQLite', () => {
     expect(owner.list(['generate-plot-outline']).map(item => item.handle.runId)).toEqual([run.handle.runId])
     expect(dispatch).toHaveBeenCalledTimes(2)
   })
+  it('第 1–5 章任务停在第 3 章：恢复卡缺的是第 3–5 章，与恢复稿已含的第 1、2 章一致', async () => {
+    const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
+      const chapter = Number((request as { task: GenerationTask }).task.purpose.split(':')[2])
+      options.onVisible({ kind: 'delta', text: outlineEntry(chapter) }); return { finishReason: chapter === 3 ? 'length' : 'stop', usage: null }
+    })
+    const f = fixture(dispatch), run = f.owner.begin(outlineSelection(f, 5))
+    for (const nonce of ['one', 'two']) { await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) }); acceptOutline(f.owner, run.handle) }
+    for (const nonce of ['normal-three', 'compact-three']) await f.owner.execute({ handle: run.handle, invocationNonce: nonce, task: outlineTask(f.owner.read(run.handle).plotOutline!) })
+    const context = f.owner.readContext(run.handle)
+    expect(context.plotOutline?.cursor).toEqual({ kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' })
+    expect(context.plotOutlineRecovery?.completeChapters).toEqual([1, 2])
+    for (const chapter of [1, 2, 3]) expect(context.plotOutlineRecovery?.draft).toContain(outlineEntry(chapter))
+    expect(context.planningContinuation).toMatchObject({ state: 'save-prefix', remainingRange: { from: 3, to: 5 } })
+    expect(context.planningDraft?.standing).toBe('open')
+  })
   it('saves the accepted outline prefix without cost and authorizes only the remaining chapters', async () => {
     const dispatch = vi.fn<GenerationRunServiceDependencies['dispatch']>(async (request, options) => {
       const chapter = Number((request as { task: GenerationTask }).task.purpose.split(':')[2])
