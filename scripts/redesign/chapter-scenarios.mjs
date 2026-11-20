@@ -214,10 +214,7 @@ async function openTiming(page, target, text) {
 
 const COMMIT_REVIEW = 'review-revision:commit-review'
 
-/**
- * 第 3 章点「重新审稿」，返回请求数与运行侧页上看得到的东西。unsaved 时写回卡住、调用方随后重载，留下一条没保存的审稿候选：
- * #686 起已保存的审修运行不列为可恢复，恢复卡的摘要只能用没保存的候选看。
- */
+/** unsaved：写回卡住，调用方随后重载，留下一条没保存的审稿候选（#686 起已保存的审修运行不列为可恢复）。 */
 async function rereviewChapter3({ app, page, fake }, { unsaved = false } = {}) {
   await chapterView.open(page, 3)
   const reviewsBefore = fake.chats.filter(chat => chat.kind === 'review').length
@@ -241,14 +238,12 @@ async function rereviewChapter3({ app, page, fake }, { unsaved = false } = {}) {
   }
 }
 
-/** 重载后从书架重开示例作品，打开运行侧页。 */
 async function reopenRunSheet({ page, reload }) {
   await reload()
   await stage.openFromLibrary(page, STAGE_SAMPLE.name)
   await runSheet.openFromPalette(page)
 }
 
-/** 切到英文界面重载，从 Ctrl K 的「Run sheet」打开运行侧页。 */
 async function reopenRunSheetEn({ page, invoke, reload }) {
   assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
   await reload()
@@ -517,7 +512,7 @@ export const CHAPTER_SCENARIOS = {
     })
     await chapterView.open(page, 4)
     await reviewAndRevise(page)
-    // 复验结果写回后按 #686 不再列为可恢复：卡住复验的写回再重载，留下一条没保存的复验候选。
+    // #686 起已保存的复验不列为可恢复，卡住写回才有候选可看。
     await holdChannel(app, COMMIT_REVIEW)
     await chapterView.merge(page).getByRole('button', { name: '全部用修稿' }).click()
     await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()

@@ -355,7 +355,7 @@ export const REFS_SCENARIOS = {
     assert.match(saved.toast, /The project copy was changed elsewhere/)
     englishOnly(saved, 'toast')
 
-    // #520 起生成模型不再兼作检索模型；没有检索模型时设置页不读登记文件，要先配一个。
+    // #520 起没有检索模型时设置页不读登记文件，要先配一个。
     assert.equal((await context.invoke(page, 'llm:save-model', EMBEDDING_MODEL)).success, true)
     assert.equal((await context.invoke(page, 'llm:set-default-embedding-model', EMBEDDING_MODEL.id)).success, true)
     fs.writeFileSync(path.join(context.samplePath, '.ai-novel', 'embedding-spaces.json'), '{ "damaged": ')
