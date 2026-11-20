@@ -616,7 +616,7 @@ function ArchFileViewerSession({
           </Notice>
         </>}
         error={recoveryError}
-        original={recoveryTab?.originalContent}
+        original={recovery.plotOutlineRecovery?.rejectedReply ?? recoveryTab?.originalContent}
       >
         {editor}
       </PlanningRecoveryFrame>
