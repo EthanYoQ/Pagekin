@@ -57,8 +57,8 @@ export function outlineRecoveryView(
   const written = done.length > 1 ? `Chapters ${span(done)} are written` : `Chapter ${span(done)} is written`
   if (done.length > 0 && stopped !== null) {
     return view('editable', 'info', text(`第 ${span(done)} 章已写好，第 ${stopped} 章没写成`, `${written}; chapter ${stopped} is not`),
-      text(`删掉正文里第 ${stopped} 章那段再保存；或把它补全（以「${heading}」开头），并把「保存到第几章」改成 ${stopped}。`,
-        `Delete the chapter ${stopped} part, then save. Or complete it (start with “${heading}”) and set “Last complete chapter” to ${stopped}.`))
+      text(`删掉正文里第 ${stopped} 章那段再保存；或把它补全，并把「保存到第几章」改成 ${stopped}。`,
+        `Delete the chapter ${stopped} part, then save. Or complete it and set “Last complete chapter” to ${stopped}.`))
   }
   if (done.length > 0) {
     return view('editable', 'info', text(`第 ${span(done)} 章已写好，还没存进正式大纲`, `${written} but not in the outline yet`),

@@ -736,6 +736,7 @@ describe('大纲恢复稿页面（#702）', () => {
   it('一章都没写成：主按钮是继续生成，保存仍可用', async () => {
     await render('outline')
     expect(page().querySelector('[role="status"]')?.textContent).toContain('第 1 章没写成')
+    expect(page().querySelector('[role="status"]')?.textContent).toContain('以「## 第1章：」开头')
     expect(primaryButtons()).toEqual(['继续生成缺少的章节'])
     expect(button('保存恢复大纲').disabled).toBe(false)
     noModel()
@@ -789,15 +790,14 @@ describe('大纲恢复稿页面（#702）', () => {
     expect(primaryButtons()).toEqual([])
     noModel()
   })
-  it('英文界面：页头、提示与按钮都是英文，章标题格式跟写作语言走', async () => {
+  it('英文界面：页头、提示与按钮都是英文', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
     context = stoppedAtChapter3()
     await render('outline')
     expect(page().querySelector('h1')?.textContent).toBe('Finish the interrupted outline')
     const notice = page().querySelector('[role="status"]')!
     expect(notice.textContent).toContain('Chapters 1–2 are written; chapter 3 is not')
-    expect(notice.textContent).toContain('## 第3章：')
-    expect(notice.textContent?.replace(/“[^”]*”/gu, '')).not.toMatch(/\p{Script=Han}/u)
+    expect(notice.textContent).not.toMatch(/\p{Script=Han}/u)
     expect(page().querySelector('header')?.textContent).not.toMatch(/\p{Script=Han}/u)
     expect(primaryButtons()).toEqual(['Save recovered outline'])
     noModel()

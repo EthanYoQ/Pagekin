@@ -278,7 +278,7 @@ async function openStoppedOutlineDraft({ page, fake }) {
   if (await runSheet.sheet(page).count() > 0) await page.keyboard.press('Escape')
   await edit.click()
   const recovery = page.getByRole('region', { name: '大纲恢复' })
-  await recovery.getByText(/待完成第 \d 至 5 章/).waitFor({ timeout: 20_000 })
+  await recovery.getByText(/待完成第 3 至 5 章/).waitFor({ timeout: 20_000 })
   return recovery
 }
 
@@ -642,7 +642,7 @@ export const ARCH_SCENARIOS = {
     const recovery = await openStoppedOutlineDraft(context)
     const stopped = await recovery.innerText()
     assert.match(stopped, /第 1–2 章已写好，第 3 章没写成/)
-    assert.match(stopped, /保存后才能继续生成。待完成第 \d 至 5 章/)
+    assert.match(stopped, /保存后才能继续生成。待完成第 3 至 5 章/)
     assert.equal(await recovery.getByLabel('保存到第几章').inputValue(), '2')
     assert.deepEqual(await recovery.locator('.pi-btn--primary').allInnerTexts(), ['保存恢复大纲'])
     assert.equal(await recovery.getByRole('button', { name: '继续生成缺少的章节' }).isEnabled(), false)
@@ -675,7 +675,7 @@ export const ARCH_SCENARIOS = {
     assert.equal(await recovery.locator('.pi-btn--primary').count(), 0)
     await context.shoot('orui-outline-recovery-blocked')
   } },
-  /** #702：英文界面下的同一页，页头与提示没有中文（章标题格式跟写作语言，仍是中文）。 */
+  /** #702：英文界面下的同一页，页头与提示没有中文。 */
   'orui-outline-recovery-en': { model: true, shell: 'stage', setup: seedArch({ clear: ['synopsis'], totalChapters: 24 }), run: async context => {
     const { page } = context
     await openStoppedOutlineDraft(context)
@@ -686,7 +686,7 @@ export const ARCH_SCENARIOS = {
     await page.getByRole('navigation', { name: 'Settings sections' }).waitFor({ state: 'detached' })
     const recovery = page.getByRole('region', { name: 'Outline recovery' })
     await recovery.getByText('Chapters 1–2 are written; chapter 3 is not').waitFor({ timeout: 20_000 })
-    assert.doesNotMatch(await recovery.locator('header').innerText(), /\p{Script=Han}/u)
+    assert.doesNotMatch(await recovery.locator('header').innerText() + await recovery.getByRole('status').innerText(), /\p{Script=Han}/u)
     await context.shoot('orui-outline-recovery-en')
   } },
 
