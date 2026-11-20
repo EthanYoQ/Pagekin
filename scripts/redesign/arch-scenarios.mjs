@@ -71,7 +71,7 @@ async function addCharacters({ page, invoke, path, session }, names) {
  * 落在第 4 章时进架构后关掉第 4 章的标签，只剩架构一页，与落在架构的版本截图一致。
  * 会话追踪先挂上，界面重载后打开作品的那次会话就能拿来读库。
  */
-function seedArch({ clear = [], totalChapters, characters = [], core = {} } = {}) {
+export function seedArch({ clear = [], totalChapters, characters = [], core = {} } = {}) {
   return async context => {
     await trackOpenedSession(context.app)
     await seedStageSample(context, { totalChapters, landOnChapter3: clear.length === 0, beforeReload: async ({ page, invoke, path, session }) => {

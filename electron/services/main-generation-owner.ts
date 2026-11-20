@@ -827,7 +827,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     if (recovery && recovery.progress.length > 1) throw new Error('GENERATION_DIRECTORY_PROGRESS_INVALID')
     const blueprintSaved = recovery?.authorEdit
     const progress = recovery?.progress[0]
-    const remainingRange = outline ? saved ? saved.remainingRange : outline.range
+    const unsavedNext = outline ? outline.range.from + (outline.composition?.chapters?.length ?? 0) + (outline.cursor.kind === 'accept' ? 1 : 0) : 0
+    const remainingRange = outline ? saved ? saved.remainingRange : unsavedNext <= outline.range.to ? { from: unsavedNext, to: outline.range.to } : outline.range
       : blueprintSaved ? blueprintSaved.remainingRange : progress ? progress.remainingRange ? { from: progress.remainingRange.startChapter, to: progress.remainingRange.endChapter } : null
         : { from: scope!.startChapter, to: scope!.endChapter }
     const target = inputs?.find(input => input.id === 'planning:target-units')

@@ -2186,11 +2186,21 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       context.data.partial = partial
       await savePartialData(expectedProjectPath, partial, session, text('保存情节大纲检查点', 'Save plot-outline navigation'))
     }
-    const stopped = (cursor: Extract<PlotOutlineProgress['cursor'], { kind: 'stopped' }>) => cursor.reason === 'source-invalid'
-      ? new Error(plotOutlineSourceInvalidText(sourceExpected.synopsis, workflowUiLocale(context)))
-      : new Error(text(
-        `第 ${cursor.chapterNumber} 章已停止自动生成，原因 ${cursor.reason}。已接受前缀和全部候选已保留，正式大纲未被覆盖。`,
-        `Automatic generation stopped at chapter ${cursor.chapterNumber}: ${cursor.reason}. The accepted prefix and all candidates remain saved; the formal outline was not overwritten.`))
+    const stopped = (cursor: Extract<PlotOutlineProgress['cursor'], { kind: 'stopped' }>) => {
+      if (cursor.reason === 'source-invalid') return new Error(plotOutlineSourceInvalidText(sourceExpected.synopsis, workflowUiLocale(context)))
+      const n = cursor.chapterNumber
+      const problem = {
+        'attempts-exhausted': text(`第 ${n} 章两次都没写成完整的单章大纲`, `Chapter ${n} failed twice to come back as one complete chapter outline`),
+        'unknown-completion': text(`第 ${n} 章的回复没有正常结束`, `The reply for chapter ${n} did not finish normally`),
+        'in-flight': text(`第 ${n} 章上一次请求还没有结果`, `The previous request for chapter ${n} has no result yet`),
+      }[cursor.reason]
+      const kept = cursor.reason === 'attempts-exhausted'
+        ? text(`恢复稿里有已写好的章节和第 ${n} 章最后一次的回复`, `The recovery draft has the finished chapters and the last reply for chapter ${n}`)
+        : text('恢复稿里有已写好的章节', 'The recovery draft has the finished chapters')
+      return new Error(text(
+        `${kept}，正式大纲没动。${problem}，自动生成停在这里。到「架构」页点「编辑恢复稿」补写这一章，或重新生成。`,
+        `${kept}; the saved outline is unchanged. ${problem}, so generation stopped there. Open Architecture and choose Edit recovery draft to finish this chapter, or generate again.`))
+    }
     const requestCallbacks = { ...callbacks, setProgress: () => {} }
     const publishProgress = (outline: PlotOutlineProgress) => {
       const total = outline.range.to - outline.range.from + 1
