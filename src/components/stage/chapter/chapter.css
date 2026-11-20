@@ -140,6 +140,11 @@
   background: var(--focus-paper, var(--paper));
 }
 
+/* 条在吸顶时本来就露在外层 scroll-padding 让出的那一段里；不抵消，Tab 聚焦条里的按钮会把纸面滚回去 */
+.stage-ch-actions-sticky * {
+  scroll-margin-top: calc(-1 * var(--stage-ch-sticky-top, 0px));
+}
+
 /* 合并卡片的描边比动作条宽，滚到条下时会从两侧露出来，左右各补一条纸色 */
 .stage-ch-merge .stage-ch-actions-sticky {
   box-shadow: -4px 0 var(--focus-paper, var(--paper)), 4px 0 var(--focus-paper, var(--paper));
