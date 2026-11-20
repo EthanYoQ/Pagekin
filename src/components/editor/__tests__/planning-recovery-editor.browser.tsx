@@ -217,7 +217,7 @@ describe('planning recovery editors', () => {
     invoke.mockRejectedValueOnce(new Error('Recovery context reload failed'))
     await act(async () => {
       if (source === 'button') {
-        container.querySelector<HTMLButtonElement>('button[title="从磁盘重新加载（AI 生成完成后可点击刷新）"]')!.click()
+        container.querySelector<HTMLButtonElement>('button[title="重新读取恢复状态"]')!.click()
       } else {
         globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'architecture_generation', projectPath: session.projectPath, projectSession: session, runId: 'completed-recovery' })
       }
@@ -259,7 +259,7 @@ describe('planning recovery editors', () => {
         context.plotOutlineRecovery.draft = original
         await render('outline')
         await edit(prefix + (keepTail ? `\n\n${oldTail}` : ''))
-        await act(async () => button('保存').click())
+        await act(async () => button('保存恢复大纲').click())
         const expected = `${prefix}\n\n${newTail}`
         expect(savedPayload).toMatchObject({ synopsis: expected, expected: context.plotOutline.sourceExpected, authorRecovery: { committedRange: { from: 1, to: 1 } } })
         expect(useEditorStore.getState().tabs[0]).toMatchObject({ content: expected, savedContent: expected, originalContent: original, dirty: false })
@@ -274,7 +274,7 @@ describe('planning recovery editors', () => {
     context = fixture('outline')
     const authored = '# 情节大纲\n\n## 第1章：雨夜\n作者正文。\n\n> 本大纲已覆盖至第 2 章（全书 3 章），其余章节将在后续批次继续生成。作者要求保留。'
     await render('outline'); await edit(authored)
-    await act(async () => button('保存').click())
+    await act(async () => button('保存恢复大纲').click())
     const expected = authored + '\n\n> 本大纲已覆盖至第 1 章（全书 3 章），其余章节将在后续批次继续生成。'
     expect(savedPayload).toMatchObject({ synopsis: expected })
     expect(editor().state.doc.toString()).toBe(expected)
@@ -291,7 +291,7 @@ describe('planning recovery editors', () => {
     await render('outline')
     const authored = '# 情节大纲\n\n## 第1章：原章\n' + (changed ? '被篡改的原文。' : '不可改写的原文。') + '\n\n## 第2章：恢复\n作者补齐的正文。'
     await edit(authored)
-    await act(async () => button('保存').click())
+    await act(async () => button('保存恢复大纲').click())
     if (changed) {
       expect(savedPayload).toBeUndefined()
       expect(editor().state.doc.toString()).toBe(authored)
@@ -309,7 +309,7 @@ describe('planning recovery editors', () => {
     const canonical = authored + '\n\n> 本大纲已覆盖至第 1 章（全书 3 章），其余章节将在后续批次继续生成。'
     await edit(authored)
     pendingSave = async () => { throw new Error('IPC_ACK_LOST_AFTER_COMMIT') }
-    await act(async () => button('保存').click())
+    await act(async () => button('保存恢复大纲').click())
     expect(savedPayload).toMatchObject({ synopsis: canonical })
     const first = structuredClone(savedPayload)
     const later = authored + '\n作者在回包丢失后继续输入。'
@@ -317,7 +317,7 @@ describe('planning recovery editors', () => {
     await act(async () => root.render(null))
     await render('outline')
     pendingSave = async () => ({ success: true })
-    await act(async () => button('保存').click())
+    await act(async () => button('保存恢复大纲').click())
     expect(savedPayload).toEqual(first)
     expect(useEditorStore.getState().tabs[0]).toMatchObject({ content: laterEdit ? later : canonical, savedContent: canonical, dirty: laterEdit })
     expect(editor().state.doc.toString()).toBe(laterEdit ? later : canonical)
@@ -394,7 +394,7 @@ describe('planning recovery editors', () => {
           recordAuthorReceipt()
           throw new Error('IPC_ACK_LOST_AFTER_COMMIT')
         }
-        await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+        await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
         const later = validText().replace('找到信件', '找到新的信件')
         await edit(later)
         await act(async () => {
@@ -415,7 +415,7 @@ describe('planning recovery editors', () => {
         if (retry === 'exit') {
           await act(async () => { await expect(saveDirtyEditorChangesForExit(session.projectPath)).rejects.toThrow('保存期间仍有未保存修改') })
         } else if (retry === 'shortcut') await shortcutSave()
-        else await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+        else await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
         await vi.waitFor(() => expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(2))
         const expected = structuredClone(first)
         if (retry === 'new-lease') {
@@ -434,16 +434,16 @@ describe('planning recovery editors', () => {
           view.contentDOM.dispatchEvent(new ClipboardEvent('copy', { bubbles: true, cancelable: true, clipboardData: data }))
         })
         expect(data.getData('text/plain')).toBe(later)
-        expect(button(kind === 'outline' ? '保存' : '保存恢复蓝图').disabled).toBe(true)
+        expect(button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').disabled).toBe(true)
         noModel()
       })
     }
     it(`${kind} invalid first text can be corrected before any submission freezes`, async () => {
       context = fixture(kind); await render(kind); await edit('未完成内容')
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(0)
       await edit(validText())
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(1)
       expect(useEditorStore.getState().tabs[0]).toMatchObject({ savedContent: validText(), dirty: false }); noModel()
     })
@@ -451,7 +451,7 @@ describe('planning recovery editors', () => {
       context = fixture(kind); await render(kind); await edit(validText())
       let finish: ((value: unknown) => void) | undefined
       pendingSave = () => new Promise(resolve => { finish = resolve })
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       await vi.waitFor(() => expect(finish).toBeDefined())
       const first = structuredClone(savedPayload)
       const later = validText().replace('找到信件', '找到新的信件')
@@ -467,7 +467,7 @@ describe('planning recovery editors', () => {
       await act(async () => root.render(null))
       await render(kind)
       pendingSave = async () => ({ success: true })
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(2)
       expect(savedPayload).toMatchObject({ authorRecovery: { leaseEpoch: 'lease-2' } })
       if (!first || typeof first !== 'object' || !('authorRecovery' in first)
@@ -478,11 +478,11 @@ describe('planning recovery editors', () => {
     })
     it(`${kind} explicit uncommitted rejection permits corrected text on retry`, async () => {
       context = fixture(kind); rejectSave = '作者内容未通过检查'; await render(kind); await edit(validText())
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
       const later = validText().replace('找到信件', '找到新的信件')
       await edit(later); rejectSave = undefined
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(2)
       expect(savedPayload).toMatchObject(kind === 'outline' ? { synopsis: later } : { blueprints: [{ keyEvents: '找到新的信件' }] })
       expect(useEditorStore.getState().tabs[0]).toMatchObject({ savedContent: later, dirty: false }); noModel()
@@ -490,15 +490,15 @@ describe('planning recovery editors', () => {
     it(`${kind} a rejected replay cannot release an earlier unknown submission`, async () => {
       context = fixture(kind); await render(kind); await edit(validText())
       pendingSave = async () => { throw new Error('IPC_ACK_UNKNOWN') }
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       const first = structuredClone(savedPayload)
       await edit(validText().replace('找到信件', '找到新的信件'))
       pendingSave = async () => ({ success: false, error: 'AUTHOR_RECEIPT_CONFLICT' })
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(savedPayload).toEqual(first)
       expect(useEditorStore.getState().tabs[0].savedContent).toBe('')
       pendingSave = async () => ({ success: true })
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(3)
       expect(savedPayload).toEqual(first)
       expect(useEditorStore.getState().tabs[0]).toMatchObject({ savedContent: validText(), dirty: true }); noModel()
@@ -506,7 +506,7 @@ describe('planning recovery editors', () => {
     it(`${kind} edits double-length candidate and saves only through author recovery`, async () => {
       context = fixture(kind); await render(kind); await edit(validText())
       const operationId = useEditorStore.getState().tabs[0].planningSaveOperationId
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(invoke.mock.calls.filter(([name]) => name === channel)).toHaveLength(1)
       expect(savedPayload).toMatchObject({ authorRecovery: { sourceHandle: handle, leaseEpoch: session.leaseId } })
       expect(savedPayload).toMatchObject(kind === 'outline' ? { expected: sourceExpected, synopsis: validText(), authorRecovery: { operationId, committedRange: { from: 1, to: 1 } } }
@@ -516,7 +516,7 @@ describe('planning recovery editors', () => {
     })
     it(`${kind} preserves dirty and operation identity after conflict and retry`, async () => {
       context = fixture(kind); rejectSave = '来源已变化'; await render(kind); await edit(validText())
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
       const first = savedPayload
       await act(async () => { await expect(saveDirtyEditorChangesForExit(session.projectPath)).rejects.toThrow('来源已变化') })
@@ -621,7 +621,7 @@ describe('planning recovery editors', () => {
         context = { ...context, planningContinuation: { sourceHandle: handle, remainingRange: { from: 2, to: 3 }, targetUnits: 600, state: 'ready' } }
         return { success: true }
       }
-      await act(async () => button(kind === 'outline' ? '保存' : '保存恢复蓝图').click())
+      await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       noModel()
       expect(container.textContent).toContain('待完成第 2 至 3 章')
       await act(async () => button('继续生成缺少的章节').click())

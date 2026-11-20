@@ -24,7 +24,9 @@ import { renderPlotOutlineSynopsis, validPlotOutlineAuthorPrefix, type PlotOutli
 import { useWorkflowStore } from '../../stores/workflow-store'
 import { outlineProgress } from '../../shared/plot-outline-checkpoint'
 import { archOutlineSource, readArchCheckpoint } from '../../services/architecture-service'
-import { outlineSourceChangedNote, outlineSourceInvalidNote, planningRemainingText } from '../run/run-recovery'
+import { Notice } from '../ui/Notice'
+import { PlanningRecoveryFrame } from '../stage/PlanningRecoveryFrame'
+import { outlineRecoveryView } from './outline-recovery-view'
 import { globalEventBus } from '../../shared/event-bus'
 import {
   ARCH_REFRESH_BLOCKED_MESSAGE,
@@ -576,6 +578,58 @@ function ArchFileViewerSession({
     writeArchEditState(useEditorStore.getState(), tabId, projection, 'sync-saved')
   }, [initialSavedContent, isCharacterProjection, rosterSnapshot?.renderedMarkdown, tabId])
 
+  const editor = (
+    <CodeMirrorEditor
+      mode="document"
+      content={isCharacterProjection && rosterSnapshot?.status === 'ready' ? castTextForView(editorContent) : editorContent}
+      filePath={filePath}
+      editable={!isCharacterProjection}
+      onChange={isCharacterProjection ? undefined : handleChange}
+      onSave={isCharacterProjection ? undefined : handleSave}
+      onCharCountChange={setCharCount}
+      hideStatusBar
+      placeholder={text(
+        '尚未生成内容，点击右上角「AI 生成」或直接在此编辑...',
+        'No content yet. Click “AI Generate” in the top-right or start editing here...',
+      )}
+    />
+  )
+
+  if (recovery) {
+    const view = outlineRecoveryView(recovery, recoveryTab?.planningSaveSnapshot?.status, locale, text, planningTargetUnit)
+    const editable = view.phase === 'editable' && projectMatches
+    return (
+      <PlanningRecoveryFrame
+        label={text('大纲恢复', 'Outline recovery')}
+        eyebrow={text('架构 · 大纲恢复稿', 'Architecture · Outline recovery draft')}
+        heading={text('补齐中断的大纲', 'Finish the interrupted outline')}
+        busy={saving || continuing}
+        end={{ value: authorEnd, min: recovery.plotOutline?.range.from, max: recovery.plotOutline?.range.to, disabled: !editable, onChange: value => {
+          authorEndRef.current = value; setAuthorEnd(value)
+          useEditorStore.setState(state => ({ tabs: state.tabs.map(tab => tab.id === tabId ? { ...tab, planningSaveEnd: value } : tab) }))
+        } }}
+        proceed={{ disabled: continuing || saving || !projectMatches || !view.continuable, onClick: () => { void continuePlanning() } }}
+        save={{ label: text('保存恢复大纲', 'Save recovered outline'), disabled: saving || !editable || !isDirty, onClick: () => { void handleSave(currentContentRef.current) } }}
+        primary={projectMatches ? view.primary : null}
+        tools={(
+          <Button variant="icon" aria-label={text('重新读取恢复状态', 'Reload recovery status')} title={text('重新读取恢复状态', 'Reload recovery status')} disabled={!projectMatches} onClick={() => { void handleReload() }}>
+            <RefreshCw size={15} aria-hidden />
+          </Button>
+        )}
+        notices={<>
+          {visibleBlockedMessage && <Notice tone="warn" title={visibleBlockedMessage} />}
+          <Notice tone={view.notice.tone} title={view.notice.title}>
+            {view.notice.lines.map(line => <p key={line}>{line}</p>)}
+          </Notice>
+        </>}
+        error={recoveryError}
+        original={recoveryTab?.originalContent}
+      >
+        {editor}
+      </PlanningRecoveryFrame>
+    )
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* 工具栏（背景与编辑区一致，内嵌在内容区中而非独立标题栏） */}
@@ -638,7 +692,7 @@ function ArchFileViewerSession({
               variant="outline"
               size="sm"
               onClick={() => { void handleSave(currentContentRef.current) }}
-              disabled={saving || !projectMatches || recoveryTab?.planningSaveSnapshot?.status === 'saved' || Boolean(recovery && recovery.plotOutlineRecovery?.writeState.kind !== 'ready' && !(recovery.plotOutlineRecovery?.saved && recoveryTab?.planningSaveSnapshot?.status === 'pending'))}
+              disabled={saving || !projectMatches}
               title={text('保存（Cmd+S）', 'Save (Cmd+S)')}
             >
               <Save size={12} />
@@ -664,7 +718,7 @@ function ArchFileViewerSession({
           )}
 
           {/* AI 生成按钮 */}
-          {stepKey && meta && !recovery && (
+          {stepKey && meta && (
             <Button
               variant="ai"
               size="sm"
@@ -680,23 +734,6 @@ function ArchFileViewerSession({
           )}
         </div>
       </div>
-
-      {recovery && <div className="px-3 py-2 text-xs space-y-2" aria-label={text('大纲恢复', 'Outline recovery')}>
-        {recoveryTab?.planningSaveSnapshot?.status === 'saved' && <p>{text('本次恢复已保存，后续修改仅供复制。', 'This recovery is saved. Further edits can only be copied.')}</p>}
-        <p>{text('这是可编辑的恢复稿，保存只写入本地，不调用模型。章标题用“## 第1章：标题”，保留连续完整的章节。', 'Edit this recovery draft; saving is local and calls no model. Use headings such as “## Chapter 1: Title” and keep complete consecutive chapters.')}</p>
-        <label>{text('保存到第几章', 'Last complete chapter')} <input type="number" min={recovery.plotOutline?.range.from} max={recovery.plotOutline?.range.to} value={authorEnd} onChange={event => {
-          const value = event.target.value
-          authorEndRef.current = value; setAuthorEnd(value)
-          useEditorStore.setState(state => ({ tabs: state.tabs.map(tab => tab.id === tabId ? { ...tab, planningSaveEnd: value } : tab) }))
-        }} /></label>
-        <p>{recovery.planningContinuation?.remainingRange
-          ? planningRemainingText(recovery.planningContinuation.remainingRange, recovery.planningContinuation.targetUnits, planningTargetUnit, text)
-          : text('本次所选章节已保存。', 'The selected chapters are saved.')}</p>
-        {recovery.plotOutlineRecovery?.writeState.kind === 'blocked' && <p>{outlineSourceInvalidNote(recovery, locale) ?? outlineSourceChangedNote(recovery, locale) ?? text('生成尚在进行、来源已变化或本稿已保存时，不能覆盖正式内容。草稿仍可编辑和复制。', 'Active generation, changed sources or an already saved draft prevent replacing saved content. You can still edit and copy this draft.')}</p>}
-        <button type="button" className="btn-secondary" disabled={continuing || saving || !projectMatches || !recovery.planningContinuation?.remainingRange || !['ready', 'continued'].includes(recovery.planningContinuation.state)} onClick={() => { void continuePlanning() }}>{text('继续生成缺少的章节', 'Generate remaining chapters')}</button>
-        <details><summary>{text('原始候选', 'Original candidate')}</summary><pre className="whitespace-pre-wrap max-h-40 overflow-auto">{recoveryTab?.originalContent}</pre></details>
-        {recoveryError && <p role="alert">{recoveryError}</p>}
-      </div>}
 
       {projectMatches && stepKey === 'characters' && <LegacyRosterRecoveryPanel onRecover={handleRepairCharacterRoster} busy={extracting} />}
       {stepKey === 'characters' && rosterPresentation && (
@@ -758,22 +795,7 @@ function ArchFileViewerSession({
       )}
 
       {/* CodeMirrorEditor document 模式，隐藏底部栏（信息已整合到上方工具栏） */}
-      <div className="flex-1 overflow-hidden">
-        <CodeMirrorEditor
-          mode="document"
-          content={isCharacterProjection && rosterSnapshot?.status === 'ready' ? castTextForView(editorContent) : editorContent}
-          filePath={filePath}
-          editable={!isCharacterProjection}
-          onChange={isCharacterProjection ? undefined : handleChange}
-          onSave={isCharacterProjection ? undefined : handleSave}
-          onCharCountChange={setCharCount}
-          hideStatusBar
-          placeholder={text(
-            '尚未生成内容，点击右上角「AI 生成」或直接在此编辑...',
-            'No content yet. Click “AI Generate” in the top-right or start editing here...',
-          )}
-        />
-      </div>
+      <div className="flex-1 overflow-hidden">{editor}</div>
 
       {/* AI 生成确认弹窗 */}
       {stepKey && (
