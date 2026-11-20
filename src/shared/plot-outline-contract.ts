@@ -352,6 +352,7 @@ export function renderPlotOutlineRange(body: string, range: PlotOutlineRange, ex
 export function validPlotOutlineAuthorPrefix(synopsis: string, progress: Pick<PlotOutlineProgress, 'range' | 'sourceExpected' | 'confirmedPrefix'>, range: PlotOutlineRange): boolean {
   if (!range || range.from !== progress.range.from || !Number.isSafeInteger(range.to) || range.to < range.from || range.to > progress.range.to) return false
   const expected = progress.sourceExpected
+  try { plotOutlineConfirmedPrefix(expected, range) } catch { return false }
   const all = headings(synopsis), entries = all.filter(entry => entry.from >= range.from && entry.from <= range.to)
   if (entries.length !== range.to - range.from + 1) return false
   const after = all.find(entry => entry.from > range.to)
@@ -376,10 +377,17 @@ export function plotOutlineRecoveryDraft(progress: PlotOutlineProgress): string 
   const chapter = progress.range.from + completed
   let body = progress.composition?.text ?? ''
   let to = Math.min(chapter, progress.range.to)
+  const heading = progress.sourceExpected.writingLanguage === 'en-US' ? `## Chapter ${chapter}:` : `## 第${chapter}章：`
   if (progress.cursor.kind === 'accept') body = joinPlotOutlineEntries(body, progress.cursor.text)
   else if (progress.cursor.kind !== 'complete') {
     if (completed) to = chapter - 1
-    else body = progress.sourceExpected.writingLanguage === 'en-US' ? `## Chapter ${chapter}:` : `## 第${chapter}章：`
+    else body = heading
+  }
+  // 旧大纲的合并条目（如「第4–5章」）不能从中间截断：写到组尾，停下那章留空标题给作者补。
+  const group = headings(progress.sourceExpected.synopsis).find(entry => entry.from <= to && entry.to > to)
+  if (group) {
+    if (completed && (progress.cursor.kind === 'stopped' || progress.cursor.kind === 'request')) body = joinPlotOutlineEntries(body, heading)
+    to = Math.min(group.to, progress.range.to)
   }
   return renderPlotOutlineRange(body, { from: progress.range.from, to }, progress.sourceExpected)
 }
