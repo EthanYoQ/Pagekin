@@ -75,6 +75,39 @@ it('还没进门的坏记录（读不出的绑定、读不出的收据）原样�
   } finally { db.close() }
 })
 
+it('rowid 超过 2^53：封存写回本行，不落到相邻的行', () => {
+  const db = new Database(databaseFile(book))
+  try {
+    db.exec(`UPDATE generation_runs SET rowid=9007199254740993 WHERE run_id='run-review-ch60'`)
+    db.exec(`INSERT INTO generation_runs(rowid,run_id,root_action_id,binding_json,status,created_at_ms,open_key)
+      SELECT 9007199254740992,'run-unsaved-ch60',root_action_id,binding_json,status,3,'open-unsaved-ch60' FROM generation_runs WHERE run_id='run-review-ch60'`)
+    const binding = (runId: string) => db.prepare('SELECT binding_json FROM generation_runs WHERE run_id=?').pluck().get(runId) as string
+    const unsaved = binding('run-unsaved-ch60')
+    expect(sealSavedReviewProofs(db)).toBe(8)
+    expect(binding('run-unsaved-ch60')).toBe(unsaved)
+    expect(binding('run-review-ch60')).not.toBe(unsaved)
+  } finally { db.close() }
+})
+
+it('上次没正常关、WAL 里留着已提交的帧：已整理过的书照常打开', { timeout: 120_000 }, async () => {
+  await openOnce(book)
+  const file = databaseFile(book), before = fs.readFileSync(file)
+  const writer = new Database(file)
+  let wal: Buffer
+  try {
+    writer.pragma('wal_autocheckpoint=0')
+    writer.prepare(`UPDATE generation_runs SET created_at_ms=created_at_ms+1 WHERE run_id='run-review-ch60'`).run()
+    wal = fs.readFileSync(`${file}-wal`)
+  } finally { writer.close() }
+  // 主文件停在写之前，WAL 里留着已提交的帧，和进程被杀后一样。
+  fs.writeFileSync(file, before)
+  fs.writeFileSync(`${file}-wal`, wal)
+  fs.rmSync(`${file}-shm`, { force: true })
+  expect(wal.length).toBeGreaterThan(0)
+
+  expect((await openOnce(book)).bindings).toHaveLength(8)
+})
+
 it('封存已提交、还没缩文件就被打断：下次打开缩到和一次做完一样大', { timeout: 120_000 }, async () => {
   const interrupted = new Database(databaseFile(book))
   try { expect(sealSavedReviewProofs(interrupted)).toBe(8) } finally { interrupted.close() }

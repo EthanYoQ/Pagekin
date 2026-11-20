@@ -197,7 +197,7 @@ export const BS702_SCENARIOS = {
     for (const copy of restored) {
       assert.equal(copy.kinds[2], 6, JSON.stringify(copy))
       assert.equal(v1Total(copy.kinds), v1Total(written.kinds), JSON.stringify(copy))
-      assert.ok(copy.kinds.sealed > 0, JSON.stringify(copy))
+      assert.ok((copy.kinds.sealed ?? 0) >= written.kinds.sealed, `副本的封存条数不少于源：${JSON.stringify(copy)}`)
     }
     await openInUi(context, second)
     await chapterView.open(page, 3)
