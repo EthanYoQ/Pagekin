@@ -149,7 +149,6 @@ export class PlotOutlineResumeAvailableError extends Error {
  */
 export const PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE = 'architecture-synopsis-source-changed'
 
-/** 主进程按冻结来源拒绝大纲请求或正式保存的码（main-generation-owner.ts assertSourcesCurrent）。 */
 const PLOT_OUTLINE_SOURCE_CHANGED_CODES = new Set(['GENERATION_SOURCE_CHANGED', 'GENERATION_SOURCE_CHANGED_MODEL'])
 
 export class PlotOutlineSourceChangedError extends Error {

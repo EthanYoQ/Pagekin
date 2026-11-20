@@ -12,7 +12,6 @@ import type { WorkflowRun } from '../../stores/workflow-store'
 import { toast } from '../ui/Toast'
 import { presentWorkflowFailure, type WorkflowFailurePresentation } from '../panels/ai-output-failure-presentation'
 
-/** 运行侧页为一次失败的运行显示的内容：标题、原因，以及能接着做什么。 */
 export interface RunFailure {
   title: string
   presentation: WorkflowFailurePresentation
