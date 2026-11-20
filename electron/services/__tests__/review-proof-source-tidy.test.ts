@@ -41,11 +41,11 @@ afterEach(() => {
 })
 
 const prose = (chapter: number) => `第${chapter}章。` + '林岚走进北塔，灯火照亮了石阶。'.repeat(40)
-/** 升级前的书童把前文全部定稿原文冻结进每条审修证明。 */
+/** v1 证明：前文全部定稿原文冻结在每条证明里。 */
 const priorChapters = (chapter: number): ReviewFinalizedMaterial[] => Array.from({ length: chapter - 1 }, (_, index) => ({
   draftId: 10_000 + index, chapterNumber: index + 1, chapterTitle: `第${index + 1}章`, content: prose(index + 1) }))
 
-/** 和作者一样关掉再打开：打开前的校验在 worker 里跑。 */
+/** 关闭后再打开：校验与整理在 worker 里完成。 */
 async function reopen() {
   closeProjectDatabase()
   initProjectDatabase(projectRoot, await verifyCanonicalProjectData(projectRoot, worker))
@@ -58,7 +58,7 @@ function closedBytes() {
   return fs.statSync(databaseFile()).size
 }
 
-/** 设计 4.3 的筛选判据：已保存、前文全文还在、超过 64 KB 的行。 */
+/** 验收口径：已保存、前文全文还在、超过 64 KB 的行。 */
 function stillFull(db: import('better-sqlite3').Database): string[] {
   return db.prepare(`SELECT r.run_id FROM generation_runs r WHERE EXISTS (SELECT 1 FROM generation_attempts t
     WHERE t.run_id=r.run_id AND json_type(t.usage_receipt_json,'$.reviewRevisionEffect')='object')

@@ -44,7 +44,7 @@ afterEach(() => {
   fs.rmSync(base, { recursive: true, force: true })
 })
 
-/** 打开一次（worker 里校验并整理）再关掉，返回所有绑定和关库后的文件大小。 */
+/** 打开并整理一次再关闭，返回全部绑定与关库后的文件字节数。 */
 async function openOnce(root: string) {
   initProjectDatabase(root, await verifyCanonicalProjectData(root, worker))
   const bindings = getProjectDb()!.prepare('SELECT run_id,binding_json FROM generation_runs ORDER BY run_id').all()

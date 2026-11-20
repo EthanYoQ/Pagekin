@@ -14,7 +14,7 @@ void Promise.all([import('./sqlite-project-migration'), import('./project-peek')
     // 账本扫描结果随内容身份一起交回，主进程据此省掉一次整库扫描。
     const open = (databasePath: string): OpenedProjectSqlite => {
       let identity = migration.openProjectSqlite({ databasePath })
-      // 整理在校验之后、主进程拿句柄之前：这时没有别人持着这本书。整理改过库就按新字节再校验一遍。
+      // 此时主进程还没持有这本书，可以独占改写；改过就重新校验。
       if (proofs.tidyReviewProofs(databasePath)) identity = migration.openProjectSqlite({ databasePath })
       const reader = new Database(databasePath, { readonly: true, fileMustExist: true })
       try { return { identity, ledgerNeedsAdmission: ledger.ledgerNeedsAdmission(reader) } } finally { reader.close() }

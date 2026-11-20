@@ -316,7 +316,7 @@ describe('打开老书整理源库后，升级前开始的审修循环在源库�
     return original
   }
 
-  /** 关掉再从书房打开：打开前的校验与整理在 worker 里跑。 */
+  /** 关闭后重新打开，校验与整理在 worker 里完成。 */
   async function reopen() {
     freezeAsV1 = false
     for (const owner of owners.splice(0)) owner.suspendForProjectClose()

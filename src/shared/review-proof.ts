@@ -3,12 +3,12 @@ import { reviewRevisionContextV2, type ReviewRevisionContext, type ReviewRevisio
 /** 封存的 v1 证明：只留 v2 字段，inputHash 取原 v1 上下文的哈希，也就是收据里的 contextHash（ADR-0031）。 */
 export type SealedReviewRevisionContext = ReviewRevisionContextV2 & { rewrittenFrom: 1 }
 
-/** 已保存、全文验过的 v1 证明才能封存：收据里的原哈希放进 inputHash，前文等材料不再留着。导出投影和源库整理共用。 */
+/** 调用方须已验过全文和收据：收据里的原哈希放进 inputHash，前文等材料丢弃。 */
 export function sealReviewContext(context: ReviewRevisionContextV1, contextHash: string): SealedReviewRevisionContext {
   return { ...reviewRevisionContextV2(context, contextHash), rewrittenFrom: 1 }
 }
 
-/** 清单里的证明三项：上下文、它的哈希、作者输入里的同一份全文。导出投影和源库整理都按这个写。 */
+/** 清单里的证明三项：上下文、它的哈希、作者输入里的同一份全文，三者必须一起写。 */
 export function reviewProofFields(context: object, sha256: (text: string) => string) {
   const contextJson = JSON.stringify(context)
   return { reviewRevisionContext: context, reviewRevisionContextHash: sha256(contextJson),

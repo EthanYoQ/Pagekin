@@ -20,7 +20,7 @@ const BINDING_FILES = [
   'electron/repositories/generation-run-repository.ts', 'electron/repositories/generation-ledger-admission.ts',
   'electron/migrations/m01-generation-runs.ts', 'electron/migrations/m03-review-cycle.ts',
   'electron/services/project-archive-service.ts', 'electron/services/portable-project-field-policy.json',
-  // 打开时把已保存的旧审修证明就地封存：按主键读写，跨记录只扫进门清单里的收据列。
+  // 按主键读写；跨记录只扫进门清单里的收据列。
   'electron/services/review-proof-tidy.ts',
 ]
 
