@@ -333,7 +333,7 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `ec-review-overflow` | 导入 3 章各约 3 MiB 的定稿，再建第 4 章草稿；点「AI 审稿」，运行侧栏报「正文没有改动。这本书的前文超过了 AI 一次能带的上限，这次没有生成。请把这条提示反馈给我们。」，不请求模型（`ec-2-review-overflow`）。修复前叫作者「请精简后重试」 | 第 4 章（中文） | 是 | #702 |
 | `ec-export-unknown-file` | 建 1 章定稿的书，冷重启前往 `.ai-novel` 里放一个 `desktop.ini`；导出失败，红字是「作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。」（`ec-3-unknown-file`）。修复前红字是原码 PORTABLE_ASSET_UNSAFE | 项目备份（中文） | 是 | #702 |
 | `ec-restore-not-archive` | 建 1 章定稿的书，在项目备份点「从本地存档恢复副本」，选一个没下载完的 `.ainovel`（不是完整 zip）；红字是「没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。」，所选文件夹里什么都没留下（`ec-4-restore-not-archive`）。修复前红字是原码 PORTABLE_ARCHIVE_INVALID | 项目备份（中文） | 是 | #702 |
-| `ec-cloud-endpoint` | 同上造书，WebDAV 地址填 `http://` 开头的地址，点「连接并绑定」；红字是「没有连接。WebDAV 地址要以 https:// 开头，不能带 ? 或 #。请改好地址，再点「连接并绑定」。」，不发网络请求（`ec-6-cloud-endpoint`）。修复前红字是原码 CLOUD_BACKUP_FAILED | 项目备份（中文） | 是 | #702 |
+| `ec-cloud-endpoint` | 同上造书，WebDAV 地址填 `http://` 开头的地址，点「连接并绑定」；红字是「没有连接。WebDAV 地址要是 https:// 开头的完整网址，不能带 ?、# 或用户名密码。请改好地址，再点「连接并绑定」。」，不发网络请求（`ec-6-cloud-endpoint`）。修复前红字是原码 CLOUD_BACKUP_FAILED | 项目备份（中文） | 是 | #702 |
 
 ## 打开时封存了读不出的生成记录（#702）
 
