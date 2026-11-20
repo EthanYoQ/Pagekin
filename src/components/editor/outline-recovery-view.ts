@@ -39,16 +39,25 @@ export function outlineRecoveryView(
   }
   const blocked = candidate.writeState.kind === 'blocked' ? candidate.writeState.reason : null
   // 已续写过的运行主进程也报 source-changed；回包丢失待重发的保存仍要能重发。
-  if ((blocked === 'source-changed' || blocked === 'source-invalid') && continuation?.state !== 'continued' && !(snapshot === 'pending' && candidate.saved)) {
+  const sourceBlocked = (blocked === 'source-changed' || blocked === 'source-invalid') && continuation?.state !== 'continued' && !(snapshot === 'pending' && candidate.saved)
+  const saved = snapshot === 'saved' || snapshot !== 'pending' && (candidate.saved || blocked === 'author-saved')
+  const restart = candidate.saved?.remainingRange?.from
+  if (sourceBlocked && saved && restart) {
+    return view('blocked', 'warn', text('本次恢复已保存，但不能接着生成', 'This recovery is saved, but generation cannot continue'),
+      text(`保存后正式大纲、模型设置、作品设定、提示词模板或写作 Skill 有改动。请从第 ${restart} 章重新生成情节大纲。`,
+        `The outline, model settings, book settings, a prompt template, or a writing skill changed after saving. Generate the plot outline again from chapter ${restart}.`))
+  }
+  if (sourceBlocked && !saved) {
     return view('blocked', 'warn', text('不能保存，也不能继续生成', 'This draft cannot be saved or continued'),
       outlineSourceInvalidNote(recovery, locale) ?? outlineSourceChangedNote(recovery, locale))
   }
-  if (snapshot === 'saved' || snapshot !== 'pending' && (candidate.saved || blocked === 'author-saved')) {
+  if (saved) {
     return view('saved', 'ok', text('本次恢复已保存，后续修改仅供复制。', 'This recovery is saved. Further edits can only be copied.'), null)
   }
   if (continuation?.state === 'continued') {
-    return view('blocked', 'info', text('这批大纲已经接着生成过', 'This outline batch was already continued'),
-      text('不能再保存。点「继续生成缺少的章节」接回那一次生成。', 'It can no longer be saved. Click “Generate remaining chapters” to return to that run.'))
+    return view('blocked', 'info', text('这批大纲已经接着生成过', 'This outline batch was already continued'), continuable
+      ? text('不能再保存。点「继续生成缺少的章节」回到那一次生成。', 'It can no longer be saved. Click “Generate remaining chapters” to go back to that run.')
+      : text('不能再保存。', 'It can no longer be saved.'))
   }
   if (blocked === 'in-flight' && !candidate.saved) {
     return view('waiting', 'info', text('大纲还在生成', 'The outline is still generating'),
