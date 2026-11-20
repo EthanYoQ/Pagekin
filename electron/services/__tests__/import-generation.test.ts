@@ -233,10 +233,12 @@ async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needle
    currentState: { location:'海港',powerLevel:'普通',physicalState:'正常',mentalState:'警觉',keyItems:'信件',recentEvents:'寻信',updatedAtChapter:0 } }))
  if (kind !== 'unproven' && kind !== 'inference' && kind !== 'retried' && kind !== 'needless-retry' && kind !== 'forged') generated[0].relationships = [{ target:'苏绾', relation:'同乡' }, { target:'掌柜', relation:'雇主' }]
  const delta = { ...generated[1], name:'掌柜' }
- const later = ['船夫','阿婆','渔娘'].map(name => ({ ...generated[1], name }))
- const batches = [[{ ...delta, relationships:[{ target:'渔娘', relation:'旧债' }] }, later[0], later[1]], [later[2]]]
+ const others = ['船夫','阿婆','渔娘','货郎','更夫','茶博士','漕丁','稳婆','账房','镖头','船娘','药童','书吏','渡工','盐丁','灯匠']
+ const later = others.map(name => ({ ...generated[1], name }))
+ const queued = [{ ...delta, relationships:[{ target:'灯匠', relation:'旧债' }] }, ...later]
+ const batches = Array.from({ length: Math.ceil(queued.length / 3) }, (_, index) => queued.slice(index * 3, index * 3 + 3))
  const original = JSON.stringify({ novelConfig:{ ...core, narrativePOV:core.narrativePov }, architectureFiles:{ premise:core.premise,worldbuilding:core.worldbuilding,synopsis:core.synopsis }, characterCards:generated,
-   ...(kind === 'batched' ? { otherCharacters: ['掌柜','船夫','阿婆','渔娘'].map(name => ({ name, role:'supporting', note:'港口人物' })) } : {}) })
+   ...(kind === 'batched' ? { otherCharacters: ['掌柜', ...others].map(name => ({ name, role:'supporting', note:'港口人物' })) } : {}) })
  let output = kind === 'unproven' ? '{"facts":"合成"}' : original
  const f=fixture(async(_r,o)=>{o.onVisible({kind:'delta',text:output});return {finishReason:'stop',usage:null}})
  const handle=f.owner.begin(f.selection).handle
@@ -284,7 +286,7 @@ it.each(['inference', 'retried', 'endpoint', 'batched', 'dropped', 'rejected-del
  expect(batch.source.kind).toBe('import')
  const approved = f.owner.characterProposals.approve({ proposalBatchId: batch.proposalBatchId, expectedRevision: batch.revision,
    operationId: '作者采用导入角色', selections: batch.items.map(item => ({ selectionKey: item.selectionKey, action: 'create' })) })
- expect(approved.created).toHaveLength(kind === 'endpoint' ? 4 : kind === 'batched' ? 7 : 3)
+ expect(approved.created).toHaveLength(kind === 'endpoint' ? 4 : kind === 'batched' ? 20 : 3)
  expect(f.db.prepare('SELECT name,static_provenance FROM characters WHERE retired=0').get()).toMatchObject({ name: '林岚', static_provenance: expect.stringContaining('generated') })
  expect(f.owner.characterProposals.listPendingFinalized()).toEqual([])
 })
