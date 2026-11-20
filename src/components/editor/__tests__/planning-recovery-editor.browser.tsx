@@ -278,6 +278,23 @@ describe('planning recovery editors', () => {
       })
     }
   }
+  it('正文末尾留着更晚一章的旧覆盖说明（第 3 章）时保存到第 2 章：只剩一条覆盖说明，写第 2 章', async () => {
+    context = fixture('outline')
+    if (!context.plotOutline || !context.plotOutlineRecovery) throw new Error('Missing outline fixture')
+    context.plotOutline.sourceExpected.totalChapters = 4
+    const note = (n: number) => `> 本大纲已覆盖至第 ${n} 章（全书 4 章），其余章节将在后续批次继续生成。`
+    const prefix = '# 情节大纲\n\n## 第1章：雨夜\n作者保留每一条线索。'
+    context.plotOutline.composition = { algorithm: 'chapter-outline-v3', text: '## 第1章：雨夜\n作者保留每一条线索。', textHash: 'a'.repeat(64), artifactIds: ['chapter-1'], sources: [], chapters: [{ chapterNumber: 1, artifactIds: ['chapter-1'], textHash: 'a'.repeat(64) }] }
+    context.plotOutline.cursor = { kind: 'stopped', chapterNumber: 2, reason: 'attempts-exhausted' }
+    context.plotOutlineRecovery.completeChapters = [1]
+    context.plotOutlineRecovery.draft = `${prefix}\n\n${note(1)}`
+    await render('outline')
+    await edit(`${prefix}\n\n## 第2章：黎明\n作者自己写完这一章。\n\n${note(3)}`)
+    await setEnd('2')
+    await act(async () => button('保存恢复大纲').click())
+    expect(savedPayload).toMatchObject({ synopsis: `${prefix}\n\n## 第2章：黎明\n作者自己写完这一章。\n\n${note(2)}`, authorRecovery: { committedRange: { from: 1, to: 2 } } })
+    noModel()
+  })
   it('outline author tail preserves an edited quotation instead of treating it as machine progress', async () => {
     context = fixture('outline')
     const authored = '# 情节大纲\n\n## 第1章：雨夜\n作者正文。\n\n> 本大纲已覆盖至第 2 章（全书 3 章），其余章节将在后续批次继续生成。作者要求保留。'
