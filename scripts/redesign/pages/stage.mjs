@@ -35,7 +35,6 @@ export const shelf = page => page.getByRole('list', { name: '最近的作品' })
 export const cover = (page, name) => shelf(page).getByRole('button', { name: `预览《${name}》` })
 export const overview = (page, name) => page.getByRole('region', { name: `《${name}》概览` })
 
-/** 概览在后台读取，读完才有统计；读不到时显示原因。等到其一，读不到就把原因当失败报出来。 */
 export async function previewBook(page, name) {
   await cover(page, name).click()
   const region = overview(page, name)
