@@ -367,6 +367,14 @@ describe('规划恢复稿', () => {
     expect(ready.kind === 'planning' && ready.meta).toContain('缺第 3–5 章')
   })
 
+  it('已经接着生成过的大纲恢复卡照常列「缺第几章」（主进程对它也报 source-changed）', () => {
+    const recovery = { handle, plotOutline: { range: { from: 1, to: 5 }, cursor: { kind: 'stopped', chapterNumber: 3, reason: 'attempts-exhausted' }, sourceExpected: { synopsis: '' } },
+      plotOutlineRecovery: { writeState: { kind: 'blocked', reason: 'source-changed' }, inFormalOutline: false },
+      planningContinuation: { state: 'continued', remainingRange: { from: 3, to: 5 } } } as never
+    const [entry] = buildRecoveryEntries({ ...EMPTY_RECOVERY_SOURCES, planning: [recovery] }, 'zh-CN')
+    expect(entry.kind === 'planning' && entry.meta).toContain('缺第 3–5 章')
+  })
+
   it('只有一章的大纲恢复稿标题写「第 6 章」，不写成「第 6–6 章」', () => {
     const recovery = { handle, plotOutlineRecovery: {}, plotOutline: { range: { from: 6, to: 6 } } } as never
     expect(buildRecoveryEntries({ ...EMPTY_RECOVERY_SOURCES, planning: [recovery] }, 'zh-CN')[0].title).toBe('大纲恢复稿 · 第 6 章')
