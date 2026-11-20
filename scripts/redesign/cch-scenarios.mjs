@@ -294,7 +294,7 @@ Object.assign(CCH_SCENARIOS, {
     await panel.getByLabel('密码或应用密钥').fill('app-secret')
     await panel.getByLabel('云书标识').fill('my-book')
     await panel.getByRole('button', { name: '连接并绑定', exact: true }).click()
-    const shown = notice(page, 'alert').filter({ hasText: /^没有连接。WebDAV 地址要以 https:\/\/ 开头，不能带 \? 或 #。请改好地址，再点「连接并绑定」。$/u })
+    const shown = notice(page, 'alert').filter({ hasText: /^没有连接。WebDAV 地址要是 https:\/\/ 开头的完整网址，不能带 \?、# 或用户名密码。请改好地址，再点「连接并绑定」。$/u })
     await shown.waitFor({ state: 'visible', timeout: 30_000 })
     await shoot('ec-6-cloud-endpoint')
     return { zh: (await shown.innerText()).trim() }

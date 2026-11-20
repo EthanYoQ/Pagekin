@@ -394,7 +394,7 @@ describe('ProjectBackupPanel', () => {
     ['CLOUD_BACKUP_CANCELLED', '已取消，作品没有改动。'],
     ['CLOUD_BACKUP_RESTORE_FAILED', '没有新建副本。云端存档已下载，但没能恢复成副本。请把这条提示反馈给我们。'],
     ['CLOUD_BACKUP_FAILED', '作品没有改动。云备份出了意外错误。请再试一次；还不行，请把这条提示反馈给我们。'],
-    ['CLOUD_BACKUP_ENDPOINT_INVALID', '没有连接。WebDAV 地址要以 https:// 开头，不能带 ? 或 #。请改好地址，再点「连接并绑定」。'],
+    ['CLOUD_BACKUP_ENDPOINT_INVALID', '没有连接。WebDAV 地址要是 https:// 开头的完整网址，不能带 ?、# 或用户名密码。请改好地址，再点「连接并绑定」。'],
     ['CLOUD_BACKUP_BOOK_ID_INVALID', '作品没有改动。云书标识只能用英文字母、数字和 . _ : @ + -，且以字母或数字开头。请改好云书标识再试。'],
   ])('云备份操作失败（%s）：说出原因，不露原码（#702）', async (errorCode, expected) => {
     invoke.mockImplementation(async (channel: string) => {

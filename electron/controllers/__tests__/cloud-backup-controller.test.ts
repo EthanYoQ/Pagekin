@@ -223,7 +223,7 @@ describe('registerCloudBackupController', () => {
     expect(JSON.stringify(result)).not.toContain('top-secret')
   })
 
-  it.each(['http://dav.example.test/root/', 'dav.example.test/root', 'https://dav.example.test/root/?token=1'])(
+  it.each(['http://dav.example.test/root/', 'dav.example.test/root', 'https://dav.example.test/root/?token=1', 'https://writer:pw@dav.example.test/root/'])(
     '作者填的 WebDAV 地址不合规（%s）：说清地址要求，不露原码（#702）', async endpoint => {
       const fetchImpl = vi.fn()
       const f = fixture({ webDav: new WebDavBackupService({ fetchImpl }) })
@@ -231,10 +231,21 @@ describe('registerCloudBackupController', () => {
       const result = await f.invoke('cloud-backup:connect', { endpoint, username: 'writer', secret: 'top-secret' }) as CloudBackupFailure
 
       expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
-        .toBe('没有连接。WebDAV 地址要以 https:// 开头，不能带 ? 或 #。请改好地址，再点「连接并绑定」。')
+        .toBe('没有连接。WebDAV 地址要是 https:// 开头的完整网址，不能带 ?、# 或用户名密码。请改好地址，再点「连接并绑定」。')
       expect(fetchImpl).not.toHaveBeenCalled()
       expect(f.deps.credentialStore.save).not.toHaveBeenCalled()
     })
+
+  it('作者粘贴的密码带了制表符：说是用户名或密码的问题，不叫作者改地址（#702）', async () => {
+    const fetchImpl = vi.fn()
+    const f = fixture({ webDav: new WebDavBackupService({ fetchImpl }) })
+
+    const result = await f.invoke('cloud-backup:connect', { endpoint: 'https://dav.example.test/root/', username: 'writer', secret: 'top-secret	' }) as CloudBackupFailure
+
+    expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
+      .toBe('没有连接。用户名或密码里带了看不见的字符（比如复制时带进来的制表符）。请重新输入，再点「连接并绑定」。')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
 
   it('作者填的云书标识有中文：绑定和刷新云端世代都说清标识要求，不露原码（#702）', async () => {
     const fetchImpl = vi.fn()
