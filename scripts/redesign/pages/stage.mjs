@@ -38,6 +38,7 @@ export const overview = (page, name) => page.getByRole('region', { name: `《${n
 export async function previewBook(page, name) {
   await cover(page, name).click()
   const region = overview(page, name)
+  await region.waitFor({ state: 'visible' })
   const stats = region.locator('.pi-stats')
   const reason = region.locator('.stage-ov-status').filter({ hasNotText: '正在读取' })
   try {
