@@ -99,6 +99,14 @@ export const I668_SCENARIOS = {
     await shoot('i668-revised-end')
     assert.equal(revisedHit, true, '已修稿滚到末尾时，定稿按钮仍可点')
 
+    await chapterView.view(page).locator('.stage-ch-actions-sticky button:not(:disabled)').last().evaluate(element => element.focus({ preventScroll: true }))
+    for (let step = 0; step < 6 && !await finalize.evaluate(element => element === document.activeElement); step++) await page.keyboard.press('Shift+Tab')
+    await settle(page)
+    const afterTab = await scrollState(page)
+    await shoot('i668-revised-tab')
+    assert.equal(await finalize.evaluate(element => element === document.activeElement), true, 'Tab 走到了定稿')
+    assert.equal(afterTab.top, revisedEnd.top, 'Tab 聚焦定稿不把页面滚回去')
+
     await finalize.click()
     await chapterView.finalizeDialog(page, 4).waitFor({ state: 'visible' })
     const afterClick = await scrollState(page)
@@ -135,7 +143,7 @@ export const I668_SCENARIOS = {
     await page.keyboard.press('Escape')
     await stage.spine(page).waitFor({ state: 'visible' })
 
-    return { reviewEnd, reviewHit, revisedEnd, revisedHit, afterClick, searchMatch, finalizeAfterSearch, focusHit }
+    return { reviewEnd, reviewHit, revisedEnd, revisedHit, afterTab, afterClick, searchMatch, finalizeAfterSearch, focusHit }
   } },
   'i668-review-1280': { model: false, shell: 'stage', setup: async context => {
     await context.page.setViewportSize({ width: 1280, height: 900 })

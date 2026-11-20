@@ -74,6 +74,9 @@ const SAMPLE_CONTENT = [
 ].filter(Boolean).sort((a, b) => b.length - a.length)
 
 /** 界面上还带汉字的文字：可见文字与各控件的可访问名称，去掉作品内容后剩下的行；顶栏的品牌字是装饰（aria-hidden），不算。 */
+/** 语言选择器里各语言用自己的名字（#722），不是漏译。 */
+const ENDONYMS = ['日本語']
+
 async function untranslated(page) {
   const { text, brand } = await page.evaluate(() => ({
     brand: document.querySelector('.stage-brand')?.textContent ?? null,
@@ -82,7 +85,7 @@ async function untranslated(page) {
   }))
   let cleaned = text
   for (const fragment of SAMPLE_CONTENT) cleaned = cleaned.split(fragment).join(' ')
-  return [...new Set(cleaned.split('\n').map(line => line.trim()).filter(line => line !== brand && /\p{Script=Han}/u.test(line)))]
+  return [...new Set(cleaned.split('\n').map(line => line.trim()).filter(line => line !== brand && !ENDONYMS.includes(line) && /\p{Script=Han}/u.test(line)))]
 }
 
 /**
@@ -188,7 +191,11 @@ export const RD10_SCENARIOS = {
     await palette(page, 'Settings')
     const nav = stage.settingsNavElement(page)
     await nav.waitFor({ state: 'visible' })
-    const pages = await nav.getByRole('button').evaluateAll(buttons => buttons.map(button => button.textContent.trim()).filter(name => !/^Back to/.test(name)))
+    const pages = await nav.getByRole('button').evaluateAll(buttons => buttons.map(button => {
+      const named = button.cloneNode(true)
+      for (const hidden of named.querySelectorAll('[aria-hidden="true"]')) hidden.remove()
+      return named.textContent.trim()
+    }).filter(name => !/^Back to/.test(name)))
     for (const name of pages) {
       await nav.getByRole('button', { name, exact: true }).click()
       await page.waitForTimeout(500)

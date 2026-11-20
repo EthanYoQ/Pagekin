@@ -587,8 +587,6 @@ export async function reviewCycleChapter(context, chapter, sent) {
     await settled('recheck')
   })
   const finalize = await step('finalize', async () => {
-    // 复核结果写回时动作条会重绘，等主按钮重新出现再点，否则 finalize 会走进「更多」菜单。
-    await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: 120_000 })
     await chapterView.finalize(page, chapter)
     await chapterView.postProcess(page).waitFor({ state: 'visible', timeout: 120_000 })
     await stage.root(page).locator(RUNNING).waitFor({ state: 'detached', timeout: 120_000 })
@@ -915,19 +913,18 @@ async function exportThenClose(context) {
   return result
 }
 
+export const NEEDS_FIXTURE = { env: { PERF702_FIXTURE: `指向 112 章夹具目录（里面有 projects/${BOOK}）。用 perf702-112 加 PERF702_SAVE 造一份，取 <SAVE>/112；定稿章数不是 112 时同时设 PERF702_FINALIZED` } }
+
+const REUSED = { model: true, shell: 'stage', requires: NEEDS_FIXTURE, setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() } }
+
 export const PERF702_SCENARIOS = {
-  'perf702-export-phases': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
-    run: exportPhases },
+  'perf702-export-phases': { ...REUSED, run: exportPhases },
   'perf702-block-control': { model: true, shell: 'stage', run: blockControls },
-  'perf702-export-close': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
-    run: exportThenClose },
-  'perf702-export': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
-    run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
-  'perf702-export-writing': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
-    run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112), { writes: true }) },
-  'perf702-reuse': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
-    run: context => timeLargeBook(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
-  'perf702-contention': { model: true, shell: 'stage', setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() },
+  'perf702-export-close': { ...REUSED, run: exportThenClose },
+  'perf702-export': { ...REUSED, run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
+  'perf702-export-writing': { ...REUSED, run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112), { writes: true }) },
+  'perf702-reuse': { ...REUSED, run: context => timeLargeBook(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
+  'perf702-contention': { ...REUSED,
     run: async context => {
       const opened = await timeOnce(context, Number(process.env.PERF702_FINALIZED ?? 112), 1)
       const results = []

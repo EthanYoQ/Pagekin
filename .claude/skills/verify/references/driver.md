@@ -32,7 +32,13 @@ node scripts/redesign/drive.mjs --scenario <名称> ...
 - `--video` 在每个截图点的 `run` 期间录屏：CDP `Page.startScreencast` 收帧，按帧时间戳交给本机 `ffmpeg` 编成 H.264 mp4，写到 `<场景>-<主题>.mp4`。不需要 Playwright 自带的 ffmpeg。
 - `--out` 默认 `.runtime/redesign-baseline/`（已被 git 忽略）。
 - `--app-root` 默认当前工作树。性能对照时指向 trunk 的工作树，用同一个驱动测两边；目标工作树也要先跑完上面两条命令，它加载的是自己的 `dist-electron/` 和 `better-sqlite3`。
-- 退出码：0 全部通过；1 有场景失败、残留进程或隔离目录外写入；2 参数错误。
+- 退出码：0 全部通过；1 有场景失败、残留进程或隔离目录外写入；2 参数错误；3 未跑（场景声明的前置不齐，没有启动应用）。
+- 场景可以用 `requires` 声明前置：`env` 是要设的环境变量（值是设置方法），`theme` 是要用的主题。缺了驱动不启动应用，stderr 逐项写「缺 X，设置方法：…」，结果 JSON 只有一项 `notRun`。批跑时把退出码 3 记成「未跑」，不算失败也不算通过。目前声明了前置的场景：
+  - `PERF702_FIXTURE`（112 章夹具，当前构建造的也行）：`perf702-export`、`-export-phases`、`-export-close`、`-export-writing`、`-reuse`、`-contention`。
+  - `PERF702_FIXTURE`（库版本 10 的 112 章夹具，要在库版本 10 的旧构建上用 `--app-root` 造）：`bs702-upgrade-open`、`-upgrade-perf`，`real-bs702-112`。
+  - `PERF702_FIXTURE`（审修循环造的库版本 10 夹具，批量造的书没有审修运行）：`bs702-seal`。
+  - `EDITOR_CONTEXT_BOOK`：`real-editor-context-ab`；`EDITOR_NOCHAPTER_DOC`：`real-editor-nochapter-ab`。
+  - `--theme dark`：`arch-dark`。
 
 RD-10 删除旧外壳之后，场景分三类：
 
