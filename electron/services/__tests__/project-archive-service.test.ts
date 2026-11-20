@@ -737,7 +737,7 @@ describe('portable project export service', () => {
       await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_AVATAR_DAMAGED')
     })
 
-    it.each(['坏了', '不见了'])('没归到任何角色的旧头像文件%s：单独报出，不叫作者去人物页重选（#702）', async damage => {
+    it.each(['坏了', '不见了'])('没归到任何角色的旧头像文件%s：照常导出，存档里没有它，恢复成功（#702）', async damage => {
       const f = fixture()
       seedProject(f)
       const db = new Database(f.databasePath)
@@ -751,9 +751,42 @@ describe('portable project export service', () => {
       const file = path.join(f.storage, ...relativePath.split('/'))
       if (damage === '坏了') fs.writeFileSync(file, Buffer.alloc(fs.statSync(file).size, 0))
       else fs.rmSync(file)
-      vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-      await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED')
+      await exportPortableProject(input(f))
+
+      const unpacked = await extract(f)
+      expect(unpacked.manifest.entries.map(entry => entry.path)).not.toContain(relativePath)
+      const restoredRoot = path.join(f.base, 'restored-orphan')
+      await restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot })
+      expect(fs.existsSync(path.join(restoredRoot, '.ai-novel', ...relativePath.split('/')))).toBe(false)
+    })
+
+    it('作品目录里有系统自动生成的 desktop.ini、Thumbs.db、.DS_Store：照常导出，存档里没有它们，恢复成功（#702）', async () => {
+      const f = fixture()
+      prompt(f, '{"提示":"留着"}')
+      const systemFiles = ['desktop.ini', 'Thumbs.db', '.DS_Store']
+      for (const name of systemFiles) {
+        fs.writeFileSync(path.join(f.storage, name), '系统写的')
+        fs.writeFileSync(path.join(f.storage, 'prompts', name), '系统写的')
+      }
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
+      const paths = (await extract(f)).manifest.entries.map(entry => entry.path)
+      expect(paths).toContain('prompts/章节.json')
+      expect(paths.filter(item => systemFiles.includes(path.posix.basename(item)))).toEqual([])
+      const restoredRoot = path.join(f.base, 'restored-system-files')
+      await restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot })
+      expect(fs.readFileSync(path.join(restoredRoot, '.ai-novel', 'prompts', '章节.json'), 'utf8')).toBe('{"提示":"留着"}')
+    })
+
+    it.runIf(process.platform === 'win32')('Windows 上系统文件名大小写不同也照常导出（#702）', async () => {
+      const f = fixture()
+      for (const name of ['DESKTOP.INI', 'thumbs.db', '.ds_store']) fs.writeFileSync(path.join(f.storage, name), '系统写的')
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
+      expect(fs.existsSync(f.target)).toBe(true)
     })
 
     it('作者删掉一份技能文件：重来一次，存档里没有它', async () => {
