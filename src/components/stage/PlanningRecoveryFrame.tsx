@@ -10,7 +10,7 @@ interface PlanningRecoveryFrameProps {
   busy: boolean
   end: { value: string; min?: number; max?: number; disabled: boolean; onChange: (value: string) => void }
   proceed: { disabled: boolean; onClick: () => void }
-  save: { label: string; disabled: boolean; onClick: () => void }
+  save: { label: string; title?: string; disabled: boolean; onClick: () => void }
   /** 流程上的下一步；两个动作都做不了时没有主按钮。 */
   primary: 'save' | 'continue' | null
   tools?: ReactNode
@@ -51,7 +51,7 @@ export function PlanningRecoveryFrame({ label, eyebrow, heading, busy, end, proc
           <Button variant={primary === 'continue' ? 'primary' : 'secondary'} disabled={proceed.disabled} onClick={proceed.onClick}>
             <Sparkles size={15} aria-hidden />{text('继续生成缺少的章节', 'Generate remaining chapters')}
           </Button>
-          <Button variant={primary === 'save' ? 'primary' : 'secondary'} disabled={save.disabled} onClick={save.onClick}>
+          <Button variant={primary === 'save' ? 'primary' : 'secondary'} title={save.title} disabled={save.disabled} onClick={save.onClick}>
             <Save size={15} aria-hidden />{save.label}
           </Button>
           {tools}

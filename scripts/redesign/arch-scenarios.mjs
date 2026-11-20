@@ -641,11 +641,16 @@ export const ARCH_SCENARIOS = {
     const recovery = await openStoppedOutlineDraft(context)
     const stopped = await recovery.innerText()
     assert.match(stopped, /第 1–2 章已写好，第 3 章没写成/)
+    assert.match(stopped, /删掉正文里第 2 章之后的内容再保存/)
     assert.match(stopped, /保存后才能继续生成。待完成第 3 至 5 章/)
     assert.equal(await recovery.getByLabel('保存到第几章').inputValue(), '2')
     assert.deepEqual(await recovery.locator('.pi-btn--primary').allInnerTexts(), ['保存恢复大纲'])
     assert.equal(await recovery.getByRole('button', { name: '继续生成缺少的章节' }).isEnabled(), false)
     await context.shoot('orui-outline-recovery-stopped')
+    await runSheet.openFromPalette(page)
+    await context.shoot('orui-outline-recovery-sheet')
+    await page.keyboard.press('Escape')
+    await runSheet.sheet(page).waitFor({ state: 'hidden' })
     await recovery.locator('summary').click()
     const written = (await recovery.locator('details pre').innerText()).split('# 全书情节大纲')[0].trimEnd()
     await recovery.locator('summary').click()
@@ -674,10 +679,11 @@ export const ARCH_SCENARIOS = {
     assert.equal(await recovery.locator('.pi-btn--primary').count(), 0)
     await context.shoot('orui-outline-recovery-blocked')
   } },
-  /** #702：英文界面下的同一页，页头与提示没有中文。 */
+  /** #702：英文界面下的同一页，页头与提示没有中文；运行侧页并排时页头折行、不溢出。 */
   'orui-outline-recovery-en': { model: true, shell: 'stage', setup: seedArch({ clear: ['synopsis'], totalChapters: 24 }), run: async context => {
     const { page } = context
     await openStoppedOutlineDraft(context)
+    await runSheet.openFromPalette(page)
     await stage.openSettings(page)
     await stage.showSettingsPage(page, '外观')
     await page.getByLabel('界面语言').selectOption('en-US')
@@ -686,6 +692,11 @@ export const ARCH_SCENARIOS = {
     const recovery = page.getByRole('region', { name: 'Outline recovery' })
     await recovery.getByText('Chapters 1–2 are written; chapter 3 is not').waitFor({ timeout: 20_000 })
     assert.doesNotMatch(await recovery.locator('header').innerText() + await recovery.getByRole('status').innerText(), /\p{Script=Han}/u)
+    const overflow = await recovery.evaluate(element => element.scrollWidth - element.clientWidth)
+    assert.equal(overflow, 0, '侧页并排时恢复稿页不横向溢出')
+    await context.shoot('orui-outline-recovery-en-sheet')
+    await page.keyboard.press('Escape')
+    await runSheet.sheet(page).waitFor({ state: 'hidden' })
     await context.shoot('orui-outline-recovery-en')
   } },
 

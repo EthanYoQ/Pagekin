@@ -731,6 +731,7 @@ describe('大纲恢复稿页面（#702）', () => {
     expect(primaryButtons()).toEqual(['保存恢复大纲'])
     expect(button('继续生成缺少的章节').disabled).toBe(true)
     expect(page().textContent).toContain('保存后才能继续生成')
+    expect(page().textContent).toContain('删掉正文里第 2 章之后的内容再保存')
     noModel()
   })
   it('一章都没写成：主按钮是继续生成，保存仍可用', async () => {

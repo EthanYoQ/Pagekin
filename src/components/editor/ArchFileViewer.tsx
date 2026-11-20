@@ -609,7 +609,7 @@ function ArchFileViewerSession({
           useEditorStore.setState(state => ({ tabs: state.tabs.map(tab => tab.id === tabId ? { ...tab, planningSaveEnd: value } : tab) }))
         } }}
         proceed={{ disabled: continuing || saving || !projectMatches || !view.continuable, onClick: () => { void continuePlanning() } }}
-        save={{ label: text('保存恢复大纲', 'Save recovered outline'), disabled: saving || !editable || !isDirty, onClick: () => { void handleSave(currentContentRef.current) } }}
+        save={{ label: text('保存恢复大纲', 'Save recovered outline'), title: text('只写入本地，不调用模型', 'Saves locally. No model call.'), disabled: saving || !editable || !isDirty, onClick: () => { void handleSave(currentContentRef.current) } }}
         primary={projectMatches ? view.primary : null}
         tools={(
           <Button variant="icon" aria-label={text('重新读取恢复状态', 'Reload recovery status')} title={text('重新读取恢复状态', 'Reload recovery status')} disabled={!projectMatches} onClick={() => { void handleReload() }}>
