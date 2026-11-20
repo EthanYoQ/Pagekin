@@ -312,7 +312,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
         characters: [],
         currentDerivedFields: {},
         stateEffectiveChapter: undefined,
-        selectedId: null, selectedName: null,
+        selectedName: null,
         loaded: false,
         dataProjectKey: null,
         dataProjectSession: null,
@@ -462,14 +462,13 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
   setSelectedId: (id) => {
     const projectSession = currentCharacterProjectSession()
     const state = get()
-    if (
-      !projectSession
-      || !sameProjectSessionContext(state.dataProjectSession, projectSession)
+    if (!projectSession) return
+    const card = state.characters.find((c, index) => characterSelectionKey(c, index) === id)
+    // 名单还没读完时先记下，load 读完再按名单核对；不在名单里就落到第一位。
+    const pending = !sameProjectSessionContext(state.dataProjectSession, projectSession)
       || state.loadingProjectSession !== null
       || state.lastError !== null
-    ) return
-    const card = state.characters.find((c, index) => characterSelectionKey(c, index) === id)
-    set({ selectedId: card ? id : null, selectedName: card?.name ?? null })
+    set({ selectedId: card || pending ? id : null, selectedName: card?.name ?? null })
   },
 
   setSelectedName: name => {
