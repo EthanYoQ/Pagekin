@@ -2,37 +2,35 @@ import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import type BetterSqlite3 from 'better-sqlite3'
 
-import { readReviewProof, sealReviewContext } from '../../src/shared/review-proof'
+import { parseLedgerObject, readableLedgerJson } from '../repositories/generation-ledger-admission'
+import { readReviewProof, reviewProofFields, sealReviewContext } from '../../src/shared/review-proof'
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex')
 
-/**
- * 已保存、前文全文还在的审修证明行，连同收据里的上下文哈希。64 KB 以下的不看：留着也是合法的 v1，导出时照样封存。
- * 坏记录（读不出的 JSON）跳过，不让一行坏账挡住整本的整理。
- */
-const FULL_SAVED_PROOFS = `SELECT r.rowid AS row, json_extract(t.usage_receipt_json,'$.reviewRevisionEffect.contextHash') AS receiptHash
-  FROM generation_attempts t JOIN generation_runs r ON r.run_id=t.run_id
-  WHERE json_valid(t.usage_receipt_json) AND json_type(t.usage_receipt_json,'$.reviewRevisionEffect')='object'
-    AND octet_length(r.binding_json) > 65536 AND json_valid(r.binding_json)
-    AND json_type(r.binding_json,'$.sourceManifest.reviewRevisionContext.history')='array'`
+/** 已保存的审修运行，连同收据里的上下文哈希。这时还没进门，读不出的收据跳过，不让一格坏账挡住整本的整理。 */
+const SAVED_REVIEW_RUNS = `SELECT DISTINCT run_id AS runId, json_extract(usage_receipt_json,'$.reviewRevisionEffect.contextHash') AS receiptHash
+  FROM generation_attempts WHERE CASE WHEN ${readableLedgerJson('usage_receipt_json')}
+    THEN json_type(usage_receipt_json,'$.reviewRevisionEffect')='object' END`
 
 /**
- * 把全文验过、收据对得上的行就地改成封存形，只换证明三项，其余字段与 `$` 记账原样。验不过的、收据对不上的原样留着。
+ * 把已保存、全文验过、收据对得上的 v1 证明就地改成封存形，只换证明三项，其余字段与 `$` 记账原样。
+ * 64 KB 以下的不动：留着也是合法的 v1，导出时照样封存。验不过的、收据对不上的、读不出的原样留着。
  * 一个事务做完：中途出错整批不落，下次照现状重筛。
  */
 export function sealSavedReviewProofs(db: BetterSqlite3.Database): number {
-  const read = db.prepare('SELECT binding_json FROM generation_runs WHERE rowid=?').pluck()
+  const large = db.prepare('SELECT rowid AS row, binding_json AS binding FROM generation_runs WHERE run_id=? AND octet_length(binding_json) > 65536')
   const write = db.prepare('UPDATE generation_runs SET binding_json=? WHERE rowid=?')
   return db.transaction(() => {
     let sealed = 0
-    for (const { row, receiptHash } of db.prepare(FULL_SAVED_PROOFS).all() as Array<{ row: number; receiptHash: unknown }>) {
-      const binding = JSON.parse(read.get(row) as string)
+    for (const { runId, receiptHash } of db.prepare(SAVED_REVIEW_RUNS).all() as Array<{ runId: string; receiptHash: unknown }>) {
+      const found = large.get(runId) as { row: number; binding: unknown } | undefined
+      const binding = parseLedgerObject(found?.binding)
+      if (!found || !binding) continue
       const proof = readReviewProof(binding.sourceManifest, sha256)
       if (proof.kind !== 'recomputable' || proof.context.version !== 1 || proof.contextHash !== receiptHash) continue
-      const context = sealReviewContext(proof.context, proof.contextHash), contextJson = JSON.stringify(context)
-      write.run(JSON.stringify({ ...binding, sourceManifest: { ...binding.sourceManifest, reviewRevisionContext: context,
-        reviewRevisionContextHash: sha256(contextJson), authorInputs: [{ id: 'review-revision-context', text: contextJson }] } }), row)
+      write.run(JSON.stringify({ ...binding, sourceManifest: { ...binding.sourceManifest as object,
+        ...reviewProofFields(sealReviewContext(proof.context, proof.contextHash), sha256) } }), found.row)
       sealed++
     }
     return sealed

@@ -64,6 +64,17 @@ it('逐行改写到一半出错：再打开一次，结果与一次做完的副�
   expect(resumed).toEqual(await openOnce(twin))
 })
 
+it('还没进门的坏记录（读不出的绑定、读不出的收据）原样跳过，不挡其余行', { timeout: 120_000 }, () => {
+  const db = new Database(databaseFile(book))
+  try {
+    db.prepare('UPDATE generation_runs SET binding_json=? WHERE run_id=?').run(`{${'坏'.repeat(30_000)}`, 'run-review-ch60')
+    db.prepare(`UPDATE generation_attempts SET usage_receipt_json='{坏' WHERE run_id='run-review-ch61'`).run()
+    const broken = db.prepare(`SELECT run_id,binding_json FROM generation_runs WHERE run_id IN ('run-review-ch60','run-review-ch61') ORDER BY run_id`).all()
+    expect(sealSavedReviewProofs(db)).toBe(6)
+    expect(db.prepare(`SELECT run_id,binding_json FROM generation_runs WHERE run_id IN ('run-review-ch60','run-review-ch61') ORDER BY run_id`).all()).toEqual(broken)
+  } finally { db.close() }
+})
+
 it('封存已提交、还没缩文件就被打断：下次打开缩到和一次做完一样大', { timeout: 120_000 }, async () => {
   const interrupted = new Database(databaseFile(book))
   try { expect(sealSavedReviewProofs(interrupted)).toBe(8) } finally { interrupted.close() }

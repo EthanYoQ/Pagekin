@@ -43,7 +43,7 @@ import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migration
 import { SchemaMigrationError } from '../migrations/registry'
 import { admitWholeLedgerOfOpenProject } from '../database'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
-import { readReviewProof, sealReviewContext } from '../../src/shared/review-proof'
+import { readReviewProof, reviewProofFields, sealReviewContext } from '../../src/shared/review-proof'
 import {
   PORTABLE_TRANSFER_AUTHORITY_PATH,
   createPortableTransferAuthority,
@@ -688,9 +688,7 @@ function projectReviewBinding(value: unknown, saved: boolean): Record<string, un
   if (proof.kind === 'unproven' || Buffer.byteLength(proof.contextJson, 'utf8') > 16 * 1024 * 1024) fail('PORTABLE_UNSAFE_PROJECTION')
   const context = saved && proof.kind === 'recomputable' && proof.context.version === 1
     ? sealReviewContext(proof.context, proof.contextHash) : proof.context
-  const contextJson = JSON.stringify(context)
-  projected.sourceManifest = { operation: safeId(manifest?.operation), reviewRevisionContext: assertReviewContext(context),
-    reviewRevisionContextHash: sha256(contextJson), authorInputs: [{ id: 'review-revision-context', text: contextJson }] }
+  projected.sourceManifest = { operation: safeId(manifest?.operation), ...reviewProofFields(assertReviewContext(context), sha256) }
   return projected
 }
 

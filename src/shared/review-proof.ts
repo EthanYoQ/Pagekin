@@ -8,6 +8,13 @@ export function sealReviewContext(context: ReviewRevisionContextV1, contextHash:
   return { ...reviewRevisionContextV2(context, contextHash), rewrittenFrom: 1 }
 }
 
+/** 清单里的证明三项：上下文、它的哈希、作者输入里的同一份全文。导出投影和源库整理都按这个写。 */
+export function reviewProofFields(context: object, sha256: (text: string) => string) {
+  const contextJson = JSON.stringify(context)
+  return { reviewRevisionContext: context, reviewRevisionContextHash: sha256(contextJson),
+    authorInputs: [{ id: 'review-revision-context', text: contextJson }] }
+}
+
 /** contextHash 是收据里应记的哈希。sealed 的这个哈希只能和收据比，不能从证明重算。 */
 export type ReviewProofRead =
   | { kind: 'absent' }
