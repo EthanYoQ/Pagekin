@@ -68,6 +68,7 @@ export const jaJP = {
   'error.cloudBackupFailed': '作品は変更されていません。クラウドバックアップで予期しないエラーが起きました。もう一度お試しください。それでも続く場合は、このメッセージをご報告ください。',
   'error.cloudBackupEndpointInvalid': '接続されていません。WebDAV のアドレスは https:// で始め、? や # を含めないでください。アドレスを直してから、「Connect and bind」をクリックしてください。',
   'error.cloudBackupBookIdInvalid': '作品は変更されていません。クラウドブック ID に使えるのは英字、数字と . _ : @ + - だけで、先頭は英字か数字にしてください。クラウドブック ID を直してから、もう一度お試しください。',
+  'error.cloudBackupGenerationDamaged': 'コピーは作成されていません。選んだクラウド世代のアーカイブファイルが破損しています。別のクラウド世代を選んでから、「Restore selected cloud generation as a copy」をクリックしてください。',
   'backup.omittedReviewCycleOne': '{chapter}のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
   'backup.omittedReviewCycleChapters': '{chapters}のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
   'backup.omittedReviewCycleChaptersAndOthers': '{chapters}などのレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',

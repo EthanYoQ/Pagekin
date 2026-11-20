@@ -65,6 +65,7 @@ export const enUS = {
   'error.cloudBackupFailed': 'Your book is unchanged. Cloud backup hit an unexpected error. Try again; if it keeps happening, please report this message to us.',
   'error.cloudBackupEndpointInvalid': 'Not connected. The WebDAV endpoint must start with https:// and cannot contain ? or #. Fix the endpoint, then click Connect and bind.',
   'error.cloudBackupBookIdInvalid': 'Your book is unchanged. The cloud book ID may use only English letters, digits, and . _ : @ + -, and must start with a letter or digit. Fix the cloud book ID, then try again.',
+  'error.cloudBackupGenerationDamaged': 'No copy was created. The archive file of the selected cloud generation is damaged. Select another cloud generation, then click Restore selected cloud generation as a copy.',
   'backup.omittedReviewCycleOne': 'A damaged review record in {chapter} was left out of the archive. The text and other reviews are included.',
   'backup.omittedReviewCycleChapters': 'Damaged review records in {chapters} were left out of the archive. The text and other reviews are included.',
   'backup.omittedReviewCycleChaptersAndOthers': 'Damaged review records in {chapters} and elsewhere were left out of the archive. The text and other reviews are included.',

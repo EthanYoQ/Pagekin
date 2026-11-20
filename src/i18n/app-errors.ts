@@ -92,6 +92,7 @@ const ERROR_KEYS = {
   CLOUD_BACKUP_FAILED: 'error.cloudBackupFailed',
   CLOUD_BACKUP_ENDPOINT_INVALID: 'error.cloudBackupEndpointInvalid',
   CLOUD_BACKUP_BOOK_ID_INVALID: 'error.cloudBackupBookIdInvalid',
+  CLOUD_BACKUP_GENERATION_DAMAGED: 'error.cloudBackupGenerationDamaged',
   // 选择文件或文件夹后授权已过期、用尽或被撤销（例如选完很久才确认）。
   EXTERNAL_FILE_GRANT_NOT_FOUND: 'error.externalFileGrantExpired',
   EXTERNAL_FILE_GRANT_EXPIRED: 'error.externalFileGrantExpired',

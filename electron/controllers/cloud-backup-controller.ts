@@ -506,13 +506,19 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
       const stagingRoot = createStagingRoot(dataRoot, id)
       const archivePath = path.join(stagingRoot, 'restore.ainovel')
       try {
-        await deps.webDav.downloadGeneration({
-          account: remoteAccount,
-          cloudBookId,
-          generationId,
-          targetArchivePath: archivePath,
-          signal,
-        })
+        try {
+          await deps.webDav.downloadGeneration({
+            account: remoteAccount,
+            cloudBookId,
+            generationId,
+            targetArchivePath: archivePath,
+            signal,
+          })
+        } catch (error) {
+          // 这个世代是从列表里选的，地址已连通过；回应不对是这个世代在云端的文件坏了。
+          if (error instanceof WebDavBackupError && error.code === 'WEBDAV_REMOTE_INVALID') fail('CLOUD_BACKUP_GENERATION_DAMAGED')
+          throw error
+        }
         let receipt: RestorePortableProjectReceipt
         try {
           receipt = await deps.restorePortableProject({ archivePath, targetProjectRoot, signal })

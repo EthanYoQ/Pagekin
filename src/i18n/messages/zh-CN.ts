@@ -67,6 +67,7 @@ export const zhCN = {
   'error.cloudBackupFailed': '作品没有改动。云备份出了意外错误。请再试一次；还不行，请把这条提示反馈给我们。',
   'error.cloudBackupEndpointInvalid': '没有连接。WebDAV 地址要以 https:// 开头，不能带 ? 或 #。请改好地址，再点「连接并绑定」。',
   'error.cloudBackupBookIdInvalid': '作品没有改动。云书标识只能用英文字母、数字和 . _ : @ + -，且以字母或数字开头。请改好云书标识再试。',
+  'error.cloudBackupGenerationDamaged': '没有新建副本。所选云端世代的存档文件坏了。请选另一个云端世代，再点「恢复所选云端世代为副本」。',
   'backup.omittedReviewCycleOne': '{chapter}有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'backup.omittedReviewCycleChapters': '{chapters}有审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'backup.omittedReviewCycleChaptersAndOthers': '{chapters}等处有审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
