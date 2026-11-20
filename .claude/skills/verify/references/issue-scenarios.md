@@ -370,3 +370,5 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `fspeed-finalize` | 默认定稿第 3 到 6 章，每章记从点「确认定稿」到「已定稿，只读」、到运行结束各发了哪些 `fs:` IPC（`fsBeforeReadOnly`、`fsBeforeRunEnd`），修后两者都没有写作 Skill 快照的 `fs:check-exists`；刷新文件树的 `fs:list-dir` 照样发（`fileTree` 记它的起止），只是运行结束不等它；每章两次对话请求，后处理步骤 attempts 为 1 | 正文（中文） | 是 | #702 |
 | `fspeed-still-processing` | 假模型闸门卡住第 3 章定稿后处理，去第 4 章点「写作此章」：不起运行，提示是「第 3 章已定稿，后台还在整理这一章，很快就好，请稍后再试。」，不是「处理失败」（`fspeed-still-processing-notice`）；放行后第 3 章后处理跑完 | 正文（中文） | 是 | #702 |
 | `real-fspeed-finalize` | 真实模型逐章定稿（默认 3 到 23 章），记计时、每次对话请求的 `enable_thinking`、`reasoning_effort`、思考字数和可见回复全文，以及步骤结果与重试；用于开关思考的质量门禁与修前修后交替计时 | 正文（中文） | 真实 | #702 |
+| `i764-outline-stopped` | 假模型让第 3 章两次都回整本的阶段大纲：运行侧页写「已生成的章节和候选都存进了恢复稿……第 3 章两次都没写成完整的单章大纲……点「编辑恢复稿」……」，不出现 `attempts-exhausted`；回到架构页有「编辑恢复稿」按钮 | 架构（中文） | 是 | #764 |
+| `real-764-outline` | 真实模型在 120 章作品上生成情节大纲（`SILICONFLOW_REASONING_OVERRIDE` 选推理强度，`I764_STRUCTURE` 选结构，`I764_CONTINUE=1` 再续写第 6–10 章），记每次尝试的原文、实发推理参数与作者看到的结果，写到 `I764_OUT` 或 `.runtime/real-764` | 架构（中文） | 真实 | #764 |
