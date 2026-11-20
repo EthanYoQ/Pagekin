@@ -17,6 +17,7 @@ import { CANONICAL_PROJECT_DATABASE, CANONICAL_PROJECT_DIRECTORY } from '../../s
 import { getCurrentProjectPath } from '../database'
 import {
   CloudCredentialStore,
+  normalizeWebDavEndpoint,
   type CloudCredentialMetadata,
   type CloudCredentialSaveInput,
   type CloudCredentialSaveResult,
@@ -292,6 +293,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
         username: string(request.username),
         secret: string(request.secret),
       }
+      try { normalizeWebDavEndpoint(candidate.endpoint) } catch { fail('CLOUD_BACKUP_ENDPOINT_INVALID') }
       await deps.webDav.checkConnection(candidate)
       let saved: CloudCredentialSaveResult
       try { saved = deps.credentialStore.save(candidate) }
@@ -303,8 +305,8 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
         ...(saved.warning ? { warning: saved.warning } : {}),
       }
     } catch (error) {
-      // 用户名和密码界面上已要求填写，连接时被判不合规的只会是作者填的地址。
-      return failure(webDavInputRejected(error) ? new CloudBackupControllerError('CLOUD_BACKUP_ENDPOINT_INVALID') : error)
+      // 地址已先核过，这里不合规的是用户名或密码（例如粘贴带进来的控制字符）。
+      return failure(webDavInputRejected(error) ? new CloudBackupControllerError('CLOUD_BACKUP_CREDENTIAL_INVALID') : error)
     }
   })
 

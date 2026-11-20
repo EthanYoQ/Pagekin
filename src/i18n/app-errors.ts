@@ -91,6 +91,7 @@ const ERROR_KEYS = {
   CLOUD_BACKUP_RESTORE_FAILED: 'error.cloudBackupRestoreFailed',
   CLOUD_BACKUP_FAILED: 'error.cloudBackupFailed',
   CLOUD_BACKUP_ENDPOINT_INVALID: 'error.cloudBackupEndpointInvalid',
+  CLOUD_BACKUP_CREDENTIAL_INVALID: 'error.cloudBackupCredentialInvalid',
   CLOUD_BACKUP_BOOK_ID_INVALID: 'error.cloudBackupBookIdInvalid',
   CLOUD_BACKUP_GENERATION_DAMAGED: 'error.cloudBackupGenerationDamaged',
   // 选择文件或文件夹后授权已过期、用尽或被撤销（例如选完很久才确认）。
@@ -186,9 +187,10 @@ const ERROR_KEYS = {
   GENERATION_PLANNING_RECOVERY_IN_FLIGHT: 'error.generationBusy',
   GENERATION_KNOWLEDGE_BUSY: 'error.generationKnowledgeBusy',
   GENERATION_AUTHOR_INPUT_TOO_LARGE: 'error.generationInputTooLarge',
-  // 审稿带的定稿前文超 8 MiB、前文超 1024 章：作者没有可精简的。后者其余触发处都是渲染端组错收据，作者走不到。
+  // 审稿带的定稿前文超 8 MiB：作者没有可精简的。
   GENERATION_REVIEW_CONTEXT_TOO_LARGE: 'error.priorTextOverLimit',
-  GENERATION_MATERIAL_DECISION_INVALID: 'error.priorTextOverLimit',
+  // 审稿材料和当初冻结的对不上（如升级后接着跑旧审稿），前文超 1024 章也报这个码。
+  GENERATION_MATERIAL_DECISION_INVALID: 'error.reviewMaterialMismatch',
   GENERATION_IMPORT_CONTEXT_LIMIT: 'error.generationInputTooLarge',
   GENERATION_DRAFT_REQUIRED_PREDECESSOR_NOT_ADMITTED: 'error.generationInputTooLarge',
   GENERATION_COMPOSITION_NO_PROGRESS: 'error.generationNoProgress',
