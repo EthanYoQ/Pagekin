@@ -394,9 +394,8 @@ export const ARCH_SCENARIOS = {
     assert.equal(await arch.next(page).isDisabled(), true, '下一步置灰')
     assert.match(await arch.page(page).locator('.arch-eyebrow').innerText(), /3 \/ 4 已确认/)
     assert.match(await stage.stageButton(page, '架构').innerText(), /3 \/ 4/, '流程脊与页头同为 3 / 4')
-    const cards = await runSheet.sheet(page).getByRole('article').locator('.run-card-title').allInnerTexts()
-    assert.ok(cards.length > 0, '运行侧页已列出上一次运行')
-    assert.deepEqual(cards.filter(title => title.startsWith('大纲恢复稿')), [], '两批都已原样写进正式大纲，不再列为可恢复（#608）')
+    const { planning } = await context.invoke(page, 'generation:list-recovery', await uiSession(context.app))
+    assert.deepEqual(planning.filter(entry => entry.plotOutlineRecovery), [], '两批都已原样写进正式大纲，运行侧页的可恢复列表不再列大纲恢复稿（#608）')
     context.before16 = (await readCore(context)).synopsis
     assert.deepEqual(Object.keys(outlineChapters(context.before16)).map(Number), Array.from({ length: 16 }, (_, index) => index + 1))
     await outline.getByRole('button', { name: '续写第 17 章起' }).click()
