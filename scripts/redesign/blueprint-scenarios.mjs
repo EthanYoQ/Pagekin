@@ -341,7 +341,10 @@ export const BLUEPRINT_SCENARIOS = {
     await page.getByText(RELATION_BASIS).waitFor({ state: 'visible' })
     for (const name of ['这是有意安排', '全书都不再提示', '去看这个角色']) await page.getByRole('button', { name }).waitFor({ state: 'visible' })
     await stage.saveStatus(page).getByText('已保存').waitFor({ state: 'visible' })
-  }, after: async ({ page }) => {
+  } },
+
+  'blueprint-relation-jump': { model: false, shell: 'stage', setup: withRelationConflict, run: async ({ page }) => {
+    await saveChapter(page, 5)
     await page.getByRole('button', { name: '去看这个角色' }).click()
     await page.getByRole('region', { name: '角色档案' }).getByRole('heading', { level: 1, name: '守塔人' }).waitFor({ state: 'visible' })
   } },
