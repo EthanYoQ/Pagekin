@@ -1,7 +1,12 @@
-import type { ReviewRevisionContext, ReviewRevisionContextV2 } from './review-revision-generation'
+import { reviewRevisionContextV2, type ReviewRevisionContext, type ReviewRevisionContextV1, type ReviewRevisionContextV2 } from './review-revision-generation'
 
-/** 导出时封存的 v1 证明：只留 v2 字段，inputHash 取原 v1 上下文的哈希，也就是收据里的 contextHash（ADR-0031）。 */
+/** 封存的 v1 证明：只留 v2 字段，inputHash 取原 v1 上下文的哈希，也就是收据里的 contextHash（ADR-0031）。 */
 export type SealedReviewRevisionContext = ReviewRevisionContextV2 & { rewrittenFrom: 1 }
+
+/** 已保存、全文验过的 v1 证明才能封存：收据里的原哈希放进 inputHash，前文等材料不再留着。导出投影和源库整理共用。 */
+export function sealReviewContext(context: ReviewRevisionContextV1, contextHash: string): SealedReviewRevisionContext {
+  return { ...reviewRevisionContextV2(context, contextHash), rewrittenFrom: 1 }
+}
 
 /** contextHash 是收据里应记的哈希。sealed 的这个哈希只能和收据比，不能从证明重算。 */
 export type ReviewProofRead =

@@ -43,8 +43,7 @@ import { inspectM03ReviewCycles, type UnprovableReviewCycle } from '../migration
 import { SchemaMigrationError } from '../migrations/registry'
 import { admitWholeLedgerOfOpenProject } from '../database'
 import type { DamagedReviewCycle } from '../../src/shared/damaged-review-cycle'
-import { readReviewProof, type SealedReviewRevisionContext } from '../../src/shared/review-proof'
-import { reviewRevisionContextV2, type ReviewRevisionContextV1 } from '../../src/shared/review-revision-generation'
+import { readReviewProof, sealReviewContext } from '../../src/shared/review-proof'
 import {
   PORTABLE_TRANSFER_AUTHORITY_PATH,
   createPortableTransferAuthority,
@@ -670,11 +669,6 @@ function assertReviewContext(value: unknown): Record<string, unknown> {
   }
   if (context.recheck !== undefined) reviewRecheck(context.recheck)
   return context
-}
-
-/** 已保存的 v1 全文证明在存档里封存（ADR-0031 决定 7）：收据里的原哈希放进 inputHash，前文等材料不再随存档带走。 */
-function sealReviewContext(context: ReviewRevisionContextV1, contextHash: string): SealedReviewRevisionContext {
-  return { ...reviewRevisionContextV2(context, contextHash), rewrittenFrom: 1 }
 }
 
 function projectReviewBinding(value: unknown, saved: boolean): Record<string, unknown> {
