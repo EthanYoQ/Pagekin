@@ -262,8 +262,7 @@ function ArchFileViewerSession({
           if (!validPlotOutlineAuthorPrefix(synopsis, progress, committedRange)) {
             const expected = progress.sourceExpected
             const title = renderPlotOutlineSynopsis('', expected.totalChapters, expected)
-            const generatedTo = Math.min(progress.range.from + (progress.composition?.chapters?.length ?? 0), progress.range.to)
-            const oldTail = renderPlotOutlineSynopsis('', generatedTo, expected).slice(title.length)
+            const oldTail = renderPlotOutlineSynopsis('', candidate.completeChapters.at(-1) ?? progress.range.from, expected).slice(title.length)
             if (oldTail && candidate.draft.endsWith(oldTail) && synopsis.endsWith(oldTail)) synopsis = synopsis.slice(0, -oldTail.length)
             synopsis = synopsis.trimEnd() + renderPlotOutlineSynopsis('', committedRange.to, expected).slice(title.length)
           }

@@ -27,13 +27,13 @@ export function outlineRecoveryView(
   const candidate = recovery.plotOutlineRecovery, outline = recovery.plotOutline, continuation = recovery.planningContinuation
   const continuable = Boolean(continuation?.remainingRange) && ['ready', 'continued'].includes(continuation?.state ?? '')
   const next = [
-    continuation?.state === 'save-prefix' && text('保存后才能继续生成。', 'Save before generating more.'),
+    continuation?.state === 'save-prefix' && text('保存后可继续生成。', 'Save to generate the rest.'),
     continuation?.remainingRange && planningRemainingText(continuation.remainingRange, continuation.targetUnits, targetUnit, text),
   ].filter(Boolean).join(text('', ' '))
-  const view = (phase: OutlineRecoveryView['phase'], tone: NoticeTone, title: string, line: string | null): OutlineRecoveryView => ({
+  const view = (phase: OutlineRecoveryView['phase'], tone: NoticeTone, title: string, line: string | null, aside: string | null = null): OutlineRecoveryView => ({
     phase, continuable, primary: continuable ? 'continue' : phase === 'editable' ? 'save' : null,
     // 不能写回时作者要按说明从本批起始章重新生成，再列「待完成第几章」会和它对不上。
-    notice: { tone, title, lines: [line, phase !== 'blocked' && next].filter((item): item is string => Boolean(item)) },
+    notice: { tone, title, lines: [line, phase !== 'blocked' && next, aside].filter((item): item is string => Boolean(item)) },
   })
 
   if (!candidate || !outline) {
@@ -56,10 +56,10 @@ export function outlineRecoveryView(
   const stopped = outline.cursor.kind === 'stopped' || outline.cursor.kind === 'request' ? outline.cursor.chapterNumber : null
   const heading = outline.sourceExpected.writingLanguage === 'en-US' ? `## Chapter ${stopped}:` : `## 第${stopped}章：`
   const written = done.length > 1 ? `Chapters ${span(done)} are written` : `Chapter ${span(done)} is written`
+  const reply = candidate.rejectedReply && stopped !== null
+    ? text(`第 ${stopped} 章那次的回复在「原始候选」里。`, `Chapter ${stopped}'s last reply is under “Original candidate”.`) : null
   if (done.length > 0 && stopped !== null) {
-    return view('editable', 'info', text(`第 ${span(done)} 章已写好，第 ${stopped} 章没写成`, `${written}; chapter ${stopped} is not`),
-      text(`删掉正文里第 ${done.at(-1)} 章之后的内容再保存；或把它改成完整的第 ${stopped} 章，把「保存到第几章」改成 ${stopped}。`,
-        `Delete everything after chapter ${done.at(-1)}, then save. Or rewrite it as a complete chapter ${stopped} and set “Last complete chapter” to ${stopped}.`))
+    return view('editable', 'info', text(`第 ${span(done)} 章已写好，第 ${stopped} 章没写成`, `${written}; chapter ${stopped} is not`), null, reply)
   }
   if (done.length > 0) {
     return view('editable', 'info', text(`第 ${span(done)} 章已写好，还没存进正式大纲`, `${written} but not in the outline yet`),
@@ -69,5 +69,5 @@ export function outlineRecoveryView(
   return view('editable', 'info', text(`第 ${stopped} 章没写成`, `Chapter ${stopped} was not written`), continuable
     ? text(`点「继续生成缺少的章节」重新生成；也可以自己补全（以「${heading}」开头）后保存。`,
       `Click “Generate remaining chapters” to try again, or complete it yourself (start with “${heading}”) and save.`)
-    : text(`自己补全它（以「${heading}」开头）后保存。`, `Complete it yourself (start with “${heading}”) and save.`))
+    : text(`自己补全它（以「${heading}」开头）后保存。`, `Complete it yourself (start with “${heading}”) and save.`), reply)
 }

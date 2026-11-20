@@ -120,7 +120,7 @@ export function openPlanningRecoveryDraft(context: GenerationRecoveryContext, pr
     projectKey,
     content: draft,
     savedContent: '',
-    originalContent: draft,
+    originalContent: context.plotOutlineRecovery?.rejectedReply ?? draft,
     dirty: draft.length > 0,
     planningRecovery: context,
     planningSaveOperationId: crypto.randomUUID(),

@@ -55,6 +55,8 @@ export interface PlotOutlineRecovery {
   sourceHandle: MainGenerationRunHandle
   leaseEpoch: string
   draft: string
+  /** 停下那一章最后一次的回复（自动生成没写成的那份），不在正文里，只在「原始候选」里给作者看和复制；没有回复时为 null。 */
+  rejectedReply: string | null
   completeChapters: number[]
   writeState: { kind: 'ready' } | { kind: 'blocked'; reason: 'in-flight' | 'source-changed' | 'author-saved' | 'source-invalid' }
   saved: PlotOutlineAuthorEditReceipt | null
@@ -366,18 +368,20 @@ export function plotOutlineSourceInvalid(progress: Pick<PlotOutlineProgress, 'cu
   return progress.cursor.kind === 'stopped' && progress.cursor.reason === 'source-invalid'
 }
 
-export function plotOutlineRecoveryDraft(progress: PlotOutlineProgress, failedCandidate?: string): string {
-  // 来源无效时拼不回正式大纲，只留已生成的章节与失败的候选供复制。
-  if (plotOutlineSourceInvalid(progress)) return joinPlotOutlineEntries(progress.composition?.text ?? '', failedCandidate ?? '')
+/** 恢复稿正文只有连续写好的章节，停下那章的回复不进正文；一章都没写好时留一个空章标题供作者补写。 */
+export function plotOutlineRecoveryDraft(progress: PlotOutlineProgress): string {
+  // 来源无效时拼不回正式大纲，只留已生成的章节供复制。
+  if (plotOutlineSourceInvalid(progress)) return progress.composition?.text ?? ''
   const completed = progress.composition?.chapters?.length ?? 0
   const chapter = progress.range.from + completed
   let body = progress.composition?.text ?? ''
+  let to = Math.min(chapter, progress.range.to)
   if (progress.cursor.kind === 'accept') body = joinPlotOutlineEntries(body, progress.cursor.text)
   else if (progress.cursor.kind !== 'complete') {
-    const heading = progress.sourceExpected.writingLanguage === 'en-US' ? `## Chapter ${chapter}: ` : `## 第${chapter}章：`
-    body = joinPlotOutlineEntries(body, failedCandidate?.trim() || `${heading}\n`)
+    if (completed) to = chapter - 1
+    else body = progress.sourceExpected.writingLanguage === 'en-US' ? `## Chapter ${chapter}:` : `## 第${chapter}章：`
   }
-  return renderPlotOutlineRange(body, { from: progress.range.from, to: Math.min(chapter, progress.range.to) }, progress.sourceExpected)
+  return renderPlotOutlineRange(body, { from: progress.range.from, to }, progress.sourceExpected)
 }
 
 /** 开头的第 0 章序章条目（到下一章标题或末尾的覆盖说明为止）；没有序章时为空串。 */

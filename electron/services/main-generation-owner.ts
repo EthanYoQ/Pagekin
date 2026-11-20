@@ -916,7 +916,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const currentAttempts = new Set(cursor.kind === 'request' || cursor.kind === 'stopped'
       ? runAttempts(run.runId).filter(attempt => attempt.purpose?.startsWith(`plot-outline:chapter:${cursor.chapterNumber}:`)).map(attempt => attempt.attemptId) : [])
     const latest = [...(viewOf(run).candidates ?? [])].reverse().find(candidate => currentAttempts.has(candidate.attemptId))
-    let draft = plotOutlineRecoveryDraft(outline, latest?.text)
+    let draft = plotOutlineRecoveryDraft(outline)
     let writeState: PlotOutlineRecovery['writeState'] = { kind: 'blocked', reason: 'source-changed' }
     try {
       if (plotOutlineSourceInvalid(outline)) writeState = { kind: 'blocked', reason: 'source-invalid' }
@@ -930,7 +930,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
         writeState = projectGenerationInFlight() ? { kind: 'blocked', reason: 'in-flight' } : { kind: 'ready' }
       }
     } catch { /* Frozen proposals remain readable when current sources are unavailable. */ }
-    return { sourceHandle: handleOf(run), leaseEpoch: deps.epoch, draft, inFormalOutline: plotOutlineBatchInFormalOutline(outline),
+    return { sourceHandle: handleOf(run), leaseEpoch: deps.epoch, draft, rejectedReply: latest?.text.trim() || null, inFormalOutline: plotOutlineBatchInFormalOutline(outline),
       completeChapters: [...(outline.composition?.chapters?.map(chapter => chapter.chapterNumber) ?? []),
         ...(outline.cursor.kind === 'accept' ? [outline.cursor.chapterNumber] : [])],
       writeState, saved }

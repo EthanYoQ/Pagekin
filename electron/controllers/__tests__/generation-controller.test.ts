@@ -893,7 +893,8 @@ describe('chapter outline command through registered main IPC and formal CAS', (
     const context = await invoke('generation:read-context', { handle })
     expect(context.plotOutlineRecovery).toMatchObject({ sourceHandle: handle, leaseEpoch: session.leaseId,
       completeChapters: [], writeState: { kind: 'ready' } })
-    expect(context.plotOutlineRecovery!.draft).toContain('FAILED-CANDIDATE')
+    expect(context.plotOutlineRecovery!.rejectedReply).toContain('FAILED-CANDIDATE')
+    expect(context.plotOutlineRecovery!.draft).not.toContain('FAILED-CANDIDATE')
     const synopsis = renderPlotOutlineSynopsis('## 第1章：作者补齐\n作者核对证词，归还钥匙。', 1, context.plotOutline!.sourceExpected)
     const payload = { synopsis, expected: context.plotOutline!.sourceExpected,
       authorRecovery: { sourceHandle: handle, leaseEpoch: session.leaseId, operationId: 'author-recovery-1', committedRange: { from: 1, to: 1 } } }

@@ -329,7 +329,7 @@ describe('chapter outline main authority', () => {
     expect(resumed.plotOutline!.cursor).toEqual({ kind: 'stopped', chapterNumber: 1, reason: 'unknown-completion' })
     await expect(owner.execute({ handle: resumed.handle, invocationNonce: 'never-replay', task: last })).rejects.toThrow('GENERATION_DISPATCH_PLOT_OUTLINE_CURSOR')
     expect(new GenerationRunRepository(() => f.db).budget(run.handle.rootActionId).attempts).toEqual(before.attempts)
-    expect(owner.readContext(resumed.handle).plotOutlineRecovery!.draft).toContain(outlineEntry(1))
+    expect(owner.readContext(resumed.handle).plotOutlineRecovery).toMatchObject({ rejectedReply: outlineEntry(1), draft: expect.not.stringContaining('线索1') })
     expect(dispatch).toHaveBeenCalledTimes(before.attempts.length)
   })
 
@@ -4025,14 +4025,14 @@ it('uses one OpenCode conversation header across attempts and changes it for ind
  expect(fetch.mock.calls.map(([,options])=>(options.headers as Record<string,string>)['x-opencode-session']))
    .toEqual([run.handle.rootActionId,run.handle.rootActionId,other.handle.rootActionId])
 })
-it('keeps the next plot-outline recovery chapter empty instead of duplicating the accepted chapter',async()=>{
+it('恢复稿只含一次已接受的第 1 章，不再预留第 2 章的空标题',async()=>{
  const f=fixture(async(_r,o)=>{o.onVisible({kind:'delta',text:outlineEntry(1)});return {finishReason:'stop',usage:null}})
  const run=f.owner.begin(outlineSelection(f,2))
  await f.owner.execute({handle:run.handle,invocationNonce:'first',task:outlineTask(run.plotOutline!)})
  acceptOutline(f.owner,run.handle)
  const recovery=f.owner.readContext(run.handle).plotOutlineRecovery!
  expect(recovery.draft.split(outlineEntry(1))).toHaveLength(2)
- expect(recovery.draft).toContain('## 第2章：')
+ expect(recovery.draft).not.toContain('## 第2章')
 })
 
 describe('next chapter after editing a reviewed batch draft (#438)', () => {

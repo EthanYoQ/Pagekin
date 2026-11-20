@@ -576,6 +576,11 @@
   width: 72px;
 }
 
+/* 恢复稿页的提示条横跨整页，说明文字跟着用满宽度，不在半页处折行。 */
+.stage-bp-recovery .pi-notice-text {
+  max-width: none;
+}
+
 .stage-bp-recovery-error {
   flex: none;
   margin: var(--s-3) 28px 0;

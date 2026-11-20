@@ -184,10 +184,12 @@ export function planningTitle(recovery: Pick<GenerationRecoveryContext, 'plotOut
     : t(`蓝图恢复稿 · 第 ${chapters} 章`, `Blueprint recovery draft · ch. ${chapters}`)
 }
 
-/** 时间按作者电脑的时区。 */
-export function planningMeta(recovery: Pick<GenerationRecoveryContext, 'planningContinuation' | 'planningDraft'>, locale: Locale): string {
+/** 时间按作者电脑的时区。来源变了或无效的大纲恢复稿要从本批起始章重新生成，不列「缺第几章」，免得和说明对不上。 */
+export function planningMeta(recovery: Pick<GenerationRecoveryContext, 'planningContinuation' | 'planningDraft' | 'plotOutlineRecovery'>, locale: Locale): string {
   const t = lang(locale)
-  const remaining = recovery.planningContinuation?.remainingRange
+  const writeState = recovery.plotOutlineRecovery?.writeState
+  const regenerate = writeState?.kind === 'blocked' && (writeState.reason === 'source-changed' || writeState.reason === 'source-invalid')
+  const remaining = regenerate ? undefined : recovery.planningContinuation?.remainingRange
   const createdAt = recovery.planningDraft?.createdAtMs
   return [
     remaining && t(`缺第 ${chapterSpan(remaining)} 章`, `Missing ch. ${chapterSpan(remaining)}`),
