@@ -76,7 +76,6 @@ async function restore(archivePath: string) {
 }
 
 interface SavedProof { runId: string; proofKind: string; proofHash?: string; receiptHash: string; version?: unknown; hasHistory: boolean }
-/** 每条已保存的审修运行：读出的证明态、证明给出的哈希、收据里的哈希。 */
 function savedProofs(db: import('better-sqlite3').Database): SavedProof[] {
   const rows = db.prepare(`SELECT r.run_id,r.binding_json,json_extract(t.usage_receipt_json,'$.reviewRevisionEffect.contextHash') AS receipt_hash
     FROM generation_runs r JOIN generation_attempts t ON t.run_id=r.run_id

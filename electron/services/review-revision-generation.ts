@@ -50,7 +50,7 @@ export class ReviewRevisionGeneration {
     if (!isDeepStrictEqual(context, current.frozen)) throw new Error('GENERATION_REVIEW_CONTEXT_CHANGED')
     return current.materials
   }
-  /** 封存的证明只出现在导出存档里，它的哈希只和收据比（ADR-0031 决定 7）。 */
+  /** contextHash 是收据里应记的哈希：封存的证明取原 v1 哈希，不能重算，只和收据比（ADR-0031 决定 7）。 */
   private proof(run: DurableGenerationRun): { context: ReviewRevisionContext; contextHash: string } {
     const proof = readReviewProof(run.binding.sourceManifest, textHash)
     if (proof.kind === 'absent' || proof.kind === 'unproven' || proof.context.operation !== run.binding.sourceManifest.operation

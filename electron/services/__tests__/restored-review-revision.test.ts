@@ -26,7 +26,7 @@ import { countDraftUnits } from '../../../src/shared/draft-units'
 import { readReviewProof } from '../../../src/shared/review-proof'
 import { inspectM03ReviewCycles } from '../../migrations/m03-review-cycle'
 
-/** 打开时置真：开跑冻结成库版本 12 之前的 v1 全文证明，模拟升级前的书童写下的审修循环。 */
+/** 置真后，新开的审修运行冻结成库版本 12 之前的 v1 全文证明，模拟升级前的书童写下的审修循环。 */
 let freezeAsV1 = false
 vi.mock('../review-revision-context', async importOriginal => {
   const actual = await importOriginal<typeof import('../review-revision-context')>()
