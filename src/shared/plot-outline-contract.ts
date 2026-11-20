@@ -369,6 +369,11 @@ export function plotOutlineSourceInvalid(progress: Pick<PlotOutlineProgress, 'cu
   return progress.cursor.kind === 'stopped' && progress.cursor.reason === 'source-invalid'
 }
 
+/** 旧大纲里被第 chapter 章从中间切开的合并条目（如「第4–5章」）。 */
+function mergedEntryCutAt(synopsis: string, chapter: number) {
+  return headings(synopsis).find(entry => entry.from <= chapter && entry.to > chapter)
+}
+
 /** 恢复稿正文只放连续写好的章节；停下那章的回复不进正文，见 rejectedReply。 */
 export function plotOutlineRecoveryDraft(progress: PlotOutlineProgress): string {
   // 来源无效时拼不回正式大纲，只留已生成的章节供复制。
@@ -383,8 +388,7 @@ export function plotOutlineRecoveryDraft(progress: PlotOutlineProgress): string 
     if (completed) to = chapter - 1
     else body = heading
   }
-  // 旧大纲的合并条目（如「第4–5章」）不能从中间截断：写到组尾，停下那章留空标题给作者补。
-  const group = headings(progress.sourceExpected.synopsis).find(entry => entry.from <= to && entry.to > to)
+  const group = mergedEntryCutAt(progress.sourceExpected.synopsis, to)
   if (group) {
     if (completed && (progress.cursor.kind === 'stopped' || progress.cursor.kind === 'request')) body = joinPlotOutlineEntries(body, heading)
     to = Math.min(group.to, progress.range.to)

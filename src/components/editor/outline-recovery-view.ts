@@ -38,8 +38,9 @@ export function outlineRecoveryView(
     return view('blocked', 'warn', text('恢复内容暂时无法读取', 'Recovery content is unavailable'), text('请重新打开恢复稿。', 'Reopen the recovery draft.'))
   }
   const blocked = candidate.writeState.kind === 'blocked' ? candidate.writeState.reason : null
-  // 已续写过的运行主进程也报 source-changed；回包丢失待重发的保存仍要能重发。
-  const sourceBlocked = (blocked === 'source-changed' || blocked === 'source-invalid') && continuation?.state !== 'continued' && !(snapshot === 'pending' && candidate.saved)
+  const alreadyContinued = continuation?.state === 'continued'
+  const resendingSave = snapshot === 'pending' && Boolean(candidate.saved)
+  const sourceBlocked = (blocked === 'source-changed' || blocked === 'source-invalid') && !alreadyContinued && !resendingSave
   const saved = snapshot === 'saved' || snapshot !== 'pending' && (candidate.saved || blocked === 'author-saved')
   const restart = candidate.saved?.remainingRange?.from
   if (sourceBlocked && saved && restart) {
@@ -54,7 +55,7 @@ export function outlineRecoveryView(
   if (saved) {
     return view('saved', 'ok', text('本次恢复已保存，后续修改仅供复制。', 'This recovery is saved. Further edits can only be copied.'), null)
   }
-  if (continuation?.state === 'continued') {
+  if (alreadyContinued) {
     return view('blocked', 'info', text('这批大纲已经接着生成过', 'This outline batch was already continued'), continuable
       ? text('不能再保存。点「继续生成缺少的章节」回到那一次生成。', 'It can no longer be saved. Click “Generate remaining chapters” to go back to that run.')
       : text('不能再保存。', 'It can no longer be saved.'))
