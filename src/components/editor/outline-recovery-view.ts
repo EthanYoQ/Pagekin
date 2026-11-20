@@ -38,16 +38,21 @@ export function outlineRecoveryView(
     return view('blocked', 'warn', text('恢复内容暂时无法读取', 'Recovery content is unavailable'), text('请重新打开恢复稿。', 'Reopen the recovery draft.'))
   }
   const blocked = candidate.writeState.kind === 'blocked' ? candidate.writeState.reason : null
+  // 已续写过的运行主进程也报 source-changed；回包丢失待重发的保存仍要能重发。
+  if ((blocked === 'source-changed' || blocked === 'source-invalid') && continuation?.state !== 'continued' && !(snapshot === 'pending' && candidate.saved)) {
+    return view('blocked', 'warn', text('不能保存，也不能继续生成', 'This draft cannot be saved or continued'),
+      outlineSourceInvalidNote(recovery, locale) ?? outlineSourceChangedNote(recovery, locale))
+  }
   if (snapshot === 'saved' || snapshot !== 'pending' && (candidate.saved || blocked === 'author-saved')) {
     return view('saved', 'ok', text('本次恢复已保存，后续修改仅供复制。', 'This recovery is saved. Further edits can only be copied.'), null)
+  }
+  if (continuation?.state === 'continued') {
+    return view('blocked', 'info', text('这批大纲已经接着生成过', 'This outline batch was already continued'),
+      text('不能再保存。点「继续生成缺少的章节」接回那一次生成。', 'It can no longer be saved. Click “Generate remaining chapters” to return to that run.'))
   }
   if (blocked === 'in-flight' && !candidate.saved) {
     return view('waiting', 'info', text('大纲还在生成', 'The outline is still generating'),
       text('生成结束后才能保存或继续。恢复稿可以先编辑、复制。', 'Save or continue after it finishes. You can edit or copy this draft meanwhile.'))
-  }
-  if (blocked && !candidate.saved) {
-    return view('blocked', 'warn', text('不能保存，也不能继续生成', 'This draft cannot be saved or continued'),
-      outlineSourceInvalidNote(recovery, locale) ?? outlineSourceChangedNote(recovery, locale))
   }
 
   const done = candidate.completeChapters

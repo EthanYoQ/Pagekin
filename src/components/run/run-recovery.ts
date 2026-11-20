@@ -189,6 +189,7 @@ export function planningMeta(recovery: Pick<GenerationRecoveryContext, 'planning
   const t = lang(locale)
   const writeState = recovery.plotOutlineRecovery?.writeState
   const regenerate = writeState?.kind === 'blocked' && (writeState.reason === 'source-changed' || writeState.reason === 'source-invalid')
+    && recovery.planningContinuation?.state !== 'continued'
   const remaining = regenerate ? undefined : recovery.planningContinuation?.remainingRange
   const createdAt = recovery.planningDraft?.createdAtMs
   return [
