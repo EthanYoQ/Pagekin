@@ -27,7 +27,15 @@ export function registerConfigController() {
         ),
       }
     } catch (error) {
-      return { success: false, error: String(error) }
+      console.error('[Config] 全局配置写入失败:', error)
+      return {
+        success: false,
+        error: mainText(
+          app.getLocale(),
+          '设置没能写进配置文件。请确认磁盘还有空间、应用数据目录可写，再重试。',
+          'The setting could not be written to the config file. Make sure the disk has space and the app data folder is writable, then try again.',
+        ),
+      }
     }
   })
 }

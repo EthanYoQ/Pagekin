@@ -258,38 +258,42 @@ async function fetchGitHubWritingSkill(sourceUrl: string): Promise<{
   raw: string
   inspection: RemoteWritingSkillInspection
 }> {
-  const location = parseGitHubWritingSkillUrl(sourceUrl)
+  const location = parseGitHubWritingSkillUrl(sourceUrl, text)
+  const githubGet = async (url: string, accept: string, notFound: Error) => {
+    let response: Response
+    try {
+      response = await fetch(url, { headers: { Accept: accept, 'User-Agent': 'AI-Novel-Writer' }, redirect: 'error', signal: AbortSignal.timeout(10_000) })
+    } catch {
+      throw new Error(text('连不上 GitHub，请检查网络后重试。', 'Could not reach GitHub. Check your network and try again.'))
+    }
+    if (response.status === 404) throw notFound
+    if (!response.ok) throw new Error(text('GitHub 暂时拒绝了请求，请稍后重试。', 'GitHub refused the request for now. Try again later.'))
+    return response
+  }
+  const tooLarge = () => new Error(text('这个 SKILL.md 超过 64 KiB，不能安装。', 'This SKILL.md is larger than 64 KiB and cannot be installed.'))
   let ref = location.ref
   if (!ref) {
-    const repositoryResponse = await fetch(
+    const repositoryResponse = await githubGet(
       `https://api.github.com/repos/${encodeURIComponent(location.owner)}/${encodeURIComponent(location.repo)}`,
-      {
-        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'AI-Novel-Writer' },
-        redirect: 'error',
-        signal: AbortSignal.timeout(10_000),
-      },
+      'application/vnd.github+json',
+      new Error(text('GitHub 上找不到这个仓库。请检查地址，并确认仓库是公开的。', 'This repository was not found on GitHub. Check the URL and make sure the repository is public.')),
     )
-    if (!repositoryResponse.ok) throw new Error(`GitHub repository lookup failed (${repositoryResponse.status})`)
     const repository = await repositoryResponse.json() as { default_branch?: unknown }
     if (typeof repository.default_branch !== 'string' || !WRITING_SKILL_NAME_PATTERN.test(repository.default_branch)) {
-      throw new Error('GitHub returned an unsupported default branch name')
+      throw new Error(text('读不出这个仓库的默认分支，请改用带分支的地址，例如 …/tree/main。', "Could not read this repository's default branch. Use a URL with a branch, such as …/tree/main."))
     }
     ref = repository.default_branch
   }
 
   const resolvedUrl = githubRawUrl(location.owner, location.repo, ref, location.path)
-  const response = await fetch(resolvedUrl, {
-    headers: { Accept: 'text/plain', 'User-Agent': 'AI-Novel-Writer' },
-    redirect: 'error',
-    signal: AbortSignal.timeout(10_000),
-  })
-  if (!response.ok) throw new Error(`SKILL.md download failed (${response.status})`)
+  const response = await githubGet(resolvedUrl, 'text/plain', new Error(text(
+    '这个地址下没有 SKILL.md。请检查仓库、分支和路径。',
+    'No SKILL.md was found at this URL. Check the repository, branch, and path.',
+  )))
   const declaredLength = Number(response.headers.get('content-length') ?? 0)
-  if (declaredLength > MAX_WRITING_SKILL_BYTES) throw new Error('SKILL.md is larger than 64 KiB')
+  if (declaredLength > MAX_WRITING_SKILL_BYTES) throw tooLarge()
   const raw = await response.text()
-  if (Buffer.byteLength(raw, 'utf8') > MAX_WRITING_SKILL_BYTES) {
-    throw new Error('SKILL.md is larger than 64 KiB')
-  }
+  if (Buffer.byteLength(raw, 'utf8') > MAX_WRITING_SKILL_BYTES) throw tooLarge()
   const inspected = inspectWritingSkillMarkdown(raw)
   const contentSha256 = createHash('sha256').update(raw, 'utf8').digest('hex')
   const publicInspection = {
