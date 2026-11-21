@@ -109,11 +109,11 @@ describe('MCP 连接失败的说明', () => {
   it.each([
     ['zh-CN', '项目已切换或重新打开', '连接失败'],
     ['en-US', 'The project was switched or reopened', 'Connection failed'],
-  ] as const)('%s 界面：登记的码换成说明，未登记的原文保留，没有原因时用兜底', async (locale, stale, fallback) => {
+  ] as const)('%s 界面：登记的码换成说明，未登记的码和没有原因时都用这里的兜底', async (locale, stale, fallback) => {
     useLocaleStore.setState({ locale })
     for (const [error, shown] of [
       ["Error invoking remote method 'mcp:connect': Error: PROJECT_SESSION_STALE", expect.stringContaining(stale)],
-      ['SOMETHING_NEW_FROM_MAIN', 'SOMETHING_NEW_FROM_MAIN'],
+      ['SOMETHING_NEW_FROM_MAIN', fallback],
       [undefined, fallback],
     ] as const) {
       mocks.invoke.mockResolvedValue({ success: false, error })

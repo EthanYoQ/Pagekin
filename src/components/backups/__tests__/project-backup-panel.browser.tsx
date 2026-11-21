@@ -269,7 +269,8 @@ describe('ProjectBackupPanel', () => {
     await fill('密码或应用密钥', 'replacement-secret')
     await act(async () => button('连接并绑定').click())
     expect(invoke).toHaveBeenCalledWith('cloud-backup:clear-credential', rotatedAccount.accountId)
-    expect(container.textContent).toContain('CLOUD_BACKUP_BINDING_CONFLICT')
+    expect(container.textContent).not.toContain('CLOUD_BACKUP_BINDING_CONFLICT')
+    expect(container.textContent).toContain('出了意外问题')
   })
 
   it('exports and restores a local copy with exact payloads without opening it', async () => {
