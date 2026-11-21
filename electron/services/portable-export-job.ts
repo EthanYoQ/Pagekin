@@ -97,10 +97,7 @@ export function rehydrateExportError(error: SerializedExportError): Error {
     case 'archive-service': return new ProjectArchiveServiceError(error.code)
     case 'archive': return new PortableProjectArchiveError(error.code)
     case 'schema': return new SchemaMigrationError(error.code, error.damagedReviewCycle)
-    case 'error': {
-      const { kind: _kind, message, ...fields } = error
-      return Object.assign(new Error(message), fields)
-    }
+    case 'error': return Object.assign(new Error(error.message), { code: error.code, path: error.path })
   }
 }
 

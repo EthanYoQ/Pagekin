@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -60,7 +61,62 @@ async function restoreAfterArchiveMoved({ app, page, diagnostics }, labels, arch
   return shown
 }
 
+/** 同步盘、杀毒软件或权限让文件能看见、读不出内容。只拒「读数据」，属性照常可读。 */
+function denyRead(file) {
+  execFileSync('icacls', [file, '/deny', '*S-1-1-0:(RD)'], { stdio: 'ignore' })
+  return () => execFileSync('icacls', [file, '/remove:d', '*S-1-1-0'], { stdio: 'ignore' })
+}
+
 export const ERRL2_SCENARIOS = {
+  'errl2-source-unreadable': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1) }, run: async context => {
+    assert.equal(process.platform, 'win32', '这个场景用 icacls 拒读，只在 Windows 上跑')
+    const { page, roots, shoot, diagnostics } = context
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    await openBackup(page, ZH)
+    const archive = path.join(roots.projects, '好的备份.ainovel')
+    await exportTo(context, ZH, archive)
+    assert.match(await notice(page, 'status'), /^本地存档已导出：/u)
+
+    const manifest = path.join(roots.projects, BOOK, '.ai-novel', 'project.json')
+    const logged = diagnostics.length
+    let allow = denyRead(manifest)
+    const blocked = path.join(roots.projects, '读不了作品.ainovel')
+    try {
+      await exportTo(context, ZH, blocked)
+      const zh = await notice(page, 'alert')
+      assert.equal(zh, '作品没有改动。作品文件读不了，可能正被同步盘或杀毒软件占用。请稍后再点「导出本地存档」。')
+      await mainLogged(diagnostics, logged, /export failed[\s\S]*EPERM/u)
+      await shoot('errl2-5-export-source-unreadable-zh')
+    } finally { allow() }
+    assert.equal(fs.existsSync(blocked), false, '没有写出存档')
+
+    const target = path.join(roots.temp, '恢复到这里')
+    fs.mkdirSync(target)
+    allow = denyRead(archive)
+    try {
+      await context.app.evaluate(({ dialog }, [file, folder]) => {
+        let calls = 0
+        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [++calls === 1 ? file : folder] })
+      }, [archive, target])
+      await stage.root(page).getByRole('button', { name: ZH.restore, exact: true }).click()
+      const restore = await notice(page, 'alert')
+      assert.equal(restore, '没有新建副本。所选存档读不了，可能没有权限或正被占用。请换一个存档，再点「从本地存档恢复副本」。')
+      await shoot('errl2-6-restore-archive-unreadable-zh')
+    } finally { allow() }
+    assert.deepEqual(fs.readdirSync(target), [], '恢复位置没有建出副本')
+
+    await switchToEnglish(page)
+    allow = denyRead(manifest)
+    try {
+      await exportTo(context, EN, blocked)
+      const en = await notice(page, 'alert')
+      assert.equal(en, 'Your book is unchanged. Some book files cannot be read; a sync or antivirus app may be using them. Wait a moment, then click Export local archive again.')
+      await shoot('errl2-7-export-source-unreadable-en')
+    } finally { allow() }
+    assert.equal(fs.existsSync(blocked), false, '没有写出存档')
+    return { blocked: path.basename(blocked) }
+  } },
   'errl2-export-inside-source': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1) }, run: async context => {
     const { page, roots, shoot } = context
     await stage.openAfterRestart(page, BOOK)
