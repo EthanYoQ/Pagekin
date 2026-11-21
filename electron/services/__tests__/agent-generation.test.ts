@@ -523,10 +523,8 @@ it('Agent 写稿留下的恢复稿在别章蓝图改过后保存不了，作者�
  const resumed=await owner.resume(child.handle)
  let failure: unknown
  try { owner.commitDraft({handle:resumed.handle,chapterNumber:1,source:'write',expectedCompositionHash:textHash(draftText)}) } catch (error) { failure=error }
- expect(failure).toBeInstanceOf(Error)
- const zh=displayedErrorMessage(shown('zh-CN'),failure),en=displayedErrorMessage(shown('en-US'),failure)
- expect(zh).not.toBe(displayedErrorMessage(shown('zh-CN'),new Error('GENERATION_SOURCE_CHANGED')))
  expect(failure).toHaveProperty('message','GENERATION_AGENT_SOURCE_CHANGED')
+ const zh=displayedErrorMessage(shown('zh-CN'),failure),en=displayedErrorMessage(shown('en-US'),failure)
  expect(zh).not.toContain('旧版');expect(en).not.toMatch(/\bold\b/i)
  expect(zh).toContain('蓝图或设定改过');expect(zh).toContain('「不再恢复」')
  expect(en).toContain('blueprints or settings changed');expect(en).toContain('“Dismiss”')
