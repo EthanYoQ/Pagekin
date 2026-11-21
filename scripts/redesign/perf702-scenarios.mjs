@@ -946,7 +946,6 @@ async function exportThenClose(context) {
   return result
 }
 
-/** 导出目标被别的程序打开（#702）：提示说清原因、原文件不变；关掉后再导出成功。 */
 async function exportHeldTarget(context) {
   const { app, page, roots, shoot } = context
   await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })

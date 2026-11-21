@@ -139,9 +139,6 @@ export function registerExternalFileGrantController(
       try {
         const target = resolveGrantPath(grants, event, grantId, 'write', relativePath)
         resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
-        // writeTextAtomically holds a root-relative Windows handle chain through
-        // temporary-file creation and replacement. Revalidate the grant at the
-        // ready phase.
         await fileSystem.writeTextAtomically(target, content, () => {
           resolveGrantPath(grants, event, grantId, 'write', relativePath, false)
           resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
