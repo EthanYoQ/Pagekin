@@ -191,10 +191,12 @@ function addDamagedOrphanAvatar(projectRoot) {
   })
 }
 
-/** 每章约 3 MiB，三章定稿合起来超过审修上下文的 8 MiB 上限。 */
-function hugeChapter(number) {
+const COPIES_FOR_3_MIB = 340
+const COPIES_OVER_REVIEW_LIMIT = 960
+
+function hugeChapter(number, copies = COPIES_FOR_3_MIB) {
   const body = chapterText(number)
-  return [body, ...Array.from({ length: 340 }, () => body.slice(chapterMarker(number).length))].join('\n\n')
+  return [body, ...Array.from({ length: copies }, () => body.slice(chapterMarker(number).length))].join('\n\n')
 }
 
 Object.assign(CCH_SCENARIOS, {
@@ -235,7 +237,7 @@ Object.assign(CCH_SCENARIOS, {
         chapters: [{ chapterNumber: number, title: chapterTitle(number), content, wordCount: countUnits(content) }] }, projectPath, session)
       assert.equal(imported.success, true, imported.error)
     }
-    const draft = chapterText(4)
+    const draft = hugeChapter(4, COPIES_OVER_REVIEW_LIMIT)
     const created = await invoke(page, 'db:draft-create', { chapterNumber: 4, version: 1, source: 'write', content: draft, wordCount: countUnits(draft) }, projectPath, session)
     assert.equal(created.success, true, created.error)
     await reload()
@@ -244,7 +246,7 @@ Object.assign(CCH_SCENARIOS, {
     await stage.openFromLibrary(page, BOOK)
     await chapterView.open(page, 4)
     await chapterView.view(page).getByRole('button', { name: 'AI 审稿', exact: true }).click()
-    const shown = page.getByText('本章正文和附加修稿要求合计超过上限', { exact: false }).first()
+    const shown = page.getByText('本章正文连同你填的要求太长', { exact: false }).first()
     await shown.waitFor({ state: 'visible', timeout: 120_000 })
     await shoot('ec-2-review-overflow')
     return { text: (await shown.innerText()).trim() }

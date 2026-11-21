@@ -12,6 +12,8 @@ import { chromeContrastFailures, msFromClickToProse, seedStageSample } from './s
 import { countUnits, STAGE_SAMPLE } from './stage-sample.mjs'
 import { FAKE_MODEL, FIXTURE_ENDPOINT_MODELS } from './fake-model.mjs'
 
+const EMBEDDING_MODEL = Object.freeze({ ...FAKE_MODEL, id: 'refs-embedding', name: '驱动检索模型', modelName: 'text-embedding-3-small', purposes: ['embedding'] })
+
 async function openFixtureModelSuggestions({ page, fake }, locale) {
   await stage.openSettings(page)
   const english = locale === 'en-US'
@@ -353,6 +355,9 @@ export const REFS_SCENARIOS = {
     assert.match(saved.toast, /The project copy was changed elsewhere/)
     englishOnly(saved, 'toast')
 
+    // #520 起没有检索模型时设置页不读登记文件，要先配一个。
+    assert.equal((await context.invoke(page, 'llm:save-model', EMBEDDING_MODEL)).success, true)
+    assert.equal((await context.invoke(page, 'llm:set-default-embedding-model', EMBEDDING_MODEL.id)).success, true)
     fs.writeFileSync(path.join(context.samplePath, '.ai-novel', 'embedding-spaces.json'), '{ "damaged": ')
     await stage.root(page).getByRole('button', { name: 'Settings', exact: true }).first().click()
     await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Retrieval model', exact: true }).click()

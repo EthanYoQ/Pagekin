@@ -60,6 +60,7 @@ fnm exec --using=22.23.1 -- node scripts/redesign/drive.mjs --scenario <名称> 
 - 0：全部通过。
 - 1：有场景失败，或会话结束检查没过。检查三项：主进程没有放出外部请求（`externalRequests`），应用关闭后没有残留进程（`residualProcesses`），真实配置目录没有新写入（`externalWrites`）。
 - 2：参数错误、场景名不对，或目标工作树没构建。
+- 3：未跑。场景声明的前置（夹具环境变量、主题）不齐，没有启动应用；stderr 写了缺什么、怎么设。哪些场景有前置见 `references/driver.md`。
 
 退出码 1 先看结果 JSON 的 `error`，再看 `.failure.png` 和 `.console.log`。不要只凭退出码 0 宣称验证通过，还要看截图。
 

@@ -19,6 +19,9 @@ import * as stage from './pages/stage.mjs'
 import { BOOK, buildByReviewCycle, chapterMarker, installLedger, installReplies, installReviewCycleReplies, reuseBuilt, reviewCycleChapter, RUNNING } from './perf702-scenarios.mjs'
 import { reviewReviseMerge, writeChapter } from './real-scenarios.mjs'
 
+const NEEDS_UPGRADABLE = { env: { PERF702_FIXTURE: `指向库版本 10 的 112 章夹具目录（里面有 projects/${BOOK}）。当前构建造出的是新库版本，要在库版本 10 的旧构建上用 --app-root 跑 perf702-112，加 PERF702_SAVE 存档，取 <SAVE>/112；定稿章数不是 112 时同时设 PERF702_FINALIZED` } }
+const NEEDS_SEALABLE = { env: { PERF702_FIXTURE: `指向库版本 10、审修证明是 v1 的夹具目录（里面有 projects/${BOOK}）。批量造的书没有审修运行，要用审修循环造：在库版本 10 的旧构建上用 --app-root 跑 perf702-review-cycle，加 PERF702_SAVE 存档；再把 PERF702_FINALIZED 设成它的定稿章数` } }
+
 const fixtureBook = () => path.join(process.env.PERF702_FIXTURE ?? assert.fail('PERF702_FIXTURE 未设置'), 'projects', BOOK)
 
 /** 库版本和每条审修证明的版本与字节数（只读）。 */
@@ -136,7 +139,7 @@ export const BS702_SCENARIOS = {
     await context.shoot('bs702-cycle12-restored')
     return { chapters: context.chapters.length, written, restored }
   } },
-  'bs702-upgrade-open': { model: true, shell: 'stage', setup: async context => {
+  'bs702-upgrade-open': { model: true, shell: 'stage', requires: NEEDS_UPGRADABLE, setup: async context => {
     installReplies(context.fake)
     await copyFixtureThenRevert(context)
   }, run: async context => {
@@ -162,7 +165,7 @@ export const BS702_SCENARIOS = {
     return { upgrade, reviewMs, proofs: after }
   } },
   // 只量数：库版本 10 的书从书房预览、打开（升级），重启后再预览、打开同一本（已是 12，对照）。
-  'bs702-upgrade-perf': { model: true, shell: 'stage', setup: async context => {
+  'bs702-upgrade-perf': { model: true, shell: 'stage', requires: NEEDS_UPGRADABLE, setup: async context => {
     installReplies(context.fake)
     await copyFixtureThenRevert(context)
   }, run: async context => {
@@ -175,7 +178,7 @@ export const BS702_SCENARIOS = {
     assertResponsive({ ...upgrade, currentPreviewBlockedMaxMs: current.previewBlockedMaxMs, currentOpenBlockedMaxMs: current.openBlockedMaxMs })
     return measured
   } },
-  'bs702-seal': { model: true, shell: 'stage', setup: async context => {
+  'bs702-seal': { model: true, shell: 'stage', requires: NEEDS_SEALABLE, setup: async context => {
     installReplies(context.fake)
     await reuseBuilt(context)
     await context.restart()
@@ -189,7 +192,7 @@ export const BS702_SCENARIOS = {
     installReplies(context.fake)
     const written = proofs(source)
     assert.deepEqual([written.userVersion, written.kinds[2]], [12, 6], JSON.stringify(written))
-    assert.ok(written.kinds.sealed > 0, `打开时已整理源库：${JSON.stringify(written)}`)
+    assert.ok(written.kinds.sealed > 0, `打开时没有封存任何老证明：PERF702_FIXTURE 要指向审修循环造的书，批量造的书没有审修运行。${JSON.stringify(written)}`)
     const v1Total = (kinds) => (kinds.sealed ?? 0) + (kinds[1] ?? 0)
     const first = await exportAndRestore(context, source, 'bs702-seal-1')
     const second = await exportAndRestore(context, first, 'bs702-seal-2')
@@ -213,7 +216,7 @@ export const BS702_SCENARIOS = {
     assert.equal(after.kinds[2], restored[1].kinds[2] + 1, '重新审稿新写了一条 v2 证明')
     return { written, restored, after }
   } },
-  'real-bs702-112': { real: true, setup: async context => { await copyFixtureThenRevert(context, { real: true }) }, run: async context => {
+  'real-bs702-112': { real: true, requires: NEEDS_UPGRADABLE, setup: async context => { await copyFixtureThenRevert(context, { real: true }) }, run: async context => {
     const upgrade = await upgradeFromLibrary(context, 'real-bs702-upgrade')
     const { page } = context, next = Number(process.env.PERF702_FINALIZED ?? 112) + 1, confirmations = []
     const write = await writeChapter(page, next, confirmations)

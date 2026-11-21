@@ -40,6 +40,8 @@ const TIMEOUT = 60_000
 const VIEWPORT = { width: 1440, height: 900 }
 const THEMES = ['light', 'dark']
 const SHELLS = ['writer', 'stage']
+/** 场景声明的前置不齐，没有启动应用：与失败（1）、参数错误（2）分开，批跑时归「未跑」。 */
+const NOT_RUN = 3
 const ROOT_NAMES = ['legacy', 'canonical', 'userData', 'home', 'appData', 'localAppData', 'temp', 'projects']
 const SCENARIOS = { ...BASELINE_SCENARIOS, ...EXTRA_SCENARIOS, ...STAGE_SCENARIOS, ...RUN_SCENARIOS, ...ARCH_SCENARIOS, ...BLUEPRINT_SCENARIOS, ...CHAPTER_SCENARIOS, ...REFS_SCENARIOS, ...VISUAL_SCENARIOS, ...X1_SCENARIOS, ...X2_SCENARIOS, ...RDX3_SCENARIOS, ...RD10_SCENARIOS, ...README_SCENARIOS, ...CONTRAST_SCENARIOS, ...F491_SCENARIOS, ...F484_SCENARIOS, ...ST504_SCENARIOS, ...F512_SCENARIOS, ...SM517_SCENARIOS, ...BPG_SCENARIOS, ...IMPORT_INFER_SCENARIOS, ...RBK_SCENARIOS, ...F537_SCENARIOS, ...F555_SCENARIOS, ...D77_SCENARIOS, ...REOPEN_SCENARIOS, ...I552_SCENARIOS, ...A573_SCENARIOS, ...F571_SCENARIOS, ...RTUX_SCENARIOS, ...TRASH_SCENARIOS, ...REAL_SCENARIOS, ...F593_SCENARIOS, ...I607_SCENARIOS, ...I608_SCENARIOS, ...I686_SCENARIOS, ...I686D_SCENARIOS, ...I668_SCENARIOS, ...ADOCK_SCENARIOS, ...I626_SCENARIOS, ...A11_SCENARIOS, ...CTXFETCH_SCENARIOS, ...I631_SCENARIOS, ...C6_SCENARIOS, ...R3_SCENARIOS, ...C7_SCENARIOS, ...C8A_SCENARIOS, ...C8B_SCENARIOS, ...SETDEL_SCENARIOS, ...EXT653_SCENARIOS, ...PROPREL_SCENARIOS, ...I676_SCENARIOS, ...F685_SCENARIOS, ...PERF702_SCENARIOS, ...JA725_SCENARIOS, ...SEALED702_SCENARIOS, ...CCH_SCENARIOS, ...R702_SCENARIOS, ...UXR_SCENARIOS, ...EDITOR_CTX_SCENARIOS, ...BS702_SCENARIOS, ...FSPEED_SCENARIOS, ...I764_SCENARIOS }
 /** 计时会话：先在同一隔离目录预启动一次写好外观（书房计时另建 20 部作品），再计之后那次冷启动。 */
@@ -631,7 +633,25 @@ async function main() {
     process.stderr.write(`--real-model 要从环境变量 ${REAL_KEY_ENV} 读密钥，当前没有\n`)
     process.exit(2)
   }
+  const missing = sessions.flatMap(([, names]) => names.flatMap(name => missingPrerequisites(SCENARIOS[name], options)))
+  if (missing.length) {
+    const result = { scenario: options.scenario, theme: options.theme, notRun: missing }
+    process.stderr.write(`未跑 ${options.scenario}：\n${missing.join('\n')}\n`)
+    process.stdout.write(`${JSON.stringify(result)}\n`)
+    fs.writeFileSync(path.join(options.out, `${options.scenario}-${options.theme}.json`), JSON.stringify([result], null, 2))
+    process.exitCode = NOT_RUN
+    return
+  }
   process.exitCode = await driveSessions({ sessions, options, realKey })
+}
+
+/** 场景用 requires 声明自己要的环境变量（值是设置方法）与主题；返回缺的每一项，齐全时为空。 */
+export function missingPrerequisites(scenario, options, env = process.env) {
+  const { env: variables = {}, theme } = scenario?.requires ?? {}
+  return [
+    ...Object.entries(variables).filter(([name]) => !env[name]).map(([name, how]) => `缺环境变量 ${name}，设置方法：${how}`),
+    ...(theme && theme !== options.theme ? [`缺 --theme ${theme}，设置方法：命令加 --theme ${theme}`] : []),
+  ]
 }
 
 /**
