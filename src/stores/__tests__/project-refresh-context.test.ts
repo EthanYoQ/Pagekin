@@ -66,7 +66,6 @@ beforeEach(() => {
   useProjectStore.setState({
     currentProject: project('A'),
     projectSessionEpoch: 0,
-    fileTree: [],
     loading: false,
   })
   useDraftStore.setState({
@@ -79,39 +78,39 @@ beforeEach(() => {
 
 describe('project refresh context', () => {
   describe('新外壳：打开作品的默认落点在提交时就落下，之后作者的导航不被收尾改回', () => {
-    async function openBWithSlowTree(before: () => void, during: () => void) {
+    async function openBWithSlowRecentList(before: () => void, during: () => void) {
       const originals = [useLayoutStore.getState(), useStageStore.getState()] as const
-      const tree = deferred<unknown[]>()
-      const treeRequested = deferred<void>()
+      const recent = deferred<unknown[]>()
+      const recentRequested = deferred<void>()
       useStageStore.setState({ sheet: null, focus: false })
       before()
       invoke.mockImplementation((channel: string, targetPath: string, requestToken: string) => {
         if (channel === 'project:open') return Promise.resolve({
           success: true, project: project('B'), requestToken, activeProjectPath: targetPath, databaseRestored: true, dbReady: true,
         })
-        if (channel === 'fs:list-dir') {
-          treeRequested.resolve()
-          return tree.promise
+        if (channel === 'project:recent-list') {
+          recentRequested.resolve()
+          return recent.promise
         }
         return Promise.resolve([])
       })
       try {
         const opening = useProjectStore.getState().openProject(project('B').path)
-        await Promise.race([treeRequested.promise, opening])
-        expect(invoke).toHaveBeenCalledWith('fs:list-dir', project('B').path, project('B').path)
+        await Promise.race([recentRequested.promise, opening])
+        expect(invoke).toHaveBeenCalledWith('project:recent-list')
         during()
-        tree.resolve([])
+        recent.resolve([])
         await expect(opening).resolves.toBe(true)
         return { layout: useLayoutStore.getState(), sheet: useStageStore.getState().sheet }
       } finally {
-        tree.resolve([])
+        recent.resolve([])
         useLayoutStore.setState(originals[0], true)
         useStageStore.setState(originals[1], true)
       }
     }
 
     it('从书房打开后进了作品又立刻回到书房：留在书房，不被换回作品', async () => {
-      const after = await openBWithSlowTree(
+      const after = await openBWithSlowRecentList(
         () => useLayoutStore.setState({ sidebarView: 'home', settingsOpen: false }),
         () => {
           navigate({ kind: 'stage' })
@@ -122,7 +121,7 @@ describe('project refresh context', () => {
     })
 
     it('加载完成前打开的运行侧页留着', async () => {
-      const after = await openBWithSlowTree(
+      const after = await openBWithSlowRecentList(
         () => useLayoutStore.setState({ sidebarView: 'project', settingsOpen: false }),
         () => navigate({ kind: 'run', facet: 'tasks' }),
       )
@@ -150,7 +149,6 @@ describe('project refresh context', () => {
       if (channel === 'project:get-runtime-context') {
         return Promise.resolve({ activeProjectPath: project('B').path, dbReady: true })
       }
-      if (channel === 'fs:list-dir') return Promise.resolve([])
       return Promise.resolve([])
     })
 
@@ -189,81 +187,6 @@ describe('project refresh context', () => {
     expect(openCalls[1]?.[3]).toBe(project('A').path)
   })
 
-  it('does not let a delayed project A file-tree response overwrite project B', async () => {
-    const responseA = deferred<Array<{ name: string; path: string; isDir: boolean }>>()
-    invoke.mockImplementation((channel: string, path: string) => {
-      if (channel === 'fs:list-dir' && path === project('A').path) return responseA.promise
-      return Promise.resolve([])
-    })
-
-    const refreshA = useProjectStore.getState().refreshFileTree(project('A').path)
-    useProjectStore.setState({
-      currentProject: project('B'),
-      fileTree: [{ name: 'B', path: 'B', isDir: true }],
-    })
-    responseA.resolve([{ name: 'A', path: 'A', isDir: true }])
-    await refreshA
-
-    expect(useProjectStore.getState().fileTree).toEqual([
-      { name: 'B', path: 'B', isDir: true },
-    ])
-    expect(invoke).toHaveBeenCalledWith(
-      'fs:list-dir',
-      project('A').path,
-      project('A').path,
-    )
-  })
-
-  it('does not let a delayed file-tree response overwrite a reopened session of the same project', async () => {
-    const responseA = deferred<Array<{ name: string; path: string; isDir: boolean }>>()
-    invoke.mockImplementation((channel: string, path: string) => {
-      if (channel === 'fs:list-dir' && path === project('A').path) return responseA.promise
-      return Promise.resolve([])
-    })
-
-    const refreshA = useProjectStore.getState().refreshFileTree(project('A').path, 0)
-    useProjectStore.setState({
-      currentProject: project('A'),
-      projectSessionEpoch: 1,
-      fileTree: [{ name: 'reopened A', path: 'reopened A', isDir: true }],
-    })
-    responseA.resolve([{ name: 'stale A', path: 'stale A', isDir: true }])
-    await refreshA
-
-    expect(useProjectStore.getState().fileTree).toEqual([
-      { name: 'reopened A', path: 'reopened A', isDir: true },
-    ])
-    expect(invoke).toHaveBeenCalledWith(
-      'fs:list-dir',
-      project('A').path,
-      project('A').path,
-    )
-  })
-
-  it('does not let a delayed file-tree response overwrite a same-path reopen with a new lease', async () => {
-    const responseA = deferred<Array<{ name: string; path: string; isDir: boolean }>>()
-    invoke.mockImplementation((channel: string, path: string) => {
-      if (channel === 'fs:list-dir' && path === project('A').path) return responseA.promise
-      return Promise.resolve([])
-    })
-
-    const refreshA = useProjectStore.getState().refreshFileTree(project('A').path, 0)
-    useProjectStore.setState({
-      currentProject: {
-        ...project('A'),
-        path: 'c:/NOVELS/A/',
-        sessionLease: 'lease-A-reopened',
-      },
-      fileTree: [{ name: 'reopened A', path: 'reopened A', isDir: true }],
-    })
-    responseA.resolve([{ name: 'stale A', path: 'stale A', isDir: true }])
-    await refreshA
-
-    expect(useProjectStore.getState().fileTree).toEqual([
-      { name: 'reopened A', path: 'reopened A', isDir: true },
-    ])
-  })
-
   it('does not settle a save after a same-path reopen has issued a new lease', async () => {
     const saveA = deferred<{ success: boolean }>()
     invoke.mockImplementation((channel: string) => {
@@ -284,14 +207,13 @@ describe('project refresh context', () => {
     await expect(saving).resolves.toBe(false)
   })
 
-  it('does not let a delayed project A file-tree failure clear project B', async () => {
-    const treeA = deferred<Array<{ name: string; path: string; isDir: boolean }>>()
-    const treeARequested = deferred<void>()
-    const requestTokens = new Map<string, string>()
+  it('does not let a delayed project A open failure clear project B', async () => {
+    const recentA = deferred<unknown[]>()
+    const recentARequested = deferred<void>()
+    let recentListCalls = 0
     invoke.mockImplementation((channel: string, ...args: unknown[]) => {
       if (channel === 'project:open') {
         const [projectPath, requestToken] = args as [string, string]
-        requestTokens.set(projectPath, requestToken)
         return Promise.resolve({
           success: true,
           project: projectPath === project('A').path ? project('A') : project('B'),
@@ -299,32 +221,22 @@ describe('project refresh context', () => {
           activeProjectPath: projectPath,
         })
       }
-      if (channel === 'fs:list-dir' && args[0] === project('A').path) {
-        treeARequested.resolve()
-        return treeA.promise
-      }
-      if (channel === 'fs:list-dir' && args[0] === project('B').path) {
-        return Promise.resolve([{ name: 'B', path: 'B', isDir: true }])
+      if (channel === 'project:recent-list' && ++recentListCalls === 1) {
+        recentARequested.resolve()
+        return recentA.promise
       }
       return Promise.resolve([])
     })
 
     const openingA = useProjectStore.getState().openProject(project('A').path)
-    await Promise.race([treeARequested.promise, openingA])
-    expect(invoke).toHaveBeenCalledWith(
-      'fs:list-dir',
-      project('A').path,
-      project('A').path,
-    )
+    await Promise.race([recentARequested.promise, openingA])
+    expect(invoke).toHaveBeenCalledWith('project:recent-list')
     const openingB = useProjectStore.getState().openProject(project('B').path)
     await expect(openingB).resolves.toBe(true)
-    treeA.reject(new Error('late A tree failure'))
+    recentA.reject(new Error('late A recent-list failure'))
     await expect(openingA).resolves.toBe(false)
 
     expect(useProjectStore.getState().currentProject?.path).toBe(project('B').path)
-    expect(useProjectStore.getState().fileTree).toEqual([
-      { name: 'B', path: 'B', isDir: true },
-    ])
   })
 
   it('does not commit delayed project A drafts after switching to project B', async () => {

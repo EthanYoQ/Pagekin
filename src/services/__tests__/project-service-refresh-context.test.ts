@@ -18,7 +18,10 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../ipc-client', () => ({
-  ipc: { invoke: mocks.invoke },
+  ipc: {
+    invoke: mocks.invoke,
+    invokeWithProjectSession: (_session: unknown, channel: string, ...args: unknown[]) => mocks.invoke(channel, ...args),
+  },
 }))
 
 const projectAPath = 'C:\\novels\\A'
@@ -54,8 +57,6 @@ describe('ProjectService REFRESH_RESOURCE project identity', () => {
       .mockResolvedValue()
     const draftLoad = vi.spyOn(useDraftStore.getState(), 'loadAllDrafts')
       .mockResolvedValue()
-    const treeRefresh = vi.spyOn(useProjectStore.getState(), 'refreshFileTree')
-      .mockResolvedValue()
     initProjectService()
 
     globalEventBus.emit('REFRESH_RESOURCE', {
@@ -67,7 +68,6 @@ describe('ProjectService REFRESH_RESOURCE project identity', () => {
 
     expect(characterLoad).not.toHaveBeenCalled()
     expect(draftLoad).not.toHaveBeenCalled()
-    expect(treeRefresh).not.toHaveBeenCalled()
 
     globalEventBus.emit('REFRESH_RESOURCE', {
       resources: ['all'],
@@ -75,14 +75,11 @@ describe('ProjectService REFRESH_RESOURCE project identity', () => {
       projectSession: { projectId: 'B', leaseId: 'lease-B', projectPath: projectBPath },
     })
     await vi.waitFor(() => {
-      expect(treeRefresh).toHaveBeenCalledWith(projectBPath, undefined, {
+      expect(draftLoad).toHaveBeenCalledWith(projectBPath, {
         projectId: 'B', leaseId: 'lease-B', projectPath: projectBPath,
       })
     })
     expect(characterLoad).toHaveBeenCalledWith(projectBPath, {
-      projectId: 'B', leaseId: 'lease-B', projectPath: projectBPath,
-    })
-    expect(draftLoad).toHaveBeenCalledWith(projectBPath, {
       projectId: 'B', leaseId: 'lease-B', projectPath: projectBPath,
     })
   })
@@ -171,7 +168,6 @@ describe('ProjectService REFRESH_RESOURCE project identity', () => {
   it('settles only the matching immutable snapshot without rereading or replacing editor content', async () => {
     vi.spyOn(useDraftStore.getState(), 'loadChapterDrafts').mockResolvedValue()
     vi.spyOn(useCharacterStore.getState(), 'load').mockResolvedValue()
-    vi.spyOn(useProjectStore.getState(), 'refreshFileTree').mockResolvedValue()
     useEditorStore.setState({
       tabs: [{
         id: 'draft-7',
@@ -225,7 +221,6 @@ describe('ProjectService REFRESH_RESOURCE project identity', () => {
   it('preserves a later editor revision and records a finalization conflict', async () => {
     vi.spyOn(useDraftStore.getState(), 'loadChapterDrafts').mockResolvedValue()
     vi.spyOn(useCharacterStore.getState(), 'load').mockResolvedValue()
-    vi.spyOn(useProjectStore.getState(), 'refreshFileTree').mockResolvedValue()
     useEditorStore.setState({
       tabs: [{
         id: 'draft-7',
@@ -297,5 +292,31 @@ describe('打开作品时的读取警告（#474）', () => {
     } finally {
       useLocaleStore.setState({ locale: previous })
     }
+  })
+})
+
+describe('ProjectService 刷新不列作品根目录', () => {
+  it('写完一章、定稿完成、别处请求刷新 fileTree 时照常重读草稿与角色，不发 fs:list-dir', async () => {
+    const session = { projectId: 'B', leaseId: 'lease-B', projectPath: projectBPath }
+    const draftLoad = vi.spyOn(useDraftStore.getState(), 'loadAllDrafts').mockResolvedValue()
+    vi.spyOn(useDraftStore.getState(), 'loadChapterDrafts').mockResolvedValue()
+    const characterLoad = vi.spyOn(useCharacterStore.getState(), 'load').mockResolvedValue()
+    mocks.invoke.mockResolvedValue([])
+    initProjectService()
+
+    globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'chapter_creation', projectPath: projectBPath, projectSession: session, runId: 'run-1' })
+    globalEventBus.emit('FINALIZE_COMPLETE', {
+      tabId: 'draft-7', chapterNumber: 2, chapterTitle: '第二章', projectPath: projectBPath, projectSession: session,
+      draftId: 7, finalizationId: 'finalization-7', contentHash: 'hash-7', contentRevision: 6, snapshotContent: '冻结正文',
+      publicationStatus: 'published',
+    })
+    globalEventBus.emit('REFRESH_RESOURCE', { resources: ['drafts', 'fileTree'], projectPath: projectBPath, projectSession: session })
+
+    await vi.waitFor(() => {
+      expect(draftLoad).toHaveBeenCalledTimes(2)
+      expect(characterLoad).toHaveBeenCalledTimes(2)
+    })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(mocks.invoke.mock.calls.map(([channel]) => channel)).not.toContain('fs:list-dir')
   })
 })

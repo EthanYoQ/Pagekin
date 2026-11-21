@@ -170,12 +170,6 @@ async function finalizeOne(context, chapterNumber) {
     await page.waitForTimeout(500)
   }
   chats = chats.map(chat => ({ ...chat, t0: chat.t0 - t0 }))
-  // 运行不等文件树刷新，它的 IPC 记账比运行结束晚，所以要轮询。
-  let fileTree = null
-  for (let waited = 0; waited < 8_000 && !fileTree; waited += 500) {
-    fileTree = (await app.evaluate(() => globalThis.__fspeedIpc)).filter(e => e.channel === 'fs:list-dir').map(e => `@${e.t0 - t0}+${e.t1 - e.t0}`).at(-1) ?? null
-    if (!fileTree) await page.waitForTimeout(500)
-  }
   const isCharacter = chat => /角色|character/iu.test(chat.system) && /状态|state/iu.test(chat.system)
   const notesText = chats.filter(chat => !isCharacter(chat)).map(chat => chat.content ?? '').join('\n')
   const characterText = chats.filter(isCharacter).map(chat => chat.content ?? '').join('\n')
@@ -187,7 +181,7 @@ async function finalizeOne(context, chapterNumber) {
     settledMs: marks.at(-1) ? marks.at(-1).start + marks.at(-1).ms : null,
     fsBeforeReadOnly: fsCalls.filter(e => e.start < readOnlyMs).map(e => `${e.ch}@${e.start}+${e.ms}`),
     fsBeforeRunEnd: fsCalls.filter(e => e.start < runEndMs).map(e => `${e.ch}@${e.start}+${e.ms}`),
-    fileTree, steps,
+    steps,
     chats: chats.map(({ content, ...rest }) => ({ ...rest, contentChars: content?.length ?? 0 })),
     events: fixture.events.map(item => ({ id: item.id, hit: hits(notesText, item.any) })),
     states: fixture.states.map(item => ({ who: item.who, kind: item.kind, hit: hits(characterText, item.any), inNotes: hits(notesText, item.any) })),

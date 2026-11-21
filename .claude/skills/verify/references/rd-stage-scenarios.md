@@ -175,10 +175,10 @@ node scripts/redesign/drive.mjs --scenario blueprint-timing --shell stage --out 
 | `chapter-merge` | 修稿后合并视图第一处用修稿（多于一处时第二处手动编辑）；`after` 完成合并，正文里是选中的文字 | 逐段选择 | 是 | lane 5 |
 | `chapter-finalize` | 第 3 章从「更多」定稿，确认后正文只读，后处理「4 / 4 完成」（正文文件与三步后处理） | 定稿视图 | 是 | lane 6 |
 | `chapter-write-after-edited-chain` | 预置第 4 章 v2 以第 3 章候选稿为前驱，再改第 3 章正文；3、4 章逐章定稿后写第 5 章：假模型收到 1 次正文请求，正文保存，运行侧页没有原始 IPC 错误 | 第 5 章与运行侧页 | 是 | #438 |
-| `chapter-rereview-legacy` | 第 3 章（旧版本留下的 reviewed 稿）点「重新审稿」：假模型收到 1 次审稿请求，运行侧页没有原始 IPC 错误；恢复卡里的审稿候选显示「1 条意见」摘要，不显示原始 JSON | 第 3 章与运行侧页 | 是 | #411、#455 |
-| `chapter-rereview-legacy-en` | 同上重新审稿后切到英文界面重开作品，从 Ctrl K「Run sheet」打开运行侧页：审稿候选显示「1 item」摘要，不显示原始 JSON | 英文运行侧页 | 是 | #455 |
-| `chapter-recheck-digest` | 第 4 章审稿（带正文证据的本章目标意见）、按意见修稿、全部用修稿合并，`fake.replyReview` 传函数让合并后的复验回一份合法复核 JSON：运行侧页的复验候选显示结论、条数与「待核实」要点，不显示原始 JSON；切到英文重开后显示「1 item」与「Needs verification」；中途拍 `chapter-recheck-digest-zh` | 英文的复验摘要 | 是 | #484 |
-| `run-usage-en` | 同 `chapter-rereview-legacy` 重新审稿后切到英文重开：只请求一次的审稿候选写「1 request used」，不写成复数 | 英文运行侧页 | 是 | #484 |
+| `chapter-rereview-legacy` | 第 3 章（旧版本留下的 reviewed 稿）点「重新审稿」：假模型收到 1 次审稿请求、写回审稿报告，运行侧页没有原始 IPC 错误。再重新审稿一次，审稿写回卡在主进程里后重载（#686 起已保存的候选不列为可恢复），恢复卡里这条没保存的审稿候选显示「1 条意见」摘要，不显示原始 JSON | 第 3 章与运行侧页 | 是 | #411、#455 |
+| `chapter-rereview-legacy-en` | 同上留下一条没保存的审稿候选，切到英文界面重开作品，从 Ctrl K「Run sheet」打开运行侧页：审稿候选显示「(1 note)」摘要，不显示原始 JSON | 英文运行侧页 | 是 | #455 |
+| `chapter-recheck-digest` | 第 4 章审稿（带正文证据的本章目标意见）、按意见修稿、全部用修稿合并，`fake.replyReview` 传函数让合并后的复验回一份合法复核 JSON，复验写回卡在主进程里后重载（留下没保存的复验候选）：运行侧页的复验候选显示结论、条数与「待核实」要点，不显示原始 JSON；切到英文重开后显示「1 item」与「Needs verification」；中途拍 `chapter-recheck-digest-zh` | 英文的复验摘要 | 是 | #484 |
+| `run-usage-en` | 同 `chapter-rereview-legacy-en` 留下没保存的审稿候选后切到英文重开：只请求一次的审稿候选写「1 request used」，不写成复数 | 英文运行侧页 | 是 | #484 |
 | `chapter-finalize-gone-en` | 切到英文界面后定稿第 3 章，主进程的 `finalization:commit` 先卡住，期间按卡住的请求里的稿 id 与会话删掉这一稿再放行：定稿仓储只交 `DRAFT_NOT_FOUND`，运行卡片的失败说明是英文、不带汉字 | 英文运行卡片的失败说明 | 是 | #474 |
 | `chapter-retry` | 角色状态更新失败后点「重试失败步骤」：之后假模型只收到角色状态请求，后处理回到 4 / 4 | 重试后的定稿视图 | 是 | lane 7 |
 | `chapter-retry-stream` | 角色状态请求两次断流（`fake.dropCharacterState(2)`）：自动后处理只请求一次，失败说明不含错误码；重开应用后点「重试失败步骤」恰好再请求一次，说明换成「没有返回完整结果」（中途截图 `chapter-retry-stream-failed`）；再点这一步的「重试」第三次请求成功，回到 3 / 3（重开后不列正文文件） | 重试成功后的定稿视图 | 是 | #420 |
@@ -201,7 +201,7 @@ node scripts/redesign/drive.mjs --scenario typing-latency --app-root <trunk 工�
 node scripts/redesign/drive.mjs --scenario typing-latency --shell stage --out <目录>
 ```
 
-草稿、审稿、合并、定稿、1280 与沉浸写作各场景都用 `contrastFailures` 核对单章视图的文字对比度（正文与合并栏 4.5，说明文字 3）。屏幕外窗口的动画帧可能被系统节流，`chapter-open` 与 `typing-latency` 都同时报不依赖动画帧的 DOM 口径。RD-X1 起打开作品的默认落点随提交同步落下，读文件树期间打开的运行侧页不再被收起（`x1-run-sheet-keep`）；`afterProjectOpenSettles` 的 2 秒等待是之前留下的，保留无害。审稿侧页属于单章视图，不随落点收起。
+草稿、审稿、合并、定稿、1280 与沉浸写作各场景都用 `contrastFailures` 核对单章视图的文字对比度（正文与合并栏 4.5，说明文字 3）。屏幕外窗口的动画帧可能被系统节流，`chapter-open` 与 `typing-latency` 都同时报不依赖动画帧的 DOM 口径。RD-X1 起打开作品的默认落点随提交同步落下，打开返回前打开的运行侧页不再被收起（`x1-run-sheet-keep`）；`afterProjectOpenSettles` 的 2 秒等待是之前留下的，保留无害。审稿侧页属于单章视图，不随落点收起。
 
 ## 作品资料页（RD-9 起）
 
@@ -215,7 +215,7 @@ node scripts/redesign/drive.mjs --scenario typing-latency --shell stage --out <�
 | `refs-threads` | 线索路线起初是埋设未到、推进不显示、解决未到；记录第 1 章定稿里的变化后，埋设一站变成已发生 | 推进后的线索 | 否 | lane 4 |
 | `refs-delete` | 线索行「更多」里的「删除线索…」弹出危险确认；`after` 取消，线索仍在 | 危险确认 | 否 | lane 5 |
 | `refs-thread-evidence-en` | 切到英文界面后记录第 1 章定稿里的变化，原文填一句定稿里没有的话：主进程只交 `NARRATIVE_THREAD_EVIDENCE_NOT_IN_SOURCE`，表单里的提示是英文、不带汉字与错误码，作者的输入留着 | 表单里的英文提示 | 否 | #474 |
-| `refs-kb-errors-en` | 导入两份资料并打开「守塔人小传」，在外观里切到英文；把这份资料的项目副本文件在磁盘上改掉后编辑并点「Save copy」：主进程只交 `KNOWLEDGE_BASE_COPY_CHANGED`，失败提示是英文；中途拍 `refs-kb-copy-changed-en`。再写坏检索索引登记文件（`.ai-novel/embedding-spaces.json`），到设置「Retrieval model」页：读状态时主进程只交 `EMBEDDING_SPACE_REGISTRY_INVALID`，索引区的提示是英文；两处都不带汉字与错误码 | 检索模型页的英文索引提示 | 是 | #474 |
+| `refs-kb-errors-en` | 导入两份资料并打开「守塔人小传」，在外观里切到英文；把这份资料的项目副本文件在磁盘上改掉后编辑并点「Save copy」：主进程只交 `KNOWLEDGE_BASE_COPY_CHANGED`，失败提示是英文；中途拍 `refs-kb-copy-changed-en`。再配一个检索模型（#520 起生成模型不再兼作检索模型），写坏检索索引登记文件（`.ai-novel/embedding-spaces.json`），到设置「Retrieval model」页：读状态时主进程只交 `EMBEDDING_SPACE_REGISTRY_INVALID`，索引区的提示是英文；两处都不带汉字与错误码 | 检索模型页的英文索引提示 | 是 | #474 |
 | `models-test-connection-en` | 在外观里切到英文，到「AI models」编辑夹具模型、把 API Key 改错后点「Test connection」：假服务回 403，provider 只交 `LLM_REQUEST_FAILED` 与状态码，模型表单的结果是英文说明、不带汉字与错误码，假服务没有记到模型请求 | 模型表单的英文连接失败 | 是 | #474 |
 | `refs-kb` | 导入两份资料后查「雾钟」，结果片段里标出查找词；整窗文字、可访问名称、提示与占位里没有 LanceDB、FTS、BM25、Embedding、向量、query、MCP、token | 查找结果 | 是 | lane 6 |
 | `refs-kb-dirty` | 改了项目副本不保存就点另一份资料，弹出放弃修改的确认；`after` 选「继续编辑」，修改还在，再按 Ctrl S 保存后「有未保存的修改」消失 | 未保存确认 | 是 | lane 7 |

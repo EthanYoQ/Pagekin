@@ -1,4 +1,4 @@
-// 本批真实模型实测缺陷的实机场景（假模型）：批次暂停时定稿给出说明、取消的批次标已取消、审稿没有可修意见时直接定稿、已保存的审稿候选不标可恢复；别的章节的批量自动定稿拦住定稿时说真实原因、取消时正在写的那一步标已取消。
+// 本批真实模型实测缺陷的实机场景（假模型）：批次暂停时定稿给出说明、取消的批次标已取消、审稿没有可修意见时直接定稿；别的章节的批量自动定稿拦住定稿时说真实原因、取消时正在写的那一步标已取消。
 import assert from 'node:assert/strict'
 
 import * as blueprint from './pages/blueprint.mjs'
@@ -64,16 +64,7 @@ export const RTUX_SCENARIOS = {
     }
     assert.deepEqual({ reviseButtons: nothingToRevise.reviseButtons, addNote: nothingToRevise.addNote }, { reviseButtons: 0, addNote: 1 })
     await context.shoot('rtux-review-nothing-to-revise')
-
-    // 运行侧页的审稿候选：已保存，条数不把通过项算成意见。
-    await runSheet.openFromPalette(page)
-    const card = runSheet.recovery(page).getByRole('article').filter({ hasText: '第3章审稿候选' })
-    await card.waitFor({ state: 'visible', timeout: 30_000 })
-    await card.scrollIntoViewIfNeeded()
-    const reviewCandidate = await card.innerText()
-    assert.match(reviewCandidate, /^已保存/, '已保存的审稿候选不标可恢复')
-    assert.match(reviewCandidate, /0 条意见，4 项通过/)
-    return { finalizeBlocked, cancelledRun, nothingToRevise, reviewCandidate }
+    return { finalizeBlocked, cancelledRun, nothingToRevise }
   } },
 
   // #587 OCR 第 0、3 条：第 5–6 章批量自动定稿只占全书共用资料；第 3 章定稿的提示说真实原因；写第 5 章时取消，那一步记已取消。

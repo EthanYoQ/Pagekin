@@ -8,6 +8,7 @@ import '../../../../styles/paper-ink/index.css'
 import '../../stage.css'
 import { translate } from '../../../../i18n/core'
 import type { Locale } from '../../../../i18n/types'
+import { globalEventBus } from '../../../../shared/event-bus'
 import type { ProjectData } from '../../../../shared/ipc-channels'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
 import { saveDirtyEditorChangesForExit, useEditorStore } from '../../../../stores/editor-store'
@@ -990,5 +991,28 @@ describe('知识库', () => {
     await vi.waitFor(() => expect(button(/检查并重建/)).toBeTruthy())
     await click(/检查并重建/)
     await vi.waitFor(() => expect(invoke.mock.calls.map(([channel]) => channel)).toContain('kb:backfill-vectors'))
+  })
+})
+
+describe('别处改了资料后知识库页重新读', () => {
+  it('收到本次打开的 fileTree 刷新请求就重读资料列表；上次打开的请求不理会', async () => {
+    const plain = invoke.getMockImplementation()!
+    let added = false
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      const result = await plain(channel, ...args)
+      return channel === 'kb:list-documents' && added
+        ? [...(result as unknown[]), { id: 'keeper', fileName: '守塔人小传.txt', importedAt: '', chunkCount: 1, filePath: 'knowledge-copy:keeper' }]
+        : result
+    })
+    await renderPage()
+    added = true
+
+    const earlierOpen = { ...session, leaseId: '上次打开' }
+    await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['fileTree'], projectPath: session.projectPath, projectSession: earlierOpen }))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    expect(button(/守塔人小传/)).toBeUndefined()
+
+    await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['fileTree'], projectPath: session.projectPath, projectSession: session }))
+    await vi.waitFor(() => expect(button(/守塔人小传/)).toBeTruthy())
   })
 })

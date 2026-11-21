@@ -47,7 +47,7 @@ async function shownError(locale: Locale, run: () => Promise<unknown>): Promise<
 
 beforeEach(() => {
   invoke.mockReset()
-  useProjectStore.setState({ currentProject: null, fileTree: [], loading: false })
+  useProjectStore.setState({ currentProject: null, loading: false })
 })
 
 afterEach(() => {
