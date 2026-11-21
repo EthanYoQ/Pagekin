@@ -88,6 +88,14 @@ describe('写作 Skills 的 GitHub 地址报错按界面语言说明（#702）',
     expect(result.error).not.toMatch(ENGLISH_SENTENCE)
   })
 
+  it('查默认分支时收到的不是 JSON（例如代理返回的网页），同样说中文', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>portal</html>', { status: 200 })))
+    const result = await inspect('https://github.com/acme/skill')
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/\p{Script=Han}/u)
+    expect(result.error).not.toMatch(/Unexpected token|JSON/u)
+  })
+
   it('连不上 GitHub 时，原始异常记进主进程日志，作者仍只看到说明', async () => {
     const cause = new TypeError('fetch failed', { cause: Object.assign(new Error('getaddrinfo ENOTFOUND api.github.com'), { code: 'ENOTFOUND' }) })
     vi.stubGlobal('fetch', vi.fn(async () => { throw cause }))
