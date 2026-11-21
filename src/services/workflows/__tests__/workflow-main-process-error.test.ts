@@ -37,11 +37,11 @@ describe('workflow failures carrying a main-process error (#466)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       for (const locale of ['zh-CN', 'en-US'] as const) {
-        const failure = fail(locale, 'GENERATION_FINALIZATION_EFFECT_CONFLICT')
+        const failure = fail(locale, 'WORKFLOW_UNREGISTERED_TEST_CODE')
         expect(failure.message).toBe(locale === 'zh-CN' ? '定稿事务未提交' : 'The finalization transaction was not committed.')
-        expect(failure).toHaveProperty('code', 'GENERATION_FINALIZATION_EFFECT_CONFLICT')
+        expect(failure).toHaveProperty('code', 'WORKFLOW_UNREGISTERED_TEST_CODE')
       }
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('GENERATION_FINALIZATION_EFFECT_CONFLICT'))
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('WORKFLOW_UNREGISTERED_TEST_CODE'))
     } finally {
       warn.mockRestore()
     }
