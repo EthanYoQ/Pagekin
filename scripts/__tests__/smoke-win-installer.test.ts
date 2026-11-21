@@ -1183,9 +1183,9 @@ $childProcess = $null
 try {
   $parentProcess = Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Milliseconds 250; exit 0') -PassThru
   $parentStartTimeTicks = $parentProcess.StartTime.ToUniversalTime().Ticks
-  $childProcess = Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -PassThru
+  $childProcess = Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', 'while ($true) { Start-Sleep -Seconds 1 }') -PassThru
   $childStartTimeTicks = $childProcess.StartTime.ToUniversalTime().Ticks
-  [void]$parentProcess.WaitForExit(5000)
+  if (-not $parentProcess.WaitForExit(45000)) { throw 'root process never exited, so the premise of this case was not established' }
   $parentProcess.Refresh()
 
   $processIds = [System.Collections.Generic.HashSet[int]]::new()
@@ -1195,13 +1195,11 @@ try {
     ([string]$parentProcess.Id) = $parentStartTimeTicks
     ([string]$childProcess.Id) = $childStartTimeTicks
   }
-  $parentExitedBeforeCleanup = $parentProcess.HasExited
   Stop-AiNovelProcessTree -Process $parentProcess -ProcessIds $processIds -StartTimeTicks $startTimeTicks
   [void]$childProcess.WaitForExit(5000)
   $childProcess.Refresh()
 
   [pscustomobject]@{
-    ParentExitedBeforeCleanup = $parentExitedBeforeCleanup
     ChildExitedAfterCleanup = $childProcess.HasExited
   } | ConvertTo-Json -Compress
 } finally {
@@ -1222,7 +1220,6 @@ try {
     const result = parseLastJsonLine(output)
 
     expect(result).toEqual({
-      ParentExitedBeforeCleanup: true,
       ChildExitedAfterCleanup: true,
     })
   })
