@@ -72,7 +72,7 @@ function failure(operation: 'export' | 'restore', error: unknown) {
     message = UNWRITABLE_ERRNO.has(code as string) ? 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE'
       : operation === 'export' ? 'PORTABLE_EXPORT_FAILED' : 'PORTABLE_RESTORE_FAILED'
   }
-  const candidate = message === raw && code !== undefined ? code : message
+  const candidate = message === raw ? code ?? raw : message
   const errorCode = PORTABLE_ERROR_CODES.has(candidate as PortableProjectOperationErrorCode)
     ? candidate as PortableProjectOperationErrorCode
     : undefined
