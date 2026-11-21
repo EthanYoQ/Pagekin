@@ -6,7 +6,11 @@ import {
   DEFAULT_GLOBAL_CONFIG,
 } from '../utils/config-utils'
 import { GlobalConfig } from '../../src/shared/ipc-channels'
-import { mainText } from '../i18n'
+import { selectCopy } from '../../src/i18n/core'
+import { mainErrorDisplayLocale } from '../i18n'
+
+/** config.json 本身坏了（例如内容是 null）时 mainText 查语言也会抛，这里用不抛的查法。 */
+const text = (zhCNText: string, enUSText: string) => selectCopy(mainErrorDisplayLocale(app.getLocale()), zhCNText, enUSText)
 
 export function registerConfigController() {
   /** 读取全局配置 */
@@ -20,8 +24,7 @@ export function registerConfigController() {
       if (updateGlobalConfig(existing => ({ ...existing, ...config, stageModelIds: existing.stageModelIds }))) return { success: true }
       return {
         success: false,
-        error: mainText(
-          app.getLocale(),
+        error: text(
           '全局配置文件已损坏，已拒绝覆盖。请修复或删除应用数据目录里的 config.json 后重试。',
           'The global config file is damaged, so it was not overwritten. Repair or delete config.json in the app data folder, then try again.',
         ),
@@ -30,8 +33,7 @@ export function registerConfigController() {
       console.error('[Config] 全局配置写入失败:', error)
       return {
         success: false,
-        error: mainText(
-          app.getLocale(),
+        error: text(
           '设置没能写进配置文件。请确认磁盘还有空间、应用数据目录可写，再重试。',
           'The setting could not be written to the config file. Make sure the disk has space and the app data folder is writable, then try again.',
         ),
