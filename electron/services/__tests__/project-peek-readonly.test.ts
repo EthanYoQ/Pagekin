@@ -9,6 +9,7 @@ import { CURRENT_DESKTOP_SCHEMA_VERSION, getDesktopMigrationRegistry } from '../
 import { migrateSchema } from '../../migrations/runner'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { ProjectPeekService, readPeekSnapshot } from '../project-peek'
+import { verifyOpenedSchema } from '../sqlite-project-migration'
 import type { ProjectSqliteWorkerOptions } from '../project-sqlite-host'
 import { projectSqliteWorkerForTest } from '../../../test/helpers/portable-export-worker'
 import { attachStatementLedger, breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
@@ -236,8 +237,24 @@ describe('ProjectPeekService source-zero-write overview', () => {
     seedCore(f.database)
     addChapter(f.database, 1, { draft: true, finalized: true })
     vi.mocked(migrateSchema).mockClear()
-    ready(readPeekSnapshot({ databasePath: f.databasePath, projectId: f.projectId, manifestFingerprint: 'manifest', scratchRoot: f.scratch }))
+    ready(readPeekSnapshot({ databasePath: f.databasePath, projectId: f.projectId, manifestFingerprint: 'manifest', scratchRoot: f.scratch,
+      recognizedSchemas: getDesktopMigrationRegistry().recognizedSchemas }))
     expect(migrateSchema).not.toHaveBeenCalled()
+  })
+
+  it('复制快照期间源库被写过，这次预览作废', () => {
+    const f = fixture()
+    const request = { databasePath: f.databasePath, projectId: f.projectId, manifestFingerprint: 'manifest', scratchRoot: f.scratch,
+      recognizedSchemas: getDesktopMigrationRegistry().recognizedSchemas }
+    const copy = fs.copyFileSync
+    const spy = vi.spyOn(fs, 'copyFileSync').mockImplementation((source, target, mode) => {
+      copy(source, target, mode)
+      f.database.prepare("UPDATE project_core SET genre='科幻'").run()
+    })
+    try {
+      expect(() => readPeekSnapshot(request)).toThrow('PROJECT_PEEK_SOURCE_CHANGED')
+    } finally { spy.mockRestore() }
+    expect(fs.readdirSync(f.scratch)).toEqual([])
   })
 
   it('reports conservative counts and never marks one chapter as a completed multi-chapter plan', async () => {
@@ -371,6 +388,18 @@ describe('ProjectPeekService source-zero-write overview', () => {
     expect(current.excerpt).toContain('雨落在旧车站')
     expect(external).not.toHaveProperty('excerpt')
     expect(f.database.prepare('SELECT total_changes()').pluck().get()).toBe(beforeChanges)
+  })
+})
+
+describe('书架上其他书的预览不比打开作品校验得多（ADR-0029 决定 1）', () => {
+  it('有一条审修循环过不了全书证明、打开得了的书，预览照常给出统计', async () => {
+    const f = fixture()
+    const book = seedReviewedBook(f.database, 2, { firstChapter: 2 })
+    breakReviewProof(f.database, book[1]!)
+    expect(() => verifyOpenedSchema(f.database)).not.toThrow()
+
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
+    ready(await service.peek(service.issueCapability(f.root)!.capabilityId))
   })
 })
 
