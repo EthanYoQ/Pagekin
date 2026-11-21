@@ -69,7 +69,7 @@ async function read(context, channel, ...args) {
 }
 
 /** 预置作品：设定、林岚、8 章蓝图，finalized 里的章以作者原稿定稿导入；接上真实模型后从书房打开。 */
-export async function seedBook(context, { finalized = [], core: coreFields = {}, characters = [] } = {}) {
+export async function seedBook(context, { finalized = [], drafts = {}, core: coreFields = {}, characters = [] } = {}) {
   const { app, page, roots, invoke, reload } = context
   await trackOpenedSession(app)
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
@@ -99,6 +99,10 @@ export async function seedBook(context, { finalized = [], core: coreFields = {},
       chapters: finalized.map(number => ({ chapterNumber: number, title: stageChapterTitle(number), content: FINALIZED_TEXT[number],
         wordCount: countUnits(FINALIZED_TEXT[number]) })) }, projectPath, session)
     assert.equal(imported.success, true, imported.error)
+  }
+  for (const [number, content] of Object.entries(drafts)) {
+    const draft = await invoke(page, 'db:draft-create', { chapterNumber: Number(number), version: 1, source: 'write', content, wordCount: countUnits(content) }, projectPath, session)
+    assert.equal(draft.success, true, draft.error)
   }
   await reload()
   await stage.openFromLibrary(page, BOOK)
@@ -577,7 +581,7 @@ export const REAL_SCENARIOS = {
   } },
 
   /** #702：第 4 章选中第一段点续写，真实模型回复后点「插入」：原文还在、续写接在后面；这次运行带上了蓝图、人物与上一章结尾。 */
-  'real-editor-context': { real: true, setup: context => seedBook(context, { finalized: [1, 2, 3] }), run: async context => {
+  'real-editor-context': { real: true, setup: context => seedBook(context, { finalized: [1, 2, 3], drafts: { 4: STAGE_SAMPLE.drafts[4].text } }), run: async context => {
     const { app, page } = context
     await app.evaluate(({ ipcMain }) => {
       const original = ipcMain._invokeHandlers.get('editor-inline:begin')
@@ -588,7 +592,6 @@ export const REAL_SCENARIOS = {
       })
     })
     const text = STAGE_SAMPLE.drafts[4].text
-    assert.equal((await read(context, 'db:draft-create', { chapterNumber: 4, version: 1, source: 'write', content: text, wordCount: countUnits(text) })).success, true)
     await openChapter(page, 4)
     const selected = text.split('\n')[0]
     const prose = chapterView.prose(page)
