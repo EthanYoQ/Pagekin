@@ -83,8 +83,8 @@ export default function RendererStartup({
   const generalBlock = text('工作台暂时无法加载。现有配置已保留，请重新启动应用。', 'The workspace could not be loaded. Your settings are preserved. Please restart the app.')
   const mainBlockedMessage: Record<StartupBlockedCode, string> = {
     GLOBAL_DATA_BLOCKED: generalBlock,
-    GLOBAL_DISK_FULL: text('现有配置已保留。磁盘空间不足，数据没能准备好。请清理磁盘后重新启动应用。', 'Your settings are preserved. The disk is full, so your data could not be prepared. Free up disk space, then restart the app.'),
-    GLOBAL_DATA_UNWRITABLE: text('现有配置已保留。数据文件夹没有写入权限，或正被其他程序占用。请关闭同步盘、杀毒软件等程序后重新启动应用。', 'Your settings are preserved. The data folder cannot be written: access is denied or another program is using it. Close sync or antivirus tools, then restart the app.'),
+    GLOBAL_DISK_FULL: text('现有配置已保留，但磁盘空间不足。请清理磁盘后重新启动应用。', 'Your settings are preserved, but the disk is full. Free up space, then restart the app.'),
+    GLOBAL_DATA_UNWRITABLE: text('现有配置已保留，但数据文件夹没有写入权限或正被占用。请关闭同步盘、杀毒软件后重新启动应用。', 'Your settings are preserved, but the data folder is locked or not writable. Close sync or antivirus tools, then restart the app.'),
     GLOBAL_MODEL_CREDENTIALS_DIFFER: text('新旧配置中同一模型的凭据不同。两份配置均已保留，请处理冲突后重新启动应用。', 'The same model has different credentials in the old and new settings. Both copies are preserved. Resolve the conflict and restart the app.'),
   }
   return (

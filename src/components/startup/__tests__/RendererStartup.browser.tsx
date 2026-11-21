@@ -329,10 +329,10 @@ it('renders pending and blocked startup messages in English', async () => {
 
 it.each([
   ['zh-CN', 'GLOBAL_DISK_FULL', '磁盘空间不足'],
-  ['zh-CN', 'GLOBAL_DATA_UNWRITABLE', '没有写入权限，或正被其他程序占用'],
+  ['zh-CN', 'GLOBAL_DATA_UNWRITABLE', '没有写入权限或正被占用'],
   ['zh-CN', 'GLOBAL_DATA_BLOCKED', '工作台暂时无法加载'],
-  ['en-US', 'GLOBAL_DISK_FULL', 'The disk is full'],
-  ['en-US', 'GLOBAL_DATA_UNWRITABLE', 'access is denied or another program is using it'],
+  ['en-US', 'GLOBAL_DISK_FULL', 'the disk is full'],
+  ['en-US', 'GLOBAL_DATA_UNWRITABLE', 'locked or not writable'],
 ] as const)('主进程数据受阻时（%s，%s）说出真正的原因，而不是外观偏好', async (locale, code, reason) => {
   useLocaleStore.setState({ locale })
   await act(async () => root.render(<RendererStartup dependencies={dependencies({ waitForMainReady: async () => ({ state: 'blocked', code }) })} />))
