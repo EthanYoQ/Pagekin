@@ -252,10 +252,7 @@ function identifier(value: unknown): string {
   return value
 }
 
-/**
- * 库里记的稿件文件名不是存档条目，恢复后发布时只落在项目根的直接子级（manuscript-publisher）。
- * 按原值查单段文件名，不做 NFKC：标题里的全角「？：」是合法文件名。空串是没有稿件可清理的收据。
- */
+// 稿件名恢复后只落在项目根的直接子级，不是存档条目；不做 NFKC，全角「？：」是合法文件名。空串表示没有稿件。
 export function assertManuscriptFileName(value: string): void {
   if (value === '') return
   if (value === '.' || value === '..' || /[/\\:]/u.test(value)

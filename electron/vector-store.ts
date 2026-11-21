@@ -1507,7 +1507,7 @@ function portableText(value: unknown): string {
 
 function portableFileName(value: unknown): string {
   const fileName = portableText(value)
-  // 文件名只是标签，章名里的标点照收；整条本机绝对路径不带出这台电脑。
+  // 文件名只是标签，不当路径校验；只拒绝绝对路径，免得带出本机目录。
   if (fileName.length > 512 || path.posix.isAbsolute(fileName) || path.win32.isAbsolute(fileName)) {
     throw new Error('PORTABLE_KNOWLEDGE_INVALID')
   }
