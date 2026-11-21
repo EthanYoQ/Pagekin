@@ -125,6 +125,14 @@ try {
   assert.equal((await invoke('cloud-backup:connect', { endpoint: `http://127.0.0.1:${deadLocalPort}/dav/`, username: 'probe', secret: 'probe-not-a-secret' })).errorCode,
     'CLOUD_BACKUP_NETWORK_FAILED', 'a dead local WebDAV is not blamed on the proxy')
 
+  assert.deepEqual(await setProxy({ enabled: true, host: 'proxy-host-typo', port: proxyPort }), { success: true })
+  const typo = await run('proxy host not found', calls)
+  for (const name of ['test-connection http', 'test-connection https', 'test-connection embedding', 'test-connection rerank']) {
+    assert.ok(String(typo[name].result.error).startsWith(PROXY_DOWN), `${name}: a mistyped proxy host is blamed on the proxy, got ${typo[name].result.error}`)
+  }
+  assert.equal(typo['discover-models'].result.errorCode, 'proxy', 'model list reports the mistyped proxy host')
+  assert.equal(typo['cloud-backup connect'].result.errorCode, 'CLOUD_BACKUP_PROXY_UNREACHABLE', 'cloud backup reports the mistyped proxy host')
+
   for (const host of ['[::1]', '::1']) {
     assert.deepEqual(await setProxy({ enabled: true, host, port: proxyPort }), { success: true }, `IPv6 proxy host ${host} is accepted`)
     assert.equal((await calls['test-connection http']()).success, true, `IPv6 proxy host ${host} carries requests`)
