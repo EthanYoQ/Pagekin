@@ -34,8 +34,7 @@ async function exportTo({ app, page }, labels, filePath) {
 
 async function mainLogged(diagnostics, from, pattern) {
   const deadline = Date.now() + 10_000
-  while (!pattern.test(diagnostics.slice(from).join('
-'))) {
+  while (!pattern.test(diagnostics.slice(from).join('\n'))) {
     assert.ok(Date.now() < deadline, `主进程日志没有记下 ${pattern}`)
     await new Promise(resolve => setTimeout(resolve, 100))
   }
