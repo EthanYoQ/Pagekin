@@ -391,9 +391,8 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
     const safeFileSystem = createWindowsSafeFileSystem()
 
     const entries = await safeFileSystem.listDirectory(capability(selectedRoot, ''))
-    expect(entries).toHaveLength(limit)
+    expect(entries.map(entry => entry.name).sort()).toEqual(fs.readdirSync(selectedRoot).sort())
     expect(entries).toContainEqual({ name: '第一卷', isDirectory: true })
-    expect(entries).toContainEqual({ name: `章节-${limit - 1}.md`, isDirectory: false })
 
     fs.writeFileSync(path.join(selectedRoot, `章节-${limit}.md`), '')
     await expect(safeFileSystem.listDirectory(capability(selectedRoot, '')))
