@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { WorkflowContext } from '../../../stores/workflow-store'
 import { workflowMainProcessError } from '../workflow-project-session'
@@ -27,16 +27,24 @@ describe('workflow failures carrying a main-process error (#466)', () => {
     expect(fail('zh-CN', stale).message).toBe('定稿事务未提交：项目已切换或重新打开，这次操作属于之前打开的项目，已拒绝执行。请在当前打开的项目里重新操作。')
   })
 
-  it('带名字的错误类转来的未登记码同样附上并保留在 code 上', () => {
+  it('带名字的错误类转来的未登记码不进说明，保留在 code 上（#787）', () => {
     const failure = fail('en-US', 'PortableProjectArchiveError: PORTABLE_ARCHIVE_INVALID')
-    expect(failure.message).toBe('The finalization transaction was not committed. PORTABLE_ARCHIVE_INVALID')
+    expect(failure.message).toBe('The finalization transaction was not committed.')
     expect(failure).toHaveProperty('code', 'PORTABLE_ARCHIVE_INVALID')
   })
 
-  it('未登记的错误码原样附上供反馈定位，并保留在 code 上', () => {
-    const failure = fail('en-US', 'GENERATION_FINALIZATION_EFFECT_CONFLICT')
-    expect(failure.message).toBe('The finalization transaction was not committed. GENERATION_FINALIZATION_EFFECT_CONFLICT')
-    expect(failure).toHaveProperty('code', 'GENERATION_FINALIZATION_EFFECT_CONFLICT')
+  it('未登记的错误码不进说明，保留在 code 上并记到控制台（#787）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      for (const locale of ['zh-CN', 'en-US'] as const) {
+        const failure = fail(locale, 'GENERATION_FINALIZATION_EFFECT_CONFLICT')
+        expect(failure.message).toBe(locale === 'zh-CN' ? '定稿事务未提交' : 'The finalization transaction was not committed.')
+        expect(failure).toHaveProperty('code', 'GENERATION_FINALIZATION_EFFECT_CONFLICT')
+      }
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('GENERATION_FINALIZATION_EFFECT_CONFLICT'))
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('日文界面：概述用英文文案，登记过的码按日文说明，未登记的中文原文不接上', () => {
