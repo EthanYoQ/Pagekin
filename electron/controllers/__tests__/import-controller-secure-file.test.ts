@@ -176,7 +176,7 @@ describe('novel import external-file capability', () => {
     {
       fileName: 'damaged.epub',
       archive: Buffer.from('not a zip archive'),
-      error: 'EPUB 文件已损坏，或缺少有效的 container.xml、OPF 与正文阅读顺序。',
+      error: '没有导入。这个 EPUB 文件坏了或格式不标准，读不出正文。请点「选择」换一个文件，或先把它另存为 .txt 再导入。',
     },
     {
       fileName: 'protected.epub',
