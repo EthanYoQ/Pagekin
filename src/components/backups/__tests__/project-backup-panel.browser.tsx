@@ -256,10 +256,12 @@ describe('ProjectBackupPanel', () => {
     expect(container.textContent).toContain('旧凭据未能清理')
   })
 
+  const CONFLICT_SHOWN = '作品没有改动，也没有上传。云备份绑定刚被改过。请关闭并重新打开设置，再试一次。'
   it.each([
-    ['清掉了', { success: true, state: 'unconfigured', affectedBindings: 0 }],
-    ['也没清掉', { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED' }],
-  ])('绑定确认撞上别处的改动、暂存账号%s：说出绑定刚被改过，不露码（#702）', async (_label, cleared) => {
+    ['清掉了', { success: true, state: 'unconfigured', affectedBindings: 0 }, CONFLICT_SHOWN],
+    ['也没清掉', { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED' },
+      `${CONFLICT_SHOWN}刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。`],
+  ])('绑定确认撞上别处的改动、暂存账号%s：说出绑定刚被改过，没删掉的密码也说出来，不露码（#702）', async (_label, cleared, expected) => {
     const rotatedAccount = { ...ACCOUNT, accountId: 'account-2' }
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
@@ -272,7 +274,7 @@ describe('ProjectBackupPanel', () => {
     await fill('密码或应用密钥', 'replacement-secret')
     await act(async () => button('连接并绑定').click())
     expect(invoke).toHaveBeenCalledWith('cloud-backup:clear-credential', rotatedAccount.accountId)
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe('作品没有改动，也没有上传。云备份绑定刚被改过。请关闭并重新打开设置，再试一次。')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(expected)
   })
 
   it('exports and restores a local copy with exact payloads without opening it', async () => {

@@ -186,7 +186,8 @@ function ProjectBackupPanelSession({
       expectedRevision: binding?.revision ?? null,
     })
     if (!confirmed.success) {
-      await ipc.invoke('cloud-backup:clear-credential', connected.account.accountId)
+      const cleared = await ipc.invoke('cloud-backup:clear-credential', connected.account.accountId)
+      if (!cleared.success) throw new Error(errorText(confirmed.errorCode) + text('刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。', ' The password you just entered could not be removed from this computer; it is still stored encrypted in the Pagekin data folder.'))
       throw new Error(confirmed.errorCode)
     }
     const isSessionOnly = connected.warning === 'CLOUD_CREDENTIAL_SESSION_ONLY'
