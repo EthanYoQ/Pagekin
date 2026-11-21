@@ -202,8 +202,8 @@ describe('中转站拒收当前输出上限字段时换字段重发一次', () =
       const { onError } = await stream(model, {}, controller.signal)
       expect(onError.mock.calls[0][0]).toBe('LLM_CANCELLED')
     } else {
-      const result = await new OpenAIProvider().generate(model, messages, options({ signal: controller.signal }))
-      expect(result).toMatchObject({ success: false, error: expect.stringContaining('AbortError') })
+      await expect(new OpenAIProvider().generate(model, messages, options({ signal: controller.signal })))
+        .rejects.toMatchObject({ name: 'AbortError' })
     }
     expect(relay.requests).toHaveLength(1)
   })
