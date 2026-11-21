@@ -737,7 +737,7 @@ describe('知识库向量维度', () => {
       undefined,
       undefined,
       space,
-    )).resolves.toMatchObject({ success: false, chunkCount: 0, error: expect.stringContaining('injected catalog switch failure') })
+    )).resolves.toMatchObject({ success: false, chunkCount: 0, error: 'KNOWLEDGE_BASE_OPERATION_FAILED' })
     vi.restoreAllMocks()
 
     expect(await getEmbeddingSpaces(projectPath)).toEqual(beforeRegistry)
@@ -822,7 +822,7 @@ describe('知识库向量维度', () => {
     )).resolves.toMatchObject({
       success: false,
       chunkCount: 0,
-      error: expect.stringContaining('createTable internal failure'),
+      error: 'KNOWLEDGE_BASE_OPERATION_FAILED',
     })
     vi.restoreAllMocks()
 
@@ -925,7 +925,7 @@ describe('知识库向量维度', () => {
         undefined,
         undefined,
         space,
-      )).resolves.toMatchObject({ success: false, chunkCount: 0, error: expect.stringContaining('registry persistence failure') })
+      )).resolves.toMatchObject({ success: false, chunkCount: 0, error: 'KNOWLEDGE_BASE_OPERATION_FAILED' })
       const tableNames = await db.tableNames()
       expect(embeddingTableNames(tableNames)).toEqual([])
       expect(await (await db.openTable('documents')).countRows()).toBe(0)
@@ -987,7 +987,7 @@ describe('知识库向量维度', () => {
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await expect(updateChunkVectors(projectPath, [{ id: canonicalId, vector: newVector }], newSpace))
-        .resolves.toMatchObject({ success: false, count: 0, error: expect.stringContaining('update registry failure') })
+        .resolves.toMatchObject({ success: false, count: 0, error: 'KNOWLEDGE_BASE_OPERATION_FAILED' })
       expect((await db.tableNames()).slice().sort()).toEqual(beforeTables)
       expect(await getEmbeddingSpaces(projectPath)).toEqual(beforeRegistry)
       expect(await (await db.openTable(oldActive.tableName)).countRows()).toBe(oldVectorRows)
@@ -1037,7 +1037,7 @@ describe('知识库向量维度', () => {
     failNthTableOpen(db, 'chunks__space_2', 2, 'injected update final verification failure')
 
     await expect(updateChunkVectors(projectPath, [{ id: canonicalId, vector: newVector }], newSpace))
-      .resolves.toMatchObject({ success: false, count: 0, error: expect.stringContaining('update final verification failure') })
+      .resolves.toMatchObject({ success: false, count: 0, error: 'KNOWLEDGE_BASE_OPERATION_FAILED' })
     vi.restoreAllMocks()
     expect((await db.tableNames()).slice().sort()).toEqual(beforeTables)
     expect(await getEmbeddingSpaces(projectPath)).toEqual(beforeRegistry)
@@ -1116,7 +1116,7 @@ describe('知识库向量维度', () => {
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await expect(updateChunkVectors(projectPath, [{ id: missingId, vector: candidateVector }], candidateIdentity))
-        .resolves.toMatchObject({ success: false, count: 0, error: expect.stringContaining('existing-space registry failure') })
+        .resolves.toMatchObject({ success: false, count: 0, error: 'KNOWLEDGE_BASE_OPERATION_FAILED' })
       expect((await db.tableNames()).slice().sort()).toEqual(beforeTables)
       expect(await (await db.openTable(candidate.tableName)).countRows()).toBe(1)
       expect(await (await db.openTable(oldActive.tableName)).countRows()).toBe(oldActiveRows)

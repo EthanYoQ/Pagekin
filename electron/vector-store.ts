@@ -1,4 +1,5 @@
 import { assertKnowledgeSourceIdle, withKnowledgeSourceGate } from './services/knowledge-source-gate'
+import { knowledgeFailureCode } from './services/knowledge-base-failure'
 /**
  * AI Novel 向量数据库封装 — 基于 LanceDB
  *
@@ -864,7 +865,7 @@ export async function planEmbeddingRebuild(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: knowledgeFailureCode(error),
     }
   }
 }
@@ -902,7 +903,7 @@ async function activatePlannedEmbeddingSpaceInternal(
     writeRegistry(projectPath, registryWithActiveGeneration(registry, matching.generation))
     return { success: true }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) }
+    return { success: false, error: knowledgeFailureCode(error) }
   }
 }
 
@@ -1007,7 +1008,7 @@ async function rebuildPlannedEmbeddingSpaceInternal(
     return {
       success: false,
       count: 0,
-      error: error instanceof Error ? error.message : String(error),
+      error: knowledgeFailureCode(error),
     }
   }
 }
@@ -1236,7 +1237,7 @@ async function addChunksInternal(
       await compensateEmbeddingWrite(db, embeddingWrite, chunkIds)
     }
     console.error('[AI Novel VectorStore] 写入失败:', error)
-    return { success: false, chunkCount: 0, error: error instanceof Error ? error.message : String(error) }
+    return { success: false, chunkCount: 0, error: knowledgeFailureCode(error) }
   }
 }
 
@@ -1270,7 +1271,7 @@ export async function replaceDocumentChunks(projectPath: string, docId: string, 
         try { await table.checkout(version); await table.restore() }
         catch (rollbackError) { console.error('[AI Novel VectorStore] 恢复重建前索引失败:', rollbackError) }
       }
-      return { success: false, chunkCount: 0, error: error instanceof Error ? error.message : String(error) }
+      return { success: false, chunkCount: 0, error: knowledgeFailureCode(error) }
     } finally { for (const { table } of opened) table.close() }
   })
 }
@@ -2015,6 +2016,6 @@ async function updateChunkVectorsInternal(
       await compensateEmbeddingWrite(db, write, updates.map(update => update.id))
     }
     console.error('[AI Novel VectorStore] 批量更新向量失败:', error)
-    return { success: false, count: 0, error: error instanceof Error ? error.message : String(error) }
+    return { success: false, count: 0, error: knowledgeFailureCode(error) }
   }
 }

@@ -78,11 +78,11 @@ it('#571 卷报 ENOTSUP 同样判为不支持', async () => {
 // 只有能证明卷不支持硬链接的码才引导作者搬书；权限、磁盘满、句柄用尽等照常报原因。
 // Windows 上 EPERM 来自 ERROR_ACCESS_DENIED（libuv win/error.c），是权限问题。
 it.each([
-  ['EPERM', 'operation not permitted'],
-  ['EACCES', 'permission denied'],
-  ['ENOSPC', 'no space left on device'],
-  ['EMFILE', 'too many open files'],
-])('#571 建硬链接报 %s：照常报原因，不说成磁盘不支持', async (code, message) => {
+  ['EPERM', 'operation not permitted', 'KNOWLEDGE_BASE_UNWRITABLE'],
+  ['EACCES', 'permission denied', 'KNOWLEDGE_BASE_UNWRITABLE'],
+  ['ENOSPC', 'no space left on device', 'KNOWLEDGE_BASE_DISK_FULL'],
+  ['EMFILE', 'too many open files', 'KNOWLEDGE_BASE_OPERATION_FAILED'],
+])('#571 建硬链接报 %s：照常报原因，不说成磁盘不支持', async (code, message, reported) => {
   const projectPath = workspace()
   vi.spyOn(fs, 'linkSync').mockImplementation(() => {
     throw Object.assign(new Error(`${code}: ${message}, link`), { code })
@@ -90,7 +90,7 @@ it.each([
 
   const result = await importText('第一章正文', '第1章 雾钟.txt', projectPath, 'openai', embeddingModel)
   expect(result).toMatchObject({ success: false })
-  expect(result.error).toMatch(new RegExp(code, 'u'))
+  expect(result.error).toBe(reported)
   expect(probeLeftovers(projectPath)).toEqual([])
 })
 
@@ -104,7 +104,7 @@ it('#571 探测文件写不进去（只读卷、磁盘满）：照常报原因�
 
   const result = await importText('第一章正文', '第1章 雾钟.txt', projectPath, 'openai', embeddingModel)
   expect(result).toMatchObject({ success: false })
-  expect(result.error).toMatch(/EROFS/u)
+  expect(result.error).toBe('KNOWLEDGE_BASE_UNWRITABLE')
   expect(generateEmbeddings).not.toHaveBeenCalled()
 })
 
