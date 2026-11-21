@@ -59,3 +59,28 @@ it('#420 修复失败后不发 WORKFLOW_COMPLETE：本章由忙转闲时重读�
   await expect.element(page.getByText('向量服务没有响应')).toBeVisible()
   expect(host!.textContent).not.toContain('模型长时间没有响应')
 })
+
+it('#702 步骤表外、已登记的码：落库的裸码和带 IPC 包装的码都显示报错目录文案，不露码名', async () => {
+  for (const [errorMsg, shownText] of [
+    ['KNOWLEDGE_BASE_NATIVE_UNAVAILABLE', '知识库不可用：Windows 原生组件加载失败。请重新安装或下载完整发布包。'],
+    ["Error invoking remote method 'project-session:invoke': Error: PROJECT_SESSION_STALE", '项目已切换或重新打开，这次操作属于之前打开的项目，已拒绝执行。请在当前打开的项目里重新操作。'],
+  ]) {
+    backend.state.postProcess = failedWith(errorMsg)
+    await render(true)
+    await render(false)
+    await expect.element(page.getByText(shownText)).toBeVisible()
+    expect(host!.textContent).not.toMatch(/[A-Z]+_[A-Z_]+|Error invoking/u)
+  }
+})
+
+it('两张表都有的码仍按后处理步骤说明，英文界面同样', async () => {
+  backend.state.postProcess = failedWith('KNOWLEDGE_BASE_VOLUME_UNSUPPORTED')
+  await render(false)
+  await expect.element(page.getByText(/从新位置打开后再点「重试」/u)).toBeVisible()
+
+  useLocaleStore.setState({ locale: 'en-US' })
+  backend.state.postProcess = failedWith('FINALIZATION_GENERATION_INCOMPLETE')
+  await render(true)
+  await render(false)
+  await expect.element(page.getByText(/The model did not return a complete result/u)).toBeVisible()
+})
