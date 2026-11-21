@@ -496,6 +496,17 @@ describe('提示栈', () => {
     expect(item.querySelector('.pi-toast-text')!.textContent).toBe('请先打开项目。')
   })
 
+  it('动作回调抛出未登记的码时，出错通知不露码（#702）', async () => {
+    await act(async () => {
+      actionToast.show({ message: '已不再恢复「第 3 章」', duration: 0, actions: [{ label: '撤销', onClick: () => Promise.reject(new Error("Error invoking remote method 'generation:set-recovery-abandoned': Error: GENERATION_RECOVERY_SOMETHING_NEW")) }] })
+    })
+    await userEvent.click(page.getByRole('button', { name: '撤销' }))
+    await wait(200)
+    const shown = liveToasts()[0].querySelector('.pi-toast-text')!.textContent ?? ''
+    expect(shown).toMatch(/\p{Script=Han}/u)
+    expect(shown).not.toMatch(/GENERATION_|Error invoking/u)
+  })
+
   it('24 条出错通知时栈收在顶栏以下、视口以内可滚动，最新一条露在底部，滚到顶能关掉最早的', async () => {
     await userEvent.hover(document.body, { position: { x: 4, y: 4 } })
     await act(async () => {
