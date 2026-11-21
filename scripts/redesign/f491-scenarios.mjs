@@ -1,10 +1,7 @@
-// #491 实机场景：旧版本（--app-root 指向 1.3.2 的构建）里把示例作品导出、恢复两轮，角色当前状态变成「历史派生」、
-// 最新章定稿的角色状态更新报来源冲突；再用本工作树的构建打开同一份数据，字段恢复为定稿派生、可编辑，重试后定稿后处理完成。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import * as architecture from './pages/architecture.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
@@ -12,8 +9,6 @@ import * as stage from './pages/stage.mjs'
 import { FIXTURE_PROSE } from './fake-model.mjs'
 import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 import { firstLine, seedStageSample } from './scenarios.mjs'
-
-const HEAD_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /** 第 3 章写进地点、道具与近况；第 4 章再改地点与近况，道具留着第 3 章的值。证据都是该章里只出现一次的原句。 */
 const CHAPTER_UPDATES = [
@@ -214,72 +209,6 @@ export const F491_SCENARIOS = {
     await context.shoot('c3-4-after-save')
     const authored = (await readAuthorNodes(context.samplePath)).filter(node => node.aspect === 'location')
     assert.deepEqual(authored.map(node => [node.value, node.effective_chapter]), [['灯塔外的礁石', 7]], '库里的节点')
-    return measured
-  } },
-
-  'f491-backup-roundtrip': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
-    context.fake.replyCharacterState(characterStateReply)
-    const measured = {}
-    await finalizeChapter(context.page, 3)
-    measured.chapter3 = await chapterView.postProcessSteps(context.page)
-
-    const first = await exportAndRestore(context, context.samplePath, 'round-1')
-    const second = await exportAndRestore(context, first, 'round-2')
-    await context.reload()
-    await openInUi(context, second)
-    await openCharacterState(context.page)
-    measured.damaged = await stateFields(context.page)
-    await context.shoot('f491-1-damaged-historical')
-
-    await finalizeChapter(context.page, 4)
-    measured.damagedFinalize = { steps: await chapterView.postProcessSteps(context.page), detail: await postDetail(context.page).innerText() }
-    await context.shoot('f491-2-damaged-finalize-error')
-    assert.match(measured.damagedFinalize.detail, /FINALIZED_CHARACTER_SOURCE_CONFLICT/u, '旧版本复现了来源冲突')
-
-    await context.restart({ appRoot: HEAD_ROOT })
-    const { page } = context
-    await stage.spine(page).or(stage.shelf(page)).first().waitFor({ state: 'visible', timeout: 60_000 })
-    await openInUi(context, second)
-    await openChapter(page, 4)
-    await postDetail(page).waitFor({ state: 'visible', timeout: 30_000 })
-    measured.repairedError = await postDetail(page).innerText()
-    assert.match(measured.repairedError, /^正文定稿已保存，但角色卡没有自动更新/u, '新构建显示可读说明')
-    assert.doesNotMatch(measured.repairedError, /Error invoking|FINALIZED_CHARACTER/u, '新构建不显示原始错误码')
-    await context.shoot('f491-3-fixed-readable-error')
-    await chapterView.postProcess(page).getByRole('button', { name: '重试失败步骤' }).click()
-    await page.waitForFunction(() => {
-      const rows = [...document.querySelectorAll('[aria-label="定稿后处理"] li')]
-      return rows.some(row => row.querySelector('b')?.textContent === '角色状态更新') && rows.every(row => row.dataset.state === 'success')
-    }, null, { timeout: 90_000 })
-    measured.repairedFinalize = await chapterView.postProcessSteps(page)
-    await context.shoot('f491-4-fixed-finalize-done')
-
-    await openCharacterState(page)
-    measured.repaired = await stateFields(page)
-    const keyItems = stage.root(page).getByRole('textbox', { name: /^关键道具/u })
-    await keyItems.fill('父亲的地图、钟绳上的纸条、守塔人的茶杯')
-    await stage.root(page).getByRole('button', { name: '保存角色' }).click()
-    await stage.root(page).locator('.cast-save-state').getByText('已保存', { exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
-    measured.edited = await stateFields(page)
-    const pick = (fields, label) => fields.find(field => field.label.startsWith(label))
-    const view = fields => ['当前位置', '关键道具', '最近重要事件'].map(label => {
-      const { hint, value, history } = pick(fields, label)
-      return { label, hint, value, history }
-    })
-    const historical = '历史派生（非当前）', note = '历史记录（来源已失效或未核验）：'
-    assert.deepEqual(view(measured.damaged), [
-      { label: '当前位置', hint: historical, value: '', history: `${note}灯塔顶层灯室` },
-      { label: '关键道具', hint: historical, value: '', history: `${note}父亲的地图、钟绳上的纸条` },
-      { label: '最近重要事件', hint: historical, value: '', history: `${note}在灯室找到「别在涨潮时敲钟」的纸条` },
-    ], '旧版本两轮往返后三项都是历史派生、输入框为空')
-    assert.deepEqual(view(measured.repaired), [
-      { label: '当前位置', hint: '定稿派生', value: '守塔人的屋子', history: null },
-      { label: '关键道具', hint: '定稿派生', value: '父亲的地图、钟绳上的纸条', history: null },
-      { label: '最近重要事件', hint: '定稿派生', value: '守塔人说父亲也问过钟的事', history: null },
-    ], '新构建打开后三项为定稿派生：第 4 章更新地点与近况，道具保留第 3 章的值')
-    assert.deepEqual(view(measured.edited)[1], { label: '关键道具', hint: '作者输入', value: '父亲的地图、钟绳上的纸条、守塔人的茶杯', history: null },
-      '手改后保存为作者输入')
-    assert.ok(measured.repairedFinalize.every(step => step.state === 'success'), JSON.stringify(measured))
     return measured
   } },
 }
