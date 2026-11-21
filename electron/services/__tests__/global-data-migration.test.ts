@@ -226,6 +226,8 @@ describe('single global generation cutover using synthetic roots only', () => {
     ['ENOSPC', 'GLOBAL_DISK_FULL'],
     ['EACCES', 'GLOBAL_DATA_UNWRITABLE'],
     ['EPERM', 'GLOBAL_DATA_UNWRITABLE'],
+    ['EBUSY', 'GLOBAL_DATA_UNWRITABLE'],
+    ['EROFS', 'GLOBAL_DATA_UNWRITABLE'],
     ['EIO', 'GLOBAL_DATA_BLOCKED'],
   ])('keeps the file-system cause %s, logs the original error, and tells startup %s', (errno, expected) => {
     const roots = fixture(); populate(roots.legacySource); const before = snapshot(roots.legacySource)
@@ -247,6 +249,19 @@ describe('single global generation cutover using synthetic roots only', () => {
     expect(result).toEqual({ state: 'blocked', code: 'GLOBAL_JSON_INVALID' })
     if (result.state === 'blocked') expect(blockedStartupCode(result)).toBe('GLOBAL_DATA_BLOCKED')
     expect(log).not.toHaveBeenCalled()
+  })
+  it('reports a config file that cannot be read as a file-system cause, not as corrupt JSON', () => {
+    const roots = fixture(); populate(roots.legacySource)
+    const read = fs.readFileSync
+    const locked = Object.assign(new Error('EBUSY: resource busy or locked, open'), { code: 'EBUSY', syscall: 'open' })
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, ...rest: unknown[]) => {
+      if (path.basename(String(file)) === 'config.json') throw locked
+      return (read as (...args: unknown[]) => unknown)(file, ...rest)
+    }) as typeof fs.readFileSync)
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const result = runGlobalDataMigration(roots)
+    expect(result).toEqual({ state: 'blocked', code: 'GLOBAL_MIGRATION_IO_FAILED', errno: 'EBUSY' })
+    expect(log.mock.calls.some(args => args.includes(locked))).toBe(true)
   })
   it('ignores later corrupt legacy changes after receipt and uses current canonical config', () => {
     const roots = fixture(); populate(roots.legacySource); const result = runGlobalDataMigration(roots)
