@@ -232,7 +232,7 @@ export const IMPORT_INFER_SCENARIOS = {
     await confirmAndWait(page, dialog, 3)
     const recoveries = fake.chats.map(chat => chat.messages.map(message => message.content).join('\n')).filter(prompt => prompt.includes(ENDPOINT_RECOVERY))
     assert.equal(recoveries.length, 1, '两位缺卡的人一批补完')
-    assert.match(recoveries[0], /只新增这些缺失角色 name：\["林探","白先生"\]/u, `已有 7 张卡也照样补两位，不再受 8 张卡限制：${/只新增这些缺失角色 name：.*/u.exec(recoveries[0])?.[0]}`)
+    assert.match(recoveries[0], /name 照抄：\[\{"name":"林探"\},\{"name":"白先生"\}\]/u, `已有 7 张卡也照样补两位，不再受 8 张卡限制：${/name 照抄：.*/u.exec(recoveries[0])?.[0]}`)
     await runSheet.tab(page, '诊断').click()
     const missingLine = runSheet.sheet(page).locator('.run-log-line').filter({ hasText: '位人物没有补出角色卡' })
     assert.match(await missingLine.innerText(), /1 位人物没有补出角色卡：白先生。.*「新建角色」或「粘贴 \/ 导入角色卡」/u, '日志写明谁还没卡、在哪补')

@@ -226,13 +226,16 @@ it('持久replayTask被篡改时拒绝回读，不新增派发',async()=>{
  expect(f.spy).toHaveBeenCalledTimes(1)
 })
 
-async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needless-retry' | 'endpoint' | 'batched' | 'failed-tail' | 'forged' | 'dropped' | 'rejected-delta' = 'unproven', beforeStyle?: (db: InstanceType<typeof Database>, globalRunId: string) => void) {
+async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needless-retry' | 'endpoint' | 'legacy-delta' | 'batched' | 'failed-tail' | 'forged' | 'dropped' | 'rejected-delta' = 'unproven', beforeStyle?: (db: InstanceType<typeof Database>, globalRunId: string) => void) {
  const core={genre:'现实',subGenre:'冒险',targetAudience:'通用',totalChapters:1,wordsPerChapter:900,plotStructure:'three_act',narrativePov:'third_limited',goldenFinger:'无',globalGuidance:'克制',premise:'海港来信',coreOutline:'寻找来信者',worldSetting:'海港',protagonistProfile:'林岚',worldbuilding:'海港街巷',synopsis:'找到信件'}
  const card = {name:'林岚',role:'protagonist',gender:'未知',age:'18',appearance:'朴素',personality:'谨慎',background:'港口居民',abilities:'观察',motivation:'寻信',relationships:[] as { target: string; relation: string }[],arc:'成长',notes:'待确认'}
  const generated = ['林岚','苏绾','顾岩'].map((name, index) => ({ ...card, name, role: index ? 'supporting' : 'protagonist',
    currentState: { location:'海港',powerLevel:'普通',physicalState:'正常',mentalState:'警觉',keyItems:'信件',recentEvents:'寻信',updatedAtChapter:0 } }))
  if (kind !== 'unproven' && kind !== 'inference' && kind !== 'retried' && kind !== 'needless-retry' && kind !== 'forged') generated[0].relationships = [{ target:'苏绾', relation:'同乡' }, { target:'掌柜', relation:'雇主' }]
  const delta = { ...generated[1], name:'掌柜' }
+ // master 上一次补卡可以在同一份 delta 里补完所有悬空端点（最多补到 8 张）。
+ const legacy = ['掌柜','船夫','阿婆','渔娘','货郎'].map(name => ({ ...generated[1], name }))
+ if (kind === 'legacy-delta') generated[0].relationships = legacy.map(card => ({ target: card.name, relation: '旧识' }))
  const others = ['船夫','阿婆','渔娘','货郎','更夫','茶博士','漕丁','稳婆','账房','镖头','船娘','药童','书吏','渡工','盐丁','灯匠']
  const later = others.map(name => ({ ...generated[1], name }))
  const queued = [{ ...delta, relationships:[{ target:'灯匠', relation:'旧债' }] }, ...later]
@@ -255,12 +258,16 @@ async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needle
    output = JSON.stringify({ characterCards: kind === 'endpoint' ? [delta] : [delta, { ...delta, name:'任意新增' }] })
    await f.owner.executeImportGeneration({execution:f.execution,handle,ordinal:1,task:{ ...task, purpose:'import-inference:endpoint-card-recovery' }})
  }
+ if (kind === 'legacy-delta') {
+   output = JSON.stringify({ characterCards: legacy })
+   await f.owner.executeImportGeneration({execution:f.execution,handle,ordinal:1,task:{ ...task, purpose:'import-inference:endpoint-card-recovery' }})
+ }
  if (kind === 'batched' || kind === 'failed-tail') for (const [index, cards] of batches.entries()) {
    output = JSON.stringify({ characterCards: cards })
    if (kind === 'failed-tail' && index === batches.length - 1) finishReason = 'length'
    await f.owner.executeImportGeneration({execution:f.execution,handle,ordinal:1 + index,task:{ ...task, purpose:'import-inference:endpoint-card-recovery' }})
  }
- const characterEntries = kind === 'unproven' ? [card] : structuredClone(kind === 'endpoint' ? [...generated,delta] : kind === 'batched' ? [...generated, ...batches.flat()] : kind === 'failed-tail' ? [...generated, ...batches.slice(0, -1).flat()] : generated)
+ const characterEntries = kind === 'unproven' ? [card] : structuredClone(kind === 'endpoint' ? [...generated,delta] : kind === 'batched' ? [...generated, ...batches.flat()] : kind === 'failed-tail' ? [...generated, ...batches.slice(0, -1).flat()] : kind === 'legacy-delta' ? [...generated, ...legacy] : generated)
  if (kind === 'failed-tail') characterEntries[3].relationships = []
  if (kind === 'dropped' || kind === 'rejected-delta') characterEntries[0].relationships = [{ target:'苏绾', relation:'同乡' }]
  if (kind === 'forged') characterEntries[0].notes = 'renderer伪造的字段'
@@ -277,7 +284,7 @@ async function globalEffect(kind: 'unproven' | 'inference' | 'retried' | 'needle
  await f.owner.executeImportGeneration({execution:f.execution,handle:style.handle,ordinal:0,task:{...task,output:'visible-text'}})
  return Object.assign(f,{style,styleSlot})
 }
-it.each(['inference', 'retried', 'endpoint', 'batched', 'failed-tail', 'dropped', 'rejected-delta'] as const)('导入角色提议从持久%s产物恢复来源并经作者批准采用', async kind => {
+it.each(['inference', 'retried', 'endpoint', 'legacy-delta', 'batched', 'failed-tail', 'dropped', 'rejected-delta'] as const)('导入角色提议从持久%s产物恢复来源并经作者批准采用', async kind => {
  const f = await globalEffect(kind)
  const stored = f.db.prepare("SELECT proposal_id,raw_value FROM character_identity_proposals WHERE source_key LIKE 'character-proposal-v1:%'").get() as { proposal_id: string; raw_value: string }
  const envelope = JSON.parse(stored.raw_value); envelope.proof.provenance = null
@@ -289,7 +296,7 @@ it.each(['inference', 'retried', 'endpoint', 'batched', 'failed-tail', 'dropped'
  expect(batch.source.kind).toBe('import')
  const approved = f.owner.characterProposals.approve({ proposalBatchId: batch.proposalBatchId, expectedRevision: batch.revision,
    operationId: '作者采用导入角色', selections: batch.items.map(item => ({ selectionKey: item.selectionKey, action: 'create' })) })
- expect(approved.created).toHaveLength(kind === 'endpoint' ? 4 : kind === 'batched' ? 20 : kind === 'failed-tail' ? 18 : 3)
+ expect(approved.created).toHaveLength(kind === 'endpoint' ? 4 : kind === 'batched' ? 20 : kind === 'failed-tail' ? 18 : kind === 'legacy-delta' ? 8 : 3)
  expect(f.db.prepare('SELECT name,static_provenance FROM characters WHERE retired=0').get()).toMatchObject({ name: '林岚', static_provenance: expect.stringContaining('generated') })
  expect(f.owner.characterProposals.listPendingFinalized()).toEqual([])
 })
