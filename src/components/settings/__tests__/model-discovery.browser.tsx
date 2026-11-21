@@ -1161,6 +1161,16 @@ describe('model discovery settings flow', () => {
       expected: 'The network request failed. Check the endpoint or network and retry. Manual model IDs remain available.',
     },
     {
+      errorCode: 'proxy' as const,
+      locale: 'zh-CN' as const,
+      expected: '连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。手工模型 ID 仍可使用。',
+    },
+    {
+      errorCode: 'proxy' as const,
+      locale: 'en-US' as const,
+      expected: 'Could not reach the proxy set in Network proxy. Check the Host and Port, start your proxy app, or turn off Use a proxy. Manual model IDs remain available.',
+    },
+    {
       errorCode: 'invalid_response' as const,
       locale: 'zh-CN' as const,
       expected: '端点返回了无法识别的模型列表。请继续手工填写模型 ID。',
