@@ -12,7 +12,6 @@ const deleteChapter3Drafts = async ({ invoke, page, path: projectPath, session }
     assert.equal((await invoke(page, 'db:draft-delete', draft.id, projectPath, session)).success, true)
 }
 
-/** 第 3 章正文流完、保存前应用被结束：重开后「可恢复」里是第 3 章候选，正文片段可勾选继续。 */
 async function leaveDraftCandidate(context) {
   const { fake } = context
   fake.streamProse({ chunks: Array.from({ length: 4 }, (_, index) => `雾钟第${index + 1}次提前响起，林岚记下潮位。`), intervalMs: 1500 })
@@ -68,7 +67,6 @@ const blocked = (labels, english) => async context => {
 }
 
 export const RU702_SCENARIOS = {
-  /** #702：第 3 章恢复稿生成后改了第 3 章蓝图，再点「确认继续已选正文」：说明恢复稿没法继续、作品没改、来源有了变化，叫作者先复制再点「不再恢复」。修复前是「出了意外问题，暂时说不清原因。请再试一次。」 */
   'ru702-blueprint-continue': { model: true, shell: 'stage', setup: context => seedStageSample(context, { landOnChapter3: false, beforeReload: deleteChapter3Drafts }),
     run: async context => {
       const measured = await blocked(ZH, false)(context)
@@ -82,7 +80,6 @@ export const RU702_SCENARIOS = {
       assert.doesNotMatch(measured.shown, /\p{Script=Han}|GENERATION_/u)
       return measured
     } },
-  /** 同一份恢复稿，来源没改：点「确认继续已选正文」照常沿原候选继续写，上一次运行是「第 3 章 · 继续正文」，「可恢复」里没有报错。 */
   'ru702-unchanged-continue': { model: true, shell: 'stage', setup: context => seedStageSample(context, { landOnChapter3: false, beforeReload: deleteChapter3Drafts }),
     run: async context => {
       await leaveDraftCandidate(context)
