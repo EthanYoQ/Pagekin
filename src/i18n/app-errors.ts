@@ -99,6 +99,7 @@ const ERROR_KEYS = {
   CLOUD_BACKUP_RESTORE_TARGET_UNWRITABLE: 'error.cloudBackupRestoreTargetUnwritable',
   CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED: 'error.cloudBackupLocalStateNotSaved',
   CLOUD_BACKUP_BINDING_CONFLICT: 'error.cloudBackupBindingConflict',
+  CLOUD_BACKUP_NOT_CONFIGURED: 'error.cloudBackupNotConfigured',
   // 选择文件或文件夹后授权已过期、用尽或被撤销（例如选完很久才确认）。
   EXTERNAL_FILE_GRANT_NOT_FOUND: 'error.externalFileGrantExpired',
   EXTERNAL_FILE_GRANT_EXPIRED: 'error.externalFileGrantExpired',

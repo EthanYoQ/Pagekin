@@ -85,6 +85,7 @@ export const enUS = {
   'error.cloudBackupRestoreTargetUnwritable': 'The chosen folder cannot be written to; you may lack permission or the disk may be full. An unfinished copy folder may be left in it; you can delete it. Choose another folder, then click Restore selected cloud generation as a copy again.',
   'error.cloudBackupLocalStateNotSaved': "Your book is unchanged. Pagekin's data folder cannot be written to; the disk may be full or you may lack permission. Free up disk space, then try again.",
   'error.cloudBackupBindingConflict': 'Your book is unchanged and nothing was uploaded. The cloud backup binding was just changed. Close and reopen settings, then try again.',
+  'error.cloudBackupNotConfigured': 'Your book is unchanged and nothing was uploaded. Cloud backup is not bound for this book yet. Close and reopen settings, then click Connect and bind.',
   'backup.omittedReviewCycleOne': 'A damaged review record in {chapter} was left out of the archive. The text and other reviews are included.',
   'backup.omittedReviewCycleChapters': 'Damaged review records in {chapters} were left out of the archive. The text and other reviews are included.',
   'backup.omittedReviewCycleChaptersAndOthers': 'Damaged review records in {chapters} and elsewhere were left out of the archive. The text and other reviews are included.',

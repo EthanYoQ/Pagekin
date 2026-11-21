@@ -88,6 +88,7 @@ export const jaJP = {
   'error.cloudBackupRestoreTargetUnwritable': '選んだフォルダーに書き込めません。権限がないか、ディスクがいっぱいの可能性があります。途中までのコピーのフォルダーが残っていれば削除してかまいません。別のフォルダーを選んでから、もう一度「Restore selected cloud generation as a copy」をクリックしてください。',
   'error.cloudBackupLocalStateNotSaved': '作品は変更されていません。Pagekin のデータフォルダーに書き込めません。ディスクがいっぱいか、権限がない可能性があります。ディスクの空きを作ってから、もう一度お試しください。',
   'error.cloudBackupBindingConflict': '作品は変更されておらず、アップロードもされていません。クラウドバックアップの紐付けが直前に変更されました。設定を閉じて開き直してから、もう一度お試しください。',
+  'error.cloudBackupNotConfigured': '作品は変更されておらず、アップロードもされていません。この作品のクラウドバックアップはまだ紐付けられていません。設定を閉じて開き直してから、「Connect and bind」をクリックしてください。',
   'backup.omittedReviewCycleOne': '{chapter}のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
   'backup.omittedReviewCycleChapters': '{chapters}のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
   'backup.omittedReviewCycleChaptersAndOthers': '{chapters}などのレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',

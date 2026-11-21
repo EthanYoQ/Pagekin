@@ -87,6 +87,7 @@ export const zhCN = {
   'error.cloudBackupRestoreTargetUnwritable': '所选文件夹写不进去，可能没有权限或磁盘满了，里面可能留下没恢复完的副本文件夹，可以删掉。请换一个文件夹，再点「恢复所选云端世代为副本」。',
   'error.cloudBackupLocalStateNotSaved': '作品没有改动。书童的数据文件夹写不进去，可能磁盘满了或没有权限。请腾出磁盘空间，再试一次。',
   'error.cloudBackupBindingConflict': '作品没有改动，也没有上传。云备份绑定刚被改过。请关闭并重新打开设置，再试一次。',
+  'error.cloudBackupNotConfigured': '作品没有改动，也没有上传。这本书的云备份还没绑定好。请关闭并重新打开设置，再点「连接并绑定」。',
   'backup.omittedReviewCycleOne': '{chapter}有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'backup.omittedReviewCycleChapters': '{chapters}有审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'backup.omittedReviewCycleChaptersAndOthers': '{chapters}等处有审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
