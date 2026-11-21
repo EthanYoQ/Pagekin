@@ -49,6 +49,7 @@ const PORTABLE_ERROR_CODES = new Set<PortableProjectOperationErrorCode>([
   'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED',
   'PORTABLE_EXPORT_INTERRUPTED',
   'PORTABLE_EXPORT_SOURCE_CHANGED',
+  'PORTABLE_EXPORT_SOURCE_UNREADABLE',
   'PORTABLE_GRANT_INVALID',
   'PORTABLE_SCHEMA_UNSUPPORTED',
   'PORTABLE_TARGET_INSIDE_SOURCE',
@@ -57,18 +58,46 @@ const PORTABLE_ERROR_CODES = new Set<PortableProjectOperationErrorCode>([
   'PORTABLE_RESTORE_INVALID',
   'PORTABLE_RESTORE_TARGET_EXISTS',
   'PORTABLE_RESTORE_UNSAFE_TARGET',
+  'PORTABLE_RESTORE_ARCHIVE_MISSING',
+  'PORTABLE_RESTORE_ARCHIVE_UNREADABLE',
 ])
 
-function failure(error: unknown) {
-  const candidate = typeof error === 'object' && error !== null && 'code' in error
-    ? error.code
-    : error instanceof Error ? error.message : undefined
+const CODE_SHAPE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u
+const UNWRITABLE_ERRNO = new Set(['EACCES', 'EPERM', 'EROFS', 'ENOSPC'])
+
+function within(root: string, file: unknown): boolean {
+  if (typeof file !== 'string') return false
+  const relative = path.relative(root, file)
+  return !relative.startsWith('..') && !path.isAbsolute(relative)
+}
+
+function sourceFailure(operation: 'export' | 'restore', code: unknown): string {
+  if (operation === 'export') return 'PORTABLE_EXPORT_SOURCE_UNREADABLE'
+  return code === 'ENOENT' ? 'PORTABLE_RESTORE_ARCHIVE_MISSING' : 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE'
+}
+
+/**
+ * 不是码的报错（SqliteError、带路径的 ENOENT）是英文原文，不交给界面：原错误记进主进程日志，界面按操作说明。
+ * 读源和写目标会报同样的 errno，只有出错的路径分得开：落在作品或所选存档上的算读源失败，其余才按 errno 算目标写不进。
+ */
+function failure(operation: 'export' | 'restore', error: unknown, source?: string) {
+  const raw = error instanceof Error ? error.message : String(error)
+  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
+  const failedPath = typeof error === 'object' && error !== null && 'path' in error ? error.path : undefined
+  let message = raw
+  if (!CODE_SHAPE.test(raw)) {
+    console.error(`[project-archive] ${operation} failed`, error)
+    message = source && within(source, failedPath) ? sourceFailure(operation, code)
+      : UNWRITABLE_ERRNO.has(code as string) ? 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE'
+        : operation === 'export' ? 'PORTABLE_EXPORT_FAILED' : 'PORTABLE_RESTORE_FAILED'
+  }
+  const candidate = message === raw ? code ?? raw : message
   const errorCode = PORTABLE_ERROR_CODES.has(candidate as PortableProjectOperationErrorCode)
     ? candidate as PortableProjectOperationErrorCode
     : undefined
   return {
     success: false as const,
-    error: error instanceof Error ? error.message : String(error),
+    error: message,
     ...(errorCode ? { errorCode } : {}),
     ...(error instanceof SchemaMigrationError && error.damagedReviewCycle ? { damagedReviewCycle: error.damagedReviewCycle } : {}),
   }
@@ -213,11 +242,13 @@ export function registerProjectArchiveController(
   })
 
   ipcMain.handle('project:archive-export', async (event: ArchiveGrantEvent, request: PortableProjectExportRequest) => {
+    let sourceRoot: string | undefined
     try {
       const active = projectAccess.assertCurrentProjectContext(
         request.projectSession,
         getCurrentProjectPath(),
       )
+      sourceRoot = active.rootPath
       const targetArchivePath = resolveGrantedPath(grants, event, request.targetArchiveGrantId, 'create')
       const receipt = await exportPortableProjectInWorker({
         sourceProjectRoot: active.rootPath,
@@ -234,13 +265,14 @@ export function registerProjectArchiveController(
       })
       return { success: true as const, receipt }
     } catch (error) {
-      return failure(error)
+      return failure('export', error, sourceRoot)
     }
   })
 
   ipcMain.handle('project:archive-restore', async (event: ArchiveGrantEvent, request: PortableProjectRestoreRequest) => {
+    let archivePath: string | undefined
     try {
-      const archivePath = resolveGrantedPath(grants, event, request.archiveGrantId, 'read')
+      archivePath = resolveGrantedPath(grants, event, request.archiveGrantId, 'read')
       const targetProjectRoot = resolveGrantedPath(grants, event, request.targetGrantId, 'create')
       const receipt = await restorePortableProject({ archivePath, targetProjectRoot })
       try {
@@ -260,7 +292,7 @@ export function registerProjectArchiveController(
         }
       }
     } catch (error) {
-      return failure(error)
+      return failure('restore', error, archivePath)
     }
   })
 }

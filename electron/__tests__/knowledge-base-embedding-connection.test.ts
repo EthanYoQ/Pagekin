@@ -75,7 +75,7 @@ describe('rebuilding search when the retrieval model cannot be reached', () => {
 
     const shown = await rebuildFailureShown('zh-CN', 'https://api.example.com/v1')
 
-    expect(shown).toBe('重建检索失败：连不上「网络代理」里设置的代理。请打开代理软件，或在「网络代理」里关掉「启用代理」。')
+    expect(shown).toBe('重建检索失败：连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。')
   })
 
   it('still names the base_url when a proxy is set but the local model itself refuses', async () => {

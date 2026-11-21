@@ -836,3 +836,170 @@ describe('portable project restore service', () => {
     expect(fs.readFileSync(path.join(staging, 'keep.txt'), 'utf8')).toBe('not-owned')
   })
 })
+
+const fsError = (code: string, syscall: string, file: string) =>
+  Object.assign(new Error(`${code}: ${syscall} '${file}'`), { code, errno: -1, syscall, path: file })
+
+describe('读不了所选存档（#702）', () => {
+  function emptyRoot(): string {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'err-l2-restore-source-'))
+    roots.push(base)
+    return base
+  }
+
+  it('存档被挪走：交出带存档路径的 ENOENT，不新建副本', async () => {
+    const base = emptyRoot()
+    const archivePath = path.join(base, '挪走了.ainovel')
+    const error = await restorePortableProject({ archivePath, targetProjectRoot: path.join(base, 'restored') })
+      .catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({ code: 'ENOENT', path: archivePath })
+    expect(fs.readdirSync(base)).toEqual([])
+  })
+
+  it.each([
+    ['哈希前看存档', 'lstatSync', 'EPERM'],
+    ['哈希后解包打开存档', 'openSync', 'EACCES'],
+  ] as const)('%s时 %s 报 %s：交出带存档路径的原错误，不新建副本', async (_label, method, errno) => {
+    const base = emptyRoot()
+    const archivePath = path.join(base, '读不了.ainovel')
+    fs.writeFileSync(archivePath, 'archive')
+    const original = fs[method] as (...args: unknown[]) => unknown
+    vi.spyOn(fs, method).mockImplementation(((file: fs.PathLike, ...rest: unknown[]) => {
+      if (path.resolve(String(file)) === archivePath) throw fsError(errno, method.replace('Sync', ''), archivePath)
+      return original(file, ...rest)
+    }) as never)
+    try {
+      const error = await restorePortableProject({ archivePath, targetProjectRoot: path.join(base, 'restored') })
+        .catch((caught: unknown) => caught)
+      expect(error).toMatchObject({ code: errno, path: archivePath })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.readdirSync(base)).toEqual(['读不了.ainovel'])
+  })
+})
+
+describe('副本装到一半出意外（#702）', () => {
+  it('往副本里放文件时被杀毒软件占着（EBUSY）：恢复失败，但所选位置已经有了副本文件夹', async () => {
+    const f = await exportedFixture()
+    const link = fs.linkSync
+    vi.spyOn(fs, 'linkSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
+      if (path.basename(String(to)) === 'project.db') throw fsError('EBUSY', 'link', String(to))
+      return link(from, to)
+    }) as typeof fs.linkSync)
+    try {
+      await expect(restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot }))
+        .rejects.toMatchObject({ code: 'EBUSY' })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(path.join(f.targetRoot, '.ai-novel'))).toBe(true)
+  })
+
+  it('放最后一个文件 project.json 时磁盘满（ENOSPC）：交出副本里的路径，副本文件夹留下了但没装完', async () => {
+    const f = await exportedFixture()
+    const manifest = path.join(f.targetRoot, '.ai-novel', 'project.json')
+    const link = fs.linkSync
+    vi.spyOn(fs, 'linkSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
+      if (path.resolve(String(to)) === manifest) throw fsError('ENOSPC', 'link', manifest)
+      return link(from, to)
+    }) as typeof fs.linkSync)
+    try {
+      await expect(restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot }))
+        .rejects.toMatchObject({ code: 'ENOSPC', path: manifest })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(path.join(f.targetRoot, '.ai-novel', 'project.db'))).toBe(true)
+    expect(fs.existsSync(manifest)).toBe(false)
+  })
+
+  it('建好副本文件夹后放不进安装标记：报所选位置没法安全写入，副本文件夹已经建了', async () => {
+    const f = await exportedFixture()
+    const marker = path.join(f.targetRoot, '.portable-restore-reservation.json')
+    const link = fs.linkSync
+    vi.spyOn(fs, 'linkSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
+      if (path.resolve(String(to)) === marker) throw fsError('EPERM', 'link', marker)
+      return link(from, to)
+    }) as typeof fs.linkSync)
+    try {
+      await expect(restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot }))
+        .rejects.toMatchObject({ code: 'PORTABLE_RESTORE_UNSAFE_TARGET' })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(f.targetRoot)).toBe(true)
+  })
+})
+
+describe('副本已建好后收尾失败（#702）', () => {
+  it('删安装标记时 EPERM：恢复照常返回已建好的副本，不报失败', async () => {
+    const f = await exportedFixture()
+    const marker = path.join(f.targetRoot, '.portable-restore-reservation.json')
+    const unlink = fs.unlinkSync
+    vi.spyOn(fs, 'unlinkSync').mockImplementation(((file: fs.PathLike) => {
+      if (path.resolve(String(file)) === path.resolve(marker)) {
+        throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${marker}'`), { code: 'EPERM' })
+      }
+      return unlink(file)
+    }) as typeof fs.unlinkSync)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const receipt = await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+      expect(receipt.targetProjectRoot).toBe(f.targetRoot)
+      expect(logged).toHaveBeenCalled()
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(path.join(f.targetRoot, '.ai-novel', 'project.db'))).toBe(true)
+
+    const replay = await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+    expect(replay.targetProjectId).toBeTruthy()
+    expect(fs.existsSync(marker)).toBe(false)
+  })
+
+  it('删掉安装标记、删安装日志时 EPERM：之后再恢复到同一位置，认出已建好的副本并补清日志', async () => {
+    const f = await exportedFixture()
+    const journal = restoreJournalPath(f.targetRoot)
+    const unlink = fs.unlinkSync
+    vi.spyOn(fs, 'unlinkSync').mockImplementation(((file: fs.PathLike) => {
+      if (path.resolve(String(file)) === path.resolve(journal)) throw fsError('EPERM', 'unlink', journal)
+      return unlink(file)
+    }) as typeof fs.unlinkSync)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    let first: Awaited<ReturnType<typeof restorePortableProject>>
+    try {
+      first = await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(path.join(f.targetRoot, '.portable-restore-reservation.json'))).toBe(false)
+    expect(fs.existsSync(journal)).toBe(true)
+
+    const replay = await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+    expect(replay.targetProjectId).toBe(first.targetProjectId)
+    expect(fs.existsSync(journal)).toBe(false)
+  })
+
+  it('留着安装日志、没有标记，但那个位置的副本被改过：不认它，日志也不删', async () => {
+    const f = await exportedFixture()
+    const journal = restoreJournalPath(f.targetRoot)
+    const unlink = fs.unlinkSync
+    vi.spyOn(fs, 'unlinkSync').mockImplementation(((file: fs.PathLike) => {
+      if (path.resolve(String(file)) === path.resolve(journal)) throw fsError('EPERM', 'unlink', journal)
+      return unlink(file)
+    }) as typeof fs.unlinkSync)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    fs.appendFileSync(path.join(f.targetRoot, '.ai-novel', 'project.db'), 'x')
+
+    await expect(restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot }))
+      .rejects.toMatchObject({ code: 'PORTABLE_RESTORE_UNSAFE_TARGET' })
+    expect(fs.existsSync(journal)).toBe(true)
+  })
+})

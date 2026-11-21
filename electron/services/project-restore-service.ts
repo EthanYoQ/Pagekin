@@ -414,6 +414,15 @@ function releaseInstallJournal(journal: ReadInstallJournal, targetRoot: string, 
   activeInstallJournals.delete(normalized(journal.path))
 }
 
+function releaseCommittedInstallJournal(journal: ReadInstallJournal, targetRoot: string, removeMarker = true): void {
+  try {
+    releaseInstallJournal(journal, targetRoot, removeMarker)
+  } catch (error) {
+    activeInstallJournals.delete(normalized(journal.path))
+    console.error('[project-restore] 副本已建好，清理安装标记失败；下次恢复到同一位置会补清', error)
+  }
+}
+
 function reservationOwned(journal: ReadInstallJournal, targetRoot: string): fs.BigIntStats {
   const root = fs.lstatSync(targetRoot, { bigint: true })
   if (!root.isDirectory() || root.isSymbolicLink()
@@ -815,7 +824,9 @@ export async function restorePortableProject(input: RestorePortableProjectInput)
       else fail('PORTABLE_RESTORE_UNSAFE_TARGET')
     }
     if (targetExists) {
-      if (journal) {
+      // 上次装完删了标记、没删掉日志：副本是否完整交给 installedReceipt 核对，核对通过只补删日志。
+      const markerPresent = fs.existsSync(path.join(targetRoot, INSTALL_MARKER_NAME))
+      if (journal && markerPresent) {
         reservationOwned(journal, targetRoot)
         cleanupInstallTemporaries(journal, targetRoot)
       }
@@ -825,7 +836,7 @@ export async function restorePortableProject(input: RestorePortableProjectInput)
           if (journal.document.targetProjectId !== installed.targetProjectId) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
           activeInstallJournals.add(normalized(journal.path))
           heldJournalPath = journal.path
-          releaseInstallJournal(journal, targetRoot, true)
+          releaseCommittedInstallJournal(journal, targetRoot, markerPresent)
           heldJournalPath = undefined
         } else if (fs.existsSync(path.join(targetRoot, INSTALL_MARKER_NAME))) {
           fail('PORTABLE_RESTORE_UNSAFE_TARGET')
@@ -910,7 +921,7 @@ export async function restorePortableProject(input: RestorePortableProjectInput)
     const installed = await installedReceipt(targetRoot, authority, extracted.manifest.entries, installedDatabaseSha256)
     if (!installed || installed.targetProjectId !== targetProjectId) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
     input.__testHooks?.afterInstallCommitted?.(targetRoot)
-    releaseInstallJournal(journal, targetRoot, true)
+    releaseCommittedInstallJournal(journal, targetRoot)
     heldJournalPath = undefined
     return installed
   } finally {

@@ -64,7 +64,7 @@ export type SerializedExportError =
   | { kind: 'archive-service'; code: ProjectArchiveServiceErrorCode }
   | { kind: 'archive'; code: PortableProjectArchiveErrorCode }
   | { kind: 'schema'; code: string; damagedReviewCycle?: DamagedReviewCycle }
-  | { kind: 'error'; message: string; code?: string }
+  | { kind: 'error'; message: string; code?: string; path?: string }
 
 export type WorkerToHost =
   | { type: 'progress'; phase: PortableExportPhase; round: number }
@@ -83,8 +83,13 @@ export function serializeExportError(error: unknown): SerializedExportError {
   if (error instanceof ProjectArchiveServiceError) return { kind: 'archive-service', code: error.code }
   if (error instanceof PortableProjectArchiveError) return { kind: 'archive', code: error.code }
   if (error instanceof SchemaMigrationError) return { kind: 'schema', code: error.code, damagedReviewCycle: error.damagedReviewCycle }
-  const code = (error as { code?: unknown } | null)?.code
-  return { kind: 'error', message: error instanceof Error ? error.message : String(error), ...(typeof code === 'string' ? { code } : {}) }
+  const { code, path } = (error ?? {}) as { code?: unknown; path?: unknown }
+  return {
+    kind: 'error',
+    message: error instanceof Error ? error.message : String(error),
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(typeof path === 'string' ? { path } : {}),
+  }
 }
 
 export function rehydrateExportError(error: SerializedExportError): Error {
@@ -92,7 +97,7 @@ export function rehydrateExportError(error: SerializedExportError): Error {
     case 'archive-service': return new ProjectArchiveServiceError(error.code)
     case 'archive': return new PortableProjectArchiveError(error.code)
     case 'schema': return new SchemaMigrationError(error.code, error.damagedReviewCycle)
-    case 'error': return Object.assign(new Error(error.message), error.code === undefined ? {} : { code: error.code })
+    case 'error': return Object.assign(new Error(error.message), { code: error.code, path: error.path })
   }
 }
 

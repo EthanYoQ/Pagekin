@@ -375,7 +375,13 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `pp702-unlisted-step-error` | 第 3 章定稿后，把「章节剧情要点」记成带 IPC 包装的 `GENERATION_KNOWLEDGE_BUSY`、「角色状态更新」记成裸码 `KNOWLEDGE_BASE_NATIVE_UNAVAILABLE`（都不在后处理步骤表里、但已登记），切到第 4 章再回来：两行显示报错目录的说明（「知识库正在更新，请稍后再生成。」「知识库不可用：Windows 原生组件加载失败……」），不露码名和 `Error invoking` | 正文（中文） | 是 | #702 |
 | `l4conn-refused` | 设置·AI 模型编辑夹具模型后关掉假服务，点「测试连接」：提示「连接失败：base_url 上没有服务在响应……」，不出现 fetch failed 与错误码（`l4conn-refused`） | 设置（中文） | 是 | #702 |
 | `l4conn-host-not-found` | 把 base_url 改成解析不到的 `http://nosuchhostzz9/v1`（系统解析器真实报 ENOTFOUND，再照 undici 的形状抛出），点「测试连接」：提示「连接失败：找不到 base_url 里的服务器……」（`l4conn-host-not-found`） | 设置（中文） | 是 | #702 |
+| `l4conn-proxy-host-typo` | 设置·网络代理打开「启用代理」，主机地址填解析不到的 `proxy-host-typo` 并保存；夹具模型的 base_url 改成 `https://model-probe.test/v1`（请求先解析代理主机，系统解析器真实报 ENOTFOUND，再照 undici 的形状抛出），点「测试连接」：提示「连接失败：连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。」（`l4conn-proxy-host-typo`） | 设置（中文） | 是 | #702 |
+| `l4conn-proxy-host-typo-en` | 同上，先在外观页切到英文界面：提示「Connection failed: Could not reach the proxy set in Network proxy. Check the Host and Port, start your proxy app, or turn off Use a proxy.」（`l4conn-proxy-host-typo-en`） | 设置（英文） | 是 | #702 |
 | `l1b-kb-rebuild-unregistered` | 设置·检索模型点「检查并重建向量索引」，主进程的 `kb:backfill-vectors` 换成回未登记码 `EMBEDDING_SPACE_VERIFY_FAILED`：提示只有「重建检索失败」，不带码名；渲染端控制台记一行「[app-errors] 未登记文案的错误码：EMBEDDING_SPACE_VERIFY_FAILED」（`l1b-kb-rebuild-unregistered`） | 设置（中文） | 是 | #702 |
+| `errl2-export-inside-source` | 设置·项目备份把存档存进作品自己的文件夹，点「导出本地存档」：中文提示「作品没有改动。存档不能放进作品自己的文件夹……换到作品文件夹以外的位置。」，切英文再导出给对应英文；不露 PORTABLE_TARGET_INSIDE_SOURCE，作品文件夹里没有写出存档（`errl2-1-export-inside-zh`、`errl2-2-export-inside-en`） | 设置（中文、英文） | 是 | #702 |
+| `errl2-restore-archive-moved` | 先导出一份存档，点「从本地存档恢复副本」选好存档后、选恢复位置时存档被移走：界面说「没有新建副本。找不到所选存档。请再点「从本地存档恢复副本」重新选一次。」，切英文再恢复给对应英文；不露英文原文和路径，主进程日志里有原来的 ENOENT，恢复位置没有建出副本（`errl2-3-restore-moved-zh`、`errl2-4-restore-moved-en`） | 设置（中文、英文） | 是 | #702 |
+| `errl2-source-unreadable` | 用 icacls 拒读作品的 project.json 后点「导出本地存档」：中文提示「作品没有改动。作品文件读不了，可能正被同步盘或杀毒软件占用。请稍后再点「导出本地存档」。」，不叫作者换位置，主进程日志有原来的 EPERM，没有写出存档；拒读所选存档后恢复：提示「所选存档读不了」，恢复位置没有建出副本；切英文再导出给对应英文（`errl2-5-export-source-unreadable-zh`、`errl2-6-restore-archive-unreadable-zh`、`errl2-7-export-source-unreadable-en`）。只在 Windows 上跑 | 设置（中文、英文） | 是 | #702 |
+| `errl2-restore-mid-install` | 先导出一份存档，再点「从本地存档恢复副本」，在主进程里让往副本放文件的 link 依次报 ENOSPC（project.json）、EPERM（安装标记）、EBUSY（project.db）：三次提示分别是「所选文件夹写不进去……」「所选文件夹没法安全写入……」「恢复时出了意外错误……」，都说「里面可能留下没恢复完的副本文件夹，可以删掉」，不再说「没有新建副本」，所选位置每次多一个没装完的副本文件夹；切英文再报 ENOSPC 给对应英文（`errl2-8-restore-mid-install-unwritable-zh`、`errl2-9-restore-mid-install-unsafe-zh`、`errl2-10-restore-mid-install-failed-zh`、`errl2-11-restore-mid-install-unwritable-en`） | 设置（中文、英文） | 是 | #702 |
 
 ## 恢复稿来源改过后点继续（#702）
 
