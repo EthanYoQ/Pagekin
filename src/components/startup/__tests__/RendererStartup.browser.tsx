@@ -327,6 +327,20 @@ it('renders pending and blocked startup messages in English', async () => {
   expect(host.textContent).not.toContain('启动尚未完成')
 })
 
+it.each([
+  ['zh-CN', 'GLOBAL_DISK_FULL', '磁盘空间不足'],
+  ['zh-CN', 'GLOBAL_DATA_UNWRITABLE', '没有写入权限，或正被其他程序占用'],
+  ['zh-CN', 'GLOBAL_DATA_BLOCKED', '工作台暂时无法加载'],
+  ['en-US', 'GLOBAL_DISK_FULL', 'The disk is full'],
+  ['en-US', 'GLOBAL_DATA_UNWRITABLE', 'access is denied or another program is using it'],
+] as const)('主进程数据受阻时（%s，%s）说出真正的原因，而不是外观偏好', async (locale, code, reason) => {
+  useLocaleStore.setState({ locale })
+  await act(async () => root.render(<RendererStartup dependencies={dependencies({ waitForMainReady: async () => ({ state: 'blocked', code }) })} />))
+  await vi.waitFor(() => expect(host.querySelector('main [role="alert"]')?.textContent).toContain(reason))
+  expect(host.textContent).not.toMatch(/外观偏好尚未安全加载|Appearance preferences could not be loaded/)
+  expect(host.textContent).not.toContain(code)
+})
+
 it('migration notice excludes its titlebar overlap from native dragging and dismisses without remounting the workspace', async () => {
   const load = vi.fn(async () => ({ default: () => <textarea aria-label="迁移后未保存正文" defaultValue="保留作者正文" /> }))
   const dep = dependencies({ waitForMainReady: async () => ({
