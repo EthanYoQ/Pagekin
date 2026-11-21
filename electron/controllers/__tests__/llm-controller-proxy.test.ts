@@ -46,3 +46,15 @@ describe('代理连不上时拉模型列表', () => {
     await expect(discover()).resolves.toEqual({ success: false, errorCode: 'proxy' })
   })
 })
+
+describe('代理连不上时测试连接', () => {
+  beforeAll(() => { if (!mocks.handlers.size) registerLLMController() })
+
+  it('Anthropic 协议的检索模型没发请求就失败：照原样说明协议，不归咎代理', async () => {
+    const result = await mocks.handlers.get('llm:test-connection')!({}, {
+      id: 'embed', name: 'embed', provider: 'custom', protocol: 'anthropic', modelName: 'm', apiKey: 'key',
+      baseUrl: 'https://api.example.com/v1', temperature: 0.7, maxTokens: 256, purposes: ['embedding'],
+    }) as { error: string }
+    expect(result.error).toContain('Anthropic')
+  })
+})

@@ -21,7 +21,7 @@ const target = http.createServer((req, res) => {
     res.end(JSON.stringify({ choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }] }))
   })
 })
-const targetPort = await listen(target)
+const targetPort = await new Promise(resolve => target.listen(0, '::', () => resolve(target.address().port)))
 
 const proxySaw = []
 const proxy = http.createServer((req, res) => {
@@ -75,6 +75,7 @@ try {
   const local = {
     'local 127.0.0.1': () => invoke('llm:test-connection', model(`http://127.0.0.1:${targetPort}/v1`)),
     'local localhost': () => invoke('llm:test-connection', model(`http://localhost:${targetPort}/v1`)),
+    'local [::1]': () => invoke('llm:test-connection', model(`http://[::1]:${targetPort}/v1`)),
   }
   const run = async (phase, table) => {
     const results = {}
@@ -121,9 +122,10 @@ try {
   assert.equal((await invoke('cloud-backup:connect', { endpoint: `http://127.0.0.1:${closedPort}/dav/`, username: 'probe', secret: 'probe-not-a-secret' })).errorCode,
     'CLOUD_BACKUP_NETWORK_FAILED', 'a dead local WebDAV is not blamed on the proxy')
 
+  assert.deepEqual(await setProxy({ enabled: true, host: '::1', port: proxyPort }), { success: true }, 'an IPv6 proxy host is accepted')
   assert.deepEqual(await setProxy({ enabled: true, host: 'http://127.0.0.1', port: proxyPort }),
     { success: false, error: 'Error: NETWORK_PROXY_INVALID' }, 'a host with a scheme is rejected before it is saved')
-  assert.equal((await invoke('config:get')).proxy.port, closedPort, 'the rejected proxy was not saved')
+  assert.equal((await invoke('config:get')).proxy.host, '::1', 'the rejected proxy was not saved')
 
   const appPid = app.process().pid
   console.log(JSON.stringify({ appPid, counts }, null, 1))
