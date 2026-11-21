@@ -583,6 +583,41 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
 
     expect(fs.readFileSync(targetPath, 'utf8')).toBe('new content')
   })
+
+  it('reports a target another program holds open as in use and leaves it unchanged', async () => {
+    const fixture = fixtureRoot()
+    const selectedRoot = path.join(fixture, 'selected')
+    const targetPath = path.join(selectedRoot, 'chapter.txt')
+    fs.mkdirSync(selectedRoot)
+    fs.writeFileSync(targetPath, 'old content', 'utf8')
+    const holder = fs.openSync(targetPath, 'r+')
+    try {
+      await expect(createWindowsSafeFileSystem().writeTextAtomically(capability(selectedRoot, 'chapter.txt'), 'new content'))
+        .rejects.toThrow('SECURE_FS_TARGET_IN_USE')
+    } finally {
+      fs.closeSync(holder)
+    }
+
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
+    expect(fs.readdirSync(selectedRoot)).toEqual(['chapter.txt'])
+  })
+
+  it('keeps the generic open failure for a read-only target that nobody holds open', async () => {
+    const fixture = fixtureRoot()
+    const selectedRoot = path.join(fixture, 'selected')
+    const targetPath = path.join(selectedRoot, 'chapter.txt')
+    fs.mkdirSync(selectedRoot)
+    fs.writeFileSync(targetPath, 'old content', 'utf8')
+    fs.chmodSync(targetPath, 0o444)
+    try {
+      await expect(createWindowsSafeFileSystem().writeTextAtomically(capability(selectedRoot, 'chapter.txt'), 'new content'))
+        .rejects.toThrow('SECURE_FS_OPEN_FAILED')
+    } finally {
+      fs.chmodSync(targetPath, 0o666)
+    }
+
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
+  })
 })
 
 describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file system', () => {
