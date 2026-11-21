@@ -317,7 +317,7 @@ describe('ModelDiscoveryService', () => {
     const fetchImpl: typeof fetch = async (_input, init) => {
       const signal = init?.signal ?? null
       if (phase === 'fetch') await waitForAbort(signal)
-      return { ok: true, status: 200, json: () => waitForAbort(signal) } as Response
+      return { ok: true, status: 200, json: () => waitForAbort(signal) } as unknown as Response
     }
 
     const result = await new ModelDiscoveryService({
