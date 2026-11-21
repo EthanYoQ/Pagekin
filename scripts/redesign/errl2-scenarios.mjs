@@ -67,6 +67,30 @@ function denyRead(file) {
   return () => execFileSync('icacls', [file, '/remove:d', '*S-1-1-0'], { stdio: 'ignore' })
 }
 
+/** 副本文件夹已经建好、往里放某个文件时出错（磁盘满、杀毒软件拦）：在主进程里让这一次 link 抛系统报错。 */
+async function restoreFailingAt({ app, page }, labels, archive, parent, failing) {
+  await app.evaluate(({ dialog }, [file, folder, [name, code]]) => {
+    const fs = process.getBuiltinModule('node:fs')
+    const path = process.getBuiltinModule('node:path')
+    const link = fs.linkSync
+    globalThis.__errl2RestoreLink = link
+    fs.linkSync = (from, to) => {
+      if (path.basename(String(to)) === name && String(to).startsWith(folder)) {
+        throw Object.assign(new Error(`${code}: link '${to}'`), { code, syscall: 'link', path: String(to) })
+      }
+      return link(from, to)
+    }
+    let calls = 0
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [++calls === 1 ? file : folder] })
+  }, [archive, parent, failing])
+  try {
+    await stage.root(page).getByRole('button', { name: labels.restore, exact: true }).click()
+    return await notice(page, 'alert')
+  } finally {
+    await app.evaluate(() => { process.getBuiltinModule('node:fs').linkSync = globalThis.__errl2RestoreLink })
+  }
+}
+
 export const ERRL2_SCENARIOS = {
   'errl2-source-unreadable': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1) }, run: async context => {
     assert.equal(process.platform, 'win32', '这个场景用 icacls 拒读，只在 Windows 上跑')
@@ -157,5 +181,38 @@ export const ERRL2_SCENARIOS = {
     await shoot('errl2-4-restore-moved-en')
     assert.deepEqual(fs.readdirSync(target), [], '恢复位置没有建出副本')
     return { zh, en }
+  } },
+  'errl2-restore-mid-install': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1) }, run: async context => {
+    const { page, roots, shoot } = context
+    const parent = path.join(roots.temp, '恢复到这里')
+    fs.mkdirSync(parent)
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    await openBackup(page, ZH)
+    const archive = path.join(roots.projects, '好的备份.ainovel')
+    await exportTo(context, ZH, archive)
+    assert.match(await notice(page, 'status'), /^本地存档已导出：/u)
+    const leftovers = () => fs.readdirSync(parent).filter(name => !name.startsWith('.')).length
+
+    const unwritable = await restoreFailingAt(context, ZH, archive, parent, ['project.json', 'ENOSPC'])
+    assert.equal(unwritable, '所选文件夹写不进去，可能没有权限或磁盘满了，里面可能留下没恢复完的副本文件夹，可以删掉。请换一个文件夹，再点「从本地存档恢复副本」。')
+    assert.equal(leftovers(), 1, '装到一半的副本文件夹留在所选位置')
+    await shoot('errl2-8-restore-mid-install-unwritable-zh')
+
+    const unsafe = await restoreFailingAt(context, ZH, archive, parent, ['.portable-restore-reservation.json', 'EPERM'])
+    assert.equal(unsafe, '所选文件夹没法安全写入，里面可能留下没恢复完的副本文件夹，可以删掉。请换一个文件夹，再点「从本地存档恢复副本」。')
+    assert.equal(leftovers(), 2, '建好的副本文件夹留在所选位置')
+    await shoot('errl2-9-restore-mid-install-unsafe-zh')
+
+    const unexpected = await restoreFailingAt(context, ZH, archive, parent, ['project.db', 'EBUSY'])
+    assert.equal(unexpected, '恢复时出了意外错误，所选文件夹里可能留下没恢复完的副本文件夹，可以删掉。请再点「从本地存档恢复副本」；还不行，请把这条提示反馈给我们。')
+    assert.equal(leftovers(), 3, '装到一半的副本文件夹留在所选位置')
+    await shoot('errl2-10-restore-mid-install-failed-zh')
+
+    await switchToEnglish(page)
+    const en = await restoreFailingAt(context, EN, archive, parent, ['project.json', 'ENOSPC'])
+    assert.equal(en, 'The chosen folder cannot be written to; you may lack permission or the disk may be full. An unfinished copy folder may be left in it; you can delete it. Choose another folder, then click Restore a copy from local archive again.')
+    await shoot('errl2-11-restore-mid-install-unwritable-en')
+    return { leftovers: leftovers() }
   } },
 }
