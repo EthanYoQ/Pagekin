@@ -4,7 +4,6 @@ import { characterStateReply, finalizeChapter } from './f491-scenarios.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
 import { seedStageSample } from './scenarios.mjs'
 
-// #702：后处理步骤记下了步骤表之外的失败原因（已登记的码，裸码或带 IPC 包装），重开本章后按报错目录说明。
 const STORED = {
   chapter_notes: "Error invoking remote method 'project-session:invoke': Error: GENERATION_KNOWLEDGE_BUSY",
   character_cards: 'KNOWLEDGE_BASE_NATIVE_UNAVAILABLE',

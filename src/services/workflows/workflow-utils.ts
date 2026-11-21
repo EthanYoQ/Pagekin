@@ -18,7 +18,7 @@ import { currentInterfaceLocale } from '../../stores/locale-store'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 import { describeFinalizationStepError, POST_PROCESS_INTERRUPTED } from '../../shared/finalization-step-error'
 
-/** 后处理步骤失败原因给作者看的唯一出口：步骤表里的码按步骤说明，其余（含落库的旧原文）交给通用报错说明。 */
+/** 步骤表里的码按步骤说明；其余（含落库的裸码或带 IPC 包装的原文）交给通用报错说明。 */
 export function finalizationStepErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
   const message = error instanceof Error ? error.message : error
   return (typeof message === 'string' && describeFinalizationStepError(message, (zh, en) => localize(copyLocale(locale), zh, en)))

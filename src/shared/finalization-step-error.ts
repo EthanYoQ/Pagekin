@@ -125,7 +125,7 @@ function detailNames(error: string): string[] {
   }
 }
 
-/** 步骤表里的错误码换成作者可读说明；表外的返回 undefined，由界面交给通用报错说明。 */
+/** 步骤表里的错误码换成作者可读说明；表外的返回 undefined。 */
 export function describeFinalizationStepError(error: string, text: (zhCNText: string, enUSText: string) => string): string | undefined {
   const entry = entryOf(error)
   if (!entry) return undefined
