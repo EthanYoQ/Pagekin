@@ -539,9 +539,8 @@ const AUTHOR_STOP_REASON_KEYS = {
 export function appErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
   const known = knownAppErrorMessage(locale, error)
   if (known) return known
-  const message = readMessage(error)
-  return unregisteredCodeMessage(locale, message.trim().replace(DISPLAY_PREFIX, ''))
-    ?? translate(locale, 'error.unknown', { message })
+  return unregisteredCodeMessage(locale, strippedRaw(error))
+    ?? translate(locale, 'error.unknown', { message: readMessage(error) })
 }
 
 const loggedUnregisteredCodes = new Set<string>()
