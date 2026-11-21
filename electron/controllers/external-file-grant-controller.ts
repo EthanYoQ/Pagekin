@@ -133,27 +133,14 @@ export function registerExternalFileGrantController(
     async (event: GrantEvent, grantId: string, relativePath: string, content: string) => {
       try {
         const target = resolveGrantPath(grants, event, grantId, 'write', relativePath)
-        const targetExists = await fileSystem.exists(target)
-        let canCreate = false
-        let createPermissionError: unknown
-        try {
-          resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
-          canCreate = true
-        } catch (error) {
-          createPermissionError = error
-        }
-        if (!targetExists && !canCreate) {
-          throw createPermissionError
-        }
+        resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
         // writeTextAtomically holds a root-relative Windows handle chain through
         // temporary-file creation and replacement. Revalidate the grant at the
-        // ready phase and let the helper enforce create-vs-write at commit.
+        // ready phase.
         await fileSystem.writeTextAtomically(target, content, () => {
           resolveGrantPath(grants, event, grantId, 'write', relativePath, false)
-          if (canCreate) {
-            resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
-          }
-        }, { mustAlreadyExist: !canCreate })
+          resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
+        })
         return { success: true }
       } catch (error) {
         return {

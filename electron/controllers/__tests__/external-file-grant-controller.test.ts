@@ -22,7 +22,7 @@ vi.mock('electron', () => ({
 
 import { registerExternalFileGrantController } from '../external-file-grant-controller'
 import { ExternalFileGrantService } from '../../services/external-file-grant-service'
-import type { AtomicWriteConstraints, WindowsSafeFileSystem } from '../../security/windows-safe-file-system'
+import type { WindowsSafeFileSystem } from '../../security/windows-safe-file-system'
 import { nodeTestSecureFileSystem } from '../../../test/helpers/node-test-secure-file-system'
 import { getGlobalDataRoot } from '../../services/app-data-locator'
 import type { GlobalConfig } from '../../../src/shared/ipc-channels'
@@ -174,14 +174,11 @@ describe('external file grant IPC contract', () => {
     expect(fs.existsSync(path.join(outsideDirectory, 'new-folder'))).toBe(false)
   })
 
-  it('仅 write 授权在 exists 后目标被删除时不能借原子替换重新创建文件', async () => {
+  it('只有 write 没有 create 的授权不能写导出文件，原文件不变', async () => {
     const exportDirectory = path.join(temporaryRoot, 'exports-write-only')
     fs.mkdirSync(exportDirectory, { recursive: true })
     fs.writeFileSync(path.join(exportDirectory, 'chapter.txt'), 'old content', 'utf8')
-    const grants = new ExternalFileGrantService({
-      now: () => 1_000,
-      newGrantId: () => 'write-only-grant',
-    })
+    const grants = new ExternalFileGrantService({ now: () => 1_000, newGrantId: () => 'write-only-grant' })
     const grant = grants.issueDirectory({
       webContentsId: 17,
       directoryPath: exportDirectory,
@@ -189,60 +186,20 @@ describe('external file grant IPC contract', () => {
       ttlMs: 60_000,
       maxUses: 2,
     })
-    let targetExists = true
-    const writeTextAtomically = vi.fn(async (
-      _capability: unknown,
-      _content: string,
-      beforeReplace?: () => void | Promise<void>,
-      constraints?: AtomicWriteConstraints,
-    ) => {
-      await beforeReplace?.()
-      if (constraints?.mustAlreadyExist && !targetExists) {
-        throw new Error('SECURE_FS_NOT_FOUND')
-      }
-      targetExists = true
-    })
-    const fileSystem = {
-      readText: vi.fn(),
-      writeTextAtomically,
-      mkdir: vi.fn(),
-      exists: vi.fn(async () => {
-        const observed = targetExists
-        // Deterministically models deletion immediately after the controller's
-        // existence observation and before the helper commit point.
-        targetExists = false
-        return observed
-      }),
-      listDirectory: vi.fn(),
-    } as unknown as WindowsSafeFileSystem
     mocks.handlers.clear()
-    registerExternalFileGrantController(grants, fileSystem)
+    registerExternalFileGrantController(grants, nodeTestSecureFileSystem)
 
-    await expect(handler('fs:grant-write-file')(
-      event(),
-      grant.grantId,
-      'chapter.txt',
-      'new content',
-    )).resolves.toMatchObject({
-      success: false,
-      error: expect.stringContaining('路径无效'),
-    })
-    expect(writeTextAtomically).toHaveBeenCalledWith(
-      expect.objectContaining({ relativePath: 'chapter.txt' }),
-      'new content',
-      expect.any(Function),
-      { mustAlreadyExist: true },
-    )
-    expect(targetExists).toBe(false)
+    await expect(handler('fs:grant-write-file')(event(), grant.grantId, 'chapter.txt', 'new content'))
+      .resolves.toEqual({ success: false, commitState: 'not_committed', error: '当前窗口无权使用该外部文件授权。' })
+    expect(fs.readFileSync(path.join(exportDirectory, 'chapter.txt'), 'utf8')).toBe('old content')
   })
 
-  it('同时具备 create 授权时允许在提交点创建已被删除的目标', async () => {
+  it('write 与 create 授权在提交点重建准备后被删除的目标', async () => {
     const exportDirectory = path.join(temporaryRoot, 'exports-create-capable')
     fs.mkdirSync(exportDirectory, { recursive: true })
-    const grants = new ExternalFileGrantService({
-      now: () => 1_000,
-      newGrantId: () => 'create-capable-grant',
-    })
+    const targetPath = path.join(exportDirectory, 'chapter.txt')
+    fs.writeFileSync(targetPath, 'old content', 'utf8')
+    const grants = new ExternalFileGrantService({ now: () => 1_000, newGrantId: () => 'create-capable-grant' })
     const grant = grants.issueDirectory({
       webContentsId: 17,
       directoryPath: exportDirectory,
@@ -250,46 +207,20 @@ describe('external file grant IPC contract', () => {
       ttlMs: 60_000,
       maxUses: 2,
     })
-    let targetExists = true
-    const writeTextAtomically = vi.fn(async (
-      _capability: unknown,
-      _content: string,
-      beforeReplace?: () => void | Promise<void>,
-      constraints?: AtomicWriteConstraints,
-    ) => {
-      await beforeReplace?.()
-      if (constraints?.mustAlreadyExist && !targetExists) {
-        throw new Error('SECURE_FS_NOT_FOUND')
-      }
-      targetExists = true
-    })
-    const fileSystem = {
-      readText: vi.fn(),
-      writeTextAtomically,
-      mkdir: vi.fn(),
-      exists: vi.fn(async () => {
-        const observed = targetExists
-        targetExists = false
-        return observed
-      }),
-      listDirectory: vi.fn(),
-    } as unknown as WindowsSafeFileSystem
+    const fileSystem: WindowsSafeFileSystem = {
+      ...nodeTestSecureFileSystem,
+      writeTextAtomically: (capability, content, beforeReplace) =>
+        nodeTestSecureFileSystem.writeTextAtomically(capability, content, async () => {
+          await beforeReplace?.()
+          fs.rmSync(targetPath)
+        }),
+    }
     mocks.handlers.clear()
     registerExternalFileGrantController(grants, fileSystem)
 
-    await expect(handler('fs:grant-write-file')(
-      event(),
-      grant.grantId,
-      'chapter.txt',
-      'new content',
-    )).resolves.toEqual({ success: true })
-    expect(writeTextAtomically).toHaveBeenCalledWith(
-      expect.objectContaining({ relativePath: 'chapter.txt' }),
-      'new content',
-      expect.any(Function),
-      { mustAlreadyExist: false },
-    )
-    expect(targetExists).toBe(true)
+    await expect(handler('fs:grant-write-file')(event(), grant.grantId, 'chapter.txt', 'new content'))
+      .resolves.toEqual({ success: true })
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe('new content')
   })
 
   it.each(['not_committed', 'unknown'] as const)(

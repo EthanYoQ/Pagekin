@@ -51,9 +51,6 @@ namespace AiNovelSecureFs {
     private const int FileDirectoryInformation = 1;
     private const int FileRenameInformation = 10;
     private const int FileDispositionInformation = 13;
-    private const int FileRenameInformationEx = 65;
-    private const uint FILE_RENAME_REPLACE_IF_EXISTS = 0x00000001;
-    private const uint FILE_RENAME_POSIX_SEMANTICS = 0x00000002;
     private const int STATUS_SUCCESS = 0;
     private const int STATUS_BUFFER_OVERFLOW = unchecked((int)0x80000005);
     private const int STATUS_NO_MORE_FILES = unchecked((int)0x80000006);
@@ -119,13 +116,6 @@ namespace AiNovelSecureFs {
     [StructLayout(LayoutKind.Sequential)]
     private struct RenameInformationHeader {
       public byte ReplaceIfExists;
-      public IntPtr RootDirectory;
-      public uint FileNameLength;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RenameInformationExHeader {
-      public uint Flags;
       public IntPtr RootDirectory;
       public uint FileNameLength;
     }
@@ -525,34 +515,6 @@ namespace AiNovelSecureFs {
       }
     }
 
-    private static void RenameExistingIntoDirectory(IntPtr fileHandle, IntPtr parentDirectory, string targetName) {
-      byte[] name = System.Text.Encoding.Unicode.GetBytes(targetName);
-      int lengthOffset = (int)Marshal.OffsetOf(typeof(RenameInformationExHeader), "FileNameLength") + sizeof(uint);
-      IntPtr buffer = Marshal.AllocHGlobal(lengthOffset + name.Length);
-      try {
-        RenameInformationExHeader header = new RenameInformationExHeader {
-          Flags = FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
-          RootDirectory = parentDirectory,
-          FileNameLength = checked((uint)name.Length),
-        };
-        Marshal.StructureToPtr(header, buffer, false);
-        Marshal.Copy(name, 0, IntPtr.Add(buffer, lengthOffset), name.Length);
-        IoStatusBlock ioStatus;
-        int status = NtSetInformationFile(
-          fileHandle,
-          out ioStatus,
-          buffer,
-          checked((uint)(lengthOffset + name.Length)),
-          FileRenameInformationEx);
-        // FileRenameInformationEx/Posix is the only write-only commit path. If
-        // this OS or file system rejects it, fail closed instead of falling
-        // back to FileRenameInformation, which can create a missing target.
-        if (status != STATUS_SUCCESS) throw new SecureFsException("SECURE_FS_WRITE_FAILED");
-      } finally {
-        Marshal.FreeHGlobal(buffer);
-      }
-    }
-
     private static void MarkDeleteOnClose(IntPtr fileHandle) {
       DispositionInformation disposition = new DispositionInformation { DeleteFile = 1 };
       IntPtr buffer = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(DispositionInformation)));
@@ -589,26 +551,11 @@ namespace AiNovelSecureFs {
       if (status != STATUS_SUCCESS) throw new SecureFsException("SECURE_FS_WRITE_FAILED");
     }
 
-    private static IntPtr OpenExistingTargetForWriteOnlyCommit(IntPtr parentDirectory, string targetName) {
-      return OpenRelative(
-        parentDirectory,
-        targetName,
-        // A metadata-only handle does not reliably participate in Windows
-        // share-delete arbitration. FILE_WRITE_DATA makes this write-only
-        // no-DELETE share lease effective while it stays open through commit.
-        FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-        FILE_ATTRIBUTE_NORMAL,
-        FILE_OPEN,
-        FILE_NON_DIRECTORY_FILE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE);
-    }
-
     /** Holds the temporary file and directory handles until main-process lease validation decides commit/cancel. */
     public sealed class AtomicWriteSession : IDisposable {
       private List<IntPtr> directories;
       private SafeFileHandle temporaryFile;
       private IntPtr parentDirectory;
-      private IntPtr requiredTarget;
       private string targetName;
       private bool committed;
 
@@ -616,30 +563,19 @@ namespace AiNovelSecureFs {
         List<IntPtr> directories,
         SafeFileHandle temporaryFile,
         IntPtr parentDirectory,
-        IntPtr requiredTarget,
         string targetName) {
         this.directories = directories;
         this.temporaryFile = temporaryFile;
         this.parentDirectory = parentDirectory;
-        this.requiredTarget = requiredTarget;
         this.targetName = targetName;
       }
 
-      public void Commit(bool mustAlreadyExist) {
+      public void Commit() {
         if (temporaryFile == null || temporaryFile.IsClosed || temporaryFile.IsInvalid) {
           throw new SecureFsException("SECURE_FS_WRITE_FAILED");
         }
-        try {
-          if (mustAlreadyExist) {
-            if (!IsValidHandle(requiredTarget)) throw new SecureFsException("SECURE_FS_WRITE_FAILED");
-            RenameExistingIntoDirectory(temporaryFile.DangerousGetHandle(), parentDirectory, targetName);
-          } else {
-            RenameIntoDirectory(temporaryFile.DangerousGetHandle(), parentDirectory, targetName);
-          }
-          committed = true;
-        } finally {
-          CloseHandle(ref requiredTarget);
-        }
+        RenameIntoDirectory(temporaryFile.DangerousGetHandle(), parentDirectory, targetName);
+        committed = true;
       }
 
       public void Dispose() {
@@ -654,24 +590,19 @@ namespace AiNovelSecureFs {
           CloseDirectoryChain(directories);
           directories = null;
         }
-        CloseHandle(ref requiredTarget);
         parentDirectory = IntPtr.Zero;
         targetName = null;
       }
     }
 
-    public static AtomicWriteSession BeginAtomicWrite(string rootPath, RootIdentity rootIdentity, string relativePath, byte[] content, bool mustAlreadyExist) {
+    public static AtomicWriteSession BeginAtomicWrite(string rootPath, RootIdentity rootIdentity, string relativePath, byte[] content) {
       if (content == null || content.Length > MaxTextBytes) throw new SecureFsException("SECURE_FS_FILE_TOO_LARGE");
       string[] segments = RelativeSegments(relativePath);
       if (segments.Length == 0) throw new SecureFsException("SECURE_FS_INVALID_PATH");
       List<IntPtr> directories = OpenDirectoryChain(rootPath, rootIdentity, Prefix(segments), false, true);
       IntPtr temporaryFile = IntPtr.Zero;
-      IntPtr requiredTarget = IntPtr.Zero;
       try {
         IntPtr parent = directories[directories.Count - 1];
-        if (mustAlreadyExist) {
-          requiredTarget = OpenExistingTargetForWriteOnlyCommit(parent, segments[segments.Length - 1]);
-        }
         string temporaryName = ".ai-novel-" + Guid.NewGuid().ToString("N") + ".tmp";
         temporaryFile = OpenFile(
           parent,
@@ -685,14 +616,11 @@ namespace AiNovelSecureFs {
           directories,
           safeHandle,
           parent,
-          requiredTarget,
           segments[segments.Length - 1]);
         directories = null;
-        requiredTarget = IntPtr.Zero;
         return session;
       } finally {
         CloseHandle(ref temporaryFile);
-        CloseHandle(ref requiredTarget);
         if (directories != null) CloseDirectoryChain(directories);
       }
     }
@@ -877,13 +805,8 @@ namespace AiNovelSecureFs {
         case "write": {
           string contentBase64 = Field(request, "contentBase64") as string;
           if (contentBase64 == null) throw new SecureFsException("SECURE_FS_INVALID_TEXT");
-          bool mustAlreadyExist = false;
-          if (request.ContainsKey("mustAlreadyExist")) {
-            if (!(Field(request, "mustAlreadyExist") is bool)) throw new SecureFsException("SECURE_FS_INVALID_OPERATION");
-            mustAlreadyExist = (bool)Field(request, "mustAlreadyExist");
-          }
           byte[] content = Convert.FromBase64String(contentBase64);
-          using (SecureHandleFileSystem.AtomicWriteSession session = SecureHandleFileSystem.BeginAtomicWrite(rootPath, rootIdentity, relativePath, content, mustAlreadyExist)) {
+          using (SecureHandleFileSystem.AtomicWriteSession session = SecureHandleFileSystem.BeginAtomicWrite(rootPath, rootIdentity, relativePath, content)) {
             Dictionary<string, object> ready = Ok();
             ready["phase"] = "ready";
             Respond(output, ready);
@@ -897,7 +820,7 @@ namespace AiNovelSecureFs {
               Respond(output, cancelled);
               return;
             }
-            session.Commit(mustAlreadyExist);
+            session.Commit();
             Respond(output, Ok());
           }
           return;
