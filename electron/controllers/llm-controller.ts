@@ -333,14 +333,17 @@ export function registerLLMController() {
     return config.defaultRerankModelId ?? null
   })
 
-  const testConnection = async (model: ModelProfile, creativeStrategy: LLMRequest['creativeStrategy']) => {
+  const testConnection = async (model: ModelProfile, creativeStrategy: LLMRequest['creativeStrategy'], request: { sent: boolean }) => {
     // 网络卡住时 undici 默认要等 300 秒才报 fetch failed；连接测试自己的截止时间会真正取消请求。
     const timeoutMs = connectionTestTimeoutMs(model)
     const deadline = new AbortController()
     const timer = setTimeout(() => deadline.abort(), timeoutMs)
     const timedOut = () => ({ success: false, error: translate(failureLocale(), 'error.connectionTestTimeout', { seconds: timeoutMs / 1000 }) })
     try {
-      if (model.purposes?.includes('rerank')) return await testRerankConnection(model)
+      if (model.purposes?.includes('rerank')) {
+        request.sent = true
+        return await testRerankConnection(model)
+      }
 
       const messages = [{ role: 'user', content: 'Say "hello" and nothing else.' }]
       const provider = LLMFactory.getProvider(model)
@@ -357,21 +360,20 @@ export function registerLLMController() {
           }
         }
         const { generateEmbeddings } = await import('../embedding')
+        request.sent = true
         await generateEmbeddings(['hello'], model.protocol, model, undefined, undefined, deadline.signal)
       } else {
-        const res = await provider.generate(
-          model,
-          messages,
-          {
-            ...resolveGenerationParameters(model, {
-              // 推理模型可能先消耗 reasoning tokens；预算过小会把可用连接误判为截断失败。
-              maxTokens: CONNECTION_TEST_MAX_TOKENS,
-              reasoningStage: 'general',
-              creativeStrategy,
-            }),
-            signal: deadline.signal,
-          },
-        )
+        const options = {
+          ...resolveGenerationParameters(model, {
+            // 推理模型可能先消耗 reasoning tokens；预算过小会把可用连接误判为截断失败。
+            maxTokens: CONNECTION_TEST_MAX_TOKENS,
+            reasoningStage: 'general',
+            creativeStrategy,
+          }),
+          signal: deadline.signal,
+        }
+        request.sent = true
+        const res = await provider.generate(model, messages, options)
         if (deadline.signal.aborted) return timedOut()
         result = res.success ? { success: true, error: undefined } : { success: false, error: providerConnectionFailure(res) }
       }
@@ -389,9 +391,9 @@ export function registerLLMController() {
     model: ModelProfile,
     creativeStrategy: LLMRequest['creativeStrategy'] = 'auto',
   ) => {
-    const result = await testConnection(model, creativeStrategy)
-    const sentNoRequest = model.protocol === 'anthropic' && model.purposes?.includes('embedding')
-    if (result.success || sentNoRequest || !await proxyUnreachable(model.baseUrl)) return result
+    const request = { sent: false }
+    const result = await testConnection(model, creativeStrategy, request)
+    if (result.success || !request.sent || !await proxyUnreachable(model.baseUrl)) return result
     return { success: false, error: translate(failureLocale(), 'error.proxyUnreachable') }
   })
 
