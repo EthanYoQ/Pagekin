@@ -372,3 +372,5 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `orui-outline-recovery-continue` | 同一份恢复稿打开后不删任何内容，直接「保存恢复大纲」，再点「继续生成缺少的章节」：正式大纲写满第 1–5 章 | 架构（中文） | 是 | #702 |
 | `orui-outline-recovery-blocked` | 同一份恢复稿打开后改模型设置，点「重新读取恢复状态」：提示「不能保存，也不能继续生成」并叫作者从第 1 章重新生成，保存与继续都停用，页上没有主按钮，提示文字用满整页宽度（`orui-outline-recovery-blocked-page`）；运行侧页的恢复卡只写「请从第 1 章重新生成」，不再同时写「缺第 3–5 章」（`orui-outline-recovery-blocked-sheet`） | 架构（中文） | 是 | #702 |
 | `orui-outline-recovery-en` | 同一份恢复稿切到英文界面：页头、按钮与提示没有中文，提示写「Chapters 1–2 are written; chapter 3 is not」；运行侧页并排时页头折行、不横向溢出（`orui-outline-recovery-en-sheet`） | 架构（英文） | 是 | #702 |
+| `l4conn-refused` | 设置·AI 模型编辑夹具模型后关掉假服务，点「测试连接」：提示「连接失败：base_url 上没有服务在响应……」，不出现 fetch failed 与错误码（`l4conn-refused`） | 设置（中文） | 是 | #702 |
+| `l4conn-host-not-found` | 把 base_url 改成解析不到的 `http://nosuchhostzz9/v1`（系统解析器真实报 ENOTFOUND，再照 undici 的形状抛出），点「测试连接」：提示「连接失败：找不到 base_url 里的服务器……」（`l4conn-host-not-found`） | 设置（中文） | 是 | #702 |

@@ -164,48 +164,44 @@ export class OpenAIProvider implements ILLMProvider {
   }
 
   async generate(model: ModelProfile, messages: Array<{ role: string; content: string }>, opts: LLMGenerateOptions): Promise<LLMResponse> {
-    try {
-      const res = await this.postChatCompletion(model, messages, opts, false)
+    const res = await this.postChatCompletion(model, messages, opts, false)
 
-      if (!res.ok) {
-        const text = await res.text()
-        return { success: false, content: '', finishReason: 'error', error: 'LLM_REQUEST_FAILED', httpFailure: { status: res.status, body: text } }
-      }
+    if (!res.ok) {
+      const text = await res.text()
+      return { success: false, content: '', finishReason: 'error', error: 'LLM_REQUEST_FAILED', httpFailure: { status: res.status, body: text } }
+    }
 
-      const data = await res.json() as {
-        choices: Array<{
-          message: { content: string; reasoning_content?: string }
-          finish_reason?: string | null
-        }>
-        usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
-      }
+    const data = await res.json() as {
+      choices: Array<{
+        message: { content: string; reasoning_content?: string }
+        finish_reason?: string | null
+      }>
+      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+    }
 
-      const finalContent = this.stripThinking(data.choices?.[0]?.message?.content ?? '')
-      const finishReason = this.normalizeFinishReason(data.choices?.[0]?.finish_reason)
-      const usage = data.usage ? {
-        promptTokens: data.usage.prompt_tokens,
-        completionTokens: data.usage.completion_tokens,
-        totalTokens: data.usage.total_tokens,
-      } : undefined
+    const finalContent = this.stripThinking(data.choices?.[0]?.message?.content ?? '')
+    const finishReason = this.normalizeFinishReason(data.choices?.[0]?.finish_reason)
+    const usage = data.usage ? {
+      promptTokens: data.usage.prompt_tokens,
+      completionTokens: data.usage.completion_tokens,
+      totalTokens: data.usage.total_tokens,
+    } : undefined
 
-      if (finishReason === 'stop') {
-        return {
-          success: true,
-          content: finalContent,
-          finishReason,
-          usage,
-        }
-      }
-
+    if (finishReason === 'stop') {
       return {
-        success: false,
+        success: true,
         content: finalContent,
         finishReason,
-        error: 'LLM_RESPONSE_INCOMPLETE',
         usage,
       }
-    } catch (error) {
-      return { success: false, content: '', finishReason: 'error', error: String(error) }
+    }
+
+    return {
+      success: false,
+      content: finalContent,
+      finishReason,
+      error: 'LLM_RESPONSE_INCOMPLETE',
+      usage,
     }
   }
 

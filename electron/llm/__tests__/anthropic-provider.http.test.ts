@@ -146,7 +146,8 @@ describe('AnthropicProvider against a local Messages server', () => {
 
   it.each([
     ['generate', async (model: ModelProfile) => {
-      await new AnthropicProvider().generate(model, [{ role: 'user', content: '写正文' }], { temperature: 0.7, maxTokens: 64 })
+      await expect(new AnthropicProvider().generate(model, [{ role: 'user', content: '写正文' }], { temperature: 0.7, maxTokens: 64 }))
+        .rejects.toThrow('fetch failed')
     }],
     ['generateStream', async (model: ModelProfile) => {
       await new AnthropicProvider().generateStream(model, [{ role: 'user', content: '写正文' }], {
