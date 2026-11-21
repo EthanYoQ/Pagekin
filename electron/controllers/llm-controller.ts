@@ -17,7 +17,7 @@ import { isRerankFailure, type RerankFailure } from '../../src/shared/knowledge-
 import { rankPassages } from '../rerank'
 import { LLMFactory } from '../llm/llm-factory'
 import { mainErrorDisplayLocale } from '../i18n'
-import { localize, translate } from '../../src/i18n/core'
+import { localize, translate, type MessageKey } from '../../src/i18n/core'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
 import { ModelExecutionLeaseRegistry } from '../services/model-execution-lease'
 import { ModelDiscoveryService } from '../services/model-discovery-service'
@@ -117,9 +117,34 @@ function applyProxyConfig() {
 
 const failureLocale = () => mainErrorDisplayLocale(app.getLocale())
 
+const CONNECTION_FAILURE_BY_CODE: Record<string, MessageKey> = {
+  ECONNREFUSED: 'error.connectionRefused',
+  ENOTFOUND: 'error.connectionHostNotFound',
+  EAI_AGAIN: 'error.connectionHostNotFound',
+  ETIMEDOUT: 'error.connectionTimedOut',
+  UND_ERR_CONNECT_TIMEOUT: 'error.connectionTimedOut',
+  UND_ERR_HEADERS_TIMEOUT: 'error.connectionTimedOut',
+  ECONNRESET: 'error.connectionInterrupted',
+  UND_ERR_SOCKET: 'error.connectionInterrupted',
+  ...Object.fromEntries([
+    'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_CRL', 'UNABLE_TO_DECRYPT_CERT_SIGNATURE', 'UNABLE_TO_DECRYPT_CRL_SIGNATURE',
+    'UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY', 'CERT_SIGNATURE_FAILURE', 'CRL_SIGNATURE_FAILURE', 'CERT_NOT_YET_VALID',
+    'CERT_HAS_EXPIRED', 'CRL_NOT_YET_VALID', 'CRL_HAS_EXPIRED', 'ERROR_IN_CERT_NOT_BEFORE_FIELD', 'ERROR_IN_CERT_NOT_AFTER_FIELD',
+    'ERROR_IN_CRL_LAST_UPDATE_FIELD', 'ERROR_IN_CRL_NEXT_UPDATE_FIELD', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'CERT_CHAIN_TOO_LONG', 'CERT_REVOKED', 'INVALID_CA',
+    'PATH_LENGTH_EXCEEDED', 'INVALID_PURPOSE', 'CERT_UNTRUSTED', 'CERT_REJECTED', 'HOSTNAME_MISMATCH', 'ERR_TLS_CERT_ALTNAME_INVALID',
+  ].map(code => [code, 'error.connectionCertificate' as const])),
+}
+
+/** fetch 只报「fetch failed」，原因在 cause.code。 */
+function connectionFailureKey(failure: unknown): MessageKey {
+  const code = (failure as { cause?: { code?: unknown } } | null)?.cause?.code
+  return (typeof code === 'string' && CONNECTION_FAILURE_BY_CODE[code]) || 'error.connectionFailed'
+}
+
 /**
  * 连接测试的结果由模型表单原样显示，主进程在这里按界面语言写成说明（#474）：要带上 HTTP 状态、
- * 供应商返回或建议地址的单独写，其余登记过的码复用 app-errors 的文案，认不出的（多是网络库的英文报错）原样保留。
+ * 供应商返回或建议地址的单独写，其余登记过的码复用 app-errors 的文案，网络失败按 cause.code 说明原因。
  */
 function connectionTestFailure(failure: unknown): string {
   const detail = failure as { code?: unknown; status?: unknown; suggestedBaseUrl?: unknown } | null
@@ -137,10 +162,10 @@ function connectionTestFailure(failure: unknown): string {
       `This is Ollama’s native /api address. Change the Base URL to ${String(detail.suggestedBaseUrl)}.`,
     )
   }
-  return knownAppErrorMessage(failureLocale(), failure) ?? String(failure)
+  return knownAppErrorMessage(failureLocale(), failure) ?? translate(failureLocale(), connectionFailureKey(failure))
 }
 
-function providerConnectionFailure(response: Extract<LLMResponse, { success: false }>): string | undefined {
+function providerConnectionFailure(response: Extract<LLMResponse, { success: false }>): string {
   if (response.error === 'LLM_REQUEST_FAILED' && response.httpFailure) {
     const { status, body } = response.httpFailure
     const advice = localize(
@@ -159,7 +184,7 @@ function providerConnectionFailure(response: Extract<LLMResponse, { success: fal
       `The model did not finish its reply (finish reason: ${response.finishReason}).`,
     )
   }
-  return response.error
+  return connectionTestFailure(response.error)
 }
 
 export function registerLLMController() {
