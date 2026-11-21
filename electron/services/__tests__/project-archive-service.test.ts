@@ -892,6 +892,14 @@ describe('portable project export service', () => {
       expect(fs.existsSync(f.target)).toBe(false)
     })
 
+    it('作品的 project.json 另有硬链接：拒绝导出，报文件不安全', async () => {
+      const f = fixture()
+      fs.linkSync(path.join(f.storage, 'project.json'), path.join(f.base, '项目外.json'))
+
+      await expect(exportPortableProject(input(f))).rejects.toThrow('PORTABLE_ASSET_UNSAFE')
+      expect(fs.existsSync(f.target)).toBe(false)
+    })
+
     it('资料不拷进导出临时目录：目标盘上不出现第二份资料', async () => {
       const f = fixture()
       const seeded = seedProject(f)

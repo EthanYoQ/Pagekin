@@ -327,7 +327,7 @@ function regularFile(file: string, missingCode: ProjectArchiveServiceErrorCode):
   } catch (error) {
     if (error instanceof ProjectArchiveServiceError) throw error
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') fail(missingCode)
-    fail('PORTABLE_ASSET_UNSAFE')
+    throw error
   }
 }
 
