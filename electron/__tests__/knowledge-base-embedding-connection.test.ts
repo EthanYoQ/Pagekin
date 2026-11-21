@@ -22,7 +22,6 @@ async function closedPort(): Promise<number> {
 
 const localModel = (baseUrl: string) => ({ provider: 'custom', baseUrl, apiKey: 'test-key', modelName: 'local-embed' })
 
-/** 设置「检索模型」页点「检查并重建向量索引」失败时，作者在提示里看到的整句。 */
 async function rebuildFailureShown(locale: 'zh-CN' | 'en-US', baseUrl: string): Promise<string> {
   await importText('林岚核对潮位表。', '第1章 旧港.txt', projectPath, 'openai', localModel(baseUrl), { mode: 'fts-only' })
   const result = await backfillVectors(projectPath, 'openai', localModel(baseUrl))

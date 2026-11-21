@@ -279,7 +279,7 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #702：检索模型的 base_url 指向本机端口，导入资料后关掉那里的服务，在设置「检索模型」页点重建，中英文提示都说明连不上的原因，不出现 fetch failed。
+  // #702：重建检索时检索模型连不上，提示须说明原因，不出现 fetch failed。
   'kb-embedding-unreachable': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     const model = { ...EMBEDDING_MODEL, id: 'kb-unreachable-embedding', name: '本机检索模型', provider: 'custom', baseUrl: `http://127.0.0.1:${context.fake.port}/v1`, apiKey: '' }
     assert.equal((await invoke(page, 'llm:save-model', model)).success, true)
@@ -287,7 +287,7 @@ export const X2_SCENARIOS = {
   } }), run: async context => {
     const { page, invoke, reload, shoot, fake } = context
     await importMaterials(context)
-    // 驱动只放行假服务的端口；关掉它，检索模型的地址上就真的没有服务在响应。
+    // 驱动只放行假服务的端口，所以靠关掉它来制造连不上。
     await fake.close()
     const rebuildFailure = async ({ locale, spine, settings, sections, page: pageName, region }) => {
       await page.getByRole('navigation', { name: spine }).getByRole('button', { name: settings, exact: true }).click()

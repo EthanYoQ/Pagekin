@@ -7,7 +7,7 @@ const CERTIFICATE_CODES = [
   'PATH_LENGTH_EXCEEDED', 'INVALID_PURPOSE', 'CERT_UNTRUSTED', 'CERT_REJECTED', 'HOSTNAME_MISMATCH', 'ERR_TLS_CERT_ALTNAME_INVALID',
 ] as const
 
-/** 系统网络错误（fetch 的 cause.code）→ 登记过的连接失败码，界面文案见 src/i18n/app-errors.ts。 */
+/** fetch 的 cause.code → 连接失败码，文案在 src/i18n/app-errors.ts。 */
 const CONNECTION_FAILURE_BY_CODE: Readonly<Record<string, string>> = {
   ECONNREFUSED: 'CONNECTION_REFUSED',
   ENOTFOUND: 'CONNECTION_HOST_NOT_FOUND',
