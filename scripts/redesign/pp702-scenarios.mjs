@@ -46,6 +46,10 @@ export const PP702_SCENARIOS = {
     })))
     await chapterView.postProcess(page).scrollIntoViewIfNeeded()
     await shoot('pp702-unlisted-step-error')
+    assert.deepEqual(rows.map(row => [row.label, row.detail]), [
+      ['章节剧情要点', '知识库正在更新，请稍后再生成。'],
+      ['角色状态更新', '知识库不可用：Windows 原生组件加载失败。请重新安装或下载完整发布包。'],
+    ], '两步各显示报错目录的说明')
     for (const row of rows) assert.doesNotMatch(row.detail, /[A-Z]+_[A-Z_]+|Error invoking/u, `${row.label}：失败说明不是原始错误码`)
     return { rows }
   } },
