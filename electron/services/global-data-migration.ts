@@ -3,12 +3,14 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { installGlobalDataLocator, type GlobalDataRoots } from './app-data-locator'
+import type { StartupBlockedCode } from '../../src/shared/startup-contract'
 
 export const GLOBAL_OBJECTS = ['config.json', 'models.json', 'recent-projects.json', 'mcp_config.json', 'prompts', 'skills', 'skins'] as const
 /** No verified product writer owns arbitrary contents of these shared legacy directories. */
 export const GLOBAL_PRESERVED_OBJECTS = ['logs', 'metadata', 'update'] as const
 type Ready = { state: 'ready'; globalGeneration: string; dataRoot: string; legacySourceIgnored: boolean; preservedUnknownCount: number }
-export type GlobalMigrationResult = Ready | { state: 'blocked'; code: string }
+type Blocked = { state: 'blocked'; code: string; errno?: string }
+export type GlobalMigrationResult = Ready | Blocked
 export interface GlobalMigrationOptions extends GlobalDataRoots {
   /** Main must hold the unchanged application single-instance lock before calling. */
   exclusiveAccess: boolean
@@ -21,11 +23,12 @@ const admitted = new WeakMap<object, string>()
 const temporarySuffix = /\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.tmp$/
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 function fail(code: string): never { throw new Error(code) }
-function parse(file: string): unknown { try {
+function parse(file: string): unknown {
   const info = fs.lstatSync(file)
   if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) fail('GLOBAL_JSON_INVALID')
-  return JSON.parse(fs.readFileSync(file, 'utf8'))
-} catch { return fail('GLOBAL_JSON_INVALID') } }
+  const text = fs.readFileSync(file, 'utf8')
+  try { return JSON.parse(text) } catch { return fail('GLOBAL_JSON_INVALID') }
+}
 function syncDirectory(directory: string): void {
   // Windows directory handles do not support fsync through Node. Files are flushed
   // before same-volume rename; restart verifies physical state against the journal.
@@ -240,8 +243,17 @@ export function runGlobalDataMigration(options: GlobalMigrationOptions): GlobalM
     return ready(receipt)
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
-    return { state: 'blocked', code: /^GLOBAL_[A-Z_]+$/.test(message) ? message : 'GLOBAL_MIGRATION_IO_FAILED' }
+    if (/^GLOBAL_[A-Z_]+$/.test(message)) return { state: 'blocked', code: message }
+    console.error('[AI Novel Writer] 全局数据迁移失败，现有配置已保留。', error)
+    const errno = (error as NodeJS.ErrnoException | undefined)?.code
+    return { state: 'blocked', code: 'GLOBAL_MIGRATION_IO_FAILED', ...(typeof errno === 'string' ? { errno } : {}) }
   }
+}
+const UNWRITABLE_ERRNOS = new Set(['EACCES', 'EPERM', 'EBUSY', 'EROFS'])
+export function blockedStartupCode(result: Blocked): StartupBlockedCode {
+  if (result.code === 'GLOBAL_MODEL_CREDENTIALS_DIFFER') return result.code
+  if (result.errno === 'ENOSPC') return 'GLOBAL_DISK_FULL'
+  return result.errno && UNWRITABLE_ERRNOS.has(result.errno) ? 'GLOBAL_DATA_UNWRITABLE' : 'GLOBAL_DATA_BLOCKED'
 }
 export function activateGlobalData(result: GlobalMigrationResult): void {
   if (result.state !== 'ready' || !admitted.has(result)) fail('GLOBAL_RESULT_NOT_VERIFIED')

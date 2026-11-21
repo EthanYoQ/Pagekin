@@ -9,7 +9,7 @@ export interface AppearanceReadbackAck {
 }
 
 export interface StartupMigrationNotice { legacySourceIgnored: boolean; preservedUnknownCount: number }
-export type StartupBlockedCode = 'GLOBAL_DATA_BLOCKED' | 'GLOBAL_MODEL_CREDENTIALS_DIFFER'
+export type StartupBlockedCode = 'GLOBAL_DATA_BLOCKED' | 'GLOBAL_DISK_FULL' | 'GLOBAL_DATA_UNWRITABLE' | 'GLOBAL_MODEL_CREDENTIALS_DIFFER'
 export type StartupState = MainReady & {
   code?: StartupBlockedCode
   migrationNotice?: StartupMigrationNotice
