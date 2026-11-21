@@ -93,6 +93,7 @@ export const enUS = {
   'error.blueprintCheckTimelineNotInForce': 'Your blueprints are unchanged. No character timeline applies to the chapters to check yet, so there is nothing to compare.',
   'error.generationSourceChanged': 'The settings, blueprint, or earlier text this generation relied on changed while it ran, so the result was not saved. Generate it again.',
   'error.generationAgentSourceChanged': 'This result wasn’t saved, and your book is unchanged. The blueprints or settings changed after the Agent conversation. Copy what you need, then click “Dismiss”.',
+  'error.generationRecoveryUnauthorized': 'This recovery draft can’t continue, and your book is unchanged. Something it was based on, such as the blueprints, settings, earlier chapters, or model settings, changed after it was generated. Copy what you need, then click “Dismiss”.',
   'error.projectCoreUpdateFailed': 'Nothing was adopted, and your settings are unchanged. Try again. If it still fails, reopen the book and adopt again.',
   'error.generationModelChanged': 'The model settings changed while this generation ran, so the result was not saved. Confirm the model to use, then generate again.',
   'error.generationFinalizedSourceNotCurrent': 'A finalized earlier chapter this request relied on was replaced, so the result was not saved. Start writing this chapter again.',

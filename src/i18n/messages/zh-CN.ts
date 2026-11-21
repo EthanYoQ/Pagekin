@@ -95,6 +95,7 @@ export const zhCN = {
   'error.blueprintCheckTimelineNotInForce': '蓝图没有改动。待检查的章节还没有生效的人物时间线，暂时没有可对照的。',
   'error.generationSourceChanged': '生成期间，它依据的设定、蓝图或前文有了变化，结果没有保存。请重新生成。',
   'error.generationAgentSourceChanged': '这份结果没有保存，作品保持原样。Agent 对话之后蓝图或设定改过。需要的内容先复制，再点「不再恢复」。',
+  'error.generationRecoveryUnauthorized': '这份恢复稿没法继续，作品没有改动。它生成之后，所依据的蓝图、设定、前文或模型设置等有了变化。需要的内容先复制，再点「不再恢复」。',
   'error.projectCoreUpdateFailed': '这次没有采用，设定没有改动。请再试一次；仍然不行，就重新打开作品后再采用。',
   'error.generationModelChanged': '生成期间模型设置被修改，这次结果没有保存。确认要用的模型后重新生成。',
   'error.generationFinalizedSourceNotCurrent': '这次依据的前章定稿已被替换，结果没有保存。请重新开始写这一章。',
