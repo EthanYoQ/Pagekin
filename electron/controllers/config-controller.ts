@@ -6,11 +6,9 @@ import {
   DEFAULT_GLOBAL_CONFIG,
 } from '../utils/config-utils'
 import { GlobalConfig } from '../../src/shared/ipc-channels'
-import { selectCopy } from '../../src/i18n/core'
-import { mainErrorDisplayLocale } from '../i18n'
+import { mainText } from '../i18n'
 
-/** config.json 本身坏了（例如内容是 null）时 mainText 查语言也会抛，这里用不抛的查法。 */
-const text = (zhCNText: string, enUSText: string) => selectCopy(mainErrorDisplayLocale(app.getLocale()), zhCNText, enUSText)
+const text = (zhCNText: string, enUSText: string) => mainText(app.getLocale(), zhCNText, enUSText)
 
 export function registerConfigController() {
   /** 读取全局配置 */

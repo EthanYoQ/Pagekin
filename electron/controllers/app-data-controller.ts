@@ -291,7 +291,7 @@ async function fetchGitHubWritingSkill(sourceUrl: string): Promise<{
     try {
       repository = JSON.parse(body) as { default_branch?: unknown }
     } catch {
-      // 代理或网关可能回一张网页；按读不出默认分支说明。
+      // 代理或网关可能回网页而非 JSON。
     }
     if (typeof repository?.default_branch !== 'string' || !WRITING_SKILL_NAME_PATTERN.test(repository.default_branch)) {
       throw new Error(text('读不出这个仓库的默认分支，请改用带分支的地址，例如 …/tree/main。', "Could not read this repository's default branch. Use a URL with a branch, such as …/tree/main."))
