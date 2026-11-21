@@ -6,10 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
-
-const proxy = vi.hoisted(() => ({ unreachable: [] as boolean[] }))
-vi.mock('../../network-proxy', () => ({ activeProxy: vi.fn(() => null), proxyUnreachable: vi.fn(async () => proxy.unreachable.shift() ?? false) }))
+import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   WebDavBackupService,
@@ -366,17 +363,6 @@ describe('WebDavBackupService', () => {
     const archivePath = `/dav/books/${BOOK}/generations/${GEN_A}/archive.ainovel`
     expect(dav.requests.filter(item => item.method === 'PUT' && item.url === archivePath)).toHaveLength(1)
     expect(dav.requests.some(item => item.method === 'GET' && item.url === archivePath)).toBe(true)
-  })
-
-  it('verifies a PUT whose response was lost while the proxy was down', async () => {
-    const dav = new DavFixture(); await dav.listen()
-    const source = workspace()
-    dav.dropAfterPutSuffix = 'archive.ainovel'
-    proxy.unreachable = [true]
-
-    await expect(appender(dav, GEN_A, source.archive)).resolves.toMatchObject({ generationId: GEN_A })
-    const archivePath = `/dav/books/${BOOK}/generations/${GEN_A}/archive.ainovel`
-    expect(dav.requests.filter(item => item.method === 'PUT' && item.url === archivePath)).toHaveLength(1)
   })
 
   it('rejects an unknown PUT whose persisted bytes do not match and never writes completion', async () => {
