@@ -376,7 +376,7 @@ describe('ProjectBackupPanel', () => {
   it.each([
     ['PORTABLE_ARCHIVE_INVALID', '没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。'],
     ['PORTABLE_SCHEMA_UNSUPPORTED', '没有新建副本。这个存档来自更新版本的书童。请先升级书童，再点「从本地存档恢复副本」。'],
-    ['PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '没有新建副本。所选文件夹写不进去，可能没有权限或磁盘满了。请换一个文件夹，再点「从本地存档恢复副本」。'],
+    ['PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '所选文件夹写不进去，可能没有权限或磁盘满了，里面可能留下没恢复完的副本文件夹，可以删掉。请换一个文件夹，再点「从本地存档恢复副本」。'],
   ])('从本地存档恢复失败（%s）：说出原因，不露原码（#702）', async (errorCode, expected) => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
@@ -397,7 +397,7 @@ describe('ProjectBackupPanel', () => {
     ['CLOUD_BACKUP_REMOTE_INVALID', '作品没有改动。这个地址上的服务器没有按 WebDAV 回应。请核对 WebDAV 地址，再试一次。'],
     ['CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE', '作品没有改动。本机没存这个 WebDAV 账号的密码。请重新填写密码，再点「连接并绑定」。'],
     ['CLOUD_BACKUP_CANCELLED', '已取消，作品没有改动。'],
-    ['CLOUD_BACKUP_RESTORE_FAILED', '没有新建副本。云端存档已下载，但没能恢复成副本。请把这条提示反馈给我们。'],
+    ['CLOUD_BACKUP_RESTORE_FAILED', '云端存档已下载，但没能恢复成副本，所选文件夹里可能留下没恢复完的副本文件夹，可以删掉。请把这条提示反馈给我们。'],
     ['CLOUD_BACKUP_FAILED', '作品没有改动。云备份出了意外错误。请再试一次；还不行，请把这条提示反馈给我们。'],
     ['CLOUD_BACKUP_ENDPOINT_INVALID', '没有连接。WebDAV 地址要是 https:// 开头的完整网址，不能带 ?、# 或用户名密码。请改好地址，再点「连接并绑定」。'],
     ['CLOUD_BACKUP_BOOK_ID_INVALID', '作品没有改动。云书标识只能用英文字母、数字和 . _ : @ + -，且以字母或数字开头。请改好云书标识再试。'],
