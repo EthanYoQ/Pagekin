@@ -3,7 +3,7 @@ import { sameProjectPathKey } from '../../shared/project-session-context'
 import type { WorkflowContext } from '../../stores/workflow-store'
 import type { WritingLanguage } from '../../shared/writing-language'
 import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
-import { knownAppErrorMessage } from '../../i18n/app-errors'
+import { displayedErrorMessage, errorCodeOf, isRegisteredErrorCode } from '../../i18n/app-errors'
 import { copyLocale } from '../../i18n/core'
 
 /**
@@ -40,11 +40,9 @@ export function workflowUiText(
   return workflowUiLocale(context) === 'en-US' ? enUSText : zhCNText
 }
 
-const errorCode = /^[A-Z][A-Z0-9_]*$/u
-
 /**
  * 主进程拒绝时只回 String(err)：多是只有中文的原文，也可能是错误码。登记过的码按界面语言说明；
- * 未登记的码原样附上供反馈定位，并挂在 code 上；其余原文只附在中文说明后面，英文界面只给英文说明。
+ * 未登记的码只给说明，码挂在 code 上并记进控制台（#787）；其余原文只附在中文说明后面，英文界面只给英文说明。
  */
 export function workflowMainProcessError(
   interfaceLocale: ErrorDisplayLocale,
@@ -54,11 +52,11 @@ export function workflowMainProcessError(
 ): Error {
   const english = copyLocale(interfaceLocale) === 'en-US'
   const summary = english ? enUSSummary : zhCNSummary
-  // String(err) 的前缀是错误类名：多数是 "Error: "，带名字的错误类（ProjectSessionStaleError）是它自己的类名。
-  const raw = typeof error === 'string' ? error.trim().replace(/^[A-Za-z]*Error: /u, '') : ''
-  if (!raw) return new Error(summary)
-  const code = errorCode.test(raw) ? raw : undefined
-  const reason = knownAppErrorMessage(interfaceLocale, raw) ?? (code || !english ? raw : undefined)
+  if (typeof error !== 'string') return new Error(summary)
+  const code = errorCodeOf(error)
+  // 未登记的码和空原文都落到这里给的兜底，也就是说明本身，不再接一遍。
+  const shown = displayedErrorMessage(interfaceLocale, error, summary)
+  const reason = shown === summary || (english && !isRegisteredErrorCode(error)) ? undefined : shown
   const failure = new Error(reason ? `${summary}${english ? ' ' : '：'}${reason}` : summary)
   return code ? Object.assign(failure, { code }) : failure
 }
