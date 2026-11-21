@@ -65,6 +65,8 @@ export default defineConfig({
   test: {
     // Test copy must not follow the operating-system locale of a CI runner.
     setupFiles: ['test/setup-locale.ts', 'test/setup-buffer-equality.ts'],
+    // Windows 上真实安全文件层的用例要用 helper exe，先按需编译。
+    globalSetup: ['scripts/build-windows-safe-file-system.mjs'],
     // 托管 Windows runner 偶发 15 到 25 秒的磁盘卡顿（#582、#592），用例与钩子时限取其约两倍。
     testTimeout: 60_000,
     hookTimeout: 60_000,

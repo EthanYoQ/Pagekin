@@ -48,7 +48,7 @@ export function findWindowsSafeFileSystemHelper(unpackedDir) {
     unpackedDir,
     'resources',
     'security',
-    'windows-safe-file-system.ps1',
+    'windows-safe-file-system.exe',
   )
   return existsSync(helper) ? helper : null
 }
