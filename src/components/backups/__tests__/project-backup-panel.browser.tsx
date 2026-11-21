@@ -256,21 +256,26 @@ describe('ProjectBackupPanel', () => {
     expect(container.textContent).toContain('旧凭据未能清理')
   })
 
-  it('clears the staged account when binding confirmation conflicts', async () => {
-    const rotatedAccount = { ...ACCOUNT, accountId: 'account-2' }
+  const CONFLICT_SHOWN = '作品没有改动，也没有上传。云备份绑定刚被改过。请关闭并重新打开设置，再试一次。'
+  const NOT_CLEARED = { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED' }
+  it.each([
+    ['清掉了', 'os-backed', { success: true, state: 'unconfigured', affectedBindings: 0 }, CONFLICT_SHOWN],
+    ['也没清掉', 'os-backed', NOT_CLEARED, `${CONFLICT_SHOWN}刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。`],
+    ['也没清掉、密码只记在本次运行里', 'session-only', NOT_CLEARED, `${CONFLICT_SHOWN}刚填的密码没能清掉，还记在书童里，退出书童后就不在了。`],
+  ] as const)('绑定确认撞上别处的改动、暂存账号%s：说出绑定刚被改过，没删掉的密码在哪也说清，不露码（#702）', async (_label, persistence, cleared, expected) => {
+    const rotatedAccount = { ...ACCOUNT, accountId: 'account-2', persistence }
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
       if (channel === 'cloud-backup:connect') return { success: true, state: 'connected', account: rotatedAccount }
       if (channel === 'cloud-backup:confirm-binding') return { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_BINDING_CONFLICT' }
-      if (channel === 'cloud-backup:clear-credential') return { success: true, state: 'unconfigured', affectedBindings: 0 }
+      if (channel === 'cloud-backup:clear-credential') return cleared
       throw new Error(`Unexpected IPC: ${channel}`)
     })
     await renderPanel()
     await fill('密码或应用密钥', 'replacement-secret')
     await act(async () => button('连接并绑定').click())
     expect(invoke).toHaveBeenCalledWith('cloud-backup:clear-credential', rotatedAccount.accountId)
-    expect(container.textContent).not.toContain('CLOUD_BACKUP_BINDING_CONFLICT')
-    expect(container.textContent).toContain('出了意外问题')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(expected)
   })
 
   it('exports and restores a local copy with exact payloads without opening it', async () => {
@@ -675,5 +680,51 @@ describe('ProjectBackupPanel', () => {
     await renderPanel()
 
     expect(container.textContent).toContain('尚未配置 WebDAV')
+  })
+
+  it('清凭据后刷新绑定状态失败：说明里不带码（#702）', async () => {
+    let viewCount = 0
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') {
+        viewCount += 1
+        return viewCount === 1
+          ? { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
+          : { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_FAILED' }
+      }
+      if (channel === 'cloud-backup:clear-credential') return { success: true, state: 'unconfigured', affectedBindings: 1 }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('清除本机凭据').click())
+    await act(async () => button('确认清除本机凭据').click())
+
+    expect(container.textContent).toContain('绑定状态刷新失败')
+    expect(container.textContent).not.toContain('CLOUD_BACKUP_')
+  })
+
+  it('云备份刚完成时点取消：完成的提示留着，不被取消的回报盖掉（#702）', async () => {
+    const backup = deferred<unknown>()
+    const cancel = deferred<unknown>()
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
+      if (channel === 'cloud-backup:backup') return backup.promise
+      if (channel === 'cloud-backup:cancel') return cancel.promise
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+    await act(async () => container.querySelector<HTMLInputElement>('input[name="cloud-disclosure"]')!.click())
+    await act(async () => button('立即云备份').click())
+    await vi.waitFor(() => expect(button('取消当前云操作')).toBeTruthy())
+    await act(async () => button('取消当前云操作').click())
+
+    await act(async () => backup.resolve({
+      success: true, state: 'backup-complete', operationId: 'op', generation: GENERATION, backupPoint: 'snapshot-7',
+      bindingSaved: true, binding: { ...BINDING, revision: 4 },
+    }))
+    await act(async () => cancel.resolve({ success: true, cancelled: false }))
+
+    expect(container.textContent).toContain('云备份完成')
+    expect(container.textContent).not.toContain('无法取消')
   })
 })

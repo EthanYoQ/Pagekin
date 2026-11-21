@@ -329,6 +329,8 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `fw723-fullwidth-title` | 建书，导入一章标题为「为什么？真相：开始」的定稿，再按定稿后处理的写法把正文导入知识库，文档名「第1章 为什么？真相：开始.txt」；冷重启后导出本地存档，提示「本地存档已导出：<哈希>」（`fw723-1-exported`）；用这份存档恢复副本，提示「已恢复新副本 …」（`fw723-2-restored`），副本的定稿稿件名和知识库文档名与原作品一致，副本能打开。修复前导出失败，红字是原码 PORTABLE_KNOWLEDGE_INVALID 或 PORTABLE_PATH_UNSAFE | 项目备份（中文） | 是 | #723 |
 | `ec-restore-not-archive` | 建 1 章定稿的书，在项目备份点「从本地存档恢复副本」，选一个没下载完的 `.ainovel`（不是完整 zip）；红字是「没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。」，所选文件夹里什么都没留下（`ec-4-restore-not-archive`）。修复前红字是原码 PORTABLE_ARCHIVE_INVALID | 项目备份（中文） | 是 | #702 |
 | `ec-cloud-endpoint` | 同上造书，WebDAV 地址填 `http://` 开头的地址，点「连接并绑定」；红字是「没有连接。WebDAV 地址要是 https:// 开头的完整网址，不能带 ?、# 或用户名密码。请改好地址，再点「连接并绑定」。」，不发网络请求（`ec-6-cloud-endpoint`）。修复前红字是原码 CLOUD_BACKUP_FAILED | 项目备份（中文） | 是 | #702 |
+| `errl3-cloud-newer-zh` | 造 1 章定稿的书；假服务端口上挂一个本机 WebDAV，只放一个云端世代，它的存档来自更新版本的书童（清单结构版本 99）。填本机 WebDAV 地址点「连接并绑定」，「刷新云端世代」，选中它点「恢复所选云端世代为副本」：红字是「没有新建副本。这个云端世代来自更新版本的书童。请先升级书童，再点「恢复所选云端世代为副本」。」，所选文件夹里什么都没留下（`errl3-cloud-newer-zh-CN`）。修复前红字是「云端存档已下载，但没能恢复成副本……请把这条提示反馈给我们。」。场景在 `errl3-scenarios.mjs` | 项目备份（中文） | 是 | #702 |
+| `errl3-cloud-newer-en` | 同上，界面切到 English：红字是「No copy was created. This cloud generation was made by a newer version of Pagekin. Update Pagekin, then click Restore selected cloud generation as a copy again.」（`errl3-cloud-newer-en-US`） | 项目备份（English） | 是 | #702 |
 
 ## 打开时封存了读不出的生成记录（#702）
 

@@ -208,11 +208,14 @@ export async function startFakeModel(diagnostics) {
     catch (error) { throw new Error(`rejectContextLength: 读不出错误体样本 ${fileURLToPath(sample)}`, { cause: error }) }
     if (!contextLengthRejection) throw new Error(`rejectContextLength: 样本缺少 ${sampleName} 错误体`)
   }
+  let handledByScenario = null
+  const setScenarioRequestHandler = handler => { handledByScenario = handler }
   const record = (kind, detail) => {
     requests.push(kind)
     diagnostics.push(`[fake-model] ${kind} <- ${detail}`)
   }
   const server = createServer(async (request, response) => {
+    if (handledByScenario?.(request, response)) return
     if (request.method === 'GET' && request.url === '/v1/models' && request.headers.authorization === `Bearer ${FAKE_MODEL.apiKey}`) {
       record('models', 'GET /v1/models')
       response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: FIXTURE_ENDPOINT_MODELS.map(id => ({ id, ...(id === FIXTURE_ENDPOINT_CONTEXT_WINDOW[0] ? { context_window: FIXTURE_ENDPOINT_CONTEXT_WINDOW[1] } : {}) })) }))
@@ -301,6 +304,6 @@ export async function startFakeModel(diagnostics) {
   })
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
   server.unref()
-  return { port: server.address().port, requests, chats, gate, streamProse, streamLog, replyCharacterCards, breakCharacterState, dropCharacterState, replyPlotTree, failProse, replyReview, stopAtLength, replyCharacterState, acceptKeylessEmbeddings, failRerank, replyImport, replyDirectoryBlueprints, rejectContextLength, embeddingAuthorizations,
+  return { port: server.address().port, setScenarioRequestHandler, requests, chats, gate, streamProse, streamLog, replyCharacterCards, breakCharacterState, dropCharacterState, replyPlotTree, failProse, replyReview, stopAtLength, replyCharacterState, acceptKeylessEmbeddings, failRerank, replyImport, replyDirectoryBlueprints, rejectContextLength, embeddingAuthorizations,
     close: () => new Promise(resolve => { server.closeAllConnections(); server.close(() => resolve()) }) }
 }

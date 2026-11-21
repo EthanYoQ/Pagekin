@@ -412,20 +412,18 @@ export class WebDavBackupService {
       if (!reader) fail('WEBDAV_REMOTE_INVALID')
       const digest = createHash('sha256')
       let written = 0
-      try {
-        for (;;) {
-          const next = await reader.read()
-          if (next.done) break
-          const chunk = Buffer.from(next.value)
-          written += chunk.length
-          if (written > manifest.archive.byteSize || written > this.maxArchiveBytes) fail('WEBDAV_REMOTE_INVALID')
-          digest.update(chunk)
-          await handle.write(chunk)
+      for (;;) {
+        let next: ReadableStreamReadResult<Uint8Array>
+        try { next = await reader.read() } catch {
+          if (input.signal?.aborted) fail('WEBDAV_CANCELLED')
+          fail('WEBDAV_NETWORK')
         }
-      } catch (error) {
-        if (input.signal?.aborted) fail('WEBDAV_CANCELLED')
-        if (error instanceof WebDavBackupError) throw error
-        fail('WEBDAV_NETWORK')
+        if (next.done) break
+        const chunk = Buffer.from(next.value)
+        written += chunk.length
+        if (written > manifest.archive.byteSize || written > this.maxArchiveBytes) fail('WEBDAV_REMOTE_INVALID')
+        digest.update(chunk)
+        await handle.write(chunk)
       }
       if (written !== manifest.archive.byteSize || digest.digest('hex') !== manifest.archive.sha256) {
         fail('WEBDAV_REMOTE_INVALID')

@@ -185,13 +185,17 @@ function ProjectBackupPanelSession({
       lastSelectedParentGenerationIds: matchesGenerationSource(connected.account.accountId, cloudBookId.trim()) ? parentIds : [],
       expectedRevision: binding?.revision ?? null,
     })
-    if (!confirmed.success) {
-      const cleared = await ipc.invoke('cloud-backup:clear-credential', connected.account.accountId)
-      if (!cleared.success) throw new Error(`${confirmed.errorCode}; ${cleared.errorCode}`)
-      throw new Error(confirmed.errorCode)
-    }
     const isSessionOnly = connected.warning === 'CLOUD_CREDENTIAL_SESSION_ONLY'
       || connected.account.persistence === 'session-only'
+    if (!confirmed.success) {
+      const cleared = await ipc.invoke('cloud-backup:clear-credential', connected.account.accountId)
+      if (!cleared.success) {
+        throw new Error(errorText(confirmed.errorCode) + (isSessionOnly
+          ? text('刚填的密码没能清掉，还记在书童里，退出书童后就不在了。', ' The password you just entered could not be cleared; Pagekin still holds it until you quit.')
+          : text('刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。', ' The password you just entered could not be removed from this computer; it is still stored encrypted in the Pagekin data folder.')))
+      }
+      throw new Error(confirmed.errorCode)
+    }
     setAccount(connected.account)
     updateBinding(confirmed.binding)
     setSessionOnlyCredential(isSessionOnly)
@@ -272,12 +276,9 @@ function ProjectBackupPanelSession({
     try {
       const result = await ipc.invoke('cloud-backup:cancel', activeOperationId)
       if (!result.success) throw new Error(result.errorCode)
-      setNotice({
-        kind: 'info',
-        text: result.cancelled
-          ? text('已发送取消请求，等待当前云操作停止。', 'Cancellation requested. Waiting for the current cloud operation to stop.')
-          : text('当前云操作已无法取消，请等待最终结果。', 'The current cloud operation can no longer be cancelled. Wait for its final result.'),
-      })
+      const finishedBeforeCancel = !result.cancelled
+      if (finishedBeforeCancel) return
+      setNotice({ kind: 'info', text: text('已发送取消请求，等待当前云操作停止。', 'Cancellation requested. Waiting for the current cloud operation to stop.') })
     } catch (error) {
       setNotice({ kind: 'error', text: errorText(error) })
     }
@@ -297,7 +298,7 @@ function ProjectBackupPanelSession({
     setConfirmClearCredential(false)
     setBindingRefreshFailed(true)
     const refreshed = await ipc.invoke('cloud-backup:view', projectSession)
-    if (!refreshed.success) throw new Error(text(`本机凭据已清除，但绑定状态刷新失败：${refreshed.errorCode}。请关闭并重新打开设置后再连接。`, `The local credential was cleared, but the binding state could not be refreshed: ${refreshed.errorCode}. Close and reopen settings before connecting.`))
+    if (!refreshed.success) throw new Error(text('本机凭据已清除，但绑定状态刷新失败。请关闭并重新打开设置后再连接。', 'The local credential was cleared, but the binding state could not be refreshed. Close and reopen settings before connecting.'))
     updateBinding(refreshed.binding)
     setAccount(refreshed.account)
     setCloudBookId(refreshed.binding?.cloudBookId ?? '')

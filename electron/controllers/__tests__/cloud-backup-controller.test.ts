@@ -29,7 +29,7 @@ import { SchemaMigrationError } from '../../migrations/registry'
 import { continuityBaseline, SCHEMA8_CONTINUITY_ARCHIVE, SCHEMA8_EXPECTED_BASELINE } from '../../../test/helpers/schema8-continuity-archive'
 import { createProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
 import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
-import { extractPortableProjectArchive } from '../../services/portable-project-archive'
+import { extractPortableProjectArchive, PortableProjectArchiveError } from '../../services/portable-project-archive'
 
 vi.mock('../../utils/remove-directory', async importOriginal => {
   const actual = await importOriginal<typeof import('../../utils/remove-directory')>()
@@ -963,14 +963,11 @@ describe('registerCloudBackupController', () => {
     expect(f.order.slice(-2)).toEqual(['unbind', 'clear'])
   })
 
-  it('rejects malformed or unknown cancellation identifiers without creating operation state', async () => {
+  it('rejects malformed cancellation identifiers without creating operation state', async () => {
     const f = fixture()
 
     await expect(f.invoke('cloud-backup:cancel', 'not-a-uuid')).resolves.toEqual({
       success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_INPUT_INVALID',
-    })
-    await expect(f.invoke('cloud-backup:cancel', OPERATION)).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_OPERATION_NOT_FOUND',
     })
   })
 
@@ -1047,5 +1044,156 @@ describe('registerCloudBackupController', () => {
 
     expect(result).toEqual({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_FAILED' })
     expect(JSON.stringify(result)).not.toMatch(/top-secret|private\.example/u)
+  })
+})
+
+describe('云备份报错说出真正的原因（#702）', () => {
+  const zh = (result: unknown) => displayedErrorMessage(shown('zh-CN'), (result as CloudBackupFailure).errorCode)
+  const backup = (f: ReturnType<typeof fixture>) => f.invoke('cloud-backup:backup', {
+    operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
+  })
+  const restoreCopy = (f: ReturnType<typeof fixture>) => f.invoke('cloud-backup:restore-copy', {
+    operationId: OPERATION, localEndpointAccountId: ACCOUNT, cloudBookId: BOOK, generationId: GENERATION,
+    targetGrantId: f.restoreTarget('restored').grantId,
+  })
+  const diskFull = (file?: string) => Object.assign(new Error('ENOSPC: no space left on device, write'), {
+    code: 'ENOSPC', syscall: 'write', ...(file ? { path: file } : {}),
+  })
+
+  it('书童数据文件夹盘满、建不了暂存目录：说数据文件夹写不进，不说意外错误', async () => {
+    const f = fixture()
+    vi.spyOn(fs, 'mkdtempSync').mockImplementation(() => { throw diskFull() })
+
+    const result = await backup(f)
+
+    expect(zh(result)).toBe('作品没有改动。书童的数据文件夹写不进去，可能磁盘满了或没有权限。请腾出磁盘空间，再试一次。')
+    expect(f.deps.exportPortableProject).not.toHaveBeenCalled()
+  })
+
+  it('打包写进暂存目录时盘满：说数据文件夹写不进，不叫作者去「导出本地存档」看原因', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.exportPortableProject).mockImplementation(async input => {
+      throw diskFull(path.join(input.attemptParentPath, 'attempt', 'project.db'))
+    })
+
+    const result = await backup(f)
+
+    expect(zh(result)).toContain('数据文件夹写不进去')
+    expect(zh(result)).not.toContain('导出本地存档')
+    expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
+  })
+
+  it('下载云端世代时本机盘满：说数据文件夹写不进，不说连不上服务器', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.webDav.downloadGeneration).mockRejectedValue(diskFull())
+
+    const result = await restoreCopy(f)
+
+    expect(zh(result)).toContain('数据文件夹写不进去')
+    expect(f.deps.restorePortableProject).not.toHaveBeenCalled()
+  })
+
+  const denied = (code: string, file?: string) => Object.assign(new Error(`${code}: denied`), {
+    code, ...(file ? { path: file } : {}),
+  })
+
+  it.each(['EACCES', 'EPERM', 'EROFS'])('书童数据文件夹没有写权限（%s）：建暂存目录、打包、下载都说数据文件夹写不进', async code => {
+    const mkdtemp = fixture()
+    vi.spyOn(fs, 'mkdtempSync').mockImplementationOnce(() => { throw denied(code) })
+    expect(zh(await backup(mkdtemp))).toContain('数据文件夹写不进去')
+
+    const pack = fixture()
+    vi.mocked(pack.deps.exportPortableProject).mockImplementation(async input => {
+      throw denied(code, path.join(input.attemptParentPath, 'attempt', 'project.db'))
+    })
+    expect(zh(await backup(pack))).toContain('数据文件夹写不进去')
+
+    const download = fixture()
+    vi.mocked(download.deps.webDav.downloadGeneration).mockRejectedValue(denied(code))
+    expect(zh(await restoreCopy(download))).toContain('数据文件夹写不进去')
+  })
+
+  it('打包时读作品文件被拒（路径不在暂存目录）：仍叫作者去「导出本地存档」看原因，不怪数据文件夹', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.exportPortableProject).mockRejectedValue(denied('EPERM', path.join(os.tmpdir(), 'my-book', 'chapters', '1.md')))
+
+    const result = await backup(f)
+
+    expect(result).toMatchObject({ errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED' })
+  })
+
+  it('云端世代来自更新版本的书童：说先升级，没有新建副本', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.restorePortableProject).mockRejectedValue(new PortableProjectArchiveError('PORTABLE_SCHEMA_UNSUPPORTED'))
+
+    const result = await restoreCopy(f)
+
+    expect(zh(result)).toBe('没有新建副本。这个云端世代来自更新版本的书童。请先升级书童，再点「恢复所选云端世代为副本」。')
+  })
+
+  it.each([
+    ['解包暂存写不进', () => new PortableProjectArchiveError('PORTABLE_ARCHIVE_TARGET_UNWRITABLE')],
+    ['装副本时盘满', () => diskFull(path.join(os.tmpdir(), 'restored', '.ai-novel', 'project.db'))],
+  ])('恢复时所选文件夹写不进（%s）：说换个文件夹，提醒可能留下没恢复完的副本', async (_label, error) => {
+    const f = fixture()
+    vi.mocked(f.deps.restorePortableProject).mockRejectedValue(error())
+
+    const result = await restoreCopy(f)
+
+    expect(zh(result)).toBe('所选文件夹写不进去，可能没有权限或磁盘满了，里面可能留下没恢复完的副本文件夹，可以删掉。请换一个文件夹，再点「恢复所选云端世代为副本」。')
+  })
+
+  it.each([
+    ['所选位置不安全', async () => { throw new Error('PORTABLE_RESTORE_UNSAFE_TARGET') }],
+    ['暂存目录里下载的存档被占用', async (input: { archivePath: string }) => {
+      throw Object.assign(new Error('EPERM: operation not permitted, open'), { code: 'EPERM', path: input.archivePath })
+    }],
+  ])('其余恢复失败（%s）仍按装到一半处理：不说没有新建副本，也不怪所选文件夹', async (_label, restore) => {
+    const f = fixture()
+    vi.mocked(f.deps.restorePortableProject).mockImplementation(restore)
+
+    const result = await restoreCopy(f)
+
+    expect(result).toMatchObject({ errorCode: 'CLOUD_BACKUP_RESTORE_FAILED' })
+    expect(zh(result)).toContain('没恢复完的副本文件夹')
+  })
+
+  it('云操作刚结束时点取消：回报已无法取消，不当成失败', async () => {
+    const f = fixture()
+    await backup(f)
+
+    await expect(f.invoke('cloud-backup:cancel', OPERATION)).resolves.toEqual({ success: true, cancelled: false })
+  })
+
+  it('清凭据半途失败后面板仍显示可写、点立即云备份：说还没绑定好，不说意外问题', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.bindingStore.get).mockReturnValue({ ...writable, mode: 'unconfigured', revision: 8 })
+
+    const result = await backup(f)
+
+    expect(zh(result)).toBe('作品没有改动，也没有上传。这本书的云备份还没绑定好。请关闭并重新打开设置，再点「连接并绑定」。')
+  })
+
+  it('绑定刚被别处改过：说没有上传，请重新打开设置', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.bindingStore.saveWritable).mockImplementation(() => { throw new Error('CLOUD_BINDING_REVISION_CONFLICT') })
+
+    const result = await f.invoke('cloud-backup:confirm-binding', {
+      projectSession: session, localEndpointAccountId: ACCOUNT, cloudBookId: BOOK,
+      lastSelectedParentGenerationIds: [], expectedRevision: 7,
+    })
+
+    expect(zh(result)).toBe('作品没有改动，也没有上传。云备份绑定刚被改过。请关闭并重新打开设置，再试一次。')
+  })
+
+  it('连上了但本机存不下凭据：说数据文件夹写不进', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.credentialStore.save).mockImplementation(() => { throw diskFull() })
+
+    const result = await f.invoke('cloud-backup:connect', {
+      endpoint: 'https://dav.example.test/root/', username: 'writer', secret: 'top-secret',
+    })
+
+    expect(zh(result)).toContain('数据文件夹写不进去')
   })
 })
