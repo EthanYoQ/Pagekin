@@ -946,6 +946,41 @@ async function exportThenClose(context) {
   return result
 }
 
+/** 导出目标被别的程序打开（#702）：提示说清原因、原文件不变；关掉后再导出成功。 */
+async function exportHeldTarget(context) {
+  const { app, page, roots, shoot } = context
+  await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(page).isVisible()) await stage.openFromLibrary(page, BOOK)
+  await stage.spine(page).waitFor({ state: 'visible', timeout: 60_000 })
+  const target = path.join(roots.projects, `held-export-${randomUUID()}`)
+  fs.mkdirSync(target)
+  const exported = path.join(target, `${BOOK}.md`)
+  fs.writeFileSync(exported, '上一次导出的内容', 'utf8')
+  await app.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }) }, target)
+  await stage.openWorkMenuItem(page, BOOK, '导出…')
+  const dialog = page.getByRole('dialog', { name: '导出项目' })
+  await dialog.getByText('合并 Markdown', { exact: true }).click()
+  const result = dialog.getByText(/已导出到：/u).or(dialog.locator('[class*="color-error-text"]')).first()
+  const holder = fs.openSync(exported, 'r+')
+  let heldText
+  try {
+    await dialog.getByRole('button', { name: '选择目录并导出', exact: true }).click()
+    await result.waitFor({ state: 'visible', timeout: 60_000 })
+    heldText = (await result.innerText()).trim()
+    await shoot('held-target')
+  } finally {
+    fs.closeSync(holder)
+  }
+  assert.equal(heldText, '文件没有改动。目标文件正被其他程序打开，关掉它后再点「选择目录并导出」。')
+  assert.equal(fs.readFileSync(exported, 'utf8'), '上一次导出的内容', '被占用时原文件不变')
+  assert.deepEqual(fs.readdirSync(target), [`${BOOK}.md`], '没有留下临时文件')
+  await dialog.getByRole('button', { name: '选择目录并导出', exact: true }).click()
+  await dialog.getByText(new RegExp(`^已导出到：.*${BOOK}\\.md$`, 'u')).waitFor({ state: 'visible', timeout: 60_000 })
+  await shoot('released-target')
+  assert.ok(fs.readFileSync(exported, 'utf8').includes(chapterMarker(1)), '关掉后再导出写进了第 1 章')
+  return { heldText, retried: true }
+}
+
 export const NEEDS_FIXTURE = { env: { PERF702_FIXTURE: `指向 112 章夹具目录（里面有 projects/${BOOK}）。用 perf702-112 加 PERF702_SAVE 造一份，取 <SAVE>/112；定稿章数不是 112 时同时设 PERF702_FINALIZED` } }
 
 const REUSED = { model: true, shell: 'stage', requires: NEEDS_FIXTURE, setup: async context => { installReplies(context.fake); await reuseBuilt(context); await context.restart() } }
@@ -984,6 +1019,8 @@ export const PERF702_SCENARIOS = {
       await stage.spine(context.page).or(stage.cover(context.page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
       return { opened, results, closed, quiesced, switched }
     } },
+  'perf702-export-held': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1, { blueprints: false }) },
+    run: exportHeldTarget },
   'perf702-blueprints': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 0); await context.restart() },
     run: context => timeBlueprintsOnly(context) },
   'perf702-bpgen': { model: true, shell: 'stage', setup: async context => { context.generated = await generateBlueprints(context); context.bpLabel = 'bpgen' },
