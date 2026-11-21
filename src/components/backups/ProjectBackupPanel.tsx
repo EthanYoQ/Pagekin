@@ -185,13 +185,17 @@ function ProjectBackupPanelSession({
       lastSelectedParentGenerationIds: matchesGenerationSource(connected.account.accountId, cloudBookId.trim()) ? parentIds : [],
       expectedRevision: binding?.revision ?? null,
     })
-    if (!confirmed.success) {
-      const cleared = await ipc.invoke('cloud-backup:clear-credential', connected.account.accountId)
-      if (!cleared.success) throw new Error(errorText(confirmed.errorCode) + text('刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。', ' The password you just entered could not be removed from this computer; it is still stored encrypted in the Pagekin data folder.'))
-      throw new Error(confirmed.errorCode)
-    }
     const isSessionOnly = connected.warning === 'CLOUD_CREDENTIAL_SESSION_ONLY'
       || connected.account.persistence === 'session-only'
+    if (!confirmed.success) {
+      const cleared = await ipc.invoke('cloud-backup:clear-credential', connected.account.accountId)
+      if (!cleared.success) {
+        throw new Error(errorText(confirmed.errorCode) + (isSessionOnly
+          ? text('刚填的密码没能清掉，还记在书童里，退出书童后就不在了。', ' The password you just entered could not be cleared; Pagekin still holds it until you quit.')
+          : text('刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。', ' The password you just entered could not be removed from this computer; it is still stored encrypted in the Pagekin data folder.')))
+      }
+      throw new Error(confirmed.errorCode)
+    }
     setAccount(connected.account)
     updateBinding(confirmed.binding)
     setSessionOnlyCredential(isSessionOnly)
