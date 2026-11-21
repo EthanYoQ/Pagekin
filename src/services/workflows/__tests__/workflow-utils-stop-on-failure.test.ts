@@ -236,7 +236,7 @@ describe('runPostProcessPipeline stopOnFailure', () => {
 
       const logs = vi.mocked(callbacks.log).mock.calls.flat().join('\n')
       expect(logs).toContain('Chapter notes failed on attempt 1; retrying')
-      expect(logs).not.toMatch(/[A-Z]+_[A-Z_]+|Select Retry|Retrying gives the same result/u)
+      expect(logs).not.toMatch(/[A-Z]+_[A-Z_]+|Select Retry|[Rr]etrying gives the same result/u)
     }
   })
 
