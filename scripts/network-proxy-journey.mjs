@@ -44,7 +44,7 @@ try {
     upstream.on('error', () => socket.destroy())
     socket.on('error', () => upstream.destroy())
   })
-  const proxyPort = await listen(proxy)
+  const proxyPort = await new Promise(resolve => proxy.listen(0, '::', () => resolve(proxy.address().port)))
   const closed = http.createServer()
   const closedPort = await listen(closed)
   await new Promise(resolve => closed.close(resolve))
@@ -125,7 +125,10 @@ try {
   assert.equal((await invoke('cloud-backup:connect', { endpoint: `http://127.0.0.1:${closedPort}/dav/`, username: 'probe', secret: 'probe-not-a-secret' })).errorCode,
     'CLOUD_BACKUP_NETWORK_FAILED', 'a dead local WebDAV is not blamed on the proxy')
 
-  assert.deepEqual(await setProxy({ enabled: true, host: '::1', port: proxyPort }), { success: true }, 'an IPv6 proxy host is accepted')
+  for (const host of ['[::1]', '::1']) {
+    assert.deepEqual(await setProxy({ enabled: true, host, port: proxyPort }), { success: true }, `IPv6 proxy host ${host} is accepted`)
+    assert.equal((await calls['test-connection http']()).success, true, `IPv6 proxy host ${host} carries requests`)
+  }
   assert.deepEqual(await setProxy({ enabled: true, host: 'http://127.0.0.1', port: proxyPort }),
     { success: false, error: 'NETWORK_PROXY_INVALID' }, 'a host with a scheme is rejected before it is saved')
   assert.equal((await invoke('config:get')).proxy.host, '::1', 'the rejected proxy was not saved')
@@ -137,7 +140,6 @@ try {
   console.log(JSON.stringify({ counts }, null, 1))
   throw error
 } finally {
-  // 启动失败也要关掉已建的服务、删临时目录，否则脚本挂住。
   if (app) await Promise.race([app.close(), new Promise(resolve => setTimeout(resolve, 10_000))])
   for (const server of [target, proxy]) if (server?.listening) { server.closeAllConnections(); server.close() }
   if (root) fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 })

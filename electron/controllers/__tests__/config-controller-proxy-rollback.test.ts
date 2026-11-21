@@ -73,7 +73,8 @@ describe('保存设置失败时，正在用的代理 A 不被卸掉', () => {
     expect(dispatcher.proxy).toBe('http://127.0.0.1:7890')
   })
 
-  it('写入配置时抛错', async () => {
+  it('config.json 被删、写入新文件时抛错', async () => {
+    fs.rmSync(configPath)
     mocks.writeFails = true
     await expect(save({ proxy: B })).resolves.toMatchObject({ success: false })
     expect(dispatcher.proxy).toBe('http://127.0.0.1:7890')
