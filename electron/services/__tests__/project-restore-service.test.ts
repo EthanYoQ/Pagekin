@@ -836,3 +836,43 @@ describe('portable project restore service', () => {
     expect(fs.readFileSync(path.join(staging, 'keep.txt'), 'utf8')).toBe('not-owned')
   })
 })
+
+describe('读不了所选存档（#702）', () => {
+  function emptyRoot(): string {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'err-l2-restore-source-'))
+    roots.push(base)
+    return base
+  }
+
+  it('存档被挪走：报找不到存档，原 ENOENT 留在 cause，不新建副本', async () => {
+    const base = emptyRoot()
+    const error = await restorePortableProject({
+      archivePath: path.join(base, '挪走了.ainovel'),
+      targetProjectRoot: path.join(base, 'restored'),
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({ message: 'PORTABLE_RESTORE_ARCHIVE_MISSING', cause: { code: 'ENOENT' } })
+    expect(fs.readdirSync(base)).toEqual([])
+  })
+
+  it.each(['EACCES', 'EPERM'])('读存档时 %s：报存档读不了，不当成目标文件夹写不进', async errno => {
+    const base = emptyRoot()
+    const archivePath = path.join(base, '读不了.ainovel')
+    fs.writeFileSync(archivePath, 'archive')
+    const lstat = fs.lstatSync
+    vi.spyOn(fs, 'lstatSync').mockImplementation(((file: fs.PathLike, options?: fs.StatSyncOptions) => {
+      if (path.resolve(String(file)) === archivePath) {
+        throw Object.assign(new Error(`${errno}: operation not permitted, lstat '${archivePath}'`), { code: errno })
+      }
+      return lstat(file, options)
+    }) as typeof fs.lstatSync)
+    try {
+      const error = await restorePortableProject({ archivePath, targetProjectRoot: path.join(base, 'restored') })
+        .catch((caught: unknown) => caught)
+      expect(error).toMatchObject({ message: 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE', cause: { code: errno } })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.readdirSync(base)).toEqual(['读不了.ainovel'])
+  })
+})

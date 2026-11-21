@@ -693,6 +693,41 @@ describe('project:archive-restore', () => {
     logged.mockRestore()
   })
 
+  it.each([
+    ['PORTABLE_RESTORE_ARCHIVE_MISSING', 'ENOENT'],
+    ['PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'EPERM'],
+  ])('读所选存档失败（%s）交出自己的码，原错误写进主进程日志（#702）', async (code, errno) => {
+    const root = tempRoot('err-l2-restore-source-')
+    const original = Object.assign(new Error(`${errno}: lstat 'D:\\备份\\a.ainovel'`), { code: errno })
+    const thrown = new Error(code, { cause: original })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.restorePortableProject.mockRejectedValueOnce(thrown)
+
+    await expect(handler('project:archive-restore')(event(), {
+      archiveGrantId: archiveFileGrant(path.join(root, 'a.ainovel')),
+      targetGrantId: newTargetGrant(path.join(root, 'copy')),
+    })).resolves.toEqual({ success: false, error: code, errorCode: code })
+    expect(logged).toHaveBeenCalledWith(expect.any(String), thrown)
+    logged.mockRestore()
+  })
+
+  it('恢复时写目标的 EPERM 仍报目标文件夹写不进（#702）', async () => {
+    const root = tempRoot('err-l2-restore-target-')
+    const thrown = Object.assign(new Error("EPERM: operation not permitted, mkdir 'D:\\备份\\copy'"), { code: 'EPERM' })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.restorePortableProject.mockRejectedValueOnce(thrown)
+
+    await expect(handler('project:archive-restore')(event(), {
+      archiveGrantId: archiveFileGrant(path.join(root, 'a.ainovel')),
+      targetGrantId: newTargetGrant(path.join(root, 'copy')),
+    })).resolves.toEqual({
+      success: false,
+      error: 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE',
+      errorCode: 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE',
+    })
+    logged.mockRestore()
+  })
+
   it('keeps restored data and returns a warning when recent registration fails', async () => {
     const root = tempRoot('b01-controller-warning-')
     const targetProjectRoot = path.join(fs.realpathSync.native(root), 'restored')

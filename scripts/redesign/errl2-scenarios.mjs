@@ -32,8 +32,18 @@ async function exportTo({ app, page }, labels, filePath) {
   await stage.root(page).getByRole('button', { name: labels.export, exact: true }).click()
 }
 
+async function mainLogged(diagnostics, from, pattern) {
+  const deadline = Date.now() + 10_000
+  while (!pattern.test(diagnostics.slice(from).join('
+'))) {
+    assert.ok(Date.now() < deadline, `主进程日志没有记下 ${pattern}`)
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+}
+
 /** 作者选好存档、还在选恢复位置时，存档被移走（拔了 U 盘、云盘同步删掉）。 */
-async function restoreAfterArchiveMoved({ app, page }, labels, archive, parent) {
+async function restoreAfterArchiveMoved({ app, page, diagnostics }, labels, archive, parent) {
+  const logged = diagnostics.length
   await app.evaluate(({ dialog }, [file, folder]) => {
     const fs = process.getBuiltinModule('node:fs')
     let calls = 0
@@ -46,6 +56,7 @@ async function restoreAfterArchiveMoved({ app, page }, labels, archive, parent) 
   }, [archive, parent])
   await stage.root(page).getByRole('button', { name: labels.restore, exact: true }).click()
   const shown = await notice(page, 'alert')
+  await mainLogged(diagnostics, logged, /restore failed[\s\S]*ENOENT: no such file or directory, lstat/u)
   fs.renameSync(`${archive}.moved`, archive)
   return shown
 }
@@ -67,7 +78,8 @@ export const ERRL2_SCENARIOS = {
     const en = await notice(page, 'alert')
     assert.equal(en, "Your book is unchanged. An archive cannot go inside the book's own folder, so none was created. Click Export local archive again and choose a location outside the book folder.")
     await shoot('errl2-2-export-inside-en')
-    return { zh, en, archiveWritten: fs.existsSync(inside) }
+    assert.equal(fs.existsSync(inside), false, '作品文件夹里没有写出存档')
+    return { zh, en }
   } },
   'errl2-restore-archive-moved': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1) }, run: async context => {
     const { page, roots, shoot } = context
@@ -81,13 +93,14 @@ export const ERRL2_SCENARIOS = {
     assert.match(await notice(page, 'status'), /^本地存档已导出：/u)
 
     const zh = await restoreAfterArchiveMoved(context, ZH, archive, target)
-    assert.equal(zh, '没有新建副本。恢复时出了意外错误。请再点「从本地存档恢复副本」；还不行，请把这条提示反馈给我们。')
+    assert.equal(zh, '没有新建副本。找不到所选存档。请再点「从本地存档恢复副本」重新选一次。')
     await shoot('errl2-3-restore-moved-zh')
 
     await switchToEnglish(page)
     const en = await restoreAfterArchiveMoved(context, EN, archive, target)
-    assert.equal(en, 'No copy was created. Something unexpected went wrong during restore. Click Restore a copy from local archive again; if it still fails, please report this message to us.')
+    assert.equal(en, 'No copy was created. The chosen archive could not be found. Click Restore a copy from local archive and choose it again.')
     await shoot('errl2-4-restore-moved-en')
-    return { zh, en, copies: fs.readdirSync(target) }
+    assert.deepEqual(fs.readdirSync(target), [], '恢复位置没有建出副本')
+    return { zh, en }
   } },
 }
