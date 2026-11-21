@@ -45,9 +45,9 @@ try {
     socket.on('error', () => upstream.destroy())
   })
   const proxyPort = await new Promise(resolve => proxy.listen(0, '::', () => resolve(proxy.address().port)))
-  const closed = http.createServer()
-  const closedPort = await listen(closed)
-  await new Promise(resolve => closed.close(resolve))
+  const closed = [http.createServer(), http.createServer()]
+  const [closedPort, deadLocalPort] = await Promise.all(closed.map(listen))
+  await Promise.all(closed.map(server => new Promise(resolve => server.close(resolve))))
 
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'proxy-journey-'))
   const roots = Object.fromEntries(['canonical', 'legacy', 'home', 'appData', 'localAppData', 'temp', 'userData'].map(name => [name, path.join(root, name)]))
@@ -122,7 +122,7 @@ try {
   assert.equal(down['discover-models'].result.errorCode, 'proxy', 'model list reports the unreachable proxy')
   assert.equal(down['cloud-backup connect'].result.errorCode, 'CLOUD_BACKUP_PROXY_UNREACHABLE', 'cloud backup reports the unreachable proxy')
   for (const name of Object.keys(local)) assert.equal(down[name].result.success, true, `${name}: local model ignores the dead proxy`)
-  assert.equal((await invoke('cloud-backup:connect', { endpoint: `http://127.0.0.1:${closedPort}/dav/`, username: 'probe', secret: 'probe-not-a-secret' })).errorCode,
+  assert.equal((await invoke('cloud-backup:connect', { endpoint: `http://127.0.0.1:${deadLocalPort}/dav/`, username: 'probe', secret: 'probe-not-a-secret' })).errorCode,
     'CLOUD_BACKUP_NETWORK_FAILED', 'a dead local WebDAV is not blamed on the proxy')
 
   for (const host of ['[::1]', '::1']) {
