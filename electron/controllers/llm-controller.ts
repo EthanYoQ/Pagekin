@@ -13,14 +13,15 @@ import { isReasoningMapping, reasoningAdapterFitsProtocol } from '../../src/shar
 import { isLocalModelEndpoint } from '../../src/shared/provider-presets'
 import { sameModelIdentity, withLearnedContextWindow } from '../../src/shared/model-profile-draft'
 import { assignStageModel, availableGenerationModelId, isModelStage, parseStageModelIds, removeModelFromStages } from '../../src/shared/model-stage-routing'
-import { isRerankFailure, type RerankFailure } from '../../src/shared/knowledge-ranking'
-import { rankPassages } from '../rerank'
+import type { RerankFailure } from '../../src/shared/knowledge-ranking'
+import { RerankError, requestOrder } from '../rerank'
 import { LLMFactory } from '../llm/llm-factory'
 import { mainErrorDisplayLocale } from '../i18n'
 import { localize, translate, type MessageKey } from '../../src/i18n/core'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
 import { ModelExecutionLeaseRegistry } from '../services/model-execution-lease'
 import { ModelDiscoveryService } from '../services/model-discovery-service'
+import { failedAtProxy } from '../network-proxy'
 
 const CONNECTION_TEST_MAX_TOKENS = 1024
 const LOCAL_CONNECTION_TEST_TIMEOUT_MS = 120_000
@@ -38,13 +39,16 @@ const RERANK_TEST_FAILURES: Record<RerankFailure, readonly [string, string]> = {
   'invalid-response': ['服务的返回不是重排结果，请确认这个模型支持重排。', 'The service did not return reranking results. Check that this model supports reranking.'],
 }
 
-async function testRerankConnection(model: ModelProfile) {
-  const { baseUrl, apiKey, modelName } = model
-  const { ranking } = await rankPassages('hello', [{ text: 'hello' }, { text: 'world' }],
-    { kind: 'explicit', profileId: model.id, endpoint: { baseUrl, apiKey, modelName } }, 2)
-  if (ranking.method === 'rerank') return { success: true, error: undefined }
-  if (!isRerankFailure(ranking.reason)) throw new Error(`RERANK_TEST_UNEXPECTED_${ranking.reason}`)
-  return { success: false, error: localize(failureLocale(), ...RERANK_TEST_FAILURES[ranking.reason]) }
+async function testRerankConnection({ baseUrl, apiKey, modelName }: ModelProfile) {
+  try {
+    await requestOrder('hello', ['hello', 'world'], { baseUrl, apiKey, modelName }, 2)
+    return { success: true, error: undefined }
+  } catch (error) {
+    if (!(error instanceof RerankError)) throw error
+    return { success: false, error: failedAtProxy(error.cause)
+      ? translate(failureLocale(), 'error.proxyUnreachable')
+      : localize(failureLocale(), ...RERANK_TEST_FAILURES[error.reason]) }
+  }
 }
 
 function loadModelConfigs(): ModelProfile[] {
@@ -95,26 +99,6 @@ function rememberContextWindow(snapshot: ModelProfile, windowTokens: number): vo
   }
 }
 
-function applyProxyConfig() {
-  try {
-    const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
-    if (config.proxy?.enabled && config.proxy.host) {
-      const proxyUrl = config.proxy.type === 'socks5'
-        ? `socks5://${config.proxy.host}:${config.proxy.port}`
-        : `http://${config.proxy.host}:${config.proxy.port}`
-      process.env.HTTP_PROXY = proxyUrl
-      process.env.HTTPS_PROXY = proxyUrl
-      process.env.http_proxy = proxyUrl
-      process.env.https_proxy = proxyUrl
-    } else {
-      delete process.env.HTTP_PROXY
-      delete process.env.HTTPS_PROXY
-      delete process.env.http_proxy
-      delete process.env.https_proxy
-    }
-  } catch { /* 忽略 */ }
-}
-
 const failureLocale = () => mainErrorDisplayLocale(app.getLocale())
 
 const CONNECTION_FAILURE_BY_CODE: Record<string, MessageKey> = {
@@ -138,6 +122,7 @@ const CONNECTION_FAILURE_BY_CODE: Record<string, MessageKey> = {
 
 /** fetch 只报「fetch failed」，原因在 cause.code。 */
 function connectionFailureKey(failure: unknown): MessageKey {
+  if (failedAtProxy(failure)) return 'error.proxyUnreachable'
   const code = (failure as { cause?: { code?: unknown } } | null)?.cause?.code
   return (typeof code === 'string' && CONNECTION_FAILURE_BY_CODE[code]) || 'error.connectionFailed'
 }
@@ -195,7 +180,6 @@ export function registerLLMController() {
 
   ipcMain.handle('llm:discover-local-context-window', async (_event, request: LocalContextWindowRequest) => {
     try {
-      applyProxyConfig()
       return await modelDiscovery.discoverLocalContextWindow(request)
     } catch {
       return null
@@ -204,7 +188,6 @@ export function registerLLMController() {
 
   ipcMain.handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
     try {
-      applyProxyConfig()
       return await modelDiscovery.discoverModels(request)
     } catch {
       return { success: false, errorCode: 'invalid_response' as const }
@@ -367,8 +350,6 @@ export function registerLLMController() {
     const timer = setTimeout(() => deadline.abort(), timeoutMs)
     const timedOut = () => ({ success: false, error: translate(failureLocale(), 'error.connectionTestTimeout', { seconds: timeoutMs / 1000 }) })
     try {
-      applyProxyConfig()
-
       if (model.purposes?.includes('rerank')) return await testRerankConnection(model)
 
       const messages = [{ role: 'user', content: 'Say "hello" and nothing else.' }]
@@ -413,5 +394,5 @@ export function registerLLMController() {
     }
   })
 
-  return { modelExecutionLeases, loadModel: getModelConfig, rememberContextWindow, applyProxyConfig }
+  return { modelExecutionLeases, loadModel: getModelConfig, rememberContextWindow }
 }

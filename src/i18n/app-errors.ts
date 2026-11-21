@@ -84,6 +84,7 @@ const ERROR_KEYS = {
   CLOUD_BACKUP_ARCHIVE_FAILED: 'error.cloudBackupArchiveFailed',
   CLOUD_BACKUP_AUTH_FAILED: 'error.cloudBackupAuthFailed',
   CLOUD_BACKUP_NETWORK_FAILED: 'error.cloudBackupNetworkFailed',
+  CLOUD_BACKUP_PROXY_UNREACHABLE: 'error.cloudBackupProxyUnreachable',
   CLOUD_BACKUP_REMOTE_INVALID: 'error.cloudBackupRemoteInvalid',
   CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE: 'error.cloudBackupCredentialUnavailable',
   CLOUD_BACKUP_CANCELLED: 'error.cloudBackupCancelled',
@@ -345,6 +346,7 @@ const ERROR_KEYS = {
   LLM_STAGE_MODEL_UNAVAILABLE: 'error.stageModelUnavailable',
   LLM_STAGE_MODEL_REQUEST_INVALID: 'error.stageModelRequestInvalid',
   MODEL_ENDPOINT_INVALID: 'error.modelEndpointInvalid',
+  NETWORK_PROXY_INVALID: 'error.networkProxyInvalid',
   MODEL_OUTPUT_LIMIT_INVALID: 'error.modelOutputLimitInvalid',
   // 生成与连接测试都会按模型设置组请求参数，Kimi 官方接口的温度超出范围时在发请求前拒绝。
   GENERATION_KIMI_TEMPERATURE_INVALID: 'error.kimiTemperatureInvalid',

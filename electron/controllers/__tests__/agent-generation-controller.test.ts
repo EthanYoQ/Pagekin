@@ -69,7 +69,7 @@ async function workflow() {
 }
 
 beforeAll(() => {
-  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => model, rememberContextWindow: () => {}, applyProxyConfig: () => {} })
+  registerGenerationController({ modelExecutionLeases: new ModelExecutionLeaseRegistry({ loadModel: () => model }), loadModel: () => model, rememberContextWindow: () => {} })
   registerDatabaseController()
 })
 beforeEach(() => {
