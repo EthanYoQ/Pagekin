@@ -17,7 +17,7 @@ export const tunnelRefused = () => Object.assign(new TypeError('fetch failed'), 
   }),
 })
 
-/** 替换 http.setGlobalProxyFromEnv（Node 22 没有）：和 Electron 一样先解析代理地址，非法就抛；dispatcher.proxy 是当前装着的代理。 */
+/** 替身：Node 22 没有 http.setGlobalProxyFromEnv。和 Electron 一样先解析地址，非法就抛。 */
 export const dispatcher = { proxy: null as string | null }
 
 export function setGlobalProxyFromEnv(env: { HTTP_PROXY?: string }) {
