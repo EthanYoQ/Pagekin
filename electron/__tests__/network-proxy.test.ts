@@ -31,6 +31,11 @@ describe('这次请求是不是连不上代理', () => {
     expect(failedAtProxy(hostNotFound('badproxyhost'))).toBe(true)
   })
 
+  it('代理主机名带大写，解析不出时错误里是小写：是', () => {
+    applyNetworkProxy(proxy('MyProxy.local'))
+    expect(failedAtProxy(hostNotFound('myproxy.local'))).toBe(true)
+  })
+
   it('解析不出的是别的主机名：不是', () => {
     applyNetworkProxy(proxy('badproxyhost'))
     expect(failedAtProxy(hostNotFound('api.example.com'))).toBe(false)
