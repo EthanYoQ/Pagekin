@@ -51,14 +51,7 @@ describe('release dependency contract', () => {
     expect(builder).toContain('security/windows-safe-file-system.exe')
 
     const safeFileSystem = readFileSync('electron/security/windows-safe-file-system.ts', 'utf8')
-    const safeFileSystemHelper = readFileSync('electron/security/windows-safe-file-system.cs', 'utf8')
     expect(safeFileSystem).toContain('electron.app.isPackaged === true')
-    expect(safeFileSystemHelper).toContain('public void Commit(bool mustAlreadyExist)')
-    expect(safeFileSystemHelper).toContain('private const int FileRenameInformationEx = 65;')
-    expect(safeFileSystemHelper).toContain('FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS')
-    expect(safeFileSystemHelper).toContain('FILE_SHARE_READ | FILE_SHARE_WRITE);')
-    expect(safeFileSystemHelper).toContain('RenameExistingIntoDirectory(temporaryFile.DangerousGetHandle()')
-    expect(safeFileSystemHelper).toContain('session.Commit(mustAlreadyExist);')
   })
 
   it('makes the formal Windows updater build self-verifying and keeps portable ZIPs out of the release workflow', () => {

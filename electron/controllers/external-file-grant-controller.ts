@@ -47,6 +47,11 @@ function grantErrorText(error: unknown): string {
     case 'SECURE_FS_HELPER_UNAVAILABLE':
     case 'SECURE_FS_HELPER_TIMEOUT':
       return text('安全外部文件服务不可用，已拒绝操作。', 'The secure external file service is unavailable; the operation was rejected.')
+    case 'SECURE_FS_TARGET_IN_USE':
+      return text(
+        '文件没有改动。目标文件正被其他程序打开，关掉它后再点「选择目录并导出」。',
+        'The file was not changed. Another program has it open. Close that program, then click "Choose folder and export" again.',
+      )
     default:
       return text('外部文件授权操作失败。', 'The external file grant operation failed.')
   }
@@ -133,27 +138,11 @@ export function registerExternalFileGrantController(
     async (event: GrantEvent, grantId: string, relativePath: string, content: string) => {
       try {
         const target = resolveGrantPath(grants, event, grantId, 'write', relativePath)
-        const targetExists = await fileSystem.exists(target)
-        let canCreate = false
-        let createPermissionError: unknown
-        try {
-          resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
-          canCreate = true
-        } catch (error) {
-          createPermissionError = error
-        }
-        if (!targetExists && !canCreate) {
-          throw createPermissionError
-        }
-        // writeTextAtomically holds a root-relative Windows handle chain through
-        // temporary-file creation and replacement. Revalidate the grant at the
-        // ready phase and let the helper enforce create-vs-write at commit.
+        resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
         await fileSystem.writeTextAtomically(target, content, () => {
           resolveGrantPath(grants, event, grantId, 'write', relativePath, false)
-          if (canCreate) {
-            resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
-          }
-        }, { mustAlreadyExist: !canCreate })
+          resolveGrantPath(grants, event, grantId, 'create', relativePath, false)
+        })
         return { success: true }
       } catch (error) {
         return {

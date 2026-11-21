@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
 
@@ -26,6 +26,7 @@ import { openCanonicalProjectFixture as initProjectDatabase } from '../../../tes
 import { FinalizationRepository } from '../../../electron/repositories/finalization-repository'
 import { ExternalFileGrantService } from '../../../electron/services/external-file-grant-service'
 import { nodeTestSecureFileSystem } from '../../../test/helpers/node-test-secure-file-system'
+import { createWindowsSafeFileSystem } from '../../../electron/security/windows-safe-file-system'
 import { setActiveProjectSessionContext } from '../../shared/project-session-context'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { exportNovel } from '../export-service'
@@ -163,4 +164,105 @@ describe('authoritative finalized export integration', () => {
     expect(fs.readdirSync(path.join(exportPath, second.path)))
       .toEqual(['chapter_1.md'])
   })
+
+  it.runIf(process.platform === 'win32')('目标文件被其他程序打开时，说明原因并保持原文件不变', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-export-held-'))
+    temporaryRoots.push(root)
+    const projectPath = path.join(root, 'project')
+    const exportPath = path.join(root, 'export')
+    fs.mkdirSync(projectPath)
+    fs.mkdirSync(exportPath)
+    initProjectDatabase(projectPath, Buffer.alloc(32, 7))
+    const db = getProjectDb()
+    if (!db) throw new Error('Expected project database')
+    const contentId = Number(db.prepare('INSERT INTO contents (body) VALUES (?)').run('old draft').lastInsertRowid)
+    const draftId = Number(db.prepare(`
+      INSERT INTO drafts_all (chapter_number, version, status, content_id, word_count)
+      VALUES (1, 1, 'draft', ?, 0)
+    `).run(contentId).lastInsertRowid)
+    FinalizationRepository.commit({
+      finalizationId: 'finalization-held',
+      draftId,
+      chapterNumber: 1,
+      chapterTitle: '起航',
+      content: '第一章正文。',
+      contentHash: sha256('第一章正文。'),
+      contentRevision: 1,
+      targetFileName: '第1章 起航.txt',
+    })
+    const grants = new ExternalFileGrantService({ now: () => 1_000, newGrantId: () => 'held-export-grant' })
+    const grant = grants.issueDirectory({
+      webContentsId: 17,
+      directoryPath: exportPath,
+      operations: ['write', 'create'],
+      ttlMs: 60_000,
+      maxUses: 10,
+    })
+    registerExternalFileGrantController(grants, createWindowsSafeFileSystem())
+    const projectSession: ProjectSessionContext = { projectId: 'project-held', leaseId: 'lease-held', projectPath }
+    setActiveProjectSessionContext(projectSession)
+    const event = { sender: { id: 17, once: vi.fn() } }
+    vi.stubGlobal('window', {
+      aiNovelAPI: {
+        invoke: async (channel: string, ...args: unknown[]) => {
+          if (channel === 'db:draft-export-snapshot') return FinalizationRepository.listAuthoritativeForExport()
+          if (channel === 'db:draft-export-authority-current') {
+            return FinalizationRepository.matchesAuthoritativeExportReceipt(args[0] as never)
+          }
+          const ipcHandler = electronMocks.handlers.get(channel)
+          if (!ipcHandler) throw new Error(`Missing IPC handler: ${channel}`)
+          return ipcHandler(event, ...args)
+        },
+      },
+    })
+    const targetPath = path.join(exportPath, 'Held Novel.md')
+    fs.writeFileSync(targetPath, 'earlier export', 'utf8')
+
+    const holder = fs.openSync(targetPath, 'r+')
+    let result: Awaited<ReturnType<typeof exportNovel>>
+    try {
+      result = await exportNovel(
+        { format: 'merged-md', grantId: grant.grantId },
+        {
+          id: projectSession.projectId,
+          sessionLease: projectSession.leaseId,
+          path: projectPath,
+          name: 'Held Novel',
+          novelConfig: { genre: 'fantasy', targetAudience: 'general', writingLanguage: 'zh-CN' },
+        },
+        projectSession,
+      )
+    } finally {
+      fs.closeSync(holder)
+    }
+
+    expect(result).toEqual({
+      success: false,
+      error: '文件没有改动。目标文件正被其他程序打开，关掉它后再点「选择目录并导出」。',
+    })
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe('earlier export')
+    expect(fs.readdirSync(exportPath)).toEqual(['Held Novel.md'])
+  })
+})
+
+// 主进程提示文案按全局数据里的界面语言取。
+const globalEnvironmentKeys = ['AI_NOVEL_APP_DATA_HOME', 'AI_NOVEL_LEGACY_SOURCE_HOME', 'AI_NOVEL_VELA_HOME'] as const
+let globalFixtureRoot = ''
+const previousGlobalEnvironment = new Map<string, string | undefined>()
+beforeAll(async () => {
+  for (const key of globalEnvironmentKeys) previousGlobalEnvironment.set(key, process.env[key])
+  const cache = path.resolve('.runtime/.cache')
+  fs.mkdirSync(cache, { recursive: true })
+  globalFixtureRoot = fs.mkdtempSync(path.join(cache, 'export-service-integration-global-'))
+  process.env.AI_NOVEL_LEGACY_SOURCE_HOME = path.join(globalFixtureRoot, 'legacy')
+  await (await import('../../../electron/services/__tests__/global-data-fixture')).prepareGlobalDataFixture(globalFixtureRoot)
+})
+afterAll(() => {
+  for (const key of globalEnvironmentKeys) {
+    const previous = previousGlobalEnvironment.get(key)
+    if (previous === undefined) delete process.env[key]
+    else process.env[key] = previous
+  }
+  vi.resetModules()
+  if (globalFixtureRoot) fs.rmSync(globalFixtureRoot, { recursive: true, force: true })
 })

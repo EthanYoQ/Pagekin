@@ -29,14 +29,6 @@ export interface SecureDirectoryEntry {
   isDirectory: boolean
 }
 
-export interface AtomicWriteConstraints {
-  /**
-   * Require an existing target through commit. The platform helper must fail
-   * closed when it cannot preserve that invariant.
-   */
-  mustAlreadyExist?: boolean
-}
-
 export interface SecureFileSystem {
   readBytes(capability: SecureFileCapability, maxBytes?: number): Promise<Buffer>
   readText(capability: SecureFileCapability, maxBytes?: number): Promise<string>
@@ -44,7 +36,6 @@ export interface SecureFileSystem {
     capability: SecureFileCapability,
     content: string,
     beforeReplace?: () => void | Promise<void>,
-    constraints?: AtomicWriteConstraints,
   ): Promise<void>
   mkdir(capability: SecureFileCapability): Promise<void>
   exists(capability: SecureFileCapability): Promise<boolean>
@@ -65,7 +56,6 @@ interface HelperRequest {
   relativePath: string
   rootIdentity: SecureRootIdentity
   contentBase64?: string
-  mustAlreadyExist?: boolean
   maxBytes?: number
 }
 
@@ -605,7 +595,7 @@ export function createSecureFileSystem(
       }
     },
 
-    async writeTextAtomically(capability, content, beforeReplace, constraints) {
+    async writeTextAtomically(capability, content, beforeReplace) {
       if (typeof content !== 'string') throw secureError('SECURE_FS_INVALID_TEXT')
       const buffer = Buffer.from(content, 'utf8')
       if (buffer.length > MAX_TEXT_BYTES) throw secureError('SECURE_FS_FILE_TOO_LARGE')
@@ -616,7 +606,6 @@ export function createSecureFileSystem(
         relativePath: safeCapability.relativePath,
         rootIdentity: safeCapability.rootIdentity,
         contentBase64: buffer.toString('base64'),
-        mustAlreadyExist: constraints?.mustAlreadyExist === true,
       }
       if (usingTestInvoke) {
         const response = await invoke(request)

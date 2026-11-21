@@ -85,16 +85,10 @@ export const nodeTestSecureFileSystem: SecureFileSystem = {
     }
   },
 
-  async writeTextAtomically(capability, content, beforeReplace, constraints) {
-    const initialTarget = resolveCapability(capability)
-    if (constraints?.mustAlreadyExist && !fs.existsSync(initialTarget)) {
-      throw secureError('SECURE_FS_NOT_FOUND')
-    }
+  async writeTextAtomically(capability, content, beforeReplace) {
+    resolveCapability(capability)
     await beforeReplace?.()
     const targetPath = resolveCapability(capability)
-    if (constraints?.mustAlreadyExist && !fs.existsSync(targetPath)) {
-      throw secureError('SECURE_FS_NOT_FOUND')
-    }
     fs.mkdirSync(path.dirname(targetPath), { recursive: true })
     const temporaryPath = path.join(
       path.dirname(targetPath),

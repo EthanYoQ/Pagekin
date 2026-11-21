@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   createSecureFileCapability,
@@ -32,13 +32,6 @@ function replaceRootWithOutsideJunction(rootPath: string, outsidePath: string): 
   fs.symlinkSync(outsidePath, rootPath, 'junction')
 }
 
-function runExternalNode(script: string, ...args: string[]): SpawnSyncReturns<string> {
-  return spawnSync(process.execPath, ['-e', script, ...args], {
-    encoding: 'utf8',
-    windowsHide: true,
-  })
-}
-
 function buildDarwinHelper(fixture: string): string {
   const output = path.join(fixture, 'darwin-safe-file-system')
   const source = path.resolve('electron/security/darwin-safe-file-system.m')
@@ -57,18 +50,6 @@ function buildDarwinHelper(fixture: string): string {
 }
 
 const builtWindowsHelper = path.resolve('electron/security/windows-safe-file-system.exe')
-
-function buildWindowsHelper(fixture: string, source: string): string {
-  const sourcePath = path.join(fixture, 'windows-safe-file-system-variant.cs')
-  const output = path.join(fixture, 'windows-safe-file-system-variant.exe')
-  fs.writeFileSync(sourcePath, source, 'utf8')
-  const result = spawnSync(process.execPath, ['scripts/build-windows-safe-file-system.mjs', sourcePath, output], {
-    encoding: 'utf8',
-    windowsHide: true,
-  })
-  expect(result.status, result.stderr).toBe(0)
-  return output
-}
 
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) {
@@ -433,138 +414,6 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
     expect(fs.readFileSync(path.join(selectedRoot, 'chapter.txt'), 'utf8')).toBe('old content')
   })
 
-  it('does not recreate a write-only target deleted before helper preparation', async () => {
-    const fixture = fixtureRoot()
-    const selectedRoot = path.join(fixture, 'selected')
-    const targetPath = path.join(selectedRoot, 'chapter.txt')
-    fs.mkdirSync(selectedRoot)
-    fs.writeFileSync(targetPath, 'old content', 'utf8')
-    const output = capability(selectedRoot, 'chapter.txt')
-    fs.rmSync(targetPath)
-    const safeFileSystem = createWindowsSafeFileSystem()
-    let reachedCommitGuard = false
-
-    await expect(safeFileSystem.writeTextAtomically(
-      output,
-      'new content',
-      () => {
-        reachedCommitGuard = true
-      },
-      { mustAlreadyExist: true },
-    )).rejects.toThrow('SECURE_FS_NOT_FOUND')
-
-    expect(reachedCommitGuard).toBe(false)
-    expect(fs.existsSync(targetPath)).toBe(false)
-    expect(fs.readdirSync(selectedRoot)).not.toEqual(expect.arrayContaining([
-      expect.stringMatching(/^\.ai-novel-.*\.tmp$/),
-    ]))
-  })
-
-  it('holds a write-only target against deletion by another process from ready through commit', async () => {
-    const fixture = fixtureRoot()
-    const selectedRoot = path.join(fixture, 'selected')
-    const targetPath = path.join(selectedRoot, 'chapter.txt')
-    fs.mkdirSync(selectedRoot)
-    fs.writeFileSync(targetPath, 'old content', 'utf8')
-    const output = capability(selectedRoot, 'chapter.txt')
-    const safeFileSystem = createWindowsSafeFileSystem()
-
-    let writeError: unknown
-    try {
-      await safeFileSystem.writeTextAtomically(
-        output,
-        'new content',
-        () => {
-          const deletion = runExternalNode(
-            "require('node:fs').rmSync(process.argv[1], { force: true })",
-            targetPath,
-          )
-          expect(deletion.status, deletion.stderr).not.toBe(0)
-          expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
-        },
-        { mustAlreadyExist: true },
-      )
-    } catch (error) {
-      writeError = error
-    }
-
-    if (writeError) {
-      expect(writeError).toMatchObject({ message: 'SECURE_FS_WRITE_FAILED' })
-      expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
-    } else {
-      expect(fs.readFileSync(targetPath, 'utf8')).toBe('new content')
-    }
-  })
-
-  it('holds a write-only target against replacement by another process from ready through commit', async () => {
-    const fixture = fixtureRoot()
-    const selectedRoot = path.join(fixture, 'selected')
-    const targetPath = path.join(selectedRoot, 'chapter.txt')
-    const attackerPath = path.join(selectedRoot, 'attacker.txt')
-    fs.mkdirSync(selectedRoot)
-    fs.writeFileSync(targetPath, 'old content', 'utf8')
-    fs.writeFileSync(attackerPath, 'attacker content', 'utf8')
-    const output = capability(selectedRoot, 'chapter.txt')
-    const safeFileSystem = createWindowsSafeFileSystem()
-
-    let writeError: unknown
-    try {
-      await safeFileSystem.writeTextAtomically(
-        output,
-        'new content',
-        () => {
-          const replacement = runExternalNode(
-            "require('node:fs').renameSync(process.argv[1], process.argv[2])",
-            attackerPath,
-            targetPath,
-          )
-          expect(replacement.status, replacement.stderr).not.toBe(0)
-          expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
-          expect(fs.readFileSync(attackerPath, 'utf8')).toBe('attacker content')
-        },
-        { mustAlreadyExist: true },
-      )
-    } catch (error) {
-      writeError = error
-    }
-
-    if (writeError) {
-      expect(writeError).toMatchObject({ message: 'SECURE_FS_WRITE_FAILED' })
-      expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
-    } else {
-      expect(fs.readFileSync(targetPath, 'utf8')).toBe('new content')
-    }
-    expect(fs.readFileSync(attackerPath, 'utf8')).toBe('attacker content')
-  })
-
-  it('fails closed without an older rename fallback when rename-ex is unsupported', async () => {
-    const fixture = fixtureRoot()
-    const selectedRoot = path.join(fixture, 'selected')
-    const targetPath = path.join(selectedRoot, 'chapter.txt')
-    const helperSource = fs.readFileSync(path.resolve('electron/security/windows-safe-file-system.cs'), 'utf8')
-    const unsupportedSource = helperSource.replace(
-      'private const int FileRenameInformationEx = 65;',
-      'private const int FileRenameInformationEx = 0x7fffffff;',
-    )
-    expect(unsupportedSource).not.toBe(helperSource)
-    fs.mkdirSync(selectedRoot)
-    fs.writeFileSync(targetPath, 'old content', 'utf8')
-    const safeFileSystem = createWindowsSafeFileSystem({
-      helperPath: buildWindowsHelper(fixture, unsupportedSource),
-      platform: 'win32',
-      isPackaged: false,
-    })
-
-    await expect(safeFileSystem.writeTextAtomically(
-      capability(selectedRoot, 'chapter.txt'),
-      'new content',
-      undefined,
-      { mustAlreadyExist: true },
-    )).rejects.toThrow('SECURE_FS_WRITE_FAILED')
-
-    expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
-  })
-
   it('allows a create-capable atomic write to create the target at commit', async () => {
     const fixture = fixtureRoot()
     const selectedRoot = path.join(fixture, 'selected')
@@ -578,10 +427,63 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
       output,
       'new content',
       () => fs.rmSync(targetPath),
-      { mustAlreadyExist: false },
     )
 
     expect(fs.readFileSync(targetPath, 'utf8')).toBe('new content')
+  })
+
+  it('reports a target another program holds open as in use and leaves it unchanged', async () => {
+    const fixture = fixtureRoot()
+    const selectedRoot = path.join(fixture, 'selected')
+    const targetPath = path.join(selectedRoot, 'chapter.txt')
+    fs.mkdirSync(selectedRoot)
+    fs.writeFileSync(targetPath, 'old content', 'utf8')
+    const holder = fs.openSync(targetPath, 'r+')
+    try {
+      await expect(createWindowsSafeFileSystem().writeTextAtomically(capability(selectedRoot, 'chapter.txt'), 'new content'))
+        .rejects.toThrow('SECURE_FS_TARGET_IN_USE')
+    } finally {
+      fs.closeSync(holder)
+    }
+
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
+    expect(fs.readdirSync(selectedRoot)).toEqual(['chapter.txt'])
+  })
+
+  it('keeps the generic open failure for a read-only target that nobody holds open', async () => {
+    const fixture = fixtureRoot()
+    const selectedRoot = path.join(fixture, 'selected')
+    const targetPath = path.join(selectedRoot, 'chapter.txt')
+    fs.mkdirSync(selectedRoot)
+    fs.writeFileSync(targetPath, 'old content', 'utf8')
+    fs.chmodSync(targetPath, 0o444)
+    try {
+      await expect(createWindowsSafeFileSystem().writeTextAtomically(capability(selectedRoot, 'chapter.txt'), 'new content'))
+        .rejects.toThrow('SECURE_FS_OPEN_FAILED')
+    } finally {
+      fs.chmodSync(targetPath, 0o666)
+    }
+
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
+  })
+
+  it('keeps the generic open failure for a read-only target that another program also holds open', async () => {
+    const fixture = fixtureRoot()
+    const selectedRoot = path.join(fixture, 'selected')
+    const targetPath = path.join(selectedRoot, 'chapter.txt')
+    fs.mkdirSync(selectedRoot)
+    fs.writeFileSync(targetPath, 'old content', 'utf8')
+    fs.chmodSync(targetPath, 0o444)
+    const holder = fs.openSync(targetPath, 'r')
+    try {
+      await expect(createWindowsSafeFileSystem().writeTextAtomically(capability(selectedRoot, 'chapter.txt'), 'new content'))
+        .rejects.toThrow('SECURE_FS_OPEN_FAILED')
+    } finally {
+      fs.closeSync(holder)
+      fs.chmodSync(targetPath, 0o666)
+    }
+
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
   })
 })
 
@@ -682,75 +584,5 @@ describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file s
       throw new Error('lease-revalidation-rejected')
     })).rejects.toThrow('lease-revalidation-rejected')
     expect(fs.readFileSync(path.join(selectedRoot, 'nested', 'chapter.txt'), 'utf8')).toBe('normal content')
-  })
-
-  it('does not recreate a must-exist target that was removed before preparation', async () => {
-    const fixture = fixtureRoot()
-    const selectedRoot = path.join(fixture, 'selected')
-    const targetPath = path.join(selectedRoot, 'chapter.txt')
-    fs.mkdirSync(selectedRoot)
-    fs.writeFileSync(targetPath, 'old content', 'utf8')
-    fs.rmSync(targetPath)
-    const safeFileSystem = createWindowsSafeFileSystem({
-      platform: 'darwin',
-      helperPath: buildDarwinHelper(fixture),
-    })
-    let reachedCommitGuard = false
-
-    await expect(safeFileSystem.writeTextAtomically(
-      capability(selectedRoot, 'chapter.txt'),
-      'new content',
-      () => {
-        reachedCommitGuard = true
-      },
-      { mustAlreadyExist: true },
-    )).rejects.toThrow('SECURE_FS_NOT_FOUND')
-
-    expect(reachedCommitGuard).toBe(false)
-    expect(fs.existsSync(targetPath)).toBe(false)
-  })
-
-  it('fails closed when a must-exist target changes during the commit guard', async () => {
-    const fixture = fixtureRoot()
-    const selectedRoot = path.join(fixture, 'selected')
-    const targetPath = path.join(selectedRoot, 'chapter.txt')
-    fs.mkdirSync(selectedRoot)
-    fs.writeFileSync(targetPath, 'old content', 'utf8')
-    const safeFileSystem = createWindowsSafeFileSystem({
-      platform: 'darwin',
-      helperPath: buildDarwinHelper(fixture),
-    })
-
-    await expect(safeFileSystem.writeTextAtomically(
-      capability(selectedRoot, 'chapter.txt'),
-      'new content',
-      () => fs.rmSync(targetPath),
-      { mustAlreadyExist: true },
-    )).rejects.toThrow('SECURE_FS_WRITE_FAILED')
-
-    expect(fs.existsSync(targetPath)).toBe(false)
-  })
-
-  it('does not replace a must-exist target substituted during the commit guard', async () => {
-    const fixture = fixtureRoot()
-    const selectedRoot = path.join(fixture, 'selected')
-    const targetPath = path.join(selectedRoot, 'chapter.txt')
-    const attackerPath = path.join(selectedRoot, 'attacker.txt')
-    fs.mkdirSync(selectedRoot)
-    fs.writeFileSync(targetPath, 'old content', 'utf8')
-    fs.writeFileSync(attackerPath, 'attacker content', 'utf8')
-    const safeFileSystem = createWindowsSafeFileSystem({
-      platform: 'darwin',
-      helperPath: buildDarwinHelper(fixture),
-    })
-
-    await expect(safeFileSystem.writeTextAtomically(
-      capability(selectedRoot, 'chapter.txt'),
-      'new content',
-      () => fs.renameSync(attackerPath, targetPath),
-      { mustAlreadyExist: true },
-    )).rejects.toThrow('SECURE_FS_WRITE_FAILED')
-
-    expect(fs.readFileSync(targetPath, 'utf8')).toBe('attacker content')
   })
 })

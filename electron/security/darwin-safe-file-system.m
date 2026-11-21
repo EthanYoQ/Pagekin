@@ -548,12 +548,6 @@ static void WriteAtomically(
     WriteResponse(Failure(@"SECURE_FS_INVALID_TEXT"));
     return;
   }
-  id required = request[@"mustAlreadyExist"];
-  if (required && !IsJsonBoolean(required)) {
-    WriteResponse(Failure(@"SECURE_FS_INVALID_OPERATION"));
-    return;
-  }
-  BOOL mustAlreadyExist = required ? [required boolValue] : NO;
   NSData *content = nil;
   if (!DecodeContent(encoded, &content, &errorCode)) {
     WriteResponse(Failure(errorCode));
@@ -566,29 +560,11 @@ static void WriteAtomically(
     return;
   }
 
-  int existing = -1;
-  struct stat expected;
-  if (mustAlreadyExist) {
-    existing = openat(parent, leaf.fileSystemRepresentation, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC);
-    if (existing < 0) {
-      WriteResponse(Failure(CodeForErrno(errno)));
-      close(parent);
-      return;
-    }
-    if (!RequireRegularFile(existing, &errorCode) || fstat(existing, &expected) < 0) {
-      WriteResponse(Failure(errorCode ?: kWriteFailed));
-      close(existing);
-      close(parent);
-      return;
-    }
-  }
-
   NSString *temporaryName = nil;
   int temporary = OpenTemporaryFile(parent, &temporaryName, &errorCode);
   if (temporary < 0 || !WriteAll(temporary, content, &errorCode)) {
     if (temporary >= 0) close(temporary);
     if (temporaryName) unlinkat(parent, temporaryName.fileSystemRepresentation, 0);
-    if (existing >= 0) close(existing);
     close(parent);
     WriteResponse(Failure(errorCode));
     return;
@@ -602,33 +578,17 @@ static void WriteAtomically(
   if (!command || ![command[@"command"] isKindOfClass:[NSString class]]
       || ![command[@"command"] isEqualToString:@"commit"]) {
     unlinkat(parent, temporaryName.fileSystemRepresentation, 0);
-    if (existing >= 0) close(existing);
     close(parent);
     WriteResponse(Failure(@"SECURE_FS_CANCELLED"));
     return;
   }
 
-  if (mustAlreadyExist) {
-    struct stat actual;
-    int check = fstatat(parent, leaf.fileSystemRepresentation, &actual, AT_SYMLINK_NOFOLLOW);
-    if (check < 0 || S_ISLNK(actual.st_mode)
-        || actual.st_dev != expected.st_dev || actual.st_ino != expected.st_ino) {
-      unlinkat(parent, temporaryName.fileSystemRepresentation, 0);
-      close(existing);
-      close(parent);
-      WriteResponse(Failure(kWriteFailed));
-      return;
-    }
-  }
-
   if (renameat(parent, temporaryName.fileSystemRepresentation, parent, leaf.fileSystemRepresentation) < 0) {
     unlinkat(parent, temporaryName.fileSystemRepresentation, 0);
-    if (existing >= 0) close(existing);
     close(parent);
     WriteResponse(Failure(kWriteFailed));
     return;
   }
-  if (existing >= 0) close(existing);
   close(parent);
   WriteResponse(Success());
 }
