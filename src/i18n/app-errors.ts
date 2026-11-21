@@ -478,6 +478,7 @@ const ARCHIVE_FAILURE_KEYS = {
     PORTABLE_ASSET_MISSING: 'error.portableAssetMissing',
     PORTABLE_ARCHIVE_PUBLISH_UNSUPPORTED: 'error.portablePublishUnsupported',
     PORTABLE_ARCHIVE_TARGET_UNWRITABLE: 'error.portableTargetUnwritable',
+    PORTABLE_EXPORT_SOURCE_UNREADABLE: 'error.portableSourceUnreadable',
     PORTABLE_EXPORT_FAILED: 'error.portableExportFailed',
   },
   restore: {

@@ -44,12 +44,10 @@ export type ProjectRestoreServiceErrorCode =
   | 'PORTABLE_RESTORE_INVALID'
   | 'PORTABLE_RESTORE_TARGET_EXISTS'
   | 'PORTABLE_RESTORE_UNSAFE_TARGET'
-  | 'PORTABLE_RESTORE_ARCHIVE_MISSING'
-  | 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE'
 
 export class ProjectRestoreServiceError extends Error {
-  constructor(readonly code: ProjectRestoreServiceErrorCode, options?: ErrorOptions) {
-    super(code, options)
+  constructor(readonly code: ProjectRestoreServiceErrorCode) {
+    super(code)
     this.name = 'ProjectRestoreServiceError'
   }
 }
@@ -509,19 +507,6 @@ async function hashPhysicalFile(file: string): Promise<string> {
   return digest
 }
 
-async function hashSelectedArchive(archivePath: string): Promise<string> {
-  try {
-    return await hashPhysicalFile(archivePath)
-  } catch (error) {
-    const errno = (error as NodeJS.ErrnoException).code
-    if (errno === 'ENOENT') throw new ProjectRestoreServiceError('PORTABLE_RESTORE_ARCHIVE_MISSING', { cause: error })
-    if (errno === 'EACCES' || errno === 'EPERM') {
-      throw new ProjectRestoreServiceError('PORTABLE_RESTORE_ARCHIVE_UNREADABLE', { cause: error })
-    }
-    throw error
-  }
-}
-
 function restoreReceipt(
   targetRoot: string,
   authority: PortableTransferAuthority,
@@ -742,9 +727,9 @@ export async function restorePortableProject(input: RestorePortableProjectInput)
     fail('PORTABLE_RESTORE_UNSAFE_TARGET')
   }
   physicalDirectory(targetParent)
-  const archiveSha256 = await hashSelectedArchive(input.archivePath)
+  const archiveSha256 = await hashPhysicalFile(input.archivePath)
   const extracted = await extractPortableProjectArchive({ archivePath: input.archivePath, stagingParentPath: targetParent })
-  if (await hashSelectedArchive(input.archivePath) !== archiveSha256) fail('PORTABLE_RESTORE_INVALID')
+  if (await hashPhysicalFile(input.archivePath) !== archiveSha256) fail('PORTABLE_RESTORE_INVALID')
   let attempt: OwnedAttempt | undefined
   let heldJournalPath: string | undefined
   try {
