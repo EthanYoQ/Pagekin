@@ -252,6 +252,14 @@ function identifier(value: unknown): string {
   return value
 }
 
+// 稿件名恢复后只落在项目根的直接子级，不是存档条目；不做 NFKC，全角「？：」是合法文件名。空串表示没有稿件。
+export function assertManuscriptFileName(value: string): void {
+  if (value === '') return
+  if (value === '.' || value === '..' || /[/\\:]/u.test(value)
+    || [...value].some(character => character.charCodeAt(0) <= 31)
+    || WINDOWS_RESERVED.test(value)) formatError('PORTABLE_PATH_UNSAFE')
+}
+
 export function portablePathKey(value: unknown, maxPathBytes = DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxPathBytes): string {
   if (typeof value !== 'string' || value.length === 0 || containsSurrogateCodeUnit(value)
     || Buffer.byteLength(value, 'utf8') > maxPathBytes) {

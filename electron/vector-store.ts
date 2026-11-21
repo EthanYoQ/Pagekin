@@ -1507,12 +1507,8 @@ function portableText(value: unknown): string {
 
 function portableFileName(value: unknown): string {
   const fileName = portableText(value)
-  const normalized = fileName.normalize('NFKC')
-  if (fileName.length > 512 || path.posix.isAbsolute(normalized) || path.win32.isAbsolute(normalized)
-    || normalized.includes('/') || normalized.includes('\\') || /^[a-z]:/iu.test(normalized)
-    || /[<>:"|?*]/u.test(normalized) || normalized.endsWith('.') || normalized.endsWith(' ')
-    || [...normalized].some(character => character.charCodeAt(0) <= 31)
-    || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(normalized)) {
+  // 文件名只是标签，不当路径校验；只拒绝绝对路径，免得带出本机目录。
+  if (fileName.length > 512 || path.posix.isAbsolute(fileName) || path.win32.isAbsolute(fileName)) {
     throw new Error('PORTABLE_KNOWLEDGE_INVALID')
   }
   return fileName

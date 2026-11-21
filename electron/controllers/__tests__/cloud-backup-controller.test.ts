@@ -21,6 +21,9 @@ import { exportPortableProjectInWorker, portableExportsRunning, type PortableExp
 import { portableExportWorkerForTest } from '../../../test/helpers/portable-export-worker'
 import { restorePortableProject } from '../../services/project-restore-service'
 import { closeProjectDatabase, getProjectDb, initProjectDatabase } from '../../database'
+import { importText } from '../../knowledge-base'
+import { closeConnection } from '../../vector-store'
+import { resolveManuscriptTarget } from '../../services/manuscript-publisher'
 import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../migrations/desktop-registry'
 import { SchemaMigrationError } from '../../migrations/registry'
 import { continuityBaseline, SCHEMA8_CONTINUITY_ARCHIVE, SCHEMA8_EXPECTED_BASELINE } from '../../../test/helpers/schema8-continuity-archive'
@@ -422,6 +425,36 @@ describe('registerCloudBackupController', () => {
 
       expect(result).toMatchObject({ success: true, state: 'backup-complete', operationId: OPERATION })
       expect(f.deps.webDav.appendGeneration).toHaveBeenCalledWith(expect.objectContaining({ originProjectId: project.sourceProjectId }))
+    } finally { project.dispose() }
+  })
+
+  it('章名含全角「？：」的定稿：稿件名和知识库文档名都带标点，照常上传（#723）', async () => {
+    const project = await createProjectArchiveRoundtripFixture()
+    try {
+      const title = '为什么？真相：开始'
+      const fileName = resolveManuscriptTarget({ projectRoot: project.sourceRoot, chapterNumber: 20, chapterTitle: title,
+        finalizationId: project.chapter20FinalizationId, reserved: new Set() }).fileName
+      const db = new Sqlite(project.sourceDatabasePath)
+      try {
+        db.prepare('UPDATE finalization_outbox_all SET chapter_title=?, target_file_name=? WHERE finalization_id=?')
+          .run(title, fileName, project.chapter20FinalizationId)
+      } finally { db.close() }
+      initProjectDatabase(project.sourceRoot)
+      try {
+        await importText(project.chapter20Body, `第20章 ${title}.txt`, project.sourceRoot, 'openai',
+          { provider: 'custom', baseUrl: 'http://127.0.0.1:9/v1', apiKey: '', modelName: 'none' }, { mode: 'fts-only' })
+      } finally { closeProjectDatabase(); closeConnection(project.sourceRoot) }
+      const f = fixture({
+        exportPortableProject: input => exportPortableProjectInWorker(input, worker),
+        assertCurrentProjectContext: vi.fn(() => ({ projectId: PROJECT, leaseId: session.leaseId, rootPath: project.sourceRoot })),
+        getCurrentProjectPath: vi.fn(() => project.sourceRoot),
+      })
+
+      const result = await f.invoke('cloud-backup:backup', { operationId: OPERATION,
+        projectSession: { ...session, projectPath: project.sourceRoot }, disclosureConfirmed: true })
+
+      expect(result).toMatchObject({ success: true, state: 'backup-complete', operationId: OPERATION })
+      expect(f.deps.webDav.appendGeneration).toHaveBeenCalledOnce()
     } finally { project.dispose() }
   })
 

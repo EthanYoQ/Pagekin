@@ -76,15 +76,20 @@ describe('production portable project assets', () => {
     { ...knowledge, documents: [{ ...knowledge.documents[0], vector: [1, 2] }] },
     { ...knowledge, secret: 'token' },
     { ...knowledge, documents: [{ ...knowledge.documents[0], fileName: 'C:\\作者\\资料.txt' }] },
-    { ...knowledge, documents: [{ ...knowledge.documents[0], fileName: '../资料.txt' }] },
     { ...knowledge, documents: [{ ...knowledge.documents[0], fileName: '/tmp/资料.txt' }] },
-    { ...knowledge, documents: [{ ...knowledge.documents[0], fileName: '资料/片段.txt' }] },
-    { ...knowledge, documents: [{ ...knowledge.documents[0], fileName: '资料\n片段.txt' }] },
+    { ...knowledge, documents: [{ ...knowledge.documents[0], fileName: '' }] },
+    { ...knowledge, documents: [{ ...knowledge.documents[0], fileName: '资'.repeat(513) }] },
     { ...knowledge, documents: [knowledge.documents[0], knowledge.documents[0]] },
     { ...knowledge, documents: [{ ...knowledge.documents[0], chunks: [knowledge.documents[0].chunks[0], knowledge.documents[0].chunks[0]] }] },
   ])('rejects corrupt, duplicate or non-portable knowledge fields', (value) => {
     expect(() => parsePortableKnowledgeSnapshot(value)).toThrow('PORTABLE_KNOWLEDGE_INVALID')
   })
+
+  it.each(['第1章 为什么？.txt', '第1章 真相：开始.txt', '第1章 半角?问号.txt', 'Chapter 1 A/B.txt', '../资料.txt'])(
+    '知识库文档名只是标签，章名里的标点原样带过去：%s（#723）', fileName => {
+      const value = { ...knowledge, documents: [{ ...knowledge.documents[0], fileName }] }
+      expect(parsePortableKnowledgeSnapshot(value).documents[0]?.fileName).toBe(fileName)
+    })
 
   it('rejects a renderer-imported path-like canonical fileName before archive construction', async () => {
     const f = fixture()

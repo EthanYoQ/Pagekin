@@ -467,6 +467,8 @@ const ARCHIVE_FAILURE_KEYS = {
   export: {
     PORTABLE_ARCHIVE_SOURCE_UNSAFE: 'error.portableAssetUnsafe',
     MIGRATION_VERIFICATION_FAILED: 'error.portableUnsafeProjection',
+    PORTABLE_PATH_UNSAFE: 'error.portablePathUnsafe',
+    PORTABLE_KNOWLEDGE_INVALID: 'error.portableKnowledgeInvalid',
   },
   restore: {
     PORTABLE_ARCHIVE_SOURCE_CHANGED: 'error.restoreArchiveChanged',

@@ -340,6 +340,10 @@ describe('ProjectBackupPanel', () => {
       '作品没有改动。有个角色头像文件坏了或不见了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。'],
     [{ errorCode: 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED', error: 'PORTABLE_EXPORT_UNRESOLVED_AVATAR_DAMAGED' },
       '作品没有改动。一张没归到任何角色名下的旧头像文件坏了或不见了，存档没有生成。请把这条提示反馈给我们。'],
+    [{ error: 'PORTABLE_PATH_UNSAFE' },
+      '作品没有改动。有个文件的名字或位置放不进存档（提示词、技能、头像或定稿稿件），存档没有生成。请把这条提示反馈给我们。'],
+    [{ error: 'PORTABLE_KNOWLEDGE_INVALID' },
+      '作品没有改动。知识库里有份资料的记录不完整或已损坏，存档没有生成。请把这条提示反馈给我们。'],
   ])('导出存档失败时说出原因，不露原码：%o（#702）', async (failure, expected) => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }

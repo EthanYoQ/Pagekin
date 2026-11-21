@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
+import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
 import { shown } from './shown-locale'
 
 describe('localized application errors', () => {
@@ -433,6 +433,15 @@ describe('damagedReviewCycleMessage', () => {
     ['zh-CN', { chapterNumber: null, chapterTitle: '', inTrash: false }, '作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。'],
   ] as const)('%s：只写章号、章名和是否在回收站，不写稿的版本和删除时间（#702）', (locale, damaged, expected) => {
     expect(damagedReviewCycleMessage(shown(locale), damaged)).toBe(expected)
+  })
+})
+
+describe('archiveFailureMessage', () => {
+  it.each([
+    ['PORTABLE_PATH_UNSAFE', 'Your book is unchanged. The name or location of a file (a prompt, skill, avatar or finalized manuscript) cannot go into an archive, so no archive was created. Please report this message to us.'],
+    ['PORTABLE_KNOWLEDGE_INVALID', 'Your book is unchanged. A document record in the knowledge base is incomplete or damaged, so no archive was created. Please report this message to us.'],
+  ])('英文界面导出报 %s：说出是哪类内容，不露原码（#723）', (code, expected) => {
+    expect(archiveFailureMessage(shown('en-US'), 'export', code)).toBe(expected)
   })
 })
 
