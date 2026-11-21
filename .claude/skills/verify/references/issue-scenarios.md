@@ -376,3 +376,13 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `l4conn-refused` | 设置·AI 模型编辑夹具模型后关掉假服务，点「测试连接」：提示「连接失败：base_url 上没有服务在响应……」，不出现 fetch failed 与错误码（`l4conn-refused`） | 设置（中文） | 是 | #702 |
 | `l4conn-host-not-found` | 把 base_url 改成解析不到的 `http://nosuchhostzz9/v1`（系统解析器真实报 ENOTFOUND，再照 undici 的形状抛出），点「测试连接」：提示「连接失败：找不到 base_url 里的服务器……」（`l4conn-host-not-found`） | 设置（中文） | 是 | #702 |
 | `l1b-kb-rebuild-unregistered` | 设置·检索模型点「检查并重建向量索引」，主进程的 `kb:backfill-vectors` 换成回未登记码 `EMBEDDING_SPACE_VERIFY_FAILED`：提示只有「重建检索失败」，不带码名；渲染端控制台记一行「[app-errors] 未登记文案的错误码：EMBEDDING_SPACE_VERIFY_FAILED」（`l1b-kb-rebuild-unregistered`） | 设置（中文） | 是 | #702 |
+
+## 恢复稿来源改过后点继续（#702）
+
+场景在 `scripts/redesign/ru702-scenarios.mjs`。先删掉第 3 章草稿再写第 3 章：假模型把正文分 4 块流完后，闸门卡住下一次请求，此时按进程树结束应用（等 3 秒再冷启动），重开后「可恢复」里是「第3章候选」，正文片段可勾选。`measured.shown` 是「可恢复」区顶上的红字。
+
+| 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
+|---|---|---|---|---|
+| `ru702-blueprint-continue` | 重开后把第 3 章蓝图标题改成「雾钟改名」并保存，勾选正文片段点「确认继续已选正文」：红字是「这份恢复稿没法继续，作品没有改动。它生成之后，所依据的蓝图、设定、前文或模型设置等有了变化。需要的内容先复制，再点「不再恢复」。」，卡片还在、片段可复制。修复前是「出了意外问题，暂时说不清原因。请再试一次。」 | 蓝图（中文） | 是 | #702 |
+| `ru702-blueprint-continue-en` | 同上，点继续前切到英文界面：红字以「This recovery draft can’t continue, and your book is unchanged.」开头、以「“Dismiss”.」结尾，没有中文和错误码 | 蓝图（英文） | 是 | #702 |
+| `ru702-unchanged-continue` | 来源不改，勾选正文片段点「确认继续已选正文」：没有红字，上一次运行是「第 3 章 · 继续正文」，又向模型发了请求（夹具正文不够本章目标字数，这次运行按字数不足结束，与恢复授权无关） | 正文（中文） | 是 | #702 |
