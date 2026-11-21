@@ -946,4 +946,25 @@ describe('副本已建好后收尾失败（#702）', () => {
     expect(replay.targetProjectId).toBe(first.targetProjectId)
     expect(fs.existsSync(journal)).toBe(false)
   })
+
+  it('留着安装日志、没有标记，但那个位置的副本被改过：不认它，日志也不删', async () => {
+    const f = await exportedFixture()
+    const journal = restoreJournalPath(f.targetRoot)
+    const unlink = fs.unlinkSync
+    vi.spyOn(fs, 'unlinkSync').mockImplementation(((file: fs.PathLike) => {
+      if (path.resolve(String(file)) === path.resolve(journal)) throw fsError('EPERM', 'unlink', journal)
+      return unlink(file)
+    }) as typeof fs.unlinkSync)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    fs.appendFileSync(path.join(f.targetRoot, '.ai-novel', 'project.db'), 'x')
+
+    await expect(restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot }))
+      .rejects.toMatchObject({ code: 'PORTABLE_RESTORE_UNSAFE_TARGET' })
+    expect(fs.existsSync(journal)).toBe(true)
+  })
 })
