@@ -67,7 +67,7 @@ describe('knowledge-base channels that throw', () => {
 
     const shown = await shownAfterIpc(invoke('kb:search', '潮位', 5, 'C:/projects/A'))
 
-    expect(shown).toBe('知识库没有改动。这次操作出了意外问题；请再试一次，还不行请把这条提示反馈给我们。')
+    expect(shown).toBe('知识库这次操作出了意外问题。请再试一次，还不行请把这条提示反馈给我们。')
     expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ code: 'GenericFailure' }))
   })
 
@@ -76,7 +76,7 @@ describe('knowledge-base channels that throw', () => {
 
     const shown = await shownAfterIpc(invoke('kb:list-documents', 'C:/projects/A'))
 
-    expect(shown).toBe('知识库没有改动。磁盘空间不足，写不进去；清理磁盘后再试一次。')
+    expect(shown).toBe('磁盘空间不足，知识库写不进去。清理磁盘后再试一次。')
   })
 
   it('passes a code it already knows straight through', async () => {

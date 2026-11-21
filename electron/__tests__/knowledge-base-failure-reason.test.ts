@@ -55,7 +55,7 @@ describe('importing material when the book folder cannot be written', () => {
     const result = await importText('林岚核对潮位表。', '第1章 旧港.txt', projectPath, 'openai', model(), { mode: 'fts-only' })
 
     expect(result.success).toBe(false)
-    expect(displayedErrorMessage(shown('zh-CN'), result.error)).toBe('知识库没有改动。磁盘空间不足，写不进去；清理磁盘后再试一次。')
+    expect(displayedErrorMessage(shown('zh-CN'), result.error)).toBe('磁盘空间不足，知识库写不进去。清理磁盘后再试一次。')
   })
 
   it('tells the author the folder is read-only or locked instead of showing EPERM', async () => {
@@ -63,8 +63,8 @@ describe('importing material when the book folder cannot be written', () => {
 
     const result = await importText('林岚核对潮位表。', '第1章 旧港.txt', projectPath, 'openai', model(), { mode: 'fts-only' })
 
-    expect(displayedErrorMessage(shown('zh-CN'), result.error)).toBe('知识库没有改动。作品文件夹写不进去，可能是只读，或被同步盘、杀毒软件占用；关掉这些程序后再试一次。')
-    expect(displayedErrorMessage(shown('en-US'), result.error)).toBe('The knowledge base was not changed. The book folder could not be written; it may be read-only or locked by sync or antivirus software. Close those programs, then try again.')
+    expect(displayedErrorMessage(shown('zh-CN'), result.error)).toBe('作品文件夹写不进去，可能是只读，或被同步盘、杀毒软件占用。关掉这些程序后再试一次。')
+    expect(displayedErrorMessage(shown('en-US'), result.error)).toBe('The book folder could not be written; it may be read-only or locked by sync or antivirus software. Close those programs, then try again.')
   })
 
   it('still offers Retry for a finalized chapter whose knowledge-base import hit a full disk', async () => {
@@ -91,7 +91,7 @@ describe('rebuilding search over a damaged index', () => {
 
     expect(result.success).toBe(false)
     const shown = rebuildShown(result)
-    expect(shown).toBe('重建检索失败：知识库没有改动。这次操作出了意外问题；请再试一次，还不行请把这条提示反馈给我们。')
+    expect(shown).toBe('重建检索失败：知识库这次操作出了意外问题。请再试一次，还不行请把这条提示反馈给我们。')
     expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ message: expect.stringMatching(/lance/iu) }))
   })
 

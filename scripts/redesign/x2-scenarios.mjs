@@ -374,7 +374,7 @@ export const X2_SCENARIOS = {
       return shown
     }
     const statusShown = async (index, shot) => {
-      const line = index.getByText(/知识库没有改动|knowledge base was not changed/u)
+      const line = index.getByText(/知识库这次操作出了意外问题|Something unexpected went wrong in the knowledge base/u)
       await line.waitFor({ state: 'visible', timeout: 30_000 })
       await shoot(`kb-damaged-index-rebuild-${shot}`)
       return (await line.innerText()).trim()
@@ -402,16 +402,16 @@ export const X2_SCENARIOS = {
     measured.damaged['en-US'] = await statusShown(await switchLocale('en-US', EN), 'damaged-en')
     assert.deepEqual(measured, {
       diskFull: {
-        'zh-CN': '重建检索失败：知识库没有改动。磁盘空间不足，写不进去；清理磁盘后再试一次。',
-        'en-US': 'Could not rebuild search. The knowledge base was not changed. The disk is full, so nothing could be written. Free up space, then try again.',
+        'zh-CN': '重建检索失败：磁盘空间不足，知识库写不进去。清理磁盘后再试一次。',
+        'en-US': 'Could not rebuild search. The disk is full, so the knowledge base could not be written. Free up space, then try again.',
       },
       unwritable: {
-        'zh-CN': '重建检索失败：知识库没有改动。作品文件夹写不进去，可能是只读，或被同步盘、杀毒软件占用；关掉这些程序后再试一次。',
-        'en-US': 'Could not rebuild search. The knowledge base was not changed. The book folder could not be written; it may be read-only or locked by sync or antivirus software. Close those programs, then try again.',
+        'zh-CN': '重建检索失败：作品文件夹写不进去，可能是只读，或被同步盘、杀毒软件占用。关掉这些程序后再试一次。',
+        'en-US': 'Could not rebuild search. The book folder could not be written; it may be read-only or locked by sync or antivirus software. Close those programs, then try again.',
       },
       damaged: {
-        'zh-CN': '知识库没有改动。这次操作出了意外问题；请再试一次，还不行请把这条提示反馈给我们。',
-        'en-US': 'The knowledge base was not changed. Something unexpected went wrong. Try again; if it keeps happening, send us this message.',
+        'zh-CN': '知识库这次操作出了意外问题。请再试一次，还不行请把这条提示反馈给我们。',
+        'en-US': 'Something unexpected went wrong in the knowledge base. Try again; if it keeps happening, send us this message.',
       },
     }, JSON.stringify(measured))
     return measured
