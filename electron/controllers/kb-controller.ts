@@ -12,6 +12,7 @@ import { isRerankFailure } from '../../src/shared/knowledge-ranking'
 import { rankPassages, rerankRecallCount } from '../rerank'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
 import { knowledgeBaseLoader } from '../services/knowledge-base-loader'
+import { knowledgeFailureCode } from '../services/knowledge-base-failure'
 import { mainText } from '../i18n'
 import { getCurrentProjectPath } from '../database'
 import { projectAccess } from '../services/project-access'
@@ -270,7 +271,7 @@ function registerKnowledgeBaseHandler<Args extends unknown[]>(
       if (isLegacyMigrationBlockedError(error)) return legacyMigrationBlockedFailure()
       const storageFailure = projectStoragePreflightFailure(error)
       if (storageFailure) return storageFailure
-      throw error
+      throw new Error(knowledgeFailureCode(error))
     }
   })
 }
@@ -393,7 +394,7 @@ export function registerKBController(
     executionAuthority: ImportRunExecutionAuthority,
   ) => {
     const projectPath = getCurrentProjectPath()
-    if (!projectPath) throw new Error(text('项目数据库未打开', 'The project database is not open.'))
+    if (!projectPath) throw new Error('PROJECT_NOT_OPEN')
     try {
       const binding = ImportRunRepository.resolveReferenceImportAuthority(runId, executionAuthority, chapterNumber)
       const fileName = referenceImportDisplayName(binding)

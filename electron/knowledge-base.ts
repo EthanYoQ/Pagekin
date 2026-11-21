@@ -18,6 +18,7 @@ import { EmbeddingResponseValidationError } from './services/embedding-response-
 import { hasRequiredApiKey } from '../src/shared/provider-presets'
 import { connectionFailureCode } from '../src/shared/connection-failure'
 import { failedAtProxy } from './network-proxy'
+import { knowledgeFailureCode } from './services/knowledge-base-failure'
 import {
   LEGACY_VECTOR_MIGRATION_BLOCKED,
   LegacyVectorMigrationBlockedError,
@@ -78,8 +79,7 @@ function knowledgeFailureDetails(error: unknown): { error: string; errorCode?: t
   if (error instanceof TypeError && error.message === 'fetch failed') {
     return { error: failedAtProxy(error) ? 'PROXY_UNREACHABLE' : connectionFailureCode(error) ?? 'EMBEDDING_CONNECTION_FAILED' }
   }
-  // 界面按登记的码说明；其余异常保留消息（不带 "Error:" 外壳），供反馈定位。
-  return { error: error instanceof Error ? error.message : String(error) }
+  return { error: knowledgeFailureCode(error) }
 }
 
 function embeddingSpaceFor(

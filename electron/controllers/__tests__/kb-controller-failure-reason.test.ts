@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { shown as shownLocale } from '../../../src/i18n/__tests__/shown-locale'
 import { appErrorMessage } from '../../../src/i18n/app-errors'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
@@ -45,7 +46,7 @@ function invoke(channel: string, ...args: unknown[]) {
 /** Electron 只把 message 带过 IPC，渲染端看到的是这个外壳。 */
 async function shownAfterIpc(promise: Promise<unknown>): Promise<string> {
   const error = await promise.then(() => { throw new Error('expected the channel to reject') }, (rejected: Error) => rejected)
-  return appErrorMessage('zh-CN', new Error(`Error invoking remote method 'kb:search': Error: ${error.message}`))
+  return appErrorMessage(shownLocale('zh-CN'), new Error(`Error invoking remote method 'kb:search': Error: ${error.message}`))
 }
 
 const lanceFailure = () => Object.assign(new Error(
@@ -89,6 +90,6 @@ describe('knowledge-base channels that throw', () => {
 
     const shown = await shownAfterIpc(invoke('kb:import-reference-text', 1, 'run-1', { owner: 'o', epoch: 1 }))
 
-    expect(shown).toBe(appErrorMessage('zh-CN', 'PROJECT_NOT_OPEN'))
+    expect(shown).toBe(appErrorMessage(shownLocale('zh-CN'), 'PROJECT_NOT_OPEN'))
   })
 })

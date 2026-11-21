@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { shown } from '../../src/i18n/__tests__/shown-locale'
 import { displayedErrorMessage } from '../../src/i18n/app-errors'
 import { planFinalizationRetry } from '../../src/shared/finalization-step-error'
 import { workflowMainProcessError } from '../../src/services/workflows/workflow-project-session'
@@ -28,7 +29,7 @@ function failKnowledgeCopyWrite(error: NodeJS.ErrnoException) {
 }
 
 const rebuildShown = (result: { error?: string; errorCode?: string }) =>
-  workflowMainProcessError('zh-CN', result.errorCode ?? result.error, '重建检索失败', 'Could not rebuild search.').message
+  workflowMainProcessError(shown('zh-CN'), result.errorCode ?? result.error, '重建检索失败', 'Could not rebuild search.').message
 
 beforeAll(() => { fs.mkdirSync(path.resolve('.runtime/.cache'), { recursive: true }) })
 
@@ -54,7 +55,7 @@ describe('importing material when the book folder cannot be written', () => {
     const result = await importText('林岚核对潮位表。', '第1章 旧港.txt', projectPath, 'openai', model(), { mode: 'fts-only' })
 
     expect(result.success).toBe(false)
-    expect(displayedErrorMessage('zh-CN', result.error)).toBe('知识库没有改动。磁盘空间不足，写不进去；清理磁盘后再试一次。')
+    expect(displayedErrorMessage(shown('zh-CN'), result.error)).toBe('知识库没有改动。磁盘空间不足，写不进去；清理磁盘后再试一次。')
   })
 
   it('tells the author the folder is read-only or locked instead of showing EPERM', async () => {
@@ -62,8 +63,8 @@ describe('importing material when the book folder cannot be written', () => {
 
     const result = await importText('林岚核对潮位表。', '第1章 旧港.txt', projectPath, 'openai', model(), { mode: 'fts-only' })
 
-    expect(displayedErrorMessage('zh-CN', result.error)).toBe('知识库没有改动。作品文件夹写不进去，可能是只读，或被同步盘、杀毒软件占用；关掉这些程序后再试一次。')
-    expect(displayedErrorMessage('en-US', result.error)).toBe('The knowledge base was not changed. The book folder could not be written; it may be read-only or locked by sync or antivirus software. Close those programs, then try again.')
+    expect(displayedErrorMessage(shown('zh-CN'), result.error)).toBe('知识库没有改动。作品文件夹写不进去，可能是只读，或被同步盘、杀毒软件占用；关掉这些程序后再试一次。')
+    expect(displayedErrorMessage(shown('en-US'), result.error)).toBe('The knowledge base was not changed. The book folder could not be written; it may be read-only or locked by sync or antivirus software. Close those programs, then try again.')
   })
 
   it('still offers Retry for a finalized chapter whose knowledge-base import hit a full disk', async () => {

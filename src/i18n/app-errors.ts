@@ -347,6 +347,9 @@ const ERROR_KEYS = {
   KNOWLEDGE_BASE_COPY_EMPTY: 'error.knowledgeCopyEmpty',
   KNOWLEDGE_BASE_TEXT_EMPTY: 'error.knowledgeTextEmpty',
   KNOWLEDGE_BASE_VOLUME_UNSUPPORTED: 'error.knowledgeVolumeUnsupported',
+  KNOWLEDGE_BASE_DISK_FULL: 'error.knowledgeDiskFull',
+  KNOWLEDGE_BASE_UNWRITABLE: 'error.knowledgeUnwritable',
+  KNOWLEDGE_BASE_OPERATION_FAILED: 'error.knowledgeOperationFailed',
   // 模型调用与设置（#474 B6）：保存或删除模型、设默认模型，以及按模型设置建执行租约时作者能照着改的原因。
   LLM_MODEL_CONFIG_CORRUPT: 'error.modelSettingsFileDamaged',
   LLM_GLOBAL_CONFIG_CORRUPT: 'error.modelSettingsFileDamaged',
