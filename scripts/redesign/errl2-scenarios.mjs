@@ -61,9 +61,9 @@ async function restoreAfterArchiveMoved({ app, page, diagnostics }, labels, arch
   return shown
 }
 
-/** 同步盘、杀毒软件或权限让文件能看见、读不出内容。只拒「读数据」，属性照常可读。 */
-function denyRead(file) {
-  execFileSync('icacls', [file, '/deny', '*S-1-1-0:(RD)'], { stdio: 'ignore' })
+/** 同步盘、杀毒软件或权限让文件能看见、读不出内容。默认只拒「读数据」；`(R)` 连属性也拒，解析真实路径就会失败。 */
+function denyRead(file, rights = '(RD)') {
+  execFileSync('icacls', [file, '/deny', `*S-1-1-0:${rights}`], { stdio: 'ignore' })
   return () => execFileSync('icacls', [file, '/remove:d', '*S-1-1-0'], { stdio: 'ignore' })
 }
 
@@ -112,6 +112,13 @@ export const ERRL2_SCENARIOS = {
       assert.equal(zh, '作品没有改动。作品文件读不了，可能正被同步盘或杀毒软件占用。请稍后再点「导出本地存档」。')
       await mainLogged(diagnostics, logged, /export failed[\s\S]*EPERM/u)
       await shoot('errl2-5-export-source-unreadable-zh')
+    } finally { allow() }
+    assert.equal(fs.existsSync(blocked), false, '没有写出存档')
+
+    allow = denyRead(manifest, '(R)')
+    try {
+      await exportTo(context, ZH, blocked)
+      assert.equal(await notice(page, 'alert'), '作品没有改动。作品文件读不了，可能正被同步盘或杀毒软件占用。请稍后再点「导出本地存档」。')
     } finally { allow() }
     assert.equal(fs.existsSync(blocked), false, '没有写出存档')
 

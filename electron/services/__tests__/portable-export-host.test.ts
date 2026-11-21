@@ -310,6 +310,16 @@ describe('在 worker 线程里导出', () => {
     } finally { unlock() }
   }, 60_000)
 
+  it.runIf(process.platform === 'win32')('作品文件连属性也读不了：照样交回带路径的系统报错，不说成文件不安全（#702）', async () => {
+    const { fixture, input } = await project()
+    const manifest = path.join(fixture.sourceStorage, 'project.json')
+    execFileSync('icacls', [manifest, '/deny', '*S-1-1-0:(R)'], { stdio: 'ignore' })
+    try {
+      const failure = await exportPortableProjectInWorker(input('locked.ainovel'), worker).catch((error: unknown) => error)
+      expect(failure).toMatchObject({ code: 'EPERM', path: manifest })
+    } finally { execFileSync('icacls', [manifest, '/remove:d', '*S-1-1-0'], { stdio: 'ignore' }) }
+  }, 60_000)
+
   it('worker 崩溃时日志不带路径：报错原文可能含用户名或作品目录', async () => {
     const { outDir, input } = await project()
     const script = path.join(outDir, 'crash-path.mjs')
