@@ -16,7 +16,7 @@ import { displayedErrorMessage } from '../../i18n/app-errors'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
-import { describeFinalizationStepError, POST_PROCESS_INTERRUPTED } from '../../shared/finalization-step-error'
+import { describeFinalizationStepError, finalizationStepErrorCode, POST_PROCESS_INTERRUPTED } from '../../shared/finalization-step-error'
 
 /** 步骤表里的码按步骤说明；其余（含落库的裸码或带 IPC 包装的原文）交给通用报错说明。 */
 export function finalizationStepErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
@@ -79,10 +79,14 @@ export async function withRetry(
       // 原始原因随步骤失败记录保存；日志按冻结的界面语言说明。作者已取消时不再重试，真实失败照常交回。
       const errMsg = err instanceof Error ? err.message : String(err)
       if (attempt < maxRetries && !cancelled) {
-        const reason = finalizationStepErrorMessage(interfaceLocale, err)
-        callbacks.log(text(
+        // 步骤表的说明是写给作者决定要不要点「重试」的，放进「正在重试」里会自相矛盾；这类原因只在最终失败时给出。
+        const reason = finalizationStepErrorCode(errMsg) ? '' : displayedErrorMessage(interfaceLocale, err)
+        callbacks.log(reason ? text(
           `  ${label} 第${attempt + 1}次失败，正在重试...（${reason}）`,
           `  ${label} failed on attempt ${attempt + 1}; retrying... (${reason})`,
+        ) : text(
+          `  ${label} 第${attempt + 1}次失败，正在重试...`,
+          `  ${label} failed on attempt ${attempt + 1}; retrying...`,
         ))
       } else {
         return { ok: false, error: errMsg, attempts: attempt + 1 }
