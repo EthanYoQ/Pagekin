@@ -399,7 +399,7 @@ export function importRecoveryBatches(targets: readonly ImportRecoveryTarget[]):
 
 function parseImportEndpointCorrectionDelta(
   content: string,
-  batch: readonly ImportRecoveryTarget[],
+  outstanding: readonly ImportRecoveryTarget[],
   text: UiText,
 ): Array<Record<string, unknown>> {
   const deltaRoot = parseImportInferenceJsonObject(content)
@@ -431,7 +431,7 @@ function parseImportEndpointCorrectionDelta(
     }
   }
   const addedNames = deltaCards.map(card => decodedLabel(card.name))
-  if (!addedNames.length || addedNames.some(name => name === undefined || !batch.some(target => target.name === name))) {
+  if (!addedNames.length || addedNames.some(name => name === undefined || !outstanding.some(target => target.name === name))) {
     throw new Error(text(
       '导入推演补卡只能补还没有角色卡的人',
       'An import card batch may add only people who still have no character card.',
@@ -487,24 +487,24 @@ function decodeWithoutDanglingRelationships(
 }
 
 /**
- * 首轮卡片加上各批补卡，第 i 份 delta 对应 importRecoveryBatches 的第 i 批。一批可以只补其中几位，但只能补这一批的人；不合格的那一批整批不用。
- * 没有 delta 的批次（没发或中途停下）里的人都算没补出。悬空关系等全部批次合并后才丢，所以指向后面批次人物的关系会保留。
+ * 首轮卡片加上各批补卡。一批可以只补其中几位，但只能补还没有卡的人，每张卡占掉同名的第一个空位；不合格的那一批整批不用。
+ * 不按批次序号对 delta，是因为旧版一次补卡可以补完所有人，已存的这种记录要能照样重放。剩下的空位都算没补出。
+ * 悬空关系等全部批次合并后才丢，所以指向后面批次人物的关系会保留。
  */
 export function decodeRecoveredImportInference(original: string, deltas: readonly string[], text: UiText): RecoveredImportInference {
   const root = parseImportInferenceJsonObject(original)
   let cards = importInferenceCards(root, text)
-  const missing: ImportRecoveryTarget[] = []
-  for (const [index, batch] of importRecoveryBatches(importEndpointRecoveryTargets(original, text)).entries()) {
-    let added: Array<Record<string, unknown>> = []
+  const missing = importEndpointRecoveryTargets(original, text)
+  for (const delta of deltas) {
+    let added: Array<Record<string, unknown>>
     try {
-      if (deltas[index] !== undefined) added = parseImportEndpointCorrectionDelta(deltas[index], batch, text)
+      added = parseImportEndpointCorrectionDelta(delta, missing, text)
       decodeWithoutDanglingRelationships(root, [...cards, ...added])
     } catch {
-      added = []
+      continue
     }
     cards = [...cards, ...added]
-    const filled = new Set(added.map(card => decodedLabel(card.name)))
-    missing.push(...batch.filter(target => !filled.has(target.name)))
+    for (const card of added) missing.splice(missing.findIndex(target => target.name === decodedLabel(card.name)), 1)
   }
   return { ...decodeWithoutDanglingRelationships(root, cards), missing }
 }
