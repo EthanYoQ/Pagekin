@@ -261,7 +261,7 @@ type SecureFileSystemPlatform = Extract<NodeJS.Platform, 'win32' | 'darwin'>
 
 function helperFileName(platform: SecureFileSystemPlatform): string {
   return platform === 'win32'
-    ? 'windows-safe-file-system.ps1'
+    ? 'windows-safe-file-system.exe'
     : 'darwin-safe-file-system'
 }
 
@@ -310,11 +310,7 @@ function parseResponse(raw: string): HelperResponse {
 }
 
 function spawnPlatformHelper(platform: SecureFileSystemPlatform, helperPath: string) {
-  const command = platform === 'win32' ? 'powershell.exe' : helperPath
-  const args = platform === 'win32'
-    ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helperPath]
-    : []
-  return spawn(command, args, {
+  return spawn(helperPath, [], {
     windowsHide: platform === 'win32',
     shell: false,
     stdio: ['pipe', 'pipe', 'pipe'],

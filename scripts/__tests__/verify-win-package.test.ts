@@ -47,7 +47,7 @@ describe('Windows package verification', () => {
     const betterSqliteRelative =
       'resources/app.asar.unpacked/node_modules/better-sqlite3/prebuilds/win32-x64.node'
     write(root, betterSqliteRelative)
-    const helperRelative = 'resources/security/windows-safe-file-system.ps1'
+    const helperRelative = 'resources/security/windows-safe-file-system.exe'
     write(root, helperRelative)
 
     expect(findLanceBinding(root)).toBe(path.join(root, relative))

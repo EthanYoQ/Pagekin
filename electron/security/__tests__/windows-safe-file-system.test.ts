@@ -56,6 +56,20 @@ function buildDarwinHelper(fixture: string): string {
   return output
 }
 
+const builtWindowsHelper = path.resolve('electron/security/windows-safe-file-system.exe')
+
+function buildWindowsHelper(fixture: string, source: string): string {
+  const sourcePath = path.join(fixture, 'windows-safe-file-system-variant.cs')
+  const output = path.join(fixture, 'windows-safe-file-system-variant.exe')
+  fs.writeFileSync(sourcePath, source, 'utf8')
+  const result = spawnSync(process.execPath, ['scripts/build-windows-safe-file-system.mjs', sourcePath, output], {
+    encoding: 'utf8',
+    windowsHide: true,
+  })
+  expect(result.status, result.stderr).toBe(0)
+  return output
+}
+
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) {
     fs.rmSync(root, { recursive: true, force: true })
@@ -158,14 +172,10 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
     const selectedRoot = path.join(fixture, 'selected')
     const fakeCwd = path.join(fixture, 'working-directory')
     const missingResources = path.join(fixture, 'packaged-resources')
-    const fakeSourceHelper = path.join(fakeCwd, 'electron', 'security', 'windows-safe-file-system.ps1')
+    const fakeSourceHelper = path.join(fakeCwd, 'electron', 'security', 'windows-safe-file-system.exe')
     fs.mkdirSync(selectedRoot)
     fs.mkdirSync(path.dirname(fakeSourceHelper), { recursive: true })
-    fs.writeFileSync(
-      fakeSourceHelper,
-      "$null = [Console]::In.ReadLine(); [Console]::Out.WriteLine('{\"ok\":true,\"exists\":false}')",
-      'utf8',
-    )
+    fs.copyFileSync(builtWindowsHelper, fakeSourceHelper)
 
     const originalCwd = process.cwd()
     const originalResourcesPath = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
@@ -200,14 +210,10 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
     const selectedRoot = path.join(fixture, 'selected')
     const fakeCwd = path.join(fixture, 'working-directory')
     const missingResources = path.join(fixture, 'development-resources')
-    const fakeSourceHelper = path.join(fakeCwd, 'electron', 'security', 'windows-safe-file-system.ps1')
+    const fakeSourceHelper = path.join(fakeCwd, 'electron', 'security', 'windows-safe-file-system.exe')
     fs.mkdirSync(selectedRoot)
     fs.mkdirSync(path.dirname(fakeSourceHelper), { recursive: true })
-    fs.writeFileSync(
-      fakeSourceHelper,
-      "$null = [Console]::In.ReadLine(); [Console]::Out.WriteLine('{\"ok\":true,\"exists\":false}')",
-      'utf8',
-    )
+    fs.copyFileSync(builtWindowsHelper, fakeSourceHelper)
     const safeFileSystem = createWindowsSafeFileSystem({
       platform: 'win32',
       isPackaged: false,
@@ -348,15 +354,69 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
     const safeFileSystem = createWindowsSafeFileSystem()
     const output = capability(selectedRoot, 'nested/chapter.txt')
 
-    // This deliberately starts four real PowerShell helpers (mkdir, write,
-    // read, list). Each helper compiles the native C# boundary, and concurrent
-    // full-suite load can exceed Vitest's 5 second unit-test default.
     await safeFileSystem.mkdir(capability(selectedRoot, 'nested'))
     await safeFileSystem.writeTextAtomically(output, '正常内容')
 
     await expect(safeFileSystem.readText(output)).resolves.toBe('正常内容')
     await expect(safeFileSystem.listDirectory(capability(selectedRoot, 'nested')))
       .resolves.toEqual([{ name: 'chapter.txt', isDirectory: false }])
+  })
+
+  it('reads a 64 MiB file and rejects a file one byte larger', async () => {
+    const fixture = fixtureRoot()
+    const selectedRoot = path.join(fixture, 'selected')
+    const targetPath = path.join(selectedRoot, 'large.txt')
+    const limit = 64 * 1024 * 1024
+    fs.mkdirSync(selectedRoot)
+    fs.writeFileSync(targetPath, Buffer.alloc(limit, 0x61))
+    const safeFileSystem = createWindowsSafeFileSystem()
+
+    const readBack = await safeFileSystem.readBytes(capability(selectedRoot, 'large.txt'))
+    expect(readBack.equals(Buffer.alloc(limit, 0x61))).toBe(true)
+
+    fs.appendFileSync(targetPath, 'a')
+    await expect(safeFileSystem.readBytes(capability(selectedRoot, 'large.txt')))
+      .rejects.toThrow('SECURE_FS_FILE_TOO_LARGE')
+  })
+
+  it('lists 16384 entries with non-ASCII names and rejects a directory with one more', async () => {
+    const fixture = fixtureRoot()
+    const selectedRoot = path.join(fixture, 'selected')
+    const limit = 16_384
+    fs.mkdirSync(selectedRoot)
+    fs.mkdirSync(path.join(selectedRoot, '第一卷'))
+    for (let index = 1; index < limit; index += 1) {
+      fs.writeFileSync(path.join(selectedRoot, `章节-${index}.md`), '')
+    }
+    const safeFileSystem = createWindowsSafeFileSystem()
+
+    const entries = await safeFileSystem.listDirectory(capability(selectedRoot, ''))
+    expect(entries).toHaveLength(limit)
+    expect(entries).toContainEqual({ name: '第一卷', isDirectory: true })
+    expect(entries).toContainEqual({ name: `章节-${limit - 1}.md`, isDirectory: false })
+
+    fs.writeFileSync(path.join(selectedRoot, `章节-${limit}.md`), '')
+    await expect(safeFileSystem.listDirectory(capability(selectedRoot, '')))
+      .rejects.toThrow('SECURE_FS_DIRECTORY_TOO_LARGE')
+  })
+
+  it('reports helper failures as bare codes without the host path', async () => {
+    const fixture = fixtureRoot()
+    const selectedRoot = path.join(fixture, 'selected-私密目录')
+    fs.mkdirSync(selectedRoot)
+    const safeFileSystem = createWindowsSafeFileSystem()
+    const failures = await Promise.all([
+      safeFileSystem.readText(capability(selectedRoot, 'missing.txt')),
+      safeFileSystem.listDirectory(capability(selectedRoot, 'missing')),
+      safeFileSystem.writeTextAtomically(capability(selectedRoot, 'missing/chapter.txt'), 'content'),
+    ].map(operation => operation.then(() => undefined, (error: unknown) => error)))
+
+    for (const failure of failures) {
+      expect(failure).toBeInstanceOf(Error)
+      expect((failure as Error).message).toMatch(/^SECURE_FS_[A-Z0-9_]+$/)
+      expect(JSON.stringify(failure)).not.toContain(fixture)
+      expect(String((failure as Error).stack)).not.toContain('私密目录')
+    }
   })
 
   it('cancels a prepared atomic replacement when the main-process commit guard rejects it', async () => {
@@ -482,9 +542,7 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
     const fixture = fixtureRoot()
     const selectedRoot = path.join(fixture, 'selected')
     const targetPath = path.join(selectedRoot, 'chapter.txt')
-    const unsupportedHelper = path.join(fixture, 'windows-safe-file-system-unsupported.ps1')
-    const sourceHelper = path.resolve('electron/security/windows-safe-file-system.ps1')
-    const helperSource = fs.readFileSync(sourceHelper, 'utf8')
+    const helperSource = fs.readFileSync(path.resolve('electron/security/windows-safe-file-system.cs'), 'utf8')
     const unsupportedSource = helperSource.replace(
       'private const int FileRenameInformationEx = 65;',
       'private const int FileRenameInformationEx = 0x7fffffff;',
@@ -492,9 +550,8 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
     expect(unsupportedSource).not.toBe(helperSource)
     fs.mkdirSync(selectedRoot)
     fs.writeFileSync(targetPath, 'old content', 'utf8')
-    fs.writeFileSync(unsupportedHelper, unsupportedSource, 'utf8')
     const safeFileSystem = createWindowsSafeFileSystem({
-      helperPath: unsupportedHelper,
+      helperPath: buildWindowsHelper(fixture, unsupportedSource),
       platform: 'win32',
       isPackaged: false,
     })

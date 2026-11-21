@@ -1,18 +1,15 @@
-# This helper is deliberately shipped as an extraResource instead of relying on
-# Node's path APIs. It opens every component below the supplied root directory
-# handle with OBJ_DONT_REPARSE, so a junction/symlink replacement cannot redirect
-# a later read, mkdir, list, or atomic replacement outside that root.
-$ErrorActionPreference = 'Stop'
-[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-
-$nativeSource = @'
+// This helper is deliberately shipped as an extraResource instead of relying on
+// Node's path APIs. It opens every component below the supplied root directory
+// handle with OBJ_DONT_REPARSE, so a junction/symlink replacement cannot redirect
+// a later read, mkdir, list, or atomic replacement outside that root.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+
+[assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8")]
 
 namespace AiNovelSecureFs {
   public sealed class SecureFsException : Exception {
@@ -803,103 +800,152 @@ namespace AiNovelSecureFs {
     }
   }
 }
-'@
 
-function Write-HelperResponse([object]$response) {
-  [Console]::Out.WriteLine(($response | ConvertTo-Json -Compress -Depth 5))
-}
+namespace AiNovelSecureFs {
+  using System.Collections;
+  using System.Text;
+  using System.Web.Script.Serialization;
 
-try {
-  Add-Type -TypeDefinition $nativeSource -Language CSharp -ErrorAction Stop | Out-Null
-  $inputLine = [Console]::In.ReadLine()
-  if ($null -eq $inputLine -or $inputLine.Length -gt 100000000) {
-    throw [AiNovelSecureFs.SecureFsException]::new('SECURE_FS_REQUEST_TOO_LARGE')
-  }
-  $request = $inputLine | ConvertFrom-Json -ErrorAction Stop
-  if (($null -eq $request) -or ($request.PSObject.Properties.Name -notcontains 'operation') -or ($request.PSObject.Properties.Name -notcontains 'rootPath') -or ($request.PSObject.Properties.Name -notcontains 'relativePath') -or ($request.PSObject.Properties.Name -notcontains 'rootIdentity')) {
-    throw [AiNovelSecureFs.SecureFsException]::new('SECURE_FS_INVALID_PATH')
-  }
-  if ($request.rootPath -isnot [string] -or $request.relativePath -isnot [string]) {
-    throw [AiNovelSecureFs.SecureFsException]::new('SECURE_FS_INVALID_PATH')
-  }
-  if ($null -eq $request.rootIdentity -or ($request.rootIdentity.PSObject.Properties.Name -notcontains 'volumeSerialNumber') -or ($request.rootIdentity.PSObject.Properties.Name -notcontains 'fileIndex') -or $request.rootIdentity.volumeSerialNumber -isnot [string] -or $request.rootIdentity.fileIndex -isnot [string]) {
-    throw [AiNovelSecureFs.SecureFsException]::new('SECURE_FS_INVALID_PATH')
-  }
-  $rootIdentity = [AiNovelSecureFs.SecureHandleFileSystem]::ParseRootIdentity(
-    $request.rootIdentity.volumeSerialNumber,
-    $request.rootIdentity.fileIndex)
+  /**
+   * One request per process over stdin/stdout, the protocol the TypeScript side speaks. Field checks
+   * mirror the former PowerShell host: property names match case-insensitively and a case-only
+   * duplicate is rejected, as ConvertFrom-Json did.
+   */
+  public static class Program {
+    private const int MaxRequestCharacters = 100000000;
+    private const int MaxCommandCharacters = 4096;
+    private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue };
 
-  switch ([string]$request.operation) {
-    'read' {
-      if (($request.PSObject.Properties.Name -notcontains 'maxBytes') -or $request.maxBytes -isnot [int] -or $request.maxBytes -lt 0 -or $request.maxBytes -gt 67108864) {
-        throw [AiNovelSecureFs.SecureFsException]::new('SECURE_FS_INVALID_OPERATION')
-      }
-      $contentBase64 = [AiNovelSecureFs.SecureHandleFileSystem]::ReadTextBase64($request.rootPath, $rootIdentity, $request.relativePath, [int]$request.maxBytes)
-      Write-HelperResponse ([pscustomobject]@{ ok = $true; contentBase64 = $contentBase64 })
-      break
+    private static Dictionary<string, object> ParseObject(string line) {
+      return AsObject(Json.DeserializeObject(line));
     }
-    'write' {
-      if ($request.PSObject.Properties.Name -notcontains 'contentBase64' -or $request.contentBase64 -isnot [string]) {
-        throw [AiNovelSecureFs.SecureFsException]::new('SECURE_FS_INVALID_TEXT')
+
+    private static Dictionary<string, object> AsObject(object value) {
+      Dictionary<string, object> parsed = value as Dictionary<string, object>;
+      if (parsed == null) return null;
+      Dictionary<string, object> result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+      foreach (KeyValuePair<string, object> entry in parsed) {
+        if (entry.Key.Length == 0) throw new SecureFsException("SECURE_FS_HELPER_FAILED");
+        result.Add(entry.Key, entry.Value);
       }
-      $mustAlreadyExist = $false
-      if ($request.PSObject.Properties.Name -contains 'mustAlreadyExist') {
-        if ($request.mustAlreadyExist -isnot [bool]) {
-          throw [AiNovelSecureFs.SecureFsException]::new('SECURE_FS_INVALID_OPERATION')
+      return result;
+    }
+
+    private static object Field(Dictionary<string, object> source, string name) {
+      object value;
+      return source.TryGetValue(name, out value) ? value : null;
+    }
+
+    private static Dictionary<string, object> Ok() {
+      return new Dictionary<string, object> { { "ok", true } };
+    }
+
+    private static void Respond(TextWriter output, Dictionary<string, object> response) {
+      output.WriteLine(Json.Serialize(response));
+      output.Flush();
+    }
+
+    private static void Handle(TextReader input, TextWriter output) {
+      string inputLine = input.ReadLine();
+      if (inputLine == null || inputLine.Length > MaxRequestCharacters) {
+        throw new SecureFsException("SECURE_FS_REQUEST_TOO_LARGE");
+      }
+      Dictionary<string, object> request = ParseObject(inputLine);
+      if (request == null || !request.ContainsKey("operation") || !request.ContainsKey("rootPath")
+          || !request.ContainsKey("relativePath") || !request.ContainsKey("rootIdentity")) {
+        throw new SecureFsException("SECURE_FS_INVALID_PATH");
+      }
+      string rootPath = Field(request, "rootPath") as string;
+      string relativePath = Field(request, "relativePath") as string;
+      if (rootPath == null || relativePath == null) throw new SecureFsException("SECURE_FS_INVALID_PATH");
+      Dictionary<string, object> identity = AsObject(Field(request, "rootIdentity"));
+      if (identity == null || !(Field(identity, "volumeSerialNumber") is string) || !(Field(identity, "fileIndex") is string)) {
+        throw new SecureFsException("SECURE_FS_INVALID_PATH");
+      }
+      SecureHandleFileSystem.RootIdentity rootIdentity = SecureHandleFileSystem.ParseRootIdentity(
+        (string)Field(identity, "volumeSerialNumber"),
+        (string)Field(identity, "fileIndex"));
+
+      switch (Field(request, "operation") as string) {
+        case "read": {
+          object maxBytes = Field(request, "maxBytes");
+          if (!(maxBytes is int) || (int)maxBytes < 0 || (int)maxBytes > 67108864) {
+            throw new SecureFsException("SECURE_FS_INVALID_OPERATION");
+          }
+          Dictionary<string, object> response = Ok();
+          response["contentBase64"] = SecureHandleFileSystem.ReadTextBase64(rootPath, rootIdentity, relativePath, (int)maxBytes);
+          Respond(output, response);
+          return;
         }
-        $mustAlreadyExist = [bool]$request.mustAlreadyExist
+        case "write": {
+          string contentBase64 = Field(request, "contentBase64") as string;
+          if (contentBase64 == null) throw new SecureFsException("SECURE_FS_INVALID_TEXT");
+          bool mustAlreadyExist = false;
+          if (request.ContainsKey("mustAlreadyExist")) {
+            if (!(Field(request, "mustAlreadyExist") is bool)) throw new SecureFsException("SECURE_FS_INVALID_OPERATION");
+            mustAlreadyExist = (bool)Field(request, "mustAlreadyExist");
+          }
+          byte[] content = Convert.FromBase64String(contentBase64);
+          using (SecureHandleFileSystem.AtomicWriteSession session = SecureHandleFileSystem.BeginAtomicWrite(rootPath, rootIdentity, relativePath, content, mustAlreadyExist)) {
+            Dictionary<string, object> ready = Ok();
+            ready["phase"] = "ready";
+            Respond(output, ready);
+            string commandLine = input.ReadLine();
+            if (commandLine == null || commandLine.Length > MaxCommandCharacters) {
+              throw new SecureFsException("SECURE_FS_CANCELLED");
+            }
+            Dictionary<string, object> command = ParseObject(commandLine);
+            if (command == null || !"commit".Equals(Field(command, "command"))) {
+              Dictionary<string, object> cancelled = new Dictionary<string, object> { { "ok", false }, { "code", "SECURE_FS_CANCELLED" } };
+              Respond(output, cancelled);
+              return;
+            }
+            session.Commit(mustAlreadyExist);
+            Respond(output, Ok());
+          }
+          return;
+        }
+        case "mkdir":
+          SecureHandleFileSystem.MakeDirectory(rootPath, rootIdentity, relativePath);
+          Respond(output, Ok());
+          return;
+        case "exists": {
+          Dictionary<string, object> response = Ok();
+          response["exists"] = SecureHandleFileSystem.Exists(rootPath, rootIdentity, relativePath);
+          Respond(output, response);
+          return;
+        }
+        case "list": {
+          ArrayList entries = new ArrayList();
+          foreach (SecureDirectoryEntry entry in SecureHandleFileSystem.ListDirectory(rootPath, rootIdentity, relativePath)) {
+            entries.Add(new Dictionary<string, object> { { "name", entry.Name }, { "isDirectory", entry.IsDirectory } });
+          }
+          Dictionary<string, object> response = Ok();
+          response["entries"] = entries;
+          Respond(output, response);
+          return;
+        }
+        default:
+          throw new SecureFsException("SECURE_FS_INVALID_OPERATION");
       }
-      $content = [Convert]::FromBase64String([string]$request.contentBase64)
-      $session = $null
+    }
+
+    public static int Main() {
+      UTF8Encoding utf8 = new UTF8Encoding(false);
+      TextReader input = new StreamReader(Console.OpenStandardInput(), utf8, false, 65536);
+      TextWriter output = new StreamWriter(Console.OpenStandardOutput(), utf8, 65536);
       try {
-        $session = [AiNovelSecureFs.SecureHandleFileSystem]::BeginAtomicWrite($request.rootPath, $rootIdentity, $request.relativePath, $content, $mustAlreadyExist)
-        Write-HelperResponse ([pscustomobject]@{ ok = $true; phase = 'ready' })
-        $commandLine = [Console]::In.ReadLine()
-        if ($null -eq $commandLine -or $commandLine.Length -gt 4096) {
-          throw [AiNovelSecureFs.SecureFsException]::new('SECURE_FS_CANCELLED')
+        Handle(input, output);
+      } catch (Exception error) {
+        SecureFsException secure = error as SecureFsException;
+        string code = secure != null ? secure.Code : "SECURE_FS_HELPER_FAILED";
+        try {
+          Respond(output, new Dictionary<string, object> { { "ok", false }, { "code", code } });
+        } catch (Exception) {
+          // The parent already closed stdout; it reports a missing response on its own.
         }
-        $command = $commandLine | ConvertFrom-Json -ErrorAction Stop
-        if ($command.command -ne 'commit') {
-          Write-HelperResponse ([pscustomobject]@{ ok = $false; code = 'SECURE_FS_CANCELLED' })
-          break
-        }
-        $session.Commit($mustAlreadyExist)
-        Write-HelperResponse ([pscustomobject]@{ ok = $true })
-      } finally {
-        if ($null -ne $session) { $session.Dispose() }
       }
-      break
-    }
-    'mkdir' {
-      [AiNovelSecureFs.SecureHandleFileSystem]::MakeDirectory($request.rootPath, $rootIdentity, $request.relativePath)
-      Write-HelperResponse ([pscustomobject]@{ ok = $true })
-      break
-    }
-    'exists' {
-      $exists = [AiNovelSecureFs.SecureHandleFileSystem]::Exists($request.rootPath, $rootIdentity, $request.relativePath)
-      Write-HelperResponse ([pscustomobject]@{ ok = $true; exists = $exists })
-      break
-    }
-    'list' {
-      $entries = @(
-        [AiNovelSecureFs.SecureHandleFileSystem]::ListDirectory($request.rootPath, $rootIdentity, $request.relativePath) |
-          ForEach-Object { [pscustomobject]@{ name = $_.Name; isDirectory = $_.IsDirectory } }
-      )
-      Write-HelperResponse ([pscustomobject]@{ ok = $true; entries = $entries })
-      break
-    }
-    default {
-      throw [AiNovelSecureFs.SecureFsException]::new('SECURE_FS_INVALID_OPERATION')
+      return 0;
     }
   }
-} catch {
-  $code = 'SECURE_FS_HELPER_FAILED'
-  if ($_.Exception -is [AiNovelSecureFs.SecureFsException]) {
-    $code = $_.Exception.Code
-  } elseif ($_.Exception.InnerException -is [AiNovelSecureFs.SecureFsException]) {
-    $code = $_.Exception.InnerException.Code
-  } elseif ($_.Exception.Message -match '^SECURE_FS_[A-Z0-9_]+$') {
-    $code = $_.Exception.Message
-  }
-  Write-HelperResponse ([pscustomobject]@{ ok = $false; code = $code })
 }
