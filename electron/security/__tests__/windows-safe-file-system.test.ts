@@ -466,6 +466,25 @@ describe.runIf(process.platform === 'win32')('Windows handle-bound secure file s
 
     expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
   })
+
+  it('keeps the generic open failure for a read-only target that another program also holds open', async () => {
+    const fixture = fixtureRoot()
+    const selectedRoot = path.join(fixture, 'selected')
+    const targetPath = path.join(selectedRoot, 'chapter.txt')
+    fs.mkdirSync(selectedRoot)
+    fs.writeFileSync(targetPath, 'old content', 'utf8')
+    fs.chmodSync(targetPath, 0o444)
+    const holder = fs.openSync(targetPath, 'r')
+    try {
+      await expect(createWindowsSafeFileSystem().writeTextAtomically(capability(selectedRoot, 'chapter.txt'), 'new content'))
+        .rejects.toThrow('SECURE_FS_OPEN_FAILED')
+    } finally {
+      fs.closeSync(holder)
+      fs.chmodSync(targetPath, 0o666)
+    }
+
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe('old content')
+  })
 })
 
 describe.runIf(process.platform === 'darwin')('Darwin handle-bound secure file system', () => {

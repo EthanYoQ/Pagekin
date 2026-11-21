@@ -10,6 +10,7 @@ import { appearanceWrite, assertBuilt, captureFailure, driveSessions, finishReal
   releaseSessionRoot, scanRunForSecret, sessionIsClean, writeConsoleLog } from '../drive.mjs'
 import { fileStamps } from '../real-model.mjs'
 import { BASELINE_SESSIONS, SCENARIOS } from '../scenarios.mjs'
+import { PERF702_SCENARIOS } from '../perf702-scenarios.mjs'
 
 const parents = []
 afterEach(() => { for (const parent of parents.splice(0)) fs.rmSync(parent, { recursive: true, force: true }) })
@@ -326,4 +327,10 @@ it('前置齐全时没有缺项', () => {
   const requires = { env: { PERF702_FIXTURE: '设置方法' }, theme: 'dark' }
   assert.deepEqual(missingPrerequisites({ requires }, { theme: 'dark' }, { PERF702_FIXTURE: 'C:/fixture' }), [])
   assert.deepEqual(missingPrerequisites({}, { theme: 'light' }, {}), [])
+})
+
+it('目标被占用的导出场景只在 Windows 上跑', () => {
+  const held = PERF702_SCENARIOS['perf702-export-held']
+  assert.deepEqual(missingPrerequisites(held, { theme: 'light' }, {}, 'win32'), [])
+  assert.deepEqual(missingPrerequisites(held, { theme: 'light' }, {}, 'darwin'), ['只在 Windows 上跑，当前平台 darwin'])
 })
