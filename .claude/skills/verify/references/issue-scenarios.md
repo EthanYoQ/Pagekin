@@ -1,8 +1,6 @@
 # 按 issue 补的场景（#382 起）
 
 > 历史说明：本文件按当时的改造或 issue 记录场景与对照步骤，不随当前构建更新。其中的对照命令（旧外壳场景、`--shell`、指向 trunk 的 `--app-root`）只适用于当时的 trunk，在当前构建上不能照抄。当前构建的做法以正文和 `driver.md` 为准；某个场景现在能不能对 head 跑，以 `driver.md`「RD-10 删除旧外壳之后」的分类为准。
->
-> 场景自带的构建要求仍然有效，例如 `f491-backup-roundtrip` 要新旧两个构建，`--app-root` 指向 1.3.2，见本文「备份往返后的角色派生状态（#491）」一节。
 
 RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找已有场景。
 
@@ -16,11 +14,7 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 
 ## 备份往返后的角色派生状态（#491）
 
-场景在 `scripts/redesign/f491-scenarios.mjs`。必须用 `--app-root` 指向已构建好的 1.3.2（master 305ee755）工作树：旧版本负责造出损坏，场景中途用 `context.restart({ appRoot })` 换成本工作树的构建打开同一份数据。直接对本工作树跑会失败，因为新构建打开项目时就修好了，旧版本那一步的来源冲突断言不成立。假模型的 `fake.replyCharacterState(build)` 让定稿后处理的角色状态更新回 `build(提示词)` 给出的 JSON。
-
-| 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
-|---|---|---|---|---|
-| `f491-backup-roundtrip` | 旧版本里定稿第 3 章写入林岚的地点、道具、近况，用界面同一组 IPC 导出 .ainovel 再恢复、两轮后按 Ctrl O 打开第二个副本：「当前状态」三项是「历史派生（非当前）」、输入框为空（`f491-1-damaged-historical`）；定稿第 4 章，角色状态更新报 `FINALIZED_CHARACTER_SOURCE_CONFLICT` 原始错误（`f491-2-damaged-finalize-error`）。换新构建重启打开同一副本：失败说明是可读中文（`f491-3-fixed-readable-error`），点「重试失败步骤」后 3 / 3 完成（`f491-4-fixed-finalize-done`）；三项回到「定稿派生」并带第 4 章的新值，改「关键道具」后保存成功、该项变为「作者输入」 | 角色名单的当前状态 | 是 | #491 |
+`f491-backup-roundtrip` 已退役（维护者 2026-11-21）。它要用 1.3.2 的构建造出损坏，而驱动总用当前的 Electron 启动 `--app-root` 的应用，1.3.2 的原生模块在当前 Electron 下加载不了。#491 的往返与打开时修复由 `electron/services/__tests__/character-continuity-roundtrip.test.ts` 覆盖。
 
 ## 定稿后处理的角色状态字段冲突（#484）
 
