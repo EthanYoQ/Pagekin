@@ -488,7 +488,8 @@ describe('archiveFailureMessage', () => {
     ['restore', 'PORTABLE_GRANT_INVALID', '没有新建副本。选好的存档或文件夹已失效。请再点「从本地存档恢复副本」重新选。'],
     ['restore', 'PORTABLE_RESTORE_ARCHIVE_MISSING', '没有新建副本。找不到所选存档。请再点「从本地存档恢复副本」重新选一次。'],
     ['restore', 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE', '没有新建副本。所选存档读不了，可能没有权限或正被占用。请换一个存档，再点「从本地存档恢复副本」。'],
-    ['restore', 'PORTABLE_RESTORE_FAILED', '没有新建副本。恢复时出了意外错误。请再点「从本地存档恢复副本」；还不行，请把这条提示反馈给我们。'],
+    ['export', 'PORTABLE_EXPORT_SOURCE_UNREADABLE', '作品没有改动。作品文件读不了，可能正被同步盘或杀毒软件占用。请稍后再点「导出本地存档」。'],
+    ['restore', 'PORTABLE_RESTORE_FAILED', '恢复时出了意外错误。请先看看所选文件夹里有没有新副本，没有再点「从本地存档恢复副本」；还不行，请把这条提示反馈给我们。'],
   ] as const)('中文界面%s报 %s：说清原因和下一步，不露原码（#702）', (operation, code, expected) => {
     expect(archiveFailureMessage(shown('zh-CN'), operation, code)).toBe(expected)
   })
@@ -499,6 +500,8 @@ describe('archiveFailureMessage', () => {
     ['restore', 'PORTABLE_GRANT_INVALID', 'No copy was created. The archive or folder you chose is no longer valid. Click Restore a copy from local archive and choose again.'],
     ['restore', 'PORTABLE_RESTORE_ARCHIVE_MISSING', 'No copy was created. The chosen archive could not be found. Click Restore a copy from local archive and choose it again.'],
     ['restore', 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'No copy was created. The chosen archive cannot be read; you may lack permission or another program may be using it. Choose another archive, then click Restore a copy from local archive again.'],
+    ['export', 'PORTABLE_EXPORT_SOURCE_UNREADABLE', 'Your book is unchanged. Some book files cannot be read; a sync or antivirus app may be using them. Wait a moment, then click Export local archive again.'],
+    ['restore', 'PORTABLE_RESTORE_FAILED', 'Something unexpected went wrong during restore. First check the chosen folder for a new copy; if there is none, click Restore a copy from local archive again. If it still fails, please report this message to us.'],
   ] as const)('英文界面%s报 %s：说清原因和下一步，不露原码（#702）', (operation, code, expected) => {
     expect(archiveFailureMessage(shown('en-US'), operation, code)).toBe(expected)
   })
@@ -507,8 +510,13 @@ describe('archiveFailureMessage', () => {
     ['PORTABLE_GRANT_INVALID', 'コピーは作成されていません。選んだアーカイブまたはフォルダーは無効になりました。もう一度「Restore a copy from local archive」をクリックして選び直してください。'],
     ['PORTABLE_RESTORE_ARCHIVE_MISSING', 'コピーは作成されていません。選んだアーカイブが見つかりません。もう一度「Restore a copy from local archive」をクリックして選び直してください。'],
     ['PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'コピーは作成されていません。選んだアーカイブを読み込めません。権限がないか、ほかのプログラムが使用中の可能性があります。別のアーカイブを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。'],
+    ['PORTABLE_RESTORE_FAILED', '復元中に予期しない問題が発生しました。まず選んだフォルダーに新しいコピーがあるか確認し、なければもう一度「Restore a copy from local archive」をクリックしてください。それでも失敗する場合は、このメッセージをご報告ください。'],
   ] as const)('日文界面恢复报 %s：说清原因和下一步，不露原码（#702）', (code, expected) => {
     expect(archiveFailureMessage(shown('ja-JP'), 'restore', code)).toBe(expected)
+  })
+
+  it('日文界面导出时作品文件读不了：说是作品文件被占用，不叫作者换位置（#702）', () => {
+    expect(archiveFailureMessage(shown('ja-JP'), 'export', 'PORTABLE_EXPORT_SOURCE_UNREADABLE')).toBe('作品は変更されていません。作品のファイルを読み込めません。同期アプリやウイルス対策ソフトが使用中の可能性があります。少し待ってから、もう一度「Export local archive」をクリックしてください。')
   })
 })
 

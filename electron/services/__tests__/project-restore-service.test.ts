@@ -837,6 +837,9 @@ describe('portable project restore service', () => {
   })
 })
 
+const fsError = (code: string, syscall: string, file: string) =>
+  Object.assign(new Error(`${code}: ${syscall} '${file}'`), { code, errno: -1, syscall, path: file })
+
 describe('读不了所选存档（#702）', () => {
   function emptyRoot(): string {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'err-l2-restore-source-'))
@@ -844,36 +847,54 @@ describe('读不了所选存档（#702）', () => {
     return base
   }
 
-  it('存档被挪走：报找不到存档，原 ENOENT 留在 cause，不新建副本', async () => {
+  it('存档被挪走：交出带存档路径的 ENOENT，不新建副本', async () => {
     const base = emptyRoot()
-    const error = await restorePortableProject({
-      archivePath: path.join(base, '挪走了.ainovel'),
-      targetProjectRoot: path.join(base, 'restored'),
-    }).catch((caught: unknown) => caught)
+    const archivePath = path.join(base, '挪走了.ainovel')
+    const error = await restorePortableProject({ archivePath, targetProjectRoot: path.join(base, 'restored') })
+      .catch((caught: unknown) => caught)
 
-    expect(error).toMatchObject({ message: 'PORTABLE_RESTORE_ARCHIVE_MISSING', cause: { code: 'ENOENT' } })
+    expect(error).toMatchObject({ code: 'ENOENT', path: archivePath })
     expect(fs.readdirSync(base)).toEqual([])
   })
 
-  it.each(['EACCES', 'EPERM'])('读存档时 %s：报存档读不了，不当成目标文件夹写不进', async errno => {
+  it.each([
+    ['哈希前看存档', 'lstatSync', 'EPERM'],
+    ['哈希后解包打开存档', 'openSync', 'EACCES'],
+  ] as const)('%s时 %s 报 %s：交出带存档路径的原错误，不新建副本', async (_label, method, errno) => {
     const base = emptyRoot()
     const archivePath = path.join(base, '读不了.ainovel')
     fs.writeFileSync(archivePath, 'archive')
-    const lstat = fs.lstatSync
-    vi.spyOn(fs, 'lstatSync').mockImplementation(((file: fs.PathLike, options?: fs.StatSyncOptions) => {
-      if (path.resolve(String(file)) === archivePath) {
-        throw Object.assign(new Error(`${errno}: operation not permitted, lstat '${archivePath}'`), { code: errno })
-      }
-      return lstat(file, options)
-    }) as typeof fs.lstatSync)
+    const original = fs[method] as (...args: unknown[]) => unknown
+    vi.spyOn(fs, method).mockImplementation(((file: fs.PathLike, ...rest: unknown[]) => {
+      if (path.resolve(String(file)) === archivePath) throw fsError(errno, method.replace('Sync', ''), archivePath)
+      return original(file, ...rest)
+    }) as never)
     try {
       const error = await restorePortableProject({ archivePath, targetProjectRoot: path.join(base, 'restored') })
         .catch((caught: unknown) => caught)
-      expect(error).toMatchObject({ message: 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE', cause: { code: errno } })
+      expect(error).toMatchObject({ code: errno, path: archivePath })
     } finally {
       vi.restoreAllMocks()
     }
     expect(fs.readdirSync(base)).toEqual(['读不了.ainovel'])
+  })
+})
+
+describe('副本装到一半出意外（#702）', () => {
+  it('往副本里放文件时被杀毒软件占着（EBUSY）：恢复失败，但所选位置已经有了副本文件夹', async () => {
+    const f = await exportedFixture()
+    const link = fs.linkSync
+    vi.spyOn(fs, 'linkSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
+      if (path.basename(String(to)) === 'project.db') throw fsError('EBUSY', 'link', String(to))
+      return link(from, to)
+    }) as typeof fs.linkSync)
+    try {
+      await expect(restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot }))
+        .rejects.toMatchObject({ code: 'EBUSY' })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(path.join(f.targetRoot, '.ai-novel'))).toBe(true)
   })
 })
 

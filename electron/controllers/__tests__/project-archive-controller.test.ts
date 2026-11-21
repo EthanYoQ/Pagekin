@@ -113,6 +113,10 @@ function tempRoot(prefix: string): string {
   return root
 }
 
+function fsError(code: string, syscall: string, file: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`${code}: ${syscall} '${file}'`), { code, errno: -1, syscall, path: file })
+}
+
 function projectSession() {
   return {
     projectId: mocks.activeSession.projectId,
@@ -528,6 +532,41 @@ describe('project:archive-export', () => {
     expect(logged).toHaveBeenCalledWith(expect.any(String), thrown)
     logged.mockRestore()
   })
+
+  function exportBesideBook(root: string) {
+    mocks.currentProjectPath = path.join(root, '我的书')
+    mocks.activeSession = { ...mocks.activeSession, projectPath: mocks.currentProjectPath, rootPath: mocks.currentProjectPath }
+    return handler('project:archive-export')(event(), {
+      targetArchiveGrantId: newTargetGrant(path.join(root, '备份.ainovel')),
+      projectSession: projectSession(),
+    })
+  }
+
+  it.each(['EACCES', 'EPERM', 'EBUSY'])('读作品文件 %s（同步盘或杀毒软件占着）：报作品文件读不了，不叫作者换位置（#702）', async errno => {
+    const root = tempRoot('err-l2-export-source-')
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.exportPortableProject.mockRejectedValueOnce(fsError(errno, 'open', path.join(root, '我的书', '.ai-novel', 'project.json')))
+
+    await expect(exportBesideBook(root)).resolves.toEqual({
+      success: false,
+      error: 'PORTABLE_EXPORT_SOURCE_UNREADABLE',
+      errorCode: 'PORTABLE_EXPORT_SOURCE_UNREADABLE',
+    })
+    logged.mockRestore()
+  })
+
+  it('存档放在作品旁边、往那里写临时目录 EPERM：仍报所选位置写不进（#702）', async () => {
+    const root = tempRoot('err-l2-export-target-')
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.exportPortableProject.mockRejectedValueOnce(fsError('EPERM', 'mkdtemp', path.join(root, '.pe-XXXXXX')))
+
+    await expect(exportBesideBook(root)).resolves.toEqual({
+      success: false,
+      error: 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE',
+      errorCode: 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE',
+    })
+    logged.mockRestore()
+  })
 })
 
 describe('project:archive-restore', () => {
@@ -694,28 +733,28 @@ describe('project:archive-restore', () => {
   })
 
   it.each([
-    ['PORTABLE_RESTORE_ARCHIVE_MISSING', 'ENOENT'],
-    ['PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'EPERM'],
-  ])('读所选存档失败（%s）交出自己的码，原错误写进主进程日志（#702）', async (code, errno) => {
+    ['PORTABLE_RESTORE_ARCHIVE_MISSING', 'ENOENT', 'lstat'],
+    ['PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'EPERM', 'lstat'],
+    ['PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'EACCES', 'open'],
+  ])('读所选存档失败（%s，%s %s）交出自己的码，原错误写进主进程日志（#702）', async (code, errno, syscall) => {
     const root = tempRoot('err-l2-restore-source-')
-    const original = Object.assign(new Error(`${errno}: lstat 'D:\\备份\\a.ainovel'`), { code: errno })
-    const thrown = new Error(code, { cause: original })
+    const archive = path.join(root, 'a.ainovel')
+    const thrown = fsError(errno, syscall, archive)
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     mocks.restorePortableProject.mockRejectedValueOnce(thrown)
 
     await expect(handler('project:archive-restore')(event(), {
-      archiveGrantId: archiveFileGrant(path.join(root, 'a.ainovel')),
+      archiveGrantId: archiveFileGrant(archive),
       targetGrantId: newTargetGrant(path.join(root, 'copy')),
     })).resolves.toEqual({ success: false, error: code, errorCode: code })
     expect(logged).toHaveBeenCalledWith(expect.any(String), thrown)
     logged.mockRestore()
   })
 
-  it('恢复时写目标的 EPERM 仍报目标文件夹写不进（#702）', async () => {
+  it('恢复到存档所在的文件夹、建副本 EPERM：仍报目标文件夹写不进（#702）', async () => {
     const root = tempRoot('err-l2-restore-target-')
-    const thrown = Object.assign(new Error("EPERM: operation not permitted, mkdir 'D:\\备份\\copy'"), { code: 'EPERM' })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
-    mocks.restorePortableProject.mockRejectedValueOnce(thrown)
+    mocks.restorePortableProject.mockRejectedValueOnce(fsError('EPERM', 'mkdir', path.join(root, 'copy')))
 
     await expect(handler('project:archive-restore')(event(), {
       archiveGrantId: archiveFileGrant(path.join(root, 'a.ainovel')),

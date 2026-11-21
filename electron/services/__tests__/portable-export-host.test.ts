@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -291,6 +292,22 @@ describe('在 worker 线程里导出', () => {
     expect(await outcome(onMainThread(at('m.ainovel')))).toEqual({ ok: true })
     expect(await outcome(exportPortableProjectInWorker(at('w.ainovel'), worker))).toEqual({ ok: true })
     expect(leftovers(deep)).toEqual([])
+  }, 60_000)
+
+  it('worker 里读不了作品文件：交回的系统报错带着出错的路径，主进程据此认出是作品文件（#702）', async () => {
+    const { fixture, input } = await project()
+    const manifest = path.join(fixture.sourceStorage, 'project.json')
+    const lock = process.platform === 'win32'
+      ? () => execFileSync('icacls', [manifest, '/deny', '*S-1-1-0:(RD)'], { stdio: 'ignore' })
+      : () => fs.chmodSync(manifest, 0)
+    const unlock = process.platform === 'win32'
+      ? () => execFileSync('icacls', [manifest, '/remove:d', '*S-1-1-0'], { stdio: 'ignore' })
+      : () => fs.chmodSync(manifest, 0o600)
+    lock()
+    try {
+      const failure = await exportPortableProjectInWorker(input('locked.ainovel'), worker).catch((error: unknown) => error)
+      expect(failure).toMatchObject({ code: expect.stringMatching(/^(EACCES|EPERM)$/u), path: manifest })
+    } finally { unlock() }
   }, 60_000)
 
   it('worker 崩溃时日志不带路径：报错原文可能含用户名或作品目录', async () => {
