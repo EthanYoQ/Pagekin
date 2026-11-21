@@ -54,7 +54,6 @@ export function workflowMainProcessError(
   const summary = english ? enUSSummary : zhCNSummary
   if (typeof error !== 'string') return new Error(summary)
   const code = errorCodeOf(error)
-  // 未登记的码和空原文都落到这里给的兜底，也就是说明本身，不再接一遍。
   const shown = displayedErrorMessage(interfaceLocale, error, summary)
   const reason = shown === summary || (english && !isRegisteredErrorCode(error)) ? undefined : shown
   const failure = new Error(reason ? `${summary}${english ? ' ' : '：'}${reason}` : summary)

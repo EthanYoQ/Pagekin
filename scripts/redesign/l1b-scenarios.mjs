@@ -9,7 +9,6 @@ const EMBEDDING_MODEL = Object.freeze({ ...FAKE_MODEL, id: 'l1b-embedding', name
 const UNREGISTERED = 'EMBEDDING_SPACE_VERIFY_FAILED'
 
 export const L1B_SCENARIOS = {
-  // #787 的规则落到工作流报错：重建检索时主进程回一个没登记文案的码（vector-store 真会抛的那个），提示只给说明，码只进控制台。
   'l1b-kb-rebuild-unregistered': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     assert.equal((await invoke(page, 'llm:save-model', EMBEDDING_MODEL)).success, true)
     assert.equal((await invoke(page, 'llm:set-default-embedding-model', EMBEDDING_MODEL.id)).success, true)
