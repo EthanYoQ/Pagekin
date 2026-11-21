@@ -1093,6 +1093,35 @@ describe('云备份报错说出真正的原因（#702）', () => {
     expect(f.deps.restorePortableProject).not.toHaveBeenCalled()
   })
 
+  const denied = (code: string, file?: string) => Object.assign(new Error(`${code}: denied`), {
+    code, ...(file ? { path: file } : {}),
+  })
+
+  it.each(['EACCES', 'EPERM', 'EROFS'])('书童数据文件夹没有写权限（%s）：建暂存目录、打包、下载都说数据文件夹写不进', async code => {
+    const mkdtemp = fixture()
+    vi.spyOn(fs, 'mkdtempSync').mockImplementationOnce(() => { throw denied(code) })
+    expect(zh(await backup(mkdtemp))).toContain('数据文件夹写不进去')
+
+    const pack = fixture()
+    vi.mocked(pack.deps.exportPortableProject).mockImplementation(async input => {
+      throw denied(code, path.join(input.attemptParentPath, 'attempt', 'project.db'))
+    })
+    expect(zh(await backup(pack))).toContain('数据文件夹写不进去')
+
+    const download = fixture()
+    vi.mocked(download.deps.webDav.downloadGeneration).mockRejectedValue(denied(code))
+    expect(zh(await restoreCopy(download))).toContain('数据文件夹写不进去')
+  })
+
+  it('打包时读作品文件被拒（路径不在暂存目录）：仍叫作者去「导出本地存档」看原因，不怪数据文件夹', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.exportPortableProject).mockRejectedValue(denied('EPERM', path.join(os.tmpdir(), 'my-book', 'chapters', '1.md')))
+
+    const result = await backup(f)
+
+    expect(result).toMatchObject({ errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED' })
+  })
+
   it('云端世代来自更新版本的书童：说先升级，没有新建副本', async () => {
     const f = fixture()
     vi.mocked(f.deps.restorePortableProject).mockRejectedValue(new PortableProjectArchiveError('PORTABLE_SCHEMA_UNSUPPORTED'))

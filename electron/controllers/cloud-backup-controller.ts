@@ -165,10 +165,21 @@ function errorCode(error: unknown): CloudBackupErrorCode {
   return 'CLOUD_BACKUP_FAILED'
 }
 
-function restoreTargetErrno(error: unknown, stagingRoot: string): boolean {
+function unwritableErrno(error: unknown): boolean {
+  return UNWRITABLE_ERRNO.has(stringField(error, 'code') ?? '')
+}
+
+function failedInside(error: unknown, root: string): boolean {
   const failedPath = stringField(error, 'path')
-  const inStaging = failedPath !== undefined && path.resolve(failedPath).startsWith(path.resolve(stagingRoot) + path.sep)
-  return UNWRITABLE_ERRNO.has(stringField(error, 'code') ?? '') && !inStaging
+  return failedPath !== undefined && path.resolve(failedPath).startsWith(path.resolve(root) + path.sep)
+}
+
+function restoreTargetErrno(error: unknown, stagingRoot: string): boolean {
+  return unwritableErrno(error) && !failedInside(error, stagingRoot)
+}
+
+function stagingWriteErrno(error: unknown, stagingRoot: string): boolean {
+  return stringField(error, 'code') === 'ENOSPC' || unwritableErrno(error) && failedInside(error, stagingRoot)
 }
 
 function stringField(error: unknown, key: 'name' | 'code' | 'syscall' | 'path'): string | undefined {
@@ -205,10 +216,16 @@ function account(store: CredentialStoreFacade, accountId: string): WebDavAccount
 
 function createStagingRoot(dataRoot: string, currentOperationId: string): string {
   const parent = path.join(path.resolve(dataRoot), STAGING_DIRECTORY)
-  fs.mkdirSync(parent, { recursive: true, mode: 0o700 })
-  const parentInfo = fs.lstatSync(parent)
-  if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) fail('CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED')
-  const root = fs.mkdtempSync(path.join(parent, `${currentOperationId}-`))
+  let root: string
+  try {
+    fs.mkdirSync(parent, { recursive: true, mode: 0o700 })
+    const parentInfo = fs.lstatSync(parent)
+    if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) fail('CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED')
+    root = fs.mkdtempSync(path.join(parent, `${currentOperationId}-`))
+  } catch (error) {
+    if (unwritableErrno(error)) fail('CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED')
+    throw error
+  }
   try { fs.chmodSync(root, 0o700) } catch { /* Windows may not expose POSIX modes. */ }
   return root
 }
@@ -420,7 +437,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
           if (signal.aborted) fail('CLOUD_BACKUP_CANCELLED')
           if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_EXPORT_SOURCE_CHANGED') fail('CLOUD_BACKUP_SOURCE_CHANGED')
           if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_EXPORT_AVATAR_DAMAGED') fail('CLOUD_BACKUP_AVATAR_DAMAGED')
-          if (stringField(error, 'code') === 'ENOSPC') fail('CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED')
+          if (stagingWriteErrno(error, stagingRoot)) fail('CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED')
           throw new CloudBackupControllerError('CLOUD_BACKUP_ARCHIVE_FAILED',
             error instanceof SchemaMigrationError ? error.damagedReviewCycle : undefined)
         }
@@ -529,6 +546,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
         } catch (error) {
           // 这个世代是从列表里选的，地址已连通过；回应不对是这个世代在云端的文件坏了。
           if (error instanceof WebDavBackupError && error.code === 'WEBDAV_REMOTE_INVALID') fail('CLOUD_BACKUP_GENERATION_DAMAGED')
+          if (unwritableErrno(error)) fail('CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED')
           throw error
         }
         let receipt: RestorePortableProjectReceipt
