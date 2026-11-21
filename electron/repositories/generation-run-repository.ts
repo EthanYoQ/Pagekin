@@ -388,8 +388,12 @@ export class GenerationRunRepository {
         const attempts = this.db().prepare('SELECT attempt_json FROM generation_attempts WHERE root_action_id=? ORDER BY rowid').all(rootId) as {
             attempt_json: string;
         }[];
-        const policy = this.characterRosters(rootId).reduce<RootBudget>((largest, roster) =>
-            roster.budget.maxPhysicalRequests > largest.maxPhysicalRequests ? roster.budget : largest, JSON.parse(row.budget_json));
+        // 每份名单记的是按冻结额度算出的整根额度；同一根下有几份名单（如 Agent 回合开了两次架构），就把各自多出的部分都加上。
+        const frozen = JSON.parse(row.budget_json) as RootBudget;
+        const policy = this.characterRosters(rootId).reduce<RootBudget>((sum, { budget }) => ({ ...sum,
+            maxPhysicalRequests: sum.maxPhysicalRequests + budget.maxPhysicalRequests - frozen.maxPhysicalRequests,
+            maxTokenLiability: sum.maxTokenLiability + budget.maxTokenLiability - frozen.maxTokenLiability,
+            maxActiveElapsedMs: sum.maxActiveElapsedMs + budget.maxActiveElapsedMs - frozen.maxActiveElapsedMs }), frozen);
         return { root: JSON.parse(row.action_json), policy, activeElapsedMs: row.active_elapsed_ms + (row.active_since_ms === null ? 0 : Math.max(0, this.now() - row.active_since_ms)), attempts: attempts.map(row => JSON.parse(row.attempt_json)), blockedCode: row.blocked_code };
     }
     attemptCount(runId: string): number {

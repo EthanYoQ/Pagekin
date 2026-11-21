@@ -386,12 +386,12 @@ export function importEndpointRecoveryTargets(original: string, text: UiText): I
   return [...listed, ...dangling.map(name => ({ name }))]
 }
 
-/** 每批最多三位，同一批里没有同名的人，模型回的卡按名字就能对上是哪一位。 */
+/** 按出现顺序连续切，每批最多三位；遇到和本批同名的人就另起一批，模型回的卡按名字就能对上是哪一位。中途停下时没卡的总是排在后面的人。 */
 export function importRecoveryBatches(targets: readonly ImportRecoveryTarget[]): ImportRecoveryTarget[][] {
   const batches: ImportRecoveryTarget[][] = []
   for (const target of targets) {
-    const batch = batches.find(candidate => candidate.length < IMPORT_CARD_BATCH_SIZE && !candidate.some(other => other.name === target.name))
-    if (batch) batch.push(target)
+    const batch = batches.at(-1)
+    if (batch && batch.length < IMPORT_CARD_BATCH_SIZE && !batch.some(other => other.name === target.name)) batch.push(target)
     else batches.push([target])
   }
   return batches
