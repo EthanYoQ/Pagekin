@@ -23,7 +23,6 @@ async function editFixtureModel(page) {
 const PROXY_TYPO_HOST = 'proxy-host-typo'
 const REMOTE_HOST = 'model-probe.test'
 
-// 代理主机名写错：远端请求先要解析代理主机，系统解析器真实报 ENOTFOUND，再照 undici 的形状抛出。
 async function proxyHostTypoConnection({ app, page, shoot }, locale) {
   const en = locale === 'en-US'
   await app.evaluate((_, { proxyHost, remoteHost }) => {
