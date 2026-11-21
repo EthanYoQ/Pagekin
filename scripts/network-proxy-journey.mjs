@@ -16,7 +16,7 @@ const targetSaw = []
 const target = http.createServer((req, res) => {
   req.resume()
   req.on('end', () => {
-    targetSaw.push(req.url)
+    targetSaw.push(req.headers.host)
     res.setHeader('content-type', 'application/json')
     if (req.url.endsWith('/models')) return res.end(JSON.stringify({ object: 'list', data: [{ id: 'probe-model', object: 'model' }] }))
     res.end(JSON.stringify({ choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }] }))
@@ -81,26 +81,34 @@ try {
     const results = {}
     for (const [name, call] of Object.entries(table)) {
       const before = proxySaw.length
-      results[name] = { result: await call(), proxied: proxySaw.slice(before) }
+      const reachedBefore = targetSaw.length
+      const result = await call()
+      results[name] = { result, proxied: proxySaw.slice(before), viaProxy: targetSaw.slice(reachedBefore).filter(host => host === 'model-probe.test').length }
     }
-    counts[phase] = Object.fromEntries(Object.entries(results).map(([name, { proxied }]) => [name, proxied.length]))
+    counts[phase] = { proxyLog: Object.fromEntries(Object.entries(results).map(([name, { proxied }]) => [name, proxied])),
+      remoteHostReached: Object.fromEntries(Object.entries(results).map(([name, { viaProxy }]) => [name, viaProxy])) }
     return results
   }
 
   assert.deepEqual(await setProxy({ enabled: false, port: proxyPort }), { success: true })
   const off = await run('proxy off', { ...calls, ...local })
-  for (const [name, { proxied }] of Object.entries(off)) assert.equal(proxied.length, 0, `${name}: proxy off sends nothing to the proxy`)
+  for (const [name, { proxied, viaProxy }] of Object.entries(off)) {
+    assert.equal(proxied.length + viaProxy, 0, `${name}: proxy off sends nothing to the proxy`)
+  }
 
   assert.deepEqual(await setProxy({ enabled: true, port: proxyPort }), { success: true })
   const on = await run('proxy on', { ...calls, ...local })
-  for (const name of Object.keys(calls)) assert.ok(on[name].proxied.length > 0, `${name}: proxy on routes the request through the proxy`)
-  assert.deepEqual(on['test-connection http'].result, { success: true }, 'test connection succeeds through the proxy')
+  // undici 复用同一个隧道，同一目标只在代理日志里留一次 CONNECT；到达假服务的 model-probe.test 请求只可能经过代理。
+  for (const name of ['test-connection http', 'discover-models', 'test-connection embedding', 'test-connection rerank']) {
+    assert.ok(on[name].viaProxy > 0, `${name}: proxy on routes the request through the proxy`)
+  }
+  assert.equal(on['test-connection http'].result.success, true, 'test connection succeeds through the proxy')
   assert.equal(on['discover-models'].result.success, true, 'model list arrives through the proxy')
   assert.ok(on['test-connection https'].proxied.includes('CONNECT model-probe.test:443'), 'https tunnels through the proxy')
   assert.ok(on['cloud-backup connect'].proxied.includes('CONNECT webdav-probe.test:443'), 'WebDAV tunnels through the proxy')
   for (const name of Object.keys(local)) {
     assert.equal(on[name].proxied.length, 0, `${name}: local model bypasses the proxy`)
-    assert.deepEqual(on[name].result, { success: true }, `${name}: local model still works with the proxy on`)
+    assert.equal(on[name].result.success, true, `${name}: local model still works with the proxy on`)
   }
 
   assert.deepEqual(await setProxy({ enabled: true, port: closedPort }), { success: true })
@@ -110,10 +118,10 @@ try {
   }
   assert.equal(down['discover-models'].result.errorCode, 'proxy', 'model list reports the unreachable proxy')
   assert.equal(down['cloud-backup connect'].result.errorCode, 'CLOUD_BACKUP_PROXY_UNREACHABLE', 'cloud backup reports the unreachable proxy')
-  for (const name of Object.keys(local)) assert.deepEqual(down[name].result, { success: true }, `${name}: local model ignores the dead proxy`)
+  for (const name of Object.keys(local)) assert.equal(down[name].result.success, true, `${name}: local model ignores the dead proxy`)
 
   assert.deepEqual(await setProxy({ enabled: true, host: 'http://127.0.0.1', port: proxyPort }),
-    { success: false, error: 'NETWORK_PROXY_INVALID' }, 'a host with a scheme is rejected before it is saved')
+    { success: false, error: 'Error: NETWORK_PROXY_INVALID' }, 'a host with a scheme is rejected before it is saved')
   assert.equal((await invoke('config:get')).proxy.port, closedPort, 'the rejected proxy was not saved')
 
   const appPid = app.process().pid

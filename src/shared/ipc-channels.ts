@@ -563,6 +563,7 @@ export type ModelDiscoveryErrorCode =
   | 'auth'
   | 'unsupported'
   | 'network'
+  | 'proxy'
   | 'invalid_response'
   | 'no_models'
   | 'no_suitable_models'

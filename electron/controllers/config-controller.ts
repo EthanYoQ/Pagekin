@@ -7,6 +7,7 @@ import {
 } from '../utils/config-utils'
 import { GlobalConfig } from '../../src/shared/ipc-channels'
 import { mainText } from '../i18n'
+import { applyNetworkProxy, applySavedNetworkProxy } from '../network-proxy'
 
 export function registerConfigController() {
   /** 读取全局配置 */
@@ -17,7 +18,9 @@ export function registerConfigController() {
   /** 保存全局配置 */
   ipcMain.handle('config:set', async (_event, config: Partial<GlobalConfig>) => {
     try {
+      if (config.proxy) applyNetworkProxy(config.proxy)
       if (updateGlobalConfig(existing => ({ ...existing, ...config, stageModelIds: existing.stageModelIds }))) return { success: true }
+      applySavedNetworkProxy()
       return {
         success: false,
         error: mainText(
@@ -27,6 +30,7 @@ export function registerConfigController() {
         ),
       }
     } catch (error) {
+      applySavedNetworkProxy()
       return { success: false, error: String(error) }
     }
   })

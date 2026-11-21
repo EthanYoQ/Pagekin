@@ -21,6 +21,7 @@ import { localize, translate } from '../../src/i18n/core'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
 import { ModelExecutionLeaseRegistry } from '../services/model-execution-lease'
 import { ModelDiscoveryService } from '../services/model-discovery-service'
+import { proxyUnreachable } from '../network-proxy'
 
 const CONNECTION_TEST_MAX_TOKENS = 1024
 const LOCAL_CONNECTION_TEST_TIMEOUT_MS = 120_000
@@ -95,26 +96,6 @@ function rememberContextWindow(snapshot: ModelProfile, windowTokens: number): vo
   }
 }
 
-function applyProxyConfig() {
-  try {
-    const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
-    if (config.proxy?.enabled && config.proxy.host) {
-      const proxyUrl = config.proxy.type === 'socks5'
-        ? `socks5://${config.proxy.host}:${config.proxy.port}`
-        : `http://${config.proxy.host}:${config.proxy.port}`
-      process.env.HTTP_PROXY = proxyUrl
-      process.env.HTTPS_PROXY = proxyUrl
-      process.env.http_proxy = proxyUrl
-      process.env.https_proxy = proxyUrl
-    } else {
-      delete process.env.HTTP_PROXY
-      delete process.env.HTTPS_PROXY
-      delete process.env.http_proxy
-      delete process.env.https_proxy
-    }
-  } catch { /* 忽略 */ }
-}
-
 const failureLocale = () => mainErrorDisplayLocale(app.getLocale())
 
 /**
@@ -170,7 +151,6 @@ export function registerLLMController() {
 
   ipcMain.handle('llm:discover-local-context-window', async (_event, request: LocalContextWindowRequest) => {
     try {
-      applyProxyConfig()
       return await modelDiscovery.discoverLocalContextWindow(request)
     } catch {
       return null
@@ -178,12 +158,9 @@ export function registerLLMController() {
   })
 
   ipcMain.handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
-    try {
-      applyProxyConfig()
-      return await modelDiscovery.discoverModels(request)
-    } catch {
-      return { success: false, errorCode: 'invalid_response' as const }
-    }
+    const result = await modelDiscovery.discoverModels(request).catch(() => ({ success: false, errorCode: 'invalid_response' as const }))
+    if (result.success || isLocalModelEndpoint(request) || !await proxyUnreachable()) return result
+    return { success: false, errorCode: 'proxy' as const }
   })
 
   ipcMain.handle('llm:save-model', async (_event, model: ModelProfile) => {
@@ -331,19 +308,13 @@ export function registerLLMController() {
     return config.defaultRerankModelId ?? null
   })
 
-  ipcMain.handle('llm:test-connection', async (
-    _event,
-    model: ModelProfile,
-    creativeStrategy: LLMRequest['creativeStrategy'] = 'auto',
-  ) => {
+  const testConnection = async (model: ModelProfile, creativeStrategy: LLMRequest['creativeStrategy']) => {
     // 网络卡住时 undici 默认要等 300 秒才报 fetch failed；连接测试自己的截止时间会真正取消请求。
     const timeoutMs = connectionTestTimeoutMs(model)
     const deadline = new AbortController()
     const timer = setTimeout(() => deadline.abort(), timeoutMs)
     const timedOut = () => ({ success: false, error: translate(failureLocale(), 'error.connectionTestTimeout', { seconds: timeoutMs / 1000 }) })
     try {
-      applyProxyConfig()
-
       if (model.purposes?.includes('rerank')) return await testRerankConnection(model)
 
       const messages = [{ role: 'user', content: 'Say "hello" and nothing else.' }]
@@ -386,7 +357,17 @@ export function registerLLMController() {
     } finally {
       clearTimeout(timer)
     }
+  }
+
+  ipcMain.handle('llm:test-connection', async (
+    _event,
+    model: ModelProfile,
+    creativeStrategy: LLMRequest['creativeStrategy'] = 'auto',
+  ) => {
+    const result = await testConnection(model, creativeStrategy)
+    if (result.success || isLocalModelEndpoint(model) || !await proxyUnreachable()) return result
+    return { success: false, error: translate(failureLocale(), 'error.proxyUnreachable') }
   })
 
-  return { modelExecutionLeases, loadModel: getModelConfig, rememberContextWindow, applyProxyConfig }
+  return { modelExecutionLeases, loadModel: getModelConfig, rememberContextWindow }
 }
