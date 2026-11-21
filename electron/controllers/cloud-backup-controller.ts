@@ -55,6 +55,7 @@ const require = createRequire(import.meta.url)
 const BetterSqlite = require('better-sqlite3') as typeof import('better-sqlite3')
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const STAGING_DIRECTORY = 'cloud-backup-staging'
+const UNWRITABLE_ERRNO = new Set(['EACCES', 'EPERM', 'ENOSPC', 'EROFS'])
 
 interface CloudBackupIpcRegistrar {
   handle(channel: string, handler: (_event: unknown, argument: unknown) => unknown): void
@@ -157,13 +158,14 @@ function webDavInputRejected(error: unknown): boolean {
 function errorCode(error: unknown): CloudBackupErrorCode {
   if (error instanceof CloudBackupControllerError) return error.code
   if (error instanceof WebDavBackupError) return webDavFailure(error.code)
+  if (stringField(error, 'code') === 'ENOSPC') return 'CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED'
   const message = error instanceof Error ? error.message : ''
   if (message === 'CLOUD_BINDING_REVISION_CONFLICT') return 'CLOUD_BACKUP_BINDING_CONFLICT'
   if (message === 'PORTABLE_RESTORE_CANCELLED') return 'CLOUD_BACKUP_CANCELLED'
   return 'CLOUD_BACKUP_FAILED'
 }
 
-function stringField(error: unknown, key: 'name' | 'code' | 'syscall'): string | undefined {
+function stringField(error: unknown, key: 'name' | 'code' | 'syscall' | 'path'): string | undefined {
   if (!error || typeof error !== 'object') return undefined
   const value = (error as Record<string, unknown>)[key]
   return typeof value === 'string' ? value : undefined
@@ -412,6 +414,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
           if (signal.aborted) fail('CLOUD_BACKUP_CANCELLED')
           if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_EXPORT_SOURCE_CHANGED') fail('CLOUD_BACKUP_SOURCE_CHANGED')
           if (error instanceof ProjectArchiveServiceError && error.code === 'PORTABLE_EXPORT_AVATAR_DAMAGED') fail('CLOUD_BACKUP_AVATAR_DAMAGED')
+          if (stringField(error, 'code') === 'ENOSPC') fail('CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED')
           throw new CloudBackupControllerError('CLOUD_BACKUP_ARCHIVE_FAILED',
             error instanceof SchemaMigrationError ? error.damagedReviewCycle : undefined)
         }
@@ -529,6 +532,14 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
           if (signal.aborted || error instanceof Error && error.message === 'PORTABLE_RESTORE_CANCELLED') {
             fail('CLOUD_BACKUP_CANCELLED')
           }
+          const code = stringField(error, 'code')
+          if (code === 'PORTABLE_SCHEMA_UNSUPPORTED') fail('CLOUD_BACKUP_RESTORE_ARCHIVE_NEWER')
+          // 下载下来的存档在暂存目录里，读它报的 errno 不是所选文件夹的问题。
+          const failedPath = stringField(error, 'path')
+          if (code === 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE' || UNWRITABLE_ERRNO.has(code ?? '')
+            && !(failedPath && path.resolve(failedPath).startsWith(path.resolve(stagingRoot) + path.sep))) {
+            fail('CLOUD_BACKUP_RESTORE_TARGET_UNWRITABLE')
+          }
           throw new CloudBackupControllerError('CLOUD_BACKUP_RESTORE_FAILED')
         }
         let binding: CloudProjectBinding | null = null
@@ -572,7 +583,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
     try {
       const id = operationId(rawId)
       const operation = operations.get(id)
-      if (!operation) fail('CLOUD_BACKUP_OPERATION_NOT_FOUND')
+      if (!operation) return { success: true as const, cancelled: false }
       operation.abort()
       return { success: true as const, cancelled: true }
     } catch (error) {

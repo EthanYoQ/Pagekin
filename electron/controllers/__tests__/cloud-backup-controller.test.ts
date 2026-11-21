@@ -29,7 +29,7 @@ import { SchemaMigrationError } from '../../migrations/registry'
 import { continuityBaseline, SCHEMA8_CONTINUITY_ARCHIVE, SCHEMA8_EXPECTED_BASELINE } from '../../../test/helpers/schema8-continuity-archive'
 import { createProjectArchiveRoundtripFixture } from '../../../test/desktop/project-archive.fixture'
 import { breakReviewProof, seedReviewedBook } from '../../../test/helpers/review-cycle-fixture'
-import { extractPortableProjectArchive } from '../../services/portable-project-archive'
+import { extractPortableProjectArchive, PortableProjectArchiveError } from '../../services/portable-project-archive'
 
 vi.mock('../../utils/remove-directory', async importOriginal => {
   const actual = await importOriginal<typeof import('../../utils/remove-directory')>()
@@ -1094,7 +1094,6 @@ describe('云备份报错说出真正的原因（#702）', () => {
   })
 
   it('云端世代来自更新版本的书童：说先升级，没有新建副本', async () => {
-    const { PortableProjectArchiveError } = await import('../../services/portable-project-archive')
     const f = fixture()
     vi.mocked(f.deps.restorePortableProject).mockRejectedValue(new PortableProjectArchiveError('PORTABLE_SCHEMA_UNSUPPORTED'))
 
@@ -1104,8 +1103,8 @@ describe('云备份报错说出真正的原因（#702）', () => {
   })
 
   it.each([
-    ['解包暂存写不进', () => new Error('PORTABLE_ARCHIVE_TARGET_UNWRITABLE')],
-    ['装副本时盘满', () => diskFull('C:\books\restored\.ai-novel\project.db')],
+    ['解包暂存写不进', () => new PortableProjectArchiveError('PORTABLE_ARCHIVE_TARGET_UNWRITABLE')],
+    ['装副本时盘满', () => diskFull(path.join(os.tmpdir(), 'restored', '.ai-novel', 'project.db'))],
   ])('恢复时所选文件夹写不进（%s）：说换个文件夹，提醒可能留下没恢复完的副本', async (_label, error) => {
     const f = fixture()
     vi.mocked(f.deps.restorePortableProject).mockRejectedValue(error())
@@ -1115,9 +1114,14 @@ describe('云备份报错说出真正的原因（#702）', () => {
     expect(zh(result)).toBe('所选文件夹写不进去，可能没有权限或磁盘满了，里面可能留下没恢复完的副本文件夹，可以删掉。请换一个文件夹，再点「恢复所选云端世代为副本」。')
   })
 
-  it('其余恢复失败仍按装到一半处理：不说没有新建副本', async () => {
+  it.each([
+    ['所选位置不安全', async () => { throw new Error('PORTABLE_RESTORE_UNSAFE_TARGET') }],
+    ['暂存目录里下载的存档被占用', async (input: { archivePath: string }) => {
+      throw Object.assign(new Error('EPERM: operation not permitted, open'), { code: 'EPERM', path: input.archivePath })
+    }],
+  ])('其余恢复失败（%s）仍按装到一半处理：不说没有新建副本，也不怪所选文件夹', async (_label, restore) => {
     const f = fixture()
-    vi.mocked(f.deps.restorePortableProject).mockRejectedValue(new Error('PORTABLE_RESTORE_UNSAFE_TARGET'))
+    vi.mocked(f.deps.restorePortableProject).mockImplementation(restore)
 
     const result = await restoreCopy(f)
 
