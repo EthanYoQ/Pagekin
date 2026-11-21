@@ -365,7 +365,8 @@ export function registerLLMController() {
     creativeStrategy: LLMRequest['creativeStrategy'] = 'auto',
   ) => {
     const result = await testConnection(model, creativeStrategy)
-    if (result.success || !await proxyUnreachable(model.baseUrl)) return result
+    const sentNoRequest = model.protocol === 'anthropic' && model.purposes?.includes('embedding')
+    if (result.success || sentNoRequest || !await proxyUnreachable(model.baseUrl)) return result
     return { success: false, error: translate(failureLocale(), 'error.proxyUnreachable') }
   })
 

@@ -19,9 +19,9 @@ export function applyNetworkProxy(proxy: ProxySettings): void {
   }
   installed = null
   if (!proxy?.enabled || !proxy.host) return
-  const url = `${proxy.type === 'socks5' ? 'socks5' : 'http'}://${proxy.host}:${proxy.port}`
+  const url = `${proxy.type === 'socks5' ? 'socks5' : 'http'}://${proxy.host.includes(':') ? `[${proxy.host}]` : proxy.host}:${proxy.port}`
   try {
-    const restore = http.setGlobalProxyFromEnv({ HTTP_PROXY: url, HTTPS_PROXY: url, NO_PROXY: 'localhost,127.0.0.1,::1' } as http.ProxyEnv)
+    const restore = http.setGlobalProxyFromEnv({ HTTP_PROXY: url, HTTPS_PROXY: url, NO_PROXY: 'localhost,127.0.0.1,[::1]' } as http.ProxyEnv)
     installed = { host: proxy.host, port: proxy.port, restore }
     for (const key of ENV_KEYS) process.env[key] = url
   } catch {

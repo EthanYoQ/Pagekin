@@ -528,7 +528,7 @@ export class WebDavBackupService {
       }
       await response.body?.cancel().catch(() => {})
     } catch (error) {
-      if (error instanceof WebDavBackupError && error.code === 'WEBDAV_NETWORK' && !signal?.aborted) uncertain = true
+      if (error instanceof WebDavBackupError && (error.code === 'WEBDAV_NETWORK' || error.code === 'WEBDAV_PROXY_UNREACHABLE') && !signal?.aborted) uncertain = true
       else throw error
     }
     if (!await this.existingMatches(account, url, expected, signal, false)) {
@@ -553,7 +553,7 @@ export class WebDavBackupService {
       }
       await response.body?.cancel().catch(() => {})
     } catch (error) {
-      if (error instanceof WebDavBackupError && error.code === 'WEBDAV_NETWORK' && !signal?.aborted) uncertain = true
+      if (error instanceof WebDavBackupError && (error.code === 'WEBDAV_NETWORK' || error.code === 'WEBDAV_PROXY_UNREACHABLE') && !signal?.aborted) uncertain = true
       else throw error
     } finally { body.destroy() }
     if (!await this.existingMatches(account, url, expected, signal, false, this.transferTimeoutMs)) {
