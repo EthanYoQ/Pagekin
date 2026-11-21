@@ -31,7 +31,7 @@ import {
   workflowMainProcessError,
 } from '../workflow-project-session'
 import { promptLanguageText } from '../../prompt-language'
-import { isWorkflowCancellation } from '../workflow-cancellation'
+import { GenerationAttemptError, TerminalProviderFailureError } from '../../generation/generation-harness'
 import { createStructuredBatchExecutor, type StructuredBatchContract } from '../structured-batch-executor'
 import type { ChapterBlueprint } from '../directory-workflow'
 import { retryDirectoryCharacterSync } from '../directory-character-sync-recovery'
@@ -212,7 +212,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     return this.executeWithGenerationRuntime('structured', params, () => this.executeWithinGeneration(params), { operation: 'import-global-facts', promptKeys: ['infer_novel_config_with_vectors', 'infer_novel_config'], skillStages: ['planning'], output: 'structured-data', ...importGenerationSelection(params.context, 'global') })
   }
 
-  /** 请求额度用完、某批失败或截断时不再发后面的批次，已补出的卡照常提交，其余的人列进缺卡提示；只有取消会让整步停下。 */
+  /** 请求额度用完，或某批到了模型却没拿回完整结果（失败、截断）时，不再发后面的批次，已补出的卡照常提交，其余的人列进缺卡提示。取消、租约过期这类错误照常抛出。 */
   private async decodeImportInferenceWithEndpointRecovery(
     rawResult: string,
     budget: LLMCompletion['receipt']['budget'],
@@ -236,14 +236,16 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     for (const batch of importRecoveryBatches(recoveryTargets)) {
       if (used.attempt >= used.maxAttempts) break
       const sofar = decodeRecoveredImportInference(rawResult, deltas, text).result.characterCards
+      let correction: LLMCompletion
       try {
-        const correction = await this.requestImportEndpointCards(rawResult, sofar, batch, callbacks, context)
-        used = correction.receipt.budget
-        deltas.push(correction.content)
+        correction = await this.requestImportEndpointCards(rawResult, sofar, batch, callbacks, context)
       } catch (error) {
-        if (context.cancelled || isWorkflowCancellation(error)) throw error
-        break
+        if (error instanceof GenerationAttemptError || error instanceof TerminalProviderFailureError) break
+        throw error
       }
+      if (correction.receipt.failureCode || correction.finishReason !== 'stop') break
+      used = correction.receipt.budget
+      deltas.push(correction.content)
     }
     const { result, droppedRelationships, missing } = decodeRecoveredImportInference(rawResult, deltas, text)
     if (missing.length > 0) {
@@ -325,8 +327,6 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       },
       context,
     )
-    assertImportCompletionNotStopped(correction, callbacks, context)
-    if (correction.finishReason !== 'stop') throw this.createIncompleteCompletionError(correction.finishReason)
     return correction
   }
 
