@@ -126,7 +126,6 @@ const CONNECTION_FAILURE_BY_CODE: Record<string, MessageKey> = {
   UND_ERR_HEADERS_TIMEOUT: 'error.connectionTimedOut',
   ECONNRESET: 'error.connectionInterrupted',
   UND_ERR_SOCKET: 'error.connectionInterrupted',
-  // Node 的 X509 证书校验错误码（tls 文档的码表），外加主机名与证书不符。
   ...Object.fromEntries([
     'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_CRL', 'UNABLE_TO_DECRYPT_CERT_SIGNATURE', 'UNABLE_TO_DECRYPT_CRL_SIGNATURE',
     'UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY', 'CERT_SIGNATURE_FAILURE', 'CRL_SIGNATURE_FAILURE', 'CERT_NOT_YET_VALID',
