@@ -476,6 +476,27 @@ describe('archiveFailureMessage', () => {
   ])('英文界面导出报 %s：说出是哪类内容，不露原码（#723）', (code, expected) => {
     expect(archiveFailureMessage(shown('en-US'), 'export', code)).toBe(expected)
   })
+
+  it.each([
+    ['export', 'PORTABLE_TARGET_INSIDE_SOURCE', '作品没有改动。存档不能放进作品自己的文件夹，没有生成。请再点「导出本地存档」，换到作品文件夹以外的位置。'],
+    ['export', 'PORTABLE_ASSET_MISSING', '作品没有改动。作品文件夹里的数据文件找不到了，存档没有生成。请重新打开这部作品，再点「导出本地存档」。'],
+    ['export', 'PORTABLE_ARCHIVE_PUBLISH_UNSUPPORTED', '作品没有改动。所选位置（常见于 U 盘、网络盘）存不了存档。请再点「导出本地存档」存到本机文件夹，再复制过去。'],
+    ['export', 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '作品没有改动。所选位置写不进去，可能没有权限或磁盘满了。请再点「导出本地存档」，换一个位置。'],
+    ['export', 'PORTABLE_EXPORT_FAILED', '作品没有改动。导出时出了意外错误，存档没有生成。请再点「导出本地存档」；还不行，请把这条提示反馈给我们。'],
+    ['restore', 'PORTABLE_RESTORE_INVALID', '没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。'],
+    ['restore', 'PORTABLE_RESTORE_UNSAFE_TARGET', '没有新建副本。所选文件夹的路径里有链接，或者读不了。请换一个普通文件夹，再点「从本地存档恢复副本」。'],
+    ['restore', 'PORTABLE_GRANT_INVALID', '没有新建副本。选好的存档或文件夹等太久已失效。请再点「从本地存档恢复副本」重新选。'],
+    ['restore', 'PORTABLE_RESTORE_FAILED', '没有新建副本。恢复时出了意外错误。请再点「从本地存档恢复副本」；还不行，请把这条提示反馈给我们。'],
+  ] as const)('中文界面%s报 %s：说清原因和下一步，不露原码（#702）', (operation, code, expected) => {
+    expect(archiveFailureMessage(shown('zh-CN'), operation, code)).toBe(expected)
+  })
+
+  it.each([
+    ['export', 'PORTABLE_TARGET_INSIDE_SOURCE', "Your book is unchanged. An archive cannot go inside the book's own folder, so none was created. Click Export local archive again and choose a location outside the book folder."],
+    ['restore', 'PORTABLE_RESTORE_UNSAFE_TARGET', 'No copy was created. The chosen folder has a link in its path or cannot be read. Choose an ordinary folder, then click Restore a copy from local archive again.'],
+  ] as const)('英文界面%s报 %s：说清原因和下一步，不露原码（#702）', (operation, code, expected) => {
+    expect(archiveFailureMessage(shown('en-US'), operation, code)).toBe(expected)
+  })
 })
 
 describe('omittedReviewCyclesMessage', () => {

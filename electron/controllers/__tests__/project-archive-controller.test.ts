@@ -512,6 +512,22 @@ describe('project:archive-export', () => {
       errorCode: 'PORTABLE_SCHEMA_UNSUPPORTED',
     })
   })
+
+  it.each([
+    ['SqliteError', new Error('UNIQUE constraint failed: chapters.id'), 'PORTABLE_EXPORT_FAILED', undefined],
+    ['EPERM', Object.assign(new Error("EPERM: operation not permitted, mkdtemp 'D:\\备份\\.pe-'"), { code: 'EPERM' }), 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE', 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE'],
+  ])('不带码的系统报错（%s）不把英文原文和路径交给界面，原错误写进主进程日志（#702）', async (_name, thrown, code, errorCode) => {
+    const root = tempRoot('err-l2-export-raw-')
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.exportPortableProject.mockRejectedValueOnce(thrown)
+
+    await expect(handler('project:archive-export')(event(), {
+      targetArchiveGrantId: newTargetGrant(path.join(root, 'current.ai-novel-project')),
+      projectSession: projectSession(),
+    })).resolves.toEqual({ success: false, error: code, ...(errorCode ? { errorCode } : {}) })
+    expect(logged).toHaveBeenCalledWith(expect.any(String), thrown)
+    logged.mockRestore()
+  })
 })
 
 describe('project:archive-restore', () => {
@@ -661,6 +677,20 @@ describe('project:archive-restore', () => {
     await expect(handler('project:archive-restore')(event(), request)).resolves.toEqual(GRANT_REFUSAL)
 
     expect(mocks.restorePortableProject).toHaveBeenCalledTimes(1)
+  })
+
+  it('恢复时不带码的系统报错只交出恢复失败的码，原错误写进主进程日志（#702）', async () => {
+    const root = tempRoot('err-l2-restore-raw-')
+    const thrown = Object.assign(new Error("ENOENT: no such file or directory, open 'D:\\备份\\copy\\project.db'"), { code: 'ENOENT' })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.restorePortableProject.mockRejectedValueOnce(thrown)
+
+    await expect(handler('project:archive-restore')(event(), {
+      archiveGrantId: archiveFileGrant(path.join(root, 'a.ainovel')),
+      targetGrantId: newTargetGrant(path.join(root, 'copy')),
+    })).resolves.toEqual({ success: false, error: 'PORTABLE_RESTORE_FAILED' })
+    expect(logged).toHaveBeenCalledWith(expect.any(String), thrown)
+    logged.mockRestore()
   })
 
   it('keeps restored data and returns a warning when recent registration fails', async () => {
