@@ -92,6 +92,7 @@ export const enUS = {
   'error.laterBlueprintCheckFinalizationChanged': 'Your blueprints are unchanged. This chapter’s finalized text changed again, so this check no longer applies.',
   'error.blueprintCheckTimelineNotInForce': 'Your blueprints are unchanged. No character timeline applies to the chapters to check yet, so there is nothing to compare.',
   'error.generationSourceChanged': 'The settings, blueprint, or earlier text this generation relied on changed while it ran, so the result was not saved. Generate it again.',
+  'error.generationAgentLegacySourceChanged': 'This recovery draft came from the old Agent, and the blueprints or settings changed since, so it can’t be saved. The text is kept. Copy what you need, then click “Dismiss”.',
   'error.projectCoreUpdateFailed': 'Nothing was adopted, and your settings are unchanged. Try again. If it still fails, reopen the book and adopt again.',
   'error.generationModelChanged': 'The model settings changed while this generation ran, so the result was not saved. Confirm the model to use, then generate again.',
   'error.generationFinalizedSourceNotCurrent': 'A finalized earlier chapter this request relied on was replaced, so the result was not saved. Start writing this chapter again.',
