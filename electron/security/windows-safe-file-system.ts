@@ -330,7 +330,8 @@ async function invokeBundledHelper(
 
   return new Promise<HelperResponse>((resolve, reject) => {
     const child = spawnPlatformHelper(platform, helperPath)
-    let output = ''
+    const chunks: Buffer[] = []
+    let received = 0
     let settled = false
     const finish = (callback: () => void) => {
       if (settled) return
@@ -346,8 +347,9 @@ async function invokeBundledHelper(
     child.once('error', () => finish(() => reject(secureError('SECURE_FS_HELPER_UNAVAILABLE'))))
     child.stdout.on('data', (chunk: Buffer) => {
       if (settled) return
-      output += chunk.toString('utf8')
-      if (Buffer.byteLength(output, 'utf8') > MAX_HELPER_RESPONSE_BYTES) {
+      chunks.push(chunk)
+      received += chunk.length
+      if (received > MAX_HELPER_RESPONSE_BYTES) {
         child.kill()
         finish(() => reject(secureError('SECURE_FS_HELPER_INVALID_RESPONSE')))
       }
@@ -357,7 +359,8 @@ async function invokeBundledHelper(
     child.stderr.resume()
     child.once('close', () => finish(() => {
       try {
-        resolve(parseResponse(output.trim()))
+        // 整段收完再解码，跨块的多字节字符才不会被拆坏。
+        resolve(parseResponse(Buffer.concat(chunks).toString('utf8').trim()))
       } catch (error) {
         reject(error)
       }
