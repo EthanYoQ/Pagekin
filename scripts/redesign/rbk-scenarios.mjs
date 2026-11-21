@@ -30,6 +30,12 @@ const seedChapter3WithRevision = context => seedStageSample(context, { beforeRel
   assert.equal(revised.success, true, revised.error)
 } })
 
+async function openToRepairNotice(page) {
+  await stage.cover(page, STAGE_SAMPLE.name).waitFor({ state: 'visible', timeout: 60_000 })
+  await stage.cover(page, STAGE_SAMPLE.name).click()
+  await stage.overview(page, STAGE_SAMPLE.name).getByRole('button', { name: `打开《${STAGE_SAMPLE.name}》` }).click()
+}
+
 /** 驱动打开作品会让界面的会话失效，界面不先回到书房就退不干净。 */
 async function factsFromDriverOpen(context, projectPath) {
   await context.reload()
@@ -123,7 +129,7 @@ export const RBK_SCENARIOS = {
     const notice = () => context.page.getByRole('alertdialog').or(context.page.getByRole('dialog')).filter({ hasText: '已修复重复的定稿' })
 
     await context.restart({ beforeLaunch: () => { observed.injected = JSON.parse(injectDuplicateFinalization(projectPath, 2)) } })
-    await stage.openAfterRestart(context.page, STAGE_SAMPLE.name)
+    await openToRepairNotice(context.page)
     await notice().waitFor({ state: 'visible', timeout: 60_000 })
     observed.notice = await notice().innerText()
     await context.shoot('rbk-7-repair-notice')
@@ -171,7 +177,7 @@ export const RBK_SCENARIOS = {
     await context.shoot('rbk-9-ch3-character-state-failed')
 
     await context.restart({ beforeLaunch: () => { observed.injected = JSON.parse(injectDuplicateFinalization(projectPath, 2)) } })
-    await stage.openAfterRestart(context.page, STAGE_SAMPLE.name)
+    await openToRepairNotice(context.page)
     await notice().waitFor({ state: 'visible', timeout: 60_000 })
     await notice().getByRole('button', { name: '知道了' }).click()
     observed.afterRepair = await chapter3ContinuityFacts(projectPath)
