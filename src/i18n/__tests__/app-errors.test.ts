@@ -551,6 +551,26 @@ describe('恢复报错只在确定还没建副本文件夹时才说没有新建�
     expect(message).not.toContain(noCopy[locale])
     expect(message).toContain(unfinished[locale])
   })
+
+  it.each(locales)('%s 界面云端世代来自新版本（解包时就拒绝）：说没有新建副本', locale => {
+    expect(displayedErrorMessage(shown(locale), 'CLOUD_BACKUP_RESTORE_ARCHIVE_NEWER').startsWith(noCopy[locale])).toBe(true)
+  })
+
+  it.each(locales)('%s 界面云端恢复时所选文件夹写不进（装到一半也会报）：不说没有新建副本', locale => {
+    const message = displayedErrorMessage(shown(locale), 'CLOUD_BACKUP_RESTORE_TARGET_UNWRITABLE')
+    expect(message).not.toContain(noCopy[locale])
+    expect(message).toContain(unfinished[locale])
+  })
+})
+
+describe('云备份已有的说明不变（#702）', () => {
+  it.each([
+    ['zh-CN', '作品没有改动。连不上「网络代理」里设置的代理。请打开代理软件，或关掉「启用代理」，再试一次。'],
+    ['en-US', 'Your book is unchanged. Could not reach the proxy set in Network proxy. Start your proxy app, or turn off Use a proxy, then try again.'],
+    ['ja-JP', '作品は変更されていません。「Network proxy」で設定したプロキシに接続できません。プロキシアプリを起動するか、「Use a proxy」をオフにしてから、もう一度お試しください。'],
+  ] as const)('%s 界面代理连不上', (locale, expected) => {
+    expect(displayedErrorMessage(shown(locale), 'CLOUD_BACKUP_PROXY_UNREACHABLE')).toBe(expected)
+  })
 })
 
 describe('omittedReviewCyclesMessage', () => {

@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   WebDavBackupService,
@@ -174,6 +174,7 @@ function fetchWithArchiveDeadlineOnly(method: 'GET' | 'PUT'): typeof fetch {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve()))))
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
@@ -477,5 +478,27 @@ describe('WebDavBackupService', () => {
       account: account(dav), cloudBookId: BOOK, generationId: GEN_A, targetArchivePath: source.target,
     })).rejects.toThrow('WEBDAV_TARGET_EXISTS')
     expect(fs.readFileSync(source.target, 'utf8')).toBe('keep-existing')
+  })
+
+  it('本机盘满写不进下载文件：报本机的写入错误，不说成连不上服务器（#702）', async () => {
+    const dav = new DavFixture(); await dav.listen()
+    const source = workspace()
+    await appender(dav, GEN_A, source.archive)
+    const open = fs.promises.open.bind(fs.promises)
+    vi.spyOn(fs.promises, 'open').mockImplementation(async (...args: Parameters<typeof fs.promises.open>) => {
+      const handle = await open(...args)
+      handle.write = (async () => {
+        throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC', syscall: 'write' })
+      }) as typeof handle.write
+      return handle
+    })
+
+    const failure = await new WebDavBackupService().downloadGeneration({
+      account: account(dav), cloudBookId: BOOK, generationId: GEN_A, targetArchivePath: source.target,
+    }).catch((error: unknown) => error)
+
+    expect(failure).toMatchObject({ code: 'ENOSPC' })
+    expect(fs.existsSync(source.target)).toBe(false)
+    expect(fs.readdirSync(source.root).some(name => name.includes('.webdav-download-'))).toBe(false)
   })
 })
