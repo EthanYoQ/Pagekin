@@ -23,5 +23,5 @@ const CONNECTION_FAILURE_BY_CODE: Readonly<Record<string, string>> = {
 /** fetch 只报「fetch failed」，原因在 cause.code；认不出的返回 undefined。 */
 export function connectionFailureCode(failure: unknown): string | undefined {
   const code = (failure as { cause?: { code?: unknown } } | null)?.cause?.code
-  return typeof code === 'string' ? CONNECTION_FAILURE_BY_CODE[code] : undefined
+  return typeof code === 'string' && Object.hasOwn(CONNECTION_FAILURE_BY_CODE, code) ? CONNECTION_FAILURE_BY_CODE[code] : undefined
 }
