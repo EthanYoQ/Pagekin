@@ -54,7 +54,6 @@ class DavFixture {
   redirectSuffix: string | null = null
   redirectLocation = ''
   stallDownload = false
-  onDownload?: () => void
   stallUpload = false
   onUpload?: () => void
   private dropped = false
@@ -118,7 +117,6 @@ class DavFixture {
       if (method === 'HEAD') { response.end(); return }
       if (this.stallDownload && url.endsWith('archive.ainovel')) {
         response.write(body.subarray(0, Math.max(1, Math.floor(body.length / 2))))
-        this.onDownload?.()
         return
       }
       response.end(body)
@@ -463,11 +461,18 @@ describe('WebDavBackupService', () => {
     const controller = new AbortController()
     let temporaryExistedAtAbort = false
     dav.stallDownload = true
-    dav.onDownload = () => {
-      temporaryExistedAtAbort = fs.readdirSync(source.root).some(name => name.includes('.webdav-download-'))
-      controller.abort()
-    }
-    const service = new WebDavBackupService()
+    const service = new WebDavBackupService({ fetchImpl: async (url, init) => {
+      const response = await fetch(url, init)
+      if (init?.method !== 'GET' || !String(url).endsWith('archive.ainovel') || !response.body) return response
+      const reader = response.body.getReader()
+      return new Response(new ReadableStream({ async pull(stream) {
+        const { done, value } = await reader.read()
+        if (done) { stream.close(); return }
+        stream.enqueue(value)
+        temporaryExistedAtAbort = fs.readdirSync(source.root).some(name => name.includes('.webdav-download-'))
+        controller.abort()
+      } }), { status: response.status, headers: response.headers })
+    } })
 
     await expect(service.downloadGeneration({
       account: account(dav), cloudBookId: BOOK, generationId: GEN_A,
