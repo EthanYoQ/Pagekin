@@ -158,7 +158,7 @@ function connectionTestFailure(failure: unknown): string {
   return knownAppErrorMessage(failureLocale(), failure) ?? translate(failureLocale(), connectionFailureKey(failure))
 }
 
-function providerConnectionFailure(response: Extract<LLMResponse, { success: false }>): string | undefined {
+function providerConnectionFailure(response: Extract<LLMResponse, { success: false }>): string {
   if (response.error === 'LLM_REQUEST_FAILED' && response.httpFailure) {
     const { status, body } = response.httpFailure
     const advice = localize(
