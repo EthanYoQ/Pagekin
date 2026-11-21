@@ -47,6 +47,11 @@ function grantErrorText(error: unknown): string {
     case 'SECURE_FS_HELPER_UNAVAILABLE':
     case 'SECURE_FS_HELPER_TIMEOUT':
       return text('安全外部文件服务不可用，已拒绝操作。', 'The secure external file service is unavailable; the operation was rejected.')
+    case 'SECURE_FS_TARGET_IN_USE':
+      return text(
+        '文件没有改动。目标文件正被其他程序打开，关掉它后再点「选择目录并导出」。',
+        'The file was not changed. Another program has it open. Close that program, then click "Choose folder and export" again.',
+      )
     default:
       return text('外部文件授权操作失败。', 'The external file grant operation failed.')
   }

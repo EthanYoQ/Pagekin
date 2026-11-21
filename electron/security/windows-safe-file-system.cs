@@ -52,6 +52,8 @@ namespace AiNovelSecureFs {
     private const int FileRenameInformation = 10;
     private const int FileDispositionInformation = 13;
     private const int STATUS_SUCCESS = 0;
+    private const int STATUS_ACCESS_DENIED = unchecked((int)0xC0000022);
+    private const int STATUS_SHARING_VIOLATION = unchecked((int)0xC0000043);
     private const int STATUS_BUFFER_OVERFLOW = unchecked((int)0x80000005);
     private const int STATUS_NO_MORE_FILES = unchecked((int)0x80000006);
     private const int STATUS_OBJECT_NAME_NOT_FOUND = unchecked((int)0xC0000034);
@@ -317,6 +319,22 @@ namespace AiNovelSecureFs {
       uint options,
       uint shareAccess,
       bool preventReparse) {
+      IntPtr handle;
+      int status = CreateRelative(rootDirectory, name, desiredAccess, fileAttributes, disposition, options, shareAccess, preventReparse, out handle);
+      if (status != STATUS_SUCCESS) ThrowForStatus(status);
+      return handle;
+    }
+
+    private static int CreateRelative(
+      IntPtr rootDirectory,
+      string name,
+      uint desiredAccess,
+      uint fileAttributes,
+      uint disposition,
+      uint options,
+      uint shareAccess,
+      bool preventReparse,
+      out IntPtr handle) {
       if (name == null || name.Length > 32760) throw new SecureFsException("SECURE_FS_INVALID_PATH");
       IntPtr nameBuffer = IntPtr.Zero;
       try {
@@ -344,8 +362,7 @@ namespace AiNovelSecureFs {
             SecurityQualityOfService = IntPtr.Zero,
           };
           IoStatusBlock ioStatus;
-          IntPtr handle;
-          int status = NtCreateFile(
+          return NtCreateFile(
             out handle,
             desiredAccess,
             ref attributes,
@@ -357,8 +374,6 @@ namespace AiNovelSecureFs {
             createOptions,
             IntPtr.Zero,
             0);
-          if (status != STATUS_SUCCESS) ThrowForStatus(status);
-          return handle;
         } finally {
           Marshal.FreeHGlobal(unicodePointer);
         }
@@ -509,10 +524,32 @@ namespace AiNovelSecureFs {
           buffer,
           checked((uint)(lengthOffset + name.Length)),
           FileRenameInformation);
+        if (status == STATUS_ACCESS_DENIED && TargetIsOpenElsewhere(parentDirectory, targetName)) {
+          throw new SecureFsException("SECURE_FS_TARGET_IN_USE");
+        }
         if (status != STATUS_SUCCESS) ThrowForStatus(status);
       } finally {
         Marshal.FreeHGlobal(buffer);
       }
+    }
+
+    // Replacing a target that another program holds open fails with ACCESS_DENIED,
+    // which a read-only target also returns. Only an open target refuses an
+    // exclusive open with SHARING_VIOLATION.
+    private static bool TargetIsOpenElsewhere(IntPtr parentDirectory, string targetName) {
+      IntPtr probe;
+      int status = CreateRelative(
+        parentDirectory,
+        targetName,
+        FILE_READ_DATA | SYNCHRONIZE,
+        FILE_ATTRIBUTE_NORMAL,
+        FILE_OPEN,
+        FILE_NON_DIRECTORY_FILE,
+        0,
+        true,
+        out probe);
+      if (status == STATUS_SUCCESS) CloseHandle(ref probe);
+      return status == STATUS_SHARING_VIOLATION;
     }
 
     private static void MarkDeleteOnClose(IntPtr fileHandle) {
