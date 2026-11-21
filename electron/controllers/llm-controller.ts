@@ -126,13 +126,21 @@ const CONNECTION_FAILURE_BY_CODE: Record<string, MessageKey> = {
   UND_ERR_HEADERS_TIMEOUT: 'error.connectionTimedOut',
   ECONNRESET: 'error.connectionInterrupted',
   UND_ERR_SOCKET: 'error.connectionInterrupted',
+  // Node 的 X509 证书校验错误码（tls 文档的码表），外加主机名与证书不符。
+  ...Object.fromEntries([
+    'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_CRL', 'UNABLE_TO_DECRYPT_CERT_SIGNATURE', 'UNABLE_TO_DECRYPT_CRL_SIGNATURE',
+    'UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY', 'CERT_SIGNATURE_FAILURE', 'CRL_SIGNATURE_FAILURE', 'CERT_NOT_YET_VALID',
+    'CERT_HAS_EXPIRED', 'CRL_NOT_YET_VALID', 'CRL_HAS_EXPIRED', 'ERROR_IN_CERT_NOT_BEFORE_FIELD', 'ERROR_IN_CERT_NOT_AFTER_FIELD',
+    'ERROR_IN_CRL_LAST_UPDATE_FIELD', 'ERROR_IN_CRL_NEXT_UPDATE_FIELD', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'CERT_CHAIN_TOO_LONG', 'CERT_REVOKED', 'INVALID_CA',
+    'PATH_LENGTH_EXCEEDED', 'INVALID_PURPOSE', 'CERT_UNTRUSTED', 'CERT_REJECTED', 'HOSTNAME_MISMATCH', 'ERR_TLS_CERT_ALTNAME_INVALID',
+  ].map(code => [code, 'error.connectionCertificate' as const])),
 }
 
-/** fetch 只报「fetch failed」，原因在 cause.code。TLS 校验失败的码没有统一前缀（CERT_HAS_EXPIRED、DEPTH_ZERO_SELF_SIGNED_CERT 等）。 */
+/** fetch 只报「fetch failed」，原因在 cause.code。 */
 function connectionFailureKey(failure: unknown): MessageKey {
   const code = (failure as { cause?: { code?: unknown } } | null)?.cause?.code
-  if (typeof code !== 'string') return 'error.connectionFailed'
-  return CONNECTION_FAILURE_BY_CODE[code] ?? (/CERT|UNABLE_TO_(?:VERIFY|GET)/u.test(code) ? 'error.connectionCertificate' : 'error.connectionFailed')
+  return (typeof code === 'string' && CONNECTION_FAILURE_BY_CODE[code]) || 'error.connectionFailed'
 }
 
 /**
