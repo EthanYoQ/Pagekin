@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 const probe = vi.hoisted(() => ({ duringProbe: () => {} }))
 
 vi.mock('../../network-proxy', () => ({
+  activeProxy: vi.fn(() => null),
   proxyUnreachable: vi.fn(async () => { probe.duringProbe(); return true }),
 }))
 

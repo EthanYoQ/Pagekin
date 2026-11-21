@@ -5,7 +5,8 @@ import type { GlobalConfig } from '../src/shared/ipc-channels'
 
 type ProxySettings = GlobalConfig['proxy']
 
-let installed: { host: string; port: number; restore: () => void } | null = null
+export type ProxyRoute = { host: string; port: number; restore: () => void }
+let installed: ProxyRoute | null = null
 
 const DIRECT_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const MCP_INHERITED_PROXY_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'] as const
@@ -36,9 +37,14 @@ export function applySavedNetworkProxy(): void {
   }
 }
 
-export function proxyUnreachable(target: string): Promise<boolean> {
+/** 请求发出前取一次，失败后交给 proxyUnreachable：期间换过代理，就不归咎现在这条。 */
+export function activeProxy(): ProxyRoute | null {
+  return installed
+}
+
+export function proxyUnreachable(target: string, sentThrough: ProxyRoute | null | undefined): Promise<boolean> {
   const proxy = installed
-  if (!proxy || DIRECT_HOSTS.has(URL.parse(target)?.hostname ?? '')) return Promise.resolve(false)
+  if (!proxy || proxy !== sentThrough || DIRECT_HOSTS.has(URL.parse(target)?.hostname ?? '')) return Promise.resolve(false)
   return new Promise(resolve => {
     const socket = net.connect({ host: proxy.host, port: proxy.port, timeout: 3000 })
     const done = (unreachable: boolean) => { socket.destroy(); resolve(unreachable) }

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 // Node 22 没有 setGlobalProxyFromEnv（Electron 主进程才有）；这里只验证判定逻辑。
 vi.mock('node:http', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:http')>()
+  const actual = await importOriginal<{ default: typeof import('node:http') }>()
   return { ...actual, default: { ...actual.default, setGlobalProxyFromEnv: () => () => {} } }
 })
 vi.mock('../utils/config-utils', () => ({ GLOBAL_CONFIG_PATH: 'config.json', DEFAULT_GLOBAL_CONFIG: {}, readJsonFile: vi.fn() }))

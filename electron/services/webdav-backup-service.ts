@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { normalizeWebDavEndpoint } from './cloud-credential-store'
-import { proxyUnreachable } from '../network-proxy'
+import { activeProxy, proxyUnreachable } from '../network-proxy'
 
 export type WebDavBackupErrorCode =
   | 'WEBDAV_INPUT_INVALID'
@@ -488,6 +488,7 @@ export class WebDavBackupService {
     if (signal?.aborted) fail('WEBDAV_CANCELLED')
     const timeoutSignal = AbortSignal.timeout(timeoutMs)
     const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
+    const sentThrough = activeProxy()
     try {
       return await this.fetchImpl(url, {
         ...init,
@@ -500,7 +501,7 @@ export class WebDavBackupService {
       })
     } catch {
       if (signal?.aborted) fail('WEBDAV_CANCELLED')
-      const proxyDown = await proxyUnreachable(url.href)
+      const proxyDown = await proxyUnreachable(url.href, sentThrough)
       if (signal?.aborted) fail('WEBDAV_CANCELLED')
       if (proxyDown) fail('WEBDAV_PROXY_UNREACHABLE')
       fail('WEBDAV_NETWORK')

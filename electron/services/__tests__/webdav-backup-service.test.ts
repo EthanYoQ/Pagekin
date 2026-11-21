@@ -9,7 +9,7 @@ import { Readable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const proxy = vi.hoisted(() => ({ unreachable: [] as boolean[] }))
-vi.mock('../../network-proxy', () => ({ proxyUnreachable: vi.fn(async () => proxy.unreachable.shift() ?? false) }))
+vi.mock('../../network-proxy', () => ({ activeProxy: vi.fn(() => null), proxyUnreachable: vi.fn(async () => proxy.unreachable.shift() ?? false) }))
 
 import {
   WebDavBackupService,

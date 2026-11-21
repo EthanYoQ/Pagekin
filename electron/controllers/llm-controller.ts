@@ -21,7 +21,7 @@ import { localize, translate, type MessageKey } from '../../src/i18n/core'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
 import { ModelExecutionLeaseRegistry } from '../services/model-execution-lease'
 import { ModelDiscoveryService } from '../services/model-discovery-service'
-import { proxyUnreachable } from '../network-proxy'
+import { activeProxy, proxyUnreachable, type ProxyRoute } from '../network-proxy'
 
 const CONNECTION_TEST_MAX_TOKENS = 1024
 const LOCAL_CONNECTION_TEST_TIMEOUT_MS = 120_000
@@ -183,8 +183,9 @@ export function registerLLMController() {
   })
 
   ipcMain.handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
+    const sentThrough = activeProxy()
     const result = await modelDiscovery.discoverModels(request).catch(() => ({ success: false, errorCode: 'invalid_response' as const }))
-    if (result.success || result.errorCode !== 'network' || !await proxyUnreachable(request.baseUrl)) return result
+    if (result.success || result.errorCode !== 'network' || !await proxyUnreachable(request.baseUrl, sentThrough)) return result
     return { success: false, errorCode: 'proxy' as const }
   })
 
@@ -333,7 +334,7 @@ export function registerLLMController() {
     return config.defaultRerankModelId ?? null
   })
 
-  const testConnection = async (model: ModelProfile, creativeStrategy: LLMRequest['creativeStrategy'], request: { sent: boolean }) => {
+  const testConnection = async (model: ModelProfile, creativeStrategy: LLMRequest['creativeStrategy'], request: { sentThrough?: ProxyRoute | null }) => {
     // 网络卡住时 undici 默认要等 300 秒才报 fetch failed；连接测试自己的截止时间会真正取消请求。
     const timeoutMs = connectionTestTimeoutMs(model)
     const deadline = new AbortController()
@@ -341,7 +342,7 @@ export function registerLLMController() {
     const timedOut = () => ({ success: false, error: translate(failureLocale(), 'error.connectionTestTimeout', { seconds: timeoutMs / 1000 }) })
     try {
       if (model.purposes?.includes('rerank')) {
-        request.sent = true
+        request.sentThrough = activeProxy()
         return await testRerankConnection(model)
       }
 
@@ -360,7 +361,7 @@ export function registerLLMController() {
           }
         }
         const { generateEmbeddings } = await import('../embedding')
-        request.sent = true
+        request.sentThrough = activeProxy()
         await generateEmbeddings(['hello'], model.protocol, model, undefined, undefined, deadline.signal)
       } else {
         const options = {
@@ -372,7 +373,7 @@ export function registerLLMController() {
           }),
           signal: deadline.signal,
         }
-        request.sent = true
+        request.sentThrough = activeProxy()
         const res = await provider.generate(model, messages, options)
         if (deadline.signal.aborted) return timedOut()
         result = res.success ? { success: true, error: undefined } : { success: false, error: providerConnectionFailure(res) }
@@ -391,9 +392,9 @@ export function registerLLMController() {
     model: ModelProfile,
     creativeStrategy: LLMRequest['creativeStrategy'] = 'auto',
   ) => {
-    const request = { sent: false }
+    const request: { sentThrough?: ProxyRoute | null } = {}
     const result = await testConnection(model, creativeStrategy, request)
-    if (result.success || !request.sent || !await proxyUnreachable(model.baseUrl)) return result
+    if (result.success || !await proxyUnreachable(model.baseUrl, request.sentThrough)) return result
     return { success: false, error: translate(failureLocale(), 'error.proxyUnreachable') }
   })
 
