@@ -86,6 +86,14 @@ describe('rebuilding search when the retrieval model cannot be reached', () => {
     expect(en).toBe('Could not rebuild search. The retrieval model could not be reached, so the search index was not changed. Check its Base URL, network, or proxy on the Retrieval model page in Settings, then try again.')
   })
 
+  it('does not take an inherited property for a cause code it does not know', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed', { cause: { code: 'constructor' } }) }))
+
+    const shown = await rebuildFailureShown('zh-CN', 'http://127.0.0.1:9/v1')
+
+    expect(shown).toBe('重建检索失败：连不上检索模型，检索索引没有改动。请在设置的「检索模型」页检查 Base URL、网络或代理后重试。')
+  })
+
   it.each([401, 403, 404])('keeps the request-failed advice for HTTP %i', async status => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('denied', { status })))
 
