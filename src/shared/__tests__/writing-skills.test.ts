@@ -263,7 +263,7 @@ Follow the [voice rules][voice] and the [tone][].
     ['https://github.com/acme/story-skill/blob/release/SKILL.md', { owner: 'acme', repo: 'story-skill', ref: 'release', path: 'SKILL.md' }],
     ['https://raw.githubusercontent.com/acme/story-skill/main/SKILL.md', { owner: 'acme', repo: 'story-skill', ref: 'main', path: 'SKILL.md' }],
   ])('normalizes GitHub source %s', (url, expected) => {
-    expect(parseGitHubWritingSkillUrl(url)).toMatchObject(expected)
+    expect(parseGitHubWritingSkillUrl(url, (_zh, en) => en)).toMatchObject(expected)
   })
 
   it.each([
@@ -272,7 +272,7 @@ Follow the [voice rules][voice] and the [tone][].
     'https://github.com/acme',
     'https://github.com/acme/story-skill/issues/1',
   ])('rejects unsupported source %s', (url) => {
-    expect(() => parseGitHubWritingSkillUrl(url)).toThrow()
+    expect(() => parseGitHubWritingSkillUrl(url, (_zh, en) => en)).toThrow()
   })
 })
 

@@ -13,7 +13,7 @@ export function resolveStoredOrSystemLocale(
 /** Interface language of the main process: the stored setting, else the system language. */
 export function getMainInterfaceLocale(systemLocale: string | undefined): ErrorDisplayLocale {
   const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
-  return resolveStoredOrSystemLocale(config.locale, systemLocale) as ErrorDisplayLocale
+  return resolveStoredOrSystemLocale(config?.locale, systemLocale) as ErrorDisplayLocale
 }
 
 /** 主进程查报错目录用的界面语言；全局设置读不出时按系统语言，不让查语言的失败盖住原来的报错。 */
