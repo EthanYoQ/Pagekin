@@ -68,7 +68,9 @@ function authorizedReference(content: string, sourceIdentity: string) {
 
 beforeEach(() => {
   authorizedRunIndex = 0
-  projectPath = fs.mkdtempSync(path.join(path.resolve('.runtime/.cache'), 'ai-novel-reference-receipt-'))
+  const cache = path.resolve('.runtime/.cache')
+  fs.mkdirSync(cache, { recursive: true })
+  projectPath = fs.mkdtempSync(path.join(cache, 'ai-novel-reference-receipt-'))
   openCanonicalProjectFixture(projectPath)
 })
 
@@ -180,8 +182,13 @@ describe('stable reference knowledge receipt', () => {
       data: [{ index: 0, embedding: [0.1, 0.2, 0.3] }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     let finishFirstEmbedding!: (response: Response) => void
+    let observeFetch!: () => void
+    const fetchObserved = new Promise<void>((resolve) => {
+      observeFetch = resolve
+    })
     const fetchMock = vi.fn()
       .mockImplementationOnce(() => new Promise<Response>((resolve) => {
+        observeFetch()
         finishFirstEmbedding = resolve
       }))
       .mockImplementation(async () => embeddingResponse())
@@ -202,7 +209,8 @@ describe('stable reference knowledge receipt', () => {
       'openai',
       embeddingModel,
     )
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await fetchObserved
+    expect(fetchMock).toHaveBeenCalledTimes(1)
 
     vi.setSystemTime(2_101)
     const takeover = ImportRunRepository.startOrResume('single-flight-run', 'renderer-b', 2_101, 10_000)
@@ -263,8 +271,13 @@ describe('stable reference knowledge receipt', () => {
       data: [{ index: 0, embedding: [0.1, 0.2, 0.3] }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     let finishFirstEmbedding!: (response: Response) => void
+    let observeFetch!: () => void
+    const fetchObserved = new Promise<void>((resolve) => {
+      observeFetch = resolve
+    })
     const fetchMock = vi.fn()
       .mockImplementationOnce(() => new Promise<Response>((resolve) => {
+        observeFetch()
         finishFirstEmbedding = resolve
       }))
       .mockImplementation(async () => embeddingResponse())
@@ -287,7 +300,8 @@ describe('stable reference knowledge receipt', () => {
         embeddingOptions: { chunkSize: 100, chunkOverlap: 0, batchSize: 1 },
       },
     )
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await fetchObserved
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     vi.setSystemTime(3_101)
     finishFirstEmbedding(embeddingResponse())
 

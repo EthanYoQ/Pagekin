@@ -53,7 +53,7 @@ class DavFixture {
   corruptDroppedPut = false
   redirectSuffix: string | null = null
   redirectLocation = ''
-  slowGetSuffix: string | null = null
+  stallDownload = false
   stallUpload = false
   onUpload?: () => void
   private dropped = false
@@ -115,9 +115,8 @@ class DavFixture {
       if (!body) { response.writeHead(404).end(); return }
       response.writeHead(200, { 'content-length': body.length, 'content-type': 'application/octet-stream' })
       if (method === 'HEAD') { response.end(); return }
-      if (this.slowGetSuffix && url.endsWith(this.slowGetSuffix)) {
+      if (this.stallDownload && url.endsWith('archive.ainovel')) {
         response.write(body.subarray(0, Math.max(1, Math.floor(body.length / 2))))
-        setTimeout(() => response.end(body.subarray(Math.max(1, Math.floor(body.length / 2)))), 150)
         return
       }
       response.end(body)
@@ -460,16 +459,27 @@ describe('WebDavBackupService', () => {
     const source = workspace()
     fs.writeFileSync(source.archive, Buffer.alloc(128 * 1024, 7))
     await appender(dav, GEN_A, source.archive)
-    dav.slowGetSuffix = 'archive.ainovel'
     const controller = new AbortController()
-    const service = new WebDavBackupService()
-    const pending = service.downloadGeneration({
+    let temporaryExistedAtAbort = false
+    dav.stallDownload = true
+    const service = new WebDavBackupService({ fetchImpl: async (url, init) => {
+      const response = await fetch(url, init)
+      if (init?.method !== 'GET' || !String(url).endsWith('archive.ainovel') || !response.body) return response
+      const reader = response.body.getReader()
+      return new Response(new ReadableStream({ async pull(stream) {
+        const { done, value } = await reader.read()
+        if (done) { stream.close(); return }
+        stream.enqueue(value)
+        temporaryExistedAtAbort = fs.readdirSync(source.root).some(name => name.includes('.webdav-download-'))
+        controller.abort()
+      } }), { status: response.status, headers: response.headers })
+    } })
+
+    await expect(service.downloadGeneration({
       account: account(dav), cloudBookId: BOOK, generationId: GEN_A,
       targetArchivePath: source.target, signal: controller.signal,
-    })
-    setTimeout(() => controller.abort(), 25)
-
-    await expect(pending).rejects.toThrow('WEBDAV_CANCELLED')
+    })).rejects.toThrow('WEBDAV_CANCELLED')
+    expect(temporaryExistedAtAbort).toBe(true)
     expect(fs.existsSync(source.target)).toBe(false)
     expect(fs.readdirSync(source.root).some(name => name.includes('.webdav-download-'))).toBe(false)
 
