@@ -1136,6 +1136,15 @@ describe('云备份报错说出真正的原因（#702）', () => {
     await expect(f.invoke('cloud-backup:cancel', OPERATION)).resolves.toEqual({ success: true, cancelled: false })
   })
 
+  it('清凭据半途失败后面板仍显示可写、点立即云备份：说还没绑定好，不说意外问题', async () => {
+    const f = fixture()
+    vi.mocked(f.deps.bindingStore.get).mockReturnValue({ ...writable, mode: 'unconfigured', revision: 8 })
+
+    const result = await backup(f)
+
+    expect(zh(result)).toBe('作品没有改动，也没有上传。这本书的云备份还没绑定好。请关闭并重新打开设置，再点「连接并绑定」。')
+  })
+
   it('绑定刚被别处改过：说没有上传，请重新打开设置', async () => {
     const f = fixture()
     vi.mocked(f.deps.bindingStore.saveWritable).mockImplementation(() => { throw new Error('CLOUD_BINDING_REVISION_CONFLICT') })

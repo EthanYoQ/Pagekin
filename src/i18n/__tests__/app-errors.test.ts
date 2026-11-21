@@ -565,9 +565,9 @@ describe('恢复报错只在确定还没建副本文件夹时才说没有新建�
 
 describe('云备份已有的说明不变（#702）', () => {
   it.each([
-    ['zh-CN', '作品没有改动。连不上「网络代理」里设置的代理。请打开代理软件，或关掉「启用代理」，再试一次。'],
-    ['en-US', 'Your book is unchanged. Could not reach the proxy set in Network proxy. Start your proxy app, or turn off Use a proxy, then try again.'],
-    ['ja-JP', '作品は変更されていません。「Network proxy」で設定したプロキシに接続できません。プロキシアプリを起動するか、「Use a proxy」をオフにしてから、もう一度お試しください。'],
+    ['zh-CN', '作品没有改动。连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」，再试一次。'],
+    ['en-US', 'Your book is unchanged. Could not reach the proxy set in Network proxy. Check the Host and Port, start your proxy app, or turn off Use a proxy, then try again.'],
+    ['ja-JP', '作品は変更されていません。「Network proxy」で設定したプロキシに接続できません。「Host」と「Port」を確認するか、プロキシアプリを起動するか、「Use a proxy」をオフにしてから、もう一度お試しください。'],
   ] as const)('%s 界面代理连不上', (locale, expected) => {
     expect(displayedErrorMessage(shown(locale), 'CLOUD_BACKUP_PROXY_UNREACHABLE')).toBe(expected)
   })
