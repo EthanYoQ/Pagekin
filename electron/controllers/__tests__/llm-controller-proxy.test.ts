@@ -2,7 +2,7 @@ import net from 'node:net'
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { refused } from '../../__tests__/proxy-failure-fixture'
+import { hostNotFound, refused } from '../../__tests__/proxy-failure-fixture'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
 
@@ -87,6 +87,12 @@ describe('请求连不上代理：说明是代理', () => {
   it('拉模型列表', async () => {
     await expect(discover()).resolves.toEqual({ success: false, errorCode: 'proxy' })
   })
+
+  it('代理主机名写错，解析不出', async () => {
+    applyNetworkProxy({ enabled: true, type: 'http', host: 'badproxyhost', port: proxyPort })
+    fetchMock.mockImplementation(async () => { throw hostNotFound('badproxyhost') })
+    expect((await testConnection()).error).toMatch(new RegExp(`^${PROXY_DOWN}`))
+  })
 })
 
 describe('代理也连不上，但这次失败另有原因：照原样说明', () => {
@@ -108,6 +114,12 @@ describe('代理也连不上，但这次失败另有原因：照原样说明', (
       throw refused('127.0.0.1', proxyA)
     })
     expect((await testConnection()).error).not.toContain('网络代理')
+  })
+
+  it('解析不出的是模型地址，不是代理主机', async () => {
+    applyNetworkProxy({ enabled: true, type: 'http', host: 'badproxyhost', port: proxyPort })
+    fetchMock.mockImplementation(async () => { throw hostNotFound('api.example.com') })
+    expect((await testConnection()).error).toMatch(/^找不到 base_url 里的服务器/)
   })
 
   it('拉模型列表时服务回 503', async () => {

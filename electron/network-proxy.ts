@@ -48,13 +48,14 @@ export function applySavedNetworkProxy(): void {
   }
 }
 
-type ConnectFailure = { syscall?: unknown; address?: unknown; port?: unknown; errors?: ConnectFailure[] }
+type ConnectFailure = { syscall?: unknown; address?: unknown; port?: unknown; hostname?: unknown; errors?: ConnectFailure[] }
 
 /** fetch 失败时，连不上的端点在 cause 里（主机名解析出多个地址时在 cause.errors）；只有它正是当前代理，才是代理连不上。 */
 export function failedAtProxy(error: unknown): boolean {
   const proxy = installed
   const cause = (error as { cause?: ConnectFailure } | null)?.cause
   if (!proxy || !cause) return false
+  if (cause.syscall === 'getaddrinfo') return String(cause.hostname).toLowerCase() === proxy.host.toLowerCase()
   return [cause, ...(cause.errors ?? [])].some(failure => failure?.syscall === 'connect' && failure.port === proxy.port
     && (net.isIP(proxy.host) ? failure.address === proxy.host : LOOPBACK.has(String(failure.address)) === (proxy.host === 'localhost')))
 }
