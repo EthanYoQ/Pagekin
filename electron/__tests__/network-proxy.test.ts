@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { dispatcher, refused, refusedLocalhost, tunnelRefused } from './proxy-failure-fixture'
+import { dispatcher, hostNotFound, refused, refusedLocalhost, tunnelRefused } from './proxy-failure-fixture'
 
 vi.mock('node:http', async (importOriginal) => {
   const actual = await importOriginal<{ default: typeof import('node:http') }>()
@@ -24,6 +24,16 @@ describe('这次请求是不是连不上代理', () => {
   it('代理写成 localhost，两个回环地址都被拒：是', () => {
     applyNetworkProxy(proxy('localhost'))
     expect(failedAtProxy(refusedLocalhost(7890))).toBe(true)
+  })
+
+  it('代理主机名解析不出：是', () => {
+    applyNetworkProxy(proxy('badproxyhost'))
+    expect(failedAtProxy(hostNotFound('badproxyhost'))).toBe(true)
+  })
+
+  it('解析不出的是别的主机名：不是', () => {
+    applyNetworkProxy(proxy('badproxyhost'))
+    expect(failedAtProxy(hostNotFound('api.example.com'))).toBe(false)
   })
 
   it('没开代理：不是', () => {

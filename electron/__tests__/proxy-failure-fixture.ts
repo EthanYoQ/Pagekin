@@ -10,6 +10,10 @@ export const refusedLocalhost = (port: number) =>
     cause: Object.assign(new AggregateError([connectRefused('::1', port), connectRefused('127.0.0.1', port)], ''), { code: 'ECONNREFUSED' }),
   })
 
+export const hostNotFound = (hostname: string) => Object.assign(new TypeError('fetch failed'), {
+  cause: Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { errno: -3008, code: 'ENOTFOUND', syscall: 'getaddrinfo', hostname }),
+})
+
 export const tunnelRefused = () => Object.assign(new TypeError('fetch failed'), {
   cause: Object.assign(new Error('Request was cancelled.'), {
     code: 0,
