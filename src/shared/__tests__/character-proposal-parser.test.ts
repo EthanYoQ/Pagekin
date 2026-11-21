@@ -66,6 +66,23 @@ describe('main-safe source-local character proposal parsing', () => {
     expect(parseArchitectureCharacterProposal({ ...fixture, details: split })).toHaveLength(3)
     expect(() => parseArchitectureCharacterProposal({ ...fixture, details: [{ artifactId: 'failed', text: '{"entries":[' }, ...split] })).toThrow()
   })
+  it('proposes all 40 people from a 40-slot roster detailed in batches of three', () => {
+    const slots = Array.from({ length: 40 }, (_, index) => ({ slotId: `slot-${index}`, name: `人物${index + 1}`,
+      role: index === 0 ? 'protagonist' : 'supporting', narrativeDuty: '推动冲突',
+      relations: [{ targetSlotId: `slot-${(index + 1) % 40}`, relation: '牵连' }] }))
+    const entry = architecture().entries[0]
+    const details = Array.from({ length: Math.ceil(40 / 3) }, (_, batch) => ({ artifactId: `details-${batch}`, text: JSON.stringify({
+      entries: slots.slice(batch * 3, batch * 3 + 3).map(slot => ({ ...entry, slotId: slot.slotId, name: slot.name, role: slot.role })) }) }))
+    const result = parseArchitectureCharacterProposal({ manifest: { artifactId: 'manifest', text: JSON.stringify({ slots }) }, details })
+    expect(result.map(item => item.fields.name)).toEqual(slots.map(slot => slot.name))
+    expect(result[39].relationships).toEqual([{ targetSelectionKey: 'slot-0', relation: '牵连' }])
+  })
+  it('still rejects a roster with fewer than three people', () => {
+    const fixture = architecture()
+    const slots = fixture.slots.slice(0, 2).map(slot => ({ ...slot, relations: [] }))
+    expect(() => parseArchitectureCharacterProposal({ manifest: { artifactId: 'manifest', text: JSON.stringify({ slots }) },
+      details: [{ artifactId: 'details', text: JSON.stringify({ entries: fixture.entries.slice(0, 2) }) }] })).toThrow()
+  })
   it('preserves every material source record and name-only relationship without resolving it', () => {
     const result = parsePlanningMaterialCharacterProposal({ expectedSourceIds: ['1:1', '2:1'], artifacts: [{ artifactId: 'a', text: JSON.stringify({ results: [
       { sourceId: '1:1', characterCards: [{ name: '同名', role: 'supporting', notes: '第一来源', relationships: [{ target: '同名', relation: '原关系' }] }] },

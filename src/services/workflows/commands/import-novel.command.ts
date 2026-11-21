@@ -1,4 +1,5 @@
 import { displayedErrorMessage, englishWithReason, importGenerationStopMessage } from '../../../i18n/app-errors'
+import { IMPORT_SLOT_MAX_REQUESTS } from '../../../shared/import-generation'
 import type { NovelConfig } from '../../../shared/ipc-channels'
 import type { ImportGenerationContext, ImportGenerationSlot } from '../../../shared/import-generation'
 import type { BeginGenerationRequest } from '../../../shared/generation-owner-contract'
@@ -31,6 +32,7 @@ import {
   workflowMainProcessError,
 } from '../workflow-project-session'
 import { promptLanguageText } from '../../prompt-language'
+import { GenerationAttemptError, TerminalProviderFailureError } from '../../generation/generation-harness'
 import { createStructuredBatchExecutor, type StructuredBatchContract } from '../structured-batch-executor'
 import type { ChapterBlueprint } from '../directory-workflow'
 import { retryDirectoryCharacterSync } from '../directory-character-sync-recovery'
@@ -46,14 +48,14 @@ import {
 import {
   importInferenceJsonContract,
   type ImportInferenceResult,
-  decodeImportInferenceJson,
   decodeRecoveredImportInference,
   importEndpointRecoveryTargets,
+  importRecoveryBatches,
+  IMPORT_CARD_RECOVERY_PURPOSE,
+  type ImportRecoveryTarget,
   IMPORT_INFERENCE_ROUNDS,
-  MAX_IMPORT_INFERENCE_CHARACTER_CARDS,
   parseImportInferenceJsonObject,
 } from './import-inference-contract'
-import { StructuredContractDiagnostic } from '../../../shared/structured-contract-diagnostic'
 import type {
   ImportGlobalFactsReceipt,
   ImportGlobalFactsRequest,
@@ -211,34 +213,57 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     return this.executeWithGenerationRuntime('structured', params, () => this.executeWithinGeneration(params), { operation: 'import-global-facts', promptKeys: ['infer_novel_config_with_vectors', 'infer_novel_config'], skillStages: ['planning'], output: 'structured-data', ...importGenerationSelection(params.context, 'global') })
   }
 
+  /** 根的请求额度或这个导入 slot 的请求序号用完，某批到了模型却没拿回完整结果（失败、截断），或拿回的卡不合格时，不再发后面的批次，已补出的卡照常提交，其余的人列进缺卡提示。取消、租约过期这类错误照常抛出。 */
   private async decodeImportInferenceWithEndpointRecovery(
     rawResult: string,
+    budget: LLMCompletion['receipt']['budget'],
+    requests: number,
     callbacks: CommandExecuteParams['callbacks'],
     context: CommandExecuteParams['context'],
   ): Promise<ImportInferenceResult> {
     const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
-    const decoded = async <T>(decode: () => T): Promise<T> => {
-      try { return decode() } catch (error) { await this.discardRejectedImportOutput(callbacks); throw error }
-    }
+    let recoveryTargets: ImportRecoveryTarget[], names: string[]
     try {
-      return decodeImportInferenceJson(rawResult)
+      names = decodeRecoveredImportInference(rawResult, [], text).result.characterCards.map(card => card.name)
+      recoveryTargets = importEndpointRecoveryTargets(rawResult, text)
     } catch (error) {
-      if (!(error instanceof StructuredContractDiagnostic)
-        || error.code !== 'relationship_endpoint_not_in_characters') {
-        await this.discardRejectedImportOutput(callbacks)
+      await this.discardRejectedImportOutput(callbacks)
+      throw error
+    }
+    names.push(...recoveryTargets.map(target => target.name))
+    const label = (target: ImportRecoveryTarget, open: string, close: string) =>
+      target.note !== undefined && names.filter(name => name === target.name).length > 1 ? `${target.name}${open}${target.note}${close}` : target.name
+    const deltas: string[] = []
+    let used = budget
+    for (const batch of importRecoveryBatches(recoveryTargets)) {
+      if (used.attempt >= used.maxAttempts || requests >= IMPORT_SLOT_MAX_REQUESTS) break
+      const sofar = decodeRecoveredImportInference(rawResult, deltas, text)
+      if (sofar.accepted < deltas.length) break
+      let correction: LLMCompletion
+      requests += 1
+      try {
+        correction = await this.requestImportEndpointCards(rawResult, sofar.result.characterCards, batch, callbacks, context)
+      } catch (error) {
+        if (error instanceof GenerationAttemptError || error instanceof TerminalProviderFailureError) break
         throw error
       }
+      if (correction.receipt.failureCode || correction.finishReason !== 'stop') break
+      used = correction.receipt.budget
+      deltas.push(correction.content)
     }
-
-    const recoveryTargets = await decoded(() => importEndpointRecoveryTargets(rawResult, text))
-    const delta = recoveryTargets.length === 0 ? null : await this.requestImportEndpointCards(rawResult, recoveryTargets, callbacks, context)
-    const { result, droppedRelationships } = await decoded(() => decodeRecoveredImportInference(rawResult, delta, text))
+    const { result, droppedRelationships, missing } = decodeRecoveredImportInference(rawResult, deltas, text)
+    if (missing.length > 0) {
+      callbacks.log(text(
+        `${missing.length} 位人物没有补出角色卡：${missing.map(target => label(target, '（', '）')).join('、')}。导入后可在「角色名单」用「新建角色」或「粘贴 / 导入角色卡」补上。`,
+        `${missing.length} ${missing.length === 1 ? 'person has' : 'people have'} no character card yet: ${missing.map(target => label(target, ' (', ')')).join(', ')}. After the import, add them on the Cast page with New character or Paste or import cards.`,
+      ))
+    }
     if (droppedRelationships.length > 0) {
       const dropped = droppedRelationships.map(item => `${item.source}→${item.target}（${item.relation}）`).join('、')
       const droppedEn = droppedRelationships.map(item => `${item.source}→${item.target} (${item.relation})`).join(', ')
       callbacks.log(text(
-        `已丢弃 ${droppedRelationships.length} 条关系（对象没有角色卡）：${dropped}。这是导入推演的上限（最多 ${MAX_IMPORT_INFERENCE_CHARACTER_CARDS} 张角色卡），不是你的设置；导入后可在「角色名单」手动补上。`,
-        `Dropped ${droppedRelationships.length} relationship(s) whose target has no character card: ${droppedEn}. This is an import-inference limit (at most ${MAX_IMPORT_INFERENCE_CHARACTER_CARDS} character cards), not one of your settings; you can add them on the Cast page after the import.`,
+        `已丢弃 ${droppedRelationships.length} 条关系（对象没有角色卡）：${dropped}。导入后可在「角色名单」手动补上。`,
+        `Dropped ${droppedRelationships.length} relationship(s) whose target has no character card: ${droppedEn}. You can add them on the Cast page after the import.`,
       ))
     }
     return result
@@ -246,27 +271,29 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
 
   private async requestImportEndpointCards(
     rawResult: string,
-    unresolvedTargets: string[],
+    existingCards: ImportInferenceResult['characterCards'],
+    unresolvedTargets: readonly ImportRecoveryTarget[],
     callbacks: CommandExecuteParams['callbacks'],
     context: CommandExecuteParams['context'],
-  ): Promise<string> {
+  ): Promise<LLMCompletion> {
     const frozen = frozenImportContext(context)
     const writingLanguage = frozen?.core.writingLanguage ?? workflowWritingLanguage(context)
     const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
-    const originalRoot = parseImportInferenceJsonObject(rawResult)
+    const originalRoot = { ...parseImportInferenceJsonObject(rawResult), characterCards: existingCards }
     callbacks.log(text(
-      `导入推演关系端点缺少 ${unresolvedTargets.length} 张角色卡，正在执行一次受限补卡校正`,
-      `${unresolvedTargets.length} relationship ${unresolvedTargets.length === 1 ? 'endpoint is' : 'endpoints are'} missing a character card; running one bounded correction`,
+      `正在补 ${unresolvedTargets.length} 张角色卡：${unresolvedTargets.map(target => target.name).join('、')}`,
+      `Adding ${unresolvedTargets.length} character ${unresolvedTargets.length === 1 ? 'card' : 'cards'}: ${unresolvedTargets.map(target => target.name).join(', ')}`,
     ))
     const correction = await this.callLLMResult(
       promptLanguageText(
         writingLanguage,
         [
           '【导入推演受限补卡校正】',
-          '上一轮完整 JSON 已可解析，但 characterCards.relationships.target 引用了 characterCards 中不存在的角色名。',
+          '上一轮完整 JSON 已可解析，但 otherCharacters 名单或 characterCards.relationships.target 里有人还没有角色卡。',
           '只输出一个完整 JSON 对象，不要 Markdown、解释或思考过程。',
           '只允许输出严格 delta，顶层必须且只能包含 characterCards。',
-          `characterCards 必须新增且只新增这些缺失角色 name：${JSON.stringify(unresolvedTargets)}`,
+          `characterCards 必须新增且只新增这些缺失角色，每人一张卡，name 照抄：${JSON.stringify(unresolvedTargets)}`,
+          'note 是这个人在原稿里的身份；和已有角色同名时也是另一个人，按 note 写他。',
           '不得回传 novelConfig、architectureFiles 或任何原有角色卡；不得删除、重排、改名或改写任何原角色。',
           '不得新增任意其他角色；delta 角色卡、currentState 与 relationships 内部不得包含合同外字段。',
           '应用端会把 delta 追加到上一轮本地原始 characterCards，再执行完整导入推演 JSON 合同校验和关系闭合校验。',
@@ -277,10 +304,11 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
         ].join('\n'),
         [
           '[Bounded import-inference endpoint-card correction]',
-          'The previous complete JSON is parseable, but characterCards.relationships.target references names absent from characterCards.',
+          'The previous complete JSON is parseable, but otherCharacters or characterCards.relationships.target names people who still have no character card.',
           'Output one complete JSON object only, with no Markdown, explanation, or reasoning.',
           'Return a strict delta whose only top-level field is characterCards.',
-          `Add exactly these missing character names and no others: ${JSON.stringify(unresolvedTargets)}`,
+          `Add one card for each of these missing people and no others, copying name exactly: ${JSON.stringify(unresolvedTargets)}`,
+          'note is who this person is in the manuscript. Someone who shares a name with an existing character is still another person; write them from note.',
           'Do not return novelConfig, architectureFiles, or any existing card. Do not remove, reorder, rename, or rewrite existing characters.',
           'Every delta card, currentState, and relationship must contain only contract fields.',
           '[Delta JSON contract]',
@@ -297,15 +325,13 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       callbacks,
       {
         responseFormat: { type: 'json_object' },
-        purpose: 'import-inference:endpoint-card-recovery',
+        purpose: IMPORT_CARD_RECOVERY_PURPOSE,
         reasoningStage: 'planning',
         writingSkillStage: 'planning',
       },
       context,
     )
-    assertImportCompletionNotStopped(correction, callbacks, context)
-    if (correction.finishReason !== 'stop') throw this.createIncompleteCompletionError(correction.finishReason)
-    return correction.content
+    return correction
   }
 
   private async executeWithinGeneration({ context, callbacks }: CommandExecuteParams): Promise<void> {
@@ -431,7 +457,10 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     callbacks.setProgress(25)
 
     let rawResult: string | undefined
+    let budget!: LLMCompletion['receipt']['budget']
+    let requests = 0
     for (let round = 0; round < IMPORT_INFERENCE_ROUNDS && rawResult === undefined; round += 1) {
+      requests += 1
       const initial = await this.callLLMResult(
         prompt,
         composePromptSystemRole({
@@ -448,6 +477,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       )
       assertImportCompletionNotStopped(initial, callbacks, context)
       if (initial.finishReason !== 'stop') throw this.createIncompleteCompletionError(initial.finishReason)
+      budget = initial.receipt.budget
       if (!isRepairableDirectJsonSyntaxFailure(initial.content)) {
         rawResult = initial.content
         continue
@@ -461,6 +491,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
         output: 'structured-data',
         messages: [],
       }, inferenceContract, initial.content, writingLanguage)
+      requests += 1
       const repair = await this.callLLMResult(
         repairTask.messages[1].content,
         repairTask.messages[0].content,
@@ -476,6 +507,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       )
       assertImportCompletionNotStopped(repair, callbacks, context)
       if (repair.finishReason !== 'stop') throw this.createIncompleteCompletionError(repair.finishReason)
+      budget = repair.receipt.budget
       if (preservesStructuredJsonEvidence(initial.content, repair.content)) rawResult = repair.content
       else callbacks.log(text(
         '语法修复改动了推演内容，这一轮作废',
@@ -501,7 +533,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     // Keep the exact visible candidate even when the legacy name-based contract
     // rejects ambiguity. This is not a formal fact or an adoption authorization.
     context.data.importGlobalInferenceCandidate = rawResult
-    const inferResult = await this.decodeImportInferenceWithEndpointRecovery(rawResult, callbacks, context)
+    const inferResult = await this.decodeImportInferenceWithEndpointRecovery(rawResult, budget, requests, callbacks, context)
 
     const roster = await ipc.invokeWithProjectSession(
       projectSession,

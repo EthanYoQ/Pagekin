@@ -4,6 +4,7 @@ import type { NovelConfig } from '../../../../shared/ipc-channels'
 import { proposalRuntimeFixture, proposalBatchFixture } from './character-proposal-runtime.fixture'
 import { contextLengthRejectingDependencies } from './context-length-runtime.fixture'
 import type { CharacterProposalSource, CharacterProposalBatch } from '../../../../shared/character-proposal'
+import type { WorkflowGenerationRuntimeDependencies } from '../base-command'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useLLMStore } from '../../../../stores/llm-store'
@@ -1245,6 +1246,83 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     ]))
   })
 
+  it('proposes a card for each of the fourteen people the author named', async () => {
+    const names = ['沈砚秋', '沈伯钧', '沈墨林', '柳如棠', '柳承宗', '顾怀瑾', '顾青梧', '陆九', '阿蘅', '韩铁衣', '方鹤年', '苏晚晴', '赵德全', '许仲谋']
+    const entries: CharacterRosterEntry[] = names.map((name, index) => ({ ...rosterEntries[1], name,
+      role: index === 0 ? 'protagonist' : index === 5 ? 'antagonist' : 'supporting',
+      relationships: [{ target: names[(index + 1) % names.length], relation: '牵连' }] }))
+    const details = detailResponses(entries).map(response => (JSON.parse(response) as { entries: unknown[] }).entries[0])
+    const responses = [JSON.stringify(manifestFor(entries)),
+      ...Array.from({ length: Math.ceil(names.length / 3) }, (_, batch) => JSON.stringify({ entries: details.slice(batch * 3, batch * 3 + 3) }))]
+    const generateStream = createResponseStream(responses)
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
+    vi.mocked(window.aiNovelAPI!.invoke).mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'character-proposal:stage') return proposalBatchFixture((args[0] as { source: CharacterProposalSource }).source)
+      if (channel === 'prompt:load-global') return { templates: [], diagnostics: [] }
+      if (channel === 'fs:check-exists') return false
+      if (channel === 'db:project-core-get') return { premise: '清末淮扬盐商沈家与柳家的恩怨，十四位重要人物都要有角色卡，故事前提足够长，可以开始生成角色名单，沈砚秋必须在新盐引换发之前查清账目。' }
+      throw new Error(`Unexpected IPC channel: ${channel}`)
+    })
+    const runContext = { ...context, data: {}, cancelled: false }
+    const command = new GenerateCharactersCommand({ expectedProjectPath: projectAPath,
+      novelConfig: { genre: '历史', totalChapters: 120, wordsPerChapter: 3000, coreOutline: `重要人物共十四位，都要有角色卡：${names.join('、')}。` } as never })
+
+    await expect(command.execute({ step: {}, context: runContext, callbacks })).resolves.toMatch(/角色提议/u)
+
+    const proposals = (runContext.data as Record<string, unknown>).characterProposalBatch as CharacterProposalBatch
+    expect(proposals.items.map(item => item.fields.name)).toEqual(names)
+    expect(generateStream).toHaveBeenCalledTimes(1 + Math.ceil(names.length / 3))
+  })
+
+  it('tells the author the cast is longer than one model reply when every roster attempt is cut off', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    const generateStream = createResponseStream(['{"slots":[', '{"slots":[', '{"slots":['], ['length', 'length', 'length'])
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
+    vi.mocked(window.aiNovelAPI!.invoke).mockImplementation(async (channel: string) => {
+      if (channel === 'prompt:load-global') return { templates: [], diagnostics: [] }
+      if (channel === 'fs:check-exists') return false
+      if (channel === 'db:project-core-get') return { premise: '清末淮扬盐商沈家与柳家的恩怨，四十位重要人物都要有角色卡，故事前提足够长，可以开始生成角色名单，沈砚秋必须在新盐引换发之前查清账目。' }
+      throw new Error(`Unexpected IPC channel: ${channel}`)
+    })
+    const command = new GenerateCharactersCommand({ expectedProjectPath: projectAPath,
+      novelConfig: { genre: '历史', totalChapters: 120, wordsPerChapter: 3000 } as never })
+
+    await expect(command.execute({ step: {}, context: { ...context, data: {}, cancelled: false }, callbacks }))
+      .rejects.toThrow('已有角色没有变动。人物太多，模型一次写不下：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。')
+    expect(generateStream).toHaveBeenCalledTimes(3)
+  })
+
+  it('tells the author the cast used up this run when character details exhaust the request budget', async () => {
+    const names = ['沈砚秋', '沈伯钧', '沈墨林', '柳如棠', '柳承宗', '顾怀瑾']
+    const entries: CharacterRosterEntry[] = names.map((name, index) => ({ ...rosterEntries[1], name,
+      role: index === 0 ? 'protagonist' : 'supporting', relationships: [] }))
+    const details = detailResponses(entries).map(response => (JSON.parse(response) as { entries: unknown[] }).entries[0])
+    const generateStream = createResponseStream([JSON.stringify(manifestFor(entries)), JSON.stringify({ entries: details.slice(0, 3) })])
+    let requests = 0
+    // 主进程在根预算用完时让 generation:execute 抛出 ROOT_BUDGET_EXHAUSTED；第三次请求起照此模拟。
+    const rootBudgetAfterTwo: WorkflowGenerationRuntimeDependencies = { createRuntime: async options => {
+      const runtime = await proposalRuntimeFixture().createRuntime(options)
+      return { ...runtime, execute: operation => runtime.execute(({ session }) => operation({ session: { budget: session.budget,
+        complete: (task, completeOptions) => (++requests > 2) ? Promise.reject(new Error('ROOT_BUDGET_EXHAUSTED')) : session.complete(task, completeOptions) } })) }
+    } }
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream })
+    vi.mocked(window.aiNovelAPI!.invoke).mockImplementation(async (channel: string) => {
+      if (channel === 'prompt:load-global') return { templates: [], diagnostics: [] }
+      if (channel === 'fs:check-exists') return false
+      if (channel === 'db:project-core-get') return { premise: '清末淮扬盐商沈家与柳家的恩怨，六位重要人物都要有角色卡，故事前提足够长，可以开始生成角色名单，沈砚秋必须在新盐引换发之前查清账目。' }
+      throw new Error(`Unexpected IPC channel: ${channel}`)
+    })
+    const command = new RuntimeGenerateCharactersCommand({ expectedProjectPath: projectAPath,
+      novelConfig: { genre: '历史', totalChapters: 120, wordsPerChapter: 3000 } as never }, rootBudgetAfterTwo)
+
+    const failure = await command.execute({ step: {}, context: { ...context, data: {}, cancelled: false }, callbacks }).catch((error: Error) => error)
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toBe('已有角色没有变动。人物太多，这次生成的额度（请求次数与时长）用完了：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。')
+  })
+
   it('rejects a manifest without a protagonist before generating details or committing', async () => {
     const manifest = manifestFor(rosterEntries)
     manifest.slots = manifest.slots.map(slot => ({
@@ -1637,6 +1715,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     await expect(command.execute({ step: {}, context, callbacks }))
       .rejects.toThrow(/完整 JSON|截断/u)
 
+    expect(generateStream).toHaveBeenCalledTimes(1)
     expect(domainIpcChannels(invoke)).not.toContain('db:character-roster-commit')
   })
 

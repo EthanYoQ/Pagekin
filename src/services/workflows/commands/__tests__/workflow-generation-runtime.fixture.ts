@@ -31,7 +31,7 @@ export const useFakeModelStream = create<{ generateStream: FakeGenerateStream }>
   },
 }))
 
-const DEFAULT_CAPABILITY_EVIDENCE: ModelExecutionLeaseReceipt['capabilityEvidence'] = {
+export const DEFAULT_CAPABILITY_EVIDENCE: ModelExecutionLeaseReceipt['capabilityEvidence'] = {
   source: {
     contextWindowTokens: 'unknown',
     maxOutputTokens: 'user-operational-cap',

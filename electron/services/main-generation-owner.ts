@@ -20,7 +20,8 @@ import { ModelExecutionLeaseRegistry, createModelExecutionLeaseReceipt } from '.
 import { createGenerationRunService, GENERATION_STOPPED, type GenerationRunServiceDependencies } from './generation-run-service'
 import { LLMHistoryRepository } from '../repositories/llm-repository'
 import { REVIEW_REVISION_OPERATIONS } from './review-revision-context'
-import { assertSemanticGenerationTask, buildMainGenerationPlan, MAIN_GENERATION_POLICY, newMainGenerationPolicy, planningGenerationScope, readMainGenerationPolicy, resolveMaterialBudget, type MainGenerationPlan, type MainGenerationPolicy } from './main-generation-plan'
+import { decodeCharacterIdentityManifest } from '../../src/shared/character-proposal-parser'
+import { assertSemanticGenerationTask, buildMainGenerationPlan, characterRosterBudget, MAIN_GENERATION_POLICY, newMainGenerationPolicy, planningGenerationScope, readMainGenerationPolicy, resolveMaterialBudget, type MainGenerationPlan, type MainGenerationPolicy } from './main-generation-plan'
 import { LLMFactory } from '../llm/llm-factory'
 import type { GenerationAttemptReceipt, GenerationTask } from '../../src/services/generation/generation-harness'
 import type { ProviderUsageEvidence } from '../llm/provider.interface'
@@ -38,7 +39,7 @@ import type { ReviewRevisionContext, PrepareReviewRevisionRequest, ReviewGenerat
 import { ReviewRevisionGeneration, ReviewSourceDeletedError } from './review-revision-generation'
 import { AgentGeneration, type AgentBeginSelection } from './agent-generation'
 import { ImportGeneration, importSlotNonce } from './import-generation'
-import type { ImportGenerationSlot } from '../../src/shared/import-generation'
+import { IMPORT_SLOT_MAX_REQUESTS, type ImportGenerationSlot } from '../../src/shared/import-generation'
 import { importGenerationSlotKey } from './import-generation-source'
 import type { ApproveCharacterProposalRequest } from '../../src/shared/character-proposal'
 import type { AgentGenerationContext, AgentGenerationInput } from '../../src/shared/agent-generation'
@@ -171,9 +172,24 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const runId = deps.database.prepare('SELECT run_id FROM generation_runs WHERE root_action_id=? ORDER BY rowid LIMIT 1').pluck().get(rootActionId)
     if (typeof runId !== 'string') throw new Error('GENERATION_ROOT_MISSING')
     const policy = readMainGenerationPolicy(repository.get(runId).binding.sourceManifest.policy)
-    if (policy.version !== MAIN_GENERATION_POLICY.version && !isDeepStrictEqual(policy.budget, repository.budget(rootActionId).policy))
+    if (policy.version !== MAIN_GENERATION_POLICY.version && !isDeepStrictEqual(policy.budget, repository.frozenBudget(rootActionId))
+      || repository.characterRosters(rootActionId).some(roster => !isDeepStrictEqual(roster.budget,
+        characterRosterBudget(policy, readMainGenerationPolicy(repository.get(roster.runId).binding.sourceManifest.policy), roster.characters))))
       throw new Error('GENERATION_POLICY_BUDGET_MISMATCH')
     return policy
+  }
+  /** 第一次详情请求前，按本运行已结算的名单数出人数，给根加额。 */
+  const sizeCharacterDetails = (run: DurableGenerationRun) => {
+    if (repository.characterRosters(run.rootActionId).some(roster => roster.runId === run.runId)) return
+    const manifest = runAttempts(run.runId).filter(attempt => attempt.purpose === 'character-architecture-manifest')
+      .map(attempt => repository.receipt(attempt.attemptId))
+      .filter(receipt => ['settled', 'unknown'].includes(receipt.attempt.status) && receipt.result?.finishReason === 'stop').at(-1)?.artifact
+    if (!manifest) return
+    const policy = readMainGenerationPolicy(run.binding.sourceManifest.policy)
+    if (policy.planning?.kind !== 'architecture') return
+    let characters: number
+    try { characters = decodeCharacterIdentityManifest(manifest.text).length } catch { return }
+    repository.recordCharacterRoster(run.runId, { manifestArtifactId: manifest.artifactId, characters, budget: characterRosterBudget(rootPolicy(run.rootActionId), policy, characters) })
   }
   const requireRun = (handle: MainGenerationRunHandle, execution = false) => {
     assertCurrent()
@@ -561,7 +577,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       if (agentWorkflow) repository.activateRootForCommittedStage(agentWorkflow.parentRootActionId, binding)
       if (importAdmission?.parentRootActionId) repository.activateRootForCommittedStage(importAdmission.parentRootActionId, binding)
       if (continuation && !continuation.continuationHandle) repository.activateRootForCommittedStage(continuation.sourceHandle.rootActionId, binding)
-      const budget = parentRootActionId ? repository.budget(parentRootActionId).policy : policy.budget
+      const budget = parentRootActionId ? repository.frozenBudget(parentRootActionId) : policy.budget
       const next = service.open({ ...binding, operation: selection.operation, uiActionNonce: selection.uiActionNonce,
         frozenInputHash: textHash(JSON.stringify([binding.fingerprint, binding.contextSnapshotId, selection.output])),
         budget, parentRootActionId })
@@ -698,6 +714,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     finalizations.assertMutable(run)
     graphs.assertMutable(run)
     legacyRosters.assertMutable(run)
+    if (run.binding.sourceManifest.operation === 'character-architecture') sizeCharacterDetails(run)
     const operation = (async () => {
     const current = deps.rebuildBinding(run.binding, currentModelReceipt(run.binding))
     // 途中在设置里保存了模型是作者最常见的来源变化，单列一个码，界面才能说清是模型变了。
@@ -1660,7 +1677,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     },
     executeImportGeneration: async (request: import('../../src/shared/import-generation').ImportGenerationChannels['import-generation:execute']['args'][0]) => {
       const run = requireRun(request.handle)
-      if (!Number.isSafeInteger(request.ordinal) || request.ordinal < 0 || request.ordinal >= MAIN_GENERATION_POLICY.budget.maxPhysicalRequests) throw new Error('GENERATION_IMPORT_ORDINAL_INVALID')
+      if (!Number.isSafeInteger(request.ordinal) || request.ordinal < 0 || request.ordinal >= IMPORT_SLOT_MAX_REQUESTS) throw new Error('GENERATION_IMPORT_ORDINAL_INVALID')
       imports.context(run)
       const invocationNonce = `import:${request.ordinal}`
       const prior = deps.database.prepare('SELECT attempt_id,usage_receipt_json FROM generation_attempts WHERE run_id=? AND invocation_nonce=?').get(run.runId, invocationNonce) as { attempt_id: string; usage_receipt_json: string } | undefined

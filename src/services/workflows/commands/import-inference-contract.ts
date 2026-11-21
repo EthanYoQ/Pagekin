@@ -17,7 +17,6 @@ export interface ImportInferenceResult {
   characterCards: CharacterRosterEntry[]
 }
 
-export const MAX_IMPORT_INFERENCE_CHARACTER_CARDS = 8
 export const IMPORT_INFERENCE_ROUNDS = 2
 const PLOT_STRUCTURES = ['three_act', 'heros_journey', 'save_the_cat', 'kishotenketsu', 'multi_thread', 'freeform'] as const
 const NARRATIVE_POVS = ['third_limited', 'first_person', 'third_omniscient', 'multi_pov'] as const
@@ -44,9 +43,10 @@ export const IMPORT_INFERENCE_JSON_CONTRACT = `
     "motivation": "非空文本", "relationships": [{"target":"同一 characterCards 中另一角色的精确 name","relation":"非空关系文本"}],
     "arc": "非空文本", "notes": "非空文本",
     "currentState": {"location":"非空文本","powerLevel":"非空文本","physicalState":"非空文本","mentalState":"非空文本","keyItems":"非空文本","recentEvents":"非空文本","updatedAtChapter":0}
-  }]
+  }],
+  "otherCharacters": [{"name":"非空角色显示名","role":"protagonist | antagonist | supporting | minor","note":"一句话身份"}]
 }
-characterCards 必须有 3–8 项，至少一个 protagonist；不同人物可以同名，不得按名字合并。name 和关系 target 只是待作者确认的原始称呼，不是角色身份；同名关系保留为待确认提议。唯一名称不得自指，target 必须在本次 name 集合中。不得省略字段、使用中文枚举或以近义字段替代。`
+characterCards 写最重要的 3–8 位，至少一个 protagonist；原文里其余有名有姓、参与情节的人物全部列进 otherCharacters（没有就给空数组），不得遗漏，也不得与 characterCards 重复。不同人物可以同名，不得按名字合并。name 和关系 target 只是待作者确认的原始称呼，不是角色身份；同名关系保留为待确认提议。唯一名称不得自指，target 必须是 characterCards 或 otherCharacters 里的 name。不得省略字段、使用中文枚举或以近义字段替代。`
 
 const EN_US_IMPORT_INFERENCE_JSON_CONTRACT = `
 [Immutable import-inference JSON contract]
@@ -69,9 +69,10 @@ Output one direct JSON object only, with no Markdown fence or explanation. It mu
     "motivation": "non-empty text", "relationships": [{"target":"exact name of another character in characterCards","relation":"non-empty relationship text"}],
     "arc": "non-empty text", "notes": "non-empty text",
     "currentState": {"location":"non-empty text","powerLevel":"non-empty text","physicalState":"non-empty text","mentalState":"non-empty text","keyItems":"non-empty text","recentEvents":"non-empty text","updatedAtChapter":0}
-  }]
+  }],
+  "otherCharacters": [{"name":"non-empty character display name","role":"protagonist | antagonist | supporting | minor","note":"one-line identity"}]
 }
-characterCards must contain 3–8 items and at least one protagonist. Different people may share a name; never merge them by name. Names and relationship targets are original labels awaiting author confirmation, not character identities. Preserve ambiguous same-name relationships as proposals. A unique name may not self-reference, and every target must occur in the same name set. Do not omit fields, translate enum values, or substitute synonym field names.`
+characterCards holds the 3–8 most important characters, with at least one protagonist. List every other named character who takes part in the plot in otherCharacters (an empty array when there are none); leave no one out and do not repeat anyone from characterCards. Different people may share a name; never merge them by name. Names and relationship targets are original labels awaiting author confirmation, not character identities. Preserve ambiguous same-name relationships as proposals. A unique name may not self-reference, and every target must be a name in characterCards or otherCharacters. Do not omit fields, translate enum values, or substitute synonym field names.`
 
 export function importInferenceJsonContract(writingLanguage: WritingLanguage): string {
   return promptLanguageText(
@@ -199,9 +200,9 @@ function currentState(value: unknown, path: string): NonNullable<CharacterRoster
   }
 }
 
-function decodeCards(value: unknown): CharacterRosterEntry[] {
+function decodeCards(value: unknown, occurrences: ReadonlyMap<string, number>): CharacterRosterEntry[] {
   if (!Array.isArray(value)) throw new StructuredContractDiagnostic('invalid_type', 'characterCards')
-  if (value.length < 3 || value.length > MAX_IMPORT_INFERENCE_CHARACTER_CARDS) throw new StructuredContractDiagnostic('invalid_value', 'characterCards')
+  if (value.length < 3) throw new StructuredContractDiagnostic('invalid_value', 'characterCards')
   const cards = value.map((raw, index): CharacterRosterEntry => {
     const path = `characterCards[${index}]`
     const card = record(raw, path)
@@ -245,7 +246,8 @@ function decodeCards(value: unknown): CharacterRosterEntry[] {
       const path = `characterCards[${index}].relationships[${relationshipIndex}].target`
       // An occurrence is a candidate, not a name-keyed identity. A shared label
       // may refer to another occurrence and must reach the approval boundary intact.
-      if (relationship.target === card.name && cards.filter(candidate => candidate.name === card.name).length === 1) {
+      const people = Math.max(cards.filter(candidate => candidate.name === card.name).length, occurrences.get(card.name) ?? 0)
+      if (relationship.target === card.name && people === 1) {
         throw new StructuredContractDiagnostic('relationship_self_reference', path)
       }
       if (!names.has(relationship.target)) {
@@ -256,7 +258,20 @@ function decodeCards(value: unknown): CharacterRosterEntry[] {
   return cards
 }
 
-export function decodeImportInferenceJson(content: string): ImportInferenceResult {
+/** 首轮卡片加 otherCharacters 里每个名字出现的次数。同名的人可能还没有卡，自指要按这个数判断。 */
+function nameOccurrences(root: Record<string, unknown>): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const list of [root.characterCards, root.otherCharacters]) {
+    if (!Array.isArray(list)) continue
+    for (const item of list) {
+      const name = isRecord(item) ? decodedLabel(item.name) : undefined
+      if (name !== undefined) counts.set(name, (counts.get(name) ?? 0) + 1)
+    }
+  }
+  return counts
+}
+
+export function decodeImportInferenceJson(content: string, occurrences?: ReadonlyMap<string, number>): ImportInferenceResult {
   const root = parseImportInferenceJsonObject(content)
   const config = record(required(root, 'novelConfig', '$'), 'novelConfig')
   const architecture = record(required(root, 'architectureFiles', '$'), 'architectureFiles')
@@ -286,7 +301,7 @@ export function decodeImportInferenceJson(content: string): ImportInferenceResul
       worldbuilding: text(required(architecture, 'worldbuilding', 'architectureFiles'), 'architectureFiles.worldbuilding'),
       synopsis: text(required(architecture, 'synopsis', 'architectureFiles'), 'architectureFiles.synopsis'),
     },
-    characterCards: decodeCards(required(root, 'characterCards', '$')),
+    characterCards: decodeCards(required(root, 'characterCards', '$'), occurrences ?? nameOccurrences(root)),
   }
 }
 
@@ -353,41 +368,57 @@ function decodedLabel(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
-function unresolvedImportRelationshipTargets(root: Record<string, unknown>, text: UiText): string[] {
+export const IMPORT_CARD_BATCH_SIZE = 3
+export const IMPORT_CARD_RECOVERY_PURPOSE = 'import-inference:endpoint-card-recovery'
+
+/** 一位还没有角色卡的人。合同允许不同人物同名，所以按出现位置算，note 是原稿里的身份，用来区分同名的人。 */
+export interface ImportRecoveryTarget {
+  name: string
+  note?: string
+}
+
+/** 名单里的人逐条算、按模型列的顺序（和卡上或彼此同名也是另一个人），再是关系指向、卡和名单里都没有的名字（按被指向的次数）。 */
+export function importEndpointRecoveryTargets(original: string, text: UiText): ImportRecoveryTarget[] {
+  const root = parseImportInferenceJsonObject(original)
   const cards = importInferenceCards(root, text)
-  const names = new Set(cards.map(card => decodedLabel(card.name)))
+  const listed = Array.isArray(root.otherCharacters) ? root.otherCharacters.flatMap((item): ImportRecoveryTarget[] => {
+    const name = isRecord(item) ? decodedLabel(item.name) : undefined
+    const note = isRecord(item) ? decodedLabel(item.note) : undefined
+    return name === undefined ? [] : [note === undefined ? { name } : { name, note }]
+  }) : []
+  const known = new Set([...cards.map(card => decodedLabel(card.name)), ...listed.map(target => target.name)])
   const references = new Map<string, number>()
   for (const card of cards) {
     const relationships = card.relationships
     if (!Array.isArray(relationships)) continue
     for (const relationship of relationships) {
       const target = isRecord(relationship) ? decodedLabel(relationship.target) : undefined
-      if (target !== undefined && !names.has(target)) references.set(target, (references.get(target) ?? 0) + 1)
+      if (target !== undefined && !known.has(target)) references.set(target, (references.get(target) ?? 0) + 1)
     }
   }
-  return [...references.keys()].sort((a, b) => references.get(b)! - references.get(a)!)
+  const dangling = [...references.keys()].sort((a, b) => references.get(b)! - references.get(a)!)
+  return [...listed, ...dangling.map(name => ({ name }))]
 }
 
-export function importEndpointRecoveryTargets(original: string, text: UiText): string[] {
-  const root = parseImportInferenceJsonObject(original)
-  const room = MAX_IMPORT_INFERENCE_CHARACTER_CARDS - importInferenceCards(root, text).length
-  return unresolvedImportRelationshipTargets(root, text).slice(0, Math.max(0, room))
+/** 按出现顺序连续切，每批最多三位；遇到和本批同名的人就另起一批，模型回的卡按名字就能对上是哪一位。中途停下时没卡的总是排在后面的人。 */
+export function importRecoveryBatches(targets: readonly ImportRecoveryTarget[]): ImportRecoveryTarget[][] {
+  const batches: ImportRecoveryTarget[][] = []
+  for (const target of targets) {
+    const batch = batches.at(-1)
+    if (batch && batch.length < IMPORT_CARD_BATCH_SIZE && !batch.some(other => other.name === target.name)) batch.push(target)
+    else batches.push([target])
+  }
+  return batches
 }
 
 function parseImportEndpointCorrectionDelta(
   content: string,
-  unresolvedTargets: readonly string[],
+  outstanding: readonly ImportRecoveryTarget[],
   text: UiText,
 ): Array<Record<string, unknown>> {
   const deltaRoot = parseImportInferenceJsonObject(content)
   assertExactImportEndpointDeltaKeys(deltaRoot, ['characterCards'], '$', text)
   const deltaCards = importInferenceCards(deltaRoot, text)
-  if (deltaCards.length !== unresolvedTargets.length) {
-    throw new Error(text(
-      '导入推演受限补卡校正只能新增缺失关系端点角色',
-      'The bounded import correction may add only characters required by missing relationship endpoints.',
-    ))
-  }
   for (const [index, deltaCard] of deltaCards.entries()) {
     const path = `characterCards[${index}]`
     assertExactImportEndpointDeltaKeys(deltaCard, IMPORT_ENDPOINT_DELTA_CARD_KEYS, path, text)
@@ -413,24 +444,17 @@ function parseImportEndpointCorrectionDelta(
       })
     }
   }
-  const expectedAddedNames = new Set(unresolvedTargets)
   const addedNames = deltaCards.map(card => decodedLabel(card.name))
-  if (addedNames.some(name => name === undefined || !expectedAddedNames.has(name))) {
+  if (!addedNames.length || addedNames.some(name => name === undefined || !outstanding.some(target => target.name === name))) {
     throw new Error(text(
-      '导入推演受限补卡校正新增角色必须精确匹配原始未闭合关系端点',
-      'Characters added by the bounded import correction must exactly match the original unresolved endpoints.',
+      '导入推演补卡只能补还没有角色卡的人',
+      'An import card batch may add only people who still have no character card.',
     ))
   }
   if (new Set(addedNames).size !== addedNames.length) {
     throw new Error(text(
       '导入推演受限补卡校正 delta 包含重复缺失关系端点角色',
       'The bounded import correction delta contains duplicate missing-endpoint characters.',
-    ))
-  }
-  if (addedNames.length !== expectedAddedNames.size) {
-    throw new Error(text(
-      '导入推演受限补卡校正 delta 缺失关系端点角色',
-      'The bounded import correction delta omits a missing-endpoint character.',
     ))
   }
   return deltaCards
@@ -445,12 +469,15 @@ export interface DroppedImportRelationship {
 export interface RecoveredImportInference {
   result: ImportInferenceResult
   droppedRelationships: DroppedImportRelationship[]
+  missing: ImportRecoveryTarget[]
+  /** 按顺序用上的补卡批数。遇到第一批不合格就停，后面的批不再算。 */
+  accepted: number
 }
 
 function decodeWithoutDanglingRelationships(
   root: Record<string, unknown>,
   cards: Array<Record<string, unknown>>,
-): RecoveredImportInference {
+): Omit<RecoveredImportInference, 'missing' | 'accepted'> {
   const names = new Set(cards.map(card => decodedLabel(card.name)))
   const droppedRelationships: DroppedImportRelationship[] = []
   const characterCards = cards.map((card) => {
@@ -470,26 +497,36 @@ function decodeWithoutDanglingRelationships(
     return { ...card, relationships }
   })
   return {
-    result: decodeImportInferenceJson(JSON.stringify({ ...root, characterCards })),
+    result: decodeImportInferenceJson(JSON.stringify({ ...root, characterCards }), nameOccurrences(root)),
     droppedRelationships,
   }
 }
 
-export function decodeRecoveredImportInference(original: string, delta: string | null, text: UiText): RecoveredImportInference {
-  try {
-    return { result: decodeImportInferenceJson(original), droppedRelationships: [] }
-  } catch (error) {
-    if (!(error instanceof StructuredContractDiagnostic) || error.code !== 'relationship_endpoint_not_in_characters') throw error
-  }
+/**
+ * 首轮卡片加上各批补卡。第 i 份补卡对应 importRecoveryBatches 的第 i 批，只能补这一批里的人，可以只补其中几位。
+ * 遇到第一批不合格就停，后面的不算，返回用上的批数，在线补卡据此不再请求。
+ * 没有 otherCharacters 的旧版记录（一次补卡可以补完所有人），每份补卡按剩下的所有空位校验；这时缺卡的名字互不相同，不会对错人。
+ * 悬空关系等全部批次合并后才丢，所以指向后面批次人物的关系会保留。
+ */
+export function decodeRecoveredImportInference(original: string, deltas: readonly string[], text: UiText): RecoveredImportInference {
   const root = parseImportInferenceJsonObject(original)
-  const cards = importInferenceCards(root, text)
-  if (delta !== null) {
+  let cards = importInferenceCards(root, text)
+  const targets = importEndpointRecoveryTargets(original, text)
+  const batches = Array.isArray(root.otherCharacters) ? importRecoveryBatches(targets) : undefined
+  const filled = new Set<ImportRecoveryTarget>()
+  let accepted = 0
+  for (const [index, delta] of deltas.entries()) {
+    const batch = batches ? batches[index] ?? [] : targets.filter(target => !filled.has(target))
+    let added: Array<Record<string, unknown>>
     try {
-      const added = parseImportEndpointCorrectionDelta(delta, importEndpointRecoveryTargets(original, text), text)
-      return decodeWithoutDanglingRelationships(root, [...cards, ...added])
+      added = parseImportEndpointCorrectionDelta(delta, batch, text)
+      decodeWithoutDanglingRelationships(root, [...cards, ...added])
     } catch {
-      // 不合格的补卡整份不用，下面只丢悬空关系。
+      break
     }
+    cards = [...cards, ...added]
+    for (const card of added) filled.add(batch.find(target => target.name === decodedLabel(card.name) && !filled.has(target))!)
+    accepted += 1
   }
-  return decodeWithoutDanglingRelationships(root, cards)
+  return { ...decodeWithoutDanglingRelationships(root, cards), missing: targets.filter(target => !filled.has(target)), accepted }
 }

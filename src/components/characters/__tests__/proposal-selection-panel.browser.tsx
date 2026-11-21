@@ -63,3 +63,18 @@ it('源角色改成暂不采用时，指向已有角色的关系一并去掉', a
   expect(latest.relationships).toEqual([])
   expect(relationBox().disabled).toBe(true)
 })
+
+it('架构提议有 40 位候选时，每位都有采用方式，指向下一位的关系都能采用', async () => {
+  const items = Array.from({ length: 40 }, (_, index) => ({ selectionKey: `slot-${index}`, sourceId: `run:slot-${index}`,
+    fields: { name: `人物${index + 1}`, role: index === 0 ? 'protagonist' as const : 'supporting' as const, background: `第 ${index + 1} 位的来历。` },
+    relationships: [{ targetSelectionKey: `slot-${(index + 1) % 40}`, relation: '牵连' }], resolution: { status: 'unresolved' as const, candidateIds: [] } }))
+  const batch: CharacterProposalBatch = { ...architectureBatch, proposalBatchId: 'cpb:forty', items }
+  await act(async () => root.render(<CharacterProposalSelectionPanel batch={batch}
+    choices={createCharacterProposalChoices(batch, [])} onChange={() => {}} />))
+  expect(host.querySelectorAll('select')).toHaveLength(40)
+  expect(host.querySelector('[aria-label="采用方式：人物40 · slot-39"]')).not.toBeNull()
+  const relations = [...host.querySelectorAll('label')].filter(label => label.textContent?.includes('：牵连'))
+  expect(relations).toHaveLength(40)
+  expect(relations.every(label => label.querySelector('input')!.disabled === false)).toBe(true)
+  expect(relations.some(label => label.textContent === '人物40 → 人物1：牵连')).toBe(true)
+})

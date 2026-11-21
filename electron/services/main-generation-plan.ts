@@ -114,6 +114,32 @@ export function importRunRequestBound(chapterCount: number): number {
   return 2 * MAIN_GENERATION_POLICY.budget.maxPhysicalRequests + planBlueprintGenerationCost(chapterCount).recoveryCallBound
 }
 
+/**
+ * 角色步骤按名单人数 N 的请求上界：名单 1 次 + 截断后整份重写 2 次 + 详情 2N − ceil(N/3) 次 + 唯一一次语法修复。
+ * 详情 3 位一批，截断就对半拆到单张，k 位一批最多 2k − 1 次（structured-batch-executor）。
+ * 开跑时名单还没返回，按 N = 0 定额；名单返回后由 characterRosterBudget 按实际人数加额。
+ */
+function characterStepRequestBound(characters: number): number {
+  return 3 + (2 * characters - Math.ceil(characters / 3)) + 1
+}
+
+function architectureRequestBound(intent: ArchitecturePlanningIntent, characters: number): number {
+  return intent.priorSteps.reduce((sum, step) => sum + (step === 'premise' ? 1 : step === 'worldbuilding' ? 2 : characterStepRequestBound(characters)), 0)
+    + (intent.synopsisRange ? 2 * (intent.synopsisRange.to - intent.synopsisRange.from + 1) : 0)
+}
+
+/**
+ * 名单返回后的根预算，只升不降，每次请求的时长与 token 责任不变。
+ * 架构根按冻结意图和实际人数重算；Agent 回合的根还要给回合本身和别的工作流留额，在冻结额度上加角色步按人数多出的次数。
+ */
+export function characterRosterBudget(root: MainGenerationPolicy, run: MainGenerationPolicy, characters: number): RootBudget {
+  if (run.planning?.kind !== 'architecture') throw new Error('GENERATION_PLANNING_BUDGET_INVALID')
+  const { budget } = root
+  const requests = root.planning ? architectureRequestBound(run.planning.intent, characters)
+    : budget.maxPhysicalRequests + characterStepRequestBound(characters) - characterStepRequestBound(0)
+  return scaledRootBudget(Math.max(budget.maxPhysicalRequests, requests), budget.maxOutputPerRequest, budget.maxTokenLiability / budget.maxPhysicalRequests)
+}
+
 export function newMainGenerationPolicy(selection: BeginGenerationRequest, model: ModelProfile, importChapterCount?: number): MainGenerationPolicy {
   const planning = planningGenerationScope(selection)
   if (planning) {
@@ -128,9 +154,7 @@ export function newMainGenerationPolicy(selection: BeginGenerationRequest, model
     : selection.batchIntent ? selection.batchIntent.range.endChapter - selection.batchIntent.range.startChapter + 1
     : planning?.kind === 'directory'
     ? planBlueprintGenerationCost(planning.requestedRange.endChapter - planning.requestedRange.startChapter + 1).recoveryCallBound
-    : planning?.kind === 'architecture' ? planning.intent.priorSteps.reduce((sum, step) => sum + (step === 'premise' ? 1 : step === 'worldbuilding' ? 2
-      : 3 + (2 * 8 - Math.ceil(8 / 3)) + 1), 0)
-      + (planning.intent.synopsisRange ? 2 * (planning.intent.synopsisRange.to - planning.intent.synopsisRange.from + 1) : 0)
+    : planning?.kind === 'architecture' ? architectureRequestBound(planning.intent, 0)
     : MAIN_GENERATION_POLICY.budget.maxPhysicalRequests
   const liability = Math.max(...REASONING_STAGES.flatMap(stage =>
     CREATIVE_STRATEGIES.map(strategy => resolvePhysicalLiability(model, strategy, stage).reservationCeiling)))

@@ -586,7 +586,7 @@ function decodeCompleteNovelConfig(
  * 不再依赖 Markdown 标题或后续第二次模型提取。
  */
 const MIN_CHARACTER_SLOTS = 3
-const MAX_CHARACTER_SLOTS = 8
+const MANIFEST_LENGTH_REPLACEMENTS = 2
 const CHARACTER_DETAIL_BATCH_SIZE = 3
 const MAX_CHARACTER_STRUCTURED_CONTEXT_UTF8_BYTES = 32_768
 function promptUtf8Bytes(value: string): number { return new TextEncoder().encode(value).byteLength }
@@ -1047,11 +1047,7 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
     const creativeSystem = composePromptSystemRole(creativeTemplate, writingLanguage)
     const creativeGuidance = renderPromptTaskGuidance(creativeTemplate, templateVariables, writingLanguage)
     const manifestSystem = `${creativeSystem}\n\n${promptCopy.manifestSystem}`
-    const manifestTask = promptCopy.manifestTask(
-      manifestContextJson,
-      MIN_CHARACTER_SLOTS,
-      MAX_CHARACTER_SLOTS,
-    )
+    const manifestTask = promptCopy.manifestTask(manifestContextJson, MIN_CHARACTER_SLOTS)
     const manifestPrompt = creativeGuidance
       ? `${creativeGuidance}\n\n${manifestTask}`
       : manifestTask
@@ -1064,7 +1060,7 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
       manifestPrompt,
       manifestSystem,
       callbacks,
-      { mode: 'replace-structured-output', maxContinuations: 2 },
+      { mode: 'replace-structured-output', maxContinuations: MANIFEST_LENGTH_REPLACEMENTS },
       {
         responseFormat: { type: 'json_object' },
         purpose: 'character-architecture-manifest',
@@ -1091,7 +1087,16 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
         },
       },
       context,
-    )
+    ).catch((error: unknown) => {
+      const attempts = this.artifactReferences.filter(reference => reference.purpose === 'character-architecture-manifest')
+      if (attempts.length > MANIFEST_LENGTH_REPLACEMENTS && attempts.every(reference => reference.finishReason === 'length')) {
+        throw new Error(text(
+          '已有角色没有变动。人物太多，模型一次写不下：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。',
+          'Your existing characters are unchanged. The cast is too long for one model reply: raise Max output tokens in the model’s Advanced settings and generate again, or add people with Paste or import cards on the Cast page.',
+        ))
+      }
+      throw error
+    })
     context.data.characterManifestArtifacts = this.artifactReferences.map(reference => ({ ...reference }))
     const manifestArtifact = this.artifactReferences.at(-1)
     let manifest: CharacterIdentitySlot[]
@@ -1203,6 +1208,12 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
       ? [{ ...receipt.visibleArtifact, purpose: receipt.purpose, finishReason: receipt.finishReason }] : [])
     if (!detailExecution.ok) {
       if (detailExecution.failure.terminal) throw detailExecution.failure.terminal
+      if (detailExecution.failure.reason === 'root_budget') {
+        throw new Error(text(
+          '已有角色没有变动。人物太多，这次生成的额度（请求次数与时长）用完了：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。',
+          'Your existing characters are unchanged. The cast used up this run’s request and time budget: raise Max output tokens in the model’s Advanced settings and generate again, or add people with Paste or import cards on the Cast page.',
+        ))
+      }
       const diagnostic = detailExecution.failure.diagnostic
       const attempts = detailExecution.receipt.attempts.length > 0
         ? detailExecution.receipt.attempts

@@ -10,14 +10,17 @@ import type { CharacterProposalProof } from './character-proposal-service'
 import type { ImportGlobalFactsReceipt } from '../../src/shared/import-global-facts'
 import { proveFinalizedCharacterGeneration } from './finalized-character-generation-proof'
 import { readLegacyRosterGenerationProof } from './legacy-roster-generation-proof'
-import { decodeRecoveredImportInference, IMPORT_INFERENCE_ROUNDS } from '../../src/services/workflows/commands/import-inference-contract'
+import { decodeRecoveredImportInference, IMPORT_CARD_RECOVERY_PURPOSE, IMPORT_INFERENCE_ROUNDS } from '../../src/services/workflows/commands/import-inference-contract'
 import { preservesStructuredJsonEvidence } from '../../src/services/workflows/structured-syntax-repair'
 
 function importCharacterEntriesFromArtifacts(db: Database.Database, runs: GenerationRunRepository, runId: string) {
   const rows = db.prepare(`SELECT t.attempt_id,json_extract(t.usage_receipt_json,'$.purpose') AS purpose
     FROM generation_attempts t JOIN generation_artifacts a ON a.attempt_id=t.attempt_id
     WHERE t.run_id=? AND a.status<>'discarded' ORDER BY t.rowid`).all(runId) as { attempt_id: string; purpose: string }[]
-  const endpoint = rows.filter(row => row.purpose === 'import-inference:endpoint-card-recovery')
+  const endpoint = rows.filter(row => row.purpose === IMPORT_CARD_RECOVERY_PURPOSE)
+  // 补卡失败后不再有请求，最后那次失败的补卡没有可用输出，它那批人按没补出算。
+  const last = endpoint.at(-1) && runs.receipt(endpoint.at(-1)!.attempt_id)
+  if (last && (last.failureCode || last.result?.finishReason !== 'stop')) endpoint.pop()
   const output = (row: typeof rows[number]) => {
     const receipt = runs.receipt(row.attempt_id), artifact = receipt.artifact
     if (!artifact || receipt.failureCode || receipt.result?.finishReason !== 'stop'
@@ -35,13 +38,12 @@ function importCharacterEntriesFromArtifacts(db: Database.Database, runs: Genera
   }
   const accepted = rounds.map(round => round.repair === undefined ? round.inference
     : preservesStructuredJsonEvidence(round.inference, round.repair) ? round.repair : null)
-  if (!rounds.length || rounds.length > IMPORT_INFERENCE_ROUNDS || endpoint.length > 1
+  if (!rounds.length || rounds.length > IMPORT_INFERENCE_ROUNDS
     || accepted.slice(0, -1).some(text => text !== null)) return null
   const original = accepted.at(-1)
   if (!original) return null
-  const delta = endpoint[0] ? output(endpoint[0]) : null
   try {
-    return decodeRecoveredImportInference(original, delta, (_zh, en) => en).result.characterCards
+    return decodeRecoveredImportInference(original, endpoint.map(output), (_zh, en) => en).result.characterCards
   } catch { return null }
 }
 
@@ -140,7 +142,7 @@ export function proveCharacterProposal(db: Database.Database, runs: GenerationRu
   }
   if (source.kind !== 'generation' || !['architecture', 'planning-material'].includes(source.inputKind)
     || Object.keys(source).some(key => !['kind', 'inputKind', 'handle', 'artifacts', 'manifestArtifactId'].includes(key))
-    || !Array.isArray(source.artifacts) || !source.artifacts.length || source.artifacts.length > 64
+    || !Array.isArray(source.artifacts) || !source.artifacts.length
     || new Set(source.artifacts.map(item => item.artifactId)).size !== source.artifacts.length) throw new Error('CHARACTER_PROPOSAL_SOURCE_INVALID')
   const run = runs.get(source.handle.runId)
   if (run.binding.projectId !== projectId || source.handle.projectId !== projectId || run.rootActionId !== source.handle.rootActionId)
