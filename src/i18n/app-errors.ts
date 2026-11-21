@@ -330,8 +330,8 @@ const ERROR_KEYS = {
   EMBEDDING_OLLAMA_NATIVE_URL: 'error.embeddingOllamaNativeUrl',
   EMBEDDING_RESPONSE_INVALID: 'error.embeddingResponseInvalid',
   EMBEDDING_CONNECTION_FAILED: 'error.embeddingConnectionFailed',
-  // 连接失败（src/shared/connection-failure.ts 按 fetch 的 cause.code 分类）：模型的测试连接与重建检索共用。
   PROXY_UNREACHABLE: 'error.proxyUnreachable',
+  // 连接失败（src/shared/connection-failure.ts 按 fetch 的 cause.code 分类）：模型的测试连接与重建检索共用。
   CONNECTION_REFUSED: 'error.connectionRefused',
   CONNECTION_HOST_NOT_FOUND: 'error.connectionHostNotFound',
   CONNECTION_TIMED_OUT: 'error.connectionTimedOut',
