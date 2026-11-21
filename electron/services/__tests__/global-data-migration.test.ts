@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { runGlobalDataMigration, activateGlobalData, GLOBAL_OBJECTS, type GlobalMigrationOptions } from '../global-data-migration'
+import { runGlobalDataMigration, activateGlobalData, blockedStartupCode, GLOBAL_OBJECTS, type GlobalMigrationOptions } from '../global-data-migration'
 import { resolveDefaultUserData, resolveGlobalDataRoots } from '../app-data-locator'
 
 const created: string[] = []
@@ -156,7 +156,8 @@ describe('single global generation cutover using synthetic roots only', () => {
       }
       rename(source, target)
     })
-    expect(runGlobalDataMigration(roots)).toEqual({ state: 'blocked', code: 'GLOBAL_MIGRATION_IO_FAILED' })
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    expect(runGlobalDataMigration(roots)).toEqual({ state: 'blocked', code: 'GLOBAL_MIGRATION_IO_FAILED', errno: 'EIO' })
     failure.mockRestore()
     expect(temporary).not.toBe('')
     expect(fs.existsSync(temporary)).toBe(true)
@@ -219,6 +220,48 @@ describe('single global generation cutover using synthetic roots only', () => {
     const before = snapshot(roots.canonicalTarget)
     expect(runGlobalDataMigration(roots)).toEqual({ state: 'blocked', code: 'GLOBAL_MODEL_CREDENTIALS_DIFFER' })
     expect(snapshot(roots.canonicalTarget)).toEqual(before)
+    expect(blockedStartupCode({ state: 'blocked', code: 'GLOBAL_MODEL_CREDENTIALS_DIFFER' })).toBe('GLOBAL_MODEL_CREDENTIALS_DIFFER')
+  })
+  it.each([
+    ['ENOSPC', 'GLOBAL_DISK_FULL'],
+    ['EACCES', 'GLOBAL_DATA_UNWRITABLE'],
+    ['EPERM', 'GLOBAL_DATA_UNWRITABLE'],
+    ['EBUSY', 'GLOBAL_DATA_UNWRITABLE'],
+    ['EROFS', 'GLOBAL_DATA_UNWRITABLE'],
+    ['EIO', 'GLOBAL_DATA_BLOCKED'],
+  ])('keeps the file-system cause %s, logs the original error, and tells startup %s', (errno, expected) => {
+    const roots = fixture(); populate(roots.legacySource); const before = snapshot(roots.legacySource)
+    const diskError = Object.assign(new Error(`${errno}: fixture failure, mkdir`), { code: errno, syscall: 'mkdir' })
+    vi.spyOn(fs, 'mkdirSync').mockImplementation(() => { throw diskError })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const result = runGlobalDataMigration(roots)
+    expect(result).toEqual({ state: 'blocked', code: 'GLOBAL_MIGRATION_IO_FAILED', errno })
+    expect(log.mock.calls.some(args => args.includes(diskError))).toBe(true)
+    if (result.state !== 'blocked') throw new Error('fixture migration was expected to block')
+    expect(blockedStartupCode(result)).toBe(expected)
+    vi.mocked(fs.mkdirSync).mockRestore()
+    expect(snapshot(roots.legacySource)).toEqual(before)
+  })
+  it('reports a corrupt source as a general block without logging a file-system cause', () => {
+    const roots = fixture(); populate(roots.legacySource); put(roots.legacySource, 'config.json', '{corrupt')
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const result = runGlobalDataMigration(roots)
+    expect(result).toEqual({ state: 'blocked', code: 'GLOBAL_JSON_INVALID' })
+    if (result.state === 'blocked') expect(blockedStartupCode(result)).toBe('GLOBAL_DATA_BLOCKED')
+    expect(log).not.toHaveBeenCalled()
+  })
+  it('reports a config file that cannot be read as a file-system cause, not as corrupt JSON', () => {
+    const roots = fixture(); populate(roots.legacySource)
+    const read = fs.readFileSync
+    const locked = Object.assign(new Error('EBUSY: resource busy or locked, open'), { code: 'EBUSY', syscall: 'open' })
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, ...rest: unknown[]) => {
+      if (path.basename(String(file)) === 'config.json') throw locked
+      return (read as (...args: unknown[]) => unknown)(file, ...rest)
+    }) as typeof fs.readFileSync)
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const result = runGlobalDataMigration(roots)
+    expect(result).toEqual({ state: 'blocked', code: 'GLOBAL_MIGRATION_IO_FAILED', errno: 'EBUSY' })
+    expect(log.mock.calls.some(args => args.includes(locked))).toBe(true)
   })
   it('ignores later corrupt legacy changes after receipt and uses current canonical config', () => {
     const roots = fixture(); populate(roots.legacySource); const result = runGlobalDataMigration(roots)
