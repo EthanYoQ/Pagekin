@@ -212,4 +212,40 @@ describe('runPostProcessPipeline stopOnFailure', () => {
 
     expect(invoke).not.toHaveBeenCalled()
   })
+
+  it('#702 retry log and stop message explain a post-processing step code instead of showing it', async () => {
+    stubIpcInvoke()
+    const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
+
+    const failure = runPostProcessPipeline('C:/novel', 'chapter_2_finalize', 'Chapter 2 finalization', [
+      { key: 'chapter_notes', label: 'Chapter notes', critical: false, executor: async () => { throw new Error('FINALIZATION_GENERATION_INCOMPLETE') } },
+    ], callbacks, { retryCount: 1, stopOnFailure: true, cancellation: englishContext(), projectSession })
+
+    await expect(failure).rejects.toThrow('Post-processing step failed: Chapter notes — The model did not return a complete result')
+    await expect(failure).rejects.not.toThrow(/FINALIZATION_/u)
+    const logs = vi.mocked(callbacks.log).mock.calls.flat().join('\n')
+    expect(logs).toContain('The model did not return a complete result')
+    expect(logs).not.toMatch(/FINALIZATION_/u)
+  })
+
+  it('#702 summary log explains each failed step through the same reason as the step row', async () => {
+    const failed = { id: 1, runId: 'run-1', stepKey: 'chapter_notes', label: 'Chapter notes', critical: false, ok: false, errorMsg: 'FINALIZATION_GENERATION_INCOMPLETE', attemptCount: 1, completedAt: '', lastAttemptAt: '2026-11-21T00:00:00.000Z' }
+    const invoke = stubIpcInvoke()
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'db:post-process-get-latest-run') return null
+      if (channel === 'db:post-process-create-run') return { success: true, id: 'run-1' }
+      if (channel === 'db:post-process-get-steps') return [failed] as never
+      if (channel === 'db:post-process-mark-step-failed') return { success: true }
+      throw new Error(`Unexpected IPC channel: ${channel}`)
+    })
+    const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
+
+    await runPostProcessPipeline('C:/novel', 'chapter_2_finalize', 'Chapter 2 finalization', [
+      { key: 'chapter_notes', label: 'Chapter notes', critical: false, executor: async () => { throw new Error('FINALIZATION_GENERATION_INCOMPLETE') } },
+    ], callbacks, { retryCount: 0, cancellation: englishContext(), projectSession })
+
+    const logs = vi.mocked(callbacks.log).mock.calls.flat().join('\n')
+    expect(logs).toContain('Failed: Chapter notes — The model did not return a complete result')
+    expect(logs).not.toMatch(/FINALIZATION_/u)
+  })
 })
