@@ -1,4 +1,5 @@
 import { displayedErrorMessage, englishWithReason, importGenerationStopMessage } from '../../../i18n/app-errors'
+import { IMPORT_SLOT_MAX_REQUESTS } from '../../../shared/import-generation'
 import type { NovelConfig } from '../../../shared/ipc-channels'
 import type { ImportGenerationContext, ImportGenerationSlot } from '../../../shared/import-generation'
 import type { BeginGenerationRequest } from '../../../shared/generation-owner-contract'
@@ -212,10 +213,11 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     return this.executeWithGenerationRuntime('structured', params, () => this.executeWithinGeneration(params), { operation: 'import-global-facts', promptKeys: ['infer_novel_config_with_vectors', 'infer_novel_config'], skillStages: ['planning'], output: 'structured-data', ...importGenerationSelection(params.context, 'global') })
   }
 
-  /** 请求额度用完，某批到了模型却没拿回完整结果（失败、截断），或拿回的卡不合格时，不再发后面的批次，已补出的卡照常提交，其余的人列进缺卡提示。取消、租约过期这类错误照常抛出。 */
+  /** 根的请求额度或这个导入 slot 的请求序号用完，某批到了模型却没拿回完整结果（失败、截断），或拿回的卡不合格时，不再发后面的批次，已补出的卡照常提交，其余的人列进缺卡提示。取消、租约过期这类错误照常抛出。 */
   private async decodeImportInferenceWithEndpointRecovery(
     rawResult: string,
     budget: LLMCompletion['receipt']['budget'],
+    requests: number,
     callbacks: CommandExecuteParams['callbacks'],
     context: CommandExecuteParams['context'],
   ): Promise<ImportInferenceResult> {
@@ -234,10 +236,11 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     const deltas: string[] = []
     let used = budget
     for (const batch of importRecoveryBatches(recoveryTargets)) {
-      if (used.attempt >= used.maxAttempts) break
+      if (used.attempt >= used.maxAttempts || requests >= IMPORT_SLOT_MAX_REQUESTS) break
       const sofar = decodeRecoveredImportInference(rawResult, deltas, text)
       if (sofar.accepted < deltas.length) break
       let correction: LLMCompletion
+      requests += 1
       try {
         correction = await this.requestImportEndpointCards(rawResult, sofar.result.characterCards, batch, callbacks, context)
       } catch (error) {
@@ -455,7 +458,9 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
 
     let rawResult: string | undefined
     let budget!: LLMCompletion['receipt']['budget']
+    let requests = 0
     for (let round = 0; round < IMPORT_INFERENCE_ROUNDS && rawResult === undefined; round += 1) {
+      requests += 1
       const initial = await this.callLLMResult(
         prompt,
         composePromptSystemRole({
@@ -486,6 +491,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
         output: 'structured-data',
         messages: [],
       }, inferenceContract, initial.content, writingLanguage)
+      requests += 1
       const repair = await this.callLLMResult(
         repairTask.messages[1].content,
         repairTask.messages[0].content,
@@ -527,7 +533,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     // Keep the exact visible candidate even when the legacy name-based contract
     // rejects ambiguity. This is not a formal fact or an adoption authorization.
     context.data.importGlobalInferenceCandidate = rawResult
-    const inferResult = await this.decodeImportInferenceWithEndpointRecovery(rawResult, budget, callbacks, context)
+    const inferResult = await this.decodeImportInferenceWithEndpointRecovery(rawResult, budget, requests, callbacks, context)
 
     const roster = await ipc.invokeWithProjectSession(
       projectSession,

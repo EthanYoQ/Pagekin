@@ -39,7 +39,7 @@ import type { ReviewRevisionContext, PrepareReviewRevisionRequest, ReviewGenerat
 import { ReviewRevisionGeneration, ReviewSourceDeletedError } from './review-revision-generation'
 import { AgentGeneration, type AgentBeginSelection } from './agent-generation'
 import { ImportGeneration, importSlotNonce } from './import-generation'
-import type { ImportGenerationSlot } from '../../src/shared/import-generation'
+import { IMPORT_SLOT_MAX_REQUESTS, type ImportGenerationSlot } from '../../src/shared/import-generation'
 import { importGenerationSlotKey } from './import-generation-source'
 import type { ApproveCharacterProposalRequest } from '../../src/shared/character-proposal'
 import type { AgentGenerationContext, AgentGenerationInput } from '../../src/shared/agent-generation'
@@ -1677,7 +1677,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     },
     executeImportGeneration: async (request: import('../../src/shared/import-generation').ImportGenerationChannels['import-generation:execute']['args'][0]) => {
       const run = requireRun(request.handle)
-      if (!Number.isSafeInteger(request.ordinal) || request.ordinal < 0 || request.ordinal >= MAIN_GENERATION_POLICY.budget.maxPhysicalRequests) throw new Error('GENERATION_IMPORT_ORDINAL_INVALID')
+      if (!Number.isSafeInteger(request.ordinal) || request.ordinal < 0 || request.ordinal >= IMPORT_SLOT_MAX_REQUESTS) throw new Error('GENERATION_IMPORT_ORDINAL_INVALID')
       imports.context(run)
       const invocationNonce = `import:${request.ordinal}`
       const prior = deps.database.prepare('SELECT attempt_id,usage_receipt_json FROM generation_attempts WHERE run_id=? AND invocation_nonce=?').get(run.runId, invocationNonce) as { attempt_id: string; usage_receipt_json: string } | undefined
