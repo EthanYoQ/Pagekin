@@ -11,6 +11,9 @@ import { _electron as electron } from 'playwright'
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server.address().port)))
 
+let app
+let root
+let proxy
 const targetSaw = []
 const target = http.createServer((req, res) => {
   req.resume()
@@ -21,45 +24,45 @@ const target = http.createServer((req, res) => {
     res.end(JSON.stringify({ choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }] }))
   })
 })
-const targetPort = await new Promise(resolve => target.listen(0, '::', () => resolve(target.address().port)))
-
-const proxySaw = []
-const proxy = http.createServer((req, res) => {
-  proxySaw.push(req.url)
-  res.writeHead(502).end()
-})
-proxy.on('connect', (req, socket, head) => {
-  proxySaw.push(`CONNECT ${req.url}`)
-  const upstream = net.connect(targetPort, '127.0.0.1', () => {
-    socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
-    upstream.write(head)
-    upstream.pipe(socket)
-    socket.pipe(upstream)
-  })
-  upstream.on('error', () => socket.destroy())
-  socket.on('error', () => upstream.destroy())
-})
-const proxyPort = await listen(proxy)
-const closed = http.createServer()
-const closedPort = await listen(closed)
-await new Promise(resolve => closed.close(resolve))
-
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'proxy-journey-'))
-const roots = Object.fromEntries(['canonical', 'legacy', 'home', 'appData', 'localAppData', 'temp', 'userData'].map(name => [name, path.join(root, name)]))
-for (const [name, dir] of Object.entries(roots)) if (name !== 'canonical') fs.mkdirSync(dir, { recursive: true })
-const env = { ...process.env, AI_NOVEL_APP_DATA_HOME: roots.canonical, AI_NOVEL_LEGACY_SOURCE_HOME: roots.legacy, AI_NOVEL_VELA_HOME: roots.legacy,
-  HOME: roots.home, USERPROFILE: roots.home, APPDATA: roots.appData, LOCALAPPDATA: roots.localAppData, TEMP: roots.temp, TMP: roots.temp }
-for (const name of ['ELECTRON_RUN_AS_NODE', 'VITE_DEV_SERVER_URL', 'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'NO_PROXY', 'no_proxy', 'NODE_USE_ENV_PROXY']) delete env[name]
-
-const model = (baseUrl, purposes = ['generation']) => ({ id: `probe-${purposes[0]}`, name: 'probe', provider: 'custom', protocol: 'openai',
-  modelName: 'probe-model', apiKey: 'sk-probe-not-a-secret', baseUrl, temperature: 0.7, maxTokens: 256, purposes })
-const REMOTE = 'http://model-probe.test/v1'
-const PROXY_DOWN = '连不上「网络代理」里设置的代理'
-
-const app = await electron.launch({ cwd: repository, env, timeout: 90_000,
-  args: ['-r', path.join(repository, 'scripts/redesign/offscreen-window.cjs'), '.', `--user-data-dir=${roots.userData}`, '--lang=zh-CN'] })
 const counts = {}
 try {
+  const targetPort = await new Promise(resolve => target.listen(0, '::', () => resolve(target.address().port)))
+
+  const proxySaw = []
+  proxy = http.createServer((req, res) => {
+    proxySaw.push(req.url)
+    res.writeHead(502).end()
+  })
+  proxy.on('connect', (req, socket, head) => {
+    proxySaw.push(`CONNECT ${req.url}`)
+    const upstream = net.connect(targetPort, '127.0.0.1', () => {
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+      upstream.write(head)
+      upstream.pipe(socket)
+      socket.pipe(upstream)
+    })
+    upstream.on('error', () => socket.destroy())
+    socket.on('error', () => upstream.destroy())
+  })
+  const proxyPort = await listen(proxy)
+  const closed = http.createServer()
+  const closedPort = await listen(closed)
+  await new Promise(resolve => closed.close(resolve))
+
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'proxy-journey-'))
+  const roots = Object.fromEntries(['canonical', 'legacy', 'home', 'appData', 'localAppData', 'temp', 'userData'].map(name => [name, path.join(root, name)]))
+  for (const [name, dir] of Object.entries(roots)) if (name !== 'canonical') fs.mkdirSync(dir, { recursive: true })
+  const env = { ...process.env, AI_NOVEL_APP_DATA_HOME: roots.canonical, AI_NOVEL_LEGACY_SOURCE_HOME: roots.legacy, AI_NOVEL_VELA_HOME: roots.legacy,
+    HOME: roots.home, USERPROFILE: roots.home, APPDATA: roots.appData, LOCALAPPDATA: roots.localAppData, TEMP: roots.temp, TMP: roots.temp }
+  for (const name of ['ELECTRON_RUN_AS_NODE', 'VITE_DEV_SERVER_URL', 'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'NO_PROXY', 'no_proxy', 'NODE_USE_ENV_PROXY']) delete env[name]
+
+  const model = (baseUrl, purposes = ['generation']) => ({ id: `probe-${purposes[0]}`, name: 'probe', provider: 'custom', protocol: 'openai',
+    modelName: 'probe-model', apiKey: 'sk-probe-not-a-secret', baseUrl, temperature: 0.7, maxTokens: 256, purposes })
+  const REMOTE = 'http://model-probe.test/v1'
+  const PROXY_DOWN = '连不上「网络代理」里设置的代理'
+
+  app = await electron.launch({ cwd: repository, env, timeout: 90_000,
+    args: ['-r', path.join(repository, 'scripts/redesign/offscreen-window.cjs'), '.', `--user-data-dir=${roots.userData}`, '--lang=zh-CN'] })
   const page = await app.firstWindow({ timeout: 90_000 })
   await page.waitForFunction(() => Boolean(window.aiNovelAPI), null, { timeout: 90_000 })
   const invoke = (channel, ...args) => page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
@@ -134,8 +137,8 @@ try {
   console.log(JSON.stringify({ counts }, null, 1))
   throw error
 } finally {
-  await Promise.race([app.close(), new Promise(resolve => setTimeout(resolve, 10_000))])
-  target.close()
-  proxy.close()
-  fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 })
+  // 启动失败也要关掉已建的服务、删临时目录，否则脚本挂住。
+  if (app) await Promise.race([app.close(), new Promise(resolve => setTimeout(resolve, 10_000))])
+  for (const server of [target, proxy]) if (server?.listening) { server.closeAllConnections(); server.close() }
+  if (root) fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 })
 }
