@@ -546,10 +546,7 @@ export function appErrorMessage(locale: ErrorDisplayLocale, error: unknown): str
 
 const loggedUnregisteredCodes = new Set<string>()
 
-/**
- * 整段原文就是一个没登记文案的码时，作者只看到通用说明；码记进控制台日志供排查，同一个码只记一次
- * （有的显示处在渲染时调用）。不是码形的原文返回 undefined，照常显示。
- */
+/** 同一个码只记一次日志：有的显示处在渲染时调用。 */
 function unregisteredCodeMessage(locale: ErrorDisplayLocale, raw: string, fallback?: string): string | undefined {
   if (!CODE_SHAPE.test(raw)) return undefined
   if (!loggedUnregisteredCodes.has(raw)) {
