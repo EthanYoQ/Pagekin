@@ -159,7 +159,7 @@ export function registerLLMController() {
 
   ipcMain.handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
     const result = await modelDiscovery.discoverModels(request).catch(() => ({ success: false, errorCode: 'invalid_response' as const }))
-    if (result.success || isLocalModelEndpoint(request) || !await proxyUnreachable()) return result
+    if (result.success || !await proxyUnreachable(request.baseUrl)) return result
     return { success: false, errorCode: 'proxy' as const }
   })
 
@@ -365,7 +365,7 @@ export function registerLLMController() {
     creativeStrategy: LLMRequest['creativeStrategy'] = 'auto',
   ) => {
     const result = await testConnection(model, creativeStrategy)
-    if (result.success || isLocalModelEndpoint(model) || !await proxyUnreachable()) return result
+    if (result.success || !await proxyUnreachable(model.baseUrl)) return result
     return { success: false, error: translate(failureLocale(), 'error.proxyUnreachable') }
   })
 

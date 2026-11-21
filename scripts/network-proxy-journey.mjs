@@ -118,6 +118,8 @@ try {
   assert.equal(down['discover-models'].result.errorCode, 'proxy', 'model list reports the unreachable proxy')
   assert.equal(down['cloud-backup connect'].result.errorCode, 'CLOUD_BACKUP_PROXY_UNREACHABLE', 'cloud backup reports the unreachable proxy')
   for (const name of Object.keys(local)) assert.equal(down[name].result.success, true, `${name}: local model ignores the dead proxy`)
+  assert.equal((await invoke('cloud-backup:connect', { endpoint: `http://127.0.0.1:${closedPort}/dav/`, username: 'probe', secret: 'probe-not-a-secret' })).errorCode,
+    'CLOUD_BACKUP_NETWORK_FAILED', 'a dead local WebDAV is not blamed on the proxy')
 
   assert.deepEqual(await setProxy({ enabled: true, host: 'http://127.0.0.1', port: proxyPort }),
     { success: false, error: 'Error: NETWORK_PROXY_INVALID' }, 'a host with a scheme is rejected before it is saved')

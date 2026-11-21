@@ -500,7 +500,7 @@ export class WebDavBackupService {
       })
     } catch {
       if (signal?.aborted) fail('WEBDAV_CANCELLED')
-      if (await proxyUnreachable()) fail('WEBDAV_PROXY_UNREACHABLE')
+      if (await proxyUnreachable(url.href)) fail('WEBDAV_PROXY_UNREACHABLE')
       fail('WEBDAV_NETWORK')
     }
   }
