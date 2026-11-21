@@ -125,10 +125,10 @@ function detailNames(error: string): string[] {
   }
 }
 
-/** 步骤记录里的错误码换成作者可读说明；其他错误原样返回。 */
-export function describeFinalizationStepError(error: string, text: (zhCNText: string, enUSText: string) => string): string {
+/** 步骤表里的错误码换成作者可读说明；表外的返回 undefined，由界面交给通用报错说明。 */
+export function describeFinalizationStepError(error: string, text: (zhCNText: string, enUSText: string) => string): string | undefined {
   const entry = entryOf(error)
-  if (!entry) return error
+  if (!entry) return undefined
   const names = detailNames(error)
   const prompt = entry.retry === 'prompt'
   return text(
