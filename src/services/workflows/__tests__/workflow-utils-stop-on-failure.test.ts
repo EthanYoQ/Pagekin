@@ -213,7 +213,7 @@ describe('runPostProcessPipeline stopOnFailure', () => {
     expect(invoke).not.toHaveBeenCalled()
   })
 
-  it('#702 retry log and stop message explain a post-processing step code instead of showing it', async () => {
+  it('#702 stop message explains a post-processing step code instead of showing it', async () => {
     stubIpcInvoke()
     const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
 
@@ -223,9 +223,21 @@ describe('runPostProcessPipeline stopOnFailure', () => {
 
     await expect(failure).rejects.toThrow('Post-processing step failed: Chapter notes — The model did not return a complete result')
     await expect(failure).rejects.not.toThrow(/FINALIZATION_/u)
-    const logs = vi.mocked(callbacks.log).mock.calls.flat().join('\n')
-    expect(logs).toContain('The model did not return a complete result')
-    expect(logs).not.toMatch(/FINALIZATION_/u)
+  })
+
+  it('#702 the automatic retry log neither shows the code nor gives Retry advice that contradicts the retry under way', async () => {
+    for (const code of ['FINALIZATION_GENERATION_INCOMPLETE', 'GENERATION_CONTEXT_LENGTH_EXCEEDED']) {
+      stubIpcInvoke()
+      const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
+
+      await expect(runPostProcessPipeline('C:/novel', 'chapter_2_finalize', 'Chapter 2 finalization', [
+        { key: 'chapter_notes', label: 'Chapter notes', critical: false, executor: async () => { throw new Error(code) } },
+      ], callbacks, { retryCount: 1, stopOnFailure: true, cancellation: englishContext(), projectSession })).rejects.toThrow()
+
+      const logs = vi.mocked(callbacks.log).mock.calls.flat().join('\n')
+      expect(logs).toContain('Chapter notes failed on attempt 1; retrying')
+      expect(logs).not.toMatch(/[A-Z]+_[A-Z_]+|Select Retry|Retrying gives the same result/u)
+    }
   })
 
   it('#702 summary log explains each failed step through the same reason as the step row', async () => {
