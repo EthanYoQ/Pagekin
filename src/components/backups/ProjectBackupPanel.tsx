@@ -271,8 +271,8 @@ function ProjectBackupPanelSession({
     try {
       const result = await ipc.invoke('cloud-backup:cancel', activeOperationId)
       if (!result.success) throw new Error(result.errorCode)
-      // 操作已经结束，结果提示已经或即将显示，这里不再盖掉它。
-      if (!result.cancelled) return
+      const finishedBeforeCancel = !result.cancelled
+      if (finishedBeforeCancel) return
       setNotice({ kind: 'info', text: text('已发送取消请求，等待当前云操作停止。', 'Cancellation requested. Waiting for the current cloud operation to stop.') })
     } catch (error) {
       setNotice({ kind: 'error', text: errorText(error) })

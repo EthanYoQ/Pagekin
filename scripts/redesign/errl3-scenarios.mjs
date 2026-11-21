@@ -60,7 +60,6 @@ function storedZip(entries) {
   return Buffer.concat([...local, directory, end])
 }
 
-/** 更新版本书童导出的存档：清单写着本版不认识的结构版本。 */
 function newerArchive() {
   const chapter = Buffer.from('第一章')
   const manifest = {
@@ -80,7 +79,6 @@ function newerArchive() {
   return storedZip([{ name: 'manifest.json', bytes: Buffer.from(JSON.stringify(manifest)) }, { name: 'chapter.txt', bytes: chapter }])
 }
 
-/** 挂在假服务端口上的本机 WebDAV：只放一个云端世代，够「连接并绑定」「刷新云端世代」「恢复所选云端世代为副本」用。 */
 function serveDav(fake) {
   const archive = newerArchive()
   const descriptor = { file: 'archive.ainovel', sha256: sha256(archive), byteSize: archive.length }
@@ -101,7 +99,7 @@ function serveDav(fake) {
   ])
   const multistatus = hrefs => `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">${hrefs
     .map(href => `<d:response><d:href>${href}</d:href><d:status>HTTP/1.1 200 OK</d:status></d:response>`).join('')}</d:multistatus>`
-  fake.serveExtra((request, response) => {
+  fake.setScenarioRequestHandler((request, response) => {
     const url = request.url ?? ''
     if (!url.startsWith('/dav/')) return false
     if (request.method === 'PROPFIND') {

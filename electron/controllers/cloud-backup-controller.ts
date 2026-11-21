@@ -165,6 +165,12 @@ function errorCode(error: unknown): CloudBackupErrorCode {
   return 'CLOUD_BACKUP_FAILED'
 }
 
+function restoreTargetErrno(error: unknown, stagingRoot: string): boolean {
+  const failedPath = stringField(error, 'path')
+  const inStaging = failedPath !== undefined && path.resolve(failedPath).startsWith(path.resolve(stagingRoot) + path.sep)
+  return UNWRITABLE_ERRNO.has(stringField(error, 'code') ?? '') && !inStaging
+}
+
 function stringField(error: unknown, key: 'name' | 'code' | 'syscall' | 'path'): string | undefined {
   if (!error || typeof error !== 'object') return undefined
   const value = (error as Record<string, unknown>)[key]
@@ -534,12 +540,7 @@ export function registerCloudBackupController(injected?: CloudBackupControllerDe
           }
           const code = stringField(error, 'code')
           if (code === 'PORTABLE_SCHEMA_UNSUPPORTED') fail('CLOUD_BACKUP_RESTORE_ARCHIVE_NEWER')
-          // 下载下来的存档在暂存目录里，读它报的 errno 不是所选文件夹的问题。
-          const failedPath = stringField(error, 'path')
-          if (code === 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE' || UNWRITABLE_ERRNO.has(code ?? '')
-            && !(failedPath && path.resolve(failedPath).startsWith(path.resolve(stagingRoot) + path.sep))) {
-            fail('CLOUD_BACKUP_RESTORE_TARGET_UNWRITABLE')
-          }
+          if (code === 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE' || restoreTargetErrno(error, stagingRoot)) fail('CLOUD_BACKUP_RESTORE_TARGET_UNWRITABLE')
           throw new CloudBackupControllerError('CLOUD_BACKUP_RESTORE_FAILED')
         }
         let binding: CloudProjectBinding | null = null
