@@ -51,6 +51,8 @@ export const enUS = {
   'error.portableContextInvalid': 'Your book is unchanged. The book was closed or switched during export, so no archive was created. Reopen the book, then click Export local archive again.',
   'error.portableAssetUnsafe': 'Your book is unchanged. The book folder contains an unrecognized file or a link, so no archive was created. Please report this message to us.',
   'error.portableUnresolvedAvatarDamaged': 'Your book is unchanged. An old avatar file that belongs to no character is damaged or missing, so no archive was created. Please report this message to us.',
+  'error.portablePathUnsafe': 'Your book is unchanged. The name or location of a file (a prompt, skill, avatar or finalized manuscript) cannot go into an archive, so no archive was created. Please report this message to us.',
+  'error.portableKnowledgeInvalid': 'Your book is unchanged. A document record in the knowledge base is incomplete or damaged, so no archive was created. Please report this message to us.',
   'error.cloudBackupArchiveFailed': 'Your book is unchanged. Packing the book failed, so nothing was uploaded. Click Export local archive to see the exact reason.',
   'error.restoreArchiveChanged': 'No copy was created. The archive file was changed or moved during restore. Make sure it is still in place, then click Restore a copy from local archive again.',
   'error.restoreArchiveInvalid': 'No copy was created. The chosen file is not a complete Pagekin archive; it may be damaged or not fully downloaded. Choose another archive, then click Restore a copy from local archive again.',

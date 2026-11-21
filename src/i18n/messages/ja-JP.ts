@@ -54,6 +54,8 @@ export const jaJP = {
   'error.portableContextInvalid': '作品は変更されていません。エクスポート中に作品が閉じられたか切り替えられたため、アーカイブは作成されませんでした。作品を開き直してから、もう一度「Export local archive」をクリックしてください。',
   'error.portableAssetUnsafe': '作品は変更されていません。作品フォルダーに不明なファイルまたはリンクがあるため、アーカイブは作成されませんでした。このメッセージをご報告ください。',
   'error.portableUnresolvedAvatarDamaged': '作品は変更されていません。どのキャラクターにも属さない古いアバター画像が破損しているか見つからないため、アーカイブは作成されませんでした。このメッセージをご報告ください。',
+  'error.portablePathUnsafe': '作品は変更されていません。ファイル（プロンプト、スキル、アバター、確定稿）の名前または場所をアーカイブに入れられないため、アーカイブは作成されませんでした。このメッセージをご報告ください。',
+  'error.portableKnowledgeInvalid': '作品は変更されていません。ナレッジベースの資料の記録が不完全か破損しているため、アーカイブは作成されませんでした。このメッセージをご報告ください。',
   'error.cloudBackupArchiveFailed': '作品は変更されていません。作品のパッケージ化に失敗したため、アップロードされませんでした。「Export local archive」をクリックすると、具体的な原因を確認できます。',
   'error.restoreArchiveChanged': 'コピーは作成されていません。復元中にアーカイブファイルが変更または移動されました。アーカイブが元の場所にあることを確認してから、もう一度「Restore a copy from local archive」をクリックしてください。',
   'error.restoreArchiveInvalid': 'コピーは作成されていません。選んだファイルは完全な Pagekin のアーカイブではありません。破損しているか、ダウンロードが終わっていない可能性があります。別のアーカイブを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。',

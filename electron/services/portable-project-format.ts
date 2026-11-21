@@ -252,6 +252,17 @@ function identifier(value: unknown): string {
   return value
 }
 
+/**
+ * 库里记的稿件文件名不是存档条目，恢复后发布时只落在项目根的直接子级（manuscript-publisher）。
+ * 按原值查单段文件名，不做 NFKC：标题里的全角「？：」是合法文件名。空串是没有稿件可清理的收据。
+ */
+export function assertManuscriptFileName(value: string): void {
+  if (value === '') return
+  if (value === '.' || value === '..' || /[/\\:]/u.test(value)
+    || [...value].some(character => character.charCodeAt(0) <= 31)
+    || WINDOWS_RESERVED.test(value)) formatError('PORTABLE_PATH_UNSAFE')
+}
+
 export function portablePathKey(value: unknown, maxPathBytes = DEFAULT_PORTABLE_ARCHIVE_LIMITS.maxPathBytes): string {
   if (typeof value !== 'string' || value.length === 0 || containsSurrogateCodeUnit(value)
     || Buffer.byteLength(value, 'utf8') > maxPathBytes) {

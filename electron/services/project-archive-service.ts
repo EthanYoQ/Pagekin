@@ -23,6 +23,7 @@ import {
   PORTABLE_SOURCE_SCHEMA_VERSION,
   PORTABLE_READABLE_SOURCE_SCHEMA_VERSIONS,
   assertPortableExportSource,
+  assertManuscriptFileName,
   assertPortableSourceSchema,
   getPortableFieldPolicy,
   portablePathKey,
@@ -1068,7 +1069,7 @@ export function sanitizePortableDatabase(databasePath: string, options: {
             if (policies[index]!.disposition !== 'validated-relative') continue
             const value = row[column.name]
             if (typeof value !== 'string') fail('PORTABLE_UNSAFE_PROJECTION')
-            portablePathKey(value)
+            assertManuscriptFileName(value)
           }
         }
       }

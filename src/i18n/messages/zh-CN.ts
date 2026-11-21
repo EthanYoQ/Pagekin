@@ -53,6 +53,8 @@ export const zhCN = {
   'error.portableContextInvalid': '作品没有改动。导出途中作品被关掉或换掉了，存档没有生成。请重新打开这部作品，再点「导出本地存档」。',
   'error.portableAssetUnsafe': '作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。',
   'error.portableUnresolvedAvatarDamaged': '作品没有改动。一张没归到任何角色名下的旧头像文件坏了或不见了，存档没有生成。请把这条提示反馈给我们。',
+  'error.portablePathUnsafe': '作品没有改动。有个文件的名字或位置放不进存档（提示词、技能、头像或定稿稿件），存档没有生成。请把这条提示反馈给我们。',
+  'error.portableKnowledgeInvalid': '作品没有改动。知识库里有份资料的记录不完整或已损坏，存档没有生成。请把这条提示反馈给我们。',
   'error.cloudBackupArchiveFailed': '作品没有改动。打包这部作品时出了错，没有上传。点「导出本地存档」能看到具体原因。',
   'error.restoreArchiveChanged': '没有新建副本。恢复途中存档文件被改动或移走了。请确认存档还在原处，再点「从本地存档恢复副本」。',
   'error.restoreArchiveInvalid': '没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。',
