@@ -307,6 +307,21 @@ describe('书房', () => {
     expect(useLayoutStore.getState().sidebarView).not.toBe('home')
   })
 
+  it('概览读不到时：预览指向「打开」按钮，当前作品没有这个按钮就不提它', async () => {
+    const answer = invoke.getMockImplementation()!
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) =>
+      channel === 'project:peek-overview' || channel === 'project:overview-current' ? { state: 'unavailable' } : answer(channel, ...args))
+    openCurrent()
+    useProjectStore.setState({ recentProjects: [LIGHTHOUSE, ISLAND] })
+    await mount()
+    const status = () => host!.querySelector('.stage-ov-status')?.textContent
+    expect(status()).toBe('暂时读不到这部作品的概览。')
+
+    await click(button('预览《雾岛》'))
+    expect(status()).toBe('暂时读不到这部作品的概览。点「打开」查看，打不开时会说明原因。')
+    expect(button('打开《雾岛》')).toBeTruthy()
+  })
+
   it('几章都在写时「继续写作」指向最后一章在写的；只有空稿的章不算开始', async () => {
     openCurrent()
     useProjectStore.setState({ recentProjects: [LIGHTHOUSE] })
