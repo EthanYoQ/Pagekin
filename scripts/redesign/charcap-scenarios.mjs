@@ -239,9 +239,9 @@ export const CHARCAP_SCENARIOS = {
     return { file, ...measured }
   } },
 
-  'real-charcap-import': { real: true, setup: context => seedEmpty(context, null), run: async context => {
+  'real-charcap-import': { real: true, requires: { env: { CHARCAP_MANUSCRIPT: '指向 14 位人物的原稿（batch11 用过 .audit/shutong-sweep/batch11/character-cap/manuscript.txt）' } },
+    setup: context => seedEmpty(context, null), run: async context => {
     const { app, page } = context
-    assert.ok(process.env.CHARCAP_MANUSCRIPT, '要用 CHARCAP_MANUSCRIPT 指向 14 位人物的原稿')
     await teeChat(app)
     const dialog = await openAuthorImport(app, page, '盐河旧事', process.env.CHARCAP_MANUSCRIPT)
     assert.equal(await dialog.getByRole('checkbox', { name: /同时反推设定、架构、角色和蓝图/u }).isChecked(), true, '反推默认勾选')
