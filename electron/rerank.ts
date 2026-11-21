@@ -3,9 +3,9 @@ import type { RerankConfig, RerankEndpoint } from '../src/shared/rerank-config'
 
 const RERANK_TIMEOUT_MS = 10_000
 
-class RerankError extends Error {
-  constructor(readonly reason: RerankFailure) {
-    super(`RERANK_${reason}`)
+export class RerankError extends Error {
+  constructor(readonly reason: RerankFailure, options?: ErrorOptions) {
+    super(`RERANK_${reason}`, options)
   }
 }
 
@@ -31,7 +31,7 @@ function parseOrder(body: unknown, documentCount: number, topN: number): number[
 
 const isTimeout = (error: unknown) => error instanceof DOMException && error.name === 'TimeoutError'
 
-async function requestOrder(query: string, documents: string[], endpoint: RerankEndpoint, topN: number): Promise<number[]> {
+export async function requestOrder(query: string, documents: string[], endpoint: RerankEndpoint, topN: number): Promise<number[]> {
   let body: unknown
   try {
     const response = await fetch(rerankUrl(endpoint.baseUrl), {
@@ -46,7 +46,7 @@ async function requestOrder(query: string, documents: string[], endpoint: Rerank
     body = await response.json().catch((error: unknown) => { throw isTimeout(error) ? error : new RerankError('invalid-response') })
   } catch (error) {
     if (error instanceof RerankError) throw error
-    throw new RerankError(isTimeout(error) ? 'timeout' : 'request-failed')
+    throw new RerankError(isTimeout(error) ? 'timeout' : 'request-failed', { cause: error })
   }
   return parseOrder(body, documents.length, topN)
 }

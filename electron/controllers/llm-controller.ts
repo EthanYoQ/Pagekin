@@ -13,15 +13,15 @@ import { isReasoningMapping, reasoningAdapterFitsProtocol } from '../../src/shar
 import { isLocalModelEndpoint } from '../../src/shared/provider-presets'
 import { sameModelIdentity, withLearnedContextWindow } from '../../src/shared/model-profile-draft'
 import { assignStageModel, availableGenerationModelId, isModelStage, parseStageModelIds, removeModelFromStages } from '../../src/shared/model-stage-routing'
-import { isRerankFailure, type RerankFailure } from '../../src/shared/knowledge-ranking'
-import { rankPassages } from '../rerank'
+import type { RerankFailure } from '../../src/shared/knowledge-ranking'
+import { RerankError, requestOrder } from '../rerank'
 import { LLMFactory } from '../llm/llm-factory'
 import { mainErrorDisplayLocale } from '../i18n'
 import { localize, translate, type MessageKey } from '../../src/i18n/core'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
 import { ModelExecutionLeaseRegistry } from '../services/model-execution-lease'
 import { ModelDiscoveryService } from '../services/model-discovery-service'
-import { activeProxy, proxyUnreachable, type ProxyRoute } from '../network-proxy'
+import { failedAtProxy } from '../network-proxy'
 
 const CONNECTION_TEST_MAX_TOKENS = 1024
 const LOCAL_CONNECTION_TEST_TIMEOUT_MS = 120_000
@@ -39,13 +39,16 @@ const RERANK_TEST_FAILURES: Record<RerankFailure, readonly [string, string]> = {
   'invalid-response': ['服务的返回不是重排结果，请确认这个模型支持重排。', 'The service did not return reranking results. Check that this model supports reranking.'],
 }
 
-async function testRerankConnection(model: ModelProfile) {
-  const { baseUrl, apiKey, modelName } = model
-  const { ranking } = await rankPassages('hello', [{ text: 'hello' }, { text: 'world' }],
-    { kind: 'explicit', profileId: model.id, endpoint: { baseUrl, apiKey, modelName } }, 2)
-  if (ranking.method === 'rerank') return { success: true, error: undefined }
-  if (!isRerankFailure(ranking.reason)) throw new Error(`RERANK_TEST_UNEXPECTED_${ranking.reason}`)
-  return { success: false, error: localize(failureLocale(), ...RERANK_TEST_FAILURES[ranking.reason]) }
+async function testRerankConnection({ baseUrl, apiKey, modelName }: ModelProfile) {
+  try {
+    await requestOrder('hello', ['hello', 'world'], { baseUrl, apiKey, modelName }, 2)
+    return { success: true, error: undefined }
+  } catch (error) {
+    if (!(error instanceof RerankError)) throw error
+    return { success: false, error: failedAtProxy(error.cause)
+      ? translate(failureLocale(), 'error.proxyUnreachable')
+      : localize(failureLocale(), ...RERANK_TEST_FAILURES[error.reason]) }
+  }
 }
 
 function loadModelConfigs(): ModelProfile[] {
@@ -119,6 +122,7 @@ const CONNECTION_FAILURE_BY_CODE: Record<string, MessageKey> = {
 
 /** fetch 只报「fetch failed」，原因在 cause.code。 */
 function connectionFailureKey(failure: unknown): MessageKey {
+  if (failedAtProxy(failure)) return 'error.proxyUnreachable'
   const code = (failure as { cause?: { code?: unknown } } | null)?.cause?.code
   return (typeof code === 'string' && CONNECTION_FAILURE_BY_CODE[code]) || 'error.connectionFailed'
 }
@@ -183,10 +187,11 @@ export function registerLLMController() {
   })
 
   ipcMain.handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
-    const sentThrough = activeProxy()
-    const result = await modelDiscovery.discoverModels(request).catch(() => ({ success: false, errorCode: 'invalid_response' as const }))
-    if (result.success || result.errorCode !== 'network' || !await proxyUnreachable(request.baseUrl, sentThrough)) return result
-    return { success: false, errorCode: 'proxy' as const }
+    try {
+      return await modelDiscovery.discoverModels(request)
+    } catch {
+      return { success: false, errorCode: 'invalid_response' as const }
+    }
   })
 
   ipcMain.handle('llm:save-model', async (_event, model: ModelProfile) => {
@@ -334,17 +339,18 @@ export function registerLLMController() {
     return config.defaultRerankModelId ?? null
   })
 
-  const testConnection = async (model: ModelProfile, creativeStrategy: LLMRequest['creativeStrategy'], request: { sentThrough?: ProxyRoute | null }) => {
+  ipcMain.handle('llm:test-connection', async (
+    _event,
+    model: ModelProfile,
+    creativeStrategy: LLMRequest['creativeStrategy'] = 'auto',
+  ) => {
     // 网络卡住时 undici 默认要等 300 秒才报 fetch failed；连接测试自己的截止时间会真正取消请求。
     const timeoutMs = connectionTestTimeoutMs(model)
     const deadline = new AbortController()
     const timer = setTimeout(() => deadline.abort(), timeoutMs)
     const timedOut = () => ({ success: false, error: translate(failureLocale(), 'error.connectionTestTimeout', { seconds: timeoutMs / 1000 }) })
     try {
-      if (model.purposes?.includes('rerank')) {
-        request.sentThrough = activeProxy()
-        return await testRerankConnection(model)
-      }
+      if (model.purposes?.includes('rerank')) return await testRerankConnection(model)
 
       const messages = [{ role: 'user', content: 'Say "hello" and nothing else.' }]
       const provider = LLMFactory.getProvider(model)
@@ -361,20 +367,21 @@ export function registerLLMController() {
           }
         }
         const { generateEmbeddings } = await import('../embedding')
-        request.sentThrough = activeProxy()
         await generateEmbeddings(['hello'], model.protocol, model, undefined, undefined, deadline.signal)
       } else {
-        const options = {
-          ...resolveGenerationParameters(model, {
-            // 推理模型可能先消耗 reasoning tokens；预算过小会把可用连接误判为截断失败。
-            maxTokens: CONNECTION_TEST_MAX_TOKENS,
-            reasoningStage: 'general',
-            creativeStrategy,
-          }),
-          signal: deadline.signal,
-        }
-        request.sentThrough = activeProxy()
-        const res = await provider.generate(model, messages, options)
+        const res = await provider.generate(
+          model,
+          messages,
+          {
+            ...resolveGenerationParameters(model, {
+              // 推理模型可能先消耗 reasoning tokens；预算过小会把可用连接误判为截断失败。
+              maxTokens: CONNECTION_TEST_MAX_TOKENS,
+              reasoningStage: 'general',
+              creativeStrategy,
+            }),
+            signal: deadline.signal,
+          },
+        )
         if (deadline.signal.aborted) return timedOut()
         result = res.success ? { success: true, error: undefined } : { success: false, error: providerConnectionFailure(res) }
       }
@@ -385,17 +392,6 @@ export function registerLLMController() {
     } finally {
       clearTimeout(timer)
     }
-  }
-
-  ipcMain.handle('llm:test-connection', async (
-    _event,
-    model: ModelProfile,
-    creativeStrategy: LLMRequest['creativeStrategy'] = 'auto',
-  ) => {
-    const request: { sentThrough?: ProxyRoute | null } = {}
-    const result = await testConnection(model, creativeStrategy, request)
-    if (result.success || !await proxyUnreachable(model.baseUrl, request.sentThrough)) return result
-    return { success: false, error: translate(failureLocale(), 'error.proxyUnreachable') }
   })
 
   return { modelExecutionLeases, loadModel: getModelConfig, rememberContextWindow }

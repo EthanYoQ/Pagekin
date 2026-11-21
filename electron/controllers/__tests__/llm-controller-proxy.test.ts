@@ -59,7 +59,7 @@ beforeAll(() => {
   registerLLMController()
 })
 
-// 代理端口真的没人听：旧做法的连通探测会说「代理连不上」，所以这些用例能分辨是看失败本身还是看代理此刻通不通。
+// 代理端口确实没人听：说明只能来自这次失败本身，不能来自代理此刻通不通。
 beforeEach(async () => {
   proxyPort = await closedPort()
   applyNetworkProxy({ enabled: true, type: 'http', host: '127.0.0.1', port: proxyPort })

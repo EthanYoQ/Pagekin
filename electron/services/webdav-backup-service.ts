@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { normalizeWebDavEndpoint } from './cloud-credential-store'
-import { activeProxy, proxyUnreachable } from '../network-proxy'
+import { failedAtProxy } from '../network-proxy'
 
 export type WebDavBackupErrorCode =
   | 'WEBDAV_INPUT_INVALID'
@@ -488,7 +488,6 @@ export class WebDavBackupService {
     if (signal?.aborted) fail('WEBDAV_CANCELLED')
     const timeoutSignal = AbortSignal.timeout(timeoutMs)
     const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
-    const sentThrough = activeProxy()
     try {
       return await this.fetchImpl(url, {
         ...init,
@@ -499,12 +498,9 @@ export class WebDavBackupService {
           ...init.headers,
         },
       })
-    } catch {
+    } catch (error) {
       if (signal?.aborted) fail('WEBDAV_CANCELLED')
-      const proxyDown = await proxyUnreachable(url.href, sentThrough)
-      if (signal?.aborted) fail('WEBDAV_CANCELLED')
-      if (proxyDown) fail('WEBDAV_PROXY_UNREACHABLE')
-      fail('WEBDAV_NETWORK')
+      fail(failedAtProxy(error) ? 'WEBDAV_PROXY_UNREACHABLE' : 'WEBDAV_NETWORK')
     }
   }
 
@@ -529,7 +525,7 @@ export class WebDavBackupService {
       }
       await response.body?.cancel().catch(() => {})
     } catch (error) {
-      if (error instanceof WebDavBackupError && (error.code === 'WEBDAV_NETWORK' || error.code === 'WEBDAV_PROXY_UNREACHABLE') && !signal?.aborted) uncertain = true
+      if (error instanceof WebDavBackupError && error.code === 'WEBDAV_NETWORK' && !signal?.aborted) uncertain = true
       else throw error
     }
     if (!await this.existingMatches(account, url, expected, signal, false)) {
@@ -554,7 +550,7 @@ export class WebDavBackupService {
       }
       await response.body?.cancel().catch(() => {})
     } catch (error) {
-      if (error instanceof WebDavBackupError && (error.code === 'WEBDAV_NETWORK' || error.code === 'WEBDAV_PROXY_UNREACHABLE') && !signal?.aborted) uncertain = true
+      if (error instanceof WebDavBackupError && error.code === 'WEBDAV_NETWORK' && !signal?.aborted) uncertain = true
       else throw error
     } finally { body.destroy() }
     if (!await this.existingMatches(account, url, expected, signal, false, this.transferTimeoutMs)) {
