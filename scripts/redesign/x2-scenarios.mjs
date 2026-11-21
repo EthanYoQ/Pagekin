@@ -337,7 +337,6 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #702：检索索引的数据文件坏了，设置「检索模型」页给可读说明，不露 LanceDB 的英文原文和本机路径；重建遇到盘满、写不进也各看一次说明。
   'kb-damaged-index-rebuild': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     const model = { ...EMBEDDING_MODEL, id: 'kb-damaged-embedding', name: '本机检索模型', provider: 'custom', baseUrl: `http://127.0.0.1:${context.fake.port}/v1`, apiKey: '' }
     assert.equal((await invoke(page, 'llm:save-model', model)).success, true)
@@ -360,7 +359,7 @@ export const X2_SCENARIOS = {
       await page.getByRole('navigation', { name: labels.spine }).waitFor({ state: 'visible' })
       return openIndex(labels)
     }
-    // 真盘满、真只读在隔离目录里造不出来，换掉处理器只为看这两条说明的样子。
+    // 隔离目录造不出真盘满和真只读，换掉处理器只看这两条文案。
     const rebuildFailure = async (index, code, shot) => {
       await app.evaluate(({ ipcMain }, error) => {
         ipcMain._invokeHandlers.set('kb:backfill-vectors', async () => ({ success: false, processed: 0, failed: 0, error }))
