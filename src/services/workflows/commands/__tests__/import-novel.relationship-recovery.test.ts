@@ -6,14 +6,9 @@ import type { CharacterRosterEntry } from '../../../../shared/character-roster'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import { InferGlobalSettingsCommand as RuntimeInferGlobalSettingsCommand } from '../import-novel.command'
 import { importRecoveryBatches } from '../import-inference-contract'
-import { useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
+import { createWorkflowRuntimeDependencies, DEFAULT_CAPABILITY_EVIDENCE, useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
+import type { WorkflowGenerationRuntimeDependencies } from '../base-command'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
-
-const slotLimit = vi.hoisted(() => ({ value: 32 }))
-vi.mock('../../../../shared/import-generation', async importOriginal => ({
-  ...await importOriginal<typeof import('../../../../shared/import-generation')>(),
-  get IMPORT_SLOT_MAX_REQUESTS() { return slotLimit.value },
-}))
 
 class InferGlobalSettingsCommand extends RuntimeInferGlobalSettingsCommand {
   constructor() { super(workflowRuntimeDependencies) }
@@ -441,23 +436,37 @@ describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {
     expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/15 位人物没有补出角色卡：路人46、/))
   })
 
-  it('stops at the per-slot request ceiling even when the root allows more, and still commits', async () => {
-    slotLimit.value = 6
-    try {
-      const invoke = stubSuccessfulImportIpc()
-      const others = Array.from({ length: 20 }, (_, index) => `路人${index + 1}`)
-      const initial = { ...validInference(), otherCharacters: others.map(name => ({ name, role: 'minor', note: '原稿人物' })) }
-      const deltas = Array.from({ length: 7 }, (_, batch) => ({ characterCards: others.slice(batch * 3, batch * 3 + 3).map(name => card(name, 'minor')) }))
-      const generateStream = respondWith([initial, ...deltas])
-
-      await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
-
-      expect(generateStream).toHaveBeenCalledTimes(6)
-      expect(committedEntries(invoke)).toHaveLength(3 + 15)
-      expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/5 位人物没有补出角色卡：路人16、/))
-    } finally {
-      slotLimit.value = 32
+  it('stops at the 32-request import slot ceiling when the root allows more, and still commits the accepted cards', async () => {
+    const base = createWorkflowRuntimeDependencies({ ...DEFAULT_CAPABILITY_EVIDENCE, maxOutputTokens: 4096 })
+    const mainOwnedRoot: WorkflowGenerationRuntimeDependencies = {
+      async createRuntime(options, main) {
+        const runtime = await base.createRuntime({ ...options, budget: { ...options.budget, maxAttempts: 32, maxRequestedOutputTokens: 32 * 4096 } }, main)
+        let ordinal = 0
+        return {
+          ...runtime,
+          execute: operation => runtime.execute(execution => operation({ ...execution, session: {
+            budget: execution.session.budget,
+            async complete(task, executionOptions) {
+              if (ordinal >= 32) throw new Error('GENERATION_IMPORT_ORDINAL_INVALID')
+              ordinal += 1
+              const outcome = await execution.session.complete(task, executionOptions)
+              return { ...outcome, receipt: { ...outcome.receipt, budget: { ...outcome.receipt.budget, maxAttempts: 40 } } }
+            },
+          } })),
+        }
+      },
     }
+    const invoke = stubSuccessfulImportIpc()
+    const others = Array.from({ length: 120 }, (_, index) => `路人${index + 1}`)
+    const initial = { ...validInference(), otherCharacters: others.map(name => ({ name, role: 'minor', note: '原稿人物' })) }
+    const deltas = Array.from({ length: 40 }, (_, batch) => ({ characterCards: others.slice(batch * 3, batch * 3 + 3).map(name => card(name, 'minor')) }))
+    const generateStream = respondWith([initial, ...deltas])
+
+    await new RuntimeInferGlobalSettingsCommand(mainOwnedRoot).execute({ step: {}, context: createContext(), callbacks })
+
+    expect(generateStream).toHaveBeenCalledTimes(32)
+    expect(committedEntries(invoke)).toHaveLength(3 + 31 * 3)
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/27 位人物没有补出角色卡：路人94、/))
   })
 
   it('asks for a card for someone who shares a name with a main card, and keeps both', async () => {

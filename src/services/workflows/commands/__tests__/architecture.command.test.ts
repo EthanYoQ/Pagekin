@@ -1715,6 +1715,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     await expect(command.execute({ step: {}, context, callbacks }))
       .rejects.toThrow(/完整 JSON|截断/u)
 
+    expect(generateStream).toHaveBeenCalledTimes(1)
     expect(domainIpcChannels(invoke)).not.toContain('db:character-roster-commit')
   })
 
