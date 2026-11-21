@@ -95,7 +95,7 @@ export const jaJP = {
   'error.laterBlueprintCheckFinalizationChanged': 'ブループリントは変更されていません。この章の定稿の本文が再び変更されたため、このチェックはもう当てはまりません。',
   'error.blueprintCheckTimelineNotInForce': 'ブループリントは変更されていません。チェック対象の章に適用される人物のタイムラインがまだないため、比較するものがありません。',
   'error.generationSourceChanged': 'この生成が参照していた設定、ブループリント、または前の本文が実行中に変更されたため、結果は保存されませんでした。もう一度生成してください。',
-  'error.generationAgentSourceChanged': 'この結果は保存されず、作品は元のままです。Agent との対話のあとでブループリント、設定、または前の章が変わりました。必要な内容をコピーしてから、もう一度生成してください。',
+  'error.generationAgentSourceChanged': 'この結果は保存されず、作品は元のままです。Agent との対話のあとでブループリントまたは設定が変わりました。必要な内容をコピーしてから「Dismiss」をクリックしてください。',
   'error.projectCoreUpdateFailed': '何も採用されず、設定は変更されていません。もう一度お試しください。それでも失敗する場合は、作品を開き直してから、もう一度採用してください。',
   'error.generationModelChanged': 'この生成の実行中にモデルの設定が変更されたため、結果は保存されませんでした。使うモデルを確認してから、もう一度生成してください。',
   'error.generationFinalizedSourceNotCurrent': 'このリクエストが参照していた定稿済みの前の章が置き換えられたため、結果は保存されませんでした。この章の執筆をやり直してください。',
