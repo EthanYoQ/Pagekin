@@ -279,6 +279,41 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
+  // #702：检索模型的 base_url 指向本机端口，导入资料后关掉那里的服务，在设置「检索模型」页点重建，中英文提示都说明连不上的原因，不出现 fetch failed。
+  'kb-embedding-unreachable': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
+    const model = { ...EMBEDDING_MODEL, id: 'kb-unreachable-embedding', name: '本机检索模型', provider: 'custom', baseUrl: `http://127.0.0.1:${context.fake.port}/v1`, apiKey: '' }
+    assert.equal((await invoke(page, 'llm:save-model', model)).success, true)
+    assert.equal((await invoke(page, 'llm:set-default-embedding-model', model.id)).success, true)
+  } }), run: async context => {
+    const { page, invoke, reload, shoot, fake } = context
+    await importMaterials(context)
+    // 驱动只放行假服务的端口；关掉它，检索模型的地址上就真的没有服务在响应。
+    await fake.close()
+    const rebuildFailure = async ({ locale, spine, settings, sections, page: pageName, region }) => {
+      await page.getByRole('navigation', { name: spine }).getByRole('button', { name: settings, exact: true }).click()
+      await stage.root(page).getByRole('navigation', { name: sections }).getByRole('button', { name: pageName, exact: true }).click()
+      const index = stage.root(page).getByRole('region', { name: region })
+      await index.getByRole('button').first().click()
+      const toast = page.locator(stage.LIVE_TOAST).last()
+      await toast.waitFor({ state: 'visible', timeout: 30_000 })
+      const shown = (await toast.innerText()).trim()
+      await shoot(`kb-embedding-unreachable-${locale}`)
+      return shown
+    }
+    const measured = { 'zh-CN': await rebuildFailure({ locale: 'zh', spine: '创作流程', settings: '设置', sections: '设置分组', page: '检索模型', region: '当前作品的检索索引' }) }
+    assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
+    await reload()
+    await page.getByRole('list', { name: 'Recent books' }).waitFor({ state: 'visible' })
+    await stage.openFromLibraryEn(page, STAGE_SAMPLE.name)
+    await page.getByRole('navigation', { name: 'Writing flow' }).waitFor({ state: 'visible' })
+    measured['en-US'] = await rebuildFailure({ locale: 'en', spine: 'Writing flow', settings: 'Settings', sections: 'Settings sections', page: 'Retrieval model', region: 'Search index of the current book' })
+    assert.deepEqual(measured, {
+      'zh-CN': '重建检索失败：base_url 上没有服务在响应。请确认模型服务已启动，端口填写正确。',
+      'en-US': 'Could not rebuild search. Nothing is answering at the base_url. Make sure the model service is running and the port is correct.',
+    }, JSON.stringify(measured))
+    return measured
+  } },
+
   // #388 T3：设置的「检索模型」页里删掉检索模型，同一页的索引区随之回到未配置，不再留着重建按钮。
   'x2-index-model': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     assert.equal((await invoke(page, 'llm:save-model', EMBEDDING_MODEL)).success, true)
