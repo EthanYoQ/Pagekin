@@ -119,6 +119,7 @@ const ERROR_KEYS = {
   GENERATION_CHAPTER_MISSING: 'error.generationSourceChanged',
   GENERATION_AUTHOR_DRAFT_CHANGED: 'error.generationSourceChanged',
   GENERATION_AGENT_SOURCE_CHANGED: 'error.generationAgentSourceChanged',
+  GENERATION_RECOVERY_UNAUTHORIZED: 'error.generationRecoveryUnauthorized',
   GENERATION_AGENT_TOOL_STALE: 'error.generationSourceChanged',
   GENERATION_DRAFT_SOURCE_CHANGED: 'error.generationSourceChanged',
   GENERATION_DRAFT_PREPARATION_CHANGED: 'error.generationSourceChanged',

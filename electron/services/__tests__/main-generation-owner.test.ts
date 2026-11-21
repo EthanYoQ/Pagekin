@@ -59,6 +59,7 @@ import { synopsisForDraftChapter } from '../../../src/services/workflows/command
 import { parseTextBlueprintsStrict } from '../../../src/services/workflows/directory-workflow'
 import { ProjectCoreRepository, type ProjectCoreSynopsisCommitRequest } from '../../repositories/project-core-repository'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
+import { displayedErrorMessage, isRegisteredErrorCode } from '../../../src/i18n/app-errors'
 vi.mock('../../database', () => ({ getProjectDb: vi.fn(), getCurrentProjectPath: vi.fn(() => null) }))
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const cleanups: (() => void)[] = []
@@ -4101,6 +4102,36 @@ it('refuses resume after selected template bytes change across a real reopen', a
   await expect(reopened.resume(view.handle)).rejects.toThrow('GENERATION_RECOVERY_UNAUTHORIZED')
   expect(reopened.read(view.handle).handle.epoch).toBe('epoch-1')
   expect(dispatch).not.toHaveBeenCalled()
+})
+describe('恢复稿生成之后来源改过，点继续时告诉作者真正的原因', () => {
+  const draftCandidate = async () => {
+    const f = fixture(async (_request, options) => { options.onVisible({ kind: 'delta', text: '雾钟提前一刻响起。' }); return { finishReason: 'stop', usage: null } })
+    const view = f.owner.begin(f.begin)
+    await f.owner.execute({ handle: view.handle, invocationNonce: 'draft', task })
+    return { f, view }
+  }
+  it.each([
+    ['本章蓝图', (f: ReturnType<typeof fixture>) => f.db.exec("UPDATE blueprints SET title='作者改过的第一章' WHERE chapter_number=1")],
+    ['作品设定', (f: ReturnType<typeof fixture>) => f.db.exec("UPDATE project_core SET global_guidance='作者更新规则'")],
+    ['模型设置', (f: ReturnType<typeof fixture>) => { f.model.modelName = 'gpt-4.1-mini' }],
+  ])('%s改过', async (_edit, edit) => {
+    const { f, view } = await draftCandidate()
+    edit(f)
+    const owner = f.reopen()
+    let failure: unknown
+    try { await owner.resume(view.handle) } catch (error) { failure = error }
+    expect(failure).toHaveProperty('message', 'GENERATION_RECOVERY_UNAUTHORIZED')
+    const zh = displayedErrorMessage(shown('zh-CN'), failure), en = displayedErrorMessage(shown('en-US'), failure)
+    expect(isRegisteredErrorCode(failure)).toBe(true)
+    expect(zh).toContain('蓝图'); expect(zh).toContain('设定'); expect(zh).toContain('「不再恢复」')
+    expect(en).toMatch(/blueprint/i); expect(en).toMatch(/setting/i); expect(en).toContain('“Dismiss”')
+  })
+  it('来源没变时照常继续', async () => {
+    const { f, view } = await draftCandidate()
+    const resumed = await f.reopen().resume(view.handle)
+    expect(resumed.handle.runId).toBe(view.handle.runId)
+    expect([...resumed.artifacts, ...(resumed.candidates ?? [])].map(item => item.text)).toEqual(['雾钟提前一刻响起。'])
+  })
 })
 
 it('uses one OpenCode conversation header across attempts and changes it for independent roots',async()=>{
