@@ -503,7 +503,7 @@ it('ADR-0030 一轮 Agent 的根被封存：别的会话登记的子流程照常
    .toThrow('GENERATION_LEDGER_UNREADABLE')
 })
 
-it('Agent 写稿留下的恢复稿在别章蓝图改过后保存不了，作者看到的说明讲清改了什么和能做的事',async()=>{
+it('Agent 写稿留下的恢复稿在别章蓝图改过后保存不了，作者看到的说明讲清蓝图或设定改过和能做的事',async()=>{
  const draftText='清晨的街道渐渐苏醒，林岚带着昨日的线索走向城门。'
  const f=fixture(async(request,options)=>{
   const agent=(request as { task: GenerationTask }).task.purpose==='agent'
@@ -528,6 +528,6 @@ it('Agent 写稿留下的恢复稿在别章蓝图改过后保存不了，作者�
  expect(zh).not.toBe(displayedErrorMessage(shown('zh-CN'),new Error('GENERATION_SOURCE_CHANGED')))
  expect(failure).toHaveProperty('message','GENERATION_AGENT_SOURCE_CHANGED')
  expect(zh).not.toContain('旧版');expect(en).not.toMatch(/\bold\b/i)
- expect(zh).toContain('蓝图、设定或前面章节');expect(zh).toContain('重新生成')
- expect(en).toContain('blueprints, settings, or earlier chapters');expect(en).toContain('generate again')
+ expect(zh).toContain('蓝图或设定改过');expect(zh).toContain('「不再恢复」')
+ expect(en).toContain('blueprints or settings changed');expect(en).toContain('“Dismiss”')
 })
