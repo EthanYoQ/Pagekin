@@ -80,6 +80,24 @@ describe('写作 Skills 的 GitHub 地址报错按界面语言说明（#702）',
     expect(result.error).not.toMatch(ENGLISH_SENTENCE)
   })
 
+  it('读 SKILL.md 正文时连接断了，同样说中文', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ start: controller => controller.error(new TypeError('terminated')) }), { status: 200 })))
+    const result = await inspect('https://github.com/acme/skill/blob/main/SKILL.md')
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/\p{Script=Han}/u)
+    expect(result.error).not.toMatch(ENGLISH_SENTENCE)
+  })
+
+  it('连不上 GitHub 时，原始异常记进主进程日志，作者仍只看到说明', async () => {
+    const cause = new TypeError('fetch failed', { cause: Object.assign(new Error('getaddrinfo ENOTFOUND api.github.com'), { code: 'ENOTFOUND' }) })
+    vi.stubGlobal('fetch', vi.fn(async () => { throw cause }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = await inspect('https://github.com/acme/skill')
+    expect(result.error).not.toMatch(/ENOTFOUND|fetch failed/u)
+    expect(warn).toHaveBeenCalledWith(expect.any(String), cause)
+    warn.mockRestore()
+  })
+
   it('英文界面：报错是英文', async () => {
     mocks.locale = 'en-US'
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
