@@ -48,7 +48,7 @@ export interface PeekSnapshotRequest {
   projectId: string
   manifestFingerprint: string
   scratchRoot: string
-  /** 主进程已建好的迁移注册表里的结构指纹；worker 每次新起，自己建一遍要几十毫秒。 */
+  /** 由主进程传入：worker 每次新起，自己建迁移注册表要几十毫秒。 */
   recognizedSchemas: readonly RecognizedSchema[]
 }
 
@@ -310,7 +310,7 @@ function aggregateProject(
   })
 }
 
-/** 不升级：概览读的表和列各版本都在，升级留到打开作品时。只查版本、完整性、外键和结构指纹，不比打开作品查得多（ADR-0029 决定 1）。 */
+/** 不升级：概览读的表和列各版本都在，升级留到打开作品时（校验范围见 ADR-0029 决定 1）。 */
 export function readPeekSnapshot(request: PeekSnapshotRequest): ProjectOverview {
   const before = sourceState(request.databasePath)
   fs.mkdirSync(request.scratchRoot, { recursive: true })

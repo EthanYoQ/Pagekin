@@ -1,10 +1,6 @@
 // 书房预览分段计时（#702 preview-speed）。
-//   preview-speed  PERF702_FIXTURE 的书（库版本 10 的 112 章夹具）与样书「灯塔」都在书架上、都未打开。
-//                  重启后立即点一次大书（冷），再与样书交替点 PREVIEW_SPEED_ROUNDS 轮（热），每次都记：
-//                  驱动发起点击、渲染端收到点击、主进程 handler 进出、worker 起止、概览 aria-busy 翻成 false、驱动等到。
-//                  只读预览，不打开大书：同一封面点第二次是打开，所以每次大书之间都先点样书。
-//                  --app-root 指向别的构建即可对照（#760 前的构建库版本是 10，同一夹具也能只读预览）。
-//                  热预览（点击到概览 aria-busy 翻成 false）中位超过 PREVIEW_SPEED_BUDGET_MS（默认 250，按 42 MB 的那份夹具定）就失败。
+// 同一封面点第二次是打开，所以每次大书之间都先点样书。
+// 预算 250 ms 按 42 MB 的那份夹具定。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -23,8 +19,7 @@ const userVersion = projectPath => {
   try { return db.prepare('PRAGMA user_version').get().user_version } finally { db.close() }
 }
 
-/** 渲染端：点击与概览 aria-busy 翻成 false 的时刻，以及长任务。时间都是 epoch 毫秒，三个进程可以对齐。
- * contextBridge 暴露的 aiNovelAPI 不可改写，peek 的收发时刻改由主进程 handler 进出代替（两边相差约 1 ms）。 */
+/** contextBridge 暴露的 aiNovelAPI 不可改写，peek 的收发时刻改由主进程 handler 进出代替（两边相差约 1 ms）。 */
 const instrumentRenderer = page => page.evaluate(() => {
   const now = () => performance.timeOrigin + performance.now()
   const log = window.__previewSpeed = { clicks: [], idle: [], longtasks: [] }
@@ -48,7 +43,6 @@ const instrumentRenderer = page => page.evaluate(() => {
   } catch { /* 没有 longtask 时只少这一列。 */ }
 })
 
-/** 主进程：peek handler 的进出，以及它起的 worker 的创建、上线、回消息、退出。 */
 const instrumentMain = app => app.evaluate(({ ipcMain }) => {
   const now = () => performance.timeOrigin + performance.now()
   const log = globalThis.__previewSpeed = { handler: [], workers: [], workerPatched: false }
@@ -100,7 +94,6 @@ async function previewOnce(page, name) {
 
 const round = value => value === undefined ? null : Math.round(value * 10) / 10
 
-/** 把三方时间戳对到同一次大书预览上，拆成各段。 */
 function segments(nodeTimes, renderer, main, index) {
   const click = renderer.clicks.filter(item => item.label === `预览《${BOOK}》`)[index]
   const idle = renderer.idle.find(item => item.label === `《${BOOK}》概览` && item.at >= click.at)
@@ -171,14 +164,13 @@ export const PREVIEW_SPEED_SCENARIOS = {
   } },
 }
 
-/** 把样书的库弄坏（损坏或改成更新的库版本），只用于核对预览「读不到」时的说法。 */
 function breakSample(databasePath, mode) {
   if (mode === 'newer') {
     const db = new DatabaseSync(databasePath)
     try { db.exec(`PRAGMA user_version = ${db.prepare('PRAGMA user_version').get().user_version + 1}`) } finally { db.close() }
     return
   }
-  // 先把 WAL 并回主库，再把 drafts 表根页的页头写坏：integrity_check 一定会报。
+  // 先并回 WAL，否则改动落不到主库；页头写坏 integrity_check 一定会报。
   const db = new DatabaseSync(databasePath)
   db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
   const { page_size: pageSize } = db.prepare('PRAGMA page_size').get()
@@ -188,7 +180,6 @@ function breakSample(databasePath, mode) {
   try { fs.writeSync(fd, Buffer.alloc(16, 0xff), 0, 16, pageSize * (rootPage - 1)) } finally { fs.closeSync(fd) }
 }
 
-/** 预览读不到的书，作者点「打开」看到的是读不到的原因（损坏、由更新版本创建），不是这部作品。 */
 const brokenPreview = (mode, reason) => ({ model: false, shell: 'stage', setup: async context => {
   await seedStageSample(context, { open: false })
   const databasePath = path.join(context.samplePath, '.ai-novel', 'project.db')
