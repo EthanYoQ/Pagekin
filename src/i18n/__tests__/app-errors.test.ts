@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, errorMessageForModel, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
 import { shown } from './shown-locale'
+import { translate } from '../core'
 
 describe('localized application errors', () => {
   it('maps stable error codes to localized messages', () => {
@@ -231,14 +232,11 @@ describe('显示处统一的报错说明（#474 渲染层消费处）', () => {
     new Error(`Error invoking remote method 'project-archive:export': Error: ${unregistered}`),
     { message: unregistered },
   ]
-  const script = { 'zh-CN': /\p{Script=Han}/u, 'en-US': /^[\x20-\x7e]+$/u, 'ja-JP': /[\p{Script=Hiragana}\p{Script=Katakana}]/u } as const
-
   it.each(['zh-CN', 'en-US', 'ja-JP'] as const)('%s：未登记的码不原样给作者看，换成这种界面语言的通用说明（#702）', locale => {
+    const general = translate(locale, 'error.unregisteredCode')
     for (const raw of codeShaped) {
-      for (const message of [displayedErrorMessage(shown(locale), raw), appErrorMessage(shown(locale), raw)]) {
-        expect(message).not.toContain(unregistered)
-        expect(message).toMatch(script[locale])
-      }
+      expect(displayedErrorMessage(shown(locale), raw)).toBe(general)
+      expect(appErrorMessage(shown(locale), raw)).toBe(general)
     }
   })
 
