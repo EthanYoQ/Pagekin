@@ -24,6 +24,7 @@ const DISCOVERY_NOTICES: Record<ModelDiscoveryErrorCode, readonly [string, strin
   auth: ['鉴权失败：请检查 API Key。手工模型 ID 仍可使用。', 'Authentication failed. Check the API key. Manual model IDs remain available.'],
   unsupported: ['该端点不支持标准模型列表接口。请继续手工填写模型 ID。', 'This endpoint does not support the standard model-list API. Continue with a manual model ID.'],
   network: ['网络请求失败，请检查端点或网络后重试。手工模型 ID 仍可使用。', 'The network request failed. Check the endpoint or network and retry. Manual model IDs remain available.'],
+  proxy: ['连不上「网络代理」里设置的代理。请打开代理软件，或关掉「启用代理」。手工模型 ID 仍可使用。', 'Could not reach the proxy set in Network proxy. Start your proxy app, or turn off Use a proxy. Manual model IDs remain available.'],
   invalid_response: ['端点返回了无法识别的模型列表。请继续手工填写模型 ID。', 'The endpoint returned an invalid model list. Continue with a manual model ID.'],
   no_models: ['端点没有返回任何模型。请继续手工填写模型 ID。', 'The endpoint returned no models. Continue with a manual model ID.'],
   no_suitable_models: ['端点返回的模型都不适合当前用途。请继续手工填写模型 ID。', 'None of the endpoint models fit this purpose. Continue with a manual model ID.'],

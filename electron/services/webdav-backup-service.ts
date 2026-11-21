@@ -3,11 +3,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { normalizeWebDavEndpoint } from './cloud-credential-store'
+import { failedAtProxy } from '../network-proxy'
 
 export type WebDavBackupErrorCode =
   | 'WEBDAV_INPUT_INVALID'
   | 'WEBDAV_AUTH'
   | 'WEBDAV_NETWORK'
+  | 'WEBDAV_PROXY_UNREACHABLE'
   | 'WEBDAV_NOT_FOUND'
   | 'WEBDAV_REMOTE_CONFLICT'
   | 'WEBDAV_REMOTE_INVALID'
@@ -496,9 +498,9 @@ export class WebDavBackupService {
           ...init.headers,
         },
       })
-    } catch {
+    } catch (error) {
       if (signal?.aborted) fail('WEBDAV_CANCELLED')
-      fail('WEBDAV_NETWORK')
+      fail(failedAtProxy(error) ? 'WEBDAV_PROXY_UNREACHABLE' : 'WEBDAV_NETWORK')
     }
   }
 
