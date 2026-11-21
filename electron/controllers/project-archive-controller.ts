@@ -59,16 +59,26 @@ const PORTABLE_ERROR_CODES = new Set<PortableProjectOperationErrorCode>([
   'PORTABLE_RESTORE_UNSAFE_TARGET',
 ])
 
-function failure(error: unknown) {
-  const candidate = typeof error === 'object' && error !== null && 'code' in error
-    ? error.code
-    : error instanceof Error ? error.message : undefined
+const CODE_SHAPE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u
+const UNWRITABLE_ERRNO = new Set(['EACCES', 'EPERM', 'EROFS', 'ENOSPC'])
+
+/** 不是码的报错（SqliteError、带路径的 ENOENT）是英文原文，不交给界面：原错误记进主进程日志，界面按操作说明。 */
+function failure(operation: 'export' | 'restore', error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error)
+  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
+  let message = raw
+  if (!CODE_SHAPE.test(raw)) {
+    console.error(`[project-archive] ${operation} failed`, error)
+    message = UNWRITABLE_ERRNO.has(code as string) ? 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE'
+      : operation === 'export' ? 'PORTABLE_EXPORT_FAILED' : 'PORTABLE_RESTORE_FAILED'
+  }
+  const candidate = message === raw && code !== undefined ? code : message
   const errorCode = PORTABLE_ERROR_CODES.has(candidate as PortableProjectOperationErrorCode)
     ? candidate as PortableProjectOperationErrorCode
     : undefined
   return {
     success: false as const,
-    error: error instanceof Error ? error.message : String(error),
+    error: message,
     ...(errorCode ? { errorCode } : {}),
     ...(error instanceof SchemaMigrationError && error.damagedReviewCycle ? { damagedReviewCycle: error.damagedReviewCycle } : {}),
   }
@@ -234,7 +244,7 @@ export function registerProjectArchiveController(
       })
       return { success: true as const, receipt }
     } catch (error) {
-      return failure(error)
+      return failure('export', error)
     }
   })
 
@@ -260,7 +270,7 @@ export function registerProjectArchiveController(
         }
       }
     } catch (error) {
-      return failure(error)
+      return failure('restore', error)
     }
   })
 }
