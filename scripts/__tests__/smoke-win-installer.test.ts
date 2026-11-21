@@ -1187,6 +1187,8 @@ try {
   $childStartTimeTicks = $childProcess.StartTime.ToUniversalTime().Ticks
   if (-not $parentProcess.WaitForExit(45000)) { throw 'root process never exited, so the premise of this case was not established' }
   $parentProcess.Refresh()
+  $childProcess.Refresh()
+  if ($childProcess.HasExited) { throw 'tracked child exited before cleanup, so the premise of this case was not established' }
 
   $processIds = [System.Collections.Generic.HashSet[int]]::new()
   [void]$processIds.Add($parentProcess.Id)
