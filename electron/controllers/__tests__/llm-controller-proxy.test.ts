@@ -58,3 +58,15 @@ describe('代理连不上时测试连接', () => {
     expect(result.error).toContain('Anthropic')
   })
 })
+
+describe('代理连不上时，发请求前就被拒的设置', () => {
+  beforeAll(() => { if (!mocks.handlers.size) registerLLMController() })
+
+  it('Kimi 官方接口温度超范围：照原样说明温度，不归咎代理', async () => {
+    const result = await mocks.handlers.get('llm:test-connection')!({}, {
+      id: 'kimi', name: 'kimi', provider: 'moonshot', protocol: 'openai', modelName: 'moonshot-v1-8k', apiKey: 'key',
+      baseUrl: 'https://api.moonshot.cn/v1', temperature: 1.5, maxTokens: 256, purposes: ['generation'],
+    }) as { error: string }
+    expect(result.error).not.toContain('网络代理')
+  })
+})
