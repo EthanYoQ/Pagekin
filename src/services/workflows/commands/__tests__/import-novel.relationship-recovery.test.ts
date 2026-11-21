@@ -5,6 +5,7 @@ import { useProjectStore } from '../../../../stores/project-store'
 import type { CharacterRosterEntry } from '../../../../shared/character-roster'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import { InferGlobalSettingsCommand as RuntimeInferGlobalSettingsCommand } from '../import-novel.command'
+import { importRecoveryBatches } from '../import-inference-contract'
 import { useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
 
@@ -448,20 +449,25 @@ describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {
       ['陆舟', 'protagonist'], ['王宁', 'supporting'], ['顾岩', 'antagonist'], ['王宁', 'minor']])
   })
 
+  it('cuts batches in listed order, starting a new one at a same name, so a stop never skips someone listed earlier', () => {
+    const [boatman, keeper, lin, bai] = [{ name: '王宁', note: '渡口船夫' }, { name: '王宁', note: '茶馆掌柜' }, { name: '林照' }, { name: '白榆' }]
+    expect(importRecoveryBatches([boatman, keeper, lin, bai])).toEqual([[boatman], [keeper, lin, bai]])
+  })
+
   it('asks for two listed people with the same name in separate batches and keeps both', async () => {
     const invoke = stubSuccessfulImportIpc()
     const initial = { ...validInference(), otherCharacters: [
       { name: '王宁', role: 'minor', note: '渡口船夫' }, { name: '王宁', role: 'minor', note: '茶馆掌柜' }, { name: '林照', role: 'minor', note: '书生' }] }
     const generateStream = respondWith([initial,
-      { characterCards: [card('王宁', 'minor'), card('林照', 'minor')] },
-      { characterCards: [card('王宁', 'supporting')] }])
+      { characterCards: [card('王宁', 'minor')] },
+      { characterCards: [card('王宁', 'supporting'), card('林照', 'minor')] }])
 
     await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
 
     expect(generateStream).toHaveBeenCalledTimes(3)
     expect(JSON.stringify(generateStream.mock.calls[2][0])).toContain('茶馆掌柜')
     expect(committedEntries(invoke).map(entry => [entry.name, entry.role])).toEqual([
-      ['陆舟', 'protagonist'], ['苏绾', 'supporting'], ['顾岩', 'antagonist'], ['王宁', 'minor'], ['林照', 'minor'], ['王宁', 'supporting']])
+      ['陆舟', 'protagonist'], ['苏绾', 'supporting'], ['顾岩', 'antagonist'], ['王宁', 'minor'], ['王宁', 'supporting'], ['林照', 'minor']])
     expect(callbacks.log).not.toHaveBeenCalledWith(expect.stringMatching(/没有补出/))
   })
 })
