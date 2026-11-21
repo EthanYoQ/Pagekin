@@ -161,54 +161,50 @@ export class AnthropicProvider implements ILLMProvider {
   }
 
   async generate(model: ModelProfile, messages: Array<{ role: string; content: string }>, opts: LLMGenerateOptions): Promise<LLMResponse> {
-    try {
-      const url = resolveAnthropicMessagesUrl(model.baseUrl)
-      const body = this.buildRequestBody(model, messages, opts, false)
+    const url = resolveAnthropicMessagesUrl(model.baseUrl)
+    const body = this.buildRequestBody(model, messages, opts, false)
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: this.buildRequestHeaders(model),
-        body: JSON.stringify(body),
-        signal: opts.signal,
-        redirect: 'error',
-      })
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: this.buildRequestHeaders(model),
+      body: JSON.stringify(body),
+      signal: opts.signal,
+      redirect: 'error',
+    })
 
-      if (!res.ok) {
-        const text = await res.text()
-        return { success: false, content: '', finishReason: 'error', error: 'LLM_REQUEST_FAILED', httpFailure: { status: res.status, body: text } }
-      }
+    if (!res.ok) {
+      const text = await res.text()
+      return { success: false, content: '', finishReason: 'error', error: 'LLM_REQUEST_FAILED', httpFailure: { status: res.status, body: text } }
+    }
 
-      const data = await res.json() as {
-        content?: Array<{ type?: string; text?: string }>
-        stop_reason?: string | null
-        usage?: AnthropicUsage
-      }
+    const data = await res.json() as {
+      content?: Array<{ type?: string; text?: string }>
+      stop_reason?: string | null
+      usage?: AnthropicUsage
+    }
 
-      const finalContent = this.stripThinking((data.content ?? [])
-        .filter(block => typeof block?.text === 'string' && (block.type === undefined || block.type === 'text'))
-        .map(block => block.text)
-        .join(''))
-      const finishReason = this.normalizeStopReason(data.stop_reason)
-      const usage = anthropicTokenUsage(data.usage)
+    const finalContent = this.stripThinking((data.content ?? [])
+      .filter(block => typeof block?.text === 'string' && (block.type === undefined || block.type === 'text'))
+      .map(block => block.text)
+      .join(''))
+    const finishReason = this.normalizeStopReason(data.stop_reason)
+    const usage = anthropicTokenUsage(data.usage)
 
-      if (finishReason === 'stop') {
-        return {
-          success: true,
-          content: finalContent,
-          finishReason,
-          usage,
-        }
-      }
-
+    if (finishReason === 'stop') {
       return {
-        success: false,
+        success: true,
         content: finalContent,
         finishReason,
-        error: 'LLM_RESPONSE_INCOMPLETE',
         usage,
       }
-    } catch (error) {
-      return { success: false, content: '', finishReason: 'error', error: String(error) }
+    }
+
+    return {
+      success: false,
+      content: finalContent,
+      finishReason,
+      error: 'LLM_RESPONSE_INCOMPLETE',
+      usage,
     }
   }
 

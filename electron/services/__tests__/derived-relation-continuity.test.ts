@@ -521,6 +521,22 @@ describe('定稿后自动记录人物关系变化', () => {
     expect(pending()).toEqual([])
   })
 
+  it('作者写的关系超过 80 字，定稿回到它时照抄的原词照样记下；模型自己写的超长关系仍不记', () => {
+    openProject()
+    const long = `自幼在同一座山门下长大、${'一起走过风雨'.repeat(12)}的师徒`
+    expect(long.length).toBeGreaterThan(80)
+    authorRelation(long)
+    commitModelOutput(finalizeNew(8, CHAPTER_EIGHT), { updates: [], relations: [relationChange('恩断义绝', BREAK_UP)] })
+    decide('decline')
+    const reconciled = '沈砚扶起林岚，重新认她为徒。'
+    commitModelOutput(finalizeNew(9, `第九章：${reconciled}`), { updates: [], relations: [relationChange(long, reconciled)] })
+    const invented = '十章：两人反目。'
+    commitModelOutput(finalizeNew(10, `第${invented}`), { updates: [], relations: [relationChange(`${long}之后又反目`, invented)] })
+
+    expect(derivedNodes().map(node => [node.effectiveChapter, node.value, !!node.matchedAuthor]).sort()).toEqual([[8, '恩断义绝', false], [9, long, true]])
+    expect(pending()).toEqual([])
+  })
+
   it('作者设定盟友，第 5 章定稿写成仇敌，第 7 章定稿回到盟友：时间线记下第 7 章的和好', () => {
     openProject()
     authorRelation('盟友')

@@ -90,76 +90,72 @@ export class GeminiProvider implements ILLMProvider {
     return { contents, systemInstruction }
   }
   async generate(model: ModelProfile, messages: Array<{ role: string; content: string }>, opts: LLMGenerateOptions): Promise<LLMResponse> {
-    try {
-      const baseUrl = model.baseUrl.replace(/\/$/, '')
-      const url = `${baseUrl}/v1beta/models/${model.modelName}:generateContent`
+    const baseUrl = model.baseUrl.replace(/\/$/, '')
+    const url = `${baseUrl}/v1beta/models/${model.modelName}:generateContent`
 
-      const { contents, systemInstruction } = this.toGeminiContents(messages)
+    const { contents, systemInstruction } = this.toGeminiContents(messages)
 
-      const generationConfig: Record<string, unknown> = {
-        maxOutputTokens: opts.maxTokens ?? model.maxTokens,
-      }
-      if (opts.temperature !== undefined) {
-        generationConfig.temperature = opts.temperature
-      }
-      if (opts.responseFormat?.type === 'json_object') {
-        generationConfig.responseMimeType = 'application/json'
-      }
-      this.applyReasoning(generationConfig, opts)
+    const generationConfig: Record<string, unknown> = {
+      maxOutputTokens: opts.maxTokens ?? model.maxTokens,
+    }
+    if (opts.temperature !== undefined) {
+      generationConfig.temperature = opts.temperature
+    }
+    if (opts.responseFormat?.type === 'json_object') {
+      generationConfig.responseMimeType = 'application/json'
+    }
+    this.applyReasoning(generationConfig, opts)
 
-      const body: Record<string, unknown> = {
-        contents,
-        generationConfig,
-      }
-      if (systemInstruction) {
-        body.systemInstruction = { parts: [{ text: systemInstruction }] }
-      }
+    const body: Record<string, unknown> = {
+      contents,
+      generationConfig,
+    }
+    if (systemInstruction) {
+      body.systemInstruction = { parts: [{ text: systemInstruction }] }
+    }
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': model.apiKey,
-        },
-        body: JSON.stringify(body),
-        signal: opts.signal,
-      })
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': model.apiKey,
+      },
+      body: JSON.stringify(body),
+      signal: opts.signal,
+    })
 
-      if (!res.ok) {
-        const text = await res.text()
-        return { success: false, content: '', finishReason: 'error', error: 'LLM_REQUEST_FAILED', httpFailure: { status: res.status, body: text } }
-      }
+    if (!res.ok) {
+      const text = await res.text()
+      return { success: false, content: '', finishReason: 'error', error: 'LLM_REQUEST_FAILED', httpFailure: { status: res.status, body: text } }
+    }
 
-      const data = await res.json() as {
-        candidates?: Array<{
-          content?: { parts?: Array<{ text?: string }> }
-          finishReason?: string | null
-        }>
-        usageMetadata?: GeminiUsageMetadata
-      }
+    const data = await res.json() as {
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> }
+        finishReason?: string | null
+      }>
+      usageMetadata?: GeminiUsageMetadata
+    }
 
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-      const finishReason = this.normalizeFinishReason(data.candidates?.[0]?.finishReason)
-      const usage = data.usageMetadata ? geminiTokenUsage(data.usageMetadata) : undefined
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    const finishReason = this.normalizeFinishReason(data.candidates?.[0]?.finishReason)
+    const usage = data.usageMetadata ? geminiTokenUsage(data.usageMetadata) : undefined
 
-      if (finishReason === 'stop') {
-        return {
-          success: true,
-          content: text,
-          usage,
-          finishReason,
-        }
-      }
-
+    if (finishReason === 'stop') {
       return {
-        success: false,
+        success: true,
         content: text,
         usage,
         finishReason,
-        error: 'LLM_RESPONSE_INCOMPLETE',
       }
-    } catch (error) {
-      return { success: false, content: '', finishReason: 'error', error: String(error) }
+    }
+
+    return {
+      success: false,
+      content: text,
+      usage,
+      finishReason,
+      error: 'LLM_RESPONSE_INCOMPLETE',
     }
   }
 

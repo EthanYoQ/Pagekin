@@ -299,14 +299,13 @@ async function relationFacts(context) {
   assert.deepEqual(derived.map(node => node.chapter), Object.keys(RELATION_CHAPTERS).map(Number), `正文写明了关系变化的两章各记下一条定稿关系；模型没报时重跑。${shown}`)
   const [earlier, later] = derived
   assert.notEqual(earlier.value, KEEPER_RELATION, `第 ${earlier.chapter} 章写的是反目，和作者设定不同。${shown}`)
-  assert.equal(later.value, KEEPER_RELATION, `第 ${later.chapter} 章回到作者设定的说法；模型换了说法时没走到这条路，重跑。${shown}`)
+  assert.deepEqual(derived.map(node => node.matchedAuthor), [false, true], `第 ${earlier.chapter} 章反目不算和作者设定一致，第 ${later.chapter} 章和好算一致。${shown}`)
   for (const node of derived) {
-    assert.equal(node.matchedAuthor, node.value === KEEPER_RELATION, `和作者设定同值的定稿关系记为一致，不同值的不记。${shown}`)
     assert.ok(RELATION_CHAPTERS[node.chapter].includes(node.quote), `定稿关系的原文出自那一章。${shown}`)
     const timeline = (await read(context, 'db:character-continuity-timeline', node.fromId)).nodes.filter(isDerivedRelation)
     assert.ok(timeline.some(entry => entry.effectiveChapter === node.chapter && entry.value === node.value), `${node.from}的时间线第 ${node.chapter} 章有「${node.value}」。${JSON.stringify(timeline)}`)
   }
-  assert.deepEqual(cards, [{ chapter: earlier.chapter, from: earlier.from, value: earlier.value }], `只有第 ${earlier.chapter} 章那条和作者设定不同的说法有建议。${shown}`)
+  assert.deepEqual(cards, [{ chapter: earlier.chapter, from: earlier.from, value: earlier.value }], `只有第 ${earlier.chapter} 章反目有建议，第 ${later.chapter} 章和好没有。${shown}`)
   return facts
 }
 
