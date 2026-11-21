@@ -266,7 +266,47 @@ async function restoreOnce(context, archive, parent, role, expected) {
   return (await shown.innerText()).trim()
 }
 
+const FW723_TITLE = '为什么？真相：开始'
+
 Object.assign(CCH_SCENARIOS, {
+  'fw723-fullwidth-title': { model: true, shell: 'stage', setup: async context => {
+    const { page, invoke } = context
+    const { projectPath } = await seedLargeBook(context, 0)
+    const opened = await invoke(page, 'project:open', projectPath, randomUUID(), null)
+    assert.equal(opened.success, true, opened.error)
+    const session = { projectId: opened.project.id, projectPath, leaseId: opened.project.sessionLease }
+    const content = chapterText(1)
+    const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
+      chapters: [{ chapterNumber: 1, title: FW723_TITLE, content, wordCount: countUnits(content) }] }, projectPath, session)
+    assert.equal(imported.success, true, imported.error)
+    const knowledge = await invoke(page, 'kb:import-text', content, `第1章 ${FW723_TITLE}.txt`, projectPath, session)
+    assert.equal(knowledge.success, true, knowledge.error)
+    await context.restart()
+  }, run: async context => {
+    const { page, roots, shoot } = context
+    const source = path.join(roots.projects, BOOK)
+    const manuscript = withBook(source, database => database.prepare('SELECT target_file_name FROM finalization_outbox WHERE chapter_number=1').pluck().get())
+    assert.equal(manuscript, `第1章 ${FW723_TITLE}.txt`, '定稿稿件名带着全角标点')
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    const archive = path.join(roots.projects, 'fw723.ainovel')
+    const exported = await exportOnce(context, archive, ZH, 'status', new RegExp(`^本地存档已导出：${SHA}$`, 'u'))
+    await shoot('fw723-1-exported')
+    const parent = path.join(roots.projects, 'restore-fw723')
+    fs.mkdirSync(parent)
+    const restored = await restoreOnce(context, archive, parent, 'status', /^已恢复新副本 /u)
+    await shoot('fw723-2-restored')
+    const [copy] = fs.readdirSync(parent)
+    const copyRoot = path.join(parent, copy)
+    assert.equal(withBook(copyRoot, database => database.prepare('SELECT target_file_name FROM finalization_outbox WHERE chapter_number=1').pluck().get()),
+      manuscript, '副本的定稿稿件名与原作品一致')
+    const reopened = await context.invoke(page, 'project:open', copyRoot, randomUUID(), null)
+    assert.equal(reopened.success, true, reopened.error)
+    const copySession = { projectId: reopened.project.id, projectPath: copyRoot, leaseId: reopened.project.sessionLease }
+    const documents = await context.invoke(page, 'kb:list-documents', copyRoot, copySession)
+    assert.ok(JSON.stringify(documents).includes(`第1章 ${FW723_TITLE}.txt`), `副本知识库保留文档名：${JSON.stringify(documents)}`)
+    return { manuscript, exported, restored }
+  } },
   'ec-restore-not-archive': { model: true, shell: 'stage', setup: async context => {
     await seedLargeBook(context, 1)
   }, run: async context => {
