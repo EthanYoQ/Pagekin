@@ -843,7 +843,7 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
 
 /**
  * 分章 Markdown 导出（#702）：每章一个文件，Windows 上每章各起一次安全文件 helper 查存在、再起一次写入。
- * 从点「选择目录并导出」计到按钮恢复；只有每章文件都在、内容是那一章时才算数。
+ * 从点「选择目录并导出」计到对话框显示导出结果；只有每章文件都在、内容是那一章时才算数。
  */
 export async function timeSplitExport(context, finalized) {
   const { app, page, roots } = context
@@ -856,11 +856,10 @@ export async function timeSplitExport(context, finalized) {
   await stage.openWorkMenuItem(page, BOOK, '导出…')
   const dialog = page.getByRole('dialog', { name: '导出项目' })
   await dialog.getByText('分章 Markdown', { exact: true }).click()
-  const exportButton = dialog.getByRole('button', { name: '选择目录并导出', exact: true })
   const startedAt = Date.now()
-  await exportButton.click()
-  await dialog.getByRole('button', { name: '导出中...', exact: true }).waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {})
-  await exportButton.waitFor({ state: 'visible', timeout: 20 * 60_000 })
+  await dialog.getByRole('button', { name: '选择目录并导出', exact: true }).click()
+  await dialog.getByText(/已导出到：/u).or(dialog.locator('[class*="color-error-text"]')).first()
+    .waitFor({ state: 'visible', timeout: 20 * 60_000 })
   const totalMs = Date.now() - startedAt
   const dialogText = await dialog.innerText()
   assert.match(dialogText, /已导出到：/u, `分章导出没有成功：${dialogText}`)
