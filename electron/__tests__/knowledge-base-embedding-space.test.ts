@@ -693,7 +693,7 @@ describe('知识库嵌入空间回填', () => {
       )).resolves.toMatchObject({
         success: false,
         chunkCount: 0,
-        error: expect.stringContaining('injected active invalidation persistence failure'),
+        error: 'KNOWLEDGE_BASE_OPERATION_FAILED',
       })
     } finally {
       renameSpy.mockRestore()

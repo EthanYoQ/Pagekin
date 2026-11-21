@@ -337,6 +337,86 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
+  'kb-damaged-index-rebuild': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
+    const model = { ...EMBEDDING_MODEL, id: 'kb-damaged-embedding', name: '本机检索模型', provider: 'custom', baseUrl: `http://127.0.0.1:${context.fake.port}/v1`, apiKey: '' }
+    assert.equal((await invoke(page, 'llm:save-model', model)).success, true)
+    assert.equal((await invoke(page, 'llm:set-default-embedding-model', model.id)).success, true)
+  } }), run: async context => {
+    const { app, page, invoke, reload, shoot } = context
+    await importMaterials(context)
+    const ZH = { spine: '创作流程', settings: '设置', sections: '设置分组', page: '检索模型', region: '当前作品的检索索引', library: '最近的作品', open: stage.openFromLibrary }
+    const EN = { spine: 'Writing flow', settings: 'Settings', sections: 'Settings sections', page: 'Retrieval model', region: 'Search index of the current book', library: 'Recent books', open: stage.openFromLibraryEn }
+    const openIndex = async labels => {
+      await page.getByRole('navigation', { name: labels.spine }).getByRole('button', { name: labels.settings, exact: true }).click()
+      await stage.root(page).getByRole('navigation', { name: labels.sections }).getByRole('button', { name: labels.page, exact: true }).click()
+      return stage.root(page).getByRole('region', { name: labels.region })
+    }
+    const switchLocale = async (locale, labels) => {
+      assert.equal((await invoke(page, 'config:set', { locale })).success, true)
+      await reload()
+      await page.getByRole('list', { name: labels.library }).waitFor({ state: 'visible' })
+      await labels.open(page, STAGE_SAMPLE.name)
+      await page.getByRole('navigation', { name: labels.spine }).waitFor({ state: 'visible' })
+      return openIndex(labels)
+    }
+    // 隔离目录造不出真盘满和真只读，换掉处理器只看这两条文案。
+    const rebuildFailure = async (index, code, shot) => {
+      await app.evaluate(({ ipcMain }, error) => {
+        ipcMain._invokeHandlers.set('kb:backfill-vectors', async () => ({ success: false, processed: 0, failed: 0, error }))
+      }, code)
+      await index.getByRole('button').first().click()
+      const toast = page.locator(stage.LIVE_TOAST).last()
+      await toast.waitFor({ state: 'visible', timeout: 30_000 })
+      const shown = (await toast.innerText()).trim()
+      await shoot(`kb-damaged-index-rebuild-${shot}`)
+      await toast.getByRole('button').click()
+      await page.locator(stage.LIVE_TOAST).waitFor({ state: 'detached' })
+      return shown
+    }
+    const statusShown = async (index, shot) => {
+      const line = index.getByText(/知识库这次操作出了意外问题|Something unexpected went wrong in the knowledge base/u)
+      await line.waitFor({ state: 'visible', timeout: 30_000 })
+      await shoot(`kb-damaged-index-rebuild-${shot}`)
+      return (await line.innerText()).trim()
+    }
+    const indexZh = await openIndex(ZH)
+    const measured = {
+      diskFull: { 'zh-CN': await rebuildFailure(indexZh, 'KNOWLEDGE_BASE_DISK_FULL', 'disk-full-zh') },
+      unwritable: { 'zh-CN': await rebuildFailure(indexZh, 'KNOWLEDGE_BASE_UNWRITABLE', 'unwritable-zh') },
+    }
+    const indexEn = await switchLocale('en-US', EN)
+    measured.diskFull['en-US'] = await rebuildFailure(indexEn, 'KNOWLEDGE_BASE_DISK_FULL', 'disk-full-en')
+    measured.unwritable['en-US'] = await rebuildFailure(indexEn, 'KNOWLEDGE_BASE_UNWRITABLE', 'unwritable-en')
+    const removed = await app.evaluate((_electron, lance) => {
+      const fs = process.getBuiltinModule('node:fs')
+      const path = process.getBuiltinModule('node:path')
+      const files = fs.readdirSync(lance).flatMap(table => {
+        const data = path.join(lance, table, 'data')
+        return fs.existsSync(data) ? fs.readdirSync(data).map(file => path.join(data, file)) : []
+      })
+      for (const file of files) fs.rmSync(file)
+      return files.length
+    }, `${context.samplePath}/.ai-novel/lancedb`)
+    assert.ok(removed > 0, '删掉了检索索引的数据文件')
+    measured.damaged = { 'zh-CN': await statusShown(await switchLocale('zh-CN', ZH), 'damaged-zh') }
+    measured.damaged['en-US'] = await statusShown(await switchLocale('en-US', EN), 'damaged-en')
+    assert.deepEqual(measured, {
+      diskFull: {
+        'zh-CN': '重建检索失败：磁盘空间不足，知识库写不进去。清理磁盘后再试一次。',
+        'en-US': 'Could not rebuild search. The disk is full, so the knowledge base could not be written. Free up space, then try again.',
+      },
+      unwritable: {
+        'zh-CN': '重建检索失败：作品文件夹写不进去，可能是只读，或被同步盘、杀毒软件占用。关掉这些程序后再试一次。',
+        'en-US': 'Could not rebuild search. The book folder could not be written; it may be read-only or locked by sync or antivirus software. Close those programs, then try again.',
+      },
+      damaged: {
+        'zh-CN': '知识库这次操作出了意外问题。请再试一次，还不行请把这条提示反馈给我们。',
+        'en-US': 'Something unexpected went wrong in the knowledge base. Try again; if it keeps happening, send us this message.',
+      },
+    }, JSON.stringify(measured))
+    return measured
+  } },
+
   // #388 T3：设置的「检索模型」页里删掉检索模型，同一页的索引区随之回到未配置，不再留着重建按钮。
   'x2-index-model': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     assert.equal((await invoke(page, 'llm:save-model', EMBEDDING_MODEL)).success, true)
