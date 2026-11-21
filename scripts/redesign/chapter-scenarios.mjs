@@ -12,6 +12,7 @@ import * as stage from './pages/stage.mjs'
 import { contrastFailures, firstLine, seedStageSample } from './scenarios.mjs'
 import { countUnits, STAGE_SAMPLE } from './stage-sample.mjs'
 import { trackOpenedSession, uiSession } from './reopen-scenarios.mjs'
+import { holdChannel, untilHeld } from './x1-scenarios.mjs'
 import { describeFinalizationStepError } from '../../src/shared/finalization-step-error.ts'
 
 const isStage = async page => await stage.root(page).count() > 0
@@ -211,25 +212,47 @@ async function openTiming(page, target, text) {
   return page.evaluate(() => window.__driveOpen)
 }
 
-/** 第 3 章点「重新审稿」，等写回审稿报告后打开运行侧页，返回请求数与侧页上看得到的东西。 */
-async function rereviewChapter3({ page, fake }) {
+const COMMIT_REVIEW = 'review-revision:commit-review'
+
+/** unsaved：写回卡住，调用方随后重载，留下一条没保存的审稿候选（#686 起已保存的审修运行不列为可恢复）。 */
+async function rereviewChapter3({ app, page, fake }, { unsaved = false } = {}) {
   await chapterView.open(page, 3)
   const reviewsBefore = fake.chats.filter(chat => chat.kind === 'review').length
+  const reviewRequests = () => fake.chats.filter(chat => chat.kind === 'review').length - reviewsBefore
+  if (unsaved) {
+    await holdChannel(app, COMMIT_REVIEW)
+    await chapterView.view(page).getByRole('button', { name: '重新审稿', exact: true }).click()
+    await untilHeld(app, COMMIT_REVIEW, 60_000)
+    return { reviewRequests: reviewRequests() }
+  }
   const started = await runsStarted(page)
   await chapterView.view(page).getByRole('button', { name: '重新审稿', exact: true }).click()
   await waitRunDone(page, started)
   const reportShown = await chapterView.reviewSheet(page).getByRole('button', { name: '添加我的意见' })
     .waitFor({ state: 'visible', timeout: 30_000 }).then(() => true, () => false)
   await runSheet.openFromPalette(page)
-  const card = runSheet.recovery(page).getByRole('article').filter({ hasText: '第3章审稿候选' })
-  await card.waitFor({ state: 'visible' })
   return {
-    reviewRequests: fake.chats.filter(chat => chat.kind === 'review').length - reviewsBefore,
+    reviewRequests: reviewRequests(),
     reportShown,
     rawIpcError: await runSheet.sheet(page).getByText(/Error invoking remote method|GENERATION_/).count(),
-    rawJson: await card.getByText('"summary"').count(),
-    digestShown: await card.getByText(/1 条意见/).count(),
   }
+}
+
+async function reopenRunSheet({ page, reload }) {
+  await reload()
+  await stage.openFromLibrary(page, STAGE_SAMPLE.name)
+  await runSheet.openFromPalette(page)
+}
+
+async function reopenRunSheetEn({ page, invoke, reload }) {
+  assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
+  await reload()
+  await stage.openFromLibraryEn(page, STAGE_SAMPLE.name)
+  await page.getByRole('navigation', { name: 'Writing flow' }).waitFor({ state: 'visible' })
+  await page.keyboard.press('ControlOrMeta+K')
+  await page.getByRole('dialog', { name: 'Search and jump' }).getByRole('combobox').fill('Run sheet')
+  await page.keyboard.press('Enter')
+  await runSheet.waitUntilOpen(page)
 }
 
 const percentile = (values, p) => {
@@ -441,27 +464,26 @@ export const CHAPTER_SCENARIOS = {
    * #455：恢复卡里这次审稿的候选显示审稿结论，不显示模型返回的原始 JSON。
    */
   'chapter-rereview-legacy': { model: true, shell: 'stage', setup: seed(), run: async context => {
-    const after = await rereviewChapter3(context)
-    assert.deepEqual(after, { reviewRequests: 1, reportShown: true, rawIpcError: 0, rawJson: 0, digestShown: 1 },
-      '重新审稿请求了模型并写回审稿报告，运行侧页没有原始 IPC 错误，恢复卡显示审稿结论而不是原始 JSON')
-    return after
+    const saved = await rereviewChapter3(context)
+    assert.deepEqual(saved, { reviewRequests: 1, reportShown: true, rawIpcError: 0 },
+      '重新审稿请求了模型并写回审稿报告，运行侧页没有原始 IPC 错误')
+    const unsaved = await rereviewChapter3(context, { unsaved: true })
+    await reopenRunSheet(context)
+    const card = runSheet.recovery(context.page).getByRole('article').filter({ hasText: '第3章审稿候选' })
+    await card.waitFor({ state: 'visible' })
+    const recovery = { reviewRequests: unsaved.reviewRequests, rawJson: await card.getByText('"summary"').count(), digestShown: await card.getByText(/1 条意见/).count() }
+    assert.deepEqual(recovery, { reviewRequests: 1, rawJson: 0, digestShown: 1 }, '没保存的审稿候选在恢复卡里显示审稿结论而不是原始 JSON')
+    return { saved, recovery }
   } },
 
-  /** #455 的英文界面：同一条审稿候选重开作品后在英文运行侧页里显示英文摘要。 */
+  /** #455 的英文界面：没保存的审稿候选重开作品后在英文运行侧页里显示英文摘要。 */
   'chapter-rereview-legacy-en': { model: true, shell: 'stage', setup: seed(), run: async context => {
-    const { page, invoke, reload } = context
-    await rereviewChapter3(context)
-    assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
-    await reload()
-    await stage.openFromLibraryEn(page, STAGE_SAMPLE.name)
-    await page.getByRole('navigation', { name: 'Writing flow' }).waitFor({ state: 'visible' })
-    await page.keyboard.press('ControlOrMeta+K')
-    await page.getByRole('dialog', { name: 'Search and jump' }).getByRole('combobox').fill('Run sheet')
-    await page.keyboard.press('Enter')
-    await runSheet.waitUntilOpen(page)
+    const { page } = context
+    await rereviewChapter3(context, { unsaved: true })
+    await reopenRunSheetEn(context)
     const card = runSheet.recovery(page).getByRole('article').filter({ hasText: 'Chapter 3 review candidate' })
     await card.waitFor({ state: 'visible' })
-    const after = { rawJson: await card.getByText('"summary"').count(), digestShown: await card.getByText(/1 item\b/).count() }
+    const after = { rawJson: await card.getByText('"summary"').count(), digestShown: await card.getByText(/\(1 note\)/).count() }
     assert.deepEqual(after, { rawJson: 0, digestShown: 1 }, '英文运行侧页的恢复卡显示英文审稿摘要而不是原始 JSON')
     return after
   } },
@@ -471,7 +493,7 @@ export const CHAPTER_SCENARIOS = {
    * 中文截 chapter-recheck-digest-zh，再切到英文重开作品，英文卡片写「1 item」与待核实。
    */
   'chapter-recheck-digest': { model: true, shell: 'stage', setup: seed(), run: async context => {
-    const { page, fake, invoke, reload, shoot } = context
+    const { app, page, fake, shoot } = context
     const summary = '复验：铺垫已压缩，仍需作者核对。'
     // 审稿同 x2-recheck：带正文证据的本章目标意见才进复验。
     const firstReview = JSON.stringify({ summary: '本章目标还没落地。', items: [
@@ -490,6 +512,8 @@ export const CHAPTER_SCENARIOS = {
     })
     await chapterView.open(page, 4)
     await reviewAndRevise(page)
+    // #686 起已保存的复验不列为可恢复，卡住写回才有候选可看。
+    await holdChannel(app, COMMIT_REVIEW)
     await chapterView.merge(page).getByRole('button', { name: '全部用修稿' }).click()
     await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
     await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
@@ -498,8 +522,8 @@ export const CHAPTER_SCENARIOS = {
       assert.ok(Date.now() < deadline, `60 秒内没有发出合并后的复验（对话请求 ${fake.chats.map(chat => chat.kind).join('、')}）`)
       await page.waitForTimeout(250)
     }
-    await waitRunDone(page)
-    await runSheet.openFromPalette(page)
+    await untilHeld(app, COMMIT_REVIEW, 60_000)
+    await reopenRunSheet(context)
     const card = runSheet.recovery(page).getByRole('article').filter({ hasText: '复核未能确认全部意见已解决' })
     await card.waitFor({ state: 'visible' })
     const zh = { rawJson: await card.getByText('"summary"').count(), modelSummary: await card.getByText(summary).count(), count: await card.getByText(/（1 条意见）/).count(),
@@ -508,14 +532,7 @@ export const CHAPTER_SCENARIOS = {
     await card.scrollIntoViewIfNeeded()
     await shoot('chapter-recheck-digest-zh')
 
-    assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
-    await reload()
-    await stage.openFromLibraryEn(page, STAGE_SAMPLE.name)
-    await page.getByRole('navigation', { name: 'Writing flow' }).waitFor({ state: 'visible' })
-    await page.keyboard.press('ControlOrMeta+K')
-    await page.getByRole('dialog', { name: 'Search and jump' }).getByRole('combobox').fill('Run sheet')
-    await page.keyboard.press('Enter')
-    await runSheet.waitUntilOpen(page)
+    await reopenRunSheetEn(context)
     const cardEn = runSheet.recovery(page).getByRole('article').filter({ hasText: 'The recheck could not confirm that every note is resolved' })
     await cardEn.waitFor({ state: 'visible' })
     await cardEn.scrollIntoViewIfNeeded()
@@ -525,18 +542,11 @@ export const CHAPTER_SCENARIOS = {
     return { zh, en }
   } },
 
-  /** #484：只请求了一次的审稿候选，英文运行侧页写「1 request used」，不写成复数。 */
+  /** #484：只请求了一次、没保存的审稿候选，英文运行侧页写「1 request used」，不写成复数。 */
   'run-usage-en': { model: true, shell: 'stage', setup: seed(), run: async context => {
-    const { page, invoke, reload } = context
-    await rereviewChapter3(context)
-    assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
-    await reload()
-    await stage.openFromLibraryEn(page, STAGE_SAMPLE.name)
-    await page.getByRole('navigation', { name: 'Writing flow' }).waitFor({ state: 'visible' })
-    await page.keyboard.press('ControlOrMeta+K')
-    await page.getByRole('dialog', { name: 'Search and jump' }).getByRole('combobox').fill('Run sheet')
-    await page.keyboard.press('Enter')
-    await runSheet.waitUntilOpen(page)
+    const { page } = context
+    await rereviewChapter3(context, { unsaved: true })
+    await reopenRunSheetEn(context)
     const card = runSheet.recovery(page).getByRole('article').filter({ hasText: 'Chapter 3 review candidate' })
     await card.waitFor({ state: 'visible' })
     await card.scrollIntoViewIfNeeded()
