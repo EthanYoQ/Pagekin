@@ -289,27 +289,50 @@ export const X2_SCENARIOS = {
     await importMaterials(context)
     // 驱动只放行假服务的端口，所以靠关掉它来制造连不上。
     await fake.close()
-    const rebuildFailure = async ({ locale, spine, settings, sections, page: pageName, region }) => {
-      await page.getByRole('navigation', { name: spine }).getByRole('button', { name: settings, exact: true }).click()
-      await stage.root(page).getByRole('navigation', { name: sections }).getByRole('button', { name: pageName, exact: true }).click()
-      const index = stage.root(page).getByRole('region', { name: region })
+    const ZH = { spine: '创作流程', settings: '设置', sections: '设置分组', page: '检索模型', region: '当前作品的检索索引' }
+    const EN = { spine: 'Writing flow', settings: 'Settings', sections: 'Settings sections', page: 'Retrieval model', region: 'Search index of the current book' }
+    const openIndex = async labels => {
+      await page.getByRole('navigation', { name: labels.spine }).getByRole('button', { name: labels.settings, exact: true }).click()
+      await stage.root(page).getByRole('navigation', { name: labels.sections }).getByRole('button', { name: labels.page, exact: true }).click()
+      return stage.root(page).getByRole('region', { name: labels.region })
+    }
+    const rebuildFailure = async (index, shot) => {
       await index.getByRole('button').first().click()
       const toast = page.locator(stage.LIVE_TOAST).last()
       await toast.waitFor({ state: 'visible', timeout: 30_000 })
       const shown = (await toast.innerText()).trim()
-      await shoot(`kb-embedding-unreachable-${locale}`)
+      await shoot(`kb-embedding-unreachable-${shot}`)
+      await toast.getByRole('button').click()
+      await page.locator(stage.LIVE_TOAST).waitFor({ state: 'detached' })
       return shown
     }
-    const measured = { 'zh-CN': await rebuildFailure({ locale: 'zh', spine: '创作流程', settings: '设置', sections: '设置分组', page: '检索模型', region: '当前作品的检索索引' }) }
-    assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
-    await reload()
-    await page.getByRole('list', { name: 'Recent books' }).waitFor({ state: 'visible' })
-    await stage.openFromLibraryEn(page, STAGE_SAMPLE.name)
-    await page.getByRole('navigation', { name: 'Writing flow' }).waitFor({ state: 'visible' })
-    measured['en-US'] = await rebuildFailure({ locale: 'en', spine: 'Writing flow', settings: 'Settings', sections: 'Settings sections', page: 'Retrieval model', region: 'Search index of the current book' })
+    const switchLocale = async (locale, library, open, flow) => {
+      assert.equal((await invoke(page, 'config:set', { locale })).success, true)
+      await reload()
+      await page.getByRole('list', { name: library }).waitFor({ state: 'visible' })
+      await open(page, STAGE_SAMPLE.name)
+      await page.getByRole('navigation', { name: flow }).waitFor({ state: 'visible' })
+    }
+    const measured = { refused: { 'zh-CN': await rebuildFailure(await openIndex(ZH), 'zh') } }
+    await switchLocale('en-US', 'Recent books', stage.openFromLibraryEn, EN.spine)
+    const indexEn = await openIndex(EN)
+    measured.refused['en-US'] = await rebuildFailure(indexEn, 'en')
+    // 认不出原因的连接失败在本机触发不了（驱动拒绝假服务以外的地址），换掉处理器只为看这条说明的样子。
+    await context.app.evaluate(({ ipcMain }) => {
+      ipcMain._invokeHandlers.set('kb:backfill-vectors', async () => ({ success: false, processed: 0, failed: 0, error: 'EMBEDDING_CONNECTION_FAILED' }))
+    })
+    measured.unclassified = { 'en-US': await rebuildFailure(indexEn, 'unclassified-en') }
+    await switchLocale('zh-CN', '最近的作品', stage.openFromLibrary, ZH.spine)
+    measured.unclassified['zh-CN'] = await rebuildFailure(await openIndex(ZH), 'unclassified-zh')
     assert.deepEqual(measured, {
-      'zh-CN': '重建检索失败：base_url 上没有服务在响应。请确认模型服务已启动，端口填写正确。',
-      'en-US': 'Could not rebuild search. Nothing is answering at the base_url. Make sure the model service is running and the port is correct.',
+      refused: {
+        'zh-CN': '重建检索失败：base_url 上没有服务在响应。请确认模型服务已启动，端口填写正确。',
+        'en-US': 'Could not rebuild search. Nothing is answering at the base_url. Make sure the model service is running and the port is correct.',
+      },
+      unclassified: {
+        'en-US': 'Could not rebuild search. The retrieval model could not be reached, so the search index was not changed. Check its Base URL, network, or proxy on the Retrieval model page in Settings, then try again.',
+        'zh-CN': '重建检索失败：连不上检索模型，检索索引没有改动。请在设置的「检索模型」页检查 Base URL、网络或代理后重试。',
+      },
     }, JSON.stringify(measured))
     return measured
   } },
