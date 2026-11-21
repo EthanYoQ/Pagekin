@@ -806,11 +806,8 @@ namespace AiNovelSecureFs {
   using System.Text;
   using System.Web.Script.Serialization;
 
-  /**
-   * One request per process over stdin/stdout, the protocol the TypeScript side speaks. Field checks
-   * mirror the former PowerShell host: property names match case-insensitively and a case-only
-   * duplicate is rejected, as ConvertFrom-Json did.
-   */
+  // 每个进程只处理一个请求，经 stdin/stdout 与 TypeScript 侧通信。
+  // 字段名按大小写不敏感匹配，仅大小写不同的重复键会被拒绝（AsObject）。
   public static class Program {
     private const int MaxRequestCharacters = 100000000;
     private const int MaxCommandCharacters = 4096;

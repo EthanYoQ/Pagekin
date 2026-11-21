@@ -29,7 +29,7 @@ export function compileWindowsSafeFileSystem(source, output) {
   }
 }
 
-/** Vitest globalSetup and the build scripts: rebuild only when the source is newer than the helper. */
+/** vitest globalSetup 的入口，同时是无参数直接运行本脚本时的默认动作。 */
 export function setup() {
   if (process.platform !== 'win32') return
   if (existsSync(defaultOutput) && statSync(defaultOutput).mtimeMs >= statSync(defaultSource).mtimeMs) return
