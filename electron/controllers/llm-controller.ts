@@ -159,7 +159,7 @@ export function registerLLMController() {
 
   ipcMain.handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
     const result = await modelDiscovery.discoverModels(request).catch(() => ({ success: false, errorCode: 'invalid_response' as const }))
-    if (result.success || !await proxyUnreachable(request.baseUrl)) return result
+    if (result.success || result.errorCode !== 'network' || !await proxyUnreachable(request.baseUrl)) return result
     return { success: false, errorCode: 'proxy' as const }
   })
 
