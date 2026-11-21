@@ -8,7 +8,15 @@ import { shown as shownLocale } from '../../src/i18n/__tests__/shown-locale'
 import { workflowMainProcessError } from '../../src/services/workflows/workflow-project-session'
 import { closeProjectDatabase } from '../database'
 import { backfillVectors, importText } from '../knowledge-base'
+import { applyNetworkProxy } from '../network-proxy'
 import { closeConnection } from '../vector-store'
+import { refused } from './proxy-failure-fixture'
+
+vi.mock('node:http', async (importOriginal) => {
+  const actual = await importOriginal<{ default: typeof import('node:http') }>()
+  const { setGlobalProxyFromEnv } = await import('./proxy-failure-fixture')
+  return { ...actual, default: { ...actual.default, setGlobalProxyFromEnv } }
+})
 
 let projectPath = ''
 
@@ -39,6 +47,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  applyNetworkProxy({ enabled: false, type: 'http', host: '', port: 0 })
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   closeProjectDatabase()
@@ -58,6 +67,24 @@ describe('rebuilding search when the retrieval model cannot be reached', () => {
     const shown = await rebuildFailureShown('en-US', `http://127.0.0.1:${await closedPort()}/v1`)
 
     expect(shown).toBe('Could not rebuild search. Nothing is answering at the base_url. Make sure the model service is running and the port is correct.')
+  })
+
+  it('blames the stopped proxy, not the base_url, when a cloud retrieval model goes through it', async () => {
+    applyNetworkProxy({ enabled: true, type: 'http', host: '127.0.0.1', port: 7890 })
+    vi.stubGlobal('fetch', vi.fn(async () => { throw refused('127.0.0.1', 7890) }))
+
+    const shown = await rebuildFailureShown('zh-CN', 'https://api.example.com/v1')
+
+    expect(shown).toBe('重建检索失败：连不上「网络代理」里设置的代理。请打开代理软件，或在「网络代理」里关掉「启用代理」。')
+  })
+
+  it('still names the base_url when a proxy is set but the local model itself refuses', async () => {
+    applyNetworkProxy({ enabled: true, type: 'http', host: '127.0.0.1', port: 7890 })
+    vi.stubGlobal('fetch', vi.fn(async () => { throw refused('127.0.0.1', 11434) }))
+
+    const shown = await rebuildFailureShown('zh-CN', 'http://127.0.0.1:11434/v1')
+
+    expect(shown).toBe('重建检索失败：base_url 上没有服务在响应。请确认模型服务已启动，端口填写正确。')
   })
 
   it('names a server that cannot be found', async () => {
