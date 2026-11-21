@@ -16,7 +16,14 @@ import { displayedErrorMessage } from '../../i18n/app-errors'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
-import { POST_PROCESS_INTERRUPTED } from '../../shared/finalization-step-error'
+import { describeFinalizationStepError, finalizationStepErrorCode, POST_PROCESS_INTERRUPTED } from '../../shared/finalization-step-error'
+
+/** 步骤表里的码按步骤说明；其余（含落库的裸码或带 IPC 包装的原文）交给通用报错说明。 */
+export function finalizationStepErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
+  const message = error instanceof Error ? error.message : error
+  return (typeof message === 'string' && describeFinalizationStepError(message, (zh, en) => localize(copyLocale(locale), zh, en)))
+    || displayedErrorMessage(locale, error)
+}
 
 /**
  * Project-level post-processing is fail-closed: never borrow the active lease.
@@ -72,10 +79,10 @@ export async function withRetry(
       // 原始原因随步骤失败记录保存；日志按冻结的界面语言说明。作者已取消时不再重试，真实失败照常交回。
       const errMsg = err instanceof Error ? err.message : String(err)
       if (attempt < maxRetries && !cancelled) {
-        const reason = displayedErrorMessage(interfaceLocale, err)
+        const reason = finalizationStepErrorCode(errMsg) ? '' : displayedErrorMessage(interfaceLocale, err)
         callbacks.log(text(
-          `  ${label} 第${attempt + 1}次失败，正在重试...（${reason}）`,
-          `  ${label} failed on attempt ${attempt + 1}; retrying... (${reason})`,
+          `  ${label} 第${attempt + 1}次失败，正在重试...${reason && `（${reason}）`}`,
+          `  ${label} failed on attempt ${attempt + 1}; retrying...${reason && ` (${reason})`}`,
         ))
       } else {
         return { ok: false, error: errMsg, attempts: attempt + 1 }
@@ -367,7 +374,7 @@ export async function runPostProcessPipeline(
           ))
         }
         if (stopOnFailure) {
-          const reason = displayedErrorMessage(interfaceLocale, stepError)
+          const reason = finalizationStepErrorMessage(interfaceLocale, stepError)
           throw new Error(text(
             `后处理步骤失败：${step.label} — ${reason}`,
             `Post-processing step failed: ${step.label} — ${reason}`,
@@ -415,7 +422,7 @@ export async function runPostProcessPipeline(
     `${sourceLabel} post-processing summary`,
   ))
   for (const [, r] of Object.entries(status.steps)) {
-    const reason = r.ok ? '' : ` — ${displayedErrorMessage(interfaceLocale, r.error)}`
+    const reason = r.ok ? '' : ` — ${finalizationStepErrorMessage(interfaceLocale, r.error)}`
     callbacks.log(text(
       `  ${r.ok ? '成功' : '失败'}：${r.label}${reason}`,
       `  ${r.ok ? 'Succeeded' : 'Failed'}: ${r.label}${reason}`,
