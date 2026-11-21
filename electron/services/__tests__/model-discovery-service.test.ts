@@ -311,27 +311,13 @@ describe('ModelDiscoveryService', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const waitForAbortOrFallback = (signal: AbortSignal | null) => new Promise<void>((resolve, reject) => {
-      const fallback = setTimeout(resolve, 100)
-      signal?.addEventListener('abort', () => {
-        clearTimeout(fallback)
-        reject(new Error(providerDetail))
-      }, { once: true })
+    const waitForAbort = (signal: AbortSignal | null) => new Promise<never>((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(new Error(providerDetail)), { once: true })
     })
-    const payload = protocol === 'gemini'
-      ? { models: [{ name: 'models/safe-model' }] }
-      : { data: [{ id: 'safe-model' }] }
     const fetchImpl: typeof fetch = async (_input, init) => {
       const signal = init?.signal ?? null
-      if (phase === 'fetch') await waitForAbortOrFallback(signal)
-      return {
-        ok: true,
-        status: 200,
-        json: async () => {
-          if (phase === 'body') await waitForAbortOrFallback(signal)
-          return payload
-        },
-      } as Response
+      if (phase === 'fetch') await waitForAbort(signal)
+      return { ok: true, status: 200, json: () => waitForAbort(signal) } as Response
     }
 
     const result = await new ModelDiscoveryService({
