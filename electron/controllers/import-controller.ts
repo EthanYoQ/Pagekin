@@ -136,8 +136,8 @@ function importSelectionErrorMessage(
   if (code === 'EPUB_INVALID_ARCHIVE') {
     return importText(
       locale,
-      'EPUB 文件已损坏，或缺少有效的 container.xml、OPF 与正文阅读顺序。',
-      'The EPUB is damaged or lacks a valid container.xml, OPF package, or textual reading order.',
+      '没有导入。这个 EPUB 文件坏了或格式不标准，读不出正文。请点「选择」换一个文件，或先把它另存为 .txt 再导入。',
+      'Nothing was imported. This EPUB is damaged or not in a standard format, so its text cannot be read. Click Choose to pick another file, or save it as .txt first and import that.',
     )
   }
   // 导入运行与检查里作者能照做的码（#474 B1），例如文件检查过期、待确认的导入太多、补选的文件不一致。
