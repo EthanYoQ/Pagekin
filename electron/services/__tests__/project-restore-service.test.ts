@@ -923,4 +923,27 @@ describe('副本已建好后收尾失败（#702）', () => {
     expect(replay.targetProjectId).toBeTruthy()
     expect(fs.existsSync(marker)).toBe(false)
   })
+
+  it('删掉安装标记、删安装日志时 EPERM：之后再恢复到同一位置，认出已建好的副本并补清日志', async () => {
+    const f = await exportedFixture()
+    const journal = restoreJournalPath(f.targetRoot)
+    const unlink = fs.unlinkSync
+    vi.spyOn(fs, 'unlinkSync').mockImplementation(((file: fs.PathLike) => {
+      if (path.resolve(String(file)) === path.resolve(journal)) throw fsError('EPERM', 'unlink', journal)
+      return unlink(file)
+    }) as typeof fs.unlinkSync)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    let first: Awaited<ReturnType<typeof restorePortableProject>>
+    try {
+      first = await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(path.join(f.targetRoot, '.portable-restore-reservation.json'))).toBe(false)
+    expect(fs.existsSync(journal)).toBe(true)
+
+    const replay = await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+    expect(replay.targetProjectId).toBe(first.targetProjectId)
+    expect(fs.existsSync(journal)).toBe(false)
+  })
 })
