@@ -202,6 +202,7 @@ export const jaJP = {
   'error.embeddingRequestFailed': '検索モデルへのリクエストが失敗しました。検索モデルの Base URL、ゲートウェイ、API キーを確認してください。',
   'error.embeddingOllamaNativeUrl': 'これは Ollama のネイティブの /api アドレスです。検索モデルの Base URL の末尾を /api から /v1 に変えてください。',
   'error.embeddingResponseInvalid': '検索モデルが使えない結果（件数、サイズ、または値の誤り）を返したため、何も書き込まれませんでした。検索モデルの Base URL を確認するか、別の検索モデルを選んでください。',
+  'error.embeddingConnectionFailed': '検索モデルに接続できなかったため、検索インデックスは変更されていません。設定の「Retrieval model」ページで Base URL、ネットワーク、プロキシを確認してから、もう一度お試しください。',
   'error.knowledgeIndexDamaged': 'この作品の検索インデックスの記録が破損しています。資料は変更されていません。作品をバックアップから復元するか、ナレッジベースを消去して資料を取り込み直してください。',
   'error.knowledgeIndexBusy': '検索インデックスを構築しています。少し待ってから、もう一度お試しください。',
   'error.knowledgeIndexChanged': 'チェックの間にナレッジベースまたは検索インデックスが変更されたため、既存のインデックスには手を付けていません。もう一度チェックして再構築してください。',
