@@ -76,6 +76,7 @@ export const enUS = {
   'backup.omittedReviewCycleUnknownMany': 'Some damaged review records were left out of the archive. The text and other reviews are included.',
   'error.externalFileGrantExpired': 'Access to the selected file or folder has expired. Choose it again.',
   'error.unknown': 'Something went wrong: {message}',
+  'error.unregisteredCode': 'Something unexpected went wrong. Try again.',
   'error.generationRequestFailed': 'The generation request failed before its result was saved. Try again. If it keeps happening, report this message and when it occurred.',
   'error.generationProjectSessionStale': 'The book was switched or reopened, so the result of this action from the earlier session is unavailable. Check the book that is open now and repeat the action if needed.',
   'error.generationProjectSessionRequired': 'This action did not carry the session of the open book, so its result is unavailable. Reopen the book and try again.',
