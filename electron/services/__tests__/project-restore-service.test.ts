@@ -876,3 +876,30 @@ describe('读不了所选存档（#702）', () => {
     expect(fs.readdirSync(base)).toEqual(['读不了.ainovel'])
   })
 })
+
+describe('副本已建好后收尾失败（#702）', () => {
+  it('删安装标记时 EPERM：恢复照常返回已建好的副本，不报失败', async () => {
+    const f = await exportedFixture()
+    const marker = path.join(f.targetRoot, '.portable-restore-reservation.json')
+    const unlink = fs.unlinkSync
+    vi.spyOn(fs, 'unlinkSync').mockImplementation(((file: fs.PathLike) => {
+      if (path.resolve(String(file)) === path.resolve(marker)) {
+        throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${marker}'`), { code: 'EPERM' })
+      }
+      return unlink(file)
+    }) as typeof fs.unlinkSync)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const receipt = await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+      expect(receipt.targetProjectRoot).toBe(f.targetRoot)
+      expect(logged).toHaveBeenCalled()
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(path.join(f.targetRoot, '.ai-novel', 'project.db'))).toBe(true)
+
+    const replay = await restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot })
+    expect(replay.targetProjectId).toBeTruthy()
+    expect(fs.existsSync(marker)).toBe(false)
+  })
+})
