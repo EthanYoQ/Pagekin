@@ -36,7 +36,7 @@ import { installWindowCloseGuard } from './controllers/window-controller'
 import { registerStartupController } from './controllers/startup-controller'
 import { installIpcSlowCallLog } from './services/ipc-slow-call-log'
 import { resolveDefaultUserData, resolveGlobalDataRoots } from './services/app-data-locator'
-import { runGlobalDataMigration, activateGlobalData } from './services/global-data-migration'
+import { runGlobalDataMigration, activateGlobalData, blockedStartupCode } from './services/global-data-migration'
 import { ensureVelaHome } from './utils/config-utils'
 import type { StartupBlockedCode, StartupMigrationNotice } from '../src/shared/startup-contract'
 import { APP_BRAND, APP_ID } from '../src/shared/brand'
@@ -311,7 +311,7 @@ function prepareGlobalRuntime(): boolean {
     exclusiveAccess: ownsInstanceLock,
   })
   if (migrated.state !== 'ready') {
-    startupBlockedCode = migrated.code === 'GLOBAL_MODEL_CREDENTIALS_DIFFER' ? migrated.code : 'GLOBAL_DATA_BLOCKED'
+    startupBlockedCode = blockedStartupCode(migrated)
     return false
   }
   activateGlobalData(migrated)

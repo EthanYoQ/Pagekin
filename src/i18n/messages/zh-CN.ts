@@ -211,6 +211,7 @@ export const zhCN = {
   'error.embeddingRequestFailed': '检索模型请求失败。请检查检索模型的 Base URL、网关与 API Key。',
   'error.embeddingOllamaNativeUrl': '这是 Ollama 原生的 /api 地址。请把检索模型 Base URL 末尾的 /api 改成 /v1。',
   'error.embeddingResponseInvalid': '检索模型返回的结果不对（条数、维度或数值），没有写入。请检查检索模型的 Base URL，或换一个检索模型。',
+  'error.embeddingConnectionFailed': '连不上检索模型，检索索引没有改动。请在设置的「检索模型」页检查 Base URL、网络或代理后重试。',
   'error.knowledgeIndexDamaged': '当前作品的检索索引记录已损坏，现有资料没有改动。请从备份恢复作品，或清空知识库后重新导入资料。',
   'error.knowledgeIndexBusy': '检索索引正在建立，请稍后再试。',
   'error.knowledgeIndexChanged': '检查期间知识库或检索索引有变动，原有索引没有改动。请重新检查并重建。',

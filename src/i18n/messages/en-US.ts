@@ -209,6 +209,7 @@ export const enUS = {
   'error.embeddingRequestFailed': 'The retrieval model request failed. Check the retrieval model’s Base URL, gateway, and API key.',
   'error.embeddingOllamaNativeUrl': 'This is Ollama’s native /api address. Change the end of the retrieval model’s Base URL from /api to /v1.',
   'error.embeddingResponseInvalid': 'The retrieval model returned an unusable result (wrong count, size, or values), so nothing was written. Check the retrieval model’s Base URL or choose another retrieval model.',
+  'error.embeddingConnectionFailed': 'The retrieval model could not be reached, so the search index was not changed. Check its Base URL, network, or proxy on the Retrieval model page in Settings, then try again.',
   'error.knowledgeIndexDamaged': 'The search index records of this book are damaged. Your material was not changed. Restore the book from a backup, or clear the knowledge base and import the material again.',
   'error.knowledgeIndexBusy': 'The search index is being built. Try again in a moment.',
   'error.knowledgeIndexChanged': 'The knowledge base or search index changed during the check, and the existing index was not touched. Check and rebuild again.',

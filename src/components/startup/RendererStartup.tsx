@@ -80,11 +80,18 @@ export default function RendererStartup({
       </div></div>}
   </>
   const blocked = phase === 'blocked' || loadFailed
+  const generalBlock = text('工作台暂时无法加载。现有配置已保留，请重新启动应用。', 'The workspace could not be loaded. Your settings are preserved. Please restart the app.')
+  const mainBlockedMessage: Record<StartupBlockedCode, string> = {
+    GLOBAL_DATA_BLOCKED: generalBlock,
+    GLOBAL_DISK_FULL: text('现有配置已保留，但磁盘空间不足。请清理磁盘后重新启动应用。', 'Your settings are preserved, but the disk is full. Free up space, then restart the app.'),
+    GLOBAL_DATA_UNWRITABLE: text('现有配置已保留，但数据文件夹没有写入权限或正被占用。请关闭同步盘、杀毒软件后重新启动应用。', 'Your settings are preserved, but the data folder is locked or not writable. Close sync or antivirus tools, then restart the app.'),
+    GLOBAL_MODEL_CREDENTIALS_DIFFER: text('新旧配置中同一模型的凭据不同。两份配置均已保留，请处理冲突后重新启动应用。', 'The same model has different credentials in the old and new settings. Both copies are preserved. Resolve the conflict and restart the app.'),
+  }
   return (
     <main className="paper-ink flex h-screen flex-col items-center justify-center gap-4 px-8" data-theme={theme} aria-busy={!blocked}>
       <h1 className="text-xl font-semibold">{blocked ? text('启动尚未完成', 'Startup is incomplete') : text('正在检查现有配置', 'Checking existing settings')}</h1>
       <p role={blocked ? 'alert' : 'status'} className="max-w-xl text-center">
-        {blocked ? blockedCode === 'GLOBAL_MODEL_CREDENTIALS_DIFFER' ? text('新旧配置中同一模型的凭据不同。两份配置均已保留，请处理冲突后重新启动应用。', 'The same model has different credentials in the old and new settings. Both copies are preserved. Resolve the conflict and restart the app.') : notice ?? text('工作台暂时无法加载。现有配置已保留，请重新启动应用。', 'The workspace could not be loaded. Your settings are preserved. Please restart the app.') : text('确认配置和外观偏好后，将打开工作台。', 'The workspace will open after settings and appearance preferences are verified.')}
+        {blocked ? blockedCode ? mainBlockedMessage[blockedCode] : notice ?? generalBlock : text('确认配置和外观偏好后，将打开工作台。', 'The workspace will open after settings and appearance preferences are verified.')}
       </p>
       {blocked && <>
         <p className="max-w-xl text-center text-sm text-[var(--ink-2)]">{text('若全局配置存在冲突，请处理后重新启动应用。此页面不会用默认值覆盖现有配置。', 'Resolve any global settings conflicts, then restart the app. This page will not replace your settings with defaults.')}</p>
