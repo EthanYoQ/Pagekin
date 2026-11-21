@@ -484,24 +484,26 @@ describe('archiveFailureMessage', () => {
     ['export', 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '作品没有改动。所选位置写不进去，可能没有权限或磁盘满了。请再点「导出本地存档」，换一个位置。'],
     ['export', 'PORTABLE_EXPORT_FAILED', '作品没有改动。导出时出了意外错误，存档没有生成。请再点「导出本地存档」；还不行，请把这条提示反馈给我们。'],
     ['restore', 'PORTABLE_RESTORE_INVALID', '没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。'],
-    ['restore', 'PORTABLE_RESTORE_UNSAFE_TARGET', '没有新建副本。所选文件夹没法安全写入。请换一个文件夹，再点「从本地存档恢复副本」。'],
+    ['restore', 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '所选文件夹写不进去，可能没有权限或磁盘满了，里面可能留下没恢复完的副本文件夹，可以删掉。请换一个文件夹，再点「从本地存档恢复副本」。'],
+    ['restore', 'PORTABLE_RESTORE_UNSAFE_TARGET', '所选文件夹没法安全写入，里面可能留下没恢复完的副本文件夹，可以删掉。请换一个文件夹，再点「从本地存档恢复副本」。'],
     ['restore', 'PORTABLE_GRANT_INVALID', '没有新建副本。选好的存档或文件夹已失效。请再点「从本地存档恢复副本」重新选。'],
     ['restore', 'PORTABLE_RESTORE_ARCHIVE_MISSING', '没有新建副本。找不到所选存档。请再点「从本地存档恢复副本」重新选一次。'],
     ['restore', 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE', '没有新建副本。所选存档读不了，可能没有权限或正被占用。请换一个存档，再点「从本地存档恢复副本」。'],
     ['export', 'PORTABLE_EXPORT_SOURCE_UNREADABLE', '作品没有改动。作品文件读不了，可能正被同步盘或杀毒软件占用。请稍后再点「导出本地存档」。'],
-    ['restore', 'PORTABLE_RESTORE_FAILED', '恢复时出了意外错误。请先看看所选文件夹里有没有新副本，没有再点「从本地存档恢复副本」；还不行，请把这条提示反馈给我们。'],
+    ['restore', 'PORTABLE_RESTORE_FAILED', '恢复时出了意外错误，所选文件夹里可能留下没恢复完的副本文件夹，可以删掉。请再点「从本地存档恢复副本」；还不行，请把这条提示反馈给我们。'],
   ] as const)('中文界面%s报 %s：说清原因和下一步，不露原码（#702）', (operation, code, expected) => {
     expect(archiveFailureMessage(shown('zh-CN'), operation, code)).toBe(expected)
   })
 
   it.each([
     ['export', 'PORTABLE_TARGET_INSIDE_SOURCE', "Your book is unchanged. An archive cannot go inside the book's own folder, so none was created. Click Export local archive again and choose a location outside the book folder."],
-    ['restore', 'PORTABLE_RESTORE_UNSAFE_TARGET', 'No copy was created. The chosen folder cannot be written to safely. Choose another folder, then click Restore a copy from local archive again.'],
+    ['restore', 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE', 'The chosen folder cannot be written to; you may lack permission or the disk may be full. An unfinished copy folder may be left in it; you can delete it. Choose another folder, then click Restore a copy from local archive again.'],
+    ['restore', 'PORTABLE_RESTORE_UNSAFE_TARGET', 'The chosen folder cannot be written to safely. An unfinished copy folder may be left in it; you can delete it. Choose another folder, then click Restore a copy from local archive again.'],
     ['restore', 'PORTABLE_GRANT_INVALID', 'No copy was created. The archive or folder you chose is no longer valid. Click Restore a copy from local archive and choose again.'],
     ['restore', 'PORTABLE_RESTORE_ARCHIVE_MISSING', 'No copy was created. The chosen archive could not be found. Click Restore a copy from local archive and choose it again.'],
     ['restore', 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'No copy was created. The chosen archive cannot be read; you may lack permission or another program may be using it. Choose another archive, then click Restore a copy from local archive again.'],
     ['export', 'PORTABLE_EXPORT_SOURCE_UNREADABLE', 'Your book is unchanged. Some book files cannot be read; a sync or antivirus app may be using them. Wait a moment, then click Export local archive again.'],
-    ['restore', 'PORTABLE_RESTORE_FAILED', 'Something unexpected went wrong during restore. First check the chosen folder for a new copy; if there is none, click Restore a copy from local archive again. If it still fails, please report this message to us.'],
+    ['restore', 'PORTABLE_RESTORE_FAILED', 'Something unexpected went wrong during restore. An unfinished copy folder may be left in the chosen folder; you can delete it. Click Restore a copy from local archive again. If it still fails, please report this message to us.'],
   ] as const)('英文界面%s报 %s：说清原因和下一步，不露原码（#702）', (operation, code, expected) => {
     expect(archiveFailureMessage(shown('en-US'), operation, code)).toBe(expected)
   })
@@ -510,13 +512,44 @@ describe('archiveFailureMessage', () => {
     ['PORTABLE_GRANT_INVALID', 'コピーは作成されていません。選んだアーカイブまたはフォルダーは無効になりました。もう一度「Restore a copy from local archive」をクリックして選び直してください。'],
     ['PORTABLE_RESTORE_ARCHIVE_MISSING', 'コピーは作成されていません。選んだアーカイブが見つかりません。もう一度「Restore a copy from local archive」をクリックして選び直してください。'],
     ['PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'コピーは作成されていません。選んだアーカイブを読み込めません。権限がないか、ほかのプログラムが使用中の可能性があります。別のアーカイブを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。'],
-    ['PORTABLE_RESTORE_FAILED', '復元中に予期しない問題が発生しました。まず選んだフォルダーに新しいコピーがあるか確認し、なければもう一度「Restore a copy from local archive」をクリックしてください。それでも失敗する場合は、このメッセージをご報告ください。'],
+    ['PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '選んだフォルダーに書き込めません。権限がないか、ディスクがいっぱいの可能性があります。途中までのコピーのフォルダーが残っていれば削除してかまいません。別のフォルダーを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。'],
+    ['PORTABLE_RESTORE_UNSAFE_TARGET', '選んだフォルダーには安全に書き込めません。途中までのコピーのフォルダーが残っていれば削除してかまいません。別のフォルダーを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。'],
+    ['PORTABLE_RESTORE_FAILED', '復元中に予期しない問題が発生しました。選んだフォルダーに途中までのコピーのフォルダーが残っていれば削除してかまいません。もう一度「Restore a copy from local archive」をクリックしてください。それでも失敗する場合は、このメッセージをご報告ください。'],
   ] as const)('日文界面恢复报 %s：说清原因和下一步，不露原码（#702）', (code, expected) => {
     expect(archiveFailureMessage(shown('ja-JP'), 'restore', code)).toBe(expected)
   })
 
   it('日文界面导出时作品文件读不了：说是作品文件被占用，不叫作者换位置（#702）', () => {
     expect(archiveFailureMessage(shown('ja-JP'), 'export', 'PORTABLE_EXPORT_SOURCE_UNREADABLE')).toBe('作品は変更されていません。作品のファイルを読み込めません。同期アプリやウイルス対策ソフトが使用中の可能性があります。少し待ってから、もう一度「Export local archive」をクリックしてください。')
+  })
+})
+
+describe('恢复报错只在确定还没建副本文件夹时才说没有新建副本（#702）', () => {
+  const locales = ['zh-CN', 'en-US', 'ja-JP'] as const
+  const noCopy = { 'zh-CN': '没有新建副本', 'en-US': 'No copy was created', 'ja-JP': 'コピーは作成されていません' }
+  const unfinished = { 'zh-CN': '没恢复完的副本文件夹', 'en-US': 'unfinished copy folder', 'ja-JP': '途中までのコピーのフォルダー' }
+  const beforeInstall = [
+    'PORTABLE_ARCHIVE_SOURCE_CHANGED', 'PORTABLE_ARCHIVE_SOURCE_UNSAFE', 'PORTABLE_ARCHIVE_INVALID', 'PORTABLE_RESTORE_INVALID',
+    'PORTABLE_SCHEMA_UNSUPPORTED', 'PORTABLE_GRANT_INVALID', 'PORTABLE_RESTORE_ARCHIVE_MISSING', 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE',
+  ]
+  const mayFollowInstall = ['PORTABLE_ARCHIVE_TARGET_UNWRITABLE', 'PORTABLE_RESTORE_UNSAFE_TARGET', 'PORTABLE_RESTORE_FAILED']
+
+  it.each(locales.flatMap(locale => beforeInstall.map(code => [locale, code] as const)))(
+    '%s 界面 %s 只会在建副本文件夹前出现：仍说没有新建副本', (locale, code) => {
+      expect(archiveFailureMessage(shown(locale), 'restore', code).startsWith(noCopy[locale])).toBe(true)
+    })
+
+  it.each(locales.flatMap(locale => mayFollowInstall.map(code => [locale, code] as const)))(
+    '%s 界面 %s 可能在副本装到一半时出现：不说没有新建副本，提醒所选文件夹里可能有没恢复完的副本', (locale, code) => {
+      const message = archiveFailureMessage(shown(locale), 'restore', code)
+      expect(message).not.toContain(noCopy[locale])
+      expect(message).toContain(unfinished[locale])
+    })
+
+  it.each(locales)('%s 界面云端恢复失败（装到一半也报这个码）：不说没有新建副本', locale => {
+    const message = displayedErrorMessage(shown(locale), 'CLOUD_BACKUP_RESTORE_FAILED')
+    expect(message).not.toContain(noCopy[locale])
+    expect(message).toContain(unfinished[locale])
   })
 })
 

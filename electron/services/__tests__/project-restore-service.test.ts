@@ -896,6 +896,41 @@ describe('副本装到一半出意外（#702）', () => {
     }
     expect(fs.existsSync(path.join(f.targetRoot, '.ai-novel'))).toBe(true)
   })
+
+  it('放最后一个文件 project.json 时磁盘满（ENOSPC）：交出副本里的路径，副本文件夹留下了但没装完', async () => {
+    const f = await exportedFixture()
+    const manifest = path.join(f.targetRoot, '.ai-novel', 'project.json')
+    const link = fs.linkSync
+    vi.spyOn(fs, 'linkSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
+      if (path.resolve(String(to)) === manifest) throw fsError('ENOSPC', 'link', manifest)
+      return link(from, to)
+    }) as typeof fs.linkSync)
+    try {
+      await expect(restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot }))
+        .rejects.toMatchObject({ code: 'ENOSPC', path: manifest })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(path.join(f.targetRoot, '.ai-novel', 'project.db'))).toBe(true)
+    expect(fs.existsSync(manifest)).toBe(false)
+  })
+
+  it('建好副本文件夹后放不进安装标记：报所选位置没法安全写入，副本文件夹已经建了', async () => {
+    const f = await exportedFixture()
+    const marker = path.join(f.targetRoot, '.portable-restore-reservation.json')
+    const link = fs.linkSync
+    vi.spyOn(fs, 'linkSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
+      if (path.resolve(String(to)) === marker) throw fsError('EPERM', 'link', marker)
+      return link(from, to)
+    }) as typeof fs.linkSync)
+    try {
+      await expect(restorePortableProject({ archivePath: f.archive, targetProjectRoot: f.targetRoot }))
+        .rejects.toMatchObject({ code: 'PORTABLE_RESTORE_UNSAFE_TARGET' })
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(fs.existsSync(f.targetRoot)).toBe(true)
+  })
 })
 
 describe('副本已建好后收尾失败（#702）', () => {

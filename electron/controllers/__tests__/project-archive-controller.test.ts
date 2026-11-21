@@ -751,10 +751,13 @@ describe('project:archive-restore', () => {
     logged.mockRestore()
   })
 
-  it('恢复到存档所在的文件夹、建副本 EPERM：仍报目标文件夹写不进（#702）', async () => {
+  it.each([
+    ['恢复到存档所在的文件夹、建副本', 'EPERM', 'mkdir', ['copy']],
+    ['副本装到一半磁盘满', 'ENOSPC', 'link', ['copy', '.ai-novel', 'project.json']],
+  ])('%s %s：报目标文件夹写不进（#702）', async (_label, errno, syscall, segments) => {
     const root = tempRoot('err-l2-restore-target-')
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
-    mocks.restorePortableProject.mockRejectedValueOnce(fsError('EPERM', 'mkdir', path.join(root, 'copy')))
+    mocks.restorePortableProject.mockRejectedValueOnce(fsError(errno, syscall, path.join(root, ...segments)))
 
     await expect(handler('project:archive-restore')(event(), {
       archiveGrantId: archiveFileGrant(path.join(root, 'a.ainovel')),
