@@ -9,6 +9,12 @@ import { importRecoveryBatches } from '../import-inference-contract'
 import { useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
 
+const slotLimit = vi.hoisted(() => ({ value: 32 }))
+vi.mock('../../../../shared/import-generation', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../../shared/import-generation')>(),
+  get IMPORT_SLOT_MAX_REQUESTS() { return slotLimit.value },
+}))
+
 class InferGlobalSettingsCommand extends RuntimeInferGlobalSettingsCommand {
   constructor() { super(workflowRuntimeDependencies) }
 }
@@ -433,6 +439,25 @@ describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {
     expect(generateStream).toHaveBeenCalledTimes(16)
     expect(committedEntries(invoke)).toHaveLength(3 + 45)
     expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/15 位人物没有补出角色卡：路人46、/))
+  })
+
+  it('stops at the per-slot request ceiling even when the root allows more, and still commits', async () => {
+    slotLimit.value = 6
+    try {
+      const invoke = stubSuccessfulImportIpc()
+      const others = Array.from({ length: 20 }, (_, index) => `路人${index + 1}`)
+      const initial = { ...validInference(), otherCharacters: others.map(name => ({ name, role: 'minor', note: '原稿人物' })) }
+      const deltas = Array.from({ length: 7 }, (_, batch) => ({ characterCards: others.slice(batch * 3, batch * 3 + 3).map(name => card(name, 'minor')) }))
+      const generateStream = respondWith([initial, ...deltas])
+
+      await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
+
+      expect(generateStream).toHaveBeenCalledTimes(6)
+      expect(committedEntries(invoke)).toHaveLength(3 + 15)
+      expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/5 位人物没有补出角色卡：路人16、/))
+    } finally {
+      slotLimit.value = 32
+    }
   })
 
   it('asks for a card for someone who shares a name with a main card, and keeps both', async () => {
