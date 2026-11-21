@@ -388,7 +388,7 @@ function safePart(value: string, [zhCN, enUS]: UrlPart, text: CopyText): string 
   try {
     decoded = decodeURIComponent(value)
   } catch {
-    // 坏掉的 % 编码按不支持的字符报。
+    // 坏 % 编码会让 decodeURIComponent 抛英文的 URIError；留空串，由下面的校验报中英文案。
   }
   if (!SAFE_SEGMENT.test(decoded) || decoded === '.' || decoded === '..') {
     throw new Error(text(`GitHub 地址里的${zhCN}有不支持的字符，请检查地址。`, `The ${enUS} in this GitHub URL has unsupported characters. Check the URL.`))
@@ -404,7 +404,6 @@ function safePath(parts: string[], text: CopyText): string {
   return decoded
 }
 
-/** 报错文案按调用方给的 text 选中英文，同 describeFinalizationStepError。 */
 export function parseGitHubWritingSkillUrl(value: string, text: CopyText): GitHubWritingSkillLocation {
   const pasteSkillUrl = () => new Error(text('请粘贴 GitHub 上 Skill 仓库、文件夹或 SKILL.md 文件的地址。', 'Paste the GitHub URL of a Skill repository, folder, or SKILL.md file.'))
   let url: URL
