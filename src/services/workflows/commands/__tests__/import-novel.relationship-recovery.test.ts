@@ -449,6 +449,55 @@ describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {
       ['陆舟', 'protagonist'], ['王宁', 'supporting'], ['顾岩', 'antagonist'], ['王宁', 'minor']])
   })
 
+  it('stops asking for batches after one comes back with an invalid card, and keeps the earlier batches', async () => {
+    const invoke = stubSuccessfulImportIpc()
+    const others = Array.from({ length: 9 }, (_, index) => `路人${index + 1}`)
+    const initial = { ...validInference(), otherCharacters: others.map(name => ({ name, role: 'minor', note: '原稿人物' })) }
+    const invalid = { ...card('路人4', 'minor'), currentState: { ...card('路人4', 'minor').currentState, updatedAtChapter: '0' } }
+    const generateStream = respondWith([initial,
+      { characterCards: others.slice(0, 3).map(name => card(name, 'minor')) },
+      { characterCards: [invalid, card('路人5', 'minor'), card('路人6', 'minor')] },
+      { characterCards: others.slice(6).map(name => card(name, 'minor')) }])
+
+    await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
+
+    expect(generateStream).toHaveBeenCalledTimes(3)
+    expect(committedEntries(invoke).map(entry => entry.name)).toEqual(['陆舟', '苏绾', '顾岩', '路人1', '路人2', '路人3'])
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/6 位人物没有补出角色卡：路人4、/))
+  })
+
+  it('tells which same-name person is still missing when an earlier batch left them out', async () => {
+    const invoke = stubSuccessfulImportIpc()
+    const initial = { ...validInference(), otherCharacters: [
+      { name: '王宁', role: 'minor', note: '渡口船夫' }, { name: '林照', role: 'minor', note: '书生' }, { name: '白榆', role: 'minor', note: '绣娘' },
+      { name: '王宁', role: 'minor', note: '茶馆掌柜' }] }
+    const generateStream = respondWith([initial,
+      { characterCards: [card('林照', 'minor'), card('白榆', 'minor')] },
+      { characterCards: [card('王宁', 'supporting')] }])
+
+    await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
+
+    expect(generateStream).toHaveBeenCalledTimes(3)
+    expect(committedEntries(invoke).map(entry => entry.name)).toEqual(['陆舟', '苏绾', '顾岩', '林照', '白榆', '王宁'])
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/1 位人物没有补出角色卡：王宁（渡口船夫）。/))
+  })
+
+  it('keeps a main card relationship to a listed person who shares its name, and asks for that person card', async () => {
+    const invoke = stubSuccessfulImportIpc()
+    const initial = { ...validInference(), otherCharacters: [{ name: '王宁', role: 'minor', note: '渡口船夫' }] }
+    initial.characterCards[1].name = '王宁'
+    initial.characterCards[1].relationships.push({ target: '王宁', relation: '同名的远亲' })
+    const generateStream = respondWith([initial, { characterCards: [card('王宁', 'minor')] }])
+
+    await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
+
+    expect(generateStream).toHaveBeenCalledTimes(2)
+    const entries = committedEntries(invoke)
+    expect(entries.map(entry => [entry.name, entry.role])).toEqual([
+      ['陆舟', 'protagonist'], ['王宁', 'supporting'], ['顾岩', 'antagonist'], ['王宁', 'minor']])
+    expect(entries[1].relationships).toEqual([{ target: '王宁', relation: '同名的远亲' }])
+  })
+
   it('cuts batches in listed order, starting a new one at a same name, so a stop never skips someone listed earlier', () => {
     const [boatman, keeper, lin, bai] = [{ name: '王宁', note: '渡口船夫' }, { name: '王宁', note: '茶馆掌柜' }, { name: '林照' }, { name: '白榆' }]
     expect(importRecoveryBatches([boatman, keeper, lin, bai])).toEqual([[boatman], [keeper, lin, bai]])
