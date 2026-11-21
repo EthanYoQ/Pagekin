@@ -1,4 +1,3 @@
-// 「网络代理」设置在真实 Electron 主进程里是否生效（#702）。先 pnpm build，再 node scripts/network-proxy-journey.mjs。
 // 不替换主进程 fetch；远端地址用不存在的域名，只有经过代理才到得了本机假服务。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -98,7 +97,7 @@ try {
 
   assert.deepEqual(await setProxy({ enabled: true, port: proxyPort }), { success: true })
   const on = await run('proxy on', { ...calls, ...local })
-  // undici 复用同一个隧道，同一目标只在代理日志里留一次 CONNECT；到达假服务的 model-probe.test 请求只可能经过代理。
+  // undici 复用隧道，同一目标代理日志里只有一次 CONNECT。
   for (const name of ['test-connection http', 'discover-models', 'test-connection embedding', 'test-connection rerank']) {
     assert.ok(on[name].viaProxy > 0, `${name}: proxy on routes the request through the proxy`)
   }

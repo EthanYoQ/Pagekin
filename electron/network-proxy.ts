@@ -7,7 +7,7 @@ type ProxySettings = GlobalConfig['proxy']
 
 let installed: { host: string; port: number; restore: () => void } | null = null
 
-/** 主进程的 fetch 不读 HTTP(S)_PROXY 环境变量，要装成全局代理才生效；本机模型直连。主机地址不合法时抛 NETWORK_PROXY_INVALID，此时不走代理。 */
+/** 主进程的 fetch 不读 HTTP(S)_PROXY 环境变量，要装成全局代理才生效。 */
 export function applyNetworkProxy(proxy: ProxySettings): void {
   installed?.restore()
   installed = null
@@ -21,7 +21,6 @@ export function applyNetworkProxy(proxy: ProxySettings): void {
   }
 }
 
-/** 按 config.json 里保存的代理设置生效；启动时和保存失败后用。 */
 export function applySavedNetworkProxy(): void {
   try {
     applyNetworkProxy(readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG).proxy)
@@ -30,7 +29,7 @@ export function applySavedNetworkProxy(): void {
   }
 }
 
-/** 开着代理且代理端口现在连不上：经代理的请求不可能成功，这就是失败的原因。 */
+/** 代理端口连不上时，经代理的请求不可能成功，所以它就是失败的原因。 */
 export function proxyUnreachable(): Promise<boolean> {
   const proxy = installed
   if (!proxy) return Promise.resolve(false)
