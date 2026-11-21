@@ -79,6 +79,7 @@ export const jaJP = {
   'backup.omittedReviewCycleUnknownMany': '破損したレビュー記録をいくつかアーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。',
   'error.externalFileGrantExpired': '選択したファイルまたはフォルダーへのアクセス権の期限が切れました。選び直してください。',
   'error.unknown': '問題が発生しました：{message}',
+  'error.unregisteredCode': '予期しない問題が発生しました。もう一度お試しください。',
   'error.generationRequestFailed': '結果が保存される前に生成リクエストが失敗しました。もう一度お試しください。繰り返し発生する場合は、このメッセージと発生した時刻をご報告ください。',
   'error.generationProjectSessionStale': '作品が切り替えられたか開き直されたため、以前のセッションで行ったこの操作の結果は利用できません。現在開いている作品を確認し、必要であれば操作をやり直してください。',
   'error.generationProjectSessionRequired': 'この操作には開いている作品のセッションが含まれていなかったため、結果は利用できません。作品を開き直してから、もう一度お試しください。',

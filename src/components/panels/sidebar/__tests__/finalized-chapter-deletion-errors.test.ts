@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { translate } from '../../../../i18n/core'
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -38,11 +39,11 @@ describe('删除定稿失败时的说明', () => {
   it.each([
     ['zh-CN', '删除失败', '项目已切换或重新打开', '未知错误'],
     ['en-US', 'Delete failed', 'The project was switched or reopened', 'Unknown error'],
-  ] as const)('%s 界面：会话失效码显示登记的说明，未登记的原文保留，没有原因时用兜底', async (locale, heading, stale, fallback) => {
+  ] as const)('%s 界面：会话失效码显示登记的说明，未登记的码用通用说明，没有原因时用兜底', async (locale, heading, stale, fallback) => {
     useLocaleStore.setState({ locale })
     for (const [error, detail] of [
       ['PROJECT_SESSION_STALE', stale],
-      ['SOMETHING_NEW_FROM_MAIN', 'SOMETHING_NEW_FROM_MAIN'],
+      ['SOMETHING_NEW_FROM_MAIN', translate(locale, 'error.unregisteredCode')],
       [undefined, fallback],
     ] as const) {
       mocks.toast.error.mockClear()
@@ -50,7 +51,7 @@ describe('删除定稿失败时的说明', () => {
       await deleteFinalizedChapter(input)
       const [message] = mocks.toast.error.mock.calls[0] as [string]
       expect(message.startsWith(`${heading}\n\n${detail}`)).toBe(true)
-      expect(message).not.toContain('PROJECT_SESSION_STALE')
+      expect(message).not.toMatch(/PROJECT_SESSION_STALE|SOMETHING_NEW_FROM_MAIN/)
     }
   })
 })

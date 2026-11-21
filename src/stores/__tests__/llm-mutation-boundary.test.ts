@@ -101,11 +101,11 @@ describe('模型设置失败时给作者看的说明', () => {
   it.each([
     ['zh-CN', '项目已切换或重新打开', '模型删除失败', '删除模型失败'],
     ['en-US', 'The project was switched or reopened', 'Could not delete the model', 'Could not delete the model.'],
-  ] as const)('%s 界面：删除模型被会话守卫拒绝时显示登记的说明，未登记的原文保留，没有原因时用兜底', async (locale, stale, title, fallback) => {
+  ] as const)('%s 界面：删除模型被会话守卫拒绝时显示登记的说明，未登记的码和没有原因时都用这里的兜底', async (locale, stale, title, fallback) => {
     useLocaleStore.setState({ locale })
     for (const [error, shown] of [
       ['PROJECT_SESSION_STALE', expect.stringContaining(stale)],
-      ['SOMETHING_NEW_FROM_MAIN', 'SOMETHING_NEW_FROM_MAIN'],
+      ['SOMETHING_NEW_FROM_MAIN', fallback],
       [undefined, fallback],
     ] as const) {
       mocks.alertError.mockClear()
