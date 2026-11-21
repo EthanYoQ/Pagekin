@@ -498,6 +498,24 @@ describe('InferGlobalSettingsCommand relationship endpoint recovery', () => {
     expect(entries[1].relationships).toEqual([{ target: '王宁', relation: '同名的远亲' }])
   })
 
+  it('keeps a relationship from one listed person to a same-name person in a later batch', async () => {
+    const invoke = stubSuccessfulImportIpc()
+    const initial = { ...validInference(), otherCharacters: [
+      { name: '王宁', role: 'minor', note: '渡口船夫' }, { name: '林照', role: 'minor', note: '书生' }, { name: '白榆', role: 'minor', note: '绣娘' },
+      { name: '王宁', role: 'minor', note: '茶馆掌柜' }] }
+    const boatman = { ...card('王宁', 'minor'), relationships: [{ target: '王宁', relation: '同名的表兄' }] }
+    const generateStream = respondWith([initial,
+      { characterCards: [boatman, card('林照', 'minor'), card('白榆', 'minor')] },
+      { characterCards: [card('王宁', 'minor')] }])
+
+    await new InferGlobalSettingsCommand().execute({ step: {}, context: createContext(), callbacks })
+
+    expect(generateStream).toHaveBeenCalledTimes(3)
+    const entries = committedEntries(invoke)
+    expect(entries.map(entry => entry.name)).toEqual(['陆舟', '苏绾', '顾岩', '王宁', '林照', '白榆', '王宁'])
+    expect(entries[3].relationships).toEqual([{ target: '王宁', relation: '同名的表兄' }])
+  })
+
   it('cuts batches in listed order, starting a new one at a same name, so a stop never skips someone listed earlier', () => {
     const [boatman, keeper, lin, bai] = [{ name: '王宁', note: '渡口船夫' }, { name: '王宁', note: '茶馆掌柜' }, { name: '林照' }, { name: '白榆' }]
     expect(importRecoveryBatches([boatman, keeper, lin, bai])).toEqual([[boatman], [keeper, lin, bai]])

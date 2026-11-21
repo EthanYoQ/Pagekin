@@ -212,7 +212,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     return this.executeWithGenerationRuntime('structured', params, () => this.executeWithinGeneration(params), { operation: 'import-global-facts', promptKeys: ['infer_novel_config_with_vectors', 'infer_novel_config'], skillStages: ['planning'], output: 'structured-data', ...importGenerationSelection(params.context, 'global') })
   }
 
-  /** 请求额度用完，或某批到了模型却没拿回完整结果（失败、截断）时，不再发后面的批次，已补出的卡照常提交，其余的人列进缺卡提示。取消、租约过期这类错误照常抛出。 */
+  /** 请求额度用完，某批到了模型却没拿回完整结果（失败、截断），或拿回的卡不合格时，不再发后面的批次，已补出的卡照常提交，其余的人列进缺卡提示。取消、租约过期这类错误照常抛出。 */
   private async decodeImportInferenceWithEndpointRecovery(
     rawResult: string,
     budget: LLMCompletion['receipt']['budget'],
@@ -235,10 +235,11 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     let used = budget
     for (const batch of importRecoveryBatches(recoveryTargets)) {
       if (used.attempt >= used.maxAttempts) break
-      const sofar = decodeRecoveredImportInference(rawResult, deltas, text).result.characterCards
+      const sofar = decodeRecoveredImportInference(rawResult, deltas, text)
+      if (sofar.accepted < deltas.length) break
       let correction: LLMCompletion
       try {
-        correction = await this.requestImportEndpointCards(rawResult, sofar, batch, callbacks, context)
+        correction = await this.requestImportEndpointCards(rawResult, sofar.result.characterCards, batch, callbacks, context)
       } catch (error) {
         if (error instanceof GenerationAttemptError || error instanceof TerminalProviderFailureError) break
         throw error

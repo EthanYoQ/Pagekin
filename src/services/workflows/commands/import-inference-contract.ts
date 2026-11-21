@@ -200,7 +200,7 @@ function currentState(value: unknown, path: string): NonNullable<CharacterRoster
   }
 }
 
-function decodeCards(value: unknown): CharacterRosterEntry[] {
+function decodeCards(value: unknown, occurrences: ReadonlyMap<string, number>): CharacterRosterEntry[] {
   if (!Array.isArray(value)) throw new StructuredContractDiagnostic('invalid_type', 'characterCards')
   if (value.length < 3) throw new StructuredContractDiagnostic('invalid_value', 'characterCards')
   const cards = value.map((raw, index): CharacterRosterEntry => {
@@ -246,7 +246,8 @@ function decodeCards(value: unknown): CharacterRosterEntry[] {
       const path = `characterCards[${index}].relationships[${relationshipIndex}].target`
       // An occurrence is a candidate, not a name-keyed identity. A shared label
       // may refer to another occurrence and must reach the approval boundary intact.
-      if (relationship.target === card.name && cards.filter(candidate => candidate.name === card.name).length === 1) {
+      const people = Math.max(cards.filter(candidate => candidate.name === card.name).length, occurrences.get(card.name) ?? 0)
+      if (relationship.target === card.name && people === 1) {
         throw new StructuredContractDiagnostic('relationship_self_reference', path)
       }
       if (!names.has(relationship.target)) {
@@ -257,7 +258,20 @@ function decodeCards(value: unknown): CharacterRosterEntry[] {
   return cards
 }
 
-export function decodeImportInferenceJson(content: string): ImportInferenceResult {
+/** 首轮卡片加 otherCharacters 里每个名字出现的次数。同名的人可能还没有卡，自指要按这个数判断。 */
+function nameOccurrences(root: Record<string, unknown>): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const list of [root.characterCards, root.otherCharacters]) {
+    if (!Array.isArray(list)) continue
+    for (const item of list) {
+      const name = isRecord(item) ? decodedLabel(item.name) : undefined
+      if (name !== undefined) counts.set(name, (counts.get(name) ?? 0) + 1)
+    }
+  }
+  return counts
+}
+
+export function decodeImportInferenceJson(content: string, occurrences?: ReadonlyMap<string, number>): ImportInferenceResult {
   const root = parseImportInferenceJsonObject(content)
   const config = record(required(root, 'novelConfig', '$'), 'novelConfig')
   const architecture = record(required(root, 'architectureFiles', '$'), 'architectureFiles')
@@ -287,7 +301,7 @@ export function decodeImportInferenceJson(content: string): ImportInferenceResul
       worldbuilding: text(required(architecture, 'worldbuilding', 'architectureFiles'), 'architectureFiles.worldbuilding'),
       synopsis: text(required(architecture, 'synopsis', 'architectureFiles'), 'architectureFiles.synopsis'),
     },
-    characterCards: decodeCards(required(root, 'characterCards', '$')),
+    characterCards: decodeCards(required(root, 'characterCards', '$'), occurrences ?? nameOccurrences(root)),
   }
 }
 
@@ -456,12 +470,14 @@ export interface RecoveredImportInference {
   result: ImportInferenceResult
   droppedRelationships: DroppedImportRelationship[]
   missing: ImportRecoveryTarget[]
+  /** 按顺序用上的补卡批数。遇到第一批不合格就停，后面的批不再算。 */
+  accepted: number
 }
 
 function decodeWithoutDanglingRelationships(
   root: Record<string, unknown>,
   cards: Array<Record<string, unknown>>,
-): Omit<RecoveredImportInference, 'missing'> {
+): Omit<RecoveredImportInference, 'missing' | 'accepted'> {
   const names = new Set(cards.map(card => decodedLabel(card.name)))
   const droppedRelationships: DroppedImportRelationship[] = []
   const characterCards = cards.map((card) => {
@@ -481,30 +497,36 @@ function decodeWithoutDanglingRelationships(
     return { ...card, relationships }
   })
   return {
-    result: decodeImportInferenceJson(JSON.stringify({ ...root, characterCards })),
+    result: decodeImportInferenceJson(JSON.stringify({ ...root, characterCards }), nameOccurrences(root)),
     droppedRelationships,
   }
 }
 
 /**
- * 首轮卡片加上各批补卡。一批可以只补其中几位，但只能补还没有卡的人，每张卡占掉同名的第一个空位；不合格的那一批整批不用。
- * 不按批次序号对 delta，是因为旧版一次补卡可以补完所有人，已存的这种记录要能照样重放。剩下的空位都算没补出。
+ * 首轮卡片加上各批补卡。第 i 份补卡对应 importRecoveryBatches 的第 i 批，只能补这一批里的人，可以只补其中几位。
+ * 遇到第一批不合格就停，后面的不算，返回用上的批数，在线补卡据此不再请求。
+ * 没有 otherCharacters 的旧版记录（一次补卡可以补完所有人），每份补卡按剩下的所有空位校验；这时缺卡的名字互不相同，不会对错人。
  * 悬空关系等全部批次合并后才丢，所以指向后面批次人物的关系会保留。
  */
 export function decodeRecoveredImportInference(original: string, deltas: readonly string[], text: UiText): RecoveredImportInference {
   const root = parseImportInferenceJsonObject(original)
   let cards = importInferenceCards(root, text)
-  const missing = importEndpointRecoveryTargets(original, text)
-  for (const delta of deltas) {
+  const targets = importEndpointRecoveryTargets(original, text)
+  const batches = Array.isArray(root.otherCharacters) ? importRecoveryBatches(targets) : undefined
+  const filled = new Set<ImportRecoveryTarget>()
+  let accepted = 0
+  for (const [index, delta] of deltas.entries()) {
+    const batch = batches ? batches[index] ?? [] : targets.filter(target => !filled.has(target))
     let added: Array<Record<string, unknown>>
     try {
-      added = parseImportEndpointCorrectionDelta(delta, missing, text)
+      added = parseImportEndpointCorrectionDelta(delta, batch, text)
       decodeWithoutDanglingRelationships(root, [...cards, ...added])
     } catch {
-      continue
+      break
     }
     cards = [...cards, ...added]
-    for (const card of added) missing.splice(missing.findIndex(target => target.name === decodedLabel(card.name)), 1)
+    for (const card of added) filled.add(batch.find(target => target.name === decodedLabel(card.name) && !filled.has(target))!)
+    accepted += 1
   }
-  return { ...decodeWithoutDanglingRelationships(root, cards), missing }
+  return { ...decodeWithoutDanglingRelationships(root, cards), missing: targets.filter(target => !filled.has(target)), accepted }
 }
