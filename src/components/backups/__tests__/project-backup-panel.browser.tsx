@@ -257,12 +257,13 @@ describe('ProjectBackupPanel', () => {
   })
 
   const CONFLICT_SHOWN = '作品没有改动，也没有上传。云备份绑定刚被改过。请关闭并重新打开设置，再试一次。'
+  const NOT_CLEARED = { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED' }
   it.each([
-    ['清掉了', { success: true, state: 'unconfigured', affectedBindings: 0 }, CONFLICT_SHOWN],
-    ['也没清掉', { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED' },
-      `${CONFLICT_SHOWN}刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。`],
-  ])('绑定确认撞上别处的改动、暂存账号%s：说出绑定刚被改过，没删掉的密码也说出来，不露码（#702）', async (_label, cleared, expected) => {
-    const rotatedAccount = { ...ACCOUNT, accountId: 'account-2' }
+    ['清掉了', 'os-backed', { success: true, state: 'unconfigured', affectedBindings: 0 }, CONFLICT_SHOWN],
+    ['也没清掉', 'os-backed', NOT_CLEARED, `${CONFLICT_SHOWN}刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。`],
+    ['也没清掉、密码只记在本次运行里', 'session-only', NOT_CLEARED, `${CONFLICT_SHOWN}刚填的密码没能清掉，还记在书童里，退出书童后就不在了。`],
+  ] as const)('绑定确认撞上别处的改动、暂存账号%s：说出绑定刚被改过，没删掉的密码在哪也说清，不露码（#702）', async (_label, persistence, cleared, expected) => {
+    const rotatedAccount = { ...ACCOUNT, accountId: 'account-2', persistence }
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'configured', binding: BINDING, account: ACCOUNT }
       if (channel === 'cloud-backup:connect') return { success: true, state: 'connected', account: rotatedAccount }
