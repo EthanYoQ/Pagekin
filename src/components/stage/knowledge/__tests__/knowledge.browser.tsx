@@ -256,7 +256,7 @@ describe('知识库', () => {
       expectExplained(words.toasts[0], zh, en)
     })
 
-    it(`${locale} 下没登记的码接在按界面语言写的说明后面，供反馈定位`, async () => {
+    it(`${locale} 下没登记的码不进提示，只给按界面语言写的说明（#787）`, async () => {
       useLocaleStore.setState({ locale })
       const plain = invoke.getMockImplementation()!
       invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'kb:backfill-vectors'
@@ -267,7 +267,7 @@ describe('知识库', () => {
       await vi.waitFor(() => expect(document.querySelector('section button')).toBeTruthy())
       await act(async () => document.querySelector<HTMLButtonElement>('section button')!.click())
       await vi.waitFor(() => expect(words.toasts).toHaveLength(1))
-      expect(words.toasts[0]).toBe(say('重建检索失败：EMBEDDING_SPACE_VERIFY_FAILED', 'Could not rebuild search. EMBEDDING_SPACE_VERIFY_FAILED'))
+      expect(words.toasts[0]).toBe(say('重建检索失败', 'Could not rebuild search.'))
     })
   }
 
@@ -816,7 +816,7 @@ describe('知识库', () => {
   it.each([
     ['zh-CN', '清空知识库…', '清空知识库', '项目已切换或重新打开', '清空知识库失败'],
     ['en-US', 'Clear knowledge base…', 'Clear knowledge base', 'The project was switched or reopened', 'Could not clear the knowledge base.'],
-  ] as const)('%s 界面：清空被主进程拒绝时，登记的码显示说明，未登记的原文保留，没有原因时用兜底', async (locale, open, confirmLabel, stale, fallback) => {
+  ] as const)('%s 界面：清空被主进程拒绝时，登记的码显示说明，未登记的码和没有原因时都用兜底', async (locale, open, confirmLabel, stale, fallback) => {
     useLocaleStore.setState({ locale })
     const error = vi.spyOn(toast, 'error').mockImplementation(() => undefined)
     const base = invoke.getMockImplementation()!
@@ -826,7 +826,7 @@ describe('知识库', () => {
     await vi.waitFor(() => expect(button(/车站档案/)).toBeTruthy())
     for (const [raw, shown] of [
       ['PROJECT_SESSION_STALE', expect.stringContaining(stale)],
-      ['SOMETHING_NEW_FROM_MAIN', expect.stringContaining('SOMETHING_NEW_FROM_MAIN')],
+      ['SOMETHING_NEW_FROM_MAIN', fallback],
       [undefined, fallback],
     ] as const) {
       reason = raw
