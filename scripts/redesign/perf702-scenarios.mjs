@@ -841,6 +841,40 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
   return { finalized, runs }
 }
 
+/**
+ * 分章 Markdown 导出（#702）：每章一个文件，Windows 上每章各起一次安全文件 helper 查存在、再起一次写入。
+ * 从点「选择目录并导出」计到按钮恢复；只有每章文件都在、内容是那一章时才算数。
+ */
+export async function timeSplitExport(context, finalized) {
+  const { app, page, roots } = context
+  await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
+  if (!await stage.spine(page).isVisible()) await stage.openFromLibrary(page, BOOK)
+  await stage.spine(page).waitFor({ state: 'visible', timeout: 60_000 })
+  const target = path.join(roots.projects, `split-export-${randomUUID()}`)
+  fs.mkdirSync(target)
+  await app.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }) }, target)
+  await stage.openWorkMenuItem(page, BOOK, '导出…')
+  const dialog = page.getByRole('dialog', { name: '导出项目' })
+  await dialog.getByText('分章 Markdown', { exact: true }).click()
+  const exportButton = dialog.getByRole('button', { name: '选择目录并导出', exact: true })
+  const startedAt = Date.now()
+  await exportButton.click()
+  await dialog.getByRole('button', { name: '导出中...', exact: true }).waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {})
+  await exportButton.waitFor({ state: 'visible', timeout: 20 * 60_000 })
+  const totalMs = Date.now() - startedAt
+  const dialogText = await dialog.innerText()
+  assert.match(dialogText, /已导出到：/u, `分章导出没有成功：${dialogText}`)
+  const folders = fs.readdirSync(target)
+  assert.equal(folders.length, 1, `导出目录里应只有这次的分章文件夹：${folders.join('、')}`)
+  const files = fs.readdirSync(path.join(target, folders[0])).filter(name => name.endsWith('.md'))
+  assert.equal(files.length, finalized, `每章一个文件：${files.length} / ${finalized}`)
+  for (let number = 1; number <= finalized; number++) {
+    const content = fs.readFileSync(path.join(target, folders[0], `chapter_${number}.md`), 'utf8')
+    assert.ok(content.includes(chapterMarker(number)), `chapter_${number}.md 是第 ${number} 章的正文`)
+  }
+  return log({ label: `${finalized}-split-export`, totalMs, files: files.length })
+}
+
 async function exportPhases(context) {
   const { app, page, roots, shoot } = context
   await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
@@ -923,6 +957,7 @@ export const PERF702_SCENARIOS = {
   'perf702-export-close': { ...REUSED, run: exportThenClose },
   'perf702-export': { ...REUSED, run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
   'perf702-export-writing': { ...REUSED, run: context => timeExport(context, Number(process.env.PERF702_FINALIZED ?? 112), { writes: true }) },
+  'perf702-split-export': { ...REUSED, run: context => timeSplitExport(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
   'perf702-reuse': { ...REUSED, run: context => timeLargeBook(context, Number(process.env.PERF702_FINALIZED ?? 112)) },
   'perf702-contention': { ...REUSED,
     run: async context => {

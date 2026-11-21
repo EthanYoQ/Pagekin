@@ -34,7 +34,7 @@ node scripts/redesign/drive.mjs --scenario <名称> ...
 - `--app-root` 默认当前工作树。性能对照时指向 trunk 的工作树，用同一个驱动测两边；目标工作树也要先跑完上面两条命令，它加载的是自己的 `dist-electron/` 和 `better-sqlite3`。
 - 退出码：0 全部通过；1 有场景失败、残留进程或隔离目录外写入；2 参数错误；3 未跑（场景声明的前置不齐，没有启动应用）。
 - 场景可以用 `requires` 声明前置：`env` 是要设的环境变量（值是设置方法），`theme` 是要用的主题。缺了驱动不启动应用，stderr 逐项写「缺 X，设置方法：…」，结果 JSON 只有一项 `notRun`。批跑时把退出码 3 记成「未跑」，不算失败也不算通过。目前声明了前置的场景：
-  - `PERF702_FIXTURE`（112 章夹具，当前构建造的也行）：`perf702-export`、`-export-phases`、`-export-close`、`-export-writing`、`-reuse`、`-contention`。
+  - `PERF702_FIXTURE`（112 章夹具，当前构建造的也行）：`perf702-export`、`-export-phases`、`-export-close`、`-export-writing`、`-split-export`、`-reuse`、`-contention`。
   - `PERF702_FIXTURE`（库版本 10 的 112 章夹具，要在库版本 10 的旧构建上用 `--app-root` 造）：`bs702-upgrade-open`、`-upgrade-perf`，`real-bs702-112`。
   - `PERF702_FIXTURE`（审修循环造的库版本 10 夹具，批量造的书没有审修运行）：`bs702-seal`。
   - `EDITOR_CONTEXT_BOOK`：`real-editor-context-ab`；`EDITOR_NOCHAPTER_DOC`：`real-editor-nochapter-ab`。
