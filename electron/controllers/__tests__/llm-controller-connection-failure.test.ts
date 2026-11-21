@@ -106,6 +106,15 @@ describe('connection test explains why the model service could not be reached', 
     expect(result.error).toContain('证书')
   })
 
+  it.each(['ECONNRESET', 'UND_ERR_SOCKET'])('points to the base_url when the connection is cut off (%s)', async code => {
+    failWith(fetchFailed(systemError(code)))
+
+    const result = await testConnection(chatModel)
+
+    expect(result.error).toContain('中途断开')
+    expect(result.error).toContain('base_url')
+  })
+
   it('gives a general explanation when the cause is not recognised', async () => {
     failWith(fetchFailed(new Error('bad port')))
 
