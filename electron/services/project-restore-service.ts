@@ -416,6 +416,15 @@ function releaseInstallJournal(journal: ReadInstallJournal, targetRoot: string, 
   activeInstallJournals.delete(normalized(journal.path))
 }
 
+function releaseCommittedInstallJournal(journal: ReadInstallJournal, targetRoot: string): void {
+  try {
+    releaseInstallJournal(journal, targetRoot, true)
+  } catch (error) {
+    activeInstallJournals.delete(normalized(journal.path))
+    console.error('[project-restore] 副本已建好，清理安装标记失败；下次恢复到同一位置会补清', error)
+  }
+}
+
 function reservationOwned(journal: ReadInstallJournal, targetRoot: string): fs.BigIntStats {
   const root = fs.lstatSync(targetRoot, { bigint: true })
   if (!root.isDirectory() || root.isSymbolicLink()
@@ -840,7 +849,7 @@ export async function restorePortableProject(input: RestorePortableProjectInput)
           if (journal.document.targetProjectId !== installed.targetProjectId) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
           activeInstallJournals.add(normalized(journal.path))
           heldJournalPath = journal.path
-          releaseInstallJournal(journal, targetRoot, true)
+          releaseCommittedInstallJournal(journal, targetRoot)
           heldJournalPath = undefined
         } else if (fs.existsSync(path.join(targetRoot, INSTALL_MARKER_NAME))) {
           fail('PORTABLE_RESTORE_UNSAFE_TARGET')
@@ -925,7 +934,7 @@ export async function restorePortableProject(input: RestorePortableProjectInput)
     const installed = await installedReceipt(targetRoot, authority, extracted.manifest.entries, installedDatabaseSha256)
     if (!installed || installed.targetProjectId !== targetProjectId) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
     input.__testHooks?.afterInstallCommitted?.(targetRoot)
-    releaseInstallJournal(journal, targetRoot, true)
+    releaseCommittedInstallJournal(journal, targetRoot)
     heldJournalPath = undefined
     return installed
   } finally {
