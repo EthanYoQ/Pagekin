@@ -11,8 +11,12 @@ import { STAGE_SAMPLE } from './stage-sample.mjs'
 const settle = page => page.waitForTimeout(400)
 
 const LOCALES = {
+  // 打开后的提示框会把外壳标 aria-hidden，按角色等不到流程脊，所以只点「打开」，由调用方等提示框。
   zh: { config: 'zh-CN', title: '有 AI 生成记录读不出', unit: ' 条', confirm: '知道了', spine: '创作流程',
-    open: page => stage.openFromLibrary(page, STAGE_SAMPLE.name) },
+    open: async page => {
+      await stage.cover(page, STAGE_SAMPLE.name).click()
+      await stage.overview(page, STAGE_SAMPLE.name).getByRole('button', { name: `打开《${STAGE_SAMPLE.name}》` }).click()
+    } },
   en: { config: 'en-US', title: "Some AI generation records couldn't be read", unit: ' AI generation records', confirm: 'Got it', spine: 'Writing flow',
     open: page => stage.openFromLibraryEn(page, STAGE_SAMPLE.name) },
   ja: { config: 'ja-JP', title: '読み取れない AI 生成記録があります', unit: ' 件', confirm: '了解', spine: 'Writing flow',
@@ -53,14 +57,22 @@ async function restartIn(context, locale, beforeLaunch) {
   return landed
 }
 
-/** 下一次 fs:list-dir 失败一次，打开作品时就会弹「部分数据加载失败」。 */
-async function failNextFileTree(app) {
+/** 下一次 project:open 之后读最近作品失败一次，打开作品时就会弹「部分数据加载失败」。书房自己读最近作品不受影响。 */
+async function failRecentListAfterNextOpen(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
-    const original = handlers.get('fs:list-dir')
-    handlers.set('fs:list-dir', async () => {
-      handlers.set('fs:list-dir', original)
-      throw new Error('sealed702 合成：文件树读不出')
+    const open = handlers.get('project:open')
+    const recent = handlers.get('project:recent-list')
+    let opened = false
+    handlers.set('project:open', async (...args) => {
+      handlers.set('project:open', open)
+      opened = true
+      return open(...args)
+    })
+    handlers.set('project:recent-list', async (...args) => {
+      if (!opened) return recent(...args)
+      handlers.set('project:recent-list', recent)
+      throw new Error('sealed702 合成：最近作品读不出')
     })
   })
 }
@@ -122,7 +134,7 @@ const otherBookMenu = page => bookMenu(page, '雾岛')
 
 async function reopenFencedByLoadError(context, locale) {
   const { page } = context
-  await failNextFileTree(context.app)
+  await failRecentListAfterNextOpen(context.app)
   await locale.open(page)
   const loadError = page.getByRole('alertdialog')
   await loadError.waitFor({ state: 'visible', timeout: 30_000 })
@@ -165,13 +177,13 @@ const afterLoadError = { model: true, shell: 'stage', run: async context => {
   await seedStageSample(context)
   const landed = await restartIn(context, LOCALES.zh, () => damageTwoRoots(context))
   const { page } = context
-  await failNextFileTree(context.app)
+  await failRecentListAfterNextOpen(context.app)
 
   await LOCALES.zh.open(page)
   const loadError = page.getByRole('alertdialog').filter({ hasText: '项目已打开，部分数据加载失败' })
   await loadError.waitFor({ state: 'visible', timeout: 30_000 })
   const measured = { landed, loadError: await loadError.innerText(), promptLayersWhileErrorOpen: await promptLayers(page) }
-  assert.match(measured.loadError, /文件树读不出/u)
+  assert.match(measured.loadError, /最近作品读不出/u)
   assert.equal(measured.promptLayersWhileErrorOpen, 1, '报错框开着时只有它一层，封存提示没挂上')
   await settle(page)
   await context.shoot('sealed702-order-1-load-error')
@@ -197,7 +209,7 @@ const switchBeforeAcknowledging = { model: true, shell: 'stage', run: async cont
   const otherPath = await createOtherBook(context)
   const landed = await restartIn(context, LOCALES.zh, () => damageTwoRoots(context))
   const { page } = context
-  await failNextFileTree(context.app)
+  await failRecentListAfterNextOpen(context.app)
 
   await LOCALES.zh.open(page)
   const loadError = page.getByRole('alertdialog').filter({ hasText: '项目已打开，部分数据加载失败' })
@@ -229,7 +241,7 @@ const switchStillOpening = { model: true, shell: 'stage', run: async context => 
   const otherPath = await createOtherBook(context)
   const landed = await restartIn(context, LOCALES.zh, () => damageTwoRoots(context))
   const { page } = context
-  await failNextFileTree(context.app)
+  await failRecentListAfterNextOpen(context.app)
 
   await LOCALES.zh.open(page)
   const loadError = page.getByRole('alertdialog').filter({ hasText: '项目已打开，部分数据加载失败' })

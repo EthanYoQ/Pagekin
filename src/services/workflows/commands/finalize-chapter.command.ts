@@ -628,8 +628,6 @@ export class FinalizeChapterCommand extends BaseWorkflowCommand<PostProcessStatu
       `\nChapter ${snapshot.chapterNumber} creation workflow fully completed`,
     ))
     this.assertNotCancelled(context)
-    // 刷新文件树要读一次盘（Windows 上约 1.7 秒），运行不等它结束。
-    void useProjectStore.getState().refreshFileTree(project.path, undefined, projectSession).catch(() => undefined)
     return postProcessStatus
   }
 

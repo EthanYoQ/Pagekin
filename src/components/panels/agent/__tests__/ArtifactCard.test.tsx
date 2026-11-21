@@ -33,7 +33,6 @@ beforeEach(() => {
       createdAt: '',
       updatedAt: '',
     },
-    fileTree: [],
     loading: false,
   })
   setActiveProjectSessionContext({

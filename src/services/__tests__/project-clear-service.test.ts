@@ -35,7 +35,6 @@ function project(leaseId = projectSession.leaseId, path = projectPath) {
 }
 
 const openProject = vi.fn()
-const refreshFileTree = vi.fn()
 const draftReset = vi.fn()
 const loadAllDrafts = vi.fn()
 const clearTabs = vi.fn()
@@ -47,7 +46,6 @@ vi.mock('../../stores/project-store', () => ({
     getState: vi.fn(() => ({
       currentProject: project(),
       openProject,
-      refreshFileTree,
     })),
   },
 }))
@@ -96,7 +94,6 @@ beforeEach(() => {
   vi.mocked(useProjectStore.getState).mockReturnValue({
     currentProject: project(),
     openProject,
-    refreshFileTree,
   } as never)
   vi.mocked(useDraftStore.getState).mockReturnValue({
     reset: draftReset,
@@ -135,7 +132,6 @@ describe('clearProjectData', () => {
     expect(clearTabs).not.toHaveBeenCalled()
     expect(draftReset).toHaveBeenCalledOnce()
     expect(openProject).not.toHaveBeenCalled()
-    expect(refreshFileTree).toHaveBeenCalledWith(projectPath, undefined, projectSession)
   })
 
   it('清除正文后通知回收站重读：回收站里的章节也一并清掉了（#592）', async () => {
@@ -307,14 +303,12 @@ describe('clearProjectData', () => {
     vi.mocked(useProjectStore.getState).mockReturnValue({
       currentProject: project('lease-b'),
       openProject,
-      refreshFileTree,
     } as never)
     resolveClear!({ success: true, cleared: ['generatedText'] })
     await clearing
 
     expect(draftReset).not.toHaveBeenCalled()
     expect(openProject).not.toHaveBeenCalled()
-    expect(refreshFileTree).not.toHaveBeenCalled()
     expect(closeTab).not.toHaveBeenCalled()
   })
 })

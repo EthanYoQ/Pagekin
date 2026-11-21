@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 
 import type { ChapterInfo } from '../../chapter-workflow'
+import { useDraftStore } from '../../../../stores/draft-store'
 import { useProjectStore } from '../../../../stores/project-store'
 import { useLLMStore } from '../../../../stores/llm-store'
 import { useEditorStore } from '../../../../stores/editor-store'
@@ -596,7 +597,6 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
           protagonistProfile: options.protagonistProfile,
         },
       } as never,
-      refreshFileTree: vi.fn().mockResolvedValue(undefined),
     })
     const context: WorkflowContext = {
       runId: 'draft-generation-runtime',
@@ -4154,22 +4154,23 @@ ${headingPrefix}第3章：潮门
     expectNoDraftPersistence(setupResult.invoke)
   })
 
-  it('preserves the accepted preview after persistence even if a later refresh fails', async () => {
+  it('preserves the accepted preview after persistence even if a later draft-list refresh fails', async () => {
     const terminalDraft = `${'已持久化正文'.repeat(800)}。`
     const runtime = fakeOutcomes(outcome(terminalDraft, 'stop'))
     const setupResult = setup({ runtime })
     const replaceText = vi.fn()
     const callbacks = Object.assign(setupResult.callbacks, { replaceText })
-    useProjectStore.setState({ refreshFileTree: vi.fn().mockRejectedValue(new Error('refresh failed')) })
+    const draftListRefresh = vi.spyOn(useDraftStore.getState(), 'loadAllDrafts').mockRejectedValue(new Error('refresh failed'))
 
-    await expect(setupResult.command.execute({
+    await setupResult.command.execute({
       step: {},
       context: setupResult.context,
       callbacks,
-    })).rejects.toThrow('refresh failed')
+    })
 
     const persisted = setupResult.invoke.mock.calls.find(([channel]) => channel === 'db:draft-create')
     const persistedText = (persisted?.[1] as { content: string }).content
+    expect(draftListRefresh).toHaveBeenCalled()
     expect(replaceText).toHaveBeenLastCalledWith(persistedText)
     expect(replaceText).not.toHaveBeenLastCalledWith('')
   })

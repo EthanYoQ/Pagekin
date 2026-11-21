@@ -18,7 +18,7 @@ let root: Root, container: HTMLDivElement, invoke: ReturnType<typeof vi.fn>, cop
 const { defaultModelId: originalModel, models: originalModels } = useLLMStore.getState()
 beforeEach(() => {
  useLocaleStore.setState({ locale: 'zh-CN', initialized: true })
- useProjectStore.setState({ currentProject: { id: session.projectId, path: session.projectPath, sessionLease: session.leaseId, novelConfig: { genre: '', targetAudience: '', coreOutline: '' } } as never, fileTree: [], loading: false })
+ useProjectStore.setState({ currentProject: { id: session.projectId, path: session.projectPath, sessionLease: session.leaseId, novelConfig: { genre: '', targetAudience: '', coreOutline: '' } } as never, loading: false })
  useWorkflowStore.setState({ activeRuns: [], history: [], currentRun: null })
  useLLMStore.setState({ defaultModelId: '' }); setActiveProjectSessionContext(session)
  stored = { view: { handle, status: 'completed', artifacts: [{ text: '沈砺候选原文' }] }, modelId: '已移除的原模型', context: { projectId: session.projectId, source }, attemptCount: 1, sourceStatus: 'conflict' } as unknown as LegacyRosterGenerationRecovery

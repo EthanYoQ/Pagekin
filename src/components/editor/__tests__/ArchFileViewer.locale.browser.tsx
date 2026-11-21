@@ -39,7 +39,7 @@ const originalEditorState = useEditorStore.getState()
 
 beforeEach(() => {
   useLocaleStore.setState({ locale: 'en-US', initialized: true })
-  useProjectStore.setState({ currentProject: project, fileTree: [], loading: false })
+  useProjectStore.setState({ currentProject: project, loading: false })
   setActiveProjectSessionContext({
     projectId: project.id,
     leaseId: project.sessionLease!,
