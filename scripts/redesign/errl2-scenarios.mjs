@@ -61,7 +61,7 @@ async function restoreAfterArchiveMoved({ app, page, diagnostics }, labels, arch
   return shown
 }
 
-/** 同步盘、杀毒软件或权限让文件能看见、读不出内容。默认只拒「读数据」；`(R)` 连属性也拒，解析真实路径就会失败。 */
+// icacls：(RD) 只拒读数据；(R) 连属性也拒，realpath 解析会失败。
 function denyRead(file, rights = '(RD)') {
   execFileSync('icacls', [file, '/deny', `*S-1-1-0:${rights}`], { stdio: 'ignore' })
   return () => execFileSync('icacls', [file, '/remove:d', '*S-1-1-0'], { stdio: 'ignore' })
