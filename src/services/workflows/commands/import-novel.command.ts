@@ -31,6 +31,7 @@ import {
   workflowMainProcessError,
 } from '../workflow-project-session'
 import { promptLanguageText } from '../../prompt-language'
+import { isWorkflowCancellation } from '../workflow-cancellation'
 import { createStructuredBatchExecutor, type StructuredBatchContract } from '../structured-batch-executor'
 import type { ChapterBlueprint } from '../directory-workflow'
 import { retryDirectoryCharacterSync } from '../directory-character-sync-recovery'
@@ -48,6 +49,9 @@ import {
   type ImportInferenceResult,
   decodeRecoveredImportInference,
   importEndpointRecoveryTargets,
+  importRecoveryBatches,
+  IMPORT_CARD_RECOVERY_PURPOSE,
+  type ImportRecoveryTarget,
   IMPORT_INFERENCE_ROUNDS,
   parseImportInferenceJsonObject,
 } from './import-inference-contract'
@@ -91,7 +95,6 @@ export function frozenImportContext(context: WorkflowContext): ImportGenerationC
 }
 
 const SHA256_HEX = /^[a-f0-9]{64}$/u
-const IMPORT_CARD_BATCH_SIZE = 3
 type UiText = (zhCNText: string, enUSText: string) => string
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -209,32 +212,44 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     return this.executeWithGenerationRuntime('structured', params, () => this.executeWithinGeneration(params), { operation: 'import-global-facts', promptKeys: ['infer_novel_config_with_vectors', 'infer_novel_config'], skillStages: ['planning'], output: 'structured-data', ...importGenerationSelection(params.context, 'global') })
   }
 
+  /** 请求额度用完、某批失败或截断时不再发后面的批次，已补出的卡照常提交，其余的人列进缺卡提示；只有取消会让整步停下。 */
   private async decodeImportInferenceWithEndpointRecovery(
     rawResult: string,
+    budget: LLMCompletion['receipt']['budget'],
     callbacks: CommandExecuteParams['callbacks'],
     context: CommandExecuteParams['context'],
   ): Promise<ImportInferenceResult> {
     const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
-    let recoveryTargets: string[]
+    let recoveryTargets: ImportRecoveryTarget[], names: string[]
     try {
-      decodeRecoveredImportInference(rawResult, [], text)
+      names = decodeRecoveredImportInference(rawResult, [], text).result.characterCards.map(card => card.name)
       recoveryTargets = importEndpointRecoveryTargets(rawResult, text)
     } catch (error) {
       await this.discardRejectedImportOutput(callbacks)
       throw error
     }
+    names.push(...recoveryTargets.map(target => target.name))
+    const label = (target: ImportRecoveryTarget, open: string, close: string) =>
+      target.note !== undefined && names.filter(name => name === target.name).length > 1 ? `${target.name}${open}${target.note}${close}` : target.name
     const deltas: string[] = []
-    for (let offset = 0; offset < recoveryTargets.length; offset += IMPORT_CARD_BATCH_SIZE) {
+    let used = budget
+    for (const batch of importRecoveryBatches(recoveryTargets)) {
+      if (used.attempt >= used.maxAttempts) break
       const sofar = decodeRecoveredImportInference(rawResult, deltas, text).result.characterCards
-      deltas.push(await this.requestImportEndpointCards(rawResult, sofar,
-        recoveryTargets.slice(offset, offset + IMPORT_CARD_BATCH_SIZE), callbacks, context))
+      try {
+        const correction = await this.requestImportEndpointCards(rawResult, sofar, batch, callbacks, context)
+        used = correction.receipt.budget
+        deltas.push(correction.content)
+      } catch (error) {
+        if (context.cancelled || isWorkflowCancellation(error)) throw error
+        break
+      }
     }
-    const { result, droppedRelationships } = decodeRecoveredImportInference(rawResult, deltas, text)
-    const missing = recoveryTargets.filter(name => !result.characterCards.some(card => card.name === name))
+    const { result, droppedRelationships, missing } = decodeRecoveredImportInference(rawResult, deltas, text)
     if (missing.length > 0) {
       callbacks.log(text(
-        `${missing.length} 位人物没有补出角色卡：${missing.join('、')}。导入后可在「角色名单」用「新建角色」或「粘贴 / 导入角色卡」补上。`,
-        `${missing.length} ${missing.length === 1 ? 'person has' : 'people have'} no character card yet: ${missing.join(', ')}. After the import, add them on the Cast page with New character or Paste or import cards.`,
+        `${missing.length} 位人物没有补出角色卡：${missing.map(target => label(target, '（', '）')).join('、')}。导入后可在「角色名单」用「新建角色」或「粘贴 / 导入角色卡」补上。`,
+        `${missing.length} ${missing.length === 1 ? 'person has' : 'people have'} no character card yet: ${missing.map(target => label(target, ' (', ')')).join(', ')}. After the import, add them on the Cast page with New character or Paste or import cards.`,
       ))
     }
     if (droppedRelationships.length > 0) {
@@ -251,17 +266,17 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
   private async requestImportEndpointCards(
     rawResult: string,
     existingCards: ImportInferenceResult['characterCards'],
-    unresolvedTargets: string[],
+    unresolvedTargets: readonly ImportRecoveryTarget[],
     callbacks: CommandExecuteParams['callbacks'],
     context: CommandExecuteParams['context'],
-  ): Promise<string> {
+  ): Promise<LLMCompletion> {
     const frozen = frozenImportContext(context)
     const writingLanguage = frozen?.core.writingLanguage ?? workflowWritingLanguage(context)
     const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
     const originalRoot = { ...parseImportInferenceJsonObject(rawResult), characterCards: existingCards }
     callbacks.log(text(
-      `正在补 ${unresolvedTargets.length} 张角色卡：${unresolvedTargets.join('、')}`,
-      `Adding ${unresolvedTargets.length} character ${unresolvedTargets.length === 1 ? 'card' : 'cards'}: ${unresolvedTargets.join(', ')}`,
+      `正在补 ${unresolvedTargets.length} 张角色卡：${unresolvedTargets.map(target => target.name).join('、')}`,
+      `Adding ${unresolvedTargets.length} character ${unresolvedTargets.length === 1 ? 'card' : 'cards'}: ${unresolvedTargets.map(target => target.name).join(', ')}`,
     ))
     const correction = await this.callLLMResult(
       promptLanguageText(
@@ -271,7 +286,8 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
           '上一轮完整 JSON 已可解析，但 otherCharacters 名单或 characterCards.relationships.target 里有人还没有角色卡。',
           '只输出一个完整 JSON 对象，不要 Markdown、解释或思考过程。',
           '只允许输出严格 delta，顶层必须且只能包含 characterCards。',
-          `characterCards 必须新增且只新增这些缺失角色 name：${JSON.stringify(unresolvedTargets)}`,
+          `characterCards 必须新增且只新增这些缺失角色，每人一张卡，name 照抄：${JSON.stringify(unresolvedTargets)}`,
+          'note 是这个人在原稿里的身份；和已有角色同名时也是另一个人，按 note 写他。',
           '不得回传 novelConfig、architectureFiles 或任何原有角色卡；不得删除、重排、改名或改写任何原角色。',
           '不得新增任意其他角色；delta 角色卡、currentState 与 relationships 内部不得包含合同外字段。',
           '应用端会把 delta 追加到上一轮本地原始 characterCards，再执行完整导入推演 JSON 合同校验和关系闭合校验。',
@@ -285,7 +301,8 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
           'The previous complete JSON is parseable, but otherCharacters or characterCards.relationships.target names people who still have no character card.',
           'Output one complete JSON object only, with no Markdown, explanation, or reasoning.',
           'Return a strict delta whose only top-level field is characterCards.',
-          `Add exactly these missing character names and no others: ${JSON.stringify(unresolvedTargets)}`,
+          `Add one card for each of these missing people and no others, copying name exactly: ${JSON.stringify(unresolvedTargets)}`,
+          'note is who this person is in the manuscript. Someone who shares a name with an existing character is still another person; write them from note.',
           'Do not return novelConfig, architectureFiles, or any existing card. Do not remove, reorder, rename, or rewrite existing characters.',
           'Every delta card, currentState, and relationship must contain only contract fields.',
           '[Delta JSON contract]',
@@ -302,7 +319,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       callbacks,
       {
         responseFormat: { type: 'json_object' },
-        purpose: 'import-inference:endpoint-card-recovery',
+        purpose: IMPORT_CARD_RECOVERY_PURPOSE,
         reasoningStage: 'planning',
         writingSkillStage: 'planning',
       },
@@ -310,7 +327,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     )
     assertImportCompletionNotStopped(correction, callbacks, context)
     if (correction.finishReason !== 'stop') throw this.createIncompleteCompletionError(correction.finishReason)
-    return correction.content
+    return correction
   }
 
   private async executeWithinGeneration({ context, callbacks }: CommandExecuteParams): Promise<void> {
@@ -436,6 +453,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     callbacks.setProgress(25)
 
     let rawResult: string | undefined
+    let budget!: LLMCompletion['receipt']['budget']
     for (let round = 0; round < IMPORT_INFERENCE_ROUNDS && rawResult === undefined; round += 1) {
       const initial = await this.callLLMResult(
         prompt,
@@ -453,6 +471,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       )
       assertImportCompletionNotStopped(initial, callbacks, context)
       if (initial.finishReason !== 'stop') throw this.createIncompleteCompletionError(initial.finishReason)
+      budget = initial.receipt.budget
       if (!isRepairableDirectJsonSyntaxFailure(initial.content)) {
         rawResult = initial.content
         continue
@@ -481,6 +500,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       )
       assertImportCompletionNotStopped(repair, callbacks, context)
       if (repair.finishReason !== 'stop') throw this.createIncompleteCompletionError(repair.finishReason)
+      budget = repair.receipt.budget
       if (preservesStructuredJsonEvidence(initial.content, repair.content)) rawResult = repair.content
       else callbacks.log(text(
         '语法修复改动了推演内容，这一轮作废',
@@ -506,7 +526,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     // Keep the exact visible candidate even when the legacy name-based contract
     // rejects ambiguity. This is not a formal fact or an adoption authorization.
     context.data.importGlobalInferenceCandidate = rawResult
-    const inferResult = await this.decodeImportInferenceWithEndpointRecovery(rawResult, callbacks, context)
+    const inferResult = await this.decodeImportInferenceWithEndpointRecovery(rawResult, budget, callbacks, context)
 
     const roster = await ipc.invokeWithProjectSession(
       projectSession,

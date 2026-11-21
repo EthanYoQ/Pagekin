@@ -10,14 +10,17 @@ import type { CharacterProposalProof } from './character-proposal-service'
 import type { ImportGlobalFactsReceipt } from '../../src/shared/import-global-facts'
 import { proveFinalizedCharacterGeneration } from './finalized-character-generation-proof'
 import { readLegacyRosterGenerationProof } from './legacy-roster-generation-proof'
-import { decodeRecoveredImportInference, IMPORT_INFERENCE_ROUNDS } from '../../src/services/workflows/commands/import-inference-contract'
+import { decodeRecoveredImportInference, IMPORT_CARD_RECOVERY_PURPOSE, IMPORT_INFERENCE_ROUNDS } from '../../src/services/workflows/commands/import-inference-contract'
 import { preservesStructuredJsonEvidence } from '../../src/services/workflows/structured-syntax-repair'
 
 function importCharacterEntriesFromArtifacts(db: Database.Database, runs: GenerationRunRepository, runId: string) {
   const rows = db.prepare(`SELECT t.attempt_id,json_extract(t.usage_receipt_json,'$.purpose') AS purpose
     FROM generation_attempts t JOIN generation_artifacts a ON a.attempt_id=t.attempt_id
     WHERE t.run_id=? AND a.status<>'discarded' ORDER BY t.rowid`).all(runId) as { attempt_id: string; purpose: string }[]
-  const endpoint = rows.filter(row => row.purpose === 'import-inference:endpoint-card-recovery')
+  const endpoint = rows.filter(row => row.purpose === IMPORT_CARD_RECOVERY_PURPOSE)
+  // 补卡失败后不再有请求，最后那次失败的补卡没有可用输出，它那批人按没补出算。
+  const last = endpoint.at(-1) && runs.receipt(endpoint.at(-1)!.attempt_id)
+  if (last && (last.failureCode || last.result?.finishReason !== 'stop')) endpoint.pop()
   const output = (row: typeof rows[number]) => {
     const receipt = runs.receipt(row.attempt_id), artifact = receipt.artifact
     if (!artifact || receipt.failureCode || receipt.result?.finishReason !== 'stop'

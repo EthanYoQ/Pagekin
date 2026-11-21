@@ -8,6 +8,7 @@ import { ImportRunRepository } from '../repositories/import-run-repository'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
 import { captureImportGenerationContext, importGenerationSlotKey, importSlotClick, IMPORT_STAGE_OPERATION } from './import-generation-source'
 import { rootBudgetExhausted } from '../../src/shared/generation-contract'
+import { IMPORT_CARD_RECOVERY_PURPOSE } from '../../src/services/workflows/commands/import-inference-contract'
 
 export function importSlotNonce(slotKey: string, retryOf?: DurableGenerationRun): string {
   return `import:${slotKey}${retryOf ? `:retry:${retryOf.runId}` : ''}`
@@ -59,20 +60,28 @@ export class ImportGeneration {
     try { this.runs.receipt(attemptId, budget); return true } catch { return false }
   }
   private attemptIds(run: DurableGenerationRun): string[] {
-    return this.db.prepare('SELECT attempt_id FROM generation_attempts WHERE run_id=?').pluck().all(run.runId) as string[]
+    return this.db.prepare('SELECT attempt_id FROM generation_attempts WHERE run_id=? ORDER BY rowid').pluck().all(run.runId) as string[]
   }
-  /** 空白回复没有可提交的内容，结构化批次会拆开重发，所以它不单独拒收运行；只有空白、没有一份可用输出时才拒收。 */
+  /**
+   * 空白回复没有可提交的内容，结构化批次会拆开重发，所以它不单独拒收运行；只有空白、没有一份可用输出时才拒收。
+   * 补卡批次失败后渲染端不再发请求（主进程也不再接），这最后一次补卡不拒收运行，它那批人列进缺卡提示。
+   */
   rejected(run: DurableGenerationRun): boolean {
     const budget = this.runs.budget(run.rootActionId)
-    const outputs = this.attemptIds(run).map((attemptId): 'usable' | 'blank' | 'rejected' => {
+    const attemptIds = this.attemptIds(run)
+    const outputs = attemptIds.map((attemptId, index): 'usable' | 'blank' | 'rejected' | 'skipped' => {
       let receipt
       try { receipt = this.runs.receipt(attemptId, budget) } catch { return 'rejected' }
+      if (index === attemptIds.length - 1 && receipt.result?.finishReason !== 'stop' && this.purpose(attemptId) === IMPORT_CARD_RECOVERY_PURPOSE) return 'skipped'
       const artifact = receipt.artifact
       if (receipt.result?.finishReason !== 'stop') return 'rejected'
       if (!artifact?.text.trim()) return 'blank'
       return this.db.prepare("SELECT 1 FROM generation_artifacts WHERE artifact_id=? AND status<>'discarded'").pluck().get(artifact.artifactId) === 1 ? 'usable' : 'rejected'
     })
     return outputs.includes('rejected') || outputs.includes('blank') && !outputs.includes('usable')
+  }
+  private purpose(attemptId: string): unknown {
+    return this.db.prepare("SELECT json_extract(usage_receipt_json,'$.purpose') FROM generation_attempts WHERE attempt_id=?").pluck().get(attemptId)
   }
   hasAttempts(run: DurableGenerationRun): boolean {
     return this.runs.attemptCount(run.runId) > 0

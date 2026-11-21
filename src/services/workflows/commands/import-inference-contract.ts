@@ -354,29 +354,52 @@ function decodedLabel(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
-/** 还没有角色卡的人：名单里的人在前（按模型列的顺序），再是关系指向的其他名字（按被指向的次数）。 */
-export function importEndpointRecoveryTargets(original: string, text: UiText): string[] {
+export const IMPORT_CARD_BATCH_SIZE = 3
+export const IMPORT_CARD_RECOVERY_PURPOSE = 'import-inference:endpoint-card-recovery'
+
+/** 一位还没有角色卡的人。合同允许不同人物同名，所以按出现位置算，note 是原稿里的身份，用来区分同名的人。 */
+export interface ImportRecoveryTarget {
+  name: string
+  note?: string
+}
+
+/** 名单里的人逐条算、按模型列的顺序（和卡上或彼此同名也是另一个人），再是关系指向、卡和名单里都没有的名字（按被指向的次数）。 */
+export function importEndpointRecoveryTargets(original: string, text: UiText): ImportRecoveryTarget[] {
   const root = parseImportInferenceJsonObject(original)
   const cards = importInferenceCards(root, text)
-  const names = new Set(cards.map(card => decodedLabel(card.name)))
-  const listed = Array.isArray(root.otherCharacters)
-    ? root.otherCharacters.map(item => isRecord(item) ? decodedLabel(item.name) : undefined) : []
+  const listed = Array.isArray(root.otherCharacters) ? root.otherCharacters.flatMap((item): ImportRecoveryTarget[] => {
+    const name = isRecord(item) ? decodedLabel(item.name) : undefined
+    const note = isRecord(item) ? decodedLabel(item.note) : undefined
+    return name === undefined ? [] : [note === undefined ? { name } : { name, note }]
+  }) : []
+  const known = new Set([...cards.map(card => decodedLabel(card.name)), ...listed.map(target => target.name)])
   const references = new Map<string, number>()
   for (const card of cards) {
     const relationships = card.relationships
     if (!Array.isArray(relationships)) continue
     for (const relationship of relationships) {
       const target = isRecord(relationship) ? decodedLabel(relationship.target) : undefined
-      if (target !== undefined && !names.has(target)) references.set(target, (references.get(target) ?? 0) + 1)
+      if (target !== undefined && !known.has(target)) references.set(target, (references.get(target) ?? 0) + 1)
     }
   }
   const dangling = [...references.keys()].sort((a, b) => references.get(b)! - references.get(a)!)
-  return [...new Set([...listed, ...dangling])].filter((name): name is string => name !== undefined && !names.has(name))
+  return [...listed, ...dangling.map(name => ({ name }))]
+}
+
+/** 每批最多三位，同一批里没有同名的人，模型回的卡按名字就能对上是哪一位。 */
+export function importRecoveryBatches(targets: readonly ImportRecoveryTarget[]): ImportRecoveryTarget[][] {
+  const batches: ImportRecoveryTarget[][] = []
+  for (const target of targets) {
+    const batch = batches.find(candidate => candidate.length < IMPORT_CARD_BATCH_SIZE && !candidate.some(other => other.name === target.name))
+    if (batch) batch.push(target)
+    else batches.push([target])
+  }
+  return batches
 }
 
 function parseImportEndpointCorrectionDelta(
   content: string,
-  outstanding: ReadonlySet<string>,
+  batch: readonly ImportRecoveryTarget[],
   text: UiText,
 ): Array<Record<string, unknown>> {
   const deltaRoot = parseImportInferenceJsonObject(content)
@@ -408,7 +431,7 @@ function parseImportEndpointCorrectionDelta(
     }
   }
   const addedNames = deltaCards.map(card => decodedLabel(card.name))
-  if (!addedNames.length || addedNames.some(name => name === undefined || !outstanding.has(name))) {
+  if (!addedNames.length || addedNames.some(name => name === undefined || !batch.some(target => target.name === name))) {
     throw new Error(text(
       '导入推演补卡只能补还没有角色卡的人',
       'An import card batch may add only people who still have no character card.',
@@ -432,12 +455,13 @@ export interface DroppedImportRelationship {
 export interface RecoveredImportInference {
   result: ImportInferenceResult
   droppedRelationships: DroppedImportRelationship[]
+  missing: ImportRecoveryTarget[]
 }
 
 function decodeWithoutDanglingRelationships(
   root: Record<string, unknown>,
   cards: Array<Record<string, unknown>>,
-): RecoveredImportInference {
+): Omit<RecoveredImportInference, 'missing'> {
   const names = new Set(cards.map(card => decodedLabel(card.name)))
   const droppedRelationships: DroppedImportRelationship[] = []
   const characterCards = cards.map((card) => {
@@ -463,22 +487,24 @@ function decodeWithoutDanglingRelationships(
 }
 
 /**
- * 首轮卡片加上各批补卡。一批可以只补其中几位，但只能补还没有卡的人；不合格的那一批整批不用。
- * 悬空关系等全部批次合并后才丢，所以指向后面批次人物的关系会保留。
+ * 首轮卡片加上各批补卡，第 i 份 delta 对应 importRecoveryBatches 的第 i 批。一批可以只补其中几位，但只能补这一批的人；不合格的那一批整批不用。
+ * 没有 delta 的批次（没发或中途停下）里的人都算没补出。悬空关系等全部批次合并后才丢，所以指向后面批次人物的关系会保留。
  */
 export function decodeRecoveredImportInference(original: string, deltas: readonly string[], text: UiText): RecoveredImportInference {
   const root = parseImportInferenceJsonObject(original)
   let cards = importInferenceCards(root, text)
-  const outstanding = new Set(importEndpointRecoveryTargets(original, text))
-  for (const delta of deltas) {
+  const missing: ImportRecoveryTarget[] = []
+  for (const [index, batch] of importRecoveryBatches(importEndpointRecoveryTargets(original, text)).entries()) {
+    let added: Array<Record<string, unknown>> = []
     try {
-      const added = parseImportEndpointCorrectionDelta(delta, outstanding, text)
+      if (deltas[index] !== undefined) added = parseImportEndpointCorrectionDelta(deltas[index], batch, text)
       decodeWithoutDanglingRelationships(root, [...cards, ...added])
-      cards = [...cards, ...added]
-      for (const card of added) outstanding.delete(decodedLabel(card.name)!)
     } catch {
-      // 这一批不合格，整批不用。
+      added = []
     }
+    cards = [...cards, ...added]
+    const filled = new Set(added.map(card => decodedLabel(card.name)))
+    missing.push(...batch.filter(target => !filled.has(target.name)))
   }
-  return decodeWithoutDanglingRelationships(root, cards)
+  return { ...decodeWithoutDanglingRelationships(root, cards), missing }
 }

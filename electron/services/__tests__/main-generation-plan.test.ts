@@ -167,7 +167,7 @@ describe('main generation physical liability planning without provider calls', (
     const batches = Array.from({ length: Math.ceil(people / 3) }, (_, index) => Math.min(3, people - index * 3))
     const castRequests = 1 + 2 + batches.reduce((sum, size) => sum + 2 * size - 1, 0) + 1
     const requests = Math.max(policy.budget.maxPhysicalRequests, 1 + 2 + 2 * 10 + castRequests)
-    expect(characterRosterBudget(policy, people)).toEqual({ maxPhysicalRequests: requests, maxOutputPerRequest: policy.budget.maxOutputPerRequest,
+    expect(characterRosterBudget(policy, policy, people)).toEqual({ maxPhysicalRequests: requests, maxOutputPerRequest: policy.budget.maxOutputPerRequest,
       maxTokenLiability: policy.budget.maxTokenLiability / policy.budget.maxPhysicalRequests * requests, maxActiveElapsedMs: requests * 112_500 })
   })
   it('scales batch roots by chapter count without shrinking below the single-root policy', () => {

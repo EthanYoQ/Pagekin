@@ -173,7 +173,8 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     if (typeof runId !== 'string') throw new Error('GENERATION_ROOT_MISSING')
     const policy = readMainGenerationPolicy(repository.get(runId).binding.sourceManifest.policy)
     if (policy.version !== MAIN_GENERATION_POLICY.version && !isDeepStrictEqual(policy.budget, repository.frozenBudget(rootActionId))
-      || repository.characterRosters(rootActionId).some(roster => !isDeepStrictEqual(roster.budget, characterRosterBudget(policy, roster.characters))))
+      || repository.characterRosters(rootActionId).some(roster => !isDeepStrictEqual(roster.budget,
+        characterRosterBudget(policy, readMainGenerationPolicy(repository.get(roster.runId).binding.sourceManifest.policy), roster.characters))))
       throw new Error('GENERATION_POLICY_BUDGET_MISMATCH')
     return policy
   }
@@ -184,11 +185,11 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       .map(attempt => repository.receipt(attempt.attemptId))
       .filter(receipt => ['settled', 'unknown'].includes(receipt.attempt.status) && receipt.result?.finishReason === 'stop').at(-1)?.artifact
     if (!manifest) return
-    const policy = rootPolicy(run.rootActionId)
+    const policy = readMainGenerationPolicy(run.binding.sourceManifest.policy)
     if (policy.planning?.kind !== 'architecture') return
     let characters: number
     try { characters = decodeCharacterIdentityManifest(manifest.text).length } catch { return }
-    repository.recordCharacterRoster(run.runId, { manifestArtifactId: manifest.artifactId, characters, budget: characterRosterBudget(policy, characters) })
+    repository.recordCharacterRoster(run.runId, { manifestArtifactId: manifest.artifactId, characters, budget: characterRosterBudget(rootPolicy(run.rootActionId), policy, characters) })
   }
   const requireRun = (handle: MainGenerationRunHandle, execution = false) => {
     assertCurrent()

@@ -128,12 +128,16 @@ function architectureRequestBound(intent: ArchitecturePlanningIntent, characters
     + (intent.synopsisRange ? 2 * (intent.synopsisRange.to - intent.synopsisRange.from + 1) : 0)
 }
 
-/** 名单返回后的根预算：冻结意图按实际人数重算，只升不降，每次请求的时长与 token 责任不变。 */
-export function characterRosterBudget(policy: MainGenerationPolicy, characters: number): RootBudget {
-  if (policy.planning?.kind !== 'architecture') throw new Error('GENERATION_PLANNING_BUDGET_INVALID')
-  const { budget } = policy
-  return scaledRootBudget(Math.max(budget.maxPhysicalRequests, architectureRequestBound(policy.planning.intent, characters)),
-    budget.maxOutputPerRequest, budget.maxTokenLiability / budget.maxPhysicalRequests)
+/**
+ * 名单返回后的根预算，只升不降，每次请求的时长与 token 责任不变。
+ * 架构根按冻结意图和实际人数重算；Agent 回合的根还要给回合本身和别的工作流留额，在冻结额度上加角色步按人数多出的次数。
+ */
+export function characterRosterBudget(root: MainGenerationPolicy, run: MainGenerationPolicy, characters: number): RootBudget {
+  if (run.planning?.kind !== 'architecture') throw new Error('GENERATION_PLANNING_BUDGET_INVALID')
+  const { budget } = root
+  const requests = root.planning ? architectureRequestBound(run.planning.intent, characters)
+    : budget.maxPhysicalRequests + characterStepRequestBound(characters) - characterStepRequestBound(0)
+  return scaledRootBudget(Math.max(budget.maxPhysicalRequests, requests), budget.maxOutputPerRequest, budget.maxTokenLiability / budget.maxPhysicalRequests)
 }
 
 export function newMainGenerationPolicy(selection: BeginGenerationRequest, model: ModelProfile, importChapterCount?: number): MainGenerationPolicy {
