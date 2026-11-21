@@ -189,7 +189,7 @@ export const enUS = {
   'error.connectionHostNotFound': 'The server in the base_url could not be found. Check the address and your network.',
   'error.connectionTimedOut': 'Connecting to the model service timed out. Check your network, then try again.',
   'error.connectionCertificate': "The server's security certificate could not be verified. Check that the base_url is the address your provider gave you.",
-  'error.connectionInterrupted': 'The connection was cut off. Check your network, then try again.',
+  'error.connectionInterrupted': 'The connection was cut off partway. Check the base_url, your network, or your proxy, then try again.',
   'error.connectionFailed': 'The test did not finish. Check the base_url, API key, and network, then try again.',
   'error.embeddingRequestFailed': 'The retrieval model request failed. Check the retrieval model’s Base URL, gateway, and API key.',
   'error.embeddingOllamaNativeUrl': 'This is Ollama’s native /api address. Change the end of the retrieval model’s Base URL from /api to /v1.',

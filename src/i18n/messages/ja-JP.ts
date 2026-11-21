@@ -192,7 +192,7 @@ export const jaJP = {
   'error.connectionHostNotFound': 'base_url のサーバーが見つかりません。アドレスとネットワークを確認してください。',
   'error.connectionTimedOut': 'モデルサービスへの接続がタイムアウトしました。ネットワークを確認してから、もう一度お試しください。',
   'error.connectionCertificate': 'サーバーのセキュリティ証明書を検証できません。base_url がサービス提供元のアドレスか確認してください。',
-  'error.connectionInterrupted': '接続が途中で切れました。ネットワークを確認してから、もう一度お試しください。',
+  'error.connectionInterrupted': '接続が途中で切れました。base_url、ネットワーク、プロキシを確認してから、もう一度お試しください。',
   'error.connectionFailed': 'テストを完了できませんでした。base_url、API キー、ネットワークを確認してから、もう一度お試しください。',
   'error.embeddingRequestFailed': '検索モデルへのリクエストが失敗しました。検索モデルの Base URL、ゲートウェイ、API キーを確認してください。',
   'error.embeddingOllamaNativeUrl': 'これは Ollama のネイティブの /api アドレスです。検索モデルの Base URL の末尾を /api から /v1 に変えてください。',
