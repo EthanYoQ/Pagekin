@@ -398,9 +398,12 @@ function readCode(error: unknown): KnownErrorCode | undefined {
   return codeCandidates(error).find(isKnownCode)
 }
 
-/** 报错带的稳定错误码，登记与否都读；至少含一个下划线，ENOENT 这类平台码不算。 */
+/** 稳定错误码的形状：至少含一个下划线，ENOENT 这类平台码不算。 */
+const CODE_SHAPE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u
+
+/** 报错带的稳定错误码，登记与否都读。 */
 export function errorCodeOf(error: unknown): string | undefined {
-  return codeCandidates(error).find((code): code is string => typeof code === 'string' && /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u.test(code))
+  return codeCandidates(error).find((code): code is string => typeof code === 'string' && CODE_SHAPE.test(code))
 }
 
 /** Electron 在主进程报错前加的调用通道前缀对作者没有意义，兜底说明里去掉。 */
@@ -534,8 +537,26 @@ const AUTHOR_STOP_REASON_KEYS = {
 } as const satisfies Record<ImportStopKind, MessageKey>
 
 export function appErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
-  return knownAppErrorMessage(locale, error)
-    ?? translate(locale, 'error.unknown', { message: readMessage(error) })
+  const known = knownAppErrorMessage(locale, error)
+  if (known) return known
+  const message = readMessage(error)
+  return unregisteredCodeMessage(locale, message.trim().replace(DISPLAY_PREFIX, ''))
+    ?? translate(locale, 'error.unknown', { message })
+}
+
+const loggedUnregisteredCodes = new Set<string>()
+
+/**
+ * 整段原文就是一个没登记文案的码时，作者只看到通用说明；码记进控制台日志供排查，同一个码只记一次
+ * （有的显示处在渲染时调用）。不是码形的原文返回 undefined，照常显示。
+ */
+function unregisteredCodeMessage(locale: ErrorDisplayLocale, raw: string, fallback?: string): string | undefined {
+  if (!CODE_SHAPE.test(raw)) return undefined
+  if (!loggedUnregisteredCodes.has(raw)) {
+    loggedUnregisteredCodes.add(raw)
+    console.warn(`[app-errors] 未登记文案的错误码：${raw}`)
+  }
+  return fallback || translate(locale, 'error.unregisteredCode')
 }
 
 /** 显示处去掉的前缀：Electron 的调用通道，以及 "Error: "、"TypeError: " 这类类名。 */
@@ -543,14 +564,18 @@ const DISPLAY_PREFIX = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*
 
 /**
  * 把报错交给作者看的统一入口（toast、提示框、内联提示）：主进程的 result.error、IPC 抛出的错误
- * 与渲染端按界面语言写好的说明都可以直接传进来。登记过的码按界面语言说明；认不出的去掉通道与类名前缀后
- * 保留原文，不吞掉信息；完全没有内容时用该处的兜底说明（调用方用 text(zh, en) 写好）。
+ * 与渲染端按界面语言写好的说明都可以直接传进来。登记过的码按界面语言说明；没登记的码用该处的兜底说明，
+ * 没有兜底时用通用说明；其余原文去掉通道与类名前缀后保留；完全没有内容时用该处的兜底说明（调用方用 text(zh, en) 写好）。
  */
 export function displayedErrorMessage(locale: ErrorDisplayLocale, error: unknown, fallback?: string): string {
   const known = knownAppErrorMessage(locale, error)
   if (known) return known
-  return displayedRaw(error).trim().replace(DISPLAY_PREFIX, '') || fallback || localize(copyLocale(locale), '未知错误', 'Unknown error')
+  const raw = strippedRaw(error)
+  return unregisteredCodeMessage(locale, raw, fallback) ?? (raw || fallback || unknownErrorText(locale))
 }
+
+const strippedRaw = (error: unknown) => displayedRaw(error).trim().replace(DISPLAY_PREFIX, '')
+const unknownErrorText = (locale: InterfaceLocale) => localize(copyLocale(locale), '未知错误', 'Unknown error')
 
 /** 报错里能给作者看的原文：字符串本身、Error 或普通对象的字符串 message；别的对象没有可读内容，交给兜底。 */
 function displayedRaw(error: unknown): string {
@@ -579,7 +604,7 @@ export function isRegisteredErrorCode(error: unknown): boolean {
   return readCode(error) !== undefined
 }
 
-/** 回给模型的工具结果按作品写作语言说明登记错误；给作者看的报错走 displayedErrorMessage。 */
+/** 回给模型的工具结果按作品写作语言说明登记错误，没登记的码原样保留；给作者看的报错走 displayedErrorMessage。 */
 export function errorMessageForModel(writingLanguage: Locale, error: unknown): string {
-  return displayedErrorMessage(writingLanguage as ErrorDisplayLocale, error)
+  return knownAppErrorMessage(writingLanguage as ErrorDisplayLocale, error) ?? (strippedRaw(error) || unknownErrorText(writingLanguage))
 }

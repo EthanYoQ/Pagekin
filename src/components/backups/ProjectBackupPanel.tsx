@@ -25,7 +25,7 @@ const EXPORT_PHASES: readonly PortableExportPhase[] = ['snapshot', 'check', 'tid
 type ExportProgress = { phase: PortableExportPhase; round: number }
 const progressStep = ({ phase, round }: ExportProgress) => round * EXPORT_PHASES.length + EXPORT_PHASES.indexOf(phase)
 
-// 主进程登记过的码（例如导出目标已存在）按界面语言说明；其余码与渲染端自己的说明原样显示。
+// 主进程登记过的码（例如导出目标已存在）按界面语言说明；没登记的码用通用说明，渲染端自己的说明原样显示。
 const errorText = (error: unknown) => displayedErrorMessage(currentInterfaceLocale(), error)
 const failureReason = (operation: 'export' | 'restore', code: string, damaged?: DamagedReviewCycle) =>
   archiveFailureMessage(currentInterfaceLocale(), operation, code, damaged)
