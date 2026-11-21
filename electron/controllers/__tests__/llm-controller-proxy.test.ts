@@ -88,10 +88,11 @@ describe('请求连不上代理：说明是代理', () => {
     await expect(discover()).resolves.toEqual({ success: false, errorCode: 'proxy' })
   })
 
-  it('代理主机名写错，解析不出', async () => {
+  it('代理主机名写错，解析不出：叫作者先检查地址和端口，不只叫他关代理', async () => {
     applyNetworkProxy({ enabled: true, type: 'http', host: 'badproxyhost', port: proxyPort })
     fetchMock.mockImplementation(async () => { throw hostNotFound('badproxyhost') })
-    expect((await testConnection()).error).toMatch(new RegExp(`^${PROXY_DOWN}`))
+    expect((await testConnection()).error)
+      .toBe('连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。')
   })
 })
 
