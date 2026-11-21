@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
+import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, errorMessageForModel, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
 import { shown } from './shown-locale'
 
 describe('localized application errors', () => {
@@ -200,7 +200,7 @@ describe('project session and external file errors from the main process (#474 B
     const exists = new Error("Error invoking remote method 'dialog:select-project-archive-export': Error: PROJECT_ARCHIVE_TARGET_EXISTS")
     expect(displayedErrorMessage(shown('en-US'), exists)).toBe('The target file already exists. Choose another file name; project archives never overwrite existing files.')
     expect(displayedErrorMessage(shown('zh-CN'), exists)).toBe('目标文件已存在，请选择其他文件名。项目存档不会覆盖已有文件。')
-    expect(displayedErrorMessage(shown('en-US'), new Error('PORTABLE_GRANT_INVALID'))).toBe('PORTABLE_GRANT_INVALID')
+    expect(displayedErrorMessage(shown('en-US'), new Error('Could not open the archive.'))).toBe('Could not open the archive.')
   })
 })
 
@@ -221,6 +221,41 @@ describe('显示处统一的报错说明（#474 渲染层消费处）', () => {
     // IPC 之外 reject 的普通对象：有字符串 message 就用它，没有就用兜底，不显示 [object Object]。
     expect(displayedErrorMessage(shown(locale), { message: '磁盘只读' }, '兜底')).toBe('磁盘只读')
     expect(displayedErrorMessage(shown(locale), { success: false }, '兜底')).toBe('兜底')
+  })
+
+  const unregistered = 'ERR_L1_NEVER_REGISTERED_PROBE'
+  const codeShaped = [
+    unregistered,
+    `Error: ${unregistered}`,
+    new Error(unregistered),
+    new Error(`Error invoking remote method 'project-archive:export': Error: ${unregistered}`),
+    { message: unregistered },
+  ]
+  const script = { 'zh-CN': /\p{Script=Han}/u, 'en-US': /^[\x20-\x7e]+$/u, 'ja-JP': /[\p{Script=Hiragana}\p{Script=Katakana}]/u } as const
+
+  it.each(['zh-CN', 'en-US', 'ja-JP'] as const)('%s：未登记的码不原样给作者看，换成这种界面语言的通用说明（#702）', locale => {
+    for (const raw of codeShaped) {
+      for (const message of [displayedErrorMessage(shown(locale), raw), appErrorMessage(shown(locale), raw)]) {
+        expect(message).not.toContain(unregistered)
+        expect(message).toMatch(script[locale])
+      }
+    }
+  })
+
+  it.each(['zh-CN', 'en-US', 'ja-JP'] as const)('%s：未登记的码有调用处自己的说明时用它', locale => {
+    expect(displayedErrorMessage(shown(locale), new Error(unregistered), '草稿保存失败')).toBe('草稿保存失败')
+  })
+
+  it.each(['zh-CN', 'en-US', 'ja-JP'] as const)('%s：不是码形的原文照常显示', locale => {
+    expect(displayedErrorMessage(shown(locale), '模型服务返回 HTTP 429')).toBe('模型服务返回 HTTP 429')
+    expect(displayedErrorMessage(shown(locale), new Error('Could not save the draft.'))).toBe('Could not save the draft.')
+    expect(displayedErrorMessage(shown(locale), `Error: ${unregistered}: 第 3 章`)).toBe(`${unregistered}: 第 3 章`)
+    expect(displayedErrorMessage(shown(locale), 'ENOENT')).toBe('ENOENT')
+  })
+
+  it('回给模型的工具结果保留未登记的码，便于模型和排查读到原因', () => {
+    expect(errorMessageForModel('zh-CN', new Error(`Error invoking remote method 'fs:read': Error: ${unregistered}`))).toBe(unregistered)
+    expect(errorMessageForModel('en-US', unregistered)).toBe(unregistered)
   })
 
   // project:create / project:open 的 catch 把 resolveDirectoryPath 抛出的码经 String(error) 原样放进 result.error。
