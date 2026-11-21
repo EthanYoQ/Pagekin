@@ -20,6 +20,9 @@ import { damageLedger, enumerations, failingCalls, rootCount, type DamagedColumn
 import { generationOutputContract, type BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { GenerationRunServiceDependencies } from '../generation-run-service'
+import { displayedErrorMessage } from '../../../src/i18n/app-errors'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
+import { DRAFT_VISIBLE_TEXT_VERSION } from '../../../src/shared/draft-visible-text'
 
 vi.mock('../../database', () => ({ getProjectDb: vi.fn(), getCurrentProjectPath: vi.fn(() => null) }))
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -498,4 +501,31 @@ it('ADR-0030 一轮 Agent 的根被封存：别的会话登记的子流程照常
  expect(child.handle.rootActionId).toBe(healthy.handle.rootActionId)
  expect(()=>f.owner.begin({...selection,uiActionNonce:'封存那轮的子流程',parentRootActionId:sealed.handle.rootActionId,agentWorkflowRegistrationId:sealed.registration.registrationId}))
    .toThrow('GENERATION_LEDGER_UNREADABLE')
+})
+
+it('旧版 Agent 留下的写稿恢复稿在别章蓝图改过后保存不了，作者看到的说明讲旧版 Agent 和能做的事',async()=>{
+ const draftText='清晨的街道渐渐苏醒，林岚带着昨日的线索走向城门。'
+ const f=fixture(async(request,options)=>{
+  const agent=(request as { task: GenerationTask }).task.purpose==='agent'
+  options.onVisible({kind:'delta',text:agent?'<tool_call>{"name":"start_workflow","arguments":{"workflow":"generate_draft","chapter_number":1}}</tool_call>':draftText})
+  return {finishReason:'stop',usage:null}
+ })
+ const result=await f.round(),ref=result.rounds[0]!.actions[0]!.ref
+ f.owner.agents.claimTool({ref,confirmed:true})
+ const registration=f.owner.agents.registerWorkflow(ref)
+ const child=f.owner.begin({operation:'chapter-draft',uiActionNonce:'agent-draft',modelId:'synthetic',chapterNumber:1,promptKeys:['first_chapter_draft'],skillStages:[],selectedDraftIds:[],selectedFinalizedDraftIds:[],output:'visible-text',
+  authorInputs:[{id:'draft:target-units',text:'20'}],parentRootActionId:result.handle.rootActionId,agentWorkflowRegistrationId:registration.registrationId})
+ const drafted=await f.owner.execute({handle:child.handle,invocationNonce:'agent-draft',task:{purpose:'chapter-draft',output:'visible-text',messages:[{role:'user',content:'写第一章'}]}})
+ f.owner.composeVisible(child.handle,[drafted.run.artifacts[0]!.artifactId],textHash(draftText),DRAFT_VISIBLE_TEXT_VERSION)
+ const owner=f.reopenStorage()
+ expect(owner.listRecovery().drafts.map(item=>item.view.handle.runId)).toContain(child.handle.runId)
+ f.db.exec("INSERT INTO blueprints(chapter_number,title) VALUES(2,'作者新加的第二章')")
+ const resumed=await owner.resume(child.handle)
+ let failure: unknown
+ try { owner.commitDraft({handle:resumed.handle,chapterNumber:1,source:'write',expectedCompositionHash:textHash(draftText)}) } catch (error) { failure=error }
+ expect(failure).toBeInstanceOf(Error)
+ const zh=displayedErrorMessage(shown('zh-CN'),failure),en=displayedErrorMessage(shown('en-US'),failure)
+ expect(zh).not.toBe(displayedErrorMessage(shown('zh-CN'),new Error('GENERATION_SOURCE_CHANGED')))
+ expect(zh).toContain('旧版 Agent');expect(zh).toContain('「不再恢复」')
+ expect(en).toContain('old Agent');expect(en).toContain('Dismiss')
 })
