@@ -95,7 +95,6 @@ export interface MainGenerationOwnerDependencies {
   rememberContextWindow?: (model: ModelProfile, windowTokens: number) => void
   buildBinding: (selection: BeginGenerationRequest & { knowledgeSnapshot?: GenerationKnowledgeSnapshot; finalizedCharacterContextHash?: string; reviewRevisionContext?: ReviewRevisionContext; agentInput?: AgentGenerationInput; agentSession?: { key: string; roundIndex: number }; editorInlineInput?: EditorInlineInput; editorInlineInputTokens?: number; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; legacyRosterKey?: string }, model: SafeGenerationModelReceipt, policy: MainGenerationPolicy) => RunBinding
   rebuildBinding: (previous: RunBinding, model: SafeGenerationModelReceipt) => RunBinding
-  beforeDispatch?: () => void
   onSnapshot?: (snapshot: MainGenerationSnapshot) => void
   onReasoning?: (event: { projectId: string; epoch: string; rootActionId: string; runId: string; attemptId: string; text: string }) => void
   dispatch?: GenerationRunServiceDependencies['dispatch']
@@ -726,7 +725,6 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const model = deps.leases.resolve(leaseId)
     const creativeStrategy = deps.database.prepare("SELECT creative_strategy FROM project_core WHERE id='main'").pluck().get() as CreativeStrategy | undefined
     const plan = buildMainGenerationPlan(model, modelReceipt(run.binding), task, repository.budget(run.rootActionId), creativeStrategy)
-    deps.beforeDispatch?.()
     assertCurrent()
     const receipt = await service.execute({ runId: run.runId, invocationNonce: request.invocationNonce, requestHash,
       providerRequest: { runId: run.runId, model, task, plan, conversationId: run.rootActionId } satisfies ProviderRequest, reservedTokens: plan.reservedTokens,

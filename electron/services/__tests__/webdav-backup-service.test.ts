@@ -168,6 +168,11 @@ function appender(fixture: DavFixture, generationId: string, archivePath: string
     })
 }
 
+// 短期限会同时作用于核对请求；worker 卡顿超过期限时它们先超时，所以只给被测的归档请求留信号。
+function fetchWithArchiveDeadlineOnly(method: 'GET' | 'PUT'): typeof fetch {
+  return (url, init) => fetch(url, init?.method === method && String(url).endsWith('archive.ainovel') ? init : { ...init, signal: undefined })
+}
+
 afterEach(async () => {
   await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve()))))
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
@@ -213,7 +218,7 @@ describe('WebDavBackupService', () => {
     fs.writeFileSync(source.archive, Buffer.alloc(64 * 1024, 7))
     const service = new WebDavBackupService({ generationIdFactory: () => GEN_A, timeoutMs: 300, transferTimeoutMs: 60_000,
       fetchImpl: async (url, init) => {
-        const response = await fetch(url, init)
+        const response = await fetchWithArchiveDeadlineOnly('GET')(url, init)
         if (init?.method !== 'GET' || !String(url).endsWith('archive.ainovel') || !response.body) return response
         const reader = response.body.getReader()
         const slow = new ReadableStream({ async pull(controller) {
@@ -237,7 +242,9 @@ describe('WebDavBackupService', () => {
     dav.stallUpload = true
     const controller = new AbortController()
     if (cancel) dav.onUpload = () => controller.abort()
-    const service = new WebDavBackupService({ generationIdFactory: () => GEN_A, transferTimeoutMs: 100 })
+    const service = new WebDavBackupService(cancel
+      ? { generationIdFactory: () => GEN_A }
+      : { generationIdFactory: () => GEN_A, transferTimeoutMs: 100, fetchImpl: fetchWithArchiveDeadlineOnly('PUT') })
     await expect(service.appendGeneration({ account: account(dav), cloudBookId: BOOK, archivePath: source.archive,
       originProjectId: PROJECT, portableSnapshotGeneration: 'fixture', parentGenerationIds: [], signal: controller.signal,
     })).rejects.toThrow(cancel ? 'WEBDAV_CANCELLED' : 'WEBDAV_NOT_FOUND')

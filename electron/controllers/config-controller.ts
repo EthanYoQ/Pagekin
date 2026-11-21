@@ -7,6 +7,7 @@ import {
 } from '../utils/config-utils'
 import { GlobalConfig } from '../../src/shared/ipc-channels'
 import { mainText } from '../i18n'
+import { applyNetworkProxy } from '../network-proxy'
 
 const text = (zhCNText: string, enUSText: string) => mainText(app.getLocale(), zhCNText, enUSText)
 
@@ -18,8 +19,11 @@ export function registerConfigController() {
 
   /** 保存全局配置 */
   ipcMain.handle('config:set', async (_event, config: Partial<GlobalConfig>) => {
+    let undoProxy: (() => void) | undefined
     try {
+      undoProxy = config.proxy && applyNetworkProxy(config.proxy)
       if (updateGlobalConfig(existing => ({ ...existing, ...config, stageModelIds: existing.stageModelIds }))) return { success: true }
+      undoProxy?.()
       return {
         success: false,
         error: text(
@@ -28,6 +32,8 @@ export function registerConfigController() {
         ),
       }
     } catch (error) {
+      undoProxy?.()
+      if (error instanceof Error && error.message === 'NETWORK_PROXY_INVALID') return { success: false, error: error.message }
       console.error('[Config] 全局配置写入失败:', error)
       return {
         success: false,

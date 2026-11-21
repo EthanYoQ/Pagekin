@@ -5,6 +5,7 @@ import type {
   ModelDiscoveryResult,
 } from '../../src/shared/ipc-channels'
 import { isLocalModelEndpoint } from '../../src/shared/provider-presets'
+import { failedAtProxy } from '../network-proxy'
 
 interface ModelDiscoveryServiceDependencies {
   fetchImpl?: typeof fetch
@@ -405,8 +406,8 @@ export class ModelDiscoveryService {
       if (!fitsPurpose) return { success: true, models }
       const fits = (candidate: DiscoveredModel) => fitsPurpose.test(candidate.value)
       return { success: true, models: [...models.filter(fits), ...models.filter(candidate => !fits(candidate))] }
-    } catch {
-      return { success: false, errorCode: 'network' }
+    } catch (error) {
+      return { success: false, errorCode: failedAtProxy(error) ? 'proxy' : 'network' }
     } finally {
       clearTimeout(timeout)
     }

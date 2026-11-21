@@ -43,6 +43,7 @@ import { APP_BRAND, APP_ID } from '../src/shared/brand'
 
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
+import { applySavedNetworkProxy } from './network-proxy'
 
 // Electron 41 在部分 Windows 环境中无法启动受限 GPU 子进程（0xC0000135），
 // 随后会触发 Chromium 的致命检查。仅放宽 GPU 子进程，保持 renderer 隔离策略不变。
@@ -261,6 +262,7 @@ app.whenReady().then(async () => {
     createWindow()
     return
   }
+  applySavedNetworkProxy()
   registerIPCHandlers()
   registerMCPHandlers()
   startupHasSettled = true
