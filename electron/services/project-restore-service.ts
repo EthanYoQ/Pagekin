@@ -500,7 +500,6 @@ async function hashPhysicalFile(file: string): Promise<string> {
   return digest
 }
 
-/** 读所选存档失败要和写恢复位置失败分开报，作者才知道该重选存档还是换文件夹。 */
 async function hashSelectedArchive(archivePath: string): Promise<string> {
   try {
     return await hashPhysicalFile(archivePath)
