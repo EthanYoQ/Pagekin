@@ -486,7 +486,9 @@ const ARCHIVE_FAILURE_KEYS = {
     PORTABLE_SCHEMA_UNSUPPORTED: 'error.restoreArchiveNewer',
     PORTABLE_ARCHIVE_TARGET_UNWRITABLE: 'error.restoreTargetUnwritable',
     PORTABLE_RESTORE_UNSAFE_TARGET: 'error.restoreTargetUnsafe',
-    PORTABLE_GRANT_INVALID: 'error.restoreSelectionExpired',
+    PORTABLE_GRANT_INVALID: 'error.restoreSelectionInvalid',
+    PORTABLE_RESTORE_ARCHIVE_MISSING: 'error.restoreArchiveMissing',
+    PORTABLE_RESTORE_ARCHIVE_UNREADABLE: 'error.restoreArchiveUnreadable',
     PORTABLE_RESTORE_FAILED: 'error.restoreFailed',
   },
 } as const satisfies Record<'export' | 'restore', Record<string, MessageKey>>

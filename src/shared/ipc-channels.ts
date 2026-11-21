@@ -352,6 +352,8 @@ export type PortableProjectOperationErrorCode =
   | 'PORTABLE_RESTORE_INVALID'
   | 'PORTABLE_RESTORE_TARGET_EXISTS'
   | 'PORTABLE_RESTORE_UNSAFE_TARGET'
+  | 'PORTABLE_RESTORE_ARCHIVE_MISSING'
+  | 'PORTABLE_RESTORE_ARCHIVE_UNREADABLE'
 
 export type PortableProjectOperationFailure = {
   success: false

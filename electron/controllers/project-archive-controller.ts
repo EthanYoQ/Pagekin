@@ -57,6 +57,8 @@ const PORTABLE_ERROR_CODES = new Set<PortableProjectOperationErrorCode>([
   'PORTABLE_RESTORE_INVALID',
   'PORTABLE_RESTORE_TARGET_EXISTS',
   'PORTABLE_RESTORE_UNSAFE_TARGET',
+  'PORTABLE_RESTORE_ARCHIVE_MISSING',
+  'PORTABLE_RESTORE_ARCHIVE_UNREADABLE',
 ])
 
 const CODE_SHAPE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u
@@ -67,8 +69,10 @@ function failure(operation: 'export' | 'restore', error: unknown) {
   const raw = error instanceof Error ? error.message : String(error)
   const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
   let message = raw
-  if (!CODE_SHAPE.test(raw)) {
+  if (!CODE_SHAPE.test(raw) || (error instanceof Error && error.cause !== undefined)) {
     console.error(`[project-archive] ${operation} failed`, error)
+  }
+  if (!CODE_SHAPE.test(raw)) {
     message = UNWRITABLE_ERRNO.has(code as string) ? 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE'
       : operation === 'export' ? 'PORTABLE_EXPORT_FAILED' : 'PORTABLE_RESTORE_FAILED'
   }
