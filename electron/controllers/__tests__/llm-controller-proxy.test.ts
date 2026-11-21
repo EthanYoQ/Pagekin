@@ -21,7 +21,14 @@ vi.mock('../../utils/config-utils', () => ({
   writeJsonFile: vi.fn(),
 }))
 
-vi.mock('../../network-proxy', () => ({ proxyUnreachable: vi.fn(async () => true) }))
+// 代理一直连不上；只有请求真的经这条代理发出（拿到了 activeProxy）才能归咎代理。
+const route = vi.hoisted(() => ({ id: 'proxy' }))
+vi.mock('../../network-proxy', () => ({
+  activeProxy: vi.fn(() => route),
+  proxyUnreachable: vi.fn(async (_target: string, sentThrough: unknown) => sentThrough === route),
+}))
+
+vi.mock('../../rerank', () => ({ rankPassages: vi.fn(async () => ({ ranking: { method: 'fallback', reason: 'request-failed' } })) }))
 
 vi.mock('../../services/model-discovery-service', () => ({
   ModelDiscoveryService: class { async discoverModels() { return mocks.discovery } },
@@ -68,5 +75,16 @@ describe('代理连不上时，发请求前就被拒的设置', () => {
       baseUrl: 'https://api.moonshot.cn/v1', temperature: 1.5, maxTokens: 256, purposes: ['generation'],
     }) as { error: string }
     expect(result.error).not.toContain('网络代理')
+  })
+})
+
+describe('代理连不上时测试同时能检索和重排的档案', () => {
+  beforeAll(() => { if (!mocks.handlers.size) registerLLMController() })
+  it('Anthropic 档案先真发了重排请求：说明是代理连不上', async () => {
+    const result = await mocks.handlers.get('llm:test-connection')!({}, {
+      id: 'both', name: 'both', provider: 'custom', protocol: 'anthropic', modelName: 'm', apiKey: 'key',
+      baseUrl: 'https://api.example.com/v1', temperature: 0.7, maxTokens: 256, purposes: ['embedding', 'rerank'],
+    }) as { error: string }
+    expect(result.error).toContain('网络代理')
   })
 })
