@@ -57,6 +57,17 @@ describe('global configuration corruption boundary', () => {
     expect(fs.readFileSync(configPath)).toEqual(originalBytes)
   })
 
+  it('config.json 内容是 null 时照样回 success:false，不在查界面语言时再抛（#702）', async () => {
+    const configPath = path.join(velaHome, 'config.json')
+    fs.writeFileSync(configPath, 'null')
+
+    await expect(handler('config:set')({}, { theme: 'light' })).resolves.toMatchObject({
+      success: false,
+      error: expect.stringMatching(/\p{Script=Han}/u),
+    })
+    expect(fs.readFileSync(configPath, 'utf8')).toBe('null')
+  })
+
   it('creates a missing config from defaults', async () => {
     await expect(handler('config:set')({}, { theme: 'light' })).resolves.toEqual({ success: true })
 

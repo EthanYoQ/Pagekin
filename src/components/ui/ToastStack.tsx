@@ -2,7 +2,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { CircleCheck, Info, OctagonAlert, TriangleAlert, X, type LucideIcon } from 'lucide-react'
-import { useLocaleStore } from '../../stores/locale-store'
+import { displayedErrorMessage } from '../../i18n/app-errors'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { Button } from './Button'
 import { toastStackMount } from './ink-overlay'
 
@@ -149,7 +150,7 @@ function ToastCard({ entry, paused }: { entry: ToastStackEntry; paused: boolean 
     try {
       await action.onClick?.()
     } catch (error) {
-      pushToast({ tone: 'danger', message: `${text('操作失败', 'Action failed')}\n\n${error instanceof Error ? error.message : String(error)}`, duration: 8000 })
+      pushToast({ tone: 'danger', message: `${text('操作失败', 'Action failed')}\n\n${displayedErrorMessage(currentInterfaceLocale(), error)}`, duration: 8000 })
     } finally {
       dismissToast(entry.id)
     }
