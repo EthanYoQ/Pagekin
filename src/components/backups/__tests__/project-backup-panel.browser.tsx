@@ -396,6 +396,7 @@ describe('ProjectBackupPanel', () => {
   it.each([
     ['CLOUD_BACKUP_AUTH_FAILED', '作品没有改动。WebDAV 没接受这组用户名和密码。请核对后重新填写，再点「连接并绑定」。'],
     ['CLOUD_BACKUP_NETWORK_FAILED', '作品没有改动。连不上 WebDAV 服务器。请检查网络和 WebDAV 地址，再试一次。'],
+    ['CLOUD_BACKUP_PROXY_UNREACHABLE', '作品没有改动。连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」，再试一次。'],
     ['CLOUD_BACKUP_REMOTE_INVALID', '作品没有改动。这个地址上的服务器没有按 WebDAV 回应。请核对 WebDAV 地址，再试一次。'],
     ['CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE', '作品没有改动。本机没存这个 WebDAV 账号的密码。请重新填写密码，再点「连接并绑定」。'],
     ['CLOUD_BACKUP_CANCELLED', '已取消，作品没有改动。'],
