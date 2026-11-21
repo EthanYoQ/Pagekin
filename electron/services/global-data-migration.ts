@@ -23,11 +23,12 @@ const admitted = new WeakMap<object, string>()
 const temporarySuffix = /\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.tmp$/
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 function fail(code: string): never { throw new Error(code) }
-function parse(file: string): unknown { try {
+function parse(file: string): unknown {
   const info = fs.lstatSync(file)
   if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) fail('GLOBAL_JSON_INVALID')
-  return JSON.parse(fs.readFileSync(file, 'utf8'))
-} catch { return fail('GLOBAL_JSON_INVALID') } }
+  const text = fs.readFileSync(file, 'utf8')
+  try { return JSON.parse(text) } catch { return fail('GLOBAL_JSON_INVALID') }
+}
 function syncDirectory(directory: string): void {
   // Windows directory handles do not support fsync through Node. Files are flushed
   // before same-volume rename; restart verifies physical state against the journal.
