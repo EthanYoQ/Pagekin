@@ -1,17 +1,18 @@
 import { RefreshCw } from 'lucide-react'
-import { getChapterFinalizeScope } from '../../../services/workflows/workflow-utils'
-import { describeFinalizationStepError, planFinalizationRetry } from '../../../shared/finalization-step-error'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { finalizationStepErrorMessage, getChapterFinalizeScope } from '../../../services/workflows/workflow-utils'
+import { planFinalizationRetry } from '../../../shared/finalization-step-error'
+import type { ErrorDisplayLocale } from '../../../i18n/types'
+import { activeInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { Button } from '../../ui/Button'
 import { usePostProcessStatus } from '../../ui/use-post-process-status'
 
 type Text = (zhCNText: string, enUSText: string) => string
 
-function stepDetail(presentation: 'success' | 'pending' | 'failed' | 'retired', error: string | undefined, text: Text): string {
+function stepDetail(presentation: 'success' | 'pending' | 'failed' | 'retired', error: string | undefined, text: Text, locale: ErrorDisplayLocale): string {
   if (presentation === 'success') return text('完成', 'Done')
   if (presentation === 'retired') return text('这一步来自旧版本，现在的定稿流程已不再运行它，无需处理。', 'This step is from an earlier version and is no longer part of finalization. Nothing to do here.')
   if (presentation === 'pending') return text('处理中', 'In progress')
-  return error ? describeFinalizationStepError(error, text) : text('失败', 'Failed')
+  return error ? finalizationStepErrorMessage(locale, error) : text('失败', 'Failed')
 }
 
 /**
@@ -30,6 +31,7 @@ export default function PostProcessSteps({ chapterNumber, publication, busy, onR
   onRetryPublication: () => void
 }) {
   const text = useLocaleStore(s => s.text)
+  const locale = useLocaleStore(activeInterfaceLocale)
   const { status, loading, steps } = usePostProcessStatus(getChapterFinalizeScope(chapterNumber), busy)
   if (loading && !publication) return null
 
@@ -52,7 +54,7 @@ export default function PostProcessSteps({ chapterNumber, publication, busy, onR
         key,
         label: step.label,
         presentation,
-        detail: stepDetail(presentation, step.error, text),
+        detail: stepDetail(presentation, step.error, text, locale),
         retry: () => onRetryStep(key),
         retryable: plan.rows.has(key),
         retryLabel: text('重试', 'Retry'),

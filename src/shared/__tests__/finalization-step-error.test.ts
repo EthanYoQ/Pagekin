@@ -100,10 +100,10 @@ describe('定稿后处理步骤错误', () => {
       .toBe(describeFinalizationStepError('FINALIZATION_GENERATION_INCOMPLETE', zh))
   })
 
-  it('源变化与模型变化给同一说明，未知错误原样显示', () => {
+  it('源变化与模型变化给同一说明，表外错误不在这里说明', () => {
     expect(describeFinalizationStepError('GENERATION_MODEL_CHANGED', en)).toBe(describeFinalizationStepError('FINALIZATION_GENERATION_SOURCE_CHANGED', en))
     expect(describeFinalizationStepError('GENERATION_SOURCE_CHANGED_MODEL', en)).toBe(describeFinalizationStepError('FINALIZATION_GENERATION_SOURCE_CHANGED', en))
-    expect(describeFinalizationStepError('network error: socket hang up', en)).toBe('network error: socket hang up')
+    expect(describeFinalizationStepError('network error: socket hang up', en)).toBeUndefined()
   })
 
   it('结果不可用不否认已发请求并提示重试', () => {
