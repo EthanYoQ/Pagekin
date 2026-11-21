@@ -46,7 +46,9 @@ export default function BookOverview({ mode, name, meta, overview, bars, primary
       {bars && <StageBars bars={bars} label={text('阶段进度', 'Stage progress')} />}
       {overview.state === 'loading' && <p className="stage-ov-status" role="status">{text('正在读取这部作品…', 'Reading this book…')}</p>}
       {overview.state === 'unavailable' && (
-        <p className="stage-ov-status" role="status">{text('暂时读不到这部作品的概览，打开后就能看到。', 'This book cannot be previewed right now. Open it to see everything.')}</p>
+        <p className="stage-ov-status" role="status">{mode === 'preview'
+          ? text('暂时读不到这部作品的概览。点「打开」查看，打不开时会说明原因。', 'This book cannot be previewed right now. Open it to see more; if it won’t open, you’ll see why.')
+          : text('暂时读不到这部作品的概览。', 'This book’s overview cannot be read right now.')}</p>
       )}
       {ready && (
         <StatGrid
