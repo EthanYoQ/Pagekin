@@ -332,5 +332,5 @@ it('前置齐全时没有缺项', () => {
 it('目标被占用的导出场景只在 Windows 上跑', () => {
   const held = PERF702_SCENARIOS['perf702-export-held']
   assert.deepEqual(missingPrerequisites(held, { theme: 'light' }, {}, 'win32'), [])
-  assert.deepEqual(missingPrerequisites(held, { theme: 'light' }, {}, 'darwin'), ['只在 Windows 上跑，当前平台 darwin'])
+  assert.deepEqual(missingPrerequisites(held, { theme: 'light' }, {}, 'darwin'), ['只在 win32 上跑，当前平台 darwin'])
 })

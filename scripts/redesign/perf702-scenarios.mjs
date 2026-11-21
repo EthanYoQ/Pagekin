@@ -1018,7 +1018,7 @@ export const PERF702_SCENARIOS = {
       await stage.spine(context.page).or(stage.cover(context.page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
       return { opened, results, closed, quiesced, switched }
     } },
-  'perf702-export-held': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1, { blueprints: false }) },
+  'perf702-export-held': { model: true, shell: 'stage', requires: { platform: 'win32' }, setup: async context => { await seedLargeBook(context, 1, { blueprints: false }) },
     run: exportHeldTarget },
   'perf702-blueprints': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 0); await context.restart() },
     run: context => timeBlueprintsOnly(context) },

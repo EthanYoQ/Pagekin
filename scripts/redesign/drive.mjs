@@ -645,12 +645,13 @@ async function main() {
   process.exitCode = await driveSessions({ sessions, options, realKey })
 }
 
-/** 场景用 requires 声明自己要的环境变量（值是设置方法）与主题；返回缺的每一项，齐全时为空。 */
-export function missingPrerequisites(scenario, options, env = process.env) {
-  const { env: variables = {}, theme } = scenario?.requires ?? {}
+/** 场景用 requires 声明自己要的环境变量（值是设置方法）、主题与平台；返回缺的每一项，齐全时为空。 */
+export function missingPrerequisites(scenario, options, env = process.env, platform = process.platform) {
+  const { env: variables = {}, theme, platform: only } = scenario?.requires ?? {}
   return [
     ...Object.entries(variables).filter(([name]) => !env[name]).map(([name, how]) => `缺环境变量 ${name}，设置方法：${how}`),
     ...(theme && theme !== options.theme ? [`缺 --theme ${theme}，设置方法：命令加 --theme ${theme}`] : []),
+    ...(only && only !== platform ? [`只在 ${only} 上跑，当前平台 ${platform}`] : []),
   ]
 }
 

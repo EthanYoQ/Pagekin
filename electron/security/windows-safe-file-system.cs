@@ -38,6 +38,7 @@ namespace AiNovelSecureFs {
     private const uint FILE_SHARE_READ = 0x00000001;
     private const uint FILE_SHARE_WRITE = 0x00000002;
     private const uint FILE_SHARE_DELETE = 0x00000004;
+    private const uint FILE_ATTRIBUTE_READONLY = 0x00000001;
     private const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
     private const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
     private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
@@ -535,10 +536,27 @@ namespace AiNovelSecureFs {
 
     // Replacing a target that another program holds open fails with ACCESS_DENIED,
     // which a read-only target also returns. Only an open target refuses an
-    // exclusive open with SHARING_VIOLATION.
+    // exclusive open with SHARING_VIOLATION. A read-only target stays unwritable
+    // after the other program closes it, so it keeps the generic failure.
     private static bool TargetIsOpenElsewhere(IntPtr parentDirectory, string targetName) {
       IntPtr probe;
       int status = CreateRelative(
+        parentDirectory,
+        targetName,
+        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_ATTRIBUTE_NORMAL,
+        FILE_OPEN,
+        FILE_NON_DIRECTORY_FILE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        true,
+        out probe);
+      if (status != STATUS_SUCCESS) return false;
+      ByHandleFileInformation information;
+      bool readOnly = !GetFileInformationByHandle(probe, out information)
+        || (information.FileAttributes & FILE_ATTRIBUTE_READONLY) != 0;
+      CloseHandle(ref probe);
+      if (readOnly) return false;
+      status = CreateRelative(
         parentDirectory,
         targetName,
         FILE_READ_DATA | SYNCHRONIZE,
