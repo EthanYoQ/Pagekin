@@ -94,16 +94,6 @@ export function initProjectService(): void {
         return
       }
 
-      // 刷新文件树（所有工作流完成后都需要）
-      console.log('[ProjectService] 开始刷新文件树...')
-      await useProjectStore.getState().refreshFileTree(
-        payload.projectPath,
-        undefined,
-        payload.projectSession,
-      )
-      if (!isProjectSessionCurrent(payload.projectSession)) return
-      console.log('[ProjectService] 文件树刷新完成')
-
       // 根据工作流类型精准刷新
       if (payload.type === 'chapter_creation') {
         // 章节创作完成 → 刷新草稿 + 角色卡（定稿后处理会更新角色状态）
@@ -125,7 +115,6 @@ export function initProjectService(): void {
     ))
   )
 
-  // 定稿完成 → 刷新草稿 + 角色 + 文件树 + 同步编辑器 Tab
   disposers.push(
     globalEventBus.on('FINALIZE_COMPLETE', (payload) => runProjectEventTask(
       () => text('定稿后的项目刷新失败', 'Could not refresh project data after finalization'),
@@ -147,11 +136,6 @@ export function initProjectService(): void {
           payload.projectSession,
         ),
         useCharacterStore.getState().load(payload.projectPath, payload.projectSession),
-        useProjectStore.getState().refreshFileTree(
-          payload.projectPath,
-          undefined,
-          payload.projectSession,
-        ),
       ])
       if (!isProjectSessionCurrent(payload.projectSession)) return
       },
@@ -202,14 +186,6 @@ export function initProjectService(): void {
       }
       if (resources.includes('all') || resources.includes('drafts')) {
         await useDraftStore.getState().loadAllDrafts(projectPath, payload.projectSession)
-        if (!isProjectSessionCurrent(payload.projectSession)) return
-      }
-      if (resources.includes('all') || resources.includes('fileTree')) {
-        await useProjectStore.getState().refreshFileTree(
-          projectPath,
-          undefined,
-          payload.projectSession,
-        )
         if (!isProjectSessionCurrent(payload.projectSession)) return
       }
       },

@@ -72,7 +72,6 @@ describe('FinalizeChapterCommand blueprint character fallback', () => {
           creativeStrategy: 'auto',
         },
       } as never,
-      refreshFileTree: vi.fn().mockResolvedValue(undefined),
     })
   })
 
@@ -108,9 +107,7 @@ describe('FinalizeChapterCommand blueprint character fallback', () => {
     expect(invoke).toHaveBeenCalledWith('db:draft-get-meta', 33, PROJECT_PATH, PROJECT_SESSION)
   })
 
-  it('uses this chapter blueprint characters when direct finalization omits them, and ends without waiting for the file tree', async () => {
-    const refreshFileTree = vi.fn(() => new Promise<void>(() => {}))
-    useProjectStore.setState({ refreshFileTree })
+  it('uses this chapter blueprint characters when direct finalization omits them', async () => {
     const completedSteps = new Set<string>()
     const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
       switch (channel) {
@@ -230,7 +227,6 @@ describe('FinalizeChapterCommand blueprint character fallback', () => {
       callbacks: stepCallbacks,
     })
 
-    expect(refreshFileTree).toHaveBeenCalledWith(PROJECT_PATH, undefined, PROJECT_SESSION)
     expect(invoke).toHaveBeenCalledWith(
       'db:blueprint-get',
       3,
