@@ -374,3 +374,5 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `orui-outline-recovery-en` | 同一份恢复稿切到英文界面：页头、按钮与提示没有中文，提示写「Chapters 1–2 are written; chapter 3 is not」；运行侧页并排时页头折行、不横向溢出（`orui-outline-recovery-en-sheet`） | 架构（英文） | 是 | #702 |
 | `l4conn-refused` | 设置·AI 模型编辑夹具模型后关掉假服务，点「测试连接」：提示「连接失败：base_url 上没有服务在响应……」，不出现 fetch failed 与错误码（`l4conn-refused`） | 设置（中文） | 是 | #702 |
 | `l4conn-host-not-found` | 把 base_url 改成解析不到的 `http://nosuchhostzz9/v1`（系统解析器真实报 ENOTFOUND，再照 undici 的形状抛出），点「测试连接」：提示「连接失败：找不到 base_url 里的服务器……」（`l4conn-host-not-found`） | 设置（中文） | 是 | #702 |
+| `errl2-export-inside-source` | 设置·项目备份把存档存进作品自己的文件夹，点「导出本地存档」：中文提示「作品没有改动。存档不能放进作品自己的文件夹……换到作品文件夹以外的位置。」，切英文再导出给对应英文；不露 PORTABLE_TARGET_INSIDE_SOURCE（`errl2-1-export-inside-zh`、`errl2-2-export-inside-en`） | 设置（中文、英文） | 是 | #702 |
+| `errl2-restore-archive-moved` | 先导出一份存档，点「从本地存档恢复副本」选好存档后、选恢复位置时存档被移走：主进程报 ENOENT 并记日志，界面只说「没有新建副本。恢复时出了意外错误……」，不露英文原文和路径（`errl2-3-restore-moved-zh`、`errl2-4-restore-moved-en`） | 设置（中文、英文） | 是 | #702 |

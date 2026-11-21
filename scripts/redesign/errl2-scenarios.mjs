@@ -1,0 +1,93 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+
+import * as stage from './pages/stage.mjs'
+import { BOOK, seedLargeBook } from './perf702-scenarios.mjs'
+
+const ZH = { settings: '设置分组', page: '项目备份', appearance: '外观', language: '界面语言', export: '导出本地存档', restore: '从本地存档恢复副本' }
+const EN = { settings: 'Settings sections', page: 'Project backup', appearance: 'Appearance', language: 'Interface language', export: 'Export local archive', restore: 'Restore a copy from local archive' }
+
+const panel = page => stage.root(page).locator('[data-testid="project-backup-panel"]')
+
+async function openBackup(page, labels) {
+  await stage.root(page).getByRole('navigation', { name: labels.settings }).getByRole('button', { name: labels.page, exact: true }).click()
+}
+
+async function switchToEnglish(page) {
+  await stage.root(page).getByRole('navigation', { name: ZH.settings }).getByRole('button', { name: ZH.appearance, exact: true }).click()
+  await page.getByLabel(ZH.language).selectOption('en-US')
+  await page.waitForFunction(() => document.documentElement.lang === 'en-US')
+  await openBackup(page, EN)
+}
+
+async function notice(page, role) {
+  const shown = panel(page).locator(`p[role="${role}"]`)
+  await shown.first().waitFor({ state: 'visible', timeout: 60_000 })
+  return (await shown.first().innerText()).trim()
+}
+
+async function exportTo({ app, page }, labels, filePath) {
+  await app.evaluate(({ dialog }, target) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: target }) }, filePath)
+  await stage.root(page).getByRole('button', { name: labels.export, exact: true }).click()
+}
+
+/** 作者选好存档、还在选恢复位置时，存档被移走（拔了 U 盘、云盘同步删掉）。 */
+async function restoreAfterArchiveMoved({ app, page }, labels, archive, parent) {
+  await app.evaluate(({ dialog }, [file, folder]) => {
+    const fs = process.getBuiltinModule('node:fs')
+    let calls = 0
+    dialog.showOpenDialog = async () => {
+      calls += 1
+      if (calls === 1) return { canceled: false, filePaths: [file] }
+      fs.renameSync(file, `${file}.moved`)
+      return { canceled: false, filePaths: [folder] }
+    }
+  }, [archive, parent])
+  await stage.root(page).getByRole('button', { name: labels.restore, exact: true }).click()
+  const shown = await notice(page, 'alert')
+  fs.renameSync(`${archive}.moved`, archive)
+  return shown
+}
+
+export const ERRL2_SCENARIOS = {
+  'errl2-export-inside-source': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1) }, run: async context => {
+    const { page, roots, shoot } = context
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    await openBackup(page, ZH)
+    const inside = path.join(roots.projects, BOOK, '备份.ainovel')
+    await exportTo(context, ZH, inside)
+    const zh = await notice(page, 'alert')
+    assert.equal(zh, '作品没有改动。存档不能放进作品自己的文件夹，没有生成。请再点「导出本地存档」，换到作品文件夹以外的位置。')
+    await shoot('errl2-1-export-inside-zh')
+
+    await switchToEnglish(page)
+    await exportTo(context, EN, inside)
+    const en = await notice(page, 'alert')
+    assert.equal(en, "Your book is unchanged. An archive cannot go inside the book's own folder, so none was created. Click Export local archive again and choose a location outside the book folder.")
+    await shoot('errl2-2-export-inside-en')
+    return { zh, en, archiveWritten: fs.existsSync(inside) }
+  } },
+  'errl2-restore-archive-moved': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1) }, run: async context => {
+    const { page, roots, shoot } = context
+    const target = path.join(roots.temp, '恢复到这里')
+    fs.mkdirSync(target)
+    await stage.openAfterRestart(page, BOOK)
+    await stage.openSettings(page)
+    await openBackup(page, ZH)
+    const archive = path.join(roots.projects, '好的备份.ainovel')
+    await exportTo(context, ZH, archive)
+    assert.match(await notice(page, 'status'), /^本地存档已导出：/u)
+
+    const zh = await restoreAfterArchiveMoved(context, ZH, archive, target)
+    assert.equal(zh, '没有新建副本。恢复时出了意外错误。请再点「从本地存档恢复副本」；还不行，请把这条提示反馈给我们。')
+    await shoot('errl2-3-restore-moved-zh')
+
+    await switchToEnglish(page)
+    const en = await restoreAfterArchiveMoved(context, EN, archive, target)
+    assert.equal(en, 'No copy was created. Something unexpected went wrong during restore. Click Restore a copy from local archive again; if it still fails, please report this message to us.')
+    await shoot('errl2-4-restore-moved-en')
+    return { zh, en, copies: fs.readdirSync(target) }
+  } },
+}
