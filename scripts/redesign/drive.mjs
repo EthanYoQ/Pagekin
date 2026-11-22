@@ -185,15 +185,39 @@ function isAlive(pid) {
   } catch (error) { return error.code === 'EPERM' }
 }
 
-async function kill(app) {
+/**
+ * Windows：Chromium 独占打开 userData\lockfile，能读写打开或文件已不在即放开。
+ * 其他平台：SingletonLock 是指向「主机名-pid」的符号链接，强杀后残留，新实例见 pid 已死就接管，所以 pid 已死或链接不在即放开。
+ */
+function singletonLock(userData) {
+  if (process.platform === 'win32') {
+    const file = path.join(userData, 'lockfile')
+    return { file, held: () => { try { fs.closeSync(fs.openSync(file, 'r+')); return false } catch (error) { return error.code !== 'ENOENT' } } }
+  }
+  const file = path.join(userData, 'SingletonLock')
+  return { file, held: () => { try { return isAlive(Number(fs.readlinkSync(file).split('-').pop())) } catch (error) { return error.code !== 'ENOENT' } } }
+}
+
+/**
+ * 进程退出码出现后，Windows 上 lockfile 的句柄还要几毫秒到几十毫秒才关，这时重启会报 process_singleton_win「Lock file can not be created」，Playwright 接着报 ECONNRESET。
+ * app.process() 在 Windows 上是 cmd.exe 包装，所以杀之前按 --user-data-dir 记下整棵树。
+ */
+export async function kill(app, userData, timeoutMs = 15_000) {
   const pid = app.process().pid
+  const tree = [...new Set([pid, ...liveProcesses(userData)])]
+  const lock = singletonLock(userData)
   try {
     if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
     else process.kill(pid, 'SIGKILL')
   } catch (error) {
     if (isAlive(pid)) throw error
   }
-  for (const deadline = Date.now() + 10_000; isAlive(pid); await delay(100)) assert.ok(Date.now() < deadline, `10 秒内进程 ${pid} 没有结束`)
+  for (const deadline = Date.now() + timeoutMs; ; await delay(20)) {
+    const alive = tree.filter(isAlive)
+    const held = lock.held()
+    if (alive.length === 0 && !held) return
+    if (Date.now() >= deadline) throw new Error(`强杀 ${timeoutMs} ms 后被杀实例还没放开：${[alive.length ? `进程 ${alive.join('、')} 还在` : '', held ? `单例锁 ${lock.file} 仍被占` : ''].filter(Boolean).join('；')}`)
+  }
 }
 
 /** close 失败时进程可能已自行退出，这时 taskkill 报「not found」；进程已不存在即视为已退出，不算强杀。 */
@@ -516,6 +540,7 @@ async function runSession(sessionName, names, options, realKey = null, roots = c
   let recording = null
   const restartRequests = []
   const modelLog = []
+  const cleanups = []
   const fetchPolicy = () => ({ fakePort: fake?.port ?? null, realOrigin: realKey ? REAL_ORIGIN : null })
   let currentAppRoot = options.appRoot
   const shell = names.map(name => SCENARIOS[name]?.shell).find(Boolean) ?? options.shell
@@ -537,6 +562,8 @@ async function runSession(sessionName, names, options, realKey = null, roots = c
         /** 场景中途多拍一张图，与收尾截图放在同一目录。 */
         shoot: name => shoot(context.page, `${base(name)}.png`),
         reload: () => context.page.reload().then(() => waitForShell(context.page, TIMEOUT)),
+        /** 场景起的定时器、子进程在这里登记释放函数。会话收尾时逆序执行，beforeLaunch 或重启抛错也一样。 */
+        onCleanup: release => { cleanups.push(release) },
         /**
          * 退出应用再用同一隔离目录冷启动（真正的重启，不重写外观），context 换成新的 app 与 page。appRoot 换成另一份构建（旧版本造数据、新版本接着打开），之后不传时沿用上次启动的构建。
          * killed: true 时模拟进程被杀：Windows 用 taskkill /T /F 结束整棵进程树，其他平台只向主进程发 SIGKILL。不走正常退出，也就跳过「重启前应用没有正常退出」的断言。
@@ -545,7 +572,7 @@ async function runSession(sessionName, names, options, realKey = null, roots = c
           restartRequests.push(...await launched.app.evaluate(() => globalThis.__driveExternalRequests))
           modelLog.push(...await launched.app.evaluate(() => globalThis.__driveModelRequests))
           await recording?.pause()
-          if (killed) await kill(launched.app)
+          if (killed) await kill(launched.app, roots.userData)
           else assert.equal((await quit(launched.app)).forced, false, '重启前应用没有正常退出')
           await beforeLaunch?.()
           launched = await launch({ roots, appRoot, fetchPolicy: fetchPolicy(), diagnostics, failureBase })
@@ -592,6 +619,7 @@ async function runSession(sessionName, names, options, realKey = null, roots = c
     await captureFailure(launched?.page, base(current === null ? sessionName : names[current]))
     options = { ...options, console: true }
   } finally {
+    for (const release of cleanups.splice(0).reverse()) await Promise.resolve().then(release).catch(error => sessionErrors.push(`场景登记的清理失败：${messageOf(error)}`))
     // 场景在 hold 与 release 之间抛错时门还关着：卡住的请求让运行一直进行，应用拒绝关闭，quit 要等满 10 秒再强杀
     fake?.gate.release()
     if (options.console) writeConsoleLog(`${base(sessionName)}.console.log`, diagnostics, sessionErrors, realKey)
@@ -642,7 +670,8 @@ async function main() {
     process.exitCode = NOT_RUN
     return
   }
-  process.exitCode = await driveSessions({ sessions, options, realKey })
+  const code = await driveSessions({ sessions, options, realKey })
+  process.stdout.write('', () => process.exit(code))
 }
 
 /** 场景用 requires 声明自己要的环境变量（值是设置方法）、主题与平台；返回缺的每一项，齐全时为空。 */
