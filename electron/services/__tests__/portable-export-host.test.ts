@@ -253,8 +253,12 @@ describe('在 worker 线程里导出', () => {
     // macOS 的 FSEvents 会补报 watch 之前建 inside 的那次事件，须先排空，否则它会被当成导出建的目录。
     const settled = async (marker: string) => {
       const from = created.length
+      const deadline = Date.now() + 20_000
       fs.writeFileSync(path.join(inside, marker), '')
-      while (!created.slice(from).some(name => name === marker || name === '')) await new Promise(resolve => setTimeout(resolve, 10))
+      while (!created.slice(from).some(name => name === marker || name === '')) {
+        if (Date.now() > deadline) throw new Error(`fs.watch 20 秒内没报回 ${marker}`)
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
     }
     let result: unknown
     try {
