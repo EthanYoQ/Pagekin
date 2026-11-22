@@ -112,7 +112,6 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* 正文字体跟作品写作语言走，不随界面语言换引号。 */
 .paper-ink:lang(en) {
   --font-ui: "Noto Sans SC Latin Quotes", "Noto Sans SC", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
   --font-display: "Noto Serif SC Latin Quotes", "Noto Serif SC", "Songti SC", "SimSun", serif;

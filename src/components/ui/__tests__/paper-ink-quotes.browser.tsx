@@ -9,7 +9,6 @@ afterEach(() => {
   host = undefined
 })
 
-/** 以 em 计的字宽：界面正文用 .paper-ink 继承的界面字体，弹窗标题用标题字体。 */
 async function advance(lang: string, className: string, char: string) {
   host?.remove()
   host = document.createElement('div')

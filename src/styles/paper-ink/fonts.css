@@ -67,7 +67,7 @@
   font-display: swap;
 }
 
-/* Noto SC 的弯引号默认是全角字形，英文界面借它自带的 pwid 比例字形，只覆盖这四个码位。 */
+/* Noto SC 的弯引号码位默认全角，用 pwid 换成比例字形，unicode-range 只覆盖这四个码位。 */
 @font-face {
   font-family: 'Noto Sans SC Latin Quotes';
   src: url('/fonts/NotoSansSC-VariableFont_wght.ttf') format('truetype');
