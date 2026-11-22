@@ -46,7 +46,6 @@ const ERROR_KEYS = {
   // #702：打开作品时 SQLite 报磁盘读写错误。FILES_BUSY 是主进程重试后作品文件仍被占用。
   PROJECT_OPEN_FILES_BUSY: 'error.projectOpenFilesBusy',
   PROJECT_OPEN_IO_FAILED: 'error.projectOpenIoFailed',
-  // #702：打开作品时库文件坏了、被别的程序锁住、没有读取权限。
   PROJECT_OPEN_DAMAGED: 'error.projectOpenDamaged',
   PROJECT_OPEN_FILES_LOCKED: 'error.projectOpenFilesLocked',
   PROJECT_OPEN_ACCESS_DENIED: 'error.projectOpenAccessDenied',

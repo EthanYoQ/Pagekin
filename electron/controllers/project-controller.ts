@@ -104,7 +104,7 @@ function systemCode(error: unknown): string | undefined {
 
 const filesStillMapped = (error: unknown) => systemCode(error) === 'SQLITE_IOERR_TRUNCATE'
 
-/** 按前缀从上往下认，TRUNCATE 要排在别的 IOERR 前面。EBUSY 是别的程序锁着库文件时读快照报的。 */
+/** 按前缀从上往下认，TRUNCATE 要排在别的 IOERR 前面。 */
 const PROJECT_FILE_FAILURES = [
   ['SQLITE_IOERR_TRUNCATE', 'PROJECT_OPEN_FILES_BUSY'],
   ['SQLITE_IOERR', 'PROJECT_OPEN_IO_FAILED'],

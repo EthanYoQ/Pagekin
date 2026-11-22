@@ -25,7 +25,6 @@ const COPY = {
   },
 }
 
-/** 尾部截掉一半：worker 校验时报 SQLITE_CORRUPT（实机测得，batch11/err-l6）。 */
 const truncate = bytes => bytes.subarray(0, Math.floor(bytes.length / 4096 / 2) * 4096)
 const FILE_LOCKER = "$f=[IO.File]::Open($env:ERRL6_DB,'Open','ReadWrite','None');[Console]::Out.WriteLine('ready');[Console]::In.ReadLine()|Out-Null;$f.Dispose()"
 

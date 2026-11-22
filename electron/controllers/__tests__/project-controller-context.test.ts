@@ -1627,7 +1627,6 @@ describe('project:open：作品文件暂时被占用（#702）', () => {
   })
 })
 
-// 实机测得的原文（batch11/err-l6）：坏库、被别的程序占住、没有权限时 worker 校验报的错。
 const systemError = (name: string, code: string, message: string) => Object.assign(new Error(message), { name, code })
 const RAW_SYSTEM_TEXT = /SqliteError|malformed|not a database|EBUSY|EPERM|EACCES|SQLITE_|PROJECT_|novels|resource busy|not permitted|rollback|回滚|cannot/u
 
