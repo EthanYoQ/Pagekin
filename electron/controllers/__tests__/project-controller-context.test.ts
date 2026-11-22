@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { appErrorMessage } from '../../../src/i18n/app-errors'
+import { appErrorMessage, projectOpenFailureMessage } from '../../../src/i18n/app-errors'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
 
@@ -1057,17 +1057,19 @@ describe('project controller project identity', () => {
     mocks.existingPaths.add(ordinaryDirectory)
     mocks.failCorePaths.add(projectD)
 
-    await expect(handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD),
+    const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD),
       'request-open-D-no-rollback-snapshot',
       ordinaryDirectory,
-    )).resolves.toMatchObject({
+    )
+    expect(result).toMatchObject({
       success: false,
       requestToken: 'request-open-D-no-rollback-snapshot',
       activeProjectPath: null,
       databaseRestored: false,
       dbReady: false,
-      error: expect.stringContaining('PROJECT_ROLLBACK_UNTRUSTED'),
+      error: expect.stringContaining('cannot read'),
     })
+    expect((result as { error: string }).error).not.toMatch(/PROJECT_ROLLBACK/)
 
     expect(mocks.initCalls).toEqual([projectD])
     expect(mocks.createdVelaDirectories).not.toContain(path.join(ordinaryDirectory, '.vela'))
@@ -1109,17 +1111,19 @@ describe('project controller project identity', () => {
     mocks.failCorePaths.add(projectD)
     mocks.failInitPaths.add(projectA)
 
-    await expect(handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD),
+    const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD),
       'request-open-D',
       projectA,
-    )).resolves.toMatchObject({
+    )
+    expect(result).toMatchObject({
       success: false,
       requestToken: 'request-open-D',
       activeProjectPath: null,
       databaseRestored: false,
       dbReady: false,
-      error: expect.stringMatching(/cannot read[\s\S]*cannot initialize/),
+      error: expect.stringMatching(/cannot read/),
     })
+    expect((result as { error: string }).error).not.toMatch(/cannot initialize/)
     expect(mocks.projectAccess.beginSession).not.toHaveBeenCalled()
     expect(mocks.closeProjectDatabase).toHaveBeenCalledOnce()
     expect(mocks.projectAccess.invalidateCurrentSession).toHaveBeenCalledOnce()
@@ -1620,5 +1624,80 @@ describe('project:open：作品文件暂时被占用（#702）', () => {
 
     expect(result).toMatchObject({ success: false, activeProjectPath: projectA, errorCode: 'PROJECT_OPEN_IO_FAILED' })
     expect(mocks.verifyCanonicalProjectData).toHaveBeenCalledOnce()
+  })
+})
+
+// 实机测得的原文（batch11/err-l6）：坏库、被别的程序占住、没有权限时 worker 校验报的错。
+const systemError = (name: string, code: string, message: string) => Object.assign(new Error(message), { name, code })
+const RAW_SYSTEM_TEXT = /SqliteError|malformed|not a database|EBUSY|EPERM|EACCES|SQLITE_|PROJECT_|novels|resource busy|not permitted|rollback|回滚|cannot/u
+
+describe('project:open：作品文件坏了、被占用或没有权限时，说真正的原因和办法（#702）', () => {
+  const openFailing = async (error: Error) => {
+    mocks.verifyCanonicalProjectData.mockRejectedValueOnce(error)
+    return handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), `open-B-${error.message}`, projectA)
+  }
+  // 与 project-store 一样：带 errorCode 时按整个结果说明，否则按 error。
+  const explain = (shownResult: unknown) => {
+    const result = shownResult as { errorCode?: string, error?: string }
+    const failure = result.errorCode ? result : result.error
+    return {
+      zh: projectOpenFailureMessage(shown('zh-CN'), failure, '灯塔'),
+      en: projectOpenFailureMessage(shown('en-US'), failure, '灯塔'),
+      ja: projectOpenFailureMessage(shown('ja-JP'), failure, '灯塔'),
+    }
+  }
+
+  it.each([
+    systemError('SqliteError', 'SQLITE_CORRUPT', 'database disk image is malformed'),
+    systemError('SqliteError', 'SQLITE_NOTADB', 'file is not a database'),
+  ])('作品库损坏（$code）：说作品文件损坏，指向「从本地存档恢复副本」', async (error) => {
+    const result = await openFailing(error)
+
+    expect(result).toMatchObject({ success: false, activeProjectPath: projectA, dbReady: true })
+    const { zh, en, ja } = explain(result)
+    expect(zh).toMatch(/损坏[\s\S]*「项目备份」[\s\S]*「从本地存档恢复副本」/u)
+    expect(en).toMatch(/damaged[\s\S]*Project backup[\s\S]*Restore a copy from local archive/u)
+    expect(ja).toMatch(/破損[\s\S]*「Project backup」[\s\S]*「Restore a copy from local archive」/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_SYSTEM_TEXT)
+  })
+
+  it.each([
+    systemError('Error', 'EBUSY', `EBUSY: resource busy or locked, open '${projectB}\\.ai-novel\\project.db'`),
+    systemError('Error', 'EBUSY', 'EBUSY: resource busy or locked, read'),
+  ])('作品库被别的程序占住：说被占用，稍等再点「打开《书名》」', async (error) => {
+    const { zh, en, ja } = explain(await openFailing(error))
+
+    expect(zh).toMatch(/别的程序[\s\S]*稍等几秒，再点「打开《灯塔》」/u)
+    expect(en).toMatch(/Another program[\s\S]*Open “灯塔”/u)
+    expect(ja).toMatch(/別のプログラム[\s\S]*「Open “灯塔”」/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_SYSTEM_TEXT)
+  })
+
+  it.each([
+    systemError('Error', 'EPERM', `EPERM: operation not permitted, open '${projectB}\\.ai-novel\\project.db'`),
+    systemError('Error', 'EACCES', `EACCES: permission denied, open '${projectB}/.ai-novel/project.db'`),
+  ])('没有权限读作品文件（$code）：说没有权限，检查权限或换个位置', async (error) => {
+    const { zh, en, ja } = explain(await openFailing(error))
+
+    expect(zh).toMatch(/没有权限[\s\S]*文件夹的权限[\s\S]*位置/u)
+    expect(en).toMatch(/permission[\s\S]*folder[\s\S]*location/u)
+    expect(ja).toMatch(/権限[\s\S]*フォルダー/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_SYSTEM_TEXT)
+  })
+
+  it('打开失败后原来那本书也没能恢复：只说打开失败的原因，不拼回滚的原文', async () => {
+    mocks.failInitPaths.add(projectA)
+    mocks.verifyCanonicalProjectData.mockResolvedValueOnce({ verifiedIn: 'worker', projectPath: projectD })
+    vi.mocked(initProjectDatabase).mockImplementationOnce(() => {
+      mocks.currentProjectPath = ''
+      throw systemError('SqliteError', 'SQLITE_CORRUPT', 'database disk image is malformed')
+    })
+
+    const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD), 'open-D-corrupt-no-rollback', projectA)
+
+    expect(result).toMatchObject({ success: false, databaseRestored: false, dbReady: false })
+    const { zh, en, ja } = explain(result)
+    expect(zh).toMatch(/损坏/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_SYSTEM_TEXT)
   })
 })
