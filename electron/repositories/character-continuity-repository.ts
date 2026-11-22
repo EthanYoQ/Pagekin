@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type BetterSqlite3 from 'better-sqlite3'
 import type { CharacterApproval } from '../../src/shared/character-identity'
-import { withoutRelationRestatements, type CharacterContinuityTimeline, type ContinuityNode, type ContinuityProvenance, type StateChapterRange } from '../../src/shared/character-continuity'
-import type { CharacterStateTextField } from '../../src/shared/character-roster'
+import { withoutRelationRestatements, type CharacterContinuityTimeline, type CharacterStateNode, type ContinuityNode, type ContinuityProvenance, type StateChapterRange } from '../../src/shared/character-continuity'
+import { CHARACTER_STATE_TEXT_FIELDS, type CharacterStateTextField } from '../../src/shared/character-roster'
 import type { FinalizedCharacterEvidence, FinalizedSourceIdentity } from '../../src/shared/finalized-continuity'
 
 export const CHARACTER_STATE_COLUMNS: Readonly<Record<CharacterStateTextField, string>> = Object.freeze({
@@ -62,19 +62,19 @@ function requireTransaction(db: BetterSqlite3.Database): void {
 }
 
 function appendNode(db: BetterSqlite3.Database, node: NodeWrite): void {
-  const position = `SELECT
-      MAX(CASE WHEN e.draft_id IS NULL OR d.status='finalized' THEN e.effective_chapter END) AS chapter,
-      COALESCE(MAX(json_extract(e.evidence_json,'$.seq')),0) AS seq
-    FROM character_continuity_events e LEFT JOIN drafts d ON d.id=e.draft_id`
-  const series = (node.target
-    ? db.prepare(`${position} WHERE e.subject_id IN (?,?) AND e.aspect='relation' AND json_extract(e.evidence_json,'$.relationshipId')=?`)
-      .get(node.subjectId, node.target.id, node.evidence.relationshipId)
-    : db.prepare(`${position} WHERE e.subject_id=? AND e.aspect=? AND e.target_id IS NULL`).get(node.subjectId, node.aspect)) as { chapter: number | null; seq: number }
+  const series = `SELECT e.*,(e.draft_id IS NULL OR d.status='finalized') AS valid FROM character_continuity_events e LEFT JOIN drafts d ON d.id=e.draft_id`
+  const rows = (node.target
+    ? db.prepare(`${series} WHERE e.subject_id IN (?,?) AND e.aspect='relation' AND json_extract(e.evidence_json,'$.relationshipId')=?`)
+      .all(node.subjectId, node.target.id, node.evidence.relationshipId)
+    : db.prepare(`${series} WHERE e.subject_id=? AND e.aspect=? AND e.target_id IS NULL`).all(node.subjectId, node.aspect)) as (NodeRow & { valid: number })[]
+  const existing = rows.map(row => ({ node: parseNode(row), valid: row.valid === 1 }))
+  const chapter = Math.max(0, ...existing.filter(item => item.valid).map(item => item.node.effectiveChapter))
+  const seq = Math.max(0, ...existing.map(item => item.node.seq))
   // 不早于同系列已有节点：否则按章折叠会读到更早写入的值，与当前列分叉。派生关系没有当前列，按章记。
-  const effectiveChapter = node.provenance.kind === 'derived' && node.target ? node.effectiveChapter : Math.max(node.effectiveChapter, series.chapter ?? 0)
+  const effectiveChapter = node.provenance.kind === 'derived' && node.target ? node.effectiveChapter : Math.max(node.effectiveChapter, chapter)
   db.prepare(`INSERT INTO character_continuity_events(event_id,subject_id,subject_name,target_id,target_name,aspect,value,effective_chapter,provenance_json,draft_id,evidence_json)
     VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(node.eventId, node.subjectId, node.subjectName, node.target?.id ?? null, node.target?.name ?? null,
-    node.aspect, node.value, effectiveChapter, JSON.stringify(node.provenance), node.draftId, JSON.stringify({ ...node.evidence, seq: series.seq + 1 }))
+    node.aspect, node.value, effectiveChapter, JSON.stringify(node.provenance), node.draftId, JSON.stringify({ ...node.evidence, seq: seq + 1 }))
 }
 
 function stateNodePlacement(write: CharacterStateWrite): Pick<NodeWrite, 'eventId' | 'effectiveChapter' | 'provenance' | 'draftId' | 'evidence'> {
@@ -157,7 +157,9 @@ function parseNode(row: NodeRow): ContinuityNode {
   const stored = JSON.parse(row.provenance_json) as ContinuityProvenance
   const provenance: ContinuityProvenance = stored.kind === 'legacy' && evidence.fieldProvenance?.kind === 'author' && typeof evidence.fieldProvenance.chapterNumber === 'number'
     ? { kind: 'legacy', authorChapter: evidence.fieldProvenance.chapterNumber } : stored
-  const base = { eventId: row.event_id, subjectId: row.subject_id, subjectName: row.subject_name, value: row.value, effectiveChapter: row.effective_chapter,
+  // M08 记的是升级时的快照章；升级前作者填的状态按当时记下的章排。
+  const effectiveChapter = provenance.kind === 'legacy' && provenance.authorChapter !== undefined ? provenance.authorChapter : row.effective_chapter
+  const base = { eventId: row.event_id, subjectId: row.subject_id, subjectName: row.subject_name, value: row.value, effectiveChapter,
     provenance, draftId: row.draft_id, seq: evidence.seq ?? 0, quote: evidence.quote ?? null }
   return row.target_id === null
     ? { ...base, aspect: row.aspect as CharacterStateTextField }
@@ -176,6 +178,13 @@ export function readCharacterContinuityNodes(db: BetterSqlite3.Database, charact
       AND (@ids IS NULL OR e.subject_id IN (SELECT value FROM json_each(@ids)) OR e.target_id IN (SELECT value FROM json_each(@ids)))
       AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.retired=1 AND c.character_id IN (e.subject_id,e.target_id))
     ORDER BY e.subject_id,e.aspect,e.effective_chapter,e.event_id`).all({ ids: characterIds && JSON.stringify(characterIds) }) as NodeRow[]).map(parseNode)
+}
+
+/** 只读在册角色的状态节点，不含关系事件。 */
+export function readCharacterStateNodes(db: BetterSqlite3.Database, activeCharacterIds: readonly string[]): CharacterStateNode[] {
+  return (db.prepare(`SELECT e.* FROM character_continuity_events e LEFT JOIN drafts d ON d.id=e.draft_id
+    WHERE e.subject_id IN (SELECT value FROM json_each(?)) AND e.aspect IN (SELECT value FROM json_each(?)) AND (e.draft_id IS NULL OR d.status='finalized')`)
+    .all(JSON.stringify(activeCharacterIds), JSON.stringify(CHARACTER_STATE_TEXT_FIELDS)) as NodeRow[]).map(parseNode) as CharacterStateNode[]
 }
 
 /** 节点里的名字是写入时的快照，改名后对不上蓝图。给预检用的读取换成角色现在的名字。 */
