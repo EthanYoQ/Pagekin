@@ -1794,6 +1794,27 @@ describe('新建、删除作品失败时，说真正的原因和办法，不露�
     for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_CREATE_DELETE_TEXT)
   })
 
+  it.each([
+    ['EIO', () => { throw systemError('Error', 'EIO', `EIO: i/o error, unlink '${path.join(projectA, '人物小传.docx')}'`) }],
+    ['EROFS', () => { throw systemError('Error', 'EROFS', `EROFS: read-only file system, unlink '${path.join(projectA, '人物小传.docx')}'`) }],
+    ['ENOTEMPTY', () => { throw systemError('Error', 'ENOTEMPTY', `ENOTEMPTY: directory not empty, rmdir '${projectA}'`) }],
+    ['没有报错但文件夹还在', () => undefined],
+  ])('没删完、原因没查明（%s）：只说没删完，不说被别的程序占用或没有权限', async (_label, removeDirectory) => {
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce(removeDirectory)
+
+    const result = await deleteBook()
+
+    expect(result).toMatchObject({ success: false, directoryDeleted: false, databaseRestored: true })
+    const { zh, en, ja } = explain(result.error)
+    expect(zh).toMatch(/没删完/u)
+    expect(en).toMatch(/not fully deleted/u)
+    expect(ja).toMatch(/削除しきれ/u)
+    expect(zh).not.toMatch(/别的程序|占用|权限/u)
+    expect(en).not.toMatch(/another program|permission/iu)
+    expect(ja).not.toMatch(/別のプログラム|権限/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_CREATE_DELETE_TEXT)
+  })
+
   it('没删完、原来的书也没能恢复：只说没删完，不拼恢复失败的原文', async () => {
     mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce(() => {
       throw systemError('Error', 'EBUSY', `EBUSY: resource busy or locked, unlink '${path.join(projectA, '人物小传.docx')}'`)
