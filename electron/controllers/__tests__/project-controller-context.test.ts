@@ -1684,6 +1684,29 @@ describe('project:open：作品文件坏了、被占用或没有权限时，说�
     for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_SYSTEM_TEXT)
   })
 
+  it.each([
+    systemError('SqliteError', 'SQLITE_READONLY', 'attempt to write a readonly database'),
+    systemError('SqliteError', 'SQLITE_READONLY_DIRECTORY', 'attempt to write a readonly database'),
+  ])('别的程序复制作品库时不让写（$code）：说被占用，稍等再点「打开《书名》」', async (error) => {
+    mocks.verifyCanonicalProjectData.mockResolvedValueOnce({ verifiedIn: 'worker', projectPath: projectB })
+    vi.mocked(initProjectDatabase).mockImplementationOnce(() => {
+      mocks.currentProjectPath = ''
+      throw error
+    })
+
+    const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), `open-B-${error.code}`, projectA)
+
+    expect(result).toMatchObject({ success: false, activeProjectPath: projectA, dbReady: true })
+    const { zh, en, ja } = explain(result)
+    expect(zh).toMatch(/别的程序[\s\S]*稍等几秒，再点「打开《灯塔》」/u)
+    expect(en).toMatch(/Another program[\s\S]*Open “灯塔”/u)
+    expect(ja).toMatch(/別のプログラム[\s\S]*「Open “灯塔”」/u)
+    for (const shownText of [zh, en, ja]) {
+      expect(shownText).not.toMatch(RAW_SYSTEM_TEXT)
+      expect(shownText).not.toMatch(/没有受影响|没有改动|not affected|影響はありません/u)
+    }
+  })
+
   it('打开失败后原来那本书也没能恢复：只说打开失败的原因，不拼回滚的原文', async () => {
     mocks.failInitPaths.add(projectA)
     mocks.verifyCanonicalProjectData.mockResolvedValueOnce({ verifiedIn: 'worker', projectPath: projectD })
