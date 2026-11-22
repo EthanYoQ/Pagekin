@@ -132,10 +132,7 @@ export function providerContextFailureText(error: unknown, locale: ErrorDisplayL
   return knownAppErrorMessage(locale, message)
 }
 
-/**
- * 网络失败的说明。主进程把连接失败和读流中断都记成 NETWORK_ERROR，靠传输诊断分辨：没拿到响应头是没连上，
- * 拿到之后断开是中途断了，诊断记下代理连不上时沿用代理说明。没有诊断的记录用合并说明，其余失败返回 undefined。
- */
+/** 主进程把没连上和读流中断都记成 NETWORK_ERROR，只能靠 diagnostics.phase 分辨。无诊断的旧记录用合并说明，非网络失败返回 undefined。 */
 export function networkFailureText(
   receipt: Pick<GenerationAttemptReceipt, 'failureCode' | 'diagnostics'> | undefined,
   locale: InterfaceLocale,

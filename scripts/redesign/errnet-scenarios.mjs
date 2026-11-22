@@ -6,7 +6,7 @@ import * as chapterView from './pages/chapter-view.mjs'
 import * as runSheet from './pages/run-sheet.mjs'
 import { seedStageSample } from './scenarios.mjs'
 
-/** 之后的对话请求：refuse 在回响应头之前就断开连接（主进程 fetch 抛 TypeError），cut 回 200 和半句正文后断开。 */
+/** refuse：响应头之前断开；cut：回 200 和半句正文后断开。 */
 function breakChats(fake, mode) {
   fake.setScenarioRequestHandler((request, response) => {
     if (request.url !== '/v1/chat/completions') return false
@@ -34,7 +34,7 @@ const deleteChapter3Drafts = async ({ page, invoke, path: projectPath, session }
 }
 
 export const ERRNET_SCENARIOS = {
-  /** #702：写第 3 章时模型服务连不上（响应头之前断开），运行侧页说明是没连上，不再只写「AI 未正常完成生成」。 */
+  /** #702：连不上（响应头前断开）。 */
   'errnet-unreachable': { model: true, shell: 'stage', setup: context => seedStageSample(context, { landOnChapter3: false, beforeReload: deleteChapter3Drafts }),
     run: async context => {
       const { page, fake, shoot } = context
@@ -48,7 +48,7 @@ export const ERRNET_SCENARIOS = {
       assert.doesNotMatch(shown, /AI 未正常完成生成|fetch failed|NETWORK_ERROR|UND_ERR/u, '不再只写笼统原因，也不露原码')
       return { shown }
     } },
-  /** #702：第 4 章审稿之后按意见修稿，回复中途断开，运行侧页说明是连接中途断了。 */
+  /** #702：修稿回复中途断开。 */
   'errnet-interrupted': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
     const { page, fake, shoot } = context
     await chapterView.open(page, 4)
