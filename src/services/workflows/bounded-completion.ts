@@ -57,7 +57,6 @@ export interface BoundedCompletionRequest {
   originalPrompt: string
   writingLanguage: WritingLanguage
   uiLocale?: Locale
-  /** 网络失败说明按界面语言显示；不给时用 uiLocale。 */
   interfaceLocale?: ErrorDisplayLocale
   sourceText?: string
   preserveCompleteStructuredPrompt?: boolean
