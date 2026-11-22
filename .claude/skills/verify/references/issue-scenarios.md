@@ -415,3 +415,12 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `errl6-damaged-en` | 同上，英文界面：标题 Couldn’t open the book，正文指向 Settings > Project backup 与 Restore a copy from local archive | 书房上的失败提示（英文） | 是 | #702 |
 | `errl6-locked`、`errl6-locked-en` | PowerShell 以不共享方式打开 `project.db`（worker 读快照报 `EBUSY`）：正文说作品文件正被别的程序占用，下一步是稍等几秒再点「打开《灯塔》」（英文 Open “灯塔”） | 书房上的失败提示 | 是 | #702 |
 | `errl6-denied`、`errl6-denied-en` | `icacls` 拒绝当前用户读写 `project.db`（worker 报 `EPERM`），收尾还原：正文说没有权限读取作品文件，检查文件夹权限或把文件夹移到有权限的位置 | 书房上的失败提示 | 是 | #702 |
+
+### 英文界面的省略号与间隔点不显示成全角（#702，font-quote）
+
+场景在 `scripts/redesign/fq-scenarios.mjs`。从书房打开《灯塔》封面下的更多操作菜单，在「从最近项目移除…」那一项里量 …、·、• 的前进宽度，和该界面应使用的字体自身的宽度对照，误差 0.02em 内。修复前英文界面三个字符都是 1em（落到 Noto Sans SC 的全角字形）。
+
+| 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
+|---|---|---|---|---|
+| `fq-library-menu` | 中文界面：三个字符与 Noto Sans SC 同宽（都是 1em），菜单项是「从最近项目移除…」 | 书房上展开的书籍菜单（中文） | 否 | #702 |
+| `fq-library-menu-en` | 英文界面：三个字符与 Inter 同宽，菜单项是 Remove from recent… | 书房上展开的书籍菜单（英文） | 否 | #702 |
