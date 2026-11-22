@@ -5,6 +5,7 @@ import { globalEventBus } from '../../shared/event-bus'
 import { useProjectStore } from '../project-store'
 import { useLocaleStore } from '../locale-store'
 import { createBoundedCompletionError } from '../../services/workflows/bounded-completion'
+import { shown } from '../../i18n/__tests__/shown-locale'
 import { PromptBudgetExceededError } from '../../services/generation/generation-harness'
 import { SourceDraftChangedError } from '../../services/workflows/source-draft-changed'
 import { WorkflowCancelledError } from '../../services/workflows/workflow-cancellation'
@@ -523,7 +524,7 @@ describe('workflow pause at a safe step boundary', () => {
   })
 
   it('copies a bounded terminal failure code to the failed step and run without changing its message', async () => {
-    const failure = createBoundedCompletionError('content_filter')
+    const failure = createBoundedCompletionError('content_filter', 'zh-CN', undefined, shown('zh-CN'))
 
     await useWorkflowStore.getState().startWorkflow({
       type: 'chapter_creation',
@@ -999,7 +1000,7 @@ describe('作者点了取消，但中止是真实错误造成的：仍记失败�
     ['执行器看到取消后停下', new WorkflowCancelledError('批量创作已取消')],
     ['主进程生成被取消（码在 code 上）', Object.assign(new Error('生成请求已取消。'), { code: 'CANCELLED' })],
     ['主进程生成被取消（码就是消息，带调用通道前缀）', new Error("Error invoking remote method 'generation:advance': Error: GENERATION_WORKFLOW_CANCELLED")],
-    ['模型输出因取消没写完', createBoundedCompletionError('cancelled')],
+    ['模型输出因取消没写完', createBoundedCompletionError('cancelled', 'zh-CN', undefined, shown('zh-CN'))],
   ])('取消造成的中止（%s）：运行和这一步都记已取消', async (_shape, cancellation) => {
     const finished = await cancelThenThrow('batch_generate', cancellation)
 

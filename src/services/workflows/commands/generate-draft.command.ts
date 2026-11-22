@@ -1726,7 +1726,7 @@ ${visibleDraft}`,
     const range = draftTargetUnitRange(params.targetChars)
     const original = () => {
       this.assertNotCancelled(params.context)
-      if (params.candidate.finishReason !== 'stop') throw this.createIncompleteCompletionError(params.candidate.finishReason)
+      if (params.candidate.finishReason !== 'stop') throw this.createIncompleteCompletionError(params.context, params.candidate.finishReason)
       params.callbacks.replaceText?.(params.candidate.text)
       return params.candidate.text
     }
@@ -1804,7 +1804,7 @@ ${params.candidate.text}`,
       return original()
     }
     this.assertNotCancelled(params.context)
-    if (outcome.finishReason === 'cancelled') throw this.createIncompleteCompletionError('cancelled')
+    if (outcome.finishReason === 'cancelled') throw this.createIncompleteCompletionError(params.context, 'cancelled')
     logDraftAttempt(params.callbacks, params.context, { zhCN: '压缩修订', enUS: 'Condense revision' }, outcome.receipt)
     const condensed = sanitizeDraftText(this.stripThinkingTags(outcome.content), params.compositionVersion)
     const units = countDraftUnits(condensed)

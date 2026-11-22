@@ -57,7 +57,7 @@ export interface BoundedCompletionRequest {
   originalPrompt: string
   writingLanguage: WritingLanguage
   uiLocale?: Locale
-  interfaceLocale?: ErrorDisplayLocale
+  interfaceLocale: ErrorDisplayLocale
   sourceText?: string
   preserveCompleteStructuredPrompt?: boolean
   requestContinuation: (prompt: string) => Promise<BoundedCompletion>
@@ -107,8 +107,8 @@ export function appendVisibleTextContinuation(
 function incompleteCompletionError(
   finishReason: LLMFinishReason,
   uiLocale: Locale,
-  receipt?: BoundedCompletion['receipt'],
-  interfaceLocale: ErrorDisplayLocale = uiLocale as ErrorDisplayLocale,
+  receipt: BoundedCompletion['receipt'] | undefined,
+  interfaceLocale: ErrorDisplayLocale,
 ): BoundedCompletionFailure {
   // `stop` should not reach this path, but preserve fail-closed behavior if a
   // legacy caller does invoke the public helper with it.
@@ -149,9 +149,9 @@ function incompleteCompletionError(
 
 export function createBoundedCompletionError(
   finishReason: LLMFinishReason,
-  uiLocale: Locale = 'zh-CN',
-  receipt?: BoundedCompletion['receipt'],
-  interfaceLocale?: ErrorDisplayLocale,
+  uiLocale: Locale,
+  receipt: BoundedCompletion['receipt'] | undefined,
+  interfaceLocale: ErrorDisplayLocale,
 ): BoundedCompletionFailure {
   return incompleteCompletionError(finishReason, uiLocale, receipt, interfaceLocale)
 }

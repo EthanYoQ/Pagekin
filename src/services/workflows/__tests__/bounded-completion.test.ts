@@ -21,7 +21,7 @@ describe('bounded completion', () => {
     const partial = `EARLY_VISIBLE_TEXT\n${'已有世界观规则。'.repeat(800)}\nLATEST_VISIBLE_TEXT`
     const requestContinuation = vi.fn().mockResolvedValue({ content: '新的正文完成了世界观规则。', finishReason: 'stop' })
 
-    const result = await completeBoundedCompletion({
+    const result = await completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: partial, finishReason: 'length' },
       mode: 'append-visible-text', maxContinuations: 1, originalPrompt, writingLanguage,
       requestContinuation,
@@ -49,7 +49,7 @@ describe('bounded completion', () => {
 
     it('returns the complete prose unchanged without a continuation', async () => {
       const requestContinuation = vi.fn()
-      await expect(completeBoundedCompletion({
+      await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
         initial: { content, finishReason: 'stop' }, mode: 'append-visible-text', maxContinuations: 3,
         originalPrompt: '输出完整正文', writingLanguage: 'zh-CN', requestContinuation,
       })).resolves.toBe(content)
@@ -60,7 +60,7 @@ describe('bounded completion', () => {
   it('preserves source refrains but rejects newly duplicated prose in a revision', async () => {
     const refrain = '旧城的钟声越过河岸，守夜人举起灯火，等待远方的船回来。'.repeat(6)
     const source = `${refrain}\n\n多年以前。\n\n${refrain}`
-    const request = { initial: { content: source, finishReason: 'stop' as const }, mode: 'append-visible-text' as const,
+    const request = { interfaceLocale: shown('zh-CN'), initial: { content: source, finishReason: 'stop' as const }, mode: 'append-visible-text' as const,
       sourceText: source, maxContinuations: 0, originalPrompt: '修订', writingLanguage: 'zh-CN' as const, requestContinuation: vi.fn() }
     await expect(completeBoundedCompletion(request)).resolves.toBe(source)
     await expect(completeBoundedCompletion({ ...request, initial: { content: `${source}\n\n${refrain}`, finishReason: 'stop' } }))
@@ -92,7 +92,7 @@ describe('bounded completion', () => {
       finishReason: 'stop',
     })
 
-    await completeBoundedCompletion({
+    await completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: initial, finishReason: 'length' },
       mode,
       maxContinuations: 1,
@@ -112,7 +112,7 @@ describe('bounded completion', () => {
       .mockResolvedValueOnce({ content: '{"chapters":[', finishReason: 'length' })
       .mockResolvedValueOnce({ content: '{"chapters":[{"number":1}]}', finishReason: 'stop' })
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: '<think>hidden</think>{"chapters":[', finishReason: 'length' },
       mode: 'replace-structured-output',
       maxContinuations: 2,
@@ -130,7 +130,7 @@ describe('bounded completion', () => {
   it('does not apply visible-prose completeness rules to structured replacement output', async () => {
     const fencedJson = '```json\n{"complete":true}\n```'
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: fencedJson, finishReason: 'stop' },
       mode: 'replace-structured-output',
       maxContinuations: 2,
@@ -143,7 +143,7 @@ describe('bounded completion', () => {
   it('fails closed after the configured structured continuation limit', async () => {
     const requestContinuation = vi.fn().mockResolvedValue({ content: '{"half":', finishReason: 'length' })
 
-    const completion = completeBoundedCompletion({
+    const completion = completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: '{"half":', finishReason: 'length' },
       mode: 'replace-structured-output',
       maxContinuations: 2,
@@ -161,7 +161,7 @@ describe('bounded completion', () => {
   })
 
   it('describes provider length as this request limit and retains the failure code', () => {
-    const error = createBoundedCompletionError('length')
+    const error = createBoundedCompletionError('length', 'zh-CN', undefined, shown('zh-CN'))
 
     expect(error).toMatchObject({
       failureCode: 'length',
@@ -176,7 +176,7 @@ describe('bounded completion', () => {
       finishReason: 'length',
     })
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('en-US'),
       initial: { content: '{"chapters":[', finishReason: 'length' },
       mode: 'replace-structured-output',
       maxContinuations: 1,
@@ -198,7 +198,7 @@ describe('bounded completion', () => {
     async (finishReason) => {
       const requestContinuation = vi.fn()
 
-      await expect(completeBoundedCompletion({
+      await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
         initial: { content: '不可保存的输出', finishReason },
         mode: 'append-visible-text',
         maxContinuations: 3,
@@ -215,7 +215,7 @@ describe('bounded completion', () => {
     const requestContinuation = vi.fn()
 
     try {
-      await completeBoundedCompletion({
+      await completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
         initial: { content: '不可保存的输出', finishReason: 'content_filter' },
         mode: 'append-visible-text',
         maxContinuations: 3,
@@ -238,7 +238,7 @@ describe('bounded completion', () => {
   it('checks cancellation before requesting a continuation', async () => {
     const requestContinuation = vi.fn()
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: '半截正文', finishReason: 'length' },
       mode: 'append-visible-text',
       maxContinuations: 3,
@@ -253,7 +253,7 @@ describe('bounded completion', () => {
 
   it('overlap-merges an ordinary visible text continuation', async () => {
     const repeatedTail = '林岚推开办公室的门，屏幕上的航班编号仍在闪烁。'.repeat(3)
-    const text = await completeBoundedCompletion({
+    const text = await completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: `开头。\n\n${repeatedTail}`, finishReason: 'length' },
       mode: 'append-visible-text',
       maxContinuations: 3,
@@ -276,7 +276,7 @@ describe('bounded completion', () => {
   ])('fails closed when a stop continuation adds %s', async (_label, continuationContent) => {
     const partial = '半截修稿正文。'.repeat(20)
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: partial, finishReason: 'length' },
       mode: 'append-visible-text',
       maxContinuations: 3,
@@ -302,7 +302,7 @@ describe('bounded completion', () => {
   ])('fails closed when completed visible text contains %s', async (_label, content, message) => {
     const requestContinuation = vi.fn()
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content, finishReason: 'stop' },
       mode: 'append-visible-text',
       maxContinuations: 3,
@@ -330,7 +330,7 @@ describe('bounded completion', () => {
     async (maxContinuations) => {
       const requestContinuation = vi.fn()
 
-      await expect(completeBoundedCompletion({
+      await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
         initial: { content: '完整输出', finishReason: 'stop' },
         mode: 'append-visible-text',
         maxContinuations,
@@ -349,7 +349,7 @@ describe('bounded completion', () => {
   ])('enforces the $expectedLimit-round $mode policy', async ({ mode, maxContinuations, expectedLimit }) => {
     const requestContinuation = vi.fn()
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: '完整输出', finishReason: 'stop' },
       mode,
       maxContinuations,
@@ -369,7 +369,7 @@ describe('bounded completion', () => {
       finishReason: 'stop',
     })
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: partial, finishReason: 'length' },
       mode: 'replace-structured-output',
       maxContinuations: 1,
@@ -392,7 +392,7 @@ describe('bounded completion', () => {
       finishReason: 'stop',
     })
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: { content: partial, finishReason: 'length' },
       mode: 'replace-structured-output',
       maxContinuations: 1,
@@ -435,7 +435,7 @@ describe('bounded completion', () => {
     const onInterrupted = vi.fn()
     const requestContinuation = vi.fn((prompt: string) => session.complete(task(prompt)))
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial, mode: 'append-visible-text', maxContinuations: 3, originalPrompt,
       writingLanguage: 'zh-CN', requestContinuation, onInterrupted,
     })).rejects.toMatchObject({ code })
@@ -469,7 +469,7 @@ describe('bounded completion', () => {
     })
     const onInterrupted = vi.fn()
 
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
       initial: await session.complete(task(originalPrompt)), mode: 'append-visible-text', maxContinuations: 3, originalPrompt,
       writingLanguage: 'zh-CN', requestContinuation: prompt => session.complete(task(prompt)), onInterrupted,
     })).resolves.toContain('世界观的最后一段。')
@@ -504,7 +504,7 @@ describe('#702：网络失败时说明真正的原因', () => {
   const transport = (phase: GenerationTransportDiagnostics['phase'], errorCode?: string): GenerationTransportDiagnostics => ({
     startedAt: 1, elapsedMs: 10, firstResponseMs: null, lastResponseMs: null, lastOutputMs: null, phase, endReason: 'failed',
     visibleEvents: 0, reasoningEvents: 0, ...(errorCode ? { errorCode } : {}) })
-  const failed = (receipt: BoundedCompletion['receipt'], content = '') => completeBoundedCompletion({
+  const failed = (receipt: BoundedCompletion['receipt'], content = '') => completeBoundedCompletion({ interfaceLocale: shown('zh-CN'),
     initial: { content, finishReason: 'error', receipt }, mode: 'append-visible-text', maxContinuations: 1,
     originalPrompt: '写第 3 章', writingLanguage: 'zh-CN', requestContinuation: vi.fn() })
 
@@ -517,7 +517,7 @@ describe('#702：网络失败时说明真正的原因', () => {
   })
 
   it('自动续写那次请求断开时同样说明（英文界面）', async () => {
-    await expect(completeBoundedCompletion({
+    await expect(completeBoundedCompletion({ interfaceLocale: shown('en-US'),
       initial: { content: '雾散开一层。', finishReason: 'length' }, mode: 'append-visible-text', maxContinuations: 2,
       originalPrompt: '写第 3 章', writingLanguage: 'en-US', uiLocale: 'en-US',
       requestContinuation: async () => ({ content: '', finishReason: 'error', receipt: { failureCode: 'NETWORK_ERROR', diagnostics: transport('stream') } }),

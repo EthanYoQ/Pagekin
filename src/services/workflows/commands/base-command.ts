@@ -295,7 +295,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
   ): Promise<string> {
     const completion = await this.callLLMResult(prompt, systemPrompt, callbacks, options, context)
     if (completion.finishReason !== 'stop') {
-      throw this.createIncompleteCompletionError(completion.finishReason, completion.receipt)
+      throw this.createIncompleteCompletionError(this.requireGenerationExecution().context, completion.finishReason, completion.receipt)
     }
     return completion.content
   }
@@ -530,13 +530,12 @@ export abstract class BaseWorkflowCommand<TResult = string> {
     if (receipt.promptBudget) callbacks.setPromptBudgetReport?.(receipt.promptBudget)
   }
 
-  protected createIncompleteCompletionError(finishReason: LLMFinishReason, receipt?: BoundedCompletion['receipt']): Error {
-    return createBoundedCompletionError(
-      finishReason,
-      this.activeGenerationExecution?.context.uiLocale ?? 'zh-CN',
-      receipt,
-      this.activeGenerationExecution?.context.interfaceLocale,
-    )
+  protected createIncompleteCompletionError(
+    context: Pick<WorkflowContext, 'uiLocale' | 'interfaceLocale'>,
+    finishReason: LLMFinishReason,
+    receipt?: BoundedCompletion['receipt'],
+  ): Error {
+    return createBoundedCompletionError(finishReason, context.uiLocale, receipt, context.interfaceLocale)
   }
 
   /**

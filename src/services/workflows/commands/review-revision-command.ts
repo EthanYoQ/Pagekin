@@ -168,7 +168,7 @@ export abstract class ReviewRevisionCommand extends BaseWorkflowCommand<string> 
       const priorAttempts = this.recovery?.attemptedPurposes.filter(purpose => purpose === this.operation || purpose.startsWith(`${this.operation}-`)).length ?? 0
       // The initial request plus three continuations share this bound across recovery.
       const remainingRequests = 4 - priorAttempts
-      if (remainingRequests <= 0) throw this.createIncompleteCompletionError('length')
+      if (remainingRequests <= 0) throw this.createIncompleteCompletionError(params.context, 'length')
       await this.callLLMWithAppendContinuation({
         taskPrompt, systemPrompt, callbacks: params.callbacks, context: params.context,
         sourceText: frozen.source.content,

@@ -123,7 +123,7 @@ function testPostProcessGeneration(): FinalizePostProcessGeneration {
             onDone: (content, _usage, finishReason) => {
               const terminalReason = finishReason ?? 'unknown'
               if (terminalReason !== 'stop') {
-                reject(createBoundedCompletionError(terminalReason))
+                reject(createBoundedCompletionError(terminalReason, 'zh-CN', undefined, shown('zh-CN')))
                 return
               }
               resolve(content)

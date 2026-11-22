@@ -476,7 +476,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
         context,
       )
       assertImportCompletionNotStopped(initial, callbacks, context)
-      if (initial.finishReason !== 'stop') throw this.createIncompleteCompletionError(initial.finishReason, initial.receipt)
+      if (initial.finishReason !== 'stop') throw this.createIncompleteCompletionError(context, initial.finishReason, initial.receipt)
       budget = initial.receipt.budget
       if (!isRepairableDirectJsonSyntaxFailure(initial.content)) {
         rawResult = initial.content
@@ -506,7 +506,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
         context,
       )
       assertImportCompletionNotStopped(repair, callbacks, context)
-      if (repair.finishReason !== 'stop') throw this.createIncompleteCompletionError(repair.finishReason, repair.receipt)
+      if (repair.finishReason !== 'stop') throw this.createIncompleteCompletionError(context, repair.finishReason, repair.receipt)
       budget = repair.receipt.budget
       if (preservesStructuredJsonEvidence(initial.content, repair.content)) rawResult = repair.content
       else callbacks.log(text(
