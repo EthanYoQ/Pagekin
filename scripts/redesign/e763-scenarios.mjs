@@ -36,15 +36,22 @@ function denyRead(file) {
   return () => execFileSync('icacls', [file, '/remove:d', process.env.USERNAME], { stdio: 'ignore' })
 }
 
-async function holdExclusively(file) {
+export async function holdExclusively(file) {
   const holder = spawn('powershell.exe', ['-NoProfile', '-Command',
-    `$h=[IO.File]::Open('${file.replaceAll("'", "''")}','Open','Read','None'); [Console]::Out.WriteLine('held'); [Console]::In.ReadLine() | Out-Null; $h.Close()`],
+    `$ErrorActionPreference='Stop'; $h=[IO.File]::Open('${file.replaceAll("'", "''")}','Open','Read','None'); [Console]::Out.WriteLine('held'); [Console]::In.ReadLine() | Out-Null; $h.Close()`],
   { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
-  await new Promise((resolve, reject) => {
-    holder.once('error', reject)
-    holder.stdout.on('data', chunk => { if (String(chunk).includes('held')) resolve() })
-  })
-  return () => execFileSync('taskkill', ['/T', '/F', '/PID', String(holder.pid)], { stdio: 'ignore' })
+  const release = () => { if (holder.exitCode === null) execFileSync('taskkill', ['/T', '/F', '/PID', String(holder.pid)], { stdio: 'ignore' }) }
+  try {
+    await new Promise((resolve, reject) => {
+      holder.once('error', reject)
+      holder.once('exit', code => reject(new Error(`独占打开夹具的 PowerShell 提前退出（${code}）`)))
+      holder.stdout.on('data', chunk => { if (String(chunk).includes('held')) resolve() })
+    })
+  } catch (error) {
+    release()
+    throw error
+  }
+  return release
 }
 
 async function chooseReference(context, file, shotName) {
@@ -69,6 +76,8 @@ function expectShown(shown, expected) {
   return { shown }
 }
 
+const win32 = { requires: { platform: 'win32' } }
+
 export const E763_SCENARIOS = {
   'e763-gbk': { model: false, shell: 'stage', setup: seedStageSample, run: async context => expectShown(
     await chooseReference(context, writeFixture(context.roots, 'gbk-novel.txt', GBK_CHAPTER), 'e763-gbk'),
@@ -78,7 +87,7 @@ export const E763_SCENARIOS = {
     await chooseReference(context, oversized(context.roots), 'e763-too-large'),
     '这个文件超过 64 MB，读不进来。请拆成几个小文件后重新导入。',
   ) },
-  'e763-denied': { model: false, shell: 'stage', setup: seedStageSample, run: async context => {
+  'e763-denied': { ...win32, model: false, shell: 'stage', setup: seedStageSample, run: async context => {
     const file = writeFixture(context.roots, 'denied-novel.txt', UTF8_CHAPTER)
     const restore = denyRead(file)
     try {
@@ -90,7 +99,7 @@ export const E763_SCENARIOS = {
       restore()
     }
   } },
-  'e763-in-use': { model: false, shell: 'stage', setup: seedStageSample, run: async context => {
+  'e763-in-use': { ...win32, model: false, shell: 'stage', setup: seedStageSample, run: async context => {
     const file = writeFixture(context.roots, 'held-novel.txt', UTF8_CHAPTER)
     const release = await holdExclusively(file)
     try {

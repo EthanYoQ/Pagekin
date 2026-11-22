@@ -479,16 +479,20 @@ describe('拆书导入读不了文件时说出原因（#763）', () => {
     it('文件被别的程序独占打开时说正被占用', async () => {
       const file = fixture('held.txt', '第1章 开始\n正文')
       const holder = spawn('powershell.exe', ['-NoProfile', '-Command',
-        `$h=[IO.File]::Open('${file}','Open','Read','None'); [Console]::Out.WriteLine('held'); [Console]::In.ReadLine() | Out-Null`],
+        `$ErrorActionPreference='Stop'; $h=[IO.File]::Open('${file.replaceAll("'", "''")}','Open','Read','None'); [Console]::Out.WriteLine('held'); [Console]::In.ReadLine() | Out-Null`],
       { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
       try {
-        await new Promise<void>(resolve => holder.stdout!.on('data', chunk => { if (String(chunk).includes('held')) resolve() }))
+        await new Promise<void>((resolve, reject) => {
+          holder.once('error', reject)
+          holder.once('exit', code => reject(new Error(`独占打开夹具的 PowerShell 提前退出（${code}）`)))
+          holder.stdout!.on('data', chunk => { if (String(chunk).includes('held')) resolve() })
+        })
         await expect(importFailure(file)).resolves.toEqual({
           success: false,
           error: READ_FAILURE_TEXT.SECURE_FS_FILE_IN_USE,
         })
       } finally {
-        execFileSync('taskkill', ['/T', '/F', '/PID', String(holder.pid)], { stdio: 'ignore' })
+        if (holder.exitCode === null) execFileSync('taskkill', ['/T', '/F', '/PID', String(holder.pid)], { stdio: 'ignore' })
       }
     }, 30_000)
   })
