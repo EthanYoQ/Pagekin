@@ -14,7 +14,9 @@ import { textHash } from '../../repositories/generation-run-repository'
 import { captureReviewRevisionContext, reviewRevisionRequest } from '../review-revision-context'
 import { commitAuthorCharacterRoster } from '../character-roster-author'
 import { CharacterRosterRepository, refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
-import { readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
+import { readCharacterContinuityNodes, readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
+import { characterTimelinePromptLines } from '../../../src/shared/character-timeline-prompt'
+import { characterTimeline } from '../../../src/shared/character-continuity'
 import { insertContinuityBaseline } from '../../migrations/m08-continuity-foundation'
 vi.mock('../../database', () => ({ getProjectDb: vi.fn() }))
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -283,6 +285,33 @@ describe('作者给人物状态选了生效章，审修按被审章节取状态'
     const f = reviewing(5)
     authorSave(f.db, '登基', { mentalState: '已登基为王' }, 10)
     expect(readCharacterContinuityTimeline(f.db, 'lin').nodes).toContainEqual(expect.objectContaining({ aspect: 'mentalState', value: '已登基为王', effectiveChapter: 10 }))
+  })
+
+  it('升级上来的旧书：作者给升级前就填过的字段选较早生效章，审其后的章看到新值', () => {
+    const f = reviewing(10)
+    f.db.exec("INSERT INTO contents(id,body) VALUES(20,'第二十章'); INSERT INTO drafts_all(id,chapter_number,version,status,content_id) VALUES(20,20,1,'finalized',20)")
+    f.db.prepare("UPDATE characters SET cs_location='北塔',cs_updated_at_chapter=3,cs_provenance=? WHERE character_id='lin'").run(JSON.stringify({ location: { kind: 'author', chapterNumber: 3 } }))
+    insertContinuityBaseline(f.db)
+    f.db.transaction(() => refreshCharacterIdentityProjection(f.db))()
+    expect(f.modelSees()).toContain('北塔 @ch3')
+    authorSave(f.db, '迁都', { location: '王都' }, 8)
+    const seen = f.modelSees()
+    expect(seen).toContain('王都 @ch8'); expect(seen).not.toContain('北塔')
+    f.at(5)
+    expect(f.modelSees()).toContain('北塔 @ch3')
+    const writing = (chapter: number) => characterTimelinePromptLines({ nodes: readCharacterContinuityNodes(f.db), chapter, characterIds: ['lin'], currentNames: new Map(), language: 'zh-CN' }).lin
+    expect(writing(10)!.join()).toContain('王都'); expect(writing(5)!.join()).toContain('北塔')
+    expect(characterTimeline(readCharacterContinuityTimeline(f.db, 'lin').nodes).map(({ chapter, changes }) => [chapter, changes.map(change => change.value)]))
+      .toEqual([[8, ['王都']], [3, ['北塔']]])
+  })
+
+  it('没升级的书照旧顺延：字段已有第 11 章的作者值，再选第 8 章存成第 11 章', () => {
+    const f = reviewing(10)
+    authorSave(f.db, '远行', { location: '北塔' }, 11)
+    authorSave(f.db, '迁都', { location: '王都' }, 8)
+    expect(f.modelSees()).not.toContain('王都')
+    f.at(11)
+    expect(f.modelSees()).toContain('王都 @ch11')
   })
 
   it('在途审稿续跑：之后才生效的状态不改变冻结材料，当章已生效的改动会让续跑按材料变化拒绝', () => {
