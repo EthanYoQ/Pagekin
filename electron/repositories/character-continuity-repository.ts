@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type BetterSqlite3 from 'better-sqlite3'
 import type { CharacterApproval } from '../../src/shared/character-identity'
-import { withoutRelationRestatements, type CharacterContinuityTimeline, type ContinuityNode, type ContinuityProvenance, type StateChapterRange } from '../../src/shared/character-continuity'
-import type { CharacterStateTextField } from '../../src/shared/character-roster'
+import { withoutRelationRestatements, type CharacterContinuityTimeline, type CharacterStateNode, type ContinuityNode, type ContinuityProvenance, type StateChapterRange } from '../../src/shared/character-continuity'
+import { CHARACTER_STATE_TEXT_FIELDS, type CharacterStateTextField } from '../../src/shared/character-roster'
 import type { FinalizedCharacterEvidence, FinalizedSourceIdentity } from '../../src/shared/finalized-continuity'
 
 export const CHARACTER_STATE_COLUMNS: Readonly<Record<CharacterStateTextField, string>> = Object.freeze({
@@ -61,9 +61,13 @@ function requireTransaction(db: BetterSqlite3.Database): void {
   if (!db.inTransaction) throw new Error('CHARACTER_CONTINUITY_TRANSACTION_REQUIRED')
 }
 
+/** 节点在系列里的章，口径同 parseNode。 */
+const SERIES_CHAPTER = `CASE WHEN json_extract(e.provenance_json,'$.kind')='legacy' AND json_extract(e.evidence_json,'$.fieldProvenance.kind')='author'
+  AND json_type(e.evidence_json,'$.fieldProvenance.chapterNumber') IN ('integer','real') THEN json_extract(e.evidence_json,'$.fieldProvenance.chapterNumber') ELSE e.effective_chapter END`
+
 function appendNode(db: BetterSqlite3.Database, node: NodeWrite): void {
   const position = `SELECT
-      MAX(CASE WHEN e.draft_id IS NULL OR d.status='finalized' THEN e.effective_chapter END) AS chapter,
+      MAX(CASE WHEN e.draft_id IS NULL OR d.status='finalized' THEN ${SERIES_CHAPTER} END) AS chapter,
       COALESCE(MAX(json_extract(e.evidence_json,'$.seq')),0) AS seq
     FROM character_continuity_events e LEFT JOIN drafts d ON d.id=e.draft_id`
   const series = (node.target
@@ -157,7 +161,9 @@ function parseNode(row: NodeRow): ContinuityNode {
   const stored = JSON.parse(row.provenance_json) as ContinuityProvenance
   const provenance: ContinuityProvenance = stored.kind === 'legacy' && evidence.fieldProvenance?.kind === 'author' && typeof evidence.fieldProvenance.chapterNumber === 'number'
     ? { kind: 'legacy', authorChapter: evidence.fieldProvenance.chapterNumber } : stored
-  const base = { eventId: row.event_id, subjectId: row.subject_id, subjectName: row.subject_name, value: row.value, effectiveChapter: row.effective_chapter,
+  // M08 记的是升级时的快照章；升级前作者填的状态从当时记下的章起排，与 appendNode 的 SERIES_CHAPTER 一致。
+  const effectiveChapter = provenance.kind === 'legacy' && provenance.authorChapter !== undefined ? provenance.authorChapter : row.effective_chapter
+  const base = { eventId: row.event_id, subjectId: row.subject_id, subjectName: row.subject_name, value: row.value, effectiveChapter,
     provenance, draftId: row.draft_id, seq: evidence.seq ?? 0, quote: evidence.quote ?? null }
   return row.target_id === null
     ? { ...base, aspect: row.aspect as CharacterStateTextField }
@@ -176,6 +182,13 @@ export function readCharacterContinuityNodes(db: BetterSqlite3.Database, charact
       AND (@ids IS NULL OR e.subject_id IN (SELECT value FROM json_each(@ids)) OR e.target_id IN (SELECT value FROM json_each(@ids)))
       AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.retired=1 AND c.character_id IN (e.subject_id,e.target_id))
     ORDER BY e.subject_id,e.aspect,e.effective_chapter,e.event_id`).all({ ids: characterIds && JSON.stringify(characterIds) }) as NodeRow[]).map(parseNode)
+}
+
+/** 只读在册角色的状态节点，不连带关系事件：审修每次捕获都要读，按 subject、aspect 走索引。 */
+export function readCharacterStateNodes(db: BetterSqlite3.Database, activeCharacterIds: readonly string[]): CharacterStateNode[] {
+  return (db.prepare(`SELECT e.* FROM character_continuity_events e LEFT JOIN drafts d ON d.id=e.draft_id
+    WHERE e.subject_id IN (SELECT value FROM json_each(?)) AND e.aspect IN (SELECT value FROM json_each(?)) AND (e.draft_id IS NULL OR d.status='finalized')`)
+    .all(JSON.stringify(activeCharacterIds), JSON.stringify(CHARACTER_STATE_TEXT_FIELDS)) as NodeRow[]).map(parseNode) as CharacterStateNode[]
 }
 
 /** 节点里的名字是写入时的快照，改名后对不上蓝图。给预检用的读取换成角色现在的名字。 */
