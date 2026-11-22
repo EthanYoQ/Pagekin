@@ -310,10 +310,7 @@ function aggregateProject(
   })
 }
 
-/**
- * Windows 的 copyFileSync 复制时不让别人写源文件，同时打开这本书的可写连接会退成只读、报 SQLITE_READONLY。
- * fs.openSync 打开的句柄允许别人读写，复制期间被写过由前后的 sourceState 比对发现。
- */
+/** Windows 的 copyFileSync 复制期间不让别人写源文件，同时打开这本书的可写连接会退成只读；openSync 的句柄不限制别人写。 */
 function copySharingWrites(source: string, target: string): void {
   const input = fs.openSync(source, 'r')
   try {
