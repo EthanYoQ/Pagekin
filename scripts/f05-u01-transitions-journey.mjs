@@ -604,7 +604,7 @@ async function main() {
       await requestOpen(page, names.b)
       await decision(page, true)
       await page.getByRole('dialog', { name: '处理未保存内容' }).waitFor({ state: 'hidden' })
-      const saveError = page.getByRole('alertdialog', { name: '打开项目异常' })
+      const saveError = page.getByRole('alertdialog', { name: '打开作品异常' })
       await saveError.waitFor({ state: 'visible' })
       assert((await saveError.innerText()).includes('项目配置未能写入磁盘'), 'save failure was not visible to the author')
       await saveError.getByRole('button', { name: '确定' }).click()
