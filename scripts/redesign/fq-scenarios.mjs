@@ -10,7 +10,9 @@ const COPY = {
 }
 
 function punctuationWidths(item, latin) {
-  return item.evaluate((element, family) => {
+  return item.evaluate(async (element, family) => {
+    const { fontFamily: stack, fontSize } = getComputedStyle(element)
+    await Promise.all([stack, family].map(fontFamily => document.fonts.load(`${fontSize} ${fontFamily}`, '…·•')))
     const measure = (char, fontFamily) => {
       const span = document.createElement('span')
       span.textContent = char
