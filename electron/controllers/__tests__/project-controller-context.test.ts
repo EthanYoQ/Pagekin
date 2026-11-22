@@ -1566,7 +1566,7 @@ describe('project:open：作品文件暂时被占用（#702）', () => {
       const result = await opening as { error: string }
 
       expect(result).toMatchObject({ success: false, activeProjectPath: projectA, dbReady: true, errorCode: 'PROJECT_OPEN_FILES_BUSY' })
-      expect(appErrorMessage('zh-CN', result)).not.toMatch(/SqliteError|disk I\/O/u)
+      expect(appErrorMessage(shown('zh-CN'), result)).not.toMatch(/SqliteError|disk I\/O/u)
       expect(mocks.initCalls).toEqual([])
     } finally { vi.useRealTimers() }
   })
