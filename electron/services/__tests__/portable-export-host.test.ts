@@ -255,7 +255,7 @@ describe('在 worker 线程里导出', () => {
       const from = created.length
       const deadline = Date.now() + 20_000
       fs.writeFileSync(path.join(inside, marker), '')
-      while (!created.slice(from).some(name => name === marker || name === '')) {
+      while (!created.slice(from).includes(marker)) {
         if (Date.now() > deadline) throw new Error(`fs.watch 20 秒内没报回 ${marker}`)
         await new Promise(resolve => setTimeout(resolve, 10))
       }
@@ -271,7 +271,8 @@ describe('在 worker 线程里导出', () => {
     } finally { watcher.close() }
 
     expect(result).toMatchObject({ ok: false, code: 'PORTABLE_TARGET_INSIDE_SOURCE' })
-    expect(created.filter(name => name !== '' && !name.startsWith('.watch-'))).toEqual([])
+    expect(created.filter(name => !name.startsWith('.watch-'))).toEqual([])
+    expect(fs.readdirSync(inside).sort()).toEqual(['.watch-done', '.watch-ready'])
   }, 60_000)
 
   it('存档一发布就算导出完成：这时停止也报成功，不会报失败又留下存档', async () => {
