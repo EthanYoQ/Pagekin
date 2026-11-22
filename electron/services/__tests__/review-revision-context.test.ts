@@ -87,7 +87,7 @@ describe('审修上下文实际 SQLite 捕获', () => {
       f.db.prepare('INSERT INTO characters(character_id,name,retired,cs_updated_at_chapter,cs_location,cs_provenance) VALUES(?,?,?,1,?,?)')
         .run(id, id, retired, location, JSON.stringify({ location: { kind, chapterNumber: 1 } }))
     }
-    // 升级前写下的状态由 M08 补成时间线基线，审修按时间线读。
+    // 手写 SQL 绕过了作者保存入口，需要 M08 基线才有时间线节点。
     insertContinuityBaseline(f.db)
     const context = f.capture()
     expect(context.characterStates).toContain('北塔'); expect(context.characterStates).not.toContain('旧站'); expect(context.characterStates).not.toContain('猜测地点')
@@ -247,7 +247,6 @@ describe('作者给人物状态选了生效章，审修按被审章节取状态'
       expectedIdentityRevision: read.identityRevision, entries, ...(stateEffectiveChapter === undefined ? {} : { stateEffectiveChapter }) },
     { projectId: PROJECT_ID, epoch: '会话' }, () => {})
   }
-  /** 一部已规划 12 章、还没有定稿的书，被审的是第 chapter 章的草稿。 */
   function reviewing(chapter: number) {
     const f = fixture()
     for (let planned = 1; planned <= 12; planned++) f.db.prepare('INSERT INTO blueprints(chapter_number,title,key_events) VALUES(?,?,?)').run(planned, '合成章节', '')

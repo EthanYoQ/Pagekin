@@ -152,7 +152,7 @@ export function captureReviewRevisionContext(db: Database.Database, request: Pre
     const authorCards = CharacterRepository.getAll(db).filter(card => card.characterId && activeIds.has(card.characterId))
     // 按被审章节读时间线：作者选了更晚生效章的状态，审更早的章时还不成立。
     const authorStates = new Map(latestNodesBefore(readCharacterContinuityNodes(db, authorCards.map(card => card.characterId!)), source.chapterNumber).states
-      .filter(node => node.provenance.kind === 'author' || node.provenance.kind === 'adopted' || node.provenance.kind === 'legacy' && node.provenance.authorChapter !== undefined)
+      .filter(node => node.provenance.kind === 'author' || node.provenance.kind === 'adopted' || (node.provenance.kind === 'legacy' && node.provenance.authorChapter !== undefined))
       .map(node => [JSON.stringify([node.subjectId, node.aspect]), node]))
     const stateLines = authorCards.flatMap(card => {
       const fields = Object.fromEntries(CHARACTER_STATE_TEXT_FIELDS.flatMap(field => {
