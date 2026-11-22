@@ -35,6 +35,7 @@ import { sanitizeProjectName } from './project-path'
 import { stopPortableExports } from '../services/portable-export-host'
 import { projectStoragePreflightFailure } from '../services/project-storage-preflight'
 import { verifyCanonicalProjectData } from '../services/project-data-locator'
+import type { LedgerAdmission } from '../repositories/generation-ledger-admission'
 import { projectPeekService } from '../services/project-peek'
 import { probeProjectSqlite } from '../services/sqlite-project-migration'
 import { mainText } from '../i18n'
@@ -86,6 +87,25 @@ function projectRootSelectionFailure(error: unknown) {
   ) {
     return { errorCode: 'PROJECT_ROOT_REQUIRED' as const, error: 'PROJECT_ROOT_REQUIRED' }
   }
+  return null
+}
+
+/**
+ * SQLite 3.53 的 Windows 实现截断不了别的进程还映射着的 project.db-shm，报 SQLITE_IOERR_TRUNCATE。
+ * 强杀书童后旧进程先放开锁、过一会儿才拆映射，这段空档里打开就会撞上；失败的那次不改作品文件。
+ */
+const FILES_BUSY_RETRY_MS = 3_000
+
+function sqliteCode(error: unknown): string | undefined {
+  const code = error instanceof Error ? (error as { code?: unknown }).code : undefined
+  return typeof code === 'string' && code.startsWith('SQLITE_') ? code : undefined
+}
+
+const filesStillMapped = (error: unknown) => sqliteCode(error) === 'SQLITE_IOERR_TRUNCATE'
+
+function projectFilesFailure(error: unknown) {
+  if (filesStillMapped(error)) return { errorCode: 'PROJECT_OPEN_FILES_BUSY' as const, error: 'PROJECT_OPEN_FILES_BUSY' }
+  if (sqliteCode(error)?.startsWith('SQLITE_IOERR')) return { errorCode: 'PROJECT_OPEN_IO_FAILED' as const, error: 'PROJECT_OPEN_IO_FAILED' }
   return null
 }
 
@@ -609,6 +629,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
 
       let legacyImportSource: ProjectDirectoryGrant | undefined
       let currentProjectClosed = false
+      let openStep: 'resolve' | 'verify' | 'connect' | 'load' = 'resolve'
       try {
         const recent = typeof target === 'string'
           ? loadRecentProjects().find(project => project.path === target) : undefined
@@ -638,18 +659,38 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         if (recent?.projectId && recent.projectId !== trustedProject.projectId) {
           throw new Error('PROJECT_OPEN_RECENT_IDENTITY_CHANGED')
         }
-        // 重开当前这本时主进程正持有它，不另起 worker 校验（它已是当前版本）。
-        const verified = sameProjectPath(getCurrentProjectPath(), resolvedProjectPath)
-          ? undefined
-          : await verifyCanonicalProjectData(resolvedProjectPath)
         const staleBeforeSwitch = () =>
           ({ success: false, project: null, requestToken, stale: true, ...databaseStateForRollbackBoundary(rollbackBoundary) })
-        if (!isLatestRequest()) return staleBeforeSwitch()
-        // 校验期间旧书照常开着、可能又起了导出，所以紧挨换库再停。
-        await stopExportsOfClosingProject()
-        if (!isLatestRequest()) return staleBeforeSwitch()
-        currentProjectClosed = true
-        const { sealedRootCount } = initProjectDatabase(resolvedProjectPath, verified)
+        let admission: LedgerAdmission | undefined
+        let busySince: number | undefined
+        for (let attempt = 1; !admission; attempt++) {
+          try {
+            openStep = 'verify'
+            // 重开当前这本时主进程正持有它，不另起 worker 校验（它已是当前版本）。
+            const verified = sameProjectPath(getCurrentProjectPath(), resolvedProjectPath)
+              ? undefined
+              : await verifyCanonicalProjectData(resolvedProjectPath)
+            if (!isLatestRequest()) return staleBeforeSwitch()
+            // 校验期间旧书照常开着、可能又起了导出，所以紧挨换库再停。
+            await stopExportsOfClosingProject()
+            if (!isLatestRequest()) return staleBeforeSwitch()
+            openStep = 'connect'
+            currentProjectClosed = true
+            admission = initProjectDatabase(resolvedProjectPath, verified)
+          } catch (error) {
+            busySince ??= Date.now()
+            if (!filesStillMapped(error) || Date.now() - busySince >= FILES_BUSY_RETRY_MS) throw error
+            // 等待期间别的请求要看到一本开着的书：先回到打开前的状态再等。
+            if (currentProjectClosed) {
+              requireReadyDatabase(restoreProjectRollbackBoundary(rollbackBoundary), 'PROJECT_ROLLBACK_DATABASE_UNAVAILABLE')
+              currentProjectClosed = false
+            }
+            await new Promise(resolve => setTimeout(resolve, Math.min(25 * attempt, 200)))
+          }
+        }
+        if (busySince !== undefined) console.warn('[Project] 作品文件暂时被占用，等它放开后打开', { waitedMs: Date.now() - busySince })
+        openStep = 'load'
+        const { sealedRootCount } = admission
         const openedDatabase = getProjectDb()
         if (openedDatabase) adoptTransferredCharacterContinuityOnOpen({ database: openedDatabase,
           projectRoot: resolvedProjectPath, projectId: trustedProject.projectId })
@@ -759,7 +800,8 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           rollbackError = restoreError
           databaseState = failedDatabaseState()
         }
-        const selectionFailure = projectStoragePreflightFailure(error) ?? projectRootSelectionFailure(error)
+        if (!legacyImportSource) console.error('[Project] 打开失败', { step: openStep, name: error instanceof Error ? error.name : typeof error, code: sqliteCode(error) })
+        const selectionFailure = projectStoragePreflightFailure(error) ?? projectRootSelectionFailure(error) ?? projectFilesFailure(error)
         const errorMessage = withRollbackFailure(selectionFailure?.error ?? String(error), rollbackError)
         return {
           success: false,

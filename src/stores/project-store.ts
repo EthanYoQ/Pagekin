@@ -15,7 +15,7 @@ import { showFinalizationRepairNotice } from '../components/finalization-repair-
 import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
 import { confirm } from '../components/ui/Confirm'
 import { pushToast } from '../components/ui/ToastStack'
-import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImportFailureMessage } from '../i18n/app-errors'
+import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImportFailureMessage, projectOpenFailureMessage } from '../i18n/app-errors'
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
 import { countUnsavedEditorItemsForProject } from './editor-unsaved'
 import { useLayoutStore } from './layout-store'
@@ -839,8 +839,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         return await get().importLegacyProject(result.legacyImportSource)
       }
       console.error('[Project] 打开失败:', result.error)
+      const failure = result.errorCode ? result : result.error
+      const title = get().recentProjects.find(project => sameProjectPathKey(project.path, projectPath))?.name
       alertError(
-        projectError(result.errorCode ? result : result.error),
+        failure ? projectOpenFailureMessage(currentInterfaceLocale(), failure, title) : projectError(failure),
         { title: projectText('打开项目失败', 'Failed to open project') },
       )
       return false

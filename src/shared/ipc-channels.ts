@@ -235,6 +235,8 @@ export type AppErrorCode =
   | 'PROJECT_STORAGE_PATH_UNSUPPORTED'
   | 'PROJECT_ROOT_REQUIRED'
   | 'PROJECT_LEGACY_IMPORT_REQUIRED'
+  | 'PROJECT_OPEN_FILES_BUSY'
+  | 'PROJECT_OPEN_IO_FAILED'
 
 export interface AppFailure {
   success: false
