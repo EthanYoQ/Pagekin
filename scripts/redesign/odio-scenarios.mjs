@@ -10,7 +10,7 @@ import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
 // 别的进程在 project.db-shm 上只留一个映射段（不留文件句柄），和强杀书童后旧进程收尾时的状态一样。
-const SECTION_HOLDER = "$fs=[IO.FileStream]::new($args[0],[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]'ReadWrite,Delete');$m=[IO.MemoryMappedFiles.MemoryMappedFile]::CreateFromFile($fs,[NullString]::Value,0,[IO.MemoryMappedFiles.MemoryMappedFileAccess]::Read,[IO.HandleInheritability]::None,$true);$v=$m.CreateViewAccessor(0,0,[IO.MemoryMappedFiles.MemoryMappedFileAccess]::Read);$fs.Dispose();[Console]::Out.WriteLine('ready');[Console]::In.ReadLine()|Out-Null;$v.Dispose();$m.Dispose()"
+const SECTION_HOLDER = "$fs=[IO.FileStream]::new($env:ODIO_SHM,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]'ReadWrite,Delete');$m=[IO.MemoryMappedFiles.MemoryMappedFile]::CreateFromFile($fs,[NullString]::Value,0,[IO.MemoryMappedFiles.MemoryMappedFileAccess]::Read,[IO.HandleInheritability]::None,$true);$v=$m.CreateViewAccessor(0,0,[IO.MemoryMappedFiles.MemoryMappedFileAccess]::Read);$fs.Dispose();[Console]::Out.WriteLine('ready');[Console]::In.ReadLine()|Out-Null;$v.Dispose();$m.Dispose()"
 const FAILED = /打开项目失败|Failed to open project/u
 const name = STAGE_SAMPLE.name
 
@@ -56,7 +56,7 @@ async function heldShmOpen(context, { releaseAfterClickMs = null, locale = null 
   try {
     await context.restart({ killed: true, beforeLaunch: async () => {
       afterKill = contentHashes(dataRoot)
-      holder = spawn('powershell', ['-NoProfile', '-Command', `& { ${SECTION_HOLDER} } '${path.join(dataRoot, 'project.db-shm')}'`], { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
+      holder = spawn('powershell', ['-NoProfile', '-Command', SECTION_HOLDER], { env: { ...process.env, ODIO_SHM: path.join(dataRoot, 'project.db-shm') }, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
       const ready = await new Promise(resolve => { holder.stdout.once('data', data => resolve(String(data).trim())); holder.once('exit', code => resolve(`exited ${code}`)) })
       assert.equal(ready, 'ready', '映射段持有者没有起来')
     } })
