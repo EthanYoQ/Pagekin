@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -19,7 +20,8 @@ import {
 import { createPortableProjectAssetProvider } from '../portable-project-assets'
 import { exportPortableProject, type ExportPortableProjectInput } from '../project-archive-service'
 
-const GENERATION = '00000000-0000-4000-8000-000000000001'
+const BetterSqlite = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
+const GENERATION ='00000000-0000-4000-8000-000000000001'
 const NOW = '2026-11-19T00:00:00.000Z'
 let worker: PortableExportWorkerOptions
 const fixtures: ProjectArchiveRoundtripFixture[] = []
@@ -141,6 +143,32 @@ describe('在 worker 线程里导出', () => {
     await stopping
     expect(fs.existsSync(path.join(outDir, 'closed.ainovel'))).toBe(false)
     expect(leftovers(outDir)).toEqual([])
+  }, 60_000)
+
+  it.runIf(process.platform === 'win32')('临时目录里有文件被别的程序开着：删除作品前停导出几秒内就返回', async () => {
+    const { fixture, outDir, input } = await project()
+    let otherProgram: InstanceType<typeof BetterSqlite> | undefined
+    let stopped: Promise<number> | undefined
+
+    const result = outcome(exportPortableProjectInWorker({
+      ...input('held.ainovel'),
+      onProgress: phase => {
+        if (phase !== 'snapshot') return
+        const held = path.join(outDir, leftovers(outDir)[0]!, 'held')
+        fs.mkdirSync(held)
+        otherProgram = new BetterSqlite(path.join(held, 'sync.db'))
+        otherProgram.exec('create table t (x)')
+        const started = performance.now()
+        stopped = stopPortableExports(fixture.sourceRoot).then(() => (performance.now() - started) / 1000)
+      },
+    }, worker))
+
+    try {
+      expect(await result).toMatchObject({ ok: false, code: 'PORTABLE_CONTEXT_INVALID' })
+      expect(await stopped).toBeLessThan(5)
+    } finally {
+      otherProgram?.close()
+    }
   }, 60_000)
 
   it('在途数读到 0 时临时目录已经删掉（退出应用靠它等清理）', async () => {
