@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { execFileSync, spawn } from 'node:child_process'
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
@@ -21,8 +22,9 @@ vi.mock('electron', () => ({
 }))
 
 import { registerImportController } from '../import-controller'
-import type { WindowsSafeFileSystem } from '../../security/windows-safe-file-system'
+import { createSecureFileSystem, type WindowsSafeFileSystem } from '../../security/windows-safe-file-system'
 import { nodeTestSecureFileSystem } from '../../../test/helpers/node-test-secure-file-system'
+import { READ_FAILURE_TEXT } from '../../../test/helpers/external-file-read-codes'
 import { ExternalFileGrantService } from '../../services/external-file-grant-service'
 import { ImportInspectionStore } from '../../services/import-inspection-store'
 import { storedZip } from '../../services/__tests__/epub-test-fixture'
@@ -302,7 +304,7 @@ describe('novel import external-file capability', () => {
 
     expect(result).toEqual({
       success: false,
-      error: '所选文件总大小超过导入上限（最多 10 字节）。',
+      error: '所选文件一共超过 10 字节，读不进来。请拆成几个小文件，分几次导入。',
     })
     expect(readText).not.toHaveBeenCalled()
     expect(grants.activeCount()).toBe(0)
@@ -331,7 +333,7 @@ describe('novel import external-file capability', () => {
 
     expect(result).toEqual({
       success: false,
-      error: '所选文件总大小超过导入上限（最多 10 字节）。',
+      error: '所选文件一共超过 10 字节，读不进来。请拆成几个小文件，分几次导入。',
     })
     expect(readText.mock.calls.map(([capability, maxBytes]) => ({
       relativePath: capability.relativePath,
@@ -394,6 +396,101 @@ describe('novel import external-file capability', () => {
     expect(readText).toHaveBeenCalledTimes(1)
     expect(readText.mock.calls[0][0].relativePath).toBe('chapters-a.txt')
     expect(grants.activeCount()).toBe(0)
+  })
+})
+
+describe('拆书导入读不了文件时说出原因（#763）', () => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-import-e763-'))
+
+  beforeEach(() => {
+    mocks.handlers.clear()
+    mocks.showOpenDialog.mockReset()
+    grants = new ExternalFileGrantService()
+    inspections = new ImportInspectionStore()
+  })
+
+  afterAll(() => {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true })
+  })
+
+  async function importFailure(file: string, fileSystem: WindowsSafeFileSystem = createSecureFileSystem()) {
+    registerImportController(fileSystem, undefined, {}, grants, inspections, Buffer.alloc(32, 42))
+    mocks.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [file] })
+    const result = await handler('dialog:select-novel-files')(event())
+    expect(grants.activeCount()).toBe(0)
+    return result
+  }
+
+  function fixture(name: string, content: Buffer | string): string {
+    const file = path.join(fs.mkdtempSync(path.join(fixtureRoot, 'case-')), name)
+    fs.writeFileSync(file, content)
+    return file
+  }
+
+  function withDeniedRead<T>(file: string, rights: string, run: () => Promise<T>): Promise<T> {
+    execFileSync('icacls', [file, '/deny', `${process.env.USERNAME}:(${rights})`], { stdio: 'ignore' })
+    return run().finally(() => execFileSync('icacls', [file, '/remove:d', process.env.USERNAME!], { stdio: 'ignore' }))
+  }
+
+  it.each(Object.entries(READ_FAILURE_TEXT).filter(([code]) => code !== 'generic'))(
+    '读文件报 %s 时显示对应的原因和办法',
+    async (code, error) => {
+      const file = fixture('novel.txt', '第1章 开始\n正文')
+      const fileSystem = { ...nodeTestSecureFileSystem, readText: vi.fn(async () => { throw new Error(code) }) }
+      await expect(importFailure(file, fileSystem)).resolves.toEqual({ success: false, error })
+    },
+  )
+
+  it('超过 128 MB 的选择说出以 MB 计的总量上限', async () => {
+    const file = fixture('huge.txt', '')
+    fs.truncateSync(file, 128 * 1024 * 1024 + 1)
+    await expect(importFailure(file, nodeTestSecureFileSystem)).resolves.toEqual({
+      success: false,
+      error: '所选文件一共超过 128 MB，读不进来。请拆成几个小文件，分几次导入。',
+    })
+  })
+
+  describe.runIf(process.platform === 'win32')('真实的 Windows 安全读文件层', () => {
+    it('GBK 编码的 .txt 说不是 UTF-8，办法是另存为 UTF-8', async () => {
+      const gbk = Buffer.from('b5da31d5c220d3eed2b90a', 'hex')
+      await expect(importFailure(fixture('gbk.txt', gbk))).resolves.toEqual({
+        success: false,
+        error: READ_FAILURE_TEXT.SECURE_FS_INVALID_TEXT,
+      })
+    })
+
+    it('超过 64 MB 的单个 .txt 说文件超过 64 MB，不说所选文件总大小超限', async () => {
+      const file = fixture('oversized.txt', '')
+      fs.truncateSync(file, 64 * 1024 * 1024 + 1)
+      await expect(importFailure(file)).resolves.toEqual({
+        success: false,
+        error: READ_FAILURE_TEXT.SECURE_FS_FILE_TOO_LARGE,
+      })
+    })
+
+    it.each(['RD', 'R'])('没有读取权限（拒绝 %s）时说系统不让打开', async (rights) => {
+      const file = fixture('denied.txt', '第1章 开始\n正文')
+      await expect(withDeniedRead(file, rights, () => importFailure(file))).resolves.toEqual({
+        success: false,
+        error: READ_FAILURE_TEXT.SECURE_FS_OPEN_FAILED,
+      })
+    })
+
+    it('文件被别的程序独占打开时说正被占用', async () => {
+      const file = fixture('held.txt', '第1章 开始\n正文')
+      const holder = spawn('powershell.exe', ['-NoProfile', '-Command',
+        `$h=[IO.File]::Open('${file}','Open','Read','None'); [Console]::Out.WriteLine('held'); [Console]::In.ReadLine() | Out-Null`],
+      { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
+      try {
+        await new Promise<void>(resolve => holder.stdout!.on('data', chunk => { if (String(chunk).includes('held')) resolve() }))
+        await expect(importFailure(file)).resolves.toEqual({
+          success: false,
+          error: READ_FAILURE_TEXT.SECURE_FS_FILE_IN_USE,
+        })
+      } finally {
+        execFileSync('taskkill', ['/T', '/F', '/PID', String(holder.pid)], { stdio: 'ignore' })
+      }
+    }, 30_000)
   })
 })
 
