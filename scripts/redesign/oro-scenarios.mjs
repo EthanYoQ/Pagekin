@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
 
 import { chooseProjectDirectoryGrant } from '../project-directory-grant.mjs'
 import { seedStageSample } from './scenarios.mjs'
@@ -20,29 +22,51 @@ const setup = async context => {
   await context.reload()
 }
 
-async function openThenPeek({ page, invoke }) {
+function watchPeekCopy(scratchRoot) {
+  let seenAt = null
+  let stopped = false
+  const copying = () => fs.existsSync(scratchRoot) && fs.readdirSync(scratchRoot)
+    .some(attempt => fs.existsSync(path.join(scratchRoot, attempt, 'snapshot.db')))
+  const done = (async () => {
+    while (!stopped && seenAt === null) {
+      if (copying()) seenAt = Date.now()
+      else await new Promise(resolve => setImmediate(resolve))
+    }
+  })()
+  return { stop: async () => { stopped = true; await done; return seenAt } }
+}
+
+async function openThenPeek({ page, invoke, roots }) {
   const rounds = Number(process.env.ORO_ROUNDS ?? 200)
   const minDelay = Number(process.env.ORO_MIN_DELAY ?? PEEK_AFTER_OPEN_MS.min)
   const maxDelay = Number(process.env.ORO_MAX_DELAY ?? PEEK_AFTER_OPEN_MS.max)
+  const scratchRoot = path.join(roots.localAppData, 'VibeCodingScratch', 'ai-novel-writer', 'project-peek')
   const failures = []
+  let effective = 0
   let current = SECOND
   for (let round = 0; round < rounds; round++) {
     const target = current === SECOND ? STAGE_SAMPLE.name : SECOND
     const book = (await invoke(page, 'project:recent-list')).find(item => item.name === target)
     assert.ok(book?.previewCapabilityId, `《${target}》没有预览凭据`)
     const delay = minDelay + (round * 7) % (maxDelay - minDelay + 1)
-    const opened = await page.evaluate(async ({ capability, path, delay, token }) => {
+    const watch = watchPeekCopy(scratchRoot)
+    const opened = await page.evaluate(async ({ capability, bookPath, delay, token }) => {
       const api = window.aiNovelAPI
-      const opening = api.invoke('project:open', path, token, null)
+      const opening = api.invoke('project:open', bookPath, token, null)
+        .then(result => ({ ...result, doneAt: performance.timeOrigin + performance.now() }))
       await new Promise(resolve => setTimeout(resolve, delay))
       await api.invoke('project:peek-overview', capability)
       return opening
-    }, { capability: book.previewCapabilityId, path: book.path, delay, token: randomUUID() })
+    }, { capability: book.previewCapabilityId, bookPath: book.path, delay, token: randomUUID() })
+    const copyStartedAt = await watch.stop()
     if (opened.success) current = target
     else failures.push({ round, delay, target, errorCode: opened.errorCode, error: String(opened.error).slice(0, 80) })
+    if (copyStartedAt !== null && copyStartedAt < opened.doneAt) effective++
   }
-  assert.deepEqual(failures, [], '打开作品时同一本书的预览不应让打开失败')
-  return { rounds, failures }
+  assert.deepEqual(failures, [], `打开作品时同一本书的预览不应让打开失败（${rounds} 轮里预览在打开完成前开始复制的有 ${effective} 轮）`)
+  const minimum = Number(process.env.ORO_MIN_EFFECTIVE ?? Math.ceil(rounds / 4))
+  assert.ok(effective >= minimum, `预览在打开完成前开始复制的只有 ${effective} 轮，少于 ${minimum} 轮，这次不算验证过`)
+  return { rounds, effective, failures }
 }
 
 export const ORO_SCENARIOS = {
