@@ -250,7 +250,7 @@ describe('在 worker 线程里导出', () => {
     fs.mkdirSync(inside)
     const created: string[] = []
     const watcher = fs.watch(inside, (_event, name) => { if (name) created.push(String(name)) })
-    // macOS 的 FSEvents 会补报 watch 之前建 inside 的那次事件：写个标记、等它报回来，事件流就对齐到这一刻。
+    // macOS 的 FSEvents 会补报 watch 之前建 inside 的那次事件，须先排空，否则它会被当成导出建的目录。
     const settled = async (marker: string) => {
       fs.writeFileSync(path.join(inside, marker), '')
       while (!created.includes(marker)) await new Promise(resolve => setTimeout(resolve, 10))
