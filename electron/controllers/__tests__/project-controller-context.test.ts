@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import os from 'node:os'
 import path from 'node:path'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { appErrorMessage, projectOpenFailureMessage } from '../../../src/i18n/app-errors'
@@ -211,6 +214,8 @@ vi.mock('../../services/project-data-locator', () => ({ verifyCanonicalProjectDa
 import { registerProjectController } from '../project-controller'
 import { createProjectDatabase, initProjectDatabase } from '../../database'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
+
+const BetterSqlite = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 
 function selectedProject(projectPath: string) {
   return { grantId: `selected:${projectPath}`, displayName: path.basename(projectPath) }
@@ -1799,6 +1804,31 @@ describe('新建、删除作品失败时，说真正的原因和办法，不露�
     expect(en).toMatch(/not fully deleted[\s\S]*another program/u)
     expect(ja).toMatch(/別のプログラム[\s\S]*削除しきれ/u)
     for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_CREATE_DELETE_TEXT)
+  })
+
+  it.runIf(process.platform === 'win32')('作品库被别的程序开着：几秒内就告诉作者被占用，不让作者干等', async () => {
+    const { removeDirectoryWithWindowsRetry } = await vi.importActual<typeof import('../../utils/remove-directory')>('../../utils/remove-directory')
+    const root = await mkdtemp(path.join(os.tmpdir(), 'delete-busy-'))
+    await mkdir(path.join(root, '.ai-novel'))
+    await writeFile(path.join(root, '正文.md'), '第一章')
+    const otherProgram = new BetterSqlite(path.join(root, '.ai-novel', 'project.db'))
+    otherProgram.exec('create table chapters (body text)')
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce(() => removeDirectoryWithWindowsRetry(root))
+    try {
+      const started = performance.now()
+      const result = await deleteBook()
+      const waitedSeconds = (performance.now() - started) / 1000
+
+      expect(waitedSeconds).toBeLessThan(5)
+      expect(result).toMatchObject({ success: false, directoryDeleted: false })
+      const { zh, en, ja } = explain(result.error)
+      expect(zh).toMatch(/没删完[\s\S]*别的程序/u)
+      expect(en).toMatch(/not fully deleted[\s\S]*another program/u)
+      expect(ja).toMatch(/別のプログラム[\s\S]*削除しきれ/u)
+    } finally {
+      otherProgram.close()
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it.each([
