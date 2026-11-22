@@ -237,6 +237,9 @@ export type AppErrorCode =
   | 'PROJECT_LEGACY_IMPORT_REQUIRED'
   | 'PROJECT_OPEN_FILES_BUSY'
   | 'PROJECT_OPEN_IO_FAILED'
+  | 'PROJECT_OPEN_DAMAGED'
+  | 'PROJECT_OPEN_FILES_LOCKED'
+  | 'PROJECT_OPEN_ACCESS_DENIED'
 
 export interface AppFailure {
   success: false

@@ -110,6 +110,8 @@ function projectCopy(zhCNText: string, enUSText: string): LocalizedProjectCopy {
 /** 停用项目的提示要等清理结束才弹出，弹出时才按当时的界面语言写。 */
 type ProjectNotice = () => string
 
+const OPEN_FAILED_TITLE = ['打开作品失败', 'Couldn’t open the book'] as const
+
 function projectNotice(zhCNText: string, enUSText: string): ProjectNotice {
   return () => projectText(zhCNText, enUSText)
 }
@@ -342,8 +344,8 @@ async function detachProjectBindings(options: {
   const title = options.title()
   alertError(
     `${message}\n${projectText(
-      '未保存的编辑和草稿已保留；重新打开正确项目后可以继续处理。',
-      'Unsaved edits and drafts were kept. Reopen the correct project to continue.',
+      '未保存的编辑和草稿已保留；重新打开作品后可以继续处理。',
+      'Unsaved edits and drafts were kept. Reopen the book to continue.',
     )}`,
     { title },
   )
@@ -611,6 +613,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const requestSequence = ++openProjectRequestSequence
     const requestToken = `${Date.now()}-${requestSequence}-${Math.random().toString(36).slice(2)}`
     const isLatestRequest = () => requestSequence === openProjectRequestSequence
+    const openFailureMessage = (result: { errorCode?: string, error?: string }) => {
+      const failure = result.errorCode ? result : result.error
+      if (!failure) return projectError(failure)
+      const title = get().recentProjects.find(project => sameProjectPathKey(project.path, projectPath))?.name
+      return projectOpenFailureMessage(currentInterfaceLocale(), failure, title)
+    }
     let rendererProject = get().currentProject
     let rendererProjectPath = rendererProject?.path ?? null
     let mainOpenWasAccepted = false
@@ -674,25 +682,22 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         || activeProjectMismatch
       ) {
         const unsafeProjectPath = get().currentProject?.path ?? rendererProjectPath
+        const closedName = rendererProject?.name
         await detachProjectBindings({
           projectPath: unsafeProjectPath,
           detachRenderer: () => set({ currentProject: null }),
           message: joinProjectNotices(
             '\n',
-            projectErrorNotice(
-              result.error,
-              '主进程项目数据库与打开结果不一致。',
-              'The main-process project database does not match the open result.',
-            ),
-            projectNotice(
-              '已解除项目界面的可编辑状态以防止继续写入。',
-              'The project editor was disabled to prevent further writes.',
-            ),
+            result.error
+              ? () => openFailureMessage(result)
+              : projectErrorNotice(
+                undefined,
+                '主进程项目数据库与打开结果不一致。',
+                'The main-process project database does not match the open result.',
+              ),
+            ...(closedName ? [projectNotice(`原来开着的《${closedName}》已关闭。`, `“${closedName}”, which was open, has been closed.`)] : []),
           ),
-          title: projectNotice(
-            '打开失败，项目数据库不可用',
-            'Project opening failed; the project database is unavailable',
-          ),
+          title: projectNotice(...OPEN_FAILED_TITLE),
           shouldNotify: isLatestRequest,
         })
         return false
@@ -839,11 +844,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         return await get().importLegacyProject(result.legacyImportSource)
       }
       console.error('[Project] 打开失败:', result.error)
-      const failure = result.errorCode ? result : result.error
-      const title = get().recentProjects.find(project => sameProjectPathKey(project.path, projectPath))?.name
       alertError(
-        failure ? projectOpenFailureMessage(currentInterfaceLocale(), failure, title) : projectError(failure),
-        { title: projectText('打开项目失败', 'Failed to open project') },
+        openFailureMessage(result),
+        { title: projectText(...OPEN_FAILED_TITLE) },
       )
       return false
     } catch (e) {
@@ -860,7 +863,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (!isLatestRequest()) return false
       alertError(
         projectError(e),
-        { title: projectText('打开项目异常', 'Unexpected project opening error') },
+        { title: projectText('打开作品异常', 'Unexpected error while opening the book') },
       )
       return false
     } finally {
