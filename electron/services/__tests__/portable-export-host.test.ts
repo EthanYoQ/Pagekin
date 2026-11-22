@@ -249,23 +249,25 @@ describe('在 worker 线程里导出', () => {
     const inside = path.join(fixture.sourceRoot, 'exports')
     fs.mkdirSync(inside)
     const created: string[] = []
-    const watcher = fs.watch(inside, (_event, name) => { if (name) created.push(String(name)) })
+    const watcher = fs.watch(inside, (_event, name) => { created.push(name ? String(name) : '') })
     // macOS 的 FSEvents 会补报 watch 之前建 inside 的那次事件，须先排空，否则它会被当成导出建的目录。
     const settled = async (marker: string) => {
+      const from = created.length
       fs.writeFileSync(path.join(inside, marker), '')
-      while (!created.includes(marker)) await new Promise(resolve => setTimeout(resolve, 10))
+      while (!created.slice(from).some(name => name === marker || name === '')) await new Promise(resolve => setTimeout(resolve, 10))
     }
-    await settled('.watch-ready')
-    created.length = 0
-
-    const result = await outcome(exportPortableProjectInWorker({
-      ...input('x.ainovel'), targetArchivePath: path.join(inside, 'x.ainovel'), attemptParentPath: inside,
-    }, worker))
-    await settled('.watch-done')
-    watcher.close()
+    let result: unknown
+    try {
+      await settled('.watch-ready')
+      created.length = 0
+      result = await outcome(exportPortableProjectInWorker({
+        ...input('x.ainovel'), targetArchivePath: path.join(inside, 'x.ainovel'), attemptParentPath: inside,
+      }, worker))
+      await settled('.watch-done')
+    } finally { watcher.close() }
 
     expect(result).toMatchObject({ ok: false, code: 'PORTABLE_TARGET_INSIDE_SOURCE' })
-    expect(created.filter(name => !name.startsWith('.watch-'))).toEqual([])
+    expect(created.filter(name => name !== '' && !name.startsWith('.watch-'))).toEqual([])
   }, 60_000)
 
   it('存档一发布就算导出完成：这时停止也报成功，不会报失败又留下存档', async () => {
