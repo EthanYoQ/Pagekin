@@ -411,7 +411,7 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 
 | 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
 |---|---|---|---|---|
-| `oro-open-then-peek` | 200 轮（`ORO_ROUNDS` 可改）打开全部成功。修复前本机 200 轮有 4 轮在 connect 一步报 `SQLITE_READONLY` | 无 | 否 | #702 |
+| `oro-open-then-peek` | 200 轮（`ORO_ROUNDS` 可改）打开全部成功；每轮盯预览 scratch 里的 `snapshot.db`，在打开完成前出现的才算有效轮，有效轮少于四分之一即失败。修复前本机 200 轮有 4 轮在 connect 一步报 `SQLITE_READONLY` | 无 | 否 | #702 |
 
 ### 打开作品失败时说真正的原因（#702，err-l6）
 
