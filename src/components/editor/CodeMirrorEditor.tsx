@@ -28,6 +28,7 @@ import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-stor
 import { useLayoutStore } from '../../stores/layout-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
 import { isTerminalProviderFailure } from '../../services/generation/generation-harness'
+import { networkFailureText } from '../../services/generation/prompt-budget-failure'
 import { getActiveProjectSessionContext, sameProjectSessionContext } from '../../shared/project-session-context'
 import { livePreview, paperHeadFacet, type PaperHead } from './live-preview'
 import InlineAnnotationReview from './InlineAnnotationReview'
@@ -608,8 +609,9 @@ export default function CodeMirrorEditor({
       if (receipt.outcome.status !== 'completed' || receipt.outcome.finishReason !== 'stop') {
         setAiResult('')
         const failureCode = receipt.outcome.receipt.failureCode
-        setAiError(failureCode ? displayedErrorMessage(currentInterfaceLocale(), failureCode)
-          : uiText('生成未完整完成，结果不可应用', 'Generation did not complete; the result cannot be applied.'))
+        setAiError(networkFailureText(receipt.outcome.receipt, currentInterfaceLocale())
+          ?? (failureCode ? displayedErrorMessage(currentInterfaceLocale(), failureCode)
+            : uiText('生成未完整完成，结果不可应用', 'Generation did not complete; the result cannot be applied.')))
         return
       }
       const proof = (receipt.run.candidates ?? receipt.run.artifacts).find(candidate => candidate.text === receipt.outcome.content && candidate.status === 'completed' && candidate.compositionEligible === true)

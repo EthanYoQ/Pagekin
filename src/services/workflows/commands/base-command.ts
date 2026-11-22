@@ -15,6 +15,7 @@ import {
   completeBoundedCompletion,
   createBoundedCompletionError,
   redactVisibleCompletionText,
+  type BoundedCompletion,
   type BoundedCompletionMode,
 } from '../bounded-completion'
 import { workflowUiText, workflowWritingLanguage } from '../workflow-project-session'
@@ -96,7 +97,7 @@ export function keepReceiptFailuresOnCancel(session: GenerationSession, context:
       const outcome = await session.complete(task, options)
       const failureCode = outcome.receipt.failureCode
       if (failureCode && context.cancelled) {
-        throw Object.assign(createBoundedCompletionError(outcome.finishReason, context.uiLocale ?? 'zh-CN'), { code: failureCode })
+        throw Object.assign(createBoundedCompletionError(outcome.finishReason, context.uiLocale ?? 'zh-CN', outcome.receipt, context.interfaceLocale), { code: failureCode })
       }
       return outcome
     },
@@ -294,7 +295,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
   ): Promise<string> {
     const completion = await this.callLLMResult(prompt, systemPrompt, callbacks, options, context)
     if (completion.finishReason !== 'stop') {
-      throw this.createIncompleteCompletionError(completion.finishReason)
+      throw this.createIncompleteCompletionError(this.requireGenerationExecution().context, completion.finishReason, completion.receipt)
     }
     return completion.content
   }
@@ -325,6 +326,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
       originalPrompt: prompt,
       writingLanguage: workflowWritingLanguage(context),
       uiLocale: context.uiLocale ?? 'zh-CN',
+      interfaceLocale: context.interfaceLocale,
       preserveCompleteStructuredPrompt: continuation.mode === 'replace-structured-output'
         && options?.promptBudget !== undefined,
       isCancelled: () => context.cancelled,
@@ -426,6 +428,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
       originalPrompt: options.taskPrompt,
       writingLanguage: workflowWritingLanguage(options.context),
       uiLocale: options.context.uiLocale ?? 'zh-CN',
+      interfaceLocale: options.context.interfaceLocale,
       isCancelled: () => options.context.cancelled,
       redactVisibleText: redactedText => this.stripThinkingTags(redactedText),
       requestContinuation: async continuationPrompt => {
@@ -527,11 +530,12 @@ export abstract class BaseWorkflowCommand<TResult = string> {
     if (receipt.promptBudget) callbacks.setPromptBudgetReport?.(receipt.promptBudget)
   }
 
-  protected createIncompleteCompletionError(finishReason: LLMFinishReason): Error {
-    return createBoundedCompletionError(
-      finishReason,
-      this.activeGenerationExecution?.context.uiLocale ?? 'zh-CN',
-    )
+  protected createIncompleteCompletionError(
+    context: Pick<WorkflowContext, 'uiLocale' | 'interfaceLocale'>,
+    finishReason: LLMFinishReason,
+    receipt?: BoundedCompletion['receipt'],
+  ): Error {
+    return createBoundedCompletionError(finishReason, context.uiLocale, receipt, context.interfaceLocale)
   }
 
   /**

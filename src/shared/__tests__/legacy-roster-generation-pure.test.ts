@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import { buildLegacyRosterTask, buildLegacyRosterJsonRepairTask, buildLegacyRosterReplacementTask, parseLegacyRosterJson, CHARACTER_ROSTER_JSON_CONTRACT, CHARACTER_ROSTER_JSON_REPAIR_SYSTEM, LEGACY_ROSTER_SYSTEM_PROMPT } from '../legacy-roster-generation-pure'
 import { BaseWorkflowCommand } from '../../services/workflows/commands/base-command'
 import { completeBoundedCompletion } from '../../services/workflows/bounded-completion'
+import { shown } from '../../i18n/__tests__/shown-locale'
 
 class ExistingParser extends BaseWorkflowCommand<string> {
   async execute() { return '' }
@@ -35,7 +36,7 @@ it.each(['zh-CN', 'en-US'] as const)('%s replacement task equals the existing bo
     const visible = '{"schemaVersion": 1, "entries": [\r\n  '
     const replacement = buildLegacyRosterReplacementTask(base, visible, language)
     let request = ''
-    await completeBoundedCompletion({ initial: { content: visible, finishReason: 'length' }, mode: 'replace-structured-output',
+    await completeBoundedCompletion({ interfaceLocale: shown('zh-CN'), initial: { content: visible, finishReason: 'length' }, mode: 'replace-structured-output',
       maxContinuations: 2, originalPrompt: base.messages[1]!.content, writingLanguage: language,
       redactVisibleText: text => text,
       requestContinuation: async prompt => { request = prompt; return { content: '{}', finishReason: 'stop' } },

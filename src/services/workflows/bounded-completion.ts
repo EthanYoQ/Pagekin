@@ -7,7 +7,10 @@ import {
 import type { LLMFinishReason } from '../../shared/ipc-channels'
 import type { WritingLanguage } from '../../shared/writing-language'
 import { localize, type Locale } from '../../i18n/core'
+import type { ErrorDisplayLocale } from '../../i18n/types'
 import { promptLanguageText } from '../prompt-language'
+import type { GenerationAttemptReceipt } from '../generation/generation-harness'
+import { networkFailureText } from '../generation/prompt-budget-failure'
 import { stripThinkingTags } from './workflow-utils'
 import { WorkflowCancelledError } from './workflow-cancellation'
 
@@ -20,6 +23,7 @@ export type BoundedCompletionMode = 'append-visible-text' | 'replace-structured-
 export interface BoundedCompletion {
   content: string
   finishReason: LLMFinishReason
+  receipt?: Pick<GenerationAttemptReceipt, 'failureCode' | 'diagnostics'>
 }
 
 /** A non-stop terminal model state that made a bounded completion fail closed. */
@@ -53,6 +57,7 @@ export interface BoundedCompletionRequest {
   originalPrompt: string
   writingLanguage: WritingLanguage
   uiLocale?: Locale
+  interfaceLocale: ErrorDisplayLocale
   sourceText?: string
   preserveCompleteStructuredPrompt?: boolean
   requestContinuation: (prompt: string) => Promise<BoundedCompletion>
@@ -102,6 +107,8 @@ export function appendVisibleTextContinuation(
 function incompleteCompletionError(
   finishReason: LLMFinishReason,
   uiLocale: Locale,
+  receipt: BoundedCompletion['receipt'] | undefined,
+  interfaceLocale: ErrorDisplayLocale,
 ): BoundedCompletionFailure {
   // `stop` should not reach this path, but preserve fail-closed behavior if a
   // legacy caller does invoke the public helper with it.
@@ -132,7 +139,7 @@ function incompleteCompletionError(
         'AI generation was cancelled, so the result was not saved.',
       ))
     default:
-      return new BoundedCompletionFailure(failureCode, localize(
+      return new BoundedCompletionFailure(failureCode, networkFailureText(receipt, interfaceLocale) ?? localize(
         uiLocale,
         'AI 未正常完成生成，结果未被保存。',
         'AI generation did not complete normally, so the result was not saved.',
@@ -142,9 +149,11 @@ function incompleteCompletionError(
 
 export function createBoundedCompletionError(
   finishReason: LLMFinishReason,
-  uiLocale: Locale = 'zh-CN',
+  uiLocale: Locale,
+  receipt: BoundedCompletion['receipt'] | undefined,
+  interfaceLocale: ErrorDisplayLocale,
 ): BoundedCompletionFailure {
-  return incompleteCompletionError(finishReason, uiLocale)
+  return incompleteCompletionError(finishReason, uiLocale, receipt, interfaceLocale)
 }
 
 function continuationLimitExceededError(maxContinuations: number, uiLocale: Locale): Error {
@@ -233,11 +242,12 @@ export async function completeBoundedCompletion(request: BoundedCompletionReques
   const merge = request.mergeVisibleText ?? appendVisibleTextContinuation
   let content = redact(request.initial.content)
   let finishReason = request.initial.finishReason
+  let receipt = request.initial.receipt
   let continuationCount = 0
 
   while (finishReason !== 'stop') {
     assertNotCancelled(uiLocale, request.isCancelled)
-    if (finishReason !== 'length') throw incompleteCompletionError(finishReason, uiLocale)
+    if (finishReason !== 'length') throw incompleteCompletionError(finishReason, uiLocale, receipt, request.interfaceLocale)
     if (continuationCount >= request.maxContinuations) {
       request.onInterrupted?.(content)
       throw continuationLimitExceededError(request.maxContinuations, uiLocale)
@@ -274,11 +284,14 @@ export async function completeBoundedCompletion(request: BoundedCompletionReques
       const merged = merge(content, nextVisible)
       if (visibleProseUnitCount(merged) <= visibleProseUnitCount(content)) {
         request.onInterrupted?.(content)
-        throw noVisibleContinuationProgressError(uiLocale)
+        throw next.finishReason === 'stop' || next.finishReason === 'length'
+          ? noVisibleContinuationProgressError(uiLocale)
+          : incompleteCompletionError(next.finishReason, uiLocale, next.receipt, request.interfaceLocale)
       }
       content = merged
     }
     finishReason = next.finishReason
+    receipt = next.receipt
   }
 
   assertNotCancelled(uiLocale, request.isCancelled)

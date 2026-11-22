@@ -124,7 +124,7 @@ export class AnalyzeWritingStyleCommand extends BaseWorkflowCommand<string> {
         context,
       )
       if (importRuntime) assertImportCompletionNotStopped(completion, callbacks, context)
-      if (completion.finishReason !== 'stop') throw this.createIncompleteCompletionError(completion.finishReason)
+      if (completion.finishReason !== 'stop') throw this.createIncompleteCompletionError(context, completion.finishReason, completion.receipt)
       const result = completion.content
       this.assertNotCancelled(context)
 

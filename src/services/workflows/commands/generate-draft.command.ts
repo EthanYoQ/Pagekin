@@ -48,6 +48,8 @@ import {
   type GenerationSession,
   TerminalProviderFailureError,
 } from '../../generation/generation-harness'
+import { networkFailureText } from '../../generation/prompt-budget-failure'
+import { createBoundedCompletionError } from '../bounded-completion'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
 import { chapterThreadTasks, parseChapterThreadTasks, type ChapterThreadTask } from '../../../shared/narrative-thread'
@@ -1109,6 +1111,8 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             // 作者取消时请求会被截断着返回，主进程不把取消码交给渲染端；带失败码的是真实失败，照常报短细纲失败。
             // 重试结果直接来自 IPC，不经过 keepReceiptFailuresOnCancel，所以这里自己分辨。
             if (!outlined.receipt.failureCode) this.assertNotCancelled(context)
+            const network = networkFailureText(outlined.receipt, context.interfaceLocale)
+            if (network) throw new Error(network)
             const reason = outlined.finishReason === 'length'
               ? uiText('模型输出被截断', 'the model output was truncated')
               : !outlined.content.trim() ? uiText('模型未返回可见内容', 'the model returned no visible content')
@@ -1137,7 +1141,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           )
           let initialVisibleDraft: string
           let initialFinishReason: LLMCompletion['finishReason']
-          let initialFailureCode: GenerationAttemptReceipt['failureCode']
+          let initialReceipt: GenerationAttemptReceipt | undefined
           let initialReasoning = true
           if (recovery?.composition) {
             initialVisibleDraft = recovery.composition!.text
@@ -1181,7 +1185,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             ))
             initialVisibleDraft = sanitizeDraftText(this.stripThinkingTags(initialCompletion.content), compositionVersion)
             initialFinishReason = initialCompletion.finishReason
-            initialFailureCode = initialOutcome.receipt.failureCode
+            initialReceipt = initialOutcome.receipt
             initialReasoning = initialOutcome.receipt.capabilities.reasoning === true
             await acknowledge(initialOutcome, initialVisibleDraft)
             }
@@ -1201,7 +1205,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             signal: cancellation.signal,
             initialDraft: initialVisibleDraft,
             initialFinishReason,
-            initialFailureCode,
+            initialReceipt,
             initialRounds: recovery?.attemptedPurposes.filter(purpose => purpose === 'chapter-draft-continuation' || purpose === 'chapter-draft-no-progress-recovery').length,
             noProgressRecoveryUsed: recovery?.attemptedPurposes.includes('chapter-draft-no-progress-recovery'),
             targetChars,
@@ -1477,7 +1481,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     initialRounds?: number
     noProgressRecoveryUsed?: boolean
     initialFinishReason: LLMCompletion['finishReason']
-    initialFailureCode?: GenerationAttemptReceipt['failureCode']
+    initialReceipt?: GenerationAttemptReceipt
     targetChars: number
     callbacks: CommandExecuteParams['callbacks']
     context: CommandExecuteParams['context']
@@ -1500,7 +1504,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     let draft = params.initialDraft
     let rounds = params.initialRounds ?? 0
     let lastFinishReason = params.initialFinishReason
-    let lastFailureCode = params.initialFailureCode
+    let lastReceipt = params.initialReceipt
     let noProgressRecoveryUsed = params.noProgressRecoveryUsed ?? false
     let recoveryPending = false
 
@@ -1624,7 +1628,7 @@ ${visibleDraft}`,
         preview.stop()
       }
       const addition = completionFromOutcome(outcome)
-      lastFailureCode = outcome.receipt.failureCode
+      lastReceipt = outcome.receipt
       logDraftAttempt(
         params.callbacks,
         params.context,
@@ -1683,21 +1687,12 @@ ${visibleDraft}`,
     if (lastFinishReason === 'length'
       && countDraftUnits(draft) > draftTargetUnitRange(params.targetChars).maximum) return { text: draft, finishReason: lastFinishReason }
     if (lastFinishReason !== 'stop') {
-      const error = this.createIncompleteCompletionError(lastFinishReason)
+      const error = createBoundedCompletionError(lastFinishReason, params.context.uiLocale, lastReceipt, params.context.interfaceLocale)
+      const lastFailureCode = lastReceipt?.failureCode
       if (lastFailureCode === 'GENERATION_PROVIDER_FAILED' || lastFailureCode === 'NETWORK_ERROR')
         Object.assign(error, { code: lastFailureCode })
-      error.message = uiText(error.message, (() => {
-        switch (lastFinishReason) {
-          case 'length':
-            return 'AI output reached the model maximum length and is incomplete. Increase the maximum output tokens or shorten the task, then try again.'
-          case 'content_filter':
-            return 'AI output was stopped by content restrictions, so the result was not saved.'
-          case 'cancelled':
-            return 'AI generation was cancelled, so the result was not saved.'
-          default:
-            return 'AI generation did not complete normally, so the result was not saved.'
-        }
-      })())
+      if (lastFinishReason === 'length') error.message = uiText(error.message,
+        'AI output reached the model maximum length and is incomplete. Increase the maximum output tokens or shorten the task, then try again.')
       throw error
     }
 
@@ -1731,7 +1726,7 @@ ${visibleDraft}`,
     const range = draftTargetUnitRange(params.targetChars)
     const original = () => {
       this.assertNotCancelled(params.context)
-      if (params.candidate.finishReason !== 'stop') throw this.createIncompleteCompletionError(params.candidate.finishReason)
+      if (params.candidate.finishReason !== 'stop') throw this.createIncompleteCompletionError(params.context, params.candidate.finishReason)
       params.callbacks.replaceText?.(params.candidate.text)
       return params.candidate.text
     }
@@ -1809,7 +1804,7 @@ ${params.candidate.text}`,
       return original()
     }
     this.assertNotCancelled(params.context)
-    if (outcome.finishReason === 'cancelled') throw this.createIncompleteCompletionError('cancelled')
+    if (outcome.finishReason === 'cancelled') throw this.createIncompleteCompletionError(params.context, 'cancelled')
     logDraftAttempt(params.callbacks, params.context, { zhCN: '压缩修订', enUS: 'Condense revision' }, outcome.receipt)
     const condensed = sanitizeDraftText(this.stripThinkingTags(outcome.content), params.compositionVersion)
     const units = countDraftUnits(condensed)

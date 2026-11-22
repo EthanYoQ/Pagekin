@@ -137,6 +137,8 @@ export const jaJP = {
   'error.generationCancelled': '生成はキャンセルされました。',
   'error.generationProviderFailed': 'モデルサービスが完全な結果を返しませんでした。ネットワークとモデルの設定を確認してから、もう一度お試しください。',
   'error.generationNetworkFailed': 'モデルサービスに接続できなかったか、応答が途中で途切れました。ネットワークまたはプロキシを確認してから、もう一度お試しください。',
+  'error.generationUnreachable': 'モデルサービスに接続できませんでした。ネットワークまたは「Network proxy」の設定を確認してから、もう一度お試しください。',
+  'error.generationConnectionInterrupted': 'モデルサービスとの接続が途中で切れました。ネットワークまたは「Network proxy」の設定を確認してから、もう一度お試しください。',
   'error.generationContextLengthExceeded': '作品は変更されていません。プロンプトがモデルの受け付ける長さを超えているため、何も生成されませんでした。設定で、コンテキストの長いモデルに切り替えるか、「Max output tokens」を下げてから、もう一度生成してください。',
   'error.generationStorageFailed': '生成されたテキストをローカルストレージに書き込めませんでした。ディスクの空き容量と、作品フォルダーへの書き込み権限を確認してから、もう一度お試しください。',
   'error.generationLedgerUnreadable': '本文は影響を受けていません。この AI 生成記録は破損していたため無効にしました。',

@@ -57,5 +57,5 @@ export function failedAtProxy(error: unknown): boolean {
   if (!proxy || !cause) return false
   if (cause.syscall === 'getaddrinfo') return String(cause.hostname).toLowerCase() === proxy.host.toLowerCase()
   return [cause, ...(cause.errors ?? [])].some(failure => failure?.syscall === 'connect' && failure.port === proxy.port
-    && (net.isIP(proxy.host) ? failure.address === proxy.host : LOOPBACK.has(String(failure.address)) === (proxy.host === 'localhost')))
+    && (net.isIP(proxy.host) ? failure.address === proxy.host : LOOPBACK.has(String(failure.address)) === (proxy.host.toLowerCase() === 'localhost')))
 }

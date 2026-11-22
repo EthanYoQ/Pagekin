@@ -774,11 +774,11 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
         context,
       )
       if (replacement.finishReason !== 'stop') {
-        throw this.createIncompleteCompletionError(replacement.finishReason)
+        throw this.createIncompleteCompletionError(context, replacement.finishReason, replacement.receipt)
       }
       resultRaw = replacement.content
     } else {
-      throw this.createIncompleteCompletionError(initial.finishReason)
+      throw this.createIncompleteCompletionError(context, initial.finishReason, initial.receipt)
     }
     this.assertNotCancelled(context)
 
@@ -1453,7 +1453,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
             onPartialAvailable: mergedText => { persistedCandidate = mergedText.trim() },
           })
         } else {
-          throw this.createIncompleteCompletionError(initial.finishReason)
+          throw this.createIncompleteCompletionError(context, initial.finishReason, initial.receipt)
         }
       } else {
         result = await this.callLLMWithAppendContinuation({
