@@ -685,7 +685,9 @@ export function registerProjectController(options: ProjectControllerOptions = {}
               requireReadyDatabase(restoreProjectRollbackBoundary(rollbackBoundary), 'PROJECT_ROLLBACK_DATABASE_UNAVAILABLE')
               currentProjectClosed = false
             }
+            if (!isLatestRequest()) return staleBeforeSwitch()
             await new Promise(resolve => setTimeout(resolve, Math.min(25 * attempt, 200)))
+            if (!isLatestRequest()) return staleBeforeSwitch()
           }
         }
         if (busySince !== undefined) console.warn('[Project] 作品文件暂时被占用，等它放开后打开', { waitedMs: Date.now() - busySince })
