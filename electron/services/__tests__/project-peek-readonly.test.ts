@@ -439,3 +439,28 @@ describe('当前作品的书库概览只做打开作品时的校验（ADR-0029 �
     expect(new ProjectPeekService({ scratchRoot: f.scratch }).readCurrent(f.projectId, f.database)).toEqual({ state: 'unavailable' })
   })
 })
+
+describe('书房预览和打开同一本书同时进行', () => {
+  it('预览正在复制作品库时，打开作品的可写连接照常能写入', async () => {
+    const f = fixture({ journalMode: 'wal' })
+    const padding = 'x'.repeat(8 * 1024 * 1024)
+    for (let index = 0; index < 8; index++) f.database.prepare('INSERT INTO contents (body) VALUES (?)').run(padding)
+    handles.splice(handles.indexOf(f.database), 1)
+    f.database.close()
+    const service = new ProjectPeekService({ scratchRoot: f.scratch, worker })
+    const capability = service.issueCapability(f.root)!
+    const copying = () => fs.existsSync(f.scratch) && fs.readdirSync(f.scratch)
+      .some(attempt => fs.existsSync(path.join(f.scratch, attempt, 'snapshot.db')))
+
+    const peeking = service.peek(capability.capabilityId)
+    for (const deadline = Date.now() + 10_000; !copying(); await new Promise(resolve => setImmediate(resolve))) {
+      expect(Date.now()).toBeLessThan(deadline)
+    }
+    const writer = new Database(f.databasePath, { fileMustExist: true })
+    handles.push(writer)
+    writer.pragma('journal_mode = WAL')
+    writer.prepare("UPDATE project_core SET genre='科幻'").run()
+    expect(writer.prepare('SELECT genre FROM project_core').get()).toEqual({ genre: '科幻' })
+    expect(await peeking).toEqual({ state: 'unavailable' })
+  }, 30_000)
+})

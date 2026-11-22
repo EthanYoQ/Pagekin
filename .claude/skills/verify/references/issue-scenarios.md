@@ -405,6 +405,14 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `odio-held-shm-ja` | 同上，点打开前切到日文界面：书房按钮是「Open “灯塔”」，提示以「保存済みの内容には影響ありません。」开头，以「もう一度「Open “灯塔”」をクリックしてください。」结尾 | 书房上的失败提示（日文） | 是 | #702 |
 | `odio-held-shm-brief` | 点「打开《灯塔》」1 秒后放开映射段：不弹提示，作品打开，主进程日志有「作品文件暂时被占用，等它放开后打开」和等了多少毫秒。修复前同样弹 `SqliteError` 原文 | 作品 | 是 | #702 |
 
+### 打开作品时同一本书的预览（#702，open-readonly）
+
+场景在 `scripts/redesign/oro-scenarios.mjs`。书房有《灯塔》《雾港》两本，经主进程处理器交替打开没开着的那本，发出打开后隔 70–130 ms 再发同一本的预览，对应作者用菜单「打开作品」或 Ctrl K 打开、打开还没完成就点封面。不截图。
+
+| 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
+|---|---|---|---|---|
+| `oro-open-then-peek` | 200 轮（`ORO_ROUNDS` 可改）打开全部成功。修复前本机 200 轮有 4 轮在 connect 一步报 `SQLITE_READONLY` | 无 | 否 | #702 |
+
 ### 打开作品失败时说真正的原因（#702，err-l6）
 
 场景在 `scripts/redesign/errl6-scenarios.mjs`。先建《灯塔》，退出应用，冷启动前把作品弄坏或占住，再从书房点「打开《灯塔》」。`-en` 的场景点打开前切到英文界面。`locked`、`denied` 只在 Windows 上跑。修复前三类都弹「打开项目失败」，正文是「发生错误：」加原文：坏库是 `SqliteError: database disk image is malformed`，占用是带作品路径的 `EBUSY: resource busy or locked`，没有权限是带作品路径的 `EPERM: operation not permitted`。
