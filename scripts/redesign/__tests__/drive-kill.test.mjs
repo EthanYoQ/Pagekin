@@ -58,7 +58,7 @@ it.runIf(process.platform === 'win32')('Windows：lockfile 一直被占时在上
 
 it.skipIf(process.platform === 'win32')('macOS 与 Linux：SingletonLock 指向的 pid 退出后就返回，留下的旧链接不算占用', async () => {
   const userData = userDataDir()
-  const holder = track(spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1500)', '--', `--user-data-dir=${userData}`], { stdio: 'ignore' }))
+  const holder = track(spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'], { stdio: 'ignore' }))
   fs.symlinkSync(`${os.hostname()}-${holder.pid}`, path.join(userData, 'SingletonLock'))
   await new Promise(resolve => setTimeout(resolve, 200))
   assert.equal(alive(holder.pid), true, '占锁进程已启动')
