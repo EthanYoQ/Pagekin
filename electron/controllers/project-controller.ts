@@ -101,6 +101,12 @@ function systemCode(error: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined
 }
 
+const DELETE_FAILURE_CODES: Readonly<Record<string, string>> = {
+  EBUSY: 'PROJECT_DELETE_FILES_BUSY',
+  EPERM: 'PROJECT_DELETE_ACCESS_DENIED',
+  EACCES: 'PROJECT_DELETE_ACCESS_DENIED',
+}
+
 const filesStillMapped = (error: unknown) => systemCode(error) === 'SQLITE_IOERR_TRUNCATE'
 
 /** 按前缀从上往下认，TRUNCATE 要排在别的 IOERR 前面。 */
@@ -1058,8 +1064,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           databaseRestored = false
         }
       }
-      const denied = ['EPERM', 'EACCES'].includes(systemCode(deletionError) ?? '')
-      return { success: false, directoryDeleted: false, databaseRestored, error: denied ? 'PROJECT_DELETE_ACCESS_DENIED' : 'PROJECT_DELETE_FAILED' }
+      return { success: false, directoryDeleted: false, databaseRestored, error: DELETE_FAILURE_CODES[systemCode(deletionError) ?? ''] ?? 'PROJECT_DELETE_FAILED' }
     }
 
     let bindingCleanupWarning: string | undefined

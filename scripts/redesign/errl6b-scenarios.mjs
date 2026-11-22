@@ -15,6 +15,7 @@ const COPY = {
     createTitle: '新建作品失败', deleteTitle: '删除作品失败', openTitle: '打开作品失败',
     createDenied: '没有权限在所选位置新建作品。请换一个保存位置。',
     deleteBusy: '作品文件夹没删完，有文件正被别的程序占用，请先关掉那个程序。',
+    deleteUnknown: '作品文件夹没删完。',
     deleteDenied: '作品文件夹没删完，没有删除其中文件的权限，请先检查文件夹的权限。',
     closed: `《${name}》已关闭，之后可以直接删掉这个文件夹，再点「从最近项目移除…」。`,
     stillOpen: '作品还开着，之后可以再删除一次。',
@@ -24,6 +25,7 @@ const COPY = {
     createTitle: 'Couldn’t create the book', deleteTitle: 'Couldn’t delete the book', openTitle: 'Couldn’t open the book',
     createDenied: 'There is no permission to create a book in the chosen location. Choose another location.',
     deleteBusy: 'The book folder was not fully deleted because another program is using a file in it. Close that program first.',
+    deleteUnknown: 'The book folder was not fully deleted.',
     deleteDenied: 'The book folder was not fully deleted because there is no permission to delete files in it. Check the folder’s permissions first.',
     closed: `“${name}” has been closed. Afterward, delete the folder yourself, then use Remove from recent… on the shelf.`,
     stillOpen: 'The book is still open, so you can delete it again afterward.',
@@ -96,6 +98,7 @@ async function createDenied(context, lang) {
  * 删除作品没删完。
  * busy：作者放在作品文件夹里的文档被别的程序独占打开。
  * denied：作者的资料子文件夹不让当前用户删除。
+ * unknown：删除报出 EIO 这类没归类的错。实机造不出，在主进程里把 fs.rm 换成直接报 EIO。
  * 其余文件（含库文件）删没删掉取决于删除顺序：库文件还在，书重新打开；库文件已删，书关闭。
  * 整个作品文件夹都拒绝删除时，打开着的作品连目录都读不了，删除在会话校验处就被拒绝，不是本场景。
  */
@@ -107,7 +110,15 @@ async function deleteLeftover(context, kind, lang) {
     await stage.openFromLibraryEn(page, name)
   } else await stage.openAfterRestart(page, name)
   if (kind === 'busy') await holdFile(context, path.join(samplePath, '人物小传.docx'))
-  else denyForCurrentUser(context, path.join(samplePath, '资料'), '(OI)(CI)(D,DC)')
+  else if (kind === 'denied') denyForCurrentUser(context, path.join(samplePath, '资料'), '(OI)(CI)(D,DC)')
+  else {
+    await context.app.evaluate(() => {
+      const fsp = process.getBuiltinModule('node:fs/promises')
+      globalThis.errl6bRealRm = fsp.rm
+      fsp.rm = async () => { throw Object.assign(new Error('EIO: i/o error, rmdir'), { code: 'EIO' }) }
+    })
+    context.onCleanup(() => context.app.evaluate(() => { process.getBuiltinModule('node:fs/promises').rm = globalThis.errl6bRealRm }))
+  }
   if (lang === 'en') {
     await stage.root(page).getByRole('banner').getByRole('button', { name: `“${name}” menu` }).click()
     await page.getByRole('menuitem', { name: 'Back to library' }).click()
@@ -124,7 +135,8 @@ async function deleteLeftover(context, kind, lang) {
   const { shown } = await alertText(page, copy.deleteTitle, 180_000)
   const left = listed(samplePath)
   const reopened = fs.existsSync(path.join(samplePath, '.ai-novel', 'project.db'))
-  const expected = `${kind === 'busy' ? copy.deleteBusy : copy.deleteDenied}${lang === 'en' ? ' ' : ''}${reopened ? copy.stillOpen : copy.closed}`
+  const reason = { busy: copy.deleteBusy, denied: copy.deleteDenied, unknown: copy.deleteUnknown }[kind]
+  const expected = `${reason}${lang === 'en' ? ' ' : ''}${reopened ? copy.stillOpen : copy.closed}`
   assert.ok(shown.includes(expected), `弹窗应说明原因、作品现在的状态和办法，期望：${expected}；实际：${shown}；文件夹里还剩：${left.join(', ')}`)
   assert.doesNotMatch(shown, RAW, '弹窗不应露出码或英文原文')
   await context.shoot(`errl6b-delete-${kind}-${lang}`)
@@ -172,6 +184,7 @@ export const ERRL6B_SCENARIOS = Object.fromEntries(['zh', 'en'].flatMap(lang => 
   [`errl6b-create-denied-${lang}`, { model: false, shell: 'stage', ...win32, run: context => createDenied(context, lang) }],
   [`errl6b-delete-busy-${lang}`, { model: true, shell: 'stage', ...win32, setup: sampleWithDocument, run: context => deleteLeftover(context, 'busy', lang) }],
   [`errl6b-delete-denied-${lang}`, { model: true, shell: 'stage', ...win32, setup: sampleWithNotes, run: context => deleteLeftover(context, 'denied', lang) }],
+  [`errl6b-delete-unknown-${lang}`, { model: true, shell: 'stage', setup: sample, run: context => deleteLeftover(context, 'unknown', lang) }],
   [`errl6b-empty-zero-${lang}`, { model: true, shell: 'stage', setup: sample, run: context => emptyDatabase(context, 'zero', lang) }],
   [`errl6b-empty-missing-${lang}`, { model: true, shell: 'stage', setup: sample, run: context => emptyDatabase(context, 'missing', lang) }],
 ]))

@@ -1910,7 +1910,7 @@ describe('project close lifecycle', () => {
       success: false,
       directoryDeleted: false,
       databaseRestored: true,
-      error: 'PROJECT_DELETE_FAILED',
+      error: 'PROJECT_DELETE_FILES_BUSY',
     })
 
     await expect(useProjectStore.getState().deleteProject(project('A').path)).resolves.toBe(false)

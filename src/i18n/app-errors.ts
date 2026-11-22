@@ -78,6 +78,7 @@ const ERROR_KEYS = {
   LEGACY_IMPORT_HISTORY_AUTHORITY_INVALID: 'error.legacyImportFailed',
   LEGACY_IMPORT_ROSTER_UNAVAILABLE: 'error.legacyImportFailed',
   PROJECT_DELETE_FAILED: 'error.projectDeleteFailed',
+  PROJECT_DELETE_FILES_BUSY: 'error.projectDeleteBusy',
   PROJECT_DELETE_ACCESS_DENIED: 'error.projectDeleteAccessDenied',
   PROJECT_RECENT_LIST_UPDATE_FAILED: 'error.projectRecentListUpdateFailed',
   PROJECT_ARCHIVE_TARGET_EXISTS: 'error.projectArchiveTargetExists',
@@ -468,7 +469,7 @@ export function projectOpenFailureMessage(locale: ErrorDisplayLocale, error: unk
   return joinSentences(locale, message, next)
 }
 
-const DELETE_LEFTOVER_CODES: ReadonlySet<string> = new Set(['PROJECT_DELETE_FAILED', 'PROJECT_DELETE_ACCESS_DENIED'])
+const DELETE_LEFTOVER_CODES: ReadonlySet<string> = new Set(['PROJECT_DELETE_FAILED', 'PROJECT_DELETE_FILES_BUSY', 'PROJECT_DELETE_ACCESS_DENIED'])
 
 /** 删除作品失败的说明。文件夹没删完时接上作品现在的状态：还开着就再删一次；已关闭（closedTitle）就自己删文件夹。 */
 export function projectDeleteFailureMessage(locale: ErrorDisplayLocale, error: unknown, closedTitle?: string): string {
