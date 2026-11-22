@@ -15,8 +15,10 @@ import { ImportSourceIdentityRepository } from '../repositories/import-source-id
 import { loadApplicationImportSourceSecret } from '../services/import-source-identity-secret'
 import { mainText } from '../i18n'
 import { importErrorLocale, importRunLocale } from './import-run-failure'
+import { readFailureCopy } from './external-file-read-failure'
 import { knownAppErrorMessage } from '../../src/i18n/app-errors'
 import {
+  MAX_TEXT_BYTES,
   windowsSafeFileSystem,
   type WindowsSafeFileSystem,
 } from '../security/windows-safe-file-system'
@@ -105,13 +107,19 @@ function importSelectionErrorMessage(
       `The import source-file limit was exceeded (limit: ${limits.maxSourceFiles}).`,
     )
   }
-  if (code === 'IMPORT_SOURCE_BYTES_EXCEEDED' || code === 'SECURE_FS_FILE_TOO_LARGE') {
+  if (code === 'IMPORT_SOURCE_BYTES_EXCEEDED') {
+    const megabytes = limits.maxTotalBytes / (1024 * 1024)
+    const [zhLimit, enLimit] = Number.isInteger(megabytes)
+      ? [`${megabytes} MB`, `${megabytes} MB`]
+      : [`${limits.maxTotalBytes} 字节`, `${limits.maxTotalBytes} bytes`]
     return importText(
       locale,
-      `所选文件总大小超过导入上限（最多 ${limits.maxTotalBytes} 字节）。`,
-      `The import source-size limit was exceeded (limit: ${limits.maxTotalBytes} bytes).`,
+      `所选文件一共超过 ${zhLimit}，读不进来。请拆成几个小文件，分几次导入。`,
+      `The selected files total more than ${enLimit} and cannot be read. Split them into smaller files and import them in a few rounds.`,
     )
   }
+  const readFailure = readFailureCopy(error)
+  if (readFailure) return importText(locale, ...readFailure)
   if (code === 'IMPORT_CHAPTER_COUNT_EXCEEDED') {
     return importText(
       locale,
@@ -469,6 +477,7 @@ export function registerImportController(
           continue
         }
         let grantId = ''
+        const remainingBytes = limits.maxTotalBytes - consumedBytes
         try {
           const grant = grantService.issueFile({
             webContentsId: event.sender.id,
@@ -484,7 +493,6 @@ export function registerImportController(
             operation: 'read',
           })
           const sourceFileName = source.displayName
-          const remainingBytes = limits.maxTotalBytes - consumedBytes
           const isEpub = path.extname(sourceFileName).toLowerCase() === '.epub'
           let parsed: ParsedChapter[]
           let contentBytes: number
@@ -590,7 +598,11 @@ export function registerImportController(
             ImportRunRepository.commitParsedSource(parsingRun.id, opaqueSourceId, sourceChapters)
           }
           content = ''
-        } catch (error) {
+        } catch (caught) {
+          // 读文件的上限是剩余总量与单文件上限中较小的那个；剩余总量更小时，超限说的是总量。
+          const error = remainingBytes < MAX_TEXT_BYTES && caught instanceof Error && caught.message === 'SECURE_FS_FILE_TOO_LARGE'
+            ? new Error('IMPORT_SOURCE_BYTES_EXCEEDED')
+            : caught
           let projectStillCurrent = false
           try {
             assertFrozenProject()
