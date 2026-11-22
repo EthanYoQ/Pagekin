@@ -250,15 +250,22 @@ describe('在 worker 线程里导出', () => {
     fs.mkdirSync(inside)
     const created: string[] = []
     const watcher = fs.watch(inside, (_event, name) => { if (name) created.push(String(name)) })
+    // macOS 的 FSEvents 会补报 watch 之前建 inside 的那次事件：写个标记、等它报回来，事件流就对齐到这一刻。
+    const settled = async (marker: string) => {
+      fs.writeFileSync(path.join(inside, marker), '')
+      while (!created.includes(marker)) await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    await settled('.watch-ready')
+    created.length = 0
 
     const result = await outcome(exportPortableProjectInWorker({
       ...input('x.ainovel'), targetArchivePath: path.join(inside, 'x.ainovel'), attemptParentPath: inside,
     }, worker))
-    await new Promise(resolve => setTimeout(resolve, 200))
+    await settled('.watch-done')
     watcher.close()
 
     expect(result).toMatchObject({ ok: false, code: 'PORTABLE_TARGET_INSIDE_SOURCE' })
-    expect(created).toEqual([])
+    expect(created.filter(name => !name.startsWith('.watch-'))).toEqual([])
   }, 60_000)
 
   it('存档一发布就算导出完成：这时停止也报成功，不会报失败又留下存档', async () => {
