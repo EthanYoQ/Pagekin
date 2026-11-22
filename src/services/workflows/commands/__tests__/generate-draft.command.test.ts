@@ -3067,6 +3067,44 @@ ${headingPrefix}第3章：潮门
     })
   })
 
+  describe('#702：网络失败时写稿说明真正的原因', () => {
+    const networkFailure = (content: string, phase: 'request' | 'stream', attempt = 1) => {
+      const result = outcome(content, 'error', attempt)
+      Object.assign(result.receipt, { failureCode: 'NETWORK_ERROR', diagnostics: { startedAt: 1, elapsedMs: 10, firstResponseMs: null,
+        lastResponseMs: null, lastOutputMs: null, phase, endReason: 'failed', visibleEvents: 0, reasoningEvents: 0 } })
+      return result
+    }
+    const failure = (f: ReturnType<typeof setup>) => f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
+      .then(() => new Error('generation did not fail'), (error: unknown) => error as Error)
+
+    it('首稿请求连不上：说明没连上模型服务', async () => {
+      const f = setup({ runtime: fakeOutcomes(networkFailure('', 'request')), wordsTarget: 500 })
+      expect((await failure(f)).message).toBe('没连上模型服务。请检查网络或「网络代理」设置后重试。')
+    })
+
+    it('自动续写时回复中途断开：说明连接中途断了，原码照旧', async () => {
+      const f = setup({ runtime: fakeOutcomes(outcome('初'.repeat(100), 'length'), networkFailure('', 'stream', 2)), wordsTarget: 500 })
+      const error = await failure(f)
+      expect(error.message).toBe('与模型服务的连接中途断了。请检查网络或「网络代理」设置后重试。')
+      expect((error as { code?: unknown }).code).toBe('NETWORK_ERROR')
+    })
+
+    it('短细纲请求连不上：说明没连上模型服务，不写「模型未返回可见内容」', async () => {
+      const runtime = fakeOutcomes(outcome('正文'.repeat(250), 'stop'))
+      runtime.outline.mockResolvedValue(networkFailure('', 'request'))
+      const f = setup({ runtime, wordsTarget: 500 })
+      expect((await failure(f)).message).toBe('没连上模型服务。请检查网络或「网络代理」设置后重试。')
+      expect(runtime.complete).not.toHaveBeenCalled()
+    })
+
+    it('供应商失败仍用原兜底文案', async () => {
+      const failed = outcome('', 'error')
+      failed.receipt.failureCode = 'GENERATION_PROVIDER_FAILED'
+      const f = setup({ runtime: fakeOutcomes(failed), wordsTarget: 500 })
+      expect((await failure(f)).message).toBe('AI 未正常完成生成，结果未被保存。')
+    })
+  })
+
   describe('new runs draft from author and finalized material plus a short outline', () => {
     it.each(['zh-CN', 'en-US'] as const)('starts with the %s draft and preserves required material through continuation', async writingLanguage => {
       const runtime = fakeRuntime(attempt => attempt === 1 ? outcome('初'.repeat(100), 'length', 1) : outcome(`${'续'.repeat(400)}。`, 'stop', 2),

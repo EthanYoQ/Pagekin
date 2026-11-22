@@ -2,9 +2,11 @@ import { composeVisibleContinuation, CONTINUATION_VISIBLE_TAIL_CHARS, VISIBLE_CO
 import { assertMechanicallyCompleteVisibleText } from '../../../shared/visible-text-integrity'
 import { describe, expect, it, vi } from 'vitest'
 import { createGenerationHarness } from '../../generation/generation-harness'
+import type { GenerationTransportDiagnostics } from '../../../shared/generation-contract'
 
 import {
   appendVisibleTextContinuation,
+  type BoundedCompletion,
   BoundedCompletionFailure,
   completeBoundedCompletion,
   createBoundedCompletionError,
@@ -495,4 +497,36 @@ it('pure visible-append-v1 retains original UTF16 overlap and whitespace behavio
     expect(appendVisibleTextContinuation(existing, addition)).toBe(expected)
   }
   expect(appendVisibleTextContinuation('<think>隐藏</think>雨夜', '<think>隐藏</think>来信')).toBe('雨夜\n\n来信')
+})
+
+describe('#702：网络失败时说明真正的原因', () => {
+  const transport = (phase: GenerationTransportDiagnostics['phase'], errorCode?: string): GenerationTransportDiagnostics => ({
+    startedAt: 1, elapsedMs: 10, firstResponseMs: null, lastResponseMs: null, lastOutputMs: null, phase, endReason: 'failed',
+    visibleEvents: 0, reasoningEvents: 0, ...(errorCode ? { errorCode } : {}) })
+  const failed = (receipt: BoundedCompletion['receipt'], content = '') => completeBoundedCompletion({
+    initial: { content, finishReason: 'error', receipt }, mode: 'append-visible-text', maxContinuations: 1,
+    originalPrompt: '写第 3 章', writingLanguage: 'zh-CN', requestContinuation: vi.fn() })
+
+  it.each([
+    ['没拿到响应头', transport('request'), '没连上模型服务。请检查网络或「网络代理」设置后重试。'],
+    ['响应开始后断开', transport('stream'), '与模型服务的连接中途断了。请检查网络或「网络代理」设置后重试。'],
+    ['连不上设置的代理', transport('request', 'PROXY_UNREACHABLE'), '连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。'],
+  ])('%s', async (_case, diagnostics, expected) => {
+    await expect(failed({ failureCode: 'NETWORK_ERROR', diagnostics })).rejects.toThrow(expected)
+  })
+
+  it('自动续写那次请求断开时同样说明（英文界面）', async () => {
+    await expect(completeBoundedCompletion({
+      initial: { content: '雾散开一层。', finishReason: 'length' }, mode: 'append-visible-text', maxContinuations: 2,
+      originalPrompt: '写第 3 章', writingLanguage: 'en-US', uiLocale: 'en-US',
+      requestContinuation: async () => ({ content: '', finishReason: 'error', receipt: { failureCode: 'NETWORK_ERROR', diagnostics: transport('stream') } }),
+    })).rejects.toThrow('The connection to the model service broke off midway. Check your network or the Network proxy settings, then try again.')
+  })
+
+  it.each([
+    ['供应商失败', { failureCode: 'GENERATION_PROVIDER_FAILED' as const, diagnostics: transport('response', 'HTTP_ERROR') }],
+    ['没有收据', undefined],
+  ])('其余失败仍用原兜底文案：%s', async (_case, receipt) => {
+    await expect(failed(receipt)).rejects.toThrow('AI 未正常完成生成，结果未被保存。')
+  })
 })
