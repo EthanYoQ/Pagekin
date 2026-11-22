@@ -13,7 +13,7 @@ afterEach(() => {
 describe('纸墨字体自洽', () => {
   it('不依赖旧外壳样式即可加载 Noto Serif SC 与 Instrument Serif', async () => {
     const serifFaces = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules])
-      .filter((rule): rule is CSSFontFaceRule => rule instanceof CSSFontFaceRule && rule.style.getPropertyValue('font-family').includes('Noto Serif SC'))
+      .filter((rule): rule is CSSFontFaceRule => rule instanceof CSSFontFaceRule && rule.style.getPropertyValue('font-family').replace(/["']/g, '') === 'Noto Serif SC')
     expect(serifFaces).toHaveLength(1)
     expect((serifFaces[0].parentStyleSheet!.ownerNode as HTMLElement).dataset.viteDevId).toMatch(/\/src\/styles\/paper-ink\//)
 
@@ -26,6 +26,7 @@ describe('纸墨字体自洽', () => {
   it('界面字体按 Noto Sans SC、Microsoft YaHei UI、PingFang SC、system-ui 回退', () => {
     host = document.createElement('div')
     host.className = 'paper-ink'
+    host.lang = 'zh-CN'
     document.body.append(host)
     expect(getComputedStyle(host).fontFamily).toBe('"Noto Sans SC", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif')
   })
