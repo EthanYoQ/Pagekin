@@ -1,4 +1,4 @@
-import type { ErrorDisplayLocale, InterfaceLocale, Locale } from '../../i18n/types'
+import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
 import { knownAppErrorMessage } from '../../i18n/app-errors'
 import { translate } from '../../i18n/core'
 import {
@@ -135,7 +135,7 @@ export function providerContextFailureText(error: unknown, locale: ErrorDisplayL
 /** 主进程把没连上和读流中断都记成 NETWORK_ERROR，只能靠 diagnostics.phase 分辨。无诊断的旧记录用合并说明，非网络失败返回 undefined。 */
 export function networkFailureText(
   receipt: Pick<GenerationAttemptReceipt, 'failureCode' | 'diagnostics'> | undefined,
-  locale: InterfaceLocale,
+  locale: ErrorDisplayLocale,
 ): string | undefined {
   if (receipt?.failureCode !== 'NETWORK_ERROR') return undefined
   const diagnostics = receipt.diagnostics

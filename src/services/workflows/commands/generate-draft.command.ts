@@ -49,6 +49,7 @@ import {
   TerminalProviderFailureError,
 } from '../../generation/generation-harness'
 import { networkFailureText } from '../../generation/prompt-budget-failure'
+import { createBoundedCompletionError } from '../bounded-completion'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
 import { chapterThreadTasks, parseChapterThreadTasks, type ChapterThreadTask } from '../../../shared/narrative-thread'
@@ -1110,7 +1111,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             // 作者取消时请求会被截断着返回，主进程不把取消码交给渲染端；带失败码的是真实失败，照常报短细纲失败。
             // 重试结果直接来自 IPC，不经过 keepReceiptFailuresOnCancel，所以这里自己分辨。
             if (!outlined.receipt.failureCode) this.assertNotCancelled(context)
-            const network = networkFailureText(outlined.receipt, context.uiLocale)
+            const network = networkFailureText(outlined.receipt, context.interfaceLocale)
             if (network) throw new Error(network)
             const reason = outlined.finishReason === 'length'
               ? uiText('模型输出被截断', 'the model output was truncated')
@@ -1686,7 +1687,7 @@ ${visibleDraft}`,
     if (lastFinishReason === 'length'
       && countDraftUnits(draft) > draftTargetUnitRange(params.targetChars).maximum) return { text: draft, finishReason: lastFinishReason }
     if (lastFinishReason !== 'stop') {
-      const error = this.createIncompleteCompletionError(lastFinishReason, lastReceipt)
+      const error = createBoundedCompletionError(lastFinishReason, params.context.uiLocale, lastReceipt, params.context.interfaceLocale)
       const lastFailureCode = lastReceipt?.failureCode
       if (lastFailureCode === 'GENERATION_PROVIDER_FAILED' || lastFailureCode === 'NETWORK_ERROR')
         Object.assign(error, { code: lastFailureCode })

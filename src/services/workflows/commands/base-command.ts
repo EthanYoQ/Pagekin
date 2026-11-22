@@ -97,7 +97,7 @@ export function keepReceiptFailuresOnCancel(session: GenerationSession, context:
       const outcome = await session.complete(task, options)
       const failureCode = outcome.receipt.failureCode
       if (failureCode && context.cancelled) {
-        throw Object.assign(createBoundedCompletionError(outcome.finishReason, context.uiLocale ?? 'zh-CN', outcome.receipt), { code: failureCode })
+        throw Object.assign(createBoundedCompletionError(outcome.finishReason, context.uiLocale ?? 'zh-CN', outcome.receipt, context.interfaceLocale), { code: failureCode })
       }
       return outcome
     },
@@ -326,6 +326,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
       originalPrompt: prompt,
       writingLanguage: workflowWritingLanguage(context),
       uiLocale: context.uiLocale ?? 'zh-CN',
+      interfaceLocale: context.interfaceLocale,
       preserveCompleteStructuredPrompt: continuation.mode === 'replace-structured-output'
         && options?.promptBudget !== undefined,
       isCancelled: () => context.cancelled,
@@ -427,6 +428,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
       originalPrompt: options.taskPrompt,
       writingLanguage: workflowWritingLanguage(options.context),
       uiLocale: options.context.uiLocale ?? 'zh-CN',
+      interfaceLocale: options.context.interfaceLocale,
       isCancelled: () => options.context.cancelled,
       redactVisibleText: redactedText => this.stripThinkingTags(redactedText),
       requestContinuation: async continuationPrompt => {
@@ -533,6 +535,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
       finishReason,
       this.activeGenerationExecution?.context.uiLocale ?? 'zh-CN',
       receipt,
+      this.activeGenerationExecution?.context.interfaceLocale,
     )
   }
 

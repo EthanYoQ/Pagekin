@@ -7,6 +7,7 @@ import {
 import type { LLMFinishReason } from '../../shared/ipc-channels'
 import type { WritingLanguage } from '../../shared/writing-language'
 import { localize, type Locale } from '../../i18n/core'
+import type { ErrorDisplayLocale } from '../../i18n/types'
 import { promptLanguageText } from '../prompt-language'
 import type { GenerationAttemptReceipt } from '../generation/generation-harness'
 import { networkFailureText } from '../generation/prompt-budget-failure'
@@ -56,6 +57,8 @@ export interface BoundedCompletionRequest {
   originalPrompt: string
   writingLanguage: WritingLanguage
   uiLocale?: Locale
+  /** 网络失败说明按界面语言显示；不给时用 uiLocale。 */
+  interfaceLocale?: ErrorDisplayLocale
   sourceText?: string
   preserveCompleteStructuredPrompt?: boolean
   requestContinuation: (prompt: string) => Promise<BoundedCompletion>
@@ -106,6 +109,7 @@ function incompleteCompletionError(
   finishReason: LLMFinishReason,
   uiLocale: Locale,
   receipt?: BoundedCompletion['receipt'],
+  interfaceLocale: ErrorDisplayLocale = uiLocale as ErrorDisplayLocale,
 ): BoundedCompletionFailure {
   // `stop` should not reach this path, but preserve fail-closed behavior if a
   // legacy caller does invoke the public helper with it.
@@ -136,7 +140,7 @@ function incompleteCompletionError(
         'AI generation was cancelled, so the result was not saved.',
       ))
     default:
-      return new BoundedCompletionFailure(failureCode, networkFailureText(receipt, uiLocale) ?? localize(
+      return new BoundedCompletionFailure(failureCode, networkFailureText(receipt, interfaceLocale) ?? localize(
         uiLocale,
         'AI 未正常完成生成，结果未被保存。',
         'AI generation did not complete normally, so the result was not saved.',
@@ -148,8 +152,9 @@ export function createBoundedCompletionError(
   finishReason: LLMFinishReason,
   uiLocale: Locale = 'zh-CN',
   receipt?: BoundedCompletion['receipt'],
+  interfaceLocale?: ErrorDisplayLocale,
 ): BoundedCompletionFailure {
-  return incompleteCompletionError(finishReason, uiLocale, receipt)
+  return incompleteCompletionError(finishReason, uiLocale, receipt, interfaceLocale)
 }
 
 function continuationLimitExceededError(maxContinuations: number, uiLocale: Locale): Error {
@@ -243,7 +248,7 @@ export async function completeBoundedCompletion(request: BoundedCompletionReques
 
   while (finishReason !== 'stop') {
     assertNotCancelled(uiLocale, request.isCancelled)
-    if (finishReason !== 'length') throw incompleteCompletionError(finishReason, uiLocale, receipt)
+    if (finishReason !== 'length') throw incompleteCompletionError(finishReason, uiLocale, receipt, request.interfaceLocale)
     if (continuationCount >= request.maxContinuations) {
       request.onInterrupted?.(content)
       throw continuationLimitExceededError(request.maxContinuations, uiLocale)
@@ -282,7 +287,7 @@ export async function completeBoundedCompletion(request: BoundedCompletionReques
         request.onInterrupted?.(content)
         throw next.finishReason === 'stop' || next.finishReason === 'length'
           ? noVisibleContinuationProgressError(uiLocale)
-          : incompleteCompletionError(next.finishReason, uiLocale, next.receipt)
+          : incompleteCompletionError(next.finishReason, uiLocale, next.receipt, request.interfaceLocale)
       }
       content = merged
     }
