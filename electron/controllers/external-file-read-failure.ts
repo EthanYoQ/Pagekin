@@ -29,11 +29,7 @@ const UNREADABLE = [
 ] as const
 
 export function readFailureCopy(error: unknown): readonly [zhCN: string, enUS: string] | undefined {
-  // 解析路径在安全文件层之前，系统拒绝时 Node 只给错误号。
-  const errno = (error as NodeJS.ErrnoException | null)?.code
-  const code = errno === 'EPERM' || errno === 'EACCES'
-    ? 'SECURE_FS_OPEN_FAILED'
-    : error instanceof Error ? error.message : String(error)
+  const code = error instanceof Error ? error.message : String(error)
   return Object.hasOwn(READ_FAILURES, code) ? READ_FAILURES[code] : undefined
 }
 

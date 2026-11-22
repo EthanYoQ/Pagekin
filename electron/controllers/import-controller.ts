@@ -94,6 +94,16 @@ function importText(locale: ImportRunLocale | undefined, zhCNText: string, enUST
   return locale === 'en-US' ? enUSText : locale === 'zh-CN' ? zhCNText : text(zhCNText, enUSText)
 }
 
+// 解析所选文件的路径在安全文件层之前，系统拒绝时 Node 只给错误号。
+function selectedFileIdentity(fileIdentity: ImportFileIdentityProvider, filePath: string): ImportSourceFileIdentity {
+  try {
+    return fileIdentity(filePath)
+  } catch (error) {
+    const errno = (error as NodeJS.ErrnoException).code
+    throw errno === 'EPERM' || errno === 'EACCES' ? new Error('SECURE_FS_OPEN_FAILED') : error
+  }
+}
+
 function tooLargeForRemainingTotal(error: unknown, remainingBytes: number): unknown {
   return remainingBytes < MAX_TEXT_BYTES && error instanceof Error && error.message === 'SECURE_FS_FILE_TOO_LARGE'
     ? new Error('IMPORT_SOURCE_BYTES_EXCEEDED')
@@ -387,7 +397,7 @@ export function registerImportController(
       // the first capability is allocated.
       let selectedBytes = 0
       const selected = result.filePaths.map(filePath => {
-        const identity = fileIdentity(filePath)
+        const identity = selectedFileIdentity(fileIdentity, filePath)
         const selectedSize = statSync(identity.canonicalLocation).size
         if (!Number.isSafeInteger(selectedSize) || selectedSize < 0) {
           throw new Error('IMPORT_SOURCE_SIZE_INVALID')
