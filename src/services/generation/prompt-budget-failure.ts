@@ -1,7 +1,9 @@
-import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
+import type { ErrorDisplayLocale, InterfaceLocale, Locale } from '../../i18n/types'
 import { knownAppErrorMessage } from '../../i18n/app-errors'
+import { translate } from '../../i18n/core'
 import {
   PromptBudgetExceededError,
+  type GenerationAttemptReceipt,
   type PromptBudgetReport,
 } from './generation-harness'
 import type {
@@ -128,6 +130,21 @@ export function providerContextFailureText(error: unknown, locale: ErrorDisplayL
   else if (typeof error === 'string') message = error
   if (classifyGenerationFailure(message, null) !== 'provider-context') return undefined
   return knownAppErrorMessage(locale, message)
+}
+
+/**
+ * 网络失败的说明。主进程把连接失败和读流中断都记成 NETWORK_ERROR，靠传输诊断分辨：没拿到响应头是没连上，
+ * 拿到之后断开是中途断了，诊断记下代理连不上时沿用代理说明。没有诊断的记录用合并说明，其余失败返回 undefined。
+ */
+export function networkFailureText(
+  receipt: Pick<GenerationAttemptReceipt, 'failureCode' | 'diagnostics'> | undefined,
+  locale: InterfaceLocale,
+): string | undefined {
+  if (receipt?.failureCode !== 'NETWORK_ERROR') return undefined
+  const diagnostics = receipt.diagnostics
+  if (diagnostics?.errorCode === 'PROXY_UNREACHABLE') return translate(locale, 'error.proxyUnreachable')
+  if (!diagnostics) return translate(locale, 'error.generationNetworkFailed')
+  return translate(locale, diagnostics.phase === 'request' ? 'error.generationUnreachable' : 'error.generationConnectionInterrupted')
 }
 
 const REASON_LABELS: Readonly<Record<TaskBudgetReasonCode, readonly [string, string]> & Partial<Record<LegacyTaskBudgetReasonCode, readonly [string, string]>>> = Object.freeze({

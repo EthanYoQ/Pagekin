@@ -136,6 +136,8 @@ export const zhCN = {
   'error.generationCancelled': '生成已取消。',
   'error.generationProviderFailed': '模型服务没有返回完整结果。请检查网络和模型设置后重试。',
   'error.generationNetworkFailed': '没连上模型服务，或回复中途断了。请检查网络或代理后重试。',
+  'error.generationUnreachable': '没连上模型服务。请检查网络或「网络代理」设置后重试。',
+  'error.generationConnectionInterrupted': '与模型服务的连接中途断了。请检查网络或「网络代理」设置后重试。',
   'error.generationContextLengthExceeded': '作品内容没有变动。提示词超出了模型能接受的长度，没有生成。到「设置」换用上下文更长的模型或调低最大输出 Tokens，再重新生成。',
   'error.generationStorageFailed': '生成内容写入本地存储失败。请检查磁盘空间和作品文件夹的写入权限后重试。',
   'error.generationLedgerUnreadable': '正文没有受影响。这条 AI 生成记录已损坏，已停用。',

@@ -1,4 +1,5 @@
 import { safeTransportError, type GenerationTransportDiagnostics } from '../../src/shared/generation-contract'
+import { failedAtProxy } from '../network-proxy'
 
 /**
  * 一次流式请求的传输诊断：各 provider 共用同一份形状与上报节奏。
@@ -34,6 +35,7 @@ export class StreamTransportDiagnostics {
     } catch (error) {
       // undici 把连接、DNS、TLS 失败统一报成「fetch failed」；请求头或地址不合法另有报错，那是请求本身的问题。
       this.networkFailure = error instanceof TypeError && error.message === 'fetch failed'
+      if (this.networkFailure && failedAtProxy(error)) this.value.errorCode = 'PROXY_UNREACHABLE'
       throw error
     }
     this.value.phase = 'response'

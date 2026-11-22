@@ -26,6 +26,7 @@ let deferFirstLease: boolean
 let rejectFirstLease: ((error: Error) => void) | null
 let leaseRequestCount: number
 let failureCode: string | undefined
+let diagnostics: Record<string, unknown> | undefined
 
 const APP_MIN_WINDOW_WIDTH = 1024
 const nextFrames = () => act(async () => { await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))) })
@@ -48,6 +49,7 @@ beforeEach(async () => {
   rejectFirstLease = null
   leaseRequestCount = 0
   failureCode = undefined
+  diagnostics = undefined
   useProjectStore.setState({ currentProject: { id: 'editor-project', sessionLease: 'editor-epoch', path: 'C:/合成编辑器', novelConfig: {} } as never })
   useLLMStore.setState({ defaultModelId: 'editor-model', loaded: true })
   const recoveries = new Map<string, unknown>()
@@ -74,7 +76,7 @@ beforeEach(async () => {
           const run = { handle, status: snapshot.status, artifacts: [snapshot] }
           const stored = recoveries.get((handle as { runId: string }).runId) as { view: unknown }
           stored.view = run
-          resolve({ run, outcome: { status: snapshot.status, content: data.fullText, finishReason: data.finishReason, receipt: { finishReason: data.finishReason, ...(failureCode ? { failureCode } : {}) } } })
+          resolve({ run, outcome: { status: snapshot.status, content: data.fullText, finishReason: data.finishReason, receipt: { finishReason: data.finishReason, ...(failureCode ? { failureCode } : {}), ...(diagnostics ? { diagnostics } : {}) } } })
         }
         listeners.set('llm:stream-done', finish as EventListener)
         if (!deferStream) queueMicrotask(() => finish({ fullText: '残缺片段', finishReason: 'length' }))
@@ -492,6 +494,15 @@ describe('CodeMirror editor AI generation boundary', () => {
     await act(async () => page.getByRole('button', { name: '润色' }).click())
     await expect.element(page.getByText('没连上模型服务，或回复中途断了。请检查网络或代理后重试。')).toBeVisible()
     expect(page.getByText(/NETWORK_ERROR/).elements()).toHaveLength(0)
+  })
+
+  it('#702：回复中途断开时气泡说明是连接中途断了', async () => {
+    failureCode = 'NETWORK_ERROR'
+    diagnostics = { startedAt: 1, elapsedMs: 10, firstResponseMs: 5, lastResponseMs: 5, lastOutputMs: 5, phase: 'stream', endReason: 'failed', visibleEvents: 1, reasoningEvents: 0 }
+    await act(async () => root.render(<CodeMirrorEditor content="原文段落" mode="prose" />))
+    await selectLine('原文段落')
+    await act(async () => page.getByRole('button', { name: '润色' }).click())
+    await expect.element(page.getByText('与模型服务的连接中途断了。请检查网络或「网络代理」设置后重试。')).toBeVisible()
   })
 
   it('keeps a batch result copy-only when the author edits the chapter during generation', async () => {

@@ -15,6 +15,7 @@ import {
   completeBoundedCompletion,
   createBoundedCompletionError,
   redactVisibleCompletionText,
+  type BoundedCompletion,
   type BoundedCompletionMode,
 } from '../bounded-completion'
 import { workflowUiText, workflowWritingLanguage } from '../workflow-project-session'
@@ -96,7 +97,7 @@ export function keepReceiptFailuresOnCancel(session: GenerationSession, context:
       const outcome = await session.complete(task, options)
       const failureCode = outcome.receipt.failureCode
       if (failureCode && context.cancelled) {
-        throw Object.assign(createBoundedCompletionError(outcome.finishReason, context.uiLocale ?? 'zh-CN'), { code: failureCode })
+        throw Object.assign(createBoundedCompletionError(outcome.finishReason, context.uiLocale ?? 'zh-CN', outcome.receipt), { code: failureCode })
       }
       return outcome
     },
@@ -294,7 +295,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
   ): Promise<string> {
     const completion = await this.callLLMResult(prompt, systemPrompt, callbacks, options, context)
     if (completion.finishReason !== 'stop') {
-      throw this.createIncompleteCompletionError(completion.finishReason)
+      throw this.createIncompleteCompletionError(completion.finishReason, completion.receipt)
     }
     return completion.content
   }
@@ -527,10 +528,11 @@ export abstract class BaseWorkflowCommand<TResult = string> {
     if (receipt.promptBudget) callbacks.setPromptBudgetReport?.(receipt.promptBudget)
   }
 
-  protected createIncompleteCompletionError(finishReason: LLMFinishReason): Error {
+  protected createIncompleteCompletionError(finishReason: LLMFinishReason, receipt?: BoundedCompletion['receipt']): Error {
     return createBoundedCompletionError(
       finishReason,
       this.activeGenerationExecution?.context.uiLocale ?? 'zh-CN',
+      receipt,
     )
   }
 
