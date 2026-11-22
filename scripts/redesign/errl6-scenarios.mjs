@@ -80,7 +80,9 @@ async function failedOpen(context, kind, lang) {
   await stage.showSettingsPage(page, '项目备份')
   const restore = page.getByRole('button', { name: '从本地存档恢复副本' })
   await restore.waitFor({ state: 'visible' })
-  return { shown, restoreReachable: await restore.isEnabled() }
+  const restoreReachable = await restore.isEnabled()
+  assert.equal(restoreReachable, true, '损坏提示给的办法用不了：「项目备份」里的「从本地存档恢复副本」是灰的')
+  return { shown, restoreReachable }
 }
 
 const setup = context => seedStageSample(context, { landOnChapter3: false })
