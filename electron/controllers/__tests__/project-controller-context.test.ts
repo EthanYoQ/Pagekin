@@ -209,7 +209,7 @@ vi.mock('../../services/portable-export-host', () => ({ stopPortableExports: moc
 vi.mock('../../services/project-data-locator', () => ({ verifyCanonicalProjectData: mocks.verifyCanonicalProjectData }))
 
 import { registerProjectController } from '../project-controller'
-import { initProjectDatabase } from '../../database'
+import { createProjectDatabase, initProjectDatabase } from '../../database'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 function selectedProject(projectPath: string) {
@@ -980,7 +980,7 @@ describe('project controller project identity', () => {
       activeProjectPath: null,
       databaseRestored: true,
       dbReady: true,
-      error: 'Error: cannot initialize project core',
+      error: 'PROJECT_CREATE_FAILED',
     })
 
     expect(mocks.initCalls).toEqual([projectC])
@@ -1151,7 +1151,7 @@ describe('project controller project identity', () => {
       activeProjectPath: null,
       databaseRestored: false,
       dbReady: false,
-      error: expect.stringMatching(/cannot initialize project core[\s\S]*cannot initialize/),
+      error: 'PROJECT_CREATE_FAILED',
     })
     expect(mocks.projectAccess.beginSession).not.toHaveBeenCalled()
     expect(mocks.closeProjectDatabase).toHaveBeenCalledOnce()
@@ -1364,7 +1364,7 @@ describe('project controller project identity', () => {
       success: false,
       directoryDeleted: false,
       databaseRestored: true,
-      error: expect.stringContaining('directory locked'),
+      error: 'PROJECT_DELETE_FAILED',
     })
     expect(mocks.initCalls).toContain(projectA)
     expect(mocks.currentProjectPath).toBe(projectA)
@@ -1381,7 +1381,7 @@ describe('project controller project identity', () => {
       success: false,
       directoryDeleted: false,
       databaseRestored: false,
-      error: expect.stringMatching(/directory locked[\s\S]*cannot initialize/),
+      error: 'PROJECT_DELETE_FAILED',
     })
     expect(mocks.currentProjectPath).toBe('')
   })
@@ -1398,7 +1398,7 @@ describe('project controller project identity', () => {
       success: true,
       directoryDeleted: true,
       databaseRestored: false,
-      warning: expect.stringContaining('recent list locked'),
+      warning: expect.stringContaining('最近项目列表更新失败'),
     })
     expect(mocks.currentProjectPath).toBe('')
     expect(mocks.projectAccess.invalidateCurrentSession).toHaveBeenCalledOnce()
@@ -1698,5 +1698,128 @@ describe('project:open：作品文件坏了、被占用或没有权限时，说�
     const { zh, en, ja } = explain(result)
     expect(zh).toMatch(/损坏/u)
     for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_SYSTEM_TEXT)
+  })
+})
+
+const RAW_CREATE_DELETE_TEXT = /SqliteError|EBUSY|EPERM|EACCES|SQLITE_|PROJECT_|resource busy|not permitted|disk I\/O|rollback|回滚|cannot|[A-Z]:[\\/]/u
+
+describe('新建、删除作品失败时，说真正的原因和办法，不露码和英文（#702）', () => {
+  const createBook = (token: string, rendererProjectPath: string | null = projectA) => handler('project:create')(
+    { sender: { id: 17 } },
+    { name: 'C', parentGrantId: `selected:${path.resolve('C:/projects')}`, genre: 'fantasy', targetAudience: 'all' },
+    token,
+    rendererProjectPath,
+  ) as Promise<{ success: boolean, error?: string, databaseRestored?: boolean }>
+  const deleteBook = () => handler('project:delete')({}, projectA, 'project-A', 'lease-project-A', projectSession()) as
+    Promise<{ success: boolean, error?: string, warning?: string, databaseRestored?: boolean }>
+  const explain = (error: unknown) => ({
+    zh: appErrorMessage(shown('zh-CN'), error),
+    en: appErrorMessage(shown('en-US'), error),
+    ja: appErrorMessage(shown('ja-JP'), error),
+  })
+
+  it.each([
+    systemError('Error', 'EPERM', `EPERM: operation not permitted, mkdir '${projectC}'`),
+    systemError('Error', 'EACCES', `EACCES: permission denied, mkdir '${projectC}'`),
+  ])('所选位置没有写权限（$code）：说没有权限，换一个保存位置', async (error) => {
+    mocks.projectAccess.createProject.mockImplementationOnce(() => { throw error })
+
+    const result = await createBook(`create-denied-${error.message}`)
+
+    expect(result).toMatchObject({ success: false, databaseRestored: true })
+    const { zh, en, ja } = explain(result.error)
+    expect(zh).toMatch(/没有权限[\s\S]*换一个保存位置/u)
+    expect(en).toMatch(/permission[\s\S]*another location/u)
+    expect(ja).toMatch(/権限[\s\S]*保存場所/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_CREATE_DELETE_TEXT)
+  })
+
+  it('建库时读写出错：说这次没能新建，换个名称或保存位置再试（文件夹可能已留下）', async () => {
+    vi.mocked(createProjectDatabase).mockImplementationOnce(() => {
+      throw systemError('SqliteError', 'SQLITE_IOERR_WRITE', 'disk I/O error')
+    })
+
+    const result = await createBook('create-io-failed')
+
+    expect(result).toMatchObject({ success: false, databaseRestored: true })
+    const { zh, en, ja } = explain(result.error)
+    expect(zh).toMatch(/没能新建作品[\s\S]*换一个作品名称或保存位置/u)
+    expect(en).toMatch(/could not be created[\s\S]*another (book )?name or location/iu)
+    expect(ja).toMatch(/作成できません[\s\S]*作品名か保存場所/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_CREATE_DELETE_TEXT)
+  })
+
+  it('新建失败后原来那本书也没能恢复：只说新建失败的原因，不拼回滚的原文', async () => {
+    mocks.projectCoreUpdate.mockImplementationOnce(() => {
+      throw systemError('SqliteError', 'SQLITE_IOERR_WRITE', 'disk I/O error')
+    })
+    mocks.failInitPaths.add(projectA)
+
+    const result = await createBook('create-fail-no-rollback')
+
+    expect(result).toMatchObject({ success: false, databaseRestored: false, dbReady: false })
+    const { zh, en, ja } = explain(result.error)
+    expect(zh).toMatch(/没能新建作品/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_CREATE_DELETE_TEXT)
+  })
+
+  it('作品文件夹里有文件被别的程序占着、没删完：说没删完和原因，不露路径和英文原文', async () => {
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce(() => {
+      throw systemError('Error', 'EBUSY', `EBUSY: resource busy or locked, unlink '${path.join(projectA, '人物小传.docx')}'`)
+    })
+
+    const result = await deleteBook()
+
+    expect(result).toMatchObject({ success: false, directoryDeleted: false, databaseRestored: true })
+    const { zh, en, ja } = explain(result.error)
+    expect(zh).toMatch(/没删完[\s\S]*别的程序/u)
+    expect(en).toMatch(/not fully deleted[\s\S]*another program/u)
+    expect(ja).toMatch(/別のプログラム[\s\S]*削除しきれ/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_CREATE_DELETE_TEXT)
+  })
+
+  it.each([
+    systemError('Error', 'EPERM', `EPERM: operation not permitted, unlink '${path.join(projectA, '.ai-novel', 'project.db')}'`),
+    systemError('Error', 'EACCES', `EACCES: permission denied, rmdir '${projectA}'`),
+  ])('没有删除权限（$code）、没删完：说没有删除权限，检查文件夹权限', async (error) => {
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce(() => { throw error })
+
+    const result = await deleteBook()
+
+    expect(result).toMatchObject({ success: false, directoryDeleted: false, databaseRestored: true })
+    const { zh, en, ja } = explain(result.error)
+    expect(zh).toMatch(/没删完[\s\S]*没有删除[\s\S]*权限/u)
+    expect(en).toMatch(/not fully deleted[\s\S]*no permission[\s\S]*permissions/u)
+    expect(ja).toMatch(/権限がない[\s\S]*削除しきれ/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_CREATE_DELETE_TEXT)
+  })
+
+  it('没删完、原来的书也没能恢复：只说没删完，不拼恢复失败的原文', async () => {
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce(() => {
+      throw systemError('Error', 'EBUSY', `EBUSY: resource busy or locked, unlink '${path.join(projectA, '人物小传.docx')}'`)
+    })
+    mocks.failInitPaths.add(projectA)
+
+    const result = await deleteBook()
+
+    expect(result).toMatchObject({ success: false, directoryDeleted: false, databaseRestored: false })
+    const { zh, en, ja } = explain(result.error)
+    expect(zh).toMatch(/没删完/u)
+    for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_CREATE_DELETE_TEXT)
+  })
+
+  it('作品已删掉、只是最近项目列表没更新：提示里不带英文原文', async () => {
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce((target: string) => {
+      mocks.existingPaths.delete(path.resolve(target))
+    })
+    mocks.writeJsonFile.mockImplementationOnce(() => {
+      throw systemError('Error', 'EPERM', `EPERM: operation not permitted, open 'C:/Users/a/recent-projects.json'`)
+    })
+
+    const result = await deleteBook()
+
+    expect(result).toMatchObject({ success: true, directoryDeleted: true })
+    expect(result.warning).toMatch(/最近项目/u)
+    expect(result.warning).not.toMatch(RAW_CREATE_DELETE_TEXT)
   })
 })

@@ -1355,7 +1355,7 @@ describe('project close lifecycle', () => {
           activeProjectPath: project('A').path,
           databaseRestored: true,
           dbReady: true,
-          error: 'cannot initialize new database',
+          error: 'PROJECT_CREATE_FAILED',
         }
       }
       throw new Error(`unexpected IPC: ${channel}`)
@@ -1372,8 +1372,8 @@ describe('project close lifecycle', () => {
     expect(useEditorStore.getState().tabs).toHaveLength(1)
     expect(mocks.onProjectOpening).not.toHaveBeenCalled()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('cannot initialize'),
-      expect.objectContaining({ title: '创建项目失败' }),
+      expect.stringContaining('没能新建作品'),
+      expect.objectContaining({ title: '新建作品失败' }),
     )
   })
 
@@ -1403,7 +1403,7 @@ describe('project close lifecycle', () => {
 
     expect(mocks.alertError).toHaveBeenCalledWith(
       expect.stringContaining('请把项目文件夹移到靠近磁盘根目录的位置'),
-      expect.objectContaining({ title: '创建项目失败' }),
+      expect.objectContaining({ title: '新建作品失败' }),
     )
   })
 
@@ -1417,7 +1417,7 @@ describe('project close lifecycle', () => {
           activeProjectPath: project('B').path,
           databaseRestored: false,
           dbReady: false,
-          error: 'create failed; rollback failed',
+          error: 'PROJECT_CREATE_FAILED',
         }
       }
       throw new Error(`unexpected IPC: ${channel}`)
@@ -1434,10 +1434,10 @@ describe('project close lifecycle', () => {
     expect(useEditorStore.getState().tabs).toHaveLength(1)
     expect(mocks.disableProjectBindingsPreservingDrafts).toHaveBeenCalledWith(project('A').path)
     expect(mocks.onProjectClosed).not.toHaveBeenCalled()
-    expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('已解除项目界面的可编辑状态'),
-      expect.objectContaining({ title: '创建失败，项目数据库不可用' }),
-    )
+    const [message, options] = mocks.alertError.mock.calls.at(-1)!
+    expect(message).toMatch(/没能新建作品[\s\S]*原来开着的《A》已关闭/u)
+    expect(message).not.toMatch(/PROJECT_|主进程|可编辑状态|数据库/u)
+    expect(options).toEqual(expect.objectContaining({ title: '新建作品失败' }))
   })
 
   it('detaches the renderer when project open cannot restore the old database', async () => {
@@ -1890,7 +1890,7 @@ describe('project close lifecycle', () => {
       success: false,
       directoryDeleted: false,
       databaseRestored: false,
-      error: 'directory locked; database restore failed',
+      error: 'PROJECT_DELETE_FAILED',
     })
 
     await expect(useProjectStore.getState().deleteProject(project('A').path)).resolves.toBe(false)
@@ -1898,10 +1898,28 @@ describe('project close lifecycle', () => {
     expect(useProjectStore.getState().currentProject).toBeNull()
     expect(mocks.onProjectClosed).toHaveBeenCalledWith(project('A').path)
     expect(useEditorStore.getState().tabs).toEqual([])
-    expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('已关闭当前项目'),
-      expect.objectContaining({ title: '删除失败，项目已停用' }),
-    )
+    const [message, options] = mocks.alertError.mock.calls.at(-1)!
+    expect(message).toMatch(/没删完[\s\S]*《A》已关闭[\s\S]*删掉这个文件夹[\s\S]*「从最近项目移除…」/u)
+    expect(message).not.toMatch(/PROJECT_|数据库|继续写入|已停用/u)
+    expect(options).toEqual(expect.objectContaining({ title: '删除作品失败' }))
+  })
+
+  // #702：文件夹没删完但库文件还在、原来的书恢复回来了，作品仍开着，可以再删一次。
+  it('删除没删完、作品恢复回来：说没删完、作品还开着、关掉占用的程序再删一次', async () => {
+    mocks.invoke.mockResolvedValueOnce({
+      success: false,
+      directoryDeleted: false,
+      databaseRestored: true,
+      error: 'PROJECT_DELETE_FAILED',
+    })
+
+    await expect(useProjectStore.getState().deleteProject(project('A').path)).resolves.toBe(false)
+
+    expect(useProjectStore.getState().currentProject?.path).toBe(project('A').path)
+    const [message, options] = mocks.alertError.mock.calls.at(-1)!
+    expect(message).toMatch(/没删完[\s\S]*作品还开着[\s\S]*再删除一次/u)
+    expect(message).not.toMatch(/PROJECT_|数据库|已关闭/u)
+    expect(options).toEqual(expect.objectContaining({ title: '删除作品失败' }))
   })
 })
 
