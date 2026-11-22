@@ -96,17 +96,29 @@ function projectRootSelectionFailure(error: unknown) {
  */
 const FILES_BUSY_RETRY_MS = 3_000
 
-function sqliteCode(error: unknown): string | undefined {
+/** SQLite 的扩展码或 Node 文件系统的 errno 码（worker 里抛的也带回来了）。 */
+function systemCode(error: unknown): string | undefined {
   const code = error instanceof Error ? (error as { code?: unknown }).code : undefined
-  return typeof code === 'string' && code.startsWith('SQLITE_') ? code : undefined
+  return typeof code === 'string' ? code : undefined
 }
 
-const filesStillMapped = (error: unknown) => sqliteCode(error) === 'SQLITE_IOERR_TRUNCATE'
+const filesStillMapped = (error: unknown) => systemCode(error) === 'SQLITE_IOERR_TRUNCATE'
+
+/** 按前缀从上往下认，TRUNCATE 要排在别的 IOERR 前面。 */
+const PROJECT_FILE_FAILURES = [
+  ['SQLITE_IOERR_TRUNCATE', 'PROJECT_OPEN_FILES_BUSY'],
+  ['SQLITE_IOERR', 'PROJECT_OPEN_IO_FAILED'],
+  ['SQLITE_CORRUPT', 'PROJECT_OPEN_DAMAGED'],
+  ['SQLITE_NOTADB', 'PROJECT_OPEN_DAMAGED'],
+  ['EBUSY', 'PROJECT_OPEN_FILES_LOCKED'],
+  ['EPERM', 'PROJECT_OPEN_ACCESS_DENIED'],
+  ['EACCES', 'PROJECT_OPEN_ACCESS_DENIED'],
+] as const
 
 function projectFilesFailure(error: unknown) {
-  if (filesStillMapped(error)) return { errorCode: 'PROJECT_OPEN_FILES_BUSY' as const, error: 'PROJECT_OPEN_FILES_BUSY' }
-  if (sqliteCode(error)?.startsWith('SQLITE_IOERR')) return { errorCode: 'PROJECT_OPEN_IO_FAILED' as const, error: 'PROJECT_OPEN_IO_FAILED' }
-  return null
+  const code = systemCode(error)
+  const errorCode = code && PROJECT_FILE_FAILURES.find(([prefix]) => code.startsWith(prefix))?.[1]
+  return errorCode ? { errorCode, error: errorCode } : null
 }
 
 export interface RecentProject {
@@ -789,7 +801,6 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           sealedGenerationCount: sealedRootCount,
         }
       } catch (error) {
-        let rollbackError: unknown
         let databaseState: ProjectDatabaseState
         try {
           databaseState = requireReadyDatabase(
@@ -799,12 +810,11 @@ export function registerProjectController(options: ProjectControllerOptions = {}
             'PROJECT_ROLLBACK_DATABASE_UNAVAILABLE',
           )
         } catch (restoreError) {
-          rollbackError = restoreError
+          console.error('[Project] 打开失败后没能回到原来的作品:', restoreError)
           databaseState = failedDatabaseState()
         }
-        if (!legacyImportSource) console.error('[Project] 打开失败', { step: openStep, name: error instanceof Error ? error.name : typeof error, code: sqliteCode(error) })
+        if (!legacyImportSource) console.error('[Project] 打开失败', { step: openStep, name: error instanceof Error ? error.name : typeof error, code: systemCode(error) })
         const selectionFailure = projectStoragePreflightFailure(error) ?? projectRootSelectionFailure(error) ?? projectFilesFailure(error)
-        const errorMessage = withRollbackFailure(selectionFailure?.error ?? String(error), rollbackError)
         return {
           success: false,
           project: null,
@@ -812,7 +822,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           ...databaseState,
           ...(selectionFailure ?? {}),
           ...(legacyImportSource ? { legacyImportSource } : {}),
-          error: errorMessage,
+          error: selectionFailure?.error ?? String(error),
         }
       }
     })

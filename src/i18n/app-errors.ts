@@ -46,6 +46,9 @@ const ERROR_KEYS = {
   // #702：打开作品时 SQLite 报磁盘读写错误。FILES_BUSY 是主进程重试后作品文件仍被占用。
   PROJECT_OPEN_FILES_BUSY: 'error.projectOpenFilesBusy',
   PROJECT_OPEN_IO_FAILED: 'error.projectOpenIoFailed',
+  PROJECT_OPEN_DAMAGED: 'error.projectOpenDamaged',
+  PROJECT_OPEN_FILES_LOCKED: 'error.projectOpenFilesLocked',
+  PROJECT_OPEN_ACCESS_DENIED: 'error.projectOpenAccessDenied',
   LEGACY_IMPORT_UNSUPPORTED_SOURCE: 'error.legacyImportUnsupportedSource',
   LEGACY_IMPORT_NOT_LEGACY_PROJECT: 'error.legacyImportNotLegacyProject',
   LEGACY_IMPORT_PATH_INVALID: 'error.legacyImportChooseAgain',
@@ -450,7 +453,7 @@ export function legacyImportFailureMessage(locale: ErrorDisplayLocale, error: un
   return joinSentences(locale, kept, reason)
 }
 
-const OPEN_RETRY_CODES: ReadonlySet<string> = new Set(['PROJECT_OPEN_FILES_BUSY', 'PROJECT_OPEN_IO_FAILED'])
+const OPEN_RETRY_CODES: ReadonlySet<string> = new Set(['PROJECT_OPEN_FILES_BUSY', 'PROJECT_OPEN_IO_FAILED', 'PROJECT_OPEN_FILES_LOCKED'])
 
 /** 打开作品失败的说明。作品文件暂时读不了时接上下一步：书架上有书名就指向「打开《书名》」这个按钮。 */
 export function projectOpenFailureMessage(locale: ErrorDisplayLocale, error: unknown, title?: string): string {

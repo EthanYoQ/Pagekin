@@ -193,7 +193,7 @@ const brokenPreview = (mode, reason) => ({ model: false, shell: 'stage', setup: 
   assert.equal(await status.textContent(), '暂时读不到这部作品的概览。点「打开」查看，打不开时会说明原因。')
   await shoot(`preview-broken-${mode}-preview`)
   await region.getByRole('button', { name: `打开《${name}》` }).click()
-  const failed = page.getByRole('alertdialog').or(page.getByRole('dialog')).filter({ hasText: '打开项目失败' })
+  const failed = page.getByRole('alertdialog').or(page.getByRole('dialog')).filter({ hasText: '打开作品失败' })
   await failed.waitFor({ state: 'visible', timeout: 30_000 })
   assert.match(await failed.textContent(), reason)
   await shoot(`preview-broken-${mode}-open`)

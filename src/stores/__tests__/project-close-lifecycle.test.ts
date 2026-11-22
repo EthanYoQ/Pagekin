@@ -1463,9 +1463,30 @@ describe('project close lifecycle', () => {
     expect(mocks.disableProjectBindingsPreservingDrafts).toHaveBeenCalledWith(project('A').path)
     expect(mocks.onProjectClosed).not.toHaveBeenCalled()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('已解除项目界面的可编辑状态'),
-      expect.objectContaining({ title: '打开失败，项目数据库不可用' }),
+      expect.stringContaining('原来开着的《A》已关闭。'),
+      expect.objectContaining({ title: '打开作品失败' }),
     )
+  })
+
+  // #702：打开失败、原来开着的书也没能恢复时，主进程只回首个原因的登记码。
+  it('打开失败且原来那本书没能恢复：说打开失败的原因，再说原来那本书已关闭，不露码和内部说法', async () => {
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open') {
+        return {
+          success: false, project: null, requestToken: args[1], activeProjectPath: null,
+          databaseRestored: false, dbReady: false, errorCode: 'PROJECT_OPEN_DAMAGED', error: 'PROJECT_OPEN_DAMAGED',
+        }
+      }
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(false)
+
+    expect(useProjectStore.getState().currentProject).toBeNull()
+    const [message, options] = mocks.alertError.mock.calls.at(-1)!
+    expect(message).toMatch(/损坏[\s\S]*「从本地存档恢复副本」[\s\S]*原来开着的《A》已关闭/u)
+    expect(message).not.toMatch(/PROJECT_|主进程|可编辑状态|数据库/u)
+    expect(options).toEqual(expect.objectContaining({ title: '打开作品失败' }))
   })
 
   it('keeps the old renderer project bound when project open fails but rollback succeeds', async () => {
@@ -1491,7 +1512,7 @@ describe('project close lifecycle', () => {
     expect(mocks.onProjectClosed).not.toHaveBeenCalled()
     expect(mocks.alertError).toHaveBeenCalledWith(
       expect.stringContaining('target project is invalid'),
-      expect.objectContaining({ title: '打开项目失败' }),
+      expect.objectContaining({ title: '打开作品失败' }),
     )
   })
 
@@ -1511,7 +1532,7 @@ describe('project close lifecycle', () => {
 
     expect(mocks.alertError).toHaveBeenLastCalledWith(
       '已保存的内容没有受影响。作品文件暂时被占用，这次没能打开。稍等几秒，再点「打开《灯塔》」。',
-      expect.objectContaining({ title: '打开项目失败' }),
+      expect.objectContaining({ title: '打开作品失败' }),
     )
   })
 
@@ -1531,7 +1552,7 @@ describe('project close lifecycle', () => {
 
     expect(mocks.alertError).toHaveBeenLastCalledWith(
       '这次没能读取作品文件。稍等几秒，再打开一次。',
-      expect.objectContaining({ title: '打开项目失败' }),
+      expect.objectContaining({ title: '打开作品失败' }),
     )
   })
 
@@ -1757,7 +1778,7 @@ describe('project close lifecycle', () => {
     releaseC.resolve()
     await expect(openingC).resolves.toBe(false)
     expect(useProjectStore.getState().currentProject?.path).toBe(project('B').path)
-    expect([...prompts.openTitles]).toEqual([SEALED_TITLE, '打开项目失败'])
+    expect([...prompts.openTitles]).toEqual([SEALED_TITLE, '打开作品失败'])
   })
 
   it("keeps this book's notices while the same session saves a new project snapshot", async () => {
