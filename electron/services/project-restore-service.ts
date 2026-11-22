@@ -620,11 +620,11 @@ async function installStagedProject(
   const sources = [...attempt.paths.values()].filter(item => item.kind === 'file' && contained(storage, item.path))
   const byKey = new Map(sources.map(item => [relativeKey(path.relative(storage, item.path)), item]))
   const expectedFiles = new Set(byKey.keys())
-  const expectedDirectories = new Set<string>()
+  const expectedDirectories = new Map<string, string>()
   for (const source of sources) {
     let relative = path.dirname(path.relative(storage, source.path))
     while (relative !== '.') {
-      expectedDirectories.add(relativeKey(relative))
+      expectedDirectories.set(relativeKey(relative), relative)
       const parent = path.dirname(relative)
       if (parent === relative) break
       relative = parent
@@ -654,8 +654,8 @@ async function installStagedProject(
     || [...existing.directories].some(key => !expectedDirectories.has(key))) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
   if (existing.files.has(portablePathKey(PROJECT_MANIFEST_NAME))) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
 
-  for (const key of [...expectedDirectories].sort((left, right) => left.split('/').length - right.split('/').length)) {
-    const directory = path.join(targetStorage, ...key.split('/'))
+  for (const relative of [...expectedDirectories.values()].sort((left, right) => left.length - right.length)) {
+    const directory = path.join(targetStorage, relative)
     if (!fs.existsSync(directory)) fs.mkdirSync(directory, { mode: 0o700 })
     physicalDirectory(directory)
   }
