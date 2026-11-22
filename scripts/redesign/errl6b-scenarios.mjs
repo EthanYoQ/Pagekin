@@ -145,7 +145,6 @@ async function deleteLeftover(context, kind, lang) {
   return { shown, left, reopened, waitedSeconds }
 }
 
-/** 带知识库的书正常删除：关库后立刻删目录，不因重试变慢。 */
 async function deleteBookWithKnowledgeBase(context) {
   const { page, samplePath } = context
   await stage.openAfterRestart(page, name)
