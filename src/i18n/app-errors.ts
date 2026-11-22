@@ -49,6 +49,10 @@ const ERROR_KEYS = {
   PROJECT_OPEN_DAMAGED: 'error.projectOpenDamaged',
   PROJECT_OPEN_FILES_LOCKED: 'error.projectOpenFilesLocked',
   PROJECT_OPEN_ACCESS_DENIED: 'error.projectOpenAccessDenied',
+  // 库文件是空的或不在：新建建库时中断，或删除作品时库文件先删掉了。
+  PROJECT_OPEN_EMPTY: 'error.projectOpenEmpty',
+  PROJECT_CREATE_ACCESS_DENIED: 'error.projectCreateAccessDenied',
+  PROJECT_CREATE_FAILED: 'error.projectCreateFailed',
   LEGACY_IMPORT_UNSUPPORTED_SOURCE: 'error.legacyImportUnsupportedSource',
   LEGACY_IMPORT_NOT_LEGACY_PROJECT: 'error.legacyImportNotLegacyProject',
   LEGACY_IMPORT_PATH_INVALID: 'error.legacyImportChooseAgain',
@@ -74,6 +78,8 @@ const ERROR_KEYS = {
   LEGACY_IMPORT_HISTORY_AUTHORITY_INVALID: 'error.legacyImportFailed',
   LEGACY_IMPORT_ROSTER_UNAVAILABLE: 'error.legacyImportFailed',
   PROJECT_DELETE_FAILED: 'error.projectDeleteFailed',
+  PROJECT_DELETE_FILES_BUSY: 'error.projectDeleteBusy',
+  PROJECT_DELETE_ACCESS_DENIED: 'error.projectDeleteAccessDenied',
   PROJECT_RECENT_LIST_UPDATE_FAILED: 'error.projectRecentListUpdateFailed',
   PROJECT_ARCHIVE_TARGET_EXISTS: 'error.projectArchiveTargetExists',
   // 导出或云备份时有一列登记为脱敏投影却没有投影办法（#611），整次打包中止，作品不动。
@@ -460,6 +466,18 @@ export function projectOpenFailureMessage(locale: ErrorDisplayLocale, error: unk
   const message = appErrorMessage(locale, error)
   if (!OPEN_RETRY_CODES.has(readCode(error) ?? '')) return message
   const next = title ? translate(locale, 'error.projectOpenRetryBook', { title }) : translate(locale, 'error.projectOpenRetry')
+  return joinSentences(locale, message, next)
+}
+
+const DELETE_LEFTOVER_CODES: ReadonlySet<string> = new Set(['PROJECT_DELETE_FAILED', 'PROJECT_DELETE_FILES_BUSY', 'PROJECT_DELETE_ACCESS_DENIED'])
+
+/** 删除作品失败的说明。文件夹没删完时接上作品现在的状态：还开着就再删一次；已关闭（closedTitle）就自己删文件夹。 */
+export function projectDeleteFailureMessage(locale: ErrorDisplayLocale, error: unknown, closedTitle?: string): string {
+  const message = appErrorMessage(locale, error)
+  if (!DELETE_LEFTOVER_CODES.has(readCode(error) ?? '')) return message
+  const next = closedTitle === undefined
+    ? translate(locale, 'error.projectDeleteStillOpen')
+    : translate(locale, 'error.projectDeleteClosed', { title: closedTitle })
   return joinSentences(locale, message, next)
 }
 
