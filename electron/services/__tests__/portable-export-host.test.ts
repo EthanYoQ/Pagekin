@@ -248,31 +248,17 @@ describe('在 worker 线程里导出', () => {
     const { fixture, input } = await project()
     const inside = path.join(fixture.sourceRoot, 'exports')
     fs.mkdirSync(inside)
-    const created: string[] = []
-    const watcher = fs.watch(inside, (_event, name) => { created.push(name ? String(name) : '') })
-    // macOS 的 FSEvents 会补报 watch 之前建 inside 的那次事件，须先排空，否则它会被当成导出建的目录。
-    const settled = async (marker: string) => {
-      const from = created.length
-      const deadline = Date.now() + 20_000
-      fs.writeFileSync(path.join(inside, marker), '')
-      while (!created.slice(from).includes(marker)) {
-        if (Date.now() > deadline) throw new Error(`fs.watch 20 秒内没报回 ${marker}`)
-        await new Promise(resolve => setTimeout(resolve, 10))
-      }
-    }
-    let result: unknown
-    try {
-      await settled('.watch-ready')
-      created.length = 0
-      result = await outcome(exportPortableProjectInWorker({
-        ...input('x.ainovel'), targetArchivePath: path.join(inside, 'x.ainovel'), attemptParentPath: inside,
-      }, worker))
-      await settled('.watch-done')
-    } finally { watcher.close() }
+    // 目录里建了又删的条目不会留在列表里，但会改动所在目录的修改时间，所以快照连修改时间一起比。
+    const snapshot = () => (fs.readdirSync(fixture.sourceRoot, { recursive: true }) as string[]).sort()
+      .map(name => [name, fs.lstatSync(path.join(fixture.sourceRoot, name), { bigint: true }).mtimeNs])
+    const before = snapshot()
+
+    const result = await outcome(exportPortableProjectInWorker({
+      ...input('x.ainovel'), targetArchivePath: path.join(inside, 'x.ainovel'), attemptParentPath: inside,
+    }, worker))
 
     expect(result).toMatchObject({ ok: false, code: 'PORTABLE_TARGET_INSIDE_SOURCE' })
-    expect(created.filter(name => !name.startsWith('.watch-'))).toEqual([])
-    expect(fs.readdirSync(inside).sort()).toEqual(['.watch-done', '.watch-ready'])
+    expect(snapshot()).toEqual(before)
   }, 60_000)
 
   it('存档一发布就算导出完成：这时停止也报成功，不会报失败又留下存档', async () => {
