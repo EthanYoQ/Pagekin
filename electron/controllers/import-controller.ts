@@ -15,8 +15,10 @@ import { ImportSourceIdentityRepository } from '../repositories/import-source-id
 import { loadApplicationImportSourceSecret } from '../services/import-source-identity-secret'
 import { mainText } from '../i18n'
 import { importErrorLocale, importRunLocale } from './import-run-failure'
+import { readFailureCopy } from './external-file-read-failure'
 import { knownAppErrorMessage } from '../../src/i18n/app-errors'
 import {
+  MAX_TEXT_BYTES,
   windowsSafeFileSystem,
   type WindowsSafeFileSystem,
 } from '../security/windows-safe-file-system'
@@ -92,6 +94,22 @@ function importText(locale: ImportRunLocale | undefined, zhCNText: string, enUST
   return locale === 'en-US' ? enUSText : locale === 'zh-CN' ? zhCNText : text(zhCNText, enUSText)
 }
 
+// 解析所选文件的路径在安全文件层之前，系统拒绝时 Node 只给错误号。
+function selectedFileIdentity(fileIdentity: ImportFileIdentityProvider, filePath: string): ImportSourceFileIdentity {
+  try {
+    return fileIdentity(filePath)
+  } catch (error) {
+    const errno = (error as NodeJS.ErrnoException).code
+    throw errno === 'EPERM' || errno === 'EACCES' ? new Error('SECURE_FS_OPEN_FAILED') : error
+  }
+}
+
+function tooLargeForRemainingTotal(error: unknown, remainingBytes: number): unknown {
+  return remainingBytes < MAX_TEXT_BYTES && error instanceof Error && error.message === 'SECURE_FS_FILE_TOO_LARGE'
+    ? new Error('IMPORT_SOURCE_BYTES_EXCEEDED')
+    : error
+}
+
 function importSelectionErrorMessage(
   error: unknown,
   locale: ImportRunLocale | undefined,
@@ -105,13 +123,19 @@ function importSelectionErrorMessage(
       `The import source-file limit was exceeded (limit: ${limits.maxSourceFiles}).`,
     )
   }
-  if (code === 'IMPORT_SOURCE_BYTES_EXCEEDED' || code === 'SECURE_FS_FILE_TOO_LARGE') {
+  if (code === 'IMPORT_SOURCE_BYTES_EXCEEDED') {
+    const megabytes = limits.maxTotalBytes / (1024 * 1024)
+    const [zhLimit, enLimit] = Number.isInteger(megabytes)
+      ? [`${megabytes} MB`, `${megabytes} MB`]
+      : [`${limits.maxTotalBytes} 字节`, `${limits.maxTotalBytes} bytes`]
     return importText(
       locale,
-      `所选文件总大小超过导入上限（最多 ${limits.maxTotalBytes} 字节）。`,
-      `The import source-size limit was exceeded (limit: ${limits.maxTotalBytes} bytes).`,
+      `所选文件一共超过 ${zhLimit}，读不进来。请拆成几个小文件，分几次导入。`,
+      `The selected files total more than ${enLimit} and cannot be read. Split them into smaller files and import them in a few rounds.`,
     )
   }
+  const readFailure = readFailureCopy(error)
+  if (readFailure) return importText(locale, ...readFailure)
   if (code === 'IMPORT_CHAPTER_COUNT_EXCEEDED') {
     return importText(
       locale,
@@ -373,7 +397,7 @@ export function registerImportController(
       // the first capability is allocated.
       let selectedBytes = 0
       const selected = result.filePaths.map(filePath => {
-        const identity = fileIdentity(filePath)
+        const identity = selectedFileIdentity(fileIdentity, filePath)
         const selectedSize = statSync(identity.canonicalLocation).size
         if (!Number.isSafeInteger(selectedSize) || selectedSize < 0) {
           throw new Error('IMPORT_SOURCE_SIZE_INVALID')
@@ -469,6 +493,7 @@ export function registerImportController(
           continue
         }
         let grantId = ''
+        const remainingBytes = limits.maxTotalBytes - consumedBytes
         try {
           const grant = grantService.issueFile({
             webContentsId: event.sender.id,
@@ -484,7 +509,6 @@ export function registerImportController(
             operation: 'read',
           })
           const sourceFileName = source.displayName
-          const remainingBytes = limits.maxTotalBytes - consumedBytes
           const isEpub = path.extname(sourceFileName).toLowerCase() === '.epub'
           let parsed: ParsedChapter[]
           let contentBytes: number
@@ -590,7 +614,8 @@ export function registerImportController(
             ImportRunRepository.commitParsedSource(parsingRun.id, opaqueSourceId, sourceChapters)
           }
           content = ''
-        } catch (error) {
+        } catch (caught) {
+          const error = tooLargeForRemainingTotal(caught, remainingBytes)
           let projectStillCurrent = false
           try {
             assertFrozenProject()

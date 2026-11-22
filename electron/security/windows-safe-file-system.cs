@@ -206,6 +206,7 @@ namespace AiNovelSecureFs {
       if (status == STATUS_OBJECT_NAME_NOT_FOUND || status == STATUS_OBJECT_PATH_NOT_FOUND) {
         throw new SecureFsException("SECURE_FS_NOT_FOUND");
       }
+      if (status == STATUS_SHARING_VIOLATION) throw new SecureFsException("SECURE_FS_FILE_IN_USE");
       throw new SecureFsException("SECURE_FS_OPEN_FAILED");
     }
 

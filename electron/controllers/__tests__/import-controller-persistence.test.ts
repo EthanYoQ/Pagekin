@@ -91,11 +91,11 @@ describe('current-project import parsing persistence', () => {
     },
     {
       kind: 'total bytes', locale: 'zh-CN', limits: { maxTotalBytes: 10 },
-      expected: '所选文件总大小超过导入上限（最多 10 字节）。',
+      expected: '所选文件一共超过 10 字节，读不进来。请拆成几个小文件，分几次导入。',
     },
     {
       kind: 'total bytes', locale: 'en-US', limits: { maxTotalBytes: 10 },
-      expected: 'The import source-size limit was exceeded (limit: 10 bytes).',
+      expected: 'The selected files total more than 10 bytes and cannot be read. Split them into smaller files and import them in a few rounds.',
     },
     {
       kind: 'chapter count', locale: 'zh-CN', limits: { maxChapters: 1 },
