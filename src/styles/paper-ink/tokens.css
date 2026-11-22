@@ -112,6 +112,11 @@
   -webkit-font-smoothing: antialiased;
 }
 
+.paper-ink:lang(en) {
+  --font-ui: "Inter Latin Punctuation", "Noto Sans SC Latin Quotes", "Noto Sans SC", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --font-display: "Instrument Serif Latin Punctuation", "Noto Serif SC Latin Quotes", "Noto Serif SC", "Songti SC", "SimSun", serif;
+}
+
 .paper-ink[data-theme="dark"],
 [data-theme="dark"] .paper-ink {
   color-scheme: dark;
