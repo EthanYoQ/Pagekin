@@ -310,6 +310,21 @@ function aggregateProject(
   })
 }
 
+/**
+ * Windows 的 copyFileSync 复制时不让别人写源文件，同时打开这本书的可写连接会退成只读、报 SQLITE_READONLY。
+ * fs.openSync 打开的句柄允许别人读写，复制期间被写过由前后的 sourceState 比对发现。
+ */
+function copySharingWrites(source: string, target: string): void {
+  const input = fs.openSync(source, 'r')
+  try {
+    const output = fs.openSync(target, 'wx')
+    try {
+      const buffer = Buffer.allocUnsafe(1 << 20)
+      for (let read; (read = fs.readSync(input, buffer)) > 0;) fs.writeSync(output, buffer, 0, read)
+    } finally { fs.closeSync(output) }
+  } finally { fs.closeSync(input) }
+}
+
 /** 不升级：概览读的表和列各版本都在，升级留到打开作品时（校验范围见 ADR-0029 决定 1）。 */
 export function readPeekSnapshot(request: PeekSnapshotRequest): ProjectOverview {
   const before = sourceState(request.databasePath)
@@ -326,11 +341,7 @@ export function readPeekSnapshot(request: PeekSnapshotRequest): ProjectOverview 
       reason: 'Ephemeral read-only project overview snapshot.',
       cleanupCommand: `Remove-Item -LiteralPath '${attempt.replaceAll("'", "''")}' -Recurse -Force`,
     }), { flag: 'wx' })
-    for (const file of before) fs.copyFileSync(
-      request.databasePath + file.suffix,
-      snapshotPath + file.suffix,
-      fs.constants.COPYFILE_EXCL,
-    )
+    for (const file of before) copySharingWrites(request.databasePath + file.suffix, snapshotPath + file.suffix)
     const copied = sourceState(snapshotPath)
     const after = sourceState(request.databasePath)
     if (!sameFileSizes(before, copied) || JSON.stringify(before) !== JSON.stringify(after)) {

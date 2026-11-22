@@ -246,10 +246,11 @@ describe('ProjectPeekService source-zero-write overview', () => {
     const f = fixture()
     const request = { databasePath: f.databasePath, projectId: f.projectId, manifestFingerprint: 'manifest', scratchRoot: f.scratch,
       recognizedSchemas: getDesktopMigrationRegistry().recognizedSchemas }
-    const copy = fs.copyFileSync
-    const spy = vi.spyOn(fs, 'copyFileSync').mockImplementation((source, target, mode) => {
-      copy(source, target, mode)
+    const read = fs.readSync
+    const spy = vi.spyOn(fs, 'readSync').mockImplementationOnce((...args: Parameters<typeof fs.readSync>) => {
+      const count = read(...args)
       f.database.prepare("UPDATE project_core SET genre='科幻'").run()
+      return count
     })
     try {
       expect(() => readPeekSnapshot(request)).toThrow('PROJECT_PEEK_SOURCE_CHANGED')
