@@ -795,7 +795,7 @@ async function main() {
         await deleteDialog.waitFor({ state: 'visible' })
         await deleteDialog.getByRole('textbox').fill(names.b)
         await deleteDialog.getByRole('button', { name: '删除作品', exact: true }).click()
-        const deleteError = session.page.getByRole('alertdialog', { name: '删除项目失败' })
+        const deleteError = session.page.getByRole('alertdialog', { name: '删除作品失败' })
         await deleteError.waitFor({ state: 'visible' })
         await deleteError.getByRole('button', { name: '确定' }).click()
         const captured = await session.app.evaluate(() => globalThis.__u01DeleteCapture.calls.at(-1))

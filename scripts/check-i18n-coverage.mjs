@@ -121,6 +121,8 @@ const localizationCallees = new Set([
   'stepDesc',
   'appErrorMessage',
   'displayedErrorMessage',
+  // 删除作品失败的说明：登记过的码按界面语言说明，再接上作品现在的状态。
+  'projectDeleteFailureMessage',
   // Small module-local wrappers used at renderer notification boundaries.
   'projectText',
   'projectError',

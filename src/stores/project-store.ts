@@ -15,7 +15,7 @@ import { showFinalizationRepairNotice } from '../components/finalization-repair-
 import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
 import { confirm } from '../components/ui/Confirm'
 import { pushToast } from '../components/ui/ToastStack'
-import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImportFailureMessage, projectOpenFailureMessage } from '../i18n/app-errors'
+import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImportFailureMessage, projectDeleteFailureMessage, projectOpenFailureMessage } from '../i18n/app-errors'
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
 import { countUnsavedEditorItemsForProject } from './editor-unsaved'
 import { useLayoutStore } from './layout-store'
@@ -111,9 +111,16 @@ function projectCopy(zhCNText: string, enUSText: string): LocalizedProjectCopy {
 type ProjectNotice = () => string
 
 const OPEN_FAILED_TITLE = ['打开作品失败', 'Couldn’t open the book'] as const
+const CREATE_FAILED_TITLE = ['新建作品失败', 'Couldn’t create the book'] as const
+const DELETE_FAILED_TITLE = ['删除作品失败', 'Couldn’t delete the book'] as const
 
 function projectNotice(zhCNText: string, enUSText: string): ProjectNotice {
   return () => projectText(zhCNText, enUSText)
+}
+
+/** 失败后原来开着的书也没能恢复、已关闭时接在原因后面的一句。 */
+function closedBookNotices(name: string | undefined): ProjectNotice[] {
+  return name ? [projectNotice(`原来开着的《${name}》已关闭。`, `“${name}”, which was open, has been closed.`)] : []
 }
 
 function joinProjectNotices(separator: string, ...notices: ProjectNotice[]): ProjectNotice {
@@ -544,20 +551,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           detachRenderer: () => set({ currentProject: null }),
           message: joinProjectNotices(
             '\n',
-            projectErrorNotice(
-              result.error,
-              '新项目创建后未能恢复原项目数据库。',
-              'Could not restore the previous project database after creating the new project.',
-            ),
-            projectNotice(
-              '已解除项目界面的可编辑状态以防止继续写入。',
-              'The project editor was disabled to prevent further writes.',
-            ),
+            () => projectError(result.errorCode ? result : result.error),
+            ...closedBookNotices(rendererProject?.name),
           ),
-          title: projectNotice(
-            '创建失败，项目数据库不可用',
-            'Project creation failed; the project database is unavailable',
-          ),
+          title: projectNotice(...CREATE_FAILED_TITLE),
           shouldNotify: isLatestRequest,
         })
         return false
@@ -566,7 +563,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         console.error('[Project] 创建失败:', result.error)
         alertError(
           projectError(result.errorCode ? result : result.error),
-          { title: projectText('创建项目失败', 'Failed to create project') },
+          { title: projectText(...CREATE_FAILED_TITLE) },
         )
         return false
       }
@@ -593,7 +590,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       console.error('[Project] createProject 异常:', e)
       alertError(
         projectError(e),
-        { title: projectText('创建项目异常', 'Unexpected project creation error') },
+        { title: projectText('新建作品异常', 'Unexpected error while creating the book') },
       )
       return false
     } finally {
@@ -682,7 +679,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         || activeProjectMismatch
       ) {
         const unsafeProjectPath = get().currentProject?.path ?? rendererProjectPath
-        const closedName = rendererProject?.name
         await detachProjectBindings({
           projectPath: unsafeProjectPath,
           detachRenderer: () => set({ currentProject: null }),
@@ -695,7 +691,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
                 '主进程项目数据库与打开结果不一致。',
                 'The main-process project database does not match the open result.',
               ),
-            ...(closedName ? [projectNotice(`原来开着的《${closedName}》已关闭。`, `“${closedName}”, which was open, has been closed.`)] : []),
+            ...closedBookNotices(rendererProject?.name),
           ),
           title: projectNotice(...OPEN_FAILED_TITLE),
           shouldNotify: isLatestRequest,
@@ -1122,7 +1118,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     ) {
       alertError(
         projectText('只能删除当前已验证项目；请先打开目标项目。', 'Only the currently verified project can be deleted. Open the target project first.'),
-        { title: projectText('删除项目失败', 'Failed to delete project') },
+        { title: projectText(...DELETE_FAILED_TITLE) },
       )
       return false
     }
@@ -1161,21 +1157,15 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           } catch (cleanupError) {
             console.error('[project-store.deleteProject] 数据库恢复失败后的界面清理失败:', cleanupError)
           }
-          alertError(`${projectError(
-            result.error,
-            '项目目录删除失败。',
-            'Could not delete the project directory.',
-          )}\n${projectText(
-            '项目数据库未能恢复，已关闭当前项目以防止继续写入。',
-            'The project database could not be restored. The current project was closed to prevent further writes.',
-          )}`, {
-            title: projectText('删除失败，项目已停用', 'Deletion failed; the project was disabled'),
-          })
+          alertError(
+            projectDeleteFailureMessage(currentInterfaceLocale(), result.error, activeProject.name),
+            { title: projectText(...DELETE_FAILED_TITLE) },
+          )
           return false
         }
         alertError(
-          projectError(result.error),
-          { title: projectText('删除项目失败', 'Failed to delete project') },
+          projectDeleteFailureMessage(currentInterfaceLocale(), result.error),
+          { title: projectText(...DELETE_FAILED_TITLE) },
         )
         return false
       }
@@ -1214,7 +1204,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     } catch (e) {
       alertError(
         projectError(e),
-        { title: projectText('删除项目异常', 'Unexpected project deletion error') },
+        { title: projectText('删除作品异常', 'Unexpected error while deleting the book') },
       )
       return false
     } finally {
