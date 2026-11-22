@@ -6,6 +6,7 @@ import { Worker } from 'node:worker_threads'
 import * as electron from 'electron'
 
 import { admitWholeLedgerOfOpenProject } from '../database'
+import { removeDirectoryWithWindowsRetry } from '../utils/remove-directory'
 import { withKnowledgeSourceGate } from './knowledge-source-gate'
 import {
   claimStop,
@@ -133,7 +134,7 @@ async function removeRunRoot(root: string, identity: fs.BigIntStats): Promise<vo
   try {
     const actual = await fs.promises.lstat(root, { bigint: true })
     if (!actual.isDirectory() || actual.isSymbolicLink() || actual.dev !== identity.dev || actual.ino !== identity.ino) return
-    await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    await removeDirectoryWithWindowsRetry(root)
   } catch (error) {
     console.warn('[portable-export] 临时目录没删掉', (error as NodeJS.ErrnoException).code)
   }
