@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { refused } from '../../__tests__/proxy-failure-fixture'
+import { refused, refusedLocalhost } from '../../__tests__/proxy-failure-fixture'
 import type { GenerationTransportDiagnostics } from '../../../src/shared/generation-contract'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 
@@ -43,4 +43,10 @@ it('#702：连不上的是模型服务而不是代理时，不记代理连不上
   expect(last).toMatchObject({ phase: 'request', endReason: 'failed' })
   expect(last?.errorCode).toBeUndefined()
   expect(onError).toHaveBeenCalledExactlyOnceWith('LLM_STREAM_NETWORK_FAILED', undefined, undefined)
+})
+
+it('#702：代理主机写成大写 LOCALHOST 时，连不上照样记成代理连不上', async () => {
+  applyNetworkProxy({ enabled: true, type: 'http', host: 'LOCALHOST', port: 7890 })
+  const { last } = await streamFailingWith(refusedLocalhost(7890))
+  expect(last).toMatchObject({ phase: 'request', errorCode: 'PROXY_UNREACHABLE' })
 })

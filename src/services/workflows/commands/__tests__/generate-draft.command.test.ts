@@ -402,6 +402,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     protagonistProfile?: string
     writingLanguage?: 'zh-CN' | 'en-US'
     uiLocale?: 'zh-CN' | 'en-US'
+    interfaceLocale?: 'ja-JP'
     chapterNumber?: number
     threadTasks?: unknown[]
     characters?: string[]
@@ -610,7 +611,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
       cancelled: false,
       writingLanguage: options.writingLanguage ?? 'zh-CN',
       uiLocale: options.uiLocale ?? 'zh-CN',
-      interfaceLocale: shown(options.uiLocale ?? 'zh-CN'),
+      interfaceLocale: shown(options.interfaceLocale ?? options.uiLocale ?? 'zh-CN'),
     } as WorkflowContext
     const callbacks: StepCallbacks = {
       log: vi.fn(),
@@ -3097,11 +3098,23 @@ ${headingPrefix}第3章：潮门
       expect(runtime.complete).not.toHaveBeenCalled()
     })
 
-    it('供应商失败仍用原兜底文案', async () => {
+    it('日文界面：首稿与短细纲都按日文说明', async () => {
+      const draft = setup({ runtime: fakeOutcomes(networkFailure('', 'request')), wordsTarget: 500, uiLocale: 'en-US', interfaceLocale: 'ja-JP' })
+      expect((await failure(draft)).message).toBe('モデルサービスに接続できませんでした。ネットワークまたは「Network proxy」の設定を確認してから、もう一度お試しください。')
+      const runtime = fakeOutcomes(outcome('正文'.repeat(250), 'stop'))
+      runtime.outline.mockResolvedValue(networkFailure('', 'request'))
+      const outline = setup({ runtime, wordsTarget: 500, uiLocale: 'en-US', interfaceLocale: 'ja-JP' })
+      expect((await failure(outline)).message).toBe('モデルサービスに接続できませんでした。ネットワークまたは「Network proxy」の設定を確認してから、もう一度お試しください。')
+    })
+
+    it.each([
+      ['zh-CN', 'AI 未正常完成生成，结果未被保存。'],
+      ['en-US', 'AI generation did not complete normally, so the result was not saved.'],
+    ] as const)('供应商失败仍用原兜底文案（%s）', async (uiLocale, expected) => {
       const failed = outcome('', 'error')
       failed.receipt.failureCode = 'GENERATION_PROVIDER_FAILED'
-      const f = setup({ runtime: fakeOutcomes(failed), wordsTarget: 500 })
-      expect((await failure(f)).message).toBe('AI 未正常完成生成，结果未被保存。')
+      const f = setup({ runtime: fakeOutcomes(failed), wordsTarget: 500, uiLocale })
+      expect((await failure(f)).message).toBe(expected)
     })
   })
 

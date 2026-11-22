@@ -3,6 +3,7 @@ import { assertMechanicallyCompleteVisibleText } from '../../../shared/visible-t
 import { describe, expect, it, vi } from 'vitest'
 import { createGenerationHarness } from '../../generation/generation-harness'
 import type { GenerationTransportDiagnostics } from '../../../shared/generation-contract'
+import { shown } from '../../../i18n/__tests__/shown-locale'
 
 import {
   appendVisibleTextContinuation,
@@ -521,6 +522,14 @@ describe('#702：网络失败时说明真正的原因', () => {
       originalPrompt: '写第 3 章', writingLanguage: 'en-US', uiLocale: 'en-US',
       requestContinuation: async () => ({ content: '', finishReason: 'error', receipt: { failureCode: 'NETWORK_ERROR', diagnostics: transport('stream') } }),
     })).rejects.toThrow('The connection to the model service broke off midway. Check your network or the Network proxy settings, then try again.')
+  })
+
+  it('日文界面看日文说明', async () => {
+    await expect(completeBoundedCompletion({
+      initial: { content: '', finishReason: 'error', receipt: { failureCode: 'NETWORK_ERROR', diagnostics: transport('stream') } },
+      mode: 'append-visible-text', maxContinuations: 1, originalPrompt: '写第 3 章', writingLanguage: 'en-US', uiLocale: 'en-US',
+      interfaceLocale: shown('ja-JP'), requestContinuation: vi.fn(),
+    })).rejects.toThrow('モデルサービスとの接続が途中で切れました。ネットワークまたは「Network proxy」の設定を確認してから、もう一度お試しください。')
   })
 
   it.each([
