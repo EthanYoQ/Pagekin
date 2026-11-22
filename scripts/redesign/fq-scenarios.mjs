@@ -9,7 +9,6 @@ const COPY = {
   en: { more: `More for “${name}”`, remove: 'Remove from recent…', latin: '"Inter"' },
 }
 
-/** 菜单项里 …、·、• 的前进宽度（em），与菜单本该使用的那款字体自己的宽度对照。 */
 function punctuationWidths(item, latin) {
   return item.evaluate((element, family) => {
     const measure = (char, fontFamily) => {
