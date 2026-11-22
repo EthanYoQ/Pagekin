@@ -27,7 +27,7 @@ const fakeApp = () => {
   return { process: () => child }
 }
 
-/** 另起一个与被杀实例同 --user-data-dir 的进程，独占打开 userData\lockfile，heldMs 后自己退出（就像树里还没退完的 Electron 进程）。 */
+/** 脚本末尾的 `# --user-data-dir=` 是 PowerShell 注释，只为让占锁进程的命令行带上它，kill 才会把它认成被杀实例的同树进程。 */
 async function holdWindowsLock(userData, heldMs) {
   const script = `$f = [System.IO.File]::Open($env:DRIVE_LOCK, 'OpenOrCreate', 'ReadWrite', 'None'); [Console]::Out.WriteLine('locked'); [Console]::Out.Flush(); Start-Sleep -Milliseconds ${heldMs} # --user-data-dir=${userData}`
   const child = track(spawn('powershell.exe', ['-NoProfile', '-Command', script], { env: { ...process.env, DRIVE_LOCK: path.join(userData, 'lockfile') }, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }))

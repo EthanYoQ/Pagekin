@@ -186,8 +186,8 @@ function isAlive(pid) {
 }
 
 /**
- * 单例锁的位置与「还被占着」的判断。Windows 是 userData\lockfile，实例独占打开它，能以读写打开或文件已不在就算放开。
- * 其他平台是指向「主机名-pid」的符号链接 SingletonLock，强杀后留在原地，新实例见 pid 已死就接管，所以链接不在或 pid 已死就算放开。
+ * Windows：Chromium 独占打开 userData\lockfile，能读写打开或文件已不在即放开。
+ * 其他平台：SingletonLock 是指向「主机名-pid」的符号链接，强杀后残留，新实例见 pid 已死就接管，所以 pid 已死或链接不在即放开。
  */
 function singletonLock(userData) {
   if (process.platform === 'win32') {
@@ -199,8 +199,7 @@ function singletonLock(userData) {
 }
 
 /**
- * 强杀后等整棵进程树都消失、单例锁放开再返回。进程退出码出现后，Windows 上 lockfile 的句柄还要几十毫秒才关，
- * 这时重启会报 process_singleton_win「Lock file can not be created」，Playwright 接着报 ECONNRESET。
+ * 进程退出码出现后，Windows 上 lockfile 的句柄还要几毫秒到几十毫秒才关，这时重启会报 process_singleton_win「Lock file can not be created」，Playwright 接着报 ECONNRESET。
  * app.process() 在 Windows 上是 cmd.exe 包装，所以杀之前按 --user-data-dir 记下整棵树。
  */
 export async function kill(app, userData, timeoutMs = 15_000) {
@@ -672,7 +671,6 @@ async function main() {
     return
   }
   const code = await driveSessions({ sessions, options, realKey })
-  // 场景漏登记的定时器或子进程句柄会让事件循环一直不空，drive 就不退出。结果写完、stdout 排空后直接退出。
   process.stdout.write('', () => process.exit(code))
 }
 
