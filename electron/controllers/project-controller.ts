@@ -39,6 +39,7 @@ import type { LedgerAdmission } from '../repositories/generation-ledger-admissio
 import { projectPeekService } from '../services/project-peek'
 import { probeProjectSqlite } from '../services/sqlite-project-migration'
 import { mainText } from '../i18n'
+import { isRegisteredErrorCode } from '../../src/i18n/app-errors'
 import { adoptTransferredCharacterContinuityOnOpen } from '../services/transferred-character-continuity'
 import { FinalizationRepository } from '../repositories/finalization-repository'
 import type { FinalizationRepairOnOpen } from '../../src/shared/finalization-repair'
@@ -61,14 +62,12 @@ function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
 }
 
-/**
- * 失败后又没能恢复原项目数据库（极少见）：把恢复失败的原因接在首个错误后面一并交出，供反馈定位；
- * 只有一个错误时报错就是它的码，渲染层能按码说明。
- */
-function withRollbackFailure(primary: string, rollbackError: unknown): string {
-  return rollbackError === undefined
-    ? primary
-    : `${primary}${text('；回滚失败：', '; rollback failed: ')}${String(rollbackError)}`
+/** 新建失败交给界面的码：登记过的码原样交出，其余系统报错按作者能做的事归成两类，原文只进日志。 */
+function projectCreateFailure(error: unknown): string {
+  if (isRegisteredErrorCode(error)) return String(error)
+  console.error('[Project] 新建失败:', error)
+  const code = systemCode(error)
+  return code === 'EPERM' || code === 'EACCES' ? 'PROJECT_CREATE_ACCESS_DENIED' : 'PROJECT_CREATE_FAILED'
 }
 
 /**
@@ -100,6 +99,12 @@ const FILES_BUSY_RETRY_MS = 3_000
 function systemCode(error: unknown): string | undefined {
   const code = error instanceof Error ? (error as { code?: unknown }).code : undefined
   return typeof code === 'string' ? code : undefined
+}
+
+const DELETE_FAILURE_CODES: Readonly<Record<string, string>> = {
+  EBUSY: 'PROJECT_DELETE_FILES_BUSY',
+  EPERM: 'PROJECT_DELETE_ACCESS_DENIED',
+  EACCES: 'PROJECT_DELETE_ACCESS_DENIED',
 }
 
 const filesStillMapped = (error: unknown) => systemCode(error) === 'SQLITE_IOERR_TRUNCATE'
@@ -593,7 +598,6 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           ...databaseState,
         }
       } catch (error) {
-        let rollbackError: unknown
         let databaseState: ProjectDatabaseState
         try {
           databaseState = requireReadyDatabase(
@@ -601,7 +605,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
             'PROJECT_ROLLBACK_DATABASE_UNAVAILABLE',
           )
         } catch (restoreError) {
-          rollbackError = restoreError
+          console.error('[Project] 新建失败后没能回到原来的作品:', restoreError)
           databaseState = failedDatabaseState()
         }
         return {
@@ -610,7 +614,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           requestToken,
           ...databaseState,
           ...(projectStoragePreflightFailure(error) ?? {}),
-          error: withRollbackFailure(String(error), rollbackError),
+          error: projectCreateFailure(error),
         }
       }
     })
@@ -1048,20 +1052,19 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     // 删除目录是不可逆提交点。rmSync 即使抛错也可能已经完成删除，
     // 因此必须以磁盘事实决定返回语义，而不是只看异常。
     const directoryDeleted = !fs.existsSync(resolvedPath)
+    if (deletionError) console.error('[Project] 删除作品文件夹时出错:', deletionError)
     if (!directoryDeleted) {
-      let restoreError: unknown
       let databaseRestored = !deletingCurrentProject || !databaseClosed
       if (deletingCurrentProject && databaseClosed) {
         try {
           initProjectDatabase(resolvedPath)
           databaseRestored = true
-        } catch (error) {
-          restoreError = error
+        } catch (restoreError) {
+          console.error('[Project] 删除没删完后没能重新打开作品:', restoreError)
           databaseRestored = false
         }
       }
-      const error = withRollbackFailure(deletionError ? String(deletionError) : 'PROJECT_DELETE_FAILED', restoreError)
-      return { success: false, directoryDeleted: false, databaseRestored, error }
+      return { success: false, directoryDeleted: false, databaseRestored, error: DELETE_FAILURE_CODES[systemCode(deletionError) ?? ''] ?? 'PROJECT_DELETE_FAILED' }
     }
 
     let bindingCleanupWarning: string | undefined
@@ -1081,16 +1084,10 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         success: true,
         directoryDeleted: true,
         databaseRestored: false,
-        ...((deletionError || bindingCleanupWarning) ? {
-          warning: [
-            deletionError
-              ? text(`项目目录已删除：${String(deletionError)}`, `The project folder was deleted: ${String(deletionError)}`)
-              : undefined,
-            bindingCleanupWarning,
-          ].filter(Boolean).join(text('；', '; ')),
-        } : {}),
+        ...(bindingCleanupWarning ? { warning: bindingCleanupWarning } : {}),
       }
     } catch (recentProjectError) {
+      console.error('[Project] 作品已删除，但最近项目列表更新失败:', recentProjectError)
       return {
         success: true,
         directoryDeleted: true,
@@ -1098,8 +1095,8 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         warning: [
           bindingCleanupWarning,
           text(
-            `项目目录已删除，但最近项目列表更新失败：${String(recentProjectError)}`,
-            `The project folder was deleted, but the recent project list could not be updated: ${String(recentProjectError)}`,
+            '项目目录已删除，但最近项目列表更新失败',
+            'The project folder was deleted, but the recent project list could not be updated',
           ),
         ].filter(Boolean).join(text('；', '; ')),
       }

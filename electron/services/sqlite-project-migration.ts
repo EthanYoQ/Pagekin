@@ -340,7 +340,11 @@ function currentSnapshotIdentity(databasePath: string): SqliteContentIdentity | 
   try {
     const db = new Database(snapshot.file, { readonly: true, fileMustExist: true })
     try {
-      if (new SqliteSchemaAdapter(db).readUserVersion() !== CURRENT_DESKTOP_SCHEMA_VERSION) return undefined
+      if (new SqliteSchemaAdapter(db).readUserVersion() !== CURRENT_DESKTOP_SCHEMA_VERSION) {
+        // 一张表都没有：新建作品时建库被中断，留下的是空库。
+        if (db.prepare('SELECT 1 FROM sqlite_master LIMIT 1').get() === undefined) throw new Error('PROJECT_OPEN_EMPTY')
+        return undefined
+      }
       snapshot.unchanged()
       return contentIdentity(snapshot.identity)
     } finally { db.close() }
@@ -375,6 +379,7 @@ function verifyLiveSchema(databasePath: string): void {
  * handle sees the verified bytes.
  */
 export function openProjectSqlite(options: { databasePath: string }): SqliteContentIdentity {
+  if (!fs.existsSync(options.databasePath)) throw new Error('PROJECT_OPEN_EMPTY')
   let identity = currentSnapshotIdentity(options.databasePath)
   if (!identity) {
     upgradeProjectSqlite({ databasePath: options.databasePath, evidence: 'no-new-failures' })

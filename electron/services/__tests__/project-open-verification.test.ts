@@ -10,6 +10,8 @@ import { migrateSchema } from '../../migrations/runner'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { createCanonicalProjectManifest } from '../../../src/shared/project-format'
 import { getProjectDatabasePath, openCanonicalProjectData } from '../project-data-locator'
+import { projectOpenFailureMessage } from '../../../src/i18n/app-errors'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const roots: string[] = []
@@ -268,5 +270,34 @@ describe('project open verification', () => {
     expect({ name: (thrown as Error).name, code: (thrown as { code?: string }).code, message: (thrown as Error).message }).toEqual(expected)
     expect(getProjectDb()).toBeNull()
     expect(fs.readFileSync(f.file)).toEqual(bytes)
+  })
+})
+
+/** 新建作品建库中途失败或被强杀：清单写好了，库文件是空的或还没建出来。 */
+function unfinishedProject(database: 'empty' | 'missing') {
+  const base = path.resolve('.runtime/.cache/perf-536/open')
+  fs.mkdirSync(base, { recursive: true })
+  const root = fs.mkdtempSync(path.join(base, 'unfinished-')); roots.push(root)
+  const data = path.join(root, '.ai-novel'); fs.mkdirSync(data)
+  fs.writeFileSync(path.join(data, 'project.json'), JSON.stringify(createCanonicalProjectManifest({ projectId: randomUUID(), createdAt: new Date().toISOString() })))
+  if (database === 'empty') fs.writeFileSync(path.join(data, 'project.db'), '')
+  return root
+}
+
+describe('作品库是空的或不在时，打开说作品文件里没有内容（#702）', () => {
+  it.each(['empty', 'missing'] as const)('库文件 %s：说没有内容并指向「从本地存档恢复副本」，不说别的软件建的、不露英文原文', (database) => {
+    const root = unfinishedProject(database)
+
+    let failure: unknown
+    try { openCanonicalProjectData(root) } catch (error) { failure = error }
+
+    expect(failure).toBeDefined()
+    const zh = projectOpenFailureMessage(shown('zh-CN'), String(failure))
+    const en = projectOpenFailureMessage(shown('en-US'), String(failure))
+    const ja = projectOpenFailureMessage(shown('ja-JP'), String(failure))
+    expect(zh).toMatch(/没有内容[\s\S]*「从本地存档恢复副本」/u)
+    expect(en).toMatch(/no content[\s\S]*Restore a copy from local archive/u)
+    expect(ja).toMatch(/内容がない[\s\S]*「Restore a copy from local archive」/u)
+    for (const text of [zh, en, ja]) expect(text).not.toMatch(/核查创建|which app|ENOENT|no such file|UNRECOGNIZED|SchemaMigrationError|PROJECT_|\.ai-novel/u)
   })
 })
