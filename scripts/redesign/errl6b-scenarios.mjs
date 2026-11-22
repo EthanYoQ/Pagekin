@@ -130,9 +130,11 @@ async function deleteLeftover(context, kind, lang) {
   }
   const confirm = page.getByRole('dialog', { name: lang === 'en' ? `Delete “${name}”?` : `删除《${name}》？` })
   await confirm.getByRole('textbox').fill(name)
+  const started = Date.now()
   await confirm.getByRole('button', { name: lang === 'en' ? 'Delete book' : '删除作品', exact: true }).click()
-  // fs.rm 对占用的文件逐层重试，实测要一分钟上下才放弃。
   const { shown } = await alertText(page, copy.deleteTitle, 180_000)
+  const waitedSeconds = (Date.now() - started) / 1000
+  assert.ok(waitedSeconds < 10, `点删除后 ${waitedSeconds} 秒才告诉作者没删完，应在几秒内`)
   const left = listed(samplePath)
   const reopened = fs.existsSync(path.join(samplePath, '.ai-novel', 'project.db'))
   const reason = { busy: copy.deleteBusy, denied: copy.deleteDenied, unknown: copy.deleteUnknown }[kind]
@@ -140,7 +142,25 @@ async function deleteLeftover(context, kind, lang) {
   assert.ok(shown.includes(expected), `弹窗应说明原因、作品现在的状态和办法，期望：${expected}；实际：${shown}；文件夹里还剩：${left.join(', ')}`)
   assert.doesNotMatch(shown, RAW, '弹窗不应露出码或英文原文')
   await context.shoot(`errl6b-delete-${kind}-${lang}`)
-  return { shown, left, reopened }
+  return { shown, left, reopened, waitedSeconds }
+}
+
+/** 带知识库的书正常删除：关库后立刻删目录，不因重试变慢。 */
+async function deleteBookWithKnowledgeBase(context) {
+  const { page, samplePath } = context
+  await stage.openAfterRestart(page, name)
+  assert.ok(fs.existsSync(path.join(samplePath, '.ai-novel', 'lancedb')), '删除前作品里应有知识库')
+  await stage.backToLibrary(page, name)
+  await stage.bookMenu(page, name, '删除作品…')
+  const confirm = page.getByRole('dialog', { name: `删除《${name}》？` })
+  await confirm.getByRole('textbox').fill(name)
+  const started = Date.now()
+  await confirm.getByRole('button', { name: '删除作品', exact: true }).click()
+  await page.getByText(`项目「${name}」已删除`).waitFor({ state: 'visible' })
+  const waitedSeconds = (Date.now() - started) / 1000
+  assert.equal(fs.existsSync(samplePath), false, '作品文件夹应已删掉')
+  await context.shoot('errl6b-delete-ok-zh')
+  return { waitedSeconds }
 }
 
 /** 作品库是空的或不在：新建建库时中断，或删除时库文件先被删掉。 */
@@ -180,11 +200,19 @@ const sampleWithNotes = async context => {
   fs.writeFileSync(path.join(context.samplePath, '资料', '灯塔考据.txt'), '灯塔建于光绪年间')
 }
 
-export const ERRL6B_SCENARIOS = Object.fromEntries(['zh', 'en'].flatMap(lang => [
+const sampleWithKnowledgeBase = context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path: projectPath, session }) => {
+  const imported = await invoke(page, 'kb:import-planning-text', '灯塔建于旧港北岸，守塔人每晚记录潮汐。', '灯塔资料.txt', projectPath, session)
+  assert.equal(imported.success, true, imported.error)
+} })
+
+export const ERRL6B_SCENARIOS = {
+  'errl6b-delete-ok-zh': { model: false, shell: 'stage', setup: sampleWithKnowledgeBase, run: deleteBookWithKnowledgeBase },
+  ...Object.fromEntries(['zh', 'en'].flatMap(lang => [
   [`errl6b-create-denied-${lang}`, { model: false, shell: 'stage', ...win32, run: context => createDenied(context, lang) }],
   [`errl6b-delete-busy-${lang}`, { model: true, shell: 'stage', ...win32, setup: sampleWithDocument, run: context => deleteLeftover(context, 'busy', lang) }],
   [`errl6b-delete-denied-${lang}`, { model: true, shell: 'stage', ...win32, setup: sampleWithNotes, run: context => deleteLeftover(context, 'denied', lang) }],
   [`errl6b-delete-unknown-${lang}`, { model: true, shell: 'stage', setup: sample, run: context => deleteLeftover(context, 'unknown', lang) }],
   [`errl6b-empty-zero-${lang}`, { model: true, shell: 'stage', setup: sample, run: context => emptyDatabase(context, 'zero', lang) }],
   [`errl6b-empty-missing-${lang}`, { model: true, shell: 'stage', setup: sample, run: context => emptyDatabase(context, 'missing', lang) }],
-]))
+  ])),
+}
