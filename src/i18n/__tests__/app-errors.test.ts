@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, errorMessageForModel, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage } from '../app-errors'
+import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, errorMessageForModel, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage, projectOpenFailureMessage } from '../app-errors'
 import { shown } from './shown-locale'
 import { translate } from '../core'
 
@@ -600,5 +600,18 @@ describe('omittedReviewCyclesMessage', () => {
       '第2章「沉船」などのレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。'],
   ] as const)('%s：%j', (locale, omitted, expected) => {
     expect(omittedReviewCyclesMessage(shown(locale), omitted)).toBe(expected)
+  })
+})
+
+describe('打开作品时文件暂时读不了（#702）', () => {
+  it('三种界面语言都指向作者要再点的那个按钮，书名填进去', () => {
+    expect(projectOpenFailureMessage(shown('en-US'), { errorCode: 'PROJECT_OPEN_FILES_BUSY' }, 'Lighthouse'))
+      .toBe('Your saved content is not affected. The book’s files are in use right now, so it could not be opened. Wait a few seconds, then click Open “Lighthouse” again.')
+    expect(projectOpenFailureMessage(shown('ja-JP'), { errorCode: 'PROJECT_OPEN_IO_FAILED' }, '灯塔'))
+      .toBe('作品のファイルを今回は読み込めませんでした。数秒待ってから、もう一度「Open “灯塔”」をクリックしてください。')
+  })
+
+  it('其他打开失败照旧说明，不接「再点打开」', () => {
+    expect(projectOpenFailureMessage(shown('zh-CN'), { errorCode: 'PROJECT_NOT_OPEN' }, '灯塔')).toBe('请先打开项目。')
   })
 })

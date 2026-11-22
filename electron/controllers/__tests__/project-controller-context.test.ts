@@ -209,6 +209,7 @@ vi.mock('../../services/portable-export-host', () => ({ stopPortableExports: moc
 vi.mock('../../services/project-data-locator', () => ({ verifyCanonicalProjectData: mocks.verifyCanonicalProjectData }))
 
 import { registerProjectController } from '../project-controller'
+import { initProjectDatabase } from '../../database'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 function selectedProject(projectPath: string) {
@@ -1518,5 +1519,106 @@ describe('legacy project copy import target grant', () => {
 
     expect(mocks.resolveExactPath).not.toHaveBeenCalled()
     expect(mocks.importLegacyProjectCopy).not.toHaveBeenCalled()
+  })
+})
+
+// #702：强杀书童后马上重开，旧进程还没拆掉 project.db-shm 的映射段，SQLite 首个连接截断它时报这个错。
+const shmStillMapped = () => Object.assign(new Error('disk I/O error'), { name: 'SqliteError', code: 'SQLITE_IOERR_TRUNCATE' })
+
+describe('project:open：作品文件暂时被占用（#702）', () => {
+  it('worker 校验撞上旧进程还没放开的映射段，等它放开后照常打开', async () => {
+    mocks.verifyCanonicalProjectData
+      .mockRejectedValueOnce(shmStillMapped())
+      .mockRejectedValueOnce(shmStillMapped())
+
+    const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-mapped', projectA)
+
+    expect(result).toMatchObject({ success: true, activeProjectPath: projectB })
+    expect(mocks.initCalls).toEqual([projectB])
+  })
+
+  it('主进程连接撞上映射段：等待时旧书照常开着，放开后换库打开', async () => {
+    const init = vi.mocked(initProjectDatabase)
+    let openDuringWait: string | undefined
+    init.mockImplementationOnce(() => {
+      mocks.currentProjectPath = ''
+      setTimeout(() => { openDuringWait = mocks.currentProjectPath }, 0)
+      throw shmStillMapped()
+    })
+
+    const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-mapped-main', projectA)
+
+    expect(openDuringWait).toBe(projectA)
+    expect(result).toMatchObject({ success: true, activeProjectPath: projectB })
+  })
+
+  it('一直被占用：约 3 秒后放弃，旧书原样开着，报登记的码而不是 SqliteError 原文', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.verifyCanonicalProjectData.mockRejectedValue(shmStillMapped())
+      const opening = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-held', projectA)
+      await vi.advanceTimersByTimeAsync(2_500)
+      let settled = false
+      void opening.then(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(settled).toBe(false)
+      await vi.runAllTimersAsync()
+      const result = await opening as { error: string }
+
+      expect(result).toMatchObject({ success: false, activeProjectPath: projectA, dbReady: true, errorCode: 'PROJECT_OPEN_FILES_BUSY' })
+      expect(appErrorMessage(shown('zh-CN'), result)).not.toMatch(/SqliteError|disk I\/O/u)
+      expect(mocks.initCalls).toEqual([])
+    } finally { vi.useRealTimers() }
+  })
+
+  it('一直被占用期间改点另一本书：这次马上作废、不再起校验，新书不用等满 3 秒', async () => {
+    mocks.verifyCanonicalProjectData.mockImplementation(async (projectPath: string) => {
+      if (projectPath === projectB) throw shmStillMapped()
+      return { verifiedIn: 'worker', projectPath }
+    })
+    const started = Date.now()
+    const older = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-held-superseded', projectA)
+    await new Promise(resolve => setTimeout(resolve, 100))
+    const probesBeforeSwitch = mocks.verifyCanonicalProjectData.mock.calls.length
+    const newer = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD), 'open-D-while-B-held', projectA)
+
+    await expect(older).resolves.toMatchObject({ success: false, stale: true, activeProjectPath: projectA, dbReady: true })
+    await expect(newer).resolves.toMatchObject({ success: true, activeProjectPath: projectD })
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(mocks.verifyCanonicalProjectData.mock.calls.filter(([p]) => p === projectB)).toHaveLength(probesBeforeSwitch)
+  })
+
+  it('主进程连接一直被占用、已回到旧书时改点另一本书：作废结果报旧书开着', async () => {
+    const init = vi.mocked(initProjectDatabase)
+    const real = init.getMockImplementation()!
+    init.mockImplementation((projectPath, verified) => {
+      if (path.resolve(projectPath) !== projectB) return real(projectPath, verified)
+      mocks.initCalls.push(projectB)
+      mocks.currentProjectPath = ''
+      throw shmStillMapped()
+    })
+    try {
+      const started = Date.now()
+      const older = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-main-held-superseded', projectA)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      const connectsBeforeSwitch = mocks.initCalls.filter(p => p === projectB).length
+      const probesBeforeSwitch = mocks.verifyCanonicalProjectData.mock.calls.filter(([p]) => p === projectB).length
+      const newer = handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD), 'open-D-while-B-main-held', projectA)
+
+      await expect(older).resolves.toMatchObject({ success: false, stale: true, activeProjectPath: projectA, dbReady: true })
+      await expect(newer).resolves.toMatchObject({ success: true, activeProjectPath: projectD })
+      expect(Date.now() - started).toBeLessThan(1_000)
+      expect(mocks.initCalls.filter(p => p === projectB)).toHaveLength(connectsBeforeSwitch)
+      expect(mocks.verifyCanonicalProjectData.mock.calls.filter(([p]) => p === projectB)).toHaveLength(probesBeforeSwitch)
+    } finally { init.mockImplementation(real) }
+  })
+
+  it('别的磁盘读写错误不重试，报「没能读取作品文件」的码', async () => {
+    mocks.verifyCanonicalProjectData.mockRejectedValueOnce(Object.assign(new Error('disk I/O error'), { name: 'SqliteError', code: 'SQLITE_IOERR_READ' }))
+
+    const result = await handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), 'open-B-ioerr', projectA)
+
+    expect(result).toMatchObject({ success: false, activeProjectPath: projectA, errorCode: 'PROJECT_OPEN_IO_FAILED' })
+    expect(mocks.verifyCanonicalProjectData).toHaveBeenCalledOnce()
   })
 })

@@ -43,6 +43,9 @@ const ERROR_KEYS = {
   NEWER_SCHEMA_READ_ONLY: 'error.projectSchemaNewer',
   // 打开作品时，正式连接看到的库与刚校验过的快照字节不一致：校验之后有别的程序改了作品文件。
   SOURCE_CHANGED_SINCE_PROBE: 'error.projectChangedDuringOpen',
+  // #702：打开作品时 SQLite 报磁盘读写错误。FILES_BUSY 是主进程重试后作品文件仍被占用。
+  PROJECT_OPEN_FILES_BUSY: 'error.projectOpenFilesBusy',
+  PROJECT_OPEN_IO_FAILED: 'error.projectOpenIoFailed',
   LEGACY_IMPORT_UNSUPPORTED_SOURCE: 'error.legacyImportUnsupportedSource',
   LEGACY_IMPORT_NOT_LEGACY_PROJECT: 'error.legacyImportNotLegacyProject',
   LEGACY_IMPORT_PATH_INVALID: 'error.legacyImportChooseAgain',
@@ -445,6 +448,16 @@ export function legacyImportFailureMessage(locale: ErrorDisplayLocale, error: un
     : knownAppErrorMessage(locale, error) ?? translate(locale, 'error.legacyImportFailed')
   const kept = translate(locale, 'error.legacyImportNothingChanged')
   return joinSentences(locale, kept, reason)
+}
+
+const OPEN_RETRY_CODES: ReadonlySet<string> = new Set(['PROJECT_OPEN_FILES_BUSY', 'PROJECT_OPEN_IO_FAILED'])
+
+/** 打开作品失败的说明。作品文件暂时读不了时接上下一步：书架上有书名就指向「打开《书名》」这个按钮。 */
+export function projectOpenFailureMessage(locale: ErrorDisplayLocale, error: unknown, title?: string): string {
+  const message = appErrorMessage(locale, error)
+  if (!OPEN_RETRY_CODES.has(readCode(error) ?? '')) return message
+  const next = title ? translate(locale, 'error.projectOpenRetryBook', { title }) : translate(locale, 'error.projectOpenRetry')
+  return joinSentences(locale, message, next)
 }
 
 const IMPORT_BLOCKED_CODES = new Set(['GENERATION_DISPATCH_BLOCKED', 'GENERATION_DIRECTORY_CONTINUATION_BLOCKED', 'GENERATION_PARENT_INVALID'])
