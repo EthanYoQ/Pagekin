@@ -1495,6 +1495,46 @@ describe('project close lifecycle', () => {
     )
   })
 
+  // #702：主进程只回登记码，书名从书架上取，「打开《书名》」是作者要再点的那个按钮。
+  it('作品文件暂时被占用时，说保住了什么，并指出再点「打开《书名》」，不露 SqliteError', async () => {
+    const failure = (args: unknown[]) => ({
+      success: false, project: null, requestToken: args[1], activeProjectPath: project('A').path,
+      databaseRestored: true, dbReady: true, errorCode: 'PROJECT_OPEN_FILES_BUSY', error: 'PROJECT_OPEN_FILES_BUSY',
+    })
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open') return failure(args)
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+    useProjectStore.setState({ recentProjects: [{ name: '灯塔', path: project('B').path, updatedAt: '' }] as never })
+
+    await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(false)
+
+    expect(mocks.alertError).toHaveBeenLastCalledWith(
+      '已保存的内容没有受影响。作品文件暂时被占用，这次没能打开。稍等几秒，再点「打开《灯塔》」。',
+      expect.objectContaining({ title: '打开项目失败' }),
+    )
+  })
+
+  it('经「打开作品」选文件夹打开时书架上没有书名，下一步不提按钮里的书名', async () => {
+    mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'project:open') {
+        return {
+          success: false, project: null, requestToken: args[1], activeProjectPath: project('A').path,
+          databaseRestored: true, dbReady: true, errorCode: 'PROJECT_OPEN_IO_FAILED', error: 'PROJECT_OPEN_IO_FAILED',
+        }
+      }
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+    useProjectStore.setState({ recentProjects: [] })
+
+    await expect(useProjectStore.getState().openProject({ grantId: 'picked', displayName: 'B' })).resolves.toBe(false)
+
+    expect(mocks.alertError).toHaveBeenLastCalledWith(
+      '这次没能读取作品文件。稍等几秒，再打开一次。',
+      expect.objectContaining({ title: '打开项目失败' }),
+    )
+  })
+
   it('reports a visible partial-load warning but returns success after the core project is opened', async () => {
     mocks.onProjectOpened.mockRejectedValueOnce(new Error('draft index unavailable'))
     mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
