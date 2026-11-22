@@ -8,6 +8,8 @@ import { freezeChapterGoals, withChapterThreadGoals } from '../../src/shared/cha
 import { writtenChapterThreadTasks, type ChapterThreadTask } from '../../src/shared/narrative-thread'
 import { findBlueprintContinuityRisks } from '../../src/shared/consistency-preflight'
 import { CHARACTER_STATE_TEXT_FIELDS } from '../../src/shared/character-roster'
+import { firstVisibleChapter, latestNodesBefore } from '../../src/shared/character-continuity'
+import { readCharacterContinuityNodes } from '../repositories/character-continuity-repository'
 import { CURRENT_DRAFT_STATUS_SQL } from '../../src/shared/draft-status'
 import { ProjectCoreRepository } from '../repositories/project-core-repository'
 import { CharacterRepository } from '../repositories/character-repository'
@@ -148,12 +150,14 @@ export function captureReviewRevisionContext(db: Database.Database, request: Pre
     }
     const activeIds = new Set((db.prepare('SELECT character_id FROM characters WHERE retired=0').all() as { character_id: string }[]).map(row => row.character_id))
     const authorCards = CharacterRepository.getAll(db).filter(card => card.characterId && activeIds.has(card.characterId))
+    // 按被审章节读时间线：作者选了更晚生效章的状态，审更早的章时还不成立。
+    const authorStates = new Map(latestNodesBefore(readCharacterContinuityNodes(db, authorCards.map(card => card.characterId!)), source.chapterNumber).states
+      .filter(node => node.provenance.kind === 'author' || node.provenance.kind === 'adopted' || node.provenance.kind === 'legacy' && node.provenance.authorChapter !== undefined)
+      .map(node => [JSON.stringify([node.subjectId, node.aspect]), node]))
     const stateLines = authorCards.flatMap(card => {
-      const state = card.currentState
-      if (!state) return []
       const fields = Object.fromEntries(CHARACTER_STATE_TEXT_FIELDS.flatMap(field => {
-        const provenance = state.provenance?.[field]
-        return provenance?.kind === 'author' && state[field] ? [[field, `${state[field]} @ch${provenance.chapterNumber}`]] : []
+        const node = authorStates.get(JSON.stringify([card.characterId, field]))
+        return node ? [[field, `${node.value} @ch${firstVisibleChapter(node)}`]] : []
       }))
       if (!Object.keys(fields).length) return []
       return [core.writingLanguage === 'en-US'

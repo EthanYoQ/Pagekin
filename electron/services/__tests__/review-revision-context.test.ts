@@ -15,6 +15,7 @@ import { captureReviewRevisionContext, reviewRevisionRequest } from '../review-r
 import { commitAuthorCharacterRoster } from '../character-roster-author'
 import { CharacterRosterRepository, refreshCharacterIdentityProjection } from '../../repositories/character-roster-repository'
 import { readCharacterContinuityTimeline } from '../../repositories/character-continuity-repository'
+import { insertContinuityBaseline } from '../../migrations/m08-continuity-foundation'
 vi.mock('../../database', () => ({ getProjectDb: vi.fn() }))
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 const connections: import('better-sqlite3').Database[] = []
@@ -86,6 +87,8 @@ describe('审修上下文实际 SQLite 捕获', () => {
       f.db.prepare('INSERT INTO characters(character_id,name,retired,cs_updated_at_chapter,cs_location,cs_provenance) VALUES(?,?,?,1,?,?)')
         .run(id, id, retired, location, JSON.stringify({ location: { kind, chapterNumber: 1 } }))
     }
+    // 升级前写下的状态由 M08 补成时间线基线，审修按时间线读。
+    insertContinuityBaseline(f.db)
     const context = f.capture()
     expect(context.characterStates).toContain('北塔'); expect(context.characterStates).not.toContain('旧站'); expect(context.characterStates).not.toContain('猜测地点')
   })
