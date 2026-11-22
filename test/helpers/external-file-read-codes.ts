@@ -12,7 +12,7 @@ function codesIn(files: string[], pattern: RegExp): string[] {
 export function secureFileSystemCodes(): string[] {
   const directory = path.resolve('electron/security')
   const files = fs.readdirSync(directory)
-    .filter(name => /\.(ts|m|ps1)$/.test(name))
+    .filter(name => /\.(ts|m|cs|ps1)$/.test(name))
     .map(name => path.join(directory, name))
   return codesIn(files, /SECURE_FS_[A-Z0-9_]+/g)
 }
@@ -23,8 +23,9 @@ export function externalFileGrantCodes(): string[] {
 
 export const READ_FAILURE_TEXT = {
   SECURE_FS_INVALID_TEXT: '这个文件不是 UTF-8 编码的文本。请用文本编辑器另存为 UTF-8 后重新导入。',
-  SECURE_FS_FILE_TOO_LARGE: '这个文件太大，读不进来。请拆成几个小文件后重新导入。',
+  SECURE_FS_FILE_TOO_LARGE: '这个文件超过 64 MB，读不进来。请拆成几个小文件后重新导入。',
   SECURE_FS_OPEN_FAILED: '系统不让打开这个文件。请把它复制到桌面等普通文件夹，再重新导入。',
+  SECURE_FS_FILE_IN_USE: '这个文件正被别的程序占用。请关掉打开它的程序，再重新导入。',
   generic: '无法读取所选文件；请重新选择后再试。',
 } as const
 

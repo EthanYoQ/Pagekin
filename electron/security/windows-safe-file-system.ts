@@ -81,7 +81,7 @@ export interface WindowsSafeFileSystemOptions {
 
 const MAX_PATH_CHARACTERS = 32_000
 const MAX_SEGMENTS = 256
-const MAX_TEXT_BYTES = 64 * 1024 * 1024
+export const MAX_TEXT_BYTES = 64 * 1024 * 1024
 const MAX_DIRECTORY_ENTRIES = 16_384
 const MAX_HELPER_RESPONSE_BYTES = Math.ceil(MAX_TEXT_BYTES * 1.4) + (2 * 1024 * 1024)
 const DEFAULT_TIMEOUT_MS = 30_000
