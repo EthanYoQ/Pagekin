@@ -12,7 +12,7 @@ const children = []
 const parents = []
 afterEach(() => {
   for (const child of children.splice(0)) if (alive(child.pid)) try { execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }) } catch { child.kill('SIGKILL') }
-  for (const parent of parents.splice(0)) fs.rmSync(parent, { recursive: true, force: true })
+  for (const parent of parents.splice(0)) fs.rmSync(parent, { recursive: true, force: true, maxRetries: 10 })
 })
 
 const userDataDir = () => {
