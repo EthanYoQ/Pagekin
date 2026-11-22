@@ -583,9 +583,9 @@ function relativeKey(value: string): string {
   return portablePathKey(value.split(path.sep).join('/'))
 }
 
-function listPhysicalTree(root: string): { files: Set<string>; directories: Set<string> } {
+function listPhysicalTree(root: string): { files: Set<string>; directories: Map<string, string> } {
   const files = new Set<string>()
-  const directories = new Set<string>()
+  const directories = new Map<string, string>()
   const visit = (directory: string) => {
     for (const name of fs.readdirSync(directory)) {
       const entry = path.join(directory, name)
@@ -593,8 +593,13 @@ function listPhysicalTree(root: string): { files: Set<string>; directories: Set<
       if (info.isSymbolicLink() || normalized(fs.realpathSync.native(entry)) !== normalized(entry)) {
         fail('PORTABLE_RESTORE_UNSAFE_TARGET')
       }
-      const key = relativeKey(path.relative(root, entry))
-      if (info.isDirectory()) { directories.add(key); visit(entry) }
+      const relative = path.relative(root, entry)
+      const key = relativeKey(relative)
+      if (info.isDirectory()) {
+        if (directories.has(key)) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
+        directories.set(key, relative)
+        visit(entry)
+      }
       else if (info.isFile()) files.add(key)
       else fail('PORTABLE_RESTORE_UNSAFE_TARGET')
     }
@@ -620,11 +625,11 @@ async function installStagedProject(
   const sources = [...attempt.paths.values()].filter(item => item.kind === 'file' && contained(storage, item.path))
   const byKey = new Map(sources.map(item => [relativeKey(path.relative(storage, item.path)), item]))
   const expectedFiles = new Set(byKey.keys())
-  const expectedDirectories = new Set<string>()
+  const expectedDirectories = new Map<string, string>()
   for (const source of sources) {
     let relative = path.dirname(path.relative(storage, source.path))
     while (relative !== '.') {
-      expectedDirectories.add(relativeKey(relative))
+      expectedDirectories.set(relativeKey(relative), relative)
       const parent = path.dirname(relative)
       if (parent === relative) break
       relative = parent
@@ -651,11 +656,16 @@ async function installStagedProject(
   }
   const existing = listPhysicalTree(targetStorage)
   if ([...existing.files].some(key => !expectedFiles.has(key))
-    || [...existing.directories].some(key => !expectedDirectories.has(key))) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
+    || [...existing.directories.keys()].some(key => !expectedDirectories.has(key))) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
   if (existing.files.has(portablePathKey(PROJECT_MANIFEST_NAME))) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
 
-  for (const key of [...expectedDirectories].sort((left, right) => left.split('/').length - right.split('/').length)) {
-    const directory = path.join(targetStorage, ...key.split('/'))
+  for (const relative of [...expectedDirectories.values()].sort((left, right) => left.length - right.length)) {
+    const directory = path.join(targetStorage, relative)
+    // 旧版按比对键（小写、NFKC）建过目录：续做时改回存档里的原名，不留两份。
+    const leftover = existing.directories.get(relativeKey(relative))
+    if (leftover !== undefined && path.basename(leftover) !== path.basename(relative)) {
+      fs.renameSync(path.join(path.dirname(directory), path.basename(leftover)), directory)
+    }
     if (!fs.existsSync(directory)) fs.mkdirSync(directory, { mode: 0o700 })
     physicalDirectory(directory)
   }
@@ -696,7 +706,7 @@ async function installStagedProject(
   }
   const finalTree = listPhysicalTree(targetStorage)
   if ([...finalTree.files].some(key => key !== portablePathKey(PROJECT_MANIFEST_NAME) && !expectedFiles.has(key))
-    || [...finalTree.directories].some(key => !expectedDirectories.has(key))) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
+    || [...finalTree.directories].some(([key, relative]) => expectedDirectories.get(key) !== relative)) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
   const manifest = byKey.get(portablePathKey(PROJECT_MANIFEST_NAME))
   if (!manifest) fail('PORTABLE_RESTORE_UNSAFE_TARGET')
   await installFile(manifest)

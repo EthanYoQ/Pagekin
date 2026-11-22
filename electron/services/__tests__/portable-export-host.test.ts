@@ -248,17 +248,20 @@ describe('在 worker 线程里导出', () => {
     const { fixture, input } = await project()
     const inside = path.join(fixture.sourceRoot, 'exports')
     fs.mkdirSync(inside)
-    const created: string[] = []
-    const watcher = fs.watch(inside, (_event, name) => { if (name) created.push(String(name)) })
+    // 目录里建了又删的条目不会留在列表里，但会改动所在目录的修改时间，所以快照连修改时间一起比。
+    // 先把 inside 拨回旧时间：时间精度粗的文件系统上，刚建好就变动也看得出来。
+    const old = new Date(2000, 0, 1)
+    fs.utimesSync(inside, old, old)
+    const snapshot = () => (fs.readdirSync(fixture.sourceRoot, { recursive: true }) as string[]).sort()
+      .map(name => [name, fs.lstatSync(path.join(fixture.sourceRoot, name), { bigint: true }).mtimeNs])
+    const before = snapshot()
 
     const result = await outcome(exportPortableProjectInWorker({
       ...input('x.ainovel'), targetArchivePath: path.join(inside, 'x.ainovel'), attemptParentPath: inside,
     }, worker))
-    await new Promise(resolve => setTimeout(resolve, 200))
-    watcher.close()
 
     expect(result).toMatchObject({ ok: false, code: 'PORTABLE_TARGET_INSIDE_SOURCE' })
-    expect(created).toEqual([])
+    expect(snapshot()).toEqual(before)
   }, 60_000)
 
   it('存档一发布就算导出完成：这时停止也报成功，不会报失败又留下存档', async () => {

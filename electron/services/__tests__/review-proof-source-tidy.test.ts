@@ -214,7 +214,12 @@ describe('打开老书时整理源库里的旧审修证明（#702 PR 4）', () =
     closeProjectDatabase()
     fs.chmodSync(databaseFile(), 0o444)
     let verified: Awaited<ReturnType<typeof verifyCanonicalProjectData>>
-    try { verified = await verifyCanonicalProjectData(projectRoot, worker) } finally { fs.chmodSync(databaseFile(), 0o644) }
+    // macOS 上只读打开会留下沿用主库 0444 权限的 -wal、-shm，不一并恢复权限，后面的写打开会失败。
+    try { verified = await verifyCanonicalProjectData(projectRoot, worker) } finally {
+      for (const file of [databaseFile(), `${databaseFile()}-wal`, `${databaseFile()}-shm`]) {
+        if (fs.existsSync(file)) fs.chmodSync(file, 0o644)
+      }
+    }
     initProjectDatabase(projectRoot, verified)
     expect(getProjectDb()!.prepare('SELECT binding_json FROM generation_runs ORDER BY run_id').pluck().all()).toEqual(bindings)
 

@@ -796,6 +796,34 @@ describe('portable project export service', () => {
       expect(fs.readFileSync(path.join(restoredRoot, '.ai-novel', 'skills', 'Thumbs.db', '技能.md'), 'utf8')).toBe('作者的技能')
     })
 
+    it.each([
+      ['直接恢复', false],
+      ['旧版恢复到一半留下小写、半角的文件夹，升级后再恢复到同一位置', true],
+    ])('恢复后作者的文件夹名一字不改：大写字母、全角字符都原样保留（%s，#702）', async (_case, resumeOldLeftover) => {
+      const f = fixture()
+      const folders = ['MyStyle', '第１卷']
+      for (const folder of folders) {
+        fs.mkdirSync(path.join(f.storage, 'skills', folder), { recursive: true })
+        fs.writeFileSync(path.join(f.storage, 'skills', folder, '技能.md'), folder)
+      }
+
+      await exportPortableProject(input(f, createPortableProjectAssetProvider()))
+
+      const restoredRoot = path.join(f.base, 'restored-folder-names')
+      if (resumeOldLeftover) {
+        await expect(restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot, __testHooks: {
+          afterTargetReserved: (_journal, target) => {
+            for (const folder of ['mystyle', '第1卷']) fs.mkdirSync(path.join(target, '.ai-novel', 'skills', folder), { recursive: true })
+            throw new Error('old-build-stopped')
+          },
+        } })).rejects.toThrow('old-build-stopped')
+      }
+      await restorePortableProject({ archivePath: f.target, targetProjectRoot: restoredRoot })
+      const skills = path.join(restoredRoot, '.ai-novel', 'skills')
+      expect(fs.readdirSync(skills).sort()).toEqual([...folders].sort())
+      for (const folder of folders) expect(fs.readFileSync(path.join(skills, folder, '技能.md'), 'utf8')).toBe(folder)
+    })
+
     it.runIf(process.platform === 'win32')('Windows 上系统文件名大小写不同也照常导出（#702）', async () => {
       const f = fixture()
       for (const name of ['DESKTOP.INI', 'thumbs.db', '.ds_store']) fs.writeFileSync(path.join(f.storage, name), '系统写的')
