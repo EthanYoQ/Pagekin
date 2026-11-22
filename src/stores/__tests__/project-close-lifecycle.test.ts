@@ -1495,7 +1495,7 @@ describe('project close lifecycle', () => {
     )
   })
 
-  // #702：主进程只回登记码，书名从书架上取，「打开《书名》」是作者要再点的那个按钮。
+  // #702：主进程只回登记码，书名由渲染端从书架上取。
   it('作品文件暂时被占用时，说保住了什么，并指出再点「打开《书名》」，不露 SqliteError', async () => {
     const failure = (args: unknown[]) => ({
       success: false, project: null, requestToken: args[1], activeProjectPath: project('A').path,

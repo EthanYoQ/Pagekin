@@ -48,7 +48,7 @@ async function openOutcome(page) {
   return { opened: false, shown: null }
 }
 
-/** 强杀正在写作的书童，冷启动后点打开时 project.db-shm 被别的进程映射着；releaseAfterClickMs 为空时一直不放。 */
+/** releaseAfterClickMs 为空时映射段一直不放。 */
 async function heldShmOpen(context, { releaseAfterClickMs = null, locale = null } = {}) {
   await startWriting(context)
   const dataRoot = path.join(context.samplePath, '.ai-novel')

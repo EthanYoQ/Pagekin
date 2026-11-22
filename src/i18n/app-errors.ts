@@ -43,7 +43,7 @@ const ERROR_KEYS = {
   NEWER_SCHEMA_READ_ONLY: 'error.projectSchemaNewer',
   // 打开作品时，正式连接看到的库与刚校验过的快照字节不一致：校验之后有别的程序改了作品文件。
   SOURCE_CHANGED_SINCE_PROBE: 'error.projectChangedDuringOpen',
-  // 打开作品时 SQLite 报磁盘读写错误（#702）。FILES_BUSY 是强杀后旧进程还占着作品文件，等了 3 秒仍没放开。
+  // #702：打开作品时 SQLite 报磁盘读写错误。FILES_BUSY 是主进程重试后作品文件仍被占用。
   PROJECT_OPEN_FILES_BUSY: 'error.projectOpenFilesBusy',
   PROJECT_OPEN_IO_FAILED: 'error.projectOpenIoFailed',
   LEGACY_IMPORT_UNSUPPORTED_SOURCE: 'error.legacyImportUnsupportedSource',
