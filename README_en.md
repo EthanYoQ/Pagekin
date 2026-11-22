@@ -300,9 +300,9 @@ Yes. In the library, open "Novel breakdown & imitation", import a .txt, .md, or 
 
 A book's writing language can be Chinese or English. Japanese writing is not supported yet. The interface is available in Chinese, English, and Japanese, and the Japanese interface is in phase 1.
 
-### How do I upgrade to 1.5.0?
+### How do I upgrade to 1.5.x?
 
-If you have 1.1.0, 1.2.x, 1.3.x, or 1.4.x installed, you get an in-app update notice (on macOS, download the new installer by hand). When 1.5.0 opens a project, it upgrades the project data. After that, 1.4.x and earlier cannot open the project or restore archives exported from 1.5.0, so back up important books first. For a project from an older version, choose "Import" in the library and then "Import an old project copy". Importing creates a new copy and leaves the original project untouched.
+If you have 1.1.0, 1.2.x, 1.3.x, or 1.4.x installed, you get an in-app update notice (on macOS, download the new installer by hand). When 1.5.0 opens a project, it upgrades the project data. After that, 1.4.x and earlier cannot open the project or restore archives exported from 1.5.0, so back up important books first. For a project from an older version, choose "Import" in the library and then "Import an old project copy". Importing creates a new copy and leaves the original project untouched. When 1.5.3 opens a project, it also upgrades the project data. After that, 1.5.0 and earlier cannot open the project, and they cannot restore archives exported from 1.5.3.
 
 ### Can I import skills, such as one that removes the AI tone?
 
