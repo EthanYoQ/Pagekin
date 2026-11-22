@@ -1058,7 +1058,6 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           databaseRestored = false
         }
       }
-      // Windows 上文件被别的程序占着报 EBUSY，没有删除权限报 EPERM 或 EACCES。
       const denied = ['EPERM', 'EACCES'].includes(systemCode(deletionError) ?? '')
       return { success: false, directoryDeleted: false, databaseRestored, error: denied ? 'PROJECT_DELETE_ACCESS_DENIED' : 'PROJECT_DELETE_FAILED' }
     }

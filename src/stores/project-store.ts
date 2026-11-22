@@ -118,7 +118,6 @@ function projectNotice(zhCNText: string, enUSText: string): ProjectNotice {
   return () => projectText(zhCNText, enUSText)
 }
 
-/** 失败后原来开着的书也没能恢复、已关闭时接在原因后面的一句。 */
 function closedBookNotices(name: string | undefined): ProjectNotice[] {
   return name ? [projectNotice(`原来开着的《${name}》已关闭。`, `“${name}”, which was open, has been closed.`)] : []
 }
