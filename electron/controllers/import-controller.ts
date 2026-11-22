@@ -94,6 +94,12 @@ function importText(locale: ImportRunLocale | undefined, zhCNText: string, enUST
   return locale === 'en-US' ? enUSText : locale === 'zh-CN' ? zhCNText : text(zhCNText, enUSText)
 }
 
+function tooLargeForRemainingTotal(error: unknown, remainingBytes: number): unknown {
+  return remainingBytes < MAX_TEXT_BYTES && error instanceof Error && error.message === 'SECURE_FS_FILE_TOO_LARGE'
+    ? new Error('IMPORT_SOURCE_BYTES_EXCEEDED')
+    : error
+}
+
 function importSelectionErrorMessage(
   error: unknown,
   locale: ImportRunLocale | undefined,
@@ -599,10 +605,7 @@ export function registerImportController(
           }
           content = ''
         } catch (caught) {
-          // 读文件的上限是剩余总量与单文件上限中较小的那个；剩余总量更小时，超限说的是总量。
-          const error = remainingBytes < MAX_TEXT_BYTES && caught instanceof Error && caught.message === 'SECURE_FS_FILE_TOO_LARGE'
-            ? new Error('IMPORT_SOURCE_BYTES_EXCEEDED')
-            : caught
+          const error = tooLargeForRemainingTotal(caught, remainingBytes)
           let projectStillCurrent = false
           try {
             assertFrozenProject()
