@@ -148,7 +148,7 @@ async function deleteLeftover(context, kind, lang) {
 async function deleteBookWithKnowledgeBase(context) {
   const { page, samplePath } = context
   await stage.openAfterRestart(page, name)
-  assert.ok(fs.existsSync(path.join(samplePath, '.ai-novel', 'lancedb')), '删除前作品里应有知识库')
+  assert.ok(fs.existsSync(path.join(samplePath, '.ai-novel', 'lancedb')), '删除前作品里应有知识库文件')
   await stage.backToLibrary(page, name)
   await stage.bookMenu(page, name, '删除作品…')
   const confirm = page.getByRole('dialog', { name: `删除《${name}》？` })
