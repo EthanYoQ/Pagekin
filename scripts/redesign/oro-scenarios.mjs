@@ -22,7 +22,6 @@ const setup = async context => {
   await context.reload()
 }
 
-/** 预览把库复制进 scratch 下的 attempt-*／snapshot.db，读完就删；看到它说明这一轮预览真的开始复制了。 */
 function watchPeekCopy(scratchRoot) {
   let seenAt = null
   let stopped = false

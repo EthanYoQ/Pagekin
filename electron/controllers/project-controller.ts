@@ -109,7 +109,7 @@ const DELETE_FAILURE_CODES: Readonly<Record<string, string>> = {
 
 const filesStillMapped = (error: unknown) => systemCode(error) === 'SQLITE_IOERR_TRUNCATE'
 
-/** 按前缀从上往下认，扩展码要排在基础码前面。只有基础码 SQLITE_READONLY 是别的程序复制时不让写，扩展码是写不进去。 */
+/** 按前缀从上往下认，扩展码要排在基础码前面。 */
 const PROJECT_FILE_FAILURES = [
   ['SQLITE_IOERR_TRUNCATE', 'PROJECT_OPEN_FILES_BUSY'],
   ['SQLITE_IOERR', 'PROJECT_OPEN_IO_FAILED'],
