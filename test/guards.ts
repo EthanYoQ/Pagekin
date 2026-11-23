@@ -20,6 +20,7 @@ export const GUARD_TESTS: readonly GuardTest[] = [
   { file: 'src/shared/__tests__/model-stage-registry.test.ts', kind: 'scan', why: '遍历 src/services 与 electron/services，生成代码发出的每个 operation 都已登记阶段' },
   { file: 'src/shared/__tests__/review-proof.test.ts', kind: 'scan', why: '遍历 electron、src、scripts 源码，审修证明只在 readReviewProof 一处解析' },
   { file: 'electron/__tests__/startup-native-isolation.test.ts', kind: 'named', why: '启动隔离：注册 IPC 时 kb-controller 不得静态导入知识库模块，import type 也算；测试放在 electron/__tests__，改 kb-controller 时按目录找不到它' },
+  { file: 'electron/controllers/__tests__/external-file-grant-controller.test.ts', kind: 'named', why: '经 test/helpers/external-file-read-codes 遍历 electron/security 源码，每个 SECURE_FS_ 码都要有读文件说明；列目录写在辅助文件里，检测器看不到' },
   { file: 'electron/services/__tests__/live-row-sentinel.test.ts', kind: 'named', why: '回收站被删行对全部读取路径不可见；横跨十来个仓库与服务，改其中任何一条读路径都可能让它红' },
 ]
 
