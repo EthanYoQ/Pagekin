@@ -1,7 +1,3 @@
-/**
- * 结论取决于别处源码的测试：改别处就会红，按改动文件又找不到它们，推送前用 `pnpm test:guards` 一次跑全。
- * kind 为 scan 的必须正好是 test/guards.test.ts 扫出来的那些；named 扫不出来，按点名登记。
- */
 export interface GuardTest {
   file: string
   kind: 'scan' | 'named'
@@ -27,7 +23,6 @@ export const GUARD_TESTS: readonly GuardTest[] = [
   { file: 'electron/services/__tests__/live-row-sentinel.test.ts', kind: 'named', why: '回收站被删行对全部读取路径不可见；横跨十来个仓库与服务，改其中任何一条读路径都可能让它红' },
 ]
 
-/** 检测器会扫中、但遍历的是临时目录而不是源码的测试。 */
 export const NOT_GUARD_TESTS: readonly Omit<GuardTest, 'kind'>[] = [
   { file: 'scripts/__tests__/release-win-verify.test.ts', why: '遍历的是发版门禁的临时目录；扫中是因为别处有匹配 .mjs 的路径正则' },
 ]
