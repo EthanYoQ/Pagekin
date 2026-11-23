@@ -24,6 +24,7 @@ if (asEntryPoint) try { assertNodeRunsTypeScript(process.version, process.featur
 `)
   process.exit(2)
 }
+export const isScenarioTable = exportName => /(^|_)SCENARIOS$/.test(exportName)
 export async function loadScenarios(directory) {
   const files = fs.readdirSync(directory).filter(name => /(^|-)scenarios\.mjs$/.test(name)).sort()
   const modules = await Promise.all(files.map(name => import(pathToFileURL(path.join(directory, name)).href)))
@@ -31,7 +32,7 @@ export async function loadScenarios(directory) {
   const definedIn = new Map()
   files.forEach((file, index) => {
     for (const [exportName, table] of Object.entries(modules[index])) {
-      if (!/(^|_)SCENARIOS$/.test(exportName)) continue
+      if (!isScenarioTable(exportName)) continue
       for (const [name, scenario] of Object.entries(table)) {
         const where = `${file} 的 ${exportName}`
         if (definedIn.has(name)) throw new Error(`场景 ${name} 重名：${definedIn.get(name)}、${where}`)

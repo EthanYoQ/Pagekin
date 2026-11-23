@@ -4,21 +4,51 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { it, vi } from 'vitest'
 vi.mock('playwright', () => ({ _electron: { launch: () => { throw new Error('UNIT_TEST_MUST_NOT_LAUNCH_ELECTRON') } } }))
+const { isScenarioTable } = await import('../drive.mjs')
 
 const redesign = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const docs = path.resolve(redesign, '../../.claude/skills/verify/references/issue-scenarios')
+const PLATFORM_NAMES = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }
 
-it('issue-scenarios/<短名>.md 表里的每个场景都定义在 <短名>-scenarios.mjs', async () => {
-  const misplaced = []
+async function readDocs() {
+  const result = []
   for (const doc of fs.readdirSync(docs).filter(name => name.endsWith('.md'))) {
     const short = doc.slice(0, -'.md'.length)
     const module = await import(pathToFileURL(path.join(redesign, `${short}-scenarios.mjs`)).href)
-    const defined = Object.entries(module).filter(([name]) => name.endsWith('_SCENARIOS')).flatMap(([, table]) => Object.keys(table))
-    const isDefined = name => name.endsWith('*') ? defined.some(key => key.startsWith(name.slice(0, -1))) : defined.includes(name)
-    const nameCells = fs.readFileSync(path.join(docs, doc), 'utf8').split('\n').filter(line => line.startsWith('| `')).map(line => line.split(' | ')[0])
-    for (const cell of nameCells) {
-      for (const [, name] of cell.matchAll(/`([^`]+)`/g)) if (!isDefined(name)) misplaced.push(`${doc}: ${name}`)
+    const defined = Object.fromEntries(Object.entries(module).filter(([name]) => isScenarioTable(name)).flatMap(([, table]) => Object.entries(table)))
+    const matching = name => Object.keys(defined).filter(key => name.endsWith('*') ? key.startsWith(name.slice(0, -1)) : key === name)
+    const lines = fs.readFileSync(path.join(docs, doc), 'utf8').split('\n')
+    const header = lines.slice(0, lines.findIndex(line => line.startsWith('| '))).join('\n')
+    const rows = lines.filter(line => line.startsWith('| `')).map(line => {
+      const names = [...line.split(' | ')[0].matchAll(/`([^`]+)`/g)].map(([, name]) => name)
+      return { line, names, scenarios: names.flatMap(matching).map(key => defined[key]) }
+    })
+    result.push({ doc, header, rows, matching })
+  }
+  return result
+}
+
+function prerequisiteTexts(scenario) {
+  const { env = {}, platform, theme } = scenario.requires ?? {}
+  return [...Object.keys(env), ...(platform ? [`只在 ${PLATFORM_NAMES[platform]}`] : []), ...(theme ? [`--theme ${theme}`] : [])]
+}
+
+it('issue-scenarios/<短名>.md 表里的每个场景都定义在 <短名>-scenarios.mjs', async () => {
+  const misplaced = (await readDocs()).flatMap(({ doc, rows, matching }) =>
+    rows.flatMap(({ names }) => names.filter(name => matching(name).length === 0).map(name => `${doc}: ${name}`)))
+  assert.deepEqual(misplaced, [])
+})
+
+it('场景 requires 声明的平台、环境变量、主题都写进说明：写在那一行，全文件场景共有时可写在文件头', async () => {
+  const missing = []
+  for (const { doc, header, rows } of await readDocs()) {
+    const perScenario = rows.flatMap(({ scenarios }) => scenarios).map(prerequisiteTexts)
+    const shared = perScenario.length ? perScenario.reduce((common, texts) => common.filter(text => texts.includes(text))) : []
+    for (const { line, names, scenarios } of rows) {
+      for (const text of new Set(scenarios.flatMap(prerequisiteTexts))) {
+        if (!line.includes(text) && !(shared.includes(text) && header.includes(text))) missing.push(`${doc} ${names.join('、')}: 缺「${text}」`)
+      }
     }
   }
-  assert.deepEqual(misplaced, [])
+  assert.deepEqual(missing, [])
 })
