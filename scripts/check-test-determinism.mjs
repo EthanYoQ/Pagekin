@@ -56,6 +56,21 @@ function declarationResolver() {
   }
 }
 
+const isFakeTimersCall = node => ts.isCallExpression(node) && node.expression.getText().endsWith('.useFakeTimers')
+const isHook = node => ts.isCallExpression(node) && ['beforeEach', 'beforeAll'].includes(node.expression.getText())
+
+// 同一用例里，或外层 describe 的 beforeEach、beforeAll 里开了假时钟
+function usesFakeTimers(node) {
+  for (let scope = node.parent; scope; scope = scope.parent) {
+    for (const statement of scope.statements ?? []) {
+      if (!ts.isExpressionStatement(statement) || (statement.pos <= node.pos && node.end <= statement.end)) continue
+      const call = statement.expression
+      if (isFakeTimersCall(call) || (isHook(call) && some(call, isFakeTimersCall))) return true
+    }
+  }
+  return false
+}
+
 function wallClockHits(sf) {
   const resolve = declarationResolver()
   const stamps = new Set()
@@ -86,13 +101,33 @@ function wallClockHits(sf) {
     }
   }
 
-  const upperBound = node => some(node, n => {
-    if (!ts.isBinaryExpression(n)) return false
-    const op = n.operatorToken.kind
-    if (op === ts.SyntaxKind.LessThanToken || op === ts.SyntaxKind.LessThanEqualsToken) return isElapsed(n.left)
-    if (op === ts.SyntaxKind.GreaterThanToken || op === ts.SyntaxKind.GreaterThanEqualsToken) return isElapsed(n.right)
-    return false
-  })
+  // truthy 为 true 时断言 node 为真，为 false 时断言它为假
+  const boundsAbove = (node, truthy) => {
+    while (ts.isParenthesizedExpression(node) || ts.isAwaitExpression(node)) node = node.expression
+    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) return boundsAbove(node.operand, !truthy)
+    if (!ts.isBinaryExpression(node)) return false
+    const op = node.operatorToken.kind
+    if (op === ts.SyntaxKind.AmpersandAmpersandToken) return truthy && (boundsAbove(node.left, true) || boundsAbove(node.right, true))
+    const less = op === ts.SyntaxKind.LessThanToken || op === ts.SyntaxKind.LessThanEqualsToken
+    if (!less && op !== ts.SyntaxKind.GreaterThanToken && op !== ts.SyntaxKind.GreaterThanEqualsToken) return false
+    return isElapsed(less === truthy ? node.left : node.right)
+  }
+
+  const expectedTruth = (matcher, argument) => {
+    if (matcher === 'toBeTruthy') return true
+    if (matcher === 'toBeFalsy') return false
+    if (!['toBe', 'toEqual', 'toStrictEqual'].includes(matcher) || !argument) return null
+    return argument.kind === ts.SyntaxKind.TrueKeyword ? true : argument.kind === ts.SyntaxKind.FalseKeyword ? false : null
+  }
+
+  const assertsUpperBound = (measured, modifiers, call) => {
+    const negated = modifiers[0] === 'not'
+    const matcher = modifiers.slice(negated ? 1 : 0).join('.')
+    if (['toBeLessThan', 'toBeLessThanOrEqual'].includes(matcher)) return !negated && isElapsed(measured)
+    if (['toBeGreaterThan', 'toBeGreaterThanOrEqual'].includes(matcher)) return negated && isElapsed(measured)
+    const truth = expectedTruth(matcher, call.arguments[0])
+    return truth !== null && boundsAbove(measured, truth !== negated)
+  }
 
   const hits = []
   const visit = node => {
@@ -100,14 +135,14 @@ function wallClockHits(sf) {
       const chain = []
       let target = node.expression
       while (ts.isPropertyAccessExpression(target)) { chain.unshift(target.name.text); target = target.expression }
-      if (ts.isCallExpression(target) && ['expect', 'expect.soft'].includes(target.expression.getText()) && target.arguments[0]) {
-        const measured = target.arguments[0]
-        const matcher = chain.join('.')
-        const bound = ['toBeLessThan', 'toBeLessThanOrEqual', 'not.toBeGreaterThan', 'not.toBeGreaterThanOrEqual'].includes(matcher)
-        if ((bound && isElapsed(measured)) || upperBound(measured)) { hits.push(node); return }
+      if (ts.isCallExpression(target) && ['expect', 'expect.soft'].includes(target.expression.getText()) && target.arguments[0]
+        && assertsUpperBound(target.arguments[0], chain.filter(part => part !== 'resolves'), node) && !usesFakeTimers(node)) {
+        hits.push(node)
+        return
       }
     }
-    if (ts.isCallExpression(node) && ['assert', 'assert.ok'].includes(node.expression.getText()) && node.arguments[0] && upperBound(node.arguments[0])) {
+    if (ts.isCallExpression(node) && ['assert', 'assert.ok'].includes(node.expression.getText()) && node.arguments[0]
+      && boundsAbove(node.arguments[0], true) && !usesFakeTimers(node)) {
       hits.push(node)
       return
     }
@@ -164,16 +199,13 @@ const readsFileName = fn => (ts.isArrowFunction(fn) || ts.isFunctionExpression(f
 
 function watchFileNameHits(sf) {
   const bindings = fsBindings(sf)
-  const watchers = new Map()
-  const findWatchers = node => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      const kind = watchKind(node.initializer, bindings)
-      if (kind) watchers.set(node.name.text, kind)
-    }
-    ts.forEachChild(node, findWatchers)
+  const resolve = declarationResolver()
+  const kindOf = expression => {
+    const direct = watchKind(expression, bindings)
+    if (direct || !ts.isIdentifier(expression)) return direct
+    const declaration = resolve(expression)
+    return declaration?.initializer ? watchKind(declaration.initializer, bindings) : null
   }
-  findWatchers(sf)
-  const kindOf = expression => watchKind(expression, bindings) ?? (ts.isIdentifier(expression) ? watchers.get(expression.text) ?? null : null)
 
   const hits = []
   const report = (node, label, fn) => hits.push({ rule: 'fs-watch-filename', node, hit: normalize(`${label} (${fn.parameters.map(p => p.getText()).join(', ')})`) })
