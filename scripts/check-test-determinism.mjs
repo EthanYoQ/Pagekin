@@ -36,7 +36,11 @@ function some(node, predicate) {
 
 function scopeDeclarations(scope) {
   const declarations = new Map()
-  const add = list => { for (const d of list) if (ts.isIdentifier(d.name)) declarations.set(d.name.text, d) }
+  const addName = (name, declaration) => {
+    if (ts.isIdentifier(name)) declarations.set(name.text, declaration)
+    else for (const element of name.elements) if (!ts.isOmittedExpression(element)) addName(element.name, element)
+  }
+  const add = list => { for (const d of list) addName(d.name, d) }
   for (const statement of scope.statements ?? []) if (ts.isVariableStatement(statement)) add(statement.declarationList.declarations)
   if ((ts.isForStatement(scope) || ts.isForOfStatement(scope) || ts.isForInStatement(scope)) && scope.initializer && ts.isVariableDeclarationList(scope.initializer)) add(scope.initializer.declarations)
   if (ts.isFunctionLike(scope)) add(scope.parameters)
@@ -57,16 +61,30 @@ function declarationResolver() {
 }
 
 const isFakeTimersCall = node => ts.isCallExpression(node) && node.expression.getText().endsWith('.useFakeTimers')
+const isRealTimersCall = node => ts.isCallExpression(node) && node.expression.getText().endsWith('.useRealTimers')
 const isHook = node => ts.isCallExpression(node) && ['beforeEach', 'beforeAll'].includes(node.expression.getText())
 
-// 同一用例里，或外层 describe 的 beforeEach、beforeAll 里开了假时钟
+function lastTimerMode(node) {
+  let mode = null
+  const visit = n => {
+    if (isFakeTimersCall(n)) mode = true
+    else if (isRealTimersCall(n)) mode = false
+    ts.forEachChild(n, visit)
+  }
+  visit(node)
+  return mode
+}
+
 function usesFakeTimers(node) {
   for (let scope = node.parent; scope; scope = scope.parent) {
+    let mode = null
     for (const statement of scope.statements ?? []) {
-      if (!ts.isExpressionStatement(statement) || (statement.pos <= node.pos && node.end <= statement.end)) continue
-      const call = statement.expression
-      if (isFakeTimersCall(call) || (isHook(call) && some(call, isFakeTimersCall))) return true
+      if (statement.pos <= node.pos && node.end <= statement.end) break
+      const call = ts.isExpressionStatement(statement) ? statement.expression : null
+      const set = call && (isFakeTimersCall(call) || isRealTimersCall(call) || isHook(call)) ? lastTimerMode(call) : null
+      if (set !== null) mode = set
     }
+    if (mode !== null) return mode
   }
   return false
 }
@@ -101,16 +119,15 @@ function wallClockHits(sf) {
     }
   }
 
-  // truthy 为 true 时断言 node 为真，为 false 时断言它为假
-  const boundsAbove = (node, truthy) => {
+  const boundsAbove = (node, assertedTrue) => {
     while (ts.isParenthesizedExpression(node) || ts.isAwaitExpression(node)) node = node.expression
-    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) return boundsAbove(node.operand, !truthy)
+    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) return boundsAbove(node.operand, !assertedTrue)
     if (!ts.isBinaryExpression(node)) return false
     const op = node.operatorToken.kind
-    if (op === ts.SyntaxKind.AmpersandAmpersandToken) return truthy && (boundsAbove(node.left, true) || boundsAbove(node.right, true))
+    if (op === ts.SyntaxKind.AmpersandAmpersandToken) return assertedTrue && (boundsAbove(node.left, true) || boundsAbove(node.right, true))
     const less = op === ts.SyntaxKind.LessThanToken || op === ts.SyntaxKind.LessThanEqualsToken
     if (!less && op !== ts.SyntaxKind.GreaterThanToken && op !== ts.SyntaxKind.GreaterThanEqualsToken) return false
-    return isElapsed(less === truthy ? node.left : node.right)
+    return isElapsed(less === assertedTrue ? node.left : node.right)
   }
 
   const expectedTruth = (matcher, argument) => {
@@ -183,9 +200,15 @@ function fsBindings(sf) {
   return { fsModules, promiseModules, callbackWatch, promiseWatch }
 }
 
-function watchKind(call, bindings) {
+const isRequire = declaration => declaration?.initializer && ts.isCallExpression(declaration.initializer) && declaration.initializer.expression.getText() === 'require'
+
+function watchKind(call, bindings, resolve) {
   if (!ts.isCallExpression(call)) return null
   const callee = call.expression
+  let root = callee
+  while (ts.isPropertyAccessExpression(root)) root = root.expression
+  const declaration = ts.isIdentifier(root) ? resolve(root) : null
+  if (declaration && !isRequire(declaration)) return null
   if (ts.isIdentifier(callee)) return bindings.callbackWatch.has(callee.text) ? 'callback' : bindings.promiseWatch.has(callee.text) ? 'promise' : null
   if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'watch') return null
   const owner = callee.expression.getText()
@@ -194,23 +217,26 @@ function watchKind(call, bindings) {
   return null
 }
 
-const readsFileName = fn => (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))
-  && fn.parameters.length >= 2 && ts.isIdentifier(fn.parameters[1].name) && !fn.parameters[1].name.text.startsWith('_')
+function readsFileName(fn) {
+  if (!(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) || fn.parameters.length < 2 || !ts.isIdentifier(fn.parameters[1].name)) return false
+  const name = fn.parameters[1].name.text
+  return some(fn.body, n => ts.isIdentifier(n) && n.text === name && n.parent.name !== n)
+}
 
 function watchFileNameHits(sf) {
   const bindings = fsBindings(sf)
   const resolve = declarationResolver()
   const kindOf = expression => {
-    const direct = watchKind(expression, bindings)
+    const direct = watchKind(expression, bindings, resolve)
     if (direct || !ts.isIdentifier(expression)) return direct
     const declaration = resolve(expression)
-    return declaration?.initializer ? watchKind(declaration.initializer, bindings) : null
+    return declaration?.initializer ? watchKind(declaration.initializer, bindings, resolve) : null
   }
 
   const hits = []
   const report = (node, label, fn) => hits.push({ rule: 'fs-watch-filename', node, hit: normalize(`${label} (${fn.parameters.map(p => p.getText()).join(', ')})`) })
   const visit = node => {
-    if (ts.isCallExpression(node) && watchKind(node, bindings) === 'callback') {
+    if (ts.isCallExpression(node) && watchKind(node, bindings, resolve) === 'callback') {
       const fn = node.arguments.find(readsFileName)
       if (fn) report(node, node.expression.getText(), fn)
     }
