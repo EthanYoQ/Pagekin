@@ -7,8 +7,14 @@ vi.mock('playwright', () => ({ _electron: { launch: () => { throw new Error('UNI
 const { isScenarioTable } = await import('../drive.mjs')
 
 const redesign = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const docs = path.resolve(redesign, '../../.claude/skills/verify/references/issue-scenarios')
+const references = path.resolve(redesign, '../../.claude/skills/verify/references')
+const docs = path.join(references, 'issue-scenarios')
+const PAGE_DOCS = ['rd-stage-scenarios.md', 'rd-review-scenarios.md', 'baseline-scenarios.md']
 const PLATFORM_NAMES = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }
+
+function tableRows(lines) {
+  return lines.filter(line => line.startsWith('| `')).map(line => ({ line, names: [...line.split(' | ')[0].matchAll(/`([^`]+)`/g)].map(([, name]) => name) }))
+}
 
 async function readDocs() {
   const result = []
@@ -19,11 +25,8 @@ async function readDocs() {
     const matching = name => Object.keys(defined).filter(key => name.endsWith('*') ? key.startsWith(name.slice(0, -1)) : key === name)
     const lines = fs.readFileSync(path.join(docs, doc), 'utf8').split('\n')
     const header = lines.slice(0, lines.findIndex(line => line.startsWith('| '))).join('\n')
-    const rows = lines.filter(line => line.startsWith('| `')).map(line => {
-      const names = [...line.split(' | ')[0].matchAll(/`([^`]+)`/g)].map(([, name]) => name)
-      return { line, names, scenarios: names.flatMap(matching).map(key => defined[key]) }
-    })
-    result.push({ doc, header, rows, matching })
+    const rows = tableRows(lines).map(({ line, names }) => ({ line, names, scenarios: names.flatMap(matching).map(key => defined[key]) }))
+    result.push({ doc, header, rows, matching, defined })
   }
   return result
 }
@@ -37,6 +40,15 @@ it('issue-scenarios/<短名>.md 表里的每个场景都定义在 <短名>-scena
   const misplaced = (await readDocs()).flatMap(({ doc, rows, matching }) =>
     rows.flatMap(({ names }) => names.filter(name => matching(name).length === 0).map(name => `${doc}: ${name}`)))
   assert.deepEqual(misplaced, [])
+})
+
+it('有 issue-scenarios/<短名>.md 的模块，定义的每个场景都在该文件或页面场景表里有说明行', async () => {
+  const pageNames = PAGE_DOCS.flatMap(doc => tableRows(fs.readFileSync(path.join(references, doc), 'utf8').split('\n'))).flatMap(({ names }) => names)
+  const undocumented = (await readDocs()).flatMap(({ doc, rows, matching, defined }) => {
+    const documented = new Set([...rows, { names: pageNames }].flatMap(({ names }) => names.flatMap(matching)))
+    return Object.keys(defined).filter(key => !documented.has(key)).map(key => `${doc}: ${key}`)
+  })
+  assert.deepEqual(undocumented, [])
 })
 
 it('场景 requires 声明的平台、环境变量、主题都写进说明：写在那一行，全文件场景共有时可写在文件头', async () => {

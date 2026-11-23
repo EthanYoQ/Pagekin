@@ -1,6 +1,6 @@
 ## chapter-scenarios.mjs 的场景（原记在「打开时封存了读不出的生成记录（#702）」）
 
-场景在 `scripts/redesign/chapter-scenarios.mjs`。
+场景在 `scripts/redesign/chapter-scenarios.mjs`。下表之外的场景（`chapter-*`、`run-usage-en`、`typing-latency`）记在 `../rd-stage-scenarios.md`「正文单章视图（RD-8 起）」。
 
 | 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
 |---|---|---|---|---|
