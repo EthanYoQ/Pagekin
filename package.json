@@ -18,6 +18,7 @@
     "check:i18n": "node scripts/check-i18n-coverage.mjs",
     "test": "vitest run",
     "test:browser": "vitest run --config vitest.browser.config.ts",
+    "test:guards": "vitest run --config vitest.guards.config.ts",
     "verify:drive": "node scripts/redesign/drive.mjs",
     "build": "node scripts/build-windows-safe-file-system.mjs && tsc && vite build",
     "build:win": "pnpm run release:win:verify",
