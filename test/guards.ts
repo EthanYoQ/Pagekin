@@ -58,6 +58,8 @@ export const NOT_GUARD_TESTS: readonly Omit<GuardTest, 'kind'>[] = [
   { file: 'electron/services/__tests__/vector-migration-snapshot.test.ts', why: TEMP_DIRECTORY },
   { file: 'electron/services/__tests__/webdav-backup-service.test.ts', why: TEMP_DIRECTORY },
   { file: 'electron/utils/__tests__/config-utils.test.ts', why: TEMP_DIRECTORY },
+  { file: 'scripts/__tests__/check-color-literals.test.mjs', why: '只在颜色检查的输入字符串里出现 glob 一词，不列目录' },
+  { file: 'scripts/__tests__/f05-a11-launch-cleanup.test.mjs', why: '给被测脚本传一个 readdirSync 返回空数组的假 fs，不列目录' },
   { file: 'scripts/__tests__/legacy-qualification-projection.test.ts', why: TEMP_DIRECTORY },
   { file: 'scripts/__tests__/release-win-verify.test.ts', why: TEMP_DIRECTORY },
   { file: 'scripts/__tests__/smoke-macos-dmg-acceptance-contract.test.ts', why: TEMP_DIRECTORY },
