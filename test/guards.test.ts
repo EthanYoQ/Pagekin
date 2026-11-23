@@ -52,6 +52,9 @@ describe('守卫测试登记表', () => {
       "await readdir(dir)",
       "for await (const entry of await opendir(dir)) {}",
       "globSync('src/**/*.css')",
+      "readdirSync (dir)",
+      "fs.readdirSync\n  (dir)",
+      "import { readdirSync as ls } from 'node:fs'\nls(dir)",
     ]) expect(scansSource(text), text).toBe(true)
     expect(scansSource("readFileSync('src/styles/app.css', 'utf8')")).toBe(false)
     expect(scansSource("readFileSync(join(ROOT, 'src/a.ts'), 'utf8'); existsSync('src')")).toBe(false)
