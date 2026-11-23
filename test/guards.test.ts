@@ -7,11 +7,9 @@ import { GUARD_TESTS, NOT_GUARD_TESTS } from './guards'
 const ROOT = join(__dirname, '..')
 const SCANNED_ROOTS = ['electron', 'scripts', 'src', 'test']
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/u
-const LISTS_DIRECTORY = /\b(?:readdirSync|readdir|globSync)\(/u
-const SOURCE_EXTENSION = String.raw`(?:tsx?\??|mjs|cjs|css|ps1|sh)`
-const FILTERS_SOURCE = new RegExp(String.raw`endsWith\(\s*['"${'`'}]\.${SOURCE_EXTENSION}['"${'`'}]\s*\)|\\\.\(?(?:\?:)?(?:\w+\??\|)*${SOURCE_EXTENSION}\b`, 'u')
+const LISTS_DIRECTORY = /\b(?:readdirSync|readdir|opendirSync|opendir|globSync|glob)\(/u
 
-const scansSource = (text: string) => LISTS_DIRECTORY.test(text) && FILTERS_SOURCE.test(text)
+const scansSource = (text: string) => LISTS_DIRECTORY.test(text)
 
 function testFiles(root: string, dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
@@ -34,9 +32,9 @@ function inventoryDrift(root: string, registered: readonly string[]) {
 }
 
 describe('守卫测试登记表', () => {
-  it('扫源码的测试正好是登记表里 kind 为 scan 的那些', () => {
+  it('列目录的测试要么登记为 scan，要么写明豁免理由', () => {
     const registered = GUARD_TESTS.filter(entry => entry.kind === 'scan').map(entry => entry.file).sort()
-    expect(inventoryDrift(ROOT, registered), '新增或移除了扫源码的测试，同步改 test/guards.ts').toEqual({ unregistered: [], stale: [] })
+    expect(inventoryDrift(ROOT, registered), '新增或移除了列目录的测试：扫仓库源码的登记进 GUARD_TESTS，列临时目录的进 NOT_GUARD_TESTS').toEqual({ unregistered: [], stale: [] })
   })
 
   it('登记的文件都在，豁免项仍会被扫中', () => {
