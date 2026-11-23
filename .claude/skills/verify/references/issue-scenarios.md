@@ -4,6 +4,6 @@
 
 RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找已有场景。
 
-说明放在 `issue-scenarios/<短名>.md`，短名是 `scripts/redesign/<短名>-scenarios.mjs` 去掉 `-scenarios.mjs`。拆分前写成的说明有的一节讲了几个场景文件，归在它最先提到的那个短名下，所以不是每个场景文件都有同名说明；页面类场景的说明在 `rd-stage-scenarios.md`、`rd-review-scenarios.md`。按场景文件或 issue 找，用 grep：`grep -rl 'c8a-scenarios' .claude/skills/verify/references/`、`grep -l '#702' .claude/skills/verify/references/issue-scenarios/*.md`。
+说明放在 `issue-scenarios/<短名>.md`，短名是 `scripts/redesign/<短名>-scenarios.mjs` 去掉 `-scenarios.mjs`。拆分前写成的说明有的一节讲了几个场景文件，归在它最先提到的那个短名下，所以不是每个场景文件都有同名说明；页面类场景的说明在 `rd-stage-scenarios.md`、`rd-review-scenarios.md`。按短名、场景名或 issue 找，用 grep：`grep -rl 'e763' .claude/skills/verify/references/`、`grep -l '#702' .claude/skills/verify/references/issue-scenarios/*.md`。
 
 新加场景时，新建 `scripts/redesign/<短名>-scenarios.mjs` 和 `issue-scenarios/<短名>.md` 两个文件，驱动自动收进来，不用改 `drive.mjs` 或本文件。
