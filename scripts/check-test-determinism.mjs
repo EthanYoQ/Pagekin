@@ -1,6 +1,5 @@
-// 测试里两类写法在 CI 慢机上才会红，修一次又是一轮（#620 第 6 轮、#818）：
-// 拿墙钟差值和固定上限比较；读 fs.watch 回调的文件名（macOS 上可能为 null）。
-// 只拦新增：现有命中记在基线里，按 文件 + 规则 + 命中文本 计数，不看行号。
+// 拦截两类 CI 慢机上才会红的测试写法（#620、#818）：墙钟差值与固定上限比较；读 fs.watch 回调的文件名（macOS 上可能为 null）。
+// 只拦新增：现有命中记在 test-determinism-baseline.json，按 文件 + 规则 + 命中文本 计数，不看行号，改动无关行不会让基线失效。
 
 import fs from 'node:fs'
 import path from 'node:path'
