@@ -113,7 +113,45 @@ test('不读文件名的 fs.watch 与别的 watch 不报', () => {
   assert.deepEqual(rulesOf("function watch(a, b) {}\nwatch(dir, (event, name) => name)"), [])
 })
 
-const WALL_CLOCK = 'const s = Date.now()\nexpect(Date.now() - s).toBeLessThan(1000)\n'
+test('布尔断言按期望真假与 not 判断方向，resolves 后的上限也算', () => {
+  const source = [
+    'const start = Date.now()',
+    'expect(Date.now() - start > 50).toBe(false)',
+    'expect(Date.now() - start < 50).not.toBe(true)',
+    'expect(Date.now() - start < 50).toBeFalsy()',
+    'expect(Date.now() - start > 50).toBe(true)',
+    'const stopped = stop().then(() => Date.now() - start)',
+    'expect(stopped).resolves.toBeLessThan(5000)',
+    'assert.ok(!(Date.now() - start > 50))',
+  ].join('\n')
+  assert.deepEqual(rulesOf(source), [2, 7, 8].map(line => `${line}:wall-clock-limit`))
+})
+
+test('用假时钟推进的用例不报，同文件别的用例照报', () => {
+  const source = [
+    "describe('fake', () => {",
+    '  beforeEach(() => { vi.useFakeTimers() })',
+    "  it('a', () => { const s = Date.now(); vi.advanceTimersByTime(50); expect(Date.now() - s).toBeLessThan(100) })",
+    '})',
+    "it('b', () => { vi.useFakeTimers(); const s = Date.now(); expect(Date.now() - s).toBeLessThan(100) })",
+    "it('c', () => { const s = Date.now(); expect(Date.now() - s).toBeLessThan(100) })",
+  ].join('\n')
+  assert.deepEqual(rulesOf(source), ['6:wall-clock-limit'])
+})
+
+test('不同用例复用 watcher 这个名字时按各自声明判断', () => {
+  const source = [
+    "import fs from 'node:fs'",
+    "import { watch } from 'node:fs/promises'",
+    "it('a', () => { const watcher = fs.watch(dir); watcher.on('change', () => changed++) })",
+    "it('b', () => { const watcher = new DomainWatcher(); watcher.on('change', (id, name) => seen.add(name)) })",
+    "it('c', async () => { const watcher = watch(dir); for await (const e of watcher) changed++ })",
+    "it('d', () => { const watcher = fs.watch(dir); watcher.on('change', (e, name) => seen.add(name)) })",
+  ].join('\n')
+  assert.deepEqual(rulesOf(source), ['6:fs-watch-filename'])
+})
+
+const WALL_CLOCK ='const s = Date.now()\nexpect(Date.now() - s).toBeLessThan(1000)\n'
 const HIT = 'expect(Date.now() - s).toBeLessThan(1000)'
 
 test('只扫测试文件：源码与 perf702 实机计时场景里的墙钟上限放行', () => {
