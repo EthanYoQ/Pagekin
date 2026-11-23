@@ -38,6 +38,10 @@ describe('守卫测试登记表', () => {
   it('认得出遍历源码目录的写法，不把遍历临时目录当成守卫', () => {
     expect(scansSource("readdirSync(dir).filter(name => name.endsWith('.ts'))")).toBe(true)
     expect(scansSource('readdirSync(dir).filter(name => /\\.(?:tsx?|mjs)$/u.test(name))')).toBe(true)
+    expect(scansSource("readdirSync(dir).filter(name => name.endsWith('.css'))")).toBe(true)
+    expect(scansSource('readdirSync(dir).filter(name => /\\.css$/u.test(name))')).toBe(true)
+    expect(scansSource("readdirSync('scripts').filter(name => name.endsWith('.ps1'))")).toBe(true)
+    expect(scansSource("readdirSync(dir).filter(name => name.endsWith('.jsx'))")).toBe(true)
     expect(scansSource("readdirSync(tmp).filter(name => name.startsWith('.pe-'))")).toBe(false)
     expect(scansSource("readFileSync('src/a.ts', 'utf8')")).toBe(false)
   })
