@@ -151,7 +151,31 @@ test('不同用例复用 watcher 这个名字时按各自声明判断', () => {
   assert.deepEqual(rulesOf(source), ['6:fs-watch-filename'])
 })
 
-const WALL_CLOCK ='const s = Date.now()\nexpect(Date.now() - s).toBeLessThan(1000)\n'
+test('用例里切回真时钟后照报；解构出的同名变量遮住外层耗时变量', () => {
+  const source = [
+    "describe('fake', () => {",
+    '  beforeEach(() => { vi.useFakeTimers() })',
+    "  it('a', () => { vi.useRealTimers(); const s = Date.now(); expect(Date.now() - s).toBeLessThan(50) })",
+    '})',
+    'const elapsed = performance.now() - started',
+    "it('b', () => { const { elapsed } = row; expect(elapsed).toBeLessThan(3) })",
+  ].join('\n')
+  assert.deepEqual(rulesOf(source), ['3:wall-clock-limit'])
+})
+
+test('watch 回调按参数是否被读取判断，不看名字前缀；被参数遮住的 watch 不算 fs', () => {
+  const source = [
+    "import fs from 'node:fs'",
+    "import { watch } from 'node:fs'",
+    'fs.watch(dir, (_event, _filename) => seen.push(_filename))',
+    'fs.watch(dir, (event, name) => { changed++ })',
+    'function probe(watch) { watch(dir, (event, name) => seen.add(name)) }',
+    'watch(dir, (event, name) => seen.add(name))',
+  ].join('\n')
+  assert.deepEqual(rulesOf(source), [3, 6].map(line => `${line}:fs-watch-filename`))
+})
+
+const WALL_CLOCK = 'const s = Date.now()\nexpect(Date.now() - s).toBeLessThan(1000)\n'
 const HIT = 'expect(Date.now() - s).toBeLessThan(1000)'
 
 test('只扫测试文件：源码与 perf702 实机计时场景里的墙钟上限放行', () => {
