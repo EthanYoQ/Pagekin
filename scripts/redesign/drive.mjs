@@ -24,7 +24,6 @@ if (asEntryPoint) try { assertNodeRunsTypeScript(process.version, process.featur
 `)
   process.exit(2)
 }
-/** 同目录的 scenarios.mjs 与 *-scenarios.mjs 都并进场景表，取导出名为 SCENARIOS 或以 _SCENARIOS 结尾的表；同名场景直接报错，不让后读的文件悄悄覆盖。 */
 export async function loadScenarios(directory) {
   const files = fs.readdirSync(directory).filter(name => /(^|-)scenarios\.mjs$/.test(name)).sort()
   const modules = await Promise.all(files.map(name => import(pathToFileURL(path.join(directory, name)).href)))
