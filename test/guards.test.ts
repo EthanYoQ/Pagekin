@@ -7,7 +7,8 @@ const ROOT = join(__dirname, '..')
 const SCANNED_ROOTS = ['electron', 'scripts', 'src', 'test']
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/u
 const LISTS_DIRECTORY = /\b(?:readdirSync|readdir|globSync)\(/u
-const FILTERS_SOURCE = /endsWith\(\s*['"`]\.(?:tsx?|mjs|cjs)['"`]\s*\)|\\\.\(?(?:\?:)?(?:\w+\??\|)*(?:tsx?\??|mjs|cjs)\b/u
+const SOURCE_EXTENSION = String.raw`(?:tsx?\??|mjs|cjs|css|ps1|sh)`
+const FILTERS_SOURCE = new RegExp(String.raw`endsWith\(\s*['"${'`'}]\.${SOURCE_EXTENSION}['"${'`'}]\s*\)|\\\.\(?(?:\?:)?(?:\w+\??\|)*${SOURCE_EXTENSION}\b`, 'u')
 
 const scansSource = (text: string) => LISTS_DIRECTORY.test(text) && FILTERS_SOURCE.test(text)
 
@@ -41,7 +42,7 @@ describe('守卫测试登记表', () => {
     expect(scansSource("readdirSync(dir).filter(name => name.endsWith('.css'))")).toBe(true)
     expect(scansSource('readdirSync(dir).filter(name => /\\.css$/u.test(name))')).toBe(true)
     expect(scansSource("readdirSync('scripts').filter(name => name.endsWith('.ps1'))")).toBe(true)
-    expect(scansSource("readdirSync(dir).filter(name => name.endsWith('.jsx'))")).toBe(true)
+    expect(scansSource("readdirSync(dist); assert.throws(run, /main\\.js 不存在/)")).toBe(false)
     expect(scansSource("readdirSync(tmp).filter(name => name.startsWith('.pe-'))")).toBe(false)
     expect(scansSource("readFileSync('src/a.ts', 'utf8')")).toBe(false)
   })
