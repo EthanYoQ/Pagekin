@@ -297,7 +297,7 @@ describe('作品库是空的或不在时，打开说作品文件里没有内容�
     const ja = projectOpenFailureMessage(shown('ja-JP'), String(failure))
     expect(zh).toMatch(/没有内容[\s\S]*「从本地存档恢复副本」/u)
     expect(en).toMatch(/no content[\s\S]*Restore a copy from local archive/u)
-    expect(ja).toMatch(/内容がない[\s\S]*「Restore a copy from local archive」/u)
+    expect(ja).toMatch(/内容がない[\s\S]*「ローカルアーカイブからコピーを復元」/u)
     for (const text of [zh, en, ja]) expect(text).not.toMatch(/核查创建|which app|ENOENT|no such file|UNRECOGNIZED|SchemaMigrationError|PROJECT_|\.ai-novel/u)
   })
 })

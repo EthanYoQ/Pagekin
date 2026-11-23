@@ -1661,7 +1661,7 @@ describe('project:open：作品文件坏了、被占用或没有权限时，说�
     const { zh, en, ja } = explain(result)
     expect(zh).toMatch(/损坏[\s\S]*「项目备份」[\s\S]*「从本地存档恢复副本」/u)
     expect(en).toMatch(/damaged[\s\S]*Project backup[\s\S]*Restore a copy from local archive/u)
-    expect(ja).toMatch(/破損[\s\S]*「Project backup」[\s\S]*「Restore a copy from local archive」/u)
+    expect(ja).toMatch(/破損[\s\S]*「Project backup」[\s\S]*「ローカルアーカイブからコピーを復元」/u)
     for (const shownText of [zh, en, ja]) expect(shownText).not.toMatch(RAW_SYSTEM_TEXT)
   })
 
