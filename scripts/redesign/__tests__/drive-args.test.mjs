@@ -6,7 +6,7 @@ import process from 'node:process'
 import { spawnSync } from 'node:child_process'
 import { afterEach, it, vi } from 'vitest'
 vi.mock('playwright', () => ({ _electron: { launch: () => { throw new Error('UNIT_TEST_MUST_NOT_LAUNCH_ELECTRON') } } }))
-import { appearanceWrite, assertBuilt, captureFailure, driveSessions, finishRealSession, harvestModelLog, idleMemory, createIsolatedRoots, isolatedEnvironment, launchArgs, missingPrerequisites, parseArgs,
+import { appearanceWrite, assertBuilt, captureFailure, driveSessions, finishRealSession, harvestModelLog, idleMemory, createIsolatedRoots, isolatedEnvironment, launchArgs, loadScenarios, missingPrerequisites, parseArgs,
   releaseSessionRoot, scanRunForSecret, sessionIsClean, writeConsoleLog } from '../drive.mjs'
 import { fileStamps } from '../real-model.mjs'
 import { BASELINE_SESSIONS, SCENARIOS } from '../scenarios.mjs'
@@ -15,6 +15,30 @@ import { PERF702_SCENARIOS } from '../perf702-scenarios.mjs'
 const parents = []
 afterEach(() => { for (const parent of parents.splice(0)) fs.rmSync(parent, { recursive: true, force: true }) })
 const tempParent = () => { const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'drive-args-')); parents.push(parent); return parent }
+
+const writeModules = (files) => {
+  const directory = tempParent()
+  for (const [name, source] of Object.entries(files)) fs.writeFileSync(path.join(directory, name), source)
+  return directory
+}
+
+it('同目录新建的 *-scenarios.mjs 不用登记就收进场景表，别的文件和导出不收', async () => {
+  const directory = writeModules({
+    'scenarios.mjs': "export const SCENARIOS = { base: {} }\nexport const EXTRA_SCENARIOS = { extra: {} }\nexport const BASELINE_SESSIONS = { all: ['base'] }\n",
+    'new-line-scenarios.mjs': "export const NEW_LINE_SCENARIOS = { fresh: {} }\nexport const HELPERS = { helper: {} }\n",
+    'notes.mjs': "export const NOTES_SCENARIOS = { stray: {} }\n",
+  })
+  assert.deepEqual(Object.keys(await loadScenarios(directory)).sort(), ['base', 'extra', 'fresh'])
+})
+
+it('两个文件定义同名场景时报错，写出两个文件名', async () => {
+  const directory = writeModules({
+    'a-scenarios.mjs': 'export const A_SCENARIOS = { shared: {} }\n',
+    'b-scenarios.mjs': 'export const B_SCENARIOS = { shared: {} }\n',
+  })
+  await assert.rejects(loadScenarios(directory), error => error.message.includes('shared')
+    && error.message.includes('a-scenarios.mjs') && error.message.includes('b-scenarios.mjs'))
+})
 
 it('pnpm 透传的 -- 与全部参数都能解析', () => {
   const options = parseArgs(['--', '--scenario', 'baseline-all', '--theme', 'dark', '--out', 'shots/x', '--dump-dom', '--console', '--app-root', '../trunk'])

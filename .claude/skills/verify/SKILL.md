@@ -80,11 +80,15 @@ fnm exec --using=22.23.1 -- node scripts/redesign/drive.mjs --scenario <名称> 
 | 查参数细节、结果 JSON 每个字段、会话结束检查的范围、只读诊断、改页面对象或假模型 | `references/driver.md` |
 | 找纸墨外壳某一页的现成场景（流程脊、运行侧页、书房、设置、架构、角色、蓝图、正文、作品资料页） | `references/rd-stage-scenarios.md` |
 | 键盘、英文界面、宽度、对比度、标签菜单这类横跨页面的场景 | `references/rd-review-scenarios.md` |
-| 某个已修 issue 的回归场景（#382 起） | `references/issue-scenarios.md` |
+| 某个已修 issue 的回归场景（#382 起） | `references/issue-scenarios/<短名>.md`，用法见 `references/issue-scenarios.md` |
 | 截图可重复性、启动耗时、空闲内存、页面内计时 | `references/measurement.md` |
 | RD-10 之前的旧外壳基线场景，只对 trunk 跑 | `references/baseline-scenarios.md` |
 
-参考里没写到的场景，以 `scripts/redesign/*-scenarios.mjs` 的源码为准。新加场景时，在对应参考文件里补一行。
+参考里没写到的场景，以 `scripts/redesign/*-scenarios.mjs` 的源码为准。
+
+新加场景时只新建文件，不改共享文件：
+- 场景写进新的 `scripts/redesign/<短名>-scenarios.mjs`，导出名以 `_SCENARIOS` 结尾。驱动自动收进同目录的场景文件，不用改 `drive.mjs`。两个文件定义同名场景时，驱动报错并写出两个文件名。
+- 修 issue 的场景，说明写进新的 `references/issue-scenarios/<短名>.md`。
 
 ## 提交本 skill 的改动
 
