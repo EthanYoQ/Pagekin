@@ -4,6 +4,6 @@
 
 RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找已有场景。
 
-每条场景的说明放在定义它的 `scripts/redesign/<短名>-scenarios.mjs` 对应的 `issue-scenarios/<短名>.md`，`scripts/redesign/__tests__/issue-scenarios-docs.test.mjs` 检查这一点。没有补过 issue 场景的模块没有说明文件；页面类场景另见 `rd-stage-scenarios.md`、`rd-review-scenarios.md`。文件头只写本文件全部场景共有的前提，只对部分场景成立的写在那一行。按 issue 找：`grep -l '#702' .claude/skills/verify/references/issue-scenarios/*.md`。
+每条场景的说明放在定义它的 `scripts/redesign/<短名>-scenarios.mjs` 对应的 `issue-scenarios/<短名>.md`，`scripts/redesign/__tests__/issue-scenarios-docs.test.mjs` 检查这一点。没有补过 issue 场景的模块没有说明文件；页面类场景另见 `rd-stage-scenarios.md`、`rd-review-scenarios.md`。文件头只写本文件全部场景共有的前提，只对部分场景成立的写在那一行。场景在 `requires` 里声明的前提（平台写「只在 Windows」、环境变量写变量名、主题写 `--theme dark`），同一个测试也查有没有写进说明。按 issue 找：`grep -l '#702' .claude/skills/verify/references/issue-scenarios/*.md`。
 
 新加场景时，新建 `scripts/redesign/<短名>-scenarios.mjs` 和 `issue-scenarios/<短名>.md` 两个文件，驱动自动收进来，不用改 `drive.mjs` 或本文件。
