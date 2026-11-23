@@ -1,0 +1,74 @@
+[
+  {
+    "file": "electron/controllers/__tests__/project-controller-context.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(Date.now() - started).toBeLessThan(1_000)",
+    "count": 2
+  },
+  {
+    "file": "electron/controllers/__tests__/project-controller-context.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(waitedSeconds).toBeLessThan(5)",
+    "count": 1
+  },
+  {
+    "file": "electron/llm/__tests__/owner-visible-stream.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(performance.now() - started).toBeLessThan(1_000)",
+    "count": 1
+  },
+  {
+    "file": "electron/migrations/__tests__/m08-baseline-scale.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(elapsed).toBeLessThan(OPEN_PROJECT_BUDGET_MS)",
+    "count": 1
+  },
+  {
+    "file": "electron/services/__tests__/main-generation-owner.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(performance.now() - start).toBeLessThan(limitMs)",
+    "count": 1
+  },
+  {
+    "file": "electron/services/__tests__/portable-export-host.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(await stopped).toBeLessThan(5)",
+    "count": 1
+  },
+  {
+    "file": "scripts/__tests__/release-win-verify.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(Date.now() - startedAt).toBeLessThan(500)",
+    "count": 1
+  },
+  {
+    "file": "scripts/__tests__/release-win-verify.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(Date.now() - startedAt).toBeLessThan(2_000)",
+    "count": 1
+  },
+  {
+    "file": "scripts/__tests__/release-win-verify.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(Date.now() - startedAt).toBeLessThan(5_000)",
+    "count": 2
+  },
+  {
+    "file": "scripts/redesign/__tests__/drive-kill.test.mjs",
+    "rule": "wall-clock-limit",
+    "hit": "assert.ok(Date.now() - startedAt < 10_000, `超时报错用了 ${Date.now() - startedAt} ms`)",
+    "count": 1
+  },
+  {
+    "file": "src/shared/__tests__/plot-outline-contract.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(performance.now() - started).toBeLessThan(200)",
+    "count": 1
+  },
+  {
+    "file": "src/shared/__tests__/plot-outline-contract.test.ts",
+    "rule": "wall-clock-limit",
+    "hit": "expect(performance.now() - started).toBeLessThan(1_000)",
+    "count": 1
+  }
+]
