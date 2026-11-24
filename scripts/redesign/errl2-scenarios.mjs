@@ -92,8 +92,7 @@ async function restoreFailingAt({ app, page }, labels, archive, parent, failing)
 }
 
 export const ERRL2_SCENARIOS = {
-  'errl2-source-unreadable': { model: true, shell: 'stage', setup: async context => { await seedLargeBook(context, 1) }, run: async context => {
-    assert.equal(process.platform, 'win32', '这个场景用 icacls 拒读，只在 Windows 上跑')
+  'errl2-source-unreadable': { model: true, shell: 'stage', requires: { platform: 'win32' }, setup: async context => { await seedLargeBook(context, 1) }, run: async context => {
     const { page, roots, shoot, diagnostics } = context
     await stage.openAfterRestart(page, BOOK)
     await stage.openSettings(page)
