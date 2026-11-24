@@ -1,7 +1,6 @@
 import { app, ipcMain } from 'electron'
 import { showOpenDialogInLastDirectory } from '../utils/remembered-dialog'
 import type { IpcMainInvokeEvent } from 'electron'
-import path from 'node:path'
 import { readJsonFile, GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG, MODELS_CONFIG_PATH } from '../utils/config-utils'
 import { GlobalConfig, ModelProfile } from '../../src/shared/ipc-channels'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
@@ -19,12 +18,6 @@ import { projectAccess } from '../services/project-access'
 import { assertRequiredExpectedProjectPath } from '../utils/project-context'
 import { externalFileGrants } from '../services/external-file-grant-service'
 import {
-  windowsSafeFileSystem,
-  type SecureFileCapability,
-  type WindowsSafeFileSystem,
-} from '../security/windows-safe-file-system'
-import { childFileCapability } from '../security/file-capability'
-import {
   LEGACY_VECTOR_MIGRATION_BLOCKED,
   LegacyVectorMigrationBlockedError,
 } from '../services/knowledge-base-migration-error'
@@ -34,19 +27,12 @@ import {
 } from '../services/project-storage-preflight'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 import { explainImportRunFailure, importRunLocale } from './import-run-failure'
-import { externalFileReadFailureText } from './external-file-read-failure'
 import { FinalizationRepository } from '../repositories/finalization-repository'
 
 function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
 }
 
-function invalidExternalGrantText(): string {
-  return text('外部文件授权无效或已失效，请重新选择。', 'The external file grant is invalid or has expired. Please choose again.')
-}
-
-const MAX_SECURE_KNOWLEDGE_IMPORT_FILES = 16_384
-const MAX_SECURE_KNOWLEDGE_IMPORT_DEPTH = 64
 const MAX_REFERENCE_IMPORT_DISPLAY_CHARACTERS = 160
 
 function isControlCharacter(character: string): boolean {
@@ -69,39 +55,6 @@ function referenceImportDisplayName(binding: { chapterNumber: number; title: str
     .trim() || '无标题'
   const boundedTitle = Array.from(safeTitle).slice(0, Math.max(0, titleBudget)).join('')
   return `${prefix}${boundedTitle}${suffix}`
-}
-
-async function readGrantedKnowledgeFolder(
-  fileSystem: WindowsSafeFileSystem,
-  root: SecureFileCapability,
-): Promise<{ files: Array<{ fileName: string; content: string }>; unreadable: string[] }> {
-  const files: Array<{ fileName: string; content: string }> = []
-  const unreadable: string[] = []
-  const visit = async (directory: SecureFileCapability, depth: number): Promise<void> => {
-    if (depth > MAX_SECURE_KNOWLEDGE_IMPORT_DEPTH) {
-      throw new Error('SECURE_FS_DIRECTORY_TOO_DEEP')
-    }
-    const entries = await fileSystem.listDirectory(directory)
-    for (const entry of entries) {
-      const child = childFileCapability(directory, entry.name)
-      if (entry.isDirectory) {
-        await visit(child, depth + 1)
-        continue
-      }
-      if (!/\.(txt|md|markdown)$/i.test(entry.name)) continue
-      if (files.length + unreadable.length >= MAX_SECURE_KNOWLEDGE_IMPORT_FILES) {
-        throw new Error('SECURE_FS_DIRECTORY_TOO_LARGE')
-      }
-      const fileName = path.basename(entry.name)
-      try {
-        files.push({ fileName, content: await fileSystem.readText(child) })
-      } catch {
-        unreadable.push(fileName)
-      }
-    }
-  }
-  await visit(root, 0)
-  return { files, unreadable }
 }
 
 /**
@@ -276,94 +229,9 @@ function registerKnowledgeBaseHandler<Args extends unknown[]>(
   })
 }
 
-export function registerKBController(
-  fileSystem: WindowsSafeFileSystem = windowsSafeFileSystem,
-) {
-  // 所有 kb:* 操作需携带同一冻结会话；选择文件/目录仍是外部授权能力。
+export function registerKBController() {
+  // 所有 kb:* 操作需携带同一冻结会话；选择文件仍是外部授权能力。
   const ipcMain = { handle: registerKnowledgeBaseHandler }
-  ipcMain.handle('kb:import-document', async (event, grantId: string, expectedProjectPath: string) => {
-    const projectPath = requireProjectPath(expectedProjectPath)
-    let file: SecureFileCapability
-    try {
-      file = externalFileGrants.resolve({
-        grantId,
-        webContentsId: event.sender.id,
-        operation: 'read',
-      })
-    } catch {
-      return { success: false, error: invalidExternalGrantText() }
-    }
-    let importedFile: { fileName: string; content: string }
-    try {
-      importedFile = {
-        fileName: path.basename(file.relativePath),
-        content: await fileSystem.readText(file),
-      }
-    } catch (error) {
-      return { success: false, error: externalFileReadFailureText(error) }
-    }
-    const embConfig = getEmbeddingConfig()
-    const protocol = embConfig?.protocol ?? 'openai'
-    const model = embConfig?.model ?? UNCONFIGURED_EMBEDDING_MODEL
-    return knowledgeBaseLoader.run((kb) => kb.importText(
-      importedFile.content,
-      importedFile.fileName,
-      projectPath,
-      protocol,
-      model,
-    ))
-  })
-
-  ipcMain.handle('kb:import-folder', async (event, grantId: string, expectedProjectPath: string) => {
-    const projectPath = requireProjectPath(expectedProjectPath)
-    let readableFolder: SecureFileCapability
-    try {
-      // Directory enumeration alone is not authority to read every discovered
-      // file. Validate the separate read operation before the one-use list
-      // capability is consumed and deleted.
-      readableFolder = externalFileGrants.revalidate({
-        grantId,
-        webContentsId: event.sender.id,
-        operation: 'read',
-      })
-      externalFileGrants.resolve({
-        grantId,
-        webContentsId: event.sender.id,
-        operation: 'list',
-      })
-    } catch {
-      return { success: false, importedCount: 0, failedFiles: [], error: invalidExternalGrantText() }
-    }
-    let folder: Awaited<ReturnType<typeof readGrantedKnowledgeFolder>>
-    try {
-      folder = await readGrantedKnowledgeFolder(fileSystem, readableFolder)
-    } catch (error) {
-      return { success: false, importedCount: 0, failedFiles: [], error: externalFileReadFailureText(error) }
-    }
-    const embConfig = getEmbeddingConfig()
-    const protocol = embConfig?.protocol ?? 'openai'
-    const model = embConfig?.model ?? UNCONFIGURED_EMBEDDING_MODEL
-    return knowledgeBaseLoader.run(async (kb) => {
-      const failedFiles = [...folder.unreadable]
-      let importedCount = 0
-      for (const importedFile of folder.files) {
-        const result = await kb.importText(
-          importedFile.content,
-          importedFile.fileName,
-          projectPath,
-          protocol,
-          model,
-        )
-        if (result.success) {
-          importedCount++
-        } else {
-          failedFiles.push(importedFile.fileName)
-        }
-      }
-      return { success: true, importedCount, failedFiles }
-    })
-  })
-
   ipcMain.handle('kb:import-text', async (_event, text: string, fileName: string, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
@@ -487,23 +355,6 @@ export function registerKBController(
     return knowledgeBaseLoader.run((kb) => kb.reindexDocumentCopy(docId, projectPath))
   })
 
-  ipcMain.handle('kb:remove-document', async (_event, docId: string, expectedProjectPath: string) => {
-    const projectPath = requireProjectPath(expectedProjectPath)
-    return knowledgeBaseLoader.run(async (kb) => {
-      try {
-        const success = await kb.removeDocument(docId, projectPath)
-        return success
-          ? { success: true }
-          : { success: false, error: text('删除知识库文档失败', 'Could not remove the knowledge-base document') }
-      } catch (error) {
-        // Preserve the controller-wide migration barrier and convert every
-        // ordinary async deletion rejection into a stable public IPC result.
-        if (isLegacyMigrationBlockedError(error)) throw error
-        return { success: false, error: text('删除知识库文档失败', 'Could not remove the knowledge-base document') }
-      }
-    })
-  })
-
   ipcMain.handle('kb:clear-all', async (_event, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     return knowledgeBaseLoader.run(async (kb) => {
@@ -576,23 +427,5 @@ export function registerKBController(
       event.sender.once('destroyed', () => externalFileGrants.revoke(grant.grantId))
       return { grantId: grant.grantId, displayName: filePath.split(/[\\/]/).pop() || filePath }
     })
-  })
-
-  ipcMain.handle('dialog:select-knowledge-folder', async (event) => {
-    const result = await showOpenDialogInLastDirectory('knowledge-folder', {
-      properties: ['openDirectory'],
-      title: text('选择要批量导入的文件夹', 'Choose a folder to import'),
-    })
-    if (result.canceled || result.filePaths.length === 0) return null
-    const folderPath = result.filePaths[0]
-    const grant = externalFileGrants.issueDirectory({
-      webContentsId: event.sender.id,
-      directoryPath: folderPath,
-      operations: ['list', 'read'],
-      ttlMs: KNOWLEDGE_BASE_GRANT_TTL_MS,
-      maxUses: 1,
-    })
-    event.sender.once('destroyed', () => externalFileGrants.revoke(grant.grantId))
-    return { grantId: grant.grantId, displayName: folderPath.split(/[\\/]/).pop() || folderPath }
   })
 }

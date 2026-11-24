@@ -213,13 +213,10 @@ describe('knowledge-base controller project context guard', () => {
   })
 
   it.each([
-    ['kb:import-document', ['book.txt']],
-    ['kb:import-folder', ['folder']],
     ['kb:import-text', ['text', 'book.txt']],
     ['kb:import-planning-text', ['text', 'planning.md']],
     ['kb:search', ['query', 5]],
     ['kb:list-documents', []],
-    ['kb:remove-document', ['doc-1']],
     ['kb:clear-all', []],
     ['kb:stats', []],
     ['kb:get-vectorless-count', []],
@@ -441,63 +438,6 @@ describe('knowledge-base controller project context guard', () => {
     expect(mocks.run).not.toHaveBeenCalled()
   })
 
-  it('waits for a delayed knowledge-base removal before reporting success', async () => {
-    let resolveRemoval!: (success: boolean) => void
-    const removeDocument = vi.fn(() => new Promise<boolean>((resolve) => {
-      resolveRemoval = resolve
-    }))
-    mocks.run.mockImplementation(async (operation: (kb: {
-      removeDocument: typeof removeDocument
-    }) => unknown) => operation({ removeDocument }))
-
-    const removal = handler('kb:remove-document')({}, 'doc-1', 'C:/projects/A')
-    let settled = false
-    void removal.then(
-      () => { settled = true },
-      () => { settled = true },
-    )
-    await new Promise<void>((resolve) => setImmediate(resolve))
-
-    expect(removeDocument).toHaveBeenCalledWith('doc-1', 'C:/projects/A')
-    expect(settled).toBe(false)
-
-    resolveRemoval(true)
-    await expect(removal).resolves.toEqual({ success: true })
-  })
-
-  it('returns an explicit public failure when knowledge-base removal returns false', async () => {
-    const removeDocument = vi.fn(async () => false)
-    mocks.run.mockImplementation(async (operation: (kb: {
-      removeDocument: typeof removeDocument
-    }) => unknown) => operation({ removeDocument }))
-
-    const result = await handler('kb:remove-document')({}, 'doc-1', 'C:/projects/A')
-    const nestedSuccess = (result as { success?: unknown }).success
-    if (nestedSuccess instanceof Promise) await nestedSuccess.catch(() => undefined)
-
-    expect(result).toEqual({
-      success: false,
-      error: '删除知识库文档失败',
-    })
-  })
-
-  it('converts a rejected knowledge-base removal into a public failure result', async () => {
-    const removeDocument = vi.fn(async () => {
-      throw new Error('native vector delete rejected')
-    })
-    mocks.run.mockImplementation(async (operation: (kb: {
-      removeDocument: typeof removeDocument
-    }) => unknown) => operation({ removeDocument }))
-
-    const result = await handler('kb:remove-document')({}, 'doc-1', 'C:/projects/A')
-    const nestedSuccess = (result as { success?: unknown }).success
-    if (nestedSuccess instanceof Promise) await nestedSuccess.catch(() => undefined)
-
-    expect(result).toEqual({
-      success: false,
-      error: '删除知识库文档失败',
-    })
-  })
 })
 
 // 参照导入失败时运行卡片原样显示 result.error：主进程按导入运行的界面语言说明知识库错误码，码另放在 errorCode（#474 B3）。

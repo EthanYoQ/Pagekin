@@ -93,17 +93,4 @@ describe('knowledge-base controller migration barrier', () => {
     })
   })
 
-  it('preserves the migration barrier when async document removal rejects', async () => {
-    mocks.run.mockImplementation(async (operation: (kb: { removeDocument: () => Promise<never> }) => unknown) => (
-      await operation({
-        removeDocument: async () => { throw new LegacyVectorMigrationBlockedError('internal migration detail') },
-      })
-    ))
-
-    await expect(handler('kb:remove-document')({}, 'doc-1', 'C:/projects/A')).resolves.toEqual({
-      success: false,
-      errorCode: LEGACY_VECTOR_MIGRATION_BLOCKED,
-      error: '旧版知识库数据需要先修复后才能继续。请修正项目中的 vectors.json，然后重试。',
-    })
-  })
 })
