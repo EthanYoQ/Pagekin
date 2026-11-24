@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/pagekin-1.5.3-timeline.gif" alt="书童 Pagekin 1.5.3 实录：查看人物状态时间线" width="100%" />
+  <img src="docs/assets/readme/pagekin-1.5.3-timeline-zh.gif" alt="书童 Pagekin 1.5.3 实录：查看人物状态时间线" width="100%" />
 </p>
 
 <p align="center">
