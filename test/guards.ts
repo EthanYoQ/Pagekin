@@ -10,6 +10,7 @@ export const GUARD_TESTS: readonly GuardTest[] = [
   { file: 'electron/repositories/__tests__/generation-ledger-sql-guard.test.ts', kind: 'scan', why: '遍历 electron 与 src 源码里的 SQL 字面量，跨记录解析的账本 JSON 列必须在进门清单里' },
   { file: 'electron/utils/__tests__/remembered-dialog.test.ts', kind: 'scan', why: '遍历 electron 源码，主进程的文件对话框都要走 remembered-dialog' },
   { file: 'scripts/__tests__/journey-project-schema-version.test.ts', kind: 'scan', why: '遍历 scripts 下的旅程脚本，不许写死项目库版本号' },
+  { file: 'scripts/redesign/__tests__/issue-scenarios-docs.test.mjs', kind: 'scan', why: '遍历 verify 的 issue-scenarios 说明文件，表里的场景都定义在同名场景模块，模块里的场景都有说明行' },
   { file: 'scripts/redesign/__tests__/modifier-keys.test.mjs', kind: 'scan', why: '遍历 scripts 下的驱动脚本，不许写死 Control+ 组合键' },
   { file: 'src/__tests__/semantic-status-text-source-contract.test.ts', kind: 'scan', why: '遍历 src 的 tsx 与 css，状态文字不用固定的 Tailwind 色板类' },
   { file: 'src/components/__tests__/icon-contract.test.ts', kind: 'scan', why: '遍历组件与编辑器源码，作者看得到的文字不含 Emoji 或充当图标的符号' },
