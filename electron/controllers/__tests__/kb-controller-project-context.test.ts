@@ -459,7 +459,7 @@ describe('reference import failures', () => {
     expect(result.error).not.toMatch(locale === 'en-US' ? /[A-Z]{3,}_|\p{Script=Han}/u : /[A-Z]{3,}_/u)
     expect(mocks.commitReferenceImportReceipt).not.toHaveBeenCalled()
   })
-  // 参照导入的幂等收据与完整性校验码已登记：按运行语言说明，码只放在 errorCode。
+  // 说明按运行语言给出，不露码；码只放在 errorCode。
   it.each([
     ['en-US', 'KNOWLEDGE_BASE_REFERENCE_RECEIPT_CONFLICT', 'could not be added to the knowledge base'],
     ['zh-CN', 'KNOWLEDGE_BASE_REFERENCE_VERIFY_FAILED', '没能写进知识库'],

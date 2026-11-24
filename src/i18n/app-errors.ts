@@ -441,7 +441,6 @@ function readCode(error: unknown): KnownErrorCode | undefined {
 /** 主进程的 IPC 入口（electron/ipc/handle.ts）把没登记的失败换成这个码。 */
 export const IPC_HANDLER_FAILED = 'IPC_HANDLER_FAILED' satisfies KnownErrorCode
 
-/** 报错里已登记的错误码；没有时返回 undefined。 */
 export const registeredErrorCode: (error: unknown) => string | undefined = readCode
 
 /** 稳定错误码的形状：至少含一个下划线，ENOENT 这类平台码不算。 */

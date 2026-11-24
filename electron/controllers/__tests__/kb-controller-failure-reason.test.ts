@@ -94,7 +94,7 @@ describe('knowledge-base channels that throw', () => {
   })
 })
 
-// c17d354db 上 knowledge-base.ts 把 error.message 原样放进返回值（回放 ①）；经 handle() 交出后作者看不到原文。
+// 知识库层可能把原始 error.message 放进失败结果；经 handle() 交出后，作者只看到通用说明。
 describe('knowledge-base channels that return a failure', () => {
   it('returns the generic code instead of an English failure the knowledge base passed through', async () => {
     const raw = { success: false, error: lanceFailure().message }
