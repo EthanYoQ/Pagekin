@@ -98,13 +98,12 @@ test('用到 fs.watch 回调文件名的写法报出，带 if (name) 判空也�
   assert.deepEqual(rulesOf(source), [5, 6, 8, 9, 10, 11, 12].map(line => `${line}:fs-watch-filename`))
 })
 
-test('不读文件名的 fs.watch 与别的 watch 不报', () => {
+test('不声明文件名参数的 fs.watch 与别的 watch 不报', () => {
   const source = [
     "import fs from 'node:fs'",
     "import { watch } from 'node:fs/promises'",
     'fs.watch(dir, () => { changed++ })',
     'fs.watch(dir, (event) => { changed++ })',
-    'fs.watch(dir, (_event, _name) => { changed++ })',
     "fs.watch(dir).on('change', () => { changed++ })",
     'for await (const event of watch(dir)) changed += event.eventType ? 1 : 0',
     "supervisor.watch('first', (id, controller) => controller.abort())",
@@ -127,7 +126,7 @@ test('布尔断言按期望真假与 not 判断方向，resolves 后的上限也
   assert.deepEqual(rulesOf(source), [2, 7, 8].map(line => `${line}:wall-clock-limit`))
 })
 
-test('用假时钟推进的用例不报，同文件别的用例照报', () => {
+test('用了假时钟的墙钟上限断言也报', () => {
   const source = [
     "describe('fake', () => {",
     '  beforeEach(() => { vi.useFakeTimers() })',
@@ -136,7 +135,7 @@ test('用假时钟推进的用例不报，同文件别的用例照报', () => {
     "it('b', () => { vi.useFakeTimers(); const s = Date.now(); expect(Date.now() - s).toBeLessThan(100) })",
     "it('c', () => { const s = Date.now(); expect(Date.now() - s).toBeLessThan(100) })",
   ].join('\n')
-  assert.deepEqual(rulesOf(source), ['6:wall-clock-limit'])
+  assert.deepEqual(rulesOf(source), [3, 5, 6].map(line => `${line}:wall-clock-limit`))
 })
 
 test('不同用例复用 watcher 这个名字时按各自声明判断', () => {
@@ -151,28 +150,26 @@ test('不同用例复用 watcher 这个名字时按各自声明判断', () => {
   assert.deepEqual(rulesOf(source), ['6:fs-watch-filename'])
 })
 
-test('用例里切回真时钟后照报；解构出的同名变量遮住外层耗时变量', () => {
+test('解构出的同名变量遮住外层耗时变量', () => {
   const source = [
-    "describe('fake', () => {",
-    '  beforeEach(() => { vi.useFakeTimers() })',
-    "  it('a', () => { vi.useRealTimers(); const s = Date.now(); expect(Date.now() - s).toBeLessThan(50) })",
-    '})',
     'const elapsed = performance.now() - started',
+    'expect(elapsed).toBeLessThan(3)',
     "it('b', () => { const { elapsed } = row; expect(elapsed).toBeLessThan(3) })",
   ].join('\n')
-  assert.deepEqual(rulesOf(source), ['3:wall-clock-limit'])
+  assert.deepEqual(rulesOf(source), ['2:wall-clock-limit'])
 })
 
-test('watch 回调按参数是否被读取判断，不看名字前缀；被参数遮住的 watch 不算 fs', () => {
+test('watch 回调声明了第二个参数就报，读不读、带不带下划线都一样；被参数遮住的 watch 不算 fs', () => {
   const source = [
     "import fs from 'node:fs'",
     "import { watch } from 'node:fs'",
     'fs.watch(dir, (_event, _filename) => seen.push(_filename))',
     'fs.watch(dir, (event, name) => { changed++ })',
+    'fs.watch(dir, (_event, _name) => { changed++ })',
     'function probe(watch) { watch(dir, (event, name) => seen.add(name)) }',
     'watch(dir, (event, name) => seen.add(name))',
   ].join('\n')
-  assert.deepEqual(rulesOf(source), [3, 6].map(line => `${line}:fs-watch-filename`))
+  assert.deepEqual(rulesOf(source), [3, 4, 5, 7].map(line => `${line}:fs-watch-filename`))
 })
 
 const WALL_CLOCK = 'const s = Date.now()\nexpect(Date.now() - s).toBeLessThan(1000)\n'
