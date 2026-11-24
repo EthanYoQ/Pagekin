@@ -85,6 +85,14 @@ describe('knowledge-base channels that throw', () => {
     await expect(invoke('kb:search', '潮位', 5, 'C:/projects/A')).rejects.toThrow(/^GENERATION_KNOWLEDGE_BUSY$/u)
   })
 
+  it('keeps the original error as the cause when an unregistered code reaches the main-process log', async () => {
+    const original = new Error('KNOWLEDGE_BASE_SHARD_LOST')
+    mocks.run.mockRejectedValue(original)
+
+    await expect(invoke('kb:search', '潮位', 5, 'C:/projects/A')).rejects.toThrow(/^IPC_HANDLER_FAILED$/u)
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('kb:search'), expect.objectContaining({ cause: original }))
+  })
+
   it('asks the author to open a project when a reference import arrives with none open', async () => {
     mocks.currentProjectPath.mockReturnValue(null)
 

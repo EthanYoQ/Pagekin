@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronRight, CircleCheck, CircleDashed, CircleMinus, CircleX, Pause, Play } from 'lucide-react'
+import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { pluralEn } from '../../../shared/plural-en'
 import { useLLMStore } from '../../../stores/llm-store'
 import { activeInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
@@ -189,6 +190,7 @@ function RunStep({ step, runStatus, live, reasoning, open, onToggle, text }: {
   text: Text
 }) {
   const output = useMemo(() => splitThinking(step.result), [step.result])
+  const locale = useLocaleStore(activeInterfaceLocale)
   const thinking = reasoning || output.thinking
   const hasDetail = Boolean(output.raw || thinking || step.error)
   const expanded = hasDetail && open
@@ -216,7 +218,7 @@ function RunStep({ step, runStatus, live, reasoning, open, onToggle, text }: {
             </details>
           )}
           {output.content && <StepOutput content={output.content} live={live} text={text} />}
-          {step.error && <p className="run-step-error">{step.error}</p>}
+          {step.error && <p className="run-step-error">{displayedErrorMessage(locale, step.error)}</p>}
         </div>
       )}
     </li>

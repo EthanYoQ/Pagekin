@@ -151,6 +151,17 @@ describe('运行侧页', () => {
     expect(card.textContent).not.toMatch(/错误码|architecture-synopsis-source-changed/)
   })
 
+  it('步骤失败带着主进程的通用码：展开后显示说明，不露码', async () => {
+    const error = "Error invoking remote method 'kb:backfill-vectors': Error: IPC_HANDLER_FAILED"
+    useWorkflowStore.setState({ activeRuns: [run('检索', 'failed', { title: '重建检索', error,
+      steps: [{ id: 'backfill', name: '重建检索', description: '', status: 'failed', progress: 0, logs: [], error }] })] })
+    await render()
+    const row = host!.querySelector<HTMLButtonElement>('.run-step-row')!
+    if (row.getAttribute('aria-expanded') !== 'true') await act(async () => row.click())
+    expect(host!.querySelector('.run-step-error')?.textContent).toBe('这次操作没有完成，出了意外问题。请再试一次；还不行，请把这条提示反馈给我们。')
+    expect(host!.querySelector('article')!.textContent).not.toContain('IPC_HANDLER_FAILED')
+  })
+
   it('要看的运行已结束时直接在历史里展开它', async () => {
     useWorkflowStore.setState({ history: [run('3', 'completed'), run('2', 'completed')] })
     await render({ kind: 'run', tab: 'active', runId: '3' })

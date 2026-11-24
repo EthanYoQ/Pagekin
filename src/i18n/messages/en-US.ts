@@ -247,7 +247,7 @@ export const enUS = {
   'error.knowledgeUnwritable': 'The book folder could not be written; it may be read-only or locked by sync or antivirus software. Close those programs, then try again.',
   'error.knowledgeOperationFailed': 'Something unexpected went wrong in the knowledge base. Try again; if it keeps happening, send us this message.',
   'error.knowledgeClearFailed': 'The knowledge base was not cleared. Select Clear knowledge base… again; if it keeps failing, send us this message.',
-  'error.knowledgeReferenceCheckFailed': 'This reference chapter could not be added to the knowledge base. Choose Continue import in the import dialog; if it keeps failing, send us this message.',
+  'error.knowledgeReferenceCheckFailed': 'Chapters already imported are kept, but this reference chapter could not be added to the knowledge base. Choose Continue import in the import dialog; if it keeps failing, send us this message.',
   'error.modelSettingsFileDamaged': 'The model settings file is damaged, so nothing was saved to avoid overwriting it. Repair or move the damaged settings file in your user configuration directory, then try again.',
   'error.stageModelUnavailable': 'That model was deleted or is no longer available for writing, so the stage keeps its current model. Choose another model in Models by stage.',
   'error.stageModelRequestInvalid': 'The stage setting was not saved because the request was not valid. Reopen Settings and choose again.',

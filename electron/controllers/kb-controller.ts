@@ -216,7 +216,7 @@ function registerKnowledgeBaseHandler<Args extends unknown[]>(
       if (isLegacyMigrationBlockedError(error)) return legacyMigrationBlockedFailure()
       const storageFailure = projectStoragePreflightFailure(error)
       if (storageFailure) return storageFailure
-      throw new Error(knowledgeFailureCode(error))
+      throw new Error(knowledgeFailureCode(error), { cause: error })
     }
   })
 }

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { REPO_ROOT } from './helpers/repo-source-files'
 import BASELINE from '../electron/ipc/direct-handle-baseline.json'
 
+// 迁到 handle() 的文件也从这里删掉，名单就不能再把它加回去。
 const ORIGINAL_BASELINE: readonly string[] = [
   'electron/controllers/app-data-controller.ts',
   'electron/controllers/chapter-lifecycle-controller.ts',
@@ -17,7 +18,6 @@ const ORIGINAL_BASELINE: readonly string[] = [
   'electron/controllers/fs-controller.ts',
   'electron/controllers/generation-controller.ts',
   'electron/controllers/import-controller.ts',
-  'electron/controllers/kb-controller.ts',
   'electron/controllers/llm-controller.ts',
   'electron/controllers/model-provider-resource-controller.ts',
   'electron/controllers/official-homepage-controller.ts',
@@ -44,6 +44,9 @@ describe('主进程按标识符禁止直接注册 IPC 处理器', () => {
     "import { ipcMain } from 'electron'\nexport const deps = { ipc: ipcMain }",
     "import { ipcMain } from 'electron'\nexport function register(ipc = ipcMain) { return ipc }",
     'const ipcMain = { handle: (_channel: string) => undefined }\nipcMain.handle(\'demo:x\')',
+    "import { ipcMain as main } from 'electron'\nmain.handle('demo:x', () => 1)",
+    "import { ipcMain } from 'electron'\nipcMain['handle']('demo:x', () => 1)",
+    "import { ipcMain } from 'electron'\nipcMain[`handle`]('demo:x', () => 1)",
   ])('新文件报错并点名 handle()：%s', async code => {
     expect(await directHandleErrors(PROBE, code)).toEqual([expect.stringContaining('改用 electron/ipc/handle.ts 的 handle()')])
   })
@@ -64,7 +67,7 @@ describe('主进程按标识符禁止直接注册 IPC 处理器', () => {
 
   it('名单里的文件照样禁止直接打开 LanceDB', async () => {
     const code = "export const open = () => import('@lancedb/lancedb')"
-    expect(await syntaxErrors(BASELINE[0]!, code, 'lance-database.ts')).not.toEqual([])
+    expect(await syntaxErrors('electron/ipc/handle.ts', code, 'lance-database.ts')).not.toEqual([])
   })
 })
 
