@@ -27,6 +27,10 @@
 </p>
 
 <p align="center">
+  <img src="docs/assets/readme/pagekin-1.5.3-timeline-zh.gif" alt="书童 Pagekin 1.5.3 实录：查看人物状态时间线" width="100%" />
+</p>
+
+<p align="center">
   <a href="https://github.com/EthanYoQ/Pagekin/releases"><img src="https://badgen.net/github/tag/EthanYoQ/Pagekin?label=release" alt="Release" /></a>
   <a href="https://github.com/EthanYoQ/Pagekin/blob/master/LICENSE"><img src="https://badgen.net/badge/license/GPL-3.0/blue" alt="GPL-3.0 License" /></a>
   <a href="https://github.com/EthanYoQ/Pagekin/stargazers"><img src="https://badgen.net/github/stars/EthanYoQ/Pagekin" alt="GitHub stars" /></a>
