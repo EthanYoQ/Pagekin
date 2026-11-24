@@ -3,8 +3,8 @@ const LANCEDB_SYNTAX = {
   message: '经 electron/lance-database.ts 打开 LanceDB，新表格式钉在那里。',
 }
 const IPC_HANDLE_SYNTAX = {
-  selector: "MemberExpression[object.name='ipcMain']:matches([property.name='handle'], [computed=true]), ImportSpecifier[imported.name='ipcMain'][local.name!='ipcMain'], :matches(Property > Identifier.value, AssignmentPattern > Identifier.right)[name='ipcMain']",
-  message: '改用 electron/ipc/handle.ts 的 handle()：没登记的失败只进主进程日志，渲染端拿通用码。',
+  selector: "Identifier[name='ipcMain'], MemberExpression[computed=true] > Literal.property[value='ipcMain']",
+  message: '不要直接拿 ipcMain，注册 IPC 处理器改用 electron/ipc/handle.ts 的 handle()：没登记的失败只进主进程日志，渲染端拿通用码。',
 }
 const LISTING_MESSAGE = '测试列仓库源码改用 test/helpers/repo-source-files.ts 的 repoSourceFiles()，列临时目录改用 test/helpers/temporary-directory.ts 的 listTemporaryDirectory()。'
 const LISTING_PRIMITIVES = ['readdir', 'readdirSync', 'opendir', 'opendirSync', 'glob', 'globSync', 'readDirectory']

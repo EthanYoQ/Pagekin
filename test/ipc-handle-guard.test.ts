@@ -36,7 +36,7 @@ async function syntaxErrors(filePath: string, code: string, marker: string): Pro
 }
 const directHandleErrors = (filePath: string, code: string) => syntaxErrors(filePath, code, 'electron/ipc/handle.ts')
 
-describe('主进程按标识符禁止直接注册 IPC 处理器', () => {
+describe('handle.ts 与名单之外，主进程拿不到 ipcMain', () => {
   it.each([
     "import { ipcMain } from 'electron'\nipcMain.handle('demo:x', () => 1)",
     "import { ipcMain } from 'electron'\nconst register = ipcMain.handle.bind(ipcMain)",
@@ -46,15 +46,21 @@ describe('主进程按标识符禁止直接注册 IPC 处理器', () => {
     "import { ipcMain as main } from 'electron'\nmain.handle('demo:x', () => 1)",
     "import { ipcMain } from 'electron'\nipcMain['handle']('demo:x', () => 1)",
     "import { ipcMain } from 'electron'\nipcMain[`handle`]('demo:x', () => 1)",
+    "import * as electron from 'electron'\nelectron.ipcMain.handle('demo:x', () => 1)",
+    "import * as electron from 'electron'\nelectron['ipcMain'].handle('demo:x', () => 1)",
+    "import electron from 'electron'\nconst { ipcMain: main } = electron\nmain.handle('demo:x', () => 1)",
+    "import { ipcMain } from 'electron'\nimport { registerAll } from './register-all'\nregisterAll(ipcMain)",
+    "import { ipcMain } from 'electron'\nipcMain.removeHandler('demo:x')",
   ])('新文件报错并点名 handle()：%s', async code => {
-    expect(await directHandleErrors(PROBE, code)).toEqual([expect.stringContaining('改用 electron/ipc/handle.ts 的 handle()')])
+    const errors = await directHandleErrors(PROBE, code)
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors).toEqual(errors.map(() => expect.stringContaining('改用 electron/ipc/handle.ts 的 handle()')))
   })
 
   it.each([
     "import { handle } from '../ipc/handle'\nhandle('demo:x', () => 1)",
-    "import { ipcMain } from 'electron'\nipcMain.removeHandler('demo:x')",
-    "import { ipcMain } from 'electron'\nimport { installIpcSlowCallLog } from '../services/ipc-slow-call-log'\ninstallIpcSlowCallLog(ipcMain)",
-  ])('不直接注册的写法不报：%s', async code => {
+    "import { app } from 'electron'\nexport const ipc = { quit: () => app.quit() }",
+  ])('不碰 ipcMain 的写法不报：%s', async code => {
     expect(await directHandleErrors(PROBE, code)).toEqual([])
   })
 
@@ -76,7 +82,7 @@ describe('直接注册 IPC 的存量名单只减不增', () => {
     expect(BASELINE).toEqual([...new Set(BASELINE)].sort())
   })
 
-  it('名单里每个文件仍在直接注册，迁到 handle() 的要从名单删除', async () => {
+  it('名单里每个文件仍在直接用 ipcMain，迁到 handle() 且不再用的要从名单删除', async () => {
     const stale: string[] = []
     for (const file of BASELINE) {
       const probe = posix.join(posix.dirname(file), 'ipc-handle-probe.ts')
