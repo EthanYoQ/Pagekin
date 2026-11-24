@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
+import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 
 const pseudoIconPattern = new RegExp([
   '[\\u2600-\\u27BF]',
@@ -32,16 +33,12 @@ const visibleWorkflowPropertyNames = new Set([
 ])
 
 function source(file: string) {
-  return readFileSync(resolve(process.cwd(), file), 'utf8')
+  return readFileSync(resolve(REPO_ROOT, file), 'utf8')
 }
 
 /** 渲染进程里作者能看到界面文字的全部组件（不含测试）。图标只能来自 Lucide，不能用 Emoji 或字符充当。 */
-function componentFiles(directory = 'src/components'): string[] {
-  return readdirSync(resolve(process.cwd(), directory), { withFileTypes: true }).flatMap(entry => {
-    const path = `${directory}/${entry.name}`
-    if (entry.isDirectory()) return entry.name === '__tests__' ? [] : componentFiles(path)
-    return entry.name.endsWith('.tsx') && !entry.name.endsWith('.browser.tsx') ? [path] : []
-  })
+function componentFiles(): string[] {
+  return repoSourceFiles('src/components').filter(file => !file.includes('/__tests__/') && file.endsWith('.tsx') && !file.endsWith('.browser.tsx'))
 }
 
 function visibleJsxSource(file: string): string {

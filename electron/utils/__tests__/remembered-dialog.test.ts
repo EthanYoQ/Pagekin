@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 
 const mocks = vi.hoisted(() => ({
   showOpenDialog: vi.fn(),
@@ -122,11 +123,9 @@ describe('file dialogs reopen in the directory used last time', () => {
 })
 
 it('every main-process file picker goes through the remembering helper', () => {
-  const electronRoot = path.resolve('electron')
-  const direct = fs.readdirSync(electronRoot, { recursive: true, encoding: 'utf8' })
-    .filter(file => file.endsWith('.ts') && !file.split(path.sep).includes('__tests__'))
-    .filter(file => path.join(electronRoot, file) !== path.join(electronRoot, 'utils', 'remembered-dialog.ts'))
-    .filter(file => /\bdialog\.show(?:Open|Save)Dialog\(/.test(fs.readFileSync(path.join(electronRoot, file), 'utf8')))
+  const direct = repoSourceFiles('electron')
+    .filter(file => file.endsWith('.ts') && !file.includes('/__tests__/') && file !== 'electron/utils/remembered-dialog.ts')
+    .filter(file => /\bdialog\.show(?:Open|Save)Dialog\(/.test(fs.readFileSync(path.join(REPO_ROOT, file), 'utf8')))
 
   expect(direct).toEqual([])
 })

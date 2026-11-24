@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 import { knownAppErrorMessage } from '../app-errors'
 import { shown } from './shown-locale'
 
@@ -793,25 +794,16 @@ const UNREGISTERED: Record<string, readonly string[]> = {
   ],
 }
 
-const ROOT = resolve(process.cwd())
-const SCANNED = ['electron', 'src']
-
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap(name => {
-    const path = join(dir, name)
-    if (name === '__tests__' || name === 'node_modules' || relative(ROOT, path) === join('src', 'i18n')) return []
-    if (statSync(path).isDirectory()) return sourceFiles(path)
-    return /\.tsx?$/u.test(name) ? [path] : []
-  })
-}
+const sourceFiles = () => ['electron', 'src'].flatMap(dir => repoSourceFiles(dir))
+  .filter(file => !file.includes('/__tests__/') && !file.startsWith('src/i18n/') && /\.tsx?$/u.test(file))
 
 const CODE_LITERAL = new RegExp(`['"\`]((?:${COVERED_PREFIXES.join('|')})[A-Z0-9_]*[A-Z0-9])['"\`]`, 'gu')
 
 function coveredCodesInSource(): Map<string, string> {
   const codes = new Map<string, string>()
-  for (const file of SCANNED.flatMap(dir => sourceFiles(join(ROOT, dir)))) {
-    for (const match of readFileSync(file, 'utf8').matchAll(CODE_LITERAL)) {
-      if (!codes.has(match[1]!)) codes.set(match[1]!, relative(ROOT, file).split(sep).join('/'))
+  for (const file of sourceFiles()) {
+    for (const match of readFileSync(join(REPO_ROOT, file), 'utf8').matchAll(CODE_LITERAL)) {
+      if (!codes.has(match[1]!)) codes.set(match[1]!, file)
     }
   }
   return codes

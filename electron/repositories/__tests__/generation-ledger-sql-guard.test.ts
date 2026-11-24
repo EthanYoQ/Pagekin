@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ADMITTED_LEDGER_CELLS } from '../generation-ledger-admission'
+import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 
 /**
  * 跨记录（没有主键或外键条件）的账本语句要解析的 JSON 列，必须都在进门清单里：
@@ -14,7 +15,6 @@ const LEDGER_TABLES = ['generation_roots', 'generation_runs', 'generation_attemp
 const LEDGER_JSON_COLUMNS = ['action_json', 'budget_json', 'binding_json', 'attempt_json', 'usage_receipt_json', 'artifact_json', 'open_key', 'idempotency_key']
 const IDENTITY_KEYS = ['open_key', 'idempotency_key']
 const KEYS = ['run_id', 'root_action_id', 'attempt_id', 'artifact_id', 'open_key', 'invocation_nonce', 'reservation_id']
-const ROOT = path.resolve(process.cwd())
 /** 文本扫描不解析 SQL，不会漏报；新文件要读绑定，就该改走仓库的按主键或按根读法。 */
 const BINDING_FILES = [
   'electron/repositories/generation-run-repository.ts', 'electron/repositories/generation-ledger-admission.ts',
@@ -113,20 +113,14 @@ function outerLedgerColumns(sql: string): string[] {
     && !(byRoot && column === 'binding_json'))
 }
 
-function* sourceFiles(dir: string): Generator<string> {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (['node_modules', '__tests__', 'dist', 'dist-electron', '.runtime'].includes(entry.name)) continue
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) yield* sourceFiles(full)
-    else if (/\.(ts|tsx|mjs)$/u.test(entry.name) && !/\.(test|spec)\./u.test(entry.name)) yield full
-  }
-}
+const sourceFiles = () => ['electron', 'src'].flatMap(dir => repoSourceFiles(dir))
+  .filter(file => !file.includes('/__tests__/') && /\.(ts|tsx|mjs)$/u.test(file) && !/\.(test|spec)\./u.test(path.posix.basename(file)))
 
 function violations(admitted: readonly string[]): string[] {
-  return [...sourceFiles(path.join(ROOT, 'electron')), ...sourceFiles(path.join(ROOT, 'src'))].flatMap(file =>
-    literals(fs.readFileSync(file, 'utf8')).flatMap(({ line, text }) => {
+  return sourceFiles().flatMap(file =>
+    literals(fs.readFileSync(path.join(REPO_ROOT, file), 'utf8')).flatMap(({ line, text }) => {
       const missing = crossRecordLedgerColumns(text).filter(column => !admitted.includes(column))
-      return missing.length ? [`${path.relative(ROOT, file).replace(/\\/gu, '/')}:${line} ${missing.join(',')}`] : []
+      return missing.length ? [`${file}:${line} ${missing.join(',')}`] : []
     }))
 }
 
@@ -192,9 +186,8 @@ describe('跨记录解析的账本 JSON 列都在进门清单里', () => {
   })
 
   it('binding_json 这个词只出现在仓库、进门、M01、M03、导出投影和打开时的证明整理里', () => {
-    const files = [...sourceFiles(path.join(ROOT, 'electron')), ...sourceFiles(path.join(ROOT, 'src')), path.join(ROOT, 'electron/services/portable-project-field-policy.json')]
-    const users = files.filter(file => fs.readFileSync(file, 'utf8').includes('binding_json'))
-      .map(file => path.relative(ROOT, file).replace(/\\/gu, '/'))
+    const files = [...sourceFiles(), 'electron/services/portable-project-field-policy.json']
+    const users = files.filter(file => fs.readFileSync(path.join(REPO_ROOT, file), 'utf8').includes('binding_json'))
     expect(users.filter(file => !BINDING_FILES.includes(file))).toEqual([])
   })
 })
