@@ -9,6 +9,7 @@ import { useWorkflowStore, workflowResourceConflictMessage } from '../../stores/
 import { selectPlanningMaterials, type PlanningMaterial } from '../../services/knowledge-service'
 import { createPlanningMaterialCharacterExtractionWorkflow } from '../../services/workflows/planning-material-workflow'
 import type { ModelProfile, ProjectSessionContext } from '../../shared/ipc-channels'
+import { resolveWritingLanguage, writingLanguageText } from '../../shared/writing-language'
 import { appErrorMessage } from '../../i18n/app-errors'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../project-session-gate'
 import { Button } from '../ui/Button'
@@ -106,7 +107,8 @@ function SessionImportButton({ session, disabled }: Props & { session: ProjectSe
     if (busy || !isProjectSessionCurrent(session)) return null
     const submittedDraft = draft
     const materials = [...submittedDraft.files]
-    if (submittedDraft.source.trim()) materials.push({ fileName: text('粘贴的角色卡.txt', 'Pasted character cards.txt'), text: submittedDraft.source })
+    const writingLanguage = resolveWritingLanguage(useProjectStore.getState().currentProject?.novelConfig.writingLanguage)
+    if (submittedDraft.source.trim()) materials.push({ fileName: writingLanguageText(writingLanguage, '粘贴的角色卡.txt', 'Pasted character cards.txt'), text: submittedDraft.source })
     if (!materials.length) return null
     const modelId = routeModelId('planning-material-character-extraction')
     const model = useLLMStore.getState().models.find(candidate => candidate.id === modelId)
