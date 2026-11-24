@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { setActiveProjectSessionContext } from '../../shared/project-session-context'
@@ -57,13 +58,6 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-function sourceFilesAt(root: string): string[] {
-  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(root, entry.name)
-    if (entry.isDirectory()) return entry.name === '__tests__' ? [] : sourceFilesAt(path)
-    return entry.name.endsWith('.ts') ? [path] : []
-  })
-}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -280,10 +274,9 @@ describe('project custom prompt session ownership', () => {
   })
 
   it('requires every workflow prompt lookup to await catalog hydration with its frozen project session', () => {
-    const workflowRoot = join(process.cwd(), 'src/services/workflows')
-    const sourceFiles = sourceFilesAt(workflowRoot)
+    const sourceFiles = repoSourceFiles('src/services/workflows').filter((file) => !file.includes('/__tests__/') && file.endsWith('.ts'))
     const unsafeLookups = sourceFiles.flatMap((file) => {
-      const source = readFileSync(file, 'utf8')
+      const source = readFileSync(join(REPO_ROOT, file), 'utf8')
       const workflowSessions = [...source.matchAll(/\bconst\s+(\w+)\s*=\s*requireWorkflowProjectSession\(context\)/g)]
         .map((match) => match[1])
       return [...source.matchAll(/(?:getPromptTemplate|resolvePromptTemplate)\(([^)]*)\)/g)]

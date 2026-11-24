@@ -1,11 +1,10 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CURRENT_DESKTOP_SCHEMA_VERSION } from '../../electron/migrations/desktop-registry'
 import { PORTABLE_SOURCE_SCHEMA_VERSION } from '../../electron/services/portable-project-format'
 import { CURRENT_PROJECT_SCHEMA_VERSION } from '../lib/current-project-schema.mjs'
-
-const scriptsRoot = path.resolve(import.meta.dirname, '..')
+import { REPO_ROOT, repoSourceFiles } from '../../test/helpers/repo-source-files'
 
 const projectSchemaRead = /user_version|schemaVersion\(|schema\.version|sourceSchemaVersion/u
 const literalLastArgument = /,\s*\d+\s*,?\s*\)$/u
@@ -20,17 +19,9 @@ const legacySchemaAllowlist = [
     reason: '回执步骤 ID，只在本脚本内引用，不是版本断言' },
 ]
 
-function journeyScripts(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) return entry.name === '__tests__' ? [] : journeyScripts(full)
-    return /\.(mjs|cjs)$/u.test(entry.name) ? [full] : []
-  })
-}
-
 function sources() {
-  return journeyScripts(scriptsRoot).map(file =>
-    ({ file: path.relative(scriptsRoot, file).replaceAll('\\', '/'), text: readFileSync(file, 'utf8') }))
+  return repoSourceFiles('scripts').filter(file => !file.includes('/__tests__/') && /\.(mjs|cjs)$/u.test(file))
+    .map(file => ({ file: file.slice('scripts/'.length), text: readFileSync(path.join(REPO_ROOT, file), 'utf8') }))
 }
 
 function assertCalls(source: string) {

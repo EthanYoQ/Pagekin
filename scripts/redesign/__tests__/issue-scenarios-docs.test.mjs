@@ -3,12 +3,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { it, vi } from 'vitest'
+import { repoSourceFiles } from '../../../test/helpers/repo-source-files'
 vi.mock('playwright', () => ({ _electron: { launch: () => { throw new Error('UNIT_TEST_MUST_NOT_LAUNCH_ELECTRON') } } }))
 const { isScenarioTable } = await import('../drive.mjs')
 
 const redesign = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const references = path.resolve(redesign, '../../.claude/skills/verify/references')
 const docs = path.join(references, 'issue-scenarios')
+const DOCS = '.claude/skills/verify/references/issue-scenarios'
 const PAGE_DOCS = ['rd-stage-scenarios.md', 'rd-review-scenarios.md', 'baseline-scenarios.md']
 const PLATFORM_NAMES = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }
 
@@ -18,7 +20,7 @@ function tableRows(lines) {
 
 async function readDocs() {
   const result = []
-  for (const doc of fs.readdirSync(docs).filter(name => name.endsWith('.md'))) {
+  for (const doc of repoSourceFiles(DOCS).filter(file => path.posix.dirname(file) === DOCS && file.endsWith('.md')).map(file => path.posix.basename(file))) {
     const short = doc.slice(0, -'.md'.length)
     const module = await import(pathToFileURL(path.join(redesign, `${short}-scenarios.mjs`)).href)
     const defined = Object.fromEntries(Object.entries(module).filter(([name]) => isScenarioTable(name)).flatMap(([, table]) => Object.entries(table)))

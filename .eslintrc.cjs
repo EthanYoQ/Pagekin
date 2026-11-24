@@ -1,3 +1,8 @@
+const LISTING_MESSAGE = '测试列仓库源码改用 test/helpers/repo-source-files.ts 的 repoSourceFiles()，列临时目录改用 test/helpers/temporary-directory.ts 的 listTemporaryDirectory()。'
+const LISTING_PRIMITIVES = ['readdir', 'readdirSync', 'opendir', 'opendirSync', 'glob', 'globSync', 'readDirectory']
+const LISTING_MODULES = ['glob', 'fast-glob', 'globby', 'tinyglobby']
+const listingModule = `/^(?:${LISTING_MODULES.join('|')})$/`
+
 module.exports = {
   root: true,
   env: { browser: true, es2020: true },
@@ -31,6 +36,18 @@ module.exports = {
       rules: {
         '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
         'react-hooks/rules-of-hooks': 'off',
+      },
+    },
+    {
+      files: ['**/*.test.*', '**/*.spec.*', '**/__tests__/**', 'test/**'],
+      excludedFiles: ['test/helpers/repo-source-files.ts', 'test/helpers/temporary-directory.ts', ...require('./test/directory-listing-baseline.json')],
+      rules: {
+        'no-restricted-imports': ['error', { paths: LISTING_MODULES.map(name => ({ name, message: LISTING_MESSAGE })) }],
+        'no-restricted-properties': ['error', ...LISTING_PRIMITIVES.map(property => ({ property, message: LISTING_MESSAGE }))],
+        'no-restricted-syntax': ['error', {
+          selector: `ImportSpecifier[imported.name=/^(?:${LISTING_PRIMITIVES.join('|')})$/], CallExpression[callee.name='require'][arguments.0.value=${listingModule}], ImportExpression[source.value=${listingModule}]`,
+          message: LISTING_MESSAGE,
+        }],
       },
     },
   ],
