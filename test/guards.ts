@@ -12,7 +12,8 @@ const isFile = (path: string) => statSync(path, { throwIfNoEntry: false })?.isFi
 function resolveRelative(root: string, from: string, specifier: string): string | undefined {
   if (!specifier.startsWith('.')) return undefined
   const base = posix.join(posix.dirname(from), specifier)
-  return MODULE_SUFFIXES.map(suffix => base + suffix).find(file => isFile(join(root, file)))
+  const sources = [base.replace(/\.js$/u, '.ts'), base.replace(/\.jsx$/u, '.tsx'), base.replace(/\.mjs$/u, '.mts')]
+  return [...MODULE_SUFFIXES.map(suffix => base + suffix), ...sources].find(file => isFile(join(root, file)))
 }
 
 export function reachesRepoSourceFiles(root: string, file: string, seen = new Set<string>()): boolean {

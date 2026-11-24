@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, posix } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { ESLint } from 'eslint'
 import { describe, expect, it } from 'vitest'
 import { guardTestFiles, reachesRepoSourceFiles, REPO_SOURCE_FILES_MODULE } from './guards'
@@ -8,7 +9,49 @@ import { REPO_ROOT, repoSourceFiles } from './helpers/repo-source-files'
 import { listTemporaryDirectory } from './helpers/temporary-directory'
 import BASELINE from './directory-listing-baseline.json'
 
-const BASELINE_CEILING = 41
+const ORIGINAL_BASELINE: readonly string[] = [
+  'electron/__tests__/knowledge-base-failure-reason.test.ts',
+  'electron/__tests__/knowledge-base-original-copy.test.ts',
+  'electron/__tests__/knowledge-base-volume.test.ts',
+  'electron/__tests__/lancedb-contract.test.ts',
+  'electron/__tests__/main-startup.test.ts',
+  'electron/controllers/__tests__/cloud-backup-controller.test.ts',
+  'electron/controllers/__tests__/fs-controller-project-boundary.test.ts',
+  'electron/controllers/__tests__/generation-controller.test.ts',
+  'electron/controllers/__tests__/project-archive-controller.test.ts',
+  'electron/controllers/__tests__/writing-skill-app-data.test.ts',
+  'electron/security/__tests__/windows-safe-file-system.test.ts',
+  'electron/services/__tests__/character-asset-service.test.ts',
+  'electron/services/__tests__/corrupt-review-cycle-export.test.ts',
+  'electron/services/__tests__/generation-knowledge-source.test.ts',
+  'electron/services/__tests__/global-data-migration.test.ts',
+  'electron/services/__tests__/legacy-project-copy-import.test.ts',
+  'electron/services/__tests__/portable-author-file-names.test.ts',
+  'electron/services/__tests__/portable-export-host.test.ts',
+  'electron/services/__tests__/portable-project-archive.test.ts',
+  'electron/services/__tests__/portable-project-assets.test.ts',
+  'electron/services/__tests__/project-access.test.ts',
+  'electron/services/__tests__/project-archive-service.test.ts',
+  'electron/services/__tests__/project-data-locator.test.ts',
+  'electron/services/__tests__/project-format-migration.test.ts',
+  'electron/services/__tests__/project-peek-readonly.test.ts',
+  'electron/services/__tests__/project-restore-service.test.ts',
+  'electron/services/__tests__/replaced-final-cleanup.test.ts',
+  'electron/services/__tests__/sqlite-project-migration.test.ts',
+  'electron/services/__tests__/vector-migration-snapshot.test.ts',
+  'electron/services/__tests__/webdav-backup-service.test.ts',
+  'electron/utils/__tests__/config-utils.test.ts',
+  'scripts/__tests__/legacy-qualification-projection.test.ts',
+  'scripts/__tests__/release-win-verify.test.ts',
+  'scripts/__tests__/smoke-macos-dmg-acceptance-contract.test.ts',
+  'scripts/__tests__/smoke-win-installer.test.ts',
+  'scripts/redesign/__tests__/drive-args.test.mjs',
+  'scripts/redesign/__tests__/drive-profile-writes.test.mjs',
+  'scripts/redesign/__tests__/real-model.test.mjs',
+  'src/services/__tests__/export-service-integration.test.ts',
+  'test/helpers/node-test-secure-file-system.ts',
+  'test/helpers/remove-temporary-tree.mjs',
+]
 const eslint = new ESLint({ cwd: REPO_ROOT })
 
 async function listingErrors(filePath: string, code: string): Promise<string[]> {
@@ -51,6 +94,20 @@ describe('listTemporaryDirectory()', () => {
     expect(() => listTemporaryDirectory(join(REPO_ROOT, 'src'))).toThrow(/repoSourceFiles\(\)/u)
     expect(() => listTemporaryDirectory(tmpdir())).toThrow(/os\.tmpdir\(\)/u)
   })
+
+  it('仓库本身在 os.tmpdir() 下时，仓库路径照样抛错', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'guards-checkout-'))
+    try {
+      mkdirSync(join(root, 'test/helpers'), { recursive: true })
+      mkdirSync(join(root, 'src'))
+      for (const file of ['test/helpers/repo-source-files.ts', 'test/helpers/temporary-directory.ts']) writeFileSync(join(root, file), readFileSync(join(REPO_ROOT, file)))
+      const copy: typeof import('./helpers/temporary-directory') = await import(pathToFileURL(join(root, 'test/helpers/temporary-directory.ts')).href)
+      expect(() => copy.listTemporaryDirectory(join(root, 'src'))).toThrow(/repoSourceFiles\(\)/u)
+      expect(() => copy.listTemporaryDirectory(root)).toThrow(/repoSourceFiles\(\)/u)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('test:guards 的成员是经 repoSourceFiles() 扫源码的测试', () => {
@@ -63,11 +120,12 @@ describe('test:guards 的成员是经 repoSourceFiles() 扫源码的测试', () 
       'src/__tests__/direct.test.ts': "import { repoSourceFiles } from '../../test/helpers/repo-source-files'\n",
       'src/__tests__/via-helper.test.ts': "import { list } from '../../test/helpers/scan'\n",
       'scripts/__tests__/dynamic.test.mjs': "const { repoSourceFiles } = await import('../../test/helpers/repo-source-files.ts')\n",
+      'src/__tests__/js-extension.test.ts': "import { repoSourceFiles } from '../../test/helpers/repo-source-files.js'\n",
       'src/__tests__/unrelated.test.ts': "import { readFileSync } from 'node:fs'\nimport { x } from '../x'\n",
       'src/x.ts': "export { repoSourceFiles as x } from '../test/helpers/repo-source-files'\n",
     }, root => {
       const member = (file: string) => reachesRepoSourceFiles(root, file)
-      expect(['src/__tests__/direct.test.ts', 'src/__tests__/via-helper.test.ts', 'scripts/__tests__/dynamic.test.mjs'].filter(member)).toHaveLength(3)
+      expect(['src/__tests__/direct.test.ts', 'src/__tests__/via-helper.test.ts', 'scripts/__tests__/dynamic.test.mjs', 'src/__tests__/js-extension.test.ts'].filter(member)).toHaveLength(4)
       expect(member('src/__tests__/unrelated.test.ts')).toBe(false)
     })
   })
@@ -131,8 +189,8 @@ describe('测试文件按标识符禁用列目录原语', () => {
 })
 
 describe('存量 baseline 只减不增', () => {
-  it(`名单不超过建立时的 ${BASELINE_CEILING} 个文件：新增违规改用 helper，不进名单`, () => {
-    expect(BASELINE.length).toBeLessThanOrEqual(BASELINE_CEILING)
+  it('名单只能是建立时名单的子集：新增违规改用 helper，不进名单，也不能顶替删掉的名额', () => {
+    expect(BASELINE.filter(file => !ORIGINAL_BASELINE.includes(file))).toEqual([])
     expect(BASELINE).toEqual([...new Set(BASELINE)].sort())
   })
 
@@ -145,4 +203,10 @@ describe('存量 baseline 只减不增', () => {
     }
     expect(stale).toEqual([])
   }, 60_000)
+
+  it('测试范围内没有 lint 不检查的扩展名（全仓 lint 只跑 ts、tsx、mjs）', () => {
+    const unlinted = ['electron', 'scripts', 'src', 'test'].flatMap(dir => repoSourceFiles(dir))
+      .filter(file => /\.(?:test|spec)\.|\/__tests__\/|^test\//u.test(file) && /\.(?:js|cjs|mts|cts|jsx)$/u.test(file))
+    expect(unlinted).toEqual([])
+  })
 })
