@@ -151,10 +151,11 @@ describe('运行侧页', () => {
     expect(card.textContent).not.toMatch(/错误码|architecture-synopsis-source-changed/)
   })
 
-  it('步骤失败带着主进程的通用码：展开后显示说明，不露码', async () => {
+  it.each<[Locale]>([['zh-CN'], ['en-US']])('步骤失败带着主进程的通用码：展开后按运行的语言显示说明，不露码（界面 %s）', async locale => {
     const error = "Error invoking remote method 'kb:backfill-vectors': Error: IPC_HANDLER_FAILED"
     useWorkflowStore.setState({ activeRuns: [run('检索', 'failed', { title: '重建检索', error,
       steps: [{ id: 'backfill', name: '重建检索', description: '', status: 'failed', progress: 0, logs: [], error }] })] })
+    useLocaleStore.setState({ locale })
     await render()
     const row = host!.querySelector<HTMLButtonElement>('.run-step-row')!
     if (row.getAttribute('aria-expanded') !== 'true') await act(async () => row.click())
