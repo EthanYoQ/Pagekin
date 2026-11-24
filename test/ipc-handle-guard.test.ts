@@ -49,6 +49,7 @@ describe('handle.ts 与名单之外，主进程拿不到 ipcMain', () => {
     "import * as electron from 'electron'\nelectron.ipcMain.handle('demo:x', () => 1)",
     "import * as electron from 'electron'\nelectron['ipcMain'].handle('demo:x', () => 1)",
     "import electron from 'electron'\nconst { ipcMain: main } = electron\nmain.handle('demo:x', () => 1)",
+    "import electron from 'electron'\nconst { 'ipcMain': main } = electron\nmain.handle('demo:x', () => 1)",
     "import { ipcMain } from 'electron'\nimport { registerAll } from './register-all'\nregisterAll(ipcMain)",
     "import { ipcMain } from 'electron'\nipcMain.removeHandler('demo:x')",
   ])('新文件报错并点名 handle()：%s', async code => {
