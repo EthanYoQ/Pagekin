@@ -163,6 +163,20 @@ describe('运行侧页', () => {
     expect(host!.querySelector('article')!.textContent).not.toContain('IPC_HANDLER_FAILED')
   })
 
+  it('失败带已登记的码、消息是一句原文：步骤报错和失败提示都按码说明', async () => {
+    const error = "ENOSPC: no space left on device, write 'C:\\novels\\lighthouse\\.ai-novel\\lancedb'"
+    const errorCode = 'KNOWLEDGE_BASE_DISK_FULL'
+    useWorkflowStore.setState({ activeRuns: [run('检索', 'failed', { title: '重建检索', error, errorCode,
+      steps: [{ id: 'backfill', name: '重建检索', description: '', status: 'failed', progress: 0, logs: [], error, errorCode }] })] })
+    await render()
+    const row = host!.querySelector<HTMLButtonElement>('.run-step-row')!
+    if (row.getAttribute('aria-expanded') !== 'true') await act(async () => row.click())
+    const shown = '磁盘空间不足，知识库写不进去。清理磁盘后再试一次。'
+    expect(host!.querySelector('.run-step-error')?.textContent).toBe(shown)
+    expect(host!.querySelector('article [role="alert"], article .pi-notice')?.textContent).toContain(shown)
+    expect(host!.querySelector('article')!.textContent).not.toContain('ENOSPC')
+  })
+
   it('要看的运行已结束时直接在历史里展开它', async () => {
     useWorkflowStore.setState({ history: [run('3', 'completed'), run('2', 'completed')] })
     await render({ kind: 'run', tab: 'active', runId: '3' })
