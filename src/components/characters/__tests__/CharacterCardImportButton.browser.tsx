@@ -10,8 +10,21 @@ import { useLLMStore } from '../../../stores/llm-store'
 import { useWorkflowStore } from '../../../stores/workflow-store'
 import { setActiveProjectSessionContext } from '../../../shared/project-session-context'
 import type { ProjectData } from '../../../shared/ipc-channels'
+import type { PlanningMaterial } from '../../../services/knowledge-service'
 
-const project = { id: 'paste', path: 'C:\\novels\\paste', sessionLease: 'lease-1' } as ProjectData
+const extractedMaterials = vi.hoisted(() => [] as PlanningMaterial[][])
+vi.mock('../../../services/workflows/planning-material-workflow', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../services/workflows/planning-material-workflow')>()
+  return {
+    ...actual,
+    createPlanningMaterialCharacterExtractionWorkflow: (...args: Parameters<typeof actual.createPlanningMaterialCharacterExtractionWorkflow>) => {
+      extractedMaterials.push([...args[0].materials])
+      return actual.createPlanningMaterialCharacterExtractionWorkflow(...args)
+    },
+  }
+})
+
+const project = { id: 'paste', path: 'C:\\novels\\paste', sessionLease: 'lease-1', novelConfig: { writingLanguage: 'zh-CN' } } as ProjectData
 const model = { id: 'model', name: 'Test model', modelName: 'test', baseUrl: 'https://example.invalid', purposes: ['generation'] } as ReturnType<typeof useLLMStore.getState>['models'][number]
 const planner = { id: 'planner', name: 'Planner', modelName: 'planner-1', baseUrl: 'https://planner.example.invalid', purposes: ['generation'] } as ReturnType<typeof useLLMStore.getState>['models'][number]
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -38,6 +51,7 @@ async function paste(value: string) {
 
 beforeEach(async () => {
   vi.clearAllMocks()
+  extractedMaterials.length = 0
   project.sessionLease = `lease-${++testLease}`
   invoke = vi.fn().mockResolvedValue(null)
   Object.defineProperty(window, 'aiNovelAPI', { configurable: true, value: { invoke, on: vi.fn(() => () => {}), once: vi.fn(), send: vi.fn() } })
@@ -86,6 +100,20 @@ describe('角色卡导入入口', () => {
       steps: [expect.objectContaining({ name: '生成待确认角色卡' }), expect.objectContaining({ name: '确认并导入角色卡' })],
     }), true)
     expect(document.querySelector('textarea')?.value).toBe('姓名：林舟')
+  })
+
+  it.each([
+    { uiLocale: 'en-US', writingLanguage: 'zh-CN', fileName: '粘贴的角色卡.txt', extract: 'Extract and preview with AI', send: 'Send and extract' },
+    { uiLocale: 'zh-CN', writingLanguage: 'en-US', fileName: 'Pasted character cards.txt', extract: 'AI 提取并预览', send: '发送并提取' },
+  ] as const)('界面 $uiLocale、作品 $writingLanguage：粘贴材料按作品写作语言命名后送去提取', async ({ uiLocale, writingLanguage, fileName, extract, send }) => {
+    await paste('姓名：林舟')
+    await act(async () => {
+      useLocaleStore.setState({ locale: uiLocale })
+      useProjectStore.setState({ currentProject: { ...project, novelConfig: { ...project.novelConfig, writingLanguage } } })
+    })
+    await click(extract)
+    await click(send)
+    expect(extractedMaterials).toEqual([[{ fileName, text: '姓名：林舟' }]])
   })
 
   it('按规划环节指定的模型征求同意并发送', async () => {

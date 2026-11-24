@@ -138,8 +138,7 @@ const dismissToasts = async page => {
 }
 const trashDialog = page => page.getByRole('dialog', { name: /^回收站（\d+）$/u })
 
-TRASH_SCENARIOS['trash-ui'] = { model: true, shell: 'stage', setup: async context => {
-  if (process.platform !== 'win32') throw new Error(`trash-ui 场景只能在 Windows 上跑：它用 powershell.exe 独占锁住实体稿，当前平台是 ${process.platform}`)
+TRASH_SCENARIOS['trash-ui'] = { model: true, shell: 'stage', requires: { platform: 'win32' }, setup: async context => {
   await trackOpenedSession(context.app)
   await seedStageSample(context)
 }, run: async context => {
