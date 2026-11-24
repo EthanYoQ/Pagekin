@@ -10,7 +10,6 @@
   "electron/controllers/fs-controller.ts",
   "electron/controllers/generation-controller.ts",
   "electron/controllers/import-controller.ts",
-  "electron/controllers/kb-controller.ts",
   "electron/controllers/llm-controller.ts",
   "electron/controllers/model-provider-resource-controller.ts",
   "electron/controllers/official-homepage-controller.ts",

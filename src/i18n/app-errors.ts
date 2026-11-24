@@ -370,6 +370,13 @@ const ERROR_KEYS = {
   KNOWLEDGE_BASE_UNWRITABLE: 'error.knowledgeUnwritable',
   KNOWLEDGE_BASE_OPERATION_FAILED: 'error.knowledgeOperationFailed',
   KNOWLEDGE_BASE_CLEAR_FAILED: 'error.knowledgeClearFailed',
+  // 参照导入的幂等收据与完整性校验（knowledge-base.ts），说明里不露码。
+  KNOWLEDGE_BASE_REFERENCE_AUTHORITY_MISMATCH: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_CLEANUP_FAILED: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_FLIGHT_INVALID: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_KEY_INVALID: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_RECEIPT_CONFLICT: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_VERIFY_FAILED: 'error.knowledgeReferenceCheckFailed',
   // 模型调用与设置（#474 B6）：保存或删除模型、设默认模型，以及按模型设置建执行租约时作者能照着改的原因。
   LLM_MODEL_CONFIG_CORRUPT: 'error.modelSettingsFileDamaged',
   LLM_GLOBAL_CONFIG_CORRUPT: 'error.modelSettingsFileDamaged',

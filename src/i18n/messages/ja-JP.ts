@@ -250,6 +250,7 @@ export const jaJP = {
   'error.knowledgeUnwritable': '作品フォルダーに書き込めませんでした。読み取り専用か、同期ソフトやウイルス対策ソフトが使用中の可能性があります。それらを終了してから、もう一度お試しください。',
   'error.knowledgeOperationFailed': 'ナレッジベースで予期しない問題が発生しました。もう一度お試しください。解決しない場合は、このメッセージをお知らせください。',
   'error.knowledgeClearFailed': 'ナレッジベースを空にできませんでした。もう一度「Clear knowledge base…」を選んでください。それでも失敗する場合は、このメッセージをお知らせください。',
+  'error.knowledgeReferenceCheckFailed': 'この参照章をナレッジベースに追加できませんでした。取り込みダイアログで「Continue import」を選んでください。それでも失敗する場合は、このメッセージをお知らせください。',
   'error.modelSettingsFileDamaged': 'モデルの設定ファイルが破損しているため、上書きを避けるために何も保存しませんでした。ユーザー設定ディレクトリにある破損した設定ファイルを修復するか移動してから、もう一度お試しください。',
   'error.stageModelUnavailable': 'そのモデルは削除されたか、執筆に使えなくなったため、この段階は現在のモデルのままです。「Models by stage」で別のモデルを選んでください。',
   'error.stageModelRequestInvalid': 'リクエストが有効でなかったため、段階の設定は保存されませんでした。設定を開き直して、選び直してください。',

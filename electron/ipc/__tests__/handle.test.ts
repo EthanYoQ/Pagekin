@@ -92,7 +92,7 @@ describe('handle() 返回的失败结果', () => {
   })
 
   it('未登记的 errorCode 和 error 一起换成通用码', async () => {
-    handle('demo:pair', () => ({ success: false, errorCode: 'KNOWLEDGE_BASE_REFERENCE_VERIFY_FAILED', error: '校验未通过（KNOWLEDGE_BASE_REFERENCE_VERIFY_FAILED）' }))
+    handle('demo:pair', () => ({ success: false, errorCode: 'EMBEDDING_SPACE_VERIFY_FAILED', error: '校验未通过（EMBEDDING_SPACE_VERIFY_FAILED）' }))
 
     await expect(invoke('demo:pair')).resolves.toEqual({ success: false, errorCode: 'IPC_HANDLER_FAILED', error: 'IPC_HANDLER_FAILED' })
   })

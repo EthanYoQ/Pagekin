@@ -1,4 +1,5 @@
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
+import { handle } from '../ipc/handle'
 import { showOpenDialogInLastDirectory } from '../utils/remembered-dialog'
 import type { IpcMainInvokeEvent } from 'electron'
 import { readJsonFile, GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG, MODELS_CONFIG_PATH } from '../utils/config-utils'
@@ -59,7 +60,7 @@ function referenceImportDisplayName(binding: { chapterNumber: number; title: str
 
 /**
  * 参照导入的运行卡片原样显示 result.error（#474）。作者能照做的知识库错误码按导入运行的界面语言说明，
- * 与 src/i18n/messages 里同名码的文案一致；其余码原样留着供反馈定位。
+ * 与 src/i18n/messages 里同名码的文案一致；其余码交给 explainImportRunFailure，没登记的由 handle() 换成通用码。
  */
 const INDEX_DAMAGED = [
   '当前作品的检索索引记录已损坏，现有资料没有改动。请从备份恢复作品，或清空知识库后重新导入资料。',
@@ -85,18 +86,9 @@ const REFERENCE_IMPORT_FAILURES: Readonly<Record<string, readonly [zhCN: string,
   ],
 }
 
-/** 参照导入的幂等收据与完整性校验：没有作者能照做的建议，给按运行语言的说明并附上码供反馈定位。 */
-function referenceIntegrityFailure(code: string): readonly [zhCN: string, enUS: string] | undefined {
-  if (!code.startsWith('KNOWLEDGE_BASE_REFERENCE_')) return undefined
-  return [
-    `参照章节未能写入知识库（校验未通过：${code}）。`,
-    `The reference chapter could not be written to the knowledge base (check failed: ${code}).`,
-  ]
-}
-
 function explainReferenceImportFailure<T extends { success: boolean; error?: string }>(result: T, runId: string): T | (T & { errorCode: string }) {
   const code = !result.success ? result.error : undefined
-  const explained = code ? REFERENCE_IMPORT_FAILURES[code] ?? referenceIntegrityFailure(code) : undefined
+  const explained = code ? REFERENCE_IMPORT_FAILURES[code] : undefined
   if (!code) return result
   if (!explained) {
     // 导入运行的授权与收据校验（#474 B1）按同一套说明写。
@@ -210,7 +202,7 @@ function registerKnowledgeBaseHandler<Args extends unknown[]>(
   channel: string,
   handler: KnowledgeBaseHandler<Args>,
 ): void {
-  ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+  handle(channel, async (event, ...args: unknown[]) => {
     if (!channel.startsWith('kb:')) return handler(event, ...(args as Args))
     const candidate = args.at(-1)
     const context = isProjectSessionContext(candidate) ? candidate : undefined
@@ -231,8 +223,7 @@ function registerKnowledgeBaseHandler<Args extends unknown[]>(
 
 export function registerKBController() {
   // 所有 kb:* 操作需携带同一冻结会话；选择文件仍是外部授权能力。
-  const ipcMain = { handle: registerKnowledgeBaseHandler }
-  ipcMain.handle('kb:import-text', async (_event, text: string, fileName: string, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:import-text', async (_event, text: string, fileName: string, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
     const protocol = embConfig?.protocol ?? 'openai'
@@ -240,7 +231,7 @@ export function registerKBController() {
     return knowledgeBaseLoader.run((kb) => kb.importText(text, fileName, projectPath, protocol, model))
   })
 
-  ipcMain.handle('kb:import-planning-text', async (_event, text: string, fileName: string, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:import-planning-text', async (_event, text: string, fileName: string, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
     const protocol = embConfig?.protocol ?? 'openai'
@@ -255,7 +246,7 @@ export function registerKBController() {
     ))
   })
 
-  ipcMain.handle('kb:import-reference-text', async (
+  registerKnowledgeBaseHandler('kb:import-reference-text', async (
     _event,
     chapterNumber: number,
     runId: string,
@@ -296,7 +287,7 @@ export function registerKBController() {
     }
   })
 
-  ipcMain.handle('kb:search', async (_event, query: string, topK: number | undefined, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:search', async (_event, query: string, topK: number | undefined, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
 
@@ -308,7 +299,7 @@ export function registerKBController() {
     }), true)
   })
 
-  ipcMain.handle('kb:search-writing-context', async (_event, query: string, topK: number | undefined, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:search-writing-context', async (_event, query: string, topK: number | undefined, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
 
@@ -327,7 +318,7 @@ export function registerKBController() {
     }))
   })
 
-  ipcMain.handle('kb:list-documents', async (_event, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:list-documents', async (_event, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     return knowledgeBaseLoader.run(async (kb) => {
       const documents = await kb.listDocuments(projectPath)
@@ -339,41 +330,41 @@ export function registerKBController() {
     })
   })
 
-  ipcMain.handle('kb:read-document-copy', async (_event, docId: string, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:read-document-copy', async (_event, docId: string, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     return knowledgeBaseLoader.run((kb) => kb.readDocumentCopy(docId, projectPath))
   })
 
-  ipcMain.handle('kb:save-document-copy', async (_event, docId: string, content: string,
+  registerKnowledgeBaseHandler('kb:save-document-copy', async (_event, docId: string, content: string,
     expectedContentHash: string, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     return knowledgeBaseLoader.run((kb) => kb.saveDocumentCopy(docId, content, expectedContentHash, projectPath))
   })
 
-  ipcMain.handle('kb:reindex-document-copy', async (_event, docId: string, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:reindex-document-copy', async (_event, docId: string, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     return knowledgeBaseLoader.run((kb) => kb.reindexDocumentCopy(docId, projectPath))
   })
 
-  ipcMain.handle('kb:clear-all', async (_event, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:clear-all', async (_event, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     return knowledgeBaseLoader.run(async (kb) => {
       const success = await kb.clearKnowledgeBase(projectPath)
-      return success ? { success: true } : { success: false, error: text('清空知识库失败', 'Could not clear the knowledge base') }
+      return success ? { success: true } : { success: false, error: 'KNOWLEDGE_BASE_CLEAR_FAILED' }
     })
   })
 
-  ipcMain.handle('kb:stats', async (_event, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:stats', async (_event, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     return knowledgeBaseLoader.run((kb) => kb.getKnowledgeStats(projectPath))
   })
 
-  ipcMain.handle('kb:get-vectorless-count', async (_event, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:get-vectorless-count', async (_event, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     return knowledgeBaseLoader.run((kb) => kb.getVectorlessCount(projectPath))
   })
 
-  ipcMain.handle('kb:get-vector-rebuild-status', async (_event, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:get-vector-rebuild-status', async (_event, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
     // Do not cause a provider request, or even offer the action, until the
@@ -402,14 +393,14 @@ export function registerKBController() {
     })
   })
 
-  ipcMain.handle('kb:backfill-vectors', async (_event, expectedProjectPath: string) => {
+  registerKnowledgeBaseHandler('kb:backfill-vectors', async (_event, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
     if (!hasUsableEmbeddingConfig(embConfig)) return { success: false, processed: 0, failed: 0, errorCode: 'EMBEDDING_MODEL_NOT_CONFIGURED', error: text('未配置 Embedding 模型', 'No embedding model is configured') }
     return knowledgeBaseLoader.run((kb) => kb.backfillVectors(projectPath, embConfig.protocol, embConfig.model))
   })
 
-  ipcMain.handle('dialog:select-knowledge-files', async (event) => {
+  registerKnowledgeBaseHandler('dialog:select-knowledge-files', async (event) => {
     const result = await showOpenDialogInLastDirectory('knowledge-files', {
       properties: ['openFile', 'multiSelections'],
       title: text('选择要导入的文档', 'Choose documents to import'),
