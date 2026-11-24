@@ -136,8 +136,8 @@ describe('architecture file external refresh protection', () => {
     })()
 
     visibleContent = 'edited and saved content'
-    gate.recordContentChange()
-    // 保存开始与保存成功都会让此前的 reload 失效。
+    // 编辑、保存开始与保存成功都会让此前的 reload 失效。
+    gate.invalidate()
     gate.invalidate()
     gate.invalidate()
     resolveReload('stale reload content')

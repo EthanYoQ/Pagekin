@@ -199,7 +199,7 @@ function ArchFileViewerSession({
       return
     }
     if (decision.kind === 'apply') {
-      reloadGateRef.current.recordContentChange()
+      reloadGateRef.current.invalidate()
       setLoading(false)
       savedContentRef.current = initialContent
       currentContentRef.current = initialContent
@@ -213,7 +213,7 @@ function ArchFileViewerSession({
   // 内容变化回调：更新 ref，不触发重渲染，避免 content prop 回传导致光标跳末尾
   const handleChange = useCallback((md: string) => {
     if (isCharacterProjection) return
-    reloadGateRef.current.recordContentChange()
+    reloadGateRef.current.invalidate()
     setLoading(false)
     setSaveOutcome('idle')
     currentContentRef.current = md
