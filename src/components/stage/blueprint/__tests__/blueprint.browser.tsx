@@ -1503,6 +1503,36 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章矛盾。')).not.toBeInTheDocument()
   })
 
+  it('蓝图连着刷新两次、先发的那次列表读取后回来：列表是后一次读到的', async () => {
+    stored = [blueprint(1, '旧港')]
+    await renderPage()
+    await expect.element(page.getByText('旧港').first()).toBeVisible()
+    let releaseFirst!: () => void
+    const held = new Promise<void>(resolve => { releaseFirst = resolve })
+    const older = [blueprint(1, '旧港')]
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    let reads = 0
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:blueprint-get-all' && ++reads === 1) {
+        await held
+        return older
+      }
+      return base(channel, ...args)
+    })
+    const before = calls('db:blueprint-get-all').length
+    await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
+    await vi.waitFor(() => expect(calls('db:blueprint-get-all').length).toBe(before + 1))
+    stored = [blueprint(1, '回潮')]
+    await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH, projectSession: SESSION }))
+    await expect.element(page.getByText('回潮').first()).toBeVisible()
+
+    await act(async () => releaseFirst())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    await expect.element(page.getByText('旧港')).not.toBeInTheDocument()
+    await expect.element(page.getByText('回潮').first()).toBeVisible()
+  })
+
   it('蓝图连着刷新两次、先发的结论读取后回来：显示后一次读到的结论', async () => {
     await renderPage(2)
     await vi.waitFor(() => expect(calls('graph-generation:latest-continuity').length).toBeGreaterThan(0))
