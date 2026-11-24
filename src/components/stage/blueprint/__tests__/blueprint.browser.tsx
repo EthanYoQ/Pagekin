@@ -1503,6 +1503,33 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await expect.element(page.getByText('第 2 章矛盾。')).not.toBeInTheDocument()
   })
 
+  it('蓝图连着刷新两次、先发的结论读取后回来：显示后一次读到的结论', async () => {
+    await renderPage(2)
+    await vi.waitFor(() => expect(calls('graph-generation:latest-continuity').length).toBeGreaterThan(0))
+    const stale = checked([finding(2, '先发那次读到的旧结论。')])
+    let releaseFirst!: () => void
+    const held = new Promise<void>(resolve => { releaseFirst = resolve })
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    let reads = 0
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'graph-generation:latest-continuity' && ++reads === 1) {
+        await held
+        return fromEarlier(stale)
+      }
+      return base(channel, ...args)
+    })
+    await refreshAndRecover(1)
+    latest = read
+    await refreshAndRecover(1)
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+
+    await act(async () => releaseFirst())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    await expect.element(page.getByText('先发那次读到的旧结论。')).not.toBeInTheDocument()
+    await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
+  })
+
   it('检查期间别章被改、之后蓝图又刷新：这次不算数，原来的结论留着', async () => {
     latest = read
     const rejected = { ...checked([finding(2, '被拒那次的第 2 章结论。')]), sourceStatus: 'conflict', view: recovery({}).view }

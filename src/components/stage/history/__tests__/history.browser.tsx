@@ -378,6 +378,28 @@ describe('版本历史', () => {
     expect(button(/草稿 v1/)).toBeUndefined()
   })
 
+  it('连续点两稿对比：先点那稿的正文晚到，对比区仍是后点那稿', async () => {
+    drafts.push({ id: 13, chapterNumber: 3, version: 3, status: 'draft', content: '雨从傍晚开始就没有停过。\n林舟攥着那封信。\n他想起母亲说过的话。' })
+    const answer = invoke.getMockImplementation()!
+    let releaseV1!: () => void
+    const heldV1 = new Promise<void>(resolve => { releaseV1 = resolve })
+    invoke.mockImplementation(async (channel, ...args) => {
+      if (channel === 'db:draft-get-full' && args[0] === 11) await heldV1
+      return answer(channel, ...args)
+    })
+    await openChapterThree()
+    await click(/草稿 v1/)
+    await click(/草稿 v2/)
+    const deleted = () => [...(host!.querySelector('article[aria-readonly="true"]')?.querySelectorAll('del') ?? [])].map(node => node.textContent).join('')
+    await vi.waitFor(() => expect(deleted()).toContain('没有署名的'))
+
+    await act(async () => releaseV1())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    expect(deleted()).toContain('没有署名的')
+    expect(deleted()).not.toContain('灰色的')
+  })
+
   it('各稿时间按数据库的 UTC 换成本地时间显示', async () => {
     await openChapterThree()
     const expected = new Date(Date.UTC(2026, 9, 1, 21, 5)).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
