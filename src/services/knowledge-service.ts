@@ -119,18 +119,6 @@ export async function clearKnowledgeBase(expectedProjectPath: string): Promise<{
   return ipc.invoke('kb:clear-all', expectedProjectPath)
 }
 
-export async function importKnowledgeDocument(grantId: string, expectedProjectPath: string) {
-  return ipc.invoke('kb:import-document', grantId, expectedProjectPath)
-}
-
-export async function importKnowledgeFolder(grantId: string, expectedProjectPath: string) {
-  return ipc.invoke('kb:import-folder', grantId, expectedProjectPath)
-}
-
-export async function removeKnowledgeDocument(docId: string, expectedProjectPath: string) {
-  return ipc.invoke('kb:remove-document', docId, expectedProjectPath)
-}
-
 /** 读取用户通过系统文件选择器明确授权的创作资料。 */
 export async function selectPlanningMaterials(): Promise<PlanningMaterial[]> {
   const grants = await ipc.invoke('dialog:select-knowledge-files')

@@ -1241,8 +1241,6 @@ export interface DatabaseChannels {
 
 // ===== 知识库频道 =====
 export interface KnowledgeBaseChannels {
-  'kb:import-document': { args: [grantId: string, expectedProjectPath: string]; return: { success: boolean; docId?: string; chunkCount?: number; error?: string; errorCode?: AppErrorCode } }
-  'kb:import-folder': { args: [grantId: string, expectedProjectPath: string]; return: { success: boolean; importedCount: number; failedFiles: string[]; error?: string; errorCode?: AppErrorCode } }
   'kb:import-text': { args: [text: string, fileName: string, expectedProjectPath: string]; return: { success: boolean; docId?: string; chunkCount?: number; error?: string; errorCode?: AppErrorCode } }
   'kb:import-planning-text': { args: [text: string, fileName: string, expectedProjectPath: string]; return: { success: boolean; docId?: string; chunkCount?: number; error?: string; errorCode?: AppErrorCode } }
   'kb:import-reference-text': {
@@ -1268,11 +1266,9 @@ export interface KnowledgeBaseChannels {
     args: [docId: string, expectedProjectPath: string]
     return: AppResult<{ success: boolean; docId?: string; chunkCount?: number; error?: string }>
   }
-  'kb:remove-document': { args: [docId: string, expectedProjectPath: string]; return: { success: boolean; error?: string } }
   'kb:clear-all': { args: [expectedProjectPath: string]; return: { success: boolean; error?: string } }
   'kb:stats': { args: [expectedProjectPath: string]; return: AppResult<{ documentCount: number; totalChunks: number; vectorDimension: number }> }
   'dialog:select-knowledge-files': { args: []; return: ExternalFileGrant[] | null }
-  'dialog:select-knowledge-folder': { args: []; return: ExternalDirectoryGrant | null }
   'kb:get-vectorless-count': { args: [expectedProjectPath: string]; return: AppResult<{ count: number }> }
   /**
    * This is a local status read only. It never sends text to an embedding
