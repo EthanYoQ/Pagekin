@@ -10,7 +10,6 @@ const EMBEDDING_MODEL = Object.freeze({ ...FAKE_MODEL, id: 'm33-embedding', name
 const GENERIC_SHOWN = '保存失败：这次操作没有完成，出了意外问题。请再试一次；还不行，请把这条提示反馈给我们。'
 
 export const M33_SCENARIOS = {
-  // 保存项目副本时把正文换成 null：知识库层返回没登记的 KNOWLEDGE_BASE_COPY_REQUEST_INVALID，经真实的 handle() 交给界面。
   'm33-ipc-generic-failure': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     assert.equal((await invoke(page, 'llm:save-model', EMBEDDING_MODEL)).success, true)
     assert.equal((await invoke(page, 'llm:set-default-embedding-model', EMBEDDING_MODEL.id)).success, true)

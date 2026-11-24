@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import { REPO_ROOT } from './helpers/repo-source-files'
 import BASELINE from '../electron/ipc/direct-handle-baseline.json'
 
-// 迁到 handle() 的文件也从这里删掉，名单就不能再把它加回去。
 const ORIGINAL_BASELINE: readonly string[] = [
   'electron/controllers/app-data-controller.ts',
   'electron/controllers/chapter-lifecycle-controller.ts',
