@@ -759,6 +759,33 @@ describe('流程脊与单章视图同一个阶段', () => {
     await expect.element(page.getByRole('button', { name: '完成合并' })).not.toBeInTheDocument()
   })
 
+  it('先点「查看修稿」读旧修稿、没读完又点「打开修稿合并」：旧修稿晚到也不换掉正在合并的修稿', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    const old = backend.addRevision(draft, 'refine')
+    old.source = null
+    backend.addRevision(draft, 'refine')
+    await mountWithSpine()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    await click('稍后再合并')
+    const answer = backend.invoke.getMockImplementation()!
+    let releaseOld!: () => void
+    const heldOld = new Promise<void>(resolve => { releaseOld = resolve })
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'db:revision-get-full' && args[0] === old.id) await heldOld
+      return answer(channel, ...args)
+    })
+    await click('查看修稿')
+    await click('打开修稿合并')
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+
+    await act(async () => releaseOld())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    await expect.element(page.getByText('修订仍可查看但不能合并', { exact: false })).not.toBeInTheDocument()
+  })
+
   it('有两份能合并的修稿：合并视图摆的是最新的一份', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     backend.addRevision(draft, 'refine')

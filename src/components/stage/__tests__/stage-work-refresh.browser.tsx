@@ -12,7 +12,7 @@ import { useDraftStore } from '../../../stores/draft-store'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
 import StageSpine from '../StageSpine'
-import { useStageView, useStageWorkRefresh } from '../use-stage-work'
+import { refreshStageWork, useStageView, useStageWorkRefresh } from '../use-stage-work'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -111,5 +111,35 @@ describe('放弃大纲恢复稿后流程脊的架构状态（#608）', () => {
 
     await announce(CURRENT)
     await expectArchitectureState('done')
+  })
+})
+
+describe('流程脊连读两次', () => {
+  it('先发的那次读取后回来：流程脊用后一次读到的蓝图', async () => {
+    const api = window.aiNovelAPI as unknown as { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> }
+    const answer = api.invoke
+    let releaseFirst!: () => void
+    const held = new Promise<void>(resolve => { releaseFirst = resolve })
+    let reads = 0
+    Object.defineProperty(window, 'aiNovelAPI', { configurable: true, value: { ...api, invoke: async (channel: string, ...args: unknown[]) => {
+      if (channel !== 'db:blueprint-get-all') return answer(channel, ...args)
+      reads += 1
+      if (reads === 1) {
+        await held
+        return [{ chapterNumber: 1, title: '先发那次读到的旧标题' }]
+      }
+      return [{ chapterNumber: 1, title: '第一盏灯' }]
+    } } })
+    const text = (zh: string) => zh
+    const older = refreshStageWork(text)
+    await act(async () => refreshStageWork(text))
+    expect(useStageStore.getState().work?.blueprints).toEqual([{ chapterNumber: 1, title: '第一盏灯' }])
+
+    await act(async () => {
+      releaseFirst()
+      await older
+    })
+
+    expect(useStageStore.getState().work?.blueprints).toEqual([{ chapterNumber: 1, title: '第一盏灯' }])
   })
 })

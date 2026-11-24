@@ -12,6 +12,7 @@ import {
 } from '../../../shared/blueprint-continuity-check'
 import type { ContinuityNode } from '../../../shared/character-continuity'
 import { exemptedFactKeys, type ConsistencyExemption } from '../../../shared/consistency-preflight'
+import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { globalEventBus } from '../../../shared/event-bus'
 import { routeStageModel } from '../../../shared/model-stage-routing'
@@ -53,7 +54,7 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
   const [exempted, setExempted] = useState<Exempted | null>(null)
   const [busy, setBusy] = useState(false)
   const checked = useRef(false)
-  const recovery = useRef(0)
+  const reportReads = useRef(new LatestRequestGate())
   const shownRun = useRef<ContinuityReport['handle'] | null>(null)
   const mounted = useRef(false)
   useEffect(() => {
@@ -71,12 +72,12 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
 
   /** 结论记的是读取当时的来源状态；蓝图保存后重读，章改回原样时才不会让整份结论一直判作过期。 */
   const recoverLatest = useCallback((session: ProjectSessionContext, applies: () => boolean, keepShown: boolean) => {
-    const request = ++recovery.current
+    const request = reportReads.current.begin()
     void readLatestContinuityReport(session)
       .then(async latest => {
         const shown = keepShown ? shownRun.current : null
         const next = shown && shown.runId !== latest?.handle.runId ? await readContinuityReport(session, shown) : latest
-        if (applies() && request === recovery.current && !checked.current) setReport(next)
+        if (applies() && reportReads.current.isLatest(request) && !checked.current) setReport(next)
       }).catch(() => {})
   }, [])
 

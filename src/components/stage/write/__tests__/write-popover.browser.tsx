@@ -306,6 +306,27 @@ describe('写前的线索：延后与指定本章推进', () => {
     await expect.element(hint(1)).toBeVisible()
   })
 
+  it('打开弹层时发出的列表读取在延后之后才回来：这一行仍是已延后', async () => {
+    threadViews = [threadView(1, '青铜钥匙', 1, 5)]
+    const beforeDefer = threadViews
+    let finishOpenList: (() => void) | null = null
+    let lists = 0
+    threadIpc = async (channel, ...args) => {
+      if (channel === 'db:narrative-thread-list' && ++lists === 2) return new Promise(resolve => { finishOpenList = () => resolve(beforeDefer) })
+      return storedThreadIpc(channel, ...args)
+    }
+    await renderPopover()
+    await act(async () => hint(1).click())
+    await vi.waitFor(() => expect(finishOpenList).toBeTypeOf('function'))
+    await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后一章' }).click())
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 6 章')
+
+    await act(async () => finishOpenList!())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    await expect.element(threadRow('青铜钥匙')).toHaveTextContent('已延到第 6 章')
+  })
+
   it('延后三章从正在写的章算，撤销后回到原来的逾期章数', async () => {
     threadViews = [threadView(1, '青铜钥匙', 1, 2)]
     await renderPopover()

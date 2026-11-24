@@ -136,15 +136,30 @@ describe('architecture file external refresh protection', () => {
     })()
 
     visibleContent = 'edited and saved content'
-    gate.recordContentChange()
-    // 保存开始与保存成功都会让此前的 reload 失效。
-    gate.invalidate()
     gate.invalidate()
     resolveReload('stale reload content')
     await delayedReload
 
     expect(visibleContent).toBe('edited and saved content')
     expect(gate.isCurrent(gate.begin())).toBe(true)
+  })
+
+  it('keeps the newer reload when an older reload of the same document returns last', async () => {
+    const gate = new ArchReloadGate()
+    let visibleContent = 'old disk content'
+    const reload = (response: Promise<string>) => (async () => {
+      const token = gate.begin()
+      const content = await response
+      if (gate.isCurrent(token)) visibleContent = content
+    })()
+    let resolveOlder!: (content: string) => void
+    const older = reload(new Promise<string>(resolve => { resolveOlder = resolve }))
+    await reload(Promise.resolve('newer reload content'))
+
+    resolveOlder('older reload content')
+    await older
+
+    expect(visibleContent).toBe('newer reload content')
   })
 
   it('ignores the editor store echo of the current local content', () => {

@@ -12,7 +12,7 @@ import {
   shouldRefreshArchOnWorkflowComplete,
   shouldSyncProjectArchTab,
 } from './arch-file-refresh-policy'
-import { LatestRequestGate } from './latest-request-gate'
+import { LatestRequestGate } from '../../shared/latest-request-gate'
 import {
   canExplicitlyRepairCharacterRoster,
   getCharacterRosterRepairPresentation,

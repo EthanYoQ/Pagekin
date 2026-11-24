@@ -103,6 +103,21 @@ describe('CharacterRosterRepairController public seam', () => {
     expect(harness.state.repairError).toBeNull()
   })
 
+  it('keeps the newer roster when an older read in the same session returns last', async () => {
+    const older = deferred<CharacterRosterSnapshot>()
+    const read = vi.fn()
+      .mockImplementationOnce(() => older.promise)
+      .mockResolvedValueOnce(readySnapshot)
+    const harness = createHarness({ read })
+
+    const loadingOlder = harness.controller.load()
+    await harness.controller.load()
+    older.resolve(pendingSnapshot)
+    await loadingOlder
+
+    expect(harness.state.snapshot).toEqual(readySnapshot)
+  })
+
   it('runs one explicit legacy roster migration, clears a prior repair error, and refreshes the authoritative roster', async () => {
     const migrate = vi.fn().mockResolvedValue(undefined)
     const read = vi.fn().mockResolvedValue(readySnapshot)

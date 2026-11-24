@@ -1,7 +1,7 @@
 import type { MainGenerationRunHandle } from '../../services/generation/generation-runtime'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import type { CharacterRosterSnapshot } from '../../shared/character-roster'
-import { LatestRequestGate } from './latest-request-gate'
+import { LatestRequestGate } from '../../shared/latest-request-gate'
 
 export interface CharacterRosterRepairState {
   snapshot: CharacterRosterSnapshot | null
