@@ -468,7 +468,7 @@ describe('ProjectBackupPanel', () => {
     ['en-US', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: false }],
       'Local archive exported: sha-1. A damaged review record in Chapter 2 "沉船" was left out of the archive. The text and other reviews are included.'],
     ['ja-JP', [{ chapterNumber: 2, chapterTitle: '沉船', inTrash: true }],
-      'Local archive exported: sha-1. ゴミ箱の第2章「沉船」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。'],
+      'ローカルアーカイブをエクスポートしました：sha-1。ゴミ箱の第2章「沉船」のレビュー記録が破損していたため、アーカイブに含めませんでした。本文とその他のレビュー内容は含まれています。'],
   ] as const)('导出存档有坏循环没放进去（%s）：成功提示后面指明章节（#702）', async (locale, omittedReviewCycles, expected) => {
     useLocaleStore.setState({ interfaceLocale: locale, locale: copyLocale(locale) })
     invoke.mockImplementation(async (channel: string) => {
@@ -479,7 +479,7 @@ describe('ProjectBackupPanel', () => {
     })
     await renderPanel()
 
-    await act(async () => button(locale === 'zh-CN' ? '导出本地存档' : 'Export local archive').click())
+    await act(async () => button({ 'zh-CN': '导出本地存档', 'en-US': 'Export local archive', 'ja-JP': 'ローカルアーカイブをエクスポート' }[locale]).click())
     expect(container.querySelector('[role="status"]')?.textContent).toBe(expected)
   })
 

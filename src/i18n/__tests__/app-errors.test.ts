@@ -509,18 +509,18 @@ describe('archiveFailureMessage', () => {
   })
 
   it.each([
-    ['PORTABLE_GRANT_INVALID', 'コピーは作成されていません。選んだアーカイブまたはフォルダーは無効になりました。もう一度「Restore a copy from local archive」をクリックして選び直してください。'],
-    ['PORTABLE_RESTORE_ARCHIVE_MISSING', 'コピーは作成されていません。選んだアーカイブが見つかりません。もう一度「Restore a copy from local archive」をクリックして選び直してください。'],
-    ['PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'コピーは作成されていません。選んだアーカイブを読み込めません。権限がないか、ほかのプログラムが使用中の可能性があります。別のアーカイブを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。'],
-    ['PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '選んだフォルダーに書き込めません。権限がないか、ディスクがいっぱいの可能性があります。途中までのコピーのフォルダーが残っていれば削除してかまいません。別のフォルダーを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。'],
-    ['PORTABLE_RESTORE_UNSAFE_TARGET', '選んだフォルダーには安全に書き込めません。途中までのコピーのフォルダーが残っていれば削除してかまいません。別のフォルダーを選んでから、もう一度「Restore a copy from local archive」をクリックしてください。'],
-    ['PORTABLE_RESTORE_FAILED', '復元中に予期しない問題が発生しました。選んだフォルダーに途中までのコピーのフォルダーが残っていれば削除してかまいません。もう一度「Restore a copy from local archive」をクリックしてください。それでも失敗する場合は、このメッセージをご報告ください。'],
+    ['PORTABLE_GRANT_INVALID', 'コピーは作成されていません。選んだアーカイブまたはフォルダーは無効になりました。もう一度「ローカルアーカイブからコピーを復元」をクリックして選び直してください。'],
+    ['PORTABLE_RESTORE_ARCHIVE_MISSING', 'コピーは作成されていません。選んだアーカイブが見つかりません。もう一度「ローカルアーカイブからコピーを復元」をクリックして選び直してください。'],
+    ['PORTABLE_RESTORE_ARCHIVE_UNREADABLE', 'コピーは作成されていません。選んだアーカイブを読み込めません。権限がないか、ほかのプログラムが使用中の可能性があります。別のアーカイブを選んでから、もう一度「ローカルアーカイブからコピーを復元」をクリックしてください。'],
+    ['PORTABLE_ARCHIVE_TARGET_UNWRITABLE', '選んだフォルダーに書き込めません。権限がないか、ディスクがいっぱいの可能性があります。途中までのコピーのフォルダーが残っていれば削除してかまいません。別のフォルダーを選んでから、もう一度「ローカルアーカイブからコピーを復元」をクリックしてください。'],
+    ['PORTABLE_RESTORE_UNSAFE_TARGET', '選んだフォルダーには安全に書き込めません。途中までのコピーのフォルダーが残っていれば削除してかまいません。別のフォルダーを選んでから、もう一度「ローカルアーカイブからコピーを復元」をクリックしてください。'],
+    ['PORTABLE_RESTORE_FAILED', '復元中に予期しない問題が発生しました。選んだフォルダーに途中までのコピーのフォルダーが残っていれば削除してかまいません。もう一度「ローカルアーカイブからコピーを復元」をクリックしてください。それでも失敗する場合は、このメッセージをご報告ください。'],
   ] as const)('日文界面恢复报 %s：说清原因和下一步，不露原码（#702）', (code, expected) => {
     expect(archiveFailureMessage(shown('ja-JP'), 'restore', code)).toBe(expected)
   })
 
   it('日文界面导出时作品文件读不了：说是作品文件被占用，不叫作者换位置（#702）', () => {
-    expect(archiveFailureMessage(shown('ja-JP'), 'export', 'PORTABLE_EXPORT_SOURCE_UNREADABLE')).toBe('作品は変更されていません。作品のファイルを読み込めません。同期アプリやウイルス対策ソフトが使用中の可能性があります。少し待ってから、もう一度「Export local archive」をクリックしてください。')
+    expect(archiveFailureMessage(shown('ja-JP'), 'export', 'PORTABLE_EXPORT_SOURCE_UNREADABLE')).toBe('作品は変更されていません。作品のファイルを読み込めません。同期アプリやウイルス対策ソフトが使用中の可能性があります。少し待ってから、もう一度「ローカルアーカイブをエクスポート」をクリックしてください。')
   })
 })
 
