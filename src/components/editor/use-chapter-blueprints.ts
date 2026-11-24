@@ -42,7 +42,7 @@ import {
   type DraftState,
   type EditableChapterBlueprintField,
 } from './chapter-card-draft-ledger'
-import { LatestRequestGate } from './latest-request-gate'
+import { LatestRequestGate } from '../../shared/latest-request-gate'
 import type { SaveOutcome } from './save-feedback'
 import { readWritableChapters } from '../../services/authoritative-chapter-sequence'
 import type { ChapterGap } from '../../shared/chapter-sequence'
