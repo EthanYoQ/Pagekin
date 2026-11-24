@@ -13,7 +13,7 @@
 <p align="center"><sub>原名「AI 小说作家 / AI Novel Writer」</sub></p>
 
 <p align="center">
-  <strong>书童（Pagekin）是一款免费开源的 AI 写小说桌面软件，适用于 Windows 和 macOS，给想用 AI 写长篇小说的作者用。</strong><br />
+  <strong>书童（Pagekin）是一款免费开源的 AI 小说写作软件，适合在 Windows 和 macOS 上进行长篇小说和网文写作。</strong><br />
   从设定、架构、角色、章节蓝图到正文的写作、审稿、修稿、定稿，一章一章把书写完。也能拆解参考小说来仿写、导入自己的原稿接着续写，或按你的意见改写。<br />
   本地优先：作品存在你自己的电脑上。软件不带模型：接你自己的 API Key（DeepSeek、OpenAI、Gemini、智谱等），或用 Ollama 跑本地模型。
 </p>
@@ -23,7 +23,8 @@
 <p align="center">
   <a href="https://github.com/EthanYoQ/Pagekin/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-Windows%20%7C%20macOS-2b4c8c?style=for-the-badge" alt="下载 Windows 与 macOS 安装包" /></a><br />
   <a href="https://www.orz.md/ai-novel-writer/demo/">观看 32 秒中文实录：选段续写与改成对话</a><br />
-  <sub>1.3.0 实录，模型等待段已剪短，AI 配音；32 秒是片长，不是生成耗时。</sub>
+  <sub>1.3.0 实录，模型等待段已剪短，AI 配音；32 秒是片长，不是生成耗时。</sub><br />
+  <a href="docs/long-form-fiction-workflow.zh.md">网文写作实战：检查人物、伏笔和跨章矛盾</a>
 </p>
 
 <p align="center">
