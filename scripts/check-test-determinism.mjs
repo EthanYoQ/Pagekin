@@ -1,4 +1,4 @@
-// 拦截两类 CI 慢机上才会红的测试写法（#620、#818）：墙钟差值与固定上限比较；读 fs.watch 回调的文件名（macOS 上可能为 null）。
+// 拦截两类 CI 慢机上才会红的测试写法（#620、#818）：墙钟差值与固定上限比较；fs.watch 回调声明文件名参数（macOS 上可能为 null）。
 // 只拦新增：现有命中记在 test-determinism-baseline.json，按 文件 + 规则 + 命中文本 计数，不看行号，改动无关行不会让基线失效。
 
 import fs from 'node:fs'
@@ -12,8 +12,8 @@ const SCRIPT_KINDS = { '.ts': ts.ScriptKind.TS, '.mts': ts.ScriptKind.TS, '.cts'
 const MAY_HIT = /Date\.now|performance\.now|hrtime|\bwatch\b/u
 
 const RULES = {
-  'wall-clock-limit': '墙钟上限断言：慢机上会误报。等条件本身成立（轮询加截止时间），或用 vi.useFakeTimers；测速度放进 scripts/redesign 的 perf702 实机计时场景',
-  'fs-watch-filename': 'fs.watch 读回调文件名：macOS 上可能为 null。改为比对目录前后快照，或只把事件当作有变化的信号再去读目录',
+  'wall-clock-limit': '墙钟上限断言：慢机上会误报。等条件本身成立（轮询加截止时间）；测速度放进 scripts/redesign 的 perf702 实机计时场景',
+  'fs-watch-filename': 'fs.watch 回调声明了文件名参数：macOS 上可能为 null。不用文件名就别声明第二个参数；要知道哪个文件变了，比对目录前后快照，或只把事件当作有变化的信号再去读目录',
 }
 
 const isTestFile = relative => relative.startsWith('test/') || relative.split('/').includes('__tests__')
@@ -58,35 +58,6 @@ function declarationResolver() {
     }
     return undefined
   }
-}
-
-const isFakeTimersCall = node => ts.isCallExpression(node) && node.expression.getText().endsWith('.useFakeTimers')
-const isRealTimersCall = node => ts.isCallExpression(node) && node.expression.getText().endsWith('.useRealTimers')
-const isHook = node => ts.isCallExpression(node) && ['beforeEach', 'beforeAll'].includes(node.expression.getText())
-
-function lastTimerMode(node) {
-  let mode = null
-  const visit = n => {
-    if (isFakeTimersCall(n)) mode = true
-    else if (isRealTimersCall(n)) mode = false
-    ts.forEachChild(n, visit)
-  }
-  visit(node)
-  return mode
-}
-
-function usesFakeTimers(node) {
-  for (let scope = node.parent; scope; scope = scope.parent) {
-    let mode = null
-    for (const statement of scope.statements ?? []) {
-      if (statement.pos <= node.pos && node.end <= statement.end) break
-      const call = ts.isExpressionStatement(statement) ? statement.expression : null
-      const set = call && (isFakeTimersCall(call) || isRealTimersCall(call) || isHook(call)) ? lastTimerMode(call) : null
-      if (set !== null) mode = set
-    }
-    if (mode !== null) return mode
-  }
-  return false
 }
 
 function wallClockHits(sf) {
@@ -153,13 +124,13 @@ function wallClockHits(sf) {
       let target = node.expression
       while (ts.isPropertyAccessExpression(target)) { chain.unshift(target.name.text); target = target.expression }
       if (ts.isCallExpression(target) && ['expect', 'expect.soft'].includes(target.expression.getText()) && target.arguments[0]
-        && assertsUpperBound(target.arguments[0], chain.filter(part => part !== 'resolves'), node) && !usesFakeTimers(node)) {
+        && assertsUpperBound(target.arguments[0], chain.filter(part => part !== 'resolves'), node)) {
         hits.push(node)
         return
       }
     }
     if (ts.isCallExpression(node) && ['assert', 'assert.ok'].includes(node.expression.getText()) && node.arguments[0]
-      && boundsAbove(node.arguments[0], true) && !usesFakeTimers(node)) {
+      && boundsAbove(node.arguments[0], true)) {
       hits.push(node)
       return
     }
@@ -217,11 +188,7 @@ function watchKind(call, bindings, resolve) {
   return null
 }
 
-function readsFileName(fn) {
-  if (!(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) || fn.parameters.length < 2 || !ts.isIdentifier(fn.parameters[1].name)) return false
-  const name = fn.parameters[1].name.text
-  return some(fn.body, n => ts.isIdentifier(n) && n.text === name && n.parent.name !== n)
-}
+const declaresFileName = fn => (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && fn.parameters.length >= 2
 
 function watchFileNameHits(sf) {
   const bindings = fsBindings(sf)
@@ -237,12 +204,12 @@ function watchFileNameHits(sf) {
   const report = (node, label, fn) => hits.push({ rule: 'fs-watch-filename', node, hit: normalize(`${label} (${fn.parameters.map(p => p.getText()).join(', ')})`) })
   const visit = node => {
     if (ts.isCallExpression(node) && watchKind(node, bindings, resolve) === 'callback') {
-      const fn = node.arguments.find(readsFileName)
+      const fn = node.arguments.find(declaresFileName)
       if (fn) report(node, node.expression.getText(), fn)
     }
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ['on', 'once', 'addListener'].includes(node.expression.name.text)
       && kindOf(node.expression.expression) === 'callback') {
-      const fn = node.arguments.find(readsFileName)
+      const fn = node.arguments.find(declaresFileName)
       if (fn) report(node, `${node.expression.expression.getText()}.${node.expression.name.text}`, fn)
     }
     if (ts.isForOfStatement(node) && node.awaitModifier && kindOf(node.expression) === 'promise' && ts.isVariableDeclarationList(node.initializer)) {
