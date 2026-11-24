@@ -75,7 +75,7 @@ jobs:
           node -e "const fs = require('node:fs'); const os = require('node:os'); const original = os.tmpdir(); const physical = fs.realpathSync.native(original); fs.appendFileSync(process.env.GITHUB_ENV, 'TMPDIR=' + physical + '\n'); console.log('tempAlias=' + (physical !== original))"
 
       - name: Run node test suite
-        run: pnpm test --reporter=default --reporter=json --outputFile.json="$UNIT_REPORT"
+        run: pnpm test --reporter=default --reporter=github-actions --reporter=json --outputFile.json="$UNIT_REPORT"
 
       - name: Upload vitest report
         if: ${{ failure() }}
