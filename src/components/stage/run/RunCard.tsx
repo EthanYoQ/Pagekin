@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronRight, CircleCheck, CircleDashed, CircleMinus, CircleX, Pause, Play } from 'lucide-react'
-import { displayedErrorMessage, registeredErrorCode } from '../../../i18n/app-errors'
+import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { errorLocaleForRun } from '../../../i18n/core'
 import { pluralEn } from '../../../shared/plural-en'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -221,7 +221,7 @@ function RunStep({ step, runStatus, runLocale, live, reasoning, open, onToggle, 
             </details>
           )}
           {output.content && <StepOutput content={output.content} live={live} text={text} />}
-          {step.error && <p className="run-step-error">{displayedErrorMessage(locale, registeredErrorCode(step.errorCode) ?? step.error)}</p>}
+          {step.error && <p className="run-step-error">{displayedErrorMessage(locale, step.error)}</p>}
         </div>
       )}
     </li>

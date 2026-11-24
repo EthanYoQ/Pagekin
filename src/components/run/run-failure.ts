@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { displayedErrorMessage, registeredErrorCode } from '../../i18n/app-errors'
+import { displayedErrorMessage } from '../../i18n/app-errors'
 import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE } from '../../services/workflows/commands/architecture.command'
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { projectSessionContextFromProject, sameProjectPathKey, sameProjectSessionContext } from '../../shared/project-session-context'
@@ -29,7 +29,7 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
     title: run.title,
     presentation: presentWorkflowFailure(
       run.failureCode ?? currentStep?.failureCode,
-      registeredErrorCode(run.errorCode) ?? registeredErrorCode(failedStep?.errorCode) ?? (run.error || currentStep?.error),
+      run.error || currentStep?.error,
       errorLocaleForRun(run.uiLocale, interfaceLocale),
       run.type === 'chapter_creation' && run.chapterWordsTarget !== undefined && !(currentStep?.result || '').trim(),
       run.promptBudgetReport ?? currentStep?.promptBudgetReport,
