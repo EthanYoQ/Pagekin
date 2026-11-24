@@ -42,6 +42,7 @@ export function useShelfOverview() {
   // 当前作品与预览各占一格：预览别的书不会冲掉当前作品已读到的概览，回到当前作品时直接显示。
   const [currentResult, setCurrentResult] = useState<{ requestKey: string; overview: ProjectOverview } | null>(null)
   const [previewResult, setPreviewResult] = useState<{ requestKey: string; overview: ProjectOverview } | null>(null)
+  const currentReads = useRef(new LatestRequestGate())
   const previewReads = useRef(new LatestRequestGate())
 
   useEffect(() => {
@@ -56,19 +57,19 @@ export function useShelfOverview() {
   }, [])
 
   useEffect(() => {
+    const reads = currentReads.current
+    const requestId = reads.begin()
     if (!currentKey) return
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session) return
     const requestKey = `current:${currentKey}`
+    const isCurrent = () => reads.isLatest(requestId) && isProjectSessionCurrent(session)
     void ipc.invokeWithProjectSession(session, 'project:overview-current').then(result => {
-      if (isProjectSessionCurrent(session)) {
-        setCurrentResult({ requestKey, overview: result })
-      }
+      if (isCurrent()) setCurrentResult({ requestKey, overview: result })
     }).catch(() => {
-      if (isProjectSessionCurrent(session)) {
-        setCurrentResult({ requestKey, overview: { state: 'unavailable' } })
-      }
+      if (isCurrent()) setCurrentResult({ requestKey, overview: { state: 'unavailable' } })
     })
+    return () => { reads.begin() }
   }, [currentKey])
 
   // 预览的书被移出最近项目后，选择随之作废，概览回到当前作品。

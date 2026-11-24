@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { act } from 'react'
+import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { StoreApi } from 'zustand'
 
@@ -46,7 +46,7 @@ async function answer(call: Call | undefined, value: unknown) {
   await act(async () => { await Promise.resolve() })
 }
 
-async function renderHook<T>(use: () => T): Promise<() => T> {
+async function renderHook<T>(use: () => T, { strict = false } = {}): Promise<() => T> {
   let latest!: T
   function Probe() {
     latest = use()
@@ -55,7 +55,7 @@ async function renderHook<T>(use: () => T): Promise<() => T> {
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  await act(async () => root!.render(<Probe />))
+  await act(async () => root!.render(strict ? <StrictMode><Probe /></StrictMode> : <Probe />))
   return () => latest
 }
 
@@ -146,5 +146,15 @@ describe('同一资源连读两次，先发的读取后回来', () => {
     await answer(older, { state: 'ready', title: '雨夜列车' })
 
     expect(result().overview).toEqual({ state: 'ready', title: '雪国' })
+  })
+
+  it('书房当前作品：同一会话读了两次（StrictMode 重放），先发的那次后回来也不盖掉后一次', async () => {
+    const result = await renderHook(() => useShelfOverview(), { strict: true })
+    const [older, newer] = pending('project:overview-current')
+
+    await answer(newer, { state: 'ready', title: '雨夜列车 · 新' })
+    await answer(older, { state: 'ready', title: '雨夜列车 · 旧' })
+
+    expect(result().overview).toEqual({ state: 'ready', title: '雨夜列车 · 新' })
   })
 })
