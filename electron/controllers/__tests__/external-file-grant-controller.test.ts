@@ -32,6 +32,7 @@ import {
   externalFileGrantCodes,
   secureFileSystemCodes,
 } from '../../../test/helpers/external-file-read-codes'
+import { repoSourceFiles } from '../../../test/helpers/repo-source-files'
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-external-grant-controller-'))
 
@@ -373,7 +374,7 @@ describe('授权通过后读文件失败，说读文件的原因而不是授权�
   )
 
   it('安全文件层的每个码在读文件阶段都落到读文件说明，不落到授权文案', async () => {
-    const codes = secureFileSystemCodes()
+    const codes = secureFileSystemCodes(repoSourceFiles('electron/security'))
     expect(codes).toEqual(expect.arrayContaining(['SECURE_FS_INVALID_TEXT', 'SECURE_FS_ROOT_CHANGED', 'SECURE_FS_HELPER_FAILED']))
     for (const code of codes) {
       const result = await readFailingWith(code)

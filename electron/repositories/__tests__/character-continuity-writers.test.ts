@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 
 const WRITES = [
   /(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|DELETE\s+FROM|UPDATE)\s+character_relationships\b/iu,
@@ -13,14 +14,6 @@ const REGISTERED_WRITERS: Readonly<Record<string, string>> = {
   'electron/repositories/character-continuity-repository.ts': '收口：写业务列并在同一事务追加节点',
   'electron/services/legacy-project-copy-import.ts': '旧版项目复制是整库导入，事务末尾由 insertContinuityBaseline 补基线节点',
   'electron/migrations/baseline-schema.ts': '迁移：只把哨兵 0 改成 NULL，不写值列',
-}
-
-function sourceFiles(directory: string): string[] {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    const full = path.join(directory, entry.name)
-    if (entry.isDirectory()) return entry.name === '__tests__' ? [] : sourceFiles(full)
-    return entry.name.endsWith('.ts') ? [full.split(path.sep).join('/')] : []
-  })
 }
 
 const isCharacterWrite = (text: string) => WRITES.some(pattern => pattern.test(text))
@@ -43,9 +36,8 @@ describe('角色状态与关系的写入方', () => {
   ])('不误报：%#', sql => expect(isCharacterWrite(sql)).toBe(false))
 
   it('每个写入方都走收口函数或登记了不追加节点的理由', () => {
-    const writers = sourceFiles('electron').filter(file => {
-      return isCharacterWrite(fs.readFileSync(file, 'utf8'))
-    })
+    const writers = repoSourceFiles('electron').filter(file => !file.includes('/__tests__/') && file.endsWith('.ts'))
+      .filter(file => isCharacterWrite(fs.readFileSync(path.join(REPO_ROOT, file), 'utf8')))
     expect(writers.sort()).toEqual(Object.keys(REGISTERED_WRITERS).sort())
   })
 })
