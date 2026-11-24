@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DamagedTrashEntry, TrashedChapter } from '../../../shared/chapter-deletion'
 import { globalEventBus } from '../../../shared/event-bus'
+import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import { sameProjectSessionContext } from '../../../shared/project-session-context'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { ipc } from '../../../services/ipc-client'
@@ -26,10 +27,10 @@ export function announceTrashChanged(projectSession: ProjectSessionContext): voi
 export function useChapterTrash(): ChapterTrash | null {
   const currentProject = useProjectStore(s => s.currentProject)
   const [state, setState] = useState<{ session: ProjectSessionContext | null; trash: ChapterTrash | null }>({ session: null, trash: null })
-  const sequence = useRef(0)
+  const trashReads = useRef(new LatestRequestGate())
 
   const load = useCallback(async (session: ProjectSessionContext) => {
-    const request = ++sequence.current
+    const request = trashReads.current.begin()
     let trash: ChapterTrash | null = null
     try {
       const result = await ipc.invokeWithProjectSession(session, 'chapter:trash-list', session.projectPath)
@@ -41,7 +42,7 @@ export function useChapterTrash(): ChapterTrash | null {
     } catch {
       // 回收站读不到不影响写作，下次删除、恢复或重新打开作品时再读。
     }
-    if (request !== sequence.current || !isProjectSessionCurrent(session)) return
+    if (!trashReads.current.isLatest(request) || !isProjectSessionCurrent(session)) return
     // 读失败时保留这个作品上一次读到的列表，记为过期。
     setState(previous => ({
       session,

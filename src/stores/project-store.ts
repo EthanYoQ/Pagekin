@@ -10,6 +10,7 @@ import type {
   NovelConfig,
 } from '../shared/ipc-channels'
 import type { AiSources } from '../shared/novel-config-ai-sources'
+import { LatestRequestGate } from '../shared/latest-request-gate'
 import { alertError } from '../components/ui/AlertDialog'
 import { showFinalizationRepairNotice } from '../components/finalization-repair-notice'
 import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
@@ -49,7 +50,7 @@ import {
 } from '../services/project-transition'
 
 let openProjectRequestSequence = 0
-let recentProjectsRequestSequence = 0
+const recentProjectsReads = new LatestRequestGate()
 let closeProjectInFlight: Promise<boolean> | null = null
 let projectRecoveryInFlight: Promise<void> | null = null
 
@@ -1062,16 +1063,16 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   loadRecentProjects: async () => {
-    const requestId = ++recentProjectsRequestSequence
+    const requestId = recentProjectsReads.begin()
     let list: ProjectChannels['project:recent-list']['return']
     try {
       list = await ipc.invoke('project:recent-list')
     } catch (error) {
       // 读不到也算读过：书房据此显示空书房，而不是一直停在等待里。
-      if (requestId === recentProjectsRequestSequence) set({ recentProjectsLoaded: true })
+      if (recentProjectsReads.isLatest(requestId)) set({ recentProjectsLoaded: true })
       throw error
     }
-    if (requestId !== recentProjectsRequestSequence) return
+    if (!recentProjectsReads.isLatest(requestId)) return
     const seenProjectPaths = new Set<string>()
     const recentProjects = list.filter((project) => {
       const key = projectPathKey(project.path) ?? project.path

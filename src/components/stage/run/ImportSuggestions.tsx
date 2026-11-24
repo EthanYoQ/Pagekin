@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { ImportFillField, ImportFillSuggestion } from '../../../shared/import-fill-empty'
+import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
 import { activeInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
@@ -58,7 +59,7 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
     { session: null, items: [] })
   const [busy, setBusy] = useState(false)
   // 只采用最近一次发起的读取：采用期间切换语言会再读一次，它读到的是采用前的建议，晚到时不能盖住采用后的结果。
-  const latestLoad = useRef(0)
+  const suggestionReads = useRef(new LatestRequestGate())
   const activeSession = useRef(session)
   const current = loaded.session === session
   const items = current ? loaded.items : []
@@ -70,10 +71,10 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
 
   useEffect(() => {
     activeSession.current = session
-    const load = ++latestLoad.current
-    void reload().then(next => { if (latestLoad.current === load) setLoaded({ session, items: next }) })
+    const load = suggestionReads.current.begin()
+    void reload().then(next => { if (suggestionReads.current.isLatest(load)) setLoaded({ session, items: next }) })
       .catch(failure => {
-        if (latestLoad.current === load) setLoaded(previous => ({ session, items: previous.session === session ? previous.items : [], failure: { reason: failure } }))
+        if (suggestionReads.current.isLatest(load)) setLoaded(previous => ({ session, items: previous.session === session ? previous.items : [], failure: { reason: failure } }))
       })
   }, [locale, reload, session])
 
@@ -84,9 +85,9 @@ export function ImportSuggestions({ run }: { run: WorkflowRun }) {
     try {
       await adoptImportSuggestions(chosen, session, run.projectPath, run.id)
       if (activeSession.current !== session) return
-      const load = ++latestLoad.current
+      const load = suggestionReads.current.begin()
       const next = await reload()
-      if (latestLoad.current === load) setLoaded(previous => previous.session === session ? { session, items: next } : previous)
+      if (suggestionReads.current.isLatest(load)) setLoaded(previous => previous.session === session ? { session, items: next } : previous)
     } catch (failure) {
       setLoaded(previous => previous.session === session ? { ...previous, failure: { reason: failure } } : previous)
     } finally {

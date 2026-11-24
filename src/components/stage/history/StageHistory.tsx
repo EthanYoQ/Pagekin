@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Lock, RotateCcw } from 'lucide-react'
 import { DRAFT_STATUS_INFO } from '../../../shared/draft-status'
+import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import { useDraftStore } from '../../../stores/draft-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { displayedErrorMessage } from '../../../i18n/app-errors'
@@ -93,7 +94,7 @@ export default function StageHistory({ projectKey }: { projectKey: string }) {
   const [missingPicked, setMissingPicked] = useState(false)
   const [reverting, setReverting] = useState(false)
   const [revertOpen, setRevertOpen] = useState(false)
-  const comparisonRequest = useRef(0)
+  const comparisonReads = useRef(new LatestRequestGate())
 
   const draftCounts = sameProjectSessionContext(draftSession, projectSessionContextFromProject(project)) ? draftsByChapter : null
   const ordered = useMemo(() => [...versions].sort((left, right) => right.version - left.version), [versions])
@@ -116,7 +117,7 @@ export default function StageHistory({ projectKey }: { projectKey: string }) {
   }
 
   const pickChapter = (chapterNumber: number) => {
-    comparisonRequest.current++
+    comparisonReads.current.begin()
     setSelectedVersionId(null)
     setComparison(null)
     setMissingPicked(false)
@@ -129,13 +130,13 @@ export default function StageHistory({ projectKey }: { projectKey: string }) {
   }
 
   const pickVersion = async (versionId: number) => {
-    const request = ++comparisonRequest.current
+    const request = comparisonReads.current.begin()
     setSelectedVersionId(versionId)
     setComparison(null)
     setMissingPicked(false)
     try {
       const next = await readComparison(versionId)
-      if (request !== comparisonRequest.current) return
+      if (!comparisonReads.current.isLatest(request)) return
       if (next === 'missing') {
         // 这一稿已被删掉：说明一句，并重读各稿与左列稿数把它去掉。
         setSelectedVersionId(null)
@@ -147,7 +148,7 @@ export default function StageHistory({ projectKey }: { projectKey: string }) {
         setSelectedVersionId(null)
       } else setComparison(next)
     } catch (error) {
-      if (request !== comparisonRequest.current) return
+      if (!comparisonReads.current.isLatest(request)) return
       setSelectedVersionId(null)
       const reason = displayedErrorMessage(currentInterfaceLocale(), error)
       toast.error(text(`读取这一稿失败：${reason}`, `Could not read this version: ${reason}`))
@@ -166,7 +167,7 @@ export default function StageHistory({ projectKey }: { projectKey: string }) {
         ? text('已新建回滚草稿，原有各稿都保留', 'Rollback draft created. Every earlier version is kept.')
         : text(`已新建草稿 v${created.version}，原有各稿都保留`, `Draft v${created.version} created. Every earlier version is kept.`))
       reloadDraftCounts()
-      comparisonRequest.current++
+      comparisonReads.current.begin()
       setSelectedVersionId(null)
       setComparison(null)
     } catch (error) {
