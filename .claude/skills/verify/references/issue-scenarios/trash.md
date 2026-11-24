@@ -5,4 +5,4 @@
 | 名称 | 检查 | 截图停在 | 夹具模型 | 对应 |
 |---|---|---|---|---|
 | `trash-roundtrip` | 第 3 章定稿后经 IPC 删除：回收站一项、可补回缺口，实体稿、知识库文档和定稿都没了；恢复后实体稿按原名重发、定稿回来；再删不要旧定稿的知识授权；彻底删除后重开作品，定稿、回收站、实体稿、知识库和未完成删除都是空的 | 不截图 | 是 | #564 |
-| `trash-ui` | 第 3、4 章定稿，另起 PowerShell 进程独占锁住第 3 章实体稿再从界面删除正文：回收站这一项标「还没清理完」，背后的页面不露本机路径和 EBUSY；恢复遇到「没写完的批量创作」给对应提示；放开文件后点「重试清理」实体稿移除；蓝图页缺口卡点「恢复」后提示已恢复，单章页「定稿后处理」有「重试」（`trash-delete-confirm`、`trash-cleanup-incomplete`、`trash-restore-batch-unfinished`、`trash-gap-card`、`trash-restore-success`）。只在 Windows 上跑 | 回收站、蓝图缺口卡 | 是 | #564、#592 |
+| `trash-ui` | 第 3、4 章定稿，另起 PowerShell 进程独占锁住第 3 章实体稿再从界面删除正文：回收站这一项标「还没清理完」，背后的页面不露本机路径和 EBUSY；恢复遇到「没写完的批量创作」给对应提示；放开文件后点「重试清理」实体稿移除；蓝图页缺口卡点「恢复」后提示已恢复，单章页「定稿后处理」有「重试」（`delete-confirm`、`trash-cleanup-incomplete`、`restore-batch-unfinished`、`gap-card`、`restore-success`）。只在 Windows 上跑 | 回收站、蓝图缺口卡 | 是 | #564、#592 |
