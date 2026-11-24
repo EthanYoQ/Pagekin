@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ipc } from '../../../services/ipc-client'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { chapterThreadPanel, type NarrativeThreadAssignmentInput, type NarrativeThreadView } from '../../../shared/narrative-thread'
+import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { captureProjectSession, isProjectSessionCurrent } from '../../project-session-gate'
@@ -21,14 +22,14 @@ export function useChapterThreadTasks(chapterNumber: number, open: boolean) {
   const movesKey = `${projectId}:${chapterNumber}`
   const movedHere = moves?.key === movesKey ? moves.byPlan : new Map<number, Move>()
   // 只认最后一次发出的请求：刚点完延后，先发的列表请求晚到也不能盖掉新结果。
-  const latestRequest = useRef(0)
+  const threadReads = useRef(new LatestRequestGate())
 
   useEffect(() => {
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session) return
-    const request = ++latestRequest.current
+    const request = threadReads.current.begin()
     void ipc.invokeWithProjectSession(session, 'db:narrative-thread-list', session.projectPath).then(threads => {
-      if (request === latestRequest.current && isProjectSessionCurrent(session)) setLoaded({ projectId: session.projectId, threads })
+      if (threadReads.current.isLatest(request) && isProjectSessionCurrent(session)) setLoaded({ projectId: session.projectId, threads })
     }).catch(() => undefined)
   }, [projectId, chapterNumber, open])
 
@@ -36,7 +37,7 @@ export function useChapterThreadTasks(chapterNumber: number, open: boolean) {
     saved: (byPlan: Map<number, Move>) => void = () => undefined) => {
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session || savingPlanId !== null) return
-    const request = ++latestRequest.current
+    const request = threadReads.current.begin()
     setSavingPlanId(planId)
     setFailure(null)
     try {
@@ -46,7 +47,7 @@ export function useChapterThreadTasks(chapterNumber: number, open: boolean) {
       const byPlan = new Map(movedHere)
       saved(byPlan)
       setMoves({ key: movesKey, byPlan })
-      if (request === latestRequest.current) setLoaded({ projectId: session.projectId, threads: result.threads })
+      if (threadReads.current.isLatest(request)) setLoaded({ projectId: session.projectId, threads: result.threads })
     } catch {
       if (isProjectSessionCurrent(session)) setFailure(failed)
     } finally {

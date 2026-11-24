@@ -1,6 +1,6 @@
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { sameProjectSessionContext } from '../../shared/project-session-context'
-import { LatestRequestGate } from '../editor/latest-request-gate'
+import { LatestRequestGate } from '../../shared/latest-request-gate'
 
 export interface LLMDataRequestTicket {
   requestId: number

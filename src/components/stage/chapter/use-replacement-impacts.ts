@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReplacementImpact } from '../../../shared/chapter-reopen'
 import { globalEventBus } from '../../../shared/event-bus'
+import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { ipc } from '../../../services/ipc-client'
 import { useProjectStore } from '../../../stores/project-store'
@@ -42,13 +43,13 @@ export function useReplacementImpacts(projectKey: string): {
   const current = session && isProjectSessionPath(session, projectKey) ? session : null
   const sessionKey = current ? `${current.projectId}:${current.leaseId}` : ''
   const [loaded, setLoaded] = useState<{ sessionKey: string; impacts: ReplacementImpact[] }>({ sessionKey: '', impacts: [] })
-  const loadSequence = useRef(0)
+  const impactReads = useRef(new LatestRequestGate())
   useSyncExternalStore(subscribe, () => seenVersion)
 
   const load = useCallback(async (projectSession: ProjectSessionContext) => {
-    const request = ++loadSequence.current
+    const request = impactReads.current.begin()
     const result = await ipc.invokeWithProjectSession(projectSession, 'chapter:replacement-impacts', projectSession.projectPath).catch(() => null)
-    if (request !== loadSequence.current || !isProjectSessionCurrent(projectSession)) return
+    if (!impactReads.current.isLatest(request) || !isProjectSessionCurrent(projectSession)) return
     setLoaded({ sessionKey: `${projectSession.projectId}:${projectSession.leaseId}`, impacts: result?.success ? result.impacts : [] })
   }, [])
 

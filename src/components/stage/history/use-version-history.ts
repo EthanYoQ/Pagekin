@@ -3,6 +3,7 @@ import { reopenFinalizedChapter } from '../../../services/chapter-reopen'
 import { ipc } from '../../../services/ipc-client'
 import { countDraftUnits } from '../../../shared/draft-units'
 import type { DraftStatus } from '../../../shared/draft-status'
+import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
@@ -56,7 +57,7 @@ export function useVersionHistory(projectKey: string) {
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null)
   // 各稿按章号与会话记下：再点当前章不必清空，换章或重新打开作品后还没读到的就是「正在读取」。
   const [loaded, setLoaded] = useState<LoadedVersions | null>(null)
-  const versionRequest = useRef(0)
+  const versionReads = useRef(new LatestRequestGate())
   const [loading, setLoading] = useState(true)
 
   const loadChapters = useCallback(async () => {
@@ -87,12 +88,12 @@ export function useVersionHistory(projectKey: string) {
   const loadVersions = useCallback(async (chapterNumber: number): Promise<VersionRecord[]> => {
     const project = useProjectStore.getState().currentProject
     const projectSession = captureProjectSession(project)
-    const request = ++versionRequest.current
+    const request = versionReads.current.begin()
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) {
       setLoaded({ chapter: chapterNumber, session: projectSessionContextFromProject(project), ok: true, versions: [] })
       return []
     }
-    const latest = () => request === versionRequest.current && isProjectSessionCurrent(projectSession)
+    const latest = () => versionReads.current.isLatest(request) && isProjectSessionCurrent(projectSession)
     try {
       const drafts = await ipc.invokeWithProjectSession(projectSession, 'db:draft-list', chapterNumber, projectSession.projectPath)
       if (!isProjectSessionCurrent(projectSession)) return []

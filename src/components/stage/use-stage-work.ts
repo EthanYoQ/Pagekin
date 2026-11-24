@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { checkArchConfirmed } from '../../services/architecture-service'
 import { ipc } from '../../services/ipc-client'
 import { globalEventBus } from '../../shared/event-bus'
+import { LatestRequestGate } from '../../shared/latest-request-gate'
 import { sameProjectPathKey, sameProjectSessionContext } from '../../shared/project-session-context'
 import { useDraftStore } from '../../stores/draft-store'
 import { useEditorStore } from '../../stores/editor-store'
@@ -20,7 +21,7 @@ import { shouldRefreshBlueprints } from '../editor/blueprint-refresh'
 import { captureProjectSession, isProjectSessionCurrent } from '../project-session-gate'
 import { toast } from '../ui/Toast'
 
-let refreshSequence = 0
+const stageWorkReads = new LatestRequestGate()
 
 /**
  * 读一次流程脊需要而 project-store、draft-store 里没有的数据：架构四节是否已确认、蓝图章号与标题；草稿顺带刷新。
@@ -29,12 +30,12 @@ let refreshSequence = 0
 export async function refreshStageWork(text: (zh: string, en: string) => string): Promise<void> {
   const { currentProject, projectSessionEpoch } = useProjectStore.getState()
   const session = captureProjectSession(currentProject)
-  const request = ++refreshSequence
+  const request = stageWorkReads.begin()
   if (!session) {
     useStageStore.setState({ work: null })
     return
   }
-  const current = () => request === refreshSequence && isProjectSessionCurrent(session)
+  const current = () => stageWorkReads.isLatest(request) && isProjectSessionCurrent(session)
     && useProjectStore.getState().projectSessionEpoch === projectSessionEpoch
   try {
     const [architecture, blueprints] = await Promise.all([

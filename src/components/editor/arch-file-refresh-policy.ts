@@ -1,4 +1,5 @@
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
+import { LatestRequestGate } from '../../shared/latest-request-gate'
 import { sameProjectSessionContext } from '../../shared/project-session-context'
 
 export interface ArchFileSnapshot {
@@ -6,37 +7,20 @@ export interface ArchFileSnapshot {
   currentContent: string
 }
 
-export interface ArchReloadToken {
-  readonly requestId: number
-  readonly contentRevision: number
-}
-
-/** 同时约束 reload 请求顺序与编辑器内容版本，防止旧读取覆盖新编辑/保存。 */
+/** 最后一次 reload 才算数；编辑、保存调用 invalidate() 作废在途 reload。 */
 export class ArchReloadGate {
-  private requestSequence = 0
-  private contentRevision = 0
+  private readonly reloads = new LatestRequestGate()
 
-  begin(): ArchReloadToken {
-    return Object.freeze({
-      requestId: ++this.requestSequence,
-      contentRevision: this.contentRevision,
-    })
+  begin(): number {
+    return this.reloads.begin()
   }
 
   invalidate(): void {
-    this.requestSequence += 1
+    this.reloads.begin()
   }
 
-  recordContentChange(): void {
-    this.contentRevision += 1
-    this.invalidate()
-  }
-
-  isCurrent(token: ArchReloadToken): boolean {
-    return (
-      token.requestId === this.requestSequence
-      && token.contentRevision === this.contentRevision
-    )
+  isCurrent(token: number): boolean {
+    return this.reloads.isLatest(token)
   }
 }
 
