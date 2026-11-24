@@ -1,76 +1,60 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { GUARD_TESTS, NOT_GUARD_TESTS } from './guards'
+import { guardTestFiles, reachesRepoSourceFiles, REPO_SOURCE_FILES_MODULE } from './guards'
+import { repoSourceFiles } from './helpers/repo-source-files'
 
-const ROOT = join(__dirname, '..')
-const SCANNED_ROOTS = ['electron', 'scripts', 'src', 'test']
-const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/u
-const LISTS_DIRECTORY = /\b(?:readdirSync|readdir|opendirSync|opendir|globSync|glob)\b/u
-
-const scansSource = (text: string) => LISTS_DIRECTORY.test(text)
-
-function testFiles(root: string, dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
-    const path = join(dir, entry.name)
-    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : testFiles(root, path)
-    return TEST_FILE.test(entry.name) ? [relative(root, path).split(sep).join('/')] : []
-  })
-}
-
-const scanningTests = (root: string) => SCANNED_ROOTS.filter(dir => existsSync(join(root, dir)))
-  .flatMap(dir => testFiles(root, join(root, dir)))
-  .filter(file => scansSource(readFileSync(join(root, file), 'utf8')))
-  .sort()
-const scanning = scanningTests(ROOT)
-const exempt = new Set(NOT_GUARD_TESTS.map(entry => entry.file))
-
-function inventoryDrift(root: string, registered: readonly string[]) {
-  const scanned = scanningTests(root).filter(file => !exempt.has(file))
-  return { unregistered: scanned.filter(file => !registered.includes(file)), stale: registered.filter(file => !scanned.includes(file)) }
-}
-
-describe('守卫测试登记表', () => {
-  it('列目录的测试要么登记为 scan，要么写明豁免理由', () => {
-    const registered = GUARD_TESTS.filter(entry => entry.kind === 'scan').map(entry => entry.file).sort()
-    expect(inventoryDrift(ROOT, registered), '新增或移除了列目录的测试：扫仓库源码的登记进 GUARD_TESTS，列临时目录的进 NOT_GUARD_TESTS').toEqual({ unregistered: [], stale: [] })
-  })
-
-  it('登记的文件都在，豁免项仍会被扫中', () => {
-    expect(GUARD_TESTS.filter(entry => !existsSync(join(ROOT, entry.file))).map(entry => entry.file)).toEqual([])
-    expect(NOT_GUARD_TESTS.filter(entry => !scanning.includes(entry.file)).map(entry => entry.file)).toEqual([])
-  })
-
-  it('凡列目录的测试都是候选，与怎样按扩展名过滤无关；只按固定路径读文件的不算', () => {
-    for (const text of [
-      "readdirSync(dir).filter(name => name.endsWith('.ts'))",
-      'readdirSync(dir).filter(name => /\\.(?:tsx?|mjs)$/u.test(name))',
-      "readdirSync(dir).filter(name => path.extname(name) === '.css')",
-      "readdirSync(dir).filter(name => name.endsWith('.css'))",
-      "readdirSync(join(ROOT, 'src'), { recursive: true })",
-      "await readdir(dir)",
-      "for await (const entry of await opendir(dir)) {}",
-      "globSync('src/**/*.css')",
-      "readdirSync (dir)",
-      "fs.readdirSync\n  (dir)",
-      "import { readdirSync as ls } from 'node:fs'\nls(dir)",
-      "const fakeFs = { readdirSync: () => [] }",
-    ]) expect(scansSource(text), text).toBe(true)
-    expect(scansSource("readFileSync('src/styles/app.css', 'utf8')")).toBe(false)
-    expect(scansSource("readFileSync(join(ROOT, 'src/a.ts'), 'utf8'); existsSync('src')")).toBe(false)
-  })
-
-  it('只过滤 .css 的守卫未登记时核对失败，登记后通过；按固定路径读 css 的不算', () => {
-    const root = mkdtempSync(join(tmpdir(), 'guards-css-'))
-    try {
-      mkdirSync(join(root, 'src', '__tests__'), { recursive: true })
-      writeFileSync(join(root, 'src/__tests__/styles.test.ts'), "readdirSync('src/styles').filter(name => path.extname(name) === '.css')")
-      writeFileSync(join(root, 'src/__tests__/fixed.test.ts'), "readFileSync('src/styles/app.css', 'utf8')")
-      expect(inventoryDrift(root, [])).toEqual({ unregistered: ['src/__tests__/styles.test.ts'], stale: [] })
-      expect(inventoryDrift(root, ['src/__tests__/styles.test.ts'])).toEqual({ unregistered: [], stale: [] })
-    } finally {
-      rmSync(root, { recursive: true, force: true })
+function withFixture(files: Record<string, string>, check: (root: string) => void) {
+  const root = mkdtempSync(join(tmpdir(), 'guards-'))
+  try {
+    for (const [file, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, file)), { recursive: true })
+      writeFileSync(join(root, file), text)
     }
+    check(root)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+describe('repoSourceFiles()', () => {
+  it('递归列出仓库目录下的文件，返回排好序、以 / 分隔的仓库相对路径', () => {
+    const files = repoSourceFiles('test')
+    expect(files).toContain(REPO_SOURCE_FILES_MODULE)
+    expect(files).toContain('test/helpers/__tests__/review-cycle-fixture.test.ts')
+    expect(files).toEqual([...files].sort())
+    expect(files.filter(file => file.includes('\\') || !file.startsWith('test/'))).toEqual([])
+  })
+})
+
+describe('test:guards 的成员是经 repoSourceFiles() 扫源码的测试', () => {
+  const helper = 'export function repoSourceFiles() { return [] }\n'
+
+  it('直接 import、经 test/ 下的辅助模块 import、动态 import 都算；没走到它的不算', () => {
+    withFixture({
+      [REPO_SOURCE_FILES_MODULE]: helper,
+      'test/helpers/scan.ts': "export { repoSourceFiles as list } from './repo-source-files'\n",
+      'src/__tests__/direct.test.ts': "import { repoSourceFiles } from '../../test/helpers/repo-source-files'\n",
+      'src/__tests__/via-helper.test.ts': "import { list } from '../../test/helpers/scan'\n",
+      'scripts/__tests__/dynamic.test.mjs': "const { repoSourceFiles } = await import('../../test/helpers/repo-source-files.ts')\n",
+      'src/__tests__/unrelated.test.ts': "import { readFileSync } from 'node:fs'\nimport { x } from '../x'\n",
+      'src/x.ts': "export { repoSourceFiles as x } from '../test/helpers/repo-source-files'\n",
+    }, root => {
+      const member = (file: string) => reachesRepoSourceFiles(root, file)
+      expect(['src/__tests__/direct.test.ts', 'src/__tests__/via-helper.test.ts', 'scripts/__tests__/dynamic.test.mjs'].filter(member)).toHaveLength(3)
+      expect(member('src/__tests__/unrelated.test.ts')).toBe(false)
+    })
+  })
+
+  it('仓库里扫源码的测试都在成员里，只读固定文件或只用临时目录的不在', () => {
+    const members = guardTestFiles()
+    expect(members).toEqual(expect.arrayContaining([
+      'test/guards.test.ts',
+      'electron/controllers/__tests__/external-file-grant-controller.test.ts',
+      'scripts/redesign/__tests__/issue-scenarios-docs.test.mjs',
+      'src/shared/__tests__/review-proof.test.ts',
+    ]))
+    expect(members).not.toContain('electron/controllers/__tests__/import-controller-secure-file.test.ts')
   })
 })
