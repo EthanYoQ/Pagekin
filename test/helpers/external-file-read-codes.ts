@@ -9,7 +9,7 @@ function codesIn(files: string[], pattern: RegExp): string[] {
   return [...codes].sort()
 }
 
-/** files 是 repoSourceFiles('electron/security') 列出的仓库相对路径；只取这一层的源码与 helper 脚本。 */
+/** files 取自 repoSourceFiles('electron/security')。 */
 export function secureFileSystemCodes(files: readonly string[]): string[] {
   const sources = files.filter(file => path.posix.dirname(file) === 'electron/security' && /\.(ts|m|cs|ps1)$/.test(file))
   return codesIn(sources.map(file => path.resolve(file)), /SECURE_FS_[A-Z0-9_]+/g)

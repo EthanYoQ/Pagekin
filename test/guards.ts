@@ -15,7 +15,6 @@ function resolveRelative(root: string, from: string, specifier: string): string 
   return MODULE_SUFFIXES.map(suffix => base + suffix).find(file => isFile(join(root, file)))
 }
 
-/** 仓库相对路径 file 经 test/ 下的模块能否走到 repoSourceFiles()；静态 import、动态 import、require 都算。 */
 export function reachesRepoSourceFiles(root: string, file: string, seen = new Set<string>()): boolean {
   if (file === REPO_SOURCE_FILES_MODULE) return true
   if (seen.has(file)) return false
@@ -26,7 +25,6 @@ export function reachesRepoSourceFiles(root: string, file: string, seen = new Se
   })
 }
 
-/** test:guards 的成员：经 repoSourceFiles() 扫仓库源码的测试文件。 */
 export function guardTestFiles(): string[] {
   return ['electron', 'scripts', 'src', 'test'].flatMap(dir => repoSourceFiles(dir))
     .filter(file => TEST_FILE.test(file) && reachesRepoSourceFiles(REPO_ROOT, file))
