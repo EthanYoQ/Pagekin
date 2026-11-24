@@ -1,3 +1,11 @@
+const LANCEDB_SYNTAX = {
+  selector: "ImportExpression[source.value='@lancedb/lancedb'], CallExpression[arguments.0.value='@lancedb/lancedb']",
+  message: '经 electron/lance-database.ts 打开 LanceDB，新表格式钉在那里。',
+}
+const IPC_HANDLE_SYNTAX = {
+  selector: "MemberExpression[object.name='ipcMain'][property.name='handle'], :matches(Property > Identifier.value, AssignmentPattern > Identifier.right)[name='ipcMain']",
+  message: '改用 electron/ipc/handle.ts 的 handle()：没登记的失败只进主进程日志，渲染端拿通用码。',
+}
 const LISTING_MESSAGE = '测试列仓库源码改用 test/helpers/repo-source-files.ts 的 repoSourceFiles()，列临时目录改用 test/helpers/temporary-directory.ts 的 listTemporaryDirectory()。'
 const LISTING_PRIMITIVES = ['readdir', 'readdirSync', 'opendir', 'opendirSync', 'glob', 'globSync', 'readDirectory']
 const LISTING_MODULES = ['glob', 'fast-glob', 'globby', 'tinyglobby']
@@ -24,10 +32,14 @@ module.exports = {
         '@typescript-eslint/no-restricted-imports': ['error', {
           paths: [{ name: '@lancedb/lancedb', allowTypeImports: true, message: '经 electron/lance-database.ts 打开 LanceDB，新表格式钉在那里。' }],
         }],
-        'no-restricted-syntax': ['error', {
-          selector: "ImportExpression[source.value='@lancedb/lancedb'], CallExpression[arguments.0.value='@lancedb/lancedb']",
-          message: '经 electron/lance-database.ts 打开 LanceDB，新表格式钉在那里。',
-        }],
+        'no-restricted-syntax': ['error', LANCEDB_SYNTAX, IPC_HANDLE_SYNTAX],
+      },
+    },
+    {
+      // 存量直接注册 IPC 的文件只减不增（test/ipc-handle-guard.test.ts 核对），迁到 handle() 后从名单删掉。
+      files: ['electron/ipc/handle.ts', ...require('./electron/ipc/direct-handle-baseline.json')],
+      rules: {
+        'no-restricted-syntax': ['error', LANCEDB_SYNTAX],
       },
     },
     {
