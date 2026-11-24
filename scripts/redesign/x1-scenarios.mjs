@@ -445,7 +445,7 @@ export const X1_SCENARIOS = {
 
   // #392 T2：第 3 章另有草稿 v1，把 v2 定稿（真实的定稿后处理写出正文文件并入知识库），正文文件被另一个进程占着时删除正文：
   // 数据库已删、正文清理失败。落在 v1 的单章视图上有「删除正文后的清理没有完成」；放开文件后点重试清理，提示消失、文件删掉。
-  'x1-cleanup-retry': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke, path: projectPath, session }) => {
+  'x1-cleanup-retry': { model: true, shell: 'stage', requires: { platform: 'win32' }, setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke, path: projectPath, session }) => {
     const text = `${STAGE_SAMPLE.drafts[3].text}\n\n堤脚的刻痕旁边，又多了一道新刻的线。`
     assert.equal((await invoke(page, 'db:draft-create', { chapterNumber: 3, version: 2, source: 'write', content: text, wordCount: countUnits(text) },
       projectPath, session)).success, true)
