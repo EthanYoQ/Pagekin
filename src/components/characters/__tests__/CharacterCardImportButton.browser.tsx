@@ -132,19 +132,23 @@ describe('角色卡导入入口', () => {
     useLLMStore.setState({ models: [], defaultModelId: null })
     await paste('姓名：林舟')
     await click('AI 提取并预览')
-    expect(document.body.textContent).toContain('模型配置')
+    expect(document.body.textContent).toContain('设置 → AI 模型')
     expect(start).not.toHaveBeenCalled()
     expect(document.querySelector('textarea')?.value).toBe('姓名：林舟')
   })
 
-  it('日文界面没有模型时，指引用设置里实际显示的入口名', async () => {
+  it.each([
+    { interfaceLocale: 'zh-CN', locale: 'zh-CN', extract: 'AI 提取并预览', path: (settings: string, models: string) => `${settings} → ${models}` },
+    { interfaceLocale: 'en-US', locale: 'en-US', extract: 'Extract and preview with AI', path: (settings: string, models: string) => `${settings} → ${models}` },
+    { interfaceLocale: 'ja-JP', locale: 'en-US', extract: 'AIで抽出・プレビュー', path: (settings: string, models: string) => `「${settings}」→「${models}」` },
+  ] as const)('界面 $interfaceLocale 没有模型时，指引用设置里实际显示的入口名', async ({ interfaceLocale, locale, extract, path }) => {
     const warning = vi.spyOn(toast, 'warning').mockImplementation(() => {})
     useLLMStore.setState({ models: [], defaultModelId: null })
     await paste('姓名：林舟')
-    await act(async () => useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' }))
-    await click('AIで抽出・プレビュー')
+    await act(async () => useLocaleStore.setState({ interfaceLocale, locale }))
+    await click(extract)
     const modelsPage = SETTINGS_PAGES.find(spec => spec.id === 'llm')!
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining(`「${selectCopy('ja-JP', '设置', 'Settings')}」→「${selectCopy('ja-JP', ...modelsPage.name)}」`))
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining(path(selectCopy(interfaceLocale, '设置', 'Settings'), selectCopy(interfaceLocale, ...modelsPage.name))))
     expect(start).not.toHaveBeenCalled()
   })
 
