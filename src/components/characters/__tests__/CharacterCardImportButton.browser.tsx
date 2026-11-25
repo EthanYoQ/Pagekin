@@ -9,6 +9,8 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useWorkflowStore } from '../../../stores/workflow-store'
 import { setActiveProjectSessionContext } from '../../../shared/project-session-context'
+import { selectCopy } from '../../../i18n/core'
+import { SETTINGS_PAGES } from '../../stage/settings/settings-pages'
 import type { ProjectData } from '../../../shared/ipc-channels'
 import type { PlanningMaterial } from '../../../services/knowledge-service'
 
@@ -133,6 +135,17 @@ describe('角色卡导入入口', () => {
     expect(document.body.textContent).toContain('模型配置')
     expect(start).not.toHaveBeenCalled()
     expect(document.querySelector('textarea')?.value).toBe('姓名：林舟')
+  })
+
+  it('日文界面没有模型时，指引用设置里实际显示的入口名', async () => {
+    const warning = vi.spyOn(toast, 'warning').mockImplementation(() => {})
+    useLLMStore.setState({ models: [], defaultModelId: null })
+    await paste('姓名：林舟')
+    await act(async () => useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' }))
+    await click('AIで抽出・プレビュー')
+    const modelsPage = SETTINGS_PAGES.find(spec => spec.id === 'llm')!
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining(`「${selectCopy('ja-JP', '设置', 'Settings')}」→「${selectCopy('ja-JP', ...modelsPage.name)}」`))
+    expect(start).not.toHaveBeenCalled()
   })
 
   it('确认外发时导航离开，回来后仍恢复粘贴内容和已选文件', async () => {

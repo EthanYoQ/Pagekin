@@ -113,7 +113,7 @@ function SessionImportButton({ session, disabled }: Props & { session: ProjectSe
     const modelId = routeModelId('planning-material-character-extraction')
     const model = useLLMStore.getState().models.find(candidate => candidate.id === modelId)
     if (!model) {
-      toast.warning(text('请先到设置 → 模型配置，添加并选择默认生成模型；输入内容已保留。', 'Add and select a default generation model in Settings → Models first. Your input has been kept.', '「設定」→「モデル設定」でモデルを追加し、既定の生成モデルに設定してください。入力内容は残っています。'))
+      toast.warning(text('请先到设置 → 模型配置，添加并选择默认生成模型；输入内容已保留。', 'Add and select a default generation model in Settings → Models first. Your input has been kept.', '「Settings」→「AI models」でモデルを追加し、既定の生成モデルに設定してください。入力内容は残っています。'))
       return null
     }
     return { submittedDraft, materials, model }
