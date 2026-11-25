@@ -39,10 +39,12 @@ describe('character role domain', () => {
     expect(getCharacterRoleLabels('protagonist')).toEqual({
       zhCN: '主角',
       enUS: 'Protagonist',
+      jaJP: '主人公',
     })
     expect(getCharacterRoleLabels('legacy-custom-role')).toEqual({
       zhCN: '配角',
       enUS: 'Supporting character',
+      jaJP: '脇役',
     })
   })
 })

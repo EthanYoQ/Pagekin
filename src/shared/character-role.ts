@@ -10,13 +10,14 @@ export type CharacterRole = typeof CHARACTER_ROLES[number]
 export interface CharacterRoleLabels {
   zhCN: string
   enUS: string
+  jaJP: string
 }
 
 export const CHARACTER_ROLE_LABELS: Readonly<Record<CharacterRole, CharacterRoleLabels>> = {
-  protagonist: { zhCN: '主角', enUS: 'Protagonist' },
-  antagonist: { zhCN: '反派', enUS: 'Antagonist' },
-  supporting: { zhCN: '配角', enUS: 'Supporting character' },
-  minor: { zhCN: '龙套', enUS: 'Minor character' },
+  protagonist: { zhCN: '主角', enUS: 'Protagonist', jaJP: '主人公' },
+  antagonist: { zhCN: '反派', enUS: 'Antagonist', jaJP: '敵対者' },
+  supporting: { zhCN: '配角', enUS: 'Supporting character', jaJP: '脇役' },
+  minor: { zhCN: '龙套', enUS: 'Minor character', jaJP: '端役' },
 }
 
 const CHARACTER_ROLE_ALIASES: Readonly<Record<string, CharacterRole>> = {
