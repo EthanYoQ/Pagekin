@@ -12,6 +12,7 @@ import {
 } from '../../../services/workflows/planning-material-workflow'
 import { globalEventBus } from '../../../shared/event-bus'
 import type { ModelProfile, ProjectSessionContext } from '../../../shared/ipc-channels'
+import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import { sameProjectSessionContext } from '../../../shared/project-session-context'
 import { knowledgeDraftDirty, type KnowledgeDraft } from '../../../stores/editor-store'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -57,13 +58,13 @@ export function useKnowledgeIndex() {
   const [statusError, setStatusError] = useState('')
   const [backfilling, setBackfilling] = useState(false)
   // 只有最后一次读取写状态：连改两次检索模型时，先发的那次晚到也不会写回过时的提示。
-  const statusRequest = useRef(0)
+  const statusReads = useRef(new LatestRequestGate())
 
   const loadStatus = useCallback(async () => {
     const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
     if (!projectSession) return
-    const request = ++statusRequest.current
-    const latest = () => request === statusRequest.current && isProjectSessionCurrent(projectSession)
+    const request = statusReads.current.begin()
+    const latest = () => statusReads.current.isLatest(request) && isProjectSessionCurrent(projectSession)
     try {
       const result = await ipc.invokeWithProjectSession(projectSession, 'kb:get-vector-rebuild-status', projectSession.projectPath)
       if (!latest()) return
@@ -140,7 +141,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
   const [searchedQuery, setSearchedQuery] = useState('')
   const [searching, setSearching] = useState(false)
   // 每次查找与清除都作废之前还没返回的查找：只有最新的一次写结果、结束「查找中」。submittedQuery 是最近一次提交的词（可能还在查）。
-  const searchRequest = useRef(0)
+  const searchReads = useRef(new LatestRequestGate())
   const submittedQuery = useRef('')
   const resetResults = useCallback(() => {
     setSearchResults([])
@@ -148,7 +149,7 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
   }, [])
   /** 清掉查找结果，并作废还没返回的查找。 */
   const clearResults = useCallback(() => {
-    searchRequest.current++
+    searchReads.current.begin()
     submittedQuery.current = ''
     setSearching(false)
     resetResults()
@@ -320,9 +321,9 @@ export function useKnowledgeBase(draftSlot?: KnowledgeDraftSlot) {
   const search = async (query = searchQuery, limit = topK) => {
     const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
     if (!projectSession) return
-    const request = ++searchRequest.current
+    const request = searchReads.current.begin()
     submittedQuery.current = query
-    const latest = () => request === searchRequest.current && isProjectSessionCurrent(projectSession)
+    const latest = () => searchReads.current.isLatest(request) && isProjectSessionCurrent(projectSession)
     setSearching(true)
     try {
       const result = await ipc.invokeWithProjectSession(projectSession, 'kb:search', query, limit, projectSession.projectPath)

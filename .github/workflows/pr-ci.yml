@@ -1,6 +1,8 @@
 name: PR CI
 
 on:
+  push:
+    branches: [master]
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
@@ -26,6 +28,7 @@ jobs:
   # changes skip the Windows shards here instead of skipping the workflow.
   changes:
     name: Detect docs-only changes
+    if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -56,7 +59,7 @@ jobs:
   desktop-tests:
     name: Windows tests (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: changes
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    if: ${{ github.event_name != 'push' && needs.changes.outputs.docs_only != 'true' }}
     runs-on: windows-2022
     timeout-minutes: 45
     strategy:
@@ -198,7 +201,7 @@ jobs:
   docs-tests:
     name: Docs content tests
     needs: changes
-    if: ${{ needs.changes.outputs.docs_only == 'true' }}
+    if: ${{ github.event_name != 'push' && needs.changes.outputs.docs_only == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -225,7 +228,7 @@ jobs:
 
   desktop:
     name: Desktop PR CI (Windows)
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name != 'push' }}
     needs: [changes, desktop-tests, docs-tests]
     runs-on: ubuntu-latest
     steps:
@@ -239,3 +242,31 @@ jobs:
           echo "changes=$CHANGES_RESULT docs_only=$DOCS_ONLY shards=$SHARD_RESULT docs_tests=$DOCS_TESTS_RESULT"
           test "$SHARD_RESULT" = success && exit 0
           test "$CHANGES_RESULT" = success && test "$DOCS_ONLY" = true && test "$SHARD_RESULT" = skipped && test "$DOCS_TESTS_RESULT" = success
+
+  # 两个各自绿的 PR 合并后可能让守卫测试变红，PR 检查看不到，只在合并后报警，不拦 PR。
+  master-guards:
+    name: Master guard tests
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda
+        with:
+          version: 11.11.0
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.1
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run guard tests
+        run: pnpm test:guards

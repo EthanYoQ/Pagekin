@@ -420,6 +420,19 @@ describe('读名单期间选中角色', () => {
     expect(useCharacterStore.getState()).toMatchObject({ selectedId: 'id:乙', selectedName: '乙' })
   })
 
+  it('连读两次名单、先发的那次后回来：名单是后一次读到的', async () => {
+    let releaseOlder!: (cards: CharacterCard[]) => void
+    invoke.mockReturnValueOnce(new Promise(resolve => { releaseOlder = resolve }))
+    const older = useCharacterStore.getState().load(PROJECT_A)
+    invoke.mockResolvedValueOnce([character('甲'), character('乙'), character('丙')])
+    await useCharacterStore.getState().load(PROJECT_A)
+
+    releaseOlder([character('甲')])
+    await older
+
+    expect(useCharacterStore.getState().characters.map(card => card.name)).toEqual(['甲', '乙', '丙'])
+  })
+
   it('选中的人读完后已不在名单里，落到第一位，不报错', async () => {
     useCharacterStore.getState().beginProjectLoad(PROJECT_A)
     useCharacterStore.getState().setSelectedId('id:已删除')

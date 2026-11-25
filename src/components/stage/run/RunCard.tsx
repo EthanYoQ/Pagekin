@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronRight, CircleCheck, CircleDashed, CircleMinus, CircleX, Pause, Play } from 'lucide-react'
+import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { errorLocaleForRun } from '../../../i18n/core'
 import { pluralEn } from '../../../shared/plural-en'
 import { useLLMStore } from '../../../stores/llm-store'
 import { activeInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
@@ -147,6 +149,7 @@ function RunSteps({ run, live, text }: { run: WorkflowRun; live: boolean; text: 
             key={step.id}
             step={step}
             runStatus={run.status}
+            runLocale={run.uiLocale}
             live={live && step.status === 'running'}
             reasoning={current ? reasoning : ''}
             open={open[step.id] ?? openByDefault}
@@ -178,9 +181,10 @@ function stepMeta(step: WorkflowStep, text: Text): string {
   return ''
 }
 
-function RunStep({ step, runStatus, live, reasoning, open, onToggle, text }: {
+function RunStep({ step, runStatus, runLocale, live, reasoning, open, onToggle, text }: {
   step: WorkflowStep
   runStatus: WorkflowRun['status']
+  runLocale: WorkflowRun['uiLocale']
   /** 这一步正在运行：输出持续追加，自动滚到最新。 */
   live: boolean
   reasoning: string
@@ -189,6 +193,7 @@ function RunStep({ step, runStatus, live, reasoning, open, onToggle, text }: {
   text: Text
 }) {
   const output = useMemo(() => splitThinking(step.result), [step.result])
+  const locale = errorLocaleForRun(runLocale, useLocaleStore(activeInterfaceLocale))
   const thinking = reasoning || output.thinking
   const hasDetail = Boolean(output.raw || thinking || step.error)
   const expanded = hasDetail && open
@@ -216,7 +221,7 @@ function RunStep({ step, runStatus, live, reasoning, open, onToggle, text }: {
             </details>
           )}
           {output.content && <StepOutput content={output.content} live={live} text={text} />}
-          {step.error && <p className="run-step-error">{step.error}</p>}
+          {step.error && <p className="run-step-error">{displayedErrorMessage(locale, step.error)}</p>}
         </div>
       )}
     </li>

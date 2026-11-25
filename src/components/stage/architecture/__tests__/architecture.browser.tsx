@@ -559,6 +559,42 @@ describe('架构阶段', () => {
     await vi.waitFor(() => expect(host!.querySelector('.arch-page[data-loading]')).toBeNull())
   })
 
+  it('连着刷新两次状态、先发的那次读取后回来：摘要是后一次读到的前提', async () => {
+    filledSpine(['premise'])
+    await render()
+    const summary = () => host!.querySelector('[data-section="premise"] .arch-section-summary')?.textContent
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const older = { ...core, premise: '旧前提：守夜人把末班车的钟拨慢了一刻。'.repeat(2) }
+    const answer = invoke.getMockImplementation()!
+    // 刷新会连带流程脊等别处重读同一份数据：第一次刷新发出的都压住，之后的重读挂起，只比这两次刷新的先后。
+    let phase: 'first' | 'second' | 'after' = 'first'
+    invoke.mockImplementation(async (channel, ...args) => {
+      if (channel === 'db:project-core-get') {
+        if (phase === 'after') return new Promise(() => {})
+        if (phase === 'first') {
+          await held
+          return older
+        }
+      }
+      return answer(channel, ...args)
+    })
+    await click('架构的更多操作')
+    await click('刷新状态')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+    phase = 'second'
+    core = { ...core, premise: '新前提：林舟在雾里听见第二声汽笛。'.repeat(2) }
+    await click('架构的更多操作')
+    await click('刷新状态')
+    await vi.waitFor(() => expect(summary()).toContain('新前提'))
+
+    phase = 'after'
+    await act(async () => release())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    expect(summary()).toContain('新前提')
+  })
+
   it('四节状态读取失败时动作区照常显示并可聚焦，页头停在加载态、主按钮不可用', async () => {
     filledSpine(['premise', 'characters', 'worldbuilding', 'synopsis'])
     const answer = invoke.getMockImplementation()!

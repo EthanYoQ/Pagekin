@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 import { knownAppErrorMessage } from '../app-errors'
 import { shown } from './shown-locale'
 
@@ -565,8 +566,8 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'CONTINUITY_INVALIDATION_CHAPTER_INVALID',
     'CONTINUITY_SOURCE_DRAFT_INVALID',
     'CONTINUITY_TARGET_CHAPTER_INVALID',
-    // 知识库与检索索引（#474 B3）：重建计划与执行之间的内部约定、新代际写入后的完整性复核、
-    // 参照导入与冻结章节的绑定、single-flight 与幂等收据。updateChunkVectors 只有测试调用。
+    // 知识库与检索索引（#474 B3）：重建计划与执行之间的内部约定、新代际写入后的完整性复核。
+    // updateChunkVectors 只有测试调用。
     'EMBEDDING_SPACE_BACKFILL_DUPLICATE_ID',
     'EMBEDDING_SPACE_BACKFILL_TARGET_MISSING',
     'EMBEDDING_SPACE_PLAN_MODE_INVALID',
@@ -574,12 +575,6 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'EMBEDDING_SPACE_VERIFY_FAILED',
     'KNOWLEDGE_BASE_CHUNKS_INVALID',
     'KNOWLEDGE_BASE_COPY_REQUEST_INVALID',
-    'KNOWLEDGE_BASE_REFERENCE_AUTHORITY_MISMATCH',
-    'KNOWLEDGE_BASE_REFERENCE_CLEANUP_FAILED',
-    'KNOWLEDGE_BASE_REFERENCE_FLIGHT_INVALID',
-    'KNOWLEDGE_BASE_REFERENCE_KEY_INVALID',
-    'KNOWLEDGE_BASE_REFERENCE_RECEIPT_CONFLICT',
-    'KNOWLEDGE_BASE_REFERENCE_VERIFY_FAILED',
   ],
   // 模型输出不合角色提议的结构契约（#471）。工作流里由结构化重试或调用处的按语言说明接住。
   // 定稿角色状态的同类码已在 app-errors.ts 登记（#552）。
@@ -793,25 +788,16 @@ const UNREGISTERED: Record<string, readonly string[]> = {
   ],
 }
 
-const ROOT = resolve(process.cwd())
-const SCANNED = ['electron', 'src']
-
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap(name => {
-    const path = join(dir, name)
-    if (name === '__tests__' || name === 'node_modules' || relative(ROOT, path) === join('src', 'i18n')) return []
-    if (statSync(path).isDirectory()) return sourceFiles(path)
-    return /\.tsx?$/u.test(name) ? [path] : []
-  })
-}
+const sourceFiles = () => ['electron', 'src'].flatMap(dir => repoSourceFiles(dir))
+  .filter(file => !file.includes('/__tests__/') && !file.startsWith('src/i18n/') && /\.tsx?$/u.test(file))
 
 const CODE_LITERAL = new RegExp(`['"\`]((?:${COVERED_PREFIXES.join('|')})[A-Z0-9_]*[A-Z0-9])['"\`]`, 'gu')
 
 function coveredCodesInSource(): Map<string, string> {
   const codes = new Map<string, string>()
-  for (const file of SCANNED.flatMap(dir => sourceFiles(join(ROOT, dir)))) {
-    for (const match of readFileSync(file, 'utf8').matchAll(CODE_LITERAL)) {
-      if (!codes.has(match[1]!)) codes.set(match[1]!, relative(ROOT, file).split(sep).join('/'))
+  for (const file of sourceFiles()) {
+    for (const match of readFileSync(join(REPO_ROOT, file), 'utf8').matchAll(CODE_LITERAL)) {
+      if (!codes.has(match[1]!)) codes.set(match[1]!, file)
     }
   }
   return codes

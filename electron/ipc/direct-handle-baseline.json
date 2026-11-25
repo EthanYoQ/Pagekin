@@ -1,0 +1,22 @@
+[
+  "electron/controllers/app-data-controller.ts",
+  "electron/controllers/chapter-lifecycle-controller.ts",
+  "electron/controllers/character-avatar-controller.ts",
+  "electron/controllers/cloud-backup-controller.ts",
+  "electron/controllers/config-controller.ts",
+  "electron/controllers/db-controller.ts",
+  "electron/controllers/external-file-grant-controller.ts",
+  "electron/controllers/finalization-controller.ts",
+  "electron/controllers/fs-controller.ts",
+  "electron/controllers/generation-controller.ts",
+  "electron/controllers/import-controller.ts",
+  "electron/controllers/llm-controller.ts",
+  "electron/controllers/model-provider-resource-controller.ts",
+  "electron/controllers/official-homepage-controller.ts",
+  "electron/controllers/project-archive-controller.ts",
+  "electron/controllers/project-controller.ts",
+  "electron/controllers/stage-notification-controller.ts",
+  "electron/controllers/window-controller.ts",
+  "electron/main.ts",
+  "electron/mcp/mcp-ipc-bridge.ts"
+]

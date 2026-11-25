@@ -1,18 +1,14 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 import { MODEL_STAGE_BY_OPERATION, stageOfOperation, type GenerationOperation, type ModelStage } from '../model-stage-routing'
 
-const root = process.cwd()
+const root = REPO_ROOT
 const TABLE_FILE = 'src/shared/model-stage-routing.ts'
 
-function sourcePaths(dir: string): string[] {
-  return readdirSync(resolve(root, dir), { withFileTypes: true }).flatMap(entry => {
-    const path = `${dir}/${entry.name}`
-    if (entry.isDirectory()) return entry.name === '__tests__' ? [] : sourcePaths(path)
-    return /\.tsx?$/.test(entry.name) && !/\.(test|spec|browser)\.tsx?$/.test(entry.name) ? [path] : []
-  })
-}
+const sourcePaths = (dir: string) => repoSourceFiles(dir)
+  .filter(file => !file.includes('/__tests__/') && /\.tsx?$/.test(file) && !/\.(test|spec|browser)\.tsx?$/.test(file))
 
 // 源码在模块加载时只读一遍，各条用例只做内存匹配：并行套件里同一批读取会从约 200ms 拉长到 9 秒，放在用例里会撞 5 秒超时。
 const SOURCES = new Map([...sourcePaths('src'), ...sourcePaths('electron')].map(file => [file, readFileSync(resolve(root, file), 'utf8')]))

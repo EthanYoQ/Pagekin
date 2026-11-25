@@ -1,76 +1,212 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { dirname, join, posix } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { ESLint } from 'eslint'
 import { describe, expect, it } from 'vitest'
-import { GUARD_TESTS, NOT_GUARD_TESTS } from './guards'
+import { guardTestFiles, reachesRepoSourceFiles, REPO_SOURCE_FILES_MODULE } from './guards'
+import { REPO_ROOT, repoSourceFiles } from './helpers/repo-source-files'
+import { listTemporaryDirectory } from './helpers/temporary-directory'
+import BASELINE from './directory-listing-baseline.json'
 
-const ROOT = join(__dirname, '..')
-const SCANNED_ROOTS = ['electron', 'scripts', 'src', 'test']
-const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/u
-const LISTS_DIRECTORY = /\b(?:readdirSync|readdir|opendirSync|opendir|globSync|glob)\b/u
+const ORIGINAL_BASELINE: readonly string[] = [
+  'electron/__tests__/knowledge-base-failure-reason.test.ts',
+  'electron/__tests__/knowledge-base-original-copy.test.ts',
+  'electron/__tests__/knowledge-base-volume.test.ts',
+  'electron/__tests__/lancedb-contract.test.ts',
+  'electron/__tests__/main-startup.test.ts',
+  'electron/controllers/__tests__/cloud-backup-controller.test.ts',
+  'electron/controllers/__tests__/fs-controller-project-boundary.test.ts',
+  'electron/controllers/__tests__/generation-controller.test.ts',
+  'electron/controllers/__tests__/project-archive-controller.test.ts',
+  'electron/controllers/__tests__/writing-skill-app-data.test.ts',
+  'electron/security/__tests__/windows-safe-file-system.test.ts',
+  'electron/services/__tests__/character-asset-service.test.ts',
+  'electron/services/__tests__/corrupt-review-cycle-export.test.ts',
+  'electron/services/__tests__/generation-knowledge-source.test.ts',
+  'electron/services/__tests__/global-data-migration.test.ts',
+  'electron/services/__tests__/legacy-project-copy-import.test.ts',
+  'electron/services/__tests__/portable-author-file-names.test.ts',
+  'electron/services/__tests__/portable-export-host.test.ts',
+  'electron/services/__tests__/portable-project-archive.test.ts',
+  'electron/services/__tests__/portable-project-assets.test.ts',
+  'electron/services/__tests__/project-access.test.ts',
+  'electron/services/__tests__/project-archive-service.test.ts',
+  'electron/services/__tests__/project-data-locator.test.ts',
+  'electron/services/__tests__/project-format-migration.test.ts',
+  'electron/services/__tests__/project-peek-readonly.test.ts',
+  'electron/services/__tests__/project-restore-service.test.ts',
+  'electron/services/__tests__/replaced-final-cleanup.test.ts',
+  'electron/services/__tests__/sqlite-project-migration.test.ts',
+  'electron/services/__tests__/vector-migration-snapshot.test.ts',
+  'electron/services/__tests__/webdav-backup-service.test.ts',
+  'electron/utils/__tests__/config-utils.test.ts',
+  'scripts/__tests__/legacy-qualification-projection.test.ts',
+  'scripts/__tests__/release-win-verify.test.ts',
+  'scripts/__tests__/smoke-macos-dmg-acceptance-contract.test.ts',
+  'scripts/__tests__/smoke-win-installer.test.ts',
+  'scripts/redesign/__tests__/drive-args.test.mjs',
+  'scripts/redesign/__tests__/drive-profile-writes.test.mjs',
+  'scripts/redesign/__tests__/real-model.test.mjs',
+  'src/services/__tests__/export-service-integration.test.ts',
+  'test/helpers/node-test-secure-file-system.ts',
+  'test/helpers/remove-temporary-tree.mjs',
+]
+const eslint = new ESLint({ cwd: REPO_ROOT })
 
-const scansSource = (text: string) => LISTS_DIRECTORY.test(text)
-
-function testFiles(root: string, dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
-    const path = join(dir, entry.name)
-    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : testFiles(root, path)
-    return TEST_FILE.test(entry.name) ? [relative(root, path).split(sep).join('/')] : []
-  })
+async function listingErrors(filePath: string, code: string): Promise<string[]> {
+  const [result] = await eslint.lintText(code, { filePath: join(REPO_ROOT, filePath) })
+  return result!.messages.filter(message => message.message.includes('repoSourceFiles()')).map(message => message.message)
 }
 
-const scanningTests = (root: string) => SCANNED_ROOTS.filter(dir => existsSync(join(root, dir)))
-  .flatMap(dir => testFiles(root, join(root, dir)))
-  .filter(file => scansSource(readFileSync(join(root, file), 'utf8')))
-  .sort()
-const scanning = scanningTests(ROOT)
-const exempt = new Set(NOT_GUARD_TESTS.map(entry => entry.file))
-
-function inventoryDrift(root: string, registered: readonly string[]) {
-  const scanned = scanningTests(root).filter(file => !exempt.has(file))
-  return { unregistered: scanned.filter(file => !registered.includes(file)), stale: registered.filter(file => !scanned.includes(file)) }
+function withFixture(files: Record<string, string>, check: (root: string) => void) {
+  const root = mkdtempSync(join(tmpdir(), 'guards-'))
+  try {
+    for (const [file, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, file)), { recursive: true })
+      writeFileSync(join(root, file), text)
+    }
+    check(root)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 }
 
-describe('守卫测试登记表', () => {
-  it('列目录的测试要么登记为 scan，要么写明豁免理由', () => {
-    const registered = GUARD_TESTS.filter(entry => entry.kind === 'scan').map(entry => entry.file).sort()
-    expect(inventoryDrift(ROOT, registered), '新增或移除了列目录的测试：扫仓库源码的登记进 GUARD_TESTS，列临时目录的进 NOT_GUARD_TESTS').toEqual({ unregistered: [], stale: [] })
+describe('repoSourceFiles()', () => {
+  it('递归列出仓库目录下的文件，返回排好序、以 / 分隔的仓库相对路径', () => {
+    const files = repoSourceFiles('test')
+    expect(files).toContain(REPO_SOURCE_FILES_MODULE)
+    expect(files).toContain('test/helpers/__tests__/review-cycle-fixture.test.ts')
+    expect(files).toEqual([...files].sort())
+    expect(files.filter(file => file.includes('\\') || !file.startsWith('test/'))).toEqual([])
+  })
+})
+
+describe('listTemporaryDirectory()', () => {
+  it('列 os.tmpdir() 下测试自建的目录', () => {
+    withFixture({ 'a.txt': '', 'sub/b.txt': '' }, root => {
+      expect(listTemporaryDirectory(root).map(entry => `${entry.name}:${entry.isDirectory()}`).sort()).toEqual(['a.txt:false', 'sub:true'])
+    })
   })
 
-  it('登记的文件都在，豁免项仍会被扫中', () => {
-    expect(GUARD_TESTS.filter(entry => !existsSync(join(ROOT, entry.file))).map(entry => entry.file)).toEqual([])
-    expect(NOT_GUARD_TESTS.filter(entry => !scanning.includes(entry.file)).map(entry => entry.file)).toEqual([])
+  it('传仓库路径就抛错，并指向 repoSourceFiles()', () => {
+    expect(() => listTemporaryDirectory(REPO_ROOT)).toThrow(/repoSourceFiles\(\)/u)
+    expect(() => listTemporaryDirectory(join(REPO_ROOT, 'src'))).toThrow(/repoSourceFiles\(\)/u)
+    expect(() => listTemporaryDirectory(tmpdir())).toThrow(/os\.tmpdir\(\)/u)
   })
 
-  it('凡列目录的测试都是候选，与怎样按扩展名过滤无关；只按固定路径读文件的不算', () => {
-    for (const text of [
-      "readdirSync(dir).filter(name => name.endsWith('.ts'))",
-      'readdirSync(dir).filter(name => /\\.(?:tsx?|mjs)$/u.test(name))',
-      "readdirSync(dir).filter(name => path.extname(name) === '.css')",
-      "readdirSync(dir).filter(name => name.endsWith('.css'))",
-      "readdirSync(join(ROOT, 'src'), { recursive: true })",
-      "await readdir(dir)",
-      "for await (const entry of await opendir(dir)) {}",
-      "globSync('src/**/*.css')",
-      "readdirSync (dir)",
-      "fs.readdirSync\n  (dir)",
-      "import { readdirSync as ls } from 'node:fs'\nls(dir)",
-      "const fakeFs = { readdirSync: () => [] }",
-    ]) expect(scansSource(text), text).toBe(true)
-    expect(scansSource("readFileSync('src/styles/app.css', 'utf8')")).toBe(false)
-    expect(scansSource("readFileSync(join(ROOT, 'src/a.ts'), 'utf8'); existsSync('src')")).toBe(false)
-  })
-
-  it('只过滤 .css 的守卫未登记时核对失败，登记后通过；按固定路径读 css 的不算', () => {
-    const root = mkdtempSync(join(tmpdir(), 'guards-css-'))
+  it('仓库本身在 os.tmpdir() 下时，仓库路径照样抛错', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'guards-checkout-'))
     try {
-      mkdirSync(join(root, 'src', '__tests__'), { recursive: true })
-      writeFileSync(join(root, 'src/__tests__/styles.test.ts'), "readdirSync('src/styles').filter(name => path.extname(name) === '.css')")
-      writeFileSync(join(root, 'src/__tests__/fixed.test.ts'), "readFileSync('src/styles/app.css', 'utf8')")
-      expect(inventoryDrift(root, [])).toEqual({ unregistered: ['src/__tests__/styles.test.ts'], stale: [] })
-      expect(inventoryDrift(root, ['src/__tests__/styles.test.ts'])).toEqual({ unregistered: [], stale: [] })
+      mkdirSync(join(root, 'test/helpers'), { recursive: true })
+      mkdirSync(join(root, 'src'))
+      for (const file of ['test/helpers/repo-source-files.ts', 'test/helpers/temporary-directory.ts']) writeFileSync(join(root, file), readFileSync(join(REPO_ROOT, file)))
+      const copy: typeof import('./helpers/temporary-directory') = await import(pathToFileURL(join(root, 'test/helpers/temporary-directory.ts')).href)
+      expect(() => copy.listTemporaryDirectory(join(root, 'src'))).toThrow(/repoSourceFiles\(\)/u)
+      expect(() => copy.listTemporaryDirectory(root)).toThrow(/repoSourceFiles\(\)/u)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('test:guards 的成员是经 repoSourceFiles() 扫源码的测试', () => {
+  const helper = 'export function repoSourceFiles() { return [] }\n'
+
+  it('直接 import、经 test/ 下的辅助模块 import、动态 import 都算；没走到它的不算', () => {
+    withFixture({
+      [REPO_SOURCE_FILES_MODULE]: helper,
+      'test/helpers/scan.ts': "export { repoSourceFiles as list } from './repo-source-files'\n",
+      'src/__tests__/direct.test.ts': "import { repoSourceFiles } from '../../test/helpers/repo-source-files'\n",
+      'src/__tests__/via-helper.test.ts': "import { list } from '../../test/helpers/scan'\n",
+      'scripts/__tests__/dynamic.test.mjs': "const { repoSourceFiles } = await import('../../test/helpers/repo-source-files.ts')\n",
+      'src/__tests__/js-extension.test.ts': "import { repoSourceFiles } from '../../test/helpers/repo-source-files.js'\n",
+      'src/__tests__/unrelated.test.ts': "import { readFileSync } from 'node:fs'\nimport { x } from '../x'\n",
+      'src/x.ts': "export { repoSourceFiles as x } from '../test/helpers/repo-source-files'\n",
+    }, root => {
+      const member = (file: string) => reachesRepoSourceFiles(root, file)
+      expect(['src/__tests__/direct.test.ts', 'src/__tests__/via-helper.test.ts', 'scripts/__tests__/dynamic.test.mjs', 'src/__tests__/js-extension.test.ts'].filter(member)).toHaveLength(4)
+      expect(member('src/__tests__/unrelated.test.ts')).toBe(false)
+    })
+  })
+
+  it('仓库里扫源码的测试都在成员里，只读固定文件或只用临时目录的不在', () => {
+    const members = guardTestFiles()
+    expect(members).toEqual(expect.arrayContaining([
+      'test/guards.test.ts',
+      'electron/controllers/__tests__/external-file-grant-controller.test.ts',
+      'scripts/redesign/__tests__/issue-scenarios-docs.test.mjs',
+      'src/shared/__tests__/review-proof.test.ts',
+    ]))
+    expect(members).not.toContain('electron/controllers/__tests__/import-controller-secure-file.test.ts')
+    expect(members.filter(file => BASELINE.includes(file))).toEqual([])
+  })
+})
+
+describe('测试文件按标识符禁用列目录原语', () => {
+  const probe = 'src/__tests__/listing-probe.test.ts'
+
+  it.each([
+    "import fs from 'node:fs'\nfs.readdirSync('.')",
+    "import * as fs from 'node:fs'\nfs.readdirSync(process.cwd())",
+    "import { readdirSync } from 'node:fs'",
+    "import { readdirSync as ls } from 'fs'",
+    "import { readdir } from 'node:fs/promises'",
+    "import fs from 'node:fs'\nawait fs.promises.opendir('.')",
+    "import fs from 'node:fs'\nfs.globSync('src/**/*.css')",
+    "const { readdirSync } = require('node:fs')",
+    "import fg from 'fast-glob'",
+    "import { globSync } from 'glob'",
+    "const glob = require('glob')",
+    "await import('tinyglobby')",
+    "import ts from 'typescript'\nts.sys.readDirectory('src')",
+    "import.meta.glob('./*.ts')",
+  ])('报错并点名 helper：%s', async code => {
+    expect(await listingErrors(probe, code)).not.toEqual([])
+    expect(await listingErrors('scripts/__tests__/listing-probe.test.mjs', code)).not.toEqual([])
+  })
+
+  it.each([
+    "import { readFileSync } from 'node:fs'\nreadFileSync('src/styles/app.css', 'utf8')",
+    "import fs from 'node:fs'\nimport { vi } from 'vitest'\nvi.spyOn(fs, 'readdirSync')",
+    'const fakeFs = { readdirSync: () => [] }',
+  ])('不读目录的写法不报：%s', async code => {
+    expect(await listingErrors(probe, code)).toEqual([])
+  })
+
+  it('两个 helper 自己和生产代码不受限，其余 test/helpers 受限', async () => {
+    const code = "import { readdirSync } from 'node:fs'\nreaddirSync('.')"
+    expect(await listingErrors(REPO_SOURCE_FILES_MODULE, code)).toEqual([])
+    expect(await listingErrors('test/helpers/temporary-directory.ts', code)).toEqual([])
+    expect(await listingErrors('src/listing-probe.ts', code)).toEqual([])
+    expect(await listingErrors('test/helpers/listing-probe.ts', code)).not.toEqual([])
+  })
+
+  it('新建一个直接列仓库根的测试文件就报错', async () => {
+    const code = "import fs from 'node:fs'\nimport { it } from 'vitest'\nit('x', () => { fs.readdirSync(process.cwd()) })\n"
+    expect(await listingErrors('src/__tests__/new-scan.test.ts', code)).toEqual([expect.stringContaining('repoSourceFiles()')])
+  })
+})
+
+describe('存量 baseline 只减不增', () => {
+  it('名单只能是建立时名单的子集：新增违规改用 helper，不进名单，也不能顶替删掉的名额', () => {
+    expect(BASELINE.filter(file => !ORIGINAL_BASELINE.includes(file))).toEqual([])
+    expect(BASELINE).toEqual([...new Set(BASELINE)].sort())
+  })
+
+  it('名单里每个文件仍在直接用列目录原语，改掉的要从名单删除', async () => {
+    const stale: string[] = []
+    for (const file of BASELINE) {
+      const name = posix.basename(file)
+      const probe = posix.join(posix.dirname(file), `listing-probe${name.slice(name.indexOf('.'))}`)
+      if ((await listingErrors(probe, readFileSync(join(REPO_ROOT, file), 'utf8'))).length === 0) stale.push(file)
+    }
+    expect(stale).toEqual([])
+  }, 60_000)
+
+  it('测试范围内没有 lint 不检查的扩展名（全仓 lint 只跑 ts、tsx、mjs）', () => {
+    const unlinted = ['electron', 'scripts', 'src', 'test'].flatMap(dir => repoSourceFiles(dir))
+      .filter(file => /\.(?:test|spec)\.|\/__tests__\/|^test\//u.test(file) && /\.(?:js|cjs|mts|cts|jsx)$/u.test(file))
+    expect(unlinted).toEqual([])
   })
 })

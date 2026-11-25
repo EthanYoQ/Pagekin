@@ -32,6 +32,7 @@ import type { SaveOutcome } from './save-feedback'
 import { forgetMergeChoices, mergeChoicesKey } from './merge-segments'
 import type { EditorInlineAnnotation } from '../../shared/editor-inline-generation'
 import { guardRepairPostProcess } from '../../services/workflow-guards'
+import { LatestRequestGate } from '../../shared/latest-request-gate'
 import {
   captureProjectSession,
   isProjectSessionCurrent,
@@ -166,9 +167,9 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
 
   const reload = useCallback(() => setReloadKey(key => key + 1), [])
   // 打开修稿合并要先读修订与源稿；读的过程中作者关掉了合并或已合并完，晚到的结果不再摆出来。
-  const mergeRequest = useRef(0)
+  const mergeReads = useRef(new LatestRequestGate())
   const closeMerge = useCallback(() => {
-    mergeRequest.current += 1
+    mergeReads.current.begin()
     setMergeData(null)
   }, [])
 
@@ -571,7 +572,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
 
   /** 读出待合并修稿与它的真实冻结源，交给合并视图；正文有未保存修改或读取期间变了就不打开。 */
   const openPendingRevision = async (rev: RevisionEntry) => {
-    const request = ++mergeRequest.current
+    const request = mergeReads.current.begin()
     const projectSession = captureProjectSession(currentProject)
     if (!meta || !projectSession || !isProjectSessionPath(projectSession, projectKey)) return
     const targetTab = useEditorStore.getState().tabs.find(
@@ -594,7 +595,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       readDraftBody(filePath, projectKey, projectSession),
       ipc.invokeWithProjectSession(projectSession, 'db:revision-get-full', rev.id, projectKey),
     ])
-    if (!isProjectSessionCurrent(projectSession) || request !== mergeRequest.current) return
+    if (!isProjectSessionCurrent(projectSession) || !mergeReads.current.isLatest(request)) return
     if (!revision) return
     const currentTarget = useEditorStore.getState().tabs.find(
       tab => tab.id === tabId && tab.projectKey === projectKey,

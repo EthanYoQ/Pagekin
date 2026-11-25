@@ -85,11 +85,50 @@ describe('knowledge-base channels that throw', () => {
     await expect(invoke('kb:search', '潮位', 5, 'C:/projects/A')).rejects.toThrow(/^GENERATION_KNOWLEDGE_BUSY$/u)
   })
 
+  it('keeps the original error as the cause when an unregistered code reaches the main-process log', async () => {
+    const original = new Error('KNOWLEDGE_BASE_SHARD_LOST')
+    mocks.run.mockRejectedValue(original)
+
+    await expect(invoke('kb:search', '潮位', 5, 'C:/projects/A')).rejects.toThrow(/^IPC_HANDLER_FAILED$/u)
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('kb:search'), expect.objectContaining({ cause: original }))
+  })
+
   it('asks the author to open a project when a reference import arrives with none open', async () => {
     mocks.currentProjectPath.mockReturnValue(null)
 
     const shown = await shownAfterIpc(invoke('kb:import-reference-text', 1, 'run-1', { owner: 'o', epoch: 1 }))
 
     expect(shown).toBe(appErrorMessage(shownLocale('zh-CN'), 'PROJECT_NOT_OPEN'))
+  })
+})
+
+// 知识库层可能把原始 error.message 放进失败结果；经 handle() 交出后，作者只看到通用说明。
+describe('knowledge-base channels that return a failure', () => {
+  it('returns the generic code instead of an English failure the knowledge base passed through', async () => {
+    const raw = { success: false, error: lanceFailure().message }
+    mocks.run.mockResolvedValue(raw)
+
+    const result = await invoke('kb:import-text', '正文', '第1章.txt', 'C:/projects/A') as { error: string }
+
+    expect(result).toEqual({ success: false, error: 'IPC_HANDLER_FAILED' })
+    expect(appErrorMessage(shownLocale('zh-CN'), result.error)).toBe('这次操作没有完成，出了意外问题。请再试一次；还不行，请把这条提示反馈给我们。')
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('kb:import-text'), raw)
+  })
+
+  it('passes a registered code the knowledge base returned straight through', async () => {
+    mocks.run.mockResolvedValue({ success: false, error: 'KNOWLEDGE_BASE_VOLUME_UNSUPPORTED' })
+
+    await expect(invoke('kb:import-text', '正文', '第1章.txt', 'C:/projects/A'))
+      .resolves.toEqual({ success: false, error: 'KNOWLEDGE_BASE_VOLUME_UNSUPPORTED' })
+  })
+
+  it('reports a failed clear with its own code', async () => {
+    mocks.run.mockImplementation(async (operation: (kb: { clearKnowledgeBase: () => Promise<boolean> }) => unknown) =>
+      operation({ clearKnowledgeBase: async () => false }))
+
+    const result = await invoke('kb:clear-all', 'C:/projects/A') as { error: string }
+
+    expect(result).toEqual({ success: false, error: 'KNOWLEDGE_BASE_CLEAR_FAILED' })
+    expect(appErrorMessage(shownLocale('zh-CN'), result.error)).toBe('知识库没能清空。请再点「清空知识库…」；还不行，请把这条提示反馈给我们。')
   })
 })

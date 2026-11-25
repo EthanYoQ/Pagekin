@@ -8,6 +8,7 @@ import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
  * 要么在 generation-error-codes.test.ts 里写明不登记的理由。
  */
 const ERROR_KEYS = {
+  IPC_HANDLER_FAILED: 'error.ipcHandlerFailed',
   KNOWLEDGE_BASE_NATIVE_UNAVAILABLE: 'error.knowledgeBaseNativeUnavailable',
   LEGACY_VECTOR_MIGRATION_BLOCKED: 'error.legacyVectorMigrationBlocked',
   PROJECT_NOT_OPEN: 'error.projectNotOpen',
@@ -368,6 +369,14 @@ const ERROR_KEYS = {
   KNOWLEDGE_BASE_DISK_FULL: 'error.knowledgeDiskFull',
   KNOWLEDGE_BASE_UNWRITABLE: 'error.knowledgeUnwritable',
   KNOWLEDGE_BASE_OPERATION_FAILED: 'error.knowledgeOperationFailed',
+  KNOWLEDGE_BASE_CLEAR_FAILED: 'error.knowledgeClearFailed',
+  // 参照导入的幂等收据与完整性校验（knowledge-base.ts），说明里不露码。
+  KNOWLEDGE_BASE_REFERENCE_AUTHORITY_MISMATCH: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_CLEANUP_FAILED: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_FLIGHT_INVALID: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_KEY_INVALID: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_RECEIPT_CONFLICT: 'error.knowledgeReferenceCheckFailed',
+  KNOWLEDGE_BASE_REFERENCE_VERIFY_FAILED: 'error.knowledgeReferenceCheckFailed',
   // 模型调用与设置（#474 B6）：保存或删除模型、设默认模型，以及按模型设置建执行租约时作者能照着改的原因。
   LLM_MODEL_CONFIG_CORRUPT: 'error.modelSettingsFileDamaged',
   LLM_GLOBAL_CONFIG_CORRUPT: 'error.modelSettingsFileDamaged',
@@ -428,6 +437,11 @@ function codeCandidates(error: unknown): unknown[] {
 function readCode(error: unknown): KnownErrorCode | undefined {
   return codeCandidates(error).find(isKnownCode)
 }
+
+/** 主进程的 IPC 入口（electron/ipc/handle.ts）把没登记的失败换成这个码。 */
+export const IPC_HANDLER_FAILED = 'IPC_HANDLER_FAILED' satisfies KnownErrorCode
+
+export const registeredErrorCode: (error: unknown) => string | undefined = readCode
 
 /** 稳定错误码的形状：至少含一个下划线，ENOENT 这类平台码不算。 */
 const CODE_SHAPE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChapterDeletionOperation } from '../../../shared/chapter-deletion'
 import { globalEventBus } from '../../../shared/event-bus'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
+import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import { formatResourceUri } from '../../../shared/project-paths'
 import { ipc } from '../../../services/ipc-client'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
@@ -19,13 +20,13 @@ export function useIncompleteDeletions(projectPath: string) {
   const text = useLocaleStore(s => s.text)
   const currentProject = useProjectStore(s => s.currentProject)
   const [state, setState] = useState<{ projectPath: string; operations: ChapterDeletionOperation[] }>({ projectPath: '', operations: [] })
-  const loadSequence = useRef(0)
+  const operationReads = useRef(new LatestRequestGate())
   const operations = state.projectPath === projectPath ? state.operations : []
 
   const fetchOperations = useCallback(async (projectSession: ProjectSessionContext) => {
-    const requestId = ++loadSequence.current
+    const requestId = operationReads.current.begin()
     const result = await ipc.invokeWithProjectSession(projectSession, 'chapter:list-incomplete-deletions', projectPath)
-    if (requestId !== loadSequence.current || !isProjectSessionCurrent(projectSession)) return null
+    if (!operationReads.current.isLatest(requestId) || !isProjectSessionCurrent(projectSession)) return null
     return result.success ? result.operations ?? [] : []
   }, [projectPath])
 

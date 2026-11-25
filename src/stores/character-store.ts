@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { ipc } from '../services/ipc-client'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
+import { LatestRequestGate } from '../shared/latest-request-gate'
 import {
   projectSessionContextFromProject,
   sameProjectPathKey,
@@ -194,7 +195,7 @@ interface SessionOperation<T> {
 
 let characterSaveInFlight: SessionOperation<void> | null = null
 let characterIdentityMutationInFlight: SessionOperation<unknown> | null = null
-let characterLoadSequence = 0
+const characterReads = new LatestRequestGate()
 
 interface CharacterState {
   characters: CharacterCard[]
@@ -305,7 +306,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
     const projectSession = currentCharacterProjectSession(projectPath, expectedProjectSession)
     if (!projectSession) return
     const requestedProjectKey = projectSession.projectPath
-    const requestSequence = ++characterLoadSequence
+    const requestSequence = characterReads.begin()
     if (!sameProjectSessionContext(get().dataProjectSession, projectSession)) {
       set({
         avatarDrafts: {},
@@ -340,7 +341,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       }
       if (
         !isCharacterProjectSessionCurrent(projectSession)
-        || requestSequence !== characterLoadSequence
+        || !characterReads.isLatest(requestSequence)
       ) return
     }
     try {
@@ -351,7 +352,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       )
       if (
         !isCharacterProjectSessionCurrent(projectSession)
-        || requestSequence !== characterLoadSequence
+        || !characterReads.isLatest(requestSequence)
       ) return
 
       const draftLedger = readCharacterDraftLedger(requestedProjectKey)
@@ -371,7 +372,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
         : { ledger: draftLedger, value: cards }
       if (
         !isCharacterProjectSessionCurrent(projectSession)
-        || requestSequence !== characterLoadSequence
+        || !characterReads.isLatest(requestSequence)
       ) return
       const visibleCards = normalizeCharacterCards(restored.value)
 
@@ -398,7 +399,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
     } catch (error) {
       if (
         !isCharacterProjectSessionCurrent(projectSession)
-        || requestSequence !== characterLoadSequence
+        || !characterReads.isLatest(requestSequence)
       ) return
       set({
         characters: [],
@@ -420,7 +421,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
   },
 
   beginProjectLoad: (projectPath) => {
-    characterLoadSequence += 1
+    characterReads.begin()
     set({
       avatarDrafts: {},
       characters: [],
@@ -440,7 +441,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
   },
 
   reset: () => {
-    characterLoadSequence += 1
+    characterReads.begin()
     set({
       avatarDrafts: {},
       characters: [],
