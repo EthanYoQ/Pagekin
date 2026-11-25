@@ -1,5 +1,5 @@
 import { directoryProposalChapter, type CharacterProposalBatch } from '../../shared/character-proposal'
-import { CHARACTER_ROLES, CHARACTER_ROLE_LABELS, normalizeCharacterRole, type CharacterRole } from '../../shared/character-role'
+import { CHARACTER_ROLES, getCharacterRoleLabels } from '../../shared/character-role'
 import { adoptedRelationships, type CharacterProposalChoices } from '../../services/character-proposal-choices'
 import { proposalRelations, sameRelationship } from '../../services/workflows/character-proposal-preview'
 import { useLocaleStore } from '../../stores/locale-store'
@@ -12,13 +12,6 @@ const editableFields = [
   ['motivation', '动机', 'Motivation', '動機'], ['arc', '弧光', 'Arc', 'キャラクターアーク'], ['notes', '备注', 'Notes', 'メモ'],
 ] as const
 
-const japaneseRoleLabels: Record<CharacterRole, string> = {
-  protagonist: '主人公',
-  antagonist: '敵対者',
-  supporting: '脇役',
-  minor: '端役',
-}
-
 /** Controlled author choices; the host owns confirmation, main owns the atomic effect. */
 export function CharacterProposalSelectionPanel({ batch, choices, onChange, disabled = false }: {
   batch: CharacterProposalBatch
@@ -29,9 +22,8 @@ export function CharacterProposalSelectionPanel({ batch, choices, onChange, disa
   const text = useLocaleStore(state => state.text)
   const roleLabel = (role: string | undefined) => {
     if (!role) return undefined
-    const normalizedRole = normalizeCharacterRole(role)
-    const label = CHARACTER_ROLE_LABELS[normalizedRole]
-    return text(label.zhCN, label.enUS, japaneseRoleLabels[normalizedRole])
+    const { zhCN, enUS, jaJP } = getCharacterRoleLabels(role)
+    return text(zhCN, enUS, jaJP)
   }
   if (choices.proposalBatchId !== batch.proposalBatchId || choices.revision !== batch.revision) return <p role="alert">{text('提议已改变，请重新载入选择。', 'The proposals changed. Reload the choices.', '提案内容が変わりました。選択肢を再度読み込んでください。')}</p>
   const { identities } = choices

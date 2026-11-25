@@ -9,6 +9,8 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useWorkflowStore } from '../../../stores/workflow-store'
 import { setActiveProjectSessionContext } from '../../../shared/project-session-context'
+import { selectCopy } from '../../../i18n/core'
+import { SETTINGS_PAGES } from '../../stage/settings/settings-pages'
 import type { ProjectData } from '../../../shared/ipc-channels'
 import type { PlanningMaterial } from '../../../services/knowledge-service'
 
@@ -130,9 +132,24 @@ describe('角色卡导入入口', () => {
     useLLMStore.setState({ models: [], defaultModelId: null })
     await paste('姓名：林舟')
     await click('AI 提取并预览')
-    expect(document.body.textContent).toContain('模型配置')
+    expect(document.body.textContent).toContain('设置 → AI 模型')
     expect(start).not.toHaveBeenCalled()
     expect(document.querySelector('textarea')?.value).toBe('姓名：林舟')
+  })
+
+  it.each([
+    { interfaceLocale: 'zh-CN', locale: 'zh-CN', extract: 'AI 提取并预览', path: (settings: string, models: string) => `${settings} → ${models}` },
+    { interfaceLocale: 'en-US', locale: 'en-US', extract: 'Extract and preview with AI', path: (settings: string, models: string) => `${settings} → ${models}` },
+    { interfaceLocale: 'ja-JP', locale: 'en-US', extract: 'AIで抽出・プレビュー', path: (settings: string, models: string) => `「${settings}」→「${models}」` },
+  ] as const)('界面 $interfaceLocale 没有模型时，指引用设置里实际显示的入口名', async ({ interfaceLocale, locale, extract, path }) => {
+    const warning = vi.spyOn(toast, 'warning').mockImplementation(() => {})
+    useLLMStore.setState({ models: [], defaultModelId: null })
+    await paste('姓名：林舟')
+    await act(async () => useLocaleStore.setState({ interfaceLocale, locale }))
+    await click(extract)
+    const modelsPage = SETTINGS_PAGES.find(spec => spec.id === 'llm')!
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining(path(selectCopy(interfaceLocale, '设置', 'Settings'), selectCopy(interfaceLocale, ...modelsPage.name))))
+    expect(start).not.toHaveBeenCalled()
   })
 
   it('确认外发时导航离开，回来后仍恢复粘贴内容和已选文件', async () => {
@@ -232,5 +249,19 @@ describe('角色卡导入入口', () => {
     await act(async () => resolveRun('completed-run'))
     await vi.waitFor(() => expect(document.querySelector('textarea')?.value).toBe('姓名：新角色'))
     expect(document.body.textContent).toContain('新角色.txt')
+  })
+
+  it('日文界面从入口按钮打开导入弹窗并展示发送确认的模型与端点', async () => {
+    await click('暂不导入')
+    await act(async () => useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' }))
+    await click('貼り付け／インポート')
+    await act(async () => page.getByRole('textbox', { name: 'キャラクターカードの全文' }).fill('名前：林舟'))
+    await click('AIで抽出・プレビュー')
+    expect(document.body.textContent).toContain('AIでカードを抽出')
+    expect(document.body.textContent).toContain(model.name)
+    expect(document.body.textContent).toContain(model.baseUrl)
+    await click('戻る')
+    expect(start).not.toHaveBeenCalled()
+    expect(document.querySelector('textarea')?.value).toBe('名前：林舟')
   })
 })

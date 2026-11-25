@@ -10,13 +10,14 @@ export type CharacterRole = typeof CHARACTER_ROLES[number]
 export interface CharacterRoleLabels {
   zhCN: string
   enUS: string
+  jaJP: string
 }
 
 export const CHARACTER_ROLE_LABELS: Readonly<Record<CharacterRole, CharacterRoleLabels>> = {
-  protagonist: { zhCN: '主角', enUS: 'Protagonist' },
-  antagonist: { zhCN: '反派', enUS: 'Antagonist' },
-  supporting: { zhCN: '配角', enUS: 'Supporting character' },
-  minor: { zhCN: '龙套', enUS: 'Minor character' },
+  protagonist: { zhCN: '主角', enUS: 'Protagonist', jaJP: '主人公' },
+  antagonist: { zhCN: '反派', enUS: 'Antagonist', jaJP: '敵対者' },
+  supporting: { zhCN: '配角', enUS: 'Supporting character', jaJP: '脇役' },
+  minor: { zhCN: '龙套', enUS: 'Minor character', jaJP: '端役' },
 }
 
 const CHARACTER_ROLE_ALIASES: Readonly<Record<string, CharacterRole>> = {
@@ -41,6 +42,12 @@ const CHARACTER_ROLE_ALIASES: Readonly<Record<string, CharacterRole>> = {
   次要角色: 'minor',
 }
 
+function lookupCharacterRoleAlias(key: string): CharacterRole | undefined {
+  return Object.prototype.hasOwnProperty.call(CHARACTER_ROLE_ALIASES, key)
+    ? CHARACTER_ROLE_ALIASES[key]
+    : undefined
+}
+
 /**
  * Normalize persisted or external role values before they enter application state.
  * Unknown legacy values deliberately fall back to the least surprising editable role.
@@ -48,8 +55,8 @@ const CHARACTER_ROLE_ALIASES: Readonly<Record<string, CharacterRole>> = {
 export function normalizeCharacterRole(value: unknown): CharacterRole {
   if (typeof value !== 'string') return 'supporting'
   const candidate = value.trim()
-  return CHARACTER_ROLE_ALIASES[candidate]
-    ?? CHARACTER_ROLE_ALIASES[candidate.toLowerCase()]
+  return lookupCharacterRoleAlias(candidate)
+    ?? lookupCharacterRoleAlias(candidate.toLowerCase())
     ?? 'supporting'
 }
 
