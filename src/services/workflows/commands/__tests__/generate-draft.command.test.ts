@@ -1487,13 +1487,13 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     const baseInvoke = invoke.getMockImplementation()!
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
       if (channel === 'db:recovery-candidate-record') {
-        return { success: false, error: 'disk full' }
+        return { success: false, failure: { code: 'RECOVERY_CANDIDATE_WRITE_FAILED', note: { key: 'error.recoveryCandidateWriteFailed' } } }
       }
       return baseInvoke(channel, ...args)
     })
 
     await expect(command.execute({ step: { id: 'draft-step' }, context, callbacks }))
-      .rejects.toThrow(/恢复候选保存失败.*disk full/u)
+      .rejects.toThrow(/恢复候选保存失败.*恢复稿没能写进作品/u)
     expect(callbacks.replaceText).toHaveBeenLastCalledWith(expect.stringContaining('正文太短。'))
   })
 
