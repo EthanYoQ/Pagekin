@@ -1,10 +1,11 @@
-import { ipcMain } from 'electron'
 import path from 'node:path'
+import { wireNote } from '../../src/i18n/app-errors'
+import { failureCode, type FailureCode, type WireFailure } from '../../src/shared/failure'
 import { FileNode, type FileWriteCommitState, type ProjectSessionContext } from '../../src/shared/ipc-channels'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import { getCurrentProjectPath } from '../database'
+import { handle } from '../ipc/handle'
 import { projectAccess } from '../services/project-access'
-import { mainText } from '../i18n'
 import {
   assertProjectFilePath,
   assertRequiredExpectedProjectPath,
@@ -41,12 +42,9 @@ type ProjectFilesystemHandler<Args extends unknown[] = unknown[]> = (
   ...args: Args
 ) => unknown
 
-function text(zhCNText: string, enUSText: string): string {
-  // This controller also runs in isolated IPC tests where Electron's `app`
-  // singleton is intentionally absent. The persisted locale remains the
-  // source of truth for both production and tests.
-  return mainText(undefined, zhCNText, enUSText)
-}
+type FailureKey = Parameters<typeof wireNote>[0]
+
+const failed = (code: FailureCode, key: FailureKey): WireFailure => ({ code, note: wireNote(key) })
 
 function isMissingFileError(error: unknown): boolean {
   const code = typeof error === 'object'
@@ -60,35 +58,20 @@ function isMissingFileError(error: unknown): boolean {
     || message === 'SECURE_FS_NOT_FOUND'
 }
 
-/** 项目会话与路径守卫（project-access、project-context）的错误码按码说明；其他错误不在这里解释。 */
-function projectAccessMessage(error: unknown): string | undefined {
-  switch (error instanceof Error ? error.message : undefined) {
-    case 'PROJECT_SESSION_STALE':
-    case 'PROJECT_SESSION_ROOT_MISMATCH':
-    case 'PROJECT_SESSION_DATABASE_MISMATCH':
-      return text(
-        '项目租约已失效，已拒绝操作。',
-        'The project lease has expired; the operation was rejected.',
-      )
-    case 'PROJECT_SESSION_REQUIRED':
-    case 'PROJECT_CONTEXT_REQUIRED':
-      return text(
-        '缺少项目会话上下文，已拒绝操作。',
-        'Project session context is missing; the operation was rejected.',
-      )
-    case 'PROJECT_FILE_OUTSIDE_PROJECT':
-      return text(
-        '目标超出当前项目范围，已拒绝操作。',
-        'The target is outside the current project; the operation was rejected.',
-      )
-    case 'PROJECT_CONTEXT_CHANGED':
-      return text(
-        '检测到跨项目读写，已拒绝操作。',
-        'Cross-project file access was rejected.',
-      )
-    default:
-      return undefined
-  }
+/** 项目会话与路径守卫（project-access、project-context）的码；其他错误不在这里解释。 */
+const ACCESS_NOTES: Readonly<Record<string, FailureKey>> = {
+  PROJECT_SESSION_STALE: 'error.projectLeaseExpired',
+  PROJECT_SESSION_ROOT_MISMATCH: 'error.projectLeaseExpired',
+  PROJECT_SESSION_DATABASE_MISMATCH: 'error.projectLeaseExpired',
+  PROJECT_SESSION_REQUIRED: 'error.projectSessionContextMissing',
+  PROJECT_CONTEXT_REQUIRED: 'error.projectSessionContextMissing',
+  PROJECT_FILE_OUTSIDE_PROJECT: 'error.projectTargetOutsideProject',
+  PROJECT_CONTEXT_CHANGED: 'error.projectCrossAccessRejected',
+}
+
+function accessFailure(error: unknown): WireFailure | undefined {
+  const code = error instanceof Error ? failureCode(error.message) : undefined
+  return code && Object.hasOwn(ACCESS_NOTES, code) ? failed(code, ACCESS_NOTES[code]) : undefined
 }
 
 /** Do not expose filesystem paths or raw Node errors across the IPC boundary. */
@@ -97,22 +80,18 @@ function projectFilesystemFailure(
   error: unknown,
   commitState: FileWriteCommitState = 'not_committed',
 ): unknown {
-  const accessMessage = projectAccessMessage(error)
+  const access = accessFailure(error)
   if (channel === 'fs:read-file') {
-    const missingFileMessage = isMissingFileError(error)
-      ? text(
-        '项目文件不存在。请检查文件路径；故事架构保存在项目数据中，请使用 read_architecture 工具读取。',
-        'The project file does not exist. Check the file path; story architecture is stored in project data and must be read with the read_architecture tool.',
-      )
-      : undefined
     return {
       success: false,
       content: '',
-      error: accessMessage ?? missingFileMessage ?? text('无法读取项目文件。', 'Could not read the project file.'),
+      failure: access ?? (isMissingFileError(error)
+        ? failed('PROJECT_FILE_NOT_FOUND', 'error.projectFileMissing')
+        : failed('PROJECT_FILE_READ_FAILED', 'error.projectFileReadFailed')),
     }
   }
   if (channel === 'fs:read-json') {
-    return { success: false, data: null, error: accessMessage ?? text('无法读取项目数据。', 'Could not read the project data.') }
+    return { success: false, data: null, failure: access ?? failed('PROJECT_DATA_READ_FAILED', 'error.projectDataReadFailed') }
   }
   if (
     channel === 'fs:write-file'
@@ -121,7 +100,7 @@ function projectFilesystemFailure(
   ) return {
     success: false,
     ...(channel === 'fs:write-file' ? { commitState } : {}),
-    error: accessMessage ?? text('无法写入项目文件。', 'Could not write the project file.'),
+    failure: access ?? failed('PROJECT_FILE_WRITE_FAILED', 'error.projectFileWriteFailed'),
   }
   throw error
 }
@@ -130,7 +109,7 @@ function registerFilesystemHandler<Args extends unknown[]>(
   channel: string,
   handler: ProjectFilesystemHandler<Args>,
 ): void {
-  ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+  handle(channel, async (event, ...args: unknown[]) => {
     const candidate = args.at(-1)
     const context = isProjectSessionContext(candidate) ? candidate : undefined
     if (context) args.pop()
@@ -217,9 +196,9 @@ export function registerFSController(
   fileSystem: WindowsSafeFileSystem = windowsSafeFileSystem,
 ) {
   // 所有项目 fs:* 通道统一以当前租约与 canonical 项目根为权限边界。
-  const ipcMain = { handle: registerFilesystemHandler }
+  const project = { handle: registerFilesystemHandler }
   // 安全的异步读取
-  ipcMain.handle('fs:read-file', async (
+  project.handle('fs:read-file', async (
     _event,
     context: ProjectSessionContext,
     filePath: string,
@@ -239,7 +218,7 @@ export function registerFSController(
   })
 
   // 跨平台绝对安全异步写入（防踩空）
-  ipcMain.handle('fs:write-file', async (
+  project.handle('fs:write-file', async (
     _event,
     context: ProjectSessionContext,
     filePath: string,
@@ -272,7 +251,7 @@ export function registerFSController(
     }
   })
 
-  ipcMain.handle('fs:list-dir', async (
+  project.handle('fs:list-dir', async (
     _event,
     context: ProjectSessionContext,
     dirPath: string,
@@ -285,7 +264,7 @@ export function registerFSController(
     return tree
   })
 
-  ipcMain.handle('fs:mkdir', async (
+  project.handle('fs:mkdir', async (
     _event,
     context: ProjectSessionContext,
     dirPath: string,
@@ -300,11 +279,11 @@ export function registerFSController(
         return { success: true }
       })
     } catch {
-      return { success: false, error: text('无法创建项目目录。', 'Could not create the project directory.') }
+      return { success: false, failure: failed('PROJECT_DIRECTORY_CREATE_FAILED', 'error.projectDirectoryCreateFailed') }
     }
   })
 
-  ipcMain.handle('fs:check-exists', async (
+  project.handle('fs:check-exists', async (
     _event,
     context: ProjectSessionContext,
     filePath: string,
@@ -316,7 +295,7 @@ export function registerFSController(
     return exists
   })
 
-  ipcMain.handle('fs:read-json', async (
+  project.handle('fs:read-json', async (
     _event,
     context: ProjectSessionContext,
     filePath: string,
@@ -331,11 +310,11 @@ export function registerFSController(
           return { success: true, data: JSON.parse(content) }
         })
     } catch {
-      return { success: false, data: null, error: text('无法读取项目数据。', 'Could not read the project data.') }
+      return { success: false, data: null, failure: failed('PROJECT_DATA_READ_FAILED', 'error.projectDataReadFailed') }
     }
   })
 
-  ipcMain.handle('fs:write-json', async (
+  project.handle('fs:write-json', async (
     _event,
     context: ProjectSessionContext,
     filePath: string,
@@ -355,7 +334,7 @@ export function registerFSController(
           return { success: true }
         })
     } catch {
-      return { success: false, error: text('无法写入项目数据。', 'Could not write the project data.') }
+      return { success: false, failure: failed('PROJECT_DATA_WRITE_FAILED', 'error.projectDataWriteFailed') }
     }
   })
 

@@ -10,6 +10,7 @@ import { ipc } from '../ipc-client'
 import { skillRegistry } from './skill-registry'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { workflowMainProcessError } from '../workflows/workflow-project-session'
+import { authorError, resultFailure } from '../../i18n/app-errors'
 
 interface WritingSkillBindingFile {
   version: 1
@@ -83,7 +84,7 @@ export async function loadWritingSkillBindings(
     projectSession.projectPath,
   )
   if (!result.success) {
-    throw workflowMainProcessError(currentInterfaceLocale(), result.error, '无法读取写作 Skill 绑定', 'Could not read the writing Skill bindings.')
+    throw workflowMainProcessError(currentInterfaceLocale(), resultFailure(result), '无法读取写作 Skill 绑定', 'Could not read the writing Skill bindings.')
   }
   try {
     return parseBindings(JSON.parse(result.content))
@@ -134,7 +135,10 @@ export async function saveWritingSkillBinding(
     `${JSON.stringify({ version: 1, bindings }, null, 2)}\n`,
     projectSession.projectPath,
   )
-  if (!result.success) throw new Error(result.error || 'Could not save writing skill bindings')
+  if (!result.success) {
+    const failure = resultFailure(result)
+    throw failure ? authorError(currentInterfaceLocale(), failure) : new Error('Could not save writing skill bindings')
+  }
 }
 
 export async function freezeWritingSkill(

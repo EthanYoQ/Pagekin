@@ -1,5 +1,6 @@
 import type { ToolArtifact } from '../../../services/agent/tool-registry'
-import { appErrorMessage } from '../../../i18n/app-errors'
+import { appErrorMessage, failureText, resultFailure } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 import { ipc } from '../../../services/ipc-client'
 import { useEditorStore } from '../../../stores/editor-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
@@ -89,7 +90,7 @@ export async function openArtifactInEditor(artifact: ToolArtifact): Promise<bool
     }
     if (!result.success) {
       alertError(
-        artifactError(result.error),
+        failureText(currentInterfaceLocale(), resultFailure(result), { fallback: note('文件读取失败。', 'Could not read the file.') }),
         { title: artifactText('无法打开产物', 'Cannot open artifact') },
       )
       return false

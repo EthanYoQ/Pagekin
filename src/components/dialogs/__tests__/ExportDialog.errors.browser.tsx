@@ -107,11 +107,11 @@ describe('ExportDialog failure handling', () => {
       }]
       if (channel === 'db:project-core-get') return { synopsis: '' }
       if (channel === 'db:draft-export-authority-current') return true
-      if (channel === 'fs:grant-write-file') return { success: false, commitState: 'not_committed', error: '磁盘空间不足' }
+      if (channel === 'fs:grant-write-file') return { success: false, commitState: 'not_committed', failure: { code: 'SECURE_FS_TARGET_IN_USE', note: { key: 'error.exportTargetInUse' } } }
       return { success: true }
     })
     await act(async () => page.getByRole('button', { name: '选择目录并导出' }).click())
-    await expect.element(page.getByText(/磁盘空间不足/)).toBeVisible()
+    await expect.element(page.getByText(/文件没有改动。目标文件正被其他程序打开，关掉它后再点「选择目录并导出」。/)).toBeVisible()
   })
 
   it('does not report success after the picker session expires', async () => {

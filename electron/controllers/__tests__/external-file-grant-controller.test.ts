@@ -33,13 +33,14 @@ import {
   secureFileSystemCodes,
 } from '../../../test/helpers/external-file-read-codes'
 import { repoSourceFiles } from '../../../test/helpers/repo-source-files'
+import { withShownError } from '../../../test/helpers/shown-ipc-failure'
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-external-grant-controller-'))
 
 function handler(channel: string): IpcHandler {
   const registered = mocks.handlers.get(channel)
   if (!registered) throw new Error(`Missing IPC handler: ${channel}`)
-  return registered
+  return async (...args) => withShownError(await registered(...args))
 }
 
 function event(webContentsId = 17) {

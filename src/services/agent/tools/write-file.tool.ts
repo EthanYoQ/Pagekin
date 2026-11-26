@@ -1,7 +1,7 @@
 import { buildAgentTool, createToolArtifact } from '../tool-registry'
 import { ipc } from '../../ipc-client'
 import { validatePath } from './safe-path'
-import { agentToolText, assertAgentToolActive, requireAgentProject, agentToolErrorDetail } from './project-context'
+import { agentToolText, assertAgentToolActive, requireAgentProject, agentToolFailureDetail } from './project-context'
 import { projectFactWorkflowForFilePath } from '../../project-fact-targets'
 import { containsHan } from '../../../i18n/app-errors'
 import { pluralEn } from '../../../shared/plural-en'
@@ -90,7 +90,7 @@ export const writeFileTool = buildAgentTool({
           artifacts: [artifact],
         }
       }
-      const detail = agentToolErrorDetail(context, result.error)
+      const detail = agentToolFailureDetail(context, result)
       return {
         success: false,
         commitState,
