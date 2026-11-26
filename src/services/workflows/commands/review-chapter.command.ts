@@ -1,4 +1,5 @@
-import { redactVisibleCompletionText } from '../bounded-completion'
+import { redactVisibleCompletionText, type BoundedCompletion } from '../bounded-completion'
+import { reviewTransportNote } from '../../generation/prompt-budget-failure'
 import { reviewTimeContinuity } from '../../../shared/chapter-time-continuity'
 import type { CommandExecuteParams, WorkflowGenerationRuntimeDependencies } from './base-command'
 import type { PreparedReviewRevisionContext, ReviewRevisionRecovery } from '../../../shared/review-revision-generation'
@@ -37,6 +38,9 @@ export class ReviewChapterCommand extends ReviewRevisionCommand {
       reviewCycleId: params.reviewCycleId, expectedMergedHash: params.expectedMergedHash,
     }, dependencies)
   }
+
+  /** 审稿失败的提示按这次请求的传输诊断说明原因。 */
+  protected override readonly receiptFailureNote = (receipt: BoundedCompletion['receipt']) => reviewTransportNote(receipt?.diagnostics)
 
   protected async generateAndCommit(prepared: PreparedReviewRevisionContext, params: CommandExecuteParams) {
     if (canCommitRecoveredReview(this.recovery)) return this.commitReview(prepared, params)

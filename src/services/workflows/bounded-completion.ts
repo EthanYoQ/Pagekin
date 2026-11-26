@@ -73,6 +73,8 @@ export interface BoundedCompletionRequest {
    * not trustworthy.
    */
   onInterrupted?: (content: string) => void
+  /** 调用方按收据给的更具体说明；返回 undefined 时用按结束原因给的说明。 */
+  failureNote?: (receipt: BoundedCompletion['receipt']) => AuthorNote | undefined
 }
 
 /** Remove hidden reasoning and malformed thinking-tag remnants before any continuation context is composed. */
@@ -225,7 +227,7 @@ export async function completeBoundedCompletion(request: BoundedCompletionReques
 
   while (finishReason !== 'stop') {
     assertNotCancelled(uiLocale, request.isCancelled)
-    if (finishReason !== 'length') throw createBoundedCompletionError(finishReason, receipt, request.interfaceLocale)
+    if (finishReason !== 'length') throw createBoundedCompletionError(finishReason, receipt, request.interfaceLocale, { note: request.failureNote?.(receipt) })
     if (continuationCount >= request.maxContinuations) {
       request.onInterrupted?.(content)
       throw continuationLimitExceededError(request.maxContinuations, uiLocale)
@@ -264,7 +266,7 @@ export async function completeBoundedCompletion(request: BoundedCompletionReques
         request.onInterrupted?.(content)
         throw next.finishReason === 'stop' || next.finishReason === 'length'
           ? noVisibleContinuationProgressError(uiLocale)
-          : createBoundedCompletionError(next.finishReason, next.receipt, request.interfaceLocale)
+          : createBoundedCompletionError(next.finishReason, next.receipt, request.interfaceLocale, { note: request.failureNote?.(next.receipt) })
       }
       content = merged
     }
