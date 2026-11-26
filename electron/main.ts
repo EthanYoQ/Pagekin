@@ -35,6 +35,7 @@ import { configureSingleInstanceRuntime } from './services/single-instance-runti
 import { installWindowCloseGuard } from './controllers/window-controller'
 import { registerStartupController } from './controllers/startup-controller'
 import { installIpcSlowCallLog } from './services/ipc-slow-call-log'
+import { guardIpcRegistration, rejectUnlistedIpc } from './ipc/handle'
 import { resolveDefaultUserData, resolveGlobalDataRoots } from './services/app-data-locator'
 import { runGlobalDataMigration, activateGlobalData, blockedStartupCode } from './services/global-data-migration'
 import { ensureVelaHome } from './utils/config-utils'
@@ -248,6 +249,7 @@ app.whenReady().then(async () => {
   }
 
   installIpcSlowCallLog(ipcMain)
+  guardIpcRegistration(ipcMain, rejectUnlistedIpc(app.isPackaged))
   registerStartupController({
     ipc: ipcMain,
     getTrustedSender: () => win?.webContents ?? null,
