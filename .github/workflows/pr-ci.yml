@@ -51,6 +51,17 @@ jobs:
           fi
           echo "docs_only=$docs_only" | tee -a "$GITHUB_OUTPUT"
 
+      # 同上，PR 不能用自己改过的检查脚本判自己；只有引入脚本的那个 PR，基准上还没有它。
+      - name: Check that baselines only shrink
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          if git cat-file -e HEAD^1:scripts/check-baseline-shrink.mjs 2>/dev/null; then
+            git show HEAD^1:scripts/check-baseline-shrink.mjs > "$RUNNER_TEMP/check-baseline-shrink.mjs"
+          else
+            cp scripts/check-baseline-shrink.mjs "$RUNNER_TEMP/check-baseline-shrink.mjs"
+          fi
+          node "$RUNNER_TEMP/check-baseline-shrink.mjs" HEAD^1
+
   desktop-tests:
     name: Windows tests (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: changes

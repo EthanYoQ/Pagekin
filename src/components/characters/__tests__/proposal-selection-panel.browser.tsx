@@ -78,3 +78,62 @@ it('架构提议有 40 位候选时，每位都有采用方式，指向下一位
   expect(relations.every(label => label.querySelector('input')!.disabled === false)).toBe(true)
   expect(relations.some(label => label.textContent === '人物40 → 人物1：牵连')).toBe(true)
 })
+
+it('日文界面下规划资料提议保留规范角色值并展示一致的日文标签与编辑无障碍名', async () => {
+  const planningBatch: CharacterProposalBatch = {
+    ...architectureBatch,
+    proposalBatchId: 'cpb:planning',
+    source: {
+      kind: 'generation',
+      inputKind: 'planning-material',
+      handle: { projectId: 'p', epoch: 'e', rootActionId: 'r', runId: 'run' },
+      artifacts: [{ artifactId: 'a', revision: 1, textHash: 'h' }],
+    },
+    items: [
+      {
+        selectionKey: 'cand-1',
+        sourceId: 'material:1',
+        fields: { name: '林舟', role: 'protagonist', background: '旧港の調査員。' },
+        relationships: [{ targetName: '沈硯', relation: '協力者' }],
+        resolution: { status: 'unresolved', candidateIds: [] },
+      },
+      {
+        selectionKey: 'cand-2',
+        sourceId: 'material:1',
+        fields: { name: '黒幕', role: 'antagonist' },
+        relationships: [],
+        resolution: { status: 'unresolved', candidateIds: [] },
+      },
+      {
+        selectionKey: 'cand-3',
+        sourceId: 'material:1',
+        fields: { name: '通行人', role: 'minor' },
+        relationships: [],
+        resolution: { status: 'unresolved', candidateIds: [] },
+      },
+    ],
+  }
+  const jaIdentities = [{ characterId: 'heroine', name: '林嵐', role: 'supporting' }]
+  await act(async () => {
+    useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    root.render(<CharacterProposalSelectionPanel batch={planningBatch}
+      choices={createCharacterProposalChoices(planningBatch, jaIdentities)} onChange={() => {}} />)
+  })
+
+  expect(host.querySelector('section[aria-label="キャラクター候補の採用方法を一括で選択"]')).not.toBeNull()
+  expect(host.textContent).toContain('林舟 · 主人公')
+  expect(host.textContent).toContain('黒幕 · 敵対者')
+  expect(host.textContent).toContain('通行人 · 端役')
+  expect(host.textContent).toContain('林嵐 · 脇役')
+  expect(host.textContent).toContain('（相手が未確定のため、関係は保留）')
+
+  const roleSelect = host.querySelector<HTMLSelectElement>('select[aria-label="候補の役割を編集：cand-1"]')!
+  expect(roleSelect).not.toBeNull()
+  expect([...roleSelect.options].map(option => [option.value, option.textContent])).toEqual([
+    ['protagonist', '主人公'],
+    ['antagonist', '敵対者'],
+    ['supporting', '脇役'],
+    ['minor', '端役'],
+  ])
+  expect(host.querySelector('input[aria-label="候補の名前を編集：cand-1"]')).not.toBeNull()
+})
