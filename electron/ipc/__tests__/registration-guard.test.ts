@@ -84,13 +84,23 @@ describe('名单外的通道不经 handle() 注册就抛错', () => {
 })
 
 describe('打包后名单外的直接注册', () => {
-  it('不抛错，改走 handle()：未登记的失败只给渲染端通用码', async () => {
-    const register = (channel: string, handler: Listener) => fake.listeners.set(channel, handler)
-    const ipc = { handle: register, handleOnce: register }
+  const packagedIpc = () => {
+    const registered = new Map<string, { once: boolean; listener: Listener }>()
+    const ipc = {
+      handle: (channel: string, listener: Listener) => { registered.set(channel, { once: false, listener }) },
+      handleOnce: (channel: string, listener: Listener) => { registered.set(channel, { once: true, listener }) },
+    }
     guardIpcRegistration(ipc as never, rejectUnlistedIpc(true))
+    return { ipc, registered }
+  }
+  const raw = () => { throw new Error('SQLITE_CANTOPEN C:\\Users\\writer\\project.db') }
 
-    ipc.handle('demo:packaged', () => { throw new Error('SQLITE_CANTOPEN C:\\Users\\writer\\project.db') })
+  it.each(['handle', 'handleOnce'] as const)('%s 不抛错，仍用同一种注册方法；未登记的失败只给渲染端通用码', async method => {
+    const { ipc, registered } = packagedIpc()
 
-    await expect(Promise.resolve(fake.listeners.get('demo:packaged')!({}))).rejects.toThrow(/^IPC_HANDLER_FAILED$/u)
+    ipc[method]('demo:packaged', raw)
+
+    expect(registered.get('demo:packaged')?.once).toBe(method === 'handleOnce')
+    await expect(Promise.resolve(registered.get('demo:packaged')!.listener({}))).rejects.toThrow(/^IPC_HANDLER_FAILED$/u)
   })
 })

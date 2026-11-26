@@ -45,48 +45,55 @@ let registeringThroughHandle = false
 export function handle<Args extends unknown[]>(channel: string, handler: IpcHandler<Args>): void {
   registeringThroughHandle = true
   try {
-    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
-      let value: unknown
-      try {
-        value = await handler(event, ...(args as Args))
-      } catch (error) {
-        const shown = publicIpcError(error)
-        if (shown.message === IPC_HANDLER_FAILED) console.error(`[AI Novel IPC] ${channel} 抛出未登记的错误:`, error)
-        throw shown
-      }
-      const shown = publicIpcResult(value)
-      if (shown !== value) console.error(`[AI Novel IPC] ${channel} 返回未登记的失败:`, value)
-      return shown
-    })
+    ipcMain.handle(channel, sanitized(channel, handler))
   } finally {
     registeringThroughHandle = false
   }
 }
 
+function sanitized<Args extends unknown[]>(channel: string, handler: IpcHandler<Args>): IpcHandler {
+  return async (event, ...args) => {
+    let value: unknown
+    try {
+      value = await handler(event, ...(args as Args))
+    } catch (error) {
+      const shown = publicIpcError(error)
+      if (shown.message === IPC_HANDLER_FAILED) console.error(`[AI Novel IPC] ${channel} 抛出未登记的错误:`, error)
+      throw shown
+    }
+    const shown = publicIpcResult(value)
+    if (shown !== value) console.error(`[AI Novel IPC] ${channel} 返回未登记的失败:`, value)
+    return shown
+  }
+}
+
+type Register = (channel: string, handler: IpcHandler) => void
+
 /**
- * 之后经 ipc 注册的处理器，不是 handle() 发起、通道又不在 direct-channels.json 里的，交给 onUnlisted。
+ * 之后经 ipc 注册的处理器，不是 handle() 发起、通道又不在 direct-channels.json 里的，交给 onUnlisted，
+ * 连同这次用的原注册方法（handle 或 handleOnce）。
  * 拦的是 ipc 对象本身，经 electron['ipcMain'] 或注入的 ipc 注册的同样被拦。
  */
 export function guardIpcRegistration(
   ipc: Pick<IpcMain, 'handle' | 'handleOnce'>,
-  onUnlisted: (channel: string, handler: IpcHandler) => void,
+  onUnlisted: (channel: string, handler: IpcHandler, register: Register) => void,
 ): void {
   const direct = new Set<string>(DIRECT_CHANNELS)
   for (const method of ['handle', 'handleOnce'] as const) {
-    const register = ipc[method].bind(ipc)
+    const register: Register = ipc[method].bind(ipc)
     ipc[method] = (channel: string, handler: IpcHandler) => {
       if (registeringThroughHandle || direct.has(channel)) register(channel, handler)
-      else onUnlisted(channel, handler)
+      else onUnlisted(channel, handler, register)
     }
   }
 }
 
-/** 打包版降级为 handle() 注册，避免已发布应用因漏登记而打不开。 */
-export function rejectUnlistedIpc(packaged: boolean): (channel: string, handler: IpcHandler) => void {
-  return (channel, handler) => {
+/** 打包版降级为套上 handle() 的失败处理再注册，避免已发布应用因漏登记而打不开。 */
+export function rejectUnlistedIpc(packaged: boolean): (channel: string, handler: IpcHandler, register: Register) => void {
+  return (channel, handler, register) => {
     const message = `IPC 通道 ${channel} 没有经 electron/ipc/handle.ts 的 handle() 注册：新通道改用 handle()，不要加进 direct-channels.json。`
     console.error(`[AI Novel IPC] ${message}`)
     if (!packaged) throw new Error(message)
-    handle(channel, handler)
+    register(channel, sanitized(channel, handler))
   }
 }
