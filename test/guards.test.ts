@@ -219,15 +219,16 @@ describe('失败的码与说明（#844）', () => {
 
   it('过 IPC 的参数不含异常原文', () => {
     for (const planted of [
-      "wireNote('error.importRunCheckFailed', { code: error.message })",
-      "wireNote('error.importRunCheckFailed', { code: String(error) })",
-      "wireNote('error.importRunCheckFailed', { code: `${error.stack}` })",
-      "wireNote('error.importRunCheckFailed', { code: error['message'] })",
-      "wireNote('error.importRunCheckFailed', { code: error.toString() })",
-      "try {} catch (error) { wireNote('error.importRunCheckFailed', { code: `${error}` }) }",
-      "try {} catch (caught) { wireNote('error.importRunCheckFailed', { code: `${(caught)}` }) }",
+      "wireNote('error.importRunCheckFailed', { code: authorOwned(error.message) })",
+      "wireNote('error.importRunCheckFailed', { code: authorOwned(String(error)) })",
+      "wireNote('error.importRunCheckFailed', { code: authorOwned(`${error.stack}`) })",
+      "wireNote('error.importRunCheckFailed', { code: authorOwned(error['message']) })",
+      "wireNote('error.importRunCheckFailed', { code: authorOwned(error.toString()) })",
+      "try {} catch (error) { wireNote('error.importRunCheckFailed', { code: authorOwned(`${error}`) }) }",
+      "try {} catch (caught) { wireNote('error.importRunCheckFailed', { code: authorOwned(`${(caught)}`) }) }",
     ]) expect(rawTextInNoteArguments('electron/x.ts', planted), planted).toHaveLength(1)
     expect(rawTextInNoteArguments('electron/x.ts', "wireNote('error.projectPathTooDeepForDatabase', { max: error.maxProjectRootLength })")).toEqual([])
+    expect(rawTextInNoteArguments('electron/x.ts', "wireNote('error.importRunCheckFailed', { code: authorOwned(material.fileName) })")).toEqual([])
   })
 
   it('造完错误不再改码或 message', () => {
@@ -244,9 +245,9 @@ describe('失败的码与说明（#844）', () => {
     expect(failureRewrites('electron/x.ts', 'Object.assign(new Error(code), { code })')).toEqual([])
   })
 
-  it('断言成 AuthorNote 或 Failure 只许在 src/shared/failure.ts 和测试里', () => {
+  it('断言成 AuthorNote、Failure 或作者数据只许在 src/shared/failure.ts 和测试里', () => {
     expect(scanProduction(failureTypeAssertions).flatMap(([, found]) => found)).toEqual([])
-    for (const planted of ['value as AuthorNote', 'value as unknown as Failure', '<Failure>value', 'value as Failure | undefined']) {
+    for (const planted of ['value as AuthorNote', 'value as unknown as Failure', '<Failure>value', 'value as Failure | undefined', 'text as AuthorOwned', 'params as NoteParams']) {
       expect(failureTypeAssertions('src/x.ts', planted), planted).toHaveLength(1)
     }
     expect(failureTypeAssertions('src/shared/failure.ts', 'value as FailureCode')).toEqual([])
