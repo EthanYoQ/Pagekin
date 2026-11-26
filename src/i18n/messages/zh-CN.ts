@@ -245,7 +245,7 @@ export const zhCN = {
   'error.recoveryCandidateAlreadyHandled': '这份恢复稿已经处理过（已采用或已丢弃），请刷新后再看。',
   'error.recoveryCandidateSourceChanged': '这一章的蓝图或草稿在恢复稿生成后有了变化，已拒绝使用这份恢复稿。请重新生成这一章。',
   'error.recoveryCandidateTextEmpty': '恢复稿没有可见正文，没有保存。请写入正文后再保存。',
-  'error.recoveryCandidateWriteFailed': '恢复稿没能写进作品，原来的内容没有改动。请再试一次。',
+  'error.recoveryCandidateWriteFailed': '原来的内容没有改动。恢复稿没能写进作品，请再试一次。',
   'error.consistencyExemptionReasonInvalid': '请填写豁免原因（不超过 500 字）。',
   'error.postProcessSourceChanged': '这一章的定稿在后处理开始前有了变化（可能被删除或重新定稿），后处理没有开始。请刷新后再看。',
   'error.connectionTestTimeout': '连接测试 {seconds} 秒内没有完成，已停止等待。请检查网络或代理设置后重试。',

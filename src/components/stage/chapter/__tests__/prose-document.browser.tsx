@@ -141,7 +141,7 @@ describe('恢复候选与只读修稿', () => {
       view.dispatch({ changes: { from: view.state.doc.length, insert: '风停了。' } })
     })
     await act(async () => { saveKey(host!.querySelector<HTMLElement>('.cm-content')!) })
-    await vi.waitFor(() => expect(errors).toHaveBeenCalledWith('恢复稿没能写进作品，原来的内容没有改动。请再试一次。'))
+    await vi.waitFor(() => expect(errors).toHaveBeenCalledWith('原来的内容没有改动。恢复稿没能写进作品，请再试一次。'))
     expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
   })
 

@@ -76,7 +76,7 @@ describe('数据库读写失败时作者看不到主进程原文', () => {
     const result = await received(channel, args)
     expect(result.success).toBe(false)
     expect(JSON.stringify(result)).not.toMatch(/SqliteError|malformed|SQLITE_/u)
-    expect(zhText(result)).toBe('恢复稿没能写进作品，原来的内容没有改动。请再试一次。')
+    expect(zhText(result)).toBe('原来的内容没有改动。恢复稿没能写进作品，请再试一次。')
   })
 
   it('db:recovery-candidate-list 遇到 SQLite 原文', async () => {

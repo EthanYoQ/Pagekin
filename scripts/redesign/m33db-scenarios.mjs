@@ -31,7 +31,7 @@ export const M33DB_SCENARIOS = {
     const alert = runSheet.recovery(page).getByRole('alert')
     await alert.waitFor({ state: 'visible' })
     const shown = (await alert.innerText()).trim()
-    assert.equal(shown, '恢复稿没能写进作品，原来的内容没有改动。请再试一次。')
+    assert.equal(shown, '原来的内容没有改动。恢复稿没能写进作品，请再试一次。')
     assert.equal(await card.count(), 1, '写入失败后恢复稿仍列着')
     return { shown, cardStillListed: true }
   }, after: ({ samplePath }) => withBook(samplePath, database => database.exec('DROP TRIGGER m33db_fail')) },

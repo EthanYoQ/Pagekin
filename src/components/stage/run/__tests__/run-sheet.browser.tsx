@@ -683,7 +683,7 @@ describe('运行侧页', () => {
     await vi.waitFor(() => expect(host!.textContent).toContain('原始候选 · 第3章 雾钟'))
     await click('放弃…')
     await click('放弃')
-    await vi.waitFor(() => expect(host!.querySelector('[role="alert"]')?.textContent).toBe('恢复稿没能写进作品，原来的内容没有改动。请再试一次。'))
+    await vi.waitFor(() => expect(host!.querySelector('[role="alert"]')?.textContent).toBe('原来的内容没有改动。恢复稿没能写进作品，请再试一次。'))
   })
 
   it('恢复候选：继续编辑的结果回来前切到英文，打开的标签用英文标题', async () => {

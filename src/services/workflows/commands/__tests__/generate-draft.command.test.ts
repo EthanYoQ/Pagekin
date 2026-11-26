@@ -1493,7 +1493,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     })
 
     await expect(command.execute({ step: { id: 'draft-step' }, context, callbacks }))
-      .rejects.toThrow(/恢复候选保存失败.*恢复稿没能写进作品/u)
+      .rejects.toThrow(/恢复候选保存失败.*原来的内容没有改动。恢复稿没能写进作品/u)
     expect(callbacks.replaceText).toHaveBeenLastCalledWith(expect.stringContaining('正文太短。'))
   })
 
