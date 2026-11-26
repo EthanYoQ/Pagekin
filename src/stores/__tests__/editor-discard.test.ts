@@ -501,6 +501,15 @@ describe('project-scoped unsaved counting', () => {
     expect(countUnsavedEditorItemsForProject(tabs, draftLedgers, projectB)).toBe(1)
     expect(countUnsavedEditorItems(tabs, draftLedgers)).toBe(2)
   })
+
+  it('does not attribute a ledger with malformed project entries to any project', () => {
+    const projectA = 'C:/novels/A'
+    const draftLedgers = {
+      config: JSON.stringify({ version: 1, projects: [null, { projectKey: projectA, baseValue: {}, draftValue: { genre: 'A' } }] }),
+    }
+
+    expect(countUnsavedEditorItemsForProject([], draftLedgers, projectA)).toBe(0)
+  })
 })
 
 it('discarding a recovery tab preserves the official blueprint draft and its dirty tab', () => {

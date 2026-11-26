@@ -25,9 +25,18 @@ describe('ignoreFailure', () => {
 })
 
 describe('parseJsonOrUndefined', () => {
-  it('parses valid JSON and returns undefined for malformed text', () => {
-    expect(parseJsonOrUndefined('{"projects":[]}')).toEqual({ projects: [] })
-    expect(parseJsonOrUndefined('null')).toBeNull()
-    expect(parseJsonOrUndefined('{"projects":')).toBeUndefined()
+  it('parses valid JSON without logging', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    expect(parseJsonOrUndefined('{"projects":[]}', 'unused')).toEqual({ projects: [] })
+    expect(parseJsonOrUndefined('null', 'unused')).toBeNull()
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('logs the named reason and returns undefined for malformed text', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    expect(parseJsonOrUndefined('{"projects":', 'unreadable draft ledger: config')).toBeUndefined()
+    expect(warn).toHaveBeenCalledWith('[ignored] unreadable draft ledger: config', expect.any(SyntaxError))
   })
 })
