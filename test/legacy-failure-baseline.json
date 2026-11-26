@@ -185,9 +185,8 @@
     "englishWithReason": 3
   },
   "src/services/workflows/commands/architecture.command.ts": {
-    "displayedErrorMessage": 8,
-    "englishWithReason": 2,
-    "knownAppErrorMessage": 1
+    "authorOwned": 2,
+    "{ legacy:": 1
   },
   "src/services/workflows/commands/base-command.ts": {
     "displayedErrorMessage": 1

@@ -14,6 +14,8 @@ import type { GenerationOperation } from '../../../shared/model-stage-routing'
 import { GenerationAttemptError, PromptBudgetExceededError, TerminalProviderFailureError } from '../../generation/generation-harness'
 import { BoundedCompletionFailure } from '../bounded-completion'
 import { isWorkflowCancellation } from '../workflow-cancellation'
+import { authorError } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 import {
   GENERATED_GLOBAL_GUIDANCE_MAX_CHARS,
   GENERATED_GLOBAL_GUIDANCE_MAX_RULES,
@@ -69,7 +71,7 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
 
   async execute(params: CommandExecuteParams): Promise<string> {
     const currentProject = useProjectStore.getState().currentProject
-    if (!currentProject) throw new Error(workflowUiText(params.context, '当前项目已切换，字段生成已停止', 'The current project changed, so field generation stopped.'))
+    if (!currentProject) throw authorError(params.context.interfaceLocale, { note: note('当前项目已切换，字段生成已停止', 'The current project changed, so field generation stopped.') })
     const expectedInput: FieldGenerationInput = structuredClone({
       name: currentProject.name,
       novelConfig: currentProject.novelConfig,
@@ -91,11 +93,7 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
         projectSessionContextFromProject(project),
       )
     ) {
-      throw new Error(workflowUiText(
-        context,
-        '当前项目已切换，字段生成已停止',
-        'The current project changed, so field generation stopped.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('当前项目已切换，字段生成已停止', 'The current project changed, so field generation stopped.') })
     }
 
     const expectedConfig = expectedInput.novelConfig
@@ -114,7 +112,7 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
       projectSession,
       writingLanguage,
     )
-    if (!template) throw new Error(workflowUiText(context, '未找到字段生成提示词', 'Field-generation prompt is unavailable'))
+    if (!template) throw authorError(context.interfaceLocale, { note: note('未找到字段生成提示词', 'Field-generation prompt is unavailable') })
     const prompt = renderPrompt(template, {
       existing_config: contextSummary,
       field_label: promptLanguageText(writingLanguage, labelPair[0], labelPair[1]),
@@ -137,20 +135,16 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
           || error instanceof TerminalProviderFailureError) {
           throw error
         }
-        const safeMessage = workflowUiText(
-          context,
-          '字段生成失败，请重试。',
-          'Field generation failed. Please try again.',
-        )
+        const failed = authorError(context.interfaceLocale, { note: note('字段生成失败，请重试。', 'Field generation failed. Please try again.') })
         if (error instanceof GenerationAttemptError) {
           const code = error.code === 'CANCELLED'
             || error.code === 'DEADLINE_EXHAUSTED'
             || error.code === 'PROVIDER_REQUEST_FAILED'
             ? error.code
             : 'PROVIDER_REQUEST_FAILED'
-          throw new GenerationAttemptError(code, safeMessage, error.receipt)
+          throw new GenerationAttemptError(code, failed.message, error.receipt)
         }
-        throw new Error(safeMessage)
+        throw failed
       }
     }
     let result = await requestFieldCompletion(prompt, `generate-field-${this.fieldKey.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`)
@@ -178,11 +172,7 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
       this.assertNotCancelled(context)
       cleanResult = this.stripThinkingTags(result).trim()
       if (!isGeneratedGlobalGuidanceValid(cleanResult)) {
-        throw new Error(workflowUiText(
-          context,
-          `全局写作要求仍不符合 ${GENERATED_GLOBAL_GUIDANCE_MIN_RULES}–${GENERATED_GLOBAL_GUIDANCE_MAX_RULES} 条且不超过 ${GENERATED_GLOBAL_GUIDANCE_MAX_CHARS} 字符的合同，结果未保存。`,
-          `The global writing guidance still does not satisfy the ${GENERATED_GLOBAL_GUIDANCE_MIN_RULES}–${GENERATED_GLOBAL_GUIDANCE_MAX_RULES}-rule, ${GENERATED_GLOBAL_GUIDANCE_MAX_CHARS}-character contract, so it was not saved.`,
-        ))
+        throw authorError(context.interfaceLocale, { note: note('全局写作要求仍不符合 {GENERATED_GLOBAL_GUIDANCE_MIN_RULES}–{GENERATED_GLOBAL_GUIDANCE_MAX_RULES} 条且不超过 {GENERATED_GLOBAL_GUIDANCE_MAX_CHARS} 字符的合同，结果未保存。', 'The global writing guidance still does not satisfy the {GENERATED_GLOBAL_GUIDANCE_MIN_RULES}–{GENERATED_GLOBAL_GUIDANCE_MAX_RULES}-rule, {GENERATED_GLOBAL_GUIDANCE_MAX_CHARS}-character contract, so it was not saved.', { GENERATED_GLOBAL_GUIDANCE_MIN_RULES, GENERATED_GLOBAL_GUIDANCE_MAX_RULES, GENERATED_GLOBAL_GUIDANCE_MAX_CHARS }) })
       }
     }
 
@@ -192,11 +182,7 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
       projectSession,
       projectSessionContextFromProject(projectState.currentProject),
     )) {
-      throw new Error(workflowUiText(
-        context,
-        '当前项目已切换，字段生成结果未保存',
-        'The current project changed, so the generated field was not saved.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('当前项目已切换，字段生成结果未保存', 'The current project changed, so the generated field was not saved.') })
     }
 
     // updateNovelConfig 是同步操作，此处检查与修改之间不会让出事件循环。
@@ -219,32 +205,20 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),
     )) {
-      throw new Error(workflowUiText(
-        context,
-        '当前项目已切换，字段生成结果未保存',
-        'The current project changed, so the generated field was not saved.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('当前项目已切换，字段生成结果未保存', 'The current project changed, so the generated field was not saved.') })
     }
     this.assertNotCancelled(context)
     const saved = mainOwned ? generatedSaved : await saveProject(projectSession)
     this.assertNotCancelled(context)
     projectState = useProjectStore.getState()
     if (!saved) {
-      throw new Error(workflowUiText(
-        context,
-        '字段生成结果保存失败',
-        'The generated field could not be saved.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('字段生成结果保存失败', 'The generated field could not be saved.') })
     }
     if (!sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(projectState.currentProject),
     )) {
-      throw new Error(workflowUiText(
-        context,
-        '当前项目已切换，字段生成已停止',
-        'The current project changed, so field generation stopped.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('当前项目已切换，字段生成已停止', 'The current project changed, so field generation stopped.') })
     }
     callbacks.log(workflowUiText(context, `「${label}」已生成并保存`, `“${label}” was generated and saved.`))
 
