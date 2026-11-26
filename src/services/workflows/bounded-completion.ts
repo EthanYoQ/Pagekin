@@ -105,7 +105,7 @@ export function appendVisibleTextContinuation(
   return redactVisibleText(composeVisibleContinuation(visibleExisting, visibleAddition))
 }
 
-const STATED_REASONS = new Set<LLMFinishReason>(['length', 'content_filter', 'cancelled'])
+const FINISH_REASONS_WITH_OWN_NOTE = new Set<LLMFinishReason>(['length', 'content_filter', 'cancelled'])
 
 function incompleteCompletionNote(finishReason: LLMFinishReason, receipt: BoundedCompletion['receipt'] | undefined): AuthorNote {
   switch (finishReason) {
@@ -124,6 +124,17 @@ function incompleteCompletionNote(finishReason: LLMFinishReason, receipt: Bounde
   }
 }
 
+function failureWithoutFallbackNote(
+  finishReason: LLMFinishReason,
+  receipt: BoundedCompletion['receipt'] | undefined,
+  failure: { code?: FailureCode; note?: AuthorNote },
+  fallback: AuthorNote,
+): Failure {
+  if (!failure.code) return { note: fallback }
+  const diagnosed = failure.note ?? (receipt?.diagnostics && !FINISH_REASONS_WITH_OWN_NOTE.has(finishReason) ? networkFailureNote(receipt) : undefined)
+  return diagnosed ? { code: failure.code, note: diagnosed } : { code: failure.code }
+}
+
 export function createBoundedCompletionError(
   finishReason: LLMFinishReason,
   receipt: BoundedCompletion['receipt'] | undefined,
@@ -134,10 +145,7 @@ export function createBoundedCompletionError(
   // legacy caller does invoke the public helper with it.
   const failureCode: BoundedCompletionFailureCode = finishReason === 'stop' ? 'unknown' : finishReason
   const shown = failure.note ?? incompleteCompletionNote(finishReason, receipt)
-  // 有码时只存明确说明或按诊断给的网络说明；兜底说明不存，界面按码给文案，message 仍是兜底说明。
-  const diagnosed = failure.note ?? (receipt?.diagnostics && !STATED_REASONS.has(finishReason) ? networkFailureNote(receipt) : undefined)
-  const stored: Failure = failure.code ? (diagnosed ? { code: failure.code, note: diagnosed } : { code: failure.code }) : { note: shown }
-  return new BoundedCompletionFailure(failureCode, stored, failureText(interfaceLocale, { note: shown }))
+  return new BoundedCompletionFailure(failureCode, failureWithoutFallbackNote(finishReason, receipt, failure, shown), failureText(interfaceLocale, { note: shown }))
 }
 
 function continuationLimitExceededError(maxContinuations: number, uiLocale: Locale): Error {

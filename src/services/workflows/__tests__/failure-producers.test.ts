@@ -101,11 +101,11 @@ describe('三条已证伪路径的产生点（#844）', () => {
         GENERATION_CONTEXT_LENGTH_EXCEEDED: 'Your work is unchanged. The prompt is longer than the model accepts, so nothing was generated. In Settings, switch to a model with a longer context or lower Max output tokens, then generate again.',
       },
     } as const
-    // 带诊断的 NETWORK_ERROR 按阶段给网络说明，是有意的差异，不在此列。
     const diagnostics = [undefined, { startedAt: 1, elapsedMs: 1, firstResponseMs: 1, lastResponseMs: 1, lastOutputMs: 1, visibleEvents: 1, reasoningEvents: 0, phase: 'stream', endReason: 'failed' }] as const
+    const diagnosticsShownByCode = (code: string) => code === 'NETWORK_ERROR' ? [undefined] : diagnostics
     for (const locale of ['zh-CN', 'en-US'] as const) {
       for (const [failureCode, expected] of Object.entries(MASTER[locale])) {
-        for (const diagnostic of failureCode === 'NETWORK_ERROR' ? [undefined] : diagnostics) {
+        for (const diagnostic of diagnosticsShownByCode(failureCode)) {
           const receipt = { failureCode, ...(diagnostic ? { diagnostics: diagnostic } : {}) } as GenerationAttemptReceipt
           const session: GenerationSession = { budget: { maxAttempts: 1, maxRequestedOutputTokens: 1, maxRequestedOutputTokensPerAttempt: 1, deadlineAt: 0 }, complete: async () => ({ status: 'incomplete', content: '', finishReason: 'error', receipt }) as GenerationOutcome }
           const context = { cancelled: true, uiLocale: locale, interfaceLocale: shown(locale) } as WorkflowContext
