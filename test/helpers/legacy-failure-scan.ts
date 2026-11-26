@@ -38,7 +38,6 @@ export function legacyFailureCounts(file: string, text: string): Partial<Record<
   return counts
 }
 
-/** 参数里有 String(…) 调用，或读 message、stack 属性（点号和方括号都算）。 */
 function readsRawText(node: ts.Node): boolean {
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'String') return true
   if (ts.isPropertyAccessExpression(node) && RAW_PROPERTIES.has(node.name.text)) return true

@@ -111,7 +111,6 @@ export function presentWorkflowFailure(
   isUnpersistedChapterDraft: boolean,
   promptBudgetReport?: PromptBudgetReport,
   activity?: WorkflowStep['generationActivity'],
-  /** 产生点写的说明：有它就不再按码或诊断改写原因。 */
   authored?: string,
 ): WorkflowFailurePresentation {
   if (failureCode === 'prompt_budget_exhausted') {
