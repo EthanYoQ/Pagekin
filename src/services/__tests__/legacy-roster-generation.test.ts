@@ -146,7 +146,6 @@ it('stage前置read期间取消不提交提议', async () => {
  const invoke = vi.fn(async (channel: string) => { if (channel === 'legacy-roster:read') { active = false; return stored } throw new Error(channel) })
  install(invoke)
  const client = createLegacyRosterGeneration(session, () => { if (!active) throw new Error('已取消') })
- // Open a known handle before enabling the cancellation race on the next read.
  invoke.mockImplementationOnce(async () => stored)
  await client.open({ handle })
  await expect(client.stage()).rejects.toThrow('已取消')

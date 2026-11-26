@@ -138,3 +138,9 @@
 - `parentRootActionId`：由主进程从已保存的原始 AI 审稿派生，绝不由渲染端当作权威提供（原文：Derived by main from the saved original AI review, never supplied as authority by renderer.）
 - `materials`：只在可续跑（带 contextId）时给出。
 - `canResume`：终态候选没通过确定性保存校验时为 false，只能复制（原文：False when a terminal candidate failed deterministic save validation and is copy-only.）
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/stores/editor-store.ts`
+
+- `reviewId`：原始 AI 审稿报告的数据库标识；人工确认快照与审稿修稿均以此为来源。

@@ -1,12 +1,6 @@
 import { formatResourceUri } from '../shared/project-paths'
 import { parseResourceUri, resourceWriteAllowed } from '../shared/project-paths'
 import { readResourceContent } from '../services/resource-protocol'
-/**
- * 草稿状态管理 — 管理各章节草稿列表、定稿操作等
- *
- * 数据来源：drafts/ch{N}/index.json（md+json 分离方案）
- * .md 文件保持纯正文，元数据全部由 index.json 管理
- */
 import { create } from 'zustand'
 import { ipc } from '../services/ipc-client'
 import { ignoreFailure } from '../shared/ignore-failure'
@@ -60,7 +54,6 @@ function toDraftMetas(list: AllInvokeChannels['db:draft-list']['return']): Draft
   })).sort((a, b) => b.version - a.version)
 }
 
-/** 直接读一章的草稿列表，不写入 store，不受 loadAllDrafts 请求序号影响。 */
 export async function fetchChapterDrafts(chapterNumber: number, projectSession: ProjectSessionContext): Promise<DraftMeta[]> {
   return toDraftMetas(await ipc.invokeWithProjectSession(projectSession, 'db:draft-list', chapterNumber, projectSession.projectPath))
 }
@@ -69,52 +62,35 @@ function staleProjectError(): { success: false; error: string } {
   return { success: false, error: '项目会话已变化，已拒绝继续操作' }
 }
 
-// ===== 类型定义 =====
-
-/** 单章下的草稿列表（key = chapterNumber） */
 export type DraftsByChapter = Record<number, DraftMeta[]>
 
 interface DraftState {
-  /** 各章草稿列表（内存缓存），key = chapterNumber */
   draftsByChapter: DraftsByChapter
-  /** 是否正在加载 */
   loading: boolean
-  /** Project whose data is currently bound to draftsByChapter. */
   dataProjectKey: string | null
-  /** Exact lease whose data is currently bound to draftsByChapter. */
   dataProjectSession: ProjectSessionContext | null
-  /** Project currently being loaded, if any. */
   loadingProjectKey: string | null
-  /** Exact lease currently loading, if known. */
   loadingProjectSession: ProjectSessionContext | null
 
-  // ===== Actions =====
-  /** Unbind old project data before publishing a newly opened project. */
   beginProjectLoad: (projectPath: string) => void
-  /** 重置为初始状态（项目关闭时由 ProjectService 调用） */
   reset: () => void
-  /** 加载某章的所有草稿 */
   loadChapterDrafts: (
     chapterNumber: number,
     expectedProjectPath?: string,
     expectedProjectSession?: ProjectSessionContext,
   ) => Promise<void>
-  /** 加载全部章节草稿（扫描 drafts/ 目录下所有 ch{NNN} 子目录） */
   loadAllDrafts: (
     expectedProjectPath?: string,
     expectedProjectSession?: ProjectSessionContext,
   ) => Promise<void>
 
-  /** 手动标记草稿状态（修稿/审稿后更新用） */
   markDraftStatus: (
     draftPath: string,
     chapterNumber: number,
     status: DraftStatus,
     expectedProjectSession?: ProjectSessionContext,
   ) => Promise<void>
-  /** 清除指定章节的缓存（下次访问时重新加载） */
   invalidateChapter: (chapterNumber: number) => void
-  /** 应用合并后的修稿，更新文件和各类状态 */
   applyMergedRevision: (
     chapterDir: string,
     chapterNumber: number | undefined,
@@ -276,7 +252,6 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
       '更新草稿状态',
     )
     if (!isDraftProjectSessionCurrent(projectSession)) return
-    // 重新加载该章草稿以刷新缓存
     await get().loadChapterDrafts(chapterNumber, project.path, projectSession)
   },
 
@@ -298,15 +273,13 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
     expectedProjectPath,
     expectedProjectSession,
   ) => {
-    void chapterDir // Compatibility argument; typed DB identities now determine the merge target.
+    void chapterDir
     let committedReceipt: Awaited<ReturnType<typeof ipc.invoke<'db:revision-merge'>>>['receipt'] | undefined
     try {
       const projectSession = currentDraftProjectSession(expectedProjectPath, expectedProjectSession)
       if (!projectSession) {
         return { success: false, error: '项目已切换，已拒绝跨项目合并' }
       }
-      // 必须在第一次 await 前冻结标签；否则动态导入/身份解析期间的新输入
-      // 会被误当成提交基准，并在完成回执到达时被覆盖。
       const editorState = useEditorStore.getState()
       const targetTab = editorState.tabs.find(t =>
         t.projectKey === expectedProjectPath && t.filePath === filePath
@@ -388,18 +361,11 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
       return { success: true, receipt: committedReceipt }
     } catch (e) {
       if (committedReceipt) return { success: true, receipt: committedReceipt, postCommitError: String(e) }
-      // 交出 message 而不是 String(e)：再套一层「Error: 」会盖住 Electron 的通道前缀，显示处就认不出主进程的错误码。
       return { success: false, error: e instanceof Error ? e.message : String(e) }
     }
   },
 }))
 
-// ===== 辅助工具导出 =====
-
-/**
- * 读取草稿文件正文（委托给 resource-protocol 统一路由）
- * @deprecated 建议直接使用 readResourceContent()
- */
 export async function readDraftBody(
   filePath: string,
   expectedProjectPath: string,

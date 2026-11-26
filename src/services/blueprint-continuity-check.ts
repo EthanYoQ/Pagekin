@@ -8,7 +8,6 @@ import { ipc } from './ipc-client'
 
 export interface ContinuityReport {
   handle: MainGenerationRunHandle
-  /** 结果读回来时，来源（蓝图、时间线、模型）和检查时是否一致。 */
   sourceStatus: GraphGenerationRecovery['sourceStatus']
   chapters: ReadonlyMap<number, ContinuityCheckChapter>
   nodes: ReadonlyMap<string, ContinuityCheckNode>
@@ -17,7 +16,6 @@ export interface ContinuityReport {
 
 export type ContinuityCheckOutcome =
   | { status: 'checked'; report: ContinuityReport }
-  /** 检查期间来源变了，这份结果对不上现在的蓝图。 */
   | { status: 'changed' }
   | { status: 'unreadable' }
 

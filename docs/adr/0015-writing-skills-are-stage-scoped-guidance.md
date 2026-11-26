@@ -28,3 +28,19 @@
 
 - `return`：bundle：按安装清单读到的附带文本；没有清单的 Skill 为 none，只看 SKILL.md。
 - `skills:pick-local`：主进程弹出系统对话框选择本机 SKILL.md 或 Skill 文件夹，只读检查后返回候选。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/agent/skill-registry.ts`
+
+- Skill 注册中心 管理所有可用的 Skill（基于 SKILL.md 的模块化知识包）。 支持： - 内置 Skill（随 Vela 发布的预设 Skill） - 用户 Skill（用户放在 ~/.vela/skills/ 下的自定义 Skill） - 项目 Skill（放在项目的 .ai-novel/skills/ 下的项目级 Skill） Skill 格式兼容 Cursor 的 SKILL.md 生态。
+- `whenToUse`：使用场景（用于 Agent 自动匹配）
+- `skillId`：字段用途：skillId 是稳定的项目绑定键，按它查找，不同于可重名的 metadata name（原文：Stable project-binding key.）
+- `writingSkill`：现行规则：只含提示词的工作流兼容检查，不兼容的包仍然可见但从不注入（原文：Prompt-only workflow compatibility; incompatible packages remain visible but are never injected.）
+- 从主进程管理的用户 Skill 目录加载，渲染进程不接触 VELA_HOME 路径。
+- `userCount`：用户 Skill 路径只能由主进程的固定应用数据服务访问。
+
+### `src/stores/workflow-store.ts`
+
+- `writingSkills`：字段用途：启动时冻结的写作 Skill 的安全展示元数据（原文：Safe display metadata for workflow-start-frozen writing skills.）
+- `writingSkills`：现行规则：完整不可变内容在第一步开始前冻结一次（原文：Full immutable content frozen once before the first workflow step starts.）

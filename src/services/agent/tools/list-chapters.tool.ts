@@ -1,6 +1,3 @@
-/**
- * list_chapters — 列出所有章节状态概览
- */
 import { buildAgentTool } from '../tool-registry'
 import { ipc } from '../../ipc-client'
 import { agentToolText, assertAgentProjectCurrent, requireAgentProject, agentToolErrorDetail } from './project-context'
@@ -41,7 +38,6 @@ export const listChaptersTool = buildAgentTool({
         .map((row: unknown) => (row as { chapterNumber?: unknown }).chapterNumber)
         .filter(chapterNumber))
 
-      // 合并所有出现过的章节号
       const allNums = new Set([...bpNums, ...draftNums, ...msNums])
       if (allNums.size === 0) {
         return { success: true, content: text(

@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 
-/** Volatile display state. Hidden reasoning never joins workflow history or generation artifacts. */
 export const useWorkflowReasoningStore = create<{
   entries: Record<string, { attemptId: string; text: string }>
   append: (workflowRunId: string, attemptId: string, chunk: string) => void

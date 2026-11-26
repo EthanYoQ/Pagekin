@@ -2,7 +2,6 @@ import { CANONICAL_PROJECT_DIRECTORY } from '../../shared/project-format'
 import type { MessageKey } from './en-US'
 import { APP_BRAND } from '../../shared/brand'
 
-// Labels of buttons and pages stay in English while the colocated copy that shows them has no Japanese yet (#722).
 export const jaJP = {
   'app.windowTitle': APP_BRAND.enName,
   'error.knowledgeBaseNativeUnavailable': 'Windows のネイティブコンポーネントを読み込めなかったため、ナレッジベースを使用できません。再インストールするか、完全なリリースパッケージをダウンロードしてください。',

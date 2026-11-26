@@ -15,7 +15,6 @@ export const readLaterBlueprintSuggestions = (session: ProjectSessionContext, fi
 export const decideLaterBlueprintSuggestion = (session: ProjectSessionContext, suggestionId: string, decision: SuggestionDecision) =>
   ipc.invokeWithProjectSession(session, 'graph-generation:decide-suggestion', { suggestionId, decision })
 
-/** 切页回来要接得上：进行中的检查按作品会话和这次替换记下来。 */
 export function runLaterBlueprintCheck(session: ProjectSessionContext, finalizationId: string, modelId: string): Promise<LaterBlueprintCheckOutcome> {
   const outcome = check(session, finalizationId, modelId)
   checks.set(checkKey(session, finalizationId), outcome)

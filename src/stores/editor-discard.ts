@@ -52,11 +52,6 @@ function discardDirtyTabs(dirtyTabIds: ReadonlySet<string>): void {
   })
 }
 
-/**
- * 放弃一个可见编辑器的修改，并在恢复对应已保存基准后关闭它。
- *
- * 后台账本按项目删除；其他项目的草稿不受影响。
- */
 export function discardAndCloseEditorTab(
   tabId: string,
   expectedProjectSession: ProjectSessionContext,
@@ -92,12 +87,6 @@ export function discardAndCloseEditorTab(
   useEditorStore.getState().closeTab(tabId)
 }
 
-/**
- * 放弃当前项目的全部未保存编辑。
- *
- * 普通 Tab 通过关闭来丢弃组件内状态；不可关闭的固定 Tab 则恢复已保存内容并清除
- * dirty。角色、配置和章节蓝图的后台账本按项目清理，其他项目草稿保持不变。
- */
 export function discardCurrentProjectEditorChanges(
   projectKey: string,
   expectedProjectSession: ProjectSessionContext,
@@ -126,13 +115,6 @@ export function discardCurrentProjectEditorChanges(
   discardDirtyTabs(dirtyTabIds)
 }
 
-/**
- * 放弃更新门禁统计到的全部未保存内容。
- *
- * 更新会退出整个应用，因此这里按所有项目清空，而不是只清当前项目。先通过各
- * 领域 store 恢复当前可见项目的保存基准，再强制清空三类后台账本；损坏账本也
- * 会被替换为空账本。最后关闭所有 dirty Tab，固定 Tab 恢复保存内容。
- */
 export function discardAllEditorChanges(): void {
   const editorBeforeDiscard = useEditorStore.getState()
   const dirtyTabIds = new Set(

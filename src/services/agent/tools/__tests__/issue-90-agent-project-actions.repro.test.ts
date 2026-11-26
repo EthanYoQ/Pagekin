@@ -34,9 +34,6 @@ const project = {
   },
 }
 
-// This launcher test supplies a synthetic main-issued action. Real source and
-// action admission are covered by the main SQLite tests; the launcher, guards,
-// workflow registration, locale and cancellation below remain real.
 const issuedActions = new Map<string, { args: Record<string, unknown>; modelId: string }>()
 const startWorkflowTool = {
   ...productionStartWorkflowTool,
@@ -83,7 +80,6 @@ function stubWorkflowIpc(overrides: Partial<Record<string, unknown>> = {}): Retu
         notesUpdatedAt: '',
       })
     }
-    // Keep the real workflow registered while this launcher-seam test observes it.
     return new Promise(() => {})
   })
   vi.stubGlobal('window', {

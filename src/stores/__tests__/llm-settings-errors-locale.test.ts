@@ -31,7 +31,6 @@ describe('model settings refusals from the main process (#474 B6)', () => {
     ['setDefaultModel', 'llm:set-default-model'],
     ['setDefaultEmbeddingModel', 'llm:set-default-embedding-model'],
   ] as const)('explains a damaged settings file from %s in the interface language', async (action, channel) => {
-    // llm-controller 的 catch 用 String(error) 交出 "Error: 码"。
     invoke.mockImplementation(async (called: string) => (
       called === channel ? { success: false, error: 'Error: LLM_GLOBAL_CONFIG_CORRUPT' } : undefined
     ))

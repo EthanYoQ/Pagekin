@@ -1,6 +1,3 @@
-/**
- * read_project_state — 读取项目全局状态
- */
 import { buildAgentTool } from '../tool-registry'
 import { ipc } from '../../ipc-client'
 import { assertAgentProjectCurrent, requireAgentProject } from './project-context'
@@ -45,7 +42,6 @@ export const readProjectStateTool = buildAgentTool({
       : `# 📊 项目状态：《${project.name}》\n`]
 
     if (includeConfig) {
-      // 读取小说配置
       try {
         const core = await ipc.invokeWithProjectSession(projectSession, 'db:project-core-get', project.path)
         assertAgentProjectCurrent(context)
@@ -83,7 +79,6 @@ export const readProjectStateTool = buildAgentTool({
         const bps = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-get-all', project.path)
         assertAgentProjectCurrent(context)
         if (bps && Array.isArray(bps)) {
-          // 倒序遍历
           const sorted = bps.sort((a, b) => b.chapterNumber - a.chapterNumber)
           for (const bp of sorted) {
             if (bp.notes && bp.notes.trim()) {

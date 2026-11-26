@@ -75,3 +75,14 @@ ADR-0011 的删除在一个事务里登记收据，再物理删掉本章定稿�
 
 - `chapter:trash-list`：回收站：每次删除一项；拼不成一项的残缺数据列进 damaged，不让整个列表失败。
 - `chapter:trash-restore`：expectedMode 是列表给出的恢复方式；事务内复核，变了就返回 CHAPTER_RESTORE_MODE_CHANGED。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/project-clear-service.ts`
+
+- 清除正文连回收站里的章节一起清掉，回收站与删除清理提示要重读。
+
+### `src/stores/restored-publication-store.ts`
+
+- `useRestoredPublicationStore`：从回收站恢复、实体稿没写出的定稿，按会话租约与稿号记。 单章视图渲染时按自己的稿号来读，不交给标签：这一章的标签怎么打开、开了几次都看得到「重新写入正文」。 重写成功后标成 published，直到换作品或重开。
+- `recordRestoredPublication`：每次放回原位都按这次的结果覆盖：同一稿删了又恢复、这次写出来了，上一次的待写记录不能留着。

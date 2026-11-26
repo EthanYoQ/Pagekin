@@ -37,8 +37,6 @@ async function typeSkillUrl(value: string) {
 }
 
 beforeEach(async () => {
-  // 主进程的回复按渠道给出最小的合法形状（同 app-no-chat）；选文件夹回 null，即作者取消了选择。
-  // App 挂载时按 config 的 locale 初始化语言，缺省就跟系统语言走，英文系统的 CI 上会渲染成英文。
   invoke = vi.fn(async (channel: string) => {
     if (channel === 'config:get') return { locale: 'zh-CN' }
     if (channel === 'project:smoke-open-request' || channel === 'dialog:select-folder') return null

@@ -1,6 +1,3 @@
-/**
- * read_characters — 读取角色卡档案
- */
 import { buildAgentTool } from '../tool-registry'
 import { ipc } from '../../ipc-client'
 import { agentToolText, assertAgentProjectCurrent, requireAgentProject, agentToolErrorDetail } from './project-context'
@@ -65,7 +62,6 @@ export const readCharactersTool = buildAgentTool({
         return { success: true, content: text(`👤 角色卡：${target.name}\n\n${formatted}`, `👤 Character card: ${target.name}\n\n${formatted}`) }
       }
 
-      // 列出所有角色
       const list = chars.map((c) => `  - ${c.name} (${c.role}) · character_id=${c.characterId ?? "unresolved"}`).join('\n')
       return { success: true, content: text(`👤 角色列表（${chars.length} 个）\n${list}\n\n使用 character_id 参数读取确切角色；名字多义时不会自动选择。`, `👤 Character list (${chars.length})\n${list}\n\nUse character_id for an exact character. Ambiguous names are never selected automatically.`) }
     } catch (error) {

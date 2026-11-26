@@ -73,3 +73,15 @@
 - `resourceKeys`：此工作流可能改动的资源（原文：Resources this workflow may mutate.）
 - `readResourceKeys`：此工作流只读、因此可与其他读者共享的资源（原文：Resources this workflow only reads and therefore may share with other readers.）
 - `workflowResourceClaimsConflict`：读者可共存，任何写者与同一逻辑资源的其他读者或写者冲突（原文：Readers may coexist. Any writer conflicts with every other reader or writer of the same logical resource.）
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/ipc-client.ts`
+
+- `getAPI`：获取唯一桌面接口；旧接口不是新运行时的写入后备通道。
+- `isCapabilityOrAppDataChannel`：这些请求的授权来自用户选择后由主进程签发的 grant，或固定 app-data 边界； 它们绝不能借用、也不需要当前项目会话。
+
+### `src/stores/appearance-bootstrap.ts`
+
+- 现行规则：这是主进程真正的启动协调器，渲染端的回退永远不能造出 ready（原文：Main's real startup coordinator. Renderer fallback must never manufacture ready.）
+- 现行规则：主进程校验发送方、来源与代际，再记录这条回读确认（原文：Main validates sender/origin and generation, then records this read-back acknowledgement.）

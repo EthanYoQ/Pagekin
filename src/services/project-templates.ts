@@ -1,19 +1,13 @@
-/**
- * 项目模板 — 新建项目时可从预置模板快速创建
- */
 import type { NovelConfig } from '../shared/ipc-channels'
 
-/** 项目模板 */
 export interface ProjectTemplate {
   id: string
   name: string
   emoji: string
   description: string
-  /** 预填充的小说配置 */
   config: Partial<NovelConfig>
 }
 
-/** 内置项目模板 */
 export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: 'blank',
@@ -107,12 +101,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   },
 ]
 
-/** 获取所有模板 */
 export function getTemplates(): ProjectTemplate[] {
   return PROJECT_TEMPLATES
 }
 
-/** 获取模板的 NovelConfig */
 export function getTemplateConfig(templateId: string): Partial<NovelConfig> {
   const template = PROJECT_TEMPLATES.find((t) => t.id === templateId)
   return template?.config ?? {}

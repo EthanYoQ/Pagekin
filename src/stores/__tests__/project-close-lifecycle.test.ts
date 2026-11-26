@@ -84,11 +84,6 @@ function project(key: 'A' | 'B' | 'C'): ProjectData {
   }
 }
 
-/**
- * Opening work must receive the same immutable identity that later IPC and
- * event handlers use.  A matching path alone would allow a same-directory
- * reopen with a newer lease to accept stale work.
- */
 function projectSession(key: 'A' | 'B' | 'C') {
   const value = project(key)
   return {
@@ -1468,7 +1463,6 @@ describe('project close lifecycle', () => {
     )
   })
 
-  // #702：打开失败、原来开着的书也没能恢复时，主进程只回首个原因的登记码。
   it('打开失败且原来那本书没能恢复：说打开失败的原因，再说原来那本书已关闭，不露码和内部说法', async () => {
     mocks.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
       if (channel === 'project:open') {
@@ -1516,7 +1510,6 @@ describe('project close lifecycle', () => {
     )
   })
 
-  // #702：主进程只回登记码，书名由渲染端从书架上取。
   it('作品文件暂时被占用时，说保住了什么，并指出再点「打开《书名》」，不露 SqliteError', async () => {
     const failure = (args: unknown[]) => ({
       success: false, project: null, requestToken: args[1], activeProjectPath: project('A').path,
@@ -1904,7 +1897,6 @@ describe('project close lifecycle', () => {
     expect(options).toEqual(expect.objectContaining({ title: '删除作品失败' }))
   })
 
-  // #702：文件夹没删完但库文件还在、原来的书恢复回来了，作品仍开着，可以再删一次。
   it('删除没删完、作品恢复回来：说没删完、作品还开着、关掉占用的程序再删一次', async () => {
     mocks.invoke.mockResolvedValueOnce({
       success: false,

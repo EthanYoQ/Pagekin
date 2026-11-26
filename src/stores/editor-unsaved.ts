@@ -8,10 +8,6 @@ const LEDGER_TYPE_BY_KEY: Record<string, EditorTab['type']> = {
 }
 const BACKGROUND_LEDGER_TYPES = new Set(Object.values(LEDGER_TYPE_BY_KEY))
 
-/**
- * 统计真正独立的未保存编辑项。可见 Tab 与其后台账本采用同一个键去重，
- * 因此更新门禁既不会漏掉暂时不可见的跨项目草稿，也不会重复计数。
- */
 export function countUnsavedEditorItems(
   tabs: readonly EditorTab[],
   draftLedgers: Readonly<Record<string, string>>,
@@ -45,7 +41,6 @@ export function countUnsavedEditorItems(
   return dirtyItems.size
 }
 
-/** 只统计关闭指定项目时会被清理的可见 Tab 与后台草稿。 */
 export function countUnsavedEditorItemsForProject(
   tabs: readonly EditorTab[],
   draftLedgers: Readonly<Record<string, string>>,

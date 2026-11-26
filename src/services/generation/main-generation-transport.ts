@@ -14,7 +14,6 @@ function assertHandle(session: ProjectSessionContext, handle: MainGenerationRunH
   if (![handle.projectId, handle.epoch, handle.rootActionId, handle.runId].every(value => typeof value === 'string' && Boolean(value.trim()))
     || handle.projectId !== session.projectId || !historical && handle.epoch !== session.leaseId) throw new Error('GENERATION_PROJECT_SESSION_MISMATCH')
 }
-/** Construction is inert: neither current session nor IPC is read until a call. */
 export function createMainGenerationTransport(captureSession = getActiveProjectSessionContext) {
   const sessions = new Map<string, ProjectSessionContext>()
   function sessionFor(handle: MainGenerationRunHandle, historical = false) {

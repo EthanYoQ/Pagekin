@@ -88,7 +88,6 @@ describe('流程脊的架构四节是否已确认：与架构页徽标同一判�
     const rewritten = Array.from({ length: 5 }, (_, index) => `## 第${index + 1}章：新灯${index + 1}\n守灯人重写第${index + 1}夜。`).join('\n\n')
     const expected = { synopsis: partialOutline, totalChapters: 24, writingLanguage: 'zh-CN' as const }
     synopsis = renderPlotOutlineRange(rewritten, { from: 1, to: 5 }, expected)
-    // executeChapterOutline 提交后 saveNavigation(outline, true) 写下的检查点。
     partial = {
       synopsis_protocol: PLOT_OUTLINE_PROTOCOL, synopsis_incomplete: false, synopsis_range: { from: 1, to: 5 }, synopsis_covered_to: 5,
       synopsis_result: rewritten, synopsis_body_hash: synopsisFactsFingerprint([rewritten]), synopsis_db_hash: synopsisFactsFingerprint([synopsis]),

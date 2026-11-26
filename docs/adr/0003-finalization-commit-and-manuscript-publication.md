@@ -42,3 +42,53 @@
 - `finalizationStepErrorCode`：本流程认识的错误码（去掉 IPC 包装）；不认识时返回 undefined，原错误照常保留。
 - 用函数替换：文件名里的 $ 不当替换模式。
 - `planFinalizationRetry`：一张定稿后处理卡（步骤名到结果）的重试安排。rows：可以单独重试的未成功步骤，各自对应这次重试要跑的步骤； card：「重试失败步骤」要重跑的步骤，按卡上顺序；retired：现在流程已没有的步骤，不重试。 现有步骤没有错误或错误没登记的照常可以重试。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/authoritative-chapter-sequence.ts`
+
+- `AuthoritativeChapterSequenceError`：同一章有多行定稿，或主进程交来的章号不合法时，下一章无从确定。
+- `next`：追加类入口（批量、新建章节、蓝图生成、导入）从这一章往后接，不往缺口里填。
+- `writable`：现在能开写的章号，从小到大：每段缺口的第一章，加上 next。
+- `readWritableChapters`：渲染端读取定稿序列的唯一入口。缺口是合法状态；重复定稿或章号不合法时抛 AuthoritativeChapterSequenceError。
+
+### `src/services/auto-next-chapter.ts`
+
+- `getAutoNextChapterPrefill`：定稿后的自动操作只负责打开紧邻的、尚未开始的章节创作窗口。 它不会直接调用模型，也不会覆盖已有草稿。
+
+### `src/services/finalization-client.ts`
+
+- `commitFinalizationSnapshot`：只接受已冻结快照；调用处不能把任意正文/目标路径塞给 retry。
+- `retryFinalizationPublication`：实体稿重试只带已提交的 finalizationId，正文和路径始终从 SQLite outbox 读取。
+
+### `src/services/finalization-snapshot.ts`
+
+- `FinalizationSnapshot`：定稿输入在用户确认时冻结：后续异步流程只能消费这里的内容与会话， 不允许回读数据库正文来替换编辑器可见内容。
+- `finalizationContentRevision`：约定：编辑器修订从 0 起，持久化的定稿来源修订从 1 起，函数里的 +1 看不出这层约定（原文：Editor revisions are zero-based; persisted finalization source revisions start at one.）
+- `reconcileFinalizationCompletion`：纯 reconciliation seam：只有仍是同一个项目会话、同一草稿、同一修订且正文未变 的 tab 才能被旧完成事件结算为已定稿。否则保留用户后续输入并记录冲突。
+
+### `src/services/project-service.ts`
+
+- 只用完成事件携带的不可变快照结算 tab。不得为此回读数据库正文， 否则完成事件可能覆盖用户在定稿等待期间的新编辑。
+- `syncFinalizedDraftTab`：将定稿完成事件与原始不可变快照进行精确 reconciliation。 绝不回读数据库正文：完成事件晚到时必须保留用户后续编辑。
+
+### `src/services/workflow-guards.ts`
+
+- `pending`：只是还没轮到（上一章还在整理），不是出错，界面不用错误样式。
+- 关键步骤都没记失败、且还有运行占着上一章：只是还没跑完。批量运行一直占着本批各章，所以必须先看有没有记失败。
+
+### `src/stores/draft-store.ts`
+
+- `fetchChapterDrafts`：直接读一章的草稿列表，不写入 store，不受 loadAllDrafts 请求序号影响。
+- `editorState`：必须在第一次 await 前冻结标签；否则动态导入/身份解析期间的新输入 会被误当成提交基准，并在完成回执到达时被覆盖。
+
+### `src/stores/editor-store.ts`
+
+- `draftId`：数据库草稿标识，用于定稿事件精确定位已打开的虚拟草稿。
+- `draftStatus`：数据库草稿状态；定稿或归档状态必须只读。
+- `contentRevision`：内容变更代次，用于阻止异步保存响应覆盖保存期间的新输入。
+- `finalizationId`：已提交定稿的稳定身份，供发布重试和冲突提示关联。
+- `finalizationPublication`：实体稿发布投影状态；pending 表示数据库已定稿但文件待发布。
+- `finalizationConflict`：完成事件落后于本地编辑时保留的显式冲突信息。
+- `settleTabSave`：按保存开始时的快照结算；期间有新输入时只更新已保存基准。
+- `settleMergedRevision`：结算修订合并；期间有新输入时保留当前正文与未保存状态。

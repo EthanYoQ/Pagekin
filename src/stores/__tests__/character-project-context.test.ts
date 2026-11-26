@@ -141,7 +141,7 @@ describe('character store project context', () => {
     await useCharacterStore.getState().load(PROJECT_A)
 
     expect(useCharacterStore.getState().characters).toEqual([persistedCharacter])
-    expect(getProjectEditorDraft(currentLedger(), PROJECT_A)).toBeUndefined() // Same ID and normalized bytes equal the persisted card; no dirty draft remains.
+    expect(getProjectEditorDraft(currentLedger(), PROJECT_A)).toBeUndefined()
   })
 
   it('normalizes only the opened project draft and preserves another project opaque payload', async () => {
@@ -340,7 +340,6 @@ describe('character store project context', () => {
     useProjectStore.setState({ currentProject: project(PROJECT_B) })
     const loadB = useCharacterStore.getState().load(PROJECT_B)
 
-    // B obtains a new lease, so it does not wait for A's stale identity mutation.
     expect(invoke).toHaveBeenCalledTimes(3)
     deleteA.resolve({ success: true })
     await Promise.all([expect(deletion).resolves.toBe(false), loadB])

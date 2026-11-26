@@ -123,7 +123,6 @@ describe('generation error codes from the main process', () => {
 })
 
 it('does not promise that a stale-session action never ran', () => {
-  // 主进程可能已经处理完，只是结果因会话失效被拒；文案只能说结果不可用。
   const raw = "Error invoking remote method 'generation:begin': Error: GENERATION_PROJECT_SESSION_STALE"
   const zh = knownAppErrorMessage(shown('zh-CN'), raw)!, en = knownAppErrorMessage(shown('en-US'), raw)!
   expect(zh).toContain('结果不可用')
@@ -132,14 +131,12 @@ it('does not promise that a stale-session action never ran', () => {
   expect(en).not.toMatch(/did not run|was not run/iu)
 })
 
-// GENERATION_MODEL_CHANGED 由主进程续跑情节大纲时抛出，GENERATION_IMPORT_MODEL_CHANGED 由导入生成抛出；GENERATION_SOURCE_CHANGED_MODEL 由 #453 抛出。
 it.each(['GENERATION_MODEL_CHANGED', 'GENERATION_IMPORT_MODEL_CHANGED', 'GENERATION_SOURCE_CHANGED_MODEL'])('explains %s mid-generation instead of falling back to the raw code', code => {
   const wrapped = `Error invoking remote method 'generation:execute': Error: ${code}`
   expect(knownAppErrorMessage(shown('zh-CN'), wrapped)).toContain('模型设置被修改')
   expect(knownAppErrorMessage(shown('en-US'), wrapped)).toContain('model settings changed')
 })
 
-// GENERATION_SKILL_BUNDLE_DAMAGED 由 #443 抛出，GENERATION_FINALIZATION_RECOVERY_UNAVAILABLE 由 #447 抛出；无论哪个 PR 先合入都已登记。
 it.each([
   ['GENERATION_SKILL_BUNDLE_DAMAGED', '重新导入', 'import'],
   ['GENERATION_FINALIZATION_RECOVERY_UNAVAILABLE', '生成记录已变化', 'generation record changed'],
@@ -149,7 +146,6 @@ it.each([
   expect(knownAppErrorMessage(shown('en-US'), wrapped)).toContain(en)
 })
 
-// 这两个码在保存时的来源复核里也会抛出，那时模型已经回答过。
 it.each(['GENERATION_DRAFT_NOT_CURRENT', 'GENERATION_FINALIZED_SOURCE_NOT_CURRENT'])('does not promise that %s happened before any model request', code => {
   const raw = `Error invoking remote method 'generation:commit-draft': Error: ${code}`
   expect(knownAppErrorMessage(shown('zh-CN'), raw)).not.toMatch(/没有调用模型|未调用模型/u)
@@ -164,7 +160,6 @@ it('does not blame a book switch when the request carried no session at all', ()
   expect(en).not.toMatch(/switched/iu)
 })
 
-// 审计点名的四个码与已登记的 GENERATION_SOURCE_CHANGED 走同一条转发路径、同一种作者情境（生成途中依据变了）。
 it.each([
   'GENERATION_SOURCE_CHANGED_DURING_SNAPSHOT',
   'GENERATION_ASSET_CHANGED_DURING_SNAPSHOT',
@@ -176,7 +171,6 @@ it.each([
   expect(knownAppErrorMessage(shown('en-US'), wrapped)).toBe(knownAppErrorMessage(shown('en-US'), 'GENERATION_SOURCE_CHANGED'))
 })
 
-// 名单版本冲突与角色不存在既来自批准角色提议，也来自普通的角色卡保存：说明不能只指向提议（#474 审计）。
 it.each(['CHARACTER_ID_REVISION_CONFLICT', 'CHARACTER_ID_UNKNOWN'])('explains %s without assuming a proposal is open', code => {
   expect(knownAppErrorMessage(shown('en-US'), code)).not.toMatch(/proposal/iu)
   expect(knownAppErrorMessage(shown('zh-CN'), code)).not.toContain('提议')
@@ -184,9 +178,7 @@ it.each(['CHARACTER_ID_REVISION_CONFLICT', 'CHARACTER_ID_UNKNOWN'])('explains %s
 
 describe('project session and external file errors from the main process (#474 B4)', () => {
   it.each([
-    // db 读通道原样抛出：Electron 包上通道名，错误类名代替了 "Error"。
     ["Error invoking remote method 'db:draft-list': ProjectSessionStaleError: PROJECT_SESSION_DATABASE_MISMATCH", 'The project was switched or reopened'],
-    // db 写通道返回 { error: String(error) }。
     ['ProjectSessionStaleError: PROJECT_SESSION_STALE', 'The project was switched or reopened'],
     ["Error invoking remote method 'kb:stats': Error: PROJECT_SESSION_REQUIRED", 'did not carry the session of the open project'],
     ['Error: PROJECT_CONTEXT_CHANGED', 'The project was switched or reopened'],
@@ -219,7 +211,6 @@ describe('显示处统一的报错说明（#474 渲染层消费处）', () => {
     expect(displayedErrorMessage(shown(locale), new Error("Error invoking remote method 'fs:read': TypeError: boom"), '兜底')).toBe('boom')
     expect(displayedErrorMessage(shown(locale), '模型服务返回 HTTP 429', '兜底')).toBe('模型服务返回 HTTP 429')
     for (const empty of [undefined, null, '', '  ', new Error('')]) expect(displayedErrorMessage(shown(locale), empty, '兜底')).toBe('兜底')
-    // IPC 之外 reject 的普通对象：有字符串 message 就用它，没有就用兜底，不显示 [object Object]。
     expect(displayedErrorMessage(shown(locale), { message: '磁盘只读' }, '兜底')).toBe('磁盘只读')
     expect(displayedErrorMessage(shown(locale), { success: false }, '兜底')).toBe('兜底')
   })
@@ -256,7 +247,6 @@ describe('显示处统一的报错说明（#474 渲染层消费处）', () => {
     expect(errorMessageForModel('en-US', unregistered)).toBe(unregistered)
   })
 
-  // project:create / project:open 的 catch 把 resolveDirectoryPath 抛出的码经 String(error) 原样放进 result.error。
   it.each(['zh-CN', 'en-US'] as const)('%s：选好的文件夹在使用前被移动或替换时，不把 EXTERNAL_FILE_GRANT_TARGET_CHANGED 交给作者', locale => {
     const message = displayedErrorMessage(shown(locale), 'Error: EXTERNAL_FILE_GRANT_TARGET_CHANGED')
     expect(message).not.toMatch(/EXTERNAL_FILE_GRANT|Error:/u)
@@ -266,7 +256,6 @@ describe('显示处统一的报错说明（#474 渲染层消费处）', () => {
 
 describe('cast, blueprint and draft errors from the main process (#474 B2)', () => {
   it.each([
-    // 可写 db 通道返回 { error: String(error) }。
     ['Error: DRAFT_FINALIZED_READ_ONLY', 'This chapter is finalized', '这一章已经定稿'],
     ['Error: CHARACTER_ROSTER_REVISION_STALE', 'The cast changed in the meantime', '角色名单在这期间被改动了'],
     ['Error: CHARACTER_ROSTER_RELATIONSHIP_TARGET_UNKNOWN', 'must be another character in the cast', '对象须是名单里的其他角色'],
@@ -281,12 +270,9 @@ describe('cast, blueprint and draft errors from the main process (#474 B2)', () 
 
 describe('knowledge base and search index errors from the main process (#474 B3)', () => {
   it.each([
-    // kb 通道的结果值：{ success: false, error: 码 }。
     ['KNOWLEDGE_BASE_COPY_CHANGED', 'Reopen the material', '请重新打开这份资料'],
     ['EMBEDDING_RESPONSE_INVALID', 'returned an unusable result', '返回的结果不对'],
-    // 检索与读取原样抛出：Electron 包上通道名与 "Error: "。
     ["Error invoking remote method 'kb:search': Error: EMBEDDING_SPACE_REGISTRY_INVALID", 'search index records of this book are damaged', '检索索引记录已损坏'],
-    // vector-store 的 catch 曾用 String(error) 交出 "Error: 码"。
     ['Error: EMBEDDING_SPACE_UNREGISTERED_DATA', 'search index records of this book are damaged', '检索索引记录已损坏'],
   ])('explains %s in the interface language without the code', (raw, english, chinese) => {
     expect(appErrorMessage(shown('en-US'), raw)).toContain(english)
@@ -307,15 +293,12 @@ describe('knowledge base and search index errors from the main process (#474 B3)
 
 describe('model, model settings and MCP errors from the main process (#474 B6)', () => {
   it.each([
-    // llm-controller 的 catch 用 String(error) 交出 "Error: 码"。
     ['Error: LLM_GLOBAL_CONFIG_CORRUPT', 'model settings file is damaged', '模型设置文件已损坏'],
     ['Error: LLM_DEFAULT_MODEL_ROLLBACK_FAILED', 'model was not deleted', '模型没有删除'],
     ['Error: LLM_STAGE_MODEL_UNAVAILABLE', 'no longer available for writing', '不能用于文本生成'],
     ['Error: LLM_STAGE_MODEL_REQUEST_INVALID', 'stage setting was not saved', '分工设置没有保存'],
-    // 执行租约的码由 ModelExecutionLeaseError 抛出，带自己的类名。
     ['ModelExecutionLeaseError: MODEL_ENDPOINT_INVALID', 'Base URL is invalid', 'Base URL 无效'],
     ['GENERATION_KIMI_TEMPERATURE_INVALID', 'temperature from 0 to 1', '温度必须在 0 到 1 之间'],
-    // mcp 通道的结果值与工具调用的 String(error)。
     ['MCP_CONFIG_INVALID', 'MCP configuration file is damaged', 'MCP 配置文件损坏'],
     ['MCP_CONNECT_FAILED', 'Could not connect to the MCP server', 'MCP 服务器连接失败'],
     ['Error: MCP_REQUEST_TIMEOUT', 'did not respond in time', '没有及时响应'],

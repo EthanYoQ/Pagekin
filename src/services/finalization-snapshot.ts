@@ -8,10 +8,6 @@ import { useLocaleStore } from '../stores/locale-store'
 
 export type FinalizationPublicationStatus = 'pending' | 'published'
 
-/**
- * 定稿输入在用户确认时冻结：后续异步流程只能消费这里的内容与会话，
- * 不允许回读数据库正文来替换编辑器可见内容。
- */
 export interface FinalizationSnapshot {
   tabId: string
   projectPath: string
@@ -33,7 +29,6 @@ export interface FinalizationCompletion {
   publicationStatus: FinalizationPublicationStatus
 }
 
-/** Editor revisions are zero-based; persisted finalization source revisions start at one. */
 export function finalizationContentRevision(editorRevision: number | undefined): number {
   return (editorRevision ?? 0) + 1
 }
@@ -67,10 +62,6 @@ export function captureFinalizationSnapshot(input: {
   })
 }
 
-/**
- * 纯 reconciliation seam：只有仍是同一个项目会话、同一草稿、同一修订且正文未变
- * 的 tab 才能被旧完成事件结算为已定稿。否则保留用户后续输入并记录冲突。
- */
 export function reconcileFinalizationCompletion(
   tab: EditorTab,
   snapshot: FinalizationSnapshot,
