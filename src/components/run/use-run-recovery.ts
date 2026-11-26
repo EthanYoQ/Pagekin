@@ -15,7 +15,8 @@ import {
   abandonHandle, buildRecoveryEntries, EMPTY_RECOVERY_SOURCES, planningTitle,
   type BatchEntry, type CandidateEntry, type DraftEntry, type EditorEntry, type PlanningEntry, type RecoveryEntry, type RecoverySources, type ReviewEntry,
 } from './run-recovery'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
+import { note, type Failure } from '../../shared/failure'
 import { leaveSettingsThen } from '../settings/unsaved-settings'
 import { forgetHiddenRecovery, readHiddenRecovery } from './hidden-recovery'
 import { actionToast } from '../ui/ActionToast'
@@ -204,6 +205,11 @@ export function useRunRecovery(): RunRecovery {
     setCandidateError(displayedErrorMessage(currentInterfaceLocale(), error, text('恢复候选操作失败', 'Recovery candidate action failed')))
   }, [stillCurrent])
 
+  const failCandidateResult = useCallback((result: { failure?: Failure }) => {
+    if (!stillCurrent()) return
+    setCandidateError(failureText(currentInterfaceLocale(), resultFailure(result), { fallback: note('恢复候选操作失败', 'Recovery candidate action failed') }))
+  }, [stillCurrent])
+
   return {
     entries,
     candidateError,
@@ -228,7 +234,7 @@ export function useRunRecovery(): RunRecovery {
       void ipc.invokeWithProjectSession(session, 'db:recovery-candidate-update', entry.candidate.candidateId, entry.candidate.visibleText, session.projectPath)
         .then(result => {
           if (!stillCurrent()) return
-          if (!result.success || !result.candidate) return failCandidate(result.error)
+          if (!result.success || !result.candidate) return failCandidateResult(result)
           const candidate = result.candidate
           useEditorStore.getState().openFile({
             id: `recovery:${candidate.candidateId}`,
@@ -252,7 +258,7 @@ export function useRunRecovery(): RunRecovery {
       void ipc.invokeWithProjectSession(session, 'db:recovery-candidate-resolve', entry.candidate.candidateId, 'discarded', session.projectPath)
         .then(result => {
           if (!stillCurrent()) return
-          if (!result.success) return failCandidate(result.error)
+          if (!result.success) return failCandidateResult(result)
           dropCandidate(entry.key)
         }, failCandidate)
     },

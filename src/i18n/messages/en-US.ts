@@ -243,6 +243,7 @@ export const enUS = {
   'error.recoveryCandidateAlreadyHandled': 'This recovered draft was already handled (used or discarded). Refresh to see the current state.',
   'error.recoveryCandidateSourceChanged': "This chapter's blueprint or draft changed after the recovered draft was made, so it cannot be used. Generate the chapter again.",
   'error.recoveryCandidateTextEmpty': 'The recovered draft has no visible text, so it was not saved. Add text, then save.',
+  'error.recoveryCandidateWriteFailed': 'The recovered draft could not be saved to the project. Nothing was changed. Try again.',
   'error.consistencyExemptionReasonInvalid': 'Enter a reason for the exemption (500 characters or fewer).',
   'error.postProcessSourceChanged': "This chapter's finalized text changed before post-processing started (it may have been deleted or finalized again), so post-processing did not start. Refresh to see the current state.",
   'error.connectionTestTimeout': 'The connection test did not finish within {seconds} seconds and was stopped. Check your network or proxy settings, then try again.',
