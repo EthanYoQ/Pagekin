@@ -205,7 +205,7 @@ export const jaJP = {
   'error.characterStateResultInvalid': '定稿の本文は保存されましたが、人物カードは更新されませんでした。モデルによる人物の状態の応答が、何度も誤った形式で返されました。この章の定稿後の処理で「Retry」を選んでください。繰り返し失敗する場合は、「Models by stage」で「After finalizing」に別のモデルを選んでください。',
   'error.characterRosterNewerChapter': '後の定稿済みの章がすでにこの人物を更新しているため、前の章でその現在の状態を上書きしませんでした。',
   'error.narrativeThreadEvidenceNotInSource': '選択した定稿済みの章に含まれる、短い抜粋を貼り付けてください。',
-  'error.plotThreadWriteFailed': 'この変更をプロジェクトに保存できませんでした。更新してから、もう一度お試しください。',
+  'error.plotThreadWriteFailed': '既存の伏線とプロットツリーはそのまま残っています。この変更をプロジェクトに保存できませんでした。更新してから、もう一度お試しください。',
   'error.draftNotFound': 'この草稿はもう存在しない（削除された可能性があります）ため、変更は保存されませんでした。',
   'error.draftFinalizedReadOnly': 'この章は定稿済みで本文は読み取り専用のため、変更は保存されませんでした。',
   'error.supersededDraftDeleteForbidden': 'これは置き換えられた定稿で、単独では削除できません。章の原稿と一緒に削除されます。',
