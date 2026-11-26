@@ -9,6 +9,7 @@ import { readResourceContent } from '../services/resource-protocol'
  */
 import { create } from 'zustand'
 import { ipc } from '../services/ipc-client'
+import { ignoreFailure } from '../shared/ignore-failure'
 import {
   type DraftMeta,
 } from '../services/draft-index'
@@ -166,8 +167,7 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
     const projectPath = expectedProjectPath ?? project.path
     const requestId = loadAllDraftsRequestSequence
 
-    try {
-      // 直接调用后端 DB 获取列表，返回的结构已经转换为兼容的 DraftMeta 格式
+    await ignoreFailure(`chapter draft list unavailable: ${chapterNumber}`, async () => {
       const list = await ipc.invokeWithProjectSession(projectSession, 'db:draft-list', chapterNumber, projectPath)
       if (
         requestId !== loadAllDraftsRequestSequence
@@ -186,9 +186,7 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
         dataProjectKey: projectPath,
         dataProjectSession: projectSession,
       }))
-    } catch {
-      // 出错或不存在时跳过
-    }
+    })
   },
 
   loadAllDrafts: async (expectedProjectPath, expectedProjectSession) => {

@@ -207,6 +207,24 @@ describe('ProjectBackupPanel', () => {
     }))
   })
 
+  it('reads the backup view once per project session across re-renders and locale changes', async () => {
+    await renderPanel()
+    await fill('WebDAV 地址', ACCOUNT.endpoint)
+    await act(async () => { useProjectStore.setState({ currentProject: { ...(PROJECT as object) } as never }) })
+    await act(async () => { useLocaleStore.setState({ interfaceLocale: 'en-US', locale: 'en-US' }) })
+    await act(async () => new Promise(resolve => setTimeout(resolve, 0)))
+
+    expect(invoke.mock.calls.filter(([channel]) => channel === 'cloud-backup:view')).toEqual([['cloud-backup:view', SESSION]])
+
+    await act(async () => { useProjectStore.setState({ currentProject: { ...(PROJECT as object), sessionLease: 'lease-2' } as never }) })
+    await act(async () => new Promise(resolve => setTimeout(resolve, 0)))
+
+    expect(invoke.mock.calls.filter(([channel]) => channel === 'cloud-backup:view')).toEqual([
+      ['cloud-backup:view', SESSION],
+      ['cloud-backup:view', { ...SESSION, leaseId: 'lease-2' }],
+    ])
+  })
+
   it('guides an unconfigured project and connects before explicit binding', async () => {
     invoke.mockImplementation(async (channel: string, request?: unknown) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }

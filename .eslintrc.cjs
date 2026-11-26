@@ -2,6 +2,24 @@ const LANCEDB_SYNTAX = {
   selector: "ImportExpression[source.value='@lancedb/lancedb'], CallExpression[arguments.0.value='@lancedb/lancedb']",
   message: '经 electron/lance-database.ts 打开 LanceDB，新表格式钉在那里。',
 }
+const EMPTY_CATCH_SYNTAX = {
+  selector: 'CatchClause[body.body.length=0]',
+  message: '空 catch 会吞掉失败：让错误传到上层，或改用 src/shared/ignore-failure.ts 的 ignoreFailure 记一行日志。',
+}
+const EMPTY_CATCH_FREE_FILES = [
+  'src/services/agent/skill-registry.ts',
+  'src/services/agent/tools/read-project-state.tool.ts',
+  'src/services/project-clear-service.ts',
+  'src/services/workflows/chapter-workflow.ts',
+  'src/services/workflows/commands/generate-draft.command.ts',
+  'src/shared/character-proposal-parser.ts',
+  'src/shared/writing-skills.ts',
+  'src/stores/agent-store.ts',
+  'src/stores/character-store.ts',
+  'src/stores/draft-store.ts',
+  'src/stores/editor-unsaved.ts',
+  'src/stores/mcp-store.ts',
+]
 const LISTING_MESSAGE = '测试列仓库源码改用 test/helpers/repo-source-files.ts 的 repoSourceFiles()，列临时目录改用 test/helpers/temporary-directory.ts 的 listTemporaryDirectory()。'
 const LISTING_PRIMITIVES = ['readdir', 'readdirSync', 'opendir', 'opendirSync', 'glob', 'globSync', 'readDirectory']
 const LISTING_MODULES = ['glob', 'fast-glob', 'globby', 'tinyglobby']
@@ -29,6 +47,12 @@ module.exports = {
           paths: [{ name: '@lancedb/lancedb', allowTypeImports: true, message: '经 electron/lance-database.ts 打开 LanceDB，新表格式钉在那里。' }],
         }],
         'no-restricted-syntax': ['error', LANCEDB_SYNTAX],
+      },
+    },
+    {
+      files: EMPTY_CATCH_FREE_FILES,
+      rules: {
+        'no-restricted-syntax': ['error', LANCEDB_SYNTAX, EMPTY_CATCH_SYNTAX],
       },
     },
     {

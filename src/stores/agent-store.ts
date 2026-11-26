@@ -28,6 +28,7 @@ import { useEditorStore } from './editor-store'
 import type { Locale } from '../i18n/types'
 import { errorLocaleForRun } from '../i18n/core'
 import { APP_BRAND } from '../shared/brand'
+import { ignoreFailure } from '../shared/ignore-failure'
 
 export const AGENT_GENERATION_BUDGET = Object.freeze({
   maxAttempts: 8,
@@ -457,13 +458,9 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         for (const call of prefetchCalls) {
           const tool = toolRegistry.get(call.toolName)
           if (tool) {
-            try {
-              const result = await tool.execute(call.args, executionContext)
-              if (result.success && result.content) {
-                prefetchResults.push(`${modelText('[预加载上下文', '[Prefetched context')} @${call.toolName}]\n${result.content}`)
-              }
-            } catch {
-              // 预取失败不阻塞主流程
+            const result = await ignoreFailure(`mention prefetch failed: ${call.toolName}`, () => tool.execute(call.args, executionContext))
+            if (result?.success && result.content) {
+              prefetchResults.push(`${modelText('[预加载上下文', '[Prefetched context')} @${call.toolName}]\n${result.content}`)
             }
           }
         }
