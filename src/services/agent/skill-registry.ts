@@ -13,6 +13,7 @@ import { CANONICAL_PROJECT_DIRECTORY } from '../../shared/project-format'
  */
 
 import { ipc } from '../ipc-client'
+import { ignoreFailure } from '../../shared/ignore-failure'
 import { useProjectStore } from '../../stores/project-store'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import {
@@ -128,7 +129,7 @@ class SkillRegistryImpl {
   /** 从主进程管理的用户 Skill 目录加载，渲染进程不接触 VELA_HOME 路径。 */
   private async loadUserSkills(target: Map<string, LoadedSkill>): Promise<number> {
     let count = 0
-    try {
+    await ignoreFailure('user skills unavailable', async () => {
       const entries = await ipc.invoke('skills:list-user')
       for (const entry of entries) {
         const skill = parseSkillMd(entry.content, entry.name, 'user', entry.baseDir, entry.filePath, undefined, entry.bundle)
@@ -136,9 +137,7 @@ class SkillRegistryImpl {
         target.set(skill.skillId, skill)
         count++
       }
-    } catch {
-      // 用户目录不可用时不影响内置或项目 Skill。
-    }
+    })
     return count
   }
 
@@ -196,7 +195,7 @@ class SkillRegistryImpl {
       if (!entry.isDir) continue
 
       const skillFile = `${entry.path}/SKILL.md`
-      try {
+      const outcome = await ignoreFailure(`project skill unavailable: ${skillFile}`, async () => {
         const result = await ipc.invokeWithProjectSession(
           projectSession,
           'fs:read-file',
@@ -208,8 +207,8 @@ class SkillRegistryImpl {
             projectSession,
             projectSessionContextFromProject(useProjectStore.getState().currentProject),
           )
-        ) return count
-        if (!result.success) continue
+        ) return 'project-changed'
+        if (!result.success) return
 
         const skill = parseSkillMd(
           result.content,
@@ -223,9 +222,8 @@ class SkillRegistryImpl {
           target.set(skill.skillId, skill)
           count++
         }
-      } catch {
-        // 单个 Skill 加载失败不影响整体
-      }
+      })
+      if (outcome === 'project-changed') return count
     }
     return count
   }

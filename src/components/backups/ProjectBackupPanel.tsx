@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { Archive, Cloud, Download, Loader2, Upload } from 'lucide-react'
 
 import { archiveFailureMessage, displayedErrorMessage, omittedReviewCyclesMessage } from '../../i18n/app-errors'
@@ -92,11 +92,10 @@ function ProjectBackupPanelSession({
     setParentIds(next?.lastSelectedParentGenerationIds ?? [])
   }
 
-  useEffect(() => {
+  const loadView = useEffectEvent((active: () => boolean) => {
     if (!projectSession) return
-    let active = true
     void ipc.invoke('cloud-backup:view', projectSession).then(result => {
-      if (!active) return
+      if (!active()) return
       if (!result.success) {
         setNotice({ kind: 'error', text: errorText(result.errorCode) })
         return
@@ -112,13 +111,16 @@ function ProjectBackupPanelSession({
         setCloudBookId(result.binding.cloudBookId)
       }
     }).catch(error => {
-      if (active) setNotice({ kind: 'error', text: errorText(error) })
+      if (active()) setNotice({ kind: 'error', text: errorText(error) })
     }).finally(() => {
-      if (active) setLoadingView(false)
+      if (active()) setLoadingView(false)
     })
+  })
+
+  useEffect(() => {
+    let active = true
+    loadView(() => active)
     return () => { active = false }
-    // sessionKey is the frozen project/session boundary for this request.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey])
 
   const run = async (action: () => Promise<void>) => {

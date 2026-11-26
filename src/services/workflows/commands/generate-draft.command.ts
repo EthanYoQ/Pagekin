@@ -1,4 +1,5 @@
 import { chapterTimeContinuity } from '../../../shared/chapter-time-continuity'
+import { ignoreFailure } from '../../../shared/ignore-failure'
 import { authorError, displayedErrorMessage, englishWithReason } from '../../../i18n/app-errors'
 import { failureCode, note } from '../../../shared/failure'
 import { sanitizeDraftText, composeDraftVisibleContinuation, DRAFT_CONDENSE_PURPOSE, DRAFT_VISIBLE_TEXT_VERSION, isDraftVisibleTextVersion, type DraftVisibleTextVersion } from '../../../shared/draft-visible-text'
@@ -717,7 +718,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       '（无后续蓝图）',
       '(no future chapter blueprints)',
     )
-    try {
+    await ignoreFailure('future blueprints unavailable for drafting', async () => {
       const { loadDirectoryBlueprints } = await import('../directory-workflow')
       const allBlueprints = await loadDirectoryBlueprints(expectedProjectPath, projectSession)
       const futureBlueprintsArr = allBlueprints.filter(
@@ -730,7 +731,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           `Chapter ${b.chapterNumber}: ${b.title} — ${b.keyEvents}`,
         )).join('\n')
       }
-    } catch { /* 忽略 */ }
+    })
 
     const template = await resolvePromptTemplate(templateKey, projectSession, writingLanguage)
     if (!template) throw new Error(uiText(
@@ -1254,7 +1255,8 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       } finally {
         cancellation.dispose()
         if (runtime) {
-          try { await runtime.close() } catch { /* execute close failure already fails before persistence */ }
+          const closing = runtime
+          await ignoreFailure('draft generation runtime close failed', () => closing.close())
         }
       }
       this.assertNotCancelled(context)
@@ -1417,19 +1419,16 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     context.data.mergedGuidance = mergedGuidance
     context.data.shortSummary = ''
 
-    try {
+    await ignoreFailure('draft list refresh failed after saving', async () => {
       const { useDraftStore } = await import('../../../stores/draft-store')
       await useDraftStore.getState().loadAllDrafts(expectedProjectPath, projectSession)
-    } catch { /* 忽略 */ }
+    })
 
-    try {
+    await ignoreFailure('saved draft could not be opened in the editor', async () => {
       if (!sameProjectSessionContext(
         projectSession,
         projectSessionContextFromProject(useProjectStore.getState().currentProject),
-      )) throw new Error(uiText(
-        '当前项目已切换，已拒绝打开旧草稿',
-        'The project changed, so opening the old draft was refused.',
-      ))
+      )) return
       const { useEditorStore } = await import('../../../stores/editor-store')
       useEditorStore.getState().openFile({
         id: pseudoPath,
@@ -1443,7 +1442,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         savedContent: cleanDraftText,
         projectKey: expectedProjectPath,
       })
-    } catch { /* 忽略 */ }
+    })
 
     callbacks.log(uiText(
       `草稿已自动入库保存为版本 v${nextVersion}（${countDraftUnits(cleanDraftText)} 字）`,
@@ -1878,15 +1877,10 @@ ${params.candidate.text}`,
     currentEntities: readonly string[],
   ): Promise<{ sources: FinalizedMaterialSource[]; locatedFactCandidates: number }> {
     const FULL_WINDOW = 5
-    let finalizedContinuity: FinalizedContinuityProjection[] = []
-    try {
-      finalizedContinuity = await ipc.invokeWithProjectSession(
-        projectSession,
-        'db:continuity-list-before',
-        currentChapter,
-        projectPath,
-      )
-    } catch { /* Optional derived index may be unavailable; finalized prose still loads below. */ }
+    const finalizedContinuity: FinalizedContinuityProjection[] = await ignoreFailure(
+      'finalized continuity index unavailable',
+      () => ipc.invokeWithProjectSession(projectSession, 'db:continuity-list-before', currentChapter, projectPath),
+    ) ?? []
 
     const selected = finalizedContinuity.flatMap(projection => {
       const isRecent = projection.chapterNumber >= currentChapter - FULL_WINDOW
@@ -1965,7 +1959,7 @@ ${params.candidate.text}`,
       && source.sourceStatus !== 'invalid'
       && Boolean(source.content.trim())
     ))) {
-      try {
+      await ignoreFailure('previous finalized chapter unavailable', async () => {
         const meta = await ipc.invokeWithProjectSession(
           projectSession,
           'db:draft-get-finalized',
@@ -2020,7 +2014,7 @@ ${params.candidate.text}`,
             })
           }
         }
-      } catch { /* Existing guard owns absence; do not invent a source identity. */ }
+      })
     }
     return { sources, locatedFactCandidates: selected.reduce((sum, item) => sum + item.evidence.length, 0) }
   }

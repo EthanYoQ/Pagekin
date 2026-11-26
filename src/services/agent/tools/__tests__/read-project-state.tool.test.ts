@@ -91,4 +91,18 @@ describe('read_project_state language boundary', () => {
     expect(result.content).toContain('## 近章要点')
     expect(result.content).toContain('暂无章节要点。章节要点会在定稿后自动生成并写入蓝图。')
   })
+
+  it('reports unreadable chapter notes instead of claiming none exist', async () => {
+    invoke.mockImplementation(async (_session, channel: string) => {
+      if (channel === 'db:project-core-get') return null
+      if (channel === 'db:blueprint-get-all') throw new Error('database is locked')
+      throw new Error(`unexpected channel ${channel}`)
+    })
+
+    const result = await readProjectStateTool.execute({}, createAgentExecutionContext())
+
+    expect(result).toMatchObject({ success: true })
+    expect(result.content).toContain('## Recent chapter notes\nFailed to load chapter notes.')
+    expect(result.content).not.toContain('No chapter notes yet')
+  })
 })

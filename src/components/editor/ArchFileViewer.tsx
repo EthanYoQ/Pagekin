@@ -286,28 +286,15 @@ function ArchFileViewerSession({
         }
         useEditorStore.getState().setPlanningSaveSnapshot(tabId, { ...submission, status: 'saved' })
         setRecoveryError('')
-      } else if (filePath.startsWith('ai-novel://core/')) {
+      } else {
         const dbField = parseCoreField(filePath)
-        if (!dbField) return
+        if (!dbField) throw new Error(text('资源只读或无效', 'This resource is read-only or invalid.'))
         requireIpcSuccess(await ipc.invokeWithProjectSession(
           projectSession,
           'db:project-core-update',
           { [dbField]: md },
           projectSession.projectPath,
         ), '保存架构文件')
-      } else {
-        // DB 化后架构文件不应有物理路径；如果意外触发，尝试 FS 写入兜底
-        console.warn('[ArchFileViewer] 非预期的物理路径保存:', filePath)
-        requireIpcSuccess(
-          await ipc.invokeWithProjectSession(
-            projectSession,
-            'fs:write-file',
-            filePath,
-            md,
-            projectSession.projectPath,
-          ),
-          '保存架构文件',
-        )
       }
       if (isProjectSessionCurrent(projectSession)) {
         reloadGateRef.current.invalidate()

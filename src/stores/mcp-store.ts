@@ -7,6 +7,7 @@
 
 import { create } from 'zustand'
 import { ipc } from '../services/ipc-client'
+import { ignoreFailure } from '../shared/ignore-failure'
 import { toolRegistry } from '../services/agent/tool-registry'
 import { displayedErrorMessage } from '../i18n/app-errors'
 import { currentInterfaceLocale, useLocaleStore } from './locale-store'
@@ -143,13 +144,11 @@ export const useMCPStore = create<MCPState>()((set, get) => ({
   },
 
   refreshTools: async () => {
-    try {
+    await ignoreFailure('MCP tool list refresh failed', async () => {
       const tools = await ipc.invoke('mcp:list-tools') as unknown[]
       const resources = await ipc.invoke('mcp:list-resources') as unknown[]
       set({ tools: tools as MCPToolData[], resources: resources as MCPResourceData[] })
-    } catch {
-      // 静默处理
-    }
+    })
   },
 
   registerMCPToolsToRegistry: () => {
