@@ -5,7 +5,6 @@ import { useProjectStore } from '../../../../stores/project-store'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import {
   GeneratePlotArchitectureCommand,
-  PLOT_OUTLINE_RESUME_ERROR_CODE,
   PlotOutlineResumeAvailableError,
 } from '../architecture.command'
 import { synopsisFactsFingerprint } from '../../../../shared/plot-outline-checkpoint'
@@ -15,6 +14,8 @@ import { composeVisibleContinuation } from '../../../../shared/visible-continuat
 import type { GenerationRecoveryContext, VisibleCompositionReceipt } from '../../../../shared/generation-owner-contract'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, type PlotOutlineProgress } from '../../../../shared/plot-outline-contract'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
+import { runFailure } from '../../../../components/run/run-failure'
+import { useWorkflowStore } from '../../../../stores/workflow-store'
 
 /**
  * 情节大纲批次状态机：
@@ -218,6 +219,7 @@ function harnessWith(
       return { success: true }
     }
     if (channel === 'fs:write-file') return { success: true }
+    if (channel === 'skills:list-user') return []
     throw new Error(`Unexpected IPC channel: ${channel}`)
   })
   vi.stubGlobal('window', {
@@ -395,7 +397,7 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
     const failure = await command.execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(PlotOutlineResumeAvailableError)
-    expect(failure).toMatchObject({ code: PLOT_OUTLINE_RESUME_ERROR_CODE })
+    expect((failure as PlotOutlineResumeAvailableError).failure.recovery).toBe('resume-plot-outline')
 
     // 部分内容已自动保存（检查点 incomplete=true + 范围 + 指纹；DB 带未完成标记）
     const checkpointWrite = harness.partialWrites[harness.partialWrites.length - 1]
@@ -407,6 +409,50 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     }))
     const synopsisUpdate = harness.coreUpdates.find(update => typeof update.synopsis === 'string')
     expect(String(synopsisUpdate!.synopsis)).toContain('本大纲未完成')
+  })
+
+  it('情节大纲截断后仍可续写', async () => {
+    const truncated = `## 第一卷
+
+第一章：旧铁锤
+${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉追查家人的下落。'.repeat(4)}
+
+第二章：宗门封锁
+林舟被迫改变追查路线。`
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([truncated]) })
+    harnessWith()
+    const thrown = await makeCommand().execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
+    const runId = await useWorkflowStore.getState().startWorkflow({
+      type: 'architecture_generation', title: '生成故事架构', projectPath: projectAPath, projectSession: context.projectSession,
+      steps: [{ name: '情节大纲', description: '情节大纲', executor: async () => { throw thrown } }],
+    })
+    const run = useWorkflowStore.getState().history.find(item => item.id === runId)!
+    const shownFailure = runFailure(run, shown('zh-CN'))
+    expect([shownFailure.canResumeOutline, shownFailure.canRestartOutline]).toEqual([true, false])
+    expect(shownFailure.presentation.reason).toBe((thrown as Error).message)
+    expect(shownFailure.presentation.reason).toContain('点「继续生成情节大纲」接着写第 1–100 章')
+  })
+
+  it.each(['zh-CN', 'en-US'] as const)('情节大纲请求中途失败仍可续写，码是中断原因（%s）', async locale => {
+    const body = `第1–20章：核对记录\n${'周岚核对记录并据此推进调查，确认各条线索的来源。'.repeat(6)}`
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: lengthThenNetworkFailure(body) })
+    harnessWith()
+    Object.assign(context, { uiLocale: locale, interfaceLocale: shown(locale) })
+    const thrown = await makeCommand({ synopsisRange: { from: 1, to: 20 } }).execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
+    expect(thrown).toBeInstanceOf(PlotOutlineResumeAvailableError)
+    expect((thrown as PlotOutlineResumeAvailableError).code).toBe('PROVIDER_REQUEST_FAILED')
+    const runId = await useWorkflowStore.getState().startWorkflow({
+      type: 'architecture_generation', title: '生成故事架构', projectPath: projectAPath, projectSession: context.projectSession, uiLocale: locale,
+      steps: [{ name: '情节大纲', description: '情节大纲', executor: async () => { throw thrown } }],
+    })
+    const run = useWorkflowStore.getState().history.find(item => item.id === runId)!
+    const shownFailure = runFailure(run, shown(locale))
+    expect([shownFailure.canResumeOutline, shownFailure.canRestartOutline]).toEqual([true, false])
+    expect(shownFailure.presentation.reason).toBe((thrown as Error).message)
+    if (locale === 'zh-CN') expect((thrown as Error).message).toMatch(/中断原因：模型请求失败。$/u)
+    else expect((thrown as Error).message).toMatch(/“Generate story architecture”\.$/u)
   })
 
   it('uses writing language, not UI locale, for the visible incomplete note', async () => {

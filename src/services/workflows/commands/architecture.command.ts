@@ -49,7 +49,10 @@ import {
   isGeneratedGlobalGuidanceValid,
   mergeExpandedNovelConfig,
 } from '../novel-config-expansion'
-import { displayedErrorMessage, englishWithReason, errorCodeOf, failureText, knownAppErrorMessage } from '../../../i18n/app-errors'
+import { authorError, caughtFailure, containsHan, errorCodeOf, failureText, registeredErrorCode } from '../../../i18n/app-errors'
+import { copyLocale } from '../../../i18n/core'
+import { AuthorError, authorOwned, failureCode, failureOf, note, type AuthorNote, type Failure, type FailureCode, type LegacyReason } from '../../../shared/failure'
+import type { ErrorDisplayLocale } from '../../../i18n/types'
 import { pluralEn } from '../../../shared/plural-en'
 import { recordAiSources, type AiSources } from '../../../shared/novel-config-ai-sources'
 import { WorkflowCancelledError } from '../workflow-cancellation'
@@ -128,48 +131,56 @@ export interface PlotOutlineChapterRange {
 }
 
 /**
- * 情节大纲生成被输出长度中断、且已完成部分已自动保存时抛出的错误。
- * errorCode 供前端识别并展示「继续生成情节大纲」断点续写按钮。
+ * 情节大纲生成被输出长度等原因中断、且已完成部分已自动保存时抛出的错误。
+ * 运行侧页凭 recovery 给出「继续生成情节大纲」；码是中断的原因。
  */
-export const PLOT_OUTLINE_RESUME_ERROR_CODE = 'architecture-synopsis-resume-available'
-
-export class PlotOutlineResumeAvailableError extends Error {
-  readonly code = PLOT_OUTLINE_RESUME_ERROR_CODE
-
-  constructor(message: string) {
-    super(message)
+export class PlotOutlineResumeAvailableError extends AuthorError {
+  constructor(locale: ErrorDisplayLocale, interrupted: Failure) {
+    const failure: Failure = { ...interrupted, recovery: 'resume-plot-outline' }
+    super(failure, failureText(locale, failure))
     this.name = 'PlotOutlineResumeAvailableError'
-    Object.setPrototypeOf(this, new.target.prototype)
   }
 }
+
+const PLOT_OUTLINE_SOURCE_CHANGED_CODES: ReadonlySet<string> = new Set(['GENERATION_SOURCE_CHANGED', 'GENERATION_SOURCE_CHANGED_MODEL'])
 
 /**
- * 情节大纲生成途中，冻结的来源（模型设置、作品设定、提示词模板、写作 Skill）被改动，主进程拒绝了下一章。
- * 同一运行无法恢复，errorCode 供运行侧页给出「去架构页重新生成」入口。
+ * 情节大纲生成途中，冻结的来源（模型设置、作品设定、提示词模板、写作 Skill）被改动，主进程拒绝了下一章或正式保存。
+ * 同一运行无法恢复，运行侧页凭 recovery 给出「去架构页重新生成」入口；码仍是主进程给的原因。
  */
-export const PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE = 'architecture-synopsis-source-changed'
-
-const PLOT_OUTLINE_SOURCE_CHANGED_CODES = new Set(['GENERATION_SOURCE_CHANGED', 'GENERATION_SOURCE_CHANGED_MODEL'])
-
-export class PlotOutlineSourceChangedError extends Error {
-  readonly code = PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE
-
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options)
+export class PlotOutlineSourceChangedError extends AuthorError {
+  constructor(locale: ErrorDisplayLocale, code: FailureCode, summary: AuthorNote, options: { cause: unknown }) {
+    const failure: Failure = { code, note: summary, recovery: 'restart-plot-outline' }
+    super(failure, failureText(locale, failure), options)
     this.name = 'PlotOutlineSourceChangedError'
-    Object.setPrototypeOf(this, new.target.prototype)
   }
 }
 
-export const WORLD_BUILDING_RESUME_ERROR_CODE = 'architecture-world-building-resume-available'
+/** 还没标记的中文原因（生成 harness、解析器写的句子）按旧规则只在中文界面显示，其余只进控制台。 */
+function reasonOf(locale: ErrorDisplayLocale, error: unknown): Failure | LegacyReason | undefined {
+  const marked = failureOf(error)
+  if (marked) return marked
+  const registered = failureCode(registeredErrorCode(error))
+  if (registered) return { code: registered }
+  const raw = typeof error === 'string' ? error : error instanceof Error ? error.message : ''
+  const legacy = copyLocale(locale) === 'zh-CN' && containsHan(raw) ? { legacy: raw } : undefined
+  // 没登记的码照样留着（error.code 仍是它），说明只能靠中文原文。
+  const code = failureCode(errorCodeOf(error))
+  if (code) return legacy ? { code, because: legacy } : { code }
+  return legacy ?? caughtFailure(error)
+}
 
-export class WorldBuildingResumeAvailableError extends Error {
-  readonly code = WORLD_BUILDING_RESUME_ERROR_CODE
+/** 原因能显示出来才用末尾带「原因」标签的那句，免得标签后面空着。 */
+function explained(locale: ErrorDisplayLocale, labelled: AuthorNote, plain: AuthorNote, because: Failure | LegacyReason | undefined): Failure {
+  if (!because) return { note: plain }
+  const shown = failureText(locale, { note: labelled, because }) !== failureText(locale, { note: labelled })
+  return { note: shown ? labelled : plain, because }
+}
 
-  constructor(message: string) {
-    super(message)
+export class WorldBuildingResumeAvailableError extends AuthorError {
+  constructor(locale: ErrorDisplayLocale, failure: Failure) {
+    super(failure, failureText(locale, failure))
     this.name = 'WorldBuildingResumeAvailableError'
-    Object.setPrototypeOf(this, new.target.prototype)
   }
 }
 
@@ -246,7 +257,35 @@ interface PlotOutlineTitleRange {
   headingLineEnd: number
 }
 
-class NonRecoverablePlotOutlineError extends Error {}
+/** 口径与架构页的恢复稿提示（run-recovery.ts outlineSourceChangedNote）一致。 */
+function sourceChangedMidBatch(model: boolean, stoppedAt: number, from: number): AuthorNote {
+  const chapters = { stoppedAt, from, lastKept: stoppedAt - 1 }
+  if (stoppedAt - 1 < from) {
+    return model
+      ? note('生成途中模型设置被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。',
+        'The model settings were changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}.', chapters)
+      : note('生成途中作品设定、提示词模板或写作 Skill 被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。',
+        'The book settings, a prompt template or a writing skill changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}.', chapters)
+  }
+  if (stoppedAt - 1 === from) {
+    return model
+      ? note('生成途中模型设置被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。本批已生成的第 {from} 章保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。',
+        'The model settings were changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. Chapter {from}, already generated in this batch, is kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}.', chapters)
+      : note('生成途中作品设定、提示词模板或写作 Skill 被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。本批已生成的第 {from} 章保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。',
+        'The book settings, a prompt template or a writing skill changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. Chapter {from}, already generated in this batch, is kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}.', chapters)
+  }
+  return model
+    ? note('生成途中模型设置被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。本批已生成的第 {from}–{lastKept} 章保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。',
+      'The model settings were changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. Chapters {from}–{lastKept}, already generated in this batch, are kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}.', chapters)
+    : note('生成途中作品设定、提示词模板或写作 Skill 被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。本批已生成的第 {from}–{lastKept} 章保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。',
+      'The book settings, a prompt template or a writing skill changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. Chapters {from}–{lastKept}, already generated in this batch, are kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}.', chapters)
+}
+
+class NonRecoverablePlotOutlineError extends AuthorError {
+  constructor(locale: ErrorDisplayLocale, summary: AuthorNote) {
+    super({ note: summary }, failureText(locale, { note: summary }))
+  }
+}
 
 const CHINESE_CHAPTER_DIGITS: Readonly<Record<string, number>> = Object.freeze({
   零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5,
@@ -307,7 +346,7 @@ function assertPlotOutlineTitleCoverage(
   seedText: string,
   from: number,
   to: number,
-  uiText: UiText,
+  locale: ErrorDisplayLocale,
   allowIncompleteLastEntry = false,
 ): void {
   const seedPriorCounts = new Map<string, number>()
@@ -351,17 +390,19 @@ function assertPlotOutlineTitleCoverage(
     if (!covered.has(chapter)) missing.push(chapter)
   }
   if (invalid.length > 0 || missing.length > 0) {
-    const message = uiText(
-      `大纲正文未按顺序提供本批第 ${from}–${to} 章的非空条目（缺失 ${missing.length} 章，空白、重复、乱序或越界 ${invalid.length} 处），结果未按完成保存。`,
-      `The outline body does not provide non-empty entries in order for batch chapters ${from}-${to} (${missing.length} missing; ${invalid.length} empty, duplicate, out of order, or out of range), so the result was not saved as complete.`,
-    )
+    const counts = { from, to, missingCount: missing.length, invalidCount: invalid.length }
     if (invalid.length > 0) {
-      throw new NonRecoverablePlotOutlineError(uiText(
-        `${message} 完整模型输出仍保留在 AI 输出中，但这种结构错误不能自动续写；请修正范围后重新生成。`,
-        `${message} The complete model output remains visible in AI output, but this structural error cannot be continued automatically; correct the range and regenerate.`,
+      throw new NonRecoverablePlotOutlineError(locale, note(
+        '大纲正文未按顺序提供本批第 {from}–{to} 章的非空条目（缺失 {missingCount} 章，空白、重复、乱序或越界 {invalidCount} 处），结果未按完成保存。 完整模型输出仍保留在 AI 输出中，但这种结构错误不能自动续写；请修正范围后重新生成。',
+        'The outline body does not provide non-empty entries in order for batch chapters {from}-{to} ({missingCount} missing; {invalidCount} empty, duplicate, out of order, or out of range), so the result was not saved as complete. The complete model output remains visible in AI output, but this structural error cannot be continued automatically; correct the range and regenerate.',
+        counts,
       ))
     }
-    throw new Error(message)
+    throw authorError(locale, { note: note(
+      '大纲正文未按顺序提供本批第 {from}–{to} 章的非空条目（缺失 {missingCount} 章，空白、重复、乱序或越界 {invalidCount} 处），结果未按完成保存。',
+      'The outline body does not provide non-empty entries in order for batch chapters {from}-{to} ({missingCount} missing; {invalidCount} empty, duplicate, out of order, or out of range), so the result was not saved as complete.',
+      counts,
+    ) })
   }
 }
 
@@ -441,7 +482,7 @@ function assertPlotOutlineBatchComplete(
   from: number,
   to: number,
   totalChapters: number,
-  uiText: UiText,
+  locale: ErrorDisplayLocale,
 ): void {
   const mark = findPlotOutlineProgressMark(merged)
   if (!mark && !merged.includes('大纲批次进度') && !merged.includes('[Outline batch progress:')) return
@@ -450,12 +491,11 @@ function assertPlotOutlineBatchComplete(
     || mark.to !== to
     || mark.totalChapters !== totalChapters
   ) {
-    throw new Error(uiText(
-      `大纲输出包含无效的批次完成标记（需要与本批范围完全一致：第 ${from}–${to} 章、全书 ${totalChapters} 章），`
-        + '批次范围可能错位，结果未按完成保存。',
-      `The outline output contains an invalid batch-completion marker (expected chapters ${from}-${to} of ${totalChapters}); `
-        + 'its range may be incorrect, so it was not saved as complete.',
-    ))
+    throw authorError(locale, { note: note(
+      '大纲输出包含无效的批次完成标记（需要与本批范围完全一致：第 {from}–{to} 章、全书 {totalChapters} 章），批次范围可能错位，结果未按完成保存。',
+      'The outline output contains an invalid batch-completion marker (expected chapters {from}-{to} of {totalChapters}); its range may be incorrect, so it was not saved as complete.',
+      { from, to, totalChapters },
+    ) })
   }
 }
 
@@ -484,8 +524,6 @@ const REQUIRED_CONFIG_TEXT_FIELDS = [
   'globalGuidance',
   'writingStyle',
 ] as const
-
-type UiText = (zhCNText: string, enUSText: string) => string
 
 function buildNovelConfigJSONContract(
   totalChapters: number,
@@ -517,30 +555,31 @@ function decodeCompleteNovelConfig(
   content: string,
   expectedTotalChapters: number,
   expectedWordsPerChapter: number,
-  text: UiText,
+  locale: ErrorDisplayLocale,
 ): NovelConfig {
+  const invalid = (summary: AuthorNote) => authorError(locale, { note: summary })
   let value: unknown
   try {
     const trimmed = content.trim()
     const fenced = /^```json[ \t]*\r?\n([\s\S]*?)\r?\n```$/iu.exec(trimmed)
     value = JSON.parse(fenced?.[1].trim() ?? trimmed)
   } catch {
-    throw new Error(text('AI 返回的小说配置不是完整 JSON 对象', 'The AI novel configuration is not a complete JSON object.'))
+    throw invalid(note('AI 返回的小说配置不是完整 JSON 对象', 'The AI novel configuration is not a complete JSON object.'))
   }
-  if (!isRecord(value)) throw new Error(text('AI 返回的小说配置必须是 JSON 对象', 'The AI novel configuration must be a JSON object.'))
+  if (!isRecord(value)) throw invalid(note('AI 返回的小说配置必须是 JSON 对象', 'The AI novel configuration must be a JSON object.'))
 
   const textFields: Record<(typeof REQUIRED_CONFIG_TEXT_FIELDS)[number], string> = {} as never
   for (const field of REQUIRED_CONFIG_TEXT_FIELDS) {
     if (typeof value[field] !== 'string' || !value[field].trim()) {
-      throw new Error(text(`AI 返回的小说配置缺少非空字段：${field}`, `The AI novel configuration is missing the non-empty field ${field}.`))
+      throw invalid(note('AI 返回的小说配置缺少非空字段：{field}', 'The AI novel configuration is missing the non-empty field {field}.', { field: authorOwned(field) }))
     }
     textFields[field] = value[field].trim()
   }
   if (typeof value.plotStructure !== 'string' || !PLOT_STRUCTURES.has(value.plotStructure as NovelConfig['plotStructure'])) {
-    throw new Error(text('AI 返回的小说配置包含非法 plotStructure', 'The AI novel configuration has an invalid plotStructure.'))
+    throw invalid(note('AI 返回的小说配置包含非法 plotStructure', 'The AI novel configuration has an invalid plotStructure.'))
   }
   if (typeof value.narrativePOV !== 'string' || !NARRATIVE_POVS.has(value.narrativePOV as NovelConfig['narrativePOV'])) {
-    throw new Error(text('AI 返回的小说配置包含非法 narrativePOV', 'The AI novel configuration has an invalid narrativePOV.'))
+    throw invalid(note('AI 返回的小说配置包含非法 narrativePOV', 'The AI novel configuration has an invalid narrativePOV.'))
   }
   for (const [field, expected] of [
     ['totalChapters', expectedTotalChapters],
@@ -553,14 +592,15 @@ function decodeCompleteNovelConfig(
       || candidate <= 0
       || candidate !== expected
     )) {
-      throw new Error(text(
-        `AI 返回的小说配置包含无效 ${field}，不得回退或覆盖作者设置`,
-        `The AI novel configuration has an invalid ${field}; it may not replace or override the author's setting.`,
+      throw invalid(note(
+        'AI 返回的小说配置包含无效 {field}，不得回退或覆盖作者设置',
+        'The AI novel configuration has an invalid {field}; it may not replace or override the author\'s setting.',
+        { field: authorOwned(field) },
       ))
     }
   }
   if (value.referenceWorks !== undefined && typeof value.referenceWorks !== 'string') {
-    throw new Error(text('AI 返回的小说配置包含无效 referenceWorks', 'The AI novel configuration has an invalid referenceWorks.'))
+    throw invalid(note('AI 返回的小说配置包含无效 referenceWorks', 'The AI novel configuration has an invalid referenceWorks.'))
   }
 
   return {
@@ -606,11 +646,7 @@ function assertArchitectureProjectSessionCurrent(
     projectSession,
     projectSessionContextFromProject(useProjectStore.getState().currentProject),
   )) {
-    throw new Error(workflowUiText(
-      context,
-      '当前项目已切换，架构生成已停止以避免写入错误项目',
-      'The current project changed, so architecture generation stopped to avoid writing to the wrong project.',
-    ))
+    throw authorError(context.interfaceLocale, { note: note('当前项目已切换，架构生成已停止以避免写入错误项目', 'The current project changed, so architecture generation stopped to avoid writing to the wrong project.') })
   }
 }
 
@@ -708,10 +744,7 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
     ))
 
     const template = await resolvePromptTemplate('generate_global_config', projectSession, writingLanguage)
-    if (!template) throw new Error(text(
-      '未找到 generate_global_config 模板',
-      'The generate_global_config template was not found.',
-    ))
+    if (!template) throw authorError(context.interfaceLocale, { note: note('未找到 generate_global_config 模板', 'The generate_global_config template was not found.') })
 
     const promptBuilder = new ArchitecturePromptBuilder(template, writingLanguage)
       .withUserIdea(this.idea)
@@ -788,13 +821,12 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
     ))
     let parsed: NovelConfig
     try {
-      parsed = decodeCompleteNovelConfig(resultRaw, this.totalChapters, this.wordsPerChapter, text)
+      parsed = decodeCompleteNovelConfig(resultRaw, this.totalChapters, this.wordsPerChapter, context.interfaceLocale)
     } catch (e) {
-      const detail = displayedErrorMessage(context.interfaceLocale, e)
-      throw new Error(text(
-        `AI 返回的小说配置不完整或无效，结果未应用。详细信息：${detail}`,
-        `The AI novel configuration was incomplete or invalid, so the result was not applied. Details: ${detail}`,
-      ))
+      throw authorError(context.interfaceLocale, explained(context.interfaceLocale,
+        note('AI 返回的小说配置不完整或无效，结果未应用。详细信息', 'The AI novel configuration was incomplete or invalid, so the result was not applied. Details:'),
+        note('AI 返回的小说配置不完整或无效，结果未应用。', 'The AI novel configuration was incomplete or invalid, so the result was not applied.'),
+        reasonOf(context.interfaceLocale, e)), { cause: e })
     }
     if (!isGeneratedGlobalGuidanceValid(parsed.globalGuidance)) {
       callbacks.log(text(
@@ -818,10 +850,7 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
       )
       const replacementGuidance = this.stripThinkingTags(replacement).trim()
       if (!isGeneratedGlobalGuidanceValid(replacementGuidance)) {
-        throw new Error(text(
-          `全局写作要求仍不符合 ${GENERATED_GLOBAL_GUIDANCE_MIN_RULES}–${GENERATED_GLOBAL_GUIDANCE_MAX_RULES} 条且不超过 ${GENERATED_GLOBAL_GUIDANCE_MAX_CHARS} 字符的合同，配置未应用。`,
-          `The global guidance still does not satisfy the ${GENERATED_GLOBAL_GUIDANCE_MIN_RULES}–${GENERATED_GLOBAL_GUIDANCE_MAX_RULES}-rule, ${GENERATED_GLOBAL_GUIDANCE_MAX_CHARS}-character contract, so the configuration was not applied.`,
-        ))
+        throw authorError(context.interfaceLocale, { note: note('全局写作要求仍不符合 {GENERATED_GLOBAL_GUIDANCE_MIN_RULES}–{GENERATED_GLOBAL_GUIDANCE_MAX_RULES} 条且不超过 {GENERATED_GLOBAL_GUIDANCE_MAX_CHARS} 字符的合同，配置未应用。', 'The global guidance still does not satisfy the {GENERATED_GLOBAL_GUIDANCE_MIN_RULES}–{GENERATED_GLOBAL_GUIDANCE_MAX_RULES}-rule, {GENERATED_GLOBAL_GUIDANCE_MAX_CHARS}-character contract, so the configuration was not applied.', { GENERATED_GLOBAL_GUIDANCE_MIN_RULES, GENERATED_GLOBAL_GUIDANCE_MAX_RULES, GENERATED_GLOBAL_GUIDANCE_MAX_CHARS }) })
       }
       parsed = { ...parsed, globalGuidance: replacementGuidance }
     }
@@ -831,10 +860,7 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),
     )) {
-      throw new Error(text(
-        '当前项目已切换，智能配置结果未应用',
-        'The current project changed, so the generated configuration was not applied.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('当前项目已切换，智能配置结果未应用', 'The current project changed, so the generated configuration was not applied.') })
     }
     const generatedConfig = mergeExpandedNovelConfig(existingConfig, parsed)
     const aiSources = recordAiSources(existingConfig, expectedSources, generatedConfig)
@@ -851,10 +877,7 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),
     )) {
-      throw new Error(text(
-        '当前项目已切换，智能配置结果未保存',
-        'The current project changed, so the generated configuration was not saved.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('当前项目已切换，智能配置结果未保存', 'The current project changed, so the generated configuration was not saved.') })
     }
     if (!mainOwned) useProjectStore.getState().setAiSources(aiSources, projectSession)
     const saved = mainOwned || await useProjectStore.getState().saveProject(projectSession)
@@ -903,10 +926,7 @@ export class GenerateCoreSeedCommand extends BaseWorkflowCommand<string> {
     callbacks.log(text('生成故事前提...', 'Generating story premise...'))
 
     const template = await resolvePromptTemplate('premise', projectSession, writingLanguage)
-    if (!template) throw new Error(text(
-      '未找到 premise 模板',
-      'The story-premise template was not found.',
-    ))
+    if (!template) throw authorError(context.interfaceLocale, { note: note('未找到 premise 模板', 'The story-premise template was not found.') })
 
     const missingValue = promptLanguageText(writingLanguage, '（未填写）', '(not provided)')
     const promptBuilder = new ArchitecturePromptBuilder(template, writingLanguage)
@@ -929,10 +949,7 @@ export class GenerateCoreSeedCommand extends BaseWorkflowCommand<string> {
       { purpose: 'generate-core-seed', reasoningStage: 'planning', writingSkillStage: 'planning' },
       context,
     )
-    if (!result.trim()) throw new Error(text(
-      '故事前提生成失败，AI 返回空内容',
-      'Story premise generation failed because the AI returned empty content.',
-    ))
+    if (!result.trim()) throw authorError(context.interfaceLocale, { note: note('故事前提生成失败，AI 返回空内容', 'Story premise generation failed because the AI returned empty content.') })
     if (context.cancelled) throw new WorkflowCancelledError(text('工作流已取消', 'Workflow was cancelled.'))
 
     const heading = promptLanguageText(writingLanguage, '故事前提', 'Story Premise')
@@ -1000,10 +1017,7 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
     const writingLanguage = workflowWritingLanguage(context)
     const promptCopy = characterArchitecturePrompts(writingLanguage)
     const creativeTemplate = await resolvePromptTemplate('character_dynamics', projectSession, writingLanguage)
-    if (!creativeTemplate) throw new Error(text(
-      '角色规划模板丢失',
-      'The character-planning template is missing.',
-    ))
+    if (!creativeTemplate) throw authorError(context.interfaceLocale, { note: note('角色规划模板丢失', 'The character-planning template is missing.') })
     const { expectedProjectPath } = this.snapshot
     const { novelConfig: config } = this.snapshot
     const modelFacts = localizeNovelConfigFacts(config, writingLanguage)
@@ -1012,10 +1026,7 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
     const premise_result = core?.premise || ''
 
     if (!premise_result || premise_result.includes('待生成') || premise_result.length < 50) {
-      throw new Error(text(
-        '故事前提尚未生成或内容不完整，请返回勾选生成',
-        'The story premise is missing or incomplete. Go back and include it for generation.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('故事前提尚未生成或内容不完整，请返回勾选生成', 'The story premise is missing or incomplete. Go back and include it for generation.') })
     }
 
     callbacks.log(text('生成角色名单...', 'Generating the cast...'))
@@ -1090,10 +1101,7 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
     ).catch((error: unknown) => {
       const attempts = this.artifactReferences.filter(reference => reference.purpose === 'character-architecture-manifest')
       if (attempts.length > MANIFEST_LENGTH_REPLACEMENTS && attempts.every(reference => reference.finishReason === 'length')) {
-        throw new Error(text(
-          '已有角色没有变动。人物太多，模型一次写不下：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。',
-          'Your existing characters are unchanged. The cast is too long for one model reply: raise Max output tokens in the model’s Advanced settings and generate again, or add people with Paste or import cards on the Cast page.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('已有角色没有变动。人物太多，模型一次写不下：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。', 'Your existing characters are unchanged. The cast is too long for one model reply: raise Max output tokens in the model’s Advanced settings and generate again, or add people with Paste or import cards on the Cast page.') })
       }
       throw error
     })
@@ -1103,11 +1111,8 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
     try {
       manifest = decodeCharacterIdentityManifest(manifestRaw)
     } catch (error) {
-      const detail = displayedErrorMessage(context.interfaceLocale, error)
-      throw new Error(text(
-        detail,
-        englishWithReason(context.interfaceLocale, 'The character identity manifest was invalid, so no character data was saved.', detail),
-      ))
+      const because = reasonOf(context.interfaceLocale, error)
+      throw authorError(context.interfaceLocale, { note: note('角色身份清单无效，没有保存角色数据', 'The character identity manifest was invalid, so no character data was saved.'), ...(because ? { because } : {}) }, { cause: error })
     }
     this.assertNotCancelled(context)
     assertArchitectureProjectSessionCurrent(projectSession, context)
@@ -1209,10 +1214,7 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
     if (!detailExecution.ok) {
       if (detailExecution.failure.terminal) throw detailExecution.failure.terminal
       if (detailExecution.failure.reason === 'root_budget') {
-        throw new Error(text(
-          '已有角色没有变动。人物太多，这次生成的额度（请求次数与时长）用完了：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。',
-          'Your existing characters are unchanged. The cast used up this run’s request and time budget: raise Max output tokens in the model’s Advanced settings and generate again, or add people with Paste or import cards on the Cast page.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('已有角色没有变动。人物太多，这次生成的额度（请求次数与时长）用完了：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。', 'Your existing characters are unchanged. The cast used up this run’s request and time budget: raise Max output tokens in the model’s Advanced settings and generate again, or add people with Paste or import cards on the Cast page.') })
       }
       const diagnostic = detailExecution.failure.diagnostic
       const attempts = detailExecution.receipt.attempts.length > 0
@@ -1228,18 +1230,16 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
           : []),
         `attempts=${attempts}`,
       ].join(' ')
+      // detail 是只给诊断看的中文原文，和收据一起进运行日志。
       const { detail, failure } = detailExecution.failure
-      const reason = detail ? displayedErrorMessage(context.interfaceLocale, detail) : failureText(context.interfaceLocale, failure)
-      throw new Error(text(
-        `${reason}；角色详情失败收据：${failureReceipt}`,
-        `${knownAppErrorMessage(context.interfaceLocale, failure.code) ?? englishWithReason(context.interfaceLocale, 'Character details failed structural validation and were not saved.', reason)} Receipt: ${failureReceipt}`,
+      callbacks.log(text(
+        `角色详情失败收据：${detail ? `${detail}；` : ''}${failureReceipt}`,
+        `Character details failure receipt: ${failureReceipt}`,
       ))
+      throw authorError(context.interfaceLocale, failure)
     }
     if (detailExecution.items.length !== manifest.length) {
-      throw new Error(text(
-        '角色详情未完整覆盖冻结身份清单',
-        'Character details did not fully cover the frozen identity manifest.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('角色详情未完整覆盖冻结身份清单', 'Character details did not fully cover the frozen identity manifest.') })
     }
     this.assertNotCancelled(context)
     assertArchitectureProjectSessionCurrent(projectSession, context)
@@ -1293,10 +1293,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
 
   async execute(params: CommandExecuteParams): Promise<string> {
     assertArchitectureProjectSessionCurrent(requireWorkflowProjectSession(params.context), params.context)
-    if (this.options.resumeWorldBuilding && !this.options.resumeHandle) throw new Error(workflowUiText(params.context,
-      '旧候选没有持久运行记录，仍可查看或复制；请明确重新开始生成。',
-      'This legacy candidate has no persistent run record. It remains available to view or copy; explicitly restart generation.',
-    ))
+    if (this.options.resumeWorldBuilding && !this.options.resumeHandle) throw authorError(params.context.interfaceLocale, { note: note('旧候选没有持久运行记录，仍可查看或复制；请明确重新开始生成。', 'This legacy candidate has no persistent run record. It remains available to view or copy; explicitly restart generation.') })
     return this.executeWithGenerationRuntime('text', params, () => this.executeWithinGeneration(params), {
       authorInputs: stepAuthorInputs(params.context, 'worldbuilding', this.snapshot, null, this.options.resumeWorldBuilding),
       operation: 'generate-world-building', promptKeys: ['world_building'], skillStages: ['planning'], output: 'visible-text',
@@ -1325,10 +1322,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
     const premise_result = core?.premise || ''
 
     if (!premise_result || premise_result.includes('待生成') || premise_result.length < 50) {
-      throw new Error(text(
-        '故事前提尚未生成或内容不完整，请返回勾选生成',
-        'The story premise is missing or incomplete. Go back and include it for generation.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('故事前提尚未生成或内容不完整，请返回勾选生成', 'The story premise is missing or incomplete. Go back and include it for generation.') })
     }
 
     const resumeRequested = this.options.resumeWorldBuilding === true
@@ -1337,10 +1331,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
       resumeRequested ? 'Reading the incomplete worldbuilding candidate...' : 'Generating worldbuilding...',
     ))
     const template = await resolvePromptTemplate('world_building', projectSession, writingLanguage)
-    if (!template) throw new Error(text(
-      '模板丢失',
-      'The worldbuilding template is missing.',
-    ))
+    if (!template) throw authorError(context.interfaceLocale, { note: note('模板丢失', 'The worldbuilding template is missing.') })
 
     const missingValue = promptLanguageText(writingLanguage, '（未填写）', '(not provided)')
     const requestedStepGuidance = ((context.data.stepGuidance as Record<string, string>) || {}).worldbuilding || ''
@@ -1359,20 +1350,14 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
         || !partial.world_building_facts_fingerprint
         || !partial.world_building_db_hash
       ) {
-        throw new Error(text(
-          '未找到可恢复的世界观候选；正式世界观保持不变，请重新生成。',
-          'No recoverable worldbuilding candidate was found. The formal worldbuilding remains unchanged; regenerate instead.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('未找到可恢复的世界观候选；正式世界观保持不变，请重新生成。', 'No recoverable worldbuilding candidate was found. The formal worldbuilding remains unchanged; regenerate instead.') })
       }
       if (this.requireGenerationExecution().mainOwned && typeof (context.data.stepGuidance as Record<string, unknown> | undefined)?.worldbuilding === 'string'
-        && requestedStepGuidance !== partial.world_building_step_guidance) throw new Error(text('作者步骤指导已变化，旧候选不能自动续写。', 'The author step guidance changed; the old candidate cannot be resumed automatically.'))
+        && requestedStepGuidance !== partial.world_building_step_guidance) throw authorError(context.interfaceLocale, { note: note('作者步骤指导已变化，旧候选不能自动续写。', 'The author step guidance changed; the old candidate cannot be resumed automatically.') })
       stepGuidance = partial.world_building_step_guidance
       expectedDbHash = partial.world_building_db_hash
       if (synopsisFactsFingerprint([core?.worldbuilding || '']) !== expectedDbHash) {
-        throw new Error(text(
-          '正式世界观自候选保存后已变化，旧候选不能自动覆盖新内容；候选仍可查看或复制。',
-          'The formal worldbuilding changed after the candidate was saved, so the old candidate cannot overwrite it. The candidate remains available to view or copy.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('正式世界观自候选保存后已变化，旧候选不能自动覆盖新内容；候选仍可查看或复制。', 'The formal worldbuilding changed after the candidate was saved, so the old candidate cannot overwrite it. The candidate remains available to view or copy.') })
       }
     }
 
@@ -1384,10 +1369,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
       JSON.stringify(template),
     ])
     if (resumeRequested && partial.world_building_facts_fingerprint !== factsFingerprint) {
-      throw new Error(text(
-        '故事前提、小说配置、角色图谱或世界观模板在候选保存后变了，旧候选不能接着生成，仍可查看或复制。',
-        'The premise, novel configuration, character map, or worldbuilding template changed after the candidate was saved, so it cannot be continued. You can still view or copy it.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('故事前提、小说配置、角色图谱或世界观模板在候选保存后变了，旧候选不能接着生成，仍可查看或复制。', 'The premise, novel configuration, character map, or worldbuilding template changed after the candidate was saved, so it cannot be continued. You can still view or copy it.') })
     }
 
     if (this.requireGenerationExecution().mainOwned && !resumeRequested) {
@@ -1483,11 +1465,10 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
           expectedDbHash,
           stepGuidance,
         )
-        const detail = displayedErrorMessage(context.interfaceLocale, error)
-        throw new WorldBuildingResumeAvailableError(text(
-          `世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。原因：${detail}`,
-          `Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason: ${detail}`,
-        ))
+        throw new WorldBuildingResumeAvailableError(context.interfaceLocale, explained(context.interfaceLocale,
+          note('世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。原因', 'Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason:'),
+          note('世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。', 'Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later.'),
+          reasonOf(context.interfaceLocale, error)))
       }
       throw error
     }
@@ -1528,14 +1509,11 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
         expectedDbHash,
         stepGuidance,
       )
-      throw new WorldBuildingResumeAvailableError(text(
-        sourceFactsChanged
-          ? '生成期间故事前提、小说配置、角色图谱或模板变了，本次结果已保留为候选，没写入正式世界观，可查看或复制。'
-          : '世界观生成期间正式内容已被修改，本次结果已保留为候选且未覆盖作者修改；可查看或复制候选。',
-        sourceFactsChanged
-          ? 'The premise, novel configuration, character map, or template changed during generation. This result was kept as a candidate and not written to worldbuilding; you can view or copy it.'
-          : 'The formal worldbuilding changed while generation was running. This result was kept as a candidate and did not overwrite the author edit; you can view or copy it.',
-      ))
+      throw new WorldBuildingResumeAvailableError(context.interfaceLocale, {
+        note: sourceFactsChanged
+          ? note('生成期间故事前提、小说配置、角色图谱或模板变了，本次结果已保留为候选，没写入正式世界观，可查看或复制。', 'The premise, novel configuration, character map, or template changed during generation. This result was kept as a candidate and not written to worldbuilding; you can view or copy it.')
+          : note('世界观生成期间正式内容已被修改，本次结果已保留为候选且未覆盖作者修改；可查看或复制候选。', 'The formal worldbuilding changed while generation was running. This result was kept as a candidate and did not overwrite the author edit; you can view or copy it.'),
+      })
     }
     const heading = promptLanguageText(writingLanguage, '世界观', 'Worldbuilding')
     await writeArchToDb(
@@ -1620,10 +1598,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
 
   async execute(params: CommandExecuteParams): Promise<string> {
     assertArchitectureProjectSessionCurrent(requireWorkflowProjectSession(params.context), params.context)
-    if (this.options.resumeSynopsis && !this.options.resumeHandle) throw new Error(workflowUiText(params.context,
-      '旧候选没有持久运行记录，仍可查看或复制；请明确重新开始生成。',
-      'This legacy candidate has no persistent run record. It remains available to view or copy; explicitly restart generation.',
-    ))
+    if (this.options.resumeSynopsis && !this.options.resumeHandle) throw authorError(params.context.interfaceLocale, { note: note('旧候选没有持久运行记录，仍可查看或复制；请明确重新开始生成。', 'This legacy candidate has no persistent run record. It remains available to view or copy; explicitly restart generation.') })
     return this.executeWithGenerationRuntime('text', params, () => this.executeWithinGeneration(params), {
       authorInputs: stepAuthorInputs(params.context, 'synopsis', this.snapshot, this.options.synopsisRange, this.options.resumeSynopsis),
       operation: 'generate-plot-outline', promptKeys: ['synopsis'], skillStages: ['planning'], output: 'visible-text',
@@ -1658,24 +1633,12 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     const char_dyn = core?.charactersArch || ''
     const world_b = core?.worldbuilding || ''
 
-    if (!premise || premise.includes('待生成')) throw new Error(text(
-      '故事前提未生成',
-      'The story premise has not been generated.',
-    ))
-    if (!char_dyn || char_dyn.includes('待生成')) throw new Error(text(
-      '角色名单未生成',
-      'The cast has not been generated.',
-    ))
-    if (!world_b || world_b.includes('待生成')) throw new Error(text(
-      '世界观未生成',
-      'Worldbuilding has not been generated.',
-    ))
+    if (!premise || premise.includes('待生成')) throw authorError(context.interfaceLocale, { note: note('故事前提未生成', 'The story premise has not been generated.') })
+    if (!char_dyn || char_dyn.includes('待生成')) throw authorError(context.interfaceLocale, { note: note('角色名单未生成', 'The cast has not been generated.') })
+    if (!world_b || world_b.includes('待生成')) throw authorError(context.interfaceLocale, { note: note('世界观未生成', 'Worldbuilding has not been generated.') })
 
     const totalChapters = Number(config.totalChapters) > 0 ? Number(config.totalChapters) : 0
-    if (totalChapters <= 0) throw new Error(text(
-      '小说配置的总章数无效，无法生成情节大纲',
-      'The total chapter count in the novel configuration is invalid; the plot outline cannot be generated.',
-    ))
+    if (totalChapters <= 0) throw authorError(context.interfaceLocale, { note: note('小说配置的总章数无效，无法生成情节大纲', 'The total chapter count in the novel configuration is invalid; the plot outline cannot be generated.') })
 
     const sourceExpected: ProjectCoreSynopsisExpected = {
       synopsis: core?.synopsis || '',
@@ -1703,10 +1666,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     ))
 
     const template = await resolvePromptTemplate('synopsis', projectSession, writingLanguage)
-    if (!template) throw new Error(text(
-      '模板丢失',
-      'The plot-outline template is missing.',
-    ))
+    if (!template) throw authorError(context.interfaceLocale, { note: note('模板丢失', 'The plot-outline template is missing.') })
 
     const { getPlotStructureGuide, getNarrativePOVLabel } = await import('../architecture-workflow')
     const guide = getPlotStructureGuide(
@@ -1733,27 +1693,18 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     if (resumeRequested) {
       // ---- 断点续写：无有效检查点必须 fail-closed，绝不退化为覆盖生成 ----
       if (!interrupted) {
-        throw new Error(text(
-          '未找到中断的情节大纲检查点（当前大纲没有未完成的批次）。请从「AI 生成故事架构」重新生成。',
-          'No interrupted plot-outline checkpoint was found (no batch is incomplete). Regenerate from “Generate story architecture” instead.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('未找到中断的情节大纲检查点（当前大纲没有未完成的批次）。请从「AI 生成故事架构」重新生成。', 'No interrupted plot-outline checkpoint was found (no batch is incomplete). Regenerate from “Generate story architecture” instead.') })
       }
       if (!partial.synopsis_range) {
-        throw new Error(text(
-          '中断检查点缺少批次范围，无法续写。请从「AI 生成故事架构」重新生成。',
-          'The interrupted checkpoint is missing its batch range. Regenerate from “Generate story architecture” instead.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('中断检查点缺少批次范围，无法续写。请从「AI 生成故事架构」重新生成。', 'The interrupted checkpoint is missing its batch range. Regenerate from “Generate story architecture” instead.') })
       }
       from = partial.synopsis_range.from
       to = partial.synopsis_range.to
       if (partial.synopsis_step_guidance === undefined) {
-        throw new Error(text(
-          '这份旧版情节大纲缺少生成时的输入记录，不能接着生成。已有内容都已保留，请从第 1 章重新生成。',
-          'This older plot outline lacks its generation inputs, so it cannot be continued. Everything is kept; regenerate from chapter 1.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('这份旧版情节大纲缺少生成时的输入记录，不能接着生成。已有内容都已保留，请从第 1 章重新生成。', 'This older plot outline lacks its generation inputs, so it cannot be continued. Everything is kept; regenerate from chapter 1.') })
       }
       if (this.requireGenerationExecution().mainOwned && typeof (context.data.stepGuidance as Record<string, unknown> | undefined)?.synopsis === 'string'
-        && requestedStepGuidance !== partial.synopsis_step_guidance) throw new Error(text('作者步骤指导已变化，旧候选不能自动续写。', 'The author step guidance changed; the old candidate cannot be resumed automatically.'))
+        && requestedStepGuidance !== partial.synopsis_step_guidance) throw authorError(context.interfaceLocale, { note: note('作者步骤指导已变化，旧候选不能自动续写。', 'The author step guidance changed; the old candidate cannot be resumed automatically.') })
       effectiveStepGuidance = partial.synopsis_step_guidance
       const expectedCheckpointFingerprint = synopsisInputsFingerprint(
         sourceExpected,
@@ -1762,24 +1713,21 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         template,
       )
       if (checkpointFingerprint !== expectedCheckpointFingerprint) {
-        throw new Error(text(
-          '故事前提、角色、世界观或总章数等在中断后变了，不能接着生成。请从「AI 生成故事架构」重新生成情节大纲。',
-          'The premise, characters, worldbuilding, chapter count, or similar inputs changed after the interruption, so it cannot be continued. Regenerate the plot outline from “Generate story architecture”.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('故事前提、角色、世界观或总章数等在中断后变了，不能接着生成。请从「AI 生成故事架构」重新生成情节大纲。', 'The premise, characters, worldbuilding, chapter count, or similar inputs changed after the interruption, so it cannot be continued. Regenerate the plot outline from “Generate story architecture”.') })
       }
       if (this.requireGenerationExecution().mainOwned) {
-        if (partial.synopsis_db_hash !== synopsisFactsFingerprint([sourceExpected.synopsis])) throw new Error(text('正式大纲已变化，不能采用旧候选。', 'The formal outline changed; the old candidate cannot be adopted.'))
+        if (partial.synopsis_db_hash !== synopsisFactsFingerprint([sourceExpected.synopsis])) throw authorError(context.interfaceLocale, { note: note('正式大纲已变化，不能采用旧候选。', 'The formal outline changed; the old candidate cannot be adopted.') })
         seedText = (await this.readMainVisibleComposition())?.text ?? ''
         if (from > 1) {
           const heading = `# ${promptLanguageText(writingLanguage, '情节大纲', 'Plot Outline')}\n\n`
           const completeCheckpoint = { synopsis_incomplete: false, synopsis_covered_to: from - 1 }
           const suffix = renderSynopsisDbText('', writingLanguage, totalChapters, completeCheckpoint).slice(heading.length)
           if (!sourceExpected.synopsis.startsWith(heading) || !sourceExpected.synopsis.endsWith(suffix)) {
-            throw new Error(text('正式大纲格式已变化，不能恢复续批。', 'The formal outline format changed, so this batch cannot be resumed.'))
+            throw authorError(context.interfaceLocale, { note: note('正式大纲格式已变化，不能恢复续批。', 'The formal outline format changed, so this batch cannot be resumed.') })
           }
           confirmedPrefix = sourceExpected.synopsis.slice(heading.length, -suffix.length)
           if (!confirmedPrefix || renderSynopsisDbText(confirmedPrefix, writingLanguage, totalChapters, completeCheckpoint) !== sourceExpected.synopsis) {
-            throw new Error(text('正式大纲与已确认前缀不一致，不能恢复续批。', 'The formal outline does not match the confirmed prefix, so this batch cannot be resumed.'))
+            throw authorError(context.interfaceLocale, { note: note('正式大纲与已确认前缀不一致，不能恢复续批。', 'The formal outline does not match the confirmed prefix, so this batch cannot be resumed.') })
           }
         }
       } else {
@@ -1792,10 +1740,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       )
       }
       if (composeVisibleContinuation(confirmedPrefix, seedText).length < MIN_SYNOPSIS_PARTIAL_PERSIST_CHARS) {
-        throw new Error(text(
-          '中断检查点内容过短，无法安全续写。请从「AI 生成故事架构」重新生成。',
-          'The interrupted checkpoint is too short to resume safely. Regenerate from “Generate story architecture” instead.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('中断检查点内容过短，无法安全续写。请从「AI 生成故事架构」重新生成。', 'The interrupted checkpoint is too short to resume safely. Regenerate from “Generate story architecture” instead.') })
       }
       mode = 'resume'
     } else {
@@ -1804,10 +1749,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         !Number.isSafeInteger(requested.from) || !Number.isSafeInteger(requested.to)
         || requested.from < 1 || requested.to > totalChapters || requested.from > requested.to
       )) {
-        throw new Error(text(
-          `章节范围无效：必须满足 1 ≤ from ≤ to ≤ ${totalChapters}`,
-          `Invalid chapter range: expected 1 ≤ from ≤ to ≤ ${totalChapters}.`,
-        ))
+        throw authorError(context.interfaceLocale, { note: note('章节范围无效：必须满足 1 ≤ from ≤ to ≤ {totalChapters}', 'Invalid chapter range: expected 1 ≤ from ≤ to ≤ {totalChapters}.', { totalChapters }) })
       }
       from = requested?.from ?? 1
       to = requested?.to ?? totalChapters
@@ -1815,43 +1757,31 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         // 覆盖重写（显式发起）或首次生成。若只覆盖到一半会静默丢弃
         // 第 to+1–coveredTo 章的已确认大纲 → 拒绝，要求续批或全量重写。
         if (!interrupted && coveredTo > 0 && to < coveredTo) {
-          throw new Error(text(
-            `本批只生成到第 ${to} 章，将丢弃已确认的第 ${to + 1}–${coveredTo} 章大纲。`
-              + `若只需补充，请从第 ${coveredTo + 1} 章发起续批；若确定重写，请生成 1–${Math.max(coveredTo, totalChapters)} 章全量覆盖。`,
-            `This batch stops at chapter ${to} and would discard the confirmed outline for chapters ${to + 1}-${coveredTo}. `
-              + `To extend, continue from chapter ${coveredTo + 1}; to rewrite, regenerate the full range 1-${Math.max(coveredTo, totalChapters)}.`,
-          ))
+          throw authorError(context.interfaceLocale, { note: note(
+            '本批只生成到第 {to} 章，将丢弃已确认的第 {firstDiscarded}–{coveredTo} 章大纲。若只需补充，请从第 {continueFrom} 章发起续批；若确定重写，请生成 1–{fullTo} 章全量覆盖。',
+            'This batch stops at chapter {to} and would discard the confirmed outline for chapters {firstDiscarded}-{coveredTo}. To extend, continue from chapter {continueFrom}; to rewrite, regenerate the full range 1-{fullTo}.',
+            { to, firstDiscarded: to + 1, coveredTo, continueFrom: coveredTo + 1, fullTo: Math.max(coveredTo, totalChapters) },
+          ) })
         }
         mode = 'fresh'
       } else {
         // 连续续批：不得跳跃、不得重写已确认前缀、源事实不得变化
         if (interrupted) {
-          throw new Error(text(
-            '当前存在未完成的批次（可断点续写）。请先完成该批次，再发起下一批生成。',
-            'A batch is still incomplete (it can be resumed). Finish that batch before starting the next one.',
-          ))
+          throw authorError(context.interfaceLocale, { note: note('当前存在未完成的批次（可断点续写）。请先完成该批次，再发起下一批生成。', 'A batch is still incomplete (it can be resumed). Finish that batch before starting the next one.') })
         }
         if (coveredTo <= 0 || from !== coveredTo + 1) {
-          throw new Error(text(
-            coveredTo > 0 && from <= coveredTo
-              ? `第 ${from} 章已包含在已确认大纲中。请从第 ${coveredTo + 1} 章继续，或从第 1 章显式选择覆盖重写。`
-              : `大纲必须连续生成：当前已覆盖至第 ${coveredTo} 章，本批应从第 ${coveredTo + 1} 章开始。`,
-            coveredTo > 0 && from <= coveredTo
-              ? `Chapter ${from} is already inside the confirmed outline. Continue from chapter ${coveredTo + 1}, or explicitly rewrite from chapter 1.`
-              : `The outline must grow contiguously: chapters up to ${coveredTo} are confirmed, so this batch must start at chapter ${coveredTo + 1}.`,
-          ))
+          const chapters = { from, coveredTo, continueFrom: coveredTo + 1 }
+          throw authorError(context.interfaceLocale, { note: coveredTo > 0 && from <= coveredTo
+            ? note('第 {from} 章已包含在已确认大纲中。请从第 {continueFrom} 章继续，或从第 1 章显式选择覆盖重写。',
+              'Chapter {from} is already inside the confirmed outline. Continue from chapter {continueFrom}, or explicitly rewrite from chapter 1.', chapters)
+            : note('大纲必须连续生成：当前已覆盖至第 {coveredTo} 章，本批应从第 {continueFrom} 章开始。',
+              'The outline must grow contiguously: chapters up to {coveredTo} are confirmed, so this batch must start at chapter {continueFrom}.', chapters) })
         }
         if (!partial.synopsis_range) {
-          throw new Error(text(
-            '续批检查点缺少上一批范围，无法确认连续覆盖。请从第 1 章重新生成。',
-            'The continuation checkpoint is missing the previous batch range. Regenerate from chapter 1.',
-          ))
+          throw authorError(context.interfaceLocale, { note: note('续批检查点缺少上一批范围，无法确认连续覆盖。请从第 1 章重新生成。', 'The continuation checkpoint is missing the previous batch range. Regenerate from chapter 1.') })
         }
         if (partial.synopsis_step_guidance === undefined) {
-          throw new Error(text(
-            '这份旧版情节大纲缺少生成时的输入记录，不能接着生成。已有内容都已保留，请从第 1 章重新生成。',
-            'This older plot outline lacks its generation inputs, so it cannot be continued. Everything is kept; regenerate from chapter 1.',
-          ))
+          throw authorError(context.interfaceLocale, { note: note('这份旧版情节大纲缺少生成时的输入记录，不能接着生成。已有内容都已保留，请从第 1 章重新生成。', 'This older plot outline lacks its generation inputs, so it cannot be continued. Everything is kept; regenerate from chapter 1.') })
         }
         const checkpointStepGuidance = partial.synopsis_step_guidance
         const expectedCheckpointFingerprint = synopsisInputsFingerprint(
@@ -1861,10 +1791,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           template,
         )
         if (checkpointFingerprint !== expectedCheckpointFingerprint) {
-          throw new Error(text(
-            '故事前提、角色、世界观或总章数等在上次生成后变了，已有大纲接不上。请在「AI 生成故事架构」里从第 1 章重新生成。',
-            'The premise, characters, worldbuilding, chapter count, or similar inputs changed since the last generation, so the existing outline cannot be extended. Regenerate from chapter 1 in “Generate story architecture”.',
-          ))
+          throw authorError(context.interfaceLocale, { note: note('故事前提、角色、世界观或总章数等在上次生成后变了，已有大纲接不上。请在「AI 生成故事架构」里从第 1 章重新生成。', 'The premise, characters, worldbuilding, chapter count, or similar inputs changed since the last generation, so the existing outline cannot be extended. Regenerate from chapter 1 in “Generate story architecture”.') })
         }
         seedText = assertCheckpointDbMirrorCurrent(
           partial,
@@ -1957,7 +1884,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         maxContinuations: 3,
         onPartialAvailable: content => { interruptedContent = composeVisibleContinuation(confirmedPrefix, content) },
       })
-      if (confirmedPrefix && !generated.trim()) throw new Error(text('情节大纲生成失败，AI 返回空内容', 'Plot outline generation failed because the AI returned empty content.'))
+      if (confirmedPrefix && !generated.trim()) throw authorError(context.interfaceLocale, { note: note('情节大纲生成失败，AI 返回空内容', 'Plot outline generation failed because the AI returned empty content.') })
       merged = composeVisibleContinuation(confirmedPrefix, generated)
       return merged
     }
@@ -1975,7 +1902,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           validationSeedText,
           from,
           to,
-          text,
+          context.interfaceLocale,
           allowIncompleteLastEntry,
         )
       } catch (error) {
@@ -1997,10 +1924,12 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         `已完成部分（约 ${partialBody.length} 字）已保存，可点击「继续生成情节大纲」从断点续写`,
         `The completed part (about ${partialBody.length} ${pluralEn(partialBody.length, 'character')}) was saved. Click “Continue plot outline” to resume from the break point.`,
       ))
-      throw new PlotOutlineResumeAvailableError(text(
-        `情节大纲没生成完就中断了：${displayedErrorMessage(context.interfaceLocale, cause)}。已完成的约 ${partialBody.length} 字已保存。\n点「继续生成情节大纲」接着写第 ${from}–${to} 章；本批太大就先在「AI 生成架构」调小每批章数。`,
-        `Plot-outline generation stopped early: ${displayedErrorMessage(context.interfaceLocale, cause)}. The finished part (about ${partialBody.length} ${pluralEn(partialBody.length, 'character')}) was saved.\nClick “Continue plot outline” to finish chapters ${from}-${to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.`,
-      ))
+      // 已保存的部分不少于 MIN_SYNOPSIS_PARTIAL_PERSIST_CHARS 字，英文只用复数。
+      const params = { chars: partialBody.length, from, to }
+      throw new PlotOutlineResumeAvailableError(context.interfaceLocale, explained(context.interfaceLocale,
+        note('情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。\n中断原因', 'Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.\nReason:', params),
+        note('情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。', 'Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.', params),
+        reasonOf(context.interfaceLocale, cause)))
     }
 
     try {
@@ -2029,21 +1958,18 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       throw error
     }
 
-    if (!merged.trim()) throw new Error(text(
-      '情节大纲生成失败，AI 返回空内容',
-      'Plot outline generation failed because the AI returned empty content.',
-    ))
+    if (!merged.trim()) throw authorError(context.interfaceLocale, { note: note('情节大纲生成失败，AI 返回空内容', 'Plot outline generation failed because the AI returned empty content.') })
     if (previousBatchPartial && stagedBatchPartial
       && stripPlotOutlineProgressLine(merged).trim() === confirmedPrefix.trim()) {
       await this.rollbackSynopsisCheckpoint(expectedProjectPath, projectSession, context, previousBatchPartial, stagedBatchPartial)
-      throw new Error(text('本批没有新增情节大纲内容，已保留上一批检查点。', 'This batch added no plot-outline content; the previous checkpoint was preserved.'))
+      throw authorError(context.interfaceLocale, { note: note('本批没有新增情节大纲内容，已保留上一批检查点。', 'This batch added no plot-outline content; the previous checkpoint was preserved.') })
     }
 
     // ===== 完成校验：正文必须完整覆盖本批；附带进度行时也必须与范围一致 =====
     let confirmedBody = ''
     try {
-      assertPlotOutlineTitleCoverage(merged, validationSeedText, from, to, text)
-      assertPlotOutlineBatchComplete(merged, from, to, totalChapters, text)
+      assertPlotOutlineTitleCoverage(merged, validationSeedText, from, to, context.interfaceLocale)
+      assertPlotOutlineBatchComplete(merged, from, to, totalChapters, context.interfaceLocale)
       confirmedBody = stripPlotOutlineProgressLine(merged)
     } catch (error) {
       if (error instanceof NonRecoverablePlotOutlineError) {
@@ -2056,7 +1982,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     }
     if (!confirmedBody) {
       // persistAndRaiseResume 已以中断错误终结；此处仅为类型安全的兜底。
-      throw new Error(text('情节大纲未完成且无法保存', 'The plot outline is incomplete and could not be saved.'))
+      throw authorError(context.interfaceLocale, { note: note('情节大纲未完成且无法保存', 'The plot outline is incomplete and could not be saved.') })
     }
 
     this.assertNotCancelled(context)
@@ -2144,11 +2070,6 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
   private async executeChapterOutline({ context, callbacks }: Pick<CommandExecuteParams, 'context' | 'callbacks'>, recovery: GenerationRecoveryContext, initial: PlotOutlineProgress): Promise<string> {
     const session = requireWorkflowProjectSession(context), handle = context.mainGenerationRunHandle!
     const text = (zh: string, en: string) => workflowUiText(context, zh, en)
-    // 来源变了以后运行侧页直接显示这两段说明，口径与架构页的恢复稿提示（run-recovery.ts outlineSourceChangedNote）一致。
-    const keptInRecoveryDraft = (zh: string, en: string) => text(`${zh}保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。`,
-      `${en} kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. `)
-    const restartFrom = (from: number) => text(`正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 ${from} 章开始。`,
-      `The saved outline was not changed. Open Architecture and generate the plot outline again from chapter ${from}.`)
     const { expectedProjectPath } = this.snapshot
     const sourceExpected = initial.sourceExpected
     const configInput = recovery.authorInputs.find(input => input.id === 'architecture:author-config')
@@ -2157,10 +2078,10 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     const guidance = recovery.authorInputs.find(input => input.id === 'architecture:step-guidance:synopsis')?.text ?? ''
     const requestedGuidance = (context.data.stepGuidance as Record<string, unknown> | undefined)?.synopsis
     if (this.options.resumeSynopsis && typeof requestedGuidance === 'string' && requestedGuidance !== guidance) throw new Error('GENERATION_PLOT_OUTLINE_GUIDANCE_CHANGED')
-    if (!sourceExpected.premise || !sourceExpected.charactersArch || !sourceExpected.worldbuilding) throw new Error(text('故事前提、角色名单和世界观必须先完成。', 'Complete the premise, characters and worldbuilding first.'))
+    if (!sourceExpected.premise || !sourceExpected.charactersArch || !sourceExpected.worldbuilding) throw authorError(context.interfaceLocale, { note: note('故事前提、角色名单和世界观必须先完成。', 'Complete the premise, characters and worldbuilding first.') })
     const language = sourceExpected.writingLanguage
     const template = await resolvePromptTemplate('synopsis', session, language)
-    if (!template) throw new Error(text('模板丢失', 'The plot-outline template is missing.'))
+    if (!template) throw authorError(context.interfaceLocale, { note: note('模板丢失', 'The plot-outline template is missing.') })
     const { getPlotStructureGuide, getNarrativePOVLabel } = await import('../architecture-workflow')
     const promptBuilder = new ArchitecturePromptBuilder(template, language)
       .withCoreSeed(sourceExpected.premise).withCharacterDynamics(sourceExpected.charactersArch).withWorldBuilding(sourceExpected.worldbuilding)
@@ -2197,18 +2118,15 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     }
     const stopped = (cursor: Extract<PlotOutlineProgress['cursor'], { kind: 'stopped' }>) => {
       if (cursor.reason === 'source-invalid') return new Error(plotOutlineSourceInvalidText(sourceExpected.synopsis, workflowUiLocale(context)))
-      const n = cursor.chapterNumber
-      const problem = {
-        'attempts-exhausted': text(`第 ${n} 章两次都没写成完整的单章大纲`, `Chapter ${n} failed twice to come back as one complete chapter outline`),
-        'unknown-completion': text(`第 ${n} 章的回复没有正常结束`, `The reply for chapter ${n} did not finish normally`),
-        'in-flight': text(`第 ${n} 章上一次请求还没有结果`, `The previous request for chapter ${n} has no result yet`),
-      }[cursor.reason]
-      const kept = cursor.reason === 'attempts-exhausted'
-        ? text(`恢复稿里有已写好的章节，第 ${n} 章最后一次的回复在「原始候选」里`, `The recovery draft has the finished chapters; the last reply for chapter ${n} is under Original candidate`)
-        : text('恢复稿里有已写好的章节', 'The recovery draft has the finished chapters')
-      return new Error(text(
-        `${kept}，正式大纲没动。${problem}，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。`,
-        `${kept}; the saved outline is unchanged. ${problem}, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going.`))
+      const n = { n: cursor.chapterNumber }
+      return authorError(context.interfaceLocale, { note: {
+        'attempts-exhausted': note('恢复稿里有已写好的章节，第 {n} 章最后一次的回复在「原始候选」里，正式大纲没动。第 {n} 章两次都没写成完整的单章大纲，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。',
+          'The recovery draft has the finished chapters; the last reply for chapter {n} is under Original candidate; the saved outline is unchanged. Chapter {n} failed twice to come back as one complete chapter outline, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going.', n),
+        'unknown-completion': note('恢复稿里有已写好的章节，正式大纲没动。第 {n} 章的回复没有正常结束，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。',
+          'The recovery draft has the finished chapters; the saved outline is unchanged. The reply for chapter {n} did not finish normally, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going.', n),
+        'in-flight': note('恢复稿里有已写好的章节，正式大纲没动。第 {n} 章上一次请求还没有结果，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。',
+          'The recovery draft has the finished chapters; the saved outline is unchanged. The previous request for chapter {n} has no result yet, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going.', n),
+      }[cursor.reason] })
     }
     const requestCallbacks = { ...callbacks, setProgress: () => {} }
     const publishProgress = (outline: PlotOutlineProgress) => {
@@ -2238,19 +2156,10 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           await this.callLLMResult(`${originalPrompt}\n\n${plotOutlineRequestContract(outline, cursor.chapterNumber, cursor.attempt)}`,
             `${promptBuilder.getSystemRole()}\n\n${planningTargetInstruction('outline', outline.targetUnits, language)}`, requestCallbacks, { purpose: plotOutlinePurpose(cursor.chapterNumber, cursor.attempt), reasoningStage: 'planning', writingSkillStage: 'planning' }, context)
         } catch (error) {
-          const code = errorCodeOf(error)
+          const code = failureCode(errorCodeOf(error))
           if (!code || !PLOT_OUTLINE_SOURCE_CHANGED_CODES.has(code)) throw error
-          const { from } = outline.range, stoppedAt = cursor.chapterNumber
-          const cause = code === 'GENERATION_SOURCE_CHANGED_MODEL'
-            ? text('生成途中模型设置被修改', 'The model settings were changed during generation')
-            : text('生成途中作品设定、提示词模板或写作 Skill 被修改', 'The book settings, a prompt template or a writing skill changed during generation')
-          const lastKept = stoppedAt - 1
-          let kept = ''
-          if (lastKept === from) kept = keptInRecoveryDraft(`本批已生成的第 ${from} 章`, `Chapter ${from}, already generated in this batch, is`)
-          else if (lastKept > from) kept = keptInRecoveryDraft(`本批已生成的第 ${from}–${lastKept} 章`, `Chapters ${from}–${lastKept}, already generated in this batch, are`)
-          throw new PlotOutlineSourceChangedError(text(
-            `${cause}，这批大纲已在第 ${stoppedAt} 章停止，没有再发送请求。`,
-            `${cause}, so this outline batch stopped at chapter ${stoppedAt} without sending another request. `) + kept + restartFrom(from), { cause: error })
+          throw new PlotOutlineSourceChangedError(context.interfaceLocale, code,
+            sourceChangedMidBatch(code === 'GENERATION_SOURCE_CHANGED_MODEL', cursor.chapterNumber, outline.range.from), { cause: error })
         }
       }
       const current = await ipc.invokeWithProjectSession(session, 'generation:read', handle)
@@ -2267,14 +2176,14 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       requireIpcSuccess(committed, text('保存完整情节大纲', 'Save the complete plot outline'))
     } catch (error) {
       // 最后一章生成完、正式保存前来源变了：主进程在保存这一步只报通用码，不分模型还是其他来源。
-      const code = errorCodeOf(error)
+      const code = failureCode(errorCodeOf(error))
       if (!code || !PLOT_OUTLINE_SOURCE_CHANGED_CODES.has(code)) throw error
-      const { from, to } = outline.range
-      const chapters = from === to ? text(`第 ${from} 章`, `chapter ${from}`) : text(`第 ${from}–${to} 章`, `chapters ${from}–${to}`)
-      throw new PlotOutlineSourceChangedError(text(
-        `本批${chapters}大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。`,
-        `The outline for ${chapters} finished, but the model settings, book settings, a prompt template, or a writing skill changed before saving, so saving was refused. `)
-        + keptInRecoveryDraft('这批大纲', 'The batch is') + restartFrom(from), { cause: error })
+      const range = outline.range
+      throw new PlotOutlineSourceChangedError(context.interfaceLocale, code, range.from === range.to
+        ? note('本批第 {from} 章大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。这批大纲保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。',
+          'The outline for chapter {from} finished, but the model settings, book settings, a prompt template, or a writing skill changed before saving, so saving was refused. The batch is kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}.', range)
+        : note('本批第 {from}–{to} 章大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。这批大纲保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。',
+          'The outline for chapters {from}–{to} finished, but the model settings, book settings, a prompt template, or a writing skill changed before saving, so saving was refused. The batch is kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}.', range), { cause: error })
     }
     await saveNavigation(outline, true)
     const { globalEventBus } = await import('../../../shared/event-bus')
@@ -2298,10 +2207,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
     )
     if (!readResult.success || !readResult.data) {
-      throw new Error(text(
-        '无法回读当前架构检查点',
-        'The current architecture checkpoint could not be read back.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('无法回读当前架构检查点', 'The current architecture checkpoint could not be read back.') })
     }
     const currentPartial = readResult.data as PartialArchData
     if (!sameSynopsisCheckpoint(currentPartial, writtenPartial)) {
@@ -2353,13 +2259,12 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           writtenPartial,
         )
       } catch (rollbackError) {
-        // 只有回滚也失败时才拼成一句；单独的 commitError 原样抛出，由失败面板按码说明。
-        const commitDetail = displayedErrorMessage(context.interfaceLocale, commitError)
-        const detail = displayedErrorMessage(context.interfaceLocale, rollbackError)
-        throw new Error(text(
-          `${commitDetail} 同时无法安全恢复旧检查点：${detail}`,
-          `${commitDetail} The previous checkpoint also could not be restored safely: ${detail}`,
-        ))
+        // 单独的 commitError 原样抛出，由失败面板按码说明。
+        const because = reasonOf(context.interfaceLocale, commitError)
+        throw authorError(context.interfaceLocale, {
+          note: note('情节大纲没能保存，旧检查点也没能安全恢复', 'The plot outline could not be saved, and the previous checkpoint could not be restored safely either.'),
+          ...(because ? { because } : {}),
+        }, { cause: rollbackError })
       }
       throw new Error(commitError)
     }

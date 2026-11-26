@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { displayedErrorMessage, failureText } from '../../i18n/app-errors'
-import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE } from '../../services/workflows/commands/architecture.command'
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { projectSessionContextFromProject, sameProjectPathKey, sameProjectSessionContext } from '../../shared/project-session-context'
 import { navigate } from '../../stores/navigation/navigation-intents'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import { errorLocaleForRun } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
-import type { Failure, LegacyReason, Recovery } from '../../shared/failure'
+import type { Failure, LegacyReason } from '../../shared/failure'
 import { useProjectStore } from '../../stores/project-store'
 import type { WorkflowRun } from '../../stores/workflow-store'
 import { toast } from '../ui/Toast'
@@ -29,7 +28,6 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
   const failedStep = run.steps.find(step => step.status === 'failed')
   const currentStep = run.steps[run.currentStepIndex] ?? run.steps[0]
   const failure = run.failure ?? failedStep?.failure
-  const failedWith = (code: string, recovery: Recovery) => run.errorCode === code || failedStep?.errorCode === code || failure?.recovery === recovery
   const locale = errorLocaleForRun(run.uiLocale, interfaceLocale)
   const legacy = run.error || currentStep?.error
   return {
@@ -43,8 +41,8 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
       failedStep?.generationActivity ?? currentStep?.generationActivity,
       failure && hasNote(failure) ? failureText(locale, failure) : undefined,
     ),
-    canResumeOutline: failedWith(PLOT_OUTLINE_RESUME_ERROR_CODE, 'resume-plot-outline'),
-    canRestartOutline: failedWith(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE, 'restart-plot-outline'),
+    canResumeOutline: failure?.recovery === 'resume-plot-outline',
+    canRestartOutline: failure?.recovery === 'restart-plot-outline',
   }
 }
 

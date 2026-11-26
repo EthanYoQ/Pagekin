@@ -20,6 +20,7 @@ import { useWorkflowStore, type WorkflowRun } from '../../../../stores/workflow-
 import RunSheet from '../RunSheet'
 import { createProjectArchTabId } from '../../../editor/arch-file-refresh-policy'
 import { globalEventBus } from '../../../../shared/event-bus'
+import { note, type Failure } from '../../../../shared/failure'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -141,14 +142,15 @@ describe('运行侧页', () => {
 
   it('大纲保存被来源检查拒绝：失败卡说明原因并只给「打开架构页」，不露错误码', async () => {
     const reason = '本批第 6 章大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。请到「架构」页重新生成情节大纲，从第 6 章开始。'
-    const errorCode = 'architecture-synopsis-source-changed'
-    useWorkflowStore.setState({ activeRuns: [run('大纲', 'failed', { type: 'architecture_generation', title: '生成故事架构', error: reason, errorCode,
-      steps: [{ id: 'synopsis', name: '情节大纲', description: '', status: 'failed', progress: 0, logs: [], error: reason, errorCode }] })] })
+    const errorCode = 'GENERATION_SOURCE_CHANGED'
+    const failure: Failure = { code: errorCode, note: note(reason, 'The source changed before saving.'), recovery: 'restart-plot-outline' }
+    useWorkflowStore.setState({ activeRuns: [run('大纲', 'failed', { type: 'architecture_generation', title: '生成故事架构', error: reason, errorCode, failure,
+      steps: [{ id: 'synopsis', name: '情节大纲', description: '', status: 'failed', progress: 0, logs: [], error: reason, errorCode, failure }] })] })
     await render()
     const card = host!.querySelector('article')!
     expect(button('打开架构页')).toBeTruthy()
     expect(button('继续生成情节大纲')).toBeUndefined()
-    expect(card.textContent).not.toMatch(/错误码|architecture-synopsis-source-changed/)
+    expect(card.textContent).not.toMatch(/错误码|GENERATION_SOURCE_CHANGED/)
   })
 
   it.each<[Locale]>([['zh-CN'], ['en-US']])('步骤失败带着主进程的通用码：展开后按运行的语言显示说明，不露码（界面 %s）', async locale => {

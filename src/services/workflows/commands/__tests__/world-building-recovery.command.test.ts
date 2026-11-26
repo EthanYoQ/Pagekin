@@ -324,6 +324,20 @@ describe('GenerateWorldBuildingCommand 截断恢复', () => {
     expect(formalWrites).toHaveLength(0)
   })
 
+  it('续写请求网络失败时英文说明不留空着的原因标签，码仍是请求失败', async () => {
+    installResponses([
+      { content: '已收到的世界观首段。', finishReason: 'length' },
+      { error: '网络连接中断' },
+    ])
+    const failure = await new GenerateWorldBuildingCommand(snapshot, createWorkflowRuntimeDependencies())
+      .execute({ step: {}, context: { ...context(), uiLocale: 'en-US', interfaceLocale: shown('en-US') }, callbacks: callbacks() })
+      .catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(WorldBuildingResumeAvailableError)
+    expect((failure as Error).message).toBe('Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later.')
+    expect((failure as WorldBuildingResumeAvailableError).code).toBe('PROVIDER_REQUEST_FAILED')
+  })
+
   it('新工作流上下文可从持久化候选恢复并在成功后清除候选', async () => {
     installResponses([
       { content: '倒悬古城以记忆结晶维持运转。', finishReason: 'length' },

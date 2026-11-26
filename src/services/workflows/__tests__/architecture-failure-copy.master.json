@@ -1,0 +1,648 @@
+{
+ "说明": "master（e0ed953bd）上三个文件里报错用的双语文案，占位统一成 ⟨表达式⟩，由 .audit 的 codemod.mjs snapshot 生成。测试要求现状 = master − 两组 removed + 两组 added。restructured 是拼接句展开成整句、文字不变；reworded 是本 PR 真改了作者看到的文字（原因换到句末、诊断原文与收据移进日志、原因显示不出时去掉标签）。",
+ "master": [
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨message⟩ 完整模型输出仍保留在 AI 输出中，但这种结构错误不能自动续写；请修正范围后重新生成。",
+   "⟨message⟩ The complete model output remains visible in AI output, but this structural error cannot be continued automatically; correct the range and regenerate."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨`大纲输出包含无效的批次完成标记（需要与本批范围完全一致：第${from}–${to}章、全书${totalChapters}章），`+'批次范围可能错位，结果未按完成保存。'⟩",
+   "⟨`Theoutlineoutputcontainsaninvalidbatch-completionmarker(expectedchapters${from}-${to}of${totalChapters});`+'itsrangemaybeincorrect,soitwasnotsavedascomplete.'⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置不是完整 JSON 对象",
+   "The AI novel configuration is not a complete JSON object."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置必须是 JSON 对象",
+   "The AI novel configuration must be a JSON object."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置缺少非空字段：⟨field⟩",
+   "The AI novel configuration is missing the non-empty field ⟨field⟩."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置包含非法 plotStructure",
+   "The AI novel configuration has an invalid plotStructure."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置包含非法 narrativePOV",
+   "The AI novel configuration has an invalid narrativePOV."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置包含无效 ⟨field⟩，不得回退或覆盖作者设置",
+   "The AI novel configuration has an invalid ⟨field⟩; it may not replace or override the author's setting."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置包含无效 referenceWorks",
+   "The AI novel configuration has an invalid referenceWorks."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "当前项目已切换，架构生成已停止以避免写入错误项目",
+   "The current project changed, so architecture generation stopped to avoid writing to the wrong project."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "未找到 generate_global_config 模板",
+   "The generate_global_config template was not found."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置不完整或无效，结果未应用。详细信息：⟨detail⟩",
+   "The AI novel configuration was incomplete or invalid, so the result was not applied. Details: ⟨detail⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "全局写作要求仍不符合 ⟨GENERATED_GLOBAL_GUIDANCE_MIN_RULES⟩–⟨GENERATED_GLOBAL_GUIDANCE_MAX_RULES⟩ 条且不超过 ⟨GENERATED_GLOBAL_GUIDANCE_MAX_CHARS⟩ 字符的合同，配置未应用。",
+   "The global guidance still does not satisfy the ⟨GENERATED_GLOBAL_GUIDANCE_MIN_RULES⟩–⟨GENERATED_GLOBAL_GUIDANCE_MAX_RULES⟩-rule, ⟨GENERATED_GLOBAL_GUIDANCE_MAX_CHARS⟩-character contract, so the configuration was not applied."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "当前项目已切换，智能配置结果未应用",
+   "The current project changed, so the generated configuration was not applied."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "当前项目已切换，智能配置结果未保存",
+   "The current project changed, so the generated configuration was not saved."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "未找到 premise 模板",
+   "The story-premise template was not found."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "故事前提生成失败，AI 返回空内容",
+   "Story premise generation failed because the AI returned empty content."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "工作流已取消",
+   "Workflow was cancelled."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "角色规划模板丢失",
+   "The character-planning template is missing."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "故事前提尚未生成或内容不完整，请返回勾选生成",
+   "The story premise is missing or incomplete. Go back and include it for generation."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "已有角色没有变动。人物太多，模型一次写不下：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。",
+   "Your existing characters are unchanged. The cast is too long for one model reply: raise Max output tokens in the model’s Advanced settings and generate again, or add people with Paste or import cards on the Cast page."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨detail⟩",
+   "⟨englishWithReason(context.interfaceLocale,'Thecharacteridentitymanifestwasinvalid,sonocharacterdatawassaved.',detail)⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "已有角色没有变动。人物太多，这次生成的额度（请求次数与时长）用完了：到「设置」里模型的「高级设置」调大「最大输出 Tokens」再生成，或在角色名单用「粘贴 / 导入角色卡」补上。",
+   "Your existing characters are unchanged. The cast used up this run’s request and time budget: raise Max output tokens in the model’s Advanced settings and generate again, or add people with Paste or import cards on the Cast page."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨reason⟩；角色详情失败收据：⟨failureReceipt⟩",
+   "⟨knownAppErrorMessage(context.interfaceLocale,failure.code)??englishWithReason(context.interfaceLocale,'Characterdetailsfailedstructuralvalidationandwerenotsaved.',reason)⟩ Receipt: ⟨failureReceipt⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "角色详情未完整覆盖冻结身份清单",
+   "Character details did not fully cover the frozen identity manifest."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "旧候选没有持久运行记录，仍可查看或复制；请明确重新开始生成。",
+   "This legacy candidate has no persistent run record. It remains available to view or copy; explicitly restart generation."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "故事前提尚未生成或内容不完整，请返回勾选生成",
+   "The story premise is missing or incomplete. Go back and include it for generation."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "模板丢失",
+   "The worldbuilding template is missing."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "未找到可恢复的世界观候选；正式世界观保持不变，请重新生成。",
+   "No recoverable worldbuilding candidate was found. The formal worldbuilding remains unchanged; regenerate instead."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "作者步骤指导已变化，旧候选不能自动续写。",
+   "The author step guidance changed; the old candidate cannot be resumed automatically."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "正式世界观自候选保存后已变化，旧候选不能自动覆盖新内容；候选仍可查看或复制。",
+   "The formal worldbuilding changed after the candidate was saved, so the old candidate cannot overwrite it. The candidate remains available to view or copy."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "故事前提、小说配置、角色图谱或世界观模板在候选保存后变了，旧候选不能接着生成，仍可查看或复制。",
+   "The premise, novel configuration, character map, or worldbuilding template changed after the candidate was saved, so it cannot be continued. You can still view or copy it."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。原因：⟨detail⟩",
+   "Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason: ⟨detail⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨sourceFactsChanged?'生成期间故事前提、小说配置、角色图谱或模板变了，本次结果已保留为候选，没写入正式世界观，可查看或复制。':'世界观生成期间正式内容已被修改，本次结果已保留为候选且未覆盖作者修改；可查看或复制候选。'⟩",
+   "⟨sourceFactsChanged?'Thepremise,novelconfiguration,charactermap,ortemplatechangedduringgeneration.Thisresultwaskeptasacandidateandnotwrittentoworldbuilding;youcanvieworcopyit.':'Theformalworldbuildingchangedwhilegenerationwasrunning.Thisresultwaskeptasacandidateanddidnotoverwritetheauthoredit;youcanvieworcopyit.'⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "旧候选没有持久运行记录，仍可查看或复制；请明确重新开始生成。",
+   "This legacy candidate has no persistent run record. It remains available to view or copy; explicitly restart generation."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "故事前提未生成",
+   "The story premise has not been generated."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "角色名单未生成",
+   "The cast has not been generated."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "世界观未生成",
+   "Worldbuilding has not been generated."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "小说配置的总章数无效，无法生成情节大纲",
+   "The total chapter count in the novel configuration is invalid; the plot outline cannot be generated."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "模板丢失",
+   "The plot-outline template is missing."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "未找到中断的情节大纲检查点（当前大纲没有未完成的批次）。请从「AI 生成故事架构」重新生成。",
+   "No interrupted plot-outline checkpoint was found (no batch is incomplete). Regenerate from “Generate story architecture” instead."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "中断检查点缺少批次范围，无法续写。请从「AI 生成故事架构」重新生成。",
+   "The interrupted checkpoint is missing its batch range. Regenerate from “Generate story architecture” instead."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "这份旧版情节大纲缺少生成时的输入记录，不能接着生成。已有内容都已保留，请从第 1 章重新生成。",
+   "This older plot outline lacks its generation inputs, so it cannot be continued. Everything is kept; regenerate from chapter 1."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "作者步骤指导已变化，旧候选不能自动续写。",
+   "The author step guidance changed; the old candidate cannot be resumed automatically."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "故事前提、角色、世界观或总章数等在中断后变了，不能接着生成。请从「AI 生成故事架构」重新生成情节大纲。",
+   "The premise, characters, worldbuilding, chapter count, or similar inputs changed after the interruption, so it cannot be continued. Regenerate the plot outline from “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "正式大纲已变化，不能采用旧候选。",
+   "The formal outline changed; the old candidate cannot be adopted."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "正式大纲格式已变化，不能恢复续批。",
+   "The formal outline format changed, so this batch cannot be resumed."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "正式大纲与已确认前缀不一致，不能恢复续批。",
+   "The formal outline does not match the confirmed prefix, so this batch cannot be resumed."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "中断检查点内容过短，无法安全续写。请从「AI 生成故事架构」重新生成。",
+   "The interrupted checkpoint is too short to resume safely. Regenerate from “Generate story architecture” instead."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "章节范围无效：必须满足 1 ≤ from ≤ to ≤ ⟨totalChapters⟩",
+   "Invalid chapter range: expected 1 ≤ from ≤ to ≤ ⟨totalChapters⟩."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨`本批只生成到第${to}章，将丢弃已确认的第${to+1}–${coveredTo}章大纲。`+`若只需补充，请从第${coveredTo+1}章发起续批；若确定重写，请生成1–${Math.max(coveredTo,totalChapters)}章全量覆盖。`⟩",
+   "⟨`Thisbatchstopsatchapter${to}andwoulddiscardtheconfirmedoutlineforchapters${to+1}-${coveredTo}.`+`Toextend,continuefromchapter${coveredTo+1};torewrite,regeneratethefullrange1-${Math.max(coveredTo,totalChapters)}.`⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "当前存在未完成的批次（可断点续写）。请先完成该批次，再发起下一批生成。",
+   "A batch is still incomplete (it can be resumed). Finish that batch before starting the next one."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨coveredTo>0&&from<=coveredTo?`第${from}章已包含在已确认大纲中。请从第${coveredTo+1}章继续，或从第1章显式选择覆盖重写。`:`大纲必须连续生成：当前已覆盖至第${coveredTo}章，本批应从第${coveredTo+1}章开始。`⟩",
+   "⟨coveredTo>0&&from<=coveredTo?`Chapter${from}isalreadyinsidetheconfirmedoutline.Continuefromchapter${coveredTo+1},orexplicitlyrewritefromchapter1.`:`Theoutlinemustgrowcontiguously:chaptersupto${coveredTo}areconfirmed,sothisbatchmuststartatchapter${coveredTo+1}.`⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "续批检查点缺少上一批范围，无法确认连续覆盖。请从第 1 章重新生成。",
+   "The continuation checkpoint is missing the previous batch range. Regenerate from chapter 1."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "这份旧版情节大纲缺少生成时的输入记录，不能接着生成。已有内容都已保留，请从第 1 章重新生成。",
+   "This older plot outline lacks its generation inputs, so it cannot be continued. Everything is kept; regenerate from chapter 1."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "故事前提、角色、世界观或总章数等在上次生成后变了，已有大纲接不上。请在「AI 生成故事架构」里从第 1 章重新生成。",
+   "The premise, characters, worldbuilding, chapter count, or similar inputs changed since the last generation, so the existing outline cannot be extended. Regenerate from chapter 1 in “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲生成失败，AI 返回空内容",
+   "Plot outline generation failed because the AI returned empty content."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没生成完就中断了：⟨displayedErrorMessage(context.interfaceLocale,cause)⟩。已完成的约 ⟨partialBody.length⟩ 字已保存。\n点「继续生成情节大纲」接着写第 ⟨from⟩–⟨to⟩ 章；本批太大就先在「AI 生成架构」调小每批章数。",
+   "Plot-outline generation stopped early: ⟨displayedErrorMessage(context.interfaceLocale,cause)⟩. The finished part (about ⟨partialBody.length⟩ ⟨pluralEn(partialBody.length,'character')⟩) was saved.\nClick “Continue plot outline” to finish chapters ⟨from⟩-⟨to⟩; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲生成失败，AI 返回空内容",
+   "Plot outline generation failed because the AI returned empty content."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "本批没有新增情节大纲内容，已保留上一批检查点。",
+   "This batch added no plot-outline content; the previous checkpoint was preserved."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲未完成且无法保存",
+   "The plot outline is incomplete and could not be saved."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "故事前提、角色名单和世界观必须先完成。",
+   "Complete the premise, characters and worldbuilding first."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "模板丢失",
+   "The plot-outline template is missing."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨kept⟩，正式大纲没动。⟨problem⟩，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。",
+   "⟨kept⟩; the saved outline is unchanged. ⟨problem⟩, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨cause⟩，这批大纲已在第 ⟨stoppedAt⟩ 章停止，没有再发送请求。",
+   "⟨cause⟩, so this outline batch stopped at chapter ⟨stoppedAt⟩ without sending another request. "
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "本批⟨chapters⟩大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。",
+   "The outline for ⟨chapters⟩ finished, but the model settings, book settings, a prompt template, or a writing skill changed before saving, so saving was refused. "
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "无法回读当前架构检查点",
+   "The current architecture checkpoint could not be read back."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨commitDetail⟩ 同时无法安全恢复旧检查点：⟨detail⟩",
+   "⟨commitDetail⟩ The previous checkpoint also could not be restored safely: ⟨detail⟩"
+  ],
+  [
+   "src/services/workflows/architecture-workflow.ts",
+   "一次只能恢复一个故事架构步骤",
+   "Only one story-architecture step can be resumed at a time."
+  ],
+  [
+   "src/services/workflows/architecture-workflow.ts",
+   "当前项目已切换，无法启动架构生成",
+   "The project changed, so architecture generation cannot start."
+  ],
+  [
+   "src/services/workflows/architecture-workflow.ts",
+   "此候选缺少可恢复的运行记录，请保留或复制候选后重新生成。",
+   "This candidate has no recoverable run record. Keep or copy it before generating again."
+  ],
+  [
+   "src/services/workflows/architecture-workflow.ts",
+   "恢复记录已变化，已拒绝改用另一运行；请重新查看候选后再继续。",
+   "The recovery record changed. A different run was not substituted; review the candidate again before continuing."
+  ],
+  [
+   "src/services/workflows/architecture-workflow.ts",
+   "当前项目已切换，无法启动配置生成",
+   "The project changed, so configuration generation cannot start."
+  ],
+  [
+   "src/services/workflows/architecture-workflow.ts",
+   "当前项目已切换，请在原项目中重试",
+   "The project changed. Return to the original project and try again."
+  ],
+  [
+   "src/services/workflows/architecture-workflow.ts",
+   "当前项目已切换，请在原项目中重试",
+   "The project changed. Return to the original project and try again."
+  ],
+  [
+   "src/services/workflows/architecture-workflow.ts",
+   "旧版角色名单修复未完成；原文和已有角色卡均未被覆盖。",
+   "Legacy cast repair did not complete; the original text and existing cards were not overwritten."
+  ],
+  [
+   "src/services/workflows/commands/generate-field.command.ts",
+   "当前项目已切换，字段生成已停止",
+   "The current project changed, so field generation stopped."
+  ],
+  [
+   "src/services/workflows/commands/generate-field.command.ts",
+   "当前项目已切换，字段生成已停止",
+   "The current project changed, so field generation stopped."
+  ],
+  [
+   "src/services/workflows/commands/generate-field.command.ts",
+   "未找到字段生成提示词",
+   "Field-generation prompt is unavailable"
+  ],
+  [
+   "src/services/workflows/commands/generate-field.command.ts",
+   "全局写作要求仍不符合 ⟨GENERATED_GLOBAL_GUIDANCE_MIN_RULES⟩–⟨GENERATED_GLOBAL_GUIDANCE_MAX_RULES⟩ 条且不超过 ⟨GENERATED_GLOBAL_GUIDANCE_MAX_CHARS⟩ 字符的合同，结果未保存。",
+   "The global writing guidance still does not satisfy the ⟨GENERATED_GLOBAL_GUIDANCE_MIN_RULES⟩–⟨GENERATED_GLOBAL_GUIDANCE_MAX_RULES⟩-rule, ⟨GENERATED_GLOBAL_GUIDANCE_MAX_CHARS⟩-character contract, so it was not saved."
+  ],
+  [
+   "src/services/workflows/commands/generate-field.command.ts",
+   "当前项目已切换，字段生成结果未保存",
+   "The current project changed, so the generated field was not saved."
+  ],
+  [
+   "src/services/workflows/commands/generate-field.command.ts",
+   "当前项目已切换，字段生成结果未保存",
+   "The current project changed, so the generated field was not saved."
+  ],
+  [
+   "src/services/workflows/commands/generate-field.command.ts",
+   "字段生成结果保存失败",
+   "The generated field could not be saved."
+  ],
+  [
+   "src/services/workflows/commands/generate-field.command.ts",
+   "当前项目已切换，字段生成已停止",
+   "The current project changed, so field generation stopped."
+  ]
+ ],
+ "removedRestructured": [
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨message⟩ 完整模型输出仍保留在 AI 输出中，但这种结构错误不能自动续写；请修正范围后重新生成。",
+   "⟨message⟩ The complete model output remains visible in AI output, but this structural error cannot be continued automatically; correct the range and regenerate."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨`大纲输出包含无效的批次完成标记（需要与本批范围完全一致：第${from}–${to}章、全书${totalChapters}章），`+'批次范围可能错位，结果未按完成保存。'⟩",
+   "⟨`Theoutlineoutputcontainsaninvalidbatch-completionmarker(expectedchapters${from}-${to}of${totalChapters});`+'itsrangemaybeincorrect,soitwasnotsavedascomplete.'⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置不完整或无效，结果未应用。详细信息：⟨detail⟩",
+   "The AI novel configuration was incomplete or invalid, so the result was not applied. Details: ⟨detail⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。原因：⟨detail⟩",
+   "Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason: ⟨detail⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨sourceFactsChanged?'生成期间故事前提、小说配置、角色图谱或模板变了，本次结果已保留为候选，没写入正式世界观，可查看或复制。':'世界观生成期间正式内容已被修改，本次结果已保留为候选且未覆盖作者修改；可查看或复制候选。'⟩",
+   "⟨sourceFactsChanged?'Thepremise,novelconfiguration,charactermap,ortemplatechangedduringgeneration.Thisresultwaskeptasacandidateandnotwrittentoworldbuilding;youcanvieworcopyit.':'Theformalworldbuildingchangedwhilegenerationwasrunning.Thisresultwaskeptasacandidateanddidnotoverwritetheauthoredit;youcanvieworcopyit.'⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨`本批只生成到第${to}章，将丢弃已确认的第${to+1}–${coveredTo}章大纲。`+`若只需补充，请从第${coveredTo+1}章发起续批；若确定重写，请生成1–${Math.max(coveredTo,totalChapters)}章全量覆盖。`⟩",
+   "⟨`Thisbatchstopsatchapter${to}andwoulddiscardtheconfirmedoutlineforchapters${to+1}-${coveredTo}.`+`Toextend,continuefromchapter${coveredTo+1};torewrite,regeneratethefullrange1-${Math.max(coveredTo,totalChapters)}.`⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨coveredTo>0&&from<=coveredTo?`第${from}章已包含在已确认大纲中。请从第${coveredTo+1}章继续，或从第1章显式选择覆盖重写。`:`大纲必须连续生成：当前已覆盖至第${coveredTo}章，本批应从第${coveredTo+1}章开始。`⟩",
+   "⟨coveredTo>0&&from<=coveredTo?`Chapter${from}isalreadyinsidetheconfirmedoutline.Continuefromchapter${coveredTo+1},orexplicitlyrewritefromchapter1.`:`Theoutlinemustgrowcontiguously:chaptersupto${coveredTo}areconfirmed,sothisbatchmuststartatchapter${coveredTo+1}.`⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨kept⟩，正式大纲没动。⟨problem⟩，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。",
+   "⟨kept⟩; the saved outline is unchanged. ⟨problem⟩, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨cause⟩，这批大纲已在第 ⟨stoppedAt⟩ 章停止，没有再发送请求。",
+   "⟨cause⟩, so this outline batch stopped at chapter ⟨stoppedAt⟩ without sending another request. "
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "本批⟨chapters⟩大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。",
+   "The outline for ⟨chapters⟩ finished, but the model settings, book settings, a prompt template, or a writing skill changed before saving, so saving was refused. "
+  ],
+  [
+   "src/services/workflows/architecture-workflow.ts",
+   "当前项目已切换，请在原项目中重试",
+   "The project changed. Return to the original project and try again."
+  ]
+ ],
+ "removedReworded": [
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨detail⟩",
+   "⟨englishWithReason(context.interfaceLocale,'Thecharacteridentitymanifestwasinvalid,sonocharacterdatawassaved.',detail)⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨reason⟩；角色详情失败收据：⟨failureReceipt⟩",
+   "⟨knownAppErrorMessage(context.interfaceLocale,failure.code)??englishWithReason(context.interfaceLocale,'Characterdetailsfailedstructuralvalidationandwerenotsaved.',reason)⟩ Receipt: ⟨failureReceipt⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没生成完就中断了：⟨displayedErrorMessage(context.interfaceLocale,cause)⟩。已完成的约 ⟨partialBody.length⟩ 字已保存。\n点「继续生成情节大纲」接着写第 ⟨from⟩–⟨to⟩ 章；本批太大就先在「AI 生成架构」调小每批章数。",
+   "Plot-outline generation stopped early: ⟨displayedErrorMessage(context.interfaceLocale,cause)⟩. The finished part (about ⟨partialBody.length⟩ ⟨pluralEn(partialBody.length,'character')⟩) was saved.\nClick “Continue plot outline” to finish chapters ⟨from⟩-⟨to⟩; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨commitDetail⟩ 同时无法安全恢复旧检查点：⟨detail⟩",
+   "⟨commitDetail⟩ The previous checkpoint also could not be restored safely: ⟨detail⟩"
+  ]
+ ],
+ "addedRestructured": [
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "生成途中模型设置被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。",
+   "The model settings were changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "生成途中作品设定、提示词模板或写作 Skill 被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。",
+   "The book settings, a prompt template or a writing skill changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "生成途中模型设置被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。本批已生成的第 {from} 章保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。",
+   "The model settings were changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. Chapter {from}, already generated in this batch, is kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "生成途中作品设定、提示词模板或写作 Skill 被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。本批已生成的第 {from} 章保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。",
+   "The book settings, a prompt template or a writing skill changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. Chapter {from}, already generated in this batch, is kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "生成途中模型设置被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。本批已生成的第 {from}–{lastKept} 章保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。",
+   "The model settings were changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. Chapters {from}–{lastKept}, already generated in this batch, are kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "生成途中作品设定、提示词模板或写作 Skill 被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。本批已生成的第 {from}–{lastKept} 章保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。",
+   "The book settings, a prompt template or a writing skill changed during generation, so this outline batch stopped at chapter {stoppedAt} without sending another request. Chapters {from}–{lastKept}, already generated in this batch, are kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "大纲正文未按顺序提供本批第 {from}–{to} 章的非空条目（缺失 {missingCount} 章，空白、重复、乱序或越界 {invalidCount} 处），结果未按完成保存。 完整模型输出仍保留在 AI 输出中，但这种结构错误不能自动续写；请修正范围后重新生成。",
+   "The outline body does not provide non-empty entries in order for batch chapters {from}-{to} ({missingCount} missing; {invalidCount} empty, duplicate, out of order, or out of range), so the result was not saved as complete. The complete model output remains visible in AI output, but this structural error cannot be continued automatically; correct the range and regenerate."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "大纲正文未按顺序提供本批第 {from}–{to} 章的非空条目（缺失 {missingCount} 章，空白、重复、乱序或越界 {invalidCount} 处），结果未按完成保存。",
+   "The outline body does not provide non-empty entries in order for batch chapters {from}-{to} ({missingCount} missing; {invalidCount} empty, duplicate, out of order, or out of range), so the result was not saved as complete."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "大纲输出包含无效的批次完成标记（需要与本批范围完全一致：第 ⟨from⟩–⟨to⟩ 章、全书 ⟨totalChapters⟩ 章），批次范围可能错位，结果未按完成保存。",
+   "The outline output contains an invalid batch-completion marker (expected chapters ⟨from⟩-⟨to⟩ of ⟨totalChapters⟩); its range may be incorrect, so it was not saved as complete."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置不完整或无效，结果未应用。详细信息",
+   "The AI novel configuration was incomplete or invalid, so the result was not applied. Details:"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。原因",
+   "Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason:"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "生成期间故事前提、小说配置、角色图谱或模板变了，本次结果已保留为候选，没写入正式世界观，可查看或复制。",
+   "The premise, novel configuration, character map, or template changed during generation. This result was kept as a candidate and not written to worldbuilding; you can view or copy it."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "世界观生成期间正式内容已被修改，本次结果已保留为候选且未覆盖作者修改；可查看或复制候选。",
+   "The formal worldbuilding changed while generation was running. This result was kept as a candidate and did not overwrite the author edit; you can view or copy it."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "本批只生成到第 ⟨to⟩ 章，将丢弃已确认的第 ⟨to+1⟩–⟨coveredTo⟩ 章大纲。若只需补充，请从第 ⟨coveredTo+1⟩ 章发起续批；若确定重写，请生成 1–⟨Math.max(coveredTo,totalChapters)⟩ 章全量覆盖。",
+   "This batch stops at chapter ⟨to⟩ and would discard the confirmed outline for chapters ⟨to+1⟩-⟨coveredTo⟩. To extend, continue from chapter ⟨coveredTo+1⟩; to rewrite, regenerate the full range 1-⟨Math.max(coveredTo,totalChapters)⟩."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "第 {from} 章已包含在已确认大纲中。请从第 {continueFrom} 章继续，或从第 1 章显式选择覆盖重写。",
+   "Chapter {from} is already inside the confirmed outline. Continue from chapter {continueFrom}, or explicitly rewrite from chapter 1."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "大纲必须连续生成：当前已覆盖至第 {coveredTo} 章，本批应从第 {continueFrom} 章开始。",
+   "The outline must grow contiguously: chapters up to {coveredTo} are confirmed, so this batch must start at chapter {continueFrom}."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "恢复稿里有已写好的章节，第 {n} 章最后一次的回复在「原始候选」里，正式大纲没动。第 {n} 章两次都没写成完整的单章大纲，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。",
+   "The recovery draft has the finished chapters; the last reply for chapter {n} is under Original candidate; the saved outline is unchanged. Chapter {n} failed twice to come back as one complete chapter outline, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "恢复稿里有已写好的章节，正式大纲没动。第 {n} 章的回复没有正常结束，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。",
+   "The recovery draft has the finished chapters; the saved outline is unchanged. The reply for chapter {n} did not finish normally, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "恢复稿里有已写好的章节，正式大纲没动。第 {n} 章上一次请求还没有结果，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。",
+   "The recovery draft has the finished chapters; the saved outline is unchanged. The previous request for chapter {n} has no result yet, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "本批第 {from} 章大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。这批大纲保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。",
+   "The outline for chapter {from} finished, but the model settings, book settings, a prompt template, or a writing skill changed before saving, so saving was refused. The batch is kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "本批第 {from}–{to} 章大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。这批大纲保留在「大纲恢复稿」中，只能查看或复制，不能覆盖正式内容。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。",
+   "The outline for chapters {from}–{to} finished, but the model settings, book settings, a prompt template, or a writing skill changed before saving, so saving was refused. The batch is kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}."
+  ],
+  [
+   "src/services/workflows/commands/generate-field.command.ts",
+   "字段生成失败，请重试。",
+   "Field generation failed. Please try again."
+  ]
+ ],
+ "addedReworded": [
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置不完整或无效，结果未应用。",
+   "The AI novel configuration was incomplete or invalid, so the result was not applied."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "角色身份清单无效，没有保存角色数据",
+   "The character identity manifest was invalid, so no character data was saved."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。",
+   "Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。\n中断原因",
+   "Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.\nReason:"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。",
+   "Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没能保存，旧检查点也没能安全恢复",
+   "The plot outline could not be saved, and the previous checkpoint could not be restored safely either."
+  ]
+ ]
+}
