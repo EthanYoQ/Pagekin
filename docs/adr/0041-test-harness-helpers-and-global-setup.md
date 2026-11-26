@@ -121,6 +121,7 @@
 
 ### `src/components/editor/__tests__/chapter-card-draft-ledger.test.ts`
 
+- `blueprintHookSource`：蓝图页的数据逻辑在 use-chapter-blueprints.ts，旧外壳的 ChapterCardEditor 与新外壳的蓝图阶段共用。
 - 远端尚未返回时，用户继续修改第一章。
 
 ### `src/components/settings/__tests__/model-discovery.browser.tsx`
@@ -276,7 +277,6 @@
 - `crampedInputs`：至少放得下三个汉字。
 - `ipcError`：Electron 把主进程的异常包成这样交给页面。
 - `profileHeadCases`：角色名单页宽：1024 宽窗口约 738px，1280 宽约 994px（窗口宽减去流程脊与边距）。
-- `besideAvatar`：名字总和头像在同一行，不会自己掉到头像下面。
 - 1024 宽窗口去掉流程脊与边距，角色名单页约 738px：名单 272，档案两侧各留 40，图谱框只剩约 385。
 - `unreachable`：只看名单页自己的层：被裁掉的控件在那个点上不会出现，被页内元素盖住时最上面的是别人。别的用例留下的全局通知不算。
 
