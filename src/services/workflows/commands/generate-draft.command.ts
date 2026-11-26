@@ -1,6 +1,6 @@
 import { chapterTimeContinuity } from '../../../shared/chapter-time-continuity'
 import { ignoreFailure } from '../../../shared/ignore-failure'
-import { authorError, displayedErrorMessage, englishWithReason } from '../../../i18n/app-errors'
+import { authorError, displayedErrorMessage, englishWithReason, resultFailure } from '../../../i18n/app-errors'
 import { failureCode, note } from '../../../shared/failure'
 import { sanitizeDraftText, composeDraftVisibleContinuation, DRAFT_CONDENSE_PURPOSE, DRAFT_VISIBLE_TEXT_VERSION, isDraftVisibleTextVersion, type DraftVisibleTextVersion } from '../../../shared/draft-visible-text'
 import { DRAFT_RECONCILE_PURPOSE, draftReconciliationBlock } from '../../../shared/draft-reconciliation'
@@ -1372,7 +1372,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             expectedProjectPath,
           )
           if (!result.success || !result.candidate) {
-            throw workflowMainProcessError(context.interfaceLocale, result.error, '存储层拒绝写入', 'Storage rejected the write.')
+            throw workflowMainProcessError(context.interfaceLocale, resultFailure(result), '存储层拒绝写入', 'Storage rejected the write.')
           }
           callbacks.log(uiText(
             '生成未能安全完成；已收到的可见正文已保存为项目恢复候选，未进入草稿库。',

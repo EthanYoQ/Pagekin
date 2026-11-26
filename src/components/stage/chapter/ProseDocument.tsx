@@ -4,7 +4,7 @@ import type { ProjectData } from '../../../shared/ipc-channels'
 import { pluralEn } from '../../../shared/plural-en'
 import { registerEditorExitSaveHandler, useEditorStore, type EditorTab } from '../../../stores/editor-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { authorError, displayedErrorMessage, resultFailure } from '../../../i18n/app-errors'
 import CodeMirrorEditor from '../../editor/CodeMirrorEditor'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
 import { Button } from '../../ui/Button'
@@ -35,7 +35,10 @@ export default function ProseDocument({ tab, project }: { tab: EditorTab; projec
     if (!current) return
     const snapshot = { content, contentRevision: current.contentRevision ?? 0 }
     const result = await ipc.invokeWithProjectSession(session, 'db:recovery-candidate-update', candidateId, content, session.projectPath)
-    if (!result.success) throw new Error(result.error || text('保存恢复候选失败', 'Could not save the recovery candidate.'))
+    if (!result.success) {
+      const failure = resultFailure(result)
+      throw failure ? authorError(currentInterfaceLocale(), failure) : new Error(text('保存恢复候选失败', 'Could not save the recovery candidate.'))
+    }
     if (!isProjectSessionCurrent(session)) return
     useEditorStore.getState().settleTabSave(tab.id, snapshot)
   }, [project, tab.filePath, tab.id, tab.projectKey, text])

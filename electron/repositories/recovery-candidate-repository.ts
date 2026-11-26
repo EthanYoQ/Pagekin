@@ -167,35 +167,35 @@ export class RecoveryCandidateRepository {
       ) throw new Error('RECOVERY_CANDIDATE_REPLACEMENT_INVALID')
     }
 
-    db.prepare(`
-      INSERT INTO recovery_candidates (
-        candidate_id, run_id, step_id, project_id, chapter_number,
-        chapter_title, source_snapshot, source_hash, source_draft_id,
-        source_draft_version, source_draft_identity_captured, visible_text,
-        content_hash, failure_code, failure_reason, replaces_candidate_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
-    `).run(
-      candidateId,
-      runId,
-      stepId,
-      projectId,
-      request.chapterNumber,
-      request.chapterTitle.trim(),
-      serialized,
-      sha256(serialized),
-      request.sourceDraft?.id ?? null,
-      request.sourceDraft?.version ?? null,
-      visibleText,
-      sha256(visibleText),
-      request.failureCode.trim().slice(0, 160),
-      request.failureReason.trim().slice(0, 2_000),
-      request.replacesCandidateId ?? null,
-    )
-
-    const row = db.prepare(`
-      SELECT * FROM recovery_candidates WHERE candidate_id = ?
-    `).get(candidateId) as RecoveryCandidateRow
-    return toCandidate(row)
+    return db.transaction(() => {
+      db.prepare(`
+        INSERT INTO recovery_candidates (
+          candidate_id, run_id, step_id, project_id, chapter_number,
+          chapter_title, source_snapshot, source_hash, source_draft_id,
+          source_draft_version, source_draft_identity_captured, visible_text,
+          content_hash, failure_code, failure_reason, replaces_candidate_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+      `).run(
+        candidateId,
+        runId,
+        stepId,
+        projectId,
+        request.chapterNumber,
+        request.chapterTitle.trim(),
+        serialized,
+        sha256(serialized),
+        request.sourceDraft?.id ?? null,
+        request.sourceDraft?.version ?? null,
+        visibleText,
+        sha256(visibleText),
+        request.failureCode.trim().slice(0, 160),
+        request.failureReason.trim().slice(0, 2_000),
+        request.replacesCandidateId ?? null,
+      )
+      return toCandidate(db.prepare(`
+        SELECT * FROM recovery_candidates WHERE candidate_id = ?
+      `).get(candidateId) as RecoveryCandidateRow)
+    })()
   }
 
   static listPending(): RecoveryCandidate[] {
@@ -222,15 +222,16 @@ export class RecoveryCandidateRepository {
     const visibleText = visibleOnly(text)
     if (!visibleText) throw new Error('RECOVERY_CANDIDATE_TEXT_EMPTY')
 
-    db.prepare(`
-      UPDATE recovery_candidates
-      SET visible_text = ?, content_hash = ?
-      WHERE candidate_id = ? AND status = 'pending'
-    `).run(visibleText, sha256(visibleText), id)
-
-    return toCandidate(db.prepare(`
-      SELECT * FROM recovery_candidates WHERE candidate_id = ?
-    `).get(id) as RecoveryCandidateRow)
+    return db.transaction(() => {
+      db.prepare(`
+        UPDATE recovery_candidates
+        SET visible_text = ?, content_hash = ?
+        WHERE candidate_id = ? AND status = 'pending'
+      `).run(visibleText, sha256(visibleText), id)
+      return toCandidate(db.prepare(`
+        SELECT * FROM recovery_candidates WHERE candidate_id = ?
+      `).get(id) as RecoveryCandidateRow)
+    })()
   }
 
   static resolve(candidateId: string, status: Exclude<RecoveryCandidateStatus, 'pending'>): void {

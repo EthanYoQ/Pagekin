@@ -358,6 +358,7 @@ const ERROR_KEYS = {
   RECOVERY_CANDIDATE_NOT_PENDING: 'error.recoveryCandidateAlreadyHandled',
   RECOVERY_CANDIDATE_SOURCE_CHANGED: 'error.recoveryCandidateSourceChanged',
   RECOVERY_CANDIDATE_TEXT_EMPTY: 'error.recoveryCandidateTextEmpty',
+  RECOVERY_CANDIDATE_WRITE_FAILED: 'error.recoveryCandidateWriteFailed',
   CONSISTENCY_EXEMPTION_REASON_INVALID: 'error.consistencyExemptionReasonInvalid',
   POST_PROCESS_FINALIZATION_SOURCE_CHANGED: 'error.postProcessSourceChanged',
   // 知识库与检索索引（#474 B3）：知识库页、设置里的检索索引检查、导入创作资料与定稿收入知识库按码说明。

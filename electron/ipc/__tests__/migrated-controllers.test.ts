@@ -20,3 +20,16 @@ it('迁移后的控制器不在直连基线里', () => {
     expect(source, file).not.toMatch(/\bipcMain\b/u)
   }
 })
+
+const MIGRATED_DATABASE_CHANNELS = [
+  'db:recovery-candidate-record',
+  'db:recovery-candidate-list',
+  'db:recovery-candidate-update',
+  'db:recovery-candidate-resolve',
+]
+
+it('迁移后的数据库处理器不在直连基线里', () => {
+  const source = readFileSync(join(REPO_ROOT, 'electron/controllers/db-controller.ts'), 'utf8')
+  for (const channel of MIGRATED_DATABASE_CHANNELS) expect(source, channel).toContain(`'${channel}'`)
+  expect(MIGRATED_DATABASE_CHANNELS.filter(channel => (DIRECT_CHANNELS as string[]).includes(channel))).toEqual([])
+})

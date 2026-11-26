@@ -245,6 +245,7 @@ export const jaJP = {
   'error.recoveryCandidateAlreadyHandled': 'この復旧された草稿はすでに処理されています（使用または破棄）。更新して、現在の状態を確認してください。',
   'error.recoveryCandidateSourceChanged': '復旧された草稿が作られた後に、この章のブループリントまたは草稿が変更されたため、使えません。章をもう一度生成してください。',
   'error.recoveryCandidateTextEmpty': '復旧された草稿には表示できるテキストがないため、保存されませんでした。テキストを追加してから、保存してください。',
+  'error.recoveryCandidateWriteFailed': '元の内容は変わっていません。復旧された草稿をプロジェクトに保存できませんでした。もう一度お試しください。',
   'error.consistencyExemptionReasonInvalid': '除外の理由を入力してください（500 文字以内）。',
   'error.postProcessSourceChanged': '後処理が始まる前にこの章の定稿の本文が変更された（削除されたか、再び定稿された可能性があります）ため、後処理は始まりませんでした。更新して、現在の状態を確認してください。',
   'error.connectionTestTimeout': '接続テストが {seconds} 秒以内に終わらなかったため、停止しました。ネットワークまたはプロキシの設定を確認してから、もう一度お試しください。',

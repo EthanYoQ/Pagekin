@@ -1,5 +1,8 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
+import { failureCode, type WireFailure } from '../../src/shared/failure'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
+import { handle } from '../ipc/handle'
 import { closeProjectDatabase, getCurrentProjectPath, getProjectDb } from '../database'
 import { stopPortableExports } from '../services/portable-export-host'
 import type { MainGenerationRunHandle } from '../../src/services/generation/generation-runtime'
@@ -62,7 +65,7 @@ import {
   isSourceDraftChangedError,
   SOURCE_DRAFT_CHANGED,
 } from '../repositories/draft-source-guard'
-import type { ExpectedDraftSource } from '../../src/shared/ipc-channels'
+import type { ExpectedDraftSource, ProjectSessionContext } from '../../src/shared/ipc-channels'
 import { PostProcessRepository } from '../repositories/post-process-repository'
 
 // 沿用的旧表
@@ -146,14 +149,21 @@ function importChannelLocale(args: unknown[]): Locale {
   return importRunLocale(first)
 }
 
+function withoutSessionContext(args: unknown[]): [ProjectSessionContext | undefined, unknown[]] {
+  const candidate = args.at(-1)
+  return isProjectSessionContext(candidate) ? [candidate, args.slice(0, -1)] : [undefined, args]
+}
+
+async function inProjectSession(handler: ProjectDatabaseHandler, event: unknown, context: ProjectSessionContext | undefined, args: unknown[]): Promise<unknown> {
+  projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
+  return await (handler as (event: unknown, ...handlerArgs: unknown[]) => unknown)(event, ...args)
+}
+
 function registerProjectDatabaseHandler(channel: string, handler: ProjectDatabaseHandler): void {
-  ipcMain.handle(channel, async (event, ...args: unknown[]) => {
-    const candidate = args.at(-1)
-    const context = isProjectSessionContext(candidate) ? candidate : undefined
-    if (context) args.pop()
+  ipcMain.handle(channel, async (event, ...received: unknown[]) => {
+    const [context, args] = withoutSessionContext(received)
     try {
-      projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
-      return await (handler as (event: unknown, ...handlerArgs: unknown[]) => unknown)(event, ...args)
+      return await inProjectSession(handler, event, context, args)
     } catch (error) {
       const importFailure = IMPORT_CHANNEL.test(channel)
         ? explainImportRunFailure(error, () => importChannelLocale(args))
@@ -164,6 +174,19 @@ function registerProjectDatabaseHandler(channel: string, handler: ProjectDatabas
       // 读通道的异常经 Electron 只带过去 message，说明直接写进 message。
       if (importFailure) throw new Error(importFailure.error)
       throw error
+    }
+  })
+}
+
+function registerMigratedDatabaseHandler(channel: string, handler: ProjectDatabaseHandler, writeFailed: WireFailure): void {
+  handle(channel, async (event, ...received: unknown[]) => {
+    try {
+      return await inProjectSession(handler, event, ...withoutSessionContext(received))
+    } catch (error) {
+      if (!MUTATING_DATABASE_CHANNELS.has(channel)) throw error
+      const code = failureCode(registeredErrorCode(error))
+      if (!code) console.error(`[AI Novel IPC] ${channel} 失败:`, error)
+      return { success: false, failure: code ? { code } : writeFailed }
     }
   })
 }
@@ -1017,55 +1040,50 @@ export function registerDatabaseController() {
     }
   })
 
-  ipcMain.handle('db:recovery-candidate-record', async (
+  const recoveryCandidates = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'RECOVERY_CANDIDATE_WRITE_FAILED',
+      note: wireNote('error.recoveryCandidateWriteFailed'),
+    }),
+  }
+
+  recoveryCandidates.handle('db:recovery-candidate-record', async (
     _event,
     request: RecoveryCandidateRecordInput,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const active = projectAccess.captureCurrentSession()
-      if (!active) throw new Error('PROJECT_SESSION_REQUIRED')
-      const candidate = RecoveryCandidateRepository.record({ ...request, projectId: active.projectId })
-      return { success: true, candidate }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const active = projectAccess.captureCurrentSession()
+    if (!active) throw new Error('PROJECT_SESSION_REQUIRED')
+    const candidate = RecoveryCandidateRepository.record({ ...request, projectId: active.projectId })
+    return { success: true, candidate }
   })
 
-  ipcMain.handle('db:recovery-candidate-list', async (_event, expectedProjectPath: string) => {
+  recoveryCandidates.handle('db:recovery-candidate-list', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return RecoveryCandidateRepository.listPending()
   })
 
-  ipcMain.handle('db:recovery-candidate-update', async (
+  recoveryCandidates.handle('db:recovery-candidate-update', async (
     _event,
     candidateId: string,
     visibleText: string,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const candidate = RecoveryCandidateRepository.updatePending(candidateId, visibleText)
-      return { success: true, candidate }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const candidate = RecoveryCandidateRepository.updatePending(candidateId, visibleText)
+    return { success: true, candidate }
   })
 
-  ipcMain.handle('db:recovery-candidate-resolve', async (
+  recoveryCandidates.handle('db:recovery-candidate-resolve', async (
     _event,
     candidateId: string,
     status: 'continued' | 'discarded',
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      RecoveryCandidateRepository.resolve(candidateId, status)
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    RecoveryCandidateRepository.resolve(candidateId, status)
+    return { success: true }
   })
 
   ipcMain.handle('db:finalization-link-knowledge-document', async (
