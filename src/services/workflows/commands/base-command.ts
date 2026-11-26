@@ -97,7 +97,7 @@ export function keepReceiptFailuresOnCancel(session: GenerationSession, context:
       const outcome = await session.complete(task, options)
       const failureCode = outcome.receipt.failureCode
       if (failureCode && context.cancelled) {
-        throw Object.assign(createBoundedCompletionError(outcome.finishReason, context.uiLocale ?? 'zh-CN', outcome.receipt, context.interfaceLocale), { code: failureCode })
+        throw createBoundedCompletionError(outcome.finishReason, outcome.receipt, context.interfaceLocale, { code: failureCode })
       }
       return outcome
     },
@@ -531,11 +531,11 @@ export abstract class BaseWorkflowCommand<TResult = string> {
   }
 
   protected createIncompleteCompletionError(
-    context: Pick<WorkflowContext, 'uiLocale' | 'interfaceLocale'>,
+    context: Pick<WorkflowContext, 'interfaceLocale'>,
     finishReason: LLMFinishReason,
     receipt?: BoundedCompletion['receipt'],
   ): Error {
-    return createBoundedCompletionError(finishReason, context.uiLocale, receipt, context.interfaceLocale)
+    return createBoundedCompletionError(finishReason, receipt, context.interfaceLocale)
   }
 
   /**

@@ -75,3 +75,21 @@ export function currentLegacyFailureCounts(): LegacyFailureCounts {
   return Object.fromEntries(scanProduction(legacyFailureCounts).filter(([, counts]) => Object.keys(counts).length > 0)
     .map(([file, counts]) => [file, Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)))]))
 }
+
+const REWRITTEN_FIELDS = new Set(['code', 'errorCode', 'message'])
+const fieldName = (name: ts.Node | undefined) => name && (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) ? name.text : undefined
+
+/** 造完错误之后再改码或 message：Object.assign(x, { code | errorCode | message }) 与 x.code = …（this. 除外）。 */
+export function failureRewrites(file: string, text: string): string[] {
+  if (!file.startsWith('src/')) return []
+  const found: string[] = []
+  walk(file, text, (node, source) => {
+    const assign = ts.isCallExpression(node) && node.expression.getText(source) === 'Object.assign' && node.arguments.slice(1).some(arg =>
+      ts.isObjectLiteralExpression(arg) && arg.properties.some(property => REWRITTEN_FIELDS.has(fieldName(property.name) ?? '')))
+    const write = ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+      && ts.isPropertyAccessExpression(node.left) && REWRITTEN_FIELDS.has(node.left.name.text)
+      && node.left.expression.kind !== ts.SyntaxKind.ThisKeyword
+    if (assign || write) found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1} ${node.getText(source)}`)
+  })
+  return found
+}

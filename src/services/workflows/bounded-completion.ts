@@ -10,7 +10,9 @@ import { localize, type Locale } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { promptLanguageText } from '../prompt-language'
 import type { GenerationAttemptReceipt } from '../generation/generation-harness'
-import { networkFailureText } from '../generation/prompt-budget-failure'
+import { networkFailureNote } from '../generation/prompt-budget-failure'
+import { failureText } from '../../i18n/app-errors'
+import { AuthorError, note, type AuthorNote, type Failure, type FailureCode } from '../../shared/failure'
 import { stripThinkingTags } from './workflow-utils'
 import { WorkflowCancelledError } from './workflow-cancellation'
 
@@ -29,15 +31,12 @@ export interface BoundedCompletion {
 /** A non-stop terminal model state that made a bounded completion fail closed. */
 export type BoundedCompletionFailureCode = Exclude<LLMFinishReason, 'stop'>
 
-/**
- * Carries the provider-neutral terminal reason without changing the user-safe
- * message used by commands and workflow logs.
- */
-export class BoundedCompletionFailure extends Error {
+/** 模型的结束原因另存在 failureCode，供分流；给作者看的说明与码都在 failure 里，构造时给定。 */
+export class BoundedCompletionFailure extends AuthorError {
   readonly failureCode: BoundedCompletionFailureCode
 
-  constructor(failureCode: BoundedCompletionFailureCode, message: string) {
-    super(message)
+  constructor(failureCode: BoundedCompletionFailureCode, failure: Failure, locale: ErrorDisplayLocale) {
+    super(failure, failureText(locale, failure))
     this.name = 'BoundedCompletionFailure'
     this.failureCode = failureCode
     Object.setPrototypeOf(this, new.target.prototype)
@@ -104,56 +103,35 @@ export function appendVisibleTextContinuation(
   return redactVisibleText(composeVisibleContinuation(visibleExisting, visibleAddition))
 }
 
-function incompleteCompletionError(
-  finishReason: LLMFinishReason,
-  uiLocale: Locale,
-  receipt: BoundedCompletion['receipt'] | undefined,
-  interfaceLocale: ErrorDisplayLocale,
-): BoundedCompletionFailure {
-  // `stop` should not reach this path, but preserve fail-closed behavior if a
-  // legacy caller does invoke the public helper with it.
-  const failureCode: BoundedCompletionFailureCode = finishReason === 'stop'
-    ? 'unknown'
-    : finishReason
-
+function incompleteCompletionNote(finishReason: LLMFinishReason, receipt: BoundedCompletion['receipt'] | undefined): AuthorNote {
   switch (finishReason) {
     case 'length':
-      return new BoundedCompletionFailure(
-        failureCode,
-        localize(
-          uiLocale,
-          'AI 输出达到本次请求长度限制，尚未完整生成。请缩短本次任务或拆分为更小批次后重试。',
-          'AI output reached this request length limit and is not yet complete. Shorten the task or split it into smaller batches, then try again.',
-        ),
+      return note(
+        'AI 输出达到本次请求长度限制，尚未完整生成。请缩短本次任务或拆分为更小批次后重试。',
+        'AI output reached this request length limit and is not yet complete. Shorten the task or split it into smaller batches, then try again.',
       )
     case 'content_filter':
-      return new BoundedCompletionFailure(failureCode, localize(
-        uiLocale,
-        'AI 输出因内容限制而未完成，结果未被保存。',
-        'AI output was stopped by content restrictions, so the result was not saved.',
-      ))
+      return note('AI 输出因内容限制而未完成，结果未被保存。', 'AI output was stopped by content restrictions, so the result was not saved.')
     case 'cancelled':
-      return new BoundedCompletionFailure(failureCode, localize(
-        uiLocale,
-        'AI 生成已取消，结果未被保存。',
-        'AI generation was cancelled, so the result was not saved.',
-      ))
+      return note('AI 生成已取消，结果未被保存。', 'AI generation was cancelled, so the result was not saved.')
     default:
-      return new BoundedCompletionFailure(failureCode, networkFailureText(receipt, interfaceLocale) ?? localize(
-        uiLocale,
-        'AI 未正常完成生成，结果未被保存。',
-        'AI generation did not complete normally, so the result was not saved.',
-      ))
+      return networkFailureNote(receipt)
+        ?? note('AI 未正常完成生成，结果未被保存。', 'AI generation did not complete normally, so the result was not saved.')
   }
 }
 
+/** 调用方要带上收据的码或换一句更贴切的说明时，在 failure 里给，不在造完之后改。 */
 export function createBoundedCompletionError(
   finishReason: LLMFinishReason,
-  uiLocale: Locale,
   receipt: BoundedCompletion['receipt'] | undefined,
   interfaceLocale: ErrorDisplayLocale,
+  failure: { code?: FailureCode; note?: AuthorNote } = {},
 ): BoundedCompletionFailure {
-  return incompleteCompletionError(finishReason, uiLocale, receipt, interfaceLocale)
+  // `stop` should not reach this path, but preserve fail-closed behavior if a
+  // legacy caller does invoke the public helper with it.
+  const failureCode: BoundedCompletionFailureCode = finishReason === 'stop' ? 'unknown' : finishReason
+  const shown = failure.note ?? incompleteCompletionNote(finishReason, receipt)
+  return new BoundedCompletionFailure(failureCode, failure.code ? { code: failure.code, note: shown } : { note: shown }, interfaceLocale)
 }
 
 function continuationLimitExceededError(maxContinuations: number, uiLocale: Locale): Error {
@@ -247,7 +225,7 @@ export async function completeBoundedCompletion(request: BoundedCompletionReques
 
   while (finishReason !== 'stop') {
     assertNotCancelled(uiLocale, request.isCancelled)
-    if (finishReason !== 'length') throw incompleteCompletionError(finishReason, uiLocale, receipt, request.interfaceLocale)
+    if (finishReason !== 'length') throw createBoundedCompletionError(finishReason, receipt, request.interfaceLocale)
     if (continuationCount >= request.maxContinuations) {
       request.onInterrupted?.(content)
       throw continuationLimitExceededError(request.maxContinuations, uiLocale)
@@ -286,7 +264,7 @@ export async function completeBoundedCompletion(request: BoundedCompletionReques
         request.onInterrupted?.(content)
         throw next.finishReason === 'stop' || next.finishReason === 'length'
           ? noVisibleContinuationProgressError(uiLocale)
-          : incompleteCompletionError(next.finishReason, uiLocale, next.receipt, request.interfaceLocale)
+          : createBoundedCompletionError(next.finishReason, next.receipt, request.interfaceLocale)
       }
       content = merged
     }

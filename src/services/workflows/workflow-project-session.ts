@@ -3,8 +3,8 @@ import { sameProjectPathKey } from '../../shared/project-session-context'
 import type { WorkflowContext } from '../../stores/workflow-store'
 import type { WritingLanguage } from '../../shared/writing-language'
 import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
-import { displayedErrorMessage, errorCodeOf, isRegisteredErrorCode } from '../../i18n/app-errors'
-import { copyLocale } from '../../i18n/core'
+import { authorError, errorCodeOf } from '../../i18n/app-errors'
+import { failureCode, note, type AuthorError, type Literal, type NoteParams } from '../../shared/failure'
 
 /**
  * 取出工作流启动时冻结的项目会话。
@@ -44,18 +44,15 @@ export function workflowUiText(
  * 主进程拒绝时只回 String(err)：多是只有中文的原文，也可能是错误码。登记过的码按界面语言说明；
  * 未登记的码只给说明，码挂在 code 上并记进控制台（#787）；其余原文只附在中文说明后面，英文界面只给英文说明。
  */
-export function workflowMainProcessError(
+export function workflowMainProcessError<const Z extends string, const E extends string>(
   interfaceLocale: ErrorDisplayLocale,
   error: unknown,
-  zhCNSummary: string,
-  enUSSummary: string,
-): Error {
-  const english = copyLocale(interfaceLocale) === 'en-US'
-  const summary = english ? enUSSummary : zhCNSummary
-  if (typeof error !== 'string') return new Error(summary)
-  const code = errorCodeOf(error)
-  const shown = displayedErrorMessage(interfaceLocale, error, summary)
-  const reason = shown === summary || (english && !isRegisteredErrorCode(error)) ? undefined : shown
-  const failure = new Error(reason ? `${summary}${english ? ' ' : '：'}${reason}` : summary)
-  return code ? Object.assign(failure, { code }) : failure
+  zhCNSummary: Literal<Z>,
+  enUSSummary: Literal<E>,
+  params?: NoteParams,
+): AuthorError {
+  const summary = note(zhCNSummary, enUSSummary, params)
+  if (typeof error !== 'string') return authorError(interfaceLocale, { note: summary })
+  const code = failureCode(errorCodeOf(error))
+  return authorError(interfaceLocale, { note: summary, because: code ? { code } : { legacy: error } })
 }

@@ -1,5 +1,6 @@
 import { chapterTimeContinuity } from '../../../shared/chapter-time-continuity'
-import { appErrorMessage, displayedErrorMessage, englishWithReason } from '../../../i18n/app-errors'
+import { authorError, displayedErrorMessage, englishWithReason } from '../../../i18n/app-errors'
+import { failureCode, note } from '../../../shared/failure'
 import { sanitizeDraftText, composeDraftVisibleContinuation, DRAFT_CONDENSE_PURPOSE, DRAFT_VISIBLE_TEXT_VERSION, isDraftVisibleTextVersion, type DraftVisibleTextVersion } from '../../../shared/draft-visible-text'
 import { DRAFT_RECONCILE_PURPOSE, draftReconciliationBlock } from '../../../shared/draft-reconciliation'
 import { DEFAULT_MATERIAL_ADMISSION } from '../../../shared/generation-owner-contract'
@@ -662,8 +663,8 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           ...(this.batchId ? { batchId: this.batchId } : {}),
           ...(contextWindowRetryOf ? { contextWindowRetryOf } : {}),
         }).catch(error => {
-          const code = error instanceof Error ? /(?:^|:\s)(KNOWLEDGE_BASE_NATIVE_UNAVAILABLE|LEGACY_VECTOR_MIGRATION_BLOCKED)$/u.exec(error.message)?.[1] : undefined
-          if (code) throw Object.assign(new Error(appErrorMessage(context.interfaceLocale, { code })), { code })
+          const code = error instanceof Error ? failureCode(/(?:^|:\s)(KNOWLEDGE_BASE_NATIVE_UNAVAILABLE|LEGACY_VECTOR_MIGRATION_BLOCKED)$/u.exec(error.message)?.[1]) : undefined
+          if (code) throw authorError(context.interfaceLocale, { code })
           throw error
         }) : null
       return { characterMaterial, authorInputs, prepared }
@@ -1687,13 +1688,14 @@ ${visibleDraft}`,
     if (lastFinishReason === 'length'
       && countDraftUnits(draft) > draftTargetUnitRange(params.targetChars).maximum) return { text: draft, finishReason: lastFinishReason }
     if (lastFinishReason !== 'stop') {
-      const error = createBoundedCompletionError(lastFinishReason, params.context.uiLocale, lastReceipt, params.context.interfaceLocale)
       const lastFailureCode = lastReceipt?.failureCode
-      if (lastFailureCode === 'GENERATION_PROVIDER_FAILED' || lastFailureCode === 'NETWORK_ERROR')
-        Object.assign(error, { code: lastFailureCode })
-      if (lastFinishReason === 'length') error.message = uiText(error.message,
-        'AI output reached the model maximum length and is incomplete. Increase the maximum output tokens or shorten the task, then try again.')
-      throw error
+      throw createBoundedCompletionError(lastFinishReason, lastReceipt, params.context.interfaceLocale, {
+        ...(lastFailureCode === 'GENERATION_PROVIDER_FAILED' || lastFailureCode === 'NETWORK_ERROR' ? { code: lastFailureCode } : {}),
+        ...(lastFinishReason === 'length' ? { note: note(
+          'AI 输出达到本次请求长度限制，尚未完整生成。请缩短本次任务或拆分为更小批次后重试。',
+          'AI output reached the model maximum length and is incomplete. Increase the maximum output tokens or shorten the task, then try again.',
+        ) } : {}),
+      })
     }
 
     const lowerBound = draftTargetUnitRange(params.targetChars).minimum

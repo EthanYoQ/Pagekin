@@ -10,7 +10,7 @@ import { listTemporaryDirectory } from './helpers/temporary-directory'
 import BASELINE from './directory-listing-baseline.json'
 import FAILURE_BASELINE from './legacy-failure-baseline.json'
 import {
-  currentLegacyFailureCounts, failureTypeAssertions, legacyFailureCounts, rawAuthorOwnedArguments, scanProduction, type LegacyFailureCounts,
+  currentLegacyFailureCounts, failureRewrites, failureTypeAssertions, legacyFailureCounts, rawAuthorOwnedArguments, scanProduction, type LegacyFailureCounts,
 } from './helpers/legacy-failure-scan'
 
 const eslint = new ESLint({ cwd: REPO_ROOT })
@@ -203,6 +203,15 @@ describe('失败的码与说明（#844）', () => {
       expect(rawAuthorOwnedArguments('src/x.ts', planted), planted).toHaveLength(1)
     }
     expect(rawAuthorOwnedArguments('src/x.ts', 'authorOwned(material.fileName)')).toEqual([])
+  })
+
+  it('造完错误不再改码或 message', () => {
+    expect(scanProduction(failureRewrites).flatMap(([, found]) => found)).toEqual([])
+    for (const planted of ['Object.assign(error, { code })', "Object.assign(error, { errorCode: 'X_Y' })", 'Object.assign(new Error(text), { message: other })', "error.code = 'X_Y'", 'failure.message = text']) {
+      expect(failureRewrites('src/x.ts', planted), planted).toHaveLength(1)
+    }
+    for (const allowed of ['this.code = code', 'Object.assign(state, { status })']) expect(failureRewrites('src/x.ts', allowed), allowed).toEqual([])
+    expect(failureRewrites('electron/x.ts', 'Object.assign(new Error(code), { code })')).toEqual([])
   })
 
   it('断言成 AuthorNote 或 Failure 只许在 src/shared/failure.ts 和测试里', () => {
