@@ -5,7 +5,7 @@ import { workflowResourceKey, type WorkflowDefinition } from '../../stores/workf
 import { useProjectStore } from '../../stores/project-store'
 import { useLocaleStore } from '../../stores/locale-store'
 import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
-import { copyLocale, localize } from '../../i18n/core'
+import { localize } from '../../i18n/core'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { globalEventBus } from '../../shared/event-bus'
 import {
@@ -29,7 +29,8 @@ import type {
 } from '../../../electron/repositories/blueprint-repository'
 import { stripThinkingTags } from './workflow-utils'
 import { requireWorkflowProjectSession, workflowMainProcessError } from './workflow-project-session'
-import { displayedErrorMessage, errorCodeOf } from '../../i18n/app-errors'
+import { authorError, caughtFailure, errorCodeOf } from '../../i18n/app-errors'
+import { failureCode, note } from '../../shared/failure'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 
 // ==========================================
@@ -176,8 +177,8 @@ export function parseTextBlueprintsStrict(
     ).map(persistedBlueprint)
   } catch (error) {
     if (structuredContractDiagnostic(error)) throw error
-    const detail = displayedErrorMessage(interfaceLocale, error)
-    throw new Error(localize(copyLocale(interfaceLocale), `蓝图 JSON 解析失败：${detail}`, `Could not parse the blueprint JSON: ${detail}`))
+    const because = caughtFailure(error)
+    throw authorError(interfaceLocale, { note: note('蓝图 JSON 解析失败', 'Could not parse the blueprint JSON.'), ...(because ? { because } : {}) }, { cause: error })
   }
 }
 
@@ -398,11 +399,9 @@ export function createDirectoryWorkflow(
             }
             if (error instanceof TerminalProviderFailureError) throw error
             // 原文可能带主进程以外的内容，不转出；稳定错误码照常带上，运行记录才说得清是哪种失败。
-            const code = errorCodeOf(error)
-            throw Object.assign(new Error(text(
-              '章节蓝图生成失败，请重试。',
-              'Chapter-blueprint generation failed. Please try again.',
-            )), code ? { code } : {})
+            const code = failureCode(errorCodeOf(error))
+            const retry = note('章节蓝图生成失败，请重试。', 'Chapter-blueprint generation failed. Please try again.')
+            throw authorError(context.interfaceLocale, code ? { code, note: retry } : { note: retry }, { cause: error })
           }
           // 返回可读摘要字符串（step.result 必须是 string，否则 AIOutputPanel 渲染会崩溃）
           return text(

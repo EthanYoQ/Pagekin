@@ -55,7 +55,7 @@ describe('讨论区 #77：上下文超长码在每条消费路径上都保留', 
         inputKey: item => item, outputKey: item => item.chapterNumber, decode: content => JSON.parse(content), validateItem: () => undefined },
     }).execute({ items: [1], limits: { maxBatchItems: 10 } }))
     await runtime.close()
-    expect(result).toMatchObject({ ok: false, failure: { reason: 'context_length', message: CODE }, receipt: { calls: 1 } })
+    expect(result).toMatchObject({ ok: false, failure: { reason: 'context_length', failure: { code: CODE } }, receipt: { calls: 1 } })
   })
 
   it('导入阶段直接取回执的路径同样以登记码失败，并上报这次请求的传输诊断', async () => {

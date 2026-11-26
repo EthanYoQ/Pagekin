@@ -14,6 +14,7 @@ import {
 } from '../../../generation/generation-harness'
 import type { GenerationRuntime } from '../../../generation/generation-runtime'
 import {
+  DirectoryPartialCommitError,
   DirectoryPostCommitCancellationError,
   DirectoryPostCommitSyncError,
   GenerateDirectoryCommand,
@@ -1020,16 +1021,56 @@ describe('GenerateDirectoryCommand', () => {
     }).then(() => null, error => error as Error)
 
     expect(failure?.message).not.toMatch(/[\u3400-\u9fff]/u)
-    expect(failure?.message).toContain('Blueprint generation failed: code=limit_exceeded reason=output_limit')
-    expect(failure?.message).toContain(
-      'purpose=chapter-blueprint-directory:compact-single:chapter-1 finishReason=length requestedTokens=4096',
-    )
+    expect(failure?.message).toBe('Blueprint generation failed. A single structured item reached the model output limit and cannot be split further.')
     expect(attempt).toBe(2)
     expect(callbacks.log).toHaveBeenCalledWith(expect.stringContaining(
       'purpose=chapter-blueprint-directory:compact-single:chapter-1 finishReason=length requestedTokens=4096',
     ))
     expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('db:blueprint-commit-range')
     expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('db:blueprint-upsert-many')
+  })
+
+  it('蓝图生成失败的英文说明不含 code= 和 reason=', async () => {
+    stubIpcInvoke(successfulCommitHandler())
+    const callbacks = stepCallbacks()
+    const session = generationSession(async task => ({
+      status: 'incomplete', content: '{"blueprints":[', finishReason: 'length', receipt: generationReceipt(1, 'length', task.purpose),
+    }))
+    const command = new GenerateDirectoryCommand({ mode: 'full', count: 1 }, projectSnapshot,
+      { createRuntime: vi.fn(async () => testRuntime(session)) })
+    const run = (uiLocale: 'zh-CN' | 'en-US') => command.execute({
+      step: {}, context: { ...workflowContext(), uiLocale, interfaceLocale: shown(uiLocale) }, callbacks,
+    }).then(() => null, error => error as Error)
+
+    const english = await run('en-US')
+    expect(english?.message).not.toMatch(/code=|reason=|finishReason|[㐀-鿿]/u)
+    expect(english?.message).toBe('Blueprint generation failed. A single structured item reached the model output limit and cannot be split further.')
+    expect((await run('zh-CN'))?.message).toBe('蓝图生成失败：单项结构化输出达到模型输出上限，无法继续拆分')
+    expect(callbacks.log).toHaveBeenCalledWith(expect.stringMatching(/^Blueprint generation failure receipt: attempt=1 .*finishReason=length/u))
+  })
+
+  it.each([
+    ['zh-CN', 'GENERATION_CONTEXT_LENGTH_EXCEEDED', '已保存第 1–2 章完整蓝图。第 3–5 章的请求超出了模型能接受的长度，这几章没有生成。请换用上下文更长的模型、调低最大输出 Tokens 或精简要求，再生成这几章。'],
+    ['en-US', 'GENERATION_CONTEXT_LENGTH_EXCEEDED', 'Saved complete blueprints for chapters 1–2. The request for chapters 3–5 was longer than the model accepts, so those chapters were not generated. Switch to a model with a longer context, lower Max output tokens, or shorten the request, then generate them again.'],
+    ['zh-CN', 'PROVIDER_REQUEST_FAILED', '已保存第 1–2 章完整蓝图；第 3–5 章未完成。原运行的候选与失败原因已保留。'],
+    ['en-US', 'PROVIDER_REQUEST_FAILED', 'Saved complete blueprints for chapters 1–2; chapters 3–5 remain incomplete. The original run retains its candidates and failure reason.'],
+  ] as const)('蓝图部分保存后的失败说明保住了什么和缺哪几章（%s，%s）', async (uiLocale, cause, expected) => {
+    stubIpcInvoke(successfulCommitHandler())
+    let attempt = 0
+    const session = generationSession(async task => {
+      attempt += 1
+      if (attempt === 1) return { status: 'incomplete', content: '{"blueprints":[', finishReason: 'length', receipt: generationReceipt(attempt, 'length') }
+      if (attempt === 2) return { status: 'completed', content: blueprintJson([1, 2]), finishReason: 'stop', receipt: generationReceipt(attempt, 'stop') }
+      if (cause === 'GENERATION_CONTEXT_LENGTH_EXCEEDED') throw new TerminalProviderFailureError(cause, generationReceipt(attempt, 'error', task.purpose))
+      throw new GenerationAttemptError(cause, '模型请求失败。', generationReceipt(attempt, 'error'))
+    })
+    const command = new GenerateDirectoryCommand({ mode: 'full', count: 5 }, projectSnapshot,
+      { createRuntime: vi.fn(async () => testRuntime(session)) })
+    const failure = await command.execute({ step: {}, context: { ...workflowContext(), uiLocale, interfaceLocale: shown(uiLocale) }, callbacks: stepCallbacks() })
+      .then(() => null, error => error as Error & { code?: string })
+    expect(failure).toBeInstanceOf(DirectoryPartialCommitError)
+    expect(failure?.message).toBe(expected)
+    expect(failure?.code).toBe('DIRECTORY_PARTIAL_COMMIT')
   })
 
   it('fails with the registered code when the provider rejects the request as too long', async () => {
@@ -1121,7 +1162,7 @@ describe('GenerateDirectoryCommand', () => {
     })
     const command = new GenerateDirectoryCommand({ mode: 'full', count: 5 }, projectSnapshot,
       { createRuntime: vi.fn(async () => testRuntime(session)) })
-    const failure = await command.execute({ step: {}, context: { ...workflowContext(), uiLocale }, callbacks: stepCallbacks() })
+    const failure = await command.execute({ step: {}, context: { ...workflowContext(), uiLocale, interfaceLocale: shown(uiLocale) }, callbacks: stepCallbacks() })
       .then(() => null, error => error as Error)
     expect(failure?.message).toContain(expected)
     expect(failure?.message).not.toMatch(/没有生成内容|nothing was generated/u)

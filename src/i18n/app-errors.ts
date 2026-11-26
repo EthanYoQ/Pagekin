@@ -714,7 +714,7 @@ function sentences(locale: ErrorDisplayLocale, failure: Failure | LegacyReason):
   return own === undefined || rest[0] === own ? rest : [own, ...rest]
 }
 
-/** 三种接法与仓库现有写法一致。 */
+/** 接法只管本层说明与原因之间那一处，原因内部照常按句子接。 */
 export type FailureJoin = 'sentence' | 'colon' | 'paragraph'
 const JOINERS: Record<FailureJoin, (chinese: boolean) => string> = {
   sentence: chinese => chinese ? '：' : ' ',
@@ -723,8 +723,10 @@ const JOINERS: Record<FailureJoin, (chinese: boolean) => string> = {
 }
 
 function authoredText(locale: ErrorDisplayLocale, failure: Failure, join: FailureJoin = 'sentence'): string | undefined {
-  const parts = sentences(locale, failure)
-  return parts.length ? parts.join(JOINERS[join](copyLocale(locale) === 'zh-CN')) : undefined
+  const [first, ...rest] = sentences(locale, failure)
+  if (first === undefined) return undefined
+  const chinese = copyLocale(locale) === 'zh-CN'
+  return rest.length ? `${first}${JOINERS[join](chinese)}${rest.join(JOINERS.sentence(chinese))}` : first
 }
 
 function unexplained(locale: ErrorDisplayLocale, failure: Failure | undefined, fallback?: string): string {
