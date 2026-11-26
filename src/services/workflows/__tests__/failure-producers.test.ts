@@ -8,6 +8,8 @@ import type { GenerationAttemptReceipt, GenerationOutcome, GenerationSession } f
 import type { WorkflowContext } from '../../../stores/workflow-store'
 import { keepReceiptFailuresOnCancel } from '../commands/base-command'
 import { workflowMainProcessError } from '../workflow-project-session'
+import { unwrapKnowledgeValue } from '../../knowledge-service'
+import { useLocaleStore } from '../../../stores/locale-store'
 
 /** master 上 workflowMainProcessError 的原样实现，作对照。 */
 function masterWorkflowMainProcessError(interfaceLocale: ErrorDisplayLocale, error: unknown, zhCNSummary: string, enUSSummary: string): Error {
@@ -81,4 +83,12 @@ describe('三条已证伪路径的产生点（#844）', () => {
       }
     }
   })
+})
+
+it('知识库服务失败只带码，旧 error 字段的句子不再进说明', () => {
+  useLocaleStore.setState({ interfaceLocale: 'en-US', locale: 'en-US' })
+  for (const error of [undefined, '', '请先打开项目。']) {
+    const thrown = (() => { try { return unwrapKnowledgeValue({ success: false, errorCode: 'PROJECT_NOT_OPEN', error }) } catch (caught) { return caught as Error & { code?: unknown } } })() as Error & { code?: unknown }
+    expect({ message: thrown.message, code: thrown.code }, String(error)).toEqual({ message: translate(shown('en-US'), 'error.projectNotOpen'), code: 'PROJECT_NOT_OPEN' })
+  }
 })
