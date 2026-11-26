@@ -33,10 +33,25 @@ export function legacyFailureCounts(file: string, text: string): Partial<Record<
       const name = calleeName(node)
       if ((LEGACY_FAILURE_CALLS as readonly string[]).includes(name ?? '')) add(name as LegacyFailureKind)
     }
-    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && node.name.text === 'legacy' && ts.isObjectLiteralExpression(node.parent)) add('{ legacy:')
+    if (ts.isPropertyAssignment(node) && propertyName(node.name) === 'because') becauseValues(node.initializer).filter(hasLegacyKey).forEach(() => add('{ legacy:'))
   })
   return counts
 }
+
+const propertyName = (name: ts.PropertyName) => ts.isIdentifier(name) || ts.isStringLiteralLike(name) ? name.text : undefined
+
+function becauseValues(value: ts.Expression): ts.Expression[] {
+  if (ts.isParenthesizedExpression(value) || ts.isAsExpression(value) || ts.isSatisfiesExpression(value)) return becauseValues(value.expression)
+  if (ts.isConditionalExpression(value)) return [...becauseValues(value.whenTrue), ...becauseValues(value.whenFalse)]
+  return [value]
+}
+
+const hasLegacyKey = (value: ts.Expression) => ts.isObjectLiteralExpression(value) && value.properties.some(property =>
+  (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) && propertyName(property.name) === 'legacy')
+
+/** 旧约定按合计比较（种类互换不算新增），authorOwned 不计入。 */
+export const legacySum = (counts: Partial<Record<LegacyFailureKind, number>>) =>
+  Object.entries(counts).reduce((sum, [kind, n]) => kind === 'authorOwned' ? sum : sum + (n ?? 0), 0)
 
 function readsRawText(node: ts.Node): boolean {
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'String') return true
