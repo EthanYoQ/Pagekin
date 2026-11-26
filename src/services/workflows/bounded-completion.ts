@@ -35,8 +35,8 @@ export type BoundedCompletionFailureCode = Exclude<LLMFinishReason, 'stop'>
 export class BoundedCompletionFailure extends AuthorError {
   readonly failureCode: BoundedCompletionFailureCode
 
-  constructor(failureCode: BoundedCompletionFailureCode, failure: Failure, locale: ErrorDisplayLocale) {
-    super(failure, failureText(locale, failure))
+  constructor(failureCode: BoundedCompletionFailureCode, failure: Failure, message: string) {
+    super(failure, message)
     this.name = 'BoundedCompletionFailure'
     this.failureCode = failureCode
     Object.setPrototypeOf(this, new.target.prototype)
@@ -105,6 +105,8 @@ export function appendVisibleTextContinuation(
   return redactVisibleText(composeVisibleContinuation(visibleExisting, visibleAddition))
 }
 
+const STATED_REASONS = new Set<LLMFinishReason>(['length', 'content_filter', 'cancelled'])
+
 function incompleteCompletionNote(finishReason: LLMFinishReason, receipt: BoundedCompletion['receipt'] | undefined): AuthorNote {
   switch (finishReason) {
     case 'length':
@@ -132,7 +134,10 @@ export function createBoundedCompletionError(
   // legacy caller does invoke the public helper with it.
   const failureCode: BoundedCompletionFailureCode = finishReason === 'stop' ? 'unknown' : finishReason
   const shown = failure.note ?? incompleteCompletionNote(finishReason, receipt)
-  return new BoundedCompletionFailure(failureCode, failure.code ? { code: failure.code, note: shown } : { note: shown }, interfaceLocale)
+  // 有码时只存明确说明或按诊断给的网络说明；兜底说明不存，界面按码给文案，message 仍是兜底说明。
+  const diagnosed = failure.note ?? (receipt?.diagnostics && !STATED_REASONS.has(finishReason) ? networkFailureNote(receipt) : undefined)
+  const stored: Failure = failure.code ? (diagnosed ? { code: failure.code, note: diagnosed } : { code: failure.code }) : { note: shown }
+  return new BoundedCompletionFailure(failureCode, stored, failureText(interfaceLocale, { note: shown }))
 }
 
 function continuationLimitExceededError(maxContinuations: number, uiLocale: Locale): Error {

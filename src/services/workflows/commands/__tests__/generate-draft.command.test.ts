@@ -4963,7 +4963,7 @@ ${headingPrefix}第3章：潮门
 
   describe('三条已证伪路径的产生点（#844）', () => {
     const draftFailure = (f: ReturnType<typeof setup>) => f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
-      .then(() => new Error('generation did not fail') as Error & { code?: unknown }, (error: unknown) => error as Error & { code?: unknown })
+      .then(() => { throw new Error('意外成功：正文生成没有失败') }, (error: unknown) => error as Error & { code?: unknown })
     const failedWith = (failureCode: GenerationAttemptReceipt['failureCode'], diagnostics?: Record<string, unknown>, attempt = 2) => {
       const result = outcome('', 'error', attempt)
       Object.assign(result.receipt, { failureCode }, diagnostics ? { diagnostics: { startedAt: 1, elapsedMs: 10, firstResponseMs: null,

@@ -83,6 +83,38 @@ describe('三条已证伪路径的产生点（#844）', () => {
       }
     }
   })
+
+  it('作者取消后带收据失败码的失败，按码显示的文案与 master 逐字相同', async () => {
+    const MASTER = {
+      'zh-CN': {
+        GENERATION_PROVIDER_FAILED: '模型服务没有返回完整结果。请检查网络和模型设置后重试。',
+        NETWORK_ERROR: '没连上模型服务，或回复中途断了。请检查网络或代理后重试。',
+        ROOT_BUDGET_EXHAUSTED: '这项生成已停止、暂停或用完了额度，不能再向模型发请求。需要时请重新生成。',
+        GENERATION_STORAGE_FAILED: '生成内容写入本地存储失败。请检查磁盘空间和作品文件夹的写入权限后重试。',
+        GENERATION_CONTEXT_LENGTH_EXCEEDED: '作品内容没有变动。提示词超出了模型能接受的长度，没有生成。到「设置」换用上下文更长的模型或调低最大输出 Tokens，再重新生成。',
+      },
+      'en-US': {
+        GENERATION_PROVIDER_FAILED: 'The model service did not return a complete result. Check your network and model settings, then try again.',
+        NETWORK_ERROR: 'Could not reach the model service, or the reply broke off midway. Check your network or proxy, then try again.',
+        ROOT_BUDGET_EXHAUSTED: 'This generation was stopped, paused, or used up its allowance, so it cannot send more requests to the model. Generate again if you need to.',
+        GENERATION_STORAGE_FAILED: 'The generated text could not be written to local storage. Check free disk space and write access to the book folder, then try again.',
+        GENERATION_CONTEXT_LENGTH_EXCEEDED: 'Your work is unchanged. The prompt is longer than the model accepts, so nothing was generated. In Settings, switch to a model with a longer context or lower Max output tokens, then generate again.',
+      },
+    } as const
+    // 带诊断的 NETWORK_ERROR 按阶段给网络说明，是有意的差异，不在此列。
+    const diagnostics = [undefined, { startedAt: 1, elapsedMs: 1, firstResponseMs: 1, lastResponseMs: 1, lastOutputMs: 1, visibleEvents: 1, reasoningEvents: 0, phase: 'stream', endReason: 'failed' }] as const
+    for (const locale of ['zh-CN', 'en-US'] as const) {
+      for (const [failureCode, expected] of Object.entries(MASTER[locale])) {
+        for (const diagnostic of failureCode === 'NETWORK_ERROR' ? [undefined] : diagnostics) {
+          const receipt = { failureCode, ...(diagnostic ? { diagnostics: diagnostic } : {}) } as GenerationAttemptReceipt
+          const session: GenerationSession = { budget: { maxAttempts: 1, maxRequestedOutputTokens: 1, maxRequestedOutputTokensPerAttempt: 1, deadlineAt: 0 }, complete: async () => ({ status: 'incomplete', content: '', finishReason: 'error', receipt }) as GenerationOutcome }
+          const context = { cancelled: true, uiLocale: locale, interfaceLocale: shown(locale) } as WorkflowContext
+          const thrown = await keepReceiptFailuresOnCancel(session, context).complete({} as never).then(() => new Error('did not throw'), (error: unknown) => error as Error)
+          expect(displayedErrorMessage(shown(locale), thrown), `${locale} ${failureCode} ${diagnostic ? 'stream' : 'none'}`).toBe(expected)
+        }
+      }
+    }
+  })
 })
 
 it('知识库服务失败只带码，旧 error 字段的句子不再进说明', () => {
