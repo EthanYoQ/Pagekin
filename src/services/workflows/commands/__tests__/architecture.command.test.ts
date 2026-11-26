@@ -1411,7 +1411,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       novelConfig: { genre: '玄幻', totalChapters: 100, wordsPerChapter: 3000 } as never,
     })
 
-    await expect(command.execute({ step: {}, context, callbacks })).rejects.toThrow('角色详情 slotId=slot-1 字段 relationships 不得出现')
+    await expect(command.execute({ step: {}, context, callbacks })).rejects.toThrow('结构化输出项不符合合同')
+    expect(vi.mocked(callbacks.log).mock.calls.map(([line]) => line)).toContainEqual(expect.stringContaining('角色详情 slotId=slot-1 字段 relationships 不得出现'))
     expect(domainIpcChannels(invoke)).toEqual(['db:project-core-get'])
   })
 
@@ -2258,7 +2259,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
 
     expect(failure?.message).not.toMatch(/[\u3400-\u9fff]/u)
     expect(failure?.message).not.toContain('code=')
-    const receipt = vi.mocked(callbacks.log).mock.calls.map(([line]) => line).find(line => line.startsWith('[Character details failure receipt]'))
+    const receipt = vi.mocked(callbacks.log).mock.calls.map(([line]) => line).find(line => line.startsWith('Character details failure receipt:'))
     expect(receipt).toContain('code=invalid_output reason=missing_item')
     expect(receipt).toContain('purpose=character-architecture-details finishReason=stop')
     expect(generateStream).toHaveBeenCalledTimes(2)
@@ -2370,7 +2371,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       })
 
       await expect(command.execute({ step: {}, context, callbacks }))
-        .rejects.toThrow('角色详情 slotId=slot-1 字段 age 必须是非空文本')
+        .rejects.toThrow('结构化输出项不符合合同')
+        expect(vi.mocked(callbacks.log).mock.calls.map(([line]) => line)).toContainEqual(expect.stringContaining('角色详情 slotId=slot-1 字段 age 必须是非空文本'))
       expect(domainIpcChannels(invoke)).toEqual(['db:project-core-get'])
     }
   })
@@ -2401,7 +2403,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
         })
 
         await expect(command.execute({ step: {}, context, callbacks }))
-          .rejects.toThrow(`角色详情 slotId=slot-1 字段 currentState.${field} 必须是非空文本`)
+          .rejects.toThrow('结构化输出项不符合合同')
+          expect(vi.mocked(callbacks.log).mock.calls.map(([line]) => line)).toContainEqual(expect.stringContaining(`角色详情 slotId=slot-1 字段 currentState.${field} 必须是非空文本`))
         expect(domainIpcChannels(invoke)).toEqual(['db:project-core-get'])
       }
     }
@@ -2429,7 +2432,8 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       novelConfig: { genre: '玄幻', totalChapters: 100, wordsPerChapter: 3000 } as never,
     })
 
-    await expect(command.execute({ step: {}, context, callbacks })).rejects.toThrow('角色详情 slotId=slot-1 字段 currentState 必填')
+    await expect(command.execute({ step: {}, context, callbacks })).rejects.toThrow('结构化输出项不符合合同')
+    expect(vi.mocked(callbacks.log).mock.calls.map(([line]) => line)).toContainEqual(expect.stringContaining('角色详情 slotId=slot-1 字段 currentState 必填'))
     expect(domainIpcChannels(invoke)).toEqual(['db:project-core-get'])
   })
 

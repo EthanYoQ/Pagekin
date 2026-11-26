@@ -1,5 +1,5 @@
 {
- "说明": "master（e0ed953bd）上三个文件里报错用的双语文案，占位统一成 ⟨表达式⟩，由 .audit 的 codemod.mjs snapshot 生成。removed/added 是本 PR 有意改写的条目，测试要求现状 = master − removed + added。",
+ "说明": "master（e0ed953bd）上三个文件里报错用的双语文案，占位统一成 ⟨表达式⟩，由 .audit 的 codemod.mjs snapshot 生成。测试要求现状 = master − 两组 removed + 两组 added。restructured 是拼接句展开成整句、文字不变；reworded 是本 PR 真改了作者看到的文字（原因换到句末、诊断原文与收据移进日志、原因显示不出时去掉标签）。",
  "master": [
   [
    "src/services/workflows/commands/architecture.command.ts",
@@ -422,7 +422,7 @@
    "The current project changed, so field generation stopped."
   ]
  ],
- "removed": [
+ "removedRestructured": [
   [
    "src/services/workflows/commands/architecture.command.ts",
    "⟨message⟩ 完整模型输出仍保留在 AI 输出中，但这种结构错误不能自动续写；请修正范围后重新生成。",
@@ -437,16 +437,6 @@
    "src/services/workflows/commands/architecture.command.ts",
    "AI 返回的小说配置不完整或无效，结果未应用。详细信息：⟨detail⟩",
    "The AI novel configuration was incomplete or invalid, so the result was not applied. Details: ⟨detail⟩"
-  ],
-  [
-   "src/services/workflows/commands/architecture.command.ts",
-   "⟨detail⟩",
-   "⟨englishWithReason(context.interfaceLocale,'Thecharacteridentitymanifestwasinvalid,sonocharacterdatawassaved.',detail)⟩"
-  ],
-  [
-   "src/services/workflows/commands/architecture.command.ts",
-   "⟨reason⟩；角色详情失败收据：⟨failureReceipt⟩",
-   "⟨knownAppErrorMessage(context.interfaceLocale,failure.code)??englishWithReason(context.interfaceLocale,'Characterdetailsfailedstructuralvalidationandwerenotsaved.',reason)⟩ Receipt: ⟨failureReceipt⟩"
   ],
   [
    "src/services/workflows/commands/architecture.command.ts",
@@ -470,11 +460,6 @@
   ],
   [
    "src/services/workflows/commands/architecture.command.ts",
-   "情节大纲没生成完就中断了：⟨displayedErrorMessage(context.interfaceLocale,cause)⟩。已完成的约 ⟨partialBody.length⟩ 字已保存。\n点「继续生成情节大纲」接着写第 ⟨from⟩–⟨to⟩ 章；本批太大就先在「AI 生成架构」调小每批章数。",
-   "Plot-outline generation stopped early: ⟨displayedErrorMessage(context.interfaceLocale,cause)⟩. The finished part (about ⟨partialBody.length⟩ ⟨pluralEn(partialBody.length,'character')⟩) was saved.\nClick “Continue plot outline” to finish chapters ⟨from⟩-⟨to⟩; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”."
-  ],
-  [
-   "src/services/workflows/commands/architecture.command.ts",
    "⟨kept⟩，正式大纲没动。⟨problem⟩，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。",
    "⟨kept⟩; the saved outline is unchanged. ⟨problem⟩, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going."
   ],
@@ -489,17 +474,34 @@
    "The outline for ⟨chapters⟩ finished, but the model settings, book settings, a prompt template, or a writing skill changed before saving, so saving was refused. "
   ],
   [
-   "src/services/workflows/commands/architecture.command.ts",
-   "⟨commitDetail⟩ 同时无法安全恢复旧检查点：⟨detail⟩",
-   "⟨commitDetail⟩ The previous checkpoint also could not be restored safely: ⟨detail⟩"
-  ],
-  [
    "src/services/workflows/architecture-workflow.ts",
    "当前项目已切换，请在原项目中重试",
    "The project changed. Return to the original project and try again."
   ]
  ],
- "added": [
+ "removedReworded": [
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨detail⟩",
+   "⟨englishWithReason(context.interfaceLocale,'Thecharacteridentitymanifestwasinvalid,sonocharacterdatawassaved.',detail)⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨reason⟩；角色详情失败收据：⟨failureReceipt⟩",
+   "⟨knownAppErrorMessage(context.interfaceLocale,failure.code)??englishWithReason(context.interfaceLocale,'Characterdetailsfailedstructuralvalidationandwerenotsaved.',reason)⟩ Receipt: ⟨failureReceipt⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没生成完就中断了：⟨displayedErrorMessage(context.interfaceLocale,cause)⟩。已完成的约 ⟨partialBody.length⟩ 字已保存。\n点「继续生成情节大纲」接着写第 ⟨from⟩–⟨to⟩ 章；本批太大就先在「AI 生成架构」调小每批章数。",
+   "Plot-outline generation stopped early: ⟨displayedErrorMessage(context.interfaceLocale,cause)⟩. The finished part (about ⟨partialBody.length⟩ ⟨pluralEn(partialBody.length,'character')⟩) was saved.\nClick “Continue plot outline” to finish chapters ⟨from⟩-⟨to⟩; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "⟨commitDetail⟩ 同时无法安全恢复旧检查点：⟨detail⟩",
+   "⟨commitDetail⟩ The previous checkpoint also could not be restored safely: ⟨detail⟩"
+  ]
+ ],
+ "addedRestructured": [
   [
    "src/services/workflows/commands/architecture.command.ts",
    "生成途中模型设置被修改，这批大纲已在第 {stoppedAt} 章停止，没有再发送请求。正式大纲未被改动。请到「架构」页重新生成情节大纲，从第 {from} 章开始。",
@@ -552,23 +554,8 @@
   ],
   [
    "src/services/workflows/commands/architecture.command.ts",
-   "AI 返回的小说配置不完整或无效，结果未应用。",
-   "The AI novel configuration was incomplete or invalid, so the result was not applied."
-  ],
-  [
-   "src/services/workflows/commands/architecture.command.ts",
-   "角色身份清单无效，没有保存角色数据",
-   "The character identity manifest was invalid, so no character data was saved."
-  ],
-  [
-   "src/services/workflows/commands/architecture.command.ts",
    "世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。原因",
    "Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason:"
-  ],
-  [
-   "src/services/workflows/commands/architecture.command.ts",
-   "世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。",
-   "Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later."
   ],
   [
    "src/services/workflows/commands/architecture.command.ts",
@@ -597,16 +584,6 @@
   ],
   [
    "src/services/workflows/commands/architecture.command.ts",
-   "情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。\n中断原因",
-   "Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.\nReason:"
-  ],
-  [
-   "src/services/workflows/commands/architecture.command.ts",
-   "情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。",
-   "Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”."
-  ],
-  [
-   "src/services/workflows/commands/architecture.command.ts",
    "恢复稿里有已写好的章节，第 {n} 章最后一次的回复在「原始候选」里，正式大纲没动。第 {n} 章两次都没写成完整的单章大纲，自动生成停在这里。到「架构」页点「编辑恢复稿」接着生成。",
    "The recovery draft has the finished chapters; the last reply for chapter {n} is under Original candidate; the saved outline is unchanged. Chapter {n} failed twice to come back as one complete chapter outline, so generation stopped there. Open Architecture and choose Edit recovery draft to keep going."
   ],
@@ -631,14 +608,41 @@
    "The outline for chapters {from}–{to} finished, but the model settings, book settings, a prompt template, or a writing skill changed before saving, so saving was refused. The batch is kept in the outline recovery draft, which can be viewed or copied but cannot replace saved content. The saved outline was not changed. Open Architecture and generate the plot outline again from chapter {from}."
   ],
   [
-   "src/services/workflows/commands/architecture.command.ts",
-   "情节大纲没能保存，旧检查点也没能安全恢复",
-   "The plot outline could not be saved, and the previous checkpoint could not be restored safely either."
-  ],
-  [
    "src/services/workflows/commands/generate-field.command.ts",
    "字段生成失败，请重试。",
    "Field generation failed. Please try again."
+  ]
+ ],
+ "addedReworded": [
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "AI 返回的小说配置不完整或无效，结果未应用。",
+   "The AI novel configuration was incomplete or invalid, so the result was not applied."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "角色身份清单无效，没有保存角色数据",
+   "The character identity manifest was invalid, so no character data was saved."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。",
+   "Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。\n中断原因",
+   "Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.\nReason:"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。",
+   "Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没能保存，旧检查点也没能安全恢复",
+   "The plot outline could not be saved, and the previous checkpoint could not be restored safely either."
   ]
  ]
 }

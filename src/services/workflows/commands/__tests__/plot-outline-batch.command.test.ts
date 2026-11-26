@@ -434,6 +434,27 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
     expect(shownFailure.presentation.reason).toContain('点「继续生成情节大纲」接着写第 1–100 章')
   })
 
+  it.each(['zh-CN', 'en-US'] as const)('情节大纲请求中途失败仍可续写，码是中断原因（%s）', async locale => {
+    const body = `第1–20章：核对记录\n${'周岚核对记录并据此推进调查，确认各条线索的来源。'.repeat(6)}`
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: lengthThenNetworkFailure(body) })
+    harnessWith()
+    Object.assign(context, { uiLocale: locale, interfaceLocale: shown(locale) })
+    const thrown = await makeCommand({ synopsisRange: { from: 1, to: 20 } }).execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
+    expect(thrown).toBeInstanceOf(PlotOutlineResumeAvailableError)
+    expect((thrown as PlotOutlineResumeAvailableError).code).toBe('PROVIDER_REQUEST_FAILED')
+    const runId = await useWorkflowStore.getState().startWorkflow({
+      type: 'architecture_generation', title: '生成故事架构', projectPath: projectAPath, projectSession: context.projectSession, uiLocale: locale,
+      steps: [{ name: '情节大纲', description: '情节大纲', executor: async () => { throw thrown } }],
+    })
+    const run = useWorkflowStore.getState().history.find(item => item.id === runId)!
+    const shownFailure = runFailure(run, shown(locale))
+    expect([shownFailure.canResumeOutline, shownFailure.canRestartOutline]).toEqual([true, false])
+    expect(shownFailure.presentation.reason).toBe((thrown as Error).message)
+    if (locale === 'zh-CN') expect((thrown as Error).message).toMatch(/中断原因：模型请求失败。$/u)
+    else expect((thrown as Error).message).toMatch(/“Generate story architecture”\.$/u)
+  })
+
   it('uses writing language, not UI locale, for the visible incomplete note', async () => {
     context.writingLanguage = 'en-US'
     context.uiLocale = 'zh-CN'

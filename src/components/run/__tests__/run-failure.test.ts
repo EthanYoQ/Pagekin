@@ -21,7 +21,7 @@ it('来源在途中变了的大纲失败：给出去架构页重新生成的入�
 })
 
 it('输出长度中断的大纲失败仍走断点续写', () => {
-  const truncated = new PlotOutlineResumeAvailableError(shown('zh-CN'), note('输出被截断', 'The output was cut off.'), undefined)
+  const truncated = new PlotOutlineResumeAvailableError(shown('zh-CN'), { note: note('输出被截断', 'The output was cut off.') })
   const failure = runFailure({ ...failedOutline('', truncated.message), failure: truncated.failure }, shown('zh-CN'))
   expect(failure.canResumeOutline).toBe(true)
   expect(failure.canRestartOutline).toBe(false)

@@ -84,13 +84,13 @@ const counted = (entries: readonly (readonly string[])[]) => entries.map(keyOf).
 
 it('架构线的失败说明与 master 逐字相同', () => {
   const removed = new Map<string, number>()
-  for (const entry of SNAPSHOT.removed) removed.set(keyOf(entry), (removed.get(keyOf(entry)) ?? 0) + 1)
+  for (const entry of [...SNAPSHOT.removedRestructured, ...SNAPSHOT.removedReworded]) removed.set(keyOf(entry), (removed.get(keyOf(entry)) ?? 0) + 1)
   const kept = SNAPSHOT.master.filter(entry => {
     const left = removed.get(keyOf(entry)) ?? 0
     if (left === 0) return true
     removed.set(keyOf(entry), left - 1)
     return false
   })
-  // 除了登记在快照 removed/added 里的整句改写，其余失败说明都和 master 一字不差。
-  expect(counted(currentCopy())).toEqual(counted([...kept, ...SNAPSHOT.added]))
+  // 除了快照里登记的整句展开（restructured）和改写（reworded），其余失败说明都和 master 一字不差。
+  expect(counted(currentCopy())).toEqual(counted([...kept, ...SNAPSHOT.addedRestructured, ...SNAPSHOT.addedReworded]))
 })
