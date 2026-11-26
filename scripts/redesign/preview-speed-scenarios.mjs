@@ -36,7 +36,9 @@ const instrumentRenderer = page => page.evaluate(() => {
     new PerformanceObserver(list => {
       for (const entry of list.getEntries()) log.longtasks.push({ at: performance.timeOrigin + entry.startTime, ms: entry.duration })
     }).observe({ type: 'longtask', buffered: true })
-  } catch { /* 没有 longtask 时只少这一列。 */ }
+  } catch (error) {
+    log.longtaskObserverError = String(error)
+  }
 })
 
 const instrumentMain = app => app.evaluate(({ ipcMain }) => {
@@ -154,7 +156,7 @@ export const PREVIEW_SPEED_SCENARIOS = {
     const warmMedianMs = warm.length % 2 ? warm[warm.length >> 1] : (warm[warm.length / 2 - 1] + warm[warm.length / 2]) / 2
     const budget = Number(process.env.PREVIEW_SPEED_BUDGET_MS ?? 250)
     assert.ok(warmMedianMs <= budget, `热预览中位 ${warmMedianMs} ms，超过 ${budget} ms：${JSON.stringify(previews)}`)
-    return { userVersion: before, workerPatched: main.workerPatched, warmMedianMs, previews }
+    return { userVersion: before, workerPatched: main.workerPatched, longtaskObserverError: renderer.longtaskObserverError ?? null, warmMedianMs, previews }
   } },
 }
 

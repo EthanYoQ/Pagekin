@@ -54,6 +54,7 @@ function writeJson(path, value) {
 
 async function findApplicationPage(browser, timeoutMilliseconds) {
   const deadline = Date.now() + timeoutMilliseconds
+  let lastPageError
   while (Date.now() < deadline) {
     for (const context of browser.contexts()) {
       for (const page of context.pages()) {
@@ -61,14 +62,14 @@ async function findApplicationPage(browser, timeoutMilliseconds) {
         try {
           await page.locator('body').waitFor({ state: 'attached', timeout: 250 })
           return page
-        } catch {
-          // The target can appear while Electron is still loading its renderer.
+        } catch (error) {
+          lastPageError = error
         }
       }
     }
     await delay(100)
   }
-  throw new Error('Timed out waiting for an Electron renderer page over CDP')
+  throw new Error('Timed out waiting for an Electron renderer page over CDP', { cause: lastPageError })
 }
 
 async function connect(endpoint) {
