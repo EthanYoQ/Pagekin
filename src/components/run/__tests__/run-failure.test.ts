@@ -48,3 +48,15 @@ it('审稿失败 message 为空时，catch 补的通用说明不盖掉诊断给�
   const run = withFailure(caughtFailure(new Error('')), { steps: [{ generationActivity: { operation: 'review-chapter', diagnostics: { endReason: 'failed', causeCode: 'UND_ERR_BODY_TIMEOUT' } } }] } as never)
   expect(runFailure(run, shown('zh-CN')).presentation.reason).toBe('读取响应流超时。上游为何停止响应尚未确认。')
 })
+
+it('根码带嵌套说明时，运行提示显示嵌套说明，诊断的兜底说明不盖掉它', () => {
+  const nested = note('缩短本章后重试。', 'Shorten this chapter and try again.')
+  const failure: Failure = { code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED', because: { note: nested } }
+  const run = withFailure(failure, { steps: [{ generationActivity: { operation: 'review-chapter', diagnostics: { endReason: 'failed' } } }] } as never)
+  expect(runFailure(run, shown('zh-CN')).presentation.reason).toContain('缩短本章后重试。')
+})
+
+it('只有码的失败，诊断给的原因照旧', () => {
+  const run = withFailure({ code: 'NETWORK_ERROR' }, { steps: [{ generationActivity: { operation: 'review-chapter', diagnostics: { endReason: 'failed', causeCode: 'UND_ERR_BODY_TIMEOUT' } } }] } as never)
+  expect(runFailure(run, shown('zh-CN')).presentation.reason).toBe('读取响应流超时。上游为何停止响应尚未确认。')
+})

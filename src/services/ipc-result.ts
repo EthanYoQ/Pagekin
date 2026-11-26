@@ -1,4 +1,5 @@
-import { errorCodeOf, knownAppErrorMessage } from '../i18n/app-errors'
+import { authorError, errorCodeOf, isRegisteredErrorCode } from '../i18n/app-errors'
+import { failureCode } from '../shared/failure'
 import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
 
 export interface IpcMutationResult {
@@ -21,10 +22,10 @@ export function requireIpcSuccess<T extends IpcMutationResult>(
 ): T {
   if (!result.success) {
     const { text } = useLocaleStore.getState()
-    const known = knownAppErrorMessage(currentInterfaceLocale(), result.error)
-    const failure = new Error(known ?? (result.error || fallbackMessage || text(`${action}失败`, 'The operation failed.')))
     // 冻结了界面语言的调用方（导出、工作流）凭 code 按自己的语言重新说明。
-    throw known ? Object.assign(failure, { code: errorCodeOf(result.error) }) : failure
+    const code = isRegisteredErrorCode(result.error) ? failureCode(errorCodeOf(result.error)) : undefined
+    if (code) throw authorError(currentInterfaceLocale(), { code })
+    throw new Error(result.error || fallbackMessage || text(`${action}失败`, 'The operation failed.'))
   }
   return result
 }

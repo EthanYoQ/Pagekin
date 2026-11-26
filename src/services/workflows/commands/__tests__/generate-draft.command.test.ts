@@ -46,6 +46,10 @@ import { assembleChapterMaterials } from '../../chapter-materials'
 import { MATERIAL_DECISION_MAX_INPUT_UNITS, materialBudgetFrom, type BeginGenerationRequest, type MaterialBudget } from '../../../../shared/generation-owner-contract'
 import { WorkflowCancelledError } from '../../workflow-cancellation'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
+import { displayedErrorMessage, failureText } from '../../../../i18n/app-errors'
+import { translate } from '../../../../i18n/core'
+import { runFailure } from '../../../../components/run/run-failure'
+import { useWorkflowStore } from '../../../../stores/workflow-store'
 
 // 默认原样透传真实装配；只有个别测试用 mockImplementationOnce 改写一次返回值，
 // 用来验证命令层对装配结果的独立复核。
@@ -4924,7 +4928,7 @@ ${headingPrefix}第3章：潮门
 
     const error = await command.execute({ step: {}, context, callbacks }).catch(value => value)
     expect(error).toBeInstanceOf(Error)
-    expect(error).not.toHaveProperty('code')
+    expect(error.code).toBeUndefined()
     expect(error.message).not.toContain('synthetic-private-key')
   })
 
@@ -4955,6 +4959,80 @@ ${headingPrefix}第3章：潮门
       .rejects.toThrow('AI 输出达到本次请求长度限制，尚未完整生成')
     expect(runtime.complete).toHaveBeenCalledTimes(8)
     expectNoDraftPersistence(invoke)
+  })
+
+  describe('三条已证伪路径的产生点（#844）', () => {
+    const draftFailure = (f: ReturnType<typeof setup>) => f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })
+      .then(() => { throw new Error('意外成功：正文生成没有失败') }, (error: unknown) => error as Error & { code?: unknown })
+    const failedWith = (failureCode: GenerationAttemptReceipt['failureCode'], diagnostics?: Record<string, unknown>, attempt = 2) => {
+      const result = outcome('', 'error', attempt)
+      Object.assign(result.receipt, { failureCode }, diagnostics ? { diagnostics: { startedAt: 1, elapsedMs: 10, firstResponseMs: null,
+        lastResponseMs: null, lastOutputMs: null, phase: 'request', endReason: 'failed', visibleEvents: 0, reasoningEvents: 0, ...diagnostics } } : {})
+      return result
+    }
+    const afterContinuation = (failed: GenerationOutcome) => fakeOutcomes(outcome('初'.repeat(100), 'length'), failed)
+
+    it('代理不可达的失败在运行卡片和失败提示里显示代理说明，不显示通用网络说明', async () => {
+      for (const locale of ['zh-CN', 'en-US'] as const) {
+        const f = setup({ runtime: afterContinuation(failedWith('NETWORK_ERROR', { errorCode: 'PROXY_UNREACHABLE' })), wordsTarget: 500, uiLocale: locale })
+        const thrown = await draftFailure(f)
+        vi.stubGlobal('window', { aiNovelAPI: {
+          invoke: vi.fn(async (channel: string) => {
+            if (channel === 'skills:list-user') return []
+            if (channel === 'fs:check-exists') return false
+            throw new Error(`unexpected ${channel}`)
+          }),
+          on: vi.fn(() => () => {}),
+          once: vi.fn(),
+        } })
+        useLocaleStore.setState({ interfaceLocale: locale, locale })
+        useWorkflowStore.setState({ activeRuns: [], history: [], globalLogs: [], waitingRuns: {}, currentRun: null, waitingForConfirm: false, waitingAfterStepIndex: -1 })
+        const runId = await useWorkflowStore.getState().startWorkflow({
+          type: 'chapter_creation', title: '第 1 章', projectPath, projectSession: f.context.projectSession,
+          steps: [{ name: '写稿', description: '写稿', executor: async () => { throw thrown } }],
+        })
+        const run = useWorkflowStore.getState().history.find(item => item.id === runId)!
+        const step = run.steps[0]!
+        const proxy = translate(shown(locale), 'error.proxyUnreachable')
+        const generic = translate(shown(locale), 'error.generationNetworkFailed')
+        const card = step.failure ? failureText(shown(locale), step.failure) : displayedErrorMessage(shown(locale), step.error)
+        const failedLog = useWorkflowStore.getState().globalLogs.filter(line => line.level === 'error').at(-1)?.message
+        expect({ card, prompt: runFailure(run, shown(locale)).presentation.reason }, locale).toEqual({ card: proxy, prompt: proxy })
+        expect(failedLog, locale).toContain(proxy)
+        expect(failedLog, locale).not.toContain(generic)
+        expect(thrown.code, locale).toBe('NETWORK_ERROR')
+      }
+    })
+
+    it('正文生成因网络或服务商失败时 error.code 与 master 相同', async () => {
+      const cases = [
+        ['NETWORK_ERROR', 'NETWORK_ERROR'],
+        ['GENERATION_PROVIDER_FAILED', 'GENERATION_PROVIDER_FAILED'],
+        ['ROOT_BUDGET_EXHAUSTED', undefined],
+        [undefined, undefined],
+      ] as const
+      for (const [failureCode, expected] of cases) {
+        for (const runtime of [afterContinuation(failedWith(failureCode)), fakeOutcomes(failedWith(failureCode, undefined, 1))]) {
+          const error = await draftFailure(setup({ runtime, wordsTarget: 500 }))
+          expect(error.code, String(failureCode)).toBe(expected)
+        }
+      }
+    })
+
+    it('长度截断的正文失败说明与 master 相同', async () => {
+      const cases = [
+        [{ uiLocale: 'zh-CN' }, 'AI 输出达到本次请求长度限制，尚未完整生成。请缩短本次任务或拆分为更小批次后重试。'],
+        [{ uiLocale: 'en-US' }, 'AI output reached the model maximum length and is incomplete. Increase the maximum output tokens or shorten the task, then try again.'],
+        [{ uiLocale: 'en-US', interfaceLocale: 'ja-JP' }, 'AI output reached the model maximum length and is incomplete. Increase the maximum output tokens or shorten the task, then try again.'],
+      ] as const
+      for (const [locales, expected] of cases) {
+        const results = [outcome('初'.repeat(1000), 'length', 1)]
+        for (let attempt = 2; attempt <= 8; attempt += 1) results.push(outcome(`第${attempt}段${'续'.repeat(1000)}。`, 'length', attempt))
+        const error = await draftFailure(setup({ runtime: fakeOutcomes(...results), wordsPerChapter: 20_000, wordsTarget: 20_000, ...locales }))
+        expect(error.message, JSON.stringify(locales)).toBe(expected)
+        expect(error.code).toBeUndefined()
+      }
+    })
   })
 
   it('uses lease reasoning evidence and refuses to continue hidden reasoning residue', async () => {

@@ -1,6 +1,7 @@
 import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
-import { knownAppErrorMessage } from '../../i18n/app-errors'
-import { translate } from '../../i18n/core'
+import { catalogNote, failureText, knownAppErrorMessage } from '../../i18n/app-errors'
+import { note, type AuthorNote } from '../../shared/failure'
+import type { GenerationTransportDiagnostics } from '../../shared/generation-contract'
 import {
   PromptBudgetExceededError,
   type GenerationAttemptReceipt,
@@ -133,15 +134,39 @@ export function providerContextFailureText(error: unknown, locale: ErrorDisplayL
 }
 
 /** 主进程把没连上和读流中断都记成 NETWORK_ERROR，只能靠 diagnostics.phase 分辨。无诊断的旧记录用合并说明，非网络失败返回 undefined。 */
+export function networkFailureNote(
+  receipt: Pick<GenerationAttemptReceipt, 'failureCode' | 'diagnostics'> | undefined,
+): AuthorNote | undefined {
+  if (receipt?.failureCode !== 'NETWORK_ERROR') return undefined
+  const diagnostics = receipt.diagnostics
+  if (diagnostics?.errorCode === 'PROXY_UNREACHABLE') return catalogNote('error.proxyUnreachable')
+  if (!diagnostics) return catalogNote('error.generationNetworkFailed')
+  return catalogNote(diagnostics.phase === 'request' ? 'error.generationUnreachable' : 'error.generationConnectionInterrupted')
+}
+
+const TIMED_OUT = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT'])
+const INTERRUPTED = new Set(['UND_ERR_SOCKET', 'ECONNRESET', 'ERR_STREAM_PREMATURE_CLOSE'])
+
+export function reviewTransportNote(diagnostics: GenerationTransportDiagnostics | undefined): AuthorNote | undefined {
+  if (diagnostics?.endReason !== 'failed') return undefined
+  const code = diagnostics.causeCode ?? diagnostics.errorCode ?? ''
+  if (code === 'UND_ERR_BODY_TIMEOUT') return note('读取响应流超时。上游为何停止响应尚未确认。', 'Reading the response stream timed out. Why the upstream stopped responding is not confirmed.')
+  if (TIMED_OUT.has(code)) return note('等待服务响应超时。具体原因尚未确认。', 'Waiting for the service timed out. The underlying cause is not confirmed.')
+  if (code === 'STREAM_INCOMPLETE') return note('响应流在完整报告返回前结束。具体原因尚未确认。', 'The response stream ended before a complete report arrived. The underlying cause is not confirmed.')
+  if (code === 'STREAM_INVALID' || code === 'RESPONSE_BODY_MISSING') return note('服务响应缺少有效的生成数据。', 'The service response did not contain valid generation data.')
+  if (INTERRUPTED.has(code)) return note('响应连接中断。具体原因尚未确认。', 'The response connection was interrupted. The underlying cause is not confirmed.')
+  if (diagnostics.httpStatus && diagnostics.httpStatus >= 400) {
+    return note('服务返回 HTTP {status}，请求未完成。', 'The service returned HTTP {status}; the request did not complete.', { status: diagnostics.httpStatus })
+  }
+  return note('审稿请求未完成，具体原因未知。', 'The review request did not complete; the specific cause is unknown.')
+}
+
 export function networkFailureText(
   receipt: Pick<GenerationAttemptReceipt, 'failureCode' | 'diagnostics'> | undefined,
   locale: ErrorDisplayLocale,
 ): string | undefined {
-  if (receipt?.failureCode !== 'NETWORK_ERROR') return undefined
-  const diagnostics = receipt.diagnostics
-  if (diagnostics?.errorCode === 'PROXY_UNREACHABLE') return translate(locale, 'error.proxyUnreachable')
-  if (!diagnostics) return translate(locale, 'error.generationNetworkFailed')
-  return translate(locale, diagnostics.phase === 'request' ? 'error.generationUnreachable' : 'error.generationConnectionInterrupted')
+  const note = networkFailureNote(receipt)
+  return note && failureText(locale, { note })
 }
 
 const REASON_LABELS: Readonly<Record<TaskBudgetReasonCode, readonly [string, string]> & Partial<Record<LegacyTaskBudgetReasonCode, readonly [string, string]>>> = Object.freeze({

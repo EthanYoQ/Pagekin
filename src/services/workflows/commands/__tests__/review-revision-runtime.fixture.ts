@@ -4,6 +4,7 @@ import type { ReviewRevisionCommandSource } from '../review-revision-command'
 import { freezeReviewRevisionContext, type PrepareReviewRevisionRequest, type PreparedReviewRevisionContext,
   type ReviewRevisionMaterials, type ReviewRevisionRecovery } from '../../../../shared/review-revision-generation'
 import type { MainGenerationSnapshot } from '../../../generation/generation-runtime'
+import type { GenerationAttemptReceipt } from '../../../generation/generation-harness'
 import { freezeChapterGoals } from '../../../../shared/chapter-goal-review'
 import { buildReviewGenerationReport } from '../../../../shared/review-generation-report'
 import { findBlueprintContinuityRisks } from '../../../../shared/consistency-preflight'
@@ -33,6 +34,8 @@ export class ReviewRevisionRuntimeFixture {
   materialDecisions: MaterialDecisionReceipt[] = []
   calls: Array<{ channel: string; args: unknown[] }> = []
   artifacts = new Map<string, MainGenerationSnapshot>()
+  /** 合进下一次结果的收据。 */
+  receiptFailure?: Pick<GenerationAttemptReceipt, 'failureCode' | 'diagnostics'>
   private sequence = 0
   private activeHandle?: ReviewRevisionRecovery['handle']
   constructor(private readonly backend: Backend) {}
@@ -196,7 +199,7 @@ export class ReviewRevisionRuntimeFixture {
           this.record(outcome.content, outcome.finishReason)
           main.callbacks.appendText(redactVisibleCompletionText(outcome.content))
           const artifact = this.recovery!.latestArtifact!
-          return { ...outcome, receipt: { ...outcome.receipt, visibleArtifact: { artifactId: artifact.artifactId,
+          return { ...outcome, receipt: { ...outcome.receipt, ...this.receiptFailure, visibleArtifact: { artifactId: artifact.artifactId,
             attemptId: artifact.attemptId, revision: artifact.revision, textHash: artifact.textHash } } }
         },
       } })) }

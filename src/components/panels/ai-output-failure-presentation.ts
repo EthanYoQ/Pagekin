@@ -1,5 +1,5 @@
-import { knownAppErrorMessage } from '../../i18n/app-errors'
-import { classifyGenerationFailure } from '../../services/generation/prompt-budget-failure'
+import { failureText, knownAppErrorMessage } from '../../i18n/app-errors'
+import { classifyGenerationFailure, reviewTransportNote } from '../../services/generation/prompt-budget-failure'
 import { copyLocale } from '../../i18n/core'
 import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
 import type { PromptBudgetReport } from '../../services/generation/generation-harness'
@@ -132,24 +132,9 @@ export function presentWorkflowFailure(
 
   if (activity?.operation === 'review-chapter') {
     const diagnostic = activity.diagnostics
-    const code = diagnostic?.causeCode ?? diagnostic?.errorCode
-    let reason = authored ?? knownAppErrorMessage(locale, error) ?? (error?.trim() || (locale === 'zh-CN' ? '审稿未完成，原因未知。' : 'The review did not finish; the cause is unknown.'))
-    if (!authored && diagnostic?.endReason === 'failed' && classifyGenerationFailure(error, null) !== 'provider-context') {
-      const zh = locale === 'zh-CN'
-      reason = code === 'UND_ERR_BODY_TIMEOUT'
-        ? (zh ? '读取响应流超时。上游为何停止响应尚未确认。' : 'Reading the response stream timed out. Why the upstream stopped responding is not confirmed.')
-        : ['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT'].includes(code ?? '')
-          ? (zh ? '等待服务响应超时。具体原因尚未确认。' : 'Waiting for the service timed out. The underlying cause is not confirmed.')
-        : code === 'STREAM_INCOMPLETE'
-          ? (zh ? '响应流在完整报告返回前结束。具体原因尚未确认。' : 'The response stream ended before a complete report arrived. The underlying cause is not confirmed.')
-        : code === 'STREAM_INVALID' || code === 'RESPONSE_BODY_MISSING'
-          ? (zh ? '服务响应缺少有效的生成数据。' : 'The service response did not contain valid generation data.')
-        : ['UND_ERR_SOCKET', 'ECONNRESET', 'ERR_STREAM_PREMATURE_CLOSE'].includes(code ?? '')
-          ? (zh ? '响应连接中断。具体原因尚未确认。' : 'The response connection was interrupted. The underlying cause is not confirmed.')
-          : diagnostic.httpStatus && diagnostic.httpStatus >= 400
-            ? (zh ? `服务返回 HTTP ${diagnostic.httpStatus}，请求未完成。` : `The service returned HTTP ${diagnostic.httpStatus}; the request did not complete.`)
-            : (zh ? '审稿请求未完成，具体原因未知。' : 'The review request did not complete; the specific cause is unknown.')
-    }
+    const transport = !authored && classifyGenerationFailure(error, null) !== 'provider-context' ? reviewTransportNote(diagnostic) : undefined
+    const reason = authored ?? (transport && failureText(locale, { note: transport }))
+      ?? knownAppErrorMessage(locale, error) ?? (error?.trim() || (locale === 'zh-CN' ? '审稿未完成，原因未知。' : 'The review did not finish; the cause is unknown.'))
     return {
       heading: locale === 'zh-CN' ? '审稿未完成' : 'Review did not finish',
       reason,
