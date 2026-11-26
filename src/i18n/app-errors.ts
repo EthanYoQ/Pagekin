@@ -656,7 +656,6 @@ function warnOnce(tag: string, detail: unknown): void {
   console.warn(`[app-errors] ${tag}`, detail)
 }
 
-/** 带目录键检查的说明入口：键写错编译不过。 */
 export function catalogNote(key: MessageKey, params?: NoteParams): AuthorNote {
   return catalogKeyNote(key, params)
 }
@@ -687,7 +686,6 @@ function legacyReasonText(locale: ErrorDisplayLocale, text: string): string | un
   return strippedRaw(text) || undefined
 }
 
-/** 一次失败拆成的句子，从概述到最底层的原因；相邻相同的只留一句。 */
 function sentences(locale: ErrorDisplayLocale, failure: Failure | LegacyReason): string[] {
   if ('legacy' in failure) return [legacyReasonText(locale, failure.legacy)].filter((text): text is string => text !== undefined)
   const own = (failure.note && noteText(locale, failure.note)) || (failure.code ? knownAppErrorMessage(locale, failure.code) : undefined)
@@ -695,7 +693,7 @@ function sentences(locale: ErrorDisplayLocale, failure: Failure | LegacyReason):
   return own === undefined || rest[0] === own ? rest : [own, ...rest]
 }
 
-/** 句子之间的接法，对应仓库里现有的三种写法。 */
+/** 三种接法与仓库现有写法一致。 */
 export type FailureJoin = 'sentence' | 'colon' | 'paragraph'
 const JOINERS: Record<FailureJoin, (chinese: boolean) => string> = {
   sentence: chinese => chinese ? '：' : ' ',
@@ -714,13 +712,12 @@ function unexplained(locale: ErrorDisplayLocale, failure: Failure, fallback?: st
   return fallback || translate(locale, 'error.unregisteredCode')
 }
 
-/** 失败的唯一显示函数：写了说明用说明，没写按码查目录，都没有用兜底说明。 */
+/** 失败的唯一显示函数。 */
 export function failureText(locale: ErrorDisplayLocale, failure: Failure, options: { fallback?: AuthorNote; join?: FailureJoin } = {}): string {
   return authoredText(locale, failure, options.join)
     ?? unexplained(locale, failure, options.fallback && noteText(locale, options.fallback))
 }
 
-/** 渲染端造错误的入口，message 是按显示语言渲染好的说明。 */
 export function authorError(locale: ErrorDisplayLocale, failure: Failure, options?: { cause?: unknown }): AuthorError {
   return new AuthorError(failure, failureText(locale, failure), options)
 }

@@ -1,6 +1,6 @@
 import { AuthorError, AuthorNote, authorOwned, catalogKeyNote, note, type Failure, type FailureCode, type WireFailure } from '../failure'
 
-/** tsc 检查（原文放不进说明）：合法写法编译通过，下面 26 条反例都必须报错。 */
+/** tsc 检查（原文放不进说明）：合法写法编译通过，下面每条反例都必须报错。 */
 export function legalShapes(fileName: string, n: number, error: Error, key: 'error.proxyUnreachable' | 'error.unregisteredCode'): unknown[] {
   const proxy: Failure = { code: 'NETWORK_ERROR', note: catalogKeyNote('error.proxyUnreachable') }
   return [

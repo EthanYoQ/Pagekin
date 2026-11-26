@@ -71,7 +71,7 @@ export interface WorkflowStep {
   activityText?: string
   result?: string
   error?: string
-  /** 失败的码与说明；旧字段 error、errorCode 迁移期照写。 */
+  /** 旧字段 error、errorCode 迁移期照写。 */
   failure?: Failure
   /** Non-empty machine-readable code supplied by the thrown error. */
   errorCode?: string

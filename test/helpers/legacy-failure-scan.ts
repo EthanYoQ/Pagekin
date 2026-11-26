@@ -25,7 +25,6 @@ function walk(file: string, text: string, visit: (node: ts.Node, source: ts.Sour
 const calleeName = (node: ts.CallExpression) => ts.isIdentifier(node.expression) ? node.expression.text
   : ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : undefined
 
-/** 旧约定的调用数：三个旧显示入口、englishWithReason、authorOwned 的调用，加 legacy 属性的对象字面量。 */
 export function legacyFailureCounts(file: string, text: string): Partial<Record<LegacyFailureKind, number>> {
   const counts: Partial<Record<LegacyFailureKind, number>> = {}
   const add = (kind: LegacyFailureKind) => { counts[kind] = (counts[kind] ?? 0) + 1 }
@@ -39,7 +38,6 @@ export function legacyFailureCounts(file: string, text: string): Partial<Record<
   return counts
 }
 
-/** authorOwned( 的参数里出现异常原文（.message、String(、.stack）。 */
 export function rawAuthorOwnedArguments(file: string, text: string): string[] {
   const found: string[] = []
   walk(file, text, (node, source) => {
@@ -50,7 +48,7 @@ export function rawAuthorOwnedArguments(file: string, text: string): string[] {
   return found
 }
 
-/** 断言成 AuthorNote 或 Failure 的地方；只有 src/shared/failure.ts 可以这样写。 */
+/** 只有 src/shared/failure.ts 可以断言成这些类型。 */
 export function failureTypeAssertions(file: string, text: string): string[] {
   if (file === FAILURE_MODULE) return []
   const found: string[] = []

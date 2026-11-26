@@ -41,10 +41,7 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
   }
 }
 
-/**
- * 失败带说明，或旧字段为空，就按 failure 显示。只带码的失败仍交旧字段：审稿失败按码分类，
- * 而未登记码在这里的显示与 master 相同。
- */
+/** 只带码的失败仍走旧字段：审稿失败按码分类，且未登记码的显示要与 master 一致。 */
 function failureReason(run: WorkflowRun, step: WorkflowRun['steps'][number] | undefined, locale: ErrorDisplayLocale): string | undefined {
   const legacy = run.error || step?.error
   const failure = run.failure ?? step?.failure
