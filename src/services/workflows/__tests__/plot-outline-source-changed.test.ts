@@ -121,7 +121,7 @@ it('最后一章生成完、正式保存时被来源检查拒绝：不出原始�
 
 async function failedRunFrom(thrown: unknown) {
   const runId = await useWorkflowStore.getState().startWorkflow({
-    type: 'generate_architecture', title: '生成故事架构', projectPath: 'C:/projects/失乐园',
+    type: 'architecture_generation', title: '生成故事架构', projectPath: 'C:/projects/失乐园',
     projectSession: { projectId: 'project-A', leaseId: 'lease-A', projectPath: 'C:/projects/失乐园' },
     steps: [{ name: '情节大纲', description: '情节大纲', executor: async () => { throw thrown } }],
   })

@@ -425,7 +425,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
     harnessWith()
     const thrown = await makeCommand().execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
     const runId = await useWorkflowStore.getState().startWorkflow({
-      type: 'generate_architecture', title: '生成故事架构', projectPath: projectAPath, projectSession: context.projectSession,
+      type: 'architecture_generation', title: '生成故事架构', projectPath: projectAPath, projectSession: context.projectSession,
       steps: [{ name: '情节大纲', description: '情节大纲', executor: async () => { throw thrown } }],
     })
     const run = useWorkflowStore.getState().history.find(item => item.id === runId)!
