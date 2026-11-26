@@ -6,6 +6,8 @@ import { useWorkflowStore } from '../stores/workflow-store'
 import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
 import { knownAppErrorMessage } from '../i18n/app-errors'
 import { globalEventBus } from '../shared/event-bus'
+import { parseJsonOrUndefined } from '../shared/ignore-failure'
+import { ledgerProjectKeys } from '../stores/editor-unsaved'
 import type { ProjectClearScope, ProjectSessionContext } from '../shared/ipc-channels'
 import {
   getActiveProjectSessionContext,
@@ -83,20 +85,12 @@ function affectedHiddenDraftLabels(
     if (!descriptor || !selected.has(descriptor.scope)) continue
     const content = draftLedgers[ledgerKey]
     if (!content) continue
-    try {
-      const parsed = JSON.parse(content) as {
-        version?: unknown
-        projects?: Array<{ projectKey?: unknown }>
-      }
-      if (
-        parsed.version === 1
-        && Array.isArray(parsed.projects)
-        && parsed.projects.some(project => project.projectKey === projectKey)
-      ) {
-        labels.add(useLocaleStore.getState().text(...descriptor.label))
-      }
-    } catch {
-      // 无法归属到具体项目的损坏账本由原有恢复流程保留，不扩大清理范围。
+    const parsed = parseJsonOrUndefined(content, `unreadable draft ledger: ${ledgerKey}`)
+    if (
+      (parsed as { version?: unknown } | null | undefined)?.version === 1
+      && ledgerProjectKeys(parsed)?.includes(projectKey)
+    ) {
+      labels.add(useLocaleStore.getState().text(...descriptor.label))
     }
   }
   return [...labels]

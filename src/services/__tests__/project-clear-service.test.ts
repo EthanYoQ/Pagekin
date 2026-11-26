@@ -212,6 +212,25 @@ describe('clearProjectData', () => {
     expect(ipc.invokeWithProjectSession).not.toHaveBeenCalled()
   })
 
+  it('leaves a draft ledger with malformed project entries to the existing recovery path', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.mocked(useEditorStore.getState).mockReturnValue({
+      tabs: [],
+      draftLedgers: {
+        config: JSON.stringify({ version: 1, projects: [null, { projectKey: projectPath, baseValue: {}, draftValue: { genre: 'unsaved' } }] }),
+        'character-editor-drafts': '{"version":1,"projects":',
+      },
+      clearTabs,
+      closeTab,
+    } as never)
+
+    await expect(clearProjectData({ creativeFields: true }, projectSession)).resolves.toEqual({
+      cleared: ['generatedText'],
+    })
+    expect(warn).toHaveBeenCalledWith('[ignored] unreadable draft ledger: character-editor-drafts', expect.any(SyntaxError))
+    warn.mockRestore()
+  })
+
   it('ignores hidden drafts from other projects or unselected clear scopes', async () => {
     vi.mocked(useEditorStore.getState).mockReturnValue({
       tabs: [],

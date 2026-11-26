@@ -383,14 +383,17 @@ const REPOSITORY: UrlPart = ['仓库名', 'repository']
 const REF: UrlPart = ['分支', 'branch']
 const PATH: UrlPart = ['路径', 'path']
 
-function safePart(value: string, [zhCN, enUS]: UrlPart, text: CopyText): string {
-  let decoded = ''
+function decodeUriPart(value: string): string | null {
   try {
-    decoded = decodeURIComponent(value)
+    return decodeURIComponent(value)
   } catch {
-    // 坏 % 编码会让 decodeURIComponent 抛英文的 URIError；留空串，由下面的校验报中英文案。
+    return null
   }
-  if (!SAFE_SEGMENT.test(decoded) || decoded === '.' || decoded === '..') {
+}
+
+function safePart(value: string, [zhCN, enUS]: UrlPart, text: CopyText): string {
+  const decoded = decodeUriPart(value)
+  if (decoded === null || !SAFE_SEGMENT.test(decoded) || decoded === '.' || decoded === '..') {
     throw new Error(text(`GitHub 地址里的${zhCN}有不支持的字符，请检查地址。`, `The ${enUS} in this GitHub URL has unsupported characters. Check the URL.`))
   }
   return decoded

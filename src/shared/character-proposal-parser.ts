@@ -3,6 +3,7 @@ import { stripDraftThinkingTags as stripThinkingTags } from './draft-visible-tex
 import { StructuredContractDiagnostic } from './structured-contract-diagnostic'
 import { CHARACTER_ROLES } from './character-role'
 import type { CharacterProposalItem } from './character-proposal'
+import { parseJsonOrUndefined } from './ignore-failure'
 
 export interface CharacterProposalArtifact { artifactId: string; text: string }
 export type ArchitectureDerivationVersion = 1 | 2
@@ -138,14 +139,7 @@ export function extractSingleCompleteJsonObject(content: string, excludeArrayRoo
     if (end === undefined) throw new Error('AI 返回包含截断 JSON 对象片段')
 
     const candidate = source.slice(start, end + 1)
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(candidate)
-    } catch {
-      // Keep scanning for the one complete JSON object; malformed candidates
-      // are not repaired or accepted.
-    }
-    if (isRecord(parsed)) candidates.push(candidate)
+    if (isRecord(parseJsonOrUndefined(candidate, 'malformed JSON candidate in character proposal'))) candidates.push(candidate)
     searchFrom = end + 1
   }
 

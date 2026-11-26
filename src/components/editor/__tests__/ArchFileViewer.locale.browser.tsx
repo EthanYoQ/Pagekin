@@ -199,6 +199,25 @@ describe('ArchFileViewer locale', () => {
     expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
   })
 
+  it('refuses to save a non-architecture resource instead of writing it as a file path', async () => {
+    useLocaleStore.setState({ locale: 'zh-CN' })
+    const errorToast = vi.spyOn(toast, 'error').mockImplementation(() => {})
+    useEditorStore.setState({ tabs: [{
+      id: 'arch-draft-resource', name: '草稿', type: 'arch-file',
+      projectKey: PROJECT_PATH, filePath: 'ai-novel://draft/7',
+      content: '误开成架构文档的草稿', savedContent: '', dirty: true,
+    }], draftLedgers: {} })
+    await act(async () => root.render(
+      <ArchFileViewer tabId="arch-draft-resource" filePath="ai-novel://draft/7"
+        projectKey={PROJECT_PATH} content="误开成架构文档的草稿" savedContent="" />,
+    ))
+    await act(async () => (container.querySelector('[title="保存（Cmd+S）"]') as HTMLButtonElement).click())
+
+    expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('fs:write-file')
+    expect(errorToast).toHaveBeenCalledWith(expect.stringContaining('资源只读或无效'))
+    expect(useEditorStore.getState().tabs[0]).toMatchObject({ dirty: true, savedContent: '' })
+  })
+
   it('keeps its exit-save handler while an inactive tab is unmounted', async () => {
     useEditorStore.setState({ tabs: [{
       id: 'arch-inactive', name: '故事前提', type: 'arch-file',

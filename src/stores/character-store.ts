@@ -18,6 +18,7 @@ import {
   characterRosterEntriesFromCards,
 } from '../services/character-roster-client'
 import { randomUUID } from '../utils/id'
+import { parseJsonOrUndefined } from '../shared/ignore-failure'
 import { useEditorStore } from './editor-store'
 import { useProjectStore } from './project-store'
 import { currentInterfaceLocale, useLocaleStore } from './locale-store'
@@ -334,11 +335,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       pendingIdentityMutation
       && sameProjectSessionContext(pendingIdentityMutation.projectSession, projectSession)
     ) {
-      try {
-        await pendingIdentityMutation.promise
-      } catch {
-        // 身份操作失败不应永久阻断后续项目加载。
-      }
+      await Promise.allSettled([pendingIdentityMutation.promise])
       if (
         !isCharacterProjectSessionCurrent(projectSession)
         || !characterReads.isLatest(requestSequence)
@@ -741,11 +738,9 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       const createdIds = new Map((result.receipt.created ?? []).map(item => [item.selectionKey, item.characterId]))
       const remapCreated = (card: CharacterCard): CharacterCard => {
         let relationships = card.relationships
-        try {
-          const parsed: unknown = JSON.parse(relationships)
-          if (Array.isArray(parsed)) relationships = JSON.stringify(parsed.map(value => value && typeof value === 'object'
-            ? { ...value, ...(typeof value.targetCharacterId === 'string' ? { targetCharacterId: createdIds.get(value.targetCharacterId) ?? value.targetCharacterId } : {}) } : value))
-        } catch { /* Free-form author notes remain unchanged. */ }
+        const parsed = parseJsonOrUndefined(relationships, 'character relationships are free-form text')
+        if (Array.isArray(parsed)) relationships = JSON.stringify(parsed.map(value => value && typeof value === 'object'
+          ? { ...value, ...(typeof value.targetCharacterId === 'string' ? { targetCharacterId: createdIds.get(value.targetCharacterId) ?? value.targetCharacterId } : {}) } : value))
         return { ...card, characterId: createdIds.get(card.characterId ?? '') ?? card.characterId, relationships }
       }
       const currentValue = projectSaveInputStillCurrent
