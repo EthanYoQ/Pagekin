@@ -96,13 +96,6 @@ describe('叙事线写入失败时作者看不到主进程原文', () => {
     expect(zhText(result)).toBe('已有的线索和剧情树都还在。这次修改没能写进作品，请刷新后再试一次。')
   })
 
-  it('写进去了、回读线索时失败，也不露原文', async () => {
-    mocks.threads.list.mockImplementation(() => { throw sqliteFailure() })
-    const result = await received('db:narrative-thread-assignment-set', WRITES[4][1])
-    expect(JSON.stringify(result)).not.toMatch(RAW)
-    expect(resultFailure(result)?.code).toBe('PLOT_THREAD_WRITE_FAILED')
-  })
-
   it.each(READS)('%s 遇到 SQLite 原文', async (channel, args, repository) => {
     repository.mockImplementation(() => { throw sqliteFailure() })
     const rejection = await invoke(channel, ...args).then(() => undefined, (error: Error) => error)

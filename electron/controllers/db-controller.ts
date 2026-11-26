@@ -954,16 +954,14 @@ export function registerDatabaseController() {
 
   plotThreads.handle('db:narrative-thread-assignment-set', async (_event, input, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    NarrativeThreadRepository.setAssignment(input)
-    return { success: true, threads: NarrativeThreadRepository.list() }
+    return { success: true, threads: NarrativeThreadRepository.setAssignment(input) }
   })
 
   plotThreads.handle('db:narrative-thread-assignment-remove', async (
     _event, planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string,
   ) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    NarrativeThreadRepository.removeAssignment(planId, chapterNumber, restoreEndChapter)
-    return { success: true, threads: NarrativeThreadRepository.list() }
+    return { success: true, threads: NarrativeThreadRepository.removeAssignment(planId, chapterNumber, restoreEndChapter) }
   })
 
   plotThreads.handle('db:plot-tree-read', async (_event, expectedProjectPath: string) => {

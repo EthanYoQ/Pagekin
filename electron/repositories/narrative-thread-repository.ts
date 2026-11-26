@@ -79,24 +79,28 @@ function rowToPlan(row: Record<string, unknown>): NarrativeThreadPlanRecord {
 export class NarrativeThreadRepository {
   static createPlan(input: NarrativeThreadPlanInput, db = requireDb()): NarrativeThreadPlanRecord {
     const value = validatePlan(input)
-    const result = db.prepare(`
-      INSERT INTO narrative_thread_plans (
-        title, type, target_start_chapter, target_end_chapter, author_intent
-      ) VALUES (?, ?, ?, ?, ?)
-    `).run(value.title, value.type, value.targetStartChapter, value.targetEndChapter, value.authorIntent)
-    return this.getPlan(Number(result.lastInsertRowid), db)!
+    return db.transaction(() => {
+      const result = db.prepare(`
+        INSERT INTO narrative_thread_plans (
+          title, type, target_start_chapter, target_end_chapter, author_intent
+        ) VALUES (?, ?, ?, ?, ?)
+      `).run(value.title, value.type, value.targetStartChapter, value.targetEndChapter, value.authorIntent)
+      return this.getPlan(Number(result.lastInsertRowid), db)!
+    })()
   }
 
   static updatePlan(id: number, input: NarrativeThreadPlanInput, db = requireDb()): NarrativeThreadPlanRecord {
     const value = validatePlan(input)
-    const result = db.prepare(`
-      UPDATE narrative_thread_plans
-      SET title = ?, type = ?, target_start_chapter = ?, target_end_chapter = ?,
-          author_intent = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(value.title, value.type, value.targetStartChapter, value.targetEndChapter, value.authorIntent, id)
-    if (result.changes !== 1) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
-    return this.getPlan(id, db)!
+    return db.transaction(() => {
+      const result = db.prepare(`
+        UPDATE narrative_thread_plans
+        SET title = ?, type = ?, target_start_chapter = ?, target_end_chapter = ?,
+            author_intent = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(value.title, value.type, value.targetStartChapter, value.targetEndChapter, value.authorIntent, id)
+      if (result.changes !== 1) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
+      return this.getPlan(id, db)!
+    })()
   }
 
   static deletePlan(id: number, db = requireDb()): void {
@@ -104,7 +108,7 @@ export class NarrativeThreadRepository {
     if (result.changes !== 1) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
   }
 
-  static setAssignment(input: NarrativeThreadAssignmentInput, db = requireDb()): void {
+  static setAssignment(input: NarrativeThreadAssignmentInput, db = requireDb()): NarrativeThreadView[] {
     const { planId, chapterNumber, writingChapter, kind } = input
     if (!Number.isSafeInteger(chapterNumber) || chapterNumber < 1 || !Number.isSafeInteger(writingChapter) || writingChapter < 1
       || (kind !== 'advance' && kind !== 'resolve') || (kind === 'resolve' && chapterNumber <= writingChapter)) {
@@ -112,22 +116,24 @@ export class NarrativeThreadRepository {
     }
     const plan = this.getPlan(planId, db)
     if (!plan) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
-    db.transaction(() => {
+    return db.transaction(() => {
       db.prepare(`
         INSERT INTO narrative_thread_assignments (plan_id, chapter_number, kind, note) VALUES (?, ?, ?, ?)
         ON CONFLICT(plan_id, chapter_number) DO UPDATE SET kind = excluded.kind, note = excluded.note, created_at = datetime('now')
       `).run(planId, chapterNumber, kind, input.note.trim())
       if (kind === 'resolve') moveTargetEnd(db, plan, chapterNumber, null)
+      return this.list(db)
     })()
   }
 
   /** 撤销延后时还原 restoreEndChapter；回收章已被作者改成别的章就只删记录。 */
-  static removeAssignment(planId: number, chapterNumber: number, restoreEndChapter: number | null, db = requireDb()): void {
-    db.transaction(() => {
+  static removeAssignment(planId: number, chapterNumber: number, restoreEndChapter: number | null, db = requireDb()): NarrativeThreadView[] {
+    return db.transaction(() => {
       const kind = db.prepare('DELETE FROM narrative_thread_assignments WHERE plan_id = ? AND chapter_number = ? RETURNING kind')
         .pluck().get(planId, chapterNumber)
       const plan = this.getPlan(planId, db)
       if (kind === 'resolve' && restoreEndChapter !== null && plan) moveTargetEnd(db, plan, restoreEndChapter, chapterNumber)
+      return this.list(db)
     })()
   }
 
@@ -158,21 +164,24 @@ export class NarrativeThreadRepository {
       throw new Error('NARRATIVE_THREAD_EVIDENCE_NOT_IN_SOURCE')
     }
     if (!this.getPlan(input.planId, db)) throw new Error('NARRATIVE_THREAD_PLAN_NOT_FOUND')
-    const result = db.prepare(`
-      INSERT INTO narrative_thread_confirmations_all (
-        plan_id, draft_id, event_type, evidence, reason
-      ) VALUES (?, ?, ?, ?, ?)
-    `).run(input.planId, input.draftId, input.type, evidence, reason)
-    const created = db.prepare('SELECT created_at AS createdAt FROM narrative_thread_confirmations WHERE id = ?')
-      .get(result.lastInsertRowid) as { createdAt: string }
+    const { id, createdAt } = db.transaction(() => {
+      const result = db.prepare(`
+        INSERT INTO narrative_thread_confirmations_all (
+          plan_id, draft_id, event_type, evidence, reason
+        ) VALUES (?, ?, ?, ?, ?)
+      `).run(input.planId, input.draftId, input.type, evidence, reason)
+      const created = db.prepare('SELECT created_at AS createdAt FROM narrative_thread_confirmations WHERE id = ?')
+        .get(result.lastInsertRowid) as { createdAt: string }
+      return { id: Number(result.lastInsertRowid), createdAt: created.createdAt }
+    })()
     return {
-      id: Number(result.lastInsertRowid),
+      id,
       ...input,
       evidence,
       reason,
       chapterNumber: source.chapter_number,
       chapterTitle: source.chapter_title,
-      createdAt: created.createdAt,
+      createdAt,
     }
   }
 
