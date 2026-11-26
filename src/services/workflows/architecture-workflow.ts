@@ -241,7 +241,7 @@ export function createConfigGenerationWorkflow(params: ConfigGenerationWorkflowP
     || !sameProjectPathKey(project.path, params.projectPath)
     || !sameProjectSessionContext(params.projectSession, currentProjectSession)
   ) {
-    throw new Error(text('当前项目已切换，无法启动配置生成', 'The project changed, so configuration generation cannot start.'))
+    throw authorError(currentInterfaceLocale(), { note: note('当前项目已切换，无法启动配置生成', 'The project changed, so configuration generation cannot start.') })
   }
   const projectSession = Object.freeze({ ...params.projectSession })
   return {
@@ -365,13 +365,12 @@ export async function migrateLegacyCharacterRoster(projectPath: string, options:
   const text = useLocaleStore.getState().text
   const project = useProjectStore.getState().currentProject
   const projectSession = projectSessionContextFromProject(project)
-  if (!project || !projectSession || !sameProjectPathKey(project.path, projectPath)) {
-    throw new Error(text('当前项目已切换，请在原项目中重试', 'The project changed. Return to the original project and try again.'))
-  }
+  const projectChanged = () => authorError(currentInterfaceLocale(), { note: note('当前项目已切换，请在原项目中重试', 'The project changed. Return to the original project and try again.') })
+  if (!project || !projectSession || !sameProjectPathKey(project.path, projectPath)) throw projectChanged()
   if (!sameProjectSessionContext(
     projectSession,
     projectSessionContextFromProject(useProjectStore.getState().currentProject),
-  )) throw new Error(text('当前项目已切换，请在原项目中重试', 'The project changed. Return to the original project and try again.'))
+  )) throw projectChanged()
 
   const source = await ipc.invokeWithProjectSession(projectSession, 'legacy-roster:read-source')
   const requiresAdoption = !!options.recoveryHandle || source.snapshot.migrationState !== 'legacy_cards_preserved'
@@ -412,9 +411,10 @@ export async function migrateLegacyCharacterRoster(projectPath: string, options:
   })
   const completedRun = useWorkflowStore.getState().history.find(run => run.id === completedRunId)
   if (!completedRun || completedRun.status !== 'completed') {
-    throw new Error(completedRun?.error || text(
+    if (completedRun?.error) throw new Error(completedRun.error)
+    throw authorError(currentInterfaceLocale(), { note: note(
       '旧版角色名单修复未完成；原文和已有角色卡均未被覆盖。',
       'Legacy cast repair did not complete; the original text and existing cards were not overwritten.',
-    ))
+    ) })
   }
 }

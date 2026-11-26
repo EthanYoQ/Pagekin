@@ -135,20 +135,16 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
           || error instanceof TerminalProviderFailureError) {
           throw error
         }
-        const safeMessage = workflowUiText(
-          context,
-          '字段生成失败，请重试。',
-          'Field generation failed. Please try again.',
-        )
+        const failed = authorError(context.interfaceLocale, { note: note('字段生成失败，请重试。', 'Field generation failed. Please try again.') })
         if (error instanceof GenerationAttemptError) {
           const code = error.code === 'CANCELLED'
             || error.code === 'DEADLINE_EXHAUSTED'
             || error.code === 'PROVIDER_REQUEST_FAILED'
             ? error.code
             : 'PROVIDER_REQUEST_FAILED'
-          throw new GenerationAttemptError(code, safeMessage, error.receipt)
+          throw new GenerationAttemptError(code, failed.message, error.receipt)
         }
-        throw new Error(safeMessage)
+        throw failed
       }
     }
     let result = await requestFieldCompletion(prompt, `generate-field-${this.fieldKey.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`)

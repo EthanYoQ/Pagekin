@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { displayedErrorMessage, failureText } from '../../i18n/app-errors'
-import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE } from '../../services/workflows/commands/architecture.command'
+import { PLOT_OUTLINE_RESUME_ERROR_CODE } from '../../services/workflows/commands/architecture.command'
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { projectSessionContextFromProject, sameProjectPathKey, sameProjectSessionContext } from '../../shared/project-session-context'
 import { navigate } from '../../stores/navigation/navigation-intents'
@@ -44,7 +44,7 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
       failure && hasNote(failure) ? failureText(locale, failure) : undefined,
     ),
     canResumeOutline: failedWith(PLOT_OUTLINE_RESUME_ERROR_CODE, 'resume-plot-outline'),
-    canRestartOutline: failedWith(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE, 'restart-plot-outline'),
+    canRestartOutline: failure?.recovery === 'restart-plot-outline',
   }
 }
 

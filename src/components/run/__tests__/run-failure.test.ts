@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { runFailure } from '../run-failure'
-import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE } from '../../../services/workflows/commands/architecture.command'
+import { PLOT_OUTLINE_RESUME_ERROR_CODE } from '../../../services/workflows/commands/architecture.command'
 import type { WorkflowRun } from '../../../stores/workflow-store'
 import { shown } from '../../../i18n/__tests__/shown-locale'
 import { note, type Failure } from '../../../shared/failure'
@@ -13,7 +13,8 @@ const failedOutline = (errorCode: string, error: string) => ({
 }) as unknown as WorkflowRun
 
 it('来源在途中变了的大纲失败：给出去架构页重新生成的入口，不提供必然被拒的断点续写', () => {
-  const failure = runFailure(failedOutline(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE, '生成途中模型设置被修改……'), shown('zh-CN'))
+  const changed: Failure = { code: 'GENERATION_SOURCE_CHANGED_MODEL', note: note('生成途中模型设置被修改……', 'The model settings changed……'), recovery: 'restart-plot-outline' }
+  const failure = runFailure({ ...failedOutline('GENERATION_SOURCE_CHANGED_MODEL', '生成途中模型设置被修改……'), failure: changed }, shown('zh-CN'))
   expect(failure.presentation.reason).toBe('生成途中模型设置被修改……')
   expect(failure.canRestartOutline).toBe(true)
   expect(failure.canResumeOutline).toBe(false)
