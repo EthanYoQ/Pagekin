@@ -7,9 +7,6 @@ import { initializeLegacyBaselineSchema } from '../../electron/migrations/baseli
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
 let fixtureDb: BetterSqlite3.Database | null = null
 let fixturePath: string | null = null
-/** Explicit historical schema regression only. Tests inject this handle into
- * repositories; it never admits a production locator or qualifies old projects.
- */
 export function openLegacyNormalizationFixture(projectPath: string): void {
   closeLegacyNormalizationFixture()
   const root = path.join(projectPath, '.vela'); fs.mkdirSync(root, { recursive: true })
