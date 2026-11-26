@@ -257,10 +257,15 @@ export function registerFSController(
     expectedProjectPath: string,
   ): Promise<FileNode[]> => {
     // 不把生产读取错误伪装成“空目录”；调用方需要区分真实空项目与读取失败。
-    const directory = assertProjectFileOperation(context, dirPath, expectedProjectPath, 'existing')
-    const tree = await readDirRecursive(fileSystem, directory)
-    assertProjectFileOperation(context, dirPath, expectedProjectPath, 'existing')
-    return tree
+    try {
+      const directory = assertProjectFileOperation(context, dirPath, expectedProjectPath, 'existing')
+      const tree = await readDirRecursive(fileSystem, directory)
+      assertProjectFileOperation(context, dirPath, expectedProjectPath, 'existing')
+      return tree
+    } catch (error) {
+      if (isMissingFileError(error)) throw new Error('PROJECT_FILE_NOT_FOUND')
+      throw error
+    }
   })
 
   project.handle('fs:mkdir', async (

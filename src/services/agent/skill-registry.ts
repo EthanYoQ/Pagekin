@@ -50,7 +50,7 @@ function isMissingProjectSkillDirectory(error: unknown): boolean {
     : undefined
   if (code === 'ENOENT' || code === 'SECURE_FS_NOT_FOUND') return true
   const message = error instanceof Error ? error.message : ''
-  return /(?:^|:\s)(?:SECURE_FS_NOT_FOUND|ENOENT: no such file or directory(?:,|$))/.test(message)
+  return /(?:^|:\s)(?:SECURE_FS_NOT_FOUND|PROJECT_FILE_NOT_FOUND$|ENOENT: no such file or directory(?:,|$))/.test(message)
 }
 
 class SkillRegistryImpl {

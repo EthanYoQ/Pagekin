@@ -159,3 +159,8 @@ describe('目标文件被占用时显示目录说明', () => {
     return grants
   }
 })
+
+it('列目录时目录已不存在，渲染端仍能认出是缺目录', async () => {
+  registerFSController(nodeTestSecureFileSystem)
+  await expect(project('fs:list-dir', path.join(projectPath, '.ai-novel', 'skills'), projectPath)).rejects.toThrow(/^PROJECT_FILE_NOT_FOUND$/u)
+})
