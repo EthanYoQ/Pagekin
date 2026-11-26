@@ -7,11 +7,6 @@ import type {
   WritingSkillStage,
 } from '../../src/shared/writing-skills'
 
-/*
- * origin/master（d21207c8）上 inspectWritingSkillMarkdown 的逐字副本，作为对拍基准。
- * 没有安装清单的已安装 Skill（本地导入出现之前装的全部，以及 GitHub 导入）必须与它逐字节一致。
- * 不要随实现一起修改这里。
- */
 const MASTER_STAGES = ['planning', 'drafting', 'review', 'refinement'] as const
 const MASTER_MAX_SKILL_BYTES = 64 * 1024
 
@@ -101,7 +96,6 @@ export function masterInspectWritingSkillMarkdown(raw: string): WritingSkillInsp
   }
 }
 
-/** 只取 master 检查结果里的字段，比对用户能看到的判定与提示词，不比新增的附带文件字段。 */
 export function masterVisibleFields(inspection: WritingSkillInspection | undefined): Partial<WritingSkillInspection> | undefined {
   if (!inspection) return undefined
   const { metadata, content, compatible, reasons, suggestedStage, utf8Bytes } = inspection
@@ -110,10 +104,8 @@ export function masterVisibleFields(inspection: WritingSkillInspection | undefin
 
 export interface LegacyInstalledSkillCase {
   label: string
-  /** Skill 目录名，也是 frontmatter 里的 name。 */
   name: string
   skill: string
-  /** 在 Skill 目录里放进被引用的文件；outside 是 Skill 目录之外的临时目录。 */
   plant?: (directory: string, outside: string) => void
 }
 
@@ -126,10 +118,6 @@ function put(directory: string, relative: string, content: string): void {
 const frontmatter = (name: string) => `---\nname: ${name}\nlanguage: zh-CN\nstage: drafting\n---\n`
 const twentyLinks = Array.from({ length: 20 }, (_, index) => `ref-${String(index + 1).padStart(2, '0')}.md`)
 
-/**
- * 复审员列出的写法：Skill 目录里真有被引用的文件（旧版 ~/.vela 迁移会原样复制，用户也可能手动放），
- * 但目录里没有安装清单。按 master，这些文件一概不读。
- */
 export const LEGACY_INSTALLED_SKILL_CASES: LegacyInstalledSkillCase[] = [
   {
     label: 'a plain link to a file that exists',
@@ -242,7 +230,6 @@ export const LEGACY_INSTALLED_SKILL_CASES: LegacyInstalledSkillCase[] = [
   },
 ]
 
-/** 在 skillsRoot/<name>/ 写出一个没有安装清单的旧式已安装 Skill。 */
 export function plantLegacyInstalledSkill(skillsRoot: string, outside: string, testCase: LegacyInstalledSkillCase): string {
   const directory = path.join(skillsRoot, testCase.name)
   fs.mkdirSync(directory, { recursive: true })

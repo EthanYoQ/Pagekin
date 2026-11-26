@@ -25,3 +25,10 @@
 取代冻结 S04/S14C 及旧 F05/U10.A11 中的原地切换、旧根退役、迁移后旧版原根必须拒写及其长时排他要求；原 A11 的数据保全能力仍须通过 V3 实际入口验收。[现行规格](../research/novel-quality-modernization/frontend-transition-specs.md)拥有本轮执行与证据出口。
 
 对 [ADR 0018](0018-program-v3-domain-contracts.md) 的 project-storage 仅部分取代：本路径的 journal/staging 在新目标所属范围，源不写 journal、不移动 `.vela`；registry、真实路径授权、来源验证、C17 可读权限转移及故障恢复要求继续有效。应用全局配置迁移、安装更新、同一新版项目的会话保护不在替代范围。冻结文件和历史失败不改写，旧原地迁移不得继续作为自动打开旧项目的回退路径。
+
+## 测试口径
+
+注释清理 M30 第 2 个 PR 从 `test/helpers/` 迁入：
+
+- `canonical-project-fixture.ts`：由测试自己建新作品。重开走真实的生产校验；这个辅助函数从不收养旧根，也不会悄悄规整未知 schema。目录里已有 `.vela` 时直接报错，旧根必须走显式的迁移测试。
+- `legacy-baseline-fixture.ts`：只用于显式的历史 schema 回归。测试把这个句柄注入各仓库；它从不放行生产定位器，也不认证旧作品。

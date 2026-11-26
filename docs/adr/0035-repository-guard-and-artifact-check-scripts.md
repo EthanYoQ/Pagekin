@@ -52,3 +52,7 @@
 ### check-color-literals.mjs
 
 - 去掉注释但保留换行，使行号不变。字符串里的 // 与 /* 不算注释（单双引号字符串不跨行，模板字符串可以）； CSS 没有行注释，url(//…) 照常扫描。
+
+### test/helpers/repo-source-files.ts
+
+- 测试扫仓库源码只经 `repoSourceFiles` 列目录；import 了它的测试就是 test:guards 的成员。（注释清理 M30 第 2 个 PR 迁入）

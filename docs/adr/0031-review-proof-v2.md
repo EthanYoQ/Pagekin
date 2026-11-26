@@ -56,3 +56,12 @@
 - 每位作者升级到这一版后第一次打开大书要付一次升级。1.5.0 的书是库版本 10，走 10→12。112 章夹具的升级耗时见 PR 描述。
 - 老书的存档不再带前文副本，存档大小不随章数平方增长。112 章手写夹具的存档库从 145.9 MB 降到 10.8 MB，导出耗时见 #702 PR 3 的描述。
 - 打开时整理后，112 章手写夹具（升到 12 后）的源库从 186.3 MB 降到 48.9 MB。第一次打开在 worker 里多花约 1.8 秒，之后每次打开的校验从约 0.9 秒降到约 0.3 秒，导出清洗从约 4.6 秒降到约 1.1 秒。副作用：任何一本书，打开时空闲页过半都会顺带 VACUUM，不只是有旧证明的书。
+
+## 测试口径
+
+`test/helpers/review-cycle-fixture.ts`（注释清理 M30 第 2 个 PR 迁入）：
+
+- `SeedOptions.history`：冻结进 v1 证明的前文，审稿与修稿两条运行都带。
+- `attachStatementLedger`：计 prepare 出的语句每次 `run`、`get`、`all`、`iterate`，每次 `exec`（整段算一条），每次 `pragma`。不计 `db.transaction` 自己发的 BEGIN、COMMIT、SAVEPOINT，它们不经过实例方法。只看得到挂上之后 prepare 的语句。「升级后读库次数不变」这类断言就靠它。
+- `StatementLedger.counts`：键是 SQL 原文（pragma 记为 `PRAGMA ...`），值是执行次数。
+- `breakReviewProof`：造一种仓库入口自己的检查看不到、只有 M03 证明才发现的损坏：审稿尝试回执指向别的审稿内容。
