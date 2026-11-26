@@ -59,49 +59,19 @@ function referenceImportDisplayName(binding: { chapterNumber: number; title: str
 }
 
 /**
- * 参照导入的运行卡片原样显示 result.error（#474）。作者能照做的知识库错误码按导入运行的界面语言说明，
- * 与 src/i18n/messages 里同名码的文案一致；其余码交给 explainImportRunFailure，没登记的由 handle() 换成通用码。
+ * 参照导入的失败按导入运行的语言说明知识库错误码，码放在 errorCode 与 failure（渲染端读 failure，#844）。
+ * 作者能照做的码（检索索引、资料为空等）已在 src/i18n/messages 登记，没登记的由 handle() 换成通用码。
  */
-const INDEX_DAMAGED = [
-  '当前作品的检索索引记录已损坏，现有资料没有改动。请从备份恢复作品，或清空知识库后重新导入资料。',
-  'The search index records of this book are damaged. Your material was not changed. Restore the book from a backup, or clear the knowledge base and import the material again.',
-] as const
-const REFERENCE_IMPORT_FAILURES: Readonly<Record<string, readonly [zhCN: string, enUS: string]>> = {
-  PROJECT_NOT_OPEN: ['请先打开项目。', 'Open a project first.'],
-  KNOWLEDGE_BASE_TEXT_EMPTY: ['资料内容是空的，没有可导入的文字。', 'The material is empty; there is no text to import.'],
-  EMBEDDING_RESPONSE_INVALID: [
-    '检索模型返回的结果不对（条数、维度或数值），没有写入。请检查检索模型的 Base URL，或换一个检索模型。',
-    'The retrieval model returned an unusable result (wrong count, size, or values), so nothing was written. Check the retrieval model’s Base URL or choose another retrieval model.',
-  ],
-  EMBEDDING_SPACE_REINDEX_REQUIRED: [
-    '当前检索模型与已建好的检索索引不一致。请先在设置的「检索模型」页检查并重建索引，再导入。',
-    'The current retrieval model does not match the search index already built. Check and rebuild the index on the Retrieval model page in Settings, then import again.',
-  ],
-  EMBEDDING_SPACE_REGISTRY_INVALID: INDEX_DAMAGED,
-  EMBEDDING_SPACE_UNREGISTERED_DATA: INDEX_DAMAGED,
-  EMBEDDING_SPACE_BUSY: ['检索索引正在建立，请稍后再试。', 'The search index is being built. Try again in a moment.'],
-  KNOWLEDGE_BASE_VOLUME_UNSUPPORTED: [
-    '资料没有收进知识库：作品所在位置不支持知识库要用的硬链接（常见于 exFAT、FAT32 磁盘）。请退出书童，把作品文件夹移到本地 NTFS 磁盘（Mac 用 APFS），从新位置打开后再导入。',
-    "The material was not added to the knowledge base: this location does not support the hard links the knowledge base needs (common on exFAT and FAT32 drives). Quit Pagekin, move the book folder to a local NTFS drive (APFS on a Mac), open it from there, then import again.",
-  ],
-}
-
-function explainReferenceImportFailure<T extends { success: boolean; error?: string }>(result: T, runId: string): T | (T & { errorCode: string }) {
-  const code = !result.success ? result.error : undefined
-  const explained = code ? REFERENCE_IMPORT_FAILURES[code] : undefined
-  if (!code) return result
-  if (!explained) {
-    // 导入运行的授权与收据校验（#474 B1）按同一套说明写。
-    const importFailure = explainImportRunFailure(code, () => importRunLocale(runId))
-    return importFailure ? { ...result, ...importFailure } : result
-  }
-  return { ...result, errorCode: code, error: importRunLocale(runId) === 'en-US' ? explained[1] : explained[0] }
+function explainReferenceImportFailure<T extends { success: boolean; error?: string }>(result: T, runId: string) {
+  const importFailure = !result.success && result.error ? explainImportRunFailure(result.error, () => importRunLocale(runId)) : undefined
+  return importFailure ? { ...result, ...importFailure } : result
 }
 
 function legacyMigrationBlockedFailure() {
   return {
     success: false as const,
     errorCode: LEGACY_VECTOR_MIGRATION_BLOCKED,
+    failure: { code: LEGACY_VECTOR_MIGRATION_BLOCKED },
     error: text(
       '旧版知识库数据需要先修复后才能继续。请修正项目中的 vectors.json，然后重试。',
       'Legacy knowledge-base data must be repaired before continuing. Fix vectors.json in the project, then try again.',
@@ -396,7 +366,7 @@ export function registerKBController() {
   registerKnowledgeBaseHandler('kb:backfill-vectors', async (_event, expectedProjectPath: string) => {
     const projectPath = requireProjectPath(expectedProjectPath)
     const embConfig = getEmbeddingConfig()
-    if (!hasUsableEmbeddingConfig(embConfig)) return { success: false, processed: 0, failed: 0, errorCode: 'EMBEDDING_MODEL_NOT_CONFIGURED', error: text('未配置 Embedding 模型', 'No embedding model is configured') }
+    if (!hasUsableEmbeddingConfig(embConfig)) return { success: false, processed: 0, failed: 0, errorCode: 'EMBEDDING_MODEL_NOT_CONFIGURED', failure: { code: 'EMBEDDING_MODEL_NOT_CONFIGURED' }, error: text('未配置 Embedding 模型', 'No embedding model is configured') }
     return knowledgeBaseLoader.run((kb) => kb.backfillVectors(projectPath, embConfig.protocol, embConfig.model))
   })
 

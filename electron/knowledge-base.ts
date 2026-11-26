@@ -54,6 +54,7 @@ import { rankPassages } from './rerank'
 import type { RerankConfig } from '../src/shared/rerank-config'
 import { RERANK_CANDIDATE_COUNT, WRITING_KNOWLEDGE_COUNT, type KnowledgeRanking, type KnowledgeRankingFallback } from '../src/shared/knowledge-ranking'
 import type { GenerationKnowledgeSnapshot } from '../src/shared/generation-knowledge'
+import type { WireFailure } from '../src/shared/failure'
 
 // ===== 迁移状态跟踪 =====
 
@@ -68,9 +69,9 @@ async function ensureMigration(projectPath: string): Promise<void> {
   }
 }
 
-function knowledgeFailureDetails(error: unknown): { error: string; errorCode?: typeof LEGACY_VECTOR_MIGRATION_BLOCKED } {
+function knowledgeFailureDetails(error: unknown): { error: string; errorCode?: typeof LEGACY_VECTOR_MIGRATION_BLOCKED; failure?: WireFailure } {
   if (error instanceof LegacyVectorMigrationBlockedError) {
-    return { error: error.code, errorCode: error.code }
+    return { error: error.code, errorCode: error.code, failure: { code: error.code } }
   }
   if (error instanceof EmbeddingResponseValidationError) {
     console.warn('[AI Novel KB] 检索模型响应无效:', error.message)

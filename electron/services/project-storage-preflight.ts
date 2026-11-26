@@ -1,5 +1,6 @@
 import path from 'node:path'
-import type { AppFailure } from '../../src/shared/ipc-channels'
+import type { IpcFailure } from '../../src/shared/failure'
+import { wireNote } from '../../src/i18n/app-errors'
 import { CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE } from '../../src/shared/project-format'
 
 export const PROJECT_STORAGE_PATH_UNSUPPORTED = 'PROJECT_STORAGE_PATH_UNSUPPORTED' as const
@@ -36,7 +37,7 @@ export class ProjectStoragePreflightError extends Error {
   constructor(
     readonly projectRootLength: number,
     readonly maxProjectRootLength: number,
-    storage: 'project' | 'knowledge-base',
+    readonly storage: 'project' | 'knowledge-base',
   ) {
     super(
       storage === 'project'
@@ -47,7 +48,7 @@ export class ProjectStoragePreflightError extends Error {
   }
 }
 
-type ProjectStorageFailure = AppFailure & {
+type ProjectStorageFailure = IpcFailure & {
   errorCode: typeof PROJECT_STORAGE_PATH_UNSUPPORTED
   error: string
 }
@@ -65,10 +66,14 @@ export function projectStoragePreflightFailure(
   error: unknown,
 ): ProjectStorageFailure | undefined {
   if (!isProjectStoragePreflightError(error)) return undefined
+  const note = error instanceof ProjectStoragePreflightError
+    ? wireNote(error.storage === 'project' ? 'error.projectPathTooDeepForDatabase' : 'error.projectPathTooDeepForKnowledgeBase', { max: error.maxProjectRootLength })
+    : undefined
   return {
     success: false,
     errorCode: PROJECT_STORAGE_PATH_UNSUPPORTED,
     error: error.message,
+    failure: { code: PROJECT_STORAGE_PATH_UNSUPPORTED, ...(note ? { note } : {}) },
   }
 }
 

@@ -10,11 +10,12 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { useWorkflowStore, type WorkflowRun } from '../../../stores/workflow-store'
 import { shown } from '../../../i18n/__tests__/shown-locale'
 import { failureText, knownAppErrorMessage } from '../../../i18n/app-errors'
-import { errorLocaleForRun } from '../../../i18n/core'
+import { copyLocale, errorLocaleForRun } from '../../../i18n/core'
 import type { InterfaceLocale, Locale } from '../../../i18n/types'
 
 const session = { projectId: 'test-project', leaseId: 'lease-test-project', projectPath: 'C:\\test-project' }
 const executionOwner = 'test-import-executor'
+const originalLocale = useLocaleStore.getState()
 
 function snapshotFor(locale: Locale): ImportRunSnapshot {
   return {
@@ -53,7 +54,8 @@ async function importTwoChapters(reply: object, options: { runLocale?: Locale; i
       default: throw new Error(`测试未配置桌面调用：${channel}`)
     }
   })
-  useLocaleStore.getState().setLocale(options.interfaceLocale ?? 'zh-CN')
+  const shownLocale = options.interfaceLocale ?? 'zh-CN'
+  useLocaleStore.setState({ locale: copyLocale(shownLocale), interfaceLocale: shownLocale })
   vi.stubGlobal('window', { aiNovelAPI: { invoke: vi.fn(async (channel: string) => channel === 'skills:list-user' ? [] : false), on: vi.fn(() => () => {}), once: vi.fn() } })
   try {
     await useWorkflowStore.getState().startWorkflow(createImportWorkflow({ projectPath: session.projectPath, projectSession: session, run: snapshot, executionOwner }))
@@ -85,7 +87,7 @@ beforeEach(() => {
 
 afterEach(() => {
   useProjectStore.setState({ currentProject: null })
-  useLocaleStore.getState().setLocale('zh-CN')
+  useLocaleStore.setState(originalLocale, true)
   vi.restoreAllMocks()
 })
 

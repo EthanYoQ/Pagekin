@@ -70,6 +70,7 @@ describe('knowledge-base controller migration barrier', () => {
     await expect(handler('kb:search')({}, 'query', 5, 'C:/projects/A')).resolves.toEqual({
       success: false,
       errorCode: LEGACY_VECTOR_MIGRATION_BLOCKED,
+      failure: { code: LEGACY_VECTOR_MIGRATION_BLOCKED },
       error: expectedError,
     })
   })
@@ -89,6 +90,7 @@ describe('knowledge-base controller migration barrier', () => {
     await expect(handler('kb:import-text')({}, 'text', 'chapter.txt', 'C:/projects/A')).resolves.toEqual({
       success: false,
       errorCode: LEGACY_VECTOR_MIGRATION_BLOCKED,
+      failure: { code: LEGACY_VECTOR_MIGRATION_BLOCKED },
       error: 'Legacy knowledge-base data must be repaired before continuing. Fix vectors.json in the project, then try again.',
     })
   })

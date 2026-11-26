@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { knownAppErrorMessage } from '../../src/i18n/app-errors'
 import { errorLocaleForRun, resolveLocale, translate } from '../../src/i18n/core'
 import type { ErrorDisplayLocale, Locale } from '../../src/i18n/types'
+import { failureCode, type WireFailure } from '../../src/shared/failure'
 import { getMainLocale, mainErrorDisplayLocale } from '../i18n'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 
@@ -12,6 +13,8 @@ const ERROR_CODE = /^[A-Z][A-Z0-9_]*$/u
 export interface ImportRunFailure {
   error: string
   errorCode: string
+  /** 只在码登记过时带：db:* 不经 handle()，没登记的码让渲染端照旧读 errorCode，error.code 与取消判定同 master。 */
+  failure?: WireFailure
 }
 
 function rawReason(error: unknown): string {
@@ -30,9 +33,12 @@ export function explainImportRunFailure(error: unknown, locale: Locale | (() => 
   const code = rawReason(error)
   if (!ERROR_CODE.test(code)) return undefined
   const resolved = importErrorLocale(typeof locale === 'function' ? locale() : locale)
+  const known = knownAppErrorMessage(resolved, code)
+  const wire = known ? failureCode(code) : undefined
   return {
-    error: knownAppErrorMessage(resolved, code) ?? translate(resolved, 'error.importRunCheckFailed', { code }),
+    error: known ?? translate(resolved, 'error.importRunCheckFailed', { code }),
     errorCode: code,
+    ...(wire ? { failure: { code: wire } } : {}),
   }
 }
 
