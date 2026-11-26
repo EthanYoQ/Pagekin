@@ -111,6 +111,8 @@ export function presentWorkflowFailure(
   isUnpersistedChapterDraft: boolean,
   promptBudgetReport?: PromptBudgetReport,
   activity?: WorkflowStep['generationActivity'],
+  /** 产生点写的说明：有它就不再按码或诊断改写原因。 */
+  authored?: string,
 ): WorkflowFailurePresentation {
   if (failureCode === 'prompt_budget_exhausted') {
     const adjustment = promptBudgetAdjustment(promptBudgetReport, copyLocale(locale))
@@ -132,8 +134,8 @@ export function presentWorkflowFailure(
   if (activity?.operation === 'review-chapter') {
     const diagnostic = activity.diagnostics
     const code = diagnostic?.causeCode ?? diagnostic?.errorCode
-    let reason = knownAppErrorMessage(locale, error) ?? (error?.trim() || (locale === 'zh-CN' ? '审稿未完成，原因未知。' : 'The review did not finish; the cause is unknown.'))
-    if (diagnostic?.endReason === 'failed' && classifyGenerationFailure(error, null) !== 'provider-context') {
+    let reason = authored ?? knownAppErrorMessage(locale, error) ?? (error?.trim() || (locale === 'zh-CN' ? '审稿未完成，原因未知。' : 'The review did not finish; the cause is unknown.'))
+    if (!authored && diagnostic?.endReason === 'failed' && classifyGenerationFailure(error, null) !== 'provider-context') {
       const zh = locale === 'zh-CN'
       reason = code === 'UND_ERR_BODY_TIMEOUT'
         ? (zh ? '读取响应流超时。上游为何停止响应尚未确认。' : 'Reading the response stream timed out. Why the upstream stopped responding is not confirmed.')
@@ -176,14 +178,14 @@ export function presentWorkflowFailure(
   return locale === 'zh-CN'
     ? {
         heading: '工作流未完成',
-        reason: knownAppErrorMessage(locale, error) ?? (error?.trim() || '生成在完成前停止。'),
+        reason: authored ?? knownAppErrorMessage(locale, error) ?? (error?.trim() || '生成在完成前停止。'),
         persistence: isUnpersistedChapterDraft
           ? '本次未保存草稿或正文章节。'
           : undefined,
       }
     : {
         heading: 'Workflow did not finish',
-        reason: knownAppErrorMessage(locale, error) ?? (error?.trim() || 'Generation stopped before it completed.'),
+        reason: authored ?? knownAppErrorMessage(locale, error) ?? (error?.trim() || 'Generation stopped before it completed.'),
         persistence: isUnpersistedChapterDraft
           ? 'This attempt did not save a draft or manuscript chapter.'
           : undefined,

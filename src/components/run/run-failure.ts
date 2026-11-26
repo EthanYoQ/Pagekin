@@ -7,6 +7,7 @@ import { navigate } from '../../stores/navigation/navigation-intents'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import { errorLocaleForRun } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
+import type { Recovery } from '../../shared/failure'
 import { useProjectStore } from '../../stores/project-store'
 import type { WorkflowRun } from '../../stores/workflow-store'
 import { toast } from '../ui/Toast'
@@ -24,28 +25,24 @@ export interface RunFailure {
 export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale): RunFailure {
   const failedStep = run.steps.find(step => step.status === 'failed')
   const currentStep = run.steps[run.currentStepIndex] ?? run.steps[0]
-  const failedWith = (code: string) => run.errorCode === code || failedStep?.errorCode === code
+  const failure = run.failure ?? failedStep?.failure
+  const failedWith = (code: string, recovery: Recovery) => run.errorCode === code || failedStep?.errorCode === code || failure?.recovery === recovery
   const locale = errorLocaleForRun(run.uiLocale, interfaceLocale)
+  const legacy = run.error || currentStep?.error
   return {
     title: run.title,
     presentation: presentWorkflowFailure(
       run.failureCode ?? currentStep?.failureCode,
-      failureReason(run, currentStep, locale),
+      failure && !legacy?.trim() ? failureText(locale, failure) : legacy,
       locale,
       run.type === 'chapter_creation' && run.chapterWordsTarget !== undefined && !(currentStep?.result || '').trim(),
       run.promptBudgetReport ?? currentStep?.promptBudgetReport,
       failedStep?.generationActivity ?? currentStep?.generationActivity,
+      failure?.note && failureText(locale, failure),
     ),
-    canResumeOutline: failedWith(PLOT_OUTLINE_RESUME_ERROR_CODE),
-    canRestartOutline: failedWith(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE),
+    canResumeOutline: failedWith(PLOT_OUTLINE_RESUME_ERROR_CODE, 'resume-plot-outline'),
+    canRestartOutline: failedWith(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE, 'restart-plot-outline'),
   }
-}
-
-/** 只带码的失败仍走旧字段：审稿失败按码分类，且未登记码的显示要与 master 一致。 */
-function failureReason(run: WorkflowRun, step: WorkflowRun['steps'][number] | undefined, locale: ErrorDisplayLocale): string | undefined {
-  const legacy = run.error || step?.error
-  const failure = run.failure ?? step?.failure
-  return failure && (failure.note || !legacy?.trim()) ? failureText(locale, failure) : legacy
 }
 
 /** 运行属于当前打开的这次项目会话；失败提示里的动作只对它生效。 */
