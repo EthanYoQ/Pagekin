@@ -6,18 +6,15 @@ import { CHAPTER_PHASE_TEXT, STAGE_NAMES } from '../stage-text'
 
 type Text = (zh: string, en: string) => string
 
-/** 概览卡上一个阶段的进度条：完成为完成色，进行中按比例填强调色，未开始为轨道色。 */
 export interface StageBar {
   stage: WorkStage
   state: 'done' | 'active' | 'todo'
-  /** 进行中时的完成比例，0 到 1。 */
   ratio: number
   label: string
 }
 
 const bar = (stage: WorkStage, state: StageBar['state'], ratio: number, label: string): StageBar => ({ stage, state, ratio, label })
 
-/** 当前作品：与流程脊同源，阶段状态完全一致。 */
 export function barsFromStages(stages: readonly StageStatus[], text: Text): StageBar[] {
   return stages.map(status => {
     const name = text(...STAGE_NAMES[status.stage])
@@ -38,10 +35,6 @@ export function barsFromStages(stages: readonly StageStatus[], text: Text): Stag
   })
 }
 
-/**
- * 只预览、未打开的书：设定按主进程返回的必填是否齐全（与流程脊同一口径，只说齐没齐），
- * 架构按四节，蓝图有 1 章即完成，正文写定稿章数与规划章数，定稿达到规划章数即完成（同流程脊）。
- */
 export function barsFromOverview(overview: ReadyProjectOverview, text: Text): StageBar[] {
   const find = (id: ReadyProjectOverview['stages'][number]['id']) => overview.stages.find(stage => stage.id === id)
   const configuration = find('configuration')
@@ -66,7 +59,6 @@ export function barsFromOverview(overview: ReadyProjectOverview, text: Text): St
   ]
 }
 
-/** 「继续写作」去哪：第一个未完成的阶段；到了正文就是该写的那一章。 */
 export function nextStep(stages: readonly StageStatus[], chapters: readonly ChapterRow[], text: Text): { label: string; intent: NavigationIntent } {
   const stage = landingStage(stages)
   const row = stage === 'manuscript' ? focusChapter(chapters) : null

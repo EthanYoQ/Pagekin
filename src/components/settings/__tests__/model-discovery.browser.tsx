@@ -74,7 +74,6 @@ const baseUrlInput = (value: string) => {
 const statusText = () => document.getElementById(modelNameInput().getAttribute('aria-describedby') ?? '')?.textContent ?? undefined
 const endpointModels = (...values: string[]) => values.map(value => ({ id: value, name: value, value }))
 const listed = (...values: string[]) => vi.fn<(request: ModelDiscoveryRequest) => Promise<ModelDiscoveryResult>>(async () => ({ success: true, models: endpointModels(...values) }))
-/** 比自动获取的防抖多等一点，确认这段时间里确实没有发请求。 */
 const AUTO_DISCOVERY_WAIT_MS = 800
 const DEEPSEEK_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro']
 const OLLAMA_MODELS = ['qwen2.5', 'llama3.3', 'llama3.2']
@@ -145,7 +144,6 @@ async function renderSettings(
   return { saveModel, setDefaultModel }
 }
 
-/** 打开一份已保存、条件齐全的配置，展开列表，等端点模型列出来。 */
 async function renderFetched(values: readonly string[], overrides: Partial<ModelProfile> = {}) {
   const discoverModels = vi.fn<(request: ModelDiscoveryRequest) => Promise<ModelDiscoveryResult>>(async () => ({ success: true, models: endpointModels(...values) }))
   const rendered = await renderSettings(savedProfile({ provider: 'deepseek', baseUrl: 'https://api.deepseek.com', modelName: 'deepseek-v4-flash', ...overrides }), discoverModels)
@@ -1503,7 +1501,6 @@ describe('model discovery settings flow', () => {
     if (!cancel) throw new Error('Missing cancel button')
     const pressedAt = cancel.getBoundingClientRect().top
 
-    // 浏览器的顺序：pointerdown，按下的默认动作让输入框失焦，pointerup，再 click。
     await act(async () => {
       cancel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
       cancel.focus({ preventScroll: true })

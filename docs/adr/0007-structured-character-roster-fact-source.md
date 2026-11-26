@@ -80,3 +80,40 @@
 
 - `mergeObjectDraftWithRemote`：以 base 为共同祖先执行字段级三方合并。 本地实际改过的字段保留 draft；其余字段采用最新 remote。
 - `mergeNamedRecordDraftWithRemote`：角色名是现有角色卡的稳定记录键。对每条记录执行三方合并： 本地改/增/删优先，未改记录以及远端新增记录采用最新 remote。
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/characters/CharacterProposalSelectionPanel.tsx`
+
+- `CharacterProposalSelectionPanel`：分工：面板只受控展示作者选择，确认归宿主、原子写入归主进程（原文：Controlled author choices; the host owns confirmation, main owns the atomic effect.）
+
+### `src/components/editor/character-extraction-policy.ts`
+
+- `isCharacterExtractionReady`：零条角色只有在当前项目角色数据已成功加载并完成绑定后才代表“真的为空”。 加载中、未绑定或加载失败都不能开放会覆盖角色记录的重新提取操作。
+
+### `src/components/editor/character-roster-repair-controller.ts`
+
+- `CharacterRosterRepairPort`：分工：控制器管请求顺序，hook 提供 React 状态与实时项目会话守卫（原文：Renderer-specific port for the structured roster read / explicit legacy migration seam. The controller owns request ordering; the hook supplies React state and the live project-session guard.）
+- `CharacterRosterRepairController`：不变式：名单读取、显式迁移与错误状态在项目会话切换时保持内部一致，且不依赖 React 以便直接测会话竞态（原文：Keeps the roster's read, explicit migration and error state internally consistent across project-session switches. It has no React dependency so the session race boundary remains directly testable.）
+- 契约：invalidate 作废全部在途操作，且不触碰已卸载的视图（原文：Invalidate every in-flight operation without mutating an unmounted view.）
+
+### `src/components/editor/character-roster-repair-state.ts`
+
+- `getCharacterRosterRepairPresentation`：将持久化状态翻译为作者能理解的动作。这里不做任何数据访问或自动修复， 组件必须显式调用 migrateLegacyCharacterRoster 才会产生写入。
+
+### `src/components/editor/use-character-roster-repair.ts`
+
+- `settled`：本会话至少读完过一次名单（成功或失败），之前的 snapshot 为空不代表没有名单。
+- `useCharacterRosterRepair`：分工：hook 共享只读名单状态与作者显式的旧名单迁移动作，加载视图时从不写入，控制器守完整项目会话身份（原文：Shared renderer hook for the read-only roster status and the author's explicit legacy migration action. The controller guards complete project session identity; it never writes while merely loading a view.）
+- `projectId`：原因：只订阅身份字段，配置字段更新才不会重建名单请求或使有效编辑草稿作废（原文：Subscribe only to identity fields so a config-field update does not recreate a roster request or invalidate a valid editor draft.）
+- `rosterRevision`：角色名单保存后修订号前进，名单全文投影与名单状态随之重读。修订号从无到有是角色卡首次载入， 首次读取已由上面的 effect 负责，不再多读一次。
+- `visibleState`：规则：切换项目会话时从不渲染上一会话的状态，旧控制器由上面 effect 清理时作废（原文：The previous session's state is never rendered during a switch, even in the small interval before the next read resolves. The old controller is invalidated by the effect cleanup above.）
+
+### `src/components/stage/architecture/ArchitectureSection.tsx`
+
+- `RosterNotice`：角色名单需要修复或采用旧角色卡时的提示条，以及保存过的旧修复运行。
+- 旧修复运行要查 generation:list（主进程串行处理，运行多时要几十毫秒），等四节读完再挂，不挡在打开架构的路上。
+
+### `src/components/stage/architecture/StageArchitecture.tsx`
+
+- `useCastSummary`：角色名单一节的摘要。角色卡在打开作品后单独载入（角色多时要几百毫秒），载完之前只这一节写「正在读取」，其余三节照常可用。

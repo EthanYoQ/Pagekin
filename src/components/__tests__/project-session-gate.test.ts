@@ -35,7 +35,6 @@ describe('component project session gate', () => {
     })
     expect(isProjectSessionCurrent(frozen)).toBe(true)
 
-    // Same project root, but a new open must invalidate all prior async work.
     setActiveProjectSessionContext({
       projectId: project.id,
       leaseId: 'lease-b',

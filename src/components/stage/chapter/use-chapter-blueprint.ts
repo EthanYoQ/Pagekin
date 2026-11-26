@@ -12,10 +12,6 @@ function readBlueprint(chapterNumber: number, projectKey: string) {
   return ipc.invokeWithProjectSession(session, 'db:blueprint-get', chapterNumber, session.projectPath)
 }
 
-/**
- * 这一章的蓝图：读到之前为 undefined，没有蓝图为 null；读取出错时 failed 为 true、蓝图仍是 undefined，
- * 不当成没有蓝图（那会清掉写作请求、提示去规划）。蓝图资源刷新或 reload 时重读。
- */
 export function useChapterBlueprint(chapterNumber: number | undefined, projectKey: string): { blueprint: Blueprint | undefined; failed: boolean; reload: () => void } {
   const [state, setState] = useState<{ blueprint: Blueprint | undefined; failed: boolean }>({ blueprint: undefined, failed: false })
   const [version, setVersion] = useState(0)

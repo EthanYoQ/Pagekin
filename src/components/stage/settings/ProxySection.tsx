@@ -5,7 +5,6 @@ import { useProxySettings } from '../../settings/use-proxy-settings'
 import { Button } from '../../ui/Button'
 import { Check } from '../../ui/Check'
 
-/** 网络代理：开关、类型、主机与端口，保存后所有 AI 请求都走代理。 */
 export default function ProxySection() {
   const text = useLocaleStore(s => s.text)
   const { proxy, dirty, update, restorePortOnBlur, saving, saved, saveError, save } = useProxySettings()

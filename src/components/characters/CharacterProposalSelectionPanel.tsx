@@ -12,7 +12,6 @@ const editableFields = [
   ['motivation', '动机', 'Motivation', '動機'], ['arc', '弧光', 'Arc', 'キャラクターアーク'], ['notes', '备注', 'Notes', 'メモ'],
 ] as const
 
-/** Controlled author choices; the host owns confirmation, main owns the atomic effect. */
 export function CharacterProposalSelectionPanel({ batch, choices, onChange, disabled = false }: {
   batch: CharacterProposalBatch
   choices: CharacterProposalChoices

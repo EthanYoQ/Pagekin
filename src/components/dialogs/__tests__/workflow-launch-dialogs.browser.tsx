@@ -10,7 +10,6 @@ import ArchitectureConfirmDialog from '../ArchitectureConfirmDialog'
 import GenerateBlueprintsDialog from '../../stage/blueprint/GenerateBlueprintsDialog'
 import { renderPlotOutlineSynopsis } from '../../../shared/plot-outline-contract'
 
-/** 数据库里还没有大纲。 */
 const NO_OUTLINE = { synopsis: '', totalChapters: 100, writingLanguage: 'zh-CN' as const }
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -84,7 +83,6 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-  // 修复角色同步会推一条成功通知；提示栈跨用例保留，关掉它免得盖住下一个用例对话框的按钮
   for (const close of document.querySelectorAll<HTMLButtonElement>('.pi-toast button[aria-label="关闭通知"]')) await act(async () => close.click())
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)) })
   await act(async () => root.unmount())
@@ -558,7 +556,6 @@ it.each(['outline', 'blueprint'] as const)('rejects eleven chapters and target 1
   const count = page.getByRole('spinbutton', { name: kind === 'outline' ? '本次生成范围的结束章' : '本次蓝图章数' })
   const submit = page.getByRole('button', { name: kind === 'outline' ? /确认生成/ : '开始生成' })
   await act(async () => { await count.fill('11') })
-  // 大纲对话框按单批上限当场判无效，提交不可点；蓝图对话框在提交时拦。
   if (kind === 'outline') await expect.element(submit).toBeDisabled()
   else await act(async () => { await submit.click() })
   expect(onConfirm).not.toHaveBeenCalled()

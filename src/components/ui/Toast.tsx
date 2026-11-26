@@ -1,12 +1,3 @@
-/**
- * 全局通知：轻量、非阻塞的操作反馈（成功、警告、普通信息、错误）。
- * 关键错误请使用 alertError()，见 AlertDialog.tsx。所有通知进同一个纸墨提示栈（ToastStack）。
- *
- * 用法：
- *   toast.success('保存成功')
- *   toast.warning('字数超出限制')
- */
-
 import { pushToast, type ToastTone } from './ToastStack'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'

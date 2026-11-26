@@ -176,7 +176,6 @@ describe('分工模型设置页', () => {
     expect(invoke).toHaveBeenCalledWith('llm:set-stage-model', { stage: 'review', modelId: 'flash' })
   })
 
-  // Windows 与 Linux 上方向键在收起的下拉里直接换选项并触发 change；macOS 会弹出选项面板，所以这里直接派发 change。
   it('唯一的生成模型不是默认模型时，聚焦的下拉换了模型后，保存期间与保存后焦点都留在下拉上', async () => {
     useLLMStore.setState({ models: [FLASH, BGE], defaultModelId: null })
     let finishSave: () => void = () => undefined

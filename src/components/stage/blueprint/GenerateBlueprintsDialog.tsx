@@ -12,14 +12,12 @@ import { pluralEn } from '../../../shared/plural-en'
 
 const numberValue = (value: string): number | '' => value === '' ? '' : Number(value)
 
-/** AI 生成蓝图：范围、每章目标、已有蓝图的处理方式与节奏指导。表单逻辑在 useDirectoryConfigForm。 */
 export default function GenerateBlueprintsDialog(props: DirectoryConfigProps) {
   const form = useDirectoryConfigForm(props)
   const ids = { targetUnits: useId(), pacing: useId(), range: useId() }
   if (!form) return null
   const { text, total, appendStart, hasPriorAuthority } = form
   const busy = form.isConfirming || form.isRecovering
-  // 指定范围只从接着的那一章往后补，从不覆盖已有蓝图，所以这时不给覆盖选项。
   const showExisting = (props.existingCount > 0 || hasPriorAuthority) && form.rangeMode !== 'range'
   const overwrite = showExisting && form.overwriteMode === 'full'
   const zh = resolveWritingLanguage(form.currentProject.novelConfig.writingLanguage) === 'zh-CN'

@@ -33,7 +33,6 @@ async function mount(element: ReactElement) {
   await act(async () => root!.render(element))
 }
 
-/** 在 target 上派发一次按键，返回事件；一路冒泡到 window，和真实按键经过的监听器相同。 */
 function press(target: EventTarget, init: KeyboardEventInit & { keyCode?: number }) {
   const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
   if (init.keyCode !== undefined) Object.defineProperty(event, 'keyCode', { value: init.keyCode })

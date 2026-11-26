@@ -12,7 +12,6 @@ import { PLANNING_ACTION_CHAPTER_LIMIT, PLANNING_TARGET_UNITS_LIMIT } from '../.
 import { useArchitectureConfirmForm, type ArchitectureConfirmFormOptions } from './use-architecture-confirm-form'
 import { pluralEn } from '../../shared/plural-en'
 
-/** 四节的说明；名字取 ARCH_STEP_NAMES。 */
 const ARCH_FILES: Array<{ key: ArchStepKey; desc: string; descEn: string }> = [
   { key: 'premise', desc: 'Logline、核心冲突、金手指定位', descEn: 'Logline, core conflict, and protagonist advantage' },
   { key: 'characters', desc: '角色弧光、关系网、矛盾交织', descEn: 'Character arcs, relationships, and conflicts' },
@@ -20,7 +19,6 @@ const ARCH_FILES: Array<{ key: ArchStepKey; desc: string; descEn: string }> = [
   { key: 'synopsis', desc: '三幕式情节骨架', descEn: 'Three-act plot structure' },
 ]
 
-/** 生成架构确认弹框（含步骤勾选） */
 export default function ArchitectureConfirmDialog(props: ArchitectureConfirmFormOptions) {
   const { isOpen, onClose } = props
   const text = useLocaleStore(s => s.text)
@@ -51,7 +49,6 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
         </DialogHeader>
 
         <div className="px-5 py-3 space-y-4">
-          {/* 配置预览 */}
           <div
             className="rounded-lg p-3 space-y-1.5 text-xs"
             style={{ backgroundColor: 'var(--color-panel)', border: '1px solid var(--color-border)' }}
@@ -75,7 +72,6 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
             )}
           </div>
 
-          {/* 步骤勾选列表 */}
           <div
             className="rounded-lg p-3 space-y-2.5"
             style={{ backgroundColor: 'var(--color-panel)', border: '1px solid var(--color-border)' }}
@@ -102,7 +98,6 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
                   className="flex items-center gap-2.5 cursor-pointer select-none"
                   onClick={() => toggleStep(f.key)}
                 >
-                  {/* 复选框 */}
                   <div
                     className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-all"
                     style={{
@@ -115,7 +110,6 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
                     )}
                   </div>
 
-                  {/* 步骤名 */}
                   <span className="text-xs flex-1" style={{ color: isChecked ? 'var(--color-text)' : 'var(--color-text-muted)' }}>
                     {text(...ARCH_STEP_NAMES[f.key])}
                     <span className="ml-1 text-[0.7rem]" style={{ color: 'var(--color-text-muted)' }}>
@@ -123,7 +117,6 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
                     </span>
                   </span>
 
-                  {/* 状态标签 */}
                   <span
                     data-mark={mark}
                     className={`text-[0.7rem] px-1.5 py-0.5 rounded flex-shrink-0 ${
@@ -211,7 +204,6 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
             </div>
           )}
 
-          {/* 逐步指导区域（可折叠） */}
           {selectedSteps.length > 0 && (
             <div
               className="rounded-lg overflow-hidden"
@@ -252,7 +244,6 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
               {text('请至少勾选一个步骤', 'Select at least one section.')}
             </p>
           )}
-          {/* 前置校验失败提示 */}
           {guardError && (
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs bg-yellow-500/10 border border-yellow-500/30 text-[var(--color-warning-text)]">
               <AlertCircle size={13} className="flex-shrink-0 mt-0.5 text-[var(--color-warning)]" />

@@ -44,10 +44,6 @@ export function createEmptyChapterCardDraftLedger(): ChapterCardDraftLedger {
   return { version: 1, projects: [] }
 }
 
-/**
- * 章节号是跨草稿、正文、摘要和向量数据的稳定键，本轮普通编辑不可修改。
- * 即使调用方绕过类型约束传入 chapterNumber，运行时也恢复原章节号。
- */
 export function updateEditableChapterBlueprintField<K extends EditableChapterBlueprintField>(
   blueprint: ChapterBlueprint,
   key: K,
@@ -96,11 +92,6 @@ export function getChapterCardProjectDraft(
   return ledger.projects.find(project => project.projectKey === projectKey)
 }
 
-/**
- * 以 dirtyChapterNumbers 作为本地修改集合合并最新数据库蓝图。
- * 脏章节采用本地值；未修改章节及远端新增章节采用 remote；
- * 尚未进入 remote 的本地新增脏章节继续保留。
- */
 export function mergeChapterCardDraftWithRemote(
   draft: ChapterCardProjectDraft,
   remoteBlueprints: readonly ChapterBlueprint[],
@@ -141,10 +132,6 @@ export function mergeChapterCardDraftWithRemote(
   }
 }
 
-/**
- * 等待远端期间允许用户继续编辑；远端返回后才读取最新账本，并在同一同步执行段内
- * 完成项目校验、三方选择和提交，避免旧 projectDraft 覆盖刚发生的本地编辑。
- */
 export async function refreshChapterCardDraftFromRemote({
   projectKey,
   loadRemote,

@@ -47,7 +47,6 @@ function pointerWorldPosition(
 
 function nodeRadius(node: GraphNode): number { return 14 + node.importance * 2 }
 
-/** Stable-ID, bounded relationship projection. Layout state never leaves this component. */
 export default function RelationshipGraph({ characters, selectedCharacterId, onOpenCharacter }: RelationshipGraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const nodesRef = useRef<GraphNode[]>([])
@@ -229,7 +228,6 @@ export default function RelationshipGraph({ characters, selectedCharacterId, onO
     } else drawFrame()
 
     const themeObserver = new MutationObserver(drawFrame)
-    // 深浅色切换时根元素换 .dark，纸墨作用域换 data-theme，两处都要重画
     const inkRoot = canvas.closest<HTMLElement>('.paper-ink')
     for (const root of new Set<HTMLElement>([document.documentElement, ...(inkRoot ? [inkRoot] : [])])) {
       themeObserver.observe(root, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
@@ -278,7 +276,6 @@ export default function RelationshipGraph({ characters, selectedCharacterId, onO
 
   return (
     <div className="relative flex h-full overflow-hidden">
-      {/* 图谱框窄时（1024 宽窗口的角色名单页约 385px）：工具条不越出画布框，中心人物让位给按钮，人物侧栏跟着收窄 */}
       <div className="@container relative min-w-0 flex-1 overflow-hidden">
         <div className="absolute right-3 top-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center justify-end gap-1 rounded-md border px-1 py-1" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-panel)', color: 'var(--color-text)' }}>
           <span className="min-w-0 max-w-32 truncate px-1 text-[11px] @max-[22rem]:hidden" title={centerName}>{text('中心', 'Center')}: {centerName}</span>

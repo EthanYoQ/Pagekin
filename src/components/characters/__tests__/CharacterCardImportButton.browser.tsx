@@ -44,7 +44,6 @@ function button(label: string) {
 }
 async function click(label: string) {
   await act(async () => button(label).click())
-  // Existing confirmation dialogs resolve after their 200 ms exit animation.
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 250)) })
 }
 async function paste(value: string) {

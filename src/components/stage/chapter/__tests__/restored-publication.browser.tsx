@@ -40,7 +40,6 @@ async function mount() {
   await act(async () => root!.render(<StageWorkspace library={false} focus={false} />))
 }
 
-/** 侧栏点第 3 章走的就是 openChapter：没开过就读正文开新标签，开着就切过去。 */
 async function openChapterThree() {
   await act(async () => { await openChapter(3) })
 }

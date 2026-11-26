@@ -178,7 +178,6 @@ describe('设定页', () => {
       expect(useEditorStore.getState().tabs.map(tab => tab.type)).toEqual(['config', 'knowledge-base'])
     })
 
-    // 换作品时会话先失效，save 返回 false 就停了，走不到位置比较。
     it('打开了另一部作品', async () => {
       await clickNextWithSlowSave()
       const other = { projectId: 'harbor', leaseId: 'lease-2', projectPath: 'C:\\novels\\harbor' }
@@ -441,7 +440,6 @@ describe('设定页', () => {
     project({ narrativeThreadDormantChapterThreshold: 5 })
     await mount()
     const input = host!.querySelector<HTMLInputElement>('input[aria-label="伏笔沉寂提醒（章）"]')!
-    // 上一条用例留下的提示会挡住指针，直接聚焦后用键盘输入。
     await act(async () => input.focus())
     await userEvent.keyboard('{End}{Backspace}')
     await userEvent.keyboard('7')

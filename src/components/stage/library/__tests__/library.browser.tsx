@@ -85,7 +85,6 @@ async function type(input: HTMLInputElement, value: string) {
 }
 
 beforeEach(async () => {
-  // 书房按桌面宽度排版。默认 414 宽的视口放不下，对话框关闭后焦点回到菜单按钮会横向滚动页面，晚到的滚动把刚打开的菜单关掉。
   await resizeViewport(1440, 900)
   invoke = vi.fn(async (channel: string) => {
     if (channel === 'project:peek-overview') return READY
@@ -242,7 +241,6 @@ describe('书房', () => {
   })
 
   it('窗口最窄 1024×640 时书房不横向溢出，书架菜单与确认框照常可用', async () => {
-    // 真实应用的最小窗口（electron/main.ts 的 minWidth、minHeight）。
     await resizeViewport(1024, 640)
     openCurrent()
     useProjectStore.setState({ recentProjects: [LIGHTHOUSE, ISLAND] })

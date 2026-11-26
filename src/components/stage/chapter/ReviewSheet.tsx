@@ -27,7 +27,6 @@ function FindingStatus({ item, checklist }: { item: EditableReviewItem; checklis
   return label ? <span className="stage-ch-issue-status" data-status={status}>{label}</span> : null
 }
 
-/** 一条审稿意见：勾选即纳入修稿；作者补充的意见与点了「编辑」的意见展开成可改的字段。 */
 function IssueCard({ item, checklist, onEdit }: {
   item: EditableReviewItem
   checklist: Checklist
@@ -114,10 +113,6 @@ function IssueCard({ item, checklist, onEdit }: {
   )
 }
 
-/**
- * 单章视图的审稿侧页（ReviewReport 的数据逻辑）：严重、建议、待核实三格统计，逐条勾选纳入修稿，
- * 添加作者意见与总体修稿指导，合并后复验未完成时可重试。勾选数与章节动作条上的「按 N 项意见修稿」同步。
- */
 export default function ReviewSheet({ checklist, subtitle, reportText, onClose }: {
   checklist: Checklist
   subtitle: string
@@ -130,7 +125,6 @@ export default function ReviewSheet({ checklist, subtitle, reportText, onClose }
   const actionable = items.filter(item => item.severity !== 'pass')
   const passed = items.length - actionable.length
   const count = (severity: EditableReviewItem['severity']) => items.filter(item => item.severity === severity).length
-  // 改动已确认的清单就是重新编辑：之后修稿前会再确认一次。
   const edit = (item: EditableReviewItem, patch: Partial<EditableReviewItem>) => {
     checklist.updateItem(item.id, patch)
     checklist.setEditingChecklist(true)

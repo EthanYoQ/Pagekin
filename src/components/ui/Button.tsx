@@ -5,14 +5,12 @@ import { clsx } from 'clsx'
 
 type NativeButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement>
 
-/** 旧组件沿用的按钮变体名，渲染时一律换成纸墨六种（见 LEGACY_INK_VARIANT）。 */
 type LegacyButtonProps = NativeButtonProps & {
   variant?: 'default' | 'ai' | 'destructive' | 'outline' | 'ghost' | 'success' | null
   size?: 'default' | 'sm' | 'lg' | 'icon' | null
   asChild?: boolean
 }
 
-/** 纸墨按钮：主、次、文字（幽灵）、危险描边、危险实心与图标。 */
 export type InkButtonVariant = 'primary' | 'secondary' | 'text' | 'danger' | 'danger-solid' | 'icon'
 export type InkButtonSize = 'sm' | 'md' | 'lg'
 
@@ -32,15 +30,9 @@ function isInkButton(props: ButtonProps): props is InkButtonProps {
 type LegacyVariant = NonNullable<LegacyButtonProps['variant']>
 type LegacySize = NonNullable<LegacyButtonProps['size']>
 
-/**
- * 沿用的旧对话框与旧面板（导入、导出、项目备份、模型表单、架构编辑等）仍写旧变体名，渲染时一律换成纸墨六种。
- * 旧面板拿 default 标切换按钮的选中项（带 aria-pressed 或 aria-selected），那不是这一层的主操作：一律换成次按钮，
- * 选中时强调色边线加淡底；aria-pressed 的选中项前面再加对勾，不只靠颜色区分（标签页不加）。
- */
 const LEGACY_INK_VARIANT: Record<LegacyVariant, Exclude<InkButtonVariant, 'icon'>> = {
   default: 'primary', ai: 'primary', success: 'primary', outline: 'secondary', ghost: 'text', destructive: 'danger-solid',
 }
-/** 旧尺寸 28/24/32px 换成纸墨最接近的一档。 */
 const LEGACY_INK_SIZE: Record<LegacySize, InkButtonSize> = { default: 'sm', sm: 'sm', lg: 'md', icon: 'sm' }
 
 function inkClasses(variant: InkButtonVariant, size: InkButtonSize, className: string | undefined) {

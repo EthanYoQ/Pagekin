@@ -19,7 +19,6 @@ interface PlanningRecoveryFrameProps {
   children: ReactNode
 }
 
-/** 大纲与蓝图恢复稿共用的骨架；样式沿用蓝图页的 `.stage-bp*`。 */
 export function PlanningRecoveryFrame({ label, eyebrow, heading, busy, end, proceed, save, primary, tools, notices, error, original, children }: PlanningRecoveryFrameProps) {
   const text = useLocaleStore(state => state.text)
   const endId = useId()

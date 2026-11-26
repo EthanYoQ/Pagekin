@@ -8,10 +8,6 @@ import { commandLabel } from './shortcut-keys'
 import { stageTabName } from './stage-text'
 import { discardAndCloseTabs, requestCloseTab } from './tab-close'
 
-/**
- * 一次关几个标签时，有未保存修改的那几个合在一起问一次（没修改的已经关上）。
- * 由内容面板挂在标签条外面：关掉没修改的之后只剩一个标签时标签条会收起，确认不能跟着它卸掉。
- */
 export function CloseTabsConfirm({ pending, onSettled }: { pending: readonly string[] | null; onSettled: () => void }) {
   const text = useLocaleStore(s => s.text)
   const count = pending?.length ?? 0
@@ -33,7 +29,6 @@ export function CloseTabsConfirm({ pending, onSettled }: { pending: readonly str
   )
 }
 
-/** 标签条右端的菜单：列出已打开的页面供跳转（F-184），并能关闭当前、其他、右侧或全部标签（F-183）。 */
 export default function StageTabMenu({ tabs, activeTabId, onSelect, onCloseMany }: {
   tabs: readonly EditorTab[]
   activeTabId: string | null

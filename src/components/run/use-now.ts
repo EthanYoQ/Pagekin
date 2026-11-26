@@ -21,7 +21,6 @@ function subscribe(listener: () => void) {
   }
 }
 
-/** 每秒刷新的当前时间，所有显示时长的地方共用一个时钟，同屏的数字才一致。只在显示时长的小组件里用。 */
 export function useNow(): number {
   return useSyncExternalStore(subscribe, () => now)
 }

@@ -110,3 +110,28 @@
 - `archSectionHasContent`：一节有没有内容：去掉空白后不为空，作者写的短内容也算（要显示出来，生成时会被覆盖）。
 - `judgeArchCore`：前提、世界观、情节大纲三节「有内容」与「已确认」的唯一判定，架构页、架构文档页的生成对话框与流程脊共用；角色名单由调用方按名单是否就绪补上。 有内容见 archSectionHasContent。 已确认：有内容，且前提、世界观超过 50 字，情节大纲按分批进度写满全书。
 - `ARCH_STEP_NAMES`：架构四节的名字（中、英）。架构页、生成对话框、提交提示与单节文档标签共用这一张；名单页的图形视图叫「关系图谱」，不与名单混名。
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/run/__tests__/outline-recovery-guide.test.ts`
+
+- `cells`：已保存 × 写状态 × 续写状态 中主进程真会给出的组合；各格写明作者该做什么。
+- 提示叫作者点「继续生成」时它就是主按钮；说不能继续时没有主按钮。
+
+### `src/components/run/run-recovery.ts`
+
+- `OutlineRecoveryGuide`：大纲恢复稿在（已保存 × 写状态 × 续写状态）表里的哪一格，以及这一格给作者的说明和主操作。
+- `planningRemainingText`：恢复稿编辑器顶部的待完成范围；只剩一章时与标题一样写「第 6 章」。
+- `outlineSourceInvalidNote`：升级前以现行规则判无效的大纲开跑、不能继续的大纲恢复稿：说明是重复章号、乱序还是章号与范围对不上；不是来源无效时为 null，由调用方用通用说明。
+- `outlineSourceChangedBlocked`：大纲恢复稿因来源（模型设置、作品设定、提示词模板或写作 Skill）已变而被封锁写回。
+- `outlineSourceChangedNote`：来源已变的大纲恢复稿：只能查看或复制；正式大纲还没有这一批时（含最后一章生成完、正式保存被来源检查拒绝） 要从本批起始章重新生成。其余情况为 null。
+
+### `src/components/stage/PlanningRecoveryFrame.tsx`
+
+- `PlanningRecoveryFrame`：大纲与蓝图恢复稿共用的骨架；样式沿用蓝图页的 `.stage-bp*`。
+
+### `src/components/stage/architecture/ArchitectureSection.tsx`
+
+- `CandidateNotice`：候选与续写的提示条：世界观或大纲生成到一半停下时，未完成的候选不写入正式内容，作者可以看、复制或接着写。
+- `restart`：来源已变的恢复稿不能写回：主动作是从本批起始章重新生成，打开恢复稿只作查看。
+- `OutlineNotice`：大纲的状态提示：被打断、分批生成还有没写到的章，或正文带分批标记而检查点已对不上。

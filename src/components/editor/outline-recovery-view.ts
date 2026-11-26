@@ -4,7 +4,6 @@ import { outlineRecoveryGuide, planningRemainingText } from '../run/run-recovery
 import type { NoticeTone } from '../ui/Notice'
 
 export interface OutlineRecoveryView {
-  /** editable：作者可以保存；saved：已保存，只能复制；waiting：生成还在进行；blocked：要重新生成、已续写过或读不出，不能写回。 */
   phase: 'editable' | 'saved' | 'waiting' | 'blocked'
   notice: { tone: NoticeTone; title: string; lines: string[] }
   continuable: boolean

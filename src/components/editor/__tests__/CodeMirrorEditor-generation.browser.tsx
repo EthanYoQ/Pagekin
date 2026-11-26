@@ -30,7 +30,6 @@ let diagnostics: Record<string, unknown> | undefined
 
 const APP_MIN_WINDOW_WIDTH = 1024
 const nextFrames = () => act(async () => { await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))) })
-/** 三击选中一行，等选区工具条出现。工具条在下一帧定位后才渲染，不能在 act 里等它：act 结束前 React 不提交渲染。 */
 const selectLine = async (text: string, options?: { exact: boolean }) => {
   await act(async () => page.getByText(text, options).click({ clickCount: 3 }))
   await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' })).toBeVisible()
@@ -127,7 +126,6 @@ describe('CodeMirror editor AI generation boundary', () => {
     await expect.element(page.getByRole('textbox', { name: 'Replace' })).toBeVisible()
 
     await act(async () => page.getByText('Original passage').click({ clickCount: 3 }))
-    // Bubble positioning commits on an animation frame; do not wait for it inside act.
     await expect.element(page.getByRole('button', { name: 'Refine' })).toBeVisible()
     await act(async () => page.getByRole('button', { name: 'Refine' }).click())
 
@@ -616,7 +614,6 @@ describe('CodeMirror editor AI generation boundary', () => {
 
     const note = page.getByRole('textbox', { name: '批注意见' })
     await expect.element(note).toBeVisible()
-    // 表单长高后在下一帧绘制前夹紧；量用户看到的那一帧，不量还没排版过的 DOM
     await nextFrames()
     expect(note.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(0)
   })
@@ -1071,7 +1068,6 @@ const annotateLine = async (text: string, note: string) => {
   await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill(note))
   await act(async () => page.getByRole('button', { name: '添加批注' }).click())
 }
-/** 正文会滚过面板所在高度，所以只看水平方向是否重叠。 */
 const overlapsColumn = (panel: Element) => {
   const box = panel.getBoundingClientRect()
   const column = container.querySelector('.cm-content')!.getBoundingClientRect()

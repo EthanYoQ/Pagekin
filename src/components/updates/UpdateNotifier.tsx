@@ -8,7 +8,6 @@ import { useUpdateState } from './use-update-state'
 
 const notifiedVersions = new Set<string>()
 
-/** Shows one persistent, app-wide notice for each release discovered in this renderer session. */
 export function UpdateNotifier() {
   const text = useLocaleStore(s => s.text)
   const { state } = useUpdateState()

@@ -6,11 +6,6 @@ export interface VectorRebuildPresentation {
   action: { zhCN: string; enUS: string }
 }
 
-/**
- * The rebuild action is intentionally absent until the main process confirms
- * that a usable embedding model is configured.  The status check itself never
- * contacts that provider.
- */
 export function getVectorRebuildPresentation(
   status: VectorRebuildStatus | null,
 ): VectorRebuildPresentation | null {

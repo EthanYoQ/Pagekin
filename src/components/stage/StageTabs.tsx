@@ -13,12 +13,10 @@ interface StageTabsProps {
   panelId: string
 }
 
-/** 内容区标签条。只有一个标签时由外壳收起；←→ 在标签间移动，Delete 关闭当前聚焦的标签。 */
 export default function StageTabs({ tabs, activeTabId, onSelect, onClose, tabDomId, panelId }: StageTabsProps) {
   const text = useLocaleStore(s => s.text)
   const list = useRef<HTMLDivElement>(null)
 
-  // 标签条隐藏了滚动条，激活标签在可视区外时作者看不到它，也没有可拖的滚动条
   useEffect(() => {
     list.current?.querySelector('[aria-selected="true"]')?.parentElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [activeTabId])

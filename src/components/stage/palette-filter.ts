@@ -6,15 +6,12 @@ export interface PaletteItem {
   id: string
   group: PaletteGroup
   label: string
-  /** 右侧的说明，例如章节状态或阶段进度。 */
   meta?: string
-  /** 章节号，用旧式数字显示，也用于按章号查找。 */
   chapter?: number
   keywords?: string
   run: () => void
 }
 
-/** 调用处不必为分组字面量写 as const。 */
 export function paletteItem(group: PaletteGroup, item: Omit<PaletteItem, 'group'>): PaletteItem {
   return { ...item, group }
 }
@@ -29,16 +26,11 @@ export const GROUP_LABELS: Record<PaletteGroup, [string, string]> = {
 
 const squash = (value: string) => value.toLocaleLowerCase().replace(/\s+/g, '')
 
-/** 「3」「第3章」「第 3 章」「chapter 3」都指第 3 章。 */
 export function chapterQuery(query: string): number | null {
   const match = /^(?:第|chapter|ch\.?)?(\d+)(?:章)?$/.exec(squash(query))
   return match ? Number(match[1]) : null
 }
 
-/**
- * 按输入过滤并排序。结果按分组顺序排列，与面板的分组显示一致，上下键才按看到的顺序移动；
- * 组内章号完全相同的章排最前，其次是标签以输入开头的项。
- */
 export function filterPalette(items: readonly PaletteItem[], query: string, mode: PaletteMode): PaletteItem[] {
   const pool = mode === 'chapters' ? items.filter(item => item.group === 'chapter') : items
   const needle = squash(query)

@@ -23,7 +23,6 @@ function StatusIcon({ kind }: { kind: UpdatePresentation['kind'] }) {
   return <Download aria-hidden="true" />
 }
 
-/** 重启更新被拦下时的两种对话框：有任务只能返回处理；有未保存修改时返回保存，或放弃修改后重启。 */
 function InstallBlockedDialogs({ guard }: { guard: InstallGuard }) {
   const text = useLocaleStore(s => s.text)
   const { block, dismiss, discardAndInstall, unsavedItemCount, activeRunCount } = guard
@@ -56,7 +55,6 @@ function InstallBlockedDialogs({ guard }: { guard: InstallGuard }) {
   )
 }
 
-/** 当前状态下可做的事。主操作只有一个，延后提醒是次要的文字按钮。 */
 function UpdateActions({ model, guard, compact }: { model: UpdateModel; guard: InstallGuard; compact: boolean }) {
   const text = useLocaleStore(s => s.text)
   const { presentation, manualActionError, state, isDeferring, lastReminderDays } = model
@@ -132,7 +130,6 @@ function UpdateStatus({ model, guard, compact }: { model: UpdateModel; guard: In
   )
 }
 
-/** 书房里的更新提示：只在发现新版本、下载中、待重启或出错时出现。检查更新与官方主页在设置的「关于与更新」。 */
 export function LibraryUpdateCard() {
   const model = useUpdateState()
   const guard = useUpdateInstallGuard(model.requestInstall)
@@ -145,7 +142,6 @@ export function LibraryUpdateCard() {
   )
 }
 
-/** 设置「关于与更新」里的应用更新：官方主页、检查更新与完整状态。 */
 export function UpdateSettings() {
   const text = useLocaleStore(s => s.text)
   const model = useUpdateState()

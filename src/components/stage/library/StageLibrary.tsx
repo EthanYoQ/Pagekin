@@ -73,7 +73,6 @@ function LegacyImportNotice() {
   return notice ? <Notice tone="info" title={text('导入旧项目副本', 'Import an old project copy')}>{notice}</Notice> : null
 }
 
-/** 第一次打开：书架是空的，唯一的主操作是新建作品。 */
 function EmptyLibrary({ modelMissing }: { modelMissing: boolean }) {
   const text = useLocaleStore(s => s.text)
   const legacyImportBusy = useProjectStore(s => s.legacyImportBusy)
@@ -97,7 +96,6 @@ function EmptyLibrary({ modelMissing }: { modelMissing: boolean }) {
   )
 }
 
-/** 书房：开始、书架与右侧的作品概览。点封面只预览，不会打开作品。 */
 export default function StageLibrary() {
   const text = useLocaleStore(s => s.text)
   const currentProject = useProjectStore(s => s.currentProject)
@@ -108,7 +106,6 @@ export default function StageLibrary() {
   const [removing, setRemoving] = useState<Book | null>(null)
   const [deleting, setDeleting] = useState<{ name: string; path: string } | null>(null)
 
-  // 最近项目读到之前不下「书架是空的」的结论，老用户启动时不会先闪一下空书房。
   const listed = useProjectStore(s => s.recentProjectsLoaded)
   const books = shelf.recentProjects
   const waiting = books.length === 0 && !currentProject
@@ -159,7 +156,6 @@ export default function StageLibrary() {
       )
     }
     if (currentProject) {
-      // 流程脊数据按这次打开载入完之前，不猜下一步，只回到作品。
       const next = view.stages.length > 0 ? nextStep(view.stages, view.chapters, text) : null
       return (
         <BookOverview

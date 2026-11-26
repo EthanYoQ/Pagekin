@@ -33,7 +33,6 @@ const workflows = vi.hoisted(() => ({
   createFinalizeWorkflow: vi.fn(),
   createRepairFinalizeWorkflow: vi.fn(),
 }))
-// 用以 /src 开头的路径：检出路径含空格时（本机 Vibe Coding Project），浏览器模式匹配不到相对路径的模拟。
 vi.mock('/src/services/workflows/chapter-workflow.ts', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../../services/workflows/chapter-workflow')>()
   for (const [name, spy] of Object.entries(workflows)) spy.mockImplementation(actual[name as keyof typeof workflows] as never)
@@ -61,7 +60,6 @@ async function mount() {
   await act(async () => root!.render(<StageWorkspace library={false} focus={false} />))
 }
 
-/** 按流程脊的方式载入这一章的稿，再打开它的单章视图。 */
 async function openDraft(draftId: number) {
   await act(async () => { await useDraftStore.getState().loadAllDrafts(SESSION.projectPath, SESSION) })
   const draft = Object.values(useDraftStore.getState().draftsByChapter).flat().find(candidate => candidate.id === draftId)!
@@ -70,9 +68,7 @@ async function openDraft(draftId: number) {
 
 const activeTab = () => useEditorStore.getState().tabs.find(tab => tab.id === useEditorStore.getState().activeTabId)
 const click = (name: string | RegExp) => act(async () => page.getByRole('button', { name, exact: typeof name === 'string' }).click())
-/** 勾选框藏在纸墨的方框后面，作者点的是整行标签。 */
 const toggle = (name: RegExp) => act(async () => page.getByRole('checkbox', { name }).element().closest('label')!.click())
-/** 工作流定义里能比较的字段：类型与标题。 */
 const started = () => startWorkflow.mock.calls.map(([definition]) => ({ type: definition.type, title: definition.title }))
 
 beforeEach(async () => {
@@ -211,7 +207,6 @@ describe('单章视图的主按钮随五种状态变化', () => {
     await openDraft(draft.id)
     await expect.element(page.getByRole('button', { name: '按 2 项意见修稿' })).toBeVisible()
 
-    // 第二次审稿留下新的审稿与它自己的复验周期；审稿工作流结束后单章视图重读这一稿的审稿。
     const second = backend.addReview(draft)
     backend.state.cycles.set(second.id, { ...backend.state.cycles.get(second.id)!, findings: [finding('second-cycle-finding')] })
     await act(async () => globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'review', projectPath: SESSION.projectPath, projectSession: SESSION, runId: 'second-review' }))
@@ -299,7 +294,6 @@ describe('单章视图的主按钮随五种状态变化', () => {
   ) => {
     useLocaleStore.setState({ locale })
     const draft = backend.addDraft({ status: 'draft' })
-    // 真实模型给的「未发现客观问题」：几条都是通过或待作者判断，没有一条默认要修。
     backend.addReview(draft, JSON.stringify({ summary: '未发现客观问题。', items: [
       { category: '措辞', severity: 'pass', description: '语言自然。' },
       { category: '节奏', severity: 'pass', description: '节奏合适。' },
@@ -520,7 +514,6 @@ describe('单章视图的主按钮随五种状态变化', () => {
 
   describe('#502 只给重试有用的失败步骤摆重试', () => {
     const IPC = "Error invoking remote method 'project-session:invoke': Error: "
-    /** 带重试按钮的行（按步骤名），以及卡片右上角的整卡重试按钮。 */
     const retryRows = () => [...host!.querySelectorAll('.stage-ch-post-step')]
       .filter(row => row.querySelector('button')).map(row => row.querySelector('b')!.textContent)
     const cardRetry = () => host!.querySelector('.stage-ch-post-head button')?.textContent ?? null
@@ -690,7 +683,6 @@ describe('单章视图的主按钮随五种状态变化', () => {
   })
 })
 
-/** 单章视图旁边摆上真实的流程脊，两边读的是同一份作品数据。 */
 async function mountWithSpine() {
   const SpineBeside = () => {
     const view = useStageView()
@@ -704,7 +696,6 @@ async function mountWithSpine() {
   await act(async () => root!.render(<><SpineBeside /><StageWorkspace library={false} focus={false} /></>))
 }
 
-/** 流程脊上第 3 章那一行。 */
 const spineRow = () => page.getByRole('list', { name: '章节' }).getByRole('button', { name: /雨夜车站/ })
 
 describe('流程脊与单章视图同一个阶段', () => {
@@ -821,7 +812,6 @@ describe('确认审稿清单的往返期间换了作品，回来的结果不碰�
   const HARBOR = { projectId: 'harbor', leaseId: 'harbor-lease', projectPath: 'C:\\novels\\harbor' }
   const RUN_SHEET = { kind: 'run' as const, tab: 'active' as const }
 
-  /** 卡住确认清单读审稿原文的那次 db:review-get-full，返回放行函数。 */
   function holdReviewRead() {
     const answer = backend.invoke.getMockImplementation()!
     let release = () => {}
@@ -837,7 +827,6 @@ describe('确认审稿清单的往返期间换了作品，回来的结果不碰�
     return { held, release }
   }
 
-  /** 换到另一次打开：作品与会话一起换，作者在新作品里开着运行侧页。 */
   async function switchTo(session: { projectId: string; leaseId: string; projectPath: string }, project: ProjectData) {
     setActiveProjectSessionContext(session)
     await act(async () => useProjectStore.setState({ currentProject: project }))
@@ -900,7 +889,6 @@ describe('确认审稿清单的往返期间换了作品，回来的结果不碰�
 describe('长章节读到底，章节动作条仍在眼前', () => {
   const LONG = Array.from({ length: 160 }, (_, index) => `第 ${index + 1} 段。雨还在下，站台的灯一盏接一盏地熄了，他把信纸折好又展开。`).join('\n\n')
 
-  /** 合并视图共 16 处改动（每十段改一处）。 */
   async function openLongMerge() {
     const draft = backend.addDraft({ status: 'draft', content: LONG })
     backend.addReview(draft)
@@ -911,7 +899,6 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
 
   async function scrollToEndAndHit(name: string) {
     const scroller = document.querySelector<HTMLElement>('.stage-ch-scroll')!
-    // 编辑器量完行高、侧页挤窄纸面后正文还会变长，每次重试都重新滚到底。
     await vi.waitFor(() => {
       scroller.scrollTop = scroller.scrollHeight
       expect(scroller.scrollTop + scroller.clientHeight).toBeGreaterThanOrEqual(scroller.scrollHeight - 1)
@@ -1005,9 +992,7 @@ describe('长章节读到底，章节动作条仍在眼前', () => {
     const oneRow = bar.offsetHeight
     host!.style.width = '1028px'
     await vi.waitFor(() => expect(bar.offsetHeight).toBeGreaterThan(oneRow))
-    // 把下一个焦点摆在旧条高之下、新条高之内：只按旧条高让位时浏览器认为它已可见，不滚动
     scroller.scrollTop += target.getBoundingClientRect().top - (scroller.getBoundingClientRect().top + oneRow + 10)
-    // 作者按键前至少过了两帧，条高的变化已经画出来
     for (let frame = 0; frame < 2; frame++) await new Promise(requestAnimationFrame)
     await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
     expect(document.activeElement).toBe(target)
@@ -1320,7 +1305,6 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await expect.element(page.getByText(/合并后会自动复验/)).toBeVisible()
   })
 
-  /** 之后的审修循环读都失败；给了审稿 id 时只让那份审稿的读失败。 */
   function failCycleReads(only?: number) {
     const answer = backend.invoke.getMockImplementation()!
     const failed = { count: 0 }

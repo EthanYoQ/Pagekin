@@ -31,7 +31,6 @@ import { installChapterTabRouting, isChapterViewTab, isProseDocumentTab } from '
 import { stageTabName } from './stage-text'
 import { cancelCloseTab, closeCleanTabs, confirmCloseTab, requestCloseTab, STAGE_CONTENT_ID } from './tab-close'
 
-/** 每种标签对应的页面。架构文档（含大纲恢复稿与角色名单全文）沿用 ArchFileViewer。 */
 function TabContent({ tab, project }: { tab: EditorTab; project: ProjectData }) {
   const text = useLocaleStore(s => s.text)
   const sameProject = sameProjectPathKey(tab.projectKey, project.path)
@@ -70,13 +69,8 @@ const tabbables = (root: Element) => [...root.querySelectorAll<HTMLElement>(TABB
 const isEditable = (target: EventTarget | null) => target instanceof HTMLElement
   && (target.isContentEditable || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)
 
-/** 侧页浮起（stage-panel.css 的容器查询）时才盖住内容区右侧；以样式为准，不在这里重复浮起的宽度阈值。 */
 const floatingSheet = (slot: HTMLElement | null) => slot && getComputedStyle(slot).position === 'absolute' ? slot : null
 
-/**
- * 浮起时焦点不停在被侧页整个盖住的控件上（内容区与设置页都算；Tab、方向键、程序化 focus、窗口变窄都算）：
- * 顺着焦点移动的方向跳到下一个看得见的，后面没有了就进侧页，前面没有了就停在所在区域本身（可聚焦时）或进侧页。
- */
 function moveFocusOffSheet(body: Element, target: Element, sheetSlot: HTMLElement, backward: boolean) {
   if (sheetSlot.contains(target)) return
   const sheet = sheetSlot.getBoundingClientRect()
@@ -84,7 +78,6 @@ function moveFocusOffSheet(body: Element, target: Element, sheetSlot: HTMLElemen
   if (!covered(target)) return
   const region = [...body.children].find(child => child.contains(target)) as HTMLElement | undefined
   if (!region) return
-  // 方向键换选的分段按钮在换选前还是 tabIndex -1，不在 Tab 序列里，所以按文档位置而不是序列下标找下一个
   const follows = (element: Element) => (target.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
   const order = tabbables(region).filter(element => element !== target && follows(element) !== backward)
   const next = (backward ? order.reverse() : order).find(element => !covered(element))
@@ -112,8 +105,6 @@ export default function StageWorkspace({ library, focus }: { library: boolean; f
   const pendingName = pending ? stageTabName(pending, text) : ''
   const [closingMany, setClosingMany] = useState<readonly string[] | null>(null)
   const sheetSlotRef = useRef<HTMLDivElement>(null)
-  // 浮起的侧页盖着内容区，焦点在内容区时 Esc 也收起它；并排时 Esc 只在侧页里有效，与原来一样。
-  // 打字处（输入框、正文编辑器）与输入法组字时的 Esc 属于输入，设置页与对话框的 Esc 归它们自己。
   const closeFloatingSheet = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape' || event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return
     if (isComposing(event.nativeEvent) || isModalOpen() || settingsOpen || isEditable(event.target)) return
@@ -126,7 +117,6 @@ export default function StageWorkspace({ library, focus }: { library: boolean; f
 
   const activeTab = tabs.find(tab => tab.id === activeTabId)
   useEffect(() => installChapterTabRouting(), [])
-  // 窗口变窄让侧页浮起时没有焦点事件，焦点可能还停在刚被盖住的控件上：主区域尺寸变化时查一次。
   const sheetMounted = sheet?.kind === 'run' && !focus && !library && project !== null
   useEffect(() => {
     const slot = sheetSlotRef.current
@@ -152,7 +142,6 @@ export default function StageWorkspace({ library, focus }: { library: boolean; f
     )
   }
 
-  // 设置页盖在内容区上，标签内容保持挂载（编辑器的撤销历史、滚动位置不丢），运行侧页照常在右侧。
   const showTabs = !focus && !settingsOpen && tabs.length > 1
   return (
     <main className="stage-panel">

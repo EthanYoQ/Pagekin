@@ -10,7 +10,6 @@ import { commandLabel } from '../shortcut-keys'
 
 const JAPANESE_ENDONYM = '日本語'
 
-/** 一行设置：左边标题与说明，右边控件与标题对齐；children（示例句、错误）占整行，放在下面。 */
 function Row({ title, desc, control, children, htmlFor }: { title: string; desc?: ReactNode; control: ReactNode; children?: ReactNode; htmlFor?: string }) {
   return (
     <div className="stage-set-row">
@@ -26,7 +25,6 @@ function Row({ title, desc, control, children, htmlFor }: { title: string; desc?
 
 const THEME_KEYS = new Set(['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'])
 
-/** 浅色与深色两张卡片的单选组：整组一个 Tab 停靠点，方向键换选并移动焦点（与 SegmentedControl 一致，带修饰键时不接管）。 */
 function ThemeChoice() {
   const text = useLocaleStore(s => s.text)
   const theme = useThemeStore(s => s.theme)

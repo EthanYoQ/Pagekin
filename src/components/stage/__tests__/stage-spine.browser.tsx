@@ -24,7 +24,6 @@ afterEach(async () => {
   host = undefined
 })
 
-/** 时间取数据库 datetime('now') 的写法；不给时按版本号排在同一天里。 */
 const draft = (chapterNumber: number, version: number, status: DraftMeta['status'], createdAt = `2026-10-12 0${version}:00:00`, updatedAt = createdAt): DraftMeta => ({
   id: chapterNumber * 10 + version, chapterNumber, version, status, createdAt, updatedAt, source: 'write',
   filePath: `ai-novel://draft/${chapterNumber * 10 + version}`, fileName: `draft_v${version}.md`,
@@ -38,7 +37,6 @@ function facts(overrides: Partial<WorkFacts> = {}): WorkFacts {
   return { config: READY_CONFIG, architecture: ALL_ARCHITECTURE, blueprints: blueprints(12), drafts: {}, runningChapters: new Set(), ...overrides }
 }
 
-/** 写作中的作品：1、2 章定稿，3 章已审稿（草稿上有一份审稿，还有一份旧草稿归档），4 章已修稿，5 章草稿，6 章正在生成。 */
 const WRITING = facts({
   drafts: {
     1: [draft(1, 1, 'finalized')],
@@ -74,10 +72,8 @@ describe('四个阶段的状态由项目数据派生', () => {
     expect(stages[1]).toMatchObject({ filled: 2, total: 4, progress: { state: 'active', ratio: 0.5 } })
     expect(stages[2]).toMatchObject({ planned: 3, total: 12, progress: { state: 'done' } })
     expect(stages[3].progress).toEqual({ state: 'todo' })
-    // 用户决定 B（#394 §6）：已有蓝图时架构没写完不拉回架构，落点跳到下一个未完成的阶段。
     expect(landingStage(stages)).toBe('manuscript')
     expect(landingStage(deriveStages(facts({ architecture: { premise: true, characters: true }, blueprints: [] })))).toBe('architecture')
-    // 已有正文就落在写作位置：没有蓝图（大纲没写完或已写完）也不落到空的蓝图页。
     const written = { blueprints: [], drafts: { 1: [draft(1, 1, 'finalized')] } }
     expect(landingStage(deriveStages(facts({ ...written, architecture: { premise: true, characters: true } })))).toBe('manuscript')
     expect(landingStage(deriveStages(facts(written)))).toBe('manuscript')
@@ -132,7 +128,6 @@ describe('四个阶段的状态由项目数据派生', () => {
     ])
     expect(rows[2].draft?.version).toBe(2)
     expect(rows[1].draft?.status).toBe('finalized')
-    // 用户决定（#407 第 2 轮）：几章都在写时落在最后一章在写的。
     expect(focusChapter(rows)?.number).toBe(5)
   })
 })

@@ -6,7 +6,6 @@ import { useLocaleStore } from '../stores/locale-store'
 interface Props {
   children: ReactNode
   fallbackLabel?: string
-  /** 自定义的出错界面，替代默认的错误详情与重试按钮；传函数时拿到重试（清掉错误、重新渲染子树）。 */
   fallback?: ReactNode | ((retry: () => void) => ReactNode)
 }
 
@@ -16,7 +15,6 @@ interface State {
   componentStack: string
 }
 
-/** 全局 Error Boundary — 防止单个组件崩溃导致整个 React 树卸载 */
 export class ErrorBoundary extends Component<Props, State> {
   static contextType = createContext(undefined)
   declare context: ContextType<typeof ErrorBoundary.contextType>

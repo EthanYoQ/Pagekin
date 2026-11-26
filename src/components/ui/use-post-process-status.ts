@@ -7,11 +7,6 @@ import { captureProjectSession, isProjectSessionCurrent } from '../project-sessi
 
 export type StepPresentation = 'success' | 'pending' | 'failed'
 
-/**
- * A fresh post-process run persists every step before it attempts any of them.
- * The database default is `ok = false`, so distinguish that pending shape from
- * a failed attempt by requiring durable failure evidence.
- */
 export function getStepPresentation(step: PostProcessStatus['steps'][string]): StepPresentation {
   if (step.ok) return 'success'
 
@@ -23,10 +18,6 @@ export function getStepPresentation(step: PostProcessStatus['steps'][string]): S
   return hasFailureEvidence ? 'failed' : 'pending'
 }
 
-/**
- * 读一个后处理 scope 的最新一次运行，定稿完成或任一工作流结束时重读。
- * 定稿视图的后处理步骤用它。busy 由忙转闲时也重读：失败的修复不发 WORKFLOW_COMPLETE，否则失败说明会停在上一次。重读期间 refreshing 为真。
- */
 export function usePostProcessStatus(scope: string, busy = false) {
   const [status, setStatus] = useState<PostProcessStatus | null>(null)
   const [loading, setLoading] = useState(true)

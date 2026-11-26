@@ -19,7 +19,6 @@ function snapshot<T>(store: StoreApi<T>): () => void {
 }
 const restores = [snapshot(useDraftStore), snapshot(useEditorStore), snapshot(useStageStore), snapshot(useProjectStore)]
 
-/** 主进程的草稿接口：每章一份草稿，按章设定返回前的延迟，或直接失败。 */
 function installDrafts(behavior: Record<number, { delayMs?: number; error?: string; empty?: boolean }>) {
   const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     if (channel === 'db:draft-list') {

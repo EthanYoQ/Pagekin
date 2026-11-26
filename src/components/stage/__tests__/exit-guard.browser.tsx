@@ -16,7 +16,6 @@ import ExitGuardDialog from '../ExitGuardDialog'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-/** 关窗守卫由 App 在外壳之外持有；测试按 App 的方式把它接到退出确认上。 */
 function GuardedExit() {
   return <ExitGuardDialog guard={useWindowCloseGuard()} />
 }

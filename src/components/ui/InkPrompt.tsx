@@ -7,7 +7,6 @@ import { Button } from './Button'
 import { createInkOverlayMount } from './ink-overlay'
 import { keepToastStackClickable } from './ToastStack'
 
-/** alert：报错，带警示印、只有「确定」；notice：告知一件已经办完的事，不带警示印、只有「确定」；confirm：取消加确认；danger：后果用朱批排、确认为实心朱印，进场焦点落在取消上。 */
 export type InkPromptKind = 'alert' | 'notice' | 'confirm' | 'danger'
 
 export interface InkPromptOptions {
@@ -16,13 +15,11 @@ export interface InkPromptOptions {
   message: string
   confirmText: string
   cancelText?: string
-  /** 提示所属的事已经不在了（例如作者换了书）：撤回它，结果按取消算。 */
   signal?: AbortSignal
 }
 
 function InkPrompt({ kind, title, message, confirmText, cancelText, signal, onResolve }: InkPromptOptions & { onResolve: (value: boolean) => void }) {
   const [open, setOpen] = useState(true)
-  /** 第一次的决定。关掉后要淡出 140ms，这期间内容还在、按钮还点得到，后点的不能改写它。 */
   const result = useRef<boolean | null>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -57,7 +54,6 @@ function InkPrompt({ kind, title, message, confirmText, cancelText, signal, onRe
           ;(kind === 'danger' ? cancelRef : confirmRef).current?.focus()
         }}
         onPointerDownOutside={keepToastStackClickable}
-        // 关掉后 Radix 等 140ms 淡出走完、内容卸载才触发它（减少动态效果时立即），这时才把结果交给调用方
         onCloseAutoFocus={() => onResolve(result.current ?? false)}
       >
         <div className="pi-dialog-head">
@@ -84,7 +80,6 @@ function InkPrompt({ kind, title, message, confirmText, cancelText, signal, onRe
   )
 }
 
-/** 在纸墨宿主里渲染一次性的对话框；关闭后卸载挂载点，再以用户的选择 resolve。 */
 export function openInkPrompt(options: InkPromptOptions): Promise<boolean> {
   return new Promise(resolve => {
     if (options.signal?.aborted) return resolve(false)

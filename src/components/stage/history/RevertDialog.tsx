@@ -7,18 +7,14 @@ interface RevertDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   chapterNumber: number
-  /** 要回退到的那一稿，例如「草稿 v1」。 */
   source: string
-  /** 回退后新建的那一稿的版本号。 */
   nextVersion: number
-  /** 回退前的当前稿，例如「草稿 v2」。 */
   current: string
   finalized: boolean
   busy: boolean
   onConfirm: () => void
 }
 
-/** 回退不删除也不覆盖任何一稿，所以用普通对话框而不是危险确认，写明会新建哪一稿。 */
 export default function RevertDialog({ open, onOpenChange, chapterNumber, source, nextVersion, current, finalized, busy, onConfirm }: RevertDialogProps) {
   const text = useLocaleStore(s => s.text)
   return (

@@ -60,7 +60,6 @@ beforeEach(() => {
     }
     if (channel === 'db:draft-next-version') return Math.max(0, ...drafts.filter(draft => draft.chapterNumber === args[0]).map(draft => draft.version)) + 1
     if (channel === 'db:draft-create') {
-      // 与 DraftRepository.create 一致：版本号在事务里按现有最大版本加一分配，不用调用方传的值。
       const input = args[0] as { chapterNumber: number; content: string }
       beforeCreate?.()
       const id = 100 + drafts.length
@@ -167,7 +166,6 @@ describe('版本历史', () => {
     await vi.waitFor(() => expect(button('回退到此版本…')).toBeTruthy())
     await click('回退到此版本…')
     expect(document.querySelector('[role="dialog"]')!.textContent).toContain('新建一份草稿 v3')
-    // 估算出 v3 之后、新建之前，后台运行又给这一章写了一稿 v3。
     beforeCreate = () => { drafts.push({ id: 13, chapterNumber: 3, version: 3, status: 'draft', content: '后台写的一稿' }) }
     await click('新建回滚草稿')
     await vi.waitFor(() => expect(button(/草稿 v4/)).toBeTruthy())
@@ -338,7 +336,6 @@ describe('版本历史', () => {
     await vi.waitFor(() => expect(versionsColumn()).toContain('这一章还没有稿'))
   })
 
-  /** 作者看得见的「正在读取」：在页面上且不透明。 */
   const loadingShown = () => {
     const loading = host!.querySelector<HTMLElement>('[aria-label="这一章的各稿"] [role="status"]')
     return loading !== null && getComputedStyle(loading).opacity !== '0'

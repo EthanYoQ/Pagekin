@@ -12,7 +12,6 @@ type Text = (zh: string, en: string) => string
 
 const RESOURCE_ICONS: Record<ResourcePage, LucideIcon> = { plot: GitBranch, knowledge: Library, history: History }
 
-/** 未开始时说明这一步做什么，开始后给出进度。 */
 function stageMeta(status: StageStatus, text: Text): string {
   const todo = status.progress.state === 'todo'
   switch (status.stage) {
@@ -53,10 +52,8 @@ interface StageSpineProps {
   onStage: (stage: WorkStage) => void
   onChapter: (chapterNumber: number) => void
   onResource: (page: ResourcePage) => void
-  /** 设置页开着时只有「设置」是当前位置。 */
   settingsOpen?: boolean
   onSettings: () => void
-  /** 回收站里的项数；大于 0 时出现入口，不论在哪个阶段：正文阶段打不开时它是找回章节的唯一入口。 */
   trashCount?: number
   onTrash?: () => void
 }
@@ -69,7 +66,6 @@ export default function StageSpine({ stages, chapters, location: activeLocation,
   const currentRow = useRef<HTMLButtonElement>(null)
   const chapterListShown = currentStage === 'manuscript' && chapters.length > 0
 
-  // 章节列表可能晚于当前章出现（打开作品时草稿索引后到），列表出现时也要把当前章滚进来
   useEffect(() => {
     currentRow.current?.scrollIntoView({ block: 'nearest' })
   }, [currentChapter, chapterListShown])

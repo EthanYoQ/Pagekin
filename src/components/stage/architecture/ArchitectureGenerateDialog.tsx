@@ -11,7 +11,6 @@ import { InkDialog } from '../InkDialog'
 import { SECTION_ORDER } from './architecture-sections'
 import { pluralEn } from '../../../shared/plural-en'
 
-/** 生成架构的确认对话框。表单与校验沿用 ArchitectureConfirmDialog 的 useArchitectureConfirmForm，这里只换成纸墨样式。 */
 export default function ArchitectureGenerateDialog(props: ArchitectureConfirmFormOptions) {
   const text = useLocaleStore(s => s.text)
   const form = useArchitectureConfirmForm(props)

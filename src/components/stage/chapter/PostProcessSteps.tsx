@@ -15,13 +15,6 @@ function stepDetail(presentation: 'success' | 'pending' | 'failed' | 'retired', 
   return error ? finalizationStepErrorMessage(locale, error) : text('失败', 'Failed')
 }
 
-/**
- * 定稿视图里的后处理（F-090、F-091）：正文文件与后处理流水线逐步列出完成、处理中或失败。
- * 重试有用的失败步骤各自可以重试，「重试失败步骤」只在至少有一步能重试时出现，重跑哪些由修复工作流按同一份安排选。
- * 正文文件写入失败时重试的是已提交的发布（F-089），不重新定稿。
- * 正文文件这一步只有本次打开期间定稿过才知道结果，否则不列出。
- * 旧版本跑批里留下、现在流程已没有的步骤照常列出，不论当时成败都说明它已不再运行，不摆重试，也不算进完成数。
- */
 export default function PostProcessSteps({ chapterNumber, publication, busy, onRetryStep, onRetryFailed, onRetryPublication }: {
   chapterNumber: number
   publication: 'pending' | 'published' | undefined

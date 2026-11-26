@@ -46,7 +46,6 @@ export function BlueprintAiFindings({ chapterNumber, ai }: { chapterNumber: numb
   )
 }
 
-/** 这次点按钮的总结，页面级，因为结论常常不在当前选中的章。 */
 export function BlueprintAiSummary({ ai, onSelectChapter }: { ai: BlueprintAiCheck; onSelectChapter: (chapterNumber: number) => void }) {
   const text = useLocaleStore(s => s.text)
   const { status, checkedThroughChapter: through } = ai

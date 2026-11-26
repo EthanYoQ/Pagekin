@@ -7,12 +7,7 @@ interface MarkdownContentProps {
   streaming?: boolean
 }
 
-/** 
- * Markdown 渲染组件（含 <think> 思考过程折叠支持）
- * 用于助手对话与运行卡片的模型输出
- */
 export default function MarkdownContent({ content, streaming }: MarkdownContentProps) {
-  // 解析 <think> 标签：将内容拆分为 [thinking?, ...markdownSegments]
   const segments = parseThinkSegments(content)
 
   return (
@@ -31,7 +26,6 @@ export default function MarkdownContent({ content, streaming }: MarkdownContentP
   )
 }
 
-/** 渲染行列表为 React 元素 */
 function renderLines(lines: string[]): React.ReactNode {
   const elements: React.ReactNode[] = []
   let i = 0
@@ -39,7 +33,6 @@ function renderLines(lines: string[]): React.ReactNode {
   while (i < lines.length) {
     const line = lines[i]
 
-    // 代码块
     if (line.startsWith('```')) {
       const lang = line.slice(3).trim()
       const codeLines: string[] = []
@@ -51,11 +44,10 @@ function renderLines(lines: string[]): React.ReactNode {
       elements.push(
         <CodeBlock key={i} lang={lang} code={codeLines.join('\n')} />
       )
-      i++ // 跳过结束的 ```
+      i++
       continue
     }
 
-    // H1 ~ H3 标题
     if (line.startsWith('### ')) {
       elements.push(
         <div key={i} className="font-semibold mt-3 mb-1 text-sm"
@@ -78,7 +70,6 @@ function renderLines(lines: string[]): React.ReactNode {
         </div>
       )
     }
-    // 无序列表
     else if (line.match(/^[-*+] /)) {
       elements.push(
         <div key={i} className="flex gap-1.5 my-0.5">
@@ -87,7 +78,6 @@ function renderLines(lines: string[]): React.ReactNode {
         </div>
       )
     }
-    // 有序列表
     else if (line.match(/^\d+\. /)) {
       const match = line.match(/^(\d+)\. (.*)$/)
       if (match) {
@@ -101,13 +91,11 @@ function renderLines(lines: string[]): React.ReactNode {
         )
       }
     }
-    // 分隔线
     else if (line.match(/^---+$/) || line.match(/^===+$/)) {
       elements.push(
         <hr key={i} className="my-2" style={{ borderColor: 'var(--rule-strong)' }} />
       )
     }
-    // 引用块
     else if (line.startsWith('> ')) {
       elements.push(
         <div
@@ -122,7 +110,6 @@ function renderLines(lines: string[]): React.ReactNode {
         </div>
       )
     }
-    // Markdown 表格（以 | 开头的连续行）
     else if (line.trimStart().startsWith('|')) {
       const tableLines: string[] = [line]
       while (i + 1 < lines.length && lines[i + 1].trimStart().startsWith('|')) {
@@ -131,11 +118,9 @@ function renderLines(lines: string[]): React.ReactNode {
       }
       elements.push(<MarkdownTable key={i} lines={tableLines} />)
     }
-    // 空行
     else if (line.trim() === '') {
       elements.push(<div key={i} className="h-2" />)
     }
-    // 普通段落
     else {
       elements.push(
         <p key={i} className="my-0.5 leading-relaxed">
@@ -150,17 +135,13 @@ function renderLines(lines: string[]): React.ReactNode {
   return elements
 }
 
-/** 内联格式渲染（加粗、斜体、行内代码） */
 function renderInline(text: string): React.ReactNode {
-  // 将文本按 **bold**、*italic*、`code` 分割渲染
   const parts: React.ReactNode[] = []
-  // 简单的正则分割处理
   const regex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g
   let lastIndex = 0
   let match: RegExpExecArray | null
 
   while ((match = regex.exec(text)) !== null) {
-    // 文字前的普通文本
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index))
     }
@@ -194,15 +175,12 @@ function renderInline(text: string): React.ReactNode {
     lastIndex = match.index + token.length
   }
 
-  // 剩余文本
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex))
   }
 
   return parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : parts
 }
-
-// ===== 代码块组件 =====
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const text = useLocaleStore(s => s.text)
@@ -217,7 +195,6 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       className="my-2 rounded-lg overflow-hidden"
       style={{ border: '1px solid var(--rule-strong)' }}
     >
-      {/* 代码块标题栏 */}
       <div
         className="flex items-center justify-between px-3 py-1.5"
         style={{
@@ -238,7 +215,6 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
           {text('复制', 'Copy')}
         </button>
       </div>
-      {/* 代码内容 */}
       <pre
         className="p-3 text-xs leading-relaxed font-mono whitespace-pre-wrap break-all"
         style={{
@@ -253,9 +229,6 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   )
 }
 
-// ===== 流式光标 =====
-
-/** 流式生成时末尾显示的闪烁光标 */
 export function StreamingCursor() {
   return (
     <span
@@ -267,8 +240,6 @@ export function StreamingCursor() {
     />
   )
 }
-
-// ===== ThinkingBlock — 可折叠的思考过程区块 =====
 
 function ThinkingBlock({ content, streaming }: { content: string; streaming?: boolean }) {
   const text = useLocaleStore(s => s.text)
@@ -284,7 +255,6 @@ function ThinkingBlock({ content, streaming }: { content: string; streaming?: bo
         backgroundColor: 'color-mix(in srgb, var(--accent) 3%, transparent)',
       }}
     >
-      {/* 头部：点击可展开/折叠 */}
       <button
         onClick={() => setExpanded(v => !v)}
         className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors"
@@ -312,7 +282,6 @@ function ThinkingBlock({ content, streaming }: { content: string; streaming?: bo
         />
       </button>
 
-      {/* 内容区（折叠/展开） */}
       {expanded && (
         <div
           className="px-3 pb-2 text-xs leading-relaxed"
@@ -332,21 +301,15 @@ function ThinkingBlock({ content, streaming }: { content: string; streaming?: bo
   )
 }
 
-// ===== Markdown 表格渲染 =====
-
-/** 解析并渲染 Markdown 表格 */
 function MarkdownTable({ lines }: { lines: string[] }) {
-  // 解析表格单元格
   const parseRow = (line: string): string[] =>
     line.split('|').slice(1, -1).map(cell => cell.trim())
 
   if (lines.length < 2) {
-    // 不足两行（至少表头 + 分隔线）
     return <p className="my-0.5 leading-relaxed">{lines.join('\n')}</p>
   }
 
   const headerCells = parseRow(lines[0])
-  // 跳过分隔线（第二行通常是 |---|---|）
   const startRow = lines[1].includes('---') ? 2 : 1
   const bodyRows = lines.slice(startRow).map(parseRow)
 
@@ -393,17 +356,11 @@ function MarkdownTable({ lines }: { lines: string[] }) {
   )
 }
 
-// ===== <think> 标签解析 =====
-
 interface ContentSegment {
   type: 'think' | 'markdown'
   content: string
 }
 
-/**
- * 将内容按 <think>...</think> 标签拆分为段落
- * 支持流式场景下未闭合的 <think> 标签
- */
 function parseThinkSegments(content: string): ContentSegment[] {
   const segments: ContentSegment[] = []
   const thinkOpenRegex = /<think>/gi
@@ -413,24 +370,20 @@ function parseThinkSegments(content: string): ContentSegment[] {
   let openMatch: RegExpExecArray | null
 
   while ((openMatch = thinkOpenRegex.exec(content)) !== null) {
-    // 提取 <think> 之前的 markdown 内容
     if (openMatch.index > lastIndex) {
       const md = content.slice(lastIndex, openMatch.index).trim()
       if (md) segments.push({ type: 'markdown', content: md })
     }
 
-    // 查找对应的 </think>
     thinkCloseRegex.lastIndex = openMatch.index + openMatch[0].length
     const closeMatch = thinkCloseRegex.exec(content)
 
     if (closeMatch) {
-      // 找到闭合标签
       const thinkContent = content.slice(openMatch.index + openMatch[0].length, closeMatch.index)
       segments.push({ type: 'think', content: thinkContent })
       lastIndex = closeMatch.index + closeMatch[0].length
       thinkOpenRegex.lastIndex = lastIndex
     } else {
-      // 未闭合（流式场景）—— 将剩余全部作为思考内容
       const thinkContent = content.slice(openMatch.index + openMatch[0].length)
       segments.push({ type: 'think', content: thinkContent })
       lastIndex = content.length
@@ -438,13 +391,11 @@ function parseThinkSegments(content: string): ContentSegment[] {
     }
   }
 
-  // 剩余的 markdown 内容
   if (lastIndex < content.length) {
     const md = content.slice(lastIndex).trim()
     if (md) segments.push({ type: 'markdown', content: md })
   }
 
-  // 如果没有 <think> 标签，直接返回整体
   if (segments.length === 0) {
     segments.push({ type: 'markdown', content })
   }

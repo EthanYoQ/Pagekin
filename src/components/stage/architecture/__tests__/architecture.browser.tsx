@@ -48,7 +48,6 @@ const click = async (name: string | RegExp) => {
   await act(async () => target!.click())
 }
 const primary = () => host!.querySelector('.arch-header .pi-btn--primary')?.textContent
-/** 启动的工作流只含勾选的那几节，步骤 key 就是实际交给后台的节。 */
 let started: ReturnType<typeof vi.fn<(definition: { steps: { key: string }[] }) => Promise<string>>>
 const launchedSteps = () => started.mock.calls.map(([definition]) => definition.steps.map(step => step.key))
 const writes = () => invoke.mock.calls.filter(([channel]) => channel === 'db:project-core-update')
@@ -58,12 +57,10 @@ function filledSpine(filled: readonly string[]) {
   useStageStore.setState({ work: { session, architecture, blueprints: [] } })
 }
 
-/** 按章写好的大纲正文，与主进程逐章生成的格式相同。 */
 const outlineBody = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => from + index)
   .map(n => `## 第${n}章：第${n}盏灯\n林舟在第${n}站认出一位失踪者的座位。`).join('\n\n')
 const OUTLINE_SOURCE = { totalChapters: 24, writingLanguage: 'zh-CN' as const }
 
-/** 已有第 1–16 章大纲（全书 24 章），分批检查点可用。 */
 function seedPartialOutline() {
   const body = outlineBody(1, 16)
   core = { ...core, synopsis: renderPlotOutlineSynopsis(body, 16, OUTLINE_SOURCE) }
@@ -195,7 +192,6 @@ describe('架构阶段', () => {
     await act(async () => useCharacterStore.setState({ rosterRevision: 2 }))
     await vi.waitFor(() => expect(rosterReads()).toBe(afterOpen + 1))
     expect(invoke.mock.calls.some(([channel]) => channel === 'legacy-roster:read-source')).toBe(false)
-    // 名单快照换了不必再读一遍另三节：打开时一轮，重读名单后也不加。
     expect(invoke.mock.calls.filter(([channel]) => channel === 'db:project-core-get')).toHaveLength(1)
     expect(started).not.toHaveBeenCalled()
   })
@@ -236,7 +232,6 @@ describe('架构阶段', () => {
 
   it.each([
     ['第 7 章请求前被拒', { kind: 'request', chapterNumber: 7, attempt: 'normal' }, [6]],
-    // 最后一章生成完、候选已齐，正式保存时被来源检查拒绝：检查点仍记着本批未完成，同样只能重新生成。
     ['第 10 章生成完、正式保存被拒', { kind: 'complete' }, [6, 7, 8, 9, 10]],
   ] as const)('第 6–10 章那批途中改了模型（%s）、恢复稿写回被封锁：提示只能查看或复制并从第 6 章重新生成，按钮直接打开从第 6 章起的对话框', async (_case, cursor, completeChapters) => {
     const body = outlineBody(1, 5)
@@ -466,7 +461,6 @@ describe('架构阶段', () => {
 
   it('有一批被打断时，范围仍按数据库里的正式大纲判定，不看检查点的进度', async () => {
     seedPartialOutline()
-    // 重写第 1–5 章的那一批被打断：检查点记的进度是开跑前的 0，正式大纲仍是第 1–16 章。
     partial = {
       synopsis_protocol: PLOT_OUTLINE_PROTOCOL, synopsis_incomplete: true, synopsis_covered_to: 0, synopsis_range: { from: 1, to: 5 },
       synopsis_generation_handle: { projectId: session.projectId, epoch: session.leaseId, rootActionId: 'root', runId: 'run' },
@@ -567,7 +561,6 @@ describe('架构阶段', () => {
     const held = new Promise<void>(resolve => { release = resolve })
     const older = { ...core, premise: '旧前提：守夜人把末班车的钟拨慢了一刻。'.repeat(2) }
     const answer = invoke.getMockImplementation()!
-    // 刷新会连带流程脊等别处重读同一份数据：第一次刷新发出的都压住，之后的重读挂起，只比这两次刷新的先后。
     let phase: 'first' | 'second' | 'after' = 'first'
     invoke.mockImplementation(async (channel, ...args) => {
       if (channel === 'db:project-core-get') {
@@ -788,7 +781,6 @@ describe('架构页开着时在运行侧页放弃大纲恢复稿（#608）', () 
       const open = (recoveryContext?.planningDraft as { standing: string } | undefined)?.standing === 'open'
       if (channel === 'generation:list-recovery') return { planning: open ? [recoveryContext] : [], editors: [], reviews: [], drafts: [], batches: [], partial: false }
       if (channel === 'generation:set-recovery-abandoned') {
-        // 主进程收到请求就同步记下放弃，回复晚一点才到渲染端。
         if (!dismissalFails) recoveryContext = { ...recoveryContext, planningDraft: { requestedRange: { from: 6, to: 10 }, createdAtMs: 1, standing: 'dismissed' } }
         return new Promise<void>((resolve, reject) => { reply = { resolve, reject } })
       }
@@ -909,7 +901,6 @@ describe('架构页一次刷新里恢复稿刚好变成不再给作者（#608）
     let previous = ''
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
       if (channel === 'generation:read-context') {
-        // 紧接着的第二次读取返回 superseded，模拟刷新中途恢复稿被补齐。
         const repeated = previous === channel
         previous = channel
         return context(repeated ? 'superseded' : 'open')

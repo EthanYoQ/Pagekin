@@ -21,16 +21,13 @@ interface BlueprintCardProps {
   onDelete: () => void
 }
 
-/** 单章蓝图：标题、定位、出场人物、主角小目标、冲突与转折、悬念钩子、作者微操指导、章节要点。章号是稳定标识，只读。 */
 export default function BlueprintCard({ blueprint, row, saving, onField, onSave, onDelete }: BlueprintCardProps) {
   const text = useLocaleStore(s => s.text)
-  // 正在输入的人名只属于当前这一章；换章时清空，不重建整张卡片（几百章换章要快）。
   const [draft, setDraft] = useState({ chapter: blueprint.chapterNumber, name: '' })
   const person = draft.chapter === blueprint.chapterNumber ? draft.name : ''
   const setPerson = (name: string) => setDraft({ chapter: blueprint.chapterNumber, name })
   const ids = { purpose: useId(), conflict: useId(), hook: useId(), guide: useId(), notes: useId(), person: useId() }
   const number = blueprint.chapterNumber
-  // 卡片不随换章重建，换章时滚回顶上。
   const cardRef = useRef<HTMLElement>(null)
   useEffect(() => { cardRef.current?.scrollTo({ top: 0 }) }, [number])
 
@@ -93,7 +90,6 @@ export default function BlueprintCard({ blueprint, row, saving, onField, onSave,
         <div className="stage-bp-field">
           <label htmlFor={ids.person}>{text('出场人物', 'Characters')}</label>
           <div className="stage-bp-people">
-            {/* 旧数据里可能有重名：按位置区分，移除只去掉点的那一个。 */}
             {blueprint.characters.map((name, index) => (
               <span key={`${index}:${name}`} className="stage-bp-person">
                 {name}
@@ -155,7 +151,6 @@ export default function BlueprintCard({ blueprint, row, saving, onField, onSave,
   )
 }
 
-/** 编辑态按章号重新挂载：换走再换回仍是排版。 */
 function Notes({ blueprint, id, onChange }: { blueprint: ChapterBlueprint; id: string; onChange: (value: string) => void }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
@@ -185,7 +180,6 @@ function Notes({ blueprint, id, onChange }: { blueprint: ChapterBlueprint; id: s
       {editing
         ? <textarea ref={input} id={id} className="stage-bp-ctl" rows={1} value={blueprint.notes}
             placeholder={text('还没有要点，支持 Markdown', 'No notes yet. Markdown works here')} onChange={event => {
-              // 从空白开始写也留在输入框里，不在打出第一个字时换成排版。
               if (!editingNotes) setEditingNotes(true)
               onChange(event.target.value)
             }} />

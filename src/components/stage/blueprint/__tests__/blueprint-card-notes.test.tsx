@@ -16,8 +16,6 @@ afterEach(() => {
 
 const ignore = () => undefined
 
-// renderToStaticMarkup 读 zustand 的初始状态，卡片直接选的 locale 是加载时按系统语言定的，setState 改不到；
-// 先固定系统语言（Node 20 没有全局 navigator，卡片的依赖加载时还会读 userAgent，所以整体替换），再重新加载组件和语言 store。
 async function renderChineseCard(notesUpdatedAt: string) {
   vi.stubGlobal('navigator', { language: 'zh-CN', languages: ['zh-CN'], userAgent: '' })
   vi.resetModules()

@@ -111,7 +111,6 @@ describe('新外壳渲染出错', () => {
     ))
     const exit = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].find(dialog => dialog.textContent?.includes('退出前处理未保存的内容'))!
     const legacy = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].find(dialog => dialog.textContent?.includes('导出项目'))!
-    // Radix 让下层的模态不接指针，elementFromPoint 会跳过它；放开之后取到的才是画在最上面的那一层
     for (const layer of document.querySelectorAll<HTMLElement>('[role="dialog"], .pi-scrim')) layer.style.pointerEvents = 'auto'
     const center = (element: Element) => {
       const rect = element.getBoundingClientRect()
@@ -122,9 +121,6 @@ describe('新外壳渲染出错', () => {
   })
 })
 
-/**
- * 画在元素中心最上面的那一层对话框。Radix 让下层的模态不接指针，elementFromPoint 会跳过它；量的时候临时放开，量完还原。
- */
 function topLayerAt(element: Element) {
   const layers = [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"], .pi-scrim')]
   const saved = layers.map(layer => layer.style.pointerEvents)
@@ -137,10 +133,6 @@ function topLayerAt(element: Element) {
 
 const exitDialog = () => [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].find(dialog => dialog.textContent?.includes('退出前处理未保存的内容')) ?? null
 
-/**
- * 下层对话框露在上层对话框外面的一点（上沿、下沿或两侧）上画在最上面的元素：上层的遮罩该把它压住，不出重影。
- * 量法同 topLayerAt，临时放开指针。
- */
 function hitOutside(lower: Element, upper: Element) {
   const l = lower.getBoundingClientRect(), u = upper.getBoundingClientRect()
   const point = [[l.left + l.width / 2, l.top + 1], [l.left + l.width / 2, l.bottom - 1], [l.left + 1, l.top + l.height / 2], [l.right - 1, l.top + l.height / 2]]
@@ -181,13 +173,10 @@ describe('退出确认与错误提示谁后弹出谁在上面', () => {
     document.body.append(host)
     root = createRoot(host)
     await act(async () => root!.render(<Harness />))
-    // 退出确认没弹出时宿主里没有它的节点：Radix 1.1 的 Portal 随 open 挂载，弹出时才排到已有提示之后
     expect(document.querySelector('#ai-novel-ink-overlay .stage-exit-scrim, #ai-novel-ink-overlay .stage-exit-dialog')).toBeNull()
-    // 提示写得长，比退出确认高，上下沿露在退出确认外面
     const alerted = alertError(['导出失败：磁盘忙', ...Array.from({ length: 14 }, (_, index) => `第 ${index + 1} 份文件没有写入。`)].join('\n'))
     const prompt = page.getByRole('alertdialog', { name: '发生错误' })
     await expect.element(prompt).toBeVisible()
-    // 退出确认弹出后提示所在的层被标 aria-hidden，按角色找不到了；先记下节点
     const promptElement = prompt.element()
     await act(async () => request({ requestId: 'close-5' }))
     await vi.waitFor(() => expect(exitDialog()).not.toBeNull())

@@ -23,7 +23,6 @@ import { BLUEPRINT, SESSION, chapterProject, createChapterBackend, generationMod
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-/** 图生成的开跑与执行换成可控的假客户端，读建议和接受仍走章节假后端。 */
 const graph = vi.hoisted(() => ({
   opened: [] as unknown[],
   release: null as null | (() => void),
