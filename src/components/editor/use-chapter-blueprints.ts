@@ -46,9 +46,15 @@ import { LatestRequestGate } from '../../shared/latest-request-gate'
 import type { SaveOutcome } from './save-feedback'
 import { readWritableChapters } from '../../services/authoritative-chapter-sequence'
 import type { ChapterGap } from '../../shared/chapter-sequence'
-import { displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { caughtFailure, displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
+import { blueprintFailureToast } from './blueprint-failure-toast'
 
 const EMPTY_CHAPTER_NUMBERS: ReadonlySet<number> = new Set()
+const SAVE_ONE_FAILED = note('保存失败', 'Could not save the blueprint.')
+const SAVE_ALL_FAILED = note('保存失败', 'Could not save the blueprints.')
+const DELETE_FAILED = note('删除失败', 'Could not delete the chapter blueprint.')
+const CLEAR_FAILED = note('清空失败', 'Could not clear the chapter blueprints.')
 
 function readDraftLedgerFromFixedTab() {
   return parseChapterCardDraftLedger(
@@ -439,7 +445,7 @@ export function useChapterBlueprints({
       if (!isCurrentProjectSession(projectSession)) return
       const message = displayedErrorMessage(currentInterfaceLocale(), err)
       addLog('error', text(`保存第 ${selected.chapterNumber} 章蓝图失败：${message}`, englishWithReason(currentInterfaceLocale(), `Could not save the blueprint for Chapter ${selected.chapterNumber}.`, message)))
-      toast.error(text(`保存失败\n\n${message}`, englishWithReason(currentInterfaceLocale(), 'Could not save the blueprint.', message, '\n\n')))
+      toast.error(blueprintFailureToast(currentInterfaceLocale(), SAVE_ONE_FAILED, caughtFailure(err)))
       setSaveOutcome('failed')
       if (propagateFailure) throw err
     } finally {
@@ -478,7 +484,7 @@ export function useChapterBlueprints({
       if (!isCurrentProjectSession(projectSession)) return
       const message = displayedErrorMessage(currentInterfaceLocale(), err)
       addLog('error', text(`保存全部蓝图失败：${message}`, englishWithReason(currentInterfaceLocale(), 'Could not save all chapter blueprints.', message)))
-      toast.error(text(`保存失败\n\n${message}`, englishWithReason(currentInterfaceLocale(), 'Could not save the blueprints.', message, '\n\n')))
+      toast.error(blueprintFailureToast(currentInterfaceLocale(), SAVE_ALL_FAILED, caughtFailure(err)))
       setSaveOutcome('failed')
       if (propagateFailure) throw err
     } finally {
@@ -564,8 +570,7 @@ export function useChapterBlueprints({
     )
     if (!isCurrentProjectSession(projectSession)) return
     if (!result.success) {
-      const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
-      toast.error(text(`删除失败\n\n${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not delete the chapter blueprint.', reason, '\n\n')))
+      toast.error(blueprintFailureToast(currentInterfaceLocale(), DELETE_FAILED, caughtFailure(result.error)))
       return
     }
     const current = currentWorkingState(projectKey, projectSession)
@@ -605,8 +610,7 @@ export function useChapterBlueprints({
     )
     if (!isCurrentProjectSession(projectSession)) return
     if (!result.success) {
-      const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
-      toast.error(text(`清空失败\n\n${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not clear the chapter blueprints.', reason, '\n\n')))
+      toast.error(blueprintFailureToast(currentInterfaceLocale(), CLEAR_FAILED, caughtFailure(result.error)))
       return
     }
     const current = currentWorkingState(projectKey, projectSession)

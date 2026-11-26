@@ -3,7 +3,8 @@ import { ipc } from '../../../services/ipc-client'
 import { launchCreativeWorkflow } from '../../../services/workflows/creative-workflow-launcher'
 import { parseTextBlueprintsStrict } from '../../../services/workflows/directory-workflow'
 import { workflowMainProcessError } from '../../../services/workflows/workflow-project-session'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { authorError, displayedErrorMessage } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 import { copyLocale } from '../../../i18n/core'
 import { structuredContractDiagnostic, structuredContractDiagnosticText } from '../../../shared/structured-contract-diagnostic'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../../shared/project-session-context'
@@ -38,33 +39,33 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
   const refresh = useCallback(async () => {
     const expectedSession = session
     const original = tab.planningRecovery
-    if (!expectedSession || !isCurrentProjectSession(expectedSession) || !original) throw new Error(text('项目会话已切换，请重新打开恢复稿', 'The project session changed. Reopen the recovery draft.'))
+    if (!expectedSession || !isCurrentProjectSession(expectedSession) || !original) throw authorError(currentInterfaceLocale(), { note: note('项目会话已切换，请重新打开恢复稿', 'The project session changed. Reopen the recovery draft.') })
     const next = await ipc.invokeWithProjectSession(expectedSession, 'generation:read-context', { handle: original.handle })
-    if (!isCurrentProjectSession(expectedSession)) throw new Error(text('项目会话已切换', 'The project session changed.'))
+    if (!isCurrentProjectSession(expectedSession)) throw authorError(currentInterfaceLocale(), { note: note('项目会话已切换', 'The project session changed.') })
     setContext(next)
     return next
-  }, [session, tab.planningRecovery, text])
+  }, [session, tab.planningRecovery])
   useEffect(() => { void Promise.resolve().then(refresh).catch(reason => setError(failureText(reason))) }, [failureText, refresh])
 
   const save = useCallback(async (propagate = false) => {
-    if (busyRef.current) { if (propagate) throw new Error(text('保存仍在进行', 'Saving is still in progress.')); return }
+    if (busyRef.current) { if (propagate) throw authorError(currentInterfaceLocale(), { note: note('保存仍在进行', 'Saving is still in progress.') }); return }
     busyRef.current = true
     setBusy(true)
     const snapshot = useEditorStore.getState().tabs.find(item => item.id === tab.id)
     try {
-      if (!session) throw new Error(text('项目会话已切换', 'The project session changed.'))
+      if (!session) throw authorError(currentInterfaceLocale(), { note: note('项目会话已切换', 'The project session changed.') })
       const fresh = await refresh()
       const candidate = fresh.blueprintRecovery
-      if (candidate?.writeState === 'unavailable') throw new Error(text('旧恢复稿不能保存或续接，可继续编辑或复制', 'This recovery draft cannot be saved or continued. You can still edit or copy it.'))
+      if (candidate?.writeState === 'unavailable') throw authorError(currentInterfaceLocale(), { note: note('旧恢复稿不能保存或续接，可继续编辑或复制', 'This recovery draft cannot be saved or continued. You can still edit or copy it.') })
       const originalRange = tab.planningRecovery?.blueprintRecovery?.editRange
       if (!snapshot || !candidate || candidate.leaseEpoch !== session.leaseId || !originalRange || !snapshot.planningSaveOperationId
-        || candidate.writeState !== 'ready' && !candidate.saved) throw new Error(text('当前无法保存，请等待生成结束或检查来源变化', 'Wait for generation to finish or check changed sources before saving.'))
+        || candidate.writeState !== 'ready' && !candidate.saved) throw authorError(currentInterfaceLocale(), { note: note('当前无法保存，请等待生成结束或检查来源变化', 'Wait for generation to finish or check changed sources before saving.') })
       const pending = useEditorStore.getState().tabs.find(item => item.id === tab.id)?.planningSaveSnapshot
-      if (pending?.status === 'saved' || candidate.saved && !pending) throw new Error(text('本次恢复已保存，后续修改仅供复制。', 'This recovery is saved. Further edits can only be copied.'))
+      if (pending?.status === 'saved' || candidate.saved && !pending) throw authorError(currentInterfaceLocale(), { note: note('本次恢复已保存，后续修改仅供复制。', 'This recovery is saved. Further edits can only be copied.') })
       let submission = pending
       if (!submission) {
         const authorEnd = Number(endRef.current)
-        if (!Number.isSafeInteger(authorEnd) || authorEnd < originalRange.from || authorEnd > originalRange.to) throw new Error(text('请选择连续完整章节的终点', 'Choose the last complete consecutive chapter.'))
+        if (!Number.isSafeInteger(authorEnd) || authorEnd < originalRange.from || authorEnd > originalRange.to) throw authorError(currentInterfaceLocale(), { note: note('请选择连续完整章节的终点', 'Choose the last complete consecutive chapter.') })
         const blueprints = parseTextBlueprintsStrict(snapshot.content ?? '', originalRange.from, authorEnd, currentInterfaceLocale(), 'author')
         submission = {
           content: snapshot.content ?? '', contentRevision: snapshot.contentRevision ?? 0,
@@ -88,7 +89,7 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
       await refresh()
     } catch (reason) { setError(failureText(reason)); if (propagate) throw reason }
     finally { busyRef.current = false; setBusy(false) }
-  }, [failureText, projectKey, refresh, session, tab.id, tab.planningRecovery, text])
+  }, [failureText, projectKey, refresh, session, tab.id, tab.planningRecovery])
   useEffect(() => {
     registerEditorExitSaveHandler({ tabId: tab.id, type: 'chapter-card', save: () => save(true) })
   }, [save, tab.id])
@@ -97,10 +98,10 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
     if (busyRef.current) return
     busyRef.current = true; setBusy(true)
     try {
-      if (!session) throw new Error(text('项目会话已切换', 'The project session changed.'))
+      if (!session) throw authorError(currentInterfaceLocale(), { note: note('项目会话已切换', 'The project session changed.') })
       const fresh = await refresh()
       const continuation = fresh.planningContinuation
-      if (!continuation?.remainingRange || !['ready', 'continued'].includes(continuation.state)) throw new Error(text('当前不能继续，请等待生成结束或检查来源变化', 'Wait for generation to finish or check changed sources before continuing.'))
+      if (!continuation?.remainingRange || !['ready', 'continued'].includes(continuation.state)) throw authorError(currentInterfaceLocale(), { note: note('当前不能继续，请等待生成结束或检查来源变化', 'Wait for generation to finish or check changed sources before continuing.') })
       await launchCreativeWorkflow({ workflow: 'generate_blueprint', params: { mode: 'append',
         startChapter: continuation.remainingRange.from, count: continuation.remainingRange.to - continuation.remainingRange.from + 1,
         targetUnits: continuation.targetUnits, restartFrom: continuation.sourceHandle,
