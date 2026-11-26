@@ -106,6 +106,13 @@ describe('failureOf', () => {
     expect(failureOf(new Error('ENOENT'))).toBeUndefined()
   })
 
+  it('普通对象的 message 同样参与判断', () => {
+    expect(failureOf({ message: 'PROJECT_NOT_OPEN', code: 'NETWORK_ERROR' })).toBeUndefined()
+    expect(failureOf({ message: proxy, code: 'NETWORK_ERROR' })).toBeUndefined()
+    expect(failureOf({ message: 'PROJECT_NOT_OPEN' })).toEqual({ code: 'PROJECT_NOT_OPEN' })
+    expect(failureOf({ message: '', errorCode: 'PROJECT_NOT_OPEN' })).toEqual({ code: 'PROJECT_NOT_OPEN' })
+  })
+
   it('认不出且 message 为空：caughtFailure 只带通用说明，不造码', () => {
     const failure = caughtFailure(new Error(''))
     expect(failure.code).toBeUndefined()

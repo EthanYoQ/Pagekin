@@ -89,7 +89,8 @@ const CODE_ONLY = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*Error
  */
 export function failureOf(error: unknown): Failure | undefined {
   if (error instanceof AuthorError) return error.failure
-  const message = typeof error === 'string' ? error : error instanceof Error ? error.message : undefined
+  const message = typeof error === 'string' ? error : typeof error === 'object' && error !== null && typeof (error as { message?: unknown }).message === 'string'
+    ? (error as { message: string }).message : undefined
   const carried = typeof error === 'object' && error !== null
     ? failureCode((error as { code?: unknown }).code) ?? failureCode((error as { errorCode?: unknown }).errorCode)
     : undefined

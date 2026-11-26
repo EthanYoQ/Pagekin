@@ -8,7 +8,7 @@ export type LegacyFailureKind = typeof LEGACY_FAILURE_CALLS[number] | '{ legacy:
 export type LegacyFailureCounts = Record<string, Partial<Record<LegacyFailureKind, number>>>
 
 const NOT_PRODUCTION = /\/__tests__\/|\.(?:test|spec|browser|typecheck)\.[cm]?[jt]sx?$|^src\/stories\//u
-const RAW_TEXT = /\.message\b|String\(|\.stack\b/u
+const RAW_PROPERTIES = new Set(['message', 'stack'])
 const FAILURE_TYPES = /\b(?:AuthorNote|Failure)\b/u
 const FAILURE_MODULE = 'src/shared/failure.ts'
 
@@ -38,10 +38,18 @@ export function legacyFailureCounts(file: string, text: string): Partial<Record<
   return counts
 }
 
+/** 参数里有 String(…) 调用，或读 message、stack 属性（点号和方括号都算）。 */
+function readsRawText(node: ts.Node): boolean {
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'String') return true
+  if (ts.isPropertyAccessExpression(node) && RAW_PROPERTIES.has(node.name.text)) return true
+  if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && RAW_PROPERTIES.has(node.argumentExpression.text)) return true
+  return ts.forEachChild(node, readsRawText) ?? false
+}
+
 export function rawAuthorOwnedArguments(file: string, text: string): string[] {
   const found: string[] = []
   walk(file, text, (node, source) => {
-    if (ts.isCallExpression(node) && calleeName(node) === 'authorOwned' && node.arguments.some(arg => RAW_TEXT.test(arg.getText(source)))) {
+    if (ts.isCallExpression(node) && calleeName(node) === 'authorOwned' && node.arguments.some(readsRawText)) {
       found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1} ${node.getText(source)}`)
     }
   })

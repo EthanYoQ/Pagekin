@@ -199,7 +199,7 @@ describe('失败的码与说明（#844）', () => {
 
   it('authorOwned( 的参数不许含异常原文', () => {
     expect(scanProduction(rawAuthorOwnedArguments).flatMap(([, found]) => found)).toEqual([])
-    for (const planted of ['authorOwned(error.message)', 'authorOwned(String(error))', 'authorOwned(`第 ${error.stack} 行`)']) {
+    for (const planted of ['authorOwned(error.message)', 'authorOwned(String(error))', 'authorOwned(`第 ${error.stack} 行`)', 'authorOwned(String (error))', 'authorOwned(error["message"])', "authorOwned(error?.['stack'])"]) {
       expect(rawAuthorOwnedArguments('src/x.ts', planted), planted).toHaveLength(1)
     }
     expect(rawAuthorOwnedArguments('src/x.ts', 'authorOwned(material.fileName)')).toEqual([])
