@@ -64,13 +64,15 @@ export function countUnsavedEditorItemsForProject(
   for (const [ledgerKey, content] of Object.entries(draftLedgers)) {
     const type = LEDGER_TYPE_BY_KEY[ledgerKey]
     if (!type || !content) continue
-    const parsed = parseJsonOrUndefined(content) as { projects?: Array<{ projectKey?: unknown } | null> } | null | undefined
-    if (
-      Array.isArray(parsed?.projects)
-      && parsed.projects.some(project => project?.projectKey === projectKey)
-    ) {
+    if (ledgerProjectKeys(parseJsonOrUndefined(content, `unreadable draft ledger: ${ledgerKey}`))?.includes(projectKey)) {
       dirtyItems.add(`${type}:${projectKey}`)
     }
   }
   return dirtyItems.size
+}
+
+export function ledgerProjectKeys(ledger: unknown): unknown[] | undefined {
+  const projects = (ledger as { projects?: unknown } | null | undefined)?.projects
+  if (!Array.isArray(projects) || !projects.every(project => typeof project === 'object' && project !== null)) return undefined
+  return projects.map(project => (project as { projectKey?: unknown }).projectKey)
 }

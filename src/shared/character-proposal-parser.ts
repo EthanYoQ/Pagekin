@@ -139,7 +139,7 @@ export function extractSingleCompleteJsonObject(content: string, excludeArrayRoo
     if (end === undefined) throw new Error('AI 返回包含截断 JSON 对象片段')
 
     const candidate = source.slice(start, end + 1)
-    if (isRecord(parseJsonOrUndefined(candidate))) candidates.push(candidate)
+    if (isRecord(parseJsonOrUndefined(candidate, 'malformed JSON candidate in character proposal'))) candidates.push(candidate)
     searchFrom = end + 1
   }
 

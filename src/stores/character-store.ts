@@ -738,7 +738,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       const createdIds = new Map((result.receipt.created ?? []).map(item => [item.selectionKey, item.characterId]))
       const remapCreated = (card: CharacterCard): CharacterCard => {
         let relationships = card.relationships
-        const parsed = parseJsonOrUndefined(relationships)
+        const parsed = parseJsonOrUndefined(relationships, 'character relationships are free-form text')
         if (Array.isArray(parsed)) relationships = JSON.stringify(parsed.map(value => value && typeof value === 'object'
           ? { ...value, ...(typeof value.targetCharacterId === 'string' ? { targetCharacterId: createdIds.get(value.targetCharacterId) ?? value.targetCharacterId } : {}) } : value))
         return { ...card, characterId: createdIds.get(card.characterId ?? '') ?? card.characterId, relationships }
