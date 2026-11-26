@@ -56,3 +56,9 @@
 ### test/helpers/repo-source-files.ts
 
 - 测试扫仓库源码只经 `repoSourceFiles` 列目录；import 了它的测试就是 test:guards 的成员。（注释清理 M30 第 2 个 PR 迁入）
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `test/guards.test.ts`
+
+- `ORIGINAL_TOTALS`：建立基线时各旧约定的总数；基线文件只能往下改。authorOwned 是新约定，每处新增都改基线、过审查。

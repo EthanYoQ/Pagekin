@@ -32,3 +32,10 @@
 
 - `canonical-project-fixture.ts`：由测试自己建新作品。重开走真实的生产校验；这个辅助函数从不收养旧根，也不会悄悄规整未知 schema。目录里已有 `.vela` 时直接报错，旧根必须走显式的迁移测试。
 - `legacy-baseline-fixture.ts`：只用于显式的历史 schema 回归。测试把这个句柄注入各仓库；它从不放行生产定位器，也不认证旧作品。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/legacy-roster-generation-pure.ts`
+
+- `LEGACY_ROSTER_SYSTEM_PROMPT`：旧项目修复的模型契约与新架构生成保持相同的版本化输出形状。旧 Markdown 只作为模型输入证据，绝不由客户端通过标题、编号或排版规则反向解析。
+- 与现有工作流 Base 解析器相同的可接受语法与错误边界（原文：Same accepted syntax and error boundary as the existing workflow Base parser.）

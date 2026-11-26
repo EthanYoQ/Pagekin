@@ -24,23 +24,18 @@ const POLARITY_TERMS: ReadonlyArray<readonly [RelationPolarity, RegExp]> = [
 
 const UNCERTAIN = /[不没无未非假伪曾昔前旧原似疑虚或]|表面|名义|暗中|可能|破裂|解除|结束|\b(?:not|no|never|former(?:ly)?|ex|once|fake|false|pretend(?:s|ed|ing)?|sham|seeming(?:ly)?|maybe|perhaps)\b/iu
 
-/** 蓝图自己写了关系转折，相反就是作者要的安排，整章不报。 */
 const RELATION_TURN = /和解|解开误会|误会解开|解除误会|重归于好|言归于好|冰释前嫌|尽释前嫌|破镜重圆|握手言和|化敌为友|化干戈|重修旧好|回心转意|反水|倒戈|决裂|反目|背叛|翻脸|假意|伪装|卧底|\b(?:reconcil\w*|mak(?:e|es|ing) amends|mend(?:s|ed|ing)? (?:fences|ties|bridges|things)|forgiv\w*|forgave|defect\w*|turncoat|betray\w*|undercover|double agent|pretend\w*)\b/iu
 
-/** 「成为、变成」在蓝图其他字段里太常见，只在关系提示里算转折。 */
 const HINT_TURN = new RegExp(`${RELATION_TURN.source}|成为|变成|成了|转为|\\b(?:becom(?:e|es|ing)|became|turn(?:s|ed|ing)? into)\\b`, 'giu')
-/** 不含「原本、昔日、曾经、former」：它们修饰转折前的关系，不否定转折。 */
 const TURN_DENIED = /[不没无未非假伪似疑或]|表面|名义|可能|拒|失败|(?:谈判|和谈)破裂|\b(?:not|no|never|fake|false|pretend\w*|sham|seeming(?:ly)?|maybe|perhaps|refus\w*|fail\w*)\b/iu
 
 const FEIGNED = /假意|伪装|\bpretend\w*\b/iu
 
-/** 先去掉转折词再查否定：冰释前嫌、重修旧好里的字不算否定。 */
 function hintAssertsTurn(relation: string): boolean {
   const rest = relation.replace(HINT_TURN, ' ')
   return rest !== relation && !FEIGNED.test(relation) && !TURN_DENIED.test(rest)
 }
 
-/** 只认词表里明确的说法。两类都沾、带否定或不确定词的一律不判，宁可漏报，不要误报。 */
 export function relationPolarity(text: string): RelationPolarity | null {
   const found = new Set<RelationPolarity>()
   let rest = text
@@ -59,7 +54,6 @@ interface ContinuityBasis {
   since: { zhCN: string; enUS: string }
 }
 
-/** 派生节点没有定稿原文就没有依据（ADR-0017）。基线节点的章号是迁移时补的，不当章号给作者看，sourceChapter 记 0。 */
 export function continuityBasis(node: ContinuityNode): ContinuityBasis | null {
   const chapter = node.effectiveChapter
   switch (node.provenance.kind) {
@@ -81,7 +75,6 @@ function newestFirst(left: CharacterRelationNode, right: CharacterRelationNode):
   return right.effectiveChapter - left.effectiveChapter || right.seq - left.seq
 }
 
-/** 键只取自节点：同一节点在别的章要用同一个键，全书豁免才管用。 */
 export function findRelationReversals(blueprint: BlueprintForPreflight, continuity: LatestContinuityNodes): ConsistencyFinding[] {
   const planText = [blueprint.purpose, blueprint.keyEvents, blueprint.suspenseHook, blueprint.notes, blueprint.userGuidance].join('\n')
   if (RELATION_TURN.test(planText)) return []
@@ -122,7 +115,6 @@ export function findRelationReversals(blueprint: BlueprintForPreflight, continui
 
 export const pendingRelationFactKey = (candidateKey: string) => `relation-pending:${candidateKey}`
 
-/** 作者一直没决定时每换一种说法就留一条建议，这里每对人物只提示本章之前最新的一条。pending 按章升序。 */
 export function findUndecidedRelations(blueprint: BlueprintForPreflight, pending: readonly PendingFinalizedRelationCandidate[]): ConsistencyFinding[] {
   const cast = new Set(blueprint.characters.map(characterRosterIdentityKey))
   const latest = new Map<string, PendingFinalizedRelationCandidate>()

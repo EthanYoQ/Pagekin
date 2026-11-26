@@ -14,9 +14,7 @@ export const FINALIZATION_SHARED_WRITE_RESOURCE_KINDS = Object.freeze([
 ] as const satisfies readonly WorkflowResourceKind[])
 
 export interface WorkflowResourceClaims {
-  /** Resources this workflow may mutate. */
   readonly resourceKeys?: readonly string[]
-  /** Resources this workflow only reads and therefore may share with other readers. */
   readonly readResourceKeys?: readonly string[]
 }
 
@@ -31,10 +29,6 @@ function intersects(left: readonly string[] | undefined, right: ReadonlySet<stri
   return left?.some(key => right.has(key)) ?? false
 }
 
-/**
- * Readers may coexist. Any writer conflicts with every other reader or writer
- * of the same logical resource.
- */
 export function workflowResourceClaimsConflict(
   active: WorkflowResourceClaims,
   requested: WorkflowResourceClaims,

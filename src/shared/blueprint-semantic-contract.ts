@@ -8,13 +8,11 @@ export interface BlueprintRelationshipFact {
   relation: string
 }
 
-/** A recurring named character first introduced by this blueprint. */
 export interface BlueprintNewCharacterCandidate {
   name: string
   role: CharacterRole
 }
 
-/** Stable provenance input; validation code and qualification hash this same manifest. */
 export const BLUEPRINT_SEMANTIC_CONTRACT_MANIFEST = Object.freeze({
   schemaVersion: 1,
   requiredFields: Object.freeze([
@@ -61,10 +59,6 @@ from/to 必须逐字复制同一项 characters 中的完整字符串；任一端
 不得省略必填字段、合并章节、输出近义字段、解释、Markdown 或代码围栏。`
 }
 
-/**
- * Provider-neutral generation fact. Persistence-only fields are deliberately
- * absent: callers add those after the model result has crossed this seam.
- */
 export interface BlueprintSemanticItem {
   chapterNumber: number
   title: string
@@ -263,10 +257,6 @@ export function decodeBlueprintSemanticPayload(
   return decoded.sort((left, right) => left.chapterNumber - right.chapterNumber)
 }
 
-/**
- * Accepts exactly one JSON root or one complete Markdown JSON fence. It never
- * searches narrative prose for a nested JSON fragment.
- */
 function parseBlueprintJsonText(text: string): unknown {
   const trimmed = text.trim()
   const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/iu.exec(trimmed)

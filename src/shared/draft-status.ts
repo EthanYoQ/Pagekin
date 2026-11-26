@@ -1,4 +1,3 @@
-/** 草稿状态：主进程、草稿索引与工作流共用 */
 export type DraftStatus = 'draft' | 'revised' | 'reviewed' | 'finalized' | 'superseded' | 'archived'
 
 export interface DraftStatusInfo {
@@ -15,14 +14,12 @@ export const DRAFT_STATUS_INFO: Readonly<Record<DraftStatus, DraftStatusInfo>> =
   archived: { readOnly: true, label: ['已归档', 'Archived'] },
 }
 
-/** 还能继续写、改、审的工作稿状态；旧版本审稿留下的 reviewed 也算（#411）。 */
 export const WORKING_DRAFT_STATUSES = ['draft', 'revised', 'reviewed'] as const satisfies readonly DraftStatus[]
 
 export const WORKING_DRAFT_STATUS_SQL = WORKING_DRAFT_STATUSES.map(status => `'${status}'`).join(',')
 
 export const CURRENT_DRAFT_STATUSES = [...WORKING_DRAFT_STATUSES, 'finalized'] as const satisfies readonly DraftStatus[]
 
-/** CURRENT_DRAFT_STATUSES 的 SQL IN 列表片段，主进程查询「最新一稿」时共用。 */
 export const CURRENT_DRAFT_STATUS_SQL = CURRENT_DRAFT_STATUSES.map(status => `'${status}'`).join(',')
 
 export const RECEIPTED_DRAFT_STATUSES = ['finalized', 'superseded'] as const satisfies readonly DraftStatus[]

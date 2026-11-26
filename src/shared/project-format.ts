@@ -1,4 +1,3 @@
-/** Manifest, physical storage, and SQLite schema versions are separate contracts. */
 export const CANONICAL_PROJECT_DIRECTORY = '.ai-novel'
 export const CANONICAL_PROJECT_DATABASE = 'project.db'
 export interface CanonicalProjectManifest {

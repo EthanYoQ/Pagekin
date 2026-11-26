@@ -7,7 +7,6 @@ import { writingLanguageText, type WritingLanguage } from './writing-language'
 
 type BlueprintData = DatabaseChannels['db:blueprint-get-all']['return'][number]
 
-/** 只放作者写的文本：时间戳进来的话，空保存也会让结果失效。 */
 export interface ContinuityCheckChapter {
   chapterNumber: number
   title: string
@@ -22,7 +21,6 @@ export interface ContinuityCheckChapter {
 
 export interface ContinuityCheckNode {
   eventId: string
-  /** 节点的来历，和规则卡同一种说法。只给作者看，不进模型请求。 */
   since: { zhCN: string; enUS: string }
   fromChapter: number
   untilChapter?: number
@@ -63,7 +61,6 @@ export function continuityCheckChapter(blueprint: BlueprintData): ContinuityChec
   }
 }
 
-/** 比对的是检查时那份文本：改回原样，结论就回来。 */
 export function isChapterAsChecked(checked: ContinuityCheckChapter, current: BlueprintData | undefined): boolean {
   return current !== undefined && JSON.stringify(continuityCheckChapter(current)) === JSON.stringify(checked)
 }
@@ -88,7 +85,6 @@ function continuityCheckNode(node: ContinuityNode): ContinuityCheckNode {
 const utf8Bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
 const PROMPT_OVERHEAD_TOKENS = 1024
 
-/** 从第一章起按顺序放，放不下就停在上一章。单章要么整章进，要么不进。第一章总是放进去：预算只决定放多少，不拒绝检查（ADR-0026）。 */
 export function selectContinuityCheckScope(blueprints: readonly BlueprintData[], nodes: readonly ContinuityNode[], inputTokens: number) {
   const chapters: ContinuityCheckChapter[] = []
   const kept = new Map<string, ContinuityCheckNode>()
@@ -114,7 +110,6 @@ export function selectContinuityCheckScope(blueprints: readonly BlueprintData[],
   }
 }
 
-/** 模型只见 e1、e2：真实 eventId 带 UUID，又长又容易抄错。 */
 export const promptId = (index: number) => `e${index + 1}`
 
 export function continuityTimeline(nodes: readonly ContinuityCheckNode[]) {
@@ -191,7 +186,6 @@ export function parseJson(content: string): unknown {
   return JSON.parse(fenced ? fenced[1]! : trimmed)
 }
 
-/** 一条引用不成立只丢这一条；整段读不出来才算失败。 */
 export function parseBlueprintContinuityCheck(
   content: string,
   chapters: readonly ContinuityCheckChapter[],
@@ -228,7 +222,6 @@ export function parseBlueprintContinuityCheck(
   }
 }
 
-/** 键只取自节点，章号由豁免行的 chapterNumber 承载：这样按章豁免和全书豁免都成立。 */
 export function continuityFindingKey(eventIds: readonly string[]): string {
   return `ai:${factHash([...eventIds].sort().join('\n'))}`
 }

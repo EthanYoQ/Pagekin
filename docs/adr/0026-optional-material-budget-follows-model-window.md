@@ -32,3 +32,23 @@ ADR-0023 取消了发送前按自估 token 拒绝，提示词放不放得下由�
 - 默认窗口配很大的 `maxTokens` 时，可用输入可能压到 0，可选材料全不放。这是额度公式的直接结果，不另做兜底。作者填对窗口或调小输出上限即可，自动拉取窗口由后续 PR 处理。
 - 字节 ÷ 3 对英文偏保守，英文项目放得比窗口实际能放的少。换算准确性让位于只有一处系数。
 - 8 MiB 收据上限不变，各来源自身的条数上限也不在这次范围内。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/generation-owner-contract.ts`
+
+- `MATERIAL_DECISION_RECEIPT_VERSION`：S10B 章节材料准入裁决的脱敏收据。 只允许编号、稳定 id、原因码与内容哈希：没有材料正文、没有作者文字、没有路径、 没有凭据。渲染层是唯一能产生它的人（`buildMaterialDecisionReceipt`），主进程按固定 形状逐字段校验后原样冻进 `RunBinding.sourceManifest`，并把它的哈希折进 `contextSnapshotHash`——恢复因此无法对着**另一份**准入裁决继续。 `contentHash` 是渲染层选择合同冻结的来源内容哈希，与主进程 `sourceRefs` 自己读库得到的 源身份所有权分开：主进程不重算正文，只校验闭集、计数与来源身份后绑定。
+- `MATERIAL_DECISION_SOURCE_ID`：v1 只接收当前写/审/修材料装配器能铸造的稳定、非正文来源 ID。
+- `MATERIAL_BYTES_PER_TOKEN`：选材按 UTF-8 字节估 token 的唯一系数。实测中文 3.78–4.37 字节/token，取 3 偏保守。
+- `MaterialBudget`：本次生成可用的输入 token 及其来历。只决定放多少可选材料，绝不用来拒绝发送（ADR-0026）。
+- `MaterialAdmission`：主进程裁决的选材依据。旧收据没有额度，只能照它记下的可选材料原样重现（frozen）。
+- `DEFAULT_MATERIAL_ADMISSION`：没有主进程额度可用时的选材依据：窗口按默认值，不预留输出。
+- `units`：该来源实际进入材料的 UTF-8 字节数（同一来源的多个片段在此合并）。
+- `reason`：`SourceOmissionReason` 的闭合码；调用方已在源头限定取值，这里只放码不放正文。
+- `verdict`：只有「必需材料全部纳入」的裁决才会走到生成，因此收据只存在这一种容量裁决。
+- `promptHash`：精确初始 user message 的 UTF-8 SHA-256；main 在首个物理请求前复核。
+- `capacity`：admittedUnits 只统计被选来源块，不冒充完整 user prompt 的总字节数。
+- `budget`：恢复同一次生成时沿用，不按当前模型重算。ADR-0026 之前的收据没有这个字段。
+- `MaterialDecisionDraft`：渲染层完成材料选择后、最终 prompt 尚未组装时的内部裁决。
+- `materialAdmission`：写稿、审修运行的选材依据；其他运行没有。
+- `materialDecision`：S10B 章节材料准入裁决（脱敏收据）。写稿在 begin 时提供；审稿/修稿在运行已开出、 首个物理请求尚未产生时通过受控绑定 IPC 补入。主进程校验后冻进 sourceManifest。

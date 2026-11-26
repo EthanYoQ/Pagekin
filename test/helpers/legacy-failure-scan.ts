@@ -55,7 +55,6 @@ export function rawAuthorOwnedArguments(file: string, text: string): string[] {
   return found
 }
 
-/** 只有 src/shared/failure.ts 可以断言成这些类型。 */
 export function failureTypeAssertions(file: string, text: string): string[] {
   if (file === FAILURE_MODULE) return []
   const found: string[] = []

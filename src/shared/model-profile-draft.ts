@@ -44,12 +44,10 @@ export function resolveContextWindow(model: ModelProfile): ResolvedContextWindow
   return { tokens: isLocalModelEndpoint(model) ? LOCAL_DEFAULT_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS, source: 'default' }
 }
 
-/** 服务商把输入和 max_tokens 合计算进窗口，输出占满窗口就一定超长；留一半给提示词。默认值是猜测，不收紧。 */
 export function contextWindowOutputCap(window: ResolvedContextWindow): number {
   return window.source === 'default' ? Infinity : Math.ceil(window.tokens / 2)
 }
 
-/** 默认值是猜测，服务商报什么都比它可信；其余来源只收紧，手填的不动。 */
 export function withLearnedContextWindow(model: ModelProfile, tokens: number): ModelProfile {
   const current = resolveContextWindow(model)
   if (current.source === 'manual' || current.source !== 'default' && tokens >= current.tokens) return model
@@ -66,7 +64,6 @@ export function clearContextWindowOverride(model: ModelProfile, discoveredTokens
   return { ...cleared, maxTokens: model.maxTokens }
 }
 
-/** One explicit model selection seam; refreshing a list never calls it. */
 export function applyModelProfileSelection(model: ModelProfile,
   selection: Partial<Pick<ModelProfile, 'provider' | 'protocol' | 'baseUrl' | 'modelName'>>,
   declared?: Partial<NonNullable<ModelProfile['capabilities']>>): ModelProfile {
@@ -78,8 +75,6 @@ export function applyModelProfileSelection(model: ModelProfile,
   const previousCap = model.capabilities?.maxOutputTokens
   const maxTokens = typeof previousCap === 'number' && Number.isSafeInteger(previousCap) && previousCap > 0
     ? Math.min(model.maxTokens, previousCap) : model.maxTokens
-  // Persist operational limits separately from the catalog's provider maxima.
-  // In particular, a new model cannot overwrite a smaller author output limit.
   const preset = { ...features, ...(capacity ? { contextWindowTokens: capacity.contextWindowTokens,
     maxOutputTokens: capacity.maxOutputTokens } : {}),
     ...(!features && resolveModelProfileReasoningMapping({ ...next, reasoningMapping: undefined }) ? { reasoning: true } : {}) }
@@ -101,18 +96,11 @@ export function applyModelProfileSelection(model: ModelProfile,
     capabilities: Object.values(capabilitySources).some(source => source !== 'unknown') ? capabilities : undefined }
 }
 
-/** 创建新模型配置时的输入；不会读取或修改已保存的配置。 */
 export interface CreateModelProfileDraftOptions {
   id: string
   purposes: ModelProfile['purposes']
 }
 
-/**
- * 为设置界面创建完整的新模型草稿。
- *
- * 生成模型从 OpenAI 端点起步，模型名留空，等作者从端点拉到的列表里选；
- * 向量模型默认使用 SiliconFlow 的免费 BAAI/bge-m3，检索模型页的引导文案按「填上密钥就能用」写；重排模型同样从 SiliconFlow 起步。
- */
 export function createModelProfileDraft({
   id,
   purposes,

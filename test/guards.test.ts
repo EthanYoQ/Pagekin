@@ -172,7 +172,6 @@ describe('存量 baseline 只减不增', () => {
 })
 
 describe('失败的码与说明（#844）', () => {
-  /** 建立基线时各旧约定的总数；基线文件只能往下改。authorOwned 是新约定，每处新增都改基线、过审查。 */
   const ORIGINAL_TOTALS: Record<string, number> = { displayedErrorMessage: 154, appErrorMessage: 27, knownAppErrorMessage: 19, englishWithReason: 27, '{ legacy:': 2 }
   const baseline = FAILURE_BASELINE as LegacyFailureCounts
   const totals = (counts: LegacyFailureCounts) => Object.values(counts).reduce<Record<string, number>>((sum, perFile) => {

@@ -46,7 +46,6 @@ export interface NarrativeThreadEvent extends NarrativeThreadEventInput {
   createdAt: string
 }
 
-/** resolve：写前延后到第 N 章的历史，延后时回收章已直接改成 N，排期不读它。advance：作者指定第 N 章推进，不动回收章。 */
 export interface NarrativeThreadAssignment {
   chapterNumber: number
   kind: 'advance' | 'resolve'
@@ -82,10 +81,6 @@ export interface NarrativeThreadChapterContext {
   characters: string[]
 }
 
-/**
- * 线索相对某一章的排期。注入正文时按正在写的章算，线索页按最大定稿章算。
- * 区间数据不可用（导入或手改写坏）时返回 null，调用方只跳过这一条。
- */
 export type NarrativeThreadSchedule =
   | { kind: 'overdue'; chaptersOverdue: number }
   | { kind: 'due' | 'assigned' | 'in-window' | 'later' | 'terminal' }
@@ -118,10 +113,6 @@ export function compareNarrativeThreadSchedules(left: NarrativeThreadSchedule, r
 
 export const CHAPTER_THREAD_TASK_LIMIT = 6
 
-/**
- * 写第 N 章时到期、逾期或作者指定的线索，开写时冻结进章节信息，作为本章硬任务。
- * 恢复和审稿都读冻结值，开写后作者改计划不影响本轮。
- */
 export interface ChapterThreadTask {
   planId: number
   title: string
@@ -173,10 +164,6 @@ export interface ChapterThreadPanel {
   leftOut: number
 }
 
-/**
- * movedHere 是写这一章时本次会话里延后过的线索（线索 id → 延到哪章）。延后前的回收章只有会话知道，
- * 所以只有它们能撤销；作者在别处改过回收章的不再算。
- */
 export function chapterThreadPanel(threads: readonly NarrativeThreadView[], chapterNumber: number,
   movedHere: ReadonlyMap<number, { to: number }>): ChapterThreadPanel {
   const { tasks, leftOut } = chapterThreadTasks(threads, chapterNumber)
@@ -197,7 +184,6 @@ export function chapterThreadPanel(threads: readonly NarrativeThreadView[], chap
   }
 }
 
-/** 读回冻结的任务，键序与开写时一致，恢复时逐字比对才能对上。格式不对返回 null。 */
 export function parseChapterThreadTasks(value: unknown): ChapterThreadTask[] | null {
   if (!Array.isArray(value) || value.length > CHAPTER_THREAD_TASK_LIMIT) return null
   const tasks: ChapterThreadTask[] = []
@@ -213,7 +199,6 @@ export function parseChapterThreadTasks(value: unknown): ChapterThreadTask[] | n
   return tasks
 }
 
-/** 写稿运行绑定（RunBinding 的 JSON）在作者输入「draft:chapter-info」里冻结的线索任务。没有记录是空列表，记录写坏返回 null。 */
 export function writtenChapterThreadTasks(bindingJson: string): ChapterThreadTask[] | null {
   try {
     const inputs = (JSON.parse(bindingJson) as { sourceManifest?: { authorInputs?: { id: string; text: unknown }[] } }).sourceManifest?.authorInputs

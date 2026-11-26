@@ -3,7 +3,6 @@ import {
   INITIAL_APPEARANCE, migrateLegacyAppearance, migratePreviousAppearance, parseAppearanceProfile, serializeAppearanceProfile,
 } from '../appearance-profile'
 
-/** RD-10 之前写下的配置：v1 的外壳只能是 unset、classic、writer，v2 还可以是 stage。 */
 const previous = (fields: Record<string, unknown> = {}) => JSON.stringify({
   schemaVersion: 1, revision: 7, shellPreference: 'writer', colorTheme: 'paper', zoom: 1.25, writingFont: 'noto-serif-sc',
   uiFont: 'inter', origin: 'author', legacyImportCompleted: true, legacyFontDefaultsVersion: 0, ...fields,
@@ -36,8 +35,6 @@ describe('RD-10 之前的外观配置迁到 v3', () => {
 })
 
 describe('旧皮肤', () => {
-  // 皮肤从来不在外观偏好里，而在主进程全局数据的 skins/manifest.json；那份文件迁移后不再读取，原样留给回退。
-  // 这里断言的是：任何版本的外观偏好都表达不了皮肤，所以三种旧皮肤迁移后都是没有背景图的纸墨界面。
   it.each(['classic', 'anime', 'custom'])('%s 皮肤写不进外观偏好：旧配置与 v3 里带皮肤字段都拒绝，迁移结果没有皮肤', skin => {
     expect(() => migratePreviousAppearance(previous({ backgroundSkin: skin }))).toThrow('APPEARANCE_UNKNOWN_FIELDS')
     const migrated = migratePreviousAppearance(previous())

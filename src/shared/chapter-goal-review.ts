@@ -12,13 +12,11 @@ export interface ChapterGoalReviewItem {
   status: 'completed' | 'unmet' | 'unknown'
   description: string
   evidence: readonly ChapterGoalEvidence[]
-  /** 只出现在线索目标上，且只在模型给出有效结论时出现。 */
   threadOutcome?: ChapterThreadOutcome
 }
 export interface ChapterGoalReview {
   version: 1
   chapterNumber: number
-  /** Coverage describes the checklist, never permission to finalize a chapter. */
   coverage: 'complete' | 'unknown' | 'not_configured'
   items: readonly ChapterGoalReviewItem[]
 }
@@ -28,7 +26,6 @@ export interface FrozenChapterGoals {
   items: readonly Readonly<{ id: string; text: string }>[]
 }
 
-/** Only explicit current-chapter list boundaries are split; prose is not semantically rewritten. */
 export function freezeChapterGoals(chapterNumber: number, keyEvents: string | null | undefined,
   authorSources: readonly string[] = []): FrozenChapterGoals {
   const items: Array<Readonly<{ id: string; text: string }>> = (keyEvents ?? '').split(/\r?\n|[；;]/u).map(text => text.trim()).filter(Boolean)
@@ -60,7 +57,6 @@ function threadGoalScheduleNote(schedule: ChapterThreadTask['schedule']): { zhCN
     : { zhCN: '本章到期', enUS: 'due this chapter' }
 }
 
-/** 写稿时冻结的线索任务追加成目标；覆盖率只描述作者配置的目标，不随它变化。 */
 export function withChapterThreadGoals(goals: FrozenChapterGoals, tasks: readonly ChapterThreadTask[],
   language: WritingLanguage): FrozenChapterGoals {
   if (!tasks.length) return goals
@@ -140,7 +136,6 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 function nonempty(value: unknown): value is string { return typeof value === 'string' && Boolean(value.trim()) }
 
-/** Permit only an extra enclosing quotation pair, never punctuation or whitespace rewriting. */
 function locateGoalEvidence(quote: unknown, draft: string): ChapterGoalEvidence | null {
   if (!nonempty(quote)) return null
   let candidate = quote
@@ -156,7 +151,6 @@ function locateGoalEvidence(quote: unknown, draft: string): ChapterGoalEvidence 
   return { quote: draft.slice(start, end), start, end }
 }
 
-/** Mechanical coverage/evidence validation; the model still owns the semantic judgment. */
 export function normalizeChapterGoalReview(
   raw: unknown, goals: FrozenChapterGoals, draft: string, language: WritingLanguage,
 ): ChapterGoalReview {
@@ -196,7 +190,6 @@ export function normalizeChapterGoalReview(
   return { version: 1, chapterNumber: goals.chapterNumber, coverage: invalidCoverage ? 'unknown' : goals.coverage, items }
 }
 
-/** 存档的目标条目上线索结论是否成立；审稿记录和项目归档共用这一条规则。没有结论时成立。 */
 export function validThreadOutcome(item: Record<string, unknown>): boolean {
   if (item.threadOutcome === undefined) return true
   return typeof item.id === 'string' && isChapterThreadGoalId(item.id) && Object.hasOwn(THREAD_OUTCOME_STATUS, String(item.threadOutcome))
@@ -204,7 +197,6 @@ export function validThreadOutcome(item: Record<string, unknown>): boolean {
     && !(item.threadOutcome === 'unaddressed' && Array.isArray(item.evidence) && item.evidence.length > 0)
 }
 
-/** Read persisted canonical reports, including historical reports without this optional field. */
 export function parseChapterGoalReview(value: unknown): ChapterGoalReview | null {
   const parsed = record(value)
   if (!parsed || parsed.version !== 1 || !Number.isSafeInteger(parsed.chapterNumber) || Number(parsed.chapterNumber) < 1
@@ -226,7 +218,6 @@ export function parseChapterGoalReview(value: unknown): ChapterGoalReview | null
   return parsed as unknown as ChapterGoalReview
 }
 
-/** A deterministic presentation projection, not another editable source of goal truth. */
 export function chapterGoalReviewItems(review: ChapterGoalReview, language: WritingLanguage): Array<Record<string, unknown>> {
   const category = writingLanguageText(language, '本章目标', 'Chapter goal')
   const items: Array<Record<string, unknown>> = review.items.map(item => ({

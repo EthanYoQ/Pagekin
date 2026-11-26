@@ -2,28 +2,19 @@ import type { MainGenerationRunHandle } from '../services/generation/generation-
 import { PLOT_OUTLINE_PROTOCOL, plotOutlineCoverageNote, plotOutlineLastChapter, plotOutlineNextChapter } from './plot-outline-contract'
 import type { WritingLanguage } from './writing-language'
 
-/** partial_arch.json 里情节大纲的分批检查点字段。 */
 export interface SynopsisCheckpoint {
   synopsis_protocol?: typeof PLOT_OUTLINE_PROTOCOL
   synopsis_generation_handle?: MainGenerationRunHandle
-  /** 情节大纲：已确认覆盖至 synopsis_covered_to 的纯正文（不含批次进度行）。 */
   synopsis_result?: string
-  /** 上一次生成在本批范围内被中断；synopsis_result 为已完成部分。 */
   synopsis_incomplete?: boolean
-  /** 最近一次成功批次的结束章（== totalChapters 时全书大纲完成）。 */
   synopsis_covered_to?: number
-  /** 当前/上次生成批次的范围；断点续写恢复时沿用。 */
   synopsis_range?: { from: number; to: number }
-  /** 上次写入 DB 的大纲全文指纹；用于检测大纲是否被手动编辑（防续批覆盖用户修改）。 */
   synopsis_db_hash?: string
-  /** 与 synopsis_result 精确绑定；旧检查点缺失时由 DB 逐字等价校验兼容。 */
   synopsis_body_hash?: string
 }
 
-/** 少于该字符数视为无保存价值的零碎输出，不落盘、不提供续写。 */
 export const MIN_SYNOPSIS_PARTIAL_PERSIST_CHARS = 120
 
-/** 落库时追加在未完成大纲末尾的可见标记（帮助用户识别与编辑器提示）。 */
 const SYNOPSIS_INCOMPLETE_MARKER_ZH = [
   '',
   '> ⚠️ **本大纲未完成**：生成被输出长度中断，以上为已自动保存的已完成部分。',
@@ -38,7 +29,6 @@ const SYNOPSIS_INCOMPLETE_MARKER_EN = [
   '',
 ].join('\n')
 
-/** 轻量确定性指纹：绑定大纲赖以生成的源事实，防止旧检查点被续到新上下文。 */
 export function synopsisFactsFingerprint(facts: readonly string[]): string {
   const joined = facts.join('\u0001')
   let hash = 5381
@@ -66,11 +56,6 @@ export function renderSynopsisDbText(
   return `# ${heading}\n\n${visibleBody}`.trim()
 }
 
-/**
- * 续批/恢复前校验 DB 中的大纲是否仍是上次生成写入的内容。用户可能直接在
- * 编辑器手动修改大纲（保存只更新 DB）：此时若按检查点前缀拼接会覆盖用户的
- * 修改，必须 fail-closed 并引导显式重新生成。
- */
 export function assertCheckpointDbMirrorCurrent(
   partial: SynopsisCheckpoint,
   dbOutlineText: string,
@@ -172,25 +157,16 @@ export function isRecoverableSynopsisCheckpoint(
     && isUsableSynopsisCheckpoint(value, dbOutlineText, writingLanguage, totalChapters)
 }
 
-/**
- * 情节大纲写到了哪里：流程脊、架构页的徽标、页头计数与主按钮、生成对话框的默认勾选共用这一个判定。
- * 写到第几章按主进程开跑时的同一判定（plotOutlineNextChapter 内部即 plotOutlineConfirmedPrefix）：正式大纲能紧接第 k 章续写才算只写到第 k 章。
- * 不用检查点的 synopsis_covered_to：重写中间几章后它记的是本批终章，与正式大纲对不上。检查点只用来认出被打断或正在生成的一批。
- */
 export type OutlineProgress =
   | { kind: 'empty' }
-  /** 有一批被打断或正在生成；正式大纲还是开跑前的样子。 */
   | { kind: 'interrupted' }
-  /** 正式大纲写到第 coveredTo 章，全书 total 章。 */
   | { kind: 'partial'; coveredTo: number; total: number }
-  /** 正文末尾还带着分批说明，却不能从它接着写：检查点没了，或说明与正文对不上（比如末尾多了换行、手动改过）。 */
   | { kind: 'unresumable' }
   | { kind: 'complete' }
 
 export function outlineProgress(synopsis: string, checkpoint: unknown, writingLanguage: WritingLanguage, totalChapters: number): OutlineProgress {
   if (synopsis.length <= 50) return { kind: 'empty' }
   if (isRecoverableSynopsisCheckpoint(checkpoint, synopsis, writingLanguage, totalChapters)) return { kind: 'interrupted' }
-  // 只有第 0 章序章：正文再长也还没开始生成。
   if (plotOutlineLastChapter(synopsis) === 0) return { kind: 'empty' }
   const next = plotOutlineNextChapter({ synopsis, totalChapters, writingLanguage })
   if (next > 1) return { kind: 'partial', coveredTo: next - 1, total: totalChapters }

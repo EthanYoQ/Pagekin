@@ -1,3 +1,34 @@
 # 保留不可区分的显式暗色主题意图
 
 版本 0.8.2 中用户主动选择的 `dark` 与更早版本深蓝主题的持久化数据形态相同，升级代码无法可靠识别来源。系统因此保留所有持久化 `dark`，只把明确的历史值 `night` 迁移为 `dark`；不再用缺失标记猜测并改写用户选择。这个决定放弃自动重命名一部分旧深蓝数据，换取升级过程不改变无法证明来源的用户偏好。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/__tests__/appearance-profile.test.ts`
+
+- `previous`：RD-10 之前写下的配置：v1 的外壳只能是 unset、classic、writer，v2 还可以是 stage。
+- 皮肤从来不在外观偏好里，而在主进程全局数据的 skins/manifest.json；那份文件迁移后不再读取，原样留给回退。 这里断言的是：任何版本的外观偏好都表达不了皮肤，所以三种旧皮肤迁移后都是没有背景图的纸墨界面。
+
+### `src/shared/__tests__/fixtures/appearance-profile-v1-parser.fixture.ts`
+
+- `THEMES`：eb0affc1（RD-3 之前的最后一版）外观配置解析器的原样拷贝，只把返回类型换成 unknown、去掉导出的错误类。 新版本写出的配置要能被回退后的旧版本读回，测试用它当旧版本；不要随新版本修改。
+
+### `src/shared/appearance-profile.ts`
+
+- `APPEARANCE_STORAGE_KEY`：外观偏好：浅色或深色、缩放与两种字体，存在渲染进程的 localStorage。 v3 起换了新键：RD-10 之前的配置（带外壳偏好与 galaxy、paper 主题）只读不写，回退到旧版本时它原样还在。
+- `LEGACY_THEME_STORAGE_KEY`：更早版本分开存的主题，迁移只读。
+- `CanonicalAppearanceProfile`：内存里的外观偏好。schemaVersion 只出现在存储里。
+- `legacyFontDefaultsVersion`：字体默认值版本只记来源，从不触发字体重置（原文：Provenance only. Never triggers a font reset.）
+- `PREVIOUS_THEME`：旧配置的主题：深色与星空迁为深色，纸面与浅色迁为浅色。
+- `parseAppearanceProfile`：读取已保存的 v3 配置，严格校验：别的版本、皮肤、外壳偏好等多出来的字段都拒绝。
+- `migratePreviousAppearance`：RD-10 之前的配置（schemaVersion 1、2）按它当时的规则严格校验后迁成 v3：主题按 PREVIOUS_THEME 换算，外壳偏好丢弃， 修订号、缩放、字体与来源照搬。只读旧键，不改它。
+- `migrateLegacyAppearance`：最早的版本只存了主题、缩放与字体（ai-novel-writer-theme）。没有这一项时用初始偏好。 跟随系统的主题按当时的系统外观落定，night 是深色的旧名。
+
+### `src/shared/project-storage.ts`
+
+- `mayHydrateAppearance`：主进程的全局数据就绪后，渲染进程才读写外观偏好。
+
+### `src/shared/startup-contract.ts`
+
+- `AppearanceReadbackAck`：渲染进程写好外观偏好并读回后，向主进程确认这一份的修订号与所在的全局数据世代。
+- `appearanceRevisionFloor`：这个窗口此前已确认过的外观修订号。重载后存储坏了时，重置要写得比它大，主进程才接受。
