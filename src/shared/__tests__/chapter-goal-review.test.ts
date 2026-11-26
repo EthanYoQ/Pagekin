@@ -63,7 +63,7 @@ describe('本章目标审稿合同', () => {
       { ...answer[0], status: 'unmet', description: '完成动作被推迟。', evidence: [{ quote: '明天再装订' }] },
       { ...answer[1], status: 'unknown', description: '没有找到约定的证据。', evidence: [] },
     ], goals, '她说，明天再装订。', 'zh-CN')
-    expect(result.coverage).toBe('complete') // 已覆盖两项，不代表目标已达成。
+    expect(result.coverage).toBe('complete')
     expect(result.items.map(item => item.status)).toEqual(['unmet', 'unknown'])
     expect(chapterGoalReviewItems(result, 'zh-CN').map(item => item.severity)).toEqual(['error', 'unknown'])
   })

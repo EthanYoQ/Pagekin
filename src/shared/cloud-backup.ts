@@ -115,7 +115,6 @@ export interface CloudBackupListRequest {
 export interface CloudBackupRestoreCopyRequest extends CloudBackupListRequest {
   operationId: string
   generationId: string
-  /** dialog:select-project-restore-target 签发的授权标识；渲染进程不得携带路径。 */
   targetGrantId: string
 }
 
@@ -161,7 +160,6 @@ export interface CloudBackupChannels {
       backupPoint: string
       bindingSaved: boolean
       binding: CloudBackupBindingView | null
-      /** 验不过、没放进这次备份的审修循环所在的章。 */
       omittedReviewCycles?: readonly DamagedReviewCycle[]
     } | CloudBackupFailure
   }

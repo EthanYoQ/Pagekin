@@ -2,7 +2,6 @@ const MAX_TERMS = 48
 const K1 = 1.2
 const B = 0.75
 
-/** 中文没有空格分词，连续汉字拆成相邻二元组；其他文字和数字按整词。 */
 export function fullTextTerms(query: string): string[] {
   const words = query.match(/\p{Script=Han}+|(?:(?!\p{Script=Han})[\p{L}\p{N}-])+/gu) ?? []
   const terms = words.flatMap(word => {
@@ -27,10 +26,6 @@ function occurrences(text: string, term: string): number {
   return count
 }
 
-/**
- * 区分大小写计数，与 LIKE 筛行一致，没命中的行不进统计，所以传全部段落和只传筛出的行排序相同。
- * 排序结果只由分数、正文、文件名决定，与行 id 和导入顺序无关。
- */
 export function rankFullText<T extends { text: string; fileName: string }>(rows: readonly T[], terms: readonly string[], totalRows: number): { row: T; score: number }[] {
   const counted = rows.map(row => ({ row, length: Array.from(row.text).length, counts: terms.map(term => occurrences(row.text, term)) }))
   const matched = counted.filter(item => item.counts.some(count => count > 0))

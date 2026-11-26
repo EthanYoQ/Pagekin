@@ -147,7 +147,6 @@ describe('provider catalog', () => {
       .toEqual(['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview'])
     expect(gemini?.embeddingModels).toEqual(['gemini-embedding-001'])
 
-    // 思考等级取自 https://ai.google.dev/gemini-api/docs/generate-content/thinking 。
     const levels = { low: 'low', medium: 'medium', high: 'high' }
     const expected = {
       'gemini-3.8-flash': { supportedEfforts: ['low', 'medium', 'high'], providerValues: levels },

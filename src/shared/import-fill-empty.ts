@@ -1,6 +1,5 @@
 import type { ImportGlobalFactsCore } from './import-global-facts'
 
-/** 作者原稿反推只补空白：每个可补字段按类型判空，非空且与反推值不同的进建议。 */
 export type ImportFillField = keyof ImportGlobalFactsCore | 'writingStyle'
 export type ImportFillValues = ImportGlobalFactsCore & { writingStyle: string }
 
@@ -17,9 +16,6 @@ export interface ImportFillPlan<Field extends ImportFillField> {
 
 type FillKind = 'text' | 'count'
 
-/**
- * suggest=false：导入章数不是作者计划的总章数，只在项目没有总章数时补上，不当作建议。
- */
 const FILL_RULES: Record<ImportFillField, { kind: FillKind; suggest: boolean }> = {
   genre: { kind: 'text', suggest: true },
   subGenre: { kind: 'text', suggest: true },

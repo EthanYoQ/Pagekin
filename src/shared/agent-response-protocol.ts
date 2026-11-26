@@ -55,11 +55,8 @@ function parseBlock(text: string, registered: ReadonlySet<string>): AgentProtoco
       return objectArguments(args) ? { name: value.name, arguments: args } : null
     } catch { return null }
   }
-  // Tagged calls historically retain unknown names so the host can return the
-  // existing unknown-tool observation. Parsing never grants tool authority.
   const direct = parseJson(text)
   if (direct) return direct
-  // An inner wrapper cannot prove that an outer control block was complete.
   if (/<\/?(?:tool_call|｜DSML｜tool_call)(?=[\s>])/i.test(text)) return null
   const embeddedJson = text.match(/\{[\s\S]*\}/)?.[0]
   return parseTaggedCall(text, registered)
@@ -97,7 +94,6 @@ function scanProtocol(text: string, registered: ReadonlySet<string>) {
     offset = markers.lastIndex
     const name = marker[2].toLowerCase()
     if (marker[1]) {
-      // A missing opening reasoning tag leaves no proven visible prefix.
       if (HIDDEN_TAGS.has(name)) { pendingText = ''; visible = ''; textParts.length = 0; toolCalls.length = 0 }
       continue
     }
@@ -131,8 +127,6 @@ function scanProtocol(text: string, registered: ReadonlySet<string>) {
   return { textParts, toolCalls, cleaned: visible.replace(/\n{3,}/g, '\n\n').trim() }
 }
 
-/** Parse a settled response against a frozen registry. This is not a streaming
- * prefix projection: an incomplete raw call may still turn into an action. */
 export function parseAgentResponseProtocol(content: string, registeredToolNames: readonly string[]): AgentResponseProtocol {
   const registered = new Set(registeredToolNames)
   const rawCall = parseRawCall(content, registered) ?? parseEnvelope(content, registered)
@@ -142,15 +136,12 @@ export function parseAgentResponseProtocol(content: string, registeredToolNames:
     visibleText: parsed.textParts.join('').replace(/\n{3,}/g, '\n\n').trim() }
 }
 
-/** Preserve prose spacing when cleaning an already selected visible response. */
 export function cleanAgentProtocolVisibleText(content: string, registeredToolNames: readonly string[]): string {
   const registered = new Set(registeredToolNames)
   if (parseRawCall(content, registered) ?? parseEnvelope(content, registered)) return ''
   return scanProtocol(content, registered).cleaned
 }
 
-/** A terminal interruption may retain prose, but never promotes a partial call
- * to a tool action. Ambiguous raw JSON/name prefixes are held back. */
 export function projectInterruptedAgentVisibleText(content: string, registeredToolNames: readonly string[]): string {
   const visible = cleanAgentProtocolVisibleText(content, registeredToolNames)
   const trimmed = visible.trimStart()

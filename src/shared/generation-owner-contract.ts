@@ -5,7 +5,6 @@ import type { GenerationKnowledgeSnapshot } from './generation-knowledge'
 import type { ImportGenerationSlot } from './import-generation'
 import type { ImportRunExecutionAuthority } from './import-run'
 
-/** Raw text explicitly supplied for this author action, never inferred candidate text. */
 export interface GenerationAuthorInput { id: string; text: string }
 export type ArchitecturePlanningIntent = Readonly<{
   version: 'architecture-action-v1'
@@ -24,7 +23,6 @@ export interface DirectoryGenerationProgress {
   committedRange: { startChapter: number; endChapter: number }
   remainingRange: { startChapter: number; endChapter: number } | null
   continuationHandle?: MainGenerationRunHandle
-  /** Read projection from the original run's immutable source manifest. */
   authorInputs?: readonly GenerationAuthorInput[]
 }
 export interface BlueprintRecoveryDiagnostic {
@@ -46,17 +44,6 @@ export interface VisibleCompositionReceipt {
   authorInputs?: GenerationAuthorInput[]
 }
 export type VisibleCompositionAlgorithm = 'visible-append-v1' | typeof import('./plot-outline-contract').PLOT_OUTLINE_PROTOCOL | import('./draft-visible-text').DraftVisibleTextVersion
-/**
- * S10B 章节材料准入裁决的脱敏收据。
- *
- * 只允许编号、稳定 id、原因码与内容哈希：没有材料正文、没有作者文字、没有路径、
- * 没有凭据。渲染层是唯一能产生它的人（`buildMaterialDecisionReceipt`），主进程按固定
- * 形状逐字段校验后原样冻进 `RunBinding.sourceManifest`，并把它的哈希折进
- * `contextSnapshotHash`——恢复因此无法对着**另一份**准入裁决继续。
- *
- * `contentHash` 是渲染层选择合同冻结的来源内容哈希，与主进程 `sourceRefs` 自己读库得到的
- * 源身份所有权分开：主进程不重算正文，只校验闭集、计数与来源身份后绑定。
- */
 export const MATERIAL_DECISION_RECEIPT_VERSION = 1
 export const MATERIAL_DECISION_UNIT_METHOD_VERSION = 'utf8-bytes-v1' as const
 export const MATERIAL_DECISION_MAX_INPUT_UNITS = 8 * 1024 * 1024
@@ -73,15 +60,12 @@ export const MATERIAL_DECISION_OMISSION_REASONS = [
 ] as const
 export type MaterialDecisionOmissionReason = typeof MATERIAL_DECISION_OMISSION_REASONS[number]
 
-/** v1 只接收当前写/审/修材料装配器能铸造的稳定、非正文来源 ID。 */
 export const MATERIAL_DECISION_SOURCE_ID = /^(?:author:required|(?:finalized|candidate|review:confirmed):[1-9]\d*|reference:(?:0|[1-9]\d*))$/u
 
-/** 选材按 UTF-8 字节估 token 的唯一系数。实测中文 3.78–4.37 字节/token，取 3 偏保守。 */
 export const MATERIAL_BYTES_PER_TOKEN = 3
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 32_768
 export const MATERIAL_BUDGET_WINDOW_SOURCES = ['manual', 'learned', 'endpoint', 'preset', 'default'] as const
 export type MaterialBudgetWindowSource = typeof MATERIAL_BUDGET_WINDOW_SOURCES[number]
-/** 本次生成可用的输入 token 及其来历。只决定放多少可选材料，绝不用来拒绝发送（ADR-0026）。 */
 export interface MaterialBudget {
   inputTokens: number
   contextWindowTokens: number
@@ -99,12 +83,10 @@ export function tightenMaterialBudget(budget: MaterialBudget, contextWindowToken
 export function estimateMaterialTokens(units: number): number {
   return Math.ceil(units / MATERIAL_BYTES_PER_TOKEN)
 }
-/** 主进程裁决的选材依据。旧收据没有额度，只能照它记下的可选材料原样重现（frozen）。 */
 export type MaterialAdmission =
   | { kind: 'budget'; budget: MaterialBudget }
   | { kind: 'frozen'; optionalContentHashes: string[] }
 
-/** 没有主进程额度可用时的选材依据：窗口按默认值，不预留输出。 */
 export const DEFAULT_MATERIAL_ADMISSION: Extract<MaterialAdmission, { kind: 'budget' }> = { kind: 'budget', budget: materialBudgetFrom({
   contextWindowTokens: DEFAULT_CONTEXT_WINDOW_TOKENS, contextWindowSource: 'default', reservedOutputTokens: 0, safetyMarginTokens: 0 }) }
 
@@ -114,41 +96,28 @@ export interface MaterialDecisionIncludedSource {
   contentHash: string
   category: MaterialDecisionCategory
   required: boolean
-  /** 该来源实际进入材料的 UTF-8 字节数（同一来源的多个片段在此合并）。 */
   units: number
 }
 export interface MaterialDecisionOmittedSource {
   sourceId: string
   revision: number
   contentHash: string
-  /** `SourceOmissionReason` 的闭合码；调用方已在源头限定取值，这里只放码不放正文。 */
   reason: MaterialDecisionOmissionReason
   category: MaterialDecisionCategory
   required: boolean
 }
 export interface MaterialDecisionReceipt {
   version: typeof MATERIAL_DECISION_RECEIPT_VERSION
-  /** 只有「必需材料全部纳入」的裁决才会走到生成，因此收据只存在这一种容量裁决。 */
   verdict: 'admitted'
-  /** 精确初始 user message 的 UTF-8 SHA-256；main 在首个物理请求前复核。 */
   promptHash: string
-  /**
-   * 生成前定稿对账请求（`chapter-draft-reconcile`）唯一 user message 的 UTF-8 SHA-256。
-   * 存在时，写稿运行的首个物理请求可以是这次对账；随后的首稿提示须等于 promptHash 对应的提示，
-   * 或恰好多出由对账输出重算的注入块（见 `src/shared/draft-reconciliation.ts`）。
-   */
   reconciliationPromptHash?: string
-  /** Frozen input identity of the automatic outline; absent on historical runs. */
   shortOutlinePromptHash?: string
-  /** admittedUnits 只统计被选来源块，不冒充完整 user prompt 的总字节数。 */
   capacity: { maxInputUnits: number; methodVersion: typeof MATERIAL_DECISION_UNIT_METHOD_VERSION; admittedUnits: number }
-  /** 恢复同一次生成时沿用，不按当前模型重算。ADR-0026 之前的收据没有这个字段。 */
   budget?: MaterialBudget
   coverage: { required: number; included: number; complete: boolean }
   included: MaterialDecisionIncludedSource[]
   omitted: MaterialDecisionOmittedSource[]
 }
-/** 渲染层完成材料选择后、最终 prompt 尚未组装时的内部裁决。 */
 export type MaterialDecisionDraft = Omit<MaterialDecisionReceipt, 'promptHash'>
 export interface GenerationDraftCommitReceipt {
   success: true
@@ -169,10 +138,6 @@ export interface GenerationDraftCommitRequest {
   batchId?: string
 }
 export type ShortOutlineRetry = { kind: 'available'; failedAttemptId: string } | { kind: 'unavailable' }
-/**
- * 一份情节大纲或章节蓝图恢复稿还算不算可恢复：superseded 是它还缺的章后来都有了正式内容（开跑之后写的），
- * dismissed 是作者放弃了它。生成还在进行的那份总是 open。
- */
 export interface PlanningDraftStanding {
   requestedRange: { from: number; to: number }
   createdAtMs: number
@@ -198,16 +163,9 @@ export interface GenerationRecoveryContext {
   draftSave: GenerationDraftSaveState
   batchId?: string
   knowledgeSnapshot?: GenerationKnowledgeSnapshot
-  /**
-   * 生成前定稿对账：对账尝试的产物 id（永不作为正文候选），以及首稿应沿用的对账原始输出——首稿尚未发出时为最近一次
-   * 完整结束的对账输出；首稿已发出时，只有主进程复核到首稿提示确实带了注入块才返回，否则为 null。
-   */
   draftReconciliation?: { artifactIds: string[]; completedOutput: string | null }
-  /** Native artifacts and the original dispatched draft task, never trusted prose evidence. */
   draftShortOutline?: { artifactIds: string[]; completedOutput: string | null; promptHash: string; initialDraftTask?: GenerationTask; retry: ShortOutlineRetry }
-  /** Present only when the originally selected drafts still match their frozen source references. */
   selectedDrafts?: PreparedDraftContext['selectedDrafts']
-  /** 写稿、审修运行的选材依据；其他运行没有。 */
   materialAdmission?: MaterialAdmission
 }
 export interface PlanningContinuationReceipt {
@@ -256,9 +214,7 @@ export interface PrepareDraftContextRequest {
   query: string
   selectedDraftIds: number[]
   batchId?: string
-  /** 被服务商以超长拒绝、回执标了 retryWithLearnedWindow 的运行；额度按它学到的窗口收紧。 */
   contextWindowRetryOf?: MainGenerationRunHandle
-  /** authorInputs 和提示词里的档案读自哪个名册版本；没读到名册时不填。 */
   characterRosterRevision?: number
 }
 export interface PreparedDraftContext {
@@ -267,7 +223,6 @@ export interface PreparedDraftContext {
   selectedDrafts: { draftId: number; chapterNumber: number; version: number; contentHash: string; content: string; required?: boolean }[]
   materialBudget: MaterialBudget
 }
-/** 单次批量创作的章数边界；渲染层界面与主进程准入共用，主进程据此限定批量根预算（见 batchRootBudget）。 */
 export const MIN_BATCH_CHAPTERS = 1
 export const MAX_BATCH_CHAPTERS = 10
 export interface GenerationBatchIntent {
@@ -289,28 +244,23 @@ export interface GenerationBatchProgress extends GenerationBatchIntent {
   completedChapters: { chapterNumber: number; draftId: number; version: number; contentHash: string;
     sourceRunHandle: MainGenerationRunHandle; finalizationId?: string; pendingFinalizationId?: string; postProcessComplete?: boolean }[]
   currentChapterRunHandle?: MainGenerationRunHandle
-  /** Null only when all requested effects are confirmed; auto_finalize waits for its outbox. */
   nextChapterNumber: number | null
   authorInputs: GenerationAuthorInput[]
 }
 export interface GenerationBatchHistory extends GenerationBatchProgress {
   sourceCurrent: boolean
 }
-/** 运行侧页「可恢复」区的数据：主进程按运行的操作类型一次筛好，只读真正可能恢复的运行。 */
 export interface GenerationRecoveryList {
   planning: GenerationRecoveryContext[]
   editors: import('./editor-inline-generation').EditorInlineRecovery[]
   reviews: { view: MainGenerationRunView; recovery: import('./review-revision-generation').ReviewRevisionRecovery }[]
   batches: GenerationBatchHistory[]
   drafts: { view: MainGenerationRunView; recovery: GenerationRecoveryContext }[]
-  /** 有运行读取失败；其余照常列出。 */
   partial: boolean
 }
 
-/** Selection and semantic intent only. Main owns identity, source hashes and budgets. */
 export interface BeginGenerationRequest {
   importSlot?: ImportGenerationSlot
-  /** Admission authority only; never persisted in the source manifest. */
   importExecution?: ImportRunExecutionAuthority
   operation: string
   uiActionNonce: string
@@ -323,25 +273,15 @@ export interface BeginGenerationRequest {
   skillStages: WritingSkillStage[]
   authorInputs?: GenerationAuthorInput[]
   output: 'visible-text' | 'structured-data'
-  /** Finite semantic exceptions frozen before dispatch; no renderer-time contract changes. */
   outputOverrides?: { purpose: string; output: 'visible-text' | 'structured-data' }[]
   parentRootActionId?: string
-  /** Explicit next-stage navigation from an atomically committed directory range. */
   continueDirectoryOperationId?: string
-  /** Explicit batch lineage; only main creates the immutable batch intent. */
   batchId?: string
   batchIntent?: GenerationBatchIntent
-  /** Main-issued before asynchronous drafting context reads. */
   preparationId?: string
-  /** Main-issued context for identity-bound extraction from immutable finalized prose. */
   finalizedCharacterContextId?: string
   reviewRevisionContextId?: string
-  /** Main-issued registration from an actual, confirmed Agent tool action. */
   agentWorkflowRegistrationId?: string
-  /**
-   * S10B 章节材料准入裁决（脱敏收据）。写稿在 begin 时提供；审稿/修稿在运行已开出、
-   * 首个物理请求尚未产生时通过受控绑定 IPC 补入。主进程校验后冻进 sourceManifest。
-   */
   materialDecision?: MaterialDecisionReceipt
 }
 export interface ExecuteGenerationRequest {
@@ -377,7 +317,6 @@ export interface GenerationOwnerChannels {
 }
 export interface GenerationOwnerEvents {
   'generation:snapshot': MainGenerationSnapshot
-  /** Volatile provider text for the active Writer display; never part of a run view or receipt. */
   'generation:reasoning': MainGenerationReasoningEvent
 }
 

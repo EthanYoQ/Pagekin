@@ -172,7 +172,6 @@ describe('存量 baseline 只减不增', () => {
 })
 
 describe('失败的码与说明（#844）', () => {
-  /** 基线只能往下改；authorOwned 每处新增都要改基线、过审查。 */
   const ORIGINAL_LEGACY_TOTAL = 154 + 27 + 19 + 27
   const baseline = FAILURE_BASELINE as LegacyFailureCounts
   const legacyTotal = (counts: LegacyFailureCounts) => Object.values(counts).reduce((sum, perFile) => sum + legacySum(perFile), 0)
@@ -188,19 +187,21 @@ describe('失败的码与说明（#844）', () => {
     expect(legacyTotal({ 'src/a.ts': { displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 1 } })).toBeGreaterThan(legacyTotal(before))
   })
 
-  it('计数认调用和 because 里的 legacy 键，不认定义、别的对象里的 legacy 键和别的写法', () => {
+  it('计数认调用和 LegacyReason 形状的对象，不认定义、多键对照表里的 legacy 键和别的写法', () => {
     expect(legacyFailureCounts('src/x.ts', [
       'export function displayedErrorMessage() {}',
       'displayedErrorMessage(locale, error)',
       'errors.appErrorMessage(locale, error)',
-      'const reason = { because: { legacy: text } }',
       'authorError(locale, { note, because: { legacy } })',
       'authorError(locale, { note, because: code ? { code } : { legacy: error } })',
-      'const note = authorOwned(name)',
-    ].join('\n'))).toEqual({ displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 3, authorOwned: 1 })
-    expect(legacyFailureCounts('src/x.ts', [
-      "const SOURCE = { author: 'author', legacy: 'legacy' }",
+      'authorError(locale, { note, because: failureOf(error) ?? { legacy: error.message } })',
       'const reason = { legacy: text }',
+      'const failure: Failure = { note: summary, because: reason }',
+      'const note = authorOwned(name)',
+    ].join('\n'))).toEqual({ displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 4, authorOwned: 1 })
+    expect(legacyFailureCounts('src/x.ts', [
+      "const SOURCE = { author: 'author', adopted: 'author', derived: 'finalized', legacy: 'legacy' }",
+      "const LABELS = { author: ['作者设定', 'Set by author'], legacy: ['升级前已有', 'From before the upgrade'] }",
       'const legacy = 1',
       'const because = { code }',
     ].join('\n'))).toEqual({})

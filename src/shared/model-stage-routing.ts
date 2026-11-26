@@ -47,7 +47,6 @@ export function isModelStage(value: unknown): value is ModelStage {
   return typeof value === 'string' && (MODEL_STAGES as readonly string[]).includes(value)
 }
 
-/** 只存 id，不复制模型档案：档案含明文 API Key（#518）。 */
 export type StageModelIds = Readonly<Partial<Record<ModelStage, string>>>
 
 export function parseStageModelIds(raw: unknown): StageModelIds {
@@ -96,7 +95,6 @@ export type StageModelRoute = { readonly stage: ModelStage; readonly staleAssign
   | { readonly source: 'none'; readonly modelId: null }
 )
 
-/** 不退到「第一个模型」：那会把正文发给作者从没选过的端点。 */
 export function routeStageModel(stage: ModelStage, state: ModelRoutingState): StageModelRoute {
   const assigned = state.stageModelIds[stage] ?? null
   const stageModelId = availableGenerationModelId(state.models, assigned)

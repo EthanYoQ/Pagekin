@@ -29,7 +29,6 @@ describe('APP_BRAND', () => {
   })
 
   it('原名与旧版实际发布的产品名逐字一致', () => {
-    // v1.3.0 正式安装包里 exe 的 VersionInfo ProductName（ADR-0022 取证）；1.3.0 之后 productName 改为书童。
     const lastReleasedProductName = 'AI小说作家'
     const legacyNames = readFileSync(resolve(process.cwd(), 'scripts/product-identity.mjs'), 'utf8')
 

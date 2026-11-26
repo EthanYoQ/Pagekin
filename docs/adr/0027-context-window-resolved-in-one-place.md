@@ -31,3 +31,25 @@
 - 窗口小的本机模型配大的最大输出时，可用输入可能为 0，可选材料全不放，见 ADR-0026「后果」。本软件不因此拦截写作；服务商仍可能以超长报错，按超长错误处理。
 - Ollama 超长时截断还是报错，官方文档没有写明，本机也没有实测。4,096 的默认值不依赖这个结论。
 - LM Studio 原生接口与 `/v1` 同地址，依据是官方文档示例，没有实测。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/generation-owner-contract.ts`
+
+- `contextWindowRetryOf`：被服务商以超长拒绝、回执标了 retryWithLearnedWindow 的运行；额度按它学到的窗口收紧。
+
+### `src/shared/ipc-channels.ts`
+
+- `learnedContextWindow`：服务商超长报错里读到的真实窗口，只由主进程写，不进 modelRevision。模型身份变了就不算数。
+
+### `src/shared/model-profile-draft.ts`
+
+- `contextWindowOutputCap`：服务商把输入和 max_tokens 合计算进窗口，输出占满窗口就一定超长；留一半给提示词。默认值是猜测，不收紧。
+- `withLearnedContextWindow`：默认值是猜测，服务商报什么都比它可信；其余来源只收紧，手填的不动。
+
+### `src/shared/provider-context-length.ts`
+
+- OpenAI 兼容协议（DeepSeek 实测）
+- 硅基流动（实测）：提示词超长，或最大输出本身超过上下文
+- Gemini；没有 key，未实测。
+- Anthropic：提示词超长，或输入加 max_tokens 超过上下文

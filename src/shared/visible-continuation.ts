@@ -24,7 +24,6 @@ function overlappingVisiblePrefixLength(existingText: string, addition: string):
 }
 
 
-/** Inputs are already visible text; source artifact bytes are never modified. */
 export function composeVisibleContinuation(existing: string, addition: string): string {
   const visibleExisting = existing.trim(), visibleAddition = addition.trim()
   const overlap = overlappingVisiblePrefixLength(visibleExisting, visibleAddition)

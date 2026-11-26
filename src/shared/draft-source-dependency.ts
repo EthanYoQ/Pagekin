@@ -3,7 +3,6 @@ interface DraftSourceDependencyBase {
   contentHash: string
 }
 
-/** Old rows omit `kind`; they are exact candidate-draft dependencies. */
 export type DraftSourceDependency =
   | (DraftSourceDependencyBase & { kind?: 'candidate' })
   | (DraftSourceDependencyBase & {

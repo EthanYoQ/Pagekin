@@ -59,3 +59,19 @@ ADR-0011 的删除在一个事务里登记收据，再物理删掉本章定稿�
 - `createLiveRowViews`：给不走迁移、手写表结构的夹具补上 M07 的回收站三列（连同删除形状触发器）、改名与 live 视图；只处理还是原表的，处理过的跳过。
 - 三列处理：三列全无，就照迁移补上（连同触发器）；三列全有，说明已迁移过（如 `dropLiveRowViews` 之后），触发器随表保留；只有一部分，是夹具写错了，抛 `LIVE_ROW_VIEWS_PARTIAL_DELETION_COLUMNS`。
 - `dropLiveRowViews`：把迁到 schema 8 的库退回 M07 之前的表名，给「把当前库改成旧库再跑基线规范化」的夹具用。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/chapter-deletion.ts`
+
+- `TrashedChapter`：回收站里的一项，即一次删除带走的全部行。deletionId 等于这次删除的主收据 operationId。
+- `draftId`：删除时这一章的定稿；恢复请求用它识别「已恢复」。
+- `versionCount`：1 份删除时的定稿加若干份被替换的旧定稿。
+- `cleanup`：删除时实体稿与知识库的清理进度（ADR-0011 收据）。
+- `DamagedTrashEntry`：读不全的一项单独列出，不挡其余各项。
+- `expectedMode`：作者确认时看到的恢复方式；事务里重算的结果不同就拒绝（CHAPTER_RESTORE_MODE_CHANGED）。
+
+### `src/shared/ipc-channels.ts`
+
+- `chapter:trash-list`：回收站：每次删除一项；拼不成一项的残缺数据列进 damaged，不让整个列表失败。
+- `chapter:trash-restore`：expectedMode 是列表给出的恢复方式；事务内复核，变了就返回 CHAPTER_RESTORE_MODE_CHANGED。

@@ -14,7 +14,6 @@ const STATE_LABELS: Readonly<Record<CharacterStateTextField, readonly [string, s
   recentEvents: ['近期经历', 'recent events'],
 })
 
-/** 按 characterId 存的提示词行。没有任何节点的角色不在里面，档案沿用原来的行。 */
 export type CharacterTimelinePromptLines = Record<string, string[]>
 
 interface PromptEntry { authored: boolean; chapter: number; text: string }
@@ -47,7 +46,6 @@ function promptEntry(node: ContinuityNode, language: WritingLanguage, targetName
   }
 }
 
-/** M08 基线的状态是升级那一刻的快照；关系基线没有章号，是名单里一直有的事实，按开篇就有算。 */
 const withTimelessBaselineRelations = (nodes: readonly ContinuityNode[]): ContinuityNode[] =>
   nodes.map(node => node.aspect === 'relation' && node.provenance.kind === 'legacy' ? { ...node, effectiveChapter: 0 } : node)
 

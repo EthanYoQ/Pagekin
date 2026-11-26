@@ -1,5 +1,3 @@
-/** Cross-process contract for project-scoped character avatars. */
-
 export const MAX_CHARACTER_AVATAR_INPUT_BYTES = 4 * 1024 * 1024
 
 export type CharacterAvatarErrorCode =

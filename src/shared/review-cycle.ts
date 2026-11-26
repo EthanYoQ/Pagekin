@@ -29,7 +29,6 @@ export interface ReviewCycleProjection {
   mergedHash?: string
   recheckCount: 0 | 1
   recheckDisposition?: 'required' | 'not-required' | 'completed'
-  /** 循环是作品从备份恢复前做的，只能看（ADR-0018 C17）。 */
   restoredHistory?: true
   findings: ReviewCycleFindingProjection[]
 }
@@ -39,25 +38,20 @@ export interface ReviewCycleRecheckFinding {
   targetId: string
   category: string
   kind: 'objective' | 'literary'
-  /** Immutable human-readable problem statement from the original saved review. */
   problem: string
-  /** Optional original goal semantics that the merged draft must actually satisfy. */
   expected?: string
   sourceSpan?: { start: number; end: number; unit: 'utf16-code-unit' }
   occurrence?: number
   sourceExcerpt?: string
-  /** Author-applied explicit goal with no old-draft quote; the original row remains unverified. */
   mustShow?: true
 }
 
 export interface ReviewCycleRecheckContext {
-  /** v1 trusted a model's positive semantic judgment after quote anchoring; v2 keeps it pending author verification. */
   version: 1 | 2
   cycleId: string
   comparisonVersion: number
   mergedHash: string
   findingSetHash: string
-  /** Present only for unshown mustShow goals, to reject evidence already in the original draft. */
   sourceContent?: string
   findings: readonly ReviewCycleRecheckFinding[]
 }
@@ -89,7 +83,6 @@ export function isNoopRevision(before: string, after: string): boolean {
   return visible(before) === visible(after)
 }
 
-/** A narrow projection from the original saved goal and author confirmation, never a fabricated old quote. */
 export function unshownMustShowRecheckFindings(rawReport: unknown, snapshot: HumanConfirmedReviewSnapshot | null,
   rows: readonly { findingId: string; kind: string; status: string; targetId: string | null;
     problemText: string; expectedText: string | null }[]): ReviewCycleRecheckFinding[] {
@@ -130,7 +123,6 @@ function countOccurrences(text: string, excerpt: string): number {
 
 const objectiveText = (value: string): string => value.replace(/[^\p{L}\p{N}]/gu, '')
 
-/** Deterministic admission only: unchanged or ambiguous evidence never spends a model request. */
 export function classifyFindingEvidenceChange(source: string, merged: string,
   finding: ReviewCycleRecheckFinding): 'changed' | 'unchanged' | 'ambiguous' {
   if (finding.mustShow) return objectiveText(source) === objectiveText(merged) ? 'unchanged' : 'changed'
@@ -173,15 +165,10 @@ function parseRecheckItems(content: string, reportVersion: ReviewReportVersion):
   } catch { return null }
 }
 
-/**
- * 新提交的复核一律按第 2 版语义判定，冻结在旧任务里的第 1 版也不例外：模型判为已解决的仍待作者核实。
- * 保存路径与恢复卡摘要共用这一口径，摘要才不会比保存结果更乐观。
- */
 export function recheckCommitPolicy(context: ReviewCycleRecheckContext): ReviewCycleRecheckContext {
   return { ...context, version: 2 }
 }
 
-/** Preserves saved parsing by reportVersion; context.version independently governs semantic resolution. */
 export function buildReviewCycleRecheckReport(content: string, merged: string,
   context: ReviewCycleRecheckContext, uiLocale: 'zh-CN' | 'en-US', reportVersion: ReviewReportVersion = 2): ReviewCycleRecheckReport {
   const parsed = parseRecheckItems(content, reportVersion)

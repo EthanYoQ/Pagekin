@@ -1,13 +1,10 @@
 import type { FinalizedSourceIdentity } from './finalized-continuity'
 
-/** S01 seam only: repositories remain the sole source of author data. */
 export interface ProjectEpoch { projectId: string; epoch: string }
 export interface SourceRef extends ProjectEpoch {
   sourceId: string
   revision: number
-  /** SHA-256 of the unmodified UTF-8 bytes; never normalized author prose. */
   contentHash: string
-  /** Editor offsets are UTF-16 code units, end exclusive. */
   span?: { start: number; end: number; unit: 'utf16-code-unit' }
 }
 export const isContentHash = (value: string): boolean => /^[a-f0-9]{64}$/u.test(value)
@@ -43,7 +40,6 @@ export interface CandidateSource extends ProjectEpoch {
 export interface CandidateAdmission extends ProjectEpoch {
   batchLineage: string; selectedCurrentDraftId?: string; directPredecessorId?: string
 }
-/** Only author-selected current drafts or the saved direct predecessor may enter context. */
 export function mayUseCandidate(candidate: CandidateSource, admission: CandidateAdmission): boolean {
   return sameProjectEpoch(candidate, admission) && candidate.state === 'draft' && candidate.saved
     && Boolean(candidate.artifactId) && Number.isSafeInteger(candidate.revision) && candidate.revision >= 0
@@ -53,7 +49,6 @@ export function mayUseCandidate(candidate: CandidateSource, admission: Candidate
 }
 export interface ContextSnapshot extends ProjectEpoch {
   id: string; hash: string
-  /** Portable receipt identity only; never an execution or author-content authority. */
   transferAuthority?: { receiptId: string; originProjectId: string; snapshotGeneration: string }
   sources: readonly { ref: SourceRef; slot: 'finalized-fact' | 'unconfirmed-continuity' | 'author-constraint'; reason: string }[]
   omissions: readonly { sourceId: string; reason: string; required: boolean }[]

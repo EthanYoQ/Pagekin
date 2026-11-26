@@ -11,7 +11,6 @@ import type {
 } from './reasoning-types'
 import { CREATIVE_STRATEGIES, isGeminiThinkingLevel, REASONING_EFFORTS } from './reasoning-types'
 
-// extraction 是定稿后从正文整理要点和角色状态。思考 token 占这两步九成以上的耗时，作者要等它们完成才能写下一章。
 const STAGE_REQUESTS: Readonly<Record<CreativeStrategy, Readonly<Record<GenerationReasoningStage, ReasoningEffort>>>> = {
   auto: { drafting: 'low', planning: 'medium', review: 'high', general: 'low', extraction: 'off' },
   'fluent-drafting': { drafting: 'off', planning: 'low', review: 'low', general: 'low', extraction: 'off' },
@@ -78,7 +77,6 @@ function closestEffectiveEffort(
   const supported = [...mapping.supportedEfforts]
     .sort((left, right) => EFFORT_RANK[left] - EFFORT_RANK[right])
   if (supported.length === 0) return null
-  // Gemini 3 关不掉思考，也有型号拒收 minimal；不发参数会落到服务商的默认档（常是 medium 或 high），所以取最低档。
   if (requested === 'off') return mapping.adapter === 'gemini-thinking-level' ? { effective: supported[0], status: 'forced' } : null
 
   const lowerOrEqual = supported.filter(effort => EFFORT_RANK[effort] <= EFFORT_RANK[requested])
@@ -88,18 +86,12 @@ function closestEffectiveEffort(
   }
 }
 
-/**
- * The single reasoning-policy seam. Callers provide product intent; this
- * module owns profile precedence, verified capability lookup,
- * provider-level capping and the user-visible resolution receipt.
- */
 export function resolveReasoningPolicy(input: {
   model: ModelProfile
   creativeStrategy?: CreativeStrategy
   stage?: GenerationReasoningStage
 }): ReasoningPolicyResolution {
   const resolution = resolveStageReasoning(input)
-  // 提取阶段对关不掉思考的服务商（不支持，或像 Gemini 3 那样被抬到最低一档）沿用审稿档位。
   return input.stage === 'extraction' && (resolution.status === 'unsupported' || resolution.status === 'forced')
     ? resolveStageReasoning({ ...input, stage: 'review' })
     : resolution
@@ -120,15 +112,11 @@ function resolveStageReasoning(input: Parameters<typeof resolveReasoningPolicy>[
     : override
   const mapping = resolveModelProfileReasoningMapping(input.model)
   if (!mapping) return { requested, effective: null, status: 'unsupported', source }
-  // Only explicitly selected application budgets are defined for this Qwen integration.
   if (!input.model.reasoningMapping && input.model.modelName === 'Qwen/Qwen3.8-27B'
     && (source !== 'model-override' || requested !== 'medium' && requested !== 'off')) {
     return { requested, effective: null, status: 'unsupported', source }
   }
-  // Only explicit, documented SiliconFlow choices are supported. Preserve
-  // automatic requests and never force off/low/medium up to high.
   if (!input.model.reasoningMapping && mapping.adapter === 'siliconflow-v4-thinking') {
-    // 只有提取阶段关思考（enable_thinking:false 实测可用）；其余阶段交给服务商默认。
     if (input.stage === 'extraction' && requested === 'off') {
       return { requested, effective: 'off', status: 'mapped', source, providerDirective: { adapter: mapping.adapter, reasoningEffort: 'off' } }
     }
