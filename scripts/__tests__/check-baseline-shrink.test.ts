@@ -51,13 +51,20 @@ describe('名单只减不增（与基准提交上的同一文件比较）', () =
     expect(result.output).toContain(file === CHANNELS ? 'b:new' : 'test/new.test.ts')
   })
 
-  it('旧约定计数只减不增：某文件计数变大或新增文件就失败，减少和新约定 authorOwned 放行', () => {
+  it('旧约定计数只减不增：某文件合计变大或新增文件就失败，减少和新约定 authorOwned 放行', () => {
     write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 1, authorOwned: 3 } })
     expect(check('base')).toMatchObject({ status: 0 })
     write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 3 } })
-    expect(check('base')).toMatchObject({ status: 1, output: expect.stringContaining('src/a.ts 的 displayedErrorMessage（2 → 3）') })
+    expect(check('base')).toMatchObject({ status: 1, output: expect.stringContaining('src/a.ts 的旧约定合计（2 → 3）') })
     write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 2 }, 'src/b.ts': { appErrorMessage: 1 } })
-    expect(check('base')).toMatchObject({ status: 1, output: expect.stringContaining('src/b.ts 的 appErrorMessage（0 → 1）') })
+    expect(check('base')).toMatchObject({ status: 1, output: expect.stringContaining('src/b.ts 的旧约定合计（0 → 1）') })
+  })
+
+  it('同一文件旧约定种类互换、合计不变时放行；换完合计变大时失败', () => {
+    write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 1, '{ legacy:': 1 } })
+    expect(check('base')).toMatchObject({ status: 0 })
+    write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 1, '{ legacy:': 2 } })
+    expect(check('base')).toMatchObject({ status: 1, output: expect.stringContaining('src/a.ts 的旧约定合计（2 → 3）') })
   })
 
   it('删掉一条再换一条顶替，同样失败', () => {

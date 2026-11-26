@@ -133,9 +133,6 @@
   "src/components/stage/chapter/use-later-blueprint-check.ts": {
     "displayedErrorMessage": 1
   },
-  "src/components/stage/characters/CharacterTimeline.tsx": {
-    "{ legacy:": 1
-  },
   "src/components/stage/history/StageHistory.tsx": {
     "displayedErrorMessage": 2
   },
@@ -224,9 +221,6 @@
   },
   "src/services/workflows/workflow-utils.ts": {
     "displayedErrorMessage": 5
-  },
-  "src/shared/character-continuity.ts": {
-    "{ legacy:": 1
   },
   "src/stores/character-store.ts": {
     "displayedErrorMessage": 1

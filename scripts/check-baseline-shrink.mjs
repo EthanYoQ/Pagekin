@@ -5,11 +5,11 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const listAdditions = (current, previous) => current.filter(entry => !previous.includes(entry))
 
-// authorOwned 是新约定，不进只减不增的统计。
-const countAdditions = (current, previous) => Object.entries(current).flatMap(([path, counts]) =>
-  Object.entries(counts)
-    .filter(([kind, n]) => kind !== 'authorOwned' && n > (previous[path]?.[kind] ?? 0))
-    .map(([kind, n]) => `${path} 的 ${kind}（${previous[path]?.[kind] ?? 0} → ${n}）`))
+// 按每个文件的合计比较，种类互换不算新增。
+const legacySum = counts => Object.entries(counts ?? {}).reduce((sum, [kind, n]) => kind === 'authorOwned' ? sum : sum + n, 0)
+const countAdditions = (current, previous) => Object.entries(current)
+  .filter(([path, counts]) => legacySum(counts) > legacySum(previous[path]))
+  .map(([path, counts]) => `${path} 的旧约定合计（${legacySum(previous[path])} → ${legacySum(counts)}）`)
 
 const BASELINES = {
   'electron/ipc/direct-channels.json': listAdditions,
