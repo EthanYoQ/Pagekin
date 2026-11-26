@@ -9,7 +9,7 @@ export type LegacyFailureCounts = Record<string, Partial<Record<LegacyFailureKin
 
 const NOT_PRODUCTION = /\/__tests__\/|\.(?:test|spec|browser|typecheck)\.[cm]?[jt]sx?$|^src\/stories\//u
 const RAW_PROPERTIES = new Set(['message', 'stack', 'toString'])
-const FAILURE_TYPES = /\b(?:AuthorNote|Failure)\b/u
+const FAILURE_TYPES = /\b(?:AuthorNote|AuthorOwned|Failure|NoteParams)\b/u
 const FAILURE_MODULE = 'src/shared/failure.ts'
 
 export function productionSourceFiles(): string[] {
@@ -69,12 +69,10 @@ function isCaughtValue(expression: ts.Expression): boolean {
   return false
 }
 
-const RAW_TEXT_SINKS = new Set(['authorOwned', 'wireNote'])
-
 export function rawTextInNoteArguments(file: string, text: string): string[] {
   const found: string[] = []
   walk(file, text, (node, source) => {
-    if (ts.isCallExpression(node) && RAW_TEXT_SINKS.has(calleeName(node) ?? '') && node.arguments.some(readsRawText)) {
+    if (ts.isCallExpression(node) && calleeName(node) === 'authorOwned' && node.arguments.some(readsRawText)) {
       found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1} ${node.getText(source)}`)
     }
   })

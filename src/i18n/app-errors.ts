@@ -2,7 +2,7 @@ import { copyLocale, localize, messages, translate, type MessageKey } from './co
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
 import {
-  AuthorError, AuthorNote, authorOwned, catalogKeyNote, codeOf, failureCode, failureOf,
+  AuthorError, AuthorNote, catalogKeyNote, codeOf, failureCode, failureOf,
   type Failure, type LegacyReason, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
 } from '../shared/failure'
 
@@ -741,7 +741,9 @@ export function caughtFailure(error: unknown): Failure | undefined {
 /** error.unknown 整句只装原文，不许过 IPC。 */
 const WIRE_EXCLUDED_KEYS: ReadonlySet<string> = new Set(['error.unknown'] satisfies MessageKey[])
 
-export function wireNote(key: Exclude<MessageKey, 'error.unknown'>, params?: WireNote['params']): WireNote {
+type NoAny<P> = { readonly [K in keyof P]: 0 extends 1 & P[K] ? never : P[K] }
+
+export function wireNote<const P extends NoteParams>(key: Exclude<MessageKey, 'error.unknown'>, params?: P & NoAny<P>): WireNote {
   return { key: key as string as WireNoteKey, ...(params ? { params } : {}) }
 }
 
@@ -776,8 +778,7 @@ export function wireFailure(value: unknown): Failure | undefined {
     if (value.note !== undefined) warnOnce('过 IPC 的说明不合格，只按码说明：', value.note)
     return { code }
   }
-  const params = note.params && Object.fromEntries(Object.entries(note.params).map(([name, v]) => [name, typeof v === 'number' ? v : authorOwned(v)]))
-  return { code, note: catalogNote(note.key as string as MessageKey, params) }
+  return { code, note: catalogNote(note.key as string as MessageKey, note.params) }
 }
 
 export function receivedIpcResult<T>(value: T): T {

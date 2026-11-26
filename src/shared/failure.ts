@@ -54,7 +54,7 @@ export type Failure =
 declare const wireKeyBrand: unique symbol
 /** 只有 wireNote() 造得出。 */
 export type WireNoteKey = string & { readonly [wireKeyBrand]: true }
-export interface WireNote { readonly key: WireNoteKey; readonly params?: Readonly<Record<string, number | string>> }
+export interface WireNote { readonly key: WireNoteKey; readonly params?: NoteParams }
 export interface WireFailure { readonly code: FailureCode; readonly note?: WireNote }
 export interface IpcFailure { readonly success: false; readonly failure: WireFailure }
 
