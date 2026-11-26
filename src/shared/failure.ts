@@ -14,7 +14,7 @@ export const authorOwned = (value: string): AuthorOwned => value as AuthorOwned
 export type NoteParams = Readonly<Record<string, number | AuthorOwned>>
 
 /** 只收字符串字面量或字面量的联合；string 和带插值的模板都不收。 */
-export type Literal<T extends string> = {} extends Record<T, 1> ? never : T
+export type Literal<T extends string> = Record<never, never> extends Record<T, 1> ? never : T
 
 /**
  * 给作者看的说明。带私有字段的类按名义比较，对象字面量和展开出来的对象都不是它；
