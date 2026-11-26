@@ -10,7 +10,7 @@ import { listTemporaryDirectory } from './helpers/temporary-directory'
 import BASELINE from './directory-listing-baseline.json'
 import FAILURE_BASELINE from './legacy-failure-baseline.json'
 import {
-  currentLegacyFailureCounts, failureRewrites, failureTypeAssertions, legacyFailureCounts, legacySum, rawAuthorOwnedArguments, scanProduction, type LegacyFailureCounts,
+  currentLegacyFailureCounts, failureRewrites, failureTypeAssertions, legacyFailureCounts, legacySum, rawTextInNoteArguments, scanProduction, type LegacyFailureCounts,
 } from './helpers/legacy-failure-scan'
 
 const eslint = new ESLint({ cwd: REPO_ROOT })
@@ -209,19 +209,34 @@ describe('失败的码与说明（#844）', () => {
   })
 
   it('authorOwned( 的参数不许含异常原文', () => {
-    expect(scanProduction(rawAuthorOwnedArguments).flatMap(([, found]) => found)).toEqual([])
+    expect(scanProduction(rawTextInNoteArguments).flatMap(([, found]) => found)).toEqual([])
     for (const planted of ['authorOwned(error.message)', 'authorOwned(String(error))', 'authorOwned(`第 ${error.stack} 行`)', 'authorOwned(String (error))', 'authorOwned(error["message"])', "authorOwned(error?.['stack'])"]) {
-      expect(rawAuthorOwnedArguments('src/x.ts', planted), planted).toHaveLength(1)
+      expect(rawTextInNoteArguments('src/x.ts', planted), planted).toHaveLength(1)
     }
-    expect(rawAuthorOwnedArguments('src/x.ts', 'authorOwned(material.fileName)')).toEqual([])
+    expect(rawTextInNoteArguments('src/x.ts', 'authorOwned(material.fileName)')).toEqual([])
+  })
+
+  it('过 IPC 的参数不含异常原文', () => {
+    for (const planted of [
+      "wireNote('error.importRunCheckFailed', { code: error.message })",
+      "wireNote('error.importRunCheckFailed', { code: String(error) })",
+      "wireNote('error.importRunCheckFailed', { code: `${error.stack}` })",
+      "wireNote('error.importRunCheckFailed', { code: error['message'] })",
+    ]) expect(rawTextInNoteArguments('electron/x.ts', planted), planted).toHaveLength(1)
+    expect(rawTextInNoteArguments('electron/x.ts', "wireNote('error.projectPathTooDeepForDatabase', { max: error.maxProjectRootLength })")).toEqual([])
   })
 
   it('造完错误不再改码或 message', () => {
     expect(scanProduction(failureRewrites).flatMap(([, found]) => found)).toEqual([])
-    for (const planted of ['Object.assign(error, { code })', "Object.assign(error, { errorCode: 'X_Y' })", 'Object.assign(new Error(text), { message: other })', "error.code = 'X_Y'", 'failure.message = text']) {
+    for (const planted of [
+      'Object.assign(error, { code })', "Object.assign(error, { errorCode: 'X_Y' })", 'Object.assign(new Error(text), { message: other })', "error.code = 'X_Y'", 'failure.message = text',
+      "error['message'] = text", "error['code'] = 'X_Y'", "error['errorCode'] = 'X_Y'",
+    ]) {
       expect(failureRewrites('src/x.ts', planted), planted).toHaveLength(1)
     }
-    for (const allowed of ['this.code = code', 'Object.assign(state, { status })']) expect(failureRewrites('src/x.ts', allowed), allowed).toEqual([])
+    for (const allowed of ['this.code = code', "this['message'] = text", "state['status'] = 'done'", 'error[field] = text', 'Object.assign(state, { status })']) {
+      expect(failureRewrites('src/x.ts', allowed), allowed).toEqual([])
+    }
     expect(failureRewrites('electron/x.ts', 'Object.assign(new Error(code), { code })')).toEqual([])
   })
 

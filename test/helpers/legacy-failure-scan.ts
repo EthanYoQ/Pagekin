@@ -57,10 +57,13 @@ function readsRawText(node: ts.Node): boolean {
   return ts.forEachChild(node, readsRawText) ?? false
 }
 
-export function rawAuthorOwnedArguments(file: string, text: string): string[] {
+/** 参数要原样插进说明的两个入口：渲染端的 authorOwned(、主进程过 IPC 的 wireNote(。 */
+const RAW_TEXT_SINKS = new Set(['authorOwned', 'wireNote'])
+
+export function rawTextInNoteArguments(file: string, text: string): string[] {
   const found: string[] = []
   walk(file, text, (node, source) => {
-    if (ts.isCallExpression(node) && calleeName(node) === 'authorOwned' && node.arguments.some(readsRawText)) {
+    if (ts.isCallExpression(node) && RAW_TEXT_SINKS.has(calleeName(node) ?? '') && node.arguments.some(readsRawText)) {
       found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1} ${node.getText(source)}`)
     }
   })
@@ -90,16 +93,18 @@ export function currentLegacyFailureCounts(): LegacyFailureCounts {
 const REWRITTEN_FIELDS = new Set(['code', 'errorCode', 'message'])
 const fieldName = (name: ts.Node | undefined) => name && (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) ? name.text : undefined
 
-/** 造完错误之后再改码或 message：Object.assign(x, { code | errorCode | message }) 与 x.code = …（this. 除外）。 */
+/** 造完错误之后再改码或 message：Object.assign(x, { code | errorCode | message })、x.code = … 与 x['code'] = …（this 除外）。 */
 export function failureRewrites(file: string, text: string): string[] {
   if (!file.startsWith('src/')) return []
   const found: string[] = []
   walk(file, text, (node, source) => {
     const assign = ts.isCallExpression(node) && node.expression.getText(source) === 'Object.assign' && node.arguments.slice(1).some(arg =>
       ts.isObjectLiteralExpression(arg) && arg.properties.some(property => REWRITTEN_FIELDS.has(fieldName(property.name) ?? '')))
-    const write = ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
-      && ts.isPropertyAccessExpression(node.left) && REWRITTEN_FIELDS.has(node.left.name.text)
-      && node.left.expression.kind !== ts.SyntaxKind.ThisKeyword
+    const target = ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken ? node.left : undefined
+    const written = target && (ts.isPropertyAccessExpression(target) ? target.name.text
+      : ts.isElementAccessExpression(target) && ts.isStringLiteralLike(target.argumentExpression) ? target.argumentExpression.text : undefined)
+    const write = !!written && REWRITTEN_FIELDS.has(written)
+      && (target as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression.kind !== ts.SyntaxKind.ThisKeyword
     if (assign || write) found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1} ${node.getText(source)}`)
   })
   return found
