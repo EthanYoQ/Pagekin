@@ -197,8 +197,9 @@ describe('失败的码与说明（#844）', () => {
       'authorError(locale, { note, because: failureOf(error) ?? { legacy: error.message } })',
       'const reason = { legacy: text }',
       'const failure: Failure = { note: summary, because: reason }',
+      'const merged = { ...base, legacy: text }',
       'const note = authorOwned(name)',
-    ].join('\n'))).toEqual({ displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 4, authorOwned: 1 })
+    ].join('\n'))).toEqual({ displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 5, authorOwned: 1 })
     expect(legacyFailureCounts('src/x.ts', [
       "const SOURCE = { author: 'author', adopted: 'author', derived: 'finalized', legacy: 'legacy' }",
       "const LABELS = { author: ['作者设定', 'Set by author'], legacy: ['升级前已有', 'From before the upgrade'] }",

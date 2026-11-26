@@ -40,9 +40,12 @@ export function legacyFailureCounts(file: string, text: string): Partial<Record<
 
 const propertyName = (name: ts.PropertyName) => ts.isIdentifier(name) || ts.isStringLiteralLike(name) ? name.text : undefined
 
-/** 认 LegacyReason 的形状（只有一个 legacy 键的对象字面量），写在 because 里、变量里还是 ?? 后面都算；多键的对照表不算。 */
-const isLegacyReason = (node: ts.Node) => ts.isObjectLiteralExpression(node) && node.properties.length === 1
-  && (ts.isPropertyAssignment(node.properties[0]) || ts.isShorthandPropertyAssignment(node.properties[0])) && propertyName(node.properties[0].name) === 'legacy'
+const isLegacyKey = (property: ts.ObjectLiteralElementLike) =>
+  (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) && propertyName(property.name) === 'legacy'
+
+/** 带 legacy 键的对象字面量写在哪都算；只豁免还带别的具名键的对照表（如来源标签表）。 */
+const isLegacyReason = (node: ts.Node) => ts.isObjectLiteralExpression(node) && node.properties.some(isLegacyKey)
+  && node.properties.every(property => isLegacyKey(property) || ts.isSpreadAssignment(property))
 
 export const legacySum = (counts: Partial<Record<LegacyFailureKind, number>>) =>
   Object.entries(counts).reduce((sum, [kind, n]) => kind === 'authorOwned' ? sum : sum + (n ?? 0), 0)
