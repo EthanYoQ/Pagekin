@@ -702,7 +702,7 @@ function sentences(locale: ErrorDisplayLocale, failure: Failure | LegacyReason):
   return own === undefined || rest[0] === own ? rest : [own, ...rest]
 }
 
-/** 三种接法与仓库现有写法一致。接法只管本层说明与原因之间那一处，原因内部照常按句子接。 */
+/** 接法只管本层说明与原因之间那一处，原因内部照常按句子接。 */
 export type FailureJoin = 'sentence' | 'colon' | 'paragraph'
 const JOINERS: Record<FailureJoin, (chinese: boolean) => string> = {
   sentence: chinese => chinese ? '：' : ' ',

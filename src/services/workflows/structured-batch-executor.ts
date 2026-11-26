@@ -73,7 +73,7 @@ export interface StructuredBatchFailure {
   code: 'generation_failed' | 'invalid_output' | 'limit_exceeded' | 'cancelled' | 'deadline'
   /** 给作者看的说明与主进程的稳定错误码（预算用完、生成被阻断等）。 */
   failure: Failure
-  /** 只有中文的诊断原文，不给作者看。只剩 architecture、import-novel 两个未迁移的读者照旧显示，它们迁走后删除。 */
+  /** 只有中文的诊断原文，不给作者看。 */
   detail?: string
   reason?: StructuredGenerationFailureReason
     | 'missing_item'

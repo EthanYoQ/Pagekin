@@ -8,8 +8,7 @@ import { workflowMainProcessError } from '../../../services/workflows/workflow-p
 import { note } from '../../../shared/failure'
 import { blueprintFailureToast } from '../blueprint-failure-toast'
 
-/** master 上 use-chapter-blueprints.ts 保存失败 toast 的原写法。 */
-function masterSaveToast(locale: ErrorDisplayLocale, error: unknown): string {
+function legacySaveFailureToast(locale: ErrorDisplayLocale, error: unknown): string {
   const message = displayedErrorMessage(locale, error)
   return locale === 'zh-CN' ? `保存失败\n\n${message}` : englishWithReason(locale, 'Could not save the blueprint.', message, '\n\n')
 }
@@ -27,7 +26,7 @@ describe('blueprint failure toast', () => {
   it.each(locales)('蓝图保存失败的 toast 与 master 逐字相同（%s）', locale => {
     for (const [name, error] of Object.entries(saveErrors(locale))) {
       expect(blueprintFailureToast(locale, note('保存失败', 'Could not save the blueprint.'), caughtFailure(error)), name)
-        .toBe(masterSaveToast(locale, error))
+        .toBe(legacySaveFailureToast(locale, error))
     }
   })
 
