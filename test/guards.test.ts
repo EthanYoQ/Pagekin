@@ -10,7 +10,7 @@ import { listTemporaryDirectory } from './helpers/temporary-directory'
 import BASELINE from './directory-listing-baseline.json'
 import FAILURE_BASELINE from './legacy-failure-baseline.json'
 import {
-  currentLegacyFailureCounts, failureRewrites, failureTypeAssertions, legacyFailureCounts, rawAuthorOwnedArguments, scanProduction, type LegacyFailureCounts,
+  currentLegacyFailureCounts, failureRewrites, failureTypeAssertions, legacyFailureCounts, legacySum, rawAuthorOwnedArguments, scanProduction, type LegacyFailureCounts,
 } from './helpers/legacy-failure-scan'
 
 const eslint = new ESLint({ cwd: REPO_ROOT })
@@ -172,29 +172,38 @@ describe('存量 baseline 只减不增', () => {
 })
 
 describe('失败的码与说明（#844）', () => {
-  /** 建立基线时各旧约定的总数；基线文件只能往下改。authorOwned 是新约定，每处新增都改基线、过审查。 */
-  const ORIGINAL_TOTALS: Record<string, number> = { displayedErrorMessage: 154, appErrorMessage: 27, knownAppErrorMessage: 19, englishWithReason: 27, '{ legacy:': 2 }
+  /** 建立基线时各旧约定的合计（种类互换不算新增）；基线文件只能往下改。authorOwned 是新约定，每处新增都改基线、过审查。 */
+  const ORIGINAL_LEGACY_TOTAL = 154 + 27 + 19 + 27
   const baseline = FAILURE_BASELINE as LegacyFailureCounts
-  const totals = (counts: LegacyFailureCounts) => Object.values(counts).reduce<Record<string, number>>((sum, perFile) => {
-    for (const [kind, n] of Object.entries(perFile)) sum[kind] = (sum[kind] ?? 0) + (n ?? 0)
-    return sum
-  }, {})
+  const legacyTotal = (counts: LegacyFailureCounts) => Object.values(counts).reduce((sum, perFile) => sum + legacySum(perFile), 0)
 
   it('旧约定只减不增', () => {
-    for (const [kind, total] of Object.entries(totals(baseline))) {
-      if (kind !== 'authorOwned') expect(total, kind).toBeLessThanOrEqual(ORIGINAL_TOTALS[kind] ?? 0)
-    }
+    expect(legacyTotal(baseline)).toBeLessThanOrEqual(ORIGINAL_LEGACY_TOTAL)
     expect(currentLegacyFailureCounts(), '旧约定的调用数变了：新增改用 failureText，删掉的从 test/legacy-failure-baseline.json 减下来').toEqual(baseline)
   })
 
-  it('计数认调用和 legacy 属性，不认定义和别的写法', () => {
+  it('旧约定按合计比较：种类互换合计不变放行，合计变大拦下', () => {
+    const before = { 'src/a.ts': { displayedErrorMessage: 1, appErrorMessage: 1 } }
+    expect(legacyTotal({ 'src/a.ts': { '{ legacy:': 1, appErrorMessage: 1, authorOwned: 4 } })).toBe(legacyTotal(before))
+    expect(legacyTotal({ 'src/a.ts': { displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 1 } })).toBeGreaterThan(legacyTotal(before))
+  })
+
+  it('计数认调用和 because 里的 legacy 键，不认定义、别的对象里的 legacy 键和别的写法', () => {
     expect(legacyFailureCounts('src/x.ts', [
       'export function displayedErrorMessage() {}',
       'displayedErrorMessage(locale, error)',
       'errors.appErrorMessage(locale, error)',
-      'const reason = { legacy: text }',
+      'const reason = { because: { legacy: text } }',
+      'authorError(locale, { note, because: { legacy } })',
+      'authorError(locale, { note, because: code ? { code } : { legacy: error } })',
       'const note = authorOwned(name)',
-    ].join('\n'))).toEqual({ displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 1, authorOwned: 1 })
+    ].join('\n'))).toEqual({ displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 3, authorOwned: 1 })
+    expect(legacyFailureCounts('src/x.ts', [
+      "const SOURCE = { author: 'author', legacy: 'legacy' }",
+      'const reason = { legacy: text }',
+      'const legacy = 1',
+      'const because = { code }',
+    ].join('\n'))).toEqual({})
   })
 
   it('authorOwned( 的参数不许含异常原文', () => {
