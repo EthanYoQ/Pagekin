@@ -46,8 +46,8 @@ export default function CharacterProfile({ projectKey }: { projectKey: string })
   const avatar = useCharacterAvatar(card?.characterId ?? null, dataReady && view === 'edit')
   const timeline = useCharacterTimeline(card?.characterId, dataReady && view === 'state')
   const roleText = (role: unknown) => {
-    const { zhCN, enUS } = getCharacterRoleLabels(role)
-    return text(zhCN, enUS)
+    const { zhCN, enUS, jaJP } = getCharacterRoleLabels(role)
+    return text(zhCN, enUS, jaJP)
   }
   const name = card?.name || text('未命名', 'Untitled')
   const chapterNoteShown = view === 'state' && profile.stateDirty && timeline.status === 'ready'

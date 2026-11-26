@@ -20,6 +20,7 @@ describe('character role domain', () => {
 
   it('defaults an unknown role to supporting', () => {
     expect(normalizeCharacterRole('legacy-custom-role')).toBe('supporting')
+    expect(normalizeCharacterRole('constructor')).toBe('supporting')
   })
 
   it('maps the documented legacy aliases already accepted by character generation', () => {
@@ -39,10 +40,12 @@ describe('character role domain', () => {
     expect(getCharacterRoleLabels('protagonist')).toEqual({
       zhCN: '主角',
       enUS: 'Protagonist',
+      jaJP: '主人公',
     })
     expect(getCharacterRoleLabels('legacy-custom-role')).toEqual({
       zhCN: '配角',
       enUS: 'Supporting character',
+      jaJP: '脇役',
     })
   })
 })
