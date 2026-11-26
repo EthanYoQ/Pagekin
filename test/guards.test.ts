@@ -214,6 +214,7 @@ describe('失败的码与说明（#844）', () => {
       expect(rawTextInNoteArguments('src/x.ts', planted), planted).toHaveLength(1)
     }
     expect(rawTextInNoteArguments('src/x.ts', 'authorOwned(material.fileName)')).toEqual([])
+    expect(rawTextInNoteArguments('src/x.ts', 'authorOwned(`Chapter ${title}`)')).toEqual([])
   })
 
   it('过 IPC 的参数不含异常原文', () => {
@@ -223,7 +224,8 @@ describe('失败的码与说明（#844）', () => {
       "wireNote('error.importRunCheckFailed', { code: `${error.stack}` })",
       "wireNote('error.importRunCheckFailed', { code: error['message'] })",
       "wireNote('error.importRunCheckFailed', { code: error.toString() })",
-      "wireNote('error.importRunCheckFailed', { code: `${error}` })",
+      "try {} catch (error) { wireNote('error.importRunCheckFailed', { code: `${error}` }) }",
+      "try {} catch (caught) { wireNote('error.importRunCheckFailed', { code: `${(caught)}` }) }",
     ]) expect(rawTextInNoteArguments('electron/x.ts', planted), planted).toHaveLength(1)
     expect(rawTextInNoteArguments('electron/x.ts', "wireNote('error.projectPathTooDeepForDatabase', { max: error.maxProjectRootLength })")).toEqual([])
   })
