@@ -4,6 +4,7 @@ import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE 
 import type { WorkflowRun } from '../../../stores/workflow-store'
 import { shown } from '../../../i18n/__tests__/shown-locale'
 import { note, type Failure } from '../../../shared/failure'
+import { caughtFailure } from '../../../i18n/app-errors'
 
 const failedOutline = (errorCode: string, error: string) => ({
   id: '运行', title: '生成故事架构', type: 'generate_architecture', status: 'failed', uiLocale: 'zh-CN', writingLanguage: 'zh-CN',
@@ -40,4 +41,9 @@ it('审稿失败带产生点写的说明时，诊断的兜底说明不盖掉它'
   const failure: Failure = { code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED', note: note('这一章太长，审稿放不下。', 'This chapter is too long to review.') }
   const run = withFailure(failure, { error: '这一章太长，审稿放不下。', steps: [{ generationActivity: { operation: 'review-chapter', diagnostics: { endReason: 'failed' } } }] } as never)
   expect(runFailure(run, shown('zh-CN')).presentation.reason).toBe('这一章太长，审稿放不下。')
+})
+
+it('审稿失败 message 为空时，catch 补的通用说明不盖掉诊断给的具体原因', () => {
+  const run = withFailure(caughtFailure(new Error('')), { steps: [{ generationActivity: { operation: 'review-chapter', diagnostics: { endReason: 'failed', causeCode: 'UND_ERR_BODY_TIMEOUT' } } }] } as never)
+  expect(runFailure(run, shown('zh-CN')).presentation.reason).toBe('读取响应流超时。上游为何停止响应尚未确认。')
 })
