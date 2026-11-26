@@ -15,6 +15,8 @@ import { composeVisibleContinuation } from '../../../../shared/visible-continuat
 import type { GenerationRecoveryContext, VisibleCompositionReceipt } from '../../../../shared/generation-owner-contract'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, type PlotOutlineProgress } from '../../../../shared/plot-outline-contract'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
+import { runFailure } from '../../../../components/run/run-failure'
+import { useWorkflowStore } from '../../../../stores/workflow-store'
 
 /**
  * 情节大纲批次状态机：
@@ -218,6 +220,7 @@ function harnessWith(
       return { success: true }
     }
     if (channel === 'fs:write-file') return { success: true }
+    if (channel === 'skills:list-user') return []
     throw new Error(`Unexpected IPC channel: ${channel}`)
   })
   vi.stubGlobal('window', {
@@ -407,6 +410,29 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
     }))
     const synopsisUpdate = harness.coreUpdates.find(update => typeof update.synopsis === 'string')
     expect(String(synopsisUpdate!.synopsis)).toContain('本大纲未完成')
+  })
+
+  it('情节大纲截断后仍可续写', async () => {
+    const truncated = `## 第一卷
+
+第一章：旧铁锤
+${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉追查家人的下落。'.repeat(4)}
+
+第二章：宗门封锁
+林舟被迫改变追查路线。`
+    useLLMStore.setState({ defaultModelId: 'model-1' })
+    useFakeModelStream.setState({ generateStream: responseStream([truncated]) })
+    harnessWith()
+    const thrown = await makeCommand().execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
+    const runId = await useWorkflowStore.getState().startWorkflow({
+      type: 'generate_architecture', title: '生成故事架构', projectPath: projectAPath, projectSession: context.projectSession,
+      steps: [{ name: '情节大纲', description: '情节大纲', executor: async () => { throw thrown } }],
+    })
+    const run = useWorkflowStore.getState().history.find(item => item.id === runId)!
+    const shownFailure = runFailure(run, shown('zh-CN'))
+    expect([shownFailure.canResumeOutline, shownFailure.canRestartOutline]).toEqual([true, false])
+    expect(shownFailure.presentation.reason).toBe((thrown as Error).message)
+    expect(shownFailure.presentation.reason).toContain('点「继续生成情节大纲」接着写第 1–100 章')
   })
 
   it('uses writing language, not UI locale, for the visible incomplete note', async () => {
