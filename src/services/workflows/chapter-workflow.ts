@@ -542,7 +542,6 @@ export function createRepairFinalizeWorkflow(
             'The finalized manuscript source receipt is stale.',
           ))
 
-          // 从数据库蓝图读取正式标题
           let chapterTitle = text(`第${chapterNumber}章`, `Chapter ${chapterNumber}`)
           let chapterEntities: string[] = []
           const bp = await ignoreFailure(

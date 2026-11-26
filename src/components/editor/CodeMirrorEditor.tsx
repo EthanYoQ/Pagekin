@@ -308,7 +308,6 @@ export default function CodeMirrorEditor({
       setActiveAIAction(null); setAiResult(''); setAiError(uiText('无法恢复原运行', 'The original run could not be restored.')); setBubbleOpen(true)
     })
   })
-  // 句柄被取走（key 变空）时不作废进行中的恢复；换下一次交接或卸载才作废。
   useEffect(() => {
     if (!recoveryKey) return
     const [, handle] = JSON.parse(recoveryKey) as [number | undefined, MainGenerationRunHandle]

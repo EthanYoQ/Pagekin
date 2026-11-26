@@ -168,7 +168,6 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
     const requestId = loadAllDraftsRequestSequence
 
     await ignoreFailure(`chapter draft list unavailable: ${chapterNumber}`, async () => {
-      // 直接调用后端 DB 获取列表，返回的结构已经转换为兼容的 DraftMeta 格式
       const list = await ipc.invokeWithProjectSession(projectSession, 'db:draft-list', chapterNumber, projectPath)
       if (
         requestId !== loadAllDraftsRequestSequence

@@ -77,7 +77,6 @@ export const readProjectStateTool = buildAgentTool({
     }
 
     if (includeSummary) {
-      // 读取最近 5 章蓝图的 notes 字段作为进度摘要
       const notesParts: string[] = []
       let notesUnavailable = false
       try {
