@@ -52,3 +52,9 @@
 ### `src/services/style-presets.ts`
 
 - `applyPreset`：应用预设到当前配置（只注入 globalGuidance，不覆盖其他元数据）
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/settings/PromptSettings.tsx`
+
+- 用户层只追加创作指导；内置任务与输出合同保持隐藏且不可改。

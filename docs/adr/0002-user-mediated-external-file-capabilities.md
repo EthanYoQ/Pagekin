@@ -33,3 +33,9 @@
 ### `src/stores/project-store.ts`
 
 - 现行规则：打开项目会在主进程撤销旧书架预览能力，刷新可见书架句柄，但不能让一次成功的打开变成失败（原文：Opening a project revokes old shelf preview capabilities in main. Refresh the visible shelf handles without turning a successful open into a failure.）
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/backups/__tests__/project-backup-panel.browser.tsx`
+
+- `archiveCalls`：渲染进程从不持有也不回传外部路径：归档 IPC 的载荷里只有授权标识，没有路径字段。

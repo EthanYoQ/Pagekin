@@ -131,3 +131,27 @@
 - `projectSession`：工作流启动时冻结的 IPC 会话，禁止在执行器内重新读取 currentProject。
 - `projectSession`：工作流来源会话。缺失、过期或与项目路径不匹配的定义必须在执行前被拒绝， 禁止按路径借用当前项目的新 lease。
 - 现行规则：缺少会话的旧定义在加入活跃运行或执行项目级副作用之前就拒绝，绝不按路径匹配借用 currentProject 的租约（原文：Runtime callers can still deserialize a legacy definition that predates the required TypeScript field. Reject it before adding an active run or executing any project-level side effect; never borrow currentProject's lease based on a matching path.）
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/__tests__/project-session-gate.test.ts`
+
+- 断言前提：同一项目根重新打开也必须使先前异步工作失效，夹具里看不出为什么要用同根（原文：Same project root, but a new open must invalidate all prior async work.）
+
+### `src/components/editor/__tests__/chapter-card-draft-ledger.test.ts`
+
+- 断言前提：路径只是位置，读写还要绑定冻结的项目 id 与租约，同路径重开才不会把旧工作用到新会话（原文：A path is only a location. The editor must bind reads/writes to the frozen project ID + lease as well, so a same-path reopen cannot apply stale work to the new session.）
+
+### `src/components/panels/llm-data-request-gate.ts`
+
+- `LLMDataRequestGate`：BottomPanel 模型统计的提交门禁：路径相同但 lease 已更新也必须视为过期。
+
+### `src/components/project-session-gate.ts`
+
+- `captureProjectSession`：规则：异步 UI 工作开始前冻结完整会话身份，只比路径不够，同目录重开会拿到新租约并使旧操作失效（原文：Freeze the rendered project's complete session identity before starting async UI work. A path is deliberately insufficient: reopening the same directory obtains a new lease and must invalidate the old UI operation.）
+- `isProjectSessionCurrent`：契约：只有项目 id 与租约都仍有效才为真（原文：True only while the exact project id + lease remains active.）
+- `isProjectSessionPath`：契约：只用于把事件载荷对到会话，不把路径当租约（原文：Safe for matching an event payload to a session without treating a path as a lease.）
+
+### `src/components/run/use-model-calls.ts`
+
+- `useModelCalls`：这部作品最近的模型调用记录，每 2 秒刷新一次。数据与读取时的会话绑在一起： 旧请求晚到也不会显示到新会话，界面上永远只有当前会话的统计。
