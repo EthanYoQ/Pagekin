@@ -592,7 +592,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
             failure = { code: 'generation_failed', reason: 'unknown', failure: { note: GENERATION_FAILED }, detail: error.message }
           }
         } else {
-          // 只保留稳定错误码，不转出主进程以外的原文（可能带凭据或提示词）；没有登记说明的码只进诊断。
+          // 只保留稳定错误码，不转出主进程以外的原文（可能带凭据或提示词）；没登记说明的码配通用说明显示。
           const code = failureCode(errorCodeOf(error))
           failure = { code: 'generation_failed', reason: 'server_error',
             failure: code && isRegisteredErrorCode(code) ? { code } : code ? { code, note: GENERATION_FAILED } : { note: GENERATION_FAILED } }

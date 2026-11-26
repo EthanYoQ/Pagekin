@@ -46,7 +46,7 @@ import { LatestRequestGate } from '../../shared/latest-request-gate'
 import type { SaveOutcome } from './save-feedback'
 import { readWritableChapters } from '../../services/authoritative-chapter-sequence'
 import type { ChapterGap } from '../../shared/chapter-sequence'
-import { caughtFailure, displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { caughtFailure, displayedErrorMessage, englishWithReason, resultFailure } from '../../i18n/app-errors'
 import { note } from '../../shared/failure'
 import { blueprintFailureToast } from './blueprint-failure-toast'
 
@@ -570,7 +570,7 @@ export function useChapterBlueprints({
     )
     if (!isCurrentProjectSession(projectSession)) return
     if (!result.success) {
-      toast.error(blueprintFailureToast(currentInterfaceLocale(), DELETE_FAILED, caughtFailure(result.error)))
+      toast.error(blueprintFailureToast(currentInterfaceLocale(), DELETE_FAILED, resultFailure(result)))
       return
     }
     const current = currentWorkingState(projectKey, projectSession)
@@ -610,7 +610,7 @@ export function useChapterBlueprints({
     )
     if (!isCurrentProjectSession(projectSession)) return
     if (!result.success) {
-      toast.error(blueprintFailureToast(currentInterfaceLocale(), CLEAR_FAILED, caughtFailure(result.error)))
+      toast.error(blueprintFailureToast(currentInterfaceLocale(), CLEAR_FAILED, resultFailure(result)))
       return
     }
     const current = currentWorkingState(projectKey, projectSession)
