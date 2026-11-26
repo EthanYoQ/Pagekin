@@ -26,7 +26,6 @@ import GenerateBlueprintsDialog from './GenerateBlueprintsDialog'
 import { pluralEn } from '../../../shared/plural-en'
 import type { ChapterGap } from '../../../shared/chapter-sequence'
 
-/** 缺口段里章号最小的那一项回收站记录；段里任何一章都可能是被删进回收站的那章。 */
 function trashedInGap(gap: ChapterGap, trash: ChapterTrash | null): GapTrash {
   if (!trash) return 'unknown'
   for (let chapterNumber = gap.from; chapterNumber <= gap.to; chapterNumber++) {
@@ -36,16 +35,11 @@ function trashedInGap(gap: ChapterGap, trash: ChapterTrash | null): GapTrash {
   return trash.stale ? 'unknown' : null
 }
 
-/** 等作者确认的一步：覆盖已有蓝图、生成前的架构警告、清空全部、删除此章、清除误导入正文。 */
 type Ask =
   | { kind: 'overwrite' | 'warning'; message?: string; resolve: (ok: boolean) => void }
   | { kind: 'delete'; chapterNumber: number }
   | { kind: 'clear' | 'legacy' }
 
-/**
- * 蓝图阶段：章节规划列表与单章蓝图编辑。主操作是写下一章（拆分按钮带写作弹层）；没有可写的章时主操作是 AI 生成蓝图。
- * 数据来自 useChapterBlueprints；未保存提示只在顶栏，⌘S 走同一个退出前保存。
- */
 export default function StageBlueprint({ projectKey, initialChapterNumber, selectRequest }: {
   projectKey: string
   initialChapterNumber?: number
@@ -70,12 +64,10 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
   const writable = useMemo(() => new Set(plan.writableChapters), [plan.writableChapters])
   const firstUnexplainedGap = plan.chapterGaps.find(gap => gap.cause === 'unexplained')
 
-  // 「已记下」和它的撤销只属于当前这一章，换章后不再显示。
   const { clearExempted } = continuity
   const clearAiExempted = ai.clearExempted
   useEffect(() => { clearExempted(); clearAiExempted() }, [clearExempted, clearAiExempted, selected?.chapterNumber])
 
-  // 写作请求只由那一章的写作按钮接手：下一章在本页，缺口章在它的单章视图。那一章现在写不了时丢掉请求，免得以后突然弹出。
   useEffect(() => {
     if (plan.loading || !writeRequest || writable.has(writeRequest.chapterNumber)) return
     useStageStore.setState({ writeRequest: null })
@@ -89,7 +81,6 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
     setAsk(null)
   }
 
-  // 确认框不叠在生成对话框上：先收起对话框再问。作者取消时对话框原样回来，不当作错误；启动失败时回来并写明原因。
   const generate = async (params: DirectoryWorkflowParams) => {
     setGenerateOpen(false)
     try {
@@ -104,7 +95,6 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
     }
   }
 
-  // 只有第一次读取（含换作品）才整页换成读取中；之后的重新加载保留页面、打开的弹层与对话框，作者的输入不丢。
   if (plan.loading && !plan.projectDataReady) {
     return <div className="stage-bp-loading" role="status">{text('正在读取章节蓝图…', 'Loading chapter blueprints…')}</div>
   }

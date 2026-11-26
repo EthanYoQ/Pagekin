@@ -3,7 +3,6 @@ import { useProjectStore } from '../stores/project-store'
 import { confirm } from './ui/Confirm'
 import { toast } from './ui/Toast'
 
-/** 确认之后的删除；书房先用危险确认（输入作品名），之后走这里。 */
 export async function deleteCurrentProject(project: { name: string; path: string }) {
   const text = useLocaleStore.getState().text
   if (await useProjectStore.getState().deleteProject(project.path)) {

@@ -33,7 +33,6 @@ function Landing() {
   return null
 }
 
-/** 与 StageShell 同样接线：落点与流程脊读同一份视图。 */
 function Spine() {
   const view = useStageView()
   useLandingPage(view)
@@ -45,7 +44,6 @@ function session(leaseId: string): ProjectSessionContext {
   return { projectId: 'landing', leaseId, projectPath: PATH }
 }
 
-/** 像 openProject 一样换上这次打开：主进程签发的会话、新的项目对象（标签已被清掉）。 */
 async function open(context: ProjectSessionContext, novelConfig: Partial<NovelConfig>) {
   await act(async () => {
     setActiveProjectSessionContext(context)
@@ -184,10 +182,6 @@ describe('打开作品时流程脊等各稿的审稿与修稿记录', () => {
   const LONG = '雾'.repeat(60)
   const meta = (id: number, chapterNumber: number, status: string) => ({ id, chapterNumber, version: 1, status, source: 'write',
     createdAt: '2026-10-13 20:00:00', updatedAt: '2026-10-13 20:00:00' })
-  /**
-   * 第 1 章定稿，第 3 章草稿已有一份审稿：没读到它的记录时只能按稿状态估计成「待审稿」。落点是最后一章在写的：
-   * 按参数第 2、4 章也是草稿时落在第 4 章，第 2 章定稿、没有第 4 章的稿时落在第 3 章。第 3 章那一稿第 n 次读审稿记录要等 release(n) 才返回，其余读取立即返回。
-   */
   function installProject(landing: 'chapter-4' | 'reviewed-chapter-3') {
     const drafts = landing === 'chapter-4'
       ? [meta(11, 1, 'finalized'), meta(21, 2, 'draft'), meta(31, 3, 'draft'), meta(41, 4, 'draft')]
@@ -217,7 +211,6 @@ describe('打开作品时流程脊等各稿的审稿与修稿记录', () => {
     return { release: (read: number) => releases[read]() }
   }
 
-  /** 流程脊上看得到的阶段与各章的阶段。 */
   const spine = () => [...host!.querySelectorAll<HTMLElement>('[data-stage], .stage-chapter')]
     .map(element => element.dataset.stage ?? `${element.querySelector('.stage-chapter-no')?.textContent}:${element.dataset.phase}`)
   const flush = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })

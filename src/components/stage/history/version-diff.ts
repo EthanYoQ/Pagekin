@@ -8,7 +8,6 @@ export interface DiffSegment {
 }
 
 export interface ProseDiff {
-  /** 按换行切开的段落，每段是一串片段。 */
   paragraphs: DiffSegment[][]
   added: number
   removed: number
@@ -16,7 +15,6 @@ export interface ProseDiff {
 
 const KIND: Record<number, DiffKind> = { [DIFF_INSERT]: 'added', [DIFF_DELETE]: 'removed' }
 
-/** 旧稿到当前稿的逐字差异，按语义合并碎片后按段落切开，供只读对比显示。 */
 export function diffProse(older: string, current: string): ProseDiff {
   const engine = new diff_match_patch()
   const diffs = engine.diff_main(older, current)

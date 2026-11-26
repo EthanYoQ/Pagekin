@@ -11,7 +11,6 @@ type ThreadsResult = { success: boolean; threads?: NarrativeThreadView[]; error?
 type Move = { from: number; to: number }
 type Moves = { key: string; byPlan: ReadonlyMap<number, Move> }
 
-/** 写前弹层的线索：挂载时就读，主按钮旁的小字才有数。读不出来只是不显示，不挡开写。 */
 export function useChapterThreadTasks(chapterNumber: number, open: boolean) {
   const text = useLocaleStore(s => s.text)
   const projectId = useProjectStore(s => s.currentProject?.id)
@@ -21,7 +20,6 @@ export function useChapterThreadTasks(chapterNumber: number, open: boolean) {
   const [moves, setMoves] = useState<Moves | null>(null)
   const movesKey = `${projectId}:${chapterNumber}`
   const movedHere = moves?.key === movesKey ? moves.byPlan : new Map<number, Move>()
-  // 只认最后一次发出的请求：刚点完延后，先发的列表请求晚到也不能盖掉新结果。
   const threadReads = useRef(new LatestRequestGate())
 
   useEffect(() => {

@@ -4,7 +4,6 @@ import { getChapterRoleLabels } from '../../../shared/chapter-role'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { Lifecycle } from '../../ui/Lifecycle'
 
-/** 章节头：大号章号、「第 N 章 · 定位」、标题与右侧的版本切换器，下面是生命周期条。沉浸写作时只留标题。 */
 export default function ChapterHead({ chapterNumber, role, title, version, step, focus }: {
   chapterNumber: number
   role?: string

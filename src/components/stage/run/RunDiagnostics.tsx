@@ -20,7 +20,6 @@ const LEVEL_TEXT: Record<'info' | 'warn' | 'error', [string, string]> = {
   error: ['失败', 'Error'],
 }
 
-/** 诊断分页（宽版侧页）：日志与 AI 调用记录，只用于排查问题。 */
 export function RunDiagnostics() {
   const text = useLocaleStore(s => s.text)
   return (

@@ -1,11 +1,3 @@
-/**
- * 单条消息渲染组件（升级版）
- *
- * 支持三种渲染模式：
- * - 用户消息：右对齐气泡
- * - 助手消息：左侧 Markdown 风格渲染
- * - Tool 调用：ToolCallBlock / ConfirmCard / ArtifactCard
- */
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import type { AgentMessage as AgentMessageType } from '../../../stores/agent-store'
@@ -69,14 +61,12 @@ export default function AgentMessage({ message }: Props) {
     )
   }
 
-  // 助手消息
   return (
     <div className="group relative flex justify-start mb-2">
       <div
         className="max-w-full text-xs leading-relaxed break-words w-full"
         style={{ color: 'var(--color-text)' }}
       >
-        {/* 文本内容 */}
         {content ? (
           <MarkdownContent content={content} streaming={streaming} />
         ) : streaming ? (
@@ -85,7 +75,6 @@ export default function AgentMessage({ message }: Props) {
           </span>
         ) : null}
 
-        {/* Tool 调用区块列表 */}
         {toolCalls && toolCalls.length > 0 && (
           <div className="mt-2">
             {toolCalls.map(tc => (
@@ -98,7 +87,6 @@ export default function AgentMessage({ message }: Props) {
           </div>
         )}
 
-        {/* 产物卡片列表 */}
         {artifacts && artifacts.length > 0 && (
           <div className="mt-2">
             {artifacts.map((a, i) => (

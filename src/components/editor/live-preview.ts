@@ -207,7 +207,6 @@ export function livePreview() {
           if (fromA <= watchedTo) invalidated = true
         })
         if (invalidated) {
-          // ponytail: only the opening 16 KiB participates in the page drop cap.
           this.firstBodyCharacter = dropcapRange(update.state.doc)
         } else if (this.firstBodyCharacter) {
           this.firstBodyCharacter = {

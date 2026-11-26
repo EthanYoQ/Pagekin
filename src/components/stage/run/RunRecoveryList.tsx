@@ -14,7 +14,6 @@ import { pluralEn } from '../../../shared/plural-en'
 
 type Text = (zh: string, en: string) => string
 
-/** liveRuns：这部作品进行中的运行，它们推进的工作已经显示为运行卡片，不再列为可恢复。 */
 export function RunRecoveryList({ recovery, liveRuns }: { recovery: RunRecovery; liveRuns: readonly WorkflowRun[] }) {
   const text = useLocaleStore(s => s.text)
   const leaseId = useProjectStore(s => s.currentProject?.sessionLease)
@@ -72,7 +71,6 @@ function RecoveryCard({ entry, recovery, text }: { entry: RecoveryEntry; recover
   }
 }
 
-/** 可在提示条里撤销，所以不用危险色，也不先确认。 */
 function AbandonButton({ disabled, onClick, text }: { disabled: boolean; onClick: () => void; text: Text }) {
   return <Button variant="text" size="sm" className="run-card-abandon" disabled={disabled} onClick={onClick}><X aria-hidden />{text('不再恢复', 'Dismiss')}</Button>
 }
@@ -167,7 +165,6 @@ function DraftCard({ entry, recovery, text, abandon }: { entry: DraftEntry; reco
   )
 }
 
-/** 旧恢复候选：放弃前就地确认，写明放弃的字数无法找回。 */
 function CandidateCard({ entry, recovery, text }: { entry: CandidateEntry; recovery: RunRecovery; text: Text }) {
   const [confirming, setConfirming] = useState(false)
   const discardButton = useRef<HTMLButtonElement>(null)

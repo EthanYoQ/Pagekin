@@ -3,7 +3,6 @@ import { navigate } from '../../stores/navigation/navigation-intents'
 import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
 
-/** 未配置模型时的首次使用引导：书房与设定页同一句说明，并给出去设置添加的入口。 */
 export default function ModelMissingNotice() {
   const text = useLocaleStore(s => s.text)
   return (

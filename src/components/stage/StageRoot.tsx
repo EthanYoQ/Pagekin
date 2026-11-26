@@ -7,7 +7,6 @@ import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import ExitGuardDialog from './ExitGuardDialog'
 
-/** 外壳渲染出错：已打开的页面与没保存的内容还在内存里，重试重新显示界面；关窗时退出确认照常问保存。 */
 function StageFallback({ retry }: { retry: () => void }) {
   const text = useLocaleStore(s => s.text)
   return (
@@ -24,10 +23,6 @@ function StageFallback({ retry }: { retry: () => void }) {
   )
 }
 
-/**
- * 外壳的根：纸墨作用域、渲染出错兜底与退出确认。
- * 退出确认挂在外壳之外，外壳渲染出错后关窗仍能保存或放弃未保存的内容。
- */
 export default function StageRoot({ theme, exitGuard, children }: { theme: Theme; exitGuard: WindowCloseGuard; children: ReactNode }) {
   return (
     <div className="paper-ink stage-root" data-theme={theme}>

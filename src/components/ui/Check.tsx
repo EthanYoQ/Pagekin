@@ -5,12 +5,10 @@ interface CheckProps {
   checked: boolean
   onChange: (checked: boolean) => void
   label: ReactNode
-  /** 复选框用于勾选列表，开关用于立即生效的设置。 */
   kind?: 'checkbox' | 'switch'
   disabled?: boolean
 }
 
-/** 基于原生 checkbox，键盘与读屏行为由浏览器提供；开关形态加 role="switch"。 */
 export function Check({ checked, onChange, label, kind = 'checkbox', disabled }: CheckProps) {
   return (
     <label className="pi-check">

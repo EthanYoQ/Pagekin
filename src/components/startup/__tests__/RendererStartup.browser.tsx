@@ -15,7 +15,6 @@ import { ipc } from '../../../services/ipc-client'
 let host: HTMLDivElement
 let root: Root
 const noticeStorageKey = 'ai-novel-writer-dismissed-migration-generation'
-/** 旧版本单独存的界面版本键：迁移不读也不写。 */
 const OLD_SHELL_STORAGE_KEY = 'ai-novel-writer-ui-version'
 const keys = [APPEARANCE_STORAGE_KEY, PREVIOUS_APPEARANCE_STORAGE_KEY, LEGACY_THEME_STORAGE_KEY, OLD_SHELL_STORAGE_KEY, noticeStorageKey, 'startup-unrelated-model']
 const dependencies = (overrides: Partial<AppearanceBootstrapDependencies> = {}): AppearanceBootstrapDependencies => ({
@@ -304,7 +303,6 @@ it('外观损坏时响应关闭请求，工作台接管后由业务决定未保�
   expect(listeners.size).toBe(1)
   listeners.forEach(callback => callback({ requestId: 'before-editor' }))
   expect(invoke).toHaveBeenLastCalledWith('window:resolve-close', 'before-editor', 'proceed')
-  // Explicit retry after repairing the synthetic preference, without recreating the component.
   localStorage.removeItem(APPEARANCE_STORAGE_KEY)
   await act(async () => (Array.from(host.querySelectorAll('button')).find(button => button.textContent === '重新检查')!).click())
   await vi.waitFor(() => expect(host.querySelector('textarea')).not.toBeNull())
@@ -360,7 +358,6 @@ it('migration notice excludes its titlebar overlap from native dragging and dism
   expect(load).toHaveBeenCalledOnce()
 })
 
-/** 计算出的颜色的相对亮度（0 黑 1 白）。先画到画布上换成 sRGB，oklch 等写法也能比。 */
 const luminance = (color: string) => {
   const context = document.createElement('canvas').getContext('2d')!
   context.fillStyle = color

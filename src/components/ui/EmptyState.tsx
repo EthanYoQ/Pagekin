@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 
-/** 纸墨空状态：衬线标题、一句说明、一个动作。 */
 interface EmptyStateProps {
   heading: string
   description?: string

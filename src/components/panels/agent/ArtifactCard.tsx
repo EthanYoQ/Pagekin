@@ -1,9 +1,3 @@
-/**
- * ArtifactCard — 产物卡片
- *
- * 当 Agent 创建/修改文件或触发工作流时，
- * 显示可点击的产物卡片，用户可直接跳转到对应资源。
- */
 import { FileText, FolderOpen, Play, ExternalLink } from 'lucide-react'
 import type { ToolArtifact } from '../../../services/agent/tool-registry'
 import { useLocaleStore } from '../../../stores/locale-store'
@@ -13,7 +7,6 @@ interface Props {
   artifact: ToolArtifact
 }
 
-/** 根据产物类型选择图标 */
 function ArtifactIcon({ type }: { type: ToolArtifact['type'] }) {
   switch (type) {
     case 'file_created':
@@ -29,7 +22,6 @@ function ArtifactIcon({ type }: { type: ToolArtifact['type'] }) {
   }
 }
 
-/** 产物类型标签 */
 function typeLabel(
   type: ToolArtifact['type'],
   text: ReturnType<typeof useLocaleStore.getState>['text'],

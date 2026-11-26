@@ -9,11 +9,6 @@ export interface CharacterRosterRepairState {
   isRepairing: boolean
 }
 
-/**
- * Renderer-specific port for the structured roster read / explicit legacy
- * migration seam. The controller owns request ordering; the hook supplies
- * React state and the live project-session guard.
- */
 export interface CharacterRosterRepairPort {
   getSession(): ProjectSessionContext | null
   isSessionUsable(session: ProjectSessionContext): boolean
@@ -26,11 +21,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/**
- * Keeps the roster's read, explicit migration and error state internally
- * consistent across project-session switches. It has no React dependency so
- * the session race boundary remains directly testable.
- */
 export class CharacterRosterRepairController {
   private readonly readGate = new LatestRequestGate()
   private repairEpoch = 0
@@ -38,7 +28,6 @@ export class CharacterRosterRepairController {
 
   constructor(private readonly getPort: () => CharacterRosterRepairPort) {}
 
-  /** Invalidate every in-flight operation without mutating an unmounted view. */
   invalidate(): void {
     this.readGate.begin()
     this.repairEpoch += 1

@@ -2,7 +2,6 @@ import { APP_BRAND } from '../../../shared/brand'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { UpdateSettings } from '../StageUpdate'
 
-/** 关于与更新：应用名、版本、定位说明，以及检查更新与更新状态。 */
 export default function AboutSection() {
   const text = useLocaleStore(s => s.text)
   return (

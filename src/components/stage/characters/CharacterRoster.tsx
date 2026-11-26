@@ -6,7 +6,6 @@ import { CharacterCardImportButton } from '../../characters/CharacterCardImportB
 import { useCharacterList } from '../../characters/use-character-list'
 import { Button } from '../../ui/Button'
 
-/** 角色名单左栏：搜索、新建、导入角色卡、按页列出角色、刷新。列表逻辑沿用旧侧栏的 useCharacterList。 */
 export default function CharacterRoster({ projectKey }: { projectKey: string }) {
   const text = useLocaleStore(s => s.text)
   const list = useCharacterList()

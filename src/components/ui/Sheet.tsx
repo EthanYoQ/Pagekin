@@ -14,7 +14,6 @@ interface SheetProps {
   subtitle?: string
   closeLabel: string
   onClose: () => void
-  /** 侧页分页；给出时 children 是当前分页的内容。segmented 是标题下一条分段胶囊，underline 是下划线页签。 */
   tabs?: { items: readonly SheetTab[]; active: string; onChange: (id: string) => void; style?: 'underline' | 'segmented' }
   footer?: ReactNode
   wide?: boolean
@@ -28,11 +27,6 @@ const TAB_KEYS: Record<string, (index: number, count: number) => number> = {
   End: (_, count) => count - 1,
 }
 
-/**
- * 内容区右侧的按需侧页。由所在布局决定位置，侧页本身不遮挡正文。
- * 非模态：打开时焦点移到标题，Tab 可以离开侧页；点在侧页空白处时焦点落在侧页自身（tabIndex=-1），Esc 仍然有效。
- * 关闭时若焦点随侧页一起消失，就还给打开前的元素。
- */
 export function Sheet({ open, title, subtitle, closeLabel, onClose, tabs, footer, wide, children }: SheetProps) {
   const titleId = useId()
   const panelId = useId()
@@ -44,7 +38,6 @@ export function Sheet({ open, title, subtitle, closeLabel, onClose, tabs, footer
       openerRef.current = null
       return
     }
-    // StrictMode 会重跑 effect，那时焦点已在标题上；只记录本次打开前的元素。
     openerRef.current ??= document.activeElement as HTMLElement | null
     titleRef.current?.focus()
     return () => {

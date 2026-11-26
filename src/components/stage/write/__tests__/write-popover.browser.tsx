@@ -18,7 +18,6 @@ import BatchWriteDialog from '../../blueprint/BatchWriteDialog'
 import WriteChapterPopover from '../WriteChapterPopover'
 
 const createChapterWorkflow = vi.hoisted(() => vi.fn())
-// 用以 /src 开头的路径：检出路径含空格时（本机 Vibe Coding Project），浏览器模式匹配不到相对路径的模拟。
 vi.mock('/src/services/workflows/chapter-workflow.ts', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../../services/workflows/chapter-workflow')>()
   createChapterWorkflow.mockImplementation(actual.createChapterWorkflow)
@@ -170,7 +169,6 @@ function installIpc() {
   })
 }
 
-/** 一次启动交给工作流的全部输入：ChapterInfo、选项，工作流定义里可比较的字段，以及启动途中读写过的作品文件。 */
 function launched() {
   expect(createChapterWorkflow).toHaveBeenCalledOnce()
   expect(startWorkflow).toHaveBeenCalledOnce()
@@ -196,14 +194,12 @@ function dangerColor() {
   return color
 }
 
-/** 写作按钮与页面里一样靠右，弹层向左展开。 */
 async function render(node: React.ReactNode) {
   await act(async () => root?.render(<div className="paper-ink"><div style={{ display: 'flex', justifyContent: 'flex-end' }}>{node}</div></div>))
 }
 
 beforeEach(async () => {
   await page.viewport(1280, 900)
-  // 视口变化的 resize 事件可能晚于渲染才到，浮层收到 resize 会关闭：先等它派发完。
   await vi.waitFor(() => expect([window.innerWidth, window.innerHeight]).toEqual([1280, 900]))
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   createChapterWorkflow.mockClear()
@@ -244,7 +240,6 @@ afterEach(async () => {
   useStageStore.setState(originalStage)
 })
 
-/** 旧的章节创作对话框在同一蓝图下交给工作流的全部输入（RD-10 删除对话框前从它取得），弹层必须与它一致。 */
 function expectedLaunch(changes: { generationModelId: string; userGuidance: string; knowledgeQueryHint?: string }) {
   const { generationModelId, userGuidance, knowledgeQueryHint } = changes
   return {

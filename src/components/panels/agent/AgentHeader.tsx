@@ -10,9 +10,6 @@ import { useOutsideClick } from '../../../hooks/useOutsideClick'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { pluralEn } from '../../../shared/plural-en'
 
-/**
- * Agent 面板顶部工具栏
- */
 export default function AgentHeader() {
   const text = useLocaleStore(s => s.text)
   const { createConversation, toggleHistory, showHistory, getActiveConversation } = useAgentStore()
@@ -20,22 +17,17 @@ export default function AgentHeader() {
   const [subView, setSubView] = useState<'main' | 'mcp' | 'skills'>('main')
   const moreRef = useRef<HTMLDivElement>(null)
 
-  // 点击外部关闭更多菜单
   useOutsideClick(moreRef, () => { setShowMore(false); setSubView('main') }, showMore)
 
-  // MCP 状态
   const { servers: mcpServers, tools: mcpTools } = useMCPStore()
   const connectedCount = mcpServers.filter(s => s.status === 'connected').length
 
-  // Skill 列表（每次渲染重新读取，避免异步加载完成后仍展示旧列表）
   const skills = skillRegistry.listAll()
 
-  /** 新建会话 */
   const handleNew = () => {
     createConversation()
   }
 
-  // 当前会话为空（无消息）时禁止新建
   const activeConv = getActiveConversation()
   const isCurrentEmpty = !activeConv || activeConv.messages.filter(m => m.role !== 'system').length === 0
   const newLabel = isCurrentEmpty ? text('当前对话为空，请先发送消息', 'The current conversation is empty') : text('新建对话', 'New conversation')
@@ -48,7 +40,6 @@ export default function AgentHeader() {
         borderBottom: '1px solid var(--color-border)',
       }}
     >
-      {/* 标题 */}
       <div
         className="flex min-w-0 items-center overflow-hidden text-ellipsis whitespace-nowrap gap-1"
         style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem', fontWeight: 500 }}
@@ -56,10 +47,8 @@ export default function AgentHeader() {
         {text('AI 写作助手', 'AI Writing Assistant')}
       </div>
 
-      {/* 右侧工具按钮组 */}
       <div className="flex items-center gap-1.5 px-0.5 flex-shrink-0">
 
-        {/* 新建对话按钮 */}
         <Button
           variant="icon"
           size="sm"
@@ -71,7 +60,6 @@ export default function AgentHeader() {
           <Plus size={13} strokeWidth={1.5} />
         </Button>
 
-        {/* 历史记录按钮 */}
         <Button
           variant="icon"
           size="sm"
@@ -83,7 +71,6 @@ export default function AgentHeader() {
           <History size={15} strokeWidth={1.5} />
         </Button>
 
-        {/* 更多菜单 */}
         <div className="relative" ref={moreRef}>
           <Button
             variant="icon"
@@ -96,7 +83,6 @@ export default function AgentHeader() {
             <MoreHorizontal size={15} strokeWidth={1.5} />
           </Button>
 
-          {/* 更多菜单下拉 */}
           {showMore && (
             <div
               className="absolute right-0 top-full mt-1 z-50 py-1 rounded-lg shadow-lg"
@@ -107,7 +93,6 @@ export default function AgentHeader() {
                 boxShadow: 'var(--shadow-popover)',
               }}
             >
-              {/* ===== 主菜单视图 ===== */}
               {subView === 'main' && (
                 <>
                   <MenuItem
@@ -139,7 +124,6 @@ export default function AgentHeader() {
                 </>
               )}
 
-              {/* ===== MCP 子视图 ===== */}
               {subView === 'mcp' && (
                 <MCPSubView
                   servers={mcpServers}
@@ -148,7 +132,6 @@ export default function AgentHeader() {
                 />
               )}
 
-              {/* ===== Skill 子视图 ===== */}
               {subView === 'skills' && (
                 <SkillSubView
                   skills={skills}
@@ -162,8 +145,6 @@ export default function AgentHeader() {
     </div>
   )
 }
-
-// ===== MCP 子视图 =====
 
 function MCPSubView({
   servers,
@@ -179,7 +160,6 @@ function MCPSubView({
 
   return (
     <>
-      {/* 返回按钮 */}
       <button
         onClick={onBack}
         className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors"
@@ -196,7 +176,6 @@ function MCPSubView({
 
       <div style={{ height: 1, backgroundColor: 'var(--color-border)', margin: '2px 0' }} />
 
-      {/* 服务器列表 */}
       {servers.length === 0 ? (
         <div className="px-3 py-3 text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
           <div className="mb-1">{text('暂无 MCP 服务器', 'No MCP servers')}</div>
@@ -211,7 +190,6 @@ function MCPSubView({
               key={server.id}
               className="flex items-center gap-2 px-3 py-1.5 text-xs"
             >
-              {/* 状态灯 */}
               <span
                 className="flex-shrink-0 w-1.5 h-1.5 rounded-full"
                 style={{
@@ -246,7 +224,6 @@ function MCPSubView({
         </div>
       )}
 
-      {/* 底部统计 */}
       {toolCount > 0 && (
         <>
           <div style={{ height: 1, backgroundColor: 'var(--color-border)', margin: '2px 0' }} />
@@ -259,8 +236,6 @@ function MCPSubView({
   )
 }
 
-// ===== Skill 子视图 =====
-
 function SkillSubView({
   skills,
   onBack,
@@ -270,7 +245,6 @@ function SkillSubView({
 }) {
   const locale = useLocaleStore(s => s.locale)
   const text = useLocaleStore(s => s.text)
-  /** 来源徽章颜色 */
   const sourceBadge = (source: string) => {
     switch (source) {
       case 'builtin': return { bg: 'color-mix(in srgb, var(--color-info) 12%, transparent)', color: 'var(--color-info)', label: text('内置', 'Built-in') }
@@ -282,7 +256,6 @@ function SkillSubView({
 
   return (
     <>
-      {/* 返回按钮 */}
       <button
         onClick={onBack}
         className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors"
@@ -299,7 +272,6 @@ function SkillSubView({
 
       <div style={{ height: 1, backgroundColor: 'var(--color-border)', margin: '2px 0' }} />
 
-      {/* Skill 列表 */}
       {skills.length === 0 ? (
         <div className="px-3 py-3 text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
           <div className="mb-1">{text('暂无可用技能', 'No skills available')}</div>
@@ -346,7 +318,6 @@ function SkillSubView({
         </div>
       )}
 
-      {/* 底部提示 */}
       <div style={{ height: 1, backgroundColor: 'var(--color-border)', margin: '2px 0' }} />
       <div className="px-3 py-1.5 text-[0.68rem]" style={{ color: 'var(--color-text-muted)' }}>
         {text('输入', 'Type')} <code className="px-0.5 rounded" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-accent)' }}>/</code> {text('可快速调用技能', 'to quickly invoke a skill')}

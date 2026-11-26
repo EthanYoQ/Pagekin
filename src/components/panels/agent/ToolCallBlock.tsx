@@ -1,12 +1,3 @@
-/**
- * ToolCallBlock — Tool 调用可视化区块
- *
- * 显示 Agent 调用的每个 Tool：
- * - 折叠的头部：Tool 名称 + 来源徽章 + 状态指示
- * - 展开的主体：参数 JSON + 执行结果
- *
- * 参考 Cursor/Antigravity 的 tool-use 可视化设计。
- */
 import { useState } from 'react'
 import {
   Wrench,
@@ -23,7 +14,6 @@ interface Props {
   toolCall: ToolCallInfo
 }
 
-/** 状态图标映射 */
 function StatusIcon({ status }: { status: ToolCallInfo['status'] }) {
   switch (status) {
     case 'completed':
@@ -42,7 +32,6 @@ function StatusIcon({ status }: { status: ToolCallInfo['status'] }) {
   }
 }
 
-/** 状态文字 */
 function statusLabel(
   status: ToolCallInfo['status'],
   text: ReturnType<typeof useLocaleStore.getState>['text'],
@@ -65,7 +54,6 @@ export default function ToolCallBlock({ toolCall }: Props) {
 
   return (
     <div className="tool-call-block">
-      {/* 折叠头部 */}
       <div className="tool-call-header" onClick={() => setExpanded(v => !v)}>
         <div className="tool-call-icon">
           <Wrench size={12} style={{ color: 'var(--color-text-muted)' }} />
@@ -73,7 +61,6 @@ export default function ToolCallBlock({ toolCall }: Props) {
 
         <span className="tool-call-name">{toolName}</span>
 
-        {/* 来源徽章 */}
         {source && (
           <span className={`tool-call-source-badge ${source}`}>
             {source === 'builtin'
@@ -84,30 +71,25 @@ export default function ToolCallBlock({ toolCall }: Props) {
           </span>
         )}
 
-        {/* 状态 */}
         <div className="tool-call-status" style={{ marginLeft: 'auto' }}>
           <StatusIcon status={status} />
           <span>{statusLabel(status, text)}</span>
         </div>
 
-        {/* 展开箭头 */}
         <ChevronRight
           size={12}
           className={`tool-call-arrow ${expanded ? 'expanded' : ''}`}
         />
       </div>
 
-      {/* 展开区域 */}
       {expanded && (
         <div className="tool-call-body">
-          {/* 参数 */}
           {Object.keys(args).length > 0 && (
             <div className="tool-call-params">
               {JSON.stringify(args, null, 2)}
             </div>
           )}
 
-          {/* 结果 */}
           {result && (
             <div className="tool-call-result" style={{ position: 'relative' }}>
               {result}
@@ -126,7 +108,6 @@ export default function ToolCallBlock({ toolCall }: Props) {
             </div>
           )}
 
-          {/* 错误 */}
           {error && (
             <div className="tool-call-result" style={{ color: 'var(--color-error-text)' }}>
               <XCircle size={13} className="inline mr-1" />{error}

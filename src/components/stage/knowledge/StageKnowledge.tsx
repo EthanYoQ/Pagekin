@@ -32,11 +32,6 @@ interface PendingExtraction {
   resolve: (send: boolean) => void
 }
 
-/**
- * 知识库：左列资料（导入的与定稿章节分开），中列所选资料的项目副本，右列在资料里查找。
- * 存储与检索方式不在这里出现；检索模型与索引检查在设置的检索模型页。
- * 所选资料与未保存的改动存在标签上：切走标签不丢，关标签与退出前走外壳统一的确认与保存。
- */
 export default function StageKnowledge({ tabId }: { tabId: string }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
@@ -52,7 +47,6 @@ export default function StageKnowledge({ tabId }: { tabId: string }) {
   const [extraction, setExtraction] = useState<PendingExtraction | null>(null)
   const saveRef = useRef(kb.saveDocument)
   useEffect(() => { saveRef.current = kb.saveDocument })
-  // 与正文编辑器一样，注册在页面卸载后仍保留，关标签时由编辑器仓库移除。
   useEffect(() => {
     registerEditorExitSaveHandler({ tabId, type: 'knowledge', save: () => saveRef.current() })
   }, [tabId])
@@ -70,7 +64,6 @@ export default function StageKnowledge({ tabId }: { tabId: string }) {
   const hasMeaningSearch = stats.vectorDimension > 0
   const vectorless = index.status?.embeddingConfigured ? index.status.vectorlessCount : 0
   const loadError = kb.loadError || index.statusError
-  // 最近一次读资料列表失败时，空列表与计数都不能当真。
   const documentsKnown = kb.documentsLoaded && !kb.loadError
 
   const pick = (docId: string) => {

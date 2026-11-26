@@ -31,16 +31,11 @@ const DARK = { layer: 'rgb(29, 29, 34)', ink: 'rgb(230, 228, 223)', danger: 'rgb
 const LIGHT = { ink: 'rgb(23, 23, 26)', accent: 'rgb(44, 74, 140)' }
 
 const wait = (ms: number) => act(async () => { await new Promise(resolve => setTimeout(resolve, ms)) })
-/**
- * 命令式弹窗关掉后先淡出 140ms，内容卸载后才 resolve。分几段等：一个 act 里的状态更新要等 act 结束才提交，
- * 一口气等 350ms 时淡出结束后的卸载会拖到断言之后。
- */
 async function promptClosed() {
   for (let step = 0; step < 7; step++) await wait(50)
 }
 const host = () => document.getElementById('ai-novel-ink-overlay')
 const focused = () => document.activeElement as HTMLElement
-/** 截 element 所在区域的图；返回按视口坐标取像素与数像素的函数（截图可能按测试页缩放）。 */
 async function stackPixels(element: HTMLElement) {
   const box = element.getBoundingClientRect()
   const base64 = await page.screenshot({ element, save: false })
@@ -65,10 +60,8 @@ async function stackPixels(element: HTMLElement) {
 const liveToasts = () => [...document.querySelectorAll<HTMLElement>('.pi-toast:not([data-exiting])')]
 const toastTitles = () => liveToasts().map(item => item.querySelector('.pi-toast-title')!.textContent)
 const buttonNamed = (scope: ParentNode, name: string) => [...scope.querySelectorAll('button')].find(b => b.textContent === name)!
-/** 遮罩在对话框底下，点它的左上角才算点在对话框外。 */
 const clickScrim = () => userEvent.click(document.querySelector<HTMLElement>('.pi-scrim')!, { position: { x: 8, y: 8 } })
 
-/** 动作失败会再推一条出错通知，所以一轮一轮关到栈空。 */
 async function clearToasts() {
   for (let round = 0; round < 8 && liveToasts().length > 0; round++) {
     for (const close of document.querySelectorAll<HTMLButtonElement>('.pi-toast:not([data-exiting]) button[aria-label="关闭通知"]')) await act(async () => close.click())
@@ -87,7 +80,6 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await clearToasts()
-  // 正在退场的卡片 140ms 后才从栈里拿掉，等它走完再拆宿主
   await wait(200)
   await act(async () => root?.unmount())
   container?.remove()
@@ -545,7 +537,6 @@ describe('提示栈', () => {
 
   it.each(['light', 'dark'] as const)('%s 主题溢出的栈滚到底时，最上面露出半截的卡片仍不透明，页面不从卡片里透出；上沿有提示还有更多的淡出带，滚到顶时消失', async (theme) => {
     await act(async () => useThemeStore.setState({ resolvedTheme: theme }))
-    // 卡片背后铺一层纯红：卡片哪里变透明，截图里那里就带红
     const backdrop = document.createElement('div')
     backdrop.style.cssText = 'position: fixed; inset: 0; background: rgb(255, 0, 0);'
     document.body.prepend(backdrop)
@@ -563,9 +554,7 @@ describe('提示栈', () => {
       expect(card.top).toBeLessThan(stackBox.top + 16)
       const sample = await stackPixels(stack)
       const red = ([r, g, b]: number[]) => r - g > 40 && r - b > 40
-      // 卡片里没有字的一段（标题只有「出错 N」，右边留到关闭按钮之前），上下避开圆角边的抗锯齿；文字的彩色抗锯齿边会被当成红
       const reddish = sample.count(card.left + 160, Math.max(card.top, stackBox.top) + 2, card.right - 48, card.bottom - 2, red)
-      // 栈的上沿（卡片列中间）被淡出带盖着，不是背后的页面
       const bandTop = sample.at((card.left + card.right) / 2, stackBox.top + 3)
       expect([reddish, red(bandTop), getComputedStyle(stack, '::before').opacity], JSON.stringify({ bandTop, card: [card.top, card.bottom], stack: [stackBox.top, stackBox.bottom] }))
         .toEqual([0, false, '1'])
@@ -576,7 +565,6 @@ describe('提示栈', () => {
       const atTop = await stackPixels(stack)
       const firstCard = liveToasts()[0].getBoundingClientRect()
       expect(atTop.count(firstCard.left + 160, firstCard.top + 2, firstCard.right - 48, firstCard.top + 12, red)).toBe(0)
-      // 滚到顶时上面没有卡片，淡出带消失：栈的上沿与最早一条的圆角外都露出背后的页面，卡片顶上没有盖着东西
       expect([getComputedStyle(stack, '::before').opacity, red(atTop.at((firstCard.left + firstCard.right) / 2, stackBox.top + 3)), red(atTop.at(firstCard.left + 1, firstCard.top + 1))])
         .toEqual(['0', true, true])
     } finally {
@@ -809,7 +797,6 @@ describe('清除生成内容', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  /** 照顶栏作品菜单的接法：菜单项打开受控的旧对话框与清除确认，都没有 Dialog.Trigger。 */
   function WorkMenu() {
     const [open, setOpen] = useState<'export' | 'clear' | null>(null)
     return (

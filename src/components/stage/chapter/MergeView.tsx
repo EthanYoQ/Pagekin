@@ -8,19 +8,13 @@ import { Button } from '../../ui/Button'
 import { Notice } from '../../ui/Notice'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 
-/** 一个未改动片段在合并视图里只占一行说明；空行锚点不显示。 */
 function sameLabel(lines: readonly string[] | undefined): boolean {
   return Boolean(lines?.some(line => line.trim()))
 }
 
-/**
- * 修稿合并（ThreeWayMerge 的数据逻辑）：每处改动选用原稿、用修稿或手动编辑，也可以全部用原稿、全部用修稿。
- * 完成合并交出的正文就是按选择拼出的文字；稍后再合并只收起视图，修稿仍待合并。
- */
 export default function MergeView({ data, versionLabel, recheck, onComplete, onLater }: {
   data: MergeData
   versionLabel: string
-  /** 按审稿意见修出的稿合并后会自动复验；直接修稿没有复验。 */
   recheck: boolean
   onComplete: (mergedText: string) => Promise<boolean>
   onLater: () => void

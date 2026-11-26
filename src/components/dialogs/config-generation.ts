@@ -11,7 +11,6 @@ import { configText } from '../../shared/novel-config-ai-sources'
 
 type Text = (zh: string, en: string) => string
 
-/** 已有作者内容的长字段：AI 填充会保留原文并追加，开始前要让作者确认扩写。 */
 export function configFieldsToExpand(config: Partial<NovelConfig> | undefined, text: Text): string[] {
   const labels: [unknown, string][] = [
     [config?.coreOutline, text('核心大纲', 'Core outline')],
@@ -26,10 +25,6 @@ export function configFieldsToExpand(config: Partial<NovelConfig> | undefined, t
   return labels.filter(([value]) => configText(value).trim()).map(([, label]) => label)
 }
 
-/**
- * 按创作脑洞与当前规模在后台启动 AI 填充配置。规划环节没有可用模型、与正在运行的任务冲突时不启动，返回 false。
- * 设定页的 AI 补全与单项生成用它。
- */
 export function startConfigGeneration({ idea, projectSession, onGenerated }: {
   idea: string
   projectSession: ProjectSessionContext
@@ -59,7 +54,6 @@ export function startConfigGeneration({ idea, projectSession, onGenerated }: {
   }
   toast.info(text('正在根据脑洞生成小说配置...', 'Generating novel configuration from your idea...'))
   addLog('info', text(`正在根据创作脑洞生成小说配置（规模：${totalChapters} 章 / ${wordsPerChapter} 字/章）...`, `Generating novel configuration (${totalChapters} ${pluralEn(totalChapters, 'chapter')} / ${wordsPerChapter} ${pluralEn(wordsPerChapter, 'word')} per chapter)...`))
-  // 后台执行 LLM 调用，由 WorkflowEngine 接管并显示运行状态。
   void startWorkflow(workflow)
   return true
 }

@@ -38,7 +38,6 @@ const TRASHED: TrashedChapter = {
 let root: Root | undefined
 let host: HTMLDivElement | undefined
 
-/** 像 openProject 一样换上这次打开：主进程签发的会话、新的项目对象，正文阶段的标签。 */
 async function open(context: ProjectSessionContext, name: string) {
   await act(async () => {
     setActiveProjectSessionContext(context)

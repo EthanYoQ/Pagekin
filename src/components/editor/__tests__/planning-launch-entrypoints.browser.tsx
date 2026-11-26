@@ -148,7 +148,6 @@ describe('其他架构文档页的生成对话框按大纲进度判定情节大�
     .map(n => `## 第${n}章：第${n}盏灯\n林舟在第${n}站认出一位失踪者的座位。`).join('\n\n')
   const OUTLINE_SOURCE = { totalChapters: 24, writingLanguage: 'zh-CN' as const }
 
-  /** 从前提文档页打开生成对话框，返回情节大纲那一行的标记。未确认的节默认勾选，已确认的默认保留。 */
   async function outlineMarkFromPremisePage(synopsis: string, checkpoint: Record<string, unknown> = {}) {
     const premise = '故事前提'.repeat(20)
     const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>

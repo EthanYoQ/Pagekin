@@ -25,7 +25,6 @@ interface RequiredState {
   label: string
 }
 
-/** 必需页的标签状态，非必需页为 null。配置载入前不下结论，只标「必需」。 */
 function useRequiredState(spec: SettingsPageSpec): RequiredState | null {
   const text = useLocaleStore(s => s.text)
   const missing = useLLMStore(s => s.loaded && spec.required !== undefined && spec.required.missing(s))
@@ -37,7 +36,6 @@ function RequiredMark({ state, decorative }: { state: RequiredState; decorative?
   return <span className="stage-set-required" data-missing={state.missing || undefined} aria-hidden={decorative || undefined}>{state.label}</span>
 }
 
-/** 导航按钮的名字只是页名（读屏和按名定位都靠它），必需与否放进描述里读出。 */
 function SettingsLink({ spec, current }: { spec: SettingsPageSpec; current: SettingsSection }) {
   const text = useLocaleStore(s => s.text)
   const required = useRequiredState(spec)
@@ -73,7 +71,6 @@ function PageHeader({ page, action }: { page: SettingsSection; action?: ReactNod
   )
 }
 
-/** 旧组件（提示词模板、写作 Skills、项目备份）放进纸墨页面时仍读旧的颜色变量，由配色桥接到纸墨令牌。 */
 function Legacy({ children }: { children: ReactNode }) {
   return <div className="stage-set-legacy">{children}</div>
 }
@@ -111,15 +108,10 @@ const close = () => leaveSettings(() => useLayoutStore.getState().closeSettings(
 
 const TEXT_INPUT_TYPES = new Set(['text', 'search', 'email', 'url', 'password', 'number', 'tel'])
 
-/** 打字的地方的 Esc 属于输入（撤销联想、清空搜索），不关闭设置页；下拉框、开关、复选框、按钮上的 Esc 照常关闭。 */
 const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement
     || (target instanceof HTMLInputElement && TEXT_INPUT_TYPES.has(target.type)))
 
-/**
- * 设置页：左侧按常用、高级、其他分组，右侧是当前一页。占满内容面板，书房与作品里都能打开；
- * 「返回」或 Esc 回到打开前的页面，有没保存的输入时先确认。当前分区记在 layout-store，书房与作品之间切换重挂后仍停在原处。
- */
 export default function StageSettings({ library }: { library: boolean }) {
   const text = useLocaleStore(s => s.text)
   const page = useLayoutStore(s => s.settingsSection)

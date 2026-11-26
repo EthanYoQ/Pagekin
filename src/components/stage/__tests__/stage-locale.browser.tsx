@@ -24,7 +24,6 @@ const restores = [useEditorStore, useLayoutStore, useLLMStore, useLocaleStore, u
   .map(store => snapshot(store as StoreApi<unknown>))
 
 const han = /\p{Script=Han}/u
-/** 作者与读屏读到的文字：去掉 aria-hidden 的装饰（顶栏的「墨」字印章在两种语言里一样）。 */
 function readableText(element: HTMLElement): string {
   const copy = element.cloneNode(true) as HTMLElement
   copy.querySelectorAll('[aria-hidden="true"]').forEach(node => node.remove())

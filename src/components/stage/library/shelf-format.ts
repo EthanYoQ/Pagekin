@@ -9,7 +9,6 @@ function startOfDay(date: Date): number {
 
 const pad = (value: number) => String(value).padStart(2, '0')
 
-/** 书架上的时间：今天写时刻，昨天、一周内写相对天数，更早写月日，跨年加年份。无效时间返回空串。 */
 export function shelfTime(iso: string, now: Date, text: Text): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ''
@@ -24,7 +23,6 @@ export function shelfTime(iso: string, now: Date, text: Text): string {
   return text(`${date.getFullYear()} 年 ${month} 月 ${day} 日`, `${monthEn} ${day}, ${date.getFullYear()}`)
 }
 
-/** 封面色调：按书名稳定地取一种，同一本书每次都是同一种颜色。 */
 export const COVER_TONES = ['navy', 'sand', 'sage', 'umber', 'paper'] as const
 export type CoverTone = typeof COVER_TONES[number]
 

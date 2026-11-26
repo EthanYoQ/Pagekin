@@ -326,7 +326,6 @@ describe('ProjectBackupPanel', () => {
     expect(container.textContent).toContain('copy-1')
     expect(openProject).not.toHaveBeenCalled()
     expect(useProjectStore.getState().currentProject).toBe(PROJECT)
-    // 渲染进程从不持有也不回传外部路径：归档 IPC 的载荷里只有授权标识，没有路径字段。
     const archiveCalls = invoke.mock.calls.filter(([channel]) => String(channel).startsWith('project:archive-'))
     expect(archiveCalls).toHaveLength(2)
     for (const [channel, payload] of archiveCalls) {

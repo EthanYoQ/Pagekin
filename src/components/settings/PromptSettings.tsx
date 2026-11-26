@@ -25,8 +25,6 @@ import { cn } from '../../lib/utils'
 import { useLocaleStore } from '../../stores/locale-store'
 import { useUnsavedSettings } from './unsaved-settings'
 
-// ==================== 来源标签配置 ====================
-
 const SOURCE_CONFIG = {
   builtin: { label: '内置', labelEn: 'Built-in', color: 'var(--color-text-muted)', bg: 'var(--color-hover)' },
   global: { label: '全局', labelEn: 'Global', color: 'var(--color-info)', bg: 'color-mix(in srgb, var(--color-info) 10%, transparent)' },
@@ -59,9 +57,6 @@ const PROMPT_META_EN: Record<string, { name: string; description: string }> = {
   infer_novel_config_with_vectors: { name: 'Infer configuration from samples', description: 'Infer a configuration from retrieved source excerpts' },
 }
 
-// ==================== 主组件 ====================
-
-/** 提示词模板设置面板 */
 export default function PromptSettings() {
   const text = useLocaleStore(s => s.text)
   const project = useProjectStore((s) => s.currentProject)
@@ -80,7 +75,6 @@ export default function PromptSettings() {
     ? languageSelection.writingLanguage
     : projectWritingLanguage
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
-  // 强制刷新用（保存/恢复后 getPromptSource 的结果会变）
   const [refreshKey, setRefreshKey] = useState(0)
   const [globalLoadError, setGlobalLoadError] = useState<string | null>(null)
   const [projectLoadError, setProjectLoadError] = useState<{
@@ -102,7 +96,6 @@ export default function PromptSettings() {
     return () => { disposed = true }
   }, [editingLanguage, text])
 
-  // 项目变更时重新加载项目级覆盖
   useEffect(() => {
     const session = projectId && projectPath && projectLease
       ? captureProjectSession({ id: projectId, path: projectPath, sessionLease: projectLease })
@@ -131,7 +124,6 @@ export default function PromptSettings() {
     return () => { disposed = true }
   }, [editingLanguage, projectId, projectLease, projectPath, text])
 
-  // 获取可编辑的模板列表
   const editableTemplates = BUILTIN_PROMPTS
     .filter((template) => EDITABLE_PROMPT_KEYS.includes(template.key))
     .map((template) => getBuiltinPromptTemplate(template.key, editingLanguage) ?? template)
@@ -158,7 +150,6 @@ export default function PromptSettings() {
           {projectLoadError.message}
         </div>
       )}
-      {/* 说明 */}
       <div
         className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs mb-4"
         style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text-muted)' }}
@@ -215,8 +206,6 @@ export default function PromptSettings() {
   )
 }
 
-// ==================== 单个模板条目 ====================
-
 function TemplateItem({
   builtinTemplate,
   currentTemplate,
@@ -248,7 +237,6 @@ function TemplateItem({
   const [prevExpanded, setPrevExpanded] = useState(isExpanded)
   const [prevContent, setPrevContent] = useState(currentTemplate.content)
 
-  // 展开时重置编辑内容
   if (isExpanded !== prevExpanded || currentTemplate.content !== prevContent) {
     if (isExpanded) {
       setEditRole(currentTemplate.systemRole ?? '')
@@ -266,7 +254,6 @@ function TemplateItem({
 
   const sourceConf = SOURCE_CONFIG[source]
 
-  // 插入变量到光标位置
   const insertVariable = (varName: string) => {
     const textarea = textareaRef.current
     if (!textarea) return
@@ -275,14 +262,12 @@ function TemplateItem({
     const text = `{{${varName}}}`
     const newContent = editGuidance.slice(0, start) + text + editGuidance.slice(end)
     setEditGuidance(newContent)
-    // 恢复光标
     requestAnimationFrame(() => {
       textarea.focus()
       textarea.setSelectionRange(start + text.length, start + text.length)
     })
   }
 
-  // 保存到全局
   const handleSaveGlobal = async () => {
     setSaving(true)
     setSaveResult(null)
@@ -300,7 +285,6 @@ function TemplateItem({
     setTimeout(() => setSaveResult(null), 3000)
   }
 
-  // 保存到项目
   const handleSaveProject = async () => {
     if (!projectSession || !isProjectSessionCurrent(projectSession)) return
     const operationSession = projectSession
@@ -323,12 +307,10 @@ function TemplateItem({
     setTimeout(() => setSaveResult(null), 3000)
   }
 
-  // 恢复默认
   const handleReset = async () => {
     const operationSession = projectSession
     setSaving(true)
     setSaveResult(null)
-    // 依次删除项目级和全局级覆盖
     if (operationSession) {
       if (!isProjectSessionCurrent(operationSession)) return
       const projectDeleted = await deleteProjectCustomPrompt(operationSession, builtinTemplate.key, writingLanguage)
@@ -366,7 +348,6 @@ function TemplateItem({
         backgroundColor: 'var(--color-panel)',
       }}
     >
-      {/* 折叠头部 */}
       <button
         className="w-full flex items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-[var(--color-hover)] outline-none focus:outline-none"
         onClick={onToggle}
@@ -394,10 +375,8 @@ function TemplateItem({
         </div>
       </button>
 
-      {/* 展开编辑区 */}
       {isExpanded && (
         <div className="px-4 pb-4 space-y-3" style={{ borderTop: '1px solid var(--color-border)' }}>
-          {/* 变量标签栏 */}
           <div className="pt-3">
             <p className="text-[0.68rem] font-medium mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
               {text('可用变量（点击插入到光标位置）', 'Available variables (click to insert)')}
@@ -444,7 +423,6 @@ function TemplateItem({
             />
           </label>
 
-          {/* 用户层只追加创作指导；内置任务与输出合同保持隐藏且不可改。 */}
           <div>
             <p className="text-[0.68rem] font-medium mb-1.5 text-[var(--color-text-muted)]">
               {text('补充创作指导', 'Additional creative guidance')}
@@ -472,7 +450,6 @@ function TemplateItem({
           </div>
 
 
-          {/* 操作按钮 */}
           <div className="flex items-center gap-2 pt-1">
             <Button
               variant="outline"
@@ -506,7 +483,6 @@ function TemplateItem({
             </Button>
           </div>
 
-          {/* 保存结果反馈 */}
           {saveResult && (
             <div
               className={cn(

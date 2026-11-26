@@ -44,7 +44,6 @@ describe('UI project session gates', () => {
   })
 
   it('passes the frozen session through DraftEditor helper calls that perform async work', () => {
-    // 单章视图的草稿异步动作在 use-draft-actions 里。
     const draftEditor = source('src/components/editor/use-draft-actions.ts')
 
     expect(draftEditor).toContain('parseDraftMeta(filePath, projectKey, projectSession)')

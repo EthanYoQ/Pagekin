@@ -109,7 +109,6 @@ describe('writing skill settings', () => {
     await expect.element(card.getByText(/the model cannot see them: FORMS\.md, image\.png/u)).toBeVisible()
     await expect.element(page.getByRole('button', { name: 'Confirm install' })).toBeEnabled()
 
-    // text 是稳定函数，切换语言不触发重渲染；重新检查一次让卡片按中文重绘。
     useLocaleStore.setState({ locale: 'zh-CN' })
     await act(async () => page.getByRole('button', { name: 'Choose folder' }).click())
     await expect.element(page.getByRole('group', { name: '待安装的 Skill' })

@@ -136,7 +136,6 @@ beforeEach(async () => {
     if (channel === 'db:project-core-get') return null
     if (channel === 'db:blueprint-get-all') return []
     if (channel === 'db:draft-list') return []
-    // 运行侧页读恢复项：这里都没有。
     if (channel === 'generation:list-recovery') return { planning: [], editors: [], reviews: [], batches: [], drafts: [], partial: false }
     if (['db:recovery-candidate-list', 'generation:list', 'skills:list-user'].includes(channel)) return []
     if (channel === 'fs:check-exists') return false
@@ -1297,7 +1296,6 @@ describe('新外壳里的导入对话框', () => {
     const restore = useThemeStore.getState()
     useThemeStore.setState({ resolvedTheme: theme })
     try {
-      // 先卸掉 beforeEach 在浅色下开的对话框，按这个主题重新打开，量的才是打开时的颜色而不是换主题的过渡
       await act(async () => root.render(<div />))
       await act(async () => root.render(<div className="paper-ink"><ImportNovelDialog open onClose={vi.fn()} /></div>))
       const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!
@@ -1314,7 +1312,6 @@ describe('新外壳里的导入对话框', () => {
         edge: contrast(style.borderTopColor, layer) >= 3,
         text: contrast(style.color, fill) >= 4.5,
       }).toEqual({ layer: INK[theme].layer, border: INK[theme].accent, check: true, offCheck: false, edge: true, text: true })
-      // 选中项只露对勾，不与「参考小说」的书本图标挤在一起；没选中的露自己的图标
       const shownIcons = (button: Element) => [...button.querySelectorAll('svg')].filter(icon => getComputedStyle(icon).display !== 'none')
         .map(icon => [...icon.classList].find(name => name.startsWith('lucide-') && name !== 'lucide-icon'))
       expect([shownIcons(on), shownIcons(off)]).toEqual([['lucide-check'], ['lucide-file-text']])

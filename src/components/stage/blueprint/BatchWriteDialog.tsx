@@ -24,7 +24,6 @@ function gapHint(gaps: readonly ChapterGap[]): [string, string] {
   ]
 }
 
-/** 批量创作：按蓝图连续写几章。每次打开都是新的实例，上一次选的模型不会带到下一次。 */
 export default function BatchWriteDialog(props: BatchChapterProps) {
   const session = captureProjectSession(useProjectStore(s => s.currentProject))
   const sessionKey = session ? `${session.projectId}:${session.leaseId}` : 'inactive'

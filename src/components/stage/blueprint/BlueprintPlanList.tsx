@@ -23,7 +23,6 @@ interface PlanItemProps {
   onSelect: (index: number) => void
 }
 
-/** 单独记忆每一行：换章或改一章时，几百章的列表只重画变了的那几行。 */
 const PlanItem = memo(function PlanItem({ blueprint, row, index, selected, next, onSelect }: PlanItemProps) {
   const text = useLocaleStore(s => s.text)
   const status = row?.running ? 'running' : row?.phase ?? 'todo'
@@ -44,7 +43,6 @@ const PlanItem = memo(function PlanItem({ blueprint, row, index, selected, next,
   )
 })
 
-/** 章节规划列表：章号、标题、有作者指导与要点的标记、正文进度。 */
 export default function BlueprintPlanList({ blueprints, rows, selectedIdx, writableChapters, onSelect }: BlueprintPlanListProps) {
   const text = useLocaleStore(s => s.text)
   return (

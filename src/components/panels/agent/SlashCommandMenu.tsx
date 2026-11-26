@@ -1,21 +1,12 @@
-/**
- * SlashCommandMenu — / 命令选择菜单
- *
- * 用户输入 / 时弹出的命令搜索和选择面板。
- */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Sparkles, Zap } from 'lucide-react'
 import { searchSlashCommands, type SlashCommand } from '../../../services/agent/intent-router'
 import { useLocaleStore } from '../../../stores/locale-store'
 
 interface Props {
-  /** 搜索关键词（/ 后面的文字） */
   query: string
-  /** 选择命令的回调 */
   onSelect: (command: SlashCommand) => void
-  /** 关闭菜单 */
   onClose: () => void
-  /** 菜单位置 */
   position?: { bottom: number; left: number }
 }
 
@@ -29,13 +20,11 @@ export default function SlashCommandMenu({ query, onSelect, onClose, position }:
 
   const [prevQuery, setPrevQuery] = useState(query)
 
-  // 重置选中索引
   if (query !== prevQuery) {
     setSelectedIndex(0)
     setPrevQuery(query)
   }
 
-  // 键盘导航
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()

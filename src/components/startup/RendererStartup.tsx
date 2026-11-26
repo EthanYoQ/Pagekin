@@ -12,7 +12,6 @@ const desktopStartup: AppearanceBootstrapDependencies = {
 const loadApp = () => import('../../App')
 const MIGRATION_NOTICE_STORAGE_KEY = 'ai-novel-writer-dismissed-migration-generation'
 
-/** Business modules are not imported until main and the renderer storage writer acknowledge readiness. */
 export default function RendererStartup({
   loadWorkspace = loadApp,
   dependencies = desktopStartup,
@@ -46,11 +45,9 @@ export default function RendererStartup({
   } }), [dependencies])
   const phase = useAppearanceStore(state => state.phase)
   const notice = useAppearanceStore(state => state.notice)
-  // 这一层在外壳的纸墨作用域之外，自己挂 .paper-ink 才取得到令牌；外观偏好还没读出（或读坏了）时跟随系统深浅色。
   const theme = useAppearanceStore(state => state.profile?.colorTheme) ?? (dependencies.systemTheme ?? systemColorTheme)()
   useEffect(() => {
     if (Workspace || !ipc.isElectron) return
-    // No author editor exists before App mounts. After that App owns its dirty-work guard.
     return ipc.on('window:close-requested', ({ requestId }) => {
       void ipc.invoke('window:resolve-close', requestId, 'proceed').catch(() => undefined)
     })
@@ -64,7 +61,6 @@ export default function RendererStartup({
     }).catch(() => { if (!disposed) setLoadFailed(true) })
     return () => { disposed = true }
   }, [attempt, startupDependencies, loadWorkspace])
-  // A later preference write failure must not unmount editors or discard in-memory author work.
   if (Workspace) return <>
     <Workspace />
     {phase === 'blocked' && <div role="alert" className="fixed inset-x-0 top-10 z-50 bg-[var(--color-panel)] px-4 py-2 text-center text-[var(--color-warning-text)]">{notice}</div>}

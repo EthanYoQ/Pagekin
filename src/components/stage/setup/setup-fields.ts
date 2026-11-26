@@ -21,7 +21,6 @@ export const STRUCTURE_OPTIONS: readonly (readonly [NovelConfig['plotStructure']
   ['freeform', ['自由结构', 'Freeform']],
 ]
 
-/** 必填项的名字，与流程脊「还差 N 项」同一组。 */
 export const REQUIRED_NAMES: Record<SetupField, Pair> = {
   coreOutline: ['核心大纲', 'core outline'],
   genre: ['类型', 'genre'],
@@ -29,7 +28,6 @@ export const REQUIRED_NAMES: Record<SetupField, Pair> = {
   targetAudience: ['目标读者', 'target readers'],
 }
 
-/** 只缺一项时，提示直接说怎么补齐。 */
 export const ONE_MISSING_HINT: Record<SetupField, Pair> = {
   coreOutline: ['写下核心大纲就能继续', 'Write the core outline to continue'],
   genre: ['选好类型就能继续', 'Choose a genre to continue'],
@@ -37,7 +35,6 @@ export const ONE_MISSING_HINT: Record<SetupField, Pair> = {
   targetAudience: ['选好目标读者就能继续', 'Choose target readers to continue'],
 }
 
-/** aiField：可单独让 AI 生成的字段。 */
 export type SheetField = { id: AiSourceField; name: Pair; desc: Pair; placeholder: Pair; aiField?: GeneratableField }
 
 const SHEET_COPY: Record<AiSourceField, Omit<SheetField, 'id'>> = {
@@ -61,5 +58,4 @@ const SHEET_COPY: Record<AiSourceField, Omit<SheetField, 'id'>> = {
     placeholder: ['如：参考《证道》的修炼体系', 'e.g. the magic system of a favourite series'] },
 }
 
-/** 顺序与 AI 来源标记的字段表一致。 */
 export const SHEET_FIELDS: readonly SheetField[] = AI_SOURCE_FIELDS.map(id => ({ id, ...SHEET_COPY[id] }))

@@ -44,7 +44,6 @@ const copies: Record<string, string> = {
   ch2: '林舟在抽屉底下翻出一张旧照片。',
 }
 
-// 应用切换界面语言时会改 <html lang>，按钮的字距跟着 :lang() 变；量宽度的用例要照样设，结束后还原。
 const PAGE_LANG = document.documentElement.lang
 let root: Root | undefined
 let host: HTMLDivElement | undefined
@@ -55,9 +54,7 @@ beforeEach(() => {
     if (channel === 'kb:list-documents') return [
       { id: 'station', fileName: '车站档案.md', importedAt: '', chunkCount: 3, filePath: 'knowledge-copy:station' },
       { id: 'people', fileName: '林舟人物小传.txt', importedAt: '', chunkCount: 2, filePath: 'knowledge-copy:people' },
-      // 定稿经 kb:import-text 收入，和导入资料一样有项目副本；只有定稿登记里的章号能把它认出来。
       { id: 'ch2', fileName: '第2章 母亲的旧照片.txt', importedAt: '', chunkCount: 4, filePath: 'knowledge-copy:ch2', finalizedChapter: 2 },
-      // 旧版导入、没有项目副本的资料。
       { id: 'legacy', fileName: '旧版地名表.txt', importedAt: '', chunkCount: 1, filePath: '' },
     ]
     if (channel === 'kb:stats') return { documentCount: 4, totalChunks: 9, vectorDimension: 0 }
@@ -137,14 +134,12 @@ async function renderPage() {
   await vi.waitFor(() => expect(button(/车站档案/)).toBeTruthy())
 }
 
-/** 页面上作者能读到的全部文字：正文、可访问名称、提示与占位。 */
 function visibleWords(): string {
   const attributes = [...document.querySelectorAll('[aria-label], [title], [placeholder]')]
     .flatMap(node => ['aria-label', 'title', 'placeholder'].map(name => node.getAttribute(name) ?? ''))
   return [document.body.textContent ?? '', ...attributes].join('\n')
 }
 
-/** 作者在页面与提示里读到的全部文字：每一步收一次页面，再加上弹过的提示。 */
 function wordCollector() {
   const toasts: string[] = []
   for (const kind of ['success', 'error', 'warning', 'info'] as const) {
@@ -211,7 +206,6 @@ describe('知识库', () => {
       expect(words.all()).not.toMatch(IMPLEMENTATION_TERMS)
     })
 
-    // 主进程只交错误码（#474 B3）：更新检索、保存副本与检查重建被拒时，提示按界面语言说明，不露码。
     const expectExplained = (message: string | undefined, zh: string, en: string) => {
       expect(message).toContain(say(zh, en))
       expect(message).not.toMatch(locale === 'en-US' ? /[A-Z]{3,}_|\p{Script=Han}/u : /[A-Z]{3,}_/u)
@@ -242,7 +236,6 @@ describe('知识库', () => {
 
     it.each([
       [{ success: false, processed: 0, failed: 0, error: 'EMBEDDING_SPACE_REGISTRY_INVALID' }, '检索索引记录已损坏', 'search index records of this book are damaged'],
-      // 旧向量迁移阻断时主进程按系统语言写 error、码放在 errorCode：以界面语言为准。
       [{ success: false, errorCode: 'LEGACY_VECTOR_MIGRATION_BLOCKED', error: '旧版知识库数据需要先修复后才能继续。请修正项目中的 vectors.json，然后重试。' }, '旧版知识库数据需要先修复', 'Legacy knowledge-base data must be repaired'],
     ])(`${locale} 下检查并重建被拒时按界面语言说明原因 %#`, async (result, zh, en) => {
       useLocaleStore.setState({ locale })

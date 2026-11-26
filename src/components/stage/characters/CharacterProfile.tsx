@@ -33,7 +33,6 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
-/** 角色档案：基础设定、当前状态、关系图谱三个视图，保存与删除。数据与操作沿用 CharacterEditor 的 useCharacterProfile。 */
 export default function CharacterProfile({ projectKey }: { projectKey: string }) {
   const text = useLocaleStore(s => s.text)
   const profile = useCharacterProfile(projectKey)
@@ -41,7 +40,6 @@ export default function CharacterProfile({ projectKey }: { projectKey: string })
   const { characters, selectedId, selectedCard: card, dataReady, identityBusy } = profile
   const [view, setView] = useState<ProfileView>('edit')
   const [confirming, setConfirming] = useState<'selected' | 'all' | null>(null)
-  // 保存后名单重读时档案会重新挂载，展开状态放在这里才不会被收起。
   const [timelineOpen, setTimelineOpen] = useState(false)
   const avatar = useCharacterAvatar(card?.characterId ?? null, dataReady && view === 'edit')
   const timeline = useCharacterTimeline(card?.characterId, dataReady && view === 'state')
@@ -52,7 +50,6 @@ export default function CharacterProfile({ projectKey }: { projectKey: string })
   const name = card?.name || text('未命名', 'Untitled')
   const chapterNoteShown = view === 'state' && profile.stateDirty && timeline.status === 'ready'
   const { setStateEffectiveChapter } = profile
-  // 说明条不显示时清掉所选章，否则保存会写到界面上看不到的章。
   useEffect(() => {
     if (!chapterNoteShown) setStateEffectiveChapter(undefined)
   }, [chapterNoteShown, setStateEffectiveChapter])

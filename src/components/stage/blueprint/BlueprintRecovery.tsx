@@ -6,10 +6,6 @@ import { Notice } from '../../ui/Notice'
 import { PlanningRecoveryFrame } from '../PlanningRecoveryFrame'
 import { useBlueprintRecovery } from './use-blueprint-recovery'
 
-/**
- * 蓝图恢复稿（F-054）：上次生成中断后恢复出的蓝图文本。作者补齐后选「保存到第几章」，只把连续完整的章节写进蓝图，不调用模型；
- * 也可以接着生成缺少的章节。原始候选随时可展开对照。
- */
 export default function BlueprintRecovery({ tab, projectKey }: { tab: EditorTab; projectKey: string }) {
   const text = useLocaleStore(state => state.text)
   const recovery = useBlueprintRecovery(tab, projectKey)

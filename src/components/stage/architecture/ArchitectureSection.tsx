@@ -21,12 +21,10 @@ interface SectionProps {
   onReload: () => void
 }
 
-/** 候选与续写的提示条：世界观或大纲生成到一半停下时，未完成的候选不写入正式内容，作者可以看、复制或接着写。 */
 function CandidateNotice({ sectionKey, overview }: { sectionKey: 'worldbuilding' | 'synopsis'; overview: ArchitectureOverview }) {
   const text = useLocaleStore(s => s.text)
   const state = sectionKey === 'synopsis' ? overview.synopsis : overview.worldBuilding
   const editDraft = sectionKey === 'synopsis' && overview.planningRecovery !== null
-  // 来源已变的恢复稿不能写回：主动作是从本批起始章重新生成，打开恢复稿只作查看。
   const restart = sectionKey === 'synopsis' ? overview.outlineRestartRange : null
   const filled = Boolean(overview.archStatus[sectionKey])
   let note = state.handle
@@ -77,7 +75,6 @@ function CandidateNotice({ sectionKey, overview }: { sectionKey: 'worldbuilding'
   )
 }
 
-/** 大纲的状态提示：被打断、分批生成还有没写到的章，或正文带分批标记而检查点已对不上。 */
 function OutlineNotice({ overview, onGenerate }: { overview: ArchitectureOverview; onGenerate: () => void }) {
   const text = useLocaleStore(s => s.text)
   const { progress, recoveryFailed, busy, candidate, handle } = overview.synopsis
@@ -117,7 +114,6 @@ function OutlineNotice({ overview, onGenerate }: { overview: ArchitectureOvervie
   return null
 }
 
-/** 角色名单需要修复或采用旧角色卡时的提示条，以及保存过的旧修复运行。 */
 function RosterNotice({ overview }: { overview: ArchitectureOverview }) {
   const text = useLocaleStore(s => s.text)
   const { presentation, canRepair, repairing, repair } = overview.roster
@@ -137,7 +133,6 @@ function RosterNotice({ overview }: { overview: ArchitectureOverview }) {
           {presentation.description}
         </Notice>
       )}
-      {/* 旧修复运行要查 generation:list（主进程串行处理，运行多时要几十毫秒），等四节读完再挂，不挡在打开架构的路上。 */}
       {!overview.loading && <div className="arch-legacy-roster"><LegacyRosterRecoveryPanel onRecover={repair} busy={repairing} /></div>}
     </>
   )

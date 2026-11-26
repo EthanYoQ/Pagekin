@@ -7,9 +7,6 @@ export interface LLMDataRequestTicket {
   projectSession: ProjectSessionContext
 }
 
-/**
- * BottomPanel 模型统计的提交门禁：路径相同但 lease 已更新也必须视为过期。
- */
 export class LLMDataRequestGate {
   private readonly requests = new LatestRequestGate()
 

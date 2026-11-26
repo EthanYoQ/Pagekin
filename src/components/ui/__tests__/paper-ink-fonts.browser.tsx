@@ -9,7 +9,6 @@ afterEach(() => {
   host = undefined
 })
 
-/** 本文件只引入纸墨样式，不引入旧外壳的 src/index.css，用来证明 RD-10 删掉旧样式后字体仍然可用。 */
 describe('纸墨字体自洽', () => {
   it('不依赖旧外壳样式即可加载 Noto Serif SC 与 Instrument Serif', async () => {
     const serifFaces = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules])

@@ -18,10 +18,6 @@ import ReplacementImpactNotices from './ReplacementImpactNotices'
 import { useChapterBlueprint } from './use-chapter-blueprint'
 import { pluralEn } from '../../../shared/plural-en'
 
-/**
- * 待写章的单章视图：本章蓝图只读展示，主按钮「写作此章」按蓝图写，箭头弹层只改本次模型与指导。
- * 这一章有了稿（写完了，或在别处写好）就在这个标签的位置换成那一稿。
- */
 export default function ChapterPlan({ tab, chapterNumber, projectKey }: { tab: EditorTab; chapterNumber: number; projectKey: string }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
@@ -38,7 +34,6 @@ export default function ChapterPlan({ tab, chapterNumber, projectKey }: { tab: E
     void swapChapterTab(tab.id, () => openDraftInChapterView(draft, row?.title ?? '', session))
   }, [draft, row?.title, tab.id])
 
-  // 没有蓝图就没有写作按钮来接手写作请求；留着它，等这一章补上蓝图后会在蓝图页突然弹出写作弹层。页面开着之后才到的请求也一样。
   const writeRequest = useStageStore(s => s.writeRequest)
   useEffect(() => {
     if (blueprint === null && writeRequest?.chapterNumber === chapterNumber) useStageStore.setState({ writeRequest: null })

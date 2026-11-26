@@ -42,7 +42,6 @@ export function ModelNameField({
   const activeIndex = activeValue === null ? -1 : visible.findIndex(candidate => candidate.value === activeValue)
   const optionId = (index: number) => `${listId}-option-${index}`
   const listShown = open && visible.length > 0
-  // 列表还没拉到时由状态行说明原因；这里只说明输入的名称没有匹配的候选。
   const emptyHint = open && !refreshing && !listShown && candidates.length > 0
     ? text('没有匹配的候选，将使用输入的名称。', 'No matching suggestions. The typed name will be used.')
     : null
@@ -113,8 +112,6 @@ export function ModelNameField({
     <div
       onBlur={(event) => {
         if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
-        // 列表随文档流展开，收起会让下面的控件上移。鼠标按下引起的失焦要等这次点击完成再收起，
-        // 否则按下与松开落在不同位置，点击会丢。
         if (pointerPressed.current) document.addEventListener('pointerup', () => window.setTimeout(hide, 0), { once: true, capture: true })
         else hide()
       }}
@@ -170,7 +167,6 @@ export function ModelNameField({
             onRefresh()
             show(null, { autoFetch: false })
             setActiveValue(null)
-            // 获取期间按钮会禁用，焦点留在上面会丢。
             document.getElementById(inputId)?.focus()
           }}
           disabled={refreshing}

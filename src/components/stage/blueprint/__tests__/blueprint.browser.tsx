@@ -23,7 +23,6 @@ import RunSheet from '../../run/RunSheet'
 import StageBlueprint from '../StageBlueprint'
 
 const writableOverride = vi.hoisted(() => ({ value: null as number[] | null }))
-// 用以 /src 开头的路径：检出路径含空格时（本机 Vibe Coding Project），浏览器模式匹配不到相对路径的模拟。
 vi.mock('/src/services/authoritative-chapter-sequence.ts', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../../services/authoritative-chapter-sequence')>()
   return {
@@ -167,7 +166,6 @@ async function renderPage(initialChapterNumber?: number) {
   await expect.element(page.getByRole('complementary', { name: '章节规划' })).toBeVisible()
 }
 
-/** 后台生成提交一段蓝图、定稿、删除或清空之后，蓝图页都会收到这条刷新。 */
 async function refreshBlueprints() {
   const before = calls('db:blueprint-get-all').length
   await act(async () => globalEventBus.emit('REFRESH_RESOURCE', { resources: ['blueprints'], projectPath: PROJECT_PATH,
@@ -178,7 +176,6 @@ async function refreshBlueprints() {
 
 beforeEach(async () => {
   await page.viewport(1280, 900)
-  // 视口变化的 resize 事件可能晚于渲染才到，浮层收到 resize 会关闭：先等它派发完。
   await vi.waitFor(() => expect([window.innerWidth, window.innerHeight]).toEqual([1280, 900]))
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   stored = [blueprint(1, '旧港'), blueprint(2, '北堤'), blueprint(3, '灯室')]
@@ -208,7 +205,6 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  // 「不再恢复」的撤销提示条 8 秒后才消失，留着会和下一个用例的「撤销」重名
   const toasts = document.querySelectorAll<HTMLButtonElement>('.pi-toast:not([data-exiting]) button[aria-label="关闭通知"]')
   for (const close of toasts) await act(async () => close.click())
   if (toasts.length) await vi.waitFor(() => expect(document.querySelector('.pi-toast')).toBeNull())
@@ -1200,7 +1196,6 @@ describe('蓝图阶段', () => {
     await act(async () => page.getByRole('group', { name: '危险' }).getByRole('menuitem', { name: '删除此章…' }).click())
     await expect.element(page.getByRole('dialog', { name: '删除第 3 章蓝图？' })).toBeVisible()
     await refreshBlueprints()
-    // 确认框是模态的，页面其余部分对辅助技术隐藏，直接读选中的那一行。
     expect(container?.querySelector('.stage-bp-plan-item[aria-current] .stage-bp-plan-no')?.textContent).toBe('3')
     const confirm = page.getByRole('dialog', { name: /^删除第 \d+ 章蓝图？$/ })
     await expect.element(confirm).toHaveAccessibleName('删除第 3 章蓝图？')
@@ -1253,7 +1248,6 @@ describe('蓝图页开着时在运行侧页放弃蓝图恢复稿（#608）', () 
       if (channel === 'generation:list-recovery') return { planning: open, editors: [], reviews: [], drafts: [], batches: [], partial: false }
       if (channel === 'generation:find-blueprint-recovery') return [...open].sort((a, b) => b.planningDraft.createdAtMs - a.planningDraft.createdAtMs)[0] ?? null
       if (channel === 'generation:set-recovery-abandoned') {
-        // 主进程收到请求就同步记下放弃，回复晚一点才到渲染端。
         const runId = (args[0] as { handle: { runId: string } }).handle.runId
         if (!dismissalFails) open = open.filter(item => item.handle.runId !== runId)
         return new Promise<void>((resolve, reject) => { reply = { resolve, reject } })

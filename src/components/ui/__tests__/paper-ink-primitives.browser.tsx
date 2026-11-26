@@ -60,7 +60,6 @@ function tokenColor(scope: HTMLElement, name: string) {
   return color
 }
 
-/** 焦点环由令牌 --focus-ring 绘制：外圈为强调色。 */
 function expectFocusRing(element: Element, theme: 'light' | 'dark' = 'light') {
   expect(getComputedStyle(element).boxShadow).toContain(ACCENT[theme])
 }
@@ -125,7 +124,6 @@ describe('Button 纸墨六种', () => {
       expect(ink).toBeGreaterThanOrEqual(4.5)
       expect(ink2).toBeGreaterThanOrEqual(4.5)
       expect(ink3).toBeGreaterThanOrEqual(4.5)
-      // 说明文字提亮后不能贴上次要文字，也不能和占位一样淡：相邻两级的对比度至少差 1.25 倍
       expect(ink / ink2).toBeGreaterThanOrEqual(1.25)
       expect(ink2 / ink3).toBeGreaterThanOrEqual(1.25)
       expect(ink3 / ink4).toBeGreaterThanOrEqual(1.25)
@@ -408,7 +406,6 @@ describe('Sheet', () => {
     await userEvent.tab()
     expect(focused()).toBe(tabs[0])
     expectFocusRing(tabs[0])
-    // Tab 若走出测试文档，Shift+Tab 回到哪里取决于外层页面与浏览器，所以在侧页之后放一个可聚焦元素。
     await userEvent.tab()
     expect(focused()).toBe(page.getByRole('button', { name: '侧页之后' }).element())
     await userEvent.tab({ shift: true })
@@ -691,7 +688,6 @@ describe('Popover', () => {
     function ScrolledRightAfterOpen() {
       const layer = useAnchoredLayer('start')
       const scroller = useRef<HTMLDivElement>(null)
-      // 排在 useAnchoredLayer 的定位之后：打开的同一次提交里，弹层按旧位置定好，滚动区才把按钮带走
       useLayoutEffect(() => {
         if (layer.open && scroller.current) scroller.current.scrollTop = 80
       }, [layer.open])
@@ -770,7 +766,6 @@ describe('Popover', () => {
       </div>,
     )
     const trigger = container.querySelector<HTMLButtonElement>('button')!
-    // 用户点的是已经画在屏上的按钮：先等它画出来，展开后按下下沉的过渡才会真的播放
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     await act(async () => trigger.click())
     const dialog = container.querySelector<HTMLElement>('[role="dialog"]')!
@@ -981,7 +976,6 @@ describe('InlineConfirm', () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
-  /** 照运行侧页「清空日志…」：确认条出现期间触发按钮禁用，清空后再也不可用。 */
   function ClearLog() {
     const [lines, setLines] = useState(12)
     const [confirming, setConfirming] = useState(false)

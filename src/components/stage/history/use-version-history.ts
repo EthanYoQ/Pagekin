@@ -35,7 +35,6 @@ export interface VersionChapter {
   title: string
 }
 
-/** 一次对比的两边正文。current 为 null 表示读不到当前稿：这一章还没有稿，或最新一稿刚被删掉。 */
 export interface VersionComparison {
   older: string
   current: string | null
@@ -43,19 +42,13 @@ export interface VersionComparison {
 
 const NO_VERSIONS: VersionRecord[] = []
 
-/** 某一章各稿的读取结果：读到的各稿，或读取失败（稿还在数据库里，只是这次没读出来）。session 为读取时的作品会话。 */
 type LoadedVersions = { chapter: number; session: ProjectSessionContext | null } & ({ ok: true; versions: VersionRecord[] } | { ok: false })
 
-/**
- * 版本历史的数据：章节列表、所选章的各稿，以及读取对比两边与回退。版本历史页用它。
- * 回退不覆盖任何一稿，而是用旧稿的正文新建一稿，返回新稿的版本号。
- */
 export function useVersionHistory(projectKey: string) {
   const currentProject = useProjectStore(s => s.currentProject)
   const text = useLocaleStore(s => s.text)
   const [chapters, setChapters] = useState<VersionChapter[]>([])
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null)
-  // 各稿按章号与会话记下：再点当前章不必清空，换章或重新打开作品后还没读到的就是「正在读取」。
   const [loaded, setLoaded] = useState<LoadedVersions | null>(null)
   const versionReads = useRef(new LatestRequestGate())
   const [loading, setLoading] = useState(true)
@@ -84,7 +77,6 @@ export function useVersionHistory(projectKey: string) {
     return () => { mounted = false }
   }, [loadChapters])
 
-  /** 读这一章的各稿；只有最后一次读取写进列表，连续点几章时先点那章的结果晚到也不会盖住后点的。 */
   const loadVersions = useCallback(async (chapterNumber: number): Promise<VersionRecord[]> => {
     const project = useProjectStore.getState().currentProject
     const projectSession = captureProjectSession(project)
@@ -113,7 +105,6 @@ export function useVersionHistory(projectKey: string) {
     }
   }, [projectKey])
 
-  // 同一部作品重新打开（新的会话）时重读：旧会话的读取作废，不重读的话这一章会一直停在「正在读取」。
   const sessionLease = currentProject?.sessionLease
   useEffect(() => {
     if (selectedChapter === null) return
@@ -129,7 +120,6 @@ export function useVersionHistory(projectKey: string) {
   }, [loadVersions, selectedChapter])
 
 
-  /** 读出这一稿与这一章最新一稿的正文；这一稿已不存在时返回 'missing'，会话已切换时返回 null，读取出错时抛出。空正文照常对比。 */
   const readComparison = useCallback(async (versionId: number): Promise<VersionComparison | 'missing' | null> => {
     const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey) || selectedChapter === null) return null
@@ -145,10 +135,6 @@ export function useVersionHistory(projectKey: string) {
     return { older, current: current ? current.content : null }
   }, [projectKey, selectedChapter])
 
-  /**
-   * 用这一稿的正文新建一稿（回滚草稿），原有各稿都保留；正文为空的旧稿照样回退成一份空稿。没有新建（会话已切换、旧稿不存在）时返回 null；
-   * 已新建时返回数据库分配的版本号，重读列表失败、读不到版本号时 version 为 null。
-   */
   const createRollbackDraft = useCallback(async (versionId: number, finalized: boolean): Promise<{ version: number | null; created: boolean } | null> => {
     const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey) || selectedChapter === null) return null
@@ -172,7 +158,6 @@ export function useVersionHistory(projectKey: string) {
     }, projectSession.projectPath)
     if (!created.success) throw new Error(created.error || text('没有新建回滚草稿', 'the rollback draft was not created'))
     if (!isProjectSessionCurrent(projectSession)) return null
-    // 版本号在数据库事务里分配，估算值可能被同时写入的稿占掉，以刷新后的列表为准。
     const refreshed = await loadVersions(selectedChapter)
     return { version: refreshed.find(version => version.id === created.id)?.version ?? null, created: true }
   }, [loadVersions, projectKey, selectedChapter, text])

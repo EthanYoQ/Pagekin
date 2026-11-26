@@ -23,10 +23,6 @@ export interface ShelfBook {
 
 const EMPTY_OVERVIEW: ShelfOverview = { state: 'empty' }
 
-/**
- * 书架与作品概览。当前作品读 `project:overview-current`（带摘录），其他书只用 `project:peek-overview` 预览，不正式打开。
- * 书房用这份数据。
- */
 export function useShelfOverview() {
   const currentProject = useProjectStore(state => state.currentProject)
   const recentProjects = useProjectStore(state => state.recentProjects)
@@ -39,7 +35,6 @@ export function useShelfOverview() {
     itemId: string
     requestKey: string
   } | null>(null)
-  // 当前作品与预览各占一格：预览别的书不会冲掉当前作品已读到的概览，回到当前作品时直接显示。
   const [currentResult, setCurrentResult] = useState<{ requestKey: string; overview: ProjectOverview } | null>(null)
   const [previewResult, setPreviewResult] = useState<{ requestKey: string; overview: ProjectOverview } | null>(null)
   const currentReads = useRef(new LatestRequestGate())
@@ -72,7 +67,6 @@ export function useShelfOverview() {
     return () => { reads.begin() }
   }, [currentKey])
 
-  // 预览的书被移出最近项目后，选择随之作废，概览回到当前作品。
   const activeSelection = selection?.currentKey === currentKey
     && recentProjects.some(project => (project.previewCapabilityId ?? project.path) === selection.itemId) ? selection : null
   const requestKey = activeSelection?.requestKey ?? (currentKey ? `current:${currentKey}` : '')
@@ -108,7 +102,6 @@ export function useShelfOverview() {
 
   return {
     overview,
-    /** 正在预览的书；为空时概览显示当前作品。 */
     selectedId: activeSelection?.itemId ?? null,
     clearSelection: () => setSelection(null),
     recentProjects: recentProjects.map((project): ShelfBook => ({

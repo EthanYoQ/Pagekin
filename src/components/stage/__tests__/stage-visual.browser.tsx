@@ -36,7 +36,6 @@ afterEach(async () => {
   host = undefined
 })
 
-/** 返回一个函数：截 element 的图，数接近 --accent 的像素（每通道差之和不超过 60）。 */
 function accentPixels(element: HTMLElement) {
   const probe = document.createElement('span')
   probe.style.color = 'var(--accent)'
@@ -165,7 +164,6 @@ describe('新外壳的外观细节', () => {
     )
     const [current, other] = container.querySelectorAll<HTMLElement>('.stage-bp-plan-item')
     const accent = accentPixels(container)
-    // 截图按测试页缩放，像素数不是固定值：拿同一时刻去掉列表项 content-visibility（不裁）的截图当整圈的参照
     const ringShown = async () => {
       const shown = await accent()
       container.querySelectorAll('li').forEach(item => { item.style.contentVisibility = 'visible' })
@@ -218,7 +216,6 @@ describe('新外壳的外观细节', () => {
         </div>,
       )
       const cover = container.querySelector<HTMLElement>('.stage-book-cover')!
-      // 指针可能还停在上一条用例留下的位置，先挪到别处
       await userEvent.hover(page.getByRole('button', { name: '别处' }))
       await new Promise(resolve => setTimeout(resolve, 300))
       const resting = getComputedStyle(cover).boxShadow
@@ -247,7 +244,6 @@ describe('新外壳的外观细节', () => {
     )
     const button = container.querySelector('button')!.getBoundingClientRect()
     const icon = container.querySelector('svg')!.getBoundingClientRect()
-    // 按钮与图标宽度奇偶不同时居中差半像素
     expect(Math.abs((icon.left + icon.right) / 2 - (button.left + button.right) / 2)).toBeLessThanOrEqual(0.5)
   })
 

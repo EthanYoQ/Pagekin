@@ -3,12 +3,10 @@ import { clsx } from 'clsx'
 interface ProgressRingProps {
   size: number
   stroke: number
-  /** 0 到 1。 */
   ratio: number
   className?: string
 }
 
-/** 进度环：底轨加按比例填充的弧，从十二点钟方向顺时针增长；半径取 size / 2 - stroke 与画板一致。是状态指示，不是图标。 */
 export function ProgressRing({ size, stroke, ratio, className }: ProgressRingProps) {
   const center = size / 2
   const radius = size / 2 - stroke

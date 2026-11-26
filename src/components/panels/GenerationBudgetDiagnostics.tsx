@@ -7,7 +7,6 @@ export interface GenerationBudgetDiagnosticsProps {
   locale: Locale
 }
 
-/** Read-only, secret-free projection of receipts already settled by the main owner. */
 export default function GenerationBudgetDiagnostics({
   diagnostics,
   locale,

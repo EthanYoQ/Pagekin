@@ -40,7 +40,6 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-/** 蓝图页的数据逻辑在 use-chapter-blueprints.ts，旧外壳的 ChapterCardEditor 与新外壳的蓝图阶段共用。 */
 function blueprintHookSource(): string {
   return normalizeSourceEol(readFileSync('src/components/editor/use-chapter-blueprints.ts', 'utf8'))
 }
@@ -203,7 +202,6 @@ describe('chapter-card draft ledger', () => {
       commit: state => { committed = state },
     })
 
-    // 远端尚未返回时，用户继续修改第一章。
     ledger = updateChapterCardProjectDraft(
       ledger,
       'project-a',
@@ -268,9 +266,6 @@ describe('chapter-card draft ledger', () => {
       readFileSync('src/services/workflows/directory-workflow.ts', 'utf8'),
     )
 
-    // A path is only a location.  The editor must bind reads/writes to the
-    // frozen project ID + lease as well, so a same-path reopen cannot apply
-    // stale work to the new session.
     expect(componentSource).toContain(
       'function currentProjectSessionForPath(projectKey: string): ProjectSessionContext | null',
     )

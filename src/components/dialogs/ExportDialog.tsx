@@ -31,7 +31,6 @@ interface ExportTaskState {
   result: { success: boolean; path?: string; error?: string } | null
 }
 
-/** 导出对话框 — 使用 shadcn/ui */
 export default function ExportDialog({ isOpen, onClose }: Props) {
   const currentProject = useProjectStore(s => s.currentProject)
   const [format, setFormat] = useState<ExportFormat>('merged-md')
@@ -111,7 +110,6 @@ export default function ExportDialog({ isOpen, onClose }: Props) {
         </DialogHeader>
 
         <div className="px-5 py-4 space-y-3">
-          {/* 格式选择 */}
           <div className="space-y-2">
             {FORMAT_OPTIONS.map((opt) => (
               <div
@@ -138,13 +136,11 @@ export default function ExportDialog({ isOpen, onClose }: Props) {
             ))}
           </div>
 
-          {/* 选项 */}
           <label className="flex items-center gap-2 text-xs cursor-pointer text-[var(--color-text-secondary)]">
             <input type="checkbox" checked={includeOutline} onChange={(e) => setIncludeOutline(e.target.checked)} />
             {text('包含故事大纲', 'Include story outline')}
           </label>
 
-          {/* 结果 */}
           {result && (
             <div className={cn(
               'p-3 rounded-lg text-xs',

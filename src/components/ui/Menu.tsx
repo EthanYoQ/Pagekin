@@ -12,16 +12,13 @@ export interface MenuItemSpec {
 export interface MenuGroupSpec {
   id: string
   label?: string
-  /** 危险分组放在最后，与普通分组之间有分隔线，项目为危险色。 */
   tone?: 'danger'
   items: readonly MenuItemSpec[]
 }
 
 interface MenuProps {
-  /** 触发按钮的可访问名称；只给图标时也作为 aria-label。 */
   label: string
   icon?: ReactNode
-  /** 文字触发按钮的内容与样式，例如顶栏的作品名加下拉箭头；label 仍作为可访问名称。 */
   trigger?: { content: ReactNode; className?: string; size?: InkButtonSize }
   groups: readonly MenuGroupSpec[]
   align?: 'start' | 'end'
@@ -74,7 +71,6 @@ export function Menu({ label, icon, trigger, groups, align = 'start' }: MenuProp
     'aria-haspopup': 'menu' as const,
     'aria-expanded': open,
     'aria-controls': open ? layerId : undefined,
-    // 键盘触发的 click（Enter、空格）detail 为 0，此时打开后把焦点移到第一项。
     onClick: (event: MouseEvent<HTMLButtonElement>) => {
       focusFirstOnOpen.current = event.detail === 0
       toggle()
