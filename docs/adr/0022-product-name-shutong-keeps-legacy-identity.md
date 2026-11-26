@@ -69,3 +69,14 @@ exe 和 `.app` 使用中文名已在 1.3.0 及更早版本中经过验证（`AI�
 - macOS 默认菜单里的「关于」「退出」等菜单项使用 `app.name`，显示为 `ai-novel-writer`，改名前后都是这样。要让这些菜单项也显示书童，需要自定义应用菜单，不在本次范围内。
 - `linux.artifactName` 仍由 `${productName}` 生成，会变为 `书童-Linux-<版本>.AppImage`。项目目前不发布 Linux 版本。
 - macOS 的 `.app` 名称、菜单栏标题和 Dock 名称都来自 `productName`，无法在本机构建或验证。下一次发布前，macOS 打包与 DMG 验收会覆盖这些项。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/__tests__/brand.test.ts`
+
+- `lastReleasedProductName`：v1.3.0 正式安装包里 exe 的 VersionInfo ProductName（ADR-0022 取证）；1.3.0 之后 productName 改为书童。
+
+### `src/shared/brand.ts`
+
+- `APP_BRAND`：产品显示名。只管界面上看到的名字；appId、数据目录、安装包文件名仍沿用旧名，换了会让老用户的数据与快捷方式对不上。
+- `APP_ID`：安装包的 appId（electron-builder.json5）。Windows 按它把系统通知归到安装时建的快捷方式名下。

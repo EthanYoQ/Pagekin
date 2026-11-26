@@ -49,7 +49,6 @@ function becauseValues(value: ts.Expression): ts.Expression[] {
 const hasLegacyKey = (value: ts.Expression) => ts.isObjectLiteralExpression(value) && value.properties.some(property =>
   (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) && propertyName(property.name) === 'legacy')
 
-/** 旧约定按合计比较（种类互换不算新增），authorOwned 不计入。 */
 export const legacySum = (counts: Partial<Record<LegacyFailureKind, number>>) =>
   Object.entries(counts).reduce((sum, [kind, n]) => kind === 'authorOwned' ? sum : sum + (n ?? 0), 0)
 
@@ -70,7 +69,6 @@ export function rawAuthorOwnedArguments(file: string, text: string): string[] {
   return found
 }
 
-/** 只有 src/shared/failure.ts 可以断言成这些类型。 */
 export function failureTypeAssertions(file: string, text: string): string[] {
   if (file === FAILURE_MODULE) return []
   const found: string[] = []

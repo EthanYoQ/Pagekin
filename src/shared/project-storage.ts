@@ -1,7 +1,6 @@
 import { isContentHash, isFinalizedSourceIdentity, sameProjectEpoch, type ProjectEpoch } from './source-ref'
 import type { FinalizedSourceIdentity } from './finalized-continuity'
 
-/** Business IDs only. Numeric PRAGMA versions belong to electron/migrations/registry. */
 export const MIGRATION_IDS = ['M00', 'M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11'] as const
 export type MigrationId = typeof MIGRATION_IDS[number]
 export const PROJECT_MIGRATION_JOURNAL = '.ai-novel-migration/journal.json'
@@ -17,7 +16,6 @@ export interface StorageRootProof {
 export interface GlobalStorageLocators {
   legacySource: StorageRootProof; canonicalTarget: StorageRootProof; userData: StorageRootProof
 }
-/** Proofs must come from main's realpath/reparse/capability probe, never renderer assertions. */
 export function assertDistinctStorageRoots(roots: readonly StorageRootProof[]): void {
   const paths = roots.map(root => {
     if (!root.authorized || !root.reparseFree || !root.canonicalRealPath) throw new Error('STORAGE_ROOT_UNPROVEN')
@@ -29,14 +27,12 @@ export function assertDistinctStorageRoots(roots: readonly StorageRootProof[]): 
   }
 }
 export type MainReady = { state: 'pending' | 'blocked' } | { state: 'ready'; globalGeneration: string }
-/** 主进程的全局数据就绪后，渲染进程才读写外观偏好。 */
 export function mayHydrateAppearance(ready: MainReady): ready is Extract<MainReady, { state: 'ready' }> {
   return ready.state === 'ready' && typeof ready.globalGeneration === 'string' && ready.globalGeneration.length > 0
 }
 export interface TransferReadableAuthority {
   transferId: string; origin: ProjectEpoch; target: ProjectEpoch; snapshotGeneration: string
   domainId: string; source: FinalizedSourceIdentity; provenance: 'author' | 'derived'
-  /** Exact allowed content source revalidated from restored assets, not an old execution receipt. */
   sourceCurrent: boolean; sourceUnambiguous: boolean; restoredContentHash: string
   nonReplayable: true
 }
@@ -52,7 +48,6 @@ export interface PortableExecutionHistory {
   nonReplayable: true; originalRootActionId: string
   status: 'settled' | 'unknown' | 'pending' | 'inflight' | 'candidate'
   presentation: 'visible-history' | 'awaiting-explicit-adoption'
-  /** Unknown dispatch retains its old liability; restore never releases or resends it. */
   reservedTokens: number
 }
 export interface PortableReceiptProjection {
@@ -60,9 +55,7 @@ export interface PortableReceiptProjection {
   projectionHash: string; excludedFieldNames: readonly string[]; nonReplayable: true
   integrityScope: 'projection-only'
 }
-/** Imported history is not a model, formal-commit, outbox, import or publication capability. */
 export function mayReplayTransferredExecution(history: PortableExecutionHistory): false {
-  // Every imported execution remains non-replayable, regardless of its recorded status.
   void history
   return false
 }

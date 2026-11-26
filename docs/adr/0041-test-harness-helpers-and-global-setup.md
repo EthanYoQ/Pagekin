@@ -29,3 +29,9 @@
 
 - 源码契约测试有意忽略检出的换行：同一份已跟踪源码在 Windows 上可能检出为 LF 或 CRLF。`normalizeSourceEol` 把 CRLF 和孤立 CR 规整为 LF。
 - `readNormalizedSource` 读源码走与契约断言、内容哈希同一道换行规整边界，所以断言和哈希在两种检出方式下得到同一个结果。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/__tests__/agent-response-protocol.test.ts`
+
+- 断言前提：历史上 null 或缺失的 arguments 表示无参数，不是原始值载荷，用例里的 value 取值看不出这条规则（原文：Historical null/missing arguments mean no arguments, not a primitive payload.）

@@ -57,7 +57,6 @@ describe('Agent response control and visible projection', () => {
 
   it.each(['[]', 'null', '"secret"', 'false', '3'])('rejects non-object argument payload %s', value => {
     const response = `<tool_call>{"name":"start_workflow","arguments":${value}}</tool_call>`
-    // Historical null/missing arguments mean no arguments, not a primitive payload.
     expect(parse(response).toolCalls).toEqual(value === 'null' ? [{ name: 'start_workflow', arguments: {} }] : [])
     expect(parse(response).visibleText).toBe('')
   })

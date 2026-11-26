@@ -40,11 +40,6 @@ function relationshipEdgeFromRecord(value: UnknownRecord): RelationshipEdge | nu
   return target && relation ? { target, relation, ...(typeof value.targetCharacterId === 'string' ? { targetCharacterId: value.targetCharacterId } : {}) } : null
 }
 
-/**
- * Accepts the structured relationship shapes already persisted by legacy
- * projects. Returning null distinguishes unstructured user notes from an
- * intentionally empty structured relationship list.
- */
 function parseStructuredRelationships(value: string): RelationshipEdge[] | null {
   const text = value.trim()
   if (!text) return []
@@ -193,11 +188,6 @@ function preserveUnchangedLegacyRelations(
   })
 }
 
-/**
- * Formats structured persistence data for the character editor. Free-form
- * notes deliberately stay untouched; syntactically valid but unrecognized JSON
- * receives repair guidance instead of exposing storage syntax to the user.
- */
 export function formatRelationshipsForEditor(
   value: string,
   options: RelationshipEditorPresentationOptions = {},
@@ -215,11 +205,6 @@ export function formatRelationshipsForEditor(
   }).join('\n')
 }
 
-/**
- * Converts an editor value to the canonical graph-readable JSON only when every
- * non-empty line is an unambiguous relation to a known character. Otherwise it
- * retains the original text, which the roster seam preserves as legacy notes.
- */
 export function relationshipStorageFromEditor(
   value: string,
   options: RelationshipTextOptions,
@@ -252,10 +237,6 @@ export function relationshipStorageFromEditor(
   return JSON.stringify(preserveUnchangedLegacyRelations(edges, options.previousStorage))
 }
 
-/**
- * Shared graph/parser seam for persisted JSON and existing plain-text notes.
- * Callers may supply the visible roster to prevent dangling graph edges.
- */
 export function parseRelationshipEdges(
   value: string,
   options: RelationshipTextOptions = {},

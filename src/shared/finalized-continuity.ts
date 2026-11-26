@@ -9,7 +9,6 @@ export type FinalizedContinuityFactCategory =
   | 'open-thread'
   | 'plot'
 
-/** Existing finalization receipt fields needed to bind derived material to immutable prose. */
 export interface FinalizedSourceIdentity {
   draftId: number
   finalizationId: string
@@ -23,7 +22,6 @@ export interface FinalizedSourceSnapshot {
   source: FinalizedSourceIdentity
   chapterTitle: string
   content: string
-  /** Project continuity watermark frozen before semantic extraction starts. */
   projectionGeneration: number
 }
 
@@ -44,7 +42,6 @@ export interface FinalizedContinuityFact {
   statement: string
   sourceChapter: number
   evidence: string
-  /** Display labels remain readable; only these proven IDs are identity references. */
   characterRefs?: FinalizedCharacterReference[]
 }
 
@@ -53,9 +50,7 @@ export interface FinalizedCharacterReference {
   displayNameSnapshot: string
 }
 
-/** A machine-derived locator only; it never becomes an author-confirmed fact. */
 export interface FinalizedCharacterStateCandidate {
-  /** Absent only on preserved legacy locators, never sufficient for a new write. */
   characterId?: string
   characterName: string
   field: CharacterStateTextField
@@ -65,7 +60,6 @@ export interface FinalizedCharacterStateCandidate {
   displayName?: string
   rawValue?: unknown
   reason?: 'author-protected' | 'legacy-protected'
-  /** Present on current source-bound decisions; omitted only by preserved legacy rows. */
   candidateKey?: string
   source?: FinalizedSourceIdentity
   expectedFieldRevision?: number
@@ -109,7 +103,6 @@ export interface FinalizedCharacterStateDecisionReceipt {
   idempotent: boolean
 }
 
-/** Offsets count JS UTF-16 code units in the immutable, unnormalized prose. */
 export interface FinalizedCharacterEvidence { start: number; end: number; text: string }
 export interface FinalizedCharacterContext extends ProjectEpoch {
   source: FinalizedSourceIdentity
@@ -122,13 +115,11 @@ export interface FinalizedCharacterContext extends ProjectEpoch {
     aliases: string[]
     fields: CharacterFieldSnapshot[]
   }>
-  /** 只用来告诉模型作者已有的关系，不参与身份比较。升级前冻结的在途定稿没有这个字段。 */
   authorRelations?: FinalizedAuthorRelation[]
 }
 export interface FinalizedAuthorRelation { sourceId: string; targetId: string; targetName: string; relation: string }
 function fromReplacedFinal(context: FinalizedCharacterContext, characterId: string, field: CharacterFieldSnapshot, originProjectId?: string): boolean {
   const previous = field.sourceOrder
-  // chapterNumber identifies the chapter within the verified project lineage; draft IDs identify versions, not chapters.
   return field.characterId === characterId && field.provenance.kind === 'derived'
     && typeof field.provenance.source?.finalizationId === 'string' && isFinalizedSourceIdentity(field.provenance.source)
     && field.provenance.source.chapterNumber === context.source.chapterNumber
@@ -138,7 +129,6 @@ function fromReplacedFinal(context: FinalizedCharacterContext, characterId: stri
       baseFieldRevision: field.revision, baseValueHash: field.valueHash, baseProvenance: field.provenance,
       source: context.source, sourceOrder: context.sourceOrder }, { source: context.source, order: context.sourceOrder, originProjectId, laterOwnerAuthoritative: true }) === 'apply-derived'
 }
-/** Render only: the original fields remain the CAS baseline. originProjectId must be main-verified transfer authority. */
 export function finalizedCharacterPromptCards(context: FinalizedCharacterContext, originProjectId?: string) {
   return context.characters.map(character => {
     const relationships = context.authorRelations?.filter(item => item.sourceId === character.characterId)
@@ -161,7 +151,6 @@ export interface FinalizedCharacterStateUpdate {
   currentState: FinalizedCharacterStateValues
   evidence: FinalizedCharacterEvidence
 }
-/** A model occurrence requiring an explicit identity decision, never an automatic merge. */
 export interface FinalizedCharacterStateOccurrence {
   selectionKey: string
   displayName: string
@@ -172,7 +161,6 @@ export interface FinalizedCharacterStateOccurrence {
   rawValue: unknown
   reason: 'name-only' | 'unknown-id' | 'ambiguous' | 'legacy'
 }
-/** 模型报告的一条关系变化，角色身份和原文都已校验。 */
 export interface FinalizedRelationChange {
   sourceId: string
   targetId: string
@@ -184,7 +172,6 @@ export interface FinalizedCharacterStateResponse {
   unresolved: FinalizedCharacterStateOccurrence[]
   relations: FinalizedRelationChange[]
 }
-/** 派生关系与作者设定不一致时留给作者的待确认项，存在 summary_snapshots.character_state_candidates 里。 */
 export interface FinalizedRelationCandidate {
   candidateKey: string
   source: FinalizedSourceIdentity
@@ -194,11 +181,9 @@ export interface FinalizedRelationCandidate {
   targetName: string
   value: string
   evidence: FinalizedCharacterEvidence
-  /** 建议创建时这对人物两个方向的作者行，每项是 [来源, 目标, 关系] 的 JSON，已排序。升级前写的候选没有这个字段。 */
   authorLinesAtCreation?: string[]
 }
 export interface PendingFinalizedRelationCandidate extends FinalizedRelationCandidate {
-  /** 列出时现读，作者后来改过就是改后的值。 */
   authorRelations: string[]
 }
 export interface FinalizedRelationDecisionRequest {
@@ -240,7 +225,6 @@ function locateEvidence(evidence: Record<string, unknown>, content: string): Fin
 const EVIDENCE_FAILURE_CODE = { 'no-exact-match': 'FINALIZED_CHARACTER_EVIDENCE_NOT_UNIQUE', 'multiple-exact-matches': 'FINALIZED_CHARACTER_EVIDENCE_NOT_UNIQUE',
   'offset-mismatch': 'FINALIZED_CHARACTER_EVIDENCE_INVALID' } as const
 
-/** relations 是附带产物：不合格的条目丢掉，绝不让它挡住状态更新或触发重新生成。 */
 function parseRelationChanges(input: unknown, context: FinalizedCharacterContext): FinalizedRelationChange[] {
   if (!Array.isArray(input) || context.identityStatus !== 'bound') return []
   const resolve = (ref: unknown) => {
@@ -264,7 +248,6 @@ function parseRelationChanges(input: unknown, context: FinalizedCharacterContext
   return [...byPair.values()]
 }
 
-/** Main re-parses the settled artifact with its own frozen context before domain commit. */
 export function parseFinalizedCharacterStateResponse(content: string, context: FinalizedCharacterContext): FinalizedCharacterStateResponse {
   const text = content.trim().replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/, '')
   const parsed: unknown = JSON.parse(text)
@@ -273,7 +256,6 @@ export function parseFinalizedCharacterStateResponse(content: string, context: F
   const seen = new Set<string>()
   for (const [index, input] of parsed.updates.entries()) {
     if (!record(input) || !record(input.currentState)) throw new Error('FINALIZED_CHARACTER_UPDATE_INVALID')
-    // A distinct code lets the repair turn name the missing field instead of offering only the empty exit.
     if (!record(input.evidence)) throw new FinalizedCharacterEvidenceError('FINALIZED_CHARACTER_EVIDENCE_MISSING', index, 'missing')
     const exactEvidence = locateEvidence(input.evidence, context.content)
     if (typeof exactEvidence === 'string') throw new FinalizedCharacterEvidenceError(EVIDENCE_FAILURE_CODE[exactEvidence], index, exactEvidence)
@@ -289,8 +271,6 @@ export function parseFinalizedCharacterStateResponse(content: string, context: F
     const characterId = typeof input.characterId === 'string' ? input.characterId : ''
     const originalText = typeof input.name === 'string' ? input.name : ''
     const character = context.identityStatus === 'bound' ? context.characters.find(item => item.characterId === characterId) : undefined
-    // Even an explicit model ID cannot disambiguate two source characters with
-    // the same frozen display label. Preserve the occurrence for author approval.
     const sharedLabel = character && context.characters.filter(item => item.displayNameSnapshot === character.displayNameSnapshot).length > 1
     if (!character || sharedLabel) {
       if (!originalText.trim() && !characterId) throw new Error('FINALIZED_CHARACTER_IDENTITY_REQUIRED')
@@ -323,17 +303,13 @@ export function finalizedCharacterOutputContract(language: WritingLanguage): str
 
 export interface FinalizedContinuityProjection {
   draftId: number
-  /** Current finalized prose to read when this derived locator is stale. */
   currentFinalizedDraftId?: number
   chapterNumber: number
   chapterTitle: string
   chapterNotes: string
   facts?: FinalizedContinuityFact[]
-  /** Used only to locate the bound finalized prose, never rendered as a fact. */
   characterStateCandidates?: FinalizedCharacterStateCandidate[]
-  /** Missing only for pre-v2 rows whose source cannot be safely reconstructed. */
   source?: FinalizedSourceIdentity
-  /** Missing legacy callers must be treated exactly like `legacy`, never current. */
   sourceStatus?: FinalizedProjectionStatus
 }
 
@@ -342,9 +318,7 @@ export interface SaveFinalizedContinuityRequest {
   chapterNumber: number
   chapterNotes: string
   facts?: FinalizedContinuityFact[]
-  /** Watermark frozen before extraction; stale in-flight results must not advance it. */
   projectionGeneration: number
-  /** Frozen before extraction; the main process revalidates it at commit time. */
   source: FinalizedSourceIdentity
 }
 
@@ -352,8 +326,6 @@ export interface SaveFinalizedCharacterStateCandidatesRequest {
   draftId: number
   chapterNumber: number
   candidates: FinalizedCharacterStateCandidate[]
-  /** Watermark frozen before extraction; stale in-flight results must not advance it. */
   projectionGeneration: number
-  /** Frozen before extraction; the main process revalidates it at commit time. */
   source: FinalizedSourceIdentity
 }

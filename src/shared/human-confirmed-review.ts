@@ -3,11 +3,6 @@ import type { ExpectedDraftSource } from './ipc-channels'
 import { parseChapterGoalReview, type ChapterGoalReview } from './chapter-goal-review'
 import { countDraftUnits } from './draft-units'
 
-/**
- * Immutable, user-confirmed review snapshot persisted in the existing
- * `reviews.content` JSON field. The source AI review remains a separate,
- * unchanged review record; `sourceReviewId` points back to it.
- */
 export const HUMAN_CONFIRMED_REVIEW_KIND = 'human-confirmed-review' as const
 export const HUMAN_CONFIRMED_REVIEW_SCHEMA_VERSION = 1 as const
 export const HUMAN_CONFIRMED_REVIEW_SCHEMA_VERSION_V2 = 2 as const
@@ -31,11 +26,8 @@ export interface HumanConfirmedReviewItem {
 export interface HumanConfirmedReviewSnapshot {
   kind: typeof HUMAN_CONFIRMED_REVIEW_KIND
   schemaVersion: typeof HUMAN_CONFIRMED_REVIEW_SCHEMA_VERSION | typeof HUMAN_CONFIRMED_REVIEW_SCHEMA_VERSION_V2
-  /** Present only for v2 snapshots whose AI items are bound to review-cycle findings. */
   cycleId?: string
-  /** The immutable original AI-review row; never the confirmation row itself. */
   sourceReviewId: number
-  /** AI review generation source. Missing only on legacy confirmations, which must fail closed. */
   sourceDraft?: Readonly<ExpectedDraftSource>
   summary: string
   authorGuidance: string
@@ -128,10 +120,6 @@ function parseItem(value: unknown, schemaVersion: 1 | 2): HumanConfirmedReviewIt
   })
 }
 
-/**
- * Validates an in-memory candidate and returns a canonical frozen snapshot.
- * Invalid or historical review values return null instead of throwing.
- */
 export function validateHumanConfirmedReviewSnapshot(
   value: unknown,
 ): HumanConfirmedReviewSnapshot | null {
@@ -178,7 +166,6 @@ export function validateHumanConfirmedReviewSnapshot(
   })
 }
 
-/** Returns null for raw AI reports, malformed JSON, and unsupported schemas. */
 export function parseHumanConfirmedReviewSnapshot(
   content: string,
 ): HumanConfirmedReviewSnapshot | null {
@@ -189,7 +176,6 @@ export function parseHumanConfirmedReviewSnapshot(
   }
 }
 
-/** 确认后的清单另存为一份审稿，复验周期挂在它指向的原始审稿上；原始 AI 审稿就挂在自己身上。 */
 export function confirmationSourceReviewId<Id extends number | undefined>(
   snapshot: HumanConfirmedReviewSnapshot | null,
   reviewId: Id,
@@ -197,7 +183,6 @@ export function confirmationSourceReviewId<Id extends number | undefined>(
   return snapshot?.sourceReviewId ?? reviewId
 }
 
-/** Constructs a canonical snapshot that can be persisted without mutating its source AI review. */
 export function createHumanConfirmedReviewSnapshot(
   input: HumanConfirmedReviewSnapshotInput,
 ): HumanConfirmedReviewSnapshot | null {
@@ -216,21 +201,14 @@ export function serializeHumanConfirmedReviewSnapshot(
   return JSON.stringify(snapshot, null, 2)
 }
 
-/** True when the author explicitly selected at least one review item for repair. */
 export function hasIncludedReviewItems(snapshot: HumanConfirmedReviewSnapshot): boolean {
   return snapshot.items.some(item => item.decision === 'apply')
 }
 
-/** Author guidance is also explicit confirmed work, even when no AI item is selected. */
 export function hasIncludedReviewWork(snapshot: HumanConfirmedReviewSnapshot): boolean {
   return hasIncludedReviewItems(snapshot) || Boolean(snapshot.authorGuidance.trim())
 }
 
-/**
- * The only review material passed to the refiner: selected items and explicit
- * author guidance. It intentionally omits ignored items, the raw AI report,
- * and the AI-produced summary.
- */
 export function renderHumanConfirmedReviewBrief(
   snapshot: HumanConfirmedReviewSnapshot,
   writingLanguage: WritingLanguage,

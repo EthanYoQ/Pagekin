@@ -4,10 +4,8 @@ import type { ProjectCoreData } from '../../electron/repositories/project-core-r
 import type { PromptTemplate } from '../services/prompt-templates'
 import type { ImportRunExecutionAuthority } from './import-run'
 
-/** 一个导入 slot 最多发出的请求数（含推演、语法修复和补卡）。主进程按请求序号核对，根的额度更大也不能超过。 */
 export const IMPORT_SLOT_MAX_REQUESTS = 32
 
-/** A durable import checkpoint, never a renderer-selected generation root. */
 export interface ImportGenerationSlot {
   runId: string
   stage: 'global' | 'style' | 'blueprints'

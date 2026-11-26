@@ -1,7 +1,6 @@
 import { getBuiltinPromptTemplate, getPromptVariableDescription, pruneEmptyOptionalPromptSections, type PromptTemplate } from '../services/builtin-prompt-templates'
 import type { WritingLanguage } from './writing-language'
 
-/** Appends only authoritative values that a custom prompt body omitted. */
 export function appendRequiredPromptContext(
   content: string,
   template: PromptTemplate,
@@ -28,12 +27,10 @@ export function appendRequiredPromptContext(
   return `${content}\n\n${heading}\n${requiredContext.join('\n\n')}`
 }
 
-/** 一次扫描代入，变量值按字面写入：值里的 $ 记号与 {{占位}} 都不再被解释。 */
 function fillVariables(text: string, variables: Record<string, string>): string {
   return text.replace(/\{\{(\w+)\}\}/g, (placeholder, key: string) => Object.hasOwn(variables, key) ? variables[key] : placeholder)
 }
 
-/** Render only the editable creative guidance, without the template body or hidden output suffix. */
 export function renderPromptTaskGuidance(
   template: Pick<PromptTemplate, 'taskGuidance'>,
   variables: Record<string, string>,
@@ -47,7 +44,6 @@ export function renderPromptTaskGuidance(
   return `${heading}\n${guidance.trim()}`
 }
 
-/** 渲染 Prompt 模板（填充变量 + 自动追加内置 systemSuffix + 空段落裁剪） */
 export function renderPrompt(
   template: PromptTemplate,
   variables: Record<string, string>,
@@ -58,7 +54,6 @@ export function renderPrompt(
   const taskGuidance = renderPromptTaskGuidance(template, variables, writingLanguage)
   if (taskGuidance) content += `\n\n${taskGuidance}`
 
-  // 自动追加系统约束（始终从内置模板获取，不受用户自定义影响）
   const builtinTemplate = getBuiltinPromptTemplate(template.key, writingLanguage)
   const suffix = builtinTemplate?.systemSuffix
   if (suffix) {

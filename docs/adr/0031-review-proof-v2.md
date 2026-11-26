@@ -65,3 +65,76 @@
 - `attachStatementLedger`：计 prepare 出的语句每次 `run`、`get`、`all`、`iterate`，每次 `exec`（整段算一条），每次 `pragma`。不计 `db.transaction` 自己发的 BEGIN、COMMIT、SAVEPOINT，它们不经过实例方法。只看得到挂上之后 prepare 的语句。「升级后读库次数不变」这类断言就靠它。
 - `StatementLedger.counts`：键是 SQL 原文（pragma 记为 `PRAGMA ...`），值是执行次数。
 - `breakReviewProof`：造一种仓库入口自己的检查看不到、只有 M03 证明才发现的损坏：审稿尝试回执指向别的审稿内容。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/cloud-backup.ts`
+
+- `omittedReviewCycles`：验不过、没放进这次备份的审修循环所在的章。
+
+### `src/shared/damaged-review-cycle.ts`
+
+- `DamagedReviewCycle`：循环自己的证据指不准章节时 chapterNumber 为 null。
+
+### `src/shared/human-confirmed-review.ts`
+
+- `HUMAN_CONFIRMED_REVIEW_KIND`：经用户确认的不可变审稿快照，持久化在既有 reviews.content，来源 AI 审稿保持独立记录（原文：Immutable, user-confirmed review snapshot persisted in the existing `reviews.content` JSON field. The source AI review remains a separate, unchanged review record; `sourceReviewId` points back to it.）
+- `cycleId`：仅 v2 快照出现：其 AI 条目绑定到审修循环的发现（原文：Present only for v2 snapshots whose AI items are bound to review-cycle findings.）
+- `sourceReviewId`：不可变的原始 AI 审稿行，从不是确认行本身（原文：The immutable original AI-review row; never the confirmation row itself.）
+- `sourceDraft`：AI 审稿生成来源；仅旧确认缺失，缺失者必须 fail-closed（原文：AI review generation source. Missing only on legacy confirmations, which must fail closed.）
+- `validateHumanConfirmedReviewSnapshot`：校验内存候选并返回冻结的规范快照，无效或历史值返回 null 不抛（原文：Validates an in-memory candidate and returns a canonical frozen snapshot. Invalid or historical review values return null instead of throwing.）
+- `parseHumanConfirmedReviewSnapshot`：原始 AI 报告、畸形 JSON 与不支持的 schema 返回 null（原文：Returns null for raw AI reports, malformed JSON, and unsupported schemas.）
+- `confirmationSourceReviewId`：确认后的清单另存为一份审稿，复验周期挂在它指向的原始审稿上；原始 AI 审稿就挂在自己身上。
+- `createHumanConfirmedReviewSnapshot`：构造可持久化的规范快照而不改动来源 AI 审稿（原文：Constructs a canonical snapshot that can be persisted without mutating its source AI review.）
+- `hasIncludedReviewWork`：作者指导也是明确确认的工作，即使没选任何 AI 条目（原文：Author guidance is also explicit confirmed work, even when no AI item is selected.）
+- `renderHumanConfirmedReviewBrief`：传给修稿器的唯一审稿材料：选中条目与作者指导，有意省略忽略项、原始 AI 报告与 AI 概述（原文：The only review material passed to the refiner: selected items and explicit author guidance. It intentionally omits ignored items, the raw AI report, and the AI-produced summary.）
+
+### `src/shared/ipc-channels.ts`
+
+- `omittedReviewCycles`：验不过、没放进存档的审修循环所在的章。
+
+### `src/shared/review-cycle.ts`
+
+- `restoredHistory`：循环是作品从备份恢复前做的，只能看（ADR-0018 C17）。
+- `problem`：来自原保存审稿的不可变人类可读问题陈述（原文：Immutable human-readable problem statement from the original saved review.）
+- `expected`：合并稿必须真正满足的可选原目标语义（原文：Optional original goal semantics that the merged draft must actually satisfy.）
+- `mustShow`：作者应用的显式目标，没有旧稿引文，原行保持未验证（原文：Author-applied explicit goal with no old-draft quote; the original row remains unverified.）
+- `version`：v1 在引文锚定后信任模型的肯定语义判断，v2 让它保持待作者核实（原文：v1 trusted a model's positive semantic judgment after quote anchoring; v2 keeps it pending author verification.）
+- `sourceContent`：仅用于未展示的 mustShow 目标，拒绝原稿里已有的证据（原文：Present only for unshown mustShow goals, to reject evidence already in the original draft.）
+- `unshownMustShowRecheckFindings`：来自原保存目标与作者确认的窄投影，绝不伪造旧引文（原文：A narrow projection from the original saved goal and author confirmation, never a fabricated old quote.）
+- `classifyFindingEvidenceChange`：只做确定性准入：未改动或有歧义的证据绝不花模型请求（原文：Deterministic admission only: unchanged or ambiguous evidence never spends a model request.）
+- `recheckCommitPolicy`：新提交的复核一律按第 2 版语义判定，冻结在旧任务里的第 1 版也不例外：模型判为已解决的仍待作者核实。 保存路径与恢复卡摘要共用这一口径，摘要才不会比保存结果更乐观。
+- `buildReviewCycleRecheckReport`：按 reportVersion 保存解析，context.version 独立决定语义解决（原文：Preserves saved parsing by reportVersion; context.version independently governs semantic resolution.）
+
+### `src/shared/review-generation-report.ts`
+
+- V1 只为对照原始字节证明已保存的报告而保留（原文：V1 is retained only to prove already-saved reports against their original bytes.）
+- `parseReviewGenerationResult`：接受一份完整可见报告，可带正文或围栏，保留模型形状门（原文：Accept one complete visible report with optional prose/fences; retain the model shape gate.）
+- `buildReviewGenerationReport`：只用调用方的冻结来源与预检证据拼装保存的报告（原文：Assemble the saved report using only the caller's frozen source and preflight evidence.）
+
+### `src/shared/review-proof.ts`
+
+- `SealedReviewRevisionContext`：封存的 v1 证明：只留 v2 字段，inputHash 取原 v1 上下文的哈希，也就是收据里的 contextHash（ADR-0031）。
+- `sealReviewContext`：调用方须已验过全文和收据：收据里的原哈希放进 inputHash，前文等材料丢弃。
+- `reviewProofFields`：清单里的证明三项：上下文、它的哈希、作者输入里的同一份全文，三者必须一起写。
+- `ReviewProofRead`：contextHash 是收据里应记的哈希。sealed 的这个哈希只能和收据比，不能从证明重算。
+- `readReviewProof`：只验证明自洽：全文、哈希、作者输入副本互相印证。字段是否齐全、来源是否当前由调用方判。
+
+### `src/shared/review-revision-generation.ts`
+
+- `PrepareReviewRevisionRequest`：断言作者选的版本，正文与所有存储事实由主进程加载（原文：Asserts the author's selected version; prose and all stored facts are loaded by main.）
+- `ReviewMaterialIdentity`：一条材料的来源身份：主进程捕获的、S10A 选择契约所需的最小集合。 它是**只增不减**字段。渲染层只能消费主进程给出的身份，绝不自行编造来源； 缺少身份的材料不能进入上下文（必需项缺失时整体显式失败）。 `provenance` 用选择契约的词汇，未知来源不得被洗成 author。 **它必须与会话无关**：这里绝不保存 `epoch`（会话租约）。同一项目重开后租约必然改变， 把租约冻进来源清单会让比较与准入在重开后假失败（见 `generation-source-binding.ts` 跨会话比较时对 `SourceRef.epoch` 的剥离， 两者是同一条规则）。活跃租约由使用方在构造 `SourceRef` 时按当前会话补上。
+- `contentHash`：材料来源未经改动的 UTF-8 字节的 SHA-256（原文：SHA-256 of the unmodified UTF-8 bytes of the material source.）
+- `projection`：只有当前投影才能提供派生事实，其他行提供原始正文（原文：Only current projections may supply derived facts; other rows supply original prose.）
+- `identity`：主进程捕获的来源身份；渲染层据此做准入，不据此编造事实。
+- `ReviewRevisionMaterials`：主进程捕获的审修材料：渲染端据此拼提示词，绑定构建与续跑都重新捕获并比对。
+- `predecessor`：由源稿绑定的精确已保存前驱，绝非推断的最新版本（原文：Exact saved predecessor bound by the source draft, never an inferred latest version.）
+- `ReviewRevisionContextV1`：库版本 12 之前写入的审修证明：整份材料原样冻结。旧运行续跑仍写这一版。
+- `ReviewRevisionContextV2`：库版本 12 起写入的审修证明：只留保存与续跑要读的字段，其余材料由 inputHash 证明（ADR-0031）。
+- `reviewRevisionContextV2`：v2 只留保存与续跑要读的字段；inputHash 由调用方给出。
+- `reviewRevisionAiBrief`：任务批准不会把 AI 提议的替换变成作者事实（原文：Task approval does not turn an AI-proposed replacement into an author fact.）
+- `reviewRevisionAuthorMaterial`：渲染层准入与主进程哈希校验共用的一个不可变作者材料块（原文：One immutable author-material block shared by renderer admission and main hash validation.）
+- `sources`：保留各来源标签，相同文本或前缀只在最长来源处输出，冻结原件对恢复与来源校验保持不变（原文：Keep each source label, but emit an identical text/prefix only at its longest source. The frozen originals stay intact for recovery and source validation.）
+- `parentRootActionId`：由主进程从已保存的原始 AI 审稿派生，绝不由渲染端当作权威提供（原文：Derived by main from the saved original AI review, never supplied as authority by renderer.）
+- `materials`：只在可续跑（带 contextId）时给出。
+- `canResume`：终态候选没通过确定性保存校验时为 false，只能复制（原文：False when a terminal candidate failed deterministic save validation and is copy-only.）

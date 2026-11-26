@@ -48,10 +48,6 @@ function lookupCharacterRoleAlias(key: string): CharacterRole | undefined {
     : undefined
 }
 
-/**
- * Normalize persisted or external role values before they enter application state.
- * Unknown legacy values deliberately fall back to the least surprising editable role.
- */
 export function normalizeCharacterRole(value: unknown): CharacterRole {
   if (typeof value !== 'string') return 'supporting'
   const candidate = value.trim()
@@ -60,7 +56,6 @@ export function normalizeCharacterRole(value: unknown): CharacterRole {
     ?? 'supporting'
 }
 
-/** Locale-neutral display data for renderer consumers. */
 export function getCharacterRoleLabels(value: unknown): CharacterRoleLabels {
   return CHARACTER_ROLE_LABELS[normalizeCharacterRole(value)]
 }

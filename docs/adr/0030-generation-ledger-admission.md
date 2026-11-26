@@ -139,3 +139,81 @@ S2 第三个 PR 把绑定移出清单后，同一夹具、同一方法（修前�
 
 - **S2 运行索引**（已做）：跨记录查找改由索引按身份键认运行，绑定移出清单，只查没静止的树；守卫测试断言清单里没有 `binding_json`，违规 0 处。正常关闭后打开的扫描约 45 ms，没回到十几毫秒：剩下的时间在五列与没静止的树的绑定上，见上面的测量。
 - **打开后提示一次**（已做）：`project:open` 的返回值带 `sealedGenerationCount`，即这次新封存的根数（数生成，不数格子），渲染端弹一次提示。同一次打开还有部分加载失败的报错框或重复定稿的修复说明时，提示排在它们之后，作者关掉前一个才弹；这些提示跟着这次打开的会话走：作者换书或关书时（包括提示弹出后，一本在途的书才打开成功），开着的提示撤掉，排着的不再弹，免得落在别的书上。不记「已提示」：封存后再扫是空的，下次打开自然不再提示。代价是提示弹出前应用崩溃或退出（包括前面的提示框还没关时）、这次打开被更新的打开请求顶掉、提示没关之前作者换了书，或封存之后这次打开又失败时，作者看不到这次提示，只有日志里的记录。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/draft-reconciliation.ts`
+
+- `DRAFT_RECONCILE_PURPOSE`：生成前定稿对账：首稿请求之前的一次模型调用，把已定稿事实（含作者最新更正）与本章蓝图的 必需事件逐条对照，产出冲突清单与“与定稿一致的落实方式”。结果注入首稿提示（执行卡之后）以及 自动续写/压缩修订共用的作者资料块。 渲染层与主进程共用本模块：主进程据此从对账尝试的原始输出重算注入块，复核首稿提示除该块外 与材料准入收据绑定的 promptHash 完全一致，渲染层因此无法借“对账结果”夹带任意内容。
+- `parseDraftReconciliation`：严格解析对账输出；任何形状不符都返回 null（调用方按“无对账”继续）。
+- `states`：模型偶尔把 finalState 写成“要点名: 内容”的对象；按原顺序展开为“要点名：内容”。
+- `asWritten`：不冲突的条目也保留模型给出的具体落实方式：只写“按原文”会让首稿按字面执行仍在等待条件的计划。
+- `stripDraftReconciliationBlock`：主进程复核：若 prompt 恰好含一次由 output 渲染出的注入块（前接一个空行），返回移除该块后的 原始提示；否则返回 null。两种写作语言都尝试，块内容完全由对账输出决定。
+- `withoutDraftReconciliationArtifacts`：写稿候选列表只列正文产物：生成前定稿对账的产物是依据而非正文，不作为候选行展示。
+
+### `src/shared/draft-short-outline.ts`
+
+- `draftShortOutlinePrompt`：生成的计划从不是作者证据或正文（原文：A generated plan is never author evidence or manuscript prose.）
+- `draftShortOutlineTask`：章节草稿的首个请求，outlinePrompt 来自 draftShortOutlinePrompt（原文：The first request of a chapter draft; `outlinePrompt` comes from `draftShortOutlinePrompt`.）
+
+### `src/shared/draft-source-dependency.ts`
+
+- `DraftSourceDependency`：旧行省略 kind，都是精确的候选草稿依赖（原文：Old rows omit `kind`; they are exact candidate-draft dependencies.）
+
+### `src/shared/generation-contract.ts`
+
+- `GenerationTransportDiagnostics`：传输诊断是安全元数据，所有相对时间用请求的单调时钟（原文：Safe transport metadata; all relative times use the request's monotonic clock.）
+- `safeTransportError`：绝不复制错误消息：服务商错误可能含 URL、凭据或输出（原文：Never copy error messages: provider errors can contain URLs, credentials or output.）
+- `actualTokens`：实际用量绝不裁剪到估计值（原文：Actual usage is never clipped to the estimate.）
+- 重开渲染端或会话不能把同一个作者 nonce 变成新的预算根（原文：Reopening a renderer/session cannot turn the same author nonce into a new budget root.）
+- `assertReservation`：必须在根账本事务里、插入唯一预留之前运行（原文：Must run in the root ledger transaction before inserting a unique reservation.）
+- `assertVisibleSnapshot`：只做 CAS 与前缀检查，持久确认属于仓库（原文：CAS/prefix check only; durable acknowledgement belongs to the repository.）
+- `TERMINAL_PROVIDER_FAILURE_CODES`：重发同一请求修不好的服务商失败：运行带着码结束（原文：Provider failures that resending the same request cannot fix: the run ends with the code.）
+
+### `src/shared/generation-knowledge.ts`
+
+- `GenerationKnowledgeItem`：主进程签发的来源快照，不含外部路径、嵌入凭据或端点元数据（原文：Main-issued source snapshot. No external paths, embedding credentials or endpoint metadata.）
+- `rank`：最终排名，从 1 起，等于数组下标加 1，材料组装重排后仍能取回检索顺序。升级前冻结的快照没有这个字段。
+
+### `src/shared/generation-owner-contract.ts`
+
+- `GenerationAuthorInput`：原始文本是为这次作者动作显式给出的，绝非推断的候选文本（原文：Raw text explicitly supplied for this author action, never inferred candidate text.）
+- `authorInputs`：来自原运行不可变来源清单的读取投影（原文：Read projection from the original run's immutable source manifest.）
+- `reconciliationPromptHash`：生成前定稿对账请求（`chapter-draft-reconcile`）唯一 user message 的 UTF-8 SHA-256。 存在时，写稿运行的首个物理请求可以是这次对账；随后的首稿提示须等于 promptHash 对应的提示， 或恰好多出由对账输出重算的注入块（见 `src/shared/draft-reconciliation.ts`）。
+- `shortOutlinePromptHash`：自动大纲的冻结输入身份，历史运行没有（原文：Frozen input identity of the automatic outline; absent on historical runs.）
+- `draftReconciliation`：生成前定稿对账：对账尝试的产物 id（永不作为正文候选），以及首稿应沿用的对账原始输出——首稿尚未发出时为最近一次 完整结束的对账输出；首稿已发出时，只有主进程复核到首稿提示确实带了注入块才返回，否则为 null。
+- `draftShortOutline`：原生产物与最初派发的草稿任务，绝非可信的正文证据（原文：Native artifacts and the original dispatched draft task, never trusted prose evidence.）
+- `selectedDrafts`：仅当最初选中的草稿仍与冻结来源引用匹配时存在（原文：Present only when the originally selected drafts still match their frozen source references.）
+- `MIN_BATCH_CHAPTERS`：单次批量创作的章数边界；渲染层界面与主进程准入共用，主进程据此限定批量根预算（见 batchRootBudget）。
+- `nextChapterNumber`：仅当所有请求的效果都已确认才为 null；auto_finalize 要等它的 outbox（原文：Null only when all requested effects are confirmed; auto_finalize waits for its outbox.）
+- `GenerationRecoveryList`：运行侧页「可恢复」区的数据：主进程按运行的操作类型一次筛好，只读真正可能恢复的运行。
+- `partial`：有运行读取失败；其余照常列出。
+- `BeginGenerationRequest`：只表达选择与语义意图，身份、来源哈希与预算归主进程（原文：Selection and semantic intent only. Main owns identity, source hashes and budgets.）
+- `importExecution`：仅作准入权威，绝不持久化进来源清单（原文：Admission authority only; never persisted in the source manifest.）
+- `outputOverrides`：派发前冻结的有限语义例外，渲染端不能在运行时改契约（原文：Finite semantic exceptions frozen before dispatch; no renderer-time contract changes.）
+- `continueDirectoryOperationId`：来自原子提交的目录范围的显式下一阶段导航（原文：Explicit next-stage navigation from an atomically committed directory range.）
+- `batchId`：显式批量谱系，只有主进程创建不可变批量意图（原文：Explicit batch lineage; only main creates the immutable batch intent.）
+- `preparationId`：主进程在异步起草上下文读取前签发（原文：Main-issued before asynchronous drafting context reads.）
+- `finalizedCharacterContextId`：主进程签发，用于从不可变定稿正文按身份绑定的抽取（原文：Main-issued context for identity-bound extraction from immutable finalized prose.）
+- `agentWorkflowRegistrationId`：主进程根据真实、已确认的 Agent 工具动作签发的登记（原文：Main-issued registration from an actual, confirmed Agent tool action.）
+- `generation:reasoning`：易变的服务商文本，只供当前写作显示，绝不进运行视图或收据（原文：Volatile provider text for the active Writer display; never part of a run view or receipt.）
+
+### `src/shared/graph-generation.ts`
+
+- `key`：主进程签发的稳定上下文与 owner 查找键，不是渲染端事实哈希（原文：Main-issued stable context/owner lookup key, not a renderer fact hash.）
+
+### `src/shared/ipc-channels.ts`
+
+- `sealedGenerationCount`：这次打开时新封存的生成（根）条数，见 ADR-0030。
+
+### `src/shared/recovery-candidate.ts`
+
+- `RecoveryCandidateRecordInput`：渲染端输入，项目身份始终来自经校验的主进程租约（原文：Renderer input; project identity is always supplied by the validated main-process lease.）
+
+### `src/shared/source-ref.ts`
+
+- `ProjectEpoch`：S01 接缝：仓库仍是作者数据的唯一来源（原文：S01 seam only: repositories remain the sole source of author data.）
+- `contentHash`：未经改动的 UTF-8 字节的 SHA-256，绝非规整过的作者正文（原文：SHA-256 of the unmodified UTF-8 bytes; never normalized author prose.）
+- `span`：编辑器偏移是 UTF-16 码元，终点不含（原文：Editor offsets are UTF-16 code units, end exclusive.）
+- `mayUseCandidate`：只有作者选定的当前草稿或已保存的直接前驱才能进上下文（原文：Only author-selected current drafts or the saved direct predecessor may enter context.）
+- `transferAuthority`：仅作可携带的收据身份，绝非执行或作者内容的权威（原文：Portable receipt identity only; never an execution or author-content authority.）

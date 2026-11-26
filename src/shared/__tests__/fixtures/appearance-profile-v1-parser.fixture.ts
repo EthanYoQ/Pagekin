@@ -1,7 +1,3 @@
-/**
- * eb0affc1（RD-3 之前的最后一版）外观配置解析器的原样拷贝，只把返回类型换成 unknown、去掉导出的错误类。
- * 新版本写出的配置要能被回退后的旧版本读回，测试用它当旧版本；不要随新版本修改。
- */
 const THEMES = ['light', 'galaxy', 'paper', 'dark']
 const FONTS = ['inter', 'noto-sans-sc', 'lxgw-wenkai', 'noto-serif-sc', 'system']
 function record(value: unknown): value is Record<string, unknown> {

@@ -104,7 +104,6 @@ describe('relationship presentation', () => {
       'Relationship data format is unrecognized. Rewrite one relationship per line as “Character: relationship”.',
     )
     expect(parseRelationshipEdges(unknownJson, options)).toEqual([])
-    // 展示层不自动改写持久化数据；用户主动编辑前保留原有值。
     expect(relationshipStorageFromEditor(unknownJson, options)).toBe(unknownJson)
   })
 })

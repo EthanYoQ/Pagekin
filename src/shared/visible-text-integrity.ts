@@ -18,11 +18,6 @@ function mechanicalCompletionError(uiLocale: Locale, zhCNReason: string, enUSRea
   ))
 }
 
-/**
- * The single mechanical-integrity gate for AI-produced visible prose. A `stop`
- * finish reason does not prove the text passed it, so every path that accepts
- * such text (first execution, recovery resume, main-process commit) shares it.
- */
 export function assertMechanicallyCompleteVisibleText(content: string, uiLocale: Locale, source = ''): void {
   const trimmed = content.trim()
   if (visibleProseUnitCount(trimmed) === 0) {

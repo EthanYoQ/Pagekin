@@ -9,13 +9,11 @@ export interface ReopenChapterRequest {
 }
 
 export type ReopenChapterResult =
-  /** created=false：本章已有一份打开的重开稿，原样返回它。 */
   | { success: true; created: boolean; draftId: number; version: number }
   | { success: false; error: string }
 
 export interface ReplacementImpact {
   chapterNumber: number
-  /** 替换者，也就是本章当前定稿的 finalizationId。「知道了」按它记，同一章再替换一次就是新的提示。预览时为 null。 */
   finalizationId: string | null
   laterChapters: number[]
   blueprintOnlyChapters: number[]

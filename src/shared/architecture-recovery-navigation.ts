@@ -1,6 +1,5 @@
 import type { MainGenerationRunHandle } from '../services/generation/generation-runtime'
 
-/** This checkpoint stores navigation only; main validates the actual run and sources. */
 export function architectureRecoveryHandle(value: unknown, kind: 'worldbuilding' | 'synopsis', projectId: string): MainGenerationRunHandle | undefined {
   if (!value || typeof value !== 'object') return undefined
   const partial = value as Record<string, unknown>
