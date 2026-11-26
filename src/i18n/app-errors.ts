@@ -1,7 +1,10 @@
 import { copyLocale, localize, messages, translate, type MessageKey } from './core'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
-import { AuthorError, AuthorNote, catalogKeyNote, codeOf, failureOf, type Failure, type LegacyReason, type NoteParams } from '../shared/failure'
+import {
+  AuthorError, AuthorNote, authorOwned, catalogKeyNote, codeOf, failureCode, failureOf,
+  type Failure, type LegacyReason, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
+} from '../shared/failure'
 
 /**
  * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
@@ -733,6 +736,67 @@ export function caughtFailure(error: unknown): Failure | undefined {
   const failure = failureOf(error)
   if (!failure) warnOnce('未标记的失败：', error)
   return failure
+}
+
+/** 整句只是一个参数、装的是原文的模板，不许过 IPC。 */
+const WIRE_EXCLUDED_KEYS: ReadonlySet<string> = new Set(['error.unknown'] satisfies MessageKey[])
+
+/** 主进程给失败配目录说明的唯一入口：键写错编译不过，参数只收数字和作者自己的数据。 */
+export function wireNote(key: Exclude<MessageKey, 'error.unknown'>, params?: WireNote['params']): WireNote {
+  return { key: key as string as WireNoteKey, ...(params ? { params } : {}) }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/** 目录里有、不在排除表、参数只有数字和字符串的才是说明；合格且没有多余字段时原样返回。 */
+function wireNoteOf(value: unknown): WireNote | undefined {
+  if (!isRecord(value) || typeof value.key !== 'string' || WIRE_EXCLUDED_KEYS.has(value.key) || !Object.hasOwn(messages['en-US'], value.key)) return undefined
+  const { params } = value
+  if (params !== undefined && !(isRecord(params) && Object.values(params).every(v => typeof v === 'string' || Number.isFinite(v)))) return undefined
+  if (Object.keys(value).every(field => field === 'key' || field === 'params')) return value as unknown as WireNote
+  return { key: value.key as WireNoteKey, ...(params ? { params: params as WireNote['params'] } : {}) }
+}
+
+/** 主进程出口：码没登记就整个换成通用码；说明不合格就丢掉，只留码。合格时原样返回。 */
+export function publicWireFailure(value: unknown): WireFailure {
+  if (!isRecord(value) || !isKnownCode(value.code)) return { code: IPC_HANDLER_FAILED }
+  const note = value.note === undefined ? undefined : wireNoteOf(value.note)
+  if (note === value.note && Object.keys(value).every(field => field === 'code' || field === 'note')) return value as unknown as WireFailure
+  return { code: value.code, ...(note ? { note } : {}) }
+}
+
+/** 渲染端入口：码的形状不对就不算失败描述；码没登记换成通用码；说明不合格就只按码说明。db:* 不经 handle()，这里是唯一一道。 */
+export function wireFailure(value: unknown): Failure | undefined {
+  const code = isRecord(value) ? failureCode(value.code) : undefined
+  if (!isRecord(value) || !code) return undefined
+  if (!isKnownCode(code)) {
+    warnOnce('过 IPC 的码没登记，换成通用码：', code)
+    return { code: IPC_HANDLER_FAILED }
+  }
+  const note = wireNoteOf(value.note)
+  if (!note) {
+    if (value.note !== undefined) warnOnce('过 IPC 的说明不合格，只按码说明：', value.note)
+    return { code }
+  }
+  const params = note.params && Object.fromEntries(Object.entries(note.params).map(([name, v]) => [name, typeof v === 'number' ? v : authorOwned(v)]))
+  return { code, note: catalogNote(note.key as string as MessageKey, params) }
+}
+
+/** ipc-client 收到返回值时调用：失败结果里的 failure 换成渲染端的 Failure，认不出就去掉。 */
+export function receivedIpcResult<T>(value: T): T {
+  if (!isRecord(value) || value.success !== false || !('failure' in value)) return value
+  const { failure: wire, ...rest } = value
+  const failure = wireFailure(wire)
+  return (failure ? { ...rest, failure } : rest) as T
+}
+
+/** 渲染端读返回值的失败：新形状优先，其次旧字段里的码。旧字段的文字不显示，只进日志。 */
+export function resultFailure(result: { failure?: Failure; error?: string; errorCode?: string }): Failure | undefined {
+  if (result.failure) return result.failure
+  const legacy = failureOf(result.errorCode) ?? failureOf(result.error)
+  if (!legacy && result.error?.trim()) warnOnce('返回值的失败不是码，原文不显示：', result.error)
+  return legacy
 }
 
 /** 显示处去掉的前缀：Electron 的调用通道，以及 "Error: "、"TypeError: " 这类类名。 */

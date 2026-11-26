@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMain, type IpcMainInvokeEvent } from 'electron'
-import { IPC_HANDLER_FAILED, registeredErrorCode } from '../../src/i18n/app-errors'
+import { IPC_HANDLER_FAILED, publicWireFailure, registeredErrorCode } from '../../src/i18n/app-errors'
 import DIRECT_CHANNELS from './direct-channels.json'
 
 export type IpcHandler<Args extends unknown[] = unknown[]> = (event: IpcMainInvokeEvent, ...args: Args) => unknown
@@ -14,26 +14,32 @@ export function publicIpcError(error: unknown): Error {
   return error instanceof Error && error.message === code ? error : new Error(code)
 }
 
-type FailureFields = { error?: unknown; errorCode?: unknown }
+type FailureFields = { error?: unknown; errorCode?: unknown; failure?: unknown }
 
 function isFailure(value: unknown): value is { success: false } & FailureFields {
   return typeof value === 'object' && value !== null && (value as { success?: unknown }).success === false
 }
 
-/**
- * 处理器返回的失败结果交给渲染端的样子：error 或 errorCode 有一个是已登记的码就照传；
- * 否则把出现的这两个字段换成通用码，不新增字段。不是失败结果的照传。
- */
-export function publicIpcResult<T>(value: T): T {
-  if (!isFailure(value)) return value
-  const { error, errorCode } = value
-  if (error === undefined && errorCode === undefined) return value
-  if (registeredErrorCode(errorCode) || registeredErrorCode(error)) return value
+/** 旧字段：error 或 errorCode 有一个是已登记的码就照传，否则把出现的这两个字段换成通用码。 */
+function publicLegacyFields({ error, errorCode }: FailureFields): FailureFields | undefined {
+  if (error === undefined && errorCode === undefined) return undefined
+  if (registeredErrorCode(errorCode) || registeredErrorCode(error)) return undefined
   return {
-    ...value,
     ...(error === undefined ? {} : { error: IPC_HANDLER_FAILED }),
     ...(errorCode === undefined ? {} : { errorCode: IPC_HANDLER_FAILED }),
   }
+}
+
+/**
+ * 处理器返回的失败结果交给渲染端的样子：旧字段按 publicLegacyFields；新形状的 failure 按 publicWireFailure
+ * 校验码和目录键。两样都不用换时原样返回，不新增字段。不是失败结果的照传。
+ */
+export function publicIpcResult<T>(value: T): T {
+  if (!isFailure(value)) return value
+  const legacy = publicLegacyFields(value)
+  const failure = 'failure' in value ? publicWireFailure(value.failure) : undefined
+  if (!legacy && failure === value.failure) return value
+  return { ...value, ...legacy, ...(failure ? { failure } : {}) }
 }
 
 let registeringThroughHandle = false

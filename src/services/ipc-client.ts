@@ -14,6 +14,7 @@ import type {
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import { getActiveProjectSessionContext } from '../shared/project-session-context'
 import type { AiNovelAPI } from '../shared/desktop-api'
+import { receivedIpcResult } from '../i18n/app-errors'
 
 /** 获取唯一桌面接口；旧接口不是新运行时的写入后备通道。 */
 function getAPI(): AiNovelAPI {
@@ -61,19 +62,20 @@ function isProjectScopedChannel(channel: string): boolean {
     || channel === 'project:overview-current'
 }
 
-function invokeWithSession<C extends InvokeChannel>(
+/** 渲染端收 IPC 返回值的入口（finalization-client 另走定稿通道，不带 failure）：失败结果里的 failure 在这里校验。 */
+async function invokeWithSession<C extends InvokeChannel>(
   channel: C,
   args: AllInvokeChannels[C]['args'],
   context?: ProjectSessionContext,
 ): Promise<AllInvokeChannels[C]['return']> {
   if (!isProjectScopedChannel(channel)) {
-    return getAPI().invoke(channel, ...args) as Promise<AllInvokeChannels[C]['return']>
+    return receivedIpcResult(await getAPI().invoke(channel, ...args)) as AllInvokeChannels[C]['return']
   }
   const projectSession = context ?? getActiveProjectSessionContext()
   if (!projectSession) {
     throw new Error('GENERATION_PROJECT_SESSION_REQUIRED')
   }
-  return getAPI().invoke(channel, ...args, projectSession) as Promise<AllInvokeChannels[C]['return']>
+  return receivedIpcResult(await getAPI().invoke(channel, ...args, projectSession)) as AllInvokeChannels[C]['return']
 }
 
 /** 类型安全的 IPC 客户端 */

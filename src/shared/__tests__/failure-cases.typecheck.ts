@@ -1,4 +1,5 @@
 import { AuthorError, AuthorNote, authorOwned, catalogKeyNote, note, type Failure, type FailureCode, type WireFailure } from '../failure'
+import { wireNote } from '../../i18n/app-errors'
 
 export function legalShapes(fileName: string, n: number, error: Error, key: 'error.proxyUnreachable' | 'error.unregisteredCode'): unknown[] {
   const proxy: Failure = { code: 'NETWORK_ERROR', note: catalogKeyNote('error.proxyUnreachable') }
@@ -7,7 +8,7 @@ export function legalShapes(fileName: string, n: number, error: Error, key: 'err
     { note: note('无法导入 {file}', 'Could not import {file}', { file: authorOwned(fileName) }), because: { code: 'LEGACY_VECTOR_MIGRATION_BLOCKED' } } satisfies Failure,
     { code: 'PROJECT_NOT_OPEN' } satisfies Failure,
     { note: note('第 {n} 章没有生成。', 'Chapter {n} was not generated.', { n }) } satisfies Failure,
-    { code: 'EMBEDDING_MODEL_NOT_CONFIGURED', note: { key: 'error.embeddingModelNotConfigured' } } satisfies WireFailure,
+    { code: 'EMBEDDING_MODEL_NOT_CONFIGURED', note: wireNote('error.embeddingModelNotConfigured') } satisfies WireFailure,
     { note: note('大纲没有写完。', 'The outline is incomplete.'), recovery: 'resume-plot-outline' } satisfies Failure,
     catalogKeyNote(key),
     new AuthorError(proxy, '已渲染的说明', { cause: error }),

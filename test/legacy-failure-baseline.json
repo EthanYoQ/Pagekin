@@ -168,6 +168,7 @@
   },
   "src/i18n/app-errors.ts": {
     "appErrorMessage": 2,
+    "authorOwned": 1,
     "displayedErrorMessage": 1,
     "knownAppErrorMessage": 6
   },
