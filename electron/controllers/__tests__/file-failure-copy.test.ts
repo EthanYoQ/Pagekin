@@ -52,7 +52,6 @@ const failing = (error: Error): WindowsSafeFileSystem => ({
   mkdir: async () => { throw error },
 })
 
-/** 渲染端经 requireIpcSuccess 拿到的说明（export-service、prompt-catalog、savePartialData 都走这里）。 */
 async function shown(result: Promise<unknown>): Promise<string> {
   try {
     requireIpcSuccess(receivedIpcResult(await result) as { success: boolean }, '读写文件')

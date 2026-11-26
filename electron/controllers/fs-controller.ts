@@ -58,7 +58,6 @@ function isMissingFileError(error: unknown): boolean {
     || message === 'SECURE_FS_NOT_FOUND'
 }
 
-/** 项目会话与路径守卫（project-access、project-context）的码；其他错误不在这里解释。 */
 const ACCESS_NOTES: Readonly<Record<string, FailureKey>> = {
   PROJECT_SESSION_STALE: 'error.projectLeaseExpired',
   PROJECT_SESSION_ROOT_MISMATCH: 'error.projectLeaseExpired',

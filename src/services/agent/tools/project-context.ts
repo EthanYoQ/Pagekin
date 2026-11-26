@@ -41,7 +41,6 @@ export function agentToolErrorDetail(
   return errorMessageForModel(context?.writingLanguage ?? DEFAULT_WRITING_LANGUAGE, error)
 }
 
-/** 主进程文件通道的失败按作品写作语言说明，回给模型。 */
 export function agentToolFailureDetail(
   context: AgentExecutionContext | undefined,
   result: { failure?: Failure },

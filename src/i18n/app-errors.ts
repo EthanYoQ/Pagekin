@@ -123,7 +123,6 @@ const ERROR_KEYS = {
   EXTERNAL_FILE_GRANT_EXHAUSTED: 'error.externalFileGrantExpired',
   // 新建、打开项目时，所选文件夹在选择之后被移动、改名或替换：project-controller 经 String(error) 原样转给界面。
   EXTERNAL_FILE_GRANT_TARGET_CHANGED: 'error.externalFileGrantExpired',
-  // 项目文件读写与导出授权（fs-controller、external-file-grant-controller）：失败另带目录说明，码只作分流与兜底。
   PROJECT_FILE_NOT_FOUND: 'error.projectFileMissing',
   PROJECT_FILE_READ_FAILED: 'error.projectFileReadFailed',
   PROJECT_DATA_READ_FAILED: 'error.projectDataReadFailed',
@@ -861,7 +860,6 @@ export function errorMessageForModel(writingLanguage: Locale, error: unknown): s
 
 const modelLocale = (writingLanguage: Locale) => writingLanguage as ErrorDisplayLocale
 
-/** 回给模型的主进程失败按作品写作语言说明。 */
 export function failureTextForModel(writingLanguage: Locale, failure: Failure): string {
   return failureText(modelLocale(writingLanguage), failure)
 }

@@ -30,7 +30,6 @@ const DENIED: GrantFailure = ['EXTERNAL_FILE_GRANT_OPERATION_DENIED', 'error.ext
 const INVALID_PATH: GrantFailure = ['EXTERNAL_FILE_GRANT_PATH_INVALID', 'error.externalGrantPathInvalid']
 const UNAVAILABLE: GrantFailure = ['EXTERNAL_FILE_SERVICE_UNAVAILABLE', 'error.externalFileServiceUnavailable']
 
-/** 授权服务与安全文件系统的错误码 → 码与目录说明；不把文件系统绝对路径或内部服务错误原样回传给渲染层。 */
 const GRANT_FAILURES: Readonly<Record<string, GrantFailure>> = {
   EXTERNAL_FILE_GRANT_NOT_FOUND: EXPIRED,
   EXTERNAL_FILE_GRANT_EXPIRED: EXPIRED,
