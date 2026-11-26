@@ -396,7 +396,7 @@ describe('写前的线索：延后与指定本章推进', () => {
   it('延后没保存上：一句人话，线索仍在任务里，再点能成功', async () => {
     threadViews = [threadView(1, '青铜钥匙', 1, 5)]
     threadIpc = async (channel, ...args) => channel === 'db:narrative-thread-assignment-set'
-      ? { success: false, error: 'Error: NARRATIVE_THREAD_PLAN_NOT_FOUND' } : storedThreadIpc(channel, ...args)
+      ? { success: false, failure: { code: 'PLOT_THREAD_WRITE_FAILED', note: { key: 'error.plotThreadWriteFailed' } } } : storedThreadIpc(channel, ...args)
     await renderPopover()
     await act(async () => hint(1).click())
     await act(async () => threadRow('青铜钥匙').getByRole('button', { name: '延后一章' }).click())
