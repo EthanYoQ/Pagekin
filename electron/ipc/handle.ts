@@ -1,5 +1,6 @@
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { ipcMain, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import { IPC_HANDLER_FAILED, registeredErrorCode } from '../../src/i18n/app-errors'
+import DIRECT_CHANNELS from './direct-channels.json'
 
 export type IpcHandler<Args extends unknown[] = unknown[]> = (event: IpcMainInvokeEvent, ...args: Args) => unknown
 
@@ -35,22 +36,57 @@ export function publicIpcResult<T>(value: T): T {
   }
 }
 
+let registeringThroughHandle = false
+
 /**
  * 注册 IPC 处理器的唯一入口。没登记的失败，原文和堆栈只写主进程日志，渲染端拿到 IPC_HANDLER_FAILED。
- * 每次调用时才取 ipcMain.handle：main.ts 的慢调用日志在启动时替换了它。
+ * 每次调用时才取 ipcMain.handle：main.ts 启动时用慢调用日志和 guardIpcRegistration 替换了它。
  */
 export function handle<Args extends unknown[]>(channel: string, handler: IpcHandler<Args>): void {
-  ipcMain.handle(channel, async (event, ...args: unknown[]) => {
-    let value: unknown
-    try {
-      value = await handler(event, ...(args as Args))
-    } catch (error) {
-      const shown = publicIpcError(error)
-      if (shown.message === IPC_HANDLER_FAILED) console.error(`[AI Novel IPC] ${channel} 抛出未登记的错误:`, error)
-      throw shown
+  registeringThroughHandle = true
+  try {
+    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+      let value: unknown
+      try {
+        value = await handler(event, ...(args as Args))
+      } catch (error) {
+        const shown = publicIpcError(error)
+        if (shown.message === IPC_HANDLER_FAILED) console.error(`[AI Novel IPC] ${channel} 抛出未登记的错误:`, error)
+        throw shown
+      }
+      const shown = publicIpcResult(value)
+      if (shown !== value) console.error(`[AI Novel IPC] ${channel} 返回未登记的失败:`, value)
+      return shown
+    })
+  } finally {
+    registeringThroughHandle = false
+  }
+}
+
+/**
+ * 之后经 ipc 注册的处理器，不是 handle() 发起、通道又不在 direct-channels.json 里的，交给 onUnlisted。
+ * 拦的是 ipc 对象本身，所以 electron['ipcMain']、把 electron 传进函数、注入的 ipc.handle 都走这里。
+ */
+export function guardIpcRegistration(
+  ipc: Pick<IpcMain, 'handle' | 'handleOnce'>,
+  onUnlisted: (channel: string, handler: IpcHandler) => void,
+): void {
+  const direct = new Set<string>(DIRECT_CHANNELS)
+  for (const method of ['handle', 'handleOnce'] as const) {
+    const register = ipc[method].bind(ipc)
+    ipc[method] = (channel: string, handler: IpcHandler) => {
+      if (registeringThroughHandle || direct.has(channel)) register(channel, handler)
+      else onUnlisted(channel, handler)
     }
-    const shown = publicIpcResult(value)
-    if (shown !== value) console.error(`[AI Novel IPC] ${channel} 返回未登记的失败:`, value)
-    return shown
-  })
+  }
+}
+
+/** 开发和测试里立刻抛错；打包后作者不能因此打不开应用，记日志后改走 handle()。 */
+export function rejectUnlistedIpc(packaged: boolean): (channel: string, handler: IpcHandler) => void {
+  return (channel, handler) => {
+    const message = `IPC 通道 ${channel} 没有经 electron/ipc/handle.ts 的 handle() 注册：新通道改用 handle()，不要加进 direct-channels.json。`
+    console.error(`[AI Novel IPC] ${message}`)
+    if (!packaged) throw new Error(message)
+    handle(channel, handler)
+  }
 }

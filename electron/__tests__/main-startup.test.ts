@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     appData: '',
     windows,
     BrowserWindow,
+    ipcHandle: vi.fn(),
     registerIPCHandlers: vi.fn(() => calls.push('ipc')),
     registerMCPHandlers: vi.fn(() => calls.push('mcp')),
     startUpdateRuntime: vi.fn((options: unknown) => {
@@ -60,7 +61,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('electron', () => ({
   app: mocks.app,
   BrowserWindow: mocks.BrowserWindow,
-  ipcMain: { removeHandler: vi.fn(), handle: vi.fn() },
+  ipcMain: { removeHandler: vi.fn(), handle: mocks.ipcHandle, handleOnce: vi.fn() },
   shell: { openExternal: mocks.openExternal },
 }))
 vi.mock('../ipc-handlers', () => ({ registerIPCHandlers: mocks.registerIPCHandlers }))
@@ -106,6 +107,7 @@ describe('interactive Electron startup', () => {
     mocks.windows.splice(0)
     mocks.registerIPCHandlers.mockClear()
     mocks.registerMCPHandlers.mockClear()
+    mocks.ipcHandle.mockClear()
     mocks.startUpdateRuntime.mockReset()
     mocks.startUpdateRuntime.mockImplementation(() => mocks.calls.push('update-runtime'))
     mocks.isMacUpdateReminderEnabled.mockReturnValue(false)
@@ -141,6 +143,17 @@ describe('interactive Electron startup', () => {
     expect(fs.readFileSync(path.join(legacy, 'config.json'), 'utf8')).toBe('{}')
     expect(fs.readFileSync(path.join(mocks.userData, 'retained.json'), 'utf8')).toBe('original Chromium profile')
     expect(mocks.windows[0]?.on).toHaveBeenCalledWith('close', expect.any(Function))
+  })
+
+  it('guards IPC registration before the startup controller registers', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await import('../main')
+    await vi.waitFor(() => expect(mocks.calls).toContain('update-runtime'))
+    const { ipcMain } = await import('electron')
+
+    expect(mocks.ipcHandle).toHaveBeenCalledWith('startup:get-state', expect.any(Function))
+    expect(() => ipcMain.handle('demo:unlisted', () => 1)).toThrow(/handle()/u)
+    expect(mocks.ipcHandle).not.toHaveBeenCalledWith('demo:unlisted', expect.anything())
   })
 
   it.runIf(process.platform === 'win32')('registers the installer appId so Windows notifications show under the app shortcut', async () => {
