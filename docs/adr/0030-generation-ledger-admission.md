@@ -303,3 +303,9 @@ S2 第三个 PR 把绑定移出清单后，同一夹具、同一方法（修前�
 ### `src/stores/workflow-reasoning-store.ts`
 
 - `useWorkflowReasoningStore`：现行规则：推理只是易失的展示状态，隐藏的推理永远不进工作流历史或生成产物（原文：Volatile display state. Hidden reasoning never joins workflow history or generation artifacts.）
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/panels/GenerationBudgetDiagnostics.tsx`
+
+- `GenerationBudgetDiagnostics`：契约：只读、不含密钥的投影，数据来自主进程已结算的收据（原文：Read-only, secret-free projection of receipts already settled by the main owner.）

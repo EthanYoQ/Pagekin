@@ -8,9 +8,7 @@ import type { ShelfBook as Book } from './use-shelf-overview'
 interface ShelfBookProps {
   book: Book
   selected: boolean
-  /** 封面左上角的小字，当前作品写类型。 */
   kicker?: string
-  /** 封面底部的旧式数字，当前作品写「定稿 / 规划」。 */
   figure?: string
   caption: string
   menu: readonly MenuGroupSpec[]
@@ -18,7 +16,6 @@ interface ShelfBookProps {
   onOpen: () => void
 }
 
-/** 书架上的一本书：点封面只预览，双击或菜单里打开；更多操作在封面下的菜单里。 */
 export default function ShelfBook({ book, selected, kicker, figure, caption, menu, onSelect, onOpen }: ShelfBookProps) {
   const text = useLocaleStore(s => s.text)
   return (

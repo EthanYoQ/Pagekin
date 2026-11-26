@@ -47,3 +47,17 @@
 - `resolvedTheme`：当前应用到界面的主题，外观偏好载入之前是浅色
 - `createThemeStore`：现行规则：主题 store 只是面向旧调用方的投影，全部持久化归 appearance-bootstrap（原文：Legacy-facing projection only; appearance-bootstrap owns all persistence.）
 - `applyTheme`：深色时给根元素加 .dark：纸墨作用域之外的旧颜色变量与 Tailwind 的 dark 变体靠它切换。
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/editor/RelationshipGraph.tsx`
+
+- `inkRoot`：深浅色切换时根元素换 .dark，纸墨作用域换 data-theme，两处都要重画
+
+### `src/components/editor/__tests__/RelationshipGraph.browser.tsx`
+
+- `role`：修复前该角色姓名固定使用 #54666E，在深色面板上测得的对比度低于 3:1。
+
+### `src/components/startup/RendererStartup.tsx`
+
+- `theme`：这一层在外壳的纸墨作用域之外，自己挂 .paper-ink 才取得到令牌；外观偏好还没读出（或读坏了）时跟随系统深浅色。

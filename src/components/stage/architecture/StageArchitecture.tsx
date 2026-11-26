@@ -19,7 +19,6 @@ import ArchitectureGenerateDialog from './ArchitectureGenerateDialog'
 import ArchitectureSection from './ArchitectureSection'
 import { excerpt, mainAction, sectionBadge, SECTION_ORDER } from './architecture-sections'
 
-/** 角色名单一节的摘要。角色卡在打开作品后单独载入（角色多时要几百毫秒），载完之前只这一节写「正在读取」，其余三节照常可用。 */
 function useCastSummary(projectKey: string): { summary: string; loading: boolean } {
   const text = useLocaleStore(s => s.text)
   const characters = useCharacterStore(s => s.characters)
@@ -35,18 +34,12 @@ function useCastSummary(projectKey: string): { summary: string; loading: boolean
 
 const openCast = (text: (zh: string, en: string) => string) => openBuiltinEditor('character-editor', text('角色名单', 'Cast'), 'character')
 
-/**
- * 架构阶段：故事前提、角色名单、世界观、情节大纲四节。编辑一节打开它的文档标签，角色名单打开名单页；
- * 数据与操作来自 useArchitectureOverview。
- */
 export default function StageArchitecture({ projectKey }: { projectKey: string }) {
   const text = useLocaleStore(s => s.text)
   const overview = useArchitectureOverview(projectKey)
   const badges = Object.fromEntries(SECTION_ORDER.map(key => [key, sectionBadge(key, overview)])) as Record<ArchStepKey, ReturnType<typeof sectionBadge>>
-  /** 页头计数与主按钮只数已确认的节（徽标「已确认」）：部分完成、不完整、待处理都不算。 */
   const filled = overview.loading ? null : SECTION_ORDER.filter(key => overview.confirmed[key]).length
   const cast = useCastSummary(projectKey)
-  /** 清空确认打开时冻结的会话：确认时作品已换就什么也不写。 */
   const [clearing, setClearing] = useState<{ key: ArchStepKey; session: ProjectSessionContext } | null>(null)
 
   const total = SECTION_ORDER.length

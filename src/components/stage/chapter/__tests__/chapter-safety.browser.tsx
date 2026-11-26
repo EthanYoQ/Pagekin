@@ -593,7 +593,6 @@ describe('批量创作占着这一章时定稿、审稿与修稿（本批真实�
     expect(useWorkflowStore.getState().startWorkflow).not.toHaveBeenCalled()
   })
 
-  // CodeRabbit（#587）：有未保存修改时，审稿和修稿曾先把修改写盘、再说「正文保持原样」。
   const occupiedToast = (verb: string) => [...document.querySelectorAll('.pi-toast')].find(card => card.textContent?.includes(`还不能${verb}`))
   const startRefine = async () => {
     await click('更多操作')
@@ -638,7 +637,6 @@ describe('批量创作占着这一章时定稿、审稿与修稿（本批真实�
     expect(useWorkflowStore.getState().startWorkflow).not.toHaveBeenCalled()
   })
 
-  // OCR 意见（#587 第 3 条）：第 5–6 章批量自动定稿不占第 3 章，只占定稿要更新的全书共用资料。
   const AUTO_FINALIZE_TITLE = '批量自动定稿 · 第 5 至 6 章'
   const autoFinalizeBatch = (status: 'running' | 'paused') => ({
     ...batch(status, 1), title: AUTO_FINALIZE_TITLE,
@@ -655,7 +653,6 @@ describe('批量创作占着这一章时定稿、审稿与修稿（本批真实�
     expect(toastText).toMatch(/角色状态/)
     expect(toastText).toMatch(/章节要点/)
     expect(toastText).toContain('取消它就能定稿')
-    // 批次正在写第 6 章时只是预留了共用资料，定稿还没开始。
     expect(toastText).not.toContain('正在给别的章节定稿')
   }
 

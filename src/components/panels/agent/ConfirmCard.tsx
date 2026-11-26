@@ -1,9 +1,3 @@
-/**
- * ConfirmCard — 操作确认卡片
- *
- * 当 Agent 调用需要确认的 Tool 时显示此卡片。
- * 用户可以批准或拒绝操作。
- */
 import { useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
 import type { ToolCallInfo } from '../../../services/agent/agent-engine'
@@ -30,18 +24,15 @@ export default function ConfirmCard({ toolCall }: Props) {
   const impactReady = impactPreview.kind === 'none' || impactPreview.kind === 'valid'
   const canApprove = (!isDomainProposal || proposalPreview.kind === 'valid') && impactReady
 
-  // 生成操作描述
   const description = generateDescription(toolName, args, text, writingLanguage)
 
   return (
     <div className="confirm-card">
-      {/* 头部 */}
       <div className="confirm-card-header">
         <ShieldAlert size={14} />
         <span>{text('需要确认操作', 'Confirmation required')}</span>
       </div>
 
-      {/* 内容 */}
       <div className="confirm-card-body">
         <div>{description}</div>
         <DomainProposalDiff toolCall={toolCall} preview={proposalPreview} />
@@ -75,7 +66,6 @@ export default function ConfirmCard({ toolCall }: Props) {
         )}
       </div>
 
-      {/* 操作按钮 */}
       <div className="confirm-card-actions">
         {isDomainProposal && (
           <button
@@ -114,7 +104,6 @@ export default function ConfirmCard({ toolCall }: Props) {
   )
 }
 
-/** 根据 Tool 名称生成人类可读的操作描述 */
 function generateDescription(
   toolName: string,
   args: Record<string, unknown>,

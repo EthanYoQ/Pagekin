@@ -1,8 +1,3 @@
-/**
- * MentionMenu — @ 提及选择菜单
- *
- * 用户输入 @ 时弹出的上下文资源选择面板。
- */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   BookOpen,
@@ -26,13 +21,9 @@ const mentionTargetIcons = {
 } satisfies Record<MentionTarget['type'], LucideIcon>
 
 interface Props {
-  /** 搜索关键词（@ 后面的文字） */
   query: string
-  /** 选择提及目标的回调 */
   onSelect: (target: MentionTarget) => void
-  /** 关闭菜单 */
   onClose: () => void
-  /** 菜单位置 */
   position?: { bottom: number; left: number }
 }
 

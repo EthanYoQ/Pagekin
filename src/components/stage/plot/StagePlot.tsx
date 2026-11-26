@@ -21,7 +21,6 @@ const OPERATION_NAMES: Record<string, [string, string]> = {
   'narrative-thread-event-candidate': ['定稿事件', 'Final events'],
 }
 
-/** 整理记录：剧情树与 AI 候选的每次生成都留有记录，可以恢复、继续、取消或保存原结果。 */
 function GenerationRecords({ plot, onClose }: { plot: PlotThreads; onClose?: () => void }) {
   const text = useLocaleStore(s => s.text)
   const recovery = plot.graphRecovery
@@ -84,9 +83,6 @@ interface StagePlotProps {
   viewRequest?: number
 }
 
-/**
- * 剧情与伏笔：剧情树与伏笔线索合为一页，用分段切换。清除剧情树与删除线索都先危险确认。
- */
 export default function StagePlot({ projectKey, initialView, viewRequest }: StagePlotProps) {
   const text = useLocaleStore(s => s.text)
   const plot = usePlotThreads(projectKey, { initialView, viewRequest })
@@ -94,7 +90,6 @@ export default function StagePlot({ projectKey, initialView, viewRequest }: Stag
   const [clearOpen, setClearOpen] = useState(false)
   const [deleting, setDeleting] = useState<NarrativeThreadView | null>(null)
   const confirmedEvents = deleting?.events.length ?? 0
-  // 生成进行中（可以取消）或剧情树生成完却没保存上（来源变化、被取消）时记录自动展开，此时不能收起；其余时候从「更多」打开。
   const pinnedRecords = plot.plotBusy || plot.aiBusy || (plot.graphRecovery?.result?.kind === 'plot' && plot.graphRecovery.effects.length === 0)
 
   return (

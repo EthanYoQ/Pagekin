@@ -15,10 +15,6 @@ import type { ReviewRevisionRecovery } from '../../shared/review-revision-genera
 import { workflowResourceKey, type WorkflowRun } from '../../stores/workflow-store'
 import type { NoticeTone } from '../ui/Notice'
 
-/**
- * 运行中断后可以接着做的事。运行侧页从这里取标题、提示、可复制的文字与动作是否可用，
- * 自己只负责排版；数据由 use-run-recovery 读取，动作也由它执行。
- */
 export type RecoveryEntry = CandidateEntry | PlanningEntry | EditorEntry | ReviewEntry | BatchEntry | DraftEntry
 
 export interface RecoveryText {
@@ -28,11 +24,9 @@ export interface RecoveryText {
 
 interface Usage {
   budget?: readonly GenerationBudgetDiagnostic[]
-  /** 「已用 N 次请求」。 */
   usage?: string
 }
 
-/** 写作中断时留下的正文候选（旧的恢复候选表）。 */
 export interface CandidateEntry {
   kind: 'candidate'
   key: string
@@ -43,23 +37,19 @@ export interface CandidateEntry {
   candidate: RecoveryCandidate
 }
 
-/** 情节大纲或章节蓝图自动生成中断后保留的恢复稿。 */
 export interface PlanningEntry {
   kind: 'planning'
   key: string
   title: string
-  /** 「缺第 16 章 · 11月7日 14:32 生成」：作者靠它分清同一范围的几份。 */
   meta: string
   note: string
   actionLabel: string
   canDismiss: boolean
-  /** 同一范围更早的几份，新的在前。 */
   earlier: PlanningEntry[]
   labels: { earlier: string }
   recovery: GenerationRecoveryContext
 }
 
-/** 正文选区或整章批注的 AI 建议中断。 */
 export interface EditorEntry extends Usage {
   kind: 'editor'
   key: string
@@ -76,12 +66,10 @@ export interface EditorEntry extends Usage {
   recovery: EditorInlineRecovery
 }
 
-/** 审修候选的一段输出：卡片显示 display，复制拿 text（原文）。审稿是结构化报告，display 是可读摘要；修稿是正文，两者相同。 */
 export interface ReviewText extends RecoveryText {
   display: string
 }
 
-/** 审稿或修稿中断。 */
 export interface ReviewEntry extends Usage {
   kind: 'review'
   key: string
@@ -92,14 +80,12 @@ export interface ReviewEntry extends Usage {
   tails: ReviewText[]
   actionLabel: string
   canAct: boolean
-  /** 结果已经保存：卡片只留给作者打开或复制，不再算可恢复。 */
   saved: boolean
   hideKey: string
   labels: { copy: string; copyTail: string }
   view: MainGenerationRunView
 }
 
-/** 批量创作中断，可从下一章继续。 */
 export interface BatchEntry {
   kind: 'batch'
   key: string
@@ -110,7 +96,6 @@ export interface BatchEntry {
   handle: MainGenerationRunHandle
 }
 
-/** 单章写作中断、没保存：勾选保留的片段续写，或沿已存细纲继续。 */
 export interface DraftEntry extends Usage {
   kind: 'draft'
   key: string
@@ -121,15 +106,12 @@ export interface DraftEntry extends Usage {
   note: string
   actionLabel: string
   hideKey: string
-  /** 草稿保存后正文又改过：只能复制。 */
   changed: boolean
-  /** 没有已存的续写方案时，至少要勾选一段才能继续。 */
   needsPick: boolean
   labels: { copy: string; tailLead: string }
   view: MainGenerationRunView
 }
 
-/** 主进程算好的可恢复运行，加上旧恢复候选表。 */
 export interface RecoverySources extends Omit<GenerationRecoveryList, 'partial'> {
   candidates: readonly RecoveryCandidate[]
 }
@@ -148,10 +130,8 @@ function usageOf(view: Pick<MainGenerationRunView, 'budgetDiagnostics' | 'ledger
   }
 }
 
-/** 没写出任何字的片段（例如刚发出请求就取消）没有可复制、可续接的内容，不列出。 */
 export const hasText = (item: { text: string }) => item.text.trim().length > 0
 
-/** 1.4.0 本机「不再显示」的标记：运行 id 加当时列出的片段与尾段。 */
 const hideKeyOf = (runId: string, items: readonly RecoveryText[]) => `${runId}#${items.map(item => `${item.id}:${item.text.length}`).join(',')}`
 
 const texts = (items: readonly { attemptId: string; text: string }[] | undefined): RecoveryText[] =>
@@ -187,7 +167,6 @@ export function planningTitle(recovery: Pick<GenerationRecoveryContext, 'plotOut
 
 type OutlineRecoverySource = Pick<GenerationRecoveryContext, 'plotOutline' | 'plotOutlineRecovery' | 'planningContinuation'>
 
-/** 大纲恢复稿在（已保存 × 写状态 × 续写状态）表里的哪一格，以及这一格给作者的说明和主操作。 */
 export interface OutlineRecoveryGuide {
   kind: 'unavailable' | 'regenerate' | 'continued' | 'saved' | 'waiting' | 'editable'
   tone: NoticeTone
@@ -249,7 +228,6 @@ export function outlineRecoveryViewOnly(guide: Pick<OutlineRecoveryGuide, 'kind'
   return guide?.kind === 'regenerate' || guide?.kind === 'continued'
 }
 
-/** 时间按作者电脑的时区。 */
 export function planningMeta(recovery: Pick<GenerationRecoveryContext, 'planningContinuation' | 'planningDraft' | 'plotOutlineRecovery' | 'plotOutline'>, locale: Locale): string {
   const t = lang(locale)
   const regenerate = recovery.plotOutlineRecovery && outlineRecoveryGuide(recovery, undefined, locale).kind === 'regenerate'
@@ -265,30 +243,23 @@ function planningTime(ms: number, locale: Locale): string {
   return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms)
 }
 
-/** 恢复稿编辑器顶部的待完成范围；只剩一章时与标题一样写「第 6 章」。 */
 export function planningRemainingText(range: { from: number; to: number }, targetUnits: number, unit: string, text: (zh: string, en: string) => string): string {
   return range.from === range.to
     ? text(`待完成第 ${range.from} 章，每章目标 ${targetUnits} ${unit}。`, `Chapter ${range.from} remains. Target ${targetUnits} ${unit} per chapter.`)
     : text(`待完成第 ${range.from} 至 ${range.to} 章，每章目标 ${targetUnits} ${unit}。`, `Chapters ${range.from} to ${range.to} remain. Target ${targetUnits} ${unit} per chapter.`)
 }
 
-/** 升级前以现行规则判无效的大纲开跑、不能继续的大纲恢复稿：说明是重复章号、乱序还是章号与范围对不上；不是来源无效时为 null，由调用方用通用说明。 */
 export function outlineSourceInvalidNote(recovery: Pick<GenerationRecoveryContext, 'plotOutline' | 'plotOutlineRecovery'>, locale: Locale): string | null {
   const writeState = recovery.plotOutlineRecovery?.writeState
   if (writeState?.kind !== 'blocked' || writeState.reason !== 'source-invalid') return null
   return plotOutlineSourceInvalidText(recovery.plotOutline?.sourceExpected.synopsis ?? '', locale)
 }
 
-/** 大纲恢复稿因来源（模型设置、作品设定、提示词模板或写作 Skill）已变而被封锁写回。 */
 function outlineSourceChangedBlocked(recovery: Pick<GenerationRecoveryContext, 'plotOutlineRecovery'>): boolean {
   const writeState = recovery.plotOutlineRecovery?.writeState
   return writeState?.kind === 'blocked' && writeState.reason === 'source-changed'
 }
 
-/**
- * 来源已变的大纲恢复稿：只能查看或复制；正式大纲还没有这一批时（含最后一章生成完、正式保存被来源检查拒绝）
- * 要从本批起始章重新生成。其余情况为 null。
- */
 export function outlineSourceChangedNote(recovery: Pick<GenerationRecoveryContext, 'plotOutline' | 'plotOutlineRecovery'>, locale: Locale): string | null {
   if (!outlineSourceChangedBlocked(recovery)) return null
   const t = lang(locale), outline = recovery.plotOutline
@@ -375,10 +346,6 @@ function editorEntry(recovery: EditorInlineRecovery, locale: Locale): EditorEntr
 
 const SEVERITY_ORDER = { error: 0, warning: 1, pass: 2 } as const
 
-/**
- * 审稿输出是结构化报告：按保存时同一份审稿契约解析，写成结论与条数一行、再列最多两条意见（问题在前）。
- * 解析不了（半截输出、不合契约）时只说明它是结构化结果，原文留给复制。
- */
 function reviewDigest(text: string, locale: Locale): string {
   const t = lang(locale)
   let report: ReturnType<typeof parseReviewGenerationResult>
@@ -387,7 +354,6 @@ function reviewDigest(text: string, locale: Locale): string {
   } catch {
     return t('这是审稿的结构化结果，未能整理成摘要；复制可得到原文。', 'This is a structured review result that could not be summarized. Copy it to get the original text.')
   }
-  // 通过项不算意见，条数和单章视图「按 N 项意见修稿」同一口径。
   const passed = report.items.filter(item => item.severity === 'pass').length
   const notes = report.items.length - passed
   const counted = t(`${notes} 条意见`, `${notes} ${pluralEn(notes, 'note')}`)
@@ -402,21 +368,12 @@ function reviewDigest(text: string, locale: Locale): string {
 
 type RecheckItems = readonly Record<string, unknown>[]
 
-/**
- * 复核摘要要和保存结果一致。已保存的直接读保存下来的报告：升级前按第 1 版保存的可能是已解决；
- * 保存的是运行最后一份候选，保存后运行不再追加请求。未保存的按保存路径的口径（recheckCommitPolicy）现算，
- * 提交时存下的就是这一份。解析不了时为 null。
- */
 function recheckItems(item: RecoveryText, recovery: ReviewRevisionRecovery, recheck: ReviewCycleRecheckContext, locale: Locale): RecheckItems | null {
   if (recovery.saved && item.id === recovery.latestArtifact?.artifactId) return (JSON.parse(recovery.saved.content) as { items: RecheckItems }).items
   const report = buildReviewCycleRecheckReport(item.text, recovery.context.source.content, recheckCommitPolicy(recheck), locale, 2)
   return report.validModelOutput ? report.items : null
 }
 
-/**
- * 复核结果写成结论与条数一行，再列最多两条，未解决在前、已解决在后。
- * 结论按全部意见写，不照抄模型的 summary（它可能自称全部解决）。解析不了时同审稿一样只给说明。
- */
 function recheckDigest(items: RecheckItems | null, locale: Locale): string {
   const t = lang(locale)
   if (!items) return t('这是复核的结构化结果，未能整理成摘要；复制可得到原文。', 'This is a structured recheck result that could not be summarized. Copy it to get the original text.')
@@ -490,7 +447,6 @@ function batchEntry(batch: GenerationBatchHistory, locale: Locale): BatchEntry {
 function draftEntry({ view, recovery }: RecoverySources['drafts'][number], locale: Locale): DraftEntry {
   const t = lang(locale)
   const unique = [...new Map([...view.artifacts, ...(view.candidates ?? [])].map(item => [item.artifactId, item])).values()]
-  // 保存过的运行只在还有没落盘的尾段时才列出；保存后正文又改过的，续写会被主进程拒绝，只能复制。
   const changed = recovery.draftSave.kind === 'changed'
   const outlineOnly = !recovery.composition && recovery.attemptedPurposes.every(purpose => purpose === 'chapter-draft-short-outline')
     && Boolean(recovery.draftShortOutline?.completedOutput || recovery.draftShortOutline?.retry?.kind === 'available')
@@ -523,13 +479,6 @@ function draftEntry({ view, recovery }: RecoverySources['drafts'][number], local
   }
 }
 
-/**
- * 这次打开作品后还在进行的工作：它正显示在运行卡片里，不是中断留下的。
- * 单章与审修要这次打开里有单章运行正占着这一章：会话内失败时持久状态不会改，仍记为 running，不能当作还在写。
- * 批量运行也占着各章，但它写的正文带批次号、不列为单章条目（use-run-recovery），也不跑审修，所以不算。
- * 选区生成不是工作流运行，看 epoch：上次打开时没写完的换过会话，仍算可恢复。这次打开里写完的运行状态仍是 running，有完整建议就不算在写。
- * 批量看进行中（含暂停）的批量运行：资源锁让同一批章同时只有一个批量运行在写，范围相同就是它在推进这一批。
- */
 export function isInFlight(entry: RecoveryEntry, leaseId: string | undefined, liveRuns: readonly Pick<WorkflowRun, 'type' | 'resourceKeys'>[]): boolean {
   if (entry.kind === 'batch') return liveRuns.some(run => run.type === 'batch_generate' && sameChapters(run.resourceKeys, entry.range))
   if (entry.kind === 'editor') {
@@ -548,12 +497,10 @@ function sameChapters(keys: readonly string[] | undefined, range: BatchEntry['ra
     && chapters.every((chapter, index) => chapter === range.startChapter + index)
 }
 
-/** 单章候选的续写按钮是否可点：勾了片段，或有已存方案可沿用。 */
 export function canResumeDraft(entry: DraftEntry, picked: readonly string[]): boolean {
   return !entry.changed && (picked.length > 0 || !entry.needsPick)
 }
 
-/** 旧恢复候选表不是生成运行，没有可放弃的运行。 */
 export function abandonHandle(entry: RecoveryEntry): MainGenerationRunHandle | undefined {
   switch (entry.kind) {
     case 'planning': return entry.canDismiss ? entry.recovery.handle : undefined
@@ -564,7 +511,6 @@ export function abandonHandle(entry: RecoveryEntry): MainGenerationRunHandle | u
   }
 }
 
-/** 列出顺序与旧 AI 输出一致：恢复稿、选区建议、审修、批量、单章，最后是旧的恢复候选表。 */
 export function buildRecoveryEntries(sources: RecoverySources, locale: Locale): RecoveryEntry[] {
   return [
     ...groupPlanning(sources.planning, locale),

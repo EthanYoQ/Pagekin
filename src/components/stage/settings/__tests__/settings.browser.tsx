@@ -40,7 +40,6 @@ const LOCAL = { ...MODEL, id: 'local', name: '本机 Ollama', provider: 'ollama'
 let root: Root | undefined
 let host: HTMLDivElement | undefined
 
-/** 与 StageShell 同样接线：外壳的快捷键先于设置页注册，沉浸写作读 stage-store。 */
 function Shortcuts({ library }: { library: boolean }) {
   useStageShortcuts({ library, focus: useStageStore(s => s.focus) })
   return null
@@ -284,7 +283,6 @@ describe('设置页', () => {
   it('有生成正在用这个模型时，保存前先提示：等它结束再保存就不保存、表单留着；仍然保存才保存；没在用的模型直接保存', async () => {
     const saveModel = vi.fn(async () => true)
     useLLMStore.setState({ saveModel })
-    // 架构生成没有单独选模型，用的是默认模型 flash。
     useWorkflowStore.setState({ activeRuns: [{ id: '运行', title: '生成故事架构', type: 'architecture_generation', status: 'running' } as never] })
     await mount()
     await click(byName('编辑「DeepSeek V4 Flash」'))

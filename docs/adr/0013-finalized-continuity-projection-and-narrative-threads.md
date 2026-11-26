@@ -67,3 +67,9 @@
 ### `src/services/consistency-preflight.ts`
 
 - `PreflightFinding`：同一节点在批量里可能出现在多章，按章豁免要靠 chapterNumber 区分。
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/stage/chapter/ReplacementImpactNotices.tsx`
+
+- `OwnImpactNotice`：检查后续蓝图要等后处理把新章的人物状态记进时间线；失败、中断或没有记录时也能查，只是依据可能不全。 「知道了」只收起替换提示，按钮和没处理的建议卡留着。

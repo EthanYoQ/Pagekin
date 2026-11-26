@@ -73,7 +73,6 @@ beforeEach(() => {
     if (channel === 'db:narrative-thread-event-confirm') {
       const input = args[0] as { planId: number; draftId: number; type: 'planted'; evidence: string; reason: string }
       if (input.evidence === '定稿里没有这句') {
-        // 可写的 db 通道由主进程包装层把异常折成 { success: false, error: String(error) }。
         return { success: false, error: 'Error: NARRATIVE_THREAD_EVIDENCE_NOT_IN_SOURCE' }
       }
       threads = threads.map(item => item.id === input.planId

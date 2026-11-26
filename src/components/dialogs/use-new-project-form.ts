@@ -4,7 +4,6 @@ import { useProjectStore } from '../../stores/project-store'
 import { ipc } from '../../services/ipc-client'
 import { useLocaleStore } from '../../stores/locale-store'
 
-/** 新建作品：名称与保存位置，创建后其余设定在设定页填写。 */
 export function useNewProjectForm(open: boolean, onClose: () => void) {
   const createProject = useProjectStore((s) => s.createProject)
   const locale = useLocaleStore(s => s.locale)
@@ -26,7 +25,6 @@ export function useNewProjectForm(open: boolean, onClose: () => void) {
     if (selected) setPath(selected)
   }
 
-  /** 类型与目标读者留空，在设定页填写。 */
   const create = async () => {
     if (!name.trim() || !path) return
     setCreating(true)

@@ -15,14 +15,9 @@ const HISTORY_LIMIT = 30
 export interface ModelCalls {
   stats: LLMStats | null
   history: LLMCallRecord[]
-  /** 这条调用属于哪次运行；复制安全诊断时附上运行名与步骤。 */
   workflowFor: (call: LLMCallRecord) => SafeDiagnosticWorkflow | undefined
 }
 
-/**
- * 这部作品最近的模型调用记录，每 2 秒刷新一次。数据与读取时的会话绑在一起：
- * 旧请求晚到也不会显示到新会话，界面上永远只有当前会话的统计。
- */
 export function useModelCalls(): ModelCalls {
   const project = useProjectStore(s => s.currentProject)
   const session = useMemo(() => projectSessionContextFromProject(project), [project])
@@ -67,7 +62,6 @@ export function useModelCalls(): ModelCalls {
   }
 }
 
-/** 复制一条调用的安全诊断（不含正文与密钥），结果用提示告诉作者。 */
 export async function copySafeDiagnostic(call: LLMCallRecord, workflow: SafeDiagnosticWorkflow | undefined, locale: Locale): Promise<void> {
   const t = (zh: string, en: string) => locale === 'en-US' ? en : zh
   if (!navigator.clipboard?.writeText) {

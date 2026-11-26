@@ -25,10 +25,6 @@ interface Selection {
   event: PlotTreeEvent
 }
 
-/**
- * 剧情树：轨道为行、章为列的只读时间轴，一页 6 章。快照来自蓝图、定稿与线索计划的整理，
- * 页面顶部写明它不参与写作；清除剧情树在「更多」里，走危险确认。
- */
 export default function PlotTimeline({ plot, onShowRecords, onClear }: { plot: PlotThreads; onShowRecords: () => void; onClear: () => void }) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)

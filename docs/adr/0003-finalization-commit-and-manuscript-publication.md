@@ -92,3 +92,14 @@
 - `finalizationConflict`：完成事件落后于本地编辑时保留的显式冲突信息。
 - `settleTabSave`：按保存开始时的快照结算；期间有新输入时只更新已保存基准。
 - `settleMergedRevision`：结算修订合并；期间有新输入时保留当前正文与未保存状态。
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/stage/chapter/PostProcessSteps.tsx`
+
+- `PostProcessSteps`：定稿视图里的后处理（F-090、F-091）：正文文件与后处理流水线逐步列出完成、处理中或失败。 重试有用的失败步骤各自可以重试，「重试失败步骤」只在至少有一步能重试时出现，重跑哪些由修复工作流按同一份安排选。 正文文件写入失败时重试的是已提交的发布（F-089），不重新定稿。 正文文件这一步只有本次打开期间定稿过才知道结果，否则不列出。 旧版本跑批里留下、现在流程已没有的步骤照常列出，不论当时成败都说明它已不再运行，不摆重试，也不算进完成数。
+
+### `src/components/ui/use-post-process-status.ts`
+
+- `getStepPresentation`：规则：新的后处理运行在尝试任何一步之前先持久化每一步，数据库默认 ok = false，所以要靠持久的失败证据把待处理与失败的尝试区分开（原文：A fresh post-process run persists every step before it attempts any of them. The database default is `ok = false`, so distinguish that pending shape from a failed attempt by requiring durable failure evidence.）
+- `usePostProcessStatus`：读一个后处理 scope 的最新一次运行，定稿完成或任一工作流结束时重读。 定稿视图的后处理步骤用它。busy 由忙转闲时也重读：失败的修复不发 WORKFLOW_COMPLETE，否则失败说明会停在上一次。重读期间 refreshing 为真。

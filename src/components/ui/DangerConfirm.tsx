@@ -10,23 +10,14 @@ interface DangerConfirmProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
-  /** 后果，例如「将删除全部章节、蓝图与设定」。 */
   consequence: string
-  /** 能否恢复，例如「删除后无法恢复，项目备份不受影响」。 */
   recoverability: string
   confirmLabel: string
   cancelLabel: string
   onConfirm: () => void
-  /** 删除整部作品时要求输入作品名，输入一致才可确认。 */
   typeToConfirm?: { expected: string; label: string }
 }
 
-/**
- * 不可逆、影响作品数据的操作用的危险确认对话框。
- * Portal 到最近的 .paper-ink 根而不是 body，才能取到纸墨令牌与深色主题；
- * 原地的空 span 只用来找到这个根。
- * 调用方都是受控打开、没有 Dialog.Trigger，Radix 关闭时无处还焦点，所以打开时自己记下焦点、关闭时还回去。
- */
 export function DangerConfirm({ open, onOpenChange, title, ...content }: DangerConfirmProps) {
   const sentinelRef = useRef<HTMLSpanElement>(null)
   const root = usePaperInkRoot(sentinelRef)
@@ -56,7 +47,6 @@ export function DangerConfirm({ open, onOpenChange, title, ...content }: DangerC
   )
 }
 
-/** 输入框的值放在随对话框挂载的组件里：父组件不经 onOpenChange 直接关闭再打开，也从空白开始。 */
 function DangerConfirmBody({ consequence, recoverability, confirmLabel, cancelLabel, onConfirm, typeToConfirm, onClose }:
   Omit<DangerConfirmProps, 'open' | 'onOpenChange' | 'title'> & { onClose: () => void }) {
   const [typed, setTyped] = useState('')

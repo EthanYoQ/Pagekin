@@ -33,7 +33,6 @@ function StageBars({ bars, label }: { bars: readonly StageBar[]; label: string }
   )
 }
 
-/** 书房右侧的作品概览：阶段进度、统计、最近写下的段落与唯一的主操作。 */
 export default function BookOverview({ mode, name, meta, overview, bars, primary, secondary }: BookOverviewProps) {
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)

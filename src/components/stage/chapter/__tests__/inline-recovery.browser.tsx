@@ -38,7 +38,6 @@ async function sha256(text: string) {
 
 const chapterTab = (chapterNumber: number) => useEditorStore.getState().tabs.find(tab => tab.chapterNumber === chapterNumber)?.filePath
 
-/** 请求发出前关闭应用留下的第 3 章选区润色运行。执行完的视图照实机：状态仍是 running，句柄换成这次打开。 */
 async function interruptedSelectionRun(documentText: string, executed: Promise<void> = Promise.resolve(), origin: () => string | undefined = () => chapterTab(3) ?? 'drafts/3') {
   const from = documentText.indexOf(SELECTED)
   const base = { action: 'refine', kind: 'author-draft', documentText, documentHash: await sha256(documentText), from, to: from + SELECTED.length, selectedText: SELECTED }
@@ -93,7 +92,6 @@ async function openChapter(chapterNumber = 3, prepare?: (draft: ReturnType<typeo
   await act(async () => { await openDraftTab(meta, `第 ${chapterNumber} 章`, SESSION) })
 }
 
-/** 批注统一修改走另一条运行（runId batch），选区运行沿用前面的夹具。 */
 async function withAnnotationReviewBackend() {
   const selectionRun = backend.invoke.getMockImplementation()!
   let batch: { view: { handle: typeof handle; status: string; artifacts: object[] }; modelId: string; sourceStatus: string; context: object } | null = null

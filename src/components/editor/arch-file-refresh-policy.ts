@@ -7,7 +7,6 @@ export interface ArchFileSnapshot {
   currentContent: string
 }
 
-/** 最后一次 reload 才算数；编辑、保存调用 invalidate() 作废在途 reload。 */
 export class ArchReloadGate {
   private readonly reloads = new LatestRequestGate()
 

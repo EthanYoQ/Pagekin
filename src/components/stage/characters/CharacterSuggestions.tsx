@@ -52,7 +52,6 @@ function SessionSuggestions({ session }: { session: ProjectSessionContext }) {
   const [collapsed, setCollapsed] = useState(false)
   const count = proposals.summaries.length + states.summaries.length + relations.candidates.length
   const busy = proposals.busy || states.busy || relations.busy
-  // 原始报错是主进程包过一层的 IPC 异常，不给作者看。失败可能发生在一次已提交的接受之后，所以只说可以重读，不断言名单状态。
   const failed = Boolean(proposals.error || states.error || relations.error)
   if (count === 0 && !failed) return null
   const reload = () => { void proposals.reload(); void states.reload(); void relations.reload() }
@@ -153,7 +152,6 @@ function SessionSuggestions({ session }: { session: ProjectSessionContext }) {
           )}
         </ul>
       )}
-      {/* 失败说明放在列表外：收起列表后作者仍要知道有一部分没读出来。 */}
       {count > 0 && failed && (
         <div role="alert" className="cast-suggestion cast-suggestion-error">
           <span className="cast-suggestion-text">{text('有一部分角色建议这次没读出来或没处理完，可以重新读取。', 'Some character suggestions could not be read or handled this time. You can read them again.')}</span>

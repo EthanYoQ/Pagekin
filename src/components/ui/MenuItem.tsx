@@ -1,8 +1,5 @@
 import { useLocaleStore } from '../../stores/locale-store'
 
-/**
- * 通用菜单项按钮
- */
 export interface MenuItemProps {
   label: string
   onClick: () => void

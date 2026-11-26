@@ -2,7 +2,6 @@ import type { Locale } from '../../../i18n/types'
 
 type Text = (zh: string, en: string) => string
 
-/** 时刻只到分钟，例如 21:26；没有时间时为空，时间无法解析时写一条短横。 */
 export function clockTime(at: string | Date | undefined, locale: Locale): string {
   if (!at) return ''
   const time = new Date(at)
@@ -21,7 +20,6 @@ export function stepDuration(startedAt: string | undefined, completedAt: string 
   return durationText(Date.parse(completedAt) - Date.parse(startedAt), text)
 }
 
-/** 调用记录里常见用途的说法；其余照原样显示。 */
 const PURPOSES: Record<string, [string, string]> = {
   generation: ['生成', 'Generation'],
   'chapter-draft': ['写正文', 'Chapter draft'],
@@ -49,7 +47,6 @@ export function callPurpose(purpose: string, text: Text): string {
   return known ? text(...known) : purpose || '—'
 }
 
-/** 统计数字：大数按本地习惯缩写（21.4万 / 21.4K），没有上报时写一条短横。 */
 export function compactNumber(value: number | null, locale: Locale): string {
   if (value === null) return '—'
   return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value)

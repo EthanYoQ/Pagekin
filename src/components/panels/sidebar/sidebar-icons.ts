@@ -28,7 +28,6 @@ const ICON_MAP: Record<string, SidebarIcon> = {
   'git-branch': GitBranch,
 }
 
-/** 根据 iconName 渲染 Lucide 图标；未找到时返回空占位。 */
 export function renderIcon(iconName: string, size = 14, style?: CSSProperties): ReactNode {
   const Icon = ICON_MAP[iconName]
   if (!Icon) {

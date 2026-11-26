@@ -86,3 +86,31 @@ ADR-0011 的删除在一个事务里登记收据，再物理删掉本章定稿�
 
 - `useRestoredPublicationStore`：从回收站恢复、实体稿没写出的定稿，按会话租约与稿号记。 单章视图渲染时按自己的稿号来读，不交给标签：这一章的标签怎么打开、开了几次都看得到「重新写入正文」。 重写成功后标成 published，直到换作品或重开。
 - `recordRestoredPublication`：每次放回原位都按这次的结果覆盖：同一稿删了又恢复、这次写出来了，上一次的待写记录不能留着。
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/stage/StageShell.tsx`
+
+- `work`：清除生成内容与回收站只对打开它们时的那次作品生效：换了作品就关掉，回收站里的确认框随之作废。
+- 去了书房就算关掉回收站，回来不再自己弹出。
+
+### `src/components/stage/StageSpine.tsx`
+
+- `trashCount`：回收站里的项数；大于 0 时出现入口，不论在哪个阶段：正文阶段打不开时它是找回章节的唯一入口。
+
+### `src/components/stage/blueprint/GapNotice.tsx`
+
+- `trashed`：有回收站项时提示可以恢复；它就是段首那章时，写作按钮叫「重写」。
+
+### `src/components/stage/blueprint/StageBlueprint.tsx`
+
+- `trashedInGap`：缺口段里章号最小的那一项回收站记录；段里任何一章都可能是被删进回收站的那章。
+
+### `src/components/stage/trash/use-chapter-trash.ts`
+
+- `entries`：新删的在前。
+- `byChapter`：每章最近一次删除的那一项：蓝图页缺口卡只认它。
+- `stale`：最近一次重读失败，列表是之前读到的：之后删的章可能不在里面，列表里没有不能当作不在回收站。
+- `announceTrashChanged`：通知回收站各处重读：删除、恢复、彻底删除、重试清理之后都发这一条。
+- `useChapterTrash`：当前作品的回收站。还没读到时是 null：不知道里面有什么，不能当作空。
+- 读失败时保留这个作品上一次读到的列表，记为过期。

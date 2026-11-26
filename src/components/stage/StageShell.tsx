@@ -43,7 +43,6 @@ function crumbsFor(view: StageView, library: boolean, activeName: string | undef
   return [stage]
 }
 
-/** 这一次打开的作品；同一路径重开会换租约，也算另一次。 */
 function openedWork(project: Pick<ProjectData, 'id' | 'sessionLease'> | null): string | null {
   return project ? `${project.id}:${project.sessionLease ?? ''}` : null
 }
@@ -61,11 +60,9 @@ export default function StageShell({ theme }: { theme: Theme }) {
     return tab ? stageTabName(tab, text) : undefined
   })
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
-  // 清除生成内容与回收站只对打开它们时的那次作品生效：换了作品就关掉，回收站里的确认框随之作废。
   const work = useProjectStore(s => openedWork(s.currentProject))
   const [clearFor, setClearFor] = useState<string | null>(null)
   const [trashFor, setTrashFor] = useState<string | null>(null)
-  // 去了书房就算关掉回收站，回来不再自己弹出。
   if (library && trashFor !== null) setTrashFor(null)
   const view = useStageView()
   const trash = useChapterTrash()
@@ -83,7 +80,6 @@ export default function StageShell({ theme }: { theme: Theme }) {
     return () => cancelIdleCallback(handle)
   }, [])
 
-  // 设置页属于打开它时的书房或作品；在书房与作品之间切换时收起。
   const settingsOpen = useLayoutStore(s => s.settingsOpen)
   const settingsSection = useLayoutStore(s => s.settingsSection)
   const wasLibrary = useRef(library)

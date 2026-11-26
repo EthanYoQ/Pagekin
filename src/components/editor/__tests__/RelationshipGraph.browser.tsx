@@ -106,7 +106,6 @@ describe('RelationshipGraph readable theme text', () => {
     await act(async () => root.render(
       <RelationshipGraph characters={[{
         characterId: 'id:' + '林墨', name: '林墨',
-        // 修复前该角色姓名固定使用 #54666E，在深色面板上测得的对比度低于 3:1。
         role: 'antagonist',
         relationships: '',
       }]} />,

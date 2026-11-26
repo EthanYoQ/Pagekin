@@ -12,9 +12,6 @@ export const CHARACTER_STATE_FIELDS: readonly (readonly [CharacterStateTextField
 
 export type StateFieldSource = 'historical' | 'author' | 'derived' | 'unknown'
 
-/**
- * 当前状态档案的一个字段：定稿派生、但已不在当前派生集合里的值是历史记录，编辑框留空，原值只作参考显示。
- */
 export function stateFieldView(
   card: CharacterCard,
   field: CharacterStateTextField,
@@ -30,13 +27,11 @@ export function stateFieldView(
   }
 }
 
-/** 口径与保存时判定要写节点的字段相同。 */
 export function rosterStateChanged(base: readonly CharacterCard[], draft: readonly CharacterCard[]): boolean {
   const before = new Map(base.map(card => [card.characterId, card.currentState]))
   return draft.some(card => CHARACTER_STATE_FIELDS.some(([field]) => (card.currentState?.[field] ?? '') !== (before.get(card.characterId)?.[field] ?? '')))
 }
 
-/** 作者手改一个状态字段：记为作者输入，章节号沿用最后更新的那一章。 */
 export function authorStateEdit(card: CharacterCard, field: CharacterStateTextField, value: string): CharacterCurrentState {
   return {
     ...(card.currentState ?? EMPTY_STATE),

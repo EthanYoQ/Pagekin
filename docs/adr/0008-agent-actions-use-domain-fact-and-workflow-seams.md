@@ -92,3 +92,21 @@ AI 写作助手的普通文件写入只产生助手文件产物，不得以同�
 - `agentWorkflowRegistration`：现行规则：主进程校验过的 Agent Tool 登记，与模型可编辑的意图分开（原文：Main-validated Agent tool registration, separate from model-editable intent.）
 - `generationModelId`：现行规则：草稿工作流的模型选择由渲染端持有，绝不能从 LLM 工具参数填充（原文：Renderer-owned model selection for a draft workflow. It must never be populated from LLM tool arguments.）
 - `requiresConfirmation`：现行规则：即使工作流自动运行也要作者显式确认（原文：Explicit author action is required even when the workflow runs automatically.）
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/panels/agent/ArtifactCard.tsx`
+
+- ArtifactCard — 产物卡片 当 Agent 创建/修改文件或触发工作流时， 显示可点击的产物卡片，用户可直接跳转到对应资源。
+
+### `src/components/panels/agent/ConfirmCard.tsx`
+
+- ConfirmCard — 操作确认卡片 当 Agent 调用需要确认的 Tool 时显示此卡片。 用户可以批准或拒绝操作。
+
+### `src/components/panels/agent/MentionMenu.tsx`
+
+- `query`：搜索关键词（@ 后面的文字）
+
+### `src/components/panels/agent/SlashCommandMenu.tsx`
+
+- `query`：搜索关键词（/ 后面的文字）

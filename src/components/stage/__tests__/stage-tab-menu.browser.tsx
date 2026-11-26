@@ -106,7 +106,6 @@ describe('标签菜单', () => {
   })
 
   it('标签多到横向滚动时激活最右边的标签：「标签操作」按钮露在外面，点那里打开菜单，不关掉标签', async () => {
-    // 下面按坐标找「标签操作」上面压着什么，视口要装得下整条 1280 宽的标签条
     await resizeViewport(1280, 800)
     const many = Array.from({ length: 24 }, (_, index) => page(`第 ${index + 1} 页 · 雾钟与灯塔的来信`))
     await render(many, many[0].id)
@@ -119,7 +118,6 @@ describe('标签菜单', () => {
     const rect = trigger.getBoundingClientRect()
     const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
     expect(trigger.contains(hit), `「标签操作」的位置上是 ${hit?.outerHTML.slice(0, 120)}`).toBe(true)
-    // 落点可能是按钮里的图标（SVG 没有 click()），按真实点击派发冒泡的 click
     await act(async () => { hit!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })) })
     expect(document.querySelectorAll('[role="menuitem"]').length, '点那里打开标签菜单').toBeGreaterThan(0)
     expect(openTabs()).toHaveLength(24)

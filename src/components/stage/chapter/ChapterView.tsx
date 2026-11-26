@@ -30,11 +30,6 @@ import { pluralEn } from '../../../shared/plural-en'
 
 interface ShownReview { key: string; id: number; content: string; cycle: ReviewCycleProjection | null }
 
-/**
- * 这一稿显示哪份审稿与原文：最新一份有复验周期的审稿（确认后的清单按它指向的原审稿算），都没有周期（旧审稿）时取最新一份。
- * 合并后的自动复验另存一份审稿，它没有自己的周期，逐项结果写回原审稿的周期；显示原审稿才看得到复验完成几项与逐项结果。
- * 审稿记录或 refreshKey 变化时重读。某份审稿的周期读失败就停，不往更旧的找：先前显示的正是这一份就原样留着，否则显示最新一份、不带周期。
- */
 function useShownReview(reviews: readonly ReviewEntry[], projectKey: string, refreshKey: string) {
   const key = reviews.map(review => review.id).join(',')
   const [report, setReport] = useState<ShownReview | null>(null)
@@ -73,7 +68,6 @@ function useShownReview(reviews: readonly ReviewEntry[], projectKey: string, ref
 
 const stickyActionsHeight = (inside: HTMLElement) => inside.closest('.stage-ch-scroll')?.querySelector<HTMLElement>('.stage-ch-actions-sticky')?.offsetHeight ?? 0
 
-/** 条高会随审稿读完出现、纸面宽窄变化；chapter.css 的 scroll-padding-top 与搜索面板 top 读这个变量。 */
 const syncStickyTopVar = (scroller: HTMLDivElement | null) => {
   if (!scroller) return
   const observer = new ResizeObserver(() => scroller.style.setProperty('--stage-ch-sticky-top', `${stickyActionsHeight(scroller)}px`))
@@ -81,10 +75,6 @@ const syncStickyTopVar = (scroller: HTMLDivElement | null) => {
   return () => observer.disconnect()
 }
 
-/**
- * 正文单章视图：章节头、生命周期、章节动作条、版本切换器与纸面正文。待写章显示本章蓝图与写作此章。
- * 审稿报告是视图里的侧页，修稿合并在纸面上逐段选择，定稿后显示后处理四步；全程不需要离开这个标签。
- */
 export default function ChapterView({ tab }: { tab: EditorTab }) {
   const project = useProjectStore(s => s.currentProject)
   const session = captureProjectSession(project)
@@ -106,29 +96,23 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   const chapterNumber = draft.meta?.chapterNumber ?? tab.chapterNumber
   const { blueprint } = useChapterBlueprint(chapterNumber, projectKey)
   const latest = useShownReview(draft.reviews, projectKey,
-    // 修稿生成、合并提交会改审修循环而审稿报告不变，周期随之重读。
     `${draft.status}:${draft.pendingRevisions.map(revision => revision.id).join(',')}`)
   const review = reviewSession(latest?.content ?? '', latest?.id, projectKey)
   const [charCount, setCharCount] = useState(() => countDraftUnits(tab.content ?? ''))
   const [annotationHistoryRevision, setAnnotationHistoryRevision] = useState(0)
-  // 沉浸写作底部的字数进度，目标取设定里的每章字数。
   const target = useProjectStore(s => s.currentProject?.novelConfig.wordsPerChapter) || 0
   const [sheetSlot, setSheetSlot] = useState<HTMLDivElement | null>(null)
   const sheetFree = useStageStore(s => s.focus || s.sheet === null || (s.sheet.kind === 'review' && (s.sheet.filePath !== filePath || latest === null)))
-  // 批注坞顶掉的侧页，批注用完放回；作者已另开别的则不动。
   const sheetBeforeDock = useRef<StageSheet | null>(null)
 
   const facts = useStageStore(s => draft.meta && s.chapterFacts && session && sameProjectSessionContext(s.chapterFacts.session, session)
     ? s.chapterFacts.byDraft[draft.meta.id]
     : undefined)
-  // 数据没读全就摆动作条会闪别的主按钮，还会重置清单状态。
   const reviewReady = draft.loaded && (draft.reviews.length === 0 || latest !== null)
   const stage = draft.loaded && draft.meta
     ? draft.status === 'archived' || draft.status === 'superseded' ? draft.status : chapterPhase(draft.status, facts)
     : null
 
-  // 审稿或修稿刚在别处生成：重读这一稿的数据，并收起跟着工作流打开的运行侧页。新审稿换掉动作条的会话键，
-  // 审稿侧页按「已审稿」默认展开；待合并修稿直接摆出合并视图。
   const { reload } = draft
   useEffect(() => {
     if (!request || request.filePath !== filePath || !sameProjectSessionContext(request.session, captureProjectSession(useProjectStore.getState().currentProject))) return
@@ -137,10 +121,8 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
-  // 请求只交给看得见的编辑器；被合并视图或批注审阅盖住时留在 store，露出后再交。交接后清掉，重挂不会重开气泡。
   const [annotationRevision, setAnnotationRevision] = useState<AnnotationRevision | null>(null)
   const covered = draft.mergeData !== null || annotationRevision?.phase === 'review'
-  // 换稿从点击到新稿换上之间锁住正文：期间发起的批注修改会随旧稿一起卸载。
   const [switching, setSwitching] = useState(false)
   const whileSwitching = useCallback(async (run: () => Promise<void>) => {
     setSwitching(true)

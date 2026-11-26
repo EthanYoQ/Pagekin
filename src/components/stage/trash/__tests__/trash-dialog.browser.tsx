@@ -27,7 +27,6 @@ let entries: TrashedChapter[]
 let damaged: DamagedTrashEntry[]
 let restoreResult: RestoreTrashedChapterResult
 let invoke: ReturnType<typeof vi.fn>
-/** 这条通道的 IPC 调用直接 reject，模拟主进程没回话。 */
 let broken: string | null
 let listFails: boolean
 
@@ -52,7 +51,6 @@ function project(): ProjectData {
 }
 
 async function render() {
-  // 换了作品后回收站变成未知，这里仍挂着对话框，用来测它自己的会话检查。
   const Harness = () => <TrashDialog open onOpenChange={() => undefined} trash={useChapterTrash() ?? { entries: [], damaged: [], byChapter: new Map(), stale: false }} />
   host = document.createElement('div')
   host.className = 'paper-ink'
@@ -62,7 +60,6 @@ async function render() {
 }
 
 beforeEach(async () => {
-  // 前面用例留下的提示条叠在小视口的对话框上会挡住按钮，给足高度。
   await page.viewport(1280, 900)
   entries =[entry(3), entry(5, { cleanup: 'failed', versionCount: 1, wordCount: 1200 })]
   damaged = [{ deletionId: 'del-broken', error: 'CHAPTER_TRASH_ENTRY_INVALID' }]

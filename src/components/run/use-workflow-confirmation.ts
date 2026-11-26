@@ -6,26 +6,20 @@ import { projectSessionContextFromProject, sameProjectSessionContext } from '../
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowStore, type WorkflowRun } from '../../stores/workflow-store'
 
-/** 等作者确认才继续的那一步。运行侧页的确认区读它，只负责排版。 */
 export interface WorkflowConfirmation {
   nextStepName: string
-  /** 这一步要作者为新出现的角色选采用方式；没有时为 undefined。 */
   proposal?: {
     batch: CharacterProposalBatch
     choices: CharacterProposalChoices
     summary: string
     onChange: (choices: CharacterProposalChoices) => void
   }
-  /** 还不能确认的原因（换了作品、角色信息没读到或正在读）。 */
   blocked?: string
   ready: boolean
   confirmLabel: string
   confirm: () => void
 }
 
-/**
- * 运行停在需要确认的步骤时返回确认区的内容，否则返回 null。
- */
 export function useWorkflowConfirmation(run: WorkflowRun): WorkflowConfirmation | null {
   const t = (zh: string, en: string) => run.uiLocale === 'en-US' ? en : zh
   const waiting = useWorkflowStore(state => state.waitingRuns[run.id])

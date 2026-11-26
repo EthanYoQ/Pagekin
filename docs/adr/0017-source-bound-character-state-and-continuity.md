@@ -104,3 +104,11 @@
 
 - `currentDerivedFields`：现行规则：这是 IPC 校验过的展示授权，原始角色卡仍是作者编辑与历史的来源（原文：IPC-verified display grant; raw cards remain the author edit and history source.）
 - `rosterLoads`：定稿发现的建议不改名单版本，建议列表靠这个计数重读。
+
+## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
+
+### `src/components/editor/character-state-fields.ts`
+
+- `stateFieldView`：当前状态档案的一个字段：定稿派生、但已不在当前派生集合里的值是历史记录，编辑框留空，原值只作参考显示。
+- `rosterStateChanged`：口径与保存时判定要写节点的字段相同。
+- `authorStateEdit`：作者手改一个状态字段：记为作者输入，章节号沿用最后更新的那一章。

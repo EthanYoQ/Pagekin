@@ -8,15 +8,12 @@ import { Button } from '../../ui/Button'
 import { Notice } from '../../ui/Notice'
 import { restoreTrashedChapter } from '../trash/trash-actions'
 
-/** 缺口段在回收站里的那一项；null 是确认不在，unknown 是回收站还没读到。 */
 export type GapTrash = TrashedChapter | null | 'unknown'
 
 export default function GapNotice({ gap, blueprint, unsaved, trashed, onWrite, onAddBlueprint, clearAction }: {
   gap: ChapterGap
   blueprint: ChapterBlueprint | null
-  /** 单章视图只读已保存的蓝图：这一章蓝图还没保存时不给写作入口。 */
   unsaved: boolean
-  /** 有回收站项时提示可以恢复；它就是段首那章时，写作按钮叫「重写」。 */
   trashed: GapTrash
   onWrite: (blueprint: ChapterBlueprint) => void
   onAddBlueprint: (chapterNumber: number) => void

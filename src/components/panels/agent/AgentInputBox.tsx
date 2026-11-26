@@ -19,15 +19,10 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { registerProjectTransitionDraft } from '../../../services/project-transition'
 
-/** 输入框最大高度（px），超出后框内滚动 */
 const MAX_HEIGHT = 200
 const projectInputDrafts = new Map<string, { value: string; savedValue: string }>()
 const isRetrievalPurpose = (purpose: ModelProfile['purposes'][number]) => purpose === 'embedding' || purpose === 'rerank'
 
-/**
- * Agent 输入框组件（参考 agent1.html 第 69-155 行）
- * 卡片式圆角容器，底部工具栏含模式/模型/发送
- */
 export default function AgentInputBox() {
   const text = useLocaleStore(s => s.text)
   const projectKey = useProjectStore(s => s.currentProject?.path)
@@ -48,15 +43,12 @@ export default function AgentInputBox() {
   const currentMode = activeConv?.mode ?? 'planning'
   const currentModelId = activeConv?.modelId ?? defaultModelId
 
-  // 找到当前模型信息
   const currentModel = models.find(m => m.id === currentModelId)
 
-  // 下拉菜单状态
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [showModeMenu, setShowModeMenu] = useState(false)
   const [showModelMenu, setShowModelMenu] = useState(false)
 
-  // / 命令和 @ 提及菜单状态
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [slashQuery, setSlashQuery] = useState('')
   const [showMentionMenu, setShowMentionMenu] = useState(false)
@@ -97,11 +89,9 @@ export default function AgentInputBox() {
     return unregister
   }, [projectKey, replaceInputText])
 
-  // 检测输入是否触发 / 或 @ 菜单
   const handleInputChange = useCallback((value: string) => {
     replaceInputText(value)
 
-    // 检测 / 命令
     if (value.startsWith('/')) {
       const q = value.slice(1).split(' ')[0] ?? ''
       setSlashQuery(q)
@@ -111,11 +101,9 @@ export default function AgentInputBox() {
       setShowSlashMenu(false)
     }
 
-    // 检测 @ 提及（在光标位置前面找 @）
     const lastAt = value.lastIndexOf('@')
     if (lastAt >= 0) {
       const afterAt = value.slice(lastAt + 1)
-      // 如果 @ 后面没有空格，视为正在输入提及
       if (!afterAt.includes(' ')) {
         setMentionQuery(afterAt)
         setShowMentionMenu(true)
@@ -128,14 +116,11 @@ export default function AgentInputBox() {
     }
   }, [replaceInputText])
 
-  // 选择 / 命令
   const handleSlashSelect = useCallback((cmd: SlashCommand) => {
     setShowSlashMenu(false)
     if (cmd.source === 'skill') {
-      // Skill 命令：替换为 /skill-name 后面可以加参数
       replaceInputText(`/${cmd.name} `)
     } else {
-      // 内置命令：直接发送
       if (projectKey) projectInputDrafts.delete(projectKey)
       replaceInputText('')
       sendMessage(`/${cmd.name}`)
@@ -143,10 +128,8 @@ export default function AgentInputBox() {
     textareaRef.current?.focus()
   }, [projectKey, replaceInputText, sendMessage])
 
-  // 选择 @ 提及
   const handleMentionSelect = useCallback((target: MentionTarget) => {
     setShowMentionMenu(false)
-    // 替换最后一个 @ 及其后面的文字为 @displayName
     const lastAt = inputText.lastIndexOf('@')
     if (lastAt >= 0) {
       const before = inputText.slice(0, lastAt)
@@ -159,19 +142,15 @@ export default function AgentInputBox() {
   const modeRef = useRef<HTMLDivElement>(null)
   const modelRef = useRef<HTMLDivElement>(null)
 
-  // 调整文本框高度的通用函数
   const adjustHeight = useCallback(() => {
     const ta = textareaRef.current
     if (!ta) return
-    // 先重置为 0px，让 scrollHeight 正确反映内容高度，避免 flex 布局拉伸导致计算出很大的初始高度
     ta.style.height = '0px'
     const next = Math.min(Math.max(ta.scrollHeight, 36), MAX_HEIGHT)
     ta.style.height = next + 'px'
-    // 超出最大高度时框内滚动，否则隐藏滚动条
     ta.style.overflowY = ta.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden'
   }, [])
 
-  // 监听尺寸变化以重新计算高度，避免刚挂载时宽度未稳定导致的 placeholder 异常换行撑起高度
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta) {
@@ -183,23 +162,19 @@ export default function AgentInputBox() {
     })
     ro.observe(ta)
     
-    // 初始化调用一次即可
     adjustHeight()
 
     return () => ro.disconnect()
   }, [adjustHeight])
 
-  // 内容变化时重新调整高度
   useEffect(() => {
     adjustHeight()
   }, [inputText, adjustHeight])
 
-  // 点击外部关闭下拉（用 useOutsideClick 统一管理三个 ref）
   useOutsideClick(contextRef, () => setShowContextMenu(false), showContextMenu)
   useOutsideClick(modeRef, () => setShowModeMenu(false), showModeMenu)
   useOutsideClick(modelRef, () => setShowModelMenu(false), showModelMenu)
 
-  /** 发送或停止 */
   const handleSendOrStop = useCallback(async () => {
     if (generating) {
       await cancelGeneration()
@@ -212,12 +187,10 @@ export default function AgentInputBox() {
     await sendMessage(text)
   }, [generating, inputText, projectKey, replaceInputText, sendMessage, cancelGeneration])
 
-  /** 键盘事件：Enter 发送，Shift+Enter 换行 */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // / 或 @ 菜单打开时，由菜单组件处理键盘事件
     if (showSlashMenu || showMentionMenu) {
       if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) {
-        return // 让菜单组件通过 window 事件处理
+        return
       }
       if (e.key === 'Escape') {
         setShowSlashMenu(false)
@@ -239,10 +212,9 @@ export default function AgentInputBox() {
       style={{
         backgroundColor: 'var(--color-hover)',
         border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-md)',  /* 4px 方正风格 */
+        borderRadius: 'var(--radius-md)',
       }}
     >
-      {/* / 命令菜单 */}
       {showSlashMenu && (
         <SlashCommandMenu
           query={slashQuery}
@@ -251,7 +223,6 @@ export default function AgentInputBox() {
         />
       )}
 
-      {/* @ 提及菜单 */}
       {showMentionMenu && (
         <MentionMenu
           query={mentionQuery}
@@ -260,7 +231,6 @@ export default function AgentInputBox() {
         />
       )}
 
-      {/* 上下文菜单（+ 按钮弹出） */}
       {showContextMenu && (
         <div
           className="absolute bottom-[calc(100%+8px)] left-0 z-50 py-1 rounded-lg shadow-lg"
@@ -277,20 +247,17 @@ export default function AgentInputBox() {
           <ContextMenuItem icon={<Image size={13} />} label={text('媒体文件', 'Media file')} onClick={() => setShowContextMenu(false)} disabled />
           <ContextMenuItem icon={<AtSign size={13} />} label={text('@提及', '@ mention')} onClick={() => {
             setShowContextMenu(false)
-            // 插入 @ 字符并触发 MentionMenu
             handleInputChange(inputText + '@')
             textareaRef.current?.focus()
           }} />
           <ContextMenuItem icon={<Workflow size={13} />} label={text('工作流命令', 'Workflow command')} onClick={() => {
             setShowContextMenu(false)
-            // 插入 / 字符并触发 SlashCommandMenu
             handleInputChange('/')
             textareaRef.current?.focus()
           }} />
         </div>
       )}
 
-      {/* 输入区域 */}
       <div className="relative w-full">
           <textarea
             ref={textareaRef}
@@ -308,16 +275,12 @@ export default function AgentInputBox() {
               display: 'block',
             }}
           />
-        {/* 占位文字颜色已通过 tailwind placeholder 设置 */}
       </div>
 
-      {/* 底部工具栏 */}
       <div className="flex items-center justify-between gap-1 px-1 mt-0.5">
 
-        {/* 左侧工具按钮组 */}
         <div className="flex items-center gap-0.5 min-w-0 flex-1">
 
-          {/* + 添加上下文 */}
           <div ref={contextRef}>
             <ToolbarIconBtn
               title={text('添加上下文', 'Add context')}
@@ -331,7 +294,6 @@ export default function AgentInputBox() {
             </ToolbarIconBtn>
           </div>
 
-          {/* 模式选择 */}
           <div ref={modeRef} className="relative">
             <button
               onClick={() => {
@@ -357,7 +319,6 @@ export default function AgentInputBox() {
               <span className="select-none">{currentMode === 'planning' ? text('深度', 'Deep') : text('快速', 'Fast')}</span>
             </button>
 
-            {/* 模式选择下拉 */}
             {showModeMenu && (
               <div
                 className="absolute bottom-full left-0 mb-1 z-50 py-1 rounded-lg shadow-lg"
@@ -389,7 +350,6 @@ export default function AgentInputBox() {
             )}
           </div>
 
-          {/* 模型选择 */}
           <div ref={modelRef} className="relative min-w-0">
             <button
               onClick={() => {
@@ -418,7 +378,6 @@ export default function AgentInputBox() {
               </span>
             </button>
 
-            {/* 模型选择下拉 */}
             {showModelMenu && (
               <div
                 className="absolute bottom-full left-0 mb-1 z-50 py-1 rounded-lg shadow-lg"
@@ -456,7 +415,6 @@ export default function AgentInputBox() {
           </div>
         </div>
 
-        {/* 右侧：发送/停止 */}
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
             onClick={handleSendOrStop}
@@ -487,9 +445,6 @@ export default function AgentInputBox() {
   )
 }
 
-// ===== 子组件 =====
-
-/** 工具栏图标按钮 */
 function ToolbarIconBtn({
   children,
   title,
@@ -519,7 +474,6 @@ function ToolbarIconBtn({
   )
 }
 
-/** 上下文菜单项 */
 function ContextMenuItem({
   icon,
   label,
@@ -555,7 +509,6 @@ function ContextMenuItem({
   )
 }
 
-/** 模式菜单项 */
 function ModeMenuItem({
   mode,
   currentMode,
@@ -592,7 +545,6 @@ function ModeMenuItem({
   )
 }
 
-/** 模型菜单项 */
 function ModelMenuItem({
   model,
   isActive,

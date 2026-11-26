@@ -22,19 +22,13 @@ function versionName(draft: DraftMeta, text: Text): string {
   return text(`${zh} v${draft.version}`, `${en} v${draft.version}`)
 }
 
-/**
- * 章节标题旁的版本切换器：列出这一章的各稿，已归档的收在「显示已归档」后面。
- * 选中另一稿时在当前标签的位置换上那一稿；这一稿有未保存的修改时先问作者保存还是放弃，不会静默丢掉。
- */
 export default function VersionSwitcher({ tab, current, label, title, disabled, whileSwitching, onSave }: {
   tab: EditorTab
   current: DraftMeta
   label: string
   title: string
-  /** 批注修改还在等作者处理，或正在换稿：换稿会卸载正文，审阅里的修改会丢。 */
   disabled: boolean
   whileSwitching: (run: () => Promise<void>) => Promise<void>
-  /** 保存这一稿的修改；失败时抛出，切换随之取消。 */
   onSave: () => Promise<void>
 }) {
   const text = useLocaleStore(s => s.text)
@@ -85,7 +79,6 @@ export default function VersionSwitcher({ tab, current, label, title, disabled, 
     try {
       if (save) {
         await onSave()
-        // 保存期间又有输入，或保存被会话守卫跳过：修改还没落盘，不切换。
         if (useEditorStore.getState().tabs.find(candidate => candidate.id === tab.id)?.dirty) return
       }
       setPending(null)

@@ -66,7 +66,6 @@ afterEach(async () => {
   delete window.aiNovelAPI
 })
 
-/** 外壳里放工作区的那一栏宽 width：面板右缘留 10px，所以内容面板（侧页与内容区所在处）比它窄 10px。 */
 async function renderAt(width: number, tab: 'world-building' | 'character' = 'world-building') {
   useEditorStore.setState({ tabs: [{ id: tab, type: tab, name: tab, projectKey: session.projectPath }], activeTabId: tab })
   host = document.createElement('div')
@@ -82,7 +81,6 @@ async function renderAt(width: number, tab: 'world-building' | 'character' = 'wo
   return { body: box('.stage-body'), content: box('.stage-content'), sheet: box('.stage-sheet-slot'), title: host!.querySelector<HTMLElement>('.arch-title') }
 }
 
-/** 一段文字排成了几行。 */
 function lineCount(element: Element) {
   const range = document.createRange()
   range.selectNodeContents(element)
@@ -107,7 +105,6 @@ describe('运行侧页的诊断分页开着时，内容区不被挤窄', () => {
   })
 })
 
-/** 元素整个落在侧页的横向范围里：侧页浮起时它被完全盖住。 */
 const coveredBy = (sheet: DOMRect) => (element: Element) => {
   const rect = element.getBoundingClientRect()
   return rect.width > 0 && rect.left >= sheet.left - 1 && rect.right <= sheet.right + 1
@@ -116,7 +113,6 @@ const tabbable = (root: Element) => [...root.querySelectorAll<HTMLElement>('butt
 const sheetOpen = () => host!.querySelector('.stage-sheet-slot') !== null
 
 describe('运行侧页开着普通分页时，架构页页头只在真放不下时换行', () => {
-  // 夹具里页头动作约 344px 宽：内容区 710px 时标题还有约 246px，放得下「故事的骨架」，动作应与标题同一行并靠右（与 master 一致）
   it('标题旁放得下动作时，动作与标题同一行、靠右', async () => {
     useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } })
     const { content, title } = await renderAt(1100)

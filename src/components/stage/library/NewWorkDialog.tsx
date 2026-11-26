@@ -6,7 +6,6 @@ import { useNewProjectForm } from '../../dialogs/use-new-project-form'
 import { Button } from '../../ui/Button'
 import { InkDialog } from '../InkDialog'
 
-/** 新建作品：起名、选保存位置。创建后打开作品，落在设定页。 */
 export default function NewWorkDialog() {
   const text = useLocaleStore(s => s.text)
   const open = useLayoutStore(s => s.newProjectOpen)

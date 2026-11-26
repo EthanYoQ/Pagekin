@@ -14,11 +14,9 @@ import { commandLabel } from './shortcut-keys'
 
 
 interface StageTopBarProps {
-  /** 位置面包屑，最后一项为当前页。 */
   crumbs: readonly string[]
   library: boolean
   focus: boolean
-  /** 沉浸写作时左侧显示的当前页：正文章节显示章号与章名，其余显示标签名。 */
   focusTitle: { chapter?: number; title: string }
   workMenu: readonly MenuGroupSpec[]
   onToggleFocus: () => void

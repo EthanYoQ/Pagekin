@@ -36,7 +36,6 @@ function source(file: string) {
   return readFileSync(resolve(REPO_ROOT, file), 'utf8')
 }
 
-/** 渲染进程里作者能看到界面文字的全部组件（不含测试）。图标只能来自 Lucide，不能用 Emoji 或字符充当。 */
 function componentFiles(): string[] {
   return repoSourceFiles('src/components').filter(file => !file.includes('/__tests__/') && file.endsWith('.tsx') && !file.endsWith('.browser.tsx'))
 }

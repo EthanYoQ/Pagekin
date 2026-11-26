@@ -69,10 +69,6 @@ interface PlotThreadsProps {
   onDelete: (thread: NarrativeThreadView) => void
 }
 
-/**
- * 伏笔线索：左列线索计划与各自的埋设、推进、解决路线；右列把定稿里的变化记进线索，以及按蓝图请 AI 建议伏笔。
- * 新建与编辑线索在对话框里完成；删除线索在每行的「更多」里，走危险确认。
- */
 export default function PlotThreads({ plot, onDelete }: PlotThreadsProps) {
   const text = useLocaleStore(s => s.text)
   const plannedChapters = useProjectStore(s => s.currentProject?.novelConfig.totalChapters)

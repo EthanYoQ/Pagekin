@@ -1,33 +1,18 @@
-/**
- * ActionToast：带操作按钮的通知，例如工作流完成后的「打开查看」「忽略」。
- * 与普通通知进同一个纸墨提示栈（ToastStack），只多了动作按钮。
- *
- * 用法：
- *   actionToast.show({ type: 'success', message: '草稿已生成', actions: [{ label: '打开查看', onClick: () => openDraft() }] })
- */
-
 import { useLocaleStore } from '../../stores/locale-store'
 import { pushToast, type ToastTone } from './ToastStack'
 
 export type ActionToastType = 'success' | 'info' | 'warning' | 'error' | 'ai'
 
 export interface ActionToastAction {
-  /** 按钮文案 */
   label: string
-  /** 点击回调（点击后通知自动关闭） */
   onClick?: () => void | Promise<void>
-  /** 按钮风格：次按钮（primary）或文字按钮（ghost） */
   variant?: 'primary' | 'ghost'
 }
 
 export interface ActionToastOptions {
-  /** 通知类型，决定语气符号 */
   type?: ActionToastType
-  /** 通知消息 */
   message: string
-  /** 操作按钮列表（最多 2 个） */
   actions?: ActionToastAction[]
-  /** 自动消失时间（毫秒），设 0 表示不自动消失。默认 8000 */
   duration?: number
   onDismiss?: () => void
 }
@@ -45,10 +30,8 @@ function enqueue(options: ActionToastOptions): () => void {
 }
 
 export const actionToast = {
-  /** 显示带操作按钮的通知 */
   show: (options: ActionToastOptions) => enqueue(options),
 
-  /** 工作流完成快捷方法 */
   workflowComplete: (message: string, openAction?: () => void | Promise<void>) => {
     const actions: ActionToastAction[] = []
     if (openAction) {

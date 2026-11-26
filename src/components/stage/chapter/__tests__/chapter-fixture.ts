@@ -56,14 +56,9 @@ interface Review { id: number; baseDraftId: number; reviewIndex: number; content
 interface Revision {
   id: number; baseDraftId: number; revisionIndex: number; revisionType: 'refine' | 'review-fix'; status: 'pending' | 'merged' | 'discarded'
   content: string; source: Draft | null; createdAt: string; updatedAt: string
-  /** 修出它的审修循环来自恢复前；unbound 是存档时循环读坏被省略、修稿留着却没有循环。 */
   restoredHistory?: true; unbound?: true
 }
 
-/**
- * 一章的假数据库：草稿、审稿、修稿、复验周期与后处理，按主进程的通道语义回答。
- * 测试改它的状态来摆出各个阶段，再读 calls 里的写入断言界面交给了主进程什么。
- */
 export function createChapterBackend() {
   const state = {
     drafts: [] as Draft[],
@@ -81,10 +76,8 @@ export function createChapterBackend() {
     calls: [] as { channel: string; args: unknown[] }[],
     clock: 0,
     suggestions: null as ContinuitySuggestionList | null,
-    /** 接受时这些建议的蓝图已被改过，主进程判为过期。 */
     staleOnAccept: new Set<string>(),
   }
-  /** 和主进程 datetime('now') 同样写法的时间，每次写入往后走一秒，先后可比。 */
   const now = () => {
     state.clock += 1
     return `2026-10-13 21:${String(Math.floor(state.clock / 60)).padStart(2, '0')}:${String(state.clock % 60).padStart(2, '0')}`
@@ -155,7 +148,6 @@ export function createChapterBackend() {
         const mergedAt = now()
         Object.assign(draft, { content: request.mergedContent, status: 'revised', updatedAt: mergedAt })
         Object.assign(revision, { status: 'merged', updatedAt: mergedAt })
-        // 只有按审稿意见修出的稿属于复验周期；直接修稿合并不动周期，也不复验。
         const reviewFix = revision.revisionType === 'review-fix'
         if (reviewFix) setCycle(revision.baseDraftId, 'merge-committed')
         return { success: true, receipt: {
@@ -220,7 +212,6 @@ export function createChapterBackend() {
     state.drafts.push(draft)
     return draft
   }
-  /** 和主进程一样：AI 审稿开一个复验周期，修稿生成后为 generated，合并提交后为 merge-committed。 */
   function setCycle(draftId: number, revisionStatus: ReviewCycleProjection['revisionStatus']) {
     const review = state.reviews.find(candidate => candidate.baseDraftId === draftId && state.cycles.has(candidate.id))
     if (review) state.cycles.set(review.id, { ...state.cycles.get(review.id)!, revisionStatus })
@@ -231,10 +222,6 @@ export function createChapterBackend() {
     state.cycles.set(review.id, { cycleId: `cycle-${review.id}`, reviewId: review.id, revisionStatus: 'not-generated', recheckCount: 0, findings: [] })
     return review
   }
-  /**
-   * 和主进程一样：合并后的自动复验另存一份审稿（每项带 findingId，没有自己的复验周期），
-   * 逐项结果写回原审稿的周期，周期记为已复验。
-   */
   const addRecheck = (draft: Draft, review: Review, statuses: ReviewFindingStatus[]): Review => {
     state.cycles.set(review.id, { ...state.cycles.get(review.id)!, revisionStatus: 'merge-committed', recheckCount: 1, recheckDisposition: 'completed',
       findings: statuses.map((status, index) => ({ findingId: `finding-${index}`, reviewItemIndex: index, category: '', kind: 'literary' as const, status })) })

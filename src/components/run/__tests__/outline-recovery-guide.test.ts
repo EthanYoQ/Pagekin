@@ -27,7 +27,6 @@ const card = (cell: Cell) => {
   return entry
 }
 
-// 已保存 × 写状态 × 续写状态 中主进程真会给出的组合；各格写明作者该做什么。
 const cells: [string, Cell, { guide: string; primary: 'save' | 'continue' | null; remaining: boolean }][] = [
   ['未保存、来源变了', { saved: false, write: 'source-changed', continuation: 'source-changed' }, { guide: '请从第 1 章重新生成情节大纲', primary: null, remaining: false }],
   ['未保存、来源无效', { saved: false, write: 'source-invalid', continuation: 'source-invalid' }, { guide: '', primary: null, remaining: false }],
@@ -48,7 +47,6 @@ describe('大纲恢复稿：恢复稿页与运行侧页恢复卡按同一张表�
     expect(view.primary).toBe(expected.primary)
     expect(view.notice.lines.some(line => line.includes('待完成第'))).toBe(expected.remaining)
     expect(entry.meta.includes('缺第 3–5 章')).toBe(expected.remaining)
-    // 提示叫作者点「继续生成」时它就是主按钮；说不能继续时没有主按钮。
     if (guide.includes('「继续生成缺少的章节」')) expect(view.primary).toBe('continue')
     if (`${view.notice.title}${guide}`.includes('不能继续') || guide.includes('重新生成情节大纲')) expect(view.primary).toBeNull()
   })

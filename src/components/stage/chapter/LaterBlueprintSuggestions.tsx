@@ -85,7 +85,6 @@ function chapterList(chapters: readonly number[], text: Text) {
 export default function LaterBlueprintSuggestions({ check, projectKey, pendingOnly }: {
   check: LaterBlueprintCheck
   projectKey: string
-  /** 只留没处理的卡和这次刚处理的卡，处理过的旧卡不再占地方。 */
   pendingOnly: boolean
 }) {
   const text = useLocaleStore(s => s.text)
