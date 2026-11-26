@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 const SCRIPT = path.resolve('scripts/check-baseline-shrink.mjs')
 const CHANNELS = 'electron/ipc/direct-channels.json'
 const LISTING = 'test/directory-listing-baseline.json'
+const FAILURES = 'test/legacy-failure-baseline.json'
 let root: string
 
 function git(...args: string[]) {
@@ -14,7 +15,7 @@ function git(...args: string[]) {
   expect(result.status, result.stderr).toBe(0)
 }
 
-function write(file: string, entries: string[]) {
+function write(file: string, entries: unknown) {
   mkdirSync(path.dirname(path.join(root, file)), { recursive: true })
   writeFileSync(path.join(root, file), `${JSON.stringify(entries)}\n`)
 }
@@ -29,6 +30,7 @@ beforeEach(() => {
   git('init', '-q', '-b', 'master')
   write(CHANNELS, ['a:one', 'a:two'])
   write(LISTING, ['test/a.test.ts'])
+  write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 2 } })
   git('add', '.')
   git('commit', '-q', '-m', 'base')
   git('tag', 'base')
@@ -47,6 +49,15 @@ describe('名单只减不增（与基准提交上的同一文件比较）', () =
     const result = check('base')
     expect(result.status).toBe(1)
     expect(result.output).toContain(file === CHANNELS ? 'b:new' : 'test/new.test.ts')
+  })
+
+  it('旧约定计数只减不增：某文件计数变大或新增文件就失败，减少和新约定 authorOwned 放行', () => {
+    write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 1, authorOwned: 3 } })
+    expect(check('base')).toMatchObject({ status: 0 })
+    write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 3 } })
+    expect(check('base')).toMatchObject({ status: 1, output: expect.stringContaining('src/a.ts 的 displayedErrorMessage（2 → 3）') })
+    write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 2 }, 'src/b.ts': { appErrorMessage: 1 } })
+    expect(check('base')).toMatchObject({ status: 1, output: expect.stringContaining('src/b.ts 的 appErrorMessage（0 → 1）') })
   })
 
   it('删掉一条再换一条顶替，同样失败', () => {

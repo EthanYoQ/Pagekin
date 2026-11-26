@@ -3,7 +3,19 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 
-const BASELINE_FILES = ['electron/ipc/direct-channels.json', 'test/directory-listing-baseline.json']
+const listAdditions = (current, previous) => current.filter(entry => !previous.includes(entry))
+
+/** 按文件计数的基线：哪个文件的哪种旧约定比基准多（新增文件从 0 算起）。authorOwned 是新约定，不受限。 */
+const countAdditions = (current, previous) => Object.entries(current).flatMap(([path, counts]) =>
+  Object.entries(counts)
+    .filter(([kind, n]) => kind !== 'authorOwned' && n > (previous[path]?.[kind] ?? 0))
+    .map(([kind, n]) => `${path} 的 ${kind}（${previous[path]?.[kind] ?? 0} → ${n}）`))
+
+const BASELINES = {
+  'electron/ipc/direct-channels.json': listAdditions,
+  'test/directory-listing-baseline.json': listAdditions,
+  'test/legacy-failure-baseline.json': countAdditions,
+}
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 
@@ -16,7 +28,7 @@ try {
 }
 
 let added = 0
-for (const file of BASELINE_FILES) {
+for (const [file, additionsOf] of Object.entries(BASELINES)) {
   try {
     git('cat-file', '-e', `${base}:${file}`)
   } catch {
@@ -30,7 +42,7 @@ for (const file of BASELINE_FILES) {
   }
   const current = JSON.parse(readFileSync(file, 'utf8'))
   const previous = JSON.parse(git('show', `${base}:${file}`))
-  const additions = current.filter(entry => !previous.includes(entry))
+  const additions = additionsOf(current, previous)
   added += additions.length
   for (const entry of additions) console.error(`${file} 新增了 ${entry}：名单只减不增，新代码改用规定的入口，不进名单。`)
 }
