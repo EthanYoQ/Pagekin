@@ -49,8 +49,8 @@
     "displayedErrorMessage": 3
   },
   "src/components/editor/use-chapter-blueprints.ts": {
-    "displayedErrorMessage": 9,
-    "englishWithReason": 6
+    "displayedErrorMessage": 7,
+    "englishWithReason": 2
   },
   "src/components/editor/use-character-profile.ts": {
     "displayedErrorMessage": 1,
@@ -185,14 +185,11 @@
     "englishWithReason": 3
   },
   "src/services/workflows/commands/architecture.command.ts": {
-    "displayedErrorMessage": 9,
+    "displayedErrorMessage": 8,
     "englishWithReason": 2,
     "knownAppErrorMessage": 1
   },
   "src/services/workflows/commands/base-command.ts": {
-    "displayedErrorMessage": 1
-  },
-  "src/services/workflows/commands/directory.command.ts": {
     "displayedErrorMessage": 1
   },
   "src/services/workflows/commands/generate-draft.command.ts": {
@@ -205,9 +202,6 @@
   },
   "src/services/workflows/creative-workflow-launcher.ts": {
     "displayedErrorMessage": 2
-  },
-  "src/services/workflows/directory-workflow.ts": {
-    "displayedErrorMessage": 1
   },
   "src/services/workflows/import-run-orchestrator.ts": {
     "appErrorMessage": 1
