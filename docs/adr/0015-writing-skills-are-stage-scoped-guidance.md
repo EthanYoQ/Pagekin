@@ -34,6 +34,7 @@
 ### `src/services/agent/skill-registry.ts`
 
 - Skill 注册中心 管理所有可用的 Skill（基于 SKILL.md 的模块化知识包）。 支持： - 内置 Skill（随 Vela 发布的预设 Skill） - 用户 Skill（用户放在 ~/.vela/skills/ 下的自定义 Skill） - 项目 Skill（放在项目的 .ai-novel/skills/ 下的项目级 Skill） Skill 格式兼容 Cursor 的 SKILL.md 生态。
+- `whenToUse`：使用场景（用于 Agent 自动匹配）
 - `skillId`：字段用途：skillId 是稳定的项目绑定键，按它查找，不同于可重名的 metadata name（原文：Stable project-binding key.）
 - `writingSkill`：现行规则：只含提示词的工作流兼容检查，不兼容的包仍然可见但从不注入（原文：Prompt-only workflow compatibility; incompatible packages remain visible but are never injected.）
 - 从主进程管理的用户 Skill 目录加载，渲染进程不接触 VELA_HOME 路径。

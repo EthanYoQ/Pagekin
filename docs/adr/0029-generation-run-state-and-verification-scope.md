@@ -60,6 +60,7 @@ C07 要求开库顺序由单一 schema lane 掌握：未知的较高版本只读
 - `errorCode`：字段语义：抛出的错误带的非空机器可读码（原文：Non-empty machine-readable code supplied by the thrown error.）
 - `failureCode`：字段语义：有界模型完成提前停止时的结构化失败原因（原文：Structured failure cause when a bounded model completion stopped early.）
 - `promptBudgetReport`：字段语义：提示词预算预检失败时安全的结构化字节归因（原文：Safe structured byte attribution for a prompt-budget preflight failure.）
+- `projectPath`：工作流启动时冻结的项目身份。
 - `projectSession`：启动时从当前项目冻结；缺失时该 run 只能失败，不能执行项目级副作用。
 - `chapterWordsTarget`：本次写作冻结的每章目标可见单位；不得在执行中重新读取全局配置。
 - `resourceKeys`：该运行将生成或改写的逻辑资源；同项目内写入与任何其他声明互斥。
@@ -70,14 +71,24 @@ C07 要求开库顺序由单一 schema lane 掌握：未知的较高版本只读
 - `mainGenerationRootHandle`：现行规则：主进程签发的身份，阶段变化保留根预算，恢复保留精确的运行（原文：Main-issued identities; stage changes keep the root budget, recovery keeps the exact run.）
 - `requestMainGenerationCancellation`：现行规则：主进程适配器提供一个幂等的取消意图，包括阶段之间（原文：Main adapter supplies one idempotent cancellation intent, including between stages.）
 - `runId`：本次运行的稳定身份，供事件消费者排除其他并发任务。
+- `projectPath`：工作流启动时冻结的项目身份。
+- `chapterWordsTarget`：本次写作冻结的每章目标可见单位。
 - `cancelRequested`：字段语义：仅导入使用的意图，当前有界效果在编排器应用取消之前就退出（原文：Import-only intent; the current bounded effect exits before the orchestrator applies cancellation.）
 - `cancellationRequest`：现行规则：导入的取消意图必须在编排器写终态边界之前持久化（原文：Import cancellation intent must be durable before its orchestrator writes the terminal boundary.）
+- `mode`：通知策略：open=直接打开 | silent=仅内部状态不额外动作
+- `message`：成功时的提示文案（备用，供日志用）
+- `openResult`：打开结果的回调（open 模式直接调用）
 - `runId`：可由需要同步订阅事件的调用方预先分配。
+- `projectPath`：工作流启动时冻结的项目身份。
+- `chapterWordsTarget`：本次写作冻结的每章目标可见单位。
+- `resourceKeys`：同一项目内由本工作流写入的逻辑资源。
+- `readResourceKeys`：同一项目内由本工作流读取的逻辑资源。
 - `onCancelRequested`：现行规则：先持久化取消，再等待当前操作让出（原文：Persist cancellation before waiting for the current operation to yield.）
 - `onCancelledAtBoundary`：现行规则：到达步骤或暂停边界之后才提交终态取消（原文：Commit terminal cancellation after a step/pause boundary is reached.）
 - `backgroundNotice`：完成或失败时，窗口不在前台则弹系统通知。
 - `withoutWritingSkills`：不调用写作 Skill 的工作流不冻快照：冻一次要读两次盘，Windows 上每次 1.5 到 2.5 秒。
 - `getResourceConflict`：返回占用同项目同一逻辑资源的活跃运行；不同资源仍可并发。
+- `cancelWorkflow`：取消工作流（传 runId 取消指定，不传取消全部）
 - `cancelProjectWorkflowsAndWait`：取消指定项目的全部工作流，并等待执行器真正退出 activeRuns。
 - `stoppedByCancellation`：作者点了取消，而且这次中止就是取消造成的；取消窗口里的真实错误不算，照常记失败。
 - 现行规则：调用方给定的持久运行 ID 同时是渲染端的单飞键，在读可变项目状态或建第二个上下文之前拒绝重复，原执行器与冻结上下文仍归第一次调用（原文：A caller-supplied durable run ID is also the renderer's single-flight key. Reject the duplicate before reading mutable project state or constructing a second context; the original executor and its frozen context remain owned by the first call.）

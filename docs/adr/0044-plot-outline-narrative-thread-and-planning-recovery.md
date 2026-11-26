@@ -102,6 +102,7 @@
 
 - `readArchCheckpointWithOutline`：读架构生成的分批检查点 partial_arch.json；没有、读不到或读失败都按没有检查点（undefined）。 大纲恢复稿已不再给作者时，去掉检查点里 synopsis_ 开头的部分，免得各处仍把它当成被打断的一批。 把判定用的那次读取一并交回（未读或读失败为 null），调用方不要再读一次，否则两次读到的判定可能不同。
 - `archOutlineSource`：作品核心里情节大纲的范围来源：章数与写作语言以作品核心为准，作品核心读不到时用作品设置。
+- 长度 > 50 才算真正已生成，前端可以直接用长度判断
 - `checkArchConfirmed`：流程脊的架构四节是否已确认：与架构页徽标同一判定（judgeArchCore），角色名单要结构化名单就绪。
 
 ### `src/services/architecture-step-selection.ts`

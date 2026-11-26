@@ -71,6 +71,10 @@
 
 - `dependencies`：夹具边界：真实的 Chromium localStorage 与 DOM，只用确定性的主进程传输契约夹具（原文：Real Chromium localStorage/DOM, deterministic main transport contract fixtures only.）
 
+### `src/stores/__tests__/editor-discard.test.ts`
+
+- 取消按钮只关闭确认对话框，不调用 discardAndCloseEditorTab。
+
 ### `src/stores/__tests__/project-opening-notice.test.ts`
 
 - `answerOpenAfter`：主进程拒绝打开：这里只看等待提示，回包内容无关。

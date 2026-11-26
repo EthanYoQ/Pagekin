@@ -101,5 +101,7 @@
 
 - `writingLanguage`：现行规则：项目写作语言在工作流启动时冻结（原文：Project writing language frozen when the workflow starts.）
 - `uiLocale`：现行规则：可见的界面语言在工作流启动时冻结（原文：Visible interface locale frozen when the workflow starts.）
+- `writingLanguage`：现行规则：项目写作语言在工作流启动时冻结（原文：Project writing language frozen when the workflow starts.）
+- `uiLocale`：现行规则：可见界面语言在工作流启动时冻结（原文：Visible interface locale frozen when the workflow starts.）
 - `interfaceLocale`：查报错目录用的界面语言，与 uiLocale 同时冻结；只在执行上下文里，不进运行记录。
 - `uiLocale`：现行规则：持久化的工作流可以独立于当前应用设置冻结界面语言（原文：Persisted workflows may freeze the UI locale independently of the current app setting.）

@@ -12,6 +12,15 @@
 
 ## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
 
+### `src/App.tsx`
+
+- `unsubActionToast`：C) 工作流完成时弹出 ActionToast 通知（不依赖任何面板状态）
+- App 卸载时销毁 ProjectService（开发环境 HMR 时会触发）
+
+### `src/hooks/useOutsideClick.ts`
+
+- `useOutsideClick`：点击目标元素外部时触发 handler @param ref 需要检测的目标元素 ref @param handler 点击外部时的回调 @param enabled 是否启用（默认 true）。可传入 showMenu 状态，菜单关闭时暂停监听以减少 document 事件开销 使用示例： ```tsx const menuRef = useRef<HTMLDivElement>(null) const [open, setOpen] = useState(false) useOutsideClick(menuRef, () => setOpen(false), open) ```
+
 ### `src/main.tsx`
 
 - 纸墨样式只在入口引入：原语组件不带样式副作用，Node 侧打包（如真实供应商资格脚本）才能引用它们。
@@ -20,6 +29,22 @@
 ### `src/services/project-service.ts`
 
 - `EventPayloadMap`：ProjectService — 项目生命周期与跨 Store 协调的单例调度层 职责： 1. 项目打开/关闭时统一初始化/清空 Layer 2 Store（character、draft） 2. 监听 EventBus 事件，驱动 Store 数据刷新 3. 同步 editor-store 中已打开 Tab 的内容（定稿后磁盘文件已变更的场景） 设计原则： - 组件不再自行 useEffect 加载数据、不再监听 window 事件 - 所有跨 Store 联动都经过此 Service - Store 只暴露纯数据 + 操作方法，不包含生命周期逻辑
+- `initProjectService`：初始化 ProjectService — 注册所有事件监听 应在 App 挂载时调用一次
+- config_generation 类型只需要轻量刷新（避免不必要的文件扫描）
+- 章节创作完成 → 刷新草稿 + 角色卡（定稿后处理会更新角色状态）
+- 架构生成完成 → 角色卡可能被提取
+- `onProjectOpened`：项目打开后的初始化 — 并行加载所有 Layer 2 数据 由 project-store.openProject 成功后调用
+- `onProjectClosed`：项目关闭时的清理 — 重置所有 Layer 2 Store 由 project-store.closeProject 调用
+- `disposeProjectService`：销毁 ProjectService — 清理所有事件监听 通常在 App 卸载时调用
+
+### `src/services/workflow-guards.ts`
+
+- 工作流前置校验工具 每个生成步骤启动前需要校验上游数据是否就绪， 以防用户在配置不完整的状态下浪费 AI Token。 校验失败时返回 GuardResult { ok: false, message }， 由调用方选择展示方式（弹窗提示 / 日志输出）。
+
+### `src/stores/draft-store.ts`
+
+- `reset`：重置为初始状态（项目关闭时由 ProjectService 调用）
+- `invalidateChapter`：清除指定章节的缓存（下次访问时重新加载）
 
 ### `src/stores/editor-store.ts`
 
@@ -31,6 +56,7 @@
 - `draftLedgers`：编辑器后台草稿账本。 账本是技术状态，不是用户文件，不能混入可关闭的 tabs。
 - `updateTabContent`：更新 Tab 内容（标记 dirty） 仅在「用户修改」时调用，会亮起未保存指示灯。
 - `syncTabContent`：静默同步 Tab 内容（不标记 dirty，也不清除 dirty） 用于「AI 生成完成后刷新」、「打开文件刷新」等非用户编辑场景。
+- `markTabSaved`：标记 Tab 已保存（清除 dirty 标记） 在保存成功后调用，使警示灯、Tab 圆点消失。
 - `removeEditorExitSaveHandlers`：现行规则：编辑器组件在活动 Tab 卸载后仍保留注册，store 自己的移除路径才是处理器生命周期的边界（原文：Editor components keep their registrations across active-tab unmounts. These store-owned removal paths are the handler lifetime boundary.）
 - `editorSaveHandler`：标签自身的保存入口：与退出前保存共用各编辑器注册的处理器；编辑器没有注册时为 null。
 - `idOnly`：diff 类型每次内容不同，只按 id 精确匹配（不走 filePath 去重） 其他类型（含 review-report）按 filePath + type 去重
@@ -42,6 +68,7 @@
 
 ### `src/stores/project-store.ts`
 
+- `withTimeout`：给 Promise 包裹超时保护，防止 IPC 调用永远不返回
 - `setAiSources`：下次保存时随设定落库。
 - 主进程已经写进库的设定字段，发布到界面并记为已保存。 keepUnsavedEdits：作者在设定页改过、还没保存的字段保持作者的值（仍算未保存）；否则一律换成库里的值。
 - `publishSavedNovelConfig`：keep：'none' 全按库里的值；'unsaved-edits' 作者改过还没保存的字段保留作者的值；'current' 这些字段都保留界面上的值，只把它们记为已保存基准。

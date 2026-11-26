@@ -23,6 +23,7 @@ AI 写作助手的普通文件写入只产生助手文件产物，不得以同�
 
 ### `src/services/agent/agent-engine.ts`
 
+- `MAX_TOOL_ROUNDS`：ReAct 循环最大次数（防止死循环）
 - `ConfigImpactBlueprintProposal`：字段来历：这是从一次性的小说配置影响预览里选出的单个蓝图差异，接口名只说是蓝图提案（原文：One optional blueprint diff selected from a transient novel-config impact preview.）
 - `LLMGenerateFn`：LLM 生成函数签名（由 agent-store 提供实际实现）
 - `observationParts`：依次执行每个 tool_call。配置影响预览中明确选择的蓝图差异会在 配置写入成功后插入此轮，并继续走同一条确认与工具执行路径。
@@ -34,6 +35,7 @@ AI 写作助手的普通文件写入只产生助手文件产物，不得以同�
 ### `src/services/agent/context-builder.ts`
 
 - Agent 智能上下文构建器 采用三级注入策略管理 Token 消耗： - L0 始终注入（~500 token）：项目名称/类型/进度/一句话大纲 - L1 编辑器感知（~800 token）：当前打开的 Tab 信息 - L2 按需获取：通过 Tool 调用获取详细数据 这是 Agent 理解用户上下文的核心模块。
+- `outline`：截取前 300 字符，避免 Token 爆炸
 
 ### `src/services/agent/tool-registry.ts`
 
@@ -47,6 +49,16 @@ AI 写作助手的普通文件写入只产生助手文件产物，不得以同�
 - `abortSignal`：现行规则：每次 Tool 调用有自己的取消信号，写入类工具在跨过提交点之前检查它（原文：One tool call's cancellation signal; write tools check it before crossing their commit point.）
 - `markSideEffectStarted`：字段用途：标记此后传输失败不能再报告成干净回滚的那个时间点（原文：Marks the point after which a transport failure cannot be reported as a clean rollback.）
 - `name`：唯一标识符（MCP Tool 使用 mcp__serverId__toolName 命名空间）
+- `description`：Tool 用途描述（Agent 凭此决定何时调用）
+- `requiresConfirmation`：是否需要用户确认后才执行（写入型操作 = true）
+- 注销某个来源的所有 Tool（例如 MCP 断开连接时）
+
+### `src/services/agent/tools/index.ts`
+
+- 内置 Tool 汇总注册 将所有内置 Tool 注册到 ToolRegistry。 在 Agent 初始化时调用 registerBuiltinTools()。
+- 只读 Tool（自动执行）
+- 行动 Tool（需确认）
+- `registerBuiltinTools`：注册所有内置 Tool 在 Agent 模块初始化时调用
 
 ### `src/services/agent/tools/project-context.ts`
 
@@ -58,14 +70,18 @@ AI 写作助手的普通文件写入只产生助手文件产物，不得以同�
 
 ### `src/services/agent/tools/safe-path.ts`
 
+- 路径安全校验工具 防止路径遍历攻击（../../ 等），确保所有文件操作都在项目根目录内。
 - `segments`：拆分路径段并手动 resolve（不依赖 Node path 模块，因为运行在渲染进程）
 
 ### `src/stores/agent-store.ts`
 
 - `mainGenerationHandle`：现行规则：这是精确的持久 Agent 导航，渲染端不持有候选镜像（原文：Exact durable Agent navigation; no renderer-owned candidate mirror.）
+- `modelId`：当前会话使用的模型 ID（null 表示使用默认）
+- `conversations`：所有会话列表（最新的排在前面）
 - `resumeGeneration`：现行规则：显式恢复原来的 Agent 回合，包括它持久化的 Tool 调用（原文：Explicitly recover the original Agent turn, including its durable tool calls.）
 - `modelId`：现行规则：modelId 为 null 表示运行开始时用一次默认模型，运行时再在整个 ReAct 循环里冻结所选租约（原文：Null means “use the default once when a run starts”; the runtime then freezes the selected lease across the entire ReAct loop.）
 - /status → 直接将 read_project_state 的结果展示 不拦截，作为普通消息让 Agent 处理（它会调用 read_project_state）
+- P1-8: 清理所有等待确认的 Promise，防止内存泄漏
 
 ### `src/stores/mcp-store.ts`
 
