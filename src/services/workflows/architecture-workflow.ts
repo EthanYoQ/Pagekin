@@ -3,7 +3,7 @@ import { globalEventBus } from '../../shared/event-bus'
 import type { MainGenerationRunHandle } from '../generation/generation-runtime'
 import type { ArchitecturePlanningIntent } from '../../shared/generation-owner-contract'
 import { workflowResourceKey, type WorkflowDefinition, type WorkflowContext, type StepCallbacks } from '../../stores/workflow-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
 import type { NovelConfig } from '../../shared/ipc-channels'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
@@ -17,7 +17,9 @@ import {
 import { randomUUID } from '../../utils/id'
 import { requireWorkflowProjectSession } from './workflow-project-session'
 import type { ArchitectureProjectSnapshot } from './commands/architecture.command'
-import { localize } from '../../i18n/core'
+import { errorLocaleForRun, localize } from '../../i18n/core'
+import { authorError } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 import type { Locale } from '../../i18n/types'
 import { ipc } from '../ipc-client'
 import { CANONICAL_PROJECT_DIRECTORY } from '../../shared/project-format'
@@ -85,10 +87,11 @@ export function createArchitectureWorkflow(
   uiLocale: Locale = useLocaleStore.getState().locale,
 ): WorkflowDefinition {
   const text = (zhCNText: string, enUSText: string) => localize(uiLocale, zhCNText, enUSText)
+  const errorLocale = errorLocaleForRun(uiLocale, currentInterfaceLocale())
   const resumingSynopsis = params.resumeSynopsis === true
   const resumingWorldBuilding = params.resumeWorldBuilding === true
   if (resumingSynopsis && resumingWorldBuilding || params.restartFrom && (resumingSynopsis || resumingWorldBuilding)) {
-    throw new Error(text('一次只能恢复一个故事架构步骤', 'Only one story-architecture step can be resumed at a time.'))
+    throw authorError(errorLocale, { note: note('一次只能恢复一个故事架构步骤', 'Only one story-architecture step can be resumed at a time.') })
   }
   const sel = resumingSynopsis || params.restartFrom
     ? ['synopsis' as const]
@@ -104,7 +107,7 @@ export function createArchitectureWorkflow(
     || !sameProjectPathKey(project.path, expectedProjectPath)
     || !sameProjectSessionContext(params.projectSession, currentProjectSession)
   ) {
-    throw new Error(text('当前项目已切换，无法启动架构生成', 'The project changed, so architecture generation cannot start.'))
+    throw authorError(errorLocale, { note: note('当前项目已切换，无法启动架构生成', 'The project changed, so architecture generation cannot start.') })
   }
   // 工厂在捕获配置快照的同一时刻绑定 lease，防止同路径重新打开后复用旧快照。
   const projectSession = Object.freeze({ ...params.projectSession })
@@ -135,12 +138,9 @@ export function createArchitectureWorkflow(
       `${expectedProjectPath}/${CANONICAL_PROJECT_DIRECTORY}/partial_arch.json`, expectedProjectPath)
     const partial = result.success ? result.data : undefined
     const handle = architectureRecoveryHandle(partial, kind, session.projectId)
-    if (!handle) throw new Error(text('此候选缺少可恢复的运行记录，请保留或复制候选后重新生成。', 'This candidate has no recoverable run record. Keep or copy it before generating again.'))
+    if (!handle) throw authorError(errorLocale, { note: note('此候选缺少可恢复的运行记录，请保留或复制候选后重新生成。', 'This candidate has no recoverable run record. Keep or copy it before generating again.') })
     if (expectedRecoveryHandle && (['projectId', 'epoch', 'rootActionId', 'runId'] as const)
-      .some(key => handle[key] !== expectedRecoveryHandle[key])) throw new Error(text(
-        '恢复记录已变化，已拒绝改用另一运行；请重新查看候选后再继续。',
-        'The recovery record changed. A different run was not substituted; review the candidate again before continuing.',
-      ))
+      .some(key => handle[key] !== expectedRecoveryHandle[key])) throw authorError(errorLocale, { note: note('恢复记录已变化，已拒绝改用另一运行；请重新查看候选后再继续。', 'The recovery record changed. A different run was not substituted; review the candidate again before continuing.') })
     context.data.partial = partial
     return handle
   }
