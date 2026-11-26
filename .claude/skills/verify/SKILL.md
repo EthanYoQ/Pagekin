@@ -60,7 +60,7 @@ fnm exec --using=22.23.1 -- node scripts/redesign/drive.mjs --scenario <名称> 
 - 0：全部通过。
 - 1：有场景失败，或会话结束检查没过。检查三项：主进程没有放出外部请求（`externalRequests`），应用关闭后没有残留进程（`residualProcesses`），真实配置目录没有新写入（`externalWrites`）。
 - 2：参数错误、场景名不对，或目标工作树没构建。
-- 3：未跑。场景声明的前置（夹具环境变量、主题）不齐，没有启动应用；stderr 写了缺什么、怎么设。哪些场景有前置见 `references/driver.md`。
+- 3：未跑。场景声明的前置（平台、夹具环境变量、主题）不齐，没有启动应用；stderr 写了缺什么、怎么设。哪些场景有前置见 `references/driver.md`。
 
 退出码 1 先看结果 JSON 的 `error`，再看 `.failure.png` 和 `.console.log`。不要只凭退出码 0 宣称验证通过，还要看截图。
 
@@ -88,7 +88,8 @@ fnm exec --using=22.23.1 -- node scripts/redesign/drive.mjs --scenario <名称> 
 
 新加场景时只新建文件，不改共享文件：
 - 场景写进新的 `scripts/redesign/<短名>-scenarios.mjs`，导出名以 `_SCENARIOS` 结尾。驱动自动收进同目录的场景文件，不用改 `drive.mjs`。两个文件定义同名场景时，驱动报错并写出两个文件名。
-- 修 issue 的场景，说明写进新的 `references/issue-scenarios/<短名>.md`。
+- 修 issue 的场景，说明写进新的 `references/issue-scenarios/<短名>.md`，每个场景一行。旧的单文件说明已拆分，不再往 `references/issue-scenarios.md` 里加场景条目。
+- 场景的前提写进 `requires`：只能在某个平台跑写 `platform`（`process.platform` 的值，如 `'win32'`），要环境变量写 `env`，要主题写 `theme`。不在 `setup`、`run`、`after` 里自己判断平台再报错，否则驱动在别的平台上会启动应用后算失败，而不是列为未跑。说明行同样写明这些前提。两条约定由 `scripts/redesign/__tests__/` 下的测试检查，细则见 `references/issue-scenarios.md`。
 
 ## 提交本 skill 的改动
 
