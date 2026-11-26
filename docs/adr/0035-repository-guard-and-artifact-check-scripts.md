@@ -21,6 +21,7 @@
 2. 名单在 `product-identity.mjs` 与 PowerShell 脚本里各有一份（`smoke-win-app.ps1`），改一处要一并改另一处；`package-win-zip.ps1` 的产品名与 exe 名统一取自 `smoke-win-app.ps1` 的库函数；默认 exe 名取自共享名单的第一个，名单与 `productName` 一致由 `product-identity.test.ts` 保证。
 3. 验收脚本选 exe 时 `freshBuild` 表示随后会在本进程里重新打包：目录里现有文件会被清掉，产物一定是当前产品名，不能按构建前的文件去找（同版本号下可能还留着改名前的构建）。macOS 的可执行文件与 `.app` 同名。
 4. 烟测安装器里最终目标路径上限须与 `project-storage-preflight.ts` 对齐，由契约测试覆盖。
+5. 进程监控按名字认领目标：exe 名、去掉扩展名的名字，再加 package.json 的 name，三者都要认。
 
 ### 三、PR 文档判定
 
