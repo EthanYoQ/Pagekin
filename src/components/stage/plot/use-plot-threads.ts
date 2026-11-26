@@ -655,7 +655,7 @@ export function usePlotThreads(projectKey: string, {
       if (!result.success) {
         const failure = resultFailure(result)
         if (!isProjectSessionCurrent(session)) return
-        // 主进程用登记过的码拒绝（如短证据不在定稿正文里）时在表单里说明原因，作者改完能直接重试；其余仍是笼统提示。
+        // 登记过的码在表单里说明原因，作者改完可直接重试。
         if (failure && failure.code !== 'PLOT_THREAD_WRITE_FAILED') setEventError(failureText(currentInterfaceLocale(), failure))
         else toast.error(text('保存定稿事件失败', 'Could not save finalized event'))
         return
