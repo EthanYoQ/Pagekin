@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const listAdditions = (current, previous) => current.filter(entry => !previous.includes(entry))
 
-/** 按文件计数的基线：哪个文件的哪种旧约定比基准多（新增文件从 0 算起）。authorOwned 是新约定，不受限。 */
+// authorOwned 是新约定，不进只减不增的统计。
 const countAdditions = (current, previous) => Object.entries(current).flatMap(([path, counts]) =>
   Object.entries(counts)
     .filter(([kind, n]) => kind !== 'authorOwned' && n > (previous[path]?.[kind] ?? 0))
