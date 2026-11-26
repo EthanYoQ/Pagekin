@@ -156,6 +156,14 @@ describe('角色名单', () => {
     expect([foot.textContent, foot.title]).toEqual([count, count])
   })
 
+  it('日文界面的名单与档案用角色导入候选同一套日文角色名', async () => {
+    useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
+    await render()
+    const shown = (selector: string) => [...host!.querySelectorAll(selector)].map(node => node.textContent)
+    expect(shown('.cast-row-role')).toEqual(['主人公', '脇役'])
+    expect(shown('.cast-role-badge')).toEqual(['主人公'])
+  })
+
   it('英文名单页两个按钮不重叠，底栏人数与页码不折行', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
     useCharacterStore.setState({ characters: [linzhou] })

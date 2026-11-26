@@ -14,8 +14,8 @@ export default function CharacterRoster({ projectKey }: { projectKey: string }) 
   const identityBusy = useCharacterStore(s => s.identityBusy)
   const { characters, pageCharacters, filteredCharacters, visibleCharacters } = list
   const roleLabel = (role: unknown) => {
-    const { zhCN, enUS } = getCharacterRoleLabels(role)
-    return text(zhCN, enUS)
+    const { zhCN, enUS, jaJP } = getCharacterRoleLabels(role)
+    return text(zhCN, enUS, jaJP)
   }
   const footCount = text(`${visibleCharacters.length} 位角色 · 第 ${list.page + 1} / ${list.pageCount} 页`,
     `${visibleCharacters.length} ${visibleCharacters.length === 1 ? 'character' : 'characters'} · page ${list.page + 1} / ${list.pageCount}`)
