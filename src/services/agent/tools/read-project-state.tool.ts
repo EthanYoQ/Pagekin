@@ -79,6 +79,7 @@ export const readProjectStateTool = buildAgentTool({
     if (includeSummary) {
       // 读取最近 5 章蓝图的 notes 字段作为进度摘要
       const notesParts: string[] = []
+      let notesUnavailable = false
       try {
         const bps = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-get-all', project.path)
         assertAgentProjectCurrent(context)
@@ -94,9 +95,15 @@ export const readProjectStateTool = buildAgentTool({
             }
           }
         }
-      } catch { /* 忽略 */ }
+      } catch {
+        notesUnavailable = true
+      }
 
-      if (notesParts.length > 0) {
+      if (notesUnavailable) {
+        parts.push(english
+          ? '## Recent chapter notes\nFailed to load chapter notes.'
+          : '## 近章要点\n获取章节要点失败')
+      } else if (notesParts.length > 0) {
         parts.push(`${english ? '## Recent chapter notes' : '## 近章要点'}\n${notesParts.join('\n\n')}`)
       } else {
         parts.push(english

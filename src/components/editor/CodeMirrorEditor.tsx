@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react'
+import { useState, useRef, useEffect, useEffectEvent, useCallback, useMemo, useLayoutEffect } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import CodeMirror, { ReactCodeMirrorRef, EditorView, ViewUpdate } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -268,9 +268,7 @@ export default function CodeMirrorEditor({
   }
 
   const recoveryKey = recoveryHandle ? JSON.stringify([recoveryNonce, recoveryHandle]) : ''
-  useEffect(() => {
-    if (!recoveryKey) return
-    const [, handle] = JSON.parse(recoveryKey) as [number | undefined, MainGenerationRunHandle]
+  const restoreRecovery = useEffectEvent((handle: MainGenerationRunHandle) => {
     const session = getActiveProjectSessionContext()
     if (!session) return
     const sequence = ++aiRequestSequenceRef.current
@@ -309,9 +307,12 @@ export default function CodeMirrorEditor({
       setBubblePos({ top: coords?.top ?? 150, left: coords?.left ?? 200, inView: true })
       setActiveAIAction(null); setAiResult(''); setAiError(uiText('无法恢复原运行', 'The original run could not be restored.')); setBubbleOpen(true)
     })
-    // 句柄被取走（key 变空）时不作废进行中的恢复；换下一次交接或卸载才作废。
-    // Navigation is explicit; later document changes are checked at acceptance.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })
+  // 句柄被取走（key 变空）时不作废进行中的恢复；换下一次交接或卸载才作废。
+  useEffect(() => {
+    if (!recoveryKey) return
+    const [, handle] = JSON.parse(recoveryKey) as [number | undefined, MainGenerationRunHandle]
+    restoreRecovery(handle)
   }, [recoveryKey])
 
   // 看得见才回执；卸载不回执，运行留在侧页。

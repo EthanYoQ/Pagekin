@@ -1,4 +1,5 @@
 import type { EditorTab } from './editor-store'
+import { parseJsonOrUndefined } from '../shared/ignore-failure'
 
 const LEDGER_TYPE_BY_KEY: Record<string, EditorTab['type']> = {
   'character-editor-drafts': 'character',
@@ -63,17 +64,12 @@ export function countUnsavedEditorItemsForProject(
   for (const [ledgerKey, content] of Object.entries(draftLedgers)) {
     const type = LEDGER_TYPE_BY_KEY[ledgerKey]
     if (!type || !content) continue
-    try {
-      const parsed = JSON.parse(content) as { projects?: Array<{ projectKey?: unknown }> }
-      if (
-        Array.isArray(parsed.projects)
-        && parsed.projects.some(project => project.projectKey === projectKey)
-      ) {
-        dirtyItems.add(`${type}:${projectKey}`)
-      }
-    } catch {
-      // clearProjectTabs preserves malformed ledgers, so closing this project
-      // cannot claim that an unattributable ledger will be discarded.
+    const parsed = parseJsonOrUndefined(content) as { projects?: Array<{ projectKey?: unknown } | null> } | null | undefined
+    if (
+      Array.isArray(parsed?.projects)
+      && parsed.projects.some(project => project?.projectKey === projectKey)
+    ) {
+      dirtyItems.add(`${type}:${projectKey}`)
     }
   }
   return dirtyItems.size

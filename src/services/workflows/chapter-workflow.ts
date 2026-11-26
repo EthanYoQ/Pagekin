@@ -3,6 +3,7 @@ import { canonicalResourceUri, parseResourceUri } from '../../shared/project-pat
 import { workflowResourceKey, type WorkflowDefinition } from '../../stores/workflow-store'
 import type { DraftMeta } from '../draft-index'
 import { ipc } from '../ipc-client'
+import { ignoreFailure } from '../../shared/ignore-failure'
 
 import type { DraftStatus } from '../../shared/draft-status'
 import type { ChapterThreadTask } from '../../shared/narrative-thread'
@@ -544,11 +545,12 @@ export function createRepairFinalizeWorkflow(
           // 从数据库蓝图读取正式标题
           let chapterTitle = text(`第${chapterNumber}章`, `Chapter ${chapterNumber}`)
           let chapterEntities: string[] = []
-          try {
-            const bp = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-get', chapterNumber, projectPath)
-            if (bp?.title) chapterTitle = bp.title
-            if (Array.isArray(bp?.characters)) chapterEntities = bp.characters
-          } catch { /* 蓝图读取失败时使用默认标题 */ }
+          const bp = await ignoreFailure(
+            'blueprint unavailable for post-processing rebuild',
+            () => ipc.invokeWithProjectSession(projectSession, 'db:blueprint-get', chapterNumber, projectPath),
+          )
+          if (bp?.title) chapterTitle = bp.title
+          if (Array.isArray(bp?.characters)) chapterEntities = bp.characters
 
           // 按行与整卡重试都按当前状态重算卡上的安排：界面可能还拿着旧状态，重试结果也一样的失败不重跑。
           const { getChapterFinalizeScope, readPostProcessStatus } = await import('./workflow-utils')
