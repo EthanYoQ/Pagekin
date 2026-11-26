@@ -8,7 +8,7 @@ export type LegacyFailureKind = typeof LEGACY_FAILURE_CALLS[number] | '{ legacy:
 export type LegacyFailureCounts = Record<string, Partial<Record<LegacyFailureKind, number>>>
 
 const NOT_PRODUCTION = /\/__tests__\/|\.(?:test|spec|browser|typecheck)\.[cm]?[jt]sx?$|^src\/stories\//u
-const RAW_PROPERTIES = new Set(['message', 'stack'])
+const RAW_PROPERTIES = new Set(['message', 'stack', 'toString'])
 const FAILURE_TYPES = /\b(?:AuthorNote|Failure)\b/u
 const FAILURE_MODULE = 'src/shared/failure.ts'
 
