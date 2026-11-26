@@ -14,7 +14,6 @@ type BlueprintData = DatabaseChannels['db:blueprint-get-all']['return'][number]
 export type GraphGenerationContext = {
   projectId: string
   originEpoch: string
-  /** Main-issued stable context/owner lookup key, not a renderer fact hash. */
   key: string
   createdAt: string
   input: GraphGenerationInput

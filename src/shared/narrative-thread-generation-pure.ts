@@ -62,7 +62,6 @@ function boundedText(value: unknown, maxLength: number): string | null {
 export function parseNarrativeThreadPlanCandidates(
   content: string,
   totalChapters: number,
-  /** Only for proving already stored graph effects with their original filtered indices. */
   legacyStoredEffect = false,
 ): NarrativeThreadPlanCandidate[] {
   return candidatesFromJson(content, MAX_PLAN_CANDIDATES, legacyStoredEffect).flatMap((candidate) => {
@@ -93,7 +92,6 @@ export function parseNarrativeThreadPlanCandidates(
 export function parseNarrativeThreadEventCandidates(
   content: string,
   finalizedContent: string,
-  /** Only for proving already stored graph effects with their original filtered indices. */
   legacyStoredEffect = false,
 ): NarrativeThreadEventCandidate[] {
   return candidatesFromJson(content, MAX_EVENT_CANDIDATES, legacyStoredEffect).flatMap((candidate) => {

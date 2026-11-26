@@ -2,25 +2,16 @@ import type { WritingLanguage } from './writing-language'
 import { inspectWritingSkillMarkdown, type WritingSkillInspection } from './writing-skills'
 
 export interface BuiltinSkillMetadata {
-  /** Skill 唯一名称 */
   name: string
-  /** 显示名称 */
   displayName?: string
-  /** 功能描述 */
   description: string
-  /** 使用场景（用于 Agent 自动匹配） */
   whenToUse?: string
-  /** 版本 */
   version?: string
-  /** 允许的工具列表（白名单） */
   allowedTools?: string[]
-  /** 参数提示 */
   argumentHint?: string
-  /** 是否可由模型自动调用 */
   userInvocable?: boolean
 }
 
-/** Fresh data keeps registry mutations out of the main-process source authority. */
 export function getBuiltinWritingSkills() {
   const builtins: Array<{
     metadata: BuiltinSkillMetadata
@@ -270,7 +261,6 @@ Use read_project_state first to understand the project's established style. Then
   return builtins
 }
 
-/** The selected language body is exactly the body used by renderer skill bindings. */
 export function readBuiltinWritingSkill(name: string, language: WritingLanguage): string | undefined {
   const skill = getBuiltinWritingSkills().find(entry => entry.metadata.name === name)
   if (!skill) return undefined

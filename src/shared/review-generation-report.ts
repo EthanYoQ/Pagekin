@@ -37,7 +37,6 @@ function isNonemptyText(value: unknown): value is string {
 }
 
 function reportText(value: string, maxCharacters: number, version: ReviewReportVersion): string {
-  // V1 is retained only to prove already-saved reports against their original bytes.
   return version === 1 ? Array.from(value.trim()).slice(0, maxCharacters).join('') : value.trim()
 }
 
@@ -78,7 +77,6 @@ function isReviewResult(value: unknown): value is ReviewResult {
     ))
 }
 
-/** Accept one complete visible report with optional prose/fences; retain the model shape gate. */
 export function parseReviewGenerationResult(content: string, reportVersion: ReviewReportVersion = 2): ReviewResult {
   if (reportVersion !== 1 && reportVersion !== 2) throw new Error('invalid review contract')
   const trimmed = stripDraftThinkingTags(content)
@@ -106,7 +104,6 @@ export function parseReviewGenerationResult(content: string, reportVersion: Revi
   return bounded
 }
 
-/** Assemble the saved report using only the caller's frozen source and preflight evidence. */
 export function buildReviewGenerationReport(input: {
   content: string
   sourceContent: string

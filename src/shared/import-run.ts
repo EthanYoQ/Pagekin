@@ -34,7 +34,6 @@ export type ImportRunStage =
 
 export type ImportRunStatus = 'ready' | 'running' | 'failed' | 'cancelled' | 'completed'
 
-/** 阶段顺序由运行用途和冻结的反推选项决定；作者原稿的反推放在后处理之后，知识库里已经有定稿正文。 */
 const IMPORT_STAGE_PLANS = {
   reference: ['knowledge', 'global', 'style', 'blueprints', 'refresh', 'completed'],
   author: ['author-commit', 'author-publish', 'author-postprocess', 'refresh', 'completed'],
@@ -110,7 +109,6 @@ export interface ImportRunChapterBatchCheckpoint {
 const IMPORT_RUN_CONTENT_FINGERPRINT = /^[a-f0-9]{64}$/u
 const IMPORT_RUN_CHAPTER_BATCH_CHECKPOINT = /^([1-9]\d*)-([1-9]\d*)-([a-f0-9]{8}(?:\.[a-f0-9]{8})*)$/u
 
-/** Canonical identity shared by blueprint batching, durable receipts, and repository checkpoints. */
 // i18n-exempt: 内部不变量与收据完整性校验：只有代码缺陷或作品库被外部改坏才会触发
 export function createImportRunChapterBatchCheckpointId(
   chapters: readonly Pick<ImportRunChapterInput, 'number' | 'contentFingerprint'>[],
@@ -165,7 +163,6 @@ export function expectedImportRunEffectKey(
   return null
 }
 
-/** Common binding checks used before storage commit and renderer replay. */
 // i18n-exempt: 内部不变量与收据完整性校验：只有代码缺陷或作品库被外部改坏才会触发
 export function assertImportRunEffectReceiptMetadata(
   receipt: ImportRunEffectReceipt,
@@ -198,14 +195,12 @@ export interface ImportRunEffectCommitResult {
   cancelApplied: boolean
 }
 
-/** Display-only source facts. Paths, grants, credentials, and provider data are forbidden. */
 export interface ImportSourceDisplayMetadata {
   displayName: string
   mediaType: string
   size: number
 }
 
-/** Main-process-only aliases captured while the external file grant is issued. */
 export interface ImportSourceFileIdentity {
   canonicalLocation: string
   fileIdentity?: string
@@ -213,18 +208,14 @@ export interface ImportSourceFileIdentity {
 
 export interface ImportRunChapterInput {
   number: number
-  /** Index into the main-process source list; never supplied by renderer input. */
   sourceIndex?: number
-  /** Stable chapter affiliation within one source. */
   sourceChapterNumber?: number
   title: string
   contentFingerprint: string
   contentSize: number
-  /** Project-owned frozen snapshot; external grants are deliberately not persisted. */
   content: string
 }
 
-/** Renderer-safe frozen chapter snapshot; source affiliations remain main-process-only. */
 export interface ImportRunChapterSnapshot {
   number: number
   title: string
@@ -237,17 +228,12 @@ export interface ImportRunPrepareRequest {
   runId: string
   purpose: ImportPurpose
   sourceFingerprint: string
-  /** Opaque per-source IDs aligned with sourceDisplay. Main-process only. */
   sourceIds?: string[]
-  /** Legacy single-source collection fingerprints aligned with sourceIds. Main-process only. */
   sourceFingerprints?: string[]
   sourceDisplay: ImportSourceDisplayMetadata[]
   locale: ImportRunLocale
-  /** Required for author manuscripts; frozen from a read-only project preview. */
   authorityFingerprint?: string
-  /** Required for author manuscripts; binds confirmation to the inspected chapter manifest. */
   expectedManifestFingerprint?: string
-  /** 作者原稿：「同时反推设定、架构、角色和蓝图」，创建运行时冻结。 */
   authorInference?: boolean
   chapters: ImportRunChapterInput[]
 }
@@ -264,14 +250,12 @@ export interface ImportRunBeginParsingRequest {
   locale: ImportRunLocale
 }
 
-/** Renderer-safe inspection metadata. Chapter content and source identities stay in main memory. */
 export type ImportChapterTargetStatus = 'new' | 'duplicate' | 'conflict'
 
 export interface ImportChapterPreview {
   number: number
   title: string
   wordCount: number
-  /** Present once the durable project ledger has classified the target chapter. */
   targetStatus?: ImportChapterTargetStatus
 }
 
@@ -284,7 +268,6 @@ export interface ImportInspectionSummary {
   totalWords: number
   totalBytes: number
   preview: ImportChapterPreview[]
-  /** Present for bounded durable previews; legacy in-memory inspections may omit it. */
   previewRemaining?: number
 }
 
@@ -305,11 +288,9 @@ export type ImportRunPrepareFromInspectionRequest = {
   locale: ImportRunLocale
   authorityFingerprint: string
   manifestFingerprint: string
-  /** 「同时反推设定、架构、角色和蓝图」，创建运行时冻结。 */
   authorInference: boolean
 }
 
-/** Current-project selection binds parsing to one frozen project lease before any source is read. */
 export interface ImportNovelFileSelectionRequest {
   runId: string
   purpose: ImportPurpose
@@ -322,13 +303,10 @@ export interface ImportRunSnapshot {
   purpose: ImportPurpose
   rootRunId: string
   effectNamespace: string
-  /** Author-manuscript snapshots expose only the hashes needed to resume their confirmed commit. */
   manifestFingerprint?: string
   authorityFingerprint?: string
-  /** 作者原稿：创建运行时冻结的「同时反推设定、架构、角色和蓝图」。 */
   authorInference?: boolean
   sourceDisplay: ImportSourceDisplayMetadata[]
-  /** Safe display facts for sources that still need user reauthorization. */
   unfinishedSourceDisplay?: ImportSourceDisplayMetadata[]
   locale: ImportRunLocale
   stage: ImportRunStage
@@ -361,7 +339,6 @@ export interface ImportRunPreparationResult {
   newChapterNumbers: number[]
   conflictChapterNumbers: number[]
   duplicateChapterNumbers: number[]
-  /** Bounded renderer-safe view derived from the main-process frozen manifest. */
   inspection?: ImportRunPreparationInspection
 }
 

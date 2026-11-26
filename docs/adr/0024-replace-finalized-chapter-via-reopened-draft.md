@@ -50,3 +50,14 @@
 - 定稿之前留下的旧稿不能再直接定稿替换，必须先以它重新打开。这是相对 #526 的行为变化。
 - 「知道了」只在本机生效。
 - 新定稿与旧定稿同名时，`kb_import` 按同名换掉旧文档，不比对作者有没有改过它。这是导入步骤原有的行为，删除步骤的哈希比对管不到这种情况。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/chapter-reopen.ts`
+
+- created=false：本章已有一份打开的重开稿，原样返回它。
+- `finalizationId`：替换者，也就是本章当前定稿的 finalizationId。「知道了」按它记，同一章再替换一次就是新的提示。预览时为 null。
+
+### `src/shared/ipc-channels.ts`
+
+- `chapter:replacement-impact-preview`：定稿确认框的预览：这份打开着的重开稿按 content（作者将要定稿的正文，含未保存的修改）定稿后会造成的影响；不是打开着的重开稿时 impact 为 null。

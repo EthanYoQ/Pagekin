@@ -15,3 +15,16 @@
 - `LegacyInstalledSkillCase.name` 既是 Skill 目录名，也是 frontmatter 里的 `name`。
 - `LegacyInstalledSkillCase.plant(directory, outside)` 在 Skill 目录里放进被引用的文件；`outside` 是 Skill 目录之外的临时目录。
 - `LEGACY_INSTALLED_SKILL_CASES` 是复审员列出的写法：Skill 目录里真有被引用的文件（旧版 `~/.vela` 迁移会原样复制，用户也可能手动放），但目录里没有安装清单。按 master，这些文件一概不读。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/builtin-writing-skills.ts`
+
+- `whenToUse`：使用场景（用于 Agent 自动匹配）
+- `getBuiltinWritingSkills`：每次返回新数据，使对注册表的改动碰不到主进程的来源权威（原文：Fresh data keeps registry mutations out of the main-process source authority.）
+- `readBuiltinWritingSkill`：所选语言的正文恰是渲染端 Skill 绑定使用的正文（原文：The selected language body is exactly the body used by renderer skill bindings.）
+
+### `src/shared/ipc-channels.ts`
+
+- `return`：bundle：按安装清单读到的附带文本；没有清单的 Skill 为 none，只看 SKILL.md。
+- `skills:pick-local`：主进程弹出系统对话框选择本机 SKILL.md 或 Skill 文件夹，只读检查后返回候选。

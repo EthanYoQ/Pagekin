@@ -1,6 +1,5 @@
 import { writingLanguageText, type WritingLanguage } from './writing-language'
 
-/** Keep the established drafting contract byte-for-byte across its consumers. */
 export function chapterTimeContinuity(language: WritingLanguage): string {
   return writingLanguageText(language,
     "【时间承接】本章紧接上一章结尾：作者没有写明跨日或时间间隔时，视为同一天内的紧接发展，上一章事件就发生在不久之前，不得写成“昨天”“昨夜”“前一天”。已定稿事件的时点以定稿原文和【本章写作方向】里的时点说明为准，本章提到这些事件时须按该时点换算（例如定稿写“黄昏”、本章时点为“同日深夜”，则那些事件发生在“黄昏时”“傍晚那会儿”；定稿写“傍晚”、本章时点为“次日上午”，则写“昨晚”“昨天傍晚”）。",

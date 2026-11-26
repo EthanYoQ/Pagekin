@@ -26,7 +26,6 @@ export interface AgentGenerationInput {
   uiLocale: Locale
   historyMessages: { role: 'user' | 'assistant'; content: string }[]
   userMessage: string
-  /** Explicit editor selection/context, never a replacement for canonical project facts. */
   editorContext?: string
   tools: AgentFrozenTool[]
 }
@@ -58,7 +57,6 @@ export interface AgentDomainToolReceipt {
   chapterNumber?: number
   beforeHash: string
   afterHash: string
-  /** Fresh read projection; historical ACK must not overwrite newer renderer edits. */
   current?: boolean
 }
 export interface AgentWorkflowRegistration {
@@ -77,7 +75,6 @@ export interface AgentGenerationRound {
   attemptId?: string
   status: 'not-started' | 'completed' | 'incomplete' | 'unknown'
   visibleText: string
-  /** Main reconstructs only the accepted protocol; hidden reasoning is never included. */
   protocolText: string
   actions: AgentToolAction[]
 }

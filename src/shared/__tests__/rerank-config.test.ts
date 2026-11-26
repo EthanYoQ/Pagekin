@@ -20,7 +20,6 @@ describe('resolveRerankConfig', () => {
       .toEqual({ kind: 'none', reason: 'embedding-not-siliconflow' })
   })
 
-  // 默认关闭自动复用的原因见 src/shared/rerank-config.ts 的 AUTO_REUSE_EMBEDDING（#632）。
   it('does not yet reuse the SiliconFlow retrieval profile for rerank by default', () => {
     expect(resolveRerankConfig({ defaultRerankModelId: null, models: [], embedding: siliconflowEmbedding }))
       .toEqual({ kind: 'none', reason: 'auto-reuse-not-enabled' })

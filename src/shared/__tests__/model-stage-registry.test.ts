@@ -10,7 +10,6 @@ const TABLE_FILE = 'src/shared/model-stage-routing.ts'
 const sourcePaths = (dir: string) => repoSourceFiles(dir)
   .filter(file => !file.includes('/__tests__/') && /\.tsx?$/.test(file) && !/\.(test|spec|browser)\.tsx?$/.test(file))
 
-// 源码在模块加载时只读一遍，各条用例只做内存匹配：并行套件里同一批读取会从约 200ms 拉长到 9 秒，放在用例里会撞 5 秒超时。
 const SOURCES = new Map([...sourcePaths('src'), ...sourcePaths('electron')].map(file => [file, readFileSync(resolve(root, file), 'utf8')]))
 const sourceFiles = (dir: string) => [...SOURCES.keys()].filter(file => file.startsWith(`${dir}/`))
 const read = (file: string) => SOURCES.get(file)!
@@ -31,7 +30,6 @@ describe('operation stage registry coverage', () => {
   })
 
   it('registers every operation that generation code sends', () => {
-    // 不是生成 operation：source-draft-changed.ts 用它们区分提示文案。
     const notGeneration = new Set(['refine', 'review'])
     const unregistered = [...sourceFiles('src/services'), ...sourceFiles('electron/services')].flatMap(file =>
       sentOperations(read(file))
@@ -49,10 +47,6 @@ describe('operation stage registry coverage', () => {
   })
 })
 
-/**
- * 接缝在工作流首次开跑时钉住模型，同一工作流后面的步骤沿用它。
- * 所以一个工作流定义里只能有一个环节的 operation，否则后面的环节会悄悄用前一个环节的模型。
- */
 describe('one stage per workflow definition', () => {
   const COMMANDS_DIR = 'src/services/workflows/commands'
   const commandSources = new Map<string, string>()

@@ -1,6 +1,5 @@
 import { hashAuthorText, isContentHash, sameProjectEpoch, type FrozenInputFingerprint, type ProjectEpoch } from './source-ref'
 
-/** Safe transport metadata; all relative times use the request's monotonic clock. */
 export interface GenerationTransportDiagnostics {
   startedAt: number
   elapsedMs: number
@@ -17,7 +16,6 @@ export interface GenerationTransportDiagnostics {
   reasoningEvents: number
 }
 
-/** Never copy error messages: provider errors can contain URLs, credentials or output. */
 export function safeTransportError(error: unknown): Pick<GenerationTransportDiagnostics, 'errorName' | 'errorCode' | 'causeCode'> {
   const codes = new Set(['UND_ERR_BODY_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
     'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'ABORT_ERR', 'ERR_STREAM_PREMATURE_CLOSE'])
@@ -43,7 +41,6 @@ export interface PhysicalAttempt {
   status: 'reserved' | 'dispatch-marked' | 'settled' | 'unknown' | 'cancelled-before-dispatch'
   reservedTokens: number
   requestedOutputTokens: number
-  /** Actual usage is never clipped to the estimate. */
   actualTokens?: number
 }
 export interface RootBudget {
@@ -62,14 +59,12 @@ export interface VisibleArtifact extends ProjectEpoch {
 export function rootActionIdempotencyKey(action: RootAction): string {
   if (![action.projectId, action.epoch, action.operation, action.uiActionNonce, action.rootActionId].every(value => Boolean(value.trim()))
     || !isContentHash(action.frozenInputHash)) throw new Error('INVALID_ROOT_ACTION')
-  // Reopening a renderer/session cannot turn the same author nonce into a new budget root.
   return JSON.stringify([action.projectId, action.operation, action.uiActionNonce, action.frozenInputHash])
 }
 export function tokenLiability(attempt: PhysicalAttempt): number {
   return attempt.status === 'cancelled-before-dispatch' ? 0
     : attempt.status === 'settled' && attempt.actualTokens !== undefined ? attempt.actualTokens : attempt.reservedTokens
 }
-/** Must run in the root ledger transaction before inserting a unique reservation. */
 export function assertReservation(root: RootAction, policy: RootBudget, attempts: readonly PhysicalAttempt[], next: PhysicalAttempt, elapsedMs: number): void {
   rootActionIdempotencyKey(root)
   const integers = [policy.maxPhysicalRequests, policy.maxTokenLiability, policy.maxOutputPerRequest, policy.maxActiveElapsedMs, next.reservedTokens, next.requestedOutputTokens]
@@ -85,7 +80,6 @@ export function assertReservation(root: RootAction, policy: RootBudget, attempts
   if (rootBudgetExhausted(policy, attempts, elapsedMs)) throw new Error('ROOT_BUDGET_EXHAUSTED')
 }
 export function rootBudgetExhausted(policy: RootBudget, attempts: readonly PhysicalAttempt[], elapsedMs: number): boolean {
-  // token 只记账不刹车（ADR-0023）。
   return attempts.filter(item => item.status !== 'cancelled-before-dispatch').length >= policy.maxPhysicalRequests
     || elapsedMs >= policy.maxActiveElapsedMs
 }
@@ -93,7 +87,6 @@ export function assertAttemptTransition(before: PhysicalAttempt['status'], after
   if (!(before === 'reserved' && ['dispatch-marked', 'cancelled-before-dispatch'].includes(after)
     || before === 'dispatch-marked' && ['settled', 'unknown'].includes(after))) throw new Error('INVALID_ATTEMPT_TRANSITION')
 }
-/** CAS/prefix check only; durable acknowledgement belongs to the repository. */
 export async function assertVisibleSnapshot(previous: VisibleArtifact, next: VisibleArtifact, expectedRevision: number): Promise<void> {
   if (![previous.artifactId, previous.attemptId, previous.rootActionId].every(id => Boolean(id.trim()))
     || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
@@ -105,7 +98,6 @@ export async function assertVisibleSnapshot(previous: VisibleArtifact, next: Vis
     || JSON.stringify(previous.fingerprint) !== JSON.stringify(next.fingerprint)) throw new Error('ARTIFACT_SNAPSHOT_CONFLICT')
 }
 
-/** Provider failures that resending the same request cannot fix: the run ends with the code. */
 export const TERMINAL_PROVIDER_FAILURE_CODES = ['GENERATION_CONTEXT_LENGTH_EXCEEDED'] as const
 
 export function isTerminalProviderFailure(code: unknown): code is typeof TERMINAL_PROVIDER_FAILURE_CODES[number] {

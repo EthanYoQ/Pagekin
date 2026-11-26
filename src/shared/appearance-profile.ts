@@ -1,16 +1,10 @@
-/**
- * 外观偏好：浅色或深色、缩放与两种字体，存在渲染进程的 localStorage。
- * v3 起换了新键：RD-10 之前的配置（带外壳偏好与 galaxy、paper 主题）只读不写，回退到旧版本时它原样还在。
- */
 export const APPEARANCE_STORAGE_KEY = 'ai-novel-writer-appearance-v3'
 export const PREVIOUS_APPEARANCE_STORAGE_KEY = 'ai-novel-writer-appearance'
-/** 更早版本分开存的主题，迁移只读。 */
 export const LEGACY_THEME_STORAGE_KEY = 'ai-novel-writer-theme'
 
 export type ColorTheme = 'light' | 'dark'
 export type AppearanceFont = 'inter' | 'noto-sans-sc' | 'lxgw-wenkai' | 'noto-serif-sc' | 'system'
 
-/** 内存里的外观偏好。schemaVersion 只出现在存储里。 */
 export interface CanonicalAppearanceProfile {
   revision: number
   colorTheme: ColorTheme
@@ -19,7 +13,6 @@ export interface CanonicalAppearanceProfile {
   uiFont: AppearanceFont
   origin: 'legacy-import' | 'author'
   legacyImportCompleted: boolean
-  /** Provenance only. Never triggers a font reset. */
   legacyFontDefaultsVersion?: number
 }
 
@@ -29,7 +22,6 @@ export const INITIAL_APPEARANCE: Readonly<CanonicalAppearanceProfile> = Object.f
 
 const FONTS = ['inter', 'noto-sans-sc', 'lxgw-wenkai', 'noto-serif-sc', 'system']
 const V3_FIELDS = ['schemaVersion', 'revision', 'colorTheme', 'zoom', 'writingFont', 'uiFont', 'origin', 'legacyImportCompleted', 'legacyFontDefaultsVersion']
-/** 旧配置的主题：深色与星空迁为深色，纸面与浅色迁为浅色。 */
 const PREVIOUS_THEME: Readonly<Record<string, ColorTheme>> = { light: 'light', paper: 'light', dark: 'dark', galaxy: 'dark' }
 const PREVIOUS_SHELL_PREFERENCES: Readonly<Record<number, readonly string[]>> = {
   1: ['unset', 'classic', 'writer'],
@@ -48,7 +40,6 @@ function parseJson(raw: string, code: string): unknown {
   try { return JSON.parse(raw) } catch { throw new AppearanceProfileError(code) }
 }
 
-/** 各版本共有的字段：修订号、缩放、字体、来源与旧字体默认值版本。 */
 function sharedFieldsValid(value: Record<string, unknown>): boolean {
   return Number.isSafeInteger(value.revision) && Number(value.revision) >= 1
     && typeof value.zoom === 'number' && Number.isFinite(value.zoom) && value.zoom >= 0.7 && value.zoom <= 1.5
@@ -75,7 +66,6 @@ function assertV3(value: unknown): asserts value is Record<string, unknown> {
   if (Object.keys(value).some(key => !V3_FIELDS.includes(key))) throw new AppearanceProfileError('APPEARANCE_UNKNOWN_FIELDS')
 }
 
-/** 读取已保存的 v3 配置，严格校验：别的版本、皮肤、外壳偏好等多出来的字段都拒绝。 */
 export function parseAppearanceProfile(raw: string): CanonicalAppearanceProfile {
   const value = parseJson(raw, 'APPEARANCE_JSON_INVALID')
   assertV3(value)
@@ -88,10 +78,6 @@ export function serializeAppearanceProfile(profile: CanonicalAppearanceProfile):
   return JSON.stringify(stored)
 }
 
-/**
- * RD-10 之前的配置（schemaVersion 1、2）按它当时的规则严格校验后迁成 v3：主题按 PREVIOUS_THEME 换算，外壳偏好丢弃，
- * 修订号、缩放、字体与来源照搬。只读旧键，不改它。
- */
 export function migratePreviousAppearance(raw: string): CanonicalAppearanceProfile {
   const value = parseJson(raw, 'APPEARANCE_JSON_INVALID')
   const shells = record(value) && typeof value.schemaVersion === 'number' ? PREVIOUS_SHELL_PREFERENCES[value.schemaVersion] : undefined
@@ -104,10 +90,6 @@ export function migratePreviousAppearance(raw: string): CanonicalAppearanceProfi
   return canonical(value, PREVIOUS_THEME[value.colorTheme]!)
 }
 
-/**
- * 最早的版本只存了主题、缩放与字体（ai-novel-writer-theme）。没有这一项时用初始偏好。
- * 跟随系统的主题按当时的系统外观落定，night 是深色的旧名。
- */
 export function migrateLegacyAppearance(themeRaw: string | null, systemTheme: ColorTheme): CanonicalAppearanceProfile {
   const profile: CanonicalAppearanceProfile = { ...INITIAL_APPEARANCE }
   if (themeRaw === null) return profile
