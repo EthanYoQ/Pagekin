@@ -38,6 +38,7 @@ import { toolRegistry } from '../../../src/services/agent/tool-registry'
 import { createAgentExecutionContext } from '../../../src/services/agent/tools/project-context'
 import { writeFileTool } from '../../../src/services/agent/tools/write-file.tool'
 import { useProjectStore } from '../../../src/stores/project-store'
+import { withShownError } from '../../../test/helpers/shown-ipc-failure'
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-novel-fs-controller-'))
 const projectAPath = path.join(temporaryRoot, 'A')
@@ -89,7 +90,7 @@ const testFileSystem: WindowsSafeFileSystem = {
 function rawHandler(channel: string): IpcHandler {
   const registered = mocks.handlers.get(channel)
   if (!registered) throw new Error(`Missing IPC handler: ${channel}`)
-  return registered
+  return async (...args) => withShownError(await registered(...args))
 }
 
 function handler(channel: string): IpcHandler {

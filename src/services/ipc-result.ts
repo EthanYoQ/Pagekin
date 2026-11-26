@@ -1,10 +1,11 @@
-import { authorError, errorCodeOf, isRegisteredErrorCode } from '../i18n/app-errors'
-import { failureCode } from '../shared/failure'
+import { authorError, isRegisteredErrorCode, resultFailure } from '../i18n/app-errors'
+import { codeOf, type Failure } from '../shared/failure'
 import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
 
 export interface IpcMutationResult {
   success: boolean
   error?: string
+  failure?: Failure
 }
 
 /**
@@ -12,8 +13,8 @@ export interface IpcMutationResult {
  * promises. Convert them to exceptions so workflows cannot continue after a
  * persistence operation failed.
  *
- * 主进程登记过的码按界面语言说明；主进程没给原因时，用调用方的 fallbackMessage，
- * 没有就用「<action>失败」。action 多是只有中文的动作名，英文界面改用通用说明。
+ * 抛出的错误带着这次失败，冻结了界面语言的调用方（导出、工作流）凭它按自己的语言重新说明。
+ * action 多是只有中文的动作名，英文界面改用通用说明。
  */
 export function requireIpcSuccess<T extends IpcMutationResult>(
   result: T,
@@ -21,10 +22,9 @@ export function requireIpcSuccess<T extends IpcMutationResult>(
   fallbackMessage?: string,
 ): T {
   if (!result.success) {
+    const failure = resultFailure(result)
+    if (failure && (failure.note || isRegisteredErrorCode(codeOf(failure)))) throw authorError(currentInterfaceLocale(), failure)
     const { text } = useLocaleStore.getState()
-    // 冻结了界面语言的调用方（导出、工作流）凭 code 按自己的语言重新说明。
-    const code = isRegisteredErrorCode(result.error) ? failureCode(errorCodeOf(result.error)) : undefined
-    if (code) throw authorError(currentInterfaceLocale(), { code })
     throw new Error(result.error || fallbackMessage || text(`${action}失败`, 'The operation failed.'))
   }
   return result

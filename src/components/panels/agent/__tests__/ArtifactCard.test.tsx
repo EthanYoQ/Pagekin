@@ -157,6 +157,7 @@ describe('ArtifactCard project identity', () => {
       success: false,
       content: '',
       error: 'file locked',
+      failure: { code: 'PROJECT_FILE_READ_FAILED' },
     } as never)
 
     await expect(openArtifactInEditor({
@@ -173,7 +174,7 @@ describe('ArtifactCard project identity', () => {
 
     expect(useEditorStore.getState().tabs).toEqual([])
     expect(alertError).toHaveBeenCalledWith(
-      '发生错误：file locked',
+      '无法读取项目文件。',
       expect.objectContaining({ title: '无法打开产物' }),
     )
   })

@@ -78,14 +78,24 @@ it('world navigation is persisted before physical calls, and failed navigation b
   const f = fixture(), original = f.invoke.getMockImplementation()!
   f.invoke.mockImplementation(async (channel, ...args) => {
     if (channel === 'fs:read-json') return { success: true, data: {} }
-    if (channel === 'fs:write-json') return { success: false, error: '导航写入失败' }
+    if (channel === 'fs:write-json') return { success: false }
     return original(channel, ...args)
   })
   const snapshot = { expectedProjectPath: projectSession.projectPath, novelConfig: {} } as never
-  await expect(new GenerateWorldBuildingCommand(snapshot).execute({ step: {}, ...f })).rejects.toThrow('导航写入失败')
+  await expect(new GenerateWorldBuildingCommand(snapshot).execute({ step: {}, ...f })).rejects.toThrow(/^保存生成运行记录失败，请重试。$/u)
   const write = f.invoke.mock.calls.find(([channel]) => channel === 'fs:write-json')!
   expect(write[2]).toEqual({ world_building_generation_handle: { projectId: projectSession.projectId, epoch: projectSession.leaseId, rootActionId: '主进程根', runId: '主进程运行' } })
   expect(f.invoke.mock.calls.filter(([channel]) => channel === 'generation:execute')).toHaveLength(0)
+})
+it('plot navigation that fails without a reason says so in the interface language, not the English action', async () => {
+  const f = fixture(), original = f.invoke.getMockImplementation()!
+  f.invoke.mockImplementation(async (channel, ...args) => {
+    if (channel === 'fs:read-json') return { success: true, data: {} }
+    if (channel === 'fs:write-json') return { success: false }
+    return original(channel, ...args)
+  })
+  const snapshot = { expectedProjectPath: projectSession.projectPath, novelConfig: {} } as never
+  await expect(new GeneratePlotArchitectureCommand(['synopsis'], snapshot).execute({ step: {}, ...f })).rejects.toThrow(/^保存生成运行记录失败，请重试。$/u)
 })
 
 

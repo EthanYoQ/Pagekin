@@ -1303,7 +1303,8 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
         const session = requireWorkflowProjectSession(params.context)
         const partial = (params.context.data.partial as PartialArchData) || await loadPartialData(this.snapshot.expectedProjectPath, session)
         partial.world_building_generation_handle = handle
-        await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation')
+        await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation',
+          workflowUiText(params.context, '保存生成运行记录失败，请重试。', 'Could not save the generation run record. Try again.'))
         params.context.data.partial = partial
       },
     })
@@ -1630,7 +1631,8 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         const session = requireWorkflowProjectSession(params.context)
         const partial = (params.context.data.partial as PartialArchData) || await loadPartialData(this.snapshot.expectedProjectPath, session)
         partial.synopsis_generation_handle = handle
-        await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation')
+        await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation',
+          workflowUiText(params.context, '保存生成运行记录失败，请重试。', 'Could not save the generation run record. Try again.'))
         params.context.data.partial = partial
       },
     })

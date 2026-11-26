@@ -123,6 +123,18 @@ const ERROR_KEYS = {
   EXTERNAL_FILE_GRANT_EXHAUSTED: 'error.externalFileGrantExpired',
   // 新建、打开项目时，所选文件夹在选择之后被移动、改名或替换：project-controller 经 String(error) 原样转给界面。
   EXTERNAL_FILE_GRANT_TARGET_CHANGED: 'error.externalFileGrantExpired',
+  PROJECT_FILE_NOT_FOUND: 'error.projectFileMissing',
+  PROJECT_FILE_READ_FAILED: 'error.projectFileReadFailed',
+  PROJECT_DATA_READ_FAILED: 'error.projectDataReadFailed',
+  PROJECT_FILE_WRITE_FAILED: 'error.projectFileWriteFailed',
+  PROJECT_DIRECTORY_CREATE_FAILED: 'error.projectDirectoryCreateFailed',
+  PROJECT_DATA_WRITE_FAILED: 'error.projectDataWriteFailed',
+  EXTERNAL_FILE_GRANT_OPERATION_DENIED: 'error.externalGrantWrongWindow',
+  EXTERNAL_FILE_GRANT_PATH_INVALID: 'error.externalGrantPathInvalid',
+  EXTERNAL_FILE_SERVICE_UNAVAILABLE: 'error.externalFileServiceUnavailable',
+  EXTERNAL_FILE_GRANT_FAILED: 'error.externalGrantFailed',
+  EXTERNAL_FILE_READ_FAILED: 'error.externalFileUnreadable',
+  SECURE_FS_TARGET_IN_USE: 'error.fileTargetInUse',
   GENERATION_REQUEST_FAILED: 'error.generationRequestFailed',
   GENERATION_PROJECT_SESSION_STALE: 'error.generationProjectSessionStale',
   GENERATION_PROJECT_SESSION_REQUIRED: 'error.generationProjectSessionRequired',
@@ -843,5 +855,11 @@ export function isRegisteredErrorCode(error: unknown): boolean {
 
 /** 回给模型的工具结果按作品写作语言说明登记错误，没登记的码原样保留；给作者看的报错走 displayedErrorMessage。 */
 export function errorMessageForModel(writingLanguage: Locale, error: unknown): string {
-  return knownAppErrorMessage(writingLanguage as ErrorDisplayLocale, error) ?? (strippedRaw(error) || unknownErrorText(writingLanguage))
+  return knownAppErrorMessage(modelLocale(writingLanguage), error) ?? (strippedRaw(error) || unknownErrorText(writingLanguage))
+}
+
+const modelLocale = (writingLanguage: Locale) => writingLanguage as ErrorDisplayLocale
+
+export function failureTextForModel(writingLanguage: Locale, failure: Failure): string {
+  return failureText(modelLocale(writingLanguage), failure)
 }

@@ -48,6 +48,17 @@ describe('project skill directory loading', () => {
     )
   })
 
+  it('treats a skill directory removed after the existence check as missing', async () => {
+    mocks.invokeWithProjectSession.mockImplementation(async (_session, channel) => {
+      if (channel === 'fs:check-exists') return true
+      if (channel === 'fs:list-dir') throw new Error("Error invoking remote method 'fs:list-dir': Error: PROJECT_FILE_NOT_FOUND")
+      throw new Error(`unexpected channel: ${channel}`)
+    })
+
+    const { skillRegistry } = await import('../skill-registry')
+    await expect(skillRegistry.loadAll()).resolves.toBeUndefined()
+  })
+
   it('does not hide project skill directory access failures', async () => {
     const denied = new Error(
       "Error invoking remote method 'fs:list-dir': Error: EACCES: permission denied",

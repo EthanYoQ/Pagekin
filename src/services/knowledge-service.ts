@@ -6,7 +6,7 @@
  */
 
 import { ipc } from './ipc-client'
-import { failureText } from '../i18n/app-errors'
+import { authorError, failureText, resultFailure } from '../i18n/app-errors'
 import { AuthorError } from '../shared/failure'
 import { currentInterfaceLocale } from '../stores/locale-store'
 import type {
@@ -130,7 +130,10 @@ export async function selectPlanningMaterials(): Promise<PlanningMaterial[]> {
   const materials: PlanningMaterial[] = []
   for (const grant of grants) {
     const result = await ipc.invoke('fs:grant-read-file', grant.grantId)
-    if (!result.success) throw new Error(result.error || `Could not read ${grant.displayName}`)
+    if (!result.success) {
+      const failure = resultFailure(result)
+      throw failure ? authorError(currentInterfaceLocale(), failure) : new Error(`Could not read ${grant.displayName}`)
+    }
     materials.push({ fileName: grant.displayName, text: result.content })
   }
   return materials

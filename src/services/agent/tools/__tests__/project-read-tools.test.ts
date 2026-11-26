@@ -149,7 +149,7 @@ describe('agent project read tools', () => {
     const invoke = vi.fn().mockResolvedValue({
       success: false,
       content: '',
-      error: missingFileError,
+      failure: { code: 'PROJECT_FILE_NOT_FOUND', note: { key: 'error.projectFileMissing' } },
     })
     vi.stubGlobal('window', {
       aiNovelAPI: {

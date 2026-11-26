@@ -1,5 +1,8 @@
 import path from 'node:path'
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
+import { wireNote } from '../../src/i18n/app-errors'
+import type { FailureCode, WireFailure } from '../../src/shared/failure'
+import { handle } from '../ipc/handle'
 import { showOpenDialogInLastDirectory } from '../utils/remembered-dialog'
 import {
   ExternalFileGrantService,
@@ -7,7 +10,7 @@ import {
   externalFileGrants,
 } from '../services/external-file-grant-service'
 import { mainText } from '../i18n'
-import { externalFileReadFailureText } from './external-file-read-failure'
+import { externalFileReadFailure } from './external-file-read-failure'
 import {
   atomicWriteFailureCommitState,
   windowsSafeFileSystem,
@@ -21,40 +24,40 @@ function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
 }
 
-/** 授权服务与安全文件系统的错误码 → 作者能读的说明；不把文件系统绝对路径或内部服务错误原样回传给渲染层。 */
-function grantErrorText(error: unknown): string {
+type GrantFailure = readonly [code: FailureCode, key: Parameters<typeof wireNote>[0]]
+const EXPIRED: GrantFailure = ['EXTERNAL_FILE_GRANT_EXPIRED', 'error.externalGrantExpired']
+const DENIED: GrantFailure = ['EXTERNAL_FILE_GRANT_OPERATION_DENIED', 'error.externalGrantWrongWindow']
+const INVALID_PATH: GrantFailure = ['EXTERNAL_FILE_GRANT_PATH_INVALID', 'error.externalGrantPathInvalid']
+const UNAVAILABLE: GrantFailure = ['EXTERNAL_FILE_SERVICE_UNAVAILABLE', 'error.externalFileServiceUnavailable']
+
+const GRANT_FAILURES: Readonly<Record<string, GrantFailure>> = {
+  EXTERNAL_FILE_GRANT_NOT_FOUND: EXPIRED,
+  EXTERNAL_FILE_GRANT_EXPIRED: EXPIRED,
+  EXTERNAL_FILE_GRANT_EXHAUSTED: EXPIRED,
+  EXTERNAL_FILE_GRANT_WRONG_WINDOW: DENIED,
+  EXTERNAL_FILE_GRANT_OPERATION_DENIED: DENIED,
+  EXTERNAL_FILE_GRANT_PATH_ABSOLUTE: INVALID_PATH,
+  EXTERNAL_FILE_GRANT_PATH_INVALID: INVALID_PATH,
+  EXTERNAL_FILE_GRANT_PATH_TRAVERSAL: INVALID_PATH,
+  EXTERNAL_FILE_GRANT_SUBPATH_REJECTED: INVALID_PATH,
+  EXTERNAL_FILE_GRANT_SCOPE_MISMATCH: INVALID_PATH,
+  EXTERNAL_FILE_GRANT_TARGET_CHANGED: INVALID_PATH,
+  EXTERNAL_FILE_GRANT_TARGET_INVALID: INVALID_PATH,
+  SECURE_FS_REPARSE_POINT: INVALID_PATH,
+  SECURE_FS_INVALID_PATH: INVALID_PATH,
+  SECURE_FS_NOT_FOUND: INVALID_PATH,
+  SECURE_FS_UNSUPPORTED_PLATFORM: UNAVAILABLE,
+  SECURE_FS_HELPER_UNAVAILABLE: UNAVAILABLE,
+  SECURE_FS_HELPER_TIMEOUT: UNAVAILABLE,
+  SECURE_FS_TARGET_IN_USE: ['SECURE_FS_TARGET_IN_USE', 'error.exportTargetInUse'],
+}
+
+function grantFailure(error: unknown): WireFailure {
   const code = error instanceof Error ? error.message : String(error)
-  switch (code) {
-    case 'EXTERNAL_FILE_GRANT_NOT_FOUND':
-    case 'EXTERNAL_FILE_GRANT_EXPIRED':
-    case 'EXTERNAL_FILE_GRANT_EXHAUSTED':
-      return text('外部文件授权已失效，请重新选择。', 'The external file grant has expired. Please choose again.')
-    case 'EXTERNAL_FILE_GRANT_WRONG_WINDOW':
-    case 'EXTERNAL_FILE_GRANT_OPERATION_DENIED':
-      return text('当前窗口无权使用该外部文件授权。', 'This window is not allowed to use the external file grant.')
-    case 'EXTERNAL_FILE_GRANT_PATH_ABSOLUTE':
-    case 'EXTERNAL_FILE_GRANT_PATH_INVALID':
-    case 'EXTERNAL_FILE_GRANT_PATH_TRAVERSAL':
-    case 'EXTERNAL_FILE_GRANT_SUBPATH_REJECTED':
-    case 'EXTERNAL_FILE_GRANT_SCOPE_MISMATCH':
-    case 'EXTERNAL_FILE_GRANT_TARGET_CHANGED':
-    case 'EXTERNAL_FILE_GRANT_TARGET_INVALID':
-    case 'SECURE_FS_REPARSE_POINT':
-    case 'SECURE_FS_INVALID_PATH':
-    case 'SECURE_FS_NOT_FOUND':
-      return text('外部文件授权路径无效，已拒绝操作。', 'The external file grant path is invalid; the operation was rejected.')
-    case 'SECURE_FS_UNSUPPORTED_PLATFORM':
-    case 'SECURE_FS_HELPER_UNAVAILABLE':
-    case 'SECURE_FS_HELPER_TIMEOUT':
-      return text('安全外部文件服务不可用，已拒绝操作。', 'The secure external file service is unavailable; the operation was rejected.')
-    case 'SECURE_FS_TARGET_IN_USE':
-      return text(
-        '文件没有改动。目标文件正被其他程序打开，关掉它后再点「选择目录并导出」。',
-        'The file was not changed. Another program has it open. Close that program, then click "Choose folder and export" again.',
-      )
-    default:
-      return text('外部文件授权操作失败。', 'The external file grant operation failed.')
-  }
+  const [failure, key] = Object.hasOwn(GRANT_FAILURES, code)
+    ? GRANT_FAILURES[code]
+    : ['EXTERNAL_FILE_GRANT_FAILED', 'error.externalGrantFailed'] as const
+  return { code: failure, note: wireNote(key) }
 }
 
 type GrantEvent = {
@@ -94,7 +97,7 @@ export function registerExternalFileGrantController(
   grants: ExternalFileGrantService = externalFileGrants,
   fileSystem: WindowsSafeFileSystem = windowsSafeFileSystem,
 ): void {
-  ipcMain.handle('dialog:select-export-directory', async (event: GrantEvent) => {
+  handle('dialog:select-export-directory', async (event: GrantEvent) => {
     const result = await showOpenDialogInLastDirectory('export-directory', {
       title: text('选择导出目录', 'Choose an export directory'),
       properties: ['openDirectory', 'createDirectory'],
@@ -116,24 +119,24 @@ export function registerExternalFileGrantController(
     }
   })
 
-  ipcMain.handle(
+  handle(
     'fs:grant-read-file',
     async (event: GrantEvent, grantId: string, relativePath?: string) => {
       let target: ResolvedExternalFileGrant
       try {
         target = resolveGrantPath(grants, event, grantId, 'read', relativePath)
       } catch (error) {
-        return { success: false, content: '', error: grantErrorText(error) }
+        return { success: false, content: '', failure: grantFailure(error) }
       }
       try {
         return { success: true, content: await fileSystem.readText(target) }
       } catch (error) {
-        return { success: false, content: '', error: externalFileReadFailureText(error) }
+        return { success: false, content: '', failure: externalFileReadFailure(error) }
       }
     },
   )
 
-  ipcMain.handle(
+  handle(
     'fs:grant-write-file',
     async (event: GrantEvent, grantId: string, relativePath: string, content: string) => {
       try {
@@ -148,13 +151,13 @@ export function registerExternalFileGrantController(
         return {
           success: false,
           commitState: atomicWriteFailureCommitState(error) ?? 'not_committed',
-          error: grantErrorText(error),
+          failure: grantFailure(error),
         }
       }
     },
   )
 
-  ipcMain.handle(
+  handle(
     'fs:grant-mkdir',
     async (event: GrantEvent, grantId: string, relativePath: string) => {
       try {
@@ -162,7 +165,7 @@ export function registerExternalFileGrantController(
         await fileSystem.mkdir(target)
         return { success: true }
       } catch (error) {
-        return { success: false, error: grantErrorText(error) }
+        return { success: false, failure: grantFailure(error) }
       }
     },
   )

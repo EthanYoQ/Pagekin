@@ -84,6 +84,7 @@ const localizationCallees = new Set([
   'stepDesc',
   'appErrorMessage',
   'displayedErrorMessage',
+  'failureText',
   'projectDeleteFailureMessage',
   'projectText',
   'projectError',
