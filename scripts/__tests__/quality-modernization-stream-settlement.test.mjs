@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { syncBuiltinESMExports } from 'node:module'
 import { OpenAIProvider } from '../../electron/llm/openai-provider'
 import { safeTransportError } from '../../src/shared/generation-contract'
+import { ignoreFailure } from '../../src/shared/ignore-failure'
 import { createAttemptSupervisor, qualificationBridgeWindows, productionScenario, continuityCaseOperations } from '../quality-modernization-driver.mjs'
 import { forwardReasoningFor, forwardQualificationWindowFor } from '../quality-modernization-run.mjs'
 
@@ -74,7 +75,7 @@ test('the actual tee consumer settles a complete DONE without waiting for body E
       vi.stubGlobal('fetch', async (_url, options) => {
         if (++fetches !== 1 || String(_url) !== 'https://network-denied.invalid/v1/chat/completions') deny()
         options.signal?.addEventListener('abort', () => {
-          try { streamController.error(new DOMException('Probe deadline', 'AbortError')) } catch { /* closed */ }
+          void ignoreFailure('已关闭的流不再接收中止', async () => streamController.error(new DOMException('Probe deadline', 'AbortError')))
         }, { once: true })
         return new Response(providerBody, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
       })

@@ -161,7 +161,7 @@ describe('bounded completion', () => {
   })
 
   it('describes provider length as this request limit and retains the failure code', () => {
-    const error = createBoundedCompletionError('length', 'zh-CN', undefined, shown('zh-CN'))
+    const error = createBoundedCompletionError('length', undefined, shown('zh-CN'))
 
     expect(error).toMatchObject({
       failureCode: 'length',

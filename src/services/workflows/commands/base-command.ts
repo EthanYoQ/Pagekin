@@ -11,6 +11,7 @@ import {
   type PromptBudgetPolicy,
 } from '../../generation/generation-harness'
 import type { GenerationReasoningStage } from '../../../shared/reasoning-types'
+import type { AuthorNote } from '../../../shared/failure'
 import {
   completeBoundedCompletion,
   createBoundedCompletionError,
@@ -90,14 +91,15 @@ export function injectWritingSkillIntoTask(
  * 主进程把存储、预算这些失败写进收据后照常返回结果，取消截断的结果则不带失败码（取消码不交给渲染端）。
  * 作者已取消时，带失败码的结果就地抛出带原码的失败，后面任何取消检查点都不会把它改记成取消；没取消时原样返回。
  */
-export function keepReceiptFailuresOnCancel(session: GenerationSession, context: WorkflowContext): GenerationSession {
+export function keepReceiptFailuresOnCancel(session: GenerationSession, context: WorkflowContext,
+  failureNote?: (receipt: GenerationAttemptReceipt) => AuthorNote | undefined): GenerationSession {
   return {
     budget: session.budget,
     complete: async (task, options) => {
       const outcome = await session.complete(task, options)
       const failureCode = outcome.receipt.failureCode
       if (failureCode && context.cancelled) {
-        throw Object.assign(createBoundedCompletionError(outcome.finishReason, context.uiLocale ?? 'zh-CN', outcome.receipt, context.interfaceLocale), { code: failureCode })
+        throw createBoundedCompletionError(outcome.finishReason, outcome.receipt, context.interfaceLocale, { code: failureCode, note: failureNote?.(outcome.receipt) })
       }
       return outcome
     },
@@ -228,7 +230,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
       return await runtime.execute(async ({ session }) => {
         this.activeGenerationExecution = {
           context: params.context,
-          session: keepReceiptFailuresOnCancel(session, params.context),
+          session: keepReceiptFailuresOnCancel(session, params.context, receipt => this.receiptFailureNote(receipt)),
           signal: cancellation.signal,
           loggedWritingSkillStages: new Set(),
           runtime,
@@ -331,6 +333,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
         && options?.promptBudget !== undefined,
       isCancelled: () => context.cancelled,
       redactVisibleText: text => this.stripThinkingTags(text),
+      failureNote: receipt => this.receiptFailureNote(receipt),
       requestContinuation: async continuationPrompt => {
         continuationCount += 1
         callbacks.log(text(
@@ -531,12 +534,14 @@ export abstract class BaseWorkflowCommand<TResult = string> {
   }
 
   protected createIncompleteCompletionError(
-    context: Pick<WorkflowContext, 'uiLocale' | 'interfaceLocale'>,
+    context: Pick<WorkflowContext, 'interfaceLocale'>,
     finishReason: LLMFinishReason,
     receipt?: BoundedCompletion['receipt'],
   ): Error {
-    return createBoundedCompletionError(finishReason, context.uiLocale, receipt, context.interfaceLocale)
+    return createBoundedCompletionError(finishReason, receipt, context.interfaceLocale)
   }
+
+  protected readonly receiptFailureNote: (receipt: BoundedCompletion['receipt']) => AuthorNote | undefined = () => undefined
 
   /**
    * 使用 Builder 的 systemRole + prompt 一键调用 LLM

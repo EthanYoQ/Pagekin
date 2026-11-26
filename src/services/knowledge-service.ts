@@ -6,6 +6,9 @@
  */
 
 import { ipc } from './ipc-client'
+import { failureText } from '../i18n/app-errors'
+import { AuthorError } from '../shared/failure'
+import { currentInterfaceLocale } from '../stores/locale-store'
 import type {
   AppErrorCode,
   AppFailure,
@@ -18,9 +21,10 @@ export interface PlanningMaterial {
   text: string
 }
 
-export class KnowledgeBaseServiceError extends Error {
-  constructor(public readonly code: AppErrorCode, message?: string) {
-    super(message ?? code)
+/** 只带码：主进程旧 error 字段的说明按系统语言写，不采用。 */
+export class KnowledgeBaseServiceError extends AuthorError {
+  constructor(code: AppErrorCode) {
+    super({ code }, failureText(currentInterfaceLocale(), { code }))
     this.name = 'KnowledgeBaseServiceError'
   }
 }
@@ -33,7 +37,7 @@ export function unwrapKnowledgeValue<T>(result: T | AppFailure): T {
     result.success === false &&
     'errorCode' in result
   ) {
-    throw new KnowledgeBaseServiceError(result.errorCode, result.error)
+    throw new KnowledgeBaseServiceError(result.errorCode)
   }
   return result as T
 }

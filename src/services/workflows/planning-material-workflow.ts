@@ -8,6 +8,7 @@ import { useProjectStore } from '../../stores/project-store'
 import { workflowResourceKey, type WorkflowDefinition } from '../../stores/workflow-store'
 import { importPlanningMaterial, type PlanningMaterial } from '../knowledge-service'
 import { workflowMainProcessError } from './workflow-project-session'
+import { authorOwned } from '../../shared/failure'
 
 export interface PlanningMaterialWorkflowParams {
   projectSession: ProjectSessionContext
@@ -50,8 +51,9 @@ export function createPlanningMaterialWorkflow(
             if (!result.success) throw workflowMainProcessError(
               context.interfaceLocale,
               result.errorCode ?? result.error,
-              `无法导入 ${material.fileName}`,
-              `Could not import ${material.fileName}`,
+              '无法导入 {fileName}',
+              'Could not import {fileName}',
+              { fileName: authorOwned(material.fileName) },
             )
             callbacks.log(text(
               `已导入 ${material.fileName}`,

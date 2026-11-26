@@ -7,7 +7,7 @@ import { navigate } from '../../stores/navigation/navigation-intents'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import { errorLocaleForRun } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
-import type { Recovery } from '../../shared/failure'
+import type { Failure, LegacyReason, Recovery } from '../../shared/failure'
 import { useProjectStore } from '../../stores/project-store'
 import type { WorkflowRun } from '../../stores/workflow-store'
 import { toast } from '../ui/Toast'
@@ -21,6 +21,9 @@ export interface RunFailure {
   /** 情节大纲途中来源被改：同一运行不能恢复，只能到架构页从本批起始章重新生成。 */
   canRestartOutline: boolean
 }
+
+const hasNote = (failure: Failure | LegacyReason | undefined): boolean =>
+  failure !== undefined && !('legacy' in failure) && (failure.note !== undefined || hasNote(failure.because))
 
 export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale): RunFailure {
   const failedStep = run.steps.find(step => step.status === 'failed')
@@ -38,7 +41,7 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
       run.type === 'chapter_creation' && run.chapterWordsTarget !== undefined && !(currentStep?.result || '').trim(),
       run.promptBudgetReport ?? currentStep?.promptBudgetReport,
       failedStep?.generationActivity ?? currentStep?.generationActivity,
-      failure?.note && failureText(locale, failure),
+      failure && hasNote(failure) ? failureText(locale, failure) : undefined,
     ),
     canResumeOutline: failedWith(PLOT_OUTLINE_RESUME_ERROR_CODE, 'resume-plot-outline'),
     canRestartOutline: failedWith(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE, 'restart-plot-outline'),

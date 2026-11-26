@@ -289,13 +289,9 @@ function nonSecretModelIdentity(profile) {
 
 function secretMarkersForProfile(profile) {
   const markers = [String(profile.apiKey || '').trim()]
-  try {
-    const endpoint = new URL(String(profile.baseUrl || ''))
-    markers.push(endpoint.username, endpoint.password)
-    for (const value of endpoint.searchParams.values()) markers.push(value)
-  } catch {
-    // A malformed endpoint has no reliably extractable credential fields.
-  }
+  const endpoint = new URL(String(profile.baseUrl || ''))
+  markers.push(endpoint.username, endpoint.password)
+  for (const value of endpoint.searchParams.values()) markers.push(value)
   return markers.filter(marker => marker.length >= 4)
 }
 

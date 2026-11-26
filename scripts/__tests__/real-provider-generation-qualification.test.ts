@@ -383,6 +383,15 @@ describe('real provider generation qualification contract', () => {
     })).toThrow(/DEEPSEEK_OFFICIAL_PROFILE_REQUIRED/u)
   })
 
+  it('rejects a malformed endpoint as a target mismatch before any provider request', async () => {
+    const profiles = inMemoryProfiles()
+    profiles[0] = { ...profiles[0], baseUrl: 'https://user:not a url@api.deepseek.com' }
+
+    await expect(runRealProviderGenerationQualification({ mode: 'dry-run', profiles, repositoryRoot }))
+      .rejects.toMatchObject({ code: 'QUALIFICATION_TARGET_MISMATCH' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('rejects exported budget and fixture overrides before any provider request', async () => {
     const fetchSpy = vi.fn(() => Promise.reject(new Error('must fail before fetch')))
     vi.stubGlobal('fetch', fetchSpy)

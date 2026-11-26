@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { chooseProjectDirectoryGrant } from '../project-directory-grant.mjs'
+import { ignoreFailure } from '../lib/ignore-failure.mjs'
 import { FAKE_MODEL, FIXTURE_CONFIG, FIXTURE_PROSE } from './fake-model.mjs'
 import * as blueprint from './pages/blueprint.mjs'
 import * as bookshelf from './pages/bookshelf.mjs'
@@ -565,8 +566,7 @@ async function pickFromPalette(page, query, option) {
 
 function bookOpened(page) {
   const loaded = page.waitForEvent('console', { predicate: message => message.text().includes('项目数据加载完成'), timeout: 30_000 })
-  // 场景在等它之前抛错时没人接这个拒绝，未处理的拒绝会让 Node 直接退出、诊断 JSON 写不出来
-  loaded.catch(() => {})
+  void ignoreFailure('只防未处理的拒绝，等待方会照常收到同一错误', () => loaded)
   return async () => {
     await loaded
     await page.getByRole('navigation', { name: '位置' }).getByText('第 4 章').waitFor({ state: 'visible' })

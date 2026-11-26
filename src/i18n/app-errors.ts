@@ -686,9 +686,15 @@ function legacyReasonText(locale: ErrorDisplayLocale, text: string): string | un
   return strippedRaw(text) || undefined
 }
 
+function codeText(locale: ErrorDisplayLocale, code: string): string | undefined {
+  const known = knownAppErrorMessage(locale, code)
+  if (known === undefined) logUnregisteredCode(code)
+  return known
+}
+
 function sentences(locale: ErrorDisplayLocale, failure: Failure | LegacyReason): string[] {
   if ('legacy' in failure) return [legacyReasonText(locale, failure.legacy)].filter((text): text is string => text !== undefined)
-  const own = (failure.note && noteText(locale, failure.note)) || (failure.code ? knownAppErrorMessage(locale, failure.code) : undefined)
+  const own = (failure.note && noteText(locale, failure.note)) || (failure.code ? codeText(locale, failure.code) : undefined)
   const rest = failure.because ? sentences(locale, failure.because) : []
   return own === undefined || rest[0] === own ? rest : [own, ...rest]
 }

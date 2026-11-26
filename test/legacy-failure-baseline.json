@@ -177,9 +177,6 @@
   "src/services/generation/prompt-budget-failure.ts": {
     "knownAppErrorMessage": 1
   },
-  "src/services/ipc-result.ts": {
-    "knownAppErrorMessage": 1
-  },
   "src/services/project-clear-service.ts": {
     "knownAppErrorMessage": 1
   },
@@ -199,7 +196,6 @@
     "displayedErrorMessage": 1
   },
   "src/services/workflows/commands/generate-draft.command.ts": {
-    "appErrorMessage": 1,
     "displayedErrorMessage": 1,
     "englishWithReason": 3
   },
@@ -216,8 +212,11 @@
   "src/services/workflows/import-run-orchestrator.ts": {
     "appErrorMessage": 1
   },
+  "src/services/workflows/planning-material-workflow.ts": {
+    "authorOwned": 1
+  },
   "src/services/workflows/workflow-project-session.ts": {
-    "displayedErrorMessage": 1
+    "{ legacy:": 1
   },
   "src/services/workflows/workflow-utils.ts": {
     "displayedErrorMessage": 5

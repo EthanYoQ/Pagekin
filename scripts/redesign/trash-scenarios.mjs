@@ -4,6 +4,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { ignoreFailure } from '../lib/ignore-failure.mjs'
 import { characterStateReply, finalizeChapter, openChapter } from './f491-scenarios.mjs'
 import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
@@ -110,7 +111,7 @@ function lockFile(file) {
     child.stdout.on('data', chunk => { if (String(chunk).includes('locked')) resolve() })
     child.once('exit', code => reject(new Error(`锁文件进程提前退出：${code}`)))
   })
-  return { pid: child.pid, ready, release: () => { try { execFileSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore' }) } catch { /* 已退出 */ } } }
+  return { pid: child.pid, ready, release: () => void ignoreFailure('锁文件进程可能已退出', () => execFileSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore' })) }
 }
 
 async function rejectNextRestoreAsBatchUnfinished(app) {

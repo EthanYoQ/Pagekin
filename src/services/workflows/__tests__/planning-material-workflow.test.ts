@@ -59,3 +59,12 @@ describe('planning material import failures', () => {
     expect(message.replace('设定.md', '')).not.toMatch(/\p{Script=Han}/u)
   })
 })
+
+it('旧向量迁移阻断时导入创作资料按界面语言说明', async () => {
+  useProjectStore.setState({ currentProject: { id: 'project-1', path: projectSession.projectPath, sessionLease: 'lease-1' } as ProjectData })
+  const blocked = { success: false, errorCode: 'LEGACY_VECTOR_MIGRATION_BLOCKED', error: '旧版知识库数据需要先修复后才能继续。请修正项目中的 vectors.json，然后重试。' }
+  const reason = (locale: InterfaceLocale) => knownAppErrorMessage(shown(locale), 'LEGACY_VECTOR_MIGRATION_BLOCKED')!
+  expect(await importFailure('zh-CN', blocked)).toBe(`无法导入 设定.md：${reason('zh-CN')}`)
+  expect(await importFailure('en-US', blocked)).toBe(`Could not import 设定.md ${reason('en-US')}`)
+  expect(await importFailure('en-US', blocked, 'ja-JP')).toBe(`Could not import 设定.md ${reason('ja-JP')}`)
+})
