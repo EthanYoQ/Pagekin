@@ -1,0 +1,263 @@
+{
+  "src/components/backups/ProjectBackupPanel.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/characters/CharacterCardImportButton.tsx": {
+    "appErrorMessage": 2
+  },
+  "src/components/characters/use-pending-character-proposals.ts": {
+    "appErrorMessage": 1
+  },
+  "src/components/characters/use-pending-relation-candidates.ts": {
+    "appErrorMessage": 1
+  },
+  "src/components/characters/use-pending-state-candidates.ts": {
+    "appErrorMessage": 1
+  },
+  "src/components/dialogs/ClearProjectDataDialog.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/dialogs/ImportNovelDialog.tsx": {
+    "displayedErrorMessage": 7,
+    "englishWithReason": 1
+  },
+  "src/components/dialogs/use-architecture-confirm-form.ts": {
+    "displayedErrorMessage": 5
+  },
+  "src/components/dialogs/use-batch-chapter-form.ts": {
+    "displayedErrorMessage": 4
+  },
+  "src/components/dialogs/use-directory-config-form.ts": {
+    "displayedErrorMessage": 8
+  },
+  "src/components/editor/ArchFileViewer.tsx": {
+    "appErrorMessage": 5
+  },
+  "src/components/editor/CodeMirrorEditor.tsx": {
+    "displayedErrorMessage": 2
+  },
+  "src/components/editor/InlineAnnotationReview.tsx": {
+    "knownAppErrorMessage": 1
+  },
+  "src/components/editor/LegacyRosterRecoveryPanel.tsx": {
+    "appErrorMessage": 2
+  },
+  "src/components/editor/review-checklist.ts": {
+    "displayedErrorMessage": 3
+  },
+  "src/components/editor/use-architecture-overview.ts": {
+    "displayedErrorMessage": 3
+  },
+  "src/components/editor/use-chapter-blueprints.ts": {
+    "displayedErrorMessage": 9,
+    "englishWithReason": 6
+  },
+  "src/components/editor/use-character-profile.ts": {
+    "displayedErrorMessage": 1,
+    "englishWithReason": 1
+  },
+  "src/components/editor/use-draft-actions.ts": {
+    "displayedErrorMessage": 10,
+    "englishWithReason": 8
+  },
+  "src/components/editor/use-novel-config-form.ts": {
+    "displayedErrorMessage": 2
+  },
+  "src/components/layout/use-window-close-guard.ts": {
+    "displayedErrorMessage": 3
+  },
+  "src/components/panels/agent/DomainProposalDiff.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/panels/agent/artifact-open.ts": {
+    "appErrorMessage": 1
+  },
+  "src/components/panels/ai-output-failure-presentation.ts": {
+    "knownAppErrorMessage": 3
+  },
+  "src/components/panels/sidebar/draft-deletion.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/panels/sidebar/finalized-chapter-deletion.ts": {
+    "displayedErrorMessage": 2
+  },
+  "src/components/panels/sidebar/sidebar-file-openers.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/panels/sidebar/use-incomplete-deletions.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/run/run-failure.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/run/use-run-recovery.ts": {
+    "displayedErrorMessage": 6
+  },
+  "src/components/settings/ModelForm.tsx": {
+    "displayedErrorMessage": 1,
+    "englishWithReason": 1
+  },
+  "src/components/settings/SkillSettings.tsx": {
+    "displayedErrorMessage": 6
+  },
+  "src/components/settings/model-provider-resource.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/settings/use-config-switch.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/settings/use-model-section.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/settings/use-proxy-settings.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/blueprint/use-blueprint-ai-check.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/blueprint/use-blueprint-recovery.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/chapter/ChapterActions.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/chapter/DeletionCleanupNotices.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/chapter/ProseDocument.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/chapter/chapter-tab-routing.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/chapter/use-later-blueprint-check.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/characters/CharacterTimeline.tsx": {
+    "{ legacy:": 1
+  },
+  "src/components/stage/history/StageHistory.tsx": {
+    "displayedErrorMessage": 2
+  },
+  "src/components/stage/knowledge/use-knowledge-base.ts": {
+    "appErrorMessage": 9
+  },
+  "src/components/stage/plot/use-plot-threads.ts": {
+    "knownAppErrorMessage": 1
+  },
+  "src/components/stage/run/ImportSuggestions.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/run/RunCard.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/setup/StageSetup.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/trash/TrashDialog.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/trash/trash-actions.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/use-stage-work.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/components/stage/write/WriteChapterPopover.tsx": {
+    "displayedErrorMessage": 3
+  },
+  "src/components/ui/ToastStack.tsx": {
+    "displayedErrorMessage": 1
+  },
+  "src/i18n/app-errors.ts": {
+    "appErrorMessage": 2,
+    "displayedErrorMessage": 1,
+    "knownAppErrorMessage": 6
+  },
+  "src/services/export-service.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/services/generation/prompt-budget-failure.ts": {
+    "knownAppErrorMessage": 1
+  },
+  "src/services/ipc-result.ts": {
+    "knownAppErrorMessage": 1
+  },
+  "src/services/project-clear-service.ts": {
+    "knownAppErrorMessage": 1
+  },
+  "src/services/project-service.ts": {
+    "displayedErrorMessage": 2,
+    "englishWithReason": 3
+  },
+  "src/services/workflows/commands/architecture.command.ts": {
+    "displayedErrorMessage": 9,
+    "englishWithReason": 2,
+    "knownAppErrorMessage": 1
+  },
+  "src/services/workflows/commands/base-command.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/services/workflows/commands/directory.command.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/services/workflows/commands/generate-draft.command.ts": {
+    "appErrorMessage": 1,
+    "displayedErrorMessage": 1,
+    "englishWithReason": 3
+  },
+  "src/services/workflows/commands/import-novel.command.ts": {
+    "displayedErrorMessage": 1,
+    "englishWithReason": 1
+  },
+  "src/services/workflows/creative-workflow-launcher.ts": {
+    "displayedErrorMessage": 2
+  },
+  "src/services/workflows/directory-workflow.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/services/workflows/import-run-orchestrator.ts": {
+    "appErrorMessage": 1
+  },
+  "src/services/workflows/workflow-project-session.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/services/workflows/workflow-utils.ts": {
+    "displayedErrorMessage": 5
+  },
+  "src/shared/character-continuity.ts": {
+    "{ legacy:": 1
+  },
+  "src/stores/character-store.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/stores/llm-store.ts": {
+    "displayedErrorMessage": 5
+  },
+  "src/stores/locale-store.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/stores/mcp-store.ts": {
+    "displayedErrorMessage": 3
+  },
+  "src/stores/navigation/stage-navigation.ts": {
+    "displayedErrorMessage": 1
+  },
+  "src/stores/project-store.ts": {
+    "appErrorMessage": 1,
+    "displayedErrorMessage": 2,
+    "englishWithReason": 1
+  },
+  "src/stores/workflow-store.ts": {
+    "displayedErrorMessage": 13
+  },
+  "electron/controllers/import-controller.ts": {
+    "knownAppErrorMessage": 1
+  },
+  "electron/controllers/import-run-failure.ts": {
+    "knownAppErrorMessage": 1
+  },
+  "electron/controllers/llm-controller.ts": {
+    "knownAppErrorMessage": 2
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronRight, CircleCheck, CircleDashed, CircleMinus, CircleX, Pause, Play } from 'lucide-react'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { displayedErrorMessage, failureText } from '../../../i18n/app-errors'
 import { errorLocaleForRun } from '../../../i18n/core'
 import { pluralEn } from '../../../shared/plural-en'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -195,7 +195,10 @@ function RunStep({ step, runStatus, runLocale, live, reasoning, open, onToggle, 
   const output = useMemo(() => splitThinking(step.result), [step.result])
   const locale = errorLocaleForRun(runLocale, useLocaleStore(activeInterfaceLocale))
   const thinking = reasoning || output.thinking
-  const hasDetail = Boolean(output.raw || thinking || step.error)
+  const failed = step.failure || (step.status === 'failed' && !step.error)
+    ? failureText(locale, step.failure)
+    : step.error && displayedErrorMessage(locale, step.error)
+  const hasDetail = Boolean(output.raw || thinking || failed)
   const expanded = hasDetail && open
   const reviewing = runStatus === 'running' && step.generationActivity?.operation === 'review-chapter'
   const row = (
@@ -221,7 +224,7 @@ function RunStep({ step, runStatus, runLocale, live, reasoning, open, onToggle, 
             </details>
           )}
           {output.content && <StepOutput content={output.content} live={live} text={text} />}
-          {step.error && <p className="run-step-error">{displayedErrorMessage(locale, step.error)}</p>}
+          {failed && <p className="run-step-error">{failed}</p>}
         </div>
       )}
     </li>
