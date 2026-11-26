@@ -14,7 +14,6 @@ function electronBinary() {
   try { return createRequire(import.meta.url)('electron') } catch { return undefined }
 }
 
-// 模拟 r3-native 夹具：临时目录里有一个 junction 指向临时目录外、仍要保留的目录。
 function fixture() {
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'remove-tree-outside-'))
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'remove-tree-scratch-'))

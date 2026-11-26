@@ -1,6 +1,7 @@
-import { copyLocale, localize, translate, type MessageKey } from './core'
+import { copyLocale, localize, messages, translate, type MessageKey } from './core'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
+import { AuthorError, AuthorNote, catalogKeyNote, codeOf, failureOf, type Failure, type LegacyReason, type NoteParams } from '../shared/failure'
 
 /**
  * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
@@ -460,6 +461,7 @@ function readMessage(error: unknown): string {
 
 /** 已登记错误码的可读文案；未登记时返回 undefined，由调用方保留原有说明。 */
 export function knownAppErrorMessage(locale: ErrorDisplayLocale, error: unknown): string | undefined {
+  if (error instanceof AuthorError) return authoredText(locale, error.failure)
   const code = readCode(error)
   return code ? translate(locale, ERROR_KEYS[code]) : undefined
 }
@@ -618,6 +620,7 @@ const AUTHOR_STOP_REASON_KEYS = {
 export function appErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
   const known = knownAppErrorMessage(locale, error)
   if (known) return known
+  if (error instanceof AuthorError) return unexplained(locale, error.failure)
   return unregisteredCodeMessage(locale, strippedRaw(error))
     ?? translate(locale, 'error.unknown', { message: readMessage(error) })
 }
@@ -625,13 +628,105 @@ export function appErrorMessage(locale: ErrorDisplayLocale, error: unknown): str
 const loggedUnregisteredCodes = new Set<string>()
 
 /** 同一个码只记一次日志：有的显示处在渲染时调用。 */
+function logUnregisteredCode(code: string): void {
+  if (loggedUnregisteredCodes.has(code)) return
+  loggedUnregisteredCodes.add(code)
+  console.warn(`[app-errors] 未登记文案的错误码：${code}`)
+}
+
 function unregisteredCodeMessage(locale: ErrorDisplayLocale, raw: string, fallback?: string): string | undefined {
   if (!CODE_SHAPE.test(raw)) return undefined
-  if (!loggedUnregisteredCodes.has(raw)) {
-    loggedUnregisteredCodes.add(raw)
-    console.warn(`[app-errors] 未登记文案的错误码：${raw}`)
-  }
+  logUnregisteredCode(raw)
   return fallback || translate(locale, 'error.unregisteredCode')
+}
+
+const loggedValues = new Set<string>()
+const loggedObjects = new WeakSet<object>()
+
+/** 对象按引用、其余按值，只记一次：显示函数会在渲染时反复调用。 */
+function warnOnce(tag: string, detail: unknown): void {
+  if (typeof detail === 'object' && detail !== null) {
+    if (loggedObjects.has(detail)) return
+    loggedObjects.add(detail)
+  } else {
+    const key = `${tag}\u0000${String(detail)}`
+    if (loggedValues.has(key)) return
+    loggedValues.add(key)
+  }
+  console.warn(`[app-errors] ${tag}`, detail)
+}
+
+export function catalogNote(key: MessageKey, params?: NoteParams): AuthorNote {
+  return catalogKeyNote(key, params)
+}
+
+/** 不是受控入口造的、目录里没有这个键、渲染出空串的说明，都当作没写。 */
+function noteText(locale: ErrorDisplayLocale, value: AuthorNote): string | undefined {
+  if (!AuthorNote.minted(value)) {
+    warnOnce('不是受控入口造的说明，已忽略', JSON.stringify(value))
+    return undefined
+  }
+  if (value.key !== undefined) {
+    if (!Object.hasOwn(messages['en-US'], value.key)) {
+      warnOnce('说明的目录键不存在，已忽略', value.key)
+      return undefined
+    }
+    return translate(locale, value.key as MessageKey, value.params).trim() || undefined
+  }
+  if (!value.copy) return undefined
+  const template = copyLocale(locale) === 'zh-CN' ? value.copy.zh : value.copy.en
+  return template.replace(/\{(\w+)\}/gu, (whole, name: string) => String(value.params?.[name] ?? whole)).trim() || undefined
+}
+
+/** 未迁移通道给的原因按旧规则：已登记码按码说明，没登记的码不显示，其余文字只在中文界面附上。 */
+function legacyReasonText(locale: ErrorDisplayLocale, text: string): string | undefined {
+  const known = knownAppErrorMessage(locale, text)
+  if (known) return known
+  if (errorCodeOf(text) || copyLocale(locale) !== 'zh-CN' || !text.trim()) return undefined
+  return strippedRaw(text) || undefined
+}
+
+function sentences(locale: ErrorDisplayLocale, failure: Failure | LegacyReason): string[] {
+  if ('legacy' in failure) return [legacyReasonText(locale, failure.legacy)].filter((text): text is string => text !== undefined)
+  const own = (failure.note && noteText(locale, failure.note)) || (failure.code ? knownAppErrorMessage(locale, failure.code) : undefined)
+  const rest = failure.because ? sentences(locale, failure.because) : []
+  return own === undefined || rest[0] === own ? rest : [own, ...rest]
+}
+
+/** 三种接法与仓库现有写法一致。 */
+export type FailureJoin = 'sentence' | 'colon' | 'paragraph'
+const JOINERS: Record<FailureJoin, (chinese: boolean) => string> = {
+  sentence: chinese => chinese ? '：' : ' ',
+  colon: chinese => chinese ? '：' : ': ',
+  paragraph: () => '\n\n',
+}
+
+function authoredText(locale: ErrorDisplayLocale, failure: Failure, join: FailureJoin = 'sentence'): string | undefined {
+  const parts = sentences(locale, failure)
+  return parts.length ? parts.join(JOINERS[join](copyLocale(locale) === 'zh-CN')) : undefined
+}
+
+function unexplained(locale: ErrorDisplayLocale, failure: Failure | undefined, fallback?: string): string {
+  const code = failure && codeOf(failure)
+  if (code) logUnregisteredCode(code)
+  return fallback || translate(locale, 'error.unregisteredCode')
+}
+
+/** 失败的唯一显示函数。认不出的失败（undefined）和没有说明、码也查不到的失败用通用说明。 */
+export function failureText(locale: ErrorDisplayLocale, failure: Failure | undefined, options: { fallback?: AuthorNote; join?: FailureJoin } = {}): string {
+  return (failure && authoredText(locale, failure, options.join))
+    ?? unexplained(locale, failure, options.fallback && noteText(locale, options.fallback))
+}
+
+export function authorError(locale: ErrorDisplayLocale, failure: Failure, options?: { cause?: unknown }): AuthorError {
+  return new AuthorError(failure, failureText(locale, failure), options)
+}
+
+/** catch 处的严格解析：认不出的不造码也不造说明，原文只进控制台，同一个错误只记一次。 */
+export function caughtFailure(error: unknown): Failure | undefined {
+  const failure = failureOf(error)
+  if (!failure) warnOnce('未标记的失败：', error)
+  return failure
 }
 
 /** 显示处去掉的前缀：Electron 的调用通道，以及 "Error: "、"TypeError: " 这类类名。 */
@@ -643,6 +738,7 @@ const DISPLAY_PREFIX = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*
  * 没有兜底时用通用说明；其余原文去掉通道与类名前缀后保留；完全没有内容时用该处的兜底说明（调用方用 text(zh, en) 写好）。
  */
 export function displayedErrorMessage(locale: ErrorDisplayLocale, error: unknown, fallback?: string): string {
+  if (error instanceof AuthorError) return authoredText(locale, error.failure) ?? unexplained(locale, error.failure, fallback)
   const known = knownAppErrorMessage(locale, error)
   if (known) return known
   const raw = strippedRaw(error)

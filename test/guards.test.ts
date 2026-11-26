@@ -8,6 +8,10 @@ import { guardTestFiles, reachesRepoSourceFiles, REPO_SOURCE_FILES_MODULE } from
 import { REPO_ROOT, repoSourceFiles } from './helpers/repo-source-files'
 import { listTemporaryDirectory } from './helpers/temporary-directory'
 import BASELINE from './directory-listing-baseline.json'
+import FAILURE_BASELINE from './legacy-failure-baseline.json'
+import {
+  currentLegacyFailureCounts, failureTypeAssertions, legacyFailureCounts, rawAuthorOwnedArguments, scanProduction, type LegacyFailureCounts,
+} from './helpers/legacy-failure-scan'
 
 const eslint = new ESLint({ cwd: REPO_ROOT })
 
@@ -164,5 +168,48 @@ describe('存量 baseline 只减不增', () => {
     const unlinted = ['electron', 'scripts', 'src', 'test'].flatMap(dir => repoSourceFiles(dir))
       .filter(file => /\.(?:test|spec)\.|\/__tests__\/|^test\//u.test(file) && /\.(?:js|cjs|mts|cts|jsx)$/u.test(file))
     expect(unlinted).toEqual([])
+  })
+})
+
+describe('失败的码与说明（#844）', () => {
+  /** 建立基线时各旧约定的总数；基线文件只能往下改。authorOwned 是新约定，每处新增都改基线、过审查。 */
+  const ORIGINAL_TOTALS: Record<string, number> = { displayedErrorMessage: 154, appErrorMessage: 27, knownAppErrorMessage: 19, englishWithReason: 27, '{ legacy:': 2 }
+  const baseline = FAILURE_BASELINE as LegacyFailureCounts
+  const totals = (counts: LegacyFailureCounts) => Object.values(counts).reduce<Record<string, number>>((sum, perFile) => {
+    for (const [kind, n] of Object.entries(perFile)) sum[kind] = (sum[kind] ?? 0) + (n ?? 0)
+    return sum
+  }, {})
+
+  it('旧约定只减不增', () => {
+    for (const [kind, total] of Object.entries(totals(baseline))) {
+      if (kind !== 'authorOwned') expect(total, kind).toBeLessThanOrEqual(ORIGINAL_TOTALS[kind] ?? 0)
+    }
+    expect(currentLegacyFailureCounts(), '旧约定的调用数变了：新增改用 failureText，删掉的从 test/legacy-failure-baseline.json 减下来').toEqual(baseline)
+  })
+
+  it('计数认调用和 legacy 属性，不认定义和别的写法', () => {
+    expect(legacyFailureCounts('src/x.ts', [
+      'export function displayedErrorMessage() {}',
+      'displayedErrorMessage(locale, error)',
+      'errors.appErrorMessage(locale, error)',
+      'const reason = { legacy: text }',
+      'const note = authorOwned(name)',
+    ].join('\n'))).toEqual({ displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 1, authorOwned: 1 })
+  })
+
+  it('authorOwned( 的参数不许含异常原文', () => {
+    expect(scanProduction(rawAuthorOwnedArguments).flatMap(([, found]) => found)).toEqual([])
+    for (const planted of ['authorOwned(error.message)', 'authorOwned(String(error))', 'authorOwned(`第 ${error.stack} 行`)', 'authorOwned(String (error))', 'authorOwned(error["message"])', "authorOwned(error?.['stack'])"]) {
+      expect(rawAuthorOwnedArguments('src/x.ts', planted), planted).toHaveLength(1)
+    }
+    expect(rawAuthorOwnedArguments('src/x.ts', 'authorOwned(material.fileName)')).toEqual([])
+  })
+
+  it('断言成 AuthorNote 或 Failure 只许在 src/shared/failure.ts 和测试里', () => {
+    expect(scanProduction(failureTypeAssertions).flatMap(([, found]) => found)).toEqual([])
+    for (const planted of ['value as AuthorNote', 'value as unknown as Failure', '<Failure>value', 'value as Failure | undefined']) {
+      expect(failureTypeAssertions('src/x.ts', planted), planted).toHaveLength(1)
+    }
+    expect(failureTypeAssertions('src/shared/failure.ts', 'value as FailureCode')).toEqual([])
   })
 })

@@ -1,7 +1,6 @@
 import path from 'node:path'
 import type BetterSqlite3 from 'better-sqlite3'
 
-/** 从 db03cf70（schema 8）导出的真实便携包，不是合成数据。 */
 export const SCHEMA8_CONTINUITY_ARCHIVE = path.resolve('test/fixtures/portable/schema8-continuity-baseline.ainovel')
 
 const LIN = '66666666-6666-4666-8666-666666666661'
