@@ -31,3 +31,16 @@
 ### 三、dsh 插件 CI
 
 测试步骤不重新构建：前一步已经构建并验证了同一份字节。
+
+## 测试与实现注记
+
+以下是注释清理（M30）时从脚本、测试与工作流里迁入的注释，按文件归并。
+
+### __tests__/macos-cloud-build-workflow.test.ts
+
+- Windows os.tmpdir uses TEMP/TMP; macOS consumes the exported TMPDIR directly.
+
+### workflows/pr-ci.yml
+
+- Default PR checkout tests the proposed merge, not an unrelated branch.
+- Compile only: do not rebuild for Electron, package installers, or publish.

@@ -53,3 +53,20 @@
 - 清理路径测试须先证明生产式清理保留了未解析的控制根，再删除没有进程的夹具。
 - 归因错误的失败，或被「结果所有者豁免」放行的链成员，都意味着分类器丢了链。
 - 消费者可能在写 `EXIT` 之前停止：缺 `EXIT` 保持不可观测，任何可用的 `EXIT` 都不得捏造已捕获的结果。
+
+## 测试与实现注记
+
+以下是注释清理（M30）时从脚本、测试与工作流里迁入的注释，按文件归并。
+
+### __tests__/release-evidence-v2.test.ts
+
+- Synthesize a historical bundle in this test only; real archived receipts remain immutable.
+
+### __tests__/smoke-macos-dmg-acceptance-contract.test.ts
+
+- Run the real catch/finally boundary after a successful main body, without fabricating UI success.
+
+### __tests__/smoke-win-installer.test.ts
+
+- Canonical search keeps the same unqualified-project boundary as its registry read.
+- Mirror schema-only app upgrades first so this assertion keeps testing the independent Unicode count migration rather than stopping at a new column.

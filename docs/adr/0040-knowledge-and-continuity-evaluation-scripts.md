@@ -19,3 +19,16 @@
 
 1. 解析与机械校验模型响应时，定位到引文只证明该引用存在于输入包里，从不证明发现在语义上是对的；汇总只统计格式与引用有效性，人工金标评分刻意缺席。
 2. 测试文件用 `.node-test` 后缀避开 Vitest 的自动发现，须显式 `node --test` 运行；子进程的 fetch 在 runner 加载之前就被替换，测试不发任何网络请求；失败的一对消耗其两次 attempt、停止后续用例且不能重试。
+
+## 测试与实现注记
+
+以下是注释清理（M30）时从脚本、测试与工作流里迁入的注释，按文件归并。
+
+### lib/continuity-calibration-runner.node-test.mjs
+
+- Child-process fetch is replaced before the runner loads: no network request.
+- A failed pair consumes its two attempts, stops later cases and cannot retry.
+
+### lib/continuity-calibration.mjs
+
+- Build model messages for one calibration packet. packet.originalChapter is optional and is used only when comparing a repair candidate.
