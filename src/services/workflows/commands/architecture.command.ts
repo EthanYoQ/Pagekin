@@ -156,10 +156,7 @@ export class PlotOutlineSourceChangedError extends AuthorError {
   }
 }
 
-/**
- * catch 到的原因：已标记的失败，或带着已登记码的错误（说明按码查）。
- * 还没标记的中文原因（生成 harness、解析器写的句子）按旧规则只在中文界面显示；其余只进控制台。
- */
+/** 还没标记的中文原因（生成 harness、解析器写的句子）按旧规则只在中文界面显示，其余只进控制台。 */
 function reasonOf(locale: ErrorDisplayLocale, error: unknown): Failure | LegacyReason | undefined {
   const marked = failureOf(error)
   if (marked) return marked
@@ -173,7 +170,7 @@ function reasonOf(locale: ErrorDisplayLocale, error: unknown): Failure | LegacyR
   return legacy ?? caughtFailure(error)
 }
 
-/** 原因真能显示出来才用末尾带「原因」标签的那句，免得标签后面空着；原因始终挂着，码不丢。 */
+/** 原因能显示出来才用末尾带「原因」标签的那句，免得标签后面空着。 */
 function explained(locale: ErrorDisplayLocale, labelled: AuthorNote, plain: AuthorNote, because: Failure | LegacyReason | undefined): Failure {
   if (!because) return { note: plain }
   const shown = failureText(locale, { note: labelled, because }) !== failureText(locale, { note: labelled })
@@ -260,7 +257,7 @@ interface PlotOutlineTitleRange {
   headingLineEnd: number
 }
 
-/** 运行侧页直接显示这段说明，口径与架构页的恢复稿提示（run-recovery.ts outlineSourceChangedNote）一致。 */
+/** 口径与架构页的恢复稿提示（run-recovery.ts outlineSourceChangedNote）一致。 */
 function sourceChangedMidBatch(model: boolean, stoppedAt: number, from: number): AuthorNote {
   const chapters = { stoppedAt, from, lastKept: stoppedAt - 1 }
   if (stoppedAt - 1 < from) {
@@ -2262,7 +2259,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           writtenPartial,
         )
       } catch (rollbackError) {
-        // 回滚也失败时另给一句说明，回滚的错误挂在 cause 上；单独的 commitError 原样抛出，由失败面板按码说明。
+        // 单独的 commitError 原样抛出，由失败面板按码说明。
         const because = reasonOf(context.interfaceLocale, commitError)
         throw authorError(context.interfaceLocale, {
           note: note('情节大纲没能保存，旧检查点也没能安全恢复', 'The plot outline could not be saved, and the previous checkpoint could not be restored safely either.'),

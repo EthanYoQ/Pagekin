@@ -24,7 +24,6 @@ function pairOf(call: ts.CallExpression): { zh: ts.Expression; en: ts.Expression
   return undefined
 }
 
-/** 报错用的文案：在 throw、new *Error(…)、authorError(…) 里面，或者本身就是 note(…)。 */
 function isFailureCopy(call: ts.CallExpression): boolean {
   if (calleeName(call) === 'note') return true
   for (let node: ts.Node | undefined = call.parent; node; node = node.parent) {
@@ -50,7 +49,7 @@ function paramExpressions(params: ts.Expression | undefined): Map<string, string
   return map
 }
 
-/** 文案统一成「插值与参数都写成 ⟨表达式⟩」，跟 codemod.mjs 的快照同一套写法。 */
+/** 与 codemod.mjs 快照同一套写法：插值和参数统一成 ⟨表达式⟩。 */
 function normalized(node: ts.Expression, params: Map<string, string> | undefined): string {
   let text: string
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) text = node.text
