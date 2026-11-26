@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 名单只减不增：对比基准提交上的同一文件；拿不到基准提交就失败，不放行。
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const BASELINE_FILES = ['electron/ipc/direct-channels.json', 'test/directory-listing-baseline.json']
 
@@ -17,13 +17,18 @@ try {
 
 let added = 0
 for (const file of BASELINE_FILES) {
-  const current = JSON.parse(readFileSync(file, 'utf8'))
   try {
     git('cat-file', '-e', `${base}:${file}`)
   } catch {
     console.log(`${file}：基准 ${base} 上没有这个文件，当作新建的名单。`)
     continue
   }
+  if (!existsSync(file)) {
+    console.error(`${file} 在基准上有、当前分支没有：名单不能改名或删掉绕过比较。`)
+    added++
+    continue
+  }
+  const current = JSON.parse(readFileSync(file, 'utf8'))
   const previous = JSON.parse(git('show', `${base}:${file}`))
   const additions = current.filter(entry => !previous.includes(entry))
   added += additions.length

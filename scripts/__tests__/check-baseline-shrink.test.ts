@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -67,5 +67,58 @@ describe('名单只减不增（与基准提交上的同一文件比较）', () =
     git('tag', '-f', 'base')
     write(CHANNELS, ['a:one', 'b:new'])
     expect(check('base')).toMatchObject({ status: 0 })
+  })
+
+  it('基准上有的名单被改名或删掉，同样失败', () => {
+    renameSync(path.join(root, CHANNELS), path.join(root, 'electron/ipc/direct-channels-v2.json'))
+    const result = check('base')
+    expect(result.status).toBe(1)
+    expect(result.output).toContain(CHANNELS)
+  })
+})
+
+describe('PR CI 的比较步骤用基准提交上的检查脚本', () => {
+  const workflow = readFileSync(path.resolve('.github/workflows/pr-ci.yml'), 'utf8').split(/\r?\n/u)
+  const start = workflow.findIndex(line => line.trim() === '- name: Check that baselines only shrink')
+  const runAt = workflow.findIndex((line, index) => index > start && line.trim() === 'run: |')
+  const body = workflow.slice(runAt + 1).filter(line => line.trim() !== '')
+  const indent = body[0]!.length - body[0]!.trimStart().length
+  const end = body.findIndex(line => line.length - line.trimStart().length < indent)
+  const step = body.slice(0, end === -1 ? body.length : end).map(line => line.slice(indent)).join('\n')
+
+  function runStep() {
+    const runnerTemp = mkdtempSync(path.join(tmpdir(), 'baseline-shrink-runner-'))
+    try {
+      const result = spawnSync('bash', ['-c', step], { cwd: root, encoding: 'utf8', env: { ...process.env, RUNNER_TEMP: runnerTemp } })
+      return { status: result.status, output: result.stdout + result.stderr }
+    } finally {
+      rmSync(runnerTemp, { recursive: true, force: true })
+    }
+  }
+
+  function commitScript(content?: string) {
+    mkdirSync(path.join(root, 'scripts'), { recursive: true })
+    if (content === undefined) copyFileSync(SCRIPT, path.join(root, 'scripts/check-baseline-shrink.mjs'))
+    else writeFileSync(path.join(root, 'scripts/check-baseline-shrink.mjs'), content)
+  }
+
+  it('PR 把脚本改成放行、同时加长名单，仍按基准上的脚本失败', () => {
+    commitScript()
+    git('add', '.')
+    git('commit', '-q', '-m', 'base with checker')
+    commitScript('process.exit(0)\n')
+    write(CHANNELS, ['a:one', 'a:two', 'b:new'])
+    git('commit', '-q', '-am', 'pr')
+    const result = runStep()
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('b:new')
+  })
+
+  it('引入脚本的 PR（基准上还没有它）用自己的那份，名单加长照样失败', () => {
+    commitScript()
+    write(CHANNELS, ['a:one', 'a:two', 'b:new'])
+    git('add', '.')
+    git('commit', '-q', '-m', 'pr adds checker')
+    expect(runStep().status).toBe(1)
   })
 })
