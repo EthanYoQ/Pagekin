@@ -35,3 +35,59 @@
 ### `src/shared/__tests__/agent-response-protocol.test.ts`
 
 - 断言前提：历史上 null 或缺失的 arguments 表示无参数，不是原始值载荷，用例里的 value 取值看不出这条规则（原文：Historical null/missing arguments mean no arguments, not a primitive payload.）
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/__tests__/app-workflow-complete.test.ts`
+
+- `notify`：测试口径：取 App 里真实的事件处理函数在新上下文里执行，而不挂载无关面板，函数体只见取文本与执行（原文：Execute the actual App event handler without mounting unrelated application panels.）
+
+### `src/services/__tests__/legacy-roster-generation.test.ts`
+
+- 测试口径：先打开一个已知句柄，再让下一次读取处于取消竞争，步骤顺序看不出这层用意（原文：Open a known handle before enabling the cancellation race on the next read.）
+
+### `src/services/__tests__/prompt-local-qwen-contract.test.ts`
+
+- `filled`：有内容的段落及其标题原样保留；只清掉其中的空条目。
+
+### `src/services/__tests__/safe-call-diagnostic.test.ts`
+
+- `requestBody`：变异意图：诱饵字段证明格式化器不会序列化任意输入字段（原文：Lures prove the formatter never serializes arbitrary input fields.）
+
+### `src/services/agent/__tests__/agent-generation.fixture.ts`
+
+- `AgentHostFixture`：夹具边界：合成的主进程传输只供消费方测试，不证明准入、来源校验、持久计账或真实供应商（原文：Synthetic main transport for consumer tests. It does not prove SQLite admission, main source validation, durable accounting, or real providers.）
+
+### `src/services/agent/tools/__tests__/issue-90-agent-project-actions.repro.test.ts`
+
+- `issuedActions`：夹具边界：这个启动器测试用合成的主进程签发动作，真实来源与动作准入由主进程 SQLite 测试覆盖，启动器、守卫、工作流注册、语言与取消保持真实（原文：This launcher test supplies a synthetic main-issued action. Real source and action admission are covered by the main SQLite tests; the launcher, guards, workflow registration, locale and cancellation below remain real.）
+- 测试口径：启动器接缝测试观察期间保持真实工作流处于注册状态（原文：Keep the real workflow registered while this launcher-seam test observes it.）
+
+### `src/services/generation/__tests__/context-length-failure.test.ts`
+
+- `result`：工作流会话替执行器补上调用编号；这里直接接主进程运行时，同样补一个。
+
+### `src/stores/__tests__/appearance-bootstrap.browser.tsx`
+
+- `dependencies`：夹具边界：真实的 Chromium localStorage 与 DOM，只用确定性的主进程传输契约夹具（原文：Real Chromium localStorage/DOM, deterministic main transport contract fixtures only.）
+
+### `src/stores/__tests__/project-opening-notice.test.ts`
+
+- `answerOpenAfter`：主进程拒绝打开：这里只看等待提示，回包内容无关。
+
+### `src/stores/__tests__/theme-store.test.ts`
+
+- `waitForMainReady`：夹具边界：确定性的主进程握手夹具，不断言真实桌面启动资格（原文：Deterministic main handshake fixture; does not assert real desktop startup qualification.）
+
+### `src/stores/__tests__/workflow-store-generation-budget.test.ts`
+
+- 工作流夹具显式提供桌面桥接；未知调用仍拒绝，避免掩盖真实 IPC 缺失。
+
+### `src/stores/__tests__/workflow-store-resource-conflict.test.ts`
+
+- 工作流夹具显式提供桌面桥接；未知调用仍拒绝，避免掩盖真实 IPC 缺失。
+
+### `src/stores/navigation/__tests__/chapter-phase.test.ts`
+
+- `hold`：下一次读修稿列表先按当时的记录取好，等它放行才返回。
+- `phaseOf`：按数据库里的记录读出这一稿的 facts，再按稿状态判断它走到哪一步，与流程脊、单章视图同一条路径。

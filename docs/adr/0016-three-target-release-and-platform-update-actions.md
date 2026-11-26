@@ -22,3 +22,13 @@ Windows 和 macOS 共享 GitHub 最新正式 Release 作为版本源，但执行
 - `UpdateErrorReason`：稳定分类，原始更新器与网络错误绝不跨过 IPC 边界（原文：Stable classifications; raw updater/network errors never cross the IPC boundary.）
 - `SafeUpdateTechnicalDetails`：白名单诊断，可安全保留与渲染，不含凭据或路径（原文：Allowlisted diagnostics that are safe to retain and render without credentials or paths.）
 - `UpdateState`：只包含可安全发送至渲染进程的值，不携带 Error 或更新器对象。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/update-presentation.ts`
+
+- `getUpdatePresentation`：将更新服务的状态转换成书房更新卡与设置「关于与更新」可观察的展示状态。 自动检查始终保持静默；只有用户主动检查时才展示“无更新”或错误反馈。
+
+### `src/stores/editor-discard.ts`
+
+- `discardAllEditorChanges`：放弃更新门禁统计到的全部未保存内容。 更新会退出整个应用，因此这里按所有项目清空，而不是只清当前项目。先通过各 领域 store 恢复当前可见项目的保存基准，再强制清空三类后台账本；损坏账本也 会被替换为空账本。最后关闭所有 dirty Tab，固定 Tab 恢复保存内容。

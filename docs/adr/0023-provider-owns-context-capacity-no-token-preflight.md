@@ -50,3 +50,34 @@
 ### `src/shared/generation-contract.ts`
 
 - token 只记账不刹车（ADR-0023）。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/agent/agent-generation-client.ts`
+
+- `AgentGenerationClient`：现行规则：这个适配器里不存在供应商或渲染端自有的生成预算（原文：No provider or renderer-owned generation budget exists in this adapter.）
+
+### `src/services/generation/__tests__/prompt-budget-failure.test.ts`
+
+- 主进程预检实际抛出的是带 SCOPE_ 的拼写，批执行器也按它解析。
+
+### `src/services/generation/__tests__/task-budget-planner.property.test.ts`
+
+- `languages`：属性测试：预算规划是纯函数，安全不变量必须对任意合法输入成立， 而不是只对我恰好想到的那几组 fixture 成立。
+
+### `src/services/generation/task-budget-planner.ts`
+
+- `outputEstimatorVersion`：现行规则：语义尺寸只支持范围规划，不是每个供应商分词器的数学上界，物理责任仍有硬上限（原文：Semantic sizing supports scope planning. It is not a mathematical upper bound for every provider tokenizer; physical liability remains hard-capped.）
+- `zh-CN`：校准依据：草稿与规划取值对照不可变的章节蓝图字段与冻结的密集夹具，只决定请求大小，不保证契约最大载荷放进一项（原文：Drafting/planning values are calibrated against the immutable chapter blueprint fields and a frozen dense fixture. They size a request; they do not promise that every contract-maximum payload fits one item.）
+- `segmentable`：字段语义：只有产品能把每一段保留为显式候选时才为 true（原文：True only when the product can preserve each segment as an explicit candidate.）
+- `modelContextWindowTokens`：字段语义：由精确的端点与模型预设证明的供应商能力，null 表示未知（原文：Provider capability proved by an exact endpoint/model preset; null means unknown.）
+- `modelMaxOutputTokens`：字段语义：由精确的端点与模型预设证明的供应商能力，null 表示未知（原文：Provider capability proved by an exact endpoint/model preset; null means unknown.）
+- `userContextWindowTokens`：现行规则：用户的运行限制只会收紧已知的供应商能力，从不证明它（原文：User operational limits restrict known provider capability but never prove it.）
+- `totalLiabilityUpperBoundTokens`：字段语义：输入、输出、推理与安全余量之和的物理上界（原文：Physical upper bound for input + output + reasoning + the safety margin.）
+- `valueTokens`：字段约定：这项决定背后的非敏感数值证据，适用时才有（原文：Non-sensitive numeric evidence behind this decision, when applicable.）
+- `requestedOutputTokens`：字段语义：做出任何容量决定之前，完整语义范围所需的输出量（原文：Output need for the complete semantic scope before any capacity decision.）
+- `reservedOutputTokens`：字段语义：这次所选物理请求的供应商最大输出（原文：Provider max output for this selected physical request.）
+- `runId`：账本按根列出全部请求；读回某次运行的结果时按它筛出本运行的请求。主进程总会填。
+- `reservedTokens`：字段语义：整个根账本的预留，含输入、输出、推理与安全余量（原文：Full root-ledger reservation, including input/output/reasoning/safety.）
+- `planTaskBudget`：现行规则：这是纯规划接缝，只提出一次物理预留，预留、派发与结算仍只归持久的主进程所有者（原文：Pure S07 planning seam. It proposes one physical reservation; the persistent main owner remains solely responsible for reserving, dispatching and settling.）
+- `fixedReasoningTokens`：上下文容量由服务商判定（ADR-0023）。

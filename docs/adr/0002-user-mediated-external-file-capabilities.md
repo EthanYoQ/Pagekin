@@ -21,3 +21,15 @@
 - `PortableProjectRestoreRequest`：归档与恢复副本位置分别来自 dialog:select-project-archive 与 dialog:select-project-restore-target 的授权。
 - `fs:grant-read-file`：用户选择后签发的授权；渲染进程仅能携带 grantId 与受限相对路径。
 - `ExternalFileGrant`：只携带用户可展示名称和不透明能力标识；不暴露外部绝对路径。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/export-service.ts`
+
+- `grantId`：由主进程选择目录后签发的受限授权，绝不是绝对路径。
+- `ExportProjectSnapshot`：导出任务冻结的项目展示数据；项目路径本身绝不作为访问凭据。
+- `exportFileStem`：Windows 与 POSIX 都安全的导出相对路径段，禁止项目名改变授权目录边界。
+
+### `src/stores/project-store.ts`
+
+- 现行规则：打开项目会在主进程撤销旧书架预览能力，刷新可见书架句柄，但不能让一次成功的打开变成失败（原文：Opening a project revokes old shelf preview capabilities in main. Refresh the visible shelf handles without turning a successful open into a failure.）

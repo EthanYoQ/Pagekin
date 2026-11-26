@@ -80,3 +80,17 @@ exe 和 `.app` 使用中文名已在 1.3.0 及更早版本中经过验证（`AI�
 
 - `APP_BRAND`：产品显示名。只管界面上看到的名字；appId、数据目录、安装包文件名仍沿用旧名，换了会让老用户的数据与快捷方式对不上。
 - `APP_ID`：安装包的 appId（electron-builder.json5）。Windows 按它把系统通知归到安装时建的快捷方式名下。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/prompt-templates.ts`
+
+- `loadCustomPrompts`：加载全局自定义 Prompt 覆盖（从 ~/.vela/prompts/ 目录）
+- `loadProjectCustomPrompts`：加载项目级自定义 Prompt 覆盖（从 {projectPath}/.vela/prompts/ 目录）
+- `saveCustomPrompt`：保存全局自定义 Prompt 到 ~/.vela/prompts/
+- `saveProjectCustomPrompt`：保存项目级自定义 Prompt 到 {projectPath}/.vela/prompts/
+
+### `src/stores/llm-store.ts`
+
+- `setDefaultModel`：设置默认生成模型（持久化到 ~/.vela/config.json）
+- `setDefaultEmbeddingModel`：设置默认向量模型（持久化到 ~/.vela/config.json）

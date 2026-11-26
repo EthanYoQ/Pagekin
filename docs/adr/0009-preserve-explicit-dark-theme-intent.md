@@ -32,3 +32,18 @@
 
 - `AppearanceReadbackAck`：渲染进程写好外观偏好并读回后，向主进程确认这一份的修订号与所在的全局数据世代。
 - `appearanceRevisionFloor`：这个窗口此前已确认过的外观修订号。重载后存储坏了时，重置要写得比它大，主进程才接受。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/stores/appearance-bootstrap.ts`
+
+- `systemColorTheme`：系统当前的深浅色：外观偏好还没读出来（或要新建）时用它。
+- `createAppearanceStore`：现行规则：每个渲染端只有一个写入者，导入模块不做任何存储读写（原文：One writer per renderer. Importing the module performs no storage read or write.）
+- `mainRevisionFloor`：主进程按窗口记着确认过的修订号，同进程重载后内存清空但它还在；重置时的修订号不能低于它。
+
+### `src/stores/theme-store.ts`
+
+- `Theme`：纸墨只有浅色与深色两套。
+- `resolvedTheme`：当前应用到界面的主题，外观偏好载入之前是浅色
+- `createThemeStore`：现行规则：主题 store 只是面向旧调用方的投影，全部持久化归 appearance-bootstrap（原文：Legacy-facing projection only; appearance-bootstrap owns all persistence.）
+- `applyTheme`：深色时给根元素加 .dark：纸墨作用域之外的旧颜色变量与 Tailwind 的 dark 变体靠它切换。

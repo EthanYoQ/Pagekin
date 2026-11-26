@@ -50,3 +50,46 @@ C07 要求开库顺序由单一 schema lane 掌握：未知的较高版本只读
 - **S2 运行索引：** 运行索引是可以从账本重建的索引，不是第二个事实源（ADR-0018）。恢复列表跳过收据里记着正式效果的审稿、修稿、写稿运行，不再重证它们，证据对不上时也不标「部分读不出」（维护者 2026-11-19 同意）。启动与关闭只恢复还在 active、或有已预留、已派发尝试的根。跨记录按什么认运行，见 ADR-0030「跨记录认运行」。
   - 第三个 PR 把 `binding_json` 移出进门清单（ADR-0030 决定 1、4、7）。打开作品只查没静止的树的绑定，选树的条件和启动恢复共用一条查询。静止树里一条绑定坏了，打开时不封存、不提示，只有读写那一次生成的操作报「记录已损坏」。导出与备份前对全部记录再查一次，坏的照常封存，书仍能导出。
 - **S3 打开作品去掉重复劳动：** 打开时的快照与哈希只保留必要的几遍（ADR-0001 的打开前探测）。由 S3 的 PR 补写。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/stores/workflow-store.ts`
+
+- 作者主动取消后安全退出；与失败分开，界面不当作出错。
+- `WorkflowFailureCode`：现行规则：有界模型完成给出的稳定的非成功终态（原文：Stable non-success terminal state supplied by a bounded model completion.）
+- `errorCode`：字段语义：抛出的错误带的非空机器可读码（原文：Non-empty machine-readable code supplied by the thrown error.）
+- `failureCode`：字段语义：有界模型完成提前停止时的结构化失败原因（原文：Structured failure cause when a bounded model completion stopped early.）
+- `promptBudgetReport`：字段语义：提示词预算预检失败时安全的结构化字节归因（原文：Safe structured byte attribution for a prompt-budget preflight failure.）
+- `projectSession`：启动时从当前项目冻结；缺失时该 run 只能失败，不能执行项目级副作用。
+- `chapterWordsTarget`：本次写作冻结的每章目标可见单位；不得在执行中重新读取全局配置。
+- `resourceKeys`：该运行将生成或改写的逻辑资源；同项目内写入与任何其他声明互斥。
+- `readResourceKeys`：该运行只读取的逻辑资源；多个读取者可以并发。
+- `errorCode`：字段语义：从失败的当前步骤镜像来的机器可读错误码（原文：Machine-readable error code mirrored from the failed current step.）
+- `failureCode`：字段语义：从失败的当前步骤镜像来的结构化终态原因（原文：Structured terminal cause mirrored from the failed current step.）
+- `promptBudgetReport`：字段语义：从失败的当前步骤镜像来的安全结构化字节归因（原文：Safe structured byte attribution mirrored from the failed current step.）
+- `mainGenerationRootHandle`：现行规则：主进程签发的身份，阶段变化保留根预算，恢复保留精确的运行（原文：Main-issued identities; stage changes keep the root budget, recovery keeps the exact run.）
+- `requestMainGenerationCancellation`：现行规则：主进程适配器提供一个幂等的取消意图，包括阶段之间（原文：Main adapter supplies one idempotent cancellation intent, including between stages.）
+- `runId`：本次运行的稳定身份，供事件消费者排除其他并发任务。
+- `cancelRequested`：字段语义：仅导入使用的意图，当前有界效果在编排器应用取消之前就退出（原文：Import-only intent; the current bounded effect exits before the orchestrator applies cancellation.）
+- `cancellationRequest`：现行规则：导入的取消意图必须在编排器写终态边界之前持久化（原文：Import cancellation intent must be durable before its orchestrator writes the terminal boundary.）
+- `runId`：可由需要同步订阅事件的调用方预先分配。
+- `onCancelRequested`：现行规则：先持久化取消，再等待当前操作让出（原文：Persist cancellation before waiting for the current operation to yield.）
+- `onCancelledAtBoundary`：现行规则：到达步骤或暂停边界之后才提交终态取消（原文：Commit terminal cancellation after a step/pause boundary is reached.）
+- `backgroundNotice`：完成或失败时，窗口不在前台则弹系统通知。
+- `withoutWritingSkills`：不调用写作 Skill 的工作流不冻快照：冻一次要读两次盘，Windows 上每次 1.5 到 2.5 秒。
+- `getResourceConflict`：返回占用同项目同一逻辑资源的活跃运行；不同资源仍可并发。
+- `cancelProjectWorkflowsAndWait`：取消指定项目的全部工作流，并等待执行器真正退出 activeRuns。
+- `stoppedByCancellation`：作者点了取消，而且这次中止就是取消造成的；取消窗口里的真实错误不算，照常记失败。
+- 现行规则：调用方给定的持久运行 ID 同时是渲染端的单飞键，在读可变项目状态或建第二个上下文之前拒绝重复，原执行器与冻结上下文仍归第一次调用（原文：A caller-supplied durable run ID is also the renderer's single-flight key. Reject the duplicate before reading mutable project state or constructing a second context; the original executor and its frozen context remain owned by the first call.）
+- `context`：运行一出现在界面上就有暂停、取消按钮，执行上下文要同时就位，否则写作 Skill 快照读取期间的点击会落空。
+- `cancellationRequestSettled`：切换作品等的是活动列表清空，取消请求落盘之前运行不能离开；保存失败由 cancelWorkflow 记日志。
+- 切换作品会先取消本作品的运行；作者已取消时，项目变了正是取消的结果，不是出错。
+- 批量任务只在步骤之间暂停，避免中断一次正在进行的模型请求或后处理； 第一步之前点的暂停同样等这一章写完，与按钮说明「写完当前这一章后暂停」一致。
+- `confirmed`：现行规则：先登记再发布等待状态，这样立即的界面确认不会丢（原文：Register before publishing waiting state so an immediate UI confirmation cannot be lost.）
+- 作者取消引发的中止：这一步停在取消处，运行保持「正在取消」，由循环后的取消收尾记为已取消。
+- 取消窗口里真实出错的运行已记失败，不能再改成已取消。
+- 同步广播，并且必须发生在 activeRuns 清理之前。 消费者可用 runId/projectPath 精确识别本次完成，且不会因动态 import 延迟丢失事件。
+- 保留在活跃列表中，直到当前执行器真正退出。项目切换/清空门禁据此继续生效。
+- `recordRunGenerationModel`：记当前在用的模型：作者原稿导入先用定稿模型做后处理，再用规划模型反推。
+- `advancesStep`：主进程每次快照都会重发相同的文本与进度，心跳只改耗时，所以这里比较取值，不看字段是否出现。
+- `before`：只有一次请求开始时才不带诊断。

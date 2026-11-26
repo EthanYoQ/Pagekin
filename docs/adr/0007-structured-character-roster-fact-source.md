@@ -41,3 +41,42 @@
 - `formatRelationshipsForEditor`：为角色编辑器格式化结构化持久数据：自由笔记有意原样不动，语法合法但不认识的 JSON 给修复指引，不向用户暴露存储语法（原文：Formats structured persistence data for the character editor. Free-form notes deliberately stay untouched; syntactically valid but unrecognized JSON receives repair guidance instead of exposing storage syntax to the user.）
 - `relationshipStorageFromEditor`：仅当每个非空行都是对已知角色的无歧义关系时才转成图谱可读 JSON，否则保留原文，由名单接缝按旧笔记保存（原文：Converts an editor value to the canonical graph-readable JSON only when every non-empty line is an unambiguous relation to a known character. Otherwise it retains the original text, which the roster seam preserves as legacy notes.）
 - `parseRelationshipEdges`：持久 JSON 与旧纯文本笔记的共享图谱解析接缝，调用方可传可见名单防悬空边（原文：Shared graph/parser seam for persisted JSON and existing plain-text notes. Callers may supply the visible roster to prevent dangling graph edges.）
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/__tests__/vela-protocol-character-roster.test.ts`
+
+- 清空创作字段经作者退休路径删除角色卡，不直接写 roster 表或 characters_arch 投影。
+
+### `src/services/character-roster-client.ts`
+
+- `characterRosterEntryFromCard`：Renderer/workflow 侧只负责把现有角色卡形状送入唯一 roster seam；最终 schema、闭包与事务校验都留在主进程 CharacterRosterRepository。
+
+### `src/services/project-fact-targets.ts`
+
+- `PROJECT_FACT_TARGETS`：现行规则：这些规范文件名的含义属于结构化项目事实，通用文件写入绝不能造出第二份 Markdown 形态的事实来源（原文：Canonical filenames whose meaning belongs to structured project facts. Generic file writes must never create a second, Markdown-shaped fact source.）
+
+### `src/stores/__tests__/character-project-context.test.ts`
+
+- 断言前提：同一 ID 且规范化字节与已持久化卡片相同，则不再留有脏草稿（原文：Same ID and normalized bytes equal the persisted card; no dirty draft remains.）
+
+### `src/stores/character-rename-ledger.ts`
+
+- `mergeCharacterDraftWithRemote`：角色改名尚未落盘时，base/remote 仍使用旧主键，draft 已使用新主键。 先按改名账本统一身份，再对同一角色执行字段级三方合并。
+- `baseById`：现行规则：名称与旧的改名元数据从不建立身份，未绑定的草稿单独保留，稳定 ID 写入器不能保存它们（原文：Names and legacy rename metadata never establish identity. Unbound drafts are retained separately and cannot be saved by the stable-ID writer.）
+- `rebuildCharacterRenamesAfterSave`：保存期间允许继续编辑。除了把显式的二次改名接到刚落盘的新主键后，还要从 本次实际落盘的角色与当前草稿中恢复“改回原名”的身份链： A -> B 正在保存时，用户可能把 B 改回 A。此时普通草稿账本会正确认为草稿 回到了旧基线并清空 A -> B；但首个事务成功后，数据库基线已变成 B，所以 后续仍必须记录 B -> A。
+
+### `src/stores/character-store.ts`
+
+- `characterSelectionKey`：现行规则：未绑定草稿的选择键只是本地界面地址，绝不是持久化的角色身份（原文：Unbound draft selection keys are local UI addresses, never persisted character identities.）
+- 现行规则：账本在磁盘上是异构的，只经类型化编辑器辅助函数读取请求的项目，其他项目的负载保持不透明并逐字节原样带过（原文：The ledger is heterogeneous on disk. Only the requested project is ever read through the typed editor helpers; foreign payloads stay opaque and are carried through byte-for-byte at the value level.）
+- `rosterRevision`：当前角色卡来自的 roster revision；所有保存都必须带回这一乐观并发令牌。
+- 现行规则：历史元数据只保留，绝不用作身份（原文：Historical metadata is preserved, never used as identity.）
+- 删除同样是完整手工名单保存：由 roster seam 在一次事务中清理关系、 蓝图引用、投影、revision 与 receipt。失败时草稿仍在本地可重试。
+- 空名单仍通过既有 roster 原子提交；主进程据此同步删除角色、关系和投影。
+- `payload`：角色主键改名、删除、蓝图结构化引用、角色图谱、revision 和 receipt 都由主进程 roster seam 在同一事务内完成。
+
+### `src/stores/project-editor-draft-ledger.ts`
+
+- `mergeObjectDraftWithRemote`：以 base 为共同祖先执行字段级三方合并。 本地实际改过的字段保留 draft；其余字段采用最新 remote。
+- `mergeNamedRecordDraftWithRemote`：角色名是现有角色卡的稳定记录键。对每条记录执行三方合并： 本地改/增/删优先，未改记录以及远端新增记录采用最新 remote。
