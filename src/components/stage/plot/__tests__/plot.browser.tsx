@@ -234,7 +234,7 @@ describe('剧情与伏笔', () => {
     await click('剧情树的更多操作')
     await click('清除剧情树…')
     await click('清除剧情树')
-    await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toBe(shown))
+    await vi.waitFor(() => expect(document.querySelector('.pi-notice[role="status"]')?.textContent).toBe(shown))
     expect(document.querySelector('table[aria-label="剧情树"]')).toBeTruthy()
   })
 
