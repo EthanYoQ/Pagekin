@@ -1,8 +1,10 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { runFailure } from '../run-failure'
 import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE } from '../../../services/workflows/commands/architecture.command'
 import type { WorkflowRun } from '../../../stores/workflow-store'
 import { shown } from '../../../i18n/__tests__/shown-locale'
+import { note, type Failure } from '../../../shared/failure'
+import { caughtFailure } from '../../../i18n/app-errors'
 
 const failedOutline = (errorCode: string, error: string) => ({
   id: '运行', title: '生成故事架构', type: 'generate_architecture', status: 'failed', uiLocale: 'zh-CN', writingLanguage: 'zh-CN',
@@ -21,4 +23,28 @@ it('输出长度中断的大纲失败仍走断点续写', () => {
   const failure = runFailure(failedOutline(PLOT_OUTLINE_RESUME_ERROR_CODE, '输出被截断'), shown('zh-CN'))
   expect(failure.canResumeOutline).toBe(true)
   expect(failure.canRestartOutline).toBe(false)
+})
+
+const withFailure = (failure: Failure | undefined, extra: Partial<WorkflowRun> = {}) => ({
+  ...failedOutline('', ''), error: '', errorCode: undefined, failure, ...extra,
+  steps: [{ id: 'synopsis', name: '情节大纲', description: '', status: 'failed', logs: [], error: '', failure, ...extra.steps?.[0] }],
+}) as unknown as WorkflowRun
+
+it('failure 带的续写去向出对应的按钮', () => {
+  const resume = runFailure(withFailure({ note: note('大纲没有写完。', 'The outline is incomplete.'), recovery: 'resume-plot-outline' }), shown('zh-CN'))
+  expect([resume.canResumeOutline, resume.canRestartOutline]).toEqual([true, false])
+  const restart = runFailure(withFailure({ code: 'GENERATION_SOURCE_CHANGED', note: note('来源变了。', 'The source changed.'), recovery: 'restart-plot-outline' }), shown('zh-CN'))
+  expect([restart.canResumeOutline, restart.canRestartOutline]).toEqual([false, true])
+})
+
+it('审稿失败带产生点写的说明时，诊断的兜底说明不盖掉它', () => {
+  const failure: Failure = { code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED', note: note('这一章太长，审稿放不下。', 'This chapter is too long to review.') }
+  const run = withFailure(failure, { error: '这一章太长，审稿放不下。', steps: [{ generationActivity: { operation: 'review-chapter', diagnostics: { endReason: 'failed' } } }] } as never)
+  expect(runFailure(run, shown('zh-CN')).presentation.reason).toBe('这一章太长，审稿放不下。')
+})
+
+it('审稿失败 message 为空时，catch 补的通用说明不盖掉诊断给的具体原因', () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const run = withFailure(caughtFailure(new Error('')), { steps: [{ generationActivity: { operation: 'review-chapter', diagnostics: { endReason: 'failed', causeCode: 'UND_ERR_BODY_TIMEOUT' } } }] } as never)
+  expect(runFailure(run, shown('zh-CN')).presentation.reason).toBe('读取响应流超时。上游为何停止响应尚未确认。')
 })

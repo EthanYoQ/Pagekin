@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { displayedErrorMessage, failureText } from '../../i18n/app-errors'
 import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE } from '../../services/workflows/commands/architecture.command'
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { projectSessionContextFromProject, sameProjectPathKey, sameProjectSessionContext } from '../../shared/project-session-context'
@@ -7,6 +7,7 @@ import { navigate } from '../../stores/navigation/navigation-intents'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import { errorLocaleForRun } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
+import type { Recovery } from '../../shared/failure'
 import { useProjectStore } from '../../stores/project-store'
 import type { WorkflowRun } from '../../stores/workflow-store'
 import { toast } from '../ui/Toast'
@@ -24,19 +25,23 @@ export interface RunFailure {
 export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale): RunFailure {
   const failedStep = run.steps.find(step => step.status === 'failed')
   const currentStep = run.steps[run.currentStepIndex] ?? run.steps[0]
-  const failedWith = (code: string) => run.errorCode === code || failedStep?.errorCode === code
+  const failure = run.failure ?? failedStep?.failure
+  const failedWith = (code: string, recovery: Recovery) => run.errorCode === code || failedStep?.errorCode === code || failure?.recovery === recovery
+  const locale = errorLocaleForRun(run.uiLocale, interfaceLocale)
+  const legacy = run.error || currentStep?.error
   return {
     title: run.title,
     presentation: presentWorkflowFailure(
       run.failureCode ?? currentStep?.failureCode,
-      run.error || currentStep?.error,
-      errorLocaleForRun(run.uiLocale, interfaceLocale),
+      failure && !legacy?.trim() ? failureText(locale, failure) : legacy,
+      locale,
       run.type === 'chapter_creation' && run.chapterWordsTarget !== undefined && !(currentStep?.result || '').trim(),
       run.promptBudgetReport ?? currentStep?.promptBudgetReport,
       failedStep?.generationActivity ?? currentStep?.generationActivity,
+      failure?.note && failureText(locale, failure),
     ),
-    canResumeOutline: failedWith(PLOT_OUTLINE_RESUME_ERROR_CODE),
-    canRestartOutline: failedWith(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE),
+    canResumeOutline: failedWith(PLOT_OUTLINE_RESUME_ERROR_CODE, 'resume-plot-outline'),
+    canRestartOutline: failedWith(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE, 'restart-plot-outline'),
   }
 }
 
