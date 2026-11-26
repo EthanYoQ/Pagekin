@@ -73,6 +73,6 @@ export function countUnsavedEditorItemsForProject(
 
 export function ledgerProjectKeys(ledger: unknown): unknown[] | undefined {
   const projects = (ledger as { projects?: unknown } | null | undefined)?.projects
-  if (!Array.isArray(projects) || !projects.every(project => typeof project === 'object' && project !== null)) return undefined
+  if (!Array.isArray(projects) || projects.some(project => project === null || project === undefined)) return undefined
   return projects.map(project => (project as { projectKey?: unknown }).projectKey)
 }
