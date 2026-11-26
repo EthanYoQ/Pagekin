@@ -5,9 +5,6 @@ import { createProjectDatabase, initProjectDatabase } from '../../electron/datab
 import { CANONICAL_PROJECT_DIRECTORY, CANONICAL_PROJECT_DATABASE, createCanonicalProjectManifest } from '../../src/shared/project-format'
 import { activateCanonicalProjectData } from '../../electron/services/project-data-locator'
 
-/** Test-owned new-project setup. Reopen exercises the actual production verifier;
- * this helper never adopts legacy roots or silently normalizes an unknown schema.
- */
 export function prepareCanonicalStorageFixture(projectPath: string, importSourceSecret?: Buffer): void {
   if (fs.existsSync(path.join(projectPath, '.vela'))) throw new Error('LEGACY_FIXTURE_REQUIRES_EXPLICIT_MIGRATION_TEST')
   const root = path.join(projectPath, CANONICAL_PROJECT_DIRECTORY)

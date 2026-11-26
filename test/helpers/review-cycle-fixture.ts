@@ -46,7 +46,6 @@ export interface SeedOptions {
   corruptBody?: string
   effect?: 'valid' | 'none' | 'wrong-effect' | 'wrong-artifact'
   chapterNumber?: number
-  /** 冻结进 v1 证明的前文，审稿与修稿两条运行都带。 */
   history?: readonly ReviewFinalizedMaterial[]
 }
 
@@ -247,18 +246,12 @@ export function seedReviewedBook(db: Database, chapters: number, { firstChapter 
 }
 
 export interface StatementLedger {
-  /** 键是 SQL 原文（pragma 记为 `PRAGMA ...`），值是执行次数。 */
   readonly counts: ReadonlyMap<string, number>
   total(): number
   reset(): void
   detach(): void
 }
 
-/**
- * 计 prepare 出的语句每次 run/get/all/iterate、每次 exec（整段算一条）、每次 pragma。
- * 不计 db.transaction 自己发的 BEGIN/COMMIT/SAVEPOINT，它们不经过实例方法。
- * 只看得到挂上之后 prepare 的语句。
- */
 export function attachStatementLedger(db: Database): StatementLedger {
   const counts = new Map<string, number>()
   let active = true
@@ -298,7 +291,6 @@ export function attachStatementLedger(db: Database): StatementLedger {
   }
 }
 
-/** 仓库入口自己的检查看不到、只有 M03 证明才发现的损坏：审稿尝试回执指向别的审稿内容。 */
 export function breakReviewProof(db: Database, item: { seeded: { reviewId: number; call: CreateReviewCycleInput } }): void {
   const changed = db.prepare(`UPDATE generation_attempts
     SET usage_receipt_json=json_set(usage_receipt_json,'$.reviewRevisionEffect.contentHash',?)
