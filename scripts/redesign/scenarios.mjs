@@ -566,7 +566,7 @@ async function pickFromPalette(page, query, option) {
 
 function bookOpened(page) {
   const loaded = page.waitForEvent('console', { predicate: message => message.text().includes('项目数据加载完成'), timeout: 30_000 })
-  void ignoreFailure('场景在等书打开之前已失败', () => loaded)
+  void ignoreFailure('只防未处理的拒绝，等待方会照常收到同一错误', () => loaded)
   return async () => {
     await loaded
     await page.getByRole('navigation', { name: '位置' }).getByText('第 4 章').waitFor({ state: 'visible' })

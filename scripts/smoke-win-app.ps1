@@ -618,7 +618,7 @@ function Stop-AiNovelProcessTree {
     catch {
       $stopError = $_
       if (Test-AiNovelTrackedProcessAlive -ProcessId $processId -StartTimeTicks $StartTimeTicks) {
-        Write-Warning "Could not stop still-running process ${processId}: $($stopError.Exception.Message)"
+        Write-Warning -WarningAction Continue "Could not stop still-running process ${processId}: $($stopError.Exception.Message)"
       }
     }
   }
@@ -626,7 +626,7 @@ function Stop-AiNovelProcessTree {
     [void]$Process.WaitForExit(5000)
   }
   catch {
-    Write-Warning "Could not wait for application exit; the post-exit window monitor decides: $($_.Exception.Message)"
+    Write-Warning -WarningAction Continue "Could not wait for application exit; the post-exit window monitor decides: $($_.Exception.Message)"
   }
 }
 

@@ -32,9 +32,13 @@ const instrumentRenderer = page => page.evaluate(() => {
       log.idle.push({ label: region.getAttribute('aria-label'), at: now() })
     }
   }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-busy'] })
-  new PerformanceObserver(list => {
-    for (const entry of list.getEntries()) log.longtasks.push({ at: performance.timeOrigin + entry.startTime, ms: entry.duration })
-  }).observe({ type: 'longtask', buffered: true })
+  try {
+    new PerformanceObserver(list => {
+      for (const entry of list.getEntries()) log.longtasks.push({ at: performance.timeOrigin + entry.startTime, ms: entry.duration })
+    }).observe({ type: 'longtask', buffered: true })
+  } catch (error) {
+    log.longtaskObserverError = String(error)
+  }
 })
 
 const instrumentMain = app => app.evaluate(({ ipcMain }) => {

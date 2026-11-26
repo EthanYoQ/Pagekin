@@ -644,7 +644,7 @@ async function main() {
     const openReply = () => {
       const reply = page.waitForEvent('console', { timeout: 30_000,
         predicate: message => message.text().includes('[ipc-client.invoke] 调用完成: project:open') })
-      void ignoreFailure('前面的步骤已失败时不再等打开回包', () => reply)
+      void ignoreFailure('只防未处理的拒绝，等待方会照常收到同一错误', () => reply)
       return reply
     }
     try {
