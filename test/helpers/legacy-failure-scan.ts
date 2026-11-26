@@ -54,8 +54,19 @@ function readsRawText(node: ts.Node): boolean {
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'String') return true
   if (ts.isPropertyAccessExpression(node) && RAW_PROPERTIES.has(node.name.text)) return true
   if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && RAW_PROPERTIES.has(node.argumentExpression.text)) return true
-  if (ts.isTemplateSpan(node) && ts.isIdentifier(node.expression)) return true
+  if (ts.isTemplateSpan(node) && isCaughtValue(node.expression)) return true
   return ts.forEachChild(node, readsRawText) ?? false
+}
+
+function isCaughtValue(expression: ts.Expression): boolean {
+  while (ts.isParenthesizedExpression(expression)) expression = expression.expression
+  if (!ts.isIdentifier(expression)) return false
+  const name = expression.text
+  for (let scope: ts.Node | undefined = expression.parent; scope; scope = scope.parent) {
+    const caught = ts.isCatchClause(scope) ? scope.variableDeclaration?.name : undefined
+    if (caught && ts.isIdentifier(caught) && caught.text === name) return true
+  }
+  return false
 }
 
 const RAW_TEXT_SINKS = new Set(['authorOwned', 'wireNote'])
