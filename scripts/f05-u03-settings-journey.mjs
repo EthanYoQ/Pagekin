@@ -98,7 +98,6 @@ const root = () => {
   assert.equal(generations.length, 1)
   return path.join(profile.canonical, 'generations', generations[0])
 }
-// 纸墨外壳的设置是外壳里的一页：作品打开着时从流程脊底部进入，左侧「设置分组」切页，「返回作品」收起。
 const settings = page => stage.root(page)
 const dismissStartupNotice = page => stage.dismissMigrationNotice(page)
 async function openSection(page, name) {
@@ -230,7 +229,6 @@ async function main() {
     await settings(page).getByRole('button', { name: '添加模型' }).first().click()
     const form = settings(page).getByPlaceholder('如：DeepSeek 主力 / GPT-4o 备用').locator('xpath=ancestor::div[contains(@class,"rounded-xl p-5")]')
     await form.locator('select').first().selectOption('custom')
-    // 先填 Key 再填端点：端点一填好就自动获取，请求只有一次且带着 Key。
     await form.locator('input[type="password"]').fill('f05-u03-offline-only')
     await form.getByPlaceholder('https://api.openai.com').fill(endpoint)
     await form.getByText('已从端点获取 1 个模型。', { exact: true }).waitFor({ timeout: 5000 })
@@ -248,7 +246,6 @@ async function main() {
     await form.getByRole('button', { name: '高级设置' }).click()
     await form.getByLabel('温度').fill('0.35')
     await form.getByLabel('最大输出 Token').fill('1536')
-    // 模型输出容量是单独的一栏（自定义端点默认 32768），与本次最大输出一起设成 1536。
     await form.getByLabel('模型输出容量').fill('1536')
     await form.getByLabel('模型推理覆盖').selectOption('low')
     const modelFile = path.join(root(), 'models.json')
@@ -345,7 +342,6 @@ async function main() {
     await dismissStartupNotice(page)
     await openWork(page, 'U03-settings')
     assert.equal(await invoke(page, 'llm:get-default-model'), workflowModel.id)
-    // 旧外壳的「小说配置」是纸墨外壳的设定页：核心大纲与类型、目标读者齐了再生成架构，Ctrl S 保存。
     await stage.stageButton(page, '设定').click()
     await stage.setupOutline(page).fill('潮汐城的记录员林岚要寻找失落地图，旧港的钟声与城门决定她的调查期限。')
     await stage.setupField(page, '类型').selectOption('悬疑')
@@ -420,7 +416,6 @@ async function main() {
     await settings(page).getByRole('combobox', { name: '修稿与定稿前润色 Skill' }).selectOption('user:safe-prose')
     await persisted(bindingFile, value => value.bindings?.refinement === 'user:safe-prose')
     await settings(page).getByRole('button', { name: '卸载 safe-prose' }).click()
-    // 确认框有进场动画；按名字等它出现再点「确认」，等它收起后再看卸载结果。
     const uninstallDialog = page.getByRole('dialog', { name: '卸载写作 Skill' })
     await uninstallDialog.getByRole('button', { name: '确认', exact: true }).click()
     await uninstallDialog.waitFor({ state: 'hidden' })

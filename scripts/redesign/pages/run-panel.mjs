@@ -1,4 +1,3 @@
-// 运行面板。旧外壳里是右侧「AI 输出」，与写作助手共用 .writer-ai-panel。
 import { waitForCompletionToast } from './shell.mjs'
 
 const PANEL = '.writer-ai-panel'
@@ -20,7 +19,6 @@ export async function waitForWorkflowDone(page) {
   await waitForCompletionToast(page)
 }
 
-/** 在渲染进程里计时：从点击名为 buttonName 的按钮到运行面板标题可见，单位毫秒，帧粒度。超过 deadlineMs 未出现即失败。 */
 export async function msFromClickToOpen(page, buttonName, trigger, deadlineMs = 30_000) {
   const header = panel(page).getByText('AI 输出', { exact: true })
   if (await header.isVisible()) throw new Error('运行面板在计时前已经可见')
@@ -47,7 +45,6 @@ export async function msFromClickToOpen(page, buttonName, trigger, deadlineMs = 
   return page.evaluate(() => window.__driveOpenLatency)
 }
 
-/** AI 输出里列出的步骤名与最后一段正文。 */
 export async function summary(page) {
   return {
     steps: await panel(page).locator('.truncate.flex-1').allInnerTexts(),
@@ -75,7 +72,6 @@ export async function openFromStatusCapsule(page) {
   await page.locator(CAPSULE).first().click()
 }
 
-/** 取消底部任务面板里所有仍在运行的任务，等到状态栏胶囊消失，退出时不必强杀。 */
 export async function cancelActiveRuns(page) {
   const CANCEL = '#writer-bottom button[title="取消任务"]'
   for (let remaining = await page.locator(CANCEL).count(); remaining > 0; remaining = await page.locator(CANCEL).count()) {

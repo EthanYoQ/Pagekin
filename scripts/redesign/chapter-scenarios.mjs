@@ -1,4 +1,3 @@
-// RD-8 正文单章视图的实机场景：对应计划 RD-8 的 live lane 1～10、perf 的 chapter-open 与 typing-latency，以及评审导览。
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 
@@ -17,7 +16,6 @@ import { describeFinalizationStepError } from '../../src/shared/finalization-ste
 
 const isStage = async page => await stage.root(page).count() > 0
 
-/** 单章视图的文字对比度：正文与要对照阅读的合并栏 4.5，说明文字 3（design-system 第 9 条）。 */
 const CONTRAST = {
   page: [['.stage-ch-title', 4.5], ['.stage-ch .stage-ch-prose .cm-content', 4.5], ['.stage-ch-eyebrow', 3], ['.stage-ch-hint', 3], ['.stage-ch-version', 3]],
   sheet: [['.stage-ch-issue-text', 4.5], ['.stage-ch-sheet-summary', 4.5], ['.stage-ch-issue-tag', 3], ['.stage-ch-issue-quote', 3], ['.stage-ch-issue-meta', 3], ['.stage-ch-sheet-count', 3]],
@@ -27,7 +25,6 @@ const CONTRAST = {
 }
 const assertContrast = async (page, checks, what) => assert.deepEqual(await contrastFailures(page, checks), [], `${what}文字对比度不足`)
 
-/** 纸面与侧页的位置：侧页（运行或审稿）不盖住纸面，同一时间只开一个。 */
 async function sheetLayout(page) {
   return page.evaluate(() => {
     const paper = document.querySelector('.stage-ch-page')?.getBoundingClientRect()
@@ -39,13 +36,8 @@ async function sheetLayout(page) {
   })
 }
 
-/**
- * 打开作品的流程在文件树读完后才回到作品页，那一步会收起运行侧页，比落点晚约半秒（实测落点 440ms、收起 1004ms），界面上没有可等的信号。
- * 场景要开运行侧页时先等它过去；审稿侧页不受它影响。
- */
 const afterProjectOpenSettles = page => page.waitForTimeout(2000)
 
-/** 预置示例作品；remember 把作品路径记进场景上下文，结束时据此重新打开作品读数据库。 */
 const seed = ({ deleteChapters = [], extra } = {}) => context => seedStageSample(context, {
   landOnChapter3: deleteChapters.length === 0,
   beforeReload: async args => {
@@ -65,7 +57,6 @@ async function createDraft({ page, invoke, path, session }, chapterNumber, versi
   assert.equal(created.success, true, created.error)
 }
 
-/** 界面打开作品后会话租约换了新的；核对数据库时回到书房，由驱动自己再打开一次拿会话。 */
 async function reopenForReading({ page, invoke, reload, projectPath }) {
   await reload()
   const opened = await invoke(page, 'project:open', projectPath, randomUUID(), null)
@@ -73,7 +64,6 @@ async function reopenForReading({ page, invoke, reload, projectPath }) {
   return { projectId: opened.project.id, projectPath, leaseId: opened.project.sessionLease }
 }
 
-/** 第 n 章定稿正文的摘要与后处理各步的成败，两种外壳都从数据库读。 */
 async function finalizedFacts(context, chapterNumber) {
   const { page, invoke, projectPath } = context
   const session = await reopenForReading(context)
@@ -90,10 +80,6 @@ async function finalizedFacts(context, chapterNumber) {
   }
 }
 
-/**
- * 页面里进行中的运行胶囊挂上来过几次。点下触发运行的按钮之前取一次，交给 waitRunDone：
- * 只等「没有进行中的胶囊」会在运行还没挂出胶囊时空过。第一次调用时装上计数。
- */
 async function runsStarted(page) {
   return page.evaluate(() => {
     if (!window.__rdRunsStarted) {
@@ -110,10 +96,6 @@ async function runsStarted(page) {
   })
 }
 
-/**
- * 审稿或修稿结果送到单章视图时运行侧页已收起：等这次运行的胶囊挂上来过、且顶栏不再有进行中的胶囊（完成后的胶囊带 data-tone="ok"）。
- * 不一定起运行的步骤（完成合并只在需要复验时才起）不给 startedBefore，只等没有进行中的胶囊。
- */
 async function waitRunDone(page, startedBefore) {
   if (!await isStage(page)) return runPanel.waitForWorkflowDone(page)
   if (await runSheet.sheet(page).isVisible()) return runSheet.waitForRunDone(page)
@@ -122,7 +104,6 @@ async function waitRunDone(page, startedBefore) {
   await page.waitForFunction(({ before, selector }) => window.__rdRunsStarted.count > before && !document.querySelector(selector), { before: startedBefore, selector: running }, { timeout: 90_000 })
 }
 
-/** 两种外壳各自写第 3 章：新外壳在待写章的单章视图点「写作此章」，旧外壳从章节蓝图的「写作第3章」对话框直接开始。 */
 async function writeChapter3(page) {
   if (await isStage(page)) {
     await chapterView.open(page, 3)
@@ -140,7 +121,6 @@ async function writeChapter3(page) {
   await chapter.editor(page).getByText(firstLine(FIXTURE_PROSE)).first().waitFor({ state: 'visible', timeout: 30_000 })
 }
 
-/** 新外壳：审稿、按意见修稿、等合并视图。 */
 async function reviewAndRevise(page) {
   const reviewing = await runsStarted(page)
   await chapterView.review(page)
@@ -151,7 +131,6 @@ async function reviewAndRevise(page) {
   await waitRunDone(page, revising)
 }
 
-/** 两种外壳各自走完审稿、按意见修稿、全部用修稿合并、等合并后复验、定稿。 */
 async function reviewReviseMergeFinalize(page) {
   if (await isStage(page)) {
     await reviewAndRevise(page)
@@ -175,7 +154,6 @@ async function reviewReviseMergeFinalize(page) {
   await waitRunDone(page)
 }
 
-/** 计时：点击 target 到正文出现 text 且所在滚动区可以滚动，毫秒，不取整。frameMs 按动画帧检查，domMs 在 DOM 变化回调里记，不依赖动画帧。 */
 async function openTiming(page, target, text) {
   const handle = await target.elementHandle()
   await page.evaluate(({ element, text }) => {
@@ -214,7 +192,6 @@ async function openTiming(page, target, text) {
 
 const COMMIT_REVIEW = 'review-revision:commit-review'
 
-/** unsaved：写回卡住，调用方随后重载，留下一条没保存的审稿候选（#686 起已保存的审修运行不列为可恢复）。 */
 async function rereviewChapter3({ app, page, fake }, { unsaved = false } = {}) {
   await chapterView.open(page, 3)
   const reviewsBefore = fake.chats.filter(chat => chat.kind === 'review').length
@@ -260,10 +237,6 @@ const percentile = (values, p) => {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1)]
 }
 
-/**
- * 按键到渲染：每个按键从 beforeinput 起，到正文 DOM 里出现这个字（MutationObserver 回调，domMs），
- * 再到其后第一帧（frameMs）。屏幕外窗口的动画帧可能被节流，两种口径都报。
- */
 async function typingLatency(page, content, keys) {
   await content.evaluate(element => {
     window.__driveTyping = []
@@ -295,7 +268,6 @@ async function typingLatency(page, content, keys) {
   }
 }
 
-/** 正文里第一段长段落的第一个视觉行放了几个字：逐字取位置，换行时停。 */
 function charsPerLine(page) {
   return chapterView.prose(page).evaluate(content => {
     const line = [...content.querySelectorAll('.cm-line')].find(node => (node.textContent ?? '').length > 60)
@@ -318,16 +290,13 @@ function charsPerLine(page) {
 }
 
 const LONG_CHAPTER = 5
-/** 1 万字的第 5 章草稿：50 段，每段 200 字，段首带段号便于定位。 */
 const longParagraphHead = index => `第${index + 1}段。`
 const LONG_TEXT = Array.from({ length: 50 }, (_, index) => {
   const head = longParagraphHead(index)
   return head + '雾是从海面上一层一层爬上来的林岚把潮汐表压在值班室的窗台上用铅笔圈出昨夜的那一格钟声比往常早了一刻潮水却没有任何变化'.repeat(4).slice(0, 200 - head.length)
 }).join('\n\n')
-/** 长章第 1 段的段首，用来判断长章正文是否已显示；与 LONG_TEXT 同源，改了正文守卫不会静默失效。 */
 const LONG_TEXT_HEAD = longParagraphHead(0)
 
-/** 打开 1 万字的第 5 章：新外壳点流程脊里的章，旧外壳点草稿箱里的草稿。 */
 async function openLongChapter(page) {
   const target = await isStage(page) ? stage.chapterButton(page, LONG_CHAPTER) : project.draftOfChapter(page, LONG_CHAPTER)
   const longProse = (await proseOf(page)).getByText(LONG_TEXT_HEAD, { exact: false })
@@ -340,13 +309,8 @@ async function openLongChapter(page) {
 
 const proseOf = async page => await isStage(page) ? chapterView.prose(page) : chapter.editor(page)
 
-/** 合并视图里每处改动当前选中的那一栏的文字。 */
 const chosenTexts = page => chapterView.merge(page).locator('[data-chosen="true"]').allInnerTexts()
 
-/**
- * 双侧页：第 3 章已审稿，默认展开审稿侧页；打开运行侧页时审稿侧页让出，从「更多」打开审稿报告时运行侧页让出。
- * 两种状态下都只有一个侧页、纸面不被盖住、正文一行不少于 24 字、页面没有横向滚动。
- */
 async function sheetsAt(page, width) {
   await page.setViewportSize({ width, height: 900 })
   await chapterView.reviewSheet(page).waitFor({ state: 'visible' })
@@ -365,13 +329,11 @@ async function sheetsAt(page, width) {
 }
 
 export const CHAPTER_SCENARIOS = {
-  /** lane 1：同一章在 trunk（旧外壳，--app-root）与 head（新外壳，--shell stage）走完写作、审稿、修稿、合并、定稿；两边 measured 相同即通过。 */
   'chapter-regression': { model: true, setup: seed({ deleteChapters: [3, 4] }), run: async context => {
     await writeChapter3(context.page)
     await reviewReviseMergeFinalize(context.page)
     const shell = await isStage(context.page) ? 'stage' : 'writer'
     const facts = await finalizedFacts(context, 3)
-    // 读数据库要回到书房重新打开作品；新外壳再打开一次作品与第 3 章，截图停在定稿视图。
     if (shell === 'stage') {
       await stage.openFromLibrary(context.page, STAGE_SAMPLE.name)
       await chapterView.open(context.page, 3)
@@ -380,7 +342,6 @@ export const CHAPTER_SCENARIOS = {
     return { shell, ...facts }
   } },
 
-  /** lane 2：草稿状态的主按钮是 AI 审稿，生命周期停在审稿。 */
   'chapter-draft': { model: false, shell: 'stage', setup: seed(), run: async ({ page }) => {
     await chapterView.open(page, 4)
     await chapterView.prose(page).getByText(firstLine(STAGE_SAMPLE.drafts[4].text)).waitFor({ state: 'visible' })
@@ -390,7 +351,6 @@ export const CHAPTER_SCENARIOS = {
     await assertContrast(page, CONTRAST.page, '单章视图')
   } },
 
-  /** lane 3：审稿后侧页展开，勾选数与主按钮「按 N 项意见修稿」、侧页底部计数同步。 */
   'chapter-review': { model: true, shell: 'stage', setup: seed(), run: async ({ page }) => {
     await chapterView.open(page, 4)
     const started = await runsStarted(page)
@@ -414,10 +374,6 @@ export const CHAPTER_SCENARIOS = {
     await assertContrast(page, CONTRAST.sheet, '审稿侧页')
   } },
 
-  /**
-   * #438：「留作草稿」批次里第 4 章以第 3 章候选稿为前驱写成；作者随后改了第 3 章，再把 3、4 章逐章定稿。
-   * 写第 5 章时模型照常出稿，保存不能因为第 4 章当初依据的第 3 章旧稿而被拒。
-   */
   'chapter-write-after-edited-chain': { model: true, shell: 'stage', setup: seed({ extra: async ({ page, invoke, path, session }) => {
     const [third] = await invoke(page, 'db:draft-list', 3, path, session)
     assert.ok(third, '示例作品有第 3 章稿')
@@ -443,12 +399,10 @@ export const CHAPTER_SCENARIOS = {
     await chapterView.open(page, 5)
     const proseBefore = fake.chats.filter(chat => chat.kind === 'prose').length
     await chapterView.view(page).getByRole('button', { name: '写作此章', exact: true }).click()
-    // 运行侧页可能还停在第 4 章定稿那张「已完成」卡上，不能据它判断写完；只认第 5 章正文出现在纸面上。
     await chapterView.prose(page).getByText(firstLine(FIXTURE_PROSE)).first().waitFor({ state: 'visible', timeout: 90_000 })
     await runSheet.openFromPalette(page)
     const proseRequests = fake.chats.filter(chat => chat.kind === 'prose').length - proseBefore
     const rawIpcError = await runSheet.sheet(page).getByText(/Error invoking remote method|GENERATION_/).count()
-    // 纸面出字只说明生成过；#438 是保存被拒，要从库里读回第 5 章的稿才算保存了。
     const session = await reopenForReading(context)
     const saved = await invoke(page, 'db:draft-list', 5, projectPath, session)
     const contents = await Promise.all(saved.map(async draft => (await invoke(page, 'db:draft-get-full', draft.id, projectPath, session))?.content ?? ''))
@@ -459,10 +413,6 @@ export const CHAPTER_SCENARIOS = {
     return after
   } },
 
-  /**
-   * #411：第 3 章是旧版本留下的 reviewed 稿，重新审稿要真的请求模型并写回审稿，运行侧页不露原始 IPC 错误。
-   * #455：恢复卡里这次审稿的候选显示审稿结论，不显示模型返回的原始 JSON。
-   */
   'chapter-rereview-legacy': { model: true, shell: 'stage', setup: seed(), run: async context => {
     const saved = await rereviewChapter3(context)
     assert.deepEqual(saved, { reviewRequests: 1, reportShown: true, rawIpcError: 0 },
@@ -476,7 +426,6 @@ export const CHAPTER_SCENARIOS = {
     return { saved, recovery }
   } },
 
-  /** #455 的英文界面：没保存的审稿候选重开作品后在英文运行侧页里显示英文摘要。 */
   'chapter-rereview-legacy-en': { model: true, shell: 'stage', setup: seed(), run: async context => {
     const { page } = context
     await rereviewChapter3(context, { unsaved: true })
@@ -488,31 +437,23 @@ export const CHAPTER_SCENARIOS = {
     return after
   } },
 
-  /**
-   * #484：合并后自动复验的结果在运行侧页的恢复卡里显示结论、条数与要点，不显示原始 JSON；
-   * 中文截 chapter-recheck-digest-zh，再切到英文重开作品，英文卡片写「1 item」与待核实。
-   */
   'chapter-recheck-digest': { model: true, shell: 'stage', setup: seed(), run: async context => {
     const { app, page, fake, shoot } = context
     const summary = '复验：铺垫已压缩，仍需作者核对。'
-    // 审稿同 x2-recheck：带正文证据的本章目标意见才进复验。
     const firstReview = JSON.stringify({ summary: '本章目标还没落地。', items: [
       { category: '连续性', severity: 'warning', description: '核对钟声提前一刻与潮位的关系。', quote: '他给林岚倒了一杯很淡的茶' },
     ], goalReviews: [{ id: 'ch4:keyEvents:1', status: 'unmet', description: '林岚还没有在灯塔里找到新的线索。',
       evidence: [{ quote: '守塔人的屋子在灯塔背风的一侧' }] }] })
     fake.replyReview(prompt => {
-      // 复验提示里也带着确认的修稿清单，要先按复核锚点认出它。
       const anchors = prompt.split('【需复核的原始证据锚点】')[1]
       if (!anchors) return prompt.includes('goalReviews') && !prompt.includes('【已确认纳入本次修稿的审稿项】') ? firstReview : null
       const findings = JSON.parse(anchors.slice(anchors.indexOf('['), anchors.indexOf(']\n\n') + 1))
-      // 证据取自修稿新增的那句，在合并后正文里只出现一次，复验按可定位的证据处理。
       return JSON.stringify({ summary, items: findings.map(({ findingId, targetId }) => ({
         findingId, targetId, resolved: true, evidenceQuote: '又核对了一遍潮位表', reason: '第二段铺垫已压缩到两句。',
       })) })
     })
     await chapterView.open(page, 4)
     await reviewAndRevise(page)
-    // #686 起已保存的复验不列为可恢复，卡住写回才有候选可看。
     await holdChannel(app, COMMIT_REVIEW)
     await chapterView.merge(page).getByRole('button', { name: '全部用修稿' }).click()
     await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
@@ -542,7 +483,6 @@ export const CHAPTER_SCENARIOS = {
     return { zh, en }
   } },
 
-  /** #484：只请求了一次、没保存的审稿候选，英文运行侧页写「1 request used」，不写成复数。 */
   'run-usage-en': { model: true, shell: 'stage', setup: seed(), run: async context => {
     const { page } = context
     await rereviewChapter3(context, { unsaved: true })
@@ -555,7 +495,6 @@ export const CHAPTER_SCENARIOS = {
     return after
   } },
 
-  /** lane 4：添加作者意见后修稿，修稿请求里带着这条意见。 */
   'chapter-manual': { model: true, shell: 'stage', setup: seed(), run: async ({ page, fake }) => {
     await chapterView.open(page, 4)
     const reviewing = await runsStarted(page)
@@ -572,7 +511,6 @@ export const CHAPTER_SCENARIOS = {
     assert.ok(JSON.stringify(revision.messages).includes(note), '人工意见进入了修稿输入')
   } },
 
-  /** lane 5：合并视图逐段选择后完成合并，草稿正文里是选中的那些文字。 */
   'chapter-merge': { model: true, shell: 'stage', setup: seed(), run: async context => {
     const { page } = context
     await chapterView.open(page, 4)
@@ -598,7 +536,6 @@ export const CHAPTER_SCENARIOS = {
     if (manual) assert.ok(merged.includes(manual), '合并结果含手动编辑的文字')
   } },
 
-  /** lane 6：定稿确认后正文只读，定稿视图列出后处理四步（正文文件与三步后处理）。 */
   'chapter-finalize': { model: true, shell: 'stage', setup: seed(), run: async ({ page }) => {
     await chapterView.open(page, 3)
     await chapterView.more(page, '定稿…')
@@ -613,7 +550,6 @@ export const CHAPTER_SCENARIOS = {
     return { steps: await chapterView.postProcessSteps(page) }
   } },
 
-  /** lane 7：后处理里角色状态更新失败（夹具回复不是 JSON），点重试只重跑这一步：之后只有角色状态请求，没有章节要点与入库。 */
   'chapter-retry': { model: true, shell: 'stage', setup: seed(), run: async ({ page, fake }) => {
     fake.breakCharacterState()
     await chapterView.open(page, 3)
@@ -634,10 +570,6 @@ export const CHAPTER_SCENARIOS = {
     return { before, after: await chapterView.postProcessSteps(page), retried }
   } },
 
-  /**
-   * #420：角色状态请求断流两次。自动后处理只发一次请求、失败说明不含错误码；重开应用后点「重试失败步骤」恰好再发一次，
-   * 仍断流时这次修复按设计失败，说明仍讲明是连接中断；再点这一步的「重试」第三次请求成功，后处理回到 3 / 3（重开后不再列正文文件一行）。
-   */
   'chapter-retry-stream': { model: true, shell: 'stage', setup: async context => { await trackOpenedSession(context.app); await seed()(context) }, run: async context => {
     const { fake } = context
     const characterRequests = () => fake.requests.filter(kind => kind === 'character-state').length
@@ -667,7 +599,6 @@ export const CHAPTER_SCENARIOS = {
     assert.equal(characterRequests(), 2, '重开后点重试恰好发出一次新请求')
     const retried = await characterStep()
     assert.equal(retried.attemptCount, 2, '步骤记录已是重试这一次')
-    // 两次断流的说明文字相同，原地刷新与否界面上分不出；切到别章再回来，读到的一定是重试这一次。
     await chapterView.open(context.page, 4)
     await chapterView.open(context.page, 3)
     const expectedError = describeFinalizationStepError(retried.errorMsg, zh => zh)
@@ -684,7 +615,6 @@ export const CHAPTER_SCENARIOS = {
     return { firstError, secondError, characterRequests: characterRequests(), steps: await chapterView.postProcessSteps(context.page) }
   } },
 
-  /** lane 8：选中一段正文用选区工具条润色，预览后替换；再选一段润色后取消，正文不变。 */
   'chapter-selection': { model: true, shell: 'stage', setup: seed(), run: async ({ page }) => {
     await chapterView.open(page, 4)
     const prose = chapterView.prose(page)
@@ -709,7 +639,6 @@ export const CHAPTER_SCENARIOS = {
     await toolbar.waitFor({ state: 'visible' })
   } },
 
-  /** lane 9：第 4 章有两稿，删除当前这一稿要危险确认，之后版本切换器只剩另一稿。 */
   'chapter-delete': { model: false, shell: 'stage', setup: seed({ extra: args => createDraft(args, 4, 2, `${STAGE_SAMPLE.drafts[4].text}\n\n这是改写的第二稿，林岚决定先不问钟的事。`) }), run: async ({ page }) => {
     await chapterView.open(page, 4)
     assert.deepEqual(await chapterView.versions(page), ['草稿 v2 · 当前', '草稿 v1'])
@@ -723,10 +652,8 @@ export const CHAPTER_SCENARIOS = {
     assert.deepEqual(await chapterView.versions(page), ['草稿 v1 · 当前'], '版本切换器不再列出删掉的那一稿')
   } },
 
-  /** lane 10：1280 宽深色（--theme dark）下正文一行约 34 字；运行侧页打开后纸面收窄，正文一行仍不少于 24 字，页面没有横向滚动。 */
   'chapter-1280': { model: false, shell: 'stage', setup: seed(), run: async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    // 第 3 章已审稿，打开时默认展开审稿侧页；先收起它量纸面单独时的一行字数。
     await chapterView.reviewSheet(page).waitFor({ state: 'visible' })
     await page.getByRole('button', { name: '关闭审稿报告' }).click()
     const alone = await charsPerLine(page)
@@ -743,10 +670,6 @@ export const CHAPTER_SCENARIOS = {
     return { charsPerLine: alone, charsPerLineWithRunSheet: withSheet }
   } },
 
-  /**
-   * 审稿侧页属于展开它的那一稿：打开作品落在已审稿的第 3 章，侧页刚出现与 4 秒后一样展开（不再先开后收）；
-   * 换到带历史审稿的已定稿第 2 章不跟过去，回到第 3 章仍展开。删掉第 4 章的稿，落点（最后一章在写的）就是第 3 章。
-   */
   'chapter-sheet-landing': { model: false, shell: 'stage', setup: seed({ extra: async ({ page, invoke, path, session }) => {
     const [finalized] = (await invoke(page, 'db:draft-list', 2, path, session)).filter(draft => draft.status === 'finalized')
     const full = await invoke(page, 'db:draft-get-full', finalized.id, path, session)
@@ -779,7 +702,6 @@ export const CHAPTER_SCENARIOS = {
   'chapter-sheets-1280': { model: false, shell: 'stage', setup: seed(), run: ({ page }) => sheetsAt(page, 1280) },
   'chapter-sheets-1440': { model: false, shell: 'stage', setup: seed(), run: ({ page }) => sheetsAt(page, 1440) },
 
-  /** 沉浸写作（Focus.dc.html）：纸面铺满内容区，底部写字数、设定里的每章目标与进度。截图浅深各一张。 */
   'chapter-focus': { model: false, shell: 'stage', setup: seed(), run: async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await chapterView.open(page, 4)
@@ -801,7 +723,6 @@ export const CHAPTER_SCENARIOS = {
     return { words, target: STAGE_SAMPLE.wordsPerChapter }
   } },
 
-  /** 评审导览：草稿审稿、侧页勾选、按意见修稿、逐段合并、定稿后处理。配 --video 录 30～60 秒。 */
   'chapter-tour': { model: true, shell: 'stage', setup: seed(), run: async ({ page }) => {
     const pause = ms => page.waitForTimeout(ms)
     await pause(1200)
@@ -840,10 +761,6 @@ export const CHAPTER_SCENARIOS = {
     await pause(3000)
   } },
 
-  /**
-   * #474 B5：英文界面定稿第 3 章，主进程收到提交时先卡住，期间把这一稿删掉再放行。定稿仓储交出 DRAFT_NOT_FOUND，
-   * 运行卡片的失败说明是英文、不带汉字与错误码。
-   */
   'chapter-finalize-gone-en': { model: true, shell: 'stage', setup: seed(), run: async ({ app, page, invoke, shoot }) => {
     await stage.openSettings(page)
     await stage.showSettingsPage(page, '外观')
@@ -884,12 +801,10 @@ export const CHAPTER_SCENARIOS = {
     return observed
   } },
 
-  /** perf：从点击第 5 章（1 万字）到正文出现且纸面可以滚动。两种外壳都能跑。 */
   'chapter-open': { model: false, setup: seed({ extra: args => createDraft(args, LONG_CHAPTER, 1, LONG_TEXT) }), run: async ({ page }) => {
     return { ...await openLongChapter(page), shell: await isStage(page) ? 'stage' : 'writer' }
   } },
 
-  /** perf：在 1 万字的第 5 章里连续输入 40 个字母，按键到渲染的 p95。两种外壳都能跑。 */
   'typing-latency': { model: false, setup: seed({ extra: args => createDraft(args, LONG_CHAPTER, 1, LONG_TEXT) }), run: async ({ page }) => {
     await openLongChapter(page)
     const content = await proseOf(page)
@@ -900,7 +815,6 @@ export const CHAPTER_SCENARIOS = {
   } },
 }
 
-/** #752：作者在合并视图里逐段选好后离开再回来（换章标签、稍后再合并），合并写进库里的仍是作者的选择。 */
 const MERGE_PICK = {
   p1: '守塔人的屋子在灯塔背风的一侧，窗玻璃上积着经年的盐。他给林岚倒了一杯很淡的茶，自己却只是捧着杯子，看着炉火。',
   p1r: '守塔人的屋子在灯塔背风的一侧，窗玻璃上积着三十年的盐。他给林岚倒了一杯很淡的茶，自己却只是捧着杯子，盯着炉火出神。',

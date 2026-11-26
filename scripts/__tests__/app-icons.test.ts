@@ -23,7 +23,6 @@ function icnsFrames(file: Buffer): Frame[] {
   return frames
 }
 
-/** 只解 8 位 RGBA、非隔行的 PNG（Chromium capturePage().toPNG() 的输出），返回每个像素的 alpha。 */
 function decodeAlpha(png: Buffer) {
   const width = png.readUInt32BE(16)
   const height = png.readUInt32BE(20)
@@ -86,7 +85,6 @@ describe('build/ 下提交的应用图标', () => {
     expect(Math.abs(margins.top - margins.bottom), `上下留白 ${margins.top}/${margins.bottom}`).toBeLessThanOrEqual(1)
     expect(Math.abs(margins.left - margins.right), `左右留白 ${margins.left}/${margins.right}`).toBeLessThanOrEqual(1)
     if (fullBleed) expect(margins).toEqual({ left: 0, top: 0, right: 0, bottom: 0 })
-    // 满版帧的图形铺满画布，上面的留白检查发现不了背景不透明；图标是圆角方块，四角按设计透明。
     expect(corners, '四角透明').toEqual([0, 0, 0, 0])
   })
 })

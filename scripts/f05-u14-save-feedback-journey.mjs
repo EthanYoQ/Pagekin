@@ -22,8 +22,6 @@ const expectedExe = argument('exe-sha256')
 const expectedAsar = argument('asar-sha256')
 assert(packageDir && packageSourceSha && /^[a-f0-9]{64}$/.test(expectedExe ?? '') && /^[a-f0-9]{64}$/.test(expectedAsar ?? ''),
   'pass --package-dir=<win-unpacked> --package-source-sha=<sha> --exe-sha256=<hash> --asar-sha256=<hash>')
-// 旧外壳时期 A06、A07 的通过回执只在当年的机器上，而且出自已删除的旧外壳：有就记下，不沿用。
-// A06 由本次编辑区里的 Ctrl S 直接验证；A07 在纸墨外壳里没有重放，记为未验证。
 const previousU14Path = path.join(repository, '.runtime', '.cache', 'f05-u14-save-feedback', '9e6e279e-9d5a-4683-bdcf-e7bc4b72152b', 'receipt.json')
 const previousU14 = fs.existsSync(previousU14Path) ? JSON.parse(fs.readFileSync(previousU14Path, 'utf8')) : null
 const executablePath = resolveWindowsExecutable(packageDir)
@@ -81,15 +79,12 @@ async function launch(env) {
   assert.equal((await invoke(page, 'startup:get-state')).state, 'ready')
   return { app, page }
 }
-/** 顶栏的保存状态：这部作品有任何一页没保存就是「未保存」。 */
 const topStatus = (page, label) => stage.saveStatus(page).filter({ hasText: new RegExp(`^${label}$`) })
 async function waitTopStatus(page, label) {
   await topStatus(page, label).waitFor({ state: 'visible' })
 }
-// 退出对话框这类模态打开时，其余部分从无障碍树里隐去，按角色找不到顶栏；这里按顶栏保存状态的类名读。
 const shownDirty = async page => await stage.root(page).locator('.stage-saved').filter({ hasText: /^未保存$/ }).count() > 0
 const failureToasts = page => stage.toastStack(page).locator(`${stage.LIVE_TOAST}[data-tone="danger"]`)
-/** 把还在的失败通知逐条关掉，免得下一步把旧通知当成新的。 */
 async function dismissFailureToasts(page) {
   for (let left = await failureToasts(page).count(); left > 0; left--) {
     await failureToasts(page).first().getByRole('button', { name: '关闭通知' }).click()
@@ -97,19 +92,16 @@ async function dismissFailureToasts(page) {
       { selector: `.pi-toast-stack ${stage.LIVE_TOAST}[data-tone="danger"]`, count: left })
   }
 }
-/** 等一条失败通知出现，读出它的文字，再关掉。 */
 async function takeFailureToast(page) {
   await failureToasts(page).first().waitFor({ state: 'visible' })
   const message = (await failureToasts(page).first().innerText()).trim()
   await dismissFailureToasts(page)
   return message
 }
-/** 正文没有保存按钮：焦点离开编辑区后按 Ctrl S，由外壳保存当前标签。编辑区里的 Ctrl S 另由 A06 验证。 */
 async function saveFromShell(page) {
   await stage.root(page).locator('.stage-ch-title').click()
   await page.keyboard.press('ControlOrMeta+s')
 }
-/** 架构文档标签（世界观等）沿用的编辑器：自带保存按钮与「未保存 / 保存失败 / 已保存」提示。 */
 const archDocument = page => stage.root(page).locator('.stage-content')
 const archFeedback = (page, label) => archDocument(page).getByRole(label === '保存失败' ? 'alert' : 'status').filter({ hasText: new RegExp(`^${label}$`) })
 const archEditor = page => archDocument(page).locator('.cm-content[contenteditable="true"]')
@@ -372,7 +364,6 @@ async function main() {
       gate.release()
     })
     await waitForSaveGate(app, 'returned', 'held draft response was not returned')
-    // 放行的回应要经过渲染进程处理；给它一秒，若误把后来的输入当成已保存，顶栏会在这期间翻成「已保存」。
     await page.waitForTimeout(1_000)
     assert(await shownDirty(page), 'earlier save response falsely cleared later input')
     assert(!storedBody().includes('并发四'), 'earlier save included later input')
@@ -485,7 +476,6 @@ async function main() {
     await blueprint.planItem(page, 1).click()
     await waitFor(() => blueprint.titleInput(page).inputValue(), value => value === blueprintMarker, 'reopened blueprint title')
     await arch.open(page)
-    // 一节不到 50 字时架构页仍按「待生成」显示「自己写」，打开的是同一份文档。
     await arch.section(page, 'worldbuilding').getByRole('button', { name: /^(编辑|自己写)$/ }).click()
     await waitFor(() => archEditor(page).innerText(), value => value?.includes(archMarker), 'reopened worldbuilding document')
     const reopenedDraft = await stage.openChapter(page, 1)

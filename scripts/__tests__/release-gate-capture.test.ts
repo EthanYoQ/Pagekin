@@ -10,8 +10,6 @@ function quotePowerShell(value: string): string {
   return `'${value.replaceAll("'", "''")}'`
 }
 
-// execFileSync blocks the event loop, so its own timeout must end a stuck
-// probe before the Vitest case timeout would.
 function runMonitorLibrary(script: string, timeoutMilliseconds: number): Record<string, unknown> {
   const output = execFileSync(
     'powershell.exe',

@@ -1,4 +1,3 @@
-// #653 多处批注统一修改：新构建里逐处审阅并保存批注历史；上一版 schema 造的作品库用新构建打开后正文与版本历史不变。
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
@@ -105,7 +104,6 @@ async function annotate(page, paragraph, note, scope = chapterView.prose(page)) 
 }
 
 export const EXT653_SCENARIOS = {
-  /** 第 4 章三段各加一条批注，统一修改；逐处审阅里接受第 1 处、编辑第 2 处、重新生成第 3 处，再接受全部。重启后批注历史仍可读。 */
   'ext653-annotations': { model: true, shell: 'stage', setup: seedFourthChapterVersion, run: async context => {
     const { fake } = context
     fake.replyReview(prompt => prompt.includes('重新改写所选片段') ? REROLLED
@@ -188,7 +186,6 @@ export const EXT653_SCENARIOS = {
     return measured
   } },
 
-  /** 第 4 章有一条批注历史，但读历史时库报错：正文照常显示，历史处写明没读出来并给「重试」；库恢复后点「重试」列出历史。 */
   'ext653-history-error': { model: false, shell: 'stage', setup: seedFourthChapterVersion, run: async ({ page, projectPath, shoot }) => {
     const measured = {}
     await readProjectDb(projectPath, db => {
@@ -215,7 +212,6 @@ export const EXT653_SCENARIOS = {
     return measured
   } },
 
-  /** 第 4 章 v1、v2 各有一条批注历史：历史仍按章列在一起，每条写明是草稿 v几，新的在前。 */
   'ext653-history-versions': { model: false, shell: 'stage', setup: seedFourthChapterVersion, run: async ({ page, projectPath, shoot }) => {
     await readProjectDb(projectPath, db => {
       const insert = db.prepare('INSERT INTO annotation_history(draft_id,before_text,after_text,annotations_json) SELECT id, ?, ?, ? FROM drafts WHERE chapter_number = 4 AND version = ?')
@@ -240,7 +236,6 @@ export const EXT653_SCENARIOS = {
     return measured
   } },
 
-  /** 逐处审阅批注修改时进沉浸写作（#294）：底栏「取消 / 接受全部」压在字数条上层，滚到哪里都点得到。 */
   'ext653-focus-review': { model: true, shell: 'stage', setup: seedFourthChapterVersion, run: async ({ page, fake, shoot }) => {
     fake.replyReview(prompt => prompt.includes(NOTES[0]) ? [REVISED[0], ...PARAGRAPHS.slice(1)].join('\n\n') : null)
     await chapterView.open(page, 4)
@@ -272,7 +267,6 @@ export const EXT653_SCENARIOS = {
     return measured
   } },
 
-  /** 恢复候选（非章节的正文编辑器）里加一条批注：面板叫「批注」，停在正文旁边不盖字。 */
   'ext653-doc-annotation': { model: false, shell: 'stage', setup: seedWithCandidate, run: async ({ page, shoot }) => {
     const measured = {}
     await runSheet.openFromPalette(page)
@@ -291,7 +285,6 @@ export const EXT653_SCENARIOS = {
     return measured
   } },
 
-  // 旧版本由 --app-root 指向已构建的 origin/master 造库；换本工作树构建重启后同一作品的正文与版本哈希须逐条不变。
   'ext653-old-library': { model: false, shell: 'stage', setup: seedFourthChapterVersion, run: async context => {
     const measured = {}
     measured.before = await draftFacts(context.projectPath)

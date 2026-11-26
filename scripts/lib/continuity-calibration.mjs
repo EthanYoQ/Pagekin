@@ -35,10 +35,6 @@ const REVIEW_INSTRUCTIONS = `你是中文小说连续性检查员。本次只做
 
 clear 时 findings 必须为空；conflict 或 unknown 时必须给出至少一条 finding。`
 
-/**
- * Build model messages for one calibration packet.
- * packet.originalChapter is optional and is used only when comparing a repair candidate.
- */
 export function buildFocusedReviewMessages(packet) {
   const normalized = normalizePacket(packet)
   return [
@@ -50,10 +46,6 @@ export function buildFocusedReviewMessages(packet) {
   ]
 }
 
-/**
- * Parse and mechanically validate a model response. A located quote proves only
- * that the citation exists in the packet, never that the finding is semantically correct.
- */
 export function parseFocusedReviewOutput(raw, packet) {
   let sourceById
   try {
@@ -124,7 +116,6 @@ export function parseFocusedReviewOutput(raw, packet) {
   return { valid: true, conclusion: value.conclusion, findings, errors: [] }
 }
 
-/** Summarize format/citation validity only. Human-owned gold scoring is intentionally absent. */
 export function summarizeCalibrationResults(results) {
   if (!Array.isArray(results)) throw new TypeError("results 必须是数组")
 

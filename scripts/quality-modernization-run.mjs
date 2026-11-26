@@ -20,21 +20,9 @@ import { runProductionCommandProbe, runProductionPhasePair, runProductionBridge,
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const CACHE = path.join(ROOT, '.runtime', '.cache', 'novel-quality-modernization')
 const isolationParent = () => path.join(process.env.LOCALAPPDATA || (process.platform === 'win32' ? fail('LOCALAPPDATA_REQUIRED') : os.tmpdir()), 'VibeCodingScratch', 'an', 'a')
-/**
- * 计划分配总额。用户于 2026-09-18 决定移除真实调用硬上限，因此它只用于
- * 协议一致性校验与汇报，不再拒绝请求。账本仍然逐条记录每次占用，
- * 花费依旧可审计；上限是决策，记账是证据。
- */
 export const PLANNED_CALL_ALLOCATION = 80
 export const DRIVER = 'scripts/real-provider-generation-qualification.mjs'
 export const PROTOCOL_PATH = path.join(ROOT, 'docs/research/novel-quality-modernization/protocol.json')
-/**
- * 账本 campaign 身份。ADR 0019（2026-09-18 用户决定）把 campaign id 从预注册协议里的
- * `novel-quality-program-v3-80-v1` 改为 `...-uncapped-v1`，好让「80 帽时期」与现在的收据
- * 不会混成同一 campaign；协议字节本身保持预注册原样（不改写）。这里把这个取代关系显式写下来：
- * 账本与 bridge 都取同一个常量，不再各自硬编码一个字符串——2f259cd 只改了 bridge 一侧，
- * 于是早门在第一次发送前就以 INVALID_CAMPAIGN_BINDING 阻断（0 真实调用，未被发现）。
- */
 const CAMPAIGN_ID_SUPERSESSION = { 'novel-quality-program-v3-80-v1': 'novel-quality-program-v3-uncapped-v1' }
 export const campaignIdFor = protocolId => CAMPAIGN_ID_SUPERSESSION[protocolId] ?? protocolId
 export const hash = value => createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')
@@ -70,8 +58,6 @@ export function validateHistoricalLedgerBoundary(raw, boundary) {
 export function validateHistoricalSupersessionBoundary(raw, fromEventCount, boundary) {
   const attempts = boundary?.reserveAttempts ?? boundary?.reserveAttemptIds?.map(attemptId => ({ attemptId,
     invocationId: boundary.evidenceInvocationId, terminal: 'settle' }))
-  // armBindings 只登记实际出现的臂；每臂 codeSha/sourceHash/driverHash 必填。parityId 是项目级
-  // parity（按 case 不同），因此要么整臂一个值写在 armBindings，要么逐 attempt 写在 reserveAttempts，二者恰选其一。
   const armBindings = boundary?.armBindings
   const armOf = item => armBindings?.[item.attemptId.split(':')[0]]
   if (!boundary || boundary.fromEventCount !== fromEventCount
@@ -126,9 +112,6 @@ function validateCampaignBindingSnapshot(binding, { campaignMode, protocol, hist
     || !['baseline', 'candidate'].includes(binding.arm) || !/^[a-f0-9]{40}$/.test(binding.codeSha)
     || ['sourceHash', 'driverHash', 'parityId'].some(key => !/^[a-f0-9]{64}$/.test(binding[key]))
     || !['early', 'post-ui', 'final', 'diagnostic'].includes(binding.milestone)) fail('INVALID_CAMPAIGN_BINDING')
-  // The frozen prefix is authenticated byte-for-byte by its boundary hash. Its old
-  // protocol selection and allocation are historical evidence, not input to the
-  // current revision, so only the stable envelope is rechecked here.
   if (historical) return
   const current = protocolBinding ?? currentProtocolBinding()
   if (typeof current.protocolRevision !== 'string' || !current.protocolRevision) fail('INVALID_PROTOCOL_REVISION')
@@ -554,10 +537,6 @@ export function forwardQualificationWindowFor(protocol, phase, milestone) {
     fail('FORWARD_QUALIFICATION_WINDOW_REGISTRATION_MISMATCH')
   return registration
 }
-/**
- * 生产桥只是协议的执行者：场景登记的 caseId 与 operation id 必须逐字等于该阶段的
- * 预注册内容。不一致时阻断，而不是跑一个不是预注册的实验。
- */
 export function assertScenarioMatchesProtocol(selection, scenario, semanticPath) {
   if (!scenario || !isDeepStrictEqual(selection.caseIds, scenario.caseIds ?? [scenario.caseId])
     || !Array.isArray(selection.operations) || selection.operations.length !== scenario.operations.length
@@ -570,7 +549,6 @@ export function assertScenarioMatchesProtocol(selection, scenario, semanticPath)
   if (selection.phase === 'c16-c18') {
     const order = semanticPath && read(semanticPath).continuityQualificationCases?.map(item => item.id)
     const oracles = selection.caseOracles
-    // v4 起每个 operation 的 kind、restore 与 caseIds 也逐字对齐：哪一案执行哪些后处理/续写只由协议决定。
     if (selection.operations.some((operation, index) => operation.kind !== scenario.operations[index].kind
       || (operation.restore ?? null) !== (scenario.operations[index].restore ?? null)
       || !isDeepStrictEqual(operation.caseIds, [...(scenario.operations[index].caseIds ?? [])]))
@@ -673,7 +651,6 @@ export function createProductionTargets(baselineRoot, output, { development = fa
     if (git(baselineRoot, ['rev-parse', 'HEAD']) !== '2264390d6fb8b052cc14736d544df0cc74516649') fail('BASELINE_SHA_MISMATCH')
     if (git(baselineRoot, ['diff', 'HEAD', '--name-only'])) fail('TARGET_TRACKED_DIRTY')
   }
-  // Keep the actual project below the production Windows path limit; no bypass.
   const root = createShortIsolationRoot()
   const semanticSource = read(path.join(ROOT, 'test/fixtures/novel-quality-modernization/semantic-source.json'))
   const fixtureExports = buildFixtureExports(semanticSource)
@@ -735,12 +712,9 @@ export function probeTarget(target) {
   inspectTarget(target)
   return { status: 'passed', evidenceLevel: 'production-generation-runtime-with-synthetic-completion', physicalModelRequests: 0, codeSha: target.codeSha, sourceHash: observed.sourceHash, driverHash: target.driver.sha256, environment: target.environment, startup: target.startup, nativeProfile: target.nativeProfile, receipt, commands, limitations: ['非桌面或IPC资格', '非预注册章节质量结果', '仅内存模拟供应商完成；未读真实模型配置'] }
 }
-// 基线臂跑冻结在 2264390d6 的驱动，它走 generation runtime；候选臂跑当前驱动，它走 generation harness。
 const PROBE_EXECUTION_SEAM = { baseline: 'generation-runtime-with-in-memory-adapter-lease', candidate: 'generation-harness-with-in-memory-adapter-lease' }
 export const probeReceiptMatches = (receipt, { arm, codeSha }) => receipt.mode === 'dry-run' && receipt.provenance.sourceSha === codeSha && receipt.executionSeam === PROBE_EXECUTION_SEAM[arm]
 
-// A single append-only campaign file; wx lock prevents concurrent reservations.
-// A torn final record fails closed. Dispatched/unknown attempts never release capacity.
 export function updateLedger(file, event, options = {}) {
   if (options.campaignMode === 'real') validatePhysicalLedger(file)
   else fs.mkdirSync(CACHE, { recursive: true })
@@ -792,14 +766,11 @@ export function updateLedger(file, event, options = {}) {
       const trustedC16Events = c16Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedPostUiEvents, c16Boundary)
         : trustedPostUiEvents
-      // 第433–507行：旧协议 hash 下两次 C16–C18 失败与一次 post-UI 执行；加性认证，不改判。
       const ccc70b31Boundary = options.campaignMode === 'real'
         ? protocol.historicalC16Ccc70b31Boundary : options.historicalC16Ccc70b31Boundary
       const trustedCcc70b31Events = ccc70b31Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedC16Events, ccc70b31Boundary)
         : trustedC16Events
-      // 第508–579行：旧协议 hash `68722f93…` 下 C16–C18 真实 invocation c9b88510 与 d8a30c11。两次 candidate 代码
-      // 身份不同，按同一 armBindings 规则各登记一段（507→546、546→579）；只加性认证，不改判。
       const c9b88510Boundary = options.campaignMode === 'real'
         ? protocol.historicalC16C9b88510Boundary : options.historicalC16C9b88510Boundary
       const trustedC9b88510Events = c9b88510Boundary
@@ -810,8 +781,6 @@ export function updateLedger(file, event, options = {}) {
       const trustedD8a30c11Events = d8a30c11Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedC9b88510Events, d8a30c11Boundary)
         : trustedC9b88510Events
-      // 第580–648行：协议 hash `a0a14777…` 下 C16–C18 真实 invocation ca466d9a（code e797f2d2，FINALIZATION_EFFECT_MISSING）
-      // 与 73b46513（code 2275cdde，C17-B 独立评审 FAIL）。按同一 armBindings 规则各登记一段（579→615、615→648）；只加性认证，不改判。
       const ca466d9aBoundary = options.campaignMode === 'real'
         ? protocol.historicalC16Ca466d9aBoundary : options.historicalC16Ca466d9aBoundary
       const trustedCa466d9aEvents = ca466d9aBoundary
@@ -822,86 +791,66 @@ export function updateLedger(file, event, options = {}) {
       const trusted73b46513Events = r73b46513Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedCa466d9aEvents, r73b46513Boundary)
         : trustedCa466d9aEvents
-      // 第649–690行：协议 hash `7a17f36a…`（场景 v4）下 C16–C18 真实 invocation fa8806d7（code 8a07eb16，独立评审 R1/R2 FAIL）。
-      // 按同一 armBindings 规则登记一段（648→690）；只加性认证，不改判。
       const fa8806d7Boundary = options.campaignMode === 'real'
         ? protocol.historicalC16Fa8806d7Boundary : options.historicalC16Fa8806d7Boundary
       const trustedFa8806d7Events = fa8806d7Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trusted73b46513Events, fa8806d7Boundary)
         : trusted73b46513Events
-      // 第691–738行：协议 hash `31f8b204…`（场景 v5）下 C16–C18 真实 invocation b42cfc55（code 2f420a38，独立评审 FAIL）。
-      // 按同一 armBindings 规则登记一段（690→738）；只加性认证，不改判。
       const b42cfc55Boundary = options.campaignMode === 'real'
         ? protocol.historicalC16B42cfc55Boundary : options.historicalC16B42cfc55Boundary
       const trustedB42cfc55Events = b42cfc55Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedFa8806d7Events, b42cfc55Boundary)
         : trustedFa8806d7Events
-      // 第739–774行：协议 hash `4491c88d…`（场景 v5）下 C16–C18 真实 invocation 67a57c04（code b6bef1f3，C17-B 技术失败停发）。
-      // 按同一 armBindings 规则登记一段（738→774）；只加性认证，不改判。
       const r67a57c04Boundary = options.campaignMode === 'real'
         ? protocol.historicalC1667a57c04Boundary : options.historicalC1667a57c04Boundary
       const trusted67a57c04Events = r67a57c04Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedB42cfc55Events, r67a57c04Boundary)
         : trustedB42cfc55Events
-      // 第775–828行：协议 hash `1d7c737b…`（场景 v5）下 C16–C18 真实 invocation 2867cfa4（code 2147b95c，自动阶段七案通过，独立评审七案 PASS）。
-      // 按同一 armBindings 规则登记一段（774→828）；只加性认证，不改判。
       const r2867cfa4Boundary = options.campaignMode === 'real'
         ? protocol.historicalC162867cfa4Boundary : options.historicalC162867cfa4Boundary
       const trusted2867cfa4Events = r2867cfa4Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trusted67a57c04Events, r2867cfa4Boundary)
         : trusted67a57c04Events
-      // 第829–843行：协议 hash `7cf6e1ce…`（场景 v2）下 post-UI 真实 invocation ba2d34ab（baseline 2264390d + candidate a618c122，
-      // candidate 首稿超上限而压缩未登记，reserve 前被拒后以 GENERATION_DRAFT_LENGTH_OUT_OF_RANGE 失败）。
-      // 按同一 armBindings 规则登记一段（828→843，两臂）；只加性认证，不改判。
       const ba2d34abBoundary = options.campaignMode === 'real'
         ? protocol.historicalPostUiBa2d34abBoundary : options.historicalPostUiBa2d34abBoundary
       const trustedBa2d34abEvents = ba2d34abBoundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trusted2867cfa4Events, ba2d34abBoundary)
         : trusted2867cfa4Events
-      // 第844–861行：协议 hash `08dbed9d…`（post-UI 场景 v3）下 post-UI 真实 invocation 1d0bdac3（baseline 2264390d + candidate 02e94787，
-      // 自动阶段两臂通过，候选首稿在区间内、未触发压缩；盲评待独立裁定，记录于私有检查点）。按同一 armBindings 规则登记一段（843→861，两臂）；只加性认证，不改判。
       const r1d0bdac3Boundary = options.campaignMode === 'real'
         ? protocol.historicalPostUi1d0bdac3Boundary : options.historicalPostUi1d0bdac3Boundary
       const trusted1d0bdac3Events = r1d0bdac3Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedBa2d34abEvents, r1d0bdac3Boundary)
         : trustedBa2d34abEvents
-      // 第862–909行：e9a39853 的 C16–C18 invocation ac3af420，共16次已结算请求；只登记物理历史，不作质量裁定。
       const ac3af420Boundary = options.campaignMode === 'real'
         ? protocol.historicalC16Ac3af420Boundary : options.historicalC16Ac3af420Boundary
       const trustedAc3af420Events = ac3af420Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trusted1d0bdac3Events, ac3af420Boundary)
         : trusted1d0bdac3Events
-      // 第910–957行：98b63481 的 C16–C18 invocation a9552e67，共16次已结算请求；仅登记物理历史。
       const a9552e67Boundary = options.campaignMode === 'real'
         ? protocol.historicalC16A9552e67Boundary : options.historicalC16A9552e67Boundary
       const trustedA9552e67Events = a9552e67Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedAc3af420Events, a9552e67Boundary)
         : trustedAc3af420Events
-      // 第958–1005行：613a55cd 的 C16–C18 invocation 63a44636，共16次已结算请求；仅登记物理历史。
       const r63a44636Boundary = options.campaignMode === 'real'
         ? protocol.historicalC1663a44636Boundary : options.historicalC1663a44636Boundary
       const trusted63a44636Events = r63a44636Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedA9552e67Events, r63a44636Boundary)
         : trustedA9552e67Events
-      // 第1006–1041行：74d168a6 的 C16–C18 invocation a4d2b6ed，共12次已结算请求；仅登记物理历史。
       const a4d2b6edBoundary = options.campaignMode === 'real'
         ? protocol.historicalC16A4d2b6edBoundary : options.historicalC16A4d2b6edBoundary
       const trustedA4d2b6edEvents = a4d2b6edBoundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trusted63a44636Events, a4d2b6edBoundary)
         : trusted63a44636Events
-      // 第1042–1080行：043b3dc3 的 C16–C18 invocation 0917fb36，共13次已结算请求；仅登记物理历史。
       const r0917fb36Boundary = options.campaignMode === 'real'
         ? protocol.historicalC160917fb36Boundary : options.historicalC160917fb36Boundary
       const trusted0917fb36Events = r0917fb36Boundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedA4d2b6edEvents, r0917fb36Boundary)
         : trustedA4d2b6edEvents
-      // 第1081–1122行：5a8208dd 的 C16–C18 invocation 1aa5487e，共14次已结算请求；仅登记物理历史。
       const r1aa5487eBoundary = options.campaignMode === 'real'
         ? protocol.historicalC161aa5487eBoundary : options.historicalC161aa5487eBoundary
       const trusted1aa5487eEvents = r1aa5487eBoundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trusted0917fb36Events, r1aa5487eBoundary)
         : trusted0917fb36Events
-      // 第1123–1158行：2e3500b8 的 C16–C18 invocation 9337909d，共12次已结算请求；仅登记物理历史。
       const r9337909dBoundary = options.campaignMode === 'real'
         ? protocol.historicalC169337909dBoundary : options.historicalC169337909dBoundary
       const trusted9337909dEvents = r9337909dBoundary
@@ -963,9 +912,6 @@ export function updateLedger(file, event, options = {}) {
         ? protocol.historicalSeparatedReviewB89b011aBoundary : options.historicalSeparatedReviewB89b011aBoundary
       const trustedSeparatedReviewB89b011aEvents = separatedReviewB89b011aBoundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trusted09ad48e1Events, separatedReviewB89b011aBoundary) : trusted09ad48e1Events
-      // 绑定校验的 phase / caseId / operation 全部取自协议本身：阶段必须先存在、
-      // caseId 必须在该阶段登记、operation 必须是该阶段登记的 operation id。
-      // 未登记 operations 的阶段在这里 fail closed。
       const postUi83573613Boundary = options.campaignMode === 'real'
         ? protocol.historicalPostUi83573613Boundary : options.historicalPostUi83573613Boundary
       const trustedPostUi83573613Events = postUi83573613Boundary
@@ -1041,9 +987,6 @@ export function updateLedger(file, event, options = {}) {
       const goalDeltaBoundary = options.campaignMode === 'real' ? protocol.historicalGoalDeltaFirstReviewBoundary : options.historicalGoalDeltaFirstReviewBoundary
       const trustedGoalDeltaEvents = goalDeltaBoundary
         ? validateHistoricalSupersessionBoundary(rawLedger, trustedFormalEvents, goalDeltaBoundary) : trustedFormalEvents
-      // 阶段决定首选分配桶：early 阶段用 early*，post-UI 重跑用 postUi*；
-      // 同一 slot 的重复发送或已超出计划样本量的发送归入失败/修复余量。
-      // ADR 0019 已移除硬上限：allocation 只分类和汇报，从不拒绝发送。
       const allocationFor = binding => {
         const occupied = [...reserved.values()].filter(row => statuses.get(row.attemptId) !== 'cancel')
         assertCandidateSlotAvailable(occupied, binding)
@@ -1110,7 +1053,6 @@ export function updateLedger(file, event, options = {}) {
           return 'nonQualificationDiagnostic'
         }
         if (binding.phase === 'separated-review-diagnostic') {
-          // Fixed registration, not invocation/SHA: restarting cannot refund a slot.
           const prior = [...reserved.values()].filter(row => row.binding.phase === binding.phase)
           const registration = protocol.phases[binding.phase]
           if (prior.length >= registration.maxPhysicalRequests || prior.some(row => row.binding.operation === binding.operation)
@@ -1220,14 +1162,12 @@ export function updateLedger(file, event, options = {}) {
 }
 export const developmentLedgerPath = (root, phase) => path.join(CACHE, `synthetic-ledger-${path.basename(root)}-${phase}.jsonl`)
 
-/** One frozen batch: all three seven-case rounds plus the nine continuous chapters. */
 export function candidateBatchSlots() {
   return [1, 2, 3].flatMap(round => PHASE_SCENARIOS['c16-c18'].caseIds.map(caseId =>
     ({ phase: 'c16-c18', round, caseId, slot: `c16-c18:${caseId}` })))
     .concat(PHASE_SCENARIOS.full.caseIds.map(caseId => ({ phase: 'full', round: 1, caseId, slot: `full:${caseId}` })))
 }
 
-/** Only independently adjudicated cases enter this calculation; technical completion is separate. */
 export function aggregateCandidateJudgments(decisions) {
   const slots = candidateBatchSlots()
   if (!Array.isArray(decisions) || decisions.length !== slots.length || slots.some(slot =>
@@ -1313,7 +1253,6 @@ export function registerCandidateBatch(targets, output) {
   return { status: 'registered', batchPath: file, batchHash: hash(fs.readFileSync(file)), ...batch, physicalModelRequests: 0 }
 }
 
-/** Adjudication consumes frozen execution evidence and two independent case reviews. */
 export function adjudicateCandidateBatch(batchPath, reviewsPath) {
   const batch = read(batchPath), reviews = read(reviewsPath)
   if (reviews.batchId !== batch.batchId || reviews.batchHash !== hash(fs.readFileSync(batchPath))
@@ -1497,8 +1436,6 @@ export function main(argv) {
       modelSources: args['--model-sources'] || args['--diagnostic-models'] ? read(real(args['--model-sources'] ?? args['--diagnostic-models'])) : undefined,
       resumeSourcePath: args['--resume-source'], savedReviewContinuationPath: args['--saved-review-continuation'], diagnosticInputPath: args['--diagnostic-input'] })
     if (command === 'freeze-targets') return prepared
-    // 零模型开发路径只跑已登记的场景；默认仍是 early-budget，逐字保持原有行为。
-    // 它永远只产出 development-only-unfrozen 收据，不构成冻结目标资格。
     const phase = args['--scenario'] ?? 'early-budget'
     const scenario = productionScenario(phase, args['--milestone'] ?? PHASE_SCENARIOS[phase]?.milestone, protocol.decisionRevision)
     if (!scenario) fail('PHASE_PRODUCTION_ADAPTER_NOT_INTEGRATED')

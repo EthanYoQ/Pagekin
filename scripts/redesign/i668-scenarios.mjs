@@ -28,7 +28,6 @@ const seed = context => seedStageSample(context, {
   },
 })
 
-/** 合并视图共 9 处改动（每十处涨潮改一句）。 */
 const seedMerge = context => seedStageSample(context, {
   landOnChapter3: false,
   beforeReload: async ({ page, invoke, path, session }) => {
@@ -50,7 +49,6 @@ const seedMerge = context => seedStageSample(context, {
 
 const scroller = page => chapterView.view(page).locator('.stage-ch-scroll')
 
-/** 编辑器量完行高后正文还会变长，要连续几帧停在底部才算到底。 */
 async function scrollToEnd(page) {
   await scroller(page).evaluate(async element => {
     for (let settled = 0; settled < 3;) {

@@ -1,5 +1,3 @@
-// #484 实机场景：定稿后处理的角色状态更新在提交前，作者在角色页改了同一个字段，提交按字段冲突拒写。
-// 步骤详情要用中英文说明原因和作者能做什么，不显示原始错误码。
 import assert from 'node:assert/strict'
 
 import * as architecture from './pages/architecture.mjs'
@@ -28,7 +26,6 @@ export async function editLocationOnCastPage(page, value) {
 
 const COMMIT = 'finalization-generation:commit'
 
-/** 卡住第 nth 次提交（本流程第 1 次是章节要点，第 2 次是角色状态），release 之前不进主进程的提交。 */
 async function holdCommit(app, nth) {
   assert.ok(await app.evaluate(({ ipcMain }, [channel, target]) => {
     const handlers = ipcMain._invokeHandlers
@@ -45,10 +42,6 @@ async function holdCommit(app, nth) {
   }, [COMMIT, nth]), '能在主进程里卡住定稿后处理的提交')
 }
 
-/**
- * 轮询主进程里的门。直接 app.evaluate 取值时，Windows 上的 Electron 41 偶发报「Promise was collected」，Playwright 报成执行上下文销毁；
- * 先取句柄再读值、读完释放就不会。
- */
 async function waitHeld(app) {
   const held = async () => {
     const handle = await app.evaluateHandle(() => globalThis.__f484Commit.held)
@@ -61,11 +54,9 @@ async function waitHeld(app) {
 
 const releaseCommit = app => app.evaluate(() => globalThis.__f484Commit.release())
 
-/** #502：重试结果也一样，这一张卡上（行与右上角）都不该有重试。正文文件一行的「重新写入正文」不算。 */
 const postButtons = (page, region) => page.getByRole('region', { name: region })
   .getByRole('button', { name: /^(重试|重试失败步骤|Retry|Retry failed steps)$/u }).count()
 
-/** 角色状态更新这一行的说明。步骤名按定稿时的界面语言存下，切到英文后仍是中文；正文文件一行在发布未完成时也标失败。 */
 const failedDetail = (page, region) => page.getByRole('region', { name: region }).locator('li[data-state="failed"]')
   .filter({ has: page.locator('b', { hasText: /^角色状态更新$/u }) }).locator('.stage-ch-post-detail')
 
@@ -107,7 +98,6 @@ export const F484_SCENARIOS = {
     for (const text of [zh, en]) assert.doesNotMatch(text, /Error invoking|FINALIZED_CHARACTER/u, '不显示原始错误码')
     assert.doesNotMatch(en, /\p{Script=Han}/u, '英文说明不带汉字')
     assert.deepEqual({ zhButtons, enButtons }, { zhButtons: 0, enButtons: 0 }, '两种语言下都不摆「重试」和「重试失败步骤」')
-    // 提交失败后后处理还会按重试间隔再提交两次；等运行结束再退出，会话才干净。
     await page.waitForFunction(() => document.querySelectorAll('.stage-capsule').length === 0, null, { timeout: 90_000 })
     return { zh, en, requests: fake.requests }
   } },
@@ -136,7 +126,6 @@ export const F484_SCENARIOS = {
     measured.detail = await postDetail(context.page).count() ? await postDetail(context.page).innerText() : null
     await context.shoot('f484-deleted-source-finalize')
 
-    // 重新打开作品再读，读到的是库里存下的值，不是页面里的缓存。
     await context.reload()
     await openInUi(context, second)
     await openCharacterState(context.page)

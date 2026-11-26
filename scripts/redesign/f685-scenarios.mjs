@@ -7,7 +7,6 @@ import * as stage from './pages/stage.mjs'
 import { afterIpc, seedStageSample } from './scenarios.mjs'
 import { finalizeChapter, openChapter } from './f491-scenarios.mjs'
 
-/** 替身：只记录 Notification.show 的标题与正文，不真的弹出。 */
 async function recordNotifications(app) {
   await app.evaluate(({ Notification }) => {
     globalThis.__f685 = []

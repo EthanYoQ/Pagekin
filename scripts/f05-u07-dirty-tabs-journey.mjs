@@ -53,15 +53,12 @@ const projectName = 'U07-dirty-tabs'
 const steps = []
 const pass = (stepId, actionId, assertion) => steps.push({ stepId, actionId, outcome: 'PASS', assertion })
 const invoke = (page, channel, ...args) => page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
-/** generation:list 只给身份与状态；要候选、账本时按 handle 逐个读完整视图。 */
 const listRunViews = async (page, context) => Promise.all((await invoke(page, 'generation:list', ['chapter-draft'], context)).map(run => invoke(page, 'generation:read', run.handle, context)))
-/** 内容区标签：只有两个以上标签时才显示标签条。 */
 const tab = (page, name) => stage.tabList(page).getByRole('tab', { name, exact: true })
 const assertActiveTab = async (page, name, actionId) => {
   await tab(page, name).waitFor({ state: 'visible' })
   assert.equal(await tab(page, name).getAttribute('aria-selected'), 'true', `${actionId}: ${name} tab is not active`)
 }
-/** 流程脊上当前这一步（aria-current="page"）。 */
 const spineCurrent = page => stage.spine(page).locator('[aria-current="page"]')
 const candidateBody = `U07 失败后保留的合成正文 ${runId}。`.repeat(8)
 const runningBody = `U07 运行中可见的合成正文 ${runId}`
@@ -69,8 +66,6 @@ const shortOutline = '- 原目标：验证面板切换。\n- 结尾状态：正�
 const model = { id: 'u07-liveness-fixture', name: 'U07 liveness fixture', provider: 'openai', protocol: 'openai',
   modelName: 'gpt-4.1', baseUrl: 'https://api.openai.com/v1', apiKey: 'u07-offline',
   maxTokens: 8192, temperature: 0.7, purposes: ['generation'] }
-// 写稿先要一份短细纲（只写短细纲）再写正文：细纲照常回复并另计；requests 只数正文请求。
-// 第 1 次正文只发可见文字、不发 [DONE]，留下持久候选；第 2 次挂住不结束，作为运行中的任务。
 const fixture = { requests: 0, outlines: 0 }
 const server = createServer(async (request, response) => {
   if (request.method !== 'POST' || request.url !== '/v1/chat/completions'
@@ -105,12 +100,10 @@ const openWork = async page => {
   await stage.openFromLibrary(page, projectName)
   await stage.waitForWork(page, projectName)
 }
-/** 蓝图页的「写第 1 章」：按蓝图直接开始写，运行侧页随之展开。 */
 const startChapter = async page => {
   await blueprint.open(page)
   await blueprint.writeButton(page).click()
 }
-/** 标签条至少两个标签（架构、设定），落在设定。 */
 const ensureTwoTabs = async page => {
   await arch.open(page)
   await stage.stageButton(page, '设定').click()
@@ -232,7 +225,6 @@ async function main() {
       assert.equal(fixture.requests, 1, 'first prose request must end without [DONE]')
       await page.reload()
       await openWork(page)
-      // 运行侧页用「运行侧页」命令打开；它已开着时不再点，不会把它关掉（#381 C2）。
       await runSheet.openFromPalette(page)
       await runSheet.recovery(page).getByText(candidateBody.slice(0, 60)).first().waitFor({ state: 'visible' })
       await startChapter(page)
@@ -325,7 +317,6 @@ async function main() {
     await blueprint.open(page)
     uiObservation = { action: 'U07.A04', tabLabels: await stage.tabList(page).getByRole('tab').allInnerTexts() }
     assert.deepEqual(uiObservation.tabLabels, ['架构', '设定', '蓝图'])
-    // 旧外壳标签条的「上一个 / 下一个编辑器」在纸墨外壳是标签条上的 ← →。
     await tab(page, '设定').click()
     await assertActiveTab(page, '设定', 'U07.A04.start')
     await page.keyboard.press('ArrowLeft')
@@ -401,7 +392,6 @@ async function main() {
     }
 
     if (columnsOnly) {
-      /** 点流程脊上的一项，等它成为当前一步，读内容区的第一个标题作为看得见的落点（空页面是空状态的标题）。 */
       const contentHeading = () => stage.root(page).locator('.stage-content').getByRole('heading').first()
       const visit = async (id, button, current, owner) => {
         currentStep = `U07.A01-${id}`
@@ -419,7 +409,6 @@ async function main() {
       await captureVisual(page, 'architecture', '.arch-page')
       await visit('cast', arch.section(page, 'characters').getByRole('button', { name: '打开角色名单' }), null, arch.castRoster(page))
       await visit('blueprint', stage.stageButton(page, '蓝图'), '蓝图', blueprintOwner)
-      // 还没有章节时「正文」落到蓝图页（先规划章节）。
       await visit('manuscript', stage.stageButton(page, '正文'), '蓝图', blueprintOwner)
       for (const [id, name] of Object.entries(refs.PAGES)) {
         await visit(id, refs.resourceButton(page, id), name, contentHeading())
@@ -438,7 +427,6 @@ async function main() {
     if (page && !page.isClosed()) await page.screenshot({ path: path.join(receiptDir, 'failure.png') }).catch(() => {})
   }
   finally {
-    // 挂住的 SSE 让工作流一直在跑；关窗守卫会正确拒绝退出，先断开它，等运行侧页里这次运行结束。
     server.closeAllConnections()
     try {
       if (livenessOnly && fixture.requests === 2 && page && !page.isClosed()) {

@@ -1,4 +1,3 @@
-// RD-X3 外部审查修复的实机场景：浮层在小窗口里的位置与内部滚动、键盘焦点环、导入对话框的主按钮数、缩窗后的提示栈、长作品名的顶栏。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -21,7 +20,6 @@ import { seedStageSample } from './scenarios.mjs'
 const DEAD = ['林岚', '守塔人', '阿潮']
 const LONG_NAME = '雾钟每晚提前一刻响起'.repeat(8)
 
-/** 第 3 章的出场人物是三位，主进程的连续性事实写他们都已死：写作弹层里出三条一致性预检提醒。 */
 const withThreeFindings = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path: projectPath, session }) => {
   assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 3, title: STAGE_SAMPLE.titles[2], role: '发展',
     purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: DEAD, userGuidance: '' }, projectPath, session)).success, true)
@@ -45,7 +43,6 @@ async function injectThreeDead(app, names) {
 
 const restoreContinuity = app => app.evaluate(({ ipcMain }) => ipcMain._invokeHandlers.set('db:continuity-list-before', globalThis.__rdx3ContinuityOriginal))
 
-/** 主进程里扣住「清除生成内容」，放行时返回给定的失败；原处理记下来由 restoreClear 放回。 */
 async function gateClear(app, error) {
   const wrapped = await app.evaluate(({ ipcMain }, message) => {
     const handlers = ipcMain._invokeHandlers
@@ -67,22 +64,16 @@ async function gateClear(app, error) {
 
 const restoreClear = app => app.evaluate(({ ipcMain }) => ipcMain._invokeHandlers.set('db:project-clear-generated-data', globalThis.__rdx3ClearOriginal))
 
-/** 下层露在上层外面的那一点被上层遮罩压住：命中上层的遮罩，截图里比上层纸面暗。 */
 function assertCovered(edge, scrim, message) {
   assert.ok(edge, `${message}：下层有露在上层外面的部分`)
   assert.ok(edge.hit.split(' ').includes(scrim) && edge.edgeLuma <= edge.paperLuma - 10, `${message}：${JSON.stringify(edge)}`)
 }
 
-/**
- * 退出确认与「清除失败」提示叠放。promptFirst 为 false 时先关窗、退出确认开着时放行失败；为 true 时先放行失败、提示开着时关窗，
- * 失败说明写长，提示比退出确认高，上下沿露在外面。
- */
 const promptAndExit = ({ promptFirst }) => ({ model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page, shoot }) => {
   await stage.stageButton(page, '设定').click()
   await stage.dirtySetup(page)
   await gateClear(app, promptFirst ? ['磁盘只读', ...Array.from({ length: 14 }, (_, index) => `第 ${index + 1} 份蓝图没有清除。`)].join('\n') : '磁盘只读')
   await stage.openWorkMenuItem(page, STAGE_SAMPLE.name, '清除生成内容…')
-  // 只清蓝图：清故事架构会先被设定里没保存的输入拦下
   const kinds = page.locator('.pi-check-row > .pi-check')
   await kinds.nth(0).click()
   await kinds.nth(2).click()
@@ -134,7 +125,6 @@ async function setViewport(page, width, height) {
   await page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, { width, height })
 }
 
-/** 写作弹层在 width×height 的窗口里：三条预检提醒时停在视口内，内部滚到底点得到「仅本次忽略」，内部滚动不关闭弹层。 */
 const popoverIn = (width, height) => ({ model: true, shell: 'stage', setup: withThreeFindings, run: async ({ app, page, shoot }) => {
   await setViewport(page, width, height)
   await injectThreeDead(app, DEAD)
@@ -165,7 +155,6 @@ const popoverIn = (width, height) => ({ model: true, shell: 'stage', setup: with
   await page.keyboard.press('Escape')
 } })
 
-/** 按 Tab 直到焦点落在 target 上，读它的 box-shadow（内容标签的环画在整个标签的 ::after 上，读那条边），截一张它周围的图。 */
 async function tabTo(page, target, shoot, name, limit = 60) {
   const handle = await target.elementHandle()
   for (let step = 0; step < limit; step++) {
@@ -185,7 +174,6 @@ async function tabTo(page, target, shoot, name, limit = 60) {
 
 const hasRing = ({ boxShadow, focusVisible }, accent) => focusVisible && boxShadow.includes(accent)
 
-/** 主进程里把第 4 章最新稿的读取扣住，直到 release：定稿后自动打开下一章的那一步停在这里，等作者在设置页里改出未保存的输入。 */
 async function holdNextChapterLookup(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -204,7 +192,6 @@ async function holdNextChapterLookup(app) {
   })
 }
 
-/** 写作弹层的出现与消失、每次焦点移动，按时间记在页面里。 */
 const recordPopoverAndFocus = page => page.evaluate(() => {
   const log = []
   window.__rdx3Log = log
@@ -224,7 +211,6 @@ const recordPopoverAndFocus = page => page.evaluate(() => {
   document.addEventListener('focusout', event => { if (!event.relatedTarget) log.push({ t: Math.round(performance.now()), blur: describe(event.target) }) }, true)
 })
 
-/** 外壳里 --accent 的计算值，[r, g, b]。 */
 const accentColor = page => stage.root(page).evaluate(root => {
   const probe = document.createElement('span')
   probe.style.color = 'var(--accent)'
@@ -234,7 +220,6 @@ const accentColor = page => stage.root(page).evaluate(root => {
   return color.match(/\d+/g).slice(0, 3).map(Number)
 })
 
-/** 截图里接近 color 的像素数（三通道差之和不超过 60）。 */
 function countColor({ pixels }, [r, g, b]) {
   let count = 0
   for (let index = 0; index < pixels.length; index += 4) {
@@ -249,7 +234,6 @@ const describeActive = page => page.evaluate(() => {
   return `${element.tagName.toLowerCase()}「${(element.getAttribute('aria-label') ?? element.textContent ?? '').trim().slice(0, 16)}」`
 })
 
-/** 每次焦点移动按时间记在页面里；失焦且没有去处（relatedTarget 为空）单独记一笔。 */
 const recordFocusMoves = page => page.evaluate(() => {
   const log = []
   window.__rdx3FocusLog = log
@@ -262,7 +246,6 @@ export const RDX3_SCENARIOS = {
   'rdx3-popover-1280': popoverIn(1280, 720),
   'rdx3-popover-1024': popoverIn(1024, 640),
 
-  /** 键盘焦点环：运行侧页分段页签的选中项、激活的内容标签、流程脊当前阶段行、拆分主按钮两半。 */
   'rdx3-keyboard': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     const accent = await stage.root(page).evaluate(root => {
       const probe = document.createElement('span')
@@ -288,10 +271,6 @@ export const RDX3_SCENARIOS = {
     return rings
   } },
 
-  /**
-   * 章节规划的当前章行与普通行按 Tab 聚焦：截行四周的图数强调色像素，聚焦时比不聚焦多出一整圈 2px 环，
-   * 只选中不聚焦的当前章没有这圈环；`withoutContainment` 是去掉列表项的 content-visibility 后同一行聚焦时的像素数，用来对照是谁裁了环。
-   */
   'rdx3-plan-ring': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     const accent = await accentColor(page)
     await blueprint.open(page)
@@ -323,10 +302,6 @@ export const RDX3_SCENARIOS = {
     return results
   } },
 
-  /**
-   * 键盘焦点环不被悬停与外壳规则盖掉（#402 OCR #6、#8）：书房里鼠标停在「新建作品」卡上再用 Tab 聚焦它，焦点环立即出现；
-   * 打开作品后用键盘打开作品菜单，方向键在菜单项间移动，聚焦项是菜单自己的 2px 内侧环（不是外圈），首项与末项各截一张图。
-   */
   'rdx3-hover-focus': { model: false, shell: 'stage', setup: context => seedStageSample(context, { open: false }), run: async ({ page, shoot }) => {
     const accent = (await accentColor(page)).join(', ')
     const ringOf = locator => locator.evaluate(element => ({ focused: element === document.activeElement, focusVisible: element.matches(':focus-visible'), boxShadow: getComputedStyle(element).boxShadow }))
@@ -339,7 +314,6 @@ export const RDX3_SCENARIOS = {
     const startRing = await ringOf(start)
     await shoot('rdx3-hover-focus-start')
     await stage.openFromLibrary(page, STAGE_SAMPLE.name)
-    // 打开作品的收尾在文件树读完后还会回到作品一次，界面上没有可等的信号（同 chapter-scenarios 的 afterProjectOpenSettles）
     await page.waitForTimeout(2000)
     const menuButton = stage.root(page).getByRole('banner').getByRole('button', { name: `《${STAGE_SAMPLE.name}》作品菜单` })
     await menuButton.focus()
@@ -361,7 +335,6 @@ export const RDX3_SCENARIOS = {
     return result
   } },
 
-  /** 新外壳里的导入对话框：同屏只有一个上墨的主按钮，用途与目标的选中项是按下的次按钮。 */
   'rdx3-import-dialog': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
     await stage.root(page).getByRole('banner').getByRole('button', { name: `《${STAGE_SAMPLE.name}》作品菜单` }).click()
     await page.getByRole('menuitem', { name: '小说拆解与仿写…', exact: true }).click()
@@ -380,7 +353,6 @@ export const RDX3_SCENARIOS = {
     await page.getByRole('dialog').first().waitFor({ state: 'hidden' })
   } },
 
-  /** 1440×900 下放得下的 11 条常驻通知，缩到 1100×640 后栈改成可滚动、最新一条露在底部，卡片右缘不因滚动条左移。 */
   'rdx3-toast-resize': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page, shoot }) => {
     const appPath = await app.evaluate(({ app: electronApp }) => electronApp.getAppPath())
     const chunk = fs.readdirSync(path.join(appPath, 'dist', 'assets')).find(name => /^ToastStack-.*\.js$/.test(name))
@@ -424,9 +396,7 @@ export const RDX3_SCENARIOS = {
     return { before, after, shiftWithoutCompensation: shift }
   } },
 
-  /** 80 个字的作品名：顶栏标题收成省略号，窗口控制按钮仍在窗口内。 */
   'rdx3-long-title': { model: false, shell: 'stage', setup: async context => {
-    // 项目文件夹以作品名命名，隔离目录加数据库路径会超出 Windows 路径上限：建普通的示例作品，打开时由主进程把作品名换成长名字
     await seedStageSample(context, { open: false })
     await context.app.evaluate(({ ipcMain }, name) => {
       const handlers = ipcMain._invokeHandlers
@@ -441,7 +411,6 @@ export const RDX3_SCENARIOS = {
   }, run: async ({ page }) => {
     await setViewport(page, 1024, 640)
     const layout = await stage.root(page).getByRole('banner').evaluate((banner, { workName, windowClose }) => {
-      // 修复前作品名直接在按钮里，没有单独的一段：退回按钮本身，先比关闭按钮的位置
       const title = banner.querySelector(workName[0]) ?? banner.querySelector(workName[1])
       const close = banner.querySelector(windowClose).getBoundingClientRect()
       return { title: title.textContent, closeRight: close.right, viewport: innerWidth, ellipsis: getComputedStyle(title).textOverflow, clipped: title.scrollWidth > title.clientWidth }
@@ -451,7 +420,6 @@ export const RDX3_SCENARIOS = {
     return layout
   } },
 
-  /** 作品菜单打开的导出、小说拆解与仿写、清除生成内容，取消或 Esc 关闭后焦点回到作品菜单按钮。 */
   'rdx3-work-menu-focus': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     const trigger = stage.root(page).getByRole('banner').getByRole('button', { name: `《${STAGE_SAMPLE.name}》作品菜单` })
     const landed = () => trigger.evaluate(element => element === document.activeElement)
@@ -472,7 +440,6 @@ export const RDX3_SCENARIOS = {
     return results
   } },
 
-  /** 模态开着时溢出的提示栈用真滚轮滚得动；栈的滚动条是全局 6px 细条。 */
   'rdx3-toast-wheel': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page, shoot }) => {
     const appPath = await app.evaluate(({ app: electronApp }) => electronApp.getAppPath())
     const chunk = fs.readdirSync(path.join(appPath, 'dist', 'assets')).find(name => /^ToastStack-.*\.js$/.test(name))
@@ -503,10 +470,6 @@ export const RDX3_SCENARIOS = {
     await page.keyboard.press('Escape')
   } },
 
-  /**
-   * 就地确认条关掉后焦点回到打开它的按钮：先写一章让诊断分页有日志，「清空日志…」用鼠标点「保留」、按 Esc、键盘打开后 Esc 与回车「保留」；
-   * 恢复卡的「放弃…」用鼠标点「保留」与按 Esc。
-   */
   'rdx3-inline-confirm-focus': { model: true, shell: 'stage', setup: seedWithCandidate, run: async ({ page, shoot }) => {
     await recordFocusMoves(page)
     await blueprint.open(page)
@@ -563,10 +526,6 @@ export const RDX3_SCENARIOS = {
     return results
   } },
 
-  /**
-   * 正文编辑区（新外壳单章视图与旧外壳草稿编辑器共用）：末尾补三行，新外壳纸面上分节符整行不缩进、破折号开头的对白缩进；
-   * Tab 插两个 em 空格；Esc 后停 2.5 秒再按 Tab 移出编辑区、不插空格；Esc 后按了方向键，Tab 又插空格。两种外壳各跑一次。
-   */
   'rdx3-prose-keys': { model: false, setup: seedStageSample, run: async ({ page, shoot }) => {
     const staged = await stage.root(page).count() > 0
     if (staged) await chapterView.open(page, 4)
@@ -597,7 +556,6 @@ export const RDX3_SCENARIOS = {
     await page.keyboard.press('Tab')
     const afterEscArrowTab = { line: await lastLine(), inEditor: await inEditor() }
     const result = { shell: staged ? 'stage' : 'writer', indents, afterTab, afterEscTab, afterEscArrowTab }
-    // 首行缩进只在新外壳的纸面上显示，旧外壳的编辑器每行都不缩进
     if (staged) assert.deepEqual(indents, { '※※※': '0px', '——他说，钟声提前了。': '36px', '◇◆◇': '0px' }, `分节符行不缩进，破折号开头的对白缩进：${JSON.stringify(result)}`)
     assert.deepEqual([afterTab, afterEscTab, afterEscArrowTab], [
       { line: '◇◆◇\u2003\u2003', inEditor: true },
@@ -607,29 +565,10 @@ export const RDX3_SCENARIOS = {
     return result
   } },
 
-  /**
-   * 定稿后自动打开下一章遇上设置页里没保存的输入：放弃确认 → 收起设置 → 第 4 章单章视图自动弹出写作弹层。
-   * 放弃确认关掉后还焦点不能把刚弹出的写作弹层关掉。
-   */
   'rdx3-write-after-discard': writeAfterDiscard(),
-  /**
-   * 同上，但放弃确认弹出前作者点过运行侧页的「历史」页签（它在确认关掉后还在）：还焦点不抢走写作弹层的焦点。
-   * 还焦点与弹层打开谁先谁后不定，所以只断言与先后无关的结果：「历史」若拿到焦点必须在弹层打开之前，弹层打开后焦点没有落到弹层外。
-   */
   'rdx3-write-after-discard-sheet': writeAfterDiscard({ focusBefore: page => runSheet.tab(page, '历史').click() }),
-  /**
-   * 设定里有没保存的输入时只清蓝图，主进程扣住清除；期间关窗弹出退出确认，再放行一个失败：
-   * 「清除失败」提示画在退出确认上面、点得到「确定」，确定后退出确认还在。退出确认露在提示外的上沿被提示的遮罩压暗。
-   */
   'rdx3-prompt-over-exit': promptAndExit({ promptFirst: false }),
-  /**
-   * 反过来：清除先失败，「清除失败」提示开着时关窗。退出确认画在提示上面，提示露在退出确认外的上下沿被退出确认的遮罩压暗；
-   * 取消退出确认后提示仍在、点得到「确定」。
-   */
   'rdx3-exit-over-prompt': promptAndExit({ promptFirst: true }),
-  /**
-   * 只导入一张角色卡，等出现确认卡后在设置的外观页把界面语言切成英文：运行侧页确认卡写「1 character candidate」。
-   */
   'rdx3-candidates-en': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake, shoot }) => {
     fake.replyCharacterCards(1)
     await page.keyboard.press('ControlOrMeta+K')
@@ -660,7 +599,6 @@ export const RDX3_SCENARIOS = {
     await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Appearance', exact: true }).click()
     await page.getByLabel('Interface language').selectOption('zh-CN')
     await page.keyboard.press('Escape')
-    // 候选还等着确认时关窗会弹「创作任务仍在运行」，退出要等满宽限再强制结束：先把这次运行走完。
     await runSheet.openFromPalette(page)
     const waiting = runSheet.anyCard(page).filter({ hasText: '等你确认' })
     await waiting.getByRole('button', { name: '按当前选择确认', disabled: false }).waitFor({ state: 'visible', timeout: 60_000 })
@@ -673,7 +611,6 @@ export const RDX3_SCENARIOS = {
 function writeAfterDiscard({ focusBefore } = {}) {
   return { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke, path: projectPath, session }) => {
     assert.equal((await invoke(page, 'config:set', { autoOpenNextChapterAfterFinalize: true })).success, true)
-    // 下一章还没动笔，定稿后才会自动弹出写作
     for (const draft of await invoke(page, 'db:draft-list', 4, projectPath, session)) {
       assert.equal((await invoke(page, 'db:draft-delete', draft.id, projectPath, session)).success, true)
     }

@@ -20,7 +20,6 @@ const repositoryRoot = path.resolve(import.meta.dirname, '..', '..')
 const smokeScriptPath = path.join(repositoryRoot, 'scripts', 'smoke-macos-dmg.sh')
 const evidenceScript = path.join(repositoryRoot, 'scripts', 'release-evidence-v2.mjs')
 const fixtures: string[] = []
-// 旧版作者源复制只等一个子进程：f05 旅程脚本加载 playwright 与 LanceDB 后复制夹具，空闲时约 0.8 s，构建机负载下实测到过 7.2 s（#428）。
 const OLD_SOURCE_COPY_CHILD_DEADLINE_MS = 30_000
 
 function readRequired(file: string) {
@@ -215,7 +214,6 @@ describe('macOS DMG acceptance receipt contract', () => {
     const stages = source.match(/function macStage\(stage\) \{[\s\S]*?\n\}/)?.[0] ?? ''
     const cleanup = source.match(/async function closeMacApplication\(app\) \{[\s\S]*?\n\}/)?.[0] ?? ''
     const verify = source.slice(source.indexOf('async function verifyMac() {'), source.indexOf('\nif (macFixtureOnly) {'))
-    // Run the real catch/finally boundary after a successful main body, without fabricating UI success.
     const boundary = verify.indexOf('\n  } catch (error) {')
     expect(boundary).toBeGreaterThan(-1)
     const completionBoundary = verify.slice(boundary)

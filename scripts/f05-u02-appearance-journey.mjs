@@ -26,7 +26,6 @@ const git = (...args) => execFileSync('git', args, { cwd: repository, encoding: 
 const steps = []
 let currentStep = 'setup'
 const pass = (stepId, actionId, assertion) => steps.push({ stepId, actionId, assertion, outcome: 'PASS' })
-// RD-10 删除了图片皮肤（动漫与自定义背景）：U02.A04 的入口不复存在，这里只核对它确实没了。
 const retiredActions = [{ actionId: 'U02.A04',
   reason: 'RD-10 removed image skins (anime and custom backgrounds); the paper-ink appearance page has no background image setting and the skin IPC channels are gone.' }]
 
@@ -98,10 +97,6 @@ async function zoomFactor(app) {
   return app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor())
 }
 
-/**
- * 设置里的「外观」：主题、界面语言、两种字体与界面缩放，改动立即生效。
- * 隔离档案里有空的旧来源目录，启动后会出「旧来源已保留」的通知条，盖住设置页顶部的返回，先点「知道了」。
- */
 async function openAppearance(page) {
   await stage.dismissMigrationNotice(page)
   await stage.openSettings(page)

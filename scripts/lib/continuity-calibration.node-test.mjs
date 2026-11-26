@@ -1,4 +1,3 @@
-// Run explicitly with node --test; .node-test avoids Vitest's automatic suite discovery.
 import test from "node:test"
 import assert from "node:assert/strict"
 

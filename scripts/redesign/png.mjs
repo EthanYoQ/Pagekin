@@ -4,7 +4,6 @@ import { inflateSync } from 'node:zlib'
 const SIGNATURE = '89504e470d0a1a0a'
 const CHANNELS = { 2: 3, 6: 4 }
 
-/** 只解码截图实际产出的格式：8 位 RGB 或 RGBA、非隔行。返回 RGBA 像素。 */
 export function decodePng(buffer) {
   assert.equal(buffer.subarray(0, 8).toString('hex'), SIGNATURE, '不是 PNG')
   let width, height, channels

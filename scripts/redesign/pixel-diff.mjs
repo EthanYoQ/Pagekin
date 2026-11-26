@@ -1,10 +1,8 @@
 import fs from 'node:fs'
 import { decodePng } from './png.mjs'
 
-/** 同一状态连续截图，渲染器在模糊与渐变上会有 ±1～2 级抖动，肉眼不可见；超过 2 级才算不同像素。 */
 const CHANNEL_TOLERANCE = 2
 
-/** 不同像素占比，0 到 1。任一通道差值超过 threshold 即算不同；threshold 为 0 即逐字节比较。 */
 function diffRatio(first, second, threshold = CHANNEL_TOLERANCE) {
   let different = 0
   for (let index = 0; index < first.pixels.length; index += 4) {

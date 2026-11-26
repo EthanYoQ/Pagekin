@@ -137,7 +137,6 @@ async function fillThreadForm(page, dialogTitle, values) {
   await dialog.waitFor({ state: 'visible' })
   if (values.title !== undefined) await dialog.getByLabel('名称', { exact: true }).fill(values.title)
   if (values.type !== undefined) await dialog.getByLabel('类型', { exact: true }).fill(values.type)
-  // label 包着 textarea，已有内容会进 label 的文字（「你的打算」后面跟着原来的打算），按开头匹配。
   if (values.intent !== undefined) await dialog.getByLabel(/^你的打算/).fill(values.intent)
   await dialog.getByRole('button', { name: '保存线索' }).click()
   await dialog.waitFor({ state: 'hidden' })
@@ -222,8 +221,6 @@ async function main() {
     await session.page.reload()
     await openProject(session.page)
 
-    // 纸墨外壳：「剧情与伏笔」是作品资料里的一页，「剧情树」与「伏笔线索」两种视图；线索在「新建线索」对话框里建，
-    // 编辑、记录定稿里的变化、删除都在线索的「更多」菜单里；剧情树事件的来源在「事件详情」里打开。
     phase = 'writer-plot-tree'
     await assertWriter(session.page)
     await openPlot(session.page)
@@ -404,7 +401,6 @@ async function main() {
     await session.page.getByText('旧站主线-2', { exact: true }).waitFor({ state: 'visible' })
     failNextRequest = true
     await session.page.getByRole('button', { name: '刷新剧情树', exact: true }).click()
-    // 失败写在剧情树上方的危险提示里（这次是「本次生成未完成保存……」，引导去整理记录恢复），不出现新的剧情树。
     const generationAlert = stage.root(session.page).locator('.pi-notice[data-tone="danger"]')
     await generationAlert.waitFor({ state: 'visible', timeout: 60_000 })
     const errorText = (await generationAlert.textContent())?.trim()

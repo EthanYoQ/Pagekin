@@ -1,4 +1,3 @@
-// #512 实机场景：定稿后处理提交时项目数据已变的码要给作者可读说明并按实测摆重试；旧版本跑批里留下的步骤不再给重试。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 
@@ -17,10 +16,6 @@ function characterStateReply(prompt) {
   return JSON.stringify({ updates: [{ characterId: id, currentState: { location: '灯塔顶层灯室' }, evidence: { text: '林岚把潮汐表压在值班室的窗台上' } }] })
 }
 
-/**
- * 角色状态这一步的前两次提交（本流程第 2、3 次提交）按断线失败，第三次（自动重试的最后一次）卡住，等驱动放行。
- * 前两次失败只为让变化落在最后一次自动尝试上：更早发生的变化在之后的自动尝试里会先按来源已变拒绝。
- */
 async function failTwiceThenHold(app) {
   assert.ok(await app.evaluate(({ ipcMain }, channel) => {
     const handlers = ipcMain._invokeHandlers
@@ -39,7 +34,6 @@ async function failTwiceThenHold(app) {
   }, COMMIT), '能在主进程里替换定稿后处理的提交')
 }
 
-/** 直接 app.evaluate 取值时，Windows 上的 Electron 41 偶发报「Promise was collected」；先取句柄再读值、读完释放就不会（同 f484）。 */
 async function waitHeld(app) {
   const held = async () => {
     const handle = await app.evaluateHandle(() => globalThis.__f512Commit.held)
@@ -69,7 +63,6 @@ async function switchToEnglish(page) {
 }
 
 const postRegion = (page, locale) => page.getByRole('region', { name: locale === 'en-US' ? 'Post-finalization steps' : '定稿后处理' })
-/** 步骤名按定稿时的界面语言存下，切到英文后仍是中文。 */
 const stepRow = (page, locale, label) => postRegion(page, locale).locator('li').filter({ has: page.locator('b', { hasText: new RegExp(`^${label}$`, 'u') }) })
 
 async function readCard(page, locale, label) {
@@ -84,7 +77,6 @@ async function readCard(page, locale, label) {
   }
 }
 
-/** 驱动自己打开作品拿会话，用应用同一组 IPC 往第 3 章最新的跑批旁写一份旧版本的跑批：四步，文风自动学习按 legacyOk 成败。 */
 async function writeLegacyRun({ page, invoke }, projectPath, legacyOk) {
   const opened = await invoke(page, 'project:open', projectPath, randomUUID(), null)
   assert.equal(opened.success, true, opened.error)
@@ -112,7 +104,6 @@ async function writeLegacyRun({ page, invoke }, projectPath, legacyOk) {
   assert.equal(legacy.success, true)
 }
 
-/** 旧版本的跑批不论文风自动学习当时成败，卡上都说明它已不再运行，不摆重试，完成数只算现在的三步。 */
 const legacyStep = (legacyOk, name) => async context => {
   const { page } = context
   await finalizeChapter(page, 3)

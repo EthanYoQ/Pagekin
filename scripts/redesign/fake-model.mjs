@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'node:http'
 
-// 与 f05-u05、f05-u12 旅程相同的做法：主进程 fetch 改道到本机假 OpenAI 兼容服务，零真实模型调用。
 export const FAKE_MODEL = Object.freeze({ id: 'redesign-drive-fixture', name: '驱动夹具模型', provider: 'openai', protocol: 'openai',
   modelName: 'gpt-4.1', baseUrl: 'https://api.openai.com/v1', apiKey: 'redesign-drive-offline-key',
   maxTokens: 4096, temperature: 0.7, purposes: ['generation'] })
@@ -19,7 +18,6 @@ const REVIEW = JSON.stringify({ summary: '时间线需要核对。', items: [
   { category: '连续性', severity: 'warning', description: '核对钟声提前一刻与潮位的关系。', quote: '昨夜的钟声比往常早了一刻' },
 ], goalReviews: [] })
 
-/** 创作资料角色提取：每个资料块回一张守塔人与一张林岚（示例作品已有林岚，可以对应已有角色）。 */
 function characterExtraction(prompt, cards) {
   const sourceIds = [...prompt.matchAll(/【资料 ([^｜】]+)｜/gu)].map(match => match[1])
   return JSON.stringify({ results: sourceIds.map(sourceId => ({ sourceId, characterCards: [
@@ -28,7 +26,6 @@ function characterExtraction(prompt, cards) {
   ].slice(0, cards) })) })
 }
 
-/** AI 填充小说配置：按配置 JSON 合同给出 9 个必填字段与两个枚举；规模字段省略，由作者设置决定。 */
 export const FIXTURE_CONFIG = Object.freeze({
   genre: '悬疑', targetAudience: '全龄', subGenre: '海港悬疑',
   coreOutline: '测绘师在停用的灯塔里追查一条沉船。',
@@ -40,14 +37,9 @@ export const FIXTURE_CONFIG = Object.freeze({
   plotStructure: 'three_act', narrativePOV: 'third_limited',
 })
 
-/** 情节大纲逐章生成：每次只要一章，回这一章的二级标题与一段正文，章号取自请求。 */
 export const outlineChapter = number => `## 第${number}章：灯下第${number}夜
 林岚在第${number}夜核对雾钟与潮位，找到一条新的线索，并决定下一步去问守塔人。她把这一夜的发现记进父亲的地图边上。`
 
-/**
- * 剧情树夹具：定稿章与单数位的蓝图章进主线，双数位的蓝图章进一条支线。来源全部取自提示里的资料，能通过主进程的校验；
- * 不开时假模型回正文，剧情树落到按资料整理的单轨快照。
- */
 export function fixturePlotTree(facts) {
   const finals = new Set(facts.finalizedChapters.map(chapter => chapter.chapterNumber))
   const planned = facts.blueprints.filter(blueprint => !finals.has(blueprint.chapterNumber))
@@ -70,7 +62,6 @@ const IMPORT_CARD = { gender: '未知', age: '30', appearance: '风衣', persona
   motivation: '查明灯塔的秘密', relationships: [], arc: '从旁观到行动', notes: '导入推演',
   currentState: { location: '旧港', powerLevel: '普通', physicalState: '正常', mentalState: '警觉', keyItems: '地图', recentEvents: '找到旧信', updatedAtChapter: 0 } }
 
-/** 参考小说导入的全局推演与分批蓝图推演；不开时与以前一样回正文。 */
 function importReply(prompt) {
   if (prompt.includes('【不可变导入推演 JSON 合同】')) {
     return { kind: 'import-global', content: JSON.stringify({
@@ -89,7 +80,6 @@ function importReply(prompt) {
   return null
 }
 
-/** 按提示里的章范围回齐全蓝图；关闭时回正文，使解析失败、留下蓝图恢复稿。 */
 function directoryReply(prompt, newcomerChapter) {
   const range = /为接下来的 第(\d+)章到第(\d+)章/u.exec(prompt)
   if (!range) return null
@@ -126,7 +116,6 @@ function responseFor(prompt, { extraction, plotTree, review, characterState, imp
   return { kind: 'prose', content: FIXTURE_PROSE }
 }
 
-/** 按固定节奏流出的正文：每块一句、以「。」结尾，界面里数「。」就知道哪一块已经显示出来。 */
 export function streamingProse(chunks, chunkChars) {
   const filler = '林岚沿着旧港的石阶往下走潮水刚退青石上还留着一层薄薄的盐霜她把父亲留下的地图摊在膝头对照远处灯塔的位置一格一格数过去'
   return Array.from({ length: chunks }, (_, index) => {
@@ -137,7 +126,6 @@ export function streamingProse(chunks, chunkChars) {
 
 export async function startFakeModel(diagnostics) {
   const requests = []
-  /** 对话请求的模型与消息原文，按到达顺序；场景用它核对两边发给模型的参数是否一致。 */
   const chats = []
   let held = null
   let holdEmbeddings = false
@@ -157,14 +145,11 @@ export async function startFakeModel(diagnostics) {
   let directoryBlueprints = false
   let contextLengthRejection = null
   let contextLengthRejectionsLeft = Infinity
-  /** 每次被接受的嵌入请求带的 Authorization 头（没有时为 null），场景据此确认本机检索模型真的没带 Key。 */
   const embeddingAuthorizations = []
   const streamLog = []
   const gate = {
-    /** 卡住之后的模型调用；embeddings 为 true 时连嵌入也卡住（参考文本入库这类只走嵌入的步骤）。 */
     hold: ({ embeddings = false } = {}) => { held ??= Promise.withResolvers(); holdEmbeddings = embeddings },
     release: () => { held?.resolve(); held = null; holdEmbeddings = false },
-    /** 正卡在门上的请求数，场景据此确认运行已停在要截的那一步。 */
     get waiting() { return waiting },
   }
   const pass = async () => {
@@ -172,33 +157,21 @@ export async function startFakeModel(diagnostics) {
     waiting++
     try { await held.promise } finally { waiting-- }
   }
-  /** 之后的正文回复按 chunks 逐块发出，块间隔 intervalMs；每块发出的时刻记进 streamLog（epoch 毫秒与累计块数）。 */
   const streamProse = plan => { stream = plan; streamLog.length = 0 }
-  /** 之后的创作资料角色提取回一份合法 JSON（每份资料默认两张卡，cards 限定张数，夹具只有 1–2 张）；不开时与以前一样回正文，提取失败，导入类场景不会停在等你确认。 */
   const replyCharacterCards = (cards = 2) => {
     if (cards !== 1 && cards !== 2) throw new Error(`replyCharacterCards: cards 只能是 1 或 2，收到 ${cards}`)
     extraction = cards
   }
-  /** 定稿后处理的角色状态更新收到不是 JSON 的回复，这一步失败；传 false 恢复，用来演示只重试失败的步骤。 */
   const breakCharacterState = (broken = true) => { brokenCharacterState = broken }
-  /** 之后 times 次角色状态请求回 200 后不发任何内容就断开连接（#420 的断流），用来演示重试真的重新请求。 */
   const dropCharacterState = (times = 1) => { droppedCharacterStates = times }
-  /** 之后的剧情树整理回一份两轨（主线加支线）的合法 JSON。 */
   const replyPlotTree = () => { plotTree = true }
-  /** 之后的正文回复以 content_filter 结束：写稿在这次打开里失败，留下可恢复的候选。传 false 恢复。 */
   const failProse = (failed = true) => { failedProse = failed }
-  /** 之后的审稿（含合并后的复验）回这份 JSON；不调用时回默认审稿。也可传函数：它对任意提示词返回非空文本时就回这段文本（含修稿请求），返回空值时照常作答；它给出的回复一律记作 review。 */
   const replyReview = content => { review = content }
-  /** 提示词满足条件的请求以 finish_reason: length 结束，模拟输出上限截断。 */
   const stopAtLength = predicate => { cutAtLength = predicate }
-  /** 之后的定稿后处理角色状态更新回 build(提示词) 给出的 JSON 文本；不调用时回空的 updates。 */
   const replyCharacterState = build => { characterState = build }
-  /** 之后不带 Key 的嵌入请求也照常回向量，模拟不需要 Key 的本机检索服务；传 false 恢复拒绝。 */
   const acceptKeylessEmbeddings = (accepted = true) => { keylessEmbeddings = accepted }
-  /** 之后的参考小说导入：全局推演回一份合法 JSON（三张角色卡），分批蓝图推演按本批章号回齐全的蓝图。 */
   const failRerank = (failed = true) => { failedRerank = failed }
   const replyImport = () => { importInference = true }
-  /** 之后的蓝图生成回齐全蓝图；传章号时那一章带一个新角色候选和他的关系，传 false 恢复。 */
   const replyDirectoryBlueprints = (on = true) => { directoryBlueprints = on }
   const rejectContextLength = (rejected = true, { sample: sampleName = 'deepseek', times = Infinity } = {}) => {
     if (!rejected) { contextLengthRejection = null; return }

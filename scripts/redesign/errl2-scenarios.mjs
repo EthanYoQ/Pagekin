@@ -41,7 +41,6 @@ async function mainLogged(diagnostics, from, pattern) {
   }
 }
 
-/** 作者选好存档、还在选恢复位置时，存档被移走（拔了 U 盘、云盘同步删掉）。 */
 async function restoreAfterArchiveMoved({ app, page, diagnostics }, labels, archive, parent) {
   const logged = diagnostics.length
   await app.evaluate(({ dialog }, [file, folder]) => {
@@ -61,13 +60,11 @@ async function restoreAfterArchiveMoved({ app, page, diagnostics }, labels, arch
   return shown
 }
 
-// icacls：(RD) 只拒读数据；(R) 连属性也拒，realpath 解析会失败。
 function denyRead(file, rights = '(RD)') {
   execFileSync('icacls', [file, '/deny', `*S-1-1-0:${rights}`], { stdio: 'ignore' })
   return () => execFileSync('icacls', [file, '/remove:d', '*S-1-1-0'], { stdio: 'ignore' })
 }
 
-/** 副本文件夹已经建好、往里放某个文件时出错（磁盘满、杀毒软件拦）：在主进程里让这一次 link 抛系统报错。 */
 async function restoreFailingAt({ app, page }, labels, archive, parent, failing) {
   await app.evaluate(({ dialog }, [file, folder, [name, code]]) => {
     const fs = process.getBuiltinModule('node:fs')

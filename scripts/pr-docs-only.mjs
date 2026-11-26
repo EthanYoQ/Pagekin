@@ -2,7 +2,6 @@
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
-// 与 GitHub paths 过滤同语义：后面的规则覆盖前面的。
 const RULES = [
   ['**/*.md', true],
   ['LICENSE', true],
@@ -11,7 +10,6 @@ const RULES = [
   ['docs/**/*.mjs', false],
   ['.release/**', false],
   ['.github/**', false],
-  // 代理指令会让代理执行命令，按代码对待。
   ['.claude/**', false],
   ['.agents/**', false],
   ['**/AGENTS.md', false],

@@ -1,5 +1,3 @@
-// #382 说明文字对比度：走一遍书房、外壳、运行侧页、架构、角色档案、设置，把画面上每一处 --ink-3 文字对它实际底色的对比度收进 measured。
-// 普通字号不低于 4.5:1，大字号（24px 起，或 18.66px 起且粗体）不低于 3:1；禁用控件按 WCAG 1.4.3 豁免。全部量完再断言，对照构建上失败时能看到每一处的值。
 import assert from 'node:assert/strict'
 
 import * as architecture from './pages/architecture.mjs'
@@ -9,7 +7,6 @@ import * as stage from './pages/stage.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
-/** 页面上颜色等于 --ink-3 的文字：按类名去重，留最低的一处。底色沿祖先逐层叠加半透明背景求出。 */
 export function captionContrast(page) {
   return page.evaluate(() => {
     const parse = value => {

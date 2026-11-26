@@ -1,4 +1,3 @@
-// RD-4 运行侧页与隐藏聊天的实机场景：对应计划 RD-4 的 live lane 1～10 与 perf 的 write-stream。
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -15,11 +14,9 @@ import * as stage from './pages/stage.mjs'
 import { firstLine, seedStageSample, seedWithoutDraft, untilGateHolds } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
-/** 聊天入口与聊天字样：按钮、区域、可访问名称和可见文字里都不该出现。 */
 const CHAT_WORDS = /AI Agent|Agent 面板|写作助手|切换回 Agent|恢复此助手任务|聊天|assistant|\bchat\b|\bagent\b/i
 const { OUTPUT_TEXT } = runSheet
 
-/** 整个窗口里的可见文字，加上所有按钮、区域与带名字元素的可访问名称。 */
 function everyName(page) {
   return page.evaluate(() => [document.body.innerText,
     ...[...document.querySelectorAll('button, [role], [aria-label], [title]')].map(element =>
@@ -32,12 +29,10 @@ async function writeNextFromBlueprint(page) {
   await runSheet.waitUntilOpen(page)
 }
 
-/** 实时输出里已经显示了几句（每句以「。」结尾）。 */
 function shownSentences(page) {
   return page.evaluate(selector => ([...document.querySelectorAll(selector)].at(-1)?.textContent?.split('。').length ?? 1) - 1, OUTPUT_TEXT)
 }
 
-/** 复制改写到页面里的记录，不碰系统剪贴板：驱动运行时作者可能正在用这台电脑。 */
 async function recordClipboard(page) {
   await page.evaluate(() => {
     window.__driveCopied = []
@@ -56,7 +51,6 @@ function hashTree(root) {
   return hashes
 }
 
-/** 从这里起记下界面发给主进程的每个 invoke 通道与次数（包一层 ipcMain 已注册的处理函数）。 */
 async function countMainInvokes(app) {
   const wrapped = await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -73,12 +67,8 @@ async function countMainInvokes(app) {
   assert.ok(wrapped > 0, '能在主进程里记下 invoke 通道')
 }
 
-/** 运行侧页的恢复列表读这两样：主进程算好的可恢复运行、旧恢复候选。 */
 const RECOVERY_READS = ['generation:list-recovery', 'db:recovery-candidate-list']
 
-/**
- * 从现在起数主进程答完的恢复读取。包装每个进程只装一次，之后的调用只清零：重复包装会丢掉中间别的包装（如 countMainInvokes）。
- */
 async function countRecoveryReads(app) {
   await app.evaluate(({ ipcMain }, channels) => {
     globalThis.__driveRecoveryReads = Object.fromEntries(channels.map(channel => [channel, 0]))
@@ -88,7 +78,6 @@ async function countRecoveryReads(app) {
     for (const channel of channels) {
       const original = handlers.get(channel)
       handlers.set(channel, async (...args) => {
-        // 记在请求到达时的窗口里：清零前发出、清零后才答完的请求不算进新窗口
         const reads = globalThis.__driveRecoveryReads
         const result = await original(...args)
         reads[channel] += 1
@@ -98,23 +87,19 @@ async function countRecoveryReads(app) {
   }, RECOVERY_READS)
 }
 
-/** 列表读完：两样都答过。 */
 async function recoveryReadsDone(app, page) {
   for (const deadline = Date.now() + 10_000; ; await page.waitForTimeout(50)) {
     const reads = await app.evaluate(() => globalThis.__driveRecoveryReads)
     if (RECOVERY_READS.every(channel => reads[channel] > 0)) break
     assert.ok(Date.now() < deadline, `10 秒内恢复列表没有重新读完：${JSON.stringify(reads)}`)
   }
-  // 最后一次回复到页面、交给 React 渲染，等两帧
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 }
 
-/** 助手任务里作者能看到的对话：输入、每一轮的可见回复与动作。运行状态与租约期限由主进程在重开作品时登记，不算对话内容。 */
 function conversation(recovery) {
   return JSON.stringify({ input: recovery.context.input, rounds: recovery.rounds.map(round => ({ visibleText: round.visibleText, actions: round.actions })) })
 }
 
-/** 示例作品加一条第 5 章的旧恢复候选（写作中断时留下的正文）。 */
 export const seedWithCandidate = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path: projectPath, session }) => {
   const recorded = await invoke(page, 'db:recovery-candidate-record', { runId: randomUUID(), stepId: '写稿', chapterNumber: 5, chapterTitle: '潮汐表',
     source: { chapterNumber: 5, title: '潮汐表', role: '发展', purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: [] },
@@ -123,7 +108,6 @@ export const seedWithCandidate = context => seedStageSample(context, { beforeRel
   assert.equal(recorded.success, true, recorded.error)
 } })
 
-/** 界面打开作品后会话租约换了新的；核对磁盘数据时回到书房，由驱动自己再打开一次拿会话。 */
 async function reopenForReading({ page, invoke, reload }, projectPath) {
   await reload()
   const opened = await invoke(page, 'project:open', projectPath, randomUUID(), null)
@@ -131,7 +115,6 @@ async function reopenForReading({ page, invoke, reload }, projectPath) {
   return { projectId: opened.project.id, projectPath, leaseId: opened.project.sessionLease }
 }
 
-/** Ctrl P 查找章节里标着「生成中」的章（流程脊只在正文阶段展开章节列表，Ctrl P 在哪一步都能看）。 */
 async function writingChapters(page) {
   await page.keyboard.press('ControlOrMeta+P')
   await stage.paletteInput(page).waitFor({ state: 'visible' })
@@ -457,7 +440,6 @@ export const RUN_SCENARIOS = {
     }
   }, after: ({ page }) => waitForRunDone(page) },
 
-  /** #409：第 3 章单章写作在本次打开里失败后，接着跑含第 3 章的批量（卡在假模型门上）：第 3 章的恢复卡照样列在运行侧页。 */
   'rst-batch-draft-card': { model: true, shell: 'stage', setup: context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path: projectPath, session }) => {
     for (const chapterNumber of [3, 4]) {
       for (const draft of await invoke(page, 'db:draft-list', chapterNumber, projectPath, session)) {
@@ -485,7 +467,6 @@ export const RUN_SCENARIOS = {
     await runSheet.waitForRunDone(page, 120_000)
   } },
 
-  /** #536、#686：第 3 章单章写作失败留下的候选可以「不再恢复」；点了之后卡片消失，重开作品也不再列出。 */
   'run-hide-draft': { model: true, shell: 'stage', setup: context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path: projectPath, session }) => {
     for (const draft of await invoke(page, 'db:draft-list', 3, projectPath, session)) {
       assert.equal((await invoke(page, 'db:draft-delete', draft.id, projectPath, session)).success, true)
@@ -519,7 +500,6 @@ export const RUN_SCENARIOS = {
     assert.ok(!recoverable.drafts.some(item => item.recovery.chapterNumber === 3), '「不再恢复」记在运行上，主进程不再把第 3 章候选列为可恢复')
   } },
 
-  /** #441 后续：第 3 章正在用夹具模型写（卡在假模型门上），在设置里改这个模型后保存：先提示，等生成结束再保存则不保存、表单留着。 */
   'rst-model-save-prompt': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake }) => {
     fake.gate.hold()
     await writeNextFromBlueprint(page)

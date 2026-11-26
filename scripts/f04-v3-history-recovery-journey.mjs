@@ -44,7 +44,6 @@ const pass = (name, observed) => steps.push({ name, outcome: 'PASS', observed })
 const invoke = (page, channel, ...args) => page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
 let secondRequestResolve
 const secondRequest = new Promise(resolve => { secondRequestResolve = resolve })
-// 写稿先要一份短细纲（只写短细纲），再写正文。细纲另计，requests 只数正文请求：第 1 次 A 写完，第 2 次 B 挂住等取消，第 3 次 A 可控失败。
 const fixture = { requests: 0, outlines: 0 }
 const shortOutline = '- 原目标：发现线索。\n- 结尾状态：线索指向旧车站。'
 const server = createServer(async (request, response) => {
@@ -56,7 +55,6 @@ const server = createServer(async (request, response) => {
   try {
     prompt = (JSON.parse(raw).messages ?? []).map(message => String(message.content)).join('\n')
   } catch {
-    // 处理函数是 async 的：这里抛出会成为未处理的拒绝，直接结束旅程进程，回执与失败截图都来不及写。
     response.writeHead(400).end()
     return
   }
@@ -76,15 +74,12 @@ const server = createServer(async (request, response) => {
     secondRequestResolve()
   } else if (fixture.requests === 3) {
     response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: failedBody } }] })}\n\n`)
-    response.end() // A valid visible SSE chunk without [DONE] is a controlled provider failure.
+    response.end()
   } else {
     response.end('unexpected fixture request')
   }
 })
 
-// 纸墨外壳：写作此章从流程脊的章节进单章视图点「写作此章」；运行、历史与可恢复的内容都在运行侧页。
-// 旧外壳的 AI 输出历史按章节标题找按钮，而运行标题是「第 1 章 · 写稿」，那个查找总是落空（#381 R11）；
-// 这里按运行侧页「历史」分页的行与它展开后的输出判定，项目隔离按行数与正文判定，查不到就失败。
 const RUN_TITLE = '第 1 章 · 写稿'
 
 async function launch(port) {
@@ -115,7 +110,6 @@ async function openFromShelf(page, name) {
   await stage.waitForWork(page, name)
 }
 
-/** 从流程脊打开这一章（待写），点单章视图的「写作此章」：按蓝图与设定里的每章字数直接开始，运行侧页随之展开。 */
 async function startChapter(page, number) {
   if (!await stage.chapterList(page).isVisible()) await stage.stageButton(page, '正文').click()
   await stage.chapterButton(page, number).click()
@@ -128,7 +122,6 @@ async function showRunSheetTab(page, name) {
   await runSheet.tab(page, name).click()
 }
 
-/** 运行侧页「历史」分页里的行：标题、是否完成。没有记录时是空状态。 */
 async function historyRows(page) {
   await showRunSheetTab(page, '历史')
   const list = page.getByRole('list', { name: '运行历史' })
@@ -139,7 +132,6 @@ async function historyRows(page) {
   })))
 }
 
-/** 展开历史里第 index 行，再展开其中每一步，返回展开后的文字。 */
 async function historyDetail(page, index) {
   const item = page.getByRole('list', { name: '运行历史' }).getByRole('listitem').nth(index)
   await item.locator('.run-history-row').click()
@@ -198,7 +190,6 @@ async function main() {
           name: '林岚', role: 'protagonist', gender: '', age: '', appearance: '', personality: '',
           background: '', abilities: '', motivation: '', relationships: [], arc: '', notes: '' }] }, created.projectPath, session)
       assert.equal(rosterCommit.success, true, rosterCommit.error)
-      // 纸墨外壳的写作此章不再填字数，按设定里的每章字数写；夹具一次回 120 字，目标定在 100。
       const core = await invoke(page, 'db:project-core-update', { totalChapters: 1, wordsPerChapter: 100 }, created.projectPath, session)
       assert.equal(core.success, true, core.error)
       assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: `${names[key]}章节`,
@@ -252,7 +243,6 @@ async function main() {
     await cancel.click()
     await cancel.waitFor({ state: 'hidden', timeout: 30_000 })
     assert.deepEqual(savedDraft(projects.B), [], 'cancelled B must not save a draft')
-    // 取消按钮在运行转为「取消中」时就隐藏，运行要等执行器退出才进历史；先等历史里出现这一条再读，免得读到空表
     await showRunSheetTab(page, '历史')
     await page.getByRole('list', { name: '运行历史' }).getByRole('listitem')
       .filter({ has: page.locator('.run-history-title', { hasText: RUN_TITLE }) }).first().waitFor({ state: 'visible', timeout: 30_000 })
@@ -275,7 +265,6 @@ async function main() {
     pass('new-process-reopen', { persistedDraft: true, workflowHistoryEntryCount: reopenedHistory.length })
 
     currentStep = 'A-provider-failure'
-    // 第 1 章已有草稿时单章视图不再摆「写作此章」；没有定稿前权威的下一章仍是第 1 章，蓝图页的「写第 1 章」再写一稿。
     await blueprint.open(page)
     await blueprint.writeNext(page)
     await runSheet.waitUntilOpen(page)
@@ -302,7 +291,6 @@ async function main() {
     await runSheet.tab(page, '进行中').click()
     const candidate = runSheet.recovery(page).getByRole('article').filter({ hasText: failedBody })
     await candidate.first().waitFor({ state: 'visible' })
-    // 候选里同一次运行的短细纲与正文各是一段摘录，各有自己的「复制」；复制的是带失败正文的那一段。
     const copy = candidate.first().locator('figure').filter({ hasText: failedBody }).getByRole('button', { name: '复制', exact: true })
     const clipboardSentinel = `V3_RECOVERY_BEFORE_COPY_${runId}`
     assert.equal(await page.evaluate(async sentinel => {

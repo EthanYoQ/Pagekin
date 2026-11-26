@@ -1,4 +1,3 @@
-// RD-V 统一视觉层的实机场景：危险确认（含清除中）、命令式错误弹框、提示栈（含出错通知）、运行失败提示，以及新外壳下的旧对话框。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -17,15 +16,12 @@ async function openWorkMenuItem(page, name) {
   await page.getByRole('menuitem', { name, exact: true }).click()
 }
 
-/** 遮罩与对话框的淡入是 220ms，截图前等它走完。 */
 const settle = page => page.waitForTimeout(400)
 
 const focusedText = page => page.evaluate(() => document.activeElement?.textContent)
 
-/** 浮层是否渲染进带 .paper-ink 的纸墨根或宿主里：只有那样才取得到纸墨令牌与深色。 */
 const inPaperInk = locator => locator.evaluate(element => element.closest('.paper-ink') !== null)
 
-/** 写一章后打开诊断分页，返回第一条调用的「复制安全诊断」按钮。 */
 async function diagnosticsCopyButton(page) {
   await blueprint.open(page)
   await blueprint.writeNext(page)
@@ -37,14 +33,12 @@ async function diagnosticsCopyButton(page) {
   return copy
 }
 
-/** 剪贴板写入成功或失败：失败时 copySafeDiagnostic 报出错通知。 */
 const stubClipboard = (page, ok) => page.evaluate(succeed => {
   navigator.clipboard.writeText = async () => { if (!succeed) throw new Error('clipboard denied') }
 }, ok)
 
 const liveToastTitles = page => page.locator('.pi-toast:not([data-exiting]) .pi-toast-title').allInnerTexts()
 
-/** 预置两条调用记录，诊断分页的调用表才有「复制安全诊断」。 */
 async function seedCalls({ page, invoke, path: projectPath, session }) {
   for (const [purpose, durationMs] of [['chapter-draft', 41_000], ['review-chapter', 27_000]]) {
     assert.equal((await invoke(page, 'db:log-llm-call', { modelId: FAKE_MODEL.id, modelName: FAKE_MODEL.name, purpose, promptTokens: 4000,
@@ -52,9 +46,7 @@ async function seedCalls({ page, invoke, path: projectPath, session }) {
   }
 }
 
-/** 运行侧页开着时逐页走一遍的页面。被挤到零宽的页面看不见，所以只等它进入 DOM。 */
 const attached = locator => locator.first().waitFor({ state: 'attached' })
-/** 资料页挂上后经 IPC 读数据，读完前显示「正在读取…」：等页面的内容标记进入 DOM、读取提示消失再量。 */
 async function loaded(page, selector) {
   await attached(stage.root(page).locator(selector))
   await page.waitForFunction(() => !document.querySelector('.stage-content')?.innerText.includes('正在读取'))
@@ -73,7 +65,6 @@ const SHEET_PAGES = [
     await stage.paletteInput(page).fill('角色')
     await stage.palette(page).getByRole('option', { name: /^角色/ }).first().click()
     await stage.palette(page).waitFor({ state: 'detached' })
-    // 名单读完才列出角色行：等到行出现，免得量到上一页。
     await attached(stage.characterList(page).locator('.cast-row'))
   }],
   ['plot', async page => { await stage.stageButton(page, '剧情与伏笔').click(); await loaded(page, '.stage-plot') }],
@@ -82,10 +73,6 @@ const SHEET_PAGES = [
   ['settings', stage.openSettings],
 ]
 
-/**
- * 主区域里排成一字一行的文字：一段至少三个字的文字排出的行数不少于字数的六成。被挤窄的标题、说明与竖排的状态标签都是这个样子；
- * 正常折行的段落每行有很多字，不会命中。逐个文本节点查，再按直接含文字的元素整体查（「正文 · 定稿」由几个短节点拼成）。
- */
 const crushedText = page => page.evaluate(() => {
   const area = document.querySelector('.stage-body')
   const found = new Set()
@@ -113,10 +100,6 @@ const areaWidths = page => page.evaluate(() => {
     sheetInner: width('.stage-sheet-slot > .pi-sheet'), overlay: getComputedStyle(document.querySelector('.stage-sheet-slot')).position === 'absolute' }
 })
 
-/**
- * 1152×720 与 820×640 是 1440×900、1024×768 的窗口在界面缩放 125% 时的 CSS 视口；683×512 是最小窗口 1024×768 在最大缩放 150% 时的，
- * 也就是主区域能被挤到的最窄处。
- */
 const SHEET_VIEWPORTS = [[1440, 900], [1280, 800], [1152, 720], [1024, 768], [820, 640], [683, 512]]
 
 async function resize(page, width, height) {
@@ -130,12 +113,7 @@ function openSheetPage(page, name) {
   return entry[1](page)
 }
 
-/**
- * 三击选中编辑器里的一行，量选区工具条实际画在哪：工具条用视口坐标定位（底边中点对准选区上方），
- * 实际底边中点与它内联的 top/left 之差就是被祖先包含块带偏的距离。
- */
 async function selbarOffset(page, line) {
-  // 点行首附近：窄视口里浮起的侧页盖住行的右半边
   await line.click({ clickCount: 3, position: { x: 24, y: 8 } })
   const toolbar = page.getByRole('toolbar', { name: '选中文字的操作' })
   await toolbar.waitFor({ state: 'visible' })
@@ -145,7 +123,6 @@ async function selbarOffset(page, line) {
     const selection = window.getSelection().getRangeAt(0).getBoundingClientRect()
     const anchorLeft = parseFloat(bar.style.left)
     const anchorTop = parseFloat(bar.style.top)
-    // 没有内联坐标时差值是 NaN，与容差比较恒为假，断言会空过。
     if (!Number.isFinite(anchorLeft) || !Number.isFinite(anchorTop)) throw new Error(`选区工具条没有内联的 left/top：「${bar.style.cssText}」`)
     return {
       dx: Math.round(rect.left + rect.width / 2 - anchorLeft),
@@ -156,7 +133,6 @@ async function selbarOffset(page, line) {
 }
 
 export const VISUAL_SCENARIOS = {
-  // 选区工具条画在选区正上方：正文与架构文档两处编辑器，运行侧页浮起时也一样。
   'rdv-selbar-anchor': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     const measured = {}
     const failures = []
@@ -183,7 +159,6 @@ export const VISUAL_SCENARIOS = {
     return measured
   } },
 
-  // 运行侧页的诊断分页开着时，在 SHEET_VIEWPORTS 的每种视口下逐页检查：主区域不被挤到一字一行。
   'rdv-sheet-squeeze': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     await runSheet.openFromPalette(page)
     await runSheet.tab(page, '诊断').click()
@@ -197,15 +172,12 @@ export const VISUAL_SCENARIOS = {
         await settle(page)
         const crushed = await crushedText(page)
         measured[`${name}-${width}`] = { ...await areaWidths(page), crushed }
-        // 设置页的分组导航固定 232px，最窄视口里留给设置内容的宽度不够；设置导航由另一项工作处理，这里只记录不判失败
         const owned = name === 'settings' && width < 820
         if (crushed.length && !owned) failures.push(`${name} @${width}：${crushed.join('、')}`)
         await shoot(`rdv-sheet-${name}-${width}`)
-        // 最窄的视口里侧页浮在设置页上、盖住「返回作品」
         if (name === 'settings') await stage.closeSettings(page, { dispatch: true })
       }
     }
-    // 最窄视口里侧页盖住了大半内容区，收起侧页再拍一遍，看内容区自己的窄版排版
     await runSheet.sheet(page).getByRole('button', { name: '收起运行侧页' }).click()
     await runSheet.sheet(page).waitFor({ state: 'detached' })
     for (const [name, open] of SHEET_PAGES.filter(([name]) => name !== 'settings')) {
@@ -213,9 +185,7 @@ export const VISUAL_SCENARIOS = {
       await settle(page)
       await shoot(`rdv-sheet-${name}-683-closed`)
     }
-    // 面板 790 宽（1076 视口）：诊断侧页浮在关系图谱上，图谱工具条不画在侧页上面、不截走点击
     await resize(page, 1076, 768)
-    // 视图切换按钮在内容区右侧，侧页浮起后被盖住，所以先切到关系图谱再开侧页
     await openSheetPage(page, 'characters')
     await stage.root(page).locator('.cast-view-switch').getByRole('button', { name: '关系图谱' }).click()
     await stage.root(page).locator('.cast-graph canvas').waitFor({ state: 'visible' })
@@ -225,7 +195,6 @@ export const VISUAL_SCENARIOS = {
     const toolbarOverSheet = await page.evaluate(() => {
       const slot = document.querySelector('.stage-sheet-slot')
       const sheet = slot.getBoundingClientRect()
-      // 只查中心点落在侧页矩形里的按钮；中心在视口外时 elementFromPoint 为 null，不算画在侧页上
       return [...document.querySelectorAll('.cast-graph button')].filter(button => {
         const rect = button.getBoundingClientRect()
         const x = rect.left + rect.width / 2
@@ -237,7 +206,6 @@ export const VISUAL_SCENARIOS = {
     measured['characters-graph-1076'] = { ...await areaWidths(page), toolbarOverSheet }
     if (toolbarOverSheet.length) failures.push(`关系图谱工具条画在浮起的侧页上：${toolbarOverSheet.join('、')}`)
     await shoot('rdv-sheet-characters-graph-1076')
-    // 1280 视口开着普通侧页（内容区约 614px）：架构页页头放得下时动作与标题同一行
     await resize(page, 1280, 800)
     await runSheet.tab(page, '进行中').click()
     await openSheetPage(page, 'architecture')
@@ -274,9 +242,7 @@ export const VISUAL_SCENARIOS = {
     await bookshelf.createProject(page, '雾岛')
     await stage.spine(page).waitFor({ state: 'visible' })
     await stage.backToLibrary(page, '雾岛')
-    // 同一目录里再建一部同名作品，主进程拒绝，界面用命令式 alertError 报错
     await page.getByRole('button', { name: '新建作品', exact: true }).click()
-    // RD-5 起新建作品是纸墨对话框（NewWorkDialog）；旧外壳仍是「新建小说项目」
     const form = page.getByRole('dialog', { name: /^(新建小说项目|新建作品)$/ })
     await form.getByRole('textbox').first().fill('雾岛')
     await form.getByRole('button', { name: '选择', exact: true }).click()
@@ -292,7 +258,6 @@ export const VISUAL_SCENARIOS = {
     await page.getByRole('alertdialog').waitFor({ state: 'hidden' })
   } },
 
-  // #474 B4：主进程只交错误码（PROJECT_DIRECTORY_EXISTS、PROJECT_DIRECTORY_MISSING），英文界面的报错弹框按码写成英文。
   'project-errors-en': { model: false, shell: 'stage', run: async context => {
     const { app, roots, invoke, shoot } = context
     let { page } = context
@@ -322,7 +287,6 @@ export const VISUAL_SCENARIOS = {
     await page.keyboard.press('Escape')
     await form.waitFor({ state: 'hidden' })
 
-    // 最近作品的文件夹在应用外被移走，再从书房打开。冷重启后作品文件不再被占用；驱动的重启按中文书房判断就绪，先切回中文。
     assert.equal((await invoke(page, 'config:set', { locale: 'zh-CN' })).success, true)
     await context.restart()
     page = context.page
@@ -349,8 +313,6 @@ export const VISUAL_SCENARIOS = {
     await page.getByRole('alertdialog').waitFor({ state: 'hidden' })
   } },
 
-  // #474 B1：英文界面导入参考小说，参照章节写入知识库前这次导入的执行租约被别处收回（用公开的 db:import-run-cancel-at-boundary
-  // 按卡住的请求里的执行身份收回）。主进程的导入运行仓储只交 IMPORT_RUN_EXECUTION_STALE，运行卡片的失败说明是英文、不带汉字与错误码。
   'import-run-error-en': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ app, page, roots, invoke, shoot }) => {
     await stage.openSettings(page)
     await stage.showSettingsPage(page, '外观')
@@ -402,9 +364,6 @@ export const VISUAL_SCENARIOS = {
     return observed
   } },
 
-  // #474 收尾：中文界面导入参考小说，参照章节已入库、批次检查点还没记下时在运行卡片上取消。放行后编排器在安全边界停下，
-  // 运行卡片里已取消步骤的说明是中文，不再是编排器原先只有英文的那句。卡在章节入库途中取消会走另一条路
-  // （主进程拒绝绑定参照章节，交 IMPORT_RUN_REFERENCE_UNBOUND），所以卡在检查点。
   'import-run-cancel-zh': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ app, page, roots, shoot }) => {
     const file = path.join(roots.temp, 'reference-novel.txt')
     fs.writeFileSync(file, `第1章 旧港\n旧港的潮水刚退，青石上还留着一层薄薄的盐霜。\n\n第2章 北堤\n北堤上的风很大。\n`)
@@ -431,7 +390,6 @@ export const VISUAL_SCENARIOS = {
     await dialog.getByRole('button', { name: '导入当前项目（2 章）', disabled: false }).click()
     await dialog.waitFor({ state: 'hidden' })
 
-    // 中途任何一步失败都要放开检查点，否则导入一直卡着，应用只能等驱动强制结束。
     try {
       for (const deadline = Date.now() + 20_000; !(await app.evaluate(() => globalThis.__driveCheckpointGate.held)); await new Promise(resolve => setTimeout(resolve, 50))) {
         assert.ok(Date.now() < deadline, '20 秒内导入没有走到批次检查点')
@@ -443,7 +401,6 @@ export const VISUAL_SCENARIOS = {
       await app.evaluate(() => globalThis.__driveCheckpointGate.release())
     }
 
-    // 作者取消记已取消（#587）；停在已保存进度处的那句留在已取消的那一步上。
     const cancelledStep = runSheet.sheet(page).locator('.run-step[data-status="cancelled"] .run-step-row').first()
     await cancelledStep.waitFor({ state: 'visible', timeout: 30_000 })
     if (await cancelledStep.getAttribute('aria-expanded') !== 'true') await cancelledStep.click()
@@ -463,8 +420,6 @@ export const VISUAL_SCENARIOS = {
     return observed
   } },
 
-  // #484：中文界面导入参考小说，主进程拒绝开始导入却没给原因时，运行卡片里失败步骤的兜底说明是中文，
-  // 不再是导入工作流原先只有英文的那句。主进程正常时总会给原因，所以在主进程里换掉这个通道的处理函数。
   'import-run-start-refused-zh': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ app, page, roots, shoot }) => {
     const file = path.join(roots.temp, 'reference-novel.txt')
     fs.writeFileSync(file, `第1章 旧港\n旧港的潮水刚退，青石上还留着一层薄薄的盐霜。\n\n第2章 北堤\n北堤上的风很大。\n`)
@@ -506,7 +461,6 @@ export const VISUAL_SCENARIOS = {
   'rdv-toasts': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: seedCalls }), run: async ({ page }) => {
     const copy = await diagnosticsCopyButton(page)
     await stubClipboard(page, true)
-    // 第一条通知会盖住侧页下方的复制按钮，之后都直接派发点击
     for (let i = 0; i < 3; i++) await copy.dispatchEvent('click')
     await stubClipboard(page, false)
     await copy.dispatchEvent('click')
@@ -514,7 +468,6 @@ export const VISUAL_SCENARIOS = {
     await stack.locator('.pi-toast[data-tone="danger"]').waitFor({ state: 'visible' })
     await page.waitForTimeout(300)
     assert.equal(await stack.count(), 1, '只有一个提示栈')
-    // 写完一章的「已完成」通知带动作，也在栈里
     assert.deepEqual((await liveToastTitles(page)).filter(title => title.includes('安全诊断')), ['已复制安全诊断', '复制安全诊断失败'],
       '同一句话合并成一条，出错的另起一条')
     const boxes = await stack.locator('.pi-toast:not([data-exiting])').evaluateAll(items => items.map(item => item.getBoundingClientRect().toJSON()))
@@ -523,13 +476,11 @@ export const VISUAL_SCENARIOS = {
     return { toasts: boxes.length }
   } },
 
-  // 常驻与出错不受条数上限约束：24 条出错时栈收在视口内、栈内滚动，最新一条露在底部，滚到顶能关掉最早那条
   'rdv-toast-flood': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page, shoot }) => {
     const appPath = await app.evaluate(({ app: electronApp }) => electronApp.getAppPath())
     const chunk = fs.readdirSync(path.join(appPath, 'dist', 'assets')).find(name => /^ToastStack-.*\.js$/.test(name))
     assert.ok(chunk, '构建产物里有提示栈模块')
     const pushed = await page.evaluate(async ({ chunkName, count }) => {
-      // 提示栈模块在新外壳启动时已载入；同一个 URL 再 import 拿到的是同一份栈状态
       const module = await import(new URL(`./assets/${chunkName}`, location.href).href)
       const push = Object.values(module).find(value => typeof value === 'function' && String(value).includes('exiting:!1'))
       if (!push) return 'no-push'
@@ -565,12 +516,10 @@ export const VISUAL_SCENARIOS = {
   } },
 
   'rdv-toast-error': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: seedCalls }), run: async ({ page }) => {
-    // 面板打开后侧页被标 aria-hidden，按角色找不到复制按钮，先拿住元素
     const copy = await (await diagnosticsCopyButton(page)).elementHandle()
     await stubClipboard(page, true)
     await copy.dispatchEvent('click')
     await page.locator('.pi-toast', { hasText: '已复制安全诊断' }).waitFor({ state: 'visible' })
-    // 提示栈已在时打开 Ctrl K 面板（Radix 模态），面板开着时复制失败
     await page.keyboard.press('ControlOrMeta+K')
     await stage.paletteInput(page).waitFor({ state: 'visible' })
     await stubClipboard(page, false)
@@ -589,7 +538,6 @@ export const VISUAL_SCENARIOS = {
   } },
 
   'rdv-clear-busy': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
-    // 主进程里的清除处理器换成永不返回，界面停在清除中
     await app.evaluate(({ ipcMain }) => {
       ipcMain.removeHandler('db:project-clear-generated-data')
       ipcMain.handle('db:project-clear-generated-data', () => new Promise(() => {}))
@@ -616,7 +564,6 @@ export const VISUAL_SCENARIOS = {
     await stage.palette(page).getByRole('option', { name: /^角色/ }).first().click()
     await materials.importCharacterCards(page, '姓名：守塔人\n身份：灯塔看守，记得每一次钟声。')
     await runSheet.waitUntilOpen(page)
-    // 导入对话框还开着时侧页被 Radix 标成 aria-hidden，按角色找不到，所以用类名
     const failure = page.locator('.run-card .pi-notice[data-tone="danger"]').first()
     await failure.waitFor({ state: 'visible', timeout: 60_000 })
     await page.keyboard.press('Escape')
@@ -647,7 +594,6 @@ export const VISUAL_SCENARIOS = {
     await page.getByRole('dialog').first().waitFor({ state: 'hidden' })
   } },
 
-  // RD-5 起设置是整页；项目备份与提示词模板仍是旧面板，用来看旧按钮变体在新外壳下换成纸墨按钮
   'rdv-settings': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     await stage.openSettings(page)
     await page.getByRole('button', { name: '提示词模板' }).click()

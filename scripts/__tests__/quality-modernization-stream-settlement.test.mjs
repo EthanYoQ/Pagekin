@@ -20,7 +20,6 @@ const open = '        streamSettlements.push((async () => {'
 const close = '        })())'
 const start = fixture.indexOf(open), end = fixture.indexOf(close, start) + close.length
 assert.ok(start >= 0 && end > start && fixture.indexOf(open, start + 1) < 0)
-// Execute the production fixture's anonymous consumer, with only its lexical inputs supplied.
 const consume = new Function('ledgerBody', 'supervisor', 'attemptId', 'physicalOutputPath',
   'requestReceipt', 'streamSettlements', 'fs', 'sha', 'dispatchAt', 'request', 'safeTransportError', fixture.slice(start, end))
 const sha = value => createHash('sha256').update(value).digest('hex')

@@ -1,6 +1,3 @@
-// 拦截两类 CI 慢机上才会红的测试写法（#620、#818）：墙钟差值与固定上限比较；fs.watch 回调声明文件名参数（macOS 上可能为 null）。
-// 只拦新增：现有命中记在 test-determinism-baseline.json，按 文件 + 规则 + 命中文本 计数，不看行号，改动无关行不会让基线失效。
-
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,7 +44,6 @@ function scopeDeclarations(scope) {
   return declarations
 }
 
-// 按名字就近找声明：长测试文件里不同用例常复用 started、elapsed 这类名字
 function declarationResolver() {
   const cache = new Map()
   return identifier => {
@@ -267,7 +263,6 @@ export function checkTestDeterminism(rootDir) {
   return { violations, stale }
 }
 
-// import.meta.url 是解析过符号链接与 junction 的真实路径，入口路径也要解析后再比
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   const rootDir = path.resolve(process.argv[2] ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
   const { violations, stale } = checkTestDeterminism(rootDir)

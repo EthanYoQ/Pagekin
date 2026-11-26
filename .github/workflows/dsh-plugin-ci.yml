@@ -49,7 +49,6 @@ jobs:
         run: pnpm run build
 
       - name: Test
-        # The preceding step already built and verified these same bytes.
         run: pnpm exec vitest run
 
       - name: Verify package contents

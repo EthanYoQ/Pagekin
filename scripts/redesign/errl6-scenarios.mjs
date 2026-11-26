@@ -28,7 +28,6 @@ const COPY = {
 const truncate = bytes => bytes.subarray(0, Math.floor(bytes.length / 4096 / 2) * 4096)
 const FILE_LOCKER = "$f=[IO.File]::Open($env:ERRL6_DB,'Open','ReadWrite','None');[Console]::Out.WriteLine('ready');[Console]::In.ReadLine()|Out-Null;$f.Dispose()"
 
-/** 别的程序以不共享方式打开着库文件：worker 读快照时报 EBUSY。 */
 async function lockFile(context, database) {
   const child = spawn('powershell', ['-NoProfile', '-Command', FILE_LOCKER],
     { env: { ...process.env, ERRL6_DB: database }, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
@@ -37,7 +36,6 @@ async function lockFile(context, database) {
   assert.equal(ready, 'ready', '占住库文件的进程没起来')
 }
 
-/** 当前用户对库文件没有读写权限：worker 读快照时报 EPERM。 */
 function denyAccess(context, database) {
   const user = execFileSync('whoami', { encoding: 'utf8' }).trim()
   execFileSync('icacls', [database, '/deny', `${user}:(R,W)`])

@@ -52,7 +52,6 @@ $globalConfig = Join-Path $velaHome 'config.json'
 $recentProjects = Join-Path $velaHome 'recent-projects.json'
 $upgradeFixtureRoot = Join-Path $smokeRoot 'user-projects\upgrade-preservation-fixture'
 $v025SaveProofPath = Join-Path $smokeRoot 'v025-save-proof.json'
-# 本次安装包的卸载程序用新产品名；升级前装上的旧版本可能还是旧名（ADR-0022）。
 $uninstaller = Join-Path $installRoot (Get-AiNovelProductUninstallerNames)[0]
 $lastWindowSnapshot = @()
 $observedProcessIds = [System.Collections.Generic.HashSet[int]]::new()
@@ -139,7 +138,6 @@ function New-AiNovelOfficialJourneyScratch {
   $parent = Join-Path ([System.IO.Path]::GetFullPath($env:LOCALAPPDATA)) 'VibeCodingScratch\an'
   $scratch = Join-Path $parent $TaskId
   $target = Join-Path $scratch 'target\source-新版副本'
-  # Keep this final-target limit aligned with project-storage-preflight.ts (covered by the contract test).
   if ($target.Length -gt 85) {
     throw "PROJECT_STORAGE_PATH_UNSUPPORTED: official A11 target has $($target.Length) characters; maximum is 85: $target"
   }

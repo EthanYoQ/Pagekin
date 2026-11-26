@@ -1,4 +1,3 @@
-// 新外壳的作品资料页：剧情与伏笔、知识库、版本历史（RD-9）。选择器用角色与可访问名称。
 import { spine } from './stage.mjs'
 
 export const PAGES = { plot: '剧情与伏笔', knowledge: '知识库', history: '版本历史' }
@@ -9,7 +8,6 @@ export async function open(page, name) {
 
 export const resourceButton = (page, name) => spine(page).getByRole('button', { name: PAGES[name], exact: true })
 
-/* 剧情与伏笔 */
 export const plotTable = page => page.getByRole('table', { name: '剧情树' })
 export const plotView = (page, name) => page.getByRole('group', { name: '剧情与伏笔的视图' }).getByRole('button', { name, exact: true })
 export const plotMore = page => page.getByRole('button', { name: '剧情树的更多操作' })
@@ -27,7 +25,6 @@ export async function buildPlotTree(page) {
   await plotTable(page).waitFor({ state: 'visible', timeout: 60_000 })
 }
 
-/** 剧情树里每条轨道的类别、名称与各事件（章、是否已发生、摘要），按页内顺序。 */
 export function plotLanes(page) {
   return plotTable(page).locator('tbody tr').evaluateAll(rows => rows.map(row => ({
     lane: row.querySelector('th')?.textContent ?? '',
@@ -35,7 +32,6 @@ export function plotLanes(page) {
   })))
 }
 
-/* 知识库 */
 export const materials = page => page.getByRole('navigation', { name: '资料' })
 export const materialButton = (page, name) => materials(page).getByRole('button', { name })
 export const copyEditor = page => page.getByRole('textbox', { name: '项目副本内容' })
@@ -48,7 +44,6 @@ export async function search(page, query) {
   await results(page).locator('mark').first().waitFor({ state: 'visible' })
 }
 
-/* 版本历史 */
 export const historyChapters = page => page.getByRole('navigation', { name: '章节' })
 export const timeline = page => page.getByRole('list', { name: '版本时间线' })
 export const versionButton = (page, name) => timeline(page).getByRole('button', { name: new RegExp(`^${name}`) })

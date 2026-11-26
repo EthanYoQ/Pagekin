@@ -7,7 +7,6 @@ import { _electron as electron } from 'playwright'
 import { STAGE_SHELL } from './redesign/pages/stage.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-// RD-10 起外观只读写 v3 键；旧键（v1、v2）只读不写。
 const appearanceKey = 'ai-novel-writer-appearance-v3'
 const previousAppearanceKey = 'ai-novel-writer-appearance'
 const themeKey = 'ai-novel-writer-theme'
@@ -94,7 +93,6 @@ if (process.argv.includes('--help')) {
       }, { appearanceKey, previousAppearanceKey, themeKey, shellKey, oldTheme })
     } finally { await session.app.close() }
     assert.deepEqual(inventory(roots.legacy), sourceBefore)
-    // This now-invalid old source must never regain write authority after cutover.
     fs.writeFileSync(path.join(roots.legacy, 'config.json'), '{later source change')
     const changedSource = inventory(roots.legacy)
     session = await launch(roots)

@@ -1,8 +1,3 @@
-/* Metadata-only Vitest reporter. Added alongside the default reporter in CI.
- * It never changes worker arguments, return values, errors, retry policy or timeouts.
- * The fork observer uses Node's live builtin export so Vitest's ESM fork import
- * sees it even though the CLI was loaded before reporters were initialized.
- */
 const fs = require('node:fs')
 const path = require('node:path')
 const childProcess = require('node:child_process')
@@ -29,7 +24,6 @@ function observeWorkers(root) {
   const originalFork = childProcess.fork
   childProcess.fork = function (...args) {
     const child = Reflect.apply(originalFork, this, args)
-    // Observe only Vitest's fork worker. Do not inspect arbitrary test subprocesses.
     const modulePath = typeof args[0] === 'string' ? args[0].replaceAll('\\', '/') : ''
     if (!/\/vitest\/dist\/workers\/forks\.js$/u.test(modulePath)) return child
     child.once('spawn', () => emit('worker-spawn', { workerPid: child.pid }))

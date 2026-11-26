@@ -26,7 +26,6 @@ const paeth = (left, up, upLeft) => {
   return pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft
 }
 
-/** rgba 为逐像素 [r,g,b,a]；第 y 行用 filters[y] 编码，覆盖解码器的五种行过滤。 */
 function encodePng({ width, height, rgba, channels = 4, filters = [] }) {
   const stride = width * channels
   const raw = Buffer.alloc(height * (stride + 1))
@@ -58,7 +57,6 @@ function gradient(width, height) {
   return Array.from({ length: width * height }, (_, index) => [(index * 37) % 256, (index * 91 + 13) % 256, (index * 53 + 200) % 256, 255])
 }
 
-/** 取值只有 0～3，相邻像素频繁相等，Paeth 预测会走到平局分支。 */
 function noise(width, height) {
   let seed = 7
   const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648) >> 16 & 3

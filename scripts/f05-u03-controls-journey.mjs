@@ -23,7 +23,6 @@ const expectedAsar = option('asar-sha256')
 assert(packageDir && packageSourceSha && /^[a-f0-9]{64}$/.test(expectedExe ?? '') && /^[a-f0-9]{64}$/.test(expectedAsar ?? ''),
   'pass --package-dir=<win-unpacked> --package-source-sha=<sha> --exe-sha256=<hash> --asar-sha256=<hash>')
 const priorPath = path.join(repository, '.runtime', '.cache', 'f05-u03-controls', '4d4c1bab-16f7-48c7-b7a8-7514b353eb76', 'receipt.json')
-// 旧外壳时期的历史回执只在当年的机器上；有就核对，没有就在回执里记下缺席，不挡本次旅程。
 const prior = fs.existsSync(priorPath) ? JSON.parse(fs.readFileSync(priorPath, 'utf8')) : null
 if (prior) assert.equal(prior.outcome, 'PASS', 'historical Writer controls receipt is not a PASS')
 const executablePath = resolveWindowsExecutable(packageDir)
@@ -89,7 +88,6 @@ async function main() {
 
     currentStep = 'U03.A02-model-notice-settings'
     await assertStage(page, 'U03.A02')
-    // 旧外壳状态栏的「点击配置模型」在纸墨外壳里是「还没有连接 AI 模型」提示的「添加模型」。
     await stage.modelMissingNotice(page).getByRole('button', { name: '添加模型', exact: true }).click()
     await settingsHeading(page, 'AI 模型').waitFor()
     recordPrecondition('U03.A02-model-notice-settings', 'stage shell assertion preceded the model-missing notice entry and the same settings page rendered')
@@ -107,7 +105,6 @@ async function main() {
     await stage.openSettings(page)
     await stage.showSettingsPage(page, '网络代理')
     const proxySwitch = stage.root(page).getByRole('switch', { name: '启用代理' })
-    // 开关是视觉隐藏的原生 checkbox，点它所在的 label。
     if (!(await proxySwitch.isChecked())) await proxySwitch.locator('xpath=ancestor::label[1]').click()
     await stage.root(page).getByLabel('主机地址', { exact: true }).fill('127.0.0.1')
     await stage.root(page).getByRole('button', { name: '保存代理设置', exact: true }).click()
@@ -116,7 +113,6 @@ async function main() {
     assert.match(await proxyAlert.textContent(), /代理配置保存失败/u)
     assert.equal(fs.readFileSync(configPath, 'utf8'), malformedConfig, 'malformed admitted config must remain untouched')
     recordPrecondition('U03.A13-proxy-failure', 'stage proxy save surfaced the malformed-global-config failure through the visible alert without replacing the protected file')
-    // 改过没存的代理设置会让返回时先问是否放弃；这里没有要留的修改。
     await stage.settingsNav(page).getByRole('button', { name: /^返回(作品|书房)$/ }).click()
     const discard = page.getByRole('dialog', { name: /放弃/ })
     if (await discard.isVisible()) await discard.getByRole('button', { name: /放弃/ }).last().click()
@@ -134,7 +130,6 @@ async function main() {
       error: project.error ? String(project.error).replaceAll(scratch, '[scratch]') : null,
       databaseRestored: project.databaseRestored, dbReady: project.dbReady }
     assert.equal(project.success, true, JSON.stringify(projectCreateObservation))
-    // Seed the existing project database directly; this action tests copying a displayed record.
     const fixtureDb = new Database(path.join(project.projectPath, '.ai-novel', 'project.db'))
     const sensitivePurpose = 'chapter-draft Authorization: Bearer sk-do-not-copy C:\\VibeCodingScratch\\private'
     try {
@@ -150,7 +145,6 @@ async function main() {
     await stage.waitForWork(page, 'U03-controls')
     const context = await invoke(page, 'project:get-runtime-context')
     assert.equal(path.resolve(context.activeProjectPath), path.resolve(project.projectPath))
-    // 旧外壳左栏的「模型」调用记录在纸墨外壳的运行侧页「诊断」分页里。
     await runSheet.openFromPalette(page)
     await runSheet.tab(page, '诊断').click()
     await page.getByRole('button', { name: '复制安全诊断' }).waitFor()

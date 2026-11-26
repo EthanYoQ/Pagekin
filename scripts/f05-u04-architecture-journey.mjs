@@ -27,7 +27,6 @@ assert(packageDir && packageSourceSha && /^[a-f0-9]{64}$/.test(expectedExe ?? ''
 const a01A04Only = process.argv.includes('--a01-a04-only')
 assert(a01A04Only || process.argv.includes('--include-recovery'), 'pass --a01-a04-only; recovery actions A05–A08 require explicit --include-recovery')
 const priorPath = path.join(repository, '.runtime', '.cache', 'f05-u04-architecture', '45f2cfb2-e7a1-494d-a7cd-a3c5d39c5241', 'receipt.json')
-// 旧外壳时期的历史回执只在当年的机器上：有就核对，没有就记下缺席。
 const prior = fs.existsSync(priorPath) ? JSON.parse(fs.readFileSync(priorPath, 'utf8')) : null
 if (prior) assert.equal(prior.outcome, 'PARTIAL')
 const executablePath = resolveWindowsExecutable(packageDir)
@@ -106,7 +105,6 @@ async function openProject(page) {
   await stage.openFromLibrary(page, projectName)
   await stage.waitForWork(page, projectName)
 }
-/** 设定页的核心大纲（旧外壳的「小说配置」创作想法），改完 Ctrl S。 */
 async function saveCoreOutline(page, value) {
   await stage.stageButton(page, '设定').click()
   await stage.setupOutline(page).fill(value)
@@ -118,7 +116,6 @@ async function architecture(page) {
   await arch.open(page)
 }
 const SECTION_KEYS = { 故事前提: 'premise', 角色名单: 'characters', 世界观: 'worldbuilding', 情节大纲: 'synopsis' }
-/** 四节都有内容后主按钮是「下一步」，生成在「架构的更多操作」里；否则主按钮就是生成。 */
 async function openGenerateDialog(page) {
   if (await arch.primary(page).filter({ hasText: /生成架构/ }).count() > 0) await arch.primary(page).click()
   else {
@@ -179,13 +176,11 @@ async function waitCore(page, context, predicate, label) {
   }
   throw new Error(`Timed out waiting for ${label}`)
 }
-// 旧外壳底部任务表的「历史任务」在纸墨外壳是运行侧页「历史」分页：数行数，判断这次运行已经结束、锁已释放。
 const historyRows = page => page.getByRole('list', { name: '运行历史' }).getByRole('listitem')
 async function showRunHistory(page) {
   await runSheet.openFromPalette(page)
   await runSheet.tab(page, '历史').click()
 }
-/** 失败时的诊断：运行历史只在「历史」页挂载，先切过去再读；读不到就返回空，不盖掉原来的错误。 */
 async function historyTextsForDiagnostics(page) {
   try {
     await showRunHistory(page)
@@ -205,7 +200,6 @@ async function runCount(page) {
   await runSheet.tab(page, '进行中').click()
   return count
 }
-/** 世界观或大纲半途停下时的提示条：正式内容保留，候选可看、可复制、可断点续写。 */
 const candidateNotice = page => stage.root(page).locator('.pi-notice').filter({ hasText: /^上次生成在半途停下/ })
 const alertTexts = page => stage.root(page).locator('[role="alert"], .pi-notice[data-tone="danger"]').allTextContents()
 async function readPartial(_page, context) {
@@ -445,7 +439,6 @@ async function main() {
     const beforeCancel = (await readCore(page, context)).worldbuilding
     await generate(page, '世界观')
     await waitPending(fixture)
-    // 旧外壳 AI 输出的「中止生成」是运行侧页里这次运行卡片的「取消」。
     await runSheet.openFromPalette(page)
     await runSheet.sheet(page).getByRole('button', { name: /^取消「/ }).click()
     const cancelled = await waitPartial(page, context, partial => partial?.world_building_incomplete === true
@@ -521,7 +514,6 @@ async function main() {
         taskHistory: taskHistory.slice(0, 3).map(value => value.slice(0, 500)),
       })}; ${String(error)}`)
     }
-    // 运行侧页「历史」里这次失败的运行写明了原因。
     await showRunHistory(page)
     const latestRun = historyRows(page).first()
     if (await latestRun.locator('.run-history-row').getAttribute('aria-expanded') !== 'true') await latestRun.locator('.run-history-row').click()

@@ -2,7 +2,6 @@
 # #702 计时：10、50、112 章快照交替跑 perf702-reuse，再按蓝图条数跑 perf702-blueprints，最后各录一份 profile。
 # 用法：bash scripts/redesign/perf702-run.sh <快照目录（含 10/ 50/ 112/）> <输出目录> [交替轮数，默认 2]
 set -euo pipefail
-# 相对路径按调用处解析，之后才 cd 到仓库根。
 fixtures=$(cd "$1" && pwd)
 out=$(mkdir -p "$2" && cd "$2" && pwd)
 passes=${3:-2}

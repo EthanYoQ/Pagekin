@@ -551,8 +551,6 @@ describe('Windows release verification orchestration', () => {
         .map(line => JSON.parse(line) as { sequence: number, state: string })
       expect(controls.at(-1)).toEqual({ sequence: 2_000_000_000, state: 'stop' })
     } finally {
-      // The fixture has no process by construction; remove it only after proving
-      // the production-style cleanup path preserved the unresolved control root.
       rmSync(fixtureRoot, { recursive: true, force: true })
     }
   })
@@ -1451,8 +1449,6 @@ internal static class ExactNsisProbeParent {
         filterBasis: exits.filter(event => String(event.exitClassification).match(/^expected-nsis-find/)).map(event => event.exitBasis),
       }))
 
-      // A misattributed failure, or a chain member waved through by the
-      // result-owned exemption, means the classifier lost the chain.
       expect(exits.some(event => event.exitClassification === 'failure')).toBe(false)
       expect(exits.some(event => event.exitClassification === 'ignored-result-owned-descendant-nonzero')).toBe(false)
       for (const event of exits) {
@@ -1847,8 +1843,6 @@ internal static class ExactNsisUninstallerHelper {
       for (const event of events.filter(event => event.kind === 'process-exit')) {
         expect(event.jobMessage).toBe(7)
         if (unknownIds.has(event.processId)) {
-          // The consumer can stop before writing EXIT. An absent EXIT remains
-          // unobservable; any available EXIT must not invent a captured result.
           expect(event).toMatchObject({ captureEstablished: false, exitCodeCaptured: false, exitCode: null, captureFailureStage: '', captureWin32Error: null })
           if (event.processIdentity !== null) {
             expect(identity(event)).toEqual(identity(failedStarts.find(start => start.processId === event.processId)))

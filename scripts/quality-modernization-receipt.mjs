@@ -58,8 +58,6 @@ export function safeReceiptDiagnostic(value, mode) {
   const diagnostic = value instanceof Error ? value.message : String(value ?? '')
   if (mode !== 'real') return diagnostic
   if (value instanceof TargetUnitsGateFailure) return diagnostic
-  // Exact internal error identities are safe and necessary for failure-lane triage.
-  // Free text, paths, provider payloads, credentials, and suffixed codes stay redacted.
   return /^(?:GENERATION|REVIEW|SOURCE|ROOT|MODEL|PROJECT|MATERIAL|TARGET|TARGETED|RECEIPT|ATTEMPT|PROVIDER|NETWORK|LLM|UNREGISTERED|INVALID)_[A-Z0-9_]{2,72}$/u.test(diagnostic)
     ? diagnostic : REDACTED
 }
@@ -75,7 +73,6 @@ export function recordPersistedDraftObservation(receipt, input) {
   return observation
 }
 
-/** Keep the offline projector on the same v3 persisted-prose unit contract. */
 export function countProjectedDraftUnits(text) {
   const normalized = text.normalize('NFC')
   const han = /\p{Script=Han}/gu
@@ -191,10 +188,6 @@ function readOwnedPersistedDraft({ projectRoot, projectPath, databasePath, chapt
   } finally { database?.close() }
 }
 
-/**
- * Re-read a failed baseline's original receipt, artifact, ledger and SQLite row.
- * The returned marker is process-private review evidence; it is never a saved receipt.
- */
 export function readVerifiedDirectPersistedDraftEvidence({ receiptPath }) {
   const isolationRoot = path.dirname(path.resolve(receiptPath))
   const requestPath = path.join(isolationRoot, 'execute-request.json')
@@ -279,10 +272,6 @@ export function readVerifiedDirectPersistedDraftEvidence({ receiptPath }) {
     gateFailure: structuredClone(gateFailure), directPersistedEvidence: evidence }
 }
 
-/**
- * Export a review-only baseline artifact. It never changes the original receipt,
- * SQLite candidate, ledger, or formal saved-draft contract.
- */
 export function projectRecoveryCandidateSupplement(input) {
   const { request, requestBytes, receipt, receiptBytes, ledgerBytes, recoveryRows, targetUnits, isolationRoot } = input
   if (request.mode !== 'real' || request.action !== 'execute' || request.target?.arm !== 'baseline'
@@ -358,7 +347,6 @@ export function projectRecoveryCandidateSupplement(input) {
   return { ...supplement, supplementPath }
 }
 
-/** Validate a supplemental artifact before projecting it into an in-memory arm result. */
 export function readVerifiedRecoveryCandidateSupplement({ receiptPath, supplementPath = path.join(path.dirname(receiptPath), 'recovery-supplement.json') }) {
   const isolationRoot = path.dirname(path.resolve(receiptPath))
   if (path.basename(receiptPath) !== 'execute-receipt.json'

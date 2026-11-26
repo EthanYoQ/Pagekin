@@ -1,5 +1,3 @@
-// RD-X1 外部审查修复的实机场景：会丢数据、写错对象、会话与导航错位的缺陷，各按作者的操作在真实 Electron 里走一遍。
-// 竞态用主进程通道上的门卡住（holdChannel），让「保存或读取还没返回时作者已经离开」稳定发生。
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -20,10 +18,6 @@ import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 export const HARBOR = '港口'
 const SKILL_URL = 'https://github.com/owner/skill'
 
-/**
- * 卡住主进程 channel 接下来的 times 次调用，releaseChannel 之后放行。after 为 true 时先交给原处理函数、卡住的是回复：
- * 主进程已经做完，渲染进程迟迟收不到，正是「保存往返期间作者换了作品」的样子。
- */
 export async function holdChannel(app, channel, { times = 1, after = false } = {}) {
   const ok = await app.evaluate(({ ipcMain }, [channel, times, after]) => {
     const handlers = ipcMain._invokeHandlers
@@ -55,7 +49,6 @@ export async function untilHeld(app, channel, timeoutMs = 15_000) {
 
 export const releaseChannel = (app, channel) => app.evaluate((_, channel) => globalThis.__driveHolds[channel].release(), channel)
 
-/** 把 project:open 提交之后的第一次读最近作品卡在门上；书房自己的读取不受影响。 */
 async function holdRecentListAfterOpen(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -80,7 +73,6 @@ async function holdRecentListAfterOpen(app) {
   })
 }
 
-/** 记下这些通道之后每次调用所属的作品路径（取调用参数最后的项目会话）。 */
 export async function recordCalls(app, channels) {
   const missing = await app.evaluate(({ ipcMain }, channels) => {
     const handlers = ipcMain._invokeHandlers
@@ -101,7 +93,6 @@ export async function recordCalls(app, channels) {
 
 const recordedCalls = app => app.evaluate(() => globalThis.__driveCalls)
 
-/** 把主进程的 channel 换成固定回复，调用次数记进 globalThis.__driveStubs。 */
 export async function stubChannel(app, channel, reply) {
   const ok = await app.evaluate(({ ipcMain }, [channel, reply]) => {
     if (!ipcMain._invokeHandlers.has(channel)) return false
@@ -125,7 +116,6 @@ async function untilStubCalls(app, channel, count, timeoutMs = 10_000) {
 
 const discardDialog = page => page.getByRole('dialog', { name: '放弃未保存的修改？' })
 
-/** 在 root 下按名字找一个目录；找不到时报错。 */
 function findDirectory(root, name) {
   const found = readdirSync(root, { withFileTypes: true, recursive: true })
     .find(entry => entry.isDirectory() && entry.name === name)
@@ -133,7 +123,6 @@ function findDirectory(root, name) {
   return join(found.parentPath, found.name)
 }
 
-/** 设置页「写作 Skills」里填一个没保存的 GitHub 地址。 */
 async function dirtySkillsPage(page) {
   await stage.showSettingsPage(page, '写作 Skills')
   const url = stage.root(page).getByRole('textbox', { name: 'GitHub Skill 地址' })
@@ -148,10 +137,6 @@ async function paletteAction(page, query) {
   await page.keyboard.press('Enter')
 }
 
-/**
- * 另建一部作品「港口」：三章蓝图、三章定稿，第 3 章定稿带一份历史审稿。
- * 每部作品的库各自从 1 编号，它第 3 章定稿的稿 id 与灯塔第 3 章草稿相同，稿的 filePath 也就相同。
- */
 export async function seedHarbor(context) {
   const { app, page, roots, invoke } = context
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
@@ -179,7 +164,6 @@ export async function seedHarbor(context) {
   context.harbor = { path: harbor, chapter3DraftId: full.id }
 }
 
-/** 先建港口，再建并打开灯塔；beforeReload 里记下灯塔第 3 章草稿的 id。 */
 const seedTwoBooks = (options = {}) => async context => {
   await seedHarbor(context)
   await seedStageSample(context, { ...options, beforeReload: async args => {
@@ -189,13 +173,11 @@ const seedTwoBooks = (options = {}) => async context => {
   } })
 }
 
-/** 第 3 章蓝图写上守塔人，一致性预检才有话说。 */
 const keeperInChapter3 = async ({ page, invoke, path: projectPath, session }) => {
   assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 3, title: STAGE_SAMPLE.titles[2], role: '发展',
     purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚', '守塔人'] }, projectPath, session)).success, true)
 }
 
-/** 主进程里把连续性事实换成「守塔人第 1 章已死」，写第 3 章时一致性预检提醒。 */
 async function injectDeadKeeper(app) {
   await app.evaluate(({ ipcMain }) => {
     ipcMain._invokeHandlers.set('db:continuity-list-before', () => [{
@@ -207,7 +189,6 @@ async function injectDeadKeeper(app) {
   })
 }
 
-/** 书房里点了「打开」之后：新外壳在提交作品时就进作品；落点晚到的版本先留在书房，作者点「继续写作」进作品。 */
 async function enterWorkAfterOpening(page) {
   const resume = stage.overview(page, STAGE_SAMPLE.name).getByRole('button', { name: /^继续写作/ })
   await Promise.race([stage.spine(page).waitFor({ state: 'visible' }), resume.waitFor({ state: 'visible' })])
@@ -215,7 +196,6 @@ async function enterWorkAfterOpening(page) {
   await stage.spine(page).waitFor({ state: 'visible' })
 }
 
-/** 从书房打开灯塔，打开提交后读最近作品卡在主进程门上。 */
 async function openWithSlowRecentList(app, page) {
   await stage.previewBook(page, STAGE_SAMPLE.name)
   await holdRecentListAfterOpen(app)
@@ -224,10 +204,6 @@ async function openWithSlowRecentList(app, page) {
   await enterWorkAfterOpening(page)
 }
 
-/**
- * 另起一个 PowerShell 进程以只共享读的方式打开文件（不带 FileShare.Delete），Windows 上删除它会得到 EBUSY。
- * 返回释放函数：按这个子进程的 PID 结束它。
- */
 async function lockFile(path) {
   const child = spawn('powershell.exe', ['-NoProfile', '-Command',
     `$f = [System.IO.File]::Open($env:DRIVE_LOCK_PATH, 'Open', 'Read', 'Read'); [Console]::Out.WriteLine('locked'); [Console]::Out.Flush(); Start-Sleep -Seconds 600`],
@@ -244,7 +220,6 @@ async function lockFile(path) {
 }
 
 export const X1_SCENARIOS = {
-  // #388 T1：切走前点的资料读得慢，切回后改了另一份资料，迟到的读取不能盖掉修改。
   'x1-kb-late-read': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
     const { app, page } = context
     await importMaterials(context)
@@ -266,7 +241,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #380 C4：设定页「下一步」的保存还没返回时作者回了书房，保存完成后不被拉去架构。
   'x1-setup-leave': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
     await stage.stageButton(page, '设定').click()
     await stage.setupOutline(page).waitFor({ state: 'visible' })
@@ -282,7 +256,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #405 r2 低项 7：设定页 Ctrl S 的保存还没返回时切到第 3 章标签再切回，下一步仍不可点，再按 Ctrl S 也不重发，保存只写一次。
   'x1-setup-save-remount': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
     await stage.stageButton(page, '设定').click()
     await stage.setupOutline(page).waitFor({ state: 'visible' })
@@ -305,7 +278,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #380 C1：设置页里有没保存的输入时，命令面板「设置」、作品菜单「项目备份」换分区先确认。
   'x1-settings-section': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
     await stage.openSettings(page)
     const url = await dirtySkillsPage(page)
@@ -321,7 +293,6 @@ export const X1_SCENARIOS = {
     return kept
   } },
 
-  // 本机 Skill 文件夹导入：系统对话框打桩为隔离目录里的 Agent Skill 文件夹，检查卡列出并入与跳过的文件，确认安装后能绑定到阶段。
   'skills-import-local': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ app, page, roots, fake, shoot }) => {
     const folder = join(roots.temp, 'scene-voice')
     mkdirSync(join(folder, 'references'), { recursive: true })
@@ -368,7 +339,6 @@ export const X1_SCENARIOS = {
     assert.equal(bound, 'user:scene-voice', '安装后的文件夹 Skill 兼容，可以绑定到章节正文')
 
     const installed = findDirectory(roots.canonical, 'scene-voice')
-    // 旧版装的 Skill 没有清单，目录里被引用的文件（含工具措辞）一概不读，与 master 一样兼容。
     const legacy = join(dirname(installed), 'legacy-forms')
     mkdirSync(legacy)
     writeFileSync(join(legacy, 'SKILL.md'), '---\nname: legacy-forms\nlanguage: zh-CN\n---\n按 [表单](forms.md) 的格式写。')
@@ -398,7 +368,6 @@ export const X1_SCENARIOS = {
     return { inspected, bound, manifest: manifest.files.map(file => file.path), legacyBindable: true, proseHasBundledFile: true }
   } },
 
-  // #387 C1：保存一致性安排的回复还没到时换了作品，回复到了也不在新作品里按旧蓝图开写。
   'x1-write-switch': { model: true, shell: 'stage', setup: seedTwoBooks({ beforeReload: keeperInChapter3 }), run: async context => {
     const { app, page, fake } = context
     await injectDeadKeeper(app)
@@ -421,8 +390,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #392 T1：每条意见都选「不修改此项」，主按钮变成确认不修改，确认后弃修决定落库，重开这一章仍在。
-  // 意见要有复验周期的条目才能弃修，周期由 AI 审稿写回时建立，所以先对第 4 章跑一次审稿。
   'x1-waive-all': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     await chapterView.open(page, 4)
     await chapterView.review(page)
@@ -443,8 +410,6 @@ export const X1_SCENARIOS = {
     return { reopened: await chapterView.hint(page).innerText() }
   } },
 
-  // #392 T2：第 3 章另有草稿 v1，把 v2 定稿（真实的定稿后处理写出正文文件并入知识库），正文文件被另一个进程占着时删除正文：
-  // 数据库已删、正文清理失败。落在 v1 的单章视图上有「删除正文后的清理没有完成」；放开文件后点重试清理，提示消失、文件删掉。
   'x1-cleanup-retry': { model: true, shell: 'stage', requires: { platform: 'win32' }, setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke, path: projectPath, session }) => {
     const text = `${STAGE_SAMPLE.drafts[3].text}\n\n堤脚的刻痕旁边，又多了一道新刻的线。`
     assert.equal((await invoke(page, 'db:draft-create', { chapterNumber: 3, version: 2, source: 'write', content: text, wordCount: countUnits(text) },
@@ -479,7 +444,6 @@ export const X1_SCENARIOS = {
     }
   } },
 
-  // #381 C1：会话内写稿失败后，运行侧页「可恢复的内容」立即列出这一章的候选，不必重开作品。
   'x1-run-recovery': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake }) => {
     fake.failProse()
     await blueprint.open(page)
@@ -491,7 +455,6 @@ export const X1_SCENARIOS = {
     return { recovery: await runSheet.recovery(page).getByRole('article').allInnerTexts() }
   } },
 
-  // #399 §1：灯塔第 3 章开着审稿侧页时换到港口，港口里同 id 的已定稿第 3 章不自动展开审稿侧页。
   'x1-review-sheet-switch': { model: false, shell: 'stage', setup: seedTwoBooks(), run: async context => {
     const { page } = context
     assert.equal(context.harbor.chapter3DraftId, context.lighthouseChapter3DraftId, '两部作品第 3 章的稿 id 相同')
@@ -507,8 +470,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #405 r2 C1：灯塔第 4 章审稿后每条意见都选不修改，确认还没返回时换到港口并打开运行侧页；
-  // 确认回来后运行侧页还开着，没有被换成灯塔那一稿的审稿侧页。第 3 章的预置审稿没有复验周期，重新审稿又被生成源校验拒绝，所以用第 4 章。
   'x1-waiver-switch': { model: true, shell: 'stage', setup: seedTwoBooks(), run: async ({ app, page }) => {
     await chapterView.open(page, 4)
     await chapterView.review(page)
@@ -531,7 +492,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #405 r2 O8：生成蓝图前读架构的那次 IPC 慢了 4.5 秒，「架构还不完整」晚于 3 秒才出现；generateRange 仍等到它并点继续生成，运行开始。
   'x1-generate-slow-warning': { model: true, shell: 'stage', setup: context => seedStageSample(context, { totalChapters: 16 }), run: async ({ app, page }) => {
     await blueprint.open(page)
     await holdChannel(app, 'db:project-core-get')
@@ -544,7 +504,6 @@ export const X1_SCENARIOS = {
     return { warned: true, runSheet: await runSheet.sheet(page).isVisible() }
   } },
 
-  // #405 r2 O8 的正常路径：架构齐全（主进程读架构时补上角色名单）不弹警告，generateRange 在运行开始时就返回，不白等 3 秒。
   'x1-generate-no-warning': { model: true, shell: 'stage', setup: context => seedStageSample(context, { totalChapters: 16 }), run: async ({ app, page }) => {
     await app.evaluate(({ ipcMain }, cast) => {
       const handlers = ipcMain._invokeHandlers
@@ -559,7 +518,6 @@ export const X1_SCENARIOS = {
     return { warned, elapsedMs, runSheet: await runSheet.sheet(page).isVisible() }
   } },
 
-  // #404-1：书房里导入旧项目副本，复制期间作者开了设置页并输入；复制完成要自动打开作品时先确认，继续编辑就不打开。
   'x1-import-settings': { model: false, shell: 'stage', setup: seedTwoBooks({ open: false }), run: async context => {
     const { app, page } = context
     await stubChannel(app, 'dialog:select-legacy-project', { grantId: 'drive-legacy', displayName: '旧港口' })
@@ -581,7 +539,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #405 r1-2：导入完成要自动打开作品时的放弃确认开着，作者又按 Ctrl N，提示先处理确认框（r2 低项 6）；选继续编辑后导入照样收尾（不再占着导入入口），也不弹新建。
   'x1-import-overlap': { model: false, shell: 'stage', setup: seedTwoBooks({ open: false }), run: async context => {
     const { app, page } = context
     await stubChannel(app, 'dialog:select-legacy-project', { grantId: 'drive-legacy', displayName: '旧港口' })
@@ -615,7 +572,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #404-2：设置页里有没保存的输入时，Ctrl O 与作品菜单「打开其他作品…」先问放弃，再弹选文件夹。
   'x1-open-folder-order': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
     await stubChannel(app, 'dialog:select-folder', null)
     await stage.openSettings(page)
@@ -632,8 +588,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #405 r1-1：设置页开着时打开作品，选文件夹时取消，设置页与输入都留着。有没保存的输入时先选放弃修改（不问的版本直接弹选文件夹）；
-  // Ctrl O、作品菜单各一次，再清空输入后 Ctrl O 一次。
   'x1-open-folder-cancel': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
     await stubChannel(app, 'dialog:select-folder', null)
     await stage.openSettings(page)
@@ -660,8 +614,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #405 r1-1 选到文件夹的一路：灯塔设置页有没保存的输入时 Ctrl O，选放弃修改，系统选文件夹选到港口（只替换 Electron 的对话框，授权照常签发），
-  // 设置页收起、打开港口，确认只问一次。
   'x1-open-folder-pick': { model: false, shell: 'stage', setup: seedTwoBooks(), run: async context => {
     const { app, page } = context
     await app.evaluate(({ dialog }, selectedPath) => {
@@ -683,7 +635,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #403：作者回过书房后从书房重新打开作品，打开返回前又回书房，返回后不被换回作品。
   'x1-library-return': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
     await stage.backToLibrary(page, STAGE_SAMPLE.name)
     await holdRecentListAfterOpen(app)
@@ -700,7 +651,6 @@ export const X1_SCENARIOS = {
     return after
   } },
 
-  // #395：打开作品、打开返回前打开运行侧页，返回后侧页仍开着。
   'x1-run-sheet-keep': { model: false, shell: 'stage', setup: context => seedStageSample(context, { open: false }), run: async ({ app, page }) => {
     await openWithSlowRecentList(app, page)
     await runSheet.openFromPalette(page)

@@ -185,7 +185,6 @@ async function preflight(page, channel, args, selection, expectedResult) {
     timer = setTimeout(() => resolve({ error: 'IPC_TIMEOUT_15000' }), 15_000)
   })])
   clearTimeout(timer)
-  // 授权标识是短期能力，不写入收据；渲染进程只会得到 { grantId, displayName }，完整路径不再出现在 IPC 结果里。
   evidence.ipcResult = outcome.result ? { displayName: outcome.result.displayName, grantIssued: typeof outcome.result.grantId === 'string' } : null
   evidence.error = outcome.error ?? null
   assert.equal(outcome.error, undefined, `public ${channel} IPC failed: ${outcome.error}`)
@@ -195,10 +194,6 @@ async function preflight(page, channel, args, selection, expectedResult) {
   return evidence
 }
 
-/**
- * 直接调用需要授权的 IPC 时：仅在主进程桩住 Electron 原生对话框（用后还原），
- * 让生产 chooser IPC 照常签发授权标识；不绕过授权服务，也不向渲染进程暴露路径。
- */
 async function chooseGrantWithStubbedDialog(app, page, channel, args, method, dialogResult) {
   await app.evaluate(({ dialog }, { method, dialogResult }) => {
     globalThis.__chooserOriginal = dialog[method]

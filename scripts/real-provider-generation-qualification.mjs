@@ -66,7 +66,6 @@ export const QUALIFICATION_PRICE_SNAPSHOTS = Object.freeze([
     modelName: 'deepseek-v4-flash',
     sourceUrl: 'https://api-docs.deepseek.com/quick_start/pricing/',
     asOf: '2026-10-24',
-    // 官方分高峰与非高峰两档，估算取高峰价（缓存未命中），只会高估。
     inputUsdPerMillionTokens: 0.3,
     outputUsdPerMillionTokens: 1.2,
   }),
@@ -343,10 +342,6 @@ function assertQualificationTargets(profiles) {
   }
 }
 
-/**
- * Builds three frozen, in-memory execution profiles. Profiles themselves are
- * never serialized; receipts expose only fixed model labels and hashed identity.
- */
 export function createQualificationProfilesFromMemory({
   configuredProfiles,
   geminiApiKey,
@@ -454,8 +449,6 @@ function sanitizedChildEnvironment(environment = process.env) {
   const sanitized = Object.fromEntries(Object.entries(environment).filter(([name]) => (
     !/(?:key|token|secret|password|authorization|credential)/iu.test(name)
   )))
-  // Avoid leaving a dangling GIT_CONFIG_COUNT after filtering KEY/VALUE pairs.
-  // The command supplies its one required safe.directory rule explicitly.
   sanitized.GIT_CONFIG_COUNT = '0'
   sanitized.GIT_TERMINAL_PROMPT = '0'
   return sanitized
@@ -544,13 +537,6 @@ function roundedUsd(value) {
   return Number(value.toFixed(6))
 }
 
-/**
- * One preflight ledger exists before product runtime loading. Every physical
- * completion reserves campaign and provider capacity before its delegate can
- * call fetch. Prompt UTF-8 bytes are a conservative hard input-token estimate:
- * a UTF-8 token cannot contain less than one byte. Dollar values are optional,
- * snapshot-based estimates and never participate in authorization.
- */
 function createQualificationPreflightLedger({ profiles, campaignStartedAt, now }) {
   const campaignDeadlineAt = campaignStartedAt + QUALIFICATION_CAMPAIGN_LIMITS.deadlineMs
   const campaign = {
@@ -1123,11 +1109,6 @@ async function qualifyOneProfile({
   }
 }
 
-/**
- * Runs profiles sequentially so the safety budget is independently enforced
- * and auditable for each provider. This function never persists profiles,
- * prompts, generated prose, endpoints, or credentials.
- */
 export async function runRealProviderGenerationQualification(options = {}) {
   assertQualificationOutputSchemaSafe()
   if (Object.hasOwn(options, 'budget')) {
@@ -1165,8 +1146,6 @@ export async function runRealProviderGenerationQualification(options = {}) {
     campaignStartedAt,
     now: Date.now,
   })
-  // The shared ledger and receipt schema both exist before loading any provider
-  // adapter; every eventual fetch is behind ledger.reserve().
   const productRuntime = await loadProductRuntime(repositoryRoot)
   const providerReceipts = []
   for (const profile of frozenProfiles) {

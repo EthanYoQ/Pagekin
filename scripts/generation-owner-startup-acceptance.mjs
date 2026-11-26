@@ -25,7 +25,6 @@ async function launch() {
   for (const name of ['ELECTRON_RUN_AS_NODE', 'VITE_DEV_SERVER_URL', 'AI_NOVEL_SMOKE_OPEN_PROJECT', 'AI_NOVEL_SMOKE_PROJECT_MARKER']) delete env[name]
   const app = await electron.launch({ cwd: repository, args: ['.', `--user-data-dir=${roots.userData}`], env, timeout: 30_000 })
   try {
-    // The actual provider adapter runs; every fetch is intercepted before any generation request.
     await app.evaluate(async (_, fixture) => {
       globalThis.__ownerAcceptance = { dispatches: 0, requests: [] }
       globalThis.fetch = async (url, options) => {

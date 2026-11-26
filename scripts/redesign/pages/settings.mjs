@@ -20,7 +20,6 @@ export async function showSection(page, name) {
   await waitForSection(page, name)
 }
 
-/** 设置弹窗当前分区的标题。 */
 export function currentSection(page) {
   return page.getByRole('button', { name: '关闭设置' }).locator('xpath=preceding-sibling::div[1]//h2').innerText()
 }

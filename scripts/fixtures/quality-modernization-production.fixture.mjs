@@ -23,8 +23,6 @@ import { projectRecoveryCandidateSupplement, recordPersistedDraftObservation, sa
 import { safeTransportError } from '../../src/shared/generation-contract'
 import { resolveOpenAIChatCompletionsUrl } from '../../electron/llm/openai-compatible-endpoint'
 
-// This adapter replaces the Electron transport, never a command/runtime/repository.
-// The final provider fetch is the sole synthetic/real response switch.
 const transport = vi.hoisted(() => ({ handlers: new Map(), listeners: new Map(), sender: null }))
 vi.mock('electron', () => ({
   ipcMain: { handle: (name, handler) => { if (transport.handlers.has(name)) throw new Error(`DUPLICATE_IPC:${name}`); transport.handlers.set(name, handler) } },
@@ -43,7 +41,6 @@ const templateKeysForPhase = phase => phase === 'c16-c18'
   ? ['consistency_check', 'refine_from_review']
   : phase === 'planning-native-diagnostic' ? ['synopsis', 'chapter_blueprint_chunk', 'first_chapter_draft', 'next_chapter_draft']
   : ['chapter_blueprint_chunk', 'first_chapter_draft', 'next_chapter_draft']
-/** 合成正文按目标单位数配长：既不低于 70% 下限，也不触发自动续写。 */
 const syntheticDraftText = (countUnits, targetUnits, chapterNumber = 1, offset = 0) => {
   const line = index => chapterNumber === 2
     ? `午后，两人来到核查地点，第${index + 1}份申请被看守退回。风从门缝灌进来，桌边的烛火晃了一下。他们交出当天的工钱换取查阅机会，把收据收进口袋，等候下一轮登记。`
@@ -60,7 +57,6 @@ const reviewedSyntheticIssues = [
   { category: '知情', severity: 'warning', description: '沈岸提前知道地图，违反作者知情边界。',
     quote: '雨还未停，沈岸已经知道信封内有地图。', replacement: '雨还未停，林澄没有向沈岸透露信封里的地图。' },
 ]
-/** 物理项目 parity 中的前驱回读：只记来源身份、hash 与字节，不记正文。 */
 const parityPredecessors = readbacks => readbacks.map(record => ({ sourceId: record.sourceId,
   chapterNumber: record.chapterNumber, version: record.version,
   revision: record.sourceId.startsWith('finalized:') ? record.draftId : record.version, contentHash: sha(record.content),
@@ -160,14 +156,11 @@ function readCommittedDraftChapterInfo(db, chapter, projectPath, chapterGuidance
 }
 function draftPromptIncludesCommittedBlueprint(userPrompt, chapterInfo, purpose) {
   const initial = purpose === 'chapter-draft' || purpose === 'chapter-draft-short-outline'
-  // 登记的唯一压缩与续写携带同一作者资料块：【本章蓝图】紧接【全局写作要求】。
   if (!initial && !['chapter-draft-continuation', 'chapter-draft-no-progress-recovery', 'chapter-draft-condense'].includes(purpose)) return false
   const heading = initial ? chapterInfo.chapterNumber === 1 ? '【本章信息】' : '【本章写作方向与核心任务】' : '【本章蓝图】'
   const marker = `\n${heading}\n`
   const start = userPrompt.indexOf(marker)
   if (start < 0 || userPrompt.indexOf(marker, start + marker.length) >= 0) return false
-  // JSON 块止于其后第一个【…】标题行（JSON 字符串中的换行均已转义）。续写/压缩要求该标题恰为【全局写作要求】；
-  // 初始请求的空【后续章节大纲预告】会被产品整段删去，此时接下一个标题，整块仍须逐键等于已提交蓝图。
   const next = userPrompt.indexOf('\n【', start + marker.length)
   const end = next
   if (end < 0 || !initial && !userPrompt.startsWith('\n【全局写作要求】', end)) return false
@@ -177,10 +170,6 @@ function draftPromptIncludesCommittedBlueprint(userPrompt, chapterInfo, purpose)
     && ['chapterNumber', 'title', 'role', 'purpose', 'characters', 'keyEvents', 'suspenseHook', 'userGuidance']
       .every(key => Object.hasOwn(sent, key) && JSON.stringify(sent[key]) === JSON.stringify(chapterInfo[key]))
 }
-/**
- * 开发合成篇幅：只有登记的案例让首稿超出上限，压缩回复按登记结局落入目标或仍越界；
- * 其余请求与冻结/真实执行都返回目标本身，不改变既有合成行为。
- */
 const syntheticDraftUnitsGoal = (plan, caseId, purpose, targetUnits, maximum) => {
   if (!plan || plan.caseId !== caseId) return targetUnits
   if (purpose === 'chapter-draft') return maximum + Math.ceil(targetUnits * 0.1)
@@ -196,11 +185,6 @@ const syntheticReview = chapter => JSON.stringify({
     : { id: `ch${chapter.number}:keyEvents:${index + 1}`, evidence: [{ quote: REVIEW_DEFECT }],
         description: `${event}被正文明确否定。`, status: 'unmet' }),
 })
-/**
- * 进程内 harness 没有 Electron dialog，无法走选择器：与选择器同一 owner（externalFileGrants）为本 sender
- * 直接签发一次性精确授权，恢复 IPC 只收授权标识（生产控制器会拒绝原始路径）。
- * 目标是尚不存在的子项（issueNewChild）；归档读取授权要求文件已存在，故须在导出成功之后再签发。
- */
 const restoreGrantIssuer = (externalFileGrants, webContentsId) => (operation, filePath) => externalFileGrants[
   operation === 'read' ? 'issueFile' : 'issueNewChild']({ webContentsId, filePath, operations: [operation],
   ttlMs: 10 * 60 * 1_000, maxUses: 1 }).grantId
@@ -331,10 +315,7 @@ test('isolated production commands persist the selected phase operations', async
   const candidate = target.arm === 'candidate'
   const baselineContract = !candidate && aiReviewRun ? loadBaselineReviewContract(target.repositoryRoot) : null
   if (baselineContract) receipt.baselineReviewNative = { repositoryRoot: target.repositoryRoot, sourceHashes: baselineContract.sourceHashes }
-  // 账本写入器在物理发送与守护之间共用：reserve 先占位，dispatch 先落盘再发网络。
   const record = event => updateLedger(request.ledgerPath, event, { campaignMode: request.mode })
-  // 每个已 dispatch 的发送都由守护拥有一个短于桥测试超时的截止时间：到点时先写 unknown，
-  // 再 abort，保证超时杀进程之前账本已经有一条终态，而不是只剩 reserve+dispatch。
   const supervisor = createAttemptSupervisor({ record, deadlineMs: windows.attemptMs })
   const originalFetch = globalThis.fetch
   let davFetch = null
@@ -418,7 +399,6 @@ test('isolated production commands persist the selected phase operations', async
     const invoke = async (channel, ...args) => {
       receipt.invocations.push(channel)
       if (!candidate && channel === 'llm:generate-stream') pendingBaselineIpc = {
-        // Legacy baseline has one renderer command/session budget and no durable RootAction; bind its command run as that root.
         attemptId: args[0], runId: currentContext?.runId, rootActionId: currentContext?.runId, projectId: args[1]?.projectSession?.projectId,
         epoch: args[1]?.projectSession?.leaseId, purpose: args[1]?.purpose, operationId,
         ...(aiReviewRun ? { modelExecutionLeaseId: args[1]?.modelExecutionLeaseId } : {}),
@@ -753,8 +733,6 @@ test('isolated production commands persist the selected phase operations', async
         assert.ok(created?.success && created.id, 'REVIEW_SOURCE_DRAFT_NOT_SAVED')
         save(path.join(target.isolationRoot, 'review-source.json'), { draftId: created.id, contentHash: sha(content) })
       }
-      // 合法前驱：第二章场景必须先有本臂自己的第一章来源。这里走生产草稿入口保存一份
-      // 「作者前情」候选（不是另一臂的输出），第二臂只从自己的库里读回同一来源。
       if (!fullRun && request.chapterNumber > 1) {
         const registered = contextSelection?.optionalPredecessors ?? []
         const bodies = [
@@ -842,7 +820,6 @@ test('isolated production commands persist the selected phase operations', async
       if (aiReviewRun) assert.equal(request.predecessor?.arm, target.arm, 'FULL_PREDECESSOR_ARM_MISMATCH')
     }
     receipt.predecessor = fullRun ? request.predecessor ?? null : undefined
-    // 每一条前驱都必须在使用前从生产 IPC 原样读回；command 只消费这些 readback，绝不旁路注入正文。
     const predecessorReadbacks = []
     for (const record of predecessorRecords) {
       const full = await invoke('db:draft-get-full', record.draftId, project.rootPath, session)
@@ -957,7 +934,6 @@ test('isolated production commands persist the selected phase operations', async
       predecessors: parityPredecessors(predecessorReadbacks),
       semanticHash: sha(source), guidanceHash: sha(source.template) }
     if (fullRun || planningRun) {
-      // Generated blueprints and prose diverge by arm; only original author inputs define initial parity.
       sourceParity = { ...sourceParity, ...(planningRun ? { core: { ...core, synopsis: '' } } : {}), authorBlueprints: [], predecessors: [] }
     }
     if (planningRun) {
@@ -980,7 +956,6 @@ test('isolated production commands persist the selected phase operations', async
       return
     }
 
-    // C17-B 的登记 operation 先是重新定稿后处理、后是续写：恢复类型取自本案唯一的续写 operation，而非首项。
     const restorationKinds = continuityRun ? [...new Set(request.operations.flatMap(operation => operation.restore ? [operation.restore] : []))] : []
     assert.ok(restorationKinds.length <= 1, 'RESTORE_KIND_AMBIGUOUS')
     const restorationKind = restorationKinds[0] ?? null
@@ -995,7 +970,6 @@ test('isolated production commands persist the selected phase operations', async
       assert.equal(path.dirname(targetProjectRoot), path.resolve(target.roots.project), 'RESTORE_OUTSIDE_TARGET_ROOT')
       const { externalFileGrants } = await load('electron/services/external-file-grant-service.ts')
       const grantFor = restoreGrantIssuer(externalFileGrants, sender.id)
-      // 授权把父目录固定为规范真实路径；恢复收据里的目标必须正是这条授权路径。
       const grantedTargetRoot = path.join(fs.realpathSync.native(path.dirname(targetProjectRoot)), path.basename(targetProjectRoot))
       let restored, selectedGenerationId, bindingMode, branchGenerationIds
       if (restorationKind === 'local') {
@@ -1005,7 +979,6 @@ test('isolated production commands persist the selected phase operations', async
         restored = await invoke('project:archive-restore', { archiveGrantId: grantFor('read', archivePath), targetGrantId: grantFor('create', targetProjectRoot) })
       } else {
         assert.equal(restorationKind, 'webdav', 'UNREGISTERED_RESTORE_KIND')
-        // The real WebDavBackupService sees a bounded in-memory DAV transport. No sockets are opened.
         const files = new Map(), collections = new Set(['/dav/'])
         receipt.dav = { transport: 'synthetic-loopback-fetch', requests: 0, externalRequests: 0 }
         davFetch = async (input, options) => {
@@ -1088,15 +1061,12 @@ test('isolated production commands persist the selected phase operations', async
       receipt.restoration.currentAuthority = (await load('electron/services/portable-current-authority.ts')).readPortableCurrentAuthority({
         database: db, projectStorageRoot: path.join(project.rootPath, '.ai-novel'), projectId: project.projectId })
       if (continuityCase.sourceSuffix) {
-        // 恢复副本内重新定稿（C17-B）。产品定稿在提交后立即运行定稿后处理；这里由本案登记的
-        // 「恢复副本重新定稿章节要点/角色状态」operation 在续写前经同一 RunFinalizePostProcessCommand 执行。
         const previous = predecessorReadbacks.find(item => item.required)
         receipt.restoration.sourceReplacement = await refinalize(previous.draftId, continuityCase.sourceSuffix)
         previous.content = receipt.restoration.sourceReplacement.content
         previous.draftId = receipt.restoration.sourceReplacement.draftId
         previous.sourceId = `finalized:${previous.draftId}`
         previous.version = receipt.restoration.sourceReplacement.version
-        // 续写实际纳入的是替换后的前驱：readback 与 parity 同步改为替换后，替换前原样另存；此后全部 dispatch 绑定新 parity。
         receipt.restoration.predecessorsBeforeReplacement = sourceParity.predecessors
         receipt.restoration.parityHashBeforeReplacement = request.parityHash
         sourceParity = { ...sourceParity, predecessors: parityPredecessors(predecessorReadbacks) }
@@ -1108,8 +1078,6 @@ test('isolated production commands persist the selected phase operations', async
     let operationKind = null, operationId = null, refinementComposition = null
     const policyEligible = request.attemptPolicy?.milestone === request.milestone && request.attemptPolicy.arms?.includes(target.arm)
     const repairPolicy = policyEligible && (!continuityRun || aiReviewRun) ? request.attemptPolicy : null
-    // C17/C18 与 post-UI 候选臂的唯一压缩：按臂登记（baseline 恒为 null，也不加载生产压缩常量）；
-    // 用途常量、计数、清洗与篇幅上限全部取自生产代码，与产品触发条件同源。
     const condensePolicy = policyEligible ? draftCondenseFor(request.attemptPolicy, target.arm) : null
     let draftCondense = null
     if (condensePolicy) {
@@ -1152,7 +1120,6 @@ test('isolated production commands persist the selected phase operations', async
         reviewReportAbsent: !reviewState.baselineCreate || reviewState.baselineCreate.attemptId !== attemptId,
         ...(operationKind === 'refine' ? { composition: refinementComposition,
           composeVisibleText: baselineContract.appendVisibleTextContinuation, redactVisibleText: baselineContract.redactVisibleCompletionText } : {}) }
-      // 原生恢复只读该 attempt 的原始 artifact 与正式效果；同一草稿的旧审稿不代替本次 owner 证据。
       if (target.arm === 'candidate' && (planningRun && operationKind === 'outline' || request.phase === 'saved-native-review-diagnostic' || r3Run || continuityRun || request.attemptPolicy?.structuredRecovery && operationKind === 'directory'
         || (request.attemptPolicy?.draftRecovery || request.attemptPolicy?.draftCondense) && operationKind === 'draft'
         || ['review', 'final-review'].includes(operationKind) && reviewLengthRecoveryFor(receipt, operationId))) {
@@ -1257,14 +1224,12 @@ test('isolated production commands persist the selected phase operations', async
           refinementComposition = { algorithm: 'visible-append-v1', textHash: sha(text), attemptIds: previous.map(item => item.attemptId) }
         }
       }
-      // 对账之后的写稿请求出站前先等对账流结算，才能从落盘输出重算注入块。
       if (structuredRecovery && operationKind === 'directory') {
         await Promise.all(streamSettlements)
         const owner = actual ?? observedIpc
         try { owner.structuredRange = structuredRequestRange(body.messages.map(message => message.content).join('\n'), owner.purpose) }
         catch (error) { preflight(false, error.message) }
       }
-      // The registered extra call must carry its real product purpose before campaign reserve.
       const draft = (reviewedRun && operationKind === 'review' || boundedRun && ['review', 'final-review'].includes(operationKind)
         || aiReviewRun && ['review', 'final-review', 'refine'].includes(operationKind)) ? latestDraft() : null
       const reviewSource = draft ? { draftId: draft.id, contentHash: sha(draft.content), ...((boundedRun || aiReviewRun) ? { version: draft.version } : {}),
@@ -1405,7 +1370,6 @@ test('isolated production commands persist the selected phase operations', async
             bytes: Buffer.byteLength(previous.content.slice(start, end), 'utf8') })),
           ...(candidate && operationKind === 'draft' ? { materialSource: materialDecision.included.find(item => item.sourceId === `candidate:${previous.id}`) } : {}) }
       }
-      // phase / caseId / operation 全部来自本次选定的协议阶段，账本按协议逐字校验。
       let planningConsumption
       if (planningRun && ['outline', 'directory'].includes(operationKind)) {
         const operation = PLANNING_NATIVE_DIAGNOSTIC.operations.find(item => item.id === operationId)
@@ -1440,7 +1404,6 @@ test('isolated production commands persist the selected phase operations', async
           ...(planningResume ? { savedOutlineContinuation: request.savedOutlineContinuation } : {}) } : {}),
         ...(aiReviewRun ? { evaluationPolicyHash: sha(request.evaluationPolicy) } : {}),
         ...(actual ? { actual } : { baselineIpc: observedIpc }) }
-      // 发送规模证据：只记字节数，绝不记提示词原文或凭据，好让两臂在不花真实调用的前提下可比。
       const registeredOptional = predecessorReadbacks.filter(record => record.marker).map(record => ({
         sourceId: `candidate:${record.draftId}`, revision: record.version, contentHash: record.materialContentHash,
         persistedContentHash: sha(record.content), persistedBytes: Buffer.byteLength(record.content, 'utf8'), markerHash: sha(record.marker),
@@ -1502,7 +1465,6 @@ test('isolated production commands persist the selected phase operations', async
         requestReceipt.structuredPrompt = { outputPath: promptPath, contentHash: sha(promptText) }
       }
 
-      // 从 dispatch 起由守护接管：到点会先为这次发送写 unknown，再 abort 下面的 fetch。
       const controller = new AbortController()
       supervisor.watch(attemptId, controller)
       const callerSignal = options?.signal
@@ -1539,7 +1501,6 @@ test('isolated production commands persist the selected phase operations', async
             severity: 'warning', description: '调整这一处用词。', quote: current.slice(0, 12) })
           const actionable = operationKind === 'review' ? issues : request.syntheticReviewedDraftCase === 'final-fail'
             ? [{ category: '自然度', severity: 'warning', description: '仍有重复描述，留给独立评审判断。', quote: current.split('\n')[2] }] : []
-          // 合成审稿只回应本臂生产代码实际冻结并发出的必现目标：未明示为 unknown，补写后给出逐字证据。
           const mustShowGoals = [...promptText.matchAll(/"id":"(ch\d+:mustShow:\d+)","text":"([^"\\]+)"/gu)]
             .map(([, id, goal]) => ({ id, proof: `${goal}。` }))
           text = JSON.stringify({ summary: actionable.length ? '存在需要修复的问题。' : '本轮未发现问题。',
@@ -1859,7 +1820,6 @@ test('isolated production commands persist the selected phase operations', async
             ...(planningRun ? { targetUnits: operation.targetUnits } : {}) }, { expectedProjectPath: project.rootPath, novelConfig: config })
       else if (operationKind === 'draft') command = new (await load('src/services/workflows/commands/generate-draft.command.ts')).GenerateDraftCommand(
           readCommittedDraftChapterInfo(db, chapter, project.rootPath, chapterGuidance),
-          // 第二章必须由本臂自己的库提供前驱候选（作者前情），不能借另一臂的输出。
           fullRun || predecessorReadbacks.some(record => record.marker)
             ? { selectedCandidateDrafts: predecessorReadbacks.map(({ marker, materialContentHash, sourceId, ...record }) => {
                 void marker
@@ -1925,7 +1885,6 @@ test('isolated production commands persist the selected phase operations', async
             selectedItems = items.map(item => {
               const index = report.items.indexOf(item)
               const finding = cycle?.findings.find(entry => entry.reviewItemIndex === index)
-              // Fail before any refine request when an adopted must-show unknown lacks its product finding.
               if (candidate && item.severity === 'unknown') assert.ok(finding?.findingId, 'REVIEWED_MUST_SHOW_FINDING_MISSING')
               return { ...item, ...(finding ? { findingId: finding.findingId } : {}), decision: 'apply', origin: 'ai' }
             })
@@ -2051,13 +2010,11 @@ test('isolated production commands persist the selected phase operations', async
         assert.equal(receipt.attempts.length, count, 'FINALIZATION_IDEMPOTENCY_DISPATCHED')
         receipt.finalizationEvidence ??= { source: slot.source, effects: [], idempotent: true }
         assert.deepEqual(slot.source, receipt.finalizationEvidence.source, 'FINALIZATION_STEPS_SOURCE_DIVERGED')
-        // 重新定稿后的后处理必须绑定替换后的新来源（C16-B/C16-C 原项目，C17-B 恢复副本）。
         const replacement = receipt.sourceReplacement ?? receipt.restoration?.sourceReplacement
         if (replacement) assert.deepEqual(slot.source, replacement.after, 'POST_PROCESS_SOURCE_NOT_REPLACEMENT')
         receipt.finalizationEvidence.effects.push({ stepKey: operationKind, effect: persisted.effect,
           effectHash: sha(persisted.effect), contextHash: sha(persisted.context) })
         if (operationKind === 'chapter_notes') {
-          // 持久 notes 投影按生产 IPC 回读，并落一份原文供独立评审引用。
           const projection = (await invoke('db:continuity-list-before', chapter.number, project.rootPath, session))
             .find(item => item.chapterNumber === slot.source.chapterNumber)
           assert.ok(projection && projection.draftId === slot.source.draftId && projection.sourceStatus === 'current'
@@ -2090,8 +2047,6 @@ test('isolated production commands persist the selected phase operations', async
             assert.equal(character?.currentState?.mentalState, '谨慎', 'AUTHOR_STATE_OVERWRITTEN')
             const candidates = await invoke('finalized-character:list-state-candidates', session)
             receipt.finalizationEvidence.authorProtected = candidates.some(item => item.characterId === character.characterId && item.field === 'mentalState')
-            // 评分规则变更（用户批准，c16-c18 v3）：模型是否提议改写作者字段，只取本 operation 末次（正式生效）attempt
-            // 的 owner artifact；其文本须与物理输出 hash 一致，且用生产解析器解析，不读自由文本。
             const formal = receipt.attempts.filter(attempt => attempt.binding.operation === operationId).at(-1)
             const formalRow = formal && db.prepare('SELECT a.usage_receipt_json,g.artifact_json FROM generation_attempts a JOIN generation_artifacts g ON g.attempt_id=a.attempt_id WHERE a.attempt_id=?')
               .get(formal.binding.actual.attemptId)
@@ -2154,7 +2109,6 @@ test('isolated production commands persist the selected phase operations', async
               const ordinary = reviewedDraftSelection(JSON.parse(stored.content))
               assert.deepEqual(selection.selected, ordinary.selected, 'R3_NATIVE_AI_SELECTION_DRIFT')
             }
-            // The existing DB holds the frozen context and raw artifact; the receipt adds only their native references.
             operationReceipt.reviewProvenance = { attemptId: row.attempt_id, effect: usage.reviewRevisionEffect }
             aiReviewedDraft[operationKind === 'review' ? 'review' : 'finalReview'] = savedReview
             if (operationKind === 'review') {
@@ -2317,7 +2271,6 @@ test('isolated production commands persist the selected phase operations', async
           protocolRevision: request.protocolRevision, protocolHash: request.protocolHash }) === null)
           verifiedEmptyDraftAttempts.add(primary.attemptId)
       }
-      // Validate the complete saved report before accepting an empty, superseded LENGTH artifact.
       if (receipt.operations.some(operation => reviewLengthRecoveryFor(receipt, operation.operation)))
         assert.equal(validateAiReviewedManuscript(receipt), null, 'REVIEW_RECOVERY_PROVENANCE_MISMATCH')
       for (const attempt of receipt.attempts) {
@@ -2347,7 +2300,6 @@ test('isolated production commands persist the selected phase operations', async
           && attempt.binding.actual.purpose === repairPolicy.primaryPurpose
           && receipt.attempts.some(other => other.binding.operation === repairPolicy.operationId
             && other.binding.actual?.purpose === repairPolicy.repairPurpose)
-        // C16 原生修复与 C17/C18、post-UI 候选的唯一压缩同规则：同一 operation 只有末次 attempt 带正式效果。
         const supersededAttempt = (copiedRun || continuityRun || reviewLengthRecoveryFor(receipt, attempt.binding.operation)
           || structuredRecovery && attempt.binding.actual.purpose.startsWith('chapter-blueprint-directory') || draftRecovery && attempt.binding.actual.purpose.startsWith('chapter-draft'))
           && receipt.attempts.filter(other => other.binding.operation === attempt.binding.operation).at(-1) !== attempt
@@ -2407,11 +2359,9 @@ test('isolated production commands persist the selected phase operations', async
     receipt.status = 'failed'; receipt.error = safeDiagnostic(error)
     throw request.mode === 'real' ? new Error('REAL_PRODUCTION_BRIDGE_FAILED') : error
   } finally {
-    // 先等流收尾、再撤守护：守护计时器仍然活着，任何仍未终态的发送都会被它写 unknown。
     await Promise.allSettled(streamSettlements)
     supervisor.dispose()
     globalThis.fetch = originalFetch
-    // Reuse the owner's safe terminal metadata even when an incomplete report aborted the command.
     try {
       const finalDb = database?.getProjectDb()
       if (candidate && finalDb?.open && receipt.attempts.length) for (const attempt of receipt.attempts) {
@@ -2433,7 +2383,6 @@ test('isolated production commands persist the selected phase operations', async
         createHash('sha256').update(fs.readFileSync(receipt.runtimePaths[key])).digest('hex')]))
     }
     vi.unstubAllGlobals()
-    // 每臂的请求规模证据（纯数字，不含提示词原文与凭据），两臂因此可在不花真实调用时比较。
     receipt.bridgeSettlementDeadlineMs = windows.attemptMs
     receipt.bridgeWindows = windows
     receipt.requestSizes = receipt.attempts.map(attempt => ({ operation: attempt.binding.operation, arm: attempt.binding.arm,

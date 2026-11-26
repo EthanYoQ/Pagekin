@@ -96,7 +96,6 @@ export const I686_SCENARIOS = {
     assert.deepEqual(cards, [{ kicker: '可恢复', title: '第4章审稿候选' }], '只列没保存的那次审稿，已保存的审稿与修稿不列')
     return { cards }
   } },
-  /** 选区润色替换一次、润色后取消一次，再审稿一次没拿到报告；重启后「可恢复」只剩那张审稿卡，它和选区卡都能「不再恢复」。 */
   'i686-tail-cards': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
     await chapterView.open(context.page, 4)
     await refineSelection(context.page, firstLine(STAGE_SAMPLE.drafts[4].text), '替换')
@@ -123,7 +122,6 @@ export const I686_SCENARIOS = {
     assert.deepEqual(hidden, [], '点「不再恢复」后审稿卡不再列出')
     return { listed, hidden }
   } },
-  /** 审稿没拿到报告后又改了正文并保存，再让一次选区润色中途被拦下；重启后两张卡都只能复制，各有「不再恢复」。 */
   'i686-tail-copy-only': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
     await chapterView.open(context.page, 4)
     context.fake.replyReview(prompt => prompt.includes('goalReviews') ? '这一次没有给出审稿报告。' : null)
@@ -166,7 +164,6 @@ export const I686_SCENARIOS = {
     assert.deepEqual(hidden, [], '两张卡点「不再恢复」后都不再列出')
     return { listed, resumable, hidden }
   } },
-  /** 选区润色建好运行、请求还没发出去应用就关了；重启后在「进行中」点「继续原选区任务」，回到第 4 章原选区，气泡里出建议，替换后卡片不再列出。 */
   'i686-continue-selection': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
     const before = await continueInterruptedSelection(context)
     const bubble = context.page.getByRole('toolbar', { name: '选中文字的操作' })
@@ -182,7 +179,6 @@ export const I686_SCENARIOS = {
     assert.ok(!after.some(card => card.title === '编辑器选区建议'), '送达气泡的选区建议不再列出')
     return { before, after }
   } },
-  /** 同上，但重启后打开第 4 章先改了一个字：定位不到原选区，在侧页续跑，建议留在卡片上可复制。 */
   'i686-continue-selection-changed': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
     const before = await continueInterruptedSelection(context, async () => {
       await chapterView.prose(context.page).getByText('你父亲也问过钟的事').first().click()

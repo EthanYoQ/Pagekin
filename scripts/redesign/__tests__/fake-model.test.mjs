@@ -5,7 +5,6 @@ import { FAKE_MODEL, startFakeModel, streamingProse } from '../fake-model.mjs'
 let fake
 afterEach(async () => { await fake?.close() })
 
-/** 按模型客户端的方式请求一次正文，返回各块的 finish_reason 与拼出的正文。 */
 async function writeProse() {
   const response = await fetch(`http://127.0.0.1:${fake.port}/v1/chat/completions`, {
     method: 'POST',

@@ -15,7 +15,6 @@ const FINALIZED = STAGE_SAMPLE.drafts[3].text.replace('钟声比往常早了一�
 const LOCK_HINT = '批注修改还在等你处理，修稿或换稿会冲掉它。先接受或取消批注修改。'
 const MORE = Array.from({ length: 80 }, (_, index) => `第 ${index + 1} 次涨潮时，林岚又数了一遍台阶。`).join('\n\n')
 
-// 修稿只改第一段，与批注的那段不重叠。
 const seedPendingRevision = context => seedStageSample(context, {
   landOnChapter3: false,
   beforeReload: async ({ page, invoke, path, session }) => {
@@ -35,7 +34,6 @@ const seedPendingRevision = context => seedStageSample(context, {
   },
 })
 
-// 第 3 章 v1 是已审稿的草稿，之后导入了 v2 定稿：v1 不能直接定稿，只能以它重新打开本章。
 const seedOlderDraft = context => seedStageSample(context, {
   landOnChapter3: false,
   beforeReload: async ({ page, invoke, path, session }) => {

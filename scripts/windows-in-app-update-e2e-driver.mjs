@@ -147,8 +147,6 @@ async function triggerRealUpdate({ endpoint, expectedVersion, evidenceRoot }) {
     evidence.restartControl = await restartButton.innerText()
     await page.screenshot({ path: join(screenshots, 'ready-to-restart-update.png'), fullPage: true })
 
-    // This is the live renderer action that reaches UpdateService.requestInstall
-    // and Electron's real autoUpdater.quitAndInstall; no test IPC shortcut is used.
     await restartButton.click({ noWaitAfter: true })
     evidence.quitAndInstallRequestedAt = new Date().toISOString()
   } finally {

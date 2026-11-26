@@ -3,7 +3,6 @@ import { it, vi } from 'vitest'
 vi.mock('playwright', () => ({ _electron: { launch: () => { throw new Error('UNIT_TEST_MUST_NOT_LAUNCH_ELECTRON') } } }))
 import { recordCalls, stubChannel } from '../x1-scenarios.mjs'
 
-/** 和 Playwright 的 app.evaluate 一样把主进程模块交给回调；主进程里只注册了 db:draft-list。 */
 function fakeApp() {
   const handlers = new Map([['db:draft-list', (_event, chapter) => [`第 ${chapter} 章的稿`]]])
   return { handlers, evaluate: async (fn, arg) => fn({ ipcMain: { _invokeHandlers: handlers } }, arg) }

@@ -35,7 +35,6 @@ const COPY = {
 
 const LOCKER = "$f=[IO.File]::Open($env:ERRL6B_FILE,'OpenOrCreate','ReadWrite',$env:ERRL6B_SHARE);[Console]::Out.WriteLine('ready');[Console]::In.ReadLine()|Out-Null;$f.Dispose()"
 
-/** 别的程序独占打开作品文件夹里的一个文件：删除它时报 EBUSY。 */
 async function holdFile(context, file) {
   const child = spawn('powershell', ['-NoProfile', '-Command', LOCKER],
     { env: { ...process.env, ERRL6B_FILE: file, ERRL6B_SHARE: 'None' }, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
@@ -44,7 +43,6 @@ async function holdFile(context, file) {
   assert.equal(ready, 'ready', '占住文件的进程没起来')
 }
 
-/** Git Bash 的 PATH 里先找到的是 coreutils 的 whoami，要用系统的 whoami.exe 取 SID。 */
 function denyForCurrentUser(context, target, rights) {
   const whoami = path.join(process.env.SystemRoot || process.env.windir, 'System32', 'whoami.exe')
   const sid = execFileSync(whoami, ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' }).match(/"(S-1-[\d-]+)"\s*$/)?.[1]
@@ -72,7 +70,6 @@ async function alertText(page, title, timeout = 20_000) {
   return { dialog, shown: (await dialog.innerText()).trim() }
 }
 
-/** 新建时选的位置不让当前用户建文件夹：mkdir 报 EPERM。 */
 async function createDenied(context, lang) {
   const copy = COPY[lang]
   const { app, page, roots } = context
@@ -94,14 +91,6 @@ async function createDenied(context, lang) {
   return { shown, left: listed(parent) }
 }
 
-/**
- * 删除作品没删完。
- * busy：作者放在作品文件夹里的文档被别的程序独占打开。
- * denied：作者的资料子文件夹不让当前用户删除。
- * unknown：删除报出 EIO 这类没归类的错。实机造不出，在主进程里把 fs.rm 换成直接报 EIO。
- * 其余文件（含库文件）删没删掉取决于删除顺序：库文件还在，书重新打开；库文件已删，书关闭。
- * 整个作品文件夹都拒绝删除时，打开着的作品连目录都读不了，删除在会话校验处就被拒绝，不是本场景。
- */
 async function deleteLeftover(context, kind, lang) {
   const copy = COPY[lang]
   const { page, samplePath } = context
@@ -162,7 +151,6 @@ async function deleteBookWithKnowledgeBase(context) {
   return { waitedSeconds }
 }
 
-/** 作品库是空的或不在：新建建库时中断，或删除时库文件先被删掉。 */
 async function emptyDatabase(context, kind, lang) {
   const copy = COPY[lang]
   const database = path.join(context.samplePath, '.ai-novel', 'project.db')

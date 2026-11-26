@@ -44,7 +44,6 @@ export const SETDEL_SCENARIOS = {
     await save.waitFor({ state: 'visible' })
     await shoot('setdel-form-while-deleting')
 
-    // 表单要等删除成功后的模型列表重读结束才关。
     await afterIpc(app, page, 'llm:list-models', async () => {
       await app.evaluate(() => globalThis.__setdelRelease())
       for (const deadline = Date.now() + 10_000; await app.evaluate(() => globalThis.__setdelDone) < 2; await page.waitForTimeout(50))

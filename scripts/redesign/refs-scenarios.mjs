@@ -1,4 +1,3 @@
-// RD-9 作品资料页（剧情与伏笔、知识库、版本历史）的实机场景：对应计划 RD-9 的 live lane 1～10、perf 的 refs-timing 与评审视频。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -46,10 +45,6 @@ export const MATERIALS = Object.freeze({
   '沉船名录.txt': '三十年前北堤外沉没的货船名叫启明号，船上的测绘员姓林。',
 })
 
-/**
- * 资料页的文字与它实际落在的底色之间的对比度：标题与正文 4.5:1，说明 3:1。
- * 选中行的底色更深，选中章的序号与选中稿的说明是小字，按 4.5:1 查；对比里删去的字与正文同字号，也按 4.5:1。
- */
 const REFS_CONTRAST = [
   ['.stage-plot-title', 4.5], ['.stage-plot-note', 4.5], ['.stage-plot-lane b', 4.5], ['.stage-plot-event[data-state="occurred"]', 4.5],
   ['.stage-plot-event[data-state="planned"]', 4.5], ['.stage-plot-chapter', 4.5], ['.stage-plot-help', 4.5], ['.stage-plot-stamp', 4.5],
@@ -60,7 +55,6 @@ const REFS_CONTRAST = [
   ['.stage-hist-version[aria-pressed="true"] .stage-hist-meta', 4.5],
 ]
 
-/** 示例作品加一条伏笔线索与第 3 章的第二稿（v1 已审稿，v2 是新草稿）。 */
 const seedRefs = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path: projectPath, session }) => {
   const plan = await invoke(page, 'db:narrative-thread-plan-create', THREAD, projectPath, session)
   assert.equal(plan.success, true, plan.error)
@@ -69,14 +63,12 @@ const seedRefs = context => seedStageSample(context, { beforeReload: async ({ pa
   assert.equal(draft.success, true, draft.error)
 } })
 
-/** 系统打开对话框直接返回这些文件，不弹窗。 */
 async function stubOpenFiles(app, files) {
   await app.evaluate(({ dialog }, selected) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: selected })
   }, files)
 }
 
-/** 记下界面发给主进程的最近一次带项目会话的调用参数，驱动用同一会话读数据库，不必重开作品。 */
 async function watchSession(app) {
   await app.evaluate(({ ipcMain }) => {
     for (const [channel, handler] of ipcMain._invokeHandlers) {
@@ -91,7 +83,6 @@ async function watchSession(app) {
 
 const lastSession = app => app.evaluate(() => globalThis.__driveSession ?? null)
 
-/** 整个窗口里的可见文字，加上可访问名称、提示与占位。 */
 function everyWord(page) {
   return page.evaluate(() => [document.body.innerText, ...[...document.querySelectorAll('[aria-label], [title], [placeholder]')]
     .map(node => `${node.getAttribute('aria-label') ?? ''} ${node.getAttribute('title') ?? ''} ${node.getAttribute('placeholder') ?? ''}`)].join('\n'))
@@ -125,10 +116,6 @@ async function assertComparisonReadOnly(page) {
   assert.equal(await page.getByText('完成合并').count(), 0, '不再打开修稿合并')
 }
 
-/**
- * perf 的 refs-timing 用：100 章，第 1、2 章是示例作品的定稿、各 1 稿，其余每章 5 稿；再用夹具模型整理出剧情树（剧情树只能经生成保存）。
- * 两种外壳都停在剧情树页上，计时从别的资料页点回来开始。
- */
 async function seedHundred(context) {
   await seedHundredChapters(context)
   const { page, fake } = context
@@ -151,7 +138,6 @@ const seedHundredChapters = context => seedStageSample(context, { totalChapters:
   }
   for (let chapterNumber = 1; chapterNumber <= 100; chapterNumber++) {
     const drafts = await invoke(page, 'db:draft-list', chapterNumber, projectPath, session)
-    // 已定稿的章不能再新建稿（db:draft-create 回 CHAPTER_FINALIZED_REOPEN_REQUIRED），只能重开，所以定稿章停在 1 稿。
     if (drafts.some(draft => draft.status === 'finalized')) continue
     const existing = drafts.length
     const content = STAGE_SAMPLE.drafts[chapterNumber]?.text ?? STAGE_SAMPLE.drafts[4].text
@@ -164,7 +150,6 @@ const seedHundredChapters = context => seedStageSample(context, { totalChapters:
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-/** 元素里的文字排成了几行；标签与标题在窄宽度下不该逐字折行。 */
 function lineCount(locator) {
   return locator.evaluate(node => {
     const range = document.createRange()
@@ -173,10 +158,6 @@ function lineCount(locator) {
   })
 }
 
-/**
- * 运行侧页开着时资料页的布局（计划 RD-9 的窄内容宽度）：1440 宽时内容区约 770px，1280 宽时约 620px。
- * 导入资料会让侧页自动展开；之后确认侧页仍开着，再看各页有没有被挤坏。
- */
 const narrowSetup = width => async context => {
   await context.page.setViewportSize({ width, height: 900 })
   await seedRefs(context)
@@ -283,7 +264,6 @@ export const REFS_SCENARIOS = {
     await page.getByRole('list', { name: '已确认的定稿事件' }).waitFor({ state: 'visible' })
     assert.deepEqual(await refs.routeStates(page, THREAD.title), ['done', 'none', 'todo'], '确认后埋设一站变成已发生')
   } },
-  /** 版本历史点一稿时它已被删掉（列表还没刷新）：对比区说明这一稿已不存在，列表重读后去掉它（#414）。 */
   'refs-history-missing': { model: false, shell: 'stage', setup: seedRefs, run: async ({ app, page, invoke }) => {
     await watchSession(app)
     await openChapterThreeVersions(page)
@@ -299,7 +279,6 @@ export const REFS_SCENARIOS = {
     await refs.versionButton(page, '草稿 v2').waitFor({ state: 'visible' })
     await refs.historyChapters(page).getByRole('button', { name: /雾钟/ }).getByText('1 稿').waitFor({ state: 'visible' })
   } },
-  // #474 B2：主进程只交 NARRATIVE_THREAD_EVIDENCE_NOT_IN_SOURCE，英文界面在记录表单里按码说明，不带汉字与错误码。
   'refs-thread-evidence-en': { model: false, shell: 'stage', setup: seedRefs, run: async ({ page, shoot }) => {
     await refs.open(page, 'plot')
     await refs.plotView(page, '伏笔线索').click()
@@ -323,8 +302,6 @@ export const REFS_SCENARIOS = {
     assert.equal(await page.getByLabel('Quote from the final').inputValue(), '这句话不在定稿里', '表单留着作者的输入，改完能直接重试')
     return observed
   } },
-  // #474 B3：主进程只交知识库错误码。英文界面下项目副本在别处被改后保存、检索索引登记文件损坏时读状态，
-  // 提示都是英文、不带汉字与错误码。
   'refs-kb-errors-en': { model: true, shell: 'stage', setup: seedRefs, run: async context => {
     const { page, shoot } = context
     const englishOnly = (observed, key) => assert.doesNotMatch(observed[key], /[A-Z]{3,}_|\p{Script=Han}/u, JSON.stringify(observed))
@@ -355,7 +332,6 @@ export const REFS_SCENARIOS = {
     assert.match(saved.toast, /The project copy was changed elsewhere/)
     englishOnly(saved, 'toast')
 
-    // #520 起没有检索模型时设置页不读登记文件，要先配一个。
     assert.equal((await context.invoke(page, 'llm:save-model', EMBEDDING_MODEL)).success, true)
     assert.equal((await context.invoke(page, 'llm:set-default-embedding-model', EMBEDDING_MODEL.id)).success, true)
     fs.writeFileSync(path.join(context.samplePath, '.ai-novel', 'embedding-spaces.json'), '{ "damaged": ')
@@ -369,8 +345,6 @@ export const REFS_SCENARIOS = {
     englishOnly(index, 'alert')
     return { saved, index }
   } },
-  // #474 B6：provider 只交 LLM_REQUEST_FAILED 与 HTTP 状态，连接测试由主进程按界面语言写成说明。
-  // 英文界面把夹具模型的 API Key 改错后测试连接，假服务回 403，模型表单的结果是英文、不带汉字与错误码。
   'models-test-connection-en': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake, shoot }) => {
     await stage.openSettings(page)
     await stage.showSettingsPage(page, '外观')
@@ -510,7 +484,6 @@ export const REFS_SCENARIOS = {
     assert.ok(Number.parseFloat(layout.optionFontSize) >= 13, '列表行字号不小于 13px')
     return { ...observed, layout, afterDrag }
   } },
-  // 没填 Key 的新配置切到 Gemini，不会去请求 Google；手填与预设同名的模型，仍带上 Gemini 3 的思考映射。
   'models-gemini-thinking-off': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     await openNewModelForm(page)
     await page.locator('select').filter({ has: page.locator('option[value="gemini"]') }).first().selectOption('gemini')
