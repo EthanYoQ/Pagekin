@@ -49,8 +49,9 @@ import {
   isGeneratedGlobalGuidanceValid,
   mergeExpandedNovelConfig,
 } from '../novel-config-expansion'
-import { authorError, displayedErrorMessage, englishWithReason, errorCodeOf, failureText, knownAppErrorMessage } from '../../../i18n/app-errors'
-import { AuthorError, authorOwned, failureCode, note, type AuthorNote, type Failure, type FailureCode } from '../../../shared/failure'
+import { authorError, caughtFailure, containsHan, errorCodeOf, failureText, registeredErrorCode } from '../../../i18n/app-errors'
+import { copyLocale } from '../../../i18n/core'
+import { AuthorError, authorOwned, failureCode, failureOf, note, type AuthorNote, type Failure, type FailureCode, type LegacyReason } from '../../../shared/failure'
 import type { ErrorDisplayLocale } from '../../../i18n/types'
 import { pluralEn } from '../../../shared/plural-en'
 import { recordAiSources, type AiSources } from '../../../shared/novel-config-ai-sources'
@@ -130,18 +131,14 @@ export interface PlotOutlineChapterRange {
 }
 
 /**
- * 情节大纲生成被输出长度中断、且已完成部分已自动保存时抛出的错误。
- * errorCode 供前端识别并展示「继续生成情节大纲」断点续写按钮。
+ * 情节大纲生成被输出长度等原因中断、且已完成部分已自动保存时抛出的错误。
+ * 运行侧页凭 recovery 给出「继续生成情节大纲」；码是中断的原因。
  */
-export const PLOT_OUTLINE_RESUME_ERROR_CODE = 'architecture-synopsis-resume-available'
-
-export class PlotOutlineResumeAvailableError extends Error {
-  readonly code = PLOT_OUTLINE_RESUME_ERROR_CODE
-
-  constructor(message: string) {
-    super(message)
+export class PlotOutlineResumeAvailableError extends AuthorError {
+  constructor(locale: ErrorDisplayLocale, summary: AuthorNote, because: Failure | LegacyReason | undefined) {
+    const failure: Failure = { note: summary, ...(because ? { because } : {}), recovery: 'resume-plot-outline' }
+    super(failure, failureText(locale, failure))
     this.name = 'PlotOutlineResumeAvailableError'
-    Object.setPrototypeOf(this, new.target.prototype)
   }
 }
 
@@ -159,15 +156,24 @@ export class PlotOutlineSourceChangedError extends AuthorError {
   }
 }
 
-export const WORLD_BUILDING_RESUME_ERROR_CODE = 'architecture-world-building-resume-available'
+/**
+ * catch 到的原因：已标记的失败，或带着已登记码的错误（说明按码查）。
+ * 还没标记的中文原因（生成 harness、解析器写的句子）按旧规则只在中文界面显示；其余只进控制台。
+ */
+function reasonOf(locale: ErrorDisplayLocale, error: unknown): Failure | LegacyReason | undefined {
+  const marked = failureOf(error)
+  if (marked) return marked
+  const code = failureCode(registeredErrorCode(error))
+  if (code) return { code }
+  const raw = typeof error === 'string' ? error : error instanceof Error ? error.message : ''
+  if (copyLocale(locale) === 'zh-CN' && containsHan(raw)) return { legacy: raw }
+  return caughtFailure(error)
+}
 
-export class WorldBuildingResumeAvailableError extends Error {
-  readonly code = WORLD_BUILDING_RESUME_ERROR_CODE
-
-  constructor(message: string) {
-    super(message)
+export class WorldBuildingResumeAvailableError extends AuthorError {
+  constructor(locale: ErrorDisplayLocale, failure: Failure) {
+    super(failure, failureText(locale, failure))
     this.name = 'WorldBuildingResumeAvailableError'
-    Object.setPrototypeOf(this, new.target.prototype)
   }
 }
 
@@ -810,11 +816,10 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
     try {
       parsed = decodeCompleteNovelConfig(resultRaw, this.totalChapters, this.wordsPerChapter, context.interfaceLocale)
     } catch (e) {
-      const detail = displayedErrorMessage(context.interfaceLocale, e)
-      throw new Error(text(
-        `AI 返回的小说配置不完整或无效，结果未应用。详细信息：${detail}`,
-        `The AI novel configuration was incomplete or invalid, so the result was not applied. Details: ${detail}`,
-      ))
+      const because = reasonOf(context.interfaceLocale, e)
+      throw authorError(context.interfaceLocale, because
+        ? { note: note('AI 返回的小说配置不完整或无效，结果未应用。详细信息', 'The AI novel configuration was incomplete or invalid, so the result was not applied. Details:'), because }
+        : { note: note('AI 返回的小说配置不完整或无效，结果未应用。', 'The AI novel configuration was incomplete or invalid, so the result was not applied.') }, { cause: e })
     }
     if (!isGeneratedGlobalGuidanceValid(parsed.globalGuidance)) {
       callbacks.log(text(
@@ -1099,11 +1104,8 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
     try {
       manifest = decodeCharacterIdentityManifest(manifestRaw)
     } catch (error) {
-      const detail = displayedErrorMessage(context.interfaceLocale, error)
-      throw new Error(text(
-        detail,
-        englishWithReason(context.interfaceLocale, 'The character identity manifest was invalid, so no character data was saved.', detail),
-      ))
+      const because = reasonOf(context.interfaceLocale, error)
+      throw authorError(context.interfaceLocale, { note: note('角色身份清单无效，没有保存角色数据', 'The character identity manifest was invalid, so no character data was saved.'), ...(because ? { because } : {}) }, { cause: error })
     }
     this.assertNotCancelled(context)
     assertArchitectureProjectSessionCurrent(projectSession, context)
@@ -1221,12 +1223,10 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
           : []),
         `attempts=${attempts}`,
       ].join(' ')
+      callbacks.log(`[Character details failure receipt] ${failureReceipt}`)
       const { detail, failure } = detailExecution.failure
-      const reason = detail ? displayedErrorMessage(context.interfaceLocale, detail) : failureText(context.interfaceLocale, failure)
-      throw new Error(text(
-        `${reason}；角色详情失败收据：${failureReceipt}`,
-        `${knownAppErrorMessage(context.interfaceLocale, failure.code) ?? englishWithReason(context.interfaceLocale, 'Character details failed structural validation and were not saved.', reason)} Receipt: ${failureReceipt}`,
-      ))
+      const because = detail ? reasonOf(context.interfaceLocale, detail) : undefined
+      throw authorError(context.interfaceLocale, because ? { ...failure, because } : failure, { cause: detail })
     }
     if (detailExecution.items.length !== manifest.length) {
       throw authorError(context.interfaceLocale, { note: note('角色详情未完整覆盖冻结身份清单', 'Character details did not fully cover the frozen identity manifest.') })
@@ -1455,11 +1455,10 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
           expectedDbHash,
           stepGuidance,
         )
-        const detail = displayedErrorMessage(context.interfaceLocale, error)
-        throw new WorldBuildingResumeAvailableError(text(
-          `世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。原因：${detail}`,
-          `Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason: ${detail}`,
-        ))
+        const because = reasonOf(context.interfaceLocale, error)
+        throw new WorldBuildingResumeAvailableError(context.interfaceLocale, because
+          ? { note: note('世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。原因', 'Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason:'), because }
+          : { note: note('世界观未能完整生成，已保存未完成候选且未覆盖正式世界观。可查看、复制或稍后续写。', 'Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later.') })
       }
       throw error
     }
@@ -1500,14 +1499,11 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
         expectedDbHash,
         stepGuidance,
       )
-      throw new WorldBuildingResumeAvailableError(text(
-        sourceFactsChanged
-          ? '生成期间故事前提、小说配置、角色图谱或模板变了，本次结果已保留为候选，没写入正式世界观，可查看或复制。'
-          : '世界观生成期间正式内容已被修改，本次结果已保留为候选且未覆盖作者修改；可查看或复制候选。',
-        sourceFactsChanged
-          ? 'The premise, novel configuration, character map, or template changed during generation. This result was kept as a candidate and not written to worldbuilding; you can view or copy it.'
-          : 'The formal worldbuilding changed while generation was running. This result was kept as a candidate and did not overwrite the author edit; you can view or copy it.',
-      ))
+      throw new WorldBuildingResumeAvailableError(context.interfaceLocale, {
+        note: sourceFactsChanged
+          ? note('生成期间故事前提、小说配置、角色图谱或模板变了，本次结果已保留为候选，没写入正式世界观，可查看或复制。', 'The premise, novel configuration, character map, or template changed during generation. This result was kept as a candidate and not written to worldbuilding; you can view or copy it.')
+          : note('世界观生成期间正式内容已被修改，本次结果已保留为候选且未覆盖作者修改；可查看或复制候选。', 'The formal worldbuilding changed while generation was running. This result was kept as a candidate and did not overwrite the author edit; you can view or copy it.'),
+      })
     }
     const heading = promptLanguageText(writingLanguage, '世界观', 'Worldbuilding')
     await writeArchToDb(
@@ -1918,10 +1914,12 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         `已完成部分（约 ${partialBody.length} 字）已保存，可点击「继续生成情节大纲」从断点续写`,
         `The completed part (about ${partialBody.length} ${pluralEn(partialBody.length, 'character')}) was saved. Click “Continue plot outline” to resume from the break point.`,
       ))
-      throw new PlotOutlineResumeAvailableError(text(
-        `情节大纲没生成完就中断了：${displayedErrorMessage(context.interfaceLocale, cause)}。已完成的约 ${partialBody.length} 字已保存。\n点「继续生成情节大纲」接着写第 ${from}–${to} 章；本批太大就先在「AI 生成架构」调小每批章数。`,
-        `Plot-outline generation stopped early: ${displayedErrorMessage(context.interfaceLocale, cause)}. The finished part (about ${partialBody.length} ${pluralEn(partialBody.length, 'character')}) was saved.\nClick “Continue plot outline” to finish chapters ${from}-${to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.`,
-      ))
+      // 已保存的部分不少于 MIN_SYNOPSIS_PARTIAL_PERSIST_CHARS 字，英文只用复数。
+      const because = reasonOf(context.interfaceLocale, cause)
+      const params = { chars: partialBody.length, from, to }
+      throw new PlotOutlineResumeAvailableError(context.interfaceLocale, because
+        ? note('情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。\n中断原因', 'Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.\nReason:', params)
+        : note('情节大纲没生成完就中断了，已完成的约 {chars} 字已保存。\n点「继续生成情节大纲」接着写第 {from}–{to} 章；本批太大就先在「AI 生成架构」调小每批章数。', 'Plot-outline generation stopped early. The finished part (about {chars} characters) was saved.\nClick “Continue plot outline” to finish chapters {from}-{to}; if the batch is too large, first choose a smaller per-batch range in “Generate story architecture”.', params), because)
     }
 
     try {
@@ -2251,13 +2249,12 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           writtenPartial,
         )
       } catch (rollbackError) {
-        // 只有回滚也失败时才拼成一句；单独的 commitError 原样抛出，由失败面板按码说明。
-        const commitDetail = displayedErrorMessage(context.interfaceLocale, commitError)
-        const detail = displayedErrorMessage(context.interfaceLocale, rollbackError)
-        throw new Error(text(
-          `${commitDetail} 同时无法安全恢复旧检查点：${detail}`,
-          `${commitDetail} The previous checkpoint also could not be restored safely: ${detail}`,
-        ))
+        // 回滚也失败时另给一句说明，回滚的错误挂在 cause 上；单独的 commitError 原样抛出，由失败面板按码说明。
+        const because = reasonOf(context.interfaceLocale, commitError)
+        throw authorError(context.interfaceLocale, {
+          note: note('情节大纲没能保存，旧检查点也没能安全恢复', 'The plot outline could not be saved, and the previous checkpoint could not be restored safely either.'),
+          ...(because ? { because } : {}),
+        }, { cause: rollbackError })
       }
       throw new Error(commitError)
     }

@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { runFailure } from '../run-failure'
-import { PLOT_OUTLINE_RESUME_ERROR_CODE } from '../../../services/workflows/commands/architecture.command'
+import { PlotOutlineResumeAvailableError } from '../../../services/workflows/commands/architecture.command'
 import type { WorkflowRun } from '../../../stores/workflow-store'
 import { shown } from '../../../i18n/__tests__/shown-locale'
 import { note, type Failure } from '../../../shared/failure'
@@ -21,7 +21,8 @@ it('来源在途中变了的大纲失败：给出去架构页重新生成的入�
 })
 
 it('输出长度中断的大纲失败仍走断点续写', () => {
-  const failure = runFailure(failedOutline(PLOT_OUTLINE_RESUME_ERROR_CODE, '输出被截断'), shown('zh-CN'))
+  const truncated = new PlotOutlineResumeAvailableError(shown('zh-CN'), note('输出被截断', 'The output was cut off.'), undefined)
+  const failure = runFailure({ ...failedOutline('', truncated.message), failure: truncated.failure }, shown('zh-CN'))
   expect(failure.canResumeOutline).toBe(true)
   expect(failure.canRestartOutline).toBe(false)
 })

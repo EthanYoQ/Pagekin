@@ -2257,8 +2257,10 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     }).then(() => null, error => error as Error)
 
     expect(failure?.message).not.toMatch(/[\u3400-\u9fff]/u)
-    expect(failure?.message).toContain('code=invalid_output reason=missing_item')
-    expect(failure?.message).toContain('purpose=character-architecture-details finishReason=stop')
+    expect(failure?.message).not.toContain('code=')
+    const receipt = vi.mocked(callbacks.log).mock.calls.map(([line]) => line).find(line => line.startsWith('[Character details failure receipt]'))
+    expect(receipt).toContain('code=invalid_output reason=missing_item')
+    expect(receipt).toContain('purpose=character-architecture-details finishReason=stop')
     expect(generateStream).toHaveBeenCalledTimes(2)
     expect(domainIpcChannels(invoke)).toEqual(['db:project-core-get'])
   })
@@ -2489,7 +2491,9 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       novelConfig: { genre: '玄幻', totalChapters: 100, wordsPerChapter: 3000 } as never,
     })
     await expect(command.execute({ step: {}, context, callbacks }))
-      .rejects.toThrow('结构化输出无法按合同解码；角色详情失败收据：code=invalid_output reason=invalid_item')
+      .rejects.toThrow('结构化输出无法按合同解码')
+    expect(vi.mocked(callbacks.log).mock.calls.map(([line]) => line))
+      .toContainEqual(expect.stringContaining('code=invalid_output reason=invalid_item'))
 
     expect(generateStream).toHaveBeenCalledTimes(4)
     expect(generateStream.mock.calls[3]?.[0].find(message => message.role === 'user')?.content)

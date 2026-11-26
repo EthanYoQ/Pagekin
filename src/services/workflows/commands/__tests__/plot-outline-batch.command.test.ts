@@ -5,7 +5,6 @@ import { useProjectStore } from '../../../../stores/project-store'
 import type { StepCallbacks, WorkflowContext } from '../../../../stores/workflow-store'
 import {
   GeneratePlotArchitectureCommand,
-  PLOT_OUTLINE_RESUME_ERROR_CODE,
   PlotOutlineResumeAvailableError,
 } from '../architecture.command'
 import { synopsisFactsFingerprint } from '../../../../shared/plot-outline-checkpoint'
@@ -398,7 +397,7 @@ describe('GeneratePlotArchitectureCommand 批次状态机', () => {
 
     const failure = await command.execute({ step: {}, context, callbacks }).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(PlotOutlineResumeAvailableError)
-    expect(failure).toMatchObject({ code: PLOT_OUTLINE_RESUME_ERROR_CODE })
+    expect((failure as PlotOutlineResumeAvailableError).failure.recovery).toBe('resume-plot-outline')
 
     // 部分内容已自动保存（检查点 incomplete=true + 范围 + 指纹；DB 带未完成标记）
     const checkpointWrite = harness.partialWrites[harness.partialWrites.length - 1]
