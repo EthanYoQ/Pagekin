@@ -65,7 +65,7 @@ import {
   isSourceDraftChangedError,
   SOURCE_DRAFT_CHANGED,
 } from '../repositories/draft-source-guard'
-import type { ExpectedDraftSource } from '../../src/shared/ipc-channels'
+import type { ExpectedDraftSource, ProjectSessionContext } from '../../src/shared/ipc-channels'
 import { PostProcessRepository } from '../repositories/post-process-repository'
 
 // 沿用的旧表
@@ -149,19 +149,21 @@ function importChannelLocale(args: unknown[]): Locale {
   return importRunLocale(first)
 }
 
-/** 取下末尾的会话上下文、核对它属于当前作品，再调处理器。args 原地去掉上下文，失败处理还要读。 */
-async function inProjectSession(handler: ProjectDatabaseHandler, event: unknown, args: unknown[]): Promise<unknown> {
+function withoutSessionContext(args: unknown[]): [ProjectSessionContext | undefined, unknown[]] {
   const candidate = args.at(-1)
-  const context = isProjectSessionContext(candidate) ? candidate : undefined
-  if (context) args.pop()
+  return isProjectSessionContext(candidate) ? [candidate, args.slice(0, -1)] : [undefined, args]
+}
+
+async function inProjectSession(handler: ProjectDatabaseHandler, event: unknown, context: ProjectSessionContext | undefined, args: unknown[]): Promise<unknown> {
   projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
   return await (handler as (event: unknown, ...handlerArgs: unknown[]) => unknown)(event, ...args)
 }
 
 function registerProjectDatabaseHandler(channel: string, handler: ProjectDatabaseHandler): void {
-  ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+  ipcMain.handle(channel, async (event, ...received: unknown[]) => {
+    const [context, args] = withoutSessionContext(received)
     try {
-      return await inProjectSession(handler, event, args)
+      return await inProjectSession(handler, event, context, args)
     } catch (error) {
       const importFailure = IMPORT_CHANNEL.test(channel)
         ? explainImportRunFailure(error, () => importChannelLocale(args))
@@ -176,14 +178,10 @@ function registerProjectDatabaseHandler(channel: string, handler: ProjectDatabas
   })
 }
 
-/**
- * 迁到 handle() 的通道。写通道失败回已登记的码，其余失败回这一组的写失败码，原文只进主进程日志；
- * 读通道照旧抛出，由 handle() 换成已登记码或 IPC_HANDLER_FAILED。
- */
 function registerMigratedDatabaseHandler(channel: string, handler: ProjectDatabaseHandler, writeFailed: WireFailure): void {
-  handle(channel, async (event, ...args: unknown[]) => {
+  handle(channel, async (event, ...received: unknown[]) => {
     try {
-      return await inProjectSession(handler, event, args)
+      return await inProjectSession(handler, event, ...withoutSessionContext(received))
     } catch (error) {
       if (!MUTATING_DATABASE_CHANNELS.has(channel)) throw error
       const code = failureCode(registeredErrorCode(error))

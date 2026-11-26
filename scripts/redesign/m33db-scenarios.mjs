@@ -17,7 +17,6 @@ function withBook(projectRoot, action) {
   }
 }
 
-/** 用触发器让作品库更新恢复稿时报 SQLite 原文，走的是真实写入路径。 */
 export const M33DB_SCENARIOS = {
   'm33db-discard-write-failed': { model: false, shell: 'stage', setup: async context => {
     await seedWithCandidate(context)
