@@ -29,7 +29,6 @@ function snapshotFor(locale: Locale): ImportRunSnapshot {
   }
 }
 
-/** 第 1 章写入成功，第 2 章拿到 reply；cancelFirst 时作者在第 1 章写入途中点了取消。 */
 async function importTwoChapters(reply: object, options: { runLocale?: Locale; interfaceLocale?: InterfaceLocale; cancelFirst?: boolean } = {}) {
   const snapshot = snapshotFor(options.runLocale ?? 'zh-CN')
   const execution = { owner: executionOwner, epoch: 1, expiresAt: Number.MAX_SAFE_INTEGER }
@@ -66,7 +65,6 @@ async function importTwoChapters(reply: object, options: { runLocale?: Locale; i
   return { ended, channels: ipcMocks.invoke.mock.calls.map(call => call[1]) }
 }
 
-/** 运行卡片的步骤详情：先读 failure，没有时读旧的 error（RunCard.tsx 的 StepDetail）。 */
 function shownOnRunCard(run: WorkflowRun, interfaceLocale: InterfaceLocale): string[] {
   const step = run.steps[0]!
   const locale = errorLocaleForRun(run.uiLocale, shown(interfaceLocale))

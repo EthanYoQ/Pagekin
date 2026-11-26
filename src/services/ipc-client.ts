@@ -50,7 +50,7 @@ function isProjectScopedChannel(channel: string): boolean {
     || channel === 'project:overview-current'
 }
 
-/** 渲染端收 IPC 返回值的入口（finalization-client 另走定稿通道，不带 failure）：失败结果里的 failure 在这里校验。 */
+/** finalization-client 另走定稿通道，不经此处。 */
 async function invokeWithSession<C extends InvokeChannel>(
   channel: C,
   args: AllInvokeChannels[C]['args'],

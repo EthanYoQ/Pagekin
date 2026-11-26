@@ -1,7 +1,6 @@
 import { wireNote } from '../app-errors'
 import type { IpcFailure, WireFailure, WireNote } from '../../shared/failure'
 
-/** 过 IPC 的失败带不了写好的句子（#844 PR-B，随 tsc --noEmit 检查）。 */
 export function writtenSentencesCannotCrossIpc(error: Error, sentence: string, maxLength: number): unknown[] {
   return [
     { success: false, failure: { code: 'PROJECT_STORAGE_PATH_UNSUPPORTED', note: wireNote('error.projectPathTooDeepForDatabase', { max: maxLength }) } } satisfies IpcFailure,

@@ -439,7 +439,6 @@ describe('knowledge-base controller project context guard', () => {
   })
 
 })
-// 参照导入失败：主进程按导入运行的语言说明知识库错误码（旧 error 字段），码另放在 errorCode 与 failure（#474 B3、#844）。
 // 参照导入失败时运行卡片原样显示 result.error：主进程按导入运行的界面语言说明知识库错误码，码另放在 errorCode（#474 B3）。
 describe('reference import failures', () => {
   it.each([

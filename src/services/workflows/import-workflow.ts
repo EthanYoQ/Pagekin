@@ -254,7 +254,7 @@ function productionDependencies(
         run.id,
         executionAuthority,
       )
-      // 带上主进程给的码：取消请求之后剩下的章节被拒绝时，取消判定只凭这个码。旧 error 字段的文字不显示。
+      // 取消判定只凭这个码，必须带上。
       if (!result.success) {
         const failure = resultFailure(result)
         const chapterNote = note('第 {n} 章参照文本未能写入知识库', 'Reference Chapter {n} could not be written to the knowledge base.', { n: chapter.number })

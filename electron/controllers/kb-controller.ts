@@ -58,10 +58,6 @@ function referenceImportDisplayName(binding: { chapterNumber: number; title: str
   return `${prefix}${boundedTitle}${suffix}`
 }
 
-/**
- * 参照导入的失败按导入运行的语言说明知识库错误码，码放在 errorCode 与 failure（渲染端读 failure，#844）。
- * 作者能照做的码（检索索引、资料为空等）已在 src/i18n/messages 登记，没登记的由 handle() 换成通用码。
- */
 function explainReferenceImportFailure<T extends { success: boolean; error?: string }>(result: T, runId: string) {
   const importFailure = !result.success && result.error ? explainImportRunFailure(result.error, () => importRunLocale(runId)) : undefined
   return importFailure ? { ...result, ...importFailure } : result

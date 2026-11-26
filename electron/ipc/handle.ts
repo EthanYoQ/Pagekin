@@ -20,7 +20,6 @@ function isFailure(value: unknown): value is { success: false } & FailureFields 
   return typeof value === 'object' && value !== null && (value as { success?: unknown }).success === false
 }
 
-/** 旧字段：error 或 errorCode 有一个是已登记的码就照传，否则把出现的这两个字段换成通用码。 */
 function publicLegacyFields({ error, errorCode }: FailureFields): FailureFields | undefined {
   if (error === undefined && errorCode === undefined) return undefined
   if (registeredErrorCode(errorCode) || registeredErrorCode(error)) return undefined
@@ -30,10 +29,6 @@ function publicLegacyFields({ error, errorCode }: FailureFields): FailureFields 
   }
 }
 
-/**
- * 处理器返回的失败结果交给渲染端的样子：旧字段按 publicLegacyFields；新形状的 failure 按 publicWireFailure
- * 校验码和目录键。两样都不用换时原样返回，不新增字段。不是失败结果的照传。
- */
 export function publicIpcResult<T>(value: T): T {
   if (!isFailure(value)) return value
   const legacy = publicLegacyFields(value)

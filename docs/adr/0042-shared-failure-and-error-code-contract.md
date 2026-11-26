@@ -157,3 +157,11 @@
 
 - `failure`：只有 caughtFailure 把认不出的原文记进控制台；message 非空时原文已在旧字段，不重复记。
 - `reason`：普通步骤失败交原错误，带 code 的按码说明；预算失败已写好说明。
+
+## 过 IPC 的失败形状（#844 PR-B）
+
+- 失败结果另带 `failure`：码加可选的目录键说明。迁移期旧 `error`、`errorCode` 照旧写，值与以前相同。
+- 目录键只有 `wireNote()` 造得出（`WireNoteKey` 是品牌类型），手写的句子放不进来。`error.unknown` 整句只装原文，排除在外。
+- 主进程出口 `publicIpcResult` 和渲染端入口 `receivedIpcResult` 各校验一次：码没登记换成 `IPC_HANDLER_FAILED`，说明不合格只留码。db:* 等直连通道不经 `handle()`，渲染端入口是它们唯一的校验。
+- 渲染端读失败走 `resultFailure`：先 `failure`，再旧字段里的码。旧 `error` 里不是码的文字不显示，只进日志。
+- 导入运行的失败只在码已登记时带 `failure`。没登记的码由渲染端照旧读 `errorCode`，参照导入的取消判定只凭这个码。

@@ -17,7 +17,7 @@ import type { Failure } from '../../../src/shared/failure'
 const RAW = "SqliteError: database is locked at C:\\Users\\writer\\Books\\A\\.ai-novel\\project.db"
 const zh = shown('zh-CN')
 
-/** 主进程处理器经 handle() 交出，结构化克隆（用 JSON 往返代替）后由渲染端的 ipc-client 收下。 */
+/** 用 JSON 往返代替结构化克隆。 */
 async function received(returned: unknown, options: { bypassExit?: boolean } = {}): Promise<{ failure?: Failure }> {
   let wire = returned
   if (!options.bypassExit) {
@@ -51,7 +51,6 @@ describe('过 IPC 的失败形状（#844 PR-B）', () => {
     expect(failureText(zh, result.failure)).toBe(knownAppErrorMessage(zh, 'IPC_HANDLER_FAILED'))
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('test:wire'), returned)
 
-    // db:* 自己注册、不经 handle()：渲染端入口单独也换成通用码。
     const bypassed = await received(returned, { bypassExit: true })
     expect(bypassed.failure).toEqual({ code: 'IPC_HANDLER_FAILED' })
   })

@@ -13,7 +13,7 @@ const ERROR_CODE = /^[A-Z][A-Z0-9_]*$/u
 export interface ImportRunFailure {
   error: string
   errorCode: string
-  /** 只在码登记过时带：db:* 不经 handle()，没登记的码让渲染端照旧读 errorCode，error.code 与取消判定同 master。 */
+  /** 只在码已登记时带；没登记的码由渲染端照旧读 errorCode。 */
   failure?: WireFailure
 }
 

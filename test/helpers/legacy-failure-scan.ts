@@ -57,7 +57,6 @@ function readsRawText(node: ts.Node): boolean {
   return ts.forEachChild(node, readsRawText) ?? false
 }
 
-/** 参数要原样插进说明的两个入口：渲染端的 authorOwned(、主进程过 IPC 的 wireNote(。 */
 const RAW_TEXT_SINKS = new Set(['authorOwned', 'wireNote'])
 
 export function rawTextInNoteArguments(file: string, text: string): string[] {
@@ -93,7 +92,7 @@ export function currentLegacyFailureCounts(): LegacyFailureCounts {
 const REWRITTEN_FIELDS = new Set(['code', 'errorCode', 'message'])
 const fieldName = (name: ts.Node | undefined) => name && (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) ? name.text : undefined
 
-/** 造完错误之后再改码或 message：Object.assign(x, { code | errorCode | message })、x.code = … 与 x['code'] = …（this 除外）。 */
+/** 造完错误之后再改 code、errorCode 或 message 的写法（this 除外）。 */
 export function failureRewrites(file: string, text: string): string[] {
   if (!file.startsWith('src/')) return []
   const found: string[] = []

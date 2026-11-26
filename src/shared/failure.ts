@@ -52,7 +52,7 @@ export type Failure =
   | ({ readonly code?: undefined; readonly note: AuthorNote } & FailureExtras)
 
 declare const wireKeyBrand: unique symbol
-/** 过 IPC 的目录键，只有 app-errors 的 wireNote() 造得出：手写的句子放不进来。 */
+/** 只有 wireNote() 造得出。 */
 export type WireNoteKey = string & { readonly [wireKeyBrand]: true }
 export interface WireNote { readonly key: WireNoteKey; readonly params?: Readonly<Record<string, number | string>> }
 export interface WireFailure { readonly code: FailureCode; readonly note?: WireNote }

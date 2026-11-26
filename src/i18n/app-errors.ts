@@ -738,10 +738,9 @@ export function caughtFailure(error: unknown): Failure | undefined {
   return failure
 }
 
-/** 整句只是一个参数、装的是原文的模板，不许过 IPC。 */
+/** error.unknown 整句只装原文，不许过 IPC。 */
 const WIRE_EXCLUDED_KEYS: ReadonlySet<string> = new Set(['error.unknown'] satisfies MessageKey[])
 
-/** 主进程给失败配目录说明的唯一入口：键写错编译不过，参数只收数字和作者自己的数据。 */
 export function wireNote(key: Exclude<MessageKey, 'error.unknown'>, params?: WireNote['params']): WireNote {
   return { key: key as string as WireNoteKey, ...(params ? { params } : {}) }
 }
@@ -749,7 +748,6 @@ export function wireNote(key: Exclude<MessageKey, 'error.unknown'>, params?: Wir
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** 目录里有、不在排除表、参数只有数字和字符串的才是说明；合格且没有多余字段时原样返回。 */
 function wireNoteOf(value: unknown): WireNote | undefined {
   if (!isRecord(value) || typeof value.key !== 'string' || WIRE_EXCLUDED_KEYS.has(value.key) || !Object.hasOwn(messages['en-US'], value.key)) return undefined
   const { params } = value
@@ -758,7 +756,6 @@ function wireNoteOf(value: unknown): WireNote | undefined {
   return { key: value.key as WireNoteKey, ...(params ? { params: params as WireNote['params'] } : {}) }
 }
 
-/** 主进程出口：码没登记就整个换成通用码；说明不合格就丢掉，只留码。合格时原样返回。 */
 export function publicWireFailure(value: unknown): WireFailure {
   if (!isRecord(value) || !isKnownCode(value.code)) return { code: IPC_HANDLER_FAILED }
   const note = value.note === undefined ? undefined : wireNoteOf(value.note)
@@ -766,7 +763,7 @@ export function publicWireFailure(value: unknown): WireFailure {
   return { code: value.code, ...(note ? { note } : {}) }
 }
 
-/** 渲染端入口：码的形状不对就不算失败描述；码没登记换成通用码；说明不合格就只按码说明。db:* 不经 handle()，这里是唯一一道。 */
+/** db:* 不经 handle()，主进程出口管不到，这里是它们唯一的校验。 */
 export function wireFailure(value: unknown): Failure | undefined {
   const code = isRecord(value) ? failureCode(value.code) : undefined
   if (!isRecord(value) || !code) return undefined
@@ -783,7 +780,6 @@ export function wireFailure(value: unknown): Failure | undefined {
   return { code, note: catalogNote(note.key as string as MessageKey, params) }
 }
 
-/** ipc-client 收到返回值时调用：失败结果里的 failure 换成渲染端的 Failure，认不出就去掉。 */
 export function receivedIpcResult<T>(value: T): T {
   if (!isRecord(value) || value.success !== false || !('failure' in value)) return value
   const { failure: wire, ...rest } = value
@@ -791,7 +787,6 @@ export function receivedIpcResult<T>(value: T): T {
   return (failure ? { ...rest, failure } : rest) as T
 }
 
-/** 渲染端读返回值的失败：新形状优先，其次旧字段里的码。旧字段的文字不显示，只进日志。 */
 export function resultFailure(result: { failure?: Failure; error?: string; errorCode?: string }): Failure | undefined {
   if (result.failure) return result.failure
   const legacy = failureOf(result.errorCode) ?? failureOf(result.error)

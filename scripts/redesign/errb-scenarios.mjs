@@ -10,7 +10,6 @@ import { seedStageSample } from './scenarios.mjs'
 const settle = page => page.waitForTimeout(400)
 const RAW = 'SqliteError: database is locked（夹具原文）'
 
-/** 参照章节入库返回带已登记码的失败，旧 error 字段装异常原文：运行卡片只显示码的目录文案（#844 PR-B）。 */
 export const ERRB_SCENARIOS = {
   'errb-reference-import-failure': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ app, page, roots, shoot }) => {
     const file = path.join(roots.temp, 'reference-novel.txt')
