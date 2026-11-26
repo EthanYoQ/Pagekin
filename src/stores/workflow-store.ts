@@ -873,7 +873,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         const failureCode = getBoundedCompletionFailureCode(error)
           ?? promptBudgetFailure?.failureCode
         const errorCode = errorCodeFromUnknown(error)
-        // message 为空时旧字段显示不出东西，这时认不出的失败也要带上通用说明。
+        // message 为空时旧字段里没有原文，认不出的只能从日志查。
         const failure = promptBudgetFailure ? undefined : errorMsg.trim() ? failureOf(error) : caughtFailure(error)
         updateStepById(set, run.id, i, {
           status: 'failed',

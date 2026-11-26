@@ -38,7 +38,7 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
       run.type === 'chapter_creation' && run.chapterWordsTarget !== undefined && !(currentStep?.result || '').trim(),
       run.promptBudgetReport ?? currentStep?.promptBudgetReport,
       failedStep?.generationActivity ?? currentStep?.generationActivity,
-      legacy?.trim() && failure?.note ? failureText(locale, failure) : undefined,
+      failure?.note && failureText(locale, failure),
     ),
     canResumeOutline: failedWith(PLOT_OUTLINE_RESUME_ERROR_CODE, 'resume-plot-outline'),
     canRestartOutline: failedWith(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE, 'restart-plot-outline'),

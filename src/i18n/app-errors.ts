@@ -706,15 +706,15 @@ function authoredText(locale: ErrorDisplayLocale, failure: Failure, join: Failur
   return parts.length ? parts.join(JOINERS[join](copyLocale(locale) === 'zh-CN')) : undefined
 }
 
-function unexplained(locale: ErrorDisplayLocale, failure: Failure, fallback?: string): string {
-  const code = codeOf(failure)
+function unexplained(locale: ErrorDisplayLocale, failure: Failure | undefined, fallback?: string): string {
+  const code = failure && codeOf(failure)
   if (code) logUnregisteredCode(code)
   return fallback || translate(locale, 'error.unregisteredCode')
 }
 
-/** 失败的唯一显示函数。 */
-export function failureText(locale: ErrorDisplayLocale, failure: Failure, options: { fallback?: AuthorNote; join?: FailureJoin } = {}): string {
-  return authoredText(locale, failure, options.join)
+/** 失败的唯一显示函数。认不出的失败（undefined）和没有说明、码也查不到的失败用通用说明。 */
+export function failureText(locale: ErrorDisplayLocale, failure: Failure | undefined, options: { fallback?: AuthorNote; join?: FailureJoin } = {}): string {
+  return (failure && authoredText(locale, failure, options.join))
     ?? unexplained(locale, failure, options.fallback && noteText(locale, options.fallback))
 }
 
@@ -722,12 +722,11 @@ export function authorError(locale: ErrorDisplayLocale, failure: Failure, option
   return new AuthorError(failure, failureText(locale, failure), options)
 }
 
-/** catch 处的严格解析：认不出的只带通用说明，不造新码；原文只进控制台，同一个错误只记一次。 */
-export function caughtFailure(error: unknown): Failure {
+/** catch 处的严格解析：认不出的不造码也不造说明，原文只进控制台，同一个错误只记一次。 */
+export function caughtFailure(error: unknown): Failure | undefined {
   const failure = failureOf(error)
-  if (failure) return failure
-  warnOnce('未标记的失败：', error)
-  return { note: catalogNote('error.unregisteredCode') }
+  if (!failure) warnOnce('未标记的失败：', error)
+  return failure
 }
 
 /** 显示处去掉的前缀：Electron 的调用通道，以及 "Error: "、"TypeError: " 这类类名。 */

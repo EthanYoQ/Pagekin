@@ -59,6 +59,13 @@ describe('步骤失败后 run.error、step.error、errorCode 与 master 相同',
   })
 })
 
+it('认不出的失败存下来没有 note', async () => {
+  for (const thrown of [new Error(''), new Error('某处中文原文'), Object.assign(new Error(''), { code: 'enoent' })]) {
+    const run = await failedRun(thrown)
+    expect([run.failure?.note, run.steps[0].failure?.note]).toEqual([undefined, undefined])
+  }
+})
+
 describe('复验失败和正文生成失败读到的 run.error 与 master 相同', () => {
   const recheckFallback = '复验任务未完成；可在修复模型或资源问题后再次重试。'
   it.each(throws)('%s', async (_name, thrown, expected) => {

@@ -113,9 +113,9 @@ describe('failureOf', () => {
     expect(failureOf({ message: '', errorCode: 'PROJECT_NOT_OPEN' })).toEqual({ code: 'PROJECT_NOT_OPEN' })
   })
 
-  it('认不出且 message 为空：caughtFailure 只带通用说明，不造码', () => {
+  it('认不出且 message 为空：caughtFailure 不造码也不造说明，显示时用通用说明', () => {
     const failure = caughtFailure(new Error(''))
-    expect(failure.code).toBeUndefined()
+    expect(failure).toBeUndefined()
     expect(failureText(zh, failure)).toBe(generic)
   })
 })

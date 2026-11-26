@@ -64,6 +64,12 @@ it('只带已登记码、message 为空的失败步骤能展开并显示说明',
   expect(shown.notice).toBe('请先打开项目。')
 })
 
+it('认不出的失败显示时仍有通用说明', async () => {
+  const shown = await failedCard(new Error(''))
+  expect(shown.expandable).toBe(true)
+  expect(shown.stepError).toBe('出了意外问题，暂时说不清原因。请再试一次。')
+})
+
 describe('未迁移的产生点在运行卡片上的显示与 master 相同', () => {
   const proxy = '代理 127.0.0.1:7890 连不上，请在设置里检查代理。'
   it.each([

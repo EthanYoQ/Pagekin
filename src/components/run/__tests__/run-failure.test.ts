@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { runFailure } from '../run-failure'
 import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE } from '../../../services/workflows/commands/architecture.command'
 import type { WorkflowRun } from '../../../stores/workflow-store'
@@ -25,7 +25,7 @@ it('输出长度中断的大纲失败仍走断点续写', () => {
   expect(failure.canRestartOutline).toBe(false)
 })
 
-const withFailure = (failure: Failure, extra: Partial<WorkflowRun> = {}) => ({
+const withFailure = (failure: Failure | undefined, extra: Partial<WorkflowRun> = {}) => ({
   ...failedOutline('', ''), error: '', errorCode: undefined, failure, ...extra,
   steps: [{ id: 'synopsis', name: '情节大纲', description: '', status: 'failed', logs: [], error: '', failure, ...extra.steps?.[0] }],
 }) as unknown as WorkflowRun
@@ -44,6 +44,7 @@ it('审稿失败带产生点写的说明时，诊断的兜底说明不盖掉它'
 })
 
 it('审稿失败 message 为空时，catch 补的通用说明不盖掉诊断给的具体原因', () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
   const run = withFailure(caughtFailure(new Error('')), { steps: [{ generationActivity: { operation: 'review-chapter', diagnostics: { endReason: 'failed', causeCode: 'UND_ERR_BODY_TIMEOUT' } } }] } as never)
   expect(runFailure(run, shown('zh-CN')).presentation.reason).toBe('读取响应流超时。上游为何停止响应尚未确认。')
 })

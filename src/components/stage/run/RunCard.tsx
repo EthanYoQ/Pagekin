@@ -195,7 +195,9 @@ function RunStep({ step, runStatus, runLocale, live, reasoning, open, onToggle, 
   const output = useMemo(() => splitThinking(step.result), [step.result])
   const locale = errorLocaleForRun(runLocale, useLocaleStore(activeInterfaceLocale))
   const thinking = reasoning || output.thinking
-  const failed = step.failure ? failureText(locale, step.failure) : step.error && displayedErrorMessage(locale, step.error)
+  const failed = step.failure || (step.status === 'failed' && !step.error)
+    ? failureText(locale, step.failure)
+    : step.error && displayedErrorMessage(locale, step.error)
   const hasDetail = Boolean(output.raw || thinking || failed)
   const expanded = hasDetail && open
   const reviewing = runStatus === 'running' && step.generationActivity?.operation === 'review-chapter'
