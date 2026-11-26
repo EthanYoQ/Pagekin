@@ -21,7 +21,7 @@ export interface PlanningMaterial {
   text: string
 }
 
-/** 只带码：主进程旧 error 字段里的说明按系统语言写，不再采用，显示时按码查目录。 */
+/** 只带码：主进程旧 error 字段的说明按系统语言写，不采用。 */
 export class KnowledgeBaseServiceError extends AuthorError {
   constructor(code: AppErrorCode) {
     super({ code }, failureText(currentInterfaceLocale(), { code }))

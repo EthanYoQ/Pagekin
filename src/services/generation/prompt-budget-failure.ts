@@ -147,7 +147,6 @@ export function networkFailureNote(
 const TIMED_OUT = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT'])
 const INTERRUPTED = new Set(['UND_ERR_SOCKET', 'ECONNRESET', 'ERR_STREAM_PREMATURE_CLOSE'])
 
-/** 审稿按传输诊断说明为什么没完成；诊断没记失败时返回 undefined。 */
 export function reviewTransportNote(diagnostics: GenerationTransportDiagnostics | undefined): AuthorNote | undefined {
   if (diagnostics?.endReason !== 'failed') return undefined
   const code = diagnostics.causeCode ?? diagnostics.errorCode ?? ''

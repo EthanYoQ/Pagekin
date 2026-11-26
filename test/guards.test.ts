@@ -172,7 +172,7 @@ describe('存量 baseline 只减不增', () => {
 })
 
 describe('失败的码与说明（#844）', () => {
-  /** 建立基线时各旧约定的合计（种类互换不算新增）；基线文件只能往下改。authorOwned 是新约定，每处新增都改基线、过审查。 */
+  /** 基线只能往下改；authorOwned 每处新增都要改基线、过审查。 */
   const ORIGINAL_LEGACY_TOTAL = 154 + 27 + 19 + 27
   const baseline = FAILURE_BASELINE as LegacyFailureCounts
   const legacyTotal = (counts: LegacyFailureCounts) => Object.values(counts).reduce((sum, perFile) => sum + legacySum(perFile), 0)

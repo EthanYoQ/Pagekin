@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const listAdditions = (current, previous) => current.filter(entry => !previous.includes(entry))
 
-// 每个文件的旧约定按合计比较，种类互换不算新增；authorOwned 是新约定，不计入。
+// 按每个文件的合计比较，种类互换不算新增。
 const legacySum = counts => Object.entries(counts ?? {}).reduce((sum, [kind, n]) => kind === 'authorOwned' ? sum : sum + n, 0)
 const countAdditions = (current, previous) => Object.entries(current)
   .filter(([path, counts]) => legacySum(counts) > legacySum(previous[path]))

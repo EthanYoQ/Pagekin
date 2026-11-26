@@ -11,7 +11,7 @@ import { workflowMainProcessError } from '../workflow-project-session'
 import { unwrapKnowledgeValue } from '../../knowledge-service'
 import { useLocaleStore } from '../../../stores/locale-store'
 
-/** master 上 workflowMainProcessError 的原样实现，作对照。 */
+/** 旧实现原样保留，作对照。 */
 function masterWorkflowMainProcessError(interfaceLocale: ErrorDisplayLocale, error: unknown, zhCNSummary: string, enUSSummary: string): Error {
   const english = copyLocale(interfaceLocale) === 'en-US'
   const summary = english ? enUSSummary : zhCNSummary

@@ -34,7 +34,7 @@ export class ReviewRevisionRuntimeFixture {
   materialDecisions: MaterialDecisionReceipt[] = []
   calls: Array<{ channel: string; args: unknown[] }> = []
   artifacts = new Map<string, MainGenerationSnapshot>()
-  /** 主进程在收据上记的失败码与传输诊断，合进下一次结果的收据。 */
+  /** 合进下一次结果的收据。 */
   receiptFailure?: Pick<GenerationAttemptReceipt, 'failureCode' | 'diagnostics'>
   private sequence = 0
   private activeHandle?: ReviewRevisionRecovery['handle']

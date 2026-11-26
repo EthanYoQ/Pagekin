@@ -22,7 +22,6 @@ export interface RunFailure {
   canRestartOutline: boolean
 }
 
-/** 产生点写的说明在本层或 because 链上任一层都算。 */
 const hasNote = (failure: Failure | LegacyReason | undefined): boolean =>
   failure !== undefined && !('legacy' in failure) && (failure.note !== undefined || hasNote(failure.because))
 

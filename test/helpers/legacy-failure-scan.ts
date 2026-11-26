@@ -49,7 +49,7 @@ function becauseValues(value: ts.Expression): ts.Expression[] {
 const hasLegacyKey = (value: ts.Expression) => ts.isObjectLiteralExpression(value) && value.properties.some(property =>
   (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) && propertyName(property.name) === 'legacy')
 
-/** 每个文件旧约定各种类的合计；authorOwned 是新约定，不计入。 */
+/** 旧约定按合计比较（种类互换不算新增），authorOwned 不计入。 */
 export const legacySum = (counts: Partial<Record<LegacyFailureKind, number>>) =>
   Object.entries(counts).reduce((sum, [kind, n]) => kind === 'authorOwned' ? sum : sum + (n ?? 0), 0)
 

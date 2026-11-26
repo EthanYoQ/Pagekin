@@ -39,7 +39,6 @@ export class ReviewChapterCommand extends ReviewRevisionCommand {
     }, dependencies)
   }
 
-  /** 审稿失败的提示按这次请求的传输诊断说明原因。 */
   protected override readonly receiptFailureNote = (receipt: BoundedCompletion['receipt']) => reviewTransportNote(receipt?.diagnostics)
 
   protected async generateAndCommit(prepared: PreparedReviewRevisionContext, params: CommandExecuteParams) {

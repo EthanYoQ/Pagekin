@@ -22,7 +22,7 @@ const timing = { startedAt: 1, elapsedMs: 10, firstResponseMs: 5, lastResponseMs
 const failed = (phase: GenerationTransportDiagnostics['phase'], fields: Partial<GenerationTransportDiagnostics>): GenerationTransportDiagnostics =>
   ({ ...timing, phase, endReason: 'failed', ...fields })
 
-/** master 上审稿运行按传输诊断给的原因，与收据失败码无关。 */
+/** 审稿按传输诊断给原因，与收据失败码无关。 */
 const BY_DIAGNOSTICS: Array<[string, GenerationTransportDiagnostics, Record<Locale, string>]> = [
   ['读响应流超时', failed('stream', { causeCode: 'UND_ERR_BODY_TIMEOUT' }), { 'zh-CN': '读取响应流超时。上游为何停止响应尚未确认。', 'en-US': 'Reading the response stream timed out. Why the upstream stopped responding is not confirmed.' }],
   ['等响应头超时', failed('response', { causeCode: 'UND_ERR_HEADERS_TIMEOUT' }), { 'zh-CN': '等待服务响应超时。具体原因尚未确认。', 'en-US': 'Waiting for the service timed out. The underlying cause is not confirmed.' }],
@@ -40,7 +40,7 @@ const BY_DIAGNOSTICS: Array<[string, GenerationTransportDiagnostics, Record<Loca
 ]
 
 const GENERIC = { 'zh-CN': 'AI 未正常完成生成，结果未被保存。', 'en-US': 'AI generation did not complete normally, so the result was not saved.' }
-/** 诊断没记失败时，master 显示产生点的说明：NETWORK_ERROR 按阶段给网络说明，其余码是通用说明。 */
+/** 诊断没记失败时：NETWORK_ERROR 给网络说明，其余码给通用说明。 */
 const NOT_FAILED: Array<[string, GenerationTransportDiagnostics | undefined, Record<Locale, string>]> = [
   ['流已结束', { ...timing, phase: 'stream', endReason: 'completed' }, { 'zh-CN': '与模型服务的连接中途断了。请检查网络或「网络代理」设置后重试。', 'en-US': 'The connection to the model service broke off midway. Check your network or the Network proxy settings, then try again.' }],
   ['请求阶段未结束', { ...timing, phase: 'request' }, { 'zh-CN': '没连上模型服务。请检查网络或「网络代理」设置后重试。', 'en-US': 'Could not reach the model service. Check your network or the Network proxy settings, then try again.' }],
@@ -61,7 +61,6 @@ beforeEach(() => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); useProjectStore.setState({ currentProject: null }) })
 
-/** 审稿命令拿到带失败码的结果，失败进运行记录，再按运行卡片的入口取失败提示的原因。 */
 async function reviewFailureReason(code: ReceiptCode, diagnostics: GenerationTransportDiagnostics | undefined, locale: Locale, cancelled = false) {
   const fixture = new ReviewRevisionRuntimeFixture(async channel => {
     if (channel === 'db:draft-get-full') return source

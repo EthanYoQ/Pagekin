@@ -541,7 +541,6 @@ export abstract class BaseWorkflowCommand<TResult = string> {
     return createBoundedCompletionError(finishReason, receipt, context.interfaceLocale)
   }
 
-  /** 命令按收据给的更具体失败说明；默认没有，用按结束原因给的说明。 */
   protected readonly receiptFailureNote: (receipt: BoundedCompletion['receipt']) => AuthorNote | undefined = () => undefined
 
   /**

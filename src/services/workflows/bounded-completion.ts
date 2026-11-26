@@ -31,7 +31,7 @@ export interface BoundedCompletion {
 /** A non-stop terminal model state that made a bounded completion fail closed. */
 export type BoundedCompletionFailureCode = Exclude<LLMFinishReason, 'stop'>
 
-/** 模型的结束原因另存在 failureCode，供分流；给作者看的说明与码都在 failure 里，构造时给定。 */
+/** failureCode 是模型的结束原因，供分流；给作者看的说明与码在 failure 里。 */
 export class BoundedCompletionFailure extends AuthorError {
   readonly failureCode: BoundedCompletionFailureCode
 
@@ -122,7 +122,6 @@ function incompleteCompletionNote(finishReason: LLMFinishReason, receipt: Bounde
   }
 }
 
-/** 调用方要带上收据的码或换一句更贴切的说明时，在 failure 里给，不在造完之后改。 */
 export function createBoundedCompletionError(
   finishReason: LLMFinishReason,
   receipt: BoundedCompletion['receipt'] | undefined,
