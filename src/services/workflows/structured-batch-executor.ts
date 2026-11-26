@@ -10,6 +10,7 @@ import {
 import { structuredContractDiagnostic } from '../../shared/structured-contract-diagnostic'
 import type { WritingLanguage } from '../../shared/writing-language'
 import { errorCodeOf, isRegisteredErrorCode } from '../../i18n/app-errors'
+import { failureCode, note, type Failure } from '../../shared/failure'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 import {
   buildStructuredSyntaxRepairTask,
@@ -70,7 +71,10 @@ export interface StructuredBatchReceipt {
 
 export interface StructuredBatchFailure {
   code: 'generation_failed' | 'invalid_output' | 'limit_exceeded' | 'cancelled' | 'deadline'
-  message: string
+  /** 给作者看的说明与主进程的稳定错误码（预算用完、生成被阻断等）。 */
+  failure: Failure
+  /** 只有中文的诊断原文，不给作者看。只剩 architecture、import-novel 两个未迁移的读者照旧显示，它们迁走后删除。 */
+  detail?: string
   reason?: StructuredGenerationFailureReason
     | 'missing_item'
     | 'duplicate_item'
@@ -89,8 +93,6 @@ export interface StructuredBatchFailure {
     actualCharacters?: number
     maxCharacters?: number
   }
-  /** 主进程给出的稳定错误码，例如预算用完或生成被阻断。 */
-  errorCode?: string
   /** 消费方原样抛出：服务商以上下文超长拒绝（保留登记的错误码），或取消造成的中止（保留取消身份）。 */
   terminal?: TerminalProviderFailureError | WorkflowCancelledError
 }
@@ -116,6 +118,11 @@ export interface StructuredBatchExecutor<TInput, TOutput> {
   }): Promise<StructuredBatchResult<TOutput>>
 }
 
+const CANCELLED = note('结构化生成已取消', 'Structured generation was cancelled.')
+const ITEM_INVALID = note('结构化输出项不符合合同', 'A structured output item does not match the contract.')
+const GENERATION_FAILED = note('结构化生成失败', 'Structured generation failed.')
+const DEADLINE = note('生成会话已超过截止时间。', 'The generation session ran past its time limit.')
+
 export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
   contract: StructuredBatchContract<TInput, TOutput>
   session: Pick<GenerationSession, 'complete'>
@@ -126,14 +133,14 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
 
   class ExecutionFailure extends Error {
     constructor(readonly failure: StructuredBatchFailure) {
-      super(failure.message)
+      super(failure.code)
     }
   }
   /** 主进程阻断根时回执带的码（活动时长用完、写入失败），失败沿用这个码。 */
-  const receiptStop = (receipt: GenerationAttemptReceipt, message: string): ExecutionFailure | undefined => {
-    const errorCode = receipt.failureCode
-    if (errorCode === 'ROOT_BUDGET_EXHAUSTED') return new ExecutionFailure({ code: 'deadline', reason: 'deadline', message, errorCode })
-    if (errorCode === 'GENERATION_STORAGE_FAILED') return new ExecutionFailure({ code: 'generation_failed', reason: 'server_error', message, errorCode })
+  const receiptStop = (receipt: GenerationAttemptReceipt): ExecutionFailure | undefined => {
+    const code = receipt.failureCode
+    if (code === 'ROOT_BUDGET_EXHAUSTED') return new ExecutionFailure({ code: 'deadline', reason: 'deadline', failure: { code } })
+    if (code === 'GENERATION_STORAGE_FAILED') return new ExecutionFailure({ code: 'generation_failed', reason: 'server_error', failure: { code } })
     return undefined
   }
 
@@ -166,7 +173,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
           failure: {
             code: 'limit_exceeded',
             reason: 'invalid_limit',
-            message: '结构化批次上限必须是正整数',
+            failure: { note: note('结构化批次上限必须是正整数', 'The structured batch limit must be a positive integer.') },
           },
           receipt,
         }
@@ -179,7 +186,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
           failure: {
             code: 'limit_exceeded',
             reason: 'invalid_limit',
-            message: '紧凑单项重建上限必须是非负整数',
+            failure: { note: note('紧凑单项重建上限必须是非负整数', 'The compact single-item rebuild limit must be a non-negative integer.') },
           },
           receipt,
         }
@@ -193,7 +200,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
           throw new ExecutionFailure({
             code: 'cancelled',
             reason: 'cancelled',
-            message: '结构化生成已取消',
+            failure: { note: CANCELLED },
           })
         }
         let builtTask: GenerationTask
@@ -208,7 +215,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
             throw new ExecutionFailure({
               code: 'invalid_output',
               reason: 'invalid_item',
-              message: '紧凑单项任务构建失败',
+              failure: { note: note('紧凑单项任务构建失败', 'Could not build the compact single-item task.') },
             })
           }
         } else {
@@ -226,9 +233,9 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
           throw new ExecutionFailure({
             code: 'invalid_output',
             reason: 'invalid_item',
-            message: compact
-              ? '紧凑单项任务必须请求 structured-data 输出'
-              : '结构化批次合同必须请求 structured-data 输出',
+            failure: { note: compact
+              ? note('紧凑单项任务必须请求 structured-data 输出', 'The compact single-item task must request structured-data output.')
+              : note('结构化批次合同必须请求 structured-data 输出', 'The structured batch contract must request structured-data output.') },
           })
         }
 
@@ -253,7 +260,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
           throw new ExecutionFailure({
             code: 'cancelled',
             reason: 'cancelled',
-            message: '结构化生成已取消',
+            failure: { note: CANCELLED },
           })
         }
         const singleItemKey = items.length === 1 ? contract.inputKey(items[0]!) : undefined
@@ -280,7 +287,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
           return
         }
         if (outcome.status === 'incomplete') {
-          const stop = receiptStop(outcome.receipt, `结构化生成未正常完成：${outcome.finishReason}`)
+          const stop = receiptStop(outcome.receipt)
           if (stop) throw stop
           if (outcome.finishReason !== 'length') {
             const reason: StructuredGenerationFailureReason = outcome.finishReason === 'content_filter'
@@ -293,14 +300,15 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
             throw new ExecutionFailure({
               code: reason === 'cancelled' ? 'cancelled' : 'generation_failed',
               reason,
-              message: `结构化生成未正常完成：${outcome.finishReason}`,
+              failure: { note: note('结构化生成未正常完成', 'Structured generation did not finish normally.') },
+              detail: `结构化生成未正常完成：${outcome.finishReason}`,
             })
           }
           if (items.length <= 1) {
             throw new ExecutionFailure({
               code: 'limit_exceeded',
               reason: 'output_limit',
-              message: '单项结构化输出达到模型输出上限，无法继续拆分',
+              failure: { note: note('单项结构化输出达到模型输出上限，无法继续拆分', 'A single structured item reached the model output limit and cannot be split further.') },
             })
           }
           const midpoint = Math.floor(items.length / 2)
@@ -324,7 +332,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
             throw new ExecutionFailure({
               code: 'invalid_output',
               reason: 'malformed_output',
-              message: '结构化语法修复合同构建失败',
+              failure: { note: note('结构化语法修复合同构建失败', 'Could not build the structured syntax-repair contract.') },
             })
           }
           if (!repairUsed) {
@@ -353,11 +361,11 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
               throw new ExecutionFailure({
                 code: 'cancelled',
                 reason: 'cancelled',
-                message: '结构化语法修复已取消',
+                failure: { note: note('结构化语法修复已取消', 'Structured syntax repair was cancelled.') },
               })
             }
             if (repaired.status === 'incomplete') {
-              const stop = receiptStop(repaired.receipt, `结构化语法修复未正常完成：${repaired.finishReason}`)
+              const stop = receiptStop(repaired.receipt)
               if (stop) throw stop
               if (repaired.finishReason === 'length') {
                 if (items.length > 1) {
@@ -374,7 +382,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
                 throw new ExecutionFailure({
                   code: 'limit_exceeded',
                   reason: 'output_limit',
-                  message: '结构化语法修复达到模型输出上限',
+                  failure: { note: note('结构化语法修复达到模型输出上限', 'Structured syntax repair reached the model output limit.') },
                 })
               }
               const repairReason: StructuredGenerationFailureReason = repaired.finishReason === 'content_filter'
@@ -385,7 +393,8 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
               throw new ExecutionFailure({
                 code: 'generation_failed',
                 reason: repairReason,
-                message: `结构化语法修复未正常完成：${repaired.finishReason}`,
+                failure: { note: note('结构化语法修复未正常完成', 'Structured syntax repair did not finish normally.') },
+                detail: `结构化语法修复未正常完成：${repaired.finishReason}`,
               })
             }
             if (!preservesStructuredJsonEvidence(candidateContent, repaired.content)) {
@@ -399,7 +408,7 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
               throw new ExecutionFailure({
                 code: 'invalid_output',
                 reason: 'malformed_output',
-                message: '结构化语法修复改变了候选中的非结构证据，已拒绝补造或改写事实',
+                failure: { note: note('结构化语法修复改变了候选中的非结构证据，已拒绝补造或改写事实', 'Structured syntax repair changed non-structural evidence in the candidate and was rejected, so no facts were invented or rewritten.') },
               })
             }
             candidateContent = repaired.content
@@ -444,11 +453,12 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
               : syntaxRepairApplied
                 ? 'malformed_output'
                 : 'invalid_item',
-            message: diagnostic
-              ? diagnostic.message
-              : syntaxRepairApplied
-                ? '结构化输出经一次语法修复后仍无法按合同解码'
-                : '结构化输出无法按合同解码',
+            failure: diagnostic
+              ? { note: ITEM_INVALID }
+              : { note: syntaxRepairApplied
+                ? note('结构化输出经一次语法修复后仍无法按合同解码', 'The structured output still could not be decoded after one syntax repair.')
+                : note('结构化输出无法按合同解码', 'The structured output could not be decoded.') },
+            ...(diagnostic ? { detail: diagnostic.message } : {}),
             ...(diagnostic
               ? {
                   diagnostic: {
@@ -474,14 +484,15 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
             throw new ExecutionFailure({
               code: 'invalid_output',
               reason: 'invalid_item',
-              message: '结构化输出项不符合合同',
+              failure: { note: ITEM_INVALID },
             })
           }
           if (error) {
             throw new ExecutionFailure({
               code: 'invalid_output',
               reason: 'invalid_item',
-              message: error,
+              failure: { note: ITEM_INVALID },
+              detail: error,
             })
           }
         }
@@ -491,7 +502,8 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
           throw new ExecutionFailure({
             code: 'invalid_output',
             reason: 'duplicate_item',
-            message: `结构化输出包含重复目标项：${[...new Set(duplicateKeys)].join('、')}`,
+            failure: { note: note('结构化输出包含重复目标项', 'The structured output contains duplicate target items.') },
+            detail: `结构化输出包含重复目标项：${[...new Set(duplicateKeys)].join('、')}`,
           })
         }
         const outputKeys = new Set(decodedKeys)
@@ -502,7 +514,8 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
           throw new ExecutionFailure({
             code: 'invalid_output',
             reason: 'unexpected_item',
-            message: `结构化输出包含批次范围外目标项：${[...new Set(unexpectedKeys)].join('、')}`,
+            failure: { note: note('结构化输出包含批次范围外目标项', 'The structured output contains items outside this batch.') },
+            detail: `结构化输出包含批次范围外目标项：${[...new Set(unexpectedKeys)].join('、')}`,
           })
         }
         const missingKeys = expectedKeys
@@ -526,9 +539,10 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
           throw new ExecutionFailure({
             code: 'invalid_output',
             reason: syntaxRepairApplied ? 'malformed_output' : 'missing_item',
-            message: syntaxRepairApplied
-              ? `结构化语法修复结果缺少目标项：${missingKeys.join('、')}`
-              : `结构化输出缺少目标项：${missingKeys.join('、')}`,
+            failure: { note: syntaxRepairApplied
+              ? note('结构化语法修复结果缺少目标项', 'The syntax-repaired output is missing target items.')
+              : note('结构化输出缺少目标项', 'The structured output is missing target items.') },
+            detail: `${syntaxRepairApplied ? '结构化语法修复结果缺少目标项' : '结构化输出缺少目标项'}：${missingKeys.join('、')}`,
           })
         }
         const outputByKey = new Map(
@@ -547,43 +561,41 @@ export function createStructuredBatchExecutor<TInput, TOutput>(dependencies: {
       } catch (error) {
         if (error instanceof PromptBudgetExceededError) throw error
         if (!(error instanceof ExecutionFailure) && error instanceof Error && error.message.includes('ROOT_BUDGET_EXHAUSTED')) {
-          const message = writingLanguage === 'zh-CN'
-            ? '本任务预算已用完；已完成的完整项目保留，剩余范围尚未发送。'
-            : 'The task budget is exhausted. Completed items are preserved; the remaining scope was not sent.'
-          return { ok: false, validatedItems: validated, failure: { code: 'limit_exceeded', reason: 'root_budget', message: `${message} (ROOT_BUDGET_EXHAUSTED)`, errorCode: 'ROOT_BUDGET_EXHAUSTED' }, receipt }
+          const failure: Failure = { code: 'ROOT_BUDGET_EXHAUSTED', note: note('本任务预算已用完；已完成的完整项目保留，剩余范围尚未发送。', 'The task budget is exhausted. Completed items are preserved; the remaining scope was not sent.') }
+          return { ok: false, validatedItems: validated, failure: { code: 'limit_exceeded', reason: 'root_budget', failure }, receipt }
         }
         let failure: StructuredBatchFailure
         if (error instanceof ExecutionFailure) {
           failure = error.failure
         } else if (error instanceof TerminalProviderFailureError) {
           recordAttempt(error.receipt)
-          failure = { code: 'generation_failed', reason: 'context_length', message: error.code, terminal: error }
+          failure = { code: 'generation_failed', reason: 'context_length', failure: { code: error.code }, terminal: error }
         } else if (error instanceof GenerationAttemptError) {
           recordAttempt(error.receipt)
           if (error.code === 'CANCELLED') {
-            failure = { code: 'cancelled', reason: 'cancelled', message: error.message }
+            failure = { code: 'cancelled', reason: 'cancelled', failure: { note: CANCELLED }, detail: error.message }
           } else if (error.code === 'DEADLINE_EXHAUSTED') {
-            failure = { code: 'deadline', reason: 'deadline', message: error.message }
+            failure = { code: 'deadline', reason: 'deadline', failure: { note: DEADLINE }, detail: error.message }
           } else {
-            failure = { code: 'generation_failed', reason: 'server_error', message: error.message }
+            failure = { code: 'generation_failed', reason: 'server_error', failure: { note: GENERATION_FAILED }, detail: error.message }
           }
         } else if (error instanceof GenerationHarnessError) {
           if (error.code === 'ATTEMPT_BUDGET_EXHAUSTED') {
-            failure = { code: 'limit_exceeded', reason: 'max_calls', message: error.message }
+            failure = { code: 'limit_exceeded', reason: 'max_calls', failure: { note: note('生成会话已用尽请求次数。', 'The generation session used up its request attempts.') }, detail: error.message }
           } else if (error.code === 'REQUESTED_TOKEN_BUDGET_EXHAUSTED') {
-            failure = { code: 'limit_exceeded', reason: 'max_requested_tokens', message: error.message }
+            failure = { code: 'limit_exceeded', reason: 'max_requested_tokens', failure: { note: note('生成会话已用尽请求输出额度。', 'The generation session used up its output budget.') }, detail: error.message }
           } else if (error.code === 'DEADLINE_EXHAUSTED') {
-            failure = { code: 'deadline', reason: 'deadline', message: error.message }
+            failure = { code: 'deadline', reason: 'deadline', failure: { note: DEADLINE }, detail: error.message }
           } else if (error.code === 'CANCELLED') {
-            failure = { code: 'cancelled', reason: 'cancelled', message: error.message }
+            failure = { code: 'cancelled', reason: 'cancelled', failure: { note: CANCELLED }, detail: error.message }
           } else {
-            failure = { code: 'generation_failed', reason: 'unknown', message: error.message }
+            failure = { code: 'generation_failed', reason: 'unknown', failure: { note: GENERATION_FAILED }, detail: error.message }
           }
         } else {
           // 只保留稳定错误码，不转出主进程以外的原文（可能带凭据或提示词）；没有登记说明的码只进诊断。
-          const errorCode = errorCodeOf(error)
-          const message = errorCode && isRegisteredErrorCode(errorCode) ? errorCode : '结构化生成失败'
-          failure = { code: 'generation_failed', reason: 'server_error', message, ...(errorCode ? { errorCode } : {}) }
+          const code = failureCode(errorCodeOf(error))
+          failure = { code: 'generation_failed', reason: 'server_error',
+            failure: code && isRegisteredErrorCode(code) ? { code } : code ? { code, note: GENERATION_FAILED } : { note: GENERATION_FAILED } }
         }
         // 取消造成的中止经 terminal 原样交给消费方抛出，各命令的失败包装不能把取消身份丢掉。
         if (failure.code === 'cancelled' || isWorkflowCancellation(error)) {

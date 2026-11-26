@@ -49,7 +49,7 @@ import {
   isGeneratedGlobalGuidanceValid,
   mergeExpandedNovelConfig,
 } from '../novel-config-expansion'
-import { displayedErrorMessage, englishWithReason, errorCodeOf, knownAppErrorMessage } from '../../../i18n/app-errors'
+import { displayedErrorMessage, englishWithReason, errorCodeOf, failureText, knownAppErrorMessage } from '../../../i18n/app-errors'
 import { pluralEn } from '../../../shared/plural-en'
 import { recordAiSources, type AiSources } from '../../../shared/novel-config-ai-sources'
 import { WorkflowCancelledError } from '../workflow-cancellation'
@@ -1228,9 +1228,11 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
           : []),
         `attempts=${attempts}`,
       ].join(' ')
+      const { detail, failure } = detailExecution.failure
+      const reason = detail ? displayedErrorMessage(context.interfaceLocale, detail) : failureText(context.interfaceLocale, failure)
       throw new Error(text(
-        `${displayedErrorMessage(context.interfaceLocale, detailExecution.failure.message)}；角色详情失败收据：${failureReceipt}`,
-        `${knownAppErrorMessage(context.interfaceLocale, detailExecution.failure.message) ?? englishWithReason(context.interfaceLocale, 'Character details failed structural validation and were not saved.', displayedErrorMessage(context.interfaceLocale, detailExecution.failure.message))} Receipt: ${failureReceipt}`,
+        `${reason}；角色详情失败收据：${failureReceipt}`,
+        `${knownAppErrorMessage(context.interfaceLocale, failure.code) ?? englishWithReason(context.interfaceLocale, 'Character details failed structural validation and were not saved.', reason)} Receipt: ${failureReceipt}`,
       ))
     }
     if (detailExecution.items.length !== manifest.length) {
