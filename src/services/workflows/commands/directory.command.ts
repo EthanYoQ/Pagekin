@@ -1,4 +1,5 @@
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { authorError, failureText } from '../../../i18n/app-errors'
+import { AuthorError, note, type Failure } from '../../../shared/failure'
 import { parsePlanningTargetUnits, planningTargetInstruction, assertPlanningActionRange, DEFAULT_PLANNING_ACTION_CHAPTERS } from '../../../shared/plot-outline-contract'
 import type { MainGenerationRunHandle } from '../../generation/generation-runtime'
 import {
@@ -52,10 +53,9 @@ export interface GenerateDirectoryCommandDependencies {
 }
 
 /** A failed run may still have one atomically adopted, fully validated prefix. */
-export class DirectoryPartialCommitError extends Error {
-  readonly code = 'DIRECTORY_PARTIAL_COMMIT'
-  constructor(readonly commitReceipt: BlueprintRangeCommitReceipt, readonly remainingRange: { startChapter: number; endChapter: number }, readonly generationFailure: StructuredBatchFailure, message: string) {
-    super(message)
+export class DirectoryPartialCommitError extends AuthorError {
+  constructor(readonly commitReceipt: BlueprintRangeCommitReceipt, readonly remainingRange: { startChapter: number; endChapter: number }, readonly generationFailure: StructuredBatchFailure, failure: Failure, renderedMessage: string) {
+    super(failure, renderedMessage)
     this.name = 'DirectoryPartialCommitError'
   }
 }
@@ -437,14 +437,13 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
           try {
             await retryDirectoryCharacterSync(receipt.characterSyncOperation.operationId, expectedProjectPath, context.projectSession, context.interfaceLocale)
           } catch { throw new DirectoryPostCommitSyncError(receipt) }
-          const remaining = `${prefixEnd + 1}–${endChapter}`
-          throw new DirectoryPartialCommitError(receipt, { startChapter: prefixEnd + 1, endChapter }, batchResult.failure, batchResult.failure.terminal
-            ? workflowUiText(context,
-              `已保存第 ${startChapter}–${prefixEnd} 章完整蓝图。第 ${remaining} 章的请求超出了模型能接受的长度，这几章没有生成。请换用上下文更长的模型、调低最大输出 Tokens 或精简要求，再生成这几章。`,
-              `Saved complete blueprints for chapters ${startChapter}–${prefixEnd}. The request for chapters ${remaining} was longer than the model accepts, so those chapters were not generated. Switch to a model with a longer context, lower Max output tokens, or shorten the request, then generate them again.`)
-            : workflowUiText(context,
-              `已保存第 ${startChapter}–${prefixEnd} 章完整蓝图；第 ${remaining} 章未完成。原运行的候选与失败原因已保留。`,
-              `Saved complete blueprints for chapters ${startChapter}–${prefixEnd}; chapters ${remaining} remain incomplete. The original run retains its candidates and failure reason.`))
+          const chapters = { start: startChapter, end: prefixEnd, from: prefixEnd + 1, to: endChapter }
+          const partial: Failure = { code: 'DIRECTORY_PARTIAL_COMMIT', note: batchResult.failure.terminal
+            ? note('已保存第 {start}–{end} 章完整蓝图。第 {from}–{to} 章的请求超出了模型能接受的长度，这几章没有生成。请换用上下文更长的模型、调低最大输出 Tokens 或精简要求，再生成这几章。',
+              'Saved complete blueprints for chapters {start}–{end}. The request for chapters {from}–{to} was longer than the model accepts, so those chapters were not generated. Switch to a model with a longer context, lower Max output tokens, or shorten the request, then generate them again.', chapters)
+            : note('已保存第 {start}–{end} 章完整蓝图；第 {from}–{to} 章未完成。原运行的候选与失败原因已保留。',
+              'Saved complete blueprints for chapters {start}–{end}; chapters {from}–{to} remain incomplete. The original run retains its candidates and failure reason.', chapters) }
+          throw new DirectoryPartialCommitError(receipt, { startChapter: prefixEnd + 1, endChapter }, batchResult.failure, partial, failureText(context.interfaceLocale, partial))
         }
         const generationSummary = directoryGenerationFailureSummary(batchResult.receipt.attempts)
         callbacks.log(workflowUiText(
@@ -460,12 +459,7 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
           )
         }
         if (batchResult.failure.terminal) throw batchResult.failure.terminal
-        const { errorCode } = batchResult.failure
-        throw Object.assign(new Error(workflowUiText(
-          context,
-          `${displayedErrorMessage(context.interfaceLocale, batchResult.failure.message)}；${generationSummary}`,
-          `Blueprint generation failed: code=${batchResult.failure.code} reason=${batchResult.failure.reason ?? 'unknown'}; ${generationSummary}`,
-        )), errorCode ? { code: errorCode } : {})
+        throw authorError(context.interfaceLocale, { note: note('蓝图生成失败', 'Blueprint generation failed.'), because: batchResult.failure.failure })
       }
 
       this.assertNotCancelled(context)
