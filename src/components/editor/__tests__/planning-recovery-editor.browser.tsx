@@ -540,12 +540,13 @@ describe('planning recovery editors', () => {
       expect(invoke.mock.calls.some(([name]) => /upsert|project-core-update/.test(name))).toBe(false); noModel()
     })
     it(`${kind} preserves dirty and operation identity after conflict and retry`, async () => {
-      context = fixture(kind); rejectSave = '来源已变化'; await render(kind); await edit(validText())
+      const conflict = kind === 'outline' ? '依据的设定、蓝图或前文有了变化' : '来源已变化'
+      context = fixture(kind); rejectSave = kind === 'outline' ? 'Error: PROJECT_CORE_SYNOPSIS_CHANGED' : '来源已变化'; await render(kind); await edit(validText())
       await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
       const first = savedPayload
-      await act(async () => { await expect(saveDirtyEditorChangesForExit(session.projectPath)).rejects.toThrow('来源已变化') })
-      expect(savedPayload).toEqual(first); expect(container.textContent).toContain('来源已变化'); noModel()
+      await act(async () => { await expect(saveDirtyEditorChangesForExit(session.projectPath)).rejects.toThrow(conflict) })
+      expect(savedPayload).toEqual(first); expect(container.textContent).toContain(conflict); noModel()
     })
     it(`${kind} exit-save keeps later input dirty while the snapshot saves`, async () => {
       context = fixture(kind); await render(kind); await edit(validText())

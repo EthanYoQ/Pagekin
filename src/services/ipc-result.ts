@@ -26,7 +26,7 @@ export function requireIpcSuccess<T extends IpcMutationResult>(
     const failure = resultFailure(result)
     if (failure && (failure.note || isRegisteredErrorCode(codeOf(failure)))) throw authorError(currentInterfaceLocale(), failure)
     const { text } = useLocaleStore.getState()
-    throw new Error(result.error || fallbackMessage || text(`${action}失败`, 'The operation failed.'))
+    throw new Error(fallbackMessage || text(`${action}失败`, 'The operation failed.'))
   }
   return result
 }

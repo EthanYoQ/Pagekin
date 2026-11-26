@@ -576,7 +576,7 @@ describe('project close lifecycle', () => {
     expect(useEditorStore.getState().tabs).toHaveLength(1)
     expect(mocks.onProjectClosed).not.toHaveBeenCalled()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('database busy'),
+      expect.not.stringContaining('database busy'),
       expect.objectContaining({ title: '关闭项目失败' }),
     )
   })
@@ -1923,7 +1923,7 @@ describe('project character-state persistence boundary', () => {
 
     expect(useProjectStore.getState().currentProject?.characterStates).toBe('')
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('disk full'),
+      expect.not.stringContaining('disk full'),
       expect.objectContaining({ title: '保存角色状态失败' }),
     )
   })
