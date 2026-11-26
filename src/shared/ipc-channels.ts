@@ -16,6 +16,7 @@ import type { CloudBackupChannels } from './cloud-backup'
 import type { ProjectOverview } from './project-overview'
 import type { ModelStage, StageModelIds } from './model-stage-routing'
 import type { KnowledgeSearchHit } from './knowledge-ranking'
+import type { Failure } from './failure'
 import type { InterfaceLocale } from '../i18n/types'
 import type { StartupChannels } from './startup-contract'
 import type {
@@ -230,6 +231,7 @@ export interface AppFailure {
   success: false
   errorCode: AppErrorCode
   error?: string
+  failure?: Failure
 }
 
 export type AppResult<T> = T | AppFailure
@@ -1155,15 +1157,15 @@ export interface DatabaseChannels {
 }
 
 export interface KnowledgeBaseChannels {
-  'kb:import-text': { args: [text: string, fileName: string, expectedProjectPath: string]; return: { success: boolean; docId?: string; chunkCount?: number; error?: string; errorCode?: AppErrorCode } }
-  'kb:import-planning-text': { args: [text: string, fileName: string, expectedProjectPath: string]; return: { success: boolean; docId?: string; chunkCount?: number; error?: string; errorCode?: AppErrorCode } }
+  'kb:import-text': { args: [text: string, fileName: string, expectedProjectPath: string]; return: { success: boolean; docId?: string; chunkCount?: number; error?: string; errorCode?: AppErrorCode; failure?: Failure } }
+  'kb:import-planning-text': { args: [text: string, fileName: string, expectedProjectPath: string]; return: { success: boolean; docId?: string; chunkCount?: number; error?: string; errorCode?: AppErrorCode; failure?: Failure } }
   'kb:import-reference-text': {
     args: [
       chapterNumber: number,
       runId: string,
       executionAuthority: ImportRunExecutionAuthority,
     ]
-    return: { success: boolean; docId?: string; chunkCount?: number; idempotent?: boolean; error?: string; errorCode?: AppErrorCode }
+    return: { success: boolean; docId?: string; chunkCount?: number; idempotent?: boolean; error?: string; errorCode?: AppErrorCode; failure?: Failure }
   }
   'kb:search': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<KnowledgeSearchHit[]> }
   'kb:search-writing-context': { args: [query: string, topK: number | undefined, expectedProjectPath: string]; return: AppResult<Array<{ text: string; score: number; fileName: string }>> }
@@ -1194,7 +1196,7 @@ export interface KnowledgeBaseChannels {
       activeVectorDimension: number
     }>
   }
-  'kb:backfill-vectors': { args: [expectedProjectPath: string]; return: { success: boolean; processed: number; failed: number; error?: string; errorCode?: AppErrorCode } }
+  'kb:backfill-vectors': { args: [expectedProjectPath: string]; return: { success: boolean; processed: number; failed: number; error?: string; errorCode?: AppErrorCode; failure?: Failure } }
 }
 
 export interface ImportChannels {

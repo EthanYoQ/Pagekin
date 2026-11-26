@@ -591,6 +591,7 @@ describe('database controller project context guard', () => {
     )).resolves.toEqual({
       success: false,
       errorCode: 'PROJECT_CONTEXT_CHANGED',
+      failure: { code: 'PROJECT_CONTEXT_CHANGED' },
       error: 'The project was switched or reopened, and this action belonged to the earlier session, so it was rejected. Repeat it in the project that is open now.',
     })
     expect(mocks.importRunFinalizeParsing).not.toHaveBeenCalled()
@@ -606,6 +607,7 @@ describe('database controller project context guard', () => {
       expect(english).toEqual({
         success: false,
         errorCode: 'IMPORT_RUN_AUTHOR_RESTART_FORBIDDEN',
+        failure: { code: 'IMPORT_RUN_AUTHOR_RESTART_FORBIDDEN' },
         error: 'An author-manuscript import cannot be restarted. Resume the original import to finish publishing and post-processing.',
       })
 
@@ -613,6 +615,7 @@ describe('database controller project context guard', () => {
       await expect(handler('db:import-run-restart')({}, 'author-run', 'next-run', 'C:/projects/A')).resolves.toEqual({
         success: false,
         errorCode: 'IMPORT_RUN_AUTHOR_RESTART_FORBIDDEN',
+        failure: { code: 'IMPORT_RUN_AUTHOR_RESTART_FORBIDDEN' },
         error: '作者原稿导入不能重新开始。请继续原来的这次导入，完成发布和后处理。',
       })
     })
@@ -655,6 +658,7 @@ describe('database controller project context guard', () => {
       )).resolves.toEqual({
         success: false,
         errorCode: 'IMPORT_INSPECTION_EXPIRED',
+        failure: { code: 'IMPORT_INSPECTION_EXPIRED' },
         error: 'The file check has expired. Choose the files again.',
       })
       expect(mocks.importRunGet).not.toHaveBeenCalled()

@@ -8,8 +8,8 @@ export type LegacyFailureKind = typeof LEGACY_FAILURE_CALLS[number] | '{ legacy:
 export type LegacyFailureCounts = Record<string, Partial<Record<LegacyFailureKind, number>>>
 
 const NOT_PRODUCTION = /\/__tests__\/|\.(?:test|spec|browser|typecheck)\.[cm]?[jt]sx?$|^src\/stories\//u
-const RAW_PROPERTIES = new Set(['message', 'stack'])
-const FAILURE_TYPES = /\b(?:AuthorNote|Failure)\b/u
+const RAW_PROPERTIES = new Set(['message', 'stack', 'toString'])
+const FAILURE_TYPES = /\b(?:AuthorNote|AuthorOwned|Failure|NoteParams)\b/u
 const FAILURE_MODULE = 'src/shared/failure.ts'
 
 export function productionSourceFiles(): string[] {
@@ -54,10 +54,22 @@ function readsRawText(node: ts.Node): boolean {
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'String') return true
   if (ts.isPropertyAccessExpression(node) && RAW_PROPERTIES.has(node.name.text)) return true
   if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && RAW_PROPERTIES.has(node.argumentExpression.text)) return true
+  if (ts.isTemplateSpan(node) && isCaughtValue(node.expression)) return true
   return ts.forEachChild(node, readsRawText) ?? false
 }
 
-export function rawAuthorOwnedArguments(file: string, text: string): string[] {
+function isCaughtValue(expression: ts.Expression): boolean {
+  while (ts.isParenthesizedExpression(expression)) expression = expression.expression
+  if (!ts.isIdentifier(expression)) return false
+  const name = expression.text
+  for (let scope: ts.Node | undefined = expression.parent; scope; scope = scope.parent) {
+    const caught = ts.isCatchClause(scope) ? scope.variableDeclaration?.name : undefined
+    if (caught && ts.isIdentifier(caught) && caught.text === name) return true
+  }
+  return false
+}
+
+export function rawTextInNoteArguments(file: string, text: string): string[] {
   const found: string[] = []
   walk(file, text, (node, source) => {
     if (ts.isCallExpression(node) && calleeName(node) === 'authorOwned' && node.arguments.some(readsRawText)) {
@@ -90,16 +102,18 @@ export function currentLegacyFailureCounts(): LegacyFailureCounts {
 const REWRITTEN_FIELDS = new Set(['code', 'errorCode', 'message'])
 const fieldName = (name: ts.Node | undefined) => name && (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) ? name.text : undefined
 
-/** 造完错误之后再改码或 message：Object.assign(x, { code | errorCode | message }) 与 x.code = …（this. 除外）。 */
+/** 造完错误之后再改 code、errorCode 或 message 的写法（this 除外）。 */
 export function failureRewrites(file: string, text: string): string[] {
   if (!file.startsWith('src/')) return []
   const found: string[] = []
   walk(file, text, (node, source) => {
     const assign = ts.isCallExpression(node) && node.expression.getText(source) === 'Object.assign' && node.arguments.slice(1).some(arg =>
       ts.isObjectLiteralExpression(arg) && arg.properties.some(property => REWRITTEN_FIELDS.has(fieldName(property.name) ?? '')))
-    const write = ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
-      && ts.isPropertyAccessExpression(node.left) && REWRITTEN_FIELDS.has(node.left.name.text)
-      && node.left.expression.kind !== ts.SyntaxKind.ThisKeyword
+    const target = ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken ? node.left : undefined
+    const written = target && (ts.isPropertyAccessExpression(target) ? target.name.text
+      : ts.isElementAccessExpression(target) && ts.isStringLiteralLike(target.argumentExpression) ? target.argumentExpression.text : undefined)
+    const write = !!written && REWRITTEN_FIELDS.has(written)
+      && (target as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression.kind !== ts.SyntaxKind.ThisKeyword
     if (assign || write) found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1} ${node.getText(source)}`)
   })
   return found

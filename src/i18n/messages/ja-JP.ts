@@ -9,6 +9,8 @@ export const jaJP = {
   'error.projectNotOpen': '先にプロジェクトを開いてください。',
   'error.embeddingModelNotConfigured': '先に埋め込みモデルを設定してください。',
   'error.projectStoragePathUnsupported': 'プロジェクトのパスが深すぎて、一部のローカルストレージで扱えません。プロジェクトフォルダーをドライブのルートに近い場所（例：D:\\Novels）に移動してから、もう一度お試しください。',
+  'error.projectPathTooDeepForDatabase': 'プロジェクトのパスが深すぎて、プロジェクトのデータベースを開けません。プロジェクトフォルダーをドライブのルートに近い場所（例：D:\\Novels）に移動し、パスを {max} 文字以内にしてください。',
+  'error.projectPathTooDeepForKnowledgeBase': 'プロジェクトのパスが深すぎて、ナレッジベースを使えません。作品は引き続き開いたり書き出したりできます。プロジェクトフォルダーをドライブのルートに近い場所（例：D:\\Novels）に移動し、パスを {max} 文字以内にしてください。',
   'error.projectLegacyImportRequired': 'これは旧形式のプロジェクトです。「Import legacy project」で新しいコピーを作成してください。元のプロジェクトはそのまま残ります。',
   'error.projectRootRequired': `親フォルダーではなく、${CANONICAL_PROJECT_DIRECTORY}/project.json を含む小説のフォルダーを選択してください。`,
   'error.projectSessionRequired': 'この操作には開いているプロジェクトのセッションが含まれていなかったため、拒否されました。プロジェクトを開き直してから、もう一度お試しください。',

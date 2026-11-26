@@ -7,6 +7,7 @@ import type {
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import { getActiveProjectSessionContext } from '../shared/project-session-context'
 import type { AiNovelAPI } from '../shared/desktop-api'
+import { receivedIpcResult } from '../i18n/app-errors'
 
 function getAPI(): AiNovelAPI {
   const api = typeof window === 'undefined' ? undefined : window.aiNovelAPI
@@ -49,19 +50,20 @@ function isProjectScopedChannel(channel: string): boolean {
     || channel === 'project:overview-current'
 }
 
-function invokeWithSession<C extends InvokeChannel>(
+/** finalization-client 另走定稿通道，不经此处。 */
+async function invokeWithSession<C extends InvokeChannel>(
   channel: C,
   args: AllInvokeChannels[C]['args'],
   context?: ProjectSessionContext,
 ): Promise<AllInvokeChannels[C]['return']> {
   if (!isProjectScopedChannel(channel)) {
-    return getAPI().invoke(channel, ...args) as Promise<AllInvokeChannels[C]['return']>
+    return receivedIpcResult(await getAPI().invoke(channel, ...args)) as AllInvokeChannels[C]['return']
   }
   const projectSession = context ?? getActiveProjectSessionContext()
   if (!projectSession) {
     throw new Error('GENERATION_PROJECT_SESSION_REQUIRED')
   }
-  return getAPI().invoke(channel, ...args, projectSession) as Promise<AllInvokeChannels[C]['return']>
+  return receivedIpcResult(await getAPI().invoke(channel, ...args, projectSession)) as AllInvokeChannels[C]['return']
 }
 
 export const ipc = {

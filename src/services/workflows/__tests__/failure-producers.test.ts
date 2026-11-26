@@ -31,7 +31,7 @@ const MAIN_PROCESS_REASONS = [
   '定稿事务未提交', 'Error: 定稿事务未提交', 'The finalization transaction was not committed.',
 ]
 
-const sameAsMaster = (zh: string, en: string, reasons: readonly unknown[]) => {
+const sameAsMaster = (zh: string, en: string, reasons: readonly (string | undefined)[]) => {
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   for (const locale of LOCALES) {
     for (const reason of reasons) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { appErrorMessage } from '../../../i18n/app-errors'
+import { appErrorMessage, resultFailure } from '../../../i18n/app-errors'
 import { ipc } from '../../../services/ipc-client'
 import {
   selectPlanningMaterials,
@@ -25,19 +25,16 @@ import { workflowMainProcessError } from '../../../services/workflows/workflow-p
 import { captureProjectSession, isProjectSessionCurrent } from '../../project-session-gate'
 import { toast } from '../../ui/Toast'
 import { pluralEn } from '../../../shared/plural-en'
-import type { Literal } from '../../../shared/failure'
+import type { Failure, Literal } from '../../../shared/failure'
 
 const EMPTY_STATS: KBStatsData = { documentCount: 0, totalChunks: 0, vectorDimension: 0 }
 export const EMPTY_DRAFT: KnowledgeDraft = { docId: null, copy: null, content: '' }
 
-/**
- * kb 通道返回的失败结果：主进程交的是错误码（#474），按 workflowMainProcessError 的约定接在说明后面。
- * errorCode 优先，因为同一结果里的 error 可能是按系统语言写好的说明。
- */
+/** 旧 error 里的说明按系统语言写，不采用。 */
 function knowledgeFailureMessage<const Z extends string, const E extends string>(
-  result: { error?: string; errorCode?: string }, zhCNSummary: Literal<Z>, enUSSummary: Literal<E>,
+  result: { error?: string; errorCode?: string; failure?: Failure }, zhCNSummary: Literal<Z>, enUSSummary: Literal<E>,
 ): string {
-  return workflowMainProcessError(currentInterfaceLocale(), result.errorCode ?? result.error, zhCNSummary, enUSSummary).message
+  return workflowMainProcessError(currentInterfaceLocale(), resultFailure(result), zhCNSummary, enUSSummary).message
 }
 
 /**

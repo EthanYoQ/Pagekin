@@ -9,6 +9,7 @@ import { workflowResourceKey, type WorkflowDefinition } from '../../stores/workf
 import { importPlanningMaterial, type PlanningMaterial } from '../knowledge-service'
 import { workflowMainProcessError } from './workflow-project-session'
 import { authorOwned } from '../../shared/failure'
+import { resultFailure } from '../../i18n/app-errors'
 
 export interface PlanningMaterialWorkflowParams {
   projectSession: ProjectSessionContext
@@ -47,10 +48,9 @@ export function createPlanningMaterialWorkflow(
         executor: async (_step, context, callbacks) => {
           for (const [index, material] of materials.entries()) {
             const result = await importPlanningMaterial(projectSession, material)
-            // errorCode 优先：旧向量迁移阻断时 error 是按系统语言写好的说明。
             if (!result.success) throw workflowMainProcessError(
               context.interfaceLocale,
-              result.errorCode ?? result.error,
+              resultFailure(result),
               '无法导入 {fileName}',
               'Could not import {fileName}',
               { fileName: authorOwned(material.fileName) },

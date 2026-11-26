@@ -7,6 +7,8 @@ export const enUS = {
   'error.projectNotOpen': 'Open a project first.',
   'error.embeddingModelNotConfigured': 'Configure an embedding model first.',
   'error.projectStoragePathUnsupported': 'The project path is too deep for some local storage. Move the project folder closer to the drive root (for example, D:\\Novels), then try again.',
+  'error.projectPathTooDeepForDatabase': 'The project path is too deep to open the project database. Move the project folder closer to the drive root (for example, D:\\Novels) so the path has at most {max} characters.',
+  'error.projectPathTooDeepForKnowledgeBase': 'The project path is too deep for the knowledge base. The book can still be opened and exported. Move the project folder closer to the drive root (for example, D:\\Novels) so the path has at most {max} characters.',
   'error.projectLegacyImportRequired': 'This is a legacy project. Use Import legacy project to create a new copy. The original is kept.',
   'error.projectRootRequired': `Select the novel folder that contains ${CANONICAL_PROJECT_DIRECTORY}/project.json, not its parent folder.`,
   'error.projectSessionRequired': 'This action did not carry the session of the open project, so it was rejected. Reopen the project and try again.',

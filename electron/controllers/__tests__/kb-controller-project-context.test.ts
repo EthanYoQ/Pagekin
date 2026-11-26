@@ -439,7 +439,6 @@ describe('knowledge-base controller project context guard', () => {
   })
 
 })
-
 // 参照导入失败时运行卡片原样显示 result.error：主进程按导入运行的界面语言说明知识库错误码，码另放在 errorCode（#474 B3）。
 describe('reference import failures', () => {
   it.each([
@@ -454,7 +453,7 @@ describe('reference import failures', () => {
     const result = await rawHandler('kb:import-reference-text')({}, 1, 'run-1', { owner: 'renderer-a', epoch: 3 }, {
       projectId: 'project-A', leaseId: 'lease-A', projectPath: mocks.currentProjectPath,
     }) as { success: boolean; error: string; errorCode: string }
-    expect(result).toMatchObject({ success: false, errorCode: code })
+    expect(result).toMatchObject({ success: false, errorCode: code, failure: { code } })
     expect(result.error).toContain(expected)
     expect(result.error).not.toMatch(locale === 'en-US' ? /[A-Z]{3,}_|\p{Script=Han}/u : /[A-Z]{3,}_/u)
     expect(mocks.commitReferenceImportReceipt).not.toHaveBeenCalled()
@@ -470,7 +469,7 @@ describe('reference import failures', () => {
     const result = await rawHandler('kb:import-reference-text')({}, 1, 'run-1', { owner: 'renderer-a', epoch: 3 }, {
       projectId: 'project-A', leaseId: 'lease-A', projectPath: mocks.currentProjectPath,
     }) as { success: boolean; error: string; errorCode: string }
-    expect(result).toMatchObject({ success: false, errorCode: code })
+    expect(result).toMatchObject({ success: false, errorCode: code, failure: { code } })
     expect(result.error).toContain(expected)
     expect(result.error).not.toMatch(locale === 'en-US' ? /[A-Z]{3,}_|\p{Script=Han}/u : /[A-Z]{3,}_/u)
   })
@@ -484,6 +483,7 @@ describe('reference import failures', () => {
     expect(result).toEqual({
       success: false,
       errorCode: 'IMPORT_RUN_EXECUTION_STALE',
+      failure: { code: 'IMPORT_RUN_EXECUTION_STALE' },
       error: 'This import was taken over by another window, or it paused after going unresponsive, so this window can no longer write to it. Resume the import from the import dialog.',
     })
     expect(mocks.run).not.toHaveBeenCalled()

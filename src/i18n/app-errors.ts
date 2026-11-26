@@ -1,7 +1,10 @@
 import { copyLocale, localize, messages, translate, type MessageKey } from './core'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
-import { AuthorError, AuthorNote, catalogKeyNote, codeOf, failureOf, type Failure, type LegacyReason, type NoteParams } from '../shared/failure'
+import {
+  AuthorError, AuthorNote, catalogKeyNote, codeOf, failureCode, failureOf,
+  type Failure, type LegacyReason, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
+} from '../shared/failure'
 
 /**
  * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
@@ -733,6 +736,63 @@ export function caughtFailure(error: unknown): Failure | undefined {
   const failure = failureOf(error)
   if (!failure) warnOnce('未标记的失败：', error)
   return failure
+}
+
+/** error.unknown 整句只装原文，不许过 IPC。 */
+const WIRE_EXCLUDED_KEYS: ReadonlySet<string> = new Set(['error.unknown'] satisfies MessageKey[])
+
+type NoAny<P> = { readonly [K in keyof P]: 0 extends 1 & P[K] ? never : P[K] }
+
+export function wireNote<const P extends NoteParams>(key: Exclude<MessageKey, 'error.unknown'>, params?: P & NoAny<P>): WireNote {
+  return { key: key as string as WireNoteKey, ...(params ? { params } : {}) }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+function wireNoteOf(value: unknown): WireNote | undefined {
+  if (!isRecord(value) || typeof value.key !== 'string' || WIRE_EXCLUDED_KEYS.has(value.key) || !Object.hasOwn(messages['en-US'], value.key)) return undefined
+  const { params } = value
+  if (params !== undefined && !(isRecord(params) && Object.values(params).every(v => typeof v === 'string' || Number.isFinite(v)))) return undefined
+  if (Object.keys(value).every(field => field === 'key' || field === 'params')) return value as unknown as WireNote
+  return { key: value.key as WireNoteKey, ...(params ? { params: params as WireNote['params'] } : {}) }
+}
+
+export function publicWireFailure(value: unknown): WireFailure {
+  if (!isRecord(value) || !isKnownCode(value.code)) return { code: IPC_HANDLER_FAILED }
+  const note = value.note === undefined ? undefined : wireNoteOf(value.note)
+  if (note === value.note && Object.keys(value).every(field => field === 'code' || field === 'note')) return value as unknown as WireFailure
+  return { code: value.code, ...(note ? { note } : {}) }
+}
+
+/** db:* 不经 handle()，主进程出口管不到，这里是它们唯一的校验。 */
+export function wireFailure(value: unknown): Failure | undefined {
+  const code = isRecord(value) ? failureCode(value.code) : undefined
+  if (!isRecord(value) || !code) return undefined
+  if (!isKnownCode(code)) {
+    warnOnce('过 IPC 的码没登记，换成通用码：', code)
+    return { code: IPC_HANDLER_FAILED }
+  }
+  const note = wireNoteOf(value.note)
+  if (!note) {
+    if (value.note !== undefined) warnOnce('过 IPC 的说明不合格，只按码说明：', value.note)
+    return { code }
+  }
+  return { code, note: catalogNote(note.key as string as MessageKey, note.params) }
+}
+
+export function receivedIpcResult<T>(value: T): T {
+  if (!isRecord(value) || value.success !== false || !('failure' in value)) return value
+  const { failure: wire, ...rest } = value
+  const failure = wireFailure(wire)
+  return (failure ? { ...rest, failure } : rest) as T
+}
+
+export function resultFailure(result: { failure?: Failure; error?: string; errorCode?: string }): Failure | undefined {
+  if (result.failure) return result.failure
+  const legacy = failureOf(result.errorCode) ?? failureOf(result.error)
+  if (!legacy && result.error?.trim()) warnOnce('返回值的失败不是码，原文不显示：', result.error)
+  return legacy
 }
 
 /** 显示处去掉的前缀：Electron 的调用通道，以及 "Error: "、"TypeError: " 这类类名。 */

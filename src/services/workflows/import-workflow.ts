@@ -25,6 +25,9 @@ import { promptLanguageText } from '../prompt-language'
 import { retryDirectoryCharacterSync } from './directory-character-sync-recovery'
 import type { WritingLanguage } from '../../shared/writing-language'
 import { countDraftUnits } from '../../shared/draft-units'
+import { note } from '../../shared/failure'
+import { authorError, isRegisteredErrorCode, resultFailure } from '../../i18n/app-errors'
+import { errorLocaleForRun } from '../../i18n/core'
 import { FINALIZATION_SHARED_WRITE_RESOURCE_KINDS } from '../../shared/workflow-resource-claims'
 
 export interface ImportWorkflowParams {
@@ -251,12 +254,14 @@ function productionDependencies(
         run.id,
         executionAuthority,
       )
-      // 带上主进程给的码：取消请求之后剩下的章节被拒绝时，取消判定只凭这个码。
-      if (!result.success) throw Object.assign(new Error(result.error || textForLocale(
-        run.locale,
-        `第 ${chapter.number} 章参照文本未能写入知识库`,
-        `Reference Chapter ${chapter.number} could not be written to the knowledge base.`,
-      )), result.errorCode ? { code: result.errorCode } : {})
+      // 取消判定只凭这个码，必须带上。
+      if (!result.success) {
+        const failure = resultFailure(result)
+        const chapterNote = note('第 {n} 章参照文本未能写入知识库', 'Reference Chapter {n} could not be written to the knowledge base.', { n: chapter.number })
+        const explained = failure && (failure.note || isRegisteredErrorCode(failure.code))
+        throw authorError(errorLocaleForRun(run.locale, context.interfaceLocale), explained ? failure
+          : failure?.code ? { code: failure.code, note: chapterNote } : { note: chapterNote })
+      }
       callbacks.log(textForLocale(
         run.locale,
         `参照章节 ${chapter.number} 已进入知识库${result.idempotent ? '（已存在）' : ''}`,
