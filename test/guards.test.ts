@@ -13,49 +13,6 @@ import {
   currentLegacyFailureCounts, failureTypeAssertions, legacyFailureCounts, rawAuthorOwnedArguments, scanProduction, type LegacyFailureCounts,
 } from './helpers/legacy-failure-scan'
 
-const ORIGINAL_BASELINE: readonly string[] = [
-  'electron/__tests__/knowledge-base-failure-reason.test.ts',
-  'electron/__tests__/knowledge-base-original-copy.test.ts',
-  'electron/__tests__/knowledge-base-volume.test.ts',
-  'electron/__tests__/lancedb-contract.test.ts',
-  'electron/__tests__/main-startup.test.ts',
-  'electron/controllers/__tests__/cloud-backup-controller.test.ts',
-  'electron/controllers/__tests__/fs-controller-project-boundary.test.ts',
-  'electron/controllers/__tests__/generation-controller.test.ts',
-  'electron/controllers/__tests__/project-archive-controller.test.ts',
-  'electron/controllers/__tests__/writing-skill-app-data.test.ts',
-  'electron/security/__tests__/windows-safe-file-system.test.ts',
-  'electron/services/__tests__/character-asset-service.test.ts',
-  'electron/services/__tests__/corrupt-review-cycle-export.test.ts',
-  'electron/services/__tests__/generation-knowledge-source.test.ts',
-  'electron/services/__tests__/global-data-migration.test.ts',
-  'electron/services/__tests__/legacy-project-copy-import.test.ts',
-  'electron/services/__tests__/portable-author-file-names.test.ts',
-  'electron/services/__tests__/portable-export-host.test.ts',
-  'electron/services/__tests__/portable-project-archive.test.ts',
-  'electron/services/__tests__/portable-project-assets.test.ts',
-  'electron/services/__tests__/project-access.test.ts',
-  'electron/services/__tests__/project-archive-service.test.ts',
-  'electron/services/__tests__/project-data-locator.test.ts',
-  'electron/services/__tests__/project-format-migration.test.ts',
-  'electron/services/__tests__/project-peek-readonly.test.ts',
-  'electron/services/__tests__/project-restore-service.test.ts',
-  'electron/services/__tests__/replaced-final-cleanup.test.ts',
-  'electron/services/__tests__/sqlite-project-migration.test.ts',
-  'electron/services/__tests__/vector-migration-snapshot.test.ts',
-  'electron/services/__tests__/webdav-backup-service.test.ts',
-  'electron/utils/__tests__/config-utils.test.ts',
-  'scripts/__tests__/legacy-qualification-projection.test.ts',
-  'scripts/__tests__/release-win-verify.test.ts',
-  'scripts/__tests__/smoke-macos-dmg-acceptance-contract.test.ts',
-  'scripts/__tests__/smoke-win-installer.test.ts',
-  'scripts/redesign/__tests__/drive-args.test.mjs',
-  'scripts/redesign/__tests__/drive-profile-writes.test.mjs',
-  'scripts/redesign/__tests__/real-model.test.mjs',
-  'src/services/__tests__/export-service-integration.test.ts',
-  'test/helpers/node-test-secure-file-system.ts',
-  'test/helpers/remove-temporary-tree.mjs',
-]
 const eslint = new ESLint({ cwd: REPO_ROOT })
 
 async function listingErrors(filePath: string, code: string): Promise<string[]> {
@@ -193,8 +150,7 @@ describe('测试文件按标识符禁用列目录原语', () => {
 })
 
 describe('存量 baseline 只减不增', () => {
-  it('名单只能是建立时名单的子集：新增违规改用 helper，不进名单，也不能顶替删掉的名额', () => {
-    expect(BASELINE.filter(file => !ORIGINAL_BASELINE.includes(file))).toEqual([])
+  it('名单排好序、不重复（只减不增由 scripts/check-baseline-shrink.mjs 对比基准提交核对）', () => {
     expect(BASELINE).toEqual([...new Set(BASELINE)].sort())
   })
 
