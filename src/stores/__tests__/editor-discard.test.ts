@@ -502,13 +502,17 @@ describe('project-scoped unsaved counting', () => {
     expect(countUnsavedEditorItems(tabs, draftLedgers)).toBe(2)
   })
 
-  it('does not attribute a ledger with malformed project entries to any project', () => {
+  it.each([
+    { entry: null, counted: 0, discardedOnClose: false },
+    { entry: 42, counted: 1, discardedOnClose: true },
+  ])('counts a hidden draft beside a $entry ledger entry exactly when closing the project would discard it', ({ entry, counted, discardedOnClose }) => {
     const projectA = 'C:/novels/A'
-    const draftLedgers = {
-      config: JSON.stringify({ version: 1, projects: [null, { projectKey: projectA, baseValue: {}, draftValue: { genre: 'A' } }] }),
-    }
+    const ledger = JSON.stringify({ version: 1, projects: [entry, { projectKey: projectA, baseValue: {}, draftValue: { genre: 'A' } }] })
 
-    expect(countUnsavedEditorItemsForProject([], draftLedgers, projectA)).toBe(0)
+    expect(countUnsavedEditorItemsForProject([], { config: ledger }, projectA)).toBe(counted)
+    useEditorStore.setState({ tabs: [], draftLedgers: { config: ledger } })
+    useEditorStore.getState().clearProjectTabs(projectA)
+    expect(useEditorStore.getState().draftLedgers.config !== ledger).toBe(discardedOnClose)
   })
 })
 
