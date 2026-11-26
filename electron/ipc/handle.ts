@@ -65,7 +65,7 @@ export function handle<Args extends unknown[]>(channel: string, handler: IpcHand
 
 /**
  * 之后经 ipc 注册的处理器，不是 handle() 发起、通道又不在 direct-channels.json 里的，交给 onUnlisted。
- * 拦的是 ipc 对象本身，所以 electron['ipcMain']、把 electron 传进函数、注入的 ipc.handle 都走这里。
+ * 拦的是 ipc 对象本身，经 electron['ipcMain'] 或注入的 ipc 注册的同样被拦。
  */
 export function guardIpcRegistration(
   ipc: Pick<IpcMain, 'handle' | 'handleOnce'>,
@@ -81,7 +81,7 @@ export function guardIpcRegistration(
   }
 }
 
-/** 开发和测试里立刻抛错；打包后作者不能因此打不开应用，记日志后改走 handle()。 */
+/** 打包版降级为 handle() 注册，避免已发布应用因漏登记而打不开。 */
 export function rejectUnlistedIpc(packaged: boolean): (channel: string, handler: IpcHandler) => void {
   return (channel, handler) => {
     const message = `IPC 通道 ${channel} 没有经 electron/ipc/handle.ts 的 handle() 注册：新通道改用 handle()，不要加进 direct-channels.json。`

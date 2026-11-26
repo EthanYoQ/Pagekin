@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// 存量名单只减不增：当前分支的名单与基准提交（默认 origin/master，PR CI 传合并提交的 HEAD^1）上的同一文件比较。
-// 基准提交拿不到就失败，不放行；基准上还没有这个文件的，当作本次新建的名单。
+// 名单只减不增：对比基准提交上的同一文件；拿不到基准提交就失败，不放行。
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
