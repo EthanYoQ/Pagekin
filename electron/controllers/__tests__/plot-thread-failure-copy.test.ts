@@ -93,7 +93,7 @@ describe('叙事线写入失败时作者看不到主进程原文', () => {
     const result = await received(channel, args)
     expect(result.success).toBe(false)
     expect(JSON.stringify(result)).not.toMatch(RAW)
-    expect(zhText(result)).toBe('这次修改没能写进作品。请刷新后再试一次。')
+    expect(zhText(result)).toBe('已有的线索和剧情树都还在。这次修改没能写进作品，请刷新后再试一次。')
   })
 
   it('写进去了、回读线索时失败，也不露原文', async () => {
