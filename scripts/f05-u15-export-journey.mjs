@@ -56,7 +56,6 @@ const profile = Object.fromEntries(['canonical', 'legacy', 'userData', 'home', '
 const exportRoot = path.join(scratch, 'exports')
 const projectName = '合成导出'
 const chapters = [
-  // Independent fixture expectations for persisted draft-unit algorithm v3.
   { chapterNumber: 1, title: '雾站', content: '# 第1章 雾站\n\n**铜钥匙**在`旧信`旁。\n\n*雨声*未停。', wordCount: 16 },
   { chapterNumber: 2, title: '归途', content: '列车---驶入\n# 内文标题\n结尾', wordCount: 10 },
 ]
@@ -152,7 +151,6 @@ async function openProject(page) {
   await stage.waitForWork(page, projectName)
 }
 
-/** 导出在顶栏作品菜单的「导出…」里，打开的是同一个导出对话框。 */
 async function exportThroughWriter(page, label, observationId) {
   await stage.waitForStage(page)
   await stage.openWorkMenuItem(page, projectName, '导出…')
@@ -322,7 +320,6 @@ async function main() {
     session = await launch()
     app = session.opened
     await openProject(session.page)
-    // 版本历史是作品资料里的一页：左列章节，中列这一章的各稿（时间线），右列与当前稿的对比。
     await refs.open(session.page, 'history')
     await refs.historyChapters(session.page).getByRole('button', { name: /来源追踪/ }).click()
     const staleBadge = refs.versionButton(session.page, '草稿 v1').getByText('来源已过期', { exact: true })
@@ -337,7 +334,6 @@ async function main() {
         screenshot: path.relative(repository, path.join(receiptDir, 'writer-version-history-stale.png')) })
 
     phase = 'writer-history-diff'
-    // 点一稿就在右列与当前稿逐字对比：只读，旧文字划掉、新文字标出，不再打开修稿合并。
     await refs.versionButton(session.page, '草稿 v1').click()
     const diffPage = refs.diffPage(session.page)
     await diffPage.waitFor({ state: 'visible' })

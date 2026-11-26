@@ -24,7 +24,6 @@ function cycleOf(database, chapter) {
   return cycle
 }
 
-/** 与 test/helpers/review-cycle-fixture.ts 的 breakReviewProof 保持一致。 */
 function breakReviewProof(projectRoot, chapter) {
   withBook(projectRoot, database => {
     const cycle = cycleOf(database, chapter)
@@ -36,7 +35,6 @@ function breakReviewProof(projectRoot, chapter) {
   })
 }
 
-/** 清空根预算，使去掉坏循环后这棵根仍过不了投影（ADR-0029「照旧失败」）。 */
 function breakRootBudget(projectRoot, chapter) {
   withBook(projectRoot, database => {
     const changed = database.prepare("UPDATE generation_roots SET budget_json='{}' WHERE root_action_id=?").run(cycleOf(database, chapter).rootActionId).changes
@@ -44,7 +42,6 @@ function breakRootBudget(projectRoot, chapter) {
   })
 }
 
-/** 静止树打开时不查绑定，只有导出前的全量进门封存它（#749）。 */
 function addUnreadableSiblingRun(projectRoot, chapter) {
   withBook(projectRoot, database => {
     const { rootActionId } = cycleOf(database, chapter)

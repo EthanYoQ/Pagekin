@@ -112,7 +112,6 @@ async function seed(context, fakeMode, chapters) {
   const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters: TOTAL_CHAPTERS, wordsPerChapter: 1000 }, projectPath, session)
   assert.equal(core.success, true, core.error)
   const title = number => QUALITY_CHAPTERS[number]?.title ?? stageChapterTitle(number)
-  // 蓝图不写本章事件，免得要点照抄蓝图，测不出模型读正文的能力。
   for (let chapterNumber = 1; chapterNumber <= TOTAL_CHAPTERS; chapterNumber++) {
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber, title: title(chapterNumber), role: '发展',
       purpose: '推进灯塔与沉船的线索', keyEvents: `林岚继续追查（${title(chapterNumber)}）`, characters: QUALITY_CAST.map(member => member.name) },
@@ -131,7 +130,6 @@ async function seed(context, fakeMode, chapters) {
   await stage.openFromLibrary(page, BOOK)
 }
 
-/** 每章定稿都留一张完成提示，叠多了驱动收尾时收不干净。 */
 async function clearCompletionToasts(page) {
   const ignore = page.getByRole('button', { name: '打开查看', exact: true }).locator('xpath=following-sibling::button[1]')
   for (let round = 0; round < 10 && await ignore.count() > 0; round++) {
@@ -162,7 +160,6 @@ async function finalizeOne(context, chapterNumber) {
   const run = await context.invoke(page, 'db:post-process-get-latest-run', 'chapter_finalize', String(chapterNumber), session.projectPath, session)
   const steps = run ? (await context.invoke(page, 'db:post-process-get-steps', run.id, session.projectPath, session))
     .map(s => ({ key: s.stepKey, ok: Boolean(s.ok), attempts: s.attemptCount, error: s.errorMsg || undefined })) : []
-  // 对话回复体是异步读的，要等读完才有全文。
   let chats = []
   for (let waited = 0; waited < 30_000; waited += 500) {
     chats = await app.evaluate(() => globalThis.__fspeedChats ?? [])
@@ -176,7 +173,6 @@ async function finalizeOne(context, chapterNumber) {
   const fixture = TEXT_OVERRIDE ? { events: [], states: [] } : QUALITY_CHAPTERS[chapterNumber]
   const record = {
     chapterNumber, units: countUnits(chapterText(chapterNumber)), readOnlyMs, runEndMs,
-    // 可写下一章：知识库与要点两步都成功才算；任一失败时守卫仍拦着。
     writableMs: marks[1] && steps.filter(s => s.key === 'kb_import' || s.key === 'chapter_notes').every(s => s.ok) ? marks[1].start + marks[1].ms : null,
     settledMs: marks.at(-1) ? marks.at(-1).start + marks.at(-1).ms : null,
     fsBeforeReadOnly: fsCalls.filter(e => e.start < readOnlyMs).map(e => `${e.ch}@${e.start}+${e.ms}`),
@@ -219,7 +215,6 @@ async function stillProcessing(context) {
   await notice.waitFor({ state: 'visible', timeout: 10_000 })
   await page.waitForTimeout(400)
   await context.shoot('fspeed-still-processing-notice')
-  // 第二个运行会把同一个胶囊原地换成「N 项运行中」，不新增节点，所以两样都看。
   const newRun = await page.evaluate(b => window.__realRunsStarted.count > b, runsBeforeWrite)
     || await page.locator('.stage-capsule').filter({ hasText: '项运行中' }).count() > 0
   assert.equal(newRun, false, '上一章后处理在跑时不起写作运行')

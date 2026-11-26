@@ -171,7 +171,6 @@ if [[ -z "$app" ]]; then
   echo 'Mounted DMG does not contain an application bundle.' >&2
   exit 1
 fi
-# 可执行文件与 .app 同名（产品名，1.3.0 之后由 AI小说作家 改为书童，ADR-0022）。
 executable="$app/Contents/MacOS/$(basename "$app" .app)"
 if [[ ! -x "$executable" ]]; then
   echo "Missing executable in mounted application: $executable" >&2

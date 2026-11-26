@@ -1,5 +1,3 @@
-// #552：角色状态更新的模型回复始终不合合同时，定稿后处理卡给出人话说明；作者重试与首跑一样发 3 次请求；
-// 在设置里给「定稿后处理」换了分工模型后，重试发给新模型，运行卡也显示新模型。
 import assert from 'node:assert/strict'
 
 import * as chapterView from './pages/chapter-view.mjs'
@@ -10,13 +8,10 @@ import { seedStageSample } from './scenarios.mjs'
 import { finalizeChapter } from './f491-scenarios.mjs'
 
 const MINI = Object.freeze({ ...FAKE_MODEL, id: 'i552-mini', name: '驱动夹具小模型', modelName: 'gpt-4.1-mini' })
-/** 首跑与每次重试都发 3 次：首发加 2 次修正。 */
 const REQUESTS_PER_RUN = 3
 
 const BAD = {
-  // 引文改了一个字，正文里精确匹配 0 次。
   paraphrase: id => ({ updates: [{ characterId: id, currentState: { recentEvents: '在灯室找到纸条' }, evidence: { text: '林岚把那张纸条夹进了父亲的地图里。' } }] }),
-  // 字段平铺在 update 上，没有 currentState 对象。
   flat: id => ({ updates: [{ characterId: id, name: '林岚', recentEvents: '在灯室找到纸条', evidence: { text: '林岚把纸条夹进父亲的地图里。' } }] }),
 }
 
@@ -52,7 +47,6 @@ async function assignFinalization(page, modelId) {
   await page.locator('select[id$="-finalization"]').selectOption(modelId)
   await page.waitForFunction(value => {
     const element = [...document.querySelectorAll('label')].find(node => node.textContent === '定稿后处理')?.control
-    // 下拉先显示新选择、再保存；aria-busy 结束才算真正存好。
     return element instanceof HTMLSelectElement && !element.disabled && element.value === value && element.getAttribute('aria-busy') !== 'true'
   }, modelId, { timeout: 10_000 })
   await stage.closeSettings(page)
@@ -64,14 +58,12 @@ async function retryOnce(context, button, label) {
   await button.click()
   await waitChats(fake, before + REQUESTS_PER_RUN)
   await settled(page)
-  // 多等一会儿，确认没有第 4 次请求。
   await page.waitForTimeout(1500)
   const row = await readRow(page)
   await context.shoot(label)
   return { row, newChats: castChats(fake).slice(before).map(chat => chat.model) }
 }
 
-/** 运行侧页「上一次运行」卡片的说明行：开始时间 · 模型 · 状态。 */
 async function lastRunMeta(page) {
   await runSheet.openFromPalette(page)
   const card = runSheet.anyCard(page).filter({ hasText: /^上一次运行/u })

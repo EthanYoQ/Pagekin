@@ -6,7 +6,6 @@ import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
 
-/** 纸墨外壳的根；设置是外壳里的一页，「返回书房」或「返回作品」收起它。 */
 export const STAGE_SHELL = '[data-shell-presentation="stage"]'
 export const SETTINGS_BACK = /^(返回书房|Back to library|返回作品|Back to the book)$/
 

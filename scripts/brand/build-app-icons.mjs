@@ -10,7 +10,6 @@ import { app, BrowserWindow } from 'electron'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const svg = readFileSync(path.join(root, 'docs/assets/brand/pagekin-icon.svg'), 'utf8')
 
-// macOS 图标网格：1024 画布里圆角方块占 824，四周留白，和 Dock 里其他应用一样大。
 const MAC_CONTENT_RATIO = 824 / 1024
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 const ICNS_ENTRIES = [
@@ -18,17 +17,12 @@ const ICNS_ENTRIES = [
   ['ic11', 32], ['ic12', 64], ['ic13', 256], ['ic14', 512],
 ]
 
-// 每个尺寸开一个新窗口：透明窗口复用时，上一次较大渲染的抗锯齿边缘会残留在左上角。
-// 窗口太小时 capturePage 会失败，所以窗口固定 1024，只截左上角 size×size。
-// SVG 必须是块级：行内 SVG 落在文字基线上，16px 时会被行高往下推几像素，截图就丢掉底边。
-// 留白取整数像素，否则 16px 的 macOS 帧会糊成半像素边。
 async function render(size, contentRatio) {
   const margin = Math.round((size - size * contentRatio) / 2)
   const inner = size - margin * 2
   const html = `<!doctype html><html><body style="margin:0;background:transparent;overflow:hidden">
     <div style="position:absolute;left:${margin}px;top:${margin}px;width:${inner}px;height:${inner}px">${svg.replace('<svg ', '<svg style="display:block" width="100%" height="100%" ')}</div>
   </body></html>`
-  // 隐藏窗口默认会节流 rAF 与绘制，可能永远等不到下一帧或截到空白。
   const win = new BrowserWindow({ width: 1024, height: 1024, useContentSize: true, show: false, frame: false, transparent: true, webPreferences: { backgroundThrottling: false } })
   try {
     await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
@@ -41,9 +35,6 @@ async function render(size, contentRatio) {
   }
 }
 
-// 截图不对就别写进图标：尺寸、非全透明、四角透明、图形落在预期的留白里（四边都对上，才说明没被截掉或挪位）。
-// 满版渲染时图形铺满画布，包围盒发现不了背景不透明；图标是圆角方块，四角按设计透明，用它兜底。
-// 小尺寸圆角的抗锯齿会向外渗 1 像素，所以每边容差 1。
 function assertPlaced(image, size, margin) {
   const { width, height } = image.getSize()
   if (width !== size || height !== size) throw new Error(`渲染尺寸不对：要 ${size}，得到 ${width}×${height}`)
@@ -111,9 +102,7 @@ async function main() {
   console.log('build/icon.ico, build/icon.icns, build/icon.png 已生成')
 }
 
-// 主进程脚本里顶层 await 会卡住 ready 事件，所以用 then 串起来。
 app.commandLine.appendSwitch('force-device-scale-factor', '1')
-// 每个尺寸用完就关窗口，别让「所有窗口已关闭」把应用提前退出。
 app.on('window-all-closed', () => {})
 app.whenReady().then(main).then(() => app.exit(0), error => {
   console.error(error)

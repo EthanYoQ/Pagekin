@@ -23,7 +23,6 @@ export const BOOK = '盐湖'
 const BLUEPRINTS = Number(process.env.PERF702_BLUEPRINTS ?? 200)
 const CHAPTER_UNITS = 3000
 const CHARACTERS = ['林岚', '守塔人', '沈默', '许青', '老周', '阿禾', '程远', '苏梅', '韩九', '小满', '陆川', '白鹭']
-/** 每句都带章号与段号：相邻两章没有相同的句子，过得了「新章节开头重演上一章结尾」的检查。 */
 const SENTENCES = [
   (chapter, paragraph) => `风从盐湖的北岸吹过来，第${chapter}夜第${paragraph}阵带着铁锈和旧木头的气味。`,
   (chapter, paragraph) => `她把地图摊在膝头，一格一格数过去，数到第${chapter + paragraph}条堤时停了下来。`,
@@ -35,7 +34,6 @@ const SENTENCES = [
 export const PROSE_PROBE = '风从盐湖的北岸吹过来'
 
 export const chapterTitle = number => `远航之${number}`
-/** 每章开头带章号，计时与角色状态的引文据此认出是哪一章。 */
 export const chapterMarker = number => `第${number}夜的潮水退得很慢。`
 
 export function chapterText(number, units = CHAPTER_UNITS) {
@@ -50,7 +48,6 @@ export function chapterText(number, units = CHAPTER_UNITS) {
 const SEED_CORE = { coreOutline: '测绘师追查父亲留下的失踪地图。', premise: '一座本该停用的灯塔仍在夜里报时。',
   worldbuilding: '旧港靠潮汐与灯塔维持秩序。', synopsis: '三幕：抵达、追查、风暴前夜。' }
 
-/** 新建作品并写满：设定、角色、BLUEPRINTS 章蓝图、前 finalized 章定稿。落在书房，作品没打开。 */
 export async function seedLargeBook(context, finalized, { blueprints: withBlueprints = true, core = SEED_CORE } = {}) {
   const { app, page, roots, invoke, reload } = context
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
@@ -88,7 +85,6 @@ export async function seedLargeBook(context, finalized, { blueprints: withBluepr
 
 const profileFilter = process.env.PERF702_PROFILE ? new RegExp(process.env.PERF702_PROFILE, 'u') : null
 
-/** 录一段操作期间渲染进程与主进程的 CPU profile，写成可用 DevTools 打开的 .cpuprofile。 */
 async function profiled({ app, page }, label, action) {
   const directory = process.env.PERF702_PROFILE_DIR
   if (!directory || (profileFilter && !profileFilter.test(label))) return action()
@@ -117,16 +113,10 @@ async function profiled({ app, page }, label, action) {
   }
 }
 
-/**
- * 主进程账本：每个 invoke 通道的调用次数与累计耗时；child_process.spawn 的次数与子进程存活总时长（安全文件层每次读写都起一个 PowerShell）；
- * 每条 SQL 的执行次数、返回行数与耗时；事件循环最长一次阻塞。渲染进程记 longtask。
- * 次数与机器快慢无关，章数翻倍时它涨不涨，比毫秒更能说明问题。每次启动后都要重装。
- */
 export async function installLedger(app, page) {
   await app.evaluate(({ ipcMain, app: electronApp }, wrapSql) => {
     if (globalThis.__perfLedger) return
     const ledger = globalThis.__perfLedger = { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 }, inflight: 0 }
-    // 跨过快照才结束的调用和子进程：起始窗口已经报出，时长记进当前窗口的 late，不混进当前窗口的各通道。
     const settle = (current, ms) => { if (current) return true; ledger.late.calls += 1; ledger.late.ms += ms; return false }
     const wrap = (channel, handler) => async (...args) => {
       const session = args.at(-1)
@@ -162,8 +152,6 @@ export async function installLedger(app, page) {
       return child
     }
     process.getBuiltinModule('node:module').syncBuiltinESMExports()
-    // 不用 monitorEventLoopDelay：它 reset() 后丢掉第一个间隔，操作一开始就卡住的那段会读成 0。
-    // 这里记相邻两次定时器的最大间隔，取账本时把还没结束的那段间隔也算上。
     const loop = ledger.loop = { last: performance.now(), max: 0 }
     setInterval(() => { const now = performance.now(); loop.max = Math.max(loop.max, now - loop.last); loop.last = now }, 5).unref()
     if (!wrapSql) return
@@ -172,7 +160,6 @@ export async function installLedger(app, page) {
     const scratch = new Database(':memory:')
     const statement = Object.getPrototypeOf(scratch.prepare('SELECT 1'))
     scratch.close()
-    // ms 是同一句 SQL 全部调用的合计；maxMs 是最长的一次调用，只有它能和 mainMaxBlockMs 对照。
     const sqlEntry = source => ledger.sql[source] ??= { calls: 0, rows: 0, ms: 0, maxMs: 0 }
     const charge = (entry, ms) => { entry.ms += ms; entry.maxMs = Math.max(entry.maxMs, ms) }
     for (const method of ['run', 'get', 'all']) {
@@ -204,7 +191,6 @@ export async function installLedger(app, page) {
         return(value) { return inner.return ? inner.return(value) : { done: true, value } },
       }
     }
-    // exec 不经过 prepare（如蓝图提交的建表补数），整段算一次调用，行数不计。
     const exec = Database.prototype.exec
     Database.prototype.exec = function (source) {
       const startedAt = performance.now()
@@ -228,14 +214,12 @@ export async function installLedger(app, page) {
   })
 }
 
-/** stallBeforeMs 只给正对照用：取账前在主进程里同步占住这么久，定时器来不及走下一拍。 */
 async function takeLedger(app, page, stallBeforeMs = 0) {
   const main = await app.evaluate((_electron, stallBeforeMs) => {
     const stalledAt = performance.now()
     while (performance.now() - stalledAt < stallBeforeMs) { /* 同步忙等 */ }
     const { channels, spawns, sql, loop, late } = globalThis.__perfLedger
     Object.assign(globalThis.__perfLedger, { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 } })
-    // 下一个窗口从这一刻算起：不重置 last，窗口前没走完的那一拍会被下一拍再算一次。
     const now = performance.now()
     const maxBlockMs = Math.round(Math.max(loop.max, now - loop.last))
     loop.max = 0
@@ -265,7 +249,6 @@ async function takeLedger(app, page, stallBeforeMs = 0) {
   return { ...main, ...renderer }
 }
 
-/** 每类模型请求的次数与提示词字符数（假模型立即作答，模型耗时为零；提示词变长只影响真实模型）。 */
 function promptStats(fake, since) {
   const stats = {}
   for (const chat of fake.chats.slice(since)) {
@@ -281,7 +264,6 @@ function log(record) {
   return record
 }
 
-/** 一次计时操作：耗时、这段时间主进程与渲染进程的账本、模型请求，按需录 profile。 */
 async function operation(context, label, action) {
   await takeLedger(context.app, context.page)
   const since = context.fake.chats.length
@@ -291,10 +273,8 @@ async function operation(context, label, action) {
 
 const prose = '.stage-content .cm-content'
 const SPINE = 'nav[aria-label="创作流程"]'
-/** 打开作品与点「正文」都落在第一章待写：定稿章之后那一章。 */
 const EMPTY_CHAPTER = '这一章还是空白'
 
-/** 从点击 target 到每个 [选择器, 文字] 依次出现在画面上的毫秒数；同时记点击后渲染进程最长一帧的间隔。 */
 async function msFromClickTo(page, target, marks, deadlineMs = 60_000) {
   const handle = await target.elementHandle()
   await page.evaluate(({ element, marks, deadlineMs }) => {
@@ -328,10 +308,6 @@ async function msFromClickTo(page, target, marks, deadlineMs = 60_000) {
   return page.evaluate(() => window.__perfMarks)
 }
 
-/**
- * 冷启动后的一轮：打开作品、进蓝图页、回正文、换到最后一章定稿（正文与定稿后处理卡片各计一次）。
- * 从点击到目标内容出现在画面上；每项另记主进程与渲染进程账本。
- */
 async function timeOnce(context, finalized, round, suffix = '') {
   const { app, page } = context
   await installLedger(app, page)
@@ -352,7 +328,6 @@ async function timeOnce(context, finalized, round, suffix = '') {
 
 export const RUNNING = '.stage-capsule:not([data-tone="ok"])'
 
-/** 门关着时点 target，到第一个模型请求卡在门上（模型之前的软件耗时）；放行后等 done() 返回，记总耗时。 */
 async function timeModelAction(context, label, click, done) {
   const { fake } = context
   return operation(context, label, async () => {
@@ -374,7 +349,6 @@ async function timeModelAction(context, label, click, done) {
   })
 }
 
-/** 单章三步：写作此章、AI 审稿、定稿（到后处理全部结束）。这会把第 finalized+1 章写成定稿，所以放在最后。 */
 async function timeSingleChapter(context, finalized, prefix = String(finalized)) {
   const { page } = context
   const next = finalized + 1
@@ -414,7 +388,6 @@ async function timeLargeBook(context, finalized, { rounds = Number(process.env.P
   return { finalized, blueprints: BLUEPRINTS, runs, single: process.env.PERF702_SINGLE === '0' ? null : await timeSingleChapter(context, finalized) }
 }
 
-/** 定稿后处理的角色状态更新：提示里的前三位角色各记一处位置与心绪，时间线随章数增长。 */
 function characterStates(prompt) {
   const ids = [...new Set([...prompt.matchAll(/"characterId":\s*"([^"\s]+)"/gu)].map(match => match[1]))].slice(0, 3)
   const chapter = /【本章内容（第(\d+)章）】/u.exec(prompt)?.[1] ?? '0'
@@ -424,7 +397,6 @@ function characterStates(prompt) {
     currentState: { recentEvents: `第${chapter}章守在北堤`, location: `第${chapter}章的北堤` }, evidence: { text: quote } })) })
 }
 
-/** 写作请求回这一章的模板正文（章号取自本章蓝图），其余请求交给假模型照常作答。 */
 function draftReply(prompt) {
   if (prompt.includes('只写短细纲') || prompt.includes('{"updates"')) return null
   const task = /(?:【本章写作方向与核心任务】|【本章信息】)[\s\S]*?(?:"chapterNumber"\s*:\s*(\d+)|第\s*(\d+)\s*章)/u.exec(prompt)
@@ -439,7 +411,6 @@ export function installReplies(fake) {
 
 const checkpoints = () => (process.env.PERF702_CHECKPOINTS ?? '10,50,112').split(',').map(Number)
 
-/** 退出应用后把作品存一份到 <PERF702_SAVE>/<章数>，再冷启动打开它接着写。 */
 async function saveCheckpoint(context, finalized) {
   const save = process.env.PERF702_SAVE
   if (!save || !checkpoints().includes(finalized)) return
@@ -448,11 +419,6 @@ async function saveCheckpoint(context, finalized) {
   await stage.openFromLibrary(context.page, BOOK)
 }
 
-/**
- * 按作者真实的写法造书：BLUEPRINTS 章蓝图之后，用批量创作「自动定稿」每次 10 章写到 finalized 章，
- * 每章都走写作、定稿与后处理（知识库、章节要点、角色状态）。正文每章约 3000 字，由假模型按模板流出。
- * 每一批记墙钟与账本，这就是「批量写多章」随全书章数的曲线。写完重启应用，计时从冷启动后的书房开始。
- */
 async function buildByBatch(context, finalized) {
   await seedLargeBook(context, 0)
   const { page } = context
@@ -476,7 +442,6 @@ async function buildByBatch(context, finalized) {
       await reached.or(failed).first().waitFor({ state: 'visible', timeout: 600_000 })
       assert.equal(await failed.count(), 0, `第 ${done + 1}～${done + count} 章的批量创作没有完成`)
       const finalizedMs = Math.round(performance.now() - startedAt)
-      // 运行侧页开着时胶囊是展开态，stage.capsule 找不到它；按胶囊的色调等到全部后处理结束。
       await stage.root(context.page).locator(RUNNING).waitFor({ state: 'detached', timeout: 120_000 })
       return { chapters: count, finalizedMs, totalMs: Math.round(performance.now() - startedAt) }
     }))
@@ -487,10 +452,6 @@ async function buildByBatch(context, finalized) {
   return batches
 }
 
-/**
- * 按手动作者的写法造书：每章在单章视图里点写作此章、AI 审稿、定稿，三步各记一次（见 timeSingleChapter）。
- * 与批量造书不同，每章留下一个不属于批次的写稿运行和一个审稿运行，「可恢复」列表要逐个读它们。
- */
 async function buildByHand(context, finalized) {
   await seedLargeBook(context, 0)
   installReplies(context.fake)
@@ -509,7 +470,6 @@ const REVISION_NOTE = '林岚把这句话记进日志，又核对了一遍潮位
 const issueQuote = chapter => `守塔人说第${chapter}夜的钟声又早了1刻`
 const goalQuote = chapter => `远处的航标灯亮了1盏，一路亮到第${chapter}号海湾。`
 
-/** 带引文的意见加一条有正文证据的目标未达成：只有有证据的目标意见才进合并后复核。 */
 function reviewReply(chapter) {
   return JSON.stringify({ summary: '本章目标还没落地。', items: [
     { category: '连续性', severity: 'warning', description: '核对钟声提前与潮位的关系。', quote: issueQuote(chapter) },
@@ -517,7 +477,6 @@ function reviewReply(chapter) {
     evidence: [{ quote: goalQuote(chapter) }] }] })
 }
 
-/** 修稿改掉两处被引的原文（证据变了，合并后才会复核），并补一句复核引用的话。 */
 function revisedText(chapter) {
   return chapterText(chapter).replace(issueQuote(chapter), `守塔人说第${chapter}夜的钟声准了`)
     .replace(goalQuote(chapter), `远处的航标灯亮了1盏。${REVISION_NOTE}`)
@@ -527,7 +486,6 @@ export function installReviewCycleReplies(fake) {
   const sent = { write: 0, review: 0, revision: 0, recheck: 0 }
   fake.replyCharacterState(characterStates)
   fake.replyReview(prompt => {
-    // 复核提示里也带着确认的修稿清单，先按复核锚点认出它。
     const anchors = prompt.split('【需复核的原始证据锚点】')[1]
     if (anchors) {
       sent.recheck++
@@ -596,7 +554,6 @@ export async function reviewCycleChapter(context, chapter, sent) {
   return { write, review, revise, merge, finalize }
 }
 
-/** 比 buildByHand 每章多一个修稿运行和一个复核运行，库的增长接近真实作品。 */
 export async function buildByReviewCycle(context, finalized, { saveCheckpoints = true, beforeLaunch } = {}) {
   await seedLargeBook(context, 0)
   const sent = installReviewCycleReplies(context.fake)
@@ -615,10 +572,6 @@ export async function buildByReviewCycle(context, finalized, { saveCheckpoints =
 const written = finalized => ({ model: true, shell: 'stage', setup: async context => { context.batches = await buildByBatch(context, finalized) },
   run: async context => ({ batches: context.batches, ...await timeLargeBook(context, finalized) }) })
 
-/**
- * 复用一份已造好的书：把 PERF702_FIXTURE 里的作品复制进本轮隔离目录再打开。
- * 112 章批量造书要十几分钟，计时、录 profile、新旧构建对比都从同一份数据出发。
- */
 export async function reuseBuilt(context) {
   const { app, page, roots, invoke, reload } = context
   const source = path.join(process.env.PERF702_FIXTURE ?? assert.fail('PERF702_FIXTURE 未设置'), 'projects', BOOK)
@@ -632,12 +585,7 @@ export async function reuseBuilt(context) {
   await reload()
 }
 
-/**
- * 用「AI 生成蓝图」一次生成第 1～BLUEPRINTS 章蓝图（假模型立即作答），记生成耗时；之后重启，蓝图页计时同 timeBlueprintsOnly。
- * 社群用户的 200 章蓝图是这样生成的，蓝图页挂载时要读这次规划运行的恢复稿。
- */
 async function generateBlueprints(context) {
-  // 生成蓝图要求架构已有故事前提等内容，用样例作品的完整核心设定。
   await seedLargeBook(context, 0, { blueprints: false, core: STAGE_SAMPLE.core })
   context.fake.replyDirectoryBlueprints()
   await installLedger(context.app, context.page)
@@ -645,11 +593,9 @@ async function generateBlueprints(context) {
   await blueprint.open(context.page)
   const generated = await operation(context, `bpgen${BLUEPRINTS}-generate`, async () => {
     const startedAt = performance.now()
-    // 一次最多生成连续 10 章（「全部 N 章」也受这个限制），按作者的做法反复「接着生成 10 章」。
     for (let done = 0; done < BLUEPRINTS; done += 10) {
       await blueprint.openGenerate(context.page)
       const dialog = blueprint.generateDialog(context.page)
-      // 聚焦章数输入框即选中「接着生成」。
       await dialog.getByLabel('本次蓝图章数').fill(String(Math.min(10, BLUEPRINTS - done)))
       await dialog.getByRole('button', { name: '开始生成' }).click()
       await blueprint.continuePastArchitectureWarning(context.page)
@@ -662,10 +608,6 @@ async function generateBlueprints(context) {
   return generated
 }
 
-/**
- * 证明「假死」的机制：渲染端每 20 ms 发一次轻量 IPC（config:get），记它的最长往返；
- * 先空跑 2 秒作基线，再在主进程里直接调一次 channel 的处理函数（用打开作品时截下的真实会话），看轻量 IPC 被它挡住多久。
- */
 async function contention(context, channel) {
   const { app, page } = context
   const probe = () => page.evaluate(async durationMs => {
@@ -682,7 +624,6 @@ async function contention(context, channel) {
   const baseline = await probe()
   const during = probe()
   const label = `contention-${channel.replace(':', '-')}-${context.contentionRuns = (context.contentionRuns ?? 0) + 1}`
-  // 结果只留形状（数组记条数、文字记字数，不写正文），对照两边时快却失败的一次一眼能看出来。
   const { handlerMs, result } = await profiled(context, label, () => app.evaluate(async ({ ipcMain }, name) => {
     const { event, session } = globalThis.__perfSession
     const startedAt = performance.now()
@@ -696,7 +637,6 @@ async function contention(context, channel) {
   return log({ label, baseline, during: await during, handlerMs, result })
 }
 
-/** 只有蓝图、没有正文的作品：蓝图页耗时随蓝图条数（PERF702_BLUEPRINTS）的曲线。 */
 async function timeBlueprintsOnly(context, rounds = Number(process.env.PERF702_ROUNDS ?? 3), mark = chapterTitle(BLUEPRINTS)) {
   const runs = []
   for (let round = 1; round <= rounds; round++) {
@@ -712,10 +652,6 @@ async function timeBlueprintsOnly(context, rounds = Number(process.env.PERF702_R
   return { blueprints: BLUEPRINTS, runs }
 }
 
-/**
- * mainMaxBlockMs 的正对照：主进程里同步占住 500 ms，读数必须约 500 ms。
- * 三条路径：渲染端 invoke 进来的处理函数里忙等、同一处跑一条约 500 ms 的 SQL（原生代码里的时间）、libuv 定时器回调里忙等。
- */
 async function blockControls(context) {
   const { app, page, invoke } = context
   await installLedger(app, page)
@@ -750,7 +686,6 @@ async function blockControls(context) {
   }
   await takeLedger(app, page, 300)
   const idleAfterStall = await profiled(context, 'control-stall-before-window', () => page.waitForTimeout(500))
-  // 反向对照：停顿发生在上一个窗口，这一窗口只该读到空闲值。
   results.stallBeforeWindow = log({ label: 'control-stall-before-window', ms: idleAfterStall, ...await takeLedger(app, page), prompts: {} })
   results.timer = await operation(context, 'control-timer-js', async () => {
     await app.evaluate(() => new Promise(resolve => setTimeout(() => {
@@ -763,7 +698,6 @@ async function blockControls(context) {
   return results
 }
 
-/** 等界面打开作品后的后台读取跑完：连续 quietMs 没有新完成的 invoke、也没有在途的 invoke 才返回，免得把它们的主进程占用算进导出。 */
 async function waitForQuietIpc(app, quietMs = 2_000, deadlineMs = 60_000) {
   const total = () => app.evaluate(() => globalThis.__perfLedger.inflight > 0 ? -1
     : Object.values(globalThis.__perfLedger.channels).reduce((sum, entry) => sum + entry.calls, 0))
@@ -777,10 +711,6 @@ async function waitForQuietIpc(app, quietMs = 2_000, deadlineMs = 60_000) {
   }
 }
 
-/**
- * 探针是渲染端每 20 ms 一次轻量 IPC，最长往返就是作者能感到的卡。
- * writes 为真时导出期间每 150 ms 保存一次第 finalized+1 章草稿，记成功次数（边写边导）。
- */
 async function timeExport(context, finalized, { rounds = Number(process.env.PERF702_ROUNDS ?? 1), writes = false } = {}) {
   const { app, page, roots, invoke } = context
   await installLedger(app, page)
@@ -811,7 +741,6 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
           }
         })()
         const startedAt = performance.now()
-        // 先发导出再开始保存，只数导出结束前完成的保存：导出前或导出后才落地的不算边写边导。
         const exporting = window.aiNovelAPI.invoke('project:archive-export', { targetArchiveGrantId: grantId, projectSession: session })
         let totalMs = 0
         const settled = exporting.finally(() => { totalMs = Math.round(performance.now() - startedAt); done = true })
@@ -830,10 +759,8 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
           sha256: exported.success ? exported.receipt.targetSha256 : undefined, probes, probeMaxMs: Math.round(probeMaxMs),
           ...writes ? { saves, saveFailures } : {} }
       }, { grantId: grant.grantId, session, draftId: draft?.id, writes })
-      // 导出失败或没出存档时耗时没有意义，场景直接判失败，免得失败被当成变快。
       assert.equal(result.success, true, `导出失败：${result.errorCode}`)
       assert.ok(fs.existsSync(archive), '导出报成功但存档不在')
-      // 边写边导要证明的是导出期间照常能存：至少一次与导出重叠的成功保存，且没有失败。
       if (writes) assert.ok(result.saves > 0 && result.saveFailures === 0, `导出期间的保存：成功 ${result.saves}，失败 ${result.saveFailures}`)
       return { ...result, archiveExists: true, archiveBytes: fs.statSync(archive).size, leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
     }))
@@ -841,10 +768,6 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
   return { finalized, runs }
 }
 
-/**
- * 分章 Markdown 导出（#702）：每章一个文件，Windows 上每章各起一次安全文件 helper 查存在、再起一次写入。
- * 从点「选择目录并导出」计到对话框显示导出结果；只有每章文件都在、内容是那一章时才算数。
- */
 export async function timeSplitExport(context, finalized) {
   const { app, page, roots } = context
   await stage.spine(page).or(stage.cover(page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
@@ -883,7 +806,6 @@ async function exportPhases(context) {
   const archive = path.join(roots.projects, `phases-${randomUUID()}.ainovel`)
   await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }) }, archive)
   const panel = stage.root(page).getByTestId('project-backup-panel')
-  // 阶段文字一闪而过：点之前就开始记出现过的阶段，导出完再核对，截图不要求阶段还在。
   await page.evaluate(labels => {
     const seen = window.__exportPhases = []
     const record = () => {
@@ -910,7 +832,6 @@ async function exportPhases(context) {
   return { seen, archiveExists: fs.existsSync(archive), leftovers: fs.readdirSync(roots.projects).filter(name => name.startsWith('.pe-')) }
 }
 
-/** 导出进行中关库（#702）：关库要等 worker 退出、临时目录删完才返回，作品重启后照常能打开。 */
 async function exportThenClose(context) {
   const { app, page, roots, invoke } = context
   await installLedger(app, page)
@@ -997,15 +918,12 @@ export const PERF702_SCENARIOS = {
       const opened = await timeOnce(context, Number(process.env.PERF702_FINALIZED ?? 112), 1)
       const results = []
       for (let round = 0; round < 3; round++) for (const channel of ['generation:list-recovery', 'generation:find-blueprint-recovery']) results.push(await contention(context, channel))
-      // 回书房放在最后：争用调用用的是打开时截下的会话。回书房不关库（关库在打开别的作品、删除作品时）。
       const { page } = context, finalized = Number(process.env.PERF702_FINALIZED ?? 112)
       await stage.root(page).getByRole('banner').getByRole('button', { name: `《${BOOK}》作品菜单` }).click()
       const closed = await operation(context, `${finalized}-r1-return-to-library`, () =>
         msFromClickTo(page, page.getByRole('menuitem', { name: '回到书房' }), [['[aria-label="最近的作品"]', BOOK]]))
-      // 第一轮进蓝图页时已把生成记录落到暂停与终态；重启后再走一轮，量的是静止以后的打开与启动恢复。
       await context.restart()
       const quiesced = await timeOnce(context, finalized, 2, '-quiesced')
-      // 再打开同一本书会先关上一次的库：关库前生成拥有者要把记录落到暂停与终态，这就是关闭作品的恢复。
       const grant = await chooseProjectDirectoryGrant(context.app, context.page, path.join(context.roots.projects, BOOK), 'project-open')
       const switched = await operation(context, `${finalized}-r2-reopen-same-quiesced`, async () => {
         const startedAt = performance.now()
@@ -1013,7 +931,6 @@ export const PERF702_SCENARIOS = {
         assert.equal(reopened.success, true, reopened.error)
         return { totalMs: Math.round(performance.now() - startedAt) }
       })
-      // 直接调 project:open 换了会话，渲染端要重载才认新会话（同 reuseBuilt）。
       await context.reload()
       await stage.spine(context.page).or(stage.cover(context.page, BOOK)).first().waitFor({ state: 'visible', timeout: 60_000 })
       return { opened, results, closed, quiesced, switched }

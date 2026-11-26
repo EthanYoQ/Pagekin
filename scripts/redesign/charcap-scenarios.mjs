@@ -30,7 +30,6 @@ const PREMISE = '光绪末年，淮扬盐河两岸，沈家与柳家靠一纸盐
   + '未婚妻柳如棠的父亲柳承宗欠下钱庄掌柜赵德全的巨债，盐运使司同知顾怀瑾借机设局，要一口吞下两家的盐引；他的女儿顾青梧是如棠的密友，却暗中倾心砚秋。'
   + '沈家账房方鹤年是顾怀瑾的眼线，码头把头陆九与妹妹阿蘅是砚秋仅有的帮手。老师许仲谋握着顾怀瑾旧案的证据。沈砚秋必须在新盐引换发之前查清账目、保住两家，否则沈柳两族都会被抄没。'
 
-/** 记下发往模型的对话请求体与回复原文（请求体不含凭据）。 */
 async function teeChat(app) {
   await app.evaluate(() => {
     if (globalThis.__charcapLog) return
@@ -63,7 +62,6 @@ async function sheetText(page) {
   return runSheet.sheet(page).innerText()
 }
 
-/** 等运行结束；停在「等你确认」时先记下作者看到的卡片再确认。 */
 async function untilDone(page, before, seen) {
   const started = Date.now()
   for (;;) {
@@ -98,7 +96,6 @@ async function roster(context, session) {
   return (read.entries ?? []).map(card => ({ name: card.name, role: card.role, relationships: card.relationships ?? [] }))
 }
 
-/** 导入反推的角色是待作者批准的提议，不直接进名单：读这份提议里的人物与关系。 */
 async function importedProposal(context, session) {
   const pending = await context.invoke(context.page, 'character-proposal:list-pending-finalized', session)
   const batches = await Promise.all(pending.filter(item => item.importOperationId).map(item =>
@@ -106,7 +103,6 @@ async function importedProposal(context, session) {
   return batches.flatMap(batch => batch.items.map(item => ({ name: item.fields.name, role: item.fields.role, relationships: item.relationships ?? [] })))
 }
 
-/** 物理请求数按台账里的尝试计（不按 fetch 计，重试与修复也算）。 */
 function requestsByPurpose(rows) {
   const counts = {}
   for (const row of rows) {
@@ -143,7 +139,6 @@ const FORTY = Array.from({ length: 40 }, (_, index) => `${SURNAMES[index % 10]}$
 const fortySlot = index => ({ slotId: `s${index + 1}`, name: FORTY[index], role: index === 0 ? 'protagonist' : index === 1 ? 'antagonist' : 'supporting',
   narrativeDuty: '牵动盐引案', relations: [{ targetSlotId: `s${(index + 1) % 40 + 1}`, relation: '欠下人情' }] })
 
-/** 假模型按名单合同回 40 位，按详情合同只回本批点到的 slotId。 */
 function fortyReply(prompt) {
   if (prompt.includes('【身份清单合同】')) return JSON.stringify({ slots: FORTY.map((_, index) => fortySlot(index)) })
   const batch = /【本批必须完整生成的 slotId】\n([^\n]+)/u.exec(prompt)
@@ -156,7 +151,6 @@ function fortyReply(prompt) {
   }) })
 }
 
-/** 与真实模型测试同样的输出上限 8192。 */
 const WIDE_MODEL = Object.freeze({ ...FAKE_MODEL, id: 'charcap-wide', name: '8192 输出夹具', modelName: 'gpt-4.1-mini', maxTokens: 8192,
   capabilities: { contextWindowTokens: 131_072, maxOutputTokens: 8192, reasoning: false, structuredOutput: true, usage: true },
   capabilitySources: { contextWindowTokens: 'manual', maxOutputTokens: 'manual', reasoning: 'preset', structuredOutput: 'preset', usage: 'preset' } })
@@ -269,13 +263,10 @@ export const CHARCAP_SCENARIOS = {
     return { file, ...measured }
   } },
 
-  /** 名单 40 位、输出上限 8192：确认卡列出全部 40 位候选，确认后名单里 40 张卡。截图停在确认卡。 */
   'charcap-arch-forty': { model: true, shell: 'stage', setup: seedFortyBook(), run: context => confirmFortyCast(context, 'charcap-arch-forty-confirm') },
 
-  /** 输出上限 4096：详情每张单独一次请求，根预算按名单 40 位算（70 次），照样走到确认卡、40 张卡。 */
   'charcap-arch-forty-4096': { model: true, shell: 'stage', setup: seedFortyBook(FAKE_MODEL), run: context => confirmFortyCast(context, 'charcap-arch-forty-4096-confirm') },
 
-  /** 名单三次都撞输出上限：运行卡写明已有角色没动、人物太多、去哪调、用哪个按钮补。 */
   'charcap-arch-truncated': { model: true, shell: 'stage', setup: seedFortyBook(), run: async context => {
     const { page, fake } = context
     const manifest = prompt => prompt.includes('【身份清单合同】')
@@ -300,7 +291,6 @@ export const CHARCAP_SCENARIOS = {
     return measured
   } },
 
-  /** 老书：已有蓝图和 8 张卡。重新生成被守卫拦住，但「新建角色」与「粘贴 / 导入角色卡」照常能加人。 */
   'charcap-oldbook-entries': { model: true, shell: 'stage', setup: seedArch({ characters: OLD_BOOK_CAST }), run: async context => {
     const { page, fake, invoke } = context
     const session = await context.app.evaluate(() => globalThis.__driveOpened)

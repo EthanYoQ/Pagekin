@@ -1,5 +1,4 @@
 param([string]$SinceUtc)
-# Read-only metadata projection. Never print Event.Message, XML, paths or dumps.
 function ConvertTo-SafeApplicationFailure {
     param($EventRecord)
     [xml]$eventXml = $EventRecord.ToXml()
@@ -45,8 +44,6 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
         if ($count -eq 0) { Write-Output '[windows-test-failure-metadata] {"event":"no-matching-event","cause":"undetermined","fastFailParameter":"unavailable"}' }
     } catch {
-        # Access denied, unavailable log and no-event results are not test failures.
-        # Exception text can contain machine paths; emit only a fixed classification.
         $status = if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') { 'no-matching-event' } else { 'metadata-unavailable' }
         Write-Output ('[windows-test-failure-metadata] {"event":"' + $status + '","cause":"undetermined","fastFailParameter":"unavailable"}')
     }

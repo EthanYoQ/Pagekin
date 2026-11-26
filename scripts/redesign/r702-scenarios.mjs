@@ -8,7 +8,6 @@ import { seedStageSample } from './scenarios.mjs'
 
 const RESTORED_HISTORY = '审稿内容都还在，但它是作品从备份恢复前做的，不能接着按它修稿或复验。点「重新审稿」，再按新意见修稿。'
 
-/** 审稿与修稿在后台跑，必须等运行胶囊出现并消失后才能点下一步。 */
 async function runOnce(page, action) {
   await page.evaluate(() => {
     window.__r702Runs = { count: 0 }
@@ -25,7 +24,6 @@ async function runOnce(page, action) {
 const EDITED_PARAGRAPH = '你父亲也问过钟的事'
 const EDIT = '钟声停了。'
 
-/** 同 x2-recheck 的审稿（带正文证据，合并后本应复验），修稿后导出恢复，在副本里打开第 4 章。 */
 async function openRestoredPendingRevision(context, label) {
   const { page, fake } = context
   fake.replyReview(JSON.stringify({ summary: '本章目标还没落地。', items: [
@@ -45,7 +43,6 @@ async function openRestoredPendingRevision(context, label) {
   await chapterView.merge(page).waitFor({ state: 'visible', timeout: 30_000 })
 }
 
-/** 恢复前的循环合并后不触发复验：假模型不再收到请求，也不留失败运行。 */
 async function mergeAndExpectNoRecheck(page, fake, chats) {
   await chapterView.merge(page).getByRole('button', { name: '全部用修稿' }).click()
   await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
@@ -92,20 +89,17 @@ export const R702_SCENARIOS = {
     await shoot('r702-3-restored-merge')
     return { chats: fake.chats.length }
   } },
-  /** 回归路径（#746）：恢复后改稿并重新审稿，再把正文改回去，恢复前的修稿又能合并。 */
   'r702-rereview-old-revision': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
     const { page, fake, shoot } = context
     await openRestoredPendingRevision(context, 'r702-rereview-old-revision')
     await chapterView.merge(page).getByRole('button', { name: '稍后再合并' }).click()
     await chapterView.merge(page).waitFor({ state: 'detached' })
-    // 改动加在全文末尾的新段：跳到全文末尾不受折行影响，退格就能原样删回。
     const original = await chapterView.prose(page).innerText()
     await chapterView.prose(page).getByText(EDITED_PARAGRAPH).first().click()
     await page.keyboard.press(documentEndKey())
     await page.keyboard.type(`
 ${EDIT}`)
     await stage.saveWithCtrlS(page)
-    // 保存后待合并列表刷新前主按钮还是「打开修稿合并」，按名字点才会等到重新审稿。
     await runOnce(page, () => chapterView.view(page).getByRole('button', { name: '重新审稿', exact: true }).click({ timeout: 30_000 }))
     await chapterView.reviseButton(page).waitFor({ state: 'visible', timeout: 30_000 })
 

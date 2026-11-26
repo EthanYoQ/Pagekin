@@ -17,8 +17,6 @@ import { assertNodeRunsTypeScript } from './node-version.mjs'
 import { dismissCompletionToasts, dismissStartupNotice, firstInteractiveControl, waitForShell } from './pages/shell.mjs'
 
 const asEntryPoint = Boolean(process.argv[1]) && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-// 场景模块会 import 应用里的 .ts：静态 import 会在任何代码运行前报 ERR_UNKNOWN_FILE_EXTENSION，所以先查再动态加载。
-// 只在作为入口运行时查：vitest 导入驱动时 .ts 由 vite 转译，用不到 Node 的类型剥离
 if (asEntryPoint) try { assertNodeRunsTypeScript(process.version, process.features.typescript) } catch (error) {
   process.stderr.write(`${error.message}
 `)
@@ -53,12 +51,9 @@ const TIMEOUT = 60_000
 const VIEWPORT = { width: 1440, height: 900 }
 const THEMES = ['light', 'dark']
 const SHELLS = ['writer', 'stage']
-/** 场景声明的前置不齐，没有启动应用：与失败（1）、参数错误（2）分开，批跑时归「未跑」。 */
 const NOT_RUN = 3
 const ROOT_NAMES = ['legacy', 'canonical', 'userData', 'home', 'appData', 'localAppData', 'temp', 'projects']
-/** 计时会话：先在同一隔离目录预启动一次写好外观（书房计时另建 20 部作品），再计之后那次冷启动。 */
 const TIMED_SESSIONS = new Set(['startup-timing', 'library-timing'])
-/** 空闲内存：与启动计时同样先预启动一次，第二次冷启动到可交互后静置，再按间隔采样全部进程的内存。 */
 const IDLE_SESSIONS = new Set(['idle-memory'])
 const PREPARED_SESSIONS = new Set([...TIMED_SESSIONS, ...IDLE_SESSIONS])
 const IDLE_SETTLE_MS = 10_000
@@ -101,7 +96,6 @@ export function parseArgs(argv) {
   return options
 }
 
-/** Electron 的全部可写根都落在 parent 下的一个新目录里；项目路径要短，原生存储有长度上限。 */
 export function createIsolatedRoots(parent) {
   fs.mkdirSync(parent, { recursive: true })
   const root = fs.mkdtempSync(path.join(parent, 'd'))
@@ -123,16 +117,13 @@ function scratchParent() {
   return path.join(base, 'VibeCodingScratch', 'an', 'drive')
 }
 
-/** 用户真实配置目录。运行前后逐个比较其中的条目，证明隔离目录之外没有写入。 */
 function realProfileDirectories() {
   const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming')
   return [path.join(os.homedir(), '.vela'), path.join(appData, 'ai-novel-writer'), path.join(appData, 'AI小说作家')]
 }
 
-/** 本机开着的书童约每 5 分钟刷新一次这几个 Chromium 缓存里文件的修改时间，所以它们的变化不能说明隔离失效，只列进 externalWritesIgnored。 */
 const RUNNING_INSTANCE_CACHES = new Set(['GPUCache', 'DawnWebGPUCache', 'DawnGraphiteCache'])
 
-/** 路径到「大小:修改时间」，目录只记存在，不存在的路径不记。超过 limit 个条目时报错：截断的快照会漏掉写入。 */
 function profileEntries(target, entries, limit) {
   let stat
   try { stat = fs.lstatSync(target) } catch (error) {
@@ -143,7 +134,6 @@ function profileEntries(target, entries, limit) {
   if (!stat.isDirectory()) return entries.set(target, `${stat.size}:${stat.mtimeMs}`)
   let names
   try { names = fs.readdirSync(target) } catch (error) {
-    // 运行中的书童可能在 lstat 与 readdir 之间删掉缓存目录
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return entries
     throw error
   }
@@ -169,7 +159,6 @@ export function profileWrites(before) {
   return { externalWrites: entries(false), externalWritesIgnored: entries(true) }
 }
 
-/** 以 --user-data-dir 匹配仍存活的 Electron 主进程与子进程。 */
 function liveProcesses(userData) {
   const needle = userData.toLowerCase()
   if (process.platform === 'win32') {
@@ -181,7 +170,6 @@ function liveProcesses(userData) {
   return output.split('\n').filter(line => line.toLowerCase().includes(needle)).map(line => Number(line.trim().split(/\s+/)[0]))
 }
 
-/** close 返回时 GPU、渲染等子进程可能还在退出，给它们约 3 秒。 */
 async function residualProcesses(userData) {
   for (let attempt = 1; ; attempt++) {
     const pids = liveProcesses(userData)
@@ -197,10 +185,6 @@ function isAlive(pid) {
   } catch (error) { return error.code === 'EPERM' }
 }
 
-/**
- * Windows：Chromium 独占打开 userData\lockfile，能读写打开或文件已不在即放开。
- * 其他平台：SingletonLock 是指向「主机名-pid」的符号链接，强杀后残留，新实例见 pid 已死就接管，所以 pid 已死或链接不在即放开。
- */
 function singletonLock(userData) {
   if (process.platform === 'win32') {
     const file = path.join(userData, 'lockfile')
@@ -210,10 +194,6 @@ function singletonLock(userData) {
   return { file, held: () => { try { return isAlive(Number(fs.readlinkSync(file).split('-').pop())) } catch (error) { return error.code !== 'ENOENT' } } }
 }
 
-/**
- * 进程退出码出现后，Windows 上 lockfile 的句柄还要几毫秒到几十毫秒才关，这时重启会报 process_singleton_win「Lock file can not be created」，Playwright 接着报 ECONNRESET。
- * app.process() 在 Windows 上是 cmd.exe 包装，所以杀之前按 --user-data-dir 记下整棵树。
- */
 export async function kill(app, userData, timeoutMs = 15_000) {
   const pid = app.process().pid
   const tree = [...new Set([pid, ...liveProcesses(userData)])]
@@ -232,7 +212,6 @@ export async function kill(app, userData, timeoutMs = 15_000) {
   }
 }
 
-/** close 失败时进程可能已自行退出，这时 taskkill 报「not found」；进程已不存在即视为已退出，不算强杀。 */
 export async function quit(app, graceMs = 10_000) {
   const pid = app.process().pid
   let timer
@@ -249,28 +228,21 @@ export async function quit(app, graceMs = 10_000) {
   return { forced: true }
 }
 
-/**
- * 隔离目录是新建的，应用没有存过界面语言，会按 navigator.language 取；非中文宿主上会落到英文，而场景全程按中文找控件。
- * --lang 固定 Chromium 的界面语言，宿主语言不再影响结果。
- */
 export function launchArgs(roots) {
   return ['-r', OFFSCREEN_WINDOW, '.', `--user-data-dir=${roots.userData}`, '--lang=zh-CN']
 }
 
-/** 失败现场：截图、DOM 与无障碍树。取证本身失败不能盖掉原来的错误。 */
 export async function captureFailure(page, base) {
   if (!page || page.isClosed()) return
   await page.screenshot({ path: `${base}.failure.png` }).catch(() => {})
   await dumpDom(page, base).catch(() => {})
 }
 
-/** 应用入口是构建产物；没构建就启动，Electron 会在桌面上弹出找不到应用的对话框，所以启动前先查。 */
 export function assertBuilt(appRoot) {
   const main = path.join(appRoot, 'dist-electron', 'main.js')
   if (!fs.existsSync(main)) throw new Error(`${main} 不存在：先在 ${appRoot} 构建（pnpm build）再跑驱动`)
 }
 
-/** 外部写入与残留进程都要留着隔离目录取证；只有全部检查通过才删。 */
 export function sessionIsClean({ failedAt, sessionErrors, residualProcesses, externalWrites }) {
   return failedAt === null && sessionErrors.length === 0 && residualProcesses?.length === 0 && externalWrites?.length === 0
 }
@@ -282,7 +254,6 @@ async function launch({ roots, appRoot, fetchPolicy = { fakePort: null, realOrig
   const app = await electron.launch({ cwd: appRoot, args: launchArgs(roots), env, timeout: TIMEOUT })
   let page
   try {
-    // 本机检索模型直接把 base_url 配成假服务的本机地址，这类请求原样放行；真实模式只放行硅基流动，只记路径、状态与耗时。
     await app.evaluate((_, { route, guard, policy }) => {
       const sink = { externalRequests: [], modelRequests: [] }
       globalThis.__driveExternalRequests = sink.externalRequests
@@ -301,7 +272,6 @@ async function launch({ roots, appRoot, fetchPolicy = { fakePort: null, realOrig
     const timing = { launchToInteractiveMs: interactiveAt - launchedAt,
       readyToShowToInteractiveMs: readyToShow === null ? null : interactiveAt - readyToShow,
       navigationToInteractiveMs: Math.round(interactiveAt - timeOrigin) }
-    // 页面里记下的时刻（导航开始为 0）：书房「新建作品」进入 DOM，书架上的书（旧欢迎页与新书房都是「预览《书名》」按钮）到齐。
     if (renderTiming) {
       const read = name => page.waitForFunction(attribute => document.documentElement.getAttribute(attribute), `data-drive-${name}`, { timeout: TIMEOUT })
         .then(handle => handle.jsonValue()).then(Number)
@@ -320,7 +290,6 @@ async function launch({ roots, appRoot, fetchPolicy = { fakePort: null, realOrig
     assert.equal((await invoke(page, 'startup:get-state')).state, 'ready')
     return { app, page, timing }
   } catch (error) {
-    // 启动失败时调用方拿不到 page，只能在退出前就地取证
     await captureFailure(page, failureBase)
     await quit(app)
     throw error
@@ -333,11 +302,6 @@ const invoke = (page, channel, ...args) =>
 const APPEARANCE_V3_KEY = 'ai-novel-writer-appearance-v3'
 const APPEARANCE_PREVIOUS_KEY = 'ai-novel-writer-appearance'
 
-/**
- * 外观写到被测构建在读的那个键。RD-10 起只有 v3 键（只有浅色与深色，没有外壳偏好）；
- * trunk 只有旧键，主题与外壳在同一次写入里改，shell 为 null 时不碰外壳偏好，版本号与它的 serializeAppearanceProfile 一致：
- * 只有新外壳写 v2，其余写 v1。两个键都还没有时返回 null。
- */
 export function appearanceWrite(stored, { theme, shell }) {
   if (stored.v3 !== null) {
     if (shell === 'writer') throw new Error('被测构建只有纸墨外壳，不能选 --shell writer')
@@ -357,10 +321,6 @@ const median = values => {
   return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2)
 }
 
-/**
- * 空闲内存：每次采样是 app.getAppMetrics() 的全部进程，合计工作集与私有字节（KB，Windows 才有私有字节），
- * 取各次合计的中位数；按进程类型的工作集也各取中位数。
- */
 export function idleMemory(samples) {
   if (samples.length === 0) throw new Error('空闲内存没有采样')
   const total = (metrics, field) => metrics.reduce((sum, metric) => sum + (metric.memory[field] ?? 0), 0)
@@ -384,7 +344,6 @@ async function sampleIdleMemory(app) {
   return idleMemory(samples)
 }
 
-/** 改主题（trunk 上连同外壳偏好）后重载一次。 */
 async function applyAppearance(page, appearance) {
   const keys = { v3: APPEARANCE_V3_KEY, previous: APPEARANCE_PREVIOUS_KEY }
   await page.waitForFunction(({ v3, previous }) => localStorage.getItem(v3) !== null || localStorage.getItem(previous) !== null, keys, { timeout: TIMEOUT })
@@ -395,10 +354,6 @@ async function applyAppearance(page, appearance) {
   await waitForShell(page, TIMEOUT)
 }
 
-/**
- * 启动计时量的是同一配置目录里的第二次冷启动：先启动一次写好主题（与外壳偏好）再退出，两侧都这样做。
- * 首次启动还要迁移旧配置、建库，与之后的启动不可比。
- */
 async function prepareProfile({ roots, appRoot, diagnostics, failureBase }, appearance, shelfBooks = 0) {
   const prepared = await launch({ roots, appRoot, diagnostics, failureBase })
   try {
@@ -407,7 +362,6 @@ async function prepareProfile({ roots, appRoot, diagnostics, failureBase }, appe
   } finally { await quit(prepared.app) }
 }
 
-/** 用公开 IPC 新建 count 部作品；新建即进入最近项目，书房的书架上就有 count 本书。 */
 async function seedShelf({ app, page }, roots, count) {
   for (let index = 1; index <= count; index++) {
     const grant = await chooseProjectDirectoryGrant(app, page, roots.projects)
@@ -418,10 +372,6 @@ async function seedShelf({ app, page }, roots, count) {
   assert.equal((await invoke(page, 'project:recent-list')).length, count, `最近项目应有 ${count} 部`)
 }
 
-/**
- * 录屏：用 CDP 的 Page.startScreencast 收集画面变化时的帧，按帧时间戳交给本机 ffmpeg 编成 H.264 mp4。
- * Playwright 的 recordVideo 需要另外下载它自带的 ffmpeg，这里不依赖它。
- */
 async function startScreencast(page) {
   const frames = []
   let session
@@ -440,7 +390,6 @@ async function startScreencast(page) {
   }
   await attach(page)
   return {
-    /** context.restart() 退出应用前停在旧页面上，冷启动后接到新页面接着录，帧都进同一段视频。 */
     pause: detach,
     resume: attach,
     async stop(file, scratch) {
@@ -478,17 +427,12 @@ async function dumpDom(page, base) {
 
 const messageOf = error => error instanceof Error ? error.message : String(error)
 
-/** 会话收尾时读回这次启动在主进程里记下的模型请求，并进 modelLog。读不回（应用已退出）记进 sessionErrors：请求数少算了，会话不算干净。 */
 export async function harvestModelLog(app, modelLog, sessionErrors) {
   try { modelLog.push(...await app.evaluate(() => globalThis.__driveModelRequests)) } catch (error) {
     sessionErrors.push(`读不回最后一次启动的模型请求记录，modelRequests 偏少：${messageOf(error)}`)
   }
 }
 
-/**
- * 真实模式会话收尾：汇总模型请求，删掉隔离目录里的模型配置。
- * 删除失败只记进 sessionErrors：会话照常走结果路径，隔离目录因会话不干净而保留，交给收尾的密钥扫描。
- */
 export function finishRealSession({ shared, sessionErrors, modelLog, canonical, remove = removePath }) {
   const summary = summarizeModelRequests(modelLog)
   shared.modelRequests = summary.count
@@ -500,17 +444,12 @@ export function finishRealSession({ shared, sessionErrors, modelLog, canonical, 
   } catch (error) { sessionErrors.push(messageOf(error)) }
 }
 
-/** 干净的会话删掉隔离目录；删不掉只记进 sessionErrors（目录留着，收尾的密钥扫描会查到它）。不干净的会话留着取证。 */
 export function releaseSessionRoot(root, clean, sessionErrors, remove = removePath) {
   if (!clean) return
   const reason = remove(root)
   if (reason) sessionErrors.push(`删不掉隔离目录 ${root}：${reason}`)
 }
 
-/**
- * 写诊断日志；写不进去只记进 sessionErrors，后面的退出与凭据清理照常执行。
- * 诊断里带出 secret 时写盘前就遮掉，运行中途被打断也不会把密钥留在产出目录；出现过即记进 sessionErrors，会话判失败。
- */
 export function writeConsoleLog(file, diagnostics, sessionErrors, secret = null) {
   let text = `${diagnostics.join('\n')}\n`
   if (secret && text.includes(secret)) {
@@ -520,12 +459,10 @@ export function writeConsoleLog(file, diagnostics, sessionErrors, secret = null)
   try { fs.writeFileSync(file, text) } catch (error) { sessionErrors.push(messageOf(error)) }
 }
 
-/** 本次写进产出目录的文件与留作取证的隔离目录里不能有密钥；找到就删掉那个文件，结果记下 keyScan。读不了的文件算扫描不完整，判失败。 */
 export function scanRunForSecret(results, out, outBefore, secret, remove = removePath) {
   const retained = [...new Set(results.map(result => result.isolationRoot))].filter(root => fs.existsSync(root))
   const walkProblems = []
   const scan = filesContaining([...changedFiles(out, outBefore, walkProblems), ...retained], secret)
-  // 逐个删：一个删不掉不影响其余，删不掉的只记路径与错误码（命中本身已判失败）。
   const removeFailures = []
   for (const file of scan.hits) {
     const reason = remove(file)
@@ -534,10 +471,6 @@ export function scanRunForSecret(results, out, outBefore, secret, remove = remov
   for (const result of results) result.keyScan = { scanned: scan.scanned, hits: scan.hits, unreadable: [...walkProblems, ...scan.unreadable], removeFailures }
 }
 
-/**
- * 一个会话一次冷启动：先跑首个截图点的 setup，再依次 run、截图、after。隔离与进程检查按会话做，结果抄进每一项。
- * realKey 只在真实模式下有：由 installRealModels 交给应用存进隔离目录的模型配置，会话结束时连同配置文件一起删掉。
- */
 async function runSession(sessionName, names, options, realKey = null, roots = createIsolatedRoots(scratchParent())) {
   const before = snapshotRealProfiles()
   const diagnostics = []
@@ -571,15 +504,9 @@ async function runSession(sessionName, names, options, realKey = null, roots = c
       shared.shell = await shellShown(launched.page)
       const context = {
         ...launched, roots, invoke, fake, diagnostics,
-        /** 场景中途多拍一张图，与收尾截图放在同一目录。 */
         shoot: name => shoot(context.page, `${base(name)}.png`),
         reload: () => context.page.reload().then(() => waitForShell(context.page, TIMEOUT)),
-        /** 场景起的定时器、子进程在这里登记释放函数。会话收尾时逆序执行，beforeLaunch 或重启抛错也一样。 */
         onCleanup: release => { cleanups.push(release) },
-        /**
-         * 退出应用再用同一隔离目录冷启动（真正的重启，不重写外观），context 换成新的 app 与 page。appRoot 换成另一份构建（旧版本造数据、新版本接着打开），之后不传时沿用上次启动的构建。
-         * killed: true 时模拟进程被杀：Windows 用 taskkill /T /F 结束整棵进程树，其他平台只向主进程发 SIGKILL。不走正常退出，也就跳过「重启前应用没有正常退出」的断言。
-         */
         restart: async ({ appRoot = currentAppRoot, beforeLaunch, killed = false } = {}) => {
           restartRequests.push(...await launched.app.evaluate(() => globalThis.__driveExternalRequests))
           modelLog.push(...await launched.app.evaluate(() => globalThis.__driveModelRequests))
@@ -592,7 +519,6 @@ async function runSession(sessionName, names, options, realKey = null, roots = c
           Object.assign(context, launched)
           await recording?.resume(context.page)
         },
-        /** 真实模式：把硅基流动的生成与检索模型存进应用并设为默认。 */
         installRealModels: async () => {
           assert.ok(realKey, '只有 --real-model 的会话能接真实模型')
           const { generation, embedding } = realModelProfiles(realKey)
@@ -632,7 +558,6 @@ async function runSession(sessionName, names, options, realKey = null, roots = c
     options = { ...options, console: true }
   } finally {
     for (const release of cleanups.splice(0).reverse()) await Promise.resolve().then(release).catch(error => sessionErrors.push(`场景登记的清理失败：${messageOf(error)}`))
-    // 场景在 hold 与 release 之间抛错时门还关着：卡住的请求让运行一直进行，应用拒绝关闭，quit 要等满 10 秒再强杀
     fake?.gate.release()
     if (options.console) writeConsoleLog(`${base(sessionName)}.console.log`, diagnostics, sessionErrors, realKey)
     if (launched && realKey) await harvestModelLog(launched.app, modelLog, sessionErrors)
@@ -686,7 +611,6 @@ async function main() {
   process.stdout.write('', () => process.exit(code))
 }
 
-/** 场景用 requires 声明自己要的环境变量（值是设置方法）、主题与平台；返回缺的每一项，齐全时为空。 */
 export function missingPrerequisites(scenario, options, env = process.env, platform = process.platform) {
   const { env: variables = {}, theme, platform: only } = scenario?.requires ?? {}
   return [
@@ -696,11 +620,6 @@ export function missingPrerequisites(scenario, options, env = process.env, platf
   ]
 }
 
-/**
- * 依次跑各会话，再扫密钥、打印、写结果 JSON，返回退出码。
- * 会话里任何一步（包括收尾清理）抛错都收成该会话的错误，不会逃出去：结果 JSON 与密钥扫描一定执行。
- * 隔离目录由这里建好交给会话，会话中途出错也知道要扫哪里。
- */
 export async function driveSessions({ sessions, options, realKey, run = runSession, makeRoots = () => createIsolatedRoots(scratchParent()) }) {
   const results = []
   const outBefore = realKey ? fileStamps(options.out) : null
@@ -715,7 +634,6 @@ export async function driveSessions({ sessions, options, realKey, run = runSessi
         error: `会话中途出错，没有正常收尾：${messageOf(error)}` }))
     }
     for (const raw of sessionResults) {
-      // 报错与诊断里若带出密钥，打印和写盘之前就遮掉，并判这次失败。
       const { value: result, redacted } = realKey ? redactSecret(raw, realKey) : { value: raw, redacted: false }
       if (redacted) result.secretRedacted = true
       results.push(result)
@@ -724,7 +642,6 @@ export async function driveSessions({ sessions, options, realKey, run = runSessi
   }
   const resultFile = path.join(options.out, `${options.scenario}-${options.theme}.json`)
   if (realKey) {
-    // 先扫密钥再打印，stdout 与结果 JSON 报的是同一份发现。扫描本身出错也记进结果并判失败。
     try { scanRunForSecret(results, options.out, outBefore, realKey) } catch (error) {
       for (const result of results) result.keyScan = { error: messageOf(error) }
     }

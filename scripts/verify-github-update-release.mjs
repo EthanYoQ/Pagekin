@@ -65,11 +65,6 @@ async function fetchBytes(fetcher, url, label) {
   return Buffer.from(await response.arrayBuffer())
 }
 
-/**
- * Validates the public GitHub Release after upload. It deliberately verifies the
- * small latest.yml byte-for-byte. GitHub's SHA-256 asset digests authenticate
- * the installer, metadata, and blockmap against the locally verified build.
- */
 export async function verifyGithubWindowsUpdateRelease({
   tag,
   localArtifacts,

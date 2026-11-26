@@ -14,8 +14,6 @@ const installerScript = resolve('scripts/smoke-win-installer.ps1')
 const releaseMonitorScript = resolve('scripts/monitor-win-release-gate.ps1')
 const upgradeFixtureScript = resolve('scripts/upgrade-data-fixture.mjs')
 const electronNodeRunner = resolve('node_modules/electron/dist/electron.exe')
-// A job's first WinForms child has needed about 4.8 s on CI, where a 5 s bound failed.
-// 20 s is about 4x that, and with the 5 s close timeout still fits the integration budget.
 const WINFORMS_WINDOW_READY_SECONDS = 20
 const oldWriterIt = process.platform === 'win32' && process.env.AI_NOVEL_A11_OLD_EXE && process.env.AI_NOVEL_A11_FIXTURE_PROJECT
   ? it : it.skip
@@ -269,8 +267,6 @@ function runInstallerLibrary(script: string): string {
 . ${quotePowerShell(installerScript)} -InstallerPath $installer -InstallerTimeoutSeconds 12 -PostExitQuietSeconds 5 -LoadInstallerLibrary
 ${script}`,
     ],
-    // The scratch-reuse case's intended EEXIST would otherwise reach the CI log;
-    // a failing call still carries stderr in its error message.
     { encoding: 'utf8', stdio: 'pipe' },
   )
 }
@@ -728,9 +724,6 @@ describe('Windows installer smoke contract', () => {
         modelFingerprint: 'upgrade-fixture/non-2048-768',
         distanceMetric: 'l2',
       }
-      // The standalone legacy fixture still validates native queries before and
-      // after its explicit normalization. Ordinary canonical business APIs must
-      // refuse this unqualified old root instead of granting migration authority.
       expect(JSON.parse(readFileSync(join(projectRoot, '.vela', 'embedding-spaces.json'), 'utf8'))).toMatchObject({
         activeGeneration: 1,
         spaces: [expect.objectContaining({
@@ -741,7 +734,6 @@ describe('Windows installer smoke contract', () => {
         })],
       })
       await expect(getEmbeddingSpaces(projectRoot)).rejects.toThrow('PROJECT_DATA_NOT_READY')
-      // Canonical search keeps the same unqualified-project boundary as its registry read.
       await expect(search(projectRoot, '升级夹具知识库', vector, 5, identity)).rejects.toThrow('PROJECT_DATA_NOT_READY')
       closeConnection(projectRoot)
 
@@ -3763,8 +3755,6 @@ try {
         draftCount: 2,
         revisionCount: 1,
       })
-      // Mirror schema-only app upgrades first so this assertion keeps testing
-      // the independent Unicode count migration rather than stopping at a new column.
       applyExpectedSchemaMigration(fixtureRoot)
       const beforeMigration = validateUpgradeFixtureWithNode(fixtureRoot)
       expect(beforeMigration.status).not.toBe(0)

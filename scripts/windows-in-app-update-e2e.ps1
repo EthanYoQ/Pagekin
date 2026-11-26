@@ -1036,8 +1036,6 @@ try {
     beforeVelaHome = $beforeVelaHome
   }
 
-  # Reuse the existing installer/error-window monitor. Its /S + final /D form
-  # is the existing NSIS silent-install contract; no relaxed helper exception is added here.
   . (Join-Path $PSScriptRoot 'smoke-win-installer.ps1') -InstallerPath $fromInstaller -LoadInstallerLibrary
   $startupWindows = @(Get-AiNovelTopLevelWindowSnapshot)
   $baselineWindows = New-AiNovelWindowIdentitySet -Windows $startupWindows
@@ -1047,7 +1045,6 @@ try {
     [System.IO.Path]::GetFileName($fromInstaller),
     [System.IO.Path]::GetFileNameWithoutExtension($fromInstaller),
     'ai-novel-writer'
-    # from_tag and expected_tag may straddle the product rename (ADR-0022), so track both names.
     Get-AiNovelProductExecutableNames
     Get-AiNovelProductNames
   )) {
@@ -1158,7 +1155,6 @@ try {
     -QuietSeconds $PostExitQuietSeconds `
     -LastWindowSnapshot ([ref]$postOldExitSnapshot)
 
-  # Resolve the updated executable only after the installer exits: the update may rename it (ADR-0022).
   Wait-E2ePendingInstallerRootExit `
     -Identity $pendingInstallerIdentity `
     -ExpectedImagePath $expectedPendingInstallerPath `

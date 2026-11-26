@@ -1,9 +1,7 @@
 name: macOS daily tests
 
-# PR CI 只跑 Windows；这里每天在 master 上跑一次 macOS，让 macOS 特有的失败不必等到发版前的打包资格构建才暴露。
 on:
   schedule:
-    # UTC 18:17 即北京时间 02:17，维护者早上能看到结果；避开整点，整点定时任务扎堆会排队延迟。schedule 只在默认分支触发。
     - cron: '17 18 * * *'
   workflow_dispatch:
 
@@ -17,9 +15,7 @@ concurrency:
 jobs:
   node-tests:
     name: macOS node tests
-    # macos-15 是 arm64，与 macos-arm64-cloud-build.yml 同一镜像，这里复现的失败与发版打包时的环境一致。
     runs-on: macos-15
-    # 该 runner 上全量 vitest 约 446s（run 45045463253），加安装和 helper 编译，45 分钟留足余量。
     timeout-minutes: 45
     env:
       CI: 'true'
@@ -48,7 +44,6 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      # GitHub 的发布文件下载偶发 5xx，重试只包这一次下载，免得每天出假红。
       - name: Download Electron binary
         timeout-minutes: 5
         run: |
@@ -69,7 +64,6 @@ jobs:
           clang -fobjc-arc -framework Foundation electron/security/darwin-safe-file-system.m -o electron/security/darwin-safe-file-system
           chmod +x electron/security/darwin-safe-file-system
 
-      # /var 是 /private/var 的别名，安全文件层按真实路径比对。
       - name: Resolve macOS test temp directory
         run: |
           node -e "const fs = require('node:fs'); const os = require('node:os'); const original = os.tmpdir(); const physical = fs.realpathSync.native(original); fs.appendFileSync(process.env.GITHUB_ENV, 'TMPDIR=' + physical + '\n'); console.log('tempAlias=' + (physical !== original))"

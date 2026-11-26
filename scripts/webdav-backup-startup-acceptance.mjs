@@ -331,8 +331,6 @@ async function main() {
       assert.equal(listed.success, true, listed.errorCode)
       assert.deepEqual(listed.generations.map(item => item.generationId), [gen1])
 
-      // 渲染进程只能携带选择器签发的授权标识：仅在主进程桩住 Electron 原生对话框（用后还原），
-      // 让生产 chooser IPC 照常签发授权，再由主进程在下载前解析。
       await session.app.evaluate(({ dialog }, parent) => {
         globalThis.__chooserOriginal = dialog.showOpenDialog
         dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [parent] })

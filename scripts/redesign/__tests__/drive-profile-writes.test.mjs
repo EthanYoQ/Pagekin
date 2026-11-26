@@ -16,7 +16,6 @@ afterEach(() => {
 
 const GPU_CACHES = ['GPUCache', 'DawnWebGPUCache', 'DawnGraphiteCache']
 
-/** 一个已经用过的配置目录：三个 GPU 缓存各有 data_1，根上有 Preferences 与 Local State。 */
 function usedProfile() {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'drive-profile-'))
   parents.push(parent)
@@ -30,7 +29,6 @@ function usedProfile() {
   return { parent, directory, cacheFiles: GPU_CACHES.map(cache => path.join(directory, cache, 'data_1')) }
 }
 
-/** 本机正在运行的书童：另一个进程把 GPU 缓存文件的修改时间刷新到将来，再在缓存目录里新建一个文件。 */
 function runningInstanceRefreshes(cacheFiles, added) {
   const script = `const fs = require('node:fs')
 const [added, ...files] = process.argv.slice(1)
@@ -92,7 +90,6 @@ it('读不了的条目直接报错，不当成不存在', () => {
   assert.throws(() => snapshotRealProfiles([directory]), { code: 'EPERM' })
 })
 
-/** 运行中的书童在快照遍历途中删掉一个缓存目录：lstat 时还在，readdir 时已经没了。 */
 function readdirFailsFor(target, code) {
   const readdir = fs.readdirSync
   vi.spyOn(fs, 'readdirSync').mockImplementation((current, ...rest) => {

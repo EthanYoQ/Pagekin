@@ -139,7 +139,6 @@ export const C6_SCENARIOS = {
 
     await blueprint.open(page)
     await blueprint.writeNext(page)
-    // 只等写稿运行开始，首个模型请求的耗时不在本场景范围。
     await page.locator('.stage-capsule').filter({ hasText: '第 5 章 · 写稿' }).waitFor({ state: 'visible', timeout: 30_000 })
     assert.equal(await blueprint.preflight(page).count(), 0, '作者决定之后不再弹一致性预检')
     assert.equal(await page.getByText('还没决定用哪个').count(), 0, '作者决定之后警告消失')

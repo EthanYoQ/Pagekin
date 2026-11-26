@@ -9,9 +9,6 @@ import * as chapterView from './pages/chapter-view.mjs'
 import * as stage from './pages/stage.mjs'
 import { seedStageSample } from './scenarios.mjs'
 
-// 回收站（#564 PR3）没有界面入口（界面在 PR4），这里经公开 IPC 在真实 Electron 里走一遍：
-// 删一章、恢复、再删、彻底删除，之后重新打开作品，核对实体稿与知识库都没有残留。
-
 async function trackOpenedSession(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -39,7 +36,6 @@ export const TRASH_SCENARIOS = {
     const session = await app.evaluate(() => globalThis.__driveOpened)
     assert.ok(session?.leaseId, '记下了界面打开作品的会话')
     const call = (channel, ...args) => invoke(page, channel, ...args, projectPath, session)
-    // 删除后 finalizedChapter 不再标出被删章，除了文件名再按定稿时记下的文档 ID 认，免得改了名的残留文档漏网。
     const tracked = new Set()
     const ofChapter = document => document.finalizedChapter === 3 || /第3章/u.test(document.fileName) || tracked.has(document.id)
     const knowledge = async () => (await call('kb:list-documents')).filter(ofChapter)
@@ -107,7 +103,6 @@ export const TRASH_SCENARIOS = {
   } },
 }
 
-/** 有实体稿时把它独占打开，让删除时的移除失败，回收站这一项就停在「清理没完成」。返回解锁函数。 */
 function lockFile(file) {
   const quoted = file.replaceAll("'", "''")
   const child = spawn('powershell.exe', ['-NoProfile', '-Command', `$f=[System.IO.File]::Open('${quoted}','Open','Read','None'); Write-Output locked; Start-Sleep 300`], { stdio: ['ignore', 'pipe', 'inherit'] })
@@ -118,7 +113,6 @@ function lockFile(file) {
   return { pid: child.pid, ready, release: () => { try { execFileSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore' }) } catch { /* 已退出 */ } } }
 }
 
-/** 只让下一次恢复返回「批次没写完」：真实复现要一批没写完的批量创作，这里替换一次主进程回复，界面走的是真实的报错与文案。 */
 async function rejectNextRestoreAsBatchUnfinished(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -131,7 +125,6 @@ async function rejectNextRestoreAsBatchUnfinished(app) {
 }
 
 const toasts = page => page.locator('#ai-novel-ink-toasts')
-/** 关掉已有的通知，下一张截图只留这一步的提示。 */
 const dismissToasts = async page => {
   await toasts(page).evaluate(node => { for (const button of node.querySelectorAll('button[aria-label="关闭通知"]')) button.click() })
   await page.waitForTimeout(600)
@@ -147,7 +140,6 @@ TRASH_SCENARIOS['trash-ui'] = { model: true, shell: 'stage', requires: { platfor
   const observed = {}
   context.fake.replyCharacterState(characterStateReply)
   await finalizeChapter(page, 3)
-  // 第 4 章也定稿，删第 3 章后才留下缺口（后面有定稿章），蓝图页出缺口卡。
   await finalizeChapter(page, 4)
   const files = manuscripts(projectPath, 3)
   observed.manuscripts = files
@@ -168,7 +160,6 @@ TRASH_SCENARIOS['trash-ui'] = { model: true, shell: 'stage', requires: { platfor
     lock.release()
   }
 
-  // 第 3 章的页面会列出删除清理失败的原文（本机路径和 EBUSY），回收站从第 4 章打开，截图里只看回收站。
   await dismissToasts(page)
   await openChapter(page, 4)
   assert.equal(await page.getByText(/EBUSY|C:\\Users/u).count(), 0, '回收站背后的页面不露本机路径和 EBUSY')
@@ -206,7 +197,6 @@ TRASH_SCENARIOS['trash-ui'] = { model: true, shell: 'stage', requires: { platfor
   observed.restoreToast = await toasts(page).innerText()
   await context.shoot('restore-success')
 
-  // 恢复提示让作者去「定稿后处理」点「重试」重新收进知识库：核对知识库里确实没有这一章，单章页确实有这个按钮。
   const session = await app.evaluate(() => globalThis.__driveOpened)
   observed.knowledgeAfterRestore = (await context.invoke(page, 'kb:list-documents', projectPath, session))
     .filter(document => document.finalizedChapter === 3 || /第3章/u.test(document.fileName)).map(document => document.fileName)

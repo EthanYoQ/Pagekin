@@ -197,7 +197,6 @@ async function preflight(page, parent, copyName) {
   await sleep(100)
   evidence.helper = pick(evidence.title, parent)
   const returned = await Promise.race([pending, sleep(15_000).then(() => { throw new Error('restore target IPC timeout') })])
-  // 授权标识是短期能力，不写入收据；渲染进程只会得到 { grantId, displayName }，完整路径不再出现在 IPC 结果里。
   evidence.returned = returned ? { displayName: returned.displayName, grantIssued: typeof returned.grantId === 'string' } : null
   assert.deepEqual(Object.keys(returned ?? {}).sort(), ['displayName', 'grantId'], 'restore target IPC returned unexpected shape')
   assert.equal(typeof returned.grantId, 'string', 'restore target IPC returned no grant')
@@ -212,7 +211,6 @@ async function launch(profile) {
   for (const key of ['ELECTRON_RUN_AS_NODE', 'VITE_DEV_SERVER_URL', 'AI_NOVEL_SMOKE_OPEN_PROJECT']) delete env[key]
   const app = await electron.launch({ executablePath, cwd: packageDir,
     args: [`--user-data-dir=${profile.userData}`], env, timeout: 30_000 })
-  // Keep main-process output beside the receipt so a UI-level failure code can be traced to its cause.
   for (const stream of [app.process().stdout, app.process().stderr]) stream?.on('data', chunk =>
     fs.appendFileSync(path.join(receiptDir, 'main-process.log'), String(chunk).replaceAll(scratch, '<isolated-scratch>')))
   const page = await app.firstWindow({ timeout: 30_000 })
@@ -225,7 +223,6 @@ async function launch(profile) {
 
 async function close(app) { await app.close(); runningApps.delete(app) }
 
-/** 从书房打开作品，再经设置分组进入「项目备份」。 */
 async function openPanel(page, name) {
   await stage.waitForStage(page)
   await stage.dismissMigrationNotice(page)
@@ -241,10 +238,6 @@ async function openPanel(page, name) {
   return panel
 }
 
-/**
- * 书架上同名的书有两本（原稿与刚恢复的分支副本）时，按书架顺序取最近打开的那本。
- * 它若已是当前作品，点封面回到「继续」概览，从「继续写作」进入；否则从概览的「打开」进入。
- */
 async function enterNewestBook(page, name) {
   await stage.dismissMigrationNotice(page)
   await stage.showLibrary(page)

@@ -6,7 +6,6 @@ import { openChapter } from './f491-scenarios.mjs'
 import { appendSentence, finalizeReopened, reopen, trackOpenedSession, uiSession } from './reopen-scenarios.mjs'
 import { seedStageSample } from './scenarios.mjs'
 
-// 第 2 章替换后林岚和守塔人反目；第 4 章（有草稿）和第 6 章的蓝图还写两人是好友，其余章不提两人。
 const REPLACED_LINE = '守塔人当着全港的人撕了她父亲的地图，林岚从此和他反目成仇。'
 const NEW_RELATION = '反目成仇'
 const FRIENDLY = '林岚和守塔人是多年的好友，一起修好了雾钟'

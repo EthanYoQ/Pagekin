@@ -35,8 +35,6 @@ const option = name => {
   assert(index !== -1 && process.argv[index + 1] && !process.argv[index + 1].startsWith('--'), `--${name} is required`)
   return process.argv[index + 1]
 }
-// 纸墨外壳（RD-10）起，正文、输入法与性能三种模式都用同一组固定安装包参数；旧外壳时期写死的历史包与 U16 新构建回执链去掉。
-// 历史 Classic 基线测的是另一份旧源码打出的旧包，参数另算，不在这里。
 const packageOptions = ['package-dir', 'source-sha', 'exe-sha256', 'asar-sha256']
 assert(historicalClassicMode || packageOptions.every(name => process.argv.includes(`--${name}`)),
   'pass --package-dir <win-unpacked> --source-sha <sha> --exe-sha256 <hash> --asar-sha256 <hash>')
@@ -55,7 +53,6 @@ const asarPath = packageDir && path.join(packageDir, 'resources', 'app.asar')
 const testedSha = historicalClassicMode ? null : option('source-sha')
 const expectedExe = historicalClassicMode ? null : option('exe-sha256')
 const expectedAsar = historicalClassicMode ? null : option('asar-sha256')
-/** 纸墨正文单章视图里的 CodeMirror。 */
 const PROSE_EDITOR = '.stage-ch-prose .cm-content[contenteditable="true"]'
 const scriptPath = fileURLToPath(import.meta.url)
 const fileHash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
@@ -86,7 +83,6 @@ const storedBody = (projectPath, draftId, historicalClassic = false) => {
 }
 
 const productInputs = ['src', 'electron', 'public', 'build', 'package.json', 'pnpm-lock.yaml', 'vite.config.ts', 'tsconfig.json', 'electron-builder.json5']
-/** 安装包来源：两个哈希对得上，打包之后产品输入没有再改（提交与工作区都算，用例目录除外）。 */
 function verifyFixedPackage() {
   assert.equal(git('rev-parse', `${testedSha}^{commit}`), testedSha, 'package source SHA is unavailable')
   assert.equal(fileHash(executablePath), expectedExe, 'executable hash changed')
@@ -111,7 +107,6 @@ async function launch() {
   return { app, page }
 }
 
-/** 从书房打开作品，再从流程脊打开第 1 章，返回纸墨纸面上的正文编辑区。 */
 async function openChapterOne(page, name) {
   await stage.dismissMigrationNotice(page)
   await stage.showLibrary(page)
@@ -122,7 +117,6 @@ async function openChapterOne(page, name) {
   await body.waitFor({ state: 'visible' })
   return body
 }
-/** 章节头的版本按钮写着「草稿 v1 · N 字」；字数随正文实时更新。 */
 const wordCount = (page, units) => chapterView.view(page).getByRole('button', { name: `本章版本：草稿 v1 · ${units} 字`, exact: true })
 
 async function quit(app) {
@@ -619,7 +613,6 @@ async function performanceMain() {
       await cpuProfiler?.session?.detach()
       assert.equal(createHash('sha256').update(storedBody(fixtures[units].projectPath, fixtures[units].draftId)).digest('hex'),
         fixtures[units].bodySha256, 'unsaved measurements changed SQLite')
-      // 撤销把正文改回原样；顶栏仍写「未保存」时按 Ctrl S 保存，保存后正文与夹具逐字相同。
       if (await stage.saveStatus(page).filter({ hasText: /^未保存$/ }).count() > 0) await stage.saveProse(page)
       await stage.saveStatus(page).filter({ hasText: /^已保存$/ }).waitFor({ state: 'visible' })
       assert.equal(createHash('sha256').update(storedBody(fixtures[units].projectPath, fixtures[units].draftId)).digest('hex'),
@@ -1094,7 +1087,6 @@ async function main() {
     pass('live-markdown-preview', 'U06.A01', 'the stage chapter CodeMirror rendered newly typed Markdown emphasis before saving')
 
     currentStep = 'U06.A02'
-    // 纸墨外壳的纸面头是章节头：章号与蓝图标题在正文之上；画板的纸面正文没有首字下沉，首字与正文同样大小。
     assert.equal(await chapterView.title(page).innerText(), '雨夜')
     const numeral = chapterView.view(page).locator('.stage-ch-numeral')
     assert.equal(await numeral.innerText(), '1')
@@ -1145,7 +1137,6 @@ async function main() {
     const proseFont = () => page.locator('.stage-ch-prose .cm-scroller').evaluate(element => getComputedStyle(element).fontFamily)
     const defaultFont = await proseFont()
     assert.match(defaultFont, /LXGW WenKai/, 'default writing font is not LXGW WenKai')
-    // 写作字体在设置的「外观」页；设置是外壳里的一页，返回作品后这一章与未保存的改动都还在。
     await stage.openSettings(page)
     await stage.showSettingsPage(page, '外观')
     await stage.root(page).getByLabel('写作字体', { exact: true }).selectOption('noto-serif-sc')

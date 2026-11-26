@@ -10,7 +10,6 @@ import { FIXTURE_PROSE } from './fake-model.mjs'
 import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 import { firstLine, seedStageSample } from './scenarios.mjs'
 
-/** 第 3 章写进地点、道具与近况；第 4 章再改地点与近况，道具留着第 3 章的值。证据都是该章里只出现一次的原句。 */
 const CHAPTER_UPDATES = [
   { marker: '灯室的门没有锁', evidence: '林岚把纸条夹进父亲的地图里。',
     currentState: { location: '灯塔顶层灯室', keyItems: '父亲的地图、钟绳上的纸条', recentEvents: '在灯室找到「别在涨潮时敲钟」的纸条' } },
@@ -25,7 +24,6 @@ export function characterStateReply(prompt) {
   return JSON.stringify({ updates: [{ characterId: id, currentState: update.currentState, evidence: { text: update.evidence } }] })
 }
 
-/** 驱动自己打开作品拿会话；界面上的会话随之失效，之后由界面重新打开。 */
 async function openForDriver({ page, invoke }, projectPath) {
   const opened = await invoke(page, 'project:open', projectPath, randomUUID(), null)
   assert.equal(opened.success, true, opened.error)
@@ -40,7 +38,6 @@ async function stubDialogs(app, { save, open }) {
   }, { save, open })
 }
 
-/** 用界面同一组 IPC 导出 .ainovel 再恢复成新副本，返回副本所在目录。 */
 export async function exportAndRestore(context, projectPath, label) {
   const { app, page, invoke, roots } = context
   const session = await openForDriver(context, projectPath)
@@ -60,7 +57,6 @@ export async function exportAndRestore(context, projectPath, label) {
   return restored.receipt.targetProjectRoot
 }
 
-/** 界面按 Ctrl O 打开指定文件夹里的作品。 */
 export async function openInUi({ app, page }, projectPath) {
   await stubDialogs(app, { open: projectPath })
   await page.keyboard.press('ControlOrMeta+O')
@@ -84,7 +80,6 @@ export async function stateFields(page) {
   })))
 }
 
-/** 定稿后处理列出了角色状态更新，每一步都已成功或失败，且没有进行中的运行。 */
 const settled = page => page.waitForFunction(() => {
   const rows = [...document.querySelectorAll('[aria-label="定稿后处理"] li')]
   return rows.some(row => row.querySelector('b')?.textContent === '角色状态更新')
@@ -103,7 +98,6 @@ export async function finalizeChapter(page, chapterNumber) {
   await settled(page)
 }
 
-/** 角色状态更新这一行的说明；正文文件一行在发布未完成时也标失败，不能取「第一条失败」。 */
 export const postDetail = page => chapterView.postProcess(page).locator('li[data-state="failed"]').filter({ has: page.locator('b', { hasText: /^角色状态更新$/u }) })
   .locator('.stage-ch-post-detail')
 

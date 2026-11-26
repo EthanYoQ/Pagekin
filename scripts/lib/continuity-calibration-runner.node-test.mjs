@@ -65,7 +65,6 @@ test("dry prepare 冻结生产 prompt 且不泄露或修改模型配置", () => 
     assert.equal(manifest.requestsPlanned, 2)
     assert.equal(before, after)
 
-    // Child-process fetch is replaced before the runner loads: no network request.
     const mockPath = path.join(scratch, "mock-fetch.mjs")
     const callsPath = path.join(scratch, "mock-calls.txt")
     writeFileSync(mockPath, `
@@ -103,7 +102,6 @@ test("dry prepare 冻结生产 prompt 且不泄露或修改模型配置", () => 
     assert.notEqual(repeated.status, 0)
     assert.equal(readFileSync(callsPath, "utf8").trim().split("\n").length, 2)
 
-    // A failed pair consumes its two attempts, stops later cases and cannot retry.
     fixtures.cases.push({ ...fixtures.cases[0], id: "not-dispatched" })
     writeFileSync(fixturesPath, JSON.stringify(fixtures))
     const failedOutput = path.join(scratch, "failure-prepared")

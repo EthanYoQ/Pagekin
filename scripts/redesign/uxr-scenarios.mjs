@@ -111,7 +111,6 @@ async function blueprintFacts(page, number) {
   }, number)
 }
 
-/** commitMs：点击后排的微任务里这一章已提交，不受帧率取整；layoutMs：再读 scrollHeight 强制排版；twoFramesMs：点击到两帧之后，含绘制。 */
 async function measureSwitching(page) {
   return page.evaluate(async () => {
     const items = [...document.querySelectorAll('.stage-bp-plan-item')]

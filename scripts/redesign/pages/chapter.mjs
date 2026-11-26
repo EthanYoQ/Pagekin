@@ -1,4 +1,3 @@
-// 单章流程：写作、审稿、修稿合并、定稿。
 export const EDITOR = '.writer-editor-content .cm-content'
 
 export const editor = page => page.locator(EDITOR)
@@ -58,5 +57,4 @@ export async function startBatch(page, modelId, targetWords, chapterCount = 1) {
   await dialog.getByRole('button', { name: '启动批量创作' }).click()
 }
 
-/** 正文编辑器（两种外壳都行）每一行的文字与首行缩进的计算值。 */
 export const lineIndents = editorContent => editorContent.locator('.cm-line').evaluateAll(lines => lines.map(line => [line.textContent, getComputedStyle(line).textIndent]))

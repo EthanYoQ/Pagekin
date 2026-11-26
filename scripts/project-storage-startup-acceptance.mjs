@@ -134,8 +134,6 @@ if (process.argv.includes('--help')) {
     invokedChannels.add(channel)
     return invoke(page, channel, ...args)
   }
-  // 渲染进程只能携带选择器签发的授权标识。这里只在主进程桩住 Electron 原生对话框（用后还原），
-  // 让生产 chooser IPC 照常签发授权：不绕过授权服务，也不向渲染进程暴露任何路径。
   const chooseGrant = async (session, channel, args, method, dialogResult) => {
     await session.app.evaluate(({ dialog }, { method, dialogResult }) => {
       globalThis.__chooserOriginal = dialog[method]
@@ -201,7 +199,6 @@ if (process.argv.includes('--help')) {
         { canceled: false, filePaths: [archivePath] })
       const chooseRestoreTarget = suggestedName => chooseGrant(session, 'dialog:select-project-restore-target', [suggestedName],
         'showOpenDialog', { canceled: false, filePaths: [profiles.B.projects] })
-      // 选择器只会给出尚不存在的子项；目标在授权之后、恢复之前被占用，正是 no-clobber 必须拦住的竞争。
       const collisionGrant = await chooseRestoreTarget('existing-target')
       assert.equal(collisionGrant.displayName, 'existing-target')
       const collisionTarget = path.join(profiles.B.projects, collisionGrant.displayName)
@@ -219,7 +216,6 @@ if (process.argv.includes('--help')) {
 
       const restoreTarget = await chooseRestoreTarget('r')
       assert.equal(restoreTarget.displayName, 'r')
-      // 授权把父目录固定为规范真实路径；恢复收据里的目标必须正是这条授权路径。
       restoredProjectPath = path.join(fs.realpathSync.native(profiles.B.projects), restoreTarget.displayName)
       const restored = await call(session.page, 'project:archive-restore', {
         archiveGrantId: (await chooseArchive()).grantId, targetGrantId: restoreTarget.grantId,

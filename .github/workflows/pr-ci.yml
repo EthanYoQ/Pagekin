@@ -15,7 +15,6 @@ on:
         default: '4'
         options: ['1', '4']
 
-# Test untrusted PR code without repository write access or model credentials.
 permissions:
   contents: read
 
@@ -24,8 +23,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Branch protection requires the desktop check on every PR, so prose-only
-  # changes skip the Windows shards here instead of skipping the workflow.
   changes:
     name: Detect docs-only changes
     if: ${{ github.event_name != 'push' }}
@@ -41,8 +38,6 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
-      # HEAD is the PR merge commit; its first parent is the base branch tip.
-      # A PR that changes the classifier must not be judged by its own copy.
       - name: Classify changed files
         id: detect
         if: ${{ github.event_name == 'pull_request' }}
@@ -85,13 +80,11 @@ jobs:
       TEST_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
 
     steps:
-      # Default PR checkout tests the proposed merge, not an unrelated branch.
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
 
-      # Keep the toolchain aligned with the existing Windows release workflow.
       - name: Set up pnpm
         uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda
         with:
@@ -113,7 +106,6 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      # GitHub 的发布文件下载偶发 5xx。跳过安装脚本，让重试只包这一次下载，lockfile 错误不重试。
       - name: Download Electron binary
         timeout-minutes: 5
         run: |
@@ -201,13 +193,9 @@ jobs:
         if: ${{ matrix.shard == 1 }}
         run: pnpm run test:browser
 
-      # Compile only: do not rebuild for Electron, package installers, or publish.
       - name: Compile renderer and Electron sources
         if: ${{ matrix.shard == 1 }}
         run: pnpm run build
-
-      # Intentionally no artifact uploads or dependency cache: keep this daily
-      # gate separate from retained, release-qualified Windows/macOS packages.
 
   docs-tests:
     name: Docs content tests
@@ -254,7 +242,6 @@ jobs:
           test "$SHARD_RESULT" = success && exit 0
           test "$CHANGES_RESULT" = success && test "$DOCS_ONLY" = true && test "$SHARD_RESULT" = skipped && test "$DOCS_TESTS_RESULT" = success
 
-  # 两个各自绿的 PR 合并后可能让守卫测试变红，PR 检查看不到，只在合并后报警，不拦 PR。
   master-guards:
     name: Master guard tests
     if: ${{ github.event_name == 'push' }}

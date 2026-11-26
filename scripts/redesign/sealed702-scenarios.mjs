@@ -1,4 +1,3 @@
-// #702 实机场景：作品里有读不出的生成记录，打开时提示一次（报封存的生成条数），再打开不提示。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 
@@ -11,7 +10,6 @@ import { STAGE_SAMPLE } from './stage-sample.mjs'
 const settle = page => page.waitForTimeout(400)
 
 const LOCALES = {
-  // 打开后的提示框会把外壳标 aria-hidden，按角色等不到流程脊，所以只点「打开」，由调用方等提示框。
   zh: { config: 'zh-CN', title: '有 AI 生成记录读不出', unit: ' 条', confirm: '知道了', spine: '创作流程',
     open: async page => {
       await stage.cover(page, STAGE_SAMPLE.name).click()
@@ -38,13 +36,11 @@ const sealedCount = context => readDb(context, db =>
 
 const notice = (page, locale) => page.getByRole('dialog').filter({ hasText: locale.title })
 
-/** 驱动去掉了烟测打开的环境变量，渲染端也不恢复上次的作品，冷启动应当总停在书房。 */
 async function landing(page) {
   await stage.spine(page).or(page.locator('.stage-library')).first().waitFor({ state: 'visible', timeout: 30_000 })
   return await stage.spine(page).isVisible() ? 'work' : 'library'
 }
 
-/** 驱动的冷启动按中文书房判断就绪：先以中文重启，再写回目标语言并 reload。 */
 async function restartIn(context, locale, beforeLaunch) {
   assert.equal((await context.invoke(context.page, 'config:set', { locale: 'zh-CN' })).success, true)
   await context.restart({ beforeLaunch })
@@ -57,7 +53,6 @@ async function restartIn(context, locale, beforeLaunch) {
   return landed
 }
 
-/** 下一次 project:open 之后读最近作品失败一次，打开作品时就会弹「部分数据加载失败」。书房自己读最近作品不受影响。 */
 async function failRecentListAfterNextOpen(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -85,7 +80,6 @@ const promptsRendered = page => page.waitForFunction(() => [...document.querySel
 const layerOf = dialog => dialog.evaluateHandle(element => element.closest('.pi-prompt-layer'))
 const detached = (page, layer) => page.waitForFunction(element => !element.isConnected, layer, { timeout: 30_000 })
 
-/** 报错框那层移走和下一个提示的挂载点挂上在同一个任务里，但对话框由 React 稍后渲染，所以还要等各层渲染完再数。 */
 async function acknowledgeLoadError(page, loadError) {
   const layer = await layerOf(loadError)
   await loadError.getByRole('button').click()
@@ -128,7 +122,6 @@ async function pickWithCtrlO(context, projectPath) {
   await context.page.keyboard.press('ControlOrMeta+O')
 }
 
-/** 提示框开着时外壳被标 aria-hidden，按角色找不到作品菜单，按 aria-label 找。 */
 const bookMenu = (page, name) => stage.root(page).locator(`[aria-label="《${name}》作品菜单"]`)
 const otherBookMenu = page => bookMenu(page, '雾岛')
 

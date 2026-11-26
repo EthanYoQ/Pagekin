@@ -50,7 +50,6 @@ describe('macOS ARM64 cloud build workflow contract', () => {
       const childFixture = execFileSync(process.execPath, ['-e',
         "const fs = require('node:fs'); const path = require('node:path'); process.stdout.write(fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'child-')))",
       ], { encoding: 'utf8', env: { ...process.env, TMPDIR: temporaryDirectory,
-        // Windows os.tmpdir uses TEMP/TMP; macOS consumes the exported TMPDIR directly.
         ...(process.platform === 'win32' ? { TEMP: temporaryDirectory, TMP: temporaryDirectory } : {}),
       } })
       expect(path.dirname(childFixture)).toBe(realpathSync.native(physical))

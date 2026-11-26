@@ -40,7 +40,6 @@ const projectName = `u13h-${runId.slice(0, 4)}`
 const steps = []
 const pass = (stepId, actionId, assertion, observed) => steps.push({ stepId, actionId, outcome: 'PASS', assertion, observed })
 const invoke = (page, channel, ...args) => page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
-// 纸墨外壳：写作此章在单章视图，已有草稿后再写一稿走蓝图页「写第 1 章」；运行状态、历史与可恢复的内容都在运行侧页。
 const RUN_TITLE = '第 1 章 · 写稿'
 async function launch(port) {
   const env = { ...process.env, AI_NOVEL_APP_DATA_HOME: profile.canonical, AI_NOVEL_LEGACY_SOURCE_HOME: profile.legacy, AI_NOVEL_VELA_HOME: profile.legacy, HOME: profile.home, USERPROFILE: profile.home, APPDATA: profile.appData, LOCALAPPDATA: profile.localAppData }
@@ -66,12 +65,10 @@ async function openFromShelf(page, name) {
   await stage.openFromLibrary(page, name)
   await stage.waitForWork(page, name)
 }
-/** 运行侧页「历史」里的行，最新的在前。 */
 async function historyRows(page) {
   await runSheet.openFromPalette(page)
   await runSheet.tab(page, '历史').click()
   const list = page.getByRole('list', { name: '运行历史' })
-  // 「历史」页是点了之后才挂载的：先等列表或空状态出现，空历史的对照才有意义。
   await list.or(runSheet.sheet(page).getByText('还没有运行记录', { exact: true })).first().waitFor({ state: 'visible' })
   if (await list.count() === 0) return []
   return list.getByRole('listitem').evaluateAll(items => items.map(item => ({
@@ -79,7 +76,6 @@ async function historyRows(page) {
     completed: item.querySelector('.run-visually-hidden')?.textContent?.startsWith('已完成') ?? false,
   })))
 }
-/** 展开历史第 index 行与其中每一步，返回展开后的文字；再点一次行就收起。 */
 async function historyDetail(page, index) {
   const item = page.getByRole('list', { name: '运行历史' }).getByRole('listitem').nth(index)
   await item.locator('.run-history-row').click()
@@ -88,7 +84,6 @@ async function historyDetail(page, index) {
   for (const toggle of await detail.locator('button[aria-expanded="false"]').all()) await toggle.click()
   return detail.innerText()
 }
-/** 每次运行一条：写稿先发短细纲再发正文，同一运行有两次尝试，记正文那次（purpose chapter-draft）。 */
 function durableRuns(projectPath) {
   const db = new Database(path.join(projectPath, '.ai-novel', 'project.db'), { readonly: true, fileMustExist: true })
   try {
@@ -119,7 +114,6 @@ async function main() {
   fs.writeFileSync(path.join(scratch, '.vibe-owner.json'), JSON.stringify({ owner: 'AI Novel F05 U13 HistoryList/workflow-status sub-evidence', sourceProject: repository, createdAt: new Date().toISOString(), ttlHours: 24,
     retainedReason: 'independent review of packaged stage run history and durable SQLite run identities',
     cleanupCommand: `Remove-Item -LiteralPath '${scratch.replaceAll("'", "''")}' -Recurse -Force` }, null, 2))
-  // 写稿先要一份短细纲（只写短细纲）再写正文。细纲照常回复并另计；requests 只数正文请求，第 2 次回 500 作可控失败。
   const fixtureState = { requests: 0, outlines: 0 }
   const server = createServer(async (request, response) => {
     if (request.method !== 'POST' || request.headers.authorization !== `Bearer ${model.apiKey}` || request.url !== '/v1/chat/completions') { response.writeHead(403).end(); return }
@@ -156,7 +150,6 @@ async function main() {
     const characterId = `draft:${randomUUID()}`
     const rosterCommit = await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision, expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries: [{ characterId, name: '林岚', role: 'protagonist', gender: '', age: '', appearance: '', personality: '', background: '', abilities: '', motivation: '', relationships: [], arc: '', notes: '' }] }, project.projectPath, context)
     assert.equal(rosterCommit.success, true, JSON.stringify(rosterCommit))
-    // 纸墨外壳的写作此章按设定里的每章字数写；夹具一次回 120 字，目标定在 100。
     const core = await invoke(page, 'db:project-core-update', { totalChapters: 1, wordsPerChapter: 100 }, project.projectPath, context)
     assert.equal(core.success, true, core.error)
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '历史印章章节', role: '发展', purpose: '验证历史', keyEvents: '验证状态', characters: [] }, project.projectPath, context)).success, true)
@@ -191,7 +184,6 @@ async function main() {
     pass('u13-workflow-status-success', null, 'Stage completed run status, trusted settled provider attempt, visible prose and persisted draft agree as sub-evidence',
       { status: savedDraft.status, attemptStatus: successfulRuns[0].attemptStatus, providerRequests: fixtureState.requests })
     currentStep = 'U13.workflow-status-failure'
-    // 第 1 章已有草稿时单章视图不再摆「写作此章」；没有定稿前权威的下一章仍是第 1 章，从蓝图页再写一稿。
     await blueprint.open(page2)
     await blueprint.writeNext(page2)
     await runSheet.waitUntilOpen(page2)
@@ -244,7 +236,6 @@ async function main() {
     for (const deadline = Date.now() + 10_000; !await app.evaluate(() => globalThis.__recoveryLists.length > 0); await reopenedPage.waitForTimeout(50)) {
       assert.ok(Date.now() < deadline, 'run sheet did not read the recoverable list after reopening')
     }
-    // 已保存的单章写稿不列为可恢复（#536）。失败的那次可能因细纲已写完而列出，这里不断言它。
     const listed = await app.evaluate(() => { const last = globalThis.__recoveryLists.at(-1); globalThis.__restoreRecoveryList(); return last })
     assert.equal(listed.partial, false, 'recoverable list read was partial after reopening')
     assert.ok(!listed.drafts.some(item => item.view.handle.runId === successfulRuns[0].runId), 'main process listed the saved single-chapter run as recoverable')

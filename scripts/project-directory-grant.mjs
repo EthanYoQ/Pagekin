@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 
-/** Synthetic fixture setup only: production chooser issues the grant through the same renderer. */
 export async function chooseProjectDirectoryGrant(app, page, directory, purpose = 'project-create') {
   await app.evaluate(({ dialog }, selectedPath) => {
     globalThis.__projectDirectoryDialogOriginal = dialog.showOpenDialog

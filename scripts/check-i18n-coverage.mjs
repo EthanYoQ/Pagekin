@@ -5,26 +5,12 @@ import ts from 'typescript'
 
 const han = /\p{Script=Han}/u
 const latinWord = /[A-Za-z]{2,}/
-/**
- * 英文里数量后的复数名词，中间可隔一两个修饰词（the ${n} existing blueprints）：数量是 1 时读成「1 chapters」，要走 pluralEn。
- * 插值后接 checks/changes 作动词（${who} checks the chapter）也会被拦：改写句子，或用 pluralEn。
- */
 const fixedPluralAfterCount = /^ (?:[a-z]+ ){0,2}(?:chapters|files|characters|items|lines|calls|drafts|words|documents|chunks|days|notes|versions|entries|kinds|blueprints|events|minutes|passages|candidates|tasks|suggestions|changes|checks)\b/
-/** 数量前的 these、those 与数量后直接跟的 have、are：数量是 1 时读成「these 1 log line」「1 have」。 */
 const pluralBeforeCount = /\b(?:these|those)\s$/i
 const pluralVerbAfterCount = /^ (?:have|are|were)\b/
 const pluralHint = "Write the noun with pluralEn(count, 'chapter'); pass irregular plurals explicitly, as in pluralEn(count, 'entry', 'entries'). Write a verb that follows the count the same way, as in pluralEn(count, 'has', 'have')."
-/**
- * 英文文案在哪个实参（从 0 数）：(locale, 中文, 英文) 形式的翻译函数与 projectError、artifactError（error, 中文兜底, 英文兜底）、
- * workflowUiText（context, 中文, 英文）与工作流文件里的 localeText、textForLocale（locale, 中文, 英文）、Agent 工具的 agentToolText（context, 中文, 英文）在第 3 个，其余在第 2 个。
- */
 const englishArgumentIndex = new Map([['localize', 2], ['stepDesc', 2], ['mainText', 2], ['projectError', 2], ['artifactError', 2], ['workflowUiText', 2], ['localeText', 2], ['textForLocale', 2], ['agentToolText', 2]])
 
-/**
- * The broad renderer roots preserve the existing visible-copy check.  The
- * boundary roots are deliberately small and correspond to actual user-facing
- * error delivery paths, not an ever-growing allow-list of string literals.
- */
 export const I18N_COVERAGE_BOUNDARIES = Object.freeze({
   rendererRoots: [
     'src/App.tsx',
@@ -37,47 +23,25 @@ export const I18N_COVERAGE_BOUNDARIES = Object.freeze({
     'src/components/panels/agent/artifact-open.ts',
   ],
   mainReturnErrorBoundaries: [
-    // `artifact-open` receives fs:read-file failures through this controller.
     'electron/controllers/fs-controller.ts',
   ],
-  // 工作流命令里 throw new Error(...) 的说明原样进运行卡片的失败说明：不能是只有中文的原文或主进程转来的原文。
-  // 整串的稳定错误码（GENERATION_DRAFT_RECEIPT_INVALID）不在这里拦：登记过的由失败面板按界面语言解释，
-  // 其余按 src/i18n/__tests__/generation-error-codes.test.ts 的约定原样留给反馈定位。
   workflowCommandErrorBoundaries: [
     'src/services/workflows/commands',
   ],
-  // 命令目录以外的工作流文件抛出的说明同样进运行卡片的失败说明、启动报错或恢复对话框（#471）：不能写只有中文的原文，
-  // 也不能写只有英文的原文（#474，中文界面会出现英文）。整串的稳定错误码照旧放行。
-  // 这里不拦转出的 .error/.message：这些文件还转出渲染端已按界面语言写好的说明（前置条件守卫的 message、运行记录的 error），
-  // 语法上分不开；主进程原文转出由各处改用 workflowMainProcessError 处理。
   workflowErrorBoundaries: [
     'src/services/workflows',
   ],
-  // 工作流目录以外的渲染层文件（含与主进程共用的 src/shared）抛出的说明会经各处 catch 显示给作者（#474）：
-  // 同样不能写只有中文的原文。纯内部断言或只进日志的，在 throw 所在行或上一行写 `// i18n-exempt: <理由>`；
-  // 同一个解析或校验函数里的多处可以写在函数声明正上一行。Promise.reject(new Error(...)) 按 throw 算。
   rendererThrowErrorBoundaries: [
     'src',
   ],
-  // 渲染层把报错交给作者的显示处（#474）：主进程的 result.error、IPC 抛出的错误与 catch 到的原因
-  // 不能原样交给 toast、提示框、报错状态或拼进 text() 的说明，要先经 displayedErrorMessage（或同类翻译函数）：
-  // 否则主进程的错误码会以裸码出现在界面上。作者看不到或值本身不是字符串的，写 `// i18n-exempt: <理由>`。
   rendererErrorDisplayBoundaries: [
     'src',
   ],
-  // 这些命令连错误码也不能直接抛（#408）：每条失败都要给作者能读的说明。
   strictWorkflowCommandErrorBoundaries: [
     'src/services/workflows/commands/legacy-character-roster-repair.command.ts',
   ],
 })
 
-/**
- * Exclusions are semantic, not file-by-file: the scanner only follows text
- * that reaches a renderer sink or a main-process returned-error boundary.
- * Model prompts, parser diagnostics and console-only logs do not cross either
- * boundary, so scanning them would create false positives without improving
- * the language users see.
- */
 export const I18N_COVERAGE_EXCLUSIONS = Object.freeze([
   'LLM prompts and response-parser strings that do not reach a renderer notification sink.',
   'Console-only diagnostics that are not passed to a renderer notification sink.',
@@ -114,7 +78,6 @@ const enhancedCoverageFiles = new Set([
 const localizationCallees = new Set([
   'text',
   'knownAppErrorMessage',
-  // Agent 工具的失败原因按作品写作语言说明。
   'agentToolErrorDetail',
   'localize',
   'translate',
@@ -122,20 +85,15 @@ const localizationCallees = new Set([
   'appErrorMessage',
   'displayedErrorMessage',
   'projectDeleteFailureMessage',
-  // Small module-local wrappers used at renderer notification boundaries.
   'projectText',
   'projectError',
   'artifactText',
   'artifactError',
-  // Main-process colocated translator.
   'mainText',
-  // 工作流命令按运行上下文里冻结的界面语言选文案；uiText 是命令里绑好上下文的简写。
   'workflowUiText',
   'uiText',
-  // 批量创作与导入工作流里按冻结界面语言选文案的本地函数。
   'localeText',
   'textForLocale',
-  // Agent 工具的说明按作品写作语言选文案（工具结果同时回给模型）。
   'agentToolText',
 ])
 
@@ -208,13 +166,11 @@ function nodeContainsHan(node, sourceFile) {
   return found
 }
 
-/** 翻译函数以外的拉丁词字面量，即只有英文的说明。整串的错误码与三元的条件不是给作者看的文字。 */
 function nodeContainsEnglishCopy(node, sourceFile) {
   if (isLocalizedCall(node, sourceFile)) return false
   if (ts.isConditionalExpression(node)) {
     return nodeContainsEnglishCopy(node.whenTrue, sourceFile) || nodeContainsEnglishCopy(node.whenFalse, sourceFile)
   }
-  // result['message'] 的键是属性名，不是文案；只查被访问的值。
   if (ts.isElementAccessExpression(node)) return nodeContainsEnglishCopy(node.expression, sourceFile)
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
     return !errorCode.test(node.text) && latinWord.test(node.text)
@@ -233,8 +189,6 @@ function nodeContainsEnglishCopy(node, sourceFile) {
 function nodeContainsUnlocalizedPromptDescription(node, sourceFile) {
   if (isLocalizedCall(node, sourceFile)) return false
   if (ts.isIdentifier(node) && node.text === 'desc') return true
-  // Nested JSX expressions and callback bodies are visited independently.  Do
-  // not treat a map callback's `desc` parameter as visible copy by itself.
   if (
     ts.isArrowFunction(node)
     || ts.isFunctionExpression(node)
@@ -291,10 +245,6 @@ function isUnsafeErrorForward(node, sourceFile, bindings, seen = new Set()) {
 
 const isPluralEnCall = (expression, sourceFile) => expression.getText(sourceFile).startsWith('pluralEn(')
 
-/**
- * 英文文案拆成文字与数量位交替的序列（texts 比 slots 多一段）。模板插值 ${n} 是数量位；带参数对象时，
- * 文字里的 {name} 占位符也是（text(中文, '{n} chapters', { n })）。参数对象里写成 pluralEn(...) 的占位符记为已变形的名词。
- */
 function englishSlots(node, sourceFile, params) {
   const parts = ts.isTemplateExpression(node)
     ? [node.head.text, ...node.templateSpans.flatMap(span => [{ pluralEn: isPluralEnCall(span.expression, sourceFile) }, span.literal.text])]
@@ -326,7 +276,6 @@ function englishSlots(node, sourceFile, params) {
   return { texts, slots }
 }
 
-/** text(中文, 英文) 的英文一侧里，`${n} chapters` 与 '{n} chapters' 这类数量后跟固定复数的文案。 */
 function inspectEnglishCounts(violations, root, file, sourceFile, node, params) {
   const { texts, slots } = ts.isTemplateExpression(node) || ts.isStringLiteralLike(node)
     ? englishSlots(node, sourceFile, params)
@@ -334,10 +283,7 @@ function inspectEnglishCounts(violations, root, file, sourceFile, node, params) 
   if (
     slots.some((slot, index) => {
       const before = texts[index], after = texts[index + 1]
-      // 「1–${n} chapters」里的数量是范围的终点，永远不是 1
       if (/[-–]$/.test(before)) return false
-      // pluralEn(...) 是已经按数量变过的名词，不是数量；但它后面的 have/are 仍随数量变。
-      // 数量所在分句里带 and 的是并列主语（the thread and its ${n} confirmed events are removed），本来就用复数动词
       if (slot.pluralEn) {
         return pluralVerbAfterCount.test(after) && !/\band\b[^.;:!?·—\n。：；！？]*$/i.test(texts.slice(0, index + 1).join(' '))
       }
@@ -519,20 +465,14 @@ function inspectMainReturnErrors(violations, root, file, sourceFile) {
 }
 
 const errorCode = /^[A-Z][A-Z0-9_]*$/
-/** 不在 __tests__ 目录里的测试、浏览器测试、Storybook 与类型声明文件也不进界面。 */
 const testOrDeclarationFile = /\.(?:test|spec)\.tsx?$|\.browser\.tsx?$|\.stories\.tsx?$|\.d\.ts$/u
 const exemptDirective =/\/\/\s*i18n-exempt:(.*)$/u
 
-/**
- * throw 所在行行尾、或紧挨着的上一行（整行注释）的 `// i18n-exempt: <理由>`。
- * 理由是空的也算违规：豁免必须说得出为什么作者看不到。
- */
 function exemption(sourceFile, node) {
   const lines = sourceFile.getFullText().split(/\r?\n/u)
   const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line
   const commentLineAbove = (index) => lines[index - 1]?.trimStart().startsWith('//') ? lines[index - 1] : undefined
   const candidates = [lines[line], commentLineAbove(line)]
-  // 写在函数声明正上一行的指令覆盖整个函数体：同一个解析或校验函数里的多处 throw 共用一条理由。
   for (let current = node.parent; current; current = current.parent) {
     if (!ts.isFunctionLike(current)) continue
     const declaration = ts.isVariableDeclaration(current.parent) ? current.parent.parent.parent : current
@@ -545,11 +485,9 @@ function exemption(sourceFile, node) {
   return undefined
 }
 
-/** 显示处：通知与提示框、报错状态的 setter、store 的 set({ error })。 */
 const errorDisplayCalls = new Set(['alertError', 'confirm', 'addLog', 'toast.error', 'toast.warning', 'toast.success', 'toast.info'])
 const errorStateSetter = /^set\w*(?:Error|Message|Warning|Notice|Failure|Reason)$/u
 const errorStateKey = /error|message|warning|reason|notice|^text$/iu
-/** 第一个实参是界面语言、其余实参里拼着原因的翻译函数。 */
 const textCallees = new Set(['text', 'localize', 'translate', 'workflowUiText', 'uiText', 'localeText', 'textForLocale', 'agentToolText'])
 
 function isCatchVariable(node, sourceFile) {
@@ -559,7 +497,6 @@ function isCatchVariable(node, sourceFile) {
   return false
 }
 
-/** 原样转出的报错：String(x)、.error/.warning/.message、catch 到的原因，以及经 const、??、||、三元或模板转一手的。 */
 function forwardsRawError(node, sourceFile, bindings, seen = new Set()) {
   if (isLocalizedCall(node, sourceFile)) return false
   if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node)) {
@@ -596,7 +533,6 @@ function inspectRawErrorDisplays(violations, root, file, sourceFile) {
     if (ts.isCallExpression(node)) {
       const name = callName(node, sourceFile)
       const [first] = node.arguments
-      // get().addLog、useWorkflowStore.getState().addLog 这类成员调用也是日志显示处。
       const isAddLog = name === 'addLog' || name.endsWith('.addLog')
       if (isAddLog || errorDisplayCalls.has(name) || (ts.isIdentifier(node.expression) && errorStateSetter.test(name))) {
         const values = isAddLog ? node.arguments.slice(1, 2) : first ? [first] : []
@@ -629,14 +565,9 @@ function inspectRawErrorDisplays(violations, root, file, sourceFile) {
   visit(sourceFile)
 }
 
-/**
- * mode：'command' 拦一切未翻译的文字与转出的原文；'untranslated' 拦翻译函数以外的汉字与拉丁词，不拦转出的原文；
- * 'chinese' 只拦翻译函数以外的汉字。
- */
 function inspectThrownErrors(violations, root, file, sourceFile, mode, allowErrorCodes) {
   const bindings = collectBindings(sourceFile)
   const visit = (node) => {
-    // Promise.reject(new Error(...)) 与 throw 同样把说明交给调用方的 catch。
     const thrown = ts.isThrowStatement(node) ? node.expression
       : ts.isCallExpression(node) && callName(node, sourceFile) === 'Promise.reject' && node.arguments[0]
     const message = thrown && ts.isNewExpression(thrown) && thrown.expression.getText(sourceFile) === 'Error' && thrown.arguments?.[0]
@@ -659,11 +590,6 @@ function inspectThrownErrors(violations, root, file, sourceFile, mode, allowErro
   visit(sourceFile)
 }
 
-/**
- * 主进程（electron/）只有中文的报错（#474）。现存的按「文件 → 所在函数 → 处数」记在基线里，不记行号：
- * 处数超过基线（新增）失败；低于基线（已修）也失败，要求运行 --update-baseline 把基线收紧，基线只减不增。
- * 作者看不到的写 `// i18n-exempt: <理由>`，规则与渲染层相同。
- */
 export const MAIN_ERROR_BASELINE_PATH = 'scripts/i18n-main-error-baseline.json'
 const MAIN_ERROR_ROOT = 'electron'
 const mainErrorProperties = new Set(['error', 'warning', 'reason', 'errorMessage'])
@@ -674,7 +600,6 @@ function isMainLocalized(node, sourceFile) {
     const callee = callName(node, sourceFile)
     if (mainLocalizationCallees.has(callee) || callee.endsWith('.text')) return true
   }
-  // locale === 'en-US' ? 英文 : 中文 这类按语言的三元。
   return ts.isConditionalExpression(node) && /locale|en-US|zh-CN/iu.test(node.condition.getText(sourceFile))
 }
 
@@ -699,7 +624,6 @@ function ownFunctionName(fn) {
   return '<anonymous>'
 }
 
-/** 报错所在的最外层具名函数（类方法带类名）；IPC handler 这类回调归到注册它的函数里，模块顶层记为 <module>。 */
 function mainErrorOwner(node) {
   let owner
   for (let current = node.parent; current; current = current.parent) {
@@ -718,7 +642,6 @@ function insideConsoleCall(node, sourceFile) {
   return false
 }
 
-/** 与 #474 盘点脚本同一口径：throw、reject(...)、dialog.show*、单独构造的 new XxxError(...) 与 error/warning/reason/errorMessage 属性。 */
 function collectMainErrorSites(root, violations) {
   const sites = []
   for (const file of filesAt(path.join(root, MAIN_ERROR_ROOT))) {
@@ -776,7 +699,6 @@ function readMainErrorBaseline(root) {
 
 const updateBaselineCommand = `node scripts/check-i18n-coverage.mjs --update-baseline`
 
-/** 对照基线：新增的逐处列出；减少或已清零的要求收紧基线。 */
 function compareMainErrorBaseline(sites, baseline, violations) {
   const counts = countMainErrorSites(sites)
   for (const [file, owners] of Object.entries(counts)) {
@@ -800,9 +722,7 @@ function compareMainErrorBaseline(sites, baseline, violations) {
   return counts
 }
 
-/** 缺日文不算违规；写了日文却是空字符串才算（运行时会退回英文，等于没写）。 */
 const JA_REPORT_ROOTS = ['src', 'electron']
-/** 这两处的文案跟运行语言走并写进运行记录，ja-JP 不落库（#725），写日文算违规。 */
 const RUN_CODE_ROOTS = ['src/services/workflows/', 'src/services/agent/']
 const jaCopyCallees = new Map([['text', 0], ['localize', 1], ['mainText', 1]])
 const frozenCopyLocale = /^(?:copyLocale\(|useLocaleStore\.getState\(\)\.locale$)/u
@@ -811,7 +731,6 @@ function isStringCopy(node) {
   return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node)
 }
 
-/** 英文之后的实参可能是日文也可能是 params：后面还有实参或它是字符串，才确定是日文。 */
 function copyArguments(node, englishIndex) {
   const third = node.arguments[englishIndex + 1]
   if (node.arguments.length > englishIndex + 2 || (third && isStringCopy(third))) return { ja: third, params: node.arguments[englishIndex + 2] }
@@ -823,7 +742,6 @@ function jaCopyCallee(node, sourceFile) {
   const callee = callName(node, sourceFile)
   const name = jaCopyCallees.has(callee) ? callee : callee.endsWith('.text') ? 'text' : undefined
   if (!name) return undefined
-  // response.text() 这类同名方法不带中英两段文案。
   const enough = node.arguments.length >= jaCopyCallees.get(name) + 2 || node.arguments.some(ts.isSpreadElement)
   return enough ? name : undefined
 }
@@ -832,7 +750,6 @@ function isFunctionValue(node) {
   return Boolean(node) && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
 }
 
-/** 本文件自己写的 text、localize 是本地包装，不是共用文案函数。 */
 function declaresCopyFunction(statement, name) {
   if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return 'local'
   if (!ts.isVariableStatement(statement)) return undefined
@@ -1008,13 +925,11 @@ export function collectI18nCoverageViolations(root = process.cwd()) {
   return violations
 }
 
-/** 把基线收紧到当前处数。只减不增：有函数处数超过基线时拒绝写入。 */
 export function updateMainErrorBaseline(root = process.cwd()) {
   const violations = []
   const sites = collectMainErrorSites(root, violations)
   const counts = compareMainErrorBaseline(sites, readMainErrorBaseline(root), violations)
   const blocking = violations.filter(violation => !violation.includes('[main-error-baseline-stale]'))
-  // 没有基线文件时是首次建立：现存的全部记入。
   if (blocking.length > 0 && fs.existsSync(path.join(root, MAIN_ERROR_BASELINE_PATH))) {
     console.error(`Refusing to raise the main-process error baseline:\n${blocking.join('\n')}`)
     return 1
@@ -1043,7 +958,6 @@ export function runI18nCoverageCheck(root = process.cwd()) {
   return 0
 }
 
-/** 逐处列出 electron/ 里只有中文的报错（文件:行、所在函数、原文），供清理与复核。 */
 export function listMainErrorSites(root = process.cwd()) {
   const sites = collectMainErrorSites(root, [])
   for (const site of sites) console.log([`${site.file}:${site.line}`, site.owner, site.text].join('\t'))

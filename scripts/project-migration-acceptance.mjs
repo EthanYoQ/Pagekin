@@ -32,7 +32,6 @@ if (args.length === 0 || args.includes('--help')) {
 } else if (args.length !== 1 || !['--dry-run', '--run-synthetic'].includes(args[0])) {
   throw new Error('PROJECT_MIGRATION_ACCEPTANCE_ARGUMENT_INVALID')
 } else {
-  // Verify every existing ancestor without following junctions to an external evidence root.
   for (let cursor = fixtureRoot; cursor !== path.dirname(cursor); cursor = path.dirname(cursor)) {
     if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw new Error('PROJECT_MIGRATION_ACCEPTANCE_UNSAFE_ROOT')
   }

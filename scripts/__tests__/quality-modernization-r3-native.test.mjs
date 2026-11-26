@@ -1110,7 +1110,6 @@ test.each([
     assert.throws(() => updateLedger(ledger, reserve('ninth', policy.operations[2].id, 'review-chapter-rebuild'), options), /ATTEMPT_UNAVAILABLE/)
     assert.throws(() => updateLedger(ledger, reserve('third-invocation', policy.operations[0].id, 'review-chapter', randomUUID()), options), /ATTEMPT_UNAVAILABLE/)
     assert.ok(fs.readFileSync(ledger, 'utf8').startsWith(original))
-    // A second UNKNOWN neither refunds this registration nor permits continuation.
     fs.writeFileSync(ledger, original)
     updateLedger(ledger, reserve('candidate:unknown', policy.operations[0].id, 'review-chapter'), options)
     updateLedger(ledger, { type: 'dispatch', attemptId: 'candidate:unknown' }, options)

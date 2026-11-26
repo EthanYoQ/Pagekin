@@ -1,5 +1,3 @@
-// 定稿后整理的质量门禁夹具：每章正文预埋关键事件，部分章预埋人物状态变化。
-// 关键事件与状态的 any 是判定用的关键词组：要点或角色状态里出现某一组的全部词，就算写到了；脚本只做初筛，漏项由人逐条复核。
 export const QUALITY_CAST = [
   { name: '林岚', role: 'protagonist', background: '旧港潮汐记录的测绘师，父亲二十年前离开旧港。' },
   { name: '守塔人', role: 'supporting', background: '旧港灯塔的守塔人，二十岁来灯塔当学徒。' },

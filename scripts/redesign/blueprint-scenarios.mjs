@@ -1,4 +1,3 @@
-// RD-7 蓝图阶段与写作此章弹层的实机场景：对应计划 RD-7 的 live lane 1～10、perf 的 blueprint-timing 与评审导览。
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -15,7 +14,6 @@ import * as stage from './pages/stage.mjs'
 import { afterIpc, contrastFailures, firstLine, seedStageSample, untilGateHolds } from './scenarios.mjs'
 import { STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 
-/** 示例作品的下一章：1、2 章定稿，权威下一章是 3。 */
 const NEXT = 3
 
 const PAGE_CONTRAST = [
@@ -25,7 +23,6 @@ const PAGE_CONTRAST = [
   ['.stage-bp-field > label em', 3], ['.stage-bp-role select', 4.5], ['.pi-split .pi-btn', 4.5],
 ]
 
-/** 第 3 章的出场人物加上守塔人：一致性预检的线索要落在本章蓝图里的人物上。 */
 const withKeeperInChapter3 = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
   assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 3, title: STAGE_SAMPLE.titles[2], role: '发展',
     purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚', '守塔人'],
@@ -35,7 +32,6 @@ const withKeeperInChapter3 = context => seedStageSample(context, { beforeReload:
 const RELATION_PLAN = { role: '发展', purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚', '守塔人'], suspenseHook: '', userGuidance: '', notes: '', notesUpdatedAt: '',
   relationshipHints: [{ from: '林岚', to: '守塔人', relation: '亲密同伴' }] }
 
-/** 关系挂在守塔人名下：他不是默认选中的角色，点按钮后能看出选中确实变了。 */
 const withRelationConflict = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
   const roster = await invoke(page, 'db:character-roster-read', path, session)
   const heroine = roster.entries.find(entry => entry.name === '林岚')
@@ -50,10 +46,6 @@ const withRelationConflict = context => seedStageSample(context, { beforeReload:
   assert.equal(committed.success, true, committed.error)
 } })
 
-/**
- * 主进程里改写 db:continuity-list-before：第 1 章定稿里守塔人已死，作为一致性预检的夹具。保存安排等其余通道照常走真实处理。
- * 写稿时的上下文也读这条通道，夹具的来源不是真实定稿，所以开始写之前要换回原处理函数。
- */
 async function injectDeadKeeper(app) {
   const wrapped = await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -74,7 +66,6 @@ function restoreContinuity(app) {
   return app.evaluate(({ ipcMain }) => ipcMain._invokeHandlers.set('db:continuity-list-before', globalThis.__driveContinuityOriginal))
 }
 
-/** 两种外壳各自从蓝图写下一章：旧外壳点「写作第 3 章」后在对话框里直接开始，不改任何字段。 */
 async function writeNextEitherShell(page) {
   if (await stage.root(page).count() > 0) {
     await blueprint.open(page)
@@ -95,7 +86,6 @@ export async function proseRequest(fake, timeoutMs = 30_000) {
   return fake.chats
 }
 
-/** 在渲染进程里计时：点击 target 到 ready 选择器出现，单位毫秒，帧粒度。 */
 async function msFromClick(page, target, readySelector, readyText) {
   await page.evaluate(({ readySelector, readyText }) => {
     let clickedAt = null
@@ -128,7 +118,6 @@ async function msFromClick(page, target, readySelector, readyText) {
 
 const TIMING_CHAPTERS = 300
 
-/** 300 章蓝图：示例作品的 12 章之外再补到 300 章，标题带章号便于定位。 */
 const withManyBlueprints = context => seedStageSample(context, { totalChapters: TIMING_CHAPTERS, blueprintCount: TIMING_CHAPTERS, beforeReload: async ({ page, invoke, path, session }) => {
   const blueprints = Array.from({ length: TIMING_CHAPTERS - STAGE_SAMPLE.titles.length }, (_, index) => {
     const chapterNumber = STAGE_SAMPLE.titles.length + index + 1
@@ -482,7 +471,6 @@ export const BLUEPRINT_SCENARIOS = {
     const proceed = recovery.getByRole('button', { name: '继续生成缺少的章节' })
     await proceed.waitFor({ state: 'visible' })
     assert.equal(await proceed.isEnabled(), true, '恢复稿里可以接着生成缺少的章节')
-    // 纸墨恢复页把待完成的章节范围写在提示正文的末尾，不再单独成段。
     const remainingText = await recovery.getByText(/待完成第 \d+ 至 \d+ 章/).innerText()
     return { remaining: remainingText.match(/待完成第 \d+ 至 \d+ 章[^。]*。/)?.[0] ?? remainingText }
   }, after: async ({ page, fake }) => {
@@ -571,7 +559,6 @@ export const BLUEPRINT_SCENARIOS = {
       : await msFromClick(page, project.tree(page).getByText('章节蓝图', { exact: true }), '.truncate', `远航之${TIMING_CHAPTERS}`)
     const target = stageShell ? blueprint.planItem(page, 150) : page.getByText('远航之150', { exact: true }).first()
     await target.scrollIntoViewIfNeeded()
-    // 先把指针停在目标上：只计点击换章，不计指针移入时的悬停重绘。
     await target.hover()
     await page.waitForTimeout(300)
     const change = stageShell

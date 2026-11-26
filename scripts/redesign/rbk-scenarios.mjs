@@ -36,7 +36,6 @@ async function openToRepairNotice(page) {
   await stage.overview(page, STAGE_SAMPLE.name).getByRole('button', { name: `打开《${STAGE_SAMPLE.name}》` }).click()
 }
 
-/** 驱动打开作品会让界面的会话失效，界面不先回到书房就退不干净。 */
 async function factsFromDriverOpen(context, projectPath) {
   await context.reload()
   const { page, invoke } = context
@@ -230,7 +229,6 @@ async function chapter3ContinuityFacts(projectPath) {
   } finally { db.close() }
 }
 
-/** 界面打开作品时第二层数据加载完成会打这条日志，重复定稿提示紧接着在同一条调用链里派发。 */
 async function waitForLayer2Loaded(diagnostics, from) {
   const deadline = Date.now() + 60_000
   while (!diagnostics.slice(from).some(line => line.includes('[ProjectService] 项目数据加载完成'))) {
@@ -243,6 +241,5 @@ function injectDuplicateFinalization(projectPath, chapter) {
   const electron = createRequire(import.meta.url)('electron')
   const script = fileURLToPath(new URL('./rbk-inject-duplicate.cjs', import.meta.url))
   return execFileSync(electron, [script, path.join(projectPath, '.ai-novel', 'project.db'), String(chapter)],
-    // better-sqlite3 是原生模块，必须用 Electron 自带的 Node 加载，ABI 才和应用一致。
     { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', windowsHide: true, timeout: 60_000 })
 }

@@ -634,7 +634,6 @@ function validateWindowsReceipt(receipt, name, bundleRoot, version) {
     assert(direct.installedExecutableExists === false && ['absent', 'empty', 'system-residue-only'].includes(direct.installDirectoryState) && Array.isArray(direct.allowedSystemResiduals), 'Windows uninstall receipt facts are invalid')
   } else if (name === 'upgrade-data') {
     assert(direct.previousVersion === '0.2.5' && direct.legacyTableCount === 11 && positiveInteger(direct.preservedAssetCount) && positiveInteger(direct.vectorDimension) && positiveInteger(direct.queryResultCount), 'Windows upgrade-data receipt facts are invalid')
-    // Receipts without a policy revision retain their historical in-place meaning.
     if (direct.upgradePolicyRevision !== undefined) {
       const copy = direct.copyImport
       const saved = direct.oldSaveProof?.draft

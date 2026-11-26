@@ -1,4 +1,3 @@
-// #571 实机场景：作品所在的磁盘建不了硬链接时，定稿后处理的「导入知识库」给出可读说明；换到支持的磁盘后重试能完成。
 import assert from 'node:assert/strict'
 
 import * as chapterView from './pages/chapter-view.mjs'
@@ -11,10 +10,6 @@ const KB_IMPORT = '导入知识库'
 const region = (page, locale) => page.getByRole('region', { name: locale === 'en-US' ? 'Post-finalization steps' : '定稿后处理' })
 const kbRow = (page, locale) => region(page, locale).locator('li').filter({ has: page.locator('b', { hasText: new RegExp(`^${KB_IMPORT}$`, 'u') }) })
 
-/**
- * 替身：主进程里只让知识库的硬链接探测失败，模拟 exFAT 卷上建不了硬链接（Windows 报 ERROR_INVALID_FUNCTION）。
- * LanceDB 的原生提交不经过 Node 的 fs，本场景碰不到它；真实 exFAT 卷上 LanceDB 提交失败的证据见 #571 的源码链。
- */
 async function volumeWithoutHardLinks(app, enabled) {
   assert.ok(await app.evaluate((_electron, on) => {
     const fs = globalThis.process.getBuiltinModule('node:fs')
@@ -36,7 +31,6 @@ async function probes(app) {
   try { return await handle.jsonValue() } finally { await handle.dispose() }
 }
 
-/** 卡上列出了导入知识库，每一步都已成功或失败，且没有进行中的运行。 */
 const settled = (page, locale) => page.waitForFunction(({ label, name }) => {
   const rows = [...document.querySelectorAll(`[aria-label="${name}"] li`)]
   return rows.some(row => row.querySelector('b')?.textContent === label)

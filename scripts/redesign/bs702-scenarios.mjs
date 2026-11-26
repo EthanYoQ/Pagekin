@@ -1,9 +1,3 @@
-// 审修证明 v2 与库版本 12 的实机验证。
-//   bs702-cycle12       假模型按审稿、修稿、合并复核、定稿写 12 章，证明全是 v2；导出再恢复两轮都通过，副本里证明仍是 v2。
-//   bs702-upgrade-open  PERF702_FIXTURE（库版本 10 的 112 章书）从书房打开，量升级耗时与主进程无响应时长，升级中截图；再写第 113 章并开一次审稿。
-//   real-bs702-112      同一夹具接真实模型，写第 113 章、审稿、修稿、合并。
-//   bs702-seal          PERF702_FIXTURE（库版本 10、审修证明是 v1 的书）打开升级（同时整理源库，老证明封存）后，再按审修循环写 2 章（v2）；
-//                       导出再恢复两轮，老证明仍是封存形、新证明仍是 v2，恢复走从严校验；恢复出的书里重新打开第 3 章再 AI 审稿。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -24,7 +18,6 @@ const NEEDS_SEALABLE = { env: { PERF702_FIXTURE: `指向库版本 10、审修证
 
 const fixtureBook = () => path.join(process.env.PERF702_FIXTURE ?? assert.fail('PERF702_FIXTURE 未设置'), 'projects', BOOK)
 
-/** 库版本和每条审修证明的版本与字节数（只读）。 */
 function proofs(projectPath) {
   const db = new DatabaseSync(path.join(projectPath, '.ai-novel', 'project.db'), { readOnly: true })
   try {
@@ -41,7 +34,6 @@ function proofs(projectPath) {
   } finally { db.close() }
 }
 
-/** 把夹具复制进隔离目录并打开一次（这一次已升级），再把库换回夹具原样，下次从书房打开时作者付的就是真实的那次升级。 */
 async function copyFixtureThenRevert(context, { real = false } = {}) {
   const { app, page, roots, invoke } = context
   const target = path.join(roots.projects, BOOK)
@@ -61,7 +53,6 @@ async function copyFixtureThenRevert(context, { real = false } = {}) {
   return target
 }
 
-/** 渲染端每 100 ms 发一次轻量 IPC，记最长往返：主进程同步升级时它会被挡住。 */
 const startProbe = page => page.evaluate(() => {
   const probe = { maxMs: 0, probes: 0, stop: false }
   probe.done = (async () => {
@@ -76,7 +67,6 @@ const startProbe = page => page.evaluate(() => {
   window.__bs702Probe = probe
 })
 
-/** 等在途的那次往返回来再报数，否则恰好卡在末尾的那次会漏记。 */
 const stopProbe = page => page.evaluate(async () => {
   const probe = window.__bs702Probe
   probe.stop = true
@@ -84,10 +74,6 @@ const stopProbe = page => page.evaluate(async () => {
   return { maxMs: probe.maxMs, probes: probe.probes }
 })
 
-/**
- * 从书房点封面预览、再点打开，各记耗时与这一段里探针的最长往返（主进程被挡多久）。预览要等概览读完，不只是卡片出现。
- * `shots` 为真时在打开途中截一张，主进程被挡住时截图同样会被挡。
- */
 async function upgradeFromLibrary(context, label, { shots = true } = {}) {
   const { page, shoot } = context
   const target = path.join(context.roots.projects, BOOK)
@@ -115,7 +101,6 @@ async function upgradeFromLibrary(context, label, { shots = true } = {}) {
   return { before, after: proofs(target).userVersion, previewMs, previewBlockedMaxMs: preview.maxMs, openMs, openBlockedMaxMs: open.maxMs, probes: preview.probes + open.probes }
 }
 
-/** 预览、打开各自让主进程停顿不超过这么久，作者不会觉得窗口卡住。 */
 const MAIN_BLOCKED_BUDGET_MS = 500
 const assertResponsive = measured => {
   const over = Object.entries(measured).filter(([key, value]) => key.endsWith('BlockedMaxMs') && value > MAIN_BLOCKED_BUDGET_MS)
@@ -164,7 +149,6 @@ export const BS702_SCENARIOS = {
     assert.equal(after.last, 2, '新开的审稿写的是 v2 证明')
     return { upgrade, reviewMs, proofs: after }
   } },
-  // 只量数：库版本 10 的书从书房预览、打开（升级），重启后再预览、打开同一本（已是 12，对照）。
   'bs702-upgrade-perf': { model: true, shell: 'stage', requires: NEEDS_UPGRADABLE, setup: async context => {
     installReplies(context.fake)
     await copyFixtureThenRevert(context)

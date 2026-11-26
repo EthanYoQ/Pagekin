@@ -1,5 +1,3 @@
-// RD-X2 外部审查修复的实机场景：页面状态与显示不对的缺陷，各按作者的操作在真实 Electron 里走一遍。
-// 每个场景把作者看到的值收进 measured，最后一次性断言，对照构建上失败时能看到每一项各是什么。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 
@@ -19,13 +17,11 @@ import { HARBOR, holdChannel, releaseChannel, seedHarbor, untilHeld } from './x1
 
 const EMBEDDING_MODEL = Object.freeze({ ...FAKE_MODEL, id: 'x2-embedding', name: '驱动检索模型', modelName: 'text-embedding-3-small', purposes: ['embedding'] })
 
-/** 与 chapter-scenarios 相同：运行侧页开着时等「上一次运行」完成；侧页已收起时等顶栏不再有进行中的胶囊。 */
 async function waitRunDone(page) {
   if (await runSheet.sheet(page).isVisible()) return runSheet.waitForRunDone(page)
   await stage.root(page).locator('.stage-capsule:not([data-tone="ok"])').waitFor({ state: 'detached', timeout: 90_000 })
 }
 
-/** 情节大纲分批写到第 6 章（全书 12 章），尾标与主进程写入的一字不差：能从第 7 章续写，架构部分完成。 */
 const partialOutline = () => renderPlotOutlineSynopsis(
   Array.from({ length: 6 }, (_, index) => `## 第${index + 1}章：${stageChapterTitle(index + 1)}\n林岚在第${index + 1}夜核对雾钟与潮位。`).join('\n\n'),
   6, { totalChapters: STAGE_SAMPLE.totalChapters, writingLanguage: 'zh-CN' })
@@ -36,10 +32,6 @@ const updateSynopsis = synopsis => async ({ page, invoke, path: projectPath, ses
   assert.equal(updated.success, true, updated.error)
 }
 
-/**
- * 另建一部只有设定与架构（大纲分批没写完）的作品；blueprints 为 true 时再加前三章蓝图，finalized 为 true 时导入第 1 章定稿（没有蓝图），
- * emptyDraft 为 true 时给第 1 章建一份正文为空的草稿（没有蓝图）。
- */
 async function seedOutlineBook(context, name, { blueprints = false, finalized = false, emptyDraft = false }) {
   const { app, page, roots, invoke } = context
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
@@ -67,7 +59,6 @@ async function seedOutlineBook(context, name, { blueprints = false, finalized = 
   }
 }
 
-/** 落点稳定后的位置面包屑：等到出现，再等半秒确认不再变。 */
 async function settledLanding(page) {
   const deadline = Date.now() + 20_000
   let last = null
@@ -81,7 +72,6 @@ async function settledLanding(page) {
   }
 }
 
-/** 从书房的「打开作品」选文件夹打开：主进程的文件夹对话框换成直接选中这部作品。 */
 async function openFolder(app, page, folder) {
   await app.evaluate(({ dialog }, selected) => {
     globalThis.__x2Dialog = dialog.showOpenDialog
@@ -95,7 +85,6 @@ async function openFolder(app, page, folder) {
   }
 }
 
-/** 把主进程 channel 之后每次调用的参数记下来（不改行为）。 */
 async function recordArgs(app, channel) {
   await app.evaluate(({ ipcMain }, channel) => {
     const calls = (globalThis.__x2Args ??= {})[channel] = []
@@ -108,15 +97,10 @@ async function recordArgs(app, channel) {
 }
 const recordedArgs = (app, channel) => app.evaluate((_, channel) => globalThis.__x2Args[channel], channel)
 
-/** 数据库 datetime('now') 的时刻按本机时区显示成什么，与页面用同一组 toLocaleString 选项。 */
 const localTime = (page, value, options) => page.evaluate(([value, options]) =>
   new Date(`${value.replace(' ', 'T')}Z`).toLocaleString('zh-CN', options), [value, options])
 
 export const X2_SCENARIOS = {
-  // #394 §6（用户决定 B）：大纲分批没写完时，只有蓝图与正文都没有才落在架构；有蓝图或正文就落到当前写作位置。
-  // 南湾只有第 1 章定稿、没有蓝图，落在第 1 章而不是空的蓝图页。空港只有一份空的草稿，空稿不算开始，落在架构（#407 第 2 轮）。
-  // 灯塔第 3、4 章都在写，落在最后一章在写的第 4 章；点「正文」与书房「继续写作」也指向第 4 章（#407 第 2 轮，用户决定）。
-  // 书房打开五部作品，再用「打开作品」选文件夹打开灯塔。
   'x2-landing': { model: false, shell: 'stage', setup: async context => {
     await seedOutlineBook(context, '荒岛', { blueprints: false })
     await seedOutlineBook(context, '北堤', { blueprints: true })
@@ -134,7 +118,6 @@ export const X2_SCENARIOS = {
     await openFolder(app, page, samplePath)
     landed['灯塔（打开作品）'] = (await settledLanding(page)).join(' / ')
     const architectureState = (await stage.stageStates(page)).architecture
-    // 对照构建上这一步可能走不通（落在架构时没有章节列表），没走通的原因记进 measured，最后一并断言。
     const manuscript = await (async () => {
       await stage.chapterButton(page, 1).click({ timeout: 5000 })
       await stage.waitForProse(page, STAGE_SAMPLE.finalized[1].split('\n')[0].slice(0, 16))
@@ -154,7 +137,6 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #394 §1：大纲末尾带分批尾标但多了一个换行（主进程已接不上续写）不算已确认；§2：超过单批上限的范围在对话框里直接判无效。
   'x2-outline': { model: false, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: updateSynopsis(`${partialOutline()}\n`) }),
     run: async ({ page, shoot }) => {
       await architecture.open(page)
@@ -163,7 +145,6 @@ export const X2_SCENARIOS = {
         progress: (await architecture.page(page).locator('.arch-progress').innerText()).trim(),
         next: await architecture.next(page).isEnabled(),
       }
-      // 判为已确认时主按钮是「下一步」，生成对话框改从页头的更多操作里打开。
       if (shown.next) {
         await stage.root(page).getByRole('button', { name: '架构的更多操作' }).click()
         await page.getByRole('menuitem', { name: 'AI 生成架构…' }).click()
@@ -182,7 +163,6 @@ export const X2_SCENARIOS = {
       return measured
     } },
 
-  // #380 C3+O2：预览港口后回到灯塔，概览不停在「正在读取」；O23：正在预览的港口被移出最近项目后，灯塔名下不显示港口的统计。
   'x2-library-overview': { model: false, shell: 'stage', setup: async context => {
     await seedHarbor(context)
     await seedStageSample(context)
@@ -210,7 +190,6 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #388 T2/T12/T8：版本历史再点当前章各稿还在；换章读到之前显示正在读取；稿的时间按 UTC 换成本地时间（单章视图的版本切换器同样）。
   'x2-history': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page, invoke, shoot }) => {
     await watchSession(app)
     await refs.open(page, 'history')
@@ -247,7 +226,6 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #484：检索模型配在本机地址、不填 Key，知识库照样认它，导入资料与补全索引都向它要向量，请求里不带 Key。
   'kb-local-keyless': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     const model = { ...EMBEDDING_MODEL, id: 'kb-local-embedding', name: '本机检索模型', provider: 'custom',
       baseUrl: `http://127.0.0.1:${context.fake.port}/v1`, apiKey: '' }
@@ -257,7 +235,6 @@ export const X2_SCENARIOS = {
     const { page, fake, shoot } = context
     fake.acceptKeylessEmbeddings()
     await importMaterials(context)
-    // 创作资料走 kb:import-planning-text，只建全文索引、不要向量；之后的嵌入请求只能来自重建，导入时带向量由单元测试覆盖。
     const importEmbeddings = fake.embeddingAuthorizations.length
     await stage.openSettings(page)
     await stage.showSettingsPage(page, '检索模型')
@@ -279,7 +256,6 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #702：重建检索时检索模型连不上，提示须说明原因，不出现 fetch failed。
   'kb-embedding-unreachable': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     const model = { ...EMBEDDING_MODEL, id: 'kb-unreachable-embedding', name: '本机检索模型', provider: 'custom', baseUrl: `http://127.0.0.1:${context.fake.port}/v1`, apiKey: '' }
     assert.equal((await invoke(page, 'llm:save-model', model)).success, true)
@@ -287,7 +263,6 @@ export const X2_SCENARIOS = {
   } }), run: async context => {
     const { page, invoke, reload, shoot, fake } = context
     await importMaterials(context)
-    // 驱动只放行假服务的端口，所以靠关掉它来制造连不上。
     await fake.close()
     const ZH = { spine: '创作流程', settings: '设置', sections: '设置分组', page: '检索模型', region: '当前作品的检索索引' }
     const EN = { spine: 'Writing flow', settings: 'Settings', sections: 'Settings sections', page: 'Retrieval model', region: 'Search index of the current book' }
@@ -317,7 +292,6 @@ export const X2_SCENARIOS = {
     await switchLocale('en-US', 'Recent books', stage.openFromLibraryEn, EN.spine)
     const indexEn = await openIndex(EN)
     measured.refused['en-US'] = await rebuildFailure(indexEn, 'en')
-    // 认不出原因的连接失败在本机触发不了（驱动拒绝假服务以外的地址），换掉处理器只为看这条说明的样子。
     await context.app.evaluate(({ ipcMain }) => {
       ipcMain._invokeHandlers.set('kb:backfill-vectors', async () => ({ success: false, processed: 0, failed: 0, error: 'EMBEDDING_CONNECTION_FAILED' }))
     })
@@ -359,7 +333,6 @@ export const X2_SCENARIOS = {
       await page.getByRole('navigation', { name: labels.spine }).waitFor({ state: 'visible' })
       return openIndex(labels)
     }
-    // 隔离目录造不出真盘满和真只读，换掉处理器只看这两条文案。
     const rebuildFailure = async (index, code, shot) => {
       await app.evaluate(({ ipcMain }, error) => {
         ipcMain._invokeHandlers.set('kb:backfill-vectors', async () => ({ success: false, processed: 0, failed: 0, error }))
@@ -417,14 +390,12 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #388 T3：设置的「检索模型」页里删掉检索模型，同一页的索引区随之回到未配置，不再留着重建按钮。
   'x2-index-model': { model: true, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke }) => {
     assert.equal((await invoke(page, 'llm:save-model', EMBEDDING_MODEL)).success, true)
     assert.equal((await invoke(page, 'llm:set-default-embedding-model', EMBEDDING_MODEL.id)).success, true)
   } }), run: async context => {
     const { page, invoke, shoot } = context
     await importMaterials(context)
-    // 主进程在没有默认检索模型时退回默认生成模型；去掉生成模型，删掉检索模型后才真的没有检索模型。
     assert.equal((await invoke(page, 'llm:delete-model', FAKE_MODEL.id)).success, true)
     await stage.openSettings(page)
     await stage.showSettingsPage(page, '检索模型')
@@ -444,7 +415,6 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #388 T15：知识库查找后改「最多显示」，按上次查找的词与新的条数重查。
   'x2-kb-limit': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
     const { app, page } = context
     await importMaterials(context)
@@ -458,7 +428,6 @@ export const X2_SCENARIOS = {
     return { searches }
   } },
 
-  // #389 X1+O#27：当前状态、关系图谱视图没有点了没反应的头像按钮；O#2：粘贴角色卡的全文框按 9 行高显示。
   'x2-cast': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     await architecture.open(page)
     await architecture.openCast(page)
@@ -481,8 +450,6 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #392 T3：第 4 章审稿、按意见修稿、全部用修稿合并，自动复验跑完后单章视图写明复验完成几项，审稿报告逐项标着复验结果。
-  // 只有带正文证据的本章目标意见才进复验：审稿回第 4 章蓝图关键事件未完成，证据取自第 4 章正文。
   'x2-recheck': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake, shoot }) => {
     fake.replyReview(JSON.stringify({ summary: '本章目标还没落地。', items: [
       { category: '连续性', severity: 'warning', description: '核对钟声提前一刻与潮位的关系。', quote: '他给林岚倒了一杯很淡的茶' },
@@ -497,7 +464,6 @@ export const X2_SCENARIOS = {
     await chapterView.merge(page).getByRole('button', { name: '全部用修稿' }).click()
     await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
     await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
-    // 合并后的复验是第三次对话请求；等它发出、顶栏不再有进行中的运行，再读提示。
     const deadline = Date.now() + 60_000
     while (fake.chats.length < 3) {
       assert.ok(Date.now() < deadline, `60 秒内没有发出合并后的复验（对话请求 ${fake.chats.map(chat => chat.kind).join('、')}）`)
@@ -516,7 +482,6 @@ export const X2_SCENARIOS = {
     return measured
   } },
 
-  // #377 R1：蓝图页改了第 5 章标题并「保存此章」，流程脊的章节列表随之显示新标题。
   'x2-blueprint-save': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
     await blueprint.open(page)
     await blueprint.planItem(page, 5).click()
@@ -530,7 +495,6 @@ export const X2_SCENARIOS = {
     return { row }
   } },
 
-  // #377 R2：点了第 4 章、正文还没读完就去设定，读完后第 4 章不把标签抢回来。
   'x2-open-chapter': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
     await holdChannel(app, 'db:draft-get-full')
     await stage.chapterButton(page, 4).click()
@@ -545,7 +509,6 @@ export const X2_SCENARIOS = {
   } },
 }
 
-/** 记下界面发给主进程的最近一次带项目会话的调用参数，驱动用同一会话读数据库。 */
 async function watchSession(app) {
   await app.evaluate(({ ipcMain }) => {
     for (const [channel, handler] of ipcMain._invokeHandlers) {
