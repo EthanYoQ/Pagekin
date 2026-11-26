@@ -28,8 +28,10 @@ import { openChapterFile } from '../../panels/sidebar/sidebar-file-openers'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
 import { toast } from '../../ui/Toast'
 import { pluralEn } from '../../../shared/plural-en'
-import { errorCodeOf, knownAppErrorMessage } from '../../../i18n/app-errors'
+import { errorCodeOf, failureText, knownAppErrorMessage, resultFailure } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 import { providerContextFailureText } from '../../../services/generation/prompt-budget-failure'
+import { plotWriteFailureText } from './plot-write-failure'
 
 const EMPTY_PLAN: NarrativeThreadPlanInput = {
   title: '', type: '', targetStartChapter: 1, targetEndChapter: 1, authorIntent: '',
@@ -445,10 +447,7 @@ export function usePlotThreads(projectKey: string, {
         projectKey,
       )
       if (!isProjectSessionCurrent(session)) return
-      if (!result.success) throw new Error(result.error ?? text(
-        '无法清除剧情树。',
-        'Could not clear the plot tree.',
-      ))
+      if (!result.success) return setPlotError(plotWriteFailureText(result, note('无法清除剧情树。', 'Could not clear the plot tree.')))
       setPlotSources(previous => previous ? { ...previous, snapshot: null } : previous)
     } catch (error) {
       if (isProjectSessionCurrent(session)) {
@@ -558,7 +557,10 @@ export function usePlotThreads(projectKey: string, {
       const result = await ipc.invokeWithProjectSession(
         session, 'db:narrative-thread-plan-create', candidate, projectKey,
       )
-      if (!result.success) throw new Error(result.error)
+      if (!result.success) {
+        if (isProjectSessionCurrent(session)) toast.error(plotWriteFailureText(result, note('保存叙事线索失败', 'Could not save narrative thread')))
+        return
+      }
       if (!isProjectSessionCurrent(session)) return
       setPlanCandidates(previous => previous.filter(item => item !== candidate))
       await reload()
@@ -582,7 +584,10 @@ export function usePlotThreads(projectKey: string, {
         evidence: candidate.evidence,
         reason: candidate.reason,
       }, projectKey)
-      if (!result.success) throw new Error(result.error)
+      if (!result.success) {
+        if (isProjectSessionCurrent(session)) toast.error(plotWriteFailureText(result, note('保存定稿事件失败', 'Could not save finalized event')))
+        return
+      }
       if (!isProjectSessionCurrent(session)) return
       setEventCandidates(previous => previous.filter(item => item !== candidate))
       await reload()
@@ -602,7 +607,10 @@ export function usePlotThreads(projectKey: string, {
       const result = editingId === null
         ? await ipc.invokeWithProjectSession(session, 'db:narrative-thread-plan-create', plan, projectKey)
         : await ipc.invokeWithProjectSession(session, 'db:narrative-thread-plan-update', editingId, plan, projectKey)
-      if (!result.success) throw new Error(result.error)
+      if (!result.success) {
+        if (isProjectSessionCurrent(session)) toast.error(plotWriteFailureText(result, note('保存叙事线索失败', 'Could not save narrative thread')))
+        return false
+      }
       if (!isProjectSessionCurrent(session)) return false
       setPlan(EMPTY_PLAN)
       setEditingId(null)
@@ -622,7 +630,10 @@ export function usePlotThreads(projectKey: string, {
     setBusy(true)
     try {
       const result = await ipc.invokeWithProjectSession(session, 'db:narrative-thread-plan-delete', id, projectKey)
-      if (!result.success) throw new Error(result.error)
+      if (!result.success) {
+        if (isProjectSessionCurrent(session)) toast.error(plotWriteFailureText(result, note('删除叙事线索失败', 'Could not delete narrative thread')))
+        return
+      }
       if (isProjectSessionCurrent(session)) await reload()
     } catch {
       if (isProjectSessionCurrent(session)) toast.error(text('删除叙事线索失败', 'Could not delete narrative thread'))
@@ -641,7 +652,14 @@ export function usePlotThreads(projectKey: string, {
         planId: eventPlanId, draftId: eventDraftId, type: eventType,
         evidence: eventEvidence, reason: eventReason,
       }, projectKey)
-      if (!result.success) throw new Error(result.error ?? 'event confirmation failed')
+      if (!result.success) {
+        const failure = resultFailure(result)
+        if (!isProjectSessionCurrent(session)) return
+        // 主进程用登记过的码拒绝（如短证据不在定稿正文里）时在表单里说明原因，作者改完能直接重试；其余仍是笼统提示。
+        if (failure && failure.code !== 'PLOT_THREAD_WRITE_FAILED') setEventError(failureText(currentInterfaceLocale(), failure))
+        else toast.error(text('保存定稿事件失败', 'Could not save finalized event'))
+        return
+      }
       if (!isProjectSessionCurrent(session)) return
       setEventPlanId(null)
       setEventEvidence('')
@@ -649,7 +667,6 @@ export function usePlotThreads(projectKey: string, {
       await reload()
     } catch (error) {
       if (!isProjectSessionCurrent(session)) return
-      // 主进程用登记过的码拒绝（如短证据不在定稿正文里）时在表单里说明原因，作者改完能直接重试；其余仍是笼统提示。
       const reason = knownAppErrorMessage(currentInterfaceLocale(), error)
       if (reason) setEventError(reason)
       else toast.error(text('保存定稿事件失败', 'Could not save finalized event'))

@@ -205,6 +205,7 @@ export const zhCN = {
   'error.characterStateResultInvalid': '正文定稿已保存，但角色卡没有自动更新：模型几次返回的角色状态格式都不对。在本章定稿后处理里点「重试」；反复失败就在「分工模型」给「定稿后处理」换个模型。',
   'error.characterRosterNewerChapter': '这个角色已经由后面章节的定稿更新过，较早章节的定稿没有覆盖它的当前状态。',
   'error.narrativeThreadEvidenceNotInSource': '请粘贴所选定稿章节中实际出现的短原文。',
+  'error.plotThreadWriteFailed': '这次修改没能写进作品。请刷新后再试一次。',
   'error.draftNotFound': '这份草稿已经不在了（可能已被删除），本次修改没有保存。',
   'error.draftFinalizedReadOnly': '这一章已经定稿，定稿正文是只读的，本次修改没有保存。',
   'error.supersededDraftDeleteForbidden': '这一稿是已被替换的旧定稿，不能单独删除；删除这一章的正文时会一起删掉。',

@@ -1026,27 +1026,27 @@ export interface DatabaseChannels {
   }
   'db:narrative-thread-plan-create': {
     args: [input: NarrativeThreadPlanInput, expectedProjectPath: string]
-    return: { success: boolean; plan?: NarrativeThreadPlanRecord; error?: string }
+    return: { success: boolean; plan?: NarrativeThreadPlanRecord; failure?: Failure }
   }
   'db:narrative-thread-plan-update': {
     args: [id: number, input: NarrativeThreadPlanInput, expectedProjectPath: string]
-    return: { success: boolean; plan?: NarrativeThreadPlanRecord; error?: string }
+    return: { success: boolean; plan?: NarrativeThreadPlanRecord; failure?: Failure }
   }
   'db:narrative-thread-plan-delete': {
     args: [id: number, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:narrative-thread-event-confirm': {
     args: [input: NarrativeThreadEventInput, expectedProjectPath: string]
-    return: { success: boolean; event?: NarrativeThreadEvent; error?: string }
+    return: { success: boolean; event?: NarrativeThreadEvent; failure?: Failure }
   }
   'db:narrative-thread-assignment-set': {
     args: [input: NarrativeThreadAssignmentInput, expectedProjectPath: string]
-    return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
+    return: { success: boolean; threads?: NarrativeThreadView[]; failure?: Failure }
   }
   'db:narrative-thread-assignment-remove': {
     args: [planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string]
-    return: { success: boolean; threads?: NarrativeThreadView[]; error?: string }
+    return: { success: boolean; threads?: NarrativeThreadView[]; failure?: Failure }
   }
   'db:plot-tree-read': {
     args: [expectedProjectPath: string]
@@ -1054,7 +1054,7 @@ export interface DatabaseChannels {
   }
   'db:plot-tree-clear': {
     args: [expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:draft-next-version': { args: [chapterNumber: number, expectedProjectPath: string]; return: number }
   'db:draft-update-status': { args: [id: number, status: string, wordCount: number | undefined, expectedProjectPath: string]; return: { success: boolean; error?: string } }
