@@ -4,7 +4,6 @@
 
 $ErrorActionPreference = "Stop"
 
-# 产品名与 exe 名统一取自 smoke-win-app.ps1 的库函数（与 scripts/product-identity.mjs 保持一致）。
 . (Join-Path $PSScriptRoot "smoke-win-app.ps1") -LoadProbeLibrary
 $exeName = (Get-AiNovelProductExecutableNames)[0]
 

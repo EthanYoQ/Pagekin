@@ -7,7 +7,6 @@ const scriptPath = fileURLToPath(import.meta.url)
 const securityDirectory = path.resolve(path.dirname(scriptPath), '..', 'electron', 'security')
 const defaultSource = path.join(securityDirectory, 'windows-safe-file-system.cs')
 const defaultOutput = path.join(securityDirectory, 'windows-safe-file-system.exe')
-// The .NET Framework 4.x compiler ships with every supported Windows, so the build needs no SDK.
 const csc = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe')
 
 export function compileWindowsSafeFileSystem(source, output) {
@@ -29,7 +28,6 @@ export function compileWindowsSafeFileSystem(source, output) {
   }
 }
 
-/** vitest globalSetup 的入口，同时是无参数直接运行本脚本时的默认动作。 */
 export function setup() {
   if (process.platform !== 'win32') return
   if (existsSync(defaultOutput) && statSync(defaultOutput).mtimeMs >= statSync(defaultSource).mtimeMs) return

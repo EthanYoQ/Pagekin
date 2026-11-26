@@ -77,7 +77,6 @@ export const L4CONN_SCENARIOS = {
     return { shown }
   } },
   'l4conn-host-not-found': { model: true, setup: seedStageSample, run: async ({ app, page, shoot }) => {
-    // 夹具的 fetch 守卫拒绝一切外部地址；这台主机名先交给系统解析器，用它真实的 ENOTFOUND 照 undici 的形状报出。
     await app.evaluate((_, host) => {
       const guarded = globalThis.fetch
       globalThis.fetch = async (input, options) => {

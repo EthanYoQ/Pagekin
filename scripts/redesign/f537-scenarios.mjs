@@ -1,4 +1,3 @@
-// #537 实机场景：长篇参考小说导入一次跑完，导入根按章数定额；活动时长在请求途中用完时，运行卡片说明原因与下一步、不露错误码，码在「诊断」日志里。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
@@ -55,10 +54,6 @@ async function failedStepError(page) {
   return stepError.innerText()
 }
 
-/**
- * 卡住第 nth 次序号 0 的导入蓝图派发（假模型输出上限小，每批先被按单章拆开，第 2 次才真正发出），
- * 卡在主进程处理函数之前：这时没有在途请求，改库不会和请求计时打架。
- */
 export async function holdBlueprintDispatch(app, nth) {
   assert.ok(await app.evaluate(({ ipcMain }, nth) => {
     const handlers = ipcMain._invokeHandlers
@@ -88,7 +83,6 @@ export async function holdBlueprintDispatch(app, nth) {
   }
 }
 
-/** 活动时长在请求进行中用完：派发前把根的活动时长推到只差 300 毫秒，并卡住假模型，让主进程的计时到点中止请求、阻断根。 */
 export async function stopOnActiveTime(context, shots = 'f537-stop-time', chapters = 15) {
   const { app, page, roots, fake, shoot } = context
   fake.replyImport()
@@ -123,7 +117,6 @@ export async function stopOnActiveTime(context, shots = 'f537-stop-time', chapte
   return { stepError, diagnostic, blockedCode: root.blocked_code }
 }
 
-/** 发送前根预算已用完：派发前把根的活动时长推到上限，预留时被拒，运行卡片给中性的预算说明。 */
 async function stopBeforeSend(context) {
   const { app, page, roots, shoot } = context
   context.fake.replyImport()
@@ -148,7 +141,6 @@ async function stopBeforeSend(context) {
   return { stepError }
 }
 
-/** 作者原稿反推在蓝图阶段发送前被根预算拒绝：说明写正文已保存、可手动补齐，不指向点不了的「重新开始」。 */
 async function stopAuthorInference(context) {
   const { app, page, roots, fake, shoot } = context
   fake.replyReview(inferenceReply)
@@ -180,7 +172,6 @@ async function stopAuthorInference(context) {
 }
 
 export const F537_SCENARIOS = {
-  // 252 章参考小说导入当前作品：知识库、全局、文风、全部蓝图一次跑完，导入根按 252 章定额（770 次、86 625 000 毫秒）。
   'f537-import-252': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
     const { app, page, roots, fake, shoot } = context
     fake.replyImport()
@@ -209,7 +200,6 @@ export const F537_SCENARIOS = {
     assert.deepEqual({ maxPhysicalRequests: measured.budget.maxPhysicalRequests, maxActiveElapsedMs: measured.budget.maxActiveElapsedMs },
       { maxPhysicalRequests: 770, maxActiveElapsedMs: 86_625_000 })
     assert.equal(measured.blockedCode, null)
-    // 假模型的输出上限只有 4096，每批 5 章先被按单章拆开，所以蓝图实际是每章 1 次，共 252 次；旧的 32 次根在第 30 章左右就会用完。
     assert.equal(measured.physicalRequests, 2 + measured.blueprintRequests)
     assert.ok(measured.blueprintRequests >= 51, `蓝图请求 ${measured.blueprintRequests} 次`)
     assert.equal(measured.blueprints, 252)

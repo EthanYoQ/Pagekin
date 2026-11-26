@@ -32,7 +32,6 @@ const names = { a: '雨夜来信', b: '空白计划', c: '不可读副本' }
 const excerpt = '第1章正文：雨落在旧车站。'
 
 function provenance() {
-  // 旧外壳时期的历史回执只在当年的机器上：有就核对 PASS，没有就记下缺席。
   const prior = fs.existsSync(priorReceiptPath) ? JSON.parse(fs.readFileSync(priorReceiptPath, 'utf8')) : null
   if (prior) assert.equal(prior.outcome, 'PASS')
   const testedSha = git('rev-parse', `${packageSourceSha}^{commit}`)
@@ -88,7 +87,6 @@ async function quit(app) {
 }
 
 const invoke = (page, channel, ...args) => page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
-/** 书房：纸墨外壳就绪，收起迁移通知（文案照旧核对），打开着作品时回到书房。 */
 const home = async page => {
   await stage.waitForStage(page)
   const migrationNotice = page.locator('.startup-migration-notice')
@@ -99,8 +97,6 @@ const home = async page => {
   }
   await stage.showLibrary(page)
 }
-/** 概览卡的统计：正文字数、定稿章节、角色。 */
-// 统计格是带 aria-label 的 <dl>，按 ARIA 没有 list 角色，按标签找；找不到就让这一步失败。
 const stats = overview => overview.getByLabel('统计', { exact: true }).innerText()
 const statOf = (text, label) => Number(new RegExp(`${label}\\s*([\\d,]+)`).exec(text)?.[1]?.replaceAll(',', '') ?? NaN)
 const bars = overview => overview.getByRole('list', { name: '阶段进度' }).locator('[data-stage]')
@@ -165,13 +161,11 @@ async function main() {
     const projects = await seed(session.app, session.page, roots)
     await quit(session.app)
     session = null
-    // A deliberately unreadable synthetic recent project stays outside the active project database.
     fs.writeFileSync(path.join(projects.c.path, '.ai-novel', 'project.db'), 'invalid synthetic SQLite fixture')
     session = await launch(roots)
     const { page } = session
     await home(page)
 
-    // 纸墨书房：点封面只预览（右侧概览「预览」），概览里的主按钮「打开《书名》」才打开；打开着的书在概览里是「继续」。
     currentStep = 'U01.A02'
     await stage.openFromLibrary(page, names.a)
     await stage.waitForWork(page, names.a)
@@ -188,9 +182,7 @@ async function main() {
     pass('library-current-real-statistics', 'U08.A01', 'Current project overview shows seeded draft units, active character and no finalized chapter')
 
     currentStep = 'U08.A04'
-    // 旧欢迎页的六行（配置、架构、蓝图、正文、审稿、定稿）在纸墨外壳是与流程脊同源的四段，审稿与定稿并进正文。
     const barsA = await bars(overviewA)
-    // 与流程脊同一口径：设定差一项、架构四节有一节（角色）、蓝图有 1 章即完成、正文 0 章定稿。
     assert.deepEqual(barsA.map(item => [item.stage, item.state, item.label]), [['setup', 'active', '设定 还差 1 项'], ['architecture', 'active', '架构 1 / 4'],
       ['blueprint', 'done', '蓝图 1 章'], ['manuscript', 'active', '正文 0 / 100']], JSON.stringify(barsA))
     pass('library-four-stage-real-progress', 'U08.A04', 'All four stage bars reflect seeded project facts: setup one item short, one of four architecture sections, one planned chapter, no finalized chapter of 100')

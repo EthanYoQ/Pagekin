@@ -13,11 +13,9 @@ import { countProjectedDraftUnits, isExpectedReferenceEvidenceFailure, isVerifie
   readVerifiedDirectPersistedDraftEvidence, readVerifiedRecoveryCandidateSupplement, targetUnitRange, acceptedTargetUnits } from './quality-modernization-receipt.mjs'
 
 const ADAPTER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-// The gate and post-run check use the same production parser as ReviewChapterCommand.
 const reviewParserBundle = buildSync({ entryPoints: [path.join(ADAPTER_ROOT, 'src/shared/review-generation-report.ts')],
   bundle: true, platform: 'node', format: 'esm', write: false }).outputFiles[0].text
 const { parseReviewGenerationResult, buildReviewGenerationReport } = await import(`data:text/javascript;base64,${Buffer.from(reviewParserBundle).toString('base64')}`)
-// 压缩稿（此后被审；未修稿时即保存的正文）由主进程按同一份生产清洗从末次压缩原文组合（generation-run-repository 的 draft-visible-v1 组合）。
 const draftVisibleBundle = buildSync({ entryPoints: [path.join(ADAPTER_ROOT, 'src/shared/draft-visible-text.ts')],
   bundle: true, platform: 'node', format: 'esm', write: false }).outputFiles[0].text
 const { sanitizeDraftText, stripDraftThinkingTags, composeDraftVisibleContinuation } = await import(`data:text/javascript;base64,${Buffer.from(draftVisibleBundle).toString('base64')}`)
@@ -93,7 +91,6 @@ export function r3ModelForOperation(operationId) {
   return profile
 }
 
-// Forward qualification only. Historical Pro and R3 registrations retain their own identities.
 export const QUALIFICATION_STAGE_MODELS = Object.freeze({
   revision: 'candidate-single-official-pro-cap32-v1',
   defaultProfile: 'pro',
@@ -499,7 +496,6 @@ export function readSavedNativeSource(inputPath, caseId) {
     original: JSON.parse(read(entry.originalReceipt, entry.originalReceiptHash)) }
 }
 
-// Only shape and standard terminal enums; never provider text, IDs or reasoning.
 export function streamEventStructure(event) {
   const type = value => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value
   const choice = event?.choices?.[0]
@@ -510,7 +506,6 @@ export function streamEventStructure(event) {
     usageType: type(event?.usage), errorType: type(event?.error) }
 }
 
-// Fixed historical input is read as bytes. Only a copied donor may be opened by SQLite.
 export function readR3NativeSource(inputPath) {
   const policy = R3_NATIVE_REVISION_DIAGNOSTIC.source
   const read = (file, expected) => {
@@ -669,7 +664,6 @@ export const BOUNDED_REVISION_DIAGNOSTIC = Object.freeze({
 })
 export const CANDIDATE_QUALITY_COMPARISON_PROTOCOL_REVISION = 's14b-candidate-quality-and-comparison-v2'
 export const CANDIDATE_ONLY_PROTOCOL_REVISION = 's14b-candidate-only-three-rounds-v1'
-// 旧 v2（只采纳 error/warning）保留为历史 revision；按 v1→v2 先例不再作为可校验策略，旧目标因协议 hash 漂移拒绝。
 export const POST_UI_REVIEW_POLICY = Object.freeze({ revision: 's14b-post-ui-reviewed-draft-must-show-unknown-v3',
   selection: 'all-error-warning-and-must-show-unknown-in-report-order', mustShowGoalId: '^ch\\d+:mustShow:\\d+$',
   confirmation: 'test-preauthorized-original-items',
@@ -679,11 +673,9 @@ export const POST_UI_REVIEW_POLICY = Object.freeze({ revision: 's14b-post-ui-rev
   armAsymmetry: Object.freeze({
     baseline: 'baseline 2264390d 不识别【第N章必现】标记，只把该行当普通世界设定文本，首审不会产生 mustShow 项，其 unknown 只可能来自蓝图 keyEvents 或覆盖不完整且不被采纳；首审有 error/warning 时仍按原规则修稿一次，无 error/warning 时按 unknown-only 规则保留初稿',
     candidate: 'candidate 把该行冻结为 chN:mustShow:K 目标；首审为 unknown 时视为作者测试预授权补写，与 error/warning 按原报告顺序共用至多一次修稿和一次普通复评，不改称已确认错误',
-    // 场景 v3（评分规则/场景变更）：候选臂登记产品原生的唯一压缩，baseline 没有该能力，不对称同样披露。
     condense: 'candidate（产品自 f00b612b 起）可对超出 draftTargetUnitRange 上限的首稿发一次产品原生压缩 chapter-draft-condense，并登记为「900单位正文」的正式效果；baseline 2264390d 没有该产品能力、不登记压缩，首稿超上限即按原字数门失败；两臂是否触发压缩及压缩后正文长度的差异来自该不对称，不得据此单独声称相对改善',
     claim: '两臂是否触发修复分支的差异来自上述不对称，不得据此单独声称相对改善；首稿自然满足时记录修复分支未触发' }) })
 const MUST_SHOW_GOAL_ID = new RegExp(POST_UI_REVIEW_POLICY.mustShowGoalId, 'u')
-// early-budget 的登记：指定范围生成的一次结构化语法修复与成稿首审的一次重建。early 场景与 post-UI 共用同一份，milestone 限定 post-ui。
 const structuredRecoveryPolicy = operationId => Object.freeze({ operationId, arms: Object.freeze(['baseline', 'candidate']),
   budget: 'planBlueprintGenerationCost', maxSyntaxRepairs: 1, maxCompactFallbacksPerChapter: 1,
   trigger: 'settled-length-or-production-blueprint-decode-failure', order: 'depth-first-half-split',
@@ -817,10 +809,6 @@ const EARLY_BUDGET_ATTEMPT_POLICY = Object.freeze({ milestone: 'post-ui', arms: 
   repairPurpose: 'chapter-blueprint-directory:structured-syntax-repair', maxRepairAttempts: 1,
   reviewRebuild: Object.freeze({ operationId: '成稿首审', primaryPurpose: 'review-chapter',
     repairPurpose: 'review-chapter-rebuild', maxRepairAttempts: 1 }) })
-/**
- * post-UI 场景 v3（评分规则/场景变更，与产品 f00b612b 的修复分开）：只为候选臂的「900单位正文」登记产品原生的唯一一次
- * 超长压缩，语义同 C16–C18 v2；early 里程碑的登记（EARLY_BUDGET_ATTEMPT_POLICY）不变。
- */
 const POST_UI_ATTEMPT_POLICY = Object.freeze({ ...EARLY_BUDGET_ATTEMPT_POLICY,
   draftRecovery: draftRecoveryPolicy(['900单位正文']),
   structuredRecovery: structuredRecoveryPolicy('指定范围生成'),
@@ -828,10 +816,6 @@ const POST_UI_ATTEMPT_POLICY = Object.freeze({ ...EARLY_BUDGET_ATTEMPT_POLICY,
     primaryPurpose: 'chapter-draft', condensePurpose: 'chapter-draft-condense', maxCondenseAttempts: 1,
     trigger: 'settled-stop-or-length-hash-verified-composed-units-above-draftTargetUnitRange-maximum',
     formalEffect: 'last-attempt-only' }) })
-/**
- * full 场景 v2（评分规则/场景变更，与产品 f00b612b 的修复分开）：只为候选臂的「连续章节正文」登记产品原生的唯一一次超长压缩，
- * 语义同 post-UI v3；每章没有审修链，保存稿即压缩稿。baseline 恒无压缩；v3 另登记两臂既有有界续写、无进展恢复与结构化拆批/完整重建。
- */
 const FULL_ATTEMPT_POLICY = Object.freeze({ milestone: 'final', arms: Object.freeze(['baseline', 'candidate']),
   draftRecovery: draftRecoveryPolicy(['连续章节正文']),
   structuredRecovery: structuredRecoveryPolicy('三章规划'),
@@ -863,17 +847,14 @@ export const POST_UI_AI_REVIEW_SCENARIOS = Object.freeze(Object.fromEntries([
       refinementRecovery: { operationId: operations.find(item => item.kind === 'refine').id, purpose: 'refine-from-review', maxAttempts: 4,
         trigger: 'settled-length-same-confirmation-visible-append-with-progress' } }, operations })]
 })))
-// v3 只改登记（attemptPolicy 增加唯一压缩），作者世界设定输入与 v2 逐字相同：沿用语义源里登记给 v2 的同一条附加行，不改动冻结的语义源。
 const AUTHOR_SETTING_LINES_REVISION = Object.freeze({
   's14b-post-ui-reviewed-budget-review-rebuild-must-show-v3': 's14b-post-ui-reviewed-budget-review-rebuild-must-show-v2',
   's14b-post-ui-reviewed-budget-review-rebuild-must-show-v4': 's14b-post-ui-reviewed-budget-review-rebuild-must-show-v2' })
-/** 场景 revision 在语义源登记的作者设定附加行。 */
 export const scenarioAuthorSettingLines = (scene, scenarioRevision) => {
   const sourceRevision = scenarioRevision?.replace(/-candidate-only-v[12]$/u, '')
   return sourceRevision ? scene?.scenarioAuthorSettingLines?.[sourceRevision === POST_UI_AI_REVIEW_SCENARIOS['early-budget'].scenarioRevision
     ? 's14b-post-ui-reviewed-budget-review-rebuild-must-show-v2' : AUTHOR_SETTING_LINES_REVISION[sourceRevision] ?? sourceRevision] ?? [] : []
 }
-/** 作者世界设定：只有登记了该场景 revision 附加行的场景才追加独立行，其余 revision 字节不变。 */
 export function scenarioAuthorSetting(scene, scenarioRevision) {
   return [scene?.material, scene?.longSetting, ...scenarioAuthorSettingLines(scene, scenarioRevision)].filter(Boolean).join('\n')
 }
@@ -887,7 +868,6 @@ export function reviewedDraftSelection(report) {
       ? 'no-actionable-review-with-unresolved-goals' : 'no-actionable-review' }
 }
 
-/** Select only discoveries present in the formal raw report; normalization is not a discovery. */
 export function aiReviewFinalManuscriptSelection({ rawContent, savedContent, context, baselineContract }) {
   if (context?.operation !== 'review-chapter' || context.recheck || !context.source?.content)
     throw new Error('AI_REVIEW_CONTEXT_INVALID')
@@ -906,14 +886,12 @@ export function aiReviewFinalManuscriptSelection({ rawContent, savedContent, con
     if (isolated.coverage === 'complete' && isolated.items[0].status === matches[0].status
       && (matches[0].status === 'unmet' || /^ch\d+:(?:keyEvents|mustShow):\d+$/u.test(goal.id))) eligibleGoals.add(goal.id)
   }
-  // General items retain parser order; goal projections retain frozen goal order. Preflight items remain separate.
   const aiItems = report.items.filter(item => raw.items.some(candidate => stableEvidence(candidate) === stableEvidence(item))
     && ['error', 'warning'].includes(item.severity) || item.goalId && eligibleGoals.has(item.goalId)
       && ['error', 'unknown'].includes(item.severity))
   const softwareItems = report.items.filter(item => item.stableFactKey && item.sourceChapter !== undefined)
   return { selected: aiItems, softwareItems, disposition: aiItems.length ? 'revised-once' : 'no-actionable-review' }
 }
-/** Baseline's private parser/presentation runs from its frozen source, without candidate goal projection. */
 export function loadBaselineReviewContract(repositoryRoot) {
   const relative = 'src/services/workflows/commands/review-chapter.command.ts'
   const source = fs.readFileSync(path.join(repositoryRoot, relative), 'utf8')
@@ -937,7 +915,6 @@ export function loadBaselineReviewContract(repositoryRoot) {
     'src/shared/writing-language.ts', 'src/services/workflows/bounded-completion.ts', 'src/services/workflows/workflow-utils.ts']
     .map(file => [file, digest(fs.readFileSync(path.join(repositoryRoot, file)))])) }
 }
-/** The S14B endpoint is immutable evidence, not a second product revision workflow. */
 export function validateReviewedDraft(result) {
   const fail = () => ({ valid: false, pairFailure: 'REVIEWED_DRAFT_EVIDENCE_INVALID' })
   const chain = result?.reviewedDraft
@@ -961,7 +938,6 @@ export function validateReviewedDraft(result) {
         || confirmation.items?.length !== selected.length || confirmation.items.some((item, index) =>
           item.decision !== 'apply' || item.origin !== 'ai'
           || ['category', 'severity', 'description', 'quote', 'goalId', 'stableFactKey'].some(key => item[key] !== selected[index][key])
-          // 非 baseline 臂采纳的必现 unknown 只能经产品 review-cycle finding 进入 apply；baseline 无 review-cycle，不要求。
           || result.arm !== 'baseline' && selected[index].severity === 'unknown' && MUST_SHOW_GOAL_ID.test(selected[index].goalId ?? '')
             && (typeof item.findingId !== 'string' || !item.findingId.trim()))) return fail()
       readArtifact(chain.revision)
@@ -994,7 +970,6 @@ export function assertBoundedRevisionSource(draft) {
     throw new Error('BOUNDED_REVISION_SOURCE_MISMATCH')
 }
 
-/** Copy preparation reads frozen files only; SQLite may open only the later working donor. */
 export function readBoundedRevisionSource(inputPath) {
   const input = JSON.parse(fs.readFileSync(inputPath, 'utf8')), source = BOUNDED_REVISION_DIAGNOSTIC.source
   const readFrozen = (file, expectedHash, bytes) => {
@@ -1148,18 +1123,12 @@ export function selectOwnerDispatch(db, handle, session, body) {
     projectId: binding.projectId, epoch: binding.epoch, purpose: JSON.parse(row.usage_receipt_json ?? '{}').purpose }
 }
 
-/**
- * 单个 attempt 的桥内结算预算。三个串行 attempt 的完整窗口必须短于父进程
- * spawn 预算，而 spawn 预算再短于 Vitest 超时，给 unknown 落账与进程收尾留出余量。
- */
 export const BRIDGE_SETTLEMENT_DEADLINE_MS = 480_000
 export const BRIDGE_SPAWN_TIMEOUT_MS = BRIDGE_SETTLEMENT_DEADLINE_MS * 3 + 60_000
 export const BRIDGE_TEST_TIMEOUT_MS = BRIDGE_SPAWN_TIMEOUT_MS + 60_000
-// post-UI 每臂最多 15 个登记 attempt：目录 3、正文 8、首审 2、修稿 1、复评 1；产品自身 root 预算仍先行约束。
 export const BRIDGE_REVIEWED_TEST_TIMEOUT_MS = BRIDGE_SETTLEMENT_DEADLINE_MS * 15 + 120_000
 const QUALIFICATION_WINDOW_HASH = '64d634a4fa20fbafbbe3103c43e4a2c9959e3a6be64aaed7404060ff5be5932b'
 
-/** Resolve only the registered bridge fallback; native owner budgets and dispatch gates remain authoritative. */
 export function qualificationBridgeWindows(request) {
   if (['saved-native-review-diagnostic', 'planning-native-diagnostic'].includes(request.phase)) {
     const planning = request.phase === 'planning-native-diagnostic'
@@ -1272,12 +1241,10 @@ export function qualificationBridgeWindows(request) {
     testMs: maxCalls * attemptMs + 120_000, maxCalls, revision: registration.revision }
 }
 
-/** 只测规模、不落内容：返回提示词载荷的 UTF-8 字节数，绝不含提示词原文或凭据。 */
 export function measurePromptBytes(messages) {
   return Buffer.byteLength(JSON.stringify(messages ?? []), 'utf8')
 }
 
-/** Deterministic outbound checks fail before campaign accounting and stay out of network diagnostics. */
 export function createOutboundPreflightAssert(failures) {
   if (!Array.isArray(failures)) throw new Error('PREFLIGHT_FAILURES_REQUIRED')
   return (condition, code) => {
@@ -1287,7 +1254,6 @@ export function createOutboundPreflightAssert(failures) {
   }
 }
 
-/** Forward-only experiment: verify the saved preference separately from each arm's natural wire. */
 export function assertForwardReasoning(registration, { arm, phase, milestone, caseId, model, creativeStrategy, resolution, body, operationId }) {
   const planning = phase === 'planning-native-diagnostic'
   if (planning && (registration?.revision !== PLANNING_NATIVE_DIAGNOSTIC.scenarioRevision
@@ -1355,7 +1321,6 @@ export function assertForwardReasoning(registration, { arm, phase, milestone, ca
       thinking_budget: observed('thinking_budget') } }
 }
 
-/** One quoted-input extraction request; all checks run before the campaign reserve. */
 export function assertSharedInputDiagnostic(registration, input, { arm, model, body, reserved, operation, inputHash }) {
   if (registration?.diagnosticId === 'separated-review-diagnostic-3x2-v1') {
     const slot = registration.operations?.find(item => item.id === operation)
@@ -1425,7 +1390,6 @@ export function assertNoOutboundPreflightFailures(receipt) {
   if (receipt.preflightFailures?.length) throw new Error('OUTBOUND_PREFLIGHT_FAILURES')
 }
 
-/** The only place where provider transport failures enter fetchFailures. */
 export async function fetchProviderResponse(fetcher, url, options, failures, diagnostic = value => String(value)) {
   if (typeof fetcher !== 'function' || !Array.isArray(failures)) throw new Error('PROVIDER_FETCH_ARGUMENTS_INVALID')
   let response
@@ -1441,25 +1405,6 @@ export async function fetchProviderResponse(fetcher, url, options, failures, dia
   return response
 }
 
-/**
- * 桥自身的结算守护：每个 dispatch attempt 各自持有一个短于桥测试超时的截止时间。
- *
- * 桥测试的 120s 超时是进程内的 JS 计时器：它不投递任何信号，也不会先运行 finally，
- * 所以「等网络流结束后再写 settle/unknown」在供应商卡住时永远等不到——账本里只剩
- * reserve+dispatch，这次发送既不 settle 也不 unknown，花费不可审计，也违反了
- * 「dispatch 之后必须 settle 或 unknown，未知不得退款」的规则。这里让桥自己持有
- * 截止时间：
- *   - terminal(): 幂等。同一 attemptId 只写一条 settle/unknown，重复调用是 no-op，
- *     因此「刚写 unknown 又想把同一次发送改写为 settle」不可能发生。
- *   - 到点: 先为该 attempt 写 unknown（占用、不退款），再 abort 它的 fetch，
- *     让等待方以失败结束——先落账，后失败。后续 attempt 从各自 dispatch 起获得完整预算；
- *     dispatch 之前的取消仍然只走 cancel。
- *
- * 被拒绝的方案：改用 process 信号/退出钩子收尾。测试超时是进程内计时器，不发送任何
- * 信号，SIGTERM 处理器根本不会触发；'exit' 处理器必须同步、无法等待未决的流；而工作
- * 进程被强杀（SIGKILL/terminate）时两者都不会运行。守护计时器活在同一个事件循环里：
- * await 网络时事件循环是空闲的，所以它一定会跑；正常收尾时由 dispose() 明确清除。
- */
 export function createAttemptSupervisor({ record, deadlineMs = BRIDGE_SETTLEMENT_DEADLINE_MS } = {}) {
   if (typeof record !== 'function') throw new Error('SUPERVISOR_RECORD_REQUIRED')
   const open = new Map()
@@ -1468,7 +1413,6 @@ export function createAttemptSupervisor({ record, deadlineMs = BRIDGE_SETTLEMENT
   const expired = new Set()
   const terminal = (attemptId, type, extra = {}) => {
     if (closed.has(attemptId)) return false
-    // 先写账本再记终态：写失败（例如 LEDGER_BUSY）不吞掉终态，调用方仍可重试。
     record({ type, attemptId, ...extra })
     closed.add(attemptId)
     open.delete(attemptId)
@@ -1630,11 +1574,6 @@ export function runProductionBridge(request) {
   } finally { try { fs.closeSync(fd) } finally { fs.unlinkSync(lock) } }
 }
 
-/**
- * C17/C18 续写的唯一一次原生超长压缩（评分规则变更，随产品修复登记）：只在同一 run/root/项目/epoch
- * 的 chapter-draft 首请求已结算为 stop、且其 hash 可复核的输出按生产计数超出 draftTargetUnitRange
- * 上限时，才许可一次 chapter-draft-condense；它不是任意失败的新重试权，正式效果只能落在末次 attempt。
- */
 export const C16_C18_ATTEMPT_POLICY = Object.freeze({ milestone: 'final', arms: Object.freeze(['candidate']),
   operationId: '续写成稿首审', primaryPurpose: 'review-chapter', repairPurpose: 'review-chapter-rebuild', maxRepairAttempts: 1,
   trigger: 'settled-stop-parse-or-shape-failure-with-native-artifact-hash',
@@ -1648,19 +1587,10 @@ export const C16_C18_ATTEMPT_POLICY = Object.freeze({ milestone: 'final', arms: 
     trigger: 'settled-stop-or-length-hash-verified-composed-units-above-draftTargetUnitRange-maximum',
     formalEffect: 'last-attempt-only' }),
 })
-/**
- * 登记的唯一压缩按臂生效：`draftCondense.arms` 缺省时沿用 attemptPolicy.arms（C16–C18 的单臂策略）；
- * post-UI v3 显式只给 candidate。未登记或该臂不在其中返回 null——baseline 因此从不获压缩许可。
- */
 export const draftCondenseFor = (attemptPolicy, arm) => {
   const condense = attemptPolicy?.draftCondense
   return condense && (condense.arms ?? attemptPolicy.arms ?? []).includes(arm) ? condense : null
 }
-/**
- * 开发合成才登记超长首稿：默认让 C16–C18 的 C17-A、post-UI 的场景1/1、full 的场景1/2（候选的第 2 章，其后第 3 章可见
- * 前驱取压缩稿）走「超长首稿→唯一压缩→在范围」；显式 syntheticDraftCondense（如 still-over）原样通过。
- * 正式合成（无 development）与真实模式不给计划，其余阶段/里程碑也不给。
- */
 export function syntheticDraftCondensePlan(options) {
   if (options?.mode !== 'synthetic' || options.development !== true) return {}
   const caseId = options.phase === 'c16-c18' ? 'C17-A'
@@ -1668,11 +1598,6 @@ export function syntheticDraftCondensePlan(options) {
       : options.phase === 'full' ? '场景1/2' : null
   return caseId ? { syntheticDraftCondense: options.syntheticDraftCondense ?? { caseId, outcome: 'in-range' } } : {}
 }
-// A phase scenario is the bridge-side counterpart of one preregistered protocol phase.
-// The protocol stays the only authority for case ids and operation ids; this map only
-// says which production commands realize them. The runner re-checks every field against
-// the selected protocol phase before opening the gate, so a drift here fails closed
-// instead of quietly running a different experiment.
 export const PHASE_SCENARIOS = Object.freeze({
   'bounded-revision-diagnostic': BOUNDED_REVISION_DIAGNOSTIC,
   'r3-native-revision-diagnostic': R3_NATIVE_REVISION_DIAGNOSTIC,
@@ -1682,9 +1607,6 @@ export const PHASE_SCENARIOS = Object.freeze({
     scenarioRevision: 'c16-c18-candidate-production-path-v7',
     attemptPolicy: C16_C18_ATTEMPT_POLICY,
     evaluationPolicy: AI_REVIEW_FINAL_MANUSCRIPT_POLICY,
-    // 新运行直接首稿；历史对账收据仍由原冻结协议识别，不在当前实验登记发送。
-    // v4（用户批准的 harness 变更）：C17-B 恢复副本内重新定稿后按产品定稿路径紧接生产后处理，
-    // notes/cards 各为独立登记 operation，与 C16 同一 RunFinalizePostProcessCommand 入口，绑定新 finalizationId。
     operations: Object.freeze([
       Object.freeze({ id: '定稿章节要点', kind: 'chapter_notes', caseIds: Object.freeze(['C16-A', 'C16-B', 'C16-C']) }),
       Object.freeze({ id: '定稿角色状态', kind: 'character_cards', caseIds: Object.freeze(['C16-A', 'C16-B', 'C16-C']) }),
@@ -1748,17 +1670,12 @@ export const PHASE_SCENARIOS = Object.freeze({
     ]),
   }),
 })
-/**
- * 一个 c16-c18 案例实际执行的登记 operation：先该案登记的定稿后处理（notes→cards），再该案的恢复续写。
- * driver 选择与结果侧校验共用这一个函数，不按下标切片。
- */
 export function continuityCaseOperations(caseId) {
   const operations = PHASE_SCENARIOS['c16-c18'].operations.filter(operation => operation.caseIds.includes(caseId))
   return [...operations.filter(operation => ['chapter_notes', 'character_cards'].includes(operation.kind)),
     ...operations.filter(operation => operation.restore),
     ...operations.filter(operation => ['review', 'refine', 'final-review'].includes(operation.kind))]
 }
-/** 登记为定稿角色状态的 operation（含 C17-B 重新定稿后处理）共用产品原生 repair 的门禁规则。 */
 export const FINALIZED_CHARACTER_OPERATION_IDS = Object.freeze(PHASE_SCENARIOS['c16-c18'].operations
   .filter(operation => operation.kind === 'character_cards').map(operation => operation.id))
 export function productionScenario(phase, milestone, protocolRevision, diagnosticInputHash) {
@@ -1811,14 +1728,12 @@ export const FULL_AI_REVIEW_SCENARIO = Object.freeze({
   operations: [...PHASE_SCENARIOS.full.operations, ...POST_UI_BUDGET.operations.slice(2)],
 })
 
-// Keep this predicate byte-for-byte equivalent to the product's direct JSON syntax test.
 const repairableDirectJsonSyntax = content => {
   const candidate = content.trim()
   if (!/^[{[]/u.test(candidate)) return false
   try { JSON.parse(candidate); return false } catch { return true }
 }
 const reviewParseFailure = content => {
-  // The command strips thinking tags first; avoid classifying an unstripped artifact as a parse failure.
   if (/<\/?think>/iu.test(content)) return false
   try { parseReviewGenerationResult(content); return false }
   catch (error) {
@@ -1868,7 +1783,6 @@ export function structuredRequestRange(prompt, purpose) {
   return Array.from({ length: end - start + 1 }, (_, index) => start + index)
 }
 const baselineDecoders = new Map()
-/** The frozen baseline's private decoder includes historical truncation. Execute that source read-only, without copying its rules to candidate. */
 export function blueprintRecoveryDecoder(repositoryRoot, arm) {
   if (arm !== 'baseline') return (output, range) => parseBlueprintSemanticResponseText(stripDraftThinkingTags(output), range)
   const directory = path.join(repositoryRoot, 'src/services/workflows/commands')
@@ -1920,7 +1834,6 @@ export function structuredRecoveryState(attempts, { chapterNumbers, decode = blu
       pending.unshift({ ...task, purpose: `${task.purpose}:structured-syntax-repair` })
       continue
     }
-    // Production itself owns evidence-preserving syntax repair; the raw source and repaired output remain hash-bound.
     if (syntax && (!lastSyntaxSource || !preservesStructuredJsonEvidence(lastSyntaxSource, output)))
       throw new Error('STRUCTURED_REPAIR_EVIDENCE_CHANGED')
     try { decode(output, task.range) }
@@ -1928,7 +1841,6 @@ export function structuredRecoveryState(attempts, { chapterNumbers, decode = blu
   }
   return { next: attempts.length < maxCalls ? pending[0] ?? null : null, complete: pending.length === 0, maxCalls }
 }
-/** Replay only the product's bounded draft path from immutable raw-visible outputs. */
 export function draftRecoveryState(attempts, { policy, targetUnits, arm, protocolRevision, reconcileCount = 0 }, readOutput) {
   let text = '', lastFinish = null, pendingRecovery = false, recoveryUsed = false, stopped = false, condensed = false
   const minimum = Math.floor(targetUnits * (arm === 'baseline' ? policy.baselineMinimumRatio : policy.candidateMinimumRatio))
@@ -1988,7 +1900,6 @@ function verifiedRecoveryOutput(owner, evidence, operationId) {
     || attempt.binding.actual && evidence.ownerArtifactHash !== attempt.visibleTextHash) throw new Error('RECOVERY_SOURCE_HASH_MISMATCH')
   return { output, finishReason: events[2].finishReason }
 }
-// R3 keeps its total eight-call budget; each native review purpose can replace one LENGTH result.
 export function reviewRecoveryAllowed(history, purpose, policy) {
   if (!history.length) return purpose === policy.primaryPurpose
   const last = history.at(-1)
@@ -1998,7 +1909,6 @@ export function reviewRecoveryAllowed(history, purpose, policy) {
     && !history.some(item => item.purpose === policy.repairPurpose)
 }
 
-/** Only the forward candidate scenarios opt in; historical receipts keep their registered interpretation. */
 export function reviewLengthRecoveryFor(result, operationId) {
   if (result.arm === 'baseline') return null
   let policy
@@ -2034,11 +1944,6 @@ export function planningOutlineState(attempts, range, read) {
   return { complete: cursor.kind === 'complete', cursor, artifactIds: accepted, text }
 }
 
-/**
- * Only a settled, hash-verified parse failure — or, for a registered draft operation, a settled
- * over-length primary draft — may add one physical request. `draftCondense.measureUnits` and
- * `draftCondense.maximum` come from the production counter and draftTargetUnitRange.
- */
 export function createOperationDispatchGate({ onReject, repairPolicy, readPrimaryEvidence, finalizationRepair = false, draftCondense = null,
   draftRecovery = null, structuredRecovery = null, refinementRecovery = null, shortOutline = null, planningOutline = null } = {}) {
   const dispatched = new Map()
@@ -2396,7 +2301,6 @@ export function validatePairedReceipt(result, { mode, arm, phase, scenario, prot
   const reviewPolicy = eligible && scenario.evaluationPolicy ? policy.reviewRebuild : null
   const reviewMatches = reviewPolicy ? result.attempts.filter(attempt => attempt?.binding?.operation === reviewPolicy.operationId) : []
   const reviewUsed = reviewMatches.length === 2
-  // post-UI v3 与 full v2：只有登记的臂（candidate）与 operation 可多出唯一一次压缩 attempt；baseline 与其余 operation 仍恰一次。
   const condensePolicy = eligible ? draftCondenseFor(policy, arm) : null
   const condenseMatches = condensePolicy
     ? result.attempts.filter(attempt => condensePolicy.operationIds.includes(attempt?.binding?.operation)) : []
@@ -2524,7 +2428,6 @@ export function validatePairedReceipt(result, { mode, arm, phase, scenario, prot
       }))) return 'ACTUAL_OWNER_ARTIFACT_MISMATCH'
   }
   if (condenseUsed) {
-    // 登记的唯一压缩：首稿→压缩同 run/root/项目/epoch；首稿 stop 且 hash 可复核、按生产计数超上限；正式效果只在末次压缩，被审稿是压缩稿。
     const [primary, condense] = condenseMatches.map(attempt => attempt.binding.actual)
     if (primary?.purpose !== condensePolicy.primaryPurpose || condense?.purpose !== condensePolicy.condensePurpose
       || ['runId', 'rootActionId', 'projectId', 'epoch'].some(key => primary[key] !== condense[key]))
@@ -2543,14 +2446,9 @@ export function validatePairedReceipt(result, { mode, arm, phase, scenario, prot
         condensedOutput = output
       } catch { return 'PHYSICAL_OUTPUT_MISSING' }
     }
-    // 压缩稿 = 末次压缩输出经生产清洗（主进程 draft-visible-v1 组合同一规则；干净输出即物理输出本身）。
-    // 首稿是否超长按首稿物理输出判，压缩稿是否落入范围按压缩稿自身判；最终稿（有修稿时是修稿产物）的范围由原字数门另判。
     const condensed = sanitizeDraftText(condensedOutput)
     if (!verifiedCondensedDraft(condenseMatches[0], result, { ...result.draftObservation, units: countProjectedDraftUnits(condensed) }))
       return 'DRAFT_CONDENSE_NOT_REGISTERED'
-    // post-UI：被审稿（reviewedDraft.initial）必须是压缩稿，而不是被压缩取代的首稿。无修稿时 initial == finalDraft == saved，同一条件
-    // 即覆盖保存的正文；有修稿时 saved 是唯一修稿产物，其来源由 validateReviewedDraft 的审修链校验。
-    // full：每章没有审修链，保存的正文（随后是下一章前驱）必须就是压缩稿。
     const reviewedSource = result.aiReviewedDraft?.initial?.contentHash
       ?? (scenario.evaluationPolicy ? result.reviewedDraft?.initial?.contentHash : result.saved?.contentHash)
     if (reviewedSource !== digest(condensed)) return 'DRAFT_CONDENSE_SAVED_MISMATCH'
@@ -2918,7 +2816,6 @@ export function readBaselineFailureEvidence(receipt, receiptPath) {
 export const modelConfigurationHash = model => digest(Object.fromEntries(Object.entries(model).filter(([key]) => key !== 'apiKey')))
 
 export function copyIsolatedRealModelConfig(original, roots, expectedHash) {
-  // Copy only the approved generation profile; a default model would also start an unregistered embedding request.
   const models = JSON.parse(fs.readFileSync(path.join(original.roots.config, 'models.json'), 'utf8'))
   const registeredStages = original.stageModels?.revision === PLANNING_STAGE_MODELS.revision ? PLANNING_STAGE_MODELS : QUALIFICATION_STAGE_MODELS
   const profiles = original.stageModels ? Object.values(registeredStages.profiles) : original.r3StageProfiles
@@ -2950,7 +2847,6 @@ export function fullExecutionSchedule(order, protocolRevision) {
   return [...chapters.filter(step => step.chapterNumber === 1).map(step => ({ ...step, operation: scenario.operations[0] })), ...chapters]
 }
 
-/** Verify the accepted same-arm DB source separately from the native excerpts sent to draft requests. */
 export function validateFullAcceptedPredecessor(result, previous) {
   if (!previous) return result.acceptedPredecessor || result.attempts.some(item => item.predecessorConsumption)
     ? 'FULL_PREDECESSOR_MISMATCH' : null
@@ -3066,7 +2962,6 @@ function saveExecutionRecord(options, record) {
   fs.renameSync(temporary, options.executionRecordPath)
 }
 
-/** Resume only unsent work. An interrupted sent step is retained, never blindly replayed. */
 function executeRecordedStep(request, options, record, key, bridge) {
   if (record.results[key]) return record.results[key]
   const operations = new Set(request.operations.map(item => item.id))
@@ -3391,7 +3286,6 @@ export function runProductionPhasePair(targets, options, bridge = runProductionB
     evaluationPolicy: options.evaluationPolicy ?? null,
     ...(['bounded-revision-diagnostic', 'r3-native-revision-diagnostic'].includes(options.phase) ? { diagnosticInputPath: options.diagnosticInputPath } : {}),
     ...(options.mode === 'synthetic' && options.development ? { syntheticReviewedDraftCase: options.syntheticReviewedDraftCase ?? 'multiple' } : {}),
-    // 开发合成才登记超长首稿（默认章见 syntheticDraftCondensePlan）；still-over 用于复现原失败语义。
     ...syntheticDraftCondensePlan({ ...options, milestone: options.milestone ?? scenario.milestone }),
     milestone: options.milestone ?? scenario.milestone,
     phase: options.phase, caseId: scenario.caseId, sceneId: scenario.sceneId, chapterNumber: scenario.chapterNumber,
@@ -3418,7 +3312,6 @@ export function runProductionPhasePair(targets, options, bridge = runProductionB
     if (stableEvidence(cases?.map(item => item.id)) !== stableEvidence(scenario.caseIds)) throw new Error('CONTINUITY_CASES_NOT_REGISTERED')
     for (const [index, item] of cases.entries()) {
       const operations = continuityCaseOperations(item.id)
-      // 抽取案恰为 notes/cards；恢复案恰一个同 kind 续写，只有带 sourceSuffix 的恢复案（C17-B）前置重新定稿后处理 notes/cards。
       const postProcess = operations.filter(operation => ['chapter_notes', 'character_cards'].includes(operation.kind)), restore = operations.filter(operation => operation.restore)
       if ((item.kind === 'extraction' ? restore.length !== 0 || postProcess.length !== 2
         : restore.length !== 1 || restore[0].restore !== item.kind || postProcess.length !== (item.sourceSuffix ? 2 : 0))
@@ -3450,8 +3343,6 @@ export function runProductionPhasePair(targets, options, bridge = runProductionB
   const results = arms.map(arm => {
     try { return runProductionBridge({ ...common, target: executionTargets[arm], action: 'execute', parityHash }) }
     catch (error) {
-      // A bridge refusal is a recorded outcome, not a harness crash: keep the receipt's
-      // own reason (for example a chapter-material capacity conflict) next to the code.
       const receipt = error.receiptPath && fs.existsSync(error.receiptPath) ? JSON.parse(fs.readFileSync(error.receiptPath, 'utf8')) : {}
       let recoveryProjection = {}
       if (arm === 'baseline') recoveryProjection = readBaselineFailureEvidence(receipt, error.receiptPath)
@@ -3482,12 +3373,6 @@ function classifyCandidateProduction(result, { mode, phase, scenario }) {
       qualityQualification: mode === 'synthetic' ? 'not-run' : 'pending-independent-oracle-review' }
 }
 
-/**
- * 结果侧复核：保存的原始可见输出按 hash 读回，以 harness 同一 v3 计数（与生产 countDraftUnits 相同）
- * 超出上限。产品先清洗再计数，清洗只删不增，因此这是产品触发压缩的必要条件，不放宽任何门。
- * `condensed` 是压缩稿的观察（须落入范围）；默认取 draftObservation——C16–C18 里保存稿即压缩稿。
- * post-UI 有修稿时 draftObservation 是修稿产物，调用方须传压缩稿自己的观察。
- */
 function verifiedCondensedDraft(primary, result, condensed = result?.draftObservation) {
   const observation = result?.draftObservation
   if (!CONTENT_HASH.test(primary?.visibleTextHash ?? '') || typeof primary.outputPath !== 'string'
@@ -3498,11 +3383,6 @@ function verifiedCondensedDraft(primary, result, condensed = result?.draftObserv
       && countProjectedDraftUnits(output) > targetUnitRange(observation.targetUnits, result.protocolRevision, 'candidate').maximum
   } catch { return false }
 }
-/**
- * C16-B 作者保护（评分规则变更，用户批准，c16-c18 v3）：作者值始终由桥断言保全；是否出现冲突候选
- * 只在模型正式生效输出确实提议改写 mentalState 时才要求。证据须绑定末次正式 attempt 的 hash 可复核产物，
- * 字段缺失或不一致一律失败。合成模式的 transport 必定提议冲突值，因此仍强制冲突候选。
- */
 function authorProtectionSatisfied(result, mode) {
   const evidence = result.finalizationEvidence, protection = evidence?.authorProtection
   const operationId = PHASE_SCENARIOS['c16-c18'].operations.find(operation => operation.kind === 'character_cards').id
@@ -3519,14 +3399,9 @@ function authorProtectionSatisfied(result, mode) {
   if (mode === 'synthetic' && !protection.proposed) return false
   return !protection.proposed || evidence.authorProtected === true
 }
-/** 案例内的定稿替换：C16-B/C16-C 在原项目重新定稿，C17-B 在恢复副本内重新定稿。 */
 const continuitySourceReplacement = result => result?.sourceReplacement ?? result?.restoration?.sourceReplacement ?? null
 const FINALIZED_SOURCE_KEYS = ['draftId', 'finalizationId', 'chapterNumber', 'contentHash']
 const sameFinalizedSource = (left, right) => FINALIZED_SOURCE_KEYS.every(key => left?.[key] !== undefined && left[key] !== null && left[key] === right?.[key])
-/**
- * v4：定稿后处理（notes/cards）必须绑定该案当前定稿来源。有替换时来源即替换后的新 finalizationId；
- * notes 持久投影与 cards derived provenance 均须回读到同一来源。
- */
 function finalizationEvidenceBound(result) {
   const evidence = result.finalizationEvidence, replacement = continuitySourceReplacement(result)
   if (!evidence?.idempotent || !evidence.derivedApplied || evidence.effects?.length !== 2
@@ -3540,10 +3415,6 @@ function finalizationEvidenceBound(result) {
       || replacement.after.finalizationId === replacement.before?.finalizationId)) return 'FINALIZATION_SOURCE_NOT_BOUND'
   return null
 }
-/**
- * v4：physicalProject.readback.predecessors 是续写实际纳入的必需前驱。C17-B 恢复副本重新定稿后，readback 与 parity
- * 改为替换后的来源（替换前另存），parityHash 仍须等于 readback 的 hash，续写 materialDecision 须纳入同一来源与 revision。
- */
 function admittedPredecessorBound(result) {
   const readback = result.physicalProject?.readback, required = readback?.predecessors?.filter(item => item?.required === true)
   if (!readback || required?.length !== 1 || result.physicalProject.parityHash !== digest(readback)) return false
@@ -3561,7 +3432,6 @@ function admittedPredecessorBound(result) {
   return drafts.length > 0 && drafts.every(attempt => attempt.optionalMaterialEvidence?.materialDecision?.included?.some(item =>
     item.sourceId === predecessor.sourceId && item.revision === predecessor.revision))
 }
-/** 评审包用的对账摘要：逐续写案如实列出注入与否、冲突数、失败原因与落盘路径/hash，不含判断。 */
 export function summarizeDraftReconciliation(results) {
   return (Array.isArray(results) ? results : []).flatMap(result => result?.draftReconciliation ? [{ caseId: result.caseId,
     operation: result.draftReconciliation.operation, status: result.draftReconciliation.status,
@@ -3863,7 +3733,6 @@ function validateContinuityCore(results, mode, currentScenario, scope = null) {
   if (stableEvidence(results.map(result => result.caseId)) !== stableEvidence(expectedCaseIds)) return fail('CANDIDATE_CASE_MISMATCH')
   const source = scope ? scope.sourceProjectId : results[0].physicalProject?.projectId
   if (!source || results.filter(result => result.caseId.startsWith('C16')).some(result => result.physicalProject?.projectId !== source)) return fail('FINALIZATION_EFFECT_MISSING')
-  // 有定稿后处理 operation 的案例（C16 三案与 C17-B）逐案核对正式效果与来源绑定。
   for (const result of results.filter(item => continuityCaseOperations(item.caseId).some(operation => ['chapter_notes', 'character_cards'].includes(operation.kind)))) {
     const failure = finalizationEvidenceBound(result)
     if (failure) return fail(failure)
@@ -3918,7 +3787,6 @@ function validateContinuityCore(results, mode, currentScenario, scope = null) {
             : condensable ? condense.condensePurpose : `finalized-character-state:repair:${ordinal}`))
           return fail('ACTUAL_OWNER_IDENTITY_MISMATCH')
       }
-      // 登记的唯一压缩：首稿 hash 可复核且超出上限（生产计数），末次压缩稿才是正式保存的在范围正文。
       if (!recoverable && condensable && attempts.length === 2 && !verifiedCondensedDraft(attempts[0], result)) return fail('DRAFT_CONDENSE_NOT_REGISTERED')
 
     }
@@ -3946,8 +3814,6 @@ function validateContinuityCore(results, mode, currentScenario, scope = null) {
   return { status: mode === 'real' ? 'pending-independent-oracle-review' : 'passed' }
 }
 
-// Existing command tests already inject the physical completion/IPC boundaries.
-// Their product text is Chinese; selection deliberately excludes language cases.
 export const COMMAND_PROBES = Object.freeze([
   { file: 'directory.command.test.ts', name: 'commits append generation as an exact replace-range operation' },
   { file: 'generate-draft.command.test.ts', name: 'accepts exactly 80% of the target without requesting a continuation' },

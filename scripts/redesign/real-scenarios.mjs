@@ -1,5 +1,3 @@
-// 真实模型场景（--real-model）：生成、审稿、修稿、定稿后处理与嵌入都由硅基流动的 DeepSeek 与 bge-m3 回复。
-// 回复的文风与质量不评判，只断言作者看得到的软件状态与库里的数据。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -21,7 +19,6 @@ import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 const BOOK = STAGE_SAMPLE.name
 const TOTAL_CHAPTERS = 8
 const WORDS_PER_CHAPTER = 800
-/** 单次模型操作的上限：真实模型一次回复可能几十秒到几分钟。 */
 const MODEL_WAIT = 10 * 60_000
 const KEY_EVENTS = [
   '林岚抵达旧港，在石阶上遇见守塔人，得知雾钟每晚提前一刻响起。',
@@ -42,7 +39,6 @@ const RELATION_CHAPTERS = {
   6: '第二盏灯的记录是守塔人自己送来的。他站在北堤上，把那本被海水泡皱的值班簿递给林岚，说当年提前敲钟，是为了让另一条船避开暗礁。林岚收下值班簿，向他道了歉。两人冰释前嫌，重新结为盟友，约好涨潮时一起守在雾钟旁。',
 }
 
-/** 记下界面打开作品拿到的会话（包一层主进程的 project:open），驱动读库时不必重开作品。重启后要重新装。 */
 export async function trackOpenedSession(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -62,13 +58,11 @@ export async function uiSession(app) {
   return session
 }
 
-/** 用界面当前的会话调主进程；读库都走它，与界面读到的是同一份数据。 */
 async function read(context, channel, ...args) {
   const session = await uiSession(context.app)
   return context.invoke(context.page, channel, ...args, session.projectPath, session)
 }
 
-/** 预置作品：设定、林岚、8 章蓝图，finalized 里的章以作者原稿定稿导入；接上真实模型后从书房打开。 */
 export async function seedBook(context, { finalized = [], drafts = {}, core: coreFields = {}, characters = [] } = {}) {
   const { app, page, roots, invoke, reload } = context
   await trackOpenedSession(app)
@@ -126,7 +120,6 @@ async function seedRelationBook(context) {
   } })
 }
 
-/** 页面里进行中的运行胶囊挂上来过几次；点下触发运行的按钮之前取一次，交给 untilRunEnds。 */
 export async function runsStarted(page) {
   return page.evaluate(() => {
     if (!window.__realRunsStarted) {
@@ -143,7 +136,6 @@ export async function runsStarted(page) {
   })
 }
 
-/** 运行侧页的全文，失败时写进错误里定位。 */
 async function runSheetText(page) {
   try {
     await runSheet.openFromPalette(page)
@@ -151,10 +143,6 @@ async function runSheetText(page) {
   } catch (error) { return `（读不到运行侧页：${error.message}）` }
 }
 
-/**
- * 等这次运行挂出胶囊、再等顶栏不再有进行中的胶囊，返回毫秒数。
- * 运行停在「等你确认」时，按作者的默认选择确认，记进 confirmations。
- */
 export async function untilRunEnds(page, before, what, confirmations = []) {
   const started = Date.now()
   for (;;) {
@@ -176,7 +164,6 @@ export async function untilRunEnds(page, before, what, confirmations = []) {
   }
 }
 
-/** 点下 trigger 发起运行并等它结束；返回耗时。 */
 async function runAndWait(page, trigger, what, confirmations) {
   const before = await runsStarted(page)
   await trigger()
@@ -190,7 +177,6 @@ export async function openChapter(page, chapterNumber) {
 
 const proseUnits = async page => countUnits(await chapterView.prose(page).innerText())
 
-/** 在待写章的单章视图点「写作此章」，等真实模型写完、正文出现。 */
 export async function writeChapter(page, chapterNumber, confirmations) {
   await openChapter(page, chapterNumber)
   const ms = await runAndWait(page, () => chapterView.view(page).getByRole('button', { name: '写作此章', exact: true }).click(),
@@ -200,7 +186,6 @@ export async function writeChapter(page, chapterNumber, confirmations) {
   return { ms, units: await proseUnits(page) }
 }
 
-/** 定稿后处理每一行都结束（成功或失败），且没有进行中的运行。 */
 async function postProcessSettled(page, chapterNumber) {
   await page.waitForFunction(() => {
     const rows = [...document.querySelectorAll('[aria-label="定稿后处理"] li')]
@@ -212,7 +197,6 @@ async function postProcessSettled(page, chapterNumber) {
   return chapterView.postProcessSteps(page)
 }
 
-/** 定稿并等后处理各行（正文文件、知识库、要点、角色状态）在真实回复下结束；任何一行失败都判失败，正文文件没写入也算。 */
 async function finalizeAndPostProcess(page, chapterNumber) {
   const started = Date.now()
   await chapterView.finalize(page, chapterNumber)
@@ -226,7 +210,6 @@ async function finalizeAndPostProcess(page, chapterNumber) {
   return { ms: Date.now() - started, steps }
 }
 
-/** 审稿、按意见修稿、全部用修稿、完成合并；审稿没有可修的意见时主按钮直接是「定稿」，改由作者添一条意见再修稿。 */
 export async function reviewReviseMerge(page, chapterNumber, confirmations) {
   const measured = {}
   measured.reviewMs = await runAndWait(page, () => chapterView.view(page).getByRole('button', { name: 'AI 审稿', exact: true }).click(),
@@ -240,7 +223,6 @@ export async function reviewReviseMerge(page, chapterNumber, confirmations) {
     measured.reviewIssues = Number((await revise.innerText()).match(/\d+/)[0])
     assert.ok(measured.reviewIssues > 0 && await revise.isEnabled(), `有修稿按钮时它按至少 1 项意见修稿且可点：${await revise.innerText()}`)
   } else {
-    // 审稿没提可修的意见时修稿走作者自己的意见：这也是作者能走的路，修稿与合并照样由真实模型完成。
     measured.reviewIssues = 0
     measured.nothingToReviseHint = await chapterView.hint(page).innerText()
     assert.match(measured.nothingToReviseHint, /这次审稿没有需要修改的意见/u)
@@ -257,12 +239,10 @@ export async function reviewReviseMerge(page, chapterNumber, confirmations) {
   const before = await runsStarted(page)
   await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
   await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: MODEL_WAIT })
-  // 完成合并只在需要复验时才起运行：起了就等它结束。
   if (await page.evaluate(b => window.__realRunsStarted.count > b, before)) measured.recheckMs = await untilRunEnds(page, before, `第 ${chapterNumber} 章合并后复验`, confirmations)
   return measured
 }
 
-/** 知识库里没有缺向量的块：嵌入失败时应用会静默降级为只按字词检索，这里要分辨出来。 */
 async function assertAllVectors(context, what) {
   const vectorless = await read(context, 'kb:get-vectorless-count')
   assert.equal(vectorless?.count, 0, `${what}后知识库有缺向量的块：${JSON.stringify(vectorless)}`)
@@ -283,7 +263,6 @@ async function postProcessRecord(context, chapterNumber) {
   return steps.map(step => ({ key: step.stepKey, ok: Boolean(step.ok) })).sort((a, b) => a.key.localeCompare(b.key))
 }
 
-/** 真实模型报什么不评判，只核对软件按它报的记对了。 */
 async function relationFacts(context) {
   const roster = await read(context, 'db:character-roster-read')
   const pair = ['林岚', '守塔人'].map(name => roster.entries.find(entry => entry.name === name).characterId)
@@ -309,16 +288,13 @@ async function relationFacts(context) {
   return facts
 }
 
-/** 重启后重新进入作品：重新装会话记录，从书房或落点打开，等流程脊出现。 */
 async function restartAndOpen(context, { killed = false } = {}) {
   await context.restart({ killed })
   await trackOpenedSession(context.app)
   await stage.openAfterRestart(context.page, BOOK)
   await stage.chapterList(context.page).or(stage.stageButton(context.page, '正文')).first().waitFor({ state: 'visible', timeout: 60_000 })
   if (!await stage.chapterList(context.page).isVisible()) await stage.stageButton(context.page, '正文').click()
-  // 重启后界面可能落在上次的页面而没有重新打开作品；没有记下会话时用 Ctrl K 重开一次。
   if (!await context.app.evaluate(() => globalThis.__driveOpened)) await stage.openFromPalette(context.page, BOOK)
-  // 流程脊可能早于 project:open 返回就已可见：等会话记下再往下走，免得读库时还没有租约。
   const deadline = Date.now() + 60_000
   while (!await context.app.evaluate(() => Boolean(globalThis.__driveOpened?.leaseId))) {
     if (Date.now() > deadline) throw new Error('重启后 60 秒内没有记下界面打开作品的会话')
@@ -332,7 +308,6 @@ const REFERENCE_NOVEL = [
   ['第3章 旧账', '阿远的姐姐翻出周伯的旧账本，发现每一页的潮位都被人用红笔改过。她顺着那些红字，一路找到了废弃的灯塔。'],
 ]
 
-/** 往运行侧页的可恢复区里找这一批：重启后没有进行中的批量运行，批次才列为可恢复。 */
 async function batchRecovery(page) {
   await runSheet.openFromPalette(page)
   const card = runSheet.recovery(page).getByRole('article').filter({ hasText: /批量正文：/ })
@@ -347,7 +322,6 @@ async function batchCards(context) {
 }
 
 export const REAL_SCENARIOS = {
-  /** 主流程：第 1～3 章逐章写作、AI 审稿、按意见修稿并合并、定稿，后处理三步在真实回复下完成，知识库每块都有向量。 */
   'real-main': { real: true, setup: context => seedBook(context), run: async context => {
     const { page, shoot } = context
     const confirmations = []
@@ -374,7 +348,6 @@ export const REAL_SCENARIOS = {
     const vectorless = await assertAllVectors(context, '三章定稿')
     const search = await read(context, 'kb:search', '雾钟提前响起', 5)
     assert.ok(Array.isArray(search) && search.length > 0, `知识库检索没有结果：${JSON.stringify(search)}`)
-    // 知识库页：配了检索模型时写着可以按意思查找，按字词查得到定稿章。
     await refs.open(page, 'knowledge')
     await page.getByText('可以按意思和字词查找。', { exact: true }).waitFor({ state: 'visible' })
     await refs.search(page, '林岚')
@@ -385,7 +358,6 @@ export const REAL_SCENARIOS = {
     return { chapters, db, knowledge: { documents: documents.length, vectorless, searchHits: search.length, uiResults: resultCount }, confirmations }
   } },
 
-  /** #578 与重启：删掉已定稿的第 2 章，重启后第 2 章不在、其余都在；第 4 章照常写；第 2 章蓝图未保存时不给写作入口，保存后在原位置重写并定稿。 */
   'real-gap': { real: true, setup: context => seedBook(context, { finalized: [1, 2, 3] }), run: async context => {
     const { shoot } = context
     let { page } = context
@@ -436,7 +408,6 @@ export const REAL_SCENARIOS = {
     const writeGap = gap.getByRole('button', { name: '重写第 2 章', exact: true })
     await writeGap.waitFor({ state: 'visible' })
     measured.savedNotice = await gap.innerText()
-    // 缺口章的写作入口把作者带到第 2 章的单章视图，由那里的写作按钮接手。
     const before = await runsStarted(page)
     await writeGap.click()
     const started = await page.waitForFunction(b => window.__realRunsStarted.count > b, before, { timeout: 15_000 }).then(() => true, () => false)
@@ -448,7 +419,6 @@ export const REAL_SCENARIOS = {
     assert.ok(measured.chapter2Rewrite.length > 0, '第 2 章在原位置写出了新稿')
     await shoot('real-gap-ch2-rewritten')
     measured.chapter2Finalize = await finalizeAndPostProcess(page, 2)
-    // 缺口列表在蓝图列表出现后才读回，等这次读取返回再数，否则数到零不说明问题。
     await afterIpc(context.app, page, 'db:draft-authority-sequence', () => blueprint.open(page))
     measured.gapNoticeAfterFinalize = await page.locator('.pi-notice').filter({ hasText: /第 2 章(的正文)?已删除/u }).count()
     assert.equal(measured.gapNoticeAfterFinalize, 0, '第 2 章重写定稿后缺口提示消失')
@@ -457,7 +427,6 @@ export const REAL_SCENARIOS = {
     return { ...measured, confirmations }
   } },
 
-  /** 定稿关系：先定稿第 6 章再定稿第 5 章，覆盖后面的章先抽取的顺序。 */
   'real-relation': { real: true, setup: seedRelationBook, run: async context => {
     const { page } = context
     const measured = { finalize: {} }
@@ -477,7 +446,6 @@ export const REAL_SCENARIOS = {
     return measured
   } },
 
-  /** #582：批量写第 3、4 章，第 3 章写完后暂停（暂停中点定稿立即提示还不能定稿）；这时应用被关掉，重启后批次可续；作者定稿第 3 章后这一批不再列出，第 3 章可以重新打开；再重启仍不列出。 */
   'real-batch': { real: true, setup: context => seedBook(context, { finalized: [1, 2] }), run: async context => {
     const { shoot } = context
     let { page } = context
@@ -499,7 +467,6 @@ export const REAL_SCENARIOS = {
     assert.deepEqual(measured.paused.chapter4, [], '暂停后没有写第 4 章')
     await shoot('real-batch-paused')
 
-    // 暂停中的批次仍占着第 3、4 章：点定稿立即提示还不能定稿，不打开确认框。
     await openChapter(page, 3)
     const finalizeButton = chapterView.view(page).getByRole('button', { name: '定稿', exact: true })
     if (await finalizeButton.count() > 0) await finalizeButton.click()
@@ -516,7 +483,6 @@ export const REAL_SCENARIOS = {
     assert.equal(measured.finalizeWhilePaused.dialogs, 0, '批次占着本章时不打开定稿确认框')
     assert.equal(measured.finalizeWhilePaused.finalizedInDb, false, '批次暂停时第 3 章不会被定稿')
 
-    // 用关掉应用而不是取消来中断批次：取消的批次不能再续（#568）。
     await restartAndOpen(context, { killed: true })
     page = context.page
     measured.recoveryBeforeFinalize = await batchRecovery(page)
@@ -541,7 +507,6 @@ export const REAL_SCENARIOS = {
     return measured
   } },
 
-  /** #580：参考小说导入当前作品，真实 bge-m3 嵌入写进 LanceDB，每块都有向量，按意思能检索到参考原文。 */
   'real-refs': { real: true, setup: context => seedBook(context, { finalized: [1, 2] }), run: async context => {
     const { app, page, roots, shoot } = context
     const file = path.join(roots.temp, '雾港.txt')
@@ -579,7 +544,6 @@ export const REAL_SCENARIOS = {
       uiResults: uiResults.slice(0, 400), confirmations }
   } },
 
-  /** #702：第 4 章选中第一段点续写，真实模型回复后点「插入」：原文还在、续写接在后面；这次运行带上了蓝图、人物与上一章结尾。 */
   'real-editor-context': { real: true, setup: context => seedBook(context, { finalized: [1, 2, 3], drafts: { 4: STAGE_SAMPLE.drafts[4].text } }), run: async context => {
     const { app, page } = context
     await app.evaluate(({ ipcMain }) => {
@@ -632,7 +596,6 @@ export const REAL_SCENARIOS = {
     const toolbar = page.getByRole('toolbar', { name: '选中文字的操作' })
     const points = []
     for (const [index, paragraph] of context.evalBook.chapter13.entries()) {
-      // 点段首左上角：上一个续写点的浮动工具条可能盖在段落中间。
       await prose.getByText(paragraph.slice(0, 20)).first().click({ clickCount: 3, position: { x: 40, y: 8 } })
       await toolbar.getByRole('button', { name: '续写' }).click()
       await toolbar.getByRole('button', { name: '插入', disabled: false }).waitFor({ state: 'visible', timeout: MODEL_WAIT })
@@ -662,7 +625,6 @@ export const REAL_SCENARIOS = {
     return { materials: points.map(({ point, materials }) => ({ point, materials })), results }
   } },
 
-  /** #702：设定文档没有章号；臂按每次运行实际带的材料记，不预设。 */
   'real-editor-nochapter-ab': { real: true, requires: { env: { EDITOR_NOCHAPTER_DOC: '指向本机的设定文档夹具 JSON（{ document, points }；batch11 用过 .audit/shutong-sweep/batch11/nochapter-narrative/fixtures/p5.json）' } }, setup: async context => {
     const file = process.env[EDITOR_NOCHAPTER_DOC]
     assert.ok(file && fs.existsSync(file), `环境变量 ${EDITOR_NOCHAPTER_DOC} 指向设定文档夹具 JSON`)
@@ -714,7 +676,6 @@ export const REAL_SCENARIOS = {
   } },
 }
 
-/** 第 13 章蓝图：钥匙和撕页两条约束只放在线索里，这样线索块是否带上能从续写里看出来。 */
 const EVAL_BLUEPRINT = { chapterNumber: 13, title: '雨夜旧楼', role: '发展', purpose: '林岚找到父亲失踪那晚去过的地下档案室，但门打不开',
   keyEvents: '雨夜林岚独自去港务局旧楼；陈默跟来，说档案柜锁着需要钥匙；陈默不敢下地下室，转身离开；林岚一个人站在地下室门前，柜子本章不打开',
   characters: ['林岚', '陈默'], suspenseHook: '地下室门缝里有光' }
@@ -728,7 +689,6 @@ const EVAL_THREADS = [
   { title: '父亲失踪那晚', targetStartChapter: 11, targetEndChapter: 16, authorIntent: '父亲那晚去过港务局旧楼；地下室的线索本章只到门口，不进去',
     events: [[12, 'planted', '十七，夜九时，旧楼后门']] },
 ]
-/** 人物状态按章变化：作者在第 4、7、10 章各改一次。 */
 const EVAL_STATES = [
   [4, '林岚', { physicalState: '左臂骨裂，用绷带吊在胸前，只能用右手做事' }],
   [6, '陈默', { recentEvents: '告诉林岚沉船名录最后一页被人撕掉，不知道是谁撕的' }],
@@ -736,7 +696,6 @@ const EVAL_STATES = [
   [10, '林岚', { recentEvents: '当面质问周砚提前敲钟的事，两人彻底反目，周砚禁止她再进灯塔' }],
 ]
 
-/** 夹具书种进真实作品库：设定、三人名册与逐章状态、第 1–12 章定稿、四条线索与确认、第 13 章蓝图与草稿。 */
 async function seedEvalBook(context, book) {
   const { app, page, roots, invoke, reload } = context
   await trackOpenedSession(app)
@@ -785,10 +744,5 @@ async function seedEvalBook(context, book) {
   return text
 }
 
-/**
- * #702 真实模型对照：第 13 章逐段选中点续写，界面备好的本章材料随 begin 发出；同一份输入带与不带 chapterContext 各跑若干次。
- * 对照臂就是没有章号的编辑器那条路：同样的续写规则与插入方式，只差本章材料。夹具书只在本机，路径由 EDITOR_CONTEXT_BOOK 给出。
- */
 const EDITOR_CONTEXT_BOOK = 'EDITOR_CONTEXT_BOOK'
-/** 设定文档续写对照的夹具：{ document, points }，points 是 document 里要逐个选中续写的段落。夹具只在本机。 */
 const EDITOR_NOCHAPTER_DOC = 'EDITOR_NOCHAPTER_DOC'

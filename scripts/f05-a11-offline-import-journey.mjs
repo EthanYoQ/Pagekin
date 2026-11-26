@@ -279,7 +279,6 @@ function comparisonDatabase(sourceCopy, root) {
     if (fs.existsSync(file)) fs.copyFileSync(file, path.join(copied, name))
   }
   const snapshot = path.join(root, 'sql-comparison.db')
-  // SQLite merges any committed WAL entries into this independent, read-only comparison input.
   execFileSync(macMode ? 'python3' : 'python', ['-c', `import sqlite3,sys
 source=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True)
 target=sqlite3.connect(sys.argv[2])
@@ -509,7 +508,6 @@ async function launch(roots) {
   }
 }
 
-/** 启动后停在书房：纸墨外壳就绪、收起迁移通知；打开着作品时回到书房。 */
 async function home(page) {
   await stage.waitForStage(page)
   await stage.dismissMigrationNotice(page)
@@ -606,8 +604,6 @@ async function quit(app, page, version) {
 async function verify(source) {
   const root = path.join(scratch, source.version)
   const sourceCopy = path.join(root, 's')
-  // The existing Windows native-storage preflight permits a shorter project root
-  // than our evidence directories; keep the published test project near scratch.
   const targetParent = path.join(scratch, source.version === 'v1.0.0' ? 'v10' : 'v11')
   fs.mkdirSync(targetParent, { recursive: true })
   const originalBefore = inventory(source.path)
@@ -796,7 +792,6 @@ async function verify(source) {
     v025Stage('reopen-ready')
     requestCounts = editSaveProof ? await observeRequests(session) : null
     if (legacyV025) {
-      // Both the preserved old recent entry and the imported copy have the same title.
       const recent = await session.page.evaluate(() => window.aiNovelAPI.invoke('project:recent-list'))
       const index = recent.findIndex(entry => path.resolve(entry.path).toLowerCase() === path.resolve(target).toLowerCase())
       assert(index >= 0, 'Imported target missing from recent projects')
@@ -1117,7 +1112,6 @@ async function verifyMac() {
       }
       throw error
     }
-    // 导入的作品第 1 章有第一版草稿与作者修稿，打开时落在最新一稿；旅程编辑的是第一版。
     const editor = await stage.openChapterVersion(session.page, 1, 1)
     const openedBody = await editorBody(editor)
     assert.equal(openedBody.replaceAll('\r\n', '\n'), macBody.replaceAll('\r\n', '\n'))

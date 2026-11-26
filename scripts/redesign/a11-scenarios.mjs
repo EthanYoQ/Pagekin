@@ -14,7 +14,6 @@ const PLANS = Object.freeze([
   { title: '父亲的旧信', type: '伏笔', targetStartChapter: 3, targetEndChapter: 5, authorIntent: '第五章林岚读到父亲的旧信。' },
 ])
 
-/** 只给线索硬任务场景加的一条：夹具正文写了林岚对照父亲的地图找灯塔，审稿判已回收有引文可依。 */
 const MAP_PLAN = Object.freeze({ title: '父亲的地图', type: '伏笔', targetStartChapter: 3, targetEndChapter: 5, authorIntent: '林岚对照父亲的地图找到灯塔。' })
 
 const ECHO_PLAN = Object.freeze({ title: '灯塔的回声', type: '支线', targetStartChapter: 4, targetEndChapter: 9, authorIntent: '后文交代回声的来源。' })
@@ -93,7 +92,6 @@ export const A11_SCENARIOS = {
     await hint(2).click()
     await row('父亲的旧信').getByText('本章到期').waitFor({ state: 'visible' })
     await page.keyboard.press('Escape')
-    // 假模型每章回同一段正文，第 6 章开头会被判成重演而不落稿；这里只看发出去的合同。
     const proseBefore = fake.chats.filter(chat => chat.kind === 'prose').length
     await chapterView.view(page).getByRole('button', { name: '写作此章', exact: true }).click()
     for (const deadline = Date.now() + 60_000; fake.chats.filter(chat => chat.kind === 'prose').length === proseBefore;) {

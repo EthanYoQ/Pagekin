@@ -560,7 +560,6 @@ describe('release evidence v2 CLI', () => {
     expect(wrongSha.status).not.toBe(0)
     expect(wrongSha.stderr).toContain('Windows old-source journeys must match the frozen candidate commit')
 
-    // Synthesize a historical bundle in this test only; real archived receipts remain immutable.
     const oldReceipt = JSON.parse(readFileSync(path.join(releaseRoot, oldPath), 'utf8'))
     for (const key of Object.keys(windowsV025CopyProof())) delete oldReceipt.direct[key]
     writeJson(path.join(releaseRoot, oldPath), oldReceipt)

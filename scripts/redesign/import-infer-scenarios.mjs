@@ -61,7 +61,6 @@ function danglingInferenceReply(prompt) {
 const INFERRED_STYLE = '短句为主，雨声与灯影反复出现，叙述贴近沈默。'
 const BLUEPRINT_BATCH = /本批必须且只能完整返回以下 chapterNumber：([\d、]+)。/u
 
-/** 作者原稿反推的三类请求回合法结果，其余请求照常作答。 */
 export function inferenceReply(prompt) {
   if (prompt.includes('逆向推演出这部小说的完整设定体系')) return JSON.stringify(INFERRED)
   if (prompt.includes('【风格档案】与【仿写指南】')) return INFERRED_STYLE
@@ -94,7 +93,6 @@ export async function seedEmptyBook(context) {
   await stage.openFromLibrary(page, EMPTY_BOOK)
 }
 
-/** 从作品菜单打开导入对话框，选「我的原稿」与原稿文件，等预览出来。 */
 export async function openAuthorImport(app, page, bookName, file) {
   await app.evaluate(({ dialog }, selected) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] })
@@ -118,7 +116,6 @@ export async function confirmAndWait(page, dialog, chapterCount) {
   await runSheet.waitForRunDone(page, 120_000)
 }
 
-/** 记下界面打开作品拿到的会话（包一层主进程的 project:open），驱动读库时不必重开作品。 */
 async function trackOpenedSession(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
@@ -140,7 +137,6 @@ async function readBook({ app, page, invoke }) {
   }
 }
 
-/** 角色名单提示条上，导入留下的角色决策写来源与人数，不露操作号。 */
 async function assertImportedCastTitle(page, count = 3) {
   const banner = page.getByRole('region', { name: '待处理的角色建议' })
   await banner.waitFor({ state: 'visible' })
@@ -207,7 +203,6 @@ export const IMPORT_INFER_SCENARIOS = {
     assert.equal(core.premise, INFERRED.architectureFiles.premise, '空的故事前提被补上')
     assert.equal(core.writingStyle, INFERRED_STYLE, '空的文风被补上')
     assert.deepEqual(blueprints.map(item => item.title), ['反推第1章', '反推第2章', '反推第3章'], '每个导入章都有蓝图')
-    // 新建作品自带每章字数默认值，它算已有内容；设定与架构的文字字段都是空的，不该有建议。
     const region = runSheet.sheet(page).getByRole('region', { name: '反推建议' })
     await region.waitFor({ state: 'visible' })
     const suggested = await region.locator('.run-suggestion-name').allInnerTexts()
@@ -254,7 +249,6 @@ export const IMPORT_INFER_SCENARIOS = {
     return { diagnostic }
   } },
 
-  // 示例作品 1、2 章已定稿，作者原稿只能从第 3 章接着导入；先删掉第 4、5 章的蓝图，让第 3 章代表「已有蓝图」。
   'import-infer-existing': { model: true, shell: 'stage', setup: context => seedStageSample(context, {
     landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
       for (const chapterNumber of [4, 5]) {

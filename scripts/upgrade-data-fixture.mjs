@@ -205,9 +205,6 @@ function rowsWithExpectedWordCounts(rows, expectedById) {
   })
 }
 
-// Independent fixture oracle for persisted draft-unit algorithm v2. Keep these
-// reviewed values explicit so a production counter regression cannot make its
-// own upgrade acceptance fixture pass by repeating the same implementation.
 const V2_DRAFT_WORD_COUNTS = Object.freeze({ 71: 32, 72: 31 })
 const MIGRATED_DRAFT_ROWS = rowsWithExpectedWordCounts(DRAFT_ROWS, V2_DRAFT_WORD_COUNTS)
 
@@ -340,8 +337,6 @@ const POST_PROCESS_STEP_COLUMNS = Object.keys(POST_PROCESS_STEP_ROWS[0])
 const LLM_CALL_COLUMNS = Object.keys(LLM_CALL_ROWS[0])
 const SUMMARY_SNAPSHOT_COLUMNS = Object.keys(SUMMARY_SNAPSHOT_ROWS[0])
 
-// Derived verbatim from v0.2.5:electron/database.ts. A newer release may append
-// migrated columns, but it must retain every legacy column in its original order.
 const V025_TABLE_COLUMNS = {
   project_core: [
     'id', 'project_name', 'genre', 'sub_genre', 'target_audience',
@@ -1089,8 +1084,6 @@ function validateDatabase(projectRoot, migratedDraftUnitCounts, saveProof) {
     assert.deepEqual(contents, CONTENT_ROWS, 'content bodies changed during upgrade')
 
     const drafts = readRows(db, 'drafts', DRAFT_COLUMNS, 'id')
-    // The old application's normal save changes only this draft's timestamp.
-    // Bind that exception to its exact before/after read-back; all author fields remain checked.
     const savedDraftRows = DRAFT_ROWS.map(row => ({ ...row }))
     if (saveProof) {
       assert.equal(saveProof.verifiedBy, 'legacy-renderer-cdp-v025-save')

@@ -1,4 +1,3 @@
-// RD-10 的实机 lane 与功能保全矩阵截图：键盘写一章、打字后立刻 Esc、英文界面全程、1280 与 1920 两种宽度、窄资料栏、标签操作菜单（含标签多到横向滚动时）、恢复候选正文页。
 import assert from 'node:assert/strict'
 
 import { FAKE_MODEL, FIXTURE_PROSE } from './fake-model.mjs'
@@ -11,10 +10,6 @@ import { seedWithCandidate } from './run-scenarios.mjs'
 import { firstLine, seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
-/**
- * 当前焦点的可见焦点环：元素按键盘聚焦（:focus-visible），环画在它自己的 box-shadow、outline 上，
- * 内容区标签画在 ::after 的边上；正文编辑区以插入点为焦点标记，记下选区是否落在编辑区里。
- */
 const focusRing = page => page.evaluate(() => {
   const element = document.activeElement
   if (!element || element === document.body) return { element: 'body', visible: false }
@@ -36,7 +31,6 @@ const focusRing = page => page.evaluate(() => {
   return { element: name, ring, focusVisible, visible: focusVisible && (ring.includes(accent) || (style.outlineStyle !== 'none' && style.outlineWidth !== '0px')) }
 })
 
-/** 只按 Tab 走到 target；每一步都记下焦点落在哪、环是否可见。 */
 async function tabTo(page, target, trail, limit = 80) {
   const handle = await target.elementHandle()
   for (let step = 0; step < limit; step++) {
@@ -47,7 +41,6 @@ async function tabTo(page, target, trail, limit = 80) {
   throw new Error(`按 ${limit} 次 Tab 没有到达目标：${JSON.stringify(trail.slice(-3))}`)
 }
 
-/** Ctrl K 输入 query 后回车，交给搜索与跳转（中英文界面的对话框名不同，按其中的组合框找）。 */
 async function palette(page, query) {
   await page.keyboard.press('ControlOrMeta+K')
   const input = page.getByRole('dialog').getByRole('combobox')
@@ -57,10 +50,6 @@ async function palette(page, query) {
   await input.waitFor({ state: 'hidden' })
 }
 
-/**
- * 作品里的内容（书名、章名、设定、正文、审稿、角色与头像上的姓、夹具模型名），英文界面里出现它们不算没翻译。
- * 【第N章必现】是角色备注里按字面解析的标记（chapter-goal-review），英文提示也写原样。
- */
 const SAMPLE_CONTENT = [
   STAGE_SAMPLE.name, ...STAGE_SAMPLE.titles, ...Object.values(STAGE_SAMPLE.core),
   ...Object.values(STAGE_SAMPLE.finalized).flatMap(text => [text, ...text.split('\n\n')]),
@@ -73,8 +62,6 @@ const SAMPLE_CONTENT = [
   FAKE_MODEL.name, '【第N章必现】',
 ].filter(Boolean).sort((a, b) => b.length - a.length)
 
-/** 界面上还带汉字的文字：可见文字与各控件的可访问名称，去掉作品内容后剩下的行；顶栏的品牌字是装饰（aria-hidden），不算。 */
-/** 语言选择器里各语言用自己的名字（#722），不是漏译。 */
 const ENDONYMS = ['日本語']
 
 async function untranslated(page) {
@@ -88,10 +75,6 @@ async function untranslated(page) {
   return [...new Set(cleaned.split('\n').map(line => line.trim()).filter(line => line !== brand && !ENDONYMS.includes(line) && /\p{Script=Han}/u.test(line)))]
 }
 
-/**
- * 知识库资料栏里放不下的东西：每个按钮都要留在所在的框里、文字不伸出按钮，分段两项各自不折行，资料栏本身没有横向溢出。
- * 返回资料栏宽度、分段文案与问题清单。
- */
 const knowledgeColumn = page => page.evaluate(() => {
   const column = document.querySelector('.stage-kb-docs')
   if (!column) return { missing: true }
@@ -121,10 +104,6 @@ const noHorizontalOverflow = page => page.evaluate(() => {
 })
 
 export const RD10_SCENARIOS = {
-  /**
-   * lane 7：只用键盘写一章。Ctrl K 去蓝图，Tab 到下一章的「写第 N 章」（样例里是第 3 章）回车开写，写完 Tab 进正文补一句、Ctrl S 保存，
-   * 再按 Esc、Tab 离开编辑区。每一步记下焦点落点与焦点环；`measured.missingRing` 必须为空。
-   */
   'rd10-keyboard': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     const trail = []
     await palette(page, '蓝图')
@@ -155,10 +134,6 @@ export const RD10_SCENARIOS = {
     return { steps: trail.length, writeButton, leftEditor, missingRing }
   } },
 
-  /**
-   * lane 6：英文界面走一遍书房、四个阶段、角色名单、章节、运行侧页、作品资料、作品菜单的对话框与设置各页，
-   * 每页去掉作品内容后不剩汉字；`measured.untranslated` 按页列出剩下的行，必须为空。
-   */
   'rd10-en': { model: false, shell: 'stage', setup: context => seedStageSample(context, { open: false }), run: async ({ page, invoke, reload, shoot }) => {
     assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
     await reload()
@@ -207,10 +182,6 @@ export const RD10_SCENARIOS = {
     return { checked: ['library', 'landing', 'setup', 'architecture', 'cast', 'blueprint', 'chapter-3', 'chapter-1', 'run-sheet', 'plot', 'knowledge', 'history', 'export', 'clear', ...pages.map(name => `settings ${name}`)], untranslated: found }
   } },
 
-  /**
-   * lane 10：1280×900 与 1920×1080 下依次截书房、第 3 章、角色名单、蓝图；文档与外壳都没有横向溢出。
-   * 主题由 --theme 决定，浅色与深色各跑一次。
-   */
   'rd10-widths': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     const measured = {}
     for (const [width, height] of [[1280, 900], [1920, 1080]]) {
@@ -235,10 +206,6 @@ export const RD10_SCENARIOS = {
     return measured
   } },
 
-  /**
-   * 窄资料栏：1280×900 下打开知识库再展开运行侧页，内容区约 620px、资料栏只剩 200px。中文、英文各量一次，
-   * 资料栏里的按钮与分段都不伸出各自的框（`measured.<语言>.problems` 为空），各截一张。
-   */
   'rd10-knowledge-narrow': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, invoke, reload, shoot }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
     const measured = {}
@@ -267,10 +234,6 @@ export const RD10_SCENARIOS = {
     return measured
   } },
 
-  /**
-   * 评审视频（配 --video，约 45 秒）：书房概览，打开作品走四个阶段与角色名单，正文第 3 章与审稿侧页，
-   * 设置的外观只有浅色、深色两套（没有皮肤与界面布局），切到深色再切回，回书房。
-   */
   'rd10-tour': { model: false, shell: 'stage', setup: context => seedStageSample(context, { open: false }), run: async ({ page }) => {
     const pause = ms => page.waitForTimeout(ms)
     await pause(2500)
@@ -303,7 +266,6 @@ export const RD10_SCENARIOS = {
     await pause(3000)
   } },
 
-  /** F-183、F-184：打开设定与蓝图共三个标签，展开「标签操作」：已打开的页面与四个关闭动作。 */
   'rd10-tab-menu': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
     await stage.stageButton(page, '设定').click()
     await blueprint.open(page)
@@ -318,20 +280,14 @@ export const RD10_SCENARIOS = {
     await page.keyboard.press('Escape')
   } },
 
-  /**
-   * 标签多到横向滚动：1280×900 下开着运行侧页，依次打开作品资料各页与几章，最后打开的标签在最右端处于激活。
-   * 「标签操作」按钮中心那一点上要是按钮本身（不被标签盖住），在那里真实点一下打开的是菜单，标签一个不少。
-   */
   'rd10-tab-overflow': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await runSheet.openFromPalette(page)
     for (const name of ['设定', '剧情与伏笔', '知识库', '版本历史']) await palette(page, name)
-    // 样例里只有前 4 章有正文，空白章没有编辑区，openChapter 等不到；第 3 章是开局的落点，标签已经开着
     for (const chapter of [1, 2, 4]) await stage.openChapter(page, chapter)
     await blueprint.open(page)
     const tabList = await stage.tabList(page).getByRole('tab').all()
     assert.equal(await tabList.at(-1).getAttribute('aria-selected'), 'true', '最后打开的标签没有激活')
-    // 等标签条把激活标签滚进来再量，量到的才是滚到最右端的状态
     await page.waitForTimeout(200)
     const strip = await page.locator('.stage-tabs').evaluate(element => ({ scroll: element.scrollWidth, client: element.clientWidth, left: element.scrollLeft }))
     assert(strip.scroll > strip.client && strip.left > 0, `标签条没有横向滚动到右端：${JSON.stringify(strip)}`)
@@ -354,7 +310,6 @@ export const RD10_SCENARIOS = {
     await page.keyboard.press('Escape')
   } },
 
-  /** F-072：运行侧页可恢复的正文候选「继续编辑」打开纸墨正文页，候选正文在纸面上可编辑。 */
   'rd10-candidate-page': { model: false, shell: 'stage', setup: seedWithCandidate, run: async ({ page }) => {
     await runSheet.openFromPalette(page)
     const card = runSheet.recovery(page).getByRole('article', { name: '原始候选 · 第5章 潮汐表' })
@@ -363,10 +318,6 @@ export const RD10_SCENARIOS = {
     await stage.waitForProse(page, '潮水退去，钟声早了一刻。')
     return { tabs: await stage.tabList(page).getByRole('tab').allInnerTexts().catch(() => []) }
   } },
-  /**
-   * lane 7 补充：三种输入方式（逐键按键、insertText、CDP 模拟的输入法组字）各打几个字后立刻按 Esc、Tab，
-   * 焦点都要离开编辑区，正文里不多出全角空格。正文编辑器曾因补全请求未结束时吞掉 Esc 而失败。
-   */
   'rd10-esc-after-typing': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
     await stage.openChapter(page, 4)
     const prose = stage.prose(page)

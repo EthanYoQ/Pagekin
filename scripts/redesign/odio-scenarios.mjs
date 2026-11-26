@@ -9,7 +9,6 @@ import * as stage from './pages/stage.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
-// 别的进程在 project.db-shm 上只留一个映射段（不留文件句柄），和强杀书童后旧进程收尾时的状态一样。
 const SECTION_HOLDER = "$fs=[IO.FileStream]::new($env:ODIO_SHM,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]'ReadWrite,Delete');$m=[IO.MemoryMappedFiles.MemoryMappedFile]::CreateFromFile($fs,[NullString]::Value,0,[IO.MemoryMappedFiles.MemoryMappedFileAccess]::Read,[IO.HandleInheritability]::None,$true);$v=$m.CreateViewAccessor(0,0,[IO.MemoryMappedFiles.MemoryMappedFileAccess]::Read);$fs.Dispose();[Console]::Out.WriteLine('ready');[Console]::In.ReadLine()|Out-Null;$v.Dispose();$m.Dispose()"
 const FAILED = /打开作品失败|Couldn’t open the book/u
 const name = STAGE_SAMPLE.name
@@ -48,7 +47,6 @@ async function openOutcome(page) {
   return { opened: false, shown: null }
 }
 
-/** releaseAfterClickMs 为空时映射段一直不放。 */
 async function heldShmOpen(context, { releaseAfterClickMs = null, locale = null } = {}) {
   await startWriting(context)
   const dataRoot = path.join(context.samplePath, '.ai-novel')

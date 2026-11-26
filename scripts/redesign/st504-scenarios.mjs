@@ -1,4 +1,3 @@
-// #504 实机场景：角色页开着时定稿一章，定稿后处理写入的角色状态不用重开作品就出现在角色页上；作者没保存的改动留着。
 import assert from 'node:assert/strict'
 
 import * as architecture from './pages/architecture.mjs'
@@ -38,7 +37,6 @@ const settled = page => page.waitForFunction(() => {
     && !document.querySelector('.stage-capsule:not([data-tone="ok"])')
 }, null, { timeout: 90_000 })
 
-/** 在页面里记下「角色状态更新」一行变成成功的时刻，与之后角色页显示新值的时刻用同一时钟。 */
 const watchCastStep = page => page.evaluate(() => {
   const done = () => [...document.querySelectorAll('[aria-label="定稿后处理"] li')]
     .some(row => row.querySelector('b')?.textContent === '角色状态更新' && row.dataset.state === 'success')
@@ -71,7 +69,6 @@ async function showEnglish(page) {
   await page.getByRole('navigation', { name: 'Settings sections' }).waitFor({ state: 'detached' })
 }
 
-/** 角色页打开后每 10 毫秒看一次新地点是否已显示，不受截图耗时影响。返回角色页打开的时刻。 */
 const watchNewLocation = page => page.evaluate(location => {
   const shown = () => [...document.querySelectorAll('.cast-grid .cast-field textarea')].some(field => field.value === location)
   const timer = setInterval(() => {

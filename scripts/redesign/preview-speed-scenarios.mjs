@@ -1,6 +1,3 @@
-// 书房预览分段计时（#702 preview-speed）。
-// 同一封面点第二次是打开，所以每次大书之间都先点样书。
-// 预算 250 ms 按 42 MB 的那份夹具定。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -19,7 +16,6 @@ const userVersion = projectPath => {
   try { return db.prepare('PRAGMA user_version').get().user_version } finally { db.close() }
 }
 
-/** contextBridge 暴露的 aiNovelAPI 不可改写，peek 的收发时刻改由主进程 handler 进出代替（两边相差约 1 ms）。 */
 const instrumentRenderer = page => page.evaluate(() => {
   const now = () => performance.timeOrigin + performance.now()
   const log = window.__previewSpeed = { clicks: [], idle: [], longtasks: [] }
@@ -82,7 +78,6 @@ async function previewOnce(page, name) {
   const start = nodeNow()
   await stage.cover(page, name).click()
   const clicked = nodeNow()
-  // 定位器等待按 Playwright 的退避间隔轮询，读完后可能再晚约 500 ms 才发现；PREVIEW_SPEED_WAIT=poll 改为每 10 ms 查一次。
   if (process.env.PREVIEW_SPEED_WAIT === 'poll') {
     await page.waitForFunction(label => document.querySelector(`section.stage-ov[aria-label="${label}"]`)?.getAttribute('aria-busy') === 'false',
       `《${name}》概览`, { polling: 10, timeout: 60_000 })
@@ -128,7 +123,6 @@ export const PREVIEW_SPEED_SCENARIOS = {
     const grant = await chooseProjectDirectoryGrant(app, page, target, 'project-open')
     const opened = await invoke(page, 'project:open', { grantId: grant.grantId }, randomUUID(), null)
     assert.equal(opened.success, true, opened.error)
-    // 打开时当前构建可能已把它升级；默认换回夹具原样（库版本 10），PREVIEW_SPEED_UPGRADED=1 时保留升级后的库。
     await context.restart({ beforeLaunch: () => {
       if (process.env.PREVIEW_SPEED_UPGRADED === '1') return
       fs.rmSync(path.join(target, '.ai-novel'), { recursive: true, force: true })
@@ -170,7 +164,6 @@ function breakSample(databasePath, mode) {
     try { db.exec(`PRAGMA user_version = ${db.prepare('PRAGMA user_version').get().user_version + 1}`) } finally { db.close() }
     return
   }
-  // 先并回 WAL，否则改动落不到主库；页头写坏 integrity_check 一定会报。
   const db = new DatabaseSync(databasePath)
   db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
   const { page_size: pageSize } = db.prepare('PRAGMA page_size').get()

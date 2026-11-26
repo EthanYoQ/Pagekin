@@ -1,11 +1,8 @@
-// 新外壳场景用的示例作品「灯塔」：12 章全部有蓝图，1、2 章定稿，3 章已审稿待修稿，4 章是草稿，其余待写。
-// 与旧外壳基线的 SAMPLE 分开，基线截图不受影响。
 import { countDraftUnits } from '../../src/shared/draft-units.ts'
 
 export const STAGE_SAMPLE = Object.freeze({
   name: '灯塔',
   totalChapters: 12,
-  // 新外壳写作此章按设定里的每章字数写（RD-7 起不再在写作时填字数）；夹具模型每次只回一段，目标定在它一次写得完的范围。
   wordsPerChapter: 100,
   titles: ['旧港', '北堤', '雾钟', '守塔人', '潮汐表', '第二盏灯', '盐霜', '沉船名录', '风暴前夜', '灯室', '回声', '归航'],
   core: {
@@ -27,7 +24,6 @@ export const STAGE_SAMPLE = Object.freeze({
       '林岚把纸条夹进父亲的地图里。窗外，第一盏航标灯亮了，接着是第二盏、第三盏，一路亮到她从没去过的那片海湾。',
       '楼下传来守塔人的咳嗽声。她忽然意识到，从她进门到现在，他一次也没有问过她为什么来。',
     ].join('\n\n'),
-    // 已审稿看的是审稿记录而不是稿状态。当前版本不再把稿设为 reviewed，第 3 章保留它来代表旧版本升级上来的数据，并带一份审稿。
     review: JSON.stringify({ summary: '线索推进清楚，有一处时间对不上。', items: [
       { category: '连续性', severity: 'warning', description: '第 1 章写钟声早了一刻，这里又写潮水没有变化，两处要对上。', quote: '潮水却没有任何变化' },
       { category: '措辞', severity: 'pass', description: '语言自然。' },
@@ -37,11 +33,9 @@ export const STAGE_SAMPLE = Object.freeze({
       '「你父亲也问过钟的事。」他说完这句话，就再也没有开口。',
     ].join('\n\n') },
   },
-  /** 第 1 章定稿后从版本历史回退出的新草稿。 */
   reverted: '林岚第二次走下旧港的石阶时，潮水还没有退。她把地图折起来塞进口袋，决定先去找那个守塔人。',
 })
 
 export const stageChapterTitle = number => STAGE_SAMPLE.titles[number - 1]
 
-/** 定稿导入会用 countDraftUnits 核对字数，不一致就拒绝，所以预置数据直接用同一个函数计数。 */
 export const countUnits = countDraftUnits

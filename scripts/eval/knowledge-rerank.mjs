@@ -25,12 +25,10 @@ const SILICONFLOW = { provider: "siliconflow", baseUrl: "https://api.siliconflow
 const EMBEDDING_MODEL = "BAAI/bge-m3"
 const GROUPS = { fts: { retrieval: "fts" }, vector: { retrieval: "vector" } }
 
-// 块 id 每次导入都随机，跨运行比较会混入召回差异，所以重排只和同一次运行、同一组候选的原序比。
 const RERANKERS = {
   identity: { model: null, rank: async (_query, candidates) => identityRank(candidates, FINAL) },
   "bge-reranker-v2-m3": {
     model: "BAAI/bge-reranker-v2-m3",
-    // 评估显式打开自动复用，借检索档案的同一端点和 Key；生产默认关闭。
     rank: async (query, candidates, production) => {
       const config = production.resolveRerankConfig({ defaultRerankModelId: undefined, models: [], embedding: embeddingModel(GROUPS.vector), autoReuseEmbedding: true })
       if (config.kind === "none") fail(`重排没有配置：${config.reason}`)
@@ -121,7 +119,6 @@ async function loadFixture() {
   }
 }
 
-/** 与 generate-draft.command.ts 拼查询的规则一致。 */
 function buildQuery(chapterInfo) {
   const hint = chapterInfo.knowledgeQueryHint?.trim() ?? ""
   return [hint, chapterInfo.title, chapterInfo.keyEvents, chapterInfo.characters.join(" ")].filter(Boolean).join(" ")
@@ -153,7 +150,6 @@ async function bundleProduction(workDir) {
     bundle: true,
     platform: "node",
     format: "cjs",
-    // 生产源码在模块顶层用 import.meta.url 建 require；打成 CJS 后换成本文件的 URL。
     banner: { js: "const __bundleUrl = require(\"node:url\").pathToFileURL(__filename).href;" },
     define: { "import.meta.url": "__bundleUrl" },
     target: "node22",
@@ -170,7 +166,6 @@ function embeddingModel(group) {
   return { ...SILICONFLOW, apiKey, modelName: EMBEDDING_MODEL }
 }
 
-/** 与 knowledge-base.ts 的 embeddingSpaceFor 保持一致，否则生产代码抛 SPACE_NOT_MATCHED。 */
 function embeddingSpace(model) {
   return { modelFingerprint: `openai|${model.baseUrl.trim().replace(/\/+$/, "")}|${model.modelName.trim()}`, distanceMetric: "l2" }
 }
@@ -351,7 +346,6 @@ async function writeReceipt(outPath, value) {
   await writeFile(outPath, text, "utf8")
 }
 
-/** 全文组平分段的顺序会因块 id 随机而变，需单独标出。 */
 async function compare(basePath, otherPath, outPath) {
   const [base, other] = await Promise.all([basePath, otherPath].map(async file => JSON.parse(await readFile(file, "utf8"))))
   const [baseIds, otherIds] = [[basePath, base], [otherPath, other]].map(([file, receipt]) => {

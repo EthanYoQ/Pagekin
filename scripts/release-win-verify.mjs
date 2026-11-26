@@ -63,7 +63,6 @@ const evidencePath = join(monitorRoot, 'evidence')
 const monitorProcessPath = join(monitorRoot, 'monitor-process.json')
 const monitorScript = resolve('scripts/monitor-win-release-gate.ps1')
 const launchGateScript = resolve('scripts/release-win-launch-gate.mjs')
-// The monitor can spend five seconds draining live processes, then requires five quiet seconds.
 const MONITOR_STEP_COMPLETION_TIMEOUT_MS = 15_000
 const packageVersion = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version
 const acceptancePath = process.env.AI_NOVEL_RELEASE_EVIDENCE_ROOT
@@ -226,7 +225,6 @@ function getWindowsProcessStartTimeTicks(processId) {
   if (!/^\d+$/.test(output)) {
     throw new Error(`Invalid Windows process start identity for PID ${processId}: ${output}`)
   }
-  // .NET ticks exceed Number.MAX_SAFE_INTEGER; preserve the exact identity as text.
   return output
 }
 

@@ -179,7 +179,6 @@ async function launch(fixturePort) {
   assert.equal((await invoke(page, 'startup:get-state')).state, 'ready')
   return { app, page }
 }
-/** 从书房打开作品，再从流程脊打开第 1 章。 */
 async function openChapter(page, name) {
   await stage.dismissMigrationNotice(page)
   await stage.showLibrary(page)
@@ -187,13 +186,10 @@ async function openChapter(page, name) {
   await stage.waitForWork(page, name)
   return stage.openChapter(page, 1)
 }
-/** 单章视图的审稿侧页：已审稿的稿打开时默认展开；被运行侧页占着时从「更多操作」打开。 */
 const reviewSheet = page => page.getByRole('complementary', { name: '审稿报告' })
 const issues = page => reviewSheet(page).locator('.stage-ch-issues > .stage-ch-issue')
 const issue = (page, description) => issues(page).filter({ has: page.locator('.stage-ch-issue-text', { hasText: description }) })
 async function openReviewSheet(page) {
-  // 审稿结果读进单章视图后动作条才换成修稿按钮，「更多操作」里也才有「审稿报告」；侧页随后自动展开。
-  // 先等读完，再等侧页一会儿，最后才从菜单打开（侧页开着时菜单里没有这一项）。
   await stage.root(page).locator('.stage-ch-actions').getByRole('button', { name: /^(按 \d+ 项意见修稿|确认不修改)$/ })
     .waitFor({ state: 'visible', timeout: 30_000 })
   await reviewSheet(page).waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {})
@@ -208,13 +204,11 @@ async function issueStates(page) {
     checked: item.querySelector('input[type="checkbox"]')?.checked ?? null,
   })))
 }
-/** 章节动作条上的修稿主按钮「按 N 项意见修稿」：清单没确认或改过就先确认成新快照，再按它启动修稿。 */
 const reviseButton = (page, count) => stage.root(page).getByRole('button', { name: `按 ${count} 项意见修稿`, exact: true })
 const lastRunCard = page => runSheet.anyCard(page).filter({ hasText: /^上一次运行/ })
 const dangerToasts = page => stage.toastStack(page).locator(`${stage.LIVE_TOAST}[data-tone="danger"]`)
 const mergeView = page => stage.root(page).getByRole('region', { name: '修稿合并' })
 const originalColumns = async page => (await mergeView(page).locator('.stage-ch-hunk-col[data-kind="original"]').allInnerTexts()).join('\n').trim()
-/** 合并后若正文标签仍标未保存，按 Ctrl S 保存。 */
 async function saveIfDirty(page) {
   if (await stage.saveStatus(page).filter({ hasText: /^未保存$/ }).count() === 0) return false
   await stage.saveProse(page)
@@ -239,9 +233,6 @@ async function main() {
     sourceProject: repository, createdAt: new Date().toISOString(), ttlHours: 24,
     retainedReason: 'isolated SQLite and failure evidence for independent review',
     cleanupCommand: `Remove-Item -LiteralPath '${scratch.replaceAll("'", "''")}' -Recurse -Force` }, null, 2))
-  // 纸墨外壳里确认清单与启动修稿是同一个按钮：静态审稿项目（A03）确认时会顺带发起一次修稿。它的审稿是直接写进仓库的、没有生成记录，
-  // 主进程准备修稿时就拒绝（GENERATION_REVIEW_LINEAGE_UNPROVEN），不调用模型；A03 结束时核对夹具一次对话请求都没收到，否则在线项目的编号会整体错位。
-  // 在线项目的第 2 次请求是原样返回的空修稿（A05，先挂住，等记下正式数据再放行），第 3 次才是真正的修稿（A04）。
   const fixture = { requests: [], externalModelRequests: 0, promptBoundaries: [], candidateReviewAccepted: false,
     noopHeld: false, releaseNoop: null }
   const server = createServer(async (request, response) => {
@@ -366,7 +357,6 @@ async function main() {
     await openChapter(page, projectName)
     await openReviewSheet(page)
     assert.equal(await issues(page).count(), 3, 'the review sheet must show all seeded review issues')
-    // 点「编辑」后说明文字换成输入框，按标签（严重程度 · 分类）认这一条。
     const unverified = issues(page).filter({ has: page.locator('.stage-ch-issue-tag', { hasText: '待核实 · 来源核实' }) })
     assert.equal(await unverified.locator('.stage-ch-issue-text').innerText(), '缺失角色标识，需核对林岚返抵灯塔的记录。')
     assert.equal(await unverified.locator('.stage-ch-issue-tag').innerText(), '待核实 · 来源核实')
@@ -391,7 +381,6 @@ async function main() {
     const rejected = issue(page, '拒绝：删掉灯塔场景。')
     await rejected.locator('label.pi-check').click()
     assert.deepEqual((await issueStates(page)).map(item => item.checked), [true, false, false])
-    // 纸墨外壳没有单独的「确认审稿清单」：「按 N 项意见修稿」先把清单确认成新快照，再按它启动修稿（主进程在准备阶段就拒绝这次修稿，不调用模型）。
     await reviseButton(page, 1).click()
     const confirmedStatic = await waitForRows(projectPath, state => state.reviews.length === 2)
     const rows = confirmedStatic.reviews
@@ -409,7 +398,6 @@ async function main() {
     ])
     assert.equal(rows[1].baseDraftId, draftId)
     assert.equal(rows[1].reviewIndex, rows[0].reviewIndex + 1)
-    // 顺带发起的修稿被主进程拒绝：等它结束（运行失败或审稿侧页报错），不留进行中的运行。
     await lastRunCard(page).locator('.run-card-meta').filter({ hasText: / · 失败$/ })
       .or(reviewSheet(page).getByRole('alert')).first().waitFor({ state: 'visible', timeout: 60_000 })
     assert.equal(liveChatRequests().length, 0,
@@ -456,7 +444,6 @@ async function main() {
     await app.close(); app = null
     ;({ app, page } = await launch(fixturePort))
     await openChapter(page, liveProjectName)
-    // 「AI 审稿」拆分按钮旁的「检查维度」：这次只留剧情连贯性。
     await stage.root(page).getByRole('button', { name: '检查维度', exact: true }).click()
     const focusPopover = page.getByRole('dialog', { name: '检查维度' })
     const dimensionLabels = ['剧情连贯性', '剧情合理性', '角色状态', '前后章节串联']
@@ -483,7 +470,6 @@ async function main() {
         goalIds: parsedReview.goalReview.items.map(item => item.id), providerRequests: fixture.requests.length }, 'U12.A01')
 
     currentStep = 'U12.A05-noop-negative-control'
-    // 纸墨外壳有待合并的修稿时不能再按意见修稿（先合并或丢弃），所以先做原样返回的空修稿对照，再做真正的修稿（A04）。
     await reviseButton(page, 1).waitFor({ state: 'visible', timeout: 30_000 })
     const beforeGeneration = generationRows(liveProjectPath)
     await reviseButton(page, 1).click()
@@ -542,7 +528,6 @@ async function main() {
         externalModelRequests: fixture.externalModelRequests }, 'U12.A05')
 
     currentStep = 'U12.A04-confirmed-revision'
-    // 清单已确认、没再改：再按「按 1 项意见修稿」沿用同一份确认快照，不再追加审稿行。
     await reviseButton(page, 1).click()
     const revised = await waitForRows(liveProjectPath, state => state.revisions.length === 1
       && state.cycles[0]?.revisionStatus === 'generated')
@@ -578,7 +563,6 @@ async function main() {
     assert.equal(oldFinding[0].cycle_id, revised.cycles[0].cycleId)
     assert.deepEqual([oldFinding[0].kind, oldFinding[0].status, oldFinding[0].target_id],
       ['literary', 'unverified', null], 'the old unanchored finding cannot be a recheck positive control')
-    // 有待合并的修稿时单章视图直接摆出合并视图。
     await mergeView(page).waitFor({ state: 'visible', timeout: 30_000 })
     assert.equal(await originalColumns(page), body, 'the first comparison is not based on the source draft')
     await mergeView(page).getByRole('button', { name: '全部用修稿', exact: true }).click()
@@ -899,7 +883,6 @@ async function main() {
     currentStep = 'U12.A08-stale-source-reopen'
     ;({ app, page } = await launch(fixturePort))
     await openChapter(page, candidateProjectName)
-    // 源稿已变的修稿不能再合并：单章视图提示「有 1 份修稿不能再合并」，「查看修稿」只读打开合并视图。
     const staleNotice = stage.root(page).locator('.pi-notice').filter({ hasText: '有 1 份修稿不能再合并' })
     await staleNotice.waitFor({ state: 'visible', timeout: 30_000 })
     await staleNotice.getByRole('button', { name: '查看修稿', exact: true }).click()

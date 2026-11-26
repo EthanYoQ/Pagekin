@@ -21,14 +21,11 @@ const scriptPath = fileURLToPath(import.meta.url)
 const repositoryRoot = resolve(dirname(scriptPath), '..')
 const apiBaseUrl = 'https://api.github.com'
 
-/** The release source is deliberately not configurable by workflow inputs or CLI flags. */
 export const OFFICIAL_UPDATE_REPOSITORY = Object.freeze({
   owner: 'EthanYoQ',
   repo: 'AI-Novel-Writer',
 })
 
-// A cold GitHub Windows runner spends around 15 seconds compiling the monitor's
-// native Job Object helper before it can publish `ready`.
 export const WINDOWS_RELEASE_MONITOR_READY_TIMEOUT_MS = 60_000
 export const WINDOWS_UPDATE_RUNNER_COMMAND = 'pwsh.exe'
 const LEGACY_UPDATE_BRIDGE_FIRST_NATIVE_SILENT_SOURCE_TAG = 'v0.7.0'
@@ -54,10 +51,6 @@ function wait(milliseconds) {
   return new Promise(resolvePromise => setTimeout(resolvePromise, milliseconds))
 }
 
-/**
- * Inputs must name a final release only. We normalize an optional historical
- * v-prefix but never accept a ref, a URL, a prerelease, or build metadata.
- */
 export function normalizeFinalReleaseTag(value, label) {
   assert(
     typeof value === 'string' && /^(?:v)?\d+\.\d+\.\d+$/.test(value),
@@ -80,15 +73,6 @@ function compareFinalVersions(left, right) {
   return 0
 }
 
-/**
- * The v0.5/v0.6 updater starts an assisted NSIS wizard because it calls
- * quitAndInstall(false, false). This test-only bridge is deliberately
- * unavailable once v0.7.0 is the source: v0.7.0 ships the native silent
- * invocation and must prove that behavior without a harness substitution.
- *
- * All installer metadata is copied from the digest-authenticated release plan;
- * callers cannot select a different repository, asset, or pending path.
- */
 export function createLegacyUpdateBridgePlan(plan, { localAppData = process.env.LOCALAPPDATA } = {}) {
   const record = assertRecord(plan, 'release plan')
   const source = assertRecord(record.from, 'release plan from')
@@ -130,11 +114,6 @@ export function createLegacyUpdateBridgePlan(plan, { localAppData = process.env.
 
 const CREDENTIAL_ENVIRONMENT_NAME = /TOKEN|SECRET|KEY|PASSWORD/i
 
-/**
- * Every child, down to the installed app under test, gets this environment:
- * the app must check for updates anonymously like a real user and never see
- * the workflow token that authenticates this script's own API requests.
- */
 export function childProcessEnvironment(additions = {}, environment = process.env) {
   const scrubbed = Object.fromEntries(
     Object.entries(environment).filter(([name]) => !CREDENTIAL_ENVIRONMENT_NAME.test(name)),
@@ -289,11 +268,6 @@ async function verifyOfficialRelease({ tag, release, fetcher, evidenceRoot, labe
   }
 }
 
-/**
- * Fetches only the fixed official repository, validates formal Releases and
- * their digest-authenticated update assets, then persists a no-secret plan for
- * the Windows UI runner. `fetcher` is injectable solely for unit tests.
- */
 export async function createOfficialUpdatePlan({
   fromTag,
   expectedTag,
@@ -372,7 +346,6 @@ function usage() {
   ].join(' ')
 }
 
-/** Public CLI seam: no repository, URL, installer, or version-source override exists. */
 export function parseWindowsInAppUpdateE2eCli(argv) {
   const [command, ...options] = argv
   if (command !== 'prepare' && command !== 'run') throw new Error(usage())

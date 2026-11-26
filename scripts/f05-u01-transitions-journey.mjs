@@ -60,7 +60,6 @@ async function invoke(page, channel, ...args) {
 }
 const productInputs = ['src', 'electron', 'public', 'build', 'package.json', 'pnpm-lock.yaml', 'vite.config.ts', 'tsconfig.json', 'electron-builder.json5']
 
-/** 安装包来源：打包之后产品输入没有再改（用例目录除外），两个哈希对得上。旧外壳时期的历史回执只记录，不再要求。 */
 function provenance() {
   const prior = fs.existsSync(priorPath) ? JSON.parse(fs.readFileSync(priorPath, 'utf8')) : null
   const testedSha = packageSourceSha
@@ -108,7 +107,6 @@ async function quit(app) {
     { code: 0, signal: null })
 }
 
-/* 纸墨外壳的书房：开始一栏有「新建作品」「打开作品」；书架上点封面只预览，概览里的「打开《书名》」才打开；当前作品在书房里仍是当前作品。 */
 async function home(page) {
   await stage.waitForStage(page)
   await stage.dismissMigrationNotice(page)
@@ -119,13 +117,11 @@ async function open(page, name) {
   await stage.openFromLibrary(page, name)
   await stage.waitForWork(page, name)
 }
-/** 预览这本书，再点概览里的「打开《书名》」；当前作品有未保存的修改时，随后出现处理未保存内容的确认。 */
 async function requestOpen(page, name) {
   await home(page)
   await stage.previewBook(page, name)
   await stage.overview(page, name).getByRole('button', { name: `打开《${name}》`, exact: true }).click()
 }
-/** 书房里用书的更多操作「回到作品」回到当前作品。 */
 async function backToWork(page, name) {
   await home(page)
   await stage.bookMenu(page, name, '回到作品')
@@ -162,7 +158,6 @@ function verifyNativeProjectGrants(calls) {
     return { purpose, senderId: choice.senderId, opaqueGrant: true, consumerMatched: true, projectId }
   })
 }
-/** 设定页的核心大纲是旧「小说配置」的创作想法；第 1 章正文在流程脊章节列表里打开。 */
 async function assertProjectFacts(page, projectPath, config, body) {
   assert.equal((await invoke(page, 'project:get-runtime-context')).activeProjectPath, projectPath)
   await stage.stageButton(page, '设定').click()
@@ -330,7 +325,6 @@ async function main() {
       const beforeA = dbFacts(aDbPath)
       const beforeB = dbFacts(bDbPath)
       const bProjectHash = hash(path.join(projects.b, '.ai-novel', 'project.json'))
-      // 纸墨外壳里小说拆解在作品菜单的「小说拆解与仿写…」，打开的是同一个导入对话框。
       const openAuthorDialog = async () => {
         await stage.openWorkMenuItem(page, names.a, '小说拆解与仿写…')
         const dialog = page.getByRole('dialog')
@@ -544,7 +538,6 @@ async function main() {
     await stage.previewBook(page, names.a)
     const previewA = stage.overview(page, names.a)
     assert.equal(await previewA.getByRole('button', { name: `打开《${names.a}》`, exact: true }).isVisible(), true)
-    // 只读预览不露正文：等统计格出现（预览已读完）再数，免得在读取中数到 0
     await previewA.getByLabel('统计', { exact: true }).waitFor({ state: 'visible' })
     assert.equal(await previewA.locator('blockquote').count(), 0, 'read-only preview exposed draft body')
     assert.equal((await invoke(page, 'project:get-runtime-context')).activeProjectPath, projects.b, 'preview switched the active project')
@@ -659,7 +652,6 @@ async function main() {
       await waitForOpenGate(session.app, 'aHeld')
       assert.equal((await invoke(page, 'project:get-runtime-context')).activeProjectPath, projects.a,
         'held A open did not commit in main process')
-      // A 还没回包时 B 仍是当前作品；书房里当前作品的按钮是「继续写作」，不会再打开一次，所以从 Ctrl K 重新打开 B，发出更新的打开请求。
       const newerReply = openReply()
       await stage.openFromPalette(page, names.b)
       await waitForOpenGate(session.app, 'bCommitted')
@@ -743,7 +735,6 @@ async function main() {
       window.webContents.setZoomFactor(1)
       return { windowSize: window.getSize(), contentSize: window.getContentSize(), zoomFactor: window.webContents.getZoomFactor() }
     })
-    // 纸墨书房里删除作品在当前作品封面的更多操作里，确认时要输入作品名。
     const deleteDialog = session.page.getByRole('dialog', { name: `删除《${names.b}》？` })
     const requestDelete = async () => {
       await home(session.page)
@@ -772,7 +763,6 @@ async function main() {
     pass('stage-delete-cancel', 'U01.A12', 'the current-book delete confirmation cancelled without changing B identity, configuration or draft')
 
     currentStep = 'U01.A12-denied'
-    // 用系统目录里的 whoami.exe：从 Git Bash 启动时 PATH 里先找到的是 coreutils 的 whoami，不认 /user。
     const whoami = path.join(process.env.SystemRoot || process.env.windir, 'System32', 'whoami.exe')
     const sid = execFileSync(whoami, ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' }).match(/"(S-1-[\d-]+)"\s*$/)?.[1]
     assert(sid, 'Windows user SID unavailable for the isolated ACL test')

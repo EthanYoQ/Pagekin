@@ -117,7 +117,6 @@ foreach($unit in $Target.ToCharArray()) {
   $keys.Add([NativePickerInput]::Key(0,[uint16][char]$unit,6))
 }
 if([NativePickerInput]::Send($keys.ToArray()) -ne $keys.Count){ throw 'Unicode SendInput incomplete' }
-# SendInput is queued; poll until the dialog has consumed it instead of reading after a fixed delay.
 $deadline = [DateTime]::UtcNow.AddSeconds(5)
 do {
   Start-Sleep -Milliseconds 100

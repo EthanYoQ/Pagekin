@@ -8,7 +8,6 @@ const median = values => {
   const middle = Math.floor(sorted.length / 2)
   return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2)
 }
-/** 操作的主读数：打开取最后一个标记（正文可交互），定稿章同时报正文与后处理卡片的差，模型操作取 toFirstRequestMs 与 totalMs，争用取处理函数耗时与期间探针最慢的一次。 */
 function readings(record) {
   const { ms } = record
   if (record.handlerMs !== undefined) return { handlerMs: record.handlerMs, baselineMaxMs: record.baseline?.maxMs, duringMaxMs: record.during?.maxMs }

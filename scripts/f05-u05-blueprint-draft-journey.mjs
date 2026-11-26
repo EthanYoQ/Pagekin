@@ -105,13 +105,11 @@ async function blueprintPage(page) {
   await assertStage(page, 'blueprint-page')
   await blueprint.open(page)
 }
-/** 收起运行侧页：运行开始时它会自动展开，收起后才能用「展开了」判断下一次运行已经开始。 */
 async function closeRunSheet(page) {
   if (!await runSheet.sheet(page).isVisible()) return
   await runSheet.sheet(page).getByRole('button', { name: '收起运行侧页' }).first().click()
   await runSheet.sheet(page).waitFor({ state: 'hidden' })
 }
-/** 大纲没写满全书时，生成蓝图前会先问「架构还不完整」；确认后照常生成。没有这一问就直接开始，运行侧页展开。 */
 async function confirmIncompleteArchitecture(page) {
   const warning = page.getByRole('dialog', { name: '架构还不完整' })
   await warning.or(runSheet.sheet(page)).first().waitFor({ state: 'visible', timeout })
@@ -120,7 +118,6 @@ async function confirmIncompleteArchitecture(page) {
   await runSheet.sheet(page).waitFor({ state: 'visible', timeout })
   return true
 }
-/** 写作前的一致性预检有提示时停下等作者处理（这里选「仅本次忽略」）；没有提示就直接开始，运行侧页展开。 */
 async function passPreflight(page, scope) {
   const ignore = scope.getByRole('button', { name: '仅本次忽略' })
   await ignore.or(runSheet.sheet(page)).first().waitFor({ state: 'visible', timeout })
@@ -129,7 +126,6 @@ async function passPreflight(page, scope) {
   await runSheet.sheet(page).waitFor({ state: 'visible', timeout })
   return true
 }
-/** 「AI 生成蓝图」里「接着生成 N 章」：已有蓝图时从下一章往后补，保留已有的。 */
 async function requestBlueprints(page, count) {
   await assertStage(page, `blueprints-${count}`)
   await closeRunSheet(page)
@@ -195,7 +191,6 @@ async function waitBatch(page, context, expectedCompleted, mode) {
   }
   throw new Error(`batch did not commit ${expectedCompleted} chapters`)
 }
-/** 蓝图页的「批量创作」：写几章、每章目标字数、本次模型与写完之后的去向；自动定稿要再确认一次。 */
 async function batchDialog(page, count, mode) {
   await assertStage(page, `batch-${mode}`)
   await blueprintPage(page)
@@ -215,9 +210,7 @@ async function batchDialog(page, count, mode) {
   await passPreflight(page, dialog)
   await dialog.waitFor({ state: 'hidden', timeout })
 }
-/** 运行侧页里这次批量创作的「取消」：只有进行中的运行才有。 */
 const batchCancel = page => runSheet.sheet(page).getByRole('button', { name: /^取消「批量草稿待审/ }).first()
-/** 等运行侧页「进行中」没有运行；返回开始等之前还在跑的运行标题。 */
 async function waitNoActiveRuns(page) {
   await runSheet.openFromPalette(page)
   await runSheet.tab(page, '进行中').click()
@@ -231,7 +224,6 @@ async function waitNoActiveRuns(page) {
   }
   return initially
 }
-/** 运行侧页「历史」里标题为 title 的最近一次运行记为已完成。 */
 async function assertRunCompleted(page, title) {
   await runSheet.openFromPalette(page)
   await runSheet.tab(page, '历史').click()
@@ -240,7 +232,6 @@ async function assertRunCompleted(page, title) {
   await row.locator('.run-history-row').filter({ hasText: '已完成，' }).waitFor({ state: 'visible', timeout })
   await runSheet.tab(page, '进行中').click()
 }
-/** 定稿视图里的「定稿后处理」：每一步的名字、状态（success / pending / failed）与说明。 */
 const postProcess = page => stage.root(page).getByRole('region', { name: '定稿后处理' })
 async function waitPostProcess(page, accept, label) {
   const deadline = Date.now() + timeout
@@ -254,7 +245,6 @@ async function waitPostProcess(page, accept, label) {
   }
   throw new Error(`${label}: ${JSON.stringify(rows)}`)
 }
-/** 切到设定再回到第 1 章，定稿视图重新挂载、重读后处理记录。 */
 async function reopenChapterOne(page) {
   await stage.stageButton(page, '设定').click()
   await stage.openChapter(page, 1)
@@ -266,7 +256,6 @@ async function createConfiguredProject(app, page, name) {
   const opened = await invoke(page, 'project:open', created.projectPath, randomUUID(), null)
   assert.equal(opened.success, true, opened.error)
   const session = { projectId: created.projectId, projectPath: created.projectPath, leaseId: opened.project.sessionLease }
-  // 写作此章不再弹参数表单（UX-05），单章的目标字数取自作品设定的每章字数；合成正文约 85 字，设为下限 100，一次写完不续写。
   assert.equal((await invoke(page, 'db:project-core-update', { premise, worldbuilding, synopsis, wordsPerChapter: 100 }, created.projectPath, session)).success, true)
   const roster = await invoke(page, 'db:character-roster-read', created.projectPath, session)
   assert.equal((await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(),
@@ -315,7 +304,6 @@ async function main() {
       : fixture.mode === 'blueprint' && compact ? [Number(compact[1])] : []
     const synopsisChapterOne = prompt.includes('林岚找到地图。')
     const synopsisChapterTwo = prompt.includes('林岚核对潮汐。')
-    // 写稿先要一份短细纲（只写短细纲）再写正文：细纲照常回复、另记在 outlines，requests 只记蓝图与正文请求，挂起与失败也只作用于正文。
     if (prompt.includes('只写短细纲')) {
       fixture.outlines.push({ mode: fixture.mode, model: body.model, synopsisChapterOne, synopsisChapterTwo })
       response.writeHead(200, { 'Content-Type': 'text/event-stream' })
@@ -359,7 +347,6 @@ async function main() {
     response.write('data: {"choices":[],"usage":{"prompt_tokens":400,"completion_tokens":200,"total_tokens":600}}\n\n')
     response.end('data: [DONE]\n\n')
   })
-  // A04 的批次与请求供 A08 核对；两段各在自己的 if 里，所以提到这里声明。
   let app, page, failure, failureUi, currentStep = 'setup', context, project, exit, batch, batchRequests
   const mark = step => { currentStep = step; process.stderr.write(`${step}\n`) }
   try {
@@ -431,7 +418,6 @@ async function main() {
     await assertStage(page, 'single-draft')
     await blueprintPage(page)
     await closeRunSheet(page)
-    // 主按钮直接按蓝图与默认模型（这里就是隔离合成模型）开始写，不弹表单。
     await blueprint.writeButton(page).click()
     await passPreflight(page, blueprint.popover(page))
     const drafts = await waitDrafts(page, context, 1)
@@ -476,7 +462,6 @@ async function main() {
     assert.ok(batchRequests.some(row => row.blueprintOne && row.synopsisChapterOne && !row.synopsisChapterTwo))
     assert.ok(batchRequests.some(row => row.blueprintTwo && row.synopsisChapterTwo && !row.synopsisChapterOne))
     assert.deepEqual(batchRequests.map(row => row.responseSha256), [createHash('sha256').update(prose).digest('hex'), createHash('sha256').update(proseTwo).digest('hex')])
-    // 两章蓝图各一次；每章正文两次尝试：短细纲与正文。
     assertTrustedAttempts(context.projectPath, 2 + 2 * 2)
     await assertRunCompleted(page, '批量草稿待审 · 第 1 至 2 章')
     pass('U05.A04-batch-review', 'U05.A04', 'stage batch review froze mode/range/model/budget and persisted two distinct unfinalized drafts',
@@ -535,7 +520,6 @@ async function main() {
     const cancelRequests = fixture.requests.filter(row => row.mode === 'cancel_request')
     assert.equal(cancelRequests.length, 1)
     assert.ok(cancelRequests[0].synopsisChapterOne && !cancelRequests[0].synopsisChapterTwo)
-    // 「取消」按下后运行先进入取消中，按钮随即消失；等根动作真的记为已取消再读。
     let cancelState
     const cancelledDeadline = Date.now() + timeout
     while (Date.now() < cancelledDeadline) {
@@ -581,7 +565,6 @@ async function main() {
     assert.ok(failedBatchId, 'failed chapter run is not bound to its batch')
 
     fixture.mode = 'retry_request'
-    // 失败的批次在运行侧页「进行中」的「可恢复的内容」里，可以「继续此批次」。
     await runSheet.openFromPalette(page)
     await runSheet.tab(page, '进行中').click()
     await runSheet.recovery(page).getByRole('button', { name: '继续此批次', exact: true }).click()
@@ -611,8 +594,6 @@ async function main() {
     assert.ok(resumedBodies[1].body.includes(proseTwo) && !resumedBodies[1].body.includes(prose))
     assert.equal(fixture.requests.slice(a07RequestOffset).filter(row => row.mode === 'draft_review').length, 1,
       'next chapter was not dispatched exactly once after the failed chapter retry succeeded')
-    // 两稿进库时批次运行还在收尾；下一步要新建并打开另一部作品，先等运行侧页「进行中」清空，
-    // 否则还在跑的批次与换作品重叠（曾在 A05 开头报主进程执行上下文被销毁，失败截图里批次停在 95%）。
     const activeWhenCommitted = await waitNoActiveRuns(page)
     pass('U05.A07-failure-stops-explicit-retry-continues', 'U05.A07',
       'first-chapter HTTP 503 stopped before chapter 2; 继续此批次 in the run sheet reissued chapter 1, then continued to chapter 2',
@@ -652,7 +633,6 @@ async function main() {
       finalized = readProjectDb(context.projectPath, db => db.prepare('SELECT d.id AS draftId,d.chapter_number AS chapterNumber,d.status,o.finalization_id AS finalizationId,o.content_hash AS contentHash,o.publication_status AS publicationStatus FROM drafts d LEFT JOIN finalization_outbox o ON o.draft_id=d.id ORDER BY d.chapter_number').all())
       confirmed = await invoke(page, 'generation:read-batch', { batchId: autoBatch.batchId }, batchSession)
       autoAttempts = readAutoAttempts()
-      // postProcessComplete 只看关键后处理（入库检索与章节笔记）；角色状态建议不在其中，会在它之后才结算。
       if (finalized[0]?.publicationStatus === 'published' && confirmed.completedChapters[0]?.postProcessComplete
         && autoAttempts.some(row => row.operation === 'finalized-character-state' && row.status === 'settled')) break
       await new Promise(resolve => setTimeout(resolve, 250))

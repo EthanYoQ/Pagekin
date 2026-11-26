@@ -7,7 +7,6 @@ import { seedStageSample } from './scenarios.mjs'
 
 const closeSheet = page => runSheet.sheet(page).getByRole('button', { name: '收起运行侧页' }).first().click()
 
-/** 生成一次第 from–to 章蓝图，等它发出请求并结束（完成或失败），再收起侧页，下一次生成才能分出是否已开始。 */
 async function generate(page, fake, from, to, status) {
   const before = fake.chats.length
   await blueprint.generateRange(page, from, to)
@@ -20,7 +19,6 @@ async function generate(page, fake, from, to, status) {
   await runSheet.sheet(page).waitFor({ state: 'hidden' })
 }
 
-/** 主进程答完一次可恢复列表的读取，再等两帧交给 React 渲染。 */
 async function recoveryListed(app, page) {
   await app.evaluate(({ ipcMain }) => {
     globalThis.__i608Reads = 0
@@ -50,9 +48,6 @@ function recoveryCards(page) {
 }
 
 export const I608_SCENARIOS = {
-  /**
-   * #608：第 13–14 章蓝图生成完成；第 15–16 章连着失败两次；作者再改第 13 章标题并保存。
-   */
   'i608-recovery-pile': { model: true, shell: 'stage', setup: context => seedStageSample(context, { totalChapters: 16 }), run: async ({ app, page, fake, shoot }) => {
     await blueprint.open(page)
     fake.replyDirectoryBlueprints()

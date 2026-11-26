@@ -14,7 +14,6 @@ const AUTHOR_64K = Object.freeze({ ...FAKE_MODEL, id: 'd77-author-64k', name: '�
 
 const SENTENCES = ['港务局的档案按潮期装订，任何不在潮期里的事都会被当作没有发生过。', '北堤外的航道每逢大潮便改一次形状，老船工靠钟声而不是海图认路。',
   '灯塔由三代守塔人轮流看管，每一代都在值班簿的最后一页留下一句没人看懂的话。', '旧港的商会与港务局互不往来，账目却总在同一天对上。']
-// 只看世界观就超过作者填的 64K：主进程的输入上界按 UTF-8 字节计。
 const WORLDBUILDING_BYTES = 96 * 1024
 const longWorldbuilding = () => {
   let text = STAGE_SAMPLE.core.worldbuilding, bytes = Buffer.byteLength(text, 'utf8')
@@ -77,7 +76,6 @@ export const D77_SCENARIOS = {
     assert.deepEqual(chats, ['context-length'], `服务商拒绝后不自动重发：${chats.join('、')}`)
     return { card: text, chats }
   } },
-  // 拉取的窗口比真实窗口大、输出上限比真实窗口还大：学到的窗口落进档案，开新运行时输出上限自动收紧。
   'ctx-lease-learned-window': { model: true, shell: 'stage', setup, run: async ({ page, fake, invoke, shoot, reload }) => {
     const reported = { ...AUTHOR_64K, maxTokens: 65_536,
       capabilities: { ...AUTHOR_64K.capabilities, contextWindowTokens: 1_048_576, maxOutputTokens: 65_536 },
@@ -108,7 +106,6 @@ export const D77_SCENARIOS = {
     await shoot('ctx-lease-learned-window-settings')
     return { maxTokens, learnedWindow: stored.learnedContextWindow.tokens, storedWindow: stored.capabilities.contextWindowTokens, conflictPrompts }
   } },
-  // 手填窗口比真实窗口大：第一次超长带窗口，软件换材料重试一次，作者看不到失败，手填的数不变。
   'ctx-retry-learned-window': { model: true, shell: 'stage', setup, run: async ({ page, fake, invoke, shoot }) => {
     const large = { ...AUTHOR_64K, capabilities: { ...AUTHOR_64K.capabilities, contextWindowTokens: 1_048_576 } }
     assert.equal((await invoke(page, 'llm:save-model', large)).success, true)
@@ -125,8 +122,6 @@ export const D77_SCENARIOS = {
     await shoot('ctx-retry-learned-window')
     return { chats, storedWindow: stored.capabilities.contextWindowTokens }
   } },
-  // 模型设置的「有效输出额度」：有值时说明新开始的生成每次最多发这么多、旧运行可能按 32,768 封顶；
-  // 把作者设置和模型输出容量清成 0 后，这句改说还没有额度，不出现「为 未设置」。不保存。
   'd77-output-allowance': { model: true, shell: 'stage', setup, run: async ({ page, shoot }) => {
     await stage.openSettings(page)
     await page.getByRole('button', { name: `编辑「${AUTHOR_64K.name}」`, exact: true }).click()

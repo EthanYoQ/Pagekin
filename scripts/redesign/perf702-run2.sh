@@ -2,7 +2,6 @@
 # #702 第二轮：手动写法快照（10/50/112）交替计时；两种 112 章作品上的主进程阻塞证明（先不录、再录 profile）；AI 生成 50/200 章蓝图。
 # 用法：bash scripts/redesign/perf702-run2.sh <手动快照目录> <批量快照目录> <输出目录>
 set -euo pipefail
-# 相对路径按调用处解析，之后才 cd 到仓库根。
 hand=$(cd "$1" && pwd)
 batch=$(cd "$2" && pwd)
 out=$(mkdir -p "$3" && cd "$3" && pwd)

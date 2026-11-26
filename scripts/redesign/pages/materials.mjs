@@ -1,4 +1,3 @@
-// 作品资料导入：知识库创作资料、角色卡与参考小说。都会在确认后启动工作流。
 async function confirmSend(page) {
   await page.getByRole('button', { name: '发送并提取', exact: true }).click()
 }
@@ -15,7 +14,6 @@ export async function importCharacterCards(page, source) {
   await confirmSend(page)
 }
 
-/** 从首页「小说拆解」把参考小说导入当前作品；文件由调用方预先桩好系统打开对话框。 */
 export async function importReferenceNovelIntoCurrentProject(page, chapterCount) {
   await page.getByRole('button', { name: '小说拆解', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '小说拆解与仿写' })

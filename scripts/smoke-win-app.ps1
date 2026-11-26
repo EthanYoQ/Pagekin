@@ -107,17 +107,12 @@ function Get-AiNovelProcessTreeIds {
       $null -eq $currentParentStartTimeTicks
     )
     if ($null -eq $currentParentStartTimeTicks -and -not $isExitedRootTerminalRefresh) {
-      # ParentProcessId is only meaningful for the exact process instance.
-      # If that instance exited, ordinary polling must not guess at children.
       continue
     }
     if (
       $null -ne $currentParentStartTimeTicks -and
       [long]$currentParentStartTimeTicks -ne [long]$parent.StartTimeTicks
     ) {
-      # ParentProcessId is only meaningful for the exact process instance.
-      # If Windows reused the PID, never follow the replacement process's
-      # children into the application tree, including during terminal refresh.
       if ($RequireSuccessfulTerminalRefresh -and $parentProcessId -eq $RootProcessId) {
         throw "Could not complete terminal process lineage refresh for root PID $RootProcessId because Windows reused its PID."
       }
@@ -128,8 +123,6 @@ function Get-AiNovelProcessTreeIds {
         $children = @(& $ProcessChildrenProvider $parentProcessId)
       }
       elseif ($RequireSuccessfulTerminalRefresh) {
-        # A terminal refresh is a proof obligation: an unavailable CIM query is
-        # not evidence that the exited root had no descendants.
         $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $parentProcessId" -ErrorAction Stop)
       }
       else {
@@ -147,9 +140,6 @@ function Get-AiNovelProcessTreeIds {
         $childStartTimeTicks = ([DateTime]$child.CreationDate).ToUniversalTime().Ticks
       }
       catch {
-        # A child without a trustworthy creation time cannot be proven to belong
-        # to this process instance. This avoids following a stale parent PID after
-        # Windows reuses that PID for a newer application process.
         continue
       }
       if ($childStartTimeTicks -lt [long]$parent.StartTimeTicks) {
@@ -170,8 +160,6 @@ function Get-AiNovelProcessTreeIds {
 }
 
 function Get-AiNovelTopLevelWindowSnapshot {
-  # GetProcessById 每调一次都枚举全机进程；按窗口逐个查时，几百个窗口乘几百个进程要几秒，
-  # 发布门禁监视器每轮都拍快照，会慢到步骤完成超时。所以先取一次进程名表，表里没有的（之后才启动的）再单独查。
   $processNames = @{}
   foreach ($process in [System.Diagnostics.Process]::GetProcesses()) {
     $processNames[[int]$process.Id] = $process.ProcessName
@@ -273,7 +261,6 @@ function Test-AiNovelVisibleMainWindow {
   if ([string]::IsNullOrWhiteSpace($title)) {
     return $false
   }
-  # 1.3.0 之后窗口标题改为「书童 Pagekin」；升级测试里的旧版本仍用旧标题，两种都认。
   foreach ($productTitle in @('书童', 'Pagekin', 'AI小说作家', 'AI Novel Writer')) {
     if ($title.IndexOf($productTitle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
       return $true
@@ -472,7 +459,6 @@ function Wait-AiNovelPostExitQuietPeriod {
     Start-Sleep -Milliseconds 100
   }
 
-  # A final snapshot closes the gap between the last polling interval and acceptance.
   $LastWindowSnapshot.Value = @(& $SnapshotProvider)
   $newErrorWindows = @(Get-AiNovelNewErrorWindows `
     -BaselineIdentities $BaselineIdentities `
@@ -560,8 +546,6 @@ function Test-AiNovelHistoricalProcessIdentity {
     return $sameIdentity
   }
   catch {
-    # The exact tracked process has exited. Keeping its PID + creation-time pair
-    # lets a delayed WerFault command line still be attributed to the product.
     return $true
   }
 }
@@ -661,9 +645,6 @@ function Assert-AiNovelProcessTreeExited {
       -not $terminalLineageRefreshed -and
       -not (Test-AiNovelTrackedProcessAlive -ProcessId $RootProcessId -StartTimeTicks $StartTimeTicks)
     ) {
-      # Do not accept an empty historical set merely because the root exited
-      # between ordinary child scans. This one strict refresh is deliberately
-      # before the alive=0 success branch below.
       Add-AiNovelTrackedProcessTree `
         -RootProcessId $RootProcessId `
         -ProcessIds $ProcessIds `
@@ -936,8 +917,6 @@ function Get-AiNovelInstalledVersion {
   return [pscustomobject]@{ productVersion = $productVersion; packageVersion = $packageVersion }
 }
 
-# 安装包产品名（exe 与卸载程序的文件名）。1.3.0 之后由 AI小说作家 改为书童（ADR-0022）：
-# 本次构建用第一个，升级测试里的旧版本用第二个。名单与 scripts/product-identity.mjs 一致。
 function Get-AiNovelProductNames {
   return @('书童', 'AI小说作家')
 }
@@ -950,7 +929,6 @@ function Get-AiNovelProductUninstallerNames {
   return @(Get-AiNovelProductNames | ForEach-Object { "Uninstall $_.exe" })
 }
 
-# 安装目录或解包目录里实际存在的 exe：新名优先；都不存在时返回新名路径，由调用方报缺失。
 function Resolve-AiNovelProductExecutable {
   param([Parameter(Mandatory = $true)][string]$Directory)
 
@@ -1121,7 +1099,6 @@ try {
     if ([string]::IsNullOrWhiteSpace($VelaHome)) {
       throw 'Legacy project-open proof requires an isolated VelaHome.'
     }
-    # v0.2.5 predates AI_NOVEL_VELA_HOME and derives .vela from os.homedir().
     $env:USERPROFILE = $VelaHome
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
     $listener.Start()
@@ -1155,9 +1132,6 @@ try {
       }
     }
     else {
-      # The root can create a child between normal polls and then exit. Refresh
-      # its historical lineage once, fail closed if that query is unavailable,
-      # and retain any live child for diagnostics and cleanup.
       Add-AiNovelTrackedProcessTree `
         -RootProcessId $process.Id `
         -ProcessIds $appProcessIds `
@@ -1201,7 +1175,6 @@ try {
       -Visible ($visibleMainWindow.Count -gt 0) `
       -NowUtc $nowUtc
     if ($visibleMainWindow.Count -gt 0 -and $null -eq $healthyObservationDeadline) {
-      # The full health interval starts only after the real product main window first appears.
       $healthyObservationDeadline = $nowUtc.AddSeconds($ObservationSeconds)
     }
     $shouldProbeLegacyProject = (
@@ -1228,7 +1201,6 @@ try {
     Start-Sleep -Milliseconds 100
   }
 
-  # Acceptance requires the real product window to remain visible in the final snapshot.
   $lastWindowSnapshot = @(Get-AiNovelTopLevelWindowSnapshot)
   $liveObservedProcessIds = Get-AiNovelLiveTrackedProcessIds -ProcessIds $observedProcessIds -StartTimeTicks $observedProcessStartTimeTicks
   $liveAppProcessIds = Get-AiNovelLiveTrackedProcessIds -ProcessIds $appProcessIds -StartTimeTicks $appProcessStartTimeTicks

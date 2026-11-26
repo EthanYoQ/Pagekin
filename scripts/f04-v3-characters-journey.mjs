@@ -155,7 +155,6 @@ async function closeAppBounded(app) {
   catch (error) { throw new Error(`ELECTRON_CLOSE_FAILED pid=${pid}: ${error?.message}`) }
 }
 
-/* 纸墨外壳的角色名单：从书房打开作品，架构阶段「角色名单」一节进入；左边名单、右边档案。 */
 async function openProject(page) {
   await stage.dismissMigrationNotice(page)
   await stage.showLibrary(page)
@@ -174,7 +173,6 @@ const castRow = (page, characterId) => arch.castRoster(page).locator(`[data-char
 const rosterIds = page => arch.castRoster(page).locator('[data-character-id]')
   .evaluateAll(rows => rows.map(row => row.getAttribute('data-character-id')))
 const profileField = (page, label) => stage.root(page).getByLabel(label, { exact: true })
-/** 当前状态各字段标签旁的来源：定稿派生、作者输入等。 */
 const fieldSource = (page, label) => stage.root(page).locator('.cast-field')
   .filter({ has: page.getByText(label, { exact: true }) }).locator('.cast-field-hint')
 const profileAvatar = page => stage.root(page).locator('img.cast-profile-avatar')
@@ -183,13 +181,11 @@ async function showProfileView(page, name) {
   const button = stage.root(page).getByRole('group', { name: '档案视图' }).getByRole('button', { name, exact: true })
   if (await button.getAttribute('aria-pressed') !== 'true') await button.click()
 }
-/** 档案有改动时写「未保存」；从它等到「已保存」，不会读到上一次保存留下的状态。 */
 async function saveCharacter(page) {
   await saveState(page, '未保存').waitFor({ state: 'visible' })
   await stage.root(page).getByRole('button', { name: '保存角色', exact: true }).click()
   await saveState(page, '已保存').waitFor({ state: 'visible', timeout: 20_000 })
 }
-/** 名单里新建一位：新草稿自动选中，填姓名后保存，等名单里出现它的稳定 ID。 */
 async function addCharacter(page, name) {
   const before = new Set(await rosterIds(page))
   await arch.castRoster(page).getByRole('button', { name: '新建角色', exact: true }).click()
@@ -203,13 +199,11 @@ async function addCharacter(page, name) {
   assert(id, `stable ID missing for ${name}`)
   return id
 }
-/** 运行侧页：这次定稿进了「历史」（成功或失败都算结束），「进行中」里没有别的运行。 */
 async function waitRunsQuiet(page, title) {
   await runSheet.openFromPalette(page)
   await runSheet.tab(page, '历史').click()
   const history = page.getByRole('list', { name: '运行历史' })
   await history.locator('.run-history-title').filter({ hasText: new RegExp(`^${title}$`) }).first().waitFor({ state: 'visible', timeout: 90_000 })
-  // 运行历史只在「历史」页挂载，切到「进行中」之前读。
   const historyTitles = await history.locator('.run-history-title').allTextContents()
   await runSheet.tab(page, '进行中').click()
   let active = []
@@ -227,7 +221,6 @@ async function waitRunCompleted(page, title) {
     .filter({ has: page.locator('.run-history-title', { hasText: new RegExp(`^${title}$`) }) }).first()
     .locator('.run-history-row').filter({ hasText: '已完成，' }).waitFor({ state: 'visible', timeout: 90_000 })
 }
-/** 打开第 number 章，核对正文是夹具写进去的那一份，然后定稿。 */
 async function finalizeChapter(page, number, prose) {
   await stage.openChapter(page, number)
   assert((await chapterView.prose(page).innerText()).includes(prose), `chapter ${number} draft differs from fixture source`)
@@ -437,7 +430,6 @@ async function main() {
       app = launched.app
       const proposalPage = launched.page
       await openRolePage(proposalPage)
-      // 纸墨外壳把状态建议与定稿角色决策合成角色名单页顶上的一条提示条，各占一行。
       await suggestions(proposalPage).locator('li[data-kind="state"]').waitFor({ state: 'visible' })
       await suggestions(proposalPage).locator('li[data-kind="decision"]').waitFor({ state: 'visible' })
       steps.push({ stepId: currentStep, actionId: 'U09.A06', outcome: 'PASS',
@@ -624,7 +616,6 @@ async function main() {
         `【大纲】${importNames[0]}负责调查失踪案。`,
         `【世界观】旧港有严格的夜航禁令。`,
       ].join('\n')
-      // 提取的候选停在运行侧页「需要你确认」里，同一张运行卡片上有「取消」。
       const panel = runSheet.sheet(rolePage).getByRole('region', { name: '需要你确认' })
       const importButton = arch.castRoster(rolePage).getByRole('button', { name: '粘贴 / 导入角色卡', exact: true })
       const importSource = rolePage.getByRole('dialog').getByRole('textbox', { name: '角色卡全文' })

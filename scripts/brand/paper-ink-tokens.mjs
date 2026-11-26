@@ -15,13 +15,10 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const TOKEN_FILE = 'src/styles/paper-ink/tokens.css'
 const DOC_FILE = 'docs/brand/README.md'
-// CSS 只把这五个字符当空白；JS 的 \s 还包括不换行空格等，会让选择器校验放行改过的类名。
 const THEME_RULES = /^[ \t\n\r\f]*\.paper-ink[ \t\n\r\f]*\{([^{}]*)\}[ \t\n\r\f]*\.paper-ink\[data-theme="dark"\],[ \t\n\r\f]*\[data-theme="dark"\] \.paper-ink[ \t\n\r\f]*\{([^{}]*)\}[ \t\n\r\f]*$/
 const START = '<!-- paper-ink-tokens:start -->'
 const END = '<!-- paper-ink-tokens:end -->'
 
-// 分类与用途取自 docs/design/2026-10-11-frontend-redesign/design-system.md「令牌」表和 tokens.css 的注释。
-// 每个令牌必须恰好落进一类；新增令牌没有归类时脚本报错，提醒补上用途。
 const CATEGORIES = [
   { title: '表面', tokens: { frame: '应用底（外框）', sunken: '凹陷输入', surface: '悬浮面板', 'surface-2': '悬停与选中', paper: '正文纸面' } },
   { title: '墨色', tokens: { ink: '正文与标题', 'ink-2': '次要文字', 'ink-3': '说明文字', 'ink-4': '禁用与占位，只用于占位符、分隔与装饰' } },
@@ -54,7 +51,6 @@ function declarations(body) {
   return result
 }
 
-// 引号外的 CSS 空白折叠成一个空格，引号内原样保留；引号没闭合（值被引号里的分号截断）时返回 null。
 function normalizeValue(value) {
   if (/url\(/i.test(value) || value.includes('\\')) return null
   let out = ''

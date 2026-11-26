@@ -45,7 +45,6 @@ const receiptDir = path.join(repository, '.runtime', '.cache', 'f05-u15-original
 const scratch = path.join(process.env.LOCALAPPDATA, 'VibeCodingScratch', 'AI-Novel', `u15-original-${runId.slice(0, 8)}`)
 const roots = Object.fromEntries(['canonical', 'legacy', 'userData', 'home', 'appData', 'localAppData']
   .map(name => [name, path.join(scratch, name)]))
-// Keep the actual project root within the existing Windows native-storage path limit.
 roots.projects = scratch
 const projectName = 'U15'
 const oldToken = `oldbeacon${runId.replaceAll('-', '')}`
@@ -62,10 +61,8 @@ const pass = (stepId, assertion) => steps.push({ stepId, actionId: 'U15.A02', ou
 const invoke = (page, channel, ...args) => page.evaluate(
   ({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
 const invokeProject = (page, session, channel, ...args) => invoke(page, channel, ...args, session)
-// 纸墨外壳知识库页的文案：保存后的过期提示、只有片段的资料、显式更新检索。
 const STALE_NOTICE = '改动还没进入检索'
 const SNIPPET_ONLY_NOTICE = '完整原文不可用'
-/** 资料列表显示文件名去掉扩展名。 */
 const materialName = source => source.name.replace(/\.[^.]+$/u, '')
 let app
 let phase = 'setup'
@@ -209,8 +206,6 @@ async function main() {
     await page.screenshot({ path: path.join(receiptDir, 'v3-stale-copy.png'), fullPage: true })
     await quit()
 
-    // This second isolated document models an old chunk-only project: its indexed
-    // snippets survive, but no full-text copy exists for the UI to reconstruct.
     const snippetCopy = path.join(projectPath, '.ai-novel', 'knowledge-copies', `${sha256(snippetDocId)}.json`)
     assert(fs.existsSync(snippetCopy), 'Snippet fixture did not first have a full-text copy')
     fs.rmSync(snippetCopy)

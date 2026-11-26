@@ -9,7 +9,6 @@ import { STAGE_SHELL } from './redesign/pages/stage.mjs'
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const root = path.join(repositoryRoot, '.runtime', '.cache', 'default-startup-acceptance', randomUUID())
 const packageJson = JSON.parse(fs.readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8'))
-// RD-10 起外观只读写 v3 键；旧键（v1、v2）只读不写。两个都去掉，下次启动就从更早的主题键迁移。
 const appearanceKey = 'ai-novel-writer-appearance-v3'
 const previousAppearanceKey = 'ai-novel-writer-appearance'
 const themeKey = 'ai-novel-writer-theme'
@@ -23,7 +22,6 @@ function fixture(name) {
   fs.mkdirSync(appData, { recursive: true })
   fs.mkdirSync(legacy)
   fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name: packageJson.name, version: packageJson.version, main: 'main.cjs' }))
-  // Relocate appData before Electron derives userData, retaining the product's default profile name.
   fs.writeFileSync(path.join(directory, 'main.cjs'), `const { app } = require('electron');
 app.setPath('appData', ${JSON.stringify(appData)});
 import(${JSON.stringify(pathToFileURL(path.join(repositoryRoot, 'dist-electron', 'main.js')).href)}).catch(error => { console.error(error); app.exit(1); });

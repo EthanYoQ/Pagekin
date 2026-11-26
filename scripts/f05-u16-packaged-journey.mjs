@@ -231,11 +231,9 @@ async function runProfile(profile, endpoint) {
     assert.equal((await invoke(page, 'startup:get-state')).state, 'ready')
     steps.push({ stepId: `${profile.name}-packaged-startup`, assertion: 'isolated packaged process and ready IPC', outcome: 'PASS' })
 
-    // 纸墨外壳是唯一的外壳，不再写外观偏好；核对实际渲染出来的外壳。
     assert.equal(await stage.root(page).getAttribute('data-shell-presentation'), 'stage')
     steps.push({ stepId: `${profile.name}-stage-shell`, assertion: 'default profile rendered the paper-ink stage shell', outcome: 'PASS' })
 
-    // Setup may use IPC. The U16 action starts after V3 opens this project through its own control.
     currentStep = `${profile.name}:project-setup`
     const projectName = `U16-${profile.name}`
     const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, profile.projects)).grantId, name: projectName,

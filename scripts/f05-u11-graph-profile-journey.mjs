@@ -24,7 +24,6 @@ const narrowOnly = process.argv.includes('--v3-narrow-only')
 const avatarOnly = process.argv.includes('--v3-avatar-batch-only')
 assert([a08Only, a09Only, a12Only, a10Only, graphCoreOnly, graphRemainingOnly, narrowOnly, avatarOnly].filter(Boolean).length <= 1,
   'select only one focused journey mode')
-// 不带模式参数（或 --v3-a10-a13）时走千人名单的 A11、A12、A13；旧外壳时期按模式写死的历史安装包都换成同一组固定安装包参数。
 const option = name => process.argv.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
 const packageDir = option('package-dir') && path.resolve(option('package-dir'))
 const testedSha = option('package-source-sha')
@@ -114,7 +113,6 @@ function rosterFacts(db) {
   })
 }
 
-/* 纸墨外壳的角色名单：架构阶段「角色名单」一节的「打开角色名单」；左边名单、右边档案，档案视图里有关系图谱。 */
 async function openProject(page) {
   await stage.dismissMigrationNotice(page)
   await stage.showLibrary(page)
@@ -125,7 +123,6 @@ async function openCast(page) {
   await arch.open(page)
   await arch.openCast(page)
 }
-/** 名单底部写「N 位角色 · 第 p / P 页」。 */
 async function waitRosterCount(page, count) {
   await arch.castRoster(page).locator('.cast-roster-foot').getByText(new RegExp(`^${count} 位角色 · `)).waitFor({ state: 'visible' })
 }
@@ -136,7 +133,6 @@ async function showGraph(page) {
   await canvas.waitFor({ state: 'visible' })
   return canvas
 }
-/** 图谱里点人：档案换到这位并回到「基础设定」。 */
 async function waitProfileOf(page, name) {
   await stage.root(page).locator('.cast-profile-name').filter({ hasText: new RegExp(`^${name}$`) }).waitFor({ state: 'visible' })
   assert.equal(await profileView(page, '基础设定').getAttribute('aria-pressed'), 'true', 'graph click did not return to the profile view')
@@ -445,7 +441,6 @@ async function verifyV3Narrow(page, app, setStep) {
     }, width)
     assert.deepEqual(windowSize.contentSize, [width, 720], `${width}: native content size differed`)
     await fit.scrollIntoViewIfNeeded()
-    // 纸墨顶栏：作品菜单、搜索、保存状态、沉浸写作与窗口按钮都要露在窗口里、没被盖住；图谱控件同样。
     const layout = await page.evaluate(() => {
       const visibleBox = element => {
         const rect = element.getBoundingClientRect()
@@ -653,12 +648,10 @@ async function verifyV3Proposal(page, db, fixture, setStep) {
   const sentinelBefore = db.prepare('SELECT * FROM characters WHERE name=? AND retired=0').get(sentinelName)
   assert(sentinelBefore?.character_id, 'unrelated synthetic role was not persisted')
   assert.equal(db.prepare('SELECT count(*) FROM character_relationships').pluck().get(), 0)
-  // 旧外壳「小说配置」的创作想法是设定页的核心大纲。
   await stage.stageButton(page, '设定').click()
   await stage.setupOutline(page).fill(premise)
   await page.keyboard.press('ControlOrMeta+s')
   await stage.saveStatus(page).filter({ hasText: /^已保存$/ }).waitFor({ state: 'visible' })
-  // 架构阶段的「生成架构」只勾角色名单。
   await arch.open(page)
   if (await arch.primary(page).filter({ hasText: /生成架构/ }).count() > 0) await arch.primary(page).click()
   else {
@@ -668,7 +661,6 @@ async function verifyV3Proposal(page, db, fixture, setStep) {
   await arch.dialog(page).waitFor({ state: 'visible' })
   await arch.selectOnly(page, ['characters'])
   await arch.startGenerate(page)
-  // 候选要作者确认：运行侧页里这次运行停在「需要你确认」，同一个批量选择面板。
   await runSheet.openFromPalette(page)
   await runSheet.tab(page, '进行中').click()
   const panel = runSheet.sheet(page).getByRole('region', { name: '需要你确认' })

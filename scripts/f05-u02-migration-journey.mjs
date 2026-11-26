@@ -19,7 +19,6 @@ const asarPath = path.join(packageDir ?? '', 'resources', 'app.asar')
 const testedSha = arg('package-source-sha')
 const expectedExeSha = arg('exe-sha256')
 const expectedAsarSha = arg('asar-sha256')
-// 旧外壳时期的历史回执只在当年的机器上：有就记下，不沿用。
 const priorReceiptPath = path.join(repository, '.runtime', '.cache', 'f05-u02-migration', 'cca73e9a-b803-4ac6-9328-2148d29be65c', 'receipt.json')
 const Database = createRequire(import.meta.url)('better-sqlite3')
 const runId = randomUUID()
@@ -65,7 +64,6 @@ async function launch(roots) {
   } catch (error) { await app.close(); throw error }
 }
 
-/** v3 外观偏好（解析后）与三个旧键的原始字节。 */
 async function stored(page) {
   return page.evaluate(keys => ({
     appearance: JSON.parse(localStorage.getItem(keys.appearanceKey)),
@@ -74,7 +72,6 @@ async function stored(page) {
   }), { appearanceKey, previousKey, themeKey, shellKey })
 }
 
-/** 迁移后不阻塞：启动就绪、进入纸墨书房、没有弹窗挡住；主题落在纸墨根与文档上。 */
 async function assertOpenStage(page, theme) {
   assert.equal((await page.evaluate(() => window.aiNovelAPI.invoke('startup:get-state'))).state, 'ready')
   await stage.root(page).locator('.stage-library').waitFor({ state: 'visible' })
@@ -84,7 +81,6 @@ async function assertOpenStage(page, theme) {
   assert.equal(await page.locator('.app-skin-root, .app-skin-background-image').count(), 0, 'an image skin is still rendered')
 }
 
-/** 旧版本把图片皮肤记在全局数据的 skins/manifest.json；新版本不再读它，迁移时原样带进新数据目录留给回退。 */
 function seedLegacySkin(roots, skin) {
   const manifest = JSON.stringify({ version: 1, activeSkin: skin })
   fs.mkdirSync(path.join(roots.legacy, 'skins'), { recursive: true })
@@ -144,20 +140,15 @@ function prepareLegacyProject(name) {
   return { sourceRoot, sourceProjectId, sourceName, sourceDatabase, before: sourceFiles(sourceRoot) }
 }
 
-/**
- * 整窗截图走主进程的 capturePage：外观里的缩放改的是 Electron 原生缩放，Playwright 按页面视口截图会裁掉一角或多出空白。
- */
 async function windowShot(app, file) {
   const png = await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'))
   fs.writeFileSync(file, Buffer.from(png, 'base64'))
 }
 
-/** 顶栏保存状态。 */
 async function topStatus(page, label) {
   await stage.saveStatus(page).filter({ hasText: new RegExp(`^${label}$`) }).waitFor({ state: 'visible' })
 }
 
-/** 从书房的「导入旧项目副本」把 schema0 旧项目导成新版副本，在副本里改正文、Ctrl S 保存，再开新进程重开。 */
 async function currentProjectState(name, roots, session, source) {
   const targetParent = path.join(scratchRoot, `t${name.slice(1)}`)
   fs.mkdirSync(targetParent)
@@ -281,7 +272,6 @@ async function main() {
       assert.equal(state.theme, null)
       assert.equal(state.shell, null)
       await assertOpenStage(fresh.page, 'light')
-      // RD-10 lane 2：全新安装首次启动停在空书房。
       await stage.root(fresh.page).getByText('书架还是空的', { exact: true }).waitFor({ state: 'visible' })
       await stage.modelMissingNotice(fresh.page).waitFor({ state: 'visible' })
       screenshots.fresh = path.join(root, 'rd10-fresh.png')
@@ -289,7 +279,6 @@ async function main() {
       pass('fresh-default-stage', 'U02.A02', 'A fresh installed profile opens the empty light paper-ink library and writes only the v3 profile', 'fresh-to-stage')
     } finally { await fresh.app.close() }
 
-    // RD-10 之前的外观偏好（v1 带 writer、v2 带 classic）加旧图片皮肤：星空迁为深色，纸面迁为浅色，皮肤不再生效，旧键与旧清单原样保留。
     for (const scenario of [
       { name: 'galaxy', skin: 'anime', theme: 'dark', shot: 'rd10-migrate-galaxy.png', previous: { schemaVersion: 1, revision: 4,
         shellPreference: 'writer', colorTheme: 'galaxy', zoom: 1.2, writingFont: 'noto-serif-sc', uiFont: 'inter', origin: 'author', legacyImportCompleted: true } },
@@ -316,7 +305,6 @@ async function main() {
         assert.equal(state.previous, previousRaw, 'pre-RD-10 appearance bytes were changed')
         await assertOpenStage(session.page, scenario.theme)
         assertSkinManifestRetained(roots, manifest)
-        // 书房读完最近项目才定版面（空书房标题与模型提示），之后再截图。
         await stage.root(session.page).getByText('书架还是空的', { exact: true }).waitFor({ state: 'visible' })
         await stage.modelMissingNotice(session.page).waitFor({ state: 'visible' })
         screenshots[scenario.name] = path.join(root, scenario.shot)
@@ -335,7 +323,6 @@ async function main() {
       } finally { await session.app.close() }
     }
 
-    // 最早的版本：主题、缩放与字体在 ai-novel-writer-theme，外壳选择在 ai-novel-writer-ui-version。迁移后接着导入旧项目副本。
     for (const [name, legacyShell] of [['v1', 'v1'], ['v2', JSON.stringify({ state: { uiVersion: 'v2' }, version: 0 })]]) {
       currentStep = `${name}-legacy-keys`
       const roots = profile(name)

@@ -1,4 +1,3 @@
-// #702 章内选区生成带本章材料：续写插在选区之后；模型窗口放不下可选材料时，气泡说明没带上哪些。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 
@@ -11,13 +10,11 @@ import { STAGE_SAMPLE } from './stage-sample.mjs'
 
 const SELECTED = firstLine(STAGE_SAMPLE.drafts[4].text)
 const NEXT = '你父亲也问过钟的事'
-/** 窗口 12K、输出 4K：留给输入约 7.7K token，放不下下面这份很长的人物档案。 */
 const NARROW = Object.freeze({ ...FAKE_MODEL, id: 'edctx-narrow-12k', name: '窄窗口模型',
   capabilities: { contextWindowTokens: 12_288, maxOutputTokens: FAKE_MODEL.maxTokens, reasoning: false, structuredOutput: true, usage: true },
   capabilitySources: { contextWindowTokens: 'manual', maxOutputTokens: 'manual', reasoning: 'preset', structuredOutput: 'preset', usage: 'preset' } })
 const LONG_PERSONALITY = '寡言，记事只记潮位与钟声，从不写自己的心情；遇到想不通的事就去码头数船。'.repeat(400)
 
-/** 第 4 章蓝图写上出场人物，人物档案才会进材料；narrow 时再换窄窗口模型、把档案写长。 */
 const setup = ({ narrow }) => context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
   assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 4, title: STAGE_SAMPLE.titles[3], role: '发展', purpose: '守塔人第一次提到父亲',
     keyEvents: '林岚在守塔人屋里听到父亲也问过钟', characters: ['林岚'] }, path, session)).success, true)
@@ -41,7 +38,6 @@ async function continueFirstLine(page) {
 const editorPrompt = fake => fake.chats.at(-1).messages.map(message => message.content).join('\n')
 
 export const EDITOR_CTX_SCENARIOS = {
-  /** 续写预览后点「插入」：选中的原文还在，续写接在它后面，下一段不动。 */
   'edctx-continue-insert': { model: true, shell: 'stage', setup: setup({ narrow: false }), run: async ({ page, fake, shoot }) => {
     const toolbar = await continueFirstLine(page)
     const prompt = editorPrompt(fake)
@@ -60,7 +56,6 @@ export const EDITOR_CTX_SCENARIOS = {
     await shoot('edctx-continue-inserted')
   } },
 
-  /** 窄窗口模型：人物放不下被裁掉，气泡说明，请求里也没有它。 */
   'edctx-trimmed-hint': { model: true, shell: 'stage', setup: setup({ narrow: true }), run: async ({ page, fake, shoot }) => {
     const toolbar = await continueFirstLine(page)
     await toolbar.getByText('人物没带上：模型窗口不够').waitFor({ state: 'visible' })
@@ -69,10 +64,6 @@ export const EDITOR_CTX_SCENARIOS = {
     await shoot('edctx-trimmed-hint')
   } },
 
-  /**
-   * 112 章定稿的书，第 113 章选中开头一段点续写，量点击到主进程收到 begin（渲染层备料）、begin 本身（主进程绑定）、点击到模型收到请求。
-   * 同一个驱动配 --app-root 指向 master 构建跑对照。每会话先热身一次再量 EDCTX_RUNS 次（默认 7）。
-   */
   'edctx-perf-112': { model: true, shell: 'stage', setup: async context => {
     const { projectPath, session } = await seedLargeBook(context, 112)
     const content = chapterText(113)

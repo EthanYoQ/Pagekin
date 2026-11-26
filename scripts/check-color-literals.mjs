@@ -1,6 +1,3 @@
-// 颜色只能来自一层令牌（design-system.md 第 6 条）。扫描 src/components 与纸墨样式目录里的十六进制、rgb、hsl 字面量，
-// 除令牌文件与测试外一律不许有：没有允许清单。
-
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,10 +10,6 @@ const COLOR_LITERAL = /(?<![\w&/])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{
 
 const isTestFile = (relative) => relative.split('/').includes('__tests__') || relative.endsWith('.browser.tsx')
 
-/**
- * 去掉注释但保留换行，使行号不变。字符串里的 // 与 /* 不算注释（单双引号字符串不跨行，模板字符串可以）；
- * CSS 没有行注释，url(//…) 照常扫描。
- */
 function stripComments(source, lineComments) {
   let out = ''
   let quote = null
@@ -71,7 +64,6 @@ export function checkColorLiterals(rootDir) {
   return { violations }
 }
 
-// import.meta.url 是解析过符号链接与 junction 的真实路径，入口路径也要解析后再比，否则经链接运行时什么都不扫就退出 0
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
   const { violations } = checkColorLiterals(rootDir)

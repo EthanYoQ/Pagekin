@@ -1,5 +1,3 @@
-// #702 诊断用：只构建渲染端并输出 sourcemap 到 .runtime/perf702/sm-dist，不碰 dist/ 与 dist-electron/。
-// 代码与 pnpm build 的渲染端产物逐字相同（只多一行 sourceMappingURL），用来把 profile 里压缩后的位置映射回源码。
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'

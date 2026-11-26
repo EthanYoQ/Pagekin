@@ -105,7 +105,6 @@ async function launch() {
   return { app, page }
 }
 
-/** 角色名单页：架构阶段的「角色名单」一节进入；名单里的行带 data-character-id。 */
 async function openRosterFromArchitecture(page) {
   await arch.open(page)
   await arch.openCast(page)
@@ -203,7 +202,6 @@ async function main() {
     picker('选择角色头像', avatarFile)
     await page.getByRole('button', { name: '取消头像更改', exact: true }).waitFor({ state: 'visible' })
     await saveCharacter(page)
-    // 第一次保存留下的「已保存」可能还在，等暂存的头像提交完（「取消头像更改」消失）再读数据库
     await page.getByRole('button', { name: '取消头像更改', exact: true }).waitFor({ state: 'detached', timeout: 20_000 })
     sourceSnapshot = avatarState(project.projectPath, characterId)
     assert.equal(sourceSnapshot.character.name, characterName)
@@ -272,7 +270,6 @@ async function main() {
     await stage.dismissMigrationNotice(page)
     const reopenedRecent = await invoke(page, 'project:recent-list')
     assert.equal(path.resolve(reopenedRecent[0]?.path ?? ''), path.resolve(restoredPath), 'restored copy not persisted in recent projects')
-    // 原作品与恢复副本同名：书架按最近项目排，第一本是刚恢复的副本。
     await stage.showLibrary(page)
     await stage.openFromLibraryAt(page, projectName, 0)
     await stage.waitForWork(page, projectName)

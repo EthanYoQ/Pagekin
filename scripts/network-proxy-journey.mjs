@@ -1,4 +1,3 @@
-// 不替换主进程 fetch；远端地址用不存在的域名，只有经过代理才到得了本机假服务。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import http from 'node:http'
@@ -101,7 +100,6 @@ try {
 
   assert.deepEqual(await setProxy({ enabled: true, port: proxyPort }), { success: true })
   const on = await run('proxy on', { ...calls, ...local })
-  // undici 复用隧道，同一目标代理日志里只有一次 CONNECT。
   for (const name of ['test-connection http', 'discover-models', 'test-connection embedding', 'test-connection rerank']) {
     assert.ok(on[name].viaProxy > 0, `${name}: proxy on routes the request through the proxy`)
   }

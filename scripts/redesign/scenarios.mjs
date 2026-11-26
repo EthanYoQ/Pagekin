@@ -19,14 +19,12 @@ import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 
 export const SAMPLE = Object.freeze({ name: '灯塔', chapterNumber: 1, blueprints: [[1, '旧港'], [2, '北堤']] })
 
-/** 系统打开对话框直接返回 selected，文件夹与文件通用。 */
 async function stubOpenDialog(app, selected) {
   await app.evaluate(({ dialog }, selected) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] })
   }, selected)
 }
 
-/** 用公开 IPC 预置示例作品，然后重载，让界面从书房重新打开它。 */
 async function seedSample({ app, page, roots, invoke, reload }, { withDraft }) {
   const created = await invoke(page, 'project:create', { parentGrantId: (await chooseProjectDirectoryGrant(app, page, roots.projects)).grantId,
     name: SAMPLE.name, genre: '悬疑', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
@@ -55,7 +53,6 @@ async function seedSample({ app, page, roots, invoke, reload }, { withDraft }) {
   await openSample(page)
 }
 
-/** 从书房打开示例作品，等项目树的统一刷新结束；之前的画面随刷新进度变化。 */
 async function openSample(page) {
   await bookshelf.openProject(page, SAMPLE.name)
   await project.waitForTreeRefreshed(page, SAMPLE.blueprints.length)
@@ -82,10 +79,6 @@ async function reviewLatestDraft({ page }) {
   await runPanel.waitForWorkflowDone(page)
 }
 
-/**
- * setup 是单跑该场景时的前置；run 从前置状态走到截图状态；after 在截图后执行。
- * baseline-all 按 BASELINE_SESSIONS 串联：只跑首个场景的 setup，之后每个场景的 run 接着上一个截图点的状态。
- */
 export const SCENARIOS = {
   'new-project': { model: false, run: async ({ app, page, roots }) => {
     await stubOpenDialog(app, roots.projects)
@@ -135,7 +128,6 @@ async function assertBottomOpensOn(page, start) {
   await shell.bottomTabLabel(page, '任务').waitFor({ state: 'visible', timeout: 5_000 })
 }
 
-/** 作品文件夹里的文件（相对路径），数据库这类每次内容不同的文件只比名字。 */
 function projectFiles(root) {
   return fs.readdirSync(root, { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile())
@@ -143,19 +135,13 @@ function projectFiles(root) {
     .sort()
 }
 
-/** 去掉每次都不同的取值（标识、时间、路径），只留键与稳定的值，用来比较两边建出的清单。 */
 function stableShape(value, key = '') {
   if (Array.isArray(value)) return value.map(item => stableShape(item))
   if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(name => [name, stableShape(value[name], name)]))
   return /(Id|At)$|^(id|path)$|[Tt]ime|[Ll]ease|[Hh]ash/.test(key) ? typeof value : value
 }
 
-/**
- * 不进 baseline-all 的场景：性能测量，以及 RD-2 导航意图在旧外壳上的回归。run 的返回值写进结果的 measured。
- * nav- 场景对 trunk 与 head 各跑一次（--app-root 指向 trunk），两边都通过即行为一致。
- */
 export const EXTRA_SCENARIOS = {
-  /** 计划 RD-5 lane 1：两种外壳、trunk 与 head 各跑一次新建作品，比较作品文件夹里建出的文件。 */
   'new-project-files': { model: false, run: async ({ app, page, roots }) => {
     await stubOpenDialog(app, roots.projects)
     await bookshelf.createProject(page, SAMPLE.name)
@@ -171,7 +157,6 @@ export const EXTRA_SCENARIOS = {
   } },
   'write-latency': { model: true, setup: seedWithoutDraft, run: async ({ page }) => {
     await project.openBlueprints(page)
-    // RD-4 起旧外壳右栏默认就是 AI 输出；trunk 默认收着。只在开着时收起，两边从同一状态开始计时。
     if (await runPanel.isOpen(page)) {
       await shell.hideRunPanel(page)
       await runPanel.waitUntilClosed(page)
@@ -229,7 +214,6 @@ export const EXTRA_SCENARIOS = {
     await shell.clickRail(page, '角色')
     await assertBottomOpensOn(page, () => materials.importCharacterCards(page, '姓名：守塔人\n身份：灯塔看守，记得每一次钟声。'))
   }, after: ({ page }) => runPanel.cancelActiveRuns(page) },
-  // 卡住模型让截图停在「批量创作运行中」，与 verify/SKILL.md 的说明一致；不卡时截图可能已是完成后的画面。
   'nav-batch': { model: true, setup: seedWithoutDraft, run: async ({ page, fake }) => {
     fake.gate.hold()
     await project.openBlueprints(page)
@@ -305,7 +289,6 @@ export const EXTRA_SCENARIOS = {
 
 export const firstLine = text => text.split('\n')[0].slice(0, 16)
 
-/** 等到有请求卡在假模型的门上：截图停在运行卡住的那一步，而不是它前后某个随机时刻。 */
 export async function untilGateHolds(gate, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs
   while (gate.waiting === 0) {
@@ -314,11 +297,6 @@ export async function untilGateHolds(gate, timeoutMs = 15_000) {
   }
 }
 
-/**
- * 跑 action，等主进程里 channel 至少有一次调用在 action 开始后返回，界面也已按返回值渲染完。
- * 用于「没有 X」「只有一条 X」这类断言：等产出 X 的那次读取结束，不用固定等待。
- * 同一窗口的 IPC 按序送达：之后再发一次 IPC，它的回复到了，channel 的回复也已交给界面，再等两帧让 React 提交。
- */
 export async function afterIpc(app, page, channel, action) {
   await app.evaluate(({ ipcMain }, channel) => {
     const done = globalThis.__driveIpcDone ??= {}
@@ -339,11 +317,6 @@ export async function afterIpc(app, page, channel, action) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 }
 
-/**
- * 用公开 IPC 预置新外壳示例作品：12 章蓝图，1、2 章定稿，3 章已审稿，4 章草稿；架构四节齐全。
- * totalChapters 改规划总章数；beforeReload 在重载前再写入数据；landOnChapter3 为 false 时只等流程脊，落点由场景自己断言。
- * beforeReload 另写了蓝图时用 blueprintCount 告诉旧外壳要等项目树显示几章。
- */
 export async function seedStageSample(context,
   { totalChapters = STAGE_SAMPLE.totalChapters, beforeReload, landOnChapter3 = true, open = true, blueprintCount = STAGE_SAMPLE.titles.length } = {}) {
   const { app, page, roots, invoke, reload } = context
@@ -400,11 +373,6 @@ export async function seedStageSample(context,
   await chapter.editor(page).getByText(firstLine(STAGE_SAMPLE.drafts[3].text)).waitFor({ state: 'visible' })
 }
 
-/**
- * 示例作品第 3、4 章都在写，打开时落在最后一章在写的那章（用户决定）：示例本身落第 4 章，种子另建更后面的稿时落那一章。
- * 各场景从第 3 章开始：等任一章正文出现，不在第 3 章就切过去，再关掉其他所有标签，与原先只开着第 3 章一样。
- * 对照用的旧构建落在第 3 章，不用切。
- */
 async function moveToChapter3(page) {
   const chapter3Text = firstLine(STAGE_SAMPLE.drafts[3].text)
   const chapter3 = stage.prose(page).getByText(chapter3Text)
@@ -418,18 +386,12 @@ async function moveToChapter3(page) {
     const name = await closing.getAttribute('aria-label')
     assert.ok(name, '标签的关闭按钮带 aria-label，才能等这一个消失')
     await closing.click()
-    // 等刚点的这个标签消失，不等某个下标：关掉一个后下标会前移，旧下标的等待会立即通过。
     await stage.tabList(page).getByRole('button', { name, exact: true }).waitFor({ state: 'detached' })
   }
-  // 只剩一个标签与一个都不剩时标签条都会收起，所以还要确认留下的是第 3 章。
   await stage.tabList(page).waitFor({ state: 'detached' })
   assert.equal(await chapter3.isVisible(), true, '关掉其他标签后第 3 章仍开着')
 }
 
-/**
- * 夹具更新源：替换主进程的更新 IPC，并推一次「发现 1.2.3」。下载时先推 40% 进度，400 ms 后变为待重启；
- * 重启安装只记次数，不会真的退出。
- */
 async function stubUpdates(app) {
   await app.evaluate(({ ipcMain, BrowserWindow }) => {
     const base = { currentVersion: '1.2.2', availableVersion: '1.2.3', updateAction: 'download', releaseName: '1.2.3', isReminderDeferred: false }
@@ -458,10 +420,8 @@ async function stubUpdates(app) {
   })
 }
 
-/** 设定页保存失败时页脚的说明。 */
 const SETUP_SAVE_FAILED = '没能保存。设定还在这一页，没有丢，可以再保存一次。'
 
-/** 让主进程的 project:save 返回失败（模拟磁盘写不进去）；fail 为 false 时换回原来的处理函数。 */
 async function failProjectSaves(app, fail) {
   await app.evaluate(({ ipcMain }, fail) => {
     const handlers = ipcMain._invokeHandlers
@@ -473,7 +433,6 @@ async function failProjectSaves(app, fail) {
   }, fail)
 }
 
-/** 在主进程拦下文件名含 pattern 的代码块请求（模拟磁盘读失败）；把 pattern 清空即放行。请求都记进 log。 */
 async function blockChunks(app, pattern) {
   await app.evaluate(({ session }, initial) => {
     globalThis.__driveChunkBlock = { pattern: initial, log: [] }
@@ -488,7 +447,6 @@ async function blockChunks(app, pattern) {
   }, pattern)
 }
 
-/** 在渲染进程里计时：从点击 trigger 指向的元素到正文编辑区出现 text，单位毫秒，帧粒度。 */
 export async function msFromClickToProse(page, target, proseSelector, text, deadlineMs = 20_000) {
   const handle = await target.elementHandle()
   await page.evaluate(({ element, proseSelector, text, deadlineMs }) => {
@@ -510,13 +468,8 @@ export async function msFromClickToProse(page, target, proseSelector, text, dead
   return page.evaluate(() => window.__driveProseLatency)
 }
 
-/**
- * 文字与它实际落在的底色之间的对比度。checks 是 [选择器, 最低比值]：普通字号的文字（说明文字也算）4.5，图标等非文字元素 3；scope 是加在每个选择器前的祖先。
- * 底色沿祖先逐层叠加半透明背景求出，与画面上的颜色一致。
- */
 export async function contrastFailures(page, checks, scope = '') {
   return page.evaluate(({ checks, scope }) => {
-    // color-mix 的结果以 color(srgb r g b / a) 给出，通道是 0–1；rgb()/rgba() 是 0–255
     const parse = value => {
       const numbers = value.match(/[\d.]+/g).map(Number)
       const [r, g, b] = value.startsWith('color(') ? numbers.slice(0, 3).map(channel => channel * 255) : numbers.slice(0, 3)
@@ -563,7 +516,6 @@ const CHROME_CONTRAST = [
   ['.stage-update-title', 4.5], ['.stage-update-text', 4.5], ['.stage-library .pi-btn:not(.pi-btn--icon)', 4.5], ['.stage-library .pi-btn--icon', 3], ['.pi-notice-title', 4.5], ['.pi-notice-text', 4.5],
 ]
 
-/** 新外壳里的文字对比度：checks 默认查外壳文字，页面场景传自己的选择器。 */
 export const chromeContrastFailures = (page, checks = CHROME_CONTRAST) => contrastFailures(page, checks, '[data-shell-presentation="stage"] ')
 
 async function assertSpineMatchesSample(page) {
@@ -574,8 +526,6 @@ async function assertSpineMatchesSample(page) {
   assert.deepEqual(rows.filter(row => row.current).map(row => row.number), [3], '预置后停在第 3 章')
 }
 
-/** 新外壳场景只在 head 上跑（trunk 没有新外壳）；chapter-switch 两种外壳都能跑，用于性能对照。 */
-/** 设置页里改了模型名、没有保存：作品里从流程脊、书房里从顶栏的设置按钮打开。 */
 async function dirtyModelName(page) {
   if (!(await stage.settingsNav(page).count())) {
     if (await stage.spine(page).count()) await stage.openSettings(page)
@@ -592,7 +542,6 @@ async function dirtyModelName(page) {
 
 const discardDialog = page => page.getByRole('dialog', { name: '放弃未保存的修改？' })
 
-/** 离开设置页的确认出现；选「继续编辑」后设置页还在、输入还在。 */
 async function keepEditing(page, entry, context) {
   await discardDialog(page).waitFor({ state: 'visible' })
   assert.equal(await stage.settingsNavElement(page).isVisible(), true, `${entry}：确认出现时设置页还在`)
@@ -614,10 +563,6 @@ async function pickFromPalette(page, query, option) {
   await stage.palette(page).getByRole('option', { name: option }).first().click()
 }
 
-/**
- * 等打开作品整个做完：落到该写的那一章，并且收尾的资源载入也结束了。打开作品收尾时还会回到作品一次，
- * 没等它就回书房，晚到的这一下会再次离开书房。
- */
 function bookOpened(page) {
   const loaded = page.waitForEvent('console', { predicate: message => message.text().includes('项目数据加载完成'), timeout: 30_000 })
   // 场景在等它之前抛错时没人接这个拒绝，未处理的拒绝会让 Node 直接退出、诊断 JSON 写不出来
@@ -628,7 +573,6 @@ function bookOpened(page) {
   }
 }
 
-/** 书房里当前作品的概览：「继续写作」回到作品。 */
 async function continueBook(page) {
   await stage.overview(page, STAGE_SAMPLE.name).getByRole('button', { name: /^继续写作/ }).click()
   await stage.spine(page).waitFor({ state: 'visible' })
@@ -939,18 +883,12 @@ export const STAGE_SCENARIOS = {
     await stage.saveStatus(page).filter({ hasText: '已保存' }).waitFor({ state: 'visible' })
     assert.equal(await stage.setupFoot(page).getByRole('alert').count(), 0, '再保存成功后失败说明消失')
   } },
-  /**
-   * 主进程的错误码在显示处按界面语言说明（#474）。先试把打开着的作品文件夹改名（真实触发，结果记进 measured.rename）；
-   * 改不动时让 kb:clear-all 返回会话失效码（与作品切换后守卫拒绝的返回同形）。中文、英文各从知识库清空一次并截图：
-   * 提示是登记的说明，不出现裸错误码。
-   */
   'stage-error-code-display': { model: false, shell: 'stage', setup: context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
     const imported = await invoke(page, 'kb:import-planning-text', '灯塔建于旧港北岸，守塔人每晚记录潮汐。', '灯塔资料.txt', path, session)
     assert.equal(imported.success, true, imported.error)
   } }), run: async context => {
     const { app, page, invoke, reload, shoot } = context
     const measured = {}
-    // 新建作品：选好上级文件夹后它被换成同名的新文件夹，主进程按授权目标已变化拒绝（#478 CodeRabbit 提的路径）。
     const parent = path.join(context.roots.projects, 'replaced-parent')
     fs.mkdirSync(parent)
     const grant = await chooseProjectDirectoryGrant(app, page, parent)
@@ -959,7 +897,6 @@ export const STAGE_SCENARIOS = {
     const created = await invoke(page, 'project:create', { parentGrantId: grant.grantId, name: '雾岛', genre: '悬疑', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
     measured.createAfterParentReplaced = created.success ? 'created' : created.error
     assert.equal(measured.createAfterParentReplaced, 'Error: EXTERNAL_FILE_GRANT_TARGET_CHANGED', '主进程按授权目标已变化拒绝新建')
-    // 只记录真实触发能否成立；改得动也立刻改回，下面一律用替换的返回，画面每次相同。
     try {
       fs.renameSync(context.samplePath, `${context.samplePath}-moved`)
       fs.renameSync(`${context.samplePath}-moved`, context.samplePath)
@@ -1016,7 +953,6 @@ export const STAGE_SCENARIOS = {
     }
     await stage.showSettingsPage(page, '项目备份')
     await stage.root(page).getByText('WebDAV', { exact: true }).waitFor({ state: 'visible' })
-    // RD-V 起新外壳里的旧按钮变体换成纸墨按钮，旧 default 成了 pi-btn--primary
     const solid = await stage.legacySettings(page).locator(stage.PRIMARY_BUTTON).evaluateAll(buttons => buttons.map(button => button.textContent.trim()))
     assert.deepEqual(solid, ['导出本地存档'], '项目备份页只有一个实心主按钮')
   } },
@@ -1093,7 +1029,6 @@ export const STAGE_SCENARIOS = {
       ['命令面板新建作品', () => pickFromPalette(page, '新建作品', /^新建作品$/), () => closeDialog(page, '新建作品')],
       ['命令面板拆解与仿写', () => pickFromPalette(page, '小说拆解与仿写', /^小说拆解与仿写$/), () => closeDialog(page, /小说拆解/)],
     ]
-    // arrived 为空的几项会打开作品，等打开整个做完再进下一项。
     for (const [name, go, arrived] of entries) {
       if (await stage.spine(page).count()) await stage.backToLibrary(page, STAGE_SAMPLE.name)
       await dirtyModelName(page)
@@ -1121,10 +1056,6 @@ export const STAGE_SCENARIOS = {
     await runSheet.waitForRunDone(page)
     await stage.waitForProse(page, firstLine(FIXTURE_PROSE))
   } },
-  /**
-   * RD-10 之前的外观配置只在旧键里：去掉 v3 键、写入旧键后重载，按旧主题迁成深色或浅色，不阻塞启动，旧键逐字节不变（供回滚）。
-   * galaxy 与 paper 各走一遍，外壳偏好写成旧外壳也照样进纸墨外壳。
-   */
   'stage-migrate': { model: false, run: async ({ page, reload }) => {
     const previousKey = 'ai-novel-writer-appearance'
     const v3Key = 'ai-novel-writer-appearance-v3'
@@ -1178,10 +1109,6 @@ export const STAGE_SCENARIOS = {
     await page.keyboard.press('Escape')
     await page.getByRole('dialog', { name: '导出项目' }).waitFor({ state: 'hidden' })
   } },
-  /**
-   * 应用菜单里有 CommandOrControl+W 的「关闭」，页面没拦下的 Ctrl W 会关窗。驱动注入的按键到不了菜单快捷键，
-   * 所以这里断言页面把 Ctrl W 拦下了（defaultPrevented），并确认应用仍在。
-   */
   'stage-close-key': { model: false, shell: 'stage', run: async ({ app, page }) => {
     await shell.firstInteractiveControl(page).waitFor({ state: 'visible' })
     await page.evaluate(() => {
@@ -1215,7 +1142,6 @@ export const STAGE_SCENARIOS = {
       assert.deepEqual({ ...(await stage.landing(page)), blueprint: (await stage.stageStates(page)).blueprint },
         { crumbs: ['正文', '第 4 章'], empty: false, blueprint: 'done' }, '规划 100 章只写了 12 章蓝图时，蓝图已完成，落点仍是正文第 4 章')
     } },
-  /** 第 1 章回到了草稿，但最后一章在写的仍是第 4 章，所以打开作品落在第 4 章；从章节列表点第 1 章打开的是这份新草稿。 */
   'stage-revert-after-final': { model: false, shell: 'stage',
     setup: context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
       const reopened = await invoke(page, 'chapter:reopen', { chapterNumber: 1 }, path, session)
@@ -1256,7 +1182,6 @@ export const STAGE_SCENARIOS = {
     await page.keyboard.press('Escape')
     await stage.spine(page).waitFor({ state: 'visible' })
   } },
-  /** RD-5 评审导览：空书房、新建作品进入设定页、补齐必填、设置三组与深色、回书房看书架与删除确认。配 --video 录评审视频。 */
   'stage-rd5-tour': { model: false, shell: 'stage', run: async ({ app, page, roots }) => {
     const pause = ms => page.waitForTimeout(ms)
     await stubOpenDialog(app, roots.projects)
@@ -1352,7 +1277,6 @@ export const STAGE_SCENARIOS = {
   } },
 }
 
-/** new-project 与示例作品都建「灯塔」，同一项目目录里不能共存，所以分两个会话。 */
 export const BASELINE_SESSIONS = {
   shelf: ['settings', 'new-project'],
   sample: ['open-sample', 'write-chapter', 'run-panel', 'review', 'revise-merge', 'finalize'],

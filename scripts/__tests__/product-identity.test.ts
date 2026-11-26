@@ -51,14 +51,12 @@ describe('product identity used by release scripts', () => {
   it('targets the current product name when the run rebuilds over a pre-rename package', () => {
     const root = mkdtempSync(join(tmpdir(), 'ai-novel-product-identity-'))
     try {
-      // 同一版本号下 win-unpacked 里还留着改名前的构建：本次构建会清掉它、产出新名 exe。
       writeFileSync(join(root, 'AI小说作家.exe'), '')
       const selected = resolvePackagedWindowsExecutable(root, { freshBuild: true })
       rmSync(join(root, 'AI小说作家.exe'))
       writeFileSync(join(root, '书童.exe'), '')
       expect(selected).toBe(join(root, '书童.exe'))
       expect(existsSync(selected)).toBe(true)
-      // 复用已有产物时，仍按实际存在的文件找。
       rmSync(join(root, '书童.exe'))
       writeFileSync(join(root, 'AI小说作家.exe'), '')
       expect(resolvePackagedWindowsExecutable(root, { freshBuild: false })).toBe(join(root, 'AI小说作家.exe'))

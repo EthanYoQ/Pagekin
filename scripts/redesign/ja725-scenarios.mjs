@@ -35,7 +35,6 @@ export const JA725_SCENARIOS = {
     await page.keyboard.press('Escape')
     await page.getByRole('navigation', { name: 'Settings sections' }).waitFor({ state: 'detached' })
 
-    // 驱动的重启按中文书房判断就绪，所以重启前先切回中文，重启后再写回日语。
     assert.equal((await invoke(page, 'config:set', { locale: 'zh-CN' })).success, true)
     await context.restart()
     page = context.page

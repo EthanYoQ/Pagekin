@@ -20,7 +20,6 @@ async function reopenRunSheet(context) {
 }
 
 export const I686D_SCENARIOS = {
-  /** 第 3 章写作失败、第 4 章审稿没拿到报告、第 4 章选区润色被拦下，重启后「可恢复」三张卡；接连关掉审稿卡和第 3 章卡，列表只剩选区卡，两次并成一条提示，撤销两张都放回；再关一次，重启也不回来。 */
   'i686d-abandon': { model: true, shell: 'stage', setup: context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path: projectPath, session }) => {
     for (const draft of await invoke(page, 'db:draft-list', 3, projectPath, session)) {
       assert.equal((await invoke(page, 'db:draft-delete', draft.id, projectPath, session)).success, true)

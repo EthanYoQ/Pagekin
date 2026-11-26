@@ -169,7 +169,6 @@ const EN = {
     deleted: { 2: 'Halfway across, the fog was so thick that Zhou could not see the bow. He heard the hull scrape a rock, as if someone under the water had knocked once.\n\nAt last the passenger spoke. He asked whether the bell on the far shore would ring tonight. Zhou did not answer. He only gripped the oar harder.' } },
 }
 
-/** 章节定位按存储值写（界面按语言显示），12 章一一对应。 */
 const ROLES = ['建置', '铺垫', '发展', '冲突', '发展', '转折', '发展', '冲突', '高潮', '高潮', '转折', '收尾']
 
 async function createBook(context, language, book) {
@@ -195,7 +194,6 @@ async function createBook(context, language, book) {
   return { path, session }
 }
 
-/** 先建书架上的第二本再建主作品，主作品最近打开才排在书架最前。beforeLocale 在切界面语言前执行。 */
 async function seed(context, sample, { afterShelf, beforeLocale } = {}) {
   const { page, invoke, reload } = context
   const shelf = await createBook(context, sample.locale, sample.shelfBook)
@@ -227,7 +225,6 @@ async function seed(context, sample, { afterShelf, beforeLocale } = {}) {
 const settle = page => page.waitForTimeout(600)
 const HERO_VIEWPORT = { width: 1440, height: 1080 }
 
-/** 关掉内容区里除 keep 以外的标签，截图里只剩要看的那一页。 */
 async function closeOtherTabs(page, keep) {
   const closers = page.getByRole('tablist').getByRole('button', { name: new RegExp(`^(关闭「|Close “)(?!${keep})`) })
   for (let open = await closers.count(); open > 0; open = await closers.count()) {
@@ -298,7 +295,6 @@ function walk(sample, { prefix, viewport }) {
   }
 }
 
-/** 截图后取消这次写作：夹具只回几句，写不满每章字数，等它跑完只会以失败收场。 */
 const scenario = (sample, options) => ({ model: true, shell: 'stage', setup: context => seed(context, sample), run: walk(sample, options),
   after: async ({ page }) => {
     await runSheet.sheet(page).getByRole('button', { name: /^(取消「|Cancel “)/ }).first().click()
@@ -307,7 +303,6 @@ const scenario = (sample, options) => ({ model: true, shell: 'stage', setup: con
 
 const characterId = (prompt, name) => new RegExp(`"characterId": "([^"]+)",\\s*"name": "${name}"`, 'u').exec(prompt)?.[1]
 
-/** 证据必须是该章原句。 */
 function stateReply(sample) {
   const [hero, keeper] = sample.book.cast.map(([name]) => name)
   return prompt => {
@@ -319,7 +314,6 @@ function stateReply(sample) {
   }
 }
 
-/** 时间线节点来自定稿后处理，所以要在中文界面里真实定稿第 3、4 章。 */
 async function finalizeThreeAndFour(context, sample) {
   const { page, fake, reload } = context
   fake.replyCharacterState(stateReply(sample))
@@ -404,7 +398,6 @@ const annotate = sample => ({ model: true, shell: 'stage', setup: context => see
     await shootBoth(page, shoot, sample, 'annotate')
   } })
 
-/** 导入的定稿没走过知识库，删除时要作者确认知识库里没有这一章，所以先导入再删除。 */
 async function deleteShelfChapter({ page, invoke }, sample, { path, session }) {
   const [[number, content]] = Object.entries(sample.shelfBook.deleted)
   const chapterNumber = Number(number)
@@ -429,7 +422,6 @@ const trash = sample => ({ shell: 'stage', setup: context => seed(context, sampl
 
 export const README_SCENARIOS = Object.fromEntries([ZH, EN].flatMap(sample => [
   [`readme-${sample.lang}`, scenario(sample, { prefix: `readme-${sample.lang}` })],
-  // README 顶部主图（docs/readme-visuals）要 4:3 的完整窗口截图。
   [`readme-hero-${sample.lang}`, scenario(sample, { prefix: `hero-${sample.lang}`, viewport: HERO_VIEWPORT })],
   [`readme-timeline-${sample.lang}`, timeline(sample)],
   [`readme-check-${sample.lang}`, check(sample)],

@@ -33,7 +33,6 @@ const candidateVisibleText = visibleText + '她又核对了北岸岩层的走向
 const recoveredContinuation = '她借灯光看清石墙背面的刻字，发现通道尽头还有一处被封住的岔路。众人记下方位，决定先检查通风口，再向里面推进。'
 const cancelVisible = '她在岸边抬头，看见灯塔的光束正缓缓扫过海面。'
 const shortOutline = '- 原目标：沿岸调查。\n- 结尾状态：线索指向北岸。'
-/** 单章写稿的运行标题：章号加步骤，不含章名。 */
 const RUN_TITLE = '第 1 章 · 写稿'
 const timeout = 60_000
 const option = name => process.argv.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
@@ -62,7 +61,6 @@ function assertRunPath() {
 async function invoke(page, channel, ...args) {
   return page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
 }
-/** generation:list 只给身份与状态；要候选、账本时按 handle 逐个读完整视图。 */
 const listRunViews = async (page, context) => Promise.all((await invoke(page, 'generation:list', ['chapter-draft'], context)).map(run => invoke(page, 'generation:read', run.handle, context)))
 
 async function launch(fixturePort) {
@@ -99,27 +97,23 @@ async function quit(app) {
   return { forced: false }
 }
 
-/** 从书房打开作品。 */
 async function openProject(page, name) {
   await stage.dismissMigrationNotice(page)
   await stage.showLibrary(page)
   await stage.openFromLibrary(page, name)
   await stage.waitForWork(page, name)
 }
-/** 蓝图页的「写第 N 章」：按蓝图与设定里的每章字数直接开始写（第 1 章有稿未定稿时再写一稿），运行侧页随之展开。 */
 async function writeNextChapter(page) {
   await blueprint.open(page)
   await blueprint.writeNext(page)
   await runSheet.waitUntilOpen(page)
 }
-/** 运行结束后「进行中」分页留着的「上一次运行」卡。 */
 const lastRun = page => runSheet.anyCard(page).filter({ hasText: /^上一次运行/ })
 async function waitLastRunFailed(page, title) {
   const card = lastRun(page).filter({ has: page.locator('.run-card-title', { hasText: title }) })
   await card.locator('.run-card-meta').filter({ hasText: / · 失败$/ }).waitFor({ state: 'visible', timeout })
   return card
 }
-/** 写稿后存成项目设定的每章字数：夹具一次回一百多字，单章目标定在 100（候选项目 200），不触发续写。 */
 async function setWordsPerChapter(page, projectPath, context, wordsPerChapter) {
   const result = await invoke(page, 'db:project-core-update', { wordsPerChapter }, projectPath, context)
   assert.equal(result.success, true, result.error)
@@ -162,7 +156,6 @@ async function main() {
   const exits = []
   let projectPath
   let currentStep = 'setup'
-  // 写稿先要一份短细纲（只写短细纲）再写正文：细纲照常回复、另计在 outlines；dispatches 只数正文请求，编号沿用原来的十次。
   const fixtureState = { dispatches: 0, outlines: 0, sent: 0, requests: [], closedDispatches: [] }
   let streamResponse
   const send = chunk => {
@@ -255,7 +248,6 @@ async function main() {
     page = session.page
     await openProject(page, projectName)
     await writeNextChapter(page)
-    // 进行中的步骤默认展开：思考过程在「思考中」里，正文在实时输出里。
     const sheet = runSheet.sheet(page)
     const thinking = sheet.locator('.run-thinking-text')
     const liveOutput = sheet.locator('.run-output')
@@ -325,7 +317,6 @@ async function main() {
     assert.equal(failedRuns.length, 2, 'Controlled provider failure must create one durable main run')
     const draftsAfterFailure = await invoke(page, 'db:draft-list', 1, projectPath, failedContext)
     assert.equal(draftsAfterFailure.length, draftsBeforeFailure.length, 'Failed attempt must not save another draft')
-    // #381 R12：运行侧页写的是运行标题「第 1 章 · 写稿」（章号与步骤），不含章名「灯塔」，证据只写核对到的这一层。
     steps.push({ stepId: 'u13-failure-code-run-title', actionId: 'U13.A03',
       assertion: `The run sheet keeps the failed run titled ${RUN_TITLE} (chapter number and step; the chapter name is not part of the run title) with the main-normalized provider failure code; one durable run, no added draft`,
       observed: { fixtureHttpStatus: 500, failedRunTitle: RUN_TITLE, chapterNameShown: false, visibleFailureCode: 'GENERATION_PROVIDER_FAILED',
@@ -400,7 +391,6 @@ async function main() {
     const pendingHandle = pendingBatch.currentChapterRunHandle
     const pendingRun = await invoke(page, 'generation:read', pendingHandle, liveBatchContext)
     const pendingChapterContext = await invoke(page, 'generation:read-context', { handle: pendingHandle }, liveBatchContext)
-    // 每章两次尝试：短细纲与正文。共享根下第 1 章细纲与正文、第 2 章细纲与失败的正文共四次。
     assert.equal(pendingRun.ledger?.physicalRequests, 4, 'Shared batch root must include chapter 1 and failed chapter 2 requests')
     assert.deepEqual(pendingChapterContext.attemptedPurposes, ['chapter-draft-short-outline', 'chapter-draft'],
       'Failed chapter run must have its outline and one prose attempt before resume')
@@ -509,7 +499,6 @@ async function main() {
     app = session.app
     page = session.page
     await openProject(page, candidateProjectName)
-    // 新进程里候选在运行侧页「进行中」的「可恢复的内容」：第1章候选，勾选这段正文后确认继续。
     await runSheet.openFromPalette(page)
     await runSheet.tab(page, '进行中').click()
     const candidateCard = runSheet.recovery(page).getByRole('article').filter({ has: page.locator('.run-card-title', { hasText: /^第1章候选$/ }) })

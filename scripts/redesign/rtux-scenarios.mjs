@@ -1,4 +1,3 @@
-// 本批真实模型实测缺陷的实机场景（假模型）：批次暂停时定稿给出说明、取消的批次标已取消、审稿没有可修意见时直接定稿；别的章节的批量自动定稿拦住定稿时说真实原因、取消时正在写的那一步标已取消。
 import assert from 'node:assert/strict'
 
 import * as blueprint from './pages/blueprint.mjs'
@@ -14,7 +13,6 @@ const NOTHING_TO_REVISE = JSON.stringify({ summary: '未发现客观问题。', 
   { category: '连续性', severity: 'pass', description: '与前文没有矛盾。' },
 ], goalReviews: [] })
 
-/** 第 3、4 章没有稿，批量创作从第 3 章写起。 */
 const withoutChapters3And4 = context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path: projectPath, session }) => {
   for (const chapterNumber of [3, 4]) {
     for (const draft of await invoke(page, 'db:draft-list', chapterNumber, projectPath, session)) {
@@ -36,7 +34,6 @@ export const RTUX_SCENARIOS = {
     fake.gate.release()
     await runSheet.sheet(page).getByText(/· 已暂停$/).waitFor({ state: 'visible', timeout: 60_000 })
 
-    // 暂停中的批次仍占着第 3 章：「定稿…」点了立即说明，不打开确认框。
     await openChapter(page, 3)
     await chapterView.more(page, '定稿…')
     const blocked = page.locator('.pi-toast').filter({ hasText: '第 3 章还不能定稿' })
@@ -45,7 +42,6 @@ export const RTUX_SCENARIOS = {
     assert.equal(finalizeBlocked.dialogs, 0, '批次占着本章时不打开定稿确认框')
     await context.shoot('rtux-finalize-blocked')
 
-    // 从提示里取消批量创作：上一次运行写已取消，不写失败。
     await blocked.getByRole('button', { name: '取消批量创作' }).click()
     await runSheet.lastRun(page).waitFor({ state: 'visible', timeout: 30_000 })
     const cancelledRun = await runSheet.lastRun(page).innerText()
@@ -53,7 +49,6 @@ export const RTUX_SCENARIOS = {
     assert.doesNotMatch(cancelledRun, /失败|未完成/, '作者取消的批次不写失败')
     await context.shoot('rtux-batch-cancelled')
 
-    // 审稿全部通过：主按钮直接是定稿，添加我的意见还在。
     fake.replyReview(NOTHING_TO_REVISE)
     await chapterView.review(page)
     await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
@@ -67,8 +62,6 @@ export const RTUX_SCENARIOS = {
     return { finalizeBlocked, cancelledRun, nothingToRevise }
   } },
 
-  // #587 OCR 第 0、3 条：第 5–6 章批量自动定稿只占全书共用资料；第 3 章定稿的提示说真实原因；写第 5 章时取消，那一步记已取消。
-  // 批量从最后一章定稿往后写，所以先定稿第 3、4 章，再重新打开第 3 章修改，让它有一份能定稿的稿。
   'rtux-r2': { model: true, shell: 'stage', setup: context => seedStageSample(context), run: async context => {
     const { page, fake } = context
     fake.replyCharacterState(characterStateReply)
