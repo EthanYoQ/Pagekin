@@ -83,7 +83,7 @@ function SessionImportButton({ session, disabled }: Props & { session: ProjectSe
   }, [sessionKey])
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const label = text('粘贴 / 导入角色卡', 'Paste or import cards')
+  const label = text('粘贴 / 导入角色卡', 'Paste or import cards', '貼り付け／インポート')
 
   async function chooseFiles() {
     const draftWhenSelected = draft
@@ -113,7 +113,7 @@ function SessionImportButton({ session, disabled }: Props & { session: ProjectSe
     const modelId = routeModelId('planning-material-character-extraction')
     const model = useLLMStore.getState().models.find(candidate => candidate.id === modelId)
     if (!model) {
-      toast.warning(text('请先到设置 → 模型配置，添加并选择默认生成模型；输入内容已保留。', 'Add and select a default generation model in Settings → Models first. Your input has been kept.'))
+      toast.warning(text('请先到设置 → AI 模型，添加并选择默认生成模型；输入内容已保留。', 'Add and select a default generation model in Settings → AI models first. Your input has been kept.', '「Settings」→「AI models」でモデルを追加し、既定の生成モデルに設定してください。入力内容は残っています。'))
       return null
     }
     return { submittedDraft, materials, model }
@@ -122,12 +122,13 @@ function SessionImportButton({ session, disabled }: Props & { session: ProjectSe
   const consentText = (model: ModelProfile) => text(
     `粘贴和选中文件的全部文本会发到下面的模型端点，用来提取角色卡。提取后要你预览确认，才写入角色名单。\n\n模型：${model.name} (${model.modelName})\n端点：${model.baseUrl}\n\n是否发送并提取？`,
     `All pasted text and selected files will be sent to this model endpoint to extract character cards. Nothing is saved to the cast until you preview and confirm.\n\nModel: ${model.name} (${model.modelName})\nEndpoint: ${model.baseUrl}\n\nSend and extract?`,
+    `貼り付けたテキストと選択したファイルの全文を、カードの抽出に使う以下のモデルに送信します。結果はプレビューで確認し、確定すると登場人物一覧に保存されます。\n\nモデル：${model.name}（${model.modelName}）\n送信先：${model.baseUrl}\n\n送信して抽出しますか？`,
   )
 
   async function send({ submittedDraft, materials, model }: Job) {
     const currentModel = useLLMStore.getState().models.find(candidate => candidate.id === model.id)
     if (!currentModel || currentModel.baseUrl !== model.baseUrl || currentModel.modelName !== model.modelName) {
-      toast.warning(text('模型配置已改变，请重新确认后发送。', 'The model configuration changed. Confirm again before sending.'))
+      toast.warning(text('模型配置已改变，请重新确认后发送。', 'The model configuration changed. Confirm again before sending.', 'モデル設定が変わりました。送信前にもう一度確認してください。'))
       return
     }
     const workflow = createPlanningMaterialCharacterExtractionWorkflow({ projectSession: session, materials, generationModelId: model.id }, locale)
@@ -145,13 +146,13 @@ function SessionImportButton({ session, disabled }: Props & { session: ProjectSe
       && !run.characterProposalChoices.selections.some(choice => choice.action !== 'keep-unresolved')
     if (rejected) {
       setOpen(true)
-      toast.warning(text('未采用任何角色，输入内容已保留。', 'No characters were adopted; your input was kept.'))
+      toast.warning(text('未采用任何角色，输入内容已保留。', 'No characters were adopted; your input was kept.', '採用された人物はいません。入力内容は残っています。'))
     } else if (run?.status === 'completed') {
       clearImportDraftIfCurrent(sessionKey, submittedDraft)
-      toast.success(text('角色卡已导入角色名单', 'Character cards imported into the cast'))
+      toast.success(text('角色卡已导入角色名单', 'Character cards imported into the cast', 'キャラクターカードを登場人物一覧に取り込みました'))
     } else {
       setOpen(true)
-      toast.warning(text('导入未完成，输入内容已保留；请查看任务详情。', 'Import did not complete. Your input has been kept; check the task details.'))
+      toast.warning(text('导入未完成，输入内容已保留；请查看任务详情。', 'Import did not complete. Your input has been kept; check the task details.', 'インポートを完了できませんでした。入力内容は残っています。タスクの詳細を確認してください。'))
     }
   }
 
@@ -182,31 +183,31 @@ function SessionImportButton({ session, disabled }: Props & { session: ProjectSe
       open={open}
       onOpenChange={value => { if (!busy) { setOpen(value); setConsent(null) } }}
       keepOnOutsideClick
-      title={consent ? text('AI 提取角色卡', 'AI character-card extraction') : label}
+      title={consent ? text('AI 提取角色卡', 'AI character-card extraction', 'AIでカードを抽出') : label}
       description={consent
         ? <span className="cast-import-consent">{consentText(consent.model)}</span>
-        : text('粘贴完整角色卡，或选择资料文件。AI 提取后由你预览确认，不会自动保存。', 'Paste full character cards or choose files. Preview and confirm the AI extraction before saving.')}
+        : text('粘贴完整角色卡，或选择资料文件。AI 提取后由你预览确认，不会自动保存。', 'Paste full character cards or choose files. Preview and confirm the AI extraction before saving.', 'キャラクターカードの全文を貼り付けるか、資料ファイルを選択してください。AIの抽出結果は、プレビューで確認して確定すると保存されます。')}
       // 两步的按钮各自带 key 重挂：第一步按钮上的回车连按落在第二步的「返回」上。外发要在第二步单独点一次，
       // 落在同一位置的双击第二下（detail > 1）不算确认。
       footer={consent
         ? <>
-          <Button key="consent-back" variant="secondary" autoFocus disabled={busy} onClick={() => setConsent(null)}>{text('返回', 'Back')}</Button>
-          <Button key="consent-send" variant="primary" disabled={busy} onClick={event => { if (event.detail <= 1) void sendConsented(consent) }}>{text('发送并提取', 'Send and extract')}</Button>
+          <Button key="consent-back" variant="secondary" autoFocus disabled={busy} onClick={() => setConsent(null)}>{text('返回', 'Back', '戻る')}</Button>
+          <Button key="consent-send" variant="primary" disabled={busy} onClick={event => { if (event.detail <= 1) void sendConsented(consent) }}>{text('发送并提取', 'Send and extract', '送信して抽出')}</Button>
         </>
         : <>
-          <Button key="source-close" variant="secondary" disabled={busy} onClick={() => setOpen(false)}>{text('暂不导入', 'Not now')}</Button>
-          <Button key="source-extract" variant="primary" disabled={busy || (!draft.source.trim() && !draft.files.length)} onClick={() => setConsent(prepare())}>{busy ? text('处理中…', 'Working…') : text('AI 提取并预览', 'Extract and preview with AI')}</Button>
+          <Button key="source-close" variant="secondary" disabled={busy} onClick={() => setOpen(false)}>{text('暂不导入', 'Not now', 'キャンセル')}</Button>
+          <Button key="source-extract" variant="primary" disabled={busy || (!draft.source.trim() && !draft.files.length)} onClick={() => setConsent(prepare())}>{busy ? text('处理中…', 'Working…', '処理中…') : text('AI 提取并预览', 'Extract and preview with AI', 'AIで抽出・プレビュー')}</Button>
         </>}
     >
       {!consent && <>
-        <textarea className="pi-input cast-import-source" aria-label={text('角色卡全文', 'Full character-card text')} value={draft.source} onChange={event => {
+        <textarea className="pi-input cast-import-source" aria-label={text('角色卡全文', 'Full character-card text', 'キャラクターカードの全文')} value={draft.source} onChange={event => {
           writeImportDraft(sessionKey, { source: event.target.value, files: draft.files })
         }} disabled={busy} rows={9} />
         <div className="cast-import-files">
-          <Button variant="secondary" size="sm" disabled={busy} onClick={() => void chooseFiles()}><FileUp size={14} aria-hidden />{text('选择文件', 'Choose files')}</Button>
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => void chooseFiles()}><FileUp size={14} aria-hidden />{text('选择文件', 'Choose files', 'ファイルを選択')}</Button>
           {draft.files.length > 0 && <>
-            <span className="cast-import-names">{draft.files.map(file => file.fileName).join(text('、', ', '))}</span>
-            <Button variant="text" size="sm" disabled={busy} onClick={() => writeImportDraft(sessionKey, { source: draft.source, files: [] })}>{text('清除文件', 'Clear files')}</Button>
+            <span className="cast-import-names">{draft.files.map(file => file.fileName).join(text('、', ', ', '、'))}</span>
+            <Button variant="text" size="sm" disabled={busy} onClick={() => writeImportDraft(sessionKey, { source: draft.source, files: [] })}>{text('清除文件', 'Clear files', '選択を解除')}</Button>
           </>}
         </div>
       </>}
