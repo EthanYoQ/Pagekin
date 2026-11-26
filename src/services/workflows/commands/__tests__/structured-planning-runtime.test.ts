@@ -78,7 +78,7 @@ it('world navigation is persisted before physical calls, and failed navigation b
   const f = fixture(), original = f.invoke.getMockImplementation()!
   f.invoke.mockImplementation(async (channel, ...args) => {
     if (channel === 'fs:read-json') return { success: true, data: {} }
-    if (channel === 'fs:write-json') return { success: false, error: 'EPERM C:/合成项目/partial_arch.json' }
+    if (channel === 'fs:write-json') return { success: false }
     return original(channel, ...args)
   })
   const snapshot = { expectedProjectPath: projectSession.projectPath, novelConfig: {} } as never

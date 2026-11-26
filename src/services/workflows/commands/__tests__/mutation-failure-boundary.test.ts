@@ -394,7 +394,7 @@ describe('workflow mutation failure boundaries', () => {
       context().projectSession!,
       '保存架构生成检查点',
     ))
-      .rejects.toThrow(/^保存架构生成检查点失败$/u)
+      .rejects.toThrow('checkpoint rejected')
   })
 
   it.each([
@@ -479,7 +479,7 @@ describe('workflow mutation failure boundaries', () => {
     const stepCallbacks = callbacks()
 
     await expect(step!.executor(stepCallbacks, context()))
-      .rejects.toThrow(/^写入章节剧情要点失败$/u)
+      .rejects.toThrow('notes rejected')
     expect(stepCallbacks.log).not.toHaveBeenCalledWith(expect.stringContaining('剧情要点提取完成'))
   })
 
@@ -500,7 +500,7 @@ describe('workflow mutation failure boundaries', () => {
       { path: PROJECT_PATH }, 1, '第一章', '正文', { complete },
     ).find(candidate => candidate.key === 'chapter_notes')!
 
-    await expect(step.executor(callbacks(), context())).rejects.toThrow(/^写入章节剧情要点失败$/u)
+    await expect(step.executor(callbacks(), context())).rejects.toThrow('transient notes failure')
     await expect(step.executor(callbacks(), context())).resolves.toBeUndefined()
 
     expect(complete).toHaveBeenCalledOnce()

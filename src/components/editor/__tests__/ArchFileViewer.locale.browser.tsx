@@ -177,7 +177,7 @@ describe('ArchFileViewer locale', () => {
   it('reports a rejected save without clearing the draft and rejects exit-save', async () => {
     useLocaleStore.setState({ locale: 'zh-CN' })
     const errorToast = vi.spyOn(toast, 'error').mockImplementation(() => {})
-    invoke.mockResolvedValue({ success: false, error: 'Error: PROJECT_SESSION_STALE' })
+    invoke.mockResolvedValue({ success: false, error: '磁盘已满' })
     useEditorStore.setState({ tabs: [{
       id: 'arch-save-error', name: '故事前提', type: 'arch-file',
       projectKey: PROJECT_PATH, filePath: 'ai-novel://core/premise',
@@ -188,13 +188,13 @@ describe('ArchFileViewer locale', () => {
         projectKey={PROJECT_PATH} content="未保存的故事前提" savedContent="" />,
     ))
     await act(async () => (container.querySelector('[title="保存（Cmd+S）"]') as HTMLButtonElement).click())
-    expect(errorToast).toHaveBeenCalledWith(expect.stringContaining('项目已切换或重新打开'))
+    expect(errorToast).toHaveBeenCalledWith(expect.stringContaining('磁盘已满'))
     expect(container.textContent).toContain('保存失败')
     expect(container.textContent).toContain('未保存的故事前提')
     expect(container.querySelector('[title="有未保存的修改"]')).not.toBeNull()
     expect(useEditorStore.getState().tabs[0]).toMatchObject({ dirty: true, savedContent: '' })
     await act(async () => {
-      await expect(saveDirtyEditorChangesForExit(PROJECT_PATH)).rejects.toThrow('项目已切换或重新打开')
+      await expect(saveDirtyEditorChangesForExit(PROJECT_PATH)).rejects.toThrow('磁盘已满')
     })
     expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
   })

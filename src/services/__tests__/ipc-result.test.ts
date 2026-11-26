@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 import { requireIpcSuccess } from '../ipc-result'
 import { useLocaleStore } from '../../stores/locale-store'
 import { displayedErrorMessage } from '../../i18n/app-errors'
@@ -41,16 +41,13 @@ it('keeps a registered main-process code on the thrown error so a frozen caller 
   expect(displayedErrorMessage(shown('ja-JP'), thrown)).toBe(translate('ja-JP', 'error.projectNotOpen'))
 })
 
-it('requireIpcSuccess 遇到没有码的主进程原文时不显示原文', () => {
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+it('未迁移通道回的中文说明照常显示', () => {
   for (const locale of ['zh-CN', 'en-US'] as const) {
     useLocaleStore.setState({ interfaceLocale: locale, locale })
-    for (const error of ['Error: 项目数据库未打开', 'connect ECONNREFUSED 127.0.0.1:7890', 'WORKFLOW_UNREGISTERED_TEST_CODE']) {
+    for (const error of ['项目数据库未打开', 'Error: 项目数据库未打开', 'connect ECONNREFUSED 127.0.0.1:7890', 'WORKFLOW_UNREGISTERED_TEST_CODE']) {
       let thrown: unknown
       try { requireIpcSuccess({ success: false, error }, '保存草稿', '兜底说明') } catch (caught) { thrown = caught }
-      expect((thrown as Error).message, `${locale} ${error}`).toBe('兜底说明')
+      expect({ message: (thrown as Error).message, code: (thrown as { code?: unknown }).code }, `${locale} ${error}`).toEqual({ message: error, code: undefined })
     }
   }
-  expect(warn.mock.calls.flat().map(String).join(' ')).toContain('connect ECONNREFUSED 127.0.0.1:7890')
-  warn.mockRestore()
 })
