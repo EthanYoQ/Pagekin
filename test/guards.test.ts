@@ -222,6 +222,7 @@ describe('失败的码与说明（#844）', () => {
       "wireNote('error.importRunCheckFailed', { code: String(error) })",
       "wireNote('error.importRunCheckFailed', { code: `${error.stack}` })",
       "wireNote('error.importRunCheckFailed', { code: error['message'] })",
+      "wireNote('error.importRunCheckFailed', { code: error.toString() })",
     ]) expect(rawTextInNoteArguments('electron/x.ts', planted), planted).toHaveLength(1)
     expect(rawTextInNoteArguments('electron/x.ts', "wireNote('error.projectPathTooDeepForDatabase', { max: error.maxProjectRootLength })")).toEqual([])
   })
