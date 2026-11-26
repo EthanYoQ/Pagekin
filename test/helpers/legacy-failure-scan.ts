@@ -54,6 +54,7 @@ function readsRawText(node: ts.Node): boolean {
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'String') return true
   if (ts.isPropertyAccessExpression(node) && RAW_PROPERTIES.has(node.name.text)) return true
   if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && RAW_PROPERTIES.has(node.argumentExpression.text)) return true
+  if (ts.isTemplateSpan(node) && ts.isIdentifier(node.expression)) return true
   return ts.forEachChild(node, readsRawText) ?? false
 }
 
