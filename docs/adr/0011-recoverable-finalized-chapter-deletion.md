@@ -14,3 +14,18 @@ SQLite 中的已定稿章节、不可变正文和定稿收据是事实源；删�
 - 放回原位或作为旧版本放回时，主收据与附属收据一起删掉，同一章以后才能再删。
 - 收据还在、清理没完成时拒绝恢复。恢复会先续跑一次清理。
 - 彻底删除保留收据，作为转移历史的删除证明。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/chapter-deletion.ts`
+
+- `CHAPTER_RESTORE_MODES`：回收站里的一项怎样恢复，由恢复那一刻的状态现算（ADR-0025）： - into-gap：本章没有定稿，被删定稿原样回到原位； - as-history：本章已重写出新定稿，被删的各版本作为被替换的旧定稿放回版本列表； - reopen-as-draft：本章没有定稿，但被删定稿的收据随作品转移而冻结，只能以它的正文开一份新草稿。
+
+### `src/shared/chapter-sequence.ts`
+
+- 定稿序列：哪些章已定稿、中间缺了哪些、下一章是几、现在能写哪几章。 主进程按定稿行算序列，渲染端按序列算可写章号，都用这里的纯函数。
+- `ChapterGapCause`：缺口的来历。deleted：段内有章留着删除收据，是作者删掉的；unexplained：没有删除记录，多半是旧版误导入。
+- `ChapterSequence`：缺口是合法状态：作者删掉中间一章后，原位置可以重写，后面照常可写。 只有同一章有多行定稿才是 invalid，这时不给下一章。
+- `AuthoritativeChapterSequence`：主进程经 IPC 交给渲染端的序列，带上定稿事实的指纹，导入提交时用它判断预览是否过期。
+- `chapterSequenceFrom`：finalizedChapterNumbers 是每一行定稿的章号（同一章多行就出现多次）； deletedChapterNumbers 是留有删除收据的章号。
+- `writableChapterNumbers`：现在能开写的章号，从小到大：每段缺口的第一章，加上下一章。 段内其余章写不了：写作前置检查要求前一章已定稿（workflow-guards 的 guardChapterWriting）。

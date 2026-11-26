@@ -5,3 +5,20 @@
 Windows 和 macOS 共享 GitHub 最新正式 Release 作为版本源，但执行不同更新动作。Windows 发现新版后只进入可用状态，用户明确点击下载才启动后台下载；下载完成后继续使用未保存内容、运行中任务和重启安装保护。macOS 只显示新版提醒并打开固定的官方最新 Release 页面，不在应用内下载、替换或安装程序，也不接收远端提供的任意跳转地址。
 
 资格构建与正式发布保持分离，正式提升需要明确授权。发布说明必须按资格回执如实披露签名和公证状态；不得因为某一平台成功就发布缺少其他受支持目标的正式版本。
+
+## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
+
+### `src/shared/ipc-channels.ts`
+
+- `updatePreferences`：更新检查和提醒延后的本机偏好，持久化到 ~/.vela/config.json。
+
+### `src/shared/update-types.ts`
+
+- `UpdateReleaseInfo`：可跨主进程、预加载与渲染进程传递的应用更新数据契约。 此文件不能依赖 Electron 或任何主进程服务，避免渲染进程类型定义反向依赖主进程实现。
+- `lastAutomaticCheckDate`：最近一次成功自动检查对应的本地日历日，成功检查每天最多一次。
+- `availableUpdate`：已确认高于当前版本的正式更新；重启后只恢复“可继续准备”，不伪造已下载状态。
+- `reminder`：仅延后当前版本的提示；不会永久忽略更新。
+- `UpdateErrorPhase`：哪个面向用户的更新操作产生了错误（原文：Which safe, user-facing update operation produced the error.）
+- `UpdateErrorReason`：稳定分类，原始更新器与网络错误绝不跨过 IPC 边界（原文：Stable classifications; raw updater/network errors never cross the IPC boundary.）
+- `SafeUpdateTechnicalDetails`：白名单诊断，可安全保留与渲染，不含凭据或路径（原文：Allowlisted diagnostics that are safe to retain and render without credentials or paths.）
+- `UpdateState`：只包含可安全发送至渲染进程的值，不携带 Error 或更新器对象。
