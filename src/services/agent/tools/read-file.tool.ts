@@ -1,7 +1,4 @@
 import { CANONICAL_PROJECT_DIRECTORY } from '../../../shared/project-format'
-/**
- * read_file — 读取项目内的文件内容
- */
 import { buildAgentTool } from '../tool-registry'
 import { ipc } from '../../ipc-client'
 import { validatePath } from './safe-path'
@@ -30,7 +27,6 @@ export const readFileTool = buildAgentTool({
     const filePath = args.file_path as string
     const { project, projectSession } = requireAgentProject(context)
 
-    // 路径安全校验
     const pathCheck = validatePath(project.path, filePath)
     if (!pathCheck.valid) {
       return { success: false, content: '', error: text(

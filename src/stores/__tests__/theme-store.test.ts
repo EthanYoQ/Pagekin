@@ -21,7 +21,6 @@ async function stores() {
   const appearance = createAppearanceStore()
   const theme = createThemeStore(appearance)
   const bootstrap = () => appearance.getState().bootstrap({
-    // Deterministic main handshake fixture; does not assert real desktop startup qualification.
     waitForMainReady: async () => ({ state: 'ready', globalGeneration: 'fixture-generation' }),
     acknowledgeReadback: async () => true,
     storage: () => localStorage, systemTheme: () => 'light',

@@ -51,7 +51,6 @@ describe('formatSafeCallDiagnostic', () => {
           reservedOutputTokens: 512,
           sections: [{ sectionName: 'continuity', utf8Bytes: 320 }],
         },
-        // Lures prove the formatter never serializes arbitrary input fields.
         requestBody: { apiKey: 'sk-secret', prompt: 'complete prompt' },
         referenceText: 'private reference prose',
       },

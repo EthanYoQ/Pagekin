@@ -33,7 +33,6 @@ function definition(
 }
 
 beforeEach(() => {
-  // 工作流夹具显式提供桌面桥接；未知调用仍拒绝，避免掩盖真实 IPC 缺失。
   vi.stubGlobal('window', {
     aiNovelAPI: {
       invoke: vi.fn(async (channel: string) => {

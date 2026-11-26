@@ -52,10 +52,6 @@ export function updateCharacterRename(
   return [...renames, { originalName: currentName, newName }]
 }
 
-/**
- * 角色改名尚未落盘时，base/remote 仍使用旧主键，draft 已使用新主键。
- * 先按改名账本统一身份，再对同一角色执行字段级三方合并。
- */
 export function mergeCharacterDraftWithRemote<T extends { name: string; characterId?: string; currentState?: CharacterRosterCharacterState }>(
   baseCharacters: readonly T[], draftCharacters: readonly T[], remoteCharacters: readonly T[],
   _renames: readonly CharacterRenameData[],
@@ -65,8 +61,6 @@ export function mergeCharacterDraftWithRemote<T extends { name: string; characte
     const ids = cards.flatMap(c => c.characterId ? [c.characterId] : [])
     if (new Set(ids).size !== ids.length) throw new Error('CHARACTER_DRAFT_IDENTITY_AMBIGUOUS')
   }
-  // Names and legacy rename metadata never establish identity. Unbound drafts
-  // are retained separately and cannot be saved by the stable-ID writer.
   const baseById = new Map(baseCharacters.filter(c => c.characterId).map(c => [c.characterId!, c]))
   const draftById = new Map(draftCharacters.filter(c => c.characterId).map(c => [c.characterId!, c]))
   const deleted = new Set([...baseById.keys()].filter(id => !draftById.has(id)))
@@ -85,11 +79,6 @@ export function mergeCharacterDraftWithRemote<T extends { name: string; characte
   return [...merged, ...draftCharacters.filter(c => !c.characterId || !included.has(c.characterId))]
 }
 
-/**
- * 定稿后处理按字段写入当前状态，作者也按字段改。作者改过的字段保留草稿值，
- * 其余字段、来源标记与 updatedAtChapter 都取数据库最新值。刷新会把数据库快照当成新基线，
- * 作者输入可能与基线文本相同，所以来源标记不同也算改过。
- */
 function mergeCurrentStateDraftWithRemote(
   base: CharacterRosterCharacterState | undefined,
   draft: CharacterRosterCharacterState,
@@ -125,14 +114,6 @@ export function rebaseCharacterRenamesAfterSave(
   })
 }
 
-/**
- * 保存期间允许继续编辑。除了把显式的二次改名接到刚落盘的新主键后，还要从
- * 本次实际落盘的角色与当前草稿中恢复“改回原名”的身份链：
- *
- * A -> B 正在保存时，用户可能把 B 改回 A。此时普通草稿账本会正确认为草稿
- * 回到了旧基线并清空 A -> B；但首个事务成功后，数据库基线已变成 B，所以
- * 后续仍必须记录 B -> A。
- */
 export function rebuildCharacterRenamesAfterSave<T extends { name: string }>(
   savedCharacters: readonly T[],
   currentCharacters: readonly T[],

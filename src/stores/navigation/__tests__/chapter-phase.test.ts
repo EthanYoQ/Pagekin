@@ -13,7 +13,6 @@ const db = vi.hoisted(() => ({
   draft: { id: 7, chapterNumber: 3, version: 1, status: 'draft', content: '雨从傍晚开始就没有停过。' },
   revisions: [] as FakeRevision[],
   reviews: [] as FakeReview[],
-  /** 下一次读修稿列表先按当时的记录取好，等它放行才返回。 */
   hold: null as Promise<void> | null,
 }))
 
@@ -47,7 +46,6 @@ vi.mock('../../../services/ipc-client', () => ({
 
 const SESSION = { projectId: 'p', leaseId: 'lease', projectPath: 'C:\\novels\\p' }
 
-/** 按数据库里的记录读出这一稿的 facts，再按稿状态判断它走到哪一步，与流程脊、单章视图同一条路径。 */
 async function phaseOf(status: 'draft' | 'reviewed' | 'revised') {
   db.draft.status = status
   await refreshChapterFacts([{ id: db.draft.id }], SESSION)
@@ -173,7 +171,6 @@ describe('打开作品的落点不等审稿与修稿记录：落到哪个阶段�
       return { landing: landingStage(stages), focus: focusChapter(chapters)?.number, manuscript: stages.at(-1)?.progress }
     }
     expect(open({ 1: emptyAfterFinal })).toEqual({ landing: 'manuscript', focus: 1, manuscript: { state: 'active', ratio: 0 } })
-    // 几章都在写时落在最后一章在写的：定稿后新建空草稿的章也算在写。
     expect(open({ 1: [draft(15, 1, 'draft')], 2: emptyAfterFinal.map(meta => ({ ...meta, chapterNumber: 2 })) }).focus).toBe(2)
   })
 })

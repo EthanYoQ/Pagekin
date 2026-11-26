@@ -3,12 +3,8 @@ import { useAppearanceStore, type AppearanceStore } from './appearance-bootstrap
 import { ipc } from '../services/ipc-client'
 import type { ColorTheme } from '../shared/appearance-profile'
 
-/** 纸墨只有浅色与深色两套。 */
 export type Theme = ColorTheme
 
-// ─── 共享字体库 ─────────────────────────────────────────────────────────────
-
-/** 内置字体 ID（界面字体和写作字体共享同一张清单） */
 export type FontId = 'inter' | 'noto-sans-sc' | 'lxgw-wenkai' | 'noto-serif-sc' | 'system'
 
 export interface FontOption {
@@ -17,14 +13,11 @@ export interface FontOption {
   labelEn: string
   desc: string
   descEn: string
-  /** 实际 CSS font-family 字符串 */
   family: string
-  /** 预览文字（用该字体渲染，展示中英文效果） */
   preview: string
   previewEn: string
 }
 
-/** 所有内置字体（界面 + 写作共用） */
 export const FONT_OPTIONS: FontOption[] = [
   {
     id: 'inter',
@@ -78,52 +71,30 @@ export const FONT_OPTIONS: FontOption[] = [
   },
 ]
 
-// ─── 向后兼容：旧版 WRITING_FONT_OPTIONS 别名 ──────────────────────────────
-/** @deprecated 请使用 FONT_OPTIONS */
 export const WRITING_FONT_OPTIONS = FONT_OPTIONS
-/** @deprecated 请使用 FontId */
 export type WritingFont = FontId
-
-// ─── 缩放常量 ─────────────────────────────────────────────────────────────
 
 const ZOOM_STEP = 0.05
 const ZOOM_MIN = 0.7
 const ZOOM_MAX = 1.5
-/** 基准 font-size（未缩放时 html 的字号，px） */
 const BASE_FONT_SIZE = 14 as const
 
-// ─── Store 类型 ──────────────────────────────────────────────────────────
-
 interface ThemeState {
-  /** 用户选择的主题 */
   theme: Theme
-  /** 当前应用到界面的主题，外观偏好载入之前是浅色 */
   resolvedTheme: Theme
-  /** 当前缩放级别（1.0 = 100%） */
   zoom: number
-  /** 当前写作字体（正文编辑区 → --font-writing） */
   writingFont: FontId
-  /** 当前界面字体（UI 全局 → --font-sans） */
   uiFont: FontId
-  /** 设置主题 */
   setTheme: (theme: Theme) => void
-  /** 初始化主题监听 */
   initTheme: () => void
-  /** 放大 */
   zoomIn: () => void
-  /** 缩小 */
   zoomOut: () => void
-  /** 重置缩放到 100% */
   zoomReset: () => void
-  /** 直接设置缩放级别 */
   setZoom: (zoom: number) => void
-  /** 设置写作字体 */
   setWritingFont: (font: FontId) => void
-  /** 设置界面字体 */
   setUiFont: (font: FontId) => void
 }
 
-/** Legacy-facing projection only; appearance-bootstrap owns all persistence. */
 export function createThemeStore(appearance: AppearanceStore = useAppearanceStore) {
   const store = create<ThemeState>()((set, get) => ({
     theme: 'light', resolvedTheme: 'light', zoom: 1, writingFont: 'lxgw-wenkai', uiFont: 'noto-sans-sc',
@@ -157,15 +128,10 @@ export function createThemeStore(appearance: AppearanceStore = useAppearanceStor
 
 export const useThemeStore = createThemeStore()
 
-/** 深色时给根元素加 .dark：纸墨作用域之外的旧颜色变量与 Tailwind 的 dark 变体靠它切换。 */
 function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle('dark', theme === 'dark')
 }
 
-/**
- * 将缩放比例应用到整个窗口。
- * Electron 环境使用 native zoomFactor；否则降级到 html root font-size。
- */
 function applyZoom(zoom: number) {
   if (ipc.isElectron) {
     ipc.setZoomFactor(zoom)
@@ -174,7 +140,6 @@ function applyZoom(zoom: number) {
   }
 }
 
-/** 将写作字体应用到 --font-writing，正文编辑器通过 CSS 变量引用 */
 function applyWritingFont(font: FontId) {
   const opt = FONT_OPTIONS.find((o) => o.id === font)
   if (opt) {
@@ -182,7 +147,6 @@ function applyWritingFont(font: FontId) {
   }
 }
 
-/** 将界面字体应用到 --font-sans，body/html 通过 font-family: var(--font-sans) 引用 */
 function applyUiFont(font: FontId) {
   const opt = FONT_OPTIONS.find((o) => o.id === font)
   if (opt) {

@@ -19,11 +19,6 @@ export interface CharacterArchitecturePromptSet {
   }): string
 }
 
-/**
- * Built-in templates used by the forward-writing lifecycle. Every key in this
- * list must provide an English overlay; commands may not silently fall back to
- * the historical Chinese template for an English project.
- */
 export const CORE_LOCALIZED_BUILTIN_PROMPT_KEYS = Object.freeze([
   'generate_novel_config_field',
   'edit_selected_text',
@@ -133,10 +128,6 @@ export function characterArchitecturePrompts(language: WritingLanguage): Charact
   return CHARACTER_ARCHITECTURE_PROMPTS[language]
 }
 
-/**
- * Model-facing built-in prompt translations. UI copy is deliberately absent:
- * the project writing language, not the application locale, selects this map.
- */
 export const EN_US_BUILTIN_PROMPTS = Object.freeze({
   edit_selected_text: {
     systemRole: 'You are an experienced fiction editor. Revise only the selected prose according to the author request while preserving its facts, viewpoint, and intent.',

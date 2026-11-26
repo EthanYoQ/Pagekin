@@ -5,29 +5,6 @@ import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-fi
 import { knownAppErrorMessage } from '../app-errors'
 import { shown } from './shown-locale'
 
-/**
- * 生成 IPC 会把任何 GENERATION_* 码原样转给渲染端，工作流失败面板对未登记的码只能显示原码。
- * 下面这些前缀的码同样会进工作流失败面板：工作流与生成运行时直接抛出，或由工作流调用的主进程服务
- * （角色提议、定稿角色状态、旧版角色名单、生成记录）经 IPC 转来（#471）。
- * 所以代码里出现的每个码都要二选一：在 app-errors.ts 登记文案，或在这里按理由列为不登记。
- *
- * 角色建议页（待批准的角色提议、定稿角色状态建议）的决策请求同样经生成 IPC 原样转来码，按同一约定登记（#474）。
- *
- * 项目会话与外部文件授权（#474 B4）的码经各控制器的 { error: String(err) } 或 IPC 异常原样到项目页、知识库与工作流：
- * 同样要么登记、要么写明理由。
- *
- * 角色名单、蓝图与剧情资料（#474 B2）的码经 db 通道的 { error: String(err) } 或 IPC 异常到角色页、蓝图与剧情页；
- * CHARACTER_ROSTER_* 还会经生成 IPC 原样转给工作流失败面板（generation-controller 放行 CHARACTER_ 前缀）。
- *
- * 定稿、实体稿、修订、恢复稿、摘要与章节删除（#474 B5）的码经 finalization:*、chapter:* 与 db 通道的 { error } 到定稿运行卡片、
- * 删除提示、修订合并与恢复列表；摘要与角色状态的校验还经生成 IPC，在那里统一成 GENERATION_REQUEST_FAILED。
- *
- * 模型调用、模型设置与执行租约（#474 B6）的码经 llm 通道的 { error } 或 IPC 异常到模型设置与生成运行时；
- * 连接测试的结果由主进程按界面语言写好再交给模型表单。
- *
- * 其余前缀（备份与迁移、安全文件系统、头像与图片、EPUB 导入、外观、编辑器等）不在这里：
- * 它们不经生成 IPC，由各自的主进程控制器或页面按自己的映射说明，逐族审显示面随主进程批次处理。
- */
 const COVERED_PREFIXES = [
   'GENERATION_',
   'LEGACY_ROSTER_',
@@ -50,14 +27,12 @@ const COVERED_PREFIXES = [
   'PLANNING_MATERIAL_',
   'MODEL_NOT_',
   'NO_DEFAULT_',
-  // 角色身份提交链路（批准角色提议时同一事务内提交）：经生成 IPC 原样转给角色建议页（#474）。
   'CHARACTER_ID_',
   'CHARACTER_APPROVAL_',
   'CHARACTER_RELATIONSHIP_',
   'CHARACTER_AUTHOR_',
   'CHARACTER_FIELDS_',
   'CHARACTER_PROVENANCE_',
-  // 项目会话、项目路径守卫，打开、创建、删除项目与外部文件授权（#474 B4）。
   'PROJECT_SESSION_',
   'PROJECT_CONTEXT_',
   'PROJECT_FILE_',
@@ -70,16 +45,13 @@ const COVERED_PREFIXES = [
   'PROJECT_CORE_',
   'PROJECT_SCHEMA_',
   'EXTERNAL_FILE_GRANT_',
-  // 角色名单、蓝图、剧情树与叙事线索，以及 db-controller 里草稿与导入断点的直接拒绝（#474 B2）。
   'CHARACTER_ROSTER_',
   'BLUEPRINT_',
   'PLOT_TREE_',
   'NARRATIVE_THREAD_',
   'DRAFT_',
   'IMPORT_RUN_',
-  // 定稿、实体稿、修订、恢复稿、连续性摘要、一致性豁免、后处理与章节删除（#474 B5）。
   'CHAPTER_DELETE_',
-  // 回收站：恢复、彻底删除与列表的拒绝原因（#564）。
   'CHAPTER_RESTORE_',
   'CHAPTER_TRASH_',
   'CHAPTER_REOPEN_',
@@ -93,19 +65,13 @@ const COVERED_PREFIXES = [
   'CONSISTENCY_EXEMPTION_',
   'POST_PROCESS_',
   'CONTINUITY_',
-  // 知识库、项目副本与检索索引（#474 B3）：经 kb 通道的 { error } 或 IPC 异常到知识库页、设置的检索索引检查，
-  // 以及导入创作资料、定稿收入知识库与参照导入的工作流。
   'KNOWLEDGE_BASE_',
   'EMBEDDING_',
-  // 模型调用、模型设置与执行租约（#474 B6）。
   'LLM_',
   'MODEL_ENDPOINT_',
   'MODEL_OUTPUT_',
   'MODEL_EXECUTION_LEASE_',
   'MCP_',
-  // 导入运行、导入回执、全局事实与作者原稿定稿导入、导入来源身份与文件检查（#474 B1）：经 db:import-run-*、
-  // db:import-global-facts-commit、kb:import-reference-text 与 dialog:select-novel-files 到导入对话框、导入运行卡片
-  // 与可继续的导入列表。主进程在这些通道的边界按导入运行的语言把码写成说明（electron/controllers/import-run-failure.ts）。
   'IMPORT_GLOBAL_FACTS_',
   'FINALIZED_IMPORT_',
   'IMPORT_SOURCE_',
@@ -115,12 +81,8 @@ const COVERED_PREFIXES = [
   'LEGACY_IMPORT_',
 ] as const
 const UNREGISTERED: Record<string, readonly string[]> = {
-  // 只写进后处理步骤记录，不作为错误抛出；步骤面板按 finalization-step-error.ts 的说明显示。
   postProcessStepRecord: ['POST_PROCESS_INTERRUPTED'],
-  // 副本已建好，只是最近项目写失败：主进程放在 warning 字段，界面不显示。
   legacyImportWarning: ['LEGACY_IMPORT_RECENT_LIST_FAILED'],
-  // 请求形状、句柄、事务、收据、哈希与谱系的完整性校验：只有我们自己的代码缺陷、被篡改的 IPC
-  // 或被外部改坏的作品库才会触发。界面给不出作者能照做的建议，原码留给反馈定位。
   contractViolation: [
     'GENERATION_AGENT_ADMISSION_REQUIRED',
     'GENERATION_AGENT_AUTHOR_SELECTION_CONFLICT',
@@ -384,8 +346,6 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'GENERATION_SOURCE_BINDING_INVALID',
     'GENERATION_SOURCE_MANIFEST_INVALID',
     'GENERATION_WORKFLOW_ADVANCE_UNAVAILABLE',
-    // #471 扩到的前缀：生成运行时与主进程生成记录的句柄、租约、快照和收据校验，
-    // 角色提议与定稿角色状态的事务与来源证明，旧版角色名单的身份与采用收据。
     'ARTIFACT_ATTEMPT_TERMINAL',
     'ARTIFACT_INTEGRITY_FAILED',
     'ARTIFACT_SNAPSHOT_CONFLICT',
@@ -447,7 +407,6 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'PLANNING_MATERIAL_TEMPLATE_MISSING',
     'RUNTIME_CLOSED',
     'TASK_BUDGET_INPUT_INVALID',
-    // #474 扩到的前缀：角色身份提交的请求形状、事务、批准收据与回读校验。
     'CHARACTER_APPROVAL_INVALID',
     'CHARACTER_APPROVAL_MUTATED',
     'CHARACTER_APPROVAL_REQUIRED',
@@ -469,8 +428,6 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'CHARACTER_RELATIONSHIP_ID_REQUIRED',
     'CHARACTER_RELATIONSHIP_INVALID',
     'CHARACTER_RELATIONSHIP_PROPOSAL_INVALID',
-    // #474 B4：项目路径与回滚快照的内部校验、删除目标与当前会话的一致性、只读字段写入与旧库迁移的完整性。
-    // 界面只从项目页对当前项目发起这些请求，作者照常操作碰不到；碰到说明代码缺陷或项目文件夹被外部改坏。
     'PROJECT_CORE_CHARACTERS_ARCH_READ_ONLY',
     'PROJECT_DELETE_IDENTITY_MISMATCH',
     'PROJECT_DELETE_TARGET_MISMATCH',
@@ -487,8 +444,6 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'PROJECT_SCHEMA_IMPORT_RUN_FOREIGN_KEY_BROKEN',
     'PROJECT_SCHEMA_IMPORT_SOURCE_SALT_INVALID',
     'PROJECT_SCHEMA_IMPORT_SOURCE_SECRET_INVALID',
-    // #474 B2：名单与蓝图提交的请求形状、幂等回执、冻结输入、回读与库内事实的校验，草稿生成请求与目标字数的参数校验，
-    // 导入断点阶段的通道参数。界面按自己的流程构造这些请求，作者照常操作碰不到；碰到说明代码缺陷或作品库被外部改坏。
     'BLUEPRINT_CHARACTER_SYNC_INPUT_INVALID',
     'BLUEPRINT_CHARACTER_SYNC_OPERATION_ID_REQUIRED',
     'BLUEPRINT_CHARACTER_SYNC_OPERATION_MISSING',
@@ -519,16 +474,12 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'DRAFT_MAIN_GENERATION_REQUEST_REQUIRED',
     'DRAFT_TARGET_UNITS_INVALID',
     'IMPORT_RUN_CHECKPOINT_STAGE_INVALID',
-    // #474 B5：删除请求与冻结删除收据、待删章节与定稿收据的一致性。界面只对列表里已定稿的这一章发起删除。
     'CHAPTER_DELETE_NOT_FINALIZED',
     'CHAPTER_DELETE_RECEIPT_CORRUPT',
     'CHAPTER_DELETE_REQUEST_MISMATCH',
     'CHAPTER_DELETE_TARGET_MISMATCH',
-    // #564 M07：drafts 删除三列与 deleted 状态不同进退时触发器拒写。只有删除事务写这三列，碰到说明代码缺陷。
     'DRAFT_DELETION_SHAPE_INVALID',
     'CHAPTER_REOPEN_REQUEST_INVALID',
-    // #474 B5：定稿快照的形状、会话与哈希，定稿收据与发布记录、导出快照的一致性，实体稿目标路径的边界。
-    // 界面从冻结的编辑器快照与库内收据构造这些请求；碰到说明代码缺陷或作品库、正文文件夹被外部改坏。
     'FINALIZATION_COMMIT_CHAPTER_MISMATCH',
     'FINALIZATION_COMMIT_ID_REQUIRED',
     'FINALIZATION_COMMIT_KNOWLEDGE_DOCUMENT_REQUIRED',
@@ -545,11 +496,8 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'MANUSCRIPT_CHAPTER_NUMBER_INVALID',
     'MANUSCRIPT_STORED_TARGET_INVALID',
     'MANUSCRIPT_TARGET_OUTSIDE_PROJECT',
-    // #474 B5：修订稿与目标草稿的从属关系、审稿修订只能走原子合并入口。界面只合并这一稿自己的修订稿。
     'REVISION_MERGE_REQUIRED',
     'REVISION_TARGET_MISMATCH',
-    // #474 B5：恢复稿的请求身份、库内哈希与替代关系，一致性豁免的事实键，草稿定稿只能走原子定稿提交，
-    // 后处理运行必须绑定定稿收据。界面从运行记录与库内事实构造这些请求。
     'CONSISTENCY_EXEMPTION_KEY_INVALID',
     'DRAFT_FINALIZATION_REQUIRES_COMMIT',
     'POST_PROCESS_FINALIZATION_SOURCE_REQUIRED',
@@ -560,14 +508,11 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'RECOVERY_CANDIDATE_REPLACEMENT_INVALID',
     'RECOVERY_CANDIDATE_SOURCE_DRAFT_INVALID',
     'RECOVERY_CANDIDATE_SOURCE_MISMATCH',
-    // #474 B5：连续性事实与读取请求的形状、失效章节号、定稿来源草稿号。蓝图与导入提交、读前文时由界面或主进程自己构造。
     'CONTINUITY_CHARACTER_REF_INVALID',
     'CONTINUITY_FACTS_INVALID',
     'CONTINUITY_INVALIDATION_CHAPTER_INVALID',
     'CONTINUITY_SOURCE_DRAFT_INVALID',
     'CONTINUITY_TARGET_CHAPTER_INVALID',
-    // 知识库与检索索引（#474 B3）：重建计划与执行之间的内部约定、新代际写入后的完整性复核。
-    // updateChunkVectors 只有测试调用。
     'EMBEDDING_SPACE_BACKFILL_DUPLICATE_ID',
     'EMBEDDING_SPACE_BACKFILL_TARGET_MISSING',
     'EMBEDDING_SPACE_PLAN_MODE_INVALID',
@@ -576,8 +521,6 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'KNOWLEDGE_BASE_CHUNKS_INVALID',
     'KNOWLEDGE_BASE_COPY_REQUEST_INVALID',
   ],
-  // 模型输出不合角色提议的结构契约（#471）。工作流里由结构化重试或调用处的按语言说明接住。
-  // 定稿角色状态的同类码已在 app-errors.ts 登记（#552）。
   modelOutputContract: [
     'CHARACTER_PROPOSAL_COVERAGE_INCOMPLETE',
     'CHARACTER_PROPOSAL_DETAIL_FIELD_INVALID',
@@ -587,10 +530,7 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'CHARACTER_PROPOSAL_ROLE_INVALID',
     'CHARACTER_PROPOSAL_SLOT_MISMATCH',
   ],
-  // 恢复与续跑的顺序约束：界面只从恢复列表或当前运行发起这些请求，按记录状态给出可用操作；
-  // 只有绕过界面直接调用才会撞上。
   recoverySequencing: [
-    // 后处理步骤收据只由这次定稿后处理自己的运行写入；步骤已被新的后处理运行替换时才会撞上（#474 B5）。
     'POST_PROCESS_STEP_NOT_FOUND',
     'GENERATION_AGENT_WORKFLOW_RECOVERY_REQUIRED',
     'GENERATION_BATCH_ALREADY_COMPLETED',
@@ -619,8 +559,6 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'GENERATION_WORKFLOW_ADVANCE_REFUSED',
     'GENERATION_WORKFLOW_RESUME_REQUIRED',
     'GENERATION_WORKFLOW_ROOT_CHANGED',
-    // #471 扩到的前缀：目录续跑只从进度列表里未完成的一项发起；旧版名单恢复面板按记录状态给出可用操作；
-    // 采用角色前必须先看过提议预览；素材裁决未就绪时不会发起写稿。
     'CHARACTER_PROPOSAL_PREVIEW_REQUIRED',
     'DIRECTORY_PROGRESS_COMPLETE',
     'DIRECTORY_PROGRESS_NOT_FOUND',
@@ -630,11 +568,7 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'LEGACY_ROSTER_GENERATION_OUTCOME_UNKNOWN',
     'LEGACY_ROSTER_MODEL_SOURCE_REQUIRED',
     'MATERIAL_DECISION_NOT_READY',
-    // 模型返回的叙事线索候选不合结构（#474 B2）。
     'NARRATIVE_THREAD_CANDIDATES_INVALID',
-    // #474 B1：导入运行的请求形状、来源身份与指纹、冻结章节快照、批次与阶段检查点、执行租约以外的状态转换、
-    // 效果收据与谱系，全局事实与作者原稿定稿导入的幂等收据，导入来源身份与文件检查数据。界面从冻结的运行记录、
-    // 检查令牌与库内收据构造这些请求；碰到说明代码缺陷或作品库被外部改坏。导入通道的边界给出带码的通用说明。
     'FINALIZED_IMPORT_AUTHORITY_CONFLICT',
     'FINALIZED_IMPORT_CHAPTERS_INVALID',
     'FINALIZED_IMPORT_FACTS_CHANGED',
@@ -702,10 +636,7 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'IMPORT_SOURCE_PURPOSE_INVALID',
     'IMPORT_SOURCE_SECRET_INVALID',
   ],
-  // 不经工作流失败面板：界面自己识别并给出专门提示、主进程内部捕获，或只在启动装配与关闭收尾时抛出。
   handledElsewhere: [
-    // 定稿连续性摘要与角色状态候选只经定稿生成 IPC 提交（#474 B5）：generation-controller 不放行 CONTINUITY_ 前缀，
-    // 记下诊断日志后统一成 GENERATION_REQUEST_FAILED；原码只进日志。
     'CONTINUITY_CHARACTER_STATE_CANDIDATES_INVALID',
     'CONTINUITY_EVIDENCE_NOT_IN_SOURCE',
     'CONTINUITY_GENERATION_STALE',
@@ -713,23 +644,16 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'CONTINUITY_ROSTER_NAME_CONFLICT',
     'CONTINUITY_SOURCE_STALE',
     'GENERATION_BLUEPRINTS_CLEARED',
-    // 新代码不再抛出（ADR-0023），只用来把旧版本留下的记录归到容量预检；旧版本里它也只在主进程内部，不经工作流失败面板。
     'GENERATION_INPUT_CAPACITY_EXCEEDED',
     'GENERATION_KNOWLEDGE_SPACE_NOT_MATCHED',
-    // 主进程中止请求时用的 AbortSignal.reason，只用来给调用记录分类，不会作为报错交给界面。
     'GENERATION_STOPPED',
     'GENERATION_TRANSPORT_ALREADY_INSTALLED',
     'GENERATION_UNSAVED_TAIL_PRESENT',
-    // 错误本身带按界面语言写好的说明，码只供调用方分流：素材容量冲突、目录部分提交与范围过大。
     'CHAPTER_MATERIAL_CAPACITY_CONFLICT',
     'DIRECTORY_PARTIAL_COMMIT',
     'DIRECTORY_TASK_COST_LIMIT',
-    // 启动时外观设置与主进程握手，失败只影响主题初始化，不进任何失败面板。
     'MAIN_ACK_REJECTED',
     'MAIN_NOT_READY',
-    // 外部文件授权的路径、范围、窗口与签发参数校验（#474 B4）：external-file-grant-controller 按码换成按界面语言的说明，
-    // 归档、知识库、云备份与旧项目导入各自折叠成不含路径的码或说明，不原样交给界面。
-    // 新建、打开项目经 String(error) 原样转出：作者能遇到的 TARGET_CHANGED 已登记；其余只有窗口或调用参数不对才会出现。
     'EXTERNAL_FILE_GRANT_DIRECTORY_REQUIRED',
     'EXTERNAL_FILE_GRANT_FILE_REQUIRED',
     'EXTERNAL_FILE_GRANT_OPERATION_DENIED',
@@ -743,8 +667,6 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'EXTERNAL_FILE_GRANT_TTL_INVALID',
     'EXTERNAL_FILE_GRANT_USES_INVALID',
     'EXTERNAL_FILE_GRANT_WRONG_WINDOW',
-    // 剧情页对读取、清除剧情树与线索的增删改按固定的按语言说明提示，不显示主进程原文（#474 B2）；
-    // AI 生成的线索与剧情树经生成确认保存，这些码在那里统一成 GENERATION_REQUEST_FAILED。
     'NARRATIVE_THREAD_EVENT_INVALID',
     'NARRATIVE_THREAD_EVENT_SOURCE_NOT_FINALIZED',
     'NARRATIVE_THREAD_PLAN_INVALID',
@@ -754,13 +676,8 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'PLOT_TREE_PROJECT_CORE_MISSING',
     'PLOT_TREE_SAVE_FAILED',
     'PLOT_TREE_SOURCES_CHANGED',
-    // 模型执行租约失效或过期（#474 B6）：渲染端生成运行时把租约通道的失败统一成 LEASE_* 码，
-    // 主进程生成经生成 IPC 统一成 GENERATION_REQUEST_FAILED，这两个码只进日志。
     'MODEL_EXECUTION_LEASE_EXPIRED',
     'MODEL_EXECUTION_LEASE_INVALID',
-    // 模型供应商的请求与响应流失败（#474 B6）：流式失败只进调用记录，主进程生成按码分成网络失败、
-    // 上下文超长（GENERATION_CONTEXT_LENGTH_EXCEEDED）或 GENERATION_PROVIDER_FAILED，渲染端生成运行时统一成租约请求失败；
-    // 非流式失败只有连接测试显示，由 llm-controller 带上 HTTP 状态与供应商返回按界面语言写成说明。
     'LLM_CANCELLED',
     'LLM_CONTEXT_LENGTH_EXCEEDED',
     'LLM_REQUEST_FAILED',
@@ -771,19 +688,14 @@ const UNREGISTERED: Record<string, readonly string[]> = {
     'LLM_STREAM_NETWORK_FAILED',
     'LLM_STREAM_PROVIDER_ERROR',
     'LLM_STREAM_UNREADABLE',
-    // MCP 连接前的配置与传输检查（#474 B6）：connect 与 mcp:connect 通道把它们统一成 MCP_CONNECT_FAILED。
     'MCP_SERVER_NOT_CONFIGURED',
     'MCP_SSE_UNSUPPORTED',
     'MCP_STDIO_COMMAND_REQUIRED',
-    // 选择导入文件时的数量、大小与章节上限，以及启动时的导入资源上限配置（#474 B1）：import-controller 的
-    // importSelectionErrorMessage 按上限写成说明（读不出文件大小时说明为无法读取所选文件、请重新选择）；
-    // 资源上限只在注册导入通道时校验，失败只让启动失败。
     'IMPORT_CHAPTER_COUNT_EXCEEDED',
     'IMPORT_RESOURCE_LIMIT_INVALID',
     'IMPORT_SOURCE_BYTES_EXCEEDED',
     'IMPORT_SOURCE_COUNT_EXCEEDED',
     'IMPORT_SOURCE_SIZE_INVALID',
-    // 批注审阅面板就地接住并换成自己的说明，原码不进失败面板（#653）。
     'DRAFT_NOT_EDITABLE',
   ],
 }

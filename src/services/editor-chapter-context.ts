@@ -8,17 +8,14 @@ import { EDITOR_CONTEXT_PLAN, EDITOR_CONTEXT_PREVIOUS_ENDING_BELOW, type EditorC
 import type { NovelConfig, ProjectSessionContext } from '../shared/ipc-channels'
 import type { WritingLanguage } from '../shared/writing-language'
 
-/** 读不出（抛错或名册待修）记 unreadable；读到空就不带这一块。 */
 type Read = { text: string } | 'unreadable'
 
-/** 章内编辑时给主进程备候选块。读哪些块只看工具表。threadsLeftOut 是相关线索里超出条数或长度上限、没进线索块的条数，只给编辑器提示用。 */
 export async function prepareEditorChapterContext(request: {
   session: ProjectSessionContext
   novelConfig: Partial<NovelConfig>
   language: WritingLanguage
   chapterNumber: number
   action: EditorInlineRequest['action']
-  /** 选区前本章正文的字数。 */
   precedingChars: number
 }): Promise<{ context: EditorInlineChapterContext; threadsLeftOut: number }> {
   const { session, language, chapterNumber } = request

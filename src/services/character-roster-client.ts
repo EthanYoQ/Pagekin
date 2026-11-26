@@ -34,10 +34,6 @@ function parseStructuredRelationships(value: string): CharacterRosterRelationshi
   ))
 }
 
-/**
- * Renderer/workflow 侧只负责把现有角色卡形状送入唯一 roster seam；最终
- * schema、闭包与事务校验都留在主进程 CharacterRosterRepository。
- */
 export function characterRosterEntryFromCard(card: CharacterData): CharacterRosterEntry {
   const relationships = parseStructuredRelationships(card.relationships)
   return {

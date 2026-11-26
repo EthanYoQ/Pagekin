@@ -1,14 +1,3 @@
-/**
- * Agent 智能上下文构建器
- *
- * 采用三级注入策略管理 Token 消耗：
- * - L0 始终注入（~500 token）：项目名称/类型/进度/一句话大纲
- * - L1 编辑器感知（~800 token）：当前打开的 Tab 信息
- * - L2 按需获取：通过 Tool 调用获取详细数据
- *
- * 这是 Agent 理解用户上下文的核心模块。
- */
-
 import { useProjectStore } from '../../stores/project-store'
 import { useEditorStore } from '../../stores/editor-store'
 import { useWorkflowStore } from '../../stores/workflow-store'
@@ -29,14 +18,6 @@ import {
 } from '../prompt-templates'
 import { localizeNovelConfigFacts } from '../../shared/novel-config-localization'
 
-// ===== 上下文构建 =====
-
-/**
- * 构建 Agent 系统提示词（含上下文和 Tool 描述）
- *
- * 这是 Agent 每次对话时的系统提示词入口。
- * 将项目上下文、编辑器状态、可用 Tool 列表整合为一份完整的系统提示。
- */
 export async function buildAgentSystemPrompt(
   mode: AgentMode,
   executionContext?: AgentExecutionContext,
@@ -54,18 +35,14 @@ export async function buildAgentSystemPrompt(
       )
     : !!currentProject
 
-  // 1. Agent 身份与行为指导
   sections.push(await buildIdentityPrompt(mode, writingLanguage, executionContext))
 
-  // 2. L0 — 始终注入的项目上下文
   const l0 = buildL0ProjectContext(writingLanguage, executionContext)
   if (l0) sections.push(l0)
 
-  // 3. L1 — 编辑器感知上下文
   const l1 = buildL1EditorContext(writingLanguage, executionContext)
   if (l1) sections.push(l1)
 
-  // 4. Tool 系统提示词
   const toolPrompt = toolRegistry.generateToolPrompt(
     writingLanguage,
     tool => canUseProjectTools
@@ -79,9 +56,6 @@ export async function buildAgentSystemPrompt(
   return sections.join('\n\n---\n\n')
 }
 
-// ===== 内部构建方法 =====
-
-/** Agent 身份提示词 */
 async function buildIdentityPrompt(
   mode: AgentMode,
   writingLanguage: WritingLanguage,
@@ -105,10 +79,6 @@ async function buildIdentityPrompt(
   )}`
 }
 
-/**
- * L0 — 始终注入的项目上下文
- * 约 300-500 token，每次对话都注入
- */
 function buildL0ProjectContext(
   writingLanguage: WritingLanguage,
   executionContext?: AgentExecutionContext,
@@ -146,7 +116,6 @@ function buildL0ProjectContext(
     parts.push(`${label('叙事视角', 'Point of view')}: ${modelFacts.narrativePOV}`)
   }
   if (cfg.coreOutline) {
-    // 截取前 300 字符，避免 Token 爆炸
     const outline = cfg.coreOutline.length > 300
       ? cfg.coreOutline.slice(0, 300) + label('…', '...')
       : cfg.coreOutline
@@ -162,10 +131,6 @@ function buildL0ProjectContext(
   return parts.join('\n')
 }
 
-/**
- * L1 — 编辑器感知上下文
- * 约 200-500 token，注入当前打开的 Tab 信息和工作流状态
- */
 function buildL1EditorContext(
   writingLanguage: WritingLanguage,
   executionContext?: AgentExecutionContext,
@@ -173,7 +138,6 @@ function buildL1EditorContext(
   const parts: string[] = []
   const label = (zhCN: string, enUS: string) => promptLanguageText(writingLanguage, zhCN, enUS)
 
-  // 当前打开的编辑器 Tab
   const editorState = useEditorStore.getState()
   const currentProject = useProjectStore.getState().currentProject
   if (
@@ -197,7 +161,6 @@ function buildL1EditorContext(
 
     parts.push(`## ${label('编辑器状态', 'Editor state')}\n${label('打开的文件', 'Open files')}:\n${tabSummaries}`)
 
-    // 如果当前活跃 Tab 有内容且不太长，注入内容摘要
     if (activeTab?.content && activeTab.content.length > 0) {
       const preview = activeTab.content.length > 500
         ? activeTab.content.slice(0, 500) + `\n${label('…（内容过长已截断，可通过 read_file 工具获取完整内容）', '... (preview truncated; use read_file to retrieve the complete content)')}`
@@ -206,7 +169,6 @@ function buildL1EditorContext(
     }
   }
 
-  // 当前工作流状态
   const workflowState = useWorkflowStore.getState()
   if (workflowState.hasActiveRun()) {
     const run = workflowState.activeRuns.find(item => item.projectPath === currentProjectPath)

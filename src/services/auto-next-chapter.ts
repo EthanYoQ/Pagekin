@@ -10,10 +10,6 @@ export interface NextChapterBlueprint {
   userGuidance: string
 }
 
-/**
- * 定稿后的自动操作只负责打开紧邻的、尚未开始的章节创作窗口。
- * 它不会直接调用模型，也不会覆盖已有草稿。
- */
 export function getAutoNextChapterPrefill(
   enabled: boolean,
   completedChapter: number,

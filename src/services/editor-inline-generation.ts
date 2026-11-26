@@ -11,7 +11,6 @@ const authorInput = (input: EditorInlineInput) => [input.action, input.documentT
   input.chapterContext && JSON.stringify(input.chapterContext)]
 const sameAuthorInput = (a: EditorInlineInput, b: EditorInlineInput) => authorInput(a).every((value, index) => value === authorInput(b)[index])
 
-/** Main owns the task, model, nonce and budget. This adapter only holds navigation. */
 export function createEditorInlineGeneration(sessionInput: ProjectSessionContext) {
   const session = Object.freeze({ ...sessionInput })
   let recovery: EditorInlineRecovery | undefined
@@ -76,7 +75,6 @@ export function createEditorInlineGeneration(sessionInput: ProjectSessionContext
       return { ...receipt, sourceStatus: current.sourceStatus }
     },
     async cancel() { cancelled = true; if (opening) await opening.catch(() => {}); await cancelKnown() },
-    // 回执失败不重试：运行仍列在侧页。
     delivered() {
       if (recovery && !detached) void ipc.invokeWithProjectSession(session, 'editor-inline:delivered', { handle: recovery.view.handle })
         .then(() => globalEventBus.emit('EDITOR_RECOVERY_DELIVERED', { projectSession: session }), () => {})

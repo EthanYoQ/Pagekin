@@ -245,7 +245,6 @@ describe('authoritative finalized export integration', () => {
   })
 })
 
-// 主进程提示文案按全局数据里的界面语言取。
 const globalEnvironmentKeys = ['AI_NOVEL_APP_DATA_HOME', 'AI_NOVEL_LEGACY_SOURCE_HOME', 'AI_NOVEL_VELA_HOME'] as const
 let globalFixtureRoot = ''
 const previousGlobalEnvironment = new Map<string, string | undefined>()

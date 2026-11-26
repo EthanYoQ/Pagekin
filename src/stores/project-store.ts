@@ -81,7 +81,6 @@ let pendingOpens = 0
 let openingNoticeTimer: ReturnType<typeof setTimeout> | undefined
 let closeOpeningNotice: (() => void) | undefined
 
-/** 长篇打开要等一会儿，第一次在新版打开还要升级；开得快时不弹，免得提示一闪而过。 */
 async function withOpeningNotice<T>(opening: Promise<T>): Promise<T> {
   if (pendingOpens++ === 0) openingNoticeTimer = setTimeout(() => {
     closeOpeningNotice = pushToast({ tone: 'info', duration: 0, message: projectText(
@@ -108,7 +107,6 @@ function projectCopy(zhCNText: string, enUSText: string): LocalizedProjectCopy {
   return { zhCNText, enUSText }
 }
 
-/** 停用项目的提示要等清理结束才弹出，弹出时才按当时的界面语言写。 */
 type ProjectNotice = () => string
 
 const OPEN_FAILED_TITLE = ['打开作品失败', 'Couldn’t open the book'] as const
@@ -264,10 +262,6 @@ function persistConfigDraftLedger(ledger: ReturnType<typeof readConfigDraftLedge
   persistProjectEditorDraftLedger(useEditorStore.getState(), CONFIG_DRAFT_TAB, ledger)
 }
 
-/**
- * 从 currentProject 中提取纯净的 ProjectData 字段，
- * 防止 Zustand 状态中混入非序列化属性导致 Electron IPC structured clone 挂起。
- */
 function toPlainProjectData(p: ProjectData): ProjectData {
   return {
     id: p.id,
@@ -282,7 +276,6 @@ function toPlainProjectData(p: ProjectData): ProjectData {
   }
 }
 
-/** 给 Promise 包裹超时保护，防止 IPC 调用永远不返回 */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -294,7 +287,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     )
   })
 }
-// 延迟导入 ProjectService，避免循环依赖
 let _onProjectOpened: ((projectSession: ProjectSessionContext) => Promise<{ warnings: string[] }>) | null = null
 let _onProjectOpening: ((projectSession: ProjectSessionContext) => void | Promise<void>) | null = null
 let _onProjectClosed: ((projectPath: string | null) => Promise<void>) | null = null
@@ -368,7 +360,6 @@ function projectDatabaseMatchesRenderer(
   )
 }
 
-/** UI 身份比较可容忍 Windows 路径表现差异；写入授权仍必须依赖 frozen lease。 */
 function sameRendererProject(
   left: ProjectData | null | undefined,
   right: ProjectData | null | undefined,
@@ -428,58 +419,33 @@ async function reconcileStaleProjectResponse(options: {
 }
 
 interface ProjectState {
-  /** 当前打开的项目 */
   currentProject: ProjectData | null
-  /** 最近项目列表 */
   recentProjects: ProjectChannels['project:recent-list']['return']
-  /** 这次启动已经读到过一次最近项目；读到之前空列表不代表书架是空的。 */
   recentProjectsLoaded: boolean
-  /** 是否正在加载 */
   loading: boolean
   legacyImportNotice: string
   legacyImportBusy: boolean
-  /** 每次成功打开项目都递增；同一路径重开也属于新的渲染进程项目会话。 */
   projectSessionEpoch: number
 
-  // ===== 操作 =====
-  /** 新建项目 */
   createProject: (config: CreateProjectConfig) => Promise<boolean>
-  /** 打开项目 */
   openProject: (target: ProjectOpenTarget) => Promise<boolean>
   importLegacyProject: (source?: ProjectDirectoryGrant) => Promise<boolean>
-  /** 保存项目 */
   saveProject: (expectedProjectSession?: ProjectSessionContext) => Promise<boolean>
-  /** 更新小说配置 */
   updateNovelConfig: (config: Partial<NovelConfig>, expectedProjectSession?: ProjectSessionContext) => void
-  /** 下次保存时随设定落库。 */
   setAiSources: (sources: AiSources, expectedProjectSession: ProjectSessionContext) => void
-  /**
-   * 主进程已经写进库的设定字段，发布到界面并记为已保存。
-   * keepUnsavedEdits：作者在设定页改过、还没保存的字段保持作者的值（仍算未保存）；否则一律换成库里的值。
-   */
-  /** keep：'none' 全按库里的值；'unsaved-edits' 作者改过还没保存的字段保留作者的值；'current' 这些字段都保留界面上的值，只把它们记为已保存基准。 */
   publishSavedNovelConfig: (saved: Partial<NovelConfig>, expectedProjectSession: ProjectSessionContext, keep: 'none' | 'unsaved-edits' | 'current') => void
-  /** Main validates frozen sources and writes before publishing generated fields to the UI. */
   commitGeneratedNovelConfig: (config: Partial<NovelConfig>, expectedConfig: NovelConfig, expectedProjectSession: ProjectSessionContext,
     generationRunHandle: import('../services/generation/generation-runtime').MainGenerationRunHandle,
-    /** Existing guarded main effect, such as an import receipt; replaces the direct core write and may return the fields it actually saved. */
     persistEffect?: () => Promise<Partial<NovelConfig> | void>,
-    /** AI 写入后的来源标记，与设定在同一事务里落库。 */
     aiSources?: AiSources) => Promise<boolean>
-  /** 放弃指定项目的配置草稿并恢复到已保存基准。 */
   discardNovelConfigDraft: (
     projectPath: string,
     expectedProjectSession: ProjectSessionContext,
   ) => void
-  /** 加载最近项目 */
   loadRecentProjects: () => Promise<void>
-  /** 只移除最近项目记录，不删除项目目录或数据 */
   removeRecentProject: (projectPath: string) => Promise<boolean>
-  /** 删除项目目录和项目数据 */
   deleteProject: (projectPath: string) => Promise<boolean>
-  /** 关闭项目 */
   closeProject: () => Promise<boolean>
-  /** 更新角色状态（内存 + 持久化） */
   updateCharacterStates: (states: string) => Promise<void>
 }
 
@@ -519,8 +485,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         )) return false
         if (!isPreparedProjectTransitionCurrent(rendererProject, preparedTransition)) return false
       }
-      // 创建与打开共享同一渲染进程请求序列。若等待工作流退出期间已有更新的
-      // 打开/创建请求提交，或当前项目已经变化，旧创建请求不得再切换主进程数据库。
       if (
         !isLatestRequest()
         || !sameRendererProject(rendererProject, get().currentProject)
@@ -567,7 +531,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         )
         return false
       }
-      // 使用主进程返回的实际项目路径（跨平台安全，避免路径分隔符问题）
       const projectDir = result.projectPath
       if (!projectDir) throw new Error(projectText('创建结果缺少项目路径', 'The created project did not report its folder.'))
       if (rendererProject && preparedTransition) {
@@ -601,8 +564,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   openProject: async (target) => {
     const projectPath = typeof target === 'string' ? target : ''
-    // 作者点的入口已先确认并收起设置页；外部打开请求、新建后自动打开到这里时设置页可能还开着，换作品会卸载它、丢掉输入。
-    // 确认完才领请求序号：确认框开着时被拒的请求不能让还在等确认的那个失效。
     if (useLayoutStore.getState().settingsOpen) {
       const { confirmLeaveSettings } = await import('../components/settings/unsaved-settings')
       if (await confirmLeaveSettings() !== 'left') return false
@@ -636,7 +597,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         rendererProjectPath = rendererProject?.path ?? null
       }
       const activeProjectPath = get().currentProject?.path
-      // 同一路径重开同样会签发新 lease；旧工作流必须先退出，不能因路径相同而漏掉。
       if (activeProjectPath) {
         const authorization = createOpenTransitionAuthorization
         const authorized = Boolean(
@@ -739,7 +699,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         if (getProjectEditorDraft(draftLedger, result.project.path)) {
           persistConfigDraftLedger(restored.ledger)
         }
-        // 必须先解除第二层数据与旧项目的绑定，再向界面发布新项目身份。
         await callProjectOpening(openedProjectSession)
         if (!isLatestRequest()) {
           await reconcileStaleProjectResponse({
@@ -764,20 +723,15 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             ? result.project!.novelConfig : restored.value },
           projectSessionEpoch: state.projectSessionEpoch + 1,
         }))
-        // 默认落点与提交同步落下，之后作者的导航不会被它改回。
         navigate({ kind: 'stage' })
         const partialLoadWarnings: string[] = []
-        // Opening a project revokes old shelf preview capabilities in main.
-        // Refresh the visible shelf handles without turning a successful open into a failure.
         try {
           await get().loadRecentProjects()
         } catch (recentError) {
           set({ recentProjects: [] })
           partialLoadWarnings.push(String(recentError))
         }
-        // 此后渲染进程已经提交返回项目；过期状态只影响派生视图，可以安全退出。
         if (!isLatestRequest()) return false
-        // 统一初始化第二层状态仓库（角色卡、草稿等）
         let layer2Warnings: string[] = []
         try {
           const layer2Result = await callProjectOpened(openedProjectSession)
@@ -797,8 +751,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             englishWithReason(currentInterfaceLocale(), 'Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.', reason),
           ))
         }
-        // 每个提示框都画在先弹的上面，所以等作者关掉前一个再弹下一个：报错最先看到。
-        // 按会话比：换书失败也会推进请求序号而这本书仍开着，同一会话保存也会换对象。
         const leftThisProject = new AbortController()
         const abortIfLeft = () => {
           if (!sameProjectSessionContext(openedProjectSession, projectSessionContextFromProject(get().currentProject))) {
@@ -925,7 +877,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       return false
     }
     try {
-      // 提取纯净数据，防止 structured clone 序列化异常属性
       const plainData = toPlainProjectData(project)
       console.log('[project-store.saveProject] 准备调用 IPC，数据大小:', JSON.stringify(plainData).length)
       const result = await withTimeout(
@@ -976,7 +927,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const current = get().currentProject
     if (!current || !sameProjectSessionContext(expectedProjectSession, projectSessionContextFromProject(current))) return false
     const ledger = readConfigDraftLedger()
-    // Only the submitted fields became formal data; unrelated author edits stay dirty.
     const saved = { ...(getProjectEditorDraft(ledger, project.path)?.baseValue ?? expectedConfig), ...config }
     const unchanged = JSON.stringify(current.novelConfig) === JSON.stringify(expectedConfig)
     const next = unchanged ? { ...expectedConfig, ...config } : { ...current.novelConfig }
@@ -987,8 +937,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
     set({ currentProject: { ...current, novelConfig: next, ...(aiSources ? { aiSources } : {}) } })
     persistConfigDraftLedger(settleProjectEditorSave(ledger, project.path, saved, next))
-    // The formal effect succeeded. A concurrent author edit remains a dirty draft,
-    // and callers must not run callbacks that replace it with an older full config.
     if (!unchanged) throw new Error('GENERATION_SAVED_WITH_NEWER_AUTHOR_DRAFT')
     return true
   },
@@ -1068,7 +1016,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     try {
       list = await ipc.invoke('project:recent-list')
     } catch (error) {
-      // 读不到也算读过：书房据此显示空书房，而不是一直停在等待里。
       if (recentProjectsReads.isLatest(requestId)) set({ recentProjectsLoaded: true })
       throw error
     }
@@ -1149,8 +1096,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             projectSessionContextFromProject(get().currentProject),
           )
         ) {
-          // 删除失败后主进程数据库也未能恢复，继续保留可写界面会制造
-          // “看似打开、实际无数据库”的危险半状态。先解除所有项目绑定。
           set({ currentProject: null })
           try {
             await callProjectClosed(projectPath)
@@ -1170,7 +1115,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         return false
       }
       if (result.warning) {
-        // 主进程已按界面语言写好清理未完成的说明（带原始文件系统错误），不再套「发生错误」。
         alertError(
           displayedErrorMessage(currentInterfaceLocale(), result.warning),
           { title: projectText('项目已删除，部分清理未完成', 'Project deleted with some cleanup incomplete') },
@@ -1341,7 +1285,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 }))
 
-// 任何 currentProject 提交都会同步刷新 IPC 的默认会话；工作流另行持有自己的冻结副本。
 useProjectStore.subscribe((state) => {
   setActiveProjectSessionContext(projectSessionContextFromProject(state.currentProject))
 })

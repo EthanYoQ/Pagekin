@@ -8,11 +8,9 @@ import { registerStartupController, type StartupEvent } from '../../../electron/
 import type { AppearanceReadbackAck, StartupState } from '../../shared/startup-contract'
 import { parseAppearanceProfileV1 } from '../../shared/__tests__/fixtures/appearance-profile-v1-parser.fixture'
 
-/** 旧版本单独存的界面版本键：迁移不读也不写，只用来确认它原样留着。 */
 const OLD_SHELL = 'ai-novel-writer-ui-version'
 const KEYS = [KEY, PREVIOUS, THEME, OLD_SHELL, 'f01-unrelated']
 
-/** Real Chromium localStorage/DOM, deterministic main transport contract fixtures only. */
 function dependencies(overrides: Partial<AppearanceBootstrapDependencies> = {}): AppearanceBootstrapDependencies {
   return {
     waitForMainReady: async () => ({ state: 'ready', globalGeneration: 'synthetic-main-generation' }),
@@ -25,7 +23,6 @@ const seedLegacy = (theme = 'paper') => {
   localStorage.setItem(THEME, raw)
   return raw
 }
-/** RD-10 之前的版本写下的配置：v1 带工作台外壳，v2 带新外壳。 */
 const seedPrevious = (fields: Record<string, unknown> = {}) => {
   const raw = JSON.stringify({ schemaVersion: 1, revision: 5, shellPreference: 'writer', colorTheme: 'galaxy', zoom: 1.1,
     writingFont: 'noto-serif-sc', uiFont: 'inter', origin: 'author', legacyImportCompleted: true, legacyFontDefaultsVersion: 1, ...fields })
@@ -227,7 +224,7 @@ describe('appearance bootstrap in real browser storage', () => {
     expect(await interrupted.getState().bootstrap(dependencies({ storage: () => storage, acknowledgeReadback: async () => false }))).toBe(false)
     expect(localStorage.getItem(THEME)).toBe(original)
     const durable = localStorage.getItem(KEY)
-    if (fault !== 'before-write') seedLegacy('light') // A later legacy write must not overwrite the committed profile.
+    if (fault !== 'before-write') seedLegacy('light')
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
     const reopened = createAppearanceStore()
     expect(await reopened.getState().bootstrap(dependencies())).toBe(true)

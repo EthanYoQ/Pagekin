@@ -14,18 +14,13 @@ export interface GenerationMessage {
   content: string
 }
 
-/** A semantic generation contract. Physical provider parameters are deliberately absent. */
 export interface GenerationTask {
   purpose: string
-  /** Semantic extent only; main owns capability checks and physical reservation. */
   budgetDemand?: import('./task-budget-planner').TaskBudgetDemand
-  /** Explicit product semantics; omitted stages derive only from output shape. */
   reasoningStage?: GenerationReasoningStage
   output: GenerationOutput
   messages: readonly GenerationMessage[]
-  /** Optional byte-exact safety policy for protected structured prompts. */
   promptBudget?: PromptBudgetPolicy
-  /** Physical request controls belong exclusively to this module's plan. */
   maxTokens?: never
   maxOutputTokens?: never
   responseFormat?: never
@@ -34,15 +29,10 @@ export interface GenerationTask {
 }
 
 export interface PromptBudgetSection {
-  /** Stable, non-sensitive section name used by receipts and localized diagnostics. */
   sectionName: string
-  /** Index in the final message array where this exact assembled fragment occurs. */
   messageIndex: number
-  /** Exact fragment from the final assembled request; never copied into reports or logs. */
   finalText: string
-  /** Optional independent ceiling for one protected evidence section. */
   limitUtf8Bytes?: number
-  /** Safe human-readable identity for diagnostics; prompt text is never copied here. */
   displayName?: string
 }
 
@@ -59,13 +49,10 @@ export interface PromptBudgetSectionReport {
 
 export type PromptBudgetResultCode = 'OK' | 'PROMPT_BUDGET_EXHAUSTED'
 
-/** Safe prompt diagnostics. Prompt text and provider endpoint details are deliberately absent. */
 export interface PromptBudgetReport {
   totalUtf8Bytes: number
   limitUtf8Bytes: number
-  /** Present on current reports; optional so persisted reports from older releases remain readable. */
   contextWindowTokens?: number | null
-  /** Present on current reports; optional so persisted reports from older releases remain readable. */
   estimatedInputTokens?: number
   reservedOutputTokens: number
   sections: readonly PromptBudgetSectionReport[]
@@ -79,11 +66,8 @@ export interface DefaultModelSnapshot {
     ModelProfile,
     'id' | 'provider' | 'protocol' | 'modelName' | 'baseUrl' | 'maxTokens' | 'capabilities'
   >
-  /** Main-process lease identity; the renderer never receives its model secret snapshot. */
   modelExecutionLeaseId?: string
-  /** Authoritative non-secret identity supplied by the main-process lease receipt. */
   endpointFingerprint?: string
-  /** Authoritative non-secret capability evidence supplied by the main-process lease receipt. */
   resolvedCapabilities?: ResolvedCapabilityEvidence
 }
 
@@ -94,15 +78,10 @@ export interface DefaultModelSource {
 export interface GenerationHarnessPolicy {
   maxAttempts: number
   maxRequestedOutputTokens: number
-  /** Intent-level cost cap for one physical request; independent of model identity. */
   maxRequestedOutputTokensPerAttempt: number
   deadlineMs: number
 }
 
-/**
- * Application-wide safety ceiling. Workflows may choose smaller intent budgets,
- * but no model capability or caller may enlarge one run beyond these bounds.
- */
 export const GENERATION_ABSOLUTE_BUDGET_LIMITS = Object.freeze({
   maxAttempts: 32,
   maxRequestedOutputTokens: 147_456,
@@ -142,7 +121,6 @@ export interface PhysicalGenerationPlan {
 }
 
 export interface PhysicalGenerationRequest {
-  /** The only model authorization crossing the completion seam. */
   modelExecutionLeaseId: string | null
   purpose: string
   creativeStrategy: CreativeStrategy
@@ -150,7 +128,6 @@ export interface PhysicalGenerationRequest {
   messages: readonly GenerationMessage[]
   plan: Readonly<PhysicalGenerationPlan>
   signal: AbortSignal
-  /** Provisional provider text. Callers must reconcile it with the terminal completion. */
   onChunk?: (chunk: string) => void
 }
 
@@ -160,16 +137,13 @@ export interface ProviderCompletion {
   usage?: TokenUsage
 }
 
-/** The only true-external seam owned by the generation module. */
 export interface CompletionPort {
   complete(request: PhysicalGenerationRequest): Promise<ProviderCompletion>
 }
 
 export interface GenerationAttemptReceipt {
   diagnostics?: import('../../shared/generation-contract').GenerationTransportDiagnostics
-  /** Main's immutable durable candidate identity; absent on unmigrated legacy execution. */
   visibleArtifact?: { artifactId: string; attemptId: string; revision: number; textHash: string }
-  /** Safe semantic task label; never contains prompt, output, endpoint, or credentials. */
   purpose?: string
   model: FrozenGenerationModelIdentity
   capabilities: ResolvedCapabilityEvidence
@@ -183,7 +157,6 @@ export interface GenerationAttemptReceipt {
     deadlineAt: number
   }
   finishReason: LLMFinishReason
-  /** Main-normalized failure category; never provider response text. */
   failureCode?: 'GENERATION_PROVIDER_FAILED' | 'NETWORK_ERROR' | 'ROOT_BUDGET_EXHAUSTED' | 'GENERATION_STORAGE_FAILED' | 'GENERATION_CONTEXT_LENGTH_EXCEEDED'
   retryWithLearnedWindow?: true
   usage?: TokenUsage
@@ -192,7 +165,6 @@ export interface GenerationAttemptReceipt {
 
 export { isTerminalProviderFailure }
 
-/** Its message is the registered code, so every failure view can explain it; the receipt keeps the dispatched call on record. */
 export class TerminalProviderFailureError extends Error {
   constructor(readonly code: 'GENERATION_CONTEXT_LENGTH_EXCEEDED', readonly receipt: GenerationAttemptReceipt) {
     super(code)
@@ -204,10 +176,6 @@ export function throwIfTerminalProviderFailure(receipt: GenerationAttemptReceipt
   if (isTerminalProviderFailure(receipt.failureCode)) throw new TerminalProviderFailureError(receipt.failureCode, receipt)
 }
 
-/**
- * For clients that read a run back instead of its receipt: that run's last attempt decides.
- * The diagnostics list every attempt under the root, including other runs such as child workflows.
- */
 export function throwIfLastAttemptTerminal(diagnostics: readonly { runId?: string; failureCode?: string | null }[] | undefined, runId: string): void {
   const failureCode = diagnostics?.filter(diagnostic => diagnostic.runId === runId).at(-1)?.failureCode
   if (isTerminalProviderFailure(failureCode)) throw new Error(failureCode)
@@ -228,10 +196,8 @@ export type GenerationOutcome =
     }
 
 export interface GenerationExecutionOptions {
-  /** Required by the S05 main-owner facade; repeated values read the same durable attempt. */
   invocationNonce?: string
   signal?: AbortSignal
-  /** Provisional provider text. It is never terminal or persistence evidence. */
   onChunk?: (chunk: string) => void
 }
 
@@ -271,7 +237,6 @@ export class GenerationHarnessError extends Error {
   }
 }
 
-/** Pre-request failure with a safe report and no physical-attempt receipt. */
 export class PromptBudgetExceededError extends GenerationHarnessError {
   constructor(
     readonly report: PromptBudgetReport,
@@ -282,7 +247,6 @@ export class PromptBudgetExceededError extends GenerationHarnessError {
   }
 }
 
-/** Failed physical attempt with a non-sensitive budget receipt for orchestration and audit. */
 export class GenerationAttemptError extends GenerationHarnessError {
   constructor(
     code: 'CANCELLED' | 'DEADLINE_EXHAUSTED' | 'PROVIDER_REQUEST_FAILED',
@@ -698,9 +662,6 @@ export function createGenerationHarness(dependencies: {
             options?.signal?.removeEventListener('abort', cancel)
           }
 
-          // Missing terminal evidence is never equivalent to a completed
-          // creative fact. Provider adapters may preserve omitted values and
-          // this seam normalizes them fail-closed.
           const finishReason = completion.finishReason ?? 'unknown'
           const receipt = attemptReceipt(
             task.purpose,

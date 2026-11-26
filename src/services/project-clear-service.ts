@@ -98,7 +98,6 @@ function affectedHiddenDraftLabels(
 
 function assertResult(result: { success: boolean; error?: string }): void {
   if (!result.success) {
-    // 对话框标题已写「清除失败」：中文界面只给主进程原因，英文界面不转出中文原文。
     const { locale, text } = useLocaleStore.getState()
     throw new Error(knownAppErrorMessage(currentInterfaceLocale(), result.error)
       ?? (result.error && locale !== 'en-US' ? result.error : text('清除项目生成内容失败', 'The generated content could not be cleared.')))
@@ -157,7 +156,6 @@ export async function clearProjectData(
 
   if (normalized.generatedText) {
     useDraftStore.getState().reset()
-    // 清除正文连回收站里的章节一起清掉，回收站与删除清理提示要重读。
     globalEventBus.emit('CHAPTER_DELETION_UPDATED', { projectPath, projectSession })
   }
   if (normalized.creativeFields) {

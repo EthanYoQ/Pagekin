@@ -1,6 +1,3 @@
-/**
- * write_file — 写入或修改项目文件
- */
 import { buildAgentTool, createToolArtifact } from '../tool-registry'
 import { ipc } from '../../ipc-client'
 import { validatePath } from './safe-path'
@@ -56,7 +53,6 @@ export const writeFileTool = buildAgentTool({
 
     const { project, projectSession } = requireAgentProject(context)
 
-    // 路径安全校验
     const pathCheck = validatePath(project.path, filePath)
     if (!pathCheck.valid) {
       return { success: false, commitState: 'not_committed', content: '', error: text(

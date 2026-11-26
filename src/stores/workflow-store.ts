@@ -41,27 +41,20 @@ import { stageNotice, type BackgroundNotice } from '../services/workflows/stage-
 import { ipc } from '../services/ipc-client'
 import type { WritingSkillStage } from '../shared/writing-skills'
 
-// ===== 工作流数据模型 =====
-
-/** 工作流步骤状态 */
 export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'cancelled'
 
-/** 工作流运行状态 */
 export type WorkflowStatus =
   | 'idle'
   | 'running'
   | 'cancelling'
   | 'completed'
   | 'failed'
-  /** 作者主动取消后安全退出；与失败分开，界面不当作出错。 */
   | 'cancelled'
   | 'paused'
   | 'waiting'
 
-/** Stable non-success terminal state supplied by a bounded model completion. */
 export type WorkflowFailureCode = BoundedCompletionFailureCode | PromptBudgetFailureCode
 
-/** 工作流步骤 */
 export interface WorkflowStep {
   id: string
   name: string
@@ -71,13 +64,9 @@ export interface WorkflowStep {
   activityText?: string
   result?: string
   error?: string
-  /** 旧字段 error、errorCode 迁移期照写。 */
   failure?: Failure
-  /** Non-empty machine-readable code supplied by the thrown error. */
   errorCode?: string
-  /** Structured failure cause when a bounded model completion stopped early. */
   failureCode?: WorkflowFailureCode
-  /** Safe structured byte attribution for a prompt-budget preflight failure. */
   promptBudgetReport?: PromptBudgetReport
   generationActivity?: { operation: string; diagnostics?: GenerationTransportDiagnostics }
   startedAt?: string
@@ -86,27 +75,18 @@ export interface WorkflowStep {
   logs: string[]
 }
 
-/** 工作流运行实例 */
 export interface WorkflowRun {
   characterProposalBatch?: CharacterProposalBatch
   characterProposalChoices?: CharacterProposalChoices
   id: string
-  /** 工作流启动时冻结的项目身份。 */
   projectPath: string
-  /** 启动时从当前项目冻结；缺失时该 run 只能失败，不能执行项目级副作用。 */
   projectSession: ProjectSessionContext | null
   generationModelId?: string
-  /** 本次写作冻结的每章目标可见单位；不得在执行中重新读取全局配置。 */
   chapterWordsTarget?: number
-  /** 该运行将生成或改写的逻辑资源；同项目内写入与任何其他声明互斥。 */
   resourceKeys?: readonly string[]
-  /** 该运行只读取的逻辑资源；多个读取者可以并发。 */
   readResourceKeys?: readonly string[]
-  /** Project writing language frozen when the workflow starts. */
   writingLanguage: WritingLanguage
-  /** Visible interface locale frozen when the workflow starts. */
   uiLocale: Locale
-  /** Safe display metadata for workflow-start-frozen writing skills. */
   writingSkills?: ReadonlyArray<{
     stage: WritingSkillStage
     skillId: string
@@ -123,143 +103,88 @@ export interface WorkflowRun {
   completedAt?: string
   error?: string
   failure?: Failure
-  /** Machine-readable error code mirrored from the failed current step. */
   errorCode?: string
-  /** Structured terminal cause mirrored from the failed current step. */
   failureCode?: WorkflowFailureCode
-  /** Safe structured byte attribution mirrored from the failed current step. */
   promptBudgetReport?: PromptBudgetReport
-  /** 已请求在当前步骤完成后的安全边界暂停 */
   pauseRequested?: boolean
 }
 
-/** 工作流类型 */
 export type WorkflowType =
-  | 'new_project_setup'       // 新项目初始化（配置→架构→目录）
-  | 'architecture_generation' // 架构生成（故事前提→角色图谱→世界观→情节大纲）
-  | 'directory'               // 目录/蓝图生成
-  | 'chapter_creation'        // 章节创作（写稿→修稿→审稿→定稿）
-  | 'batch_generate'          // 批量生成
-  | 'config_generation'       // 智能配置生成
-  | 'post_process'            // 后处理任务（角色卡提取等）
-  | 'novel_import'            // 导入已有小说（逆向推演全流程）
+  | 'new_project_setup'
+  | 'architecture_generation'
+  | 'directory'
+  | 'chapter_creation'
+  | 'batch_generate'
+  | 'config_generation'
+  | 'post_process'
+  | 'novel_import'
 
-/** 工作流步骤执行器 */
 export type StepExecutor = (
   step: WorkflowStep,
   context: WorkflowContext,
   callbacks: StepCallbacks,
 ) => Promise<string | void>
 
-/** 工作流上下文（共享数据） */
 export interface WorkflowContext {
-  /** Main-issued identities; stage changes keep the root budget, recovery keeps the exact run. */
   mainGenerationRootHandle?: import('../services/generation/generation-runtime').MainGenerationRunHandle
   mainGenerationRunHandle?: import('../services/generation/generation-runtime').MainGenerationRunHandle
   agentWorkflowRegistrationId?: string
-  /** Main adapter supplies one idempotent cancellation intent, including between stages. */
   requestMainGenerationCancellation?: () => Promise<void>
-  /** 本次运行的稳定身份，供事件消费者排除其他并发任务。 */
   runId: string
-  /** 工作流启动时冻结的项目身份。 */
   projectPath: string
-  /** 工作流启动时冻结的 IPC 会话，禁止在执行器内重新读取 currentProject。 */
   projectSession: ProjectSessionContext
   generationModelId?: string
-  /** 本次写作冻结的每章目标可见单位。 */
   chapterWordsTarget?: number
-  /** Project writing language frozen when the workflow starts. */
   writingLanguage: WritingLanguage
-  /** Visible interface locale frozen when the workflow starts. */
   uiLocale: Locale
-  /** 查报错目录用的界面语言，与 uiLocale 同时冻结；只在执行上下文里，不进运行记录。 */
   interfaceLocale: ErrorDisplayLocale
-  /** Full immutable content frozen once before the first workflow step starts. */
   writingSkills?: FrozenWritingSkillSnapshot
-  /** 步骤间传递的数据 */
   data: Record<string, unknown>
-  /** 是否已取消 */
   cancelled: boolean
-  /** Import-only intent; the current bounded effect exits before the orchestrator applies cancellation. */
   cancelRequested?: boolean
-  /** Import cancellation intent must be durable before its orchestrator writes the terminal boundary. */
   cancellationRequest?: Promise<void>
-  /** 是否已请求在当前步骤完成后的安全边界暂停 */
   pauseRequested?: boolean
 }
 
-/** 步骤回调 */
 export interface StepCallbacks {
-  /** 追加日志 */
   log: (message: string) => void
-  /** 更新进度 (0-100) */
   setProgress: (progress: number) => void
   setActivityText?: (activityText: string | undefined) => void
-  /** 保存本步骤最近一次模型调用的安全提示词预算摘要。 */
   setPromptBudgetReport?: (report: PromptBudgetReport) => void
   setGenerationActivity?: (activity: NonNullable<WorkflowStep['generationActivity']>) => void
-  /** 流式文本追加 */
   appendText: (text: string) => void
-  /** 用一份安全的临时或终态文本替换当前步骤输出。 */
   replaceText?: (text: string) => void
 }
 
-// ===== 工作流定义 =====
-
-/** 工作流完成后的通知/跳转动作 */
 export interface WorkflowCompleteAction {
-  /** 通知策略：open=直接打开 | silent=仅内部状态不额外动作 */
   mode: 'open' | 'silent'
-  /** 成功时的提示文案（备用，供日志用） */
   message?: string
-  /** 打开结果的回调（open 模式直接调用） */
   openResult?: () => void | Promise<void>
 }
 
 export interface WorkflowDefinition {
   onStarted?: () => void
-  /** 可由需要同步订阅事件的调用方预先分配。 */
   runId?: string
-  /** Main-validated Agent tool registration, separate from model-editable intent. */
   agentWorkflowRegistration?: import('../shared/agent-generation').AgentWorkflowRegistration
   type: WorkflowType
   title: string
-  /** 工作流启动时冻结的项目身份。 */
   projectPath: string
-  /**
-   * 工作流来源会话。缺失、过期或与项目路径不匹配的定义必须在执行前被拒绝，
-   * 禁止按路径借用当前项目的新 lease。
-   */
   projectSession: ProjectSessionContext
-  /**
-   * Renderer-owned model selection for a draft workflow. It must never be
-   * populated from LLM tool arguments.
-   */
   generationModelId?: string
-  /** 本次写作冻结的每章目标可见单位。 */
   chapterWordsTarget?: number
-  /** 同一项目内由本工作流写入的逻辑资源。 */
   resourceKeys?: readonly string[]
-  /** 同一项目内由本工作流读取的逻辑资源。 */
   readResourceKeys?: readonly string[]
-  /** Persisted workflows may freeze the UI locale independently of the current app setting. */
   uiLocale?: Locale
   steps: Array<{
     name: string
     description: string
     executor: StepExecutor
-    /** Explicit author action is required even when the workflow runs automatically. */
     requiresConfirmation?: boolean
   }>
-  /** Persist cancellation before waiting for the current operation to yield. */
   onCancelRequested?: (context: WorkflowContext) => void | Promise<void>
-  /** Commit terminal cancellation after a step/pause boundary is reached. */
   onCancelledAtBoundary?: (context: WorkflowContext) => void | Promise<void>
-  /** 工作流完成后的通知/跳转动作（可选） */
   onComplete?: WorkflowCompleteAction
-  /** 完成或失败时，窗口不在前台则弹系统通知。 */
   backgroundNotice?: BackgroundNotice
-  /** 不调用写作 Skill 的工作流不冻快照：冻一次要读两次盘，Windows 上每次 1.5 到 2.5 秒。 */
   withoutWritingSkills?: true
 }
 
@@ -312,65 +237,40 @@ function uiText(locale: Locale, zhCNText: string, enUSText: string): string {
   return locale === 'en-US' ? enUSText : zhCNText
 }
 
-// ===== Store =====
-
 interface WorkflowState {
-  /** 所有活跃的工作流（支持多任务并发） */
   activeRuns: WorkflowRun[]
-  /** 历史工作流记录 */
   history: WorkflowRun[]
-  /** 全局日志（下方面板用） */
   globalLogs: Array<{ time: string; level: 'info' | 'warn' | 'error'; message: string }>
 
-  /** 兼容属性：第一个活跃工作流（供旧代码平稳过渡） */
   currentRun: WorkflowRun | null
 
-  /** 步进模式：各工作流的等待状态 */
   waitingRuns: Record<string, { waitingForConfirm: boolean; waitingAfterStepIndex: number }>
 
-  // ===== 旧接口兼容（映射到第一个 activeRun） =====
   waitingForConfirm: boolean
   waitingAfterStepIndex: number
 
-  // ===== 便捷查询 =====
-  /** 检查指定类型的工作流是否有在运行 */
   isTypeRunning: (type: WorkflowType) => boolean
-  /** 返回占用同项目同一逻辑资源的活跃运行；不同资源仍可并发。 */
   getResourceConflict: (definition: Pick<
     WorkflowDefinition,
     'projectPath' | 'resourceKeys' | 'readResourceKeys'
   >) => WorkflowRun | null
-  /** 是否有任何工作流在运行 */
   hasActiveRun: () => boolean
-  /** 活跃任务数量 */
   activeCount: () => number
 
-  // ===== Actions =====
-  /** 启动一个工作流（可并发），返回 runId */
   startWorkflow: (definition: WorkflowDefinition, stepByStep?: boolean) => Promise<string>
-  /** 步进模式下确认继续执行下一步（需指定 runId） */
   setCharacterProposalChoices: (runId: string, choices: CharacterProposalChoices) => boolean
   confirmContinue: (runId?: string) => void
-  /** 取消工作流（传 runId 取消指定，不传取消全部） */
   cancelWorkflow: (runId?: string) => void
-  /** 取消指定项目的全部工作流，并等待执行器真正退出 activeRuns。 */
   cancelProjectWorkflowsAndWait: (projectPath: string, timeoutMs?: number) => Promise<void>
-  /** 请求在当前步骤完成后的安全边界暂停工作流 */
   pauseWorkflow: (runId: string) => void
-  /** 继续已暂停或正在等待安全暂停的工作流 */
   resumeWorkflow: (runId: string) => void
   recordRunGenerationModel: (runId: string, modelId: string) => void
-  /** 添加全局日志 */
   addLog: (level: 'info' | 'warn' | 'error', message: string, locale?: Locale) => void
-  /** 清空日志 */
   clearLogs: () => void
 }
 
-/** 工作流上下文实例 Map（runId → context） */
 const activeContexts = new Map<string, WorkflowContext>()
-/** 步进模式：存储「等待用户确认」的 Promise resolve（runId → resolve） */
 const continueResolveRefs = new Map<string, () => void>()
-/** 批量任务：存储「等待恢复」的 Promise resolve（runId → resolve） */
 const pauseResolveRefs = new Map<string, () => void>()
 const cancelRequestedHooks = new Map<string, (context: WorkflowContext) => void | Promise<void>>()
 const cancelBoundaryHooks = new Map<string, (context: WorkflowContext) => void | Promise<void>>()
@@ -383,12 +283,10 @@ function isCancellationPending(context: WorkflowContext): boolean {
   return context.cancelled || context.cancelRequested === true
 }
 
-/** 作者点了取消，而且这次中止就是取消造成的；取消窗口里的真实错误不算，照常记失败。 */
 function stoppedByCancellation(context: WorkflowContext, error: unknown): boolean {
   return isCancellationPending(context) && isWorkflowCancellation(error)
 }
 
-/** 计算兼容字段的辅助函数 */
 function computeCompat(activeRuns: WorkflowRun[], waitingRuns: Record<string, { waitingForConfirm: boolean; waitingAfterStepIndex: number }>) {
   const currentRun = activeRuns.length > 0 ? activeRuns[0] : null
   const firstRunId = currentRun?.id ?? ''
@@ -416,12 +314,10 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   globalLogs: [],
   waitingRuns: {},
 
-  // 兼容属性初始值
   currentRun: null,
   waitingForConfirm: false,
   waitingAfterStepIndex: -1,
 
-  // ===== 便捷查询 =====
   isTypeRunning: (type) => get().activeRuns.some(r =>
     r.type === type
     && (r.status === 'running' || r.status === 'waiting' || r.status === 'paused' || r.status === 'cancelling')
@@ -447,7 +343,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   },
 
   confirmContinue: (runId) => {
-    // 如果未指定 runId，使用第一个等待中的
     const targetId = runId ?? Object.keys(get().waitingRuns).find(id => get().waitingRuns[id]?.waitingForConfirm)
     if (!targetId) return
     const run = get().activeRuns.find(candidate => candidate.id === targetId)
@@ -466,10 +361,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   },
 
   startWorkflow: async (definition, stepByStep = false) => {
-    // A caller-supplied durable run ID is also the renderer's single-flight key.
-    // Reject the duplicate before reading mutable project state or constructing a
-    // second context; the original executor and its frozen context remain owned
-    // by the first call.
     if (definition.runId && get().activeRuns.some(run => run.id === definition.runId)) {
       return definition.runId
     }
@@ -490,10 +381,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     const writingLanguage = resolveWritingLanguage(currentProject?.novelConfig.writingLanguage)
     const uiLocale = definition.uiLocale ?? useLocaleStore.getState().locale
 
-    // Runtime callers can still deserialize a legacy definition that predates
-    // the required TypeScript field. Reject it before adding an active run or
-    // executing any project-level side effect; never borrow currentProject's
-    // lease based on a matching path.
     if (!projectSession) {
       const rejectedRun: WorkflowRun = {
         id: runId,
@@ -588,7 +475,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       })),
     }
 
-    // 运行一出现在界面上就有暂停、取消按钮，执行上下文要同时就位，否则写作 Skill 快照读取期间的点击会落空。
     const context: WorkflowContext = {
       ...(definition.agentWorkflowRegistration ? { mainGenerationRootHandle: definition.agentWorkflowRegistration.parentHandle,
         agentWorkflowRegistrationId: definition.agentWorkflowRegistration.registrationId } : {}),
@@ -619,7 +505,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       }
     })
 
-    // 切换作品等的是活动列表清空，取消请求落盘之前运行不能离开；保存失败由 cancelWorkflow 记日志。
     const cancellationRequestSettled = () => context.cancellationRequest?.catch(() => undefined)
 
     const endBeforeFirstStep = async (status: 'failed' | 'cancelled', error: string) => {
@@ -668,7 +553,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),
     )) {
-      // 切换作品会先取消本作品的运行；作者已取消时，项目变了正是取消的结果，不是出错。
       if (isCancellationPending(context)) {
         await cancelBeforeFirstStep()
         return runId
@@ -720,14 +604,10 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
 
     definition.onStarted?.()
 
-    // 逐步执行
     for (let i = 0; i < definition.steps.length; i++) {
-      // 批量任务只在步骤之间暂停，避免中断一次正在进行的模型请求或后处理；
-      // 第一步之前点的暂停同样等这一章写完，与按钮说明「写完当前这一章后暂停」一致。
       if (i > 0) await waitForResumeAtSafeBoundary()
 
       if (!isCancellationPending(context) && ((stepByStep && i > 0) || definition.steps[i].requiresConfirmation)) {
-        // Register before publishing waiting state so an immediate UI confirmation cannot be lost.
         const confirmed = new Promise<void>(resolve => { continueResolveRefs.set(run.id, resolve) })
         const batch = context.data.characterProposalBatch as CharacterProposalBatch | undefined
         if (batch) delete context.data.characterProposalChoices
@@ -744,7 +624,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         await confirmed
         if (!isCancellationPending(context)) updateRunById(set, run.id, { status: 'running' })
       }
-      // 检查取消
       if (context.cancelled && definition.type !== 'novel_import') {
         updateRunById(set, run.id, {
           status: 'cancelled',
@@ -773,7 +652,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
 
       const stepDef = definition.steps[i]
 
-      // 标记当前步骤为运行中
       updateStepById(set, run.id, i, { status: 'running', startedAt: new Date().toISOString(), activityText: undefined })
       updateRunById(set, run.id, { currentStepIndex: i })
       get().addLog('info', uiText(
@@ -782,7 +660,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         `[Running] [${definition.title}] Step: ${stepDef.name}`,
       ), context.uiLocale)
 
-      // 创建步骤回调
       let promptBudgetAttemptCount = 0
       const callbacks: StepCallbacks = {
         log: (message) => {
@@ -855,7 +732,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         ), context.uiLocale)
 
       } catch (error) {
-        // 作者取消引发的中止：这一步停在取消处，运行保持「正在取消」，由循环后的取消收尾记为已取消。
         if (stoppedByCancellation(context, error)) {
           const notice = error instanceof WorkflowCancelledError && error.notice ? { error: error.message } : {}
           updateStepById(set, run.id, i, { status: 'cancelled', completedAt: new Date().toISOString(), ...notice })
@@ -873,7 +749,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         const failureCode = getBoundedCompletionFailureCode(error)
           ?? promptBudgetFailure?.failureCode
         const errorCode = errorCodeFromUnknown(error)
-        // 只有 caughtFailure 把认不出的原文记进控制台；message 非空时原文已在旧字段，不重复记。
         const failure = promptBudgetFailure ? undefined : errorMsg.trim() ? failureOf(error) : caughtFailure(error)
         updateStepById(set, run.id, i, {
           status: 'failed',
@@ -892,7 +767,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
           ...(failureCode ? { failureCode } : {}),
           ...(promptBudgetFailure ? { promptBudgetReport: promptBudgetFailure.report } : {}),
         })
-        // 普通步骤失败交原错误，带 code 的按码说明；预算失败已写好说明。
         const reason = displayedErrorMessage(context.interfaceLocale, promptBudgetFailure ? errorMsg : error)
         get().addLog('error', uiText(
           context.uiLocale,
@@ -904,9 +778,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     }
 
     await cancellationRequestSettled()
-    // 检查是否全部完成
     let finalRun = get().activeRuns.find(r => r.id === run.id)
-    // 取消窗口里真实出错的运行已记失败，不能再改成已取消。
     if (finalRun?.status !== 'failed' && (finalRun?.status === 'cancelling' || context.cancelled)) {
       const finalizeCancellation = cancelBoundaryHooks.get(run.id)
       if (finalizeCancellation) {
@@ -951,8 +823,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         `[Completed] Workflow "${definition.title}" completed`,
       ), context.uiLocale)
 
-      // 同步广播，并且必须发生在 activeRuns 清理之前。
-      // 消费者可用 runId/projectPath 精确识别本次完成，且不会因动态 import 延迟丢失事件。
       globalEventBus.emit('WORKFLOW_COMPLETE', {
         type: definition.type,
         projectPath: definition.projectPath,
@@ -960,15 +830,12 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         runId: run.id,
       })
 
-      // ===== 执行 onComplete 通知/跳转 =====
       if (definition.onComplete) {
         const { mode, openResult } = definition.onComplete
         try {
           if (mode === 'open' && openResult) {
-            // 直接打开结果
             await openResult()
           }
-          // silent 模式不做额外操作
         } catch (e) {
           get().addLog('warn', uiText(
             context.uiLocale,
@@ -983,7 +850,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     const notice = endedRun && definition.backgroundNotice && stageNotice(context.uiLocale, definition.backgroundNotice, endedRun, context.data)
     if (notice) void ipc.invoke('window:notify-stage', notice).catch(() => {})
 
-    // 从活跃列表移除，存入历史
     set(s => {
       const completedRun = s.activeRuns.find(r => r.id === run.id)
       const newRuns = s.activeRuns.filter(r => r.id !== run.id)
@@ -1000,7 +866,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       }
     })
 
-    // 清理上下文
     activeContexts.delete(run.id)
     continueResolveRefs.delete(run.id)
     pauseResolveRefs.delete(run.id)
@@ -1012,7 +877,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
 
   cancelWorkflow: (runId) => {
     if (runId) {
-      // 取消指定工作流
       const ctx = activeContexts.get(runId)
       const targetRun = get().activeRuns.find(r => r.id === runId)
       if (!ctx || !targetRun || isTerminalRunStatus(targetRun.status)) {
@@ -1037,12 +901,10 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
           void ctx.requestMainGenerationCancellation?.().catch(error => get().addLog('error', displayedErrorMessage(ctx.interfaceLocale, error), targetRun.uiLocale))
         }
       }
-      // 如果在步进等待，解除 Promise
       const resolve = continueResolveRefs.get(runId)
       if (resolve) { resolve(); continueResolveRefs.delete(runId) }
       const pauseResolve = pauseResolveRefs.get(runId)
       if (pauseResolve) { pauseResolve(); pauseResolveRefs.delete(runId) }
-      // 保留在活跃列表中，直到当前执行器真正退出。项目切换/清空门禁据此继续生效。
       set(s => {
         const newWaiting = { ...s.waitingRuns }
         delete newWaiting[runId]
@@ -1069,7 +931,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         '[Cancel requested] Waiting for the current operation to exit safely',
       ), targetRun.uiLocale)
     } else {
-      // 取消全部
       const targetRuns = get().activeRuns.filter(run => !isTerminalRunStatus(run.status))
       for (const [id, ctx] of activeContexts) {
         const run = get().activeRuns.find(item => item.id === id)
@@ -1177,7 +1038,6 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     }
   },
 
-  // 记当前在用的模型：作者原稿导入先用定稿模型做后处理，再用规划模型反推。
   recordRunGenerationModel: (runId, modelId) => {
     const run = get().activeRuns.find(candidate => candidate.id === runId)
     if (run && run.generationModelId !== modelId) updateRunById(set, runId, { generationModelId: modelId })
@@ -1186,16 +1046,13 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   addLog: (level, message, locale = useLocaleStore.getState().locale) => {
     const entry = { time: new Date().toLocaleTimeString(locale), level, message }
     set((s) => ({
-      globalLogs: [...s.globalLogs, entry].slice(-500), // 保留最近 500 条
+      globalLogs: [...s.globalLogs, entry].slice(-500),
     }))
   },
 
   clearLogs: () => set({ globalLogs: [] }),
 }))
 
-// ===== 工具函数（按 runId 操作） =====
-
-/** 更新指定工作流的运行状态 */
 function updateRunById(
   set: (fn: (s: WorkflowState) => Partial<WorkflowState>) => void,
   runId: string,
@@ -1209,18 +1066,16 @@ function updateRunById(
   })
 }
 
-/** 主进程每次快照都会重发相同的文本与进度，心跳只改耗时，所以这里比较取值，不看字段是否出现。 */
 function advancesStep(step: WorkflowStep, { status, progress, result, generationActivity: activity }: Partial<WorkflowStep>): boolean {
   if (status === 'running' || (progress !== undefined && progress !== step.progress) || (result !== undefined && result !== step.result)) return true
   if (!activity) return false
-  if (!activity.diagnostics) return true // 只有一次请求开始时才不带诊断。
+  if (!activity.diagnostics) return true
   const before = step.generationActivity
   return before?.operation !== activity.operation
     || (before.diagnostics?.lastOutputMs ?? null) !== activity.diagnostics.lastOutputMs
     || before.diagnostics?.endReason !== activity.diagnostics.endReason
 }
 
-/** 更新指定工作流的指定步骤 */
 function updateStepById(
   set: (fn: (s: WorkflowState) => Partial<WorkflowState>) => void,
   runId: string,
@@ -1239,7 +1094,6 @@ function updateStepById(
   })
 }
 
-/** 追加指定工作流的指定步骤日志 */
 function appendStepLogById(
   set: (fn: (s: WorkflowState) => Partial<WorkflowState>) => void,
   runId: string,

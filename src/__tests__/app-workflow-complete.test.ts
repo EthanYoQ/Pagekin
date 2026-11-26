@@ -20,7 +20,6 @@ it('preserves complete workflow titles in Chinese and English completion notific
   const workflowComplete = vi.fn()
   const completedRun = { id: 'run-1', title: '' }
   let english = false
-  // Execute the actual App event handler without mounting unrelated application panels.
   const notify = runInNewContext(`(${handler!.getText(source)})`, {
     sameProjectSessionContext: () => true,
     projectSessionContextFromProject: () => ({}),

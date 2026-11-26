@@ -45,7 +45,6 @@ export type CharacterCard = CharacterData
 export type CharacterAvatarDraft = { kind: 'image'; base64: string; mime: string } | { kind: 'remove' }
 export const characterAvatarChanges = new EventTarget()
 
-/** Unbound draft selection keys are local UI addresses, never persisted character identities. */
 export function characterSelectionKey(card: CharacterCard, index: number): string {
   return card.characterId ?? `unbound:${index}`
 }
@@ -101,9 +100,6 @@ export function readCharacterDraftLedger(
           }
         : project
     )),
-    // The ledger is heterogeneous on disk. Only the requested project is ever
-    // read through the typed editor helpers; foreign payloads stay opaque and
-    // are carried through byte-for-byte at the value level.
   } as ReturnType<typeof parseProjectEditorDraftLedger<CharacterCard[]>>
 }
 
@@ -203,23 +199,17 @@ interface CharacterState {
   avatarDrafts: Record<string, CharacterAvatarDraft>
   stageAvatar: (characterId: string, draft: CharacterAvatarDraft | null, session: ProjectSessionContext) => void
   commitAvatarDrafts: (session: ProjectSessionContext) => Promise<void>
-  /** IPC-verified display grant; raw cards remain the author edit and history source. */
   currentDerivedFields: Record<string, CharacterStateTextField[]>
   stateEffectiveChapter: number | undefined
   setStateEffectiveChapter: (chapter: number | undefined) => void
   selectedId: string | null
-  /** Display-only compatibility; writes always receive characterId. */
   selectedName: string | null
   saving: boolean
   identityBusy: boolean
   loaded: boolean
-  /** 当前 characters 数组实际归属的项目；为空时禁止任何角色写操作。 */
   dataProjectKey: string | null
-  /** Exact lease whose character data is currently mounted. */
   dataProjectSession: ProjectSessionContext | null
-  /** 当前角色卡来自的 roster revision；所有保存都必须带回这一乐观并发令牌。 */
   rosterRevision: number | null
-  /** 定稿发现的建议不改名单版本，建议列表靠这个计数重读。 */
   rosterLoads: number
   identityRevision: number | null
   loadingProjectKey: string | null
@@ -254,7 +244,6 @@ interface CharacterState {
     operationKind?: 'delete',
   ) => Promise<void>
 
-  // 兼容旧接口
   loadCharacters: (projectPath: string, expectedProjectSession?: ProjectSessionContext) => Promise<void>
 }
 
@@ -527,7 +516,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
     const selectedIndex = characters.findIndex((card, index) => characterSelectionKey(card, index) === get().selectedId)
     const removedIndex = characters.findIndex((card, index) => characterSelectionKey(card, index) === name)
     const selected = remaining[selectedIndex === removedIndex ? 0 : selectedIndex - Number(selectedIndex > removedIndex)] ?? remaining[0]
-    const nextRenames = renames // Historical metadata is preserved, never used as identity.
+    const nextRenames = renames
     set({
       characters: remaining,
       avatarDrafts: Object.fromEntries(Object.entries(get().avatarDrafts).filter(([id]) => id !== name)),
@@ -538,8 +527,6 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
     nextLedger = setCharacterDraftRenames(nextLedger, projectKey, nextRenames)
     persistCharacterDraftLedger(nextLedger)
 
-    // 删除同样是完整手工名单保存：由 roster seam 在一次事务中清理关系、
-    // 蓝图引用、投影、revision 与 receipt。失败时草稿仍在本地可重试。
     return get().saveAll(projectKey, projectSession, 'delete')
       .then(() => isCharacterProjectSessionCurrent(projectSession))
       .catch(() => false)
@@ -568,7 +555,6 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
     nextLedger = setCharacterDraftRenames(nextLedger, projectKey, [])
     persistCharacterDraftLedger(nextLedger)
 
-    // 空名单仍通过既有 roster 原子提交；主进程据此同步删除角色、关系和投影。
     return get().saveAll(projectKey, projectSession, 'delete')
       .then(() => isCharacterProjectSessionCurrent(projectSession))
       .catch(() => false)
@@ -713,8 +699,6 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       ?? (savedRenames.length > 0 ? 'rename' : 'save')
 
     const save = async () => {
-      // 角色主键改名、删除、蓝图结构化引用、角色图谱、revision 和 receipt
-      // 都由主进程 roster seam 在同一事务内完成。
       const payload = {
         expectedRevision, expectedIdentityRevision: expectedIdentityRevision ?? undefined,
         schemaVersion: 1 as const, intent: 'manual_edit' as const,

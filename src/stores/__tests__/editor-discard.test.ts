@@ -295,7 +295,6 @@ describe('editor discard semantics', () => {
     })
     const before = useEditorStore.getState().draftLedgers[CHARACTER_DRAFT_TAB.id]
 
-    // 取消按钮只关闭确认对话框，不调用 discardAndCloseEditorTab。
     expect(useEditorStore.getState().draftLedgers[CHARACTER_DRAFT_TAB.id]).toBe(before)
     expect(useCharacterStore.getState().characters[0]?.name).toBe('新名')
     expect(useEditorStore.getState().tabs[0]?.id).toBe('character-a')

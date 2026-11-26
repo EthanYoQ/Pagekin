@@ -1,6 +1,3 @@
-/**
- * read_architecture — 读取故事架构文件
- */
 import { buildAgentTool } from '../tool-registry'
 import { ipc } from '../../ipc-client'
 import { agentToolText, assertAgentProjectCurrent, requireAgentProject, agentToolErrorDetail } from './project-context'
@@ -53,7 +50,6 @@ export const readArchitectureTool = buildAgentTool({
       }
 
       if (fileName) {
-        // Find property based on suffix
         const isPremise = fileName.includes('前提') || fileName.includes('premise')
         const isWorld = fileName.includes('世界') || fileName.includes('world')
         const isChar = fileName.includes('角色') || fileName.includes('character')

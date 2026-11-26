@@ -49,7 +49,6 @@ describe('讨论区 #77：上下文超长码在每条消费路径上都保留', 
 
   it('蓝图等结构化批次以登记码失败，并保留已发出的那次调用', async () => {
     const runtime = await createMainOwnedGenerationRuntime({ runHandle: handle }, transport(CODE))
-    // 工作流会话替执行器补上调用编号；这里直接接主进程运行时，同样补一个。
     const result = await runtime.execute(({ session }) => createStructuredBatchExecutor<number, { chapterNumber: number }>({ writingLanguage: 'zh-CN',
       session: { complete: (input, options) => session.complete(input, { ...options, invocationNonce: 'call' }) },
       contract: { buildTask: ({ items }) => ({ purpose: 'chapter-blueprints', output: 'structured-data', messages: [{ role: 'user', content: JSON.stringify(items) }] }),

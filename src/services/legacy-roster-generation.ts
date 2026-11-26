@@ -12,7 +12,6 @@ export function canContinueLegacyRoster(current: LegacyRosterGenerationRecovery)
     && (!!current.proposal || !!current.artifact || current.attemptCount === 0
       || !!latest && (latest.status === 'completed' || latest.status === 'failed') && latest.compositionEligible === true)
 }
-/** Main alone owns the fixed task, bounded repairs, source proof and proposal. */
 export function createLegacyRosterGeneration(sessionInput: ProjectSessionContext, assertActive: () => void = () => {}) {
   const session = Object.freeze({ ...sessionInput })
   let recovery: LegacyRosterGenerationRecovery | undefined
@@ -63,8 +62,6 @@ export function createLegacyRosterGeneration(sessionInput: ProjectSessionContext
         throw new Error('LEGACY_ROSTER_GENERATION_OUTCOME_UNKNOWN')
       }
       if (!sourceUsable(current)) throw new Error('LEGACY_ROSTER_GENERATION_SOURCE_CONFLICT')
-      // Main replays cached ordinals and alone decides whether a known malformed
-      // stop can use one of the original finite repair attempts.
       const receipt = await ipc.invokeWithProjectSession(session, 'legacy-roster:execute', { handle: current.view.handle })
       if (!sameRun(receipt.run.handle, current.view.handle)) throw new Error('LEGACY_ROSTER_GENERATION_IDENTITY_MISMATCH')
       assertActive()

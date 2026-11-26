@@ -216,7 +216,6 @@ function DangerDemo() {
 
 export const Danger: Story = { render: () => <DangerDemo /> }
 
-/** 命令式弹窗与提示栈走纸墨宿主。 */
 function OverlaysDemo() {
   return (
     <div style={row}>

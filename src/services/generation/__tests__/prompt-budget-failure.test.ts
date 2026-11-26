@@ -99,7 +99,6 @@ describe('writing skill prompt budget diagnostics', () => {
   it.each([
     ['GENERATION_RESERVATION_INVALID', null, 'unknown'],
     ['TASK_BUDGET_SPLIT_REQUIRED:scope-split', null, 'capacity-preflight'],
-    // 主进程预检实际抛出的是带 SCOPE_ 的拼写，批执行器也按它解析。
     ['TASK_BUDGET_SCOPE_SPLIT_REQUIRED:7', null, 'capacity-preflight'],
     ["Error invoking remote method 'generation:execute': Error: TASK_BUDGET_SCOPE_SPLIT_REQUIRED:7", null, 'capacity-preflight'],
     ['ROOT_BUDGET_EXHAUSTED', null, 'budget-exhausted'],

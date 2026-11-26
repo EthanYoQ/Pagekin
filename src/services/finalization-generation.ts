@@ -5,14 +5,12 @@ import type { FinalizedCharacterArtifact } from '../shared/finalized-character-g
 import type { MainGenerationRunHandle } from './generation/generation-runtime'
 import { isTerminalProviderFailure, throwIfTerminalProviderFailure } from './generation/generation-harness'
 
-/** Reuses one durable main slot. Saved effects never rebuild prompts or execute. */
 export async function runFinalizationGeneration(options: {
   session: ProjectSessionContext
   slot: FinalizationGenerationSlot
   modelId: () => string
   parentRootActionId?: string
   retryOf?: FinalizedCharacterArtifact
-  /** 作者点重试时看到的运行。主进程判断它没有可提交的结果时另开运行，用 modelId() 给出的当前分工模型。 */
   retryRunId?: string
   cancelled: () => boolean
   onHandle?: (handle: MainGenerationRunHandle, modelId: string) => void
@@ -45,12 +43,10 @@ export async function runFinalizationGeneration(options: {
     if (options.cancelled()) { await cancel(); throw new Error('GENERATION_WORKFLOW_CANCELLED') }
     if (recovery.effect) return recovery.effect
     if (recovery.sourceStatus !== 'current' || recovery.view.status === 'cancelled') throw new Error('FINALIZATION_GENERATION_SOURCE_CHANGED')
-    // 同一根下的另一步骤也有诊断，只看本步骤最近一次请求。
     const latestFailure = recovery.latestAttempt?.failureCode
     if (isTerminalProviderFailure(latestFailure)) throw new Error(latestFailure)
     let candidates = recovery.view.candidates ?? recovery.view.artifacts
     let candidate = candidates.at(-1)
-    // 显式引用只对冻结它的那次运行有效；begin 换了新运行时按普通路径重新请求。
     const requested = options.retryOf
     const retryOf = requested && candidates.some(item => item.artifactId === requested.artifactId) ? requested : undefined
     let executed = false
@@ -69,7 +65,6 @@ export async function runFinalizationGeneration(options: {
       candidate = candidates.find(item => item.artifactId === reference?.artifactId && item.revision === reference.revision && item.textHash === reference.textHash)
     }
     if (!candidate || candidate.status !== 'completed' || candidate.compositionEligible !== true) {
-      // 本次已发请求、或回放的是模型正常结束的候选：模型确实返回过结果，只是不可用，不能说成没发请求。
       throw new Error(executed || candidate?.status === 'completed' ? 'FINALIZATION_GENERATION_RESULT_UNUSABLE' : 'FINALIZATION_GENERATION_ARTIFACT_REQUIRED')
     }
     return await ipc.invokeWithProjectSession(session, 'finalization-generation:commit', { handle: recovery.view.handle,

@@ -198,8 +198,6 @@ describe('locale store', () => {
     expect(reportError).not.toHaveBeenCalled()
   })
 
-  // 两次连续选择 zh-CN → en-US → ja-JP，各自成败、谁先返回，八种组合。
-  // 主进程按发出顺序写配置，失败的不写：保存下来的是最后一次成功的选择。
   const outcomes = [true, false].flatMap(first => [true, false].flatMap(second =>
     [false, true].map(secondSettlesFirst => [first, second, secondSettlesFirst] as const)))
   it.each(outcomes)('shows the saved language once both saves settle (first ok %s, second ok %s, second settles first %s)', async (firstOk, secondOk, secondSettlesFirst) => {

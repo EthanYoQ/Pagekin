@@ -32,7 +32,6 @@ let host: HTMLDivElement
 let root: Root
 let invoke: ReturnType<typeof vi.fn<(channel: string, ...args: unknown[]) => Promise<unknown>>>
 
-/** 主进程的回复按渠道给出最小的合法形状；列表类给空列表。 */
 function reply(channel: string): unknown {
   if (channel === 'config:get') return { locale: configLocale }
   if (channel === 'project:smoke-open-request') return null

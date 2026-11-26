@@ -3,8 +3,6 @@ import type { WritingLanguage } from '../../shared/writing-language'
 
 export const S07_TASK_BUDGET_POLICY = Object.freeze({
   version: 's07-task-budget-v1',
-  // Semantic sizing supports scope planning. It is not a mathematical upper
-  // bound for every provider tokenizer; physical liability remains hard-capped.
   outputEstimatorVersion: 'semantic-units-sizing-v1',
   draftUnits: Object.freeze({
     baseTokens: 512,
@@ -16,16 +14,12 @@ export const S07_TASK_BUDGET_POLICY = Object.freeze({
   structuredItems: Object.freeze({
     baseTokens: 512,
     tokensPerItem: Object.freeze({
-      // Drafting/planning values are calibrated against the immutable chapter
-      // blueprint fields and a frozen dense fixture. They size a request; they
-      // do not promise that every contract-maximum payload fits one item.
       'zh-CN': Object.freeze({ drafting: 3_072, planning: 3_072, review: 512, general: 512 }),
       'en-US': Object.freeze({ drafting: 2_048, planning: 2_048, review: 384, general: 384 }),
     }),
   }),
 })
 
-// 这张表随生成运行存档，已存档的运行要按原样读回，所以提取阶段不加列，按审稿的条目大小算。
 const itemTokens = (writingLanguage: WritingLanguage, stage: GenerationReasoningStage) =>
   S07_TASK_BUDGET_POLICY.structuredItems.tokensPerItem[writingLanguage][stage === 'extraction' ? 'review' : stage]
 
@@ -34,7 +28,6 @@ export type TaskBudgetDemand =
       kind: 'draft-units'
       writingLanguage: WritingLanguage
       requestedUnits: number
-      /** True only when the product can preserve each segment as an explicit candidate. */
       segmentable: boolean
     }
   | {
@@ -46,13 +39,10 @@ export type TaskBudgetDemand =
 export type TaskBudgetCapabilitySource = 'verified-provider-preset' | 'unknown'
 
 export interface TaskBudgetCapabilityConstraints {
-  /** Provider capability proved by an exact endpoint/model preset; null means unknown. */
   modelContextWindowTokens: number | null
-  /** Provider capability proved by an exact endpoint/model preset; null means unknown. */
   modelMaxOutputTokens: number | null
   modelContextSource: TaskBudgetCapabilitySource
   modelOutputSource: TaskBudgetCapabilitySource
-  /** User operational limits restrict known provider capability but never prove it. */
   userContextWindowTokens: number | null
   userMaxOutputTokens: number | null
 }
@@ -62,7 +52,6 @@ export type TaskBudgetLiabilityBound =
   | { mode: 'separate-bounded'; reasoningUpperBoundTokens: number }
   | {
       mode: 'total-bounded'
-      /** Physical upper bound for input + output + reasoning + the safety margin. */
       totalLiabilityUpperBoundTokens: number
     }
   | { mode: 'unknown'; reasoningUpperBoundTokens?: number }
@@ -96,7 +85,6 @@ export type TaskBudgetReasonCode =
   | 'liability-bound-unknown'
   | 'scope-split'
 
-/** Written only by receipts persisted before ADR-0023; diagnostics still read them back. */
 export type LegacyTaskBudgetReasonCode =
   | 'model-context-cap'
   | 'user-context-cap'
@@ -107,7 +95,6 @@ export type LegacyTaskBudgetReasonCode =
 
 export interface TaskBudgetReason {
   code: TaskBudgetReasonCode
-  /** Non-sensitive numeric evidence behind this decision, when applicable. */
   valueTokens?: number
   selected: boolean
 }
@@ -125,9 +112,7 @@ export interface TaskBudgetDecision {
   requestedQuantity: number
   selectedQuantity: number
   remainingQuantity: number
-  /** Output need for the complete semantic scope before any capacity decision. */
   requestedOutputTokens: number
-  /** Provider max output for this selected physical request. */
   reservedOutputTokens: number
   reasoningUpperBoundTokens: number
   reservationLiabilityTokens: number
@@ -137,11 +122,9 @@ export interface TaskBudgetDecision {
 
 export interface GenerationBudgetDiagnostic {
   attemptId: string
-  /** 账本按根列出全部请求；读回某次运行的结果时按它筛出本运行的请求。主进程总会填。 */
   runId?: string
   plannerVersion?: string
   requestedOutputTokens: number
-  /** Full root-ledger reservation, including input/output/reasoning/safety. */
   reservedTokens: number
   actual: {
     input: number | null
@@ -200,10 +183,6 @@ function maximumItemsFor(
   return Math.floor(usable / itemTokens(demand.writingLanguage, stage))
 }
 
-/**
- * Pure S07 planning seam. It proposes one physical reservation; the persistent
- * main owner remains solely responsible for reserving, dispatching and settling.
- */
 export function planTaskBudget(input: TaskBudgetPlannerInput): TaskBudgetDecision {
   if (!input || !REASONING_STAGES.includes(input.stage)
     || !input.demand || !['draft-units', 'structured-items'].includes(input.demand.kind)
@@ -246,7 +225,6 @@ export function planTaskBudget(input: TaskBudgetPlannerInput): TaskBudgetDecisio
     reasons.push({ code: 'liability-bound-unknown', selected: true })
   }
 
-  // 上下文容量由服务商判定（ADR-0023）。
   const fixedReasoningTokens = input.liability.mode === 'separate-bounded' || input.liability.mode === 'unknown'
     ? input.liability.reasoningUpperBoundTokens ?? 0
     : 0

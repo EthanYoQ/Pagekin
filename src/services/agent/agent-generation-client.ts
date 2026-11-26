@@ -8,7 +8,6 @@ import { throwIfLastAttemptTerminal } from '../generation/generation-harness'
 type ClaimRequest = AgentGenerationChannels['agent-generation:claim-tool']['args'][0]
 type FinishRequest = AgentGenerationChannels['agent-generation:finish-tool']['args'][0]
 
-/** No provider or renderer-owned generation budget exists in this adapter. */
 export class AgentGenerationClient {
   private current?: AgentGenerationRecovery
   private closed = false

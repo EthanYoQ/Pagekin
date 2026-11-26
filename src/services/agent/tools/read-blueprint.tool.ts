@@ -1,6 +1,3 @@
-/**
- * read_blueprint — 读取章节蓝图
- */
 import { buildAgentTool } from '../tool-registry'
 import { ipc } from '../../ipc-client'
 import { agentToolText, assertAgentProjectCurrent, requireAgentProject, agentToolErrorDetail } from './project-context'
@@ -30,7 +27,6 @@ export const readBlueprintTool = buildAgentTool({
     const chapterNum = args.chapter_number as number | undefined
 
     if (chapterNum !== undefined) {
-      // 读取指定章节蓝图
       const bp = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-get', chapterNum, project.path)
       assertAgentProjectCurrent(context)
       if (!bp) {
@@ -42,7 +38,6 @@ export const readBlueprintTool = buildAgentTool({
       ) }
     }
 
-    // 列出所有蓝图文件
     try {
       const bps = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-get-all', project.path)
       assertAgentProjectCurrent(context)

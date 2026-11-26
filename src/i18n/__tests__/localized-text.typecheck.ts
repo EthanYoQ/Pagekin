@@ -1,7 +1,6 @@
 import { localize, type LocalizedText } from '../core'
 import type { InterfaceLocale } from '../types'
 
-/** tsc 检查：日文只能写在英文之后，参数对象只能放在最后。 */
 export function japaneseCopyComesBeforeParams(text: LocalizedText, locale: InterfaceLocale): void {
   const params = { n: 1 }
   text('第 {n} 章', 'Chapter {n}', '第 {n} 章', params)

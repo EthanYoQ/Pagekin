@@ -1,6 +1,3 @@
-/**
- * open_editor — 在编辑器中打开文件
- */
 import { buildAgentTool, createToolArtifact } from '../tool-registry'
 import { useEditorStore } from '../../../stores/editor-store'
 import { ipc } from '../../ipc-client'
@@ -54,7 +51,6 @@ export const openEditorTool = buildAgentTool({
     }
     const fullPath = fullPath_check.fullPath
 
-    // 读取文件内容
     const result = await ipc.invokeWithProjectSession(projectSession, 'fs:read-file', fullPath, project.path)
     assertAgentProjectCurrent(context)
     if (!result.success) {
@@ -68,7 +64,6 @@ export const openEditorTool = buildAgentTool({
       }
     }
 
-    // 在编辑器中打开
     assertAgentToolActive(context)
     const fileName = filePath.split('/').pop() ?? filePath
     useEditorStore.getState().openFile({

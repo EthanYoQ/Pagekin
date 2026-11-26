@@ -26,7 +26,6 @@ export type PlanningRecoverySaveSnapshot = EditorTabSaveSnapshot & {
   }
 }[PlanningSaveChannel]
 
-/** 知识库读到的一份资料的项目副本。 */
 export interface KnowledgeDocumentCopy {
   available: boolean
   content?: string
@@ -35,12 +34,10 @@ export interface KnowledgeDocumentCopy {
   indexStatus: 'current' | 'stale' | 'unavailable'
 }
 
-/** 知识库里所选的资料、读到的项目副本与正在改的文字。 */
 export interface KnowledgeDraft {
   docId: string | null
   copy: KnowledgeDocumentCopy | null
   content: string
-  /** 保存或更新检索在途。放在标签上，页面切走再切回也认得出。 */
   busy?: boolean
 }
 
@@ -48,60 +45,37 @@ export function knowledgeDraftDirty(draft: KnowledgeDraft): boolean {
   return Boolean(draft.copy?.available && draft.content !== draft.copy.content)
 }
 
-/** 编辑器 Tab 数据 */
 export interface EditorTab {
   id: string
   name: string
-  /** 知识库页的标签。 */
   type: 'chapter' | 'outline' | 'character' | 'config' | 'diff' | 'chapter-card' | 'world-building' | 'arch-file' | 'version-history' | 'review-report' | 'narrative-thread' | 'knowledge'
   filePath?: string
   content?: string
-  /** 架构文档已持久化的基准内容，用于跨 Tab/项目切换后恢复脏状态。 */
   savedContent?: string
-  /** diff 视图的原始内容 */
   originalContent?: string
   dirty?: boolean
-  /** 固定 Tab，不可关闭 */
   pinned?: boolean
-  /** 修稿文件路径（三栏合并用） */
   revisionPath?: string
-  /** 审稿报告内容（供「根据意见修稿」使用） */
   reviewReport?: string
-  /** 草稿所属章节号 */
   chapterNumber?: number
-  /** 数据库草稿标识，用于定稿事件精确定位已打开的虚拟草稿。 */
   draftId?: number
-  /** 数据库草稿状态；定稿或归档状态必须只读。 */
   draftStatus?: DraftStatus
-  /** 内容变更代次，用于阻止异步保存响应覆盖保存期间的新输入。 */
   contentRevision?: number
-  /** 伪协议资源所属项目；用于隔离同一路径在不同项目中的编辑草稿。 */
   projectKey?: string
-  /** 打开/定稿时冻结的项目会话租约；同一路径重开不能复用旧 tab 的完成事件。 */
   projectSessionLease?: string
-  /** 已提交定稿的稳定身份，供发布重试和冲突提示关联。 */
   finalizationId?: string
-  /** 实体稿发布投影状态；pending 表示数据库已定稿但文件待发布。 */
   finalizationPublication?: 'pending' | 'published'
-  /** 完成事件落后于本地编辑时保留的显式冲突信息。 */
   finalizationConflict?: {
     finalizationId: string
     publicationStatus: 'pending' | 'published'
   }
-  /** 草稿所在章节目录 */
   chapterDir?: string
-  /** 审稿报告存放路径 */
   reportPath?: string
-  /** 原始 AI 审稿报告的数据库标识；人工确认快照与审稿修稿均以此为来源。 */
   reviewId?: number
-  /** 叙事线编辑器本次打开的视图。 */
   narrativeThreadView?: 'plot-tree' | 'plans'
-  /** 重复打开同一叙事线 Tab 时递增，确保本次视图请求生效。 */
   narrativeThreadViewRequest?: number
-  /** 章节蓝图页按 chapterNumber 选中一章的请求次数；只有带章号打开时才递增，重复打开同一章也会重新选中。 */
   chapterSelectRequest?: number
   planningRecovery?: GenerationRecoveryContext
-  /** 知识库标签的所选资料与未保存的改动；页面随标签切换卸载后靠它留住。 */
   knowledgeDraft?: KnowledgeDraft
   planningSaveOperationId?: string
   planningSaveEnd?: string
@@ -130,61 +104,31 @@ export function openPlanningRecoveryDraft(context: GenerationRecoveryContext, pr
 }
 
 interface EditorState {
-  /** 打开的 Tab 列表 */
   tabs: EditorTab[]
-  /** 当前活跃的 Tab ID */
   activeTabId: string | null
-  /**
-   * 编辑器后台草稿账本。
-   *
-   * 账本是技术状态，不是用户文件，不能混入可关闭的 tabs。
-   */
   draftLedgers: Record<string, string>
 
-  // ===== Actions =====
-  /** 打开文件（如果已打开则激活） */
   openFile: (tab: EditorTab) => void
-  /** 写入后台草稿账本。 */
   setDraftLedger: (key: string, content: string) => void
-  /** 同步某项目可见内置编辑器的未保存状态。 */
   setProjectEditorDirty: (
     type: Extract<EditorTab['type'], 'character' | 'config' | 'chapter-card'>,
     projectKey: string,
     dirty: boolean,
   ) => void
-  /** 写入知识库标签的所选资料与改动，并按改动同步未保存标记。 */
   setKnowledgeDraft: (tabId: string, draft: KnowledgeDraft) => void
-  /** 关闭 Tab */
   closeTab: (tabId: string) => void
-  /** 激活 Tab */
   setActiveTab: (tabId: string) => void
-  /**
-   * 更新 Tab 内容（标记 dirty）
-   * 仅在「用户修改」时调用，会亮起未保存指示灯。
-   */
   updateTabContent: (tabId: string, content: string) => void
-  /**
-   * 静默同步 Tab 内容（不标记 dirty，也不清除 dirty）
-   * 用于「AI 生成完成后刷新」、「打开文件刷新」等非用户编辑场景。
-   */
   syncTabContent: (tabId: string, content: string) => void
-  /**
-   * 标记 Tab 已保存（清除 dirty 标记）
-   * 在保存成功后调用，使警示灯、Tab 圆点消失。
-   */
   markTabSaved: (tabId: string, savedContent?: string) => void
-  /** 按保存开始时的快照结算；期间有新输入时只更新已保存基准。 */
   settleTabSave: (tabId: string, snapshot: EditorTabSaveSnapshot) => void
   setPlanningSaveSnapshot: (tabId: string, snapshot: PlanningRecoverySaveSnapshot | undefined) => void
-  /** 结算修订合并；期间有新输入时保留当前正文与未保存状态。 */
   settleMergedRevision: (
     tabId: string,
     snapshot: EditorTabSaveSnapshot,
     mergedContent: string,
   ) => void
-  /** 清空所有 Tab */
   clearTabs: () => void
-  /** 只清理指定项目的 Tab 与后台草稿，保留其他项目的未保存内容。 */
   clearProjectTabs: (projectKey: string) => void
 }
 
@@ -233,8 +177,6 @@ export function registerEditorExitSaveHandler(handler: EditorExitSaveHandler): (
   }
 }
 
-// Editor components keep their registrations across active-tab unmounts.
-// These store-owned removal paths are the handler lifetime boundary.
 function removeEditorExitSaveHandlers(tab: EditorTab): void {
   exitSaveHandlers.delete(`tab:${tab.id}`)
   if (tab.projectKey && !tab.planningRecovery && BACKGROUND_LEDGER_BY_EDITOR_TYPE[tab.type]) {
@@ -242,7 +184,6 @@ function removeEditorExitSaveHandlers(tab: EditorTab): void {
   }
 }
 
-/** 标签自身的保存入口：与退出前保存共用各编辑器注册的处理器；编辑器没有注册时为 null。 */
 export function editorSaveHandler(tab: Pick<EditorTab, 'id' | 'type' | 'projectKey'>): (() => Promise<void>) | null {
   const handler = exitSaveHandlers.get(`tab:${tab.id}`)
     ?? (tab.projectKey ? exitSaveHandlers.get(exitSaveTypeKey(tab.type, tab.projectKey)) : undefined)
@@ -298,8 +239,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     const tabWithDraftState = !tab.planningRecovery && hasBackgroundProjectDraft(get().draftLedgers, projectScopedTab)
       ? { ...projectScopedTab, dirty: true }
       : projectScopedTab
-    // diff 类型每次内容不同，只按 id 精确匹配（不走 filePath 去重）
-    // 其他类型（含 review-report）按 filePath + type 去重
     const idOnly = tab.type === 'diff' || Boolean(tab.planningRecovery)
     const existing = get().tabs.find((t) =>
       t.id === tabWithDraftState.id ||
@@ -317,14 +256,12 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         } : t), activeTabId: existing.id }))
         return
       }
-      // diff / review-report 每次内容不同，强制更新内容后激活
       if (tabWithDraftState.type === 'diff' || tabWithDraftState.type === 'review-report') {
         set((s) => ({
           tabs: s.tabs.map((t) => t.id === existing.id ? { ...t, ...tabWithDraftState, id: tabWithDraftState.id } : t),
           activeTabId: tabWithDraftState.id,
         }))
       } else {
-        // 其他类型 Tab：已打开，更新名称并直接激活
         set((s) => ({
           tabs: s.tabs.map((t) => t.id === existing.id
             ? {
@@ -358,7 +295,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         }))
       }
     } else {
-      // 新开 Tab
       set((s) => ({
         tabs: [
           ...s.tabs,
@@ -401,7 +337,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   closeTab: (tabId) => {
     const { tabs, activeTabId } = get()
-    // pinned Tab 不可关闭
     const target = tabs.find((t) => t.id === tabId)
     if (target?.pinned) return
     if (target) removeEditorExitSaveHandlers(target)
@@ -431,7 +366,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     }))
   },
 
-  // 静默刷新内容（不改变 dirty 标记，用于 AI 生成后刷新、打开文件同步等场景）
   syncTabContent: (tabId, content) => {
     set((s) => ({
       tabs: s.tabs.map((t) => t.id === tabId
@@ -446,7 +380,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     }))
   },
 
-  // 标记 Tab 已保存 —— 清除 dirty 标记，使标题栏警示灯和 Tab 圆点消失
   markTabSaved: (tabId, savedContent) => {
     set((s) => ({
       tabs: s.tabs.map((t) => t.id === tabId

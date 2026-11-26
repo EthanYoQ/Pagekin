@@ -14,35 +14,22 @@ import { removeModelFromStages, type ModelStage, type StageModelIds } from '../s
 import { useProjectStore } from './project-store'
 
 interface LLMState {
-  /** 已配置的模型列表 */
   models: ModelProfile[]
-  /** 当前默认生成模型 ID */
   defaultModelId: string | null
-  /** 当前默认向量模型 ID */
   defaultEmbeddingModelId: string | null
   defaultRerankModelId: string | null
   stageModelIds: StageModelIds
-  /** 是否已加载模型配置 */
   loaded: boolean
 
-  // ===== Actions =====
-  /** 初始化（加载模型列表 + 默认模型 ID） */
   init: () => Promise<void>
-  /** 加载模型列表 */
   loadModels: () => Promise<void>
-  /** 保存模型 */
   saveModel: (model: ModelProfile) => Promise<boolean>
-  /** 删除模型 */
   deleteModel: (modelId: string) => Promise<boolean>
-  /** 设置默认生成模型（持久化到 ~/.vela/config.json） */
   setDefaultModel: (modelId: string) => Promise<boolean>
-  /** 设置默认向量模型（持久化到 ~/.vela/config.json） */
   setDefaultEmbeddingModel: (modelId: string) => Promise<boolean>
   setDefaultRerankModel: (modelId: string) => Promise<boolean>
   setStageModel: (stage: ModelStage, modelId: string | null) => Promise<boolean>
-  /** 测试模型连接 */
   testConnection: (model: ModelProfile) => Promise<{ success: boolean; error?: string }>
-  /** 以当前表单中的端点和凭据主动发现 provider 模型。 */
   discoverModels: (request: ModelDiscoveryRequest) => Promise<ModelDiscoveryResult>
   discoverLocalContextWindow: (request: LocalContextWindowRequest) => Promise<number | null>
 }
