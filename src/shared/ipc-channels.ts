@@ -481,11 +481,11 @@ export type FileWriteCommitState = 'not_committed' | 'committed' | 'unknown'
 export interface FileChannels {
   'fs:read-file': {
     args: [filePath: string, expectedProjectPath: string]
-    return: { success: boolean; content: string; error?: string }
+    return: { success: boolean; content: string; failure?: Failure }
   }
   'fs:write-file': {
     args: [filePath: string, content: string, expectedProjectPath: string]
-    return: { success: boolean; commitState: FileWriteCommitState; error?: string }
+    return: { success: boolean; commitState: FileWriteCommitState; failure?: Failure }
   }
   'fs:list-dir': {
     args: [dirPath: string, expectedProjectPath: string]
@@ -493,7 +493,7 @@ export interface FileChannels {
   }
   'fs:mkdir': {
     args: [dirPath: string, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'fs:check-exists': {
     args: [filePath: string, expectedProjectPath: string]
@@ -501,25 +501,25 @@ export interface FileChannels {
   }
   'fs:read-json': {
     args: [filePath: string, expectedProjectPath: string]
-    return: { success: boolean; data: unknown; error?: string }
+    return: { success: boolean; data: unknown; failure?: Failure }
   }
   'fs:write-json': {
     args: [filePath: string, data: unknown, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'fs:grant-read-file': {
     args: [grantId: string, relativePath?: string]
-    return: { success: boolean; content: string; error?: string }
+    return: { success: boolean; content: string; failure?: Failure }
   }
   'fs:grant-write-file': {
     args: [grantId: string, relativePath: string, content: string]
     return:
       | { success: true }
-      | { success: false; commitState: Exclude<FileWriteCommitState, 'committed'>; error?: string }
+      | { success: false; commitState: Exclude<FileWriteCommitState, 'committed'>; failure?: Failure }
   }
   'fs:grant-mkdir': {
     args: [grantId: string, relativePath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'dialog:select-export-directory': {
     args: []

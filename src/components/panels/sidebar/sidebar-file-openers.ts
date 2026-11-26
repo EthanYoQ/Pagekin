@@ -9,7 +9,7 @@ import { ipc } from '../../../services/ipc-client'
 import { useEditorStore } from '../../../stores/editor-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { displayedErrorMessage, failureText, resultFailure } from '../../../i18n/app-errors'
 import { toast } from '../../ui/Toast'
 import {
   captureProjectSession,
@@ -39,9 +39,10 @@ export async function confirmCurrentProjectSession(
     : null
 }
 
-function reportFileReadFailure(error: unknown): void {
+const caughtReason = (error: unknown) => displayedErrorMessage(currentInterfaceLocale(), error)
+
+function reportFileReadFailure(reason: string): void {
   const { text } = useLocaleStore.getState()
-  const reason = displayedErrorMessage(currentInterfaceLocale(), error)
   toast.error(text(`无法读取文件：${reason}`, `Could not read file: ${reason}`))
 }
 
@@ -60,7 +61,7 @@ export async function openArchFile(filePath: string, name: string): Promise<void
     try {
       content = await readCoreContent(filePath, projectSession)
     } catch (error) {
-      if (isProjectSessionCurrent(projectSession)) reportFileReadFailure(error)
+      if (isProjectSessionCurrent(projectSession)) reportFileReadFailure(caughtReason(error))
       return
     }
   } else {
@@ -71,7 +72,7 @@ export async function openArchFile(filePath: string, name: string): Promise<void
       projectKey,
     )
     if (!result.success) {
-      if (isProjectSessionCurrent(projectSession)) reportFileReadFailure(result.error)
+      if (isProjectSessionCurrent(projectSession)) reportFileReadFailure(failureText(currentInterfaceLocale(), resultFailure(result)))
       return
     }
     content = result.content
@@ -131,13 +132,13 @@ export async function openChapterFile(filePath: string, name: string): Promise<v
         projectKey,
       )
       if (!result.success) {
-        if (isProjectSessionCurrent(projectSession)) reportFileReadFailure(result.error)
+        if (isProjectSessionCurrent(projectSession)) reportFileReadFailure(failureText(currentInterfaceLocale(), resultFailure(result)))
         return
       }
       content = result.content
     }
   } catch (error) {
-    if (isProjectSessionCurrent(projectSession)) reportFileReadFailure(error)
+    if (isProjectSessionCurrent(projectSession)) reportFileReadFailure(caughtReason(error))
     return
   }
   if (!isProjectSessionCurrent(projectSession)) return

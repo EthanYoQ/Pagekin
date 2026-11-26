@@ -2,7 +2,8 @@ import { useProjectStore } from '../../../stores/project-store'
 import type { AgentExecutionContext } from '../tool-registry'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import type { Locale } from '../../../i18n/types'
-import { errorMessageForModel } from '../../../i18n/app-errors'
+import { errorMessageForModel, failureTextForModel, resultFailure } from '../../../i18n/app-errors'
+import type { Failure } from '../../../shared/failure'
 import { errorLocaleForRun } from '../../../i18n/core'
 import { currentInterfaceLocale } from '../../../stores/locale-store'
 import {
@@ -38,6 +39,14 @@ export function agentToolErrorDetail(
 ): string | undefined {
   if (error === undefined || error === null || (typeof error === 'string' && !error.trim())) return undefined
   return errorMessageForModel(context?.writingLanguage ?? DEFAULT_WRITING_LANGUAGE, error)
+}
+
+export function agentToolFailureDetail(
+  context: AgentExecutionContext | undefined,
+  result: { failure?: Failure },
+): string | undefined {
+  const failure = resultFailure(result)
+  return failure && failureTextForModel(context?.writingLanguage ?? DEFAULT_WRITING_LANGUAGE, failure)
 }
 
 export function createAgentExecutionContext(
