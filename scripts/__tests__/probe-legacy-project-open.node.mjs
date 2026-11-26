@@ -206,15 +206,15 @@ test('renderer reload in the same official process cannot count as a roster rest
     windowsHide: true, stdio: 'ignore', env: { ...process.env, AI_NOVEL_VELA_HOME: join(root, 'h'), APPDATA: join(root, 'a'), LOCALAPPDATA: join(root, 'l') },
   })
   try {
-    let target
+    let target, lastListError
     for (let attempt = 0; attempt < 100; attempt++) {
       try {
         target = (await fetch(`http://127.0.0.1:${port}/json/list`).then(response => response.json())).find(page => page.type === 'page')
         if (target) break
-      } catch { /* still starting */ }
+      } catch (error) { lastListError = error }
       await new Promise(resolvePromise => setTimeout(resolvePromise, 100))
     }
-    assert.ok(target, 'official renderer CDP page must start')
+    assert.ok(target, `official renderer CDP page must start; last error: ${lastListError}`)
     const cdp = async (method, params = {}) => {
       const socket = new WebSocket(target.webSocketDebuggerUrl)
       await new Promise(resolvePromise => socket.addEventListener('open', resolvePromise, { once: true }))
@@ -230,12 +230,12 @@ test('renderer reload in the same official process cannot count as a roster rest
     }
     const before = (await cdp('Runtime.evaluate', { expression: 'performance.timeOrigin', returnByValue: true })).result.result.value
     await cdp('Page.reload')
-    let after = before
+    let after = before, lastReloadError
     for (let attempt = 0; attempt < 50 && after === before; attempt++) {
       await new Promise(resolvePromise => setTimeout(resolvePromise, 100))
-      try { after = (await cdp('Runtime.evaluate', { expression: 'performance.timeOrigin', returnByValue: true })).result.result.value } catch { /* reloading */ }
+      try { after = (await cdp('Runtime.evaluate', { expression: 'performance.timeOrigin', returnByValue: true })).result.result.value } catch (error) { lastReloadError = error }
     }
-    assert.notEqual(after, before, 'renderer time origin must change without a process restart')
+    assert.notEqual(after, before, `renderer time origin must change without a process restart; last error: ${lastReloadError}`)
     const body = { verifiedBy: 'legacy-renderer-cdp-roster-write', projectPath: project,
       package: { version: '1.1.0', executableSha256: hash(readFileSync(legacyExe)), asarSha256: hash(readFileSync(join(dirname(legacyExe), 'resources/app.asar'))) },
       process: { pid: child.pid, exited: true, portClosed: true, executablePath: legacyExe, userDataPath: userData } }

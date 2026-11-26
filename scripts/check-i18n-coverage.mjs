@@ -574,16 +574,16 @@ function inspectThrownErrors(violations, root, file, sourceFile, mode, allowErro
     const exempt = message && exemption(sourceFile, node)
     if (exempt === 'missing-reason') {
       add(violations, root, file, sourceFile, node, message.getText(sourceFile), 'exempt-without-reason')
-    } else if (exempt) {
-      // 写明理由的豁免：作者看不到这条说明。
-    } else if (message && mode === 'chinese') {
-      inspectVisibleExpression(violations, root, file, sourceFile, message, 'thrown-error')
-    } else if (message && mode === 'untranslated') {
-      if (nodeContainsHan(message, sourceFile) || nodeContainsEnglishCopy(message, sourceFile)) {
-        add(violations, root, file, sourceFile, message, message.getText(sourceFile), 'thrown-error')
+    } else if (message && !exempt) {
+      if (mode === 'chinese') {
+        inspectVisibleExpression(violations, root, file, sourceFile, message, 'thrown-error')
+      } else if (mode === 'untranslated') {
+        if (nodeContainsHan(message, sourceFile) || nodeContainsEnglishCopy(message, sourceFile)) {
+          add(violations, root, file, sourceFile, message, message.getText(sourceFile), 'thrown-error')
+        }
+      } else if (!(allowErrorCodes && ts.isStringLiteralLike(message) && errorCode.test(message.text))) {
+        inspectBoundaryExpression(violations, root, file, sourceFile, message, 'thrown-error', bindings)
       }
-    } else if (message && !(allowErrorCodes && ts.isStringLiteralLike(message) && errorCode.test(message.text))) {
-      inspectBoundaryExpression(violations, root, file, sourceFile, message, 'thrown-error', bindings)
     }
     ts.forEachChild(node, visit)
   }

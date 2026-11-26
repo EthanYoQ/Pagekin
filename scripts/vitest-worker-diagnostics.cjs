@@ -5,11 +5,17 @@ const { syncBuiltinESMExports } = require('node:module')
 const { createHash } = require('node:crypto')
 const installed = Symbol.for('ai-novel.vitest-worker-diagnostics')
 
-function emit(event, metadata = {}) {
+async function ignoreFailure(reason, run) {
   try {
-    fs.writeSync(2, '[vitest-worker-diagnostic] ' + JSON.stringify({ event, observerPid: process.pid,
-      monotonicNs: process.hrtime.bigint().toString(), ...metadata }) + '\n')
-  } catch { /* Diagnostics must not alter test outcomes if the output sink fails. */ }
+    return await run()
+  } catch (error) {
+    console.warn(`[ignored] ${reason}`, error)
+    return undefined
+  }
+}
+function emit(event, metadata = {}) {
+  void ignoreFailure('诊断输出写不出时不影响测试结果', () => fs.writeSync(2, '[vitest-worker-diagnostic] '
+    + JSON.stringify({ event, observerPid: process.pid, monotonicNs: process.hrtime.bigint().toString(), ...metadata }) + '\n'))
 }
 function relativeTestFile(root, value) {
   if (typeof value !== 'string') return null
@@ -33,13 +39,13 @@ function observeWorkers(root) {
       exitCode: Number.isInteger(code) ? code : null, signal: typeof signal === 'string' && /^SIG[A-Z0-9]+$/u.test(signal) ? signal : null }))
     const originalSend = child.send
     child.send = function (message, ...sendArgs) {
-      try {
+      void ignoreFailure('诊断不改变原 send 的结果和报错', () => {
         if (message?.__vitest_worker_request__ === true && ['run', 'collect', 'start', 'stop'].includes(message.type)) {
           const files = Array.isArray(message.context?.files)
             ? message.context.files.map(file => relativeTestFile(root, file?.filepath)).filter(Boolean) : []
           emit('worker-request', { workerPid: child.pid, method: message.type, files })
         }
-      } catch { /* Preserve the original send result and error semantics. */ }
+      })
       return Reflect.apply(originalSend, this, [message, ...sendArgs])
     }
     return child
@@ -55,14 +61,14 @@ class VitestWorkerDiagnostics {
     } catch { emit('diagnostics-unavailable') }
   }
   boundary(event, task, isCase = false) {
-    try {
+    void ignoreFailure('报告器元数据不能打断或拦截测试', () => {
       const file = relativeTestFile(this.root, isCase ? task.module.moduleId : task.moduleId)
       if (!file || isCase && file !== 'electron/services/__tests__/vector-migration-snapshot.test.ts') return
       const metadata = { file }
       if (isCase && typeof task.id === 'string') metadata.testId = createHash('sha256').update(task.id).digest('hex').slice(0, 16)
       if (Number.isSafeInteger(task.location?.line) && task.location.line > 0) metadata.line = task.location.line
       emit(event, metadata)
-    } catch { /* Reporter metadata must not fail or intercept a test. */ }
+    })
   }
   onTestModuleQueued(module) { this.boundary('suite-queued', module) }
   onTestModuleStart(module) { this.boundary('suite-start', module) }

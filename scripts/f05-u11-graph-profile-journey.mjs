@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { chooseProjectDirectoryGrant } from './project-directory-grant.mjs'
+import { ignoreFailure } from './lib/ignore-failure.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -88,8 +89,8 @@ async function quit(app) {
     new Promise(resolve => { timer = setTimeout(() => { timedOut = true; resolve(false) }, 10_000) })])
   clearTimeout(timer)
   if (!closed) {
-    try { execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, encoding: 'utf8' }) }
-    catch { /* A process that exited during taskkill is checked below. */ }
+    await ignoreFailure('进程可能在 taskkill 期间已退出，下面按 PID 复核',
+      () => execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, encoding: 'utf8' }))
   }
   for (let attempt = 0; attempt < 40; attempt++) {
     try { process.kill(pid, 0) }

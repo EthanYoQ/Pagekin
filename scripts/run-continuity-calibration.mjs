@@ -632,8 +632,8 @@ async function execute(args, fixturesRead, fixtures, modelsRead, profile) {
   let modelsAfter = null
   try {
     modelsAfter = sha256(await readFile(args.modelsPath))
-  } catch {
-    // The unchanged check fails closed without exposing the raw filesystem error.
+  } catch (error) {
+    manifest.modelsSourceReadFailure = error?.code ?? "READ_FAILED"
   }
   manifest.modelsSourceHashAfter = modelsAfter
   manifest.modelsSourceUnchanged = modelsAfter === modelsHash

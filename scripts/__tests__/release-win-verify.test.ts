@@ -3,6 +3,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readF
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { ignoreFailure } from '../../src/shared/ignore-failure'
 
 const releaseScript = resolve('scripts/release-win-verify.mjs')
 const releaseMonitorScript = resolve('scripts/monitor-win-release-gate.ps1')
@@ -274,11 +275,8 @@ async function settleWithin(
 }
 
 async function stopGateMonitor(controlPath: string, monitor: ReturnType<typeof spawn>): Promise<void> {
-  try {
-    appendFileSync(controlPath, `${JSON.stringify({ sequence: 99, state: 'stop' })}\n`, 'utf8')
-  } catch {
-    // A monitor that already failed may have closed its control channel.
-  }
+  await ignoreFailure('已失败的监视器可能已关闭控制通道', async () =>
+    appendFileSync(controlPath, `${JSON.stringify({ sequence: 99, state: 'stop' })}\n`, 'utf8'))
   try {
     await settleWithin(monitor)
   } catch {
