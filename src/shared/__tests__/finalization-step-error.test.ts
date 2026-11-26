@@ -63,7 +63,6 @@ describe('定稿后处理步骤错误', () => {
     for (const text of [zhText, enText]) expect(text).not.toMatch(/Error invoking|FINALIZED_CHARACTER|请点「重试」|Select Retry/u)
   })
 
-  // 合同解析函数抛出的每个码都会在提交时记到「角色状态更新」步骤上（#552）；从源码取全集，新增的码漏登记时这里先红。
   const contractCodes = [...new Set(readFileSync(new URL('../finalized-continuity.ts', import.meta.url), 'utf8').match(/FINALIZED_CHARACTER_[A-Z_]+[A-Z]/gu))]
   it('#552 IDENTITY_REQUIRED 在章节要点提交时也会出现：说明不能说成角色卡没更新', () => {
     const raw = "Error invoking remote method 'finalization-generation:commit': Error: FINALIZED_CHARACTER_IDENTITY_REQUIRED"

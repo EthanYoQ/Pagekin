@@ -3,7 +3,6 @@ import { WRITING_LANGUAGES, type WritingLanguage } from './writing-language'
 
 export type PlotTreeTrackRole = 'main' | 'subplot'
 export type PlotTreeEventStatus = 'planned' | 'occurred'
-/** Immutable snapshot safety ceiling, independent of the project's current source range. */
 export const MAX_PLOT_TREE_CHAPTER_NUMBER = 4_294_967_295
 
 export type PlotTreeSourceReference =
@@ -79,7 +78,6 @@ export interface PlotTreeSourceBundle {
   narrativeThreads: PlotTreeNarrativeThreadSource[]
   sourceRevision: string
   snapshot: PlotTreeSnapshot | null
-  /** A corrupt or structurally unsafe stored snapshot was isolated without deleting it. */
   storedSnapshotInvalid?: true
 }
 
@@ -169,12 +167,10 @@ function plotTreeSourceChapterBounds(
   }
 }
 
-/** True only when at least one current fact can legally support a plot-tree event. */
 export function hasUsablePlotTreeEventSource(sources: PlotTreeSourceBundle): boolean {
   return plotTreeSourceChapterBounds(sources) !== null
 }
 
-/** Rejects model-controlled track ranges that exceed the current authoritative source domain. */
 // i18n-exempt: 剧情树只在主进程生成与保存，失败经生成 IPC 边界换成错误码，读快照失败被 catch 吞掉；作者看不到这条说明
 export function assertPlotTreeSnapshotChapterBounds(
   snapshot: PlotTreeSnapshot,
@@ -269,7 +265,6 @@ function assertSourceExists(
   ))) throw new Error('剧情树来源引用不存在')
 }
 
-/** Validates a persisted snapshot without requiring its historical sources to still exist. */
 // i18n-exempt: 剧情树只在主进程生成与保存，失败经生成 IPC 边界换成错误码，读快照失败被 catch 吞掉；作者看不到这条说明
 export function assertStoredPlotTreeSnapshot(
   value: unknown,
@@ -369,7 +364,6 @@ export function assertStoredPlotTreeSnapshot(
   }
 }
 
-/** Validates a newly generated snapshot against the project's current sources. */
 // i18n-exempt: 剧情树只在主进程生成与保存，失败经生成 IPC 边界换成错误码，读快照失败被 catch 吞掉；作者看不到这条说明
 export function assertPlotTreeSnapshot(
   value: unknown,

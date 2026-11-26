@@ -30,7 +30,6 @@ export interface RecoveryCandidateRecordRequest {
   replacesCandidateId?: string
 }
 
-/** Renderer input; project identity is always supplied by the validated main-process lease. */
 export type RecoveryCandidateRecordInput = Omit<RecoveryCandidateRecordRequest, 'projectId'>
 
 export interface RecoveryCandidate {

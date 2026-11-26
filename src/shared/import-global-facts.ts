@@ -27,7 +27,6 @@ export interface ImportGlobalFactsRequest {
   characterEntries: CharacterRosterEntry[]
 }
 
-/** replace：参考小说整体写入；fill-empty：作者原稿只补空白，非空字段的反推值进 suggestions。 */
 export type ImportGlobalFactsMode = 'replace' | 'fill-empty'
 
 interface ImportGlobalFactsReceiptBase {

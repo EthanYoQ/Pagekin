@@ -1,21 +1,17 @@
 import { reviewRevisionContextV2, type ReviewRevisionContext, type ReviewRevisionContextV1, type ReviewRevisionContextV2 } from './review-revision-generation'
 
-/** 封存的 v1 证明：只留 v2 字段，inputHash 取原 v1 上下文的哈希，也就是收据里的 contextHash（ADR-0031）。 */
 export type SealedReviewRevisionContext = ReviewRevisionContextV2 & { rewrittenFrom: 1 }
 
-/** 调用方须已验过全文和收据：收据里的原哈希放进 inputHash，前文等材料丢弃。 */
 export function sealReviewContext(context: ReviewRevisionContextV1, contextHash: string): SealedReviewRevisionContext {
   return { ...reviewRevisionContextV2(context, contextHash), rewrittenFrom: 1 }
 }
 
-/** 清单里的证明三项：上下文、它的哈希、作者输入里的同一份全文，三者必须一起写。 */
 export function reviewProofFields(context: object, sha256: (text: string) => string) {
   const contextJson = JSON.stringify(context)
   return { reviewRevisionContext: context, reviewRevisionContextHash: sha256(contextJson),
     authorInputs: [{ id: 'review-revision-context', text: contextJson }] }
 }
 
-/** contextHash 是收据里应记的哈希。sealed 的这个哈希只能和收据比，不能从证明重算。 */
 export type ReviewProofRead =
   | { kind: 'absent' }
   | { kind: 'unproven' }
@@ -25,7 +21,6 @@ export type ReviewProofRead =
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 
-/** 只验证明自洽：全文、哈希、作者输入副本互相印证。字段是否齐全、来源是否当前由调用方判。 */
 export function readReviewProof(manifest: unknown, sha256: (text: string) => string): ReviewProofRead {
   const stored = record(manifest)
   if (stored?.reviewRevisionContext === undefined) return { kind: 'absent' }

@@ -13,7 +13,6 @@ import { renderHumanConfirmedReviewBrief } from './human-confirmed-review'
 import { writingLanguageText } from './writing-language'
 
 export type ReviewRevisionOperation = 'review-chapter' | 'refine-draft' | 'refine-from-review'
-/** Asserts the author's selected version; prose and all stored facts are loaded by main. */
 export interface PrepareReviewRevisionRequest {
   operation: ReviewRevisionOperation
   draftId: number
@@ -25,23 +24,10 @@ export interface PrepareReviewRevisionRequest {
   authorInputs: GenerationAuthorInput[]
   uiLocale: Locale
 }
-/**
- * 一条材料的来源身份：主进程捕获的、S10A 选择契约所需的最小集合。
- *
- * 它是**只增不减**字段。渲染层只能消费主进程给出的身份，绝不自行编造来源；
- * 缺少身份的材料不能进入上下文（必需项缺失时整体显式失败）。
- * `provenance` 用选择契约的词汇，未知来源不得被洗成 author。
- *
- * **它必须与会话无关**：这里绝不保存 `epoch`（会话租约）。同一项目重开后租约必然改变，
- * 把租约冻进来源清单会让比较与准入在重开后假失败（见
- * `generation-source-binding.ts` 跨会话比较时对 `SourceRef.epoch` 的剥离，
- * 两者是同一条规则）。活跃租约由使用方在构造 `SourceRef` 时按当前会话补上。
- */
 export interface ReviewMaterialIdentity {
   projectId: string
   sourceId: string
   revision: number
-  /** SHA-256 of the unmodified UTF-8 bytes of the material source. */
   contentHash: string
   provenance: 'finalized' | 'legacy' | 'author' | 'derived' | 'generated' | 'unknown'
 }
@@ -51,12 +37,9 @@ export interface ReviewFinalizedMaterial {
   chapterTitle: string
   content: string
   source?: FinalizedSourceIdentity
-  /** Only current projections may supply derived facts; other rows supply original prose. */
   projection?: FinalizedContinuityProjection
-  /** 主进程捕获的来源身份；渲染层据此做准入，不据此编造事实。 */
   identity?: ReviewMaterialIdentity
 }
-/** 主进程捕获的审修材料：渲染端据此拼提示词，绑定构建与续跑都重新捕获并比对。 */
 export interface ReviewRevisionMaterials {
   operation: ReviewRevisionOperation
   source: ExpectedDraftSource
@@ -68,7 +51,6 @@ export interface ReviewRevisionMaterials {
   characterStates: string
   worldbuilding: string
   history: ReviewFinalizedMaterial[]
-  /** Exact saved predecessor bound by the source draft, never an inferred latest version. */
   predecessor?: ReviewFinalizedMaterial
   blueprints: BlueprintForPreflight[]
   frozenGoals: FrozenChapterGoals
@@ -76,9 +58,7 @@ export interface ReviewRevisionMaterials {
   confirmation?: { reviewSourceId: number; content: string; originalReviewContentHash: string; snapshot: HumanConfirmedReviewSnapshot }
   recheck?: ReviewCycleRecheckContext
 }
-/** 库版本 12 之前写入的审修证明：整份材料原样冻结。旧运行续跑仍写这一版。 */
 export type ReviewRevisionContextV1 = { version: 1 } & ReviewRevisionMaterials
-/** 库版本 12 起写入的审修证明：只留保存与续跑要读的字段，其余材料由 inputHash 证明（ADR-0031）。 */
 export type ReviewRevisionContextV2 = { version: 2 } & Pick<ReviewRevisionMaterials, 'operation' | 'source' | 'sourceHash'
   | 'writingLanguage' | 'uiLocale' | 'authorInputs' | 'frozenGoals' | 'preflightFindings' | 'confirmation' | 'recheck'>
   & { wordsPerChapter: number; inputHash: string }
@@ -89,26 +69,21 @@ export function freezeReviewRevisionContext(materials: ReviewRevisionMaterials, 
   sha256: (text: string) => string): ReviewRevisionContext {
   return version === 1 ? { version: 1, ...materials } : reviewRevisionContextV2(materials, sha256(JSON.stringify(materials)))
 }
-/** v2 只留保存与续跑要读的字段；inputHash 由调用方给出。 */
 export function reviewRevisionContextV2(materials: ReviewRevisionMaterials, inputHash: string): ReviewRevisionContextV2 {
   const { operation, source, sourceHash, writingLanguage, uiLocale, authorInputs, frozenGoals, preflightFindings, confirmation, recheck } = materials
   return { version: 2, operation, source, sourceHash, writingLanguage, uiLocale, authorInputs, frozenGoals, preflightFindings,
     wordsPerChapter: materials.config.wordsPerChapter, ...(confirmation ? { confirmation } : {}), ...(recheck ? { recheck } : {}), inputHash }
 }
 
-/** Task approval does not turn an AI-proposed replacement into an author fact. */
 export function reviewRevisionAiBrief(context: Pick<ReviewRevisionMaterials, 'confirmation' | 'writingLanguage'>): string {
   const snapshot = context.confirmation?.snapshot
   return snapshot ? renderHumanConfirmedReviewBrief({ ...snapshot, authorGuidance: '',
     items: snapshot.items.filter(item => item.origin === 'ai') }, context.writingLanguage) : ''
 }
 
-/** One immutable author-material block shared by renderer admission and main hash validation. */
 export function reviewRevisionAuthorMaterial(context: ReviewRevisionMaterials): string {
   const text = (zh: string, en: string) => writingLanguageText(context.writingLanguage, zh, en)
   const snapshot = context.confirmation?.snapshot
-  // Keep each source label, but emit an identical text/prefix only at its longest source.
-  // The frozen originals stay intact for recovery and source validation.
   const sources: [string, string | undefined][] = [
     ['config.worldSetting', context.config.worldSetting],
     ['config.coreOutline', context.config.coreOutline],
@@ -146,7 +121,6 @@ export interface PreparedReviewRevisionContext {
   contextId: string
   context: ReviewRevisionContext
   materials: ReviewRevisionMaterials
-  /** Derived by main from the saved original AI review, never supplied as authority by renderer. */
   parentRootActionId?: string
   modelId?: string
 }
@@ -175,11 +149,9 @@ export interface ReviewRevisionCommitReceipt {
 export interface ReviewRevisionRecovery {
   handle: MainGenerationRunHandle
   context: ReviewRevisionContext
-  /** 只在可续跑（带 contextId）时给出。 */
   materials?: ReviewRevisionMaterials
   modelId: string
   sourceStatus: 'current' | 'conflict'
-  /** False when a terminal candidate failed deterministic save validation and is copy-only. */
   canResume: boolean
   contextId?: string
   saved?: ReviewRevisionCommitReceipt

@@ -9,7 +9,6 @@ export type CharacterResolution =
 export interface CharacterAlias extends ProjectEpoch {
   characterId: string; displayText: string; sourceId: string; fromRevision: number; toRevision?: number
 }
-/** Input candidates come from a project/source-scoped exact alias lookup; never similarity. */
 export function resolveCharacterIdentity(originalText: string, candidateIds: readonly string[]): CharacterResolution {
   if (!originalText || candidateIds.some(id => !id)) throw new Error('INVALID_CHARACTER_LOOKUP')
   const unique = [...new Set(candidateIds)]
@@ -48,10 +47,6 @@ const sameProvenance = (a: CharacterStateFieldProvenance, b: CharacterStateField
   a.kind === 'legacy' && b.kind === 'legacy'
   || a.kind === 'author' && b.kind === 'author' && a.chapterNumber === b.chapterNumber
   || a.kind === 'derived' && b.kind === 'derived' && sameSource(a.source, b.source)
-/**
- * A verified transfer origin shares the copied projection generation counter: `${origin}:G` is treated as `${projectId}:G`,
- * so an equal generation is allowed and chapter/revision order below still rejects regressions.
- */
 function advancesProjectContinuity(projectId: string, previous: string, current: string, originProjectId?: string): boolean {
   const generation = (epoch: string, project: string) => {
     if (!project || !epoch.startsWith(`${project}:`)) return null
@@ -63,7 +58,6 @@ function advancesProjectContinuity(projectId: string, previous: string, current:
   return after !== null && (before !== null && after > before || fromOrigin !== null && after >= fromOrigin)
 }
 export type DerivedPatchDecision = 'apply-derived' | 'already-applied' | 'proposal-required' | 'later-source-owns' | 'source-conflict' | 'field-conflict'
-/** Caller recomputes hashes and reads field/authority in the same synchronous commit transaction. */
 export function decideDerivedPatch(current: CharacterFieldSnapshot, patch: DerivedCharacterPatch,
   authority: { source: FinalizedSourceIdentity; order: DerivedSourceOrder; originProjectId?: string; laterOwnerAuthoritative: boolean }): DerivedPatchDecision {
   const order = patch.sourceOrder
@@ -95,7 +89,6 @@ export function decideDerivedPatch(current: CharacterFieldSnapshot, patch: Deriv
   if (current.provenance.kind !== 'derived' && !(current.provenance.kind === 'legacy' && current.value === '')) return 'proposal-required'
   return 'apply-derived'
 }
-/** Exact source/value-scoped dedupe; a new finalization source may propose again. */
 export function rejectedCharacterProposalKey(patch: DerivedCharacterPatch): string {
   return JSON.stringify([patch.projectId, patch.characterId, patch.field, patch.source.contentHash, patch.valueHash])
 }
@@ -115,7 +108,6 @@ export type ScopedCharacterResolution =
   | { status: 'ambiguous'; candidateIds: string[] }
   | { status: 'unresolved'; candidateIds: string[] }
 export interface CharacterLookup { name: string; projectId: string; sourceKey?: string; revision: number }
-/** Names alone are never proof of identity. Matching is exact, scoped and versioned. */
 export function resolveScopedCharacterIdentity(aliases: readonly ScopedCharacterAlias[], lookup: CharacterLookup): ScopedCharacterResolution {
   const nonempty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
   const revision = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0
@@ -139,6 +131,5 @@ export interface CharacterApproval {
   operationId: string
   expectedRevision: number
   source: CharacterStaticProvenance
-  /** Main-process explicit author action, never inferred from generated text. */
   action: 'author-edit' | 'adopt-generated' | 'adopt-import' | 'confirm-identity'
 }

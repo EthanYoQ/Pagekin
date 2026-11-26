@@ -7,7 +7,6 @@ export const CREATIVE_STRATEGIES = [
 
 export type CreativeStrategy = typeof CREATIVE_STRATEGIES[number]
 
-/** Controlled semantic stage used by product callers; never inferred from a diagnostic name. */
 export const REASONING_STAGES = ['drafting', 'planning', 'review', 'general', 'extraction'] as const
 export type GenerationReasoningStage = typeof REASONING_STAGES[number]
 
@@ -18,10 +17,6 @@ export type ReasoningOverride = 'auto' | ReasoningEffort
 
 export type ReasoningResolutionStatus = 'mapped' | 'capped' | 'forced' | 'unsupported'
 
-/**
- * generateContent 的 thinkingConfig.thinkingLevel 取值。minimal 是官方给的「不思考」档，但不保证完全不思考，
- * 所以只用来承接产品里的「关闭」。https://ai.google.dev/gemini-api/docs/generate-content/thinking
- */
 export const GEMINI_THINKING_LEVELS = ['minimal', 'low', 'medium', 'high'] as const
 export type GeminiThinkingLevel = typeof GEMINI_THINKING_LEVELS[number]
 
@@ -31,7 +26,6 @@ export function isGeminiThinkingLevel(value: unknown): value is GeminiThinkingLe
 
 export function reasoningAdapterFitsProtocol(protocol: unknown, adapter: ProviderReasoningDirective['adapter']): boolean {
   if (adapter === 'gemini-thinking-budget' || adapter === 'gemini-thinking-level') return protocol === 'gemini'
-  // 没写协议的旧配置按 OpenAI 兼容处理；anthropic 协议暂无经验证的推理参数映射。
   return protocol !== 'gemini' && protocol !== 'anthropic'
 }
 
@@ -49,13 +43,11 @@ export type ProviderReasoningDirective =
       thinkingBudget: number
     }
   | {
-      /** Gemini 3 起用 thinkingLevel 代替 thinkingBudget。 */
       adapter: 'gemini-thinking-level'
       thinkingLevel: GeminiThinkingLevel
     }
   | {
       adapter: 'openai-thinking-budget'
-      /** Zero disables thinking; positive values budget thinking separately from the answer. */
       thinkingBudget: number
     }
   | {
@@ -72,11 +64,9 @@ export interface VerifiedReasoningMapping {
   adapter: ProviderReasoningDirective['adapter']
   supportedEfforts: readonly EffectiveReasoningEffort[]
   providerValues: Readonly<Partial<Record<EffectiveReasoningEffort, string | number>>>
-  /** Documented compatibility aliases from a requested product effort to the provider's actual effort. */
   requestAliases?: Readonly<Partial<Record<ReasoningEffort, EffectiveReasoningEffort>>>
 }
 
-/** Validate the existing finite adapter shape, including manually supplied mappings. */
 export function isReasoningMapping(value: unknown): value is VerifiedReasoningMapping {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const mapping = value as VerifiedReasoningMapping

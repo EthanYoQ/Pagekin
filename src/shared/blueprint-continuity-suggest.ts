@@ -3,7 +3,6 @@ import {
 } from './blueprint-continuity-check'
 import { writingLanguageText, type WritingLanguage } from './writing-language'
 
-/** 建议只改这些规划文字。作者指导、备注和出场角色由作者自己管。 */
 export const BLUEPRINT_PATCH_FIELDS = ['title', 'role', 'purpose', 'keyEvents', 'suspenseHook'] as const
 export type BlueprintPatchField = typeof BLUEPRINT_PATCH_FIELDS[number]
 export type BlueprintPatch = Partial<Record<BlueprintPatchField, string>>
@@ -22,7 +21,6 @@ export interface ContinuitySuggestResult {
 
 export type SuggestionStatus = 'pending' | 'accepted' | 'rejected' | 'stale'
 
-/** 一章一张卡：before 是检查时那份蓝图的原文，接受时写进去的就是 after。 */
 export interface ContinuitySuggestionView {
   suggestionId: string
   chapterNumber: number
@@ -115,10 +113,6 @@ function readPatch(value: unknown, chapter: ContinuityCheckChapter): BlueprintPa
   return Object.keys(patch).length > 0 ? patch : null
 }
 
-/**
- * 一条引用不成立只丢这一条；整段读不出来才算失败。
- * 同一章的几条改的字段不重叠就合成一条；重叠时整章丢掉，免得写进去的文字对不上卡片上的任何一条说明。
- */
 export function parseBlueprintContinuitySuggest(
   content: string,
   chapters: readonly ContinuityCheckChapter[],

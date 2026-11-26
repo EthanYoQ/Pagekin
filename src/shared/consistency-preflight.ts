@@ -6,7 +6,6 @@ export interface ConsistencyExemption {
   stableFactKey: string
   reason: string
   revoked: boolean
-  /** null 表示全书豁免。 */
   chapterNumber: number | null
 }
 
@@ -14,7 +13,6 @@ export interface ConsistencyFinding {
   stableFactKey: string
   severity: 'warning'
   sourceChapter: number
-  /** 依据是作者自己写的设定：sourceChapter 只是生效章，不是出处。 */
   authorSetting?: true
   evidence: string
   issue: { zhCN: string; enUS: string }
@@ -37,7 +35,6 @@ export interface BlueprintForPreflight {
   suspenseHook: string
   userGuidance: string
   notes: string
-  /** 未校验的 JSON，形状和 BlueprintData 的同名字段一致，由规则解析。 */
   relationshipHints?: unknown
 }
 
@@ -87,7 +84,6 @@ export function factHash(identity: string): string {
   return hash.toString(16).padStart(16, '0')
 }
 
-/** 规则只产出 ConsistencyFinding，豁免在规则表外统一处理。 */
 interface BlueprintRuleContext {
   blueprint: BlueprintForPreflight
   projections: readonly FinalizedContinuityProjection[]
@@ -95,7 +91,6 @@ interface BlueprintRuleContext {
   pendingRelations: readonly PendingFinalizedRelationCandidate[]
 }
 
-/** 故意收窄：只有结构化的死亡终态才和「本章出场」冲突。 */
 function terminalCharacterScheduled({ blueprint, projections }: BlueprintRuleContext): ConsistencyFinding[] {
   const characters = new Set(blueprint.characters.map(normalizedKeyPart))
   return projections.flatMap(projection => (
@@ -135,7 +130,6 @@ export function exemptedFactKeys(exemptions: readonly ConsistencyExemption[], ch
     .map(exemption => exemption.stableFactKey))
 }
 
-/** 审稿入口不传 nodes 和 pendingRelations：它的结果冻结在审稿上下文里，恢复时要逐字段相等，升级后不能多出关系提示。 */
 export function findBlueprintContinuityRisks(
   projections: readonly FinalizedContinuityProjection[],
   blueprint: BlueprintForPreflight,

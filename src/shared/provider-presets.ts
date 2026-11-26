@@ -1,32 +1,20 @@
-/**
- * 服务商预设配置 — 共享类型定义
- * 渲染进程与主进程共同使用，持久化在 ~/.vela/provider-presets.json
- */
-
 import type { VerifiedReasoningMapping } from './reasoning-types'
 import { isReasoningMapping, reasoningAdapterFitsProtocol } from './reasoning-types'
 
-/** 单个模型的预设 — name + 该模型的输出 token 上限 */
 export interface ModelPreset {
   name: string
-  /** Model-specific capability metadata. `maxTokens` remains the legacy output limit. */
   capabilities?: ModelCapabilities
-  /** Independently verified JSON-mode support; does not imply other feature or capacity facts. */
   structuredOutput?: boolean
-  /** Verified capacity facts used only for budget planning, independent of feature flags. */
   budgetCapabilities?: ModelBudgetCapabilities
-  /** Provider request mapping verified against the official model documentation. */
   reasoningMapping?: VerifiedReasoningMapping
   maxTokens: number
 }
 
-/** Provider-documented capacity facts that do not imply request-feature support. */
 export interface ModelBudgetCapabilities {
   contextWindowTokens: number
   maxOutputTokens: number
   evidence: {
     sourceUrl: string
-    /** The catalog deliberately records a safe value at or below the rounded provider claim. */
     calibration: 'conservative-provider-documentation'
   }
 }
@@ -37,9 +25,7 @@ export interface ResolvedModelBudgetCapabilities {
   evidence?: ModelBudgetCapabilities['evidence']
 }
 
-/** Optional capabilities supported by a model endpoint. */
 export interface ModelCapabilities {
-  /** `null` means the endpoint has not declared a context window. */
   contextWindowTokens: number | null
   maxOutputTokens: number
   reasoning: boolean
@@ -47,7 +33,6 @@ export interface ModelCapabilities {
   usage: boolean
 }
 
-/** Persisted profile fields needed to resolve effective built-in capabilities. */
 export interface ModelCapabilityProfile {
   provider?: unknown
   protocol?: unknown
@@ -58,28 +43,17 @@ export interface ModelCapabilityProfile {
   reasoningMapping?: VerifiedReasoningMapping
 }
 
-/** 单个服务商的预设配置 */
 export interface ProviderPreset {
-  /** 服务商唯一标识（内置值如 openai/deepseek，用户可自定义如 my-proxy） */
   provider: string
-  /** 界面显示名称，缺省时使用 provider ID */
   displayName?: string
-  /** 默认 API 地址 */
   baseUrl: string
-  /** Additional exact official endpoints allowed to supply budget capability evidence. */
   budgetCapabilityBaseUrls?: string[]
-  /** Persisted provider labels accepted only for this exact budget evidence match. */
   budgetProviderAliases?: string[]
-  /** 默认调用协议：openai 兼容 或 gemini 原生 */
   protocol: string
-  /** 支持的生成模型列表（含各自的 maxTokens） */
   models: ModelPreset[]
   retiredModels?: ModelPreset[]
-  /** 支持的向量模型列表（embedding 模型不需要 maxTokens） */
   embeddingModels: string[]
-  /** 向量模型的能力元数据，按模型 ID 索引以保持旧的 string[] 配置兼容。 */
   embeddingModelCapabilities?: Record<string, ModelCapabilities>
-  /** 重排模型，第一个是默认值。 */
   rerankModels?: string[]
 }
 
@@ -102,26 +76,17 @@ function geminiThinkingLevelPreset(name: string, supportsMinimal: boolean): Mode
   }
 }
 
-/**
- * 创建内置服务商目录。
- *
- * 每次调用均返回新的对象，方便调用方安全地派生 UI 状态而不污染全局预设。
- */
 export function createProviderCatalog(): ProviderPreset[] {
   return [
   {
     provider: 'openai',
     displayName: 'OpenAI',
     baseUrl: 'https://api.openai.com',
-    // Profiles persist the versioned endpoint; both spellings are the same
-    // official host, so only budget evidence may match through it.
     budgetCapabilityBaseUrls: ['https://api.openai.com/v1'],
     protocol: 'openai',
     models: [
       {
         name: 'gpt-4.1',
-        // Preserve the legacy operational default; budget evidence is separate
-        // and never advertised as request-feature support.
         maxTokens: 16_384,
         budgetCapabilities: {
           contextWindowTokens: 1_047_576,
@@ -215,8 +180,6 @@ export function createProviderCatalog(): ProviderPreset[] {
     models: [
       {
         name: 'grok-4.5',
-        // Retain `maxTokens` for existing execution paths while exposing the
-        // precise capability names used by new settings forms.
         maxTokens: 8192,
         capabilities: {
           contextWindowTokens: 500_000,
@@ -225,7 +188,6 @@ export function createProviderCatalog(): ProviderPreset[] {
           structuredOutput: true,
           usage: true,
         },
-        // https://docs.x.ai/developers/model-capabilities/text/reasoning
         reasoningMapping: {
           adapter: 'openai-reasoning-effort',
           supportedEfforts: ['low', 'medium', 'high'],
@@ -245,20 +207,14 @@ export function createProviderCatalog(): ProviderPreset[] {
     models: [
       {
         name: 'deepseek-ai/DeepSeek-V4-Flash',
-        // JSON mode: https://docs.siliconflow.cn/docs/api/chat-completions-post
         structuredOutput: true,
-        // https://docs.siliconflow.cn/docs/api/chat-completions-post
         reasoningMapping: {
           adapter: 'siliconflow-v4-thinking',
           supportedEfforts: ['high', 'max'],
           providerValues: { high: 'high', max: 'max' },
         },
-        // Preserve the existing operational default. The separately verified
-        // capacity is evidence for planning and does not enlarge user settings.
         maxTokens: 16_384,
         budgetCapabilities: {
-          // The provider page publishes rounded 1049K / 393K values. Use
-          // conservative decimal bounds rather than inventing binary limits.
           contextWindowTokens: 1_000_000,
           maxOutputTokens: 393_000,
           evidence: {
@@ -269,7 +225,6 @@ export function createProviderCatalog(): ProviderPreset[] {
       },
       {
         name: 'deepseek-ai/DeepSeek-V4.1-Flash',
-        // 只登记推理参数；JSON 模式与容量未核实，不登记。
         reasoningMapping: {
           adapter: 'siliconflow-v4-thinking',
           supportedEfforts: ['high', 'max'],
@@ -279,9 +234,7 @@ export function createProviderCatalog(): ProviderPreset[] {
       },
       {
         name: 'deepseek-ai/DeepSeek-V4-Pro',
-        // JSON mode: https://docs.siliconflow.cn/docs/userguide/guides/json-mode
         structuredOutput: true,
-        // https://docs.siliconflow.cn/docs/api/chat-completions-post
         reasoningMapping: {
           adapter: 'siliconflow-v4-thinking',
           supportedEfforts: ['high', 'max'],
@@ -299,10 +252,7 @@ export function createProviderCatalog(): ProviderPreset[] {
       },
       {
         name: 'Qwen/Qwen3.8-27B',
-        // JSON mode: https://docs.siliconflow.cn/docs/userguide/guides/json-mode
         structuredOutput: true,
-        // Application-selected budget, not a provider-defined medium effort.
-        // https://docs.siliconflow.cn/docs/userguide/capabilities/reasoning
         reasoningMapping: {
           adapter: 'openai-thinking-budget',
           supportedEfforts: ['off', 'medium'],
@@ -311,7 +261,6 @@ export function createProviderCatalog(): ProviderPreset[] {
         maxTokens: 16_384,
         budgetCapabilities: {
           contextWindowTokens: 262_144,
-          // Conservative supported output, not a claim of the model's maximum.
           maxOutputTokens: 16_384,
           evidence: {
             sourceUrl: 'https://www.siliconflow.cn/models',
@@ -321,7 +270,6 @@ export function createProviderCatalog(): ProviderPreset[] {
       },
     ],
     embeddingModels: ['BAAI/bge-m3'],
-    // https://docs.siliconflow.com/en/api-reference/rerank/create-rerank
     rerankModels: ['BAAI/bge-reranker-v2-m3'],
     embeddingModelCapabilities: {
       'BAAI/bge-m3': {
@@ -357,7 +305,6 @@ export function createProviderCatalog(): ProviderPreset[] {
           structuredOutput: true,
           usage: true,
         },
-        // https://api-docs.deepseek.com/guides/thinking_mode/
         reasoningMapping: {
           adapter: 'deepseek-v4-thinking',
           supportedEfforts: ['off', 'low', 'high', 'max'],
@@ -375,7 +322,6 @@ export function createProviderCatalog(): ProviderPreset[] {
           structuredOutput: true,
           usage: true,
         },
-        // https://api-docs.deepseek.com/guides/thinking_mode/
         reasoningMapping: {
           adapter: 'deepseek-v4-thinking',
           supportedEfforts: ['off', 'low', 'high', 'max'],
@@ -387,7 +333,6 @@ export function createProviderCatalog(): ProviderPreset[] {
     embeddingModels: [],
   },
   {
-    /** 智谱 BigModel — OpenAI 兼容协议，API 路径为 /v4 */
     provider: 'bigmodel',
     displayName: 'BigModel（智谱）',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
@@ -417,14 +362,9 @@ export function createProviderCatalog(): ProviderPreset[] {
       },
     ],
     embeddingModels: ['embedding-3'],
-    // https://docs.bigmodel.cn/api-reference/模型-api/文本重排序
     rerankModels: ['rerank'],
   },
   {
-    /**
-     * 智谱 BigModel — Anthropic Messages 兼容协议，API 前缀为 /api/anthropic。
-     * 模型 ID 与 OpenAI 兼容端点一致；该协议没有嵌入接口，也不声明 JSON 模式与推理映射。
-     */
     provider: 'bigmodel-anthropic',
     displayName: 'BigModel（智谱 Anthropic）',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
@@ -455,15 +395,12 @@ export function createProviderCatalog(): ProviderPreset[] {
     displayName: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com',
     protocol: 'gemini',
-    // 容量见各模型页 https://ai.google.dev/gemini-api/docs/models/<模型 ID>（输入 1,048,576、输出 65,536，
-    // 均支持 Thinking 与 Structured outputs）；思考等级见 https://ai.google.dev/gemini-api/docs/generate-content/thinking 。
     models: [
       geminiThinkingLevelPreset('gemini-3.8-flash', false),
       geminiThinkingLevelPreset('gemini-3.5-flash-lite', true),
       geminiThinkingLevelPreset('gemini-3.1-pro-preview', false),
       geminiThinkingLevelPreset('gemini-3-flash-preview', true),
     ],
-    // 2.5 Flash-Lite 已不对新用户开放（调用返回 404），老用户已保存的配置仍按原映射调用。
     retiredModels: [
       {
         name: 'gemini-2.5-flash-lite',
@@ -475,7 +412,6 @@ export function createProviderCatalog(): ProviderPreset[] {
           structuredOutput: true,
           usage: true,
         },
-        // https://ai.google.dev/gemini-api/docs/generate-content/thinking
         reasoningMapping: {
           adapter: 'gemini-thinking-budget',
           supportedEfforts: ['off', 'low', 'medium', 'high'],
@@ -483,7 +419,6 @@ export function createProviderCatalog(): ProviderPreset[] {
         },
       },
     ],
-    // text-embedding-004 已不在 models 列表里；gemini-embedding-001 默认返回 3072 维。
     embeddingModels: ['gemini-embedding-001'],
   },
   {
@@ -514,12 +449,10 @@ export function createProviderCatalog(): ProviderPreset[] {
   ]
 }
 
-/** 内置默认预设（首次启动时写入持久化文件） */
 export const BUILTIN_PRESETS: ProviderPreset[] = createProviderCatalog()
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
 
-/** base_url 是可解析的 http(s) 地址时返回解析结果，否则返回 null。 */
 export function parseHttpEndpoint(baseUrl: string): URL | null {
   const trimmed = baseUrl.trim()
   if (!URL.canParse(trimmed)) return null
@@ -527,12 +460,10 @@ export function parseHttpEndpoint(baseUrl: string): URL | null {
   return endpoint.protocol === 'http:' || endpoint.protocol === 'https:' ? endpoint : null
 }
 
-/** Ollama 和本机地址上的模型服务：不需要 API Key，连接测试也按本机放宽超时。 */
 export function isLocalModelEndpoint({ provider, baseUrl }: { provider: string, baseUrl: string }): boolean {
   return provider === 'ollama' || LOCAL_HOSTNAMES.has(parseHttpEndpoint(baseUrl)?.hostname ?? '')
 }
 
-/** 设置页保存、拉取列表和知识库嵌入共用的 Key 规则：填了 Key，或者是不需要 Key 的 Ollama 与本机地址。 */
 export function hasRequiredApiKey(model: { provider: string, baseUrl: string, apiKey: string }): boolean {
   return Boolean(model.apiKey.trim()) || isLocalModelEndpoint(model)
 }
@@ -613,10 +544,6 @@ function matchesBudgetCapabilityEndpoint(preset: ProviderPreset, baseUrl: unknow
     .some(candidate => endpoint === normalizedOfficialBaseUrl(candidate))
 }
 
-/**
- * Resolve capacity evidence for budget planning without making claims about
- * reasoning, structured output, usage reporting, or other request features.
- */
 export function resolveModelProfileBudgetCapabilities(
   profile: ModelCapabilityProfile,
 ): ResolvedModelBudgetCapabilities | undefined {
@@ -633,7 +560,6 @@ export function resolveModelProfileBudgetCapabilities(
   ) return undefined
 
   const model = catalogModel(preset, modelName)
-  // Qwen evidence is scoped to the published CN endpoint, not the V4 alias.
   if (modelName === 'Qwen/Qwen3.8-27B'
     && normalizedOfficialBaseUrl(profile.baseUrl) !== 'https://api.siliconflow.cn/v1') return undefined
   const dedicated = validatedBudgetCapabilities(model?.budgetCapabilities)
@@ -647,11 +573,6 @@ export function resolveModelProfileBudgetCapabilities(
   }
 }
 
-/**
- * Resolve verified built-in provider facts without mutating persisted data.
- * User-stored capabilities and output limits are operational policy, not proof
- * of what a provider endpoint supports, so they never override this result.
- */
 export function resolveModelProfileCapabilities(
   profile: ModelCapabilityProfile,
 ): ModelCapabilities | undefined {
@@ -676,7 +597,6 @@ export function resolveModelProfileCapabilities(
   return validatedCapabilities(model?.capabilities)
 }
 
-/** Resolve one declared feature on the exact catalog endpoint, protocol and model. */
 export function resolveModelProfileStructuredOutput(profile: ModelCapabilityProfile): boolean | undefined {
   if (typeof profile.protocol !== 'string' || typeof profile.modelName !== 'string') return undefined
   const modelName = profile.modelName.trim()
@@ -685,11 +605,6 @@ export function resolveModelProfileStructuredOutput(profile: ModelCapabilityProf
   return preset ? catalogModel(preset, modelName)?.structuredOutput : undefined
 }
 
-/**
- * Resolve only provider request mappings whose endpoint and exact model slug
- * match an app-maintained built-in preset. User-entered capability flags are
- * operational hints and never become protocol evidence.
- */
 export function resolveModelProfileReasoningMapping(
   profile: ModelCapabilityProfile,
 ): VerifiedReasoningMapping | undefined {
@@ -706,8 +621,6 @@ export function resolveModelProfileReasoningMapping(
 
   const protocol = profile.protocol
   const modelName = profile.modelName.trim()
-  // Display labels do not define endpoint capabilities. Budget aliases still
-  // do not grant request features without an exact endpoint mapping.
   const preset = BUILTIN_PRESETS.find(candidate => candidate.protocol === protocol
     && normalizedOfficialBaseUrl(profile.baseUrl) === normalizedOfficialBaseUrl(candidate.baseUrl))
   if (!preset) return undefined

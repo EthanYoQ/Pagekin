@@ -16,10 +16,6 @@ import type { CloudBackupChannels } from './cloud-backup'
 import type { ProjectOverview } from './project-overview'
 import type { ModelStage, StageModelIds } from './model-stage-routing'
 import type { KnowledgeSearchHit } from './knowledge-ranking'
-/**
- * IPC 频道定义 — 渲染进程与主进程的类型安全通信契约
- * 所有 IPC 调用都通过此文件定义频道名和参数/返回值类型
- */
 import type { InterfaceLocale } from '../i18n/types'
 import type { StartupChannels } from './startup-contract'
 import type {
@@ -94,7 +90,6 @@ import type {
   ImportRunStage,
 } from './import-run'
 
-// ===== 全局配置 =====
 export interface ConfigChannels {
   'config:get': {
     args: []
@@ -106,7 +101,6 @@ export interface ConfigChannels {
   }
 }
 
-// ===== 应用更新 =====
 export interface UpdateChannels {
   'update:get-state': {
     args: []
@@ -138,7 +132,6 @@ export interface UpdateStateEvents {
   'update:state': UpdateState
 }
 
-// ===== 窗口控制 =====
 export interface WindowChannels {
   'window:minimize': {
     args: []
@@ -156,7 +149,6 @@ export interface WindowChannels {
     args: [requestId: string, decision: 'proceed' | 'cancel']
     return: { success: boolean }
   }
-  /** 写作、审稿、修稿、定稿结束时调用；窗口在后台且设置开着时才弹系统通知。 */
   'window:notify-stage': {
     args: [notice: StageNotice]
     return: { shown: boolean }
@@ -169,7 +161,6 @@ export interface WindowEvents {
   'window:close-requested': { requestId: string }
 }
 
-// ===== 固定官方主页 =====
 export interface OfficialHomepageChannels {
   'official-homepage:open': {
     args: []
@@ -177,9 +168,7 @@ export interface OfficialHomepageChannels {
   }
 }
 
-// ===== 固定模型服务商外链 =====
 export interface ModelProviderResourceChannels {
-  /** 只接受受信任资源 ID，由主进程映射为固定 HTTPS URL。 */
   'model-provider-resource:open': {
     args: [resource: ModelProviderResourceId]
     return: { success: boolean; error?: string }
@@ -206,17 +195,13 @@ export interface GlobalConfig {
   locale?: InterfaceLocale
   defaultModelId: string | null
   defaultEmbeddingModelId?: string | null
-  /** 显式选定的重排档案；缺省时按检索档案自动复用。 */
   defaultRerankModelId?: string | null
   stageModelIds?: StageModelIds
-  /** 定稿与后处理成功后，打开下一章的创作窗口（默认关闭）。 */
   autoOpenNextChapterAfterFinalize?: boolean
-  /** 书童在后台时，阶段结束弹系统通知（缺省为开）。 */
   backgroundStageNotifications?: boolean
   editorFontSize: number
   editorFontFamily: string
   autoSaveInterval: number
-  /** 更新检查和提醒延后的本机偏好，持久化到 ~/.vela/config.json。 */
   updatePreferences?: UpdatePreferences
   dialogDirectories?: Partial<Record<DialogDirectoryKind, string>>
   proxy?: {
@@ -249,17 +234,12 @@ export interface AppFailure {
 
 export type AppResult<T> = T | AppFailure
 
-/**
- * 一次打开项目时由主进程签发并冻结的跨进程会话身份。
- * projectPath 仅用于主进程的规范根目录校验，不能单独授予访问权限。
- */
 export interface ProjectSessionContext {
   projectId: string
   leaseId: string
   projectPath: string
 }
 
-/** Renderer-captured source draft contract revalidated by the main-process write transaction. */
 export interface ExpectedDraftSource {
   id: number
   chapterNumber: number
@@ -270,7 +250,6 @@ export interface ExpectedDraftSource {
 
 export type SourceDraftGuardErrorCode = 'SOURCE_DRAFT_CHANGED'
 
-// ===== 项目管理 =====
 export interface CreateProjectConfig {
   name: string
   parentGrantId: string
@@ -284,18 +263,14 @@ export interface ProjectDirectoryGrant {
   displayName: string
 }
 
-/** Strings identify main-owned recent projects; new selections require a grant. */
 export type ProjectOpenTarget = string | ProjectDirectoryGrant
 
-/** 目标位置只以 dialog:select-project-archive-export 签发的授权标识表达；渲染进程不得携带路径。 */
 export interface PortableProjectExportRequest {
   targetArchiveGrantId: string
   projectSession: ProjectSessionContext
-  /** 原样回送在进度事件里：同一窗口可能有上一次导出还没停，界面只认自己这次的。 */
   exportId?: string
 }
 
-/** 导出与云备份打包的阶段，按顺序：读取作品、检查、整理、打包。资料被改时整次重来，阶段会从头再走一遍。 */
 export type PortableExportPhase = 'snapshot' | 'check' | 'tidy' | 'package'
 
 export interface PortableExportEvents {
@@ -315,11 +290,9 @@ export interface PortableProjectExportReceipt {
   }
   entryCount: number
   requiresRuntimeFreezeGuard: true
-  /** 验不过、没放进存档的审修循环所在的章。 */
   omittedReviewCycles?: readonly DamagedReviewCycle[]
 }
 
-/** 归档与恢复副本位置分别来自 dialog:select-project-archive 与 dialog:select-project-restore-target 的授权。 */
 export interface PortableProjectRestoreRequest {
   archiveGrantId: string
   targetGrantId: string
@@ -419,7 +392,6 @@ export interface ProjectChannels {
       legacyImportSource?: ProjectDirectoryGrant
       errorCode?: AppErrorCode
       finalizationRepair?: FinalizationRepairOnOpen
-      /** 这次打开时新封存的生成（根）条数，见 ADR-0030。 */
       sealedGenerationCount?: number
     }
   }
@@ -502,7 +474,6 @@ export interface ProjectChannels {
   }
 }
 
-// ===== 文件系统 =====
 export type FileWriteCommitState = 'not_committed' | 'committed' | 'unknown'
 
 export interface FileChannels {
@@ -534,7 +505,6 @@ export interface FileChannels {
     args: [filePath: string, data: unknown, expectedProjectPath: string]
     return: { success: boolean; error?: string }
   }
-  /** 用户选择后签发的授权；渲染进程仅能携带 grantId 与受限相对路径。 */
   'fs:grant-read-file': {
     args: [grantId: string, relativePath?: string]
     return: { success: boolean; content: string; error?: string }
@@ -555,15 +525,10 @@ export interface FileChannels {
   }
 }
 
-// ===== LLM 调用 =====
 export interface DiscoveredModel {
-  /** Provider-owned model identifier exactly as returned by the list API. */
   id: string
-  /** Provider-owned display name, falling back to the identifier. */
   name: string
-  /** Value that can be saved in ModelProfile.modelName. */
   value: string
-  /** Only explicit, unambiguous declarations from the endpoint response. */
   capabilities?: Partial<ModelCapabilities>
 }
 
@@ -580,7 +545,6 @@ export type ModelDiscoveryResult =
   | { success: true; models: DiscoveredModel[] }
   | { success: false; errorCode: ModelDiscoveryErrorCode }
 
-/** Unsaved endpoint fields required to request a provider's model list; purposes decide which models fit. */
 export type ModelDiscoveryRequest = Pick<
   ModelProfile,
   'provider' | 'protocol' | 'baseUrl' | 'apiKey' | 'purposes'
@@ -601,7 +565,6 @@ export interface LLMChannels {
     return: ModelProfile[]
   }
   'llm:discover-models': {
-    /** Discovery uses the current settings form without persisting it first. */
     args: [request: ModelDiscoveryRequest]
     return: ModelDiscoveryResult
   }
@@ -658,15 +621,12 @@ export interface LLMChannels {
   }
 }
 
-// ===== 公共数据类型 =====
 export interface ProjectData {
   id: string
   name: string
   path: string
-  /** 主进程签发；仅与 id 组合为会话凭据，path 不是授权。 */
   sessionLease?: string
   novelConfig: NovelConfig
-  /** 与 novelConfig 并列，只给设定页用。 */
   aiSources?: AiSources
   characterStates: string
   createdAt: string
@@ -674,14 +634,8 @@ export interface ProjectData {
 }
 
 export interface NovelConfig {
-  /**
-   * Project content language; independent from the application UI locale.
-   * Missing only while reading pre-language renderer drafts; project open normalizes it.
-   */
   writingLanguage?: WritingLanguage
-  /** Project-scoped writing intent; independent from the selected model. */
   creativeStrategy?: CreativeStrategy
-  /** Project-scoped chapter count before an active narrative thread is marked dormant. */
   narrativeThreadDormantChapterThreshold?: number
   genre: string
   subGenre: string
@@ -706,7 +660,6 @@ export interface FileNode {
   children?: FileNode[]
 }
 
-/** 只携带用户可展示名称和不透明能力标识；不暴露外部绝对路径。 */
 export interface ExternalFileGrant {
   grantId: string
   displayName: string
@@ -714,7 +667,6 @@ export interface ExternalFileGrant {
 
 export type ExternalDirectoryGrant = ExternalFileGrant
 
-/** 固定 app-data 服务使用的提示词数据；文件位置不由渲染进程决定。 */
 export interface AppPromptTemplate {
   key: string
   writingLanguage?: WritingLanguage
@@ -722,9 +674,7 @@ export interface AppPromptTemplate {
 }
 
 export interface PromptLoadDiagnostic {
-  /** Derived from the owned filename when possible; absent means the whole scope is unreadable. */
   key?: string
-  /** Absent on legacy receipts, which retain their original scope-wide behavior. */
   writingLanguage?: WritingLanguage
   path: string
   error: string
@@ -741,7 +691,6 @@ export interface AppDataChannels {
   'prompt:delete-global': { args: [key: string, writingLanguage: WritingLanguage]; return: { success: boolean; error?: string } }
   'skills:list-user': {
     args: []
-    /** bundle：按安装清单读到的附带文本；没有清单的 Skill 为 none，只看 SKILL.md。 */
     return: Array<{ name: string; content: string; baseDir: string; filePath: string; bundle: import('./writing-skills').InstalledWritingSkillBundle }>
   }
   'skills:inspect-github': {
@@ -752,7 +701,6 @@ export interface AppDataChannels {
     args: [sourceUrl: string]
     return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; error?: string }
   }
-  /** 主进程弹出系统对话框选择本机 SKILL.md 或 Skill 文件夹，只读检查后返回候选。 */
   'skills:pick-local': {
     args: [kind: import('./writing-skills').LocalWritingSkillSourceKind]
     return: { success: boolean; cancelled?: boolean; inspection?: import('./writing-skills').LocalWritingSkillInspection; error?: string }
@@ -769,15 +717,10 @@ export interface AppDataChannels {
 
 export interface LLMRequest {
   modelId: string
-  /** Optional frozen main-process model snapshot; when present it is authoritative. */
   modelExecutionLeaseId?: string
-  /** Stable attribution for per-project call history. */
   purpose?: string
-  /** Project-scoped product intent captured by the renderer for this request. */
   creativeStrategy?: CreativeStrategy
-  /** Controlled semantic stage; never inferred from the diagnostic purpose label. */
   reasoningStage?: GenerationReasoningStage
-  /** Frozen project lease. Missing/stale leases are never written to project statistics. */
   projectSession?: ProjectSessionContext
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
   maxTokens?: number
@@ -805,7 +748,6 @@ export interface ModelExecutionCapabilityEvidence {
   usage: boolean | null
 }
 
-/** Non-secret evidence for a complete ModelProfile snapshot retained only in the main process. */
 export interface ModelExecutionLeaseReceipt {
   leaseId: string
   modelId: string
@@ -823,11 +765,9 @@ interface LLMResponseBase {
   content: string
   usage?: TokenUsage
   error?: string
-  /** 供应商返回非 2xx 时的状态码与响应正文；error 为 LLM_REQUEST_FAILED，由连接测试按界面语言写进说明（#474）。 */
   httpFailure?: { status: number; body: string }
 }
 
-/** Every non-stream response carries explicit terminal evidence. */
 export type LLMResponse =
   | (LLMResponseBase & { success: true; finishReason: 'stop' })
   | (LLMResponseBase & {
@@ -835,10 +775,6 @@ export type LLMResponse =
       finishReason: Exclude<LLMFinishReason, 'stop'>
     })
 
-/**
- * Provider-neutral end state for generated text. `stop` is the only state
- * that downstream workflows and the Agent may treat as a complete response.
- */
 export type LLMFinishReason =
   | 'stop'
   | 'length'
@@ -862,20 +798,13 @@ export interface ModelProfile {
   apiKey: string
   baseUrl: string
   temperature: number
-  /** 新配置使用的端点能力；旧配置缺失时继续使用 maxTokens。 */
   capabilities?: ModelCapabilities
-  /** Configuration provenance only; never grants verified provider bounds. */
   capabilitySources?: Partial<Record<keyof ModelCapabilities, 'endpoint' | 'preset' | 'manual' | 'unknown'>>
-  /** 服务商超长报错里读到的真实窗口，只由主进程写，不进 modelRevision。模型身份变了就不算数。 */
   learnedContextWindow?: Pick<ModelProfile, 'provider' | 'protocol' | 'baseUrl' | 'modelName'> & { tokens: number }
-  /** 旧配置和当前执行路径使用的输出 token 上限，保持兼容。 */
   maxTokens: number
   purposes: Array<'generation' | 'refinement' | 'summary' | 'embedding' | 'rerank'>
-  /** Profile-scoped advanced request; `auto` defers to project strategy and purpose. */
   reasoningOverride?: ReasoningOverride
-  /** Explicit advanced wire mapping; omitted profiles use endpoint metadata. */
   reasoningMapping?: VerifiedReasoningMapping
-  /** 仅用于 Embedding 模型；旧配置省略时沿用原有默认行为。 */
   embeddingOptions?: EmbeddingOptions
 }
 
@@ -887,7 +816,6 @@ export interface ProjectClearOptions {
 
 export type ProjectClearScope = 'creativeFields' | 'blueprints' | 'generatedText'
 
-// ===== 引入 DB 类型 =====
 import type {
   ProjectCoreData,
   ProjectCoreSynopsisCommitRequest,
@@ -925,11 +853,9 @@ import type {
   ImportGlobalFactsRequest,
 } from './import-global-facts'
 
-// ===== 数据库操作 =====
 export interface DatabaseChannels {
   'db:close': { args: [expectedProjectPath: string]; return: { success: boolean } }
 
-  // 1. project_core
   'db:project-core-get': {
     args: [expectedProjectPath: string]
     return: ProjectCoreData | null
@@ -1000,7 +926,6 @@ export interface DatabaseChannels {
   }
   'db:import-run-complete': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; error?: string } }
 
-  // 2. blueprints
   'db:blueprint-get-all': { args: [expectedProjectPath: string]; return: BlueprintData[] }
   'db:blueprint-get': { args: [chapterNumber: number, expectedProjectPath: string]; return: BlueprintData | null }
   'db:blueprint-upsert': { args: [data: BlueprintData, expectedProjectPath: string]; return: { success: boolean; error?: string } }
@@ -1028,12 +953,7 @@ export interface DatabaseChannels {
   'db:blueprint-delete': { args: [chapterNumber: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
   'db:blueprint-clear-all': { args: [expectedProjectPath: string]; return: { success: boolean; error?: string } }
 
-  // 3. characters
   'db:character-get-all': { args: [expectedProjectPath: string]; return: CharacterData[] }
-  /**
-   * 结构化角色名单的唯一提交 seam。角色条目仍持久化于 characters 表；
-   * 返回的快照经过主进程事务内 read-back 验证。
-   */
   'db:character-roster-read': {
     args: [expectedProjectPath: string]
     return: CharacterRosterSnapshot
@@ -1045,7 +965,6 @@ export interface DatabaseChannels {
     return: { success: boolean; receipt?: CharacterRosterCommitReceipt; error?: string }
   }
 
-  // 4. drafts
   'db:draft-import-finalized-batch': {
     args: [request: FinalizedDraftImportRequest, expectedProjectPath: string]
     return: { success: boolean; receipt?: FinalizedDraftImportReceipt; error?: string }
@@ -1169,7 +1088,6 @@ export interface DatabaseChannels {
     return: { success: boolean; finalization?: { knowledgeDocumentId: string }; error?: string }
   }
 
-  // 5. revisions
   'db:revision-create': { args: [params: { baseDraftId: number; revisionType: 'refine' | 'review-fix'; userPrompt?: string; reviewSourceId?: number; content: string; wordCount: number; expectedSource?: ExpectedDraftSource }, expectedProjectPath: string]; return: { success: boolean; id?: number; revisionIndex?: number; errorCode?: SourceDraftGuardErrorCode; error?: string } }
   'db:revision-replace-pending': { args: [params: { baseDraftId: number; revisionType: 'refine' | 'review-fix'; userPrompt?: string; reviewSourceId?: number; content: string; wordCount: number; expectedSource?: ExpectedDraftSource }, expectedProjectPath: string]; return: { success: boolean; id?: number; revisionIndex?: number; errorCode?: SourceDraftGuardErrorCode; error?: string } }
   'db:revision-list': { args: [baseDraftId: number, expectedProjectPath: string]; return: RevisionMeta[] }
@@ -1206,7 +1124,6 @@ export interface DatabaseChannels {
   'db:revision-mark-merged': { args: [id: number, mergedToDraftId: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
   'db:revision-mark-discarded': { args: [id: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
 
-  // 6. reviews
   'db:review-create': { args: [params: { baseDraftId: number; reviewIndex?: number; content: string; expectedSource?: ExpectedDraftSource; reviewCycleId?: string }, expectedProjectPath: string]; return: { success: boolean; id?: number; reviewIndex?: number; errorCode?: SourceDraftGuardErrorCode; error?: string } }
   'db:review-list': { args: [baseDraftId: number, expectedProjectPath: string]; return: ReviewMeta[] }
   'db:review-get-latest': { args: [baseDraftId: number, expectedProjectPath: string]; return: ReviewFull | null }
@@ -1214,7 +1131,6 @@ export interface DatabaseChannels {
   'db:review-cycle-get': { args: [reviewId: number, expectedProjectPath: string]; return: ReviewCycleProjection | null }
   'db:review-next-index': { args: [baseDraftId: number, expectedProjectPath: string]; return: number }
 
-  // 7. post_process
   'db:post-process-create-run': { args: [params: { finalizedSource?: import('./finalized-continuity').FinalizedSourceIdentity; triggerSourceType: string; triggerSourceId: string; sourceLabel: string; steps: Array<{ key: string; label: string; critical: boolean }> }, expectedProjectPath: string]; return: { success: boolean; id?: string; error?: string } }
   'db:post-process-get-latest-run': { args: [sourceType: string, sourceId: string, expectedProjectPath: string]; return: PostProcessRunData | null }
   'db:post-process-get-steps': { args: [runId: string, expectedProjectPath: string]; return: PostProcessStepData[] }
@@ -1222,7 +1138,6 @@ export interface DatabaseChannels {
   'db:post-process-mark-step-failed': { args: [runId: string, stepKey: string, errorMsg: string, expectedProjectPath: string]; return: { success: boolean; error?: string } }
   'db:post-process-is-all-passed': { args: [sourceType: string, sourceId: string, expectedProjectPath: string]; return: boolean }
 
-  // 沿用旧表
   'db:log-llm-call': { args: [call: Record<string, unknown>, expectedProjectPath: string]; return: { success: boolean } }
   'db:get-llm-stats': {
     args: [expectedProjectPath: string]
@@ -1239,7 +1154,6 @@ export interface DatabaseChannels {
   'db:get-llm-history': { args: [limit: number | undefined, expectedProjectPath: string]; return: unknown[] }
 }
 
-// ===== 知识库频道 =====
 export interface KnowledgeBaseChannels {
   'kb:import-text': { args: [text: string, fileName: string, expectedProjectPath: string]; return: { success: boolean; docId?: string; chunkCount?: number; error?: string; errorCode?: AppErrorCode } }
   'kb:import-planning-text': { args: [text: string, fileName: string, expectedProjectPath: string]; return: { success: boolean; docId?: string; chunkCount?: number; error?: string; errorCode?: AppErrorCode } }
@@ -1270,10 +1184,6 @@ export interface KnowledgeBaseChannels {
   'kb:stats': { args: [expectedProjectPath: string]; return: AppResult<{ documentCount: number; totalChunks: number; vectorDimension: number }> }
   'dialog:select-knowledge-files': { args: []; return: ExternalFileGrant[] | null }
   'kb:get-vectorless-count': { args: [expectedProjectPath: string]; return: AppResult<{ count: number }> }
-  /**
-   * This is a local status read only. It never sends text to an embedding
-   * provider; the renderer uses it to decide whether it may offer a rebuild.
-   */
   'kb:get-vector-rebuild-status': {
     args: [expectedProjectPath: string]
     return: AppResult<{
@@ -1287,7 +1197,6 @@ export interface KnowledgeBaseChannels {
   'kb:backfill-vectors': { args: [expectedProjectPath: string]; return: { success: boolean; processed: number; failed: number; error?: string; errorCode?: AppErrorCode } }
 }
 
-  // ===== 导入小说 =====
 export interface ImportChannels {
   'dialog:select-novel-files': {
     args: [request?: ImportPurpose | ImportNovelFileSelectionRequest, projectSession?: ProjectSessionContext]
@@ -1300,7 +1209,6 @@ export interface ImportChannels {
   }
 }
 
-// ===== 章节生命周期 =====
 export interface ChapterLifecycleChannels {
   'chapter:delete-finalized': {
     args: [request: DeleteFinalizedChapterRequest, expectedProjectPath: string]
@@ -1318,12 +1226,10 @@ export interface ChapterLifecycleChannels {
     args: [expectedProjectPath: string]
     return: { success: boolean; operations?: ChapterDeletionOperation[]; error?: string }
   }
-  /** 回收站：每次删除一项；拼不成一项的残缺数据列进 damaged，不让整个列表失败。 */
   'chapter:trash-list': {
     args: [expectedProjectPath: string]
     return: ChapterTrashListResult
   }
-  /** expectedMode 是列表给出的恢复方式；事务内复核，变了就返回 CHAPTER_RESTORE_MODE_CHANGED。 */
   'chapter:trash-restore': {
     args: [request: RestoreTrashedChapterRequest, expectedProjectPath: string]
     return: RestoreTrashedChapterResult
@@ -1348,14 +1254,12 @@ export interface ChapterLifecycleChannels {
     args: [expectedProjectPath: string]
     return: { success: true; impacts: ReplacementImpact[] } | { success: false; error: string }
   }
-  /** 定稿确认框的预览：这份打开着的重开稿按 content（作者将要定稿的正文，含未保存的修改）定稿后会造成的影响；不是打开着的重开稿时 impact 为 null。 */
   'chapter:replacement-impact-preview': {
     args: [draftId: number, content: string, expectedProjectPath: string]
     return: { success: true; impact: ReplacementImpact | null } | { success: false; error: string }
   }
 }
 
-// ===== MCP =====
 export type MCPConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
 export interface MCPServerSummary {
@@ -1409,12 +1313,9 @@ export interface MCPChannels {
   'mcp:get-config-path': { args: []; return: string }
 }
 
-// ===== 合并所有频道 =====
 export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CloudBackupChannels & GraphGenerationChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
 export type AllEventChannels = GenerationOwnerEvents & UpdateStateEvents & WindowEvents & PortableExportEvents
 
-/** 提取 invoke 频道名 */
 export type InvokeChannel = keyof AllInvokeChannels
 
-/** 提取 event 频道名 */
 export type EventChannel = keyof AllEventChannels

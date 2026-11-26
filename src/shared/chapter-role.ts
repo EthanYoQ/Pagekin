@@ -34,22 +34,15 @@ const CHAPTER_ROLE_UNSET_LABELS: ChapterRoleLabels = { zhCN: '未设定', enUS: 
 
 export interface ChapterRoleOption {
   value: string
-  /** null marks a stored custom label, which is shown verbatim. */
   labels: ChapterRoleLabels | null
 }
 
-/** Display labels for a stored role, or null when it is a custom label. */
 export function getChapterRoleLabels(value: unknown): ChapterRoleLabels | null {
   return typeof value === 'string' && CHAPTER_ROLE_SET.has(value)
     ? CHAPTER_ROLE_LABELS[value as ChapterRole]
     : null
 }
 
-/**
- * Options for a role <select>: the canonical list, plus an entry for the stored
- * value when it is a custom label or not set yet. That entry keeps the real
- * value selected and visible instead of silently showing the first option.
- */
 export function chapterRoleOptions(current: unknown): ChapterRoleOption[] {
   const options: ChapterRoleOption[] = CHAPTER_ROLES.map(role => ({
     value: role,
@@ -61,12 +54,6 @@ export function chapterRoleOptions(current: unknown): ChapterRoleOption[] {
   return options
 }
 
-/**
- * The display value for a role <select>: the stored value when it is
- * non-blank, otherwise the unset option's value. Trimming only decides
- * "unset" here; it never rewrites the stored string, so a padded custom label
- * still matches its option and stays selected.
- */
 export function chapterRoleSelectValue(current: unknown): string {
   return typeof current === 'string' && current.trim() ? current : ''
 }

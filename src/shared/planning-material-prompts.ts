@@ -1,6 +1,5 @@
 import type { WritingLanguage } from './writing-language'
 
-/** Single source for the built-in material extraction instructions. */
 export function getPlanningMaterialExtractionTemplate(language: WritingLanguage) {
   return {
     systemRole: language === 'en-US' ? 'Extract only fiction characters explicitly present in the author material. Do not invent characters or rewrite author facts. Output strict JSON only.' : '你从作者资料中提取明确出现的小说角色。不得虚构新角色或改写作者事实。只输出严格 JSON。',

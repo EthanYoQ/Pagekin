@@ -7,7 +7,6 @@ const CERTIFICATE_CODES = [
   'PATH_LENGTH_EXCEEDED', 'INVALID_PURPOSE', 'CERT_UNTRUSTED', 'CERT_REJECTED', 'HOSTNAME_MISMATCH', 'ERR_TLS_CERT_ALTNAME_INVALID',
 ] as const
 
-/** fetch 的 cause.code → 连接失败码，文案在 src/i18n/app-errors.ts。 */
 const CONNECTION_FAILURE_BY_CODE: Readonly<Record<string, string>> = {
   ECONNREFUSED: 'CONNECTION_REFUSED',
   ENOTFOUND: 'CONNECTION_HOST_NOT_FOUND',
@@ -20,7 +19,6 @@ const CONNECTION_FAILURE_BY_CODE: Readonly<Record<string, string>> = {
   ...Object.fromEntries(CERTIFICATE_CODES.map(code => [code, 'CONNECTION_CERTIFICATE_INVALID'])),
 }
 
-/** fetch 只报「fetch failed」，原因在 cause.code；认不出的返回 undefined。 */
 export function connectionFailureCode(failure: unknown): string | undefined {
   const code = (failure as { cause?: { code?: unknown } } | null)?.cause?.code
   return typeof code === 'string' && Object.hasOwn(CONNECTION_FAILURE_BY_CODE, code) ? CONNECTION_FAILURE_BY_CODE[code] : undefined
