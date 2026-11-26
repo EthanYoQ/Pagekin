@@ -673,6 +673,19 @@ describe('运行侧页', () => {
     await vi.waitFor(() => expect(host!.querySelector('[role="alert"]')?.textContent).toBe('Recovery candidate action failed'))
   })
 
+  it('恢复候选：放弃时作品库没写进去，提示用目录说明', async () => {
+    candidates = [candidate()]
+    const fallback = invoke.getMockImplementation()!
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'db:recovery-candidate-resolve'
+      ? { success: false, failure: { code: 'RECOVERY_CANDIDATE_WRITE_FAILED', note: { key: 'error.recoveryCandidateWriteFailed' } } }
+      : fallback(channel, ...args))
+    await render()
+    await vi.waitFor(() => expect(host!.textContent).toContain('原始候选 · 第3章 雾钟'))
+    await click('放弃…')
+    await click('放弃')
+    await vi.waitFor(() => expect(host!.querySelector('[role="alert"]')?.textContent).toBe('原来的内容没有改动。恢复稿没能写进作品，请再试一次。'))
+  })
+
   it('恢复候选：继续编辑的结果回来前切到英文，打开的标签用英文标题', async () => {
     candidates = [candidate()]
     let finish!: (value: unknown) => void

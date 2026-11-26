@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { closeProjectDatabase } from '../../database'
+import { closeProjectDatabase, getProjectDb } from '../../database'
 import { openCanonicalProjectFixture as initProjectDatabase } from '../../../test/helpers/canonical-project-fixture'
 import { searchKnowledge } from '../../knowledge-base'
 import { BlueprintRepository } from '../blueprint-repository'
@@ -55,6 +55,21 @@ afterEach(() => {
 })
 
 describe('RecoveryCandidateRepository project-local seam', () => {
+  it('写入后回读失败时整次写入撤回，不留半截恢复稿', () => {
+    const request = { runId: 'run-readback', stepId: 'generate-draft', projectId: 'project-recovery', chapterNumber: 3,
+      chapterTitle: source.title, source, sourceDraft: null, visibleText: '原来的恢复正文', failureCode: 'NETWORK_ERROR', failureReason: 'readback' }
+    const kept = RecoveryCandidateRepository.record(request)
+    const db = getProjectDb()!
+    db.exec(`CREATE TRIGGER corrupt_after_write AFTER INSERT ON recovery_candidates BEGIN
+      UPDATE recovery_candidates SET content_hash = 'corrupt' WHERE candidate_id = NEW.candidate_id; END;
+      CREATE TRIGGER corrupt_after_update AFTER UPDATE OF visible_text ON recovery_candidates BEGIN
+      UPDATE recovery_candidates SET content_hash = 'corrupt' WHERE candidate_id = NEW.candidate_id; END;`)
+    expect(() => RecoveryCandidateRepository.record({ ...request, runId: 'run-readback-2' })).toThrow('RECOVERY_CANDIDATE_INTEGRITY_FAILED')
+    expect(() => RecoveryCandidateRepository.updatePending(kept.candidateId, '改过的恢复正文')).toThrow('RECOVERY_CANDIDATE_INTEGRITY_FAILED')
+    db.exec('DROP TRIGGER corrupt_after_write; DROP TRIGGER corrupt_after_update;')
+    expect(RecoveryCandidateRepository.listPending()).toEqual([expect.objectContaining({ candidateId: kept.candidateId, visibleText: '原来的恢复正文' })])
+  })
+
   it('keeps imported pending history visible but refuses every old-state mutation', () => {
     const old = RecoveryCandidateRepository.record({ runId: 'old-run', stepId: 'generate-draft', projectId: 'project-recovery', chapterNumber: 3,
       chapterTitle: source.title, source, sourceDraft: null, visibleText: '历史恢复正文', failureCode: 'NETWORK_ERROR', failureReason: 'old' })

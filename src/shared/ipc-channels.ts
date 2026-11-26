@@ -1071,7 +1071,7 @@ export interface DatabaseChannels {
   }
   'db:recovery-candidate-record': {
     args: [request: RecoveryCandidateRecordInput, expectedProjectPath: string]
-    return: { success: boolean; candidate?: RecoveryCandidate; error?: string }
+    return: { success: boolean; candidate?: RecoveryCandidate; failure?: Failure }
   }
   'db:recovery-candidate-list': {
     args: [expectedProjectPath: string]
@@ -1079,11 +1079,11 @@ export interface DatabaseChannels {
   }
   'db:recovery-candidate-update': {
     args: [candidateId: string, visibleText: string, expectedProjectPath: string]
-    return: { success: boolean; candidate?: RecoveryCandidate; error?: string }
+    return: { success: boolean; candidate?: RecoveryCandidate; failure?: Failure }
   }
   'db:recovery-candidate-resolve': {
     args: [candidateId: string, status: 'continued' | 'discarded', expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:finalization-link-knowledge-document': {
     args: [draftId: number, documentId: string, expectedProjectPath: string]

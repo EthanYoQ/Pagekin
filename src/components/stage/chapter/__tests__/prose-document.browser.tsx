@@ -126,6 +126,25 @@ describe('恢复候选与只读修稿', () => {
     expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
   })
 
+  it('保存恢复候选时作品库没写进去，提示用目录说明，候选保持未保存', async () => {
+    const errors = vi.spyOn(toast, 'error').mockImplementation(() => undefined)
+    const plain = invoke.getMockImplementation()!
+    invoke.mockImplementation(async (channel, ...args) => channel === 'db:recovery-candidate-update'
+      ? { success: false, failure: { code: 'RECOVERY_CANDIDATE_WRITE_FAILED', note: { key: 'error.recoveryCandidateWriteFailed' } } }
+      : plain(channel, ...args))
+    useEditorStore.setState({ tabs: [{ id: 'recovery:candidate-1', name: '恢复候选', type: 'chapter', filePath: 'ai-novel://recovery/candidate-1',
+      content: candidate.visibleText, savedContent: candidate.visibleText, dirty: false, projectKey: session.projectPath }], activeTabId: 'recovery:candidate-1' })
+    await act(async () => root!.render(<StageWorkspace library={false} focus={false} />))
+    await vi.waitFor(() => expect(host!.querySelector('.cm-editor')).not.toBeNull())
+    await act(async () => {
+      const view = EditorView.findFromDOM(host!.querySelector<HTMLElement>('.cm-editor')!)!
+      view.dispatch({ changes: { from: view.state.doc.length, insert: '风停了。' } })
+    })
+    await act(async () => { saveKey(host!.querySelector<HTMLElement>('.cm-content')!) })
+    await vi.waitFor(() => expect(errors).toHaveBeenCalledWith('原来的内容没有改动。恢复稿没能写进作品，请再试一次。'))
+    expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
+  })
+
   it.each(['merged', 'discarded'])('已%s的修稿只读显示，按 Ctrl S 不写任何东西', async status => {
     useEditorStore.setState({ tabs: [{ id: '修稿', name: `修稿合并：第3章（${status}）`, type: 'chapter', filePath: 'ai-novel://revision/9',
       content: '林岚从海港带回了信。', savedContent: '林岚从海港带回了信。', dirty: false, projectKey: session.projectPath, draftStatus: 'archived' }], activeTabId: '修稿' })
