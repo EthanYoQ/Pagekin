@@ -8,7 +8,7 @@
 
 ## 决定
 
-浮层一律 Portal 到最近的 .paper-ink 根，取纸墨令牌与深色主题，不被滚动容器裁切。受控打开的对话框自己记下焦点并在关闭时还回去，不依赖 Radix 的 Trigger。键盘与读屏行为尽量由原生控件提供，需要自绘时按 aria-pressed、aria-current、aria-expanded 的约定表达，不只靠颜色区分。危险操作先确认，影响较小的就地确认，可撤销的不用危险色也不先确认。旧组件沿用的变体与颜色变量在渲染时由桥接层换成纸墨写法，新代码不再写旧变体。下面按文件列出各条口径。
+菜单、弹层与危险确认这类组件内浮层 Portal 到最近的 .paper-ink 根，取纸墨令牌与深色主题，不被滚动容器裁切；命令式弹窗与通知例外，它们挂在 body 下自带 .paper-ink 的共享宿主（ink-overlay）里，由宿主跟随主题并负责 .pi-prompt-layer 的叠放。受控打开的对话框自己记下焦点并在关闭时还回去，不依赖 Radix 的 Trigger。键盘与读屏行为尽量由原生控件提供，需要自绘时按 aria-pressed、aria-current、aria-expanded 的约定表达，不只靠颜色区分。危险操作先确认，影响较小的就地确认，可撤销的不用危险色也不先确认。旧组件沿用的变体与颜色变量在渲染时由桥接层换成纸墨写法，新代码不再写旧变体。下面按文件列出各条口径。
 
 ## 界面组件口径（注释清理 #852 第 5 个 PR，src/components）
 
@@ -145,7 +145,7 @@
 
 ### `src/components/ui/Input.tsx`
 
-- `Input`：通用 Input 组件 type="number" 的增强行为： - 编辑中允许清空输入框（不会阻止删除操作） - 失焦时若为空值，自动恢复为 min 属性值（若设置）或 "0" - 业务组件可通过自定义 onBlur 覆盖恢复逻辑
+- `Input`：通用 Input 组件 type="number" 的增强行为： - 编辑中允许清空输入框（不会阻止删除操作） - 失焦时若为空值，自动恢复为 min 属性值（若设置）或 "0" - 自定义 onBlur 在兜底之后才被调用，只能在其后再改值，不能阻止兜底先触发 change
 - `nativeSet`：通过 nativeInputValueSetter 触发 React onChange
 
 ### `src/components/ui/Lifecycle.tsx`
