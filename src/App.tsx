@@ -22,7 +22,6 @@ import {
 } from './shared/project-session-context'
 import { getAutoNextChapterPrefill, type NextChapterBlueprint } from './services/auto-next-chapter'
 
-/** 主应用：纸墨外壳（流程脊、内容区标签与按需侧页），以及全局对话框与快捷键。 */
 export default function App() {
   const initTheme = useThemeStore((s) => s.initTheme)
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme)
@@ -35,18 +34,15 @@ export default function App() {
   const loadRecentProjects = useProjectStore((s) => s.loadRecentProjects)
   const exitGuard = useWindowCloseGuard()
 
-  // 初始化：主题 + LLM 模型 + 最近项目 + 缩放级别
   useEffect(() => {
     initLocale()
     initTheme()
     initLLM()
     loadRecentProjects()
-    // 初始化 ProjectService — 注册全局事件监听（生命周期与 App 一致）
     import('./services/project-service').then(({ initProjectService }) => {
       initProjectService()
     }).catch(e => console.warn('[ProjectService] 初始化失败:', e))
 
-    // C) 工作流完成时弹出 ActionToast 通知（不依赖任何面板状态）
     const unsubActionToast = globalEventBus.on('WORKFLOW_COMPLETE', ({ projectSession, runId }) => {
       if (!sameProjectSessionContext(
         projectSession,
@@ -110,7 +106,6 @@ export default function App() {
     })
 
     return () => {
-      // App 卸载时销毁 ProjectService（开发环境 HMR 时会触发）
       import('./services/project-service').then(({ disposeProjectService }) => {
         disposeProjectService()
       }).catch(() => {})
@@ -132,7 +127,6 @@ export default function App() {
     }).catch(error => console.error('[SmokeProjectOpen]', error))
   }, [])
 
-  // 全局快捷键: Cmd+N 新建项目，Cmd+O 打开项目，Cmd+= / Cmd+- / Cmd+0 缩放
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
@@ -160,7 +154,7 @@ export default function App() {
 
   const globalDialogs = (
     <>
-      {/* 全局对话框 — 由 layout-store 控制开关，不再依赖 window.dispatchEvent */}
+      {}
       <ImportNovelDialog
         open={importNovelOpen}
         onClose={closeImportNovel}

@@ -160,3 +160,9 @@
 - `AUTO_REUSE_EMBEDDING`：参考评估没证明重排能提升写作质量（#632），暂不自动借检索档案重排；正式评估通过后再改为 true。
 - `isSiliconflowEndpoint`：只看 provider 不够：作者可能把硅基流动档案的地址改成了代理、http 或别的端口，Key 不能跟着去那里。 URL 会把 https 的 :443 规范成空端口。
 - `resolveRerankConfig`：显式选了重排档案就只用它；否则只有硅基流动检索档案可以把同一端点和 Key 借给重排。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/stores/llm-store.ts`
+
+- `discoverModels`：以当前表单中的端点和凭据主动发现 provider 模型。

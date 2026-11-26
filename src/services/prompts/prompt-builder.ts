@@ -7,10 +7,6 @@ import {
 } from '../prompt-templates'
 import type { WritingLanguage } from '../../shared/writing-language'
 
-/**
- * 基础抽象 Prompt 建造者
- * 用于安全地拼装 LLM 生成所需的不可变上下文片段，避免漏传变量。
- */
 export class BasePromptBuilder {
   protected template: PromptTemplate;
   protected variables: Record<string, string> = {};
@@ -19,16 +15,13 @@ export class BasePromptBuilder {
     this.template = template;
   }
 
-  /** 获取模板定义的 system role（LLM system message 角色定位） */
   public getSystemRole(): string {
     return composePromptSystemRole(this.template, this.writingLanguage)
   }
 
-  /** 打包输出最终经过所有合法性替换的字符串 */
   public build(): string {
     let result = this.template.content
     for (const [key, value] of Object.entries(this.variables)) {
-      // 使用 replaceAll 避免正则注入风险，安全替换所有匹配项
       const safeValue = value || ''
       result = result.replaceAll(`{{${key}}}`, safeValue)
     }
@@ -44,7 +37,6 @@ export class BasePromptBuilder {
       result += `\n\n${heading}\n${taskGuidance.trim()}`
     }
 
-    // 自动追加 systemSuffix（始终从内置模板获取，与 renderPrompt 行为对齐）
     const builtinTemplate = getBuiltinPromptTemplate(this.template.key, this.writingLanguage)
     const suffix = builtinTemplate?.systemSuffix
     if (suffix) {
@@ -57,10 +49,8 @@ export class BasePromptBuilder {
 
     result = appendRequiredPromptContext(result, this.template, this.variables, this.writingLanguage)
 
-    // 空变量段落裁剪：与 renderPrompt 保持同一套规则。
     result = pruneEmptyOptionalPromptSections(result)
 
-    // 防御性校验：检查是否有未处理的模板占位符
     const missing = result.match(/\{\{.*?\}\}/g)
     if (missing) {
       console.warn(`[PromptBuilder] 警告：模板 "${this.template.name}" 中有未赋值的变量残留:`, missing)
@@ -69,10 +59,6 @@ export class BasePromptBuilder {
   }
 }
 
-/**
- * 章节生成专用 Builder
- * 提供全链条上下文强类型注入，拒绝 raw Record<string,string> 的 "盲打模式"
- */
 export class ChapterPromptBuilder extends BasePromptBuilder {
   
   withArchitecture(architecture: string) {
@@ -154,22 +140,17 @@ export class ChapterPromptBuilder extends BasePromptBuilder {
     return this;
   }
 
-  /** 文风描述（注入写稿/修稿 Prompt） */
   withWritingStyle(style: string) {
     this.variables.writing_style = style;
     return this;
   }
 
-  /** 用户指定的知识库检索关键词（追加到向量搜索 query） */
   withKnowledgeQueryHint(hint: string) {
     this.variables.knowledge_query_hint = hint;
     return this;
   }
 }
 
-/**
- * 审稿/审查专用 Builder
- */
 export class ReviewPromptBuilder extends BasePromptBuilder {
   withChapterContent(content: string) {
     this.variables.chapter_content = content;
@@ -191,16 +172,12 @@ export class ReviewPromptBuilder extends BasePromptBuilder {
     return this;
   }
 
-  /** 审稿维度侧重点（角色一致性/世界观合理性/剧情逻辑等） */
   withReviewFocus(focus: string) {
     this.variables.review_focus = focus;
     return this;
   }
 }
 
-/**
- * 定稿后处理专项 Builder
- */
 export class PostProcessPromptBuilder extends BasePromptBuilder {
   withChapterContent(content: string) {
     this.variables.chapter_content = content;
@@ -225,9 +202,6 @@ export class PostProcessPromptBuilder extends BasePromptBuilder {
   }
 }
 
-/**
- * 架构生成与逆向推演 Builders
- */
 export class ArchitecturePromptBuilder extends BasePromptBuilder {
   withGenre(genre: string) {
     this.variables.genre = genre;
@@ -309,22 +283,17 @@ export class ArchitecturePromptBuilder extends BasePromptBuilder {
     return this;
   }
 
-  /** 逐步指导（每步可选的补充说明） */
   withStepGuidance(guidance: string) {
     this.variables.step_guidance = guidance;
     return this;
   }
 
-  /** 参考作品 */
   withReferenceWorks(works: string) {
     this.variables.reference_works = works;
     return this;
   }
 }
 
-/**
- * 目录细纲生成 Builders
- */
 export class DirectoryPromptBuilder extends BasePromptBuilder {
   withNovelArchitecture(arch: string) {
     this.variables.novel_architecture = arch;
@@ -361,85 +330,68 @@ export class DirectoryPromptBuilder extends BasePromptBuilder {
     return this;
   }
 
-  /** 节奏/风格指导（如"前30章快节奏，每章一爽点"） */
   withPacingGuidance(guidance: string) {
     this.variables.pacing_guidance = guidance;
     return this;
   }
 }
 
-/**
- * 导入小说专用 Builder
- * 用于逆向推演（向量采样增强版配置推演 & 单章蓝图推演）
- */
 export class ImportPromptBuilder extends BasePromptBuilder {
-  /** 向量检索：世界观与力量体系片段 */
   withSampledWorldview(content: string) {
     this.variables.sampled_worldview = content;
     return this;
   }
 
-  /** 向量检索：主角设定与金手指片段 */
   withSampledProtagonist(content: string) {
     this.variables.sampled_protagonist = content;
     return this;
   }
 
-  /** 向量检索：核心矛盾与敌对势力片段 */
   withSampledConflict(content: string) {
     this.variables.sampled_conflict = content;
     return this;
   }
 
-  /** 向量检索：写作风格与叙事视角片段 */
   withSampledStyle(content: string) {
     this.variables.sampled_style = content;
     return this;
   }
 
-  /** 第一章正文 */
   withFirstChapter(content: string) {
     this.variables.first_chapter = content;
     return this;
   }
 
-  /** 最新一章正文 */
   withLatestChapter(content: string) {
     this.variables.latest_chapter = content;
     return this;
   }
 
-  /** 已有总章数 */
   withTotalChapters(num: number | string) {
     this.variables.total_chapters = String(num);
     return this;
   }
 
-  /** 本章正文全文（单章蓝图推演用） */
   withChapterContent(content: string) {
     this.variables.chapter_content = content;
     return this;
   }
 
-  /** 章节序号 */
   withChapterNumber(num: number | string) {
     this.variables.chapter_number = String(num);
     return this;
   }
 
-  /** 章节标题 */
   withChapterTitle(title: string) {
     this.variables.chapter_title = title;
     return this;
   }
 
-  /** 全局配置脱水版 */
   withNovelConfigSummary(summary: string) {
     this.variables.novel_config_summary = summary;
     return this;
   }
 
-  /** 旧版兼容：sample_content（infer_novel_config 原始 Prompt 用） */
   withSampleContent(content: string) {
     this.variables.sample_content = content;
     return this;

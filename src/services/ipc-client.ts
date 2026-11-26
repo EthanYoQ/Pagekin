@@ -1,10 +1,3 @@
-/**
- * 渲染进程的 IPC 客户端 — 类型安全的主进程通信封装
- *
- * 用法：
- *   import { ipc } from '@/services/ipc-client'
- *   const result = await ipc.invoke('project:create', { name: '...' })
- */
 import type {
   AllInvokeChannels,
   AllEventChannels,
@@ -15,7 +8,6 @@ import type { ProjectSessionContext } from '../shared/ipc-channels'
 import { getActiveProjectSessionContext } from '../shared/project-session-context'
 import type { AiNovelAPI } from '../shared/desktop-api'
 
-/** 获取唯一桌面接口；旧接口不是新运行时的写入后备通道。 */
 function getAPI(): AiNovelAPI {
   const api = typeof window === 'undefined' ? undefined : window.aiNovelAPI
   if (!api) {
@@ -26,10 +18,6 @@ function getAPI(): AiNovelAPI {
   return api
 }
 
-/**
- * 这些请求的授权来自用户选择后由主进程签发的 grant，或固定 app-data 边界；
- * 它们绝不能借用、也不需要当前项目会话。
- */
 function isCapabilityOrAppDataChannel(channel: string): boolean {
   return channel.startsWith('fs:grant-')
     || channel.startsWith('dialog:select-')
@@ -76,14 +64,7 @@ function invokeWithSession<C extends InvokeChannel>(
   return getAPI().invoke(channel, ...args, projectSession) as Promise<AllInvokeChannels[C]['return']>
 }
 
-/** 类型安全的 IPC 客户端 */
 export const ipc = {
-  /**
-   * 调用主进程并等待返回值（类型安全）
-   *
-   * @example
-   * const result = await ipc.invoke('project:create', { name: '我的小说', path: '/path', genre: '玄幻', targetAudience: '男频' })
-   */
   invoke: async <C extends InvokeChannel>(
     channel: C,
     ...args: AllInvokeChannels[C]['args']
@@ -94,7 +75,6 @@ export const ipc = {
     return result
   },
 
-  /** 工作流/工具在启动处冻结会话后，必须使用此入口而不是重新读取 currentProject。 */
   invokeWithProjectSession: async <C extends InvokeChannel>(
     context: ProjectSessionContext,
     channel: C,
@@ -108,9 +88,6 @@ export const ipc = {
     return invokeWithSession(channel, args, context)
   },
 
-  /**
-   * 监听主进程推送的事件（返回取消订阅函数）
-   */
   on: <C extends EventChannel>(
     channel: C,
     callback: (data: AllEventChannels[C]) => void,
@@ -118,7 +95,6 @@ export const ipc = {
     return getAPI().on(channel, callback as (...args: unknown[]) => void)
   },
 
-  /** 一次性监听 */
   once: <C extends EventChannel>(
     channel: C,
     callback: (data: AllEventChannels[C]) => void,
@@ -126,28 +102,23 @@ export const ipc = {
     getAPI().once(channel, callback as (...args: unknown[]) => void)
   },
 
-  /** 单向发送（无返回值） */
   send: (channel: string, ...args: unknown[]) => {
     getAPI().send(channel, ...args)
   },
 
-  /** 是否在 Electron 环境中 */
   get isElectron(): boolean {
     return typeof window !== 'undefined'
       && !!window.aiNovelAPI
   },
 
-  /** 设置窗口缩放级别 */
   setZoomLevel: (level: number) => {
     getAPI().setZoomLevel(level)
   },
 
-  /** 设置绝对缩放比例 */
   setZoomFactor: (factor: number) => {
     getAPI().setZoomFactor(factor)
   },
 
-  /** 获取当前缩放级别 */
   getZoomLevel: () => {
     return getAPI().getZoomLevel()
   }

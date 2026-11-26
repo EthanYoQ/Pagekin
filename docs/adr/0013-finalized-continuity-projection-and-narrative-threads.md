@@ -52,3 +52,18 @@
 - `BlueprintRuleContext`：规则只产出 ConsistencyFinding，豁免在规则表外统一处理。
 - `terminalCharacterScheduled`：故意收窄：只有结构化的死亡终态才和「本章出场」冲突。
 - `findBlueprintContinuityRisks`：审稿入口不传 nodes 和 pendingRelations：它的结果冻结在审稿上下文里，恢复时要逐字段相等，升级后不能多出关系提示。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/blueprint-continuity-check.ts`
+
+- `sourceStatus`：结果读回来时，来源（蓝图、时间线、模型）和检查时是否一致。
+- 检查期间来源变了，这份结果对不上现在的蓝图。
+
+### `src/services/blueprint-continuity-suggest.ts`
+
+- `runLaterBlueprintCheck`：切页回来要接得上：进行中的检查按作品会话和这次替换记下来。
+
+### `src/services/consistency-preflight.ts`
+
+- `PreflightFinding`：同一节点在批量里可能出现在多章，按章豁免要靠 chapterNumber 区分。

@@ -1,11 +1,3 @@
-/**
- * 导出服务 — 将小说项目导出为多种格式
- *
- * 支持：
- * - 合并 Markdown（全书合并为单个 .md）
- * - 分章 Markdown（每章一个 .md）
- * - 纯文本 TXT
- */
 import { ipc } from './ipc-client'
 import { requireIpcSuccess } from './ipc-result'
 import { useWorkflowStore } from '../stores/workflow-store'
@@ -32,13 +24,11 @@ export type ExportFormat = 'merged-md' | 'split-md' | 'txt'
 
 interface ExportOptions {
   format: ExportFormat
-  /** 由主进程选择目录后签发的受限授权，绝不是绝对路径。 */
   grantId: string
   includeOutline?: boolean
   includeCharacters?: boolean
 }
 
-/** 导出任务冻结的项目展示数据；项目路径本身绝不作为访问凭据。 */
 export interface ExportProjectSnapshot {
   id: string
   sessionLease: string
@@ -235,7 +225,6 @@ function renderMarkdownChapter(
   return `${heading}\n\n${content}`
 }
 
-/** 导出全书 */
 export async function exportNovel(
   options: ExportOptions,
   project: ExportProjectSnapshot,
@@ -295,11 +284,9 @@ export async function exportNovel(
 
     switch (options.format) {
       case 'merged-md': {
-        // 合并为单个 Markdown
         let content = `# ${project.name}\n\n`
         content += `> ${project.novelConfig.genre} · ${project.novelConfig.targetAudience}\n\n---\n\n`
 
-        // 可选：包含大纲
         if (options.includeOutline) {
           const core = await ipc.invokeWithProjectSession(
             projectSession,
@@ -312,7 +299,6 @@ export async function exportNovel(
           }
         }
 
-        // 章节内容
         for (const ch of chapterContents) {
           content += ch.markdownContent + '\n\n---\n\n'
         }
@@ -341,7 +327,6 @@ export async function exportNovel(
       }
 
       case 'split-md': {
-        // 每章一个 Markdown
         const splitDir = `${projectFileStem}-${randomUUID()}`
         const authorityCurrent = await ipc.invokeWithProjectSession(
           projectSession,
@@ -389,17 +374,15 @@ export async function exportNovel(
       }
 
       case 'txt': {
-        // 纯文本（去除 Markdown 格式）
         let content = `${project.name}\n${'='.repeat(project.name.length * 2)}\n\n`
 
         for (const ch of chapterContents) {
-          // 简单去除 Markdown 标记
           const plainText = ch.markdownContent
-            .replace(/^#{1,6}\s+/gm, '')  // 去掉标题标记
-            .replace(/\*\*(.*?)\*\*/g, '$1')  // 去掉加粗
-            .replace(/\*(.*?)\*/g, '$1')  // 去掉斜体
-            .replace(/`(.*?)`/g, '$1')  // 去掉代码标记
-            .replace(/---+/g, '\n')  // 分隔线
+            .replace(/^#{1,6}\s+/gm, '')
+            .replace(/\*\*(.*?)\*\*/g, '$1')
+            .replace(/\*(.*?)\*/g, '$1')
+            .replace(/`(.*?)`/g, '$1')
+            .replace(/---+/g, '\n')
             .trim()
 
           content += `${plainText}\n\n`
@@ -467,7 +450,6 @@ export async function exportNovel(
   }
 }
 
-/** Windows 与 POSIX 都安全的导出相对路径段，禁止项目名改变授权目录边界。 */
 function exportFileStem(name: string): string {
   const normalized = Array.from(name, (character) => (
     character.charCodeAt(0) < 32 ? '_' : character

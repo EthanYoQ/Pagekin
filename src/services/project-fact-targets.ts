@@ -1,9 +1,5 @@
 export type ProjectFactWorkflow = 'generate_architecture' | 'generate_blueprint'
 
-/**
- * Canonical filenames whose meaning belongs to structured project facts.
- * Generic file writes must never create a second, Markdown-shaped fact source.
- */
 export const PROJECT_FACT_TARGETS = Object.freeze([
   { fact: 'premise', workflow: 'generate_architecture', fileNames: ['故事前提.md', 'premise.md'] },
   { fact: 'worldbuilding', workflow: 'generate_architecture', fileNames: ['世界观.md', 'worldbuilding.md'] },

@@ -86,3 +86,21 @@
 - `source`：抽取前冻结，主进程提交时重新校验（原文：Frozen before extraction; the main process revalidates it at commit time.）
 - `projectionGeneration`：抽取前冻结的水位，过期的在途结果不得推进它（原文：Watermark frozen before extraction; stale in-flight results must not advance it.）
 - `source`：抽取前冻结，主进程提交时重新校验（原文：Frozen before extraction; the main process revalidates it at commit time.）
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/workflow-guards.ts`
+
+- `chars`：检查角色卡是否存在（不变量 1 的反向约束）
+- `chars`：检查角色卡是否存在（不变量 1 的反向约束：无角色卡则阻断写稿）
+- `prevScope`：不变量 2 的反向约束：前一章定稿后处理必须全部通过
+- `guardCharacterRegeneration`：角色卡重新生成/补齐的前置校验： 不变量 1：角色卡仅允许在蓝图目录为空时重新生成， 否则会破坏已有蓝图/章节的角色状态链。
+
+### `src/stores/character-rename-ledger.ts`
+
+- `mergeCurrentStateDraftWithRemote`：定稿后处理按字段写入当前状态，作者也按字段改。作者改过的字段保留草稿值， 其余字段、来源标记与 updatedAtChapter 都取数据库最新值。刷新会把数据库快照当成新基线， 作者输入可能与基线文本相同，所以来源标记不同也算改过。
+
+### `src/stores/character-store.ts`
+
+- `currentDerivedFields`：现行规则：这是 IPC 校验过的展示授权，原始角色卡仍是作者编辑与历史的来源（原文：IPC-verified display grant; raw cards remain the author edit and history source.）
+- `rosterLoads`：定稿发现的建议不改名单版本，建议列表靠这个计数重读。

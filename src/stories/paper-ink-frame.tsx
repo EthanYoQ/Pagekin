@@ -1,6 +1,5 @@
 import type { Decorator } from '@storybook/react'
 
-/** 把 Storybook 工具栏的主题带进纸墨作用域。 */
 export const paperInkFrame: Decorator = (Story, context) => {
   const theme = (context.globals as { theme?: string }).theme
   return (

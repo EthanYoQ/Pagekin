@@ -1,6 +1,3 @@
-/**
- * 格式化相对时间（如：刚刚 / 5分钟前 / 2小时前 / 3天前）
- */
 export function formatRelativeTime(timestamp: number, locale: 'zh-CN' | 'en-US' = 'zh-CN'): string {
   const now = Date.now()
   const diff = now - timestamp
@@ -15,9 +12,6 @@ export function formatRelativeTime(timestamp: number, locale: 'zh-CN' | 'en-US' 
   return new Date(timestamp).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
 }
 
-/**
- * 格式化日期为本地化字符串
- */
 export function formatDate(timestamp: number, options?: Intl.DateTimeFormatOptions): string {
   return new Date(timestamp).toLocaleString('zh-CN', options ?? {
     year: 'numeric',

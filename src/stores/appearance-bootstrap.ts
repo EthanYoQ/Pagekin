@@ -8,13 +8,10 @@ import {
 import { mayHydrateAppearance } from '../shared/project-storage'
 import type { AppearanceReadbackAck, StartupState } from '../shared/startup-contract'
 export type { AppearanceReadbackAck } from '../shared/startup-contract'
-/** 系统当前的深浅色：外观偏好还没读出来（或要新建）时用它。 */
 export const systemColorTheme = (): ColorTheme => window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 
 export interface AppearanceBootstrapDependencies {
-  /** Main's real startup coordinator. Renderer fallback must never manufacture ready. */
   waitForMainReady(): Promise<StartupState>
-  /** Main validates sender/origin and generation, then records this read-back acknowledgement. */
   acknowledgeReadback(ack: AppearanceReadbackAck): Promise<boolean>
   storage?: () => Pick<Storage, 'getItem' | 'setItem'>
   systemTheme?: () => ColorTheme
@@ -29,10 +26,6 @@ export interface AppearanceBootstrapState {
   resetAppearance(): boolean
 }
 
-/**
- * 读出这台机器上的外观偏好：已有 v3 就用它；没有时依次从 RD-10 之前的配置、更早的主题键迁移，都没有就用初始偏好。
- * 旧键只读，回退到旧版本时它们原样还在。
- */
 function readOrMigrate(storage: Pick<Storage, 'getItem'>, systemTheme: () => ColorTheme): { profile: CanonicalAppearanceProfile; stored: string | null } {
   const stored = storage.getItem(APPEARANCE_STORAGE_KEY)
   if (stored !== null) return { profile: parseAppearanceProfile(stored), stored }
@@ -41,11 +34,9 @@ function readOrMigrate(storage: Pick<Storage, 'getItem'>, systemTheme: () => Col
   return { profile: migrateLegacyAppearance(storage.getItem(LEGACY_THEME_STORAGE_KEY), systemTheme()), stored: null }
 }
 
-/** One writer per renderer. Importing the module performs no storage read or write. */
 export function createAppearanceStore() {
   let storage: Pick<Storage, 'getItem' | 'setItem'> | null = null
   let acknowledgedRaw: string | null = null
-  // 主进程按窗口记着确认过的修订号，同进程重载后内存清空但它还在；重置时的修订号不能低于它。
   let mainRevisionFloor = 0
   let inFlight: Promise<boolean> | null = null
   return create<AppearanceBootstrapState>()((set, get) => {

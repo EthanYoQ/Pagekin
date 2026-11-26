@@ -3,10 +3,6 @@ import { describe, expect, it } from 'vitest'
 
 import { planTaskBudget, type TaskBudgetPlannerInput } from '../task-budget-planner'
 
-/**
- * 属性测试：预算规划是纯函数，安全不变量必须对任意合法输入成立，
- * 而不是只对我恰好想到的那几组 fixture 成立。
- */
 const languages = ['zh-CN', 'en-US'] as const
 const stages = ['drafting', 'planning', 'review', 'general'] as const
 
@@ -31,7 +27,6 @@ const capability = fc.record({
   userMaxOutputTokens: fc.option(fc.integer({ min: 1, max: 400_000 }), { nil: null }),
 }).map(limits => ({
   ...limits,
-  // 规划器要求两个来源标记与取值一致。
   modelContextSource: limits.modelContextWindowTokens === null ? 'unknown' as const : 'verified-provider-preset' as const,
   modelOutputSource: limits.modelMaxOutputTokens === null ? 'unknown' as const : 'verified-provider-preset' as const,
 }))

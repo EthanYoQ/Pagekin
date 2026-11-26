@@ -23,7 +23,6 @@ vi.mock('../../services/project-service', () => ({
 
 const originalLocale = useLocaleStore.getState().locale
 
-/** 主进程打开或创建被拒时的回包：数据库仍在原处，报错是 String(err) 形式的错误码。 */
 function refusal(error: string, requestToken: string) {
   return {
     success: false,

@@ -27,16 +27,12 @@ export interface GenerationRuntime {
 export interface CreateGenerationRuntimeOptions {
   budget: GenerationRuntimeBudget
   modelId?: string
-  /** Project identity captured by the caller before any asynchronous lease work. */
   projectSession?: ProjectSessionContext
-  /** Project writing policy captured by the caller before asynchronous preparation. */
   creativeStrategy?: CreativeStrategy
-  /** Alternate physical budget inputs are forbidden; one budget owns both consumers. */
   policy?: never
   structuredLimits?: never
 }
 
-/** Opt-in S05 handle. Only the main-process begin action may issue this identity. */
 export interface MainGenerationRunHandle {
   projectId: string
   epoch: string
@@ -52,10 +48,8 @@ export interface MainGenerationSnapshot extends MainGenerationRunHandle {
   text: string
   textHash: string
   status: 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown'
-  /** Main-verified settled stop/length artifact; status alone never authorizes composition. */
   compositionEligible?: boolean
 }
-/** Provider reasoning is sent only to the active display and has no durable run projection. */
 export interface MainGenerationReasoningEvent extends MainGenerationRunHandle {
   attemptId: string
   text: string
@@ -68,19 +62,16 @@ export interface MainGenerationRunView {
   unsavedTails?: readonly { attemptId: string; artifactId: string; durableRevision: number; text: string; failureCode: string }[]
   ledger?: { policy: RootBudget; tokenLiability: number; physicalRequests: number; activeElapsedMs: number; blockedCode: string | null }
   handle: MainGenerationRunHandle
-  /** Read-only compatibility projection from the persistent main ledger. */
   budget: Readonly<GenerationSessionBudget>
   status: 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
   nonReplayable: boolean
   artifacts: readonly MainGenerationSnapshot[]
 }
-/** 运行列表里的一项：只够认出是哪个运行、什么状态、做什么的；要候选与账本再按 handle 读。 */
 export type MainGenerationRunSummary = Pick<MainGenerationRunView, 'handle' | 'status' | 'operation'>
 export interface MainGenerationExecuteReceipt {
   outcome: GenerationOutcome
   run: MainGenerationRunView
 }
-/** No provider, model lease creation, reservation or root creation methods exist here. */
 export interface MainGenerationTransport {
   execute(request: { handle: MainGenerationRunHandle; invocationNonce: string; task: GenerationTask }): Promise<MainGenerationExecuteReceipt>
   read(handle: MainGenerationRunHandle): Promise<MainGenerationRunView>
@@ -100,12 +91,10 @@ export interface MainOwnedGenerationRuntime extends GenerationRuntime {
   read(): Promise<MainGenerationRunView>
   cancel(): Promise<MainGenerationRunView>
 }
-/** Pure read seam for F04; it neither creates roots nor resumes execution. */
 export function readMainGenerationRun(transport: MainGenerationTransport, handle: MainGenerationRunHandle): Promise<MainGenerationRunView> {
   return transport.read({ ...handle })
 }
 let defaultMainTransport: MainGenerationTransport | undefined
-/** Installed once by the central typed IPC adapter; absent wiring fails closed. */
 export function installMainGenerationTransport(transport: MainGenerationTransport): void {
   if (defaultMainTransport && defaultMainTransport !== transport) throw new Error('GENERATION_TRANSPORT_ALREADY_INSTALLED')
   defaultMainTransport = transport
@@ -143,9 +132,7 @@ export async function createMainOwnedGenerationRuntime(options: MainOwnedGenerat
       const previous = snapshots.get(captured.artifactId)
       if (previous) {
         if (previous.attemptId !== captured.attemptId) throw new Error('MAIN_ARTIFACT_ATTEMPT_CHANGED')
-        // Delivery order can differ from commit order. Older acknowledged views never replace newer ones.
         if (captured.revision < previous.revision) return
-        // A terminal read can overtake its last running notification without changing the artifact.
         if (previous.status !== 'running' && captured.status === 'running'
           && captured.revision === previous.revision && captured.durableRevision === previous.durableRevision
           && captured.text === previous.text && captured.textHash === previous.textHash) return
@@ -193,7 +180,6 @@ export async function createMainOwnedGenerationRuntime(options: MainOwnedGenerat
       const view = await read()
       if (view.nonReplayable) throw new Error('MAIN_RUN_NON_REPLAYABLE')
       if (execution?.signal) throw new Error('MAIN_CANCEL_REQUIRES_EXPLICIT_ACTION')
-      // Old onChunk cannot safely append independent attempts. Use full snapshot receipts instead.
       if (execution?.onChunk) throw new Error('MAIN_SNAPSHOT_CALLBACK_REQUIRED')
       const receipt = await transport.execute({ handle, invocationNonce, task: structuredClone(task) })
       assertView(receipt.run)

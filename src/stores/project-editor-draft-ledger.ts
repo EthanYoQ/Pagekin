@@ -82,10 +82,6 @@ function ownKeys(value: object): string[] {
   return Object.keys(value)
 }
 
-/**
- * 以 base 为共同祖先执行字段级三方合并。
- * 本地实际改过的字段保留 draft；其余字段采用最新 remote。
- */
 export function mergeObjectDraftWithRemote<T extends object>(
   baseValue: T,
   draftValue: T,
@@ -104,10 +100,6 @@ export function mergeObjectDraftWithRemote<T extends object>(
   return merged
 }
 
-/**
- * 角色名是现有角色卡的稳定记录键。对每条记录执行三方合并：
- * 本地改/增/删优先，未改记录以及远端新增记录采用最新 remote。
- */
 export function mergeNamedRecordDraftWithRemote<T extends { name: string }>(
   baseValue: readonly T[],
   draftValue: readonly T[],

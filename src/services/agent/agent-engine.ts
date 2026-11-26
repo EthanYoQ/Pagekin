@@ -1,16 +1,3 @@
-/**
- * Agent 核心引擎 — ReAct（Reasoning + Acting）循环
- *
- * 这是 Agent 的大脑，负责：
- * 1. 将用户消息、系统提示、Tool 描述组装为 LLM 输入
- * 2. 解析 LLM 输出中的 <tool_call> 标签
- * 3. 执行 Tool 并将结果注入为 observation
- * 4. 循环直到 LLM 不再调用 Tool 或达到最大循环次数
- *
- * 参考 Claude Code 的 query.ts 和 QueryEngine 设计，
- * 但简化为 Vela 的 Electron + React 架构。
- */
-
 import {
   toolRegistry,
   type AgentExecutionContext,
@@ -25,20 +12,12 @@ import { parseAgentResponseProtocol, cleanAgentProtocolVisibleText } from '../..
 import type { AgentGenerationRound, AgentToolAction } from '../../shared/agent-generation'
 import { providerContextFailureText } from '../generation/prompt-budget-failure'
 
-// ===== 常量 =====
-
-/** ReAct 循环最大次数（防止死循环） */
 const MAX_TOOL_ROUNDS = 8
 
-/** Tool 执行超时（毫秒） */
 const TOOL_TIMEOUT_MS = 30_000
 
-/** Tool 返回内容最大长度（字符） */
 const TOOL_RESULT_MAX_CHARS = 3000
 
-// ===== 类型 =====
-
-/** Tool 调用信息 */
 export interface ToolCallInfo {
   id: string
   toolName: string
@@ -47,13 +26,10 @@ export interface ToolCallInfo {
   result?: string
   error?: string
   commitState?: FileWriteCommitState
-  /** Tool 来源标记 */
   source?: string
-  /** Frozen project identity used to render and execute a confirmed domain proposal. */
   projectSession?: AgentExecutionContext['projectSession']
 }
 
-/** One optional blueprint diff selected from a transient novel-config impact preview. */
 export interface ConfigImpactBlueprintProposal {
   readonly name: 'propose_chapter_blueprint'
   readonly arguments: Record<string, unknown>
@@ -64,51 +40,29 @@ export interface ToolConfirmationDecision {
   readonly blueprintProposals?: readonly ConfigImpactBlueprintProposal[]
 }
 
-/** Agent Engine 回调 */
 export interface AgentEngineCallbacks {
-  /** 流式文本片段 */
   onTextChunk: (chunk: string) => void
-  /** Tool 调用开始 */
   onToolCallStart: (toolCall: ToolCallInfo) => void
-  /** Tool 调用完成 */
   onToolCallComplete: (toolCall: ToolCallInfo) => void
-  /** Tool 需要用户确认 */
   onToolCallConfirmRequired: (toolCall: ToolCallInfo) => Promise<boolean | ToolConfirmationDecision>
-  /** 全部完成 */
   onDone: (fullText: string, toolCalls: ToolCallInfo[], artifacts: ToolArtifact[]) => void
-  /** 错误 */
   onError: (error: string) => void
 }
 
-/** LLM 消息格式 */
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
 }
 
-/** LLM 生成函数签名（由 agent-store 提供实际实现） */
 export type LLMGenerateFn = (
   messages: LLMMessage[],
   modelId: string,
 ) => Promise<string | AgentGenerationRound>
 
-/** Remove provider control text before any model response reaches the UI. */
 export function cleanAgentVisibleText(text: string): string {
   return cleanAgentProtocolVisibleText(text, toolRegistry.listAll().map(tool => tool.name))
 }
 
-// ===== 核心引擎 =====
-
-/**
- * 执行 Agent ReAct 循环
- *
- * 流程：
- * 1. 将系统提示（含 Tool 描述）+ 历史消息 + 用户消息发送给 LLM
- * 2. 解析 LLM 回复中的 <tool_call> 标签
- * 3. 如果有 tool_call → 执行 Tool → 将结果作为 observation 追加到消息历史 → 重新调用 LLM
- * 4. 循环直到 LLM 不再调用 Tool 或达到 MAX_TOOL_ROUNDS
- * 5. 返回最终文本回复
- */
 export async function runAgentLoop(
   systemPrompt: string,
   historyMessages: LLMMessage[],
@@ -124,8 +78,6 @@ export async function runAgentLoop(
   }
   const allToolCalls: ToolCallInfo[] = []
   const allArtifacts: ToolArtifact[] = []
-  // One agent run gets one immutable project identity. Tool calls later in the
-  // loop must not silently borrow a lease issued after a same-path reopen.
   const executionContext = providedExecutionContext ?? createAgentExecutionContext(modelId)
   const modelText = (zhCN: string, enUS: string) => (
     writingLanguageText(executionContext.writingLanguage, zhCN, enUS)
@@ -134,7 +86,6 @@ export async function runAgentLoop(
     executionContext.uiLocale === 'en-US' ? enUS : zhCN
   )
 
-  // 构建消息列表
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
     ...historyMessages,
@@ -145,7 +96,6 @@ export async function runAgentLoop(
   let fullAssistantText = ''
 
   while (rounds < MAX_TOOL_ROUNDS) {
-    // 检查中止信号
     if (abortSignal?.aborted) {
       callbacks.onDone(fullAssistantText + uiText('\n\n_（已停止生成）_', '\n\n_(Generation stopped)_'), allToolCalls, allArtifacts)
       return
@@ -153,7 +103,6 @@ export async function runAgentLoop(
 
     rounds++
 
-    // 调用 LLM
     let llmResponse: string
     try {
       const generated = await generateFn(messages, modelId ?? '')
@@ -168,33 +117,26 @@ export async function runAgentLoop(
       return
     }
 
-    // 检查中止
     if (abortSignal?.aborted) {
       callbacks.onDone(fullAssistantText + uiText('\n\n_（已停止生成）_', '\n\n_(Generation stopped)_'), allToolCalls, allArtifacts)
       return
     }
 
-    // 解析 LLM 回复：分离文本和 tool_call
     const { textParts, toolCalls } = parseToolCalls(llmResponse)
 
-    // 输出文本部分（清理可能残留的 tool_call/tool_result 标记）
     const textContent = cleanAgentVisibleText(textParts.join(''))
     if (textContent) {
       callbacks.onTextChunk(textContent)
       fullAssistantText += textContent
     }
 
-    // 如果没有 tool_call，循环结束
     if (toolCalls.length === 0) {
       callbacks.onDone(fullAssistantText, allToolCalls, allArtifacts)
       return
     }
 
-    // 将 LLM 的完整回复加入历史（包含 tool_call 标签）
     messages.push({ role: 'assistant', content: llmResponse })
 
-    // 依次执行每个 tool_call。配置影响预览中明确选择的蓝图差异会在
-    // 配置写入成功后插入此轮，并继续走同一条确认与工具执行路径。
     const observationParts: string[] = []
     const roundToolCalls = [...toolCalls]
     let resultUnknown = false
@@ -211,7 +153,6 @@ export async function runAgentLoop(
       }
       allToolCalls.push(toolCallInfo)
 
-      // 查找 Tool
       const tool = toolRegistry.get(tc.name)
       if (!tool) {
         toolCallInfo.status = 'failed'
@@ -224,10 +165,8 @@ export async function runAgentLoop(
         continue
       }
 
-      // 记录来源
       toolCallInfo.source = tool.source
 
-      // 需要用户确认的 Tool
       let confirmationDecision: ToolConfirmationDecision = { confirmed: true }
       if (tool.requiresConfirmation) {
         toolCallInfo.status = 'waiting_confirm'
@@ -243,17 +182,11 @@ export async function runAgentLoop(
           observationParts.push(`<tool_result name="${tc.name}" error="true">\n${modelText('用户拒绝了此操作', 'The user declined this action')}\n</tool_result>`)
           continue
         }
-        // The waiting confirmation card already represents this call. Its
-        // completion below updates that same card instead of appending a
-        // second one when execution begins.
         toolCallInfo.status = 'running'
       } else {
-        // Non-confirming tools still need one visible lifecycle card.
         toolCallInfo.status = 'running'
         callbacks.onToolCallStart(toolCallInfo)
       }
-
-      // 执行 Tool
 
       let sideEffectStarted = false
       try {
@@ -271,7 +204,6 @@ export async function runAgentLoop(
           abortSignal,
         )
 
-        // 截断过长的结果
         const truncatedContent = truncateResult(
           tc.name,
           result,
@@ -344,8 +276,6 @@ export async function runAgentLoop(
       return
     }
 
-    // 将所有 tool 结果作为 user role 的 observation 注入
-    // 加上明确提示，防止 LLM 误以为这是用户新发言
     const observation = `${modelText(
       '[以下是工具执行结果，请根据结果继续回答用户的问题]',
       '[The following are tool results. Continue answering the user based on them.]',
@@ -356,7 +286,6 @@ export async function runAgentLoop(
     messages.push({ role: 'user', content: observation })
   }
 
-  // 达到最大循环次数
   if (rounds >= MAX_TOOL_ROUNDS) {
     fullAssistantText += uiText(
       '\n\n已达到最大工具调用次数限制，自动停止。',
@@ -367,10 +296,6 @@ export async function runAgentLoop(
   callbacks.onDone(fullAssistantText, allToolCalls, allArtifacts)
 }
 
-// ===== 工具函数 =====
-
-/** Production rounds and action identities come only from main. The legacy
- * string loop above remains an explicitly injected engine test seam. */
 async function runHostedAgentLoop(generate: LLMGenerateFn, callbacks: AgentEngineCallbacks,
   context: AgentExecutionContext, signal?: AbortSignal): Promise<void> {
   const host = context.agentGeneration!
@@ -497,15 +422,11 @@ async function runHostedAgentLoop(generate: LLMGenerateFn, callbacks: AgentEngin
   }
 }
 
-/** Compatibility adapter; main consumers supply their own frozen registry. */
 export function parseToolCalls(text: string) {
   const { textParts, toolCalls } = parseAgentResponseProtocol(text, toolRegistry.listAll().map(tool => tool.name))
   return { textParts, toolCalls }
 }
 
-/**
- * 带超时的 Tool 执行
- */
 async function executeToolWithTimeout(
   executeFn: (
     args: Record<string, unknown>,
@@ -532,8 +453,6 @@ async function executeToolWithTimeout(
       execution,
       new Promise<ToolResult>((_, reject) => {
         timer = setTimeout(() => {
-          // A dispatched write gets the same finite foreground wait, but is
-          // reported as unknown rather than cancelled/retryable.
           if (isReadOnly || !hasSideEffectStarted()) controller.abort()
           reject(new ToolExecutionTimeoutError(writingLanguageText(
             writingLanguage,
@@ -551,9 +470,6 @@ async function executeToolWithTimeout(
 
 class ToolExecutionTimeoutError extends Error {}
 
-/**
- * 截断过长的 Tool 结果
- */
 function truncateResult(
   toolName: string,
   result: ToolResult,

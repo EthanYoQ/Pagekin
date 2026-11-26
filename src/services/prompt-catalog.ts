@@ -7,7 +7,6 @@ import { useLocaleStore } from '../stores/locale-store'
 import type { PromptTemplate } from './prompt-templates'
 import { resolveWritingLanguage, type WritingLanguage } from '../shared/writing-language'
 
-/** 项目提示词的损坏原因按码缓存，报错时再按当时的界面语言说明：缓存会跨越界面语言切换。 */
 const DIAGNOSTIC_TEXT: Record<string, readonly [zhCN: string, enUS: string]> = {
   PROMPT_TEMPLATE_INVALID: ['提示词内容结构无效', 'The prompt file has an invalid structure.'],
   PROMPT_FILENAME_MISMATCH: ['提示词标识或语言与文件名不一致', 'The prompt key or language does not match its file name.'],
@@ -31,7 +30,6 @@ export type PromptCommit =
   | { action: 'save'; scope: 'project'; projectSession: ProjectSessionContext; template: PromptTemplate }
   | { action: 'delete'; scope: 'project'; projectSession: ProjectSessionContext; key: string; writingLanguage?: WritingLanguage }
 
-/** Persistence is the real seam: Electron IPC in production, an in-memory fake in tests. */
 export interface PromptPersistence {
   loadGlobal(): Promise<PromptLoadReceipt>
   loadProject(projectSession: ProjectSessionContext): Promise<PromptLoadReceipt>
@@ -66,8 +64,6 @@ function validTemplate(value: PromptTemplate): boolean {
 }
 
 function templateLanguage(template: Pick<PromptTemplate, 'writingLanguage'>): WritingLanguage {
-  // Files written before bilingual overrides had no language marker. They were
-  // authored by the Chinese-only settings surface and therefore migrate to zh-CN.
   return resolveWritingLanguage(template.writingLanguage)
 }
 
@@ -95,7 +91,6 @@ function keepDiagnosticAfterChange(
 function setLocalizedTemplate(target: Map<string, PromptTemplate>, template: PromptTemplate): void {
   const key = localizedKey(template.key, templateLanguage(template))
   const current = target.get(key)
-  // Prefer an explicitly tagged file over its legacy untagged Chinese version.
   if (!current || template.writingLanguage || !current.writingLanguage) target.set(key, template)
 }
 
@@ -108,10 +103,6 @@ function promptLanguageFromFilename(filename: string): WritingLanguage | undefin
   return match?.[1] as WritingLanguage | undefined
 }
 
-/**
- * Owns prompt hydration, precedence and durable mutation. Callers never need
- * to know whether a prompt came from disk, cache, a project lease or a built-in.
- */
 export class PromptCatalog {
   private readonly builtins: ReadonlyMap<string, PromptTemplate>
   private globalPrompts = new Map<string, PromptTemplate>()
@@ -247,7 +238,6 @@ export class PromptCatalog {
     }
   }
 
-  /** Synchronous compatibility read; lifecycle remains owned by this module. */
   peek(
     key: string,
     projectSession?: ProjectSessionContext,
@@ -262,13 +252,11 @@ export class PromptCatalog {
     return builtin ? { template: builtin, source: 'builtin' } : undefined
   }
 
-  /** Compatibility hook for project-session lifecycle tests and close events. */
   clearProject(): void {
     this.projectCache = null
     this.projectLoads.clear()
   }
 
-  /** Compatibility preload; normal callers should use resolve/list. */
   async loadProject(
     projectSession: ProjectSessionContext,
     writingLanguage: WritingLanguage = 'zh-CN',
@@ -353,7 +341,6 @@ export class PromptCatalog {
   }
 }
 
-/** Electron adapter for the PromptCatalog persistence seam. */
 export const ipcPromptPersistence: PromptPersistence = {
   async loadGlobal() {
     if (!ipc.isElectron) return { templates: [], diagnostics: [] }

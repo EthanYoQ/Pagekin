@@ -1,21 +1,13 @@
-/**
- * 写作风格预设包
- *
- * 预定义的写作风格模板，应用后自动填充 NovelConfig 相关字段
- */
 import type { NovelConfig } from '../shared/ipc-channels'
 
-/** 风格预设 */
 export interface StylePreset {
   id: string
   name: string
   emoji: string
   description: string
-  /** 覆盖的字段 */
   overrides: Partial<NovelConfig>
 }
 
-/** 内置风格预设 */
 export const STYLE_PRESETS: StylePreset[] = [
   {
     id: 'male-hot-blood',
@@ -139,12 +131,10 @@ export const STYLE_PRESETS: StylePreset[] = [
   },
 ]
 
-/** 获取所有预设 */
 export function getPresets(): StylePreset[] {
   return STYLE_PRESETS
 }
 
-/** 应用预设到当前配置（只注入 globalGuidance，不覆盖其他元数据） */
 export function applyPreset(presetId: string, config: NovelConfig): NovelConfig {
   const preset = STYLE_PRESETS.find((p) => p.id === presetId)
   if (!preset) return config
@@ -154,7 +144,6 @@ export function applyPreset(presetId: string, config: NovelConfig): NovelConfig 
   }
 }
 
-/** 获取预设覆盖的字段名 */
 export function getOverrideFields(presetId: string): string[] {
   const preset = STYLE_PRESETS.find((p) => p.id === presetId)
   if (!preset) return []

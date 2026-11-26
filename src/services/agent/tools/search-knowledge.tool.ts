@@ -1,6 +1,3 @@
-/**
- * search_knowledge — 语义搜索知识库
- */
 import { buildAgentTool } from '../tool-registry'
 import { ipc } from '../../ipc-client'
 import { unwrapKnowledgeValue } from '../../knowledge-service'

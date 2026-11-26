@@ -1,9 +1,3 @@
-/**
- * stats-service — LLM 调用统计数据访问服务
- *
- * 封装 BottomPanel ModelsView 中的 IPC 调用。
- */
-
 import { ipc } from './ipc-client'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import type { LLMFinishReason } from '../shared/ipc-channels'
@@ -12,7 +6,6 @@ import { SQLITE_TIMESTAMP } from '../shared/sqlite-time'
 import type { WorkflowRun } from '../stores/workflow-store'
 import type { SafeDiagnosticWorkflow } from './safe-call-diagnostic'
 
-/** LLM 调用统计 */
 export interface LLMStats {
   totalCalls: number
   successfulCalls: number
@@ -23,7 +16,6 @@ export interface LLMStats {
   totalCompletionTokens: number | null
 }
 
-/** LLM 调用记录 */
 export interface LLMCallRecord {
   id: number
   modelId?: string
@@ -54,11 +46,6 @@ function timestamp(value: string | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-/**
- * Relate a persisted model call to workflow state only when one step can own
- * its complete request interval. Ambiguous concurrent runs deliberately keep
- * workflow fields unknown.
- */
 export function diagnosticWorkflowForCall(
   call: LLMCallRecord,
   runs: readonly WorkflowRun[],
@@ -96,7 +83,6 @@ export function diagnosticWorkflowForCall(
   }
 }
 
-/** 获取 LLM 调用统计 */
 export async function getLLMStats(projectSession: ProjectSessionContext): Promise<LLMStats> {
   return ipc.invokeWithProjectSession(
     projectSession,
@@ -105,7 +91,6 @@ export async function getLLMStats(projectSession: ProjectSessionContext): Promis
   )
 }
 
-/** 获取最近 LLM 调用记录 */
 export async function getLLMHistory(
   projectSession: ProjectSessionContext,
   limit = 30,
@@ -118,7 +103,6 @@ export async function getLLMHistory(
   )) as unknown as LLMCallRecord[]
 }
 
-/** 同时加载统计和历史（常用组合） */
 export async function loadLLMData(
   projectSession: ProjectSessionContext,
   limit = 30,

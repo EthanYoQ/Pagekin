@@ -91,3 +91,22 @@
 ### `src/shared/recovery-actions.ts`
 
 - `editorCanContinue`：主进程决定列不列、运行侧页决定按钮能不能点，都按这里判断，两边不会对不上。
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/__tests__/architecture-service-status.test.ts`
+
+- executeChapterOutline 提交后 saveNavigation(outline, true) 写下的检查点。
+
+### `src/services/architecture-service.ts`
+
+- `readArchCheckpointWithOutline`：读架构生成的分批检查点 partial_arch.json；没有、读不到或读失败都按没有检查点（undefined）。 大纲恢复稿已不再给作者时，去掉检查点里 synopsis_ 开头的部分，免得各处仍把它当成被打断的一批。 把判定用的那次读取一并交回（未读或读失败为 null），调用方不要再读一次，否则两次读到的判定可能不同。
+- `archOutlineSource`：作品核心里情节大纲的范围来源：章数与写作语言以作品核心为准，作品核心读不到时用作品设置。
+- 长度 > 50 才算真正已生成，前端可以直接用长度判断
+- `checkArchConfirmed`：流程脊的架构四节是否已确认：与架构页徽标同一判定（judgeArchCore），角色名单要结构化名单就绪。
+
+### `src/services/architecture-step-selection.ts`
+
+- `archSectionHasContent`：一节有没有内容：去掉空白后不为空，作者写的短内容也算（要显示出来，生成时会被覆盖）。
+- `judgeArchCore`：前提、世界观、情节大纲三节「有内容」与「已确认」的唯一判定，架构页、架构文档页的生成对话框与流程脊共用；角色名单由调用方按名单是否就绪补上。 有内容见 archSectionHasContent。 已确认：有内容，且前提、世界观超过 50 字，情节大纲按分批进度写满全书。
+- `ARCH_STEP_NAMES`：架构四节的名字（中、英）。架构页、生成对话框、提交提示与单节文档标签共用这一张；名单页的图形视图叫「关系图谱」，不与名单混名。

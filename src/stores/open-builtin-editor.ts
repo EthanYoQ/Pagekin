@@ -1,7 +1,6 @@
 import { useEditorStore } from './editor-store'
 import { useProjectStore } from './project-store'
 
-/** 打开内置编辑器 */
 export function openBuiltinEditor(
   id: string,
   name: string,

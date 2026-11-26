@@ -14,7 +14,6 @@ export function assertGraphResult(recovery: GraphGenerationRecovery): asserts re
   throwIfLastAttemptTerminal(recovery.view.budgetDiagnostics, recovery.view.handle.runId)
   throw new Error('GRAPH_GENERATION_INCOMPLETE')
 }
-/** Navigation only: main owns sources, tasks, candidate identity and durable effects. */
 export function createGraphGeneration(sessionInput: ProjectSessionContext) {
   const session = Object.freeze({ ...sessionInput })
   let recovery: GraphGenerationRecovery | undefined

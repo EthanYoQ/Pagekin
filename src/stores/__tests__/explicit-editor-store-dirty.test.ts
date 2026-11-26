@@ -437,7 +437,6 @@ describe('explicit editor dirty integration', () => {
     const ledger = parseProjectEditorDraftLedger<CharacterCard[]>(
       draftLedgerContent(CHARACTER_DRAFT_TAB.id),
     )
-    // A 的完成回调已失去 lease，不能替 B 清理或改写 A 的待保存草稿。
     expect(getProjectEditorDraft(ledger, project().path)?.draftValue[0]?.notes)
       .toBe('A 保存快照')
   })

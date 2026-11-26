@@ -557,7 +557,6 @@ describe('built-in model-neutral prompt contract', () => {
     for (const text of kept) expect(empty).toContain(text)
     expect(empty).not.toMatch(/\n{3,}/u)
 
-    // 有内容的段落及其标题原样保留；只清掉其中的空条目。
     const filled = build(true)
     expect(filled).toContain(language === 'zh-CN' ? '【剧情记忆库与前置断点上下文】\n- [全局剧情进展]：前文进展' : '[Story memory and previous stopping point]\n- Overall progress: 前文进展')
     expect(filled).toContain(language === 'zh-CN' ? '【后续章节大纲预告】（仅供了解后续剧情发力点，请绝对不要在本章提前写出后续内容！）\n- 第3章：后续蓝图' : 'do not reveal or advance them in this chapter]\n- 第3章：后续蓝图')

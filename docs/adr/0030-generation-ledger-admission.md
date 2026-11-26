@@ -217,3 +217,89 @@ S2 第三个 PR 把绑定移出清单后，同一夹具、同一方法（修前�
 - `span`：编辑器偏移是 UTF-16 码元，终点不含（原文：Editor offsets are UTF-16 code units, end exclusive.）
 - `mayUseCandidate`：只有作者选定的当前草稿或已保存的直接前驱才能进上下文（原文：Only author-selected current drafts or the saved direct predecessor may enter context.）
 - `transferAuthority`：仅作可携带的收据身份，绝非执行或作者内容的权威（原文：Portable receipt identity only; never an execution or author-content authority.）
+
+## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
+
+### `src/services/editor-chapter-context.ts`
+
+- `Read`：读不出（抛错或名册待修）记 unreadable；读到空就不带这一块。
+- `prepareEditorChapterContext`：章内编辑时给主进程备候选块。读哪些块只看工具表。threadsLeftOut 是相关线索里超出条数或长度上限、没进线索块的条数，只给编辑器提示用。
+
+### `src/services/editor-inline-generation.ts`
+
+- `createEditorInlineGeneration`：现行规则：任务、模型、随机数与预算都归主进程，这个适配器只持有导航（原文：Main owns the task, model, nonce and budget. This adapter only holds navigation.）
+- 回执失败不重试：运行仍列在侧页。
+
+### `src/services/finalization-generation.ts`
+
+- `runFinalizationGeneration`：现行规则：复用同一个持久的主进程槽位，已存的效果不重建提示词也不执行（原文：Reuses one durable main slot. Saved effects never rebuild prompts or execute.）
+- `retryRunId`：作者点重试时看到的运行。主进程判断它没有可提交的结果时另开运行，用 modelId() 给出的当前分工模型。
+- `latestFailure`：同一根下的另一步骤也有诊断，只看本步骤最近一次请求。
+- `requested`：显式引用只对冻结它的那次运行有效；begin 换了新运行时按普通路径重新请求。
+- 本次已发请求、或回放的是模型正常结束的候选：模型确实返回过结果，只是不可用，不能说成没发请求。
+
+### `src/services/generation/generation-harness.ts`
+
+- `GenerationTask`：现行规则：生成任务只描述语义，物理的供应商参数故意不在其中（原文：A semantic generation contract. Physical provider parameters are deliberately absent.）
+- `budgetDemand`：现行规则：预算需求只表达语义范围，能力检查与物理预留归主进程（原文：Semantic extent only; main owns capability checks and physical reservation.）
+- `reasoningStage`：现行规则：推理阶段是显式产品语义，省略时只按输出形状推导（原文：Explicit product semantics; omitted stages derive only from output shape.）
+- `promptBudget`：字段用途：对受保护的结构化提示词可选的逐字节安全策略（原文：Optional byte-exact safety policy for protected structured prompts.）
+- `maxTokens`：现行规则：物理请求控制只属于本模块的计划，调用方不能带 maxTokens（原文：Physical request controls belong exclusively to this module's plan.）
+- `sectionName`：字段约定：稳定且不含敏感信息的段落名，供回执与本地化诊断使用（原文：Stable, non-sensitive section name used by receipts and localized diagnostics.）
+- `messageIndex`：字段语义：这段拼好的片段在最终消息数组里出现的下标（原文：Index in the final message array where this exact assembled fragment occurs.）
+- `finalText`：字段约定：最终组装请求里的原文片段，绝不进报告或日志（原文：Exact fragment from the final assembled request; never copied into reports or logs.）
+- `limitUtf8Bytes`：字段语义：对一段受保护证据的可选独立上限（原文：Optional independent ceiling for one protected evidence section.）
+- `displayName`：字段约定：诊断用的安全可读名称，提示词正文绝不拷到这里（原文：Safe human-readable identity for diagnostics; prompt text is never copied here.）
+- `PromptBudgetReport`：现行规则：提示词诊断是安全的，提示词正文与供应商端点细节故意不在其中（原文：Safe prompt diagnostics. Prompt text and provider endpoint details are deliberately absent.）
+- `modelExecutionLeaseId`：现行规则：租约身份属于主进程，渲染端永远拿不到模型密钥快照（原文：Main-process lease identity; the renderer never receives its model secret snapshot.）
+- `endpointFingerprint`：字段约定：主进程租约回执给出的权威非密钥身份（原文：Authoritative non-secret identity supplied by the main-process lease receipt.）
+- `resolvedCapabilities`：字段约定：主进程租约回执给出的权威非密钥能力证据（原文：Authoritative non-secret capability evidence supplied by the main-process lease receipt.）
+- `maxRequestedOutputTokensPerAttempt`：字段语义：单次物理请求的意图级成本上限，与模型身份无关（原文：Intent-level cost cap for one physical request; independent of model identity.）
+- `GENERATION_ABSOLUTE_BUDGET_LIMITS`：现行规则：应用级安全上限，工作流可选更小的意图预算，但任何模型能力或调用方都不能把一次运行放大到超出它（原文：Application-wide safety ceiling. Workflows may choose smaller intent budgets, but no model capability or caller may enlarge one run beyond these bounds.）
+- `modelExecutionLeaseId`：现行规则：这是越过完成接缝的唯一模型授权（原文：The only model authorization crossing the completion seam.）
+- `onChunk`：字段语义：供应商的临时文本，调用方必须与终态完成结果核对（原文：Provisional provider text. Callers must reconcile it with the terminal completion.）
+- `CompletionPort`：现行规则：这是生成模块拥有的唯一真正的外部接缝（原文：The only true-external seam owned by the generation module.）
+- `purpose`：字段约定：安全的语义任务标签，绝不含提示词、输出、端点或凭据（原文：Safe semantic task label; never contains prompt, output, endpoint, or credentials.）
+- `failureCode`：字段约定：主进程规范化的失败类别，绝不是供应商响应原文（原文：Main-normalized failure category; never provider response text.）
+- `throwIfLastAttemptTerminal`：现行规则：按运行回读的客户端以那次运行的最后一次尝试为准，诊断列出根下所有尝试，包括子工作流等其他运行（原文：For clients that read a run back instead of its receipt: that run's last attempt decides. The diagnostics list every attempt under the root, including other runs such as child workflows.）
+- `invocationNonce`：字段用途：S05 主进程所有者外观所要求，重复值读到同一个持久尝试（原文：Required by the S05 main-owner facade; repeated values read the same durable attempt.）
+- `onChunk`：字段语义：供应商的临时文本，绝不是终态或持久化证据（原文：Provisional provider text. It is never terminal or persistence evidence.）
+- `PromptBudgetExceededError`：类语义：请求之前的失败，带安全报告，没有物理尝试回执（原文：Pre-request failure with a safe report and no physical-attempt receipt.）
+- `GenerationAttemptError`：类语义：失败的物理尝试，带非敏感的预算回执，供编排与审计（原文：Failed physical attempt with a non-sensitive budget receipt for orchestration and audit.）
+- `finishReason`：现行规则：缺失终态证据绝不等同于已完成的创作事实，适配器可保留省略值，这个接缝按失败关闭规范化（原文：Missing terminal evidence is never equivalent to a completed creative fact. Provider adapters may preserve omitted values and this seam normalizes them fail-closed.）
+
+### `src/services/generation/generation-runtime.ts`
+
+- `creativeStrategy`：现行规则：写作策略由调用方在异步准备之前捕获（原文：Project writing policy captured by the caller before asynchronous preparation.）
+- `policy`：现行规则：禁止另给物理预算输入，一个预算同时服务两个消费方（原文：Alternate physical budget inputs are forbidden; one budget owns both consumers.）
+- `MainGenerationRunHandle`：现行规则：这个句柄只有主进程的 begin 动作能签发（原文：Opt-in S05 handle. Only the main-process begin action may issue this identity.）
+- `compositionEligible`：现行规则：只有主进程核实过的已结算 stop 或 length 产物才可组合，单看 status 从不授权（原文：Main-verified settled stop/length artifact; status alone never authorizes composition.）
+- `MainGenerationReasoningEvent`：现行规则：供应商推理只送到当前展示，没有持久的运行投影（原文：Provider reasoning is sent only to the active display and has no durable run projection.）
+- `MainGenerationRunSummary`：运行列表里的一项：只够认出是哪个运行、什么状态、做什么的；要候选与账本再按 handle 读。
+- `MainGenerationTransport`：现行规则：传输接口里没有供应商、模型租约创建、预留或根创建方法（原文：No provider, model lease creation, reservation or root creation methods exist here.）
+- `readMainGenerationRun`：现行规则：这是纯读取接缝，不创建根也不续跑（原文：Pure read seam for F04; it neither creates roots nor resumes execution.）
+- `installMainGenerationTransport`：现行规则：由中央类型化 IPC 适配器安装一次，没有接线时失败关闭（原文：Installed once by the central typed IPC adapter; absent wiring fails closed.）
+- 现行规则：送达顺序可能与提交顺序不同，较旧的已确认视图绝不替换较新的（原文：Delivery order can differ from commit order. Older acknowledged views never replace newer ones.）
+- 现行规则：终态读取可能先于最后一条 running 通知到达，产物不变（原文：A terminal read can overtake its last running notification without changing the artifact.）
+- 现行规则：旧式 onChunk 不能安全追加独立尝试，改用完整快照回执（原文：Old onChunk cannot safely append independent attempts. Use full snapshot receipts instead.）
+
+### `src/services/generation/main-generation-transport.ts`
+
+- `createMainGenerationTransport`：现行规则：构造是惰性的，调用之前既不读当前会话也不碰 IPC（原文：Construction is inert: neither current session nor IPC is read until a call.）
+
+### `src/services/graph-generation.ts`
+
+- `createGraphGeneration`：现行规则：这里只管导航，来源、任务、候选身份与持久效果归主进程（原文：Navigation only: main owns sources, tasks, candidate identity and durable effects.）
+
+### `src/services/legacy-roster-generation.ts`
+
+- `createLegacyRosterGeneration`：现行规则：固定任务、有限修复、来源证明与提议都只归主进程（原文：Main alone owns the fixed task, bounded repairs, source proof and proposal.）
+- `receipt`：现行规则：主进程重放缓存的序号，并独自判定已知的畸形停止能否使用原有有限修复尝试之一（原文：Main replays cached ordinals and alone decides whether a known malformed stop can use one of the original finite repair attempts.）
+
+### `src/services/stats-service.ts`
+
+- `diagnosticWorkflowForCall`：现行规则：只有一步能拥有完整请求区间时才把持久的模型调用与工作流状态关联，含糊的并发运行故意保持工作流字段未知（原文：Relate a persisted model call to workflow state only when one step can own its complete request interval. Ambiguous concurrent runs deliberately keep workflow fields unknown.）
+
+### `src/stores/workflow-reasoning-store.ts`
+
+- `useWorkflowReasoningStore`：现行规则：推理只是易失的展示状态，隐藏的推理永远不进工作流历史或生成产物（原文：Volatile display state. Hidden reasoning never joins workflow history or generation artifacts.）

@@ -5,7 +5,6 @@ import { findBlueprintContinuityRisks } from '../shared/consistency-preflight'
 import type { PendingFinalizedRelationCandidate } from '../shared/finalized-continuity'
 import { ipc } from './ipc-client'
 
-/** 同一节点在批量里可能出现在多章，按章豁免要靠 chapterNumber 区分。 */
 export type PreflightFinding = ConsistencyFinding & { chapterNumber: number; characterId?: string }
 
 export interface ConsistencyPreflightResult {

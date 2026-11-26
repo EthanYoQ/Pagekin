@@ -1,6 +1,3 @@
-/**
- * start_workflow — 触发创作工作流
- */
 import { buildAgentTool, createToolArtifact } from '../tool-registry'
 import { launchCreativeWorkflow, type CreativeIntent } from '../../workflows/creative-workflow-launcher'
 import { assertAgentToolActive, requireAgentProject, agentToolErrorDetail } from './project-context'
@@ -48,7 +45,6 @@ export const startWorkflowTool = buildAgentTool({
     const projectPath = project.path
     const generationModelId = context?.selectedModelId?.trim() || undefined
 
-    // 需要章节号的工作流
     const chapterWorkflows = ['generate_draft', 'review', 'refine', 'finalize']
     if (chapterWorkflows.includes(workflow) && chapterNumber === undefined) {
       return {

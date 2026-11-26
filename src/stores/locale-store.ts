@@ -14,9 +14,7 @@ export interface LocaleDependencies {
 }
 
 export interface LocaleState {
-  /** Language chosen for the interface, including languages that colocated copy does not have yet. */
   interfaceLocale: InterfaceLocale
-  /** 界面语言对应的文案语言（ja-JP 读 en-US），运行冻结的就是它。 */
   locale: Locale
   initialized: boolean
   init: () => Promise<void>
@@ -29,10 +27,6 @@ function localeFields(interfaceLocale: InterfaceLocale): Pick<LocaleState, 'inte
   return { interfaceLocale, locale: copyLocale(interfaceLocale) }
 }
 
-/**
- * Interface language in effect. Code that sets only `locale` (as tests do with setState) leaves
- * `interfaceLocale` behind; then `locale` wins, so the catalog and the colocated copy never disagree.
- */
 export function activeInterfaceLocale(state: Pick<LocaleState, 'interfaceLocale' | 'locale'>): ErrorDisplayLocale {
   return (copyLocale(state.interfaceLocale) === state.locale ? state.interfaceLocale : state.locale) as ErrorDisplayLocale
 }
@@ -64,9 +58,6 @@ function createLocaleSaveLedger(initiallySaved: InterfaceLocale) {
 export function createLocaleState(dependencies: LocaleDependencies): StateCreator<LocaleState> {
   return (set, get) => {
     const ledger = createLocaleSaveLedger(resolveInterfaceLocale(dependencies.systemLocale()))
-    // Components commonly select only `t` or `text`. Refreshing these reader
-    // identities with the locale makes those subscriptions reactive while the
-    // functions still resolve the latest locale when called from callbacks.
     const localeReaders = () => ({
       t: (key: MessageKey, params?: MessageParams) => translate(activeInterfaceLocale(get()), key, params),
       text: (zhCNText: string, enUSText: string, jaJPTextOrParams?: string | MessageParams, params?: MessageParams) => (

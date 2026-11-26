@@ -233,7 +233,6 @@ describe('agent project read tools', () => {
     useProjectStore.setState({
       currentProject: { ...project(projectAPath), novelConfig: { writingLanguage } } as never,
     })
-    // reject 的值是 undefined（没有任何原因）。
     const invoke = vi.fn(() => Promise.reject(undefined))
     vi.stubGlobal('window', { aiNovelAPI: { invoke, on: vi.fn(), once: vi.fn(), send: vi.fn() } })
     const context = createAgentExecutionContext()
@@ -276,7 +275,6 @@ describe('agent project read tools', () => {
     vi.stubGlobal('window', { aiNovelAPI: { invoke } })
     const context = createAgentExecutionContext()
 
-    // 登记过的码按作品写作语言说明，不把主进程转来的中文原文交给英文作品。
     for (let call = 0; call < 2; call += 1) {
       await expect(searchKnowledgeTool.execute({ query: 'campus' }, context)).resolves.toMatchObject({
         success: false,

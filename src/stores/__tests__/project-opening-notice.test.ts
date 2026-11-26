@@ -21,7 +21,6 @@ vi.mock('../../services/project-service', () => ({
   onProjectClosed: vi.fn(),
 }))
 
-/** 主进程拒绝打开：这里只看等待提示，回包内容无关。 */
 function answerOpenAfter(ms: number) {
   invoke.mockImplementation((channel: string, _target: unknown, requestToken: string) => channel === 'project:open'
     ? new Promise(resolve => setTimeout(() => resolve({ success: false, project: null, requestToken,

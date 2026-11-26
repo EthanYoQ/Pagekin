@@ -3,8 +3,6 @@ import type { AgentAuthorBlueprintProposal, AgentGenerationInput, AgentGeneratio
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { parseAgentResponseProtocol } from '../../../shared/agent-response-protocol'
 
-/** Synthetic main transport for consumer tests. It does not prove SQLite
- * admission, main source validation, durable accounting, or real providers. */
 export class AgentHostFixture {
   recovery!: AgentGenerationRecovery
   beginError?: Error

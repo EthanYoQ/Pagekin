@@ -21,7 +21,6 @@ const session: ProjectSessionContext = {
 
 describe('writing skill project bindings', () => {
   beforeEach(() => {
-    // 绑定报错按界面语言说明；下面的断言按英文界面写。
     useLocaleStore.setState({ locale: 'en-US' })
     invoke.mockReset()
     invoke.mockResolvedValue([])

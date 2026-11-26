@@ -32,11 +32,6 @@ export function agentToolText(
   )
 }
 
-/**
- * 工具失败的原因：主进程登记过的码按作品写作语言说明（工具结果同时显示给作者、回给模型），
- * 其余去掉通道前缀后原样保留；原因是 undefined、null 或空白字符串时返回 undefined，由工具用自己的兜底说明
- * （没有可读 message 的对象会得到「未知错误」）。
- */
 export function agentToolErrorDetail(
   context: AgentExecutionContext | undefined,
   error: unknown,
@@ -76,7 +71,6 @@ export function requireAgentProjectSession(
   return session
 }
 
-/** Resolve the project only after proving it is the frozen agent session. */
 export function requireAgentProject(
   context?: AgentExecutionContext,
 ): { project: NonNullable<ReturnType<typeof useProjectStore.getState>['currentProject']>; projectSession: ProjectSessionContext } {
@@ -110,7 +104,6 @@ export function assertAgentProjectCurrent(context?: AgentExecutionContext): void
   }
 }
 
-/** Last renderer-side gate before an Agent tool starts an observable side effect. */
 export function assertAgentToolActive(context?: AgentExecutionContext): void {
   if (context?.abortSignal?.aborted) {
     throw new Error(agentToolText(

@@ -1,10 +1,3 @@
-/**
- * architecture-service — 架构文件状态检查服务
- *
- * 全量 DB 化后，这里直接查 project_core 和 blueprints 表，不再读取文件。
- * 使用场景：Sidebar、流程脊
- */
-
 import type { NovelConfig, ProjectSessionContext } from '../shared/ipc-channels'
 import type { GenerationRecoveryContext } from '../shared/generation-owner-contract'
 import { CANONICAL_PROJECT_DIRECTORY } from '../shared/project-format'
@@ -16,11 +9,6 @@ import { judgeArchCore } from './architecture-step-selection'
 import { architectureRecoveryHandle } from '../shared/architecture-recovery-navigation'
 import { planningRecoverable } from '../shared/planning-recovery'
 
-/**
- * 读架构生成的分批检查点 partial_arch.json；没有、读不到或读失败都按没有检查点（undefined）。
- * 大纲恢复稿已不再给作者时，去掉检查点里 synopsis_ 开头的部分，免得各处仍把它当成被打断的一批。
- * 把判定用的那次读取一并交回（未读或读失败为 null），调用方不要再读一次，否则两次读到的判定可能不同。
- */
 export async function readArchCheckpointWithOutline(projectSession: ProjectSessionContext): Promise<{
   checkpoint: Record<string, unknown> | undefined
   outline: GenerationRecoveryContext | null
@@ -40,7 +28,6 @@ export async function readArchCheckpoint(projectSession: ProjectSessionContext):
   return (await readArchCheckpointWithOutline(projectSession)).checkpoint
 }
 
-/** 作品核心里情节大纲的范围来源：章数与写作语言以作品核心为准，作品核心读不到时用作品设置。 */
 export function archOutlineSource(
   core: { synopsis?: string | null; totalChapters?: number | null; writingLanguage?: string | null } | null | undefined,
   novelConfig?: Pick<NovelConfig, 'totalChapters' | 'writingLanguage'>,
@@ -52,10 +39,6 @@ export function archOutlineSource(
   }
 }
 
-/**
- * 检查所有架构块的生成状态
- * @returns key → boolean 映射，true 表示该块已有有效内容
- */
 export async function checkArchStatus(
   projectSession: ProjectSessionContext,
 ): Promise<Record<string, boolean>> {
@@ -80,7 +63,6 @@ export async function checkArchStatus(
   ])
   if (!core) return status
 
-  // 长度 > 50 才算真正已生成，前端可以直接用长度判断
   status.premise = (core.premise?.length ?? 0) > 50
   status.characters = roster.status === 'ready'
   status.worldbuilding = (core.worldbuilding?.length ?? 0) > 50
@@ -89,9 +71,6 @@ export async function checkArchStatus(
   return status
 }
 
-/**
- * 流程脊的架构四节是否已确认：与架构页徽标同一判定（judgeArchCore），角色名单要结构化名单就绪。
- */
 export async function checkArchConfirmed(
   projectSession: ProjectSessionContext,
   novelConfig?: Pick<NovelConfig, 'totalChapters' | 'writingLanguage'>,
@@ -108,9 +87,6 @@ export async function checkArchConfirmed(
   return { ...judgeArchCore(core, progress.kind).confirmed, characters: roster.status === 'ready' }
 }
 
-/**
- * 获取蓝图数量
- */
 export async function getBlueprintCount(projectSession: ProjectSessionContext): Promise<number> {
   try {
     const blueprints = await ipc.invokeWithProjectSession(
