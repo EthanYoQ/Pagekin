@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { authorError, catalogNote } from '../../i18n/app-errors'
+import { shown } from '../../i18n/__tests__/shown-locale'
 import { useLocaleStore } from '../locale-store'
 import { useProjectStore } from '../project-store'
 import { useWorkflowStore, type WorkflowRun } from '../workflow-store'
@@ -48,6 +50,12 @@ const throws = [
 describe('步骤失败后 run.error、step.error、errorCode 与 master 相同', () => {
   it.each(throws)('%s', async (_name, thrown, expected) => {
     expect(legacyFields(await failedRun(thrown()))).toEqual(expected)
+  })
+
+  it('AuthorError：与 master 上 Object.assign(new Error(说明), { code }) 写出的相同', async () => {
+    const migrated = authorError(shown('zh-CN'), { code: 'NETWORK_ERROR', note: catalogNote('error.proxyUnreachable') })
+    const master = Object.assign(new Error(migrated.message), { code: 'NETWORK_ERROR' })
+    expect(legacyFields(await failedRun(migrated))).toEqual(legacyFields(await failedRun(master)))
   })
 })
 

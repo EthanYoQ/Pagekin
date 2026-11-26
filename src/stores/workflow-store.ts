@@ -1,4 +1,5 @@
-import { displayedErrorMessage } from '../i18n/app-errors'
+import { caughtFailure, displayedErrorMessage } from '../i18n/app-errors'
+import { failureOf, type Failure } from '../shared/failure'
 import type { GenerationTransportDiagnostics } from '../shared/generation-contract'
 import type { CharacterProposalBatch } from '../shared/character-proposal'
 import type { CharacterProposalChoices } from '../services/character-proposal-choices'
@@ -70,6 +71,8 @@ export interface WorkflowStep {
   activityText?: string
   result?: string
   error?: string
+  /** 失败的码与说明；旧字段 error、errorCode 迁移期照写。 */
+  failure?: Failure
   /** Non-empty machine-readable code supplied by the thrown error. */
   errorCode?: string
   /** Structured failure cause when a bounded model completion stopped early. */
@@ -119,6 +122,7 @@ export interface WorkflowRun {
   createdAt: string
   completedAt?: string
   error?: string
+  failure?: Failure
   /** Machine-readable error code mirrored from the failed current step. */
   errorCode?: string
   /** Structured terminal cause mirrored from the failed current step. */
@@ -869,9 +873,12 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         const failureCode = getBoundedCompletionFailureCode(error)
           ?? promptBudgetFailure?.failureCode
         const errorCode = errorCodeFromUnknown(error)
+        // message 为空时旧字段显示不出东西，这时认不出的失败也要带上通用说明。
+        const failure = promptBudgetFailure ? undefined : errorMsg.trim() ? failureOf(error) : caughtFailure(error)
         updateStepById(set, run.id, i, {
           status: 'failed',
           error: errorMsg,
+          ...(failure ? { failure } : {}),
           ...(errorCode ? { errorCode } : {}),
           ...(failureCode ? { failureCode } : {}),
           ...(promptBudgetFailure ? { promptBudgetReport: promptBudgetFailure.report } : {}),
@@ -880,6 +887,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         updateRunById(set, run.id, {
           status: 'failed',
           error: errorMsg,
+          ...(failure ? { failure } : {}),
           ...(errorCode ? { errorCode } : {}),
           ...(failureCode ? { failureCode } : {}),
           ...(promptBudgetFailure ? { promptBudgetReport: promptBudgetFailure.report } : {}),

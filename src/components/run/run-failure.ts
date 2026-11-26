@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { displayedErrorMessage, failureText } from '../../i18n/app-errors'
 import { PLOT_OUTLINE_RESUME_ERROR_CODE, PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE } from '../../services/workflows/commands/architecture.command'
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { projectSessionContextFromProject, sameProjectPathKey, sameProjectSessionContext } from '../../shared/project-session-context'
@@ -25,12 +25,13 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
   const failedStep = run.steps.find(step => step.status === 'failed')
   const currentStep = run.steps[run.currentStepIndex] ?? run.steps[0]
   const failedWith = (code: string) => run.errorCode === code || failedStep?.errorCode === code
+  const locale = errorLocaleForRun(run.uiLocale, interfaceLocale)
   return {
     title: run.title,
     presentation: presentWorkflowFailure(
       run.failureCode ?? currentStep?.failureCode,
-      run.error || currentStep?.error,
-      errorLocaleForRun(run.uiLocale, interfaceLocale),
+      failureReason(run, currentStep, locale),
+      locale,
       run.type === 'chapter_creation' && run.chapterWordsTarget !== undefined && !(currentStep?.result || '').trim(),
       run.promptBudgetReport ?? currentStep?.promptBudgetReport,
       failedStep?.generationActivity ?? currentStep?.generationActivity,
@@ -38,6 +39,16 @@ export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale
     canResumeOutline: failedWith(PLOT_OUTLINE_RESUME_ERROR_CODE),
     canRestartOutline: failedWith(PLOT_OUTLINE_SOURCE_CHANGED_ERROR_CODE),
   }
+}
+
+/**
+ * 失败带说明，或旧字段为空，就按 failure 显示。只带码的失败仍交旧字段：审稿失败按码分类，
+ * 而未登记码在这里的显示与 master 相同。
+ */
+function failureReason(run: WorkflowRun, step: WorkflowRun['steps'][number] | undefined, locale: ErrorDisplayLocale): string | undefined {
+  const legacy = run.error || step?.error
+  const failure = run.failure ?? step?.failure
+  return failure && (failure.note || !legacy?.trim()) ? failureText(locale, failure) : legacy
 }
 
 /** 运行属于当前打开的这次项目会话；失败提示里的动作只对它生效。 */
