@@ -56,6 +56,10 @@ jobs:
           fi
           echo "docs_only=$docs_only" | tee -a "$GITHUB_OUTPUT"
 
+      - name: Check that baselines only shrink
+        if: ${{ github.event_name == 'pull_request' }}
+        run: node scripts/check-baseline-shrink.mjs HEAD^1
+
   desktop-tests:
     name: Windows tests (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: changes
