@@ -32,11 +32,9 @@ const instrumentRenderer = page => page.evaluate(() => {
       log.idle.push({ label: region.getAttribute('aria-label'), at: now() })
     }
   }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-busy'] })
-  try {
-    new PerformanceObserver(list => {
-      for (const entry of list.getEntries()) log.longtasks.push({ at: performance.timeOrigin + entry.startTime, ms: entry.duration })
-    }).observe({ type: 'longtask', buffered: true })
-  } catch { /* 没有 longtask 时只少这一列。 */ }
+  new PerformanceObserver(list => {
+    for (const entry of list.getEntries()) log.longtasks.push({ at: performance.timeOrigin + entry.startTime, ms: entry.duration })
+  }).observe({ type: 'longtask', buffered: true })
 })
 
 const instrumentMain = app => app.evaluate(({ ipcMain }) => {

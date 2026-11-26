@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { chooseProjectDirectoryGrant } from './project-directory-grant.mjs'
+import { ignoreFailure } from './lib/ignore-failure.mjs'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -640,11 +641,10 @@ async function main() {
         return result
       })
     }, projects.a)
-    // 回包要等后面的步骤做完才读；先挂一个空的 catch，超时时由下面的 await 抛出，不让进程因未处理的拒绝退出。
     const openReply = () => {
       const reply = page.waitForEvent('console', { timeout: 30_000,
         predicate: message => message.text().includes('[ipc-client.invoke] 调用完成: project:open') })
-      reply.catch(() => {})
+      void ignoreFailure('前面的步骤已失败时不再等打开回包', () => reply)
       return reply
     }
     try {
@@ -883,7 +883,7 @@ async function main() {
     if (session?.page && !session.page.isClosed()) await session.page.screenshot({ path: path.join(path.dirname(receiptPath), 'failure.png') }).catch(() => {})
     if (session) {
       const closed = await Promise.race([session.app.close().then(() => true).catch(() => false), new Promise(resolve => setTimeout(() => resolve(false), 5_000))])
-      if (!closed) { try { session.app.process()?.kill() } catch { /* already closed */ } }
+      if (!closed) await ignoreFailure('应用进程可能已退出', () => session.app.process()?.kill())
     }
     fs.writeFileSync(receiptPath, JSON.stringify({ outcome: 'FAIL', ...source, driverSha256, shelfScreenshot, deleteEntryScreenshot,
       failedStep: currentStep, steps, nativePickerEvidence, nativeProcessEvidence, error: String(error), diagnostic, modelRequests, rendererLogs: rendererLogs.slice(-20) }, null, 2))

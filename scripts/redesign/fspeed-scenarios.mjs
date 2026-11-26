@@ -67,6 +67,7 @@ async function instrument(app) {
         let content = ''
         let reasoning = 0
         let usage = null
+        let unparsedLines = 0
         for (const line of text.split('\n')) {
           if (!line.startsWith('data:') || line.includes('[DONE]')) continue
           try {
@@ -75,12 +76,12 @@ async function instrument(app) {
             reasoning += (delta.reasoning_content ?? '').length
             content += delta.content ?? ''
             if (chunk.usage) usage = chunk.usage
-          } catch { /* 非 JSON 的 SSE 行不计 */ }
+          } catch { unparsedLines += 1 }
         }
         if (!text.startsWith('data:') && content === '') {
           try { content = JSON.parse(text).choices?.[0]?.message?.content ?? '' } catch { content = text.slice(0, 4000) }
         }
-        Object.assign(entry, { totalMs: Date.now() - t0, content, reasoningChars: reasoning, usage })
+        Object.assign(entry, { totalMs: Date.now() - t0, content, reasoningChars: reasoning, usage, unparsedLines })
       }).catch(error => { entry.readError = String(error) })
       return response
     }

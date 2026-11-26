@@ -1405,6 +1405,14 @@ export async function fetchProviderResponse(fetcher, url, options, failures, dia
   return response
 }
 
+async function ignoreFailure(reason, run) {
+  try {
+    return await run()
+  } catch (error) {
+    console.warn(`[ignored] ${reason}`, error)
+    return undefined
+  }
+}
 export function createAttemptSupervisor({ record, deadlineMs = BRIDGE_SETTLEMENT_DEADLINE_MS } = {}) {
   if (typeof record !== 'function') throw new Error('SUPERVISOR_RECORD_REQUIRED')
   const open = new Map()
@@ -1425,8 +1433,9 @@ export function createAttemptSupervisor({ record, deadlineMs = BRIDGE_SETTLEMENT
     const controller = open.get(attemptId)
     if (!open.has(attemptId)) return
     expired.add(attemptId)
-    try { terminal(attemptId, 'unknown', { reasonCode: 'BRIDGE_SETTLEMENT_DEADLINE_EXCEEDED' }) } catch { /* 账本暂不可写也必须继续 abort */ }
-    try { controller?.abort?.(new Error('ATTEMPT_DEADLINE_EXCEEDED')) } catch { /* ignore */ }
+    void ignoreFailure('账本暂不可写时照样中止，悬空的 dispatch 由对账补记 unknown',
+      () => terminal(attemptId, 'unknown', { reasonCode: 'BRIDGE_SETTLEMENT_DEADLINE_EXCEEDED' }))
+    controller?.abort?.(new Error('ATTEMPT_DEADLINE_EXCEEDED'))
   }
   return {
     watch(attemptId, controller) {

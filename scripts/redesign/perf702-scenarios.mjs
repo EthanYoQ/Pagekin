@@ -217,7 +217,7 @@ export async function installLedger(app, page) {
 async function takeLedger(app, page, stallBeforeMs = 0) {
   const main = await app.evaluate((_electron, stallBeforeMs) => {
     const stalledAt = performance.now()
-    while (performance.now() - stalledAt < stallBeforeMs) { /* 同步忙等 */ }
+    while (performance.now() - stalledAt < stallBeforeMs) continue
     const { channels, spawns, sql, loop, late } = globalThis.__perfLedger
     Object.assign(globalThis.__perfLedger, { channels: {}, spawns: { calls: 0, ms: 0, kinds: {} }, sql: {}, late: { calls: 0, ms: 0 } })
     const now = performance.now()
@@ -672,7 +672,7 @@ async function blockControls(context) {
       globalThis.__perfControlRestore()
       const startedAt = performance.now()
       if (kind === 'sql') globalThis.__perfControlDb.prepare('WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL SELECT x + 1 FROM c WHERE x < ?) SELECT count(*) AS n FROM c').get(sqlRows)
-      else while (performance.now() - startedAt < 500) { /* 同步忙等 */ }
+      else while (performance.now() - startedAt < 500) continue
       globalThis.__perfControlBlockedMs = Math.round(performance.now() - startedAt)
       return original(...args)
     })
@@ -690,7 +690,7 @@ async function blockControls(context) {
   results.timer = await operation(context, 'control-timer-js', async () => {
     await app.evaluate(() => new Promise(resolve => setTimeout(() => {
       const startedAt = performance.now()
-      while (performance.now() - startedAt < 500) { /* 同步忙等 */ }
+      while (performance.now() - startedAt < 500) continue
       resolve()
     }, 0)))
     return { blockedMs: 500 }

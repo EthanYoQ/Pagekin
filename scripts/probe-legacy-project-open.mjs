@@ -146,18 +146,18 @@ if (writeProof) {
 }
 
 const deadline = Date.now() + 20_000
-let page
+let page, lastListError
 while (Date.now() < deadline) {
   try {
     const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then(response => response.json())
     page = targets.find(target => target.type === 'page' && target.webSocketDebuggerUrl)
     if (page) break
-  } catch {
-    // The legacy Electron debugger endpoint may not be ready yet.
+  } catch (error) {
+    lastListError = error
   }
   await new Promise(resolvePromise => setTimeout(resolvePromise, 100))
 }
-if (!page) throw new Error('Legacy Electron DevTools endpoint did not expose a renderer page')
+if (!page) throw new Error('Legacy Electron DevTools endpoint did not expose a renderer page', { cause: lastListError })
 if (rosterProof) {
   const current = listener()
   if (current?.pid !== processProof.pid || current.startedAt !== processProof.startedAt) throw new Error('Roster proof CDP listener changed before renderer connection')

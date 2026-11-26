@@ -179,14 +179,13 @@ function Get-AiNovelTopLevelWindowSnapshot {
     [void][AiNovelSmoke.TopLevelWindowProbe]::GetWindowThreadProcessId($handle, [ref]$windowProcessId)
     $processName = $processNames[[int]$windowProcessId]
     if ($null -eq $processName) {
-      $processName = '<exited>'
       try {
         $owner = [System.Diagnostics.Process]::GetProcessById([int]$windowProcessId)
         $processName = $owner.ProcessName
         $owner.Dispose()
       }
       catch {
-        # The owner may exit between EnumWindows and process lookup; retain the PID as evidence.
+        $processName = '<exited>'
       }
     }
 
@@ -617,14 +616,17 @@ function Stop-AiNovelProcessTree {
       Stop-Process -Id $processId -Force -ErrorAction Stop
     }
     catch {
-      # A process disappearing after the identity check is the expected path.
+      $stopError = $_
+      if (Test-AiNovelTrackedProcessAlive -ProcessId $processId -StartTimeTicks $StartTimeTicks) {
+        Write-Warning "Could not stop still-running process ${processId}: $($stopError.Exception.Message)"
+      }
     }
   }
   try {
     [void]$Process.WaitForExit(5000)
   }
   catch {
-    # The post-exit window monitor below is authoritative for delayed error dialogs.
+    Write-Warning "Could not wait for application exit; the post-exit window monitor decides: $($_.Exception.Message)"
   }
 }
 

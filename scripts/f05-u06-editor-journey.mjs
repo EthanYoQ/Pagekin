@@ -285,7 +285,7 @@ async function measureEditorInteractionV2(page, action, expectedDocument, editor
       const lineRect = line?.getBoundingClientRect()
       const browserRange = browserSelection?.rangeCount ? browserSelection.getRangeAt(0) : null
       const rangeRect = browserRange?.getBoundingClientRect()
-      let nativeAnchor = null, nativeHead = null, nativeRangeStart = null, nativeRangeEnd = null
+      let nativeAnchor = null, nativeHead = null, nativeRangeStart = null, nativeRangeEnd = null, nativeSelectionError = null
       if (browserSelection?.anchorNode && browserSelection.focusNode) {
         try {
           nativeAnchor = view.posAtDOM(browserSelection.anchorNode, browserSelection.anchorOffset)
@@ -294,7 +294,7 @@ async function measureEditorInteractionV2(page, action, expectedDocument, editor
             nativeRangeStart = view.posAtDOM(browserRange.startContainer, browserRange.startOffset)
             nativeRangeEnd = view.posAtDOM(browserRange.endContainer, browserRange.endOffset)
           }
-        } catch { /* an unmappable native selection is a failed terminal state */ }
+        } catch (error) { nativeSelectionError = String(error) }
       }
       const focused = document.hasFocus()
       const visible = document.visibilityState === 'visible'
@@ -304,7 +304,7 @@ async function measureEditorInteractionV2(page, action, expectedDocument, editor
         editorRect.width > 0 && editorRect.height > 0 && lineInViewport && lineRect.width > 0 && lineRect.height > 0 &&
         (action === 'input' ? lineText.startsWith('测') : lineText.startsWith('春') && !!rangeRect && rangeRect.height > 0)
       return { documentMatches, caretOrSelectionMatches, visibleDomMatches, secondRaf:true, nativeAnchor, nativeHead,
-        nativeRangeStart, nativeRangeEnd, focused, visible,
+        nativeRangeStart, nativeRangeEnd, nativeSelectionError, focused, visible,
         documentLength: view.state.doc.length, anchor: selection.anchor, head: selection.head, visiblePrefix: lineText.slice(0, 8) }
     }
     const finish = (error, end, observation) => {
