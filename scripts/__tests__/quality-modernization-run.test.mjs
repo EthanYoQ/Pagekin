@@ -5529,7 +5529,7 @@ test('bridge 在记账前按 operation 校验出站权威，且只把真实 prov
 
 test('外围请求即使被调用方捕获，prepare 与 execute 也不能通过', async () => {
   const receipt = { preflightFailures: [], physicalModelRequests: 0, syntheticDispatches: 0 }
-  try { await Promise.resolve().then(() => rejectOutsidePhysicalBoundary(receipt)) } catch { /* 产品可回退 FTS */ }
+  await assert.rejects(Promise.resolve().then(() => rejectOutsidePhysicalBoundary(receipt)), /NETWORK_OUTSIDE_PHYSICAL_BOUNDARY/)
   assert.deepEqual(receipt.preflightFailures, ['NETWORK_OUTSIDE_PHYSICAL_BOUNDARY'])
   assert.throws(() => assertNoOutboundPreflightFailures(receipt), /OUTBOUND_PREFLIGHT_FAILURES/)
   assert.equal(receipt.physicalModelRequests, 0)
