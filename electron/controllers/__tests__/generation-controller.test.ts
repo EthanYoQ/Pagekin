@@ -44,6 +44,7 @@ import { restorePortableProject } from '../../services/project-restore-service'
 import { readPortableRuntimeFreeze } from '../../services/portable-runtime-freeze'
 import { runIndexOf } from '../../repositories/generation-run-index'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
+import { expectLoggedCode } from './logged-ipc-code'
 
 const model: ModelProfile = { id: 'fixture', name: '合成模型', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1',
   baseUrl: 'https://api.openai.com/v1', apiKey: 'synthetic-only', maxTokens: 1024, temperature: 0.7, purposes: ['generation'] }
@@ -64,6 +65,7 @@ beforeAll(() => {
   registerDatabaseController()
 })
 beforeEach(() => {
+  vi.spyOn(console, 'error')
   const cache = path.resolve('.runtime/.cache/t12c')
   fs.mkdirSync(cache, { recursive: true })
   root = fs.mkdtempSync(path.join(cache, 'ipc-'))
@@ -123,7 +125,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
       expect((await ipc.invokeWithProjectSession(session, 'generation:bind-material-decision', { handle: run.handle, materialDecision: decision })).handle)
         .toEqual(bound.handle)
       await expect(ipc.invokeWithProjectSession(session, 'generation:bind-material-decision', { handle: run.handle,
-        materialDecision: { ...decision, promptHash: textHash('被替换的提示词') } })).rejects.toThrow('GENERATION_MATERIAL_DECISION_CONFLICT')
+        materialDecision: { ...decision, promptHash: textHash('被替换的提示词') } })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_MATERIAL_DECISION_CONFLICT')
       const result = await ipc.invokeWithProjectSession(session, 'generation:execute', { handle: run.handle, invocationNonce: `实际请求:${op}`, task: {
         purpose: op, output: op === 'review-chapter' ? 'structured-data' : 'visible-text', messages: [{ role: 'user', content: prompt }],
       } })
@@ -211,7 +213,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
   }
   it('commits finalized character state through the registered context, generation and effect IPC', async () => {
     const f = await finalizedCharacterFixture()
-    await expect(invoke('generation:begin', { ...f.selection, finalizedCharacterContextId: 'forged' })).rejects.toThrow('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
+    await expect(invoke('generation:begin', { ...f.selection, finalizedCharacterContextId: 'forged' })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
     expect(f.fetch).not.toHaveBeenCalled()
     const { view: run } = await invoke('finalization-generation:begin', { slot: f.slot, modelId: model.id })
     const receipt = await invoke('finalization-generation:execute', { handle: run.handle })
@@ -460,9 +462,9 @@ describe('generation public IPC with actual project authority and SQLite', () =>
   })
   it('requires an issued preparation and rejects source changes before opening a drafting root', async () => {
     const fetch = stream()
-    await expect(invoke('generation:begin', { ...request, operation: 'chapter-draft', chapterNumber: 1 })).rejects.toThrow('GENERATION_DRAFT_PREPARATION_REQUIRED')
+    await expect(invoke('generation:begin', { ...request, operation: 'chapter-draft', chapterNumber: 1 })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_DRAFT_PREPARATION_REQUIRED')
     const { selection } = await prepareDraft()
-    await expect(invoke('generation:begin', { ...selection, preparationId: '伪造凭据' })).rejects.toThrow('GENERATION_DRAFT_PREPARATION_REQUIRED')
+    await expect(invoke('generation:begin', { ...selection, preparationId: '伪造凭据' })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_DRAFT_PREPARATION_REQUIRED')
     getProjectDb()!.exec("UPDATE project_core SET global_guidance='作者修改后的指导'")
     await expect(invoke('generation:begin', selection)).rejects.toThrow('GENERATION_DRAFT_PREPARATION_CHANGED')
     expect(fetch).not.toHaveBeenCalled()
@@ -500,7 +502,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     const prepared = await invoke('generation:prepare-draft-context', fixture.prepareRequest)
     const selection = fixture.selectionFor(prepared.preparationId)
     delete selection.materialDecision
-    await expect(invoke('generation:begin', selection)).rejects.toThrow('GENERATION_MATERIAL_DECISION_REQUIRED')
+    await expect(invoke('generation:begin', selection)).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_MATERIAL_DECISION_REQUIRED')
     expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM generation_roots').pluck().get()).toBe(0)
     expect(fetch).not.toHaveBeenCalled()
   })
@@ -548,8 +550,8 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     const { selection } = await prepareDraft()
     const beforeRoots = getProjectDb()!.prepare('SELECT * FROM generation_roots').all()
     if (old) {
-      await expect(invoke('generation:restart', old.handle, { ...selection, uiActionNonce: '重新开始', preparationId: undefined })).rejects.toThrow('GENERATION_DRAFT_PREPARATION_REQUIRED')
-      await expect(invoke('generation:restart', old.handle, { ...selection, uiActionNonce: '重新开始', preparationId: '伪造凭据' })).rejects.toThrow('GENERATION_DRAFT_PREPARATION_REQUIRED')
+      await expect(invoke('generation:restart', old.handle, { ...selection, uiActionNonce: '重新开始', preparationId: undefined })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_DRAFT_PREPARATION_REQUIRED')
+      await expect(invoke('generation:restart', old.handle, { ...selection, uiActionNonce: '重新开始', preparationId: '伪造凭据' })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_DRAFT_PREPARATION_REQUIRED')
     }
     const lance = await import('@lancedb/lancedb')
     const connection = await lance.connect(path.join(getProjectDataRoot(session.projectPath), 'lancedb'))
@@ -602,11 +604,11 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     db.prepare('UPDATE contents SET body=? WHERE id=(SELECT content_id FROM drafts WHERE id=?)').run('作者修改后的当前正文。', saved.id)
     const attempts = db.prepare('SELECT * FROM generation_attempts').all()
     expect((await invoke('generation:read-context', { handle: run.handle })).draftSave).toEqual({ kind: 'changed' })
-    await expect(invoke('generation:execute', { ...execution, invocationNonce: '不得重发' })).rejects.toThrow('GENERATION_DRAFT_RECEIPT_INVALID')
+    await expect(invoke('generation:execute', { ...execution, invocationNonce: '不得重发' })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_DRAFT_RECEIPT_INVALID')
     await expect(invoke('generation:retry-draft-short-outline', { handle: run.handle, failedAttemptId: result.run.artifacts[0].attemptId }))
-      .rejects.toThrow('GENERATION_DRAFT_RECEIPT_INVALID')
-    await expect(invoke('generation:commit-draft', commit)).rejects.toThrow('GENERATION_DRAFT_RECEIPT_INVALID')
-    await expect(invoke('generation:resume', run.handle)).rejects.toThrow('GENERATION_DRAFT_RECEIPT_INVALID')
+      .rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_DRAFT_RECEIPT_INVALID')
+    await expect(invoke('generation:commit-draft', commit)).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_DRAFT_RECEIPT_INVALID')
+    await expect(invoke('generation:resume', run.handle)).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_DRAFT_RECEIPT_INVALID')
     expect(db.prepare('SELECT * FROM generation_attempts').all()).toEqual(attempts)
     expect(db.prepare('SELECT body FROM contents JOIN drafts ON drafts.content_id=contents.id WHERE drafts.id=?').pluck().get(saved.id))
       .toBe('作者修改后的当前正文。')
@@ -730,7 +732,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     }
     expect(warn).toHaveBeenCalledWith('[generation] stale project session rejected', { channel: 'generation:begin' })
     const run = await invoke('generation:begin', request)
-    await expect(invoke('generation:read', { ...run.handle, rootActionId: 'foreign' })).rejects.toThrow('GENERATION_RUN_IDENTITY_MISMATCH')
+    await expect(invoke('generation:read', { ...run.handle, rootActionId: 'foreign' })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_RUN_IDENTITY_MISMATCH')
     expect(fetch).not.toHaveBeenCalled()
   })
   it('requires source revalidation for public resume and leaves stale candidates readable', async () => {

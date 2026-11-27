@@ -23,6 +23,7 @@ import { ModelExecutionLeaseRegistry } from '../../services/model-execution-leas
 import { projectAccess } from '../../services/project-access'
 import { createProjectDatabase, initProjectDatabase, closeProjectDatabase, getProjectDb } from '../../database'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
+import { expectLoggedCode } from './logged-ipc-code'
 
 const base = path.join(os.tmpdir(), 'an-agent-ipc-')
 const model: ModelProfile = { id: 'synthetic-ipc', name: 'Synthetic IPC', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1',
@@ -73,6 +74,7 @@ beforeAll(() => {
   registerDatabaseController()
 })
 beforeEach(() => {
+  vi.spyOn(console, 'error')
   root = fs.mkdtempSync(base)
   mocks.globalRoot = path.join(root, 'global'); fs.mkdirSync(mocks.globalRoot)
   const project = projectAccess.createProject(root, '合成')
@@ -227,8 +229,8 @@ describe('Agent registered IPC, actual SQLite and intercepted provider boundary'
     const f = await workflow()
     const registrations = await Promise.all([invoke('agent-generation:register-workflow', { ref: f.ref }), invoke('agent-generation:register-workflow', { ref: f.ref })])
     expect(registrations).toEqual([f.registration, f.registration])
-    await expect(invoke('generation:begin', { ...f.selection, parentRootActionId: 'forged' })).rejects.toThrow('GENERATION_AGENT_CHILD_NOT_AUTHORIZED')
-    await expect(invoke('generation:begin', { ...f.selection, authorInputs: [] })).rejects.toThrow('GENERATION_AGENT_CHILD_NOT_AUTHORIZED')
+    await expect(invoke('generation:begin', { ...f.selection, parentRootActionId: 'forged' })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_AGENT_CHILD_NOT_AUTHORIZED')
+    await expect(invoke('generation:begin', { ...f.selection, authorInputs: [] })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_AGENT_CHILD_NOT_AUTHORIZED')
     const [left, right] = await Promise.all([invoke('generation:begin', f.selection), invoke('generation:begin', { ...f.selection, uiActionNonce: 'second-launch' })])
     expect(left.handle).toEqual(right.handle)
     const result = await invoke('generation:execute', { handle: left.handle, invocationNonce: 'child-request', task: { purpose: 'generate-core-seed', output: 'visible-text', messages: [{ role: 'user', content: 'Synthetic child' }] } })

@@ -19,6 +19,11 @@ const model = { id: 'synthetic-owner', name: '合成模型', provider: 'openai',
 async function invoke(page, channel, ...args) {
   return page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
 }
+// 作者端只收到通用码，原码要从主进程日志核对。
+async function rejectsWithMainCode(session, promise, code) {
+  await assert.rejects(promise, /IPC_HANDLER_FAILED/)
+  assert.equal(await session.app.evaluate(() => globalThis.__ipcLoggedCodes.at(-1)), code)
+}
 async function launch() {
   const env = { ...process.env, AI_NOVEL_APP_DATA_HOME: roots.canonical, AI_NOVEL_LEGACY_SOURCE_HOME: roots.legacy, AI_NOVEL_VELA_HOME: roots.legacy,
     HOME: roots.home, USERPROFILE: roots.home, APPDATA: roots.appData, LOCALAPPDATA: roots.localAppData }
@@ -27,6 +32,9 @@ async function launch() {
   try {
     await app.evaluate(async (_, fixture) => {
       globalThis.__ownerAcceptance = { dispatches: 0, requests: [] }
+      const logError = console.error
+      globalThis.__ipcLoggedCodes = []
+      console.error = (...args) => { if (String(args[0]).includes('抛出未登记的错误') && args[1] instanceof Error) globalThis.__ipcLoggedCodes.push(args[1].message); logError(...args) }
       globalThis.fetch = async (url, options) => {
         if (String(url) !== 'https://api.openai.com/v1/chat/completions'
           || new Headers(options?.headers).get('Authorization') !== `Bearer ${fixture.syntheticKey}`) throw new Error('SYNTHETIC_FETCH_ONLY')
@@ -94,7 +102,7 @@ if (process.argv.includes('--help')) {
       assert.equal(opened.success, true, opened.error)
       const context = { projectId, projectPath, leaseId: opened.project.sessionLease }
       assert.equal((await invoke(session.page, 'llm:save-model', model)).success, true)
-      await assert.rejects(invoke(session.page, 'generation:begin', { ...selection, promptKeys: [] }, context), /GENERATION_BEGIN_INVALID/)
+      await rejectsWithMainCode(session, invoke(session.page, 'generation:begin', { ...selection, promptKeys: [] }, context), 'GENERATION_BEGIN_INVALID')
       const run = await invoke(session.page, 'generation:begin', selection, context)
       oldHandle = run.handle
       const request = { handle: oldHandle, invocationNonce: 'synthetic-one', task }

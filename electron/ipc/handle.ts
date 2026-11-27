@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMain, type IpcMainInvokeEvent } from 'electron'
-import { IPC_HANDLER_FAILED, publicWireFailure, registeredErrorCode } from '../../src/i18n/app-errors'
+import { IPC_HANDLER_FAILED, publicWireFailure, registeredErrorCode, registeredErrorMessage } from '../../src/i18n/app-errors'
 import DIRECT_CHANNELS from './direct-channels.json'
 
 export type IpcHandler<Args extends unknown[] = unknown[]> = (event: IpcMainInvokeEvent, ...args: Args) => unknown
@@ -9,9 +9,9 @@ export type IpcHandler<Args extends unknown[] = unknown[]> = (event: IpcMainInvo
  * Electron 只把 message 带过 IPC，所以 code 属性上的码要放进 message。
  */
 export function publicIpcError(error: unknown): Error {
-  const code = registeredErrorCode(error)
-  if (!code) return new Error(IPC_HANDLER_FAILED)
-  return error instanceof Error && error.message === code ? error : new Error(code)
+  const message = registeredErrorMessage(error)
+  if (!message) return new Error(IPC_HANDLER_FAILED)
+  return error instanceof Error && error.message === message ? error : new Error(message)
 }
 
 type FailureFields = { error?: unknown; errorCode?: unknown; failure?: unknown }
