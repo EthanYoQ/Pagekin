@@ -95,7 +95,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const resumableRun = resumableRuns.find(run => run.id === selectedResumableRunId)
     ?? resumableRuns[0]
     ?? null
-  // last_error 可能是报错原文，不显示内容。取消的运行也可能留着取消前的原因，所以只看状态。
+  // last_error 不可信（可能是报错原文，取消的运行也会残留旧原因），只按状态显示通用说明。
   const resumableFailure = resumableRun?.status === 'failed' ? failureText(currentInterfaceLocale(), undefined) : ''
   const resumableRunIsActive = resumableRun
     ? activeWorkflows.some(workflow => workflow.id === resumableRun.id)

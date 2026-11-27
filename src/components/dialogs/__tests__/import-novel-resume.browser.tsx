@@ -328,7 +328,7 @@ describe('current-project reference import', () => {
     await act(async () => useProjectStore.setState({ currentProject: { ...project } as never }))
     await act(async () => page.getByTestId('import-target-current').click())
 
-    // #845 PR-H2：last_error 里分不清主进程写好的说明和原文，一律显示通用说明；要重新选的文件仍列出。
+    // #845：不读 last_error 的内容，只显示通用说明；要重新选的文件仍列出。
     await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('出了意外问题，暂时说不清原因。请再试一次。')
     await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('secret-novel.txt')
     expect(container.textContent).not.toContain(safeFailure)
@@ -336,7 +336,7 @@ describe('current-project reference import', () => {
     expect(container.textContent).not.toContain('C:\\Users\\Private')
   })
 
-  // #845 PR-H2：对话框不读 last_error 的内容。旧版本存的是报错原文，上一轮的写入带过 author-safe 标记，都只显示通用说明。
+  // #845：不读 last_error 的内容。旧记录是报错原文，新记录带 author-safe 标记，两种都只显示通用说明。
   describe('续导入面板里的上次失败', () => {
     const OLD_RECORD = "ENOENT: open 'C:\\Users\\Private\\secret-novel.txt' PRIVATE_DIAGNOSTIC_123"
     const NEW_RECORD = 'author-safe:v1:zh-CN:PRIVATE_DIAGNOSTIC_123'
@@ -388,7 +388,7 @@ describe('current-project reference import', () => {
   it.each([
     ['zh-CN', 'IMPORT_RUN_EXECUTION_STALE', '上次失败：出了意外问题，暂时说不清原因。请再试一次。'],
     ['en-US', '导入已取消，停在了已保存的进度处。', 'Stage: global; progress: 0/1'],
-  ] as const)('shows the resumable run failure in the %s UI language (#484)', async (locale, lastError, expected) => {
+  ] as const)('shows the generic failure of a resumable run in the %s UI language, never its stored reason (#484)', async (locale, lastError, expected) => {
     const failed = importRun({ id: 'failed-run', stage: 'global', status: 'failed', lastError })
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'db:import-run-list-resumable') return [failed]
