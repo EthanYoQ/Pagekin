@@ -289,6 +289,8 @@ export const enUS = {
   'error.postProcessWriteFailed': 'The finalized chapter text is saved. Post-processing progress could not be saved to the project. Try again.',
   'error.reviewWriteFailed': 'The draft text was not changed. This review or annotation could not be saved to the project. Try again.',
   'error.revisionWriteFailed': 'The draft text was not changed. This revision could not be saved to the project. Try again.',
+  'error.consistencyExemptionWriteFailed': 'The consistency arrangement was not changed. This change could not be saved to the project. Try again.',
+  'error.characterRosterWriteFailed': 'The character cards were not changed. This change could not be saved to the project. Try again.',
   'error.connectionTestTimeout': 'The connection test did not finish within {seconds} seconds and was stopped. Check your network or proxy settings, then try again.',
   'error.proxyUnreachable': 'Could not reach the proxy set in Network proxy. Check the Host and Port, start your proxy app, or turn off Use a proxy.',
   'error.networkProxyInvalid': 'The host is not valid. Enter only an IP address or domain name, such as 127.0.0.1.',

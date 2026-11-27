@@ -756,7 +756,7 @@ describe('database controller project context guard', () => {
 
     expect(result).toMatchObject({
       success: false,
-      error: 'Error: PROJECT_SESSION_REQUIRED',
+      failure: { code: 'PROJECT_SESSION_REQUIRED' },
     })
     expect(mocks.authorRosterCommit).not.toHaveBeenCalled()
   })

@@ -16,7 +16,8 @@ import { routeStageModel } from '../../../shared/model-stage-routing'
 import type { ChapterWritePrefill } from '../../../stores/layout-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { displayedErrorMessage, failureText, resultFailure } from '../../../i18n/app-errors'
+import { note, type AuthorNote, type Failure } from '../../../shared/failure'
 import { pluralEn } from '../../../shared/plural-en'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
@@ -136,15 +137,16 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
   }
 
   /** 保存或撤销一致性安排：进行中按钮不可再点，失败时在弹层里写明原因。成功时返回发起时的会话。 */
-  const changeArrangement = async (failure: string, call: (session: ProjectSessionContext) => Promise<{ success: boolean; error?: string }>) => {
+  const changeArrangement = async (fallback: AuthorNote, call: (session: ProjectSessionContext) => Promise<{ success: boolean; failure?: Failure }>) => {
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session || busy) return null
     setBusy(true)
     setMessage(null)
     try {
       const result = await call(session)
-      if (!result.success) throw new Error(result.error || failure)
-      return session
+      if (result.success) return session
+      if (isProjectSessionCurrent(session)) setMessage({ text: failureText(currentInterfaceLocale(), resultFailure(result), { fallback }) })
+      return null
     } catch (error) {
       if (isProjectSessionCurrent(session)) setMessage({ text: displayedErrorMessage(currentInterfaceLocale(), error) })
       return null
@@ -154,13 +156,13 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
   }
 
   const saveArrangement = async (finding: PreflightFinding, scope: ExemptionScope) => {
-    const saved = await changeArrangement(text('保存一致性安排失败', 'Could not save the consistency arrangement.'),
+    const saved = await changeArrangement(note('保存一致性安排失败', 'Could not save the consistency arrangement.'),
       session => saveFindingExemption(session, finding, scope, text))
     if (saved) await start(false, saved)
   }
 
   const revokeArrangement = async (exemption: ConsistencyExemption) => {
-    const revoked = await changeArrangement(text('撤销一致性安排失败', 'Could not revoke the consistency arrangement.'),
+    const revoked = await changeArrangement(note('撤销一致性安排失败', 'Could not revoke the consistency arrangement.'),
       session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', exemption.stableFactKey, exemption.chapterNumber, session.projectPath))
     if (!revoked) return
     setPreflight(current => current ? {
