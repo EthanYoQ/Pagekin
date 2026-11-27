@@ -167,14 +167,14 @@ function stopIfCancelled(context: ImportRunExecutionContext, locale: ImportRunLo
 const RECORD_NEXT_ZH = '请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。'
 const RECORD_NEXT_EN = ' Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'
 
-/** 收据或检查点与持久化记录对不上：作者无法自行修复，说明写明是哪一项，统一接上继续或重新导入的办法。 */
+/** 收据或检查点与持久化记录对不上：作者无法自行修复，只能继续或重新导入。 */
 export function importRecordError<const Z extends string, const E extends string>(
   locale: ErrorDisplayLocale,
   zh: Literal<Z>,
   en: Literal<E>,
   params?: NoteParams,
 ): AuthorError {
-  // 两段都是字面量，拼上常量仍是字面量；Literal 的检查到泛型这里推不下去，只在这一处断言。
+  // 字面量拼接常量仍是字面量，但 Literal 对泛型模板类型推不出来，这里只能断言。
   const full = note(`${zh}${RECORD_NEXT_ZH}` as Literal<`${Z}${typeof RECORD_NEXT_ZH}`>, `${en}${RECORD_NEXT_EN}` as Literal<`${E}${typeof RECORD_NEXT_EN}`>, params)
   return authorError(locale, { note: full })
 }
