@@ -21,6 +21,7 @@ import {
   type ImportRunOrchestratorDependencies,
 } from '../../../src/services/workflows/import-run-orchestrator'
 import type { ImportRunChapterSnapshot } from '../../../src/shared/import-run'
+import { storedImportFailure } from '../../../src/shared/import-run'
 import type { CharacterRosterEntry } from '../../../src/shared/character-roster'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
 import { failureText } from '../../../src/i18n/app-errors'
@@ -355,7 +356,7 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     expect(failedRun).toMatchObject({
       stage: 'blueprints',
       status: 'failed',
-      lastError: failureText(shown('zh-CN'), undefined),
+      lastError: storedImportFailure(failureText(shown('zh-CN'), undefined), 'zh-CN'),
       completedBatches: { blueprints: [expect.stringMatching(/^1-2-[a-f0-9]{8}\.[a-f0-9]{8}$/u)] },
     })
     const checkpoint = failedRun.completedBatches.blueprints![0]!
@@ -455,7 +456,7 @@ describe('ImportRunOrchestrator with the real import repository', () => {
       id: runId,
       stage: 'blueprints',
       status: 'failed',
-      lastError: failureText(shown('zh-CN'), undefined),
+      lastError: storedImportFailure(failureText(shown('zh-CN'), undefined), 'zh-CN'),
       completedBatches: {
         knowledge: [expect.any(String)],
         global: ['done'],

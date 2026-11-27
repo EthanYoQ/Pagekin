@@ -96,9 +96,9 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const resumableRun = resumableRuns.find(run => run.id === selectedResumableRunId)
     ?? resumableRuns[0]
     ?? null
-  // 取消的运行也可能留着取消前的失败原因，不写「上次失败」。旧版本存的可能是报错原文，没有标记就只给通用说明。
+  // 取消的运行也可能留着取消前的失败原因，不写「上次失败」。旧版本存的可能是报错原文，别的语言写的说明也看不懂，都只给通用说明。
   const resumableFailure = resumableRun?.status === 'failed' && resumableRun.lastError
-    ? writtenImportFailure(resumableRun.lastError) ?? failureText(currentInterfaceLocale(), undefined)
+    ? writtenImportFailure(resumableRun.lastError, currentInterfaceLocale()) ?? failureText(currentInterfaceLocale(), undefined)
     : ''
   const resumableRunIsActive = resumableRun
     ? activeWorkflows.some(workflow => workflow.id === resumableRun.id)

@@ -45,10 +45,12 @@ export function explainImportRunFailure(error: unknown, locale: Locale | (() => 
 
 /** 主进程捕获的失败存进 last_error：认得出的码换成说明，其余存通用说明，原文只进日志。 */
 export function persistedImportRunFailure(error: unknown, locale: Locale | (() => Locale)): string {
-  const explained = explainImportRunFailure(error, locale)?.error
-  if (explained) return storedImportFailure(explained)
+  const runLocale = typeof locale === 'function' ? locale() : locale
+  const resolved = importErrorLocale(runLocale)
+  const explained = explainImportRunFailure(error, runLocale)?.error
+  if (explained) return storedImportFailure(explained, resolved)
   console.error('[AI Novel] 导入运行失败，原文不存进记录：', error)
-  return storedImportFailure(translate(importErrorLocale(typeof locale === 'function' ? locale() : locale), 'error.unregisteredCode'))
+  return storedImportFailure(translate(resolved, 'error.unregisteredCode'), resolved)
 }
 
 /** 导入的运行语言来自请求或运行记录，界面语言取主进程配置。 */

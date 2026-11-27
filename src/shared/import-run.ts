@@ -325,17 +325,26 @@ export interface ImportRunSnapshot {
 }
 
 // 旧版本存进 last_error 的可能是报错原文，看不出来；所以新写入的说明都带这个标记，没有标记的一律不显示原文。
+// 标记里记着说明的语言：作者换了界面语言后，别的语言写的说明不显示。
 const WRITTEN_FAILURE_MARK = 'author-safe:v1:'
 const STORED_FAILURE_LIMIT = 2_000
 
-/** 把可以给作者看的说明存进导入运行的 last_error。 */
-export function storedImportFailure(sentence: string): string {
-  return WRITTEN_FAILURE_MARK + sentence.slice(0, STORED_FAILURE_LIMIT - WRITTEN_FAILURE_MARK.length)
+const markFor = (locale: string) => `${WRITTEN_FAILURE_MARK}${locale}:`
+
+/** 把按 locale 写好、可以给作者看的说明存进导入运行的 last_error。 */
+export function storedImportFailure(sentence: string, locale: string): string {
+  const mark = markFor(locale)
+  return mark + sentence.slice(0, STORED_FAILURE_LIMIT - mark.length)
 }
 
-/** 存下的说明；旧记录没有标记时返回 undefined。 */
-export function writtenImportFailure(stored: string): string | undefined {
-  return stored.startsWith(WRITTEN_FAILURE_MARK) ? stored.slice(WRITTEN_FAILURE_MARK.length) : undefined
+export function isStoredImportFailure(stored: string): boolean {
+  return stored.startsWith(WRITTEN_FAILURE_MARK)
+}
+
+/** 按 locale 写的存下的说明；旧记录或别的语言写的返回 undefined。 */
+export function writtenImportFailure(stored: string, locale: string): string | undefined {
+  const mark = markFor(locale)
+  return stored.startsWith(mark) ? stored.slice(mark.length) : undefined
 }
 
 export type ImportRunClassification = 'exact-duplicate' | 'new' | 'conflict' | 'resumable'

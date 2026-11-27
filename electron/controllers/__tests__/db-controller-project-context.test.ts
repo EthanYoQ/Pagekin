@@ -228,7 +228,7 @@ vi.mock('../../services/import-source-identity-secret', () => ({
 }))
 
 import { registerDatabaseController } from '../db-controller'
-import { storedImportFailure } from '../../../src/shared/import-run'
+import { storedImportFailure, writtenImportFailure } from '../../../src/shared/import-run'
 
 function currentSession() {
   return {
@@ -597,10 +597,20 @@ describe('database controller project context guard', () => {
   })
 
   describe('import run failures shown in the import dialog and run card (#474)', () => {
-    it('stores the written sentence from the renderer with the author-safe mark', async () => {
+    it('stores the marked sentence from the renderer as it is', async () => {
       const execution = { owner: 'renderer', epoch: 1, expiresAt: 1 }
-      await handler('db:import-run-fail')({}, 'run', 'knowledge', 'Chapter 3 could not be written.', execution, 'C:/projects/A')
-      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', storedImportFailure('Chapter 3 could not be written.'), execution)
+      const written = storedImportFailure('Chapter 3 could not be written.', 'en-US')
+      await handler('db:import-run-fail')({}, 'run', 'knowledge', written, execution, 'C:/projects/A')
+      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', written, execution)
+    })
+
+    it('stores the generic explanation for an unmarked reason instead of its raw text', async () => {
+      mocks.importRunGet.mockReturnValue({ locale: 'en-US' })
+      const execution = { owner: 'renderer', epoch: 1, expiresAt: 1 }
+      await handler('db:import-run-fail')({}, 'run', 'knowledge', "ENOENT: open 'C:/Users/Private/secret.txt'", execution, 'C:/projects/A')
+      const stored = mocks.importRunFail.mock.lastCall?.[2] as string
+      expect(stored).not.toContain('Private')
+      expect(writtenImportFailure(stored, 'en-US')).toBe('Something unexpected went wrong. Try again.')
     })
   })
 

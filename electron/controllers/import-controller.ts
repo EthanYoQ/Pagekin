@@ -95,6 +95,11 @@ function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
 }
 
+/** 存进导入运行的说明按哪种语言写。 */
+function failureLocale(locale: ImportRunLocale | undefined) {
+  return importErrorLocale(importRunLocale(undefined, locale))
+}
+
 function importText(locale: ImportRunLocale | undefined, zhCNText: string, enUSText: string): string {
   return locale === 'en-US' ? enUSText : locale === 'zh-CN' ? zhCNText : text(zhCNText, enUSText)
 }
@@ -535,7 +540,7 @@ export function registerImportController(
                 ImportRunRepository.failParsedSource(
                   parsingRun.id,
                   opaqueSourceId,
-                  storedImportFailure(importText(responseLocale, '所选来源文件为空', 'Selected source file is empty')),
+                  storedImportFailure(importText(responseLocale, '所选来源文件为空', 'Selected source file is empty'), failureLocale(responseLocale)),
                 )
               }
               continue
@@ -566,7 +571,7 @@ export function registerImportController(
                   responseLocale,
                   '所选来源文件只有章节标题，没有可导入的正文',
                   'The selected source file contains chapter headings but no body text',
-                )),
+                ), failureLocale(responseLocale)),
               )
             }
             continue
@@ -617,7 +622,7 @@ export function registerImportController(
             ImportRunRepository.failParsedSource(
               parsingRun.id,
               opaqueSourceId,
-              storedImportFailure(importSelectionErrorMessage(error, responseLocale, limits)),
+              storedImportFailure(importSelectionErrorMessage(error, responseLocale, limits), failureLocale(responseLocale)),
             )
           }
           throw error

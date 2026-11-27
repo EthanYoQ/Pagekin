@@ -6,7 +6,7 @@ import type {
   ImportRunSnapshot,
   ImportRunStage,
 } from '../../../shared/import-run'
-import { createImportRunChapterBatchCheckpointId } from '../../../shared/import-run'
+import { createImportRunChapterBatchCheckpointId, storedImportFailure, writtenImportFailure } from '../../../shared/import-run'
 import type { FinalizedDraftImportReceipt } from '../../../shared/finalized-draft-import'
 import { failureText, importStopFailure } from '../../../i18n/app-errors'
 import { useProjectStore } from '../../../stores/project-store'
@@ -103,8 +103,9 @@ function harness(total = 25, overrides: Partial<ImportRunSnapshot> = {}, interfa
       run = { ...run, stage: nextStage }
       return run
     }),
+    // 存下的原因按对话框显示的样子记：去掉标记；标记里的语言不是界面语言时保留原样，断言会失败。
     fail: vi.fn(async (_runId, stage, error) => {
-      run = { ...run, stage, status: 'failed', lastError: error }
+      run = { ...run, stage, status: 'failed', lastError: writtenImportFailure(error, interfaceLocale) ?? error }
       return run
     }),
     cancelAtBoundary: vi.fn(async () => {
@@ -473,7 +474,7 @@ describe('ImportRunOrchestrator', () => {
 
     await expect(running).rejects.toThrow('provider unavailable')
     expect(deps.fail).toHaveBeenCalledWith(
-      'run-1', 'global', failureText(shown('en-US'), undefined), authoritativeExecution,
+      'run-1', 'global', storedImportFailure(failureText(shown('en-US'), undefined), 'en-US'), authoritativeExecution,
     )
   })
 

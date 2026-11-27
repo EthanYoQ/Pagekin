@@ -42,7 +42,7 @@ import type { FinalizedDraftImportRequest } from '../../src/shared/finalized-dra
 import { ImportGlobalFactsRepository } from '../repositories/import-global-facts-repository'
 import type { ImportGlobalFactsRequest } from '../../src/shared/import-global-facts'
 import { ImportRunRepository } from '../repositories/import-run-repository'
-import { persistedImportRunFailure } from './import-run-failure'
+import { importRunLocale, persistedImportRunFailure } from './import-run-failure'
 import type {
   ImportRunExecutionLease,
   ImportRunPrepareEffectReceiptRequest,
@@ -52,7 +52,7 @@ import type {
 import {
   AUTHOR_IMPORT_PREVIEW_STALE,
   isImportRunDirectCheckpointStage,
-  storedImportFailure,
+  isStoredImportFailure,
 } from '../../src/shared/import-run'
 import { ImportSourceIdentityRepository } from '../repositories/import-source-identity-repository'
 import { importInspectionStore } from '../services/import-inspection-store'
@@ -525,8 +525,10 @@ export function registerDatabaseController() {
     expectedProjectPath: string,
   ) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    // 渲染端交来的是已经写好、可以给作者看的说明。
-    const reason = typeof errorMessage === 'string' ? storedImportFailure(errorMessage) : errorMessage
+    // 渲染端交来的是已经加上标记的说明；没有标记的按认不出的失败存通用说明。
+    const reason = typeof errorMessage === 'string' && !isStoredImportFailure(errorMessage)
+      ? persistedImportRunFailure(errorMessage, () => importRunLocale(runId))
+      : errorMessage
     return { success: true, run: ImportRunRepository.fail(runId, stage, reason, execution) }
   })
 

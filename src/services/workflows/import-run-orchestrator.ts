@@ -17,6 +17,7 @@ import {
   IMPORT_RUN_BLUEPRINT_BATCH_SIZE,
   IMPORT_RUN_KNOWLEDGE_BATCH_SIZE,
   parseImportRunChapterBatchCheckpointId,
+  storedImportFailure,
 } from '../../shared/import-run'
 import type { StepCallbacks } from '../../stores/workflow-store'
 import type { FinalizedDraftImportDraftReceipt, FinalizedDraftImportReceipt } from '../../shared/finalized-draft-import'
@@ -355,7 +356,7 @@ export class ImportRunOrchestrator {
             runId,
             requestedStage,
             // 存进运行的只有可以给作者看的说明；认不出的报错存通用说明，原文不进记录。
-            failureText(this.dependencies.interfaceLocale, reasonOf(failure)),
+            storedImportFailure(failureText(this.dependencies.interfaceLocale, reasonOf(failure)), this.dependencies.interfaceLocale),
             execution.current,
           )
         } catch (leaseError) {

@@ -306,6 +306,7 @@ describe('current-project reference import', () => {
   })
 
   it('shows the stored parsing explanation and the files to choose again after reopen, never a private diagnostic', async () => {
+    await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
     const privateDiagnostic = "ENOENT: open 'C:\\Users\\Private\\secret-novel.txt'"
     const safeFailure = 'Could not read the selected files. Please choose them again.'
     const parsing = importRun({
@@ -313,7 +314,7 @@ describe('current-project reference import', () => {
       locale: 'en-US',
       stage: 'parsing',
       status: 'failed',
-      lastError: storedImportFailure(safeFailure),
+      lastError: storedImportFailure(safeFailure, 'en-US'),
       unfinishedSourceDisplay: [{ displayName: 'secret-novel.txt', mediaType: 'text/plain', size: 20 }],
       completedSources: 0,
       totalSources: 1,
@@ -356,13 +357,27 @@ describe('current-project reference import', () => {
     })
 
     it('取消的新记录不写上次失败', async () => {
-      const shown = await openWith(importRun({ stage: 'global', status: 'cancelled', lastError: 'author-safe:v1:模型服务暂时不可用，导入停在了已保存的进度处。' }))
+      const shown = await openWith(importRun({ stage: 'global', status: 'cancelled', lastError: 'author-safe:v1:zh-CN:模型服务暂时不可用，导入停在了已保存的进度处。' }))
       expect(shown).not.toContain('上次失败')
     })
 
     it('真实失败的新记录照原句显示', async () => {
-      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastError: 'author-safe:v1:模型服务暂时不可用，导入停在了已保存的进度处。' }))
+      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastError: 'author-safe:v1:zh-CN:模型服务暂时不可用，导入停在了已保存的进度处。' }))
       expect(shown).toContain('上次失败：模型服务暂时不可用，导入停在了已保存的进度处。')
+    })
+
+    it('切到英文界面后不显示中文写的说明，只给英文通用说明', async () => {
+      await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'db:import-run-list-resumable') return [importRun({ stage: 'global', status: 'failed', lastError: storedImportFailure('模型服务暂时不可用，导入停在了已保存的进度处。', 'zh-CN') })]
+        if (channel === 'db:project-core-get') return null
+        if (channel === 'db:blueprint-get-all') return []
+        return { success: true }
+      })
+      await act(async () => useProjectStore.setState({ currentProject: { ...project } as never }))
+      await act(async () => page.getByTestId('import-target-current').click())
+      await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('Something unexpected went wrong. Try again.')
+      expect(page.getByTestId('import-resumable-run').element().textContent).not.toMatch(/\p{Script=Han}/u)
     })
 
     it('带原文的旧记录只显示通用说明', async () => {
@@ -391,7 +406,7 @@ describe('current-project reference import', () => {
   })
 
   it.each([
-    ['zh-CN', storedImportFailure('这次导入已由别的窗口接手。请在那个窗口里继续。'), '上次失败：这次导入已由别的窗口接手'],
+    ['zh-CN', storedImportFailure('这次导入已由别的窗口接手。请在那个窗口里继续。', 'zh-CN'), '上次失败：这次导入已由别的窗口接手'],
     ['en-US', '导入已取消，停在了已保存的进度处。', 'Stage: global; progress: 0/1'],
   ] as const)('shows the resumable run failure in the %s UI language (#484)', async (locale, lastError, expected) => {
     const failed = importRun({ id: 'failed-run', stage: 'global', status: 'failed', lastError })

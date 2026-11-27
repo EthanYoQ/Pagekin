@@ -198,11 +198,11 @@ describe('主进程存进导入运行的失败原因', () => {
   it('SQLite 原文换成通用说明', () => {
     const stored = persistedImportRunFailure(sqliteFailure(), 'en-US')
     expect(stored).not.toMatch(RAW)
-    expect(writtenImportFailure(stored)).toBe(failureText(shown('en-US'), undefined))
+    expect(writtenImportFailure(stored, 'en-US')).toBe(failureText(shown('en-US'), undefined))
   })
 
   it('认得出的码存登记的说明', () => {
     const stored = persistedImportRunFailure(new Error('IMPORT_RUN_EXECUTION_STALE'), 'zh-CN')
-    expect(writtenImportFailure(stored)).toBe(failureText(shown('zh-CN'), { code: 'IMPORT_RUN_EXECUTION_STALE' }))
+    expect(writtenImportFailure(stored, 'zh-CN')).toBe(failureText(shown('zh-CN'), { code: 'IMPORT_RUN_EXECUTION_STALE' }))
   })
 })
