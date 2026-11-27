@@ -164,7 +164,7 @@ function stopIfCancelled(context: ImportRunExecutionContext, locale: ImportRunLo
   }
 }
 
-/** 收据或检查点与持久化记录对不上：作者照做不了什么，只能从导入对话框继续或重新导入，说明里留下是哪一项、接着写处理办法。 */
+/** 收据或检查点与持久化记录对不上：作者照做不了什么，只能从导入对话框继续或重新导入，调用方的说明写明是哪一项和处理办法。 */
 export function importRecordError(locale: ErrorDisplayLocale, what: AuthorNote): AuthorError {
   return authorError(locale, { note: what })
 }
