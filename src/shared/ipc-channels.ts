@@ -689,31 +689,31 @@ export interface AppPromptLoadReceipt {
 
 export interface AppDataChannels {
   'prompt:load-global': { args: []; return: AppPromptLoadReceipt }
-  'prompt:save-global': { args: [template: AppPromptTemplate]; return: { success: boolean; error?: string } }
-  'prompt:delete-global': { args: [key: string, writingLanguage: WritingLanguage]; return: { success: boolean; error?: string } }
+  'prompt:save-global': { args: [template: AppPromptTemplate]; return: { success: boolean; failure?: Failure } }
+  'prompt:delete-global': { args: [key: string, writingLanguage: WritingLanguage]; return: { success: boolean; failure?: Failure } }
   'skills:list-user': {
     args: []
     return: Array<{ name: string; content: string; baseDir: string; filePath: string; bundle: import('./writing-skills').InstalledWritingSkillBundle }>
   }
   'skills:inspect-github': {
     args: [sourceUrl: string]
-    return: { success: boolean; inspection?: import('./writing-skills').RemoteWritingSkillInspection; error?: string }
+    return: { success: boolean; inspection?: import('./writing-skills').RemoteWritingSkillInspection; failure?: Failure }
   }
   'skills:install-github': {
     args: [sourceUrl: string]
-    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; error?: string }
+    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; failure?: Failure }
   }
   'skills:pick-local': {
     args: [kind: import('./writing-skills').LocalWritingSkillSourceKind]
-    return: { success: boolean; cancelled?: boolean; inspection?: import('./writing-skills').LocalWritingSkillInspection; error?: string }
+    return: { success: boolean; cancelled?: boolean; inspection?: import('./writing-skills').LocalWritingSkillInspection; failure?: Failure }
   }
   'skills:install-local': {
     args: [candidateId: string]
-    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; error?: string }
+    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; failure?: Failure }
   }
   'skills:uninstall-user': {
     args: [name: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 

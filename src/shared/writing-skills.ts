@@ -375,13 +375,10 @@ export function inspectInstalledWritingSkill(raw: string, bundle: InstalledWriti
     : inspection
 }
 
-type CopyText = (zhCNText: string, enUSText: string) => string
-type UrlPart = readonly [zhCN: string, enUS: string]
-
-const OWNER: UrlPart = ['用户名', 'owner']
-const REPOSITORY: UrlPart = ['仓库名', 'repository']
-const REF: UrlPart = ['分支', 'branch']
-const PATH: UrlPart = ['路径', 'path']
+/** 地址哪里不对；说明由调用方按界面语言写。 */
+export type GitHubSkillUrlProblem = 'paste-skill' | 'not-url' | 'https-only' | 'github-only' | 'not-skill-md' | UrlPart
+type UrlPart = 'owner' | 'repository' | 'branch' | 'path'
+type Reject = (problem: GitHubSkillUrlProblem) => Error
 
 function decodeUriPart(value: string): string | null {
   try {
@@ -391,58 +388,49 @@ function decodeUriPart(value: string): string | null {
   }
 }
 
-function safePart(value: string, [zhCN, enUS]: UrlPart, text: CopyText): string {
+function safePart(value: string, part: UrlPart, reject: Reject): string {
   const decoded = decodeUriPart(value)
-  if (decoded === null || !SAFE_SEGMENT.test(decoded) || decoded === '.' || decoded === '..') {
-    throw new Error(text(`GitHub 地址里的${zhCN}有不支持的字符，请检查地址。`, `The ${enUS} in this GitHub URL has unsupported characters. Check the URL.`))
-  }
+  if (decoded === null || !SAFE_SEGMENT.test(decoded) || decoded === '.' || decoded === '..') throw reject(part)
   return decoded
 }
 
-function safePath(parts: string[], text: CopyText): string {
-  const decoded = parts.map(part => safePart(part, PATH, text)).join('/')
-  if (!decoded || !decoded.toLowerCase().endsWith('skill.md')) {
-    throw new Error(text('地址要指向 SKILL.md 文件，或包含它的文件夹。', 'The URL must point to a SKILL.md file or a folder that contains one.'))
-  }
+function safePath(parts: string[], reject: Reject): string {
+  const decoded = parts.map(part => safePart(part, 'path', reject)).join('/')
+  if (!decoded || !decoded.toLowerCase().endsWith('skill.md')) throw reject('not-skill-md')
   return decoded
 }
 
-export function parseGitHubWritingSkillUrl(value: string, text: CopyText): GitHubWritingSkillLocation {
-  const pasteSkillUrl = () => new Error(text('请粘贴 GitHub 上 Skill 仓库、文件夹或 SKILL.md 文件的地址。', 'Paste the GitHub URL of a Skill repository, folder, or SKILL.md file.'))
+export function parseGitHubWritingSkillUrl(value: string, reject: Reject): GitHubWritingSkillLocation {
   let url: URL
   try {
     url = new URL(value)
   } catch {
-    throw new Error(text('这不是有效的网址。请粘贴 GitHub 上 Skill 的地址。', 'This is not a valid URL. Paste the GitHub URL of the Skill.'))
+    throw reject('not-url')
   }
-  if (url.protocol !== 'https:' || url.username || url.password || url.port) {
-    throw new Error(text('只支持 https:// 开头的公开 GitHub 地址。', 'Only public GitHub URLs that start with https:// are supported.'))
-  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) throw reject('https-only')
   const parts = url.pathname.split('/').filter(Boolean)
 
   if (url.hostname === 'raw.githubusercontent.com') {
-    if (parts.length < 4) throw pasteSkillUrl()
+    if (parts.length < 4) throw reject('paste-skill')
     return {
-      owner: safePart(parts[0], OWNER, text),
-      repo: safePart(parts[1].replace(/\.git$/i, ''), REPOSITORY, text),
-      ref: safePart(parts[2], REF, text),
-      path: safePath(parts.slice(3), text),
+      owner: safePart(parts[0], 'owner', reject),
+      repo: safePart(parts[1].replace(/\.git$/i, ''), 'repository', reject),
+      ref: safePart(parts[2], 'branch', reject),
+      path: safePath(parts.slice(3), reject),
       sourceUrl: url.toString(),
     }
   }
-  if (url.hostname !== 'github.com') {
-    throw new Error(text('只支持 github.com 和 raw.githubusercontent.com 的地址。', 'Only github.com and raw.githubusercontent.com URLs are supported.'))
-  }
-  if (parts.length < 2) throw pasteSkillUrl()
+  if (url.hostname !== 'github.com') throw reject('github-only')
+  if (parts.length < 2) throw reject('paste-skill')
 
-  const owner = safePart(parts[0], OWNER, text)
-  const repo = safePart(parts[1].replace(/\.git$/i, ''), REPOSITORY, text)
+  const owner = safePart(parts[0], 'owner', reject)
+  const repo = safePart(parts[1].replace(/\.git$/i, ''), 'repository', reject)
   if (parts.length === 2) return { owner, repo, path: 'SKILL.md', sourceUrl: url.toString() }
 
   const kind = parts[2]
-  if ((kind !== 'tree' && kind !== 'blob') || parts.length < 4) throw pasteSkillUrl()
-  const ref = safePart(parts[3], REF, text)
+  if ((kind !== 'tree' && kind !== 'blob') || parts.length < 4) throw reject('paste-skill')
+  const ref = safePart(parts[3], 'branch', reject)
   const targetParts = parts.slice(4)
   if (kind === 'tree') targetParts.push('SKILL.md')
-  return { owner, repo, ref, path: safePath(targetParts, text), sourceUrl: url.toString() }
+  return { owner, repo, ref, path: safePath(targetParts, reject), sourceUrl: url.toString() }
 }

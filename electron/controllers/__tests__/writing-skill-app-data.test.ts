@@ -8,6 +8,7 @@ import {
   masterVisibleFields,
   plantLegacyInstalledSkill,
 } from '../../../test/helpers/installed-writing-skill-fixture'
+import { rendered } from './rendered-failure'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
 
@@ -36,7 +37,7 @@ let velaHome: string
 function handler(channel: string): IpcHandler {
   const result = mocks.handlers.get(channel)
   if (!result) throw new Error(`Missing IPC handler: ${channel}`)
-  return result
+  return async (...args) => rendered(await result(...args), 'en-US')
 }
 
 function skillResponse(body = `---

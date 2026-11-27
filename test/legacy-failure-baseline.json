@@ -229,5 +229,8 @@
   },
   "electron/controllers/llm-controller.ts": {
     "authorOwned": 3
+  },
+  "electron/controllers/app-data-controller.ts": {
+    "authorOwned": 3
   }
 }

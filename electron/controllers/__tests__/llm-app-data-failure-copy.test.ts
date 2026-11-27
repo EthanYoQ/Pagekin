@@ -86,11 +86,14 @@ const locale = () => shown(mocks.locale as InterfaceLocale)
 
 type Received = { success: boolean; failure?: Failure; error?: string }
 
-/** 迁移后读 failure；master 上读 error。fallback 是调用点原有的兜底句。 */
+/** 迁移后读 failure，通用码让给调用点的兜底句（SkillSettings、llm-store 同此）；master 上读 error。 */
 async function reasonShown(raw: unknown, fallback: readonly [string, string]): Promise<string> {
   const result = receivedIpcResult(await raw) as Received
   expect(result.success).toBe(false)
-  if ('failure' in result) return failureText(locale(), resultFailure(result), { fallback: note(...fallback as [never, never]) })
+  if ('failure' in result) {
+    const failure = resultFailure(result)
+    return failureText(locale(), failure?.code === 'IPC_HANDLER_FAILED' ? undefined : failure, { fallback: note(...fallback as [never, never]) })
+  }
   return displayedErrorMessage(locale(), new Error(result.error || selectCopy(locale(), ...fallback)))
 }
 
