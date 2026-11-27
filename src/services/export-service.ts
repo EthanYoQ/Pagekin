@@ -2,7 +2,8 @@ import { ipc } from './ipc-client'
 import { requireIpcSuccess } from './ipc-result'
 import { useWorkflowStore } from '../stores/workflow-store'
 import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
-import { displayedErrorMessage } from '../i18n/app-errors'
+import { authorError, caughtFailure, failureText } from '../i18n/app-errors'
+import { AuthorError, note, type AuthorNote } from '../shared/failure'
 import { errorLocaleForRun } from '../i18n/core'
 import type { Locale } from '../i18n/types'
 import type { FileWriteCommitState, ProjectSessionContext } from '../shared/ipc-channels'
@@ -67,14 +68,13 @@ type ExportWriteFailureCommitState = Exclude<FileWriteCommitState, 'committed'>
 
 function requireExportWriteSuccess(
   result: { success: boolean; commitState?: FileWriteCommitState; error?: string },
-  action: string,
-  fallbackMessage: string,
+  fallback: AuthorNote,
 ): void {
   try {
-    requireIpcSuccess(result, action, fallbackMessage)
+    requireIpcSuccess(result, '写入导出文件')
   } catch (error) {
     throw Object.assign(
-      error instanceof Error ? error : new Error(String(error)),
+      error instanceof AuthorError ? error : authorError(currentInterfaceLocale(), { note: fallback }),
       {
         commitState: result.commitState === 'unknown'
           ? 'unknown'
@@ -157,12 +157,11 @@ function changedFinalizationResult(
 
 function requireFinalizedExportSnapshot(
   value: unknown,
-  text: (zhCNText: string, enUSText: string) => string,
 ): FinalizedDraftExportSnapshot[] {
-  if (!Array.isArray(value)) throw new Error(text('定稿导出快照无效', 'The finalized export snapshot is invalid.'))
+  if (!Array.isArray(value)) throw authorError(currentInterfaceLocale(), { note: note('定稿导出快照无效', 'The finalized export snapshot is invalid.') })
   const seenChapters = new Set<number>()
   const rows = value.map((candidate) => {
-    if (!candidate || typeof candidate !== 'object') throw new Error(text('定稿导出快照无效', 'The finalized export snapshot is invalid.'))
+    if (!candidate || typeof candidate !== 'object') throw authorError(currentInterfaceLocale(), { note: note('定稿导出快照无效', 'The finalized export snapshot is invalid.') })
     const row = candidate as Partial<FinalizedDraftExportSnapshot>
     const { draftId, chapterNumber, version, title, content, finalizationId, contentHash } = row
     if (
@@ -175,8 +174,8 @@ function requireFinalizedExportSnapshot(
       || !(finalizationId === null
         || (typeof finalizationId === 'string' && finalizationId.trim().length > 0))
       || typeof contentHash !== 'string' || !/^[a-f0-9]{64}$/u.test(contentHash)
-    ) throw new Error(text('定稿导出快照身份或正文无效', 'A chapter in the finalized export snapshot has an invalid identity or text.'))
-    if (seenChapters.has(chapterNumber)) throw new Error(text(`第 ${chapterNumber} 章存在重复定稿`, `Chapter ${chapterNumber} has more than one finalized version.`))
+    ) throw authorError(currentInterfaceLocale(), { note: note('定稿导出快照身份或正文无效', 'A chapter in the finalized export snapshot has an invalid identity or text.') })
+    if (seenChapters.has(chapterNumber)) throw authorError(currentInterfaceLocale(), { note: note('第 {chapterNumber} 章存在重复定稿', 'Chapter {chapterNumber} has more than one finalized version.', { chapterNumber }) })
     seenChapters.add(chapterNumber)
     return Object.freeze({
       draftId,
@@ -250,7 +249,7 @@ export async function exportNovel(
       projectSession,
       'db:draft-export-snapshot',
       projectSession.projectPath,
-    ), text)
+    ))
     const authorityReceipt = exportAuthorityReceipt(frozenDrafts)
     if (!isProjectSessionCurrent(projectSession)) return staleExportResult(uiLocale)
     const chapterContents = frozenDrafts.map(draft => ({
@@ -314,11 +313,7 @@ export async function exportNovel(
         if (!authorityCurrent) return changedFinalizationResult(uiLocale)
         activeWritePath = outputPath
         const writeResult = await ipc.invoke('fs:grant-write-file', options.grantId, outputPath, content)
-        requireExportWriteSuccess(
-          writeResult,
-          text('写入导出文件', 'Write export file'),
-          text('写入导出文件失败', 'Failed to write the exported file.'),
-        )
+        requireExportWriteSuccess(writeResult, note('写入导出文件失败', 'Failed to write the exported file.'))
         activeWritePath = undefined
         if (!isProjectSessionCurrent(projectSession)) {
           return staleCommittedSingleExportResult(uiLocale, outputPath)
@@ -357,11 +352,7 @@ export async function exportNovel(
           if (!stillCurrent) return changedFinalizationResult(uiLocale, writtenSplitFiles)
           activeWritePath = `${splitDir}/${ch.name}`
           const writeResult = await ipc.invoke('fs:grant-write-file', options.grantId, activeWritePath, ch.markdownContent)
-          requireExportWriteSuccess(
-            writeResult,
-            text(`导出章节 ${ch.name}`, `Export chapter ${ch.name}`),
-            text(`导出章节 ${ch.name} 失败`, `Failed to export chapter ${ch.name}.`),
-          )
+          requireExportWriteSuccess(writeResult, note('导出章节 chapter_{chapterNumber}.md 失败', 'Failed to export chapter chapter_{chapterNumber}.md.', { chapterNumber: ch.chapterNumber }))
           writtenSplitFiles.push(activeWritePath)
           activeWritePath = undefined
           if (!isProjectSessionCurrent(projectSession)) {
@@ -399,11 +390,7 @@ export async function exportNovel(
         if (!authorityCurrent) return changedFinalizationResult(uiLocale)
         activeWritePath = outputPath
         const writeResult = await ipc.invoke('fs:grant-write-file', options.grantId, outputPath, content)
-        requireExportWriteSuccess(
-          writeResult,
-          text('写入导出文件', 'Write export file'),
-          text('写入导出文件失败', 'Failed to write the exported file.'),
-        )
+        requireExportWriteSuccess(writeResult, note('写入导出文件失败', 'Failed to write the exported file.'))
         activeWritePath = undefined
         if (!isProjectSessionCurrent(projectSession)) {
           return staleCommittedSingleExportResult(uiLocale, outputPath)
@@ -444,7 +431,7 @@ export async function exportNovel(
       : activeWritePath && commitState === 'unknown'
         ? unknownSingleWriteDetail(uiLocale, activeWritePath)
         : ''
-    const errorMessage = `${displayedErrorMessage(errorLocale, error)}${partialWriteDetail}`
+    const errorMessage = `${failureText(errorLocale, caughtFailure(error))}${partialWriteDetail}`
     addLog('error', text(`导出失败: ${errorMessage}`, `Export failed: ${errorMessage}`), uiLocale)
     return { success: false, error: errorMessage }
   }
