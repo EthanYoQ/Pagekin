@@ -31,8 +31,8 @@ type ResultWithFailure = { failure?: Failure; errorCode?: string; error?: string
 const resultText = (result: ResultWithFailure) => failureText(currentInterfaceLocale(), resultFailure(result))
 const resultFailureOrUnknown = (result: ResultWithFailure): Failure => resultFailure(result) ?? { code: IPC_HANDLER_FAILED }
 const failed = (result: ResultWithFailure) => authorError(currentInterfaceLocale(), resultFailureOrUnknown(result))
-const failureReason = (operation: 'export' | 'restore', result: ResultWithFailure & { damagedReviewCycle?: DamagedReviewCycle }) =>
-  archiveFailureMessage(currentInterfaceLocale(), operation, codeOf(resultFailureOrUnknown(result)) ?? IPC_HANDLER_FAILED, result.damagedReviewCycle)
+const failureReason = (operation: 'export' | 'restore', result: ResultWithFailure, damaged?: DamagedReviewCycle) =>
+  archiveFailureMessage(currentInterfaceLocale(), operation, codeOf(resultFailureOrUnknown(result)) ?? IPC_HANDLER_FAILED, damaged)
 const withOmitted = (message: string, omitted?: readonly DamagedReviewCycle[]) => {
   if (!omitted?.length) return message
   const locale = currentInterfaceLocale()
@@ -175,7 +175,7 @@ function ProjectBackupPanelSession({
     })
     const result = await ipc.invoke('project:archive-export', { targetArchiveGrantId: target.grantId, projectSession, exportId })
       .finally(() => { stopListening(); setExportProgress(null) })
-    if (!result.success) return fail(failureReason('export', result))
+    if (!result.success) return fail(failureReason('export', result, result.damagedReviewCycle))
     setNotice({ kind: 'success', text: withOmitted(text(`本地存档已导出：${result.receipt.targetSha256}`, `Local archive exported: ${result.receipt.targetSha256}`, `ローカルアーカイブをエクスポートしました：${result.receipt.targetSha256}`), result.receipt.omittedReviewCycles) })
   })
 
@@ -254,7 +254,7 @@ function ProjectBackupPanelSession({
     setActiveOperationId(operationId)
     try {
       const result = await ipc.invoke('cloud-backup:backup', { operationId, projectSession, disclosureConfirmed: true })
-      if (!result.success) return fail(failureReason('export', result))
+      if (!result.success) return fail(failureReason('export', result, result.damagedReviewCycle))
       if (result.binding) updateBinding(result.binding)
       setNotice({ kind: 'success', text: withOmitted(text(`云备份完成：${result.generation.generationId}；备份点 ${result.backupPoint}${result.bindingSaved ? '' : '；绑定未保存'}`, `Cloud backup complete: ${result.generation.generationId}; backup point ${result.backupPoint}${result.bindingSaved ? '' : '; binding not saved'}`, `クラウドバックアップが完了しました：${result.generation.generationId}。バックアップポイント ${result.backupPoint}${result.bindingSaved ? '' : '。紐付けは保存されていません'}`), result.omittedReviewCycles) })
     } finally {
