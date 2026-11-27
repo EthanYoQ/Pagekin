@@ -12,7 +12,7 @@ import type { StepCallbacks, WorkflowContext } from '../../stores/workflow-store
 import type { AllInvokeChannels, InvokeChannel, ProjectSessionContext } from '../../shared/ipc-channels'
 import { ipc } from '../ipc-client'
 import { copyLocale, errorLocaleForRun, localize } from '../../i18n/core'
-import { authorError, displayedErrorMessage } from '../../i18n/app-errors'
+import { authorError, displayedErrorMessage, resultFailure } from '../../i18n/app-errors'
 import { note } from '../../shared/failure'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { currentInterfaceLocale } from '../../stores/locale-store'
@@ -296,7 +296,7 @@ export async function runPostProcessPipeline(
       ...(options?.finalizedSource ? { finalizedSource: options.finalizedSource } : {})
     }, projectPath)
     if (!createRes.success || !createRes.id) {
-      throw workflowMainProcessError(interfaceLocale, createRes.error, '创建跑批失败', 'Failed to create the post-processing run.')
+      throw workflowMainProcessError(interfaceLocale, resultFailure(createRes), '创建跑批失败', 'Failed to create the post-processing run.')
     }
     // createRes.id 是本次跑批的唯一身份。禁止再以“最新一条”反查：
     // SQLite 时间精度为秒，并发创建时反查可能拿到同秒内的另一条 Run。
@@ -344,7 +344,7 @@ export async function runPostProcessPipeline(
         assertNotCancelled()
         const markResult = await invokeForProjectSession(projectSession, 'db:post-process-mark-step-ok', runId, step.key, projectPath)
         if (!markResult.success) {
-          throw workflowMainProcessError(interfaceLocale, markResult.error, '记录后处理成功状态失败', 'Failed to record the successful post-processing state.')
+          throw workflowMainProcessError(interfaceLocale, resultFailure(markResult), '记录后处理成功状态失败', 'Failed to record the successful post-processing state.')
         }
       } else {
         // 真实失败先记进后处理状态，再看取消：取消只决定后面不再跑，不能盖掉已经发生的失败。
@@ -358,7 +358,7 @@ export async function runPostProcessPipeline(
           projectPath,
         )
         if (!markResult.success) {
-          throw workflowMainProcessError(interfaceLocale, markResult.error, '记录后处理失败状态失败', 'Failed to record the failed post-processing state.')
+          throw workflowMainProcessError(interfaceLocale, resultFailure(markResult), '记录后处理失败状态失败', 'Failed to record the failed post-processing state.')
         }
         if (stopOnFailure) {
           const reason = finalizationStepErrorMessage(interfaceLocale, stepError)

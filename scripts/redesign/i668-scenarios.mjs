@@ -20,7 +20,7 @@ const seed = context => seedStageSample(context, {
       if (chapterNumber === 3) {
         const expectedSource = { id: created.id, chapterNumber, version: 1, status: 'draft', content }
         const review = await invoke(page, 'db:review-create', { baseDraftId: created.id, content: STAGE_SAMPLE.drafts[3].review, expectedSource }, path, session)
-        assert.equal(review.success, true, review.error)
+        assert.equal(review.success, true, review.failure?.code)
       } else {
         assert.equal((await invoke(page, 'db:draft-update-status', created.id, 'revised', undefined, path, session)).success, true)
       }
@@ -39,11 +39,11 @@ const seedMerge = context => seedStageSample(context, {
     assert.equal(created.success, true, created.error)
     const expectedSource = { id: created.id, chapterNumber: 3, version: 1, status: 'draft', content }
     const review = await invoke(page, 'db:review-create', { baseDraftId: created.id, content: STAGE_SAMPLE.drafts[3].review, expectedSource }, path, session)
-    assert.equal(review.success, true, review.error)
+    assert.equal(review.success, true, review.failure?.code)
     const revised = content.replace(/(第 \d*0 次涨潮时，林岚又数了一遍台阶。)雾钟没有响/g, '$1雾钟响了三声')
     const revision = await invoke(page, 'db:revision-create', { baseDraftId: created.id, revisionType: 'review-fix', reviewSourceId: review.id,
       content: revised, wordCount: countUnits(revised), expectedSource }, path, session)
-    assert.equal(revision.success, true, revision.error)
+    assert.equal(revision.success, true, revision.failure?.code)
   },
 })
 
