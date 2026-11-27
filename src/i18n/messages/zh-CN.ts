@@ -298,6 +298,7 @@ export const zhCN = {
   'error.blueprintWriteFailed': '已有的章节蓝图都还在。这次修改没能写进作品，请再试一次。',
   'error.projectCoreWriteFailed': '故事设定与架构没有改动。这次修改没能写进作品，请再试一次。',
   'error.projectClearFailed': '作品内容没有被清除。这次清除没能完成，请再试一次。',
+  'error.projectClearRestoreFailed': '作品库里的内容没有被清除，但有章节正文文件没能挪回作品文件夹，暂存在作品数据的 trash 文件夹里。请把它们挪回作品文件夹后再试。',
   'error.connectionTestTimeout': '连接测试 {seconds} 秒内没有完成，已停止等待。请检查网络或代理设置后重试。',
   'error.proxyUnreachable': '连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。',
   'error.networkProxyInvalid': '主机地址填得不对。只填 IP 或域名，例如 127.0.0.1。',

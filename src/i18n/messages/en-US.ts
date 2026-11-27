@@ -296,6 +296,7 @@ export const enUS = {
   'error.blueprintWriteFailed': 'Your existing chapter blueprints are all still there. This change could not be saved to the project. Try again.',
   'error.projectCoreWriteFailed': 'Your story settings and architecture were not changed. This change could not be saved to the project. Try again.',
   'error.projectClearFailed': 'Nothing in the project was cleared. Clearing did not finish. Try again.',
+  'error.projectClearRestoreFailed': 'Nothing in the project database was cleared, but some chapter text files could not be moved back to the project folder and are in the trash folder of the project data. Move them back to the project folder, then try again.',
   'error.connectionTestTimeout': 'The connection test did not finish within {seconds} seconds and was stopped. Check your network or proxy settings, then try again.',
   'error.proxyUnreachable': 'Could not reach the proxy set in Network proxy. Check the Host and Port, start your proxy app, or turn off Use a proxy.',
   'error.networkProxyInvalid': 'The host is not valid. Enter only an IP address or domain name, such as 127.0.0.1.',

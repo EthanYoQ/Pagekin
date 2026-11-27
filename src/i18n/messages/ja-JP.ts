@@ -298,6 +298,7 @@ export const jaJP = {
   'error.blueprintWriteFailed': 'Your existing chapter blueprints are all still there. This change could not be saved to the project. Try again.',
   'error.projectCoreWriteFailed': 'Your story settings and architecture were not changed. This change could not be saved to the project. Try again.',
   'error.projectClearFailed': 'Nothing in the project was cleared. Clearing did not finish. Try again.',
+  'error.projectClearRestoreFailed': 'Nothing in the project database was cleared, but some chapter text files could not be moved back to the project folder and are in the trash folder of the project data. Move them back to the project folder, then try again.',
   'error.connectionTestTimeout': '接続テストが {seconds} 秒以内に終わらなかったため、停止しました。ネットワークまたはプロキシの設定を確認してから、もう一度お試しください。',
   'error.proxyUnreachable': '「Network proxy」で設定したプロキシに接続できません。「Host」と「Port」を確認するか、プロキシアプリを起動するか、「Use a proxy」をオフにしてください。',
   'error.networkProxyInvalid': 'ホストが正しくありません。127.0.0.1 のように IP アドレスかドメイン名だけを入力してください。',
