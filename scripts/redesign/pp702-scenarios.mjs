@@ -35,7 +35,7 @@ export const PP702_SCENARIOS = {
     assert.ok(run?.id, '第 3 章有后处理记录')
     for (const [stepKey, error] of Object.entries(STORED)) {
       const marked = await call('db:post-process-mark-step-failed', run.id, stepKey, error)
-      assert.equal(marked.success, true, marked.error)
+      assert.equal(marked.success, true, marked.failure?.code)
     }
     await chapterView.open(page, 4)
     await chapterView.open(page, 3)

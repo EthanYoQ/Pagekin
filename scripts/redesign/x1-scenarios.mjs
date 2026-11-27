@@ -160,7 +160,7 @@ export async function seedHarbor(context) {
   const full = await invoke(page, 'db:draft-get-full', finalized.id, harbor, session)
   const review = await invoke(page, 'db:review-create', { baseDraftId: full.id, content: STAGE_SAMPLE.drafts[3].review,
     expectedSource: { id: full.id, chapterNumber: 3, version: full.version, status: full.status, content: full.content } }, harbor, session)
-  assert.equal(review.success, true, review.error)
+  assert.equal(review.success, true, review.failure?.code)
   context.harbor = { path: harbor, chapter3DraftId: full.id }
 }
 

@@ -356,7 +356,7 @@ export async function seedStageSample(context,
     if (review) {
       const expectedSource = { id: draft.id, chapterNumber: Number(number), version: 1, status, content: text }
       const created = await invoke(page, 'db:review-create', { baseDraftId: draft.id, content: review, expectedSource }, path, session)
-      assert.equal(created.success, true, created.error)
+      assert.equal(created.success, true, created.failure?.code)
     }
   }
   await beforeReload?.({ page, invoke, path, session })

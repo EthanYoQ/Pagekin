@@ -381,14 +381,14 @@ const completeWrite = completeWriteProof ? `
   const secondSource = { id: second.id, chapterNumber: 1, version: 2, status: secondDraft.status, content: seed.draft2 }
   const reviewSaved = await window.velaAPI.invoke('db:review-create',
     { baseDraftId: second.id, content: seed.review, expectedSource: secondSource }, result.project.path, context)
-  if (reviewSaved?.success !== true || !Number.isInteger(reviewSaved.id)) throw new Error(reviewSaved?.error || 'complete source review save failed')
+  if (reviewSaved?.success !== true || !Number.isInteger(reviewSaved.id)) throw new Error(reviewSaved?.failure?.code || 'complete source review save failed')
   const reviewed = await window.velaAPI.invoke('db:draft-update-status', second.id, 'reviewed', seed.draft2.length, result.project.path, context)
   if (reviewed?.success !== true) throw new Error(reviewed?.error || 'complete source reviewed status save failed')
   const revisionSaved = await window.velaAPI.invoke('db:revision-create',
     { baseDraftId: second.id, revisionType: 'review-fix', reviewSourceId: reviewSaved.id,
       content: seed.revision, wordCount: seed.revision.length,
       expectedSource: { ...secondSource, status: 'reviewed' } }, result.project.path, context)
-  if (revisionSaved?.success !== true || !Number.isInteger(revisionSaved.id)) throw new Error(revisionSaved?.error || 'complete source revision save failed')
+  if (revisionSaved?.success !== true || !Number.isInteger(revisionSaved.id)) throw new Error(revisionSaved?.failure?.code || 'complete source revision save failed')
   const merged = await window.velaAPI.invoke('db:revision-merge', {
     revisionId: revisionSaved.id, targetDraftId: second.id, expectedDraftContent: seed.draft2,
     mergedContent: seed.revision, wordCount: seed.revision.length,

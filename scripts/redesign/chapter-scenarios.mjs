@@ -675,7 +675,7 @@ export const CHAPTER_SCENARIOS = {
     const full = await invoke(page, 'db:draft-get-full', finalized.id, path, session)
     const expectedSource = { id: full.id, chapterNumber: 2, version: full.version, status: full.status, content: full.content }
     const created = await invoke(page, 'db:review-create', { baseDraftId: full.id, content: STAGE_SAMPLE.drafts[3].review, expectedSource }, path, session)
-    assert.equal(created.success, true, created.error)
+    assert.equal(created.success, true, created.failure?.code)
     for (const draft of await invoke(page, 'db:draft-list', 4, path, session)) {
       assert.equal((await invoke(page, 'db:draft-delete', draft.id, path, session)).success, true)
     }
