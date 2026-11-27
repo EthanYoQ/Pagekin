@@ -8,7 +8,10 @@ import { navigate } from '../../stores/navigation/navigation-intents'
 import { toast } from '../ui/Toast'
 import { actionToast, type ActionToastAction } from '../ui/ActionToast'
 import { chapterLabel } from '../../shared/chapter-label'
-import { displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { authorError, displayedErrorMessage, englishWithReason, failureText } from '../../i18n/app-errors'
+import { failureOr } from '../../services/failure-reason'
+import { reasonOf } from '../../services/workflows/commands/architecture.command'
+import { note } from '../../shared/failure'
 import {
   draftAIResourceClaims,
   finalizeResourceClaims,
@@ -40,6 +43,8 @@ import {
 } from '../project-session-gate'
 
 type Text = (zh: string, en: string) => string
+
+const SAVE_FAILED = note('草稿保存失败', 'Could not save the draft')
 
 /** 审稿的检查维度。promptLabel 是交给工作流的固定中文名，不随界面语言变化。 */
 export function reviewDimensions(text: Text) {
@@ -259,7 +264,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     setSaveOutcome('idle')
     try {
       const resource = parseResourceUri(filePath)
-      if (!resourceWriteAllowed(filePath) || resource?.kind !== 'draft') throw new Error(text('资源只读或无效', 'This resource is read-only or invalid.'))
+      if (!resourceWriteAllowed(filePath) || resource?.kind !== 'draft') throw authorError(currentInterfaceLocale(), { note: note('资源只读或无效', 'This resource is read-only or invalid.') })
       const result = await ipc.invokeWithProjectSession(
         projectSession,
         'db:draft-update-content',
@@ -268,7 +273,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
         countDraftUnits(saveSnapshot.content),
         projectSession.projectPath,
       )
-      if (!result.success) throw new Error(result.error || text('草稿保存失败', 'Could not save the draft'))
+      if (!result.success) throw authorError(currentInterfaceLocale(), failureOr(SAVE_FAILED, reasonOf(currentInterfaceLocale(), result.error)))
       if (!isProjectSessionCurrent(projectSession)) return
       const currentTab = useEditorStore.getState().tabs.find(
         tab => tab.id === tabId && tab.projectKey === projectKey,
@@ -283,7 +288,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     } catch (error) {
       if (isProjectSessionCurrent(projectSession)) {
         setSaveOutcome('failed')
-        toast.error(displayedErrorMessage(currentInterfaceLocale(), error, text('草稿保存失败', 'Could not save the draft')))
+        toast.error(failureText(currentInterfaceLocale(), failureOr(SAVE_FAILED, reasonOf(currentInterfaceLocale(), error))))
       }
       if (propagateFailure) throw error
     } finally {
@@ -412,8 +417,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       useWorkflowStore.getState().startWorkflow(definition, false)
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
-      const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`修稿启动失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not start AI revision.', reason)))
+      toast.error(failureText(currentInterfaceLocale(), { note: note('修稿启动失败', 'Could not start AI revision.'), because: reasonOf(currentInterfaceLocale(), e) }))
     }
   }
 
@@ -442,8 +446,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       useWorkflowStore.getState().startWorkflow(definition, false)
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
-      const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`审稿启动失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not start AI review.', reason)))
+      toast.error(failureText(currentInterfaceLocale(), { note: note('审稿启动失败', 'Could not start AI review.'), because: reasonOf(currentInterfaceLocale(), e) }))
     }
   }
 
@@ -470,7 +473,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
         tab => tab.id === tabId && tab.projectKey === projectKey,
       )
       if (!targetTab) {
-        throw new Error(text('当前草稿或项目会话已失效，无法冻结定稿内容', 'The draft or project session is no longer available.'))
+        throw authorError(currentInterfaceLocale(), { note: note('当前草稿或项目会话已失效，无法冻结定稿内容', 'The draft or project session is no longer available.') })
       }
       const snapshot = captureFinalizationSnapshot({
         tab: {
@@ -528,7 +531,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       const result = await retryFinalizationPublication(finalizationId, projectSession)
       if (!isProjectSessionCurrent(projectSession)) return
       if (!result.success) {
-        throw new Error(result.error || text('实体稿发布仍未完成', 'Manuscript publication is not complete.'))
+        throw authorError(currentInterfaceLocale(), failureOr(note('实体稿发布仍未完成', 'Manuscript publication is not complete.'), reasonOf(currentInterfaceLocale(), result.error)))
       }
       useEditorStore.setState(state => ({
         tabs: state.tabs.map(tab => tab.id === tabId
@@ -694,12 +697,10 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
         reload()
         return true
       }
-      const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
-      toast.error(text(`合并失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not merge the revision.', reason)))
+      toast.error(failureText(currentInterfaceLocale(), { note: note('合并失败', 'Could not merge the revision.'), because: reasonOf(currentInterfaceLocale(), result.error) }))
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return false
-      const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`合并出错：${reason}`, englishWithReason(currentInterfaceLocale(), 'An error occurred while merging the revision.', reason)))
+      toast.error(failureText(currentInterfaceLocale(), { note: note('合并出错', 'An error occurred while merging the revision.'), because: reasonOf(currentInterfaceLocale(), e) }))
     }
     return false
   }
@@ -708,15 +709,20 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
   const discardRevisions = async (ids: readonly number[]) => {
     const projectSession = captureProjectSession(currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) return
+    const discardFailed = (error: unknown) => {
+      if (isProjectSessionCurrent(projectSession)) toast.error(failureText(currentInterfaceLocale(), { note: note('丢弃修稿失败', 'Could not discard the revision.'), because: reasonOf(currentInterfaceLocale(), error) }))
+    }
     try {
       for (const id of ids) {
         const result = await ipc.invokeWithProjectSession(projectSession, 'db:revision-mark-discarded', id, projectSession.projectPath)
-        if (!result.success) throw new Error(result.error)
+        if (!result.success) {
+          discardFailed(result.error)
+          break
+        }
         forgetMergeChoices(mergeChoicesKey(projectSession.projectId, id))
       }
     } catch (error) {
-      const reason = displayedErrorMessage(currentInterfaceLocale(), error)
-      if (isProjectSessionCurrent(projectSession)) toast.error(text(`丢弃修稿失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not discard the revision.', reason)))
+      discardFailed(error)
     }
     if (isProjectSessionCurrent(projectSession)) reload()
   }

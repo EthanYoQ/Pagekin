@@ -1,7 +1,7 @@
 import { chapterTimeContinuity } from '../../../shared/chapter-time-continuity'
 import { ignoreFailure } from '../../../shared/ignore-failure'
 import { authorError, displayedErrorMessage, englishWithReason, resultFailure } from '../../../i18n/app-errors'
-import { failureCode, note } from '../../../shared/failure'
+import { authorOwned, failureCode, note } from '../../../shared/failure'
 import { sanitizeDraftText, composeDraftVisibleContinuation, DRAFT_CONDENSE_PURPOSE, DRAFT_VISIBLE_TEXT_VERSION, isDraftVisibleTextVersion, type DraftVisibleTextVersion } from '../../../shared/draft-visible-text'
 import { DRAFT_RECONCILE_PURPOSE, draftReconciliationBlock } from '../../../shared/draft-reconciliation'
 import { DEFAULT_MATERIAL_ADMISSION } from '../../../shared/generation-owner-contract'
@@ -50,7 +50,7 @@ import {
   type GenerationSession,
   TerminalProviderFailureError,
 } from '../../generation/generation-harness'
-import { networkFailureText } from '../../generation/prompt-budget-failure'
+import { networkFailureNote } from '../../generation/prompt-budget-failure'
 import { createBoundedCompletionError } from '../bounded-completion'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
@@ -403,13 +403,11 @@ function draftTooShortError(
   units: number,
   targetUnits: number,
 ): Error {
-  return new Error(workflowUiText(
-    context,
-    `模型已声明生成结束，但正文仅约 ${units}/${targetUnits} 字，明显未达到章节目标，结果未保存。` +
-      '请提高最大输出 Tokens、降低本章目标字数，或改用输出能力更强的模型后重试。',
-    `The model reported completion, but the draft is only about ${units}/${targetUnits} units and clearly misses the chapter target, so it was not saved. ` +
-      'Increase the maximum output tokens, lower the chapter target, or use a model with greater output capacity and try again.',
-  ))
+  return authorError(context.interfaceLocale, { note: note(
+    '模型已声明生成结束，但正文仅约 {units}/{targetUnits} 字，明显未达到章节目标，结果未保存。请提高最大输出 Tokens、降低本章目标字数，或改用输出能力更强的模型后重试。',
+    'The model reported completion, but the draft is only about {units}/{targetUnits} units and clearly misses the chapter target, so it was not saved. Increase the maximum output tokens, lower the chapter target, or use a model with greater output capacity and try again.',
+    { units, targetUnits },
+  ) })
 }
 
 function chapterLengthContractText(writingLanguage: WritingLanguage, targetUnits: number): string {
@@ -598,10 +596,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       projectSession,
       projectSessionContextFromProject(project),
     )) {
-      throw new Error(uiText(
-        '当前项目已切换，章节生成已停止',
-        'The project changed, so chapter generation was stopped.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('当前项目已切换，章节生成已停止', 'The project changed, so chapter generation was stopped.') })
     }
     const novelConfig = Object.freeze({ ...project.novelConfig })
     const writingLanguage = workflowWritingLanguage(context)
@@ -734,10 +729,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     })
 
     const template = await resolvePromptTemplate(templateKey, projectSession, writingLanguage)
-    if (!template) throw new Error(uiText(
-      `未找到模板: ${templateKey}`,
-      `Template not found: ${templateKey}`,
-    ))
+    if (!template) throw authorError(context.interfaceLocale, { note: note('未找到模板: {templateKey}', 'Template not found: {templateKey}', { templateKey: authorOwned(templateKey) }) })
 
     // ==========================================
     // Prompt 构建——按「稳定前缀 → 可变后缀」排列
@@ -856,10 +848,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       && Boolean(source.content.trim())
     ))
     if (!isFirstChapter && !hasRequiredPreviousCandidate && !requiredFinalizedSource) {
-      throw new Error(uiText(
-        `无法固定第 ${previousChapterNumber} 章的必需定稿来源，已停止生成。请修复或重新定稿该章后再试。`,
-        `The required finalized source for Chapter ${previousChapterNumber} could not be fixed, so generation stopped. Repair or re-finalize that chapter and try again.`,
-      ))
+      throw authorError(context.interfaceLocale, { note: note('无法固定第 {previousChapterNumber} 章的必需定稿来源，已停止生成。请修复或重新定稿该章后再试。', 'The required finalized source for Chapter {previousChapterNumber} could not be fixed, so generation stopped. Repair or re-finalize that chapter and try again.', { previousChapterNumber }) })
     }
     const chapterExecutionContract = chapterExecutionContractText(writingLanguage, writerChapterInfo)
     const systemRole = `${promptBuilder.getSystemRole()}\n\n${chapterExecutionContract.rules}`
@@ -904,10 +893,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         `  必需材料超出上下文容量（${error.decision.decision}）：${blocked}`,
         `  Required material exceeds the context capacity (${error.decision.decision}): ${blocked}`,
       ))
-      throw new Error(uiText(
-        '本章必需材料（作者资料、角色档案、后续计划、上一章正文）超出上下文容量，已停止生成。请精简这些内容后重试。',
-        'The required material for this chapter (author facts, character profiles, future plans, previous chapter prose) exceeds the context capacity, so generation stopped. Trim it and try again.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('本章必需材料（作者资料、角色档案、后续计划、上一章正文）超出上下文容量，已停止生成。请精简这些内容后重试。', 'The required material for this chapter (author facts, character profiles, future plans, previous chapter prose) exceeds the context capacity, so generation stopped. Trim it and try again.') })
     }
     const admittedCandidateSourceIds = new Set(chapterMaterials.selection.included
       .map(material => material.ref.sourceId)
@@ -1113,15 +1099,14 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             // 作者取消时请求会被截断着返回，主进程不把取消码交给渲染端；带失败码的是真实失败，照常报短细纲失败。
             // 重试结果直接来自 IPC，不经过 keepReceiptFailuresOnCancel，所以这里自己分辨。
             if (!outlined.receipt.failureCode) this.assertNotCancelled(context)
-            const network = networkFailureText(outlined.receipt, context.interfaceLocale)
-            if (network) throw new Error(network)
-            const reason = outlined.finishReason === 'length'
-              ? uiText('模型输出被截断', 'the model output was truncated')
-              : !outlined.content.trim() ? uiText('模型未返回可见内容', 'the model returned no visible content')
-                : uiText('模型未正常完成输出', 'the model did not complete the output normally')
-            const diagnostic = `(GENERATION_DRAFT_SHORT_OUTLINE_FAILED; status=${outlined.status}; finishReason=${outlined.finishReason})`
-            throw new Error(uiText(`短细纲生成失败：${reason}。正文尚未开始。${diagnostic}`,
-              `The short chapter outline failed: ${reason}. Drafting has not started. ${diagnostic}`))
+            const network = networkFailureNote(outlined.receipt)
+            if (network) throw authorError(context.interfaceLocale, { note: network })
+            callbacks.log(`  GENERATION_DRAFT_SHORT_OUTLINE_FAILED; status=${outlined.status}; finishReason=${outlined.finishReason}`)
+            throw authorError(context.interfaceLocale, { note: outlined.finishReason === 'length'
+              ? note('短细纲生成失败：模型输出被截断。正文尚未开始。', 'The short chapter outline failed: the model output was truncated. Drafting has not started.')
+              : !outlined.content.trim()
+                ? note('短细纲生成失败：模型未返回可见内容。正文尚未开始。', 'The short chapter outline failed: the model returned no visible content. Drafting has not started.')
+                : note('短细纲生成失败：模型未正常完成输出。正文尚未开始。', 'The short chapter outline failed: the model did not complete the output normally. Drafting has not started.') })
           }
           if (recovery?.draftShortOutline && !shortOutline) throw new Error('GENERATION_DRAFT_SHORT_OUTLINE_FAILED')
           const reconciliationBlock = [recordedReconciliation ? draftReconciliationBlock(writingLanguage, recordedReconciliation) : '',
@@ -1266,10 +1251,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         if (units < range.minimum) throw draftTooShortError(context, units, targetChars)
       }
       if (!alreadySaved && hasSubstantialPreviousChapterReuse(previousEnding, cleanDraftText, writingLanguage)) {
-        throw new Error(uiText(
-          '新章节开头与上一章结尾存在大段重演，结果未保存。请重新生成，并让本章从上一章已完成事件之后继续。',
-          'The new chapter substantially replays the previous ending, so it was not saved. Regenerate it and continue after the events already completed in the previous chapter.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('新章节开头与上一章结尾存在大段重演，结果未保存。请重新生成，并让本章从上一章已完成事件之后继续。', 'The new chapter substantially replays the previous ending, so it was not saved. Regenerate it and continue after the events already completed in the previous chapter.') })
       }
 
       // 落于数据库
@@ -1277,10 +1259,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         projectSession,
         projectSessionContextFromProject(useProjectStore.getState().currentProject),
       )) {
-        throw new Error(uiText(
-          '当前项目已切换，已拒绝保存章节草稿',
-          'The project changed, so saving the chapter draft was refused.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('当前项目已切换，已拒绝保存章节草稿', 'The project changed, so saving the chapter draft was refused.') })
       }
       this.assertNotCancelled(context)
       if (mainOwned && !alreadySaved
@@ -1513,14 +1492,10 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       && lastFinishReason === 'length'
       && countDraftUnits(draft) < 100
     ) {
-      throw new Error(
-        uiText(
-          '模型的输出预算主要消耗在推理阶段，尚未产生足够正文。无法安全续接隐藏推理过程；' +
-            '请关闭模型思考模式、提高最大输出 Tokens，或改用更适合正文创作的非推理模型。',
-          'The model spent most of its output budget on reasoning and did not produce enough prose. Hidden reasoning cannot be continued safely. ' +
-            'Disable reasoning mode, increase the maximum output tokens, or use a non-reasoning model better suited to drafting.',
-        ),
-      )
+      throw authorError(params.context.interfaceLocale, { note: note(
+        '模型的输出预算主要消耗在推理阶段，尚未产生足够正文。无法安全续接隐藏推理过程；请关闭模型思考模式、提高最大输出 Tokens，或改用更适合正文创作的非推理模型。',
+        'The model spent most of its output budget on reasoning and did not produce enough prose. Hidden reasoning cannot be continued safely. Disable reasoning mode, increase the maximum output tokens, or use a non-reasoning model better suited to drafting.',
+      ) })
     }
 
     while (this.shouldAutoContinue(draft, params.targetChars, rounds, lastFinishReason)) {
@@ -1660,10 +1635,7 @@ ${visibleDraft}`,
       if (addition.finishReason === 'length' && mergedDelta < 300) {
         params.callbacks.replaceText?.(draft)
         if (noProgressRecoveryUsed) {
-          throw new Error(uiText(
-            '唯一一次无进展恢复请求仍未增加足够的新正文，结果未保存。请缩短章节目标后重试。',
-            'The single no-progress recovery request still did not add enough new prose, so the result was not saved. Shorten the chapter target and try again.',
-          ))
+          throw authorError(params.context.interfaceLocale, { note: note('唯一一次无进展恢复请求仍未增加足够的新正文，结果未保存。请缩短章节目标后重试。', 'The single no-progress recovery request still did not add enough new prose, so the result was not saved. Shorten the chapter target and try again.') })
         }
         noProgressRecoveryUsed = true
         recoveryPending = true

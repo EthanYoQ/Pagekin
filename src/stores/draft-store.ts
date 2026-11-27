@@ -18,7 +18,8 @@ import { useProjectStore } from './project-store'
 import { requireIpcSuccess } from '../services/ipc-result'
 import { countDraftUnits } from '../shared/draft-units'
 import { useEditorStore } from './editor-store'
-import { useLocaleStore } from './locale-store'
+import { currentInterfaceLocale, useLocaleStore } from './locale-store'
+import { authorError } from '../i18n/app-errors'
 
 let loadAllDraftsRequestSequence = 0
 
@@ -354,7 +355,7 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
         definition.onStarted = started
         await Promise.race([admission, useWorkflowStore.getState().startWorkflow(definition, false).then(runId => {
           const run = useWorkflowStore.getState().history.find(item => item.id === runId)
-          if (run?.status === 'failed') throw new Error(run.error)
+          if (run?.status === 'failed') throw run.failure ? authorError(currentInterfaceLocale(), run.failure) : new Error(run.error)
         })])
       }
 

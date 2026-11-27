@@ -157,7 +157,7 @@ export class PlotOutlineSourceChangedError extends AuthorError {
 }
 
 /** 还没标记的中文原因（生成 harness、解析器写的句子）按旧规则只在中文界面显示，其余只进控制台。 */
-function reasonOf(locale: ErrorDisplayLocale, error: unknown): Failure | LegacyReason | undefined {
+export function reasonOf(locale: ErrorDisplayLocale, error: unknown): Failure | LegacyReason | undefined {
   const marked = failureOf(error)
   if (marked) return marked
   const registered = failureCode(registeredErrorCode(error))
