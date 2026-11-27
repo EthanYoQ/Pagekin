@@ -251,7 +251,6 @@ app.whenReady().then(async () => {
   installIpcSlowCallLog(ipcMain)
   guardIpcRegistration(ipcMain, rejectUnlistedIpc(app.isPackaged))
   registerStartupController({
-    ipc: ipcMain,
     getTrustedSender: () => win?.webContents ?? null,
     rendererUrl: VITE_DEV_SERVER_URL || pathToFileURL(path.join(RENDERER_DIST, 'index.html')).href,
     getGlobalGeneration: () => startupGeneration,

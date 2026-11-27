@@ -1,21 +1,23 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const handlers = vi.hoisted(() => new Map<string, (event: StartupEvent, input?: unknown) => unknown>())
+vi.mock('../../ipc/handle', () => ({ handle: (channel: string, handler: (event: StartupEvent, input?: unknown) => unknown) => { handlers.set(channel, handler) } }))
+
 import { registerStartupController, type StartupEvent, type StartupSender } from '../startup-controller'
 import { APPEARANCE_STORAGE_KEY } from '../../../src/shared/appearance-profile'
 
-let handlers: Map<string, (event: StartupEvent, input?: unknown) => unknown>
 let sender: StartupSender
 let event: StartupEvent
 let generation: string | null
 let blocked: 'GLOBAL_DATA_BLOCKED' | undefined
 const ack = (profileRevision = 1) => ({ storageKey: APPEARANCE_STORAGE_KEY, profileRevision, globalGeneration: '世代甲' })
 beforeEach(() => {
-  handlers = new Map()
+  handlers.clear()
   sender = { id: 1, mainFrame: { url: 'file:///isolated/index.html' }, isDestroyed: () => false }
   event = { sender, senderFrame: sender.mainFrame }
   generation = '世代甲'
   blocked = undefined
-  registerStartupController({ ipc: { handle: (channel, handler) => { handlers.set(channel, handler) } },
-    getTrustedSender: () => sender, rendererUrl: 'file:///isolated/index.html',
+  registerStartupController({ getTrustedSender: () => sender, rendererUrl: 'file:///isolated/index.html',
     getGlobalGeneration: () => generation, getBlockedCode: () => blocked })
 })
 const invoke = (channel: string, input?: unknown, from = event) => handlers.get(channel)!(from, input)

@@ -1,4 +1,5 @@
 import { APPEARANCE_STORAGE_KEY } from '../../src/shared/appearance-profile'
+import { handle } from '../ipc/handle'
 import type { StartupState, StartupMigrationNotice, StartupBlockedCode } from '../../src/shared/startup-contract'
 
 export interface StartupSender {
@@ -8,7 +9,6 @@ export interface StartupSender {
 }
 export interface StartupEvent { sender: StartupSender; senderFrame?: StartupSender['mainFrame'] | null }
 interface StartupControllerOptions {
-  ipc: { handle(channel: string, listener: (event: StartupEvent, input?: unknown) => unknown): void }
   getTrustedSender(): StartupSender | null
   rendererUrl: string
   /** 全局数据迁移完成后的世代；还没就绪时为 null。 */
@@ -35,7 +35,7 @@ export function registerStartupController(options: StartupControllerOptions): vo
     return typeof value === 'string' && value.length > 0 ? value : null
   }
   const trusted = (event: StartupEvent) => isTrustedStartupSender(event, options.getTrustedSender(), options.rendererUrl)
-  options.ipc.handle('startup:get-state', (event): StartupState => {
+  handle('startup:get-state', (event: StartupEvent): StartupState => {
     if (!trusted(event)) return { state: 'blocked' }
     const code = options.getBlockedCode()
     if (code) return { state: 'blocked', code }
@@ -47,7 +47,7 @@ export function registerStartupController(options: StartupControllerOptions): vo
       ...(appearanceRevisionFloor !== undefined ? { appearanceRevisionFloor } : {}),
       ...(notice ? { migrationNotice: { legacySourceIgnored: notice.legacySourceIgnored, preservedUnknownCount: notice.preservedUnknownCount } } : {}) }
   })
-  options.ipc.handle('startup:appearance-ack', (event, input) => {
+  handle('startup:appearance-ack', (event: StartupEvent, input?: unknown) => {
     if (!trusted(event) || options.getBlockedCode() || !input || typeof input !== 'object' || Array.isArray(input)) return false
     const ack = input as Record<string, unknown>
     const keys = ['storageKey', 'profileRevision', 'globalGeneration']

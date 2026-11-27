@@ -59,7 +59,7 @@ describe('应用启动时的整套 IPC 注册经过守卫', () => {
     const { registerUpdateController } = await import('../../controllers/update-controller')
     expect(fake.registrations).toEqual([])
 
-    registerStartupController({ ipc: ipcMain as never, getTrustedSender: () => null, rendererUrl: '',
+    registerStartupController({ getTrustedSender: () => null, rendererUrl: '',
       getGlobalGeneration: () => null, getBlockedCode: () => undefined })
     registerIPCHandlers()
     registerMCPHandlers()
