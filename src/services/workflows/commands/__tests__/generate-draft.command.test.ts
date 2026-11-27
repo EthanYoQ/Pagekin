@@ -4908,6 +4908,29 @@ ${headingPrefix}第3章：潮门
     },
   )
 
+  it('正文过短、内容拦截、长度截断三种失败的说明不变', async () => {
+    const cases = [
+      ['正文过短', () => fakeRuntime(() => outcome('正文太短。', 'stop')),
+        '模型已声明生成结束，但正文仅约 8/500 字，明显未达到章节目标，结果未保存。请提高最大输出 Tokens、降低本章目标字数，或改用输出能力更强的模型后重试。',
+        'The model reported completion, but the draft is only about 8/500 units and clearly misses the chapter target, so it was not saved. Increase the maximum output tokens, lower the chapter target, or use a model with greater output capacity and try again.'],
+      ['内容拦截', () => fakeOutcomes(outcome(`${'正文'.repeat(2500)}。`, 'content_filter')),
+        'AI 输出因内容限制而未完成，结果未被保存。',
+        'AI output was stopped by content restrictions, so the result was not saved.'],
+      ['长度截断', () => fakeOutcomes(outcome('初'.repeat(1000), 'length', 1),
+        ...[2, 3, 4, 5, 6, 7, 8].map(attempt => outcome(`第${attempt}段${'续'.repeat(1000)}。`, 'length', attempt))),
+      'AI 输出达到本次请求长度限制，尚未完整生成。请缩短本次任务或拆分为更小批次后重试。',
+      'AI output reached the model maximum length and is incomplete. Increase the maximum output tokens or shorten the task, then try again.'],
+    ] as const
+    for (const [name, runtime, zh, en] of cases) {
+      const words = name === '长度截断' ? { wordsPerChapter: 20_000, wordsTarget: 20_000 } : { wordsTarget: 500 }
+      for (const [uiLocale, expected] of [['zh-CN', zh], ['en-US', en]] as const) {
+        const { context, callbacks, command } = setup({ runtime: runtime(), ...words, uiLocale })
+        const error = await command.execute({ step: {}, context, callbacks }).then(() => undefined, (value: unknown) => value)
+        expect([name, uiLocale, (error as Error | undefined)?.message]).toEqual([name, uiLocale, expected])
+      }
+    }
+  })
+
   it('surfaces a main-owned safe provider failure code without saving a draft', async () => {
     const failed = outcome('', 'error')
     Object.assign(failed.receipt, { failureCode: 'GENERATION_PROVIDER_FAILED' })

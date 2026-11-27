@@ -19,6 +19,7 @@ import { useProjectStore } from '../../../../stores/project-store'
 import { useWorkflowStore } from '../../../../stores/workflow-store'
 import { openDraftTab } from '../../../../stores/open-draft-tab'
 import { toast } from '../../../ui/Toast'
+import { catalogNote } from '../../../../i18n/app-errors'
 import { commandLabel, IS_MAC } from '../../shortcut-keys'
 import StageSpine from '../../StageSpine'
 import StageWorkspace from '../../StageWorkspace'
@@ -1252,6 +1253,29 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
     await click('重试合并后复验')
     await expect.element(page.getByText('复验完成：1 / 2 项意见已解决')).toBeVisible()
     expect(page.getByText('合并后复验还没完成，可在审稿报告里重试').elements()).toEqual([])
+  })
+
+  describe('复验失败的提示不变', () => {
+    const proxy = '连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。'
+    it.each([
+      ['没有原因', { error: '' }, '复验任务未完成；可在修复模型或资源问题后再次重试。'],
+      ['已登记码', { error: 'PROJECT_NOT_OPEN', errorCode: 'PROJECT_NOT_OPEN', failure: { code: 'PROJECT_NOT_OPEN' } }, '请先打开项目。'],
+      ['未标记的句子', { error: '审稿模型返回了空内容。' }, '审稿模型返回了空内容。'],
+      ['码加说明', { error: proxy, errorCode: 'NETWORK_ERROR', failure: { code: 'NETWORK_ERROR', note: catalogNote('error.proxyUnreachable') } }, proxy],
+    ] as const)('%s', async (_name, run, expected) => {
+      const draft = backend.addDraft({ status: 'revised' })
+      const review = backend.addReview(draft)
+      backend.state.cycles.set(review.id, { ...backend.state.cycles.get(review.id)!, ...recheckPending })
+      await mount()
+      await openDraft(draft.id)
+      await openReport()
+      startWorkflow.mockImplementation(async () => {
+        useWorkflowStore.setState({ history: [{ id: 'recheck-run', status: 'failed', ...run } as never] })
+        return 'recheck-run'
+      })
+      await click('重试合并后复验')
+      await expect.element(page.getByText(expected, { exact: true })).toBeVisible()
+    })
   })
 
   it('最新审稿的循环读失败、更早的审稿有循环：仍显示最新一份，不退回更早的', async () => {
