@@ -27,7 +27,8 @@ import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
 import { Check } from '../ui/Check'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { authorError, displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 import { captureProjectSession, isProjectSessionCurrent } from '../project-session-gate'
 import { randomUUID } from '../../utils/id'
 import { pluralEn } from '../../shared/plural-en'
@@ -192,10 +193,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
       let project = useProjectStore.getState().currentProject
       let projectSession = captureProjectSession(project)
       if (targetMode === 'new' && !explicitRun) {
-        if (!name.trim() || !savePath) throw new Error(text(
-          '请先填写新项目名称和保存位置，再选择小说文件。',
-          'Enter the new project name and save location before choosing novel files.',
-        ))
+        if (!name.trim() || !savePath) throw authorError(currentInterfaceLocale(), { note: note('请先填写新项目名称和保存位置，再选择小说文件。', 'Enter the new project name and save location before choosing novel files.') })
         const success = await createProject({
           name: name.trim(),
           parentGrantId: savePath.grantId,
@@ -209,10 +207,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         projectSession = captureProjectSession(project)
         setTargetMode('current')
       }
-      if (!project || !projectSession) throw new Error(text(
-        '目标项目缺少有效会话，已拒绝读取小说文件。',
-        'The target project has no valid session, so the novel files were not read.',
-      ))
+      if (!project || !projectSession) throw authorError(currentInterfaceLocale(), { note: note('目标项目缺少有效会话，已拒绝读取小说文件。', 'The target project has no valid session, so the novel files were not read.') })
       operationSession = projectSession
       const runId = explicitRun?.id ?? randomUUID()
       const runLocale = explicitRun?.locale ?? locale
@@ -277,7 +272,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
     const project = useProjectStore.getState().currentProject
     const projectSession = captureProjectSession(project)
     if (!project || !projectSession) {
-      throw new Error(text('当前项目会话已失效，无法启动导入', 'The project session expired, so the import cannot start.'))
+      throw authorError(currentInterfaceLocale(), { note: note('当前项目会话已失效，无法启动导入', 'The project session expired, so the import cannot start.') })
     }
     const authorChapterNumbers = run.purpose === 'author-manuscript'
       ? await loadAuthorImportChapterNumbers(run, projectSession, project.path)
@@ -294,7 +289,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
       console.error('[ImportNovel] 导入工作流失败:', error)
     })
     if (isProjectSessionCurrent(projectSession)) onClose()
-  }, [onClose, startWorkflow, text])
+  }, [onClose, startWorkflow])
 
   const applyPreparation = useCallback(async (
     preparation: ImportRunPreparationResult,
@@ -338,7 +333,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
       ))
       return
     }
-    if (!preparation.run) throw new Error(text('导入运行缺少持久化记录', 'The import run has no persisted record.'))
+    if (!preparation.run) throw authorError(currentInterfaceLocale(), { note: note('导入运行缺少持久化记录', 'The import run has no persisted record.') })
     await launchRun(preparation.run)
   }, [launchRun, text])
 
@@ -360,10 +355,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
     try {
       const project = useProjectStore.getState().currentProject
       const projectSession = captureProjectSession(project)
-      if (!project || !projectSession) throw new Error(text(
-        '目标项目缺少有效会话，已拒绝导入',
-        'The target project has no valid session, so the import was rejected.',
-      ))
+      if (!project || !projectSession) throw authorError(currentInterfaceLocale(), { note: note('目标项目缺少有效会话，已拒绝导入', 'The target project has no valid session, so the import was rejected.') })
 
       if (purpose === 'reference') {
         setInspection(null)
@@ -391,12 +383,8 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         project.path,
       )
       if (!prepared.success) {
-        throw new Error(prepared.errorCode === AUTHOR_IMPORT_PREVIEW_STALE
-          ? text(
-              '项目或作者原稿清单已变化，请重新选择文件并确认预览。',
-              'The project or author manuscript changed. Select the files again and confirm the preview.',
-            )
-          : prepared.error || text('无法创建导入运行', 'Could not create the import run.'))
+        if (prepared.errorCode === AUTHOR_IMPORT_PREVIEW_STALE) throw authorError(currentInterfaceLocale(), { note: note('项目或作者原稿清单已变化，请重新选择文件并确认预览。', 'The project or author manuscript changed. Select the files again and confirm the preview.') })
+        throw prepared.error ? new Error(prepared.error) : authorError(currentInterfaceLocale(), { note: note('无法创建导入运行', 'Could not create the import run.') })
       }
       setInspection(null)
       setSplitDone(false)
@@ -431,7 +419,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         ))
         return
       }
-      if (!preparation.run) throw new Error(text('导入运行缺少持久化记录', 'The import run has no persisted record.'))
+      if (!preparation.run) throw authorError(currentInterfaceLocale(), { note: note('导入运行缺少持久化记录', 'The import run has no persisted record.') })
       await launchRun(preparation.run)
     } catch (e) {
       console.error('[ImportNovel] 导入失败:', e)
@@ -472,10 +460,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
           project.path,
         )
         if (!isProjectSessionCurrent(projectSession)) return
-        if (!result.success || !result.preparation) throw new Error(result.error || text(
-          '无法完成已解析的导入，请重试。',
-          'Could not finalize the parsed import. Please try again.',
-        ))
+        if (!result.success || !result.preparation) throw result.error ? new Error(result.error) : authorError(currentInterfaceLocale(), { note: note('无法完成已解析的导入，请重试。', 'Could not finalize the parsed import. Please try again.') })
         await applyPreparation(result.preparation, projectSession, resumableRun.id)
       } catch (error) {
         if (!isProjectSessionCurrent(projectSession)) return
@@ -504,9 +489,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         project.path,
       )
       if (!isProjectSessionCurrent(session)) return
-      if (!result.success || !result.run) throw new Error(result.error || text(
-        '无法重新开始导入', 'Could not restart the import.',
-      ))
+      if (!result.success || !result.run) throw result.error ? new Error(result.error) : authorError(currentInterfaceLocale(), { note: note('无法重新开始导入', 'Could not restart the import.') })
       if (result.run.stage === 'parsing') {
         const restartedRun = result.run
         setResumableState(previous => {

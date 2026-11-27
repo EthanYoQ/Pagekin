@@ -203,15 +203,8 @@
     "displayedErrorMessage": 1,
     "englishWithReason": 3
   },
-  "src/services/workflows/commands/import-novel.command.ts": {
-    "displayedErrorMessage": 1,
-    "englishWithReason": 1
-  },
   "src/services/workflows/creative-workflow-launcher.ts": {
     "displayedErrorMessage": 2
-  },
-  "src/services/workflows/import-run-orchestrator.ts": {
-    "appErrorMessage": 1
   },
   "src/services/workflows/planning-material-workflow.ts": {
     "authorOwned": 1

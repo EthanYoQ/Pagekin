@@ -8,13 +8,14 @@ import type {
 } from '../../../shared/import-run'
 import { createImportRunChapterBatchCheckpointId } from '../../../shared/import-run'
 import type { FinalizedDraftImportReceipt } from '../../../shared/finalized-draft-import'
-import { importGenerationStopMessage } from '../../../i18n/app-errors'
+import { failureText, importStopFailure } from '../../../i18n/app-errors'
 import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowStore } from '../../../stores/workflow-store'
 import {
   IMPORT_CHAPTER_PAGE_SIZE,
   IMPORT_KNOWLEDGE_BATCH_SIZE,
   ImportRunOrchestrator,
+  importRecordError,
   type ImportRunOrchestratorDependencies,
 } from '../import-run-orchestrator'
 import { shown } from '../../../i18n/__tests__/shown-locale'
@@ -951,14 +952,14 @@ describe('ImportRunOrchestrator', () => {
 describe('ImportRunOrchestrator failure copy follows the import run locale', () => {
   const han = /\p{Script=Han}/u
 
-  function authorPostprocessHarness(locale: ImportRunSnapshot['locale']) {
+  function authorPostprocessHarness(locale: ImportRunSnapshot['locale'], interfaceLocale: InterfaceLocale = locale) {
     const fixture = harness(2, {
       locale,
       purpose: 'author-manuscript',
       effectNamespace: 'import:author-manuscript:run-1',
       authorityFingerprint: 'c'.repeat(64),
       stage: 'author-postprocess',
-    })
+    }, interfaceLocale)
     const receipt: FinalizedDraftImportReceipt = {
       operationId: 'author-import:run-1',
       payloadHash: 'e'.repeat(64),
@@ -1014,6 +1015,26 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
     expect(getRun().lastError).toBe((failure as Error).message)
   })
 
+  it('导入记录报错统一接上继续或重新导入的办法，调用处只写是哪一项', () => {
+    expect(importRecordError(shown('zh-CN'), '记录甲不完整。', 'Record A is incomplete.').message)
+      .toBe('记录甲不完整。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。')
+    expect(importRecordError(shown('en-US'), '记录甲不完整。', 'Record A is incomplete.').message)
+      .toBe('Record A is incomplete. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.')
+  })
+
+  it('英文运行在日文界面续跑：收据缺章的说明仍是英文，与英文界面逐字相同', async () => {
+    const outcomes = await Promise.all((['en-US', 'ja-JP'] as const).map(async interfaceLocale => {
+      const { deps, getRun } = authorPostprocessHarness('en-US', interfaceLocale)
+      const failure = await new ImportRunOrchestrator(deps)
+        .executeStage('run-1', 'author-postprocess', 'test-runner', { cancelled: false }, callbacks)
+        .catch((error: Error) => error)
+      return { message: (failure as Error).message, stored: getRun().lastError }
+    }))
+
+    const expected = 'The saved author-manuscript record is missing Chapter 2. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'
+    expect(outcomes).toEqual([{ message: expected, stored: expected }, { message: expected, stored: expected }])
+  })
+
   it.each([
     ['zh-CN', 'blueprints', "Error invoking remote method 'generation:begin': Error: GENERATION_DIRECTORY_CONTINUATION_BLOCKED", 'GENERATION_DIRECTORY_CONTINUATION_BLOCKED'],
     ['en-US', 'global', 'ROOT_BUDGET_EXHAUSTED', 'ROOT_BUDGET_EXHAUSTED'],
@@ -1027,7 +1048,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', stage, 'test-runner', { cancelled: false }, { ...callbacks, log })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(importGenerationStopMessage(shown(locale), code))
+    expect((failure as Error).message).toBe(failureText(shown(locale), importStopFailure(code)))
     expect((failure as Error).message).not.toContain(code)
     expect(getRun()).toMatchObject({ status: 'failed', lastError: (failure as Error).message })
     expect(log.mock.calls.flat().some(line => String(line).includes(code))).toBe(true)
@@ -1042,8 +1063,8 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, { ...callbacks, log })
       .catch((error: Error) => error)
 
-    const japanese = importGenerationStopMessage(shown('ja-JP'), 'ROOT_BUDGET_EXHAUSTED')
-    expect(japanese).not.toBe(importGenerationStopMessage(shown('en-US'), 'ROOT_BUDGET_EXHAUSTED'))
+    const japanese = failureText(shown('ja-JP'), importStopFailure('ROOT_BUDGET_EXHAUSTED'))
+    expect(japanese).not.toBe(failureText(shown('en-US'), importStopFailure('ROOT_BUDGET_EXHAUSTED')))
     expect((failure as Error).message).toBe(japanese)
     expect(getRun()).toMatchObject({ locale: 'en-US', lastError: japanese })
     expect(log).toHaveBeenCalledWith('Import stop reason: ROOT_BUDGET_EXHAUSTED')
@@ -1082,7 +1103,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
     const failure = await new ImportRunOrchestrator(deps)
       .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, callbacks)
       .catch((error: Error) => error)
-    expect((failure as Error).message).toBe(importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript'))
+    expect((failure as Error).message).toBe(failureText(shown('zh-CN'), importStopFailure('ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript')))
     expect((failure as Error).message).not.toContain('重新开始')
     expect(getRun().lastError).toBe((failure as Error).message)
   })
