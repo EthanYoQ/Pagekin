@@ -3,7 +3,7 @@ import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
 import {
   AuthorError, AuthorNote, catalogKeyNote, codeOf, failureCode, failureOf,
-  type Failure, type LegacyReason, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
+  type Failure, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
 } from '../shared/failure'
 
 /**
@@ -548,7 +548,7 @@ const WRAPPED_CODE = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*Er
 /** 码后面可以跟「:数字」的码。渲染端按这个数字拆批，所以数字要和码一起过 IPC。 */
 const COUNTED_CODES: ReadonlySet<string> = new Set(['TASK_BUDGET_SCOPE_SPLIT_REQUIRED'])
 
-/** counted 为 false 时带数字的 message 不算码，errorCodeOf 的读者看到的与原来相同。 */
+/** counted 为 false 时，「码:数字」形式的 message 不算码；只有 readCode 与 registeredErrorMessage 认数字后缀。 */
 function wrappedCode(error: unknown, counted: boolean): { code: string; count?: string } | undefined {
   const message = typeof error === 'string' ? error : error instanceof Error ? error.message : undefined
   const match = message === undefined ? null : WRAPPED_CODE.exec(message.trim())
@@ -586,13 +586,6 @@ const CODE_SHAPE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u
 /** 报错带的稳定错误码，登记与否都读。 */
 export function errorCodeOf(error: unknown): string | undefined {
   return codeCandidates(error).find((code): code is string => typeof code === 'string' && CODE_SHAPE.test(code))
-}
-
-/** Electron 在主进程报错前加的调用通道前缀对作者没有意义，兜底说明里去掉。 */
-const IPC_PREFIX = /^Error invoking remote method '[^']+': (?:[A-Za-z]*Error: )?/u
-
-function readMessage(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).replace(IPC_PREFIX, '')
 }
 
 /** 已登记错误码的可读文案；未登记时返回 undefined，由调用方保留原有说明。 */
@@ -721,11 +714,7 @@ const AUTHOR_STOP_KEYS = {
 } as const satisfies Record<ImportStopKind, MessageKey>
 
 export function appErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
-  const known = knownAppErrorMessage(locale, error)
-  if (known) return known
-  if (error instanceof AuthorError) return unexplained(locale, error.failure)
-  return unregisteredCodeMessage(locale, strippedRaw(error))
-    ?? translate(locale, 'error.unknown', { message: readMessage(error) })
+  return displayedErrorMessage(locale, error)
 }
 
 const loggedUnregisteredCodes = new Set<string>()
@@ -735,12 +724,6 @@ function logUnregisteredCode(code: string): void {
   if (loggedUnregisteredCodes.has(code)) return
   loggedUnregisteredCodes.add(code)
   console.warn(`[app-errors] 未登记文案的错误码：${code}`)
-}
-
-function unregisteredCodeMessage(locale: ErrorDisplayLocale, raw: string, fallback?: string): string | undefined {
-  if (!CODE_SHAPE.test(raw)) return undefined
-  logUnregisteredCode(raw)
-  return fallback || translate(locale, 'error.unregisteredCode')
 }
 
 const loggedValues = new Set<string>()
@@ -781,22 +764,13 @@ function noteText(locale: ErrorDisplayLocale, value: AuthorNote): string | undef
   return template.replace(/\{(\w+)\}/gu, (whole, name: string) => String(value.params?.[name] ?? whole)).trim() || undefined
 }
 
-/** 未迁移通道给的原因按旧规则：已登记码按码说明，没登记的码不显示，其余文字只在中文界面附上。 */
-function legacyReasonText(locale: ErrorDisplayLocale, text: string): string | undefined {
-  const known = knownAppErrorMessage(locale, text)
-  if (known) return known
-  if (errorCodeOf(text) || copyLocale(locale) !== 'zh-CN' || !text.trim()) return undefined
-  return strippedRaw(text) || undefined
-}
-
 function codeText(locale: ErrorDisplayLocale, code: string): string | undefined {
   const known = knownAppErrorMessage(locale, code)
   if (known === undefined) logUnregisteredCode(code)
   return known
 }
 
-function sentences(locale: ErrorDisplayLocale, failure: Failure | LegacyReason): string[] {
-  if ('legacy' in failure) return [legacyReasonText(locale, failure.legacy)].filter((text): text is string => text !== undefined)
+function sentences(locale: ErrorDisplayLocale, failure: Failure): string[] {
   const own = (failure.note && noteText(locale, failure.note)) || (failure.code ? codeText(locale, failure.code) : undefined)
   const rest = failure.because ? sentences(locale, failure.because) : []
   return own === undefined || rest[0] === own ? rest : [own, ...rest]
@@ -840,12 +814,9 @@ export function caughtFailure(error: unknown): Failure | undefined {
   return failure
 }
 
-/** error.unknown 整句只装原文，不许过 IPC。 */
-const WIRE_EXCLUDED_KEYS: ReadonlySet<string> = new Set(['error.unknown'] satisfies MessageKey[])
-
 type NoAny<P> = { readonly [K in keyof P]: 0 extends 1 & P[K] ? never : P[K] }
 
-export function wireNote<const P extends NoteParams>(key: Exclude<MessageKey, 'error.unknown'>, params?: P & NoAny<P>): WireNote {
+export function wireNote<const P extends NoteParams>(key: MessageKey, params?: P & NoAny<P>): WireNote {
   return { key: key as string as WireNoteKey, ...(params ? { params } : {}) }
 }
 
@@ -853,7 +824,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 function wireNoteOf(value: unknown): WireNote | undefined {
-  if (!isRecord(value) || typeof value.key !== 'string' || WIRE_EXCLUDED_KEYS.has(value.key) || !Object.hasOwn(messages['en-US'], value.key)) return undefined
+  if (!isRecord(value) || typeof value.key !== 'string' || !Object.hasOwn(messages['en-US'], value.key)) return undefined
   const { params } = value
   if (params !== undefined && !(isRecord(params) && Object.values(params).every(v => typeof v === 'string' || Number.isFinite(v)))) return undefined
   if (Object.keys(value).every(field => field === 'key' || field === 'params')) return value as unknown as WireNote
@@ -867,7 +838,7 @@ export function publicWireFailure(value: unknown): WireFailure {
   return { code: value.code, ...(note ? { note } : {}) }
 }
 
-/** db:* 不经 handle()，主进程出口管不到，这里是它们唯一的校验。 */
+/** 渲染端入口不信任过 IPC 的形状：码和目录键在这里再认一次。 */
 export function wireFailure(value: unknown): Failure | undefined {
   const code = isRecord(value) ? failureCode(value.code) : undefined
   if (!isRecord(value) || !code) return undefined
@@ -901,18 +872,18 @@ export function resultFailure(result: { failure?: Failure; error?: string; error
 const DISPLAY_PREFIX = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*Error: )?/u
 
 /**
- * 把报错交给作者看的统一入口（toast、提示框、内联提示）：主进程的 result.error、IPC 抛出的错误
- * 与渲染端按界面语言写好的说明都可以直接传进来。登记过的码按界面语言说明；没登记的码用该处的兜底说明，
- * 没有兜底时用通用说明；其余原文去掉通道与类名前缀后保留；完全没有内容时用该处的兜底说明（调用方用 text(zh, en) 写好）。
+ * 把报错交给作者看的入口：AuthorError 显示它的说明，登记过的码按界面语言说明，
+ * 其余（没登记的码、原文、空）用该处的兜底说明，没有兜底时用通用说明；原文只进控制台。
  */
 export function displayedErrorMessage(locale: ErrorDisplayLocale, error: unknown, fallback?: string): string {
   if (error instanceof AuthorError) return authoredText(locale, error.failure) ?? unexplained(locale, error.failure, fallback)
   const known = knownAppErrorMessage(locale, error)
   if (known) return known
   const raw = strippedRaw(error)
-  return unregisteredCodeMessage(locale, raw, fallback) ?? (raw || fallback || unknownErrorText(locale))
+  if (CODE_SHAPE.test(raw)) logUnregisteredCode(raw)
+  else if (raw) warnOnce('未标记的失败，原文不显示：', error instanceof Error ? error : raw)
+  return fallback || translate(locale, 'error.unregisteredCode')
 }
-
 
 const strippedRaw = (error: unknown) => displayedRaw(error).trim().replace(DISPLAY_PREFIX, '')
 const unknownErrorText = (locale: InterfaceLocale) => localize(copyLocale(locale), '未知错误', 'Unknown error')
@@ -929,14 +900,6 @@ function displayedRaw(error: unknown): string {
 
 export function containsHan(value: string): boolean {
   return /\p{Script=Han}/u.test(value)
-}
-
-/**
- * 英文句子后附上原因。英文界面下含汉字的原因（主进程未登记的中文原文）不拼进英文句子，只给概述；
- * 日文界面下原因按日文目录写好，照样附上。
- */
-export function englishWithReason(locale: ErrorDisplayLocale, summary: string, reason: string, separator = ' '): string {
-  return !reason.trim() || (locale === 'en-US' && containsHan(reason)) ? summary : `${summary}${separator}${reason}`
 }
 
 /** 主进程是否登记过这个码（登记过的码才有目录文案）。 */
