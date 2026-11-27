@@ -122,7 +122,7 @@ describe('分工模型设置页', () => {
 
   it('保存失败时提示原因，下拉回到原来的选择', async () => {
     useLLMStore.setState({ stageModelIds: { review: 'glm' } })
-    invoke.mockImplementation(async channel => channel === 'llm:set-stage-model' ? { success: false, error: 'Error: LLM_STAGE_MODEL_UNAVAILABLE' } : undefined)
+    invoke.mockImplementation(async channel => channel === 'llm:set-stage-model' ? { success: false, failure: { code: 'LLM_STAGE_MODEL_UNAVAILABLE' } } : undefined)
     await mount()
     await choose('review', 'flash')
     expect(select('review').value).toBe('glm')
