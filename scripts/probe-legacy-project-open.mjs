@@ -403,7 +403,7 @@ const completeWrite = completeWriteProof ? `
     content: seed.revision, contentRevision: 0,
   }, context)
   if (finalized?.success !== true || finalized.committed !== true || finalized.publicationStatus !== 'published'
-    || !finalized.finalizationId) throw new Error(finalized?.error || 'complete source finalization failed')
+    || !finalized.finalizationId) throw new Error(finalized?.failure?.code || 'complete source finalization failed')
   const updated = { ...result.project, novelConfig: { ...result.project.novelConfig, ...seed.config } }
   const configSaved = await window.velaAPI.invoke('project:save', result.project.id, updated, result.project.path, context)
   if (configSaved?.success !== true) throw new Error(configSaved?.error || 'complete source author config save failed')

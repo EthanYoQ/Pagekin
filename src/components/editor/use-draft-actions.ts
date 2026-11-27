@@ -26,7 +26,7 @@ import { isRevisionSourceCurrent, refreshChapterFacts } from '../../stores/navig
 import { readDraftBody } from '../../stores/draft-store'
 import { markRestoredPublished, restoredPublicationKey, useRestoredPublicationStore } from '../../stores/restored-publication-store'
 import { ipc } from '../../services/ipc-client'
-import { retryFinalizationPublication } from '../../services/finalization-client'
+import { finalizationFailure, retryFinalizationPublication } from '../../services/finalization-client'
 import { captureFinalizationSnapshot } from '../../services/finalization-snapshot'
 import { countDraftUnits } from '../../shared/draft-units'
 import { globalEventBus } from '../../shared/event-bus'
@@ -531,7 +531,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       const result = await retryFinalizationPublication(finalizationId, projectSession)
       if (!isProjectSessionCurrent(projectSession)) return
       if (!result.success) {
-        throw authorError(currentInterfaceLocale(), failureOr(note('实体稿发布仍未完成', 'Manuscript publication is not complete.'), reasonOf(currentInterfaceLocale(), result.error)))
+        throw authorError(currentInterfaceLocale(), failureOr(note('实体稿发布仍未完成', 'Manuscript publication is not complete.'), finalizationFailure(result)))
       }
       useEditorStore.setState(state => ({
         tabs: state.tabs.map(tab => tab.id === tabId
