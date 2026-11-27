@@ -997,7 +997,7 @@ describe('InferGlobalSettingsCommand', () => {
       step: {},
       context: createContext(),
       callbacks,
-    })).rejects.toThrow('导入全局事实原子提交失败：导入没能继续：校验没有通过。请重试；如果仍然出现，请把这段说明反馈给我们。')
+    })).rejects.toThrow('导入全局事实原子提交失败：已经导入的内容没有受影响。导入没能继续：校验没有通过。请重试；如果仍然出现，请把这段说明反馈给我们。')
     expect(useProjectStore.getState().currentProject?.novelConfig.genre).toBe('玄幻')
   })
 })

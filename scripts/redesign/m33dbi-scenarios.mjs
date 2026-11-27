@@ -6,7 +6,7 @@ import { referenceNovel } from './f537-scenarios.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
-const CHECK_FAILED_EN = 'The import could not continue because a check failed. Try again; if it keeps happening, send us this message.'
+const CHECK_FAILED_EN = 'Content already imported is unaffected. The import could not continue because a check failed. Try again; if it keeps happening, send us this message.'
 
 async function setInterfaceLocale(page, locale) {
   const settings = /^(设置|Settings)$/u

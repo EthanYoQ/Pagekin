@@ -67,8 +67,8 @@ const invoke = (channel: string, ...args: unknown[]) => mocks.handlers.get(chann
 const sqliteFailure = () => Object.assign(new Error('database disk image is malformed'), { name: 'SqliteError', code: 'SQLITE_CORRUPT' })
 const RAW = /SqliteError|malformed|SQLITE_/u
 const CHECK_FAILED = {
-  'zh-CN': '导入没能继续：校验没有通过。请重试；如果仍然出现，请把这段说明反馈给我们。',
-  'en-US': 'The import could not continue because a check failed. Try again; if it keeps happening, send us this message.',
+  'zh-CN': '已经导入的内容没有受影响。导入没能继续：校验没有通过。请重试；如果仍然出现，请把这段说明反馈给我们。',
+  'en-US': 'Content already imported is unaffected. The import could not continue because a check failed. Try again; if it keeps happening, send us this message.',
 }
 
 const WRITES = [
