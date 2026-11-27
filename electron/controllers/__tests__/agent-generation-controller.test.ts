@@ -152,18 +152,18 @@ describe('Agent registered IPC, actual SQLite and intercepted provider boundary'
     const f = await action('propose_novel_config', { changes: { genre: 'Confirmed genre' } })
     expect(f.recovery.rounds[0].visibleText).toBe('Visible candidate.')
     expect(f.recovery.run.artifacts[0].text).toBe('Visible candidate.')
-    await expect(invoke('agent-generation:commit-domain-tool', { ref: f.ref })).rejects.toThrow('GENERATION_AGENT_DOMAIN_TOOL_NOT_AUTHORIZED')
+    await expect(invoke('agent-generation:commit-domain-tool', { ref: f.ref })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_AGENT_DOMAIN_TOOL_NOT_AUTHORIZED')
     const proposals = [{ name: 'propose_chapter_blueprint' as const, arguments: { chapter_number: 1, changes: { title: 'Author plan' } } }]
     const claims = await Promise.all([invoke('agent-generation:claim-tool', { ref: f.ref, confirmed: true, authorBlueprintProposals: proposals }),
       invoke('agent-generation:claim-tool', { ref: f.ref, confirmed: true, authorBlueprintProposals: proposals })])
     expect(claims.map(claim => claim.execute).sort()).toEqual([false, true])
-    await expect(invoke('agent-generation:finish-tool', { ref: f.ref, status: 'completed', observation: 'Forged completion' })).rejects.toThrow('GENERATION_AGENT_DOMAIN_EFFECT_REQUIRED')
+    await expect(invoke('agent-generation:finish-tool', { ref: f.ref, status: 'completed', observation: 'Forged completion' })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_AGENT_DOMAIN_EFFECT_REQUIRED')
     const receipt = await invoke('agent-generation:commit-domain-tool', { ref: f.ref })
     expect(receipt.changes).toEqual({ genre: 'Confirmed genre' })
     expect(getProjectDb()!.prepare('SELECT genre FROM project_core').pluck().get()).toBe('Confirmed genre')
     await invoke('agent-generation:finish-tool', { ref: f.ref, status: 'completed', observation: 'Actual domain receipt' })
     const child = (await invoke('agent-generation:read', { handle: f.recovery.handle })).rounds[0].actions[1]
-    await expect(invoke('agent-generation:commit-domain-tool', { ref: child.ref })).rejects.toThrow('GENERATION_AGENT_DOMAIN_TOOL_NOT_AUTHORIZED')
+    await expect(invoke('agent-generation:commit-domain-tool', { ref: child.ref })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_AGENT_DOMAIN_TOOL_NOT_AUTHORIZED')
     await invoke('agent-generation:claim-tool', { ref: child.ref, confirmed: true })
     await invoke('agent-generation:commit-domain-tool', { ref: child.ref })
     await invoke('agent-generation:finish-tool', { ref: child.ref, status: 'completed', observation: 'Actual blueprint receipt' })
@@ -194,7 +194,7 @@ describe('Agent registered IPC, actual SQLite and intercepted provider boundary'
     const f = await action('propose_novel_config', { changes: { genre: 'Candidate' } })
     await invoke('agent-generation:claim-tool', { ref: f.ref, confirmed: true })
     getProjectDb()!.exec("UPDATE project_core SET genre='External author edit'")
-    await expect(invoke('agent-generation:commit-domain-tool', { ref: f.ref })).rejects.toThrow('GENERATION_AGENT_DOMAIN_TOOL_NOT_AUTHORIZED')
+    await expect(invoke('agent-generation:commit-domain-tool', { ref: f.ref })).rejects.toThrow('IPC_HANDLER_FAILED'); expectLoggedCode('GENERATION_AGENT_DOMAIN_TOOL_NOT_AUTHORIZED')
     const read = await invoke('agent-generation:read', { handle: f.recovery.handle })
     expect(read.sourceStatus).toBe('conflict')
     expect(read.rounds[0].visibleText).toBe('Visible candidate.')
@@ -207,7 +207,8 @@ describe('Agent registered IPC, actual SQLite and intercepted provider boundary'
     const ref: AgentToolActionRef = structuredClone(f.ref)
     if (field === 'toolCallId' || field === 'attemptId') ref[field] = 'forged'
     else ref.handle[field] = 'forged'
-    await expect(invoke('agent-generation:claim-tool', { ref, confirmed: true })).rejects.toThrow(/GENERATION_AGENT_(IDENTITY|TOOL_IDENTITY)_MISMATCH/)
+    await expect(invoke('agent-generation:claim-tool', { ref, confirmed: true })).rejects.toThrow('IPC_HANDLER_FAILED')
+    expect(vi.mocked(console.error)).toHaveBeenLastCalledWith(expect.stringContaining('抛出未登记的错误'), expect.objectContaining({ message: expect.stringMatching(/^GENERATION_AGENT_(IDENTITY|TOOL_IDENTITY)_MISMATCH$/u) }))
     expect(getProjectDb()!.prepare('SELECT genre FROM project_core').pluck().get()).toBe('Original genre')
   })
 

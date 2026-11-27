@@ -28,11 +28,12 @@ const graph = vi.hoisted(() => ({
   release: null as null | (() => void),
   result: 'checked' as 'checked' | 'unreadable',
   runId: 'run-1',
+  failure: null as Error | null,
 }))
 vi.mock('../../../../services/graph-generation', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../services/graph-generation')>(),
   createGraphGeneration: () => ({
-    open: async (request: unknown) => { graph.opened.push(request) },
+    open: async (request: unknown) => { graph.opened.push(request); if (graph.failure) throw graph.failure },
     execute: () => new Promise(resolve => {
       graph.release = () => resolve({
         result: graph.result === 'checked' ? { kind: 'continuity-suggest', suggestions: [], droppedSuggestions: 0 } : undefined,
@@ -344,6 +345,15 @@ describe('替换定稿后检查后续蓝图', () => {
     await click('检查后续蓝图')
     await finish()
     await expect.element(page.getByText('蓝图没有改动。这次结果没读出来，再点“检查后续蓝图”。')).toBeVisible()
+  })
+
+  it('主进程只说出了意外时，显示这里的兜底句，不显示通用句', async () => {
+    graph.failure = new Error("Error invoking remote method 'graph-generation:begin': Error: IPC_HANDLER_FAILED")
+    try {
+      await openReplaced()
+      await click('检查后续蓝图')
+      await expect.element(page.getByText('蓝图没有改动。这次没查成，再点“检查后续蓝图”。')).toBeVisible()
+    } finally { graph.failure = null }
   })
 
   it('在两章替换定稿的标签之间切换：上一章在跑的检查不挡这一章的按钮，结果也不落到这一章', async () => {
