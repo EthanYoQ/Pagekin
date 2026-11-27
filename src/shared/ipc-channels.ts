@@ -98,7 +98,7 @@ export interface ConfigChannels {
   }
   'config:set': {
     args: [config: Partial<Omit<GlobalConfig, 'stageModelIds'>>]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
@@ -165,14 +165,14 @@ export interface WindowEvents {
 export interface OfficialHomepageChannels {
   'official-homepage:open': {
     args: []
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
 export interface ModelProviderResourceChannels {
   'model-provider-resource:open': {
     args: [resource: ModelProviderResourceId]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 

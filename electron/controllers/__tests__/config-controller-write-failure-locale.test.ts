@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { failureText, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
 
@@ -28,16 +30,17 @@ beforeEach(async () => {
 })
 
 describe('全局设置写盘失败时的说明（#702）', () => {
+  const shownText = async (locale: 'zh-CN' | 'en-US') => {
+    const raw = await mocks.handlers.get('config:set')!({}, { locale: 'en-US' })
+    expect(JSON.stringify(raw)).not.toMatch(/EPERM|operation not permitted/u)
+    return failureText(shown(locale), resultFailure(receivedIpcResult(raw) as { success: boolean }))
+  }
+
   it('中文界面：说中文，不露系统原文', async () => {
-    const result = await mocks.handlers.get('config:set')!({}, { locale: 'en-US' }) as { success: boolean; error?: string }
-    expect(result.success).toBe(false)
-    expect(result.error).toMatch(/\p{Script=Han}/u)
-    expect(result.error).not.toMatch(/EPERM|operation not permitted|config\.json/u)
+    expect(await shownText('zh-CN')).toBe('设置没能写进配置文件。请确认磁盘还有空间、应用数据目录可写，再重试。')
   })
 
   it('英文界面：说英文', async () => {
-    mocks.locale = 'en-US'
-    const result = await mocks.handlers.get('config:set')!({}, { locale: 'zh-CN' }) as { success: boolean; error?: string }
-    expect(result.error).not.toMatch(/\p{Script=Han}|EPERM/u)
+    expect(await shownText('en-US')).not.toMatch(/\p{Script=Han}|EPERM/u)
   })
 })

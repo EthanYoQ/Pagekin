@@ -22,7 +22,8 @@ import { parseJsonOrUndefined } from '../shared/ignore-failure'
 import { useEditorStore } from './editor-store'
 import { useProjectStore } from './project-store'
 import { currentInterfaceLocale, useLocaleStore } from './locale-store'
-import { displayedErrorMessage } from '../i18n/app-errors'
+import { displayedErrorMessage, failureText, resultFailure } from '../i18n/app-errors'
+import { note } from '../shared/failure'
 import { workflowMainProcessError } from '../services/workflows/workflow-project-session'
 import {
   CHARACTER_DRAFT_TAB,
@@ -272,7 +273,11 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
         const text = useLocaleStore.getState().text
         throw new Error(text('头像保存失败，档案其它内容已保存。', 'The avatar could not be saved. Other profile changes were saved.'), { cause: error })
       }
-      if (!response.success) throw new Error(response.error.message)
+      if (!response.success) {
+        throw new Error(failureText(currentInterfaceLocale(), resultFailure(response), {
+          fallback: note('头像保存失败，档案其它内容已保存。', 'The avatar could not be saved. Other profile changes were saved.'),
+        }))
+      }
       characterAvatarChanges.dispatchEvent(new CustomEvent('changed', { detail: { context: session, characterId } }))
       if (isCharacterProjectSessionCurrent(session) && get().avatarDrafts[characterId] === draft) get().stageAvatar(characterId, null, session)
     }

@@ -1,19 +1,6 @@
+import type { Failure } from './failure'
+
 export const MAX_CHARACTER_AVATAR_INPUT_BYTES = 4 * 1024 * 1024
-
-export type CharacterAvatarErrorCode =
-  | 'INVALID_SENDER'
-  | 'INVALID_CHARACTER_ID'
-  | 'PROJECT_NOT_OPEN'
-  | 'CHARACTER_NOT_FOUND'
-  | 'IMAGE_READ_FAILED'
-  | 'IMAGE_FORMAT_INVALID'
-  | 'IMAGE_TOO_LARGE'
-  | 'AVATAR_SAVE_FAILED'
-
-export interface CharacterAvatarError {
-  code: CharacterAvatarErrorCode
-  message: string
-}
 
 export interface CharacterAvatarView {
   characterId: string
@@ -27,19 +14,19 @@ export type CharacterAvatarAssetMime = CharacterAvatarView['mime'] | 'applicatio
 export type CharacterAvatarChooseResponse =
   | { success: true; cancelled: true }
   | { success: true; cancelled: false; image: Omit<CharacterAvatarView, 'assetRevision'> }
-  | { success: false; error: CharacterAvatarError }
+  | { success: false; failure?: Failure }
 
 export type CharacterAvatarCommitResponse =
   | { success: true; avatar: CharacterAvatarView }
-  | { success: false; error: CharacterAvatarError }
+  | { success: false; failure?: Failure }
 
 export type CharacterAvatarBatchReadResponse =
   | { success: true; avatars: CharacterAvatarView[] }
-  | { success: false; error: CharacterAvatarError }
+  | { success: false; failure?: Failure }
 
 export type CharacterAvatarRemoveResponse =
   | { success: true }
-  | { success: false; error: CharacterAvatarError }
+  | { success: false; failure?: Failure }
 
 export interface CharacterAvatarChannels {
   'character-avatar:choose': {
