@@ -123,7 +123,7 @@ function productionDependencies(
 ): ImportRunOrchestratorDependencies {
   const session = context.projectSession
   const projectPath = context.projectPath
-  // 主进程没给原因时的兜底说明进运行卡片的步骤详情，按导入运行的语言写（工作流的 interfaceLocale 随 run.locale）。
+  // 兜底说明按导入运行的语言写，不跟随当前界面语言（interfaceLocale 随 run.locale）。
   const required = <T,>(result: { success: boolean; error?: string } & T, fallback: AuthorNote): T => {
     if (!result.success) throw result.error ? new Error(result.error) : authorError(context.interfaceLocale, { note: fallback })
     return result

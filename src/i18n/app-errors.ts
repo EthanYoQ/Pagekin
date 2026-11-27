@@ -623,7 +623,7 @@ const REFERENCE_STOP_KEYS = {
   previousAttempt: 'error.importPreviousAttemptIncomplete',
 } as const satisfies Record<ImportStopKind, MessageKey>
 
-/** 作者原稿不能重新开始，原稿正文在反推之前已经提交；说明先写原因，再接作者实际能做的下一步。 */
+/** 作者原稿的正文在反推前已提交，不能重新开始，说明里不提「重新开始」。 */
 const AUTHOR_STOP_KEYS = {
   budget: 'error.authorInferenceBudgetReached',
   activeTime: 'error.authorInferenceActiveTimeExhausted',

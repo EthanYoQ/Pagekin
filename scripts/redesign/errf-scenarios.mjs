@@ -6,7 +6,7 @@ import { holdBlueprintDispatch, importRoot, readDb, referenceNovel, writeDb } fr
 import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
-// 845 PR-F：导入停下的说明随导入运行的语言。运行开始时的界面语言决定运行语言，停下后切界面语言，运行卡片的说明不跟着变。
+// 845 PR-F：导入停下的说明按运行开始时的界面语言写，停下后切换界面语言不改变已有说明。
 
 const LABELS = {
   zh: { menu: `《${STAGE_SAMPLE.name}》作品菜单`, item: '小说拆解与仿写…', dialog: '小说拆解与仿写', choose: '选择', start: chapters => `导入当前项目（${chapters} 章）` },
@@ -48,7 +48,6 @@ async function failedStepError(page) {
   return stepError.innerText()
 }
 
-/** 第 2 批蓝图派发卡在门上时把累计时长推到上限，导入停在「模型请求累计时长已到上限」。 */
 async function stopOnActiveTime(context, lang, chapters = 15) {
   const { app, page, roots, fake } = context
   if (lang === 'en') await setInterfaceLocale(page, 'en-US')
