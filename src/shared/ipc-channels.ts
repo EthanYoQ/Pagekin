@@ -878,7 +878,7 @@ export interface DatabaseChannels {
     args: [request: ImportGlobalFactsRequest, expectedProjectPath: string]
     return: { success: boolean; receipt?: ImportGlobalFactsReceipt; failure?: Failure }
   }
-  'db:project-clear-generated-data': { args: [options: ProjectClearOptions, expectedProjectPath: string]; return: { success: boolean; cleared?: ProjectClearScope[]; physicalFilesDeleted?: number; failure?: Failure } }
+  'db:project-clear-generated-data': { args: [options: ProjectClearOptions, expectedProjectPath: string]; return: { success: boolean; cleared?: ProjectClearScope[]; physicalFilesDeleted?: number; error?: string } }
   'db:import-run-prepare-inspection': {
     args: [request: ImportRunPrepareFromInspectionRequest, expectedProjectPath: string]
     return: ImportRunPrepareFromInspectionResult
