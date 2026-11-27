@@ -160,6 +160,13 @@ describe('蓝图与作品台账失败时作者看不到主进程原文', () => {
     expect(text('zh-CN', await received('db:project-clear-generated-data', [{ blueprints: true }, PATH])))
       .toBe('作品内容没有被清除。这次清除没能完成，请再试一次。')
   })
+
+  it('章节文件挪不回原处时，不说「没有被清除」，说清文件在哪', async () => {
+    mocks.clear.clearGeneratedData.mockImplementation(() => { throw new Error('PROJECT_CLEAR_RESTORE_FAILED') })
+    const result = await received('db:project-clear-generated-data', [{ generatedText: true }, PATH])
+    expect(resultFailure(result)?.code).toBe('PROJECT_CLEAR_RESTORE_FAILED')
+    expect(text('zh-CN', result)).toBe('作品库里的内容没有被清除，但有章节正文文件没能挪回作品文件夹，暂存在作品数据的 trash 文件夹里。请把它们挪回作品文件夹后再试。')
+  })
 })
 
 describe('蓝图与作品台账失败的说明与 master 逐字相同', () => {
