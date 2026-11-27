@@ -1493,7 +1493,8 @@ describe('project close lifecycle', () => {
           activeProjectPath: project('A').path,
           databaseRestored: true,
           dbReady: true,
-          error: 'target project is invalid',
+          error: 'PROJECT_OPERATION_FAILED',
+          failure: { code: 'PROJECT_OPERATION_FAILED' },
         }
       }
       throw new Error(`unexpected IPC: ${channel}`)

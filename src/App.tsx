@@ -123,7 +123,7 @@ export default function App() {
       if (!opened) throw new Error('烟测项目打开失败')
       const confirmed = await ipc.invoke('project:smoke-open-confirm', request.projectPath)
       // i18n-exempt: 同上，只进控制台日志
-      if (!confirmed.success) throw new Error(confirmed.error || '烟测项目确认失败')
+      if (!confirmed.success) throw new Error('烟测项目确认失败')
     }).catch(error => console.error('[SmokeProjectOpen]', error))
   }, [])
 

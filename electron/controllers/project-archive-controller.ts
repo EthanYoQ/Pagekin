@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
 import { showOpenDialogInLastDirectory, showSaveDialogInLastDirectory } from '../utils/remembered-dialog'
 
 import type {
@@ -24,6 +24,8 @@ import { restorePortableProject } from '../services/project-restore-service'
 import { registerRecentProject } from './project-controller'
 import { mainText } from '../i18n'
 import { SchemaMigrationError } from '../migrations/registry'
+import { handle } from '../ipc/handle'
+import { registeredErrorCode } from '../../src/i18n/app-errors'
 
 const require = createRequire(import.meta.url)
 
@@ -80,6 +82,9 @@ function sourceFailure(operation: 'export' | 'restore', code: unknown): string {
  * 不是码的报错（SqliteError、带路径的 ENOENT）是英文原文，不交给界面：原错误记进主进程日志，界面按操作说明。
  * 读源和写目标会报同样的 errno，只有出错的路径分得开：落在作品或所选存档上的算读源失败，其余才按 errno 算目标写不进。
  */
+/** 打开作品也报 MIGRATION_VERIFICATION_FAILED，说的是别的事；导出时它指有一项数据无法安全打包。 */
+const exportFailureCode = (code: string) => code === 'MIGRATION_VERIFICATION_FAILED' ? 'PORTABLE_UNSAFE_PROJECTION' : code
+
 function failure(operation: 'export' | 'restore', error: unknown, source?: string) {
   const raw = error instanceof Error ? error.message : String(error)
   const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
@@ -91,6 +96,11 @@ function failure(operation: 'export' | 'restore', error: unknown, source?: strin
       : UNWRITABLE_ERRNO.has(code as string) ? 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE'
         : operation === 'export' ? 'PORTABLE_EXPORT_FAILED' : 'PORTABLE_RESTORE_FAILED'
   }
+  if (operation === 'export') message = exportFailureCode(message)
+  if (!registeredErrorCode(message)) {
+    console.error(`[project-archive] ${operation} failed with an unregistered code`, error)
+    message = 'PROJECT_OPERATION_FAILED'
+  }
   const candidate = message === raw ? code ?? raw : message
   const errorCode = PORTABLE_ERROR_CODES.has(candidate as PortableProjectOperationErrorCode)
     ? candidate as PortableProjectOperationErrorCode
@@ -98,6 +108,7 @@ function failure(operation: 'export' | 'restore', error: unknown, source?: strin
   return {
     success: false as const,
     error: message,
+    failure: { code: message },
     ...(errorCode ? { errorCode } : {}),
     ...(error instanceof SchemaMigrationError && error.damagedReviewCycle ? { damagedReviewCycle: error.damagedReviewCycle } : {}),
   }
@@ -187,7 +198,7 @@ export function registerProjectArchiveController(
     event.preventDefault()
     void stopPortableExports().finally(() => app.quit())
   })
-  ipcMain.handle('dialog:select-project-archive-export', async (event: ArchiveGrantEvent, suggestedName: string) => {
+  handle('dialog:select-project-archive-export', async (event: ArchiveGrantEvent, suggestedName: string) => {
     const result = await showSaveDialogInLastDirectory('project-archive', {
       title: text('导出项目存档', 'Export project archive'),
       defaultPath: `${safeSuggestedName(suggestedName, 'project-backup')}.${ARCHIVE_EXTENSION}`,
@@ -208,7 +219,7 @@ export function registerProjectArchiveController(
     return issueSelectedGrant(grants, event, issued, result.filePath)
   })
 
-  ipcMain.handle('dialog:select-project-archive', async (event: ArchiveGrantEvent) => {
+  handle('dialog:select-project-archive', async (event: ArchiveGrantEvent) => {
     const result = await showOpenDialogInLastDirectory('project-archive', {
       title: text('选择项目存档', 'Choose a project archive'),
       filters: [{ name: 'AI Novel Archive', extensions: [ARCHIVE_EXTENSION] }],
@@ -226,7 +237,7 @@ export function registerProjectArchiveController(
     return issueSelectedGrant(grants, event, issued, archivePath)
   })
 
-  ipcMain.handle('dialog:select-project-restore-target', async (event: ArchiveGrantEvent, suggestedName: string) => {
+  handle('dialog:select-project-restore-target', async (event: ArchiveGrantEvent, suggestedName: string) => {
     const result = await showOpenDialogInLastDirectory('project-restore-target', { title: text('选择恢复副本所在文件夹', 'Choose the folder for the restored copy'), properties: ['openDirectory', 'createDirectory'] })
     const parent = result.canceled ? undefined : result.filePaths[0]
     if (!parent) return null
@@ -241,7 +252,7 @@ export function registerProjectArchiveController(
     return issueSelectedGrant(grants, event, issued, targetPath)
   })
 
-  ipcMain.handle('project:archive-export', async (event: ArchiveGrantEvent, request: PortableProjectExportRequest) => {
+  handle('project:archive-export', async (event: ArchiveGrantEvent, request: PortableProjectExportRequest) => {
     let sourceRoot: string | undefined
     try {
       const active = projectAccess.assertCurrentProjectContext(
@@ -269,7 +280,7 @@ export function registerProjectArchiveController(
     }
   })
 
-  ipcMain.handle('project:archive-restore', async (event: ArchiveGrantEvent, request: PortableProjectRestoreRequest) => {
+  handle('project:archive-restore', async (event: ArchiveGrantEvent, request: PortableProjectRestoreRequest) => {
     let archivePath: string | undefined
     try {
       archivePath = resolveGrantedPath(grants, event, request.archiveGrantId, 'read')
