@@ -10,6 +10,10 @@ import type {
   PortableProjectRestoreRequest,
   ProjectChannels,
 } from '../../../src/shared/ipc-channels'
+import { archiveFailureMessage, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
+import { codeOf, type Failure } from '../../../src/shared/failure'
+import type { DamagedReviewCycle } from '../../../src/shared/damaged-review-cycle'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 import { SchemaMigrationError } from '../../migrations/registry'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
@@ -793,5 +797,39 @@ describe('project:archive-restore', () => {
       warning: 'PROJECT_RECENT_LIST_UPDATE_FAILED',
     })
     expect(fs.readFileSync(restoredMarker, 'utf8')).toBe('restored')
+  })
+})
+
+describe('作品、归档、更新与云备份失败的说明与 master 逐字相同', () => {
+  const shownArchiveFailure = async (operation: 'export' | 'restore', raw: unknown, locale: 'zh-CN' | 'en-US') => {
+    const result = receivedIpcResult(await raw) as { success: boolean; failure?: Failure; error?: string; errorCode?: string; damagedReviewCycle?: DamagedReviewCycle }
+    expect(result.success).toBe(false)
+    return archiveFailureMessage(shown(locale), operation, codeOf(resultFailure(result)!) ?? '', result.damagedReviewCycle)
+  }
+  const exportWith = (thrown: unknown, root: string) => {
+    mocks.exportPortableProject.mockRejectedValueOnce(thrown)
+    return handler('project:archive-export')(event(), { targetArchiveGrantId: newTargetGrant(path.join(root, 'a.ainovel')), projectSession: projectSession() })
+  }
+  const restoreWith = (thrown: unknown, root: string) => {
+    mocks.restorePortableProject.mockRejectedValueOnce(thrown)
+    return handler('project:archive-restore')(event(), { archiveGrantId: archiveFileGrant(path.join(root, 'a.ainovel')), targetGrantId: newTargetGrant(path.join(root, 'copy')) })
+  }
+
+  it.each(['zh-CN', 'en-US'] as const)('%s', async locale => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const root = tempRoot('m33-proj-archive-copy-')
+    const shownText = {
+      exportSqlite: await shownArchiveFailure('export', exportWith(new Error('UNIQUE constraint failed: chapters.id'), root), locale),
+      exportUnwritable: await shownArchiveFailure('export', exportWith(Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' }), root), locale),
+      exportUnverified: await shownArchiveFailure('export', exportWith(new Error('MIGRATION_VERIFICATION_FAILED'), root), locale),
+      exportDamagedCycle: await shownArchiveFailure('export', exportWith(new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED', { chapterNumber: 2, chapterTitle: '沉船', inTrash: false }), root), locale),
+      exportStale: await shownArchiveFailure('export', handler('project:archive-export')(event(), { targetArchiveGrantId: newTargetGrant(path.join(root, 'b.ainovel')), projectSession: { ...projectSession(), leaseId: 'stale' } }), locale),
+      restoreRaw: await shownArchiveFailure('restore', restoreWith(Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' }), root), locale),
+      restoreNewer: await shownArchiveFailure('restore', restoreWith(new Error('PORTABLE_SCHEMA_UNSUPPORTED'), root), locale),
+      restoreUnwritable: await shownArchiveFailure('restore', restoreWith(Object.assign(new Error('PORTABLE_ARCHIVE_TARGET_UNWRITABLE'), { code: 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE' }), root), locale),
+      restoreTargetExists: await shownArchiveFailure('restore', restoreWith(new Error('PORTABLE_RESTORE_TARGET_EXISTS'), root), locale),
+      restoreGrantInvalid: await shownArchiveFailure('restore', handler('project:archive-restore')(event(), { archiveGrantId: 'missing', targetGrantId: 'missing' }), locale),
+    }
+    expect(shownText).toMatchSnapshot()
   })
 })

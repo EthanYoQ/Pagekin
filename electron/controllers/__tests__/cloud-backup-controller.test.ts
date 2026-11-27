@@ -6,7 +6,9 @@ import { createRequire } from 'node:module'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { CloudBackupFailure, CloudBackupProjectSessionContext } from '../../../src/shared/cloud-backup'
-import { damagedReviewCycleMessage, displayedErrorMessage } from '../../../src/i18n/app-errors'
+import { damagedReviewCycleMessage, displayedErrorMessage, failureText, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
+import type { Failure } from '../../../src/shared/failure'
+import { publicIpcResult } from '../../ipc/handle'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
 import { ExternalFileGrantService } from '../../services/external-file-grant-service'
 import { WebDavBackupError, WebDavBackupService } from '../../services/webdav-backup-service'
@@ -1195,5 +1197,25 @@ describe('云备份报错说出真正的原因（#702）', () => {
     })
 
     expect(zh(result)).toContain('数据文件夹写不进去')
+  })
+})
+
+describe('作品、归档、更新与云备份失败的说明与 master 逐字相同', () => {
+  it.each(['zh-CN', 'en-US'] as const)('%s', async locale => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fixture()
+    const shownText = async (raw: unknown) => {
+      const result = receivedIpcResult(await raw) as { success: boolean; failure?: Failure; errorCode?: string }
+      expect(result.success).toBe(false)
+      return failureText(shown(locale), resultFailure(result))
+    }
+    vi.mocked(f.deps.webDav.checkConnection).mockRejectedValueOnce(new WebDavBackupError('WEBDAV_AUTH'))
+    expect({
+      connectAuth: await shownText(f.invoke('cloud-backup:connect', { endpoint: 'https://dav.example.test/root/', username: 'writer', secret: 'top-secret' })),
+      connectInputInvalid: await shownText(f.invoke('cloud-backup:connect', null)),
+      cancelInputInvalid: await shownText(f.invoke('cloud-backup:cancel', 'not-a-uuid')),
+      backupWithoutDisclosure: await shownText(f.invoke('cloud-backup:backup', { operationId: '33333333-3333-4333-8333-333333333333', disclosureConfirmed: false })),
+      listCredentialUnavailable: await shownText(f.invoke('cloud-backup:list', { localEndpointAccountId: 'missing', cloudBookId: 'book' })),
+    }).toMatchSnapshot()
   })
 })
