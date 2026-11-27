@@ -43,8 +43,8 @@ async function injectThreeDead(app, names) {
 
 const restoreContinuity = app => app.evaluate(({ ipcMain }) => ipcMain._invokeHandlers.set('db:continuity-list-before', globalThis.__rdx3ContinuityOriginal))
 
-async function gateClear(app, error) {
-  const wrapped = await app.evaluate(({ ipcMain }, message) => {
+async function gateClear(app) {
+  const wrapped = await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
     if (!(handlers instanceof Map) || !handlers.has('db:project-clear-generated-data')) return false
     let release
@@ -55,10 +55,10 @@ async function gateClear(app, error) {
     handlers.set('db:project-clear-generated-data', async () => {
       gate.hit = true
       await gate.opened
-      return { success: false, error: message }
+      return { success: false, failure: { code: 'PROJECT_CLEAR_FAILED', note: { key: 'error.projectClearFailed' } } }
     })
     return true
-  }, error)
+  })
   assert.ok(wrapped, '能在主进程里替换清除生成内容的处理')
 }
 
@@ -72,7 +72,7 @@ function assertCovered(edge, scrim, message) {
 const promptAndExit = ({ promptFirst }) => ({ model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page, shoot }) => {
   await stage.stageButton(page, '设定').click()
   await stage.dirtySetup(page)
-  await gateClear(app, promptFirst ? ['磁盘只读', ...Array.from({ length: 14 }, (_, index) => `第 ${index + 1} 份蓝图没有清除。`)].join('\n') : '磁盘只读')
+  await gateClear(app)
   await stage.openWorkMenuItem(page, STAGE_SAMPLE.name, '清除生成内容…')
   const kinds = page.locator('.pi-check-row > .pi-check')
   await kinds.nth(0).click()
@@ -86,6 +86,8 @@ const promptAndExit = ({ promptFirst }) => ({ model: false, shell: 'stage', setu
   if (promptFirst) {
     await app.evaluate(() => globalThis.__rdx3ClearGate.release())
     await prompt.waitFor({ state: 'visible' })
+    // 失败说明只有一句，撑高说明区，让提示的上下沿露在退出确认外面
+    await prompt.locator('.pi-dialog-message').evaluate(element => { element.style.minHeight = '420px' })
     await shell.requestWindowClose(app)
     await exit.waitFor({ state: 'visible' })
     const observed = { exitOnTop: await stage.isTopmost(exit), focusInExit: await exit.evaluate(element => element.contains(document.activeElement)) }
