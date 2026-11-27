@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -214,6 +214,14 @@ describe('失败的码与说明（#844）', () => {
       "translate(locale, 'error.unregisteredCode')",
       'const legacy = 1',
     ]) expect(removedFailureEntries('src/x.ts', allowed), allowed).toEqual([])
+  })
+
+  it('direct-channels.json 不存在，CI 与守卫不读它', () => {
+    expect(existsSync(join(REPO_ROOT, 'electron/ipc/direct-channels.json'))).toBe(false)
+    const readers = ['src', 'electron', 'scripts', '.github', 'test'].flatMap(dir => repoSourceFiles(dir))
+      .filter(file => file !== 'test/helpers/legacy-failure-scan.ts' && file !== 'test/guards.test.ts')
+      .filter(file => readFileSync(join(REPO_ROOT, file), 'utf8').includes('direct-channels'))
+    expect(readers).toEqual([])
   })
 
   it('authorOwned( 的参数不许含异常原文', () => {

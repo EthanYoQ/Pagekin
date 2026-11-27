@@ -112,6 +112,8 @@ export const jaJP = {
   'error.externalFileGrantExpired': '選択したファイルまたはフォルダーへのアクセス権の期限が切れました。選び直してください。',
   'error.unregisteredCode': '予期しない問題が発生しました。もう一度お試しください。',
   'error.ipcHandlerFailed': '予期しない問題が発生したため、この操作は完了しませんでした。もう一度お試しください。解決しない場合は、このメッセージをお知らせください。',
+  'error.actionFailed': '操作は完了しませんでした。もう一度お試しください。',
+  'error.generationRunRecordSaveFailed': '生成の実行記録を保存できませんでした。もう一度お試しください。',
   'error.projectLeaseExpired': 'プロジェクトのリースが失効したため、操作を拒否しました。',
   'error.projectSessionContextMissing': 'プロジェクトのセッション情報がないため、操作を拒否しました。',
   'error.projectTargetOutsideProject': '対象が現在のプロジェクトの範囲外のため、操作を拒否しました。',

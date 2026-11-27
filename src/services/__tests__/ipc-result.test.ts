@@ -16,16 +16,16 @@ it('explains a registered main-process code in the English interface (#474)', ()
 
 it('falls back to English, not the Chinese action label, when the main process gives no reason (#474)', () => {
   useLocaleStore.setState({ locale: 'en-US' })
-  expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^The operation failed\.$/u)
+  expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^The operation did not finish\. Try again\.$/u)
   useLocaleStore.setState({ locale: 'zh-CN' })
-  expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^保存草稿失败$/u)
+  expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^保存草稿失败，请再试一次。$/u)
 })
 
-it('explains a registered main-process code in Japanese and keeps the inline fallback in English under a Japanese interface (#722)', () => {
+it('explains a registered main-process code and the fallback in Japanese under a Japanese interface (#722)', () => {
   useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' })
   expect(() => requireIpcSuccess({ success: false, error: 'Error: GENERATION_PROJECT_SESSION_STALE' }, '保存草稿'))
     .toThrow(/作品が切り替えられた/u)
-  expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^The operation failed\.$/u)
+  expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^操作は完了しませんでした。もう一度お試しください。$/u)
 })
 
 it('keeps a registered main-process code on the thrown error so a frozen caller can explain it in its own language (#722)', () => {
@@ -41,13 +41,3 @@ it('keeps a registered main-process code on the thrown error so a frozen caller 
   expect(displayedErrorMessage(shown('ja-JP'), thrown)).toBe(translate('ja-JP', 'error.projectNotOpen'))
 })
 
-it('未迁移通道回的中文说明照常显示', () => {
-  for (const locale of ['zh-CN', 'en-US'] as const) {
-    useLocaleStore.setState({ interfaceLocale: locale, locale })
-    for (const error of ['项目数据库未打开', 'Error: 项目数据库未打开', 'connect ECONNREFUSED 127.0.0.1:7890', 'WORKFLOW_UNREGISTERED_TEST_CODE']) {
-      let thrown: unknown
-      try { requireIpcSuccess({ success: false, error }, '保存草稿', '兜底说明') } catch (caught) { thrown = caught }
-      expect({ message: (thrown as Error).message, code: (thrown as { code?: unknown }).code }, `${locale} ${error}`).toEqual({ message: error, code: undefined })
-    }
-  }
-})

@@ -71,10 +71,10 @@ function requireExportWriteSuccess(
   fallback: AuthorNote,
 ): void {
   try {
-    requireIpcSuccess(result, '写入导出文件')
+    requireIpcSuccess(result, '写入导出文件', fallback)
   } catch (error) {
     throw Object.assign(
-      error instanceof AuthorError ? error : authorError(currentInterfaceLocale(), { note: fallback }),
+      error as AuthorError,
       {
         commitState: result.commitState === 'unknown'
           ? 'unknown'

@@ -383,7 +383,7 @@ export const ipcPromptPersistence: PromptPersistence = {
           file.path,
           projectSession.projectPath,
         )
-        requireIpcSuccess(result, '读取项目提示词')
+        requireIpcSuccess(result, '读取项目提示词', catalogNote('error.promptFileUnreadable'))
         if (!result.content.trim()) continue
         const parsed = JSON.parse(result.content) as PromptTemplate
         if (!validTemplate(parsed)) throw new Error('PROMPT_TEMPLATE_INVALID')

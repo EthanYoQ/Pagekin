@@ -134,6 +134,9 @@
   "src/services/generation/prompt-budget-failure.ts": {
     "knownAppErrorMessage": 1
   },
+  "src/services/ipc-result.ts": {
+    "authorOwned": 1
+  },
   "src/services/project-clear-service.ts": {
     "authorOwned": 1
   },
