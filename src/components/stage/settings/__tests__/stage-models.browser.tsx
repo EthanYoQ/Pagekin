@@ -127,7 +127,7 @@ describe('分工模型设置页', () => {
     await choose('review', 'flash')
     expect(select('review').value).toBe('glm')
     expect(document.body.textContent).toContain('分工设置没有保存')
-    expect(document.body.textContent).toContain('不能用于文本生成')
+    expect(document.body.textContent).toContain('这个模型已删除或不能用于文本生成，这个环节保留原来的模型。请在「分工模型」里另选一个。')
     await act(async () => button('确定')?.click())
   })
 

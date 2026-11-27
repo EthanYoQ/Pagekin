@@ -226,6 +226,17 @@ describe('模型设置失败的说明与 master 逐字相同', () => {
     }
   })
 
+  it('分工模型指定了不存在的模型', async () => {
+    const expected = {
+      'zh-CN': '这个模型已删除或不能用于文本生成，这个环节保留原来的模型。请在「分工模型」里另选一个。',
+      'en-US': 'That model was deleted or is no longer available for writing, so the stage keeps its current model. Choose another model in Models by stage.',
+    }
+    for (const each of ['zh-CN', 'en-US'] as const) {
+      mocks.locale = each
+      expect(await reasonShown(invoke('llm:set-stage-model', { stage: 'review', modelId: 'gone' }), ['分工设置没有保存', 'The stage setting was not saved'])).toBe(expected[each])
+    }
+  })
+
   it('删除模型时写盘失败，显示原兜底句', async () => {
     writeJsonFile.mockImplementationOnce(() => { throw Object.assign(new Error("EPERM: operation not permitted, open 'C:\\models.json'"), { code: 'EPERM' }) })
     const result = receivedIpcResult(await invoke('llm:delete-model', 'chat')) as Received
