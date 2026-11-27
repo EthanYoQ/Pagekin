@@ -271,7 +271,7 @@ const rosterWrite = rosterWriteProof ? `
     ],
   }, result.project.path, context)
   if (saved?.success !== true || saved.receipt?.operationId !== operationId || saved.receipt.idempotent !== false) {
-    throw new Error(saved?.error || 'legacy roster manual_edit did not return a fresh save receipt')
+    throw new Error(saved?.failure?.code || 'legacy roster manual_edit did not return a fresh save receipt')
   }
   const after = await window.velaAPI.invoke('db:character-roster-read', result.project.path, context)
   if (after?.status !== 'ready' || !Array.isArray(after.entries) || after.entries.length !== 2

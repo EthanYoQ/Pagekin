@@ -261,6 +261,8 @@ export const jaJP = {
   'error.postProcessWriteFailed': '定稿の本文は保存されています。定稿後処理の進行状況をプロジェクトに保存できませんでした。もう一度お試しください。',
   'error.reviewWriteFailed': '本文は変更されていません。今回のレビューまたは注釈をプロジェクトに保存できませんでした。もう一度お試しください。',
   'error.revisionWriteFailed': '草稿の本文は変更されていません。今回の改稿をプロジェクトに保存できませんでした。もう一度お試しください。',
+  'error.consistencyExemptionWriteFailed': '一貫性の扱いは変更されていません。今回の変更をプロジェクトに保存できませんでした。もう一度お試しください。',
+  'error.characterRosterWriteFailed': '人物カードは変更されていません。今回の変更をプロジェクトに保存できませんでした。もう一度お試しください。',
   'error.connectionTestTimeout': '接続テストが {seconds} 秒以内に終わらなかったため、停止しました。ネットワークまたはプロキシの設定を確認してから、もう一度お試しください。',
   'error.proxyUnreachable': '「Network proxy」で設定したプロキシに接続できません。「Host」と「Port」を確認するか、プロキシアプリを起動するか、「Use a proxy」をオフにしてください。',
   'error.networkProxyInvalid': 'ホストが正しくありません。127.0.0.1 のように IP アドレスかドメイン名だけを入力してください。',

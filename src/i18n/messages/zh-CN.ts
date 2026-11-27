@@ -261,6 +261,8 @@ export const zhCN = {
   'error.postProcessWriteFailed': '正文定稿已保存。定稿后处理的进度没能写进作品，请再试一次。',
   'error.reviewWriteFailed': '正文没有改动。这次审稿或批注没能写进作品，请再试一次。',
   'error.revisionWriteFailed': '草稿正文没有改动。这次修稿没能写进作品，请再试一次。',
+  'error.consistencyExemptionWriteFailed': '一致性安排没有改动。这次修改没能写进作品，请再试一次。',
+  'error.characterRosterWriteFailed': '角色卡没有改动。这次修改没能写进作品，请再试一次。',
   'error.connectionTestTimeout': '连接测试 {seconds} 秒内没有完成，已停止等待。请检查网络或代理设置后重试。',
   'error.proxyUnreachable': '连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。',
   'error.networkProxyInvalid': '主机地址填得不对。只填 IP 或域名，例如 127.0.0.1。',

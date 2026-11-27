@@ -65,7 +65,7 @@ export async function seedLargeBook(context, finalized, { blueprints: withBluepr
     entries: CHARACTERS.map((name, index) => ({ characterId: `draft:${randomUUID()}`, name, role: index === 0 ? 'protagonist' : 'supporting',
       gender: '', age: '', appearance: '', personality: '', background: `${name}在旧港长大。`, abilities: '', motivation: '查明沉船的来历。',
       relationships: [], arc: '', notes: '' })) }, projectPath, session)
-  assert.equal(committed.success, true, committed.error)
+  assert.equal(committed.success, true, committed.failure?.code)
   const updated = await invoke(page, 'db:project-core-update', { ...core, totalChapters: BLUEPRINTS, wordsPerChapter: CHAPTER_UNITS }, projectPath, session)
   assert.equal(updated.success, true, updated.error)
   const blueprints = Array.from({ length: BLUEPRINTS }, (_, index) => ({ chapterNumber: index + 1, title: chapterTitle(index + 1), role: '发展',

@@ -97,6 +97,23 @@ const MIGRATED_DATABASE_CHANNELS = [
   'db:revision-merge',
   'db:revision-mark-merged',
   'db:revision-mark-discarded',
+  'db:consistency-exemption-list',
+  'db:consistency-exemption-save',
+  'db:consistency-exemption-revoke',
+  'db:continuity-save-finalized',
+  'db:continuity-save-character-state-candidates',
+  'db:continuity-list-before',
+  'db:continuity-read-source',
+  'db:character-continuity-nodes',
+  'db:character-continuity-timeline',
+  'db:character-continuity-preflight-nodes',
+  'db:blueprint-relationship-hints',
+  'db:character-get-all',
+  'db:character-roster-read',
+  'db:character-roster-commit',
+  'db:blueprint-character-sync-list-pending',
+  'db:blueprint-character-sync-get',
+  'db:blueprint-character-sync-complete',
 ]
 
 it('迁移后的数据库处理器不在直连基线里', () => {

@@ -38,7 +38,7 @@ let container: HTMLDivElement | undefined
 let startWorkflow: ReturnType<typeof vi.fn>
 let continuityProjections: unknown[]
 let exemptions: { stableFactKey: string; reason: string; revoked: boolean; chapterNumber: number | null }[]
-let exemptionSave: () => Promise<{ success: boolean; error?: string }>
+let exemptionSave: () => Promise<{ success: boolean; failure?: unknown }>
 let continuityGate: Promise<void> | null = null
 let authority: unknown
 let committedHints: Record<number, unknown>
@@ -837,9 +837,11 @@ describe('写作此章弹层', () => {
     expect(main.disabled).toBe(false)
   })
 
+  const WRITE_FAILED = { success: false, failure: { code: 'CONSISTENCY_EXEMPTION_WRITE_FAILED', note: { key: 'error.consistencyExemptionWriteFailed' } } }
+
   it('保存安排时按钮不可再点；保存失败写明原因，不开始写', async () => {
     continuityProjections = DEAD_KEEPER
-    let finishSave: (result: { success: boolean; error?: string }) => void = () => {}
+    let finishSave: (result: typeof WRITE_FAILED) => void = () => {}
     exemptionSave = () => new Promise(resolve => { finishSave = resolve })
     await render(<WriteChapterPopover chapterNumber={5} blueprint={blueprintWritePrefill(BLUEPRINT)} label="写第 5 章" />)
     await act(async () => page.getByRole('button', { name: '写第 5 章' }).click())
@@ -851,8 +853,8 @@ describe('写作此章弹层', () => {
     expect(main.disabled).toBe(true)
     expect(main.getAttribute('aria-busy')).toBeNull()
     expect(main.closest('.pi-split')!.classList.contains('pi-split--main-off')).toBe(true)
-    await act(async () => finishSave({ success: false, error: '数据库只读' }))
-    await expect.element(popover.getByRole('alert')).toHaveTextContent('数据库只读')
+    await act(async () => finishSave(WRITE_FAILED))
+    await expect.element(popover.getByRole('alert')).toHaveTextContent('一致性安排没有改动。这次修改没能写进作品，请再试一次。')
     await expect.element(popover.getByRole('button', { name: '这是有意安排' })).toBeEnabled()
     expect(startWorkflow).not.toHaveBeenCalled()
   })
@@ -903,7 +905,7 @@ describe('写作此章弹层', () => {
 
   it('批量创作的预检里保存安排失败也写明原因，保存中不可再点', async () => {
     continuityProjections = DEAD_KEEPER
-    let finishSave: (result: { success: boolean; error?: string }) => void = () => {}
+    let finishSave: (result: typeof WRITE_FAILED) => void = () => {}
     exemptionSave = () => new Promise(resolve => { finishSave = resolve })
     await render(<BatchWriteDialog isOpen startChapterNumber={5} onClose={vi.fn()} />)
     const dialog = page.getByRole('dialog', { name: '批量创作' })
@@ -912,8 +914,8 @@ describe('写作此章弹层', () => {
     await expect.element(dialog.getByRole('region', { name: '一致性预检' })).toBeVisible()
     await act(async () => dialog.getByRole('button', { name: '这是有意安排' }).click())
     await expect.element(dialog.getByRole('button', { name: '这是有意安排' })).toBeDisabled()
-    await act(async () => finishSave({ success: false, error: '数据库只读' }))
-    await expect.element(dialog.getByRole('alert')).toHaveTextContent('数据库只读')
+    await act(async () => finishSave(WRITE_FAILED))
+    await expect.element(dialog.getByRole('alert')).toHaveTextContent('一致性安排没有改动。这次修改没能写进作品，请再试一次。')
     await expect.element(dialog.getByRole('button', { name: '这是有意安排' })).toBeEnabled()
     expect(startWorkflow).not.toHaveBeenCalled()
   })
