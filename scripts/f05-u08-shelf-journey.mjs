@@ -134,7 +134,7 @@ async function seed(app, page, roots) {
   assert.equal(blueprint.success, true, blueprint.error)
   const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
     content: excerpt, wordCount: 12 }, projects.a.path, context)
-  assert.equal(draft.success, true, draft.error)
+  assert.equal(draft.success, true, draft.failure?.code)
   const roster = await invoke(page, 'db:character-roster-read', projects.a.path, context)
   const character = { characterId: `draft:${randomUUID()}`, name: '林舟', role: 'protagonist', gender: '', age: '', appearance: '', personality: '',
     background: '', abilities: '', motivation: '', relationships: [], arc: '', notes: '' }

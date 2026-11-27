@@ -282,7 +282,7 @@ async function main() {
       assert.equal(blueprint.success, true, blueprint.error)
       const draft = await invoke(rolePage, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
         content: lateProse, wordCount: lateProse.length }, projectPath, session)
-      assert.equal(draft.success, true, draft.error)
+      assert.equal(draft.success, true, draft.failure?.code)
       await closeAppBounded(app); app = null
 
       launched = await launch()
@@ -303,7 +303,7 @@ async function main() {
       const newerText = `${lateProse}新版定稿。`
       const newer = await invoke(stalePage, 'db:draft-create', { chapterNumber: 1, version: 2, source: 'write',
         content: newerText, wordCount: newerText.length }, projectPath, currentSession)
-      assert.equal(newer.success, true, newer.error)
+      assert.equal(newer.success, true, newer.failure?.code)
       const committed = await invoke(stalePage, 'finalization:commit', { tabId: 'u09-stale-v2', projectPath,
         projectSession: currentSession, draftId: newer.id, chapterNumber: 1, chapterTitle: '南站新版',
         content: newerText, contentRevision: 0 }, currentSession)
@@ -360,7 +360,7 @@ async function main() {
       assert.equal(blueprint.success, true, blueprint.error)
       const draft = await invoke(sourcePage, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
         content: finalizedProse, wordCount: finalizedProse.length }, projectPath, session)
-      assert.equal(draft.success, true, draft.error)
+      assert.equal(draft.success, true, draft.failure?.code)
       const draftId = draft.id
       assert(Number.isSafeInteger(draftId) && draftId > 0)
       await closeAppBounded(app); app = null
@@ -527,7 +527,7 @@ async function main() {
       assert.equal(secondBlueprint.success, true, secondBlueprint.error)
       const secondDraft = await invoke(secondSourcePage, 'db:draft-create', { chapterNumber: 2, version: 1, source: 'write',
         content: lateProse, wordCount: lateProse.length }, projectPath, secondSession)
-      assert.equal(secondDraft.success, true, secondDraft.error)
+      assert.equal(secondDraft.success, true, secondDraft.failure?.code)
       await closeAppBounded(app); app = null
 
       launched = await launch()

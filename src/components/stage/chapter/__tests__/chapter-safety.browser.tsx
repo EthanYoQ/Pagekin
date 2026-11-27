@@ -120,7 +120,7 @@ describe('版本切换器', () => {
     const error = vi.spyOn(toast, 'error').mockImplementation(() => undefined)
     const answer = backend.invoke.getMockImplementation()!
     backend.invoke.mockImplementation(async (channel, ...args) => channel === 'db:draft-update-content'
-      ? { success: false, error: 'Error: DRAFT_FINALIZED_READ_ONLY' }
+      ? { success: false, failure: { code: 'DRAFT_FINALIZED_READ_ONLY' } }
       : answer(channel, ...args))
     await mount()
     await openDraft(v2.id)

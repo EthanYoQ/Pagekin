@@ -274,7 +274,7 @@ async function main() {
       assert.equal(saved.success, true, saved.error)
       const draft = await invoke(session.page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
         content: fixtureBody[key], wordCount: fixtureBody[key].length }, projects[key], context)
-      assert.equal(draft.success, true, draft.error)
+      assert.equal(draft.success, true, draft.failure?.code)
     }
     const dbA = new Database(path.join(projects.a, '.ai-novel', 'project.db'), { fileMustExist: true })
     const coreOutline = () => dbA.prepare("SELECT core_outline FROM project_core WHERE id = 'main'").get().core_outline

@@ -191,7 +191,7 @@ async function main() {
     mark('fixture-draft-seed')
     const seededDraft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: '列车抵达旧车站。', wordCount: 8 }, project.projectPath, context)
-    assert.equal(seededDraft.success, true, seededDraft.error)
+    assert.equal(seededDraft.success, true, seededDraft.failure?.code)
     draftId = seededDraft.id ?? seededDraft.draft?.id
     assert(Number.isInteger(draftId), `draft id absent: ${JSON.stringify(seededDraft)}`)
     mark('stage-project-open')

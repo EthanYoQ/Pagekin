@@ -51,6 +51,7 @@ import {
   TerminalProviderFailureError,
 } from '../../generation/generation-harness'
 import { networkFailureNote } from '../../generation/prompt-budget-failure'
+import { draftWriteFailure } from '../../draft-write-failure'
 import { createBoundedCompletionError } from '../bounded-completion'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
@@ -1322,7 +1323,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       })()
       const nextVersion = createResult.version
       if (!createResult.success || !createResult.id) {
-        throw workflowMainProcessError(context.interfaceLocale, 'error' in createResult ? createResult.error : undefined, '章节草稿保存失败', 'Failed to save the chapter draft.')
+        throw workflowMainProcessError(context.interfaceLocale, 'failure' in createResult ? draftWriteFailure(createResult) : undefined, '章节草稿保存失败', 'Failed to save the chapter draft.')
       }
       this.assertNotCancelled(context)
       draftPersisted = true

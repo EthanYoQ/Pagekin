@@ -366,6 +366,7 @@ const ERROR_KEYS = {
   DRAFT_NOT_WRITABLE: 'error.draftFinalizedReadOnly',
   DRAFT_FINALIZED_READ_ONLY: 'error.draftFinalizedReadOnly',
   SUPERSEDED_DRAFT_DELETE_FORBIDDEN: 'error.supersededDraftDeleteForbidden',
+  FINALIZED_DRAFT_DELETE_REQUIRED: 'error.finalizedDraftDeleteRequired',
   FINALIZATION_SUPERSEDED: 'error.finalizationSuperseded',
   FINALIZATION_COMMIT_SUPERSEDED: 'error.finalizationSuperseded',
   // 删除已定稿的这一章（#474 B5）：删除与清理重试时作者能照着处理的拒绝原因。
@@ -418,6 +419,7 @@ const ERROR_KEYS = {
   REVISION_WRITE_FAILED: 'error.revisionWriteFailed',
   CONSISTENCY_EXEMPTION_WRITE_FAILED: 'error.consistencyExemptionWriteFailed',
   CHARACTER_ROSTER_WRITE_FAILED: 'error.characterRosterWriteFailed',
+  DRAFT_WRITE_FAILED: 'error.draftWriteFailed',
   // 知识库与检索索引（#474 B3）：知识库页、设置里的检索索引检查、导入创作资料与定稿收入知识库按码说明。
   EMBEDDING_REQUEST_FAILED: 'error.embeddingRequestFailed',
   EMBEDDING_OLLAMA_NATIVE_URL: 'error.embeddingOllamaNativeUrl',

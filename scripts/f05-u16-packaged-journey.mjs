@@ -246,7 +246,7 @@ async function runProfile(profile, endpoint) {
         leaseId: opened.project.sessionLease }
       const seeded = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
         content: `云归档合成正文 ${runId}`, wordCount: 8 }, created.projectPath, projectSession)
-      assert.equal(seeded.success, true, seeded.error)
+      assert.equal(seeded.success, true, seeded.failure?.code)
     }
     await page.reload()
     await stage.waitForStage(page)

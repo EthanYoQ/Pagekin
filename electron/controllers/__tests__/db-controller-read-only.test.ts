@@ -68,7 +68,7 @@ describe('db:draft-update-content 对带定稿收据的稿', () => {
     for (const draftId of [current, replaced]) {
       await expect(updateContent(draftId, '覆盖')).resolves.toEqual({
         success: false,
-        error: 'Error: DRAFT_FINALIZED_READ_ONLY',
+        failure: { code: 'DRAFT_FINALIZED_READ_ONLY' },
       })
     }
     expect([DraftRepository.getFull(replaced)?.content, DraftRepository.getFull(current)?.content])

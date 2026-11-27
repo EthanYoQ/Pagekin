@@ -759,7 +759,18 @@ export function registerDatabaseController() {
   // ============================================================
   // 4. drafts — 草稿
   // ============================================================
-  ipcMain.handle('db:draft-import-finalized-batch', async (
+  // 新建、删除各在一个事务里，改状态是一条语句，改正文不删稿：失败时已存的稿件都还在。
+  const drafts = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'DRAFT_WRITE_FAILED',
+      note: wireNote('error.draftWriteFailed'),
+    }),
+  }
+  const importedDrafts = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, { code: IPC_HANDLER_FAILED }),
+  }
+
+  importedDrafts.handle('db:draft-import-finalized-batch', async (
     _event,
     request: FinalizedDraftImportRequest,
     expectedProjectPath: string,
@@ -773,7 +784,7 @@ export function registerDatabaseController() {
     }
   })
 
-  ipcMain.handle('db:draft-create', async (_event, params: {
+  drafts.handle('db:draft-create', async (_event, params: {
     chapterNumber: number
     version: number
     source: 'write' | 'rewrite'
@@ -781,61 +792,56 @@ export function registerDatabaseController() {
     wordCount: number
     sourceDependencies?: DraftSourceDependency[]
   }, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const id = DraftRepository.create(params)
-      return { success: true, id }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return { success: true, id: DraftRepository.create(params) }
   })
 
-  ipcMain.handle('db:draft-list', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-list', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.listByChapter(chapterNumber)
   })
 
-  ipcMain.handle('db:draft-list-all', async (_event, expectedProjectPath: string) => {
+  drafts.handle('db:draft-list-all', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.listAll()
   })
 
-  ipcMain.handle('db:draft-get-meta', async (_event, id: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-meta', async (_event, id: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getMeta(id)
   })
 
-  ipcMain.handle('db:draft-get-full', async (_event, id: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-full', async (_event, id: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getFull(id)
   })
 
-  ipcMain.handle('db:draft-get-latest', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-latest', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getLatestByChapter(chapterNumber)
   })
 
-  ipcMain.handle('db:draft-get-finalized', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-finalized', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getFinalizedByChapter(chapterNumber)
   })
 
-  ipcMain.handle('db:draft-get-max-finalized-chapter', async (_event, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-max-finalized-chapter', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getMaxFinalizedChapter()
   })
 
-  ipcMain.handle('db:draft-authority-sequence', async (_event, expectedProjectPath: string) => {
+  drafts.handle('db:draft-authority-sequence', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return FinalizedDraftImportRepository.authoritySequence()
   })
 
-  ipcMain.handle('db:draft-export-snapshot', async (_event, expectedProjectPath: string) => {
+  drafts.handle('db:draft-export-snapshot', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return FinalizationRepository.listAuthoritativeForExport()
   })
 
-  ipcMain.handle('db:draft-export-authority-current', async (_event, receipt, expectedProjectPath: string) => {
+  drafts.handle('db:draft-export-authority-current', async (_event, receipt, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return FinalizationRepository.matchesAuthoritativeExportReceipt(receipt)
   })
@@ -947,19 +953,15 @@ export function registerDatabaseController() {
     return { success: true }
   })
 
-  ipcMain.handle('db:draft-next-version', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-next-version', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getNextVersion(chapterNumber)
   })
 
-  ipcMain.handle('db:draft-update-status', async (_event, id: number, status: string, wordCount: number | undefined, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      DraftRepository.updateStatus(id, status, wordCount)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  drafts.handle('db:draft-update-status', async (_event, id: number, status: string, wordCount: number | undefined, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    DraftRepository.updateStatus(id, status, wordCount)
+    return { success: true }
   })
 
   // 审稿、批注写入各在一个事务里（review-repository.ts、annotation-commit），失败整次撤回。
@@ -995,34 +997,17 @@ export function registerDatabaseController() {
     return { success: true }
   })
 
-  ipcMain.handle('db:draft-update-content', async (_event, id: number, content: string, wordCount: number, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const draft = DraftRepository.getMeta(id)
-      if (!draft) throw new Error('DRAFT_NOT_FOUND')
-      DraftRepository.updateContent(id, content, wordCount)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  drafts.handle('db:draft-update-content', async (_event, id: number, content: string, wordCount: number, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    if (!DraftRepository.getMeta(id)) throw new Error('DRAFT_NOT_FOUND')
+    DraftRepository.updateContent(id, content, wordCount)
+    return { success: true }
   })
 
-  ipcMain.handle('db:draft-delete', async (_event, id: number, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      DraftRepository.delete(id)
-      return { success: true }
-    } catch (err) {
-      if (
-        err
-        && typeof err === 'object'
-        && 'code' in err
-        && err.code === 'FINALIZED_DRAFT_DELETE_REQUIRED'
-      ) {
-        return { success: false, errorCode: 'FINALIZED_DRAFT_DELETE_REQUIRED' as const }
-      }
-      return { success: false, error: String(err) }
-    }
+  drafts.handle('db:draft-delete', async (_event, id: number, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    DraftRepository.delete(id)
+    return { success: true }
   })
 
   const recoveryCandidates = {
