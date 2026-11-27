@@ -1226,7 +1226,7 @@ export interface ChapterLifecycleChannels {
   }
   'chapter:list-incomplete-deletions': {
     args: [expectedProjectPath: string]
-    return: { success: boolean; operations?: ChapterDeletionOperation[]; error?: string }
+    return: { success: boolean; operations?: ChapterDeletionOperation[]; failure?: Failure }
   }
   'chapter:trash-list': {
     args: [expectedProjectPath: string]
@@ -1246,19 +1246,19 @@ export interface ChapterLifecycleChannels {
   }
   'chapter:remove-replaced-knowledge': {
     args: [draftId: number, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: true } | { success: false; failure?: Failure; stepError?: string }
   }
   'chapter:remove-replaced-manuscripts': {
     args: [draftId: number, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: true } | { success: false; failure?: Failure; stepError?: string }
   }
   'chapter:replacement-impacts': {
     args: [expectedProjectPath: string]
-    return: { success: true; impacts: ReplacementImpact[] } | { success: false; error: string }
+    return: { success: true; impacts: ReplacementImpact[] } | { success: false; failure?: Failure }
   }
   'chapter:replacement-impact-preview': {
     args: [draftId: number, content: string, expectedProjectPath: string]
-    return: { success: true; impact: ReplacementImpact | null } | { success: false; error: string }
+    return: { success: true; impact: ReplacementImpact | null } | { success: false; failure?: Failure }
   }
 }
 

@@ -1145,7 +1145,7 @@ export const STAGE_SCENARIOS = {
   'stage-revert-after-final': { model: false, shell: 'stage',
     setup: context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
       const reopened = await invoke(page, 'chapter:reopen', { chapterNumber: 1 }, path, session)
-      assert.equal(reopened.success, true, reopened.error)
+      assert.equal(reopened.success, true, JSON.stringify(reopened))
       const updated = await invoke(page, 'db:draft-update-content', reopened.draftId, STAGE_SAMPLE.reverted, countUnits(STAGE_SAMPLE.reverted), path, session)
       assert.equal(updated.success, true, updated.error)
     } }),

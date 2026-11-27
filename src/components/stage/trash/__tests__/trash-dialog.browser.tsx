@@ -9,6 +9,7 @@ import type { DamagedTrashEntry, RestoreTrashedChapterResult, TrashedChapter } f
 import type { ProjectData } from '../../../../shared/ipc-channels'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
 import { globalEventBus } from '../../../../shared/event-bus'
+import { translate } from '../../../../i18n/core'
 import { useLocaleStore } from '../../../../stores/locale-store'
 import { useProjectStore } from '../../../../stores/project-store'
 import { toast } from '../../../ui/Toast'
@@ -71,7 +72,7 @@ beforeEach(async () => {
   listFails = false
   invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     if (channel === broken) throw new Error('IPC 断开：EBUSY')
-    if (channel === 'chapter:trash-list' && listFails) return { success: false, error: 'CHAPTER_TRASH_REQUEST_INVALID' }
+    if (channel === 'chapter:trash-list' && listFails) return { success: false, failure: { code: 'CHAPTER_TRASH_REQUEST_INVALID' } }
     if (channel === 'chapter:trash-list') return { success: true, entries, damaged }
     if (channel === 'chapter:trash-restore') {
       if (restoreResult.success) entries = entries.filter(item => item.deletionId !== (args[0] as { deletionId: string }).deletionId)
@@ -133,6 +134,14 @@ describe('回收站对话框（#564）', () => {
     await expect.element(dialog().getByRole('button', { name: '清空回收站…' })).toBeEnabled()
   })
 
+  it('读不全的一项记下的是系统原文时，只给通用说明', async () => {
+    damaged = [{ deletionId: 'del-broken', error: "Unexpected token '}' in JSON at position 12" }]
+    await render()
+    const broken = item('有一项读不全')
+    expect(broken.textContent).toContain(translate('zh-CN', 'error.unregisteredCode'))
+    expect(broken.textContent).not.toMatch(/Unexpected token|JSON/u)
+  })
+
   it('删除时间按作者所在时区显示：库里记的 UTC 2026-11-05 23:30 在东八区是 11 月 6 日 07:30', async () => {
     await cdp().send('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Shanghai' })
     try {
@@ -162,7 +171,7 @@ describe('回收站对话框（#564）', () => {
   })
 
   it('恢复被拒（批次没写完）：写明正文还在、为什么不能放回、去哪里结束批量，不露错误码', async () => {
-    restoreResult = { success: false, error: 'CHAPTER_RESTORE_BATCH_UNFINISHED' }
+    restoreResult = { success: false, failure: { code: 'CHAPTER_RESTORE_BATCH_UNFINISHED' } }
     await render()
     await expect.element(dialog()).toHaveAccessibleName('回收站（3）')
     await act(async () => item('第 3 章').querySelector('button')!.click())
@@ -232,7 +241,7 @@ describe('回收站对话框（#564）', () => {
   })
 
   it('回收站操作失败不显示异常原文', async () => {
-    // 这三个通道直连，主进程会把异常 message 原样放进 error（electron/services/chapter-deletion-service.ts 的 messageOf）。
+    // 结果里即使带了原文 error，渲染端也不显示。
     const raw = 'database is locked'
     const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) =>
@@ -255,7 +264,7 @@ describe('回收站对话框（#564）', () => {
   })
 
   it('回收站操作失败带已登记的码时，说明与 master 相同', async () => {
-    restoreResult = { success: false, error: 'CHAPTER_RESTORE_CLEANUP_INCOMPLETE' } as RestoreTrashedChapterResult
+    restoreResult = { success: false, failure: { code: 'CHAPTER_RESTORE_CLEANUP_INCOMPLETE' } } as RestoreTrashedChapterResult
     const error = vi.spyOn(toast, 'error')
     await render()
     await expect.element(dialog()).toHaveAccessibleName('回收站（3）')

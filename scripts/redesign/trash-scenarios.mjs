@@ -74,7 +74,7 @@ export const TRASH_SCENARIOS = {
 
     const again = await call('chapter:delete-finalized', { draftId: draft.id, chapterNumber: 3 })
     const relisted = await call('chapter:trash-list')
-    step('再删', { again: { success: again.success, error: again.error, status: again.operation?.status }, trash: relisted.entries })
+    step('再删', { again: { success: again.success, failure: again.failure, status: again.operation?.status }, trash: relisted.entries })
     assert.equal(again.success, true, `恢复后再删不要旧定稿知识授权：${JSON.stringify(again)}`)
     assert.equal(relisted.entries.length, 1)
 
@@ -120,7 +120,7 @@ async function rejectNextRestoreAsBatchUnfinished(app) {
     const original = handlers.get('chapter:trash-restore')
     handlers.set('chapter:trash-restore', async () => {
       handlers.set('chapter:trash-restore', original)
-      return { success: false, error: 'CHAPTER_RESTORE_BATCH_UNFINISHED' }
+      return { success: false, failure: { code: 'CHAPTER_RESTORE_BATCH_UNFINISHED' } }
     })
   })
 }

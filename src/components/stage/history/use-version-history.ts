@@ -4,7 +4,8 @@ import { ipc } from '../../../services/ipc-client'
 import { countDraftUnits } from '../../../shared/draft-units'
 import type { DraftStatus } from '../../../shared/draft-status'
 import { LatestRequestGate } from '../../../shared/latest-request-gate'
-import { useLocaleStore } from '../../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
+import { failureText, resultFailure } from '../../../i18n/app-errors'
 import { useProjectStore } from '../../../stores/project-store'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../../shared/project-session-context'
@@ -140,7 +141,7 @@ export function useVersionHistory(projectKey: string) {
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey) || selectedChapter === null) return null
     if (finalized) {
       const reopened = await reopenFinalizedChapter(projectSession, { chapterNumber: selectedChapter, initialDraftId: versionId })
-      if (!reopened.success) throw new Error(reopened.error)
+      if (!reopened.success) throw new Error(failureText(currentInterfaceLocale(), resultFailure(reopened)))
       if (!isProjectSessionCurrent(projectSession)) return null
       await loadVersions(selectedChapter)
       return { version: reopened.version, created: reopened.created }

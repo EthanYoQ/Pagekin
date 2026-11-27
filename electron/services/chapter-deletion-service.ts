@@ -10,6 +10,7 @@ import type {
   RestoreTrashedChapterRequest,
   RestoreTrashedChapterResult,
 } from '../../src/shared/chapter-deletion'
+import type { Failure } from '../../src/shared/failure'
 import { CHAPTER_RESTORE_MODES } from '../../src/shared/chapter-deletion'
 import { CHAPTER_RESTORED_REPROJECTION_PENDING } from '../../src/shared/finalization-step-error'
 import { getCurrentProjectPath, getProjectDb } from '../database'
@@ -64,8 +65,8 @@ function publishedManuscripts(operation: ChapterDeletionOperation): string[] {
 }
 
 /** 每项投影各自的失败原因留在 operation 的 manuscriptError、knowledgeError 上，由删除清理提示逐项显示。 */
-function operationError(operation: ChapterDeletionOperation): string | undefined {
-  return operation.status === 'failed' ? 'CHAPTER_DELETE_CLEANUP_INCOMPLETE' : undefined
+function operationFailure(operation: ChapterDeletionOperation): Failure | undefined {
+  return operation.status === 'failed' ? { code: 'CHAPTER_DELETE_CLEANUP_INCOMPLETE' } : undefined
 }
 
 function legacyKnowledgeAuthorizationRequired(
@@ -75,13 +76,13 @@ function legacyKnowledgeAuthorizationRequired(
     success: false,
     committed: false,
     operation,
-    error: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED',
+    failure: { code: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED' },
   }
 }
 
 function frozenLegacyOperation(projectRoot: string, operation: ChapterDeletionOperation): ChapterDeletionResult | null {
   if (!readPortableRuntimeFreeze(projectRoot).isFrozen('chapter_deletion_operations', operation.operationId)) return null
-  return { success: false, committed: false, error: 'CHAPTER_DELETE_LEGACY_OPERATION_FROZEN' }
+  return { success: false, committed: false, failure: { code: 'CHAPTER_DELETE_LEGACY_OPERATION_FROZEN' } }
 }
 
 const isId = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
@@ -134,7 +135,7 @@ export class ChapterDeletionService {
       const existing = ChapterDeletionRepository.getByDraftId(request.draftId)
       if (existing) {
         if (existing.draftId !== request.draftId || existing.chapterNumber !== request.chapterNumber) {
-          return { success: false, committed: false, error: 'CHAPTER_DELETE_REQUEST_MISMATCH' }
+          return { success: false, committed: false, failure: { code: 'CHAPTER_DELETE_REQUEST_MISMATCH' } }
         }
         const frozen = frozenLegacyOperation(projectRoot, existing)
         if (frozen) return frozen
@@ -183,7 +184,7 @@ export class ChapterDeletionService {
     return this.exclusive(projectRoot, async () => {
       const operation = ChapterDeletionRepository.get(operationId)
       if (!operation) {
-        return { success: false, committed: false, error: 'CHAPTER_DELETE_OPERATION_NOT_FOUND' }
+        return { success: false, committed: false, failure: { code: 'CHAPTER_DELETE_OPERATION_NOT_FOUND' } }
       }
       const frozen = frozenLegacyOperation(projectRoot, operation)
       if (frozen) return frozen
@@ -209,36 +210,31 @@ export class ChapterDeletionService {
    */
   restore(projectRoot: string, projectId: string, request: RestoreTrashedChapterRequest): Promise<RestoreTrashedChapterResult> {
     return this.exclusive(projectRoot, async (): Promise<RestoreTrashedChapterResult> => {
-      if (!validRestoreRequest(request)) return { success: false, error: 'CHAPTER_RESTORE_REQUEST_INVALID' }
+      if (!validRestoreRequest(request)) return { success: false, failure: { code: 'CHAPTER_RESTORE_REQUEST_INVALID' } }
       const receipt = ChapterDeletionRepository.get(request.deletionId)
       if (receipt && (receipt.status === 'pending' || receipt.status === 'failed') && !frozenLegacyOperation(projectRoot, receipt)) {
         const cleaned = await this.resume(projectRoot, receipt.operationId)
-        if (!cleaned.success) return { success: false, error: 'CHAPTER_RESTORE_CLEANUP_INCOMPLETE', ...(cleaned.operation ? { operation: cleaned.operation } : {}) }
+        if (!cleaned.success) return { success: false, failure: { code: 'CHAPTER_RESTORE_CLEANUP_INCOMPLETE' }, ...(cleaned.operation ? { operation: cleaned.operation } : {}) }
       }
       const final = ChapterDeletionRepository.trashedFinal(request.deletionId)
-      let restored: Exclude<RestoreTrashedChapterResult, { success: false }>
-      try {
-        const target = final && request.expectedMode === 'into-gap'
-          ? republishTarget({ projectRoot, targetFileName: final.targetFileName, chapterNumber: final.chapterNumber,
-            chapterTitle: final.chapterTitle, content: final.contentSnapshot, finalizationId: final.finalizationId,
-            reserved: ChapterDeletionRepository.reservedManuscriptTargets() })
-          : undefined
-        this.assertOwner(projectRoot)
-        const db = getProjectDb()
-        if (!db) throw new Error('PROJECT_NOT_OPEN')
-        restored = db.transaction(() => {
-          const batches = new GenerationDraftEffects(db, new GenerationRunRepository(() => db))
-          // 放回会把发布与后处理重置为待处理；被删章删除前已确认完，才按确认完算批次进度。
-          const settled = final && batches.finalizationSettled(final.finalizationId) ? final.chapterNumber : undefined
-          const result = ChapterDeletionRepository.restore(request, target)
-          if (result.outcome !== 'already-restored' && batches.unfinishedBatchChapters(projectId, settled).has(result.chapterNumber)) {
-            throw new Error('CHAPTER_RESTORE_BATCH_UNFINISHED')
-          }
-          return result
-        }).immediate()
-      } catch (error) {
-        return { success: false, error: messageOf(error) }
-      }
+      const target = final && request.expectedMode === 'into-gap'
+        ? republishTarget({ projectRoot, targetFileName: final.targetFileName, chapterNumber: final.chapterNumber,
+          chapterTitle: final.chapterTitle, content: final.contentSnapshot, finalizationId: final.finalizationId,
+          reserved: ChapterDeletionRepository.reservedManuscriptTargets() })
+        : undefined
+      this.assertOwner(projectRoot)
+      const db = getProjectDb()
+      if (!db) throw new Error('PROJECT_NOT_OPEN')
+      const restored = db.transaction(() => {
+        const batches = new GenerationDraftEffects(db, new GenerationRunRepository(() => db))
+        // 放回会把发布与后处理重置为待处理；被删章删除前已确认完，才按确认完算批次进度。
+        const settled = final && batches.finalizationSettled(final.finalizationId) ? final.chapterNumber : undefined
+        const result = ChapterDeletionRepository.restore(request, target)
+        if (result.outcome !== 'already-restored' && batches.unfinishedBatchChapters(projectId, settled).has(result.chapterNumber)) {
+          throw new Error('CHAPTER_RESTORE_BATCH_UNFINISHED')
+        }
+        return result
+      }).immediate()
       if (restored.outcome !== 'restored') return restored
       // 恢复已经提交，重发失败或抛错都只让实体稿停在待发布，不能把这次恢复报成没成功。
       try {
@@ -257,18 +253,14 @@ export class ChapterDeletionService {
   purge(projectRoot: string, request: PurgeTrashRequest): Promise<PurgeTrashResult> {
     return this.exclusive(projectRoot, async (): Promise<PurgeTrashResult> => {
       const targets = purgeTargets(request)
-      if (!targets) return { success: false, error: 'CHAPTER_TRASH_REQUEST_INVALID' }
-      try {
-        return { success: true, ...ChapterDeletionRepository.purge(targets) }
-      } catch (error) {
-        return { success: false, error: messageOf(error) }
-      }
+      if (!targets) return { success: false, failure: { code: 'CHAPTER_TRASH_REQUEST_INVALID' } }
+      return { success: true, ...ChapterDeletionRepository.purge(targets) }
     })
   }
 
   private async resume(projectRoot: string, operationId: string): Promise<ChapterDeletionResult> {
     let operation = ChapterDeletionRepository.get(operationId)
-    if (!operation) return { success: false, committed: false, error: 'CHAPTER_DELETE_OPERATION_NOT_FOUND' }
+    if (!operation) return { success: false, committed: false, failure: { code: 'CHAPTER_DELETE_OPERATION_NOT_FOUND' } }
     const frozen = frozenLegacyOperation(projectRoot, operation)
     if (frozen) return frozen
     if (operation.status === 'completed') {
@@ -282,12 +274,12 @@ export class ChapterDeletionService {
 
     this.assertOwner(projectRoot)
     operation = ChapterDeletionRepository.settle(operationId)
-    const error = operationError(operation)
+    const failure = operationFailure(operation)
     return {
       success: operation.status === 'completed',
       committed: true,
       operation,
-      ...(error ? { error } : {}),
+      ...(failure ? { failure } : {}),
     }
   }
 
