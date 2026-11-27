@@ -229,6 +229,7 @@ describe('模型设置失败的说明与 master 逐字相同', () => {
   it('删除模型时写盘失败，显示原兜底句', async () => {
     writeJsonFile.mockImplementationOnce(() => { throw Object.assign(new Error("EPERM: operation not permitted, open 'C:\\models.json'"), { code: 'EPERM' }) })
     const result = receivedIpcResult(await invoke('llm:delete-model', 'chat')) as Received
+    expect(result.success).toBe(false)
     const text = 'failure' in result
       ? failureText(locale(), resultFailure(result)?.code === 'IPC_HANDLER_FAILED' ? undefined : resultFailure(result), { fallback: note('删除模型失败', 'Could not delete the model.') })
       : failureText(locale(), resultFailure(result), { fallback: note('删除模型失败', 'Could not delete the model.') })

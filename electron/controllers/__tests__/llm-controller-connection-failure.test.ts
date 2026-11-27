@@ -153,4 +153,14 @@ describe('connection test explains why the model service could not be reached', 
     expect(result.error).toContain(expected)
     expect(result.error).not.toMatch(forbidden)
   })
+
+  it('认不出的失败只回通用码，原文写进主进程日志', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const unknown = new Error('SECRET_UNKNOWN_FAILURE_MARKER')
+    failWith(unknown)
+    const result = await testConnection(chatModel)
+    expect(result.success).toBe(false)
+    expect(result.error).not.toContain('SECRET_UNKNOWN_FAILURE_MARKER')
+    expect(logged).toHaveBeenCalledWith(expect.any(String), unknown)
+  })
 })

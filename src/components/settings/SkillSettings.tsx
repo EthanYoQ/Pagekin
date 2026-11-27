@@ -476,5 +476,3 @@ function skillError(result: { failure?: Failure }, fallback: AuthorNote) {
   const failure = resultFailure(result)
   return authorError(currentInterfaceLocale(), failure && failure.code !== IPC_HANDLER_FAILED ? failure : { note: fallback })
 }
-
-

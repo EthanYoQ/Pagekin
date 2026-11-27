@@ -121,6 +121,7 @@ function connectionTestFailure(failure: unknown) {
     return testFailure(wireNote('error.connectionTestOllamaNativeUrl', { baseUrl: authorOwned(detail.suggestedBaseUrl) }))
   }
   const code = registered(failure) ?? (failedAtProxy(failure) ? 'PROXY_UNREACHABLE' : registered(connectionFailureCode(failure)))
+  if (!code) console.error('[AI Novel Writer] 连接测试失败:', failure)
   return { success: false as const, failure: { code: code ?? CONNECTION_TEST_FAILED } satisfies WireFailure }
 }
 
