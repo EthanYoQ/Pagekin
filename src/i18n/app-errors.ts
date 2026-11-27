@@ -50,7 +50,7 @@ const UNEXPLAINED_FAILURE_KEYS = {
   CLOUD_BACKUP_OPERATION_CONFLICT: 'error.unregisteredCode',
   // 恢复大纲任务时渲染端按这个码换成专用说明，码要过 handle()；别处抛出时原因各不相同，只说不清原因。
   GENERATION_PLOT_OUTLINE_PREFIX_INVALID: 'error.unregisteredCode',
-  // 下面几个码渲染端各有读者：定稿后处理按码定重试（finalization-step-error.ts），剧情树与蓝图检查按码给专用说明。码要过 handle()。
+  // 渲染端按这些码分支（定稿后处理的重试、剧情树与蓝图检查的专用说明），码要过 handle()。
   GENERATION_FINALIZATION_PREDECESSOR_REQUIRED: 'error.unregisteredCode',
   GENERATION_FINALIZATION_IDENTITY_CHANGED: 'error.unregisteredCode',
   GENERATION_FINALIZATION_ARTIFACT_INVALID: 'error.unregisteredCode',

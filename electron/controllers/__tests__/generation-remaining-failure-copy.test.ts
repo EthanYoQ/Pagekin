@@ -44,7 +44,6 @@ function invokeOverElectron(channel: string, ...args: unknown[]): Promise<unknow
   })
 }
 
-/** 让 owner 的这个方法抛出 thrown，经真实注册的通道调用，返回渲染端拿到的错误。 */
 async function failureOf(channel: string, method: string, thrown: unknown): Promise<Error> {
   const fail = () => { throw thrown }
   mocks.overrides[method] = method === 'agents' ? new Proxy({}, { get: () => fail }) : fail

@@ -36,7 +36,6 @@ export const M33GEN2B_SCENARIOS = {
       assert.equal(fake.requests.filter(kind => kind === 'review').length, 0, '被拒的检查没有发出模型请求')
       return { shown: FALLBACK }
     }, after: async ({ app }) => {
-      // 还原 graph-generation:execute，同一轮后面的场景照常检查。
       await app.evaluate(({ ipcMain }) => {
         ipcMain._invokeHandlers.set('graph-generation:execute', globalThis.__m33gen2bExecute)
         delete globalThis.__m33gen2bExecute
