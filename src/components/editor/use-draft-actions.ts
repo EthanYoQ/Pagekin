@@ -8,10 +8,10 @@ import { navigate } from '../../stores/navigation/navigation-intents'
 import { toast } from '../ui/Toast'
 import { actionToast, type ActionToastAction } from '../ui/ActionToast'
 import { chapterLabel } from '../../shared/chapter-label'
-import { authorError, displayedErrorMessage, englishWithReason, failureText } from '../../i18n/app-errors'
+import { authorError, displayedErrorMessage, englishWithReason, failureText, resultFailure } from '../../i18n/app-errors'
 import { failureOr } from '../../services/failure-reason'
 import { reasonOf } from '../../services/workflows/commands/architecture.command'
-import { note } from '../../shared/failure'
+import { note, type Failure, type LegacyReason } from '../../shared/failure'
 import {
   draftAIResourceClaims,
   finalizeResourceClaims,
@@ -305,7 +305,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       const savedTab = annotationTab()
       if (!projectSession || !isProjectSessionPath(projectSession, projectKey) || !meta || !savedTab || typeof savedTab.savedContent !== 'string' || savedTab.content !== before) throw new Error('SOURCE_DRAFT_CHANGED')
       const result = await ipc.invokeWithProjectSession(projectSession, 'db:annotation-commit', { draftId: meta.id, expectedSaved: savedTab.savedContent, before, after, annotations }, projectSession.projectPath)
-      if (!result.success) throw new Error(result.error || 'ANNOTATION_COMMIT_FAILED')
+      if (!result.success) throw new Error(resultFailure(result)?.code ?? 'ANNOTATION_COMMIT_FAILED')
       if (!isProjectSessionCurrent(projectSession)) return
       if (pendingRevisions.length > 0) reload()
       const current = annotationTab()
@@ -709,20 +709,20 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
   const discardRevisions = async (ids: readonly number[]) => {
     const projectSession = captureProjectSession(currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) return
-    const discardFailed = (error: unknown) => {
-      if (isProjectSessionCurrent(projectSession)) toast.error(failureText(currentInterfaceLocale(), { note: note('丢弃修稿失败', 'Could not discard the revision.'), because: reasonOf(currentInterfaceLocale(), error) }))
+    const discardFailed = (because: Failure | LegacyReason | undefined) => {
+      if (isProjectSessionCurrent(projectSession)) toast.error(failureText(currentInterfaceLocale(), { note: note('丢弃修稿失败', 'Could not discard the revision.'), because }))
     }
     try {
       for (const id of ids) {
         const result = await ipc.invokeWithProjectSession(projectSession, 'db:revision-mark-discarded', id, projectSession.projectPath)
         if (!result.success) {
-          discardFailed(result.error)
+          discardFailed(resultFailure(result))
           break
         }
         forgetMergeChoices(mergeChoicesKey(projectSession.projectId, id))
       }
     } catch (error) {
-      discardFailed(error)
+      discardFailed(reasonOf(currentInterfaceLocale(), error))
     }
     if (isProjectSessionCurrent(projectSession)) reload()
   }
