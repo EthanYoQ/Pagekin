@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getUpdatePresentation, type UpdateError } from '../update-presentation'
+import { getUpdatePresentation, type UpdateError, type UpdateProblem } from '../update-presentation'
 
 const baseState = {
   currentVersion: '0.2.5',
@@ -15,13 +15,7 @@ const checkFailure = {
   safeTechnicalDetails: 'UPDATE_OPERATION_FAILED',
 } satisfies UpdateError
 
-const installFailure = {
-  code: 'INSTALL_FAILED',
-  phase: 'install',
-  reason: 'install-failed',
-  retryable: true,
-  safeTechnicalDetails: 'INSTALL_FAILED',
-} satisfies UpdateError
+const installFailure = { failure: { code: 'INSTALL_FAILED' }, retryable: true } satisfies UpdateProblem
 
 describe('getUpdatePresentation', () => {
   it('keeps the update button disabled while an automatic check is running', () => {

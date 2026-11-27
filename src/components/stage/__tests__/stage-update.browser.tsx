@@ -148,6 +148,31 @@ describe('书房的更新提示', () => {
     await vi.waitFor(() => expect(calls('update:open-release')).toHaveLength(1))
     expect(calls('update:download')).toHaveLength(0)
   })
+
+  it('英文界面：下载失败按原因说明，给出重试', async () => {
+    state = AVAILABLE
+    useLocaleStore.setState({ locale: 'en-US' })
+    invoke.mockImplementation(async (channel: string) => channel === 'update:get-state' ? state
+      : { success: false, state, failure: { code: 'DOWNLOAD_FAILED', note: { key: 'error.updateNetwork' } }, retryable: true })
+    await mount()
+    await click(button('Download update'))
+    await vi.waitFor(() => expect(host!.querySelector('[role="alert"] .stage-update-text')?.textContent)
+      .toBe('Could not reach the update service. Check your network connection and try again.'))
+    expect(button('Retry download')).toBeTruthy()
+  })
+
+  it('延后提醒的请求被拒时用固定说明，不给重试', async () => {
+    state = AVAILABLE
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'update:get-state') return state
+      throw new Error("Error invoking remote method 'update:defer-reminder': Error: IPC_HANDLER_FAILED")
+    })
+    await mount()
+    await click(button('稍后提醒'))
+    await click(menuItem('7 天后提醒'))
+    await vi.waitFor(() => expect(host!.querySelector('[role="alert"] .stage-update-text')?.textContent).toBe('当前没有可延后的更新提醒。'))
+    expect(host!.querySelector('[role="alert"] button')).toBeNull()
+  })
 })
 
 describe('设置里的关于与更新', () => {

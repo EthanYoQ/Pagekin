@@ -3,7 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ipc } from '../../services/ipc-client'
 import {
   getUpdatePresentation,
-  type UpdateError,
+  responseProblem,
+  type UpdateErrorCode,
+  type UpdateProblem,
   type UpdateState,
 } from '../../services/update-presentation'
 
@@ -13,45 +15,13 @@ const disabledState: UpdateState = {
   isReminderDeferred: false,
 }
 
-const fallbackCheckError: UpdateError = {
-  code: 'CHECK_FAILED',
-  phase: 'check',
-  reason: 'unknown',
-  retryable: true,
-  safeTechnicalDetails: 'UPDATE_OPERATION_FAILED',
-}
+const failed = (code: UpdateErrorCode, retryable: boolean): UpdateProblem => ({ failure: { code }, retryable })
 
-const fallbackReminderError: UpdateError = {
-  code: 'REMINDER_NOT_AVAILABLE',
-  phase: 'reminder',
-  reason: 'reminder-unavailable',
-  retryable: false,
-  safeTechnicalDetails: 'REMINDER_NOT_AVAILABLE',
-}
-
-const fallbackInstallError: UpdateError = {
-  code: 'INSTALL_FAILED',
-  phase: 'install',
-  reason: 'install-failed',
-  retryable: true,
-  safeTechnicalDetails: 'INSTALL_FAILED',
-}
-
-const fallbackDownloadError: UpdateError = {
-  code: 'DOWNLOAD_FAILED',
-  phase: 'download',
-  reason: 'unknown',
-  retryable: true,
-  safeTechnicalDetails: 'UPDATE_OPERATION_FAILED',
-}
-
-const fallbackOpenReleaseError: UpdateError = {
-  code: 'OPEN_RELEASE_FAILED',
-  phase: 'navigation',
-  reason: 'open-release-failed',
-  retryable: true,
-  safeTechnicalDetails: 'OPEN_RELEASE_FAILED',
-}
+const fallbackCheckError = failed('CHECK_FAILED', true)
+const fallbackReminderError = failed('REMINDER_NOT_AVAILABLE', false)
+const fallbackInstallError = failed('INSTALL_FAILED', true)
+const fallbackDownloadError = failed('DOWNLOAD_FAILED', true)
+const fallbackOpenReleaseError = failed('OPEN_RELEASE_FAILED', true)
 
 const MAX_TIMER_DELAY_MS = 2_147_000_000
 
@@ -91,11 +61,10 @@ export function scheduleReminderRefresh(
 }
 
 /** 将 IPC 订阅和更新操作集中在一个可替换的状态边界内。 */
-// i18n-exempt: response.error 是主进程分好类的 UpdateError 对象，由 getUpdatePresentation 按界面语言说明，不是原文。
 export function useUpdateState() {
   const [state, setState] = useState<UpdateState>(disabledState)
   const [manualCheckRequested, setManualCheckRequested] = useState(false)
-  const [manualActionError, setManualActionError] = useState<UpdateError>()
+  const [manualActionError, setManualActionError] = useState<UpdateProblem>()
   const [isDeferring, setIsDeferring] = useState(false)
   const [lastReminderDays, setLastReminderDays] = useState<7 | 30>(7)
 
@@ -150,7 +119,7 @@ export function useUpdateState() {
     try {
       const response = await ipc.invoke('update:check')
       setState(response.state)
-      setManualActionError(response.error)
+      setManualActionError(responseProblem(response))
     } catch {
       setManualActionError(fallbackCheckError)
     }
@@ -164,7 +133,7 @@ export function useUpdateState() {
     try {
       const response = await ipc.invoke('update:defer-reminder', days)
       setState(response.state)
-      setManualActionError(response.error)
+      setManualActionError(responseProblem(response))
       if (response.success) setManualCheckRequested(false)
     } catch {
       setManualActionError(fallbackReminderError)
@@ -179,7 +148,7 @@ export function useUpdateState() {
     try {
       const response = await ipc.invoke('update:download')
       setState(response.state)
-      setManualActionError(response.error)
+      setManualActionError(responseProblem(response))
     } catch {
       setManualActionError(fallbackDownloadError)
     }
@@ -191,7 +160,7 @@ export function useUpdateState() {
     try {
       const response = await ipc.invoke('update:open-release')
       setState(response.state)
-      setManualActionError(response.error)
+      setManualActionError(responseProblem(response))
     } catch {
       setManualActionError(fallbackOpenReleaseError)
     }
@@ -203,7 +172,7 @@ export function useUpdateState() {
     try {
       const response = await ipc.invoke('update:quit-and-install')
       setState(response.state)
-      setManualActionError(response.error)
+      setManualActionError(responseProblem(response))
     } catch {
       setManualActionError(fallbackInstallError)
     }

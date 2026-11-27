@@ -1,9 +1,9 @@
 import { useState, type CSSProperties } from 'react'
 import { CircleAlert, CircleCheck, Download, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react'
 import { ipc } from '../../services/ipc-client'
-import type { UpdatePresentation } from '../../services/update-presentation'
+import { stateProblem, type UpdatePresentation } from '../../services/update-presentation'
 import { getOfficialHomepageOpenError } from '../../shared/official-homepage'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { getUpdateCardCopy } from '../updates/update-card-copy'
 import { getUpdateRetryAction } from '../updates/update-retry-action'
 import { useUpdateInstallGuard } from '../updates/use-update-install-guard'
@@ -59,15 +59,15 @@ function UpdateActions({ model, guard, compact }: { model: UpdateModel; guard: I
   const text = useLocaleStore(s => s.text)
   const { presentation, manualActionError, state, isDeferring, lastReminderDays } = model
   if (presentation.kind === 'manual-error') {
-    const error = manualActionError ?? state.error
-    if (error && !error.retryable) return null
+    const problem = manualActionError ?? stateProblem(state.error)
+    if (problem && !problem.retryable) return null
     const retry = {
       install: { label: text('再次尝试重启更新', 'Try restarting the update again'), run: guard.install },
       defer: { label: text('重试保存提醒时间', 'Retry saving the reminder'), run: () => void model.deferReminder(lastReminderDays) },
       download: { label: text('重试下载更新', 'Retry download'), run: () => void model.downloadUpdate() },
       'open-release': { label: text('重试打开下载页', 'Retry opening download page'), run: () => void model.openRelease() },
       check: { label: text('重试检查', 'Retry check'), run: () => void model.checkForUpdates() },
-    }[getUpdateRetryAction(error?.code)]
+    }[getUpdateRetryAction(problem?.failure.code)]
     return <div className="stage-update-actions"><Button variant="secondary" size="sm" onClick={retry.run}>{retry.label}</Button></div>
   }
   const defer = presentation.canDefer && (compact
@@ -104,7 +104,7 @@ function UpdateActions({ model, guard, compact }: { model: UpdateModel; guard: I
 function UpdateStatus({ model, guard, compact }: { model: UpdateModel; guard: InstallGuard; compact: boolean }) {
   const text = useLocaleStore(s => s.text)
   const { presentation, state, manualActionError } = model
-  const copy = getUpdateCardCopy(presentation, state, text, manualActionError)
+  const copy = getUpdateCardCopy(presentation, state, text, currentInterfaceLocale(), manualActionError)
   const progress = Math.min(100, Math.max(0, Math.round(state.downloadProgress?.percent ?? 0)))
   return (
     <section

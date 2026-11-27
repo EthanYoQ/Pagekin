@@ -393,32 +393,34 @@ async function moveToChapter3(page) {
   assert.equal(await chapter3.isVisible(), true, '关掉其他标签后第 3 章仍开着')
 }
 
-async function stubUpdates(app) {
-  await app.evaluate(({ ipcMain, BrowserWindow }) => {
+async function stubUpdates(app, { checkFails = false } = {}) {
+  await app.evaluate(({ ipcMain, BrowserWindow }, checkFails) => {
     const base = { currentVersion: '1.2.2', availableVersion: '1.2.3', updateAction: 'download', releaseName: '1.2.3', isReminderDeferred: false }
     const fixture = globalThis.__driveUpdate = { state: { ...base, status: 'available' }, installs: 0 }
     const publish = state => {
       fixture.state = state
       BrowserWindow.getAllWindows()[0]?.webContents.send('update:state', state)
     }
-    for (const channel of ['update:get-state', 'update:check', 'update:download', 'update:open-release', 'update:defer-reminder', 'update:quit-and-install']) {
-      ipcMain.removeHandler(channel)
-    }
-    ipcMain.handle('update:get-state', () => fixture.state)
-    ipcMain.handle('update:check', () => ({ success: true, checked: true, updateAvailable: true, state: fixture.state }))
-    ipcMain.handle('update:download', () => {
+    const handlers = ipcMain._invokeHandlers
+    if (!handlers) throw new Error('取不到主进程的 IPC 处理函数表')
+    const handle = (channel, handler) => handlers.set(channel, handler)
+    handle('update:get-state', () => fixture.state)
+    handle('update:check', () => checkFails
+      ? { success: false, checked: true, updateAvailable: false, state: { ...fixture.state, status: 'error' }, failure: { code: 'CHECK_FAILED', note: { key: 'error.updateNetwork' } }, retryable: true }
+      : { success: true, checked: true, updateAvailable: true, state: fixture.state })
+    handle('update:download', () => {
       publish({ ...base, status: 'downloading', downloadProgress: { percent: 40, transferred: 40, total: 100, bytesPerSecond: 100 } })
       setTimeout(() => publish({ ...base, status: 'downloaded' }), 400)
       return { success: true, state: fixture.state }
     })
-    ipcMain.handle('update:open-release', () => ({ success: true, state: fixture.state }))
-    ipcMain.handle('update:defer-reminder', () => ({ success: true, state: fixture.state }))
-    ipcMain.handle('update:quit-and-install', () => {
+    handle('update:open-release', () => ({ success: true, state: fixture.state }))
+    handle('update:defer-reminder', () => ({ success: true, state: fixture.state }))
+    handle('update:quit-and-install', () => {
       fixture.installs += 1
       return { success: true, state: fixture.state }
     })
     publish(fixture.state)
-  })
+  }, checkFails)
 }
 
 const SETUP_SAVE_FAILED = '没能保存。设定还在这一页，没有丢，可以再保存一次。'
@@ -715,6 +717,23 @@ export const STAGE_SCENARIOS = {
   }, after: async ({ app, page }) => {
     await page.getByRole('dialog', { name: '请先处理未保存的修改' }).getByRole('button', { name: '返回保存' }).click()
     assert.equal(await app.evaluate(() => globalThis.__driveUpdate.installs), 0, '有未保存修改时不会重启安装')
+  } },
+  'stage-update-check-failed-en': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page, shoot }) => {
+    await stubUpdates(app, { checkFails: true })
+    await stage.openSettings(page)
+    await stage.showSettingsPage(page, '外观')
+    await page.getByLabel('界面语言').selectOption('en-US')
+    await page.waitForFunction(() => document.documentElement.lang === 'en-US')
+    await stage.root(page).getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'About & updates', exact: true }).click()
+    await stage.root(page).getByRole('button', { name: 'Check for updates', exact: true }).click()
+    const alert = stage.root(page).getByRole('alert', { name: 'App updates' })
+    await alert.waitFor({ state: 'visible' })
+    const shown = await alert.innerText()
+    assert.match(shown, /Could not reach the update service\. Check your network connection and try again\./u, '按原因说明网络失败')
+    assert.doesNotMatch(shown, /CHECK_FAILED|IPC_HANDLER_FAILED|\p{Script=Han}/u, '英文界面不露码也不夹中文')
+    await alert.getByRole('button', { name: 'Retry check' }).waitFor({ state: 'visible' })
+    await shoot('update-check-failed-en')
+    return { shown }
   } },
   'stage-setup-required': { model: false, shell: 'stage', run: async ({ app, page, roots }) => {
     await stubOpenDialog(app, roots.projects)
