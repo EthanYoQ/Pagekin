@@ -48,7 +48,7 @@ async function seedSample({ app, page, roots, invoke, reload }, { withDraft }) {
   if (withDraft) {
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: SAMPLE.chapterNumber, version: 1, source: 'write',
       content: FIXTURE_PROSE, wordCount: FIXTURE_PROSE.length }, created.projectPath, session)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
   }
   await reload()
   await openSample(page)
@@ -347,11 +347,11 @@ export async function seedStageSample(context,
   const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
     chapters: Object.entries(STAGE_SAMPLE.finalized).map(([number, content]) => ({ chapterNumber: Number(number),
       title: stageChapterTitle(Number(number)), content, wordCount: countUnits(content) })) }, path, session)
-  assert.equal(imported.success, true, imported.error)
+  assert.equal(imported.success, true, imported.failure?.code)
   for (const [number, { status, text, review }] of Object.entries(STAGE_SAMPLE.drafts)) {
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: Number(number), version: 1, source: 'write',
       content: text, wordCount: countUnits(text) }, path, session)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
     if (status !== 'draft') assert.equal((await invoke(page, 'db:draft-update-status', draft.id, status, undefined, path, session)).success, true)
     if (review) {
       const expectedSource = { id: draft.id, chapterNumber: Number(number), version: 1, status, content: text }
@@ -1166,7 +1166,7 @@ export const STAGE_SCENARIOS = {
       const reopened = await invoke(page, 'chapter:reopen', { chapterNumber: 1 }, path, session)
       assert.equal(reopened.success, true, JSON.stringify(reopened))
       const updated = await invoke(page, 'db:draft-update-content', reopened.draftId, STAGE_SAMPLE.reverted, countUnits(STAGE_SAMPLE.reverted), path, session)
-      assert.equal(updated.success, true, updated.error)
+      assert.equal(updated.success, true, updated.failure?.code)
     } }),
     run: async ({ page }) => {
       await stage.prose(page).getByText(firstLine(STAGE_SAMPLE.drafts[4].text)).first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {})

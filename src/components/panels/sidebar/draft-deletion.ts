@@ -4,7 +4,7 @@ import { ipc } from '../../../services/ipc-client'
 import { globalEventBus } from '../../../shared/event-bus'
 import type { ProjectData } from '../../../shared/ipc-channels'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { failureText, resultFailure } from '../../../i18n/app-errors'
 import { toast } from '../../ui/Toast'
 import {
   captureProjectSession,
@@ -44,7 +44,8 @@ export async function deleteDraftVersion({ draft, displayName, projectKey, proje
     projectKey,
   )
   if (!isProjectSessionCurrent(projectSession)) return false
-  if (result.errorCode === 'FINALIZED_DRAFT_DELETE_REQUIRED') {
+  const failure = resultFailure(result)
+  if (failure?.code === 'FINALIZED_DRAFT_DELETE_REQUIRED') {
     await useDraftStore.getState().loadChapterDrafts(
       draft.chapterNumber,
       projectKey,
@@ -55,7 +56,7 @@ export async function deleteDraftVersion({ draft, displayName, projectKey, proje
     return false
   }
   if (!result.success) {
-    const reason = displayedErrorMessage(currentInterfaceLocale(), result.error)
+    const reason = failureText(currentInterfaceLocale(), failure)
     toast.error(text(`删除失败\n\n${reason}`, `Delete failed\n\n${reason}`))
     return false
   }

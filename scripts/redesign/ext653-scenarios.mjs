@@ -50,7 +50,7 @@ const seedFourthChapterVersion = context => seedStageSample(context, {
     context.projectPath = projectPath
     const text = PARAGRAPHS.join('\n\n')
     const created = await invoke(page, 'db:draft-create', { chapterNumber: 4, version: 2, source: 'rewrite', content: text, wordCount: countUnits(text) }, projectPath, session)
-    assert.equal(created.success, true, created.error)
+    assert.equal(created.success, true, created.failure?.code)
   },
 })
 

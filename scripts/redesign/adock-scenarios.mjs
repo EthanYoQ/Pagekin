@@ -23,7 +23,7 @@ const seedPendingRevision = context => seedStageSample(context, {
     }
     const content = STAGE_SAMPLE.drafts[3].text
     const created = await invoke(page, 'db:draft-create', { chapterNumber: 3, version: 1, source: 'write', content, wordCount: countUnits(content) }, path, session)
-    assert.equal(created.success, true, created.error)
+    assert.equal(created.success, true, created.failure?.code)
     const expectedSource = { id: created.id, chapterNumber: 3, version: 1, status: 'draft', content }
     const review = await invoke(page, 'db:review-create', { baseDraftId: created.id, content: STAGE_SAMPLE.drafts[3].review, expectedSource }, path, session)
     assert.equal(review.success, true, review.failure?.code)
@@ -40,7 +40,7 @@ const seedOlderDraft = context => seedStageSample(context, {
     const content = FINALIZED
     const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
       chapters: [{ chapterNumber: 3, title: stageChapterTitle(3), content, wordCount: countUnits(content) }] }, path, session)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
   },
 })
 

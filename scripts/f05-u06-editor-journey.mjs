@@ -487,7 +487,7 @@ async function performanceMain() {
       const context = { projectId: created.projectId, projectPath: created.projectPath, leaseId: opened.project.sessionLease }
       const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
         content: body, wordCount: units }, created.projectPath, context)
-      assert.equal(draft.success, true, draft.error)
+      assert.equal(draft.success, true, draft.failure?.code)
       const draftId = draft.id ?? draft.draft?.id
       assert(Number.isInteger(draftId))
       assert.equal(storedBody(created.projectPath, draftId), body)
@@ -762,7 +762,7 @@ async function historicalClassicMain() {
       const context = { projectId: opened.project.id, projectPath: opened.project.path, leaseId: opened.project.sessionLease }
       const draft = await invokeClassic(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
         content: body, wordCount: units }, created.projectPath, context)
-      assert.equal(draft.success, true, draft.error)
+      assert.equal(draft.success, true, draft.failure?.code)
       const draftId = draft.id ?? draft.draft?.id
       assert(Number.isInteger(draftId))
       assert.equal(storedBody(created.projectPath, draftId, true), body)
@@ -965,7 +965,7 @@ async function imeMain() {
     const context = { projectId: created.projectId, projectPath, leaseId: opened.project.sessionLease }
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: imeFixtureBody, wordCount: 13 }, projectPath, context)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
     draftId = draft.id ?? draft.draft?.id
     assert(Number.isInteger(draftId))
     assert.equal(storedBody(projectPath, draftId), imeFixtureBody)
@@ -1062,7 +1062,7 @@ async function main() {
     assert.equal(blueprint.success, true, blueprint.error)
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: fixtureBody, wordCount: 13 }, projectPath, context)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
     draftId = draft.id ?? draft.draft?.id
     assert(Number.isInteger(draftId))
     exit = await quit(app)

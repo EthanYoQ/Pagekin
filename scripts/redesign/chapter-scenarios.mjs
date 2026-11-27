@@ -54,7 +54,7 @@ const seed = ({ deleteChapters = [], extra } = {}) => context => seedStageSample
 
 async function createDraft({ page, invoke, path, session }, chapterNumber, version, text) {
   const created = await invoke(page, 'db:draft-create', { chapterNumber, version, source: version > 1 ? 'rewrite' : 'write', content: text, wordCount: countUnits(text) }, path, session)
-  assert.equal(created.success, true, created.error)
+  assert.equal(created.success, true, created.failure?.code)
 }
 
 async function reopenForReading({ page, invoke, reload, projectPath }) {
@@ -382,7 +382,7 @@ export const CHAPTER_SCENARIOS = {
     const fourth = STAGE_SAMPLE.drafts[4].text
     const created = await invoke(page, 'db:draft-create', { chapterNumber: 4, version: 2, source: 'rewrite', content: fourth, wordCount: countUnits(fourth),
       sourceDependencies: [{ kind: 'candidate', draftId: third.id, contentHash: createHash('sha256').update(original, 'utf8').digest('hex') }] }, path, session)
-    assert.equal(created.success, true, created.error)
+    assert.equal(created.success, true, created.failure?.code)
     const edited = `${original}\n\n作者审稿时补的一句：雾钟停了。`
     assert.equal((await invoke(page, 'db:draft-update-content', third.id, edited, countUnits(edited), path, session)).success, true)
   } }), run: async context => {
@@ -789,7 +789,7 @@ export const CHAPTER_SCENARIOS = {
       held = await app.evaluate(() => globalThis.__driveFinalizeGate.held)
     }
     const deleted = await invoke(page, 'db:draft-delete', held.draftId, held.session.projectPath, held.session)
-    assert.equal(deleted.success, true, deleted.error)
+    assert.equal(deleted.success, true, deleted.failure?.code)
     await app.evaluate(() => globalThis.__driveFinalizeGate.release())
     const failure = page.getByText('The finalization transaction was not committed.', { exact: false }).first()
     await failure.waitFor({ state: 'visible', timeout: 30_000 })

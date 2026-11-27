@@ -190,7 +190,7 @@ async function createBook(context, language, book) {
   const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
     chapters: Object.entries(book.finalized).map(([number, content]) => ({ chapterNumber: Number(number),
       title: book.titles[Number(number) - 1], content, wordCount: countUnits(content) })) }, path, session)
-  assert.equal(imported.success, true, imported.error)
+  assert.equal(imported.success, true, imported.failure?.code)
   return { path, session }
 }
 
@@ -209,7 +209,7 @@ async function seed(context, sample, { afterShelf, beforeLocale } = {}) {
   path, session)).success, true)
   for (const [number, { status, text, review }] of Object.entries(sample.book.drafts)) {
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: Number(number), version: 1, source: 'write', content: text, wordCount: countUnits(text) }, path, session)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
     if (status !== 'draft') assert.equal((await invoke(page, 'db:draft-update-status', draft.id, status, undefined, path, session)).success, true)
     if (review) {
       const expectedSource = { id: draft.id, chapterNumber: Number(number), version: 1, status, content: text }
@@ -403,7 +403,7 @@ async function deleteShelfChapter({ page, invoke }, sample, { path, session }) {
   const chapterNumber = Number(number)
   const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
     chapters: [{ chapterNumber, title: sample.shelfBook.titles[chapterNumber - 1], content, wordCount: countUnits(content) }] }, path, session)
-  assert.equal(imported.success, true, imported.error)
+  assert.equal(imported.success, true, imported.failure?.code)
   const draft = (await invoke(page, 'db:draft-list', chapterNumber, path, session)).find(item => item.status === 'finalized')
   const asked = await invoke(page, 'chapter:delete-finalized', { draftId: draft.id, chapterNumber }, path, session)
   assert.equal(asked.failure?.code, 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED', JSON.stringify(asked))

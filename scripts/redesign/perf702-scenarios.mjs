@@ -77,7 +77,7 @@ export async function seedLargeBook(context, finalized, { blueprints: withBluepr
       return { chapterNumber: start + index, title: chapterTitle(start + index), content, wordCount: countUnits(content) }
     })
     const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(), chapters }, projectPath, session)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
   }
   await reload()
   return { projectPath, session }
@@ -721,7 +721,7 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
   assert.ok(session?.leaseId, '记下了界面打开作品的会话')
   const draft = writes ? await invoke(page, 'db:draft-create', { chapterNumber: finalized + 1, version: 1, source: 'write',
     content: chapterMarker(finalized + 1), wordCount: 10 }, session.projectPath, session) : null
-  if (writes) assert.equal(draft.success, true, draft.error)
+  if (writes) assert.equal(draft.success, true, draft.failure?.code)
   const runs = []
   for (let round = 1; round <= rounds; round++) {
     const archive = path.join(roots.projects, `export-${round}-${randomUUID()}.ainovel`)

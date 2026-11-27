@@ -1044,7 +1044,7 @@ describe('database controller project context guard', () => {
       'C:/projects/A',
     )).resolves.toEqual({
       success: false,
-      errorCode: 'FINALIZED_DRAFT_DELETE_REQUIRED',
+      failure: { code: 'FINALIZED_DRAFT_DELETE_REQUIRED' },
     })
     expect(mocks.draftDelete).toHaveBeenCalledWith(1)
   })

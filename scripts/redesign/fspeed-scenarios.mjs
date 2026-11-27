@@ -121,11 +121,11 @@ async function seed(context, fakeMode, chapters) {
   const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
     chapters: [1, 2].map(number => ({ chapterNumber: number, title: title(number), content: STAGE_SAMPLE.finalized[number],
       wordCount: countUnits(STAGE_SAMPLE.finalized[number]) })) }, projectPath, session)
-  assert.equal(imported.success, true, imported.error)
+  assert.equal(imported.success, true, imported.failure?.code)
   for (const number of chapters) {
     const content = chapterText(number)
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: number, version: 1, source: 'write', content, wordCount: countUnits(content) }, projectPath, session)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
   }
   await reload()
   await stage.openFromLibrary(page, BOOK)

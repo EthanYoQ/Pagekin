@@ -19,15 +19,15 @@ const SECOND_DRAFT = `${STAGE_SAMPLE.drafts[3].text}\n\n林岚把纸条又读了
 const seedChapter3WithOlderDraft = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
   const draft = await invoke(page, 'db:draft-create', { chapterNumber: 3, version: 2, source: 'write', content: SECOND_DRAFT,
     wordCount: countUnits(SECOND_DRAFT) }, path, session)
-  assert.equal(draft.success, true, draft.error)
+  assert.equal(draft.success, true, draft.failure?.code)
 } })
 
 const seedChapter3WithRevision = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
   const draft = await invoke(page, 'db:draft-create', { chapterNumber: 3, version: 2, source: 'rewrite', content: SECOND_DRAFT,
     wordCount: countUnits(SECOND_DRAFT) }, path, session)
-  assert.equal(draft.success, true, draft.error)
+  assert.equal(draft.success, true, draft.failure?.code)
   const revised = await invoke(page, 'db:draft-update-status', draft.id, 'revised', undefined, path, session)
-  assert.equal(revised.success, true, revised.error)
+  assert.equal(revised.success, true, revised.failure?.code)
 } })
 
 async function openToRepairNotice(page) {
