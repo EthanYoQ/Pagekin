@@ -15,7 +15,6 @@ const PROJECTION = [{
   facts: [{ category: 'character-state', entities: ['顾舟'], statement: '顾舟已经死亡。', sourceChapter: 1, evidence: '表盖内侧刻着一组陌生坐标。' }],
 }]
 
-/** master 上读通道抛的是 Electron 包过的原文，迁到 handle() 后抛的是登记码。 */
 const REJECTIONS = [
   ['master 的原文', new Error("Error invoking remote method 'db:x': SqliteError: database disk image is malformed")],
   ['迁移后的通用码', new Error('IPC_HANDLER_FAILED')],

@@ -617,7 +617,6 @@ export function registerDatabaseController() {
     }
   })
 
-  // 角色名册提交与回读在一个事务里（character-roster-author.ts），提议回执的写入与回读也是（blueprint-repository.ts），失败整次撤回。
   const roster = {
     handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
       code: 'CHARACTER_ROSTER_WRITE_FAILED',
@@ -692,7 +691,6 @@ export function registerDatabaseController() {
     return CharacterRepository.getAll()
   })
 
-  // 豁免的保存与撤销各是一条语句（consistency-exemption-repository.ts），失败时原来的安排不变。
   const continuity = {
     handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
       code: 'CONSISTENCY_EXEMPTION_WRITE_FAILED',
@@ -842,7 +840,6 @@ export function registerDatabaseController() {
     return FinalizationRepository.matchesAuthoritativeExportReceipt(receipt)
   })
 
-  // 定稿连续性改由主进程定稿事务写，这两个旧入口只剩拒绝；作者走不到（finalize-chapter.command.ts 总带 finalizedStage），只回通用码。
   const retiredContinuity = {
     handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, { code: IPC_HANDLER_FAILED }),
   }
