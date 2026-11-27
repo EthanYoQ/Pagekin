@@ -34,7 +34,7 @@ function modelReply(command: RuntimeAnalyzeWritingStyleCommand) {
   return { mockResolvedValue: (content: string) => spy.mockResolvedValue({ content, finishReason: 'stop', receipt: {} }) }
 }
 
-function stubIpcInvoke(updateResult: { success: boolean; error?: string } = { success: true }) {
+function stubIpcInvoke(updateResult: { success: boolean; failure?: { code: string; note?: { key: string } } } = { success: true }) {
   const invoke = vi.fn((channel: string) => {
     if (channel === 'prompt:load-global') return Promise.resolve({ templates: [], diagnostics: [] })
     if (channel === 'db:project-core-update') return Promise.resolve(updateResult)

@@ -704,7 +704,7 @@ describe('清除生成内容', () => {
   const project = { id: 'lighthouse', path: 'C:/novels/lighthouse', sessionLease: 'lease-clear' } as ProjectData
   const originalProject = useProjectStore.getState()
   let invoke: ReturnType<typeof vi.fn>
-  let finishClear: (result: { success: boolean; error?: string }) => void = () => {}
+  let finishClear: (result: { success: boolean; failure?: { code: string; note?: { key: string } } }) => void = () => {}
 
   beforeEach(() => {
     invoke = vi.fn((channel: string) => channel === 'db:project-clear-generated-data'
