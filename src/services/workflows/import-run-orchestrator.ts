@@ -23,7 +23,7 @@ import type { FinalizedDraftImportDraftReceipt, FinalizedDraftImportReceipt } fr
 import { authorError, errorCodeOf, importStopFailure } from '../../i18n/app-errors'
 import { localize } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
-import { note, type AuthorError, type AuthorNote } from '../../shared/failure'
+import { note, type AuthorError, type Literal, type NoteParams } from '../../shared/failure'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 
 export const IMPORT_CHAPTER_PAGE_SIZE = 100
@@ -164,9 +164,19 @@ function stopIfCancelled(context: ImportRunExecutionContext, locale: ImportRunLo
   }
 }
 
-/** 收据或检查点与持久化记录对不上；作者无法自行修复，只能继续或重新导入。 */
-export function importRecordError(locale: ErrorDisplayLocale, what: AuthorNote): AuthorError {
-  return authorError(locale, { note: what })
+const RECORD_NEXT_ZH = '请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。'
+const RECORD_NEXT_EN = ' Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'
+
+/** 收据或检查点与持久化记录对不上：作者无法自行修复，说明写明是哪一项，统一接上继续或重新导入的办法。 */
+export function importRecordError<const Z extends string, const E extends string>(
+  locale: ErrorDisplayLocale,
+  zh: Literal<Z>,
+  en: Literal<E>,
+  params?: NoteParams,
+): AuthorError {
+  // 两段都是字面量，拼上常量仍是字面量；Literal 的检查到泛型这里推不下去，只在这一处断言。
+  const full = note(`${zh}${RECORD_NEXT_ZH}` as Literal<`${Z}${typeof RECORD_NEXT_ZH}`>, `${en}${RECORD_NEXT_EN}` as Literal<`${E}${typeof RECORD_NEXT_EN}`>, params)
+  return authorError(locale, { note: full })
 }
 
 function splitContiguousBatches(
@@ -459,7 +469,8 @@ export class ImportRunOrchestrator {
     if (!committedReceipt || committedReceipt.state !== 'committed') {
       throw importRecordError(
         this.dependencies.interfaceLocale,
-        note('这一步生成的结果没有保存下来。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'The result generated in this step was not saved. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
+        '这一步生成的结果没有保存下来。',
+        'The result generated in this step was not saved.',
       )
     }
     return { run, execution: execution.current }
@@ -475,7 +486,8 @@ export class ImportRunOrchestrator {
     if (!existing) {
       throw importRecordError(
         this.dependencies.interfaceLocale,
-        note('已完成的导入批次缺少保存记录，无法按原结果恢复。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'A completed import batch is missing its saved record, so its result cannot be restored. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
+        '已完成的导入批次缺少保存记录，无法按原结果恢复。',
+        'A completed import batch is missing its saved record, so its result cannot be restored.',
       )
     }
     execution.current = await this.dependencies.renewExecution(run.id, execution.current)
@@ -640,7 +652,8 @@ export class ImportRunOrchestrator {
     if (!receipt) {
       throw importRecordError(
         this.dependencies.interfaceLocale,
-        note('读不到已保存的作者原稿记录。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'The saved author-manuscript record could not be read. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
+        '读不到已保存的作者原稿记录。',
+        'The saved author-manuscript record could not be read.',
       )
     }
     const draftsByChapter = new Map(receipt.drafts.map(draft => [draft.chapterNumber, draft]))
@@ -656,7 +669,8 @@ export class ImportRunOrchestrator {
           if (!draft) {
             throw importRecordError(
               this.dependencies.interfaceLocale,
-              note('已保存的作者原稿记录里缺少第 {number} 章。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'The saved author-manuscript record is missing Chapter {number}. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.', { number: chapter.number }),
+              '已保存的作者原稿记录里缺少第 {number} 章。',
+              'The saved author-manuscript record is missing Chapter {number}.', { number: chapter.number },
             )
           }
           execution.current = await this.dependencies.renewExecution(run.id, execution.current)

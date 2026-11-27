@@ -194,17 +194,18 @@ function productionDependencies(
       if (!durableReceipt || JSON.stringify(durableReceipt) !== JSON.stringify(receipt)) {
         throw importRecordError(
           context.interfaceLocale,
-          note('已提交的导入结果与保存的记录不一致。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Committed import effect receipt does not match durable storage. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
+          '已提交的导入结果与保存的记录不一致。',
+          'Committed import effect receipt does not match durable storage.',
         )
       }
       assertImportRunEffectReceiptMetadata(durableReceipt, run)
       if (durableReceipt.state !== 'committed') {
-        throw importRecordError(context.interfaceLocale, note('导入结果还没有提交，不能直接恢复。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Prepared import effects cannot be replayed. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'))
+        throw importRecordError(context.interfaceLocale, '导入结果还没有提交，不能直接恢复。', 'Prepared import effects cannot be replayed.')
       }
       if (durableReceipt.kind === 'chapter-blueprint-range') {
         const committed = durableReceipt.effectReceipt as BlueprintRangeCommitReceipt | undefined
         if (!committed?.characterSyncOperation?.operationId) {
-          throw importRecordError(context.interfaceLocale, note('已保存的章节蓝图导入记录不完整。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Committed blueprint import receipt is incomplete. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'))
+          throw importRecordError(context.interfaceLocale, '已保存的章节蓝图导入记录不完整。', 'Committed blueprint import receipt is incomplete.')
         }
         await retryDirectoryCharacterSync(
           committed.characterSyncOperation.operationId,
@@ -220,7 +221,7 @@ function productionDependencies(
           !authorReceipt
           || authorReceipt.operationId !== `author-import:${run.id}`
           || authorReceipt.drafts.length !== run.totalChapters
-        ) throw importRecordError(context.interfaceLocale, note('已保存的作者原稿导入记录不完整。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Committed author-manuscript receipt is incomplete. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'))
+        ) throw importRecordError(context.interfaceLocale, '已保存的作者原稿导入记录不完整。', 'Committed author-manuscript receipt is incomplete.')
         return
       }
       const core = await ipc.invokeWithProjectSession(session, 'db:project-core-get', projectPath)
@@ -323,7 +324,8 @@ function productionDependencies(
       if (receipt.state !== 'committed' || receipt.kind !== 'author-finalized-batch') {
         throw importRecordError(
           context.interfaceLocale,
-          note('作者原稿定稿还没有保存完成。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Author-manuscript finalization has not been durably committed. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
+          '作者原稿定稿还没有保存完成。',
+          'Author-manuscript finalization has not been durably committed.',
         )
       }
       return receipt.effectReceipt as FinalizedDraftImportReceipt
