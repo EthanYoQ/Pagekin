@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, errorMessageForModel, importGenerationStopMessage, knownAppErrorMessage, legacyImportFailureMessage, projectOpenFailureMessage } from '../app-errors'
+import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, errorMessageForModel, failureText, importStopFailure, knownAppErrorMessage, legacyImportFailureMessage, projectOpenFailureMessage } from '../app-errors'
 import { shown } from './shown-locale'
 import { translate } from '../core'
 
@@ -325,11 +325,11 @@ describe('import generation stops (#537)', () => {
   const blocked = ['GENERATION_DISPATCH_BLOCKED', 'GENERATION_DIRECTORY_CONTINUATION_BLOCKED', 'GENERATION_PARENT_INVALID'] as const
 
   it.each(['zh-CN', 'en-US'] as const)('tells a request limit, an active-time stop and a blocked generation apart in %s, without codes, and names the only way to finish', locale => {
-    const requestLimit = importGenerationStopMessage(shown(locale), 'ROOT_BUDGET_EXHAUSTED')
-    const activeTime = importGenerationStopMessage(shown(locale), 'ROOT_BUDGET_EXHAUSTED', true)
-    const blockedMessages = blocked.map(code => importGenerationStopMessage(shown(locale), code))
-    const previousAttempt = importGenerationStopMessage(shown(locale), 'GENERATION_IMPORT_PREVIOUS_ATTEMPT_INCOMPLETE')
-    const storage = importGenerationStopMessage(shown(locale), 'GENERATION_STORAGE_FAILED', true)
+    const requestLimit = failureText(shown(locale), importStopFailure('ROOT_BUDGET_EXHAUSTED'))
+    const activeTime = failureText(shown(locale), importStopFailure('ROOT_BUDGET_EXHAUSTED', true))
+    const blockedMessages = blocked.map(code => failureText(shown(locale), importStopFailure(code)))
+    const previousAttempt = failureText(shown(locale), importStopFailure('GENERATION_IMPORT_PREVIOUS_ATTEMPT_INCOMPLETE'))
+    const storage = failureText(shown(locale), importStopFailure('GENERATION_STORAGE_FAILED', true))
     const all = [requestLimit, activeTime, ...blockedMessages, previousAttempt, storage]
     for (const message of all) {
       expect(message).toBeTruthy()
@@ -344,8 +344,8 @@ describe('import generation stops (#537)', () => {
   })
 
   it('does not claim the request count ran out when a stop before sending may be the running time', () => {
-    expect(importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED')).toMatch(/^这次导入的请求次数或运行时长已到上限/u)
-    expect(importGenerationStopMessage(shown('en-US'), 'ROOT_BUDGET_EXHAUSTED')).toMatch(/^This import reached its limit on model requests or running time/u)
+    expect(failureText(shown('zh-CN'), importStopFailure('ROOT_BUDGET_EXHAUSTED'))).toMatch(/^这次导入的请求次数或运行时长已到上限/u)
+    expect(failureText(shown('en-US'), importStopFailure('ROOT_BUDGET_EXHAUSTED'))).toMatch(/^This import reached its limit on model requests or running time/u)
   })
 
   it.each(['zh-CN', 'en-US'] as const)('tells an author-manuscript inference stop in %s what is saved and what the author can still do, without Start over', locale => {
@@ -354,18 +354,18 @@ describe('import generation stops (#537)', () => {
     const saved = { 'zh-CN': /原稿正文已经导入并保存，只是 AI 反推的设定、文风或蓝图没有做完/u, 'en-US': /manuscript text is imported and saved/u }[locale]
     const startOver = { 'zh-CN': /重新开始/u, 'en-US': /Start over/u }[locale]
     for (const [code, inFlight] of stops) {
-      const author = importGenerationStopMessage(shown(locale), code, inFlight, 'author-manuscript')
-      const reference = importGenerationStopMessage(shown(locale), code, inFlight)
+      const author = failureText(shown(locale), importStopFailure(code, inFlight, 'author-manuscript'))
+      const reference = failureText(shown(locale), importStopFailure(code, inFlight))
       expect(author).toMatch(saved)
       expect(author).not.toMatch(startOver)
       expect(author).not.toMatch(/[A-Z]{3,}_[A-Z]/u)
       expect(reference).toMatch(nextStep[locale])
-      expect(importGenerationStopMessage(shown(locale), code, inFlight, 'reference')).toBe(reference)
+      expect(failureText(shown(locale), importStopFailure(code, inFlight, 'reference'))).toBe(reference)
     }
   })
 
   it.each(['GENERATION_PROVIDER_FAILED', 'IMPORT_RUN_EXECUTION_STALE', 'DEADLINE_EXHAUSTED'])('leaves %s to the shared explanation', code => {
-    expect(importGenerationStopMessage(shown('zh-CN'), code)).toBeUndefined()
+    expect(importStopFailure(code)).toBeUndefined()
   })
 
   it.each(['GENERATION_PARENT_INVALID', 'GENERATION_IMPORT_PREVIOUS_ATTEMPT_INCOMPLETE'])('registers a readable explanation for %s', code => {
@@ -427,7 +427,7 @@ describe('日文界面的已登记错误', () => {
   it('按日文目录说明，句子之间不加空格；未知错误的兜底仍是英文', () => {
     expect(legacyImportFailureMessage(shown('ja-JP'), 'LEGACY_IMPORT_IO_FAILED'))
       .toMatch(/^何も取り込まれませんでした。元のファイルは変更されていません。[^ ]/u)
-    expect(importGenerationStopMessage(shown('ja-JP'), 'GENERATION_STORAGE_FAILED', false, 'author-manuscript'))
+    expect(failureText(shown('ja-JP'), importStopFailure('GENERATION_STORAGE_FAILED', false, 'author-manuscript')))
       .toMatch(/。原稿の本文は取り込まれ/u)
     expect(displayedErrorMessage(shown('ja-JP'), 'PROJECT_NOT_OPEN')).toBe('先にプロジェクトを開いてください。')
     expect(displayedErrorMessage(shown('ja-JP'), '')).toBe('Unknown error')
