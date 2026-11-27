@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { caughtFailure, displayedErrorMessage, englishWithReason } from '../../../i18n/app-errors'
+import { caughtFailure, displayedErrorMessage, resultFailure } from '../../../i18n/app-errors'
 import { translate } from '../../../i18n/core'
 import { shown } from '../../../i18n/__tests__/shown-locale'
 import type { ErrorDisplayLocale } from '../../../i18n/types'
@@ -8,16 +8,17 @@ import { workflowMainProcessError } from '../../../services/workflows/workflow-p
 import { note } from '../../../shared/failure'
 import { blueprintFailureToast } from '../blueprint-failure-toast'
 
+/** master 的拼法：概述、空一行、按界面语言显示的原因。 */
 function legacySaveFailureToast(locale: ErrorDisplayLocale, error: unknown): string {
   const message = displayedErrorMessage(locale, error)
-  return locale === 'zh-CN' ? `保存失败\n\n${message}` : englishWithReason(locale, 'Could not save the blueprint.', message, '\n\n')
+  return locale === 'zh-CN' ? `保存失败\n\n${message}` : `Could not save the blueprint.\n\n${message}`
 }
 
 const locales = [shown('zh-CN'), shown('en-US'), shown('ja-JP')]
 const saveErrors = (locale: ErrorDisplayLocale) => ({
-  registeredCode: workflowMainProcessError(locale, 'PROJECT_NOT_OPEN', '保存章节蓝图失败', 'Could not save the chapter blueprint.'),
-  mainProcessChinese: workflowMainProcessError(locale, '磁盘空间不足', '保存章节蓝图失败', 'Could not save the chapter blueprint.'),
-  unregisteredCode: workflowMainProcessError(locale, 'BLUEPRINT_TEST_UNREGISTERED', '保存章节蓝图失败', 'Could not save the chapter blueprint.'),
+  registeredCode: workflowMainProcessError(locale, { code: 'PROJECT_NOT_OPEN' }, '保存章节蓝图失败', 'Could not save the chapter blueprint.'),
+  mainProcessChinese: workflowMainProcessError(locale, resultFailure({ error: '磁盘空间不足' }), '保存章节蓝图失败', 'Could not save the chapter blueprint.'),
+  unregisteredCode: workflowMainProcessError(locale, resultFailure({ error: 'BLUEPRINT_TEST_UNREGISTERED' }), '保存章节蓝图失败', 'Could not save the chapter blueprint.'),
   noReason: workflowMainProcessError(locale, undefined, '保存章节蓝图失败', 'Could not save the chapter blueprint.'),
   codeOnlyError: new Error('PROJECT_NOT_OPEN'),
 })
@@ -32,7 +33,7 @@ describe('blueprint failure toast', () => {
 
   it('概述和原因之间空一行，原因内部仍按句子接', () => {
     const zh = shown('zh-CN')
-    const error = workflowMainProcessError(zh, 'PROJECT_NOT_OPEN', '保存章节蓝图失败', 'Could not save the chapter blueprint.')
+    const error = workflowMainProcessError(zh, { code: 'PROJECT_NOT_OPEN' }, '保存章节蓝图失败', 'Could not save the chapter blueprint.')
     expect(blueprintFailureToast(zh, note('保存失败', 'Could not save the blueprint.'), caughtFailure(error)))
       .toBe(`保存失败\n\n保存章节蓝图失败：${translate(zh, 'error.projectNotOpen')}`)
     expect(blueprintFailureToast(shown('en-US'), note('删除失败', 'Could not delete the chapter blueprint.'), caughtFailure('PROJECT_NOT_OPEN')))

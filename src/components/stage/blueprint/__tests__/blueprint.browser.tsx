@@ -1652,7 +1652,8 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     await renderPage(2)
     await expect.element(page.getByText('第 2 章写两人并肩，节点说已决裂。')).toBeVisible()
     await check()
-    await expect.element(page.getByText('网络断了')).toBeVisible()
+    await expect.element(page.getByText('蓝图没有改动。这次没查成，再点一次“AI 检查”。')).toBeVisible()
+    expect(document.body.textContent).not.toContain('网络断了')
     stored = original
     latest = read
     await refreshAndRecover()
@@ -1787,7 +1788,7 @@ describe('AI 检查（蓝图正文对照时间线）', () => {
     })
 
     it.each([
-      ['请求失败', '网络断了'],
+      ['请求失败', '蓝图没有改动。这次没查成，再点一次“AI 检查”。'],
       ['结果读不出来', '蓝图没有改动。这次结果没读出来，再点一次“AI 检查”。'],
     ])('离开期间这次检查%s：回来仍看到上次成功的结论，并提示这次没查成', async (kind, notice) => {
       latest = read

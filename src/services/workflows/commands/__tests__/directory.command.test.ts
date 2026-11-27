@@ -22,6 +22,7 @@ import {
 } from '../directory.command'
 import { listPendingDirectoryCharacterSyncs } from '../../directory-character-sync-recovery'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
+import { expectEndedWith } from '../../../../stores/__tests__/run-failure-expect'
 
 type Blueprint = {
   chapterNumber: number
@@ -1740,8 +1741,8 @@ describe('GenerateDirectoryCommand：作者点了取消，批次随后失败（�
       throw failure()
     })
 
-    expect(finished).toMatchObject({ status: 'failed', errorCode: code })
-    expect(finished.steps[0]).toMatchObject({ status: 'failed', errorCode: code })
+    expectEndedWith(finished, 'failed', code)
+    expectEndedWith(finished.steps[0], 'failed', code)
     expect(commits).toEqual([])
   })
 
@@ -1755,14 +1756,14 @@ describe('GenerateDirectoryCommand：作者点了取消，批次随后失败（�
       throw failure()
     })
 
-    expect(finished).toMatchObject({ status: 'failed', errorCode: code })
+    expectEndedWith(finished, 'failed', code)
     expect(commits).toEqual([])
   })
 
   it('没有取消时唯一一批存储失败：运行同样记失败，带原码', async () => {
     const { finished } = await runDirectory(3, async () => { throw storageFailure() })
 
-    expect(finished).toMatchObject({ status: 'failed', errorCode: 'GENERATION_STORAGE_FAILED' })
+    expectEndedWith(finished, 'failed', 'GENERATION_STORAGE_FAILED')
   })
 
   it('批次因取消中止：运行和这一步都记已取消，不写入', async () => {

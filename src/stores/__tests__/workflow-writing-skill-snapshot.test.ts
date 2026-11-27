@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { freezeWritingSkillsSnapshot } = vi.hoisted(() => ({ freezeWritingSkillsSnapshot: vi.fn() }))
 vi.mock('../../services/agent/writing-skill-bindings', () => ({ freezeWritingSkillsSnapshot }))
 
-import { authorError } from '../../i18n/app-errors'
+import { authorError, failureText } from '../../i18n/app-errors'
 import { shown } from '../../i18n/__tests__/shown-locale'
 import { authorOwned, note } from '../../shared/failure'
 import { useLocaleStore } from '../locale-store'
@@ -53,8 +53,8 @@ describe('workflow writing skill snapshot', () => {
     expect(useWorkflowStore.getState().activeRuns).toHaveLength(0)
     expect(useWorkflowStore.getState().history[0]).toMatchObject({
       status: 'failed',
-      error: expect.stringContaining('user:gone'),
     })
+    expect(failureText(shown('zh-CN'), useWorkflowStore.getState().history[0]?.failure)).toContain('user:gone')
   })
 
   it('reserves resource claims before the asynchronous snapshot load', async () => {

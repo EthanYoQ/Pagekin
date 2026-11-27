@@ -505,7 +505,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
             updateAssistantMsg(m => ({
               ...m,
               content: m.content ? m.content + text('\n\n生成未完成，原候选已保留。', '\n\nGeneration did not finish; the original candidate was retained.')
-                : error || text('生成失败，请重试。', 'Generation failed. Please try again.'),
+                : error,
               streaming: false,
             }))
             set({ generating: false, activeRequestId: null })

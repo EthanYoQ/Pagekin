@@ -45,6 +45,7 @@ import { readPortableRuntimeFreeze } from '../../services/portable-runtime-freez
 import { runIndexOf } from '../../repositories/generation-run-index'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
 import { expectLoggedCode } from './logged-ipc-code'
+import { expectEndedWith } from '../../../src/stores/__tests__/run-failure-expect'
 
 const model: ModelProfile = { id: 'fixture', name: '合成模型', provider: 'openai', protocol: 'openai', modelName: 'gpt-4.1',
   baseUrl: 'https://api.openai.com/v1', apiKey: 'synthetic-only', maxTokens: 1024, temperature: 0.7, purposes: ['generation'] }
@@ -450,8 +451,8 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     })
 
     expect(rejection).toMatchObject({ message: 'GENERATION_DISPATCH_BLOCKED' })
-    expect(ended).toMatchObject({ status: 'failed', error: 'GENERATION_DISPATCH_BLOCKED' })
-    expect(ended.steps[0]).toMatchObject({ status: 'failed', error: 'GENERATION_DISPATCH_BLOCKED' })
+    expectEndedWith(ended, 'failed', 'GENERATION_DISPATCH_BLOCKED')
+    expectEndedWith(ended.steps[0], 'failed', 'GENERATION_DISPATCH_BLOCKED')
     expect(fetch).not.toHaveBeenCalled()
   })
   it.each([new KnowledgeBaseUnavailableError(new Error('native missing')),new LegacyVectorMigrationBlockedError('untrusted details')])('preserves known knowledge failure code before drafting',async error=>{

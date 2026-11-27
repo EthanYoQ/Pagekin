@@ -81,7 +81,7 @@ const COVERED_PREFIXES = [
   'LEGACY_IMPORT_',
 ] as const
 const UNREGISTERED: Record<string, readonly string[]> = {
-  postProcessStepRecord: ['POST_PROCESS_INTERRUPTED'],
+  postProcessStepRecord: ['POST_PROCESS_INTERRUPTED', 'POST_PROCESS_STEP_FAILED'],
   legacyImportWarning: ['LEGACY_IMPORT_RECENT_LIST_FAILED'],
   contractViolation: [
     'GENERATION_AGENT_ADMISSION_REQUIRED',

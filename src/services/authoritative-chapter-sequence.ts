@@ -5,11 +5,11 @@ import {
 } from '../shared/chapter-sequence'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import type { WritingLanguage } from '../shared/writing-language'
+import { AuthorError } from '../shared/failure'
+import { writtenNote } from '../i18n/app-errors'
 import { ipc } from './ipc-client'
 
-export class AuthoritativeChapterSequenceError extends Error {
-  readonly code = 'AUTHORITATIVE_CHAPTER_SEQUENCE_INVALID' as const
-
+export class AuthoritativeChapterSequenceError extends AuthorError {
   constructor(
     readonly sequence: AuthoritativeChapterSequence,
     locale: WritingLanguage,
@@ -21,9 +21,10 @@ export class AuthoritativeChapterSequenceError extends Error {
         ? `Finalized authority has duplicate records for Chapters ${duplicates.join(', ')}.`
         : `权威定稿的第 ${duplicates.join('、')} 章存在重复记录。`
       : en ? 'Finalized manuscript authority is inconsistent.' : '权威定稿状态不一致。'
-    super(en
+    const sentence = en
       ? `${detail} Repair or remove the conflicting finalized chapters before continuing.`
-      : `${detail}请先修复或移除冲突定稿，再继续创作。`)
+      : `${detail}请先修复或移除冲突定稿，再继续创作。`
+    super({ code: 'AUTHORITATIVE_CHAPTER_SEQUENCE_INVALID', note: writtenNote(sentence) }, sentence)
     this.name = 'AuthoritativeChapterSequenceError'
   }
 }

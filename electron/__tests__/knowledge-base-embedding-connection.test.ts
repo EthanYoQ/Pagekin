@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { shown as shownLocale } from '../../src/i18n/__tests__/shown-locale'
+import { resultFailure } from '../../src/i18n/app-errors'
 import { workflowMainProcessError } from '../../src/services/workflows/workflow-project-session'
 import { closeProjectDatabase } from '../database'
 import { backfillVectors, importText } from '../knowledge-base'
@@ -34,7 +35,7 @@ async function rebuildFailureShown(locale: 'zh-CN' | 'en-US', baseUrl: string): 
   await importText('林岚核对潮位表。', '第1章 旧港.txt', projectPath, 'openai', localModel(baseUrl), { mode: 'fts-only' })
   const result = await backfillVectors(projectPath, 'openai', localModel(baseUrl))
   expect(result.success).toBe(false)
-  return workflowMainProcessError(shownLocale(locale), result.errorCode ?? result.error, '重建检索失败', 'Could not rebuild search.').message
+  return workflowMainProcessError(shownLocale(locale), resultFailure(result), '重建检索失败', 'Could not rebuild search.').message
 }
 
 beforeAll(() => { fs.mkdirSync(path.resolve('.runtime/.cache'), { recursive: true }) })

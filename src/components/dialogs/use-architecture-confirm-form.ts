@@ -203,14 +203,16 @@ export function useArchitectureConfirmForm({
       // 前置校验 1：小说配置是否填写
       const configGuard = guardArchitectureGeneration()
       if (!configGuard.ok) {
-        setGuardError(displayedErrorMessage(currentInterfaceLocale(), configGuard.message, text('配置校验失败', 'Configuration validation failed.')))
+        // i18n-exempt: 前置校验的 message 是 workflow-guards 按界面语言写好的句子，不是报错原文
+        setGuardError(configGuard.message || text('配置校验失败', 'Configuration validation failed.'))
         return
       }
 
       // 范围合法性（超出总章数或起大于止）
       const resolution = resolveSynopsisRange()
       if (!resolution.ok) {
-        setGuardError(displayedErrorMessage(currentInterfaceLocale(), resolution.message, boundsIssue))
+        // i18n-exempt: resolveSynopsisRange 的 message 是本文件按界面语言写好的范围说明
+        setGuardError(resolution.message || boundsIssue)
         return
       }
 
@@ -218,7 +220,8 @@ export function useArchitectureConfirmForm({
       if (selectedSteps.includes('characters') && archStatus.characters) {
         const charGuard = await guardCharacterRegeneration()
         if (!charGuard.ok) {
-          setGuardError(displayedErrorMessage(currentInterfaceLocale(), charGuard.message, text('角色卡不可重新生成', 'Character cards cannot be regenerated.')))
+          // i18n-exempt: 前置校验的 message 是 workflow-guards 按界面语言写好的句子，不是报错原文
+          setGuardError(charGuard.message || text('角色卡不可重新生成', 'Character cards cannot be regenerated.'))
           return
         }
       }

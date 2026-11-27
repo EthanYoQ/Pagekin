@@ -8,6 +8,7 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { createChapterWorkflow, createRepairFinalizeWorkflow } from '../chapter-workflow'
 import { shown } from '../../../i18n/__tests__/shown-locale'
+import { shownFailure } from '../../../stores/__tests__/run-failure-expect'
 
 const postProcess = vi.hoisted(() => ({
   params: [] as Array<Record<string, unknown>>,
@@ -240,7 +241,7 @@ describe('createRepairFinalizeWorkflow', () => {
       const run = useWorkflowStore.getState().history.find(entry => entry.id === runId)
       expect(run).toMatchObject({ status: expectedStatus, steps: [{ status: expectedStatus }] })
       if (expectedStatus === 'failed') {
-        expect(run?.error).toContain('角色状态')
+        expect(shownFailure(run!)).toContain('角色状态')
         expect(completed).not.toHaveBeenCalled()
         expect(openResult).not.toHaveBeenCalled()
       } else {

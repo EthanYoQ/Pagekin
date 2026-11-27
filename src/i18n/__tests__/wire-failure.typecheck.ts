@@ -14,8 +14,6 @@ export function writtenSentencesCannotCrossIpc(error: Error, sentence: string, m
     wireNote('请先打开项目。'),
     // @ts-expect-error 键是变量
     wireNote(sentence),
-    // @ts-expect-error 「发生错误：{message}」整句只装原文，不许过 IPC
-    wireNote('error.unknown', { message: error.message }),
     // @ts-expect-error 参数不能是对象
     wireNote('error.projectPathTooDeepForDatabase', { max: error }),
     // @ts-expect-error 新形状没有写好的句子这一栏

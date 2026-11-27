@@ -10,7 +10,8 @@ import { listTemporaryDirectory } from './helpers/temporary-directory'
 import BASELINE from './directory-listing-baseline.json'
 import FAILURE_BASELINE from './legacy-failure-baseline.json'
 import {
-  currentLegacyFailureCounts, failureRewrites, failureTypeAssertions, legacyFailureCounts, legacySum, rawTextInNoteArguments, scanProduction, type LegacyFailureCounts,
+  currentLegacyFailureCounts, failureRewrites, failureTypeAssertions, legacyFailureCounts, legacySum, rawTextInNoteArguments, removedFailureEntries, scanProduction,
+  type LegacyFailureCounts,
 } from './helpers/legacy-failure-scan'
 
 const eslint = new ESLint({ cwd: REPO_ROOT })
@@ -183,29 +184,36 @@ describe('失败的码与说明（#844）', () => {
 
   it('旧约定按合计比较：种类互换合计不变放行，合计变大拦下', () => {
     const before = { 'src/a.ts': { displayedErrorMessage: 1, appErrorMessage: 1 } }
-    expect(legacyTotal({ 'src/a.ts': { '{ legacy:': 1, appErrorMessage: 1, authorOwned: 4 } })).toBe(legacyTotal(before))
-    expect(legacyTotal({ 'src/a.ts': { displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 1 } })).toBeGreaterThan(legacyTotal(before))
+    expect(legacyTotal({ 'src/a.ts': { knownAppErrorMessage: 1, appErrorMessage: 1, authorOwned: 4 } })).toBe(legacyTotal(before))
+    expect(legacyTotal({ 'src/a.ts': { displayedErrorMessage: 1, appErrorMessage: 1, knownAppErrorMessage: 1 } })).toBeGreaterThan(legacyTotal(before))
   })
 
-  it('计数认调用和 LegacyReason 形状的对象，不认定义、多键对照表里的 legacy 键和别的写法', () => {
+  it('计数认调用，不认定义和别的写法', () => {
     expect(legacyFailureCounts('src/x.ts', [
       'export function displayedErrorMessage() {}',
       'displayedErrorMessage(locale, error)',
       'errors.appErrorMessage(locale, error)',
-      'authorError(locale, { note, because: { legacy } })',
-      'authorError(locale, { note, because: code ? { code } : { legacy: error } })',
-      'authorError(locale, { note, because: failureOf(error) ?? { legacy: error.message } })',
-      'const reason = { legacy: text }',
-      'const failure: Failure = { note: summary, because: reason }',
-      'const merged = { ...base, legacy: text }',
       'const note = authorOwned(name)',
-    ].join('\n'))).toEqual({ displayedErrorMessage: 1, appErrorMessage: 1, '{ legacy:': 5, authorOwned: 1 })
-    expect(legacyFailureCounts('src/x.ts', [
-      "const SOURCE = { author: 'author', adopted: 'author', derived: 'finalized', legacy: 'legacy' }",
-      "const LABELS = { author: ['作者设定', 'Set by author'], legacy: ['升级前已有', 'From before the upgrade'] }",
       'const legacy = 1',
-      'const because = { code }',
-    ].join('\n'))).toEqual({})
+    ].join('\n'))).toEqual({ displayedErrorMessage: 1, appErrorMessage: 1, authorOwned: 1 })
+  })
+
+  it('旧失败约定的入口不存在', () => {
+    expect(scanProduction(removedFailureEntries).flatMap(([, found]) => found)).toEqual([])
+    for (const planted of [
+      'englishWithReason(locale, text, reason)',
+      'import type { LegacyReason } from "./failure"',
+      'const keys = WIRE_EXCLUDED_KEYS',
+      "translate(locale, 'error.unknown', { message })",
+      "import DIRECT_CHANNELS from './direct-channels.json'",
+      'authorError(locale, { note, because: { legacy: error.message } })',
+      'const merged = { ...base, legacy: text }',
+    ]) expect(removedFailureEntries('src/x.ts', planted), planted).not.toEqual([])
+    for (const allowed of [
+      "const SOURCE = { author: 'author', derived: 'finalized', legacy: 'legacy' }",
+      "translate(locale, 'error.unregisteredCode')",
+      'const legacy = 1',
+    ]) expect(removedFailureEntries('src/x.ts', allowed), allowed).toEqual([])
   })
 
   it('authorOwned( 的参数不许含异常原文', () => {
@@ -213,6 +221,7 @@ describe('失败的码与说明（#844）', () => {
     for (const planted of ['authorOwned(error.message)', 'authorOwned(String(error))', 'authorOwned(`第 ${error.stack} 行`)', 'authorOwned(String (error))', 'authorOwned(error["message"])', "authorOwned(error?.['stack'])"]) {
       expect(rawTextInNoteArguments('src/x.ts', planted), planted).toHaveLength(1)
     }
+    expect(rawTextInNoteArguments('src/x.ts', 'writtenNote(error.message)')).toHaveLength(1)
     expect(rawTextInNoteArguments('src/x.ts', 'authorOwned(material.fileName)')).toEqual([])
     expect(rawTextInNoteArguments('src/x.ts', 'authorOwned(`Chapter ${title}`)')).toEqual([])
   })

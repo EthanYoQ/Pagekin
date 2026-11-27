@@ -4,8 +4,9 @@ import { useDraftStore } from '../stores/draft-store'
 import { useEditorStore, type EditorTab } from '../stores/editor-store'
 import { useWorkflowStore } from '../stores/workflow-store'
 import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
-import { failureText, resultFailure } from '../i18n/app-errors'
-import { note, type Failure } from '../shared/failure'
+import { resultFailure, authorError, authorErrorOr } from '../i18n/app-errors'
+import { copyLocale } from '../i18n/core'
+import { authorOwned, note, type Failure } from '../shared/failure'
 import { globalEventBus } from '../shared/event-bus'
 import { parseJsonOrUndefined } from '../shared/ignore-failure'
 import { ledgerProjectKeys } from '../stores/editor-unsaved'
@@ -46,7 +47,7 @@ function isProjectSessionCurrent(projectSession: ProjectSessionContext): boolean
 
 function assertProjectSessionCurrent(projectSession: ProjectSessionContext): void {
   if (!isProjectSessionCurrent(projectSession)) {
-    throw new Error(useLocaleStore.getState().text('项目会话已变化，本次清除已取消', 'The book session changed, so clearing was cancelled.'))
+    throw authorError(currentInterfaceLocale(), { note: note('项目会话已变化，本次清除已取消', 'The book session changed, so clearing was cancelled.') })
   }
 }
 
@@ -99,9 +100,7 @@ function affectedHiddenDraftLabels(
 
 function assertResult(result: { success: boolean; failure?: Failure }): void {
   if (!result.success) {
-    throw new Error(failureText(currentInterfaceLocale(), resultFailure(result), {
-      fallback: note('清除项目生成内容失败', 'The generated content could not be cleared.'),
-    }))
+    throw authorErrorOr(currentInterfaceLocale(), resultFailure(result), note('清除项目生成内容失败', 'The generated content could not be cleared.'))
   }
 }
 
@@ -117,7 +116,7 @@ export async function clearProjectData(
   const projectPath = projectSession.projectPath
 
   if (useWorkflowStore.getState().hasActiveRun()) {
-    throw new Error(useLocaleStore.getState().text('当前仍有工作流运行中，请先等待完成或取消工作流后再清除。', 'A workflow is still running. Wait for it to finish or cancel it, then clear.'))
+    throw authorError(currentInterfaceLocale(), { note: note('当前仍有工作流运行中，请先等待完成或取消工作流后再清除。', 'A workflow is still running. Wait for it to finish or cancel it, then clear.') })
   }
 
   const editorState = useEditorStore.getState()
@@ -133,10 +132,12 @@ export async function clearProjectData(
     ...hiddenDraftLabels,
   ])]
   if (unsavedLabels.length > 0) {
-    throw new Error(useLocaleStore.getState().text(
-      `以下内容有未保存修改，请先保存或放弃草稿后再清除：${unsavedLabels.join('、')}`,
-      `These items have unsaved changes. Save or discard them before clearing: ${unsavedLabels.join(', ')}`,
-    ))
+    const locale = currentInterfaceLocale()
+    throw authorError(locale, { note: note(
+      '以下内容有未保存修改，请先保存或放弃草稿后再清除：{labels}',
+      'These items have unsaved changes. Save or discard them before clearing: {labels}',
+      { labels: authorOwned(unsavedLabels.join(copyLocale(locale) === 'zh-CN' ? '、' : ', ')) },
+    ) })
   }
 
   assertProjectSessionCurrent(projectSession)

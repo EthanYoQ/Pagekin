@@ -4,13 +4,14 @@ import { launchCreativeWorkflow } from '../../services/workflows/creative-workfl
 import { projectSessionContextFromProject, sameProjectPathKey, sameProjectSessionContext } from '../../shared/project-session-context'
 import { navigate } from '../../stores/navigation/navigation-intents'
 import { currentInterfaceLocale } from '../../stores/locale-store'
-import { errorLocaleForRun } from '../../i18n/core'
+import { copyLocale, errorLocaleForRun } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
-import type { Failure, LegacyReason } from '../../shared/failure'
+import { codeOf, type Failure } from '../../shared/failure'
 import { useProjectStore } from '../../stores/project-store'
 import type { WorkflowRun } from '../../stores/workflow-store'
 import { toast } from '../ui/Toast'
 import { presentWorkflowFailure, type WorkflowFailurePresentation } from '../panels/ai-output-failure-presentation'
+import { formatPromptBudgetFailure, PROMPT_BUDGET_FAILURE_CODE } from '../../services/generation/prompt-budget-failure'
 
 export interface RunFailure {
   title: string
@@ -21,25 +22,29 @@ export interface RunFailure {
   canRestartOutline: boolean
 }
 
-const hasNote = (failure: Failure | LegacyReason | undefined): boolean =>
-  failure !== undefined && !('legacy' in failure) && (failure.note !== undefined || hasNote(failure.because))
+const hasNote = (failure: Failure | undefined): boolean =>
+  failure !== undefined && (failure.note !== undefined || hasNote(failure.because))
 
 export function runFailure(run: WorkflowRun, interfaceLocale: ErrorDisplayLocale): RunFailure {
   const failedStep = run.steps.find(step => step.status === 'failed')
   const currentStep = run.steps[run.currentStepIndex] ?? run.steps[0]
   const failure = run.failure ?? failedStep?.failure
   const locale = errorLocaleForRun(run.uiLocale, interfaceLocale)
-  const legacy = run.error || currentStep?.error
+  const failureCode = run.failureCode ?? currentStep?.failureCode
+  const promptBudgetReport = run.promptBudgetReport ?? currentStep?.promptBudgetReport
   return {
     title: run.title,
     presentation: presentWorkflowFailure(
-      run.failureCode ?? currentStep?.failureCode,
-      failure && !legacy?.trim() ? failureText(locale, failure) : legacy,
+      failureCode,
+      failureCode === PROMPT_BUDGET_FAILURE_CODE && promptBudgetReport
+        ? formatPromptBudgetFailure(promptBudgetReport, copyLocale(locale))
+        : failure && failureText(locale, failure),
       locale,
       run.type === 'chapter_creation' && run.chapterWordsTarget !== undefined && !(currentStep?.result || '').trim(),
-      run.promptBudgetReport ?? currentStep?.promptBudgetReport,
+      promptBudgetReport,
       failedStep?.generationActivity ?? currentStep?.generationActivity,
       failure && hasNote(failure) ? failureText(locale, failure) : undefined,
+      failure && codeOf(failure),
     ),
     canResumeOutline: failure?.recovery === 'resume-plot-outline',
     canRestartOutline: failure?.recovery === 'restart-plot-outline',

@@ -9,6 +9,7 @@ import type { NovelConfig } from '../../../shared/ipc-channels'
 import { shown } from '../../../i18n/__tests__/shown-locale'
 import { runFailure } from '../../../components/run/run-failure'
 import { useWorkflowStore } from '../../../stores/workflow-store'
+import { expectFailedWith } from '../../../stores/__tests__/run-failure-expect'
 
 const originalDefaultModelId = useLLMStore.getState().defaultModelId
 afterEach(() => {
@@ -143,7 +144,7 @@ it.each([
   expect(shownFailure.presentation.reason).toBe(error.message)
   expect(shownFailure.presentation.reason).toContain('请到「架构」页重新生成情节大纲，从第 6 章开始。')
   expect(shownFailure.presentation.reason).not.toMatch(/[A-Z]+_[A-Z_]+|architecture-synopsis/u)
-  expect([run.errorCode, run.steps[0].errorCode]).toEqual([upstream, upstream])
+  expectFailedWith(run, upstream)
 })
 
 it.each([

@@ -2,7 +2,7 @@ import { copyLocale, localize, messages, translate, type MessageKey } from './co
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
 import {
-  AuthorError, AuthorNote, catalogKeyNote, codeOf, failureCode, failureOf,
+  AuthorError, AuthorNote, authorOwned, catalogKeyNote, codeOf, failureCode, failureOf, note,
   type Failure, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
 } from '../shared/failure'
 
@@ -261,6 +261,8 @@ const ERROR_KEYS = {
   GENERATION_AGENT_CANCELLED: 'error.generationCancelled',
   GENERATION_PROVIDER_FAILED: 'error.generationProviderFailed',
   GENERATION_STREAM_INVALID: 'error.generationProviderFailed',
+  // 生成 harness 发请求时模型服务抛错（GenerationAttemptError）；以前只有中文界面能看到 harness 写的「模型请求失败。」原文。
+  PROVIDER_REQUEST_FAILED: 'error.generationProviderFailed',
   NETWORK_ERROR: 'error.generationNetworkFailed',
   GENERATION_CONTEXT_LENGTH_EXCEEDED: 'error.generationContextLengthExceeded',
   GENERATION_FAILED: 'error.generationRequestFailed',
@@ -807,11 +809,29 @@ export function authorError(locale: ErrorDisplayLocale, failure: Failure, option
   return new AuthorError(failure, failureText(locale, failure), options)
 }
 
+/** 本应用自己按界面语言写好的整句说明（不是报错原文）：原样给作者看。 */
+export function writtenNote(sentence: string): AuthorNote {
+  return note('{sentence}', '{sentence}', { sentence: authorOwned(sentence) })
+}
+
+/** 说得清的失败照它说明，说不清时用 fallback 这句；选法与 failureText 的 fallback 相同。 */
+export function authorErrorOr(locale: ErrorDisplayLocale, failure: Failure | undefined, fallback: AuthorNote): AuthorError {
+  return authorError(locale, failure && authoredText(locale, failure) ? failure : { note: fallback })
+}
+
 /** catch 处的严格解析：认不出的不造码也不造说明，原文只进控制台，同一个错误只记一次。 */
 export function caughtFailure(error: unknown): Failure | undefined {
   const failure = failureOf(error)
   if (!failure) warnOnce('未标记的失败：', error)
   return failure
+}
+
+/** 认得出的失败按标记或码说明；没登记的码照样留着（error.code 仍是它）；其余原文只进控制台。 */
+export function reasonOf(error: unknown): Failure | undefined {
+  const marked = failureOf(error)
+  if (marked) return marked
+  const code = failureCode(readCode(error) ?? errorCodeOf(error))
+  return code ? { code } : caughtFailure(error)
 }
 
 type NoAny<P> = { readonly [K in keyof P]: 0 extends 1 & P[K] ? never : P[K] }
@@ -881,7 +901,7 @@ export function displayedErrorMessage(locale: ErrorDisplayLocale, error: unknown
   if (known) return known
   const raw = strippedRaw(error)
   if (CODE_SHAPE.test(raw)) logUnregisteredCode(raw)
-  else if (raw) warnOnce('未标记的失败，原文不显示：', error instanceof Error ? error : raw)
+  else if (raw) warnOnce('未标记的失败，原文不显示：', typeof error === 'object' && error !== null ? error : raw)
   return fallback || translate(locale, 'error.unregisteredCode')
 }
 

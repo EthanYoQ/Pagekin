@@ -32,6 +32,7 @@ import { useWorkflowStore } from '../../../stores/workflow-store'
 import { shown } from '../../../i18n/__tests__/shown-locale'
 import { appErrorMessage } from '../../../i18n/app-errors'
 import type { InterfaceLocale } from '../../../i18n/types'
+import { expectEndedWith, shownFailure } from '../../../stores/__tests__/run-failure-expect'
 
 const session = { projectId: 'test-project', leaseId: 'lease-test-project', projectPath: 'C:\\test-project' }
 const executionOwner = 'test-import-executor'
@@ -650,7 +651,8 @@ describe('作者在一批参照章节导入途中取消（#587）', () => {
     const { ended, channels } = await cancelDuringFirstChapter({ success: false, error: '导入已取消。', errorCode: 'IMPORT_RUN_CANCELLED' })
 
     expect(ended).toMatchObject({ status: 'cancelled' })
-    expect(ended.steps[0]).toMatchObject({ status: 'cancelled', error: '导入已取消，停在了已保存的进度处。' })
+    expect(ended.steps[0]).toMatchObject({ status: 'cancelled' })
+    expect(shownFailure(ended.steps[0])).toBe('导入已取消，停在了已保存的进度处。')
     expect(channels).toContain('db:import-run-cancel-at-boundary')
     expect(channels).not.toContain('db:import-run-fail')
   })
@@ -658,8 +660,8 @@ describe('作者在一批参照章节导入途中取消（#587）', () => {
   it('取消请求之后剩下的章节因真实错误失败：运行记失败，带原错误码，导入运行记失败而不是已取消', async () => {
     const { ended, channels } = await cancelDuringFirstChapter({ success: false, error: '检索索引正在建立，请稍后再试。', errorCode: 'EMBEDDING_SPACE_BUSY' })
 
-    expect(ended).toMatchObject({ status: 'failed', errorCode: 'EMBEDDING_SPACE_BUSY' })
-    expect(ended.steps[0]).toMatchObject({ status: 'failed', errorCode: 'EMBEDDING_SPACE_BUSY' })
+    expectEndedWith(ended, 'failed', 'EMBEDDING_SPACE_BUSY')
+    expectEndedWith(ended.steps[0], 'failed', 'EMBEDDING_SPACE_BUSY')
     expect(channels).toContain('db:import-run-fail')
     expect(channels).not.toContain('db:import-run-cancel-at-boundary')
   })

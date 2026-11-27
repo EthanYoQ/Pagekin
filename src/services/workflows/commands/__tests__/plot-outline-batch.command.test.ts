@@ -451,8 +451,8 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
     const shownFailure = runFailure(run, shown(locale))
     expect([shownFailure.canResumeOutline, shownFailure.canRestartOutline]).toEqual([true, false])
     expect(shownFailure.presentation.reason).toBe((thrown as Error).message)
-    if (locale === 'zh-CN') expect((thrown as Error).message).toMatch(/中断原因：模型请求失败。$/u)
-    else expect((thrown as Error).message).toMatch(/“Generate story architecture”\.$/u)
+    if (locale === 'zh-CN') expect((thrown as Error).message).toMatch(/中断原因：模型服务没有返回完整结果。请检查网络和模型设置后重试。$/u)
+    else expect((thrown as Error).message).toMatch(/“Generate story architecture”\.\nReason: The model service did not return a complete result\. Check your network and model settings, then try again\.$/u)
   })
 
   it('uses writing language, not UI locale, for the visible incomplete note', async () => {

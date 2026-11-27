@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ipc } from '../../services/ipc-client'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
-import { note } from '../../shared/failure'
+import { displayedErrorMessage, resultFailure, authorErrorOr, catalogNote } from '../../i18n/app-errors'
 
 export interface ProxyDraft {
   enabled: boolean
@@ -43,7 +42,7 @@ export function useProxySettings() {
     setSaveError(null)
     try {
       const result = await ipc.invoke('config:set', { proxy: { ...proxy, port: Number(proxy.port) || 7890 } })
-      if (!result.success) throw new Error(failureText(currentInterfaceLocale(), resultFailure(result), { fallback: note('未知错误', 'Unknown error') }))
+      if (!result.success) throw authorErrorOr(currentInterfaceLocale(), resultFailure(result), catalogNote('error.unregisteredCode'))
       setStored(proxy)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)

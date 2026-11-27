@@ -25,6 +25,8 @@ import {
   type CommandExecuteParams,
   type WorkflowGenerationRuntimeDependencies,
 } from './base-command'
+import { authorError } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 
 const MATERIAL_EXTRACTION_BATCH_SIZE = 2
 const PLANNING_MATERIAL_CHARACTER_CANDIDATES = 'planningMaterialCharacterCandidates'
@@ -61,7 +63,7 @@ export class ExtractPlanningMaterialCharactersCommand extends BaseWorkflowComman
     if (!sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),
-    )) throw new Error(text('当前项目已切换，角色提取已停止', 'The project changed, so character extraction stopped.'))
+    )) throw authorError(context.interfaceLocale, { note: note('当前项目已切换，角色提取已停止', 'The project changed, so character extraction stopped.') })
 
     const chunks = materialChunks(this.materials)
     if (chunks.length === 0) {
@@ -116,11 +118,8 @@ export class ExtractPlanningMaterialCharactersCommand extends BaseWorkflowComman
     })
     if (!extraction.ok) {
       if (extraction.failure.terminal) throw extraction.failure.terminal
-      const reason = extraction.failure.reason ?? 'unknown'
-      throw new Error(text(
-        `角色卡提取失败（code=${extraction.failure.code}；reason=${reason}）。`,
-        `Character-card extraction failed (code=${extraction.failure.code}; reason=${reason}).`,
-      ))
+      console.warn('[planning-material] 角色卡提取失败：', extraction.failure.code, extraction.failure.reason)
+      throw authorError(context.interfaceLocale, { note: note('角色卡提取失败。', 'Character-card extraction failed.') })
     }
 
     const records = planningMaterialCharacterRecords(extraction.items)
@@ -158,14 +157,11 @@ export class CommitPlanningMaterialCharactersCommand extends BaseWorkflowCommand
     if (!sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),
-    )) throw new Error(text('当前项目已切换，角色导入已停止', 'The project changed, so character import stopped.'))
+    )) throw authorError(context.interfaceLocale, { note: note('当前项目已切换，角色导入已停止', 'The project changed, so character import stopped.') })
 
     this.assertNotCancelled(context)
     const entries = context.data[PLANNING_MATERIAL_CHARACTER_CANDIDATES] as CharacterRosterEntry[] | undefined
-    if (!entries) throw new Error(text(
-      '缺少已预览的角色卡候选，未写入角色名单',
-      'No reviewed character-card candidates are available; the character roster was not changed.',
-    ))
+    if (!entries) throw authorError(context.interfaceLocale, { note: note('缺少已预览的角色卡候选，未写入角色名单', 'No reviewed character-card candidates are available; the character roster was not changed.') })
     if (entries.length === 0) {
       callbacks.setProgress(100)
       callbacks.log(text('没有待导入的角色卡', 'There are no character cards to import.'))

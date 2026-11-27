@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, englishWithReason, errorCodeOf, errorMessageForModel, failureText, importStopFailure, knownAppErrorMessage, legacyImportFailureMessage, projectOpenFailureMessage } from '../app-errors'
+import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, errorCodeOf, errorMessageForModel, failureText, importStopFailure, knownAppErrorMessage, legacyImportFailureMessage, projectOpenFailureMessage } from '../app-errors'
 import { shown } from './shown-locale'
 import { translate } from '../core'
 
@@ -51,8 +51,8 @@ describe('localized application errors', () => {
     expect(displayedErrorMessage(shown('en-US'), new Error(code))).not.toContain('Export')
   })
 
-  it('preserves an unknown error as localized diagnostic text', () => {
-    expect(appErrorMessage(shown('en-US'), new Error('disk full'))).toBe('Something went wrong: disk full')
+  it('shows the general explanation for an unknown error instead of its text', () => {
+    expect(appErrorMessage(shown('en-US'), new Error('disk full'))).toBe(translate('en-US', 'error.unregisteredCode'))
   })
 })
 
@@ -189,16 +189,16 @@ describe('project session and external file errors from the main process (#474 B
     expect(appErrorMessage(shown('zh-CN'), raw)).not.toMatch(/[A-Z]{3,}_/u)
   })
 
-  it('translates a registered code thrown by a dialog handler and keeps renderer copy as is', () => {
+  it('translates a registered code thrown by a dialog handler; plain renderer text is not shown', () => {
     const exists = new Error("Error invoking remote method 'dialog:select-project-archive-export': Error: PROJECT_ARCHIVE_TARGET_EXISTS")
     expect(displayedErrorMessage(shown('en-US'), exists)).toBe('The target file already exists. Choose another file name; project archives never overwrite existing files.')
     expect(displayedErrorMessage(shown('zh-CN'), exists)).toBe('目标文件已存在，请选择其他文件名。项目存档不会覆盖已有文件。')
-    expect(displayedErrorMessage(shown('en-US'), new Error('Could not open the archive.'))).toBe('Could not open the archive.')
+    expect(displayedErrorMessage(shown('en-US'), new Error('Could not open the archive.'))).toBe(translate('en-US', 'error.unregisteredCode'))
   })
 })
 
 describe('显示处统一的报错说明（#474 渲染层消费处）', () => {
-  it.each(['zh-CN', 'en-US'] as const)('%s：剥掉通道与类名前缀再认码，认不出的保留原文，没有内容时用兜底', locale => {
+  it.each(['zh-CN', 'en-US'] as const)('%s：剥掉通道与类名前缀再认码，认不出的和没有内容的都用兜底', locale => {
     const stale = knownAppErrorMessage(shown(locale), 'PROJECT_SESSION_STALE')!
     for (const raw of [
       'PROJECT_SESSION_STALE',
@@ -207,11 +207,11 @@ describe('显示处统一的报错说明（#474 渲染层消费处）', () => {
       new Error("Error invoking remote method 'kb:clear-all': Error: PROJECT_SESSION_STALE"),
       { errorCode: 'PROJECT_SESSION_STALE' },
     ]) expect(displayedErrorMessage(shown(locale), raw, '兜底')).toBe(stale)
-    expect(displayedErrorMessage(shown(locale), "Error invoking remote method 'fs:read': Error: EBUSY: resource busy", '兜底')).toBe('EBUSY: resource busy')
-    expect(displayedErrorMessage(shown(locale), new Error("Error invoking remote method 'fs:read': TypeError: boom"), '兜底')).toBe('boom')
-    expect(displayedErrorMessage(shown(locale), '模型服务返回 HTTP 429', '兜底')).toBe('模型服务返回 HTTP 429')
+    expect(displayedErrorMessage(shown(locale), "Error invoking remote method 'fs:read': Error: EBUSY: resource busy", '兜底')).toBe('兜底')
+    expect(displayedErrorMessage(shown(locale), new Error("Error invoking remote method 'fs:read': TypeError: boom"), '兜底')).toBe('兜底')
+    expect(displayedErrorMessage(shown(locale), '模型服务返回 HTTP 429', '兜底')).toBe('兜底')
     for (const empty of [undefined, null, '', '  ', new Error('')]) expect(displayedErrorMessage(shown(locale), empty, '兜底')).toBe('兜底')
-    expect(displayedErrorMessage(shown(locale), { message: '磁盘只读' }, '兜底')).toBe('磁盘只读')
+    expect(displayedErrorMessage(shown(locale), { message: '磁盘只读' }, '兜底')).toBe('兜底')
     expect(displayedErrorMessage(shown(locale), { success: false }, '兜底')).toBe('兜底')
   })
 
@@ -235,11 +235,11 @@ describe('显示处统一的报错说明（#474 渲染层消费处）', () => {
     expect(displayedErrorMessage(shown(locale), new Error(unregistered), '草稿保存失败')).toBe('草稿保存失败')
   })
 
-  it.each(['zh-CN', 'en-US', 'ja-JP'] as const)('%s：不是码形的原文照常显示', locale => {
-    expect(displayedErrorMessage(shown(locale), '模型服务返回 HTTP 429')).toBe('模型服务返回 HTTP 429')
-    expect(displayedErrorMessage(shown(locale), new Error('Could not save the draft.'))).toBe('Could not save the draft.')
-    expect(displayedErrorMessage(shown(locale), `Error: ${unregistered}: 第 3 章`)).toBe(`${unregistered}: 第 3 章`)
-    expect(displayedErrorMessage(shown(locale), 'ENOENT')).toBe('ENOENT')
+  it.each(['zh-CN', 'en-US', 'ja-JP'] as const)('%s：不是码形的原文也不显示，换成通用说明', locale => {
+    const general = translate(locale, 'error.unregisteredCode')
+    for (const raw of ['模型服务返回 HTTP 429', new Error('Could not save the draft.'), `Error: ${unregistered}: 第 3 章`, 'ENOENT']) {
+      expect(displayedErrorMessage(shown(locale), raw)).toBe(general)
+    }
   })
 
   it('回给模型的工具结果保留未登记的码，便于模型和排查读到原因', () => {
@@ -424,20 +424,13 @@ describe('导入旧项目副本的拒绝原因', () => {
 })
 
 describe('日文界面的已登记错误', () => {
-  it('按日文目录说明，句子之间不加空格；未知错误的兜底仍是英文', () => {
+  it('按日文目录说明，句子之间不加空格；没有内容时用日文的通用说明', () => {
     expect(legacyImportFailureMessage(shown('ja-JP'), 'LEGACY_IMPORT_IO_FAILED'))
       .toMatch(/^何も取り込まれませんでした。元のファイルは変更されていません。[^ ]/u)
     expect(failureText(shown('ja-JP'), importStopFailure('GENERATION_STORAGE_FAILED', false, 'author-manuscript')))
       .toMatch(/。原稿の本文は取り込まれ/u)
     expect(displayedErrorMessage(shown('ja-JP'), 'PROJECT_NOT_OPEN')).toBe('先にプロジェクトを開いてください。')
-    expect(displayedErrorMessage(shown('ja-JP'), '')).toBe('Unknown error')
-  })
-
-  it('附不附原因看界面语言：日文界面保留原因，英文界面丢掉含汉字的原因', () => {
-    const japanese = displayedErrorMessage(shown('ja-JP'), 'PROJECT_NOT_OPEN')
-    expect(englishWithReason(shown('ja-JP'), 'Could not merge the revision.', japanese)).toBe(`Could not merge the revision. ${japanese}`)
-    expect(englishWithReason(shown('en-US'), 'Could not merge the revision.', '项目数据库未打开：ファイル.md')).toBe('Could not merge the revision.')
-    expect(englishWithReason(shown('en-US'), 'Could not merge the revision.', 'disk full')).toBe('Could not merge the revision. disk full')
+    expect(displayedErrorMessage(shown('ja-JP'), '')).toBe(translate('ja-JP', 'error.unregisteredCode'))
   })
 })
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { displayedErrorMessage, errorCodeOf, isRegisteredErrorCode } from '../../../i18n/app-errors'
+import { displayedErrorMessage, errorCodeOf, isRegisteredErrorCode, resultFailure } from '../../../i18n/app-errors'
 import { copyLocale, translate } from '../../../i18n/core'
 import type { ErrorDisplayLocale } from '../../../i18n/types'
 import { shown } from '../../../i18n/__tests__/shown-locale'
@@ -11,7 +11,7 @@ import { workflowMainProcessError } from '../workflow-project-session'
 import { unwrapKnowledgeValue } from '../../knowledge-service'
 import { useLocaleStore } from '../../../stores/locale-store'
 
-/** 旧实现原样保留，作对照。 */
+/** 旧实现原样保留，作对照。原文不是码时旧实现在中文界面接上原文，现在只给概述。 */
 function masterWorkflowMainProcessError(interfaceLocale: ErrorDisplayLocale, error: unknown, zhCNSummary: string, enUSSummary: string): Error {
   const english = copyLocale(interfaceLocale) === 'en-US'
   const summary = english ? enUSSummary : zhCNSummary
@@ -35,8 +35,9 @@ const sameAsMaster = (zh: string, en: string, reasons: readonly (string | undefi
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   for (const locale of LOCALES) {
     for (const reason of reasons) {
-      const master = masterWorkflowMainProcessError(shown(locale), reason, zh, en)
-      const migrated = workflowMainProcessError(shown(locale), reason, zh as never, en as never)
+      const failure = resultFailure({ error: reason })
+      const master = masterWorkflowMainProcessError(shown(locale), failure ? reason : undefined, zh, en)
+      const migrated = workflowMainProcessError(shown(locale), failure, zh as never, en as never)
       expect({ message: migrated.message, code: migrated.code }, `${locale} ${String(reason)}`)
         .toEqual({ message: master.message, code: (master as { code?: string }).code })
     }

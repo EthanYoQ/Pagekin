@@ -316,7 +316,7 @@ describe('GenerateWorldBuildingCommand 截断恢复', () => {
 
     await expect(new GenerateWorldBuildingCommand(snapshot, createWorkflowRuntimeDependencies())
       .execute({ step: {}, context: context(), callbacks: callbacks() }))
-      .rejects.toThrow('模型请求失败')
+      .rejects.toThrow('原因：模型服务没有返回完整结果。')
 
     expect(requestStartWrites).toEqual([0, 1])
     expect(recoverableWorldBuildingCandidate(partialFile)).toBe('已收到的世界观首段。')
@@ -324,7 +324,7 @@ describe('GenerateWorldBuildingCommand 截断恢复', () => {
     expect(formalWrites).toHaveLength(0)
   })
 
-  it('续写请求网络失败时英文说明不留空着的原因标签，码仍是请求失败', async () => {
+  it('续写请求网络失败时英文说明按码给出原因，码仍是请求失败', async () => {
     installResponses([
       { content: '已收到的世界观首段。', finishReason: 'length' },
       { error: '网络连接中断' },
@@ -334,7 +334,7 @@ describe('GenerateWorldBuildingCommand 截断恢复', () => {
       .catch((error: unknown) => error)
 
     expect(failure).toBeInstanceOf(WorldBuildingResumeAvailableError)
-    expect((failure as Error).message).toBe('Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later.')
+    expect((failure as Error).message).toBe('Worldbuilding did not complete. The incomplete candidate was saved without overwriting the formal worldbuilding; you can view, copy, or resume it later. Reason: The model service did not return a complete result. Check your network and model settings, then try again.')
     expect((failure as WorldBuildingResumeAvailableError).code).toBe('PROVIDER_REQUEST_FAILED')
   })
 

@@ -1,4 +1,4 @@
-import { displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
+import { displayedErrorMessage, resultFailure, authorErrorOr } from '../../i18n/app-errors'
 import { note } from '../../shared/failure'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import type { ModelProviderResourceId } from '../../shared/model-provider-resources'
@@ -11,7 +11,7 @@ type LocalizedText = (zhCNText: string, enUSText: string) => string
 export async function openModelProviderResource(resource: ModelProviderResourceId, text: LocalizedText) {
   try {
     const result = await ipc.invoke('model-provider-resource:open', resource)
-    if (!result.success) throw new Error(failureText(currentInterfaceLocale(), resultFailure(result), { fallback: note('无法打开服务商页面', 'Unable to open provider page') }))
+    if (!result.success) throw authorErrorOr(currentInterfaceLocale(), resultFailure(result), note('无法打开服务商页面', 'Unable to open provider page'))
   } catch (error) {
     alertError(displayedErrorMessage(currentInterfaceLocale(), error), { title: text('打开链接失败', 'Unable to open link') })
   }

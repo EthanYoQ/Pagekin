@@ -112,6 +112,7 @@ export function presentWorkflowFailure(
   promptBudgetReport?: PromptBudgetReport,
   activity?: WorkflowStep['generationActivity'],
   authored?: string,
+  reasonCode?: string,
 ): WorkflowFailurePresentation {
   if (failureCode === 'prompt_budget_exhausted') {
     const adjustment = promptBudgetAdjustment(promptBudgetReport, copyLocale(locale))
@@ -132,7 +133,7 @@ export function presentWorkflowFailure(
 
   if (activity?.operation === 'review-chapter') {
     const diagnostic = activity.diagnostics
-    const transport = !authored && classifyGenerationFailure(error, null) !== 'provider-context' ? reviewTransportNote(diagnostic) : undefined
+    const transport = !authored && classifyGenerationFailure(reasonCode ?? error, null) !== 'provider-context' ? reviewTransportNote(diagnostic) : undefined
     const reason = authored ?? (transport && failureText(locale, { note: transport }))
       ?? knownAppErrorMessage(locale, error) ?? (error?.trim() || (locale === 'zh-CN' ? '审稿未完成，原因未知。' : 'The review did not finish; the cause is unknown.'))
     return {

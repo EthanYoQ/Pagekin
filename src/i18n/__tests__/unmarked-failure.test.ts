@@ -10,7 +10,7 @@ let warn: MockInstance<typeof console.warn>
 beforeEach(() => { warn = vi.spyOn(console, 'warn').mockImplementation(() => {}) })
 afterEach(() => { vi.restoreAllMocks() })
 
-const logged = () => warn.mock.calls.flat().map(value => value instanceof Error ? value.message : String(value)).join('\n')
+const logged = () => warn.mock.calls.flat().map(value => typeof value === 'object' && value !== null ? String((value as { message?: unknown }).message) : String(value)).join('\n')
 
 describe('没标记的错误显示通用说明，原文只进日志', () => {
   it.each([

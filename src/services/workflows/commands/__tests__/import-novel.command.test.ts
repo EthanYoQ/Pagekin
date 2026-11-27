@@ -1217,7 +1217,8 @@ describe('导入 slot 的输出没通过校验', () => {
     await expect(new RuntimeInferBlueprintsPerChapterCommand({ createRuntime: async () => runtime } as never)
       .execute({ step: {}, context, callbacks })).rejects.toThrow('蓝图推演失败：结构化输出项不符合合同')
     expect(discarded()).toEqual(['artifact-1', 'artifact-2'])
-    expect(vi.mocked(callbacks.log)).toHaveBeenCalledWith(expect.stringContaining('IPC 断开'))
+    expect(vi.mocked(callbacks.log)).toHaveBeenCalledWith(expect.stringContaining('丢弃没通过校验的导入输出失败'))
+    expect(vi.mocked(callbacks.log).mock.calls.flat().join('\n')).not.toContain('IPC 断开')
   })
 
   it('输出合法、只是提交失败：不丢弃，「继续导入」复用这次结果', async () => {

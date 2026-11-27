@@ -446,7 +446,7 @@ describe('planning material character extraction', () => {
 
     expect(failure).toBeInstanceOf(Error)
     expect((failure as Error).message).toBe(
-      'Character-card extraction failed (code=invalid_output; reason=invalid_item).',
+      'Character-card extraction failed.',
     )
     expect((failure as Error).message).not.toContain('PRIVATE_INVALID_OUTPUT')
     expect((failure as Error).message).not.toContain('PRIVATE_PROSE')
@@ -485,7 +485,7 @@ describe('planning material character extraction', () => {
     ])
 
     await expect(command.execute({ step: {}, context, callbacks })).rejects.toThrow(
-      '角色卡提取失败（code=invalid_output；reason=invalid_item）。',
+      '角色卡提取失败。',
     )
     expect(invoke).not.toHaveBeenCalledWith(
       'db:character-roster-commit',
@@ -569,7 +569,7 @@ describe('planning material character extraction', () => {
     await expect(new ExtractPlanningMaterialCharactersCommand([
       { fileName: '人物设定.md', text: '林晓是十八岁的主角，认识周岚。' },
     ]).execute({ step: {}, context, callbacks })).rejects.toThrow(
-      '角色卡提取失败（code=invalid_output；reason=invalid_item）。',
+      '角色卡提取失败。',
     )
 
     expect(generateStream).toHaveBeenCalledOnce()

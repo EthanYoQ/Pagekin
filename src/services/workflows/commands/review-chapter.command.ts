@@ -16,6 +16,8 @@ import {
 import { ipc } from '../../ipc-client'
 import { selectFrozenReviewRevisionMaterials } from './review-revision-materials'
 import { requireWorkflowProjectSession, workflowUiText } from '../workflow-project-session'
+import { authorError } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 
 export interface ReviewChapterParams extends ReviewRevisionCommandSource {
   reviewFocus?: string
@@ -49,7 +51,7 @@ export class ReviewChapterCommand extends ReviewRevisionCommand {
     params.callbacks.log(text('准备启动一致性审查引擎...', 'Preparing the continuity review...'))
     const projectSession = requireWorkflowProjectSession(params.context)
     const template = await resolvePromptTemplate('consistency_check', projectSession, language)
-    if (!template) throw new Error(text('未找到审稿模板', 'The review prompt template was not found.'))
+    if (!template) throw authorError(params.context.interfaceLocale, { note: note('未找到审稿模板', 'The review prompt template was not found.') })
     // 与写稿路径同一套准入：材料成员由合同判定，绝不按「最近/相关」自行拼凑。
     const render = (admitted: ReviewRevisionMaterialAdmission['admitted']) => {
       const builder = new ReviewPromptBuilder(template, language)
@@ -116,10 +118,7 @@ export class ReviewChapterCommand extends ReviewRevisionCommand {
         : error.decision.remainingRequired.join('、')
       params.callbacks.log(text(`  必需材料超出上下文容量（${error.decision.decision}）：${blocked}`,
         `  Required material exceeds the context capacity (${error.decision.decision}): ${blocked}`))
-      throw new Error(text(
-        '本章审稿的必需材料超出上下文容量，已停止审稿。请精简相关作者材料或前驱后重试。',
-        'The required material for this review exceeds the context capacity, so the review stopped. Trim the required author material or predecessor and try again.',
-      ))
+      throw authorError(params.context.interfaceLocale, { note: note('本章审稿的必需材料超出上下文容量，已停止审稿。请精简相关作者材料或前驱后重试。', 'The required material for this review exceeds the context capacity, so the review stopped. Trim the required author material or predecessor and try again.') })
     }
     const { builder, reviewPrompt } = render(admission.admitted)
     await this.bindMaterialDecision(params, admission.decision, reviewPrompt)
@@ -163,10 +162,9 @@ export class ReviewChapterCommand extends ReviewRevisionCommand {
       raw = await generate('review-chapter-rebuild', [instruction,
         promptLanguageText(language, '【原始审稿任务】', '[Original review task]'), reviewPrompt, contract].join('\n\n'))
       try { parseReviewGenerationResult(raw) } catch (error) {
-        const detail = error instanceof SyntaxError
-          ? text('替代输出仍不是完整 JSON', 'the replacement output is still not complete JSON')
-          : text('替代输出仍不符合审稿报告合同', 'the replacement output still does not match the review-report contract')
-        throw new Error(text(`AI 返回的审稿结果两次均无效（${detail}），因此未保存报告。`, `The AI review response was invalid twice (${detail}), so no report was saved.`))
+        throw authorError(params.context.interfaceLocale, { note: error instanceof SyntaxError
+          ? note('AI 返回的审稿结果两次均无效（替代输出仍不是完整 JSON），因此未保存报告。', 'The AI review response was invalid twice (the replacement output is still not complete JSON), so no report was saved.')
+          : note('AI 返回的审稿结果两次均无效（替代输出仍不符合审稿报告合同），因此未保存报告。', 'The AI review response was invalid twice (the replacement output still does not match the review-report contract), so no report was saved.') })
       }
     }
     return this.commitReview(prepared, params)

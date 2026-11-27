@@ -20,7 +20,7 @@ import {
 } from '../../services/workflows/directory-workflow'
 import { launchCreativeWorkflow } from '../../services/workflows/creative-workflow-launcher'
 import { blueprintWritePrefill } from '../../services/workflows/chapter-write-launch'
-import { guardDirectoryGeneration } from '../../services/workflow-guards'
+import { guardDirectoryGeneration, guardStop } from '../../services/workflow-guards'
 import { toast } from '../ui/Toast'
 import { globalEventBus, type EventPayloadMap } from '../../shared/event-bus'
 import { shouldRefreshBlueprints } from './blueprint-refresh'
@@ -46,7 +46,7 @@ import { LatestRequestGate } from '../../shared/latest-request-gate'
 import type { SaveOutcome } from './save-feedback'
 import { readWritableChapters } from '../../services/authoritative-chapter-sequence'
 import type { ChapterGap } from '../../shared/chapter-sequence'
-import { caughtFailure, displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { caughtFailure, displayedErrorMessage, authorError } from '../../i18n/app-errors'
 import { specificWriteFailure } from '../../services/specific-write-failure'
 import { note } from '../../shared/failure'
 import { blueprintFailureToast } from './blueprint-failure-toast'
@@ -445,7 +445,7 @@ export function useChapterBlueprints({
     } catch (err) {
       if (!isCurrentProjectSession(projectSession)) return
       const message = displayedErrorMessage(currentInterfaceLocale(), err)
-      addLog('error', text(`保存第 ${selected.chapterNumber} 章蓝图失败：${message}`, englishWithReason(currentInterfaceLocale(), `Could not save the blueprint for Chapter ${selected.chapterNumber}.`, message)))
+      addLog('error', text(`保存第 ${selected.chapterNumber} 章蓝图失败：${message}`, `Could not save the blueprint for Chapter ${selected.chapterNumber}. ${message}`))
       toast.error(blueprintFailureToast(currentInterfaceLocale(), SAVE_ONE_FAILED, caughtFailure(err)))
       setSaveOutcome('failed')
       if (propagateFailure) throw err
@@ -484,7 +484,7 @@ export function useChapterBlueprints({
     } catch (err) {
       if (!isCurrentProjectSession(projectSession)) return
       const message = displayedErrorMessage(currentInterfaceLocale(), err)
-      addLog('error', text(`保存全部蓝图失败：${message}`, englishWithReason(currentInterfaceLocale(), 'Could not save all chapter blueprints.', message)))
+      addLog('error', text(`保存全部蓝图失败：${message}`, `Could not save all chapter blueprints. ${message}`))
       toast.error(blueprintFailureToast(currentInterfaceLocale(), SAVE_ALL_FAILED, caughtFailure(err)))
       setSaveOutcome('failed')
       if (propagateFailure) throw err
@@ -629,7 +629,7 @@ export function useChapterBlueprints({
   /** 触发蓝图批量生成（来自生成对话框的确认回调）。返回是否已启动：作者取消架构警告时返回 false。 */
   const handleBatchGenerate = async (params: DirectoryWorkflowParams, confirmWarning: (message: string) => Promise<boolean>): Promise<boolean> => {
     const projectSession = currentProjectSessionForPath(projectKey)
-    if (!projectMatches || !projectSession) throw new Error(text('项目会话已切换，未启动章节蓝图生成', 'The project changed, so blueprint generation was not started.'))
+    if (!projectMatches || !projectSession) throw authorError(currentInterfaceLocale(), { note: note('项目会话已切换，未启动章节蓝图生成', 'The project changed, so blueprint generation was not started.') })
     const expectedProjectPath = projectKey
 
     // 前置校验：故事架构是否就绪
@@ -637,18 +637,19 @@ export function useChapterBlueprints({
     if (!isCurrentProjectSession(projectSession)) return false
     if (!guard.ok) {
       // 校验失败：阻断并提示
-      const reason = displayedErrorMessage(currentInterfaceLocale(), guard.message, text('章节蓝图生成前置条件未满足', 'Blueprint prerequisites are not met.'))
+      const reason = guard.message || text('章节蓝图生成前置条件未满足', 'Blueprint prerequisites are not met.')
+      // i18n-exempt: 前置校验的 message 是 workflow-guards 按界面语言写好的句子，不是报错原文
       addLog('error', text(`前置条件未满足：${reason}`, 'A required precondition is not met.'))
-      throw new Error(reason)
+      throw guardStop(currentInterfaceLocale(), guard, note('章节蓝图生成前置条件未满足', 'Blueprint prerequisites are not met.'))
     }
     if (guard.message) {
       // 有警告但允许继续：由界面确认
-      if (!await confirmWarning(displayedErrorMessage(currentInterfaceLocale(), guard.message))) return false
+      if (!await confirmWarning(guard.message)) return false
     }
 
     if (!isCurrentProjectSession(projectSession)) {
       addLog('error', text('项目已切换，未启动章节蓝图生成', 'The project changed, so chapter blueprint generation was not started.'))
-      throw new Error(text('项目已切换，未启动章节蓝图生成', 'The project changed, so blueprint generation was not started.'))
+      throw authorError(currentInterfaceLocale(), { note: note('项目已切换，未启动章节蓝图生成', 'The project changed, so blueprint generation was not started.') })
     }
     await launchCreativeWorkflow({ workflow: 'generate_blueprint', params }, projectSession)
     addLog('info', text('已启动章节蓝图生成', 'Chapter blueprint generation started'))

@@ -431,7 +431,7 @@ describe('版本历史', () => {
     const base = invoke.getMockImplementation()!
     invoke.mockImplementation(async (channel, ...args) => channel === 'db:draft-get-full' ? Promise.reject(new Error('数据库忙')) : base(channel, ...args))
     await click(/草稿 v1/)
-    await vi.waitFor(() => expect(error).toHaveBeenCalledWith('读取这一稿失败：数据库忙'))
+    await vi.waitFor(() => expect(error).toHaveBeenCalledWith('读取这一稿失败：出了意外问题，暂时说不清原因。请再试一次。'))
     expect(document.querySelector('.stage-hist-diff')!.textContent).toBe('选一稿，与当前稿逐字对比。')
   })
 
@@ -543,8 +543,8 @@ describe('版本历史', () => {
   it.each([
     ['zh-CN', { success: false }, '回退失败：没有新建回滚草稿'],
     ['en-US', { success: false }, 'Could not revert: the rollback draft was not created'],
-    ['zh-CN', new Error('数据库只读'), '回退失败：数据库只读'],
-  ] as const)('%s 下新建回滚草稿失败（%o）：提示与界面语言一致，只写原因，不带 Error 前缀', async (locale, outcome, message) => {
+    ['zh-CN', new Error('数据库只读'), '回退失败：出了意外问题，暂时说不清原因。请再试一次。'],
+  ] as const)('%s 下新建回滚草稿失败（%o）：提示与界面语言一致，没标记的报错原文不显示', async (locale, outcome, message) => {
     useLocaleStore.setState({ locale })
     const errors = vi.spyOn(toast, 'error').mockImplementation(() => undefined)
     await act(async () => root!.render(<StageHistory projectKey={session.projectPath} />))

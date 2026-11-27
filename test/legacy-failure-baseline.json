@@ -15,14 +15,13 @@
     "displayedErrorMessage": 1
   },
   "src/components/dialogs/ImportNovelDialog.tsx": {
-    "displayedErrorMessage": 2,
-    "englishWithReason": 1
+    "displayedErrorMessage": 2
   },
   "src/components/dialogs/use-architecture-confirm-form.ts": {
-    "displayedErrorMessage": 5
+    "displayedErrorMessage": 2
   },
   "src/components/dialogs/use-batch-chapter-form.ts": {
-    "displayedErrorMessage": 4
+    "displayedErrorMessage": 3
   },
   "src/components/dialogs/use-directory-config-form.ts": {
     "displayedErrorMessage": 8
@@ -47,14 +46,9 @@
     "displayedErrorMessage": 3
   },
   "src/components/editor/use-chapter-blueprints.ts": {
-    "displayedErrorMessage": 7,
-    "englishWithReason": 2
+    "displayedErrorMessage": 5
   },
   "src/components/editor/use-character-profile.ts": {
-    "displayedErrorMessage": 1,
-    "englishWithReason": 1
-  },
-  "src/components/editor/use-draft-actions.ts": {
     "displayedErrorMessage": 1
   },
   "src/components/editor/use-novel-config-form.ts": {
@@ -80,9 +74,6 @@
   },
   "src/components/run/use-run-recovery.ts": {
     "displayedErrorMessage": 6
-  },
-  "src/components/settings/ModelForm.tsx": {
-    "englishWithReason": 1
   },
   "src/components/settings/SkillSettings.tsx": {
     "displayedErrorMessage": 6
@@ -129,21 +120,16 @@
   "src/components/stage/run/ImportSuggestions.tsx": {
     "displayedErrorMessage": 1
   },
-  "src/components/stage/run/RunCard.tsx": {
-    "displayedErrorMessage": 1
-  },
-  "src/components/stage/setup/StageSetup.tsx": {
-    "displayedErrorMessage": 1
-  },
   "src/components/stage/use-stage-work.ts": {
     "displayedErrorMessage": 1
   },
   "src/components/stage/write/WriteChapterPopover.tsx": {
-    "displayedErrorMessage": 3
+    "displayedErrorMessage": 1
   },
   "src/i18n/app-errors.ts": {
-    "displayedErrorMessage": 1,
-    "knownAppErrorMessage": 6
+    "authorOwned": 1,
+    "displayedErrorMessage": 2,
+    "knownAppErrorMessage": 4
   },
   "src/services/agent/writing-skill-bindings.ts": {
     "authorOwned": 3
@@ -151,43 +137,45 @@
   "src/services/generation/prompt-budget-failure.ts": {
     "knownAppErrorMessage": 1
   },
-  "src/services/project-service.ts": {
-    "displayedErrorMessage": 2,
-    "englishWithReason": 3
+  "src/services/project-clear-service.ts": {
+    "authorOwned": 1
   },
   "src/services/workflows/chapter-workflow.ts": {
     "authorOwned": 1
   },
+  "src/services/workflows/character-card-normalizer.ts": {
+    "authorOwned": 5
+  },
   "src/services/workflows/commands/architecture.command.ts": {
-    "authorOwned": 2,
-    "{ legacy:": 1
+    "authorOwned": 2
   },
   "src/services/workflows/commands/base-command.ts": {
+    "authorOwned": 1,
     "displayedErrorMessage": 1
   },
   "src/services/workflows/commands/finalize-chapter.command.ts": {
     "authorOwned": 2
   },
   "src/services/workflows/commands/generate-draft.command.ts": {
-    "authorOwned": 1,
-    "displayedErrorMessage": 1,
-    "englishWithReason": 3
+    "authorOwned": 3,
+    "displayedErrorMessage": 1
   },
   "src/services/workflows/creative-workflow-launcher.ts": {
+    "authorOwned": 1,
     "displayedErrorMessage": 2
   },
   "src/services/workflows/planning-material-workflow.ts": {
     "authorOwned": 1
   },
-  "src/services/workflows/workflow-project-session.ts": {
-    "{ legacy:": 1
-  },
   "src/services/workflows/workflow-utils.ts": {
-    "displayedErrorMessage": 2,
-    "authorOwned": 2
+    "authorOwned": 2,
+    "displayedErrorMessage": 2
   },
   "src/stores/character-store.ts": {
     "displayedErrorMessage": 1
+  },
+  "src/stores/editor-store.ts": {
+    "authorOwned": 1
   },
   "src/stores/locale-store.ts": {
     "displayedErrorMessage": 1
@@ -197,10 +185,10 @@
   },
   "src/stores/project-store.ts": {
     "appErrorMessage": 1,
-    "displayedErrorMessage": 1,
-    "englishWithReason": 1
+    "displayedErrorMessage": 1
   },
   "src/stores/workflow-store.ts": {
+    "authorOwned": 1,
     "displayedErrorMessage": 12
   },
   "electron/controllers/app-data-controller.ts": {

@@ -591,6 +591,12 @@ describe('GenerateConfigCommand error boundaries', () => {
   })
 })
 
+/** 身份清单没通过校验：作者看到的是概述，解析器的具体原因只留在 cause 上进日志。 */
+const invalidManifest = (detail: string | RegExp) => ({
+  message: '角色身份清单无效，没有保存角色数据',
+  cause: expect.objectContaining({ message: typeof detail === 'string' ? detail : expect.stringMatching(detail) }),
+})
+
 describe('GenerateCharactersCommand structured roster seam', () => {
   it('persists English architecture headings without rewriting mixed UTF-8 model output', async () => {
     const modelOutput = 'Night Café 夜航 — “déjà vu” remains unchanged.'
@@ -1351,7 +1357,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
     })
 
     await expect(command.execute({ step: {}, context, callbacks }))
-      .rejects.toThrow('角色身份清单必须至少包含一个主角')
+      .rejects.toMatchObject(invalidManifest('角色身份清单必须至少包含一个主角'))
 
     expect(generateStream).toHaveBeenCalledOnce()
     expect(domainIpcChannels(invoke)).toEqual(['db:project-core-get'])
@@ -1381,7 +1387,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       novelConfig: { genre: '玄幻', totalChapters: 100, wordsPerChapter: 3000 } as never,
     })
 
-    await expect(command.execute({ step: {}, context, callbacks })).rejects.toThrow('角色身份清单缺少 slots')
+    await expect(command.execute({ step: {}, context, callbacks })).rejects.toMatchObject(invalidManifest('角色身份清单缺少 slots'))
     expect(generateStream).toHaveBeenCalledOnce()
     expect(domainIpcChannels(invoke)).toEqual(['db:project-core-get'])
   })
@@ -1714,7 +1720,7 @@ describe('GenerateCharactersCommand structured roster seam', () => {
       novelConfig: { genre: '玄幻', totalChapters: 100, wordsPerChapter: 3000 } as never,
     })
     await expect(command.execute({ step: {}, context, callbacks }))
-      .rejects.toThrow(/完整 JSON|截断/u)
+      .rejects.toMatchObject(invalidManifest(/完整 JSON|截断/u))
 
     expect(generateStream).toHaveBeenCalledTimes(1)
     expect(domainIpcChannels(invoke)).not.toContain('db:character-roster-commit')

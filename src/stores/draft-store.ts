@@ -356,7 +356,7 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
         definition.onStarted = started
         await Promise.race([admission, useWorkflowStore.getState().startWorkflow(definition, false).then(runId => {
           const run = useWorkflowStore.getState().history.find(item => item.id === runId)
-          if (run?.status === 'failed') throw run.failure ? authorError(currentInterfaceLocale(), run.failure) : new Error(run.error)
+          if (run?.status === 'failed') throw authorError(currentInterfaceLocale(), run.failure ?? { note: note('合并后复验没有启动。', 'The post-merge recheck did not start.') })
         })])
       }
 

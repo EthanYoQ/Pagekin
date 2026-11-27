@@ -2,7 +2,8 @@ import type { ModelProfile, ProjectSessionContext } from '../../shared/ipc-chann
 import type { Locale } from '../../i18n/types'
 import { isProjectSessionCurrent } from '../../components/project-session-gate'
 import { useLLMStore } from '../../stores/llm-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
+import { failureText, reasonOf } from '../../i18n/app-errors'
 import { useWorkflowStore, workflowResourceConflictMessage } from '../../stores/workflow-store'
 import { readWritableChapters, type WritableChapters } from '../authoritative-chapter-sequence'
 import { readConsistencyPreflight, type ConsistencyPreflightResult } from '../consistency-preflight'
@@ -107,6 +108,7 @@ export interface ChapterWriteLaunch {
   locale: Locale
 }
 
+/** message 都是按界面语言写好、可以直接给作者看的句子。 */
 export type ChapterWriteOutcome =
   /** 项目已切换，什么也不做。 */
   | { kind: 'stale' }
@@ -145,7 +147,7 @@ export async function launchChapterWrite({
     chapters = await readWritableChapters(session, locale)
   } catch (error) {
     if (!isProjectSessionCurrent(session)) return { kind: 'stale' }
-    return { kind: 'authority-error', message: error instanceof Error ? error.message : String(error) }
+    return { kind: 'authority-error', message: failureText(currentInterfaceLocale(), reasonOf(error)) }
   }
   if (!isProjectSessionCurrent(session)) return { kind: 'stale' }
   if (!chapters.writable.includes(targetChapter)) {

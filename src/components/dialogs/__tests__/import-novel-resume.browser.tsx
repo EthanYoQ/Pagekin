@@ -304,7 +304,7 @@ describe('current-project reference import', () => {
     await expect.element(page.getByText('One or more selected files are empty. Add novel text and choose the unfinished files again.')).toBeVisible()
   })
 
-  it('shows only the persisted safe parsing failure after reopen', async () => {
+  it('never shows the stored parsing reason after reopen, only the generic text and the files to choose again', async () => {
     const privateDiagnostic = "ENOENT: open 'C:\\Users\\Private\\secret-novel.txt'"
     const safeFailure = 'Could not read the selected files. Please choose them again.'
     const parsing = importRun({
@@ -328,7 +328,10 @@ describe('current-project reference import', () => {
     await act(async () => useProjectStore.setState({ currentProject: { ...project } as never }))
     await act(async () => page.getByTestId('import-target-current').click())
 
-    await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent(safeFailure)
+    // #845 PR-H2：last_error 里分不清主进程写好的说明和原文，一律显示通用说明；要重新选的文件仍列出。
+    await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('出了意外问题，暂时说不清原因。请再试一次。')
+    await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('secret-novel.txt')
+    expect(container.textContent).not.toContain(safeFailure)
     expect(container.textContent).not.toContain(privateDiagnostic)
     expect(container.textContent).not.toContain('C:\\Users\\Private')
   })
@@ -834,7 +837,8 @@ describe('current-project reference import', () => {
     })
     await act(async () => useProjectStore.setState({ currentProject: { ...project } as never }))
     await act(async () => page.getByTestId('import-target-current').click())
-    await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('provider unavailable')
+    await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('出了意外问题，暂时说不清原因。请再试一次。')
+    expect(container.textContent).not.toContain('provider unavailable')
     await act(async () => {
       useWorkflowStore.setState({
         activeRuns: [{
@@ -904,7 +908,8 @@ describe('current-project reference import', () => {
     await act(async () => page.getByTestId('import-target-current').click())
     await act(async () => page.getByTestId('import-purpose-author').click())
 
-    await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('continuity unavailable')
+    await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('出了意外问题，暂时说不清原因。请再试一次。')
+    expect(container.textContent).not.toContain('continuity unavailable')
     await expect.element(page.getByTestId('author-import-continue-guidance'))
       .toHaveTextContent('继续同一导入')
     expect(page.getByRole('button', { name: '重新开始' }).query()).toBeNull()
