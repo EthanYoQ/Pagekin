@@ -35,7 +35,7 @@ import { configureSingleInstanceRuntime } from './services/single-instance-runti
 import { installWindowCloseGuard } from './controllers/window-controller'
 import { registerStartupController } from './controllers/startup-controller'
 import { installIpcSlowCallLog } from './services/ipc-slow-call-log'
-import { guardIpcRegistration, rejectUnlistedIpc } from './ipc/handle'
+import { guardIpcRegistration, handle, rejectUnlistedIpc } from './ipc/handle'
 import { resolveDefaultUserData, resolveGlobalDataRoots } from './services/app-data-locator'
 import { runGlobalDataMigration, activateGlobalData, blockedStartupCode } from './services/global-data-migration'
 import { ensureVelaHome } from './utils/config-utils'
@@ -251,7 +251,7 @@ app.whenReady().then(async () => {
   installIpcSlowCallLog(ipcMain)
   guardIpcRegistration(ipcMain, rejectUnlistedIpc(app.isPackaged))
   registerStartupController({
-    ipc: ipcMain,
+    ipc: { handle },
     getTrustedSender: () => win?.webContents ?? null,
     rendererUrl: VITE_DEV_SERVER_URL || pathToFileURL(path.join(RENDERER_DIST, 'index.html')).href,
     getGlobalGeneration: () => startupGeneration,

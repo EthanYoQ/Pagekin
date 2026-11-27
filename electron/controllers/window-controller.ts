@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { handle } from '../ipc/handle'
 
 interface WindowCloseGuardState {
   approved: boolean
@@ -38,13 +39,13 @@ export function installWindowCloseGuard(win: BrowserWindow): void {
 }
 
 export function registerWindowController() {
-  ipcMain.handle('window:minimize', async (event) => {
+  handle('window:minimize', async (event) => {
     const win = getSenderWindow(event)
     win?.minimize()
     return { success: !!win }
   })
 
-  ipcMain.handle('window:toggle-maximize', async (event) => {
+  handle('window:toggle-maximize', async (event) => {
     const win = getSenderWindow(event)
     if (!win) return { success: false }
 
@@ -57,13 +58,13 @@ export function registerWindowController() {
     return { success: true, maximized: win.isMaximized() }
   })
 
-  ipcMain.handle('window:close', async (event) => {
+  handle('window:close', async (event) => {
     const win = getSenderWindow(event)
     win?.close()
     return { success: !!win }
   })
 
-  ipcMain.handle('window:resolve-close', async (event, requestId: unknown, decision: unknown) => {
+  handle('window:resolve-close', async (event, requestId: unknown, decision: unknown) => {
     const win = getSenderWindow(event)
     const state = win ? closeGuardStates.get(win) : undefined
     if (

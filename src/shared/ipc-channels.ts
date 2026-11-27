@@ -98,7 +98,7 @@ export interface ConfigChannels {
   }
   'config:set': {
     args: [config: Partial<Omit<GlobalConfig, 'stageModelIds'>>]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
@@ -165,14 +165,14 @@ export interface WindowEvents {
 export interface OfficialHomepageChannels {
   'official-homepage:open': {
     args: []
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
 export interface ModelProviderResourceChannels {
   'model-provider-resource:open': {
     args: [resource: ModelProviderResourceId]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
@@ -1140,7 +1140,7 @@ export interface DatabaseChannels {
   'db:post-process-mark-step-failed': { args: [runId: string, stepKey: string, errorMsg: string, expectedProjectPath: string]; return: { success: boolean; error?: string } }
   'db:post-process-is-all-passed': { args: [sourceType: string, sourceId: string, expectedProjectPath: string]; return: boolean }
 
-  'db:log-llm-call': { args: [call: Record<string, unknown>, expectedProjectPath: string]; return: { success: boolean } }
+  'db:log-llm-call': { args: [call: Record<string, unknown>, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
   'db:get-llm-stats': {
     args: [expectedProjectPath: string]
     return: {

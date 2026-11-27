@@ -82,7 +82,7 @@ describe('保存设置失败时，正在用的代理 A 不被卸掉', () => {
 
   it('代理 B 的地址非法', async () => {
     fs.writeFileSync(configPath, '{broken')
-    await expect(save({ proxy: { ...B, host: 'http://127.0.0.1' } })).resolves.toEqual({ success: false, error: 'NETWORK_PROXY_INVALID' })
+    await expect(save({ proxy: { ...B, host: 'http://127.0.0.1' } })).resolves.toEqual({ success: false, failure: { code: 'NETWORK_PROXY_INVALID' } })
     expect(dispatcher.proxy).toBe('http://127.0.0.1:7890')
   })
 })

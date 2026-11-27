@@ -1,13 +1,14 @@
 import { create, type StateCreator } from 'zustand'
 import { ipc } from '../services/ipc-client'
 import { copyLocale, localize, resolveInterfaceLocale, selectCopy, storedInterfaceLocale, translate, type LocalizedText, type MessageKey, type MessageParams } from '../i18n/core'
-import { displayedErrorMessage } from '../i18n/app-errors'
+import { authorError, displayedErrorMessage, IPC_HANDLER_FAILED, resultFailure } from '../i18n/app-errors'
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from '../i18n/types'
 import type { GlobalConfig } from '../shared/ipc-channels'
+import type { Failure } from '../shared/failure'
 
 export interface LocaleDependencies {
   loadConfig: () => Promise<Partial<GlobalConfig>>
-  saveLocale: (locale: InterfaceLocale) => Promise<{ success: boolean; error?: string }>
+  saveLocale: (locale: InterfaceLocale) => Promise<{ success: boolean; failure?: Failure }>
   systemLocale: () => string | undefined
   setDocumentLanguage: (locale: InterfaceLocale) => void
   reportError?: (message: string, title: string) => void | Promise<void>
@@ -83,7 +84,8 @@ export function createLocaleState(dependencies: LocaleDependencies): StateCreato
         dependencies.setDocumentLanguage(locale)
         try {
           const result = await dependencies.saveLocale(locale)
-          if (!result.success) throw new Error(result.error ?? 'Failed to persist locale')
+          // 抛 AuthorError 而不是字符串：回退语言后再按回退后的界面语言说明原因。
+          if (!result.success) throw authorError(activeInterfaceLocale(get()), resultFailure(result) ?? { code: IPC_HANDLER_FAILED })
           ledger.succeeded(save, locale)
         } catch (error) {
           ledger.failed(error)

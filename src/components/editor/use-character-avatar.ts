@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getActiveProjectSessionContext, sameProjectSessionContext } from '../../shared/project-session-context'
 import { ipc } from '../../services/ipc-client'
 import { characterAvatarChanges, useCharacterStore } from '../../stores/character-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
+import { failureText, resultFailure } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 export { characterAvatarChanges }
 
 export function base64ToObjectUrl(base64: string, mime: string): string | null {
@@ -86,7 +88,11 @@ export function useCharacterAvatar(characterId: string | null, editing: boolean)
     let notice: string | null = null
     try {
       const response = await ipc.invokeWithProjectSession(context, 'character-avatar:choose', characterId)
-      if (!response.success) notice = response.error.message
+      if (!response.success) {
+        notice = failureText(currentInterfaceLocale(), resultFailure(response), {
+          fallback: note('头像操作暂时无法完成，请稍后重试。', 'The avatar operation could not be completed. Try again later.'),
+        })
+      }
       else if (!response.cancelled) {
         const url = base64ToObjectUrl(response.image.base64, response.image.mime)
         if (!url) notice = text('头像预览失败，请换一张图片再试。', 'Could not preview the avatar. Choose another image.')

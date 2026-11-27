@@ -151,12 +151,8 @@ export function UpdateSettings() {
 
   const openHomepage = async () => {
     setHomepageError(null)
-    try {
-      const result = await ipc.invoke('official-homepage:open')
-      if (!result.success) throw new Error(result.error)
-    } catch {
-      setHomepageError(getOfficialHomepageOpenError(useLocaleStore.getState().locale))
-    }
+    const opened = await ipc.invoke('official-homepage:open').then(result => result.success, () => false)
+    if (!opened) setHomepageError(getOfficialHomepageOpenError(useLocaleStore.getState().locale))
   }
 
   return (

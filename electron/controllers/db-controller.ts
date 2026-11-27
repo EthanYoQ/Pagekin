@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
+import { IPC_HANDLER_FAILED, registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
 import { failureCode, type WireFailure } from '../../src/shared/failure'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import { handle } from '../ipc/handle'
@@ -1325,23 +1325,23 @@ export function registerDatabaseController() {
   // ============================================================
   // 沿用旧表
   // ============================================================
-  ipcMain.handle('db:log-llm-call', async (_event, call, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      LLMHistoryRepository.logCall(call)
-      return { success: true }
-    } catch (error) {
-      console.error('[db:log-llm-call] Error:', error)
-      return { success: false }
-    }
+  // 只有脚本与场景写调用记录，没有作者看得到的调用点，写失败只回通用码。
+  const llmCalls = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, { code: IPC_HANDLER_FAILED }),
+  }
+
+  llmCalls.handle('db:log-llm-call', async (_event, call, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    LLMHistoryRepository.logCall(call)
+    return { success: true }
   })
 
-  ipcMain.handle('db:get-llm-stats', async (_event, expectedProjectPath: string) => {
+  llmCalls.handle('db:get-llm-stats', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return LLMHistoryRepository.getStats()
   })
 
-  ipcMain.handle('db:get-llm-history', async (_event, limit: number | undefined, expectedProjectPath: string) => {
+  llmCalls.handle('db:get-llm-history', async (_event, limit: number | undefined, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return LLMHistoryRepository.getHistory(limit ?? 50)
   })

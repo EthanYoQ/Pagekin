@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { ipc } from '../../services/ipc-client'
-import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { currentInterfaceLocale } from '../../stores/locale-store'
+import { displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 import type { GlobalConfig } from '../../shared/ipc-channels'
 
 type SwitchKey = 'autoOpenNextChapterAfterFinalize' | 'backgroundStageNotifications'
 
 /** 键缺省时取 fallback。 */
 export function useConfigSwitch(key: SwitchKey, fallback: boolean, failure: (reason: string) => string) {
-  const text = useLocaleStore(s => s.text)
   const [enabled, setEnabled] = useState(fallback)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +26,7 @@ export function useConfigSwitch(key: SwitchKey, fallback: boolean, failure: (rea
     setError(null)
     try {
       const result = await ipc.invoke('config:set', { [key]: checked })
-      if (!result.success) throw new Error(result.error || text('未知错误', 'Unknown error'))
+      if (!result.success) throw new Error(failureText(currentInterfaceLocale(), resultFailure(result), { fallback: note('未知错误', 'Unknown error') }))
     } catch (cause) {
       setEnabled(previous)
       setError(failure(displayedErrorMessage(currentInterfaceLocale(), cause)))

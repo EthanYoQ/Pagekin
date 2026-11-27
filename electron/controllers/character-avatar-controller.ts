@@ -1,4 +1,5 @@
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
+import { handle } from '../ipc/handle'
 import { showOpenDialogInLastDirectory } from '../utils/remembered-dialog'
 import type { ProjectSessionContext } from '../../src/shared/ipc-channels'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
@@ -6,8 +7,6 @@ import type {
   CharacterAvatarBatchReadResponse,
   CharacterAvatarChooseResponse,
   CharacterAvatarCommitResponse,
-  CharacterAvatarError,
-  CharacterAvatarErrorCode,
   CharacterAvatarRemoveResponse,
   CharacterAvatarView,
 } from '../../src/shared/character-avatar'
@@ -25,19 +24,21 @@ export interface CharacterAvatarControllerDependencies {
 
 function text(zh: string, en: string): string { return mainText(app.getLocale(), zh, en) }
 
-function failure(code: CharacterAvatarErrorCode): CharacterAvatarError {
-  const messages: Record<CharacterAvatarErrorCode, [string, string]> = {
-    INVALID_SENDER: ['当前窗口无权访问角色头像。', 'This window cannot access character avatars.'],
-    INVALID_CHARACTER_ID: ['角色身份无效，头像未修改。', 'The character identity is invalid.'],
-    PROJECT_NOT_OPEN: ['尚未打开项目，无法访问头像。', 'No project is open.'],
-    CHARACTER_NOT_FOUND: ['该角色已不存在，头像未修改。', 'That character no longer exists.'],
-    IMAGE_READ_FAILED: ['无法读取所选图片，请重新选择。', 'The selected image could not be read.'],
-    IMAGE_FORMAT_INVALID: ['请选择有效的 PNG、JPEG 或 WebP 图片。', 'Choose a valid PNG, JPEG, or WebP image.'],
-    IMAGE_TOO_LARGE: ['图片超过 4 MB，请换一张更小的。', 'The image is larger than 4 MB.'],
-    AVATAR_SAVE_FAILED: ['头像保存失败，原头像保持不变。', 'The avatar could not be saved; the previous avatar is unchanged.'],
-  }
-  const [zh, en] = messages[code]
-  return { code, message: text(zh, en) }
+/** 资产服务抛的码换成头像专用的已登记码：同名通用码在别处另有说法。 */
+const FAILURES = {
+  INVALID_SENDER: 'CHARACTER_AVATAR_SENDER_INVALID',
+  INVALID_CHARACTER_ID: 'CHARACTER_AVATAR_ID_INVALID',
+  PROJECT_NOT_OPEN: 'CHARACTER_AVATAR_PROJECT_NOT_OPEN',
+  CHARACTER_NOT_FOUND: 'CHARACTER_AVATAR_CHARACTER_NOT_FOUND',
+  IMAGE_READ_FAILED: 'CHARACTER_AVATAR_IMAGE_READ_FAILED',
+  IMAGE_FORMAT_INVALID: 'CHARACTER_AVATAR_IMAGE_FORMAT_INVALID',
+  IMAGE_TOO_LARGE: 'CHARACTER_AVATAR_IMAGE_TOO_LARGE',
+  AVATAR_SAVE_FAILED: 'CHARACTER_AVATAR_SAVE_FAILED',
+} as const
+type AvatarFailure = keyof typeof FAILURES
+
+function failure(reason: AvatarFailure) {
+  return { code: FAILURES[reason] }
 }
 
 function validSender(event: AvatarEvent): boolean {
@@ -45,10 +46,10 @@ function validSender(event: AvatarEvent): boolean {
     && typeof event.sender.isDestroyed === 'function' && !event.sender.isDestroyed())
 }
 
-function errorCode(error: unknown): CharacterAvatarErrorCode {
+function errorCode(error: unknown): AvatarFailure {
   if (error instanceof Error && [
     'INVALID_CHARACTER_ID', 'CHARACTER_NOT_FOUND', 'IMAGE_READ_FAILED', 'IMAGE_FORMAT_INVALID', 'IMAGE_TOO_LARGE',
-  ].includes(error.message)) return error.message as CharacterAvatarErrorCode
+  ].includes(error.message)) return error.message as AvatarFailure
   return 'AVATAR_SAVE_FAILED'
 }
 const CHARACTER_ID = /^[a-zA-Z0-9_-]{1,128}$/u
@@ -78,38 +79,38 @@ export function registerCharacterAvatarController(deps: CharacterAvatarControlle
     for (const key of cache.keys()) if (key.startsWith(prefix)) cache.delete(key)
   }
 
-  ipcMain.handle('character-avatar:choose', (event: AvatarEvent, characterId: string, context: ProjectSessionContext): Promise<CharacterAvatarChooseResponse> => serialize(async () => {
-    if (!validSender(event)) return { success: false, error: failure('INVALID_SENDER') }
+  handle('character-avatar:choose', (event: AvatarEvent, characterId: string, context: ProjectSessionContext): Promise<CharacterAvatarChooseResponse> => serialize(async () => {
+    if (!validSender(event)) return { success: false, failure: failure('INVALID_SENDER') }
     const service = serviceFor(deps, event, context)
-    if (!service) return { success: false, error: failure('PROJECT_NOT_OPEN') }
+    if (!service) return { success: false, failure: failure('PROJECT_NOT_OPEN') }
     enterScope(context)
-    if (!service.hasCharacter(characterId)) return { success: false, error: failure('CHARACTER_NOT_FOUND') }
+    if (!service.hasCharacter(characterId)) return { success: false, failure: failure('CHARACTER_NOT_FOUND') }
     let selection: Awaited<ReturnType<typeof showOpenDialogInLastDirectory>>
     try { selection = await showOpenDialogInLastDirectory('character-avatar', { title: text('选择角色头像', 'Choose a character avatar'),
       properties: ['openFile'], filters: [{ name: 'PNG / JPEG / WebP', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] }) }
-    catch { return { success: false, error: failure('IMAGE_READ_FAILED') } }
+    catch { return { success: false, failure: failure('IMAGE_READ_FAILED') } }
     if (selection.canceled || selection.filePaths.length === 0) return { success: true, cancelled: true }
-    if (selection.filePaths.length !== 1) return { success: false, error: failure('IMAGE_READ_FAILED') }
+    if (selection.filePaths.length !== 1) return { success: false, failure: failure('IMAGE_READ_FAILED') }
     try { return { success: true, cancelled: false, image: await service.previewFile(characterId, selection.filePaths[0]!) } }
-    catch (error) { return { success: false, error: failure(errorCode(error)) } }
+    catch (error) { return { success: false, failure: failure(errorCode(error)) } }
   }))
 
-  ipcMain.handle('character-avatar:commit', (event: AvatarEvent, characterId: string, base64: string, context: ProjectSessionContext): Promise<CharacterAvatarCommitResponse> => serialize(async () => {
-    if (!validSender(event)) return { success: false, error: failure('INVALID_SENDER') }
+  handle('character-avatar:commit', (event: AvatarEvent, characterId: string, base64: string, context: ProjectSessionContext): Promise<CharacterAvatarCommitResponse> => serialize(async () => {
+    if (!validSender(event)) return { success: false, failure: failure('INVALID_SENDER') }
     const service = serviceFor(deps, event, context)
-    if (!service) return { success: false, error: failure('PROJECT_NOT_OPEN') }
+    if (!service) return { success: false, failure: failure('PROJECT_NOT_OPEN') }
     enterScope(context)
     try {
       const avatar = service.commit(characterId, base64)
       invalidate(context, characterId)
       return { success: true, avatar }
-    } catch (error) { return { success: false, error: failure(errorCode(error)) } }
+    } catch (error) { return { success: false, failure: failure(errorCode(error)) } }
   }))
 
-  ipcMain.handle('character-avatar:read-batch', async (event: AvatarEvent, characterIds: string[], context: ProjectSessionContext): Promise<CharacterAvatarBatchReadResponse> => {
-    if (!validSender(event)) return { success: false, error: failure('INVALID_SENDER') }
+  handle('character-avatar:read-batch', async (event: AvatarEvent, characterIds: string[], context: ProjectSessionContext): Promise<CharacterAvatarBatchReadResponse> => {
+    if (!validSender(event)) return { success: false, failure: failure('INVALID_SENDER') }
     const service = serviceFor(deps, event, context)
-    if (!service) return { success: false, error: failure('PROJECT_NOT_OPEN') }
+    if (!service) return { success: false, failure: failure('PROJECT_NOT_OPEN') }
     enterScope(context)
     try {
       if (!Array.isArray(characterIds) || characterIds.length > 256
@@ -129,15 +130,15 @@ export function registerCharacterAvatarController(deps: CharacterAvatarControlle
         result.push(avatar)
       }
       return { success: true, avatars: result }
-    } catch (error) { return { success: false, error: failure(errorCode(error)) } }
+    } catch (error) { return { success: false, failure: failure(errorCode(error)) } }
   })
 
-  ipcMain.handle('character-avatar:remove', (event: AvatarEvent, characterId: string, context: ProjectSessionContext): Promise<CharacterAvatarRemoveResponse> => serialize(async () => {
-    if (!validSender(event)) return { success: false, error: failure('INVALID_SENDER') }
+  handle('character-avatar:remove', (event: AvatarEvent, characterId: string, context: ProjectSessionContext): Promise<CharacterAvatarRemoveResponse> => serialize(async () => {
+    if (!validSender(event)) return { success: false, failure: failure('INVALID_SENDER') }
     const service = serviceFor(deps, event, context)
-    if (!service) return { success: false, error: failure('PROJECT_NOT_OPEN') }
+    if (!service) return { success: false, failure: failure('PROJECT_NOT_OPEN') }
     enterScope(context)
     try { service.remove(characterId); invalidate(context, characterId); return { success: true } }
-    catch (error) { return { success: false, error: failure(errorCode(error)) } }
+    catch (error) { return { success: false, failure: failure(errorCode(error)) } }
   }))
 }

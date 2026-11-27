@@ -52,7 +52,7 @@ describe('global configuration corruption boundary', () => {
 
     await expect(handler('config:set')({}, { theme: 'light' })).resolves.toMatchObject({
       success: false,
-      error: expect.any(String),
+      failure: { code: 'CONFIG_FILE_DAMAGED' },
     })
     expect(fs.readFileSync(configPath)).toEqual(originalBytes)
   })
@@ -63,7 +63,7 @@ describe('global configuration corruption boundary', () => {
 
     await expect(handler('config:set')({}, { theme: 'light' })).resolves.toMatchObject({
       success: false,
-      error: expect.stringMatching(/\p{Script=Han}/u),
+      failure: { code: 'CONFIG_FILE_DAMAGED' },
     })
     expect(fs.readFileSync(configPath, 'utf8')).toBe('null')
   })
