@@ -7,7 +7,7 @@ export type UpdateState = UpdateChannels['update:get-state']['return']
 export type UpdateErrorCode = NonNullable<UpdateState['error']>['code']
 export type UpdateError = NonNullable<UpdateState['error']>
 
-/** 卡片要显示的失败：说明按 failure，重试按钮看 retryable。 */
+/** failure 决定说明文案，retryable 决定是否出重试按钮。 */
 export interface UpdateProblem {
   readonly failure: Failure
   readonly retryable: boolean

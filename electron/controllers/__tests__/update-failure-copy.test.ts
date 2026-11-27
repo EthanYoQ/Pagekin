@@ -41,7 +41,6 @@ function register(service: Partial<UpdateServiceFacade>) {
   registerUpdateController({ subscribe: () => () => undefined, getState: () => STATE, ...service } as UpdateServiceFacade, { ipc: { handle }, publish: () => undefined })
 }
 
-/** 主进程 handle() 出口、JSON 往返代替结构化克隆、渲染端 ipc.invoke 入口。 */
 async function received(channel: string, ...args: unknown[]): Promise<Record<string, unknown>> {
   const wire = await mocks.listeners.get(channel)!({ sender: { id: 1 } }, ...args)
   const crossed = JSON.parse(JSON.stringify(wire)) as unknown
