@@ -984,7 +984,7 @@ describe('InferGlobalSettingsCommand', () => {
     stubIpcInvoke((channel) => {
       if (channel === 'kb:search') return []
       if (channel === 'db:character-roster-read') return { status: 'ready', revision: 7, entries: [] }
-      if (channel === 'db:import-global-facts-commit') return { success: false, error: '全局事实事务失败' }
+      if (channel === 'db:import-global-facts-commit') return { success: false, failure: { code: 'IMPORT_RUN_CHECK_FAILED' } }
       throw new Error(`unexpected IPC ${channel}`)
     })
     useLLMStore.setState({ defaultModelId: 'model-a' })
@@ -997,7 +997,7 @@ describe('InferGlobalSettingsCommand', () => {
       step: {},
       context: createContext(),
       callbacks,
-    })).rejects.toThrow(/全局事实事务失败/)
+    })).rejects.toThrow('导入全局事实原子提交失败：导入没能继续：校验没有通过。请重试；如果仍然出现，请把这段说明反馈给我们。')
     expect(useProjectStore.getState().currentProject?.novelConfig.genre).toBe('玄幻')
   })
 })

@@ -13,6 +13,7 @@ import type { FinalizedDraftImportReceipt } from '../../shared/finalized-draft-i
 import { sameProjectSessionContext, projectSessionContextFromProject } from '../../shared/project-session-context'
 import { ipc } from '../ipc-client'
 import { useProjectStore } from '../../stores/project-store'
+import { currentInterfaceLocale } from '../../stores/locale-store'
 import { workflowResourceKey, type StepCallbacks, type WorkflowContext, type WorkflowDefinition, type WorkflowStep } from '../../stores/workflow-store'
 import {
   IMPORT_CHAPTER_PAGE_SIZE,
@@ -25,7 +26,7 @@ import { promptLanguageText } from '../prompt-language'
 import { retryDirectoryCharacterSync } from './directory-character-sync-recovery'
 import type { WritingLanguage } from '../../shared/writing-language'
 import { countDraftUnits } from '../../shared/draft-units'
-import { note, type AuthorNote } from '../../shared/failure'
+import { note, type AuthorNote, type Failure } from '../../shared/failure'
 import { authorError, isRegisteredErrorCode, resultFailure } from '../../i18n/app-errors'
 import { errorLocaleForRun } from '../../i18n/core'
 import { FINALIZATION_SHARED_WRITE_RESOURCE_KINDS } from '../../shared/workflow-resource-claims'
@@ -45,11 +46,10 @@ function textForLocale(locale: ImportRunSnapshot['locale'], zhCNText: string, en
 }
 
 function incompleteAuthorManifestError(run: ImportRunSnapshot): Error {
-  return new Error(textForLocale(
-    run.locale,
+  return authorError(errorLocaleForRun(run.locale, currentInterfaceLocale()), { note: note(
     '作者原稿的持久化章节清单不完整，无法安全启动导入。',
     'The persisted author-manuscript chapter manifest is incomplete, so the import cannot start safely.',
-  ))
+  ) })
 }
 
 function normalizeAuthorChapterNumbers(
@@ -124,8 +124,8 @@ function productionDependencies(
   const session = context.projectSession
   const projectPath = context.projectPath
   // 兜底说明按导入运行的语言写，不跟随当前界面语言（interfaceLocale 随 run.locale）。
-  const required = <T,>(result: { success: boolean; error?: string } & T, fallback: AuthorNote): T => {
-    if (!result.success) throw result.error ? new Error(result.error) : authorError(context.interfaceLocale, { note: fallback })
+  const required = <T extends { success: boolean; failure?: Failure }>(result: T, fallback: AuthorNote): T => {
+    if (!result.success) throw authorError(context.interfaceLocale, resultFailure(result) ?? { note: fallback })
     return result
   }
   return {
@@ -442,11 +442,10 @@ function importStep(
 export function createImportWorkflow(params: ImportWorkflowParams): WorkflowDefinition {
   const project = useProjectStore.getState().currentProject
   if (!project || !sameProjectSessionContext(params.projectSession, projectSessionContextFromProject(project))) {
-    throw new Error(textForLocale(
-      params.run.locale,
+    throw authorError(errorLocaleForRun(params.run.locale, currentInterfaceLocale()), { note: note(
       '当前项目已切换，无法启动导入工作流',
       'The project changed, so the import workflow cannot start.',
-    ))
+    ) })
   }
   const session = Object.freeze({ ...params.projectSession })
   const count = params.run.totalChapters
@@ -467,7 +466,7 @@ export function createImportWorkflow(params: ImportWorkflowParams): WorkflowDefi
         execution,
         params.projectPath,
       )
-      if (!result.success) throw result.error ? new Error(result.error) : authorError(context.interfaceLocale, { note: note('无法保存导入取消请求', 'Could not persist the import cancellation request.') })
+      if (!result.success) throw authorError(context.interfaceLocale, resultFailure(result) ?? { note: note('无法保存导入取消请求', 'Could not persist the import cancellation request.') })
     },
   }
   if (params.run.purpose === 'author-manuscript') {

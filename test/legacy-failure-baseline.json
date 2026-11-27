@@ -18,7 +18,7 @@
     "displayedErrorMessage": 1
   },
   "src/components/dialogs/ImportNovelDialog.tsx": {
-    "displayedErrorMessage": 7,
+    "displayedErrorMessage": 3,
     "englishWithReason": 1
   },
   "src/components/dialogs/use-architecture-confirm-form.ts": {
